@@ -30,6 +30,25 @@
 //! trigger:   user | boot | on-demand | passive | pairing | static | manual
 //! progress:  the unified download-progress kind ("" = silent/no UI)
 //! root:      cache (%LOCALAPPDATA%) | data (%APPDATA%) | bundled | ""
+//!
+//! UNIFIED STATE LAYER
+//! ===================
+//! Each row may carry a state file at `<data>/resources/<id>.json`
+//! ({schema, sha256, version, installedAt, checkedAt}) — ONE schema across
+//! every resource, whatever its owner's internal stamp looks like. The
+//! owner stamps (the res pack's tree hash, the datasets' sidecars, the
+//! gameparams build marker) remain the CONTENT truth this walk reads; the
+//! state file is the freshness ledger: when the content landed here
+//! (installedAt, backfilled from the owner stamp on first sight) and when
+//! this app last checked it (checkedAt, set by refresh_resources).
+//!
+//! THE REFRESH ENTRY
+//! =================
+//! `refresh_resources(ids?)` is the one IPC that re-checks every
+//! refreshable row: the data-pack lane (both datasets, same single-flight
+//! boot path) and the res-pack manifest check. Unknown ids are ignored;
+//! a lane's failure is logged and reported by absence from the returned
+//! list, never failing the whole call.
 #![allow(dead_code)] // registry fields are documentation; readers may not use all
 
 use anyhow::anyhow;
@@ -143,6 +162,87 @@ pub(crate) const REGISTRY: &[ResourceSpec] = &[
     },
 ];
 
+// ── the unified state layer ───────────────────────────────────────────────
+
+/// The freshness ledger entry at `<data>/resources/<id>.json`. One schema
+/// for every row; the OWNER stamps stay the content truth (the walk reads
+/// them), this file only records when that content landed/was checked here.
+#[derive(Debug, Default, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ResourceStateFile {
+    schema: u32,
+    id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    sha256: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    version: Option<String>,
+    /// When this content landed on this machine (approximate for pre-state
+    /// installs: the first walk that saw the owner stamp recorded it).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    installed_at: Option<String>,
+    /// When refresh_resources last checked this row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    checked_at: Option<String>,
+}
+
+/// The rows that HAVE an owner stamp worth projecting: the walk backfills
+/// their state file on first sight; the refresh command re-records them.
+const STAMPED_ROWS: &[&str] = &["res-pack", "data-kit", "data-ship-gameparams"];
+
+fn state_path(data: &Path, id: &str) -> std::path::PathBuf {
+    data.join("resources").join(format!("{id}.json"))
+}
+
+fn read_state(data: &Path, id: &str) -> Option<ResourceStateFile> {
+    read_json(&state_path(data, id))
+        .and_then(|v| serde_json::from_value::<ResourceStateFile>(v).ok())
+        .filter(|s| s.id == id)
+}
+
+fn now_rfc3339() -> String {
+    // Millisecond precision: consecutive installs within one second must
+    // still compare distinct (the ledger's content-moved re-stamp relies
+    // on it).
+    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// Record/merge one row's ledger entry. Best-effort: a failed write only
+/// costs the timestamps (the walk's content probe never touches this).
+fn record_state_in(
+    data: &Path,
+    id: &str,
+    sha256: Option<String>,
+    version: Option<String>,
+    mark_checked: bool,
+) {
+    let mut state = read_state(data, id).unwrap_or_default();
+    let fresh = state.installed_at.is_none() && (sha256.is_some() || version.is_some());
+    if fresh {
+        state.installed_at = Some(now_rfc3339());
+    }
+    if state.sha256 != sha256 && sha256.is_some() {
+        // Content moved since the last ledger entry: this IS a new install.
+        state.installed_at = Some(now_rfc3339());
+    }
+    state.schema = 1;
+    state.id = id.to_string();
+    state.sha256 = sha256.or(state.sha256);
+    state.version = version.or(state.version);
+    if mark_checked {
+        state.checked_at = Some(now_rfc3339());
+    }
+    let body = match serde_json::to_string(&state) {
+        Ok(body) => body,
+        Err(e) => {
+            tracing::warn!("resource state serialize {id}: {e}");
+            return;
+        },
+    };
+    if let Err(e) = super::appdata::write_json_in(data, &format!("resources/{id}.json"), &body) {
+        tracing::warn!("resource state write {id}: {e}");
+    }
+}
+
 // ── the status row (spec + on-disk state) ────────────────────────────────
 
 /// One registry row joined with its current on-disk state. Serialized
@@ -166,6 +266,11 @@ pub struct ResourceStatusRow {
     pub size_bytes: u64,
     /// cache | data | bundled | "" — which root the resource lives under.
     pub root: String,
+    /// When this content landed here (unified state ledger; None for
+    /// rows without an installed payload).
+    pub installed_at: Option<String>,
+    /// When refresh_resources last checked this row.
+    pub checked_at: Option<String>,
 }
 
 /// The aggregated status walk: one row per REGISTRY entry, state read from
@@ -188,6 +293,24 @@ fn status_in(data: &Path, cache: &Path) -> Vec<ResourceStatusRow> {
         .iter()
         .map(|spec| {
             let state = probe(spec.id, data, cache);
+            // Stamped rows get their ledger entry backfilled on first sight
+            // (installedAt) and their timestamps surfaced; the content
+            // fields stay owned by the probe above.
+            let ledger = if STAMPED_ROWS.contains(&spec.id) {
+                let has_content = state.sha256.is_some() || state.version.is_some();
+                if has_content && read_state(data, spec.id).is_none() {
+                    record_state_in(
+                        data,
+                        spec.id,
+                        state.sha256.clone(),
+                        state.version.clone(),
+                        false,
+                    );
+                }
+                read_state(data, spec.id)
+            } else {
+                None
+            };
             ResourceStatusRow {
                 id: spec.id.to_string(),
                 kind: spec.kind.to_string(),
@@ -199,6 +322,8 @@ fn status_in(data: &Path, cache: &Path) -> Vec<ResourceStatusRow> {
                 sha256: state.sha256,
                 size_bytes: state.size_bytes,
                 root: state.root,
+                installed_at: ledger.as_ref().and_then(|l| l.installed_at.clone()),
+                checked_at: ledger.as_ref().and_then(|l| l.checked_at.clone()),
             }
         })
         .collect()
@@ -341,6 +466,83 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
         .and_then(|raw| serde_json::from_str(&raw).ok())
 }
 
+// ── the refresh entry ─────────────────────────────────────────────────────
+
+/// Which lanes a refresh touches. Pure so tests pin the routing.
+struct RefreshPlan {
+    /// The data-pack lane (both datasets — the boot single-flight path).
+    data_lane: bool,
+    /// The res-pack manifest check (no download; the panel's own card owns
+    /// the actual download decision).
+    res_check: bool,
+}
+
+fn refresh_plan(ids: Option<&[String]>) -> RefreshPlan {
+    let Some(ids) = ids.filter(|v| !v.is_empty()) else {
+        return RefreshPlan {
+            data_lane: true,
+            res_check: true,
+        };
+    };
+    RefreshPlan {
+        data_lane: ids
+            .iter()
+            .any(|id| id == "data-kit" || id == "data-ship-gameparams"),
+        res_check: ids.iter().any(|id| id == "res-pack"),
+    }
+}
+
+/// The one refresh entry: re-check every refreshable row. The data-pack
+/// lane reuses the boot refresh (single-flight, both datasets); the res
+/// lane runs the manifest check (fetch-only). Each touched row's ledger is
+/// re-recorded (checkedAt + fresh stamps). Returns the ids actually
+/// refreshed — a lane that failed (network down) is logged and simply
+/// absent from the list, so one bad lane never fails the whole call.
+#[tauri::command]
+pub async fn refresh_resources(ids: Option<Vec<String>>) -> CommandResult<Vec<String>> {
+    let plan = refresh_plan(ids.as_deref());
+    let mut done: Vec<String> = Vec::new();
+    let mut data_touched = false;
+    let mut res_touched = false;
+
+    if plan.data_lane {
+        match super::data_pack::refresh_data_pack().await {
+            Ok(_) => data_touched = true,
+            Err(e) => tracing::warn!(error = %e, "resource refresh: data lane failed"),
+        }
+    }
+    if plan.res_check {
+        match super::model_pack::check_res_update().await {
+            Ok(_) => res_touched = true,
+            Err(e) => tracing::warn!(error = %e, "resource refresh: res check failed"),
+        }
+    }
+
+    if data_touched {
+        done.push("data-kit".into());
+        done.push("data-ship-gameparams".into());
+    }
+    if res_touched {
+        done.push("res-pack".into());
+    }
+
+    // Re-record the touched rows' ledger entries (fresh stamps + checkedAt).
+    if !done.is_empty() {
+        let ids = done.clone();
+        let data = super::appdata::appdata_dir_path()?;
+        let cache = crate::paths::ensure_cache_dir()?;
+        tokio::task::spawn_blocking(move || {
+            for id in ids {
+                let state = probe(&id, &data, &cache);
+                record_state_in(&data, &id, state.sha256, state.version, true);
+            }
+        })
+        .await
+        .map_err(|e| anyhow!("resource ledger task: {e}"))?;
+    }
+    Ok(done)
+}
+
 // ── tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -446,6 +648,98 @@ mod tests {
     /// Frozen-channel discipline: the app-update row is informational only
     /// (kind "update", channel "app") and the walk never invents a stamp
     /// file for it.
+    /// The ledger backfills from the owner stamp on first sight and keeps
+    /// its installedAt stable afterwards; a refresh stamps checkedAt.
+    #[test]
+    fn ledger_backfills_then_records_checks() {
+        let data = TempDir::new("data");
+        let cache = TempDir::new("cache");
+        let pack = data.0.join("data-pack");
+        fs::create_dir_all(&pack).unwrap();
+        fs::write(
+            pack.join("ship-consumable-kit.meta.json"),
+            r#"{"sha256":"aaa","version":"v1"}"#,
+        )
+        .unwrap();
+        fs::write(pack.join("ship-consumable-kit.json"), b"body-v1").unwrap();
+
+        // First walk: no ledger yet → backfilled with an installedAt.
+        let rows = status_in(&data.0, &cache.0);
+        let kit = rows.iter().find(|r| r.id == "data-kit").unwrap();
+        let first_installed = kit.installed_at.clone();
+        assert!(
+            first_installed.is_some(),
+            "first sight backfills installedAt"
+        );
+        assert!(kit.checked_at.is_none(), "no refresh ran yet");
+
+        // Second walk without changes: installedAt stable.
+        let rows = status_in(&data.0, &cache.0);
+        let kit = rows.iter().find(|r| r.id == "data-kit").unwrap();
+        assert_eq!(kit.installed_at, first_installed);
+
+        // A refresh records checkedAt (content unchanged → installedAt kept).
+        let state = probe("data-kit", &data.0, &cache.0);
+        record_state_in(&data.0, "data-kit", state.sha256, state.version, true);
+        let rows = status_in(&data.0, &cache.0);
+        let kit = rows.iter().find(|r| r.id == "data-kit").unwrap();
+        assert_eq!(kit.installed_at, first_installed);
+        assert!(kit.checked_at.is_some(), "refresh records checkedAt");
+
+        // Content moves → installedAt moves with it.
+        fs::write(
+            pack.join("ship-consumable-kit.meta.json"),
+            r#"{"sha256":"bbb","version":"v2"}"#,
+        )
+        .unwrap();
+        fs::write(pack.join("ship-consumable-kit.json"), b"body-v2").unwrap();
+        let state = probe("data-kit", &data.0, &cache.0);
+        record_state_in(&data.0, "data-kit", state.sha256, state.version, true);
+        let rows = status_in(&data.0, &cache.0);
+        let kit = rows.iter().find(|r| r.id == "data-kit").unwrap();
+        assert_ne!(kit.installed_at, first_installed, "new content re-stamps");
+    }
+
+    /// Unstamped rows (caches, bundled) never grow a ledger file.
+    #[test]
+    fn unstamped_rows_stay_ledgerless() {
+        let data = TempDir::new("data");
+        let cache = TempDir::new("cache");
+        fs::create_dir_all(cache.0.join("image-cache/dummy")).unwrap();
+        fs::write(cache.0.join("image-cache/dummy/f.png"), [0u8; 8]).unwrap();
+        status_in(&data.0, &cache.0);
+        assert!(
+            !data
+                .0
+                .join("resources")
+                .join("cache-image-cache.json")
+                .exists()
+        );
+        assert!(!data.0.join("resources").join("bundled-lesta.json").exists());
+    }
+
+    /// The refresh routing: absent/empty ids → both lanes; named ids select
+    /// their lane; unknown ids are ignored (no lane fires spuriously).
+    #[test]
+    fn refresh_plan_routes_ids() {
+        let all = refresh_plan(None);
+        assert!(all.data_lane && all.res_check);
+        let all = refresh_plan(Some(&[]));
+        assert!(
+            all.data_lane && all.res_check,
+            "empty list means refresh all"
+        );
+
+        let data_only = refresh_plan(Some(&["data-kit".to_string(), "nope".to_string()]));
+        assert!(data_only.data_lane && !data_only.res_check);
+
+        let res_only = refresh_plan(Some(&["res-pack".to_string()]));
+        assert!(!res_only.data_lane && res_only.res_check);
+
+        let none = refresh_plan(Some(&["unknown".to_string()]));
+        assert!(!none.data_lane && !none.res_check);
+    }
+
     #[test]
     fn app_update_row_is_informational() {
         let data = TempDir::new("data");

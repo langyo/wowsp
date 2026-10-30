@@ -105,6 +105,10 @@ export interface ResourceStatusRow {
   sizeBytes: number;
   /** cache | data | bundled | "". */
   root: string;
+  /** When this content landed here (unified state ledger). */
+  installedAt?: string | null;
+  /** When refresh_resources last checked this row. */
+  checkedAt?: string | null;
 }
 
 // One transport listener for `wowsp://download-progress`, fanned out to
@@ -177,6 +181,12 @@ export const resPackApi = {
   /** The aggregated registry walk: one row per runtime-managed resource
    *  (spec fields + on-disk state). Powers the resources inventory. */
   resourcesStatus: () => transport.invoke<ResourceStatusRow[]>(RPC.resources_status),
+  /** The one refresh entry: re-checks the data-pack lane and the res-pack
+   *  manifest (fetch-only; downloads stay behind their own cards). Returns
+   *  the ids actually refreshed — a failed lane is absent, never an error
+   *  for the whole call. */
+  refreshResources: (ids?: string[]) =>
+    transport.invoke<string[]>(RPC.refresh_resources, { ids: ids ?? null }),
   /** The ONE resource-download progress stream
    *  (`wowsp://download-progress`). Registers exactly one transport
    *  listener process-wide and fans every tick out to the subscribers —

@@ -128,6 +128,25 @@ export function useSettingsUpdatesState() {
     }
   }
 
+  // The inventory's own refresh button: one entry re-checks the data-pack
+  // lane + the res manifest, then reloads the walk (the ledger's checkedAt
+  // comes back with it).
+  const inventoryBusy = ref(false);
+
+  async function refreshInventoryRow() {
+    if (inventoryBusy.value) return;
+    inventoryBusy.value = true;
+    try {
+      await api.refreshResources();
+    } catch {
+      // a lane failure is already logged shell-side; the walk reload below
+      // reports whatever state actually landed
+    } finally {
+      await loadResourceRows();
+      inventoryBusy.value = false;
+    }
+  }
+
   async function refreshDataPackRow(force: boolean) {
     if (dataPackBusy.value) return;
     dataPackBusy.value = true;
@@ -174,6 +193,8 @@ export function useSettingsUpdatesState() {
     modCatalogBusy,
     resourceRows,
     loadResourceRows,
+    inventoryBusy,
+    refreshInventoryRow,
     refreshDataPackRow,
     refreshModCatalogRow,
   };

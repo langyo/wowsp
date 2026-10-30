@@ -87,15 +87,25 @@ export default defineComponent({
       const invRows = updates.resourceRows.value;
       return (
           <>
-          {/* ── Resource inventory (the registry walk, read-only) ───────
+          {/* ── Resource inventory (the registry walk) ─────────────────
               One line per runtime-managed resource: channel, kind, on-disk
-              state. Management actions stay in the groups below. */}
+              state, install stamp. Management actions stay in the groups
+              below; the refresh button re-checks the refreshable lanes
+              (data pack + res manifest — never auto-downloads). */}
           <HkSettingsGroup title={t("settings.resInvTitle")}>
             <HkSettingsHint>{t("settings.resInvHint")}</HkSettingsHint>
             {invRows ? (
               <ul class="settings-modal__res-inv">
                 {invRows.map((row) => (
-                  <li class="settings-modal__res-inv-row" key={row.id}>
+                  <li
+                    class="settings-modal__res-inv-row"
+                    key={row.id}
+                    data-hint={
+                      row.checkedAt
+                        ? t("settings.resInvChecked", { time: formatLocalStamp(row.checkedAt) })
+                        : undefined
+                    }
+                  >
                     <span class="settings-modal__res-inv-name">{rowName(row.id)}</span>
                     <span class="settings-modal__res-inv-meta">
                       {[
@@ -105,6 +115,9 @@ export default defineComponent({
                         row.present
                           ? row.version ?? (row.sha256 ? hash6(row.sha256) : null)
                           : t("settings.cacheStatusMissing"),
+                        row.installedAt
+                          ? t("settings.resInvInstalled", { time: formatLocalStamp(row.installedAt) })
+                          : null,
                       ]
                         .filter(Boolean)
                         .join(" · ")}
@@ -113,6 +126,14 @@ export default defineComponent({
                 ))}
               </ul>
             ) : null}
+            <HkButton
+              variant="secondary"
+              size="sm"
+              loading={updates.inventoryBusy.value}
+              onClick={() => void updates.refreshInventoryRow()}
+            >
+              {t("settings.resInvRefresh")}
+            </HkButton>
           </HkSettingsGroup>
 
           {/* ── Game-client data ─────────────────────────────────────────── */}

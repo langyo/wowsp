@@ -760,6 +760,7 @@ pub fn run() {
             commands::data_pack::get_ship_kit,
             commands::data_pack::refresh_data_pack,
             commands::resources::resources_status,
+            commands::resources::refresh_resources,
             commands::model_pack::ensure_res_pack,
             commands::model_pack::res_cache_root,
             commands::model_pack::res_report_bundled,
