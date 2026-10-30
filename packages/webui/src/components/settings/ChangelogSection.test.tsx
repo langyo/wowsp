@@ -109,6 +109,11 @@ describe("ChangelogSection", () => {
     await flushPromises();
 
     expect(document.body.querySelector(".hk-error-landing")).not.toBeNull();
+    expect(document.body.querySelector(".hk-error-landing.is-fill")).not.toBeNull();
+    // The group hands the rest of the pane to the fill-seated card.
+    const errorGroup = document.body.querySelector(".changelog__error-fill");
+    expect(errorGroup).not.toBeNull();
+    expect(errorGroup!.classList.contains("hk-settings-group")).toBe(true);
     expect(document.body.querySelector(".changelog__release")).toBeNull();
     expect(changelog.error).toContain("no mirror");
 
@@ -127,6 +132,10 @@ describe("ChangelogSection", () => {
     await flushPromises();
     expect(document.body.querySelector(".changelog__release")).not.toBeNull();
     expect(document.body.querySelector(".hk-error-landing")).not.toBeNull();
+    // The stale-feed card rides ABOVE real content — it must stay in
+    // flow (no fill seating, no yielded group).
+    expect(document.body.querySelector(".hk-error-landing.is-fill")).toBeNull();
+    expect(document.body.querySelector(".changelog__error-fill")).toBeNull();
   });
 
   it("renders the empty state for an empty feed", async () => {

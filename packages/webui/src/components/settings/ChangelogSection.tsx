@@ -54,7 +54,7 @@ export default defineComponent({
 
     return () => (
       <>
-      <HkSettingsGroup>
+      <HkSettingsGroup class={changelog.error && !changelog.releases.length ? "changelog__error-fill" : undefined}>
         <div class="settings-modal__packs-head">
           <h2 class="hk-settings-group-title">{t("settings.changelog")}</h2>
           <HkButton
@@ -68,9 +68,14 @@ export default defineComponent({
         </div>
         <HkSettingsHint>{t("settings.changelogHint")}</HkSettingsHint>
         {changelog.error && !changelog.releases.length ? (
-          /* Feed-fetch failure — the standard error card: the localized
-             sentence leads, the raw failure rides structured in the pane. */
+          /* Feed-fetch failure — the standard error card, FILL-seated: the
+             group yields the rest of the pane to it and the card
+             compresses its raw-details frame to fit (the 2026-10-30
+             report: the un-filled card pushed the whole pane into a
+             scroll). The stale-feed branch below stays in-flow — there is
+             real content under the card there. */
           <ErrorCard
+            fill
             error={changelog.error}
             description={t("settings.changelogFailed")}
             retry={() => void changelog.refresh()}

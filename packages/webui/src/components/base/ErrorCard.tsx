@@ -52,6 +52,11 @@ export default defineComponent({
     retry: { type: Function as PropType<(() => void) | undefined>, default: undefined },
     /** Retry wording override; empty falls back to common.retry. */
     retryLabel: { type: String, default: "" },
+    /** Fill seating (hikari's landing `fill`): the host pane lays the card
+     *  out as its shrinking region, so the card compresses its raw-details
+     *  frame to FIT the pane instead of scrolling it. Opt-in — the default
+     *  keeps every existing in-flow placement byte-identical. */
+    fill: { type: Boolean, default: false },
   },
   setup(props) {
     /** The JSON container embedded in `error`, when the whole string is
@@ -101,6 +106,7 @@ export default defineComponent({
     return () => (
       <HkErrorLanding
         variant="inline"
+        fill={props.fill}
         tone={props.tone}
         title={props.title}
         description={descriptionText.value}

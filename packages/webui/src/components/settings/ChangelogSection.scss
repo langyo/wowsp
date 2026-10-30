@@ -3,6 +3,17 @@
 // header, the markdown body rendered below). Surface colors come from
 // the hikari tokens so both theme modes read correctly.
 
+// The failure-state group yields the rest of the settings pane to the
+// error card: the shell's pane viewport is a definite-height flex column,
+// so lifting the group's content floor lets hikari's fill-seated landing
+// compress its raw-details frame to the remaining space instead of
+// pushing the whole pane into a scroll (2026-10-30 report). Applied only
+// on the error-only state — the stale-feed state keeps the normal flow.
+.changelog__error-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .changelog {
   &__state {
     display: flex;
