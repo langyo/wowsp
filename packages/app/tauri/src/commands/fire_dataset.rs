@@ -2244,7 +2244,7 @@ fn build_outcome_context(stream: &ReplayStream) -> OutcomeContext<'_> {
 /// Planar position of one trajectory at time `t` (linear interpolation,
 /// clamped at both ends — the reference implementation's `sampleAtTraj`;
 /// `None` when the entity has no samples at all).
-fn position_at(traj: &EntityTrajectory, t: f32) -> Option<(f32, f32)> {
+pub(crate) fn position_at(traj: &EntityTrajectory, t: f32) -> Option<(f32, f32)> {
     let ss = &traj.samples;
     if ss.is_empty() {
         return None;

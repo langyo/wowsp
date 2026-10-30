@@ -104,7 +104,7 @@ use super::decision_tick::DEFAULT_EYE_HEIGHT;
 use super::fire_dataset::{
     DECISION_INTERVAL_S, DecisionRowCore, ENEMY_SLOTS, FRIEND_SLOTS, FireDatasetSlot,
     FireSampleParams, LABEL_WINDOW_S, MOVE_SECTOR_COUNT, MOVE_SECTOR_NONE, MoveDatasetRow,
-    export_move_replay_file,
+    OUTCOME_WINDOW_S, export_move_replay_file, position_at,
 };
 
 // ── scoring constants (the documented weights) ──────────────────────────────
@@ -172,6 +172,10 @@ pub struct ShipScoreSample {
     /// Head-B raw probability `p(expert fires)` — `null` on non-can-fire
     /// rows. `fire` is recoverable as `fired ? fireProb : 1 − fireProb`.
     pub fire_prob: Option<f32>,
+    /// Enemy HP lost in `(t + labelWindow, t + 45 s]` attributable to this
+    /// ship's covering impacts (E13 window semantics) — `null` on
+    /// non-can-fire rows. E21's realized-outcome substrate.
+    pub hp_lost: Option<f32>,
     /// Softmax mass on the actual move sector.
     #[serde(rename = "move")]
     pub mv: f32,
@@ -352,6 +356,112 @@ fn fire_action_contexts(stream: &ReplayStream) -> BTreeMap<i32, FireActionCtx> {
             )
         })
         .collect()
+}
+
+// ── E21: per-decision window HP-loss attribution (E13 mirror) ──────────────
+//
+// fire_dataset's OutcomeContext is module-private, so — exactly like
+// FireActionCtx above — the E13 hp-lost window is re-implemented
+// field-for-field: hit impacts (shotKills) per owner × enemy hull HP drops,
+// full credit to a drop when a window impact of the owner covers it within
+// the ±(0.4/0.6) s envelope and sat within the 500-unit attribution radius
+// of the hull at the impact time. Timelines are (time, x, z)/(time, delta)
+// tuples so the context owns its data with no lifetimes tied to the stream.
+// Entity→team comes from the export rows themselves (every scored entity
+// has rows); hulls without rows are skipped — a teammate or an unscored
+// spectator contributes no attribution either way.
+struct WindowOutcomeCtx {
+    impacts_by_owner: BTreeMap<i32, Vec<(f32, f32, f32)>>,
+    drops_by_entity: BTreeMap<i32, Vec<(f32, f32)>>,
+    /// entity id -> index into `stream.trajectories` (position lookups).
+    traj_index: BTreeMap<i32, usize>,
+}
+
+fn window_outcome_context(stream: &ReplayStream) -> WindowOutcomeCtx {
+    let mut impacts_by_owner: BTreeMap<i32, Vec<(f32, f32, f32)>> = BTreeMap::new();
+    for k in &stream.shot_kills {
+        impacts_by_owner
+            .entry(k.owner_id)
+            .or_default()
+            .push((k.time, k.x, k.z));
+    }
+    for v in impacts_by_owner.values_mut() {
+        v.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let mut drops_by_entity: BTreeMap<i32, Vec<(f32, f32)>> = BTreeMap::new();
+    for traj in &stream.trajectories {
+        let mut drops = Vec::new();
+        for w in traj.hp_samples.windows(2) {
+            let delta = w[0].value.saturating_sub(w[1].value);
+            if delta >= 50 {
+                drops.push((w[1].time, delta as f32));
+            }
+        }
+        drops_by_entity.insert(traj.entity_id, drops);
+    }
+    let traj_index = stream
+        .trajectories
+        .iter()
+        .enumerate()
+        .map(|(i, tr)| (tr.entity_id, i))
+        .collect();
+    WindowOutcomeCtx {
+        impacts_by_owner,
+        drops_by_entity,
+        traj_index,
+    }
+}
+
+/// Enemy HP lost in `(t + label_window, t + OUTCOME_WINDOW_S]` attributable
+/// to `owner`'s covering impacts — the E13 `enemyHpLostNearby` semantics,
+/// generalized from the recorder row to any scored ship.
+fn window_hp_lost(
+    ctx: &WindowOutcomeCtx,
+    stream: &ReplayStream,
+    teams: &BTreeMap<i32, i8>,
+    owner: i32,
+    decider_team: i8,
+    t: f32,
+) -> f32 {
+    let w0 = t + LABEL_WINDOW_S;
+    let w1 = t + OUTCOME_WINDOW_S;
+    if w1 <= w0 {
+        return 0.0;
+    }
+    let empty: Vec<(f32, f32, f32)> = Vec::new();
+    let impacts = ctx.impacts_by_owner.get(&owner).unwrap_or(&empty);
+    let i0 = impacts.partition_point(|k| k.0 <= w0);
+    let i1 = impacts.partition_point(|k| k.0 <= w1);
+    let window = &impacts[i0..i1];
+    if window.is_empty() {
+        return 0.0;
+    }
+    let mut hp_lost = 0.0f32;
+    for (entity, team) in teams {
+        if *entity == owner || *team == decider_team {
+            continue;
+        }
+        let Some(drops) = ctx.drops_by_entity.get(entity) else {
+            continue;
+        };
+        let d0 = drops.partition_point(|d| d.0 <= w0);
+        let d1 = drops.partition_point(|d| d.0 <= w1);
+        for &(drop_t, delta) in &drops[d0..d1] {
+            let covered = window.iter().any(|&(kt, kx, kz)| {
+                kt >= drop_t - 0.6 && kt < drop_t + 0.4 && {
+                    let Some(&ti) = ctx.traj_index.get(entity) else {
+                        return false;
+                    };
+                    position_at(&stream.trajectories[ti], kt)
+                        .is_some_and(|(vx, vz)| (vx - kx).hypot(vz - kz) <= 500.0)
+                }
+            });
+            if covered {
+                hp_lost += delta;
+            }
+        }
+    }
+    hp_lost
 }
 
 /// p10 (nearest-rank) of the consecutive main-salvo intervals, clamped to
@@ -905,6 +1015,13 @@ where
     F: FnMut(&MoveDatasetRow) -> anyhow::Result<(f32, Vec<f32>)>,
 {
     let fire_ctxs = fire_action_contexts(stream);
+    let outcome_ctx = window_outcome_context(stream);
+    // entity -> team (recorder-relative 0/1) from the rows themselves — the
+    // attribution query skips same-team and unknown hulls.
+    let teams: BTreeMap<i32, i8> = rows
+        .iter()
+        .map(|r| (r.core.owner_entity_id, r.core.team_id))
+        .collect();
     let outcomes = BattleResultsIndex::parse(stream.battle_results.as_deref());
     let in_window = |t: f32| t_from.is_none_or(|from| t >= from) && t_to.is_none_or(|to| t <= to);
     // owner → running aggregates (samples kept whole — the UI slides).
@@ -946,12 +1063,23 @@ where
             fire_n: 0,
             mv_sum: 0.0,
         });
+        let hp_lost = can_fire.then(|| {
+            window_hp_lost(
+                &outcome_ctx,
+                stream,
+                &teams,
+                row.core.owner_entity_id,
+                row.core.team_id,
+                row.core.t,
+            )
+        });
         acc.samples.push(ShipScoreSample {
             t: row.core.t,
             inst: c.inst,
             fire: c.fire,
             fired: c.fired,
             fire_prob: c.fire_prob,
+            hp_lost,
             mv: c.mv,
             confidence: c.confidence,
         });
@@ -1047,6 +1175,115 @@ pub fn compute_ship_scores(
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn e21_window_hp_lost_attributes_covered_enemy_drops() {
+        use wowsp_tauri_shared::{
+            EntityTrajectory, HpSample, PositionSample, ReplayStream, ShotKillEvent,
+        };
+        let mk_stream = |imp_x: f32, drop: u32| ReplayStream {
+            trajectories: vec![
+                EntityTrajectory {
+                    entity_id: 1,
+                    kind: None,
+                    samples: Vec::new(),
+                    death_time: None,
+                    cap_samples: Vec::new(),
+                    cap_progress: Vec::new(),
+                    cruise_samples: Vec::new(),
+                    hp_samples: Vec::new(),
+                },
+                EntityTrajectory {
+                    entity_id: 2,
+                    kind: None,
+                    samples: vec![
+                        PositionSample {
+                            entity_id: 2,
+                            vehicle_id: 0,
+                            time: 0.0,
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                            yaw: 0.0,
+                        },
+                        PositionSample {
+                            entity_id: 2,
+                            vehicle_id: 0,
+                            time: 100.0,
+                            x: 0.0,
+                            y: 0.0,
+                            z: 0.0,
+                            yaw: 0.0,
+                        },
+                    ],
+                    death_time: None,
+                    cap_samples: Vec::new(),
+                    cap_progress: Vec::new(),
+                    cruise_samples: Vec::new(),
+                    hp_samples: vec![
+                        HpSample {
+                            time: 0.0,
+                            value: 40000,
+                        },
+                        HpSample {
+                            time: 20.0,
+                            value: 40000 - drop,
+                        },
+                    ],
+                },
+            ],
+            shot_kills: vec![ShotKillEvent {
+                time: 20.1,
+                owner_id: 1,
+                hit_type: 0,
+                shot_id: 0,
+                x: imp_x,
+                y: 0.0,
+                z: 0.0,
+            }],
+            ..minimal_stream(None)
+        };
+        let mut teams = BTreeMap::new();
+        teams.insert(1, 0i8); // decider
+        teams.insert(2, 1i8); // enemy
+        // Impact within 500 units of the drop position -> full credit.
+        let near_stream = mk_stream(100.0, 500);
+        let got = window_hp_lost(
+            &window_outcome_context(&near_stream),
+            &near_stream,
+            &teams,
+            1,
+            0,
+            0.0,
+        );
+        assert_eq!(got, 500.0);
+        // Impact 2000 units away -> no credit.
+        let far_stream = mk_stream(2000.0, 500);
+        let far = window_hp_lost(
+            &window_outcome_context(&far_stream),
+            &far_stream,
+            &teams,
+            1,
+            0,
+            0.0,
+        );
+        assert_eq!(far, 0.0);
+        // Same-team hull -> never credited.
+        let mut ally_teams = teams.clone();
+        ally_teams.insert(2, 0i8);
+        let ally_stream = mk_stream(100.0, 500);
+        let ally = window_hp_lost(
+            &window_outcome_context(&ally_stream),
+            &ally_stream,
+            &ally_teams,
+            1,
+            0,
+            0.0,
+        );
+        assert_eq!(ally, 0.0);
+    }
+
     use super::*;
 
     // ── synthetic fixtures (fire_dataset / decision_serve test pattern) ──
