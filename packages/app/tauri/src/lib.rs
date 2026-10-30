@@ -33,7 +33,8 @@ mod resource_pack;
 mod settings_store;
 #[cfg(feature = "test-harness")]
 mod test_harness;
-/// Browser arguments shared by every WebView2 window (see the module docs).
+/// WebView2 browser-argument policy: static args are gone; the conditional
+/// GPU switch rides an env var set before any webview exists (module docs).
 mod webview_args;
 
 use tauri::Manager;
@@ -67,6 +68,13 @@ pub fn run() {
     // On desktop this also attaches the daily-rolling UTF-8 file sink the
     // settings' 问题反馈 section ships (see src/logging.rs).
     logging::init();
+
+    // Conditional WebView2 GPU switch (webview_args): sets the
+    // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS env var only on machines with a
+    // hardware discrete GPU, BEFORE any webview — and therefore any WebView2
+    // environment — exists. Must stay this early; see webview_args.rs for
+    // the 156 frozen-animations incident and the accepted degradations.
+    webview_args::apply_gpu_switch();
 
     // Elevated hardware-snapshot helper (commands::hardware_info): when the
     // feedback export needs administrator-only rows, the app relaunches

@@ -31,7 +31,6 @@
       {
         "label": "main",
         "title": "WoWSP",
-        "additionalBrowserArgs": "--force-high-performance-gpu --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
         "width": 1280,
         "height": 820,
         "resizable": true,
@@ -48,7 +47,6 @@
       {
         "label": "tray-panel",
         "title": "WoWSP Tray",
-        "additionalBrowserArgs": "--force-high-performance-gpu --disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection",
         "url": "/tray.html",
         "width": 320,
         "height": 248,

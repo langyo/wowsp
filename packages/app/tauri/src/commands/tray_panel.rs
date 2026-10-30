@@ -232,9 +232,10 @@ pub fn post_create_setup(_win: &WebviewWindow) {}
 /// keeps the corners square).
 ///
 /// Idempotent and applied lazily before every show path, NOT from setup:
-/// the tauri 2 setup hook runs BEFORE the config windows exist, so a
-/// get_webview_window there answers None and the styling would silently
-/// never happen (that was the skin bug's last piece).
+/// in tauri 2.12 the config-declared windows are created INSIDE
+/// Builder::run's setup pass and only then does the app's setup closure
+/// run, so there is no earlier hook that can see this window; styling from
+/// setup would race or silently miss (that was the skin bug's last piece).
 #[cfg(target_os = "windows")]
 fn ensure_styled(win: &WebviewWindow) {
     use std::sync::atomic::{AtomicBool, Ordering};

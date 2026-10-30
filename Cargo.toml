@@ -157,11 +157,17 @@ winreg = "^0.56"
 # cargo-deny; its `chrono` default reuses the chrono already in the tree.
 wmi = "^0.18"
 
-# Windows screen capture for overlay roster positioning.
+# Windows screen capture for overlay roster positioning; DXGI adapter
+# enumeration for the conditional WebView2 GPU switch (webview_args.rs).
 windows = { version = "^0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Dwm",
+    # CreateDXGIFactory1/EnumAdapters1: count hardware display adapters to
+    # decide whether the high-performance-GPU switch is worth passing.
+    "Win32_Graphics_Dxgi",
+    # CoInitializeEx: the DXGI enumeration thread needs a COM apartment.
+    "Win32_System_Com",
     # GetDpiForWindow: the overlay's side-pad reserve converts the chip
     # layer's CSS px through the game window's monitor scale.
     "Win32_UI_HiDpi",
