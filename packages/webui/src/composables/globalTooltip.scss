@@ -94,10 +94,13 @@
 
 /* Prose cards (a card carrying a `body` briefing — the water-table ship-class
    hover cards): the parameter cards' 300px measure wraps a sentence into a
-   narrow column, so a paragraph card widens to a reading width instead. Both
-   classes sit on the popup, so this later rule wins over the 300px cap. */
+   narrow column, so a paragraph card widens to a reading width instead —
+   but only a notch past the parameter cards: at 2xs CJK text a wider
+   measure outruns its two-to-four-line briefing and reads as a banner.
+   Both classes sit on the popup, so this later rule wins over the 300px
+   cap. */
 .global-tooltip--paragraph {
-  max-width: 380px;
+  max-width: 340px;
 }
 
 .global-tooltip__card {
@@ -180,32 +183,34 @@
 
 /* Itemized control lines (HintCard.keys — the "press X to do Y" list under
    a briefing): a keycap chip leads each action. The group is set off from
-   the prose by the same hairline the parameter rows use. */
+   the prose by the same hairline the parameter rows use, and — like those
+   rows — the lines share one grid: the keycap column sizes to the widest
+   cap, so every cap centers on one column axis while the action texts keep
+   a straight left edge (a per-row flex leaves the texts ragged whenever
+   neighboring caps differ in width). */
 .global-tooltip__card-keys {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  align-items: start;
+  gap: 4px 6px;
   margin-top: 1px;
   padding-top: 6px;
   border-top: 1px solid rgb(0 0 0 / 12%);
-}
-
-.global-tooltip__card-key {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
   font-size: var(--text-2xs);
   line-height: 1.65;
 }
 
+.global-tooltip__card-key {
+  display: contents;
+}
+
 .global-tooltip__key-cap {
-  flex-shrink: 0;
+  justify-self: center;
   min-width: 1.7em;
   box-sizing: border-box;
   padding: 0 5px;
   border-radius: 4px;
   font-family: inherit;
-  font-size: var(--text-2xs);
   font-weight: 600;
   line-height: 1.65;
   text-align: center;

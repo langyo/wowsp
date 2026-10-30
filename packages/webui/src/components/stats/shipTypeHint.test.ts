@@ -62,7 +62,9 @@ describe("shipTypeHintCardOf", () => {
 
   it("itemizes the carrier's squadron controls; gun classes stay prose-only", () => {
     const cv = shipTypeHintCardOf("CV")!;
-    expect(cv.keys?.map((k) => k.key)).toEqual(["1/2/3", "左键", "W", "F"]);
+    expect(cv.keys?.map((k) => k.key)).toEqual(["数字键", "左键", "W", "F"]);
+    // The cap reads as a key group; the digits ride the action text instead.
+    expect(cv.keys?.[0]?.text).toContain("1 选攻击机");
     expect(cv.keys?.[3]?.text).toContain("召回");
     expect(shipTypeHintCardOf("CA")?.body).toContain("203 mm");
     expect(shipTypeHintCardOf("CL")?.body).toContain("152 mm");
