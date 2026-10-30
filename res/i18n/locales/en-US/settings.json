@@ -292,6 +292,7 @@
   "resourcesDecisionsDesc": "Fire model (ONNX) and per-map terrain line-of-sight rasters, installed out of band under <cache>/decisions.",
   "resourcesDecisionsModelInstalled": "Model installed ({size})",
   "resourcesDecisionsModelMissing": "Model missing",
+  "resourcesDecisionsAdviceInstalled": "Advice model installed ({size})",
   "resourcesDecisionsAbsent": "Not installed.",
   "resourcesDecisionsUnknown": "Could not read the pack status.",
   "resourcesDecisionsDemoInUse": "The built-in demo model is in use.",

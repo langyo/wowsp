@@ -292,6 +292,7 @@
   "resourcesDecisionsDesc": "开火模型（ONNX）与逐地图地形通视栅格，独立安装于 <cache>/decisions。",
   "resourcesDecisionsModelInstalled": "模型已安装（{size}）",
   "resourcesDecisionsModelMissing": "模型缺失",
+  "resourcesDecisionsAdviceInstalled": "建议模型已安装（{size}）",
   "resourcesDecisionsAbsent": "未安装。",
   "resourcesDecisionsUnknown": "无法读取模型包状态。",
   "resourcesDecisionsDemoInUse": "当前使用内置演示模型。",

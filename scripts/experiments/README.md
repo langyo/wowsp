@@ -206,8 +206,10 @@
 - **结论：双模型分工定案（用户批准）**——武备属性让「该不该开火」的分类
   与校准更好、却破坏模型分数与「实现伤害」的排序对齐（评分需要后者）。
   **评分链用 E19**（伤害排序对齐优先，X2/X3 语义已验证），**建议链用 E24**
-  （分类/校准优先）；两者输入契约只差一个 `attrs` 输入（权重留在训练节点，
-  不随库分发）。端上推理两侧已支持该分离：`DecisionModel`/`ScoreModel`
+  （分类/校准优先）；两者输入契约只差一个 `attrs` 输入。建议链槽位已定版：
+  决策包可选 `advice_fire_model.onnx`（env `WOWSP_DEBUG_ADVICE_FIRE_MODEL`
+  覆盖 / dev 检出取 `out/fire_model/e24_attrs/fp32.onnx`），战术板建议命令
+  优先走它、缺槽回退评分火模型；交付只走 fp32（int8 的 headA 偏移见下）。端上推理两侧已支持该分离：`DecisionModel`/`ScoreModel`
   自动识别带 `attrs` 输入的导出并拒绝契约错配（缺输入/多输入/宽度不符均
   硬报错），路由向量从内嵌属性表逐位复刻训练特征化
   （`ship_attrs.rs`，含闭式 ONNX fixture 测试）。

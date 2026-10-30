@@ -80,6 +80,14 @@ pub struct DecisionsPackStatus {
     /// Size of the installed movement model file (0 when absent).
     #[serde(default)]
     pub move_model_bytes: u64,
+    /// Whether `advice_fire_model.onnx` is installed (E24 attribute-routed
+    /// fire MoE — the advice chain of the dual-model split; optional, the
+    /// tactical board falls back to the scoring fire model without it).
+    #[serde(default)]
+    pub advice_model_present: bool,
+    /// Size of the installed advice model file (0 when absent).
+    #[serde(default)]
+    pub advice_model_bytes: u64,
     /// Map short names that already have a `terrain_los.npz` raster,
     /// sorted ascending.
     pub los_maps: Vec<String>,

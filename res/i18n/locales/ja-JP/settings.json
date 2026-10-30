@@ -292,6 +292,7 @@
   "resourcesDecisionsDesc": "射撃モデル（ONNX）とマップごとの地形可視性ラスター。<cache>/decisions に別途インストールされます。",
   "resourcesDecisionsModelInstalled": "モデル導入済み（{size}）",
   "resourcesDecisionsModelMissing": "モデルがありません",
+  "resourcesDecisionsAdviceInstalled": "アドバイスモデル導入済み（{size}）",
   "resourcesDecisionsAbsent": "未インストール。",
   "resourcesDecisionsUnknown": "モデルパックの状態を読み取れませんでした。",
   "resourcesDecisionsDemoInUse": "内蔵のデモモデルを使用中です。",
