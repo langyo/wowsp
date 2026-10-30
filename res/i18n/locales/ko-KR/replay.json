@@ -613,5 +613,9 @@
     "samples": "{ships}척 · {rows}개 결정 지점",
     "contribution": "기여",
     "perShot": "발당 평균 {value}"
+  },
+  "aiAnalysis": {
+    "toggle": "AI 분석",
+    "portableUnavailable": "휴대용 빌드에는 AI 추론 런타임 없음"
   }
 }

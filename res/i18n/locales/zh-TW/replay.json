@@ -613,5 +613,9 @@
     "samples": "{ships} 艘船 · {rows} 個決策點",
     "contribution": "貢獻",
     "perShot": "每發均值 {value}"
+  },
+  "aiAnalysis": {
+    "toggle": "AI 分析",
+    "portableUnavailable": "便携版無 AI 推理執行時"
   }
 }

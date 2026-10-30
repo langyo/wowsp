@@ -292,7 +292,7 @@ function drawMovementAdvice(
   projX: (x: number) => number,
   projZ: (zScene: number) => number,
 ): void {
-  if (!ctx.moveAdviceOn.value || !ctx.debugReport.value) return;
+  if (!ctx.aiAnalysisOn.value || !ctx.debugReport.value) return;
   const report = ctx.debugReport.value;
   const posOf = (entityId: number) => {
     const tr = ctx.trajById.get(entityId);
@@ -364,7 +364,7 @@ function drawDecisionSuggestions(
   rotRad: number,
   probMin: number,
 ): void {
-  if (!ctx.decisionsOn.value || !ctx.decisionReport.value) return;
+  if (!ctx.aiAnalysisOn.value || !ctx.decisionReport.value) return;
   const report = ctx.decisionReport.value;
   // Amber → red as fireProb climbs 0 → 1 (readable on both the game's
   // light-dark map art and next to team green/red glyphs).
