@@ -323,7 +323,9 @@ function shellSections(
  * first ping marks the target for the shorter duration, a second ping
  * (double ping) extends it. GameParams carries them per sector
  * (`sectorParams[i].lifetime`, one entry per ping tier); WG's profile splits
- * them into `wave_duration_0` / `wave_duration_1`.
+ * them into `wave_duration_0` / `wave_duration_1`. The Lesta client's
+ * schema instead ships one `sectorLifetime` per ship (no tier split), which
+ * renders as a single neutral mark-duration row.
  */
 function sonarRows(gameparams: unknown, profile: Profile): SpecRow[] {
   const rows: SpecRow[] = [];
@@ -358,6 +360,18 @@ function sonarRows(gameparams: unknown, profile: Profile): SpecRow[] {
       rows.push({ key: "sonarPing1", value: `${lifetimes[0].toFixed(0)} s`, hint: "sonarPing1Hint" });
     if (lifetimes[1] != null)
       rows.push({ key: "sonarPing2", value: `${lifetimes[1].toFixed(0)} s`, hint: "sonarPing2Hint" });
+    // The Lesta client's schema has no per-tier sectorParams: one per-ship
+    // `sectorLifetime` covers both ping tiers, so it renders as a single
+    // neutral mark-duration row (no single/double split to report).
+    if (lifetimes.length === 0) {
+      const legacy = num(pg.sectorLifetime);
+      if (legacy != null && legacy > 0)
+        rows.push({
+          key: "sonarMarkTime",
+          value: `${legacy.toFixed(0)} s`,
+          hint: "sonarMarkTimeHint",
+        });
+    }
   } else {
     const sonar = profile?.submarine_sonar as SubmarineSonarBlock | undefined;
     if (!sonar || typeof sonar !== "object") return [];

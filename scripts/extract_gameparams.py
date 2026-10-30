@@ -122,6 +122,21 @@ def _entities(raw: object) -> list[dict]:
     return [e for e in items if isinstance(e, dict)]
 
 
+def entity_index(data: object) -> dict[str, dict]:
+    """Internal-name → entity index over a name-keyed GameParams root (the
+    game-assets `game-params --full` shape). Numeric id keys and the
+    "ships" wrapper are Ship entries, never ammo names — the same key rule
+    as the Rust `json_entity_index`. Shared with the Lesta bundle builder
+    so both pack paths embed identical `__torpedoAmmo` shapes."""
+    if not isinstance(data, dict):
+        return {}
+    return {
+        key: value
+        for key, value in data.items()
+        if key != "ships" and isinstance(value, dict) and _as_int(key) is None
+    }
+
+
 def collect_ship_slices(data: object) -> dict[int, dict]:
     """ship id → the armed ship entity (A_Artillery preferred), mirroring
     extract_ship_slice's candidate pick, with the referenced torpedo ammo
@@ -138,20 +153,12 @@ def collect_ship_slices(data: object) -> dict[int, dict]:
             continue
         armed_by_id.setdefault(ship_id, []).append(entity)
 
-    entity_index: dict[str, dict] = {}
-    if isinstance(data, dict):
-        # Same key rule as the Rust json_entity_index: numeric id keys (and
-        # the "ships" wrapper) are Ship entries, never ammo names.
-        entity_index = {
-            key: value
-            for key, value in data.items()
-            if key != "ships" and isinstance(value, dict) and _as_int(key) is None
-        }
+    entities = entity_index(data)
 
     slices: dict[int, dict] = {}
     for ship_id, candidates in armed_by_id.items():
         pick = next((c for c in candidates if "A_Artillery" in c), candidates[0])
-        slices[ship_id] = embed_torpedo_ammo(pick, entity_index)
+        slices[ship_id] = embed_torpedo_ammo(pick, entities)
     return slices
 
 

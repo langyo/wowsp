@@ -444,6 +444,8 @@
     "sonarPing1Hint": "소나가 1회 명중한 뒤 목표에 남는 1중 표식의 지속 시간.",
     "sonarPing2": "이중 핑 표식",
     "sonarPing2Hint": "소나가 연속 2회 명중(이중 핑)한 뒤 목표에 남는 2중 표식의 지속 시간. 단일 핑 표식보다 길다.",
+    "sonarMarkTime": "소나 표식 지속 시간",
+    "sonarMarkTimeHint": "소나 명중 후 목표에 남는 표식의 지속 시간(이 클라이언트는 1중/2중을 구분하지 않음).",
     "batteryCapacity": "축전지 용량",
     "batteryCapacityHint": "잠항 중 소모하는 전력 비축량.",
     "batteryDrain": "전력 소모",
