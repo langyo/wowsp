@@ -213,6 +213,46 @@ describe("buildShipSpecs submarine sonar", () => {
     const groups = buildShipSpecs(PROFILE, "japan", GAMEPARAMS);
     expect(groups.find((g) => g.group === "sonar")).toBeUndefined();
   });
+
+  it("reads the researched pinger module when A1/A2 variants are co-listed", () => {
+    // Tech-tree hulls list both sonar modules: A1 stock (9 km / 7.5 s) and
+    // A2 researched (10 km / 6.0 s). The panel's top-configuration
+    // convention means the A2 numbers must render.
+    const gp = {
+      name: "PGSS210_U_2501",
+      A1_PingerGun: { waveDistance: 9000, waveReloadTime: 7.5, maxWaveHits: 2 },
+      A2_PingerGun: {
+        waveDistance: 10000,
+        waveReloadTime: 6.0,
+        maxWaveHits: 2,
+        waveParams: [{ waveSpeed: [500, 500, 500, 500, 500] }],
+        sectorParams: [
+          { width: 15, lifetime: 25 },
+          { width: 15, lifetime: 65 },
+        ],
+      },
+      A_Hull: { health: 18900 },
+      ShipUpgradeInfo: {
+        PGUH910_TOP: {
+          ucType: "_Hull",
+          prev: "",
+          components: {
+            hull: ["A_Hull"],
+            artillery: [],
+            airDefense: [],
+            airArmament: [],
+            atba: [],
+            torpedoes: [],
+            pinger: ["A1_PingerGun", "A2_PingerGun"],
+          },
+        },
+      },
+    } as Record<string, unknown>;
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", gp);
+    expect(rowOf(groups, "sonar", "sonarRange")?.value).toBe("10.0 km");
+    expect(rowOf(groups, "sonar", "sonarReload")?.value).toBe("6.0 s");
+    expect(rowOf(groups, "sonar", "sonarPing2")?.value).toBe("65 s");
+  });
 });
 
 describe("buildShipSpecs submarine battery and mobility", () => {
