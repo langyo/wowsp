@@ -85,7 +85,6 @@
   "selfhostLog": "ウィザード出力",
   "selfhostLogEmpty": "まだ出力はありません。ステップを実行するとここに表示されます。",
   "selfhostStepDone": "完了",
-  "lanLegacyTitle": "LAN ペアリング（旧）",
-  "lanLegacyHint": "ゲートウェイ以前の旧経路です。スマホのリプレイウィザードにこの PC の LAN アドレスと PIN を入力します。インターネット用ペアリングコードは廃止されました。上のモバイルサービスを使ってください。",
-  "lanLegacyPhoneHint": "スマホで「リプレイ → PC から取得」を開き、同じ Wi-Fi 上で上の PIN を入力してください。"
+  "rootConnectExistingHint": "デプロイ済み（入手済み）のゲートウェイ URL を貼り付けて保存すると接続できます。",
+  "rootDeployHint": "ゲートウェイがまだない？数分で自分専用のプライベートゲートウェイをデプロイできます。"
 }

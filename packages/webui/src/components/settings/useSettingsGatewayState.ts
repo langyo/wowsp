@@ -3,7 +3,7 @@
  *  mobile-service toggle driving gateway_publish_start/stop on the
  *  session-hub route, the publish status pill (wowsp://gateway-state via
  *  the store), and the self-host wizard's open flag. */
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useToast } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
@@ -31,6 +31,16 @@ export function useSettingsGatewayState() {
   /** Whether the configured root is the official default (readonly
    *  display) — the custom branch carries the editable field. */
   const usingOfficial = computed(() => !gateway.isCustomRoot);
+  /** The route-entry TAB the user is looking at — independent of the
+   *  saved config so "custom" is freely clickable (it reveals the
+   *  connect-existing editor and the deploy entry; nothing saves until
+   *  保存). Follows the config whenever it loads or changes. */
+  const rootMode = ref<"official" | "custom">(
+    usingOfficial.value ? "official" : "custom",
+  );
+  watch(usingOfficial, (official) => {
+    rootMode.value = official ? "official" : "custom";
+  });
   /** The custom-root edit draft; seeded from the config once it lands. */
   const rootDraft = ref("");
   const rootBusy = ref(false);
@@ -123,6 +133,7 @@ export function useSettingsGatewayState() {
     route,
     shownPlayer,
     usingOfficial,
+    rootMode,
     rootDraft,
     rootBusy,
     rootError,

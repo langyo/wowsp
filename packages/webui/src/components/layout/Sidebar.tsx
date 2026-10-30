@@ -276,6 +276,24 @@ export default defineComponent({
     // to the RIGHT of this card, vertically centered on it.
     const statusCardEl = ref<HTMLElement | null>(null);
 
+    /** The phone-link indicator, rendered INSIDE the game-status row's
+     *  right edge (never its own row). It exists only while the mobile
+     *  service is enabled; its hover surface is the GatewayCaptchaHint
+     *  card, pinned while the node demands an unsolved Turnstile. The
+     *  phone build never mounts it (publish is desktop-only). */
+    const phoneSlot = () =>
+      !isMobileApp() && gateway.config.enabled ? (
+        <GatewayCaptchaHint anchor={statusCardEl}>
+          <span
+            class={["sidebar__status-phone", "is-" + gatewayTone.value]}
+            data-hint={gatewayTip.value}
+            data-hint-pos="right"
+          >
+            <Smartphone size={18} />
+          </span>
+        </GatewayCaptchaHint>
+      ) : null;
+
     return () => {
       // The shared nav + footer body: the drawer variant hosts it directly
       // (its classic self-contained root), the desktop wraps it in the rail
@@ -347,6 +365,7 @@ export default defineComponent({
                   ) : null}
                 </span>
                 <span class="sidebar__status-text">{t("common.game.online")}</span>
+                {phoneSlot()}
               </div>
               <div class="sidebar__game-detail">
                 {clientLabelOf(proc.value) ? (
@@ -378,6 +397,7 @@ export default defineComponent({
                   data-hint-pos="right"
                 />
                 <span class="sidebar__status-text">{t("common.game.offline")}</span>
+                {phoneSlot()}
               </div>
             </div>
           )}
@@ -389,24 +409,6 @@ export default defineComponent({
               display mode). Only ever active on the desktop app — the
               process report is offline everywhere else. */}
           <FullscreenModeHint anchor={statusCardEl} />
-
-          {/* Gateway push (desktop): the phone icon joins the footer
-              beside the status card while the mobile service is enabled.
-              Its hover surface is the GatewayCaptchaHint card — pinned
-              while the node demands an unsolved Turnstile — anchored
-              right of the status card like the plugin-update hint above.
-              The phone build never mounts it (publish is desktop-only). */}
-          {!isMobileApp() && gateway.config.enabled ? (
-            <GatewayCaptchaHint class="sidebar__footer-slot" anchor={statusCardEl}>
-              <span
-                class={["sidebar__gateway-icon", "is-" + gatewayTone.value]}
-                data-hint={gatewayTip.value}
-                data-hint-pos="right"
-              >
-                <Smartphone size={22} />
-              </span>
-            </GatewayCaptchaHint>
-          ) : null}
 
           {/* game upgrade — the ACTIVE install still holds mods (and
               possibly the in-game probe) stranded in an old bin/. The

@@ -85,7 +85,6 @@
   "selfhostLog": "Wizard output",
   "selfhostLogEmpty": "Nothing yet — run a step to see its output.",
   "selfhostStepDone": "done",
-  "lanLegacyTitle": "LAN pairing (legacy)",
-  "lanLegacyHint": "The pre-gateway route: the phone types this computer's LAN address and PIN into the replay wizard. The internet pairing code is gone — use the mobile service above instead.",
-  "lanLegacyPhoneHint": "On the phone open Replay → Get from PC and enter the PIN while both devices share one Wi-Fi."
+  "rootConnectExistingHint": "Paste the gateway URL you deployed (or were given) and save to connect.",
+  "rootDeployHint": "No gateway yet? Deploy your own private one in a few minutes."
 }

@@ -107,17 +107,18 @@
       }
     }
 
-    /* Gateway phone-status icon: a 22px mark beside the status card while
-       the mobile service runs. Its color reads the publish phase —
-       pending-captcha warning / online success / error danger / idle
-       muted — mirroring the status pip's tone vocabulary. */
-    .sidebar__gateway-icon {
+    /* Gateway phone-status icon: rides INSIDE the game-status row's
+       right edge while the mobile service runs (never its own row). Its
+       color reads the publish phase — pending-captcha warning / online
+       success / error danger / idle muted — mirroring the status pip's
+       tone vocabulary. */
+    .sidebar__status-phone {
+      margin-left: auto;
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
       color: rgb(var(--color-muted));
+      cursor: default;
 
       &.is-pending {
         color: var(--hi-color-warning, #d29922);
