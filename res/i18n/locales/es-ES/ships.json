@@ -689,7 +689,10 @@
     "linkTypeChange": "Cambio de tipo",
     "linkBranches": "Ramas paralelas",
     "linkArchetype": "Perfil de rama",
-    "linkInfo": "Info de la línea de investigación"
+    "linkInfo": "Info de la línea de investigación",
+    "linkResearchXp": "Experiencia de investigación",
+    "linkResearchWithModules": "Con módulos requeridos",
+    "linkResearchNone": "No se necesita experiencia de investigación"
   },
   "banner": {
     "imageFailed": "No se pudieron cargar algunas imágenes de buques",

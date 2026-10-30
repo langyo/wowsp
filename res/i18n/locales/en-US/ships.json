@@ -689,7 +689,10 @@
     "linkTypeChange": "Type change",
     "linkBranches": "Parallel lines",
     "linkArchetype": "Line focus",
-    "linkInfo": "Research link info"
+    "linkInfo": "Research link info",
+    "linkResearchXp": "Research XP",
+    "linkResearchWithModules": "With required modules",
+    "linkResearchNone": "No research XP needed"
   },
   "banner": {
     "imageFailed": "Some ship portraits failed to load.",

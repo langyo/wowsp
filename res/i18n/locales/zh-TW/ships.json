@@ -689,7 +689,10 @@
     "linkTypeChange": "艦種變更",
     "linkBranches": "並行分支",
     "linkArchetype": "線路定位",
-    "linkInfo": "研發線路資訊"
+    "linkInfo": "研發線路資訊",
+    "linkResearchXp": "研發經驗",
+    "linkResearchWithModules": "含必要模組",
+    "linkResearchNone": "無需研發經驗"
   },
   "banner": {
     "imageFailed": "部分艦艇圖片載入失敗",

@@ -689,7 +689,10 @@
     "linkTypeChange": "Changement de type",
     "linkBranches": "Branches parallèles",
     "linkArchetype": "Profil de branche",
-    "linkInfo": "Infos sur la ligne de recherche"
+    "linkInfo": "Infos sur la ligne de recherche",
+    "linkResearchXp": "XP de recherche",
+    "linkResearchWithModules": "Avec modules requis",
+    "linkResearchNone": "Aucune XP de recherche requise"
   },
   "banner": {
     "imageFailed": "Échec du chargement de certains portraits de navires",

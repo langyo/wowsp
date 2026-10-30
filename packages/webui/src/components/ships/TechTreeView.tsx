@@ -28,6 +28,7 @@ import { AssetImage } from "@/components/base/AssetImage";
 import BattleIcon from "@/components/base/BattleIcon";
 import { recordShipImageFailure } from "@/utils/shipImageFailures";
 import type { ShipInfo } from "@/api";
+import { forkJogY, forkLinkHitPath, treeLinkHintCard } from "./treeLinkHint";
 import "./TechTreeView.scss";
 
 /**
@@ -53,6 +54,13 @@ import "./TechTreeView.scss";
  *     ⓘ popup, whose texts are the client's own localization (official
  *     zh-Hans + ru-RU, curated en-US), bundled by
  *     scripts/extract/build_branch_features.py.
+ *   - Hovering a ship→ship connector opens the research-XP tooltip: the
+ *     lower ship's ShipUpgradeInfo costXP for the active realm (WG/Lesta),
+ *     from the bundled upgrade chains. Every connector is a hover target
+ *     EXCEPT a fork connector's shared pre-fork stub — that stub also
+ *     carries the parent's straight continuation, so it stays with the
+ *     continuation's tooltip; the fork chain is hoverable from its
+ *     distinct jog onward (geometry in treeLinkHint.ts).
  *   - Two kinds of links carry a small ⓘ button, mirroring the in-game
  *     tree: the cross-type research hand-offs carry the link info card (the
  *     client's ShipCrossResearchInfo: what the link changes — type hand-off,
@@ -287,6 +295,10 @@ export default defineComponent({
      *  by measure() next to the paths. */
     interface LinkIcon { key: string; x: number; y: number; card: string }
     const linkIcons = ref<LinkIcon[]>([]);
+    /** Invisible wide hit strokes for the connector research-XP tooltips;
+     *  same coordinate space as the visible paths, measured per run. */
+    interface HitItem { key: string; d: string; card: string }
+    const hitItems = ref<HitItem[]>([]);
     const svgSize = ref({ w: 0, h: 0 });
     let ro: ResizeObserver | null = null;
 
@@ -308,6 +320,18 @@ export default defineComponent({
 
       const out: DItem[] = [];
       const icons: LinkIcon[] = [];
+      // Connector tooltip hit paths. Vertical/cross strokes land in `hits`
+      // and render ABOVE the fork strokes (`forkHits`): at a fork parent the
+      // shared pre-fork stub overlaps the straight continuation, and the
+      // continuation must win that hover (the fork child's XP is ambiguous
+      // there — see treeLinkHint.ts).
+      const hits: HitItem[] = [];
+      const forkHits: HitItem[] = [];
+      /** The data-hint-card JSON for one ship→ship research connector, or
+       *  null when the active realm's bundle cannot price it (then no hit
+       *  path is emitted — a hover that shows nothing must not exist). */
+      const connectorCard = (fromShipId: number, toShipId: number): string | null =>
+        treeLinkHintCard(fromShipId, toShipId, props.realm, { toName: labelOf(toShipId) });
       const dotSet = new Set<string>();
       const dot = (key: string, cx: number, cy: number): void => {
         if (!dotSet.has(key)) {
@@ -360,7 +384,13 @@ export default defineComponent({
           dot(`dot-${c.parentId}-out`, pCX, pCY);
           dot(`dot-${c.shipId}-in`, cCX, cCY);
 
-          out.push({ key: `v-${c.parentId}-${c.shipId}`, d: `M ${pCX} ${pCY} V ${cCY}`, cls: "conn" });
+          const connD = `M ${pCX} ${pCY} V ${cCY}`;
+          out.push({ key: `v-${c.parentId}-${c.shipId}`, d: connD, cls: "conn" });
+          // Hover target: a widened invisible stroke over the same line.
+          // Cards and the ⓘ buttons sit in higher z bands, so they keep
+          // their own pointer targets.
+          const connCard = connectorCard(c.parentId, c.shipId);
+          if (connCard) hits.push({ key: `hv-${c.parentId}-${c.shipId}`, d: connD, card: connCard });
 
           // ⓘ at branch-segment starts: the game hangs its characteristics
           // popup above the first ship of every branch run. Runs without
@@ -393,13 +423,25 @@ export default defineComponent({
 
           // Right-angle fork path:
           //   parent↓ → corner → child→ (or ┌ shape when child is to the right)
-          // Step 1: down from parent bottom to halfway between parent-bottom and child-top
-          const midY = pCY + (cCY - pCY) * 0.45;
+          // Step 1: down from parent bottom to the jog height. The stub above
+          // the jog is shared with the parent's straight continuation, so it
+          // belongs to THAT connector's tooltip, never to this fork child's.
+          const midY = forkJogY(pCY, cCY);
           out.push({
             key: `f-${c.forkFromId}-${c.shipId}`,
             d: `M ${pCX} ${pCY} V ${midY} H ${cCX} V ${cCY}`,
             cls: "conn",
           });
+          // Hover target: only the DISTINCT part — the horizontal jog plus
+          // the vertical drop into the fork child — never the shared stub.
+          const forkCard = connectorCard(c.forkFromId, c.shipId);
+          if (forkCard) {
+            forkHits.push({
+              key: `hf-${c.forkFromId}-${c.shipId}`,
+              d: forkLinkHitPath(pCX, pCY, cCX, cCY),
+              card: forkCard,
+            });
+          }
 
           dot(`dot-${c.forkFromId}-fout`, pCX, pCY);
           dot(`dot-${c.shipId}-fin`, cCX, cCY);
@@ -440,38 +482,42 @@ export default defineComponent({
         const cX = rightward ? ch.x : ch.x + ch.w;
         const pMidY = p.y + p.h / 2;
 
+        let linkD: string;
+        let iconX: number;
         if (childNode.tier === parentNode.tier) {
-          out.push({ key: `x-${link.from}-${link.to}`, d: `M ${pX} ${pMidY} H ${cX}`, cls: "conn" });
+          linkD = `M ${pX} ${pMidY} H ${cX}`;
           dot(`dot-${link.from}-xout`, pX, pMidY);
           dot(`dot-${link.to}-xin`, cX, pMidY);
-          icons.push({
-            key: `i-${link.from}-${link.to}`,
-            x: (pX + cX) / 2,
-            y: pMidY,
-            card: linkHintCard(parentNode, childNode),
-          });
+          iconX = (pX + cX) / 2;
         } else {
           // Tier-shifted hand-offs (Pan-Asia DD→CA at IV→V): run across at
           // the parent's mid height, then drop into the child's top.
           const cCX = ch.x + ch.w / 2;
-          out.push({
-            key: `x-${link.from}-${link.to}`,
-            d: `M ${pX} ${pMidY} H ${cCX} V ${ch.y}`,
-            cls: "conn",
-          });
+          linkD = `M ${pX} ${pMidY} H ${cCX} V ${ch.y}`;
           dot(`dot-${link.from}-xout`, pX, pMidY);
           dot(`dot-${link.to}-xin`, cCX, ch.y);
-          icons.push({
-            key: `i-${link.from}-${link.to}`,
-            x: (pX + cCX) / 2,
-            y: pMidY,
-            card: linkHintCard(parentNode, childNode),
-          });
+          iconX = (pX + cCX) / 2;
         }
+        out.push({ key: `x-${link.from}-${link.to}`, d: linkD, cls: "conn" });
+        icons.push({
+          key: `i-${link.from}-${link.to}`,
+          x: iconX,
+          y: pMidY,
+          card: linkHintCard(parentNode, childNode),
+        });
+        // The line is a ship→ship research link too, so it gets the XP
+        // tooltip; the ⓘ card above it keeps working (the button is DOM in
+        // a higher z band and wins the pointer over the line's midpoint).
+        const linkCard = connectorCard(link.from, link.to);
+        if (linkCard) hits.push({ key: `hx-${link.from}-${link.to}`, d: linkD, card: linkCard });
       }
 
       drawItems.value = out;
       linkIcons.value = icons;
+      // Fork hits render first so the straight-continuation and cross-link
+      // hits paint above them: the shared pre-fork stub always resolves to
+      // the continuation's tooltip.
+      hitItems.value = [...forkHits, ...hits];
       svgSize.value = { w: root.scrollWidth, h: root.scrollHeight };
     }
 
@@ -516,6 +562,19 @@ export default defineComponent({
                 <path key={item.key} class={`tech-tree-v3__${item.cls}`} d={item.d} />
               );
             })}
+            {/* Connector research-XP hover targets: invisible wide strokes
+                over the visible lines (CSS re-enables pointer events on the
+                stroke only). Same data-hint-card JSON contract as the ⓘ
+                buttons; the card/ⓘ layers above the SVG keep their pointers. */}
+            {hitItems.value.map((item) => (
+              <path
+                key={item.key}
+                class="tech-tree-v3__linkhit"
+                d={item.d}
+                data-hint-card={item.card}
+                data-hint-pos="top"
+              />
+            ))}
           </svg>
 
           {/* Type sections laid out left-to-right on one shared tier ladder */}
