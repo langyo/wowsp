@@ -171,11 +171,15 @@ export default defineComponent({
       // damage) — the values users copy into chats and tools (hikari
       // 0.55.224 selection policy opt-in). Its buttons stay chrome.
       <div class={["hk-selectable", "stats-card", `stats-card--${wrTier.value}`]}>
-        {/* identity header */}
+        {/* identity header. Karma superscript (业力) at the nickname's
+            top-right rides the head's own prop — the stats prefs' own
+            switch (independent of the PR master); hidden/older answers
+            simply carry no figure. */}
         <IdentityHead
           name={props.stats.name}
           tag={props.stats.clanTag}
           nameClass={props.nameClass}
+          karma={prefs.prefs.cardKarmaEnabled ? (props.stats.karma ?? null) : null}
           onTagClick={
             props.onClanClick && props.stats.clanId != null
               ? () => props.onClanClick?.()

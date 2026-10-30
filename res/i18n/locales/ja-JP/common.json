@@ -15,6 +15,7 @@
   },
   "saved": "保存しました",
   "imageUnavailable": "画像を読み込めません",
+  "karma": "カルマ",
   "detect": {
     "title": "ゲームのインストール",
     "scanning": "レジストリと Steam ライブラリをスキャン中…",

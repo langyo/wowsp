@@ -1582,7 +1582,7 @@ fn dog_tag_renames_texture_symbol_and_color_ids() {
 }
 
 /// Wire-critical payload: exact key set of the player card's data —
-/// 36 keys, every multi-word one renamed (client.ts: PlayerStats).
+/// 37 keys, every multi-word one renamed (client.ts: PlayerStats).
 #[test]
 fn player_stats_renames_every_deep_stat_field() {
     let stats = PlayerStats {
@@ -1603,6 +1603,7 @@ fn player_stats_renames_every_deep_stat_field() {
         ships_played: Some(87),
         leveling_tier: Some(42),
         leveling_points: Some(987_654),
+        karma: Some(7),
         dog_tag: Some(DogTag {
             texture_id: 1,
             symbol_id: 2,
@@ -1650,6 +1651,7 @@ fn player_stats_renames_every_deep_stat_field() {
             "shipsPlayed",
             "levelingTier",
             "levelingPoints",
+            "karma",
             "dogTag",
             "soloWr",
             "div2Wr",
@@ -1672,6 +1674,7 @@ fn player_stats_renames_every_deep_stat_field() {
         ],
     );
     assert_eq!(v["clanTag"], "[SENT]");
+    assert_eq!(v["karma"], 7);
     assert_eq!(v["div2Wr"], 52.25);
     assert_eq!(v["rankedPr"], 1_890);
     assert_eq!(v["rankedKdRatio"], 1.75);

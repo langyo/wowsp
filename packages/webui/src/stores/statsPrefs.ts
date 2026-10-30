@@ -120,6 +120,17 @@ export interface StatsPrefs {
    *  applies in both live-roster density modes, over the row's resolved
    *  stats-source PR; AND-composed with `prEnabled`. */
   liveRosterPrTint: boolean;
+  /** Player karma (业力 — the WG net like/report count) pressed to the
+   *  TOP-RIGHT of every nickname on the roster surfaces: the live panel's
+   *  rows (both densities) and the post-battle matrix's rows (compact and
+   *  full). Independent of `prEnabled` — karma is identity metadata, not a
+   *  rating. Default ON; a player without a carried figure (hidden CN
+   *  profiles, older caches, bots) simply renders no badge. */
+  rosterKarmaEnabled: boolean;
+  /** The stats cards' own karma superscript — the same top-right-of-nickname
+   *  badge on the player identity head (我的水表 dashboard card and the
+   *  lookup page's player card; clan cards never carry one). Default ON. */
+  cardKarmaEnabled: boolean;
   /** Post-battle roster rows expanded to a full-card look in the live
    *  roster's richer-density spirit (name/ship/stat stack + ship-meta strip +
    *  career seal + XP column; the live roster adds the same strip to its
@@ -173,6 +184,8 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   weightedTeamWr: true,
   liveRosterCompact: true,
   liveRosterPrTint: true,
+  rosterKarmaEnabled: true,
+  cardKarmaEnabled: true,
   postbattleRosterFull: false,
   teamAvgEnabled: false,
   sealDisabled: {},
@@ -376,6 +389,14 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.liveRosterPrTint === "boolean"
           ? j.liveRosterPrTint
           : DEFAULT_STATS_PREFS.liveRosterPrTint,
+      rosterKarmaEnabled:
+        typeof j.rosterKarmaEnabled === "boolean"
+          ? j.rosterKarmaEnabled
+          : DEFAULT_STATS_PREFS.rosterKarmaEnabled,
+      cardKarmaEnabled:
+        typeof j.cardKarmaEnabled === "boolean"
+          ? j.cardKarmaEnabled
+          : DEFAULT_STATS_PREFS.cardKarmaEnabled,
       postbattleRosterFull:
         typeof j.postbattleRosterFull === "boolean"
           ? j.postbattleRosterFull
@@ -524,6 +545,16 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     save();
   }
 
+  function setRosterKarmaEnabled(v: boolean) {
+    prefs.value.rosterKarmaEnabled = v;
+    save();
+  }
+
+  function setCardKarmaEnabled(v: boolean) {
+    prefs.value.cardKarmaEnabled = v;
+    save();
+  }
+
   function setPostbattleRosterFull(v: boolean) {
     prefs.value.postbattleRosterFull = v;
     save();
@@ -569,6 +600,8 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setWeightedTeamWr,
     setLiveRosterCompact,
     setLiveRosterPrTint,
+    setRosterKarmaEnabled,
+    setCardKarmaEnabled,
     setPostbattleRosterFull,
     setTeamAvgEnabled,
     setSealDisabled,

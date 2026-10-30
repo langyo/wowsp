@@ -233,7 +233,11 @@
     "localizedTiersToggle": "Etiquetas de nivel localizadas",
     "localizedTiersToggleDesc": "Etiquetas de nivel divertidas; al desactivar se muestran las bandas inglesas estándar (Bad/Good/Unicum, etc.).",
     "prTintToggle": "Tinte de fila por nivel de PR",
-    "prTintToggleDesc": "Tiñe cada fila del roster en directo con el color del nivel de PR del jugador (nivel rojo → rojo, morado → morado); activado por defecto."
+    "prTintToggleDesc": "Tiñe cada fila del roster en directo con el color del nivel de PR del jugador (nivel rojo → rojo, morado → morado); activado por defecto.",
+    "rosterKarmaToggle": "Karma en las listas",
+    "rosterKarmaToggleDesc": "Muestra el karma de cada jugador (saldo de valoraciones/informes) como superíndice en la esquina superior derecha del apodo en las listas de batalla en directo y de resultados. Activado por defecto.",
+    "cardKarmaToggle": "Karma en la ficha",
+    "cardKarmaToggleDesc": "Muestra el karma en la esquina superior derecha del apodo en las fichas de estadísticas del jugador (mi marcador / búsqueda). Activado por defecto."
   },
   "sealCustomizer": {
     "desc": "Los sellos tienen dos niveles: los sellos de nivel 1 son de un solo carácter (incluido «过街老鼠») y los de nivel 2, de cuatro caracteres (sellos de composición y fusionados). En los paneles de batalla en vivo y posterior, los sellos de nivel 1 se muestran como la imagen cuadrada del sello junto a cada entrada y los de nivel 2 como una pequeña etiqueta horizontal junto a la puntuación. Haz clic en un sello para asignarle una imagen personalizada; un sello ya personalizado vuelve a su aspecto predeterminado con un solo clic (las imágenes se guardan en la carpeta stamps del directorio de datos de la aplicación). El interruptor de la derecha activa o desactiva cada sello; la vista previa se actualiza al instante.",

@@ -80,5 +80,5 @@ pub(crate) use shared::{
 };
 pub(crate) use stats_math::{
     ExpectedPrRow, PrAlgo, PvpStats, account_expected_pr_for, compute_pr, expected_ship_pr,
-    rating_from_winrate,
+    karma_of, rating_from_winrate,
 };

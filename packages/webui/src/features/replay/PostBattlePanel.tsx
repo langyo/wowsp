@@ -65,6 +65,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import ErrorCard from "@/components/base/ErrorCard";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
+import KarmaSup from "@/components/base/KarmaSup";
 import StampTag from "@/components/base/StampTag";
 import StatsCard from "@/components/stats/StatsCard";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
@@ -1104,6 +1105,12 @@ export default defineComponent({
                       </span>
                     );
                   })()}
+                  {/* Karma (业力) superscript at the nickname's top-right —
+                      same register as the live panel's rows (the stats
+                      prefs' own switch; missing figures render nothing). */}
+                  {prefs.value.rosterKarmaEnabled ? (
+                    <KarmaSup value={stat?.karma ?? null} class="replay-view__postbattle-cell-karma" />
+                  ) : null}
                   {stat?.clanTag ? (
                     <span class="replay-view__postbattle-cell-clan">[{stat.clanTag}]</span>
                   ) : null}
@@ -1208,6 +1215,11 @@ export default defineComponent({
                       </span>
                     );
                   })()}
+                  {/* Karma superscript — the same top-right-of-nick
+                      register as the compact row and the live panel. */}
+                  {prefs.value.rosterKarmaEnabled ? (
+                    <KarmaSup value={stat?.karma ?? null} class="replay-view__postbattle-fcell-karma" />
+                  ) : null}
                   {stat?.clanTag ? (
                     <span class="replay-view__postbattle-fcell-clan">[{stat.clanTag}]</span>
                   ) : null}

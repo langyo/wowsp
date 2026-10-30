@@ -48,6 +48,32 @@ export default defineComponent({
           />
         </div>
 
+        {/* Karma (业力 — the WG net like/report count) switches sit OUTSIDE
+            the PR master's cluster: karma is identity metadata, not a rating,
+            so both stay reachable while the PR rating is off. The roster one
+            covers the live + post-battle player lists, the card one the
+            stats cards' identity head (我的水表 / lookup). */}
+        <div class="stats-prefs__row">
+          <span class="stats-prefs__row-text">
+            <span class="stats-prefs__row-label">{tr("rosterKarmaToggle")}</span>
+            <span class="stats-prefs__row-desc">{tr("rosterKarmaToggleDesc")}</span>
+          </span>
+          <HkSwitch
+            modelValue={prefs.prefs.rosterKarmaEnabled}
+            onUpdate:modelValue={(v: boolean) => prefs.setRosterKarmaEnabled(v)}
+          />
+        </div>
+        <div class="stats-prefs__row">
+          <span class="stats-prefs__row-text">
+            <span class="stats-prefs__row-label">{tr("cardKarmaToggle")}</span>
+            <span class="stats-prefs__row-desc">{tr("cardKarmaToggleDesc")}</span>
+          </span>
+          <HkSwitch
+            modelValue={prefs.prefs.cardKarmaEnabled}
+            onUpdate:modelValue={(v: boolean) => prefs.setCardKarmaEnabled(v)}
+          />
+        </div>
+
         {/* Sub-controls exist only while the rating is on — collapsing the
             cluster keeps the off state to a single honest switch. */}
         {prefs.prefs.prEnabled ? (

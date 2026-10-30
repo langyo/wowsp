@@ -60,6 +60,14 @@ pub struct PlayerStats {
     pub leveling_tier: Option<i32>,
     /// WG service record points (XP towards next tier).
     pub leveling_points: Option<i64>,
+    /// Player karma (业力) — the account's net like/report count, read off
+    /// the same account/info answer (`statistics.basic.karma` on the WG
+    /// clusters, the vortex `basic` node normalized top-level on CN).
+    /// Rendered as the nickname's top-right superscript on the roster and
+    /// card surfaces. `#[serde(default)]` keeps cache blobs written before
+    /// this field existed deserializable.
+    #[serde(default)]
+    pub karma: Option<i64>,
 
     // ── Dog tag (player emblem) ─────────────────────────────────────────
     /// Player's dog tag components, fetched from the WG Vortex API. The dog

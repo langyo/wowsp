@@ -123,7 +123,9 @@ fn vortex_status(v: &serde_json::Value) -> Option<&str> {
 /// consumed by `PvpStats::extract` / `leveling_of` / `parse_dog_tag`:
 ///
 ///   name             → nickname
-///   statistics.basic → leveling_tier / leveling_points (WG keeps them top-level)
+///   statistics.basic → leveling_tier / leveling_points / karma (WG keeps
+///                      leveling_* top-level; karma lands top-level too so
+///                      the shared karma_of read covers both clusters)
 ///   statistics.pvp   → battles_count→battles, survived→survived_battles,
 ///                      win_and_survived→survived_wins,
 ///                      original_exp→xp (base XP — the vortex `exp` is the
@@ -206,6 +208,7 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
         "nickname": name,
         "leveling_tier": basic.and_then(|b| b.get("leveling_tier")).and_then(|v| v.as_i64()),
         "leveling_points": basic.and_then(|b| b.get("leveling_points")).and_then(|v| v.as_i64()),
+        "karma": basic.and_then(|b| b.get("karma")).and_then(|v| v.as_i64()),
         "statistics": stats_json,
         "dog_tag": node.get("dog_tag").filter(|v| !v.is_null()),
     })
@@ -491,6 +494,10 @@ fn player_stats_of(
             .and_then(|v| v.as_i64())
             .map(|v| v as i32),
         leveling_points: node.get("leveling_points").and_then(|v| v.as_i64()),
+        // The normalize pass lifts the vortex basic node's karma onto the
+        // top-level slot, so the shared defensive read lands it here (and
+        // hidden profiles, whose statistics tree nulls out, keep None).
+        karma: super::wg_api::karma_of(Some(node)),
         dog_tag: if with_dog_tag {
             node.get("dog_tag").and_then(parse_dog_tag)
         } else {
@@ -1190,6 +1197,9 @@ mod tests {
         assert_eq!(node.get("nickname").unwrap(), "川S-大叔其实不是大叔");
         assert_eq!(node.get("leveling_tier").unwrap(), 17);
         assert_eq!(node.get("leveling_points").unwrap(), 16953);
+        // The vortex basic node's karma lifts onto the top-level slot the
+        // shared karma_of read (WG clusters serve it under statistics.basic).
+        assert_eq!(node.get("karma").unwrap(), 0);
 
         // The normalized node feeds the shared WG extractor verbatim.
         let p = PvpStats::extract(node.get("statistics"));

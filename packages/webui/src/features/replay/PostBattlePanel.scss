@@ -412,6 +412,14 @@
 .replay-view__postbattle-fcell-name .stamp-tag {
   font-size: 0.78em;
 }
+/* Karma (业力) superscript — raised to the nickname's top-right corner in
+   both row densities (compact cell + full card). KarmaSup's own sheet
+   carries the base geometry; this nudges it above the row's center line.
+   flex: none so the nick never loses its ellipsis slot to the badge. */
+.replay-view__postbattle-cell-karma,
+.replay-view__postbattle-fcell-karma {
+  margin-top: -0.55em;
+}
 /* Per-row nickname mask toggle. Muted until hovered — the share flow's
    discoverability lives in the toolbar hint. */
 .replay-view__postbattle-cell-eye {

@@ -85,6 +85,7 @@ const EMPTY_ROSTER_STAT: RosterStat = {
   clanId: null,
   clanTag: null,
   realm: null,
+  karma: null,
   hidden: false,
   loading: false,
 };
