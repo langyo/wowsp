@@ -367,7 +367,22 @@ export default defineConfig({
   publicDir: resolve(pkgDir, 'src/res'),
   base: '/',
   server: {
-    port: 5173,
+    // WoWSP's DEDICATED dev port. It is deliberately NOT Vite's default 5173:
+    // that port is shared by every Vite project on this machine, and the
+    // 2026-10-30 incident had the neighboring easy-hydro dev server holding
+    // 5173 while WoWSP's Vite silently fell back to 5174 — the Tauri window's
+    // fixed devUrl then loaded the NEIGHBOR's page. The port is pinned in
+    // lockstep with packages/app/tauri/tauri.conf.json's devUrl and
+    // scripts/dev.py's VITE_PORT (src/devPort.contract.test.ts enforces it).
+    // - 127.0.0.1: bind the IPv4 loopback explicitly so a same-port server on
+    //   a wildcard/IPv6 address can never shadow the window's target.
+    // - strictPort: a taken port is a loud startup failure, never a silent
+    //   fallback to another port the devUrl does not know about.
+    // scripts/dev.py additionally guards `just dev` and names the offending
+    // pid/process before Tauri launches.
+    host: "127.0.0.1",
+    port: 5199,
+    strictPort: true,
     proxy: {
       '/api': {
         target: mockTarget,
