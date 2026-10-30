@@ -53,6 +53,11 @@ open class BuildTask : DefaultTask() {
         project.exec {
             workingDir(File(project.projectDir, rootDirRel))
             executable(executable)
+            // Must stay in lockstep with scripts/android_cargo_target.py: the
+            // Android NDK's lld cannot open non-ASCII paths (GBK-mangled
+            // rustc target paths under a Chinese checkout), so Android Studio
+            // builds also need an ASCII CARGO_TARGET_DIR.
+            environment("CARGO_TARGET_DIR", androidCargoTargetDir())
             args(args)
             if (project.logger.isEnabled(LogLevel.DEBUG)) {
                 args("-vv")
@@ -64,5 +69,34 @@ open class BuildTask : DefaultTask() {
             }
             args(listOf("--target", target))
         }.assertNormalExitValue()
+    }
+
+    private fun androidCargoTargetDir(): String {
+        // Mirrors scripts/android_cargo_target.py (same candidate order and
+        // ASCII guard) so the justfile build and Android Studio cannot drift.
+        val candidates = mutableListOf<String>()
+        val override = System.getenv("WOWSP_ANDROID_CARGO_TARGET")?.trim().orEmpty()
+        if (override.isNotEmpty()) candidates.add(override)
+        val localAppData = System.getenv("LOCALAPPDATA")?.trim().orEmpty()
+        if (localAppData.isNotEmpty()) {
+            candidates.add(File(localAppData, "wowsp/android-target").path)
+        }
+        val temp = System.getProperty("java.io.tmpdir")?.trim().orEmpty()
+        if (temp.isNotEmpty()) candidates.add(File(temp, "wowsp-android-target").path)
+        if (Os.isFamily(Os.FAMILY_WINDOWS)) {
+            candidates.add("C:\\Users\\Public\\wowsp-android-target")
+        } else {
+            candidates.add("/tmp/wowsp-android-target")
+        }
+        for (candidate in candidates) {
+            if (candidate.any { it.code > 0x7E }) continue
+            val directory = File(candidate)
+            if (directory.isDirectory || directory.mkdirs()) return directory.path
+        }
+        throw GradleException(
+            "No ASCII-writable CARGO_TARGET_DIR for the Android build. " +
+                "Set WOWSP_ANDROID_CARGO_TARGET to an ASCII path " +
+                "(the NDK lld cannot handle non-ASCII paths)."
+        )
     }
 }

@@ -322,6 +322,12 @@ _build-android *FLAGS='':
     export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
         ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
         JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=1
+    # The Android NDK's lld mangles non-ASCII rustc paths on Windows (GBK
+    # bytes under a Chinese checkout path fail to open), so the Rust half
+    # must build into an ASCII CARGO_TARGET_DIR. The resolver prints/creates
+    # one (override: WOWSP_ANDROID_CARGO_TARGET); the Gradle/Android Studio
+    # path mirrors the same candidate order in buildSrc/.../BuildTask.kt.
+    export CARGO_TARGET_DIR="$({{py}} scripts/android_cargo_target.py)"
     cargo tauri android build {{FLAGS}}
 
 # Single-ABI APK shortcut: the canonical `--debug --apk --target aarch64`
