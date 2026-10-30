@@ -697,8 +697,11 @@ const SpecsPanel = defineComponent({
         );
       }
       // One label/value row — shared by group-level rows and section rows.
-      const renderRow = (row: { key: string; value: string; hint?: string }) => (
-        <div class="specs-group__row" key={row.key}>
+      // The ns argument namespaces the key per section: the same row key
+      // (torpDamage) legitimately appears in two torpedo-type sections and
+      // Vue needs unique sibling keys inside the one dl.
+      const renderRow = (row: { key: string; value: string; hint?: string }, ns = "") => (
+        <div class="specs-group__row" key={ns + row.key}>
           <dt class="specs-group__label">
             {t(`ships.spec.${row.key}`)}
             {row.hint ? (
@@ -740,7 +743,7 @@ const SpecsPanel = defineComponent({
                           {t(`ships.spec.${sec.labelKey}`)}
                           {sec.suffix ?? ""}
                         </span>
-                        {sec.rows.map((row) => renderRow(row))}
+                        {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
                       </div>
                     </>
                   ))}
