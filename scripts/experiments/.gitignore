@@ -4,3 +4,7 @@ out/
 *.png
 *.json
 !README.md
+# E24 routing table: derived from the (ignored) gameparams pack by
+# build_ship_attributes.py, tracked so training nodes without the pack
+# can consume it (same pattern as packages/webui ships_basics.json).
+!ship_attributes.json
