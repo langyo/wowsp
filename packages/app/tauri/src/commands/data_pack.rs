@@ -150,9 +150,9 @@ fn data_url(asset: &str) -> String {
 /// sha256, so a mirror able to rewrite it could also swap the datasets.
 /// Only when BOTH official channels are unreachable or rate-limited does
 /// the mirror-served manifest pass unverified.
-async fn fetch_manifest(client: &reqwest::Client) -> anyhow::Result<DataManifest> {
+async fn fetch_manifest(clients: &super::network::HttpPair) -> anyhow::Result<DataManifest> {
     let expected = match release_digest::lookup_official_sha256(
-        client,
+        clients,
         DATA_CHANNEL,
         DATA_TAG,
         DATA_MANIFEST,
@@ -172,13 +172,17 @@ async fn fetch_manifest(client: &reqwest::Client) -> anyhow::Result<DataManifest
     let url = data_url(DATA_MANIFEST);
     let mut last_err = format!("no mirror attempted for {url}");
     for candidate in super::github_mirror::candidates(&url) {
-        match client
-            .get(&candidate)
-            .header("User-Agent", "WoWSP-data-pack/1.0")
-            .header("Cache-Control", "no-cache")
-            .timeout(std::time::Duration::from_secs(30))
-            .send()
-            .await
+        // Each ladder step rides the proxy→direct chain (a dead configured
+        // proxy must not stall the refresh behind the 30 s per-mirror cap).
+        let host = super::upstream_health::host_of_url(&candidate).to_string();
+        match super::upstream_health::send_with_fallback(clients, &host, "data-pack", |client| {
+            client
+                .get(&candidate)
+                .header("User-Agent", "WoWSP-data-pack/1.0")
+                .header("Cache-Control", "no-cache")
+                .timeout(std::time::Duration::from_secs(30))
+        })
+        .await
         {
             Ok(resp) if resp.status().is_success() => match resp.bytes().await {
                 Ok(body)
@@ -302,8 +306,8 @@ pub async fn refresh_data_pack() -> CommandResult<bool> {
 /// a failure (or a manifest that lacks the dataset) leaves the other lane's
 /// cache and every bundled fallback untouched.
 async fn refresh_datasets() -> anyhow::Result<bool> {
-    let client = super::network::build_http_client()?;
-    let manifest = fetch_manifest(&client).await?;
+    let clients = super::network::HttpPair::build(|b| b)?;
+    let manifest = fetch_manifest(&clients).await?;
     let mut changed = refresh_kit_dataset(&manifest).await?;
     changed |= refresh_shipdata_dataset(&manifest).await?;
     Ok(changed)

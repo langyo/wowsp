@@ -38,7 +38,8 @@ use serde::{Deserialize, Serialize};
 
 use wowsp_tauri_shared::CommandResult;
 
-use crate::commands::network::build_http_client;
+use crate::commands::network::HttpPair;
+use crate::commands::upstream_health;
 use crate::paths;
 
 /// The tarball of the provider-registry repo's master branch (single request,
@@ -363,11 +364,14 @@ pub(crate) fn registry_url() -> String {
 /// Download + gunzip + untar the registry, keeping only the files the parser
 /// needs (entrypoint TOMLs and model metadata TOMLs) as (path, content).
 pub(crate) async fn download_registry(url: &str) -> Result<Vec<(String, String)>> {
-    let client = build_http_client()?;
-    let response = client
-        .get(url)
-        .timeout(DOWNLOAD_TIMEOUT)
-        .send()
+    // The tarball GET rides the proxy→direct chain; the capped body
+    // stream below reads off whichever response the chain landed on.
+    let clients = HttpPair::build(|b| b)?;
+    let host = upstream_health::host_of_url(url).to_string();
+    let response =
+        upstream_health::send_with_fallback(&clients, &host, "chat-translate", |client| {
+            client.get(url).timeout(DOWNLOAD_TIMEOUT)
+        })
         .await
         .map_err(|error| anyhow!("provider registry request failed: {error}"))?;
     if !response.status().is_success() {

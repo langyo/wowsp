@@ -20,10 +20,10 @@ pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
         // offline fallback if the fetch below fails too.
         let localized = index.mods.iter().any(|m| !m.i18n.is_empty()) || index.mods.is_empty();
         let fresh = fetched_recently(&index.fetched_at);
-        let client = crate::commands::network::build_http_client().ok();
-        let digest = match client {
-            Some(client) => release_digest::fetch_official_sha256(
-                &client,
+        let clients = crate::commands::network::HttpPair::build(|b| b).ok();
+        let digest = match clients {
+            Some(clients) => release_digest::fetch_official_sha256(
+                &clients,
                 INDEX_CHANNEL,
                 INDEX_TAG,
                 INDEX_ASSET,
@@ -87,14 +87,14 @@ pub(crate) fn load_cached_index() -> Option<CatalogIndex> {
 }
 
 pub(crate) async fn fetch_index() -> anyhow::Result<(CatalogIndex, String)> {
-    let client = crate::commands::network::build_http_client()?;
+    let clients = crate::commands::network::HttpPair::build(|b| b)?;
     // The official digest comes first, over the two channels the payload
     // mirrors can influence neither (the pairing relay's signed doc,
     // cross-checked with api.github.com): a mirror could otherwise forge
     // the index together with every package hash inside it. No digest →
     // no refresh (the caller keeps serving the last verified cache).
     let expected =
-        release_digest::fetch_official_sha256(&client, INDEX_CHANNEL, INDEX_TAG, INDEX_ASSET)
+        release_digest::fetch_official_sha256(&clients, INDEX_CHANNEL, INDEX_TAG, INDEX_ASSET)
             .await
             .map_err(|e| anyhow!("catalog index cannot be verified: {e}"))?;
     let mut last_err = String::from("no index url attempted");
@@ -103,14 +103,23 @@ pub(crate) async fn fetch_index() -> anyhow::Result<(CatalogIndex, String)> {
         // accepts the connection but trickles the body would otherwise
         // hang `mod_catalog_refresh` (and every freshness assessment
         // joined onto it) forever. A 30s total cap per URL keeps the
-        // failover ladder moving instead.
-        let resp = client
-            .get(&url)
-            .timeout(std::time::Duration::from_secs(30))
-            .header("Accept", "application/json")
-            .header("Cache-Control", "no-cache")
-            .send()
-            .await;
+        // failover ladder moving instead. Each step rides the proxy→direct
+        // chain, so a dead configured proxy fails over at the transport
+        // level instead of eating the whole cap.
+        let host = crate::commands::upstream_health::host_of_url(&url).to_string();
+        let resp = crate::commands::upstream_health::send_with_fallback(
+            &clients,
+            &host,
+            "catalog-index",
+            |client| {
+                client
+                    .get(&url)
+                    .timeout(std::time::Duration::from_secs(30))
+                    .header("Accept", "application/json")
+                    .header("Cache-Control", "no-cache")
+            },
+        )
+        .await;
         let resp = match resp {
             Ok(r) if r.status().is_success() => r,
             Ok(r) => {

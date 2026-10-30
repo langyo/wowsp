@@ -84,8 +84,9 @@ use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress};
 
 use crate::commands::download_hub::{self, DownloadRequest};
 use crate::commands::graceful_exit;
-use crate::commands::network::build_http_client;
+use crate::commands::network::HttpPair;
 use crate::commands::release_digest::asset_sha256;
+use crate::commands::upstream_health;
 
 /// Update-watch table embedded by `build.rs` from
 /// `[package.metadata.shun.update]` in this crate's Cargo.toml.
@@ -457,32 +458,38 @@ fn parse_official_release(release: &serde_json::Value) -> Result<OfficialRelease
 /// One attempt at the GitHub release-API lookup; the caller owns the
 /// retry budget and the error rendering.
 async fn github_release_attempt(
-    client: &reqwest::Client,
+    pair: &HttpPair,
     url: &str,
     timeout: Duration,
 ) -> Result<serde_json::Value> {
-    let response = client
-        .get(url)
-        .header("User-Agent", "WoWSP-updater")
-        .header("Accept", "application/vnd.github+json")
-        .timeout(timeout)
-        .send()
-        .await;
+    // The attempt rides the proxy→direct chain (upstream_health): only the
+    // transport-level failure degrades to the direct twin; the caller's
+    // error strings keep their historical "{url}: …" shape.
+    let host = upstream_health::host_of_url(url).to_string();
+    let response = upstream_health::send_with_fallback(pair, &host, "update-digest", |client| {
+        client
+            .get(url)
+            .header("User-Agent", "WoWSP-updater")
+            .header("Accept", "application/vnd.github+json")
+            .timeout(timeout)
+    })
+    .await
+    .map_err(|e| anyhow!("{url}: {e}"));
     match response {
         Ok(r) if r.status().is_success() => r.json().await.map_err(|e| anyhow!("parse {url}: {e}")),
         Ok(r) => Err(anyhow!("{url}: HTTP {}", r.status())),
-        Err(e) => Err(anyhow!("{url}: {e}")),
+        Err(e) => Err(e),
     }
 }
 
 /// Fetch the official latest release and its installer sha256 from
 /// GitHub, with the full retry budget. Any failure is an `Err`: an
 /// installer that cannot be verified is never spawned.
-async fn fetch_official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
+async fn fetch_official_release(pair: &HttpPair) -> Result<OfficialRelease> {
     let url = LATEST_RELEASE_API;
     let mut last_err = String::new();
     for _ in 0..DIGEST_ATTEMPTS {
-        match github_release_attempt(client, url, DIGEST_TIMEOUT).await {
+        match github_release_attempt(pair, url, DIGEST_TIMEOUT).await {
             Ok(release) => return parse_official_release(&release),
             Err(e) => last_err = format!("{e:#}"),
         }
@@ -535,8 +542,8 @@ fn app_relay_digest(parsed: super::release_digest::RelayDigestDoc) -> Result<Rel
 /// `Ok(None)` is the relay definitively publishing no app-channel
 /// digest (a fresh 404 or its remembered absent-mark), which likewise
 /// leaves the deciding to GitHub.
-async fn fetch_relay_digest(client: &reqwest::Client) -> Result<Option<RelayDigest>> {
-    super::release_digest::fetch_relay_doc_latest(client, "app")
+async fn fetch_relay_digest(pair: &HttpPair) -> Result<Option<RelayDigest>> {
+    super::release_digest::fetch_relay_doc_latest(pair, "app")
         .await
         .and_then(|doc| doc.map(app_relay_digest).transpose())
 }
@@ -548,20 +555,20 @@ async fn fetch_relay_digest(client: &reqwest::Client) -> Result<Option<RelayDige
 /// legs fail outright (the common transient shape on CN networks) does
 /// GitHub's full retry budget get spent; a channel DISAGREEMENT is
 /// terminal and never retried past.
-async fn official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
+async fn official_release(pair: &HttpPair) -> Result<OfficialRelease> {
     let github_quick = async {
-        github_release_attempt(client, LATEST_RELEASE_API, QUICK_LEG_TIMEOUT)
+        github_release_attempt(pair, LATEST_RELEASE_API, QUICK_LEG_TIMEOUT)
             .await
             .and_then(|release| parse_official_release(&release))
     };
-    let (relay, github_quick) = tokio::join!(fetch_relay_digest(client), github_quick);
+    let (relay, github_quick) = tokio::join!(fetch_relay_digest(pair), github_quick);
     match (relay, github_quick) {
         // Both quick legs unavailable: transient failures are the norm
         // (CN networks drop api.github.com silently; the relay may be
         // mid-deploy), so spend GitHub's full retry budget before
         // refusing the update.
         (Err(relay_err), Err(_)) => {
-            fetch_official_release(client).await.map_err(|github_err| {
+            fetch_official_release(pair).await.map_err(|github_err| {
                 anyhow!("cannot verify the update (relay: {relay_err}; GitHub: {github_err}); download it manually from GitHub Releases")
             })
         },
@@ -570,7 +577,7 @@ async fn official_release(client: &reqwest::Client) -> Result<OfficialRelease> {
         // budget when the quick leg already failed.
         (Ok(None), Ok(g)) => Ok(g),
         (Ok(None), Err(github_quick_err)) => {
-            fetch_official_release(client).await.map_err(|github_err| {
+            fetch_official_release(pair).await.map_err(|github_err| {
                 anyhow!("cannot verify the update (relay: no digest published; GitHub: {github_quick_err} / {github_err}); download it manually from GitHub Releases")
             })
         },
@@ -643,13 +650,13 @@ fn version_from_redirect(url: &str) -> Option<String> {
 
 /// GET `{base}/{marker}` and return the trimmed body — the candidate
 /// version. 200 + non-empty text makes the source reachable.
-async fn probe_marker(client: &reqwest::Client, base: &str, marker: &str) -> Result<String> {
+async fn probe_marker(pair: &HttpPair, base: &str, marker: &str) -> Result<String> {
     let url = format!("{}/{}", base.trim().trim_end_matches('/'), marker);
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| anyhow!("probe {url}: {e}"))?;
+    let host = upstream_health::host_of_url(&url).to_string();
+    let response =
+        upstream_health::send_with_fallback(pair, &host, "update-probe", |client| client.get(&url))
+            .await
+            .map_err(|e| anyhow!("probe {url}: {e}"))?;
     if response.status() != reqwest::StatusCode::OK {
         bail!("probe {url}: unexpected status {}", response.status());
     }
@@ -668,13 +675,13 @@ async fn probe_marker(client: &reqwest::Client, base: &str, marker: &str) -> Res
 /// Resolve the latest version by following the source's `releases/latest`
 /// redirect and reading the tag out of the final URL. The body is never
 /// read — the redirected URL is the payload, then the connection drops.
-async fn probe_tag(client: &reqwest::Client, base: &str) -> Result<String> {
+async fn probe_tag(pair: &HttpPair, base: &str) -> Result<String> {
     let url = tag_url_from_source(base);
-    let response = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| anyhow!("probe {url}: {e}"))?;
+    let host = upstream_health::host_of_url(&url).to_string();
+    let response =
+        upstream_health::send_with_fallback(pair, &host, "update-probe", |client| client.get(&url))
+            .await
+            .map_err(|e| anyhow!("probe {url}: {e}"))?;
     if response.status() != reqwest::StatusCode::OK {
         bail!("probe {url}: unexpected status {}", response.status());
     }
@@ -692,10 +699,10 @@ async fn probe_tag(client: &reqwest::Client, base: &str) -> Result<String> {
 ///
 /// The answer is mirror-controlled text that later lands in URLs and file
 /// names, so anything but a well-formed release version fails the probe.
-async fn probe_source(client: &reqwest::Client, base: &str, marker: &str) -> Result<String> {
-    let version = match probe_tag(client, base).await {
+async fn probe_source(pair: &HttpPair, base: &str, marker: &str) -> Result<String> {
+    let version = match probe_tag(pair, base).await {
         Ok(version) => version,
-        Err(tag_err) => probe_marker(client, base, marker)
+        Err(tag_err) => probe_marker(pair, base, marker)
             .await
             .map_err(|marker_err| anyhow!("tag probe: {tag_err}; marker probe: {marker_err}"))?,
     };
@@ -718,15 +725,18 @@ struct SourceCandidate {
 /// way `candidates` is in resolution-arrival order — the first entry is the
 /// winner.
 async fn race_sources(
-    client: &reqwest::Client,
+    pair: &HttpPair,
     sources: &[String],
     marker: &str,
     collect_all: bool,
 ) -> Result<Vec<SourceCandidate>> {
+    // The racing semantics are untouched: every probe keeps its own
+    // PROBE_TIMEOUT cap and its position in the FuturesUnordered — each
+    // attempt merely rides the proxy→direct chain individually.
     let mut probes: futures::stream::FuturesUnordered<_> = sources
         .iter()
         .map(|base| async move {
-            let probe = tokio::time::timeout(PROBE_TIMEOUT, probe_source(client, base, marker))
+            let probe = tokio::time::timeout(PROBE_TIMEOUT, probe_source(pair, base, marker))
                 .await
                 .map_err(|_| anyhow!("probe {base}: timed out after {}s", PROBE_TIMEOUT.as_secs()));
             (base.clone(), probe)
@@ -759,8 +769,8 @@ async fn resolve_latest() -> Result<(String, String)> {
         .files
         .first()
         .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
-    let client = build_http_client()?;
-    let candidates = race_sources(&client, &watch.sources, marker, false).await?;
+    let clients = HttpPair::build(|b| b)?;
+    let candidates = race_sources(&clients, &watch.sources, marker, false).await?;
     let winner = &candidates[0];
     Ok((
         winner.version.clone(),
@@ -960,7 +970,7 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
         .files
         .first()
         .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
-    let client = build_http_client()?;
+    let clients = HttpPair::build(|b| b)?;
     emit_phase(app, phase::VERIFY);
     // The version comes from the official channels — the relay digest
     // endpoint or api.github.com, cross-checked whenever both answer —
@@ -968,14 +978,14 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     // tag must not turn the update into a downgrade (or a reinstall).
     // The same answer carries the official digest every mirror byte is
     // verified against; without it the update is refused.
-    let official = pass.run(official_release(&client)).await?;
+    let official = pass.run(official_release(&clients)).await?;
     ensure_newer(&official.version, APP_VERSION)?;
     let version = official.version;
     // Every source is probed in parallel with a 10 s cap each; all that
     // answer enter the artifact race.
     emit_phase(app, phase::RACE);
     let candidates = pass
-        .run(race_sources(&client, &watch.sources, marker, true))
+        .run(race_sources(&clients, &watch.sources, marker, true))
         .await?;
     let sources = download_sources(&version, &candidates);
     let expected_sha256 = official.sha256;
@@ -1425,6 +1435,14 @@ mod tests {
             .proxy(reqwest::Proxy::https(proxy).unwrap())
             .build()
             .unwrap();
+        // The pair shape the production lookup now takes: the stalling
+        // proxy client as the proxied arm, an (unused — the stall never
+        // returns a transport error, so no fallback fires) direct twin.
+        let clients = HttpPair::from_clients(
+            client,
+            reqwest::Client::builder().no_proxy().build().unwrap(),
+            true,
+        );
         let (started, ready) = tokio::sync::oneshot::channel();
         let server = tokio::spawn(async move {
             let (mut socket, _) = listener.accept().await.unwrap();
@@ -1441,7 +1459,7 @@ mod tests {
             assert!(pass.cancel());
         };
         let outcome = tokio::time::timeout(Duration::from_secs(3), async {
-            tokio::join!(pass.run(fetch_official_release(&client)), cancel)
+            tokio::join!(pass.run(fetch_official_release(&clients)), cancel)
         })
         .await;
         server.abort();

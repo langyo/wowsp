@@ -13,8 +13,8 @@
 //!
 //! Transport is injected through [CompletionTransport] so every case in this
 //! module is unit-tested against canned responses with zero real network.
-//! Production entry points are [translate_line] (caller-owned reqwest client)
-//! and [translate_line_configured] (settings + the shared proxy-aware client).
+//! Production entry points are [translate_line] (caller-owned client pair)
+//! and [translate_line_configured] (settings + the shared proxy-aware pair).
 //! [translate_line_traced] runs the exact same pipeline and additionally
 //! returns a [LineTrace] of the FINAL attempt (system prompt, user payload,
 //! POST body, parsed/raw answer) for the settings page's translation-test
@@ -32,7 +32,8 @@ use serde_json::{Value, json};
 
 use wowsp_tauri_shared::{ChatTranslateConfig, MatchContext};
 
-use crate::commands::network::build_http_client;
+use crate::commands::network::HttpPair;
+use crate::commands::upstream_health;
 
 use super::config;
 use super::prompt::{SYSTEM_PROMPT, build_user_payload};
@@ -158,9 +159,11 @@ trait CompletionTransport {
     ) -> BoxFuture<'a, Result<CompletionResponse>>;
 }
 
-/// The production transport: the shared proxy-aware reqwest client.
+/// The production transport: the shared proxy→direct client pair (a dead
+/// configured proxy falls back to the direct twin instead of costing the
+/// configured timeout — see upstream_health::send_with_fallback).
 struct ReqwestTransport<'a> {
-    client: &'a reqwest::Client,
+    pair: &'a HttpPair,
 }
 
 impl CompletionTransport for ReqwestTransport<'_> {
@@ -169,18 +172,23 @@ impl CompletionTransport for ReqwestTransport<'_> {
         request: &'a CompletionRequest,
     ) -> BoxFuture<'a, Result<CompletionResponse>> {
         Box::pin(async move {
-            let response = self
-                .client
-                .post(&request.url)
-                .header("Authorization", format!("Bearer {}", request.api_key))
-                .timeout(request.timeout)
-                .json(&request.body)
-                .send()
+            // The completions POST is fully replayable (JSON body built
+            // from the same request each time), so it rides the chain.
+            let host = upstream_health::host_of_url(&request.url).to_string();
+            let response =
+                upstream_health::send_with_fallback(self.pair, &host, "chat-translate", |client| {
+                    client
+                        .post(&request.url)
+                        .header("Authorization", format!("Bearer {}", request.api_key))
+                        .timeout(request.timeout)
+                        .json(&request.body)
+                })
                 .await
                 .map_err(|error| {
-                    if error.is_timeout() {
+                    let text = error.to_string();
+                    if text.contains("timed out") || text.contains("timeout") {
                         anyhow!("translation service request timed out")
-                    } else if error.is_connect() {
+                    } else if text.contains("connect") || text.contains("dns") {
                         anyhow!("translation service connection failed")
                     } else {
                         anyhow!("translation service request failed")
@@ -198,10 +206,10 @@ impl CompletionTransport for ReqwestTransport<'_> {
 
 /// Translate one chat line into every requested target language.
 ///
-/// client is the caller's proxy-aware reqwest client (see
-/// network::build_http_client); context is the battle summary M2 fills.
+/// clients is the caller's proxy→direct pair (see network::HttpPair);
+/// context is the battle summary M2 fills.
 pub(crate) async fn translate_line(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     cfg: &ConfigView,
     text: &str,
     targets: &[String],
@@ -209,7 +217,7 @@ pub(crate) async fn translate_line(
     context: &MatchContext,
 ) -> Result<LineTranslation> {
     translate_line_with(
-        &ReqwestTransport { client },
+        &ReqwestTransport { pair: clients },
         cfg,
         text,
         targets,
@@ -222,7 +230,7 @@ pub(crate) async fn translate_line(
 
 /// Convenience for callers that only hold the settings document (the live
 /// pipeline and the debug command): resolve the view, build the shared
-/// proxy-aware client and run the same pipeline.
+/// proxy→direct pair and run the same pipeline.
 pub(crate) async fn translate_line_configured(
     config: &ChatTranslateConfig,
     text: &str,
@@ -264,15 +272,15 @@ async fn translate_configured(
     context: &MatchContext,
     trace: Option<&mut LineTrace>,
 ) -> Result<LineTranslation> {
-    let client = build_http_client()?;
+    let clients = HttpPair::build(|b| b)?;
     let cfg = ConfigView::from_config(config);
     match trace {
-        // Production path: exactly the caller-owned-client pipeline, no trace
+        // Production path: exactly the caller-owned-pair pipeline, no trace
         // bookkeeping (the pipeline core sees None and compiles it away).
-        None => translate_line(&client, &cfg, text, targets, self_lang, context).await,
+        None => translate_line(&clients, &cfg, text, targets, self_lang, context).await,
         Some(trace) => {
             translate_line_with(
-                &ReqwestTransport { client: &client },
+                &ReqwestTransport { pair: &clients },
                 &cfg,
                 text,
                 targets,

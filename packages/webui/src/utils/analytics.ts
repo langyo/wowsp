@@ -20,6 +20,7 @@
  */
 import { readonly, ref } from "vue";
 
+import { api } from "@/api";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 
 const APP_MEASUREMENT_ID = "G-BGD43VPDEJ";
@@ -133,6 +134,11 @@ export function initAnalytics(): void {
     initAnalytics();
   };
   script.onerror = () => {
+    // Silent in the UI on purpose (a blocked tag host is ordinary
+    // firewall/offline life), but leave one line through the app's
+    // log_ui_error channel so a support bundle can tell "no telemetry"
+    // from "telemetry broken".
+    void api.logUiError("gtag.js failed to load (blocked or offline) — app telemetry unavailable");
     script.remove();
     tagScript = null;
   };

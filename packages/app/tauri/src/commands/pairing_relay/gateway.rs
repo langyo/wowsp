@@ -150,16 +150,26 @@ pub(super) fn store_gateway_info(info: Option<GatewayInfo>) {
 /// non-200, oversize or foreign body) — the caller falls back to legacy
 /// direct mode; only a clean gateway manifest yields `Ok(Some(..))`.
 async fn fetch_manifest(url: &str) -> Result<Option<GatewayManifest>> {
-    // The SAME shared HTTP client every other outbound request uses: the
-    // Android CA-bundle client there, SChannel on the desktop.
-    let client = super::network::build_http_client()?;
-    let resp = client
-        .get(url)
-        .header(reqwest::header::CACHE_CONTROL, "no-store")
-        .timeout(MANIFEST_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| anyhow!("manifest fetch failed ({e})"))?;
+    // The SAME shared HTTP pair every other outbound request uses (the
+    // Android CA-bundle pair there, SChannel on the desktop), with the
+    // proxy→direct fallback: a dead configured proxy must not push the
+    // session into legacy direct mode against a healthy gateway. Any
+    // failure here still degrades exactly as before.
+    let clients = super::network::HttpPair::build(|b| b)?;
+    let host = super::super::upstream_health::host_of_url(url).to_string();
+    let resp = super::super::upstream_health::send_with_fallback(
+        &clients,
+        &host,
+        "relay-manifest",
+        |client| {
+            client
+                .get(url)
+                .header(reqwest::header::CACHE_CONTROL, "no-store")
+                .timeout(MANIFEST_TIMEOUT)
+        },
+    )
+    .await
+    .map_err(|e| anyhow!("manifest fetch failed ({e})"))?;
     if !resp.status().is_success() {
         return Ok(None);
     }

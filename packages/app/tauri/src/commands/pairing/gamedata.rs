@@ -71,7 +71,8 @@ pub async fn pairing_pull_gamedata(
     let status_is_success = match &target {
         PairingTarget::Lan { .. } => {
             let (host, port) = lan_parts(&target)?;
-            let client = super::network::build_http_client()?;
+            // LAN pairing peer — always-direct client (see pairing_pair).
+            let client = super::network::build_direct_http_client()?;
             let url = format!("http://{host}:{port}/api/gamedata");
             let resp = loop {
                 let resp = client

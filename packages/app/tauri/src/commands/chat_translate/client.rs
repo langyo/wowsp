@@ -11,13 +11,16 @@
 //!      so the probe falls back to a one-token `POST
 //!      {baseUrl}/chat/completions` with the configured model.
 //!
-//! Every request rides `network::build_http_client()`, so the Settings →
-//! Network proxy choice applies. Expected failures (no key, timeout, non-2xx)
+//! Every request rides `network::HttpPair` (the Settings → Network proxy
+//! choice applies, with the proxy→direct fallback of
+//! `upstream_health::send_with_fallback`). Expected failures (no key, timeout, non-2xx)
 //! are REPORTED in [ProviderTestResult] instead of rejecting the command, so
 //! the settings card renders the reason inline (the same report-shape
 //! pattern the player-marker and network settings use). The API key never
 //! appears in a message, and no request
 //! header or body is ever logged.
+
+use anyhow::Error;
 
 use std::time::{Duration, Instant};
 
@@ -25,7 +28,8 @@ use serde_json::{Value, json};
 
 use wowsp_tauri_shared::{ChatTranslateConfig, ProviderTestResult};
 
-use crate::commands::network::build_http_client;
+use crate::commands::network::HttpPair;
+use crate::commands::upstream_health;
 
 use super::config::effective_api_key;
 
@@ -64,15 +68,19 @@ fn status_error(status: reqwest::StatusCode) -> String {
     }
 }
 
-/// User-facing copy for a transport failure (`reqwest`'s own Display is only
-/// a fallback — it may carry the URL, but never the Authorization header).
-fn request_error(error: &reqwest::Error) -> String {
-    if error.is_timeout() {
+/// User-facing copy for a transport failure on either arm of the
+/// proxy→direct chain. The chain reports an anyhow error whose Display is
+/// reqwest's own (source chain included), so the timeout/connect families
+/// stay recognizable by their message; it may carry the URL, but never
+/// the Authorization header.
+fn request_error(error: &Error) -> String {
+    let text = error.to_string();
+    if text.contains("timed out") || text.contains("timeout") {
         "the provider did not answer in time (timeout)".to_string()
-    } else if error.is_connect() {
+    } else if text.contains("connect") || text.contains("dns") {
         "could not reach the provider — check the base URL and network settings".to_string()
     } else {
-        format!("provider request failed: {error}")
+        format!("provider request failed: {text}")
     }
 }
 
@@ -103,7 +111,7 @@ fn configured_timeout(config: &ChatTranslateConfig) -> Duration {
 /// The one-token chat-completions fallback for providers without a
 /// `GET /models` route.
 async fn chat_completions_probe(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     config: &ChatTranslateConfig,
     api_key: &str,
 ) -> ProviderTestResult {
@@ -114,12 +122,17 @@ async fn chat_completions_probe(
         "max_tokens": 1,
         "stream": false,
     });
-    let response = client
-        .post(url)
-        .header("Authorization", format!("Bearer {api_key}"))
-        .timeout(configured_timeout(config))
-        .json(&body)
-        .send()
+    // The one-token ping is a replayable JSON POST, so it rides the
+    // proxy→direct chain like the models probe.
+    let host = upstream_health::host_of_url(&url).to_string();
+    let response =
+        upstream_health::send_with_fallback(clients, &host, "chat-translate", |client| {
+            client
+                .post(&url)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .timeout(configured_timeout(config))
+                .json(&body)
+        })
         .await;
     match response {
         Ok(response) if response.status().is_success() => ProviderTestResult {
@@ -143,8 +156,8 @@ pub(crate) async fn test_connection(config: &ChatTranslateConfig) -> ProviderTes
             started,
         );
     };
-    let client = match build_http_client() {
-        Ok(client) => client,
+    let clients = match HttpPair::build(|b| b) {
+        Ok(clients) => clients,
         Err(error) => {
             return with_latency(
                 failed(format!("could not build the HTTP client: {error}")),
@@ -153,11 +166,14 @@ pub(crate) async fn test_connection(config: &ChatTranslateConfig) -> ProviderTes
         },
     };
     let models_url = endpoint_url(&config.provider.base_url, "/models");
-    let response = client
-        .get(&models_url)
-        .header("Authorization", format!("Bearer {api_key}"))
-        .timeout(MODELS_TIMEOUT_CAP.min(configured_timeout(config)))
-        .send()
+    let host = upstream_health::host_of_url(&models_url).to_string();
+    let response =
+        upstream_health::send_with_fallback(&clients, &host, "chat-translate", |client| {
+            client
+                .get(&models_url)
+                .header("Authorization", format!("Bearer {api_key}"))
+                .timeout(MODELS_TIMEOUT_CAP.min(configured_timeout(config)))
+        })
         .await;
     match response {
         Ok(response) if response.status().is_success() => {
@@ -180,7 +196,7 @@ pub(crate) async fn test_connection(config: &ChatTranslateConfig) -> ProviderTes
             )
         },
         Ok(response) if matches!(response.status().as_u16(), 404 | 405) => with_latency(
-            chat_completions_probe(&client, config, &api_key).await,
+            chat_completions_probe(&clients, config, &api_key).await,
             started,
         ),
         Ok(response) => with_latency(failed(status_error(response.status())), started),

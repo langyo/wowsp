@@ -45,7 +45,8 @@ use tokio::io::AsyncWriteExt;
 use wowsp_tauri_shared::download::phase;
 use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress};
 
-use super::network::build_http_client;
+use super::network::HttpPair;
+use super::upstream_health;
 
 /// Progress-event cadence: the percent tick and the EWMA speed sample
 /// both run on this clock so the webview isn't flooded per chunk.
@@ -529,7 +530,7 @@ async fn run_transfer(
     if cancel.load(Ordering::SeqCst) {
         return Err(anyhow::Error::msg(req.cancel_msg.clone()));
     }
-    let client = build_http_client()?;
+    let clients = HttpPair::build(|b| b)?;
 
     if let Some(parent) = req.part.parent() {
         if !parent.as_os_str().is_empty() {
@@ -561,7 +562,7 @@ async fn run_transfer(
             tokio::select! {
                 biased;
                 () = cancelled(&cancel) => return Err(anyhow::Error::msg(req.cancel_msg.clone())),
-                sources = race_reorder(&client, &req.sources, committed, window, app.as_ref(), &req) => sources,
+                sources = race_reorder(&clients, &req.sources, committed, window, app.as_ref(), &req) => sources,
             }
         },
         None => req.sources.clone(),
@@ -577,7 +578,7 @@ async fn run_transfer(
         let hasher_snapshot = hasher.clone();
         let mut restarted = false;
         match attempt(
-            &client,
+            &clients,
             url,
             &req,
             &cancel,
@@ -668,7 +669,7 @@ async fn run_transfer(
 /// (byte 0 when this attempt reports `restarted`, see there).
 #[allow(clippy::too_many_arguments)]
 async fn attempt(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     url: &str,
     req: &DownloadRequest,
     cancel: &Arc<AtomicBool>,
@@ -678,17 +679,26 @@ async fn attempt(
     tracker: &mut SpeedTracker,
     restarted: &mut bool,
 ) -> anyhow::Result<()> {
-    let mut request = client.get(url);
-    if *committed > 0 {
-        request = request.header(reqwest::header::RANGE, format!("bytes={}-", *committed));
-    }
-    if let Some(timeout) = req.timeout {
-        request = request.timeout(timeout);
-    }
+    // The ranged GET is replayable (headers only), so it rides the
+    // proxy→direct chain INSIDE the cancellation select — a stalled
+    // proxy arm fails over at the transport level instead of eating the
+    // whole per-attempt timeout, and cancel still aborts whichever arm
+    // is in flight. The streamed body afterwards is read once, off the
+    // response the chain landed on.
+    let host = upstream_health::host_of_url(url).to_string();
     let mut response = tokio::select! {
         biased;
         () = cancelled(cancel) => return Err(anyhow::Error::msg(req.cancel_msg.clone())),
-        response = request.send() => response.map_err(|e| anyhow!("{url}: {e}"))?,
+        response = upstream_health::send_with_fallback(clients, &host, "download", |client| {
+            let mut request = client.get(url);
+            if *committed > 0 {
+                request = request.header(reqwest::header::RANGE, format!("bytes={}-", *committed));
+            }
+            if let Some(timeout) = req.timeout {
+                request = request.timeout(timeout);
+            }
+            request
+        }) => response.map_err(|e| anyhow!("{url}: {e}"))?,
     };
     let status = response.status();
 
@@ -861,18 +871,27 @@ async fn attempt(
 /// bytes read and how long they took (the throughput proxy for
 /// ordering). `None` = the source did not serve usable bytes in time.
 async fn probe_source(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     url: &str,
     offset: u64,
     window: Duration,
 ) -> Option<(u64, Duration)> {
     let started = Instant::now();
     let probe = async {
-        let mut request = client.get(url);
-        if offset > 0 {
-            request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
-        }
-        let mut response = request.send().await.ok()?;
+        // Same chain as the real attempt: the race window measures
+        // whichever path serves bytes, and a dead proxy arm fails over
+        // instead of stalling the probe silent.
+        let host = upstream_health::host_of_url(url).to_string();
+        let mut response =
+            upstream_health::send_with_fallback(clients, &host, "download", |client| {
+                let mut request = client.get(url);
+                if offset > 0 {
+                    request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
+                }
+                request
+            })
+            .await
+            .ok()?;
         let status = response.status();
         if status != reqwest::StatusCode::OK && status != reqwest::StatusCode::PARTIAL_CONTENT {
             return None;
@@ -895,7 +914,7 @@ async fn probe_source(
 /// Emits one `race` event first so the UI can render the indeterminate
 /// racing state while the probes settle.
 async fn race_reorder(
-    client: &reqwest::Client,
+    clients: &HttpPair,
     sources: &[String],
     offset: u64,
     window: Duration,
@@ -907,7 +926,7 @@ async fn race_reorder(
         .iter()
         .enumerate()
         .map(|(idx, url)| async move {
-            let result = probe_source(client, url, offset, window).await;
+            let result = probe_source(clients, url, offset, window).await;
             (idx, result)
         })
         .collect();

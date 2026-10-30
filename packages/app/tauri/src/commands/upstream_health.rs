@@ -164,19 +164,19 @@ fn clear_direct_preferred(host: &str) -> bool {
         .is_some()
 }
 
-/// One GET attempt over one client. The point is the per-attempt log line:
-/// every connection the app makes leaves one here (host, endpoint label,
-/// which path rode, how long it took, how it ended), so a support bundle
-/// can tell a hung proxy from a dead host instead of staring at silence.
-async fn attempt_get(
-    client: &reqwest::Client,
+/// One request attempt over one client. The point is the per-attempt log
+/// line: every connection the app makes leaves one here (host, endpoint
+/// label, which path rode, how long it took, how it ended), so a support
+/// bundle can tell a hung proxy from a dead host instead of staring at
+/// silence.
+async fn attempt_send(
+    req: reqwest::RequestBuilder,
     host: &str,
     label: &str,
-    url: &str,
     via: &str,
 ) -> Result<reqwest::Response, reqwest::Error> {
     let started = std::time::Instant::now();
-    let outcome = client.get(url).send().await;
+    let outcome = req.send().await;
     let elapsed_ms = started.elapsed().as_millis() as u64;
     match &outcome {
         Ok(_) => tracing::debug!(host, label, via, elapsed_ms, "http transport attempt ok"),
@@ -216,9 +216,42 @@ pub(crate) async fn get_with_fallback(
     label: &str,
     url: String,
 ) -> anyhow::Result<reqwest::Response> {
+    send_with_fallback(pair, host, label, move |client| client.get(&url)).await
+}
+
+/// The chain behind `get_with_fallback`, generalized to any request
+/// shape: `build` receives whichever client the chain picks and returns the
+/// request to send, so per-request headers and timeouts ride along
+/// unchanged. Same semantics as the stats family's primitive — proxy first
+/// (the configured policy is the user's explicit choice); a TRANSPORT-level
+/// failure over the proxy (timeout, connect, TLS — not an HTTP error
+/// status, which proves the path works) degrades to one attempt on the
+/// direct twin; only both failing fails the request. After a proxy failure
+/// the host rides the direct path for `DIRECT_PREFERRED_TTL_MS`, and a
+/// proxy success takes it back at once. Errors come back UNPREFIXED.
+///
+/// ONE HARD RULE: the request must be replayable. The fallback re-runs
+/// `build` against the direct twin, so a builder carrying a
+/// non-replayable body (a file stream, a socket pipe) must not ride this
+/// chain — build a direct-only client for those instead.
+/// No health is recorded here: callers own the recording
+/// (`recorded_get` / `record_transport`) and key it on the FINAL
+/// outcome — a proxy failure rescued by the direct path leaves the host
+/// healthy.
+/// Loopback targets never ride the proxy in the first place (the base
+/// builder exempts loopback — and the RFC1918/link-local ranges — from any
+/// configured proxy, see `http_builder_for`), so the chain must not
+/// narrate a proxy→direct fallback for them — nor burn a direct-preference
+/// mark on a host whose "proxied" attempt was never a proxy path at all.
+pub(crate) async fn send_with_fallback(
+    pair: &super::network::HttpPair,
+    host: &str,
+    label: &str,
+    build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+) -> anyhow::Result<reqwest::Response> {
     let can_proxy = pair.has_proxy() && !is_loopback_host(host);
     if can_proxy && !direct_preferred_at(host, now_millis()) {
-        match attempt_get(pair.proxied(), host, label, &url, "proxy").await {
+        match attempt_send(build(pair.proxied()), host, label, "proxy").await {
             Ok(resp) => {
                 if clear_direct_preferred(host) {
                     tracing::info!(
@@ -237,7 +270,8 @@ pub(crate) async fn get_with_fallback(
                     "proxy transport failed — falling back to the direct path"
                 );
                 prefer_direct(host);
-                return match attempt_get(pair.direct(), host, label, &url, "direct-fallback").await
+                return match attempt_send(build(pair.direct()), host, label, "direct-fallback")
+                    .await
                 {
                     Ok(resp) => Ok(resp),
                     Err(direct_err) => Err(anyhow!(
@@ -252,7 +286,7 @@ pub(crate) async fn get_with_fallback(
     } else {
         "direct"
     };
-    attempt_get(pair.direct(), host, label, &url, via)
+    attempt_send(build(pair.direct()), host, label, via)
         .await
         .map_err(|e| anyhow!("{e}"))
 }
@@ -360,13 +394,17 @@ pub async fn upstream_health() -> CommandResult<Vec<UpstreamHostReport>> {
         .collect())
 }
 
-/// Host of an `https://…` URL — the CN module's shared `get_json` knows
-/// only the full URL, and the catalogue keys on bare hosts.
+/// Host of any URL — the CN module's shared `get_json` and the fallback
+/// chain's call sites know only the full URL, and both key on bare hosts.
 pub(crate) fn host_of_url(url: &str) -> &str {
-    url.trim_start_matches("https://")
-        .split('/')
-        .next()
-        .unwrap_or("")
+    // Any scheme prefix is stripped: mirror ladders mix https
+    // candidates with loopback http dev mirrors, and both key the
+    // fallback chain + health catalogue on the bare host.
+    let no_scheme = match url.split_once("://") {
+        Some((_, rest)) => rest,
+        None => url,
+    };
+    no_scheme.split('/').next().unwrap_or("")
 }
 
 #[cfg(test)]
@@ -467,6 +505,10 @@ mod tests {
             host_of_url("https://api.korabli.su/wows/account/list/"),
             "api.korabli.su"
         );
+        assert_eq!(
+            host_of_url("http://127.0.0.1:8787/relay/manifest"),
+            "127.0.0.1:8787"
+        );
         assert_eq!(host_of_url("not-a-url"), "not-a-url");
     }
 
@@ -549,6 +591,39 @@ mod tests {
             .expect("direct-preferred request");
         assert_eq!(resp.status(), 200);
         server.join().expect("stub served both connections");
+        let _ = clear_direct_preferred(host);
+    }
+
+    /// The generalized chain (send_with_fallback) carries non-GET
+    /// requests: a POST through a dead proxy arm lands on the direct
+    /// twin with method, headers and JSON body intact.
+    #[tokio::test]
+    async fn post_rides_the_same_fallback_chain() {
+        let host = "test-post-fallback.example";
+        let (addr, server) = stub_server(1);
+        let pair = crate::commands::network::HttpPair::from_clients(
+            dead_proxy_client(),
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("direct"),
+            true,
+        );
+        let url = format!("http://{addr}/probe");
+        let resp = send_with_fallback(&pair, host, "probe", |client| {
+            client
+                .post(&url)
+                .header("X-Wowsp-Probe", "1")
+                .json(&serde_json::json!({"ok": true}))
+        })
+        .await
+        .expect("direct fallback rescues the POST");
+        assert_eq!(resp.status(), 200);
+        server.join().expect("stub served");
+        assert!(
+            direct_preferred_at(host, now_millis()),
+            "the mark is written for POST failures too"
+        );
         let _ = clear_direct_preferred(host);
     }
 
