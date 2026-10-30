@@ -24,9 +24,10 @@ pub const TRAY_PANEL_LABEL: &str = "tray-panel";
 
 /// Panel size in LOGICAL px (scaled by the target monitor's factor). Fixed:
 /// the content is a compact status + menu list that must never scroll.
-/// 248 fits the tallest content state (game running + the +2 font-scale
-/// level ≈ 245px) without a dead void between the status rows and the menu.
-const PANEL_LOGICAL: (f64, f64) = (320.0, 248.0);
+/// 208 fits the tallest content state (game running + the +2 font-scale
+/// level) with a small margin; the status/player cards flex-absorb the
+/// slack of lighter states so no dead void opens between the blocks.
+const PANEL_LOGICAL: (f64, f64) = (320.0, 208.0);
 
 /// Edge breathing room (physical px) when clamping against the work area.
 const WORK_AREA_MARGIN: f64 = 8.0;
@@ -342,7 +343,7 @@ mod tests {
     use super::*;
 
     const WORK: (f64, f64, f64, f64) = (0.0, 0.0, 1920.0, 1040.0);
-    const PANEL: (f64, f64) = (320.0, 248.0);
+    const PANEL: (f64, f64) = (320.0, 208.0);
 
     /// Bottom-right tray (the common case): the panel opens ABOVE the icon,
     /// right-aligned with it (clamped off the screen's right edge).
@@ -350,7 +351,7 @@ mod tests {
     fn bottom_tray_opens_above_and_clamps_right() {
         let icon = (1880.0, 1000.0, 40.0, 40.0); // bottom edge, taskbar tray
         let (x, y) = panel_origin(icon, PANEL, WORK);
-        assert_eq!(y, 1000.0 - 248.0 - 8.0, "opens above the icon");
+        assert_eq!(y, 1000.0 - 208.0 - 8.0, "opens above the icon");
         assert_eq!(x, 1920.0 - 320.0 - 8.0, "clamped off the right edge");
     }
 

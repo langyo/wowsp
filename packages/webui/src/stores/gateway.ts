@@ -198,9 +198,13 @@ export const useGatewayStore = defineStore("gateway", () => {
   /// Snapshot the publisher's link state from Rust. A surface that mounts
   /// LATE (the tray panel opens long after the transitions) needs this;
   /// `wowsp://gateway-state` only carries what happens while listening.
+  /// The service toggle is synced too: the tray webview stays mounted
+  /// across show/hide, so a toggle made in the settings window would
+  /// otherwise never reach it.
   async function refreshPublishStatus(): Promise<GatewayPublishStatus | null> {
     try {
       const status = await api.gatewayPublishStatus();
+      config.value.enabled = status.enabled;
       pubPhase.value = status.phase;
       pubSubscribers.value = status.subscribers;
       if (status.route) pubRoute.value = status.route;

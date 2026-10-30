@@ -42,12 +42,28 @@ export default defineComponent({
     // The tray window may open long after the publisher's transitions, so
     // read the snapshot on mount — `wowsp://gateway-state` supplies the
     // live updates from there (the store's own listener is already wired).
+    void gateway.loadConfig();
     void gateway.refreshPublishStatus();
 
     /** Phone-link voice: the service toggle, the live socket and the
-     *  count of subscribed phones. */
+     *  count of subscribed phones. The icon itself only exists while the
+     *  service is ON (the sidebar's phone-icon rule) and its tone follows
+     *  the same state grammar. */
     const phoneLinked = computed(() => gateway.pubSubscribers > 0);
     const phonePhase = computed(() => gateway.pubPhase);
+    const phoneTone = computed(() => {
+      if (phoneLinked.value) return "is-linked";
+      switch (phonePhase.value) {
+        case "captcha":
+          return "is-warning";
+        case "error":
+          return "is-error";
+        case "online":
+          return "is-on";
+        default:
+          return "";
+      }
+    });
     const phoneLabel = computed(() => {
       if (!gateway.config.enabled) return t("tray.phoneServiceOff");
       switch (phonePhase.value) {
@@ -102,9 +118,21 @@ export default defineComponent({
         void api.trayPanelAction("dismiss").catch(() => undefined);
       }
     }
-    onMounted(() => window.addEventListener("keydown", onKey));
+    /** The Rust side shows/hides the WINDOW; the document's visibility
+     *  flips with it — that is the "panel just opened" signal. */
+    function onVisibility() {
+      if (document.visibilityState === "visible") void gateway.refreshPublishStatus();
+    }
+    onMounted(() => {
+      window.addEventListener("keydown", onKey);
+      // The panel webview stays MOUNTED across show/hide (only the window
+      // toggles), so each OPEN re-reads the link snapshot: a toggle made in
+      // the settings window while the panel was hidden must still land.
+      window.addEventListener("visibilitychange", onVisibility);
+    });
     onBeforeUnmount(() => {
       window.removeEventListener("keydown", onKey);
+      window.removeEventListener("visibilitychange", onVisibility);
       session.stop();
     });
 
@@ -127,6 +155,20 @@ export default defineComponent({
               <span class="tray-panel__status-text">
                 {running.value ? t("common.game.online") : t("common.game.offline")}
               </span>
+              {gateway.config.enabled ? (
+                <span
+                  class={["tray-panel__status-phone", phoneTone.value]}
+                  title={phoneLabel.value}
+                  aria-label={phoneLabel.value}
+                >
+                  <Smartphone size={14} />
+                  {phoneLinked.value ? (
+                    <span class="tray-panel__status-phone-count" aria-hidden="true">
+                      {gateway.pubSubscribers}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
             </div>
             {running.value ? (
               <div class="tray-panel__status-detail">
@@ -181,28 +223,6 @@ export default defineComponent({
                 <span class="tray-panel__player-none">{t("account.notBound")}</span>
               </div>
             )}
-          </div>
-
-          {/* phone link — mobile service + the publisher's live phone count */}
-          <div
-            class={[
-              "tray-panel__phone",
-              phoneLinked.value
-                ? "is-linked"
-                : gateway.config.enabled
-                  ? "is-on"
-                  : "is-off",
-            ]}
-          >
-            <div class="tray-panel__phone-row">
-              <Smartphone size={15} class="tray-panel__phone-icon" />
-              <span class="tray-panel__phone-text">{phoneLabel.value}</span>
-              {phoneLinked.value ? (
-                <span class="tray-panel__phone-count" aria-hidden="true">
-                  {gateway.pubSubscribers}
-                </span>
-              ) : null}
-            </div>
           </div>
 
           {/* menu actions — the old native tray menu, as rows */}
