@@ -17,9 +17,11 @@
 
 use anyhow::{Result, anyhow};
 
+#[cfg(desktop)]
 use serde::Serialize;
 use std::path::Path;
 
+#[cfg(desktop)]
 use tauri::Emitter;
 
 use wowsp_tauri_shared::{
@@ -27,6 +29,9 @@ use wowsp_tauri_shared::{
     ChatTranslateConfigUpdate, DEFAULT_BASE_URL, DEFAULT_MODEL, SUPPORTED_LANGS,
 };
 
+// The chat panel window — and the overlay module that owns its event
+// vocabulary — is desktop-only; mobile has no panel to notify.
+#[cfg(desktop)]
 use crate::commands::overlay::CHAT_PREFS_EVENT;
 use crate::paths;
 use crate::settings_store::{self, SettingsSource};
@@ -327,6 +332,9 @@ pub(crate) fn effective_api_key(config: &ChatTranslateConfig) -> Option<String> 
 /// (`wowsp://chat-prefs`). One field today — the configured data-side line
 /// cap; the overlay window's own `chatPanelMaxLines` caps the same list
 /// window-side. camelCase wire shape, mirroring the webui's listener.
+///
+/// Desktop only, like the panel window it feeds.
+#[cfg(desktop)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ChatPrefsPayload {
@@ -334,7 +342,8 @@ pub(crate) struct ChatPrefsPayload {
 }
 
 /// Payload for [`emit_prefs`]: the sanitized `display.maxLines` (pure, so the
-/// wire shape is unit-tested without an app handle).
+/// wire shape is unit-tested without an app handle). Desktop only.
+#[cfg(desktop)]
 pub(crate) fn prefs_payload(config: &ChatTranslateConfig) -> ChatPrefsPayload {
     ChatPrefsPayload {
         max_lines: config.display.max_lines,
@@ -343,11 +352,16 @@ pub(crate) fn prefs_payload(config: &ChatTranslateConfig) -> ChatPrefsPayload {
 
 /// Notify the live chat panel that the settings changed (a settings save just
 /// landed). Best-effort: no window listening is normal (the panel window is
-/// only up while the game runs), so a failed emit is not an error.
+/// only up while the game runs), so a failed emit is not an error. The
+/// emitter is a no-op on mobile — there is no panel window to notify, and
+/// the overlay module that owns the event vocabulary is desktop-only.
 pub(crate) fn emit_prefs(app: &tauri::AppHandle, config: &ChatTranslateConfig) {
+    #[cfg(desktop)]
     if let Err(error) = app.emit(CHAT_PREFS_EVENT, prefs_payload(config)) {
         tracing::debug!(error = %error, "emit chat-prefs failed");
     }
+    #[cfg(mobile)]
+    let _ = (app, config);
 }
 
 /// The config as the webui receives it, with the key stripped and the two

@@ -382,6 +382,7 @@ struct SliceCandidates {
     first: Option<usize>,
 }
 
+#[cfg(desktop)]
 impl SliceCandidates {
     /// The entry the lookup would serve: (root-entry index, picked from the
     /// direct id-keyed form), if any.

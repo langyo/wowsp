@@ -1918,7 +1918,10 @@ pub async fn ensure_res_pack() -> CommandResult<String> {
 pub async fn res_cache_root() -> CommandResult<Option<String>> {
     #[cfg(mobile)]
     {
-        return mobile_serving_root();
+        // `mobile_serving_root` reports the serving root (or `None` when the
+        // APK bundle serves); its own cache-root failure is a real error the
+        // IPC should surface, so propagate it instead of matching on it.
+        return Ok(mobile_serving_root()?);
     }
     #[cfg(not(mobile))]
     {

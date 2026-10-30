@@ -50,7 +50,9 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::Mutex;
+#[cfg(windows)]
+use std::sync::{Arc, OnceLock};
 #[cfg(windows)]
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -2633,15 +2635,25 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
     // Proactive static pass: mod files referencing client assets that exist
     // in neither tree nor the client index. This is the battle_stats.swf
     // class found WITHOUT waiting for a crash — the log-evidenced pass only
-    // knows what the loader complained about.
-    let mut proactive: Vec<ModReference> = Vec::new();
-    if let Some(root_path) = root.as_deref().map(Path::new) {
-        if let Some(root_str) = root.as_deref() {
-            if let Some(client) = client_asset_basenames(root_str) {
-                proactive = dangling_mod_references(&res_mods_bases(root_path), &client);
+    // knows what the loader complained about. The client index is part of
+    // the local Windows install (`bin/<ver>/idx`), so the whole pass is
+    // Windows-scoped like its helpers; elsewhere `proactive` stays empty.
+    #[cfg(windows)]
+    let proactive: Vec<ModReference> = {
+        let mut refs: Vec<ModReference> = Vec::new();
+        if let Some(root_path) = root.as_deref().map(Path::new) {
+            if let Some(root_str) = root.as_deref() {
+                if let Some(client) = client_asset_basenames(root_str) {
+                    refs = dangling_mod_references(&res_mods_bases(root_path), &client);
+                }
             }
         }
-    }
+        refs
+    };
+    // Without a local client index to compare against, the pass contributes
+    // nothing and the analysis proceeds on its log-evidenced findings alone.
+    #[cfg(not(windows))]
+    let proactive: Vec<ModReference> = Vec::new();
     let mut findings = build_findings(record, &mods_inventory, &game_logs, &display_urls);
     for reference in proactive.iter().take(6) {
         findings.push(CrashFinding {
