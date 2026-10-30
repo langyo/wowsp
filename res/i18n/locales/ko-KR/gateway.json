@@ -85,7 +85,6 @@
   "selfhostLog": "마법사 출력",
   "selfhostLogEmpty": "아직 출력이 없습니다. 단계를 실행하면 여기에 표시됩니다.",
   "selfhostStepDone": "완료",
-  "lanLegacyTitle": "LAN 페어링(구형)",
-  "lanLegacyHint": "게이트웨이 이전의 구경로입니다. 휴대폰 리플레이 마법사에 이 PC의 LAN 주소와 PIN을 입력합니다. 인터넷 페어링 코드는 제거되었습니다. 위의 모바일 서비스를 사용하세요.",
-  "lanLegacyPhoneHint": "휴대폰에서 '리플레이 → PC에서 가져오기'를 열고 같은 Wi-Fi에서 위의 PIN을 입력하세요."
+  "rootConnectExistingHint": "배포한(또는 받은) 게이트웨이 URL을 붙여넣고 저장하면 연결됩니다.",
+  "rootDeployHint": "아직 게이트웨이가 없나요? 몇 분 만에 자신만의 프라이빗 게이트웨이를 배포할 수 있습니다."
 }

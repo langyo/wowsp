@@ -85,7 +85,6 @@
   "selfhostLog": "精靈輸出",
   "selfhostLogEmpty": "還沒有輸出——執行任意步驟後在此查看。",
   "selfhostStepDone": "完成",
-  "lanLegacyTitle": "LAN 配對（舊）",
-  "lanLegacyHint": "閘道之前的舊通道：手機在重播精靈裡輸入本機的區域網路地址和 PIN。網際網路配對碼已移除——請改用上方的手機服務。",
-  "lanLegacyPhoneHint": "在手機上開啟「重播 → 從電腦取得」，同一 Wi-Fi 下輸入上方 PIN。"
+  "rootConnectExistingHint": "貼上你已部署（或取得的）閘道位址並儲存即可連線。",
+  "rootDeployHint": "還沒有閘道？幾分鐘即可部署自己的私有閘道。"
 }

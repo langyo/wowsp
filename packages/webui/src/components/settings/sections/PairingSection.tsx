@@ -1,27 +1,23 @@
 /** Pairing settings section — the gateway-push surface (route entry +
- *  mobile service + self-host wizard) with the LEGACY LAN pairing kept
- *  usable under a collapsed disclosure. Phone build renders the PHONE
- *  (client) side: the route entry field (custom domain for self-host) plus
- *  the existing paired-computers management; the wizard stays
- *  desktop-only (publishing is a desktop concern).
+ *  mobile service + self-host wizard). The LEGACY LAN pairing is gone
+ *  from the UI entirely. Phone build renders the PHONE (client) side:
+ *  the route entry field (custom domain for self-host) plus the existing
+ *  paired-computers management; the wizard stays desktop-only
+ *  (publishing is a desktop concern).
  *
  *  Desktop primary UI (gateway-push §5): the ROUTE ENTRY (readonly
- *  official default / editable custom root, normalized by Rust), the
- *  MOBILE SERVICE toggle (enabled → gateway_publish_start on the
- *  session-hub route; disabled → stop), the gateway status (phase from
- *  wowsp://gateway-state via the gateway store), and the self-host wizard
- *  entry. The relay pairing-code display and its regenerate button are
- *  GONE from the UI (the code allocation stays in Rust for legacy
- *  phones); LAN pairing survives under the collapsed LAN 配对（旧）
- *  disclosure with its PIN display. */
+ *  official default / editable custom root, normalized by Rust —
+ *  selecting 自定义 reveals the connect-existing editor and the deploy
+ *  entry), the MOBILE SERVICE toggle (enabled → gateway_publish_start on
+ *  the session-hub route; disabled → stop), the gateway status (phase
+ *  from wowsp://gateway-state via the gateway store), and the self-host
+ *  wizard entry. The relay pairing-code display is GONE from the UI. */
 import { computed, defineComponent, type PropType } from "vue";
-import { Copy, Rocket, Smartphone } from "@lucide/vue";
+import { Rocket, Smartphone } from "@lucide/vue";
 import {
   HkAlert,
   HkButton,
-  HkExpansionPanel,
   HkInput,
-  HkOtpInput,
   HkSettingsGroup,
   HkSettingsHint,
   HkSettingsSub,
@@ -32,7 +28,6 @@ import {
 
 import { t, tError } from "@/i18n";
 import { GATEWAY_OFFICIAL_ROOT } from "@/api";
-import ErrorCard from "@/components/base/ErrorCard";
 import SelfhostWizard from "@/components/settings/SelfhostWizard";
 import { entryKey } from "@/stores/pairing";
 import { isMobileApp } from "@/utils/platform";
@@ -76,38 +71,56 @@ export default defineComponent({
         <HkTabs
           block
           variant="segmented"
-          modelValue={gw.usingOfficial.value ? "official" : "custom"}
+          modelValue={gw.rootMode.value}
           onUpdate:modelValue={(v: string) => {
-            if (v === "official") void gw.useOfficialRoot();
+            // Selecting a tab never saves by itself: "official" restores
+            // the official entry (the one free choice), "custom" only
+            // reveals the editor + the deploy/connect actions below.
+            gw.rootMode.value = v === "custom" ? "custom" : "official";
+            if (v === "official" && !gw.usingOfficial.value) {
+              void gw.useOfficialRoot();
+            }
           }}
           tabs={[
             { key: "official", label: t("gateway.rootOfficial") },
             { key: "custom", label: t("gateway.rootCustom") },
           ]}
         />
-        {gw.usingOfficial.value ? (
+        {gw.rootMode.value === "official" ? (
           <div class="settings-modal__pairing-row">
             <code class="settings-modal__pairing-value">{GATEWAY_OFFICIAL_ROOT}</code>
           </div>
         ) : (
-          <div class="gateway-settings__root-edit">
-            <HkInput
-              modelValue={gw.rootDraft.value}
-              onUpdate:modelValue={(v: string) => (gw.rootDraft.value = v)}
-              placeholder="https://gateway.example.com/gateway/"
-              spellcheck={false}
-              submitOnEnter={() => void gw.saveCustomRoot(gw.rootDraft.value)}
-            />
-            <HkButton
-              size="sm"
-              variant="primary"
-              loading={gw.rootBusy.value}
-              disabled={gw.rootBusy.value || !gw.rootDraft.value.trim()}
-              onClick={() => void gw.saveCustomRoot(gw.rootDraft.value)}
-            >
-              {t("gateway.rootSave")}
-            </HkButton>
-          </div>
+          <>
+            <div class="gateway-settings__root-edit">
+              <HkInput
+                modelValue={gw.rootDraft.value}
+                onUpdate:modelValue={(v: string) => (gw.rootDraft.value = v)}
+                placeholder="https://gateway.example.com/gateway/"
+                spellcheck={false}
+                submitOnEnter={() => void gw.saveCustomRoot(gw.rootDraft.value)}
+              />
+              <HkButton
+                size="sm"
+                variant="primary"
+                loading={gw.rootBusy.value}
+                disabled={gw.rootBusy.value || !gw.rootDraft.value.trim()}
+                onClick={() => void gw.saveCustomRoot(gw.rootDraft.value)}
+              >
+                {t("gateway.rootSave")}
+              </HkButton>
+            </div>
+            <HkSettingsHint>{t("gateway.rootConnectExistingHint")}</HkSettingsHint>
+            {!isMobileApp() ? (
+              <div class="settings-modal__pairing-open">
+                <HkButton variant="secondary" onClick={() => (gw.wizardOpen.value = true)}>
+                  <Rocket size={15} />
+                  {t("gateway.selfhostOpen")}
+                </HkButton>
+                <HkSettingsHint>{t("gateway.rootDeployHint")}</HkSettingsHint>
+              </div>
+            ) : null}
+          </>
         )}
         {gw.rootError.value ? (
           <p class="gateway-settings__error">{tError(gw.rootError.value)}</p>
@@ -232,70 +245,6 @@ export default defineComponent({
               </HkButton>
             </div>
           </HkSettingsGroup>
-
-          {/* LEGACY LAN pairing — the pre-gateway route, kept usable under
-              a collapsed disclosure (the Rust code allocation stays for
-              legacy phones; the relay CODE display itself is gone). */}
-          <HkExpansionPanel title={t("gateway.lanLegacyTitle")}>
-            <div class="gateway-settings__lan">
-              <HkSettingsHint>{t("gateway.lanLegacyHint")}</HkSettingsHint>
-              <HkTabs
-                block
-                variant="segmented"
-                modelValue={pairingStore.server?.running ? "on" : "off"}
-                onUpdate:modelValue={(v: string) =>
-                  void (v === "on" ? pairingStore.startServer() : pairingStore.stopServer())
-                }
-                tabs={[
-                  { key: "off", label: t("settings.pairingOff") },
-                  { key: "on", label: t("settings.pairingOn") },
-                ]}
-              />
-              {pairingStore.serverBusy ? (
-                <p class="settings-modal__pairing-busy">
-                  <HkSpinner size="sm" tone="current" />
-                </p>
-              ) : null}
-              {pairingStore.serverError ? (
-                <ErrorCard error={pairingStore.serverError} />
-              ) : null}
-              {pairingStore.server?.running ? (
-                <div class="settings-modal__pairing-live">
-                  <div class="settings-modal__pairing-pin">
-                    <HkOtpInput
-                      length={6}
-                      separated
-                      size="lg"
-                      readonly
-                      modelValue={pairingStore.server.pin ?? ""}
-                      ariaLabel={t("settings.pairingPin")}
-                      style={{ "--hk-otp-font-size": "1.6rem" } as Record<string, string>}
-                    />
-                    <div class="settings-modal__pairing-pin-actions">
-                      <HkButton
-                        size="sm"
-                        variant="secondary"
-                        ariaLabel={t("settings.pairingPinCopy")}
-                        onClick={() => void pairing.copyPin(pairingStore.server?.pin ?? "")}
-                      >
-                        <Copy size={14} />
-                        {t("settings.pairingPinCopy")}
-                      </HkButton>
-                    </div>
-                  </div>
-                  <HkSettingsHint>{t("gateway.lanLegacyPhoneHint")}</HkSettingsHint>
-                  <div class="settings-modal__pairing-row">
-                    <span class="settings-modal__pairing-label">
-                      {t("settings.pairingAddress")}
-                    </span>
-                    <code class="settings-modal__pairing-value">
-                      {pairingStore.server.host}:{pairingStore.server.port}
-                    </code>
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          </HkExpansionPanel>
 
           {/* The wizard window (desktop-only surface). */}
           <SelfhostWizard

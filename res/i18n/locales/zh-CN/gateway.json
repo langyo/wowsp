@@ -85,7 +85,6 @@
   "selfhostLog": "向导输出",
   "selfhostLogEmpty": "还没有输出——运行任意步骤后在此查看。",
   "selfhostStepDone": "完成",
-  "lanLegacyTitle": "LAN 配对（旧）",
-  "lanLegacyHint": "网关之前的旧通道：手机在录像向导里输入本机的局域网地址和 PIN。互联网配对码已移除——请改用上方的手机服务。",
-  "lanLegacyPhoneHint": "在手机上打开「录像 → 从电脑获取」，同一 Wi-Fi 下输入上方 PIN。"
+  "rootConnectExistingHint": "粘贴你已部署（或获取的）网关地址并保存即可连接。",
+  "rootDeployHint": "还没有网关？几分钟即可部署自己的私有网关。"
 }

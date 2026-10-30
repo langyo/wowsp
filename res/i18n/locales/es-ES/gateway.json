@@ -85,7 +85,6 @@
   "selfhostLog": "Salida del asistente",
   "selfhostLogEmpty": "Nada todavía — ejecuta un paso para ver su salida.",
   "selfhostStepDone": "listo",
-  "lanLegacyTitle": "Emparejamiento LAN (antiguo)",
-  "lanLegacyHint": "La ruta anterior a la pasarela: el teléfono escribe la dirección LAN y el PIN de este equipo en el asistente de repeticiones. El código de emparejamiento por Internet desapareció — usa el servicio móvil de arriba.",
-  "lanLegacyPhoneHint": "En el teléfono abre Repetición → Obtener del PC e introduce el PIN en un Wi-Fi compartido."
+  "rootConnectExistingHint": "Pega la URL de la pasarela que desplegaste (o recibiste) y guarda para conectar.",
+  "rootDeployHint": "¿Aún no tienes pasarela? Despliega la tuya en unos minutos."
 }

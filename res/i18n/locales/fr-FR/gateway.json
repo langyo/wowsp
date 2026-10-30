@@ -85,7 +85,6 @@
   "selfhostLog": "Sortie de l'assistant",
   "selfhostLogEmpty": "Rien pour l'instant — lancez une étape pour voir sa sortie.",
   "selfhostStepDone": "terminé",
-  "lanLegacyTitle": "Appairage LAN (ancien)",
-  "lanLegacyHint": "L'ancienne route d'avant la passerelle : le téléphone saisit l'adresse LAN et le PIN de cet ordinateur dans l'assistant de replays. Le code d'appairage Internet a disparu — utilisez plutôt le service mobile ci-dessus.",
-  "lanLegacyPhoneHint": "Sur le téléphone, ouvrez Replay → Obtenir du PC et saisissez le PIN sur un Wi-Fi commun."
+  "rootConnectExistingHint": "Collez l'URL de la passerelle que vous avez déployée (ou reçue) et enregistrez pour vous connecter.",
+  "rootDeployHint": "Pas encore de passerelle ? Déployez la vôtre en quelques minutes."
 }
