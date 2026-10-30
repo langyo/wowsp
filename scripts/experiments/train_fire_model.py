@@ -369,6 +369,7 @@ def load_datasets(paths: list[Path]) -> dict:
         "rows_meta": [] if keep_meta else None,
     }
     rows = data["rows_meta"]
+    attr_rows: list[list[float]] = []
     pose = 0
     for path_ in unique:
         stem = path_.stem
@@ -401,12 +402,18 @@ def load_datasets(paths: list[Path]) -> dict:
                     data["outcome_hits"][pose] = float(h or 0.0)
                     data["outcome_fired"][pose] = float(fshots or 0.0)
                     data["outcome_hp_lost"][pose] = float(hp or 0.0)
+                if ATTR_TABLE:
+                    attr_rows.append(row_attr_vector(row))
                 data["outcome_mode"][pose] = row.get("gameMode")
                 data["outcome_version"][pose] = row.get("replayVersion")
                 if keep_meta:
                     rows.append(row)
                 pose += 1
     assert pose == n, f"row count drifted: {pose} != {n}"
+    if ATTR_TABLE and attr_rows:
+        data["attrs"] = np.array(attr_rows, dtype=np.float32)
+    else:
+        data["attrs"] = None
     return data
 
 
@@ -535,6 +542,71 @@ def build_model(
     return TwoHeadDeepSets()
 
 
+# -- E24: weapon-attribute routing input -----------------------------------
+# The table is built by build_ship_attributes.py out of the gameparams
+# pack: per-ship weapon attributes (concealment, smoke-firing detection,
+# main-battery range, torpedo range, radar/hydro flags) plus team
+# composition aggregates. The router reads SHIP PROPERTIES, never ship
+# names — a mixed-role hull (a gunboat DD, a Hel-style hybrid in a DD
+# slot with cap duty) routes by what it can do and partially activates
+# every expert its attribute profile matches.
+ATTR_DIM = 10
+ATTR_TABLE: dict[int, list[float]] = {}
+
+
+def load_attr_table(path: str) -> None:
+    """E24: load shipId -> weapon-attribute table. Raises when the table
+    is requested but unreadable — a silent empty table would train an
+    E19-shape gate while the run log claims attribute routing."""
+    global ATTR_TABLE
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not raw:
+        raise SystemExit(f"[e24] attr table {path} is empty — refusing to train an E19-shaped gate under an attribute-routing flag")
+    for sid, a in raw.items():
+        ATTR_TABLE[int(sid)] = [
+            float(a.get("vis") or 0) / 20.0,
+            float(a.get("visSmoke") or 0) / 5.0,
+            float(a.get("mbRange") or 0) / 30000.0,
+            float(a.get("torpRange") or 0) / 20000.0,
+            float(a.get("hasRadar") or 0),
+            float(a.get("hasHydro") or 0),
+        ]
+
+
+def _attrs_of(sid) -> list[float]:
+    a = ATTR_TABLE.get(int(sid)) if sid else None
+    # unknown ship -> neutral mid-brightness defaults, not zeros: zeroing
+    # would read as "minimum concealment, no guns" — the worst possible
+    # imputation for an unidentified hull.
+    return a if a is not None else [0.5, 0.0, 0.5, 0.0, 0.0, 0.0]
+
+
+def row_attr_vector(row: dict) -> list[float]:
+    """Own-ship 6 dims + 4 team-composition dims (mean friend/enemy
+    main-battery range and concealment): the router sees what MY ship can
+    do and what the lobby around it looks like."""
+    own = _attrs_of(row.get("shipId"))
+    fr_r = fr_v = en_r = en_v = 0.0
+    fr_n = en_n = 0
+    for e in row.get("friends", []):
+        a = _attrs_of(e.get("shipId"))
+        fr_r += a[2]
+        fr_v += a[0]
+        fr_n += 1
+    for e in row.get("enemies", []):
+        a = _attrs_of(e.get("shipId"))
+        en_r += a[2]
+        en_v += a[0]
+        en_n += 1
+    if fr_n:
+        fr_r /= fr_n
+        fr_v /= fr_n
+    if en_n:
+        en_r /= en_n
+        en_v /= en_n
+    return own + [fr_r, fr_v, en_r, en_v]
+
+
 # ── E19: soft mixture-of-experts with a front router ─────────────────────────
 # The router reads the EXISTING input contract only (the global feature block
 # already carries the own-ship attribute proxies — main-battery range, reload,
@@ -572,7 +644,9 @@ def build_moe_model(
             )
             # Router: global attributes + pooled RAW entity stats + pooled
             # encoded context -> expert weights.
-            self.gate1 = nn.Linear(global_dim + entity_dim + hidden, gate_hidden)
+            self.gate1 = nn.Linear(
+                global_dim + entity_dim + hidden + (ATTR_DIM if ATTR_TABLE else 0), gate_hidden
+            )
             self.gate2 = nn.Linear(gate_hidden, experts)
             self.ctx1 = nn.ModuleList(
                 nn.Linear(hidden + global_dim, hidden) for _ in range(experts)
@@ -582,7 +656,7 @@ def build_moe_model(
             self.head_b = nn.ModuleList(nn.Linear(hidden, 1) for _ in range(experts))
             self.last_gate = None
 
-        def forward(self, entity, global_feat, mask):
+        def forward(self, entity, global_feat, mask, attrs=None):
             m = mask.unsqueeze(-1)
             denom = mask.sum(dim=1, keepdim=True).clamp(min=1.0)
             pooled_raw = (entity * m).sum(dim=1) / denom  # [B, E]
@@ -591,7 +665,13 @@ def build_moe_model(
             pooled_h = (h * m).sum(dim=1) / denom  # [B, H]
             gate_logits = self.gate2(
                 torch.relu(
-                    self.gate1(torch.cat([global_feat, pooled_raw, pooled_h], dim=-1))
+                    self.gate1(
+                        torch.cat(
+                            [global_feat, pooled_raw, pooled_h]
+                            + ([attrs] if attrs is not None else []),
+                            dim=-1,
+                        )
+                    )
                 )
             )  # [B, K]
             w = torch.softmax(gate_logits, dim=-1)
@@ -931,6 +1011,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--out-dir",
         default=str(here / "out/fire_model"),
         help="output directory for fp32.onnx / int8.onnx / metrics.json",
+    )
+    p.add_argument(
+        "--attr-table",
+        default=None,
+        help=(
+            "E24 weapon-attribute routing table (ship_attributes.json from "
+            "build_ship_attributes.py); absent = the E19 gate without "
+            "attributes"
+        ),
     )
     p.add_argument("--epochs", type=int, default=60, help="training epochs (default 60)")
     p.add_argument("--batch-size", type=int, default=128)
@@ -1374,6 +1463,12 @@ def run_selftest() -> int:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.attr_table:
+        load_attr_table(args.attr_table)
+        print(
+            f"[e24] attr table: {len(ATTR_TABLE)} ships from {args.attr_table} "
+            f"(gate input +{ATTR_DIM})"
+        )
     here = Path(__file__).resolve().parent
     if args.selftest:
         return run_selftest()
@@ -1546,7 +1641,12 @@ def main(argv: list[str] | None = None) -> int:
             for s in range(0, len(order), args.batch_size):
                 idx = order[s : s + args.batch_size]
                 b = batch(idx)
-                la, lb = model(b["entity"], b["global"], b["mask"])
+                attrs_b = (
+                    torch.from_numpy(data["attrs"][idx]).to(device)
+                    if data.get("attrs") is not None
+                    else None
+                )
+                la, lb = model(b["entity"], b["global"], b["mask"], attrs_b)
                 loss_a = bce(la, smooth(y_a[idx])).mean()
                 m = b_mask[idx]
                 loss_b = (bce(lb, smooth(y_b[idx])) * m).sum() / m.sum().clamp(min=1.0)
@@ -1580,7 +1680,13 @@ def main(argv: list[str] | None = None) -> int:
         with torch.no_grad():
             gs = []
             for s in range(0, len(val_idx), 16384):
-                model(batch(val_idx[s : s + 16384])["entity"], batch(val_idx[s : s + 16384])["global"], batch(val_idx[s : s + 16384])["mask"])
+                _vi = val_idx[s : s + 16384]
+                _va = (
+                    torch.from_numpy(data["attrs"][_vi]).to(device)
+                    if data.get("attrs") is not None
+                    else None
+                )
+                model(batch(_vi)["entity"], batch(_vi)["global"], batch(_vi)["mask"], _va)
                 gs.append(model.last_gate.mean(dim=0).cpu())
             gate_mean = torch.stack(gs).mean(dim=0).tolist()
         print(f"[e19] held-out mean gate share per expert: {[round(x, 4) for x in gate_mean]}")
@@ -1593,8 +1699,14 @@ def main(argv: list[str] | None = None) -> int:
         outs_b: list = []
         with torch.no_grad():
             for s in range(0, len(idx), 16384):
-                b = batch(idx[s : s + 16384])
-                la, lb = m(b["entity"], b["global"], b["mask"])
+                _si = idx[s : s + 16384]
+                b = batch(_si)
+                _sa = (
+                    torch.from_numpy(data["attrs"][_si]).to(device)
+                    if data.get("attrs") is not None
+                    else None
+                )
+                la, lb = m(b["entity"], b["global"], b["mask"], _sa)
                 outs_a.append(la)
                 outs_b.append(lb)
         return torch.cat(outs_a), torch.cat(outs_b)
@@ -1803,17 +1915,36 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     # ── ONNX export (static shapes, batch 1) ─────────────────────────────
+    # E24: with an attr table loaded the gate takes a 4th input (`attrs`,
+    # [1, ATTR_DIM]) — the export AND every ORT call below must feed it,
+    # or the traced graph and the trained gate disagree (the first E24
+    # full run crashed exactly here: 1x298 vs 308x64).
     model = model.cpu()  # export and all ORT validation run on CPU
+    use_attrs = data["attrs"] is not None
+    # Checkpoint BEFORE export: an export/quantization bug must never cost
+    # the training run (the first E24 full run lost ~2h to exactly that).
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "hidden": args.hidden,
+            "attr_dim": ATTR_DIM if use_attrs else 0,
+            "loss_last": losses[-1],
+        },
+        out_dir / "checkpoint.pt",
+    )
+    print(f"[e12] checkpoint -> {out_dir / 'checkpoint.pt'}")
     fp32_path = out_dir / "fp32.onnx"
     ex = torch.from_numpy(data["entity"][:1])
     gx = torch.from_numpy(data["global"][:1])
     mx = torch.from_numpy(data["mask"][:1])
+    in_names = ["entity", "global_feat", "mask"] + (["attrs"] if use_attrs else [])
+    export_inputs = (ex, gx, mx) + ((torch.from_numpy(data["attrs"][:1]),) if use_attrs else ())
     try:
         torch.onnx.export(
             model,
-            (ex, gx, mx),
+            export_inputs,
             str(fp32_path),
-            input_names=["entity", "global_feat", "mask"],
+            input_names=in_names,
             output_names=["logitA", "logitB"],
             opset_version=17,
             dynamo=False,
@@ -1822,9 +1953,9 @@ def main(argv: list[str] | None = None) -> int:
         # older/newer torch without the dynamo kwarg
         torch.onnx.export(
             model,
-            (ex, gx, mx),
+            export_inputs,
             str(fp32_path),
-            input_names=["entity", "global_feat", "mask"],
+            input_names=in_names,
             output_names=["logitA", "logitB"],
             opset_version=17,
         )
@@ -1858,19 +1989,20 @@ def main(argv: list[str] | None = None) -> int:
     sess_fp32 = ort.InferenceSession(str(fp32_path), so, providers=["CPUExecutionProvider"])
     sess_int8 = ort.InferenceSession(str(int8_path), so, providers=["CPUExecutionProvider"])
 
-    def run_ort(sess, e, g, m):
+    def run_ort(sess, e, g, m, a=None):
         """Batch-1 ORT forward (the export is static batch 1): accepts
-        [N, ...] arrays, loops rows, returns ([N], [N]) logits."""
+        [N, ...] arrays, loops rows, returns ([N], [N]) logits. `a` is the
+        E24 attrs block ([N, ATTR_DIM]) when the export carries one."""
         las, lbs = [], []
         for i in range(len(g)):
-            la, lb = sess.run(
-                None,
-                {
-                    "entity": e[i : i + 1].astype(np.float32),
-                    "global_feat": g[i : i + 1].astype(np.float32),
-                    "mask": m[i : i + 1].astype(np.float32),
-                },
-            )
+            feed = {
+                "entity": e[i : i + 1].astype(np.float32),
+                "global_feat": g[i : i + 1].astype(np.float32),
+                "mask": m[i : i + 1].astype(np.float32),
+            }
+            if a is not None:
+                feed["attrs"] = a[i : i + 1].astype(np.float32)
+            la, lb = sess.run(None, feed)
             las.append(np.asarray(la).reshape(-1)[0])
             lbs.append(np.asarray(lb).reshape(-1)[0])
         return np.array(las), np.array(lbs)
@@ -1884,17 +2016,20 @@ def main(argv: list[str] | None = None) -> int:
     # the full dataset (hours of CPU for machinery evidence only) — the
     # parity/quantization checks run on a deterministic PREFIX subsample.
     vg = min(n, 50_000)
+    va = data["attrs"][:vg] if use_attrs else None
     ort_la, ort_lb = run_ort(
         sess_fp32,
         data["entity"][:vg],
         data["global"][:vg],
         data["mask"][:vg],
+        va,
     )
     q_la, q_lb = run_ort(
         sess_int8,
         data["entity"][:vg],
         data["global"][:vg],
         data["mask"][:vg],
+        va,
     )
 
     # 1. PyTorch vs ORT fp32 parity over the first parity_samples rows
@@ -1939,10 +2074,11 @@ def main(argv: list[str] | None = None) -> int:
         e = data["entity"][i][pidx][None]
         m = data["mask"][i][pidx][None]
         g = data["global"][i][None]
-        pla, plb = run_ort(sess_fp32, e, g, m)
+        ai = data["attrs"][i][None] if use_attrs else None
+        pla, plb = run_ort(sess_fp32, e, g, m, ai)
         perm_max_a = max(perm_max_a, abs(pla[0] - ort_la[i]))
         perm_max_b = max(perm_max_b, abs(plb[0] - ort_lb[i]))
-        qla, qlb = run_ort(sess_int8, e, g, m)
+        qla, qlb = run_ort(sess_int8, e, g, m, ai)
         qperm_max_a = max(qperm_max_a, abs(qla[0] - q_la[i]))
         qperm_max_b = max(qperm_max_b, abs(qlb[0] - q_lb[i]))
     print(
@@ -1958,14 +2094,18 @@ def main(argv: list[str] | None = None) -> int:
         m = data["mask"][i].copy()
         e[:ENEMY_SLOTS] = 0.0
         m[:ENEMY_SLOTS] = 0.0
-        la, lb = run_ort(sess_fp32, e[None], data["global"][i][None], m[None])
+        la, lb = run_ort(
+            sess_fp32, e[None], data["global"][i][None], m[None],
+            data["attrs"][i][None] if use_attrs else None,
+        )
         worst_nan = worst_nan or not (np.isfinite(la).all() and np.isfinite(lb).all())
     e0 = np.zeros((1, SLOTS, data["entity_dim"]), dtype=np.float32)
     m0 = np.zeros((1, SLOTS), dtype=np.float32)
     g0 = np.zeros((1, data["global_dim"]), dtype=np.float32)
-    la0, lb0 = run_ort(sess_fp32, e0, g0, m0)
+    a0 = np.zeros((1, ATTR_DIM), dtype=np.float32) if use_attrs else None
+    la0, lb0 = run_ort(sess_fp32, e0, g0, m0, a0)
     empty_finite = bool(np.isfinite(la0).all() and np.isfinite(lb0).all())
-    la0i, lb0i = run_ort(sess_int8, e0, g0, m0)
+    la0i, lb0i = run_ort(sess_int8, e0, g0, m0, a0)
     empty_finite_int8 = bool(np.isfinite(la0i).all() and np.isfinite(lb0i).all())
     print(
         f"[e12] mask boundary: enemy-masked rows finite={not worst_nan}, "
@@ -1983,10 +2123,15 @@ def main(argv: list[str] | None = None) -> int:
         "entityDim": int(data["entity_dim"]),
         "globalDim": int(data["global_dim"]),
     }
+    if use_attrs:
+        sample["attrs"] = data["attrs"][0].tolist()
+        sample["attrDim"] = ATTR_DIM
     (out_dir / "sample_input.json").write_text(json.dumps(sample), encoding="utf-8")
 
     metrics.update(
         {
+            "attr_routing": bool(use_attrs),
+            "attr_dim": int(ATTR_DIM if use_attrs else 0),
             "parity_fp32_max_dp_a": parity_a,
             "parity_fp32_max_dp_b": parity_b,
             "parity_rows": int(len(check)),

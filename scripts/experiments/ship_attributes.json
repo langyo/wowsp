@@ -1,0 +1,9298 @@
+{
+ "3246831056": {
+  "vis": 5.86,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 17571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3247387984": {
+  "vis": 15.76,
+  "visSmoke": 14.93,
+  "mbRange": 17818.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3247388368": {
+  "vis": 17.951,
+  "visSmoke": 21.5,
+  "mbRange": 27000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3247388464": {
+  "vis": 18.57,
+  "visSmoke": 21.38,
+  "mbRange": 21400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3248404240": {
+  "vis": 11.52,
+  "visSmoke": 5.2,
+  "mbRange": 14060.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3248404464": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 14200.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3248437200": {
+  "vis": 17.26,
+  "visSmoke": 18.92,
+  "mbRange": 21540.0,
+  "torpRange": 5700.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3248437232": {
+  "vis": 15.19,
+  "visSmoke": 15.1,
+  "mbRange": 23257.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3249452400": {
+  "vis": 11.8,
+  "visSmoke": 5.85,
+  "mbRange": 15300.0,
+  "torpRange": 9999.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3249485808": {
+  "vis": 16.24,
+  "visSmoke": 16.19,
+  "mbRange": 17120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3250501424": {
+  "vis": 12.32,
+  "visSmoke": 9.12,
+  "mbRange": 14360.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3256759600": {
+  "vis": 7.39,
+  "visSmoke": 2.73,
+  "mbRange": 10450.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3256760112": {
+  "vis": 8.01,
+  "visSmoke": 3.53,
+  "mbRange": 13335.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3256792528": {
+  "vis": 15.33,
+  "visSmoke": 10.32,
+  "mbRange": 18450.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3256792816": {
+  "vis": 15.27,
+  "visSmoke": 9.89,
+  "mbRange": 17130.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3256792848": {
+  "vis": 12.76,
+  "visSmoke": 9.47,
+  "mbRange": 16500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3256825168": {
+  "vis": 16.0,
+  "visSmoke": 16.33,
+  "mbRange": 20500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3256825584": {
+  "vis": 17.34,
+  "visSmoke": 16.7,
+  "mbRange": 18910.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3256825840": {
+  "vis": 15.54,
+  "visSmoke": 17.04,
+  "mbRange": 24500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3256858064": {
+  "vis": 14.67,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3256858416": {
+  "vis": 13.58,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3257874224": {
+  "vis": 15.11,
+  "visSmoke": 14.25,
+  "mbRange": 21400.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3258890000": {
+  "vis": 11.52,
+  "visSmoke": 5.2,
+  "mbRange": 15860.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3267278288": {
+  "vis": 15.83,
+  "visSmoke": 9.99,
+  "mbRange": 19040.0,
+  "torpRange": 11442.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3309254640": {
+  "vis": 15.89,
+  "visSmoke": 15.82,
+  "mbRange": 23350.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3315513040": {
+  "vis": 12.22,
+  "visSmoke": 7.18,
+  "mbRange": 16230.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3319740208": {
+  "vis": 15.56,
+  "visSmoke": 15.9,
+  "mbRange": 19806.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3319740400": {
+  "vis": 15.2,
+  "visSmoke": 13.65,
+  "mbRange": 21040.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3320755920": {
+  "vis": 10.83,
+  "visSmoke": 6.18,
+  "mbRange": 15670.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3321837360": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 21210.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3330159920": {
+  "vis": 7.59,
+  "visSmoke": 2.82,
+  "mbRange": 11450.0,
+  "torpRange": 17142.9,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3330192848": {
+  "vis": 16.3,
+  "visSmoke": 11.34,
+  "mbRange": 18450.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3330193200": {
+  "vis": 16.16,
+  "visSmoke": 9.77,
+  "mbRange": 18130.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3330193360": {
+  "vis": 11.351,
+  "visSmoke": 5.52,
+  "mbRange": 15300.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3330193392": {
+  "vis": 15.04,
+  "visSmoke": 8.2,
+  "mbRange": 18270.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3330225872": {
+  "vis": 17.61,
+  "visSmoke": 19.45,
+  "mbRange": 26090.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3330225968": {
+  "vis": 12.6,
+  "visSmoke": 15.9,
+  "mbRange": 19806.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3330226128": {
+  "vis": 15.19,
+  "visSmoke": 15.5,
+  "mbRange": 24250.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3330226160": {
+  "vis": 17.29,
+  "visSmoke": 17.38,
+  "mbRange": 23650.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3330258640": {
+  "vis": 14.3,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3330258928": {
+  "vis": 13.49,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3331208656": {
+  "vis": 8.92,
+  "visSmoke": 3.63,
+  "mbRange": 11528.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3331241680": {
+  "vis": 10.83,
+  "visSmoke": 6.18,
+  "mbRange": 15670.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3331274160": {
+  "vis": 14.48,
+  "visSmoke": 13.67,
+  "mbRange": 23900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3331274736": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 23350.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3332289744": {
+  "vis": 11.68,
+  "visSmoke": 5.36,
+  "mbRange": 13182.0,
+  "torpRange": 15700.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3332290256": {
+  "vis": 10.83,
+  "visSmoke": 6.18,
+  "mbRange": 15670.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3332323024": {
+  "vis": 17.46,
+  "visSmoke": 19.27,
+  "mbRange": 26630.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3332323120": {
+  "vis": 15.71,
+  "visSmoke": 12.78,
+  "mbRange": 18460.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3332323152": {
+  "vis": 15.71,
+  "visSmoke": 14.86,
+  "mbRange": 20000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3332323312": {
+  "vis": 16.06,
+  "visSmoke": 16.01,
+  "mbRange": 18270.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3332356080": {
+  "vis": 13.79,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3333371888": {
+  "vis": 17.29,
+  "visSmoke": 17.38,
+  "mbRange": 23650.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3333404368": {
+  "vis": 15.19,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3334420176": {
+  "vis": 15.36,
+  "visSmoke": 13.81,
+  "mbRange": 21400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3335501808": {
+  "vis": 15.38,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3337500656": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 11120.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340154832": {
+  "vis": 6.62,
+  "visSmoke": 2.14,
+  "mbRange": 6000.0,
+  "torpRange": 18571.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3340154864": {
+  "vis": 5.86,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3340645584": {
+  "vis": 7.16,
+  "visSmoke": 2.81,
+  "mbRange": 12750.0,
+  "torpRange": 15700.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3340645680": {
+  "vis": 7.39,
+  "visSmoke": 2.73,
+  "mbRange": 10450.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340645840": {
+  "vis": 7.39,
+  "visSmoke": 2.9,
+  "mbRange": 12300.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340646192": {
+  "vis": 7.51,
+  "visSmoke": 2.92,
+  "mbRange": 12050.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3340678352": {
+  "vis": 13.79,
+  "visSmoke": 8.49,
+  "mbRange": 16100.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340678608": {
+  "vis": 17.46,
+  "visSmoke": 12.66,
+  "mbRange": 19440.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3340678960": {
+  "vis": 15.54,
+  "visSmoke": 10.17,
+  "mbRange": 17830.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3340679120": {
+  "vis": 13.62,
+  "visSmoke": 9.02,
+  "mbRange": 16800.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3340679152": {
+  "vis": 16.06,
+  "visSmoke": 13.15,
+  "mbRange": 18810.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3340711728": {
+  "vis": 17.63,
+  "visSmoke": 18.22,
+  "mbRange": 20610.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3340711888": {
+  "vis": 15.19,
+  "visSmoke": 15.5,
+  "mbRange": 24250.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340711920": {
+  "vis": 15.54,
+  "visSmoke": 17.04,
+  "mbRange": 24500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340744400": {
+  "vis": 13.5,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340744496": {
+  "vis": 13.58,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340744656": {
+  "vis": 14.32,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3340744688": {
+  "vis": 14.49,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3341694416": {
+  "vis": 6.87,
+  "visSmoke": 2.69,
+  "mbRange": 12750.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3341727696": {
+  "vis": 12.76,
+  "visSmoke": 6.58,
+  "mbRange": 15035.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3341727728": {
+  "vis": 15.64,
+  "visSmoke": 11.43,
+  "mbRange": 18590.0,
+  "torpRange": 13071.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3341759696": {
+  "vis": 16.7,
+  "visSmoke": 18.29,
+  "mbRange": 19180.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3341759792": {
+  "vis": 13.03,
+  "visSmoke": 10.26,
+  "mbRange": 19070.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3341759952": {
+  "vis": 14.92,
+  "visSmoke": 14.84,
+  "mbRange": 20830.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3341760240": {
+  "vis": 16.3,
+  "visSmoke": 16.26,
+  "mbRange": 19020.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3341760336": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 24520.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3341760464": {
+  "vis": 14.9,
+  "visSmoke": 13.35,
+  "mbRange": 20860.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3341760496": {
+  "vis": 16.2,
+  "visSmoke": 16.15,
+  "mbRange": 19620.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3342775504": {
+  "vis": 13.29,
+  "visSmoke": 7.03,
+  "mbRange": 17500.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3342776048": {
+  "vis": 14.01,
+  "visSmoke": 8.68,
+  "mbRange": 14680.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3342776112": {
+  "vis": 14.49,
+  "visSmoke": 11.0,
+  "mbRange": 17300.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3342808816": {
+  "vis": 14.49,
+  "visSmoke": 13.68,
+  "mbRange": 18120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3342808880": {
+  "vis": 14.8,
+  "visSmoke": 14.72,
+  "mbRange": 16363.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3342808912": {
+  "vis": 16.24,
+  "visSmoke": 15.42,
+  "mbRange": 22970.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3342809072": {
+  "vis": 15.19,
+  "visSmoke": 15.1,
+  "mbRange": 21143.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3342841552": {
+  "vis": 12.06,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3342841840": {
+  "vis": 14.51,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3343791408": {
+  "vis": 7.21,
+  "visSmoke": 2.66,
+  "mbRange": 9930.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3344905936": {
+  "vis": 15.36,
+  "visSmoke": 13.81,
+  "mbRange": 21400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3345921744": {
+  "vis": 11.87,
+  "visSmoke": 6.92,
+  "mbRange": 12620.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3352180720": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 12500.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3352213296": {
+  "vis": 14.67,
+  "visSmoke": 11.73,
+  "mbRange": 18500.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3352246256": {
+  "vis": 14.1,
+  "visSmoke": 12.59,
+  "mbRange": 20200.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3353294640": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 19280.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3353294672": {
+  "vis": 16.24,
+  "visSmoke": 15.42,
+  "mbRange": 25270.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3353327600": {
+  "vis": 13.79,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3354310384": {
+  "vis": 13.54,
+  "visSmoke": 8.27,
+  "mbRange": 15550.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3355359056": {
+  "vis": 12.92,
+  "visSmoke": 6.72,
+  "mbRange": 15920.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3356374864": {
+  "vis": 6.63,
+  "visSmoke": 2.6,
+  "mbRange": 10180.0,
+  "torpRange": 11425.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3360569040": {
+  "vis": 6.9,
+  "visSmoke": 2.65,
+  "mbRange": 12060.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3360569328": {
+  "vis": 7.32,
+  "visSmoke": 2.82,
+  "mbRange": 12080.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3360601904": {
+  "vis": 15.81,
+  "visSmoke": 10.6,
+  "mbRange": 18510.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3360602096": {
+  "vis": 12.27,
+  "visSmoke": 6.2,
+  "mbRange": 18200.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3360634576": {
+  "vis": 17.951,
+  "visSmoke": 21.5,
+  "mbRange": 27000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3360634864": {
+  "vis": 17.61,
+  "visSmoke": 17.76,
+  "mbRange": 24200.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3361617616": {
+  "vis": 6.9,
+  "visSmoke": 2.65,
+  "mbRange": 0.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3361650384": {
+  "vis": 12.22,
+  "visSmoke": 7.18,
+  "mbRange": 16230.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3361650480": {
+  "vis": 15.54,
+  "visSmoke": 10.17,
+  "mbRange": 17830.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3362666192": {
+  "vis": 7.53,
+  "visSmoke": 2.48,
+  "mbRange": 12463.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3362732016": {
+  "vis": 16.41,
+  "visSmoke": 16.39,
+  "mbRange": 19570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3363747792": {
+  "vis": 11.36,
+  "visSmoke": 5.52,
+  "mbRange": 15419.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3363780304": {
+  "vis": 16.76,
+  "visSmoke": 16.9,
+  "mbRange": 19890.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3374266064": {
+  "vis": 16.76,
+  "visSmoke": 16.9,
+  "mbRange": 19890.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3425613520": {
+  "vis": 14.67,
+  "visSmoke": 11.86,
+  "mbRange": 19090.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3426694960": {
+  "vis": 14.84,
+  "visSmoke": 11.9,
+  "mbRange": 16000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3434526416": {
+  "vis": 7.12,
+  "visSmoke": 2.96,
+  "mbRange": 10000.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3435018064": {
+  "vis": 8.3,
+  "visSmoke": 3.47,
+  "mbRange": 8500.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3435083760": {
+  "vis": 17.29,
+  "visSmoke": 17.38,
+  "mbRange": 23650.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3436066800": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 12500.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3436099280": {
+  "vis": 12.46,
+  "visSmoke": 6.3,
+  "mbRange": 16538.5,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3436099408": {
+  "vis": 14.66,
+  "visSmoke": 12.38,
+  "mbRange": 18100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3436131792": {
+  "vis": 14.96,
+  "visSmoke": 14.87,
+  "mbRange": 18900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3437147600": {
+  "vis": 14.01,
+  "visSmoke": 7.67,
+  "mbRange": 18100.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3437180368": {
+  "vis": 15.3,
+  "visSmoke": 15.21,
+  "mbRange": 20300.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3437180656": {
+  "vis": 14.39,
+  "visSmoke": 13.58,
+  "mbRange": 18300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3437180720": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 21450.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3437180912": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 21100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3438196528": {
+  "vis": 10.48,
+  "visSmoke": 4.89,
+  "mbRange": 16610.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3439605008": {
+  "vis": 11.52,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3445503440": {
+  "vis": 9.12,
+  "visSmoke": 3.73,
+  "mbRange": 11528.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3445503824": {
+  "vis": 9.58,
+  "visSmoke": 4.15,
+  "mbRange": 13560.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3445503984": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 11120.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3445536112": {
+  "vis": 12.13,
+  "visSmoke": 6.09,
+  "mbRange": 15760.0,
+  "torpRange": 19285.7,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3445536208": {
+  "vis": 14.17,
+  "visSmoke": 9.66,
+  "mbRange": 17200.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3445536592": {
+  "vis": 16.06,
+  "visSmoke": 11.54,
+  "mbRange": 19080.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3445536720": {
+  "vis": 12.52,
+  "visSmoke": 11.24,
+  "mbRange": 18320.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3445536752": {
+  "vis": 11.52,
+  "visSmoke": 5.2,
+  "mbRange": 15000.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3445569264": {
+  "vis": 15.19,
+  "visSmoke": 16.69,
+  "mbRange": 19250.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3445569488": {
+  "vis": 16.2,
+  "visSmoke": 16.16,
+  "mbRange": 20860.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3446585136": {
+  "vis": 13.97,
+  "visSmoke": 8.65,
+  "mbRange": 17810.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3447600976": {
+  "vis": 8.21,
+  "visSmoke": 3.42,
+  "mbRange": 12270.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3447666672": {
+  "vis": 15.19,
+  "visSmoke": 15.1,
+  "mbRange": 23257.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3448747280": {
+  "vis": 13.79,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3450812144": {
+  "vis": 13.27,
+  "visSmoke": 10.86,
+  "mbRange": 16370.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3488528080": {
+  "vis": 11.52,
+  "visSmoke": 4.77,
+  "mbRange": 13530.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3499013840": {
+  "vis": 12.6,
+  "visSmoke": 6.52,
+  "mbRange": 16500.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3509499600": {
+  "vis": 12.6,
+  "visSmoke": 6.52,
+  "mbRange": 16500.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3511629776": {
+  "vis": 14.14,
+  "visSmoke": 12.63,
+  "mbRange": 18150.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3518969840": {
+  "vis": 15.89,
+  "visSmoke": 15.82,
+  "mbRange": 23350.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3519985360": {
+  "vis": 12.6,
+  "visSmoke": 6.52,
+  "mbRange": 16500.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3519985392": {
+  "vis": 15.03,
+  "visSmoke": 9.65,
+  "mbRange": 18800.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3520017872": {
+  "vis": 16.2,
+  "visSmoke": 16.15,
+  "mbRange": 19380.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3522049840": {
+  "vis": 6.6,
+  "visSmoke": 3.09,
+  "mbRange": 12470.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3522082512": {
+  "vis": 12.76,
+  "visSmoke": 7.6,
+  "mbRange": 15580.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3522115536": {
+  "vis": 13.37,
+  "visSmoke": 12.66,
+  "mbRange": 18570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3529422032": {
+  "vis": 10.48,
+  "visSmoke": 4.49,
+  "mbRange": 14740.0,
+  "torpRange": 23571.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3529422608": {
+  "vis": 12.42,
+  "visSmoke": 5.76,
+  "mbRange": 13410.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3529422672": {
+  "vis": 16.07,
+  "visSmoke": 13.83,
+  "mbRange": 21200.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3529455312": {
+  "vis": 15.14,
+  "visSmoke": 12.33,
+  "mbRange": 21730.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3529455600": {
+  "vis": 15.89,
+  "visSmoke": 15.82,
+  "mbRange": 23350.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3530437840": {
+  "vis": 9.26,
+  "visSmoke": 3.96,
+  "mbRange": 12782.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3530470608": {
+  "vis": 12.83,
+  "visSmoke": 7.19,
+  "mbRange": 17610.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3530470832": {
+  "vis": 14.2,
+  "visSmoke": 11.29,
+  "mbRange": 18600.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3530471120": {
+  "vis": 10.83,
+  "visSmoke": 6.18,
+  "mbRange": 15670.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3530471152": {
+  "vis": 14.01,
+  "visSmoke": 7.66,
+  "mbRange": 16760.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3530471216": {
+  "vis": 13.79,
+  "visSmoke": 8.49,
+  "mbRange": 18500.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3530471408": {
+  "vis": 15.64,
+  "visSmoke": 11.43,
+  "mbRange": 18590.0,
+  "torpRange": 13071.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3530503632": {
+  "vis": 17.3,
+  "visSmoke": 17.39,
+  "mbRange": 18900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3530504176": {
+  "vis": 16.41,
+  "visSmoke": 17.97,
+  "mbRange": 20040.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3531486416": {
+  "vis": 7.151,
+  "visSmoke": 2.32,
+  "mbRange": 12840.0,
+  "torpRange": 11430.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3531486928": {
+  "vis": 6.46,
+  "visSmoke": 2.49,
+  "mbRange": 11300.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3531519792": {
+  "vis": 10.5,
+  "visSmoke": 4.52,
+  "mbRange": 15000.0,
+  "torpRange": 13568.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3531519984": {
+  "vis": 15.04,
+  "visSmoke": 12.09,
+  "mbRange": 17900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3532535600": {
+  "vis": 6.98,
+  "visSmoke": 3.09,
+  "mbRange": 10470.0,
+  "torpRange": 12128.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3532568272": {
+  "vis": 12.76,
+  "visSmoke": 7.6,
+  "mbRange": 15580.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3532601296": {
+  "vis": 14.84,
+  "visSmoke": 14.76,
+  "mbRange": 18000.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3539384016": {
+  "vis": 7.12,
+  "visSmoke": 2.96,
+  "mbRange": 10000.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3539875632": {
+  "vis": 7.86,
+  "visSmoke": 3.46,
+  "mbRange": 11151.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3539875824": {
+  "vis": 8.03,
+  "visSmoke": 4.6,
+  "mbRange": 12300.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3539907792": {
+  "vis": 14.32,
+  "visSmoke": 12.07,
+  "mbRange": 19590.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3539908304": {
+  "vis": 12.7,
+  "visSmoke": 7.56,
+  "mbRange": 17160.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3539908368": {
+  "vis": 13.34,
+  "visSmoke": 8.78,
+  "mbRange": 18100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3539908400": {
+  "vis": 16.16,
+  "visSmoke": 9.77,
+  "mbRange": 18130.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3539908432": {
+  "vis": 14.34,
+  "visSmoke": 11.42,
+  "mbRange": 20100.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3539908592": {
+  "vis": 15.04,
+  "visSmoke": 8.2,
+  "mbRange": 18270.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3539940688": {
+  "vis": 15.36,
+  "visSmoke": 15.67,
+  "mbRange": 23300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3539940816": {
+  "vis": 17.7,
+  "visSmoke": 17.86,
+  "mbRange": 22300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3539941072": {
+  "vis": 17.61,
+  "visSmoke": 19.45,
+  "mbRange": 26090.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3539941104": {
+  "vis": 16.13,
+  "visSmoke": 10.79,
+  "mbRange": 18900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3539941360": {
+  "vis": 15.2,
+  "visSmoke": 13.65,
+  "mbRange": 21040.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3540923600": {
+  "vis": 7.63,
+  "visSmoke": 3.0,
+  "mbRange": 11820.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540923696": {
+  "vis": 8.32,
+  "visSmoke": 2.84,
+  "mbRange": 12700.0,
+  "torpRange": 15000.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3540924112": {
+  "vis": 6.63,
+  "visSmoke": 2.55,
+  "mbRange": 10950.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540924208": {
+  "vis": 7.2,
+  "visSmoke": 2.66,
+  "mbRange": 11900.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3540924368": {
+  "vis": 7.19,
+  "visSmoke": 2.55,
+  "mbRange": 11580.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540924400": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 12500.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540956368": {
+  "vis": 14.88,
+  "visSmoke": 9.88,
+  "mbRange": 19283.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3540956592": {
+  "vis": 14.0,
+  "visSmoke": 8.68,
+  "mbRange": 17600.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3540956624": {
+  "vis": 15.54,
+  "visSmoke": 10.17,
+  "mbRange": 18500.0,
+  "torpRange": 8571.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3540956880": {
+  "vis": 10.83,
+  "visSmoke": 6.18,
+  "mbRange": 15670.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3540956912": {
+  "vis": 11.03,
+  "visSmoke": 4.99,
+  "mbRange": 13800.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540957008": {
+  "vis": 14.66,
+  "visSmoke": 12.38,
+  "mbRange": 18100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3540957136": {
+  "vis": 11.63,
+  "visSmoke": 5.72,
+  "mbRange": 15760.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3540957168": {
+  "vis": 12.23,
+  "visSmoke": 9.62,
+  "mbRange": 16100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3540989136": {
+  "vis": 16.74,
+  "visSmoke": 15.28,
+  "mbRange": 18570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540989232": {
+  "vis": 15.11,
+  "visSmoke": 14.25,
+  "mbRange": 21400.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540989264": {
+  "vis": 15.56,
+  "visSmoke": 14.73,
+  "mbRange": 18700.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540989360": {
+  "vis": 14.48,
+  "visSmoke": 13.67,
+  "mbRange": 23900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540989392": {
+  "vis": 14.96,
+  "visSmoke": 14.87,
+  "mbRange": 18900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540989648": {
+  "vis": 15.01,
+  "visSmoke": 15.04,
+  "mbRange": 21750.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540989680": {
+  "vis": 16.3,
+  "visSmoke": 16.26,
+  "mbRange": 19120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3540989744": {
+  "vis": 16.18,
+  "visSmoke": 16.13,
+  "mbRange": 20820.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3540989936": {
+  "vis": 15.31,
+  "visSmoke": 15.23,
+  "mbRange": 18800.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3541972176": {
+  "vis": 7.53,
+  "visSmoke": 2.48,
+  "mbRange": 12460.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3541972432": {
+  "vis": 7.9,
+  "visSmoke": 3.48,
+  "mbRange": 11600.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3541972688": {
+  "vis": 6.63,
+  "visSmoke": 2.55,
+  "mbRange": 9409.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3541972816": {
+  "vis": 7.42,
+  "visSmoke": 3.27,
+  "mbRange": 12970.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3541972944": {
+  "vis": 7.2,
+  "visSmoke": 2.66,
+  "mbRange": 12100.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3542004944": {
+  "vis": 11.36,
+  "visSmoke": 5.52,
+  "mbRange": 15980.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3542005040": {
+  "vis": 12.64,
+  "visSmoke": 9.3,
+  "mbRange": 16200.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3542005456": {
+  "vis": 11.52,
+  "visSmoke": 6.66,
+  "mbRange": 15780.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3542005552": {
+  "vis": 14.84,
+  "visSmoke": 8.41,
+  "mbRange": 17520.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3542005712": {
+  "vis": 11.36,
+  "visSmoke": 5.52,
+  "mbRange": 15600.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3542005744": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 15620.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3542037808": {
+  "vis": 14.78,
+  "visSmoke": 15.09,
+  "mbRange": 18500.0,
+  "torpRange": 8571.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3542038256": {
+  "vis": 14.39,
+  "visSmoke": 13.58,
+  "mbRange": 18300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3542038512": {
+  "vis": 14.1,
+  "visSmoke": 12.59,
+  "mbRange": 20200.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3542070992": {
+  "vis": 12.67,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3542071248": {
+  "vis": 11.36,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3543020848": {
+  "vis": 7.5,
+  "visSmoke": 2.78,
+  "mbRange": 11800.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3543021360": {
+  "vis": 7.98,
+  "visSmoke": 3.52,
+  "mbRange": 14047.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3543021520": {
+  "vis": 6.3,
+  "visSmoke": 2.31,
+  "mbRange": 12078.0,
+  "torpRange": 9998.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3543053520": {
+  "vis": 12.67,
+  "visSmoke": 7.06,
+  "mbRange": 17560.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3543053680": {
+  "vis": 11.8,
+  "visSmoke": 5.85,
+  "mbRange": 15300.0,
+  "torpRange": 9999.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3543054032": {
+  "vis": 12.76,
+  "visSmoke": 7.6,
+  "mbRange": 15580.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3543054064": {
+  "vis": 14.26,
+  "visSmoke": 8.91,
+  "mbRange": 16510.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3543054128": {
+  "vis": 10.54,
+  "visSmoke": 4.94,
+  "mbRange": 14470.0,
+  "torpRange": 13568.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3543054320": {
+  "vis": 10.9,
+  "visSmoke": 5.21,
+  "mbRange": 13260.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3543086544": {
+  "vis": 14.84,
+  "visSmoke": 14.01,
+  "mbRange": 20110.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3543086896": {
+  "vis": 15.19,
+  "visSmoke": 11.68,
+  "mbRange": 18870.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3543087056": {
+  "vis": 14.84,
+  "visSmoke": 14.76,
+  "mbRange": 18000.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3543577808": {
+  "vis": 6.4,
+  "visSmoke": 2.03,
+  "mbRange": 6000.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3544102736": {
+  "vis": 12.92,
+  "visSmoke": 6.72,
+  "mbRange": 18000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3544102864": {
+  "vis": 11.1,
+  "visSmoke": 5.35,
+  "mbRange": 14500.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3545183952": {
+  "vis": 15.71,
+  "visSmoke": 14.17,
+  "mbRange": 21200.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3549869360": {
+  "vis": 5.81,
+  "visSmoke": 2.0,
+  "mbRange": 6000.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3549869840": {
+  "vis": 5.8,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 18571.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3549869904": {
+  "vis": 5.74,
+  "visSmoke": 3.71,
+  "mbRange": 13500.0,
+  "torpRange": 17142.9,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3549870032": {
+  "vis": 6.12,
+  "visSmoke": 2.0,
+  "mbRange": 6000.0,
+  "torpRange": 18571.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3549870064": {
+  "vis": 5.86,
+  "visSmoke": 2.28,
+  "mbRange": 6500.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550360880": {
+  "vis": 9.27,
+  "visSmoke": 4.21,
+  "mbRange": 13000.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3550360912": {
+  "vis": 7.13,
+  "visSmoke": 2.51,
+  "mbRange": 12300.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550361040": {
+  "vis": 7.62,
+  "visSmoke": 3.0,
+  "mbRange": 12907.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550361296": {
+  "vis": 7.66,
+  "visSmoke": 2.53,
+  "mbRange": 12401.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550361328": {
+  "vis": 9.83,
+  "visSmoke": 3.51,
+  "mbRange": 11400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550361392": {
+  "vis": 7.86,
+  "visSmoke": 3.46,
+  "mbRange": 11151.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3550361424": {
+  "vis": 7.83,
+  "visSmoke": 2.69,
+  "mbRange": 12370.0,
+  "torpRange": 28571.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550361584": {
+  "vis": 7.41,
+  "visSmoke": 2.86,
+  "mbRange": 12400.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550393552": {
+  "vis": 13.79,
+  "visSmoke": 8.49,
+  "mbRange": 16100.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550393648": {
+  "vis": 11.5,
+  "visSmoke": 5.63,
+  "mbRange": 15200.0,
+  "torpRange": 19285.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3550393680": {
+  "vis": 11.8,
+  "visSmoke": 5.85,
+  "mbRange": 17800.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3550393712": {
+  "vis": 12.27,
+  "visSmoke": 6.2,
+  "mbRange": 14510.0,
+  "torpRange": 8571.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3550393808": {
+  "vis": 13.62,
+  "visSmoke": 12.85,
+  "mbRange": 19100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3550394064": {
+  "vis": 13.0,
+  "visSmoke": 7.82,
+  "mbRange": 14400.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3550394096": {
+  "vis": 13.54,
+  "visSmoke": 11.09,
+  "mbRange": 18400.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3550394128": {
+  "vis": 13.34,
+  "visSmoke": 8.78,
+  "mbRange": 18100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3550394160": {
+  "vis": 15.46,
+  "visSmoke": 12.52,
+  "mbRange": 18500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3550394192": {
+  "vis": 16.01,
+  "visSmoke": 13.1,
+  "mbRange": 20300.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550394352": {
+  "vis": 13.44,
+  "visSmoke": 8.18,
+  "mbRange": 15830.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3550426448": {
+  "vis": 15.72,
+  "visSmoke": 15.64,
+  "mbRange": 25310.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550426480": {
+  "vis": 14.9,
+  "visSmoke": 10.21,
+  "mbRange": 20400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550426576": {
+  "vis": 16.53,
+  "visSmoke": 18.1,
+  "mbRange": 19540.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550426832": {
+  "vis": 17.46,
+  "visSmoke": 19.27,
+  "mbRange": 26630.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550426864": {
+  "vis": 17.34,
+  "visSmoke": 16.7,
+  "mbRange": 18910.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550426896": {
+  "vis": 15.03,
+  "visSmoke": 15.34,
+  "mbRange": 22200.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550427120": {
+  "vis": 16.41,
+  "visSmoke": 17.97,
+  "mbRange": 23530.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550459216": {
+  "vis": 11.36,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550459600": {
+  "vis": 14.3,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3550459856": {
+  "vis": 11.36,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551409520": {
+  "vis": 7.38,
+  "visSmoke": 2.45,
+  "mbRange": 12100.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551409616": {
+  "vis": 6.87,
+  "visSmoke": 2.69,
+  "mbRange": 12750.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551409968": {
+  "vis": 7.2,
+  "visSmoke": 2.79,
+  "mbRange": 11860.0,
+  "torpRange": 11425.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551410160": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 12850.0,
+  "torpRange": 19585.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3551442384": {
+  "vis": 16.94,
+  "visSmoke": 16.97,
+  "mbRange": 20950.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3551442640": {
+  "vis": 12.76,
+  "visSmoke": 7.6,
+  "mbRange": 15580.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3551474896": {
+  "vis": 16.86,
+  "visSmoke": 16.88,
+  "mbRange": 23100.0,
+  "torpRange": 14286.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551475120": {
+  "vis": 16.76,
+  "visSmoke": 16.77,
+  "mbRange": 19020.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551475152": {
+  "vis": 16.2,
+  "visSmoke": 16.15,
+  "mbRange": 19380.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551475440": {
+  "vis": 16.3,
+  "visSmoke": 16.26,
+  "mbRange": 19020.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3551475536": {
+  "vis": 16.24,
+  "visSmoke": 16.19,
+  "mbRange": 23420.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552457936": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 12100.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552458032": {
+  "vis": 7.4,
+  "visSmoke": 2.45,
+  "mbRange": 11500.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3552458448": {
+  "vis": 6.63,
+  "visSmoke": 2.55,
+  "mbRange": 9409.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552458512": {
+  "vis": 7.38,
+  "visSmoke": 2.73,
+  "mbRange": 11690.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3552490832": {
+  "vis": 13.26,
+  "visSmoke": 8.03,
+  "mbRange": 15100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3552491216": {
+  "vis": 11.52,
+  "visSmoke": 6.66,
+  "mbRange": 15780.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3552491280": {
+  "vis": 11.32,
+  "visSmoke": 4.94,
+  "mbRange": 14100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552491344": {
+  "vis": 13.74,
+  "visSmoke": 10.88,
+  "mbRange": 18760.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3552491472": {
+  "vis": 11.0,
+  "visSmoke": 5.28,
+  "mbRange": 15420.0,
+  "torpRange": 11442.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3552491504": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 15990.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3552523472": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 23349.7,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552523984": {
+  "vis": 15.71,
+  "visSmoke": 14.17,
+  "mbRange": 21198.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552524016": {
+  "vis": 14.49,
+  "visSmoke": 13.68,
+  "mbRange": 18120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552524080": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 21210.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552524240": {
+  "vis": 14.61,
+  "visSmoke": 13.07,
+  "mbRange": 17100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3552524272": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 21100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3553507120": {
+  "vis": 6.2,
+  "visSmoke": 2.73,
+  "mbRange": 11517.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3553539792": {
+  "vis": 12.76,
+  "visSmoke": 7.6,
+  "mbRange": 15580.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3553539824": {
+  "vis": 9.6,
+  "visSmoke": 4.4,
+  "mbRange": 17520.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3553540048": {
+  "vis": 11.0,
+  "visSmoke": 5.28,
+  "mbRange": 15420.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3553540080": {
+  "vis": 10.66,
+  "visSmoke": 4.6,
+  "mbRange": 12400.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3553572048": {
+  "vis": 15.07,
+  "visSmoke": 14.98,
+  "mbRange": 18840.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3553572144": {
+  "vis": 14.16,
+  "visSmoke": 12.2,
+  "mbRange": 17430.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3553572560": {
+  "vis": 15.71,
+  "visSmoke": 14.17,
+  "mbRange": 21198.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3553572848": {
+  "vis": 13.09,
+  "visSmoke": 11.71,
+  "mbRange": 19900.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3554555600": {
+  "vis": 6.81,
+  "visSmoke": 2.62,
+  "mbRange": 9000.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3554588464": {
+  "vis": 12.76,
+  "visSmoke": 9.47,
+  "mbRange": 16010.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3554621136": {
+  "vis": 15.71,
+  "visSmoke": 14.17,
+  "mbRange": 21198.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3555603760": {
+  "vis": 6.32,
+  "visSmoke": 2.32,
+  "mbRange": 9700.0,
+  "torpRange": 14286.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3555636944": {
+  "vis": 12.76,
+  "visSmoke": 7.6,
+  "mbRange": 15580.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3555669712": {
+  "vis": 15.71,
+  "visSmoke": 14.17,
+  "mbRange": 21198.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3555670000": {
+  "vis": 15.54,
+  "visSmoke": 13.99,
+  "mbRange": 16420.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3556653040": {
+  "vis": 6.81,
+  "visSmoke": 2.21,
+  "mbRange": 8630.0,
+  "torpRange": 7842.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3560912592": {
+  "vis": 17.46,
+  "visSmoke": 19.27,
+  "mbRange": 26630.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3655218480": {
+  "vis": 7.59,
+  "visSmoke": 2.82,
+  "mbRange": 11450.0,
+  "torpRange": 17142.9,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3655218960": {
+  "vis": 7.33,
+  "visSmoke": 3.23,
+  "mbRange": 13260.0,
+  "torpRange": 17155.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3655218992": {
+  "vis": 7.6,
+  "visSmoke": 2.58,
+  "mbRange": 12570.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3655219184": {
+  "vis": 8.03,
+  "visSmoke": 3.13,
+  "mbRange": 12600.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3655251408": {
+  "vis": 12.4,
+  "visSmoke": 5.91,
+  "mbRange": 13800.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3655251664": {
+  "vis": 9.78,
+  "visSmoke": 4.28,
+  "mbRange": 11200.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3655251920": {
+  "vis": 14.14,
+  "visSmoke": 9.49,
+  "mbRange": 16850.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3655251952": {
+  "vis": 16.06,
+  "visSmoke": 13.15,
+  "mbRange": 18810.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3655284528": {
+  "vis": 17.11,
+  "visSmoke": 14.32,
+  "mbRange": 21970.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3655284688": {
+  "vis": 13.09,
+  "visSmoke": 16.44,
+  "mbRange": 17570.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3655317296": {
+  "vis": 13.58,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3656333264": {
+  "vis": 15.11,
+  "visSmoke": 15.42,
+  "mbRange": 22220.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3658397424": {
+  "vis": 13.54,
+  "visSmoke": 8.27,
+  "mbRange": 15550.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3659445712": {
+  "vis": 12.06,
+  "visSmoke": 5.99,
+  "mbRange": 16310.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3660461904": {
+  "vis": 6.98,
+  "visSmoke": 0.0,
+  "mbRange": 11720.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3660462032": {
+  "vis": 6.46,
+  "visSmoke": 0.0,
+  "mbRange": 10790.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3666786288": {
+  "vis": 15.04,
+  "visSmoke": 12.09,
+  "mbRange": 18970.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3666818864": {
+  "vis": 16.76,
+  "visSmoke": 16.0,
+  "mbRange": 21340.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3666818896": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 24520.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3666819056": {
+  "vis": 16.41,
+  "visSmoke": 16.39,
+  "mbRange": 19570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3667801296": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 11550.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3667801808": {
+  "vis": 6.63,
+  "visSmoke": 2.55,
+  "mbRange": 10950.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3667802064": {
+  "vis": 6.76,
+  "visSmoke": 2.48,
+  "mbRange": 11890.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3667834576": {
+  "vis": 11.52,
+  "visSmoke": 6.66,
+  "mbRange": 15780.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3667834672": {
+  "vis": 14.84,
+  "visSmoke": 8.41,
+  "mbRange": 17520.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3667867440": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 21450.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3667867632": {
+  "vis": 16.06,
+  "visSmoke": 16.01,
+  "mbRange": 18270.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3667899856": {
+  "vis": 13.16,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3667900112": {
+  "vis": 12.22,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3667900208": {
+  "vis": 15.71,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3667900400": {
+  "vis": 11.87,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3668850672": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 12880.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3668883440": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 13560.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3668916016": {
+  "vis": 15.19,
+  "visSmoke": 11.68,
+  "mbRange": 19870.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3669898960": {
+  "vis": 6.81,
+  "visSmoke": 2.62,
+  "mbRange": 9000.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3669964624": {
+  "vis": 16.41,
+  "visSmoke": 14.2,
+  "mbRange": 18210.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3676223184": {
+  "vis": 14.67,
+  "visSmoke": 11.86,
+  "mbRange": 21290.0,
+  "torpRange": 28571.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3676223216": {
+  "vis": 12.76,
+  "visSmoke": 8.75,
+  "mbRange": 16280.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3679369200": {
+  "vis": 10.66,
+  "visSmoke": 4.6,
+  "mbRange": 13344.0,
+  "torpRange": 6428.6,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3699291600": {
+  "vis": 12.84,
+  "visSmoke": 6.66,
+  "mbRange": 17330.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3708761808": {
+  "vis": 15.89,
+  "visSmoke": 15.94,
+  "mbRange": 22300.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3709777360": {
+  "vis": 14.01,
+  "visSmoke": 7.67,
+  "mbRange": 18100.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3709777872": {
+  "vis": 11.74,
+  "visSmoke": 7.5,
+  "mbRange": 16100.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3719247568": {
+  "vis": 14.14,
+  "visSmoke": 15.68,
+  "mbRange": 23000.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3720263120": {
+  "vis": 13.58,
+  "visSmoke": 7.82,
+  "mbRange": 18480.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3720263632": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 15700.0,
+  "torpRange": 11400.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3720263664": {
+  "vis": 11.43,
+  "visSmoke": 5.13,
+  "mbRange": 15610.0,
+  "torpRange": 6428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3720296272": {
+  "vis": 13.93,
+  "visSmoke": 11.05,
+  "mbRange": 22690.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3721344976": {
+  "vis": 12.82,
+  "visSmoke": 12.2,
+  "mbRange": 16900.0,
+  "torpRange": 14284.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3729732816": {
+  "vis": 14.84,
+  "visSmoke": 15.15,
+  "mbRange": 21130.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3729733328": {
+  "vis": 16.5,
+  "visSmoke": 16.6,
+  "mbRange": 20570.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3729733616": {
+  "vis": 15.86,
+  "visSmoke": 10.49,
+  "mbRange": 18480.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3730748880": {
+  "vis": 13.58,
+  "visSmoke": 7.82,
+  "mbRange": 18480.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3730749392": {
+  "vis": 11.48,
+  "visSmoke": 6.63,
+  "mbRange": 16800.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3730749424": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 15860.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3730781648": {
+  "vis": 16.14,
+  "visSmoke": 16.09,
+  "mbRange": 18380.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3730782000": {
+  "vis": 15.71,
+  "visSmoke": 12.78,
+  "mbRange": 18460.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3730782032": {
+  "vis": 15.71,
+  "visSmoke": 14.86,
+  "mbRange": 20000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3730782192": {
+  "vis": 15.09,
+  "visSmoke": 15.0,
+  "mbRange": 17420.0,
+  "torpRange": 13071.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3730814960": {
+  "vis": 13.79,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3731830736": {
+  "vis": 14.14,
+  "visSmoke": 14.49,
+  "mbRange": 19070.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3732879312": {
+  "vis": 13.97,
+  "visSmoke": 13.19,
+  "mbRange": 19760.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3739137488": {
+  "vis": 12.4,
+  "visSmoke": 5.91,
+  "mbRange": 13800.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3740153648": {
+  "vis": 7.2,
+  "visSmoke": 2.79,
+  "mbRange": 11860.0,
+  "torpRange": 11425.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3740153840": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 12850.0,
+  "torpRange": 19585.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3740185808": {
+  "vis": 14.67,
+  "visSmoke": 11.73,
+  "mbRange": 18500.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3740186416": {
+  "vis": 12.59,
+  "visSmoke": 9.91,
+  "mbRange": 18360.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3740218576": {
+  "vis": 16.7,
+  "visSmoke": 18.29,
+  "mbRange": 19180.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3740219088": {
+  "vis": 15.89,
+  "visSmoke": 15.94,
+  "mbRange": 22300.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3741202128": {
+  "vis": 6.63,
+  "visSmoke": 2.96,
+  "mbRange": 11400.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3741234640": {
+  "vis": 11.17,
+  "visSmoke": 5.4,
+  "mbRange": 15610.0,
+  "torpRange": 11430.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3741234992": {
+  "vis": 14.49,
+  "visSmoke": 11.0,
+  "mbRange": 17300.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3741235152": {
+  "vis": 11.0,
+  "visSmoke": 5.28,
+  "mbRange": 15420.0,
+  "torpRange": 11442.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3741235184": {
+  "vis": 15.04,
+  "visSmoke": 12.09,
+  "mbRange": 18000.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3741267408": {
+  "vis": 16.94,
+  "visSmoke": 16.97,
+  "mbRange": 19570.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3741267760": {
+  "vis": 15.02,
+  "visSmoke": 13.29,
+  "mbRange": 21120.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3741267792": {
+  "vis": 15.89,
+  "visSmoke": 15.82,
+  "mbRange": 25020.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3741267952": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 21100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3741300688": {
+  "vis": 11.36,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3741300720": {
+  "vis": 11.87,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3742316496": {
+  "vis": 14.14,
+  "visSmoke": 12.63,
+  "mbRange": 18150.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3742316528": {
+  "vis": 14.0,
+  "visSmoke": 13.96,
+  "mbRange": 17120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3743332304": {
+  "vis": 10.22,
+  "visSmoke": 4.43,
+  "mbRange": 14100.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3743364816": {
+  "vis": 15.36,
+  "visSmoke": 13.81,
+  "mbRange": 21400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3743365072": {
+  "vis": 13.97,
+  "visSmoke": 13.19,
+  "mbRange": 19760.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3744380368": {
+  "vis": 13.79,
+  "visSmoke": 8.01,
+  "mbRange": 16319.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3746477520": {
+  "vis": 10.3,
+  "visSmoke": 4.82,
+  "mbRange": 11240.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3749623248": {
+  "vis": 18.16,
+  "visSmoke": 15.58,
+  "mbRange": 20350.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3749623504": {
+  "vis": 14.67,
+  "visSmoke": 11.86,
+  "mbRange": 21290.0,
+  "torpRange": 28571.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3750638896": {
+  "vis": 6.7,
+  "visSmoke": 2.98,
+  "mbRange": 9460.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3750639408": {
+  "vis": 7.04,
+  "visSmoke": 2.72,
+  "mbRange": 11110.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3750639568": {
+  "vis": 7.03,
+  "visSmoke": 2.47,
+  "mbRange": 12510.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3750639600": {
+  "vis": 7.54,
+  "visSmoke": 2.91,
+  "mbRange": 12090.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3750672080": {
+  "vis": 14.67,
+  "visSmoke": 11.86,
+  "mbRange": 19090.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3750672112": {
+  "vis": 13.54,
+  "visSmoke": 11.09,
+  "mbRange": 17010.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3750672176": {
+  "vis": 14.67,
+  "visSmoke": 11.73,
+  "mbRange": 18500.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3750672368": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 14860.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3750704336": {
+  "vis": 16.24,
+  "visSmoke": 15.42,
+  "mbRange": 20300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3750704848": {
+  "vis": 16.86,
+  "visSmoke": 17.01,
+  "mbRange": 20330.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3750704880": {
+  "vis": 16.3,
+  "visSmoke": 16.26,
+  "mbRange": 19120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3750705136": {
+  "vis": 16.41,
+  "visSmoke": 16.39,
+  "mbRange": 19570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751196368": {
+  "vis": 7.12,
+  "visSmoke": 2.96,
+  "mbRange": 8500.0,
+  "torpRange": 17871.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3751687376": {
+  "vis": 7.53,
+  "visSmoke": 2.48,
+  "mbRange": 12460.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751687888": {
+  "vis": 6.63,
+  "visSmoke": 2.55,
+  "mbRange": 10950.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751687984": {
+  "vis": 7.68,
+  "visSmoke": 2.99,
+  "mbRange": 12120.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3751720144": {
+  "vis": 13.27,
+  "visSmoke": 8.03,
+  "mbRange": 17580.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751720400": {
+  "vis": 12.84,
+  "visSmoke": 6.66,
+  "mbRange": 17330.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3751720752": {
+  "vis": 14.84,
+  "visSmoke": 8.41,
+  "mbRange": 17520.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3751720912": {
+  "vis": 11.36,
+  "visSmoke": 5.52,
+  "mbRange": 15600.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3751720944": {
+  "vis": 13.21,
+  "visSmoke": 7.98,
+  "mbRange": 15600.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3751753168": {
+  "vis": 16.14,
+  "visSmoke": 16.09,
+  "mbRange": 18380.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751753520": {
+  "vis": 15.71,
+  "visSmoke": 12.78,
+  "mbRange": 18460.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751753552": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 24520.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751753712": {
+  "vis": 16.06,
+  "visSmoke": 16.01,
+  "mbRange": 18270.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751786192": {
+  "vis": 12.22,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751786288": {
+  "vis": 15.71,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751786448": {
+  "vis": 13.97,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3751786480": {
+  "vis": 14.14,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3752736112": {
+  "vis": 6.89,
+  "visSmoke": 2.53,
+  "mbRange": 12320.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3752736208": {
+  "vis": 8.42,
+  "visSmoke": 3.37,
+  "mbRange": 10500.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3752736720": {
+  "vis": 6.76,
+  "visSmoke": 2.48,
+  "mbRange": 11890.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3752769232": {
+  "vis": 12.4,
+  "visSmoke": 7.32,
+  "mbRange": 15280.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3752769264": {
+  "vis": 9.6,
+  "visSmoke": 4.4,
+  "mbRange": 17520.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3752769328": {
+  "vis": 12.77,
+  "visSmoke": 6.56,
+  "mbRange": 14000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3752802000": {
+  "vis": 16.33,
+  "visSmoke": 14.84,
+  "mbRange": 20310.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3752802096": {
+  "vis": 14.59,
+  "visSmoke": 13.74,
+  "mbRange": 17400.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3752802256": {
+  "vis": 14.84,
+  "visSmoke": 14.76,
+  "mbRange": 18210.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3752802288": {
+  "vis": 13.44,
+  "visSmoke": 12.01,
+  "mbRange": 18620.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3753785136": {
+  "vis": 7.33,
+  "visSmoke": 3.23,
+  "mbRange": 11870.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3753817456": {
+  "vis": 10.66,
+  "visSmoke": 5.04,
+  "mbRange": 14000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3753817904": {
+  "vis": 9.67,
+  "visSmoke": 4.4,
+  "mbRange": 13500.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3753817936": {
+  "vis": 13.8,
+  "visSmoke": 8.5,
+  "mbRange": 15040.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3753818064": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 14500.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3753850320": {
+  "vis": 15.02,
+  "visSmoke": 12.47,
+  "mbRange": 17470.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3754866128": {
+  "vis": 11.62,
+  "visSmoke": 6.25,
+  "mbRange": 16200.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3756963280": {
+  "vis": 10.66,
+  "visSmoke": 5.04,
+  "mbRange": 10980.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3759585072": {
+  "vis": 5.4,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3759585264": {
+  "vis": 5.76,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3760075984": {
+  "vis": 7.16,
+  "visSmoke": 2.81,
+  "mbRange": 12750.0,
+  "torpRange": 15700.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3760076080": {
+  "vis": 7.93,
+  "visSmoke": 2.97,
+  "mbRange": 12350.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3760076144": {
+  "vis": 7.18,
+  "visSmoke": 2.53,
+  "mbRange": 12780.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3760076208": {
+  "vis": 7.68,
+  "visSmoke": 3.11,
+  "mbRange": 12620.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760076496": {
+  "vis": 7.51,
+  "visSmoke": 2.9,
+  "mbRange": 11620.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760076752": {
+  "vis": 8.16,
+  "visSmoke": 3.19,
+  "mbRange": 12100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3760076784": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 11724.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760108912": {
+  "vis": 12.13,
+  "visSmoke": 6.09,
+  "mbRange": 15760.0,
+  "torpRange": 19285.7,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3760109008": {
+  "vis": 17.58,
+  "visSmoke": 14.87,
+  "mbRange": 20350.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3760109264": {
+  "vis": 14.67,
+  "visSmoke": 11.86,
+  "mbRange": 19090.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3760109296": {
+  "vis": 12.76,
+  "visSmoke": 8.75,
+  "mbRange": 16280.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760109392": {
+  "vis": 12.06,
+  "visSmoke": 5.59,
+  "mbRange": 15000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3760109520": {
+  "vis": 11.351,
+  "visSmoke": 5.52,
+  "mbRange": 15300.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3760109552": {
+  "vis": 15.04,
+  "visSmoke": 12.09,
+  "mbRange": 18970.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3760141776": {
+  "vis": 16.24,
+  "visSmoke": 16.19,
+  "mbRange": 24680.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760142032": {
+  "vis": 17.46,
+  "visSmoke": 20.92,
+  "mbRange": 26630.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760142064": {
+  "vis": 15.19,
+  "visSmoke": 16.69,
+  "mbRange": 19250.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760142160": {
+  "vis": 16.24,
+  "visSmoke": 15.42,
+  "mbRange": 24800.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760142288": {
+  "vis": 15.19,
+  "visSmoke": 16.69,
+  "mbRange": 21500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760142320": {
+  "vis": 17.29,
+  "visSmoke": 18.97,
+  "mbRange": 21650.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760174896": {
+  "vis": 13.58,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760175056": {
+  "vis": 15.19,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3760175088": {
+  "vis": 15.38,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761124656": {
+  "vis": 7.11,
+  "visSmoke": 2.73,
+  "mbRange": 12140.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761125104": {
+  "vis": 8.81,
+  "visSmoke": 3.65,
+  "mbRange": 11300.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761125136": {
+  "vis": 7.93,
+  "visSmoke": 2.97,
+  "mbRange": 12350.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761125360": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 12600.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761157328": {
+  "vis": 11.0,
+  "visSmoke": 4.88,
+  "mbRange": 14100.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761157488": {
+  "vis": 11.58,
+  "visSmoke": 5.34,
+  "mbRange": 15570.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761157584": {
+  "vis": 15.71,
+  "visSmoke": 12.78,
+  "mbRange": 18190.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3761157904": {
+  "vis": 12.14,
+  "visSmoke": 7.12,
+  "mbRange": 15580.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761157936": {
+  "vis": 14.67,
+  "visSmoke": 13.81,
+  "mbRange": 20640.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761157968": {
+  "vis": 14.84,
+  "visSmoke": 11.9,
+  "mbRange": 18560.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761158128": {
+  "vis": 11.54,
+  "visSmoke": 5.65,
+  "mbRange": 15680.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761190096": {
+  "vis": 16.67,
+  "visSmoke": 16.8,
+  "mbRange": 25410.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761190192": {
+  "vis": 13.03,
+  "visSmoke": 10.26,
+  "mbRange": 19070.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761190352": {
+  "vis": 14.92,
+  "visSmoke": 14.84,
+  "mbRange": 20830.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761190608": {
+  "vis": 17.46,
+  "visSmoke": 19.27,
+  "mbRange": 26500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761190640": {
+  "vis": 16.3,
+  "visSmoke": 16.26,
+  "mbRange": 19020.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761190704": {
+  "vis": 16.76,
+  "visSmoke": 16.0,
+  "mbRange": 21340.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761190864": {
+  "vis": 14.9,
+  "visSmoke": 13.35,
+  "mbRange": 20860.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3761190896": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 23350.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3761681872": {
+  "vis": 5.5,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 17571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761682128": {
+  "vis": 5.94,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14000.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3761682384": {
+  "vis": 5.67,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14298.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762173136": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 11550.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762173232": {
+  "vis": 7.29,
+  "visSmoke": 2.69,
+  "mbRange": 11610.0,
+  "torpRange": 17142.9,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "3762173744": {
+  "vis": 7.51,
+  "visSmoke": 3.31,
+  "mbRange": 11840.0,
+  "torpRange": 12128.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762173776": {
+  "vis": 8.21,
+  "visSmoke": 3.42,
+  "mbRange": 12270.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762173936": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 12100.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762205904": {
+  "vis": 13.29,
+  "visSmoke": 7.03,
+  "mbRange": 17500.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762206032": {
+  "vis": 11.9,
+  "visSmoke": 5.92,
+  "mbRange": 16060.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762206128": {
+  "vis": 10.4,
+  "visSmoke": 5.9,
+  "mbRange": 15200.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762206160": {
+  "vis": 14.06,
+  "visSmoke": 7.72,
+  "mbRange": 19100.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762206480": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 16060.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762206512": {
+  "vis": 14.49,
+  "visSmoke": 9.13,
+  "mbRange": 17520.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762206544": {
+  "vis": 11.87,
+  "visSmoke": 5.9,
+  "mbRange": 16440.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762206672": {
+  "vis": 11.74,
+  "visSmoke": 7.5,
+  "mbRange": 16100.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762206704": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 15830.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3762238800": {
+  "vis": 14.22,
+  "visSmoke": 13.42,
+  "mbRange": 18550.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762238928": {
+  "vis": 13.52,
+  "visSmoke": 12.07,
+  "mbRange": 18300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762239184": {
+  "vis": 17.29,
+  "visSmoke": 17.5,
+  "mbRange": 19380.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762239216": {
+  "vis": 14.49,
+  "visSmoke": 13.68,
+  "mbRange": 18120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762239280": {
+  "vis": 14.84,
+  "visSmoke": 11.9,
+  "mbRange": 19090.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3762239312": {
+  "vis": 16.24,
+  "visSmoke": 15.42,
+  "mbRange": 23820.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762239440": {
+  "vis": 15.56,
+  "visSmoke": 14.73,
+  "mbRange": 20020.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762239472": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 21100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762271440": {
+  "vis": 11.87,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762271696": {
+  "vis": 13.16,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762271984": {
+  "vis": 13.44,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762272048": {
+  "vis": 15.71,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762272208": {
+  "vis": 13.09,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762272240": {
+  "vis": 14.14,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3762730256": {
+  "vis": 5.82,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 25714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763221872": {
+  "vis": 6.3,
+  "visSmoke": 2.31,
+  "mbRange": 12320.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3763221968": {
+  "vis": 7.33,
+  "visSmoke": 2.88,
+  "mbRange": 11560.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763222224": {
+  "vis": 6.79,
+  "visSmoke": 2.61,
+  "mbRange": 11810.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763222256": {
+  "vis": 6.98,
+  "visSmoke": 2.89,
+  "mbRange": 12650.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763254608": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 13560.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3763254992": {
+  "vis": 11.76,
+  "visSmoke": 5.36,
+  "mbRange": 13570.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3763255024": {
+  "vis": 10.83,
+  "visSmoke": 5.16,
+  "mbRange": 15060.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3763255088": {
+  "vis": 10.48,
+  "visSmoke": 4.89,
+  "mbRange": 16610.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3763255120": {
+  "vis": 11.17,
+  "visSmoke": 8.85,
+  "mbRange": 16770.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3763255248": {
+  "vis": 11.0,
+  "visSmoke": 5.28,
+  "mbRange": 15420.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3763255280": {
+  "vis": 12.32,
+  "visSmoke": 7.26,
+  "mbRange": 16910.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3763287408": {
+  "vis": 12.78,
+  "visSmoke": 12.17,
+  "mbRange": 15650.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763287760": {
+  "vis": 16.76,
+  "visSmoke": 16.9,
+  "mbRange": 19880.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763287856": {
+  "vis": 15.19,
+  "visSmoke": 11.68,
+  "mbRange": 19870.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763287888": {
+  "vis": 16.41,
+  "visSmoke": 14.2,
+  "mbRange": 19100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763288016": {
+  "vis": 15.71,
+  "visSmoke": 14.89,
+  "mbRange": 18570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763288048": {
+  "vis": 15.93,
+  "visSmoke": 15.86,
+  "mbRange": 16060.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763320528": {
+  "vis": 12.22,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3763320816": {
+  "vis": 11.87,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764270288": {
+  "vis": 6.98,
+  "visSmoke": 2.73,
+  "mbRange": 11890.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764270416": {
+  "vis": 6.63,
+  "visSmoke": 2.43,
+  "mbRange": 10180.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764270832": {
+  "vis": 6.98,
+  "visSmoke": 2.57,
+  "mbRange": 12080.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764270896": {
+  "vis": 6.81,
+  "visSmoke": 2.63,
+  "mbRange": 11640.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764270928": {
+  "vis": 7.51,
+  "visSmoke": 3.11,
+  "mbRange": 12780.0,
+  "torpRange": 11400.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764271056": {
+  "vis": 6.63,
+  "visSmoke": 2.43,
+  "mbRange": 10180.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764271088": {
+  "vis": 6.98,
+  "visSmoke": 2.68,
+  "mbRange": 12510.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764303056": {
+  "vis": 9.26,
+  "visSmoke": 4.2,
+  "mbRange": 13180.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764303152": {
+  "vis": 11.7,
+  "visSmoke": 5.77,
+  "mbRange": 16530.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764303216": {
+  "vis": 9.78,
+  "visSmoke": 4.5,
+  "mbRange": 12810.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764303280": {
+  "vis": 11.16,
+  "visSmoke": 6.4,
+  "mbRange": 16150.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764303312": {
+  "vis": 12.76,
+  "visSmoke": 7.12,
+  "mbRange": 15490.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764303600": {
+  "vis": 11.7,
+  "visSmoke": 5.77,
+  "mbRange": 14010.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764303664": {
+  "vis": 12.76,
+  "visSmoke": 9.47,
+  "mbRange": 16010.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764303696": {
+  "vis": 12.92,
+  "visSmoke": 6.72,
+  "mbRange": 16170.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3764335888": {
+  "vis": 10.0,
+  "visSmoke": 3.0,
+  "mbRange": 7000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764336336": {
+  "vis": 16.41,
+  "visSmoke": 16.51,
+  "mbRange": 20350.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764336432": {
+  "vis": 14.63,
+  "visSmoke": 12.92,
+  "mbRange": 17820.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764336464": {
+  "vis": 16.41,
+  "visSmoke": 14.2,
+  "mbRange": 18210.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764336624": {
+  "vis": 13.97,
+  "visSmoke": 12.47,
+  "mbRange": 16000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764369200": {
+  "vis": 13.09,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3764369232": {
+  "vis": 12.57,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765319120": {
+  "vis": 6.29,
+  "visSmoke": 2.48,
+  "mbRange": 9200.0,
+  "torpRange": 6428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765319664": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 11350.0,
+  "torpRange": 7842.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765351888": {
+  "vis": 13.27,
+  "visSmoke": 6.62,
+  "mbRange": 14040.0,
+  "torpRange": 7157.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3765352144": {
+  "vis": 11.0,
+  "visSmoke": 5.28,
+  "mbRange": 14910.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3765352176": {
+  "vis": 11.47,
+  "visSmoke": 6.62,
+  "mbRange": 14300.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765352400": {
+  "vis": 10.66,
+  "visSmoke": 6.06,
+  "mbRange": 14270.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3765384528": {
+  "vis": 14.3,
+  "visSmoke": 11.38,
+  "mbRange": 16100.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765384656": {
+  "vis": 13.27,
+  "visSmoke": 10.47,
+  "mbRange": 16830.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765384944": {
+  "vis": 13.27,
+  "visSmoke": 10.86,
+  "mbRange": 16370.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765385168": {
+  "vis": 11.87,
+  "visSmoke": 9.35,
+  "mbRange": 15340.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3765385200": {
+  "vis": 13.11,
+  "visSmoke": 11.73,
+  "mbRange": 17130.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3766368080": {
+  "vis": 6.63,
+  "visSmoke": 2.6,
+  "mbRange": 11810.0,
+  "torpRange": 9999.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3766433040": {
+  "vis": 10.0,
+  "visSmoke": 3.0,
+  "mbRange": 7000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3766433072": {
+  "vis": 12.13,
+  "visSmoke": 9.54,
+  "mbRange": 16000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767416080": {
+  "vis": 5.0,
+  "visSmoke": 1.0,
+  "mbRange": 5000.0,
+  "torpRange": 5700.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767416176": {
+  "vis": 6.29,
+  "visSmoke": 2.02,
+  "mbRange": 10110.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767416784": {
+  "vis": 6.46,
+  "visSmoke": 2.09,
+  "mbRange": 9210.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767448784": {
+  "vis": 9.88,
+  "visSmoke": 4.34,
+  "mbRange": 12720.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767448848": {
+  "vis": 14.56,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767449040": {
+  "vis": 9.96,
+  "visSmoke": 4.6,
+  "mbRange": 10780.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767449296": {
+  "vis": 10.66,
+  "visSmoke": 4.83,
+  "mbRange": 13490.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767449584": {
+  "vis": 10.66,
+  "visSmoke": 5.04,
+  "mbRange": 12450.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767482160": {
+  "vis": 11.17,
+  "visSmoke": 8.85,
+  "mbRange": 11860.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767482320": {
+  "vis": 11.89,
+  "visSmoke": 9.37,
+  "mbRange": 13680.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3767809296": {
+  "vis": 10.19,
+  "visSmoke": 0.0,
+  "mbRange": 12000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3768464656": {
+  "vis": 5.0,
+  "visSmoke": 1.0,
+  "mbRange": 5000.0,
+  "torpRange": 5700.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3768465392": {
+  "vis": 5.59,
+  "visSmoke": 2.0,
+  "mbRange": 6550.0,
+  "torpRange": 6428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3768497424": {
+  "vis": 7.5,
+  "visSmoke": 1.0,
+  "mbRange": 8500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3768497488": {
+  "vis": 8.56,
+  "visSmoke": 3.83,
+  "mbRange": 9170.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3768497968": {
+  "vis": 9.26,
+  "visSmoke": 3.4,
+  "mbRange": 9930.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3768857872": {
+  "vis": 10.19,
+  "visSmoke": 0.0,
+  "mbRange": 12000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3769513264": {
+  "vis": 7.51,
+  "visSmoke": 2.78,
+  "mbRange": 12010.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3769546000": {
+  "vis": 7.5,
+  "visSmoke": 1.0,
+  "mbRange": 8500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3864933840": {
+  "vis": 9.12,
+  "visSmoke": 3.73,
+  "mbRange": 13128.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3865982416": {
+  "vis": 8.92,
+  "visSmoke": 3.63,
+  "mbRange": 11528.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3867587856": {
+  "vis": 6.11,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3969824208": {
+  "vis": 16.3,
+  "visSmoke": 11.34,
+  "mbRange": 18450.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "3969857328": {
+  "vis": 17.63,
+  "visSmoke": 19.38,
+  "mbRange": 20600.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "3971888592": {
+  "vis": 8.54,
+  "visSmoke": 3.44,
+  "mbRange": 11137.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "3972445456": {
+  "vis": 4.19,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4065212112": {
+  "vis": 7.53,
+  "visSmoke": 2.48,
+  "mbRange": 11330.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4069438928": {
+  "vis": 11.0,
+  "visSmoke": 5.28,
+  "mbRange": 14320.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4074157872": {
+  "vis": 5.57,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 20001.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4074158064": {
+  "vis": 5.86,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4074648880": {
+  "vis": 9.07,
+  "visSmoke": 3.86,
+  "mbRange": 12000.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4074649040": {
+  "vis": 7.39,
+  "visSmoke": 2.9,
+  "mbRange": 12300.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4074649296": {
+  "vis": 7.68,
+  "visSmoke": 2.54,
+  "mbRange": 12550.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4074649392": {
+  "vis": 8.01,
+  "visSmoke": 3.53,
+  "mbRange": 13335.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4074649424": {
+  "vis": 8.61,
+  "visSmoke": 3.42,
+  "mbRange": 11500.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4074681808": {
+  "vis": 15.83,
+  "visSmoke": 9.99,
+  "mbRange": 19040.0,
+  "torpRange": 11442.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4074682064": {
+  "vis": 12.4,
+  "visSmoke": 6.26,
+  "mbRange": 18000.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4074682192": {
+  "vis": 14.32,
+  "visSmoke": 12.07,
+  "mbRange": 19590.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4074682320": {
+  "vis": 13.62,
+  "visSmoke": 9.02,
+  "mbRange": 16800.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4074682352": {
+  "vis": 12.06,
+  "visSmoke": 6.03,
+  "mbRange": 16710.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4074714832": {
+  "vis": 14.99,
+  "visSmoke": 16.49,
+  "mbRange": 25000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4074714928": {
+  "vis": 15.56,
+  "visSmoke": 15.9,
+  "mbRange": 19806.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4074715088": {
+  "vis": 16.2,
+  "visSmoke": 17.74,
+  "mbRange": 20500.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4074715120": {
+  "vis": 16.8,
+  "visSmoke": 16.82,
+  "mbRange": 22824.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4074747856": {
+  "vis": 14.32,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4075697456": {
+  "vis": 8.88,
+  "visSmoke": 3.78,
+  "mbRange": 10450.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4075697872": {
+  "vis": 6.81,
+  "visSmoke": 2.62,
+  "mbRange": 10950.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4075697968": {
+  "vis": 7.86,
+  "visSmoke": 3.46,
+  "mbRange": 11410.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4075730384": {
+  "vis": 14.88,
+  "visSmoke": 9.88,
+  "mbRange": 16370.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4075730640": {
+  "vis": 12.46,
+  "visSmoke": 6.3,
+  "mbRange": 15035.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4075730768": {
+  "vis": 14.66,
+  "visSmoke": 12.38,
+  "mbRange": 16560.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4075730896": {
+  "vis": 12.8,
+  "visSmoke": 8.33,
+  "mbRange": 14450.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4075730928": {
+  "vis": 11.87,
+  "visSmoke": 5.9,
+  "mbRange": 14280.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4075763408": {
+  "vis": 15.01,
+  "visSmoke": 16.51,
+  "mbRange": 21750.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4075763504": {
+  "vis": 15.11,
+  "visSmoke": 15.02,
+  "mbRange": 17090.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4075763664": {
+  "vis": 14.88,
+  "visSmoke": 15.19,
+  "mbRange": 17900.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4075763696": {
+  "vis": 16.2,
+  "visSmoke": 16.15,
+  "mbRange": 19620.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4076255024": {
+  "vis": 5.61,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 17858.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4076255216": {
+  "vis": 5.96,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 15715.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4076745936": {
+  "vis": 7.33,
+  "visSmoke": 2.88,
+  "mbRange": 12510.0,
+  "torpRange": 14286.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4076746032": {
+  "vis": 8.51,
+  "visSmoke": 3.59,
+  "mbRange": 10270.0,
+  "torpRange": 12128.6,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4076746192": {
+  "vis": 7.51,
+  "visSmoke": 2.95,
+  "mbRange": 10927.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4076746448": {
+  "vis": 6.63,
+  "visSmoke": 2.55,
+  "mbRange": 8554.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4076746544": {
+  "vis": 7.76,
+  "visSmoke": 3.42,
+  "mbRange": 10850.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4076778960": {
+  "vis": 14.1,
+  "visSmoke": 8.29,
+  "mbRange": 16060.0,
+  "torpRange": 5742.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4076779216": {
+  "vis": 12.5,
+  "visSmoke": 6.35,
+  "mbRange": 15035.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4076779344": {
+  "vis": 15.19,
+  "visSmoke": 12.25,
+  "mbRange": 16090.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4076779472": {
+  "vis": 12.06,
+  "visSmoke": 7.05,
+  "mbRange": 14270.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4076779504": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 14200.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4076811984": {
+  "vis": 14.72,
+  "visSmoke": 14.76,
+  "mbRange": 20770.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4076812080": {
+  "vis": 14.8,
+  "visSmoke": 14.72,
+  "mbRange": 16363.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4076812240": {
+  "vis": 14.51,
+  "visSmoke": 14.44,
+  "mbRange": 17100.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4076812272": {
+  "vis": 15.2,
+  "visSmoke": 15.11,
+  "mbRange": 19050.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4077303056": {
+  "vis": 5.33,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 16431.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4077794608": {
+  "vis": 7.21,
+  "visSmoke": 2.66,
+  "mbRange": 9930.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4077794768": {
+  "vis": 7.51,
+  "visSmoke": 2.95,
+  "mbRange": 11080.0,
+  "torpRange": 9999.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4077795024": {
+  "vis": 6.46,
+  "visSmoke": 2.49,
+  "mbRange": 10000.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4077795120": {
+  "vis": 6.98,
+  "visSmoke": 3.09,
+  "mbRange": 10470.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4077827792": {
+  "vis": 11.88,
+  "visSmoke": 5.96,
+  "mbRange": 14640.0,
+  "torpRange": 18557.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4077828048": {
+  "vis": 10.83,
+  "visSmoke": 6.18,
+  "mbRange": 13470.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4077828080": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 13240.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4077860656": {
+  "vis": 14.59,
+  "visSmoke": 13.74,
+  "mbRange": 15818.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4077860816": {
+  "vis": 12.98,
+  "visSmoke": 12.33,
+  "mbRange": 16500.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4078352176": {
+  "vis": 5.66,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 16431.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4078352368": {
+  "vis": 6.36,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14288.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4078843184": {
+  "vis": 7.0,
+  "visSmoke": 2.57,
+  "mbRange": 10000.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4078843344": {
+  "vis": 6.81,
+  "visSmoke": 2.67,
+  "mbRange": 10809.0,
+  "torpRange": 9999.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4078843600": {
+  "vis": 6.46,
+  "visSmoke": 2.49,
+  "mbRange": 9850.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4078876368": {
+  "vis": 10.9,
+  "visSmoke": 5.21,
+  "mbRange": 12600.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4078876624": {
+  "vis": 11.17,
+  "visSmoke": 6.41,
+  "mbRange": 12730.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4078876656": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 13000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4078909232": {
+  "vis": 12.82,
+  "visSmoke": 11.32,
+  "mbRange": 15060.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4078909392": {
+  "vis": 12.82,
+  "visSmoke": 12.2,
+  "mbRange": 16300.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4079891760": {
+  "vis": 6.6,
+  "visSmoke": 2.42,
+  "mbRange": 9550.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4079891920": {
+  "vis": 7.11,
+  "visSmoke": 2.78,
+  "mbRange": 9540.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4079924944": {
+  "vis": 10.52,
+  "visSmoke": 4.96,
+  "mbRange": 12600.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4079925200": {
+  "vis": 11.5,
+  "visSmoke": 6.37,
+  "mbRange": 12650.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4079957808": {
+  "vis": 11.6,
+  "visSmoke": 9.15,
+  "mbRange": 14454.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4079957968": {
+  "vis": 12.63,
+  "visSmoke": 10.96,
+  "mbRange": 14820.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4081006384": {
+  "vis": 10.53,
+  "visSmoke": 7.85,
+  "mbRange": 13546.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4081006544": {
+  "vis": 12.46,
+  "visSmoke": 10.82,
+  "mbRange": 13180.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4081039312": {
+  "vis": 11.7,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4082054960": {
+  "vis": 10.09,
+  "visSmoke": 7.57,
+  "mbRange": 11636.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4082055120": {
+  "vis": 12.49,
+  "visSmoke": 9.83,
+  "mbRange": 13280.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4165907728": {
+  "vis": 12.0,
+  "visSmoke": 4.0,
+  "mbRange": 15830.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4166956304": {
+  "vis": 14.0,
+  "visSmoke": 5.0,
+  "mbRange": 15830.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4168004880": {
+  "vis": 14.0,
+  "visSmoke": 5.0,
+  "mbRange": 14000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178457808": {
+  "vis": 7.41,
+  "visSmoke": 2.86,
+  "mbRange": 13390.0,
+  "torpRange": 19285.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4178457904": {
+  "vis": 7.51,
+  "visSmoke": 2.78,
+  "mbRange": 11150.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178458064": {
+  "vis": 9.7,
+  "visSmoke": 4.06,
+  "mbRange": 12300.0,
+  "torpRange": 14284.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178458320": {
+  "vis": 6.9,
+  "visSmoke": 2.65,
+  "mbRange": 12060.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178458416": {
+  "vis": 7.54,
+  "visSmoke": 2.93,
+  "mbRange": 12800.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4178458608": {
+  "vis": 7.32,
+  "visSmoke": 2.82,
+  "mbRange": 12080.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178490832": {
+  "vis": 15.67,
+  "visSmoke": 11.46,
+  "mbRange": 19000.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4178491120": {
+  "vis": 15.42,
+  "visSmoke": 11.2,
+  "mbRange": 18700.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178491184": {
+  "vis": 15.81,
+  "visSmoke": 10.6,
+  "mbRange": 18510.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4178491216": {
+  "vis": 16.1,
+  "visSmoke": 11.59,
+  "mbRange": 19500.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4178491344": {
+  "vis": 11.7,
+  "visSmoke": 5.77,
+  "mbRange": 16530.0,
+  "torpRange": 17142.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4178491376": {
+  "vis": 13.58,
+  "visSmoke": 8.3,
+  "mbRange": 16220.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4178523600": {
+  "vis": 17.78,
+  "visSmoke": 19.55,
+  "mbRange": 21300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178523856": {
+  "vis": 17.951,
+  "visSmoke": 21.5,
+  "mbRange": 27000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178523952": {
+  "vis": 18.57,
+  "visSmoke": 21.38,
+  "mbRange": 21400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4178523984": {
+  "vis": 17.29,
+  "visSmoke": 18.14,
+  "mbRange": 26630.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178524112": {
+  "vis": 16.19,
+  "visSmoke": 16.54,
+  "mbRange": 24480.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178524144": {
+  "vis": 17.61,
+  "visSmoke": 17.76,
+  "mbRange": 24200.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178556624": {
+  "vis": 15.54,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178556880": {
+  "vis": 14.49,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4178556912": {
+  "vis": 15.54,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179015120": {
+  "vis": 6.3,
+  "visSmoke": 2.0,
+  "mbRange": 6000.0,
+  "torpRange": 16428.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179015408": {
+  "vis": 5.94,
+  "visSmoke": 2.19,
+  "mbRange": 10500.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179015472": {
+  "vis": 5.57,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 20001.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179015632": {
+  "vis": 6.1,
+  "visSmoke": 2.0,
+  "mbRange": 6000.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179015664": {
+  "vis": 5.86,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179506384": {
+  "vis": 7.2,
+  "visSmoke": 2.77,
+  "mbRange": 11940.0,
+  "torpRange": 19285.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4179506480": {
+  "vis": 7.39,
+  "visSmoke": 2.73,
+  "mbRange": 10450.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179506640": {
+  "vis": 9.7,
+  "visSmoke": 4.06,
+  "mbRange": 11240.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179506928": {
+  "vis": 8.9,
+  "visSmoke": 3.71,
+  "mbRange": 9600.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179506992": {
+  "vis": 7.51,
+  "visSmoke": 2.92,
+  "mbRange": 12050.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179507024": {
+  "vis": 9.58,
+  "visSmoke": 4.15,
+  "mbRange": 13560.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179507152": {
+  "vis": 7.37,
+  "visSmoke": 2.61,
+  "mbRange": 12780.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179539152": {
+  "vis": 12.13,
+  "visSmoke": 5.65,
+  "mbRange": 15500.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179539280": {
+  "vis": 11.26,
+  "visSmoke": 5.45,
+  "mbRange": 15510.0,
+  "torpRange": 15000.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4179539376": {
+  "vis": 14.5,
+  "visSmoke": 10.29,
+  "mbRange": 17130.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179539408": {
+  "vis": 17.46,
+  "visSmoke": 12.66,
+  "mbRange": 19440.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4179539696": {
+  "vis": 15.27,
+  "visSmoke": 9.89,
+  "mbRange": 17130.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179539728": {
+  "vis": 12.76,
+  "visSmoke": 9.47,
+  "mbRange": 16500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179539760": {
+  "vis": 15.54,
+  "visSmoke": 10.17,
+  "mbRange": 17830.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179539792": {
+  "vis": 16.06,
+  "visSmoke": 11.54,
+  "mbRange": 19080.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179539920": {
+  "vis": 11.17,
+  "visSmoke": 5.4,
+  "mbRange": 15760.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4179572176": {
+  "vis": 16.53,
+  "visSmoke": 18.1,
+  "mbRange": 20680.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179572464": {
+  "vis": 17.34,
+  "visSmoke": 16.7,
+  "mbRange": 19940.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179572528": {
+  "vis": 17.63,
+  "visSmoke": 18.22,
+  "mbRange": 20610.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4179572560": {
+  "vis": 17.46,
+  "visSmoke": 18.35,
+  "mbRange": 26080.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179572688": {
+  "vis": 15.19,
+  "visSmoke": 15.5,
+  "mbRange": 24250.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179572720": {
+  "vis": 15.54,
+  "visSmoke": 17.04,
+  "mbRange": 24500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179604944": {
+  "vis": 14.67,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179605200": {
+  "vis": 15.19,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179605296": {
+  "vis": 13.58,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4179605488": {
+  "vis": 15.38,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180554960": {
+  "vis": 6.98,
+  "visSmoke": 2.68,
+  "mbRange": 11040.0,
+  "torpRange": 15000.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4180555056": {
+  "vis": 7.39,
+  "visSmoke": 2.73,
+  "mbRange": 9270.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180555216": {
+  "vis": 8.73,
+  "visSmoke": 3.53,
+  "mbRange": 11137.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180555504": {
+  "vis": 8.18,
+  "visSmoke": 3.34,
+  "mbRange": 8600.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180555568": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 9999.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4180555600": {
+  "vis": 9.26,
+  "visSmoke": 3.96,
+  "mbRange": 11620.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180555728": {
+  "vis": 7.03,
+  "visSmoke": 2.47,
+  "mbRange": 11370.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4180587728": {
+  "vis": 11.97,
+  "visSmoke": 5.53,
+  "mbRange": 13638.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180587856": {
+  "vis": 12.7,
+  "visSmoke": 6.54,
+  "mbRange": 13850.0,
+  "torpRange": 15000.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4180587952": {
+  "vis": 14.5,
+  "visSmoke": 9.83,
+  "mbRange": 15200.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4180587984": {
+  "vis": 15.54,
+  "visSmoke": 9.69,
+  "mbRange": 16162.0,
+  "torpRange": 11442.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4180588272": {
+  "vis": 14.54,
+  "visSmoke": 9.18,
+  "mbRange": 15570.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180588304": {
+  "vis": 12.34,
+  "visSmoke": 8.1,
+  "mbRange": 14570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4180588336": {
+  "vis": 13.97,
+  "visSmoke": 8.65,
+  "mbRange": 16191.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4180588368": {
+  "vis": 14.49,
+  "visSmoke": 9.13,
+  "mbRange": 16671.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4180588496": {
+  "vis": 12.76,
+  "visSmoke": 6.58,
+  "mbRange": 15035.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4180588528": {
+  "vis": 13.21,
+  "visSmoke": 7.98,
+  "mbRange": 14390.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4180620752": {
+  "vis": 16.2,
+  "visSmoke": 16.15,
+  "mbRange": 17620.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180621040": {
+  "vis": 16.59,
+  "visSmoke": 15.83,
+  "mbRange": 17272.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180621104": {
+  "vis": 16.76,
+  "visSmoke": 17.2,
+  "mbRange": 18470.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4180621136": {
+  "vis": 16.24,
+  "visSmoke": 15.42,
+  "mbRange": 18450.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180621264": {
+  "vis": 14.84,
+  "visSmoke": 15.15,
+  "mbRange": 19210.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4180621296": {
+  "vis": 15.9,
+  "visSmoke": 15.83,
+  "mbRange": 21180.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181112272": {
+  "vis": 6.2,
+  "visSmoke": 2.0,
+  "mbRange": 6000.0,
+  "torpRange": 15714.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181112560": {
+  "vis": 6.07,
+  "visSmoke": 2.23,
+  "mbRange": 9500.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181112624": {
+  "vis": 5.61,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 17858.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181112784": {
+  "vis": 6.1,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 15715.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181112816": {
+  "vis": 5.96,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 15715.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181603536": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 11370.0,
+  "torpRange": 13585.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4181603632": {
+  "vis": 7.2,
+  "visSmoke": 2.65,
+  "mbRange": 9160.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181603792": {
+  "vis": 9.12,
+  "visSmoke": 3.73,
+  "mbRange": 10528.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181604048": {
+  "vis": 7.53,
+  "visSmoke": 2.48,
+  "mbRange": 11330.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181604080": {
+  "vis": 8.17,
+  "visSmoke": 3.08,
+  "mbRange": 7820.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181604144": {
+  "vis": 7.68,
+  "visSmoke": 2.99,
+  "mbRange": 9854.0,
+  "torpRange": 13585.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181604176": {
+  "vis": 7.93,
+  "visSmoke": 3.3,
+  "mbRange": 11861.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181604304": {
+  "vis": 6.81,
+  "visSmoke": 2.5,
+  "mbRange": 11100.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181636304": {
+  "vis": 11.68,
+  "visSmoke": 5.36,
+  "mbRange": 13182.0,
+  "torpRange": 15700.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181636432": {
+  "vis": 12.6,
+  "visSmoke": 6.46,
+  "mbRange": 13750.0,
+  "torpRange": 8571.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4181636528": {
+  "vis": 14.2,
+  "visSmoke": 8.86,
+  "mbRange": 15035.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181636560": {
+  "vis": 12.84,
+  "visSmoke": 6.66,
+  "mbRange": 15753.0,
+  "torpRange": 5742.9,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4181636848": {
+  "vis": 14.01,
+  "visSmoke": 8.68,
+  "mbRange": 14680.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181636880": {
+  "vis": 12.14,
+  "visSmoke": 7.12,
+  "mbRange": 14160.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181636912": {
+  "vis": 13.79,
+  "visSmoke": 8.49,
+  "mbRange": 16082.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181636944": {
+  "vis": 13.27,
+  "visSmoke": 8.03,
+  "mbRange": 15980.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181637072": {
+  "vis": 11.36,
+  "visSmoke": 5.52,
+  "mbRange": 14017.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4181637104": {
+  "vis": 12.22,
+  "visSmoke": 7.18,
+  "mbRange": 14390.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4181669328": {
+  "vis": 15.42,
+  "visSmoke": 15.33,
+  "mbRange": 16340.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181669616": {
+  "vis": 15.76,
+  "visSmoke": 14.93,
+  "mbRange": 17270.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181669680": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 19280.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4181669712": {
+  "vis": 16.24,
+  "visSmoke": 15.42,
+  "mbRange": 22970.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181669840": {
+  "vis": 14.14,
+  "visSmoke": 13.35,
+  "mbRange": 17854.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181669872": {
+  "vis": 16.06,
+  "visSmoke": 16.01,
+  "mbRange": 20600.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181702096": {
+  "vis": 13.41,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181702352": {
+  "vis": 12.06,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181702448": {
+  "vis": 13.09,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181702608": {
+  "vis": 14.51,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4181702640": {
+  "vis": 14.51,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182160656": {
+  "vis": 3.84,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182652112": {
+  "vis": 6.81,
+  "visSmoke": 2.5,
+  "mbRange": 10850.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182652208": {
+  "vis": 6.86,
+  "visSmoke": 2.51,
+  "mbRange": 9160.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182652368": {
+  "vis": 8.92,
+  "visSmoke": 3.63,
+  "mbRange": 11028.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182652624": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 9426.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182652656": {
+  "vis": 7.27,
+  "visSmoke": 2.68,
+  "mbRange": 6820.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182652720": {
+  "vis": 7.51,
+  "visSmoke": 2.92,
+  "mbRange": 9863.0,
+  "torpRange": 12128.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182652752": {
+  "vis": 7.33,
+  "visSmoke": 3.03,
+  "mbRange": 11861.0,
+  "torpRange": 11400.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182652880": {
+  "vis": 7.08,
+  "visSmoke": 2.61,
+  "mbRange": 10980.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182684880": {
+  "vis": 10.31,
+  "visSmoke": 4.38,
+  "mbRange": 12910.0,
+  "torpRange": 14957.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182685008": {
+  "vis": 11.23,
+  "visSmoke": 5.43,
+  "mbRange": 13650.0,
+  "torpRange": 11430.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182685104": {
+  "vis": 13.8,
+  "visSmoke": 8.5,
+  "mbRange": 14300.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182685136": {
+  "vis": 12.92,
+  "visSmoke": 6.72,
+  "mbRange": 15744.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182685424": {
+  "vis": 13.54,
+  "visSmoke": 8.27,
+  "mbRange": 14650.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182685456": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 13420.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182685488": {
+  "vis": 13.44,
+  "visSmoke": 8.33,
+  "mbRange": 15745.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182685520": {
+  "vis": 13.44,
+  "visSmoke": 8.18,
+  "mbRange": 16307.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182685648": {
+  "vis": 11.17,
+  "visSmoke": 5.4,
+  "mbRange": 13972.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182685680": {
+  "vis": 12.06,
+  "visSmoke": 7.05,
+  "mbRange": 14699.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4182717904": {
+  "vis": 14.57,
+  "visSmoke": 14.49,
+  "mbRange": 15790.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182718192": {
+  "vis": 13.89,
+  "visSmoke": 13.12,
+  "mbRange": 15950.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182718256": {
+  "vis": 15.19,
+  "visSmoke": 14.33,
+  "mbRange": 17770.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182718288": {
+  "vis": 15.36,
+  "visSmoke": 13.37,
+  "mbRange": 16930.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4182718416": {
+  "vis": 14.14,
+  "visSmoke": 12.63,
+  "mbRange": 16500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183209424": {
+  "vis": 6.1,
+  "visSmoke": 2.0,
+  "mbRange": 6000.0,
+  "torpRange": 15714.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183209712": {
+  "vis": 6.16,
+  "visSmoke": 2.0,
+  "mbRange": 8500.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183209776": {
+  "vis": 5.66,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 16431.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183209936": {
+  "vis": 5.53,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14284.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183209968": {
+  "vis": 6.36,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14288.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183700688": {
+  "vis": 6.81,
+  "visSmoke": 2.67,
+  "mbRange": 10810.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183700784": {
+  "vis": 6.86,
+  "visSmoke": 2.51,
+  "mbRange": 9010.0,
+  "torpRange": 14286.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183700944": {
+  "vis": 7.51,
+  "visSmoke": 2.95,
+  "mbRange": 10927.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183701200": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183701232": {
+  "vis": 7.12,
+  "visSmoke": 2.62,
+  "mbRange": 6270.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183701296": {
+  "vis": 7.33,
+  "visSmoke": 3.23,
+  "mbRange": 9881.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183701328": {
+  "vis": 7.51,
+  "visSmoke": 3.11,
+  "mbRange": 11860.0,
+  "torpRange": 11400.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183701456": {
+  "vis": 6.63,
+  "visSmoke": 2.43,
+  "mbRange": 10550.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183733456": {
+  "vis": 9.96,
+  "visSmoke": 4.26,
+  "mbRange": 12273.0,
+  "torpRange": 13514.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183733584": {
+  "vis": 9.86,
+  "visSmoke": 4.54,
+  "mbRange": 13150.0,
+  "torpRange": 11430.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183733680": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 14180.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183733712": {
+  "vis": 12.76,
+  "visSmoke": 6.58,
+  "mbRange": 15108.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183734000": {
+  "vis": 14.06,
+  "visSmoke": 8.73,
+  "mbRange": 14650.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183734032": {
+  "vis": 11.52,
+  "visSmoke": 5.64,
+  "mbRange": 13240.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183734064": {
+  "vis": 12.22,
+  "visSmoke": 6.13,
+  "mbRange": 14990.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183734096": {
+  "vis": 12.92,
+  "visSmoke": 6.72,
+  "mbRange": 14472.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183734224": {
+  "vis": 9.96,
+  "visSmoke": 4.6,
+  "mbRange": 11972.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183734256": {
+  "vis": 13.74,
+  "visSmoke": 8.44,
+  "mbRange": 14245.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4183766480": {
+  "vis": 14.74,
+  "visSmoke": 13.2,
+  "mbRange": 15460.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183766768": {
+  "vis": 13.41,
+  "visSmoke": 10.98,
+  "mbRange": 15640.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183766832": {
+  "vis": 13.44,
+  "visSmoke": 12.7,
+  "mbRange": 16117.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183766864": {
+  "vis": 15.71,
+  "visSmoke": 13.73,
+  "mbRange": 17980.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183766992": {
+  "vis": 13.97,
+  "visSmoke": 13.19,
+  "mbRange": 15590.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183799248": {
+  "vis": 11.96,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183799504": {
+  "vis": 9.6,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183799600": {
+  "vis": 11.7,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183799760": {
+  "vis": 12.06,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4183799792": {
+  "vis": 13.79,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184749264": {
+  "vis": 6.63,
+  "visSmoke": 2.43,
+  "mbRange": 9940.0,
+  "torpRange": 9128.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184749360": {
+  "vis": 6.62,
+  "visSmoke": 2.43,
+  "mbRange": 8650.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184749520": {
+  "vis": 6.81,
+  "visSmoke": 2.67,
+  "mbRange": 10809.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184749776": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 8110.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184749808": {
+  "vis": 7.0,
+  "visSmoke": 2.57,
+  "mbRange": 6180.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184749872": {
+  "vis": 6.32,
+  "visSmoke": 2.08,
+  "mbRange": 9120.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184749904": {
+  "vis": 6.98,
+  "visSmoke": 2.73,
+  "mbRange": 10980.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184750032": {
+  "vis": 6.63,
+  "visSmoke": 2.43,
+  "mbRange": 10100.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184782032": {
+  "vis": 9.96,
+  "visSmoke": 4.6,
+  "mbRange": 11819.0,
+  "torpRange": 13514.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184782160": {
+  "vis": 9.5,
+  "visSmoke": 4.34,
+  "mbRange": 12950.0,
+  "torpRange": 11430.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184782256": {
+  "vis": 9.87,
+  "visSmoke": 4.56,
+  "mbRange": 13680.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184782288": {
+  "vis": 13.79,
+  "visSmoke": 8.01,
+  "mbRange": 14835.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184782576": {
+  "vis": 11.27,
+  "visSmoke": 5.46,
+  "mbRange": 13540.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184782608": {
+  "vis": 11.87,
+  "visSmoke": 5.86,
+  "mbRange": 12750.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184782640": {
+  "vis": 12.06,
+  "visSmoke": 5.99,
+  "mbRange": 14990.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184782672": {
+  "vis": 12.22,
+  "visSmoke": 6.16,
+  "mbRange": 13572.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184782800": {
+  "vis": 9.87,
+  "visSmoke": 4.56,
+  "mbRange": 12381.0,
+  "torpRange": 10028.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4184815056": {
+  "vis": 13.27,
+  "visSmoke": 11.86,
+  "mbRange": 14550.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184815344": {
+  "vis": 12.76,
+  "visSmoke": 10.03,
+  "mbRange": 14640.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184815408": {
+  "vis": 14.14,
+  "visSmoke": 11.24,
+  "mbRange": 14990.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184815440": {
+  "vis": 14.84,
+  "visSmoke": 12.84,
+  "mbRange": 16500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4184815568": {
+  "vis": 14.49,
+  "visSmoke": 12.59,
+  "mbRange": 15270.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185797840": {
+  "vis": 6.29,
+  "visSmoke": 2.42,
+  "mbRange": 8800.0,
+  "torpRange": 10457.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185797936": {
+  "vis": 6.62,
+  "visSmoke": 2.43,
+  "mbRange": 8610.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185798096": {
+  "vis": 6.46,
+  "visSmoke": 2.09,
+  "mbRange": 9245.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185798384": {
+  "vis": 6.34,
+  "visSmoke": 2.33,
+  "mbRange": 5700.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185798448": {
+  "vis": 6.11,
+  "visSmoke": 2.01,
+  "mbRange": 8227.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185798480": {
+  "vis": 6.63,
+  "visSmoke": 2.6,
+  "mbRange": 10740.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185798608": {
+  "vis": 6.29,
+  "visSmoke": 2.31,
+  "mbRange": 9830.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185830736": {
+  "vis": 8.0,
+  "visSmoke": 3.56,
+  "mbRange": 11040.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4185830832": {
+  "vis": 10.18,
+  "visSmoke": 4.74,
+  "mbRange": 12750.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4185830864": {
+  "vis": 9.6,
+  "visSmoke": 4.01,
+  "mbRange": 10236.0,
+  "torpRange": 7157.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4185831152": {
+  "vis": 10.77,
+  "visSmoke": 5.12,
+  "mbRange": 12600.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185831184": {
+  "vis": 11.7,
+  "visSmoke": 5.73,
+  "mbRange": 12550.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4185831216": {
+  "vis": 10.3,
+  "visSmoke": 4.78,
+  "mbRange": 10628.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4185831248": {
+  "vis": 12.92,
+  "visSmoke": 6.78,
+  "mbRange": 13650.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4185831376": {
+  "vis": 10.13,
+  "visSmoke": 4.71,
+  "mbRange": 11327.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4185863632": {
+  "vis": 13.21,
+  "visSmoke": 10.42,
+  "mbRange": 12410.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185863920": {
+  "vis": 12.07,
+  "visSmoke": 9.5,
+  "mbRange": 13260.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185863984": {
+  "vis": 13.79,
+  "visSmoke": 10.92,
+  "mbRange": 14540.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185864016": {
+  "vis": 15.36,
+  "visSmoke": 12.42,
+  "mbRange": 15840.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185864144": {
+  "vis": 13.97,
+  "visSmoke": 12.11,
+  "mbRange": 14400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185896400": {
+  "vis": 8.56,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185896656": {
+  "vis": 8.56,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185896752": {
+  "vis": 9.26,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4185896944": {
+  "vis": 9.78,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186846416": {
+  "vis": 5.59,
+  "visSmoke": 2.0,
+  "mbRange": 7880.0,
+  "torpRange": 10457.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186846480": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 10000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186846512": {
+  "vis": 5.96,
+  "visSmoke": 2.2,
+  "mbRange": 8610.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186846672": {
+  "vis": 5.94,
+  "visSmoke": 2.0,
+  "mbRange": 9380.0,
+  "torpRange": 7142.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186846960": {
+  "vis": 6.17,
+  "visSmoke": 2.27,
+  "mbRange": 5600.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186847024": {
+  "vis": 6.46,
+  "visSmoke": 2.13,
+  "mbRange": 8181.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186847056": {
+  "vis": 6.46,
+  "visSmoke": 2.05,
+  "mbRange": 9470.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186847184": {
+  "vis": 6.11,
+  "visSmoke": 2.0,
+  "mbRange": 9760.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879312": {
+  "vis": 9.56,
+  "visSmoke": 4.37,
+  "mbRange": 11040.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879408": {
+  "vis": 9.56,
+  "visSmoke": 4.37,
+  "mbRange": 11040.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879440": {
+  "vis": 9.96,
+  "visSmoke": 4.6,
+  "mbRange": 10340.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879728": {
+  "vis": 9.08,
+  "visSmoke": 4.07,
+  "mbRange": 10340.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879760": {
+  "vis": 9.43,
+  "visSmoke": 4.26,
+  "mbRange": 11570.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879792": {
+  "vis": 9.43,
+  "visSmoke": 3.5,
+  "mbRange": 10080.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879824": {
+  "vis": 11.0,
+  "visSmoke": 5.04,
+  "mbRange": 11720.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186879952": {
+  "vis": 9.78,
+  "visSmoke": 4.5,
+  "mbRange": 10754.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186912016": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 10000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186912208": {
+  "vis": 11.36,
+  "visSmoke": 8.97,
+  "mbRange": 11480.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186912560": {
+  "vis": 10.13,
+  "visSmoke": 7.6,
+  "mbRange": 10820.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186912592": {
+  "vis": 11.0,
+  "visSmoke": 8.73,
+  "mbRange": 11340.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4186912720": {
+  "vis": 13.27,
+  "visSmoke": 10.47,
+  "mbRange": 13680.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187894992": {
+  "vis": 5.24,
+  "visSmoke": 2.0,
+  "mbRange": 7740.0,
+  "torpRange": 12000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187895056": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 0.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187895088": {
+  "vis": 6.03,
+  "visSmoke": 2.0,
+  "mbRange": 8300.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187895248": {
+  "vis": 5.59,
+  "visSmoke": 2.0,
+  "mbRange": 9700.0,
+  "torpRange": 7142.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187895536": {
+  "vis": 6.06,
+  "visSmoke": 2.0,
+  "mbRange": 5500.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187895600": {
+  "vis": 5.24,
+  "visSmoke": 2.0,
+  "mbRange": 7572.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187895632": {
+  "vis": 5.76,
+  "visSmoke": 2.0,
+  "mbRange": 8900.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187895760": {
+  "vis": 5.24,
+  "visSmoke": 2.0,
+  "mbRange": 8030.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187927824": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 0.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187927888": {
+  "vis": 8.56,
+  "visSmoke": 3.83,
+  "mbRange": 9170.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187927984": {
+  "vis": 8.41,
+  "visSmoke": 3.2,
+  "mbRange": 10740.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187928016": {
+  "vis": 8.76,
+  "visSmoke": 3.38,
+  "mbRange": 9154.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187928304": {
+  "vis": 7.86,
+  "visSmoke": 2.94,
+  "mbRange": 10340.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187928336": {
+  "vis": 8.03,
+  "visSmoke": 3.02,
+  "mbRange": 11340.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187928400": {
+  "vis": 8.73,
+  "visSmoke": 4.17,
+  "mbRange": 9330.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4187928528": {
+  "vis": 9.96,
+  "visSmoke": 4.6,
+  "mbRange": 10580.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976336": {
+  "vis": 5.94,
+  "visSmoke": 2.31,
+  "mbRange": 8536.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976400": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 14000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976432": {
+  "vis": 7.16,
+  "visSmoke": 2.64,
+  "mbRange": 10740.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976464": {
+  "vis": 6.4,
+  "visSmoke": 2.06,
+  "mbRange": 8845.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976560": {
+  "vis": 7.3,
+  "visSmoke": 2.69,
+  "mbRange": 9075.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976592": {
+  "vis": 7.68,
+  "visSmoke": 3.03,
+  "mbRange": 9669.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976880": {
+  "vis": 6.63,
+  "visSmoke": 2.43,
+  "mbRange": 9940.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976912": {
+  "vis": 8.56,
+  "visSmoke": 3.27,
+  "mbRange": 11380.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188976976": {
+  "vis": 8.03,
+  "visSmoke": 3.34,
+  "mbRange": 9479.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4188977104": {
+  "vis": 6.81,
+  "visSmoke": 2.21,
+  "mbRange": 8745.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4189009168": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 16000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4235113744": {
+  "vis": 15.0,
+  "visSmoke": 7.5,
+  "mbRange": 15000.0,
+  "torpRange": 12142.8,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4236129552": {
+  "vis": 10.0,
+  "visSmoke": 5.0,
+  "mbRange": 10000.0,
+  "torpRange": 14285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4236195088": {
+  "vis": 18.0,
+  "visSmoke": 9.0,
+  "mbRange": 25000.0,
+  "torpRange": 10000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4237243664": {
+  "vis": 18.0,
+  "visSmoke": 9.0,
+  "mbRange": 25000.0,
+  "torpRange": 10000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4238292240": {
+  "vis": 14.0,
+  "visSmoke": 7.0,
+  "mbRange": 25000.0,
+  "torpRange": 20000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4239340816": {
+  "vis": 16.0,
+  "visSmoke": 8.0,
+  "mbRange": 27000.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4240356624": {
+  "vis": 15.0,
+  "visSmoke": 7.5,
+  "mbRange": 15000.0,
+  "torpRange": 12142.8,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4241405200": {
+  "vis": 12.0,
+  "visSmoke": 6.0,
+  "mbRange": 16000.0,
+  "torpRange": 18571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4242453776": {
+  "vis": 11.0,
+  "visSmoke": 5.5,
+  "mbRange": 16000.0,
+  "torpRange": 18571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4244911376": {
+  "vis": 9.7,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4249761040": {
+  "vis": 10.0,
+  "visSmoke": 5.0,
+  "mbRange": 10000.0,
+  "torpRange": 14285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4250809616": {
+  "vis": 6.0,
+  "visSmoke": 3.0,
+  "mbRange": 10000.0,
+  "torpRange": 14285.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4251858192": {
+  "vis": 8.0,
+  "visSmoke": 4.0,
+  "mbRange": 12000.0,
+  "torpRange": 28571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4252907504": {
+  "vis": 8.051,
+  "visSmoke": 3.32,
+  "mbRange": 13100.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4253299984": {
+  "vis": 5.24,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4253956080": {
+  "vis": 7.851,
+  "visSmoke": 3.22,
+  "mbRange": 11600.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4255004656": {
+  "vis": 7.63,
+  "visSmoke": 3.13,
+  "mbRange": 11400.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4255037136": {
+  "vis": 11.52,
+  "visSmoke": 6.66,
+  "mbRange": 15780.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4256053232": {
+  "vis": 7.13,
+  "visSmoke": 2.74,
+  "mbRange": 11200.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4256085712": {
+  "vis": 7.51,
+  "visSmoke": 2.78,
+  "mbRange": 9075.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4258182864": {
+  "vis": 8.9,
+  "visSmoke": 4.01,
+  "mbRange": 9345.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4259231440": {
+  "vis": 12.22,
+  "visSmoke": 7.18,
+  "mbRange": 16230.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4259264496": {
+  "vis": 13.79,
+  "visSmoke": 12.31,
+  "mbRange": 14620.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4261295376": {
+  "vis": 8.0,
+  "visSmoke": 3.0,
+  "mbRange": 0.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4262343952": {
+  "vis": 8.0,
+  "visSmoke": 3.0,
+  "mbRange": 9800.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4263458064": {
+  "vis": 18.0,
+  "visSmoke": 8.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4264441840": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 12880.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4265588720": {
+  "vis": 13.01,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4266538256": {
+  "vis": 5.0,
+  "visSmoke": 2.0,
+  "mbRange": 13800.0,
+  "torpRange": 27142.7,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4266538992": {
+  "vis": 6.46,
+  "visSmoke": 2.09,
+  "mbRange": 8372.0,
+  "torpRange": 7200.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4266571024": {
+  "vis": 9.0,
+  "visSmoke": 3.0,
+  "mbRange": 16300.0,
+  "torpRange": 22142.8,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4266603792": {
+  "vis": 14.0,
+  "visSmoke": 5.0,
+  "mbRange": 15500.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4267587280": {
+  "vis": 6.01,
+  "visSmoke": 2.22,
+  "mbRange": 8680.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4267620048": {
+  "vis": 9.8,
+  "visSmoke": 4.29,
+  "mbRange": 10709.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4267685872": {
+  "vis": 9.86,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4268635408": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 9000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4268635856": {
+  "vis": 6.01,
+  "visSmoke": 2.22,
+  "mbRange": 8680.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4269683984": {
+  "vis": 5.0,
+  "visSmoke": 4.06,
+  "mbRange": 8000.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4269684432": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 9410.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4269717488": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 7842.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4270732560": {
+  "vis": 5.82,
+  "visSmoke": 2.83,
+  "mbRange": 5000.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4272829712": {
+  "vis": 6.3,
+  "visSmoke": 3.21,
+  "mbRange": 0.0,
+  "torpRange": 5714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4272830448": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 11772.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4272862928": {
+  "vis": 12.22,
+  "visSmoke": 7.18,
+  "mbRange": 16791.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4272895696": {
+  "vis": 16.67,
+  "visSmoke": 16.8,
+  "mbRange": 19708.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4273878288": {
+  "vis": 7.76,
+  "visSmoke": 4.06,
+  "mbRange": 6000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4273911760": {
+  "vis": 14.14,
+  "visSmoke": 9.49,
+  "mbRange": 19800.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4273911792": {
+  "vis": 13.44,
+  "visSmoke": 8.18,
+  "mbRange": 15830.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4273977328": {
+  "vis": 13.49,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4274926864": {
+  "vis": 4.86,
+  "visSmoke": 2.61,
+  "mbRange": 0.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4274926928": {
+  "vis": 7.551,
+  "visSmoke": 2.69,
+  "mbRange": 11280.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4274927440": {
+  "vis": 7.42,
+  "visSmoke": 2.86,
+  "mbRange": 11000.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4274927600": {
+  "vis": 6.81,
+  "visSmoke": 2.21,
+  "mbRange": 7845.0,
+  "torpRange": 7842.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4274959664": {
+  "vis": 11.3,
+  "visSmoke": 5.48,
+  "mbRange": 13000.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4274959728": {
+  "vis": 12.96,
+  "visSmoke": 7.77,
+  "mbRange": 15000.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4274960144": {
+  "vis": 11.83,
+  "visSmoke": 5.44,
+  "mbRange": 15000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4274960176": {
+  "vis": 14.48,
+  "visSmoke": 12.78,
+  "mbRange": 16000.0,
+  "torpRange": 13568.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4274992432": {
+  "vis": 14.13,
+  "visSmoke": 13.33,
+  "mbRange": 18900.0,
+  "torpRange": 21428.6,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4274992464": {
+  "vis": 15.76,
+  "visSmoke": 14.93,
+  "mbRange": 17800.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4275975440": {
+  "vis": 7.76,
+  "visSmoke": 2.54,
+  "mbRange": 6000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4275975504": {
+  "vis": 7.51,
+  "visSmoke": 2.9,
+  "mbRange": 11000.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4275976016": {
+  "vis": 7.37,
+  "visSmoke": 2.89,
+  "mbRange": 10900.0,
+  "torpRange": 15711.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4276008240": {
+  "vis": 10.9,
+  "visSmoke": 5.21,
+  "mbRange": 12730.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4276008304": {
+  "vis": 13.28,
+  "visSmoke": 8.04,
+  "mbRange": 14545.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4276008656": {
+  "vis": 10.83,
+  "visSmoke": 6.18,
+  "mbRange": 15670.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4276008720": {
+  "vis": 11.52,
+  "visSmoke": 5.21,
+  "mbRange": 14440.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4276008752": {
+  "vis": 13.61,
+  "visSmoke": 10.76,
+  "mbRange": 15270.0,
+  "torpRange": 13568.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4276041008": {
+  "vis": 13.79,
+  "visSmoke": 13.03,
+  "mbRange": 18100.0,
+  "torpRange": 17142.9,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4276041040": {
+  "vis": 15.19,
+  "visSmoke": 13.64,
+  "mbRange": 17000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4276041424": {
+  "vis": 17.46,
+  "visSmoke": 19.27,
+  "mbRange": 26630.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4276041712": {
+  "vis": 15.71,
+  "visSmoke": 15.64,
+  "mbRange": 21227.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277024016": {
+  "vis": 6.3,
+  "visSmoke": 2.83,
+  "mbRange": 0.0,
+  "torpRange": 5714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277024080": {
+  "vis": 7.28,
+  "visSmoke": 2.8,
+  "mbRange": 10900.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277024464": {
+  "vis": 6.01,
+  "visSmoke": 2.22,
+  "mbRange": 8680.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277024592": {
+  "vis": 6.98,
+  "visSmoke": 2.73,
+  "mbRange": 10910.0,
+  "torpRange": 14284.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277056816": {
+  "vis": 10.47,
+  "visSmoke": 4.93,
+  "mbRange": 12454.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277056880": {
+  "vis": 11.17,
+  "visSmoke": 5.4,
+  "mbRange": 14360.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4277057328": {
+  "vis": 12.76,
+  "visSmoke": 9.47,
+  "mbRange": 14910.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4277089552": {
+  "vis": 18.0,
+  "visSmoke": 8.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277089584": {
+  "vis": 13.1,
+  "visSmoke": 11.54,
+  "mbRange": 17400.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4277090288": {
+  "vis": 17.29,
+  "visSmoke": 17.38,
+  "mbRange": 23650.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4278072592": {
+  "vis": 4.86,
+  "visSmoke": 2.65,
+  "mbRange": 0.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4278072656": {
+  "vis": 6.81,
+  "visSmoke": 2.5,
+  "mbRange": 10630.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4278073168": {
+  "vis": 6.81,
+  "visSmoke": 2.5,
+  "mbRange": 10360.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4278105360": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 10000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4278105392": {
+  "vis": 10.0,
+  "visSmoke": 4.63,
+  "mbRange": 12272.7,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4278105456": {
+  "vis": 10.78,
+  "visSmoke": 5.13,
+  "mbRange": 13090.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4278105904": {
+  "vis": 12.32,
+  "visSmoke": 9.12,
+  "mbRange": 14360.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4278138128": {
+  "vis": 18.0,
+  "visSmoke": 8.0,
+  "mbRange": 15000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4278138160": {
+  "vis": 12.67,
+  "visSmoke": 11.19,
+  "mbRange": 16500.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4279121168": {
+  "vis": 7.76,
+  "visSmoke": 2.9,
+  "mbRange": 6000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4279121232": {
+  "vis": 6.46,
+  "visSmoke": 2.37,
+  "mbRange": 10180.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4279121744": {
+  "vis": 6.63,
+  "visSmoke": 2.6,
+  "mbRange": 10180.0,
+  "torpRange": 11425.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4279153968": {
+  "vis": 9.7,
+  "visSmoke": 4.46,
+  "mbRange": 11818.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4279154032": {
+  "vis": 10.48,
+  "visSmoke": 4.93,
+  "mbRange": 12454.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4279154384": {
+  "vis": 8.03,
+  "visSmoke": 3.36,
+  "mbRange": 11240.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4279186704": {
+  "vis": 30.0,
+  "visSmoke": 30.0,
+  "mbRange": 11000.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4279186736": {
+  "vis": 12.4,
+  "visSmoke": 9.75,
+  "mbRange": 15100.0,
+  "torpRange": 11428.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4280169744": {
+  "vis": 6.3,
+  "visSmoke": 2.77,
+  "mbRange": 0.0,
+  "torpRange": 5714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4280169808": {
+  "vis": 6.29,
+  "visSmoke": 2.31,
+  "mbRange": 9540.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4280170192": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 8030.0,
+  "torpRange": 7157.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4280170480": {
+  "vis": 6.46,
+  "visSmoke": 2.49,
+  "mbRange": 10930.0,
+  "torpRange": 7842.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4280202544": {
+  "vis": 7.83,
+  "visSmoke": 3.49,
+  "mbRange": 11540.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4280202608": {
+  "vis": 10.13,
+  "visSmoke": 4.71,
+  "mbRange": 12370.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4280202960": {
+  "vis": 10.3,
+  "visSmoke": 4.6,
+  "mbRange": 13080.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4280235312": {
+  "vis": 11.37,
+  "visSmoke": 8.42,
+  "mbRange": 14800.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4281218320": {
+  "vis": 4.86,
+  "visSmoke": 2.9,
+  "mbRange": 0.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4281218384": {
+  "vis": 5.89,
+  "visSmoke": 2.0,
+  "mbRange": 10070.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4281219056": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 11120.0,
+  "torpRange": 23571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4281251088": {
+  "vis": 10.67,
+  "visSmoke": 11.0,
+  "mbRange": 14000.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4281251184": {
+  "vis": 9.78,
+  "visSmoke": 4.5,
+  "mbRange": 11750.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4281251536": {
+  "vis": 11.0,
+  "visSmoke": 5.06,
+  "mbRange": 11670.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4281284304": {
+  "vis": 16.76,
+  "visSmoke": 16.9,
+  "mbRange": 18071.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4281284592": {
+  "vis": 13.62,
+  "visSmoke": 10.77,
+  "mbRange": 14380.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4282266896": {
+  "vis": 5.82,
+  "visSmoke": 2.65,
+  "mbRange": 0.0,
+  "torpRange": 17142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4282267344": {
+  "vis": 6.9,
+  "visSmoke": 2.65,
+  "mbRange": 0.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4282299760": {
+  "vis": 9.96,
+  "visSmoke": 4.6,
+  "mbRange": 11170.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4282300112": {
+  "vis": 12.22,
+  "visSmoke": 7.18,
+  "mbRange": 15035.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4282333168": {
+  "vis": 15.19,
+  "visSmoke": 15.1,
+  "mbRange": 21143.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4282365936": {
+  "vis": 16.94,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4283315472": {
+  "vis": 6.6,
+  "visSmoke": 2.83,
+  "mbRange": 0.0,
+  "torpRange": 10714.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4283348240": {
+  "vis": 10.67,
+  "visSmoke": 11.0,
+  "mbRange": 14000.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4283348976": {
+  "vis": 12.27,
+  "visSmoke": 6.2,
+  "mbRange": 16900.0,
+  "torpRange": 0.0,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4283381456": {
+  "vis": 11.17,
+  "visSmoke": 8.85,
+  "mbRange": 11820.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4283381488": {
+  "vis": 17.42,
+  "visSmoke": 17.54,
+  "mbRange": 20780.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284364048": {
+  "vis": 6.76,
+  "visSmoke": 2.9,
+  "mbRange": 0.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284364112": {
+  "vis": 7.68,
+  "visSmoke": 2.86,
+  "mbRange": 12680.0,
+  "torpRange": 14285.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284364496": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 28585.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284364624": {
+  "vis": 7.7,
+  "visSmoke": 2.98,
+  "mbRange": 12600.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284396816": {
+  "vis": 15.54,
+  "visSmoke": 10.17,
+  "mbRange": 20700.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284396848": {
+  "vis": 11.74,
+  "visSmoke": 5.8,
+  "mbRange": 14700.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284396912": {
+  "vis": 12.34,
+  "visSmoke": 7.28,
+  "mbRange": 18000.0,
+  "torpRange": 19285.7,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4284397328": {
+  "vis": 12.04,
+  "visSmoke": 5.6,
+  "mbRange": 17000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284397360": {
+  "vis": 14.7,
+  "visSmoke": 12.99,
+  "mbRange": 18200.0,
+  "torpRange": 13568.6,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4284429584": {
+  "vis": 12.61,
+  "visSmoke": 13.0,
+  "mbRange": 12000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284429616": {
+  "vis": 15.64,
+  "visSmoke": 15.56,
+  "mbRange": 21700.0,
+  "torpRange": 21428.6,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4284429648": {
+  "vis": 16.0,
+  "visSmoke": 16.33,
+  "mbRange": 20500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284430032": {
+  "vis": 16.59,
+  "visSmoke": 16.7,
+  "mbRange": 20460.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4284462352": {
+  "vis": 16.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4285412624": {
+  "vis": 10.5,
+  "visSmoke": 3.0,
+  "mbRange": 10000.0,
+  "torpRange": 5742.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4285445392": {
+  "vis": 14.0,
+  "visSmoke": 7.0,
+  "mbRange": 17000.0,
+  "torpRange": 14271.4,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4285445840": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 14246.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4285478160": {
+  "vis": 12.61,
+  "visSmoke": 13.0,
+  "mbRange": 12000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4285511376": {
+  "vis": 9.6,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4286461200": {
+  "vis": 9.22,
+  "visSmoke": 3.0,
+  "mbRange": 7000.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4286461936": {
+  "vis": 7.16,
+  "visSmoke": 2.75,
+  "mbRange": 10536.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4286494416": {
+  "vis": 12.76,
+  "visSmoke": 7.6,
+  "mbRange": 15580.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4286527184": {
+  "vis": 14.74,
+  "visSmoke": 11.81,
+  "mbRange": 15300.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4286527472": {
+  "vis": 16.24,
+  "visSmoke": 16.19,
+  "mbRange": 17120.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4286559504": {
+  "vis": 14.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4287509776": {
+  "vis": 4.86,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 5142.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4287510224": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 21428.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4287542544": {
+  "vis": 29.1,
+  "visSmoke": 30.0,
+  "mbRange": 8000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4287542992": {
+  "vis": 11.7,
+  "visSmoke": 6.79,
+  "mbRange": 13553.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4287575312": {
+  "vis": 15.87,
+  "visSmoke": 17.79,
+  "mbRange": 20610.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4287575760": {
+  "vis": 15.71,
+  "visSmoke": 14.17,
+  "mbRange": 19271.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4288558800": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4288559088": {
+  "vis": 7.41,
+  "visSmoke": 2.86,
+  "mbRange": 10609.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4288591120": {
+  "vis": 10.06,
+  "visSmoke": 5.4,
+  "mbRange": 15760.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4288591856": {
+  "vis": 10.66,
+  "visSmoke": 4.6,
+  "mbRange": 13344.0,
+  "torpRange": 6428.6,
+  "hasRadar": 1,
+  "hasHydro": 1
+ },
+ "4288623888": {
+  "vis": 15.71,
+  "visSmoke": 18.35,
+  "mbRange": 26080.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4288624336": {
+  "vis": 18.33,
+  "visSmoke": 17.18,
+  "mbRange": 19825.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4288624624": {
+  "vis": 15.54,
+  "visSmoke": 13.99,
+  "mbRange": 16400.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4289606928": {
+  "vis": 6.76,
+  "visSmoke": 2.9,
+  "mbRange": 12050.0,
+  "torpRange": 15000.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4289607376": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4289607664": {
+  "vis": 7.33,
+  "visSmoke": 2.83,
+  "mbRange": 11445.0,
+  "torpRange": 9128.6,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4289640144": {
+  "vis": 11.87,
+  "visSmoke": 6.92,
+  "mbRange": 12620.0,
+  "torpRange": 14271.4,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4289640432": {
+  "vis": 13.09,
+  "visSmoke": 6.87,
+  "mbRange": 13830.0,
+  "torpRange": 7842.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4289672464": {
+  "vis": 19.07,
+  "visSmoke": 11.0,
+  "mbRange": 8000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4290655952": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 8110.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4290688720": {
+  "vis": 9.6,
+  "visSmoke": 4.18,
+  "mbRange": 12800.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4290721040": {
+  "vis": 15.89,
+  "visSmoke": 2.0,
+  "mbRange": 8000.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4290721776": {
+  "vis": 13.62,
+  "visSmoke": 10.77,
+  "mbRange": 14380.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4291704080": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4291704528": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4291736848": {
+  "vis": 12.84,
+  "visSmoke": 2.0,
+  "mbRange": 11000.0,
+  "torpRange": 5742.9,
+  "hasRadar": 1,
+  "hasHydro": 0
+ },
+ "4291737040": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 14810.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4291737584": {
+  "vis": 8.56,
+  "visSmoke": 3.83,
+  "mbRange": 9170.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4291770064": {
+  "vis": 14.6,
+  "visSmoke": 13.06,
+  "mbRange": 16950.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4292752656": {
+  "vis": 7.56,
+  "visSmoke": 3.0,
+  "mbRange": 8000.0,
+  "torpRange": 13071.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4292753104": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4292753392": {
+  "vis": 5.76,
+  "visSmoke": 2.0,
+  "mbRange": 7782.0,
+  "torpRange": 7144.3,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4292785424": {
+  "vis": 14.0,
+  "visSmoke": 7.0,
+  "mbRange": 8000.0,
+  "torpRange": 12857.1,
+  "hasRadar": 0,
+  "hasHydro": 1
+ },
+ "4292785968": {
+  "vis": 9.26,
+  "visSmoke": 3.4,
+  "mbRange": 9920.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4292818192": {
+  "vis": 15.13,
+  "visSmoke": 11.0,
+  "mbRange": 14000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4292818736": {
+  "vis": 15.89,
+  "visSmoke": 15.05,
+  "mbRange": 21450.0,
+  "torpRange": 8571.4,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4292851696": {
+  "vis": 11.52,
+  "visSmoke": 0.0,
+  "mbRange": 0.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293801232": {
+  "vis": 5.94,
+  "visSmoke": 2.0,
+  "mbRange": 9410.0,
+  "torpRange": 9985.7,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293801424": {
+  "vis": 6.79,
+  "visSmoke": 2.66,
+  "mbRange": 11890.0,
+  "torpRange": 11442.9,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293801680": {
+  "vis": 0.0,
+  "visSmoke": 0.0,
+  "mbRange": 8030.0,
+  "torpRange": 7157.1,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293834096": {
+  "vis": 6.81,
+  "visSmoke": 2.21,
+  "mbRange": 8500.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293834192": {
+  "vis": 10.3,
+  "visSmoke": 4.82,
+  "mbRange": 11240.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293834544": {
+  "vis": 8.38,
+  "visSmoke": 3.32,
+  "mbRange": 9856.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293834736": {
+  "vis": 8.03,
+  "visSmoke": 3.58,
+  "mbRange": 9592.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293866768": {
+  "vis": 10.13,
+  "visSmoke": 2.0,
+  "mbRange": 11000.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293867216": {
+  "vis": 9.26,
+  "visSmoke": 7.65,
+  "mbRange": 9880.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ },
+ "4293867504": {
+  "vis": 13.44,
+  "visSmoke": 10.62,
+  "mbRange": 14240.0,
+  "torpRange": 0.0,
+  "hasRadar": 0,
+  "hasHydro": 0
+ }
+}
