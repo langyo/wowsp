@@ -2,10 +2,16 @@
  *  attribute JSON is anchor-supplied, so anything malformed or off-schema
  *  must degrade to "no card" instead of breaking the hint. Popup geometry
  *  itself is upstream hikari's now (applyTooltipPosition + popupBounds,
- *  tested there); AppTitleBar declares the chrome band via popupChrome. */
-import { describe, expect, it } from "vitest";
+ *  tested there); AppTitleBar declares the chrome band via popupChrome.
+ *
+ *  The appended describe covers the OTHER half of the document-level hook:
+ *  installGlobalTooltip also installs hikari's native-title bridge, so a
+ *  plain `title=` element (hikari's own components included) renders the
+ *  house `.hk-tooltip-popup` instead of the browser bubble, while
+ *  `data-hint` anchors stay on the app's richer popup. */
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { hintCardFrom } from "./globalTooltip";
+import { hintCardFrom, installGlobalTooltip } from "./globalTooltip";
 
 describe("hintCardFrom", () => {
   it("accepts a full card and keeps every populated field", () => {
@@ -223,5 +229,106 @@ describe("hintCardFrom row chips", () => {
     })!;
     // The row whose chips all got dropped carries nothing — removed entirely.
     expect(card.rows).toEqual([{ label: "L2", value: "V" }]);
+  });
+});
+
+/** The plain-`title` half of the document hook (hikari's
+ *  installHkTooltipBridge, installed by installGlobalTooltip): a native
+ *  `title=` attribute is moved aside to `data-hk-title` on engage and the
+ *  shared .hk-tooltip-popup.hk-tooltip-bridge shows it after the bridge
+ *  delay, while `data-hint` anchors are excluded so the two popups never
+ *  stack. installGlobalTooltip() is latched per document (module-level
+ *  `installed`), so this describe installs ONCE in beforeAll; each test
+ *  owns its host and fake timers. happy-dom has no layout engine, so anchor
+ *  rects are stubbed — the hint hook's fire() rejects a zero rect. */
+describe("globalTooltip native-title bridge", () => {
+  let host: HTMLElement;
+
+  beforeAll(() => {
+    installGlobalTooltip();
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    host = document.createElement("div");
+    document.body.appendChild(host);
+  });
+
+  afterEach(() => {
+    // Leave the shared install idle for the next test: a pointerover on the
+    // non-anchor host dismisses the hint popup, and any scroll disengages a
+    // still-held bridge title. Then drop this test's markup.
+    host.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    document.dispatchEvent(new Event("scroll"));
+    host.remove();
+    vi.useRealTimers();
+  });
+
+  /** Zero rects would trip the hint hook's vanished-anchor guard and give
+   *  the placement math nothing to chew on — give both paths a real box. */
+  function withRect(el: HTMLElement): void {
+    el.getBoundingClientRect = () =>
+      ({
+        width: 120, height: 24, left: 10, top: 10, right: 130, bottom: 34,
+        x: 10, y: 10, toJSON: () => ({}),
+      }) as DOMRect;
+  }
+
+  function bridgePopup(): HTMLElement | null {
+    return document.querySelector<HTMLElement>(".hk-tooltip-popup.hk-tooltip-bridge");
+  }
+
+  function bridgeShown(): boolean {
+    return bridgePopup()?.classList.contains("hk-tooltip-visible") ?? false;
+  }
+
+  function hintPopup(): HTMLElement | null {
+    return document.querySelector<HTMLElement>(".hk-tooltip-popup:not(.hk-tooltip-bridge)");
+  }
+
+  it("upgrades a plain title= element through the bridge popup", () => {
+    const btn = document.createElement("button");
+    btn.setAttribute("title", "tip text");
+    withRect(btn);
+    host.appendChild(btn);
+
+    btn.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    // Engage is synchronous: the native title is already gone, and only the
+    // delayed popup show is pending.
+    expect(btn.hasAttribute("title")).toBe(false);
+    expect(btn.dataset.hkTitle).toBe("tip text");
+    expect(bridgeShown()).toBe(false);
+
+    vi.advanceTimersByTime(300);
+    const popup = bridgePopup();
+    expect(popup?.parentElement?.id).toBe("hk-overlay-root");
+    expect(bridgeShown()).toBe(true);
+    expect(popup?.textContent).toBe("tip text");
+
+    btn.dispatchEvent(new MouseEvent("pointerout", { bubbles: true }));
+    expect(btn.getAttribute("title")).toBe("tip text");
+    expect(btn.dataset.hkTitle).toBeUndefined();
+    expect(bridgeShown()).toBe(false);
+    btn.remove();
+  });
+
+  it("keeps a [data-hint] anchor on the richer hint popup even with a title", () => {
+    const el = document.createElement("span");
+    el.setAttribute("data-hint", "rich hint");
+    el.setAttribute("title", "native fallback");
+    withRect(el);
+    host.appendChild(el);
+
+    el.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    vi.advanceTimersByTime(300);
+
+    const hint = hintPopup();
+    expect(hint?.classList.contains("hk-tooltip-visible")).toBe(true);
+    expect(hint?.textContent).toBe("rich hint");
+    // The excluded anchor keeps its title and never engages the bridge, so
+    // the richer popup is the only one on screen.
+    expect(el.getAttribute("title")).toBe("native fallback");
+    expect(el.hasAttribute("data-hk-title")).toBe(false);
+    expect(bridgeShown()).toBe(false);
   });
 });

@@ -1,6 +1,20 @@
 /**
- * Global delegated tooltip — one document-level hook that retires every
+ * Global delegated tooltip — the document-level hooks that retire every
  * native `title` tooltip in the app in favor of hikari's presentation.
+ *
+ * Two complementary halves, both installed once per document:
+ *
+ *  - Rich hints: this module's own delegates below drive the app's richer
+ *    popup — `data-hint` plain text, `data-hint-card` structured hover
+ *    cards, `data-hint-tags` chip rows and `data-hint-overflow` gating.
+ *  - Plain titles: hikari's `installHkTooltipBridge` (installed at the end
+ *    of installGlobalTooltip) upgrades ANY remaining `title=` attribute —
+ *    including hikari's own components (the HkThemeToggle palette trigger,
+ *    the HkThemePanelContent auto-altitude merged cell) — to the same
+ *    `.hk-tooltip-popup` shell, placement math and tooltip z band, with
+ *    zero per-component migration. `data-hint` anchors keep the richer
+ *    popup above and are excluded from the bridge, so an element carrying
+ *    both never stacks two popups.
  *
  * Elements opt in with `data-hint="…"` (plain text, pre-localized at the
  * call site); optional `data-hint-pos="top|bottom|left|right"` overrides
@@ -35,7 +49,11 @@
  * floats over the window controls — flip, edge clamping and root-zoom
  * (DPI pref) compensation are all upstream behavior this hook inherits.
  */
-import { ensureOverlayRoot, usePopupManager } from "@celestia-island/hikari";
+import {
+  ensureOverlayRoot,
+  installHkTooltipBridge,
+  usePopupManager,
+} from "@celestia-island/hikari";
 import {
   applyTooltipPosition,
   type TooltipPlacement,
@@ -633,5 +651,22 @@ export function installGlobalTooltip(): void {
   window.addEventListener("blur", () => hideNow());
   window.addEventListener("resize", () => {
     if (state === "shown") place();
+  });
+
+  // Plain `title=` tooltips have no call site to migrate, so hikari's
+  // document-level bridge takes that half over: hovering or focusing ANY
+  // `[title]` element lifts the attribute aside and fades in the very same
+  // `.hk-tooltip-popup` shell / placement math / tooltip z band this module
+  // uses — mounted in #hk-overlay-root, same 300ms delay as HkTooltip. That
+  // is what upgrades hikari's own embedded components (the HkThemeToggle
+  // palette trigger, HkThemePanelContent's auto-altitude merged cell, …)
+  // without touching them.
+  //
+  // The data-hint anchors are excluded: they keep this module's richer popup
+  // (cards, chips, overflow gating), and without the exclusion an anchor
+  // carrying BOTH `title` and `data-hint` would stack the bridge's plainer
+  // bubble underneath the hint popup.
+  installHkTooltipBridge({
+    exclude: "[data-hint], [data-hint-card], [data-hint-overflow]",
   });
 }

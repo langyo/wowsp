@@ -122,6 +122,26 @@ export {
   type FontScaleLevel,
 } from "./fontScalePreference";
 
+// Solar location basis preference (appearance settings): whether hikari's sun
+// clock derives its coordinates from the computer's configured timezone (the
+// default: offline estimate, no network/permission prompt) or from hikari's
+// geolocation cascade (already-granted browser fix, else IP lookup). Applied
+// at boot BEFORE initTheme so the clock's first resolution already honors the
+// stored basis, plus one settle refresh right after initTheme so hikari's own
+// boot resolution rides the same last-switch-wins queue.
+export {
+  SOLAR_LOCATION_BASIS_DEFAULT,
+  SOLAR_LOCATION_BASIS_STORAGE_KEY,
+  initSolarLocationPreference,
+  readStoredSolarLocationBasis,
+  setSolarLocationBasis,
+  settleSolarLocationPreference,
+  solarLocationBasis,
+  systemTimeZoneId,
+  timezoneBasisLocation,
+  type SolarLocationBasis,
+} from "./solarLocationPreference";
+
 // Interface-scale (DPI) preference (appearance settings): root CSS `zoom`
 // driven by the persisted percent, with the app-level preview countdown and
 // the escape hatches. Canvas hosts read the applied scale via
