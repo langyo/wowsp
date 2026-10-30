@@ -1,8 +1,9 @@
-import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle, Smartphone } from "@lucide/vue";
 
 import {
+  HkSidebarRailSwap,
   HkSidebarRailToggle,
   HkTag,
   HkTooltip,
@@ -80,7 +81,12 @@ import "./Sidebar.scss";
  *     `.hk-sidebar-rail-clip`, so full-width rows stay inside the rail
  *     footprint while widths animate. The panel itself cannot clip any more
  *     (the toggle's outer half hangs outside it), so that wrapper is the
- *     only clipping box.
+ *     only clipping box. Inside it, HkSidebarRailSwap renders ONE BODY PER
+ *     DENSITY (rail / full), each pinned at its own width and exchanged
+ *     through the tab-panel opacity dissolve: no body is ever laid out at
+ *     the panel's transient width, so a collapse or expand can never
+ *     squeeze the rows (the 2026-10-30 fix; the density dress rides each
+ *     generation, freezing on the leaving copy while it dissolves).
  * The drawer variant mounts NONE of this; its markup is unchanged.
  */
 export default defineComponent({
@@ -153,6 +159,25 @@ export default defineComponent({
       rail.endPinning();
     };
 
+    /** A density flip REMOUNTS the entering generation (the crossfade
+     *  swap), so an element focused inside the dissolving copy is
+     *  unmounted ~300ms later and focus would drop to <body> — taking the
+     *  host's :focus-within (the toggle's keyboard reveal) with it. The
+     *  peek-closers therefore hand focus to the TOGGLE, the one control
+     *  outside the swap that survives the flip. Only a peek CLOSE needs
+     *  this: without an open peek, a click inside the panel is a
+     *  navigation and focus must follow the router's own landing. */
+    const handoffPeekFocus = (closingPeek: boolean) => {
+      if (!closingPeek) return;
+      const active = document.activeElement;
+      if (!(active instanceof HTMLElement) || !hostRef.value?.contains(active)) return;
+      void nextTick(() => {
+        hostRef.value
+          ?.querySelector<HTMLButtonElement>(".hk-sidebar-rail-toggle button")
+          ?.focus();
+      });
+    };
+
     // The wallpaper-blur band under the main column (theme.scss body::after)
     // offsets by the sidebar's LAYOUT footprint; publish the live width so
     // the band follows the rail — the documentElement-notch precedent every
@@ -172,9 +197,13 @@ export default defineComponent({
 
     /** Icon-only rail dress for a nav tile: the label rides along as the
      *  hover hint (the global data-hint tooltip) and the accessible name
-     *  while the text span is display:none'd by the [data-rail] rules. */
-    const railTile = (label: string) =>
-      railDensity.value
+     *  while the text span is display:none'd by the [data-rail] rules.
+     *  Parameterized by the GENERATION's density — the rail swap renders
+     *  one body per density, so the leaving copy keeps the expanded dress
+     *  (no hints) while it dissolves and the entering copy takes the
+     *  icon-only one. */
+    const railTile = (rail: boolean, label: string) =>
+      rail
         ? { "data-hint": label, "data-hint-pos": "right", "aria-label": label }
         : {};
 
@@ -238,14 +267,15 @@ export default defineComponent({
     // other games also run (the expanded card's badge text); in rail
     // density the dot is the whole card, so the plain online/offline label
     // rides the same channel. Expanded single-instance keeps the original
-    // hintless dot (the card's text says it all).
-    const statusDotHint = computed(() => {
+    // hintless dot (the card's text says it all). Parameterized by the
+    // GENERATION's density (see railTile).
+    const statusDotHint = (rail: boolean) => {
       if (runningCount.value > 1)
         return t("common.game.multiRunning", { n: runningCount.value });
-      if (railDensity.value)
+      if (rail)
         return t(proc.value.running ? "common.game.online" : "common.game.offline");
       return undefined;
-    });
+    };
 
     /** "Steam · ASIA" or just "Steam" when realm is unknown. */
     const clientLabelOf = (p: { kind?: GameProcessInfo["kind"]; realm?: string | null }) => {
@@ -265,12 +295,12 @@ export default defineComponent({
 
     // Rail density degrades the account row to its avatar alone; the shown
     // name rides the row as the hover hint (expanded it IS the visible
-    // text, so no hint is wanted there).
-    const accountHint = computed(() =>
-      railDensity.value
+    // text, so no hint is wanted there). Parameterized by the GENERATION's
+    // density (see railTile).
+    const accountHint = (rail: boolean) =>
+      rail
         ? shownPlayer.value?.nickname ?? t("account.notBound")
-        : undefined,
-    );
+        : undefined;
 
     // The game-status card element — PluginUpdateHint anchors its popup
     // to the RIGHT of this card, vertically centered on it.
@@ -297,8 +327,10 @@ export default defineComponent({
     return () => {
       // The shared nav + footer body: the drawer variant hosts it directly
       // (its classic self-contained root), the desktop wraps it in the rail
-      // composition below.
-      const body = (
+      // composition below. The body is a FUNCTION of the density: the rail
+      // swap renders one body per generation (its { rail } scoped param),
+      // so each density paints at its own width and dress.
+      const body = (rail: boolean) => (
         <>
         {/* No brand row: the title bar above already carries the WoWSP
             identity — the nav's generous top padding keeps the first link
@@ -309,16 +341,16 @@ export default defineComponent({
             class={["sidebar__link", { "is-active": route.path === "/playtime" }]}
             activeClass="is-active"
             exactActiveClass="is-active"
-            {...railTile(t("nav.dashboard"))}
+            {...railTile(rail, t("nav.dashboard"))}
           >
             <BarChart3 size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.dashboard")}</span>
           </RouterLink>
-          <RouterLink to="/lookup" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.lookup"))}>
+          <RouterLink to="/lookup" class="sidebar__link" activeClass="is-active" {...railTile(rail, t("nav.lookup"))}>
             <Search size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.lookup")}</span>
           </RouterLink>
-          <RouterLink to="/ships" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.ships"))}>
+          <RouterLink to="/ships" class="sidebar__link" activeClass="is-active" {...railTile(rail, t("nav.ships"))}>
             <Ship size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.ships")}</span>
           </RouterLink>
@@ -327,19 +359,19 @@ export default defineComponent({
               pushed, same-account battle — see views/replay/LiveView's
               mobile branch). Tactics analysis works from the bundled map
               catalog with touch gestures, so phones get it too. */}
-          <RouterLink to="/live" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.live"))}>
+          <RouterLink to="/live" class="sidebar__link" activeClass="is-active" {...railTile(rail, t("nav.live"))}>
             <Video size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.live")}</span>
           </RouterLink>
-          <RouterLink to="/replay" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.replay"))}>
+          <RouterLink to="/replay" class="sidebar__link" activeClass="is-active" {...railTile(rail, t("nav.replay"))}>
             <Film size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.replay")}</span>
           </RouterLink>
-          <RouterLink to="/tactics" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.tactics"))}>
+          <RouterLink to="/tactics" class="sidebar__link" activeClass="is-active" {...railTile(rail, t("nav.tactics"))}>
             <Crosshair size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.tactics")}</span>
           </RouterLink>
-          <RouterLink to="/resources" class="sidebar__link" activeClass="is-active" {...railTile(t("nav.resources"))}>
+          <RouterLink to="/resources" class="sidebar__link" activeClass="is-active" {...railTile(rail, t("nav.resources"))}>
             <Package size={16} class="sidebar__link-icon" />
             <span class="sidebar__link-text">{t("nav.resources")}</span>
           </RouterLink>
@@ -357,7 +389,7 @@ export default defineComponent({
               <div class="sidebar__game-status-row">
                 <span
                   class="sidebar__status-dot sidebar__status-dot--on"
-                  data-hint={statusDotHint.value || undefined}
+                  data-hint={statusDotHint(rail) || undefined}
                   data-hint-pos="right"
                 >
                   {runningCount.value > 1 ? (
@@ -393,7 +425,7 @@ export default defineComponent({
               <div class="sidebar__game-status-row">
                 <span
                   class="sidebar__status-dot sidebar__status-dot--off"
-                  data-hint={statusDotHint.value || undefined}
+                  data-hint={statusDotHint(rail) || undefined}
                   data-hint-pos="right"
                 />
                 <span class="sidebar__status-text">{t("common.game.offline")}</span>
@@ -519,7 +551,7 @@ export default defineComponent({
           <button
             type="button"
             class="sidebar__footer-btn"
-            data-hint={accountHint.value || undefined}
+            data-hint={accountHint(rail) || undefined}
             data-hint-pos="right"
             onClick={() => ui.show("account")}
           >
@@ -556,7 +588,7 @@ export default defineComponent({
       );
 
       if (isDrawer.value) {
-        return <aside class="sidebar sidebar--drawer">{body}</aside>;
+        return <aside class="sidebar sidebar--drawer">{body(false)}</aside>;
       }
 
       // Desktop rail composition (hikari kit): the root is the LAYOUT box
@@ -571,6 +603,16 @@ export default defineComponent({
       // inside the panel that navigates (nav link, footer button) also
       // dismisses an open peek — the shell kit's onNavigate contract,
       // delegated to the panel.
+      //
+      // The CONTENT handoff is the kit's crossfade swap (HkSidebarRailSwap,
+      // 0.55.237): one body per density, each pinned at its own width
+      // (RAIL_WIDTH / EXPANDED_WIDTH) and exchanged through the tab-panel
+      // opacity dissolve while the clip windows the panel's animating
+      // width — nothing re-lays-out at a transient width, so the rail
+      // toggle can never squeeze the rows. The root's data-rail stays as a
+      // STATE MARKER for hosts/tests; the density DRESS ([data-rail] CSS,
+      // hints, aria) rides each generation, where it can freeze on the
+      // leaving copy during the dissolve.
       return (
         <aside
           ref={hostRef}
@@ -584,15 +626,33 @@ export default defineComponent({
           onPointermove={onHostPointerMove}
           onTransitionend={onHostTransitionEnd}
           onKeydown={(e: KeyboardEvent) => {
-            if (rail.onKeydown(e)) e.stopPropagation();
+            const closingPeek = e.key === "Escape" && rail.peeking.value;
+            if (rail.onKeydown(e)) {
+              handoffPeekFocus(closingPeek);
+              e.stopPropagation();
+            }
           }}
         >
           <div
             class="sidebar__panel hk-sidebar-rail-panel"
             style={{ width: railDensity.value ? RAIL_WIDTH : EXPANDED_WIDTH }}
-            onClick={() => rail.closePeek()}
+            onClick={() => {
+              const closingPeek = rail.peeking.value;
+              rail.closePeek();
+              handoffPeekFocus(closingPeek);
+            }}
           >
-            <div class="hk-sidebar-rail-clip">{body}</div>
+            <div class="hk-sidebar-rail-clip">
+              <HkSidebarRailSwap
+                rail={railDensity.value}
+                railWidth={RAIL_WIDTH}
+                expandedWidth={EXPANDED_WIDTH}
+              >
+                {/* The scoped param is renamed: bare rail would shadow the
+                    useSidebarRail handle the outer bindings read. */}
+                {({ rail: density }: { rail: boolean }) => body(density)}
+              </HkSidebarRailSwap>
+            </div>
             <HkSidebarRailToggle expanded={!railCollapsed.value} onToggle={rail.toggle} />
           </div>
         </aside>

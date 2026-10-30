@@ -104,6 +104,16 @@ function hostOf(wrapper: VueWrapper): HTMLElement {
   return el;
 }
 
+/** The ACTIVE (entering/settled) generation of the rail swap. During a
+ * dissolve two generations share the swap's cell — the leaving copy is
+ * FROZEN at its old dress — so density assertions must target the LAST
+ * one, never document order's first. */
+function activeGeneration(host: HTMLElement): HTMLElement {
+  const gens = host.querySelectorAll<HTMLElement>(".hk-sidebar-rail-generation");
+  expect(gens.length, "the swap renders at least one generation").toBeGreaterThan(0);
+  return gens[gens.length - 1]!;
+}
+
 function panelOf(wrapper: VueWrapper): HTMLElement {
   const el = hostOf(wrapper).querySelector<HTMLElement>(".sidebar__panel.hk-sidebar-rail-panel");
   expect(el, "rail panel should exist inside the host").toBeTruthy();
@@ -245,12 +255,15 @@ describe("Sidebar desktop rail composition", () => {
     // The wallpaper-band channel follows the rail footprint.
     expect(liveWidth()).toBe(RAIL_WIDTH);
     // Icon-only dress: the label moves to the hint + accessible name.
-    const firstLink = host.querySelector<HTMLAnchorElement>(".sidebar__link");
+    // The assertions ride the ACTIVE generation — the swap's leaving copy
+    // (still dissolving at the expanded dress) may still be mounted.
+    const gen = activeGeneration(host);
+    const firstLink = gen.querySelector<HTMLAnchorElement>(".sidebar__link");
     expect(firstLink?.getAttribute("data-hint")).toBe(t("nav.dashboard"));
     expect(firstLink?.getAttribute("data-hint-pos")).toBe("right");
     expect(firstLink?.getAttribute("aria-label")).toBe(t("nav.dashboard"));
     // The account row degrades to its avatar; the name rides the row.
-    const accountBtn = host.querySelector<HTMLButtonElement>(
+    const accountBtn = gen.querySelector<HTMLButtonElement>(
       ".sidebar__footer-btn[data-hint-pos='right']",
     );
     expect(accountBtn?.getAttribute("data-hint")).toBe(t("account.notBound"));
@@ -359,8 +372,12 @@ describe("Sidebar desktop rail composition", () => {
     await dwell(400);
     expect(host.hasAttribute("data-peeking")).toBe(true);
     // A nav-row click (the shell kit's onNavigate contract, delegated to
-    // the whole panel) lands the route AND closes the peek.
-    host.querySelector<HTMLAnchorElement>(".sidebar__link[href='/lookup']")!.click();
+    // the whole panel) lands the route AND closes the peek. The query
+    // rides the ACTIVE generation: in a browser the frozen rail copy is
+    // first in document order mid-dissolve, and its link is pointer-dead.
+    activeGeneration(host)
+      .querySelector<HTMLAnchorElement>(".sidebar__link[href='/lookup']")!
+      .click();
     await flushPromises();
     expect(router.currentRoute.value.path).toBe("/lookup");
     expect(host.hasAttribute("data-peeking")).toBe(false);
@@ -381,9 +398,58 @@ describe("Sidebar desktop rail composition", () => {
     const { wrapper } = await mountSidebar();
     await collapseViaToggle(wrapper);
     const host = hostOf(wrapper);
-    // Offline default store: the degraded card's dot names its state.
-    const dot = host.querySelector<HTMLElement>(".sidebar__status-dot");
+    // Offline default store: the degraded card's dot names its state. The
+    // query rides the ACTIVE generation (the leaving copy keeps no hints).
+    const dot = activeGeneration(host).querySelector<HTMLElement>(".sidebar__status-dot");
     expect(dot?.getAttribute("data-hint")).toBe(t("common.game.offline"));
+  });
+
+  it("hands the body over through the SWAP: per-generation pinned widths", async () => {
+    // The 2026-10-30 fix: the rail toggle exchanges the two densities
+    // through hikari's crossfade swap. Each generation renders at the
+    // dense/expanded box of ITS OWN — the body is never laid out at the
+    // panel's transient width (the fix's whole point). The mid-dissolve
+    // freeze itself (both generations mounted, leaving copy frozen) is
+    // pinned in hikari's HkSidebarRailSwap suite, where the Transition
+    // timing is deterministic; happy-dom here resolves the leave
+    // synchronously (no stylesheet → no transition), so this test pins
+    // the composition and the REST states' pinned widths.
+    const { wrapper } = await mountSidebar();
+    const host = hostOf(wrapper);
+
+    // The swap rides INSIDE the clip; the density dress keys off the
+    // generation (the root keeps only its data-rail state marker).
+    const panel = panelOf(wrapper);
+    const clip = panel.querySelector<HTMLElement>(":scope > .hk-sidebar-rail-clip")!;
+    const swap = clip.querySelector<HTMLElement>(":scope > .hk-sidebar-rail-swap")!;
+    expect(swap, "the kit's crossfade swap hosts the body").toBeTruthy();
+    const generationOf = () =>
+      Array.from(host.querySelectorAll<HTMLElement>(".hk-sidebar-rail-generation"));
+
+    // Expanded rest: ONE generation, pinned at the expanded width, no dress.
+    let gens = generationOf();
+    expect(gens.length).toBe(1);
+    expect(gens[0]!.hasAttribute("data-rail")).toBe(false);
+    expect(gens[0]!.style.width).toBe(EXPANDED_WIDTH);
+
+    // Collapsed rest: ONE generation (happy-dom resolves the leave
+    // synchronously — the mid-dissolve window is pinned upstream), pinned
+    // at the rail width and dressed.
+    await collapseViaToggle(wrapper);
+    gens = generationOf();
+    expect(gens.length).toBe(1);
+    expect(gens[0]!.hasAttribute("data-rail")).toBe(true);
+    expect(gens[0]!.style.width).toBe(RAIL_WIDTH);
+    // A peek lifts the dress on the entering generation (full width again).
+    vi.useFakeTimers();
+    fire(host, "pointerenter");
+    await vi.advanceTimersByTimeAsync(400);
+    await flushPromises();
+    gens = generationOf();
+    expect(gens[gens.length - 1]!.hasAttribute("data-rail")).toBe(false);
+    expect(gens[gens.length - 1]!.style.width).toBe(EXPANDED_WIDTH);
+    // The root keeps the data-rail STATE MARKER (hosts/tests).
+    expect(host.hasAttribute("data-rail")).toBe(false);
   });
 });
 
