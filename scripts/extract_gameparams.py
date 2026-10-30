@@ -140,10 +140,12 @@ def collect_ship_slices(data: object) -> dict[int, dict]:
 
     entity_index: dict[str, dict] = {}
     if isinstance(data, dict):
+        # Same key rule as the Rust json_entity_index: numeric id keys (and
+        # the "ships" wrapper) are Ship entries, never ammo names.
         entity_index = {
             key: value
             for key, value in data.items()
-            if key != "ships" and isinstance(value, dict)
+            if key != "ships" and isinstance(value, dict) and _as_int(key) is None
         }
 
     slices: dict[int, dict] = {}
@@ -184,7 +186,10 @@ def _torpedo_ammo_names(entity: dict) -> list[str]:
 def embed_torpedo_ammo(entity: dict, entities: dict[str, dict]) -> dict:
     """Slice shape v2: attach the referenced torpedo Projectile entities
     under "__torpedoAmmo" (name → entity). Returns the input unchanged when
-    nothing embeds; never mutates the pick (it is shared with the index)."""
+    nothing embeds; never mutates the pick (it is shared with the index),
+    and an existing "__torpedoAmmo" key wins (the Rust embed's or-insert)."""
+    if "__torpedoAmmo" in entity:
+        return entity
     ammo: dict[str, dict] = {}
     for name in _torpedo_ammo_names(entity):
         candidate = entities.get(name)
@@ -334,6 +339,14 @@ def main() -> int:
         )
     if build_file.is_file() and build_file.read_text(encoding="utf-8").strip() != str(build):
         print(f"[extract-gameparams] build changed → re-extracting whole pack.")
+        args.force = True
+
+    # A stamp mismatch must re-extract too: pack_complete() only bypassed the
+    # EARLY return for a pre-v2 pack — the per-ship skip below would keep
+    # every v1 slice while the stamp write claims shape v2.
+    stamp_file = out_dir / "slice-format.txt"
+    if not stamp_file.is_file() or stamp_file.read_text(encoding="utf-8").strip() != str(SLICE_FORMAT):
+        print(f"[extract-gameparams] slice shape changed → re-extracting whole pack.")
         args.force = True
 
     print(f"[extract-gameparams] loading {source} ...")

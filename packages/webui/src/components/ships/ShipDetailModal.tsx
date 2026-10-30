@@ -742,6 +742,11 @@ const SpecsPanel = defineComponent({
                         <span class="specs-group__section-label">
                           {t(`ships.spec.${sec.labelKey}`)}
                           {sec.suffix ?? ""}
+                          {sec.hintKey ? (
+                            <span class="specs-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
+                              <HelpCircle size={11} />
+                            </span>
+                          ) : null}
                         </span>
                         {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
                       </div>

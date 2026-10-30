@@ -31,7 +31,7 @@
  * renders with internal divider lines.
  */
 import { buildAntiAirRows } from "./antiAir";
-import { mainCaliberMm, resolveShipParts } from "./shipParts";
+import { mainCaliberMm, resolveShipParts, roleHpSlots } from "./shipParts";
 export interface SpecRow {
   /** i18n key under `ships.spec.*`, e.g. "hp" → "ships.spec.hp". */
   key: string;
@@ -50,6 +50,8 @@ export interface SpecRow {
 export interface SpecSection {
   /** i18n key under `ships.spec.section.*` for the block label. */
   labelKey: string;
+  /** Optional i18n key for a help tooltip explaining the section. */
+  hintKey?: string;
   /** Optional raw suffix appended to the label (e.g. " · 10.0 km" to tell
    * two same-type torpedo sections apart). */
   suffix?: string;
@@ -154,7 +156,8 @@ interface ConcealmentBlock {
 /**
  * A torpedo Projectile entity out of the slice's embedded `__torpedoAmmo`
  * (shape v2). `distanceOfDamage` tiers and the homing params only exist on
- * submarine torpedoes; surface launchers keep working through the WG rows.
+ * submarine torpedoes; surface ships render sections too, limited to their
+ * top-configuration launchers' mounted types.
  */
 interface TorpedoAmmoEntry {
   alphaDamage?: unknown;
@@ -271,14 +274,14 @@ function shellSections(
   nation?: string,
 ): SpecSection[] {
   if (!shells || typeof shells !== "object") return [];
-  const order: Array<[string, string | undefined]> = [
-    ["HE", "heShell"],
-    ["CS", "sapShell"],
-    ["AP", "apShell"],
-    ["Cruise", "cruiseShell"],
+  const order: Array<[string, string, string | undefined]> = [
+    ["HE", "heShell", "heShellHint"],
+    ["CS", "sapShell", "sapShellHint"],
+    ["AP", "apShell", "apShellHint"],
+    ["Cruise", "cruiseShell", undefined],
   ];
   const out: SpecSection[] = [];
-  for (const [key, labelKey] of order) {
+  for (const [key, labelKey, hintKey] of order) {
     const sh = shells[key];
     if (!sh || typeof sh !== "object" || !labelKey) continue;
     const e = sh as ShellEntry;
@@ -304,7 +307,7 @@ function shellSections(
       const dpm = (Number(dmg.replace(/[^0-9.-]/g, "")) * barrels * 60) / reload;
       rows.push({ key: key === "AP" ? "apDpm" : "heDpm", value: fmtNum(dpm)! });
     }
-    if (rows.length) out.push({ labelKey, rows });
+    if (rows.length) out.push({ labelKey, hintKey, rows });
   }
   return out;
 }
@@ -430,15 +433,28 @@ function homingCutoffValue(raw: Record<string, unknown> | undefined): string | n
  * entities (slice shape v2). Homing types (carrying `SubmarineTorpedoParams`)
  * and straight-runners get labelled sections; two sections of the same kind
  * disambiguate with a "range · speed" suffix (a Surcouf-style dual-homing
- * fit). Returns [] when the slice predates the embedding — the caller then
- * keeps the WG profile's single-torpedo rows.
+ * fit). Only the TOP configuration's launchers decide what renders: the
+ * embedding carries every ammo entity any launcher block references —
+ * researchable alternates included (Shimakaze A1/A2/A3) — while the panel
+ * shows the mounted fit. Returns [] when the slice predates the embedding —
+ * the caller then keeps the WG profile's single-torpedo rows.
  */
 function torpedoSections(gameparams: unknown): SpecSection[] {
   const gp = gameparams as Record<string, unknown> | null | undefined;
   const ammo = gp?.__torpedoAmmo;
   if (!ammo || typeof ammo !== "object" || Array.isArray(ammo)) return [];
+  // Ammo names mounted by the top-configuration torpedo launchers.
+  const mounted = new Set<string>();
+  if (gp) {
+    for (const [, slot] of roleHpSlots(resolveShipParts(gp, "top").torpedoes)) {
+      for (const name of Array.isArray(slot.ammoList) ? slot.ammoList : []) {
+        if (typeof name === "string") mounted.add(name);
+      }
+    }
+  }
   const sections: SpecSection[] = [];
-  for (const entity of Object.values(ammo)) {
+  for (const [name, entity] of Object.entries(ammo)) {
+    if (mounted.size > 0 && !mounted.has(name)) continue;
     if (!entity || typeof entity !== "object") continue;
     const e = entity as TorpedoAmmoEntry;
     const rows: SpecRow[] = [];
@@ -629,7 +645,7 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
       mobRows.push({ key: "underwaterSpeed", value: `${uwSpeed.toFixed(1)} kn` });
     const buoySpeed = num(subMob.max_buoyancy_speed);
     if (buoySpeed != null && buoySpeed > 0)
-      mobRows.push({ key: "buoyancySpeed", value: `${buoySpeed.toFixed(1)} kn` });
+      mobRows.push({ key: "buoyancySpeed", value: `${buoySpeed.toFixed(1)} m/s` });
     const buoyRudder = num(subMob.buoyancy_rudder_time);
     if (buoyRudder != null && buoyRudder > 0)
       mobRows.push({ key: "buoyancyRudder", value: `${buoyRudder.toFixed(1)} s` });

@@ -149,6 +149,15 @@ function subGameparams() {
           [86.66, 1],
         ],
       },
+      // A researchable alternate the top launchers do NOT mount: embedded by
+      // the materializer (some launcher block references it) but never shown.
+      PGPT999_Unmounted: {
+        name: "PGPT999_Unmounted",
+        typeinfo: { type: "Projectile", species: "Torpedo" },
+        alphaDamage: 30000,
+        speed: 70,
+        maxDist: 400,
+      },
     },
   } as Record<string, unknown>;
 }
@@ -209,6 +218,8 @@ describe("buildShipSpecs submarine battery and mobility", () => {
     expect(rowOf(groups, "battery", "batteryRegen")?.value).toBe("0.8/s");
     expect(rowOf(groups, "mobility", "underwaterSpeed")?.value).toBe("27.0 kn");
     expect(rowOf(groups, "mobility", "buoyancyRudder")?.value).toBe("18.4 s");
+    // WG documents max_buoyancy_speed as the vertical dive rate, m/s.
+    expect(rowOf(groups, "mobility", "buoyancySpeed")?.value).toBe("3.4 m/s");
   });
 });
 
@@ -222,6 +233,16 @@ describe("buildShipSpecs per-type torpedo sections", () => {
     ]);
     // Group-level rows keep the launcher-level facts (reload / launchers).
     expect(torp?.rows.map((r) => r.key)).toEqual(["torpReload", "torpLaunchers"]);
+  });
+
+  it("hides torpedo types the top-configuration launchers do not mount", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", subGameparams());
+    const torp = groups.find((g) => g.group === "torpedoes");
+    // The embedded PGPT999_Unmounted alternate (researchable variant) never
+    // renders — the panel shows the mounted fit only.
+    expect(torp?.sections?.length).toBe(2);
+    const values = (torp?.sections ?? []).flatMap((s) => s.rows.map((r) => r.value));
+    expect(values).not.toContain("30,000");
   });
 
   it("formats the ×0.03 km distance scale and the falloff tiers", () => {

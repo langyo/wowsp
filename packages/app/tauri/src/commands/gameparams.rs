@@ -164,23 +164,37 @@ fn write_bulk_fill_marker(data_dir: &Path, build: u32) {
 /// Bumping it wipes the per-ship cache once so every slice re-materializes
 /// in the new shape; same best-effort contract as the build-change wipe.
 const SLICE_FORMAT: u32 = 2;
+/// Where the shape stamp lives: OUTSIDE "gameparams/", deliberately. Every
+/// invalidator wipes the whole "gameparams/" dir, so a stamp inside it
+/// would be destroyed by the build-change wipe and re-written by the shape
+/// check — a perpetual wipe loop (each function resurrecting its own marker
+/// while deleting the other's). A sibling file cannot be wiped by either.
+const SLICE_FORMAT_MARKER: &str = "gameparams-slice-format.txt";
 
 /// Drop the per-ship cache when its slices predate the current payload
-/// shape. The marker lives beside the build markers inside `gameparams/`,
-/// so the same wipe covers the bulk-fill marker and the next warm/fill
-/// rewrites the whole roster in the current shape.
+/// shape. The stamp sits beside (not inside) "gameparams/"; the wipe clears
+/// the bulk-fill and build markers with the roster, and the next warm/fill
+/// rewrites everything in the current shape.
 fn invalidate_cache_on_stale_slice_format() {
-    let Some(dir) = appdata_dir_path().ok().map(|d| d.join("gameparams")) else {
+    let Some(root) = appdata_dir_path().ok() else {
         return;
     };
-    let marker = dir.join("slice-format.txt");
-    if fs::read_to_string(&marker).ok().as_deref() == Some(SLICE_FORMAT.to_string().as_str()) {
+    invalidate_cache_on_stale_slice_format_at(&root);
+}
+
+/// The injectable core of invalidate_cache_on_stale_slice_format — root is
+/// the appdata-style root directory holding "gameparams/".
+fn invalidate_cache_on_stale_slice_format_at(root: &Path) {
+    if read_json_in(root, SLICE_FORMAT_MARKER)
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some(SLICE_FORMAT.to_string().as_str())
+    {
         return;
     }
-    if let Some(parent) = marker.parent() {
-        let _ = fs::remove_dir_all(parent);
-    }
-    let _ = write_appdata_json("gameparams/slice-format.txt", &SLICE_FORMAT.to_string());
+    let _ = fs::remove_dir_all(root.join("gameparams"));
+    let _ = write_json_in(root, SLICE_FORMAT_MARKER, &SLICE_FORMAT.to_string());
 }
 
 /// Torpedo ammo entity names referenced by the slice's launcher slots:
@@ -948,20 +962,29 @@ pub(crate) fn latest_build_with_idx(root: &Path) -> Option<u32> {
 
 /// Wipe the per-ship cache when the game's build number changed since it was
 /// filled. Best-effort: a failed wipe only means stale data until the next
-/// build change, never a hard error.
+/// build change, never a hard error. The marker lives INSIDE "gameparams/"
+/// (unlike the slice-format stamp) — a missing marker reads as "not stamped
+/// for this build", the wipe is then a no-op on an already-empty directory
+/// and only re-writes the stamp, so this can never loop against the shape
+/// check: neither invalidator can delete the other's marker anymore.
 fn invalidate_cache_on_build_change(build: u32) {
-    let marker = appdata_dir_path()
-        .map(|d| d.join("gameparams").join("source-build.txt"))
-        .ok();
-    let Some(marker) = marker else { return };
+    let Some(root) = appdata_dir_path().ok() else {
+        return;
+    };
+    invalidate_cache_on_build_change_at(&root, build);
+}
+
+/// The injectable core of invalidate_cache_on_build_change — root is the
+/// appdata-style root directory holding "gameparams/".
+fn invalidate_cache_on_build_change_at(root: &Path, build: u32) {
+    let dir = root.join("gameparams");
+    let marker = dir.join("source-build.txt");
     let current = fs::read_to_string(&marker).ok();
     if current.as_deref() == Some(build.to_string().as_str()) {
         return;
     }
-    if let Some(parent) = marker.parent() {
-        let _ = fs::remove_dir_all(parent);
-    }
-    let _ = write_appdata_json("gameparams/source-build.txt", &build.to_string());
+    let _ = fs::remove_dir_all(&dir);
+    let _ = write_json_in(root, "gameparams/source-build.txt", &build.to_string());
 }
 
 /// Normalize the decoded GameParams pickle root to the params dict. The raw
@@ -2075,6 +2098,86 @@ mod tests {
         assert!(bulk_fill_marker_matches(&dir, 1200));
         assert!(!bulk_fill_marker_matches(&dir, 1300));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Regression (the v1→v2 upgrade shape): the shape stamp and the build
+    /// marker must CONVERGE, never loop. A stamp inside gameparams/ made each
+    /// invalidator's wipe delete the other's marker — every lookup wiped the
+    /// cache again; the stamp now lives OUTSIDE the wiped dir, so after one
+    /// shape wipe + one build re-stamp both checks are durable no-ops, and a
+    /// later build change cannot resurrect the shape wipe.
+    #[test]
+    fn slice_shape_and_build_markers_converge_without_loop() {
+        let root = crate::commands::pairing::tests::tempfile_dir();
+        // A v1 cache: slices + build stamp, no shape stamp.
+        let cache = root.join("gameparams");
+        fs::create_dir_all(&cache).unwrap();
+        let slice = cache.join("4282948544.json");
+        fs::write(&slice, "{\"name\":\"v1\"}").unwrap();
+        write_json_in(&root, "gameparams/source-build.txt", "1200").unwrap();
+
+        // The call pair get_ship_gameparams runs, twice: the second pair must
+        // find both markers in place and do nothing.
+        invalidate_cache_on_stale_slice_format_at(&root);
+        invalidate_cache_on_build_change_at(&root, 1200);
+        let stamp_after_first = fs::read_to_string(root.join(SLICE_FORMAT_MARKER)).unwrap();
+        invalidate_cache_on_stale_slice_format_at(&root);
+        invalidate_cache_on_build_change_at(&root, 1200);
+        assert_eq!(
+            fs::read_to_string(root.join(SLICE_FORMAT_MARKER)).unwrap(),
+            stamp_after_first,
+            "the shape stamp must be stable across repeated checks"
+        );
+        assert_eq!(
+            fs::read_to_string(cache.join("source-build.txt")).unwrap(),
+            "1200",
+            "the build stamp must be stable across repeated checks"
+        );
+
+        // A later game update wipes the roster (build change) but MUST NOT
+        // delete the shape stamp — the next shape check stays a no-op.
+        invalidate_cache_on_build_change_at(&root, 1300);
+        assert!(!slice.exists(), "the build change wipes the roster");
+        assert!(
+            root.join(SLICE_FORMAT_MARKER).exists(),
+            "the build wipe must not delete the shape stamp"
+        );
+        invalidate_cache_on_stale_slice_format_at(&root);
+        assert!(
+            root.join(SLICE_FORMAT_MARKER).exists(),
+            "no second shape wipe after a build change"
+        );
+        assert_eq!(
+            fs::read_to_string(cache.join("source-build.txt")).unwrap(),
+            "1300"
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A cache predating the shape stamp is wiped exactly once (the v1→v2
+    /// upgrade), and the stamp the wipe writes survives later checks.
+    #[test]
+    fn stale_slice_format_wipes_the_roster_once() {
+        let root = crate::commands::pairing::tests::tempfile_dir();
+        let cache = root.join("gameparams");
+        fs::create_dir_all(&cache).unwrap();
+        let slice = cache.join("4282948544.json");
+        fs::write(&slice, "{\"name\":\"v1\"}").unwrap();
+
+        invalidate_cache_on_stale_slice_format_at(&root);
+        assert!(!slice.exists(), "the v1 roster is wiped once");
+        assert_eq!(
+            fs::read_to_string(root.join(SLICE_FORMAT_MARKER)).unwrap(),
+            SLICE_FORMAT.to_string()
+        );
+
+        // The refill's output survives every later check untouched. (The
+        // refill recreates the wiped dir, as write_json_in does.)
+        fs::create_dir_all(&cache).unwrap();
+        fs::write(&slice, "{\"name\":\"v2\",\"__torpedoAmmo\":{}}").unwrap();
+        invalidate_cache_on_stale_slice_format_at(&root);
+        assert!(slice.exists(), "a stamped cache is never re-wiped");
+        fs::remove_dir_all(&root).unwrap();
     }
 
     /// The pickled variant groups id-sharing entries the same way the
