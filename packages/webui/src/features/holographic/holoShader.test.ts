@@ -45,6 +45,9 @@ describe("holoShader", () => {
     // terrain and ghost ships, with a normalized direction ready to use.
     expect(mat.uniforms.uFacetGain.value).toBe(0);
     expect(mat.uniforms.uFacetSat.value).toBe(0);
+    // Slice lines are the stage's opt-in too — markers/terrain/mod stage
+    // keep the legacy fill.
+    expect(mat.uniforms.uSliceGain.value).toBe(0);
     const dir = mat.uniforms.uFacetDir.value as THREE.Vector3;
     expect(dir).toBeInstanceOf(THREE.Vector3);
     expect(dir.length()).toBeCloseTo(1, 6);

@@ -279,7 +279,9 @@ export function createShipStage(
     const holo = makeShipHoloMaterial();
     // The site runs both themes; the pale light-mode hero background washes
     // a translucent fill out further, so it keeps a tenth more opacity
-    // there — same split as the desktop stage. Applied live: the shared
+    // there. (The desktop stage runs an even denser light fill — 0.72 — and
+    // a mode-aware palette; the site hero is a single monochrome hull, so
+    // it keeps its own lighter split.) Applied live: the shared
     // stageTheme source re-applies on a mid-session flip (the old
     // read-once snapshot lagged a whole page view behind the toggle).
     const applyHoloFillAlpha = (mode: StageThemeMode) => {
@@ -294,6 +296,11 @@ export function createShipStage(
     holo.uniforms.uFlickerGain.value = 0.05;
     holo.uniforms.uSweepLo.value = holoBox.min.y - holoYSpan * 0.3;
     holo.uniforms.uSweepHi.value = holoBox.max.y + holoYSpan * 0.3;
+    // Stacked-projection slices — the app stage's main surface cue, scaled
+    // to the model (site scenes are not normalized to the app's 200-unit
+    // box, so the pitch follows the hull's own height: ~10 lines over it).
+    holo.uniforms.uSliceGain.value = 0.30;
+    holo.uniforms.uSliceSpacing.value = Math.max(holoYSpan / 10, 0.05);
     disposables.push(holo);
     // Unsubscribed with the stage's other disposables in dispose().
     disposables.push({

@@ -21,6 +21,7 @@ import { readStageThemeMode, useImage, watchStageThemeMode, type StageThemeMode 
 import { isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
+import { applyStageLook, colorForCategory, categoryBase, WEAPON_NAMES, HOLO_BASE_ALPHA } from "@/features/holographic/stageLook";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import ErrorCard from "@/components/base/ErrorCard";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -49,8 +50,10 @@ export interface ArmorZone {
  * ship detail modal.
  *
  * Replaces the old inline `init3dViewer` (fixed 150px, no interaction). This
- * stage renders the ship as a cyan hologram with Fresnel rim lighting +
- * scanlines + a faint wireframe overlay, and is fully orbit-controlled:
+ * stage renders the ship as a glass-projection hologram — a translucent
+ * category-tinted shell with a Fresnel silhouette rim, stacked slice lines,
+ * scanlines and a climbing sweep band (palette + gains live in
+ * `features/holographic/stageLook.ts`) — and is fully orbit-controlled:
  * left-drag to rotate, wheel to zoom, right-drag to pan. Auto-rotates gently
  * until the user grabs it.
  *
@@ -145,80 +148,6 @@ function armorBucketForRgb(rgb: number): number {
  *  differently, and the depth test then rejects arbitrary whole triangles
  *  ("half the hull missing"). See makeHoloDepthMaterial. */
 const ShipStageDepthMaterial = makeHoloDepthMaterial();
-
-/** Mesh categories that render one hue step brighter (weapons pop off the
- *  hull under the holographic palette). */
-const WEAPON_NAMES = new Set([
-  "main_battery", "secondary_battery", "aa_mount", "torpedo",
-  "weapon", "turret_part", "aircraft",
-]);
-
-/** Pre-defined base hues (0-360) for known category names.  Each
- *  category name always maps to the same hue — no hash drift. */
-const PRESET_HUES: Record<string, number> = {
-  // Hull — ONE hue for the whole plating. The bow/mid/stern split is
-  // a bake-chunk boundary, not a visible structure: giving each chunk
-  // its own hue painted three mismatched pastel slabs over a
-  // continuous hull, one of the main "mushy patchwork" cues.
-  hull_bow:    195,
-  hull_mid:    195,
-  hull_stern:  195,
-  hull_body:   195,
-  deck_house:  220,
-  // Superstructure — green-cyan, distinct from blue hull body
-  superstructure: 148,
-  funnel:      240,
-  // Weapons — warm spectrum with 30–40° gaps
-  main_battery:      22,   // orange
-  secondary_battery: 55,   // amber
-  aa_mount:          6,    // red
-  torpedo:          172,   // teal
-  aircraft:         280,   // purple
-  weapon:            36,   // gold (generic)
-  turret_part:       44,   // darker gold
-  propeller:        200,   // screws share the misc hue
-  misc:             200,
-};
-
-/** Instance-suffixed bake names ("main_battery_249") still colour by
- *  their category prefix, so every turret looks the same while
- *  remaining individually addressable. */
-function categoryBase(name: string): string {
-  for (const key of Object.keys(PRESET_HUES)) {
-    if (name === key || name.startsWith(`${key}_`)) return key;
-  }
-  return name;
-}
-
-function colorForCategory(name: string): { base: THREE.Color; fresnel: THREE.Color } {
-  name = categoryBase(name);
-  let hue: number, sat: number, lit: number;
-  if (PRESET_HUES[name] != null) {
-    hue = PRESET_HUES[name];
-  } else {
-    let h = 0;
-    for (let i = 0; i < name.length; i++) {
-      h = ((h << 5) - h) + name.charCodeAt(i);
-      h |= 0;
-    }
-    hue = (h >>> 0) % 360;
-  }
-  if (WEAPON_NAMES.has(name)) {
-    sat = 0.72;
-    lit = 0.35;
-  } else if (name.startsWith("hull_") || name === "deck_house" || name === "superstructure") {
-    sat = 0.48;
-    lit = 0.30;
-  } else if (name === "funnel") {
-    sat = 0.15; lit = 0.22;
-  } else {
-    sat = 0.50; lit = 0.32;
-  }
-  return {
-    base: new THREE.Color().setHSL(hue / 360, sat, lit),
-    fresnel: new THREE.Color().setHSL(hue / 360, sat * 0.85, Math.min(lit * 2.0, 0.85)),
-  };
-}
 
 /** userData bookkeeping written onto armor overlay meshes. */
 interface ArmorMeshUserData {
@@ -1253,56 +1182,28 @@ export default defineComponent({
       });
       if (import.meta.env.DEV) console.log("[holo model] meshes:", meshes.length, "names:", meshes.map(m => m.name));
 
+      const lookMode = readStageThemeMode();
       for (const mesh of meshes) {
         const name = mesh.name || "misc";
         let mat = materialCache.get(name);
         if (!mat) {
           mat = makeHoloMaterial();
-          const c = colorForCategory(name);
+          // The whole material look — palette + gains — lives in the shared
+          // stageLook module (tuned in the holo lab; see that header for why
+          // the normal-driven lighting terms stay dark). The category is
+          // tagged onto the material so a live theme flip can re-dress the
+          // colours without rebuilding the scene (applyStageTheme).
+          const c = colorForCategory(name, lookMode);
           mat.uniforms.baseColor.value.copy(c.base);
           mat.uniforms.fresnelColor.value.copy(c.fresnel);
-          // Definition layer: smooth-normal headlight + measuring grid so
-          // broad panels read as surfaces instead of a flat pastel fill.
-          // Both gains stay LOW: the baked hull's quantized plates sit at
-          // slightly different incidences, and big normal-driven terms
-          // amplify those differences into mottled patches across the
-          // flank (the headlight) or dense stripes at grazing (the grid).
-          mat.uniforms.uLightGain.value = 0.30;
-          mat.uniforms.uLinesGain.value = 0.12;
-          // Facet tone: a key light fixed in the ship's frame, so deck, flank
-          // and end plates keep different brightness/saturation at ANY camera
-          // angle (the headlight above fades out at the grazing angles a
-          // broadside view sits at, which is where the hull went flat). Gains
-          // stay low — the point is the tone STEP at a real edge, not a paint
-          // job — and the direction leans vertical so the flank, the tone the
-          // rest of this block is tuned around, keeps its exact value.
-          mat.uniforms.uFacetGain.value = 0.22;
-          mat.uniforms.uFacetSat.value = 0.35;
-          mat.uniforms.uFacetDir.value.set(0.5, 0.78, 0.38).normalize();
-          // Glassier hologram: the fill drops to roughly 60% of the legacy
-          // opacity in the dark theme (a tenth more in the light theme) so
-          // broadsides show the background through them (the
-          // depth anchor still hides the far side), the rim carries the
-          // silhouette, and three layered motions — fine screen rows, a
-          // climbing sweep band, a faint flicker — keep the surface reading
-          // as a transmitted projection rather than moulded plastic. The
-          // pale light-theme background washes a translucent fill out
-          // further, so it keeps a tenth more opacity there (same mode
-          // split the scene background uses — HOLO_BASE_ALPHA below, and a
-          // live theme flip re-applies it across the cache).
-          mat.uniforms.uBaseAlpha.value = HOLO_BASE_ALPHA[readStageThemeMode()];
-          mat.uniforms.uRimAlpha.value = 0.55;
-          mat.uniforms.uScanGain.value = 0.50;
-          mat.uniforms.uSweepGain.value = 0.40;
-          mat.uniforms.uFlickerGain.value = 0.05;
-          // Confine the rim to the true silhouette (tuned in the holo lab
-          // against the crumpled-foil plate seams; see holoShader.ts).
-          mat.uniforms.uFresnelPow.value = 5.0;
-          mat.uniforms.uFresnelGain.value = 1.0;
+          applyStageLook(mat.uniforms as unknown as HoloUniforms, lookMode);
+          mat.userData.holoCategory = categoryBase(name);
           materialCache.set(name, mat);
         }
         mesh.material = mat;
-        mesh.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
+        // Instance-suffixed names ("main_battery_249") must match their
+        // category for the render-order bump too, same as for the colour.
+        mesh.renderOrder = WEAPON_NAMES.has(categoryBase(name)) ? 1 : 0;
 
         // Depth anchor: the holo material is transparent and writes no
         // depth, so without an opaque anchor every interior / far-side face
@@ -1315,7 +1216,7 @@ export default defineComponent({
           mesh.geometry,
           ShipStageDepthMaterial,
         );
-        depthAnchor.renderOrder = WEAPON_NAMES.has(name) ? 1 : 0;
+        depthAnchor.renderOrder = mesh.renderOrder;
         mesh.add(depthAnchor);
 
         // No structural-edge overlay: the baked hull is a coarse mesh, so an
@@ -1339,10 +1240,6 @@ export default defineComponent({
       dark: { bg: 0x0c121e, gridA: 0x1a3a55, gridB: 0x0e1f30, gridOpacity: 0.4 },
       light: { bg: 0xf5f8fc, gridA: 0x2f7fc2, gridB: 0xaec3d6, gridOpacity: 0.5 },
     } as const;
-    /** Holographic fill alpha per mode: the pale light-theme background
-     *  washes a translucent fill out further, so it keeps a tenth more
-     *  opacity there (the material factory and applyStageTheme share it). */
-    const HOLO_BASE_ALPHA = { dark: 0.45, light: 0.55 } as const;
     /** Waterline gauge hue per mode: lavender reads on the dark scene,
      *  deep purple on the light one (rebuildWaterline + applyStageTheme). */
     const WL_GAUGE = { dark: 0xd8b4fe, light: 0x7e22ce } as const;
@@ -1383,12 +1280,15 @@ export default defineComponent({
         sc.add(gridRef);
       }
       waterlineGaugeMat?.color.setHex(WL_GAUGE[mode]);
-      // Holographic fill alpha across every staged model — walk the live
-      // scene instead of a material cache (prepareHoloModel's cache is
-      // per-load): every holo material carries uBaseAlpha, every non-holo
-      // material (wire, waterline, armor, depth anchors) lacks it, so the
-      // uniform's presence is the discriminator. Covers the hidden
-      // airframes too — they sit in the scene with visible=false.
+      // Holographic fill alpha + palette across every staged model — walk
+      // the live scene instead of a material cache (prepareHoloModel's
+      // cache is per-load): every holo material carries uBaseAlpha, every
+      // non-holo material (wire, waterline, armor, depth anchors) lacks
+      // it, so the uniform's presence is the discriminator. Covers the
+      // hidden airframes too — they sit in the scene with visible=false.
+      // The palette is mode-aware (saturated azure glass on the light
+      // stage, translucent cyan on the dark one), so a flip re-dresses the
+      // category colours tagged onto the materials as well as the alpha.
       sc.traverse((o) => {
         const mat = (o as THREE.Mesh).material as
           | THREE.Material
@@ -1398,6 +1298,12 @@ export default defineComponent({
         for (const m of list) {
           const uniforms = (m as THREE.ShaderMaterial).uniforms;
           if (uniforms?.uBaseAlpha) uniforms.uBaseAlpha.value = HOLO_BASE_ALPHA[mode];
+          const category = m.userData?.holoCategory as string | undefined;
+          if (category && uniforms?.baseColor && uniforms?.fresnelColor) {
+            const c = colorForCategory(category, mode);
+            (uniforms.baseColor as { value: THREE.Color }).value.copy(c.base);
+            (uniforms.fresnelColor as { value: THREE.Color }).value.copy(c.fresnel);
+          }
         }
       });
     }
