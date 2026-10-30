@@ -54,3 +54,38 @@ version without touching the updater.
 - `just publish-shipdata` — bake the two-realm bundle + publish it.
 - `scripts/release_models.py` — the res pack (+ deltas).
 - `scripts/mod_hub_publish.py` — the mod-hub catalog.
+
+## Unified state layer (the freshness ledger)
+
+Stamped rows (res-pack, data-kit, data-ship-gameparams) also carry a ledger
+entry at `<data>/resources/<id>.json` — ONE schema
+(`{schema, id, sha256, version, installedAt, checkedAt}`) across every
+resource, whatever its owner's internal stamp looks like. The owner stamps
+remain the CONTENT truth (the walk reads them directly); the ledger records
+WHEN: `installedAt` is backfilled on the first walk that sees an owner
+stamp (approximate for pre-ledger installs) and re-stamped when the content
+hash moves; `checkedAt` is set by the refresh entry. Unstamped rows
+(caches, the bundled snapshot) never grow a ledger file.
+
+## The refresh entry
+
+`refresh_resources(ids?)` is the one IPC that re-checks the refreshable
+rows: the data-pack lane (both datasets, the same single-flight boot path)
+and the res-pack manifest check (fetch-only — downloads stay behind their
+own consented cards). Unknown ids are ignored; a failed lane is logged and
+absent from the returned id list, never failing the whole call. The
+inventory's refresh button calls it with no ids (refresh everything
+refreshable). The app-update row is deliberately not refreshable here: its
+channel is frozen (see above) and the updater owns its checks.
+
+## Manifest envelope equivalence
+
+No wire format changed in S3. The data channel's `wowsp-data.json` IS the
+canonical envelope (`{format, datasets: {id: {version, sha256, asset,
+size}}}`); the res manifest (`wowsp-res.json`) is a single-entry document
+whose fields map one-to-one onto an envelope entry
+(`treeSha256`→`sha256`, `version`→`version`, `assetSha256`/`assetSize`→
+asset identity), and the unified state ledger gives both the same
+client-side shape. Forcing the envelope onto single-entry channels would
+have been schema churn with no reader — the equivalence plus the ledger
+deliver the actual coherence.
