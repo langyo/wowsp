@@ -290,11 +290,10 @@ export function createShipStage(
     };
     applyHoloFillAlpha(readStageThemeMode());
     holo.uniforms.uRimAlpha.value = 0.55;
-    // Rim confined to the true silhouette — matches the app stage (pow 20):
-    // at pow 10 the curving hull regions (bilge turn, bow flare) still
-    // crossed the visible threshold and painted bright lines over the
-    // coarse quantized hull.
-    holo.uniforms.uFresnelPow.value = 20.0;
+    // Rim confined to the true silhouette — matches the app stage (pow 60):
+    // even at pow 20 the nearly edge-on plates of the curving bow and bilge
+    // still glowed faintly over the coarse quantized hull.
+    holo.uniforms.uFresnelPow.value = 60.0;
     holo.uniforms.uFresnelGain.value = 1.0;
     holo.uniforms.uScanGain.value = 0.50;
     holo.uniforms.uSweepGain.value = 0.40;

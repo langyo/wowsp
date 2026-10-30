@@ -154,14 +154,13 @@ export function applyStageLook(u: HoloUniforms, mode: StageLookMode): void {
   u.uScanGain.value = 0.45;
   u.uSweepGain.value = 0.40;
   u.uFlickerGain.value = 0.05;
-  // Confine the rim to the true silhouette: exponent 20 with a modest
-  // gain keeps the rim a silhouette light instead of a per-plate mosaic of
-  // bright wedges on the coarse quantized hull. At pow 10 the continuously
-  // curving hull regions (bilge turn, bow flare, plate creases) still
-  // crossed the visible threshold and painted bright curving lines across
-  // the flank; 0.9^20 = 0.12 vs 0.9^10 = 0.35 pushes them under it while
-  // the true silhouette (dot -> 1) is untouched.
-  u.uFresnelPow.value = 20.0;
+  // Confine the rim to the true silhouette: a razor exponent with a
+  // modest gain keeps the rim a silhouette light instead of a per-plate
+  // mosaic of bright wedges on the coarse quantized hull. Even at pow 20
+  // the nearly edge-on plates of the curving bow and bilge still glowed
+  // faintly; 0.9^60 = 0.001 buries them while the true silhouette
+  // (dot -> 0.98+) still reads as a thin outline.
+  u.uFresnelPow.value = 60.0;
   u.uFresnelGain.value = 1.2;
   // Stacked-projection slices: the hologram's main surface cue. 4 world
   // units of pitch puts ~10 lines over a normalized hull's height; the
