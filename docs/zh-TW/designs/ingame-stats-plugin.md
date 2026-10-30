@@ -274,6 +274,15 @@ WOWSP_PROBE price catalog written 日誌行報告各集合計數），或在整�
 id）以及元件形態（解碼的 __slots__ 類別還是 SafeClass 包裝）；離線 harness
 已用植入集合固定解析契約。
 
+**消費方式。** `scripts/extract/apply_price_catalog.py` 把採集到的
+`price_catalog.json` 連接到已隨包的升級鏈資料上：`--inspect` 印出採集
+形狀與連接報告（各集合計數、命中 id、未命中樣本、出現的貨幣值），不寫
+任何檔案；`--apply` 填充逐模組的 `xp`/`credits` 與邊的
+`xpWithModules`/`requiredModules`，並在寫入前用鏈資料既有的
+`xpShip` 校驗採集的艦船經驗；`--self-test` 離線證明連接/填充邏輯
+（CI 與探針沙盒合規檢查並排執行），因此拿到新採集只需 inspect、apply、
+複核。
+
 ## 產品整合
 
 1. **開關即自動安裝**：在設定中啟用遊戲內排序來源後，經由現有的

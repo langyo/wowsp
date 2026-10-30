@@ -461,6 +461,15 @@ written 日志行报告各集合计数），或在整个 hub 被扣留（Lesta �
 （解码的 __slots__ 类还是 SafeClass 包装）；离线 harness 已用植入集合固定
 解析契约。
 
+**消费方式。** `scripts/extract/apply_price_catalog.py` 把采集到的
+`price_catalog.json` 连接到已随包的升级链数据上：`--inspect` 打印采集
+形状与连接报告（各集合计数、命中 id、未命中样例、出现的货币值），不写
+任何文件；`--apply` 填充逐模块的 `xp`/`credits` 与边的
+`xpWithModules`/`requiredModules`，并在写入前用链数据里已有的
+`xpShip` 校验采集的舰船经验；`--self-test` 离线证明连接/填充逻辑
+（CI 与探针沙盒合规检查并排运行），因此拿到新采集只需 inspect、apply、
+复核。
+
 ## 准心瞄准浮窗
 
 瞄准浮窗（2026-10-18）在准心正下方一段可配置的距离上悬浮显示被瞄准

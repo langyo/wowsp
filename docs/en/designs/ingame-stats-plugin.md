@@ -593,6 +593,17 @@ the entity-id join keys (ship/item ids) and the component shapes (the
 decoded __slots__ classes vs SafeClass wrappers); the harness pins the
 parsing contract offline with planted collections.
 
+**Consuming the capture.** `scripts/extract/apply_price_catalog.py`
+joins a captured `price_catalog.json` onto the bundled upgrade-chain
+data: `--inspect` prints the capture shape and the join report (per
+collection counts, matched ids, sample misses, the currencies seen) and
+writes nothing; `--apply` fills the per-module `xp`/`credits` and the
+`xpWithModules`/`requiredModules` pair of an edge, validating the
+capture's ship XP against the chain's `xpShip` before touching it.
+`--self-test` proves the join/fill logic offline (CI runs it next to the
+probe conformance check), so a fresh capture only has to be inspected,
+applied and reviewed.
+
 ## Crosshair aim panel
 
 The aim panel (2026-10-18) floats the AIMED player's basic stats a
