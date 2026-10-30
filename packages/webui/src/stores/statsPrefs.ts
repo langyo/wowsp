@@ -120,7 +120,8 @@ export interface StatsPrefs {
    *  applies in both live-roster density modes, over the row's resolved
    *  stats-source PR; AND-composed with `prEnabled`. */
   liveRosterPrTint: boolean;
-  /** Player karma (业力 — the WG net like/report count) pressed to the
+  /** Player karma (业力; the zh-CN UI label is the client's official 声望 —
+   *  the WG net like/report count) pressed to the
    *  TOP-RIGHT of every nickname on the roster surfaces: the live panel's
    *  rows (both densities) and the post-battle matrix's rows (compact and
    *  full). Independent of `prEnabled` — karma is identity metadata, not a
