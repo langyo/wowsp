@@ -17,6 +17,13 @@
  * of an `overflow: auto` box live in SCROLLED space and the gradient
  * would scroll away with the content.
  *
+ * Presentation knobs: the painter feathers the band's inline ends via
+ * `--selection-hint-feather` (default `--space-24`) and sizes the band
+ * via `--selection-hint-size`; everything else stays as-is (both vars
+ * are consumer-overridable on the host itself — a direct declaration
+ * beats an inherited one, so ancestor values never reach the painters;
+ * see useSelectionEdgeHint.scss).
+ *
  * Semantics (mirroring the upstream contract): a "selected" descendant
  * (the default selector matches hikari's own selection grammar —
  * non-false `aria-current`, `aria-selected="true"`, `.is-active`) that
