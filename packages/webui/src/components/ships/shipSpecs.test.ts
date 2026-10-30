@@ -193,7 +193,11 @@ describe("buildShipSpecs submarine sonar", () => {
     expect(rowOf(groups, "sonar", "sonarReload")?.value).toBe("6.0 s");
     expect(rowOf(groups, "sonar", "sonarWaveSpeed")?.value).toBe("500 m/s");
     expect(rowOf(groups, "sonar", "sonarWidth")?.value).toBe("15°");
-    expect(rowOf(groups, "sonar", "sonarMarkTime")?.value).toBe("25 s / 65 s");
+    // The two ping tiers are separate rows — a first ping marks the target
+    // for the shorter duration, the double ping for the longer one.
+    expect(rowOf(groups, "sonar", "sonarPing1")?.value).toBe("25 s");
+    expect(rowOf(groups, "sonar", "sonarPing2")?.value).toBe("65 s");
+    expect(rowOf(groups, "sonar", "sonarMarkTime")).toBeUndefined();
   });
 
   it("falls back to WG's submarine_sonar profile block without the slice", () => {
@@ -201,7 +205,8 @@ describe("buildShipSpecs submarine sonar", () => {
     expect(rowOf(groups, "sonar", "sonarRange")?.value).toBe("14.0 km");
     // Stock profile numbers, not the top-config ones (7.5 s reload).
     expect(rowOf(groups, "sonar", "sonarReload")?.value).toBe("7.5 s");
-    expect(rowOf(groups, "sonar", "sonarMarkTime")?.value).toBe("25 s / 65 s");
+    expect(rowOf(groups, "sonar", "sonarPing1")?.value).toBe("25 s");
+    expect(rowOf(groups, "sonar", "sonarPing2")?.value).toBe("65 s");
   });
 
   it("shows no sonar group for surface ships", () => {

@@ -318,6 +318,12 @@ function shellSections(
  * it is the TOP-configuration module the rest of the panel agrees on — and
  * WG's `submarine_sonar` profile block (stock numbers) answers when the
  * slice is unavailable, so every submarine still gets a sonar group.
+ *
+ * The two mark durations are separate rows (single-ping / double-ping): a
+ * first ping marks the target for the shorter duration, a second ping
+ * (double ping) extends it. GameParams carries them per sector
+ * (`sectorParams[i].lifetime`, one entry per ping tier); WG's profile splits
+ * them into `wave_duration_0` / `wave_duration_1`.
  */
 function sonarRows(gameparams: unknown, profile: Profile): SpecRow[] {
   const rows: SpecRow[] = [];
@@ -343,11 +349,15 @@ function sonarRows(gameparams: unknown, profile: Profile): SpecRow[] {
     const width = num(sector?.width);
     if (width != null && width > 0)
       rows.push({ key: "sonarWidth", value: `${width.toFixed(0)}°`, hint: "sonarWidthHint" });
+    // One sectorParams entry per ping tier: [0] = first ping, [1] = the
+    // double (second) ping. Rendered as two explicit rows.
     const lifetimes = (Array.isArray(pg.sectorParams) ? pg.sectorParams : [])
       .map((s) => num((s as Record<string, unknown>)?.lifetime))
       .filter((v): v is number => v != null);
-    if (lifetimes.length > 0)
-      rows.push({ key: "sonarMarkTime", value: lifetimes.map((v) => `${v.toFixed(0)} s`).join(" / "), hint: "sonarMarkTimeHint" });
+    if (lifetimes[0] != null)
+      rows.push({ key: "sonarPing1", value: `${lifetimes[0].toFixed(0)} s`, hint: "sonarPing1Hint" });
+    if (lifetimes[1] != null)
+      rows.push({ key: "sonarPing2", value: `${lifetimes[1].toFixed(0)} s`, hint: "sonarPing2Hint" });
   } else {
     const sonar = profile?.submarine_sonar as SubmarineSonarBlock | undefined;
     if (!sonar || typeof sonar !== "object") return [];
@@ -365,12 +375,8 @@ function sonarRows(gameparams: unknown, profile: Profile): SpecRow[] {
       rows.push({ key: "sonarWidth", value: `${width.toFixed(0)}°`, hint: "sonarWidthHint" });
     const t0 = num(sonar.wave_duration_0);
     const t1 = num(sonar.wave_duration_1);
-    if (t0 != null)
-      rows.push({
-        key: "sonarMarkTime",
-        value: `${t0.toFixed(0)} s${t1 != null ? ` / ${t1.toFixed(0)} s` : ""}`,
-        hint: "sonarMarkTimeHint",
-      });
+    if (t0 != null) rows.push({ key: "sonarPing1", value: `${t0.toFixed(0)} s`, hint: "sonarPing1Hint" });
+    if (t1 != null) rows.push({ key: "sonarPing2", value: `${t1.toFixed(0)} s`, hint: "sonarPing2Hint" });
   }
   return rows;
 }
