@@ -67,7 +67,11 @@
     margin-left: auto;
 
     > .hk-input-wrapper {
-      width: 4.5rem;
+      // hikari 0.55.237: the number field draws the shared lucide stepper
+      // column in its trailing edge, and the centered text line reserves
+      // that clearance on BOTH sides — 4.5rem left the typed px value
+      // ~2px of line, so the box grows to keep three digits comfortable.
+      width: 7rem;
       flex: none;
     }
   }

@@ -135,7 +135,10 @@
 
   &__port {
     flex: none;
-    width: 6.5rem;
+    // hikari 0.55.237: the number field carries the shared lucide stepper
+    // column; the centered line reserves that clearance symmetrically, so
+    // the box widens to keep a five-digit port readable.
+    width: 8rem;
   }
 
   /* ── PIN step (hikari OTP grid) ── */
