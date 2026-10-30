@@ -133,8 +133,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.230
-        version: 0.55.230(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.234
+        version: 0.55.234(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -349,8 +349,8 @@ packages:
       three: ^0.185
       vue: ^*
 
-  '@celestia-island/hikari@0.55.230':
-    resolution: {integrity: sha512-Eg468U+LIFs/dnpmG+uMDLsdyYx3BTYF2VZ1pEXZwnVx6ym89iEE1DTAwvXMYJtGLvGQOoOC01QoxssRpceBjw==}
+  '@celestia-island/hikari@0.55.234':
+    resolution: {integrity: sha512-tzCBCcv0GAbrr85EJNWgvWt9c3cSanLbPTB2urR6Z2R+C4WghbWqCJTbUTn5Ru3Lm9HmJBj21pQWxNlLeCgyTQ==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
@@ -3350,7 +3350,7 @@ snapshots:
       three: 0.185.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.230(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.234(@types/three@0.185.4)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.185.4
