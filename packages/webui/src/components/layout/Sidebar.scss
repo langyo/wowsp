@@ -375,13 +375,21 @@
 }
 
 /* ── Rail density (icon-only dress) ─────────────────────────────────────
-   Keyed off [data-rail] — true only while COLLAPSED and not peeking (the
-   peek overlay renders the full sidebar unchanged). Nav links become
-   centered icon tiles (labels ride their data-hint/aria-label, set in
-   Sidebar.tsx) and the footer rows degrade to their leading marks: the
-   status dot, the gateway icon, the client row's platform icon, the
-   account row's avatar, the migrate prompt's warning triangle. */
-.sidebar[data-rail] {
+   Keyed off [data-rail] ON THE SWAP GENERATION (hikari 0.55.237) — true
+   only while COLLAPSED and not peeking (the peek overlay renders the full
+   sidebar unchanged). Nav links become centered icon tiles (labels ride
+   their data-hint/aria-label, set in Sidebar.tsx) and the footer rows
+   degrade to their leading marks: the status dot, the gateway icon, the
+   client row's platform icon, the account row's avatar, the migrate
+   prompt's warning triangle.
+
+   The generation (NOT the host root) is the carrier by design: the root
+   attribute flips with the state and would restyle the FROZEN leaving
+   generation mid-dissolve — reintroducing the very squeeze the swap
+   exists to fix — while the generation's attribute freezes on the
+   leaving copy until it unmounts. The root keeps a data-rail state
+   marker for hosts/tests; it carries no styling. */
+.hk-sidebar-rail-generation[data-rail] {
   .sidebar__nav {
     padding-inline: 0.375rem;
   }

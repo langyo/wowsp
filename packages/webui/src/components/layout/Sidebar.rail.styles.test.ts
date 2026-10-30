@@ -160,21 +160,44 @@ describe("Sidebar rail stylesheet contract", () => {
     expect(css).toContain(".hk-sidebar-rail-host:focus-within .hk-sidebar-rail-toggle");
   });
 
-  it("rail density hides the peek-only content", () => {
+  it("rail density hides the peek-only content (keyed off the SWAP GENERATION)", () => {
+    // The density dress keys off the rail swap's generation, never the
+    // host root: the root attribute flips with the state and would
+    // restyle the FROZEN leaving generation mid-dissolve — the squeeze
+    // the swap exists to fix. The generation's attribute freezes on the
+    // leaving copy until it unmounts.
     for (const selector of [
-      ".sidebar[data-rail] .sidebar__link",
-      ".sidebar[data-rail] .sidebar__link .sidebar__link-text",
-      ".sidebar[data-rail] .sidebar__status-text",
-      ".sidebar[data-rail] .sidebar__game-detail",
-      ".sidebar[data-rail] .sidebar__footer-btn .sidebar__footer-btn-key",
-      ".sidebar[data-rail] .sidebar__footer-btn .sidebar__footer-btn-text",
-      ".sidebar[data-rail] .sidebar__footer-btn .sidebar__footer-btn-value .hk-tag",
+      ".hk-sidebar-rail-generation[data-rail] .sidebar__link",
+      ".hk-sidebar-rail-generation[data-rail] .sidebar__link .sidebar__link-text",
+      ".hk-sidebar-rail-generation[data-rail] .sidebar__status-text",
+      ".hk-sidebar-rail-generation[data-rail] .sidebar__game-detail",
+      ".hk-sidebar-rail-generation[data-rail] .sidebar__footer-btn .sidebar__footer-btn-key",
+      ".hk-sidebar-rail-generation[data-rail] .sidebar__footer-btn .sidebar__footer-btn-text",
+      ".hk-sidebar-rail-generation[data-rail] .sidebar__footer-btn .sidebar__footer-btn-value .hk-tag",
     ]) {
       expect(css, selector).toContain(selector);
     }
+    // Nothing keys density off the host root any more.
+    expect(css).not.toContain(".sidebar[data-rail]");
     // The tiles center their icons.
-    const tile = css.match(/\.sidebar\[data-rail\] \.sidebar__link \{[^}]*\}/)?.[0];
+    const tile = css.match(
+      /\.hk-sidebar-rail-generation\[data-rail\] \.sidebar__link \{[^}]*\}/,
+    )?.[0];
     expect(tile).toContain("justify-content: center");
+  });
+
+  it("the kit's crossfade swap geometry rides along from the granular entry", () => {
+    // The content handoff (hikari 0.55.237): inside the clip, two
+    // width-pinned generations exchanged through the tab-panel dissolve.
+    // The swap never STRETCHES with the animating clip width; the
+    // generations are the flex columns the body expects.
+    const swap = ruleBody(".hk-sidebar-rail-clip > .hk-sidebar-rail-swap");
+    expect(swap, "the swap sizing rule ships through the subpath").not.toBeNull();
+    expect(swap).toContain("align-self: flex-start");
+    const gen = ruleBody(".hk-sidebar-rail-swap .hk-sidebar-rail-generation");
+    expect(gen, "the generation rule ships through the subpath").not.toBeNull();
+    expect(gen).toContain("display: flex");
+    expect(gen).toContain("flex-direction: column");
   });
 
   it("the visual surface moved onto the panel and off the desktop host only", () => {
