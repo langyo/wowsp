@@ -556,7 +556,8 @@
     "costFlags": "Signaux",
     "costFlagsNote": "Équiper des signaux ne coûte rien",
     "realm": "Implémentation serveur",
-    "realmHint": "Bascule toute la vue navires entre les implémentations serveur WG et Lesta : l'arbre technologique et la source de données de l'encyclopédie, les arbres de compétences, les commandants et les pavillons suivent le cluster choisi."
+    "realmHint": "Bascule toute la vue navires entre les implémentations serveur WG et Lesta : l'arbre technologique et la source de données de l'encyclopédie, les arbres de compétences, les commandants et les pavillons suivent le cluster choisi.",
+    "tabParts": "Équipement"
   },
   "flags": {
     "tier1": "Standard",
@@ -802,6 +803,57 @@
     "cfg": {
       "base": "Base",
       "variant": "Variante"
+    }
+  },
+  "parts": {
+    "empty": "Aucune donnée de chaîne de recherche d'équipement pour ce navire.",
+    "intro": "Chaîne de recherche des modules de coque. La colonne A est le module d'origine ; les tuiles empilées dans une colonne sont des options de recherche alternatives. Sous une tuile : les crédits ; sur les lignes : l'XP de recherche.",
+    "placeholderNote": "Crédits, XP et caractéristiques des modules sont en cours d'extraction et s'affichent — pour l'instant.",
+    "stockHull": "Coque d'origine",
+    "xpNeeded": "XP de recherche : {xp}",
+    "prevShip": "Palier précédent",
+    "nextShip": "Palier suivant",
+    "prevLineXp": "XP de recherche pour ce navire : {xp}",
+    "nextLineNote": "XP de recherche requise pour le navire du palier suivant",
+    "openShipHint": "Cliquez pour fermer ce détail et ouvrir le navire.",
+    "statsTodo": "Caractéristiques des modules en attente de l'extraction des données client (TODO).",
+    "statsHp": "Robustesse",
+    "statsRange": "Portée",
+    "statsReload": "Rechargement",
+    "variantRow": "Variante",
+    "variantStock": "D'origine",
+    "variantMed": "Intermédiaire",
+    "variantTop": "Sommet",
+    "requiresModule": "Module requis",
+    "creditsHint": "Crédits de recherche (extraction en attente)",
+    "gameparamsMissing": "Les données de modules GameParams ne sont pas chargées.",
+    "role": {
+      "hull": "Coque",
+      "suo": "Contrôle de tir",
+      "firecontrol": "Contrôle de tir",
+      "artillery": "Artillerie principale",
+      "atba": "Artillerie secondaire",
+      "torpedoes": "Torpilles",
+      "depthcharges": "Charges de profondeur",
+      "airdefense": "DCA",
+      "airarmament": "Aéronautique",
+      "airsupport": "Soutien aérien",
+      "pinger": "Sonar",
+      "radars": "Radar",
+      "directors": "Directeurs de tir",
+      "finders": "Télémètres",
+      "engine": "Moteur",
+      "specials": "Modules spéciaux",
+      "visualcustomizations": "Apparence",
+      "sonar": "Sonar",
+      "fighter": "Chasseurs",
+      "flightcontrol": "Contrôle des vols",
+      "skipbomber": "Bombardiers à rebond",
+      "torpedobomber": "Torpilleurs",
+      "divebomber": "Bombardiers en piqué",
+      "abilities": "Consommables et compétences",
+      "primaryweapons": "Armes principales",
+      "secondaryweapons": "Armes secondaires"
     }
   }
 }

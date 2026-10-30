@@ -556,7 +556,8 @@
     "costFlags": "信号旗",
     "costFlagsNote": "装备信号旗不消耗货币",
     "realm": "服务器实现模式",
-    "realmHint": "在 WG 与 Lesta 服务器实现之间切换整个舰船视图：科技树与百科数据源、技能树、舰长与信号旗均跟随所选服务器。"
+    "realmHint": "在 WG 与 Lesta 服务器实现之间切换整个舰船视图：科技树与百科数据源、技能树、舰长与信号旗均跟随所选服务器。",
+    "tabParts": "装备选择"
   },
   "flags": {
     "tier1": "标准",
@@ -802,6 +803,57 @@
     "cfg": {
       "base": "基础",
       "variant": "变种"
+    }
+  },
+  "parts": {
+    "empty": "该舰暂无装备研发链数据。",
+    "intro": "舰体装备模块的研发链。A 列为初始模块，同一栏堆叠表示该槽位有多种可选研发；方块下方为所需银币，连线提示所需研发经验。",
+    "placeholderNote": "模块级银币、研发经验与属性数值仍在提取中，暂以 — 显示。",
+    "stockHull": "基础船体",
+    "xpNeeded": "研发经验：{xp}",
+    "prevShip": "上一级舰船",
+    "nextShip": "下一级舰船",
+    "prevLineXp": "本级舰船研发经验：{xp}",
+    "nextLineNote": "研发下一级舰船所需经验",
+    "openShipHint": "点击关闭当前详情并打开该舰详情。",
+    "statsTodo": "模块属性数值待客户端数据提取后显示（TODO）。",
+    "statsHp": "耐久",
+    "statsRange": "射程",
+    "statsReload": "装填",
+    "variantRow": "变体",
+    "variantStock": "初始",
+    "variantMed": "中级",
+    "variantTop": "顶配",
+    "requiresModule": "所需前置模块",
+    "creditsHint": "研发所需银币（待提取）",
+    "gameparamsMissing": "GameParams 模块数据尚未加载。",
+    "role": {
+      "hull": "船体",
+      "suo": "火控系统",
+      "firecontrol": "火控",
+      "artillery": "主炮",
+      "atba": "副炮",
+      "torpedoes": "鱼雷",
+      "depthcharges": "深水炸弹",
+      "airdefense": "防空",
+      "airarmament": "舰载机",
+      "airsupport": "航空支援",
+      "pinger": "声呐",
+      "radars": "雷达",
+      "directors": "指挥仪",
+      "finders": "测距仪",
+      "engine": "动力",
+      "specials": "特殊模块",
+      "visualcustomizations": "外观",
+      "sonar": "声呐",
+      "fighter": "战斗机",
+      "flightcontrol": "飞行控制",
+      "skipbomber": "跳弹轰炸机",
+      "torpedobomber": "鱼雷机",
+      "divebomber": "俯冲轰炸机",
+      "abilities": "消耗品与技能",
+      "primaryweapons": "主武器",
+      "secondaryweapons": "副武器"
     }
   }
 }

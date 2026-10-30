@@ -74,9 +74,13 @@ export default defineComponent({
   },
   emits: {
     close: () => true,
+    /** The equipment chain asked for another ship — ShipsView closes this
+     *  detail and reopens on the requested ship. */
+    openShip: (_shipId: number) => true,
   },
   setup(props, { emit }) {
     const accounts = useAccountStore();
+    const encyclopedia = useEncyclopediaStore();
     const shipStats = useShipStatsStore();
     const ranked = useRankedStore();
     const trends = useTrendsStore();
@@ -229,6 +233,19 @@ export default defineComponent({
     function selectTab(name: typeof tab.value) {
       tab.value = name;
       if (name === "mystats") void loadMyStats();
+    }
+
+    /** A next/previous-tier card in the 装备选择 panel resolved another
+     *  ship: validate the id against the realm-aware encyclopedia list (the
+     *  panel only ever links research neighbours of the current branch) and
+     *  forward it upward — ShipsView owns the close + reopen. */
+    function openShipFromPlanner(shipId: number) {
+      if (shipId === props.ship?.shipId) return;
+      const known =
+        encyclopedia.ships.some((entry) => entry.shipId === shipId) ||
+        encyclopedia.byId.has(shipId);
+      if (!known) return;
+      emit("openShip", shipId);
     }
 
     const open = computed(() => props.ship !== null);
@@ -619,6 +636,7 @@ export default defineComponent({
                     gameRoot={props.gameRoot}
                     gameparams={gameparams.value as Record<string, unknown> | null}
                     onUpdate:build={(b: PlannerBuild) => (build.value = b)}
+                    onOpenShip={(shipId: number) => openShipFromPlanner(shipId)}
                   />
                 </div>
               )}

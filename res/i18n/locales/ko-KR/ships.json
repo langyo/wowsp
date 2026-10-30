@@ -556,7 +556,8 @@
     "costFlags": "신호기",
     "costFlagsNote": "신호기 장착은 무료",
     "realm": "서버 구현",
-    "realmHint": "함선 보기 전체를 WG와 Lesta 서버 구현 간에 전환합니다: 기술 트리와 도감 데이터 소스, 스킬 트리, 함장, 신호기가 모두 선택한 서버를 따릅니다."
+    "realmHint": "함선 보기 전체를 WG와 Lesta 서버 구현 간에 전환합니다: 기술 트리와 도감 데이터 소스, 스킬 트리, 함장, 신호기가 모두 선택한 서버를 따릅니다.",
+    "tabParts": "장비 선택"
   },
   "flags": {
     "tier1": "일반",
@@ -802,6 +803,57 @@
     "cfg": {
       "base": "기본형",
       "variant": "파생형"
+    }
+  },
+  "parts": {
+    "empty": "이 함선의 장비 개발 트리 데이터가 없습니다.",
+    "intro": "선체 장비 모듈 개발 트리. A 열은 초기 모듈이며, 한 열에 쌓인 타일은 선택 가능한 개발 옵션입니다. 타일 아래는 필요 크레딧, 연결선은 필요 개발 경험치입니다.",
+    "placeholderNote": "모듈별 크레딧·개발 경험치·성능 수치는 추출 중이며 현재 — 로 표시됩니다.",
+    "stockHull": "초기 선체",
+    "xpNeeded": "개발 경험치: {xp}",
+    "prevShip": "이전 티어",
+    "nextShip": "다음 티어",
+    "prevLineXp": "이 함선의 개발 경험치: {xp}",
+    "nextLineNote": "다음 티어 함선에 필요한 개발 경험치",
+    "openShipHint": "클릭하면 이 상세를 닫고 해당 함선의 상세를 엽니다.",
+    "statsTodo": "모듈 성능 수치는 클라이언트 데이터 추출 대기 중입니다 (TODO).",
+    "statsHp": "내구도",
+    "statsRange": "사거리",
+    "statsReload": "장전",
+    "variantRow": "형식",
+    "variantStock": "초기",
+    "variantMed": "중간",
+    "variantTop": "최종",
+    "requiresModule": "필요 선행 모듈",
+    "creditsHint": "개발에 필요한 크레딧 (추출 대기)",
+    "gameparamsMissing": "GameParams 모듈 데이터가 로드되지 않았습니다.",
+    "role": {
+      "hull": "선체",
+      "suo": "사격 통제",
+      "firecontrol": "사격 통제",
+      "artillery": "주포",
+      "atba": "부포",
+      "torpedoes": "어뢰",
+      "depthcharges": "폭뢰",
+      "airdefense": "대공",
+      "airarmament": "함재기",
+      "airsupport": "항공 지원",
+      "pinger": "소나",
+      "radars": "레이더",
+      "directors": "지시 장치",
+      "finders": "거리 측정기",
+      "engine": "기관",
+      "specials": "특수 모듈",
+      "visualcustomizations": "외관",
+      "sonar": "소나",
+      "fighter": "전투기",
+      "flightcontrol": "비행 통제",
+      "skipbomber": "스킵 폭격기",
+      "torpedobomber": "뇌격기",
+      "divebomber": "급강하 폭격기",
+      "abilities": "소모품 및 스킬",
+      "primaryweapons": "주무장",
+      "secondaryweapons": "부무장"
     }
   }
 }

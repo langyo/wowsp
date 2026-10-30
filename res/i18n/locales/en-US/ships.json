@@ -556,7 +556,8 @@
     "costFlags": "Signals",
     "costFlagsNote": "Signals cost nothing to equip",
     "realm": "Server implementation",
-    "realmHint": "Switches the whole ships view between the WG and Lesta server implementations: the tech tree and encyclopedia data source, skill trees, commanders and signal flags all follow the selected cluster."
+    "realmHint": "Switches the whole ships view between the WG and Lesta server implementations: the tech tree and encyclopedia data source, skill trees, commanders and signal flags all follow the selected cluster.",
+    "tabParts": "Equipment"
   },
   "flags": {
     "tier1": "Standard",
@@ -802,6 +803,57 @@
     "cfg": {
       "base": "Base",
       "variant": "Variant"
+    }
+  },
+  "parts": {
+    "empty": "No equipment research chain data for this ship.",
+    "intro": "Research chain of the hull's equipment modules. Column A is the stock module; stacked tiles in one column are alternative research options. Credits sit under a tile, research XP on the connectors.",
+    "placeholderNote": "Per-module credits, research XP and stats are still being extracted and show as — for now.",
+    "stockHull": "Stock hull",
+    "xpNeeded": "Research XP: {xp}",
+    "prevShip": "Previous tier",
+    "nextShip": "Next tier",
+    "prevLineXp": "Research XP for this ship: {xp}",
+    "nextLineNote": "Research XP needed for each next-tier ship",
+    "openShipHint": "Click to close this detail and open the ship.",
+    "statsTodo": "Per-module stats pending client-data extraction (TODO).",
+    "statsHp": "Durability",
+    "statsRange": "Range",
+    "statsReload": "Reload",
+    "variantRow": "Variant",
+    "variantStock": "Stock",
+    "variantMed": "Intermediate",
+    "variantTop": "Top",
+    "requiresModule": "Requires module",
+    "creditsHint": "Research credits (pending extraction)",
+    "gameparamsMissing": "GameParams module data is not loaded.",
+    "role": {
+      "hull": "Hull",
+      "suo": "Fire control",
+      "firecontrol": "Fire control",
+      "artillery": "Main battery",
+      "atba": "Secondary battery",
+      "torpedoes": "Torpedoes",
+      "depthcharges": "Depth charges",
+      "airdefense": "AA defense",
+      "airarmament": "Aircraft",
+      "airsupport": "Air support",
+      "pinger": "Sonar",
+      "radars": "Radar",
+      "directors": "Directors",
+      "finders": "Rangefinders",
+      "engine": "Engine",
+      "specials": "Special modules",
+      "visualcustomizations": "Visuals",
+      "sonar": "Sonar",
+      "fighter": "Fighters",
+      "flightcontrol": "Flight control",
+      "skipbomber": "Skip bombers",
+      "torpedobomber": "Torpedo bombers",
+      "divebomber": "Dive bombers",
+      "abilities": "Consumables & skills",
+      "primaryweapons": "Primary weapons",
+      "secondaryweapons": "Secondary weapons"
     }
   }
 }
