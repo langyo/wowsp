@@ -326,6 +326,9 @@ export interface UpstreamHostHealth {
   lastSuccessTs?: number | null;
   lastFailureTs?: number | null;
   lastError?: string | null;
+  /** Wall time of the most recent recorded success (the slow-proxy
+   *  disclosure renders it; null until the first success). */
+  lastElapsedMs?: number | null;
 }
 
 /** Mirrors `commands::upstream_health::UpstreamHostReport` (catalogue +

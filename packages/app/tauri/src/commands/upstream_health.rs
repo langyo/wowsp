@@ -69,6 +69,10 @@ pub struct HostHealth {
     pub last_success_ts: Option<i64>,
     pub last_failure_ts: Option<i64>,
     pub last_error: Option<String>,
+    /// Wall time of the most recent RECORDED success (failures keep
+    /// the previous value). The slow-proxy disclosure renders it: a
+    /// crawling proxy shows up as numbers instead of a vague feeling.
+    pub last_elapsed_ms: Option<u64>,
 }
 
 static HOST_HEALTH: LazyLock<std::sync::Mutex<BTreeMap<String, HostHealth>>> =
@@ -95,6 +99,17 @@ pub(crate) fn record_success(host: &str) {
     let h = map.entry(host.to_string()).or_default();
     h.consecutive_failures = 0;
     h.last_success_ts = Some(now_ts());
+}
+
+/// record_success plus the request's wall time. The stats family's
+/// recorded_get measures the whole fallback chain and stores it, so a
+/// slow-but-alive path stays visible (see last_elapsed_ms).
+pub(crate) fn record_success_with_latency(host: &str, elapsed_ms: u64) {
+    let mut map = HOST_HEALTH.lock().unwrap_or_else(|p| p.into_inner());
+    let h = map.entry(host.to_string()).or_default();
+    h.consecutive_failures = 0;
+    h.last_success_ts = Some(now_ts());
+    h.last_elapsed_ms = Some(elapsed_ms);
 }
 
 pub(crate) fn record_failure(host: &str, error: &str) {
@@ -183,6 +198,20 @@ pub(crate) fn direct_preferred_hosts() -> Vec<String> {
     hosts
 }
 
+/// The live predicate behind [direct_preferred_hosts] — used by the
+/// WebSocket dialer (pairing_relay::ws), which shares these per-host TTL
+/// marks so a dead proxy costs the relay ONE failed dial per window
+/// instead of one per reconnect (the bridge redials on a <=30 s cadence).
+pub(crate) fn host_prefers_direct(host: &str) -> bool {
+    direct_preferred_at(host, now_millis())
+}
+
+/// Hand `host` to the direct path after a WebSocket-level proxy failure
+/// — same semantics as the HTTP chain's automatic demotion.
+pub(crate) fn mark_host_direct_preferred(host: &str) {
+    prefer_direct(host)
+}
+
 /// One request attempt over one client. The point is the per-attempt log
 /// line: every connection the app makes leaves one here (host, endpoint
 /// label, which path rode, how long it took, how it ended), so a support
@@ -225,7 +254,7 @@ async fn attempt_send(
 /// the chain must not narrate a proxy→direct fallback for them — nor burn
 /// a direct-preference mark on a host whose "proxied" attempt was never a
 /// proxy path at all.
-fn is_loopback_host(host: &str) -> bool {
+pub(crate) fn is_loopback_host(host: &str) -> bool {
     host == "localhost" || host.starts_with("127.") || host == "::1" || host.starts_with("[::1]")
 }
 
@@ -323,12 +352,14 @@ pub(crate) async fn recorded_get(
     label: &str,
     url: String,
 ) -> anyhow::Result<reqwest::Response> {
+    let started = std::time::Instant::now();
     let outcome = get_with_fallback(pair, host, label, url).await;
+    let elapsed_ms = started.elapsed().as_millis() as u64;
     match &outcome {
         Ok(resp) => {
             let status = resp.status();
             if status.is_success() {
-                record_success(host);
+                record_success_with_latency(host, elapsed_ms);
             } else {
                 record_failure(host, &format!("HTTP {status}"));
             }
@@ -453,6 +484,36 @@ mod tests {
         let h = health_of(host);
         assert_eq!(h.consecutive_failures, 2);
         assert_eq!(h.last_error.as_ref().unwrap().len(), ERROR_TRUNC);
+    }
+
+    /// recorded_get stores the chain's wall time on success — the
+    /// slow-proxy disclosure renders it.
+    #[tokio::test]
+    async fn recorded_get_stores_latency_on_success() {
+        let (addr, server) = stub_server(1);
+        let host = format!("latency-{addr}");
+        let pair = crate::commands::network::HttpPair::from_clients(
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("healthy"),
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("direct"),
+            false,
+        );
+        let resp = recorded_get(&pair, &host, "probe", format!("http://{addr}/probe"))
+            .await
+            .expect("stub serves");
+        assert_eq!(resp.status(), 200);
+        let h = health_of(&host);
+        assert_eq!(h.consecutive_failures, 0);
+        assert!(
+            h.last_elapsed_ms.is_some(),
+            "the success records its wall time"
+        );
+        server.join().expect("stub served");
     }
 
     #[test]
