@@ -75,7 +75,15 @@
     display: flex;
     gap: 1.2rem;
     align-items: flex-start;
-    padding: 0.3rem 0;
+    /* NO top padding on purpose. The type heads stick at top: 0, so the
+       row's first row must START at the scrollport's top edge: any air
+       above the heads (this was 0.3rem) becomes pre-pin travel, and the
+       heads visibly slid up by that much the moment scrolling began
+       before coming to rest against the edge. The breathing room above
+       the head band belongs to the page chrome (the meta line above the
+       tree body), not to the scrolling content. The bottom padding stays
+       as the tree's tail clearance inside the scroll range. */
+    padding: 0 0 0.3rem;
   }
 }
 
