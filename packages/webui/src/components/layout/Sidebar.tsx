@@ -1,4 +1,4 @@
-import { computed, defineComponent, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import { RouterLink, useRoute, useRouter } from "vue-router";
 import { BarChart3, Search, Ship, Film, Video, Crosshair, Package, AlertTriangle, Smartphone } from "@lucide/vue";
 
@@ -159,24 +159,14 @@ export default defineComponent({
       rail.endPinning();
     };
 
-    /** A density flip REMOUNTS the entering generation (the crossfade
-     *  swap), so an element focused inside the dissolving copy is
-     *  unmounted ~300ms later and focus would drop to <body> — taking the
-     *  host's :focus-within (the toggle's keyboard reveal) with it. The
-     *  peek-closers therefore hand focus to the TOGGLE, the one control
-     *  outside the swap that survives the flip. Only a peek CLOSE needs
-     *  this: without an open peek, a click inside the panel is a
-     *  navigation and focus must follow the router's own landing. */
-    const handoffPeekFocus = (closingPeek: boolean) => {
-      if (!closingPeek) return;
-      const active = document.activeElement;
-      if (!(active instanceof HTMLElement) || !hostRef.value?.contains(active)) return;
-      void nextTick(() => {
-        hostRef.value
-          ?.querySelector<HTMLButtonElement>(".hk-sidebar-rail-toggle button")
-          ?.focus();
-      });
-    };
+    // The peek-close FOCUS HANDOFF lives in the kit now
+    // (useSidebarRail.closePeek, hikari 0.55.242): every close path —
+    // Escape, nav click, the pin path AND the pointerleave grace timer —
+    // hands focus to the toggle when the focused node lived inside the
+    // swapped content window. This host used to carry its own copy; it is
+    // deliberately gone so the behavior has ONE implementation (the kit's
+    // also covers the grace close and the nested-toggle case this local
+    // version missed).
 
     // The wallpaper-blur band under the main column (theme.scss body::after)
     // offsets by the sidebar's LAYOUT footprint; publish the live width so
@@ -626,21 +616,13 @@ export default defineComponent({
           onPointermove={onHostPointerMove}
           onTransitionend={onHostTransitionEnd}
           onKeydown={(e: KeyboardEvent) => {
-            const closingPeek = e.key === "Escape" && rail.peeking.value;
-            if (rail.onKeydown(e)) {
-              handoffPeekFocus(closingPeek);
-              e.stopPropagation();
-            }
+            if (rail.onKeydown(e)) e.stopPropagation();
           }}
         >
           <div
             class="sidebar__panel hk-sidebar-rail-panel"
             style={{ width: railDensity.value ? RAIL_WIDTH : EXPANDED_WIDTH }}
-            onClick={() => {
-              const closingPeek = rail.peeking.value;
-              rail.closePeek();
-              handoffPeekFocus(closingPeek);
-            }}
+            onClick={() => rail.closePeek()}
           >
             <div class="hk-sidebar-rail-clip">
               <HkSidebarRailSwap
