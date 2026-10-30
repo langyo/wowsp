@@ -444,6 +444,8 @@
     "sonarPing1Hint": "ソナーが1回命中した後、目標に付く一重標識の持続時間。",
     "sonarPing2": "二重ピング標識",
     "sonarPing2Hint": "ソナーが2回連続で命中（二重ピング）した後、目標に付く二重標識の持続時間。単発ピング標識より長い。",
+    "sonarMarkTime": "ソナー標識の持続時間",
+    "sonarMarkTimeHint": "ソナー命中後、目標に付く標識の持続時間（このクライアントは一重/二重で分けていない）。",
     "batteryCapacity": "蓄電池容量",
     "batteryCapacityHint": "潜航中に消費する電力の備蓄量。",
     "batteryDrain": "電力消費",

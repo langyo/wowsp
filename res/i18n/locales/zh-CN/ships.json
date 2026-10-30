@@ -444,6 +444,8 @@
     "sonarPing1Hint": "单次声纳命中后，目标身上一重标记的持续时间。",
     "sonarPing2": "双 ping 标记",
     "sonarPing2Hint": "连续两次声纳命中（双 ping）后，目标身上二重标记的持续时间；比单 ping 标记更长。",
+    "sonarMarkTime": "声纳标记持续时间",
+    "sonarMarkTimeHint": "声纳命中后目标被标记的持续时间（该客户端数据未区分一重/二重标记时长）。",
     "batteryCapacity": "蓄电池容量",
     "batteryCapacityHint": "潜水时消耗的电量储备。",
     "batteryDrain": "电量消耗",

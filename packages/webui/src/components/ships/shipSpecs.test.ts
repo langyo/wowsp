@@ -253,6 +253,30 @@ describe("buildShipSpecs submarine sonar", () => {
     expect(rowOf(groups, "sonar", "sonarReload")?.value).toBe("6.0 s");
     expect(rowOf(groups, "sonar", "sonarPing2")?.value).toBe("65 s");
   });
+
+  it("reads the Lesta client's single sectorLifetime as one mark-duration row", () => {
+    // Lesta GameParams has no per-tier sectorParams: one sectorLifetime
+    // covers both ping tiers, and there is no width field either.
+    const gp = {
+      name: "PJSS520_I2",
+      A_PingerGun: {
+        waveDistance: 13500,
+        waveReloadTime: 6,
+        maxWaveHits: 2,
+        waveParams: [{ waveSpeed: [800, 800, 800, 800, 800] }],
+        sectorLifetime: 20,
+      },
+    } as Record<string, unknown>;
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", gp);
+    expect(rowOf(groups, "sonar", "sonarRange")?.value).toBe("13.5 km");
+    expect(rowOf(groups, "sonar", "sonarReload")?.value).toBe("6.0 s");
+    expect(rowOf(groups, "sonar", "sonarWaveSpeed")?.value).toBe("800 m/s");
+    expect(rowOf(groups, "sonar", "sonarMarkTime")?.value).toBe("20 s");
+    // No tier split in that schema — the WG-style rows stay absent.
+    expect(rowOf(groups, "sonar", "sonarPing1")).toBeUndefined();
+    expect(rowOf(groups, "sonar", "sonarPing2")).toBeUndefined();
+    expect(rowOf(groups, "sonar", "sonarWidth")).toBeUndefined();
+  });
 });
 
 describe("buildShipSpecs submarine battery and mobility", () => {

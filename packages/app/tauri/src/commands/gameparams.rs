@@ -1787,6 +1787,63 @@ mod tests {
         assert!(bundled_lesta_slice(i64::MAX).is_none());
     }
 
+    /// The bundled pack records the slice shape it was built for and its
+    /// submarine slices carry the embedded torpedo ammo. The Lesta-only subs
+    /// have no install to fall back on, so a v1/pack-built-before-v2 regen
+    /// would silently strip their per-type torpedo rows (and the sonar
+    /// durations) from the spec panel.
+    #[test]
+    fn bundled_lesta_pack_uses_the_current_slice_shape() {
+        let raw = inflate_bundled_pack().expect("bundled pack inflates");
+        let root: serde_json::Value = serde_json::from_slice(&raw).expect("pack parses");
+        assert_eq!(
+            root.get("sliceFormat").and_then(|v| v.as_u64()),
+            Some(u64::from(SLICE_FORMAT)),
+            "bundled Lesta pack was built for a different slice shape"
+        );
+        let ships = root
+            .get("ships")
+            .and_then(|v| v.as_object())
+            .expect("pack ships object");
+        let mut subs = 0;
+        for slice in ships.values().filter_map(|s| s.as_object()) {
+            if slice
+                .get("typeinfo")
+                .and_then(|t| t.get("species"))
+                .and_then(|v| v.as_str())
+                != Some("Submarine")
+            {
+                continue;
+            }
+            subs += 1;
+            // Every launcher ammoList reference must arrive embedded — the
+            // panel's per-type torpedo sections read nothing else.
+            let names: Vec<String> = slice
+                .values()
+                .filter_map(|b| b.as_object())
+                .flat_map(|b| b.values())
+                .filter_map(|m| m.as_object())
+                .filter_map(|m| m.get("ammoList"))
+                .filter_map(|a| a.as_array())
+                .flatten()
+                .filter_map(|n| n.as_str().map(str::to_string))
+                .collect();
+            if names.is_empty() {
+                continue;
+            }
+            let name = slice.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let ammo = slice
+                .get("__torpedoAmmo")
+                .and_then(|v| v.as_object())
+                .unwrap_or_else(|| panic!("packed submarine {name} carries no __torpedoAmmo"));
+            assert!(
+                names.iter().any(|n| ammo.contains_key(n)),
+                "packed submarine {name}: no referenced ammo entity embedded"
+            );
+        }
+        assert!(subs > 0, "expected the Lesta-only submarines in the pack");
+    }
+
     /// Every airframe the bundled carriers embark must be labelled and
     /// model-mapped by the committed plane tables: the picker resolves
     /// index → role (labels) and name → geometry path through them, so a

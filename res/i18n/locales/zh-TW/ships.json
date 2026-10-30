@@ -444,6 +444,8 @@
     "sonarPing1Hint": "單次聲納命中後，目標身上一重標記的持續時間。",
     "sonarPing2": "雙 ping 標記",
     "sonarPing2Hint": "連續兩次聲納命中（雙 ping）後，目標身上二重標記的持續時間；比單 ping 標記更長。",
+    "sonarMarkTime": "聲納標記持續時間",
+    "sonarMarkTimeHint": "聲納命中後目標被標記的持續時間（該客戶端資料未區分一重/二重標記時長）。",
     "batteryCapacity": "蓄電池容量",
     "batteryCapacityHint": "潛水時消耗的電量儲備。",
     "batteryDrain": "電量消耗",

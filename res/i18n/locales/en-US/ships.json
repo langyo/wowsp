@@ -444,6 +444,8 @@
     "sonarPing1Hint": "How long the single-ping mark stays on the target after one sonar hit.",
     "sonarPing2": "Double-ping mark",
     "sonarPing2Hint": "How long the double-ping mark stays on the target after two consecutive sonar hits; longer than the single-ping mark.",
+    "sonarMarkTime": "Sonar mark duration",
+    "sonarMarkTimeHint": "How long the sonar mark stays on the target (this client does not split single/double ping durations).",
     "batteryCapacity": "Battery capacity",
     "batteryCapacityHint": "The electricity reserve spent while submerged.",
     "batteryDrain": "Battery drain",

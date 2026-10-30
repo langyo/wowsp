@@ -444,6 +444,8 @@
     "sonarPing1Hint": "Durée de la marque simple sur la cible après un seul impact sonar.",
     "sonarPing2": "Marque ping double",
     "sonarPing2Hint": "Durée de la marque double sur la cible après deux impacts sonar consécutifs ; plus longue que la marque simple.",
+    "sonarMarkTime": "Durée de la marque sonar",
+    "sonarMarkTimeHint": "Durée de la marque sonar sur la cible (ce client ne distingue pas les marques simple/double).",
     "batteryCapacity": "Capacité de batterie",
     "batteryCapacityHint": "Réserve d’électricité consommée en plongée.",
     "batteryDrain": "Consommation",
