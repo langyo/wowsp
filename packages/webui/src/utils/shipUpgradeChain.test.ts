@@ -70,9 +70,23 @@ describe("shipUpgradeChain", () => {
     expect(pr48!.xpShip).toBe(researchOf(PR_48)!.xp);
     expect(nextResearch(MINSK, PR_30)!.index).toBe("PRSD208");
     expect(nextResearch(MINSK, PR_30)!.xpShip).toBe(researchOf(PR_30)!.xp);
-    // "with minimal equipment" has no source yet — the null contract is pinned.
-    expect(pr48!.xpWithModules).toBeNull();
-    expect(pr48!.requiredModules).toBeNull();
+    // "with minimal equipment" is filled from the client's server-synced
+    // price catalog when a capture is applied — so the contract is
+    // STATE-AWARE, not permanently null: either the field is absent (the
+    // bundled capture has not run yet) or it is a positive whole number
+    // (>= the ship XP) with the required-module list alongside it.
+    if (pr48!.xpWithModules === null) {
+      expect(pr48!.requiredModules).toBeNull();
+    } else {
+      expect(Number.isInteger(pr48!.xpWithModules)).toBe(true);
+      expect(pr48!.xpWithModules).toBeGreaterThanOrEqual(pr48!.xpShip!);
+      expect(Array.isArray(pr48!.requiredModules)).toBe(true);
+      expect(pr48!.requiredModules!.length).toBeGreaterThan(0);
+      for (const module of pr48!.requiredModules!) {
+        expect(typeof module, module).toBe("string");
+        expect(module.length).toBeGreaterThan(0);
+      }
+    }
     // Minsk is a shared ship: the same edge resolves through the Lesta bundle.
     expect(nextResearch(MINSK, PR_48, "lesta")).not.toBeNull();
     // A non-edge misses cleanly.
@@ -114,9 +128,16 @@ describe("upgrade slots", () => {
               .toBeGreaterThanOrEqual(lastDepth);
             lastDepth = step.depth;
             expect(step.isStock, step.name).toBe(step === slot.steps[0]);
-            // Per-module economy is absent from GameParams — null until extracted.
-            expect(step.xp, step.name).toBeNull();
-            expect(step.credits, step.name).toBeNull();
+            // Per-module economy: null until a server price-catalog capture is
+            // applied, then a positive amount (never zero, never a string).
+            if (step.xp !== null) {
+              expect(Number.isInteger(step.xp), step.name).toBe(true);
+              expect(step.xp, step.name).toBeGreaterThan(0);
+            }
+            if (step.credits !== null) {
+              expect(Number.isInteger(step.credits), step.name).toBe(true);
+              expect(step.credits, step.name).toBeGreaterThan(0);
+            }
           }
         }
       }
