@@ -33,6 +33,13 @@ commands/gameparams.rs so Lesta-only ids never touch an install), the
 Lesta airplanes merged into the plane tables and their performance rows
 baked into plane_specs.json (model_convert's extract_lesta_planes.py +
 extract_plane_specs.py; their GLBs bake via bake_lesta_planes.py).
+
+The same two GameParams dumps also bake the app's SERVER-DELIVERED ship-data
+bundle: build_shipdata_bundle.py writes both realms' slices as a zip
+(manifest + one JSON per ship) that publish_data_pack.py ships on the
+data-latest hot-update channel — `just publish-shipdata` bakes and
+publishes it, so the fleet's armor/ballistics/sonar data reaches install-less
+machines without an app release.
 """
 from __future__ import annotations
 

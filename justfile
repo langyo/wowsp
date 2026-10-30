@@ -470,10 +470,23 @@ package *FLAGS:
 # the hot-update channel `commands/data_pack.rs` refreshes on every app
 # boot. Run after re-baking data (extract_ship_consumable_kit.py & co.);
 # identical content is a client-side no-op (content-addressed assets).
-# Idempotent; --dry-run shows the upload/prune plan.
+# Idempotent; --dry-run shows the upload/prune plan. Pushing the release is
+# the maintainer's step (gh auth), by design.
 
 publish-data *ARGS:
     python scripts/publish_data_pack.py {{ARGS}}
+
+# Bake the two-realm ship-data bundle (both GameParams dumps from the extract
+# cache) and publish just that dataset: the fleet's armor/ballistics/sonar
+# slices reach machines with no install — and both realms — without an app
+# release. Needs the WG dump plus a Lesta dump (`just extract` fills both;
+# --lesta-gameparams accepts a pre-decoded one).
+#   just publish-shipdata            → bake + publish + prune
+#   just publish-shipdata --dry-run  → bake + show the upload plan
+
+publish-shipdata *ARGS:
+    python scripts/extract/build_shipdata_bundle.py
+    python scripts/publish_data_pack.py --dataset ship-gameparams {{ARGS}}
 
 # ── e2e ───────────────────────────────────────────────────────────────
 
