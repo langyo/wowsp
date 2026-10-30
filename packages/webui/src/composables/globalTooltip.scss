@@ -9,6 +9,15 @@
   max-width: 440px;
 }
 
+/* Plain-text hints keep their supplied line breaks (a "
+"-joined ship
+   list is the standing example) — the structured card body already does
+   this; the plain text channel needs it just as much. Bridge popups share
+   the class and gain the same behaviour for free. */
+.hk-tooltip-popup .hk-tooltip-content {
+  white-space: pre-line;
+}
+
 /* Global hint tag chips (see globalTooltip.ts `data-hint-tags`): ribbon-
    style qualifiers rendered under the hint text. Colours follow the
    HkTooltip contract — fixed ink legible on both popup palettes, with a

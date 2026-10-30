@@ -240,7 +240,7 @@ export default defineComponent({
           <div class="feedback__card">
             <div class="feedback__row">
               <span class="feedback__label">{t("settings.feedbackLatestLog")}</span>
-              <span class="feedback__file" title={latest.value.name}>{latest.value.name}</span>
+              <span class="feedback__file" data-hint={latest.value.name}>{latest.value.name}</span>
               <span class="feedback__meta">
                 {formatBytes(latest.value.sizeBytes)}
                 {formatDateTime(lang.uiLocale.value, latest.value.modified)
@@ -250,7 +250,7 @@ export default defineComponent({
             </div>
             <div class="feedback__row">
               <span class="feedback__label">{t("settings.feedbackLogDir")}</span>
-              <span class="feedback__dir" title={overview.value?.dir}>
+              <span class="feedback__dir" data-hint={overview.value?.dir}>
                 {overview.value?.dir}
               </span>
               <HkIconButton

@@ -717,7 +717,7 @@ export default defineComponent({
                       ) : (
                         config.replayDirs.map((d) => (
                           <div key={d} class="playtime-view__sources-row">
-                            <span class="playtime-view__sources-path" title={d}>
+                            <span class="playtime-view__sources-path" data-hint={d}>
                               {d}
                             </span>
                             <button
@@ -809,7 +809,7 @@ export default defineComponent({
                         {card.running ? (
                           <span
                             class="playtime-card__pulse"
-                            title={t("playtime.cards.running")}
+                            data-hint={t("playtime.cards.running")}
                           />
                         ) : null}
                       </span>

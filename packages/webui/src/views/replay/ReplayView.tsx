@@ -813,7 +813,7 @@ const PostBattleFallbackPanel = defineComponent({
                   return (
                     <span
                       class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
-                      title={color ? markerColorLabel(color) : undefined}
+                      data-hint={color ? markerColorLabel(color) : undefined}
                     >
                       {masking.maskOf(r.vehicle.name)}
                     </span>
@@ -2292,7 +2292,7 @@ export default defineComponent({
                     class={["replay-card__ship", markerTintClass(color)]}
                     data-player-name={r.playerName ?? undefined}
                     data-player-realm={r.installRealm ?? undefined}
-                    title={color ? markerColorLabel(color) : undefined}
+                    data-hint={color ? markerColorLabel(color) : undefined}
                   >
                     {r.playerName ?? t("replay.list.unknownPlayer")}
                   </span>

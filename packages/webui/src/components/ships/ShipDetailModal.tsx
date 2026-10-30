@@ -492,7 +492,7 @@ export default defineComponent({
                 showLabel
               />
               {eventId.value ? (
-                <span class="ship-detail__event-tag" title={eventTooltip(eventId.value)}>
+                <span class="ship-detail__event-tag" data-hint={eventTooltip(eventId.value)}>
                   <HkTag variant={RARITY_VARIANT[rarity.value]}>
                     {eventLabel(eventId.value)}
                   </HkTag>

@@ -1007,7 +1007,7 @@ export default defineComponent({
                               type="button"
                               class="ship-filter-bar__opt ship-filter-bar__tier-flip"
                               data-tier-flip
-                              title={t("ships.filter.dirFlip")}
+                              data-hint={t("ships.filter.dirFlip")}
                               aria-label={t("ships.filter.dirFlip")}
                               onClick={() => {
                                 sel.value.tier = {

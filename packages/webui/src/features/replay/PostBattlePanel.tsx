@@ -1099,7 +1099,7 @@ export default defineComponent({
                     return (
                       <span
                         class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
-                        title={color ? markerColorLabel(color) : undefined}
+                        data-hint={color ? markerColorLabel(color) : undefined}
                       >
                         {masking.maskOf(p.name)}
                       </span>
@@ -1209,7 +1209,7 @@ export default defineComponent({
                     return (
                       <span
                         class={["replay-view__postbattle-fcell-nick", markerTintClass(color)]}
-                        title={color ? markerColorLabel(color) : undefined}
+                        data-hint={color ? markerColorLabel(color) : undefined}
                       >
                         {masking.maskOf(p.name)}
                       </span>

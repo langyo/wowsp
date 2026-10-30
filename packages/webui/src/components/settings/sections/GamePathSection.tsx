@@ -90,7 +90,7 @@ export default defineComponent({
                             ) : null}
                             {active ? <Check size={12} class="install-card__check" /> : null}
                           </span>
-                          <span class="install-card__path" title={i.path}>{i.path}</span>
+                          <span class="install-card__path" data-hint={i.path}>{i.path}</span>
                         </span>
                         {active ? (
                           <HkTag variant="success" size="sm">{t("common.gamePath.inUse")}</HkTag>
@@ -109,7 +109,7 @@ export default defineComponent({
                         <button
                           type="button"
                           class="settings-modal__install-remove"
-                          title={t("common.gamePath.removeAction")}
+                          data-hint={t("common.gamePath.removeAction")}
                           aria-label={t("common.gamePath.removeAction")}
                           onClick={() => (gamePaths.installArmed.value = i.path)}
                         >

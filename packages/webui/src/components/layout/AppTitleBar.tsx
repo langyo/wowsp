@@ -201,7 +201,7 @@ export default defineComponent({
                   <button
                     type="button"
                     class="hk-titlebar-btn app-titlebar__menu app-titlebar__account"
-                    title={t("nav.accountMenu")}
+                    data-hint={t("nav.accountMenu")}
                     aria-label={t("nav.accountMenu")}
                     aria-expanded={navUi.open}
                     onClick={(e: MouseEvent) => {
@@ -215,7 +215,7 @@ export default defineComponent({
                   <button
                     type="button"
                     class="hk-titlebar-btn app-titlebar__menu"
-                    title={t("nav.openMenu")}
+                    data-hint={t("nav.openMenu")}
                     aria-label={t("nav.openMenu")}
                     aria-expanded={navUi.open}
                     onClick={(e: MouseEvent) => {

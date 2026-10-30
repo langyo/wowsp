@@ -82,7 +82,7 @@ export default defineComponent({
               <HkScrollContainer class="rs-tip__list">
                 {props.replays.map((r, i) => (
                   <div class="rs-tip__item" key={`${r.name}-${i}`}>
-                    <span class="rs-tip__name" title={r.name}>
+                    <span class="rs-tip__name" data-hint={r.name}>
                       {r.name}
                     </span>
                     {r.time ? <span class="rs-tip__time">{r.time}</span> : null}

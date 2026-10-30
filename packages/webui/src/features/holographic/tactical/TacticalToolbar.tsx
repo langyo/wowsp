@@ -416,7 +416,8 @@ export default defineComponent({
                   <button
                     key={w}
                     class={["tac-bar__width", style.value.width === w ? "tac-bar__width--on" : ""]}
-                    title={i18nT("replay.tactical.style.width")}
+                    data-hint={i18nT("replay.tactical.style.width")}
+                    aria-label={i18nT("replay.tactical.style.width")}
                     onClick={() => {
                       props.store.style.value = { ...style.value, width: w };
                     }}
@@ -428,7 +429,8 @@ export default defineComponent({
                   <button
                     key={d}
                     class={["tac-bar__dash", `tac-bar__dash--${d}`, style.value.dash === d ? "tac-bar__dash--on" : ""]}
-                    title={i18nT(`replay.tactical.style.dash.${d}`)}
+                    data-hint={i18nT(`replay.tactical.style.dash.${d}`)}
+                    aria-label={i18nT(`replay.tactical.style.dash.${d}`)}
                     onClick={() => {
                       props.store.style.value = { ...style.value, dash: d };
                     }}

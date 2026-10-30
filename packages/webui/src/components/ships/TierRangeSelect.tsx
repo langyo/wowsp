@@ -101,7 +101,7 @@ export default defineComponent({
           v-slots={{
             tick: ({ value }: { value: number }) =>
               value === TIER_MAX ? (
-                <span class="tier-range__star" title={t("ships.filter.tierSupership")}>★</span>
+                <span class="tier-range__star" data-hint={t("ships.filter.tierSupership")}>★</span>
               ) : (
                 <span>{tierLabel(value)}</span>
               ),

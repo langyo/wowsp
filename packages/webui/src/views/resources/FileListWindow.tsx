@@ -164,7 +164,7 @@ export function renderFileListWindow(ctx: ResourcesCtx) {
                   ]}
                   disabled={fromLedger || !preview}
                   onClick={() => (files.selectedPkg.value = p.name)}
-                  title={p.name}
+                  data-hint={p.name}
                 >
                   <Package size={14} />
                   <span class="file-window__pkg-name">{p.name}</span>

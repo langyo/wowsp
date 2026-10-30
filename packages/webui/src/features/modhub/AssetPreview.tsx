@@ -163,7 +163,7 @@ export default defineComponent({
       return (
         <div class="asset-preview__grid">
           {list.map((f) => (
-            <figure class="asset-preview__tile" key={f.rel} title={f.rel}>
+            <figure class="asset-preview__tile" key={f.rel} data-hint={f.rel}>
               {thumbs.value[f.rel] ? (
                 <img src={thumbs.value[f.rel]} alt={f.rel} />
               ) : failed.value[f.rel] ? (

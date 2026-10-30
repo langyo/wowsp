@@ -595,7 +595,7 @@ export default defineComponent({
                     <HkTag variant="default" size="sm">{typeLabel(ship.type)} ({shipTypeBadgeShort(ship.type, ship.shipId)})</HkTag>
                     <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} variant="flag" size="sm" />
                     {eventId ? (
-                      <span class="ship-card__event-tag" title={eventTooltip(eventId)}>
+                      <span class="ship-card__event-tag" data-hint={eventTooltip(eventId)}>
                         <HkTag variant={RARITY_VARIANT[rarity]} size="sm">{eventLabel(eventId)}</HkTag>
                       </span>
                     ) : (

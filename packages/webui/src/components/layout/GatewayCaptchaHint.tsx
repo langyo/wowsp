@@ -297,7 +297,7 @@ export default defineComponent({
                 type="button"
                 class="gateway-captcha-hint__min"
                 aria-label={t("gateway.captchaMinimize")}
-                title={t("gateway.captchaMinimize")}
+                data-hint={t("gateway.captchaMinimize")}
                 onClick={minimize}
               >
                 <Minus size={12} />

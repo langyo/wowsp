@@ -301,7 +301,7 @@ export default defineComponent({
                         "clan-card__col--name",
                         markerTintClass(tint),
                       ]}
-                      title={tint ? markerColorLabel(tint) : undefined}
+                      data-hint={tint ? markerColorLabel(tint) : undefined}
                     >
                       {m.name}
                     </span>

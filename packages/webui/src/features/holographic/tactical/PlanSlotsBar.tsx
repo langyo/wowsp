@@ -129,7 +129,8 @@ export default defineComponent({
                   ref={renameInput}
                   class="plan-slots__rename"
                   value={renaming.value.value}
-                  title={i18nT("tactics.slots.rename")}
+                  data-hint={i18nT("tactics.slots.rename")}
+                  aria-label={i18nT("tactics.slots.rename")}
                   onInput={(e: Event) => {
                     if (renaming.value) renaming.value.value = (e.target as HTMLInputElement).value;
                   }}
@@ -141,7 +142,7 @@ export default defineComponent({
                 <button
                   type="button"
                   class={["plan-slots__chip", slot.id === props.activeId ? "plan-slots__chip--on" : ""]}
-                  title={i18nT("tactics.slots.rename")}
+                  data-hint={i18nT("tactics.slots.rename")}
                   onClick={() => clickChip(slot.id)}
                   onDblclick={() => beginRename(slot.id, slot.name)}
                 >
@@ -235,7 +236,8 @@ export default defineComponent({
                 ref={renameInput}
                 class="plan-slots__rename"
                 value={renaming.value.value}
-                title={i18nT("tactics.slots.rename")}
+                data-hint={i18nT("tactics.slots.rename")}
+                aria-label={i18nT("tactics.slots.rename")}
                 onInput={(e: Event) => {
                   if (renaming.value) renaming.value.value = (e.target as HTMLInputElement).value;
                 }}
@@ -247,7 +249,7 @@ export default defineComponent({
               <button
                 type="button"
                 class={["plan-slots__chip", slot.id === props.activeId ? "plan-slots__chip--on" : ""]}
-                title={i18nT("tactics.slots.rename")}
+                data-hint={i18nT("tactics.slots.rename")}
                 onClick={() => clickChip(slot.id)}
                 onDblclick={() => beginRename(slot.id, slot.name)}
               >

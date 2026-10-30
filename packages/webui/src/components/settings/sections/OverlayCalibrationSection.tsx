@@ -214,7 +214,7 @@ export default defineComponent({
      *  fingerprint etc. */
     function fieldTag(label: string, value: string, title?: string) {
       return (
-        <span class="calib-sec__field" title={title}>
+        <span class="calib-sec__field" data-hint={title}>
           <HkTag size="sm">
             <span class="calib-sec__tag-label">{label}</span>
             <span class="calib-sec__tag-value">{value}</span>
@@ -292,7 +292,7 @@ export default defineComponent({
           {/* Icon-only control — the wrapping span carries the hover
               tooltip (HkButton takes ariaLabel, not title) and pins the
               row's right edge. */}
-          <span class="calib-sec__edit" title={edit}>
+          <span class="calib-sec__edit" data-hint={edit}>
             <HkButton
               size="sm"
               variant="secondary"
@@ -356,7 +356,7 @@ export default defineComponent({
                         twin-disambiguating tail baked into the label; the
                         full install path rides the title tooltip, and the
                         last-updated stamp sits top-right. */}
-                    <div class="calib-sec__head" title={c.path}>
+                    <div class="calib-sec__head" data-hint={c.path}>
                       <PlatformIcon kind={c.kind} size={22} />
                       <span class="calib-sec__name">
                         {cardLabels.value.get(normalizeGamePath(c.path)) ?? c.path}

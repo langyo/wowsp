@@ -158,7 +158,7 @@ export default defineComponent({
               {gateway.config.enabled ? (
                 <span
                   class={["tray-panel__status-phone", phoneTone.value]}
-                  title={phoneLabel.value}
+                  data-hint={phoneLabel.value}
                   aria-label={phoneLabel.value}
                 >
                   <Smartphone size={14} />

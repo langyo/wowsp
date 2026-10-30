@@ -160,7 +160,7 @@ export default defineComponent({
               <span class="mod-update-toast__icon">
                 {installing ? <HkSpinner size="xs" tone="current" /> : <PackageCheck size={14} />}
               </span>
-              <p class="mod-update-toast__message" title={step}>
+              <p class="mod-update-toast__message" data-hint={step}>
                 {step}
               </p>
               {meta && <span class="mod-update-toast__meta">{meta}</span>}

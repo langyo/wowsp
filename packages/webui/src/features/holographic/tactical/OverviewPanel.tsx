@@ -254,7 +254,7 @@ export default defineComponent({
           <button
             type="button"
             class="tac-overview__pct"
-            title={i18nT("replay.tactical.timeline.zoomFit")}
+            data-hint={i18nT("replay.tactical.timeline.zoomFit")}
             onClick={() => props.onReset()}
           >
             {percent.value}%

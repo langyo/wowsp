@@ -163,7 +163,7 @@ export default defineComponent({
                   <button
                     type="button"
                     class="s-theme-mode-autoalt"
-                    title={t("settings.themeAutoAltitudeTip")}
+                    data-hint={t("settings.themeAutoAltitudeTip")}
                     aria-label={t("settings.themeAutoAltitudeTip")}
                     onClick={resolveAutoToManual}
                   >
@@ -344,7 +344,7 @@ export default defineComponent({
                           <button
                             type="button"
                             class="settings-modal__wallpaper-delete"
-                            title={t("settings.wallpaperDelete")}
+                            data-hint={t("settings.wallpaperDelete")}
                             aria-label={t("settings.wallpaperDelete")}
                             onClick={() => (appearance.wallpaperArmed.value = w.id)}
                           >

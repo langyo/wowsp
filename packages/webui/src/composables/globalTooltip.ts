@@ -7,14 +7,16 @@
  *  - Rich hints: this module's own delegates below drive the app's richer
  *    popup — `data-hint` plain text, `data-hint-card` structured hover
  *    cards, `data-hint-tags` chip rows and `data-hint-overflow` gating.
- *  - Plain titles: hikari's `installHkTooltipBridge` (installed at the end
- *    of installGlobalTooltip) upgrades ANY remaining `title=` attribute —
- *    including hikari's own components (the HkThemeToggle palette trigger,
- *    the HkThemePanelContent auto-altitude merged cell) — to the same
- *    `.hk-tooltip-popup` shell, placement math and tooltip z band, with
- *    zero per-component migration. `data-hint` anchors keep the richer
- *    popup above and are excluded from the bridge, so an element carrying
- *    both never stacks two popups.
+ *  - Native titles: the app's OWN call sites are all `data-hint` now
+ *    (enforced by nativeTitlePolicy.test.ts — a source scan that fails on
+ *    any new `title=` tooltip). hikari's `installHkTooltipBridge`
+ *    (installed at the end of installGlobalTooltip) stays as the safety
+ *    net for markup hikari itself renders with a `title=` — the
+ *    HkThemeToggle palette trigger, the HkThemePanelContent auto-altitude
+ *    merged cell — upgrading them to the same `.hk-tooltip-popup` shell,
+ *    placement math and tooltip z band. `data-hint` anchors keep the
+ *    richer popup above and are excluded from the bridge, so an element
+ *    carrying both never stacks two popups.
  *
  * Elements opt in with `data-hint="…"` (plain text, pre-localized at the
  * call site); optional `data-hint-pos="top|bottom|left|right"` overrides
@@ -653,14 +655,15 @@ export function installGlobalTooltip(): void {
     if (state === "shown") place();
   });
 
-  // Plain `title=` tooltips have no call site to migrate, so hikari's
-  // document-level bridge takes that half over: hovering or focusing ANY
-  // `[title]` element lifts the attribute aside and fades in the very same
+  // The app's own markup carries no `title=` tooltips anymore
+  // (nativeTitlePolicy.test.ts fences that), so this bridge exists for the
+  // markup HIkARI ITSELF renders with a title: hovering or focusing such an
+  // element lifts the attribute aside and fades in the very same
   // `.hk-tooltip-popup` shell / placement math / tooltip z band this module
   // uses — mounted in #hk-overlay-root, same 300ms delay as HkTooltip. That
-  // is what upgrades hikari's own embedded components (the HkThemeToggle
-  // palette trigger, HkThemePanelContent's auto-altitude merged cell, …)
-  // without touching them.
+  // upgrades hikari's embedded components (the HkThemeToggle palette
+  // trigger, HkThemePanelContent's auto-altitude merged cell, …) without
+  // touching the published package.
   //
   // The data-hint anchors are excluded: they keep this module's richer popup
   // (cards, chips, overflow gating), and without the exclusion an anchor

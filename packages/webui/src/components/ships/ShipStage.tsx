@@ -2167,7 +2167,7 @@ export default defineComponent({
                     <button
                       type="button"
                       class={["ship-stage__rotate-btn", autoRotate.value ? "is-active" : ""].join(" ")}
-                      title={autoRotate.value ? t("ships.detail.stage.rotateOn") : t("ships.detail.stage.rotateOff")}
+                      data-hint={autoRotate.value ? t("ships.detail.stage.rotateOn") : t("ships.detail.stage.rotateOff")}
                       aria-label={t("ships.detail.stage.rotate")}
                       aria-pressed={autoRotate.value}
                       onClick={() => setAutoRotate(!autoRotate.value)}
@@ -2199,7 +2199,7 @@ export default defineComponent({
                     <button
                       type="button"
                       class={["ship-stage__model-pick-btn", modelSelection.value !== "hull" ? "is-active" : ""].join(" ")}
-                      title={t("ships.detail.stage.modelPicker")}
+                      data-hint={t("ships.detail.stage.modelPicker")}
                       aria-label={t("ships.detail.stage.modelPicker")}
                       aria-expanded={modelPickOpen.value}
                       aria-haspopup="listbox"
@@ -2235,7 +2235,7 @@ export default defineComponent({
                     <button
                       type="button"
                       class={["ship-stage__wl-btn", showWaterline.value ? "is-active" : ""].join(" ")}
-                      title={t("ships.detail.stage.waterline")}
+                      data-hint={t("ships.detail.stage.waterline")}
                       aria-label={t("ships.detail.stage.waterline")}
                       aria-pressed={showWaterline.value}
                       onClick={toggleWaterline}

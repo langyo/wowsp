@@ -705,7 +705,7 @@ export default defineComponent({
                                 type="button"
                                 class="pairing-wizard__entry-retry"
                                 onClick={() => void download(e.path)}
-                                title={prog?.error ?? ""}
+                                data-hint={prog?.error ?? ""}
                               >
                                 {t("common.retry")}
                               </button>

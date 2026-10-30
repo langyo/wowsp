@@ -163,7 +163,7 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
                   return (
                     <span
                       class={["holo-roster__nick", markerTintClass(color)]}
-                      title={color ? markerColorLabel(color) : undefined}
+                      data-hint={color ? markerColorLabel(color) : undefined}
                     >
                       {r.vehicle.name}
                     </span>
