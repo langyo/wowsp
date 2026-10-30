@@ -29,8 +29,8 @@ body {
   user-select: none;
   display: flex;
   flex-direction: column;
-  gap: 0.55rem;
-  padding: 0.9rem 0.9rem 0.7rem;
+  gap: 0.4rem;
+  padding: 0.7rem 0.9rem 0.55rem;
   color: rgb(var(--color-text));
   font-size: var(--text-sm);
   /* Hairline inner edge so the card reads against same-colored windows
@@ -69,12 +69,18 @@ body {
 .tray-panel__status {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 0.3rem;
-  padding: 0.5rem 0.65rem;
+  padding: 0.4rem 0.65rem;
   border-radius: var(--radius-sm);
   background: rgb(var(--color-border) / 8%);
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted));
+  /* Absorbs the state-dependent height slack (offline vs running, font
+     scale) INSIDE the card, so the panel never shows a dead void between
+     blocks — see the menu's pinned-bottom note. */
+  flex: 1 1 auto;
+  min-height: fit-content;
 
   &.is-running {
     background: rgb(var(--color-success) / 8%);
@@ -87,55 +93,35 @@ body {
   gap: 0.55rem;
 }
 
-/* Phone-link block — same card grammar as the session block, tinted by
-   state: a linked phone reads success, a service that is merely on reads
-   neutral, an off service stays muted. */
-.tray-panel__phone {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  padding: 0.5rem 0.65rem;
-  border-radius: var(--radius-sm);
-  background: rgb(var(--color-border) / 8%);
-  color: rgb(var(--color-muted));
-
-  &.is-linked {
-    background: rgb(var(--color-success) / 8%);
-  }
-
-  &.is-off {
-    opacity: 0.75;
-  }
-}
-
-.tray-panel__phone-row {
+/* Phone-link indicator — rides the status row's RIGHT edge (never its own
+   row): it exists only while the mobile service is on, and its tone
+   follows the sidebar's phone-icon grammar (linked = success, captcha =
+   warning, error = error, merely online = muted). */
+.tray-panel__status-phone {
+  margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-}
-
-/* The icon rides the same 1.1rem column as the status pip so the rows
-   stay optically aligned. */
-.tray-panel__phone-icon {
-  width: 1.1rem;
-  height: 1.1rem;
-  flex-shrink: 0;
+  gap: 0.25rem;
   color: rgb(var(--color-muted));
+  cursor: default;
+
+  &.is-linked {
+    color: rgb(var(--color-success));
+  }
+  &.is-warning {
+    color: rgb(var(--color-warning));
+  }
+  &.is-error {
+    color: rgb(var(--color-error));
+  }
+  &.is-on {
+    color: rgb(var(--color-primary));
+  }
 }
 
-.tray-panel__phone.is-linked .tray-panel__phone-icon {
-  color: rgb(var(--color-success));
-}
-
-.tray-panel__phone-text {
-  font-size: var(--text-xs);
-  color: rgb(var(--color-text));
-}
-
-.tray-panel__phone-count {
-  margin-left: auto;
-  min-width: 1.2rem;
-  padding: 0 0.3rem;
+.tray-panel__status-phone-count {
+  min-width: 1.1rem;
+  padding: 0 0.25rem;
   border-radius: var(--radius-sm);
   background: rgb(var(--color-success) / 18%);
   color: rgb(var(--color-success));
@@ -204,11 +190,18 @@ body {
   flex-shrink: 0;
 }
 
-/* Player row — the resolved "who is playing" identity. */
+/* Player row — the resolved "who is playing" identity. Shares the slack
+   absorption with the status card (flex 1) so leftover height spreads
+   into the two cards instead of a hole above the menu. */
 .tray-panel__player {
-  padding: 0.5rem 0.6rem;
+  padding: 0.4rem 0.6rem;
   border-radius: var(--radius-sm);
   background: rgb(var(--color-primary) / 6%);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  flex: 1 1 auto;
+  min-height: fit-content;
 }
 
 .tray-panel__player-row {
@@ -234,11 +227,10 @@ body {
 }
 
 /* Menu actions — the tray menu's Show / Quit as rows. Pinned to the
-   bottom edge: the window height (PANEL_LOGICAL in commands/tray_panel.rs)
-   is sized to the tallest content state, so the slack this auto margin
-   absorbs is a small offline-state separator, never a dead void. */
+   bottom by the flex-grow cards above it: the window height
+   (PANEL_LOGICAL in commands/tray_panel.rs) fits the tallest state and
+   the two cards absorb every leftover pixel, so no dead void appears. */
 .tray-panel__menu {
-  margin-top: auto;
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
