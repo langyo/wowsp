@@ -270,18 +270,30 @@ shipCrossResearchInfo 與 itemPrice 兩個集合都拿到資料即標記完成�
 WOWSP_PROBE price catalog written 日誌行報告各集合計數），或在整個 hub 被
 扣留（Lesta 沙盒形態）時靜默放棄（無檔案、無日誌行、無 soft 錯誤）。計數
 為 -1 表示 hub 拒絕該集合名。重試窗口結束後檔案永不重寫：伴生程式可能正在
-讀取它。**首次實機採集需驗證**：實際提供的集合名、實體 id 連接鍵（船/物品
-id）以及元件形態（解碼的 __slots__ 類別還是 SafeClass 包裝）；離線 harness
-已用植入集合固定解析契約。
+讀取它。
+
+**已用一次真實港口採集驗證**（WG，build 13357625，2026-10-31）：
+itemPrice 提供 11,617 筆、shipTechRestrictions 被拒（-1）、
+shipEconomicAttributes 1 筆，而 shipCrossResearchInfo **為空**——它由客戶端
+自己的研發介面填充，登入時不落資料。價格實體的元件 id 是被定價物品的
+**GameParams 數字 id**（不是條目名），因此價格只能經由提取器寫入每個模組
+步驟的 gpid 連接到鏈資料；艦船價格攜帶艦船自身的 GameParams id，即鏈資料的
+shipId 鍵。出現的貨幣：銀幣 5,706 / 經驗 3,694 / 金幣 838（另有非經濟類
+"value"/活動貨幣被填充忽略）。採集的艦船經驗與鏈資料的 research.xp 在全部
+1,230 艘 WG 艦船上完全一致；庫存模組沒有研發經驗（隨船附帶），因此只有
+升級模組獲得經濟資料。
 
 **消費方式。** `scripts/extract/apply_price_catalog.py` 把採集到的
 `price_catalog.json` 連接到已隨包的升級鏈資料上：`--inspect` 印出採集
-形狀與連接報告（各集合計數、命中 id、未命中樣本、出現的貨幣值），不寫
-任何檔案；`--apply` 填充逐模組的 `xp`/`credits` 與邊的
-`xpWithModules`/`requiredModules`，並在寫入前用鏈資料既有的
-`xpShip` 校驗採集的艦船經驗；`--self-test` 離線證明連接/填充邏輯
-（CI 與探針沙盒合規檢查並排執行），因此拿到新採集只需 inspect、apply、
-複核。
+形狀與連接報告（各集合計數、gpid 命中率、出現的貨幣值、艦船經驗交叉校驗），
+不寫任何檔案；`--apply` 填充逐模組的 `xp`/`credits` 與邊的
+`xpWithModules`/`requiredModules`。「含必要模組」總值由鏈資料自身的
+解鎖圖計算（攜帶 nextShips 的模組就是必須先研發的模組）：艦船經驗 + 這些
+模組的採集研發經驗；一旦採集攜帶同步的 shipCrossResearchInfo 總值則以其為
+準。`--self-test` 離線證明連接/填充邏輯（CI 與探針沙盒合規檢查並排執行），
+因此拿到新採集只需 inspect、apply、複核。隨包的 WG 資料已套用該經濟資料；
+Lesta 資料在拿到 Lesta 客戶端採集前保持可空欄位（本機未安裝 Lesta 客戶端，
+且這些數值由伺服器同步、無法從其 GameParams dump 推導）。
 
 ## 產品整合
 

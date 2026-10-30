@@ -456,19 +456,31 @@ builds.json / order_probe.json 相同的平铺文件桥读取。
 itemPrice 两个集合都拿到数据即标记完成（一条 WOWSP_PROBE price catalog
 written 日志行报告各集合计数），或在整个 hub 被扣留（Lesta 沙盒形态）时
 静默放弃（无文件、无日志行、无 soft 错误）。计数为 -1 表示 hub 拒绝该集合
-名。重试窗口结束后文件永不重写：伴生程序可能正在读取它。**首次实机采集
-需验证**：实际提供的集合名、实体 id 连接键（船/物品 id）以及组件形态
-（解码的 __slots__ 类还是 SafeClass 包装）；离线 harness 已用植入集合固定
-解析契约。
+名。重试窗口结束后文件永不重写：伴生程序可能正在读取它。
+
+**已用一次真实港口采集验证**（WG，build 13357625，2026-10-31）：
+`itemPrice` 提供 11,617 条、`shipTechRestrictions` 被拒（-1）、
+`shipEconomicAttributes` 1 条，而 `shipCrossResearchInfo` **为空**——
+它由客户端自己的研发界面填充，登录时不落数据。价格实体的组件 `id` 是
+被定价物品的 **GameParams 数字 id**（不是条目名），所以价格只能通过提取器
+写入每个模块步骤的 `gpid` 连接到链数据；舰船价格携带舰船自身的
+GameParams id，即链数据的 shipId 键。出现的货币：银币 5,706 / 经验
+3,694 / 金币 838（另有非经济类 "value"/活动货币被填充忽略）。采集的舰船
+经验与链数据的 `research.xp` 在全部 1,230 艘 WG 舰船上完全一致；库存
+模块没有研发经验（随船附带），因此只有升级模块获得经济数据。
 
 **消费方式。** `scripts/extract/apply_price_catalog.py` 把采集到的
 `price_catalog.json` 连接到已随包的升级链数据上：`--inspect` 打印采集
-形状与连接报告（各集合计数、命中 id、未命中样例、出现的货币值），不写
-任何文件；`--apply` 填充逐模块的 `xp`/`credits` 与边的
-`xpWithModules`/`requiredModules`，并在写入前用链数据里已有的
-`xpShip` 校验采集的舰船经验；`--self-test` 离线证明连接/填充逻辑
-（CI 与探针沙盒合规检查并排运行），因此拿到新采集只需 inspect、apply、
-复核。
+形状与连接报告（各集合计数、gpid 命中率、出现的货币值、舰船经验交叉校验），
+不写任何文件；`--apply` 填充逐模块的 `xp`/`credits` 与边的
+`xpWithModules`/`requiredModules`。「含必要模块」总值由链数据自身的
+解锁图计算（携带 `nextShips` 的模块就是必须先研发的模块）：舰船经验 +
+这些模块的采集研发经验；一旦采集携带同步的 `shipCrossResearchInfo`
+总值则以其为准。`--self-test` 离线证明连接/填充逻辑（CI 与探针沙盒
+合规检查并排运行），因此拿到新采集只需 inspect、apply、复核。随包的 WG
+数据已应用该经济数据；Lesta 数据在拿到 Lesta 客户端采集前保持可空字段
+（本机未安装 Lesta 客户端，且这些数值由服务器同步、无法从其 GameParams
+dump 推导）。
 
 ## 准心瞄准浮窗
 
