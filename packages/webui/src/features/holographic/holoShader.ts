@@ -17,27 +17,22 @@
  * doubled the fleet's draw calls; the hull read now rides this shader's
  * own terms (see uLinesGain) plus the caller's hull outline.
  *
- * Definition layer: the ship stage enables five extra terms that give large
- * panels surface reading (a flat pastel fill with nothing between the
- * silhouette and the rim reads as porridge on a broadside hull):
- *   - `uLightGain` — a soft headlight (dot of the smooth normal with the view
- *     direction, eased, multiplicative) so curvature and creases modulate the
- *     fill instead of every facing fragment getting the same colour. Gated on
- *     `vHasNormal`: markers and terrain build on normal-less geometry and
- *     keep the flat look (their uniforms stay at the 0 defaults).
- *   - `uLinesGain` — a faint world-space measuring grid (10-unit pitch,
- *     fwidth-antialiased) so a broadside slab shows panel-scale structure
- *     without a per-triangle wireframe. World space because the bake's local
+ * Surface-structure layer: the ship stage gets its panel read from terms
+ * that CANNOT fragment on the coarse quantized bake. Normal-driven terms
+ * (a headlight, a ship-fixed facet key, a measuring grid) were tried for
+ * this and rejected: every normal-based gain turns the ~30–50° plate-
+ * incidence spread into mottled light/dark blotches that read as broken
+ * reflections. The stage's structure now comes from `uSliceGain` —
+ *   - `uSliceGain` / `uSliceSpacing` — thin world-space-Y iso-contour
+ *     lines (fwidth-antialiased, additive in the fresnel colour): the
+ *     stacked-projection-lines hologram cue. Normal-independent, so the
+ *     plate mosaic cannot break them. World space because the bake's local
  *     units differ per ship while the stage normalizes every model to the
  *     same 200-unit box.
- *   - `uFacetGain` / `uFacetSat` / `uFacetDir` — a key light fixed in the
- *     SHIP's frame (object space) that gives every plate orientation its own
- *     brightness and saturation. Unlike the headlight it does not vanish at
- *     grazing incidence, so a low broadside — the view that otherwise melts
- *     into one flat fill — keeps its deck edge, chine and superstructure
- *     corners. `abs(dot(n, dir))` because the bake's winding is arbitrary.
- *     Off by default; the stage sets a low gain and a direction biased to the
- *     vertical so the existing flank tone stays put.
+ * The legacy definition terms (`uLightGain`, `uLinesGain`, `uFacetGain` /
+ * `uFacetSat` / `uFacetDir`) stay wired — `uLinesGain` still serves the
+ * replay's ship markers — but the stage look (`stageLook.applyStageLook`)
+ * leaves them at 0.
  * Texture layer: three more stage-only terms push the look from "moulded
  * plastic" toward a transmitted projection —
  *   - `uScanGain` — fine CRT-pitch scanline rows in SCREEN space (constant
@@ -107,6 +102,14 @@ export interface HoloUniforms {
    *  otherwise turns the broad rim into a per-plate mosaic of bright wedges). */
   uFresnelPow: { value: number };
   uFresnelGain: { value: number };
+  /** Hologram slice lines: thin world-space-Y iso-contours (fwidth-
+   *  antialiased), additive in the fresnel colour. Normal-independent, so
+   *  the coarse bake's plate mosaic cannot break them — this is the stage
+   *  look's main surface-structure carrier (0 = off, legacy default). */
+  uSliceGain: { value: number };
+  /** World-space interval between slice lines (stage units — every model is
+   *  normalized into the same 200-unit box, so one value fits all ships). */
+  uSliceSpacing: { value: number };
   /** Ship-fixed facet key: a brightness step per plate orientation (0 = the
    *  legacy flat fill). The headlight above fades out at grazing angles, which
    *  is exactly where a broadside melts into one fill — this term does not. */
@@ -171,6 +174,8 @@ export const HOLO_FRAG = /* glsl */ `
   uniform float uFacetGain;
   uniform float uFacetSat;
   uniform vec3 uFacetDir;
+  uniform float uSliceGain;
+  uniform float uSliceSpacing;
   varying vec3 vWorldPos;
   varying vec3 vViewPos;
   varying vec3 vLocalPos;
@@ -243,6 +248,19 @@ export const HOLO_FRAG = /* glsl */ `
       vec3 g = abs(fract(vWorldPos / 10.0 - 0.5) - 0.5) / fwidth(vWorldPos);
       float line = 1.0 - min(min(g.x, g.y), g.z);
       col += fresnelColor * clamp(line, 0.0, 1.0) * uLinesGain;
+    }
+    // Hologram slice lines: thin iso-contours of the world-space Y axis.
+    // fwidth keeps them at a constant pixel width at any zoom; the width
+    // floor keeps a deck that sits exactly ON a contour from lighting up
+    // wholesale (fwidth ≈ 0 on a flat horizontal plate is the degenerate
+    // case). Additive and normal-independent — a curved hull flank picks
+    // up the classic stacked-projection-lines read.
+    if (uSliceGain > 0.0) {
+      float sy = vWorldPos.y / max(uSliceSpacing, 0.001);
+      float sd = abs(fract(sy + 0.5) - 0.5);
+      float sw = max(fwidth(sy) * 1.2, 0.015);
+      float sliceLine = 1.0 - smoothstep(0.0, sw, sd);
+      col += fresnelColor * sliceLine * uSliceGain;
     }
     // Fine scanline rows in SCREEN space: constant CRT pitch at any zoom,
     // drifting slowly upward. Screen space because local-space rows change
@@ -343,6 +361,10 @@ export function makeHoloMaterial(): THREE.ShaderMaterial {
       uFacetGain: { value: 0.0 },
       uFacetSat: { value: 0.0 },
       uFacetDir: { value: new THREE.Vector3(0.5, 0.78, 0.38).normalize() },
+      // Slice lines off by default (markers, terrain and the mod stage keep
+      // the legacy fill); the ship stage opts in via applyStageLook.
+      uSliceGain: { value: 0.0 },
+      uSliceSpacing: { value: 4.0 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,

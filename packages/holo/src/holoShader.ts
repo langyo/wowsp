@@ -66,6 +66,10 @@ export const SHIP_FRAG = /* glsl */ `
   uniform float uFlickerGain;
   uniform float uSweepLo;
   uniform float uSweepHi;
+  // Hologram slice lines (iso-contours of world-space Y) — the app stage's
+  // surface-structure cue, ported for parity. 0 = off (replay ships).
+  uniform float uSliceGain;
+  uniform float uSliceSpacing;
 
   void main() {
     vec3 n = faceNormal();
@@ -90,6 +94,16 @@ export const SHIP_FRAG = /* glsl */ `
         sweep = exp(-d * d);
         col += fresnelColor * sweep * uSweepGain;
       }
+    }
+    // Thin iso-contour lines, fwidth-antialiased (the width floor keeps a
+    // deck sitting exactly ON a contour from lighting up wholesale).
+    // Normal-independent, so the coarse bake's plate mosaic can't break it.
+    if (uSliceGain > 0.0) {
+      float sy = vWorldPos.y / max(uSliceSpacing, 0.001);
+      float sd = abs(fract(sy + 0.5) - 0.5);
+      float sw = max(fwidth(sy) * 1.2, 0.015);
+      float sliceLine = 1.0 - smoothstep(0.0, sw, sd);
+      col += fresnelColor * sliceLine * uSliceGain;
     }
     // Faint projector flicker — two incommensurate sines, single digits of
     // gain so it reads as transmission, not as a rendering bug.
@@ -211,6 +225,8 @@ export function makeShipHoloMaterial(): THREE.ShaderMaterial {
       uFlickerGain: { value: 0.0 },
       uSweepLo: { value: 0.0 },
       uSweepHi: { value: 0.0 },
+      uSliceGain: { value: 0.0 },
+      uSliceSpacing: { value: 4.0 },
     },
     vertexShader: HOLO_VERT,
     fragmentShader: SHIP_FRAG,
