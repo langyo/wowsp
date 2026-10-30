@@ -18,7 +18,8 @@ Per ship (keyed by stringified shipId, like tech_tree.json):
         requiredModules,                  # null: unavailable in GameParams
       }},
       slots: [{ucType, steps: [           # one bracket per module slot
-        {name, isStock, xp: null, credits: null, components, unlocks?},
+        {name, prev, depth, isStock, xp: null, credits: null, components,
+         unlocks?},
       ]}],
   }}}
 
@@ -33,13 +34,17 @@ client-UI economy layer holds them) — the per-step xp/credits and the
 extracted, so the schema does not have to change when it lands.
 
 `slots` follows the game's own module structure: entries grouped by `ucType`,
-each slot ordered stock -> top along the `prev` chain (the same resolution
-shipParts.ts uses at runtime: a chain head is an entry whose `prev` names no
-same-slot entry, the top is the entry nothing else upgrades from; parallel
-variant chains keep table order after the canonical one). `components` is the
-entry's component-name map verbatim (hull entries list every mounted role);
-`unlocks` carries the numeric shipIds of the entry's `nextShips`, resolved
-here so the webui needs no GameParams to map module -> unlocked ship.
+each slot ordered by upgrade depth (stock -> top) along the `prev` chains —
+the same modules shipParts.ts resolves at runtime. Each step carries its raw
+`prev` (the GameParams upgrade entry key it upgrades from; null for stock)
+and its `depth` (the upgrade level within the bracket: stock = 0, parallel
+variants of the same level share a depth, and a module whose `prev` points
+into another bracket — a hull-locked gun/torpedo top — sits one level above
+the slot's stock). Steps are ordered by (depth, table order) so alternatives
+sit adjacent. `components` is the entry's component-name map verbatim (hull
+entries list every mounted role); `unlocks` carries the numeric shipIds of
+the entry's `nextShips`, resolved here so the webui needs no GameParams to
+map module -> unlocked ship.
 
 Input resolution order (first available wins; --gameparams always wins):
 
@@ -173,6 +178,9 @@ class _Stats:
         self.slots = 0
         self.steps = 0
         self.unlock_steps = 0
+        self.parallel_slots = 0
+        self.cross_slot_prev = 0
+        self.max_depth = 0
         self.kinds: dict[str, int] = {}
 
 
@@ -399,7 +407,7 @@ def _slots(
     index_to_id: dict[str, str],
     stats: _Stats,
 ) -> list[dict]:
-    """One slot per ucType, steps ordered stock -> top along the prev chain."""
+    """One slot per ucType, steps ordered by upgrade depth (stock -> top)."""
     by_kind: dict[str, list[tuple[str, dict]]] = {}
     for name, up in sui.items():
         if not isinstance(up, dict):
@@ -408,16 +416,30 @@ def _slots(
         if not kind:
             continue
         by_kind.setdefault(kind, []).append((name, up))
+    # Every upgrade entry of the ship, whatever its slot — tells a module whose
+    # prev points into another bracket apart from a plain slot root.
+    all_names = {name for name, up in sui.items() if isinstance(up, dict)}
     slots: list[dict] = []
     for kind in sorted(by_kind, key=lambda k: (SLOT_ORDER.get(k, len(SLOT_ORDER)), k)):
-        chain = _chain_order(by_kind[kind])
+        slot_names = {name for name, _ in by_kind[kind]}
+        ordered = _ordered_steps(by_kind[kind], all_names)
+        depths = [depth for _, depth in ordered]
+        stats.max_depth = max(stats.max_depth, max(depths, default=0))
+        if len(set(depths)) != len(depths):
+            stats.parallel_slots += 1
         raw_uc = by_kind[kind][0][1].get("ucType")
         steps: list[dict] = []
-        for pos, name in enumerate(chain):
+        for pos, (name, depth) in enumerate(ordered):
             up = sui[name]
+            prev = up.get("prev")
+            prev_key = prev if isinstance(prev, str) and prev else None
+            if prev_key is not None and prev_key not in slot_names:
+                stats.cross_slot_prev += 1
             components = up.get("components")
             step: dict = {
                 "name": name,
+                "prev": prev_key,
+                "depth": depth,
                 "isStock": pos == 0,
                 "xp": None,
                 "credits": None,
@@ -435,40 +457,46 @@ def _slots(
     return slots
 
 
-def _chain_order(entries: list[tuple[str, dict]]) -> list[str]:
-    """Stock -> top order for one ucType slot.
+def _ordered_steps(
+    entries: list[tuple[str, dict]],
+    all_names: set[str],
+) -> list[tuple[str, int]]:
+    """(name, depth) pairs, stock -> top, for one ucType slot.
 
-    Mirrors shipParts.ts' chainsByKind resolution: the stock module is the
-    first entry nothing in the slot upgrades FROM (its prev is empty or names
-    an entry of another slot — a cross-slot prerequisite such as a torpedo
-    upgrade requiring hull B), the top is the entry nothing upgrades from;
-    follow prev -> successor from the stock, then append any parallel variant
-    chain in table order so no module is lost.
+    Depth is the module's upgrade level inside the slot: 0 for a stock module
+    (no prev), otherwise one more than its same-slot prev's depth. A prev
+    naming a module of ANOTHER slot (a hull-locked gun/torpedo top) puts the
+    entry one level above the slot's stock — the level the prerequisite hull
+    variant introduces. Parallel variant chains therefore share a depth level
+    and ties keep GameParams table order, so alternatives sit adjacent.
     """
     names = [name for name, _ in entries]
-    name_set = set(names)
-    head = next(
-        (name for name, up in entries
-         if not (isinstance(up.get("prev"), str) and up["prev"] in name_set)),
-        names[0],
-    )
-    order = [head]
-    seen = {head}
-    while True:
-        nxt = next(
-            (name for name, up in entries
-             if up.get("prev") == order[-1] and name not in seen),
-            None,
-        )
-        if nxt is None:
-            break
-        order.append(nxt)
-        seen.add(nxt)
+    by_name = dict(entries)
+    depth: dict[str, int] = {}
     for name in names:
-        if name not in seen:
-            order.append(name)
-            seen.add(name)
-    return order
+        prev = by_name[name].get("prev")
+        if not (isinstance(prev, str) and prev):
+            depth[name] = 0
+        elif prev not in by_name:
+            # Cross-slot prerequisite (or a missing entry): one level up when
+            # it names another module of this ship, else treat as a root.
+            depth[name] = 1 if prev in all_names else 0
+    # Resolve same-slot prev edges; the SUI table order is not depth order.
+    progress = True
+    while progress:
+        progress = False
+        for name in names:
+            prev = by_name[name].get("prev")
+            if not (isinstance(prev, str) and prev in depth):
+                continue
+            want = depth[prev] + 1
+            if name not in depth or depth[name] < want:
+                depth[name] = want
+                progress = True
+    for name in names:
+        depth.setdefault(name, 0)
+    ordered = sorted(range(len(names)), key=lambda i: (depth[names[i]], i))
+    return [(names[i], depth[names[i]]) for i in ordered]
 
 
 def _unlocks(up: dict, key_to_id: dict[str, str], index_to_id: dict[str, str]) -> list[int]:
@@ -519,6 +547,9 @@ def _report(out: Path, realm: str, version: str, ships: dict[str, dict], stats: 
           f"({stats.xp_ship_known} with xpShip), {stats.ships_with_next} ships unlock something")
     print(f"[upgrade-chain] {stats.slots} slots / {stats.steps} steps "
           f"({stats.unlock_steps} steps carry unlocks)")
+    print(f"[upgrade-chain] topology: max depth {stats.max_depth}, "
+          f"{stats.parallel_slots} slots with parallel variants, "
+          f"{stats.cross_slot_prev} cross-slot prev links")
     top = sorted(stats.kinds.items(), key=lambda kv: -kv[1])
     print(f"[upgrade-chain] slots by ucType: {dict(top)}")
     if stats.unresolved_targets:
