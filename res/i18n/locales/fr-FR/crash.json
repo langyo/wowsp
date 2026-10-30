@@ -43,7 +43,10 @@
     "restoreWarning": "Restaurer l'avertissement",
     "recordDetail": "Rapport de plantage",
     "resetAll": "Réinitialiser toutes les entrées",
-    "resetDone": "{count} entrées de plantage réinitialisées."
+    "resetDone": "{count} entrées de plantage réinitialisées.",
+    "markViewed": "Marquer comme consulté",
+    "summary": "Résumé",
+    "highlights": "Points clés"
   },
   "findings": {
     "exceptionAccessViolation": "Violation d'accès — le client a lu ou écrit une mémoire qui ne lui appartient pas",

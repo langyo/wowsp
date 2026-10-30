@@ -144,8 +144,7 @@
   margin-left: auto;
 }
 
-.crash-section__suspect-lines,
-.crash-section__log-highlights {
+.crash-section__suspect-lines {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -164,10 +163,6 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-}
-
-.crash-section__log-highlights code {
-  color: var(--hi-color-error);
 }
 
 .crash-section__actions {
@@ -207,6 +202,11 @@
 
   &.is-dismissed {
     opacity: 0.55;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary) / 60%);
+    outline-offset: 1px;
   }
 }
 
@@ -254,34 +254,6 @@
   font-size: var(--text-xs);
 }
 
-// ── the raw-logs window ────────────────────────────────────────────────────
-
-.crash-section__raw {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-height: 60vh;
-  overflow-y: auto;
-}
-
-.crash-section__log-name {
-  margin: 0 0 4px;
-  font-size: var(--text-sm);
-  font-weight: 600;
-  font-family: var(--font-mono);
-}
-
-.crash-section__log-tail {
-  margin: 6px 0 0;
-  padding: 8px;
-  max-height: 14rem;
-  overflow: auto;
-  font-size: var(--text-xs);
-  background: var(--hi-color-bg-subtle);
-  border-radius: var(--radius-sm);
-  white-space: pre-wrap;
-  word-break: break-all;
-}
 // ── the record card head: time + direct-cause tag ──────────────────────────
 
 .crash-section__record-head {
@@ -294,13 +266,5 @@
   font-weight: 600;
 }
 
-// ── the per-record log window (scrolls to the tail on open) ────────────────
-
-.crash-section__detail-logs {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding-right: 4px;
-}
+// The per-record log window is hikari's HkLogWindow (overlay scrollbar,
+// tabbed tails) — no local chrome of its own left to style.

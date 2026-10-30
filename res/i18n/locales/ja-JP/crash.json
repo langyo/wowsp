@@ -43,7 +43,10 @@
     "restoreWarning": "警告を復元",
     "recordDetail": "クラッシュ詳細",
     "resetAll": "すべての記録をリセット",
-    "resetDone": "{count} 件のクラッシュ記録をリセットしました"
+    "resetDone": "{count} 件のクラッシュ記録をリセットしました",
+    "markViewed": "既読にする",
+    "summary": "概要",
+    "highlights": "ハイライト"
   },
   "findings": {
     "exceptionAccessViolation": "アクセス違反 —— クライアントが権限のないメモリーに読み書きしました",

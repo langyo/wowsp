@@ -115,6 +115,13 @@ export const useCrashStore = defineStore("crash", () => {
           onClick: () => {
             promptToastId = null;
             settingsUi.show("crash");
+            // Opening the analysis IS viewing the crash: the read
+            // watermark retires this record (and every older pending one)
+            // backend-side, so it never re-toasts on a later boot.
+            // Idempotent with the section's own mount-time marking.
+            void markViewed(record.id).catch(() => {
+              // No backend answer — the prompt simply stays armed.
+            });
           },
         },
       },
@@ -231,6 +238,28 @@ export const useCrashStore = defineStore("crash", () => {
       activeRecord.value = null;
       clearPrompt();
     }
+  }
+
+  /** Mark one record VIEWED backend-side — the read watermark flips it
+   *  AND every OLDER pending record in the same pass. The flipped rows
+   *  already sit in the history list, so their status flips IN PLACE
+   *  (ingest's prepend would scramble the newest-first order the records
+   *  window renders, and could sink a still-pending newer row below
+   *  dismissed ones); a row that raced a refresh falls back to the
+   *  usual upsert. Resolves the flipped count. Throws on backend
+   *  refusal — the calling surface owns the error toast. */
+  async function markViewed(id: string): Promise<number> {
+    const flipped = await api.markGameCrashViewed(id);
+    for (const record of flipped) {
+      const row = history.value.find((r) => r.id === record.id);
+      if (row) row.status = record.status;
+      else history.value = [record, ...history.value.filter((r) => r.id !== record.id)];
+    }
+    // Re-resolve the prompt exactly like refreshHistory: the watermark
+    // may have retired the active record (and every pending one with it).
+    activeRecord.value = history.value.find((r) => r.status === "new") ?? null;
+    if (!activeRecord.value) clearPrompt();
+    return flipped.length;
   }
 
   /** Reset every record in one pass (new -> dismissed backend-side) and
@@ -491,6 +520,7 @@ export const useCrashStore = defineStore("crash", () => {
     stop,
     refreshHistory,
     dismiss,
+    markViewed,
     dismissAll,
     analyze,
     exportReport,

@@ -16,6 +16,7 @@ vi.mock("@/api", () => ({
     listenGameCrash: vi.fn((_handler: unknown) => Promise.resolve(() => undefined)),
     listGameCrashes: vi.fn(),
     dismissGameCrash: vi.fn(),
+    markGameCrashViewed: vi.fn(),
     dismissAllGameCrashes: vi.fn(),
     analyzeGameCrash: vi.fn(),
     exportGameCrashReport: vi.fn(),
@@ -42,6 +43,7 @@ const mocked = {
   listen: vi.mocked(api.listenGameCrash),
   list: vi.mocked(api.listGameCrashes),
   dismiss: vi.mocked(api.dismissGameCrash),
+  markViewed: vi.mocked(api.markGameCrashViewed),
   dismissAll: vi.mocked(api.dismissAllGameCrashes),
   analyze: vi.mocked(api.analyzeGameCrash),
   export: vi.mocked(api.exportGameCrashReport),
@@ -95,6 +97,7 @@ beforeEach(() => {
   mocked.listen.mockImplementation((_handler: unknown) => Promise.resolve(() => undefined));
   mocked.list.mockResolvedValue([] as never);
   mocked.dismiss.mockResolvedValue(null as never);
+  mocked.markViewed.mockResolvedValue([] as never);
   mocked.dismissAll.mockResolvedValue(0 as never);
   mocked.analyze.mockResolvedValue(analysis as never);
   mocked.export.mockResolvedValue("C:\\exports\\crash.zip" as never);
@@ -222,6 +225,70 @@ describe("useCrashStore.dismiss", () => {
     await crash.dismiss("old");
 
     expect(crash.activeRecord?.id).toBe("live");
+  });
+});
+
+describe("useCrashStore.markViewed", () => {
+  it("folds the watermark's flipped records in and clears the prompt", async () => {
+    // The backend flips the marked record AND the older pending one (the
+    // read watermark); the store must apply every flipped row.
+    mocked.markViewed.mockResolvedValue([
+      record({ id: "crash-1", status: "dismissed" }),
+      record({ id: "older", status: "dismissed" }),
+    ] as never);
+    const crash = useCrashStore();
+    crash.activeRecord = record();
+    crash.history = [record(), record({ id: "older", status: "new" })];
+
+    const count = await crash.markViewed("crash-1");
+
+    expect(mocked.markViewed).toHaveBeenCalledWith("crash-1");
+    expect(count).toBe(2);
+    expect(crash.activeRecord).toBeNull();
+    expect(crash.history.map((r) => r.status)).toEqual(["dismissed", "dismissed"]);
+  });
+
+  it("flips rows IN PLACE: the newest-first list order survives", async () => {
+    // ingest() prepends — folding the watermark through it would reverse
+    // the flipped block (or sink a still-pending newer row below
+    // dismissed ones). The rows must flip where they sit.
+    mocked.markViewed.mockResolvedValue([
+      record({ id: "crash-1", status: "dismissed" }),
+      record({ id: "older", status: "dismissed" }),
+    ] as never);
+    const crash = useCrashStore();
+    crash.history = [record(), record({ id: "older", status: "new" })];
+
+    await crash.markViewed("crash-1");
+
+    expect(crash.history.map((r) => r.id)).toEqual(["crash-1", "older"]);
+  });
+
+  it("keeps a still-pending newer record pinned when an older row is marked", async () => {
+    mocked.markViewed.mockResolvedValue([
+      record({ id: "mid", status: "dismissed" }),
+      record({ id: "old", status: "dismissed" }),
+    ] as never);
+    const crash = useCrashStore();
+    crash.activeRecord = record({ id: "live" });
+    crash.history = [
+      record({ id: "live" }),
+      record({ id: "mid" }),
+      record({ id: "old" }),
+    ];
+
+    await crash.markViewed("mid");
+
+    expect(crash.history.map((r) => r.id)).toEqual(["live", "mid", "old"]);
+    expect(crash.history.map((r) => r.status)).toEqual(["new", "dismissed", "dismissed"]);
+    expect(crash.activeRecord?.id).toBe("live");
+  });
+
+  it("propagates backend refusals to the calling surface", async () => {
+    mocked.markViewed.mockRejectedValue(new Error("nope") as never);
+    const crash = useCrashStore();
+    await expect(crash.markViewed("crash-1")).rejects.toThrow("nope");
+    expect(crash.history).toEqual([]);
   });
 });
 

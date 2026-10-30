@@ -5,17 +5,20 @@
  *  action plumbing. */
 import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 
 import { createPinia, setActivePinia } from "pinia";
 
 import type { CrashAnalysis, GameCrashRecord } from "@/api";
 import { initLocaleMessages, t } from "@/i18n";
+import { useCrashStore } from "@/stores/crash";
 
 vi.mock("@/api", () => ({
   api: {
     listenGameCrash: vi.fn(() => Promise.resolve(() => undefined)),
     listGameCrashes: vi.fn(),
     dismissGameCrash: vi.fn(),
+    markGameCrashViewed: vi.fn(() => Promise.resolve([])),
     dismissAllGameCrashes: vi.fn(),
     analyzeGameCrash: vi.fn(),
     exportGameCrashReport: vi.fn(),
@@ -40,6 +43,7 @@ import CrashSection from "./CrashSection";
 
 const mocked = {
   list: vi.mocked(api.listGameCrashes),
+  markViewed: vi.mocked(api.markGameCrashViewed),
   dismissAll: vi.mocked(api.dismissAllGameCrashes),
   analyze: vi.mocked(api.analyzeGameCrash),
   exportReport: vi.mocked(api.exportGameCrashReport),
@@ -84,7 +88,16 @@ const analysis: CrashAnalysis = {
     { code: "exceptionAccessViolation", severity: "critical", detail: "0xC0000005" },
     { code: "faultingModule", severity: "warning", detail: "nvldum.dll" },
   ],
-  gameLogs: [],
+  gameLogs: [
+    {
+      name: "python.log",
+      path: "D:/Games/World of Warships/profile/python.log",
+      sizeBytes: 1024,
+      modified: "2026-10-28T09:59:00Z",
+      tail: "12:00:00 INFO: port loaded\n13:00:00 ERROR: failed to load texture",
+      highlights: ["13:00:00 ERROR: failed to load texture"],
+    },
+  ],
   appLogs: [],
   modsInventory: [{ name: "gui", isDir: true, modified: undefined }],
   suspects: [
@@ -192,9 +205,10 @@ describe("CrashSection", () => {
     });
   });
 
-  it("opens a record log window from its card", async () => {
+  it("opens a hikari log window from its card and marks the record viewed", async () => {
     mocked.list.mockResolvedValue([record()]);
     mocked.analyze.mockResolvedValue(analysis);
+    mocked.markViewed.mockResolvedValue([record({ status: "dismissed" })] as never);
     const wrapper = mount(CrashSection);
     await vi.waitFor(() => {
       expect(
@@ -209,9 +223,86 @@ describe("CrashSection", () => {
       expect(document.body.querySelector(".crash-section__record")).toBeTruthy();
     });
     (document.body.querySelector(".crash-section__record") as HTMLElement).click();
+    // The detail window is hikari's HkLogWindow (tabbed log viewer).
     await vi.waitFor(() => {
-      expect(document.body.querySelector(".crash-section__detail-logs")).toBeTruthy();
+      expect(document.body.querySelector(".s-log-viewer")).toBeTruthy();
     });
+    // Opening the record retires it (the read watermark).
+    await vi.waitFor(() => {
+      expect(mocked.markViewed).toHaveBeenCalledWith("crash-1");
+    });
+    // The per-log tab renders and carries the log's tail.
+    const tabs = [...document.body.querySelectorAll<HTMLButtonElement>(".s-log-tab")];
+    expect(tabs.some((b) => (b.textContent ?? "").includes("python.log"))).toBe(true);
+    tabs.find((b) => (b.textContent ?? "").includes("python.log"))!.click();
+    await vi.waitFor(() => {
+      expect(document.body.textContent).toContain("failed to load texture");
+    });
+  });
+
+  it("marks the newest pending record viewed when the section mounts", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mount(CrashSection);
+    await vi.waitFor(() => {
+      expect(mocked.markViewed).toHaveBeenCalledWith("crash-1");
+    });
+  });
+
+  it("does not auto-mark a crash that arrives while the section is open", async () => {
+    mocked.list.mockResolvedValue([record({ status: "dismissed" })]);
+    mocked.analyze.mockResolvedValue(analysis);
+    const wrapper = mount(CrashSection);
+    await vi.waitFor(() => {
+      expect(
+        wrapper.findAll("button").some((b) => b.text().includes(t("crash.section.openRecords"))),
+      ).toBe(true);
+    });
+    expect(mocked.markViewed).not.toHaveBeenCalled();
+    // A fresh crash lands mid-session: the sticky prompt IS the
+    // notification, so the merely-open section must not retire it —
+    // only an explicit view (toast action, record open, row button)
+    // marks. The section's selected-record watch refreshes analysis but
+    // never marks.
+    const crash = useCrashStore();
+    crash.history = [record({ id: "fresh" }), ...crash.history];
+    await nextTick();
+    expect(mocked.markViewed).not.toHaveBeenCalled();
+  });
+
+  it("does not mark anything when the history is settled", async () => {
+    mocked.list.mockResolvedValue([record({ status: "dismissed" })]);
+    mocked.analyze.mockResolvedValue(analysis);
+    const wrapper = mount(CrashSection);
+    // The history loaded (the open-records affordance needs a record).
+    await vi.waitFor(() => {
+      expect(
+        wrapper.findAll("button").some((b) => b.text().includes(t("crash.section.openRecords"))),
+      ).toBe(true);
+    });
+    expect(mocked.markViewed).not.toHaveBeenCalled();
+  });
+
+  it("marks a record viewed from its list row without opening the detail", async () => {
+    mocked.list.mockResolvedValue([
+      record(),
+      record({ id: "older", status: "new", detectedAt: "2026-10-27T10:00:00Z" }),
+    ]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mocked.markViewed.mockResolvedValue([] as never);
+    const wrapper = mount(CrashSection);
+    await openRecords(wrapper);
+    // Both pending rows carry the explicit action.
+    const markButtons = [
+      ...document.body.querySelectorAll<HTMLButtonElement>(".crash-section__record button"),
+    ].filter((b) => (b.textContent ?? "").includes(t("crash.section.markViewed")));
+    expect(markButtons).toHaveLength(2);
+    markButtons[1]!.click();
+    await vi.waitFor(() => {
+      expect(mocked.markViewed).toHaveBeenCalledWith("older");
+    });
+    // The action must not double as an open: the detail window stays down.
+    expect(document.body.querySelector(".s-log-viewer")).toBeFalsy();
   });
 
   it("ignores a suspect through the store command", async () => {

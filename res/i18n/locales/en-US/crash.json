@@ -43,7 +43,10 @@
     "restoreWarning": "Restore warning",
     "recordDetail": "Crash report",
     "resetAll": "Reset all records",
-    "resetDone": "Reset {count} crash records."
+    "resetDone": "Reset {count} crash records.",
+    "markViewed": "Mark viewed",
+    "summary": "Summary",
+    "highlights": "Highlights"
   },
   "findings": {
     "exceptionAccessViolation": "Access violation — the client read or wrote memory it does not own",
