@@ -99,6 +99,12 @@ jobs:
         # Lesta ModsAPI whitelist bit twice in the field) and drives a
         # full battle; fails on any NameError degradation.
         run: python scripts/check_ingame_plugin.py
+      - name: Price catalog fill self-test
+        # Hermetic proof of the capture->chain join/fill: the probe's
+        # server-synced price_catalog.json feeds the per-module XP/credits and
+        # the with-required-modules research totals, and this pins the join
+        # keys + the xpShip sanity guard against a synthetic capture.
+        run: python scripts/extract/apply_price_catalog.py --self-test
       - name: npm audit
         # Audit L-1: PRODUCTION dependencies gate at `high` (what a shipped
         # app actually exposes); dev-toolchain advisories (vite/esbuild
