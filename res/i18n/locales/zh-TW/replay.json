@@ -600,16 +600,18 @@
     "debugModel": "實驗模型"
   },
   "scores": {
-    "title": "AI 模型認同度",
+    "title": "AI 決策評分",
     "close": "關閉評分面板",
-    "disclaimer": "模型認同度 ≠ 戰績/水準：當前模型世代未通過與實際傷害的相關性驗證（ρ≈0）。",
-    "whole": "整場",
+    "disclaimer": "貢獻＝決策視窗內歸因的實際傷害（已驗證與戰績相關）；認同度＝模型對決策的認同（獨立維度，≠戰績）。",
+    "whole": "認同",
     "instant": "瞬時",
     "confidence": "置信度",
     "fire": "開火分量",
     "move": "走位分量",
     "noFire": "無可開火時刻",
     "noData": "暫無評分資料",
-    "samples": "{ships} 艘船 · {rows} 個決策點"
+    "samples": "{ships} 艘船 · {rows} 個決策點",
+    "contribution": "貢獻",
+    "perShot": "每發均值 {value}"
   }
 }

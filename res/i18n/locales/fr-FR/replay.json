@@ -600,16 +600,18 @@
     "debugModel": "Modèle expérimental"
   },
   "scores": {
-    "title": "Accord du modèle IA",
+    "title": "Scores de décision de l'IA",
     "close": "Fermer le panneau de scores",
-    "disclaimer": "Accord du modèle ≠ niveau ni résultat du combat : la génération actuelle du modèle n'a pas passé la validation par corrélation prédéclarée avec les dégâts réels (ρ≈0).",
-    "whole": "Partie entière",
+    "disclaimer": "Contribution = dégâts attribués dans les fenêtres de décision de ce navire (validés contre les résultats de bataille) ; accord = l'approbation par le modèle de ses décisions (dimension indépendante, pas une note).",
+    "whole": "Accord",
     "instant": "Instant",
     "confidence": "confiance",
     "fire": "Composante de tir",
     "move": "Composante de déplacement",
     "noFire": "Aucune occasion de tir enregistrée",
     "noData": "Aucune donnée de score",
-    "samples": "{ships} navires · {rows} points de décision"
+    "samples": "{ships} navires · {rows} points de décision",
+    "contribution": "Contrib.",
+    "perShot": "Par tir {value}"
   }
 }

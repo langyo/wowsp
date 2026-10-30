@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { MovementAdvice, ShipScoreSample } from "@/api";
 import { adviceColorRgb, secondBearingRad } from "./moveAdvisories";
-import { scoreSampleAt } from "./HoloScorePanel";
+import { formatContribution, scoreSampleAt } from "./HoloScorePanel";
 
 function advice(partial: Partial<MovementAdvice>): MovementAdvice {
   return {
@@ -79,5 +79,13 @@ describe("scoreSampleAt", () => {
   it("is null before the first decision point", () => {
     expect(scoreSampleAt(samples, 50)).toBeNull();
     expect(scoreSampleAt([], 100)).toBeNull();
+  });
+});
+
+describe("formatContribution", () => {
+  it("renders compact damage tiers", () => {
+    expect(formatContribution(842)).toBe("842");
+    expect(formatContribution(84_234)).toBe("84.2k");
+    expect(formatContribution(1_312_000)).toBe("1.31M");
   });
 });

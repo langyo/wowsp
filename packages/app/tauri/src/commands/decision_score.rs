@@ -223,6 +223,13 @@ pub struct ShipScoreEntry {
     pub whole_fire: Option<f32>,
     /// Mean move-alignment over all samples.
     pub whole_move: f32,
+    /// E21's validated whole-game semantic: enemy HP lost in the decision
+    /// windows where this ship FIRED, attributed to its covering impacts —
+    /// `null` when the ship never fired (no can-fire window with a shot).
+    pub contribution: Option<f64>,
+    /// Fired can-fire windows behind `contribution` (the per-shot mean is
+    /// contribution / contribution_shots).
+    pub contribution_shots: Option<u32>,
     pub samples: Vec<ShipScoreSample>,
     pub outcome: ShipOutcome,
 }
@@ -1034,6 +1041,8 @@ where
         fire_sum: f32,
         fire_n: usize,
         mv_sum: f32,
+        contrib_sum: f64,
+        contrib_shots: u32,
     }
     let mut accs: BTreeMap<i32, Acc> = BTreeMap::new();
     let mut stats = ScoreRunStats::default();
@@ -1062,6 +1071,8 @@ where
             fire_sum: 0.0,
             fire_n: 0,
             mv_sum: 0.0,
+            contrib_sum: 0.0,
+            contrib_shots: 0,
         });
         let hp_lost = can_fire.then(|| {
             window_hp_lost(
@@ -1089,6 +1100,10 @@ where
             acc.fire_sum += f;
             acc.fire_n += 1;
         }
+        if let (Some(true), Some(hp)) = (c.fired, hp_lost) {
+            acc.contrib_sum += hp as f64;
+            acc.contrib_shots += 1;
+        }
     }
     let meta = rows.first();
     let per_ship: Vec<ShipScoreEntry> = accs
@@ -1107,6 +1122,8 @@ where
                 whole_game: if n > 0 { acc.inst_sum / n as f32 } else { 0.0 },
                 whole_fire: (acc.fire_n > 0).then(|| acc.fire_sum / acc.fire_n as f32),
                 whole_move: if n > 0 { acc.mv_sum / n as f32 } else { 0.0 },
+                contribution: (acc.contrib_shots > 0).then_some(acc.contrib_sum),
+                contribution_shots: (acc.contrib_shots > 0).then_some(acc.contrib_shots),
                 samples: acc.samples,
                 outcome,
             }

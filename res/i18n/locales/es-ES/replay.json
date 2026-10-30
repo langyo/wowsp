@@ -600,16 +600,18 @@
     "debugModel": "Modelo experimental"
   },
   "scores": {
-    "title": "Acuerdo del modelo IA",
+    "title": "Puntuaciones de decisión de la IA",
     "close": "Cerrar el panel de puntuaciones",
-    "disclaimer": "Acuerdo del modelo ≠ nivel ni resultado del combate: la generación actual del modelo no superó la validación preregistrada de correlación con el daño real (ρ≈0).",
-    "whole": "Partida",
+    "disclaimer": "Contribución = daño atribuido en las ventanas de decisión de este barco (validado frente a resultados de batalla); acuerdo = el respaldo del modelo a sus decisiones (dimensión independiente, no una valoración).",
+    "whole": "Acuerdo",
     "instant": "Instante",
     "confidence": "confianza",
     "fire": "Componente de disparo",
     "move": "Componente de movimiento",
     "noFire": "Sin ocasiones de tiro registradas",
     "noData": "Sin datos de puntuación",
-    "samples": "{ships} barcos · {rows} puntos de decisión"
+    "samples": "{ships} barcos · {rows} puntos de decisión",
+    "contribution": "Contrib.",
+    "perShot": "Por disparo {value}"
   }
 }

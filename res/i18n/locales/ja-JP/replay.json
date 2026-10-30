@@ -600,16 +600,18 @@
     "debugModel": "実験モデル"
   },
   "scores": {
-    "title": "AI モデル一致度",
+    "title": "AI デシジョン スコア",
     "close": "スコアパネルを閉じる",
-    "disclaimer": "モデル一致度 ≠ 戦績/実力：現行のモデル世代は実際のダメージとの相関検証（ρ≈0）を通過していません。",
-    "whole": "全体",
+    "disclaimer": "貢献＝判断ウィンドウで帰属された実際のダメージ（戦績との相関を検証済み）；同意度＝モデルの判断への同意（独立した次元で、戦績ではない）。",
+    "whole": "同意",
     "instant": "瞬間",
     "confidence": "信頼度",
     "fire": "砲撃要素",
     "move": "移動要素",
     "noFire": "発射可能な場面なし",
     "noData": "スコアデータなし",
-    "samples": "{ships} 隻 · {rows} 決定点"
+    "samples": "{ships} 隻 · {rows} 決定点",
+    "contribution": "貢献",
+    "perShot": "1発平均 {value}"
   }
 }
