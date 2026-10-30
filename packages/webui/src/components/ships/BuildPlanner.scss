@@ -1082,3 +1082,243 @@
     flex-wrap: wrap;
   }
 }
+
+/* ── 装备选择 (equipment progression chain) ────────────────────────────── */
+.planner-v__parts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.planner-v__parts-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.65rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 15%);
+  border-radius: var(--radius-sm);
+  overflow-x: auto;
+}
+
+.planner-v__parts-row {
+  display: flex;
+  align-items: flex-start;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+/* Left gutter keeps the stock column aligned across rows; only the first
+   row puts the previous-tier mini card in it. */
+.planner-v__parts-gutter {
+  flex: 0 0 168px;
+  width: 168px;
+  align-self: stretch;
+  position: relative;
+}
+
+.planner-v__parts-prev {
+  position: absolute;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 168px;
+  transform: translateY(-50%);
+}
+
+/* Connector lines: the short line joining the previous-tier card and the
+   extension line leading to the next-tier cards. Both carry their own
+   tooltip (research XP). */
+.planner-v__parts-link {
+  position: relative;
+  display: block;
+  flex: 0 0 auto;
+  height: 14px;
+  cursor: help;
+
+  &::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgb(var(--color-border) / 45%);
+  }
+
+  &--prev {
+    width: 26px;
+  }
+
+  &--next {
+    position: absolute;
+    left: 0;
+    width: 36px;
+    transform: translateY(-50%);
+  }
+}
+
+.planner-v__parts-track {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.planner-v__parts-edges {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.planner-v__parts-edge {
+  fill: none;
+  stroke: rgb(var(--color-border) / 55%);
+  stroke-width: 1.5;
+  transition: stroke var(--duration-short) var(--ease-standard);
+}
+
+.planner-v__parts-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+  pointer-events: stroke;
+  cursor: help;
+}
+
+.planner-v__parts-edges g:hover .planner-v__parts-edge {
+  stroke: rgb(var(--color-primary) / 85%);
+}
+
+/* One square module tile; the letter is the column variant, the caption the
+   localized equipment role. Credits render under researched modules only. */
+.planner-v__parts-cell {
+  position: absolute;
+  height: 76px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.planner-v__parts-tile {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  background: rgb(var(--color-text) / 4%);
+  border: 1px solid rgb(var(--color-border) / 25%);
+  border-radius: var(--radius-sm);
+  cursor: help;
+  transition: border-color var(--duration-short) var(--ease-standard),
+    background var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 60%);
+    background: rgb(var(--color-primary) / 8%);
+  }
+}
+
+.planner-v__parts-letter {
+  font-size: var(--text-lg);
+  font-weight: 800;
+  line-height: 1;
+  color: rgb(var(--color-text));
+  font-variant-numeric: tabular-nums;
+}
+
+.planner-v__parts-role {
+  max-width: 52px;
+  font-size: 9px;
+  line-height: 1.15;
+  color: rgb(var(--color-muted));
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-v__parts-credits {
+  font-size: 9px;
+  line-height: 12px;
+  min-height: 12px;
+  color: rgb(var(--color-muted));
+  font-variant-numeric: tabular-nums;
+  cursor: help;
+}
+
+/* Previous/next-tier mini card: flag + name + tier badge. */
+.planner-v__parts-ship {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 142px;
+  padding: 0.2rem 0.35rem;
+  background: rgb(var(--color-bg));
+  border: 1px solid rgb(var(--color-border) / 25%);
+  border-radius: var(--radius-sm);
+  color: rgb(var(--color-text));
+  font-size: var(--text-2xs);
+  cursor: pointer;
+  transition: border-color var(--duration-short) var(--ease-standard);
+
+  &:hover {
+    border-color: rgb(var(--color-primary) / 60%);
+  }
+}
+
+.planner-v__parts-ship-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.planner-v__parts-ship-tier {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0 0.22rem;
+  border-radius: 3px;
+  background: rgb(var(--color-primary) / 12%);
+  color: rgb(var(--color-primary));
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+/* Extension column: one line from the row's last module, next-tier cards
+   stacked on its end. */
+.planner-v__parts-next {
+  position: relative;
+  flex: 0 0 190px;
+  width: 190px;
+  align-self: stretch;
+}
+
+.planner-v__parts-next-cards {
+  position: absolute;
+  left: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transform: translateY(-50%);
+}
+
+.planner-v__parts-placeholder {
+  opacity: 0.6;
+}
+
+@media (max-width: 720px) {
+  .planner-v__parts-gutter {
+    flex-basis: 118px;
+    width: 118px;
+  }
+
+  .planner-v__parts-ship {
+    max-width: 112px;
+  }
+}
+

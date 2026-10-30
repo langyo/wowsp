@@ -1,5 +1,15 @@
-import { computed, defineComponent, onScopeDispose, ref, Teleport, watch, type PropType } from "vue";
-import { AlertTriangle, Ban, Coins, Lock, RotateCcw, X } from "@lucide/vue";
+import {
+  computed,
+  defineComponent,
+  h,
+  onScopeDispose,
+  ref,
+  Teleport,
+  watch,
+  type Component,
+  type PropType,
+} from "vue";
+import { AlertTriangle, Ban, Coins, Lock, RotateCcw, Wrench, X } from "@lucide/vue";
 
 import { HkButton, HkTabs } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
@@ -7,8 +17,22 @@ import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
 import { AssetImage } from "@/components/base/AssetImage";
 import { techTreeNode, type TechTreeRealm } from "@/utils/techTreeData";
+import { shipUpgradeChain } from "@/utils/shipUpgradeChain";
+import { resolveNationFlag } from "@/utils/nationFlags";
+import { tierToRoman } from "@wowsp/holo";
 import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
+import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import NationFlag from "@/components/base/NationFlag";
 import type { ShipInfo } from "@/api";
+import {
+  buildUpgradeChainRows,
+  mountedComponents,
+  resolvePreviousShip,
+  variantMarkerOf,
+  type UpgradeCell,
+  type UpgradePanel,
+  type UpgradeRow,
+} from "./upgradeChainRows";
 import {
   classSkills,
   recommendedSkills,
@@ -230,7 +254,7 @@ function hasMsg(key: string): boolean {
   return (i18n.global as { te: (k: string) => boolean }).te(key);
 }
 
-type Section = "skills" | "captains" | "flags" | "upgrades" | "costs";
+type Section = "parts" | "skills" | "captains" | "flags" | "upgrades" | "costs";
 
 export default defineComponent({
   name: "BuildPlanner",
@@ -249,6 +273,9 @@ export default defineComponent({
   },
   emits: {
     "update:build": (_v: PlannerBuild) => true,
+    /** A next/previous-tier equipment card was clicked — the host closes
+     *  the current detail and opens the requested ship. */
+    openShip: (_shipId: number) => true,
   },
   setup(props, { emit }) {
     const { dataLanguage } = useLanguage();
@@ -688,7 +715,10 @@ export default defineComponent({
       { immediate: true },
     );
 
-    const RAIL: Array<{ key: Section; labelKey: string; icon?: string }> = [
+    const RAIL: Array<{ key: Section; labelKey: string; icon?: string; glyph?: Component }> = [
+      // Rail top (the empty slot above 舰长技能): the equipment-chain
+      // pseudo-section has no game art, so it renders a lucide glyph.
+      { key: "parts", labelKey: "tabParts", glyph: Wrench },
       { key: "skills", labelKey: "tabSkills", icon: "/images/skills/gm_turn.webp" },
       { key: "captains", labelKey: "tabCaptains", icon: "/images/commanders/Yamamoto.webp" },
       { key: "flags", labelKey: "tabFlags", icon: "/images/signals/PCEF030_CK_SignalFlag.webp" },
@@ -699,8 +729,181 @@ export default defineComponent({
       },
       // No game art exists for this pseudo-section — the rail renders a
       // lucide glyph for it instead (see the nav markup below).
-      { key: "costs", labelKey: "tabCosts" },
+      { key: "costs", labelKey: "tabCosts", glyph: Coins },
     ];
+
+    // ── 装备选择 (equipment progression chain) ─────────────────────────────
+    // One row per ShipUpgradeInfo ucType slot; the row runs left-to-right
+    // from the slot's stock module through its researched modules (parallel
+    // research options stack in one column). The data prep — slot ordering,
+    // stock-first, depth/prev topology grouping, unlock filtering and the
+    // previous-tier resolution — lives in ./upgradeChainRows so the layout
+    // model is unit-tested without Vue.
+    const encyclopedia = useEncyclopediaStore();
+    /** Display lookup of the realm-aware encyclopedia list; `byId` is the
+     *  realm-independent union, used only as a fallback for a ship the active
+     *  branch prunes (the Lesta overlay already flows through the store). */
+    const shipsById = computed(
+      () => new Map<number, ShipInfo>(encyclopedia.ships.map((ship) => [ship.shipId, ship])),
+    );
+    const upgradeChain = computed(() => shipUpgradeChain(props.ship.shipId, realm.value));
+    const upgradePanel = computed(() => buildUpgradeChainRows(upgradeChain.value, realm.value));
+    /** The tech-tree predecessor (previous-tier card on the first row). */
+    const previousShip = computed(() => resolvePreviousShip(props.ship.shipId, realm.value));
+
+    function encyclopediaShip(shipId: number): ShipInfo | null {
+      return shipsById.value.get(shipId) ?? encyclopedia.byId.get(shipId) ?? null;
+    }
+    function partsShipName(shipId: number): string {
+      const info = encyclopediaShip(shipId);
+      if (info) return encyclopedia.shipDisplayName(info);
+      return techTreeNode(shipId, realm.value)?.name ?? "#" + shipId;
+    }
+    function partsShipTier(shipId: number): number | null {
+      return encyclopediaShip(shipId)?.tier ?? techTreeNode(shipId, realm.value)?.tier ?? null;
+    }
+    function partsShipNation(shipId: number): string {
+      return encyclopediaShip(shipId)?.nation ?? techTreeNode(shipId, realm.value)?.nation ?? "";
+    }
+    function partsShipType(shipId: number): string {
+      return encyclopediaShip(shipId)?.type ?? techTreeNode(shipId, realm.value)?.type ?? "";
+    }
+    /** Localized label of one component/ucType role; event-ship roles the
+     *  catalog does not know fall back to the raw role key. */
+    function partsRoleLabel(role: string): string {
+      const key = "ships.parts.role." + role;
+      return hasMsg(key) ? t(key) : role;
+    }
+    /** Placeholder for values the module-economy extraction has not landed
+     *  yet — the panel NEVER fakes a number. */
+    const PARTS_DASH = "—";
+    function partsNumber(value: number | null | undefined): string {
+      return typeof value === "number" && Number.isFinite(value)
+        ? value.toLocaleString()
+        : PARTS_DASH;
+    }
+    function partsEdgeHint(xp: number | null): string {
+      return t("ships.parts.xpNeeded", { xp: partsNumber(xp) });
+    }
+    function partsNextLineCard(links: UpgradeRow["nextShips"]): string {
+      return JSON.stringify({
+        title: t("ships.parts.nextShip"),
+        rows: links.map((link) => ({
+          label: partsShipName(link.shipId),
+          value: t("ships.parts.xpNeeded", { xp: partsNumber(link.xpShip) }),
+        })),
+        note: t("ships.parts.nextLineNote"),
+      });
+    }
+    /** Hover card of one module tile: localized role+variant title, the raw
+     *  GameParams entry name as subtitle, the component roles it mounts, the
+     *  required cross-slot module when the connector had to fall back to this
+     *  slot's previous column, and the TODO stat slots (module stats are not
+     *  in the extracted data yet). */
+    function partsModuleCard(cell: UpgradeCell, row: UpgradeRow): string {
+      const hullStock = row.role === "hull" && cell.column === 0;
+      const rows: Array<{ label: string; value: string }> = [];
+      for (const mounted of mountedComponents(cell.step.components)) {
+        rows.push({ label: partsRoleLabel(mounted.role), value: mounted.names.join(", ") });
+      }
+      const prev = typeof cell.step.prev === "string" ? cell.step.prev : "";
+      if (prev && cell.parentName !== prev) {
+        // Cross-slot prerequisite (hull-locked torpedo/artillery tops): the
+        // line keeps this slot's own previous column, the required module
+        // rides the card instead.
+        rows.push({ label: t("ships.parts.requiresModule"), value: prev });
+      }
+      const marker = variantMarkerOf(cell.step.name);
+      if (marker) {
+        rows.push({
+          label: t("ships.parts.variantRow"),
+          value: t(
+            "ships.parts.variant" +
+              (marker === "stock" ? "Stock" : marker === "med" ? "Med" : "Top"),
+          ),
+        });
+      }
+      rows.push(
+        { label: t("ships.parts.statsHp"), value: PARTS_DASH },
+        { label: t("ships.parts.statsRange"), value: PARTS_DASH },
+        { label: t("ships.parts.statsReload"), value: PARTS_DASH },
+      );
+      return JSON.stringify({
+        title: hullStock
+          ? t("ships.parts.stockHull")
+          : partsRoleLabel(row.role) + " " + cell.variant,
+        badge: cell.variant,
+        subtitle: cell.step.name,
+        rows,
+        note: props.gameparams
+          ? t("ships.parts.statsTodo")
+          : t("ships.parts.gameparamsMissing"),
+      });
+    }
+    /** Hover card of a next/previous-tier ship mini card. */
+    function partsShipCard(shipId: number): string {
+      const type = partsShipType(shipId);
+      const nation = partsShipNation(shipId);
+      const tier = partsShipTier(shipId);
+      return JSON.stringify({
+        title: partsShipName(shipId),
+        badge: tier != null ? tierToRoman(tier) : undefined,
+        subtitle: type ? t("ships.type." + type) : undefined,
+        subtitleFlagUrl: nation ? resolveNationFlag(nation, "flag") : undefined,
+        note: t("ships.parts.openShipHint"),
+      });
+    }
+
+    // The tiles are square and the connector sits centred in the gap between
+    // two adjacent tiles, so the row geometry is pure arithmetic on the row
+    // model (no DOM measurement) — the SVG edges and the absolutely placed
+    // tiles share it.
+    const PARTS_TILE = 56;
+    const PARTS_GAP = 36;
+    const PARTS_CELL_H = 76;
+    const PARTS_LANE_GAP = 10;
+
+    interface PartsEdge {
+      key: string;
+      d: string;
+      xp: number | null;
+    }
+    interface PartsRowGeometry {
+      trackW: number;
+      trackH: number;
+      edges: PartsEdge[];
+      cellX: (cell: UpgradeCell) => number;
+      cellY: (cell: UpgradeCell) => number;
+    }
+
+    function partsRowGeometry(row: UpgradeRow): PartsRowGeometry {
+      const laneH = PARTS_CELL_H + PARTS_LANE_GAP;
+      const trackW =
+        row.columns.length * PARTS_TILE +
+        Math.max(0, row.columns.length - 1) * PARTS_GAP;
+      const trackH =
+        row.laneCount * PARTS_CELL_H +
+        Math.max(0, row.laneCount - 1) * PARTS_LANE_GAP;
+      const cellX = (cell: UpgradeCell) => cell.column * (PARTS_TILE + PARTS_GAP);
+      const cellY = (cell: UpgradeCell) => cell.lane * laneH;
+      const byName = new Map(row.cells.map((cell) => [cell.step.name, cell]));
+      const edges: PartsEdge[] = [];
+      for (const cell of row.cells) {
+        if (!cell.parentName) continue;
+        const parent = byName.get(cell.parentName);
+        if (!parent) continue;
+        const x1 = cellX(parent) + PARTS_TILE;
+        const y1 = cellY(parent) + PARTS_TILE / 2;
+        const x2 = cellX(cell);
+        const y2 = cellY(cell) + PARTS_TILE / 2;
+        const d =
+          y1 === y2
+            ? "M " + x1 + " " + y1 + " L " + x2 + " " + y2
+            : "M " + x1 + " " + y1 + " H " + (x1 + x2) / 2 + " V " + y2 + " H " + x2;
+        edges.push({ key: cell.step.name, d, xp: cell.step.xp });
+      }
+      return { trackW, trackH, edges, cellX, cellY };
+    }
 
     // ── Center-section renderers ───────────────────────────────────────────
     function renderSkills() {
@@ -1179,8 +1382,167 @@ export default defineComponent({
       );
     }
 
+    function renderPartsCell(cell: UpgradeCell, row: UpgradeRow, geo: PartsRowGeometry) {
+      const hullStock = row.role === "hull" && cell.column === 0;
+      const credits = partsNumber(cell.step.credits);
+      const creditHint =
+        cell.step.credits == null
+          ? t("ships.parts.creditsHint")
+          : credits + " " + t("ships.skills.costCredits");
+      return (
+        <div
+          class="planner-v__parts-cell"
+          key={cell.step.name}
+          data-module={cell.step.name}
+          data-xp={cell.step.xp == null ? "" : String(cell.step.xp)}
+          data-credits={cell.step.credits == null ? "" : String(cell.step.credits)}
+          style={{
+            left: geo.cellX(cell) + "px",
+            top: geo.cellY(cell) + "px",
+            width: PARTS_TILE + "px",
+          }}
+        >
+          <div
+            class="planner-v__parts-tile"
+            data-hint-card={partsModuleCard(cell, row)}
+            data-hint-pos="top"
+          >
+            <span class="planner-v__parts-letter">{cell.variant}</span>
+            <span class="planner-v__parts-role">
+              {hullStock ? t("ships.parts.stockHull") : partsRoleLabel(row.role)}
+            </span>
+          </div>
+          {cell.column > 0 ? (
+            <span class="planner-v__parts-credits" data-hint={creditHint}>
+              {credits}
+            </span>
+          ) : null}
+        </div>
+      );
+    }
+
+    /** Previous/next-tier mini card: nation flag + name + tier badge; a
+     *  click asks the host to close this detail and open that ship. */
+    function renderPartsShip(shipId: number) {
+      const tier = partsShipTier(shipId);
+      const nation = partsShipNation(shipId);
+      return (
+        <button
+          type="button"
+          class="planner-v__parts-ship"
+          onClick={() => emit("openShip", shipId)}
+          data-hint-card={partsShipCard(shipId)}
+          data-hint-pos="top"
+        >
+          {nation ? <NationFlag nation={nation} variant="flag" size="sm" /> : null}
+          <span class="planner-v__parts-ship-name">{partsShipName(shipId)}</span>
+          {tier != null ? (
+            <span class="planner-v__parts-ship-tier">{tierToRoman(tier)}</span>
+          ) : null}
+        </button>
+      );
+    }
+
+    function renderPartsRow(row: UpgradeRow, rowIndex: number, panelModel: UpgradePanel) {
+      const geo = partsRowGeometry(row);
+      const stockCell = row.columns[0]?.[0] ?? null;
+      const lastColumn = row.columns[row.columns.length - 1] ?? [];
+      const anchorCell = lastColumn.find((cell) => cell.nextShips.length > 0) ?? lastColumn[0];
+      // Only the FIRST row carries the previous-tier card on its left.
+      const previous = rowIndex === 0 ? previousShip.value : null;
+      const cardsH = row.nextShips.length * 36;
+      const anchorY = anchorCell ? geo.cellY(anchorCell) + PARTS_TILE / 2 : 0;
+      const stockY = stockCell ? geo.cellY(stockCell) + PARTS_TILE / 2 : 0;
+      const rowH = Math.max(
+        geo.trackH,
+        row.nextShips.length > 0 ? anchorY + cardsH / 2 + 6 : 0,
+        previous ? stockY + 18 : 0,
+      );
+      return (
+        <div
+          class="planner-v__parts-row"
+          key={row.ucType}
+          data-role={row.role}
+          style={{ minHeight: rowH + "px" }}
+        >
+          <div class="planner-v__parts-gutter">
+            {previous ? (
+              <div class="planner-v__parts-prev" style={{ top: stockY + "px" }}>
+                {renderPartsShip(previous.shipId)}
+                <span
+                  class="planner-v__parts-link planner-v__parts-link--prev"
+                  data-hint={t("ships.parts.prevLineXp", {
+                    xp: partsNumber(panelModel.researchXp),
+                  })}
+                  data-hint-pos="top"
+                />
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            class="planner-v__parts-track"
+            style={{ width: geo.trackW + "px", height: geo.trackH + "px" }}
+          >
+            <svg class="planner-v__parts-edges" width={geo.trackW} height={geo.trackH}>
+              {geo.edges.map((edge) => (
+                <g key={edge.key}>
+                  <path class="planner-v__parts-edge" d={edge.d} />
+                  <path
+                    class="planner-v__parts-edge-hit"
+                    d={edge.d}
+                    data-hint={partsEdgeHint(edge.xp)}
+                    data-hint-pos="top"
+                  />
+                </g>
+              ))}
+            </svg>
+            {row.cells.map((cell) => renderPartsCell(cell, row, geo))}
+          </div>
+
+          {row.nextShips.length > 0 ? (
+            <div class="planner-v__parts-next" style={{ minHeight: rowH + "px" }}>
+              <span
+                class="planner-v__parts-link planner-v__parts-link--next"
+                style={{ top: anchorY + "px" }}
+                data-hint-card={partsNextLineCard(row.nextShips)}
+                data-hint-pos="top"
+              />
+              <div class="planner-v__parts-next-cards" style={{ top: anchorY + "px" }}>
+                {row.nextShips.map((link) => renderPartsShip(link.shipId))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      );
+    }
+
+    /** Horizontal equipment research chain: one row per ucType slot, stock
+     *  -> top left to right, credits under researched modules, XP on the
+     *  connectors, next-tier cards after a row's last module and the
+     *  previous-tier card on the first row's left. */
+    function renderParts() {
+      const panelModel = upgradePanel.value;
+      if (!panelModel) {
+        return <p class="planner-v__empty">{t("ships.parts.empty")}</p>;
+      }
+      return (
+        <div class="planner-v__parts">
+          <p class="planner-v__note">{t("ships.parts.intro")}</p>
+          <div class="planner-v__parts-body">
+            {panelModel.rows.map((row, index) => renderPartsRow(row, index, panelModel))}
+          </div>
+          <p class="planner-v__note planner-v__parts-placeholder">
+            {t("ships.parts.placeholderNote")}
+          </p>
+        </div>
+      );
+    }
+
     function renderSection() {
       switch (section.value) {
+        case "parts":
+          return renderParts();
         case "captains":
           return renderCommanders();
         case "flags":
@@ -1256,7 +1618,7 @@ export default defineComponent({
                     />
                   ) : (
                     <span class="planner-v__rail-icon planner-v__rail-icon--glyph">
-                      <Coins size={18} />
+                      {h(item.glyph ?? Coins, { size: 18 })}
                     </span>
                   )}
                   <span class="planner-v__rail-label">{t(`ships.skills.${item.labelKey}`)}</span>

@@ -556,7 +556,8 @@
     "costFlags": "訊號旗",
     "costFlagsNote": "裝備訊號旗不消耗貨幣",
     "realm": "伺服器實作模式",
-    "realmHint": "在 WG 與 Lesta 伺服器實作之間切換整個艦船視圖：科技樹與百科資料來源、技能樹、艦長與訊號旗均跟隨所選伺服器。"
+    "realmHint": "在 WG 與 Lesta 伺服器實作之間切換整個艦船視圖：科技樹與百科資料來源、技能樹、艦長與訊號旗均跟隨所選伺服器。",
+    "tabParts": "裝備選擇"
   },
   "flags": {
     "tier1": "標準",
@@ -802,6 +803,57 @@
     "cfg": {
       "base": "基礎",
       "variant": "變種"
+    }
+  },
+  "parts": {
+    "empty": "該艦暫無裝備研發鏈資料。",
+    "intro": "艦體裝備模組的研發鏈。A 列為初始模組，同一欄堆疊表示該槽位有多種可選研發；方塊下方為所需銀幣，連線提示所需研發經驗。",
+    "placeholderNote": "模組級銀幣、研發經驗與屬性數值仍在提取中，暫以 — 顯示。",
+    "stockHull": "基礎船體",
+    "xpNeeded": "研發經驗：{xp}",
+    "prevShip": "上一級艦船",
+    "nextShip": "下一級艦船",
+    "prevLineXp": "本級艦船研發經驗：{xp}",
+    "nextLineNote": "研發下一級艦船所需經驗",
+    "openShipHint": "點擊關閉目前詳情並打開該艦詳情。",
+    "statsTodo": "模組屬性數值待客戶端資料提取後顯示（TODO）。",
+    "statsHp": "耐久",
+    "statsRange": "射程",
+    "statsReload": "裝填",
+    "variantRow": "變體",
+    "variantStock": "初始",
+    "variantMed": "中級",
+    "variantTop": "頂配",
+    "requiresModule": "所需前置模組",
+    "creditsHint": "研發所需銀幣（待提取）",
+    "gameparamsMissing": "GameParams 模組資料尚未載入。",
+    "role": {
+      "hull": "船體",
+      "suo": "火控系統",
+      "firecontrol": "火控",
+      "artillery": "主炮",
+      "atba": "副炮",
+      "torpedoes": "魚雷",
+      "depthcharges": "深水炸彈",
+      "airdefense": "防空",
+      "airarmament": "艦載機",
+      "airsupport": "航空支援",
+      "pinger": "聲吶",
+      "radars": "雷達",
+      "directors": "指揮儀",
+      "finders": "測距儀",
+      "engine": "動力",
+      "specials": "特殊模組",
+      "visualcustomizations": "外觀",
+      "sonar": "聲吶",
+      "fighter": "戰鬥機",
+      "flightcontrol": "飛行控制",
+      "skipbomber": "跳彈轟炸機",
+      "torpedobomber": "魚雷機",
+      "divebomber": "俯衝轟炸機",
+      "abilities": "消耗品與技能",
+      "primaryweapons": "主武器",
+      "secondaryweapons": "副武器"
     }
   }
 }

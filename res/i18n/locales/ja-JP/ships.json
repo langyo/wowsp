@@ -556,7 +556,8 @@
     "costFlags": "シグナル",
     "costFlagsNote": "シグナルの装備は無料",
     "realm": "サーバー実装",
-    "realmHint": "艦船ビュー全体をWGとLestaのサーバー実装で切り替えます：技術ツリーと図鑑のデータソース、スキルツリー、艦長、信号旗がすべて選択したサーバーに従います。"
+    "realmHint": "艦船ビュー全体をWGとLestaのサーバー実装で切り替えます：技術ツリーと図鑑のデータソース、スキルツリー、艦長、信号旗がすべて選択したサーバーに従います。",
+    "tabParts": "装備選択"
   },
   "flags": {
     "tier1": "標準",
@@ -802,6 +803,57 @@
     "cfg": {
       "base": "基本型",
       "variant": "派生型"
+    }
+  },
+  "parts": {
+    "empty": "この艦の装備開発ツリーのデータがありません。",
+    "intro": "艦体装備モジュールの開発ツリー。A 列が初期モジュールで、同じ列に積み重なったタイルは選択可能な開発候補です。タイル下が必要クレジット、接続線が必要開発経験値です。",
+    "placeholderNote": "モジュールごとのクレジット・開発経験値・性能値は抽出中で、現在は — と表示しています。",
+    "stockHull": "初期船体",
+    "xpNeeded": "開発経験値：{xp}",
+    "prevShip": "前のティア",
+    "nextShip": "次のティア",
+    "prevLineXp": "この艦の開発経験値：{xp}",
+    "nextLineNote": "次のティアの艦に必要な開発経験値",
+    "openShipHint": "クリックでこの詳細を閉じ、艦の詳細を開きます。",
+    "statsTodo": "モジュール性能値はクライアントデータの抽出待ちです（TODO）。",
+    "statsHp": "耐久",
+    "statsRange": "射程",
+    "statsReload": "装填",
+    "variantRow": "型",
+    "variantStock": "初期",
+    "variantMed": "中間",
+    "variantTop": "最終",
+    "requiresModule": "必要な前段モジュール",
+    "creditsHint": "開発に必要なクレジット（抽出待ち）",
+    "gameparamsMissing": "GameParams のモジュールデータが読み込まれていません。",
+    "role": {
+      "hull": "船体",
+      "suo": "射撃管制",
+      "firecontrol": "射撃管制",
+      "artillery": "主砲",
+      "atba": "副砲",
+      "torpedoes": "魚雷",
+      "depthcharges": "爆雷",
+      "airdefense": "対空",
+      "airarmament": "艦載機",
+      "airsupport": "航空支援",
+      "pinger": "ソナー",
+      "radars": "レーダー",
+      "directors": "方位盤",
+      "finders": "測距儀",
+      "engine": "機関",
+      "specials": "特殊モジュール",
+      "visualcustomizations": "外観",
+      "sonar": "ソナー",
+      "fighter": "戦闘機",
+      "flightcontrol": "飛行管制",
+      "skipbomber": "スキップ爆撃機",
+      "torpedobomber": "雷撃機",
+      "divebomber": "急降下爆撃機",
+      "abilities": "消耗品・スキル",
+      "primaryweapons": "主兵装",
+      "secondaryweapons": "副兵装"
     }
   }
 }

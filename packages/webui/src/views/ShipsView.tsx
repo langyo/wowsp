@@ -1,4 +1,4 @@
-import { computed, defineComponent, onUnmounted, ref, Transition, watch } from "vue";
+import { computed, defineComponent, nextTick, onUnmounted, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
 import { ArrowLeftRight, GitBranch, List, RotateCcw, Ship } from "@lucide/vue";
 
@@ -230,6 +230,22 @@ export default defineComponent({
       selectedShip.value = ship;
       // Preload community trend for the modal's "Server Trend" tab.
       void trends.loadCommunity(ship.shipId);
+    }
+
+    /** A link inside the detail modal (the 装备选择 chain's next/previous
+     *  tier cards) asks for another ship. Close the current detail first and
+     *  reopen on the next tick, so the modal really closes + opens instead of
+     *  swapping its content under the same open state (the user's explicit
+     *  contract); resolve the id against the same realm-aware list the modal
+     *  validated it against. */
+    function openShipFromModal(shipId: number) {
+      const ship =
+        encyclopedia.ships.find((entry) => entry.shipId === shipId) ??
+        encyclopedia.byId.get(shipId) ??
+        null;
+      if (!ship) return;
+      selectedShip.value = null;
+      void nextTick(() => openDetail(ship));
     }
 
     // ── image banner (systemic portrait load failures) ─────────────────
@@ -632,6 +648,7 @@ export default defineComponent({
           ship={selectedShip.value}
           gameRoot={gameRoot.value}
           onClose={() => (selectedShip.value = null)}
+          onOpenShip={openShipFromModal}
         />
       </div>
     );

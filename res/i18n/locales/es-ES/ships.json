@@ -556,7 +556,8 @@
     "costFlags": "Señales",
     "costFlagsNote": "Equipar señales no cuesta nada",
     "realm": "Implementación de servidor",
-    "realmHint": "Cambia toda la vista de barcos entre las implementaciones de servidor WG y Lesta: el árbol tecnológico y la fuente de datos de la enciclopedia, los árboles de habilidades, los comandantes y las señales siguen el clúster elegido."
+    "realmHint": "Cambia toda la vista de barcos entre las implementaciones de servidor WG y Lesta: el árbol tecnológico y la fuente de datos de la enciclopedia, los árboles de habilidades, los comandantes y las señales siguen el clúster elegido.",
+    "tabParts": "Equipamiento"
   },
   "flags": {
     "tier1": "Estándar",
@@ -802,6 +803,57 @@
     "cfg": {
       "base": "Base",
       "variant": "Variante"
+    }
+  },
+  "parts": {
+    "empty": "No hay datos de la cadena de investigación de equipo para este buque.",
+    "intro": "Cadena de investigación de los módulos del casco. La columna A es el módulo de origen; las fichas apiladas en una columna son opciones de investigación alternativas. Bajo la ficha, los créditos; en las líneas, la XP de investigación.",
+    "placeholderNote": "Los créditos, la XP y las estadísticas de los módulos aún se están extrayendo y se muestran como — por ahora.",
+    "stockHull": "Casco de origen",
+    "xpNeeded": "XP de investigación: {xp}",
+    "prevShip": "Nivel anterior",
+    "nextShip": "Nivel siguiente",
+    "prevLineXp": "XP de investigación de este buque: {xp}",
+    "nextLineNote": "XP de investigación necesaria para el buque del siguiente nivel",
+    "openShipHint": "Haz clic para cerrar este detalle y abrir el buque.",
+    "statsTodo": "Estadísticas de módulos pendientes de la extracción de datos del cliente (TODO).",
+    "statsHp": "Resistencia",
+    "statsRange": "Alcance",
+    "statsReload": "Recarga",
+    "variantRow": "Variante",
+    "variantStock": "De origen",
+    "variantMed": "Intermedia",
+    "variantTop": "Superior",
+    "requiresModule": "Módulo requerido",
+    "creditsHint": "Créditos de investigación (extracción pendiente)",
+    "gameparamsMissing": "Los datos de módulos de GameParams no están cargados.",
+    "role": {
+      "hull": "Casco",
+      "suo": "Control de tiro",
+      "firecontrol": "Control de tiro",
+      "artillery": "Artillería principal",
+      "atba": "Artillería secundaria",
+      "torpedoes": "Torpedos",
+      "depthcharges": "Cargas de profundidad",
+      "airdefense": "AAA",
+      "airarmament": "Aviación",
+      "airsupport": "Apoyo aéreo",
+      "pinger": "Sonar",
+      "radars": "Radar",
+      "directors": "Directores de tiro",
+      "finders": "Telémetros",
+      "engine": "Motor",
+      "specials": "Módulos especiales",
+      "visualcustomizations": "Aspecto",
+      "sonar": "Sonar",
+      "fighter": "Cazas",
+      "flightcontrol": "Control de vuelo",
+      "skipbomber": "Bombarderos de rebote",
+      "torpedobomber": "Torpederos",
+      "divebomber": "Bombarderos en picado",
+      "abilities": "Consumibles y habilidades",
+      "primaryweapons": "Armas principales",
+      "secondaryweapons": "Armas secundarias"
     }
   }
 }
