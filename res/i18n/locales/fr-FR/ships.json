@@ -38,8 +38,8 @@
       "body": "Un porte-avions ne combat que par ses aéronefs : les groupes aériens sont limités — une DCA qui abat une escadrille emporte avec elle tous vos dégâts — frappez, puis dégagez. La coque n'a presque pas d'artillerie propre : elle survit par la distance et le couvert, et sa vraie valeur tient à la détection et à la pression sur toute la carte.",
       "keys": {
         "1": {
-          "key": "1/2/3",
-          "text": "Choisir avions d'attaque, torpilleurs ou bombardiers ; un double appui lance l'escadrille."
+          "key": "1–3",
+          "text": "1 avions d'attaque, 2 torpilleurs, 3 bombardiers ; un double appui lance l'escadrille."
         },
         "2": {
           "key": "Clic gauche",
