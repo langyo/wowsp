@@ -35,7 +35,6 @@ export default defineComponent({
     const columns = computed(() => {
       const report = props.report;
       if (!report) return [];
-      const maxT = props.duration || 1200;
       return report.scores.perShip.map((ship) => {
         const cells = ship.samples.map((s) => ({
           t: s.t,
