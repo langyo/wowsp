@@ -640,8 +640,13 @@ pub fn run() {
             commands::overlay::create_overlay_window,
             commands::overlay::destroy_overlay_window,
             commands::overlay::set_overlay_visible,
+            // Diagnostics of the overlay WINDOW itself — no window, no
+            // stand-in: these exist only where the desktop module does.
+            #[cfg(desktop)]
             commands::overlay::report_overlay_paint,
+            #[cfg(desktop)]
             commands::overlay::report_overlay_page_error,
+            #[cfg(desktop)]
             commands::overlay::get_overlay_diag,
             commands::overlay::start_overlay_tab_watch,
             commands::overlay::stop_overlay_tab_watch,
@@ -778,6 +783,9 @@ pub fn run() {
             commands::trends::get_community_ship_trend,
             commands::trends::get_ship_server_stats,
             commands::trends::get_expected_pr_table,
+            // Screenshot capture grabs the desktop main window's surface —
+            // the module is desktop-only, so is its command.
+            #[cfg(desktop)]
             commands::screenshot::capture_main_window,
             commands::exports::pick_export_path,
             // Tactics plan-profile archives (commands/tactics_profile.rs):

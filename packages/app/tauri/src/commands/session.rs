@@ -31,10 +31,13 @@
 //! and the `sync_active_account` command lets the main window push its
 //! selection changes immediately instead of waiting for the file refresh.
 
+#[cfg(desktop)]
 use anyhow::{Result, anyhow};
 
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+#[cfg(desktop)]
+use std::time::Duration;
+use std::time::SystemTime;
 
 use tauri::{AppHandle, Emitter};
 use wowsp_tauri_shared::{
