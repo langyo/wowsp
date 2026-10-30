@@ -26,6 +26,12 @@ sandbox has no networking, so this probe observes and bridges out:
     the WG-family crewParams shape as the fallback) go out for the app's
     /live build lookup — the roster records carry these from the game's
     own shared data, enemies included (vehicle props are ALL_CLIENTS);
+  - the server-synced PRICE catalog (price_catalog.json): once per
+    client session the probe dumps the four dataHub economy collections
+    (itemPrice / shipCrossResearchInfo / shipTechRestrictions /
+    shipEconomicAttributes) — the per-item price and module research-XP
+    layer the companion cannot derive statically. Capture-only, one-shot
+    (see dump_price_catalog);
   - the ONE thing still rendered is the capture side channel's barcode
     strips: the unbound view (WoWSPProbe.unbound, installed to
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
@@ -74,6 +80,7 @@ ROSTER_JOURNAL_FILE = 'roster_journal.jsonl'
 TELEMETRY_FILE = 'telemetry.json'
 ORDER_PROBE_FILE = 'order_probe.json'
 BUILDS_FILE = 'builds.json'
+PRICE_CATALOG_FILE = 'price_catalog.json'
 
 # Tool config: WoWSP maintains res_mods/wowsp.toml and seeds our table
 # ([tools."battle.ingame.stats"]) with these values; the keys below are the
@@ -787,6 +794,333 @@ except:
     _UI = None
 
 
+# ── server-synced price catalog (price_catalog.json) ────────────────────
+# The client's module economy is NOT static: per-item prices
+# (dhcomponents.ItemPrice, collection 'itemPrice') and the cross-research
+# fields (dhcomponents.ShipCrossResearchInfo, 'shipCrossResearchInfo',
+# incl. the required-module dependency price info) arrive as dataHub
+# components synchronized from the server at login — neither GameParams
+# nor the scripts layer carries the catalog (decoded build 13357625; see
+# the design doc's Server-synced price catalog section). The companion
+# app has no other route to the module XP/credits the client renders, so
+# the probe dumps the four synced collections ONCE per client session
+# into the flat-file bridge. This is CAPTURE ONLY: nothing here feeds the
+# panel, telemetry or ordering.
+#
+# The reads below are protocol access + bare excepts only: the Lesta
+# sandbox may withhold the collections or their component classes, and
+# that must degrade to no file, never to a dead callback. No new
+# builtin name is looked up (str/int/dict/... are all avoided, like the
+# rest of the bridge helpers).
+PRICE_CATALOG_VERSION = 1
+PRICE_CATALOG_COLLECTIONS = ('shipCrossResearchInfo', 'itemPrice',
+                             'shipTechRestrictions', 'shipEconomicAttributes')
+
+# Login-sync window: retry on the scheduler ticks until BOTH the research
+# and the price collection carry data, or a handful of attempts is spent
+# — then the bridge is done for the whole client session. The file is
+# never re-written afterwards (the app may be reading it). Ten attempts
+# is ~20 s at the port cadence (the load attempt counts), which covers
+# the login datastore sync without rewriting the bridge file forever.
+PRICE_CATALOG_MAX_TRIES = 10
+
+# Bounds: a pathological collection must never stall a tick or grow the
+# file without limit. Real collection sizes are unverified until the
+# first live capture; the payload's truncated flag records a capped dump.
+PRICE_CATALOG_MAX_ENTITIES = 30000
+PRICE_CATALOG_MAX_ITEMS = 256
+
+
+# The decoded __slots__ field lists (pyc evidence, build 13357625). The
+# two extra ShipCrossResearchInfo names (totalCostXP/basePrice) come from
+# the research-system model this component feeds; they are read only when
+# the synced object exposes them. ShipEconomicAttributes has an EMPTY
+# __slots__ (it syncs dynamically), so the generic fallback is its only
+# source — the empty tuple just marks the class as known.
+_PRICE_COMPONENT_FIELDS = {
+    'ItemPrice': ('id', 'currencyID', 'currency', 'basePrice',
+                  'finalPrice', 'discountPercent', 'discountId', 'type',
+                  'till', 'isPrivate'),
+    'ShipCrossResearchInfo': (
+        'shipsCrossResearchCostXP', 'shipPathList', 'researchPriceShipExp',
+        'researchPriceFreeExp', 'prevShipResearchedExp',
+        'dependenciesResearchPriceInfo', 'researchPriceInfo',
+        'researchDeficitPriceInfo', 'isFreeExpAvailable',
+        'isPrevShipResearched', 'isResearchPriceVisible', 'isFreeExpCost',
+        'isResearchDeficit', 'dependenciesResearchPriceVisible',
+        'isResearchPreviousShipLockVisible', 'isResearchAvailable',
+        'totalCostXP', 'basePrice'),
+    'ShipTechRestrictions': ('id', 'restrictions'),
+    'ShipEconomicAttributes': (),
+}
+
+# Last-resort slot-name candidates for an unrecognized component class or
+# a recognized one whose fields all failed to read: the union of the
+# known lists plus the generic dh field names, every read guarded.
+_PRICE_GENERIC_FIELDS = (
+    'id', 'restrictions', 'currency', 'currencyID', 'basePrice',
+    'finalPrice', 'discountPercent', 'discountId', 'type', 'till',
+    'isPrivate', 'shipsCrossResearchCostXP', 'shipPathList',
+    'researchPriceShipExp', 'researchPriceFreeExp',
+    'prevShipResearchedExp', 'dependenciesResearchPriceInfo',
+    'researchPriceInfo', 'researchDeficitPriceInfo', 'isFreeExpAvailable',
+    'isPrevShipResearched', 'isResearchPriceVisible', 'isFreeExpCost',
+    'isResearchDeficit', 'dependenciesResearchPriceVisible',
+    'isResearchPreviousShipLockVisible', 'isResearchAvailable',
+    'totalCostXP', 'creditsFactor', 'costCredits', 'costGold', 'data',
+)
+
+# Candidate fields of the nested price structs (decoded PriceInfoStruct:
+# __slots__ ['finalPrice', 'basePrice', 'currency']).
+_PRICE_STRUCT_FIELDS = ('finalPrice', 'basePrice', 'currency', 'currencyID',
+                        'value', 'amount', 'name', 'id', 'discountPercent')
+
+
+def _price_field(source, field):
+    """(True, value) for one component/struct field, (False, None) when
+    the object does not expose it.
+
+    Protocol order, no reflection builtins: instance __dict__ (plain
+    objects and the offline harness), then dynamic attribute access
+    through __getattribute__ (a __slots__ component — the dh components
+    and Lesta's structs are __slots__ classes), then subscript. An unset
+    __slots__ attribute raises and is skipped, never guessed.
+    """
+    try:
+        return True, source.__dict__[field]
+    except:
+        pass
+    try:
+        return True, source.__getattribute__(field)
+    except:
+        pass
+    try:
+        return True, source[field]
+    except:
+        return False, None
+
+
+def _price_value(value, depth=0):
+    """One component field value as a JSON-safe shape.
+
+    Text first (a py2 str is also iterable and %d accepts digit strings),
+    then mappings, sequences, plain struct objects (their public __dict__
+    or the decoded PriceInfoStruct slots), and numbers last (int/long/
+    float through _to_int; the prices on this bridge are integers). An
+    opaque value degrades to its text form so one odd field can never
+    kill the dump. Depth and container width are bounded.
+    """
+    if value is None or value is True or value is False:
+        return value
+    try:
+        # '%s'-style text concat: str/unicode stay verbatim, everything
+        # else raises into the shape probes below.
+        return value + ''
+    except:
+        pass
+    if _is_kind(value, 'bytes', 'bytearray'):
+        text = _as_text(value)
+        return text if text is not None else _fmt(value)
+    if depth <= 4:
+        try:
+            pairs = value.items()
+        except:
+            pairs = None
+        if pairs is not None:
+            out = {}
+            count = 0
+            try:
+                for key, item in pairs:
+                    if count >= PRICE_CATALOG_MAX_ITEMS:
+                        break
+                    count += 1
+                    try:
+                        out[_fmt(key)] = _price_value(item, depth + 1)
+                    except:
+                        continue
+            except:
+                pass
+            return out
+        try:
+            seq = []
+            count = 0
+            for item in value:
+                if count >= PRICE_CATALOG_MAX_ITEMS:
+                    break
+                count += 1
+                try:
+                    seq.append(_price_value(item, depth + 1))
+                except:
+                    continue
+            return seq
+        except:
+            pass
+        # Plain struct objects (PriceInfoStruct and friends): a __slots__
+        # instance carries no __dict__, so dump the decoded candidate
+        # fields instead of an opaque repr.
+        attrs = None
+        try:
+            attrs = value.__dict__
+        except:
+            attrs = None
+        out = {}
+        if attrs is not None:
+            try:
+                for key in attrs:
+                    name = _fmt(key)
+                    if not name or name.startswith('_'):
+                        continue
+                    try:
+                        out[name] = _price_value(attrs[key], depth + 1)
+                    except:
+                        continue
+            except:
+                pass
+        else:
+            for field in _PRICE_STRUCT_FIELDS:
+                found, raw = _price_field(value, field)
+                if not found:
+                    continue
+                try:
+                    out[field] = _price_value(raw, depth + 1)
+                except:
+                    continue
+        if out:
+            return out
+    # Numbers last: '%d' is the numeric protocol probe (text was caught
+    # above; an opaque object falls through to its text form).
+    try:
+        '%d' % (value,)
+    except:
+        return _fmt(value)
+    return _to_int(value)
+
+
+def _price_component_key(comp, fallback):
+    """The component's class name (the decoded dhcomponents class — the
+    key the companion matches on), else its CLASS_ID, else the collection
+    mapping key it was reached by. Empty means unnameable, skip."""
+    name = ''
+    try:
+        name = _fmt(comp.__class__.__name__)
+    except:
+        name = ''
+    if name:
+        return name
+    try:
+        class_id = _fmt(comp.CLASS_ID)
+        if class_id:
+            return 'class_' + class_id
+    except:
+        pass
+    if fallback is None:
+        return ''
+    return _fmt(fallback)
+
+
+def _price_component_row(comp, known):
+    """The field map for one component.
+
+    Recognized class (decoded field list): read exactly those slots.
+    Anything else — or a recognized class whose fields all failed — gets
+    the guarded generic fallback: instance __dict__ items first, then the
+    known slot-name candidates. An unrecognized component that yields no
+    fields at all still records its class name/id, so a first real
+    capture stays diagnosable.
+    """
+    row = {}
+    if known:
+        for field in known:
+            found, raw = _price_field(comp, field)
+            if not found:
+                continue
+            try:
+                row[field] = _price_value(raw)
+            except:
+                continue
+    if not row:
+        attrs = None
+        try:
+            attrs = comp.__dict__
+        except:
+            attrs = None
+        if attrs is not None:
+            try:
+                for key in attrs:
+                    name = _fmt(key)
+                    if not name or name.startswith('_') or name in row:
+                        continue
+                    try:
+                        row[name] = _price_value(attrs[key])
+                    except:
+                        continue
+            except:
+                pass
+    if not row:
+        for field in _PRICE_GENERIC_FIELDS:
+            found, raw = _price_field(comp, field)
+            if not found:
+                continue
+            try:
+                row[field] = _price_value(raw)
+            except:
+                continue
+    if not row and known is None:
+        try:
+            name = _fmt(comp.__class__.__name__)
+        except:
+            name = ''
+        if name:
+            row['_class'] = name
+        try:
+            class_id = _fmt(comp.CLASS_ID)
+            if class_id:
+                row['_class_id'] = class_id
+        except:
+            pass
+    return row
+
+
+def _price_entity_row(entity):
+    """One dataHub entity as {id, components} (the dump's row shape).
+
+    Component mapping first — the duck-typed dataHub contract the
+    sort-key probe also relies on (items(), then values(), then give up) —
+    with a per-component guard so one unreadable component never loses
+    the entity. The entity id is the join key the companion uses
+    (ship/item id); it rides as text so no int/str shape matters.
+    """
+    row = {}
+    try:
+        row['id'] = _fmt(entity.id)
+    except:
+        row['id'] = ''
+    components = {}
+    pairs = []
+    try:
+        for key, comp in entity.components.items():
+            pairs.append((key, comp))
+    except:
+        try:
+            for comp in entity.components.values():
+                pairs.append((None, comp))
+        except:
+            pairs = []
+    for pair in pairs:
+        try:
+            key = pair[0]
+            comp = pair[1]
+            cname = _price_component_key(comp, key)
+            if not cname:
+                continue
+            components[cname] = _price_component_row(
+                comp, _PRICE_COMPONENT_FIELDS.get(cname))
+        except:
+            continue
+    row['components'] = components
+    return row
+
+
 class Probe:
     # Old-style on purpose: `object` is not in the Lesta sandbox's
     # builtin whitelist (`class Probe(object)` was the 2026-10-08 14:04
@@ -824,6 +1158,12 @@ class Probe:
         # exist but carry no build fields at all.
         self.builds_written = False
         self.builds_tries = 0
+        # One-shot price catalog bridge bookkeeping (see the dump method
+        # below): the done latch is per CLIENT session (the synced catalog
+        # does not change per battle), the tries counter bounds the
+        # login-sync retry window.
+        self.price_catalog_done = False
+        self.price_catalog_tries = 0
         self.journal = []
         self.empty_ticks = 0
         self.dead_latch = {None} - {None}
@@ -869,6 +1209,14 @@ class Probe:
         # (see tick's empty branch).
         self.walk_seen = 0
         self.resolve_api()
+        # The server-synced economy components (see dump_price_catalog):
+        # one load-phase attempt, retried by the scheduler ticks until the
+        # login sync delivers both key collections (or the retry cap is
+        # spent). Guarded like every other load path.
+        try:
+            self.tick_price_catalog('load')
+        except:
+            self.soft('price catalog failed=' + _exc_text(120))
         self.api_probe('load')
         try:
             events.onPlayersListUpdated(self.on_players_list)
@@ -1000,6 +1348,150 @@ class Probe:
             # sandbox-safe exception text. An absent file = no build data.
             self.builds_written = True
             self.soft('builds failed=' + _exc_text(120))
+
+    def dump_price_catalog(self, phase):
+        """One dump of the client's server-synced economy components.
+
+        The four dataHub collections below carry what the companion cannot
+        derive statically (decoded dhcomponents, build 13357625):
+        ItemPrice = per-item credits/gold price; ShipCrossResearchInfo =
+        cross-research XP plus the required-module dependency price info;
+        ShipTechRestrictions / ShipEconomicAttributes = the bare synced
+        components. Every entity becomes
+
+            {id: <entity id text>,
+             components: {<component class name or class id>:
+                          {<field>: <JSON-safe value>}}}
+
+        with a KNOWN field list per decoded component class plus a guarded
+        generic fallback (see _price_component_row). Returns the
+        per-collection counts (-1 = the hub refused that name) or None
+        when no dataHub is injected / the write failed. Writes
+        price_catalog.json only when at least one entity was captured;
+        an empty or withheld client is a SILENT no-op (the Lesta sandbox
+        shape: no file, no log line, no soft error). Never raises: a
+        refused collection, a bad entity or an unreadable field is
+        skipped, not logged — the one aggregate line is logged by
+        tick_price_catalog when data lands.
+
+        Capture-only: nothing here feeds telemetry, the panel or the
+        ordering, and the companion reads the file through the same probe
+        file bridge as builds.json / order_probe.json.
+        """
+        if self.dh is None:
+            return None
+        data = {}
+        counts = {}
+        truncated = False
+        for name in PRICE_CATALOG_COLLECTIONS:
+            rows = []
+            count = 0
+            try:
+                cols = self.dh.getEntityCollections(name)
+            except:
+                # Withheld/unavailable collection: recorded as -1, never
+                # logged (the sandbox may refuse every name on Lesta).
+                counts[name] = -1
+                data[name] = rows
+                continue
+            if cols is None:
+                counts[name] = -1
+                data[name] = rows
+                continue
+            try:
+                for entity in cols:
+                    if count >= PRICE_CATALOG_MAX_ENTITIES:
+                        truncated = True
+                        break
+                    count += 1
+                    try:
+                        rows.append(_price_entity_row(entity))
+                    except:
+                        continue
+            except:
+                pass
+            counts[name] = len(rows)
+            data[name] = rows
+        total = 0
+        for name in PRICE_CATALOG_COLLECTIONS:
+            try:
+                value = counts.get(name, 0)
+                if value > 0:
+                    total += value
+            except:
+                continue
+        if total <= 0:
+            # Nothing synced yet (or the whole hub refuses the names):
+            # no file, no log — the caller retries during the login
+            # window and otherwise gives up silently.
+            return counts
+        body = {'v': PRICE_CATALOG_VERSION,
+                't': _to_int(time.time() * 1000),
+                'phase': phase or '',
+                'collections': data,
+                'counts': counts}
+        if truncated:
+            body['truncated'] = True
+        try:
+            _bridge_write(PRICE_CATALOG_FILE, json_encode_safe(body))
+        except:
+            self.soft('price catalog write failed=' + _exc_text(120))
+            return None
+        return counts
+
+    def tick_price_catalog(self, phase):
+        """One bounded attempt at the one-shot price catalog bridge.
+
+        Called once at load (after resolve_api) and again from the
+        scheduler ticks while the login datastore sync is still in
+        flight: the dump is retried until BOTH the research collection
+        and itemPrice carry data, or PRICE_CATALOG_MAX_TRIES is spent.
+        Then the bridge is DONE for the whole client session — later
+        ticks never re-write the file (the companion may be reading it).
+        One WOWSP_PROBE line reports the per-collection counts when data
+        landed; a fully withheld hub (the Lesta shape) stays silent and
+        simply never produces the file.
+        """
+        if self.price_catalog_done:
+            return
+        if self.price_catalog_tries >= PRICE_CATALOG_MAX_TRIES:
+            self.price_catalog_done = True
+            return
+        self.price_catalog_tries += 1
+        counts = self.dump_price_catalog(phase)
+        if counts is None:
+            # No dataHub / failed write: silently stand down.
+            self.price_catalog_done = True
+            return
+        ready = False
+        try:
+            ready = (counts.get('shipCrossResearchInfo', 0) > 0 and
+                     counts.get('itemPrice', 0) > 0)
+        except:
+            ready = False
+        total = 0
+        for name in PRICE_CATALOG_COLLECTIONS:
+            try:
+                value = counts.get(name, 0)
+                if value > 0:
+                    total += value
+            except:
+                continue
+        if total <= 0:
+            # Nothing captured yet: keep retrying inside the window, then
+            # give up silently (nothing to report).
+            if self.price_catalog_tries >= PRICE_CATALOG_MAX_TRIES:
+                self.price_catalog_done = True
+            return
+        # A partial capture keeps retrying (each attempt rewrites the
+        # same file whole) until both key collections landed or the cap
+        # is spent; the one aggregate log line is emitted exactly once.
+        if ready or self.price_catalog_tries >= PRICE_CATALOG_MAX_TRIES:
+            self.price_catalog_done = True
+            parts = []
+            for name in PRICE_CATALOG_COLLECTIONS:
+                parts.append(name + '=' + _fmt(counts.get(name, 0)))
+            log('price catalog written ' + ' '.join(parts))
 
     def self_team_of(self, records):
         """The local player's record teamId (0/1) for builds.json's
@@ -2361,6 +2853,13 @@ class Probe:
             ' players=' + _fmt(len(rows)))
 
     def tick(self):
+        # The one-shot price catalog retry (see tick_price_catalog): the
+        # login-sync bridge may only fill after load, so a bounded retry
+        # rides the normal scheduler cadence until it is done.
+        try:
+            self.tick_price_catalog('battle' if self.in_battle else 'port')
+        except:
+            self.soft('price catalog failed=' + _exc_text(120))
         records = self.players_raw()
         # Stash this tick's raw roster records: write_telemetry reads their
         # isAlive as the authoritative alive source (see there — the entity

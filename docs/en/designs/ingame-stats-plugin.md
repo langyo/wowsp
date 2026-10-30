@@ -509,6 +509,90 @@ Bridge files (protocol v1, all in the mod directory):
 // re-query; the mod consumes it within a 10 s window.
 ```
 
+## Server-synced price catalog (price_catalog.json)
+
+**Why it exists.** The client's module economy is not static: neither
+GameParams nor the scripts layer carries it (decoded build 13357625 —
+ShipCrossResearchInfo reads a runtime price list, and the price classes
+behind getModulePrices are synced client params). Per-item prices
+(credits/gold, discounts) and the cross-research fields (module research
+XP plus the required-module dependency price info) arrive as dataHub
+components synchronized from the server at login:
+dhcomponents.ItemPrice (collection itemPrice),
+dhcomponents.ShipCrossResearchInfo (shipCrossResearchInfo),
+dhcomponents.ShipTechRestrictions (shipTechRestrictions) and
+dhcomponents.ShipEconomicAttributes (shipEconomicAttributes). The
+companion app cannot derive these offline, so the probe captures them
+once per client session. **Capture-only:** nothing in game reads the file
+(no telemetry, panel or ordering path touches it); the companion reads it
+through the same flat-file bridge as builds.json / order_probe.json.
+
+**File shape.**
+
+```jsonc
+// price_catalog.json — one-shot per client session (never per battle);
+// written only when at least one entity was captured.
+{ "v": 1, "t": 1690000000000, "phase": "load" | "battle",
+  "counts": { "shipCrossResearchInfo": 842, "itemPrice": 21713,
+              "shipTechRestrictions": 842, "shipEconomicAttributes": 842 },
+  "collections": {
+    "shipCrossResearchInfo": [
+      { "id": "4170000000",            // the ENTITY id (the join key)
+        "components": {
+          "ShipCrossResearchInfo": {   // component class name (or CLASS_ID)
+            "researchPriceShipExp": 12000,
+            "researchPriceFreeExp": 300,
+            "researchPriceInfo": { "basePrice": 12000, "finalPrice": 9600,
+                                   "currency": "credits" },
+            "dependenciesResearchPriceInfo": {
+              "PRUH604_D7_HULL_TOP_2": { "basePrice": 4000,
+                                         "finalPrice": 3800,
+                                         "currency": "credits" } },
+            "dependenciesResearchPriceVisible": true,
+            "isResearchPriceVisible": true,
+            "shipsCrossResearchCostXP": 18000
+            // ...the full decoded __slots__ list of the class; the
+            // authoritative field lists live in Main.py's
+            // _PRICE_COMPONENT_FIELDS
+          } } }
+    ],
+    "itemPrice": [
+      { "id": "...", "components": { "ItemPrice": {
+          "id": 9201, "currencyID": "credits", "currency": "credits",
+          "basePrice": 21000, "finalPrice": 18900,
+          "discountPercent": 10, "discountId": 0, "type": "...",
+          "till": 0, "isPrivate": false } } } ],
+    "shipTechRestrictions": [
+      { "id": "...", "components": { "ShipTechRestrictions": {
+          "id": 9301, "restrictions": [ "...upgrade entry name..." ] } } } ],
+    "shipEconomicAttributes": [ ... ]
+    // ^ dynamic sync: generic fallback fields (decoded __slots__ is empty)
+  },
+  "truncated": true }   // omitted unless the 30000-entity cap was hit
+```
+
+Every value is JSON-safe by construction: scalars verbatim, nested price
+structs/mappings as objects, strings/bytes text-decoded, numbers via the
+probe's sandbox-safe number conversion (prices are integers), containers
+bounded (256 items, depth 4). Unreadable fields are omitted, never
+fabricated; an unrecognized component class is keyed by its class name
+(CLASS_ID fallback) and dumped through the generic __dict__/known-slot
+fallback, with _class/_class_id diagnostics when nothing else reads.
+
+**Lifecycle.** One load-phase attempt after resolve_api(), then a small
+number of scheduler-tick retries (cap 10, ~20 s at the port cadence)
+for the login datastore sync. The bridge is done once BOTH
+shipCrossResearchInfo and itemPrice
+carry data — one WOWSP_PROBE price catalog written line reports the
+per-collection counts — or it stands down silently when the whole hub is
+withheld (the Lesta sandbox shape: no file, no log line, no soft error).
+A count of -1 means the hub refused that collection name. The file is
+never re-written after the retry window: the companion may be reading it.
+**A first real capture must verify** the actual served collection names,
+the entity-id join keys (ship/item ids) and the component shapes (the
+decoded __slots__ classes vs SafeClass wrappers); the harness pins the
+parsing contract offline with planted collections.
+
 ## Crosshair aim panel
 
 The aim panel (2026-10-18) floats the AIMED player's basic stats a
@@ -658,7 +742,14 @@ plus the CN360 volunteer replays at matching builds).
   survive) — and the live-battle question they could not answer (what
   the real Lesta sandbox serves for the 'ship' collection) was settled
   the same day, 2026-10-10: the full key table, 11/11 including bots.
-  Also keep `python -m py_compile` green.
+  Three PRICE passes pin the server-synced economy bridge: the planted
+  collections must round-trip the exact entity rows / decoded field
+  lists / counts, the deferred shape proves the login-sync retry lands
+  the same file on a later tick, and the withheld Lesta shape
+  (UiComponents raising + every collection refused) must leave
+  price_catalog.json ABSENT with no swallowed-exception text in either
+  the probe log or the soft-error latch. Also keep
+  `python -m py_compile` green.
 - **Port-only smoke test** (no battle): launch the game, sit in port
   ~15 s, exit; assert `injected names=[…]`, `api[load] dh=True`, and a
   fresh heartbeat in `python.log`. This is the cheap protocol that kept

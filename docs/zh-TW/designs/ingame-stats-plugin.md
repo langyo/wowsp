@@ -201,6 +201,79 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
 // 查詢；mod 在 10 s 時間窗內消費。
 ```
 
+## 伺服器同步的價格目錄（price_catalog.json）
+
+**為何需要它。** 用戶端的模組經濟資料不是靜態的：GameParams 與腳本層都不
+攜帶（build 13357625 解碼結論——ShipCrossResearchInfo 讀取執行時價格表，
+getModulePrices 背後的價格類別來自用戶端同步參數）。逐項價格（銀幣/金幣、
+折扣）與跨研究欄位（模組研究經驗、所需模組的依賴價格資訊）在登入時以
+dataHub 元件從伺服器同步而來：dhcomponents.ItemPrice（集合 itemPrice）、
+dhcomponents.ShipCrossResearchInfo（shipCrossResearchInfo）、
+dhcomponents.ShipTechRestrictions（shipTechRestrictions）以及
+dhcomponents.ShipEconomicAttributes（shipEconomicAttributes）。伴生程式
+無法離線推導這些資料，因此探針每個用戶端工作階段抓取一次。**僅採集**：
+遊戲內沒有任何路徑讀取該檔案（遙測、面板、排序都不使用它）；伴生程式
+透過與 builds.json / order_probe.json 相同的平鋪檔案橋讀取。
+
+**檔案形狀。**
+
+```jsonc
+// price_catalog.json —— 每個用戶端工作階段一次性寫出（絕不按對局重寫）；
+// 僅在至少採集到一個實體時出現。
+{ "v": 1, "t": 1690000000000, "phase": "load" | "battle",
+  "counts": { "shipCrossResearchInfo": 842, "itemPrice": 21713,
+              "shipTechRestrictions": 842, "shipEconomicAttributes": 842 },
+  "collections": {
+    "shipCrossResearchInfo": [
+      { "id": "4170000000",            // 實體 id（連接鍵）
+        "components": {
+          "ShipCrossResearchInfo": {   // 元件類別名（或 CLASS_ID）
+            "researchPriceShipExp": 12000,
+            "researchPriceFreeExp": 300,
+            "researchPriceInfo": { "basePrice": 12000, "finalPrice": 9600,
+                                   "currency": "credits" },
+            "dependenciesResearchPriceInfo": {
+              "PRUH604_D7_HULL_TOP_2": { "basePrice": 4000,
+                                         "finalPrice": 3800,
+                                         "currency": "credits" } },
+            "dependenciesResearchPriceVisible": true,
+            "isResearchPriceVisible": true,
+            "shipsCrossResearchCostXP": 18000
+            // ……該類別的完整解碼 __slots__ 欄位表；
+            // 權威欄位清單見 Main.py 的 _PRICE_COMPONENT_FIELDS
+          } } }
+    ],
+    "itemPrice": [
+      { "id": "...", "components": { "ItemPrice": {
+          "id": 9201, "currencyID": "credits", "currency": "credits",
+          "basePrice": 21000, "finalPrice": 18900,
+          "discountPercent": 10, "discountId": 0, "type": "...",
+          "till": 0, "isPrivate": false } } } ],
+    "shipTechRestrictions": [
+      { "id": "...", "components": { "ShipTechRestrictions": {
+          "id": 9301, "restrictions": [ "……升級條目名……" ] } } } ],
+    "shipEconomicAttributes": [ ... ]
+    // ^ 動態同步：走通用回退欄位（解碼的 __slots__ 為空）
+  },
+  "truncated": true }   // 僅在觸及 30000 實體上限時出現
+```
+
+所有值在構造上都是 JSON 安全的：純量原樣、巢狀價格結構/映射轉為物件、
+字串/位元組解碼為文字、數字走探針的沙盒安全數值轉換（價格為整數）、容器
+有界（256 項、深度 4）。讀不到的欄位直接省略、絕不偽造；未知元件類別以
+類別名（CLASS_ID 兜底）為鍵，經 __dict__/已知槽位通用回退轉儲，若什麼都
+讀不到則記錄 _class/_class_id 供診斷。
+
+**生命週期。** resolve_api() 之後在載入階段嘗試一次，隨後在排程 tick 上做
+少量重試（上限 10 次，港口節拍下約 20 s）以覆蓋登入資料同步窗口。當
+shipCrossResearchInfo 與 itemPrice 兩個集合都拿到資料即標記完成（一條
+WOWSP_PROBE price catalog written 日誌行報告各集合計數），或在整個 hub 被
+扣留（Lesta 沙盒形態）時靜默放棄（無檔案、無日誌行、無 soft 錯誤）。計數
+為 -1 表示 hub 拒絕該集合名。重試窗口結束後檔案永不重寫：伴生程式可能正在
+讀取它。**首次實機採集需驗證**：實際提供的集合名、實體 id 連接鍵（船/物品
+id）以及元件形態（解碼的 __slots__ 類別還是 SafeClass 包裝）；離線 harness
+已用植入集合固定解析契約。
+
 ## 產品整合
 
 1. **開關即自動安裝**：在設定中啟用遊戲內排序來源後，經由現有的
@@ -251,7 +324,10 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
   的 Lesta 形態、未配對側保持遍歷序的部分覆蓋形態、以及鍵表必須存活的
   15.9 編碼器怪癖）——它們回答不了的實彈對局問題（真實 Lesta 沙箱對
   'ship' 集合到底給什麼）已於當日 2026-10-10 定案：完整鍵表，含 bot 共
-  11/11。外加 `python -m py_compile`。
+  11/11。2026-10-31 起另加三個價格 pass：植入形態斷言 price_catalog.json
+  的實體列/解碼欄位/計數精確一致，延遲形態證明登入同步重試能在後續 tick
+  落盤，扣留形態（UiComponents 拋異 + 全部集合被拒）斷言檔案缺失且日誌與
+  soft 錯誤閂鎖中沒有吞例外文字。外加 `python -m py_compile`。
 - **僅港口冒煙測試**（不打戰鬥）：啟動遊戲、在港口停留約 15 s、退出；
   斷言 `python.log` 出現 `injected names=[…]`、`api[load] dh=True`
   與新鮮的心跳。這套廉價協定讓實驗保持誠實——保留它作為安裝的
