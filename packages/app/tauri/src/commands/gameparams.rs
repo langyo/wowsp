@@ -6,21 +6,29 @@
 //! community-turned-in-tree tool `game-assets` (vendored under `packages/tools/`) unpacks it.
 //!
 //! Lookup order for one ship's subtree:
-//!   0. Bundled Lesta snapshot (`data/lesta_ship_gameparams.json.gz`,
+//!   0. Hot-updated ship-data bundle (the `data-latest` channel's
+//!      `ship-gameparams` dataset, a zip of BOTH realms' slices,
+//!      downloaded and verified by `commands/data_pack.rs`): our own
+//!      server answers install-less machines — and both realms — without an
+//!      app release. Gated on the bundle's `sliceFormat` so a shape
+//!      bump degrades to the carried snapshot instead of feeding the panel
+//!      a payload this build cannot read.
+//!   1. Bundled Lesta snapshot (`data/lesta_ship_gameparams.json.gz`,
 //!      embedded below): the encyclopedia's Lesta realm ids exist only in the Lesta
 //!      client's own GameParams, so they are answered straight from the
-//!      carried snapshot — no install (WG or Lesta) is consulted.
-//!   1. `gameparams/<shipId>.json` AppData cache (instant; pairing sync
+//!      carried snapshot — no install (WG or Lesta) is consulted. Offline
+//!      baseline for the bundle above.
+//!   2. `gameparams/<shipId>.json` AppData cache (instant; pairing sync
 //!      fills it on phones).
-//!   2. Mobile only: the offline pack baked into the APK assets
+//!   3. Mobile only: the offline pack baked into the APK assets
 //!      (`data/gameparams/<shipId>.json`, written by
 //!      `scripts/extract_gameparams.py` — the same file format this cache
 //!      uses). A phone has no game install, so this is its primary source;
 //!      it lives BETWEEN the cache and the install paths: fresher synced
 //!      slices win, bundled data beats any install error.
-//!   3. A pre-unpacked `GameParams.json` at the game root (or the extract
+//!   4. A pre-unpacked `GameParams.json` at the game root (or the extract
 //!      script's LOCALAPPDATA cache) → extract slice → cache → return.
-//!   4. In-app unpack: mount the install's idx/pkg VFS, read
+//!   5. In-app unpack: mount the install's idx/pkg VFS, read
 //!      `content/GameParams.data`, decode the pickle, pick the ship's entry
 //!      → cache → return. This is the path every fresh player install takes
 //!      (nobody runs game-assets by hand); the decode dominates its cost, so
@@ -114,6 +122,38 @@ fn inflate_bundled_pack() -> Result<Vec<u8>, std::io::Error> {
 /// the map stays cached for the process's lifetime.
 fn bundled_lesta_slice(ship_id: i64) -> Option<serde_json::Value> {
     bundled_lesta_ships().get(&ship_id.to_string()).cloned()
+}
+
+/// Whether a ship-data bundle's manifest speaks the slice shape this build
+/// understands. A shape bump must degrade to the carried snapshot instead
+/// of feeding the panel a payload it cannot read.
+fn bundle_shape_ok(manifest: &serde_json::Value) -> bool {
+    manifest.get("sliceFormat").and_then(|v| v.as_u64()) == Some(u64::from(SLICE_FORMAT))
+}
+
+/// The hot-updated ship-data bundle's slice for `ship_id` (the
+/// `data-latest` channel, see `commands/data_pack.rs`), when one is
+/// cached, verified and shape-compatible. Every failure is silent: the
+/// carried snapshot and the install chain below answer instead.
+fn hot_update_slice(ship_id: i64) -> Option<serde_json::Value> {
+    let manifest = match super::data_pack::shipdata_manifest() {
+        Ok(Some(manifest)) => manifest,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::warn!(error = %e, "ship-data bundle manifest unreadable");
+            return None;
+        },
+    };
+    if !bundle_shape_ok(&manifest) {
+        return None;
+    }
+    match super::data_pack::shipdata_slice(ship_id) {
+        Ok(slice) => slice,
+        Err(e) => {
+            tracing::warn!(error = %e, "ship-data bundle slice unreadable");
+            None
+        },
+    }
 }
 
 // ── bulk per-ship cache fill ─────────────────────────────────────────────
@@ -632,7 +672,16 @@ pub async fn get_ship_gameparams(
 ) -> CommandResult<serde_json::Value> {
     let cache_file = format!("gameparams/{ship_id}.json");
 
-    // 0. Bundled Lesta snapshot first: these ids belong to the Lesta client
+    // 0. Hot-updated ship-data bundle first: our own server's current bake
+    //    for BOTH realms, refreshed independently of app releases. It
+    //    supersedes the carried snapshot below and answers before any
+    //    install is consulted; absent, corrupt or shape-incompatible
+    //    bundles fall straight through.
+    if let Some(slice) = hot_update_slice(ship_id) {
+        return Ok(slice);
+    }
+
+    // 1. Bundled Lesta snapshot first: these ids belong to the Lesta client
     //    the encyclopedia's realm was generated from, and only that
     //    snapshot's slice is guaranteed to describe the ship the UI is
     //    showing (a build-drifted or WG install answers a different ship, or
@@ -649,20 +698,20 @@ pub async fn get_ship_gameparams(
         return Ok(slice);
     }
 
-    // 0a. Mobile freshness gate: a bundled pack strictly newer than the
+    // 1a. Mobile freshness gate: a bundled pack strictly newer than the
     //     data the phone last synced drops the synced cache first, so the
     //     cache read below can never serve stale slices over an app
     //     update. (The desktop's build-change invalidation follows.)
     #[cfg(mobile)]
     invalidate_synced_cache_behind_bundle(&app);
 
-    // 0b. Slice payload shape outdated? One marker read — when the cached
+    // 1b. Slice payload shape outdated? One marker read — when the cached
     //     slices predate the current shape (v2 embeds torpedo ammo), drop
     //     the whole per-ship cache BEFORE any read so the fill below
     //     re-materializes every slice in the current shape.
     invalidate_cache_on_stale_slice_format();
 
-    // 0c. Game updated since the cache was filled? Drop stale slices BEFORE
+    // 1c. Game updated since the cache was filled? Drop stale slices BEFORE
     //     any cache read (one bin/ readdir — cheap even on the hot path) so
     //     armor data never lags the client. Skips itself when there is no
     //     resolvable bin/ (the phone app: game_root is always empty there).
@@ -670,14 +719,14 @@ pub async fn get_ship_gameparams(
         invalidate_cache_on_build_change(build);
     }
 
-    // 1. Cache hit?
+    // 2. Cache hit?
     if let Ok(Some(raw)) = read_appdata_json(&cache_file) {
         if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
             return Ok(v);
         }
     }
 
-    // 2. Mobile: the bundled offline pack. The asset resolver hands back
+    // 3. Mobile: the bundled offline pack. The asset resolver hands back
     //    the APK-embedded file bytes (dist/webui-relative key); the install
     //    paths below can never succeed on a phone, so pack problems surface
     //    as clear errors instead of the misleading "no bin/ version dir"
@@ -1785,6 +1834,24 @@ mod tests {
         assert_eq!(slice.get("id").and_then(|v| v.as_i64()), Some(id));
         assert!(bundled_lesta_slice(1).is_none());
         assert!(bundled_lesta_slice(i64::MAX).is_none());
+    }
+
+    /// A bundle baked for a different slice shape must never feed the
+    /// panel: the gate is a plain manifest comparison, so an app that
+    /// predates a shape bump silently keeps using its carried snapshot.
+    #[test]
+    fn bundle_shape_gate_matches_only_the_current_slice_format() {
+        assert!(bundle_shape_ok(&serde_json::json!({
+            "sliceFormat": SLICE_FORMAT
+        })));
+        assert!(!bundle_shape_ok(&serde_json::json!({
+            "sliceFormat": SLICE_FORMAT + 1
+        })));
+        assert!(!bundle_shape_ok(&serde_json::json!({})));
+        // A string is not a shape: refuse rather than coerce.
+        assert!(!bundle_shape_ok(&serde_json::json!({
+            "sliceFormat": SLICE_FORMAT.to_string()
+        })));
     }
 
     /// The bundled pack records the slice shape it was built for and its

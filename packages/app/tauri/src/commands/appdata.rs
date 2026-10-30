@@ -103,6 +103,16 @@ pub(crate) fn write_json_in(
     crate::atomic_file::write(&data_file_path(dir, file)?, content)
 }
 
+/// Binary sibling of `write_json_in` for non-text payloads (the
+/// data pack's ship-data zip). Same path guard and atomicity contract.
+pub(crate) fn write_bytes_in(
+    dir: &std::path::Path,
+    file: &str,
+    content: &[u8],
+) -> anyhow::Result<()> {
+    crate::atomic_file::write_bytes(&data_file_path(dir, file)?, content)
+}
+
 /// Read a JSON file from AppData. Returns None if the file doesn't exist yet.
 #[tauri::command]
 pub fn appdata_read(file: String) -> CommandResult<Option<String>> {
