@@ -23,10 +23,9 @@
 //! Unknown ship ids get the neutral mid profile `[0.5, 0.0, 0.5, 0.0, 0.0,
 //! 0.0]` — NOT zeros, which would read as "minimum concealment, no guns".
 
+use anyhow::{anyhow, bail};
 use std::collections::HashMap;
 use std::sync::OnceLock;
-
-use anyhow::{anyhow, bail};
 
 /// Width of the routing input (the training script's `ATTR_DIM`).
 pub const ATTR_DIM: usize = 10;
