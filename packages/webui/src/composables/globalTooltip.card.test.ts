@@ -50,19 +50,19 @@ describe("globalTooltip briefing paragraph", () => {
     hover(
       anchor({
         title: "重型巡洋舰",
-        markerUrl: "/images/ships/icon_white_cruiser.webp",
+        markerUrl: "/images/ships/icon_outline_cruiser.webp",
         body: "第一段。\n第二段。",
       }),
     );
     const p = popup();
     expect(p?.classList.contains("global-tooltip--paragraph")).toBe(true);
     expect(p?.querySelector(".global-tooltip__card-title")?.textContent).toBe("重型巡洋舰");
-    // The white HUD glyph renders as a bare image — no plate span behind
+    // The line-art HUD glyph renders as a bare image — no plate span behind
     // it; the CSS filter tint carries the contrast instead (see
     // globalTooltip.scss).
     const marker = p?.querySelector(".global-tooltip__card-marker");
     expect(marker?.tagName).toBe("IMG");
-    expect(marker?.getAttribute("src")).toBe("/images/ships/icon_white_cruiser.webp");
+    expect(marker?.getAttribute("src")).toBe("/images/ships/icon_outline_cruiser.webp");
     expect(p?.querySelector(".global-tooltip__card-icon")).toBeNull();
     expect(p?.querySelector(".global-tooltip__card-body")?.textContent).toBe("第一段。\n第二段。");
   });

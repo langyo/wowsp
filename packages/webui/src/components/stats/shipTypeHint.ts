@@ -3,13 +3,14 @@
  * / CA/CL / DD / SS).
  *
  * The card is the global tooltip's structured form (`data-hint-card`, see
- * composables/globalTooltip.ts): the class glyph exactly as the board draws
- * it on the minimap — the game's white, right-pointing marker art — beside
- * a bold class name, then a short gameplay briefing (what the class is
- * FOR, not just how it is bracketed against its neighbours). Control-heavy
- * classes (carrier, submarine) follow the briefing with an itemized
- * "press X to do Y" list (HintCard.keys) and a muted mechanics note, so
- * the card never grows back into one long paragraph.
+ * composables/globalTooltip.ts): the class glyph the board draws on the
+ * minimap, redrawn as plate-free outline line art so the popup's ink tint
+ * keeps its strokes apart at this size — beside a bold class name, then a
+ * short gameplay briefing (what the class is FOR, not just how it is
+ * bracketed against its neighbours). Control-heavy classes (carrier,
+ * submarine) follow the briefing with an itemized "press X to do Y" list
+ * (HintCard.keys) and a muted mechanics note, so the card never grows back
+ * into one long paragraph.
  *
  * Every string is resolved here at call time and the card is serialized to
  * JSON, because the tooltip's contract is pre-localized plain text (the
@@ -38,8 +39,8 @@ const HINT_KEY: Record<string, string> = {
 };
 
 /** i18n key → the WG ShipInfo.type the minimap marker is keyed by (the
- *  "white" variant is the neutral, right-facing marker the rows themselves
- *  draw). */
+ *  "outline" variant is the neutral, right-facing marker the rows themselves
+ *  draw, derived from the same art as the "white" variant). */
 const ICON_TYPE: Record<string, string> = {
   bb: "Battleship",
   cv: "AirCarrier",
@@ -85,7 +86,8 @@ function keysFor(key: string): HintCardKey[] {
 
 /** The card for one badge code, or null when the class has no briefing
  *  (`?` — unknown/auxiliary hulls) or the active locale carries no text.
- *  The head glyph is the class's minimap marker, white and pointing right. */
+ *  The head glyph is the class's minimap marker, drawn as outline line art
+ *  and pointing right. */
 export function shipTypeHintCardOf(code: string | null | undefined): HintCard | null {
   const key = HINT_KEY[(code ?? "").trim()];
   if (!key) return null;
@@ -94,10 +96,10 @@ export function shipTypeHintCardOf(code: string | null | undefined): HintCard | 
   // An unshipped/missing message resolves to the key path itself (vue-i18n's
   // miss behaviour) — never leak that into the popup.
   if (!title || !body || title.startsWith("ships.typeInfo.")) return null;
-  // The "white" variant is the neutral minimap marker — the same art the
-  // rows draw next to the name — so the card hands it over as markerUrl
-  // (the popup tints the white glyph to its own ink; see HintCard.markerUrl).
-  const markerUrl = shipIconUrl(ICON_TYPE[key], "white");
+  // The "outline" variant is the neutral minimap marker as line art — the
+  // same glyph the rows draw, with its plate dropped so the popup's ink tint
+  // keeps the interior gaps open at the card's 20 px (see HintCard.markerUrl).
+  const markerUrl = shipIconUrl(ICON_TYPE[key], "outline");
   const keys = keysFor(key);
   const noteKey = `ships.typeInfo.${key}.note`;
   const note = te(noteKey) ? t(noteKey) : "";

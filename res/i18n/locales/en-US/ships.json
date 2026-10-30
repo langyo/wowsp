@@ -39,7 +39,7 @@
       "keys": {
         "1": {
           "key": "1–3",
-          "text": "1 attack aircraft, 2 torpedo bombers, 3 bombers; double-tap to launch the squadron."
+          "text": "Each number picks a different aircraft type; double-tap to launch the squadron."
         },
         "2": {
           "key": "LMB",
