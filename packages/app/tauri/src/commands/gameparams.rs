@@ -153,6 +153,133 @@ fn write_bulk_fill_marker(data_dir: &Path, build: u32) {
     );
 }
 
+/// Version of the per-ship slice payload SHAPE (not the game build):
+///
+///   1 — the bare ship entity, as historically cached;
+///   2 — the ship entity plus `__torpedoAmmo`: the torpedo Projectile
+///       entities its launcher `HP_*` slots reference via `ammoList`
+///       (damage falloff tiers, ping-response homing, per-type damage —
+///       none of which the WG default_profile carries).
+///
+/// Bumping it wipes the per-ship cache once so every slice re-materializes
+/// in the new shape; same best-effort contract as the build-change wipe.
+const SLICE_FORMAT: u32 = 2;
+
+/// Drop the per-ship cache when its slices predate the current payload
+/// shape. The marker lives beside the build markers inside `gameparams/`,
+/// so the same wipe covers the bulk-fill marker and the next warm/fill
+/// rewrites the whole roster in the current shape.
+fn invalidate_cache_on_stale_slice_format() {
+    let Some(dir) = appdata_dir_path().ok().map(|d| d.join("gameparams")) else {
+        return;
+    };
+    let marker = dir.join("slice-format.txt");
+    if fs::read_to_string(&marker).ok().as_deref() == Some(SLICE_FORMAT.to_string().as_str()) {
+        return;
+    }
+    if let Some(parent) = marker.parent() {
+        let _ = fs::remove_dir_all(parent);
+    }
+    let _ = write_appdata_json("gameparams/slice-format.txt", &SLICE_FORMAT.to_string());
+}
+
+/// Torpedo ammo entity names referenced by the slice's launcher slots:
+/// every `ammoList` under any mount of any weapon block (mounts are the
+/// `HP_*` sub-dicts in real data). Shells are referenced the same way, so
+/// the entity-level Projectile/Torpedo filter in `embed_torpedo_ammo`
+/// decides what actually embeds.
+#[cfg(desktop)]
+fn torpedo_ammo_names(slice: &serde_json::Value) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let Some(blocks) = slice.as_object() else {
+        return names;
+    };
+    for block in blocks.values() {
+        let Some(mounts) = block.as_object() else {
+            continue;
+        };
+        for mount in mounts.values() {
+            let Some(ammo) = mount
+                .as_object()
+                .and_then(|m| m.get("ammoList"))
+                .and_then(|v| v.as_array())
+            else {
+                continue;
+            };
+            for name in ammo.iter().filter_map(|v| v.as_str()) {
+                if !names.iter().any(|n| n == name) {
+                    names.push(name.to_string());
+                }
+            }
+        }
+    }
+    names
+}
+
+/// A torpedo Projectile entity (`typeinfo.type == "Projectile"`,
+/// `species == "Torpedo"`). Shells share the Projectile type but carry
+/// `species == "Shell"`; bombs and other ammo stay out of the slice.
+#[cfg(desktop)]
+fn is_torpedo_projectile(entity: &serde_json::Value) -> bool {
+    entity
+        .get("typeinfo")
+        .and_then(|t| t.as_object())
+        .is_some_and(|t| {
+            t.get("type").and_then(|v| v.as_str()) == Some("Projectile")
+                && t.get("species").and_then(|v| v.as_str()) == Some("Torpedo")
+        })
+}
+
+/// Embed the slice's referenced torpedo ammo entities under
+/// `__torpedoAmmo` (name → entity). The webui spec panel reads per-type
+/// torpedo detail (falloff tiers, homing response, double-ping damage
+/// coefficient) from it; slices without torpedo launchers are untouched,
+/// and an existing `__torpedoAmmo` key (already-embedded input) wins.
+#[cfg(desktop)]
+fn embed_torpedo_ammo(
+    slice: &mut serde_json::Value,
+    lookup: &dyn Fn(&str) -> Option<serde_json::Value>,
+) {
+    let names = torpedo_ammo_names(slice);
+    if names.is_empty() {
+        return;
+    }
+    let mut ammo = serde_json::Map::new();
+    for name in &names {
+        if let Some(entity) = lookup(name)
+            && is_torpedo_projectile(&entity)
+        {
+            ammo.insert(name.clone(), entity);
+        }
+    }
+    if ammo.is_empty() {
+        return;
+    }
+    if let Some(obj) = slice.as_object_mut() {
+        obj.entry("__torpedoAmmo".to_string())
+            .or_insert_with(|| serde_json::Value::Object(ammo));
+    }
+}
+
+/// Internal-name → entity index over the parsed loose GameParams root
+/// (shape 4 — the game-assets `game-params --full` output). The array /
+/// `ships` shapes carry no entity names, so they embed nothing and the
+/// slice keeps its historical shape.
+#[cfg(desktop)]
+fn json_entity_index(
+    parsed: &serde_json::Value,
+) -> std::collections::HashMap<String, serde_json::Value> {
+    let mut out = std::collections::HashMap::new();
+    if let Some(obj) = parsed.as_object() {
+        for (k, v) in obj {
+            if k != "ships" && k.parse::<i64>().is_err() && v.is_object() {
+                out.insert(k.clone(), v.clone());
+            }
+        }
+    }
+    out
+}
+
 /// Numeric id of a decoded entry — the same id → ShipId chain
 /// `pickled_entry_matches` matches with, surfaced as a value.
 #[cfg(desktop)]
@@ -349,7 +476,27 @@ fn fill_ship_cache_from_pickle(
         return (0, 0, false);
     };
     let picks = group_pickle_ship_picks(&entries);
-    let slice_at = |idx: usize| to_json(&entries[idx].1).ok();
+    // Torpedo ammo embedding needs the full entity table (launchers
+    // reference ammo by internal name), so index the entries once and
+    // clone+embed per served slice.
+    let ammo_index: std::collections::HashMap<String, usize> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, (k, _))| match k {
+            pickled::HashableValue::String(s) => Some((s.inner().to_string(), idx)),
+            _ => None,
+        })
+        .collect();
+    let slice_at = |idx: usize| {
+        let mut slice = to_json(&entries[idx].1).ok()?;
+        let lookup = |name: &str| {
+            ammo_index
+                .get(name)
+                .and_then(|i| to_json(&entries[*i].1).ok())
+        };
+        embed_torpedo_ammo(&mut slice, &lookup);
+        Some(slice)
+    };
     fill_ship_cache_exec(picks, slice_at, data_dir, game_root, build)
 }
 
@@ -432,7 +579,13 @@ fn fill_ship_cache_from_json(
         })
         .collect();
     picks.sort_by_key(|(sid, _)| *sid);
-    let slice_at = |idx: usize| Some(pairs[idx].1.clone());
+    let ammo_index = json_entity_index(parsed);
+    let slice_at = |idx: usize| {
+        let mut slice = pairs[idx].1.clone();
+        let lookup = |name: &str| ammo_index.get(name).cloned();
+        embed_torpedo_ammo(&mut slice, &lookup);
+        Some(slice)
+    };
     fill_ship_cache_exec(picks, slice_at, data_dir, game_root, build)
 }
 
@@ -489,7 +642,13 @@ pub async fn get_ship_gameparams(
     #[cfg(mobile)]
     invalidate_synced_cache_behind_bundle(&app);
 
-    // 0b. Game updated since the cache was filled? Drop stale slices BEFORE
+    // 0b. Slice payload shape outdated? One marker read — when the cached
+    //     slices predate the current shape (v2 embeds torpedo ammo), drop
+    //     the whole per-ship cache BEFORE any read so the fill below
+    //     re-materializes every slice in the current shape.
+    invalidate_cache_on_stale_slice_format();
+
+    // 0c. Game updated since the cache was filled? Drop stale slices BEFORE
     //     any cache read (one bin/ readdir — cheap even on the hot path) so
     //     armor data never lags the client. Skips itself when there is no
     //     resolvable bin/ (the phone app: game_root is always empty there).
@@ -556,8 +715,10 @@ pub async fn warm_ship_gameparams_cache(game_root: String) -> CommandResult<bool
             // surface the proper error if the user opens a ship anyway).
             return Ok(false);
         };
-        // Same freshness gate every lookup runs: a build change wipes stale
-        // slices BEFORE any decision on the marker below.
+        // Same freshness gates every lookup runs: a slice-shape change or a
+        // build change wipes stale slices BEFORE any decision on the bulk
+        // marker below.
+        invalidate_cache_on_stale_slice_format();
         invalidate_cache_on_build_change(build);
         let dir = appdata_dir_path()?;
         if bulk_fill_marker_matches(&dir, build) {
@@ -940,6 +1101,28 @@ fn upgrade_prices_from_pickle(pickle: &pickled::Value) -> Result<serde_json::Val
 
 #[cfg(desktop)]
 fn ship_slice_from_pickle(pickle: &pickled::Value, ship_id: i64) -> Option<serde_json::Value> {
+    let mut slice = ship_slice_from_pickle_raw(pickle, ship_id)?;
+    let entries = params_root(pickle).and_then(|p| dict_entries(&p))?;
+    let ammo_index: std::collections::HashMap<String, usize> = entries
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, (k, _))| match k {
+            pickled::HashableValue::String(s) => Some((s.inner().to_string(), idx)),
+            _ => None,
+        })
+        .collect();
+    let lookup = |name: &str| {
+        ammo_index
+            .get(name)
+            .and_then(|i| to_json(&entries[*i].1).ok())
+    };
+    embed_torpedo_ammo(&mut slice, &lookup);
+    Some(slice)
+}
+
+/// The raw entry pick under 'ship_slice_from_pickle' — no ammo embedding.
+#[cfg(desktop)]
+fn ship_slice_from_pickle_raw(pickle: &pickled::Value, ship_id: i64) -> Option<serde_json::Value> {
     let params = params_root(pickle)?;
 
     let mut candidates: Vec<pickled::Value> = Vec::new();
@@ -1073,6 +1256,20 @@ fn pickled_as_i64(v: &pickled::Value) -> Option<i64> {
 /// dump once for the whole roster, so the slice walk must not re-parse).
 #[cfg(desktop)]
 pub(crate) fn extract_ship_slice_from_parsed(
+    parsed: &serde_json::Value,
+    ship_id: i64,
+) -> Result<serde_json::Value> {
+    let mut slice = extract_ship_slice_from_parsed_raw(parsed, ship_id)?;
+    let ammo_index = json_entity_index(parsed);
+    let lookup = |name: &str| ammo_index.get(name).cloned();
+    embed_torpedo_ammo(&mut slice, &lookup);
+    Ok(slice)
+}
+
+/// The raw entry pick under 'extract_ship_slice_from_parsed' — no ammo
+/// embedding.
+#[cfg(desktop)]
+fn extract_ship_slice_from_parsed_raw(
     parsed: &serde_json::Value,
     ship_id: i64,
 ) -> Result<serde_json::Value> {
@@ -1957,6 +2154,131 @@ mod tests {
                 || !dir.join("gameparams").exists(),
             "the abort wipe must not leave stale slices behind"
         );
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ── torpedo ammo embedding (slice format v2) ──────────────────────
+
+    fn plist(items: &[pickled::Value]) -> pickled::Value {
+        pickled::Value::List(items.to_vec().into())
+    }
+
+    /// A submarine-shaped JSON dump: the served slice embeds the referenced
+    /// torpedo Projectile entities under `__torpedoAmmo` — shells stay out
+    /// (species filter), unresolvable names stay out, and ships/other
+    /// entities are never embedded.
+    #[test]
+    fn embeds_torpedo_ammo_into_json_slice() {
+        let parsed = serde_json::json!({
+            "PJSS820_BA_I56": {
+                "id": 3434526416_i64,
+                "name": "PJSS820_BA_I56",
+                "A_Torpedoes": {
+                    "HP_JGT_1": { "ammoList": ["PTORP_A", "PSHELL_B", "PABSENT_C"] },
+                    "HP_JGT_2": { "ammoList": ["PTORP_A"] }
+                }
+            },
+            "PTORP_A": {
+                "name": "PTORP_A",
+                "typeinfo": { "type": "Projectile", "species": "Torpedo" },
+                "alphaDamage": 72400
+            },
+            "PSHELL_B": {
+                "name": "PSHELL_B",
+                "typeinfo": { "type": "Projectile", "species": "Shell" }
+            }
+        });
+        let slice = extract_ship_slice_from_parsed(&parsed, 3434526416).unwrap();
+        let ammo = slice.get("__torpedoAmmo").unwrap().as_object().unwrap();
+        assert_eq!(ammo.len(), 1, "only the torpedo entity embeds: {ammo:?}");
+        assert!(
+            ammo.contains_key("PTORP_A"),
+            "the referenced torpedo must embed: {ammo:?}"
+        );
+        assert_eq!(
+            ammo.get("PTORP_A")
+                .and_then(|v| v.get("alphaDamage"))
+                .and_then(|v| v.as_i64()),
+            Some(72400)
+        );
+    }
+
+    /// The array form carries no entity names, so its slices keep the
+    /// historical shape (no `__torpedoAmmo` key at all).
+    #[test]
+    fn array_form_slice_stays_bare() {
+        let parsed = serde_json::json!([
+            { "id": 4282948544_i64, "name": "PASB510_Montana", "A_Torpedoes":
+                { "HP_T": { "ammoList": ["PTORP_A"] } } }
+        ]);
+        let slice = extract_ship_slice_from_parsed(&parsed, 4282948544).unwrap();
+        assert!(slice.get("__torpedoAmmo").is_none());
+    }
+
+    /// Same embedding through the pickled single-ship path.
+    #[test]
+    fn embeds_torpedo_ammo_into_pickle_slice() {
+        let pickle = pdict(&[
+            (
+                "PJSS820_BA_I56",
+                pdict(&[
+                    ("id", pickled::Value::I64(3434526416)),
+                    ("name", pstr("PJSS820_BA_I56")),
+                    (
+                        "A_Torpedoes",
+                        pdict(&[(
+                            "HP_JGT_1",
+                            pdict(&[("ammoList", plist(&[pstr("PTORP_A")]))]),
+                        )]),
+                    ),
+                ]),
+            ),
+            (
+                "PTORP_A",
+                pdict(&[
+                    ("name", pstr("PTORP_A")),
+                    (
+                        "typeinfo",
+                        pdict(&[("type", pstr("Projectile")), ("species", pstr("Torpedo"))]),
+                    ),
+                    ("alphaDamage", pickled::Value::I64(72400)),
+                ]),
+            ),
+        ]);
+        let ship = ship_slice_from_pickle(&pickle, 3434526416).unwrap();
+        let ammo = ship.get("__torpedoAmmo").unwrap().as_object().unwrap();
+        assert!(ammo.contains_key("PTORP_A"));
+        assert_eq!(
+            ammo.get("PTORP_A")
+                .and_then(|v| v.get("alphaDamage"))
+                .and_then(|v| v.as_i64()),
+            Some(72400)
+        );
+    }
+
+    /// The bulk JSON fill writes the embedded shape into the cache files.
+    #[test]
+    fn bulk_fill_json_embeds_ammo_in_cache_files() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        let parsed = serde_json::json!({
+            "PJSS820_BA_I56": {
+                "id": 3434526416_i64,
+                "name": "PJSS820_BA_I56",
+                "A_Torpedoes": {
+                    "HP_JGT_1": { "ammoList": ["PTORP_A"] }
+                }
+            },
+            "PTORP_A": {
+                "name": "PTORP_A",
+                "typeinfo": { "type": "Projectile", "species": "Torpedo" }
+            }
+        });
+        let (written, _skipped, aborted) = fill_ship_cache_from_json(&parsed, &dir, "", 0);
+        assert!(!aborted);
+        assert_eq!(written, 1);
+        let cached = fs::read_to_string(dir.join("gameparams").join("3434526416.json")).unwrap();
+        assert!(cached.contains("__torpedoAmmo"));
+        assert!(cached.contains("PTORP_A"));
         fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -5,10 +5,18 @@
  * is seconds (DPM needs the ×60), and the default_profile carries NO
  * caliber field — the caliber/HE-pen rows only appear via the raw
  * GameParams fallback.
+ *
+ * Submarine coverage: the sonar group reads the raw A_PingerGun block
+ * (WG's `submarine_sonar` profile block answers when the slice is
+ * missing), the battery / underwater-mobility rows ride the WG profile,
+ * and per-type torpedo sections read the `__torpedoAmmo` entities the
+ * slice materializer embeds (shape v2) — falloff tiers on the ×0.03 km
+ * GameParams distance scale (466.7 → 14.0 km) and the ping-response
+ * homing numbers.
  */
 import { describe, expect, it } from "vitest";
 
-import { buildShipSpecs, type Profile, type SpecRow } from "./shipSpecs";
+import { buildShipSpecs, type Profile, type SpecGroup, type SpecRow } from "./shipSpecs";
 
 /** A Mogami-shaped CL profile in the real WG default_profile shape
  *  (no caliber key anywhere — that is the live-data reality). */
@@ -32,10 +40,19 @@ const GAMEPARAMS = {
   A_Artillery: { HP_AGM_1: { barrelDiameter: 0.155, numBarrels: 3 } },
 } as Record<string, unknown>;
 
+function rowOf(groups: SpecGroup[], group: string, key: string): SpecRow | undefined {
+  const g = groups.find((x) => x.group === group);
+  if (!g) return undefined;
+  return (
+    g.rows.find((r) => r.key === key) ??
+    (g.sections ?? [])
+      .flatMap((s) => s.rows)
+      .find((r) => r.key === key)
+  );
+}
+
 function artilleryRow(key: string, gameparams?: Record<string, unknown> | null): SpecRow | undefined {
-  const groups = buildShipSpecs(PROFILE, "japan", gameparams);
-  const group = groups.find((g) => g.group === "artillery");
-  return group?.rows.find((r) => r.key === key);
+  return rowOf(buildShipSpecs(PROFILE, "japan", gameparams), "artillery", key);
 }
 
 /** "141,429" → 141429 (fmtNum is locale-formatted). */
@@ -46,7 +63,7 @@ function asNumber(value: string): number {
 describe("buildShipSpecs main-battery units", () => {
   it("passes WG's burn_probability through as the percentage it already is", () => {
     // 10.0 in the data means 10% — never the 1000% the ×100 path produced.
-    expect(artilleryRow("heFireChance")?.value).toBe("10%");
+    expect(artilleryRow("fireChance")?.value).toBe("10%");
   });
 
   it("computes DPM per minute (damage × barrels × 60 / reload)", () => {
@@ -63,5 +80,176 @@ describe("buildShipSpecs main-battery units", () => {
     // With the raw entry loaded: 0.155 m turrets → 155 mm, IJN HE pen = /6.
     expect(artilleryRow("mainGunCaliber", GAMEPARAMS)?.value).toBe("155 mm");
     expect(artilleryRow("hePenetration", GAMEPARAMS)?.value).toBe("26 mm");
+  });
+
+  it("splits the battery into one section per shell type", () => {
+    const groups = buildShipSpecs(PROFILE, "japan", GAMEPARAMS);
+    const art = groups.find((g) => g.group === "artillery");
+    expect(art?.sections?.map((s) => s.labelKey)).toEqual(["heShell", "apShell"]);
+    // Per-shell damage moved into the sections…
+    expect(rowOf(groups, "artillery", "shellDamage")?.value).toBe("3,300");
+    // …and the shared rows (range / reload / barrels) stay group-level.
+    expect(art?.rows.map((r) => r.key)).toContain("mainGunRange");
+  });
+});
+
+/** U-2501-shaped submarine GameParams entry: a canonical A_PingerGun and
+ *  the shape-v2 __torpedoAmmo embedding (one homing + one straight type,
+ *  the real PGPT021/PGPT043 values). */
+function subGameparams() {
+  return {
+    name: "PGSS110_U_2501",
+    A_PingerGun: {
+      waveDistance: 14000,
+      waveReloadTime: 6,
+      maxWaveHits: 2,
+      waveParams: [{ waveSpeed: [500, 500, 500, 500, 500], visibility: 14 }],
+      sectorParams: [
+        { width: 15, lifetime: 25, alertTime: 11.6 },
+        { width: 15, lifetime: 65, alertTime: 11.6 },
+      ],
+    },
+    A_Torpedoes: {
+      HP_GGT_1: { ammoList: ["PGPT021_G7E_T4_Sub", "PGPT043_G7E_T4_Sub_Magnetic"] },
+    },
+    __torpedoAmmo: {
+      PGPT021_G7E_T4_Sub: {
+        name: "PGPT021_G7E_T4_Sub",
+        typeinfo: { type: "Projectile", species: "Torpedo" },
+        alphaDamage: 23200,
+        speed: 82,
+        maxDist: 466.7,
+        visibilityFactor: 2.2,
+        uwCritical: 0.35,
+        damageCoeffMaxPing: 2,
+        distanceOfDamage: [
+          [83.33, 0.1],
+          [86.66, 1],
+        ],
+        SubmarineTorpedoParams: {
+          yawChangeSpeed: [1.5, 2.5, 2.5],
+          dropTargetAtDistance: {
+            Battleship: [2100, 1600, 1600],
+            Cruiser: [1440, 720, 360],
+            Destroyer: [480, 240, 120],
+            Submarine: [240, 120, 120],
+          },
+        },
+      },
+      PGPT043_G7E_T4_Sub_Magnetic: {
+        name: "PGPT043_G7E_T4_Sub_Magnetic",
+        typeinfo: { type: "Projectile", species: "Torpedo" },
+        alphaDamage: 39300,
+        speed: 62,
+        maxDist: 266.66,
+        visibilityFactor: 1.9,
+        uwCritical: 0.85,
+        distanceOfDamage: [
+          [83.33, 0.1],
+          [86.66, 1],
+        ],
+      },
+    },
+  } as Record<string, unknown>;
+}
+
+/** U-2501-shaped WG default_profile (the real submarine_* blocks). */
+const SUB_PROFILE = {
+  hull: { health: 18900, torpedoes_barrels: 6, artillery_barrels: 0 },
+  torpedoes: {
+    distance: 14,
+    max_damage: 8633,
+    reload_time: 69,
+    torpedo_speed: 77,
+    visibility_dist: 2.1,
+  },
+  submarine_sonar: {
+    wave_max_dist: 14,
+    wave_shot_delay: 7.5,
+    wave_speed_max: 500,
+    wave_width: 15,
+    wave_duration_0: 25,
+    wave_duration_1: 65,
+  },
+  submarine_battery: { max_capacity: 280, consumption_rate: 1, regen_rate: 0.8 },
+  submarine_mobility: { max_speed_under_water: 27, buoyancy_rudder_time: 18.4, max_buoyancy_speed: 3.4 },
+  mobility: { max_speed: 27, rudder_time: 6.8, turning_radius: 420 },
+  concealment: { detect_distance_by_ship: 5.6, detect_distance_by_plane: 2.1, detect_distance_by_submarine: 2.1 },
+} as unknown as Profile;
+
+describe("buildShipSpecs submarine sonar", () => {
+  it("reads the sonar group from the raw A_PingerGun block (top config)", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", subGameparams());
+    expect(rowOf(groups, "sonar", "sonarRange")?.value).toBe("14.0 km");
+    expect(rowOf(groups, "sonar", "sonarReload")?.value).toBe("6.0 s");
+    expect(rowOf(groups, "sonar", "sonarWaveSpeed")?.value).toBe("500 m/s");
+    expect(rowOf(groups, "sonar", "sonarWidth")?.value).toBe("15°");
+    expect(rowOf(groups, "sonar", "sonarMarkTime")?.value).toBe("25 s / 65 s");
+  });
+
+  it("falls back to WG's submarine_sonar profile block without the slice", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", null);
+    expect(rowOf(groups, "sonar", "sonarRange")?.value).toBe("14.0 km");
+    // Stock profile numbers, not the top-config ones (7.5 s reload).
+    expect(rowOf(groups, "sonar", "sonarReload")?.value).toBe("7.5 s");
+    expect(rowOf(groups, "sonar", "sonarMarkTime")?.value).toBe("25 s / 65 s");
+  });
+
+  it("shows no sonar group for surface ships", () => {
+    const groups = buildShipSpecs(PROFILE, "japan", GAMEPARAMS);
+    expect(groups.find((g) => g.group === "sonar")).toBeUndefined();
+  });
+});
+
+describe("buildShipSpecs submarine battery and mobility", () => {
+  it("adds the battery group and underwater-mobility rows from the WG profile", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", subGameparams());
+    expect(rowOf(groups, "battery", "batteryCapacity")?.value).toBe("280");
+    expect(rowOf(groups, "battery", "batteryDrain")?.value).toBe("1.0/s");
+    expect(rowOf(groups, "battery", "batteryRegen")?.value).toBe("0.8/s");
+    expect(rowOf(groups, "mobility", "underwaterSpeed")?.value).toBe("27.0 kn");
+    expect(rowOf(groups, "mobility", "buoyancyRudder")?.value).toBe("18.4 s");
+  });
+});
+
+describe("buildShipSpecs per-type torpedo sections", () => {
+  it("splits homing and straight-running torpedoes into labelled sections", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", subGameparams());
+    const torp = groups.find((g) => g.group === "torpedoes");
+    expect(torp?.sections?.map((s) => s.labelKey)).toEqual([
+      "torpHomingSection",
+      "torpStraightSection",
+    ]);
+    // Group-level rows keep the launcher-level facts (reload / launchers).
+    expect(torp?.rows.map((r) => r.key)).toEqual(["torpReload", "torpLaunchers"]);
+  });
+
+  it("formats the ×0.03 km distance scale and the falloff tiers", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", subGameparams());
+    // 466.7 → 14.0 km (the encyclopedia's 14 km torpedo range).
+    expect(rowOf(groups, "torpedoes", "torpRange")?.value).toBe("14.0 km");
+    // Most subs: ×10% inside ~2.5 km, full damage beyond ~2.6 km.
+    expect(rowOf(groups, "torpedoes", "torpFalloff")?.value).toBe(
+      "2.5 km → 10% · 2.6 km → 100%",
+    );
+  });
+
+  it("reads the ping-response homing numbers on homing sections", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", subGameparams());
+    const homing = groups.find((g) => g.group === "torpedoes")?.sections?.[0];
+    expect(homing?.rows.find((r) => r.key === "torpDoublePing")?.value).toBe("×2");
+    expect(homing?.rows.find((r) => r.key === "torpHomingYaw")?.value).toBe("1.5°/s / 2.5°/s");
+    // Double-ping cut-offs per class, BB / CA / DD / SS order.
+    expect(homing?.rows.find((r) => r.key === "torpHomingCutoff")?.value).toBe(
+      "1.6 / 0.72 / 0.24 / 0.12 km",
+    );
+  });
+
+  it("keeps the WG single-torpedo rows when the slice predates the embedding", () => {
+    const groups = buildShipSpecs(SUB_PROFILE, "germany", { name: "PGSS110_U_2501" });
+    const torp = groups.find((g) => g.group === "torpedoes");
+    expect(torp?.sections).toBeUndefined();
+    expect(torp?.rows.map((r) => r.key)).toContain("torpDamage");
+    expect(rowOf(groups, "torpedoes", "torpRange")?.value).toBe("14.0 km");
   });
 });

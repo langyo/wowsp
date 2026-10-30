@@ -1,5 +1,5 @@
 import { defineComponent, computed, type PropType } from "vue";
-import { Crosshair, Target, Wind, Rocket, Anchor } from "@lucide/vue";
+import { Crosshair, Target, Wind, Rocket, Anchor, Radar } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { resolveShipParts, type ShipParts } from "./shipParts";
@@ -19,7 +19,7 @@ interface WeaponCard {
   count: number;
 }
 
-function cardsOf(groups: WeaponGroup[]): WeaponCard[] {
+function cardsOf(groups: WeaponGroup[], waveKm: number | null): WeaponCard[] {
   const out: WeaponCard[] = [];
   for (const g of groups) {
     switch (g.kind) {
@@ -95,6 +95,16 @@ function cardsOf(groups: WeaponGroup[]): WeaponCard[] {
           count: g.count,
         });
         break;
+      case "sonar":
+        out.push({
+          key: "sonar",
+          icon: Radar,
+          label: t("ships.detail.weapon.sonar"),
+          detail: waveKm != null ? `${waveKm.toFixed(1)} km` : "—",
+          zone: "bow",
+          count: 1,
+        });
+        break;
     }
   }
   return out;
@@ -126,7 +136,14 @@ export default defineComponent({
         ...parts.atba,
         ...parts.artillery,
       ]);
-      return cardsOf(summarizeWeapons(gp, { parts, bandOf }));
+      // Sonar card detail: the pinger wave distance in km (matching the
+      // spec panel's sonar group).
+      const pinger = parts.pinger.find((b) => {
+        const d = Number((b as Record<string, unknown> | null)?.waveDistance ?? 0);
+        return Number.isFinite(d) && d > 0;
+      });
+      const waveKm = pinger ? Number(pinger.waveDistance) / 1000 : null;
+      return cardsOf(summarizeWeapons(gp, { parts, bandOf }), waveKm);
     });
     return () => {
       if (weapons.value.length === 0) return null;

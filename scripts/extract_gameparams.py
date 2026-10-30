@@ -15,6 +15,19 @@ APK embeds a pre-extracted pack under the webui's public dir:
                                                          credit prices
                                                          (double-keyed map)
   packages/webui/src/res/data/gameparams/build.txt       source game build
+  packages/webui/src/res/data/gameparams/slice-format.txt
+                                                         slice payload shape
+                                                         version (mirrors
+                                                         SLICE_FORMAT in
+                                                         commands/gameparams.rs;
+                                                         a mismatch forces a
+                                                         pack re-extract)
+
+Slice payload shape v2 embeds, under "__torpedoAmmo", the torpedo
+Projectile entities the ship's launcher mounts reference via "ammoList"
+(per-type damage, falloff tiers, ping-response homing); v1 slices were the
+bare ship entity. This script and the Rust cache materializer must keep
+the shapes field-for-field interchangeable.
 
 The directory is gitignored (like the GLB pack): it is derived data,
 regenerated from a local extract by the android just recipes before the
@@ -56,6 +69,11 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts" / "extract"))
 from _common import find_game_path, latest_bin_with_idx, run_game_params  # noqa: E402
 from build_techtree import _params_root  # noqa: E402
+
+# Slice payload shape this script writes (must equal SLICE_FORMAT in
+# packages/app/tauri/src/commands/gameparams.rs; the pack stamp makes a
+# shape bump re-extract an otherwise up-to-date pack).
+SLICE_FORMAT = 2
 
 DEFAULT_OUT = ROOT / "packages/webui/src/res/data/gameparams"
 CACHE_DIR = Path(
@@ -106,7 +124,8 @@ def _entities(raw: object) -> list[dict]:
 
 def collect_ship_slices(data: object) -> dict[int, dict]:
     """ship id → the armed ship entity (A_Artillery preferred), mirroring
-    extract_ship_slice's candidate pick."""
+    extract_ship_slice's candidate pick, with the referenced torpedo ammo
+    entities embedded (slice shape v2)."""
     armed_by_id: dict[int, list[dict]] = {}
     for entity in _entities(data):
         typeinfo = entity.get("typeinfo") or {}
@@ -119,11 +138,61 @@ def collect_ship_slices(data: object) -> dict[int, dict]:
             continue
         armed_by_id.setdefault(ship_id, []).append(entity)
 
+    entity_index: dict[str, dict] = {}
+    if isinstance(data, dict):
+        entity_index = {
+            key: value
+            for key, value in data.items()
+            if key != "ships" and isinstance(value, dict)
+        }
+
     slices: dict[int, dict] = {}
     for ship_id, candidates in armed_by_id.items():
         pick = next((c for c in candidates if "A_Artillery" in c), candidates[0])
-        slices[ship_id] = pick
+        slices[ship_id] = embed_torpedo_ammo(pick, entity_index)
     return slices
+
+
+def _is_torpedo_projectile(entity: dict) -> bool:
+    """typeinfo Projectile/Torpedo — shells (species "Shell") and other ammo
+    stay out (same filter as commands/gameparams.rs)."""
+    typeinfo = entity.get("typeinfo")
+    if not isinstance(typeinfo, dict):
+        return False
+    return typeinfo.get("type") == "Projectile" and typeinfo.get("species") == "Torpedo"
+
+
+def _torpedo_ammo_names(entity: dict) -> list[str]:
+    """Ammo entity names referenced by any launcher mount's ammoList
+    (mounts are the HP_* sub-dicts of weapon blocks in real data)."""
+    names: list[str] = []
+    for block in entity.values():
+        if not isinstance(block, dict):
+            continue
+        for mount in block.values():
+            if not isinstance(mount, dict):
+                continue
+            ammo_list = mount.get("ammoList")
+            if not isinstance(ammo_list, list):
+                continue
+            for name in ammo_list:
+                if isinstance(name, str) and name not in names:
+                    names.append(name)
+    return names
+
+
+def embed_torpedo_ammo(entity: dict, entities: dict[str, dict]) -> dict:
+    """Slice shape v2: attach the referenced torpedo Projectile entities
+    under "__torpedoAmmo" (name → entity). Returns the input unchanged when
+    nothing embeds; never mutates the pick (it is shared with the index)."""
+    ammo: dict[str, dict] = {}
+    for name in _torpedo_ammo_names(entity):
+        candidate = entities.get(name)
+        if isinstance(candidate, dict) and _is_torpedo_projectile(candidate):
+            ammo[name] = candidate
+    if not ammo:
+        return entity
+    return {**entity, "__torpedoAmmo": ammo}
 
 
 def _price_cost(entity: dict) -> int | None:
@@ -227,7 +296,12 @@ def main() -> int:
     # the per-ship skip keeps a partial run resumable.
     def pack_complete() -> bool:
         ships = list(out_dir.glob("*.json"))
-        return bool(ships) and (out_dir / "upgrade-prices.json").is_file()
+        if not ships or not (out_dir / "upgrade-prices.json").is_file():
+            return False
+        stamp = out_dir / "slice-format.txt"
+        if not stamp.is_file():
+            return False  # pre-v2 pack: embed the torpedo ammo shape
+        return stamp.read_text(encoding="utf-8").strip() == str(SLICE_FORMAT)
 
     build = resolve_build(args.build, game)
     build_file = out_dir / "build.txt"
@@ -282,6 +356,7 @@ def main() -> int:
     prices = collect_upgrade_prices(data)
     _write_json(out_dir / "upgrade-prices.json", prices, args.pretty)
     _write_json(build_file, build, pretty=False)
+    _write_json(out_dir / "slice-format.txt", SLICE_FORMAT, pretty=False)
 
     raw_total = sum(p.stat().st_size for p in out_dir.glob("*.json"))
     print(

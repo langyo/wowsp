@@ -44,7 +44,8 @@ export type ShipPartRole =
   | "airDefense"
   | "airArmament"
   | "depthCharges"
-  | "airSupport";
+  | "airSupport"
+  | "pinger";
 
 export const SHIP_PART_ROLES: readonly ShipPartRole[] = [
   "hull",
@@ -55,6 +56,7 @@ export const SHIP_PART_ROLES: readonly ShipPartRole[] = [
   "airArmament",
   "depthCharges",
   "airSupport",
+  "pinger",
 ];
 
 /** Resolved component blocks per role, top-configuration or stock. */
@@ -67,6 +69,8 @@ export interface ShipParts {
   airArmament: Gp[];
   depthCharges: Gp[];
   airSupport: Gp[];
+  /** Submarine sonar (pinger) block — the ping weapon's `A_PingerGun`. */
+  pinger: Gp[];
 }
 
 function isDict(v: unknown): v is Record<string, unknown> {
@@ -194,6 +198,7 @@ const CANONICAL_KEYS: Record<ShipPartRole, string[]> = {
   airArmament: ["A_AirArmament"],
   depthCharges: ["A_DepthCharge"],
   airSupport: ["A_AirSupport"],
+  pinger: ["A_PingerGun"],
 };
 
 function blocksFor(gp: Gp, names: string[]): Gp[] {
@@ -239,6 +244,7 @@ const EMPTY_PARTS: ShipParts = {
   airArmament: [],
   depthCharges: [],
   airSupport: [],
+  pinger: [],
 };
 
 /**
@@ -268,6 +274,7 @@ export function resolveShipParts(gp: Gp, config: "stock" | "top" = "top"): ShipP
     airArmament: [],
     depthCharges: [],
     airSupport: [],
+    pinger: [],
   };
   // Legacy fallback: entries whose hull omits a role (or unpacker dumps
   // with stripped hulls) still mounted the canonical block — e.g. the
@@ -318,6 +325,7 @@ function canonicalParts(gp: Record<string, unknown>): ShipParts {
     airArmament: list(gp.A_AirArmament),
     depthCharges: list(gp.A_DepthCharge),
     airSupport: list(gp.A_AirSupport),
+    pinger: list(gp.A_PingerGun),
   };
 }
 
