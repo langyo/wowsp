@@ -183,6 +183,7 @@ def canonical_parts(gp: dict) -> dict[str, Any]:
         "airArmament": lst("A_AirArmament"),
         "depthCharges": lst("A_DepthCharge"),
         "airSupport": lst("A_AirSupport"),
+        "pinger": lst("A_PingerGun"),
     }
 
 

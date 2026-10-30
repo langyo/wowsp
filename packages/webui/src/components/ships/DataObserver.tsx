@@ -201,6 +201,11 @@ export default defineComponent({
                       <span class="do-group__section-label">
                         {t(`ships.spec.${sec.labelKey}`)}
                         {sec.suffix ?? ""}
+                        {sec.hintKey ? (
+                          <span class="do-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
+                            <HelpCircle size={10} />
+                          </span>
+                        ) : null}
                       </span>
                       {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
                     </div>

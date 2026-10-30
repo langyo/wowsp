@@ -48,7 +48,7 @@ export interface SpecRow {
  * divide them with internal separator lines instead of interleaving rows.
  */
 export interface SpecSection {
-  /** i18n key under `ships.spec.section.*` for the block label. */
+  /** i18n key for the block label, resolved under `ships.spec.*`. */
   labelKey: string;
   /** Optional i18n key for a help tooltip explaining the section. */
   hintKey?: string;
@@ -302,8 +302,9 @@ function shellSections(
     if (spd != null) rows.push({ key: "shellSpeed", value: `${spd} ${speedUnit()}` });
     // DPM = perShellDamage × barrels × 60 / reload — reload is seconds, so
     // the ×60 converts to per-minute (a plain damage × barrels / reload
-    // silently showed damage per SECOND).
-    if (barrels != null && reload != null && reload > 0 && dmg) {
+    // silently showed damage per SECOND). Only HE/AP carry DPM rows (the
+    // historic set); SAP / Cruise sections stay without one.
+    if ((key === "HE" || key === "AP") && barrels != null && reload != null && reload > 0 && dmg) {
       const dpm = (Number(dmg.replace(/[^0-9.-]/g, "")) * barrels * 60) / reload;
       rows.push({ key: key === "AP" ? "apDpm" : "heDpm", value: fmtNum(dpm)! });
     }
@@ -452,6 +453,9 @@ function torpedoSections(gameparams: unknown): SpecSection[] {
       }
     }
   }
+  // An empty mounted set (no top torpedo launcher resolved — exotic slice
+  // shapes) deliberately falls back to every embedded entity rather than
+  // dropping the group's per-type detail entirely.
   const sections: SpecSection[] = [];
   for (const [name, entity] of Object.entries(ammo)) {
     if (mounted.size > 0 && !mounted.has(name)) continue;
