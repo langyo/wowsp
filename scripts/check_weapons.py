@@ -162,6 +162,12 @@ def resolve_parts(gp: dict, config: str = "top") -> dict[str, Any]:
             kept = [e for e in kept if not (keys & e[0])]
             kept.append((keys, block))
         parts[role] = [b for _, b in kept]
+    # Single pinger weapon: A1/A2 pinger modules carry no HP_* slots, so the
+    # variant collapse above leaves both — the upgrade order picks top (last)
+    # for "top" and stock (first) for "stock" (mirrors shipParts.ts).
+    pinger = parts.get("pinger") or []
+    if len(pinger) > 1:
+        parts["pinger"] = [pinger[-1] if config == "top" else pinger[0]]
     return parts
 
 

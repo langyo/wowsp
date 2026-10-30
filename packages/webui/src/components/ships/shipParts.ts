@@ -305,6 +305,16 @@ export function resolveShipParts(gp: Gp, config: "stock" | "top" = "top"): ShipP
     }
     parts[role] = blocks;
   }
+  // The pinger is a single weapon, and its A1/A2 upgrade modules carry NO
+  // HP_* slots — collapseVariants cannot see them as variants, so a hull
+  // co-listing both (U-2501, most tech-tree subs: A1 reload 7.5 s vs A2
+  // 6.0 s; British A1 range 9 km vs A2 10 km) would keep both and the
+  // consumers take the FIRST = the STOCK module. The upgrade order picks
+  // the top (last) for "top" config and the stock (first) for "stock",
+  // matching the panel's configuration convention.
+  if (parts.pinger.length > 1) {
+    parts.pinger = [parts.pinger[config === "top" ? parts.pinger.length - 1 : 0]];
+  }
   return parts;
 }
 

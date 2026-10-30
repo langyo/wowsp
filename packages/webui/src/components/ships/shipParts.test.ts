@@ -415,11 +415,52 @@ function submarineLike() {
   } as Record<string, unknown>;
 }
 
+/** A tech-tree sub hull co-listing BOTH pinger upgrade modules: A1 is the
+ *  stock sonar (shorter range / slower reload), A2 the researched top one —
+ *  the shape every US/GER/UK/RU/IT/FR tech-tree sub uses in real data. */
+function submarineWithPingerVariants() {
+  const stock = { waveDistance: 9000, waveReloadTime: 7.5, maxWaveHits: 2 };
+  const top = { waveDistance: 10000, waveReloadTime: 6.0, maxWaveHits: 2 };
+  return {
+    name: "PGSS210_U_2501",
+    A1_PingerGun: stock,
+    A2_PingerGun: top,
+    A1_Torpedoes: { HP_GGT_1: mount(1) },
+    A_Hull: { health: 18900 },
+    ShipUpgradeInfo: {
+      PGUH910_TOP: {
+        ucType: "_Hull",
+        prev: "",
+        components: {
+          hull: ["A_Hull"],
+          torpedoes: ["A1_Torpedoes"],
+          pinger: ["A1_PingerGun", "A2_PingerGun"],
+          artillery: [],
+          airDefense: [],
+          airArmament: [],
+          atba: [],
+        },
+      },
+    },
+  } as Record<string, unknown>;
+}
+
 describe("submarine pinger role", () => {
   it("resolves the pinger block through ShipUpgradeInfo (U-2501 style)", () => {
     const gp = submarineLike();
     const parts = resolveShipParts(gp, "top");
     expect(parts.pinger).toEqual([gp.A_PingerGun]);
+  });
+
+  it("picks the researched pinger module for top and the stock one for stock", () => {
+    // Real ships co-list A1/A2_PingerGun; the modules carry no HP_* slots, so
+    // the variant collapse must be explicit — the FIRST block is the stock
+    // module and would otherwise show its slower reload / shorter range.
+    const gp = submarineWithPingerVariants();
+    expect(resolveShipParts(gp, "top").pinger).toEqual([gp.A2_PingerGun]);
+    expect(resolveShipParts(gp, "stock").pinger).toEqual([gp.A1_PingerGun]);
+    // The sonar weapon group still reports exactly one pinger.
+    expect(summarizeWeapons(gp).filter((g) => g.kind === "sonar")).toHaveLength(1);
   });
 
   it("falls back to the canonical A_PingerGun without upgrade info", () => {
