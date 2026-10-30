@@ -13,6 +13,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { computeSmoothNormals } from "@/features/holographic/smoothNormals";
 import { pruneModelDebris } from "@/features/holographic/debrisPrune";
+import { healAntennaGaps } from "@/features/holographic/antennaHeal";
 import { deinterleaveGeometry } from "@/features/holographic/deinterleave";
 import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
@@ -1147,6 +1148,15 @@ export default defineComponent({
           "tris of", pruned.trianglesBefore,
           pruned.largestDropped.map((d) => `${d.mesh}(${d.triangles}t)`).join(" "),
         );
+      }
+
+      // The bake also drops the thin whip between a masthead and its antenna
+      // pole — the yardarm floats a visible gap above the tower and reads as
+      // a broken mast. Bridge those gaps with a thin tube (in the pole's own
+      // mesh, so it takes the same palette colour) before normals are built.
+      const healed = healAntennaGaps(model);
+      if (import.meta.env.DEV && healed.connectors > 0) {
+        console.log("[holo model] healed", healed.connectors, "antenna gap(s)");
       }
 
       model.traverse((child) => {
