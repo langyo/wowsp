@@ -1,21 +1,23 @@
 /**
- * Probe for the selection edge hint's load-bearing wiring assumption: the
- * rail binds the composable's state as `data-selection-beyond` on the
- * HkScrollContainer COMPONENT, and Vue fallthrough attrs must land it on
- * the container's ROOT — the positioned non-scrolling box the gradient
- * paints on — even though the component `expose()`s a scroll handle
- * (expose does not disable attribute inheritance; only inheritAttrs:false
- * or a multi-root fragment would, and the installed hikari ships neither).
- * If a future hikari rebuild ever breaks that, the hint silently stops
- * painting (the attribute would land nowhere useful) — this turns it red.
+ * Probe for the settings rail's selection edge hint under hikari's own
+ * `selectionHint` prop (adopted from the retired app-local twin once
+ * 0.55.229 shipped the capability upstream): the installed container
+ * mirrors the sensed state as `data-selection-beyond` on its ROOT — the
+ * positioned non-scrolling box the library's painter draws on — so the
+ * app only passes the prop. The structural pins keep the two things the
+ * shell relies on: the mirror lands on the rail root (never on the
+ * scrolling viewport the sensor reads through), and the pane container,
+ * which passes no prop, stays silent.
  *
- * happy-dom performs no layout, so the pass's degenerate read is "none"
- * (its zero boxes report no rendered selection rows). That value alone
- * cannot distinguish "sensed through the real viewport" from "never wired",
- * so the probe also drives a scroll on the real viewport with stubbed band
- * geometry and pins the state flip — end-to-end through the installed
- * container's exposed scroller, its scroll listener, and the fallthrough
- * binding.
+ * happy-dom performs no layout, so the mount pass's degenerate read is
+ * "top": every box is zero and the selected row's zero rect sits at the
+ * zero-height band's top edge (the library writes the mirror itself on
+ * its first sensing pass — the twin's inert rendered "none" is gone with
+ * the fallthrough binding). That value alone cannot distinguish "sensed
+ * through the real viewport" from "mirrored by accident", so the probe
+ * also drives a scroll on the real viewport with stubbed band geometry
+ * and pins the state flip — end-to-end through the installed container's
+ * exposed scroller and its scroll listener.
  */
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
@@ -64,28 +66,33 @@ describe("SettingsShell", () => {
     expect(wrapper.find('[data-test="pane-language"]').exists()).toBe(true);
   });
 
-  it("lands the selection hint state on the rail container ROOT through fallthrough attrs", async () => {
+  it("mirrors the selection hint state on the rail container ROOT only", async () => {
     const wrapper = mountShell();
     // The rail HOST is the element carrying the shell BEM class AND the
-    // container base class — the positioned non-scrolling box.
+    // container base class — the positioned non-scrolling box the
+    // library paints on.
     const rail = wrapper.element.querySelector(".hk-settings__rail") as HTMLElement;
     expect(rail).toBeTruthy();
     expect(rail.classList.contains("hk-scroll-container")).toBe(true);
     expect(rail.tagName).toBe("NAV");
-    // The fallthrough attribute landed on that root, not on the viewport
-    // or nowhere (happy-dom's no-layout degenerate read is "none").
-    expect(rail.getAttribute("data-selection-beyond")).toBe("none");
+    // The library mirrors the sensed state onto that root itself (its
+    // write-on-change contract); happy-dom's no-layout degenerate read
+    // is "top" (see the header note).
+    expect(rail.getAttribute("data-selection-beyond")).toBe("top");
     const viewport = rail.querySelector(".hk-scroll-container-viewport") as HTMLElement;
     expect(viewport).toBeTruthy();
+    // The mirror binds on the container root only — never on the
+    // scrolling viewport the sensor reads through.
     expect(viewport.hasAttribute("data-selection-beyond")).toBe(false);
+    // ...and only the rail opts in: the pane container carries nothing.
     const pane = wrapper.element.querySelector(".hk-settings__pane") as HTMLElement;
     expect(pane.classList.contains("hk-scroll-container")).toBe(true);
     expect(pane.hasAttribute("data-selection-beyond")).toBe(false);
 
-    // End-to-end wiring: stub the band and the active row, scroll the REAL
-    // viewport, and the state must flip on the root — proving the composable
-    // sensed through the container's exposed scroller and its listeners are
-    // bound to that element.
+    // End-to-end: stub the band and the active row, scroll the REAL
+    // viewport, and the mirrored state must flip on the root — the
+    // upstream sensor senses through the exposed scroller and its own
+    // scroll listener.
     const band = { x: 0, y: 0, top: 0, bottom: 400, left: 0, right: 100, width: 100, height: 400 } as DOMRect;
     vi.spyOn(viewport, "getBoundingClientRect").mockReturnValue(band);
     const active = rail.querySelector(".hk-settings__rail-item.is-active") as HTMLElement;
