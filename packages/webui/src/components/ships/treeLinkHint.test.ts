@@ -9,8 +9,10 @@
  *     path (a hover target that opens nothing must not exist);
  *   - the fork hit area: only the distinct post-fork jog + drop is hoverable,
  *     the shared pre-fork stub (the straight continuation's line) is not;
- *   - the future "with required modules" row appears only when the bundle
- *     actually carries a value (null today — the single-row contract).
+ *   - the "with required modules" row appears only when the bundle carries a
+ *     value: absent until a server price-catalog capture is applied, then the
+ *     card grows a second row (the tests assert both states by reading the
+ *     bundle rather than pinning one).
  *
  * Numeric XP is asserted only RELATIONALLY against the accessor (same rule as
  * shipUpgradeChain.test.ts): a future rebalance regenerates the bundles and
@@ -76,8 +78,13 @@ describe("treeLinkResearch", () => {
       const research = treeLinkResearch(MYOKO, MOGAMI, realm);
       expect(research, realm).not.toBeNull();
       expect(research!.xp, realm).toBe(researchOf(MOGAMI, realm)!.xp);
-      // The "with required modules" total has no source yet.
-      expect(research!.xpWithModules, realm).toBeNull();
+      // The "with required modules" total mirrors the bundle: absent until a
+      // server price-catalog capture is applied, then a positive total.
+      const bundleTotal = nextResearch(MYOKO, MOGAMI, realm)?.xpWithModules ?? null;
+      expect(research!.xpWithModules, realm).toBe(bundleTotal);
+      if (research!.xpWithModules !== null) {
+        expect(research!.xpWithModules, realm).toBeGreaterThanOrEqual(research!.xp);
+      }
     }
   });
 
@@ -108,7 +115,7 @@ describe("treeLinkResearch", () => {
 });
 
 describe("treeLinkHintCard", () => {
-  it("builds the shared hint-card shape with one XP row today", () => {
+  it("builds the shared hint-card shape (one XP row, plus the capture row when filled)", () => {
     const raw = treeLinkHintCard(MYOKO, MOGAMI, "wg", { toName: "最上" });
     expect(raw).not.toBeNull();
     const card = hintCardFrom(JSON.parse(raw!));
@@ -118,11 +125,20 @@ describe("treeLinkHintCard", () => {
     expect(card!.badge).toBe("VIII");
     expect(card!.subtitle).toBe(t("ships.type.Cruiser"));
     expect(card!.subtitleFlagUrl).toContain("images/nations_small/japan.webp");
-    expect(card!.rows).toHaveLength(1);
+    // The capture may have filled the "with required modules" total — the
+    // row set is state-aware, never assuming the unfilled bundle.
+    const bundleTotal = nextResearch(MYOKO, MOGAMI, "wg")?.xpWithModules ?? null;
+    expect(card!.rows).toHaveLength(bundleTotal === null ? 1 : 2);
     expect(card!.rows![0]).toEqual({
       label: t("ships.techTree.linkResearchXp"),
       value: researchOf(MOGAMI, "wg")!.xp.toLocaleString(),
     });
+    if (bundleTotal !== null) {
+      expect(card!.rows![1]).toEqual({
+        label: t("ships.techTree.linkResearchWithModules"),
+        value: bundleTotal.toLocaleString(),
+      });
+    }
     // The label really resolved (not an echoed missing-i18n key).
     expect(card!.rows![0].label).not.toContain("ships.techTree");
   });

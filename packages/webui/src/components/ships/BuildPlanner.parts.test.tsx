@@ -162,7 +162,9 @@ describe("BuildPlanner 装备选择 panel", () => {
     expect(wrapper.findAll(".planner-v__parts-tile")).toHaveLength(8);
     const credits = wrapper.findAll(".planner-v__parts-credits");
     expect(credits).toHaveLength(3);
-    for (const credit of credits) expect(credit.text()).toBe("—");
+    // The buy-credit figures come from the server price-catalog capture: an
+    // em dash until the bundle carries them, a grouped number afterwards.
+    for (const credit of credits) expect(credit.text()).toMatch(/^(—|\d[\d,]*)$/);
     // The hull stock anchor is the GameParams stock module.
     const hullCells = rows[0].findAll(".planner-v__parts-cell");
     expect(hullCells[0].attributes("data-module")).toBe("PRUH603_D7_HULL_STOCK_2");
