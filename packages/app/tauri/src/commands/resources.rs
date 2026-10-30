@@ -346,6 +346,10 @@ fn read_json(path: &Path) -> Option<serde_json::Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // The lib-level import strips to what the walk needs; the test fixtures
+    // are the only PathBuf users (clippy's unused-import run and CI's
+    // portable --tests check both compile this module).
+    use std::path::PathBuf;
 
     struct TempDir(PathBuf);
 
