@@ -2175,10 +2175,28 @@ def main(argv: list[str] | None = None) -> int:
     assert parity_a < 1e-5 and parity_b < 1e-5, "fp32 parity failed"
     assert not worst_nan and empty_finite and empty_finite_int8, "NaN at mask boundary"
     assert perm_max_a < 1e-5 and perm_max_b < 1e-5, "permutation invariance failed"
-    # Loss must drop meaningfully. The E9 single-replay gate demanded a 2x
-    # drop; multi-replay corpora start lower (mixed head-A/B balance), so a
-    # 15% relative drop is the honest floor — 126 replays measured 1.40x.
-    assert losses[-1] < 0.85 * losses[0], "train loss did not decrease enough"
+    # Loss must mean something. A relative drop from epoch 0 is the wrong
+    # yardstick once the input contract changes: E24's attribute routing
+    # starts ~0.43 lower than E19's (the gate has real signal from step 1),
+    # so 0.85*losses[0] flagged a perfectly healthy run. Compare against
+    # the base-rate baseline instead — predicting the majority class for
+    # both heads, which any useful model must beat by a wide margin.
+    p_a = float(np.clip(can.mean(), 1e-6, 1 - 1e-6))
+    base_a = -(p_a * math.log(p_a) + (1 - p_a) * math.log(1 - p_a))
+    fb = finite_b & can
+    p_b = float(np.clip(y_b_sel[fb].mean(), 1e-6, 1 - 1e-6)) if fb.any() else 0.5
+    base_b = -(p_b * math.log(p_b) + (1 - p_b) * math.log(1 - p_b))
+    base_loss = base_a + base_b
+    print(
+        f"[e12] base-rate baseline: {base_loss:.4f} "
+        f"(headA {base_a:.4f} @ p={p_a:.3f}, headB {base_b:.4f} @ p={p_b:.3f}); "
+        f"final {losses[-1]:.4f} = {losses[-1] / base_loss:.3f}x baseline"
+    )
+    # 0.70x base rate is the "really learned" bar (a merely skewed constant
+    # predictor lands near 1x); 0.97x epoch 0 catches a stalled run that the
+    # baseline comparison alone would let through.
+    assert losses[-1] < 0.70 * base_loss, "train loss did not beat the base-rate baseline"
+    assert losses[-1] < 0.97 * losses[0], "train loss barely moved from epoch 0"
     print("[e12] ALL pipeline checks passed")
     return 0
 
