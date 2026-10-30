@@ -25,6 +25,16 @@
 //!     copy; a missing or corrupt cache simply means "keep the baked
 //!     asset".
 //!
+//! A SECOND dataset rides the same channel: `ship-gameparams`, both realms'
+//! GameParams slices as a zip (~15 MB, baked by
+//! `scripts/extract/build_shipdata_bundle.py`). It is consumed by
+//! `commands/gameparams.rs` rather than the webui, so the armor/ballistics
+//! tab answers install-less machines from our own server — the shape gate
+//! (`sliceFormat`) lives at that call site. It keeps the kit's contract
+//! (mirror ladder, content sha, sidecar verification, silent degradation)
+//! with its own larger byte cap, and the zip container means a lookup
+//! inflates exactly one ship entry instead of the whole fleet.
+//!
 //! Deliberately NOT part of the resource pack: mixing a few KB of data
 //! into the ~500 MB models archive would churn its content tree hash on
 //! every data tweak (and mobile is full-download-only there), so data
@@ -57,10 +67,25 @@ const DATA_MANIFEST: &str = "wowsp-data.json";
 const KIT_DATASET: &str = "ship-consumable-kit";
 const KIT_FILE: &str = "data-pack/ship-consumable-kit.json";
 const KIT_META: &str = "data-pack/ship-consumable-kit.meta.json";
-/// Sanity cap on a dataset body: the kit is ~15 KB, so anything megabyte
-/// scale means the manifest pointed at the wrong asset — fail the refresh
-/// and keep the cached/bundled copy instead of absorbing it.
+/// Sanity cap on the kit's body: it is ~15 KB, so anything megabyte scale
+/// means the manifest pointed at the wrong asset — fail the refresh and
+/// keep the cached/bundled copy instead of absorbing it.
 const DATASET_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// The second dataset: BOTH realms' GameParams slices as a zip — the
+/// container baked by `scripts/extract/build_shipdata_bundle.py` and
+/// published on this same channel, so the armor/ballistics/sonar data
+/// reaches machines with no install (and both realms) without an app
+/// release. Consumed by `commands/gameparams.rs`, which tries it
+/// before the carried Lesta snapshot and any install.
+const SHIPDATA_DATASET: &str = "ship-gameparams";
+const SHIPDATA_FILE: &str = "data-pack/ship-gameparams.zip";
+const SHIPDATA_META: &str = "data-pack/ship-gameparams.meta.json";
+/// The bundle's manifest entry (slice shape + per-realm build stamps).
+const SHIPDATA_MANIFEST_ENTRY: &str = "manifest.json";
+/// ~15 MB today (1445 ships across both realms); the cap catches a manifest
+/// pointing at the wrong asset while leaving room for fleet growth.
+const SHIPDATA_MAX_BYTES: usize = 64 * 1024 * 1024;
 
 /// The unified download hub's job id for the dataset transfer.
 const JOB_ID: &str = "data-pack";
@@ -266,16 +291,25 @@ pub async fn refresh_data_pack() -> CommandResult<bool> {
         }
         *guard = true;
     }
-    let result = refresh_kit().await;
+    let result = refresh_datasets().await;
     if let Ok(mut guard) = REFRESH_ACTIVE.lock() {
         *guard = false;
     }
     result.map_err(Into::into)
 }
 
-async fn refresh_kit() -> anyhow::Result<bool> {
+/// One pass over every dataset this shell knows. Each lane is independent:
+/// a failure (or a manifest that lacks the dataset) leaves the other lane's
+/// cache and every bundled fallback untouched.
+async fn refresh_datasets() -> anyhow::Result<bool> {
     let client = super::network::build_http_client()?;
     let manifest = fetch_manifest(&client).await?;
+    let mut changed = refresh_kit_dataset(&manifest).await?;
+    changed |= refresh_shipdata_dataset(&manifest).await?;
+    Ok(changed)
+}
+
+async fn refresh_kit_dataset(manifest: &DataManifest) -> anyhow::Result<bool> {
     let entry = match manifest.datasets.get(KIT_DATASET) {
         Some(entry) => entry,
         // A manifest without the kit (older manifest, newer vocabulary)
@@ -322,6 +356,127 @@ async fn refresh_kit() -> anyhow::Result<bool> {
     outcome
 }
 
+/// Download + cache the ship-data bundle when the manifest's copy differs
+/// from the cached one. Same mirror ladder / streaming sha verification /
+/// download-hub queueing as the kit; the cap and timeout are larger because
+/// this dataset IS megabytes, not the kit's few KB. Every failure degrades
+/// to the carried Lesta snapshot and the install chain.
+async fn refresh_shipdata_dataset(manifest: &DataManifest) -> anyhow::Result<bool> {
+    let Some(entry) = manifest.datasets.get(SHIPDATA_DATASET) else {
+        // A manifest without the bundle (older manifest, newer vocabulary)
+        // is not an error — the carried snapshot simply stays.
+        return Ok(false);
+    };
+    if shipdata_is_current(entry)? {
+        return Ok(false);
+    }
+    // The asset name becomes a URL path segment under data-latest.
+    if !release_digest::is_plain_segment(&entry.asset) {
+        bail!(
+            "data pack manifest names an invalid asset {:?}",
+            entry.asset
+        );
+    }
+    let url = data_url(&entry.asset);
+    let part = appdata::appdata_dir_path()?.join(format!("{SHIPDATA_FILE}.part"));
+    let done = download_hub::transfer(
+        None,
+        DownloadRequest {
+            expected_sha256: Some(entry.sha256.clone()),
+            timeout: Some(std::time::Duration::from_secs(600)),
+            max_bytes: Some(SHIPDATA_MAX_BYTES as u64),
+            ..DownloadRequest::new(
+                JOB_ID,
+                wowsp_tauri_shared::download::kind::DATA_PACK,
+                super::github_mirror::candidates(&url),
+                part,
+            )
+        },
+    )
+    .await?;
+    let bytes = tokio::fs::read(&done.path)
+        .await
+        .map_err(|e| anyhow!("read {}: {e}", done.path.display()))?;
+    let outcome = install_shipdata(&bytes, entry);
+    let _ = tokio::fs::remove_file(&done.path).await;
+    outcome
+}
+
+/// Whether the cached bundle already carries the manifest's content.
+fn shipdata_is_current(entry: &DatasetEntry) -> anyhow::Result<bool> {
+    let dir = appdata::appdata_dir_path()?;
+    Ok(shipdata_meta_in(&dir)?.is_some_and(|m| m.sha256.eq_ignore_ascii_case(&entry.sha256)))
+}
+
+/// The cached bundle's sidecar (None when absent or unparsable).
+fn shipdata_meta_in(dir: &Path) -> anyhow::Result<Option<KitMeta>> {
+    Ok(
+        fs::read_to_string(appdata::data_file_path(dir, SHIPDATA_META)?)
+            .ok()
+            .and_then(|raw| serde_json::from_str::<KitMeta>(&raw).ok()),
+    )
+}
+
+/// The verified bundle path (sidecar present AND the body's sha matching),
+/// or None for "no cache / corrupt cache" — every caller then degrades.
+///
+/// The body is re-hashed per call (~15 MB, tens of milliseconds) rather
+/// than memoized: a cache keyed on the sidecar cannot see a body replaced
+/// or corrupted behind it, and a ship lookup is not a hot enough path to
+/// trade that detection away.
+fn shipdata_path_in(dir: &Path) -> anyhow::Result<Option<std::path::PathBuf>> {
+    let Some(meta) = shipdata_meta_in(dir)? else {
+        return Ok(None);
+    };
+    let path = appdata::data_file_path(dir, SHIPDATA_FILE)?;
+    let bytes = match fs::read(&path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(anyhow!("read {SHIPDATA_FILE}: {e}")),
+    };
+    if !meta.sha256.eq_ignore_ascii_case(&sha256_hex(&bytes)) {
+        return Ok(None);
+    }
+    Ok(Some(path))
+}
+
+/// Read one entry out of the verified bundle as JSON. None (never an error
+/// callers must handle specially) when the bundle or the entry is absent,
+/// so a ship that predates the bundle simply falls through.
+fn bundle_entry(root: &Path, name: &str) -> anyhow::Result<Option<serde_json::Value>> {
+    use std::io::Read as _;
+
+    let Some(path) = shipdata_path_in(root)? else {
+        return Ok(None);
+    };
+    let file = fs::File::open(&path).map_err(|e| anyhow!("open {}: {e}", path.display()))?;
+    let mut zip =
+        zip::ZipArchive::new(file).map_err(|e| anyhow!("read {}: {e}", path.display()))?;
+    let mut entry = match zip.by_name(name) {
+        Ok(entry) => entry,
+        Err(zip::result::ZipError::FileNotFound) => return Ok(None),
+        Err(e) => return Err(anyhow!("read {name} from ship-data bundle: {e}")),
+    };
+    let mut text = String::new();
+    entry
+        .read_to_string(&mut text)
+        .map_err(|e| anyhow!("read {name} from ship-data bundle: {e}"))?;
+    Ok(serde_json::from_str(&text).ok())
+}
+
+/// The cached bundle's manifest — slice shape plus per-realm build stamps.
+/// The consumer gates on `sliceFormat` before
+/// trusting any entry (see commands/gameparams.rs).
+pub(crate) fn shipdata_manifest() -> anyhow::Result<Option<serde_json::Value>> {
+    bundle_entry(&appdata::appdata_dir_path()?, SHIPDATA_MANIFEST_ENTRY)
+}
+
+/// The cached bundle's slice for one ship id — the entry point
+/// `commands/gameparams.rs` consumes.
+pub(crate) fn shipdata_slice(ship_id: i64) -> anyhow::Result<Option<serde_json::Value>> {
+    bundle_entry(&appdata::appdata_dir_path()?, &format!("{ship_id}.json"))
+}
+
 /// Verify a downloaded body against the manifest sha and install it into
 /// the AppData cache. The sha check is the gate: a mirror that serves
 /// garbage (or an asset name collision) fails here and the cached /
@@ -354,6 +509,32 @@ fn install_kit_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> anyhow::Res
     })
     .map_err(|e| anyhow!("serialize kit meta: {e}"))?;
     appdata::write_json_in(dir, KIT_META, &meta)?;
+    Ok(true)
+}
+
+/// Install the ship-data bundle: the body is BINARY (a zip), so it lands
+/// through the byte writer; the sidecar write order is the same as the
+/// kit's (body first, sidecar second) so a crash between the two reads as
+/// corrupt during verification, never as a new body with an old hash.
+fn install_shipdata(bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
+    install_shipdata_in(&appdata::appdata_dir_path()?, bytes, entry)
+}
+
+fn install_shipdata_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
+    let sha = sha256_hex(bytes);
+    if !sha.eq_ignore_ascii_case(&entry.sha256) {
+        bail!(
+            "asset sha mismatch: manifest {} vs downloaded {sha}",
+            entry.sha256
+        );
+    }
+    appdata::write_bytes_in(dir, SHIPDATA_FILE, bytes)?;
+    let meta = serde_json::to_string(&KitMeta {
+        sha256: sha.to_ascii_lowercase(),
+        version: entry.version.clone(),
+    })
+    .map_err(|e| anyhow!("serialize ship-data meta: {e}"))?;
+    appdata::write_json_in(dir, SHIPDATA_META, &meta)?;
     Ok(true)
 }
 
@@ -449,6 +630,76 @@ mod tests {
             asset: format!("ship-consumable-kit-{}.json", &sha[..8.min(sha.len())]),
             size: 15_453,
         }
+    }
+
+    // ── ship-data bundle (second dataset) ─────────────────────────────
+
+    /// A bundle in the baked shape: manifest entry + one JSON per ship.
+    fn shipdata_zip(slice_ids: &[i64], slice_format: u64) -> Vec<u8> {
+        use std::io::Write as _;
+
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let options = zip::write::SimpleFileOptions::default();
+            let manifest = serde_json::json!({
+                "format": 1,
+                "sliceFormat": slice_format,
+                "realms": {},
+                "totalShips": slice_ids.len(),
+            });
+            writer.start_file(SHIPDATA_MANIFEST_ENTRY, options).unwrap();
+            writer.write_all(manifest.to_string().as_bytes()).unwrap();
+            for id in slice_ids {
+                writer.start_file(format!("{id}.json"), options).unwrap();
+                writer
+                    .write_all(format!("{{\"id\":{id},\"name\":\"ship{id}\"}}").as_bytes())
+                    .unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
+
+    fn shipdata_entry(sha: &str, size: usize) -> DatasetEntry {
+        DatasetEntry {
+            version: "2026-10-30T00:00:00Z".into(),
+            sha256: sha.into(),
+            asset: format!("ship-gameparams-{}.zip", &sha[..8.min(sha.len())]),
+            size: size as u64,
+        }
+    }
+
+    #[test]
+    fn shipdata_bundle_round_trips_and_verifies() {
+        let fixture = KitFixture::new();
+        let bytes = shipdata_zip(&[1001, 1002], 2);
+        let entry = shipdata_entry(&sha256_hex(&bytes), bytes.len());
+        install_shipdata_in(&fixture.0, &bytes, &entry).unwrap();
+
+        assert!(shipdata_path_in(&fixture.0).unwrap().is_some());
+        let manifest = bundle_entry(&fixture.0, SHIPDATA_MANIFEST_ENTRY)
+            .unwrap()
+            .unwrap();
+        assert_eq!(manifest["sliceFormat"], serde_json::json!(2));
+        let slice = bundle_entry(&fixture.0, "1002.json").unwrap().unwrap();
+        assert_eq!(slice["name"], serde_json::json!("ship1002"));
+        // An id outside the bundle is "absent", not an error.
+        assert!(bundle_entry(&fixture.0, "9999.json").unwrap().is_none());
+
+        // A body replaced behind its sidecar must read as "no cache".
+        fs::write(fixture.0.join(SHIPDATA_FILE), b"tampered").unwrap();
+        assert!(shipdata_path_in(&fixture.0).unwrap().is_none());
+        assert!(bundle_entry(&fixture.0, "1002.json").unwrap().is_none());
+    }
+
+    #[test]
+    fn shipdata_install_rejects_a_sha_mismatch() {
+        let fixture = KitFixture::new();
+        let bytes = shipdata_zip(&[1001], 2);
+        let entry = shipdata_entry(&"0".repeat(64), bytes.len());
+        assert!(install_shipdata_in(&fixture.0, &bytes, &entry).is_err());
+        assert!(!fixture.0.join(SHIPDATA_FILE).exists());
     }
 
     #[test]

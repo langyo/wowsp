@@ -12,6 +12,12 @@ use std::sync::Mutex;
 static REPLACE_GATE: Mutex<()> = Mutex::new(());
 
 pub(crate) fn write(path: &Path, content: &str) -> Result<()> {
+    write_bytes(path, content.as_bytes())
+}
+
+/// Binary sibling of `write` — the same temp-file + gated-rename
+/// contract for payloads that are not text (the ship-data bundle is a zip).
+pub(crate) fn write_bytes(path: &Path, content: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .ok_or_else(|| anyhow!("data file has no parent"))?;
@@ -24,7 +30,7 @@ pub(crate) fn write(path: &Path, content: &str) -> Result<()> {
         .create_new(true)
         .open(&tmp)
         .map_err(|e| anyhow!("create {tmp:?}: {e}"))?;
-    let result = file.write_all(content.as_bytes());
+    let result = file.write_all(content);
     drop(file);
     let result = result
         .map_err(|e| anyhow!("write {tmp:?}: {e}"))
