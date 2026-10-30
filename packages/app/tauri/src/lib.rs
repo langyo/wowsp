@@ -69,12 +69,14 @@ pub fn run() {
     // settings' 问题反馈 section ships (see src/logging.rs).
     logging::init();
 
-    // Conditional WebView2 GPU switch (webview_args): sets the
-    // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS env var only on machines with a
-    // hardware discrete GPU, BEFORE any webview — and therefore any WebView2
-    // environment — exists. Must stay this early; see webview_args.rs for
-    // the 156 frozen-animations incident and the accepted degradations.
-    webview_args::apply_gpu_switch();
+    // Conditional WebView2 arguments (webview_args): composes
+    // WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS once — the high-performance GPU
+    // switch on switchable-graphics machines, and the manual-proxy mirror
+    // (Settings → Network manual mode) — BEFORE any webview, and therefore
+    // any WebView2 environment, exists. Must stay this early; see
+    // webview_args.rs for the 156 frozen-animations incident and the
+    // accepted degradations.
+    webview_args::apply_webview_args();
 
     // Elevated hardware-snapshot helper (commands::hardware_info): when the
     // feedback export needs administrator-only rows, the app relaunches

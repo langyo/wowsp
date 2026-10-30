@@ -9,15 +9,28 @@
 //! `--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection` plus —
 //! deliberately restored — `--autoplay-policy=no-user-gesture-required`
 //! (wry's out-of-box default; the former static override suppressed it,
-//! which only ever mattered as a permission, not an autoplay trigger). The
-//! only per-machine argument is the high-performance-GPU switch, applied
-//! ONCE per process through the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
-//! environment variable ([apply_gpu_switch]) when — and only when — the
-//! machine reports switchable graphics (two or more hardware display
-//! adapters, [has_switchable_graphics]). The env var is process-wide, so
-//! the identical-args rule for webviews sharing one user-data folder
-//! (tauri-utils) holds no matter which windows exist or when they are
-//! created.
+//! which only ever mattered as a permission, not an autoplay trigger).
+//!
+//! The per-machine arguments ride ONE process-wide channel — the
+//! `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` environment variable, composed
+//! once by [apply_webview_args]:
+//!
+//! - the high-performance-GPU switch, when — and only when — the machine
+//!   reports switchable graphics (two or more hardware display adapters,
+//!   [has_switchable_graphics]);
+//! - the manual-proxy mirror: in Settings → Network "manual" mode the
+//!   same proxy URL the Rust stack uses is pinned into the WebView2
+//!   network stack ([webview_proxy_flag]), so the webview's own remote
+//!   surface (GA telemetry, the gateway's Turnstile frame) stops
+//!   following a possibly-broken system proxy while the app itself
+//!   talks through the manual one. Chromium arguments are frozen when
+//!   the browser process starts, so a proxy change applies on the next
+//!   launch; elevated sessions ignore the env var entirely (both are
+//!   documented WebView2 behaviours).
+//!
+//! The env var is process-wide, so the identical-args rule for webviews
+//! sharing one user-data folder (tauri-utils) holds no matter which
+//! windows exist or when they are created.
 //!
 //! ## Why conditional at all: the 156 incident, and what the switch is
 //!
@@ -76,9 +89,11 @@
 //!   [apply_gpu_switch]'s call in `run()` is a one-line hotfix.
 
 /// The environment variable WebView2 reads for extra browser arguments.
-/// Documented end-user/debug channel; the app only ever SETS it when the
-/// machine qualifies for the GPU switch, and leaves user-set values alone.
-const GPU_SWITCH_ENV: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
+/// Documented end-user/debug channel. The app writes it ONCE per process
+/// ([apply_webview_args]) with the composed set — the conditional GPU
+/// switch and, in manual-proxy mode, the WebView2 proxy mirror — and
+/// leaves a user-set value alone.
+const WEBVIEW_ARGS_ENV: &str = "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS";
 
 const GPU_SWITCH_FLAG: &str = "--force-high-performance-gpu";
 
@@ -156,21 +171,50 @@ fn is_hardware_gpu(vendor_id: u32, name: &str) -> bool {
     !VIRTUAL_ADAPTER_MARKERS.iter().any(|m| lower.contains(m))
 }
 
-/// Set [GPU_SWITCH_ENV] when this machine reports switchable graphics.
-/// Called once from [crate::run] before any webview (and therefore any
-/// WebView2 environment) exists. A user-set value is respected and left
-/// untouched — the env var is the documented end-user override channel.
-/// Detection runs on a side thread with a hard deadline (DXGI needs a COM
-/// apartment on the calling thread and can be slow right after boot); on
-/// timeout the switch is simply not applied — the default-adapter fallback
-/// is always safe.
-pub fn apply_gpu_switch() {
-    if std::env::var_os(GPU_SWITCH_ENV).is_some() {
-        tracing::info!("webview args: {GPU_SWITCH_ENV} already set by the user, leaving as-is");
+/// Compose and set [WEBVIEW_ARGS_ENV] once, from [crate::run], before any
+/// webview (and therefore any WebView2 environment) exists. Two
+/// contributors, both conditional:
+///
+/// - the high-performance GPU switch, on machines with switchable
+///   graphics (detection runs on a side thread with a hard deadline —
+///   DXGI needs a COM apartment on the calling thread and can be slow
+///   right after boot; on timeout the switch is simply not applied and
+///   the default-adapter fallback stays safe);
+/// - the WebView2 proxy mirror: in manual-proxy mode the SAME proxy URL
+///   the Rust stack uses is pinned into the WebView2 network stack (the
+///   GA/Turnstile surface would otherwise keep following a possibly
+///   broken system proxy while the app itself talks through the manual
+///   one). Chromium args are process-wide and frozen when the browser
+///   process starts, so a proxy change takes effect on the next launch,
+///   and the env var is ignored in elevated sessions (both documented
+///   WebView2 behaviours).
+///
+/// A user-set value is respected and left untouched — the env var is the
+/// documented end-user override channel. Both contributors share it so
+/// every webview over the one user-data folder keeps byte-identical
+/// arguments, which wry/WebView2 require.
+pub fn apply_webview_args() {
+    if std::env::var_os(WEBVIEW_ARGS_ENV).is_some() {
+        tracing::info!("webview args: {WEBVIEW_ARGS_ENV} already set by the user, leaving as-is");
         return;
     }
-    if !detect_switchable_graphics() {
+    let mut args: Vec<String> = Vec::new();
+    if detect_switchable_graphics() {
+        args.push(GPU_SWITCH_FLAG.to_string());
+        tracing::info!("webview args: switchable graphics detected, high-performance switch on");
+    } else {
         tracing::debug!("webview args: no switchable graphics, high-performance switch off");
+    }
+    match webview_proxy_flag() {
+        Some(flag) => {
+            // The URL itself is not logged: a manual proxy may embed
+            // credentials. The fact is enough for a support log.
+            tracing::info!("webview args: manual proxy mirrored into the WebView2 network stack");
+            args.push(flag);
+        },
+        None => tracing::debug!("webview args: no WebView2 proxy mirror in effect"),
+    }
+    if args.is_empty() {
         return;
     }
     // SAFETY: single environment mutation during early startup, before the
@@ -178,10 +222,61 @@ pub fn apply_gpu_switch() {
     // nothing else in the process reads the env concurrently at this point.
     // WebView2's own loader reads the variable natively when it later
     // creates the browser process.
-    unsafe { std::env::set_var(GPU_SWITCH_ENV, GPU_SWITCH_FLAG) };
-    tracing::info!(
-        "webview args: switchable graphics detected, {GPU_SWITCH_ENV}={GPU_SWITCH_FLAG}"
-    );
+    unsafe { std::env::set_var(WEBVIEW_ARGS_ENV, args.join(" ")) };
+}
+
+/// The WebView2 proxy flag for the current policy: Some("--proxy-server=…")
+/// only in manual mode with a usable URL. System mode needs no mirror (the
+/// webview already follows the OS proxy), and none mode deliberately leaves
+/// the webview on the OS resolution: the WebView2 channel has no "strictly
+/// direct" switch short of the debug-class `--no-proxy-server` hammer, and
+/// the app's own data path is direct either way.
+fn webview_proxy_flag() -> Option<String> {
+    let config = crate::commands::network::load_config();
+    if config.mode != crate::commands::network::ProxyMode::Manual {
+        return None;
+    }
+    let url = crate::commands::network::effective_proxy(&config)?;
+    chromium_proxy_flag(&url)
+}
+
+/// Translate a manual proxy URL into a Chromium `--proxy-server=` flag.
+///
+/// Chromium's proxy URL syntax overlaps curl's but not exactly: the scheme
+/// must be one Chromium knows (http/https/socks5; the curl-only `socks5h`
+/// spelling means socks5 with remote DNS, which is what Chromium's socks5
+/// always does), and inline credentials are NOT supported there — reqwest
+/// uses them for the Rust stack, but Chromium would try to connect to a
+/// host literally named `user:pass@host`, so the userinfo is stripped here.
+/// A credentialed manual proxy therefore keeps working for the app's own
+/// traffic and silently drops the webview's (unauthenticated) GA/Turnstile
+/// surface — the diagnostics panel is where that shows up.
+fn chromium_proxy_flag(url: &str) -> Option<String> {
+    chromium_proxy_url(url).map(|u| format!("--proxy-server={u}"))
+}
+
+/// The URL half of [chromium_proxy_flag] — pure and unit-tested.
+fn chromium_proxy_url(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let (scheme, rest) = trimmed.split_once("://")?;
+    let scheme = match scheme.to_ascii_lowercase().as_str() {
+        "http" => "http",
+        "https" => "https",
+        "socks5" | "socks5h" => "socks5",
+        _ => return None,
+    };
+    // Drop inline credentials: the authority ends at the first '/', '?'
+    // or '#', and the userinfo (if any) precedes the last '@' inside it.
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let (authority, tail) = rest.split_at(authority_end);
+    let host = match authority.rsplit_once('@') {
+        Some((_, host)) => host,
+        None => authority,
+    };
+    if host.is_empty() {
+        return None;
+    }
+    Some(format!("{scheme}://{host}{tail}"))
 }
 
 #[cfg(windows)]
@@ -278,6 +373,41 @@ mod tests {
             name: name.into(),
             vendor_id,
         }
+    }
+
+    /// The Chromium translation: known schemes only, socks5h folded onto
+    /// socks5, and inline credentials stripped (Chromium cannot dial them).
+    #[test]
+    fn chromium_proxy_url_maps_schemes_and_strips_credentials() {
+        assert_eq!(
+            chromium_proxy_url("http://user:pass@127.0.0.1:7890"),
+            Some("http://127.0.0.1:7890".to_string())
+        );
+        assert_eq!(
+            chromium_proxy_url("socks5h://127.0.0.1:1080"),
+            Some("socks5://127.0.0.1:1080".to_string())
+        );
+        assert_eq!(
+            chromium_proxy_url("socks5://127.0.0.1:1080"),
+            Some("socks5://127.0.0.1:1080".to_string())
+        );
+        assert_eq!(
+            chromium_proxy_url("https://proxy.example:8443"),
+            Some("https://proxy.example:8443".to_string())
+        );
+        assert_eq!(
+            chromium_proxy_url("http://user:pa@ss@127.0.0.1:7890").as_deref(),
+            Some("http://127.0.0.1:7890"),
+            "the LAST '@' separates credentials from the host"
+        );
+        assert_eq!(chromium_proxy_url("   "), None);
+        assert_eq!(chromium_proxy_url("not-a-url"), None);
+        assert_eq!(chromium_proxy_url("ftp://host:21"), None);
+        assert_eq!(
+            chromium_proxy_flag("http://127.0.0.1:7890").as_deref(),
+            Some("--proxy-server=http://127.0.0.1:7890")
+        );
+        assert_eq!(chromium_proxy_flag(""), None);
     }
 
     #[test]
