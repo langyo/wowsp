@@ -44,9 +44,11 @@ describe("StatsCard karma superscript", () => {
     statsPrefsState.value.cardKarmaEnabled = true;
     const badge = mountCard().find(".id-head__karma");
     expect(badge.exists()).toBe(true);
-    expect(badge.classes()).toContain("karma-sup");
-    expect(badge.classes()).toContain("karma-sup--pos");
-    expect(badge.text()).toBe("+12");
+    // The figure renders PLAIN — the number as answered, no "+" and no
+    // value-based sign classes (karma only ever carries positives and 0);
+    // id-head__karma is the card head's own surface class.
+    expect(badge.classes()).toEqual(["karma-sup", "id-head__karma"]);
+    expect(badge.text()).toBe("12");
   });
 
   it("hides the badge when the card-karma pref is off", () => {
@@ -60,13 +62,15 @@ describe("StatsCard karma superscript", () => {
     expect(wrapper.find(".id-head__karma").exists()).toBe(false);
   });
 
-  it("keeps zero and negative figures visible with their sign classes", () => {
+  it("keeps every figure on the one neutral face — zero included, no banding", () => {
     statsPrefsState.value.cardKarmaEnabled = true;
     const zero = mountCard({ ...STATS, karma: 0 } as PlayerStats).find(".id-head__karma");
-    expect(zero.classes()).toContain("karma-sup--zero");
+    expect(zero.classes()).toEqual(["karma-sup", "id-head__karma"]);
     expect(zero.text()).toBe("0");
+    // Defensive shape: a weird payload carrying a negative still renders
+    // the plain figure — the badge never invents sign emphasis or colors.
     const neg = mountCard({ ...STATS, karma: -3 } as PlayerStats).find(".id-head__karma");
-    expect(neg.classes()).toContain("karma-sup--neg");
+    expect(neg.classes()).toEqual(["karma-sup", "id-head__karma"]);
     expect(neg.text()).toBe("-3");
   });
 });

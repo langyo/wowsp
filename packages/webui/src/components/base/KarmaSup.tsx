@@ -11,11 +11,13 @@ import "./KarmaSup.scss";
  * on every surface (the user's requested placement — a raised index figure,
  * not a stat column).
  *
- * Renders NOTHING while the value is null/undefined: karma is absent on
- * hidden profiles, on answers older than the field (session caches, replay
- * snapshots), and for bots — a missing figure must not paint a misleading
- * "0". Positive counts tint green and carry an explicit "+", negative ones
- * red, zero stays muted (zero is a real verdict and keeps rendering).
+ * The figure renders PLAIN — the number exactly as the API answers it, no
+ * sign and no value-based color: karma only ever carries positive counts
+ * and 0, so a "+" prefix or a green/red banding would be invented
+ * emphasis (user feedback). Renders NOTHING while the value is
+ * null/undefined: karma is absent on hidden profiles, on answers older
+ * than the field (session caches, replay snapshots), and for bots — a
+ * missing figure must not paint a misleading "0".
  */
 export default defineComponent({
   name: "KarmaSup",
@@ -27,13 +29,9 @@ export default defineComponent({
     return () => {
       const v = props.value;
       if (v == null) return null;
-      const sign = v > 0 ? "--pos" : v < 0 ? "--neg" : "--zero";
       return (
-        <sup
-          class={["karma-sup", `karma-sup${sign}`]}
-          data-hint={`${t("common.karma")}: ${v.toLocaleString()}`}
-        >
-          {v > 0 ? `+${v}` : `${v}`}
+        <sup class="karma-sup" data-hint={`${t("common.karma")}: ${v}`}>
+          {v}
         </sup>
       );
     };
