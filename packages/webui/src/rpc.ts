@@ -129,6 +129,7 @@ export const RPC = {
   data_pack_info: "data_pack_info",
   get_ship_kit: "get_ship_kit",
   refresh_data_pack: "refresh_data_pack",
+  resources_status: "resources_status",
   ensure_res_pack: "ensure_res_pack",
   res_cache_root: "res_cache_root",
   res_report_bundled: "res_report_bundled",

@@ -87,6 +87,26 @@ export interface AuxCacheStatus {
 }
 
 // ── Unified download-progress bus ─────────────────────────────────────────
+/** One row of the resource registry walk (`commands/resources.rs`):
+ *  the declarative spec (channel / trigger / progress bus) joined with the
+ *  resource's current on-disk state. Read-only overview — each resource's
+ *  management actions live in its own settings card. */
+export interface ResourceStatusRow {
+  id: string;
+  kind: "update" | "pack" | "dataset" | "index" | "cache" | "bundled";
+  /** Signed digest channel on the pairing relay ("" when none). */
+  channel: string;
+  trigger: string;
+  /** Download-progress bus kind ("" = silent). */
+  progress: string;
+  present: boolean;
+  version?: string | null;
+  sha256?: string | null;
+  sizeBytes: number;
+  /** cache | data | bundled | "". */
+  root: string;
+}
+
 // One transport listener for `wowsp://download-progress`, fanned out to
 // every subscriber: stores each register a filter, and no context ever
 // listens on a second channel. In browser dev mode (no transport.listen)
@@ -154,6 +174,9 @@ export const resPackApi = {
   auxCacheOverview: () => transport.invoke<AuxCacheStatus[]>(RPC.aux_cache_overview),
   /** Wipe one auxiliary cache directory's contents. */
   clearAuxCache: (scope: string) => transport.invoke<null>(RPC.clear_aux_cache, { scope }),
+  /** The aggregated registry walk: one row per runtime-managed resource
+   *  (spec fields + on-disk state). Powers the resources inventory. */
+  resourcesStatus: () => transport.invoke<ResourceStatusRow[]>(RPC.resources_status),
   /** The ONE resource-download progress stream
    *  (`wowsp://download-progress`). Registers exactly one transport
    *  listener process-wide and fans every tick out to the subscribers —

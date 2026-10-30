@@ -203,6 +203,7 @@ pub mod release_digest;
 pub mod replay;
 pub mod replay_probe;
 pub mod res_mods;
+pub mod resources;
 #[cfg(desktop)]
 pub mod screenshot;
 // Session hub: the Rust-side source of truth for "what is running / who is

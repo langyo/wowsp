@@ -599,6 +599,39 @@
     font-weight: 600;
   }
 
+  /* ── resource inventory (the registry walk, Settings → resources) ── */
+  &__res-inv {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  &__res-inv-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    font-size: var(--text-xs);
+  }
+
+  &__res-inv-name {
+    color: rgb(var(--color-text));
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  &__res-inv-meta {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-2xs);
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   /* ── phone pairing (desktop server side) ── */
   &__pairing-busy {
     display: flex;
