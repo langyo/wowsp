@@ -37,7 +37,8 @@ use chrono::{Datelike, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use wowsp_tauri_shared::{
     CommandResult, GameInstall, PlaytimeBattle, PlaytimeBattles, PlaytimeDay, PlaytimeLaunch,
-    PlaytimeOverview, PlaytimeSource, ReplayMetaLite,
+    PlaytimeOverview, PlaytimeSource, ReplayMetaLite, ReplayPlayerCandidate,
+    ReplayPlayerCandidates,
 };
 
 /// The ledger file under the AppData root (atomic writes via the shared
@@ -831,17 +832,118 @@ fn retain_own_battles(battles: Vec<PlaytimeBattle>) -> Vec<PlaytimeBattle> {
         .collect()
 }
 
-/// The blocking core both ledger commands share: load the cache, scan the
-/// roots, answer the rows (and write the cache back only when it changed).
-fn scan_battles() -> Result<PlaytimeBattles> {
+/// The blocking core of the battle scans: load the cache, walk every
+/// root, answer the RAW rows — unfiltered, so a fold that needs ALL
+/// recorder identities (the onboarding candidates below) sees every
+/// player, not just the machine owner's. Also writes the cache back only
+/// when the scan changed it, exactly like the ledger answer path.
+fn scan_all_battles() -> Result<Vec<PlaytimeBattle>> {
     let dir = super::appdata::appdata_dir_path()?;
     let battles = scan_battle_cache_in(&dir, |cache| {
         let roots = super::game_context::replay_roots();
         battles_from_roots(&roots, cache)
     })?
     .battles;
-    let battles = retain_own_battles(battles);
+    Ok(battles)
+}
+
+/// The blocking core both ledger commands share: the raw scan with the
+/// owner filter applied for the playtime answer.
+fn scan_battles() -> Result<PlaytimeBattles> {
+    let battles = retain_own_battles(scan_all_battles()?);
     Ok(PlaytimeBattles { battles })
+}
+
+/// Fold the RAW battle rows into the onboarding candidates: one
+/// `(realm, nickname)` group per player the local replays testify was
+/// logged in on this machine. Rows vote only under the same evidence rule
+/// [`own_recorders`] uses for the playtime ledger — a detected install's
+/// OWN `replays/` folder (kind set), with the realm resolved — because a
+/// pinned archive of someone else's replays is not local-login evidence.
+/// Bot / scripted-unit nicknames never vote (a real recorder is a human),
+/// and rows the header parse degraded to nameless never do either.
+fn candidates_from_battles(battles: &[PlaytimeBattle]) -> Vec<ReplayPlayerCandidate> {
+    /// Accumulator per `(realm, nickname)` group.
+    struct Tally {
+        battles: u32,
+        last: Option<String>,
+    }
+    let mut tallies: BTreeMap<(String, String), Tally> = BTreeMap::new();
+    for b in battles {
+        if b.kind.is_none() {
+            continue;
+        }
+        let Some(realm) = b.realm.as_deref().filter(|r| !r.is_empty()) else {
+            continue;
+        };
+        let Some(name) = b
+            .player_name
+            .as_deref()
+            .map(str::trim)
+            .filter(|n| !n.is_empty())
+            .filter(|n| !super::replay::is_bot_nickname(n))
+        else {
+            continue;
+        };
+        let entry = tallies
+            .entry((realm.to_owned(), name.to_owned()))
+            .or_insert(Tally {
+                battles: 0,
+                last: None,
+            });
+        entry.battles += 1;
+        // Filename datetimes share one lexicographically sortable shape per
+        // prefix family, so a plain string max keeps the newest row
+        // ("20260101" vs "20260101_101010" orders correctly).
+        entry.last = match (&entry.last, &b.date_time) {
+            (Some(a), Some(b2)) => Some(a.max(b2).to_owned()),
+            (None, Some(b2)) => Some(b2.to_owned()),
+            _ => entry.last.take(),
+        };
+    }
+    let mut candidates: Vec<ReplayPlayerCandidate> = tallies
+        .into_iter()
+        .map(|((realm, nickname), t)| ReplayPlayerCandidate {
+            realm,
+            nickname,
+            battles: t.battles,
+            last_date_time: t.last,
+        })
+        .collect();
+    // Most evidence first; the frontend's "one per server" default picks
+    // each realm's head row out of this order. Nickname asc as the final
+    // stable tiebreak keeps repeated scans byte-identical.
+    candidates.sort_by(|a, b| {
+        b.battles
+            .cmp(&a.battles)
+            .then_with(|| b.last_date_time.cmp(&a.last_date_time))
+            .then_with(|| a.nickname.cmp(&b.nickname))
+    });
+    candidates
+}
+
+/// The onboarding wizard's local-player discovery: fold the SAME replay
+/// evidence the battle ledger scans (shared cache, shared gate — a first
+/// launch here warms the cache for the 游玩时间 view) into the list of
+/// players that have logged in on this machine, one row per
+/// `(server, nickname)` with replay counts and the newest recording date.
+/// The wizard shows the list alongside the client confirmation and binds
+/// the user-selected rows as remembered accounts (the WG API resolves the
+/// account id at bind time — the replay headers carry none).
+///
+/// Async command + `tokio::task::spawn_blocking` — the identical blocking
+/// walk rule as [`playtime_battles`].
+#[tauri::command]
+pub async fn replay_player_candidates() -> CommandResult<ReplayPlayerCandidates> {
+    tokio::task::spawn_blocking(|| -> Result<ReplayPlayerCandidates> {
+        let battles = scan_all_battles()?;
+        Ok(ReplayPlayerCandidates {
+            candidates: candidates_from_battles(&battles),
+        })
+    })
+    .await
+    .map_err(|e| anyhow!("replay player candidates task failed: {e}"))?
+    .map_err(Into::into)
 }
 
 /// The 游玩时间 view's battle ledger: one row per completed replay across
@@ -1927,6 +2029,150 @@ mod tests {
         let mut cache = BattleCache::default();
         let all = battles_from_roots(&[(dir.clone(), None)], &mut cache);
         assert_eq!(retain_own_battles(all).len(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The onboarding candidates fold: one row per (realm, nickname),
+    /// counts and newest date per group, most-evidence-first order. Rows
+    /// from an ownerless root (a pinned archive) never vote — the same
+    /// local-login evidence rule the own-battles filter uses.
+    #[test]
+    fn candidates_group_by_realm_and_nickname_most_evidence_first() {
+        let asia_dir = temp_battle_dir("cand-asia");
+        write_synthetic_replay(
+            &asia_dir.join("20261001_080000_a.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"langyo","relation":0,"shipId":1}]}"#,
+        );
+        write_synthetic_replay(
+            &asia_dir.join("20261004_090000_b.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"langyo","relation":0,"shipId":1}]}"#,
+        );
+        write_synthetic_replay(
+            &asia_dir.join("20261002_120000_c.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"Friend","relation":0,"shipId":1}]}"#,
+        );
+        // Same battle count AND same newest date as Friend — only the
+        // nickname-asc tiebreak separates the two rows.
+        write_synthetic_replay(
+            &asia_dir.join("20261002_120000_f.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"Alma","relation":0,"shipId":1}]}"#,
+        );
+        let ru_dir = temp_battle_dir("cand-ru");
+        write_synthetic_replay(
+            &ru_dir.join("20261003_170000_d.wowsreplay"),
+            r#"{"matchGroup":"pvp","playerName":"langyo","vehicles":[
+                {"id":1,"name":"langyo","relation":0,"shipId":1}]}"#,
+        );
+        let pin_dir = temp_battle_dir("cand-pin");
+        write_synthetic_replay(
+            &pin_dir.join("20261005_100000_e.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"ArchiveOnly","relation":0,"shipId":1}]}"#,
+        );
+
+        let asia = GameInstall {
+            kind: GameInstallKind::Steam,
+            path: r"C:\Games\WoWS".into(),
+            realm: Some("asia".into()),
+        };
+        let lesta = GameInstall {
+            kind: GameInstallKind::Lesta,
+            path: r"C:\Games\Lesta".into(),
+            realm: Some("ru".into()),
+        };
+        let mut cache = BattleCache::default();
+        let all = battles_from_roots(
+            &[
+                (asia_dir.clone(), Some(asia)),
+                (ru_dir.clone(), Some(lesta)),
+                (pin_dir.clone(), None),
+            ],
+            &mut cache,
+        );
+        let candidates = candidates_from_battles(&all);
+        // langyo has the most battles (2 on asia + 1 on ru are SEPARATE
+        // servers); the pinned archive never votes.
+        assert_eq!(candidates.len(), 4);
+        let by = |realm: &str, name: &str| {
+            candidates
+                .iter()
+                .find(|c| c.realm == realm && c.nickname == name)
+                .unwrap_or_else(|| panic!("missing {realm}/{name}"))
+        };
+        // Order, index-pinned so a comparator regression cannot hide: most
+        // battles first; the three single-battle rows fall back to the
+        // newest recording date; a FULL tie (Friend / Alma share
+        // 20261002_120000) breaks to nickname asc.
+        assert_eq!(&candidates[0].nickname, "langyo");
+        assert_eq!(candidates[0].realm, "asia");
+        assert_eq!(candidates[0].battles, 2);
+        assert_eq!(
+            candidates[0].last_date_time.as_deref(),
+            Some("20261004_090000")
+        );
+        assert_eq!(candidates[1].realm, "ru");
+        assert_eq!(candidates[1].nickname, "langyo");
+        assert_eq!(
+            candidates[1].last_date_time.as_deref(),
+            Some("20261003_170000")
+        );
+        assert_eq!(candidates[2].nickname, "Alma");
+        assert_eq!(candidates[3].nickname, "Friend");
+        let ru_row = by("ru", "langyo");
+        assert_eq!(ru_row.battles, 1);
+        assert_eq!(ru_row.last_date_time.as_deref(), Some("20261003_170000"));
+        assert_eq!(by("asia", "Friend").battles, 1);
+        assert!(candidates.iter().all(|c| c.nickname != "ArchiveOnly"));
+        std::fs::remove_dir_all(&asia_dir).unwrap();
+        std::fs::remove_dir_all(&ru_dir).unwrap();
+        std::fs::remove_dir_all(&pin_dir).unwrap();
+    }
+
+    /// Bot / scripted-unit recorder names and nameless (unparseable
+    /// header) rows never vote — only a human nickname on a resolved
+    /// realm is local-login evidence.
+    #[test]
+    fn candidates_skip_bot_scripted_and_nameless_rows() {
+        let dir = temp_battle_dir("cand-noise");
+        write_synthetic_replay(
+            &dir.join("20261001_080000_bot.wowsreplay"),
+            r#"{"matchGroup":"pve","vehicles":[
+                {"id":1,"name":":Sturdee:","relation":0,"shipId":1}]}"#,
+        );
+        write_synthetic_replay(
+            &dir.join("20261002_080000_ids.wowsreplay"),
+            r#"{"matchGroup":"pve","vehicles":[
+                {"id":1,"name":"IDS_OP_15_DUMMY_01","relation":0,"shipId":1}]}"#,
+        );
+        write_synthetic_replay(&dir.join("20261003_080000_raw.wowsreplay"), "{}");
+        // The one human row: it votes on its own, so the noise filter is
+        // observable against a non-empty input.
+        write_synthetic_replay(
+            &dir.join("20261004_080000_human.wowsreplay"),
+            r#"{"matchGroup":"pvp","vehicles":[
+                {"id":1,"name":"RealHuman","relation":0,"shipId":1}]}"#,
+        );
+        let cn = GameInstall {
+            kind: GameInstallKind::Cn360,
+            path: r"C:\Games\WoWS360".into(),
+            realm: Some("cn".into()),
+        };
+        let mut cache = BattleCache::default();
+        let all = battles_from_roots(&[(dir.clone(), Some(cn))], &mut cache);
+        let candidates = candidates_from_battles(&all);
+        assert_eq!(candidates.len(), 1, "only the human row votes");
+        assert_eq!(candidates[0].nickname, "RealHuman");
+        assert_eq!(candidates[0].realm, "cn");
+        // The realm-less twin: an owned install whose realm never resolved
+        // cannot anchor a server identity either — a voting row with no
+        // realm still never votes.
+        let mut realmless = all[3].clone();
+        realmless.realm = None;
+        assert!(candidates_from_battles(std::slice::from_ref(&realmless)).is_empty());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

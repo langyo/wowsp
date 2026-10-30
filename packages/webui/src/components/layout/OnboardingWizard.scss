@@ -316,6 +316,81 @@
     gap: 0.5rem;
   }
 
+  /* ── game step: local player candidates ── */
+
+  &__players {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.35rem;
+    border-top: 1px solid rgb(var(--color-border) / 15%);
+  }
+
+  &__players-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  /* Server chip — the same uppercased realm tag the install rows and
+     replay cards carry, so a multi-server list reads as servers, not
+     just groups. */
+  &__players-realm {
+    align-self: flex-start;
+    padding: 0.05rem 0.4rem;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-muted));
+    border: 1px solid rgb(var(--color-border) / 25%);
+    border-radius: var(--radius-xs);
+  }
+
+  /* One candidate row — checkbox + nickname + evidence line. Same
+     reserved-border card chrome as the install rows so the two lists
+     read as one step; the primary border marks a checked (own) player. */
+  &__player {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    min-width: 0;
+    padding: 0.45rem 0.7rem;
+    background: rgb(var(--color-surface));
+    background: rgb(var(--color-surface) / min(100%, calc(45% + 55% * var(--ui-opacity, 1))));
+    border: 2px solid transparent;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    transition: border-color var(--duration-short) var(--ease-standard),
+      background-color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      background: rgb(var(--color-surface));
+      background: rgb(var(--color-surface) / min(100%, calc(70% + 30% * var(--ui-opacity, 1))));
+      border-color: rgb(var(--color-border) / 35%);
+    }
+
+    &.is-on {
+      border-color: rgb(var(--color-primary));
+    }
+  }
+
+  &__player-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__player-meta {
+    flex: none;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
   &__plugin {
     display: flex;
     flex-direction: column;

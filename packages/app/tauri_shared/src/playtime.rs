@@ -138,3 +138,41 @@ pub struct PlaytimeBattles {
     /// filename date sink to the end, keeping a stable order).
     pub battles: Vec<PlaytimeBattle>,
 }
+
+/// One player identity the local replays testify was logged in on this
+/// machine — the onboarding wizard's "本机登陆过的玩家" list. Aggregated from
+/// the SAME battle rows the playtime ledger scans (see
+/// `replay_player_candidates`): every replay a client of realm R recorded
+/// as nickname N votes for the candidate (R, N), so several accounts played
+/// in turn on one machine each surface as their own row.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayPlayerCandidate {
+    /// The recording install's realm ("ru"/"eu"/"na"/"asia"/"cn") — the
+    /// SERVER the evidence was recorded on. Only rows under a detected
+    /// install vote, so this is never empty.
+    pub realm: String,
+    /// The recorder's nickname (the replay descriptor's `playerName` —
+    /// see `ReplayMetaLite::player_name`). The account id is deliberately
+    /// NOT part of the wire shape: WG replay headers carry none (the
+    /// roster's per-battle entity ids are NOT accountDBIDs), so the
+    /// frontend resolves the id through the WG API lookup at bind time,
+    /// exactly like the account modal's nickname search.
+    pub nickname: String,
+    /// How many replays this nickname recorded on this machine.
+    pub battles: u32,
+    /// Filename datetime (`YYYYMMDD[_HHMMSS]`) of the newest replay in
+    /// the group; `None` when no row carried a parsable date.
+    pub last_date_time: Option<String>,
+}
+
+/// Reply of the `replay_player_candidates` command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplayPlayerCandidates {
+    /// Candidates ordered most-evidence-first: `battles` desc, then
+    /// `last_date_time` desc (undated rows sink), then nickname asc as
+    /// the stable tiebreak. The frontend's "one per server" default picks
+    /// each realm's first row out of this order.
+    pub candidates: Vec<ReplayPlayerCandidate>,
+}

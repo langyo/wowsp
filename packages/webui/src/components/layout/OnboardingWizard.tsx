@@ -1,6 +1,6 @@
 import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 
-import { HkButton, HkModal, HkScrollContainer, HkSpinner, HkStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
+import { HkButton, HkCheckbox, HkModal, HkScrollContainer, HkSpinner, HkStepFlow, useToast, getThemeTokens, themePresets, useTheme } from "@celestia-island/hikari";
 import { Check, ImagePlus, Moon, Sun, SunMoon } from "@lucide/vue";
 
 import { t, tError } from "@/i18n";
@@ -19,10 +19,18 @@ import {
 } from "@/stores/statsPrefs";
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
+import { useStatsStore } from "@/stores/stats";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { markPluginPromptDismissed } from "@/stores/pluginPrompt";
-import { api, type GameInstall } from "@/api";
+import { api, type GameInstall, type ReplayPlayerCandidate } from "@/api";
 import { isMobileApp } from "@/utils/platform";
+import { KNOWN_REALMS } from "@/utils/realms";
+import {
+  candidateKey,
+  defaultSelection,
+  groupCandidatesByRealm,
+  type PlayerCandidateGroup,
+} from "@/utils/replayPlayerCandidates";
 import { installLabelOf } from "@/utils/installLabel";
 import { sameGamePath } from "@/utils/gamePath";
 import AnnouncementContent from "./AnnouncementContent";
@@ -331,6 +339,132 @@ export default defineComponent({
       toast.success(t("replay.live.idlePluginInstalled"));
     }
 
+    // ── game step: local player discovery ──
+
+    // The replay scan's "who logged in on this machine" list, shown in
+    // the SAME step as the client confirmation so first-time setup asks
+    // both questions at once. The scan itself runs on the Rust side over
+    // every detected client's replays folder (header-only reads, shared
+    // cache with the playtime ledger); here we only group the answer and
+    // seed the selection: one row per server, the most-played candidate
+    // of each realm — the shared-machine / multi-server rows stay
+    // unchecked until the user opts in.
+    const playersScan = ref<"idle" | "loading" | "done" | "failed">("idle");
+    const playerGroups = ref<PlayerCandidateGroup[]>([]);
+    const selectedPlayers = ref<Set<string>>(new Set());
+    // Commit-once guard: leaving the game step binds the checked rows;
+    // a back-and-forth revisit must not re-run the lookups.
+    let playersCommitted = false;
+
+    const stats = useStatsStore();
+
+    async function loadPlayerCandidates() {
+      if (playersScan.value !== "idle") return;
+      playersScan.value = "loading";
+      try {
+        // The never-configured check runs AFTER the (idempotent) store
+        // load settles: a user who already bound players keeps the step
+        // about clients only — the list targets first-time setup.
+        await accounts.load();
+        if (accounts.accounts.length > 0) {
+          playersScan.value = "done";
+          return;
+        }
+        const answer = await api.replayPlayerCandidates();
+        const groups = groupCandidatesByRealm(answer.candidates, KNOWN_REALMS);
+        playerGroups.value = groups;
+        selectedPlayers.value = defaultSelection(groups);
+        playersScan.value = "done";
+      } catch {
+        // Command unavailable (an older shell) or the scan failed — the
+        // section folds away quietly; setup stays about the clients.
+        playersScan.value = "failed";
+      }
+    }
+
+    watch(
+      () => step.value === "game",
+      (inGame) => {
+        if (inGame) void loadPlayerCandidates();
+      },
+      { immediate: true },
+    );
+
+    function togglePlayer(c: ReplayPlayerCandidate) {
+      const key = candidateKey(c);
+      const next = new Set(selectedPlayers.value);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      selectedPlayers.value = next;
+    }
+
+    // Leaving the game step in EITHER direction (下一步 past it, or
+    // 上一步 back — the rows the user leaves behind are final either way)
+    // binds the selection, once per wizard run. The WG API resolves each nickname
+    // to its account id (replay headers carry none), the same lookup the
+    // account modal's bind flow uses — its side effect also seeds the
+    // shared stats cache, so the freshly bound cards render with data.
+    // Unresolvable nicknames (renamed account, offline) are reported and
+    // skippable: settings keeps the manual bind path.
+    watch(step, (now, was) => {
+      if (was === "game" && now !== "game") void commitSelectedPlayers();
+    });
+
+    async function commitSelectedPlayers() {
+      // Both bail-outs guard the flag burn below: leaving while the scan is
+      // still loading must stay a benign no-op (the section showed no choice
+      // to honor), so a later revisit — with the list now rendered — can
+      // still commit exactly once. Burning the guard on the no-op would
+      // silently ignore that revisit's visible, checked rows.
+      if (playersCommitted || playersScan.value !== "done") return;
+      playersCommitted = true;
+      const chosen = playerGroups.value
+        .flatMap((g) => g.rows)
+        .filter((c) => selectedPlayers.value.has(candidateKey(c)));
+      if (chosen.length === 0) return;
+      let bound = 0;
+      const failed: { realm: string; nickname: string }[] = [];
+      for (const c of chosen) {
+        try {
+          const found = await stats.lookup(c.nickname, c.realm, { force: true });
+          await accounts.addAccount({
+            accountId: found.accountId,
+            nickname: found.name,
+            realm: c.realm,
+          });
+          bound += 1;
+        } catch {
+          failed.push({ realm: c.realm, nickname: c.nickname });
+        }
+      }
+      // Same follow a client switch gets: if the just-confirmed install's
+      // realm gained an account, land on it so the app opens identified.
+      const realm = config.activeInstall?.realm;
+      if (realm) await accounts.autoSwitchRealm(realm).catch(() => undefined);
+      if (bound > 0) toast.info(t("onboarding.playersBound", { n: bound }));
+      if (failed.length > 0) {
+        // A nickname that failed on two servers would read as a duplicated
+        // entry — qualify repeats with their server tag instead.
+        const repeats = new Set(
+          failed
+            .map((f) => f.nickname)
+            .filter((n, i, all) => all.indexOf(n) !== i),
+        );
+        const names = failed.map((f) =>
+          repeats.has(f.nickname) ? `${f.nickname} (${f.realm.toUpperCase()})` : f.nickname,
+        );
+        toast.error(t("onboarding.playersBindFailed", { names: names.join(", ") }));
+      }
+    }
+
+    /** `YYYYMMDD[_HHMMSS]` → `YYYY-MM-DD` (empty when undatable). The
+     *  filename stamp is already local time, so this is a pure
+     *  re-format — never a Date round-trip that could shift the day. */
+    function playerLastDateLabel(stamp: string | null): string {
+      if (!stamp || stamp.length < 8) return "";
+      return `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}`;
+    }
+
     function skipPlugin() {
       if (pluginSkip.count.value > 0) return;
       pluginDeclined.value = true;
@@ -541,6 +675,85 @@ export default defineComponent({
                         {t("common.gamePath.browse")}
                       </HkButton>
                     </div>
+
+                    {/* Local players — the replay scan's "who logged in
+                        here" list, alongside the client ask. Shows only
+                        for a never-configured player; leaving the step
+                        binds the checked rows (one per server is
+                        preselected). Spinner while the header-only scan
+                        runs; a failed/empty scan folds the section
+                        away. */}
+                    {playersScan.value === "loading" ? (
+                      <div class="onboarding__game-scan">
+                        <HkSpinner size="xs" tone="current" />
+                        <span>{t("onboarding.playersScanning")}</span>
+                      </div>
+                    ) : playersScan.value === "done" &&
+                      playerGroups.value.length > 0 ? (
+                      <div class="onboarding__players">
+                        <h3 class="onboarding__subtitle">
+                          {t("onboarding.playersSection")}
+                        </h3>
+                        <p class="onboarding__desc">
+                          {t("onboarding.playersDesc")}
+                        </p>
+                        {playerGroups.value.map((g) => (
+                          <div class="onboarding__players-group" key={g.realm}>
+                            <span class="onboarding__players-realm">
+                              {g.realm.toUpperCase()}
+                            </span>
+                            {g.rows.map((c) => {
+                              const on = selectedPlayers.value.has(
+                                candidateKey(c),
+                              );
+                              return (
+                                // The focusable checkbox input owns the
+                                // keyboard path (one tab stop per row — a
+                                // row tabindex would double it); the row
+                                // itself stays a click target for mouse /
+                                // touch, with the checkbox's own emit
+                                // skipped by the .hk-checkbox guard
+                                // (PrTrendSection's split).
+                                <div
+                                  key={candidateKey(c)}
+                                  role="checkbox"
+                                  aria-checked={on}
+                                  class={["onboarding__player", on ? "is-on" : ""]}
+                                  onClick={(e: MouseEvent) => {
+                                    if ((e.target as HTMLElement).closest(".hk-checkbox")) {
+                                      return;
+                                    }
+                                    togglePlayer(c);
+                                  }}
+                                >
+                                  <HkCheckbox
+                                    size="sm"
+                                    modelValue={on}
+                                    onUpdate:modelValue={() => togglePlayer(c)}
+                                  />
+                                  <span class="onboarding__player-name">
+                                    {c.nickname}
+                                  </span>
+                                  <span class="onboarding__player-meta">
+                                    {playerLastDateLabel(c.lastDateTime)
+                                      ? t("onboarding.playerMeta", {
+                                          n: c.battles,
+                                          date: playerLastDateLabel(c.lastDateTime),
+                                        })
+                                      : t("onboarding.playerMetaNoDate", {
+                                          n: c.battles,
+                                        })}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ))}
+                        <p class="onboarding__desc">
+                          {t("onboarding.playersHint")}
+                        </p>
+                      </div>
+                    ) : null}
 
                     {/* In-game plugin offer — only when the confirmed
                         install is probed and plugin-absent. 暂不安装 rides

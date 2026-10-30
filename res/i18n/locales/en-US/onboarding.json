@@ -46,5 +46,13 @@
   "pluginInstall": "Install plugin",
   "pluginSkip": "Not now",
   "pluginSkipCountdown": "Not now ({n}s)",
-  "pluginDone": "In-game plugin installed — live battles pick it up automatically."
+  "pluginDone": "In-game plugin installed — live battles pick it up automatically.",
+  "playersScanning": "Quickly scanning local replays for players seen on this machine…",
+  "playersSection": "Players seen on this machine",
+  "playersDesc": "A quick pass over each client's replays identified the players that have logged in on this machine. The likeliest one per server is preselected — keep only your own accounts checked.",
+  "playersHint": "Only the checked players are added as bound accounts; unchecked ones are left out and can be added later in Settings → Accounts.",
+  "playersBound": "Added {n} local player(s).",
+  "playersBindFailed": "Could not auto-add: {names} — add them later in Settings → Accounts.",
+  "playerMeta": "{n} replays · latest {date}",
+  "playerMetaNoDate": "{n} replays"
 }

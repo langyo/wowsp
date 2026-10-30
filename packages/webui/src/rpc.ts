@@ -34,6 +34,9 @@ export const RPC = {
   // Drop the battle ledger's disk cache and rescan from whatever is on
   // disk right now (the replay-sources manager's rebuild action).
   playtime_battles_reset: "playtime_battles_reset",
+  // Players the local replays testify logged in on this machine, folded
+  // from the same battle scan (the onboarding wizard's player list).
+  replay_player_candidates: "replay_player_candidates",
   // One row per LOCAL replay file whose BattleResults decoded, recorded by
   // the requested account inside [from_sec, to_sec] (commands/
   // local_battles.rs) — the dashboard range views' replay source.

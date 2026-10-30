@@ -148,6 +148,30 @@ export interface PlaytimeBattles {
   battles: PlaytimeBattle[];
 }
 
+/** Mirrors `wowsp_tauri_shared::ReplayPlayerCandidate` — one player the
+ *  local replays testify logged in on this machine: the recorder identity
+ *  of every replay under a detected install, grouped per (realm, nickname).
+ *  Deliberately no accountId: WG replay headers carry none, so the id
+ *  resolves through the WG API lookup at bind time (see the account
+ *  modal's nickname search). */
+export interface ReplayPlayerCandidate {
+  /** The recording install's realm ("ru"/"eu"/"na"/"asia"/"cn"). */
+  realm: string;
+  nickname: string;
+  /** How many replays this player recorded on this machine. */
+  battles: number;
+  /** Newest replay's filename datetime (`YYYYMMDD[_HHMMSS]`), null when
+   *  no row carried a parsable date. */
+  lastDateTime: string | null;
+}
+
+/** Mirrors `wowsp_tauri_shared::ReplayPlayerCandidates` — the
+ *  `replay_player_candidates` reply, ordered most evidence first (battles
+ *  desc, then lastDateTime desc, then nickname asc). */
+export interface ReplayPlayerCandidates {
+  candidates: ReplayPlayerCandidate[];
+}
+
 /** Mirrors `wowsp_tauri_shared::AccountProfile` — one remembered account as
  *  the webui's own accounts.json writes it (and the Rust session hub reads
  *  it back for playing-account matching). */
@@ -231,6 +255,16 @@ export const gameApi = {
    *  replays leaves with the cache. */
   playtimeBattlesReset: () =>
     transport.invoke<PlaytimeBattles>(RPC.playtime_battles_reset),
+  /** Players the local replays testify logged in on this machine (commands/
+   *  playtime.rs `replay_player_candidates`) — one row per (realm,
+   *  nickname) with replay counts and the newest recording date, most
+   *  evidence first. The onboarding wizard shows the list alongside the
+   *  client confirmation and binds the user-selected rows; the account id
+   *  resolves through the WG API lookup at bind time (replay headers carry
+   *  none). Shares the battle ledger's disk cache, so a first launch here
+   *  warms it for the 游玩时间 view. */
+  replayPlayerCandidates: () =>
+    transport.invoke<ReplayPlayerCandidates>(RPC.replay_player_candidates),
   /** Rust session hub snapshot (commands/session.rs) — the running process
    *  plus the resolved "who is playing" identity. Live updates arrive via
    *  listenSessionChanged; this is the boot/fetch side. */

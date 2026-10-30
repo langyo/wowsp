@@ -46,5 +46,13 @@
   "pluginInstall": "Instalar complemento",
   "pluginSkip": "Por ahora no",
   "pluginSkipCountdown": "Por ahora no ({n} s)",
-  "pluginDone": "Complemento instalado: las batallas en directo lo usan automáticamente."
+  "pluginDone": "Complemento instalado: las batallas en directo lo usan automáticamente.",
+  "playersScanning": "Analizando rápidamente las repeticiones locales para identificar jugadores…",
+  "playersSection": "Jugadores vistos en este equipo",
+  "playersDesc": "Un repaso rápido a las repeticiones de cada cliente identificó a los jugadores que han iniciado sesión en este equipo. El más probable por servidor queda preseleccionado: deja marcadas solo tus propias cuentas.",
+  "playersHint": "Solo los jugadores marcados se añaden como cuentas vinculadas; los desmarcados quedan fuera y pueden añadirse luego en Ajustes → Cuentas.",
+  "playersBound": "{n} jugador(es) local(es) añadido(s).",
+  "playersBindFailed": "No se pudieron añadir automáticamente: {names}; añádelos luego en Ajustes → Cuentas.",
+  "playerMeta": "{n} repeticiones · última {date}",
+  "playerMetaNoDate": "{n} repeticiones"
 }
