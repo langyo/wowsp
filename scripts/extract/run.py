@@ -8,7 +8,8 @@ named in --module run (default: all).
 Modules:
   assets    nation flags (crest + small), crew skill icons, modernization icons
   rarity    ship_id → rarity map (GameParams RarityCategory, via wowsinfo bridge)
-  techtree  tech-tree topology (nextShips) + archetype
+  techtree  tech-tree topology (nextShips) + archetype + the per-ship
+            upgrade chains / research economy (both realms)
   encyclopedia  WG bundle + Lesta snapshot sync with incremental diff reports
   models    shipId → base model name map (skin→base dedup for the 3D viewer)
             + aircraft performance rows (plane_specs.json)
@@ -96,6 +97,11 @@ METADATA_JSON = CACHE_DIR / "wows_meta.json"
 RARITY_JSON = SRC_DATA / "ship_rarity.json"
 TECHTREE_JSON = SRC_DATA / "tech_tree.json"
 TECHTREE_LESTA_JSON = SRC_DATA / "tech_tree_lesta.json"
+# Per-ship upgrade chains + ship-level research economy (both realms),
+# emitted by build_upgrade_chain.py from the same GameParams dumps as the
+# trees and refreshed by the techtree module alongside them.
+UPGRADE_CHAIN_JSON = SRC_DATA / "ship_upgrade_chain.json"
+UPGRADE_CHAIN_LESTA_JSON = SRC_DATA / "ship_upgrade_chain_lesta.json"
 SHIPMODELS_JSON = SRC_DATA / "ship_models.json"
 
 
@@ -311,6 +317,7 @@ def _run_techtree() -> None:
         "--rarity", str(RARITY_JSON),
         "--out", str(TECHTREE_JSON),
     )
+    _run_upgrade_chain("wg", GAMEPARAMS_JSON, UPGRADE_CHAIN_JSON)
 
 
 def _run_techtree_lesta(
@@ -326,6 +333,8 @@ def _run_techtree_lesta(
     the bundled tech_tree_lesta.json is left untouched: generating it from
     the WG client's dump would silently re-emit the WG tree under the Lesta
     name, which is exactly the defect this separate path exists to prevent.
+    The same snapshot also bakes ship_upgrade_chain_lesta.json (the Lesta
+    upgrade-chain bundle), so the realm artifacts never drift apart.
     """
     lesta_gp = explicit_gameparams or os.environ.get("WOWSP_LESTA_GAMEPARAMS")
     if lesta_gp:
@@ -336,6 +345,7 @@ def _run_techtree_lesta(
         stamp = _run_lesta_overlay(lesta_gp)
         _run_wg_only_roster(Path(lesta_gp))
         _run_lesta_shipdata(Path(lesta_gp), stamp)
+        _run_upgrade_chain("lesta", Path(lesta_gp), UPGRADE_CHAIN_LESTA_JSON)
         return
     lesta = find_lesta_game_path(explicit_lesta_path)
     if not lesta:
@@ -353,6 +363,27 @@ def _run_techtree_lesta(
     stamp = _run_lesta_overlay(GAMEPARAMS_LESTA_JSON, lesta)
     _run_wg_only_roster(GAMEPARAMS_LESTA_JSON)
     _run_lesta_shipdata(GAMEPARAMS_LESTA_JSON, stamp)
+    _run_upgrade_chain("lesta", GAMEPARAMS_LESTA_JSON, UPGRADE_CHAIN_LESTA_JSON)
+
+
+def _run_upgrade_chain(realm: str, gameparams: Path, out: Path) -> None:
+    """Per-ship upgrade chains + ship-level research economy (both realms).
+
+    build_upgrade_chain.py reads the realm's GameParams dump — the same one the
+    realm's tree was cut from — and emits the module chains (stock -> top per
+    ucType slot, prev-chain ordered like shipParts.ts at runtime), the ships
+    each top module unlocks (GameParams entry keys resolved to numeric
+    shipIds) and the unlocked ship's own costXP (the tech-tree connector
+    tooltip's minimal case). Per-module XP/credits stay null: the client data
+    carries ship-level economy only — module prices live in the client's UI
+    economy layer, not in GameParams.
+    """
+    _py(
+        "build_upgrade_chain.py",
+        "--realm", realm,
+        "--gameparams", str(gameparams),
+        "--out", str(out),
+    )
 
 
 def _run_wg_only_roster(lesta_gameparams: Path, wg_version: str | None = None) -> None:
@@ -602,7 +633,7 @@ def _run_encyclopedia(game: str) -> None:
     WG client's build — the roster is a set-difference of the two dumps, so
     a WG client update moves it just like a Lesta one does (the same
     detection sync_encyclopedia.py and the overlay bake share). Both in
-    step prints in-sync and writes nothing; drift re-bakes the five Lesta
+    step prints in-sync and writes nothing; drift re-bakes the six Lesta
     artifacts off dump caches that are first re-cut when their recorded
     build no longer matches their client, with before/after snapshots
     compactly diffed.
@@ -679,6 +710,7 @@ def _run_encyclopedia(game: str) -> None:
         SRC_DATA / "ships_lesta.json",
         SRC_DATA / "ships_wg_only.json",
         TECHTREE_LESTA_JSON,
+        UPGRADE_CHAIN_LESTA_JSON,
         SRC_DATA / "ship_names.json",
         REPO / "packages" / "app" / "tauri" / "data" / "lesta_ship_gameparams.json.gz",
     ]
@@ -692,6 +724,7 @@ def _run_encyclopedia(game: str) -> None:
         wg_version=f"wg-{wg_build}+lesta-{build}",
     )
     _run_lesta_shipdata(GAMEPARAMS_LESTA_JSON, stamp)
+    _run_upgrade_chain("lesta", GAMEPARAMS_LESTA_JSON, UPGRADE_CHAIN_LESTA_JSON)
     after = {p: p.read_bytes() if p.exists() else None for p in artifacts}
     for artifact in artifacts:
         _print_artifact_diff(artifact, before[artifact], after[artifact])
