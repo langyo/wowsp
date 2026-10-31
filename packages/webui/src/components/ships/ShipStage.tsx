@@ -1534,6 +1534,15 @@ export default defineComponent({
         }
       } catch (e) {
         clearWaterline();
+        // Slim phone build with no downloaded pack: every GLB candidate
+        // 404s and the raw fetch error would read as breakage. Point at the
+        // one download path that exists there (Settings ▸ resources — the
+        // toggle's auto-download above is deliberately desktop-only).
+        if (isMobileApp() && !isModelPackReady()) {
+          hasModel.value = false;
+          errorMsg.value = t("ships.model3d.phoneHint");
+          return;
+        }
         errorMsg.value = (e as Error).message || String(e);
         toast.error(`3D model failed: ${errorMsg.value}`);
       } finally {

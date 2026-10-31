@@ -789,7 +789,8 @@
   "model3d": {
     "downloadStart": "La vue 3D nécessite le pack de modèles (~1,2 Go) — téléchargement lancé…",
     "ready": "Pack de modèles prêt",
-    "failed": "Échec du téléchargement du pack de modèles — réessayez plus tard"
+    "failed": "Échec du téléchargement du pack de modèles — réessayez plus tard",
+    "phoneHint": "Aucun paquet de modèles 3D sur cet appareil pour l'instant — téléchargez-le dans Paramètres ▸ Ressources (~1,2 Go) ; la vue 2D n'est pas affectée."
   },
   "module": {
     "fireControl": "Conduite de tir",
