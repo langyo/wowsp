@@ -42,12 +42,7 @@ vi.mock("@/features/share/statsShot", () => ({ renderStatsShot: vi.fn() }));
 vi.mock("@/features/share/clanShot", () => ({ renderClanShot: vi.fn() }));
 vi.mock("@/features/holographic/modelLoader", () => ({ shipOfflineEntry: () => null, shipNameFromModelDb: () => "", shipNameFromOfflineDb: () => "" }));
 vi.mock("@/features/holographic/shipIcons", () => ({ shipIcon: () => null }));
-// The i18n singleton carries the locale the DateTag capsule formats by —
-// a static zh-CN value keeps the stub honest without wiring vue-i18n here.
-vi.mock("@/i18n", () => ({
-  t: (key: string) => key,
-  i18n: { global: { locale: { value: "zh-CN" } } },
-}));
+vi.mock("@/i18n", () => ({ t: (key: string) => key }));
 vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: "en" } }) }));
 vi.mock("@/components/stats/StatsCard", () => ({ default: { name: "StatsCard", props: ["stats"], render: () => null } }));
 vi.mock("@/components/stats/ClanCard", () => ({ default: { name: "ClanCard", props: ["clan"], render: () => null }, defaultRosterOrder: vi.fn(), roleLabel: vi.fn() }));
@@ -103,6 +98,13 @@ vi.mock("@celestia-island/hikari", () => ({
     name: "HkDatePicker",
     props: ["modelValue", "min", "max", "placeholder", "size"],
     emits: ["update:modelValue"],
+    render: () => null,
+  },
+  // The kit's locale-ordered date capsule (wowsp stopped carrying the local
+  // stopgap copy in 0.55.246) — the row renders nothing in these suites.
+  HkDateTag: {
+    name: "HkDateTag",
+    props: ["value", "time"],
     render: () => null,
   },
   // Scroll-region host: pass-through div wrapping the slot (the tests

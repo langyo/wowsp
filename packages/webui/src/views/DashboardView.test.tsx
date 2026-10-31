@@ -146,13 +146,7 @@ vi.mock("@/features/holographic/modelLoader", () => ({
   shipNameFromOfflineDb: () => "",
 }));
 vi.mock("@wowsp/holo", () => ({ tierToRoman: (tier: number) => String(tier) }));
-// The i18n singleton carries the locale the DateTag capsule formats by —
-// a static zh-CN value keeps the stub honest without wiring vue-i18n here.
-vi.mock("@/i18n", () => ({
-  t: (key: string) => key,
-  te: () => false,
-  i18n: { global: { locale: { value: "zh-CN" } } },
-}));
+vi.mock("@/i18n", () => ({ t: (key: string) => key, te: () => false }));
 vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: "en" } }) }));
 
 // ── Child components ───────────────────────────────────────────────────────
@@ -259,6 +253,13 @@ vi.mock("@celestia-island/hikari", () => ({
     name: "HkDatePicker",
     props: ["modelValue", "min", "max", "placeholder", "size"],
     emits: ["update:modelValue"],
+    render: () => null,
+  },
+  // The kit's locale-ordered date capsule (wowsp stopped carrying the local
+  // stopgap copy in 0.55.246) — the row renders nothing in these suites.
+  HkDateTag: {
+    name: "HkDateTag",
+    props: ["value", "time"],
     render: () => null,
   },
   HkScrollContainer: {

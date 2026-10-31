@@ -7,11 +7,10 @@ import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/Clan
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HkScrollContainer, HkSpinner, HkTabs } from "@celestia-island/hikari";
+import { HkDateTag, HkScrollContainer, HkSpinner, HkTabs } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
-import DateTag from "@/components/base/DateTag";
 import TypeSummaryChips from "@/components/stats/TypeSummaryChips";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
@@ -1064,11 +1063,11 @@ export default defineComponent({
                               {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                             </span>
                             <span class="lookup-view__ship-date">
-                              {/* Locale-ordered Y/M/D capsule (hikari's
-                                  HkDateTag contract, local stopgap copy);
-                                  the em-dash keeps the no-data fallback. */}
+                              {/* Locale-ordered Y/M/D capsule — hikari's
+                                  HkDateTag business part; the em-dash keeps
+                                  the no-data fallback. */}
                               {s.lastBattleTime ? (
-                                <DateTag value={s.lastBattleTime * 1000} />
+                                <HkDateTag value={s.lastBattleTime * 1000} />
                               ) : (
                                 "—"
                               )}
