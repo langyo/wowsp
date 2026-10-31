@@ -36,6 +36,10 @@ mod test_harness;
 /// WebView2 browser-argument policy: static args are gone; the conditional
 /// GPU switch rides an env var set before any webview exists (module docs).
 mod webview_args;
+/// Main-window geometry memory: reopen where the player left it, validated
+/// against the current desktop (module docs spell out the policy).
+#[cfg(desktop)]
+mod window_state;
 
 use tauri::Manager;
 #[cfg(desktop)]
@@ -199,6 +203,10 @@ pub fn run() {
             // tray, so the system back gesture simply closes the app.
             #[cfg(desktop)]
             {
+                // Window-geometry memory (main window only; every other
+                // label is a no-op inside): move/resize events feed the
+                // debounced tracker, a close request flushes it.
+                window_state::record(window, event);
                 // The tray panel hides — never closes — on blur and on
                 // programmatic close requests: it is a persistent popup
                 // anchored to the tray icon, and destroying it would give
@@ -424,10 +432,26 @@ pub fn run() {
                 }
 
                 let _ = w.eval(&js);
-                // `center` is desktop-only (no window positioning on a
-                // single-surface mobile layout).
+            }
+
+            // ── Main-window geometry memory (desktop) ─────────────────
+            //
+            // Restore the remembered position/size (validated against the
+            // desktop this launch greets — a gone monitor or a closed
+            // off-screen window relocates somewhere fully visible; see
+            // window_state's module docs), center only on the first launch,
+            // and only then lift the window's config `visible: false` — the
+            // conf keeps it hidden so it never paints at the centered
+            // default and jumps to the remembered spot.
+            if let Some(w) = app.get_webview_window("main") {
                 #[cfg(desktop)]
-                let _ = w.center();
+                match window_state::restore(&w) {
+                    Ok(true) => {},
+                    Ok(false) | Err(_) => {
+                        let _ = w.center();
+                    },
+                }
+                let _ = w.show();
             }
 
             // ── Dev-only test control server ──────────────────────────────
@@ -914,8 +938,18 @@ pub fn run() {
             commands::replay_probe::replay_visibility_probe,
             commands::quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running WoWSP tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building WoWSP tauri application")
+        .run(|_app, event| {
+            // Final window-geometry flush: RunEvent::Exit is the one hook
+            // every deliberate exit path crosses (the quit command's
+            // app.exit(0), the close guard's force-exit hook, the last
+            // window closing) after the geometry has stopped changing.
+            #[cfg(desktop)]
+            if let tauri::RunEvent::Exit = event {
+                window_state::flush_now();
+            }
+        });
 }
 
 /// Square the main window's corners while it is maximized, restore the system
