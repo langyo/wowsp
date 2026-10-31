@@ -426,14 +426,25 @@
 }
 
 .playtime-view__sources-row {
+  /* Same literal menu-item row adoption as .playtime-view__scope-opt
+     above — the view's two popover menus speak one grammar (the sweep's
+     follow-up: this sibling kept the old compact stock). */
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 6px 4px 10px;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
 
   &:hover {
-    background: rgb(var(--color-text) / 5%);
+    background: rgb(var(--color-primary) / 8%);
+    border-color: rgb(var(--color-primary) / 25%);
+  }
+
+  .hk-popover-panel.hk-is-sheet & {
+    min-height: 44px;
+    padding: 10px 16px;
   }
 }
 

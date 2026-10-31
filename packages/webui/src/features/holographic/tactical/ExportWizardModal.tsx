@@ -226,7 +226,7 @@ export default defineComponent({
                         : i18nT("replay.tactical.export.region")
                     }
                     disabled={props.busy}
-                    class={props.regionActive || props.pendingRegion ? "is-active" : ""}
+                    active={props.regionActive || props.pendingRegion}
                     onClick={() => run("exportRegion")}
                   >
                     {{ suffix: () => <span class="tac-exportwiz__desc">{i18nT("replay.tactical.export.regionDesc")}</span> }}
@@ -239,7 +239,7 @@ export default defineComponent({
                         : i18nT("replay.tactical.record.start")
                     }
                     disabled={props.busy || (!props.recording && !props.recordingSupported)}
-                    class={props.recording ? "is-active" : ""}
+                    active={props.recording}
                     onClick={() => run("recordToggle")}
                   >
                     {{ suffix: () => <span class="tac-exportwiz__desc">{i18nT("replay.tactical.export.recordDesc")}</span> }}

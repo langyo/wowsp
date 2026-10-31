@@ -233,7 +233,8 @@ export default defineComponent({
             </button>
             <button
               type="button"
-              class="tray-panel__menu-item tray-panel__menu-item--danger"
+              class="tray-panel__menu-item"
+              data-danger
               onClick={() => act("quit")}
             >
               <LogOut size={15} class="tray-panel__menu-icon" />

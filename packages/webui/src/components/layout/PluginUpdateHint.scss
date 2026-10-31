@@ -159,11 +159,12 @@
   }
 
   &__group-label {
-    font-size: var(--text-3xs, 0.625rem);
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    // The caption band is hikari's shared .hk-menu-section-label grammar
+    // (size/weight/tracking/color come from there — the old local copy
+    // restated all four at the same values). This surface keeps only its
+    // own steps: the UPPERCASE casing (a surface convention, like the
+    // platform switcher's) and the truncation for long group names.
     text-transform: uppercase;
-    color: rgb(var(--color-muted));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
