@@ -33,10 +33,6 @@ import type {
   ChatTranslateLanguagesConfig,
   ChatTranslateProviderConfig,
   ChatTranslateSendConfig,
-  ChatProviderEntry,
-  ChatProviderModel,
-  ChatProviderNames,
-  ChatProviderRegistry,
   ChatTranslateSendMode,
   DebugTranslateResult,
   DebugTranslation,
@@ -213,81 +209,12 @@ function normalizeDebugResult(raw: unknown): DebugTranslateResult {
   };
 }
 
-/** Tolerant read of the shell's provider registry: a malformed catalog can
- *  only drop entries; the window still lets every field be typed by hand. */
-function normalizeRegistry(raw: unknown): ChatProviderRegistry | null {
-  if (raw === null || typeof raw !== "object") return null;
-  const r = raw as { fetchedAt?: unknown; stale?: unknown; providers?: unknown };
-  const text = (value: unknown): string => (typeof value === "string" ? value : "");
-  const names = (value: unknown): ChatProviderNames => {
-    const n = (value ?? {}) as Record<string, unknown>;
-    return {
-      en: text(n.en),
-      zhs: text(n.zhs),
-      zht: text(n.zht),
-      ja: text(n.ja),
-      ko: text(n.ko),
-      fr: text(n.fr),
-      es: text(n.es),
-      ru: text(n.ru),
-    };
-  };
-  const providers: ChatProviderEntry[] = Array.isArray(r.providers)
-    ? r.providers
-        .filter(
-          (entry): entry is Record<string, unknown> =>
-            entry !== null &&
-            typeof entry === "object" &&
-            typeof (entry as { id?: unknown }).id === "string",
-        )
-        .map((entry) => ({
-          id: entry.id as string,
-          providerId: text(entry.providerId),
-          names: names(entry.names),
-          baseUrl: text(entry.baseUrl),
-          envVar: typeof entry.envVar === "string" ? entry.envVar : null,
-          defaultModel:
-            typeof entry.defaultModel === "string" ? entry.defaultModel : null,
-          models: Array.isArray(entry.models)
-            ? (entry.models as unknown[])
-                .filter(
-                  (model): model is Record<string, unknown> =>
-                    model !== null &&
-                    typeof model === "object" &&
-                    typeof (model as { id?: unknown }).id === "string",
-                )
-                .map<ChatProviderModel>((model) => ({
-                  id: model.id as string,
-                  name: typeof model.name === "string" ? model.name : null,
-                }))
-            : [],
-        }))
-    : [];
-  return {
-    fetchedAt:
-      typeof r.fetchedAt === "number" && Number.isFinite(r.fetchedAt)
-        ? r.fetchedAt
-        : 0,
-    stale: r.stale === true,
-    providers,
-  };
-}
-
 export const useChatTranslateStore = defineStore("chatTranslate", () => {
   const config = ref<ChatTranslateConfigPublic>(defaultConfig());
   /** A key is stored on disk (the value itself never leaves the shell). */
   const apiKeySet = ref(false);
   /** WOWSP_CHAT_TRANSLATE_API_KEY is set and takes precedence over the file. */
   const envKeyOverride = ref(false);
-  /** The shared provider registry (langyo/provider-registry, via the shell);
-   *  null until the first load (or when the shell cannot provide it). */
-  const registry = ref<ChatProviderRegistry | null>(null);
-  const registryLoading = ref(false);
-  const registryError = ref<string | null>(null);
-  /** The catalog served is a cached fallback: the refresh attempt failed but
-   *  an older on-disk catalog still answered (the window says so — a silent
-   *  stale list would read as "refresh succeeded"). */
-  const registryStale = ref(false);
   const loaded = ref(false);
   const testing = ref(false);
   /** Last connectivity-test result; null until the first run. */
@@ -328,28 +255,6 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
       })();
     }
     return pendingLoad;
-  }
-
-  /** Fetch the shared provider registry (24h shell cache unless refresh).
-   *  Re-entry is guarded synchronously: a double-click never queues a second
-   *  fetch, and the first caller owns the whole load. A failure keeps any
-   *  previously loaded catalog (the window can still pick from it) and
-   *  surfaces the sentence for its error line. */
-  async function loadRegistry(refresh: boolean = false): Promise<void> {
-    if (registryLoading.value) return;
-    registryLoading.value = true;
-    registryError.value = null;
-    try {
-      const catalog = normalizeRegistry(
-        await chatTranslateApi.getChatProviderRegistry(refresh),
-      );
-      registry.value = catalog;
-      registryStale.value = catalog?.stale === true;
-    } catch (error) {
-      registryError.value = error instanceof Error ? error.message : String(error);
-    } finally {
-      registryLoading.value = false;
-    }
   }
 
   /** Persist one merged config; `apiKey` is the write's tri-state secret
@@ -518,10 +423,6 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     config,
     apiKeySet,
     envKeyOverride,
-    registry,
-    registryLoading,
-    registryError,
-    registryStale,
     loaded,
     testing,
     testResult,
@@ -530,7 +431,6 @@ export const useChatTranslateStore = defineStore("chatTranslate", () => {
     debugError,
     lastSaveOk,
     load,
-    loadRegistry,
     setEnabled,
     acceptConsent,
     setProvider,

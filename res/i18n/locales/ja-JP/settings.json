@@ -575,16 +575,8 @@
     "testResponsePayload": "構造化応答",
     "testNoResult": "まだ結果がありません——「翻訳」を押してください。",
     "translateTestFailed": "翻訳テストに失敗しました：{msg}",
-    "providerPreset": "プロバイダー",
-    "providerPresetCustom": "カスタム",
-    "modelPreset": "モデル",
-    "modelPresetCustom": "カスタムモデル",
     "advancedParams": "詳細パラメーター",
-    "advancedHint": "プロバイダーの指定がない限り変更する必要はありません。",
-    "registryLoading": "プロバイダー一覧を読み込み中…",
-    "registryFailed": "プロバイダー一覧を読み込めませんでした。下の項目は手動で入力できます。",
-    "registryRefresh": "プロバイダー一覧を更新",
-    "registryStale": "更新できませんでした。キャッシュ済みのプロバイダー一覧を表示しています。ネットワークを確認して再試行してください。"
+    "advancedHint": "プロバイダーの指定がない限り変更する必要はありません。"
   },
   "sectionCrashed": "この設定セクションでエラーが発生しました。他の設定は引き続き使用できます。"
 }

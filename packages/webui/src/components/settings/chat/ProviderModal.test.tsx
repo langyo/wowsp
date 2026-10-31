@@ -1,19 +1,18 @@
 /**
- * The provider window's registry-driven shortcuts and layout:
+ * The simplified provider window (registry pickers removed per user request):
  *
- *  - the service-provider / model pickers list the shared langyo/provider-registry
- *    catalog (localized names for the running interface locale) plus the
- *    custom entries;
- *  - picking a preset fills the endpoint and its preferred model; "custom"
- *    keeps both fields editable, so the window works without the registry;
- *  - the API key owns a full-width row, and timeout/temperature collapse into
- *    the HkExpansionPanel (closed by default, aria-expanded=false);
- *  - a catalog failure shows the localized sentence while the manual fields
- *    keep working.
+ *  - the endpoint, the model and the API key are three hand-typed full-width
+ *    rows; the model's placeholder is the shell's default deepseek-flash;
+ *  - no service-provider / model dropdown exists anywhere in the window;
+ *  - timeout + temperature live in the HkExpansionPanel, collapsed by default
+ *    (aria-expanded=false) and rendered as two compact parameters on one line;
+ *  - the connectivity test reports through toasts, Save writes the tri-state
+ *    key (untouched = null / typed = replace / clear = "") and a failed save
+ *    keeps the window open with the typed draft.
  *
  * hikari is partially stubbed: the real HkModal (footer teleports to body) and
- * the real HkExpansionPanel (its aria-expanded toggle is what the collapse
- * test asserts) are kept; the pickers/inputs become small interactive doubles.
+ * the real HkExpansionPanel (its aria-expanded toggle is asserted) are kept;
+ * the fields become small interactive doubles.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
@@ -21,7 +20,6 @@ import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from "@vue/t
 import { defineComponent, h } from "vue";
 
 import type {
-  ChatProviderRegistry,
   ChatTranslateConfigPublic,
   ChatTranslateConfigResponse,
   ChatTranslateConfigUpdate,
@@ -32,8 +30,13 @@ const mocks = vi.hoisted(() => ({
     getChatTranslateConfig: vi.fn(),
     setChatTranslateConfig: vi.fn(),
     testChatTranslateProvider: vi.fn(),
-    getChatProviderRegistry: vi.fn(),
     debugTranslateText: vi.fn(),
+  },
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
   },
 }));
 
@@ -57,12 +60,6 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
       return () => h("span", { class: "stub-HkTag" }, slots.default?.() ?? []);
     },
   });
-  const HkSpinner = defineComponent({
-    name: "HkSpinner",
-    setup() {
-      return () => h("span", { class: "stub-HkSpinner" });
-    },
-  });
   const HkButton = defineComponent({
     name: "HkButton",
     inheritAttrs: false,
@@ -70,15 +67,9 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
       return () => h("button", { ...attrs, type: "button" }, slots.default?.() ?? []);
     },
   });
-  const HkIconButton = defineComponent({
-    name: "HkIconButton",
-    inheritAttrs: false,
-    setup(_props, { slots, attrs }) {
-      return () => h("button", { ...attrs, type: "button" }, slots.default?.() ?? []);
-    },
-  });
   const HkInput = defineComponent({
     name: "HkInput",
+    inheritAttrs: false,
     props: {
       modelValue: { type: String, default: "" },
       placeholder: { type: String, default: "" },
@@ -86,82 +77,61 @@ vi.mock("@celestia-island/hikari", async (importOriginal) => {
       variant: { type: String, default: "text" },
     },
     emits: ["update:modelValue"],
-    setup(props, { emit }) {
+    setup(props, { emit, attrs }) {
       return () =>
         h("input", {
-          class: "stub-HkInput",
+          ...attrs,
+          class: ["stub-HkInput", attrs.class],
           value: props.modelValue,
           placeholder: props.placeholder,
           disabled: props.disabled,
-          // Mirrors the real component's password variant (the API-key row's
-          // test asserts it is what the user sees).
+          // Mirror the real component's password variant: the API-key row's
+          // masking must be asserted, not assumed.
           type: props.variant === "password" ? "password" : undefined,
           onInput: (event: Event) =>
             emit("update:modelValue", (event.target as HTMLInputElement).value),
+          // Mirror the real HkInput's submitOnEnter contract (the endpoint and
+          // model fields save on Enter as well as through the footer).
+          onKeydown: (event: KeyboardEvent) => {
+            if (event.key !== "Enter") return;
+            const submit = attrs.submitOnEnter as (() => void) | undefined;
+            if (typeof submit === "function") submit();
+          },
         });
     },
   });
   const HkNumberInput = defineComponent({
     name: "HkNumberInput",
+    inheritAttrs: false,
     props: { modelValue: { type: Number, default: 0 } },
     emits: ["update:modelValue"],
-    setup(props, { emit }) {
+    setup(props, { emit, attrs }) {
       return () =>
         h("input", {
-          class: "stub-HkNumberInput",
+          ...attrs,
+          class: ["stub-HkNumberInput", attrs.class],
           type: "number",
           value: String(props.modelValue),
           onInput: (event: Event) =>
-            emit("update:modelValue", Number((event.target as HTMLInputElement).value)),
-        });
-    },
-  });
-  const HkSelect = defineComponent({
-    name: "HkSelect",
-    props: {
-      modelValue: { type: String, default: "" },
-      options: { type: Array, default: () => [] },
-      placeholder: { type: String, default: "" },
-      disabled: { type: Boolean, default: false },
-    },
-    emits: ["update:modelValue"],
-    setup(props, { emit }) {
-      return () =>
-        h(
-          "div",
-          {
-            class: "stub-HkSelect",
-            "data-value": props.modelValue,
-            "data-disabled": props.disabled ? "" : undefined,
-          },
-          (props.options as Array<{ value: string; label: string }>).map((option) =>
-            h(
-              "button",
-              {
-                key: option.value,
-                type: "button",
-                onClick: () => emit("update:modelValue", option.value),
-              },
-              option.label,
+            emit(
+              "update:modelValue",
+              Number((event.target as HTMLInputElement).value),
             ),
-          ),
-        );
+        });
     },
   });
   return {
     ...actual,
     HkButton,
-    HkIconButton,
     HkInput,
     HkNumberInput,
-    HkSelect,
     HkSettingsHint,
-    HkSpinner,
     HkTag,
+    useToast: () => mocks.toast,
   };
 });
 
-import { i18n, initLocaleMessages, loadLocaleMessages, t } from "@/i18n";
+import { initLocaleMessages, t } from "@/i18n";
 import ProviderModal from "./ProviderModal";
 import { useChatTranslateStore } from "@/stores/chatTranslate";
 
@@ -200,8 +170,11 @@ function baseConfig(): ChatTranslateConfigPublic {
   };
 }
 
-function responseOf(config: ChatTranslateConfigPublic): ChatTranslateConfigResponse {
-  return { config, apiKeySet: false, envKeyOverride: false };
+function responseOf(
+  config: ChatTranslateConfigPublic,
+  apiKeySet = false,
+): ChatTranslateConfigResponse {
+  return { config, apiKeySet, envKeyOverride: false };
 }
 
 /** The shell's echo for a settings write: store the update as the truth. */
@@ -218,59 +191,23 @@ function echoConfig(update: ChatTranslateConfigUpdate): ChatTranslateConfigRespo
   });
 }
 
-function names(en: string, zhs: string) {
-  return { en, zhs, zht: zhs, ja: en, ko: en, fr: en, es: en, ru: en };
-}
-
-function registry(): ChatProviderRegistry {
-  return {
-    fetchedAt: 123,
-    stale: false,
-    providers: [
-      {
-        id: "deepseek_default",
-        providerId: "deepseek",
-        names: names("DeepSeek", "深度求索"),
-        baseUrl: "https://api.deepseek.com",
-        envVar: "DEEPSEEK_API_KEY",
-        defaultModel: "deepseek-flash",
-        models: [
-          { id: "deepseek-flash", name: "DeepSeek Flash" },
-          { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
-        ],
-      },
-      {
-        id: "openrouter_default",
-        providerId: "openrouter",
-        names: names("OpenRouter", "OpenRouter 中转"),
-        baseUrl: "https://openrouter.ai/api/v1",
-        envVar: null,
-        defaultModel: null,
-        models: [{ id: "vendor/model", name: null }],
-      },
-    ],
-  };
-}
-
 beforeEach(() => {
   vi.resetAllMocks();
   setActivePinia(createPinia());
   document.body.innerHTML = "";
-  (i18n.global.locale as unknown as { value: string }).value = "en-US";
   mocks.chatApi.getChatTranslateConfig.mockResolvedValue(responseOf(baseConfig()));
   mocks.chatApi.setChatTranslateConfig.mockImplementation(
     (update: ChatTranslateConfigUpdate) => Promise.resolve(echoConfig(update)),
   );
-  mocks.chatApi.getChatProviderRegistry.mockResolvedValue(registry());
+  mocks.chatApi.testChatTranslateProvider.mockResolvedValue({
+    ok: true,
+    latencyMs: 12,
+    modelEcho: "deepseek-flash",
+    error: null,
+  });
 });
 
 const modalRoot = () => document.querySelector<HTMLElement>(".hk-modal-root");
-const selects = () =>
-  Array.from(document.querySelectorAll<HTMLElement>(".stub-HkSelect"));
-const selectButton = (select: HTMLElement, label: string) =>
-  Array.from(select.querySelectorAll<HTMLButtonElement>("button")).find(
-    (button) => (button.textContent ?? "") === label,
-  );
 const footerButton = (label: string) => {
   const button = Array.from(
     document.querySelectorAll<HTMLButtonElement>(".hk-modal-footer button"),
@@ -281,6 +218,10 @@ const footerButton = (label: string) => {
 const inputByPlaceholder = (placeholder: string) =>
   document.querySelector<HTMLInputElement>(
     `input.stub-HkInput[placeholder="${placeholder}"]`,
+  );
+const fieldByLabel = (label: string) =>
+  Array.from(modalRoot()!.querySelectorAll<HTMLElement>(".chat-settings__field")).find(
+    (field) => (field.textContent ?? "").includes(label),
   );
 const setCalls = () => mocks.chatApi.setChatTranslateConfig.mock.calls;
 
@@ -297,46 +238,57 @@ async function openWindow(): Promise<VueWrapper> {
   return wrapper;
 }
 
-describe("provider window (registry + layout)", () => {
-  it("loads the catalog on open and lists localized providers", async () => {
+describe("provider window (manual endpoint form)", () => {
+  it("renders the manual fields and no dropdowns", async () => {
     await openWindow();
-    expect(mocks.chatApi.getChatProviderRegistry).toHaveBeenCalledTimes(1);
-    expect(mocks.chatApi.getChatProviderRegistry).toHaveBeenCalledWith(false);
-    const providerSelect = selects()[0];
-    expect(providerSelect).toBeDefined();
-    for (const label of [
-      t("settings.chatTranslate.providerPresetCustom"),
-      "DeepSeek",
-      "OpenRouter",
-    ]) {
-      expect(selectButton(providerSelect, label)).toBeDefined();
-    }
-    // The refresh control forces a live fetch and is disabled while loading.
-    const refresh = document.querySelector<HTMLButtonElement>(
-      `[aria-label="${t("settings.chatTranslate.registryRefresh")}"]`,
+    expect(fieldByLabel(t("settings.chatTranslate.baseUrl"))).toBeDefined();
+    expect(fieldByLabel(t("settings.chatTranslate.model"))).toBeDefined();
+    expect(fieldByLabel(t("settings.chatTranslate.apiKey"))).toBeDefined();
+    expect(modalRoot()!.textContent).toContain(
+      t("settings.chatTranslate.advancedParams"),
     );
-    expect(refresh).not.toBeNull();
-    refresh!.click();
-    await flushPromises();
-    expect(mocks.chatApi.getChatProviderRegistry).toHaveBeenLastCalledWith(true);
+    // The registry pickers are gone: no select widget of any kind. The
+    // real hikari HkSelect renders `.hk-select-wrapper` (not a native
+    // <select>), so assert BOTH shapes — a future re-introduction must fail
+    // here even if the test mock no longer stubs HkSelect.
+    expect(modalRoot()!.querySelector("select")).toBeNull();
+    expect(modalRoot()!.querySelector(".stub-HkSelect")).toBeNull();
+    expect(modalRoot()!.querySelector(".hk-select-wrapper")).toBeNull();
+    // Footer order: Close -> Test connection -> Save.
+    const labels = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".hk-modal-footer button"),
+    ).map((button) => button.textContent ?? "");
+    expect(labels).toHaveLength(3);
+    expect(labels[0]).toContain(t("settings.chatTranslate.close"));
+    expect(labels[1]).toContain(t("settings.chatTranslate.testBtn"));
+    expect(labels[2]).toContain(t("settings.chatTranslate.save"));
   });
 
-  it("fills the endpoint and model from a preset and saves them", async () => {
+  it("shows the shell's default model as the model placeholder", async () => {
     await openWindow();
-    selectButton(selects()[0], "DeepSeek")!.click();
+    const modelInput = inputByPlaceholder("deepseek-flash");
+    expect(modelInput).not.toBeNull();
+    // The stored draft fills the field; the placeholder stays deepseek-flash.
+    expect(modelInput!.placeholder).toBe("deepseek-flash");
+    expect(modelInput!.value).toBe("my-model");
+  });
+
+  it("writes a hand-typed endpoint and model, leaving the key untouched", async () => {
+    await openWindow();
+    const baseUrl = inputByPlaceholder("https://api.deepseek.com")!;
+    const model = inputByPlaceholder("deepseek-flash")!;
+    baseUrl.value = "https://api.example.com/v1";
+    baseUrl.dispatchEvent(new Event("input"));
+    model.value = "deepseek-flash";
+    model.dispatchEvent(new Event("input"));
     await flushPromises();
-    expect(inputByPlaceholder("https://api.deepseek.com")!.value).toBe(
-      "https://api.deepseek.com",
-    );
-    const modelSelect = selects()[1];
-    expect(modelSelect.getAttribute("data-value")).toBe("deepseek-flash");
     footerButton(t("settings.chatTranslate.save")).click();
     await flushPromises();
     expect(setCalls()).toHaveLength(1);
     expect(setCalls()[0][0]).toEqual(
       expect.objectContaining({
         provider: expect.objectContaining({
-          baseUrl: "https://api.deepseek.com",
+          baseUrl: "https://api.example.com/v1",
           model: "deepseek-flash",
           apiKey: null,
         }),
@@ -344,49 +296,55 @@ describe("provider window (registry + layout)", () => {
     );
   });
 
-  it("keeps the custom provider fully editable", async () => {
+  it("leaves an untouched key as null on save", async () => {
+    // The "unchanged" arm: the shell keeps whatever key is stored on disk.
     await openWindow();
-    // No registry match for the stored custom endpoint: free inputs are shown.
-    const baseUrl = inputByPlaceholder("https://api.deepseek.com")!;
-    const model = inputByPlaceholder("deepseek-flash")!;
-    baseUrl.value = "https://elsewhere.example/v2";
-    baseUrl.dispatchEvent(new Event("input"));
-    model.value = "some-model";
-    model.dispatchEvent(new Event("input"));
+    footerButton(t("settings.chatTranslate.save")).click();
+    await flushPromises();
+    expect(setCalls()[0][0]).toEqual(
+      expect.objectContaining({ provider: expect.objectContaining({ apiKey: null }) }),
+    );
+  });
+
+  it("replaces the stored key when one is typed", async () => {
+    await openWindow();
+    const keyInput = inputByPlaceholder(
+      t("settings.chatTranslate.apiKeyMissing"),
+    )!;
+    // The key field is masked and sits ALONE on its own row (the review's
+    // "API key gets its own line" layout), not beside another input.
+    expect(keyInput.getAttribute("type")).toBe("password");
+    const keyRow = keyInput.closest(".chat-settings__field");
+    expect(keyRow).not.toBeNull();
+    expect(keyRow!.querySelectorAll("input")).toHaveLength(1);
+    keyInput.value = "sk-test-replacement";
+    keyInput.dispatchEvent(new Event("input"));
     await flushPromises();
     footerButton(t("settings.chatTranslate.save")).click();
     await flushPromises();
     expect(setCalls()[0][0]).toEqual(
       expect.objectContaining({
-        provider: expect.objectContaining({
-          baseUrl: "https://elsewhere.example/v2",
-          model: "some-model",
-        }),
+        provider: expect.objectContaining({ apiKey: "sk-test-replacement" }),
       }),
     );
   });
 
-  it("shows the free model input for the custom-model choice", async () => {
+  it("clears the stored key through the clear button", async () => {
+    // The "clear" arm: the button writes "" immediately (no footer save).
+    mocks.chatApi.getChatTranslateConfig.mockResolvedValue(
+      responseOf(baseConfig(), true),
+    );
     await openWindow();
-    selectButton(selects()[0], "DeepSeek")!.click();
-    await flushPromises();
-    selectButton(
-      selects()[1],
-      t("settings.chatTranslate.modelPresetCustom"),
-    )!.click();
-    await flushPromises();
-    const modelInput = inputByPlaceholder("deepseek-flash")!;
-    expect(modelInput).not.toBeNull();
-    expect(modelInput.value).toBe("deepseek-flash");
-    modelInput.value = "deepseek-experimental";
-    modelInput.dispatchEvent(new Event("input"));
-    await flushPromises();
-    footerButton(t("settings.chatTranslate.save")).click();
+    const clearButton = Array.from(
+      document.querySelectorAll<HTMLButtonElement>(".hk-modal-root button"),
+    ).find((button) =>
+      (button.textContent ?? "").includes(t("settings.chatTranslate.apiKeyClear")),
+    );
+    expect(clearButton).toBeDefined();
+    clearButton!.click();
     await flushPromises();
     expect(setCalls()[0][0]).toEqual(
-      expect.objectContaining({
-        provider: expect.objectContaining({ model: "deepseek-experimental" }),
-      }),
+      expect.objectContaining({ provider: expect.objectContaining({ apiKey: "" }) }),
     );
   });
 
@@ -394,225 +352,152 @@ describe("provider window (registry + layout)", () => {
     await openWindow();
     const header = modalRoot()!.querySelector<HTMLButtonElement>(
       ".hk-expansion-panel-header",
-    );
-    expect(header).not.toBeNull();
-    // Closed by default; the MD3 header owns the state via aria-expanded.
-    expect(header!.getAttribute("aria-expanded")).toBe("false");
-    header!.click();
+    )!;
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    // Two compact numeric parameters, not full-width fields.
+    expect(modalRoot()!.querySelectorAll(".chat-settings__number")).toHaveLength(2);
+    header.click();
     await flushPromises();
-    expect(header!.getAttribute("aria-expanded")).toBe("true");
-    expect(modalRoot()!.querySelectorAll(".stub-HkNumberInput")).toHaveLength(2);
-    expect(modalRoot()!.textContent).toContain(
-      t("settings.chatTranslate.advancedParams"),
-    );
-    // One row, two labelled compact fields (timeout + temperature) — not two
-    // full-width bars stacked (the settings review's stretched-controls fix).
-    expect(modalRoot()!.querySelectorAll(".chat-settings__param")).toHaveLength(2);
+    expect(header.getAttribute("aria-expanded")).toBe("true");
     expect(
       modalRoot()!.querySelectorAll(".stub-HkNumberInput.chat-settings__number"),
     ).toHaveLength(2);
-  });
-
-  it("gives the API key its own full-width row", async () => {
-    await openWindow();
-    const fields = Array.from(
-      modalRoot()!.querySelectorAll<HTMLElement>(".chat-settings__field"),
-    );
-    const keyField = fields.find((field) =>
-      (field.textContent ?? "").includes(t("settings.chatTranslate.apiKey")),
-    );
-    expect(keyField).toBeDefined();
-    // A password field, alone on its own field row (the endpoint row is a
-    // different field) — the layout the review asked for.
-    const keyInput = keyField!.querySelector<HTMLInputElement>("input");
-    expect(keyInput).not.toBeNull();
-    expect(keyInput!.getAttribute("type")).toBe("password");
-    expect(keyField!.querySelectorAll("input")).toHaveLength(1);
-  });
-
-  it("echoes a stored preset endpoint and model back into the pickers", async () => {
-    mocks.chatApi.getChatTranslateConfig.mockResolvedValue(
-      responseOf({
-        ...baseConfig(),
-        provider: {
-          ...baseConfig().provider,
-          baseUrl: "https://api.deepseek.com/",
-          model: "deepseek-v4-pro",
-        },
-      }),
-    );
-    await openWindow();
-    // A trailing slash / case difference still recognizes the preset.
-    expect(selects()[0].getAttribute("data-value")).toBe("deepseek_default");
-    expect(selects()[1].getAttribute("data-value")).toBe("deepseek-v4-pro");
-    // A model OUTSIDE the preset's catalog falls back to the free input.
-    mocks.chatApi.getChatTranslateConfig.mockResolvedValue(
-      responseOf({
-        ...baseConfig(),
-        provider: {
-          ...baseConfig().provider,
-          baseUrl: "https://api.deepseek.com",
-          model: "some-private-model",
-        },
-      }),
-    );
-    document.body.innerHTML = "";
-    setActivePinia(createPinia());
-    await openWindow();
-    expect(selects()[1].getAttribute("data-value")).toBe("\u0000custom");
-    expect(inputByPlaceholder("deepseek-flash")!.value).toBe("some-private-model");
-  });
-
-  it("disables the refresh control while a fetch is in flight", async () => {
-    await openWindow();
-    let release: (value: unknown) => void = () => undefined;
-    mocks.chatApi.getChatProviderRegistry.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
-    const refresh = document.querySelector<HTMLButtonElement>(
-      `[aria-label="${t("settings.chatTranslate.registryRefresh")}"]`,
-    )!;
-    refresh.click();
-    await flushPromises();
-    expect(refresh.disabled).toBe(true);
-    expect(refresh.querySelector(".stub-HkSpinner")).not.toBeNull();
-    release(registry());
-    await flushPromises();
-    await flushPromises();
-    expect(refresh.disabled).toBe(false);
-  });
-
-  it("never overwrites edits made while the catalog is still loading", async () => {
-    let release: (value: unknown) => void = () => undefined;
-    mocks.chatApi.getChatProviderRegistry.mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          release = resolve;
-        }),
-    );
-    await openWindow();
-    // Catalog in flight: the user types the preset's own endpoint. The guard
-    // is what keeps the late catalog from snapping the picker onto it — the
-    // typed value alone would match, so removing the guard flips this test.
-    const baseUrl = inputByPlaceholder("https://api.deepseek.com")!;
-    baseUrl.value = "https://api.deepseek.com";
-    baseUrl.dispatchEvent(new Event("input"));
-    await flushPromises();
-    release(registry());
-    await flushPromises();
-    await flushPromises();
-    // The late catalog must NOT snap the picker onto a preset.
-    expect(inputByPlaceholder("https://api.deepseek.com")!.value).toBe(
-      "https://api.deepseek.com",
-    );
-    expect(selects()[0].getAttribute("data-value")).toBe("");
-  });
-
-  it("picks the entry whose catalog holds the stored model on a shared base URL", async () => {
-    const sharedBase = "https://api.minimax.chat/v1";
-    mocks.chatApi.getChatTranslateConfig.mockResolvedValue(
-      responseOf({
-        ...baseConfig(),
-        provider: {
-          ...baseConfig().provider,
-          baseUrl: sharedBase,
-          model: "minimax-m2.5",
-        },
-      }),
-    );
-    mocks.chatApi.getChatProviderRegistry.mockResolvedValue({
-      fetchedAt: 1,
-      stale: false,
-      providers: [
-        {
-          id: "minimax_default",
-          providerId: "minimax",
-          names: names("MiniMax (China)", "MiniMax（中国）"),
-          baseUrl: sharedBase,
-          envVar: null,
-          defaultModel: "MiniMax-M2.7",
-          models: [
-            { id: "MiniMax-M2.7", name: null },
-            { id: "minimax-m2.5", name: null },
-            { id: "MiniMax-Text-01", name: null },
-          ],
-        },
-        {
-          id: "minimax_coding_max",
-          providerId: "minimax",
-          names: names("MiniMax Coding Plan Max", "MiniMax 编程套餐 Max"),
-          baseUrl: sharedBase,
-          envVar: null,
-          defaultModel: "minimax-m2.5",
-          models: [
-            { id: "minimax-m2.5", name: null },
-            { id: "minimax-m2.1", name: null },
-          ],
-        },
-      ],
-    });
-    await openWindow();
-    // Both entries share the endpoint; the stored MODEL decides which plan
-    // the picker reports (the shortest matching catalog = the more specific
-    // plan entry).
-    expect(selects()[0].getAttribute("data-value")).toBe("minimax_coding_max");
-    expect(selects()[1].getAttribute("data-value")).toBe("minimax-m2.5");
-  });
-
-  it("says when the shown catalog is a stale cached fallback", async () => {
-    mocks.chatApi.getChatProviderRegistry.mockResolvedValueOnce({
-      ...registry(),
-      stale: true,
-    });
-    await openWindow();
     expect(modalRoot()!.textContent).toContain(
-      t("settings.chatTranslate.registryStale"),
+      t("settings.chatTranslate.temperature"),
     );
-    // The cached providers are still pickable.
-    expect(selectButton(selects()[0], "DeepSeek")).toBeDefined();
   });
 
-  it("surfaces a catalog failure while the manual fields keep working", async () => {
-    mocks.chatApi.getChatProviderRegistry.mockRejectedValueOnce(
-      new Error("registry fetch failed"),
+  it("reports the connectivity test through toasts", async () => {
+    await openWindow();
+    footerButton(t("settings.chatTranslate.testBtn")).click();
+    await flushPromises();
+    await flushPromises();
+    expect(mocks.chatApi.testChatTranslateProvider).toHaveBeenCalledTimes(1);
+    expect(mocks.toast.success).toHaveBeenLastCalledWith(
+      t("settings.chatTranslate.testOkModel", {
+        model: "deepseek-flash",
+        ms: 12,
+      }),
+    );
+    mocks.chatApi.testChatTranslateProvider.mockResolvedValueOnce({
+      ok: false,
+      latencyMs: 0,
+      modelEcho: null,
+      error: "synthetic timeout",
+    });
+    footerButton(t("settings.chatTranslate.testBtn")).click();
+    await flushPromises();
+    await flushPromises();
+    expect(mocks.toast.error).toHaveBeenLastCalledWith(
+      t("settings.chatTranslate.testFail", { msg: "synthetic timeout" }),
+    );
+  });
+
+  it("keeps the window and the typed draft when the save fails", async () => {
+    mocks.chatApi.setChatTranslateConfig.mockRejectedValueOnce(
+      new Error("shell down"),
     );
     await openWindow();
-    const text = modalRoot()!.textContent ?? "";
-    expect(text).toContain(t("settings.chatTranslate.registryFailed"));
-    expect(text).toContain("registry fetch failed");
-    // The custom path is untouched: both fields are still there and save.
+    const keyInput = inputByPlaceholder(
+      t("settings.chatTranslate.apiKeyMissing"),
+    )!;
+    keyInput.value = "sk-fresh";
+    keyInput.dispatchEvent(new Event("input"));
+    await flushPromises();
+    footerButton(t("settings.chatTranslate.save")).click();
+    await flushPromises();
+    await flushPromises();
+    // Still open, its typed key still on screen, and the failure is spelled out.
+    expect(modalRoot()).not.toBeNull();
+    expect(
+      inputByPlaceholder(t("settings.chatTranslate.apiKeyMissing"))!.value,
+    ).toBe("sk-fresh");
+    expect(document.body.textContent).toContain(
+      t("settings.chatTranslate.saveFailed"),
+    );
+  });
+
+  it("keeps the endpoint and model drafts when the save fails", async () => {
+    mocks.chatApi.setChatTranslateConfig.mockRejectedValueOnce(
+      new Error("shell down"),
+    );
+    await openWindow();
     const baseUrl = inputByPlaceholder("https://api.deepseek.com")!;
-    const model = inputByPlaceholder("deepseek-flash")!;
-    baseUrl.value = "https://manual.example/v1";
+    baseUrl.value = "https://typed.example/v2";
     baseUrl.dispatchEvent(new Event("input"));
-    model.value = "manual-model";
+    const model = inputByPlaceholder("deepseek-flash")!;
+    model.value = "typed-model";
     model.dispatchEvent(new Event("input"));
     await flushPromises();
     footerButton(t("settings.chatTranslate.save")).click();
     await flushPromises();
+    await flushPromises();
+    // The window survives the failed write with BOTH typed drafts intact —
+    // a retry must save the same endpoint/model, not the old stored pair.
+    expect(modalRoot()).not.toBeNull();
+    expect(inputByPlaceholder("https://api.deepseek.com")!.value).toBe(
+      "https://typed.example/v2",
+    );
+    expect(model.value).toBe("typed-model");
+    expect(document.body.textContent).toContain(
+      t("settings.chatTranslate.saveFailed"),
+    );
+  });
+
+  it("saves on Enter from the endpoint field", async () => {
+    await openWindow();
+    const baseUrl = inputByPlaceholder("https://api.deepseek.com")!;
+    baseUrl.value = "https://enter.example/v1";
+    baseUrl.dispatchEvent(new Event("input"));
+    expect(
+      mocks.chatApi.setChatTranslateConfig,
+    ).not.toHaveBeenCalled();
+    // The field's submit-on-enter wiring reaches the same save path as the
+    // footer button.
+    baseUrl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+    await flushPromises();
+    expect(mocks.chatApi.setChatTranslateConfig).toHaveBeenCalledTimes(1);
     expect(setCalls()[0][0]).toEqual(
       expect.objectContaining({
         provider: expect.objectContaining({
-          baseUrl: "https://manual.example/v1",
-          model: "manual-model",
+          baseUrl: "https://enter.example/v1",
         }),
       }),
     );
   });
 
-  it("picks the registry names matching the interface locale", async () => {
-    // Load the target locale so the mounted labels resolve too (the assertion
-    // below only needs the registry names, but missing-key chatter is noise).
-    await loadLocaleMessages("zh-CN");
-    (i18n.global.locale as unknown as { value: string }).value = "zh-CN";
-    await openWindow();
-    const providerSelect = selects()[0];
-    expect(selectButton(providerSelect, "深度求索")).toBeDefined();
-    expect(
-      selectButton(providerSelect, t("settings.chatTranslate.providerPresetCustom")),
-    ).toBeDefined();
+  it("shows the shell-healed defaults after saving an empty model", async () => {
+    // The shell heals an empty model to deepseek-flash; the response re-syncs
+    // the drafts, so the window must show the healed value (not stay blank).
+    mocks.chatApi.setChatTranslateConfig.mockImplementationOnce(
+      (update: ChatTranslateConfigUpdate) =>
+        Promise.resolve(
+          responseOf({
+            ...baseConfig(),
+            provider: {
+              ...update.provider,
+              model: "deepseek-flash",
+              apiKey: "",
+            },
+          }),
+        ),
+    );
+    const wrapper = await openWindow();
+    const model = inputByPlaceholder("deepseek-flash")!;
+    model.value = "";
+    model.dispatchEvent(new Event("input"));
+    await flushPromises();
+    footerButton(t("settings.chatTranslate.save")).click();
+    await flushPromises();
+    await flushPromises();
+    // A successful save closes the window; reopening it shows the shell's
+    // healed model (the store applied the response, the draft re-syncs). The
+    // prop must go false first: the component's close is an emit, which the
+    // host is responsible for applying before a reopen.
+    await wrapper.setProps({ modelValue: false });
+    await flushPromises();
+    await wrapper.setProps({ modelValue: true });
+    await flushPromises();
+    expect(inputByPlaceholder("deepseek-flash")!.value).toBe("deepseek-flash");
   });
 });
