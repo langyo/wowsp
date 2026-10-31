@@ -241,7 +241,6 @@ body {
   align-items: center;
   gap: 0.55rem;
   padding: 0.45rem 0.65rem;
-  border: none;
   border-radius: var(--radius-sm);
   background: transparent;
   color: rgb(var(--color-muted));
@@ -252,7 +251,11 @@ body {
   transition: color var(--duration-short) var(--ease-standard),
     background var(--duration-short) var(--ease-standard);
 
-  &:hover {
+  /* Reserved border (menu-item convention): the hover/danger washes
+     draw inside the same box with no layout shift. */
+  border: 1px solid transparent;
+
+  &:hover:not([data-danger]) {
     color: rgb(var(--color-text));
     background: rgb(var(--color-primary) / 10%);
   }
@@ -261,7 +264,12 @@ body {
     outline-offset: 1px;
   }
 
-  &--danger {
+  /* Danger rides the grammar's data-danger attribute — a rest face AND
+     a hover face (the old --danger class painted hover-only, so the
+     quit row read ordinary until pointed at). */
+  &[data-danger] {
+    color: rgb(var(--color-error));
+
     &:hover {
       color: rgb(var(--color-error));
       background: rgb(var(--color-error) / 10%);

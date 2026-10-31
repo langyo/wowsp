@@ -436,7 +436,7 @@ export default defineComponent({
                 client is actually pending ("Steam · ASIA" over that
                 client's rows); a single client stays a flat list. */}
             {multi ? (
-              <span class="plugin-update-hint__group-label">{groupLabel(g)}</span>
+              <span class="hk-menu-section-label plugin-update-hint__group-label">{groupLabel(g)}</span>
             ) : null}
             {entries.map(renderItem)}
           </div>

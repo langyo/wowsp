@@ -159,11 +159,14 @@
   }
 
   &__group-label {
-    font-size: var(--text-3xs, 0.625rem);
-    font-weight: 600;
-    letter-spacing: 0.02em;
+    // The caption band is hikari's shared .hk-menu-section-label grammar
+    // (weight/tracking/color come from there). This surface keeps its own
+    // steps: the UPPERCASE casing (a surface convention, like the
+    // platform switcher's), the truncation for long group names, AND the
+    // caption size — this hint's captions are the 8px step
+    // (--text-3xs; the grammar default is 10px and would grow them).
+    --hk-menu-section-label-font: var(--text-3xs, 0.5rem);
     text-transform: uppercase;
-    color: rgb(var(--color-muted));
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
