@@ -1444,6 +1444,8 @@ fn live_game_roots(exe_path: Option<&str>, seen_root: Option<&str>) -> Vec<Strin
 const BACKFILL_LOOKBACK_SECS: i64 = 14 * 24 * 3600;
 /// Same-crash clustering: an event-log entry, its WER folder and its dump
 /// land within minutes of each other — one imported record per cluster.
+/// Two WG crash reports are exempt (see merge_backfill_candidates): each
+/// report is one crash of its own.
 #[cfg(windows)]
 const BACKFILL_CLUSTER_SECS: i64 = 300;
 
@@ -1475,9 +1477,24 @@ fn all_game_images() -> Vec<String> {
         .collect()
 }
 
+/// The evidence family of a candidate id — the segment before the first
+/// ':' (evt / wer / dmp / wgc).
+#[cfg(windows)]
+fn evidence_family(evidence_id: &str) -> &str {
+    evidence_id.split(':').next().unwrap_or("")
+}
+
 /// The pure merge: sort newest-first with the event-log source outranking
 /// WER outranking dumps, then keep ONE candidate per (image ± cluster
-/// window) — the same crash never imports twice from three sources.
+/// window) — the same crash never imports twice from three sources. Two WG
+/// crash reports are the exception and never cluster with each other: the
+/// game's crash handler writes exactly one report per fatal exception and
+/// the process dies with it, so two reports — seconds apart in practice,
+/// a relapse crash right after a relaunch — are two DISTINCT crashes and
+/// both must import (observed 2026-10-31: reports 81 s apart, one crash
+/// each). A report still clusters against the OTHER sources of the same
+/// crash (an event-log entry outranks it), and cross-source pairs of one
+/// crash keep merging as before.
 #[cfg(windows)]
 fn merge_backfill_candidates(mut candidates: Vec<BackfillCandidate>) -> Vec<BackfillCandidate> {
     // Priority FIRST: the event-log entry claims its cluster before the
@@ -1490,6 +1507,8 @@ fn merge_backfill_candidates(mut candidates: Vec<BackfillCandidate>) -> Vec<Back
         let clustered = kept.iter().any(|k| {
             k.image == candidate.image
                 && (k.at_unix - candidate.at_unix).abs() <= BACKFILL_CLUSTER_SECS
+                && !(evidence_family(&k.evidence_id) == "wgc"
+                    && evidence_family(&candidate.evidence_id) == "wgc")
         });
         if !clustered {
             kept.push(candidate);
@@ -1704,7 +1723,9 @@ fn harvest_backfill_candidates() -> Vec<BackfillCandidate> {
     // WG crash-handler reports: <game>/crashes/<image>-<stamp>.crash. On
     // installs whose WER handoff is suppressed this folder is the ONLY
     // durable evidence — the observed machine had zero event-log and WER
-    // entries for a crash that left two reports here.
+    // entries for a relapse pair that left two reports here (two crashes,
+    // one each; see merge_backfill_candidates for why the pair imports
+    // as two records).
     let stems: Vec<String> = images.iter().map(|i| image_stem(i)).collect();
     let mut roots: Vec<String> = super::game_context::cached_scan()
         .iter()

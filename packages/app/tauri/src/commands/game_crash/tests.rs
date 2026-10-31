@@ -839,6 +839,65 @@ fn backfill_merge_clusters_one_crash_across_three_sources() {
     );
 }
 
+/// Two WG crash reports inside the cluster window are TWO crashes — the
+/// observed relapse shape (2026-10-31: reports 81 s apart, one crash each,
+/// the second a reconnect that died at battle load again). The cluster
+/// merge used to swallow the older report whole.
+#[cfg(windows)]
+#[test]
+fn backfill_merge_keeps_both_wgc_reports_of_two_distinct_crashes() {
+    let t = 1_790_000_000;
+    let merged = merge_backfill_candidates(vec![
+        candidate(
+            "wgc:WorldOfWarships64-2026-10-31_15-51-47.crash",
+            t + 81,
+            "worldofwarships64.exe",
+            1,
+        ),
+        candidate(
+            "wgc:WorldOfWarships64-2026-10-31_15-50-26.crash",
+            t,
+            "worldofwarships64.exe",
+            1,
+        ),
+    ]);
+    let ids: Vec<&str> = merged.iter().map(|c| c.evidence_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec![
+            "wgc:WorldOfWarships64-2026-10-31_15-50-26.crash",
+            "wgc:WorldOfWarships64-2026-10-31_15-51-47.crash",
+        ],
+        "two WG reports are two crashes — both import, chronological order kept"
+    );
+}
+
+/// The exemption is pair-scoped: a WG report still merges into the OTHER
+/// sources of the SAME crash, and cross-source pairs cluster as before.
+#[cfg(windows)]
+#[test]
+fn backfill_merge_still_clusters_one_crash_across_wgc_and_event_log() {
+    let t = 1_790_000_000;
+    let merged = merge_backfill_candidates(vec![
+        // One crash: its WG report lands 30 s after the event-log entry.
+        candidate(
+            "wgc:WorldOfWarships64-2026-10-31_15-50-26.crash",
+            t + 30,
+            "worldofwarships64.exe",
+            1,
+        ),
+        candidate("evt:460470", t, "worldofwarships64.exe", 0),
+        // The Event 1000 + 1001 pair of one crash still merges too.
+        candidate("evt:460471", t + 5, "worldofwarships64.exe", 0),
+    ]);
+    let ids: Vec<&str> = merged.iter().map(|c| c.evidence_id.as_str()).collect();
+    assert_eq!(
+        ids,
+        vec!["evt:460471"],
+        "cross-source evidence of one crash keeps importing once (one event-log entry survives)"
+    );
+}
+
 #[test]
 fn backfill_tombstones_roundtrip_cap_and_heal() {
     let dir = TempDir::new("tombstones");
