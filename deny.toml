@@ -82,6 +82,13 @@ name = "malkuth"
 expression = "LicenseRef-sysl-1.0"
 license-files = [{ path = "LICENSE", hash = 0xda2b7c13 }]
 
+# hikari-host (crates.io dependency of the app shell) declares
+# license-file = "LICENSE" - the hikari repo's SySL-1.0 licence file.
+[[licenses.clarify]]
+name = "hikari-host"
+expression = "LicenseRef-sysl-1.0"
+license-files = [{ path = "LICENSE", hash = 0x629cea03 }]
+
 # shun declares `license-file = "LICENSE"` (no SPDX expression), so
 # clarify it from the license file itself (SySL-1.0, same license as WoWSP).
 [[licenses.clarify]]

@@ -19,6 +19,7 @@
     "core:window:allow-hide",
     "core:webview:allow-create-webview-window",
     "core:app:default",
-    "core:app:allow-version"
+    "core:app:allow-version",
+    "hikari-host:allow-ack-close"
   ]
 }

@@ -12,6 +12,7 @@ import {
   useBreakpoint,
   useToast,
 } from "@celestia-island/hikari";
+import { useCloseRequest } from "@celestia-island/hikari/runtime";
 
 import { useConfigStore } from "@/stores/config";
 import { useAccountStore } from "@/stores/account";
@@ -50,16 +51,16 @@ import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getVersion } from "@tauri-apps/api/app";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "@/i18n";
 import "./AppShell.scss";
 
 /**
  * Root layout shell: sidebar (left) + main content (right). Loads accounts +
- * starts the game-status poller on mount. Listens for the Rust close-requested
- * event to show a quit-vs-minimize confirm dialog (HkModal with a footer
- * action group), unless a choice was already remembered in the closeBehavior
+ * starts the game-status poller on mount. Subscribes through hikari-host's
+ * close-request hook (the hook acks the Rust watchdog first) to show a
+ * quit-vs-minimize confirm dialog (HkModal with a footer action group),
+ * unless a choice was already remembered in the closeBehavior
  * store (the same one the settings' closeBehavior section edits) — then that
  * action runs straight away. On first launch (until completed) it also runs
  * the four-step onboarding wizard, whose first step carries the mandatory
@@ -136,7 +137,7 @@ export default defineComponent({
     // True from the moment a wizard run completes this boot (starts true
     // whenever the wizard is up) — see syncGamePathSetup below.
     const wizardHandledGameSetup = ref(showOnboarding.value);
-    let unlistenClose: UnlistenFn | null = null;
+    let unlistenClose: (() => void) | null = null;
 
     function syncGamePathSetup() {
       showGamePathSetup.value =
@@ -435,35 +436,28 @@ export default defineComponent({
         dupInstall.scheduleCheck();
       }
 
-      // The close-requested event only exists inside the Tauri shell; in a
-      // plain browser tab listen() would throw at mount, so guard it (the
-      // close dialog is desktop-app-only anyway).
-      if (isNative()) {
-        unlistenClose = await listen("close-requested", () => {
-          // Acknowledge FIRST: Rust arms a 5 s force-close watchdog before it
-          // emits this event, and a webview that never answers it is killed
-          // when the watchdog fires (the dead-renderer fallback). The ack
-          // proves this listener is alive and stands the watchdog down BEFORE
-          // the async dialog/action work below, which may outlive the window.
-          // Fire-and-forget: an older shell without the command rejects, and
-          // that must never affect the quit dialog itself.
-          void invoke("close_requested_ack").catch(() => undefined);
-          // The remembered action (AppShell's dialog checkbox / the settings'
-          // closeBehavior radio — one store, one slot). "ask" is the stored
-          // absence of a choice, and the store's loader already swept any
-          // junk value on import, so no heal-write is needed here.
-          const saved = closeBehavior.action;
-          if (saved !== "ask") {
-            void handleCloseChoice(saved);
-          } else {
-            // Fresh ask: the checkbox writes the SAME slot the settings'
-            // closeBehavior radio edits, so a tick left over from an earlier
-            // close would silently re-arm an action the user just cleared.
-            rememberChoice.value = false;
-            showCloseDialog.value = true;
-          }
-        });
-      }
+      // The close-request listener comes from hikari's runtime hook: it acks
+      // `plugin:hikari-host|ack_close` as its FIRST action — standing the Rust
+      // force-close watchdog down before the async dialog/action work below —
+      // and it is a safe no-op outside a Tauri webview (plain browser tab, SSR),
+      // so no isNative guard is needed. The quit-vs-tray decision stays a webui
+      // concern; the hook only proves this renderer is alive.
+      unlistenClose = useCloseRequest(() => {
+        // The remembered action (AppShell's dialog checkbox / the settings'
+        // closeBehavior radio — one store, one slot). "ask" is the stored
+        // absence of a choice, and the store's loader already swept any
+        // junk value on import, so no heal-write is needed here.
+        const saved = closeBehavior.action;
+        if (saved !== "ask") {
+          void handleCloseChoice(saved);
+        } else {
+          // Fresh ask: the checkbox writes the SAME slot the settings'
+          // closeBehavior radio edits, so a tick left over from an earlier
+          // close would silently re-arm an action the user just cleared.
+          rememberChoice.value = false;
+          showCloseDialog.value = true;
+        }
+      });
     });
     onBeforeUnmount(() => {
       gameStatus.stop();

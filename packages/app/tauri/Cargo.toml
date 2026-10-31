@@ -67,6 +67,9 @@ malkuth.workspace = true
 
 # App-version one-time action scaffold (see commands/app_migrations.rs)
 hifumi.workspace = true
+# Shell-lifecycle guard shared by hikari hosts: the close-request ack command
+# plus the force-close watchdog the shell forwards its window events into.
+hikari-host.workspace = true
 
 # AppData directory resolution
 dirs-next.workspace = true
