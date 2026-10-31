@@ -6,6 +6,7 @@ import { nextTick } from "vue";
 import type { PlayerBuild } from "@/api";
 import { initLocaleMessages, setLocale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 import LiveShipMeta from "./LiveShipMeta";
 import { playerBuildView } from "./playerBuild";
 
@@ -34,6 +35,11 @@ beforeAll(async () => {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  // The DPI singleton re-reads the documentElement per test: a zoom
+  // test's scale must never leak into the unzoomed default.
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
   // happy-dom returns a zero rect; the flyout skips placement on zero and
   // would never open its measured card.
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
@@ -52,6 +58,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
   document.body.innerHTML = "";
 });
 
@@ -83,6 +92,22 @@ describe("LiveShipMeta build card", () => {
     expect(card).not.toBeNull();
     expect(card?.style.width).toBe("360px");
     expect(document.body.querySelector(".player-build")).toBeNull();
+    wrapper.unmount();
+  });
+
+  it("places the card in the root zoom's local space", async () => {
+    // 125% interface scale: the strip rect answers in visual px while the
+    // teleported card's left/top paint ×scale — unconverted, the card
+    // drifts scale× off its strip (the hint family's zoom report).
+    document.documentElement.dataset.dpiScale = "125";
+    resetAppliedDpiScaleForTest();
+    const wrapper = await openCard(null);
+    const card = document.body.querySelector(".live-ship-card") as HTMLElement | null;
+    expect(card).not.toBeNull();
+    // Anchor left 10 visual / 1.25 → 8 local; bottom 30 / 1.25 = 24, plus
+    // the 8px hang-below gap → 32.
+    expect(card?.style.left).toBe("8px");
+    expect(card?.style.top).toBe("32px");
     wrapper.unmount();
   });
 });

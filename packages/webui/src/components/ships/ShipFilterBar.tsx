@@ -63,6 +63,7 @@ import { ArrowDown, ArrowUp, Search } from "@lucide/vue";
 import { HkPopover, HkScrollContainer, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { shipOfflineEntry, nationNameFromDb } from "@/features/holographic/modelLoader";
 import { shipIconUrl } from "@/features/holographic/shipIcons";
 import { canonicalNation } from "@/utils/nationFlags";
@@ -391,6 +392,9 @@ export default defineComponent({
      *  applied (static per instance — `exclude` never changes at runtime). */
     const order: CatKey[] = DEFAULT_ORDER.filter((k) => !props.exclude.includes(k));
     const encyclopedia = useEncyclopediaStore();
+    // The root DPI zoom the indent measure converts against — see
+    // measureChipIndent (`1` while the interface-scale preference is Auto).
+    const dpiScale = useAppliedDpiScale();
     const { dataLanguage } = useLanguage();
     // Phone widths (the same <768px cut hikari's sheets use) dock every
     // popup as a bottom sheet instead of an anchored floating panel.
@@ -541,12 +545,22 @@ export default defineComponent({
       const rowStyle = getComputedStyle(row);
       const padLeft = parseFloat(rowStyle.paddingLeft) || 0;
       const borderLeft = parseFloat(rowStyle.borderLeftWidth) || 0;
+      // gBCR answers in root-visual px while the consumed `--sfb-indent`
+      // (a CSS length inside the zoomed subtree) and the computed paddings
+      // are local: divide the rect difference by the applied root scale
+      // before mixing, or a DPI-zoomed root over-measures by (scale − 1)
+      // of the offset (the hint family's zoom notes).
+      const z = dpiScale.value;
       // Floor (not round): a fractional overshoot would poke the row's
       // right edge past the host content edge, while a shortfall just
       // leaves an invisible sub-pixel gap on the left.
       chipIndent.value = Math.max(
         0,
-        Math.floor(bar.getBoundingClientRect().left - row.getBoundingClientRect().left - padLeft - borderLeft),
+        Math.floor(
+          (bar.getBoundingClientRect().left - row.getBoundingClientRect().left) / z -
+            padLeft -
+            borderLeft,
+        ),
       );
     }
 

@@ -25,6 +25,8 @@
  */
 import { onBeforeUnmount, ref, watch, type Ref } from "vue";
 
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
+
 /** Firefox line-height wheel mode (deltaMode 1): one notch reports ~3
  *  lines, not pixels — normalized here so a notch pans a wheel-like
  *  distance on every engine (40px/line, the classic WebKit line height).
@@ -62,6 +64,9 @@ export function useOptionStrip() {
   /** The real scroller: hikari's viewport inside the container root. */
   let viewportEl: HTMLElement | null = null;
   const panning = ref(false);
+  // The root DPI zoom the drag-pan converts against — see onPointerMove
+  // (`1` while the interface-scale preference is Auto).
+  const dpiScale = useAppliedDpiScale();
   const PAN_THRESHOLD = 5;
   let pressX = 0;
   let pressY = 0;
@@ -132,7 +137,11 @@ export function useOptionStrip() {
     e.preventDefault();
     const el = viewportEl;
     if (!el) return;
-    el.scrollLeft -= e.clientX - lastX;
+    // The pointer delta is visual px while scrollLeft is the strip's
+    // zoomed local space — divide by the applied scale or the pan runs
+    // scale× faster than the pointer under a manual interface scale (the
+    // hint family's zoom notes).
+    el.scrollLeft -= (e.clientX - lastX) / dpiScale.value;
     lastX = e.clientX;
   }
 

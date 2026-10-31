@@ -37,6 +37,7 @@ import {
   nationNameFromDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { runtimeShipEpoch } from "./runtimeShipIdentity";
 import {
   formatShipParams,
@@ -133,6 +134,13 @@ export default defineComponent({
     // ── Flyout card ────────────────────────────────────────────────────────
     const flyoutOpen = ref(false);
     const flyoutPos = ref<CSSProperties>({});
+    // The card teleports to <body> — inside the root DPI zoom's subtree —
+    // so its written left/top paint in the zoomed local space while the
+    // anchor's gBCR and window.innerWidth/innerHeight answer in
+    // root-visual px: placeLiveCard runs entirely in local space, fed the
+    // measured values divided by the applied scale (the hint family's
+    // zoom notes; offsetWidth/offsetHeight are already local).
+    const dpiScale = useAppliedDpiScale();
     // The card is an HkScrollContainer: a COMPONENT ref — it exposes the
     // scrolling viewport (the measure-then-place pass below reads its box;
     // the card's 1px border sits just outside it), not an element.
@@ -169,12 +177,21 @@ export default defineComponent({
         void nextTick(() => {
           const viewport = card.value?.getScrollElement();
           if (!viewport) return;
+          // The strip rect is visual px; placeLiveCard's contract is the
+          // card's zoomed local space — divide the visual inputs (the
+          // offsetWidth/offsetHeight box is already local).
+          const z = dpiScale.value;
           const { left, top } = placeLiveCard(
-            r,
+            {
+              left: r.left / z,
+              top: r.top / z,
+              right: r.right / z,
+              bottom: r.bottom / z,
+            },
             viewport.offsetWidth,
             viewport.offsetHeight,
-            window.innerWidth,
-            window.innerHeight,
+            window.innerWidth / z,
+            window.innerHeight / z,
           );
           flyoutPos.value = {
             left: `${Math.round(left)}px`,

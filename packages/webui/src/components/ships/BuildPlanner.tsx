@@ -22,6 +22,7 @@ import { resolveNationFlag } from "@/utils/nationFlags";
 import { tierToRoman } from "@wowsp/holo";
 import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import NationFlag from "@/components/base/NationFlag";
 import type { ShipInfo } from "@/api";
 import {
@@ -563,6 +564,12 @@ export default defineComponent({
     const flagTip = ref<{ sig: SignalEntry; cx: number; bottom: number } | null>(null);
     const flagTipEl = ref<HTMLElement | null>(null);
     const flagTipPos = ref<Record<string, string>>({ left: "0px", top: "0px", visibility: "hidden" });
+    // The card teleports to <body> — inside the root DPI zoom's subtree —
+    // so its written left/top paint in the zoomed local space while gBCR
+    // and window.innerWidth/innerHeight answer in root-visual px: every
+    // measured value is divided by the applied scale first, or the card
+    // drifts scale× off its tile (the hint family's zoom notes).
+    const dpiScale = useAppliedDpiScale();
     // Faded hover card: the DOM stays through a short leave transition
     // (delayed unmount) instead of snapping; `mounted` drives the leave
     // class while `flagTip` keeps serving the frozen content.
@@ -591,7 +598,9 @@ export default defineComponent({
         flagTipHideTimer = undefined;
       }
       const r = el.getBoundingClientRect();
-      flagTip.value = { sig, cx: r.left + r.width / 2, bottom: r.bottom };
+      // Into the card's zoomed local space (see the dpiScale note above).
+      const z = dpiScale.value;
+      flagTip.value = { sig, cx: (r.left + r.width / 2) / z, bottom: r.bottom / z };
       flagTipMounted.value = true;
       // Any scroll (capture: the modal body scrolls, not the window) moves a
       // fixed card off its anchor — hide, same trade the global hint makes.
@@ -605,11 +614,16 @@ export default defineComponent({
         const el = flagTipEl.value;
         const tip = flagTip.value;
         if (!el || !tip) return;
+        const z = dpiScale.value;
+        // gBCR answers in visual px — the card's width/height divide into
+        // the same local space tip.cx/tip.bottom were converted to.
         const card = el.getBoundingClientRect();
+        const cardW = card.width / z;
+        const cardH = card.height / z;
         const m = 8;
-        const x = Math.max(m, Math.min(tip.cx - card.width / 2, window.innerWidth - card.width - m));
+        const x = Math.max(m, Math.min(tip.cx - cardW / 2, window.innerWidth / z - cardW - m));
         let y = tip.bottom + 8;
-        if (y + card.height > window.innerHeight - m) y = Math.max(m, tip.bottom - card.height - 8);
+        if (y + cardH > window.innerHeight / z - m) y = Math.max(m, tip.bottom - cardH - 8);
         flagTipPos.value = { left: `${Math.round(x)}px`, top: `${Math.round(y)}px`, visibility: "visible" };
       },
       { flush: "post" },

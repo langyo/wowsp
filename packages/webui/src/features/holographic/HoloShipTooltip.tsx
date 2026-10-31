@@ -37,6 +37,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import BattleIcon from "@/components/base/BattleIcon";
 import NationFlag from "@/components/base/NationFlag";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { scopedViewOf } from "@/utils/shipStatsScope";
 import type { ResolvedStatsMode, RosterModeNumbers } from "@/utils/statView";
@@ -126,6 +127,10 @@ export default defineComponent({
   setup(props) {
     const { dataLanguage } = useLanguage();
     const encStore = useEncyclopediaStore();
+    // The root DPI zoom the placement math runs against — see place (the
+    // scale the document root is drawn at, `1` while the interface-scale
+    // preference is Auto).
+    const dpiScale = useAppliedDpiScale();
 
     const enemy = computed(() => props.vehicle.relation >= 2);
     const self = computed(() => props.vehicle.relation === 0);
@@ -242,12 +247,24 @@ export default defineComponent({
       if (!r.width && !r.height) return; // detached anchor — don't cache
       lastW = w;
       lastH = h;
+      // The card teleports to <body> — inside the root DPI zoom's subtree —
+      // so its written left/top paint in the zoomed local space while the
+      // anchor's gBCR and window.innerWidth/innerHeight answer in
+      // root-visual px: placeLiveCard runs entirely in local space, fed
+      // the measured values divided by the applied scale (the hint
+      // family's zoom notes; offsetWidth/offsetHeight are already local).
+      const z = dpiScale.value;
       const { left, top } = placeLiveCard(
-        r,
+        {
+          left: r.left / z,
+          top: r.top / z,
+          right: r.right / z,
+          bottom: r.bottom / z,
+        },
         w,
         h,
-        window.innerWidth,
-        window.innerHeight,
+        window.innerWidth / z,
+        window.innerHeight / z,
       );
       pos.value = {
         left: `${Math.round(left)}px`,

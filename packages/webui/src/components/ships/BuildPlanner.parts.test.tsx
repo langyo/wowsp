@@ -17,7 +17,7 @@
  *  predecessor PRSD206 (4078843344) is the previous-tier card.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { defineComponent, h } from "vue";
 
 vi.mock("@/i18n", () => ({
@@ -116,6 +116,7 @@ vi.mock("./DataObserver", () => ({
 import BuildPlanner from "./BuildPlanner";
 import { emptyBuild } from "./modifierPipeline";
 import type { ShipInfo } from "@/api";
+import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 
 enableAutoUnmount(afterEach);
 
@@ -205,5 +206,53 @@ describe("BuildPlanner 装备选择 panel", () => {
     const wrapper = mountParts({ ...minsk(), shipId: 123456789 });
     expect(wrapper.find(".planner-v__parts").exists()).toBe(false);
     expect(wrapper.find(".planner-v__empty").text()).toBe("ships.parts.empty");
+  });
+});
+
+describe("BuildPlanner flag hover card (root-zoom placement)", () => {
+  it("places the flag card in the root zoom's local space", async () => {
+    // 125% interface scale: the tile's rect answers in visual px while the
+    // teleported card's written left/top paint ×scale — unconverted, the
+    // card drifted scale× off its tile (the hint family's zoom report).
+    document.documentElement.dataset.dpiScale = "125";
+    resetAppliedDpiScaleForTest();
+    // happy-dom measures every box 0×0 — stub the tile AND the card to one
+    // 120×20 box at (10, 10). The card's measured width (120/1.25 = 96
+    // local) clamps the centered x onto the 8px edge margin.
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockReturnValue({
+        width: 120,
+        height: 20,
+        top: 10,
+        left: 10,
+        right: 130,
+        bottom: 30,
+        x: 10,
+        y: 10,
+        toJSON: () => ({}),
+      } as DOMRect);
+    try {
+      const wrapper = mount(BuildPlanner, {
+        props: { ship: minsk(), build: emptyBuild(), initialSection: "flags" },
+      });
+      const tile = wrapper.find(".planner-v__flag");
+      expect(tile.exists()).toBe(true);
+      await tile.trigger("mouseenter");
+      await flushPromises();
+
+      const card = document.body.querySelector<HTMLElement>(".flag-card");
+      expect(card).not.toBeNull();
+      // Tile center (10 + 60) visual / 1.25 → 56 local, minus half the
+      // card width (48) lands exactly on the 8px edge margin; bottom
+      // 30 / 1.25 = 24 plus the 8px hang-below gap → 32.
+      expect(card?.style.left).toBe("8px");
+      expect(card?.style.top).toBe("32px");
+    } finally {
+      spy.mockRestore();
+      delete document.documentElement.dataset.dpiScale;
+      document.documentElement.style.removeProperty("zoom");
+      resetAppliedDpiScaleForTest();
+    }
   });
 });
