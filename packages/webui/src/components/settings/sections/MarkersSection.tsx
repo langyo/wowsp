@@ -27,6 +27,7 @@ import {
   HkSwitch,
   HkTabs,
   HkTag,
+  useBreakpoint,
   useToast,
 } from "@celestia-island/hikari";
 import { Cloud, Filter, Plus, Search, X } from "@lucide/vue";
@@ -216,6 +217,8 @@ export default defineComponent({
     // native file picker. On the phone the dialog renders the
     // exact-search body alone (no tab strip at all).
     const mobileApp = isMobileApp();
+    // Phone LAYOUT (viewport) — drives the popover's sheet docking flag.
+    const { isMobile: phoneLayout } = useBreakpoint();
 
     // ── add dialog (tabbed: 精准搜索 / 从海猴雷达导入) ──────────────────
     const addOpen = ref(false);
@@ -840,6 +843,10 @@ export default defineComponent({
             placement="bottom-end"
             padding="lg"
             title={t("settings.markersSearchPlaceholder")}
+            /* Phones never float anchored menus (repo convention,
+             * ShipFilterBar): the search panel docks as a bottom sheet. */
+            sheetOnMobile
+            closeOnBackdrop={phoneLayout.value}
           >
             <div class="markers-section__pop">
               <HkInput

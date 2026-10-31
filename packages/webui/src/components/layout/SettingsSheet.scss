@@ -1,0 +1,11 @@
+/* SettingsSheet — the phone-layout settings window. HkModal docks as a
+   bottom sheet at <=767px; the settings body is long and rail-driven, so
+   the sheet rides near its cap (100dvh − title bar − safe area, the
+   --hk-sheet-top-inset AppShell re-anchors) instead of hugging a short
+   fold. Only the phone branch is touched — desktop keeps the modal
+   frame. */
+@media (max-width: 767px) {
+  .wowsp-settings-sheet {
+    height: calc(100dvh - var(--hk-sheet-top-inset, 4.25rem));
+  }
+}

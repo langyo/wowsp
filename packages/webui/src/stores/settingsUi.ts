@@ -1,8 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-import { router } from "@/router";
-import { isMobileApp, isPhoneLayout } from "@/utils/platform";
+import { isMobileApp } from "@/utils/platform";
 
 /** Settings sections. The id set only — rail order comes from
  *  SETTINGS_GROUPS below (the union's textual order is not meaningful). */
@@ -151,16 +150,14 @@ export const useSettingsUiStore = defineStore("settingsUi", () => {
    *  optionally gliding the pane onto one of that section's cards (a
    *  SETTINGS_ANCHOR_* value; consumed by SettingsShell, see its
    *  focusAnchor prop). Without arguments the last-viewed section stays
-   *  selected and no glide is pending. Phone layout goes to the settings
-   *  page (a real route, so the system back gesture works); desktop
-   *  layout raises the app-singleton modal. */
+   *  selected and no glide is pending. Both layouts raise the
+   *  app-singleton window now: the desktop modal and the phone bottom
+   *  sheet (hikari's HkModal backGuard pushes a history entry, so the
+   *  Android back gesture closes it — the reason the old /settings route
+   *  page existed is gone). */
   function show(at?: SettingsSection, anchor?: string) {
     if (at) section.value = normalizeSettingsSection(at);
     focusAnchor.value = anchor ?? null;
-    if (isPhoneLayout()) {
-      void router.push({ path: "/settings", query: { section: section.value } });
-      return;
-    }
     visible.value = true;
   }
 

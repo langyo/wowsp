@@ -75,6 +75,12 @@ const HEADING_PROP_LINES = new Set([
   "components/ships/ShipFilterBar.tsx|title={t(def.title)}",
   // <AsyncSearchCombo …> heading prop on the mod-search combo.
   'views/ResourcesView.tsx|title={t("resources.searchMod")}',
+  // <HkModal …> heading prop on the phone replay-detail sheet (the level-3
+  // window; its opening tag spans past the recovery window).
+  'views/replay/ReplayView.tsx|title={t("replay.detail.title")}',
+  // <HkPopover …> heading on the tactics profile rename — the sheetOnMobile
+  // props below pushed the tag past the recovery window.
+  'views/replay/TacticsView.tsx|title={t("tactics.profile.rename")}',
 ]);
 
 /** Path fragments that never contain migratable markup. */
