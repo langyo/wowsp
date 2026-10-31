@@ -7,13 +7,12 @@ import { analyzeSpawnSymmetry, type EntitySide } from "@/features/replay/spawnSy
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
-import StaticReportPanel from "@/features/holographic/StaticReportPanel";
-import type { StaticReport } from "@/api";
 import PairingWizard from "@/features/replay/PairingWizard";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePairingStore } from "@/stores/pairing";
 import { useUpdaterStore } from "@/stores/updater";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
+import { isNative } from "@/transport";
 import type {
   AchievementEvent,
   ArenaPlayer,
@@ -2032,34 +2031,36 @@ export default defineComponent({
      * `null` entity = the recorder (Rust-side default; the always-fully-
      * observable perspective). The Rust side caches the scoring pass, so
      * switching perspectives is one IPC round-trip. */
-    const showReport = ref(false);
-    const staticReport = ref<StaticReport | null>(null);
-    const staticReportLoading = ref(false);
-    const staticReportError = ref<string | null>(null);
-    const openStaticReport = async (entityId?: number) => {
+    /** E25 static report: opens its own SECONDARY WINDOW (report.html,
+     * spawned/focused by the Rust opener — an open window is re-targeted
+     * via wowsp://report-params instead of stacked). `null` entity = the
+     * recorder (Rust-side default; the always-fully-observable view). */
+    const openStaticReport = (entityId?: number | null) => {
       const cur = parser.current.value;
       if (!cur) return;
-      const path = cur.path;
-      if (!path) return;
-      showReport.value = true;
-      staticReportLoading.value = true;
-      staticReportError.value = null;
-      try {
-        staticReport.value = await api.decisionStaticReport(
-          path,
-          entityId ?? null,
-        );
-      } catch (err) {
-        staticReportError.value = String(err);
-      } finally {
-        staticReportLoading.value = false;
-      }
+      void api.openStaticReportWindow(cur.path, entityId ?? null).catch(() => undefined);
     };
     /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
      *  chat panel reads its clock for the playhead and calls its pausing
      *  seek when a timeline dot/track is clicked. Null while no map mounts
      *  (decode error) — the panel then renders without the playhead. */
     const mapRef = ref<HoloMapHandle | null>(null);
+    // Cross-window step-through: the report window's 跳转 buttons emit
+    // wowsp://report-seek at MAIN; this listener drives the 3D playhead.
+    let unlistenReportSeek: (() => void) | null = null;
+    onMounted(() => {
+      if (!isNative()) return;
+      void import("@tauri-apps/api/event")
+        .then(({ listen }) =>
+          listen<number>("wowsp://report-seek", (e) => {
+            const t0 = e.payload;
+            if (typeof t0 === "number") mapRef.value?.seek(t0);
+          }),
+        )
+        .then((fn) => (unlistenReportSeek = fn))
+        .catch(() => undefined);
+    });
+    onUnmounted(() => unlistenReportSeek?.());
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
     const duration = ref(0);
@@ -2662,11 +2663,7 @@ export default defineComponent({
                     ) : null}
                     <button
                       class="replay-view__meta-item replay-view__pill"
-                      onClick={() =>
-                        showReport.value
-                          ? (showReport.value = false)
-                          : void openStaticReport()
-                      }
+                      onClick={() => openStaticReport()}
                     >
                       {t("replay.report.title")}
                     </button>
@@ -2786,37 +2783,6 @@ export default defineComponent({
                             mapApi={mapRef.value}
                           />
                         </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {showReport.value ? (
-                    <div
-                      class="replay-view__modal"
-                      onClick={() => (showReport.value = false)}
-                    >
-                      <div
-                        class="replay-view__modal-panel"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {staticReportError.value ? (
-                          <ErrorCard
-                            title={t("replay.report.title")}
-                            error={staticReportError.value}
-                          />
-                        ) : staticReport.value ? (
-                          <StaticReportPanel
-                            report={staticReport.value}
-                            loading={staticReportLoading.value}
-                            onSeek={(t0) => mapRef.value?.seek(t0)}
-                            onPick={(entityId) => void openStaticReport(entityId)}
-                            onClose={() => (showReport.value = false)}
-                          />
-                        ) : (
-                          <div class="replay-view__placeholder">
-                            {t("replay.report.loading")}
-                          </div>
-                        )}
                       </div>
                     </div>
                   ) : null}

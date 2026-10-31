@@ -38,7 +38,7 @@ import { hikariLocaleOf } from "./i18n/hikariMessages";
  *  would trip the scale's risky-rollback wipe and erase the preference the
  *  main window shares) and must not cancel a manual-locate pick the MAIN
  *  window may legitimately have in flight at that arbitrary moment. */
-export type BootstrapSurface = "main" | "tray";
+export type BootstrapSurface = "main" | "tray" | "report";
 
 export interface BootstrapOptions {
   surface?: BootstrapSurface;

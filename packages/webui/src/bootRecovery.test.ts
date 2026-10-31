@@ -153,9 +153,11 @@ describe("boot recovery wiring — published delegation", () => {
       "chat.html",
       "index.html",
       "overlay.html",
+      "report.html",
       "tray.html",
     ]);
-    expect(tagsFor("index.html"), "the SPA shell is the only page").toHaveLength(1);
+    expect(tagsFor("index.html"), "the SPA shell carries the tag").toHaveLength(1);
+    expect(tagsFor("report.html"), "the report window is an app window too").toHaveLength(1);
     for (const page of ["overlay.html", "aimcard.html", "chat.html", "tray.html"]) {
       expect(tagsFor(page), page + " is shell-managed — no recovery").toHaveLength(0);
     }

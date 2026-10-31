@@ -304,6 +304,14 @@ export const decisionApi = {
       entityId: entityId ?? null,
       losGridDir: losGridDir ?? null,
     }),
+  /** E25: spawn/focus the report's secondary window on this target (the
+   *  window loads report.html with the query the Rust side builds; an
+   *  already-open window is re-targeted via wowsp://report-params). */
+  openStaticReportWindow: (replayPath: string, entityId?: number | null) =>
+    transport.invoke<null>(RPC.open_static_report_window, {
+      replayPath,
+      entityId: entityId ?? null,
+    }),
   /** Filesystem-only inventory of `<cache>/decisions` (no ORT session). */
   decisionsPackStatus: () =>
     transport.invoke<DecisionsPackStatus>(RPC.decisions_pack_status),
