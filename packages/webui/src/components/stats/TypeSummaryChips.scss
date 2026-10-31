@@ -1,0 +1,29 @@
+/* TypeSummaryChips — one chip grammar for both water tables: the grey
+   chip background comes from the lookup's cards, the inline content
+   rhythm ("CV 1,181 51.8%") from the dashboard's. */
+.type-summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.type-summary-chips__chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgb(var(--color-text) / 4%);
+  font-size: var(--text-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.type-summary-chips__code {
+  font-weight: 700;
+  color: rgb(var(--color-primary));
+}
+
+.type-summary-chips__battles {
+  color: rgb(var(--color-text));
+  font-weight: 600;
+}

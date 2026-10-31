@@ -5,9 +5,11 @@ import StatsCard from "@/components/stats/StatsCard";
 import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
 import RefreshStatsButton from "@/components/stats/RefreshStatsButton";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import { HkTag, HkButton, HkScrollContainer, useToast } from "@celestia-island/hikari";
+import { HkButton, HkScrollContainer, useToast } from "@celestia-island/hikari";
 
 import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
+import DateTag from "@/components/base/DateTag";
+import TypeSummaryChips from "@/components/stats/TypeSummaryChips";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
@@ -338,11 +340,6 @@ export default defineComponent({
         (fallbackName || shipNameFromModelDb(shipId) || `#${shipId}`)
       );
     }
-    function formatDate(epochSec: number): string {
-      if (!epochSec) return "—";
-      return new Date(epochSec * 1000).toLocaleDateString();
-    }
-
     /** The strip's segments: the shared presets plus 自定义 (whose picker
      *  window the DateRangeTabs popover reports through `customWindow`) —
      *  the same control the lookup page serves. */
@@ -607,26 +604,17 @@ export default defineComponent({
                   </p>
                 ) : null}
 
-                {/* Group summary cards (compact) */}
+                {/* Per-type summary chips — the shared component both
+                    water tables serve, so the two surfaces cannot drift
+                    (grey chip body, "CV 1,181 51.8%" content). */}
                 {typeSummary.value.length > 0 ? (
-                  <div class="dash-type-grid">
-                    {typeSummary.value.map((ts) => {
-                      // The card carries the class briefing on the badge code
-                      // itself (see components/stats/shipTypeHint.ts).
-                      const code = SHIP_TYPE_SHORT[ts.type] ?? "?";
-                      return (
-                        <div
-                          class="dash-type-card"
-                          key={ts.type}
-                          data-hint-card={shipTypeHintCard(code)}
-                        >
-                          <span class="dash-type-card__code">{code}</span>
-                          <span class="dash-type-card__battles">{ts.battles.toLocaleString()}</span>
-                          <span style={{ color: winrateColor(ts.winrate) }}>{ts.winrate.toFixed(1)}%</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <TypeSummaryChips
+                    items={typeSummary.value.map((ts) => ({
+                      code: SHIP_TYPE_SHORT[ts.type] ?? "?",
+                      battles: ts.battles,
+                      winrate: ts.winrate,
+                    }))}
+                  />
                 ) : null}
 
                 {/* Flat ship table — multi-key sorted by the filter chips'
@@ -641,6 +629,17 @@ export default defineComponent({
                   </p>
                 ) : (
                   <div class="dash-ship-table">
+                    {/* Column captions — the lookup list carries the same
+                        head row, so both water tables explain their number
+                        columns identically. */}
+                    <div class="dash-ship-table__head">
+                      <span>{t("stats.ships")}</span>
+                      <span>{t("stats.battles")}</span>
+                      <span>{t("stats.winrate")}</span>
+                      <span>{t("stats.avgDamage")}</span>
+                      <span>{t("stats.kdRatio")}</span>
+                      <span>{t("dashboard.lastBattle")}</span>
+                    </div>
                     {filteredShips.value.map((s) => {
                       const info = encyclopedia.byId.get(s.shipId);
                       const off = shipOfflineEntry(s.shipId);
@@ -672,14 +671,15 @@ export default defineComponent({
                             <span class="dash-ship-table__ship-ico">
                               <BattleIcon type={type} variant="white" size={18} />
                             </span>
-                            <HkTag
-                              variant="primary"
-                              size="sm"
-                              class="dash-ship-table__type-tag"
+                            {/* Plain type code — no pill, the same
+                                grammar the lookup list renders (the two
+                                water tables share one row shape). */}
+                            <span
+                              class="dash-ship-table__ship-type"
                               data-hint-card={shipTypeHintCard(badge)}
                             >
                               {badge}
-                            </HkTag>
+                            </span>
                             <em class="dash-ship-table__ship-tier">
                               {off?.tier != null ? tierToRoman(off.tier) : ""}
                             </em>
@@ -702,7 +702,16 @@ export default defineComponent({
                           <span class="dash-ship-table__col-num">
                             {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                           </span>
-                          <span class="dash-ship-table__col-date">{formatDate(s.lastBattleTime)}</span>
+                          <span class="dash-ship-table__col-date">
+                            {/* Locale-ordered Y/M/D capsule (hikari's
+                                HkDateTag contract, local stopgap copy);
+                                the em-dash keeps the no-data fallback. */}
+                            {s.lastBattleTime ? (
+                              <DateTag value={s.lastBattleTime * 1000} />
+                            ) : (
+                              "—"
+                            )}
+                          </span>
                         </div>
                       );
                     })}

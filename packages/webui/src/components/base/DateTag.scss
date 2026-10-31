@@ -1,0 +1,29 @@
+/* DateTag — the date/time capsule (see DateTag.tsx). Local stopgap copy
+   of hikari's HkDateTag: class names match the kit's so the upgrade that
+   drops this file changes import paths only. */
+.hk-date-tag {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: rgb(var(--color-text) / 6%);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  white-space: nowrap;
+  vertical-align: middle;
+
+  &__row {
+    display: block;
+    text-align: center;
+    color: rgb(var(--color-text));
+
+    /* The year and the optional time ride muted so the month/day pair
+       leads the capsule visually, whichever order the locale picks. */
+    &--year,
+    &--time {
+      color: rgb(var(--color-text) / 55%);
+    }
+  }
+}

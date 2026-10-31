@@ -286,32 +286,6 @@
   }
 }
 
-.lookup-view__typegrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 6px;
-}
-
-.lookup-view__typecard {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 6px 10px;
-  border-radius: 6px;
-  background: rgb(var(--color-text) / 4%);
-  font-size: var(--text-2xs);
-  .lookup-view__typecard-code {
-    font-weight: 700;
-    color: rgb(var(--color-text) / 80%);
-  }
-  .lookup-view__typecard-battles {
-    flex: 1;
-    text-align: right;
-    color: rgb(var(--color-text) / 60%);
-    font-family: var(--font-mono);
-  }
-}
-
 .lookup-view__ships {
   display: flex;
   flex-direction: column;
@@ -332,6 +306,53 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* Column captions — the dashboard table's head row twin: same muted
+   uppercase grammar, and the leading spacers mirror the row's
+   icon/type/tier slot widths so the name caption sits over the name. */
+.lookup-view__shiplist-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px 6px;
+  font-size: var(--text-2xs);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: rgb(var(--color-muted));
+  font-weight: 600;
+  border-bottom: 1px solid rgb(var(--color-border) / 15%);
+}
+
+.lookup-view__head-lead {
+  flex: 0 0 22px;
+
+  &--wide {
+    flex: 0 0 28px;
+  }
+}
+
+.lookup-view__head-name {
+  flex: 1 1 auto;
+}
+
+.lookup-view__head-num {
+  flex: 0 0 56px;
+  text-align: right;
+
+  &--dmg {
+    flex: 0 0 76px;
+  }
+
+  &--kd {
+    flex: 0 0 44px;
+  }
+}
+
+.lookup-view__head-date {
+  flex: 0 0 auto;
+  min-width: 64px;
+  text-align: right;
 }
 
 .lookup-view__ship {
@@ -368,24 +389,32 @@
 
 .lookup-view__ship-tier {
   /* 28px still clears the widest roman numeral (VIII) in the mono face;
-     the tight box keeps the tier from drifting right of the type code. */
+     the tight box keeps the tier from drifting right of the type code.
+     The explicit line-height pins the tier and the type code to the same
+     box: the mono face's taller default line box centered its glyphs a
+     hair ABOVE the code's (the row's flex centering balances boxes, not
+     glyph bodies). */
   flex: 0 0 28px;
   text-align: center;
   font-style: normal;
   color: rgb(var(--color-text));
   font-family: var(--font-mono);
+  font-size: 0.625rem;
+  line-height: 12px;
 }
 
 .lookup-view__ship-type {
   /* 28px keeps the combined CA/CL fallback legible; a resolved CA/CL badge
      sits well inside it. Centered so the shorter codes don't strand a
-     blank band ahead of the tier column. */
+     blank band ahead of the tier column. Same 12px line box as the tier —
+     the pair reads as one aligned column. */
   flex: 0 0 28px;
   text-align: center;
   color: rgb(var(--color-muted));
   font-size: 0.625rem;
   font-weight: 600;
   white-space: nowrap;
+  line-height: 12px;
 }
 
 .lookup-view__ship-battles {
@@ -416,8 +445,12 @@
 }
 
 .lookup-view__ship-date {
-  flex: 0 0 84px;
-  text-align: right;
+  /* The DateTag capsule carries its own ink; the column anchors it
+     right and tones the em-dash fallback. */
+  flex: 0 0 auto;
+  min-width: 64px;
+  display: flex;
+  justify-content: flex-end;
   color: rgb(var(--color-muted) / 80%);
   font-size: 0.625rem;
 }
