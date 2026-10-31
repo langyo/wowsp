@@ -32,6 +32,30 @@ permissions:
   pull-requests: read
 
 jobs:
+  # A squash merge turns the PR title into the master commit subject, so the
+  # reusable lint's bot-author exemption must not ship non-compliant subjects
+  # from dependabot (16 of the 20 bot PRs merged so far landed a bare
+  # "Bump x from y to z" subject). This normalizes dependabot titles to the
+  # "⬆️ <title>." house form — the shape the three manually-retitled bot PRs
+  # already used — and fails the run when a bot title cannot be expressed
+  # compliantly, so the gap surfaces instead of merging silently. Human PRs
+  # are untouched: the reusable lint owns their validation. Note the retitle
+  # fires the `edited` trigger once; the re-run is a no-op by design.
+  normalize-bot-title:
+    if: >-
+      github.event_name == 'pull_request' &&
+      endsWith(github.event.pull_request.user.login, '[bot]')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7
+      - name: Retitle the bot PR into compliance
+        run: python scripts/retitle_bot_pr.py --pr "${{ github.event.pull_request.number }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   lint-commits:
     uses: celestia-island/celestia-devtools/.github/workflows/commit-msg-lint.yml@2e76d373762dc6b36c1ab7625c1c34842c28ad4a
     with:
