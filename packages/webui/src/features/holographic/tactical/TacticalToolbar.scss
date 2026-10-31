@@ -104,13 +104,16 @@
   }
 }
 
-/* Plan extras under a marker menu list — the horizontal inset matches the
-   menu panel's own row inset so the picker aligns with the rows above. */
+/* Plan extras under a marker menu list — rides INSIDE the HkMenuPanel,
+   so the panel's own inset is the one horizontal inset these rows get
+   (the old rule re-echoed --hk-menu-panel-inset from OUTSIDE the panel:
+   aligned only while both fallbacks agreed, broken by any inset
+   override or a sheet context with a different inset). */
 .tac-pop__extras {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 2px var(--hk-menu-panel-inset, 12px) 4px;
+  padding-block: 2px 4px;
 }
 
 .tac-pop__sep {
@@ -153,16 +156,6 @@
    marks the row that is currently engaged (its own component has no
    checked state — HkMenu's data rows do, but these lists carry custom
    onPick behaviour and suffix hints). */
-.hk-popover-panel .hk-menu-action-item.is-active {
-  background: rgb(var(--color-primary) / 14%);
-  color: rgb(var(--color-primary));
-
-  .hk-menu-action-item__label {
-    color: rgb(var(--color-primary));
-    font-weight: 600;
-  }
-}
-
 /* Plan-board action-kind picker row (stays a compact segmented trio). */
 .tac-bar__item {
   display: flex;

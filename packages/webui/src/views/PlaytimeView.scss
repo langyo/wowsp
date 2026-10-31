@@ -310,12 +310,21 @@
 }
 
 .playtime-view__scope-opt {
+  /* The hikari menu-item row grammar, adopted literally (this repo pins
+     a hikari that predates the .hk-menu-body / partial-export wave, so
+     the numbers are restated here): 34px / 6×12 desktop with the 1px
+     transparent border RESERVED (the hover wash + active face draw
+     inside it, exactly like the grammar rows), guarded hover, primary
+     wash + weight on [data-active]. The sheet-context widening rides a
+     host media block — this popover goes sheetOnMobile at the same
+     767px breakpoint the library's sheet family uses. */
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 6px 10px;
-  border: none;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   background: transparent;
   color: rgb(var(--color-text) / 85%);
@@ -323,16 +332,27 @@
   font-size: var(--text-sm);
   text-align: left;
   cursor: pointer;
-  transition: background var(--duration-short) var(--ease-standard);
+  transition: background var(--duration-short) var(--ease-standard),
+    border-color var(--duration-short) var(--ease-standard);
 
   &:hover {
-    background: rgb(var(--color-text) / 6%);
+    background: rgb(var(--color-primary) / 8%);
+    border-color: rgb(var(--color-primary) / 25%);
   }
 
   &[data-active] {
-    color: rgb(var(--color-text));
-    background: rgb(var(--color-primary) / 12%);
+    color: rgb(var(--color-primary));
+    background: rgb(var(--color-primary) / 10%);
+    border-color: rgb(var(--color-primary) / 40%);
     font-weight: 600;
+  }
+
+  @media (max-width: 767px) {
+    & {
+      min-height: 44px;
+      padding: 10px 16px;
+      font-size: var(--text-base);
+    }
   }
 
   &-label {
