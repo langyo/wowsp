@@ -36,10 +36,6 @@ mod test_harness;
 /// WebView2 browser-argument policy: static args are gone; the conditional
 /// GPU switch rides an env var set before any webview exists (module docs).
 mod webview_args;
-/// Main-window geometry memory: reopen where the player left it, validated
-/// against the current desktop (module docs spell out the policy).
-#[cfg(desktop)]
-mod window_state;
 
 use tauri::Manager;
 #[cfg(desktop)]
@@ -160,6 +156,30 @@ pub fn run() {
             let _ = w.set_focus();
         }
     }));
+    // hikari-host (window state): the main window's geometry memory — remember
+    // where the player left it, restore validated against the desktop this
+    // launch greets (a gone monitor or a closed off-screen window relocates
+    // fully visible; 800×600 floor, combined-desktop ceiling). This shell's
+    // local window_state module (retired by this migration) was the in-app
+    // copy the 0.5.0 crate generalized; the plugin restores in its
+    // window-ready hook (before this shell's setup), records through the
+    // event forward in on_window_event below, and flushes on every deliberate
+    // exit path through its own RunEvent::Exit hook. Desktop only: the path
+    // resolve needs no app handle there, and mobile has no window positioning.
+    // A failed path resolve logs and skips the feature for the session — a
+    // read-only data dir must not take the app down with it.
+    #[cfg(desktop)]
+    let builder = match paths::data_dir() {
+        Ok(dir) => builder.plugin(hikari_host::window_state::tauri_shell::init(
+            hikari_host::window_state::tauri_shell::WindowStateConfig::new(
+                dir.join("window-state.json"),
+            ),
+        )),
+        Err(err) => {
+            tracing::warn!(error = %err, "window-state persistence unavailable this session");
+            builder
+        },
+    };
     builder
         // Default-browser hand-off for http(s) URLs (open_external) —
         // mobile-supported, replaces the Windows-only ShellExecuteW path.
@@ -206,7 +226,11 @@ pub fn run() {
                 // Window-geometry memory (main window only; every other
                 // label is a no-op inside): move/resize events feed the
                 // debounced tracker, a close request flushes it.
-                window_state::record(window, event);
+                hikari_host::window_state::tauri_shell::handle_window_event(
+                    window.app_handle(),
+                    window,
+                    event,
+                );
                 // The tray panel hides — never closes — on blur and on
                 // programmatic close requests: it is a persistent popup
                 // anchored to the tray icon, and destroying it would give
@@ -436,21 +460,17 @@ pub fn run() {
 
             // ── Main-window geometry memory (desktop) ─────────────────
             //
-            // Restore the remembered position/size (validated against the
-            // desktop this launch greets — a gone monitor or a closed
-            // off-screen window relocates somewhere fully visible; see
-            // window_state's module docs), center only on the first launch,
-            // and only then lift the window's config `visible: false` — the
-            // conf keeps it hidden so it never paints at the centered
-            // default and jumps to the remembered spot.
+            // The config's `center: true` is the universal pre-restore
+            // default: it positions the still-hidden window at creation,
+            // and the hikari-host window-state plugin's window-ready hook —
+            // which runs BEFORE this setup (plugins initialize before the
+            // event loop creates the config-declared windows) — overrides
+            // it with the remembered geometry whenever a valid state file
+            // exists. First launch and a corrupt/legacy file both surface
+            // the centered default; only then lift the config's
+            // `visible: false` so the window never paints at one spot and
+            // jumps to the other.
             if let Some(w) = app.get_webview_window("main") {
-                #[cfg(desktop)]
-                match window_state::restore(&w) {
-                    Ok(true) => {},
-                    Ok(false) | Err(_) => {
-                        let _ = w.center();
-                    },
-                }
                 let _ = w.show();
             }
 
@@ -940,18 +960,8 @@ pub fn run() {
             commands::replay_probe::replay_visibility_probe,
             commands::quit_app,
         ])
-        .build(tauri::generate_context!())
-        .expect("error while building WoWSP tauri application")
-        .run(|_app, event| {
-            // Final window-geometry flush: RunEvent::Exit is the one hook
-            // every deliberate exit path crosses (the quit command's
-            // app.exit(0), the close guard's force-exit hook, the last
-            // window closing) after the geometry has stopped changing.
-            #[cfg(desktop)]
-            if let tauri::RunEvent::Exit = event {
-                window_state::flush_now();
-            }
-        });
+        .run(tauri::generate_context!())
+        .expect("error while running WoWSP tauri application");
 }
 
 /// Square the main window's corners while it is maximized, restore the system
