@@ -314,7 +314,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     permissions:
       contents: write
-    uses: celestia-island/celestia-devtools/.github/workflows/release-notes.yml@7772d837b7303410cfa0f42b049114cc24292253
+    uses: celestia-island/celestia-devtools/.github/workflows/release-notes.yml@2e76d373762dc6b36c1ab7625c1c34842c28ad4a
 
   publish:
     # The draft's tag association is the fragile part. GitHub files — or
