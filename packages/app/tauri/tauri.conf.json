@@ -50,6 +50,7 @@
         "label": "tray-panel",
         "title": "WoWSP Tray",
         "url": "/tray.html",
+        "create": false,
         "width": 320,
         "height": 208,
         "resizable": false,
