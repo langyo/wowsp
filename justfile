@@ -126,7 +126,8 @@ test target='unit' *FLAGS='':
 
 # ── lint ──────────────────────────────────────────────────────────────
 #   just lint           → full: fmt-check + clippy + anyhow policy +
-#                         pnpm lint + i18n + release-notes grammar
+#                         pnpm lint + i18n + license domains +
+#                         release-notes grammar
 #   just lint rust      → fmt-check + clippy
 #   just lint webui     → pnpm lint
 #   just lint i18n      → i18n parity check
@@ -143,6 +144,8 @@ _lint-full:
     @python scripts/check_anyhow.py
     {{PM}} -r lint
     @python scripts/check_i18n.py
+    @python scripts/check_licenses.py
+    @python scripts/check_licenses.py --self-test
     @python scripts/release_notes_i18n.py self-test
 
 _lint-rust:
