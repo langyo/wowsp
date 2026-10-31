@@ -154,11 +154,13 @@ malkuth = { version = "^0.5", default-features = false, features = ["signals"] }
 hifumi = "^0.2"
 
 # hikari host facility: the shared close-request ack / force-close guard this
-# shell used to carry as its own close_guard module. The `tauri` feature is the
+# shell used to carry as its own close_guard module, and (since 0.5.0) the
+# window geometry memory that replaced this shell's own window_state module.
+# The `tauri` feature is the
 # adapter — the plugin owns the `ack_close` IPC command, the shell forwards its
 # own window events into the helper and passes its graceful drain as the
-# force-exit hook. Published to crates.io (0.4.0).
-hikari-host = { version = "0.4", features = ["tauri"] }
+# force-exit hook. Published to crates.io (0.5.0).
+hikari-host = { version = "0.5", features = ["tauri"] }
 
 # Windows registry scanning for game install detection (official / Lesta / 360)
 winreg = "^0.56"
