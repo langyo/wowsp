@@ -72,8 +72,10 @@ export interface HoloCap {
 
 /** Everything the scorebar / clock / minimap need each frame. */
 export interface HoloHudState {
-  scoreAlly: number;
-  scoreEnemy: number;
+  /** Domination points; OMITTED in modes with no points victory (PvE
+   *  operations) — the scorebar then shows the cap chips alone. */
+  scoreAlly?: number;
+  scoreEnemy?: number;
   aliveAlly: number;
   aliveEnemy: number;
   time: number; // battle seconds

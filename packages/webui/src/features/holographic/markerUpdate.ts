@@ -432,9 +432,13 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   // Capture-zone ownership + estimated score at this instant.
   updateCapsAndScore(ctx, t);
   // Repaint the 3D cap rings by live state (owner color, capture pulse).
+  // Unborn zones (op points whose EntityCreate time is still ahead of the
+  // playhead) keep their ring + letter hidden entirely.
   ctx.capDisplay.value.forEach((c, i) => {
     const ring = ctx.capRings[i];
     if (!ring) return;
+    ring.visible = c.live;
+    if (!c.live) return;
     const mat = ring.material as LineMaterial;
     if (c.owner === 1) mat.color.set(0x4ade80);
     else if (c.owner === 2) mat.color.set(0xcc3333);
@@ -447,6 +451,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   ctx.capDisplay.value.forEach((c, i) => {
     const sprite = ctx.capLetterSprites[i];
     if (!sprite) return;
+    sprite.visible = c.live;
+    if (!c.live) return;
     if (!sprite.userData.canvas) return;
     const text = String(c.letter);
     let etaLine = "";

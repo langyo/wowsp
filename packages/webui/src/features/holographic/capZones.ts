@@ -56,6 +56,24 @@ export function capLetter(t: EntityTrajectory, position: number): string {
   return String.fromCharCode(65 + (t.kind?.controlPointIndex ?? position));
 }
 
+/** Battle time the zone's EntityCreate fired — the authoritative "this
+ *  point now exists" instant, already parsed off the replay stream.
+ *  Negative (-1) marks entities that existed before the recording started
+ *  (every domination point in PvP); operation scenarios (行动) create
+ *  points MID-battle, one by one as the script advances. */
+export function zoneBirthTime(t: EntityTrajectory): number {
+  return t.kind?.creationTime ?? -1;
+}
+
+/** Whether the zone exists at playhead time `at`: a point created
+ *  mid-battle (ops) stays invisible — no ring, no letter, no scorebar
+ *  chip — until its creation time crosses the playhead. Pre-recording
+ *  zones (negative birth time) are live from the first frame. */
+export function zoneIsLive(t: EntityTrajectory, at: number): boolean {
+  const born = zoneBirthTime(t);
+  return born < 0 || at >= born;
+}
+
 // ── Scoring rules (official: wiki.worldofwarships.com/Ship:Game_Modes) ──
 // Domination Random/Co-op: 3 areas → start 300, +3 per completed capture,
 // +3 every 5s per controlled area; 4 areas → start 200, +4, +4 every 9s.
@@ -84,6 +102,10 @@ export const KILL_PTS: Record<string, { kill: number; death: number }> = {
 export interface CapZoneState {
   letter: string;
   owner: number; // 0 neutral, 1 ally, 2 enemy
+  /** False while the zone's EntityCreate time still lies in the future —
+   *  operation points appear progressively, so every surface (3D ring,
+   *  letter sprite, minimap, scorebar chip) hides unborn zones. */
+  live: boolean;
   /** 0..1 progress of the current capture towards the capturing team. */
   progress: number;
   /** Ships of each side inside the point right now. */

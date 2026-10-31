@@ -536,6 +536,8 @@ export function drawMinimap(ctx: MapInternals) {
   const capRadiusPx = (radius: number) =>
     Math.max(3, (radius / (dbW || 1)) * w);
   ctx.capZones.value.forEach((z, i) => {
+    // Unborn op points (EntityCreate time ahead of the playhead) sit out.
+    if (ctx.capDisplay.value[i]?.live === false) return;
     const cx = wx(z.kind!.initialX);
     const cz = wz(-z.kind!.initialZ);
     const owner = ctx.capDisplay.value[i]?.owner ?? 0;
@@ -796,6 +798,8 @@ export function drawMinimap(ctx: MapInternals) {
       const zcapR = (radius: number) =>
         Math.max(6, (radius / (vfull.maxX - vfull.minX || 1)) * zw);
       ctx.capZones.value.forEach((z, i) => {
+        // Unborn op points (EntityCreate time ahead of the playhead) sit out.
+        if (ctx.capDisplay.value[i]?.live === false) return;
         const cx = zwx(z.kind!.initialX);
         const cz = zwz(-z.kind!.initialZ);
         const owner = ctx.capDisplay.value[i]?.owner ?? 0;

@@ -201,21 +201,33 @@ export default defineComponent({
       const enemies = s.ships.filter((sh) => sh.role === "enemy");
       const enter = props.onShipEnter ?? undefined;
       const leave = props.onShipLeave ?? undefined;
+      // Domination scores are optional: modes with no points victory (PvE
+      // operations) pass none, and the main row degrades to the cap chips —
+      // hidden entirely while the scenario has created no point yet.
+      const showMain = s.scoreAlly != null || s.scoreEnemy != null || s.caps.length > 0;
       return (
         <div class="holo-scorebar">
-          <span class="holo-scorebar__main">
-            <span class="holo-scorebar__score holo-scorebar__score--ally">
-              <span class="holo-scorebar__dot holo-scorebar__dot--ally" />
-              {s.scoreAlly}
+          {showMain ? (
+            <span class="holo-scorebar__main">
+              {s.scoreAlly != null ? (
+                <span class="holo-scorebar__score holo-scorebar__score--ally">
+                  <span class="holo-scorebar__dot holo-scorebar__dot--ally" />
+                  {s.scoreAlly}
+                </span>
+              ) : null}
+              {s.caps.length ? (
+                <span class="holo-scorebar__caps">
+                  {s.caps.map((c) => <CapChip key={c.letter} cap={c} />)}
+                </span>
+              ) : null}
+              {s.scoreEnemy != null ? (
+                <span class="holo-scorebar__score holo-scorebar__score--enemy">
+                  {s.scoreEnemy}
+                  <span class="holo-scorebar__dot holo-scorebar__dot--enemy" />
+                </span>
+              ) : null}
             </span>
-            <span class="holo-scorebar__caps">
-              {s.caps.map((c) => <CapChip key={c.letter} cap={c} />)}
-            </span>
-            <span class="holo-scorebar__score holo-scorebar__score--enemy">
-              {s.scoreEnemy}
-              <span class="holo-scorebar__dot holo-scorebar__dot--enemy" />
-            </span>
-          </span>
+          ) : null}
           {s.ships.length ? (
             <span class="holo-scorebar__ships">
               {allies.map((sh, i) => (
