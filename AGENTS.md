@@ -71,11 +71,15 @@ of improvising a launch.
 - **Merge commit subjects are forbidden** (`Merge branch ...` /
   `Merge pull request ...`): this repo only uses squash merge.
 - Exemptions: `Revert "..."` (git revert output) is exempt from the gitmoji
-  requirement; bot commits (dependabot etc.) are exempt by author filtering
-  (see the workflow).
+  requirement; in-PR commit subjects authored by bots are exempt by author
+  filtering (see the workflow). **PR titles are NOT exempt** — a squash merge
+  turns the title into the master commit subject, so commit-msg-lint.yml
+  normalizes dependabot titles to `⬆️ <title>.` (the reusable lint's author
+  exemption stays scoped to the bot's own branch commits) and fails the run
+  when a bot title cannot be expressed compliantly.
 - **PR titles follow exactly the same rules** (after squash merge the PR
   title becomes the commit subject): `<gitmoji> <one-line English.>`, no
-  colon prefix; bot PRs (dependabot) are exempt.
+  colon prefix.
 
 ## 2. CHANGELOG Policy (mandatory)
 
@@ -357,7 +361,8 @@ Before submitting, the relevant subset of `just lint` (or scoped
      `scripts/sync_versions.py --check`). Every action is pinned to a full
      commit SHA.
    - `commit-msg-lint.yml` — PR title + every commit subject in the PR
-     (via `scripts/commit_msg_lint.py`, bot authors exempt).
+     (via `scripts/commit_msg_lint.py`, bot authors exempt in the reusable
+     lint; bot PR titles are normalized first, see §1).
    - `release.yml` — tag-driven build & release. Its `preflight` job first
      requires the tagged commit's `ci.yml` run to be green (repository
      variable `RELEASE_SKIP_PREFLIGHT=true` waives it for an emergency
