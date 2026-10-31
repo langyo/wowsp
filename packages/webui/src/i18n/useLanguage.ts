@@ -39,7 +39,7 @@ import { RPC } from "@/rpc";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { isNative, transport } from "@/transport";
 
-import { i18n, setLocale, SUPPORTED_LOCALES, type Locale } from "./index";
+import { currentLocale, setLocale, SUPPORTED_LOCALES, type Locale } from "./index";
 
 const UI_KEY = "wowsp-ui-locale";
 const DATA_KEY = "wowsp-data-language";
@@ -150,7 +150,7 @@ function loadUiLocale(): Locale {
   if (saved && (SUPPORTED_LOCALES as readonly string[]).includes(saved)) {
     return saved as Locale;
   }
-  const detected = (i18n.global.locale as unknown as { value: Locale }).value as Locale;
+  const detected = currentLocale();
   // Heal-write: a saved-but-unsupported locale (stale tag from an older
   // build's locale list, hand edit) is forced back to the detected value so
   // the correction sticks instead of re-detecting on every boot.
@@ -218,7 +218,7 @@ function loadDataLanguage(): string {
   if (saved && isLangLoc(saved)) return saved;
 
   // First startup: determine from UI locale + realm, then persist.
-  const ui = (i18n.global.locale as unknown as { value: Locale }).value as Locale;
+  const ui = currentLocale();
   const realm = localStorage.getItem("wowsp-active-realm") || "asia";
   const determined = determineDataLanguage(ui, realm);
   localStorage.setItem(DATA_KEY, determined);

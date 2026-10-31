@@ -18,6 +18,8 @@
  */
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, type PropType, type VNodeChild } from "vue";
 
+import { asPropType } from "@/utils/typing";
+
 import "./RangeSlider.scss";
 
 /** Ordered pair [lo, hi]; an out-of-order input normalizes silently. */
@@ -29,7 +31,7 @@ export default defineComponent({
   props: {
     /** Controlled [lo, hi]; every emitted pair lands snapped and clamped. */
     modelValue: {
-      type: Array as unknown as PropType<RangeValue>,
+      type: asPropType<RangeValue>(Array),
       required: true,
     },
     min: { type: Number, default: 0 },

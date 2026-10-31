@@ -28,6 +28,8 @@ import { initLocaleMessages, t } from "@/i18n";
 import { useAccountStore } from "@/stores/account";
 import { useNavUiStore } from "@/stores/navUi";
 import { useSessionStore } from "@/stores/session";
+import type { SessionSnapshot } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 import AppTitleBar from "./AppTitleBar";
 
 enableAutoUnmount(afterEach);
@@ -109,7 +111,7 @@ describe("AppTitleBar account avatar (phone layout)", () => {
   it("uses the session hub's resolved identity when present", async () => {
     await mountBar(480);
     const session = useSessionStore();
-    session.snapshot = {
+    session.snapshot = fakeAs<SessionSnapshot>({
       display: {
         accountId: 42,
         nickname: "HubPlayer",
@@ -117,7 +119,7 @@ describe("AppTitleBar account avatar (phone layout)", () => {
         registered: true,
         playing: true,
       },
-    } as unknown as typeof session.snapshot;
+    });
     await flushPromises();
     const letter = document.querySelector<HTMLElement>(".app-titlebar__account-letter");
     expect(letter?.textContent).toBe("H");

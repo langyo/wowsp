@@ -42,7 +42,7 @@ export function useOverlayLifecycle() {
   let syncRequested = false;
 
   function locale(): string {
-    return (i18n.global.locale as unknown as { value: string }).value;
+    return i18n.global.locale.value;
   }
 
   async function sync() {

@@ -4,6 +4,8 @@
  *  every case re-imports a fresh instance (vi.resetModules). */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { asIndexable } from "@/utils/typing";
+
 const KILL_SWITCH = "ga-disable-G-BGD43VPDEJ";
 
 async function freshModule() {
@@ -25,7 +27,7 @@ function finishLoading() {
 }
 
 function win(): Record<string, unknown> {
-  return window as unknown as Record<string, unknown>;
+  return asIndexable(window);
 }
 
 beforeEach(() => {

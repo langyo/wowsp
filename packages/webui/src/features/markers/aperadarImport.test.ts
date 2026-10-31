@@ -5,6 +5,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ApeRadarWatchList } from "@/api";
+import { invalidInput } from "@/test-utils/invalid";
 import {
   buildApeRadarPreview,
   rowsToImportItems,
@@ -108,8 +109,8 @@ describe("buildApeRadarPreview", () => {
         {
           server: "EU",
           players: [
-            { accountId: "12345" as unknown as number, name: "StringId", status: "Cheater" },
-            { accountId: "not-a-number" as unknown as number, name: "JunkId", status: "Cheater" },
+            { accountId: invalidInput<number>("12345"), name: "StringId", status: "Cheater" },
+            { accountId: invalidInput<number>("not-a-number"), name: "JunkId", status: "Cheater" },
             { accountId: undefined, name: "NoId", status: "Negtive" },
           ],
         },

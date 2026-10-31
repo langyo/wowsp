@@ -19,6 +19,8 @@ import {
   useToast,
 } from "@celestia-island/hikari";
 
+import { asIndexable } from "@/shared/typing";
+
 import {
   isAuthError,
   listFeedbackPage,
@@ -255,7 +257,7 @@ export default defineComponent({
             dense
             loading={loading.value}
             error={error.value ?? undefined}
-            rows={filtered.value as unknown as Record<string, unknown>[]}
+            rows={filtered.value.map(asIndexable)}
             rowKey="record_id"
             emptyTitle="暂无反馈记录"
             emptyDescription={props.filter ? "当前筛选下没有记录——切换到「全部」看看。" : undefined}

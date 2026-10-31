@@ -16,11 +16,12 @@
  *  - ShipsView's inline filter row;
  *  - the playtime PR trend's ship popup (replacing its bracket pills).
  */
-import { computed, defineComponent, type PropType } from "vue";
+import { computed, defineComponent } from "vue";
 
 import RangeSlider from "@/components/base/RangeSlider";
 import { tierLabel } from "@/utils/shipCompare";
 import { t } from "@/i18n";
+import { asPropType } from "@/utils/typing";
 import "./TierRangeSelect.scss";
 
 /** Ordered tier pair [lo, hi] on the 1–11 axis. */
@@ -45,7 +46,7 @@ export default defineComponent({
   name: "TierRangeSelect",
   props: {
     modelValue: {
-      type: Array as unknown as PropType<TierRange>,
+      type: asPropType<TierRange>(Array),
       required: true,
     },
     disabled: { type: Boolean, default: false },

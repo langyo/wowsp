@@ -15,7 +15,7 @@
 import treeWgRaw from "@/data/tech_tree.json";
 import treeLestaRaw from "@/data/tech_tree_lesta.json";
 import branchFeaturesRaw from "@/data/tech_tree_branch_features.json";
-import { i18n, type Locale } from "@/i18n";
+import { i18n } from "@/i18n";
 
 export type TechTreeRealm = "wg" | "lesta";
 
@@ -222,7 +222,30 @@ interface BranchFeaturesData {
   };
 }
 
-const featureData = branchFeaturesRaw as unknown as BranchFeaturesData;
+/** Re-shape the bundled JSON into `BranchFeaturesData`.
+ *
+ *  JSON module types keep the literal array shapes the file has on disk, and
+ *  the generator writes each feature group as a plain 2-element array — so
+ *  every `groups` row arrives as `(string | string[])[]`, not as the
+ *  `[category, feats]` pair the UI destructures. Rebuilding the pairs here
+ *  (rather than asserting the whole document) is what keeps the load checked:
+ *  a group that is missing either half yields an empty/blank row instead of
+ *  undefined reaching the renderer. */
+function toBranchFeatures(raw: typeof branchFeaturesRaw): BranchFeaturesData {
+  const branches: Record<string, TechTreeBranchInfo> = {};
+  for (const [id, info] of Object.entries(raw.branches)) {
+    branches[id] = {
+      card: info.card,
+      groups: info.groups.map((group): [string, string[]] => [
+        typeof group[0] === "string" ? group[0] : "",
+        Array.isArray(group[1]) ? group[1] : [],
+      ]),
+    };
+  }
+  return { ...raw, branches };
+}
+
+const featureData = toBranchFeatures(branchFeaturesRaw);
 
 /** Generic per-type branches used when a line has no specific record. */
 const TYPE_GENERIC_BRANCH: Record<string, string> = {
@@ -265,7 +288,7 @@ export function techTreeBranchHasContent(branchName: string, type?: string): boo
  *  locale here, falling back to en-US. */
 function featureText(map: Record<string, string> | undefined): string {
   if (!map) return "";
-  const locale = (i18n.global.locale as unknown as { value: Locale }).value;
+  const locale = i18n.global.locale.value;
   const tag = locale.startsWith("zh")
     ? "zh-Hans"
     : locale.startsWith("ru")

@@ -20,7 +20,7 @@ import type { ModelPreviewPart } from "@/api";
 import ErrorCard from "@/components/base/ErrorCard";
 import LoadingNote from "@/components/base/LoadingNote";
 import { isNative } from "@/utils/platform";
-import { makeHoloMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
+import { makeHoloMaterial, tickHoloUniforms } from "@/features/holographic/holoShader";
 import { loadGlbModel } from "@/features/holographic/modelLoader";
 import { SCENE_THEMES } from "@/features/holographic/useThreeScene";
 
@@ -51,9 +51,9 @@ export default defineComponent({
     let lastT = 0;
 
     const holoMat = makeHoloMaterial();
-    // ShaderMaterial's uniforms record is an open IUniform map; the tick
-    // helper wants the closed HoloUniforms shape (time/scanOffset drive).
-    const holoUniforms = holoMat.uniforms as unknown as HoloUniforms;
+    // `makeHoloMaterial` returns the closed-uniforms subtype, so the tick
+    // helper's `time`/`scanOffset` reads are checked, not asserted.
+    const holoUniforms = holoMat.uniforms;
     const wireMat = new THREE.MeshBasicMaterial({
       color: 0x33ccff,
       wireframe: true,

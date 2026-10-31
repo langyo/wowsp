@@ -21,7 +21,6 @@ import {
   zoneHitTest,
   zoneRadiusAt,
   zoneSectorPoints,
-  type ZoneLike,
 } from "./zones";
 import { TACTICAL_DOC_VERSION } from "./types";
 import {
@@ -275,7 +274,7 @@ export function elementPoints(
  *  triangle/arc at its current sweep radius, or the ring's centre. */
 function zoneSectorPointsOf(el: ZoneElement, t: number): Vec2[] {
   if (el.halfAngle > 0) {
-    return zoneSectorPoints(el as unknown as ZoneLike, zoneRadiusAt(el as unknown as ZoneLike, t));
+    return zoneSectorPoints(el, zoneRadiusAt(el, t));
   }
   return [el.at];
 }
@@ -317,7 +316,7 @@ export function hitTestElement(
       return false;
     }
     case "zone":
-      return zoneHitTest(el as unknown as ZoneLike, p, t, padWorld);
+      return zoneHitTest(el, p, t, padWorld);
     case "replayPath":
       return false; // not directly selectable in wave 1
   }

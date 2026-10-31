@@ -53,6 +53,8 @@ import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { createPinia } from "pinia";
 import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
+import { fakeAs } from "@/test-utils/fakes";
+
 import ShipFilterBar, { type FilterState } from "./ShipFilterBar";
 import { panEngaged, stripWheelDelta } from "./optionStrip";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -102,7 +104,7 @@ const META = [
   { shipId: 3, name: "Ship 3", tier: 6, type: "Cruiser", nation: "ussr" },
   { shipId: 4, name: "Ship 4", tier: 10, type: "Destroyer", nation: "germany" },
   { shipId: 5, name: "Ship 5", tier: 10, type: "Cruiser", nation: "uk" },
-] as unknown as ShipInfo[];
+].map((m) => fakeAs<ShipInfo>(m));
 
 // Mode-breakdown helpers — every ShipModeStats field besides battles is
 // noise for the matching predicates, so the buckets carry zeros.
@@ -151,7 +153,9 @@ function mountBar(ships: PlayerShipStats[] = SHIPS, meta: ShipInfo[] = META) {
 
 const lastState = (wrapper: ReturnType<typeof mountBar>): FilterState => {
   const calls = wrapper.emitted("change") ?? [];
-  const [state] = calls[calls.length - 1] as unknown as [FilterState];
+  // `emitted()` is `unknown[][]` — the emit signature is known here, so one
+  // asserted read (pinned by every assertion that consumes the state).
+  const [state] = calls[calls.length - 1] as [FilterState];
   return state;
 };
 const order = (wrapper: ReturnType<typeof mountBar>) =>

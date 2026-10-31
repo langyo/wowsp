@@ -23,6 +23,8 @@ import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import type { Component } from "vue";
 
+import { fakeAs } from "@/test-utils/fakes";
+
 import SettingsShell from "./SettingsShell";
 
 const GROUPS = [
@@ -98,7 +100,11 @@ describe("SettingsShell", () => {
     const active = rail.querySelector(".hk-settings__rail-item.is-active") as HTMLElement;
     const below = { x: 0, y: 500, top: 500, bottom: 560, left: 0, right: 100, width: 100, height: 60 } as DOMRect;
     vi.spyOn(active, "getBoundingClientRect").mockReturnValue(below);
-    vi.spyOn(active, "getClientRects").mockReturnValue([below] as unknown as DOMRectList);
+    // Only `.length` is observed by the upstream sensor; the list double
+    // carries the row rect for the index and item() readers.
+    vi.spyOn(active, "getClientRects").mockReturnValue(
+      fakeAs<DOMRectList>({ length: 1, 0: below, item: (i: number) => (i === 0 ? below : null) }),
+    );
     viewport.dispatchEvent(new Event("scroll"));
     await new Promise<void>((r) => requestAnimationFrame(() => r()));
     expect(rail.getAttribute("data-selection-beyond")).toBe("bottom");

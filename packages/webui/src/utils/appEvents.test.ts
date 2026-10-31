@@ -10,13 +10,13 @@ const { emitMock } = vi.hoisted(() => ({ emitMock: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ emit: emitMock }));
 
 afterEach(() => {
-  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  delete window.__TAURI_INTERNALS__;
   emitMock.mockClear();
 });
 
 describe("emitTauriEvent", () => {
   it("broadcasts the event inside the Tauri shell", async () => {
-    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    window.__TAURI_INTERNALS__ = {};
     emitTauriEvent("wowsp://stamps-changed");
     // The bus rides a dynamic import — let that microtask land.
     await new Promise((resolve) => setTimeout(resolve, 0));

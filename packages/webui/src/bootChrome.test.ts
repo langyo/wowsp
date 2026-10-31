@@ -4,7 +4,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
-import type { Plugin } from "vite";
+import type {
+  HtmlTagDescriptor,
+  MinimalPluginContextWithoutEnvironment,
+  Plugin,
+} from "vite";
+
+import { fakeAs } from "@/test-utils/fakes";
 
 import {
   BOOT_CHROME_HTML_FILES,
@@ -66,20 +72,45 @@ interface HtmlTag {
   injectTo?: string;
 }
 
+/** Tag descriptor → the narrow shape these tests read (plugins emit string
+ *  inline content only; a nested-descriptor child would be a plugin bug). */
+function toTag(d: HtmlTagDescriptor): HtmlTag {
+  return {
+    tag: d.tag,
+    attrs: d.attrs,
+    children: typeof d.children === "string" ? d.children : undefined,
+    injectTo: d.injectTo,
+  };
+}
+
 function transform(
   plugin: Plugin,
   filename: string,
   warnings: string[] = [],
 ): HtmlTag[] {
-  const hook = plugin.transformIndexHtml as unknown as (
-    ...args: unknown[]
-  ) => HtmlTag[] | undefined;
-  const tags = hook.call(
-    { warn: (message: string) => void warnings.push(message) },
+  // Vite types the hook as a function|object|array union; these boot plugins
+  // expose the plain function form. Narrowing on `typeof` (instead of casting)
+  // keeps the call checked, and the sync assertions below fail loudly if a
+  // plugin ever becomes async — this helper is called from sync `it()` bodies.
+  const hook = plugin.transformIndexHtml;
+  if (typeof hook !== "function") {
+    throw new Error("boot plugin must expose a transformIndexHtml function hook");
+  }
+  const out = hook.call(
+    fakeAs<MinimalPluginContextWithoutEnvironment>({
+      warn: (log: unknown) => void warnings.push(String(log)),
+    }),
     '<!doctype html><html><body><div id="app"></div></body></html>',
-    { filename },
+    { path: filename, filename },
   );
-  return tags ?? [];
+  if (out instanceof Promise) {
+    throw new Error("boot plugin transformIndexHtml hook must be synchronous");
+  }
+  if (typeof out === "string") {
+    throw new Error("boot plugin must return tag descriptors, not html");
+  }
+  const descriptors = Array.isArray(out) ? out : (out?.tags ?? []);
+  return descriptors.map(toTag);
 }
 
 /** The bar as registered on a desktop build (the only platform that has it). */

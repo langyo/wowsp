@@ -125,12 +125,24 @@ export const i18n = createI18n({
   messages: {},
 });
 
+/** The active UI locale as the project's `Locale` union.
+ *
+ *  vue-i18n models the active locale as a plain `WritableComputedRef<string>`
+ *  (the tag is data, so the library cannot know this app's eight codes), so
+ *  reading `.locale.value` yields `string`. Validating through matchLocale is
+ *  the honest narrowing: every in-app write goes through setLocale(), which
+ *  only ever receives a `Locale`, so a tag that fails to match could only be
+ *  a stale value — fall back exactly like detection does. */
+export function currentLocale(): Locale {
+  return matchLocale(i18n.global.locale.value) ?? FALLBACK_LOCALE;
+}
+
 /** Pre-mount bootstrap: load the fallback (en-US — vue-i18n resolves every
  *  missing key against it) and the resolved initial locale, so the first
  *  render already has its message table. When the initial locale IS the
  *  fallback it is loaded once. */
 export async function initLocaleMessages(): Promise<void> {
-  const initial = (i18n.global.locale as unknown as { value: Locale }).value;
+  const initial = i18n.global.locale.value;
   const loads = [loadLocaleMessages(FALLBACK_LOCALE)];
   if (initial !== FALLBACK_LOCALE) loads.push(loadLocaleMessages(initial));
   await Promise.all(loads);
@@ -146,7 +158,7 @@ export async function setLocale(locale: Locale): Promise<void> {
   const seq = ++localeRequestSeq;
   await loadLocaleMessages(locale);
   if (seq !== localeRequestSeq) return;
-  (i18n.global.locale as unknown as { value: Locale }).value = locale;
+  i18n.global.locale.value = locale;
   if (typeof document !== "undefined") {
     document.documentElement.lang = locale;
   }

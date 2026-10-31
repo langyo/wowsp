@@ -43,7 +43,10 @@ function mountSlider(modelValue: Range = [1, 11], extra: Record<string, unknown>
 function lastEmitted(wrapper: VueWrapper): Range | undefined {
   const calls = wrapper.emitted("update:modelValue") ?? [];
   // Each emitted call is the args tuple — here a single Range payload.
-  const last = calls[calls.length - 1] as unknown as [Range] | undefined;
+  // `emitted()` hands back `unknown[][]` (the harness cannot know the emit
+  // signature), so this one read is asserted; the payload is pinned by the
+  // assertions in every test below.
+  const last = calls[calls.length - 1] as [Range] | undefined;
   return last ? last[0] : undefined;
 }
 

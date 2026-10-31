@@ -128,7 +128,7 @@ describe("cloneBuild", () => {
     const out = cloneBuild({
       skills: { A: 1 },
       signals: [],
-      upgrades: { "2": "PCM001", 3: "PCM002" } as unknown as Record<number, string>,
+      upgrades: { "2": "PCM001", 3: "PCM002" },
       commander: null,
       healthPct: 1,
     });

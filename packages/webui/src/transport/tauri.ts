@@ -3,6 +3,8 @@
  * which reaches the Rust `#[tauri::command]` handlers in
  * `packages/app/tauri/src/commands/`.
  */
+import type { HostWindow } from "@/utils/typing";
+
 import type { Transport } from "./types";
 import { LookupError, RpcError } from "./types";
 
@@ -21,7 +23,7 @@ interface TauriGlobal {
 
 export class TauriTransport implements Transport {
   private get invokeFn() {
-    const t = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__;
+    const t = (window as HostWindow<{ __TAURI__?: TauriGlobal }>).__TAURI__;
     if (!t?.core?.invoke) {
       throw new RpcError("Tauri core.invoke unavailable", "transport");
     }
@@ -71,7 +73,7 @@ export class TauriTransport implements Transport {
   }
 
   async listen<T = unknown>(event: string, handler: (payload: T) => void): Promise<() => void> {
-    const listenFn = (window as unknown as { __TAURI__?: TauriGlobal }).__TAURI__?.event?.listen;
+    const listenFn = (window as HostWindow<{ __TAURI__?: TauriGlobal }>).__TAURI__?.event?.listen;
     if (!listenFn) {
       // Not in Tauri shell (mock/browser) — no backend push source.
       return () => {};

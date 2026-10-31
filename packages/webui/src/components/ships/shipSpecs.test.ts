@@ -16,7 +16,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { buildShipSpecs, type Profile, type SpecGroup, type SpecRow } from "./shipSpecs";
+import { buildShipSpecs, type SpecGroup, type SpecRow } from "./shipSpecs";
 
 /** A Mogami-shaped CL profile in the real WG default_profile shape
  *  (no caliber key anywhere — that is the live-data reality). */
@@ -32,7 +32,7 @@ const PROFILE = {
       AP: { damage: 4600, bullet_speed: 920 },
     },
   },
-} as unknown as Profile;
+};
 
 /** Raw GameParams entry whose stock artillery carries 155 mm turrets
  *  (barrelDiameter is metres on the HP_* slots). */
@@ -184,7 +184,7 @@ const SUB_PROFILE = {
   submarine_mobility: { max_speed_under_water: 27, buoyancy_rudder_time: 18.4, max_buoyancy_speed: 3.4 },
   mobility: { max_speed: 27, rudder_time: 6.8, turning_radius: 420 },
   concealment: { detect_distance_by_ship: 5.6, detect_distance_by_plane: 2.1, detect_distance_by_submarine: 2.1 },
-} as unknown as Profile;
+};
 
 describe("buildShipSpecs submarine sonar", () => {
   it("reads the sonar group from the raw A_PingerGun block (top config)", () => {

@@ -7,21 +7,25 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useToast } from "@celestia-island/hikari";
 
+import { fakeAs } from "@/test-utils/fakes";
+
 import { setAudioElementFactoryForTests, useAudioPlayerStore } from "./audioPlayer";
 
 type Handler = ((e: Event) => unknown) | null;
+/** DOM types `onerror` as receiving `string | Event` (GlobalEventHandlers). */
+type ErrorHandler = ((e: string | Event) => unknown) | null;
 
 /** Just the surface the store touches, cast to HTMLAudioElement. */
 class StubAudioElement {
   src = "";
   paused = true;
-  error: { message: string } | null = null;
+  error: MediaError | null = null;
   ontimeupdate: Handler = null;
   ondurationchange: Handler = null;
   onplay: Handler = null;
   onpause: Handler = null;
   onended: Handler = null;
-  onerror: Handler = null;
+  onerror: ErrorHandler = null;
   #duration = Number.NaN;
   #currentTime = 0;
   play = vi.fn(async () => {
@@ -65,7 +69,7 @@ let el: StubAudioElement;
 beforeEach(() => {
   setActivePinia(createPinia());
   el = new StubAudioElement();
-  setAudioElementFactoryForTests(() => el as unknown as HTMLAudioElement);
+  setAudioElementFactoryForTests(() => fakeAs<HTMLAudioElement>(el));
   // The store's frame ticker would otherwise spin real happy-dom rAF
   // loops for the rest of the file (tests end with tracks still
   // playing); frames are never needed here — the ticker test installs
@@ -194,7 +198,7 @@ describe("useAudioPlayerStore", () => {
     const orphan = el; // the element the stale loader captured
     player.stop(); // swap tears the wired element down (el = null)
     el = new StubAudioElement(); // the retry creates a fresh element
-    setAudioElementFactoryForTests(() => el as unknown as HTMLAudioElement);
+    setAudioElementFactoryForTests(() => fakeAs<HTMLAudioElement>(el));
 
     const second = deferred<string>();
     const retried = player.play("banks/a.wem", "a.wem", () => second.promise);
@@ -297,7 +301,7 @@ describe("useAudioPlayerStore", () => {
     const slot = () => useToast().toasts.find((t) => t.type === "error");
     const before = slot()?.messages.length ?? 0;
     await player.play("banks/a.wem", "a.wem", async () => "data:audio/wav;base64,QQ");
-    el.error = { message: "unsupported codec" };
+    el.error = fakeAs<MediaError>({ message: "unsupported codec" });
     el.onerror?.(new Event("error"));
     expect(player.active).toBe(false);
     expect(slot()?.messages.length).toBe(before + 1);

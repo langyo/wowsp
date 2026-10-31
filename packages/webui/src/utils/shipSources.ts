@@ -43,7 +43,7 @@ const norm = (value: string) => value.trim().toLowerCase();
  *  The manual arrays are the maintainer's hand additions. */
 const CURATED_BY_NAME = new Map<string, ShipSource>();
 for (const tag of ["coal", "steel", "event"] as const) {
-  for (const name of (sourcesDoc as unknown as { [k: string]: string[] })[tag] ?? []) {
+  for (const name of sourcesDoc[tag] ?? []) {
     if (!CURATED_BY_NAME.has(norm(name))) CURATED_BY_NAME.set(norm(name), tag);
   }
 }
@@ -51,9 +51,7 @@ for (const tag of ["coal", "steel", "event"] as const) {
 /** The scraper's generated shipId → tags map (live armory regions +
  *  Wayback history union — see scripts/scrape_armory_sources.py). */
 const GENERATED_BY_ID = new Map<string, ShipSource[]>(
-  Object.entries(
-    (sourcesDoc as unknown as { generated?: Record<string, string[]> }).generated ?? {},
-  ).map(([id, tags]) => [id, tags.filter((t): t is ShipSource => (SHIP_SOURCES as readonly string[]).includes(t))]),
+  Object.entries(sourcesDoc.generated ?? {}).map(([id, tags]) => [id, tags.filter((t): t is ShipSource => (SHIP_SOURCES as readonly string[]).includes(t))]),
 );
 
 /** shipId → every normalized name the offline db carries for it. */

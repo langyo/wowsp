@@ -9,6 +9,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { ArenaInfo } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 import { useAccountStore } from "./account";
 import { useConfigStore } from "./config";
 import { useGameStatusStore } from "./gameStatus";
@@ -23,7 +24,7 @@ vi.mock("@/api", () => ({
 import { api } from "@/api";
 
 function arena(dateTime: string): ArenaInfo {
-  return {
+  return fakeAs<ArenaInfo>({
     dateTime,
     matchGroup: "pvp",
     mapName: "",
@@ -32,7 +33,7 @@ function arena(dateTime: string): ArenaInfo {
     botCount: 0,
     scriptedUnitCount: 0,
     vehicles: [],
-  } as unknown as ArenaInfo;
+  });
 }
 
 /** Selection tiers for a test run: active install realm, bound account

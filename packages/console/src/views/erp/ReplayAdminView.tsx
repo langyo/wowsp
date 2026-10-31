@@ -27,6 +27,8 @@ import {
   useToast,
 } from "@celestia-island/hikari";
 
+import { asIndexable } from "@/shared/typing";
+
 import {
   getReplayAdminCredits,
   getReplayAdminList,
@@ -460,7 +462,7 @@ export default defineComponent({
                   { key: "updatedAt", title: "最近活动", width: "160px" },
                   { key: "actions", title: "操作", width: "230px" },
                 ]}
-                rows={contributors.value as unknown as Record<string, unknown>[]}
+                rows={contributors.value.map(asIndexable)}
                 rowKey="anonId"
                 hover
               >
@@ -477,7 +479,7 @@ export default defineComponent({
                   { key: "realm", title: "服务器", width: "120px" },
                   { key: "count", title: "累计采纳" },
                 ]}
-                rows={(credits.value?.contributors ?? []) as unknown as Record<string, unknown>[]}
+                rows={(credits.value?.contributors ?? []).map(asIndexable)}
                 rowKey="name"
                 hover
               >

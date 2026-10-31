@@ -23,6 +23,8 @@ import { describe, expect, it, vi, afterEach, beforeEach } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
+import { fakeAs } from "@/test-utils/fakes";
+
 import RankedShipTable from "./RankedShipTable";
 import { useRankedStore } from "@/stores/ranked";
 import { useShipStatsStore } from "@/stores/shipStats";
@@ -114,7 +116,7 @@ const META = [
   // split (see shipLiveStats.test.ts for the same vocabulary).
   { shipId: 4181636944, name: "Charles Martel", tier: 8, type: "Cruiser", nation: "france" },
   { shipId: 4287543280, name: "Cleveland", tier: 8, type: "Cruiser", nation: "usa" },
-] as unknown as ShipInfo[];
+].map((m) => fakeAs<ShipInfo>(m));
 
 /** Career rows for the CN fallback — the water-table shape with a ranked
  *  split; a ship with no ranked battles must never surface. */
@@ -128,7 +130,7 @@ function careerRow(shipId: number, rankedBattles: number): PlayerShipStats {
     winrate: 0,
     avgDamage: 0,
   };
-  return {
+  return fakeAs<PlayerShipStats>({
     shipId,
     name: "",
     battles: 50,
@@ -140,7 +142,7 @@ function careerRow(shipId: number, rankedBattles: number): PlayerShipStats {
     avgDamage: 10_000,
     lastBattleTime: 0,
     modes: { solo: null, div2: null, div3: null, coop: null, ranked: bucket },
-  } as unknown as PlayerShipStats;
+  });
 }
 
 async function mountTable(

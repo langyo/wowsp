@@ -8,11 +8,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { CatalogEntry } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 
 import { DIR_ALIASES, idHints, resolveIdentity } from "./migrateIdentity";
 
 const entry = (id: string, name: string): CatalogEntry =>
-  ({
+  fakeAs<CatalogEntry>({
     id,
     category: "battle",
     discussion: null,
@@ -23,10 +24,10 @@ const entry = (id: string, name: string): CatalogEntry =>
     nameZh: "",
     nameEn: name,
     description: "",
-    authorUrl: "",
+    authors: [],
     packages: [],
     i18n: {},
-  }) as unknown as CatalogEntry;
+  });
 
 const CATALOG = [entry("battle.calculator.penetration", "PenCalc"), entry("battle.marker.smoke", "SmokeMark")];
 

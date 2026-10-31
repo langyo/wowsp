@@ -151,11 +151,11 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // Seed hikari's own i18n context (upstreamed components render their own
   // copy: confirm dialog buttons, empty states, …) from the detected app
   // locale, and keep it in sync when the user switches languages.
-  const appLocale = (i18n.global.locale as unknown as { value: string }).value;
+  const appLocale = i18n.global.locale.value;
   document.documentElement.lang = appLocale;
   void setHikariLocale(hikariLocaleOf(appLocale));
   watch(
-    () => (i18n.global.locale as unknown as { value: string }).value,
+    () => i18n.global.locale.value,
     (locale) => {
       document.documentElement.lang = locale;
       void setHikariLocale(hikariLocaleOf(locale));

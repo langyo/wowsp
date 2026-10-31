@@ -231,7 +231,7 @@ export default defineComponent({
                         class="seal-customizer__label-wrap"
                         ref={(el) => {
                           if (editingKind.value === kind) {
-                            editorWrap.value = el as unknown as HTMLElement | null;
+                            editorWrap.value = el instanceof HTMLElement ? el : null;
                           }
                         }}
                       >
@@ -247,7 +247,8 @@ export default defineComponent({
                           <div class="seal-customizer__editor" role="group">
                             <input
                               ref={(el) => {
-                                editorInput.value = el as unknown as HTMLInputElement | null;
+                                editorInput.value =
+                                  el instanceof HTMLInputElement ? el : null;
                               }}
                               class="seal-customizer__editor-input"
                               type="text"

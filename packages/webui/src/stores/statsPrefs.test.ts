@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  delete window.__TAURI_INTERNALS__;
   emitMock.mockClear();
 });
 
@@ -534,7 +534,7 @@ describe("statsPrefs store", () => {
     // The Tab overlay listens for exactly this event to re-read the blob
     // live (overlay/main.ts's refreshPrefs) — the one channel between the
     // windows, which share localStorage but not Pinia state.
-    (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+    window.__TAURI_INTERNALS__ = {};
     const { useStatsPrefsStore: useFresh } = await freshModule();
     useFresh().setOverlayBattleScope("ranked");
     // The broadcast dynamically imports the event module — let that

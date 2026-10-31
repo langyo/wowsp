@@ -14,6 +14,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("@/api", () => ({ api: {} }));
 
 import type { ArenaInfo, PlayingAccount, SessionSnapshot } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useLiveSelfStore } from "@/stores/liveSelf";
 import { useOverlayStore } from "@/stores/overlay";
@@ -21,7 +22,7 @@ import { useSessionStore } from "@/stores/session";
 import { useLiveSessionGuard } from "./useLiveSessionGuard";
 
 const fakeArena = (stamp: string): ArenaInfo =>
-  ({ dateTime: stamp, vehicles: [], raw: null }) as unknown as ArenaInfo;
+  fakeAs<ArenaInfo>({ dateTime: stamp, vehicles: [], raw: null });
 
 /** Seed the self feed the way the mine panel leaves it mid/post battle.
  *  The store's own new-battle watcher (queued by setArena) wipes the model

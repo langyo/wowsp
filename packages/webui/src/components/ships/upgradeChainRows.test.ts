@@ -20,6 +20,7 @@
  */
 import { describe, expect, it } from "vitest";
 
+import { invalidInput } from "@/test-utils/invalid";
 import { researchOf, shipUpgradeChain } from "@/utils/shipUpgradeChain";
 import { techTreeNode, type TechTreeNode } from "@/utils/techTreeData";
 import {
@@ -93,7 +94,7 @@ function withoutTopology(chain: UpgradeChainInput, role: string): UpgradeChainIn
             steps: slot.steps.map((step) => ({
               ...step,
               prev: null,
-              depth: undefined as unknown as number,
+              depth: invalidInput<number>(undefined),
             })),
           },
     ),

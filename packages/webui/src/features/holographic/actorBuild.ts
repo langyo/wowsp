@@ -44,6 +44,7 @@ import { ammoOfColor } from "./tactical/shellTypes";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { isScriptedUnitName } from "@/utils/aiNames";
+import { asIndexable } from "@/utils/typing";
 import type { EntityTrajectory } from "@/api";
 import type { ShipLabel } from "./shipLabel";
 import { parsePostBattle } from "@/features/replay/postBattle";
@@ -332,7 +333,7 @@ export function rebuildActors(ctx: MapInternals) {
     const line = new THREE.Line(lockGeom, lockMat);
     line.visible = false;
     scene.add(line);
-    ctx.lockLine = line as unknown as THREE.Mesh;
+    ctx.lockLine = line;
   }
 
   const minimapAddFirst = buildPlaneTrails(ctx);
@@ -567,7 +568,7 @@ export function rebuildActors(ctx: MapInternals) {
 
   // Dev-only scene introspection hook (vite debug page: window.__holoDebug).
   if (import.meta.env.DEV) {
-    (window as unknown as Record<string, unknown>).__holoDebug = {
+    asIndexable(window).__holoDebug = {
       get scene() {
         return ctx.api.value?.scene ?? null;
       },
@@ -655,7 +656,7 @@ export function rebuildActors(ctx: MapInternals) {
       const ring = makeOverlayRing(radius, CAP_RING_PX, 0.55);
       ring.position.set(cx, 0.6, -cz);
       scene.add(ring);
-      ctx.trajectoryLines.push(ring as unknown as THREE.Line);
+      ctx.trajectoryLines.push(ring);
       ctx.capRings.push(ring);
       ctx.overlayLineMats.push(ring.material as LineMaterial);
       const canvas = document.createElement("canvas");
@@ -677,7 +678,7 @@ export function rebuildActors(ctx: MapInternals) {
       // Zone letters ride above the weather mask (see weatherScene).
       sprite.renderOrder = OVERLAY_RING_ORDER;
       scene.add(sprite);
-      ctx.trajectoryLines.push(sprite as unknown as THREE.Line);
+      ctx.trajectoryLines.push(sprite);
       ctx.capLetterSprites.push(sprite);
     }
   }

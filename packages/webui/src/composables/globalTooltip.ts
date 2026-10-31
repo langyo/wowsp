@@ -484,7 +484,14 @@ export function installGlobalTooltip(): void {
   // competes with: on <body> the root's document-space z (90000) would bury
   // the popup's ordinal (300) under every open modal's backdrop, hiding
   // in-modal hints (the ship-detail consumable cards) behind the dialog.
-  ensureOverlayRoot().appendChild(popup);
+  //
+  // hikari 0.56 reports the root as `HTMLElement | null` — it is genuinely
+  // absent where there is no document. The bridge only ever runs in a
+  // browser (the caller guards `typeof document`), so a null root here means
+  // there is nothing to attach to: skip the popup instead of throwing.
+  const overlayRoot = ensureOverlayRoot();
+  if (!overlayRoot) return;
+  overlayRoot.appendChild(popup);
 
   // One persistent registration holds the tooltip z band for the app's
   // lifetime — same pattern as the long-lived toast stack; band slots

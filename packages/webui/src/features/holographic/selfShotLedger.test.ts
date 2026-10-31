@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { buildSelfShotLedger, querySelfShotLedger } from "./selfShotLedger";
-import type { EntityTrajectory, ShotKillEvent } from "@/api";
+import type {
+  EntityKind,
+  EntityTrajectory,
+  PositionSample,
+  ShotKillEvent,
+} from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 
 /** A ship trajectory with a straight 10 u/s run and a flat HP stream. */
 function shipTraj(
@@ -12,16 +18,17 @@ function shipTraj(
     deathTime?: number;
   } = {},
 ): EntityTrajectory {
-  return {
+  // Nested doubles as well: the fixture only carries the members this suite's
+  // code path reads, and partiality is per object, not per document.
+  const sample = (time: number, x: number): PositionSample =>
+    fakeAs<PositionSample>({ time, entityId, x, z: opts.z0 ?? 0, yaw: 0 });
+  return fakeAs<EntityTrajectory>({
     entityId,
-    kind: { entityType: 2, initialX: opts.x0 ?? 0, initialZ: opts.z0 ?? 0 },
-    samples: [
-      { time: 0, x: opts.x0 ?? 0, z: opts.z0 ?? 0, yaw: 0 },
-      { time: 10, x: (opts.x0 ?? 0) + 100, z: opts.z0 ?? 0, yaw: 0 },
-    ],
+    kind: fakeAs<EntityKind>({ entityType: 2, initialX: opts.x0 ?? 0, initialZ: opts.z0 ?? 0 }),
+    samples: [sample(0, opts.x0 ?? 0), sample(10, (opts.x0 ?? 0) + 100)],
     hpSamples: opts.hp,
     deathTime: opts.deathTime,
-  } as unknown as EntityTrajectory;
+  });
 }
 
 function shot(
@@ -30,7 +37,7 @@ function shot(
   x: number,
   z: number,
 ): ShotKillEvent {
-  return { ownerId, time, x, z, shotId: 0 } as unknown as ShotKillEvent;
+  return fakeAs<ShotKillEvent>({ ownerId, time, x, z, shotId: 0 });
 }
 
 const SELF = 1;

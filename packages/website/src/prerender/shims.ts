@@ -7,7 +7,24 @@
 // browser). This module must stay the FIRST import of entry.ts: ESM
 // executes imports in order.
 
-const g = globalThis as unknown as Record<string, unknown>;
+/** The five globals this module installs are deliberate PARTIAL stand-ins (a
+ *  `window` with a location and a few sizes, a `document` with two methods) —
+ *  the real DOM types cannot describe them, and they must overwrite the Node
+ *  globals. Type exactly those five away for this module: they are written and
+ *  boolean-tested here, never read through this view (the module-scope reads
+ *  downstream go through the real globals once the shim has run). Every other
+ *  global keeps its real type, so a typo in an unrelated name still fails. */
+type PrerenderGlobals = Omit<
+  typeof globalThis,
+  "window" | "document" | "navigator" | "matchMedia" | "history"
+> & {
+  window?: unknown;
+  document?: unknown;
+  navigator?: unknown;
+  matchMedia?: unknown;
+  history?: unknown;
+};
+const g: PrerenderGlobals = globalThis;
 const base = import.meta.env.BASE_URL || "/";
 
 if (!g.window) {

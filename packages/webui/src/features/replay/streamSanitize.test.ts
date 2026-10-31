@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { EntityTrajectory, PositionSample, ReplayStream } from "@/api";
+import { invalidInput } from "@/test-utils/invalid";
+
 import { sanitizeReplayStream } from "./streamSanitize";
 
 const pos = (time: number, x = 0, z = 0): PositionSample => ({
@@ -18,8 +20,10 @@ const traj = (over: Partial<EntityTrajectory> = {}): EntityTrajectory => ({
   ...over,
 });
 
+// Every fixture this file builds is deliberately malformed: feeding the
+// sanitizer data the compiler already knows is wrong is the point.
 const streamOf = (trajectories: unknown): ReplayStream =>
-  ({ trajectories }) as unknown as ReplayStream;
+  invalidInput<ReplayStream>({ trajectories });
 
 describe("sanitizeReplayStream", () => {
   it("keeps a clean stream untouched, array identities included", () => {
@@ -56,7 +60,9 @@ describe("sanitizeReplayStream", () => {
   });
 
   it("drops nullish and non-finite samples from a timeline", () => {
-    const bad = [
+    // nullish entries and non-finite fields are exactly what the sanitizer
+    // exists to drop, so the fixture is typed as clean samples on purpose.
+    const bad = invalidInput<PositionSample[]>([
       pos(0),
       undefined,
       pos(5, Number.NaN, 0),
@@ -64,7 +70,7 @@ describe("sanitizeReplayStream", () => {
       pos(10, 0, Number.NEGATIVE_INFINITY),
       null,
       pos(15, 3, 4),
-    ] as unknown as PositionSample[];
+    ]);
     const stream = streamOf([traj({ samples: bad })]);
     sanitizeReplayStream(stream);
     const kept = stream.trajectories[0].samples;
@@ -77,7 +83,7 @@ describe("sanitizeReplayStream", () => {
 
   it("coerces a non-array samples field to the empty timeline", () => {
     const stream = streamOf([
-      traj({ samples: "broken" as unknown as PositionSample[] }),
+      traj({ samples: invalidInput<PositionSample[]>("broken") }),
     ]);
     sanitizeReplayStream(stream);
     expect(stream.trajectories[0].samples).toEqual([]);
@@ -88,9 +94,16 @@ describe("sanitizeReplayStream", () => {
       null,
       traj({
         entityId: 2,
-        hpSamples: [{ time: 1, value: 50 }, null, { time: 3, value: Number.NaN }] as unknown as EntityTrajectory["hpSamples"],
+        hpSamples: invalidInput<EntityTrajectory["hpSamples"]>([
+          { time: 1, value: 50 },
+          null,
+          { time: 3, value: Number.NaN },
+        ]),
         capSamples: [{ time: 2, value: 0 }],
-        capProgress: [null, { time: 4, value: 700 }] as unknown as EntityTrajectory["capProgress"],
+        capProgress: invalidInput<EntityTrajectory["capProgress"]>([
+          null,
+          { time: 4, value: 700 },
+        ]),
       }),
       undefined,
     ]);

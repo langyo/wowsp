@@ -9,5 +9,8 @@
   "peerDependencies": {
     "three": "^0.*",
     "vue": "^*"
+  },
+  "devDependencies": {
+    "@types/three": "^0.186"
   }
 }

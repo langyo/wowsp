@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import { fakeAs } from "@/test-utils/fakes";
+
 import { statCellOrigins } from "./shotKit";
 
 /** A canvas stand-in whose measureText is deterministic: every glyph is
  *  6px wide. Only measureText is on statCellOrigins' critical path. */
-const fakeCtx = {
-  measureText: (s: string) => ({ width: s.length * 6 }),
-} as unknown as CanvasRenderingContext2D;
+const fakeCtx = fakeAs<CanvasRenderingContext2D>({
+  measureText: (s: string) => fakeAs<TextMetrics>({ width: s.length * 6 }),
+});
 
 /** Column widths implied by the fake measure for a cell matrix. */
 function colWidths(cells: string[][]): number[] {

@@ -12,6 +12,7 @@ import { createMemoryHistory, createRouter } from "vue-router";
 // upstream component out of the wrapper must fail here.
 import AppTitleBar from "@/components/layout/AppTitleBar";
 import { initLocaleMessages } from "@/i18n";
+import { asIndexable } from "@/utils/typing";
 
 /**
  * The boot-chrome HANDOFF, end to end against the really installed hikari.
@@ -130,7 +131,7 @@ afterEach(() => {
   document.documentElement.removeAttribute("data-mode");
   document.documentElement.style.removeProperty("--hk-boot-chrome-h");
   document.body.innerHTML = "";
-  delete (window as unknown as Record<string, unknown>).HkBootChrome;
+  delete asIndexable(window).HkBootChrome;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });

@@ -10,6 +10,8 @@
  * copies (the app's local one and the @wowsp/holo one the website uses).
  */
 import { describe, expect, it } from "vitest";
+
+import { fakeAs } from "@/test-utils/fakes";
 import { drawShipGlyph as drawLocal } from "./shipGlyph";
 import { drawShipGlyph as drawHolo } from "@wowsp/holo";
 
@@ -32,10 +34,10 @@ function recordingCtx(): { rec: { paths: Pt[][] }; ctx: CanvasRenderingContext2D
     stroke() {},
     // outline mode reads the transform magnitude for hairline widths
     getTransform() {
-      return { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+      return fakeAs<DOMMatrix>({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
     },
   };
-  return { rec, ctx: rec as unknown as CanvasRenderingContext2D };
+  return { rec, ctx: fakeAs<CanvasRenderingContext2D>(rec) };
 }
 
 /** Union bounding box of every recorded polygon. */
