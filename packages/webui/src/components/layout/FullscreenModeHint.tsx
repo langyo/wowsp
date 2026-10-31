@@ -4,6 +4,7 @@ import { MonitorX } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import "./FullscreenModeHint.scss";
 
 /** Gap between the status card's top edge and the hint above it. */
@@ -43,6 +44,10 @@ export default defineComponent({
   },
   setup(props) {
     const gameStatus = useGameStatusStore();
+    // The root DPI zoom the hint's coordinate math runs against — see
+    // place (the scale the document root is drawn at, `1` while the
+    // interface-scale preference is Auto).
+    const dpiScale = useAppliedDpiScale();
 
     const open = ref(false);
     const popStyle = ref<{ left: string; top: string } | null>(null);
@@ -55,14 +60,19 @@ export default defineComponent({
 
     /** Rewrite the hint style off the anchor card, clamping the top once
      *  the hint's own rendered height is known (happy-dom and the
-     *  pre-mount pass both measure 0). */
+     *  pre-mount pass both measure 0). The hint teleports to <body> —
+     *  inside the root DPI zoom's subtree — so its left/top live in the
+     *  zoomed local space and paint scale× larger: the visual-space rect
+     *  is divided by the applied scale first, or the card drifts scale×
+     *  off its anchor (PluginUpdateHint's zoom notes). */
     function place(): boolean {
       const rect = props.anchor?.value?.getBoundingClientRect();
       if (!rect) return false;
       const height = popEl.value?.offsetHeight ?? 0;
+      const z = dpiScale.value;
       popStyle.value = {
-        left: `${rect.left}px`,
-        top: `${Math.max(EDGE_PX, rect.top - ANCHOR_GAP_PX - height)}px`,
+        left: `${rect.left / z}px`,
+        top: `${Math.max(EDGE_PX, rect.top / z - ANCHOR_GAP_PX - height)}px`,
       };
       return true;
     }
@@ -97,6 +107,11 @@ export default defineComponent({
       if (open.value) place();
     }
     window.addEventListener("resize", onResize);
+    // A scale change never fires a resize event: while the card is up,
+    // re-anchor it in the new space (PluginUpdateHint's zoom watch).
+    watch(dpiScale, () => {
+      if (open.value) place();
+    });
     onBeforeUnmount(() => window.removeEventListener("resize", onResize));
 
     return () =>

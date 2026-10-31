@@ -44,6 +44,7 @@ vi.mock("@/api", () => ({
 import { initLocaleMessages, t } from "@/i18n";
 import { useGatewayStore } from "@/stores/gateway";
 import { useSessionStore } from "@/stores/session";
+import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 import GatewayCaptchaHint, { REOPEN_DELAY_MS } from "./GatewayCaptchaHint";
 
 enableAutoUnmount(afterEach);
@@ -117,6 +118,11 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.useFakeTimers();
   document.body.innerHTML = "";
+  // The DPI singleton re-reads the documentElement per test: a zoom
+  // test's scale must never leak into the unzoomed default.
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
   for (const m of Object.values(mocks)) m.mockReset();
   mocks.appdataRead.mockRejectedValue(new Error("no cache file"));
   mocks.getHealth.mockResolvedValue({
@@ -128,6 +134,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
   const toasts = useToast().toasts;
   for (const slot of [...toasts]) useToast().remove(slot.id);
 });
@@ -144,6 +153,20 @@ describe("GatewayCaptchaHint", () => {
     expect(el?.style.transform).toBe("translateY(-50%)");
     expect(el?.getAttribute("role")).toBe("status");
     expect(el?.textContent).toContain(t("gateway.captchaTitle"));
+  });
+
+  it("divides the anchor geometry by the applied root zoom", async () => {
+    // PluginUpdateHint's zoom regression, mirrored for the cloned
+    // mechanics: at 125% the unconverted card drifted scale× off the
+    // anchor (240 visual / 1.25 + 10 → 202 local; center 720 → 576).
+    document.documentElement.dataset.dpiScale = "125";
+    resetAppliedDpiScaleForTest();
+    await mountHint();
+
+    const el = pop();
+    expect(el).not.toBeNull();
+    expect(el?.style.left).toBe("202px");
+    expect(el?.style.top).toBe("576px");
   });
 
   it("mounts the widget only after the health document lands", async () => {

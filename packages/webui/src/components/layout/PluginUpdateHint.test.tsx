@@ -43,6 +43,7 @@ import type { GameInstall } from "@/api";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
+import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 import { installLabel } from "@/utils/installLabel";
 import PluginUpdateHint, { REOPEN_DELAY_MS, SETTLED_LINGER_MS } from "./PluginUpdateHint";
 
@@ -121,6 +122,11 @@ function pop(): HTMLElement | null {
 beforeEach(() => {
   vi.useFakeTimers();
   document.body.innerHTML = "";
+  // The DPI singleton re-reads the documentElement per test: a zoom
+  // test's scale must never leak into the unzoomed default.
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
   for (const m of Object.values(mocks)) m.mockReset();
   mocks.routerPush.mockResolvedValue(undefined);
   mocks.listenDownloadProgress.mockReturnValue(() => undefined);
@@ -143,6 +149,9 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
   const toasts = useToast().toasts;
   for (const slot of [...toasts]) useToast().remove(slot.id);
 });
@@ -404,6 +413,62 @@ describe("PluginUpdateHint", () => {
     await flushPromises();
 
     expect(el?.style.top).toBe(`${window.innerHeight - 8 - 200}px`);
+  });
+
+  describe("root-zoom anchoring (the DPI pref's zoomed local space)", () => {
+    /** Apply a manual interface scale the way dpiPrefs does, and make
+     *  the singleton re-read it (the component captures the ref at
+     *  setup). */
+    const setScale = (pct: string): void => {
+      document.documentElement.dataset.dpiScale = pct;
+      resetAppliedDpiScaleForTest();
+    };
+
+    it("divides the anchor geometry by the applied scale", async () => {
+      // 125% was the report's shape (user report 2026-10-31): unconverted,
+      // the card drifted right/down by the factor and dropped its
+      // 一键更新 action past the window's bottom edge.
+      setScale("125");
+      await mountHint({ probeOutdated: true, running: true }, anchorCard(240, 700, 40));
+
+      const el = pop();
+      expect(el).not.toBeNull();
+      // 240 visual / 1.25 + 10 → 202 local; the card's center
+      // (720 visual) → 576 local.
+      expect(el?.style.left).toBe("202px");
+      expect(el?.style.top).toBe("576px");
+    });
+
+    it("clamps the bottom against the zoomed viewport", async () => {
+      setScale("125");
+      await mountHint({ probeOutdated: true, running: true }, anchorCard(240, 700, 40));
+      const el = pop();
+      expect(el).not.toBeNull();
+
+      // The card measures 400px tall (half 200): the center at 576 local
+      // would push the bottom edge past the zoomed viewport (768/1.25
+      // local px tall) → the re-anchor clamps the top up instead.
+      Object.defineProperty(el, "offsetHeight", { value: 400, configurable: true });
+      window.dispatchEvent(new Event("resize"));
+      await flushPromises();
+
+      expect(el?.style.top).toBe(`${window.innerHeight / 1.25 - 8 - 200}px`);
+    });
+
+    it("re-anchors when the scale changes while the card is up", async () => {
+      await mountHint({ probeOutdated: true, running: true }, anchorCard(240, 700, 40));
+      expect(pop()?.style.left).toBe("250px");
+
+      // The settings' live DPI preview over a pinned card: the scale
+      // never fires a resize event, so the watch owns the re-anchor.
+      // No singleton reset here — the component holds the live ref, the
+      // attribute mutation must reach it through the observer.
+      document.documentElement.dataset.dpiScale = "125";
+      await flushPromises();
+
+      expect(pop()?.style.left).toBe("202px");
+      expect(pop()?.style.top).toBe("576px");
+    });
   });
 
   it("one-click update drives the all-installs pass", async () => {

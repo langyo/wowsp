@@ -17,6 +17,7 @@ import { INGAME_PLUGIN_MOD_ID } from "@/components/settings/useSettingsGamePaths
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore, PROBE_ITEM } from "@/stores/pluginUpdates";
 import type { PendingInstall } from "@/stores/pluginUpdates";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { sameGamePath } from "@/utils/gamePath";
 import { installFolderName, installLabel } from "@/utils/installLabel";
 import "./PluginUpdateHint.scss";
@@ -125,6 +126,10 @@ export default defineComponent({
     const updates = usePluginUpdatesStore();
     const gameStatus = useGameStatusStore();
     const router = useRouter();
+    // The root DPI zoom the popup's coordinate math runs against — see
+    // applyStyle/place (the scale the document root is drawn at, `1`
+    // while the interface-scale preference is Auto).
+    const dpiScale = useAppliedDpiScale();
 
     const open = ref(false);
     const popStyle = ref<{ left: string; top: string; transform: string } | null>(null);
@@ -199,12 +204,20 @@ export default defineComponent({
 
     /** Rewrite the popup style off the anchor snapshot, clamping the
      *  centered top into the viewport once the popup's own rendered
-     *  height is known (jsdom and the pre-mount pass both measure 0). */
+     *  height is known (jsdom and the pre-mount pass both measure 0).
+     *  The popup teleports to <body> — inside the root DPI zoom's
+     *  subtree — so its left/top live in the zoomed local space and
+     *  paint scale× larger: every visual-space measurement (gBCR,
+     *  window.innerHeight) is divided by the applied scale first, or
+     *  the card drifts scale× off its anchor and the bottom clamp
+     *  leaks past the window edge (user report 2026-10-31: at 125% the
+     *  一键更新 action landed off-screen). */
     function applyStyle(): void {
       const half = (popEl.value?.offsetHeight ?? 0) / 2;
+      const innerH = window.innerHeight / dpiScale.value;
       const top = Math.max(
         EDGE_PX + half,
-        Math.min(anchorCenterY, window.innerHeight - EDGE_PX - half),
+        Math.min(anchorCenterY, innerH - EDGE_PX - half),
       );
       popStyle.value = {
         left: `${anchorLeft}px`,
@@ -214,12 +227,16 @@ export default defineComponent({
     }
 
     /** Snapshot the anchor card's rect. Returns false when neither the
-     *  anchor nor the wrapper is mounted yet (pre-mount pin flip). */
+     *  anchor nor the wrapper is mounted yet (pre-mount pin flip). The
+     *  rect answers in root-visual px (standardized zoom reports
+     *  ancestor zoom applied) — divided into the popup's zoomed local
+     *  space, the conversion applyStyle's viewport clamp runs too. */
     function place(): boolean {
       const rect = (props.anchor?.value ?? wrapEl.value)?.getBoundingClientRect();
       if (!rect) return false;
-      anchorLeft = Math.min(rect.right + ANCHOR_GAP_PX, window.innerWidth - 340);
-      anchorCenterY = rect.top + rect.height / 2;
+      const z = dpiScale.value;
+      anchorLeft = Math.min(rect.right / z + ANCHOR_GAP_PX, window.innerWidth / z - 340);
+      anchorCenterY = (rect.top + rect.height / 2) / z;
       applyStyle();
       return true;
     }
@@ -337,6 +354,12 @@ export default defineComponent({
       if (open.value) place();
     }
     window.addEventListener("resize", onResize);
+    // A scale change never fires a resize event: while the card is up
+    // (the settings' live DPI preview over a pinned card), re-anchor it
+    // in the new space — the same drift class the resize listener covers.
+    watch(dpiScale, () => {
+      if (open.value) place();
+    });
     onBeforeUnmount(() => {
       clearTimers();
       window.removeEventListener("resize", onResize);
