@@ -70,7 +70,16 @@ import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import ribbonNamesRaw from "@/data/ribbon_names.json";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
-import { HkButton, HkIconButton, HkScrollContainer, HkScrollPin, HkSpinner, useToast } from "@celestia-island/hikari";
+import {
+  HkButton,
+  HkIconButton,
+  HkModal,
+  HkScrollContainer,
+  HkScrollPin,
+  HkSpinner,
+  useBreakpoint,
+  useToast,
+} from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -1938,6 +1947,13 @@ export default defineComponent({
     // pairing wizard pulling from the user's desktop WoWSP.
     const pairing = usePairingStore();
     const wizardOpen = ref(false);
+    // Phone LAYOUT (viewport): the replay page shows ONLY the level-2 list;
+    // opening a replay raises the level-3 detail as a tall bottom-sheet
+    // WINDOW (hikari docks HkModal at <=767px, backGuard closes it on the
+    // Android back gesture) — the shittim-chest every-window-pops-from-
+    // the-bottom convention. Desktop keeps the inline detail pane.
+    const { isMobile: phoneLayout } = useBreakpoint();
+    const detailSheetOpen = ref(false);
     // Deep link: /replay?pairing=1 auto-opens the wizard — the phone
     // settings' pairing section routes here (its primary button).
     if (route.query.pairing === "1") wizardOpen.value = true;
@@ -2338,6 +2354,7 @@ export default defineComponent({
             ]}
             onClick={() => {
               void parser.open(r.path);
+              if (phoneLayout.value) detailSheetOpen.value = true;
             }}
           >
             <div class="replay-card__top">
@@ -2441,7 +2458,322 @@ export default defineComponent({
       );
     }
 
-    return () => (
+    return () => {
+      // The detail pane, built once per render: desktop mounts it inline,
+      // phone layout raises it as a tall bottom-sheet window (the
+      // level-3 content of the replay page - the list below is the
+      // level-2 surface the phone shows directly).
+      const mainSection = (
+          <section class="replay-view__main">
+            {/* Phone-only page scroller (≤767px the stacked detail scrolls
+                here): the hikari container owns the scrollbar, and the inner
+                wrapper keeps the former direct-child flex chain (__content
+                flex:1 etc.) intact — on desktop nothing overflows, so the
+                roster/map keep managing their own scroll exactly as before. */}
+            <HkScrollContainer class="replay-view__main-scroll">
+              <div class="replay-view__main-inner">
+                {parser.current.value ? (
+                  <div class="replay-view__content">
+                    {parser.error.value ? (
+                      <ErrorCard error={parser.error.value} />
+                    ) : null}
+                    {/* The reveal shortcut (top-right corner of the opened
+                        replay): transparent ghost icon button that shows the
+                        replay file pre-selected in the OS file manager. The
+                        hover hint rides the delegated data-hint channel as
+                        a card — the label as the head, the replay's
+                        install-relative path as the identity line (see
+                        revealRelPath); a native title attribute would trip
+                        nativeTitlePolicy fence. Desktop app only — phones
+                        have no file manager and a plain browser tab has no
+                        such command. */}
+                    {isNative() && !isMobileApp() && parser.current.value.path ? (
+                      <button
+                        type="button"
+                        class="replay-view__reveal"
+                        data-hint-card={JSON.stringify({
+                          title: t("replay.reveal.tip"),
+                          subtitle: revealRelPath.value,
+                        })}
+                        aria-label={t("replay.reveal.tip")}
+                        onClick={onRevealReplay}
+                      >
+                        <FolderSearch size={14} />
+                      </button>
+                    ) : null}
+                    <header class="replay-view__meta">
+                      {/* The map as a jump tag (shared with the live head): hover
+                          previews the map's bundled minimap, click opens the map's
+                          tactical board — see MapNameTag. */}
+                      <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
+                      <span class="replay-view__meta-item">
+                        {formatDateTime(parser.current.value.dateTime)}
+                      </span>
+                      {parser.current.value.matchGroup ? (
+                        <span
+                          class="replay-view__meta-item replay-view__pill"
+                          style={
+                            (spawnSymmetryOperation.value
+                              ? // Decode-time refinement: the spawn probe
+                                // promoted a plain-co-op descriptor label to
+                                // 行动 (see spawnSymmetryOperation above).
+                                modeColorOfKey("operation")
+                              : modeColor(
+                                  parser.current.value.matchGroup,
+                                  parser.current.value.scenario,
+                                  parser.current.value.eventType,
+                                  parser.current.value.botCount ?? 0,
+                                  parser.current.value.scriptedUnitCount ?? 0,
+                                  hasSingleTeamRoster(parser.current.value.vehicles),
+                                )) as CSSProperties
+                          }
+                        >
+                          {spawnSymmetryOperation.value
+                            ? modeLabelOfKey("operation")
+                            : modeLabel(
+                                parser.current.value.matchGroup,
+                                parser.current.value.scenario,
+                                parser.current.value.eventType,
+                                parser.current.value.botCount ?? 0,
+                                parser.current.value.scriptedUnitCount ?? 0,
+                                hasSingleTeamRoster(parser.current.value.vehicles),
+                              )}
+                        </span>
+                      ) : null}
+                      <span class="replay-view__meta-item replay-view__count">
+                        {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
+                      </span>
+                      {duration.value > 0 ? (
+                        <span class="replay-view__meta-item">
+                          {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
+                        </span>
+                      ) : null}
+                      {resultsLoading.value ? (
+                        <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
+                          {t("replay.results")}
+                          <HkSpinner size="xs" tone="current" />
+                        </span>
+                      ) : battleResults.value || trajectories.value.length > 0 ? (
+                        <button
+                          class="replay-view__meta-item replay-view__pill replay-view__results"
+                          onClick={() => (showResults.value = !showResults.value)}
+                        >
+                          {t("replay.results")}
+                        </button>
+                      ) : null}
+                      {chatCount.value > 0 ? (
+                        <button
+                          class="replay-view__meta-item replay-view__pill"
+                          onClick={() => (showChat.value = !showChat.value)}
+                        >
+                          {t("replay.chatLog")}
+                        </button>
+                      ) : null}
+                      {/* The static report opens a SECONDARY desktop window
+                          (report.html, Rust-spawned) — phones have no such
+                          window, so the pill stays desktop-only. */}
+                      {!isMobileApp() ? (
+                        <button
+                          class="replay-view__meta-item replay-view__pill"
+                          onClick={() => openStaticReport()}
+                        >
+                          {t("replay.report.title")}
+                        </button>
+                      ) : null}
+                    </header>
+                    {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
+                      <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
+                        <div
+                          class="replay-view__modal-panel"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div class="replay-view__modal-head">
+                            <div class="replay-view__modal-title">
+                              <strong>{t("replay.results")}</strong>
+                              {!battleResults.value ? (
+                                <span class="replay-view__results-note">
+                                  {t("replay.resultsIncomplete")}
+                                </span>
+                              ) : null}
+                            </div>
+                            <HkIconButton
+                              class="hk-window-close replay-view__modal-close"
+                              size={32}
+                              variant="ghost"
+                              icon="close"
+                              aria-label={t("common.close")}
+                              onClick={() => (showResults.value = false)}
+                            />
+                          </div>
+                          {/* Results-body scroller: the hikari container owns the
+                              scrollbar (auto-hiding overlay track); the panel
+                              scrolls inside its viewport. Nothing pins in here,
+                              and no pin anywhere consumes a whitespace contract
+                              (the chat body's timeline pin rides strategy="none"). */}
+                          <HkScrollContainer class="replay-view__modal-body">
+                            <div class="replay-view__modal-body__inner">
+                              {battleResults.value ? (
+                                <PostBattlePanel
+                                  raw={battleResults.value}
+                                  head={{
+                                    matchGroup: parser.current.value.matchGroup,
+                                    scenario: parser.current.value.scenario,
+                                    eventType: parser.current.value.eventType,
+                                    botCount: parser.current.value.botCount ?? null,
+                                    scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
+                                    mapName: parser.current.value.mapName,
+                                    realm: realm.value,
+                                    gameVersion: gameVersionOf(parser.current.value.raw),
+                                    battleTime: parser.current.value.dateTime
+                                      ? formatDateTime(parser.current.value.dateTime)
+                                      : null,
+                                    durationSec: duration.value > 0 ? duration.value : null,
+                                  }}
+                                  operation={isOperation.value}
+                                  stream={{
+                                    trajectories: trajectories.value,
+                                    recorderVehicleId: recorderVehicleId.value,
+                                    shotKills: shotKills.value,
+                                    damageStats: damageStats.value,
+                                    achievements: achievements.value,
+                                    arenaPlayers: arenaPlayers.value,
+                                    shellLaunches: shellLaunches.value,
+                                    torpedoes: torpedoes.value,
+                                  }}
+                                  roster={parser.current.value.vehicles}
+                                  builds={allyBuilds.value}
+                                  onClose={() => (showResults.value = false)}
+                                />
+                              ) : (
+                                <PostBattleFallbackPanel
+                                  vehicles={parser.current.value.vehicles}
+                                  trajectories={trajectories.value}
+                                  explosions={explosions.value}
+                                  shotKills={shotKills.value}
+                                  damageStats={damageStats.value}
+                                  realm={realm.value}
+                                  operation={isOperation.value}
+                                  shipNameOrder={shipNameOrder.value}
+                                  arenaPlayers={arenaPlayers.value}
+                                  inferredDeaths={inferredDeaths.value}
+                                  statsMode={fallbackStatsMode.value}
+                                  onClose={() => (showResults.value = false)}
+                                />
+                              )}
+                            </div>
+                          </HkScrollContainer>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {showChat.value && chatCount.value > 0 ? (
+                      <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
+                        <div
+                          class="replay-view__modal-panel replay-view__chat-panel"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div class="replay-view__modal-head">
+                            <div class="replay-view__modal-title">
+                              <strong>{t("replay.chatLog")}</strong>
+                            </div>
+                            <HkIconButton
+                              class="hk-window-close replay-view__modal-close"
+                              size={32}
+                              variant="ghost"
+                              icon="close"
+                              aria-label={t("common.close")}
+                              onClick={() => (showChat.value = false)}
+                            />
+                          </div>
+                          <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
+                            <ChatLogPanel
+                              events={chatMessages.value}
+                              vehicles={parser.current.value.vehicles}
+                              trajectories={trajectories.value}
+                              arenaPlayers={arenaPlayers.value}
+                              duration={duration.value}
+                              realm={realm.value}
+                              mapApi={mapRef.value}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    <div class="replay-view__detail">
+                      <div class="replay-view__map-wrap">
+                        {trajectoryError.value ? (
+                          // Hardcoded English on purpose — the trajectory
+                          // decoder is a power-user diagnostic path without a
+                          // translation budget (kept verbatim from the old
+                          // placeholder).
+                          <div class="replay-view__placeholder">
+                            <ErrorCard title="Trajectory decode failed" error={trajectoryError.value} />
+                          </div>
+                        ) : updater.portable ? (
+                          // The portable edition ships no 3D — the
+                          // holographic map gives way to the install hint.
+                          <div class="replay-view__placeholder">{t("common.portable3dBlocked")}</div>
+                        ) : (
+                          <HolographicMap
+                            ref={mapRef}
+                            replayPath={parser.current.value.path}
+                            trajectories={trajectories.value}
+                            shellLaunches={shellLaunches.value}
+                            explosions={explosions.value}
+                            torpedoes={torpedoes.value}
+                            torpedoSteers={torpedoSteers.value}
+                            weaponLocks={weaponLocks.value}
+                            battleResults={battleResults.value ?? undefined}
+                            replayVersion={replayVersion.value ?? undefined}
+                            mapNamePkt={mapNamePkt.value ?? undefined}
+                            cameraFrames={cameraFrames.value}
+                            netStats={netStats.value}
+                            leavesMap={leavesMap.value}
+                            cameraModes={cameraModes.value}
+                            squadronCreates={squadronCreates.value}
+                            squadronPlanes={squadronPlanes.value}
+                            minimapSquadronAdds={minimapSquadronAdds.value}
+                            minimapSquadronMoves={minimapSquadronMoves.value}
+                            minimapSquadronRemoves={minimapSquadronRemoves.value}
+                            wards={wards.value}
+                            wardRemoves={wardRemoves.value}
+                            shotKills={shotKills.value}
+                            damageStats={damageStats.value}
+                            chatMessages={chatMessages.value}
+                            achievements={achievements.value}
+                            arenaPlayers={arenaPlayers.value}
+                            inferredDeaths={inferredDeaths.value}
+                            weatherTransitions={weatherTransitions.value}
+                            weatherNotifications={weatherNotifications.value}
+                            vehicles={parser.current.value.vehicles}
+                            operation={isOperation.value}
+                            encyclopedia={encyclopedia.byId}
+                            mapId={parser.current.value.mapName ?? ""}
+                            matchGroup={parser.current.value.matchGroup ?? ""}
+                            mapName={parser.current.value.mapName ?? ""}
+                            initialTime={initialSeek}
+                            initialMinimapZoom={route.query.mm === "1"}
+                            realm={realm.value}
+                            shipNameOrder={shipNameOrder.value}
+                            statsMode={fallbackStatsMode.value}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ) : parser.error.value ? (
+                  <div class="replay-view__placeholder">
+                    <ErrorCard error={parser.error.value} />
+                  </div>
+                ) : (
+                  <div class="replay-view__placeholder">{t("replay.select")}</div>
+                )}
+              </div>
+            </HkScrollContainer>
+          </section>
+      );
+      return (
       <main class="replay-view">
         <aside class="replay-view__list">
           <div class="replay-view__list-head">
@@ -2608,314 +2940,19 @@ export default defineComponent({
           </HkScrollContainer>
         </aside>
 
-        <section class="replay-view__main">
-          {/* Phone-only page scroller (≤767px the stacked detail scrolls
-              here): the hikari container owns the scrollbar, and the inner
-              wrapper keeps the former direct-child flex chain (__content
-              flex:1 etc.) intact — on desktop nothing overflows, so the
-              roster/map keep managing their own scroll exactly as before. */}
-          <HkScrollContainer class="replay-view__main-scroll">
-            <div class="replay-view__main-inner">
-              {parser.current.value ? (
-                <div class="replay-view__content">
-                  {parser.error.value ? (
-                    <ErrorCard error={parser.error.value} />
-                  ) : null}
-                  {/* The reveal shortcut (top-right corner of the opened
-                      replay): transparent ghost icon button that shows the
-                      replay file pre-selected in the OS file manager. The
-                      hover hint rides the delegated data-hint channel as
-                      a card — the label as the head, the replay's
-                      install-relative path as the identity line (see
-                      revealRelPath); a native title attribute would trip
-                      nativeTitlePolicy fence. Desktop app only — phones
-                      have no file manager and a plain browser tab has no
-                      such command. */}
-                  {isNative() && !isMobileApp() && parser.current.value.path ? (
-                    <button
-                      type="button"
-                      class="replay-view__reveal"
-                      data-hint-card={JSON.stringify({
-                        title: t("replay.reveal.tip"),
-                        subtitle: revealRelPath.value,
-                      })}
-                      aria-label={t("replay.reveal.tip")}
-                      onClick={onRevealReplay}
-                    >
-                      <FolderSearch size={14} />
-                    </button>
-                  ) : null}
-                  <header class="replay-view__meta">
-                    {/* The map as a jump tag (shared with the live head): hover
-                        previews the map's bundled minimap, click opens the map's
-                        tactical board — see MapNameTag. */}
-                    <MapNameTag class="replay-view__map" spaceId={parser.current.value.mapName} lang={mapLang.value} />
-                    <span class="replay-view__meta-item">
-                      {formatDateTime(parser.current.value.dateTime)}
-                    </span>
-                    {parser.current.value.matchGroup ? (
-                      <span
-                        class="replay-view__meta-item replay-view__pill"
-                        style={
-                          (spawnSymmetryOperation.value
-                            ? // Decode-time refinement: the spawn probe
-                              // promoted a plain-co-op descriptor label to
-                              // 行动 (see spawnSymmetryOperation above).
-                              modeColorOfKey("operation")
-                            : modeColor(
-                                parser.current.value.matchGroup,
-                                parser.current.value.scenario,
-                                parser.current.value.eventType,
-                                parser.current.value.botCount ?? 0,
-                                parser.current.value.scriptedUnitCount ?? 0,
-                                hasSingleTeamRoster(parser.current.value.vehicles),
-                              )) as CSSProperties
-                        }
-                      >
-                        {spawnSymmetryOperation.value
-                          ? modeLabelOfKey("operation")
-                          : modeLabel(
-                              parser.current.value.matchGroup,
-                              parser.current.value.scenario,
-                              parser.current.value.eventType,
-                              parser.current.value.botCount ?? 0,
-                              parser.current.value.scriptedUnitCount ?? 0,
-                              hasSingleTeamRoster(parser.current.value.vehicles),
-                            )}
-                      </span>
-                    ) : null}
-                    <span class="replay-view__meta-item replay-view__count">
-                      {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
-                    </span>
-                    {duration.value > 0 ? (
-                      <span class="replay-view__meta-item">
-                        {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
-                      </span>
-                    ) : null}
-                    {resultsLoading.value ? (
-                      <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
-                        {t("replay.results")}
-                        <HkSpinner size="xs" tone="current" />
-                      </span>
-                    ) : battleResults.value || trajectories.value.length > 0 ? (
-                      <button
-                        class="replay-view__meta-item replay-view__pill replay-view__results"
-                        onClick={() => (showResults.value = !showResults.value)}
-                      >
-                        {t("replay.results")}
-                      </button>
-                    ) : null}
-                    {chatCount.value > 0 ? (
-                      <button
-                        class="replay-view__meta-item replay-view__pill"
-                        onClick={() => (showChat.value = !showChat.value)}
-                      >
-                        {t("replay.chatLog")}
-                      </button>
-                    ) : null}
-                    {/* The static report opens a SECONDARY desktop window
-                        (report.html, Rust-spawned) — phones have no such
-                        window, so the pill stays desktop-only. */}
-                    {!isMobileApp() ? (
-                      <button
-                        class="replay-view__meta-item replay-view__pill"
-                        onClick={() => openStaticReport()}
-                      >
-                        {t("replay.report.title")}
-                      </button>
-                    ) : null}
-                  </header>
-                  {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
-                    <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
-                      <div
-                        class="replay-view__modal-panel"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div class="replay-view__modal-head">
-                          <div class="replay-view__modal-title">
-                            <strong>{t("replay.results")}</strong>
-                            {!battleResults.value ? (
-                              <span class="replay-view__results-note">
-                                {t("replay.resultsIncomplete")}
-                              </span>
-                            ) : null}
-                          </div>
-                          <HkIconButton
-                            class="hk-window-close replay-view__modal-close"
-                            size={32}
-                            variant="ghost"
-                            icon="close"
-                            aria-label={t("common.close")}
-                            onClick={() => (showResults.value = false)}
-                          />
-                        </div>
-                        {/* Results-body scroller: the hikari container owns the
-                            scrollbar (auto-hiding overlay track); the panel
-                            scrolls inside its viewport. Nothing pins in here,
-                            and no pin anywhere consumes a whitespace contract
-                            (the chat body's timeline pin rides strategy="none"). */}
-                        <HkScrollContainer class="replay-view__modal-body">
-                          <div class="replay-view__modal-body__inner">
-                            {battleResults.value ? (
-                              <PostBattlePanel
-                                raw={battleResults.value}
-                                head={{
-                                  matchGroup: parser.current.value.matchGroup,
-                                  scenario: parser.current.value.scenario,
-                                  eventType: parser.current.value.eventType,
-                                  botCount: parser.current.value.botCount ?? null,
-                                  scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
-                                  mapName: parser.current.value.mapName,
-                                  realm: realm.value,
-                                  gameVersion: gameVersionOf(parser.current.value.raw),
-                                  battleTime: parser.current.value.dateTime
-                                    ? formatDateTime(parser.current.value.dateTime)
-                                    : null,
-                                  durationSec: duration.value > 0 ? duration.value : null,
-                                }}
-                                operation={isOperation.value}
-                                stream={{
-                                  trajectories: trajectories.value,
-                                  recorderVehicleId: recorderVehicleId.value,
-                                  shotKills: shotKills.value,
-                                  damageStats: damageStats.value,
-                                  achievements: achievements.value,
-                                  arenaPlayers: arenaPlayers.value,
-                                  shellLaunches: shellLaunches.value,
-                                  torpedoes: torpedoes.value,
-                                }}
-                                roster={parser.current.value.vehicles}
-                                builds={allyBuilds.value}
-                                onClose={() => (showResults.value = false)}
-                              />
-                            ) : (
-                              <PostBattleFallbackPanel
-                                vehicles={parser.current.value.vehicles}
-                                trajectories={trajectories.value}
-                                explosions={explosions.value}
-                                shotKills={shotKills.value}
-                                damageStats={damageStats.value}
-                                realm={realm.value}
-                                operation={isOperation.value}
-                                shipNameOrder={shipNameOrder.value}
-                                arenaPlayers={arenaPlayers.value}
-                                inferredDeaths={inferredDeaths.value}
-                                statsMode={fallbackStatsMode.value}
-                                onClose={() => (showResults.value = false)}
-                              />
-                            )}
-                          </div>
-                        </HkScrollContainer>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  {showChat.value && chatCount.value > 0 ? (
-                    <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
-                      <div
-                        class="replay-view__modal-panel replay-view__chat-panel"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div class="replay-view__modal-head">
-                          <div class="replay-view__modal-title">
-                            <strong>{t("replay.chatLog")}</strong>
-                          </div>
-                          <HkIconButton
-                            class="hk-window-close replay-view__modal-close"
-                            size={32}
-                            variant="ghost"
-                            icon="close"
-                            aria-label={t("common.close")}
-                            onClick={() => (showChat.value = false)}
-                          />
-                        </div>
-                        <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
-                          <ChatLogPanel
-                            events={chatMessages.value}
-                            vehicles={parser.current.value.vehicles}
-                            trajectories={trajectories.value}
-                            arenaPlayers={arenaPlayers.value}
-                            duration={duration.value}
-                            realm={realm.value}
-                            mapApi={mapRef.value}
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div class="replay-view__detail">
-                    <div class="replay-view__map-wrap">
-                      {trajectoryError.value ? (
-                        // Hardcoded English on purpose — the trajectory
-                        // decoder is a power-user diagnostic path without a
-                        // translation budget (kept verbatim from the old
-                        // placeholder).
-                        <div class="replay-view__placeholder">
-                          <ErrorCard title="Trajectory decode failed" error={trajectoryError.value} />
-                        </div>
-                      ) : updater.portable ? (
-                        // The portable edition ships no 3D — the
-                        // holographic map gives way to the install hint.
-                        <div class="replay-view__placeholder">{t("common.portable3dBlocked")}</div>
-                      ) : (
-                        <HolographicMap
-                          ref={mapRef}
-                          replayPath={parser.current.value.path}
-                          trajectories={trajectories.value}
-                          shellLaunches={shellLaunches.value}
-                          explosions={explosions.value}
-                          torpedoes={torpedoes.value}
-                          torpedoSteers={torpedoSteers.value}
-                          weaponLocks={weaponLocks.value}
-                          battleResults={battleResults.value ?? undefined}
-                          replayVersion={replayVersion.value ?? undefined}
-                          mapNamePkt={mapNamePkt.value ?? undefined}
-                          cameraFrames={cameraFrames.value}
-                          netStats={netStats.value}
-                          leavesMap={leavesMap.value}
-                          cameraModes={cameraModes.value}
-                          squadronCreates={squadronCreates.value}
-                          squadronPlanes={squadronPlanes.value}
-                          minimapSquadronAdds={minimapSquadronAdds.value}
-                          minimapSquadronMoves={minimapSquadronMoves.value}
-                          minimapSquadronRemoves={minimapSquadronRemoves.value}
-                          wards={wards.value}
-                          wardRemoves={wardRemoves.value}
-                          shotKills={shotKills.value}
-                          damageStats={damageStats.value}
-                          chatMessages={chatMessages.value}
-                          achievements={achievements.value}
-                          arenaPlayers={arenaPlayers.value}
-                          inferredDeaths={inferredDeaths.value}
-                          weatherTransitions={weatherTransitions.value}
-                          weatherNotifications={weatherNotifications.value}
-                          vehicles={parser.current.value.vehicles}
-                          operation={isOperation.value}
-                          encyclopedia={encyclopedia.byId}
-                          mapId={parser.current.value.mapName ?? ""}
-                          matchGroup={parser.current.value.matchGroup ?? ""}
-                          mapName={parser.current.value.mapName ?? ""}
-                          initialTime={initialSeek}
-                          initialMinimapZoom={route.query.mm === "1"}
-                          realm={realm.value}
-                          shipNameOrder={shipNameOrder.value}
-                          statsMode={fallbackStatsMode.value}
-                        />
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ) : parser.error.value ? (
-                <div class="replay-view__placeholder">
-                  <ErrorCard error={parser.error.value} />
-                </div>
-              ) : (
-                <div class="replay-view__placeholder">{t("replay.select")}</div>
-              )}
-            </div>
-          </HkScrollContainer>
-        </section>
+        {phoneLayout.value ? (
+          <HkModal
+            modelValue={detailSheetOpen.value}
+            onUpdate:modelValue={(v: boolean) => (detailSheetOpen.value = v)}
+            title={t("replay.detail.title")}
+            width="100%"
+            contentClass="hk-settings-host wowsp-replay-sheet"
+          >
+            {mainSection}
+          </HkModal>
+        ) : (
+          mainSection
+        )}
 
         {/* Hidden HTML file picker backing the mobile import action (the
             styled button clicks it). Multi-select .wowsreplay only. Rendered
@@ -2940,5 +2977,6 @@ export default defineComponent({
         />
       </main>
     );
+    };
   },
 });

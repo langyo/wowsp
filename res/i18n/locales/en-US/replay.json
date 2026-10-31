@@ -669,5 +669,8 @@
     "noAttributed": "no attributed loss",
     "modelNote": "Contribution measures realised damage, not decision elegance; agreement is not a player rating.",
     "noTarget": "Open a replay and press “AI battle report” in the replay view."
+  },
+  "detail": {
+    "title": "Battle detail"
   }
 }

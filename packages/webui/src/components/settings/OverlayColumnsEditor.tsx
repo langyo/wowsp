@@ -33,7 +33,13 @@
 import { computed, defineComponent, nextTick, onBeforeUnmount, ref, watch, type PropType } from "vue";
 
 import { Plus, Trash2, GripHorizontal } from "@lucide/vue";
-import { HkButton, HkIconButton, HkPopover, HkTabs } from "@celestia-island/hikari";
+import {
+  HkButton,
+  HkIconButton,
+  HkPopover,
+  HkTabs,
+  useBreakpoint,
+} from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import {
@@ -135,6 +141,8 @@ export default defineComponent({
   },
   setup(props) {
     const prefs = useStatsPrefsStore();
+    // Phone LAYOUT (viewport) — drives the popover's sheet docking flag.
+    const { isMobile: phoneLayout } = useBreakpoint();
     // The list under edit: the caller's when props.columns is given, the
     // store's overlayColumns otherwise — identical either way downstream.
     const columns = computed(() => props.columns ?? prefs.prefs.overlayColumns);
@@ -484,6 +492,10 @@ export default defineComponent({
               placement="bottom-end"
               padding="lg"
               title={t("settings.overlayContent.colAdd")}
+              /* Phones never float anchored menus (repo convention): the
+               * add-column panel docks as a bottom sheet. */
+              sheetOnMobile
+              closeOnBackdrop={phoneLayout.value}
             >
               <div class="overlay-columns__menu">
                 <div class="overlay-columns__menu-group">

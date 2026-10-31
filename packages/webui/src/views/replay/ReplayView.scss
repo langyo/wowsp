@@ -1015,11 +1015,16 @@
   .replay-view {
     flex-direction: column;
 
+    /* The phone page IS the level-2 list now (the detail rides a tall
+       bottom-sheet window — see the HkModal in ReplayView): full height,
+       no stacked-detail cap, nothing below it to separate from. */
     &__list {
       width: 100%;
-      max-height: 36vh;
+      flex: 1;
+      min-height: 0;
+      max-height: none;
       border-right: none;
-      border-bottom: 1px solid rgb(var(--color-border) / 20%);
+      border-bottom: none;
     }
 
     &__main {
@@ -1134,4 +1139,16 @@
 @keyframes replay-results-pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.8; }
+}
+
+
+
+/* The level-3 replay detail sheet (phone): near the sheet cap so the map
+   and roster get real estate; hk-settings-host (the second content class)
+   keeps the frame height stable and the section flex chain fills the
+   body. */
+@media (max-width: 767px) {
+  .wowsp-replay-sheet {
+    height: calc(100dvh - var(--hk-sheet-top-inset, 4.25rem));
+  }
 }
