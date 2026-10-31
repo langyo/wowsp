@@ -296,6 +296,7 @@
     "pluginSafeModeRepair": "Réactiver les mods et réparer le plugin",
     "pluginSafeModeLater": "Plus tard",
     "pluginSafeModeRepaired": "Mods restaurés et plugin en jeu réparé",
+    "pluginSafeModeQuarantinedDesc": "La sonde elle-même est en quarantaine avec les mods : elle est intacte et revient dès la levée du mode sans échec (le bouton de réparation fait les deux). Le jeu doit d'abord être fermé.",
     "selfTitle": "Ma bataille",
     "selfWaitingHint": "Entrez en bataille : dégâts, médailles et coulés s'affichent ici en direct",
     "selfSyncing": "Synchronisation du combat",

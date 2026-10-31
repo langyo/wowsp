@@ -296,6 +296,7 @@
     "pluginSafeModeRepair": "모드 복원 및 플러그인 복구",
     "pluginSafeModeLater": "나중에",
     "pluginSafeModeRepaired": "모드를 복원하고 게임 내 플러그인을 복구했습니다",
+    "pluginSafeModeQuarantinedDesc": "프로브 본체도 모드와 함께 격리되어 있습니다——손상되지 않았으며 안전 모드를 해제하면 함께 돌아옵니다(복구 버튼이 두 작업을 한 번에 처리합니다). 먼저 게임을 완전히 종료하세요.",
     "selfTitle": "내 전적",
     "selfWaitingHint": "전투에 진입하면 입힌 피해·훈장·격침이 실시간으로 표시됩니다",
     "selfSyncing": "전투 데이터 동기화 중",

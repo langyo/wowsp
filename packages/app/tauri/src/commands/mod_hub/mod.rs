@@ -239,6 +239,16 @@ fn quarantined_twins(game_root: &str) -> Vec<(String, PathBuf)> {
         .collect()
 }
 
+/// The quarantined res_mods TREES (paths only) — the read-side view other
+/// modules use to answer presence questions while safe mode is on (the
+/// in-game plugin status asks whether its probe rides a twin).
+pub(crate) fn quarantined_res_mods(game_root: &str) -> Vec<PathBuf> {
+    quarantined_twins(game_root)
+        .into_iter()
+        .map(|(_, twin)| twin)
+        .collect()
+}
+
 /// Does the tree carry any regular files? A recreated husk (empty, or
 /// empty directories only) answers false; an unreadable tree answers true
 /// (conservative — never delete what we cannot inspect).

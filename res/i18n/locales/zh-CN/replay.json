@@ -296,6 +296,7 @@
     "pluginSafeModeRepair": "解除安全模式并自动修复",
     "pluginSafeModeLater": "暂不处理",
     "pluginSafeModeRepaired": "模组已恢复，游戏内插件已修复",
+    "pluginSafeModeQuarantinedDesc": "探针本体已随全部模组一并隔离——完好无损，解除安全模式即随之恢复（修复按钮会一步完成）。请先完全退出游戏。",
     "selfTitle": "我的战绩",
     "selfWaitingHint": "进入战斗后，这里会实时同步你打出的伤害、获得的勋章与击沉",
     "selfSyncing": "战报同步中",

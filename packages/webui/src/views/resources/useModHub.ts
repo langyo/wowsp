@@ -33,6 +33,7 @@ import { appliesToRealm, realmOfInstall } from "@/features/modhub/servers";
 import { requestModOpDisclaimer } from "@/features/modhub/ModOpDisclaimer";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import {
   failureDetail,
   usePluginUpdatesStore,
@@ -846,6 +847,10 @@ export function useModHub() {
         active ? t("resources.safeModeOnDone") : t("resources.safeModeOffDone"),
       );
       await scan();
+      // The quarantine rename flips the in-game plugin's presence: re-probe
+      // so the plugin surfaces report quarantined/absent instead of riding
+      // the pre-toggle snapshot.
+      await useIngamePluginStore().refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {

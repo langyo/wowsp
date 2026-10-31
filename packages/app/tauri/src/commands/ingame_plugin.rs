@@ -98,6 +98,15 @@ pub struct IngamePluginStatus {
     /// install offer with the "turn mods back on and repair" ask instead of
     /// offering an install the backend must refuse.
     pub safe_mode: bool,
+    /// The probe is quarantined WITH the mods: safe mode is on, the live
+    /// tree carries no entry, and a `res_mods.wowsp-disabled` twin DOES
+    /// carry it — the probe survives and comes back the moment safe mode
+    /// lifts. False while safe mode is on but no twin carries the entry
+    /// (a purge stranded it, or it was never installed): that state needs
+    /// a real install after the recovery, not just the rename. The UI
+    /// words the two apart so a missing probe stops masking a quarantine
+    /// (user report 2026-10-31).
+    pub quarantined: bool,
     /// Installed but NOT the bytes this app ships (an older build, a
     /// missing unbound view, or a hand-edited file): the UI offers a
     /// one-click update. The in-game version string is pinned at 0.1.0 by
@@ -125,6 +134,13 @@ pub fn ingame_plugin_status(game_root: String) -> CommandResult<IngamePluginStat
             PLUGIN_SOURCE,
         ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW));
     let safe_mode = super::mod_hub::safe_mode_active(&game_root);
+    // The probe rides the safe-mode twin when it was live at the rename:
+    // any quarantined res_mods (the current one, or a twin stranded in an
+    // older bin/ by a game update) carrying the entry answers true.
+    let quarantined = !installed
+        && super::mod_hub::quarantined_res_mods(&game_root)
+            .iter()
+            .any(|twin| probe_entry(twin).is_file());
     // Verdict trail for feedback bundles: the live surfaces poll this
     // freely, and a presence flip the UI showed is exactly what support
     // must be able to answer from the log afterwards — the filesystem
@@ -135,12 +151,14 @@ pub fn ingame_plugin_status(game_root: String) -> CommandResult<IngamePluginStat
         installed,
         outdated,
         safe_mode,
+        quarantined,
         res_mods = %dir.display(),
         "ingame plugin status probed"
     );
     Ok(IngamePluginStatus {
         installed,
         safe_mode,
+        quarantined,
         outdated,
         res_mods: dir.to_string_lossy().into_owned(),
         discussion: DISCUSSION_NUMBER,
@@ -1513,6 +1531,7 @@ mod tests {
         let status = ingame_plugin_status(game.to_string_lossy().into_owned()).unwrap();
         assert!(status.installed, "the live tree carries the probe entry");
         assert!(!status.safe_mode, "nothing is quarantined yet");
+        assert!(!status.quarantined, "live presence is not a quarantine");
 
         // Safe mode's one atomic rename (the shape mod_hub applies): the
         // files survive, the LIVE res_mods path does not.
@@ -1525,6 +1544,23 @@ mod tests {
         assert!(
             status.safe_mode,
             "the quarantine must be reported, not read as a missing plugin"
+        );
+        assert!(
+            status.quarantined,
+            "the twin carries the probe — it is quarantined, not gone"
+        );
+
+        // The purge-strand shape (observed 2026-10-31): safe mode on, the
+        // twin carries NO probe — a real install is needed after the
+        // recovery, and the report must not claim a quarantine.
+        let twin = ver_dir.join("res_mods.wowsp-disabled");
+        std::fs::remove_file(twin.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY)).unwrap();
+        let status = ingame_plugin_status(game.to_string_lossy().into_owned()).unwrap();
+        assert!(!status.installed);
+        assert!(status.safe_mode);
+        assert!(
+            !status.quarantined,
+            "safe mode without the probe in any twin is a genuine absence"
         );
 
         std::fs::remove_dir_all(&game).ok();

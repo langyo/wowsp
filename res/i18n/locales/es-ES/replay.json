@@ -296,6 +296,7 @@
     "pluginSafeModeRepair": "Restaurar los mods y reparar el complemento",
     "pluginSafeModeLater": "Por ahora no",
     "pluginSafeModeRepaired": "Mods restaurados y complemento reparado",
+    "pluginSafeModeQuarantinedDesc": "La sonda misma está en cuarentena junto con los mods: está intacta y vuelve en cuanto se desactive el modo seguro (el botón de reparación hace ambas cosas). Primero hay que cerrar el juego.",
     "selfTitle": "Mi batalla",
     "selfWaitingHint": "Entra en batalla: daño, medallas y hundimientos se muestran aquí en directo",
     "selfSyncing": "Sincronizando la batalla",
