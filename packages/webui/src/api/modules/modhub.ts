@@ -75,6 +75,68 @@ export interface PurgeReinstallReport {
   backupPath?: string | null;
 }
 
+/** One catalog unit recorded in an unfinished purge's state marker
+ *  (`wowsp-purge-state.json`) — the resume feeds the id (and its scheme)
+ *  back through the verified reinstall path. */
+export interface PurgePlanUnit {
+  id: string;
+  name: string;
+  preset?: string | null;
+}
+
+/** The unfinished-purge state marker inside a backup dir: what the flow
+ *  planned vs what already completed. Presence alone = the purge never
+ *  finished (a completed flow removes the marker). */
+export interface PurgeMarkerInfo {
+  /** `wowsp-only` | `adopt-foreign`. */
+  mode: string;
+  planned: PurgePlanUnit[];
+  done: PurgePlanUnit[];
+  /** Local unit names the adoption pass re-registers on resume. */
+  known?: string[];
+  /** RFC3339 stamp of the moment the purge started. */
+  startedAt: string;
+}
+
+/** One `res_mods.wowsp-purge-*` backup directory of the install's bin
+ *  tree, newest first (`mod_hub_purge_backups`). */
+export interface PurgeBackup {
+  dirName: string;
+  path: string;
+  /** Unix seconds parsed from the directory name. */
+  stamp: number;
+  fileCount: number;
+  /** The unfinished-purge marker exists — resolve (resume / mark done)
+   *  before a new purge or a delete. */
+  hasMarker: boolean;
+  marker?: PurgeMarkerInfo | null;
+}
+
+/** Result of finishing an interrupted purge through the same verified
+ *  reinstall path the purge used (`mod_hub_purge_backup_resume`). */
+export interface PurgeResumeReport {
+  /** Units the marker already carried as done before this resume. */
+  resumedDone: number;
+  reinstalled: string[];
+  /** Units copied back from the backup and registered as WoWSP local
+   *  installs (the adoption pass). */
+  adopted: string[];
+  skipped: PurgeSkip[];
+  backupPath: string;
+}
+
+/** Result of folding a purge backup back into the live res_mods
+ *  (keep-new: live copies always win; a conflict-free merge deletes the
+ *  backup, a conflicted one keeps it whole). */
+export interface PurgeBackupRestoreReport {
+  mergedFiles: number;
+  /** Live-owned conflicts plus bookkeeping/probe files (never transplanted). */
+  skippedFiles: number;
+  /** The live tree already owned these paths — the keep-the-backup signal. */
+  conflictFiles: number;
+  backupRemoved: boolean;
+}
+
 /** Result of toggling one installed plugin's `.bak` state. */
 export interface UnitToggleReport {
   relPath: string;
@@ -494,6 +556,32 @@ export const modHubApi = {
     transport.invoke<PurgeReinstallReport>(RPC.mod_hub_purge_reinstall, {
       gameRoot,
       mode,
+    }),
+  /** Every purge-backup directory under the install's bin tree, newest
+   *  first; `hasMarker` marks a purge that never finished. */
+  modHubPurgeBackups: (gameRoot: string) =>
+    transport.invoke<PurgeBackup[]>(RPC.mod_hub_purge_backups, { gameRoot }),
+  /** Permanently delete a COMPLETED purge backup (refuses while the
+   *  unfinished marker is still there). */
+  modHubPurgeBackupDelete: (gameRoot: string, dirName: string) =>
+    transport.invoke<null>(RPC.mod_hub_purge_backup_delete, { gameRoot, dirName }),
+  /** Drop ONLY the unfinished marker — the backup becomes a plain
+   *  completed snapshot (files kept). */
+  modHubPurgeBackupDismiss: (gameRoot: string, dirName: string) =>
+    transport.invoke<null>(RPC.mod_hub_purge_backup_dismiss, { gameRoot, dirName }),
+  /** Fold the backup's files back into live res_mods (keep-new: live
+   *  copies win; a conflict-free merge deletes the backup). */
+  modHubPurgeBackupRestore: (gameRoot: string, dirName: string) =>
+    transport.invoke<PurgeBackupRestoreReport>(RPC.mod_hub_purge_backup_restore, {
+      gameRoot,
+      dirName,
+    }),
+  /** Finish an interrupted purge: the remaining planned units through
+   *  the verified reinstall path, then the adoption pass. */
+  modHubPurgeBackupResume: (gameRoot: string, dirName: string) =>
+    transport.invoke<PurgeResumeReport>(RPC.mod_hub_purge_backup_resume, {
+      gameRoot,
+      dirName,
     }),
   /** Drop ghost ledger records and collect orphaned snapshot dirs. */
   modHubReconcile: (gameRoot: string) =>

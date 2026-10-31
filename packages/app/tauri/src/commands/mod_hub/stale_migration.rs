@@ -338,7 +338,7 @@ fn stale_migration_pair(
 /// the plan (absent from every bucket) and the execute sweep — the loader
 /// MARKER is then re-created empty at the destination when the migrated
 /// tree carries PnF content ([`ensure_loader_marker`]).
-fn is_migration_bookkeeping(rel: &str) -> bool {
+pub(crate) fn is_migration_bookkeeping(rel: &str) -> bool {
     let name = rel.rsplit('/').next().unwrap_or(rel);
     if name.eq_ignore_ascii_case("installed_mods.xml")
         || name.eq_ignore_ascii_case("PnFModsLoader.py")
@@ -362,7 +362,7 @@ fn is_migration_bookkeeping(rel: &str) -> bool {
 /// modern client treats the file as a presence marker, but a pack shipping
 /// real loader content is never ours to downgrade; empty bytes (the
 /// standard) are the fallback.
-fn ensure_loader_marker(res_mods: &Path, preferred: Option<&[u8]>) {
+pub(crate) fn ensure_loader_marker(res_mods: &Path, preferred: Option<&[u8]>) {
     if !res_mods.join("PnFMods").is_dir() {
         return;
     }
@@ -370,6 +370,23 @@ fn ensure_loader_marker(res_mods: &Path, preferred: Option<&[u8]>) {
     if !marker.is_file() {
         let _ = fs::write(&marker, preferred.unwrap_or(b""));
     }
+}
+
+/// The keep-new conflict probe the migration sweeps share with the
+/// purge-backup restore-merge (`purge_backups`): does the DESTINATION tree
+/// already own this path — a live file, a disabled `.bak` twin, or the live
+/// counterpart of this `.bak` twin (a lone stranded twin beside a live file
+/// would silently break later toggles)? The newer destination copy always
+/// wins; the caller decides what happens to the source copy (the migration
+/// drops it, the restore-merge leaves it in the backup it keeps).
+pub(crate) fn dest_owns_keep_new(dst: &Path) -> bool {
+    let name = dst
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let bare = name.strip_suffix(".bak").unwrap_or(&name).to_string();
+    let live = dst.with_file_name(&bare);
+    dst.is_file() || sibling_with_suffix(dst, ".bak").is_file() || live.is_file()
 }
 
 /// SHA-256 of a file's bytes — the content equality half of the duplicate
@@ -380,7 +397,9 @@ fn file_sha256(path: &Path) -> anyhow::Result<[u8; 32]> {
 }
 
 /// Every file under `root`, as forward-slash `root`-relative paths.
-fn collect_tree_files(root: &Path) -> anyhow::Result<Vec<String>> {
+/// Shared with the purge-backup restore-merge (its walk of a backup tree
+/// is the same enumeration).
+pub(crate) fn collect_tree_files(root: &Path) -> anyhow::Result<Vec<String>> {
     let mut out = Vec::new();
     let mut stack = vec![root.to_path_buf()];
     while let Some(dir) = stack.pop() {
@@ -505,9 +524,7 @@ fn migrate_tree(
         // disabled twin, or as the live counterpart of this stranded twin —
         // so the (older) stranded copy is dropped. Migrating a lone `.bak`
         // next to a live file would silently break later toggles.
-        let bare = name.strip_suffix(".bak").unwrap_or(&name).to_string();
-        let live = d.with_file_name(&bare);
-        if d.is_file() || sibling_with_suffix(&d, ".bak").is_file() || live.is_file() {
+        if dest_owns_keep_new(&d) {
             let _ = fs::remove_file(&s);
             *skipped += 1;
             continue;
@@ -593,13 +610,10 @@ pub(crate) fn migration_execute_core(
             continue;
         }
         let d = dst.join(&rel);
-        let name = rel.rsplit('/').next().unwrap_or(&rel).to_string();
-        let bare = name.strip_suffix(".bak").unwrap_or(&name).to_string();
-        let live = d.with_file_name(&bare);
         // Keep-new, re-checked at execute time: a destination file (live or
         // as a disabled twin) that appeared since planning must never be
         // overwritten or handed a stranded `.bak` sibling.
-        if d.is_file() || sibling_with_suffix(&d, ".bak").is_file() || live.is_file() {
+        if dest_owns_keep_new(&d) {
             let _ = fs::remove_file(&s);
             skipped += 1;
             tracing::info!(

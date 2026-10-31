@@ -1,0 +1,123 @@
+// Purge-backup snapshots — the launcher row above the mod hub installed
+// list plus the secondary window it opens. Unfinished markers (an
+// interrupted purge) wear the amber warning family; completed backups are
+// quiet rows. Compact rows: icon + name + badge cluster + actions.
+
+.purge-backups {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 0 10px;
+  border-bottom: 1px solid var(--hi-color-border);
+  margin-bottom: 6px;
+
+  // The window's inner block: the separator/margin belong to the sidebar
+  // context only.
+  &.purge-backups--window {
+    padding: 2px 0 8px;
+    border-bottom: 0;
+    margin-bottom: 0;
+  }
+}
+
+// The one-line launcher: click (or Enter/Space) opens the manager window.
+.purge-backups__row.is-summary {
+  cursor: pointer;
+  user-select: none;
+
+  &:hover,
+  &:focus-visible {
+    background: rgb(var(--color-warning) / 20%);
+  }
+}
+
+.purge-backups__chevron {
+  flex: none;
+  color: var(--hi-color-text-secondary);
+}
+
+.purge-backups__scroll {
+  max-height: 56vh;
+}
+
+.purge-backups__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--hi-color-border);
+  border-radius: var(--radius-sm);
+  background: var(--hi-color-bg-subtle);
+
+  &.is-unfinished {
+    border-color: var(--hi-color-warning);
+    background: rgb(var(--color-warning) / 12%);
+  }
+}
+
+.purge-backups__icon {
+  flex: none;
+  display: inline-flex;
+  color: var(--hi-color-text-secondary);
+
+  .is-unfinished & {
+    color: var(--hi-color-warning);
+  }
+}
+
+.purge-backups__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.purge-backups__name {
+  font-size: var(--text-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.purge-backups__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.purge-backups__badge {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: var(--text-xs);
+  background: rgb(var(--color-text) / 10%);
+  color: var(--hi-color-text-secondary);
+
+  &.is-unfinished {
+    background: var(--hi-color-warning);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  &.is-evidence {
+    background: transparent;
+    border: 1px solid var(--hi-color-border);
+    color: var(--hi-color-text-secondary);
+  }
+}
+
+.purge-backups__actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+// The quiet remedy line under the rows (shown while any unfinished
+// marker exists).
+.purge-backups__footnote {
+  margin: 8px 0 0;
+  font-size: var(--text-xs);
+  color: var(--hi-color-text-secondary);
+}
