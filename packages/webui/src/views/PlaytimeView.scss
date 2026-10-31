@@ -310,14 +310,14 @@
 }
 
 .playtime-view__scope-opt {
-  /* The hikari menu-item row grammar, adopted literally (this repo pins
-     a hikari that predates the .hk-menu-body / partial-export wave, so
-     the numbers are restated here): 34px / 6×12 desktop with the 1px
+  /* The hikari menu-item row grammar, adopted literally (the pinned
+     hikari ships no .hk-menu-body / partial-export surface for this,
+     so the numbers are restated here): 34px / 6×12 desktop with the 1px
      transparent border RESERVED (the hover wash + active face draw
      inside it, exactly like the grammar rows), guarded hover, primary
-     wash + weight on [data-active]. The sheet-context widening rides a
-     host media block — this popover goes sheetOnMobile at the same
-     767px breakpoint the library's sheet family uses. */
+     wash + weight on [data-active]. The sheet-context widening keys on
+     the popover's own .hk-is-sheet class — the exact hook, no
+     breakpoint seam. */
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -347,12 +347,13 @@
     font-weight: 600;
   }
 
-  @media (max-width: 767px) {
-    & {
-      min-height: 44px;
-      padding: 10px 16px;
-      font-size: var(--text-base);
-    }
+  /* The sheet geometry keys on the popover's OWN sheet class (exact,
+     no breakpoint seam — hikari's rule: sheet geometry arrives through
+     the sheet context, never a per-component media query). */
+  .hk-popover-panel.hk-is-sheet & {
+    min-height: 44px;
+    padding: 10px 16px;
+    font-size: var(--text-base);
   }
 
   &-label {
@@ -383,7 +384,13 @@
 
 .playtime-view__scope-hint {
   margin-top: 4px;
-  padding: 0 10px;
+  /* Tracks the rows' inline inset (12px desktop / 16px sheet) so the
+     hint text lines up with the labels above it. */
+  padding: 0 12px;
+
+  .hk-popover-panel.hk-is-sheet & {
+    padding: 0 16px;
+  }
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted) / 90%);
 }
