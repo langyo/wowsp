@@ -297,6 +297,15 @@ export interface ModInstallRecord {
   restoreDir?: string | null;
   /** Game install this record belongs to (empty on legacy records). */
   gameRoot?: string;
+  /** Per-file SHA-256 (lowercase hex) of the SHARED-COMPONENT files the
+   *  install wrote, keyed by normalized res_mods-relative path (absent on
+   *  records written before the field existed). Advisory handoff
+   *  metadata — no webui behavior change this round. */
+  hashes?: Record<string, string> | null;
+  /** Capture-time SHA-256 of the restore LAYERS the install took of the
+   *  same shared files (the pre-overwrite bytes the uninstall verifies
+   *  before restoring). Absent on legacy records. */
+  snapshotHashes?: Record<string, string> | null;
 }
 
 /** One package's expected write map — the read-only classifier over an
@@ -485,6 +494,10 @@ export interface UninstallReport {
   name: string;
   removedFiles: number;
   restoredFiles: number;
+  /** Advisory notices — e.g. snapshot layers skipped because their bytes
+   *  failed the record's stored SHA-256. Absent when empty (older builds
+   *  never send it). */
+  warnings?: string[];
 }
 
 /** Mod-install progress, the store-side projection of a

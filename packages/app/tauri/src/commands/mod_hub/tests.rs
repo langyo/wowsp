@@ -187,6 +187,8 @@ fn uninstall_unit_removes_files_and_syncs_manifest() {
         files: vec!["camerasConsumer.xml".into()],
         restore_dir: Some(restore.to_string_lossy().into_owned()),
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     });
     let cam = classify_installed_root(&rm, None)
         .into_iter()
@@ -233,6 +235,8 @@ fn unit_uninstall_drops_loader_owning_record_not_a_zombie() {
         ],
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     };
 
     // Last PnF content in the tree: the record drops AND the 0-byte
@@ -737,6 +741,8 @@ impl OverlappingMods {
             files: vec!["content/shared.dds".into()],
             restore_dir: Some(restore.to_string_lossy().into_owned()),
             game_root: game.to_string_lossy().into_owned(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let installs = vec![
             record("older", &older_restore),
@@ -1056,6 +1062,8 @@ fn unit_uninstall_trims_partially_overlapping_record() {
         ],
         restore_dir: Some(restore.to_string_lossy().into_owned()),
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     }];
     let report = uninstall_unit_core(game.to_str().unwrap(), &rm, &unit, &mut installs).unwrap();
     assert_eq!(report.restored_files, 1);
@@ -1090,6 +1098,8 @@ fn half_disable_violation_detects_mods_spanning_the_unit() {
         files: files.iter().map(|f| f.to_string()).collect(),
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     };
     let paths = vec!["content".to_string()];
     // Same tree + files outside it: disabling the unit would half-disable
@@ -1335,6 +1345,8 @@ fn migrate_moves_stranded_files_and_repoints_ledger() {
         files: vec!["PnFMods/Skin/Main.py".into()],
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     }];
     let report = migrate_ledgerred(&game, "1", &mut installs).unwrap();
     assert_eq!(report.to_version, "2");
@@ -1823,6 +1835,8 @@ fn repoint_and_uninstall_respect_install_identity() {
         files: files.iter().map(|f| f.to_string()).collect(),
         restore_dir: None,
         game_root: root.to_string_lossy().into_owned(),
+        hashes: None,
+        snapshot_hashes: None,
     };
     let mut installs = vec![
         mk(&a, "1", &["PnFMods/A/Main.py"]),
@@ -1904,6 +1918,8 @@ fn conflict_warnings_flag_overlapping_records() {
         files: files.iter().map(|f| f.to_string()).collect(),
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     };
     let installs = vec![
         mk("a", "ModA", &["gui/a.png", "gui/b.png"]),
@@ -1939,6 +1955,8 @@ fn local_record_describes_local_install() {
         },
         written: vec!["gui/a.png".into(), "ime_config.xml".into()],
         restore_dir: Some(PathBuf::from("R")),
+        hashes: None,
+        snapshot_hashes: None,
     };
     let plan = PackagePlan {
         kind: ModKind::Gui,
@@ -2482,6 +2500,8 @@ fn ledger_uninstall_removes_preload_copies() {
         files: vec!["gui/mod.png".into()],
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     }];
 
     crate::commands::mod_catalog::uninstall_from_ledger(
@@ -2632,6 +2652,8 @@ fn stale_record_uninstall_clears_live_bin_copies() {
         files: files.into_iter().map(Into::into).collect(),
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     };
     let mut installs = vec![
         mk("m", "1", vec!["gui/mod.png", "gui/shared.png"]),
@@ -3755,6 +3777,8 @@ fn resume_record(id: &str, files: &[&str]) -> ModInstallRecord {
         files: files.iter().map(|f| f.to_string()).collect(),
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     }
 }
 

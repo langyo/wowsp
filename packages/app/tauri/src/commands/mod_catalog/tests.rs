@@ -207,6 +207,8 @@ mod tests {
                 files: vec!["gui/a.png".into()],
                 restore_dir: Some(restore.to_string_lossy().into_owned()),
                 game_root: game.to_string_lossy().into_owned(),
+                hashes: None,
+                snapshot_hashes: None,
             }];
             let packages = vec![CatalogPackage {
                 url: "https://example.com/pack.zip".into(),
@@ -268,7 +270,12 @@ mod tests {
         let game_root = tmp.join("game").to_string_lossy().into_owned();
         let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
 
-        let (report, written, restore) = unpack_and_install(
+        let mod_hub::PlanApply {
+            report,
+            written,
+            restore_dir: restore,
+            ..
+        } = unpack_and_install(
             "test-mod",
             "Test mod",
             &work,
@@ -289,7 +296,10 @@ mod tests {
         assert!(restore.is_none(), "fresh install overwrites nothing");
 
         // Re-install over it: the overwritten originals must be snapshotted.
-        let (_report2, _written2, restore2) = unpack_and_install(
+        let mod_hub::PlanApply {
+            restore_dir: restore2,
+            ..
+        } = unpack_and_install(
             "test-mod",
             "Test mod",
             &work,
@@ -317,6 +327,8 @@ mod tests {
             files: written,
             restore_dir: Some(restore2.to_string_lossy().into_owned()),
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         }];
         let removed = uninstall_from_ledger(&mut installs, "test-mod", &game_root).unwrap();
         assert_eq!(removed.removed_files, 3);
@@ -362,6 +374,8 @@ mod tests {
             files: vec!["gui/a.png".into()],
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         }];
         let report = uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
         assert_eq!(report.removed_files, 1);
@@ -400,7 +414,11 @@ mod tests {
         };
 
         // v1 adds a file the v2 package drops — leftovers must not survive.
-        let (_r1, written1, restore1) = run(&tmp.join("work1"), b"v1", "res_mods/gui/keep1.png");
+        let mod_hub::PlanApply {
+            written: written1,
+            restore_dir: restore1,
+            ..
+        } = run(&tmp.join("work1"), b"v1", "res_mods/gui/keep1.png");
         let mut installs = vec![ModInstallRecord {
             id: "m".into(),
             name: "m".into(),
@@ -414,6 +432,8 @@ mod tests {
             files: written1,
             restore_dir: restore1.map(|p| p.to_string_lossy().into_owned()),
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         }];
 
         // Reinstall: rewind the old record first (exactly what
@@ -425,7 +445,11 @@ mod tests {
             "dropped files must go"
         );
 
-        let (_r2, written2, restore2) = run(&tmp.join("work2"), b"v2", "res_mods/gui/keep2.png");
+        let mod_hub::PlanApply {
+            written: written2,
+            restore_dir: restore2,
+            ..
+        } = run(&tmp.join("work2"), b"v2", "res_mods/gui/keep2.png");
         installs.push(ModInstallRecord {
             id: "m".into(),
             name: "m".into(),
@@ -439,6 +463,8 @@ mod tests {
             files: written2,
             restore_dir: restore2.map(|p| p.to_string_lossy().into_owned()),
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         });
 
         // Final uninstall rewinds to VANILLA, not to v1.
@@ -481,6 +507,8 @@ mod tests {
             files: files.iter().map(|f| (*f).to_string()).collect(),
             restore_dir: restore.map(|p| p.to_string_lossy().into_owned()),
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![
             mk("a", &["gui/shared.css", "gui/only-a.css"], Some(&restore_a)),
@@ -540,6 +568,8 @@ mod tests {
             files: files.iter().map(|f| (*f).to_string()).collect(),
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![
             mk("a", &["gui/shared.css", "gui/only-a.css"]),
@@ -617,6 +647,8 @@ mod tests {
             files: vec!["gui/shared.css".into()],
             restore_dir: Some(restore.to_string_lossy().into_owned()),
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![
             mk("a", "1", &restore_a),
@@ -675,6 +707,8 @@ mod tests {
             files: vec![format!("PnFMods/{main}/Main.py"), "PnFModsLoader.py".into()],
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![mk("a", "A"), mk("b", "B")];
         uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
@@ -738,6 +772,8 @@ mod tests {
             files: files.iter().map(|f| f.to_string()).collect(),
             restore_dir: restore.map(str::to_string),
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let orphan = tmp.join("rr/orphan-restore");
         touch(&orphan.join("gui/dead.png"));
@@ -809,6 +845,8 @@ mod tests {
             files: files.iter().map(|f| f.to_string()).collect(),
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![
             mk("zombie", &["PnFModsLoader.py"]),
@@ -1058,7 +1096,11 @@ mod tests {
             &[("res_mods/gui/a.png", b"a")],
         );
         let mut installs = Vec::new();
-        let (rep_a, written_a, _) = unpack_and_install(
+        let mod_hub::PlanApply {
+            report: rep_a,
+            written: written_a,
+            ..
+        } = unpack_and_install(
             "battle.panel.ttaro",
             "TTaro",
             &work_a,
@@ -1081,6 +1123,8 @@ mod tests {
             files: written_a,
             restore_dir: None,
             game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
         });
 
         // The folded entry installs another scheme; supersedes names the
@@ -1095,7 +1139,7 @@ mod tests {
             .iter()
             .map(|s| s.to_string())
             .collect();
-        let (_rep_b, _written_b, _) = unpack_and_install(
+        unpack_and_install(
             "battle.panel",
             "侧边面板",
             &work_b,
@@ -1145,6 +1189,8 @@ mod tests {
                 files: vec!["gui/a.png".into()],
                 restore_dir: None,
                 game_root: game_root.clone(),
+                hashes: None,
+                snapshot_hashes: None,
             }),
         );
         assert!(res_mods.join("wowsp.toml").is_file());
@@ -1161,6 +1207,8 @@ mod tests {
             files: vec!["gui/a.png".into()],
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         }];
         uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
         assert!(
@@ -1273,6 +1321,8 @@ mod tests {
                 files: vec!["a.xml".into()],
                 restore_dir: None,
                 game_root: String::new(),
+                hashes: None,
+                snapshot_hashes: None,
             }],
         };
         let json = serde_json::to_string_pretty(&ledger).unwrap();
@@ -1295,6 +1345,8 @@ mod tests {
             files: files.iter().map(|f| f.to_string()).collect(),
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         }
     }
 
@@ -1320,7 +1372,7 @@ mod tests {
         }];
         // A game-root layout zip classifies through the `res_mods` directory —
         // the label that used to leak into the ledger.
-        let (report, _, _) = unpack_and_install(
+        let mod_hub::PlanApply { report, .. } = unpack_and_install(
             "battle.build.viewer",
             "Build Viewer",
             &work,
@@ -1499,6 +1551,8 @@ mod tests {
             files: files.iter().map(|f| (*f).to_string()).collect(),
             restore_dir: restore.map(|p| p.to_string_lossy().into_owned()),
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![
             mk(
@@ -1596,6 +1650,8 @@ mod tests {
             files: files.iter().map(|f| (*f).to_string()).collect(),
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![
             mk("a", &["PnFMods/TTaroModUtils/S.py", "gui/a-only.png"]),
@@ -1639,6 +1695,8 @@ mod tests {
             files: files.iter().map(|f| (*f).to_string()).collect(),
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         // a claims x.json only; b keeps the SAME component root alive via
         // y.json — no exact-path overlap anywhere.
@@ -1685,6 +1743,8 @@ mod tests {
             files: files.iter().map(|f| (*f).to_string()).collect(),
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let mut installs = vec![
             mk("a", &["PnFMods/TTaroModUtils/SchemaScanner.py"]),
@@ -1700,6 +1760,534 @@ mod tests {
         assert!(!rm.join("PnFMods/TTaroModUtils/Other.py").exists());
         assert!(installs.is_empty());
         fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// P4 wire compat: the `hashes` field is additive. A record written
+    /// before the field existed (no `hashes` key anywhere in the ledger)
+    /// deserializes with `hashes: None`, a `None` never puts a key on the
+    /// wire, and a populated map round-trips key-for-key.
+    #[test]
+    fn install_records_without_hashes_deserialize_as_none() {
+        let old = serde_json::json!({
+            "id": "a",
+            "name": "A",
+            "version": "1",
+            "category": "battle",
+            "source": "mod-hub",
+            "binVersion": "1",
+            "installedAt": "2026-01-01T00:00:00Z",
+            "files": ["PnFMods/TTaroModUtils/x.py"],
+            "restoreDir": null,
+            "gameRoot": ""
+        });
+        let record: ModInstallRecord = serde_json::from_value(old).unwrap();
+        assert_eq!(record.hashes, None);
+        assert_eq!(record.snapshot_hashes, None);
+        // `None` stays off the wire entirely — old payloads stay
+        // byte-identical.
+        let wire = serde_json::to_value(&record).unwrap();
+        assert!(wire.get("hashes").is_none());
+        assert!(wire.get("snapshotHashes").is_none());
+        // Populated maps round-trip verbatim — the written-bytes map and
+        // the separate capture-time layer map each under their own key.
+        let mut with_hashes = record.clone();
+        with_hashes.hashes = Some(
+            [(
+                "pnfmods/ttaromodutils/x.py".to_string(),
+                "deadbeef".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        with_hashes.snapshot_hashes = Some(
+            [(
+                "pnfmods/ttaromodutils/x.py".to_string(),
+                "feedface".to_string(),
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let wire = serde_json::to_value(&with_hashes).unwrap();
+        assert_eq!(
+            wire.get("hashes")
+                .and_then(|h| h.get("pnfmods/ttaromodutils/x.py")),
+            Some(&serde_json::json!("deadbeef"))
+        );
+        assert_eq!(
+            wire.get("snapshotHashes")
+                .and_then(|h| h.get("pnfmods/ttaromodutils/x.py")),
+            Some(&serde_json::json!("feedface"))
+        );
+        let back: ModInstallRecord = serde_json::from_value(wire).unwrap();
+        assert_eq!(back.hashes, with_hashes.hashes);
+        assert_eq!(back.snapshot_hashes, with_hashes.snapshot_hashes);
+    }
+
+    /// P4 install-side hashing: only SHARED-COMPONENT files gain a content
+    /// hash (a private file never gets an entry, whatever else the install
+    /// wrote), keys use the normalized ledger spelling, and an install
+    /// with no shared file yields `None` so its record keeps `hashes:
+    /// None`.
+    #[test]
+    fn shared_file_hashes_hash_only_shared_component_paths() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_hash_scoping");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        fs::create_dir_all(rm.join("PnFMods/TTaroModUtils")).unwrap();
+        fs::create_dir_all(rm.join("gui")).unwrap();
+        fs::write(rm.join("PnFMods/TTaroModUtils/x.py"), b"shared bytes").unwrap();
+        fs::write(rm.join("gui/private.css"), b"private bytes").unwrap();
+        fs::write(tmp.join("game/gettext_x64r.dll"), b"dll bytes").unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let written = vec![
+            "PnFMods/TTaroModUtils/x.py".to_string(),
+            "gui/private.css".to_string(),
+            "@game/gettext_x64r.dll".to_string(),
+        ];
+        let hashes =
+            shared_file_hashes(&game_root, "1", &written).expect("shared files were written");
+        assert_eq!(hashes.len(), 2, "the private file gets no entry");
+        let expected = |bytes: &[u8]| {
+            use sha2::{Digest, Sha256};
+            hex::encode(Sha256::digest(bytes))
+        };
+        assert_eq!(
+            hashes.get("pnfmods/ttaromodutils/x.py"),
+            Some(&expected(b"shared bytes")),
+            "keys are the normalized ledger spelling"
+        );
+        assert_eq!(
+            hashes.get("@game/gettext_x64r.dll"),
+            Some(&expected(b"dll bytes")),
+            "game-root drops hash against the game root"
+        );
+        // No shared component written at all -> None (not an empty map).
+        assert_eq!(
+            shared_file_hashes(&game_root, "1", &["gui/private.css".to_string()]),
+            None
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// P4 verify-before-restore: a snapshot layer whose bytes fail the
+    /// record's stored SHA-256 is skipped and counted in the report's
+    /// warnings instead of being restored over the tree; a matching layer
+    /// still restores as always. One bad layer never fails the uninstall.
+    #[test]
+    fn uninstall_skips_a_snapshot_that_fails_its_recorded_hash() {
+        let tmp = std::env::temp_dir().join("wowsp_restore_verify");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        let shared = "PnFMods/TTaroModUtils/SchemaScanner.py";
+        fs::create_dir_all(rm.join("PnFMods/TTaroModUtils")).unwrap();
+        fs::write(rm.join(shared), b"live bytes").unwrap();
+        let sha = |bytes: &[u8]| {
+            use sha2::{Digest, Sha256};
+            hex::encode(Sha256::digest(bytes))
+        };
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |restore: &Path| ModInstallRecord {
+            id: "b".into(),
+            name: "B".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec![shared.to_string()],
+            restore_dir: Some(restore.to_string_lossy().into_owned()),
+            game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
+        };
+
+        // A tampered snapshot layer: its actual bytes hash to something
+        // OTHER than the capture-time LAYER digest the record stored for
+        // it (snapshot_hashes — the map restore verification reads).
+        let restore_bad = tmp.join("restore-bad");
+        fs::create_dir_all(restore_bad.join("PnFMods/TTaroModUtils")).unwrap();
+        fs::write(restore_bad.join(shared), b"tampered bytes").unwrap();
+        let mut bad = mk(&restore_bad);
+        bad.snapshot_hashes = Some(
+            [(uninstall_path_key(shared), sha(b"shared a bytes"))]
+                .into_iter()
+                .collect(),
+        );
+        let mut installs = vec![bad];
+        let report = uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
+        assert_eq!(
+            report.restored_files, 0,
+            "the tampered layer is not restored"
+        );
+        assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+        assert!(
+            report.warnings[0].contains("SHA-256"),
+            "{:?}",
+            report.warnings
+        );
+        assert!(
+            report.warnings[0].contains(&uninstall_path_key(shared)),
+            "{:?}",
+            report.warnings
+        );
+        assert!(installs.is_empty(), "the uninstall itself still completes");
+        // The tampered bytes never reached the tree.
+        assert!(!rm.join(shared).exists());
+
+        // A snapshot matching its stored hash restores as always (the
+        // first uninstall pruned the emptied component dir, so the live
+        // tree is recreated first).
+        let restore_ok = tmp.join("restore-ok");
+        fs::create_dir_all(restore_ok.join("PnFMods/TTaroModUtils")).unwrap();
+        fs::write(restore_ok.join(shared), b"shared a bytes").unwrap();
+        fs::create_dir_all(rm.join("PnFMods/TTaroModUtils")).unwrap();
+        fs::write(rm.join(shared), b"live bytes").unwrap();
+        let mut ok = mk(&restore_ok);
+        ok.snapshot_hashes = Some(
+            [(uninstall_path_key(shared), sha(b"shared a bytes"))]
+                .into_iter()
+                .collect(),
+        );
+        let mut installs = vec![ok];
+        let report = uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
+        assert_eq!(report.restored_files, 1);
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert_eq!(fs::read(rm.join(shared)).unwrap(), b"shared a bytes");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Drive a catalog reinstall of id "a" whose package rewrites the
+    /// shared ttaro GUI file with `bytes` (P4 divergence fixtures below).
+    /// P4 end-to-end layer verification through the REAL pipeline: install
+    /// A over a live shared file (the journal captures a layer of the old
+    /// bytes; the record stores the capture-time LAYER hash), then
+    /// uninstall — the ORIGINAL pre-A bytes come back with no warnings.
+    /// Tamper the layer file after the install and the uninstall instead
+    /// skips that restore and counts it. The written-bytes map must never
+    /// be consulted for restore verification.
+    #[test]
+    fn layer_hashes_survive_the_real_install_uninstall_pipeline() {
+        let tmp = std::env::temp_dir().join("wowsp_layer_hash_e2e");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        let shared = "gui/ttaro/index.css";
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join(shared), b"pre-A original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let sha = |bytes: &[u8]| {
+            use sha2::{Digest, Sha256};
+            hex::encode(Sha256::digest(bytes))
+        };
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+
+        // Install A over the live file through the real catalog core.
+        let install_a = |work: &Path| -> mod_hub::PlanApply {
+            fs::create_dir_all(work).unwrap();
+            zip_fixture(
+                &package_archive(work, 0),
+                &[("res_mods/gui/ttaro/index.css", b"A's new bytes")],
+            );
+            let packages = vec![CatalogPackage {
+                url: "https://example.com/part.zip".into(),
+                sha256: String::new(),
+                size: 0,
+                name: "part.zip".into(),
+            }];
+            unpack_and_install("a", "A", work, &game_root, &packages, &[], &mut Vec::new()).unwrap()
+        };
+        // The ledger record the install command pushes for the applied plan.
+        let record_of = |applied: &mod_hub::PlanApply| ModInstallRecord {
+            id: "a".into(),
+            name: "A".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: applied.report.bin_version.clone(),
+            installed_at: String::new(),
+            files: applied.written.clone(),
+            restore_dir: applied
+                .restore_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
+            game_root: String::new(),
+            hashes: applied.hashes.clone(),
+            snapshot_hashes: applied.snapshot_hashes.clone(),
+        };
+
+        // Clean hand-off: the layer map hashes the CAPTURED PRE-overwrite
+        // bytes while the written map hashes what A wrote — two different
+        // digests for the same key, never to be confused.
+        let applied = install_a(&tmp.join("work1"));
+        assert!(
+            applied.restore_dir.is_some(),
+            "overwriting a live file captures a layer"
+        );
+        assert_eq!(
+            applied
+                .hashes
+                .as_ref()
+                .unwrap()
+                .get(&uninstall_path_key(shared)),
+            Some(&sha(b"A's new bytes"))
+        );
+        assert_eq!(
+            applied
+                .snapshot_hashes
+                .as_ref()
+                .unwrap()
+                .get(&uninstall_path_key(shared)),
+            Some(&sha(b"pre-A original")),
+            "the layer map hashes the LAYER copy, not the written bytes"
+        );
+        let mut installs = vec![record_of(&applied)];
+        let report = uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+        assert_eq!(report.restored_files, 1);
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert_eq!(
+            fs::read(rm.join(shared)).unwrap(),
+            b"pre-A original",
+            "the ORIGINAL bytes come back"
+        );
+
+        // Tampered layer: same install sequence, then the layer file is
+        // mutated on disk before the uninstall — the restore is skipped
+        // and counted instead of putting unknowable bytes back.
+        let applied = install_a(&tmp.join("work2"));
+        let restore = applied
+            .restore_dir
+            .as_ref()
+            .expect("overwrote a live file")
+            .clone();
+        fs::write(restore.join(shared), b"tampered layer").unwrap();
+        let mut installs = vec![record_of(&applied)];
+        let report = uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+        assert_eq!(
+            report.restored_files, 0,
+            "the tampered layer is not restored"
+        );
+        assert_eq!(report.warnings.len(), 1, "{:?}", report.warnings);
+        assert!(
+            report.warnings[0].contains("SHA-256"),
+            "{:?}",
+            report.warnings
+        );
+        assert!(
+            !rm.join(shared).exists(),
+            "the tampered bytes never reached the tree"
+        );
+        fs::remove_dir_all(&tmp).ok();
+        fs::remove_dir_all(mod_hub::restore_root()).ok();
+    }
+
+    fn reinstall_shared_ttaro(
+        work: &Path,
+        game_root: &str,
+        installs: &mut Vec<ModInstallRecord>,
+        bytes: &[u8],
+    ) -> mod_hub::PlanApply {
+        fs::create_dir_all(work).unwrap();
+        zip_fixture(
+            &package_archive(work, 0),
+            &[("res_mods/gui/ttaro/index.css", bytes)],
+        );
+        let packages = vec![CatalogPackage {
+            url: "https://example.com/part.zip".into(),
+            sha256: String::new(),
+            size: 0,
+            name: "part.zip".into(),
+        }];
+        unpack_and_install("a", "A", work, game_root, &packages, &[], installs).unwrap()
+    }
+
+    /// P4 divergence warning: reinstalling pack A over a shared component
+    /// file another live record (B) claims WITH a stored hash warns when
+    /// the incoming bytes DIFFER (naming the file and both record ids) and
+    /// stays silent when they match — the mixed-version shared-tree
+    /// signal, carried on the report's warning channel; nothing is refused
+    /// either way.
+    #[test]
+    fn reinstall_over_divergent_shared_bytes_warns_and_matching_stays_silent() {
+        let tmp = std::env::temp_dir().join("wowsp_divergence_warning");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        let shared = "gui/ttaro/index.css";
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join(shared), b"ttaro v1").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let sha = |bytes: &[u8]| {
+            use sha2::{Digest, Sha256};
+            hex::encode(Sha256::digest(bytes))
+        };
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |id: &str, hashes: Option<std::collections::HashMap<String, String>>| {
+            ModInstallRecord {
+                id: id.into(),
+                name: id.to_uppercase(),
+                version: "1".into(),
+                category: "battle".into(),
+                source: "mod-hub".into(),
+                discussion: None,
+                preset: None,
+                bin_version: "1".into(),
+                installed_at: String::new(),
+                files: vec![shared.to_string()],
+                restore_dir: None,
+                game_root: String::new(),
+                hashes,
+                snapshot_hashes: None,
+            }
+        };
+        // B (the newer owner) hashed the shared file's v1 bytes at ITS
+        // install; A is the older owner being reinstalled.
+        let b = mk(
+            "b",
+            Some(
+                [(uninstall_path_key(shared), sha(b"ttaro v1"))]
+                    .into_iter()
+                    .collect(),
+            ),
+        );
+        let mut installs = vec![mk("a", None), b];
+
+        // DIFFERENT bytes: exactly one mixed-version warning naming the
+        // file and both record ids, and the install still lands.
+        let applied =
+            reinstall_shared_ttaro(&tmp.join("work1"), &game_root, &mut installs, b"ttaro v2");
+        assert_eq!(
+            applied
+                .report
+                .warnings
+                .iter()
+                .filter(|w| w.contains("mixed-version"))
+                .count(),
+            1,
+            "{:?}",
+            applied.report.warnings
+        );
+        let warning = applied
+            .report
+            .warnings
+            .iter()
+            .find(|w| w.contains("mixed-version"))
+            .unwrap();
+        assert!(warning.contains(shared), "{warning}");
+        assert!(warning.contains("(install a)"), "{warning}");
+        assert!(warning.contains("(id b)"), "{warning}");
+        assert_eq!(fs::read(rm.join(shared)).unwrap(), b"ttaro v2");
+        // The fresh record's own hashes describe the bytes it just wrote.
+        assert_eq!(
+            applied
+                .hashes
+                .as_ref()
+                .unwrap()
+                .get(&uninstall_path_key(shared)),
+            Some(&sha(b"ttaro v2"))
+        );
+
+        // Same-bytes reinstall (B's stored hash matches the incoming
+        // bytes): silent.
+        installs.push(mk("a", applied.hashes));
+        let reapplied =
+            reinstall_shared_ttaro(&tmp.join("work2"), &game_root, &mut installs, b"ttaro v1");
+        assert!(
+            !reapplied
+                .report
+                .warnings
+                .iter()
+                .any(|w| w.contains("mixed-version")),
+            "{:?}",
+            reapplied.report.warnings
+        );
+        fs::remove_dir_all(&tmp).ok();
+        fs::remove_dir_all(mod_hub::restore_root()).ok();
+    }
+
+    /// P4 refresh keeps layer hashes truthful: reinstalling the older
+    /// owner refreshes the newer owner's captured layer to the new bytes,
+    /// and `sync_snapshot_hashes` must move the owner's stored LAYER
+    /// digest with it — otherwise the owner's later uninstall would
+    /// misread the freshly refreshed layer as tampered and skip restoring
+    /// it (the exact healthy-restore false positive round 2 closed).
+    #[test]
+    fn refreshed_layers_keep_their_stored_hash_in_step() {
+        let tmp = std::env::temp_dir().join("wowsp_refresh_hash_sync");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        let shared = "gui/ttaro/index.css";
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join(shared), b"a v1").unwrap();
+        let restore_b = tmp.join("restore-b");
+        fs::create_dir_all(restore_b.join("gui/ttaro")).unwrap();
+        fs::write(restore_b.join(shared), b"a v1").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let sha = |bytes: &[u8]| {
+            use sha2::{Digest, Sha256};
+            hex::encode(Sha256::digest(bytes))
+        };
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk =
+            |id: &str,
+             restore: Option<&Path>,
+             snapshot_hashes: Option<std::collections::HashMap<String, String>>| {
+                ModInstallRecord {
+                    id: id.into(),
+                    name: id.to_uppercase(),
+                    version: "1".into(),
+                    category: "battle".into(),
+                    source: "mod-hub".into(),
+                    discussion: None,
+                    preset: None,
+                    bin_version: "1".into(),
+                    installed_at: String::new(),
+                    files: vec![shared.to_string()],
+                    restore_dir: restore.map(|p| p.to_string_lossy().into_owned()),
+                    game_root: String::new(),
+                    hashes: None,
+                    snapshot_hashes,
+                }
+            };
+        // B (the newer owner) captured a layer of A's v1 bytes at its
+        // install; A is the older owner being reinstalled with v2 bytes.
+        let mut installs = vec![
+            mk("a", None, None),
+            mk(
+                "b",
+                Some(&restore_b),
+                Some(
+                    [(uninstall_path_key(shared), sha(b"a v1"))]
+                        .into_iter()
+                        .collect(),
+                ),
+            ),
+        ];
+
+        reinstall_shared_ttaro(&tmp.join("work"), &game_root, &mut installs, b"a v2");
+
+        // The layer followed the refreshed bytes, and the stored layer
+        // digest followed the layer.
+        assert_eq!(fs::read(restore_b.join(shared)).unwrap(), b"a v2");
+        assert_eq!(
+            installs[0]
+                .snapshot_hashes
+                .as_ref()
+                .unwrap()
+                .get(&uninstall_path_key(shared)),
+            Some(&sha(b"a v2")),
+            "the stored layer digest followed the refreshed bytes"
+        );
+
+        // …so B's uninstall restores the refreshed bytes WITHOUT a
+        // tamper warning.
+        let report = uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
+        assert_eq!(report.restored_files, 1);
+        assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+        assert_eq!(fs::read(rm.join(shared)).unwrap(), b"a v2");
+        fs::remove_dir_all(&tmp).ok();
+        fs::remove_dir_all(mod_hub::restore_root()).ok();
     }
 
     fn catalog_package(url: &str, sha256: &str) -> CatalogPackage {

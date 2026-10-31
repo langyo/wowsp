@@ -183,7 +183,10 @@ pub(crate) use index::parse_index;
 pub(crate) use install::{
     WorkDir, package_archive, size_within_catalog, unpack_and_install, validate_path_segment,
 };
-pub(crate) use install::{entry_display_name, newer_owner_records, refresh_newer_snapshots};
+pub(crate) use install::{
+    entry_display_name, newer_owner_records, refresh_newer_snapshots, shared_divergence_warnings,
+    shared_file_hashes, snapshot_layer_hashes, sync_snapshot_hashes,
+};
 #[cfg(test)]
 pub(crate) use install::{loose_root_files, package_install_layout};
 #[cfg(test)]
@@ -197,7 +200,7 @@ pub(crate) use reconcile::reconcile_core_with_grace;
 // tests alongside the matcher's own suite (production callers stay in
 // the uninstall submodule).
 #[cfg(test)]
-pub(crate) use uninstall::{is_shared_component_path, shared_component_root};
+pub(crate) use uninstall::{is_shared_component_path, shared_component_root, uninstall_path_key};
 
 pub(crate) use uninstall::{
     UninstallReport, rewind_for_reinstall, uninstall_from_ledger, validate_file_removal_order,

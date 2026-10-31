@@ -4,6 +4,7 @@
 use anyhow::{anyhow, bail};
 
 use super::*;
+use sha2::{Digest, Sha256};
 
 /// Whether a downloaded package's byte length is consistent with the
 /// catalog's listed size. Publisher indexes list byte-exact sizes, but the
@@ -314,7 +315,7 @@ pub(crate) async fn mod_catalog_install_inner(
     })
     .await
     .map_err(|e| anyhow!("install task: {e}"))?;
-    let (report, written, restore_dir) = match outcome {
+    let unpacked = match outcome {
         Ok(done) => done,
         Err(e) => {
             // The rewind already changed the ledger even though the unpack
@@ -330,9 +331,9 @@ pub(crate) async fn mod_catalog_install_inner(
     // Say whose files this install clobbered (the journal already
     // snapshotted them — this is the visibility half of the conflict
     // policy the design doc promises).
-    let mut report = report;
+    let mut report = unpacked.report;
     let conflicts = mod_hub::conflict_warnings(
-        &written,
+        &unpacked.written,
         &ledger.installs,
         &entry.id,
         &report.bin_version,
@@ -357,11 +358,14 @@ pub(crate) async fn mod_catalog_install_inner(
         discussion: entry.discussion,
         bin_version: report.bin_version.clone(),
         installed_at: Utc::now().to_rfc3339(),
-        files: written,
-        restore_dir: restore_dir
+        files: unpacked.written,
+        restore_dir: unpacked
+            .restore_dir
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned()),
         game_root: game_root.clone(),
+        hashes: unpacked.hashes,
+        snapshot_hashes: unpacked.snapshot_hashes,
     });
     // The shared on-disk manifest mirrors the record (id, scheme, …).
     let record = ledger.installs.last().expect("record pushed above");
@@ -693,11 +697,12 @@ pub(crate) fn entry_display_name(entry: &CatalogEntry) -> String {
 
 /// Extract every package archive (part order = index order) into `work`, then
 /// run the shared classify → install pipeline. Validate the full replacement
-/// before rewinding an existing install. Returns the report plus the
-/// written-file list (res_mods-relative, `@game/`-prefixed for game-root
-/// files) and restore snapshot dir for the ledger. `display_name` replaces
-/// the classifier's directory label as the plan/report/record name (see
-/// [`entry_display_name`]).
+/// before rewinding an existing install. Returns the applied plan — the
+/// user-facing report, the written-file list (res_mods-relative,
+/// `@game/`-prefixed for game-root files), the restore snapshot dir and
+/// the shared-component content hashes — everything the ledger record
+/// needs. `display_name` replaces the classifier's directory label as the
+/// plan/report/record name (see [`entry_display_name`]).
 ///
 /// Aslain packages are laid out against the game root: the payload lives under
 /// `res_mods/…` (→ `bin/<ver>/res_mods/…`), and a few text mods ship a loose
@@ -713,7 +718,7 @@ pub(crate) fn unpack_and_install(
     // variants of one HUD element, so the rewind spans them too.
     supersede_ids: &[String],
     installs: &mut Vec<ModInstallRecord>,
-) -> anyhow::Result<(InstallReport, Vec<String>, Option<PathBuf>)> {
+) -> anyhow::Result<mod_hub::PlanApply> {
     let extract_root = work.join("unpacked");
     fs::create_dir_all(&extract_root).map_err(|e| anyhow!("create unpack dir: {e}"))?;
     let mut files = Vec::new();
@@ -774,17 +779,37 @@ pub(crate) fn unpack_and_install(
     for id in &installed_variants {
         rewind_for_reinstall(installs, id, game_root)?;
     }
-    let applied = mod_hub::install_plan_with_loose(&plan_root, game_root, &plan, &loose)?;
+    let mut applied = mod_hub::install_plan_with_loose(&plan_root, game_root, &plan, &loose)?;
     // Best effort: keep the newer owners' snapshots of the files this install
     // just rewrote in sync, so their uninstall restores the current bytes.
-    refresh_newer_snapshots(
+    let refreshed = refresh_newer_snapshots(
         game_root,
         &applied.report.bin_version,
         &applied.written,
         &newer_owners,
     );
+    // A refreshed layer now holds the bytes this install just wrote — keep
+    // the owners' stored layer hashes in step so their uninstalls do not
+    // misread the refresh as tampering (best effort, like the refresh).
+    if let Some(written_hashes) = applied.hashes.as_ref() {
+        sync_snapshot_hashes(installs, &refreshed, written_hashes);
+    }
+    // Mixed-version shared-tree signal (advisory): the bytes this install
+    // just wrote versus the content hashes other live records stored for
+    // the same shared-component files — differing bytes warn through the
+    // report's existing warning channel, identical bytes stay silent. The
+    // written-bytes map computed at install time is reused verbatim.
+    if let Some(written_hashes) = applied.hashes.as_ref() {
+        applied.report.warnings.extend(shared_divergence_warnings(
+            installs,
+            mod_id,
+            game_root,
+            &applied.report.bin_version,
+            written_hashes,
+        ));
+    }
 
-    Ok((applied.report, applied.written, applied.restore_dir))
+    Ok(applied)
 }
 
 /// Records that sit AFTER the first rewound one in ledger order - the "newer
@@ -819,21 +844,23 @@ pub(crate) fn newer_owner_records(
 /// uninstall restore. A record keyed at another bin_version owns physically
 /// different files, so it is skipped too. Best effort - a failed refresh only
 /// logs and never fails the install. Shared by the catalog install and the
-/// local same-name reinstall.
+/// local same-name reinstall. Returns the (owner id, written rel) pairs it
+/// actually refreshed, so callers can keep the owners' `snapshot_hashes`
+/// in step with the new layer bytes (see [`sync_snapshot_hashes`]).
 pub(crate) fn refresh_newer_snapshots(
     game_root: &str,
     bin_version: &str,
     written: &[String],
     newer_owners: &[ModInstallRecord],
-) {
+) -> Vec<(String, String)> {
     if newer_owners.is_empty() {
-        return;
+        return Vec::new();
     }
     let res_mods = Path::new(game_root)
         .join("bin")
         .join(bin_version)
         .join("res_mods");
-    let mut refreshed = 0usize;
+    let mut refreshed = Vec::new();
     for owner in newer_owners {
         if owner.bin_version != bin_version {
             continue;
@@ -867,7 +894,7 @@ pub(crate) fn refresh_newer_snapshots(
                 continue;
             }
             match fs::copy(&source, &snapshot) {
-                Ok(_) => refreshed += 1,
+                Ok(_) => refreshed.push((owner.id.clone(), rel.clone())),
                 Err(e) => tracing::debug!(
                     snapshot = %snapshot.display(),
                     error = %e,
@@ -876,12 +903,214 @@ pub(crate) fn refresh_newer_snapshots(
             }
         }
     }
-    if refreshed > 0 {
+    if !refreshed.is_empty() {
         tracing::info!(
-            refreshed,
+            refreshed = refreshed.len(),
             "refreshed newer owners' snapshots of rewritten shared files"
         );
     }
+    refreshed
+}
+
+// ── Shared-file content hashes ───────────────────────────────────────────────
+
+/// Per-file budget for shared-component hashing. The shared runtime trees
+/// are small (scripts, configs, one DLL); a file past this cap is skipped
+/// with a warning instead of hashed — the hashes are advisory handoff
+/// metadata and must never make an install or uninstall expensive.
+const SHARED_HASH_CAP_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Stream one file's SHA-256 (lowercase hex) without loading it whole.
+/// `None` — never an error — when the file is missing, unreadable, or past
+/// [`SHARED_HASH_CAP_BYTES`] (skip-and-warn): every caller treats hashing
+/// as advisory. Shared by the install-time hash computation, the restore
+/// verification and the divergence check.
+pub(crate) fn sha256_capped(path: &Path) -> Option<String> {
+    let unreadable = |what: &str, e: &std::io::Error| {
+        tracing::debug!(path = %path.display(), error = %e, "hash source {what}");
+    };
+    let len = match fs::metadata(path) {
+        Ok(meta) => meta.len(),
+        Err(e) => {
+            unreadable("unreadable", &e);
+            return None;
+        },
+    };
+    if len > SHARED_HASH_CAP_BYTES {
+        tracing::warn!(
+            path = %path.display(),
+            cap = SHARED_HASH_CAP_BYTES,
+            "shared-file hash skipped: file exceeds the cap"
+        );
+        return None;
+    }
+    let mut file = match fs::File::open(path) {
+        Ok(f) => f,
+        Err(e) => {
+            unreadable("unreadable", &e);
+            return None;
+        },
+    };
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 64 * 1024];
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => {
+                unreadable("read failed", &e);
+                return None;
+            },
+        }
+    }
+    Some(hex::encode(hasher.finalize()))
+}
+
+/// Resolve a ledger-relative path against the install it belongs to
+/// (`@game/…` drops at the game root, everything else under
+/// `bin/<version>/res_mods`).
+fn written_file_path(game_root: &str, bin_version: &str, rel: &str) -> PathBuf {
+    match rel.strip_prefix("@game/") {
+        Some(rest) => Path::new(game_root).join(rest),
+        None => Path::new(game_root)
+            .join("bin")
+            .join(bin_version)
+            .join("res_mods")
+            .join(rel),
+    }
+}
+
+/// Content hashes for a fresh record's SHARED-COMPONENT files: after the
+/// install wrote its files, every written path that belongs to a shared
+/// component tree (see [`super::uninstall::is_shared_component_path`]) is
+/// hashed so later handoffs can prove what bytes this record put on disk.
+/// Keys use the normalized ledger spelling
+/// ([`super::uninstall::uninstall_path_key`]); private files never get an
+/// entry, and `None` (not an empty map) is returned when the install
+/// touched no shared component — such records keep `hashes: None`.
+pub(crate) fn shared_file_hashes(
+    game_root: &str,
+    bin_version: &str,
+    written: &[String],
+) -> Option<std::collections::HashMap<String, String>> {
+    let mut hashes = std::collections::HashMap::new();
+    for rel in written
+        .iter()
+        .filter(|rel| super::uninstall::is_shared_component_path(rel))
+    {
+        if let Some(hex) = sha256_capped(&written_file_path(game_root, bin_version, rel)) {
+            hashes.insert(super::uninstall::uninstall_path_key(rel), hex);
+        }
+    }
+    (!hashes.is_empty()).then_some(hashes)
+}
+
+/// Capture-time hashes of the RESTORE LAYERS this install took: for every
+/// shared-component file the journal snapshotted (a restore-dir copy
+/// exists), the LAYER copy's bytes are hashed — the pre-overwrite content
+/// an uninstall will put back. This is deliberately a SEPARATE map from
+/// [`shared_file_hashes`]: a healthy layer's bytes differ from what the
+/// install wrote by definition, so verifying a restore against the
+/// written-bytes map would skip every ordinary restore. Files with no
+/// captured layer (brand-new shared files) get no entry; `None` when no
+/// shared layer exists at all.
+pub(crate) fn snapshot_layer_hashes(
+    written: &[String],
+    restore_dir: &Path,
+) -> Option<std::collections::HashMap<String, String>> {
+    let mut hashes = std::collections::HashMap::new();
+    for rel in written
+        .iter()
+        .filter(|rel| super::uninstall::is_shared_component_path(rel))
+    {
+        let layer = restore_dir.join(rel);
+        if !layer.is_file() {
+            continue;
+        }
+        if let Some(hex) = sha256_capped(&layer) {
+            hashes.insert(super::uninstall::uninstall_path_key(rel), hex);
+        }
+    }
+    (!hashes.is_empty()).then_some(hashes)
+}
+
+/// Keep a record's [`snapshot_hashes`] truthful when a later install
+/// refreshes one of its layers: `refresh_newer_snapshots` copies the new
+/// live bytes over the layer copy, so the stored layer hash must follow.
+/// Only existing entries are updated — records without the map (legacy,
+/// or nothing captured) keep restoring unverified. Reuses the installer's
+/// written-bytes map (the refreshed layer now holds exactly those bytes),
+/// so nothing is hashed twice.
+pub(crate) fn sync_snapshot_hashes(
+    installs: &mut [ModInstallRecord],
+    refreshed: &[(String, String)],
+    written_hashes: &std::collections::HashMap<String, String>,
+) {
+    for (owner_id, rel) in refreshed {
+        let key = super::uninstall::uninstall_path_key(rel);
+        let Some(current) = written_hashes.get(&key) else {
+            continue;
+        };
+        for record in installs.iter_mut().filter(|r| r.id == *owner_id) {
+            if let Some(map) = record.snapshot_hashes.as_mut() {
+                if map.contains_key(&key) {
+                    map.insert(key.clone(), current.clone());
+                }
+            }
+        }
+    }
+}
+
+/// Divergence warning at the shared-file handoff: after THIS install
+/// wrote its files, a shared-component file another live record claims
+/// WITH a stored hash that no longer matches is the mixed-version
+/// shared-tree signal — two packs shipping different builds of the same
+/// runtime component. Takes the install's ALREADY-COMPUTED written-bytes
+/// map (see [`shared_file_hashes`]) so nothing is hashed twice. One
+/// warning per file, naming the file and both record ids; same-bytes
+/// reinstalls and claimers without hashes stay silent, and records keyed
+/// at another bin or game root own different physical files and never
+/// compare. Advisory only: the report warning is the whole effect,
+/// nothing is refused.
+pub(crate) fn shared_divergence_warnings(
+    installs: &[ModInstallRecord],
+    own_id: &str,
+    game_root: &str,
+    bin_version: &str,
+    written_hashes: &std::collections::HashMap<String, String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for (key, actual) in written_hashes {
+        for claimer in installs {
+            if claimer.id == own_id
+                || claimer.bin_version != bin_version
+                || (!claimer.game_root.is_empty() && claimer.game_root != game_root)
+            {
+                continue;
+            }
+            let Some(recorded) = claimer.hashes.as_ref().and_then(|hashes| hashes.get(key)) else {
+                continue;
+            };
+            // Same-bytes reinstalls (and hex-case drift) stay silent.
+            if recorded.eq_ignore_ascii_case(actual) {
+                continue;
+            }
+            tracing::warn!(
+                file = %key,
+                claimer = %claimer.id,
+                install = %own_id,
+                recorded = %recorded,
+                "shared-component bytes diverged between installed records"
+            );
+            out.push(format!(
+                "shared component file {key} was rewritten with different bytes (install {own_id}) — they no longer match the hash recorded by \"{}\" (id {}); the shared runtime tree is now mixed-version",
+                claimer.name, claimer.id
+            ));
+            break;
+        }
+    }
+    out
 }
 
 /// Files sitting at the zip root next to `res_mods/` (game-root payloads).

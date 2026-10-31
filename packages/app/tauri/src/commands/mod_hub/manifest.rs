@@ -704,6 +704,8 @@ mod tests {
             files: vec!["gui/a.png".into()],
             restore_dir: None,
             game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         set_managed_enabled(&dir, &[record], false);
         let mut again = entry("M2");
@@ -906,6 +908,8 @@ mod tests {
             files: vec!["gui/a.png".into()],
             restore_dir: None,
             game_root: "g".into(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         // Stale bin: the row (toggled off) + a tool config.
         let stale = format!(

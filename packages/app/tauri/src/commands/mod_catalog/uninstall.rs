@@ -14,6 +14,12 @@ pub struct UninstallReport {
     pub name: String,
     pub removed_files: usize,
     pub restored_files: usize,
+    /// Advisory notices — e.g. snapshot layers skipped because their bytes
+    /// failed the record's stored SHA-256 (see `restore_tree`). Absent when
+    /// empty so the wire shape of clean uninstalls stays byte-identical to
+    /// older builds.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<String>,
 }
 
 /// Windows file spelling and the disabled twin refer to one ownership slot.
@@ -443,10 +449,19 @@ fn rewind_from_ledger(
     // either — the layer copy is dropped together with the rest of the
     // restore dir below.
     let mut restored = 0usize;
+    let mut warnings: Vec<String> = Vec::new();
     if let Some(dir) = record.restore_dir.as_ref() {
         let restore = PathBuf::from(dir);
         if restore.is_dir() {
-            restored = restore_tree(&restore, &res_mods, Path::new(game_root), &protected)?;
+            let (count, verify_failures) = restore_tree(
+                &restore,
+                &res_mods,
+                Path::new(game_root),
+                &protected,
+                record.snapshot_hashes.as_ref(),
+            )?;
+            restored = count;
+            warnings = verify_failures;
             fs::remove_dir_all(&restore).ok();
         }
     }
@@ -484,20 +499,32 @@ fn rewind_from_ledger(
         name: record.name,
         removed_files: removed,
         restored_files: restored,
+        warnings,
     })
 }
 
 /// Copy a snapshot tree back: entries under `@game/` land in the game root,
 /// everything else in res_mods. Paths in `protected` are skipped (a reinstall
 /// keeps files another record owns, so its snapshot must not overwrite them).
-/// Returns the restored file count.
+/// When the record stored a LAYER hash for a snapshot file
+/// (`snapshot_hashes`, shared components only — hashed from the layer bytes
+/// at capture time), the snapshot's actual bytes are verified against it
+/// first: a mismatch SKIPS that restore and counts it as a verification
+/// failure — one corrupted layer never reaches the live tree and never
+/// fails the whole uninstall. The record's WRITTEN-bytes map (`hashes`) is
+/// deliberately never consulted here: a healthy layer's bytes differ from
+/// what the install wrote by definition. Files without a stored layer hash
+/// (private files, legacy records) restore unverified. Returns the restored
+/// file count plus one warning per skipped layer.
 fn restore_tree(
     from: &Path,
     res_mods: &Path,
     game_root: &Path,
     protected: &std::collections::HashSet<String>,
-) -> anyhow::Result<usize> {
+    snapshot_hashes: Option<&std::collections::HashMap<String, String>>,
+) -> anyhow::Result<(usize, Vec<String>)> {
     let mut count = 0usize;
+    let mut failed: Vec<String> = Vec::new();
     let mut stack = vec![from.to_path_buf()];
     while let Some(dir) = stack.pop() {
         for ent in fs::read_dir(&dir)
@@ -512,8 +539,32 @@ fn restore_tree(
             let Ok(rel) = src.strip_prefix(from) else {
                 continue;
             };
-            if protected.contains(&uninstall_path_key(&rel.to_string_lossy())) {
+            let key = uninstall_path_key(&rel.to_string_lossy());
+            if protected.contains(&key) {
                 continue;
+            }
+            // Verify before restore: a snapshot whose bytes no longer match
+            // the CAPTURE-TIME layer hash this record stored is skipped and
+            // reported instead of overwriting the live file with unknowable
+            // bytes. Layers without a stored hash (private files, pre-field
+            // records) and ones that cannot be hashed still restore — the
+            // hashes stay advisory.
+            if let Some(expected) = snapshot_hashes.and_then(|map| map.get(&key)) {
+                if let Some(actual) = super::install::sha256_capped(&src) {
+                    if !actual.eq_ignore_ascii_case(expected) {
+                        let warning = format!(
+                            "skipped restoring {key}: its snapshot failed the SHA-256 verification against the recorded bytes"
+                        );
+                        tracing::warn!(
+                            snapshot = %src.display(),
+                            recorded = %expected,
+                            actual,
+                            "restore skipped: snapshot failed hash verification"
+                        );
+                        failed.push(warning);
+                        continue;
+                    }
+                }
             }
             let dest = if let Ok(rest) = rel.strip_prefix("@game") {
                 let rest = rest.to_string_lossy();
@@ -530,7 +581,7 @@ fn restore_tree(
             count += 1;
         }
     }
-    Ok(count)
+    Ok((count, failed))
 }
 
 // ── Ledger reconciliation ────────────────────────────────────────────────────
