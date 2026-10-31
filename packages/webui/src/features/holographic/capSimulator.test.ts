@@ -112,7 +112,10 @@ function fakeCtx(zones: EntityTrajectory[]): MapInternals {
     _capDisplaySig: "",
     allyScore: { value: 0 },
     enemyScore: { value: 0 },
-  } as unknown as MapInternals;
+  // Ref-shaped doubles ({ value }) are not assignable to Partial<MapInternals>
+  // (ComputedRef brand symbols), so the subset the function reads is asserted once here.
+  } as unknown as MapInternals; // ts-escape-ok: ref-brand double, see note above
+
 }
 
 describe("updateCapsAndScore birth gating", () => {
