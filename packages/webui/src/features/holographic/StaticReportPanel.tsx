@@ -209,7 +209,7 @@ export default defineComponent({
                     ]}
                     onClick={() => r.entityId !== props.report.entityId && props.onPick(r.entityId)}
                     disabled={r.coverage.samples === 0}
-                    title={
+                    data-hint={
                       r.coverage.samples === 0
                         ? i18nT("replay.report.noData")
                         : `${i18nT("replay.report.coverage")}: ${pct(r.coverage.completeness)}%`
@@ -241,7 +241,7 @@ export default defineComponent({
                     ]}
                     onClick={() => r.entityId !== props.report.entityId && props.onPick(r.entityId)}
                     disabled={r.coverage.samples === 0}
-                    title={
+                    data-hint={
                       r.coverage.samples === 0
                         ? i18nT("replay.report.noData")
                         : `${i18nT("replay.report.coverage")}: ${pct(r.coverage.completeness)}%`
@@ -350,7 +350,7 @@ export default defineComponent({
                       <button
                         class="srp-moment__seek"
                         onClick={() => props.onSeek?.(m.t)}
-                        title={i18nT("replay.report.seekHint")}
+                        aria-label={i18nT("replay.report.seekHint")}
                       >
                         <Camera size={12} />
                         <span>{i18nT("replay.report.seek")}</span>
