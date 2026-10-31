@@ -5,10 +5,9 @@ import StatsCard from "@/components/stats/StatsCard";
 import RankedSeasonModal from "@/components/stats/RankedSeasonModal";
 import RefreshStatsButton from "@/components/stats/RefreshStatsButton";
 import AccountSwitcherModal from "@/components/account/AccountSwitcherModal";
-import { HkButton, HkScrollContainer, useToast } from "@celestia-island/hikari";
+import { HkButton, HkDateTag, HkScrollContainer, useToast } from "@celestia-island/hikari";
 
 import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
-import DateTag from "@/components/base/DateTag";
 import TypeSummaryChips from "@/components/stats/TypeSummaryChips";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
@@ -703,11 +702,11 @@ export default defineComponent({
                             {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                           </span>
                           <span class="dash-ship-table__col-date">
-                            {/* Locale-ordered Y/M/D capsule (hikari's
-                                HkDateTag contract, local stopgap copy);
-                                the em-dash keeps the no-data fallback. */}
+                            {/* Locale-ordered Y/M/D capsule — hikari's
+                                HkDateTag business part; the em-dash keeps
+                                the no-data fallback. */}
                             {s.lastBattleTime ? (
-                              <DateTag value={s.lastBattleTime * 1000} />
+                              <HkDateTag value={s.lastBattleTime * 1000} />
                             ) : (
                               "—"
                             )}
