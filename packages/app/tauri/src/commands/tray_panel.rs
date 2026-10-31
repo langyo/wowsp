@@ -169,25 +169,46 @@ pub fn debug_show(app: &AppHandle) {
 }
 
 /// The panel window, created ONCE from the `tray-panel` entry in
-/// `tauri.conf.json` (created hidden at boot alongside the main window).
+/// `tauri.conf.json` — but on FIRST USE, not at boot: the entry carries
+/// `"create": false`, so Tauri's setup loop skips it on every platform.
 ///
-/// It used to be created lazily via `WebviewWindowBuilder` here — and that
-/// path turned out to be the whole "native window skin" bug: on this
-/// runtime, a `WebviewWindowBuilder`-created window came up with its full
-/// native frame intact (caption + borders + opaque redirection surface)
-/// even though every builder flag said otherwise, verified with
-/// WindowFromPoint + GetWindowLongPtr against a release build. The
-/// `WindowConfig` path (`tauri.conf.json` — the same one the main window
-/// has ridden since forever) applies all of it correctly, so the panel
-/// lives there now: pre-created hidden, zero cost, and [`place_and_show`]
-/// just positions and reveals it. Mobile note: the config entry also
-/// creates a hidden panel webview there — invisible and harmless.
+/// Why not let the setup loop create it: on Android there is exactly ONE
+/// webview, and creating the second (hidden) window repoints it at
+/// `tray.html` — the phone booted straight into the desktop tray menu.
+/// (The Android assets copy of tauri.conf.json is frozen at scaffold time —
+/// tauri-cli's project generator never overwrites existing files — so the
+/// mobile runtime must be safe against stale config copies; a `create`
+/// flag in the BASE config is, unlike a platform-overlay window list.)
+///
+/// Why `from_config`: it is the exact call the setup loop used, i.e. the
+/// `WindowConfig` path that fixed the "native window skin" bug (a
+/// hand-built `WebviewWindowBuilder` came up with its full native frame;
+/// verified with WindowFromPoint + GetWindowLongPtr against a release
+/// build). Creation is deferred to the first tray click / debug show, and
+/// [`ensure_styled`] still runs right after — the first reveal styles it.
 fn ensure_tray_panel(app: &AppHandle) -> Option<WebviewWindow> {
-    let win = app.get_webview_window(TRAY_PANEL_LABEL);
-    if win.is_none() {
-        tracing::warn!("tray panel window missing (config entry not created?)");
+    if let Some(win) = app.get_webview_window(TRAY_PANEL_LABEL) {
+        return Some(win);
     }
-    win
+    let Some(config) = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|w| w.label == TRAY_PANEL_LABEL)
+        .cloned()
+    else {
+        tracing::warn!("tray panel config entry missing");
+        return None;
+    };
+    match tauri::WebviewWindowBuilder::from_config(app, &config).and_then(|builder| builder.build())
+    {
+        Ok(win) => Some(win),
+        Err(err) => {
+            tracing::warn!("tray panel creation failed: {err}");
+            None
+        },
+    }
 }
 
 /// One-time Win32 styling for the config-created panel (called from

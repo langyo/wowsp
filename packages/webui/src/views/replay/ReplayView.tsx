@@ -2661,12 +2661,17 @@ export default defineComponent({
                         {t("replay.chatLog")}
                       </button>
                     ) : null}
-                    <button
-                      class="replay-view__meta-item replay-view__pill"
-                      onClick={() => openStaticReport()}
-                    >
-                      {t("replay.report.title")}
-                    </button>
+                    {/* The static report opens a SECONDARY desktop window
+                        (report.html, Rust-spawned) — phones have no such
+                        window, so the pill stays desktop-only. */}
+                    {!isMobileApp() ? (
+                      <button
+                        class="replay-view__meta-item replay-view__pill"
+                        onClick={() => openStaticReport()}
+                      >
+                        {t("replay.report.title")}
+                      </button>
+                    ) : null}
                   </header>
                   {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
                     <div class="replay-view__modal" onClick={() => (showResults.value = false)}>

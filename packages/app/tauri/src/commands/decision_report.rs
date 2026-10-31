@@ -536,6 +536,7 @@ pub(crate) fn build_static_report(
 }
 
 /// The report's secondary-window label (single instance: re-open re-targets).
+#[cfg(desktop)]
 pub const REPORT_WINDOW_LABEL: &str = "report";
 
 /// Spawn (or re-target + focus) the AI battle report's secondary window.
@@ -545,6 +546,12 @@ pub const REPORT_WINDOW_LABEL: &str = "report";
 /// target through the `wowsp://report-params` event and keeps its scroll
 /// position on a same-replay perspective switch. Main-window-only (audit
 /// P0-5): only the replay view may spawn windows.
+///
+/// Desktop-only: mobile has no secondary windows, and the builder APIs this
+/// uses (`decorations`/`shadow`/`center`) do not exist on the mobile
+/// runtime — an ungated registration broke the Android build outright. The
+/// webui hides the report pill on phones to match.
+#[cfg(desktop)]
 #[tauri::command]
 pub fn open_static_report_window(
     window: tauri::Window,
