@@ -75,6 +75,16 @@ jobs:
         run: python scripts/check_rpc_parity.py
       - name: i18n parity
         run: python scripts/check_i18n.py
+      - name: License document domains
+        # The wizard license texts ship verbatim inside the installer, where
+        # antivirus heuristics scan their strings: a squatted vendor domain
+        # (deepseek.ai / zhipu.ai) got the 0.6.8 installer flagged by Huorong.
+        # The guard keeps look-alike domains and plain-http links out of the
+        # corpus, and its self-test exercises the repair pass the installer
+        # build applies to refreshed upstream SySL texts.
+        run: |
+          python scripts/check_licenses.py
+          python scripts/check_licenses.py --self-test
       - name: Release-notes i18n self-test
         # The grammar fixtures for the release-body scaffold (AGENTS.md
         # §10) — hermetic, no network, keeps the python authority and the

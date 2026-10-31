@@ -8,8 +8,8 @@ WoWSP es software gratuito y de código abierto, distribuido únicamente por la 
 
 La información sobre los modelos que figura a continuación se divulga conforme a lo que exige la «Licencia de Código Sintético» (SySL); el texto completo de la licencia está en: [https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
 
-- **GLM 5.3 / 5.3 Flash** — Zhipu AI — [zhipu.ai](https://zhipu.ai)
-- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+- **GLM 5.3 / 5.3 Flash** — Zhipu AI — [www.zhipuai.cn](https://www.zhipuai.cn)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [www.deepseek.com](https://www.deepseek.com)
 
 ### Privacidad y telemetría
 

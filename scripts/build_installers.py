@@ -74,6 +74,18 @@ import sys
 import urllib.request
 from pathlib import Path
 
+# The license-domain guard/repair pair is a sibling script: the installer
+# stages license texts from upstream (celestia-island/sysl), whose model
+# disclosure can name the vendors with look-alike domains — Huorong flagged
+# the 0.6.8 installer over the squatted deepseek.ai string. The repair pass
+# keeps fetched texts safe even while the upstream template is unfixed.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from license_domains import (  # noqa: E402
+    IMPERSONATION_DOMAINS,
+    lookalike_pattern,
+    sanitize_license_text,
+)
+
 REPO = Path(__file__).resolve().parent.parent
 TAURI = REPO / "packages" / "app" / "tauri"
 MODELS = REPO / "packages" / "webui" / "src" / "res" / "models"
@@ -435,7 +447,69 @@ def fetch_sysl_agreements(stage: Path) -> None:
             if not vendored.is_file():
                 sys.exit(f"no SySL agreement for {locale}: fetch failed and no vendored copy")
             text = vendored.read_text(encoding="utf-8")
+        # Never let a look-alike vendor domain into an installer: the fetched
+        # upstream template still carries the squatted deepseek.ai / zhipu.ai
+        # links that got 0.6.8 flagged by antivirus heuristics. The repair is
+        # logged so a stale upstream template is visible in the build output.
+        text, fixed = sanitize_license_text(text)
+        for lookalike, official in fixed:
+            reason = (
+                "upstream SySL template still carries the look-alike domain"
+                if lookalike in IMPERSONATION_DOMAINS
+                else "insecure upstream link upgraded to https"
+            )
+            print(f"[license] sanitized {locale}: {lookalike} -> {official} ({reason})")
+        assert_no_lookalike(text, f"SySL agreement ({locale})")
         dest.write_text(text, encoding="utf-8", newline="")
+
+
+def assert_no_lookalike(text: str, label: str) -> None:
+    """Refuse to stage a license document that still carries a look-alike.
+
+    The repair pass handles every shape we know about; this post-condition is
+    the belt to its braces. A build must fail loudly rather than ship an
+    installer that antivirus heuristics flag (the 0.6.8 incident).
+
+    Scope: this only proves no look-alike AV string survives in a staged
+    document. It intentionally does not re-run check_licenses.py's full
+    corpus rules: the fetched upstream SySL agreement is the one input the
+    committed corpus cannot cover, and failing a release build over, say, an
+    upstream http:// link would be disproportionate. The committed corpus is
+    guarded in CI; this assertion is the last line against the AV hit.
+    """
+    leftovers = [
+        domain
+        for domain in IMPERSONATION_DOMAINS
+        if lookalike_pattern(domain).search(text)
+    ]
+    if leftovers:
+        sys.exit(
+            f"license document {label} still carries look-alike vendor "
+            f"domain(s) {leftovers} after the repair pass — refusing to build "
+            "an installer that antivirus heuristics would flag"
+        )
+
+
+def stage_text(src: Path, dest: Path, label: str) -> None:
+    """Stage one license document, repairing look-alike vendor domains.
+
+    Every text bundled for the wizard goes through the same repair, not just
+    the upstream-refreshed SySL agreements: the documents are scanned by
+    antivirus heuristics inside the installer, so a regression in a
+    product-owned or docs-owned file must not reach a package (CI's
+    check_licenses.py guards the committed corpus on top of this).
+    """
+    text = src.read_text(encoding="utf-8")
+    text, fixed = sanitize_license_text(text)
+    for lookalike, official in fixed:
+        reason = (
+            "look-alike vendor domain in a staged license document"
+            if lookalike in IMPERSONATION_DOMAINS
+            else "insecure link upgraded to https"
+        )
+        print(f"[license] sanitized {label}: {lookalike} -> {official} ({reason})")
+    assert_no_lookalike(text, label)
+    dest.write_text(text, encoding="utf-8", newline="")
 
 
 def stage_documents(stage: Path, version: str) -> None:
@@ -453,9 +527,13 @@ def stage_documents(stage: Path, version: str) -> None:
     licenses = stage / "licenses"
     licenses.mkdir(parents=True, exist_ok=True)
     for src in sorted((INSTALLER / "licenses").glob("copyright-*.txt")):
-        shutil.copy2(src, licenses / src.name)
+        stage_text(src, licenses / src.name, src.name)
     # The Microsoft DirectML redistributable shipped beside the app exe.
-    shutil.copy2(INSTALLER / "licenses" / "directml.txt", licenses / "directml.txt")
+    stage_text(
+        INSTALLER / "licenses" / "directml.txt",
+        licenses / "directml.txt",
+        "directml.txt",
+    )
 
     fetch_sysl_agreements(stage)
 
@@ -466,7 +544,7 @@ def stage_documents(stage: Path, version: str) -> None:
         src = REPO / "docs" / doc_lang / "license" / "usage-telemetry.md"
         if not src.is_file():
             sys.exit(f"telemetry document missing for `{locale}`: {src}")
-        shutil.copy2(src, telemetry / f"{locale}.md")
+        stage_text(src, telemetry / f"{locale}.md", f"usage-telemetry.md ({locale})")
 
 
 def stage_payload(stage: Path, app_exe: Path, variant: str) -> Path:

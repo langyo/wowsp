@@ -8,8 +8,8 @@ WoWSP 完全免费、开源，仅通过官方 GitHub Releases（github.com/langy
 
 以下模型信息基于《合成源码协议》（SySL）的要求披露，协议全文见：[https://github.com/celestia-island/sysl](https://github.com/celestia-island/sysl)
 
-- **GLM 5.3 / 5.3 Flash** — 智谱 AI — [zhipu.ai](https://zhipu.ai)
-- **DeepSeek V4 Flash / Pro** — DeepSeek — [deepseek.ai](https://deepseek.ai)
+- **GLM 5.3 / 5.3 Flash** — 智谱 AI — [www.zhipuai.cn](https://www.zhipuai.cn)
+- **DeepSeek V4 Flash / Pro** — DeepSeek — [www.deepseek.com](https://www.deepseek.com)
 
 ### 隐私与遥测
 
