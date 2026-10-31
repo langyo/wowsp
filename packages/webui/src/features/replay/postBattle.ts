@@ -32,6 +32,8 @@
  * remaining-HP — producing impossible values like "290 planes shot down".
  */
 
+import { isAiName } from "@/utils/aiNames";
+
 export interface PostBattlePlayer {
   accountId: number;
   name: string;
@@ -203,4 +205,29 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
     selfCredits,
     raw,
   };
+}
+
+/** First post-battle row matching an AI-controlled victim hull, for the
+ *  replay kill feed's killer resolution: operations (行动) field hostile
+ *  waves the arena roster never lists (an op roster covers the player team
+ *  only — the waves spawn mid-battle), so the replay side cannot join by
+ *  nickname. The ship's GameParams id plus an AI-shaped name (`:bot:` fill /
+ *  `IDS_*` / `#` text keys — a human nickname is never shaped like either)
+ *  is the whole signature. `victimIsEnemy` + the recorder's team slot keep a
+ *  same-hull human row on the other side from absorbing the join. Undefined
+ *  when no row qualifies — the caller keeps its "?" killer. */
+export function findNpcVictimRow(
+  players: readonly PostBattlePlayer[],
+  shipId: number,
+  victimIsEnemy: boolean,
+  selfTeam: 0 | 1 | 2 | null,
+): PostBattlePlayer | undefined {
+  return players.find(
+    (p) =>
+      p.shipId === shipId &&
+      isAiName(p.name) &&
+      (selfTeam == null ||
+        p.team == null ||
+        (p.team === selfTeam) !== victimIsEnemy),
+  );
 }

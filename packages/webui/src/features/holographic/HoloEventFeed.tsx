@@ -13,23 +13,28 @@ import type { TeamRole } from "./teamColors";
 
 /** Transient "X sunk Y" feed entry. Each side renders its own ship name
  *  with the player nickname underneath (killer left-aligned, victim
- *  right-aligned, "sank" centred). */
+ *  right-aligned, "sank" centred) — and each side carries its OWN team
+ *  color: the victim's icon paints the victim's side, the killer's icon the
+ *  killer's. AI victims (op waves / bot fills) carry no nickname row — the
+ *  ship name alone says them. */
 interface KillEvent {
   id: number;
-  /** Victim's player nickname. */
+  /** Victim's player nickname ("" for AI victims). */
   text: string;
   /** Victim's ship display name. */
   shipName: string;
   /** Victim's ship type (for the HUD icon). */
   shipType: string | null;
+  /** Side of the VICTIM — the card's left tint bar follows it. */
+  role: TeamRole;
+  /** Side of the KILLER — the victim's opposite except self-kills. */
+  killerRole: TeamRole;
   /** Killer's ship display name. */
   killerShipName: string;
   /** Killer's ship type (for the HUD icon). */
   killerShipType: string | null;
   /** Killer's player nickname (resolved from the post-battle payload). */
   killerName: string | null;
-  /** Role of the KILLER (the card tint is the killer's side). */
-  role: TeamRole;
 }
 /** A battle-chat bubble (sender joined from the roster). */
 interface ChatFeedEntry {
@@ -76,7 +81,7 @@ export default defineComponent({
                         <BattleIcon
                           kind="ship"
                           type={e.killerShipType}
-                          variant={e.role === "enemy" ? "enemy" : "ally"}
+                          variant={e.killerRole === "enemy" ? "enemy" : "ally"}
                           size={13}
                         />
                       ) : null}
@@ -95,7 +100,7 @@ export default defineComponent({
                         <BattleIcon
                           kind="ship"
                           type={e.shipType}
-                          variant={e.role === "ally" ? "enemy" : "ally"}
+                          variant={e.role === "enemy" ? "enemy" : "ally"}
                           size={13}
                         />
                       ) : null}

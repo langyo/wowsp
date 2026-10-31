@@ -7,7 +7,7 @@
  * recorder aim line and the chat/achievement event feed advance.
  */
 import * as THREE from "three";
-import { parsePostBattle } from "@/features/replay/postBattle";
+import { findNpcVictimRow, parsePostBattle } from "@/features/replay/postBattle";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t as i18nT } from "@/i18n";
@@ -18,7 +18,7 @@ import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
 import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./modelLoader";
-import { isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
+import { isAiName, isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
 import { formationOffsets } from "./planeFormation";
@@ -247,6 +247,11 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           let killerShipId: number | null = null;
           let killerShipName = "";
           let killerShipType: string | null = null;
+          // The card paints each side with its OWN team color (the icons,
+          // not just the tint bar): the killer is the opposite side of the
+          // victim, except a self-kill (beached, detonation — the row names
+          // itself) below.
+          let killerRole: TeamRole = role === "enemy" ? "ally" : "enemy";
           if (ctx.props.battleResults) {
             ctx.pbCache ??= parsePostBattle(ctx.props.battleResults);
           }
@@ -258,13 +263,23 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
             // the ship's name — scripted victims join through their roster
             // entry's RAW nickname instead, with the shipId only as the
             // last resort (escort waves share a shipId, so that join is
-            // ambiguous whenever two of them sank).
+            // ambiguous whenever two of them sank). An UNLISTED operation
+            // wave (行动) has neither scripted flag nor roster row — the op
+            // roster covers the player team only — and its label reads the
+            // ship name too, so there the plain-name lookup is gated to
+            // real nicknames (never the ship-name fallback); PvP keeps the
+            // old lookup even for the freak nickname-equals-ship-name case.
             const veh = ctx.rosterAssignments.get(entityId);
-            let victim = label?.scripted
-              ? undefined
-              : ctx.pbCache.players.find(
-                  (p) => (p.name ?? "").trim().toLowerCase() === vn,
-                );
+            const shipNameFallback =
+              !!ctx.props.operation &&
+              !!label?.shipName &&
+              who === label.shipName;
+            let victim =
+              label?.scripted || shipNameFallback
+                ? undefined
+                : ctx.pbCache.players.find(
+                    (p) => (p.name ?? "").trim().toLowerCase() === vn,
+                  );
             if (!victim && veh && isScriptedUnitName(veh.name)) {
               const rn = veh.name.trim().toLowerCase();
               victim = ctx.pbCache.players.find(
@@ -276,17 +291,36 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
                 (p) => p.shipId === label.shipId && isScriptedUnitName(p.name ?? ""),
               );
             }
+            if (!victim && !label?.scripted && label?.shipId != null) {
+              // Unlisted operation wave: join the post-battle AI row by
+              // ship id on the victim's own side (findNpcVictimRow), so the
+              // killer's nickname/ship resolve instead of reading "?".
+              const pb = ctx.pbCache;
+              const selfTeam =
+                pb.selfId != null
+                  ? pb.players.find((p) => p.accountId === pb.selfId)?.team ??
+                    null
+                  : null;
+              victim = findNpcVictimRow(
+                pb.players,
+                label.shipId,
+                role === "enemy",
+                selfTeam,
+              );
+            }
             if (victim?.killerId != null) {
               const killer = ctx.pbCache.players.find(
                 (p) => p.accountId === victim.killerId,
               );
               killerShipId = killer?.shipId ?? null;
-              // A scripted NPC killer has no readable nickname — the card's
-              // ship slot carries it; a raw `IDS_*` key never shows.
+              // An AI killer (`:bot:` fill / raw `IDS_*` key) has no
+              // readable nickname — the card's ship slot carries it.
               killerName =
-                killer && !isScriptedUnitName(killer.name ?? "")
-                  ? killer.name
-                  : null;
+                killer && !isAiName(killer.name ?? "") ? killer.name : null;
+              // Self-kill: killer and victim share the row (and the side).
+              if (killer && victim.team != null && killer.team === victim.team) {
+                killerRole = role;
+              }
             }
           }
           if (killerShipId != null) {
@@ -317,15 +351,20 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
             ctx.feed.value.unshift({
               kind: "kill",
               id: feedId,
-              // A scripted NPC victim already shows its ship name in the
-              // card's ship slot — an extra name slot would repeat it.
-              text: label?.scripted ? "" : who,
+              // The enemy/AI side carries no nickname row — the ship name
+              // already says it (an op wave's label IS the ship name, a bot
+              // fill reads ":Name:"); only human victims get one.
+              text:
+                who && !isAiName(who) && who !== (label?.shipName ?? "")
+                  ? who
+                  : "",
               shipName: label?.shipName ?? "",
               shipType: label?.type ?? null,
+              role,
+              killerRole,
               killerShipName,
               killerShipType,
               killerName,
-              role,
             });
             if (ctx.feed.value.length > FEED_CAP) ctx.feed.value.pop();
             window.setTimeout(() => {
