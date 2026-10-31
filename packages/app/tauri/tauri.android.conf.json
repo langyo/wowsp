@@ -1,5 +1,22 @@
 {
   "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "WoWSP",
+        "width": 1280,
+        "height": 820,
+        "resizable": true,
+        "fullscreen": false,
+        "visible": true,
+        "decorations": false,
+        "transparent": false,
+        "shadow": true,
+        "minimizable": true,
+        "maximizable": true,
+        "closable": true
+      }
+    ],
     "security": {
       "assetProtocol": {
         "enable": true,
