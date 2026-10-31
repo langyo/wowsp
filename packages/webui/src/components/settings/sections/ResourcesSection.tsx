@@ -8,7 +8,7 @@
  *  the `ai` feature out entirely, so inference/scoring surfaces are disabled
  *  with a pointer to the full installer instead of failing silently. */
 import { defineComponent, type PropType } from "vue";
-import { HkButton, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
+import { HkButton, HkSettingsGroup, HkSettingsHint, HkTag } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -88,42 +88,69 @@ export default defineComponent({
       return (
           <>
           {/* ── Resource inventory (the registry walk) ─────────────────
-              One line per runtime-managed resource: channel, kind, on-disk
-              state, install stamp. Management actions stay in the groups
-              below; the refresh button re-checks the refreshable lanes
-              (data pack + res manifest — never auto-downloads). */}
+              One line per runtime-managed resource: kind, channel, size,
+              version and install stamp each render as a hikari tag chip.
+              Management actions stay in the groups below; the refresh
+              button re-checks the refreshable lanes (data pack + res
+              manifest — never auto-downloads). */}
           <HkSettingsGroup title={t("settings.resInvTitle")}>
             <HkSettingsHint>{t("settings.resInvHint")}</HkSettingsHint>
             {invRows ? (
               <ul class="settings-modal__res-inv">
-                {invRows.map((row) => (
-                  <li
-                    class="settings-modal__res-inv-row"
-                    key={row.id}
-                    data-hint={
-                      row.checkedAt
-                        ? t("settings.resInvChecked", { time: formatLocalStamp(row.checkedAt) })
-                        : undefined
-                    }
-                  >
-                    <span class="settings-modal__res-inv-name">{rowName(row.id)}</span>
-                    <span class="settings-modal__res-inv-meta">
-                      {[
-                        kindLabel(row.kind),
-                        row.channel || "—",
-                        row.sizeBytes > 0 ? formatBytes(row.sizeBytes) : null,
-                        row.present
-                          ? row.version ?? (row.sha256 ? hash6(row.sha256) : null)
-                          : t("settings.cacheStatusMissing"),
-                        row.installedAt
-                          ? t("settings.resInvInstalled", { time: formatLocalStamp(row.installedAt) })
-                          : null,
-                      ]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    </span>
-                  </li>
-                ))}
+                {invRows.map((row) => {
+                  const version = row.present
+                    ? row.version ?? (row.sha256 ? hash6(row.sha256) : null)
+                    : null;
+                  return (
+                    <li
+                      class="settings-modal__res-inv-row"
+                      key={row.id}
+                      data-hint={
+                        row.checkedAt
+                          ? t("settings.resInvChecked", { time: formatLocalStamp(row.checkedAt) })
+                          : undefined
+                      }
+                    >
+                      <span class="settings-modal__res-inv-name">{rowName(row.id)}</span>
+                      {/* One chip per fact: kind + channel classify the
+                          lane, the rest report its on-disk state. Facts a
+                          row lacks (channel, version) simply render no
+                          chip; an absent resource warns instead. Tooltips
+                          carry the raw values the chips abbreviate. */}
+                      <span class="settings-modal__res-inv-meta">
+                        <HkTag variant="info" size="sm">{kindLabel(row.kind)}</HkTag>
+                        {row.channel ? (
+                          <HkTag variant="primary" size="sm">{row.channel}</HkTag>
+                        ) : null}
+                        {row.sizeBytes > 0 ? (
+                          <HkTag size="sm">{formatBytes(row.sizeBytes)}</HkTag>
+                        ) : null}
+                        {version ? (
+                          /* The abbreviated build id hints its full source
+                             (raw version, else the whole sha256). */
+                          <span data-hint={row.version ?? row.sha256 ?? undefined}>
+                            <HkTag size="sm" class="settings-modal__res-inv-tag-mono">
+                              {version}
+                            </HkTag>
+                          </span>
+                        ) : null}
+                        {!row.present ? (
+                          <HkTag variant="warning" size="sm">
+                            {t("settings.cacheStatusMissing")}
+                          </HkTag>
+                        ) : null}
+                        {row.installedAt ? (
+                          /* The local stamp hints the raw UTC ISO source. */
+                          <span data-hint={row.installedAt}>
+                            <HkTag size="sm">
+                              {t("settings.resInvInstalled", { time: formatLocalStamp(row.installedAt) })}
+                            </HkTag>
+                          </span>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             ) : null}
             <HkButton
