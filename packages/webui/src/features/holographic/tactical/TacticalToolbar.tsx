@@ -9,7 +9,7 @@
  * Every flyout is hikari machinery, not hand-rolled chrome: HkPopover
  * (anchored, auto-flipping, phone bottom-sheet) carries the panel and tool
  * lists render as HkMenuPanel + HkMenuActionItem rows (icon + label +
- * shortcut suffix, active row via the host's is-active class) — the same
+ * shortcut suffix, active row via the component's active prop) — the same
  * primitives the filter chips and admin menus are built on.
  */
 import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType } from "vue";
@@ -277,7 +277,10 @@ export default defineComponent({
     };
 
     /** One tool row in a menu panel: icon + label + shortcut suffix, the
-     *  active tool highlighted through the host's is-active class. */
+     *  active tool highlighted through the component's own active prop
+     *  (data-active — the grammar's selected face; the old host
+     *  .is-active rule lost to the compiled hover rule, so hovering the
+     *  active row flipped it to the hover face). */
     const menuRow = (tl: ToolMeta) => {
       const Icon = tl.icon;
       const hint = TOOL_KEY_HINTS[tl.id];
@@ -286,7 +289,7 @@ export default defineComponent({
           key={tl.id}
           icon={<Icon size={14} />}
           label={i18nT(`replay.tactical.${tl.key}`)}
-          class={tool.value === tl.id ? "is-active" : ""}
+          active={tool.value === tl.id}
           onClick={() => {
             props.store.tool.value = tl.id;
             close();
@@ -353,12 +356,19 @@ export default defineComponent({
             <HkPopover {...popoverProps("markers", () => markerBtn.value)} title={i18nT("replay.tactical.menu.markers")}>
               <HkMenuPanel label={i18nT("replay.tactical.menu.markers")}>
                 {markerTools.value.map((tl) => menuRow(tl))}
-              </HkMenuPanel>
-              {props.plan ? (
-                <div class="tac-pop__extras">
-                  <div class="tac-pop__sep" />
-                  <div class="tac-pop__label">{i18nT("replay.tactical.plan.actionLabel")}</div>
-                  <div class="tac-pop__row">
+                {/* The plan extras ride INSIDE the panel: the surface's
+                    own inset is the one inset (the band used to re-echo
+                    --hk-menu-panel-inset from outside, aligned only
+                    while both fallbacks agreed). */}
+                  {/* Menu-legal roles on the subtree: role=menu's content
+                      model takes group/separator/menuitem children only —
+                      a bare div/label/p/button run inside role="menu"
+                      reads to AT as an unreachable foreign block. */}
+                {props.plan ? (
+                  <div class="tac-pop__extras" role="group" aria-label={i18nT("replay.tactical.plan.actionLabel")}>
+                  <div class="tac-pop__sep" role="separator" />
+                  <div class="tac-pop__label" role="presentation">{i18nT("replay.tactical.plan.actionLabel")}</div>
+                  <div class="tac-pop__row" role="presentation">
                     {ACTION_KINDS.map((kind) => {
                       const Icon = ACTION_ICONS[kind];
                       const on = props.store.actionKind.value === kind;
@@ -366,6 +376,8 @@ export default defineComponent({
                         <button
                           key={kind}
                           class={["tac-bar__item", on ? "tac-bar__item--on" : ""]}
+                          role="menuitemradio"
+                          aria-checked={on}
                           onClick={() => {
                             props.store.actionKind.value = kind;
                           }}
@@ -376,9 +388,10 @@ export default defineComponent({
                       );
                     })}
                   </div>
-                  <p class="tac-bar__note">{i18nT("replay.tactical.plan.hint")}</p>
-                </div>
-              ) : null}
+                  <p class="tac-bar__note" role="presentation">{i18nT("replay.tactical.plan.hint")}</p>
+                  </div>
+                ) : null}
+              </HkMenuPanel>
             </HkPopover>
           </span>
         ) : null}
@@ -504,7 +517,7 @@ export default defineComponent({
                       icon={<Icon size={14} />}
                       label={i18nT(row.key)}
                       disabled={uncovered}
-                      class={props.heatMode === row.mode ? "is-active" : ""}
+                      active={props.heatMode === row.mode}
                       onClick={() => {
                         props.onSetHeat?.(row.mode);
                         close();
