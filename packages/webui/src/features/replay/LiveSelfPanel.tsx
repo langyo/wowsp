@@ -45,6 +45,7 @@ import { buildSelfShotModel, fmtClock } from "./selfReportView";
 import type { SelfStatsModel } from "./liveSelfStats";
 import { useBattleClock } from "./useBattleClock";
 import MapNameTag from "./MapNameTag";
+import PluginStatusCard from "./PluginStatusCard";
 import SelfReportBody from "./SelfReportBody";
 import { WaitingRadarArt } from "./liveGuideArt";
 import "./LiveBattlePanel.scss";
@@ -211,6 +212,13 @@ export default defineComponent({
               <WaitingRadarArt class="live-battle__empty-art" />
               <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
               <p class="live-battle__empty-hint">{t("replay.live.selfWaitingHint")}</p>
+              {/* Status-only plugin card: the SAME one the roster panel's
+                  waiting state shows, so both tabs differ only by the hint
+                  line until the battle starts. res_mods mutations are
+                  refused while the game runs, so no lifecycle buttons here
+                  — but the state (incl. the outdated warning) stays
+                  visible. */}
+              <PluginStatusCard actions={false} />
             </div>
           </HkScrollContainer>
         );
