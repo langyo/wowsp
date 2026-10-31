@@ -181,6 +181,73 @@ describe("buildPlayerContextMenuRequest", () => {
     );
     host.remove();
   });
+
+  it("dismissing a CLOUD row rides cloudDismiss, not markers_remove", async () => {
+    mocks.invoke.mockImplementation((cmd: string) =>
+      cmd === RPC.markers_list
+        ? Promise.resolve([
+            {
+              nickname: "CheaterCN",
+              color: "yellow",
+              note: null,
+              accountId: 77,
+              createdAt: 1,
+              source: "cloud",
+            },
+          ])
+        : Promise.resolve([]),
+    );
+    const cloudDismiss = vi.fn().mockResolvedValue(undefined);
+    const deps: PlayerMenuDeps = {
+      markers: useMarkersStore(),
+      openLookup: vi.fn(),
+      copyName: vi.fn(),
+      cloudDismiss,
+    };
+    await deps.markers.ensureLoaded();
+
+    const nick = makeRow("CheaterCN", "77");
+    const req = buildPlayerContextMenuRequest(point(nick), deps)!;
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    createApp(
+      defineComponent({
+        render: () => h("div", [req.header!()]),
+      }),
+    ).mount(host);
+
+    // Same-color click on the cloud row = the local false-positive
+    // verdict: dismiss, never a markers_remove. (The ACTIVE dot is the
+    // yellow one by construction — the store's cloud row is yellow.)
+    const active = host.querySelector(".hk-tag-dot[data-active]") as HTMLButtonElement;
+    active.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(cloudDismiss).toHaveBeenCalledWith(77, true);
+    expect(mocks.invoke).not.toHaveBeenCalledWith(
+      RPC.markers_remove,
+      expect.anything(),
+    );
+
+    // Another color = the user's own LOCAL marker (which then shadows the
+    // cloud row in the merged view) — an ordinary markers_add.
+    mocks.invoke.mockImplementation((cmd: string, args?: Record<string, unknown>) =>
+      Promise.resolve(
+        cmd === RPC.markers_add
+          ? [{ nickname: "CheaterCN", color: args?.color, note: null, accountId: 77, createdAt: 2 }]
+          : [],
+      ),
+    );
+    const red = Array.from(host.querySelectorAll(".hk-tag-dot")).find(
+      (b) => !(b as HTMLButtonElement).hasAttribute("data-active"),
+    ) as HTMLButtonElement;
+    red.click();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      RPC.markers_add,
+      expect.objectContaining({ nickname: "CheaterCN", color: "red", accountId: 77 }),
+    );
+    host.remove();
+  });
 });
 
 /** End-to-end regression: the host must reach the REAL provider API.

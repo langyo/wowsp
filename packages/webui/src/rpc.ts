@@ -318,6 +318,14 @@ export const RPC = {
   aperadar_watchlist_scan: "aperadar_watchlist_scan",
   aperadar_watchlist_read: "aperadar_watchlist_read",
   aperadar_watchlist_pick: "aperadar_watchlist_pick",
+  // Cloud ban-list matches (云端封禁名单, CN-only yuyuko service): the
+  // battle-roster background check, the settings list/details, the local
+  // dismiss/undo and the feature toggle.
+  cloud_ban_check: "cloud_ban_check",
+  cloud_ban_list: "cloud_ban_list",
+  cloud_ban_dismiss: "cloud_ban_dismiss",
+  cloud_ban_get_config: "cloud_ban_get_config",
+  cloud_ban_set_config: "cloud_ban_set_config",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

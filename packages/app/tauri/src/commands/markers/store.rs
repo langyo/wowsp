@@ -26,7 +26,7 @@ pub(crate) const MARKERS_FILE: &str = "markers.json";
 /// re-fetch on this event instead of going stale mid-session.
 pub(crate) const MARKERS_CHANGED_EVENT: &str = "wowsp://markers-changed";
 
-fn unix_now() -> i64 {
+pub(crate) fn unix_now() -> i64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -66,10 +66,12 @@ pub(crate) fn store_markers(dir: &Path, markers: &[MarkerEntry]) -> Result<()> {
 
 // ── commands ─────────────────────────────────────────────────────────────────
 
-/// The local marker list (settings page + battle-marker surfaces).
+/// The marker list every surface reads: the LOCAL list plus the cloud
+/// ban-list matches merged in as yellow rows (see commands/markers/cloud).
+/// markers.json on disk stays purely local — the merge is wire-view only.
 #[tauri::command]
 pub fn markers_list() -> CommandResult<Vec<MarkerEntry>> {
-    Ok(load_markers())
+    Ok(super::cloud::merge_cloud_markers(load_markers()))
 }
 
 /// Add or update one marker — the same nickname (case-insensitive) UPSERTS:
@@ -108,11 +110,12 @@ pub fn markers_add(
             note,
             account_id,
             created_at: unix_now(),
+            source: None,
         }),
     }
     store_markers(&dir, &markers).map_err(|e| anyhow!("store markers: {e:#}"))?;
     let _ = window.app_handle().emit(MARKERS_CHANGED_EVENT, ());
-    Ok(markers)
+    Ok(super::cloud::merge_cloud_markers(markers))
 }
 
 /// Remove one marker by nickname (case-insensitive). Returns the remaining
@@ -125,7 +128,7 @@ pub fn markers_remove(window: tauri::Window, nickname: String) -> CommandResult<
     markers.retain(|m| !same_nickname(&m.nickname, &nickname));
     store_markers(&dir, &markers).map_err(|e| anyhow!("store markers: {e:#}"))?;
     let _ = window.app_handle().emit(MARKERS_CHANGED_EVENT, ());
-    Ok(markers)
+    Ok(super::cloud::merge_cloud_markers(markers))
 }
 
 /// Batch import (the settings wizard's 从海猴雷达导入 tab): upsert every
@@ -149,7 +152,7 @@ pub fn markers_import(
     store_markers(&dir, &markers).map_err(|e| anyhow!("store markers: {e:#}"))?;
     let _ = window.app_handle().emit(MARKERS_CHANGED_EVENT, ());
     Ok(MarkerImportResult {
-        list: markers,
+        list: super::cloud::merge_cloud_markers(markers),
         added,
         updated,
         skipped,
@@ -193,6 +196,7 @@ pub(crate) fn upsert_import(
                     note: item.note,
                     account_id: item.account_id,
                     created_at: unix_now(),
+                    source: None,
                 });
                 added += 1;
             },
