@@ -851,6 +851,7 @@ pub fn run() {
             commands::model_pack::clear_aux_cache,
             commands::wallpaper::wallpaper_list,
             commands::wallpaper::wallpaper_import,
+            commands::wallpaper::wallpaper_import_bytes,
             commands::wallpaper::wallpaper_remove,
             commands::stamps::stamp_list,
             commands::stamps::stamp_import_bytes,

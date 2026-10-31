@@ -245,6 +245,7 @@ export const RPC = {
 
   wallpaper_list: "wallpaper_list",
   wallpaper_import: "wallpaper_import",
+  wallpaper_import_bytes: "wallpaper_import_bytes",
   wallpaper_remove: "wallpaper_remove",
   stamp_list: "stamp_list",
   get_supporter_avatars: "get_supporter_avatars",

@@ -270,6 +270,14 @@ export const shellApi = {
   /** Native image picker → copy into the wallpapers folder. Null = the
    *  user cancelled the dialog. */
   wallpaperImport: () => transport.invoke<WallpaperFile | null>(RPC.wallpaper_import),
+  /** Webview picker's image bytes → save into the wallpapers folder (raw
+   *  IPC body — same channel as stampImportBytes; the header carries the
+   *  extension). The phone's route: the webview file input opens the
+   *  system document picker, no native dialog involved. */
+  wallpaperImportBytes: (ext: string, bytes: Uint8Array) =>
+    transport.invokeRaw?.<WallpaperFile>(RPC.wallpaper_import_bytes, bytes, {
+      "x-wallpaper-ext": ext,
+    }) ?? Promise.reject(new Error("raw IPC unavailable in this host")),
   wallpaperRemove: (id: string) => transport.invoke<null>(RPC.wallpaper_remove, { id }),
   /** Resolve the supporters' live Bilibili avatar URLs (About page
    *  special-thanks cards) — one entry per input uid, `face` null when neither
