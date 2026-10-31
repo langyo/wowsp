@@ -14,6 +14,10 @@
 //! * WER report folders (per-user and machine-wide ReportArchive /
 //!   ReportQueue, both exist in the wild: several systems redirect reports
 //!   to C:/ProgramData entirely);
+//! * the WG game's own crash-handler reports under <game>/crashes
+//!   (WorldOfWarships64-YYYY-MM-DD_HH-MM-SS.crash) — on installs whose WER
+//!   handoff is suppressed this folder is the ONLY durable crash evidence,
+//!   so the live pass reads it as well as the boot backfill;
 //! * the LocalDumps folder (%LOCALAPPDATA%/CrashDumps, one
 //!   name.pid.dmp file per crash).
 //!
@@ -148,9 +152,11 @@ pub struct GameCrashRecord {
     /// new | dismissed.
     pub status: String,
     /// Stable evidence identity (evt:<record-id> / wer:<dir-name> /
-    /// dmp:<file-name>) — the recent-crash backfill dedupes on it so the
-    /// same historical crash never imports twice. Live detections leave
-    /// it empty (their time window dedupes them).
+    /// dmp:<file-name> / wgc:<file-name>) — the recent-crash backfill
+    /// dedupes on it so the same historical crash never imports twice.
+    /// Live detections carry it too, so their own crash is not re-imported
+    /// by a later backfill (the time-window cluster check stays the second
+    /// line of defence).
     #[serde(default)]
     pub evidence_id: Option<String>,
 }
@@ -257,10 +263,11 @@ pub struct GameRestartInfo {
 #[derive(Debug, Default)]
 struct CrashEvidence {
     source: &'static str,
-    /// EventRecordID when the event log backed this evidence — rides onto
+    /// Stable identity of the backing artifact (evt:<record-id> /
+    /// wer:<dir-name> / dmp:<file-name> / wgc:<file-name>) — rides onto
     /// the record's evidence_id so live detections dedupe against future
     /// backfills even after history truncation.
-    record_id: Option<u64>,
+    evidence_id: Option<String>,
     exception_code: Option<String>,
     faulting_module: Option<String>,
     report_path: Option<String>,
@@ -348,6 +355,15 @@ fn save_seen_in(dir: &Path, seen: &[String]) {
             tracing::warn!(error = %e, "persist backfill tombstones failed");
         }
     }
+}
+
+/// Is this evidence id already tombstoned (recorded by a live detection or
+/// a backfill import)? The live pass re-reads the tombstone list before
+/// appending: the same WG report can confirm a second exit, and a duplicate
+/// record would re-toast a crash the player already saw.
+fn evidence_already_known(dir: &Path, evidence_id: &str) -> bool {
+    let _guard = SEEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    load_seen_in(dir).iter().any(|known| known == evidence_id)
 }
 static HISTORY_LOCK: Mutex<()> = Mutex::new(());
 
@@ -860,8 +876,14 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
         seen.last_seen_unix - EVIDENCE_SLACK_SECS,
         now_unix + EVIDENCE_SLACK_SECS,
     );
-    let Some(evidence) = collect_crash_evidence(&seen.image, seen.exe_path.as_deref(), pid, window)
-    else {
+    let Some(evidence) = collect_crash_evidence(
+        &seen.image,
+        seen.exe_path.as_deref(),
+        seen.root.as_deref(),
+        seen.start_unix,
+        pid,
+        window,
+    ) else {
         tracing::info!(pid, image = %seen.image, "game client exited cleanly (no crash evidence)");
         reset_new_records(app);
         return;
@@ -874,6 +896,22 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
             return;
         },
     };
+    // The same artifact can confirm a SECOND exit — the crashed pid lingers,
+    // or the client is relaunched and exits cleanly inside the lookback. The
+    // tombstone list already names this crash, so a duplicate record must
+    // not be appended or broadcast. The crash was real, so the clean-exit
+    // reset must not run either.
+    if let Some(evidence_id) = record.evidence_id.as_deref() {
+        if evidence_already_known(&dir, evidence_id) {
+            tracing::info!(
+                pid,
+                image = %record.image_name,
+                evidence_id,
+                "crash evidence already recorded; duplicate artifact ignored"
+            );
+            return;
+        }
+    }
     if let Err(e) = append_record_in(&dir, &record) {
         tracing::warn!(error = %e, "persist crash record failed");
     }
@@ -968,7 +1006,7 @@ fn build_crash_record(pid: u32, seen: &SeenProcess, evidence: &CrashEvidence) ->
         summary: (!evidence.summary.is_empty()).then_some(evidence.summary.clone()),
         mods_active,
         status: STATUS_NEW.to_string(),
-        evidence_id: evidence.record_id.map(|id| format!("evt:{id}")),
+        evidence_id: evidence.evidence_id.clone(),
     }
 }
 
@@ -985,13 +1023,22 @@ fn res_mods_has_entries(root: &str) -> bool {
 // ── crash-evidence collection (Windows) ──────────────────────────────────────
 
 /// Hunt crash evidence in priority order: the event log (structured codes
-/// and module names), then WER report folders, then LocalDumps. The first
-/// hit wins; an event-log hit additionally adopts its StorePath report
-/// folder.
+/// and module names), then WER report folders, then the game's own crash
+/// reports, then LocalDumps (a bare dump is the least informative evidence).
+/// The first hit wins; an event-log hit additionally adopts its StorePath
+/// report folder.
+///
+/// `start_unix` is the vanished process' session start: a WG report for
+/// THIS process can only carry mtime >= it, and reports of PREVIOUS sessions
+/// are strictly older, so it is a tighter-but-correct lower bound than
+/// last_seen - EVIDENCE_SLACK_SECS (a crash dialog left open keeps the pid
+/// alive, pushing last_seen far past the report's mtime).
 #[cfg(windows)]
 fn collect_crash_evidence(
     image: &str,
     exe_path: Option<&str>,
+    game_root: Option<&str>,
+    start_unix: Option<i64>,
     pid: u32,
     window: (i64, i64),
 ) -> Option<CrashEvidence> {
@@ -1012,6 +1059,10 @@ fn collect_crash_evidence(
         return Some(evidence);
     }
     if let Some(evidence) = wer_dir_evidence(image, window) {
+        return Some(evidence);
+    }
+    let roots = live_game_roots(exe_path, game_root);
+    if let Some(evidence) = game_report_evidence(image, &roots, window, start_unix) {
         return Some(evidence);
     }
     local_dump_evidence(image, pid, window)
@@ -1122,9 +1173,13 @@ fn decode_command_output(bytes: &[u8]) -> String {
 fn wer_dir_evidence(image: &str, window: (i64, i64)) -> Option<CrashEvidence> {
     let dir = scan_wer_report_dirs(image, window)?.into_iter().next()?;
     let values = wer_report_values(&dir)?;
+    let name = dir
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     Some(CrashEvidence {
         source: SOURCE_WER_REPORT,
-        record_id: None,
+        evidence_id: Some(format!("wer:{name}")),
         exception_code: values.exception_code,
         faulting_module: values.faulting_module,
         report_path: Some(dir.to_string_lossy().into_owned()),
@@ -1253,9 +1308,13 @@ fn local_dump_evidence(image: &str, pid: u32, window: (i64, i64)) -> Option<Cras
     }
     hits.sort_by_key(|(exact, mtime, _)| (*exact, *mtime));
     let (_, mtime, path) = hits.into_iter().next_back()?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
     Some(CrashEvidence {
         source: SOURCE_CRASH_DUMP,
-        record_id: None,
+        evidence_id: Some(format!("dmp:{name}")),
         exception_code: None,
         faulting_module: None,
         report_path: None,
@@ -1269,6 +1328,111 @@ fn local_dump_evidence(image: &str, pid: u32, window: (i64, i64)) -> Option<Cras
             .to_rfc3339()
         ),
     })
+}
+
+/// WG crash-handler reports under <root>/crashes, named
+/// <image-stem>-YYYY-MM-DD_HH-MM-SS.crash — the game's own handler writes
+/// them on the install whose WER handoff is suppressed, which is precisely
+/// the shape the live pass used to miss. The file name is matched with the
+/// same delimited-prefix token rule the backfill uses (so the 32-bit stem
+/// never claims a 64-bit report); the newest in-window report of any root
+/// wins.
+///
+/// The mtime floor is the process' session start when known — deliberately
+/// WIDER than window.0 (last_seen - slack): a crash dialog left open keeps
+/// the pid alive for minutes after the report was written.
+#[cfg(windows)]
+fn game_report_evidence(
+    image: &str,
+    roots: &[String],
+    window: (i64, i64),
+    start_unix: Option<i64>,
+) -> Option<CrashEvidence> {
+    let stem = image_stem(image);
+    if stem.is_empty() {
+        return None;
+    }
+    let floor = start_unix.unwrap_or(window.0);
+    let stems = [stem];
+    let mut newest: Option<(i64, PathBuf)> = None;
+    for root in roots {
+        let Ok(entries) = fs::read_dir(Path::new(root).join("crashes")) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let lower = name.to_ascii_lowercase();
+            if !lower.ends_with(".crash") || crash_report_image(&name, &stems).is_none() {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            let Some(modified) = meta.modified().ok() else {
+                continue;
+            };
+            let mtime = unix_secs(modified);
+            if mtime < floor || mtime > window.1 {
+                continue;
+            }
+            if newest.as_ref().is_none_or(|(best, _)| mtime > *best) {
+                newest = Some((mtime, entry.path()));
+            }
+        }
+    }
+    let (_, path) = newest?;
+    let name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    Some(CrashEvidence {
+        source: SOURCE_GAME_REPORT,
+        evidence_id: Some(format!("wgc:{name}")),
+        exception_code: None,
+        faulting_module: None,
+        report_path: Some(path.to_string_lossy().into_owned()),
+        dump_path: None,
+        summary: crash_report_summary(&path),
+    })
+}
+
+/// The install roots the live evidence hunt may consult for a WG crash
+/// report: the validated root of the vanished process first, then the root
+/// its exe path implies. Only when neither is known does the chain fall
+/// back to the persisted active install plus the scan cache — with the
+/// process root in hand a multi-install machine must not guess. That
+/// fallback is defensive and normally unreachable: the poller drops
+/// exe-less pids and exe_game_root answers None only for a root-level stub,
+/// so a real live crash always carries a root.
+#[cfg(windows)]
+fn live_game_roots(exe_path: Option<&str>, seen_root: Option<&str>) -> Vec<String> {
+    let mut roots: Vec<String> = Vec::new();
+    if let Some(root) = seen_root {
+        roots.push(root.to_string());
+    }
+    if let Some(root) = exe_path.and_then(super::game_context::exe_game_root) {
+        if !roots
+            .iter()
+            .any(|known| super::game_context::same_folder(known, &root))
+        {
+            roots.push(root);
+        }
+    }
+    if !roots.is_empty() {
+        return roots;
+    }
+    if let Some(active) = super::game_context::persisted_active_path() {
+        roots.push(active);
+    }
+    for install in super::game_context::cached_scan() {
+        if !roots
+            .iter()
+            .any(|known| super::game_context::same_folder(known, &install.path))
+        {
+            roots.push(install.path);
+        }
+    }
+    roots
 }
 
 // ── recent-crash backfill (the safety net catch-up) ─────────────────────────
@@ -1342,9 +1506,14 @@ fn merge_backfill_candidates(mut candidates: Vec<BackfillCandidate>) -> Vec<Back
 /// and the fuzzy stem-contains pass would otherwise attribute every 64-bit
 /// crash to the 32-bit image (the substring "worldofwarships" matches
 /// "WorldOfWarships64.exe" too). The fuzzy pass only rescues events whose
-/// app name no image states verbatim.
+/// app name no image states verbatim. Leak PREdictions are rejected first:
+/// the exact-name pass never consults event_matches_client, and a leak
+/// event names the still-running client in P1 just like a crash does.
 #[cfg(windows)]
 fn attributed_image(event: &ParsedEvent, images: &[String], window: (i64, i64)) -> Option<String> {
+    if !event_is_crash_shaped(event) {
+        return None;
+    }
     let app = event
         .data
         .iter()
@@ -1377,13 +1546,20 @@ fn crash_report_image(file_name: &str, stems: &[String]) -> Option<String> {
 
 /// The candidate summary for a WG crash report: the report carries the
 /// actual cause in its Message block ("Unhandled exception", an assert,
-/// ...) — fall back to the application line when the block is absent.
-/// Bounded read, one line, no secrets.
+/// ...) near the TOP — the tail of a ~4.5 KB report is a mid stack-trace
+/// line, which is not a crash cause. Reads the first 2 KiB; falls back to
+/// the application line when the block is absent. Bounded read, one line,
+/// no secrets.
 #[cfg(windows)]
 fn crash_report_summary(path: &Path) -> String {
-    let Ok((bytes, _, _)) = read_tail(path, 2048) else {
+    use std::io::Read as _;
+    let Ok(file) = fs::File::open(path) else {
         return String::new();
     };
+    let mut bytes = Vec::new();
+    if file.take(2048).read_to_end(&mut bytes).is_err() {
+        return String::new();
+    }
     let text = String::from_utf8_lossy(&bytes);
     let mut lines = text.lines();
     let Some(first) = lines.next() else {
@@ -1842,6 +2018,19 @@ fn xml_unescape(value: &str) -> String {
         .replace("&amp;", "&")
 }
 
+/// A leak PREdiction is not a crash: Event 1001 with
+/// EventName=RADAR_PRE_LEAK_64 (P1 naming the client) reports a STILL-RUNNING
+/// process the OS suspects of leaking memory. It must never confirm a crash
+/// — nor falsely confirm a later clean exit inside the lookback. Only this
+/// shape is filtered; APPCRASH / AppHangB1 / BEX64 / unknown shapes pass.
+#[cfg(windows)]
+fn event_is_crash_shaped(event: &ParsedEvent) -> bool {
+    !event
+        .data
+        .iter()
+        .any(|(key, value)| key == "eventname" && value.to_ascii_lowercase().contains("pre_leak"))
+}
+
 /// Does one parsed event name this client inside the window? The app-name
 /// match accepts the Event 1000 spelling (AppName), the Event 1001
 /// spelling (P1), the AppPath / StorePath forms, and falls back to the
@@ -1854,6 +2043,9 @@ fn event_matches_client(
     window: (i64, i64),
 ) -> bool {
     if !matches!(event.event_id, Some(1000 | 1001)) {
+        return false;
+    }
+    if !event_is_crash_shaped(event) {
         return false;
     }
     if let Some(time) = event.time_unix {
@@ -1930,7 +2122,7 @@ fn evidence_from_event(event: &ParsedEvent) -> CrashEvidence {
     }
     CrashEvidence {
         source: SOURCE_EVENT_LOG,
-        record_id: event.record_id,
+        evidence_id: event.record_id.map(|id| format!("evt:{id}")),
         exception_code,
         faulting_module,
         report_path,

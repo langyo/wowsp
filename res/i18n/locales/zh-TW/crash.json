@@ -7,7 +7,7 @@
     "restart": "重新啟動遊戲",
     "analysis": "檢視分析",
     "dismiss": "忽略",
-    "safeRestartFallback": "未能定位遊戲資料夾，將直接重新啟動。",
+    "safeRestartNoRoot": "未能定位遊戲資料夾——無法進入安全模式，因此沒有重新啟動遊戲。請先在設定中選擇遊戲目錄。",
     "open": "查看崩潰分析"
   },
   "section": {
@@ -114,7 +114,8 @@
     "none": "沒有發現"
   },
   "errors": {
-    "gameRunning": "遊戲用戶端正在執行 —— 請先關閉它，再重新啟動或切換安全模式。"
+    "gameRunning": "遊戲用戶端正在執行 —— 請先關閉它，再重新啟動或切換安全模式。",
+    "safeModeUnconfirmed": "無法確認已進入安全模式——未重新啟動遊戲。"
   },
   "modlist": {
     "pinnedBadge": "崩潰嫌疑",

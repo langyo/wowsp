@@ -7,7 +7,7 @@
     "restart": "Reiniciar el juego",
     "analysis": "Ver análisis",
     "dismiss": "Descartar",
-    "safeRestartFallback": "No se pudo localizar la carpeta del juego; se reiniciará tal cual.",
+    "safeRestartNoRoot": "No se pudo localizar la carpeta del juego: no se puede activar el modo seguro, así que el cliente NO se ha reiniciado. Selecciona primero la instalación del juego.",
     "open": "Revisar fallo"
   },
   "section": {
@@ -114,7 +114,8 @@
     "none": "Nada encontrado"
   },
   "errors": {
-    "gameRunning": "El cliente del juego está en ejecución — ciérralo antes de reiniciar o cambiar el modo seguro."
+    "gameRunning": "El cliente del juego está en ejecución — ciérralo antes de reiniciar o cambiar el modo seguro.",
+    "safeModeUnconfirmed": "No se pudo confirmar la activación del modo seguro: el cliente no se ha reiniciado."
   },
   "modlist": {
     "pinnedBadge": "Sospechoso del fallo",
