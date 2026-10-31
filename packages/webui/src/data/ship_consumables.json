@@ -94,6 +94,10 @@
   "CrashCrewAuto",
   "FighterAuto"
  ],
+ "PASA918": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
  "PASA920": [
   "CrashCrewAuto",
   "FighterAuto"
@@ -759,6 +763,15 @@
   "RLSSearch",
   "RegenCrew",
   "SonarSearch"
+ ],
+ "PASC717": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SonarSearch",
+  "Spotter"
  ],
  "PASC718": [
   "AuxiliaryTorpedoArmamentBooster",
@@ -1902,6 +1915,10 @@
   "CrashCrew",
   "RegenCrew",
   "SpeedBooster"
+ ],
+ "PFSB918": [
+  "CrashCrew",
+  "RegenCrew"
  ],
  "PFSC101": [
   "CrashCrew"
@@ -3515,7 +3532,8 @@
  "PISC739": [
   "CrashCrew",
   "Fighter",
-  "RegenCrew"
+  "RegenCrew",
+  "Spotter"
  ],
  "PISC897": [
   "CrashCrew",
@@ -3678,6 +3696,10 @@
   "FighterAuto"
  ],
  "PJSA710": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
+ "PJSA718": [
   "CrashCrewAuto",
   "FighterAuto"
  ],
@@ -4260,6 +4282,13 @@
   "RegenCrew",
   "SonarSearch"
  ],
+ "PJSC769": [
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
+  "SpeedBooster",
+  "SubmarineLocator"
+ ],
  "PJSC810": [
   "AuxiliaryTorpedoArmamentBooster",
   "CrashCrew",
@@ -4702,6 +4731,10 @@
   "AuxiliaryTorpedoArmamentBooster",
   "CrashCrew",
   "Fighter",
+  "RegenCrew"
+ ],
+ "PRSB720": [
+  "CrashCrew",
   "RegenCrew"
  ],
  "PRSB729": [
@@ -5226,6 +5259,13 @@
   "RegenCrew",
   "Spotter"
  ],
+ "PSSB919": [
+  "ArtilleryBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "Spotter"
+ ],
  "PSSC101": [
   "CrashCrew"
  ],
@@ -5729,6 +5769,16 @@
   "SonarSearch"
  ],
  "PWSC010": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSC014": [
+  "CrashCrew",
+  "RegenCrew",
+  "SpeedBoosterPremium_TimeBased"
+ ],
+ "PWSC015": [
   "CrashCrew",
   "RegenCrew",
   "SpeedBoosterPremium_TimeBased"
@@ -6641,6 +6691,13 @@
   "CrashCrew",
   "RegenCrew",
   "SonarSearch",
+  "TorpedoReloader"
+ ],
+ "PZSC910": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew",
+  "SmokeGenerator",
   "TorpedoReloader"
  ],
  "PZSC918": [

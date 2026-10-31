@@ -689,6 +689,7 @@
     "subLocator": "Localisateur de sous-marins",
     "torpReload": "Boosteur de torpilles",
     "artyReload": "Boosteur d'artillerie principale",
+    "auxCoordination": "Coordination de l'armement auxiliaire et des torpilles",
     "defensiveAA": "Feu AA défensif"
   },
   "techTree": {

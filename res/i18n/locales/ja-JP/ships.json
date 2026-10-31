@@ -689,7 +689,8 @@
     "subLocator": "潜水艦探知機",
     "torpReload": "魚雷装填ブースター",
     "artyReload": "主砲装填ブースター",
-    "defensiveAA": "対空弾幕"
+    "auxCoordination": "副兵装・雷装連携",
+    "defensiveAA": "対空防御砲火"
   },
   "techTree": {
     "realmHint": "テックツリーの分岐ソース：WG 基準トポロジと Lesta クライアント自身の研究ライン。",

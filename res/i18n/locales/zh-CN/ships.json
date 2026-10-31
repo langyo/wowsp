@@ -689,7 +689,8 @@
     "subLocator": "潜艇探测",
     "torpReload": "鱼雷装填助推器",
     "artyReload": "主炮装填助推器",
-    "defensiveAA": "防空弹幕"
+    "auxCoordination": "鱼雷与辅助武器协调",
+    "defensiveAA": "防御型对空火力"
   },
   "techTree": {
     "realmHint": "科技树分支来源：WG 为基准拓扑，Lesta 为客户端自身研究线。",

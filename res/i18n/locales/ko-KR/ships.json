@@ -689,6 +689,7 @@
     "subLocator": "잠수함 탐지기",
     "torpReload": "어뢰 재장전 부스터",
     "artyReload": "주포 재장전 부스터",
+    "auxCoordination": "어뢰 및 보조무기 협동",
     "defensiveAA": "대공 탄막"
   },
   "techTree": {

@@ -104,12 +104,20 @@ describe("shipLiveStats", () => {
   it("maps consumable families to localized labels", () => {
     expect(shipConsumableLabel("SonarSearch")).toBe("水听器");
     expect(shipConsumableLabel("RLSSearch")).toBe("雷达");
-    expect(shipConsumableLabel("AuxiliaryTorpedoArmamentBooster")).toBe("防空弹幕");
+    // AirDefenseDisp resolves through the defensiveAA key (the family is
+    // Lesta-only now); WG repurposed PCY087 into the coordination consumable,
+    // so AuxiliaryTorpedoArmamentBooster reads auxCoordination instead.
+    expect(shipConsumableLabel("AirDefenseDisp")).toBe("防御型对空火力");
+    expect(shipConsumableLabel("AuxiliaryTorpedoArmamentBooster")).toBe("鱼雷与辅助武器协调");
     expect(isKnownConsumable("CrashCrew")).toBe(true);
     expect(shipConsumableLabel("CrashCrew")).toBe("损管小组");
     // The damage-control party is universal, so it never earns a row badge.
     expect(isBadgeConsumable("CrashCrew")).toBe(false);
     expect(isBadgeConsumable("SonarSearch")).toBe(true);
+    // DefAA stays a known, badged row (Lesta ships still mount it).
+    expect(isKnownConsumable("AirDefenseDisp")).toBe(true);
+    expect(isBadgeConsumable("AirDefenseDisp")).toBe(true);
+    expect(isKnownConsumable("AuxiliaryTorpedoArmamentBooster")).toBe(true);
     expect(isKnownConsumable("MindControl")).toBe(false);
     expect(isBadgeConsumable("MindControl")).toBe(false);
     // Unknown families fall back to a spaced-out raw name.
