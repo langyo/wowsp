@@ -484,13 +484,18 @@ export default defineComponent({
             <div class="ship-detail__id">
               <HkTag variant="primary">{tierToRoman(viewShip.value.tier)}</HkTag>
               <HkTag variant="primary">{typeLabel(viewShip.value.type)} ({typeShort.value})</HkTag>
-              <NationFlag
-                nation={viewShip.value.nation}
-                label={nationLabel(viewShip.value.nation)}
-                variant="flag"
-                size="md"
-                showLabel
-              />
+              {/* Nation reads as one more identity tag: the flag + label sit
+                  inside the same pill chrome as the tier / type chips. */}
+              <HkTag variant="primary">
+                <NationFlag
+                  nation={viewShip.value.nation}
+                  label={nationLabel(viewShip.value.nation)}
+                  variant="flag"
+                  size="sm"
+                  aria-hidden="true"
+                />
+                {nationLabel(viewShip.value.nation)}
+              </HkTag>
               {eventId.value ? (
                 <span class="ship-detail__event-tag" data-hint={eventTooltip(eventId.value)}>
                   <HkTag variant={RARITY_VARIANT[rarity.value]}>

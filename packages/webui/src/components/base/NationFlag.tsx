@@ -32,8 +32,6 @@ export default defineComponent({
       type: String as PropType<"sm" | "md" | "lg">,
       default: "md",
     },
-    /** When true, render the nation label text next to the flag. */
-    showLabel: { type: Boolean, default: false },
     /** Overrides the default data-hint (the nation label) — call sites that
      *  embed the flag in a richer row (chart legends) pass the full hint so
      *  hovering the flag speaks for the whole row. */
@@ -63,9 +61,6 @@ export default defineComponent({
           ) : (
             <span class="nation-flag__fallback">{initial.value}</span>
           )}
-          {props.showLabel ? (
-            <span class="nation-flag__label">{props.label}</span>
-          ) : null}
         </span>
       );
     };
