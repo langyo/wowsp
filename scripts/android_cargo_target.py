@@ -18,6 +18,13 @@ Override with WOWSP_ANDROID_CARGO_TARGET. A candidate is accepted only when
 its path is pure ASCII and it can be created; the first success wins. Prints
 the directory (forward slashes) on stdout and exits 1 with a clear message
 when nothing is available.
+
+Convergence contract (2026-10-31): when the shared mobile facility
+(`celestia-devtools mobile build wowsp-android`) drives a build it exports
+WOWSP_ANDROID_CARGO_TARGET with its own resolved path, which this resolver
+honors first — both implementations then agree on one directory. Standalone
+just/Android Studio builds (undriven) keep this file's candidate order, and
+BuildTask.kt mirrors it deliberately; do not change one without the other.
 """
 from __future__ import annotations
 

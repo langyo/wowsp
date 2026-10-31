@@ -69,6 +69,51 @@ just build installers # shun three-mode installers (full flavors bundle the mode
 Frontend assets are emitted to `dist/webui/` and consumed by Tauri via
 `frontendDist` in `tauri.conf.json`.
 
+## Building for Android
+
+The Android edition is built from source on a machine with the toolchain
+below; there is no CI lane for it yet.
+
+**Prerequisites**
+
+- JDK 17 (the justfile defaults to a local Corretto 17; override with
+  `JAVA_HOME`), Android SDK with platform 36 (`ANDROID_HOME`), and NDK
+  **26.1.10909125** as the only/newest NDK under `$ANDROID_HOME/ndk` —
+  tauri-cli picks the NEWEST NDK there and ignores `NDK_HOME`, so a stray
+  newer NDK silently changes your build.
+- Rust target `aarch64-linux-android` (`rustup target add …`); the
+  canonical build is single-ABI arm64-v8a.
+- The checkout may live anywhere, but the **cargo target directory must be
+  ASCII-only**: the NDK linker receives target paths as raw bytes and
+  fails on non-ASCII (the classic `D:\源代码\…` GBK break, "cannot find
+  version script"). The build exports `CARGO_TARGET_DIR` from
+  `scripts/android_cargo_target.py` automatically (override with
+  `WOWSP_ANDROID_CARGO_TARGET`), and `gradle.properties` sets
+  `android.overridePathCheck=true` for the AGP side.
+
+**Build**
+
+```bash
+just check-android   # cargo check for the android target (fast sanity)
+just build android-apk   # fetch_models + gameparams + pnpm webui + cargo tauri android build --apk --target aarch64
+```
+
+The APK lands in `packages/app/tauri/gen/android/app/build/outputs/apk/`.
+Debug builds sign with the local debug keystore automatically; **release
+builds come out unsigned** until a signing config is wired into
+`gen/android` (deliberate — see the justfile notes).
+
+**The shared mobile facility**
+
+`celestia-devtools mobile doctor` audits the whole surface (JDK/SDK/NDK,
+the NDK newest-wins trap, ASCII compliance of every path involved), and
+`celestia-devtools mobile build wowsp-android` wraps the same justfile
+flow with that audit plus a pinned ASCII target dir. When the facility
+drives a build it exports `WOWSP_ANDROID_CARGO_TARGET`, so this repo's
+own resolver and the shared one converge on the same directory by
+construction; standalone `just`/Android Studio builds keep using the
+resolver below (the two implementations are deliberately lockstep).
+
 ## Common issues
 
 - **`icons/icon.ico` not found** — run `just gen icons` (regenerates from

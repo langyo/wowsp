@@ -74,6 +74,11 @@ open class BuildTask : DefaultTask() {
     private fun androidCargoTargetDir(): String {
         // Mirrors scripts/android_cargo_target.py (same candidate order and
         // ASCII guard) so the justfile build and Android Studio cannot drift.
+        // Convergence contract (2026-10-31): when the shared facility
+        // (celestia-devtools mobile build wowsp-android) drives a build it
+        // exports WOWSP_ANDROID_CARGO_TARGET, which this resolver honors
+        // first — driven builds and standalone builds then agree on one
+        // directory by construction.
         val candidates = mutableListOf<String>()
         val override = System.getenv("WOWSP_ANDROID_CARGO_TARGET")?.trim().orEmpty()
         if (override.isNotEmpty()) candidates.add(override)
