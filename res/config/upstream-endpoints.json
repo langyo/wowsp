@@ -10,6 +10,8 @@
     { "id": "vortex-asia", "host": "vortex.worldofwarships.asia", "purpose": "statsVortex", "realms": ["asia"], "kind": "stats" },
     { "id": "vortex-cn", "host": "vortex.wowsgame.cn", "purpose": "statsVortex", "realms": ["cn"], "kind": "stats" },
     { "id": "clans-cn", "host": "clans.wowsgame.cn", "purpose": "clans", "realms": ["cn"], "kind": "stats" },
+    { "id": "yuyuko-ban", "host": "v3-api.wows.shinoaki.com", "purpose": "banList", "realms": ["cn"], "kind": "stats" },
+    { "id": "yuyuko-ban-legacy", "host": "api.wows.yuyuko.dev", "purpose": "banList", "realms": ["cn"], "kind": "stats" },
     { "id": "encyclopedia", "host": "api.worldofwarships.asia", "purpose": "encyclopedia", "realms": ["ru", "eu", "na", "asia", "cn"], "kind": "stats" },
     { "id": "pr-expected", "host": "api.wows-numbers.com", "purpose": "pr", "realms": ["ru", "eu", "na", "asia", "cn"], "kind": "stats" },
     { "id": "github-api", "host": "api.github.com", "purpose": "update", "realms": [], "kind": "content" },

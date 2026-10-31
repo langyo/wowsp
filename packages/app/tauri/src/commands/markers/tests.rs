@@ -28,6 +28,7 @@ fn entry(nickname: &str, color: MarkerColor) -> MarkerEntry {
         note: None,
         account_id: None,
         created_at: 1,
+        source: None,
     }
 }
 
@@ -75,6 +76,7 @@ fn import_upserts_adds_updates_and_skips() {
         note: Some("old".into()),
         account_id: None,
         created_at: 1,
+        source: None,
     }];
     // Same nickname (case/space-insensitive) updates in place, the
     // arriving account id replaces the blank; a new nickname appends;

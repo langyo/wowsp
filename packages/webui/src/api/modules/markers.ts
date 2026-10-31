@@ -7,6 +7,10 @@ import { RPC } from "@/rpc";
 /** The three marker colors and their meanings. */
 export type MarkerColor = "red" | "yellow" | "purple";
 
+/** Where a wire marker row came from — local judgment or an automatic
+ *  cloud-ban match merged into markers_list (absent = local). */
+export type MarkerSource = "local" | "cloud";
+
 /** Mirrors MarkerEntry. */
 export interface MarkerEntry {
   /** The roster nickname, unicode case-insensitive key. */
@@ -18,6 +22,8 @@ export interface MarkerEntry {
   accountId?: number | null;
   /** Unix seconds when the marker was added. */
   createdAt?: number;
+  /** "cloud" on merged rows only — never persisted in markers.json. */
+  source?: MarkerSource | null;
 }
 
 /** Mirrors ApeRadarWatchPlayer — one parsed 海猴雷达 watch-list entry. */
@@ -56,6 +62,43 @@ export interface MarkerImportResult {
   skipped: number;
 }
 
+/** Mirrors CloudBanRecord — one yuyuko voList item (ban detail). */
+export interface CloudBanRecord {
+  banName?: string | null;
+  userName?: string | null;
+  banTime?: string | null;
+  recordTime?: string | null;
+  namesake: number;
+}
+
+/** Mirrors CloudBanMatch — one matched player (settings tooltip + dismiss). */
+export interface CloudBanMatch {
+  accountId: number;
+  nickname: string;
+  matched: boolean;
+  dismissed: boolean;
+  records: CloudBanRecord[];
+  fetchedAt: number;
+}
+
+/** Mirrors CloudBanPlayer — one roster row passed to cloudBanCheck. */
+export interface CloudBanPlayer {
+  accountId: number;
+  nickname: string;
+}
+
+/** Mirrors CloudBanCheckResult. */
+export interface CloudBanCheckResult {
+  skipped: boolean;
+  queried: number;
+  changed: boolean;
+}
+
+/** Mirrors CloudBanConfig. */
+export interface CloudBanConfig {
+  enabled: boolean;
+}
+
 export const markersApi = {
   /** The local marker list (settings page + battle-marker surfaces). */
   markersList: () => transport.invoke<MarkerEntry[]>(RPC.markers_list),
@@ -91,4 +134,25 @@ export const markersApi = {
   /** Native single-select dialog for a WatchList.json; null = cancelled. */
   aperadarPick: () =>
     transport.invoke<string | null>(RPC.aperadar_watchlist_pick),
+  /** Background check of one CN battle roster against the cloud ban
+   *  list. Failures are silent — the stale cache keeps serving. */
+  cloudBanCheck: (players: CloudBanPlayer[], realm: string) =>
+    transport.invoke<CloudBanCheckResult>(RPC.cloud_ban_check, {
+      players,
+      realm,
+    }),
+  /** Every matched player (dismissed ones included and flagged). */
+  cloudBanList: () => transport.invoke<CloudBanMatch[]>(RPC.cloud_ban_list),
+  /** Dismiss (or restore) one cloud match — the local false-positive
+   *  judgment; the cloud list itself is untouched. */
+  cloudBanDismiss: (accountId: number, dismissed: boolean) =>
+    transport.invoke<null>(RPC.cloud_ban_dismiss, { accountId, dismissed }),
+  cloudBanGetConfig: () =>
+    transport.invoke<CloudBanConfig>(RPC.cloud_ban_get_config),
+  cloudBanSetConfig: (enabled: boolean) =>
+    transport.invoke<CloudBanConfig>(RPC.cloud_ban_set_config, { enabled }),
+  /** markers-changed broadcast (local edits + cloud refreshes + the
+   *  toggle) — the same event the bare-DOM overlays re-fetch on. */
+  listenMarkersChanged: (handler: () => void) =>
+    transport.listen?.("wowsp://markers-changed", handler),
 };

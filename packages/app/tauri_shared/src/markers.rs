@@ -21,6 +21,18 @@ pub enum MarkerColor {
     Purple,
 }
 
+/// Where a wire marker row came from: the user's own local judgment, or an
+/// automatic match against the cloud ban list (yuyuko, CN-only — see
+/// commands/markers/cloud.rs). Only the merged wire view ever sets Cloud;
+/// markers.json never persists a source, so an absent value always means a
+/// plain local entry (#[serde(default)] keeps old files loading).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MarkerSource {
+    Local,
+    Cloud,
+}
+
 /// One marked player. The NICKNAME is the key (the user adds players by
 /// name — case-insensitive match against battle rosters); the account id
 /// rides along when it was resolved at add time and sharpens the match
@@ -40,6 +52,12 @@ pub struct MarkerEntry {
     /// Unix seconds of when the marker was added.
     #[serde(default)]
     pub created_at: i64,
+    /// Provenance on the WIRE view only: Some(Cloud) when this row is an
+    /// automatic cloud-ban match merged into markers_list. Never persisted
+    /// (markers.json stays purely local) and never serialized for local
+    /// entries, so existing files and wire payloads are byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<MarkerSource>,
 }
 
 // ── ApeRadar (海猴雷达) import ─────────────────────────────────────────────
@@ -109,4 +127,102 @@ pub struct MarkerImportResult {
     pub added: usize,
     pub updated: usize,
     pub skipped: usize,
+}
+
+// ── Cloud ban-list matches (云端封禁名单) ────────────────────────────────────
+// The yuyuko community service (wows.shinoaki.com, the API behind
+// wows.mgaia.top/#/banLike) answers a per-account ban-history query; a
+// record whose namesake count is exactly 1 marks the player as a SUSPECTED
+// banned cheater — mapped onto the yellow marker (疑似作弊). Strictly a
+// read-only cloud lookup: nothing is uploaded, matches are cached locally
+// and merged into the markers_list wire view only (see
+// commands/markers/cloud.rs for the whole pipeline).
+
+/// One ban record from the cloud list (yuyuko's voList item, field names
+/// verbatim from the wire: BanName / UserName / BanTime / RecordTime /
+/// BanNameNamesake).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBanRecord {
+    /// The officially published banned name (官方公布的封禁名).
+    #[serde(default)]
+    pub ban_name: Option<String>,
+    /// A historical username the service saw for this identity.
+    #[serde(default)]
+    pub user_name: Option<String>,
+    /// The ban date as the service reports it (preformatted string).
+    #[serde(default)]
+    pub ban_time: Option<String>,
+    /// When the service recorded this entry (preformatted string).
+    #[serde(default)]
+    pub record_time: Option<String>,
+    /// How many usernames share the ban name — exactly 1 is the service's
+    /// own "matched" signal (see wowsCheaterViewer's reading of the API).
+    #[serde(default)]
+    pub namesake: i64,
+}
+
+/// One cached cloud-ban answer, keyed by account id in ban-list.json.
+/// Negative answers are cached too (a clean player stays clean for the
+/// cache TTL, so a battle never re-bills the community service).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBanEntry {
+    pub account_id: i64,
+    /// The roster nickname the player carried when last queried (the
+    /// merged marker row matches by BOTH nickname and id, mirroring the
+    /// local-entry contract).
+    pub nickname: String,
+    /// Whether the answer was a match (any record with namesake == 1).
+    pub matched: bool,
+    /// Every record the service returned (the tooltip lists them).
+    pub records: Vec<CloudBanRecord>,
+    /// Unix seconds of the query that produced this entry.
+    pub fetched_at: i64,
+}
+
+/// Wire view of one MATCHED player for the settings list (tooltip details
+/// + the dismiss state) — composed from the cache at read time.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBanMatch {
+    pub account_id: i64,
+    pub nickname: String,
+    /// Always true here — unmatched entries never reach the wire list.
+    pub matched: bool,
+    /// Whether the user dismissed this cloud match locally (a dismissed
+    /// match leaves the merged marker list until undone).
+    pub dismissed: bool,
+    pub records: Vec<CloudBanRecord>,
+    pub fetched_at: i64,
+}
+
+/// One roster player passed to cloud_ban_check — the arena row's id+name
+/// pair (the id is the query key, the nickname seeds the cache entry).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBanPlayer {
+    pub account_id: i64,
+    pub nickname: String,
+}
+
+/// cloud_ban_check's outcome — counters for logging/diagnostics; the UI
+/// rides the markers-changed event instead of the numbers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBanCheckResult {
+    /// True when the feature is off / the realm is not CN / nothing to
+    /// do / another check is already in flight (the busy gate).
+    pub skipped: bool,
+    /// How many ids actually went over the wire.
+    pub queried: usize,
+    /// Whether the cache changed (and the markers-changed event fired).
+    pub changed: bool,
+}
+
+/// The ban-list toggle (ban-list.toml projection).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CloudBanConfig {
+    pub enabled: bool,
 }

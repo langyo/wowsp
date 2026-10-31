@@ -29,7 +29,7 @@ import {
   HkTag,
   useToast,
 } from "@celestia-island/hikari";
-import { Filter, Plus, Search, X } from "@lucide/vue";
+import { Cloud, Filter, Plus, Search, X } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { MARKER_COLORS, useMarkersStore } from "@/stores/markers";
@@ -37,7 +37,7 @@ import { useAccountStore } from "@/stores/account";
 import { useStatsStore } from "@/stores/stats";
 import { prAlgoForRequest, useStatsPrefsStore, type OverlayColumnMetric } from "@/stores/statsPrefs";
 import { api } from "@/api";
-import type { ApeRadarWatchList, MarkerColor, MarkerEntry } from "@/api";
+import type { ApeRadarWatchList, CloudBanMatch, MarkerColor, MarkerEntry } from "@/api";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 import FilterCategoryChip from "@/components/ships/FilterCategoryChip";
 import {
@@ -55,6 +55,7 @@ import { scopedRosterView } from "@/utils/shipStatsScope";
 import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { buildApeRadarPreview, rowsToImportItems } from "@/features/markers/aperadarImport";
+import { cloudMatchHint, type CloudHintLabels } from "@/features/markers/cloudBan";
 import { isAiName } from "@/utils/aiNames";
 import { isMobileApp } from "@/utils/platform";
 import "./MarkersSection.scss";
@@ -122,6 +123,93 @@ export default defineComponent({
     const account = useAccountStore();
     const stats = useStatsStore();
     const toast = useToast();
+
+    // ── cloud ban-list (云端封禁名单) — toggle + tooltip details ──────
+    // null = not loaded yet (the switch renders off and disabled until
+    // the config answer lands, so it never flips under a click).
+    const cloudEnabled = ref<boolean | null>(null);
+    const cloudMatches = ref<Map<number, CloudBanMatch>>(new Map());
+
+    async function loadCloudConfig(): Promise<void> {
+      try {
+        cloudEnabled.value = (await api.cloudBanGetConfig()).enabled;
+      } catch {
+        cloudEnabled.value = false;
+      }
+    }
+    async function loadCloudMatches(): Promise<void> {
+      try {
+        const list = await api.cloudBanList();
+        cloudMatches.value = new Map(list.map((m) => [m.accountId, m]));
+      } catch {
+        /* tooltip details are best-effort — rows still render */
+      }
+    }
+    void loadCloudConfig();
+    void loadCloudMatches();
+    // The cloud side refreshes independently (a battle's check lands via
+    // the markers-changed event) — reload the detail map whenever the
+    // merged list's cloud population changes.
+    watch(
+      () =>
+        store.entries
+          .filter((e) => e.source === "cloud")
+          .map((e) => e.accountId)
+          .join(","),
+      () => void loadCloudMatches(),
+    );
+
+    async function setCloudEnabled(next: boolean): Promise<void> {
+      const prev = cloudEnabled.value;
+      cloudEnabled.value = next; // optimistic; the backend answer rules
+      try {
+        cloudEnabled.value = (await api.cloudBanSetConfig(next)).enabled;
+      } catch (e) {
+        cloudEnabled.value = prev;
+        toast.show((e as Error).message, { type: "error" });
+      }
+    }
+
+    /** The tooltip line for a cloud row (detail map hit → full hint;
+     *  miss → the generic sentence). */
+    function cloudHintFor(entry: MarkerEntry): string {
+      const labels: CloudHintLabels = {
+        title: t("settings.markersCloudTooltip"),
+        banTime: t("settings.markersCloudFieldBanTime"),
+        banName: t("settings.markersCloudFieldBanName"),
+        userName: t("settings.markersCloudFieldUserName"),
+        namesake: t("settings.markersCloudFieldNamesake"),
+      };
+      const match =
+        entry.accountId != null ? cloudMatches.value.get(entry.accountId) : undefined;
+      return match ? cloudMatchHint(match, labels) : labels.title;
+    }
+
+    /** Dismiss a cloud row (a local false-positive verdict) with an undo
+     *  toast — the row leaves the merged list via the change event. */
+    async function dismissCloudEntry(entry: MarkerEntry): Promise<void> {
+      if (entry.accountId == null) return;
+      const accountId = entry.accountId;
+      try {
+        await api.cloudBanDismiss(accountId, true);
+        toast.show(t("settings.markersCloudDismissed", { name: entry.nickname }), {
+          type: "success",
+          duration: 8000,
+          action: {
+            label: t("settings.markersCloudUndo"),
+            onClick: () => {
+              void api.cloudBanDismiss(accountId, false).catch((err: Error) => {
+                // A failed restore must not pass silently — the row stays
+                // dismissed and the user would believe otherwise.
+                toast.show(err.message, { type: "error" });
+              });
+            },
+          },
+        });
+      } catch (e) {
+        toast.show((e as Error).message, { type: "error" });
+      }
+    }
 
     // The import wizard is desktop-only: 海猴雷达 is a Windows tool, and
     // the phone build has neither the default-location scan nor the
@@ -296,7 +384,11 @@ export default defineComponent({
       return buildApeRadarPreview(
         list,
         { negtive: importNegtive.value, cheater: importCheater.value },
-        store.entries.map((entry) => entry.nickname),
+        // "已标记，将更新" is about LOCAL rows — a cloud-only match must
+        // not read as "already marked" and talk the user out of an import.
+        store.entries
+          .filter((entry) => entry.source !== "cloud")
+          .map((entry) => entry.nickname),
       );
     });
 
@@ -373,26 +465,46 @@ export default defineComponent({
     let fetchSeq = 0;
     async function refreshStats(): Promise<void> {
       const seq = ++fetchSeq;
-      const names = store.entries.map((e) => e.nickname).filter((n) => !isAiName(n));
       const rl = realm.value;
-      if (!rl || names.length === 0) {
+      // Cloud rows are CN players by construction: fetch their stats on
+      // "cn" rather than the active realm (a dual-realm user would
+      // otherwise read wrong-realm — occasionally wrong-PLAYER — numbers
+      // beside a "suspected cheater" row). Off the CN realm the cloud
+      // rows skip fetching and settle to dashes below.
+      const localNames = store.entries
+        .filter((e) => e.source !== "cloud")
+        .map((e) => e.nickname)
+        .filter((n) => !isAiName(n));
+      const cloudNames = store.entries
+        .filter((e) => e.source === "cloud")
+        .map((e) => e.nickname)
+        .filter((n) => !isAiName(n));
+      // Everything SETTLES, only some rows FETCH: a name missing from
+      // statsMap renders a forever-spinner (rosterStatCols), so the
+      // settled loops below dash whatever was not fetched — while the
+      // fetch batch keeps cloud rows only on the CN realm.
+      const settleNames = [...localNames, ...cloudNames];
+      const fetchNames = rl === "cn" ? settleNames : localNames;
+      if (!rl || settleNames.length === 0) {
         statsMap.value = new Map();
+        statsLoading.value = false;
         return;
       }
       statsLoading.value = true;
       try {
-        const map = await fetchRosterStatsByNames(names, rl, (name, entry) => {
+        const map = await fetchRosterStatsByNames(fetchNames, rl, (name, entry) => {
           if (seq !== fetchSeq) return;
           const next = new Map(statsMap.value);
           next.set(name, entry);
           statsMap.value = next;
         });
         if (seq === fetchSeq) {
-          // Names the batch could not resolve get a settled all-null
+          // Names the batch could not resolve — and cloud rows off the
+          // CN realm, which never fetched — get a settled all-null
           // entry: rosterStatCols renders a dash for a present-but-empty
           // stat and a forever-spinner for a missing one.
           const settled = new Map(map);
-          for (const name of names) {
+          for (const name of settleNames) {
             if (!settled.has(name)) settled.set(name, EMPTY_ROSTER_STAT);
           }
           statsMap.value = settled;
@@ -402,7 +514,7 @@ export default defineComponent({
         // every name into its dash face.
         if (seq === fetchSeq) {
           const settled = new Map<string, RosterStat>();
-          for (const name of names) settled.set(name, EMPTY_ROSTER_STAT);
+          for (const name of settleNames) settled.set(name, EMPTY_ROSTER_STAT);
           statsMap.value = settled;
         }
       } finally {
@@ -786,31 +898,75 @@ export default defineComponent({
                   />
                   <span
                     class={["markers-section__entry-name", markerTintClass(entry.color)]}
-                    data-hint={markerColorLabel(entry.color)}
+                    data-hint={
+                      entry.source === "cloud"
+                        ? cloudHintFor(entry)
+                        : markerColorLabel(entry.color)
+                    }
                   >
                     {entry.nickname}
                   </span>
-                  {entry.note ? (
+                  {entry.source === "cloud" ? (
+                    <span
+                      class="markers-section__cloud-badge"
+                      data-hint={t("settings.markersCloudTooltip")}
+                    >
+                      <Cloud size={11} />
+                      {t("settings.markersCloudBadge")}
+                    </span>
+                  ) : entry.note ? (
                     <span class="markers-section__entry-note">{entry.note}</span>
                   ) : null}
                   <span class="markers-section__entry-id">
                     {entry.accountId ?? ""}
                   </span>
                   <span class="markers-section__stats">{statCells(entry)}</span>
-                  <HkIconButton
-                    class="markers-section__remove-btn"
-                    variant="ghost"
-                    aria-label={t("settings.markersRemove")}
-                    data-hint={t("settings.markersRemove")}
-                    onClick={() => void removeEntry(entry)}
-                  >
-                    <X size={14} />
-                  </HkIconButton>
+                  {entry.source === "cloud" ? (
+                    <HkIconButton
+                      class="markers-section__remove-btn"
+                      variant="ghost"
+                      aria-label={t("settings.markersCloudDismiss")}
+                      data-hint={t("settings.markersCloudDismiss")}
+                      onClick={() => void dismissCloudEntry(entry)}
+                    >
+                      <X size={14} />
+                    </HkIconButton>
+                  ) : (
+                    <HkIconButton
+                      class="markers-section__remove-btn"
+                      variant="ghost"
+                      aria-label={t("settings.markersRemove")}
+                      data-hint={t("settings.markersRemove")}
+                      onClick={() => void removeEntry(entry)}
+                    >
+                      <X size={14} />
+                    </HkIconButton>
+                  )}
                 </div>
               ))
             )}
           </div>
         </HkScrollContainer>
+        <div class="markers-section__cloud-row">
+          <HkSwitch
+            size="sm"
+            color="warning"
+            modelValue={cloudEnabled.value ?? false}
+            disabled={cloudEnabled.value == null}
+            onUpdate:modelValue={(v: boolean) => {
+              if (cloudEnabled.value != null) void setCloudEnabled(v);
+            }}
+          />
+          <span class="markers-section__cloud-label">
+            {t("settings.markersCloudToggle")}
+          </span>
+          <span
+            class="markers-section__cloud-hint"
+            data-hint={t("settings.markersCloudHint")}
+          >
+            {t("settings.markersCloudHintShort")}
+          </span>
+        </div>
         <HkModal
           modelValue={addOpen.value}
           onUpdate:modelValue={(v: boolean) => (addOpen.value = v)}

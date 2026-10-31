@@ -31,7 +31,7 @@ import {
 import { useClipboard } from "@/composables/useClipboard";
 import { isAiName } from "@/utils/aiNames";
 import { t } from "@/i18n";
-import type { MarkerColor } from "@/api";
+import { api, type MarkerColor } from "@/api";
 import { MARKER_COLORS, useMarkersStore } from "@/stores/markers";
 
 /** The shared dot ink — the same hexes the settings list, the live
@@ -82,15 +82,24 @@ export function playerFromPoint(point: ContextTriggerPoint): PlayerMenuTarget | 
 }
 
 /** Builder dependencies — injected so tests drive the menu without a
- *  live router or clipboard. */
+ *  live router or clipboard. cloudDismiss is optional for the same
+ *  reason — tests that never touch a cloud row can omit it. */
 export interface PlayerMenuDeps {
   markers: ReturnType<typeof useMarkersStore>;
   openLookup: (nickname: string, realm: string | null) => void;
   copyName: (nickname: string) => void;
+  /** Dismiss (or restore) a cloud ban-list match — the un-mark path for
+   *  a cloud-sourced row (markers_remove cannot touch it). */
+  cloudDismiss?: (accountId: number, dismissed: boolean) => Promise<void>;
 }
 
 /** One dot toggle: same color unmarks, another color re-marks (the
- *  backend upserts by nickname; the account id sharpens the match). */
+ *  backend upserts by nickname; the account id sharpens the match). A
+ *  same-color click on a CLOUD row dismisses the cloud match instead —
+ *  the cloud's judgment never overrides the user's, and unmarking it is
+ *  a local "false positive" verdict; any OTHER color becomes the user's
+ *  own local marker, which then shadows the cloud row by the merge's
+ *  local-wins rule. */
 async function toggleMarker(
   player: PlayerMenuTarget,
   color: string,
@@ -98,6 +107,16 @@ async function toggleMarker(
 ): Promise<void> {
   if (!MARKER_COLORS.includes(color as MarkerColor)) return;
   if (deps.markers.colorOf(player.nickname, player.accountId) === color) {
+    const entry = deps.markers.entryOf(player.nickname, player.accountId);
+    if (entry?.source === "cloud") {
+      if (player.accountId != null && deps.cloudDismiss) {
+        await deps.cloudDismiss(player.accountId, true);
+        return;
+      }
+      // A cloud row without an account id cannot be dismissed — nothing
+      // sensible to do; leave the mark (dismiss from the settings list).
+      return;
+    }
     await deps.markers.remove(player.nickname);
     return;
   }
@@ -179,6 +198,8 @@ export function usePlayerContextMenu(): void {
       });
     },
     copyName: (nickname) => copy(nickname),
+    cloudDismiss: (accountId, dismissed) =>
+      api.cloudBanDismiss(accountId, dismissed).then(() => undefined),
   };
 
   const unbind = bindContextMenu(document.body, ctx, (point) =>

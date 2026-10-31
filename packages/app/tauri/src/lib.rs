@@ -715,6 +715,15 @@ pub fn run() {
             commands::markers::aperadar_watchlist_scan,
             commands::markers::aperadar_watchlist_read,
             commands::markers::aperadar_watchlist_pick,
+            // Cloud ban-list matches (云端封禁名单, CN-only, yuyuko community
+            // service): the battle-roster background check, the settings
+            // list/details and the local dismiss/undo. Read paths stay
+            // open to every window; the writes are main-window gated.
+            commands::markers::cloud_ban_check,
+            commands::markers::cloud_ban_list,
+            commands::markers::cloud_ban_dismiss,
+            commands::markers::cloud_ban_get_config,
+            commands::markers::cloud_ban_set_config,
             // Mobile replay acquisition + desktop pairing (all targets — the
             // start/stop server commands answer with the mobile marker, the
             // client commands run anywhere, a desktop can pull from another

@@ -13,6 +13,7 @@ import { api, type ArenaInfo, type VehicleEntry } from "@/api";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { isAiName } from "@/utils/aiNames";
 import { hasSingleTeamRoster, isOperationBattle } from "@/utils/modeColors";
 import { splitLiveRosterSides } from "@/utils/rosterSides";
 
@@ -60,6 +61,36 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
   }
 
   let arenaUnlisten: (() => void) | null = null;
+
+  /** The battle whose roster already went through the cloud ban check —
+   *  the 3 s poll would otherwise re-fire the command for every tick of
+   *  the SAME battle (the backend cache makes that harmless, but once
+   *  per battle identity is the contract). */
+  let cloudCheckedBattle: string | null = null;
+
+  /** Fire the cloud ban-list check for a fresh CN roster (fire-and-forget:
+   *  a failed check silently keeps the stale marks; the markers-changed
+   *  event refreshes every surface when the answer lands). AI/scripted
+   *  names and id-less rows (probe fallback rosters) never query. */
+  function triggerCloudBanCheck(info: ArenaInfo): void {
+    if (battleRealm.value !== "cn") return;
+    const battleId = info.dateTime ?? "";
+    if (cloudCheckedBattle === battleId) return;
+    cloudCheckedBattle = battleId;
+    const seen = new Set<number>();
+    const players = info.vehicles
+      .filter((v) => v.id > 0 && !isAiName(v.name))
+      .filter((v) => {
+        if (seen.has(v.id)) return false;
+        seen.add(v.id);
+        return true;
+      })
+      .map((v) => ({ accountId: v.id, nickname: v.name }));
+    if (players.length === 0) return;
+    void api.cloudBanCheck(players, "cn").catch(() => {
+      /* background — the stale cache keeps serving */
+    });
+  }
 
   /** The live side split — scripted scenario NPCs (`IDS_*` / `#Name`)
    *  filtered out of the ally block iff this is a real operation (行动),
@@ -121,6 +152,7 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
         if (arenaInfo.value?.dateTime !== info.dateTime) latchBattleRealm();
         arenaInfo.value = info;
         battleEnded.value = false;
+        triggerCloudBanCheck(info);
       } else if (arenaInfo.value) {
         battleEnded.value = true;
       }
@@ -153,6 +185,7 @@ export const useOverlayStore = defineStore("arenaOverlay", () => {
         if (arenaInfo.value?.dateTime !== info.dateTime) latchBattleRealm();
         arenaInfo.value = info;
         battleEnded.value = false;
+        triggerCloudBanCheck(info);
       })) as (() => void) | null;
       watching.value = true;
     } catch (e) {
