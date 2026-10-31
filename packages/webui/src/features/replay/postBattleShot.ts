@@ -42,27 +42,10 @@ import {
   type ShotFooterStrings,
   type ShotPalette,
 } from "@/features/share/shotKit";
-import type { StampKind } from "@/utils/winrate";
-
-/** The seal verdicts' wording — the exact map the DOM StampTag face
- *  carries (components/base/StampTag.tsx, its TAG_TEXT is the wording
- *  source of truth), so the matrix's horizontal sealTags paint the same
- *  strings the roster's identity line shows. Total over StampKind: any
- *  kind a caller passes arrives labelled. */
-const STAMP_LABEL: Record<StampKind, string> = {
-  miracle: "神了",
-  ape: "猴",
-  maggot: "蛆",
-  rat: "过街老鼠",
-  air: "空中小人",
-  sub: "水下小人",
-  airVeteran: "空中奶龙",
-  subVeteran: "水下奶蛙",
-  airMiracle: "空中神人",
-  subMiracle: "水下神人",
-  airApe: "空中小猴",
-  subApe: "水下小猴",
-};
+import { stampWording, type StampKind } from "@/utils/winrate";
+// The custom tag wording (seal customizer's label editor) rides the same
+// module-level prefs ref every other face reads.
+import { statsPrefsState } from "@/stores/statsPrefs";
 
 /** One right-aligned stat cell of a row (WR / PR / battles / avg damage
  *  / base XP — whichever columns the chip toggles admit). */
@@ -546,9 +529,11 @@ export async function renderPostBattleShot(
       let nickX = tx;
       for (let i = 0; i < sealTags.length; i++) {
         // The kinds arrive as StampKind ids; the seal-tag helpers take the
-        // face WORDING — always map through STAMP_LABEL (a raw "ape" would
-        // paint the latin id AND measure the wrong width for the nick).
-        const label = STAMP_LABEL[sealTags[i]];
+        // face WORDING — always map through stampWording (a raw "ape" would
+        // paint the latin id AND measure the wrong width for the nick), so
+        // the matrix paints the same strings — custom label editor edits
+        // included — the roster's identity line shows.
+        const label = stampWording(sealTags[i], statsPrefsState.value.sealLabels);
         const tagW = sealTagWidth(ctx, label);
         drawSealTag(ctx, nickX + tagW / 2, cy - 8, label);
         nickX += tagW + (i < sealTags.length - 1 ? 6 : 0);

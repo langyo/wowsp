@@ -58,7 +58,7 @@
 import { clanWinrateKey, lookupClanWinrate } from "@/utils/clanWinrate";
 import { AI_NAME } from "@/utils/aiNames";
 import { isKnownRealm } from "@/utils/realms";
-import { careerStamp, type CareerStamp, type StampKind } from "@/utils/winrate";
+import { careerStamp, STAMP_WORDING, type CareerStamp, type StampKind } from "@/utils/winrate";
 // Display prefs — the same tolerant read the table page uses, so the
 // card's PR can never disagree with the chips' under the configured
 // algorithm, and the seal kill switches gate the same kinds.
@@ -72,7 +72,6 @@ import {
   type AimShipRow,
   type BatchStat,
   type SealLineOptions,
-  STAMP_TEXT,
 } from "./aimcardLines";
 import { installNativeMenuBlock } from "@/utils/nativeMenu";
 import "./aimcard.scss";
@@ -523,7 +522,7 @@ async function loadCustomStamps() {
     // instead of falling back to the text seal.
     const next: Partial<Record<StampKind, string>> = {};
     for (const f of files) {
-      if ((Object.keys(STAMP_TEXT) as string[]).includes(f.kind)) {
+      if ((Object.keys(STAMP_WORDING) as string[]).includes(f.kind)) {
         next[f.kind as StampKind] = convertFileSrc(f.path);
       }
     }
@@ -626,6 +625,7 @@ function render() {
       const html = sealLineHtml(verdict, compositions.get(aimName) ?? null, {
         disabled: prefs.sealsDisabled,
         custom: customStamps,
+        labels: prefs.sealLabels,
       } satisfies SealLineOptions);
       if (html) sealLine = `<div class="aim-seals">${html}</div>`;
     }

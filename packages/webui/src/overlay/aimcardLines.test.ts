@@ -220,7 +220,7 @@ describe("sealLineHtml", () => {
       disabled: new Set(),
       custom: {},
     });
-    expect(html).toBe('<span class="aim-stamp" data-stamp="rat" title="过街老鼠">过街老鼠</span>');
+    expect(html).toBe('<span class="aim-stamp" data-stamp="rat">过街老鼠</span>');
   });
 
   it("merges a miracle career with a sub composition into the merged seal", () => {
@@ -246,7 +246,24 @@ describe("sealLineHtml", () => {
       custom: { ape: "asset://stamps/ape.webp" },
     });
     expect(html).toBe(
-      '<img class="aim-stamp" data-stamp="ape" src="asset://stamps/ape.webp" alt="猴" title="猴">',
+      '<img class="aim-stamp" data-stamp="ape" src="asset://stamps/ape.webp" alt="猴">',
     );
+  });
+
+  it("ignores a custom picture for a secondary-tier kind (no icon capability)", () => {
+    const html = stampNode("air", {
+      disabled: new Set(),
+      custom: { air: "asset://stamps/air.webp" },
+    });
+    expect(html).toBe('<span class="aim-stamp" data-stamp="air">空中小人</span>');
+  });
+
+  it("presses the customizer's custom label wording", () => {
+    const html = stampNode("air", {
+      disabled: new Set(),
+      custom: {},
+      labels: { air: "空中仙人" },
+    });
+    expect(html).toBe('<span class="aim-stamp" data-stamp="air">空中仙人</span>');
   });
 });

@@ -33,15 +33,27 @@ describe("StampTag", () => {
     const tag = wrapper.find("span.stamp-tag");
     expect(tag.exists()).toBe(true);
     expect(tag.text()).toBe("空中小人");
-    // The data-hint tooltip carries the award criteria (the resolved
-    // stats.sealAirDesc copy).
-    expect(tag.attributes("data-hint")).toContain("Awarded when carrier battles exceed 20%");
+    // The stamps carry no hover tooltip (the award criteria live in the
+    // seal customizer rows alone).
+    expect(tag.attributes("data-hint")).toBeUndefined();
     expect(wrapper.find("img.stamp-tag").exists()).toBe(false);
   });
 
   it("carries the merged seal's wording through the same face", () => {
     const wrapper = mountTag("subMiracle");
     expect(wrapper.find("span.stamp-tag").text()).toBe("水下神人");
+  });
+
+  it("presses the customizer's custom label in place of the default wording", () => {
+    const prev = statsPrefsState.value.sealLabels;
+    statsPrefsState.value.sealLabels = { ...prev, air: "空中仙人" };
+    try {
+      expect(mountTag("air").find("span.stamp-tag").text()).toBe("空中仙人");
+      // A kind without a custom label keeps the default wording.
+      expect(mountTag("sub").find("span.stamp-tag").text()).toBe("水下小人");
+    } finally {
+      statsPrefsState.value.sealLabels = prev;
+    }
   });
 
   it("renders nothing under a non-zh UI locale", () => {

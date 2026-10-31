@@ -66,6 +66,7 @@ describe("loadStatsPrefs", () => {
       postbattleRosterFull: false,
       teamAvgEnabled: false,
       sealDisabled: {},
+      sealLabels: {},
       overlayColumns: [
         { scope: "global", metric: "winrate" },
         { scope: "global", metric: "pr" },
@@ -445,6 +446,7 @@ describe("statsPrefs store", () => {
       postbattleRosterFull: true,
       teamAvgEnabled: true,
       sealDisabled: {},
+      sealLabels: {},
       overlayColumns: [
         { scope: "solo", metric: "winrate" },
         { scope: "ship", metric: "pr" },
@@ -472,6 +474,35 @@ describe("statsPrefs store", () => {
     store.setSealDisabled("rat", true);
     store.setSealDisabled("air", false);
     expect(loadStatsPrefs().sealDisabled).toEqual({ rat: true });
+  });
+
+  it("persists a custom seal label and drops it on reset", async () => {
+    const store = useStatsPrefsStore();
+    store.setSealLabel("air", " 空中仙人 ");
+    // Trimmed on write; the cap is 8 characters.
+    expect(store.prefs.sealLabels).toEqual({ air: "空中仙人" });
+    expect(loadStatsPrefs().sealLabels).toEqual({ air: "空中仙人" });
+    // An empty (or whitespace-only) write removes the label — the default
+    // wording returns on every face.
+    store.setSealLabel("air", "   ");
+    expect(store.prefs.sealLabels).toEqual({});
+    expect(loadStatsPrefs().sealLabels).toEqual({});
+  });
+
+  it("keeps only known kinds and sane strings in sealLabels", () => {
+    localStorage.setItem(
+      STATS_PREFS_STORAGE_KEY,
+      JSON.stringify({
+        sealLabels: {
+          air: "空中仙人",
+          voodoo: "恶魔",
+          sub: "",
+          miracle: "x".repeat(9),
+        },
+      }),
+    );
+    // Unknown kinds, empty strings and over-cap values drop out.
+    expect(loadStatsPrefs().sealLabels).toEqual({ air: "空中仙人" });
   });
 
   it("initializes state from persisted storage", async () => {

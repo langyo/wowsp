@@ -128,6 +128,35 @@ export function stampTier(kind: StampKind): StampTier {
     : "secondary";
 }
 
+/** The seals' locale-free CJK wording — the ONE default map every face
+ *  reads: the DOM StampTag's text (二级章), RatingStamp's alt/aria strings,
+ *  the Tab overlay's plain-text chips, the aim card and the post-battle
+ *  share renderer (previously four copies that could drift). */
+export const STAMP_WORDING: Record<StampKind, string> = {
+  miracle: "神了",
+  ape: "猴",
+  maggot: "蛆",
+  rat: "过街老鼠",
+  air: "空中小人",
+  sub: "水下小人",
+  airVeteran: "空中奶龙",
+  subVeteran: "水下奶蛙",
+  airMiracle: "空中神人",
+  subMiracle: "水下神人",
+  airApe: "空中小猴",
+  subApe: "水下小猴",
+};
+
+/** A user's per-kind custom label (the seal customizer's tag editor), keyed
+ *  by StampKind. Absent kind = the default STAMP_WORDING shows. Only the
+ *  secondary tier's wording is editable — the primary tier is picture art. */
+export type SealLabelMap = Partial<Record<StampKind, string>>;
+
+/** The effective wording for a seal: the user's custom label when one is
+ *  set, else the default STAMP_WORDING entry. */
+export function stampWording(kind: StampKind, labels?: SealLabelMap): string {
+  return labels?.[kind] ?? STAMP_WORDING[kind];
+}
 /** Whether `kind` is one of the merged composition+career seals. Consumers
  *  with merged-kind-specific behavior (the share shots' seal sizing, and
  *  anything else that used to hardcode the miracle equalities) route through
