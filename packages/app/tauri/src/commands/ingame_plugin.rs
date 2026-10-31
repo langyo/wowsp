@@ -124,9 +124,23 @@ pub fn ingame_plugin_status(game_root: String) -> CommandResult<IngamePluginStat
             &format!("PnFMods/{MOD_DIR}/{MOD_ENTRY}"),
             PLUGIN_SOURCE,
         ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW));
+    let safe_mode = super::mod_hub::safe_mode_active(&game_root);
+    // Verdict trail for feedback bundles: the live surfaces poll this
+    // freely, and a presence flip the UI showed is exactly what support
+    // must be able to answer from the log afterwards — the filesystem
+    // verdict lands here beside the poller's own stream lines, so
+    // "the probe was there, then gone" separates an actual file change
+    // from a freshness/pending-list flip (user report 2026-10-31).
+    tracing::debug!(
+        installed,
+        outdated,
+        safe_mode,
+        res_mods = %dir.display(),
+        "ingame plugin status probed"
+    );
     Ok(IngamePluginStatus {
         installed,
-        safe_mode: super::mod_hub::safe_mode_active(&game_root),
+        safe_mode,
         outdated,
         res_mods: dir.to_string_lossy().into_owned(),
         discussion: DISCUSSION_NUMBER,

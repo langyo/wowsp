@@ -2144,12 +2144,17 @@ fn mods_inventory_entries(root: &Path) -> Vec<ModEntry> {
     mods
 }
 
-/// Findings for one record + its collected context.
+/// Findings for one record + its collected context. `probe_seen` is the
+/// caller's wide-window verdict (see [`analyze_sync`]): whether any game log
+/// carried the in-game probe's `WOWSP_PROBE` marker in the bytes the
+/// analysis read — NOT whether the marker happens to sit inside an excerpt's
+/// display tail.
 fn build_findings(
     record: &GameCrashRecord,
     mods: &[ModEntry],
     game_logs: &[LogExcerpt],
     dangling_urls: &[String],
+    probe_seen: bool,
 ) -> Vec<CrashFinding> {
     let mut findings = Vec::new();
     if let Some(code) = &record.exception_code {
@@ -2218,7 +2223,6 @@ fn build_findings(
             detail: None,
         });
     }
-    let probe_seen = game_logs.iter().any(|log| log.tail.contains("WOWSP_PROBE"));
     if probe_seen {
         findings.push(CrashFinding {
             code: "probeWasActive".to_string(),
@@ -2552,9 +2556,11 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
     let mut game_logs = Vec::new();
     let mut raw_texts: Vec<(String, String)> = Vec::new();
     for path in candidates {
-        // Keep the raw (redacted) text of the same tail window the excerpt
-        // saw: the suspect scan needs the res_mods lines the highlight
-        // keywords alone might miss.
+        // Keep the raw text of the same tail window the excerpt saw: the
+        // suspect scan and the probe-marker scan need the res_mods lines
+        // and WOWSP_PROBE markers the highlight keywords alone might
+        // miss. (Unredacted by design — it never leaves the backend; the
+        // excerpts that cross the wire are redacted separately.)
         if let Ok((bytes, _, _)) = read_tail(&path, EXCERPT_FILE_CAP) {
             let text = String::from_utf8_lossy(&bytes).into_owned();
             let name = path
@@ -2654,7 +2660,22 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
     // nothing and the analysis proceeds on its log-evidenced findings alone.
     #[cfg(not(windows))]
     let proactive: Vec<ModReference> = Vec::new();
-    let mut findings = build_findings(record, &mods_inventory, &game_logs, &display_urls);
+    // The probe's activity marker is searched over the FULL capped window
+    // already read for the excerpt pass (2 MiB per file), never the 160-line
+    // display tail: the probe logs its startup lines early, a long session
+    // scrolls them out of the display window while the probe ran the whole
+    // time, and the finding must not flip to absent between two crash
+    // records of the same install (user report 2026-10-31).
+    let probe_seen = raw_texts
+        .iter()
+        .any(|(_, text)| text.contains("WOWSP_PROBE"));
+    let mut findings = build_findings(
+        record,
+        &mods_inventory,
+        &game_logs,
+        &display_urls,
+        probe_seen,
+    );
     for reference in proactive.iter().take(6) {
         findings.push(CrashFinding {
             code: "missingModAsset".to_string(),

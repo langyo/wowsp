@@ -256,7 +256,7 @@ fn findings_flag_recent_mod_changes_and_mods_in_play() {
 
     let record = sample_record("gc-findings", Some(dir.path().to_str().unwrap()));
     let mods = mods_inventory_entries(dir.path());
-    let findings = build_findings(&record, &mods, &[], &[]);
+    let findings = build_findings(&record, &mods, &[], &[], false);
 
     let recent = findings
         .iter()
@@ -281,6 +281,73 @@ fn findings_flag_recent_mod_changes_and_mods_in_play() {
 }
 
 #[test]
+fn probe_was_active_reads_the_wide_window_not_the_display_tail() {
+    // The probe writes its startup lines early in python.log; a session
+    // that runs long enough scrolls them past the 160-line display tail.
+    // The finding must still fire off the wide window the analysis reads
+    // — a tail-window verdict flips to absent between two crash records
+    // of one install and reads to the user as "the probe vanished".
+    // (User report 2026-10-31.)
+    let dir = TempDir::new("probe-seen");
+    let mut lines = vec!["WOWSP_PROBE sandbox builtins=ok".to_string()];
+    for i in 0..(EXCERPT_TAIL_LINES + 40) {
+        lines.push(format!("filler line {i}"));
+    }
+    let path = dir.touch("profile/python.log", &lines.join("\n"));
+
+    let excerpt = excerpt_of(&path, EXCERPT_TAIL_LINES).expect("excerpt");
+    assert!(
+        !excerpt.tail.contains("WOWSP_PROBE"),
+        "the fixture really does overflow the display tail"
+    );
+    let (bytes, _, _) = read_tail(&path, EXCERPT_FILE_CAP).expect("window");
+    let probe_seen = String::from_utf8_lossy(&bytes).contains("WOWSP_PROBE");
+    assert!(probe_seen, "the wide window still sees the marker");
+
+    let record = sample_record("gc-probe", Some(dir.path().to_str().unwrap()));
+    let findings = build_findings(&record, &[], &[], &[], probe_seen);
+    let finding = findings
+        .iter()
+        .find(|f| f.code == "probeWasActive")
+        .expect("probe finding present off the wide window");
+    assert_eq!(finding.severity, "info");
+
+    let without = build_findings(&record, &[], &[], &[], false);
+    assert!(
+        !without.iter().any(|f| f.code == "probeWasActive"),
+        "no marker anywhere in the window means no finding"
+    );
+}
+
+#[test]
+fn analyze_sync_flags_probe_active_off_the_wide_window() {
+    // End-to-end pin for the wiring in analyze_sync: the same overflowing
+    // fixture driven through the full analysis pass must carry the finding.
+    // The unit test above proves build_findings honors the flag; this one
+    // proves the flag is actually computed off the wide window (and could
+    // not pass against a display-tail verdict).
+    let dir = TempDir::new("probe-seen-sync");
+    let mut lines = vec!["WOWSP_PROBE sandbox builtins=ok".to_string()];
+    for i in 0..(EXCERPT_TAIL_LINES + 40) {
+        lines.push(format!("filler line {i}"));
+    }
+    dir.touch(
+        "profile/python.log",
+        &lines.join(
+            "
+",
+        ),
+    );
+
+    let record = sample_record("gc-probe-sync", Some(dir.path().to_str().unwrap()));
+    let analysis = analyze_sync(&record).expect("analysis");
+    assert!(
+        analysis.findings.iter().any(|f| f.code == "probeWasActive"),
+        "the analysis pass finds the marker outside the display tail"
+    );
+}
+
+#[test]
 fn findings_stay_crash_scoped() {
     // Safe mode is a LIVE state the section shows as its own row — it must
     // never read as a crash-time claim (the old finding was misleading
@@ -288,7 +355,7 @@ fn findings_stay_crash_scoped() {
     let dir = TempDir::new("findings-safe");
     dir.touch("bin/7/res_mods.wowsp-disabled/mod", "x");
     let record = sample_record("gc-safe", Some(dir.path().to_str().unwrap()));
-    let findings = build_findings(&record, &[], &[], &[]);
+    let findings = build_findings(&record, &[], &[], &[], false);
     assert!(
         !findings.iter().any(|f| f.code == "safeModeOn"),
         "safe mode is not a crash finding"
@@ -854,7 +921,7 @@ fn quarantine_accepts_nested_files_and_rejects_traversal() {
 fn findings_flag_dangling_ui_references_as_critical() {
     let record = sample_record("gc-dangling", None);
     let urls = vec!["gui/flash/battle_stats.swf".to_string()];
-    let findings = build_findings(&record, &[], &[], &urls);
+    let findings = build_findings(&record, &[], &[], &urls, false);
     let finding = findings
         .iter()
         .find(|f| f.code == "danglingUiReference")
