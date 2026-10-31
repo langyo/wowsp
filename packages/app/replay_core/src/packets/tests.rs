@@ -716,6 +716,45 @@ fn decodes_real_replay_positions_and_entities() {
     }
 }
 
+/// A 15.9 PvE operation's BattleResults (0x22) frame is ~293-366 KB — over
+/// the former 200 KB frame cap, which made the walk drop the frame (and
+/// every frame behind it) and leave `battle_results` empty: no killer
+/// attribution in the replay kill feed, no post-battle numbers. The walk
+/// must carry a legitimate large frame whole.
+#[test]
+fn large_battle_results_frame_is_walked_intact() {
+    // The wire shape parse_battle_results reads: u32 length + JSON body.
+    let json = format!(
+        r#"{{"playersPublicInfo":{{"42":[0,"Test",0,0,0,0,0,0]}},"pad":"{}"}}"#,
+        "x".repeat(300_000)
+    );
+    let mut payload = (json.len() as u32).to_le_bytes().to_vec();
+    payload.extend_from_slice(json.as_bytes());
+    let frames: Vec<u8> = [
+        wire_frame(
+            PACKET_POSITION,
+            1.0,
+            &synthetic_position_payload(SYNTH_SHIP_A, 10.0, 20.0, 0.0),
+        ),
+        wire_frame(PACKET_BATTLE_RESULTS, 735.0, &payload),
+        // A frame AFTER the big one must still decode: the walk must not
+        // stop at it.
+        wire_frame(
+            PACKET_POSITION,
+            736.0,
+            &synthetic_position_payload(SYNTH_SHIP_A, 11.0, 21.0, 0.0),
+        ),
+    ]
+    .concat();
+    let empty = std::collections::HashSet::new();
+    let decoded = super::frames::walk_frames(&frames, &empty, false, &profile_for(false), None);
+    assert_eq!(decoded.battle_results.as_deref(), Some(json.as_str()));
+    assert_eq!(
+        decoded.positions.get(&SYNTH_SHIP_A).map(Vec::len),
+        Some(2),
+        "both position frames decode across the large BattleResults frame"
+    );
+}
 /// Diagnostic: walk all frames and report per-type counts, max payload
 /// size, and whether the walk terminated early (absurd size guard).
 /// Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
@@ -742,7 +781,7 @@ fn dump_packet_stats() {
         let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
         let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
         let payload_end = c + 12 + size;
-        if size > 200_000 || payload_end > inflated.len() {
+        if size > super::frames::MAX_FRAME_BYTES || payload_end > inflated.len() {
             early_break = Some((c, size, ptype, inflated.len()));
             break;
         }
@@ -799,7 +838,7 @@ fn dump_state_ship_ids() {
         let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
         let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
         let payload_end = c + 12 + size;
-        if size > 200_000 || payload_end > inflated.len() {
+        if size > super::frames::MAX_FRAME_BYTES || payload_end > inflated.len() {
             break;
         }
         if ptype == PACKET_ENTITY_CREATE {
@@ -850,7 +889,7 @@ fn dump_position_packet_sizes() {
         let size = u32::from_le_bytes(inflated[pos..pos + 4].try_into().unwrap()) as usize;
         let ptype = u32::from_le_bytes(inflated[pos + 4..pos + 8].try_into().unwrap());
         let payload_end = pos + 12 + size;
-        if size > 200_000 || payload_end > inflated.len() {
+        if size > super::frames::MAX_FRAME_BYTES || payload_end > inflated.len() {
             break;
         }
         if ptype == 0x0a {
@@ -870,7 +909,7 @@ fn dump_position_packet_sizes() {
         let size = u32::from_le_bytes(inflated[pos..pos + 4].try_into().unwrap()) as usize;
         let ptype = u32::from_le_bytes(inflated[pos + 4..pos + 8].try_into().unwrap());
         let payload_end = pos + 12 + size;
-        if size > 200_000 || payload_end > inflated.len() {
+        if size > super::frames::MAX_FRAME_BYTES || payload_end > inflated.len() {
             break;
         }
         if ptype == 0x0a && size >= 45 {
@@ -1945,7 +1984,7 @@ fn dump_weather_signals() {
         let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
         let time = f32::from_le_bytes(inflated[c + 8..c + 12].try_into().unwrap());
         let payload_end = c + 12 + size;
-        if size > 200_000 || payload_end > inflated.len() {
+        if size > super::frames::MAX_FRAME_BYTES || payload_end > inflated.len() {
             break;
         }
         let payload = &inflated[c + 12..payload_end];
@@ -2050,7 +2089,7 @@ fn dump_weather_signals() {
         let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
         let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
         let payload_end = c + 12 + size;
-        if size > 200_000 || payload_end > inflated.len() {
+        if size > super::frames::MAX_FRAME_BYTES || payload_end > inflated.len() {
             break;
         }
         let payload = &inflated[c + 12..payload_end];

@@ -8,6 +8,18 @@ use super::*;
 /// NEW entities are skipped (existing ones keep decoding) — audit
 /// M-8-class input hardening.
 pub(super) const MAX_TRACKED_ENTITIES: usize = 100_000;
+/// Upper bound on a single frame's declared payload size — a desync guard
+/// only, it must never reject a legitimate frame. The BattleResults (0x22)
+/// JSON alone measures ~293 KB on a 15.9 PvE operation (7 humans + 13 bot
+/// fills + 13 scripted units in the roster) and ~366 KB on the WW2 op
+/// family; the former hard 200 KB ceiling silently dropped that frame AND
+/// every frame behind it, so `battle_results` came back `None` on exactly
+/// the replays whose kill attribution needs it (the kill feed read "?" for
+/// every sink and the post-battle numbers vanished). The inflated stream is
+/// already capped at [`MAX_INFLATED_STREAM_BYTES`] (256 MiB), so 16 MiB per
+/// frame keeps two orders of magnitude of headroom over any real packet
+/// while still refusing a desynced size.
+pub(super) const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 /// Walk `[u32 size][u32 type][f32 time][payload]` frames, collecting Position
 /// samples (grouped by entity id) and EntityCreate metadata. Stops cleanly if a
 /// frame header is truncated or declares an absurd size (trailing padding).
@@ -83,7 +95,7 @@ pub(super) fn walk_frames(
             break;
         };
         let payload_end = cur + 12 + size;
-        if size > 200_000 || payload_end > inflated.len() {
+        if size > MAX_FRAME_BYTES || payload_end > inflated.len() {
             break;
         }
         let payload = &inflated[cur + 12..payload_end];
