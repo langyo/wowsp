@@ -1239,6 +1239,9 @@ struct DebugCacheKey {
 /// the death-time table for the alive gate.
 pub(crate) struct DebugCacheEntry {
     pub(crate) scores: ShipScoreReport,
+    /// The replay's recorder entity (the default static-report
+    /// perspective — the only always-fully-observable ship).
+    pub(crate) recorder: Option<i32>,
     /// entity id → rows sorted by `t` (team-known ships only — the E16
     /// export drops mirror-ambiguous hulls, the recorder included when its
     /// shipId collides; those ships get neither advice nor scores).
@@ -1335,6 +1338,7 @@ fn build_debug_cache_entry(
         fire: fire_detail.to_string(),
         move_model: move_detail.to_string(),
     };
+    let recorder = stream.recorder_vehicle_id;
     let scores = build_ship_scores(&stream, &rows, &replay_id, None, None, sources, |row| {
         let (entity, global, mask) = feature_tensors_v2(row);
         // E24: an attribute-routed fire model gets the routing vector from
@@ -1377,6 +1381,7 @@ fn build_debug_cache_entry(
     }
     Ok(DebugCacheEntry {
         scores,
+        recorder,
         rows: by_ship,
         death,
         los_loaded,

@@ -22,6 +22,7 @@
     "@tauri-apps/api": "^2",
     "@vue/devtools-api": "^8",
     "@wowsp/holo": "workspace:*",
+    "html-to-image": "^1.11.13",
     "mediabunny": "^1",
     "pinia": "^4",
     "three": "^0.186",

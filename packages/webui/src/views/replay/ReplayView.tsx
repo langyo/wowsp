@@ -7,6 +7,8 @@ import { analyzeSpawnSymmetry, type EntitySide } from "@/features/replay/spawnSy
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
+import StaticReportPanel from "@/features/holographic/StaticReportPanel";
+import type { StaticReport } from "@/api";
 import PairingWizard from "@/features/replay/PairingWizard";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePairingStore } from "@/stores/pairing";
@@ -2026,6 +2028,33 @@ export default defineComponent({
     const allyBuilds = ref<PlayerBuild[]>([]);
     const showResults = ref(false);
     const showChat = ref(false);
+    /** E25 static report: open flag + the focused perspective's report.
+     * `null` entity = the recorder (Rust-side default; the always-fully-
+     * observable perspective). The Rust side caches the scoring pass, so
+     * switching perspectives is one IPC round-trip. */
+    const showReport = ref(false);
+    const staticReport = ref<StaticReport | null>(null);
+    const staticReportLoading = ref(false);
+    const staticReportError = ref<string | null>(null);
+    const openStaticReport = async (entityId?: number) => {
+      const cur = parser.current.value;
+      if (!cur) return;
+      const path = cur.path;
+      if (!path) return;
+      showReport.value = true;
+      staticReportLoading.value = true;
+      staticReportError.value = null;
+      try {
+        staticReport.value = await api.decisionStaticReport(
+          path,
+          entityId ?? null,
+        );
+      } catch (err) {
+        staticReportError.value = String(err);
+      } finally {
+        staticReportLoading.value = false;
+      }
+    };
     /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
      *  chat panel reads its clock for the playhead and calls its pausing
      *  seek when a timeline dot/track is clicked. Null while no map mounts
@@ -2631,6 +2660,16 @@ export default defineComponent({
                         {t("replay.chatLog")}
                       </button>
                     ) : null}
+                    <button
+                      class="replay-view__meta-item replay-view__pill"
+                      onClick={() =>
+                        showReport.value
+                          ? (showReport.value = false)
+                          : void openStaticReport()
+                      }
+                    >
+                      {t("replay.report.title")}
+                    </button>
                   </header>
                   {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
                     <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
@@ -2747,6 +2786,37 @@ export default defineComponent({
                             mapApi={mapRef.value}
                           />
                         </div>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showReport.value ? (
+                    <div
+                      class="replay-view__modal"
+                      onClick={() => (showReport.value = false)}
+                    >
+                      <div
+                        class="replay-view__modal-panel"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {staticReportError.value ? (
+                          <ErrorCard
+                            title={t("replay.report.title")}
+                            error={staticReportError.value}
+                          />
+                        ) : staticReport.value ? (
+                          <StaticReportPanel
+                            report={staticReport.value}
+                            loading={staticReportLoading.value}
+                            onSeek={(t0) => mapRef.value?.seek(t0)}
+                            onPick={(entityId) => void openStaticReport(entityId)}
+                            onClose={() => (showReport.value = false)}
+                          />
+                        ) : (
+                          <div class="replay-view__placeholder">
+                            {t("replay.report.loading")}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ) : null}

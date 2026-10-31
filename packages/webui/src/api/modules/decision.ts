@@ -43,6 +43,96 @@ export interface DecisionSuggestionReport {
   suggestions: DecisionSuggestion[];
 }
 
+
+// ── E25 · static per-player decision report ─────────────────────────────
+
+/** Data availability over the alive interval (mirrors StaticCoverage). */
+export interface StaticCoverage {
+  aliveFrom: number;
+  aliveTo: number;
+  samples: number;
+  gapSeconds: number;
+  completeness: number;
+  /** [from, to] battle-second segments the player was unresolvable. */
+  gapSegments: [number, number][];
+}
+
+/** Whole-game headline numbers (E21/E22 semantics). */
+export interface StaticWholeScores {
+  wholeGame: number;
+  wholeFire: number | null;
+  wholeMove: number;
+  contribution: number | null;
+  contributionShots: number | null;
+}
+
+/** Why a moment was selected (drives the localized caption). */
+export type StaticMomentCategory =
+  | "damageRealized"
+  | "missedOpportunity"
+  | "forcedShot"
+  | "strongWindow"
+  | "weakWindow";
+
+/** Nearest observed enemy snapshot. */
+export interface StaticEnemySnapshot {
+  entityId: number;
+  distM: number;
+  bearingRelRad: number;
+  inRange: boolean;
+}
+
+/** One dissected key decision. */
+export interface StaticMoment {
+  t: number;
+  category: StaticMomentCategory;
+  weight: number;
+  hpFrac: number | null;
+  speedKt: number | null;
+  enemiesObserved: number;
+  nearestEnemy: StaticEnemySnapshot | null;
+  fired: boolean | null;
+  fireProb: number | null;
+  moveSector: number;
+  advisedSector: number;
+  advisedProb: number;
+  inst: number;
+  fireAlignment: number | null;
+  moveAlignment: number;
+  confidence: number;
+  hpLostWindow: number | null;
+  hpFracAfter: number | null;
+}
+
+/** One roster row (the perspective picker). */
+export interface StaticRosterEntry {
+  entityId: number;
+  shipId: number | null;
+  name: string | null;
+  teamId: 0 | 1;
+  isRecorder: boolean;
+  diedAt: number | null;
+  coverage: StaticCoverage;
+  whole: StaticWholeScores | null;
+  outcome: unknown;
+}
+
+/** The full static report (mirrors the Rust StaticReport). */
+export interface StaticReport {
+  replayPath: string;
+  replayId: string;
+  mapName: string | null;
+  gameMode: string | null;
+  durationS: number;
+  losLoaded: boolean;
+  modelSources: { fire: string; moveModel: string };
+  entityId: number;
+  roster: StaticRosterEntry[];
+  timeline: { t: number; inst: number; confidence: number }[];
+  moments: StaticMoment[];
+}
+
+
 /** Installed `decisions` model-pack inventory. Mirrors
  *  `wowsp_tauri_shared::DecisionsPackStatus`. */
 export interface DecisionsPackStatus {
@@ -200,6 +290,18 @@ export const decisionApi = {
     transport.invoke<DecisionDebugReport>(RPC.decision_debug_report, {
       replayPath,
       timeSec,
+      losGridDir: losGridDir ?? null,
+    }),
+  /** E25 static per-player decision report (any roster perspective; the
+   *  Rust side shares the debug-report scoring cache). */
+  decisionStaticReport: (
+    replayPath: string,
+    entityId: number | null,
+    losGridDir?: string,
+  ) =>
+    transport.invoke<StaticReport>(RPC.decision_static_report, {
+      replayPath,
+      entityId: entityId ?? null,
       losGridDir: losGridDir ?? null,
     }),
   /** Filesystem-only inventory of `<cache>/decisions` (no ORT session). */
