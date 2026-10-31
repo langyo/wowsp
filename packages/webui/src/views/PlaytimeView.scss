@@ -437,9 +437,10 @@
   border: 1px solid transparent;
   border-radius: var(--radius-sm);
 
+  /* Display row (the remove button is the affordance): the hover stays
+     quiet-neutral — the primary wash would read as clickability. */
   &:hover {
-    background: rgb(var(--color-primary) / 8%);
-    border-color: rgb(var(--color-primary) / 25%);
+    background: rgb(var(--color-text) / 5%);
   }
 
   .hk-popover-panel.hk-is-sheet & {
