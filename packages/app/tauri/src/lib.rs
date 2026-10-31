@@ -896,6 +896,7 @@ pub fn run() {
             commands::decision_serve::decision_fire_suggestions,
             #[cfg(feature = "ai")]
             commands::decision_serve::decision_debug_report,
+            #[cfg(feature = "ai")]
             commands::decision_report::decision_static_report,
             commands::decision_pack::decisions_pack_status,
             commands::decision_pack::clear_decisions_pack,
