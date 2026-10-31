@@ -49,11 +49,14 @@ export function isScriptedUnitName(name: string): boolean {
 }
 
 /** Whether a SINKING ship's record sits out the replay map's bottom-left
- *  event feed: in operations (PvE) the scenario waves sink by the dozen and
- *  would flood it, so there only HUMAN sinks are listed — scripted units
- *  and bot fills sit out (either side), a human teammate's sinking still
- *  shows. PvP has no AI ships, so the operation gate alone is a no-op
- *  there. The kill counters are unaffected — this is a feed-only rule. */
+ *  event feed: in operations (PvE) the listed scenario units sink by the
+ *  dozen and would flood it, so scripted units and bot fills sit out (either
+ *  side) while a human teammate's sinking still shows. Roster-LESS hostile
+ *  waves (the op roster covers the player team only) pass the gate — they
+ *  are the kills the human team actually causes, and the feed attributes
+ *  their killer through the post-battle payload (findNpcVictimRow). PvP has
+ *  no AI ships, so the operation gate alone is a no-op there. The kill
+ *  counters are unaffected — this is a feed-only rule. */
 export function isAiSinkVictim(
   operation: boolean,
   scripted: boolean | undefined,

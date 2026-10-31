@@ -9,7 +9,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { parsePostBattle } from "./postBattle";
+import { findNpcVictimRow, parsePostBattle, type PostBattlePlayer } from "./postBattle";
 
 /** Build a zeroed CLIENT_PUBLIC_RESULTS array with sparse overrides. */
 function arr(overrides: Record<number, unknown>, len = 538): unknown[] {
@@ -210,5 +210,73 @@ describe("parsePostBattle field mapping", () => {
     expect(parsePostBattle(null)).toBeNull();
     expect(parsePostBattle("not json")).toBeNull();
     expect(parsePostBattle('{"playersPublicInfo": {}}')).toBeNull();
+  });
+});
+
+describe("findNpcVictimRow", () => {
+  /** A post-battle row with only the fields the join reads. */
+  const row = (over: Partial<PostBattlePlayer>): PostBattlePlayer => ({
+    accountId: 1,
+    name: ":Z-35:",
+    realm: null,
+    shipId: 4180000000,
+    team: 2,
+    alive: false,
+    damage: 0,
+    damageTaken: 0,
+    frags: 0,
+    hpRatio: 0,
+    killerId: 42,
+    exp: 0,
+    ribbons: [],
+    ...over,
+  });
+  const SHIP = 4180000000;
+
+  it("joins the AI row by ship id on the enemy side of the recorder", () => {
+    const players = [
+      row({ accountId: 10, name: "HumanTeamMate", shipId: SHIP, team: 1, killerId: null }),
+      row({ accountId: 11, name: ":Z-35:", shipId: SHIP, team: 2, killerId: 10 }),
+    ];
+    // Self team 1, the sinking ship is an enemy wave → the enemy AI row.
+    const victim = findNpcVictimRow(players, SHIP, true, 1);
+    expect(victim?.accountId).toBe(11);
+    expect(victim?.killerId).toBe(10);
+  });
+
+  it("joins an ally-side AI row for an ally victim", () => {
+    const players = [
+      row({ accountId: 11, name: ":Z-35:", shipId: SHIP, team: 2 }),
+      row({ accountId: 12, name: ":Escort:", shipId: SHIP, team: 1, killerId: 20 }),
+    ];
+    expect(findNpcVictimRow(players, SHIP, false, 1)?.accountId).toBe(12);
+  });
+
+  it("never joins a human row sharing the hull", () => {
+    const players = [
+      row({ accountId: 10, name: "SomePlayer", shipId: SHIP, team: 2 }),
+    ];
+    expect(findNpcVictimRow(players, SHIP, true, 1)).toBeUndefined();
+  });
+
+  it("skips AI rows on the wrong side when the recorder team is known", () => {
+    const players = [
+      row({ accountId: 12, name: ":Escort:", shipId: SHIP, team: 1 }),
+    ];
+    // Enemy victim must not absorb an ally-side row.
+    expect(findNpcVictimRow(players, SHIP, true, 1)).toBeUndefined();
+  });
+
+  it("accepts IDS text keys and the parser's #id fallback names", () => {
+    const players = [
+      row({ accountId: 13, name: "IDS_OP_WAVE_01", shipId: SHIP, team: 2, killerId: 9 }),
+      row({ accountId: 14, name: "#14", shipId: 1234, team: 2, killerId: 8 }),
+    ];
+    expect(findNpcVictimRow(players, SHIP, true, null)?.killerId).toBe(9);
+    expect(findNpcVictimRow(players, 1234, true, null)?.killerId).toBe(8);
+  });
+
+  it("returns undefined when nothing matches the ship id", () => {
+    expect(findNpcVictimRow([row({})], 999, true, null)).toBeUndefined();
   });
 });
