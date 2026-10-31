@@ -83,7 +83,7 @@ pub struct StaticRosterEntry {
 }
 
 /// Data availability over the alive interval.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StaticCoverage {
     /// Alive interval [from, to]; `to` is the death time or the replay's
@@ -97,6 +97,9 @@ pub struct StaticCoverage {
     pub gap_seconds: f32,
     /// covered / alive, clamped to [0, 1].
     pub completeness: f32,
+    /// The gap segments themselves ([from, to] pairs, battle seconds) —
+    /// the coverage bar paints these as hatched stretches.
+    pub gap_segments: Vec<(f32, f32)>,
 }
 
 /// The whole-game headline numbers (E21/E22 semantics).
@@ -300,6 +303,7 @@ fn coverage_of(samples: &[ShipScoreSample], alive_from: f32, alive_to: f32) -> S
             samples: 0,
             gap_seconds: alive,
             completeness: 0.0,
+            gap_segments: vec![(alive_from, alive_to)],
         };
     }
     let ts: Vec<f32> = samples.iter().map(|s| s.t).collect();
@@ -315,6 +319,7 @@ fn coverage_of(samples: &[ShipScoreSample], alive_from: f32, alive_to: f32) -> S
         } else {
             1.0
         },
+        gap_segments: gaps,
     }
 }
 
@@ -324,11 +329,16 @@ fn coverage_of(samples: &[ShipScoreSample], alive_from: f32, alive_to: f32) -> S
 pub(crate) fn build_static_report(
     path: &Path,
     los_dir: Option<&Path>,
-    entity_id: i32,
+    entity_id: Option<i32>,
 ) -> anyhow::Result<StaticReport> {
     use serde_json::json;
 
     with_debug_cache_entry(path, los_dir, |entry| {
+        // None = the recorder (the default perspective: always fully
+        // observable — every other ship is bounded by spotting).
+        let entity_id = entity_id
+            .or(entry.recorder)
+            .ok_or_else(|| anyhow!("replay carries no recorder id — pass an explicit entity"))?;
         let scores: &ShipScoreReport = &entry.scores;
         let scored_horizon = scores
             .per_ship
@@ -529,7 +539,7 @@ pub(crate) fn build_static_report(
 #[tauri::command]
 pub fn decision_static_report(
     replay_path: String,
-    entity_id: i32,
+    entity_id: Option<i32>,
     los_grid_dir: Option<String>,
 ) -> CommandResult<StaticReport> {
     let path = Path::new(&replay_path);
@@ -660,14 +670,12 @@ mod tests {
     fn static_real_report_invariants() {
         let replay = std::env::var("WOWSP_STATIC_REPORT_REPLAY")
             .expect("set WOWSP_STATIC_REPORT_REPLAY to a local .wowsreplay");
-        let (stream, _) = decode_replay_stream_with_events(&replay).expect("decode");
-        let recorder = stream.recorder_vehicle_id.expect("recorder id");
         // Optional perspective override (any-player demo: an enemy id from
-        // a previous run's roster exercises the coverage-gap path).
+        // a previous run's roster exercises the coverage-gap path); None
+        // exercises the recorder-default resolution.
         let entity = std::env::var("WOWSP_STATIC_REPORT_ENTITY")
             .ok()
-            .and_then(|v| v.parse::<i32>().ok())
-            .unwrap_or(recorder);
+            .and_then(|v| v.parse::<i32>().ok());
         let report = build_static_report(Path::new(&replay), None, entity).expect("build report");
         assert!(!report.roster.is_empty());
         assert!(!report.timeline.is_empty());

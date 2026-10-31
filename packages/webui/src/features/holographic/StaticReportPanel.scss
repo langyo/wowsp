@@ -1,0 +1,477 @@
+/**
+ * StaticReportPanel styles — the long-image column. Dark surface (the
+ * exported PNG carries its own background), hikari tokens where they
+ * exist, self-contained otherwise: the exported node must not depend on
+ * parent-panel CSS variables that html-to-image cannot inline.
+ */
+.static-report-panel {
+  --srp-bg: #0d1117;
+  --srp-card: #161c26;
+  --srp-line: #2a3342;
+  --srp-ink: #d6dde8;
+  --srp-dim: #9aa6b5;
+  --srp-good: #4cc38a;
+  --srp-bad: #e5534b;
+  --srp-warn: #d29922;
+  --srp-ally: #57a6ff;
+  --srp-enemy: #e07059;
+
+  display: flex;
+  flex-direction: column;
+  width: min(720px, 92vw);
+  max-height: 86vh;
+  background: var(--srp-bg);
+  border: 1px solid var(--srp-line);
+  border-radius: 10px;
+  color: var(--srp-ink);
+  overflow: hidden;
+
+  &__chrome {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--srp-line);
+    flex: none;
+  }
+
+  &__title {
+    font-weight: 600;
+    font-size: 14px;
+  }
+
+  &__spin {
+    animation: srp-rotate 1.1s linear infinite;
+  }
+
+  &__actions {
+    margin-left: auto;
+    display: flex;
+    gap: 6px;
+  }
+
+  &__btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--srp-ink);
+    background: #1d2634;
+    border: 1px solid var(--srp-line);
+    border-radius: 6px;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: default;
+    }
+
+    &--plain {
+      padding: 4px 6px;
+    }
+  }
+
+  // The exported column: not height-constrained when capturing.
+  &__export-root {
+    overflow-y: auto;
+    padding: 12px 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+}
+
+@keyframes srp-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// ── perspective picker ──
+.srp-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__team {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  &__label {
+    font-size: 11px;
+    color: var(--srp-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  &__row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+
+  &__chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px 3px 7px;
+    font-size: 12px;
+    color: var(--srp-ink);
+    background: var(--srp-card);
+    border: 1px solid var(--srp-line);
+    border-radius: 999px;
+    cursor: pointer;
+
+    &:disabled {
+      opacity: 0.38;
+      cursor: default;
+    }
+
+    &--self {
+      border-color: var(--srp-ally);
+      box-shadow: 0 0 0 1px var(--srp-ally) inset;
+    }
+  }
+
+  &__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--srp-ally);
+
+    &--enemy {
+      background: var(--srp-enemy);
+    }
+  }
+
+  &__name {
+    max-width: 128px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__badge {
+    font-size: 10px;
+    padding: 0 5px;
+    border-radius: 8px;
+    line-height: 15px;
+
+    &--full {
+      color: var(--srp-good);
+      background: rgba(76, 195, 138, 0.14);
+    }
+
+    &--partial {
+      color: var(--srp-warn);
+      background: rgba(210, 153, 34, 0.16);
+    }
+
+    &--none {
+      color: var(--srp-bad);
+      background: rgba(229, 83, 75, 0.14);
+    }
+  }
+}
+
+// ── header ──
+.srp-head {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--srp-card);
+  border: 1px solid var(--srp-line);
+  border-radius: 8px;
+
+  &__id {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__name {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  &__tag {
+    font-size: 11px;
+    padding: 1px 7px;
+    border-radius: 8px;
+    background: #1d2634;
+    color: var(--srp-dim);
+
+    &--dead {
+      color: var(--srp-bad);
+    }
+  }
+
+  &__map {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--srp-dim);
+  }
+
+  &__scores {
+    display: flex;
+    gap: 22px;
+  }
+
+  &__score {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+
+    &-label {
+      font-size: 11px;
+      color: var(--srp-dim);
+    }
+
+    b {
+      font-size: 19px;
+    }
+
+    &-sub {
+      font-size: 11px;
+      color: var(--srp-dim);
+    }
+  }
+
+  &__coverage {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    &-label {
+      font-size: 11px;
+      color: var(--srp-dim);
+    }
+
+    &-note {
+      margin-left: 8px;
+      color: var(--srp-warn);
+    }
+  }
+}
+
+.srp-coverage-bar {
+  position: relative;
+  height: 8px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(76, 195, 138, 0.5), rgba(76, 195, 138, 0.25));
+
+  &__gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    min-width: 2px;
+    background: repeating-linear-gradient(
+      45deg,
+      rgba(229, 83, 75, 0.65),
+      rgba(229, 83, 75, 0.65) 3px,
+      transparent 3px,
+      transparent 6px
+    );
+    border-radius: 2px;
+  }
+}
+
+// ── sparkline ──
+.srp-spark {
+  width: 100%;
+  height: 56px;
+  // The export column is a constrained flex column — without this the
+  // SVG (no intrinsic content height) flex-shrinks to 0 under overflow.
+  flex: none;
+  display: block;
+
+  &__gap {
+    fill: rgba(229, 83, 75, 0.18);
+  }
+
+  &__mid {
+    stroke: #2a3342;
+    stroke-dasharray: 3 4;
+  }
+
+  &__line {
+    fill: none;
+    stroke: #57a6ff;
+    stroke-width: 1.6;
+  }
+
+  &__mark {
+    stroke-width: 2;
+
+    &--good {
+      stroke: var(--srp-good);
+    }
+
+    &--bad {
+      stroke: var(--srp-bad);
+    }
+
+    &--warn {
+      stroke: var(--srp-warn);
+    }
+
+    &--ok {
+      stroke: var(--srp-ally);
+    }
+  }
+}
+
+// ── moment cards ──
+.srp-moments {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  &__empty {
+    padding: 18px;
+    text-align: center;
+    color: var(--srp-dim);
+    font-size: 13px;
+  }
+}
+
+.srp-moment {
+  padding: 10px 12px;
+  background: var(--srp-card);
+  border: 1px solid var(--srp-line);
+  border-left: 3px solid var(--srp-ally);
+  border-radius: 8px;
+
+  &--good {
+    border-left-color: var(--srp-good);
+  }
+
+  &--bad {
+    border-left-color: var(--srp-bad);
+  }
+
+  &--warn {
+    border-left-color: var(--srp-warn);
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  &__idx {
+    font-size: 11px;
+    color: var(--srp-dim);
+  }
+
+  &__time {
+    font-size: 13px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__cat {
+    font-size: 11px;
+    padding: 1px 8px;
+    border-radius: 8px;
+    background: #1d2634;
+
+    &--good {
+      color: var(--srp-good);
+    }
+
+    &--bad {
+      color: var(--srp-bad);
+    }
+
+    &--warn {
+      color: var(--srp-warn);
+    }
+
+    &--ok {
+      color: var(--srp-ally);
+    }
+  }
+
+  &__seek {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    padding: 3px 8px;
+    color: var(--srp-ink);
+    background: #1d2634;
+    border: 1px solid var(--srp-line);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  &__body {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 6px 14px;
+  }
+
+  &__stat {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    font-size: 12px;
+
+    span {
+      font-size: 10.5px;
+      color: var(--srp-dim);
+    }
+
+    b {
+      font-weight: 600;
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    &--outcome b {
+      color: var(--srp-good);
+    }
+  }
+
+  &__delta,
+  &__actual,
+  &__prob {
+    font-size: 10.5px;
+    color: var(--srp-dim);
+    font-weight: 400;
+  }
+
+  &__range {
+    font-size: 10px;
+    padding: 0 5px;
+    border-radius: 7px;
+
+    &.in {
+      color: var(--srp-good);
+      background: rgba(76, 195, 138, 0.14);
+    }
+
+    &.out {
+      color: var(--srp-warn);
+      background: rgba(210, 153, 34, 0.16);
+    }
+  }
+}
+
+.srp-foot {
+  font-size: 10.5px;
+  color: var(--srp-dim);
+  text-align: center;
+  padding-top: 4px;
+}

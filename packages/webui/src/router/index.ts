@@ -36,6 +36,17 @@ export const router = createRouter({
       component: () => import("@/views/replay/LiveView"),
     },
     {
+      // E25 dev showcase for the static report panel (real fixtures from
+      // the env-gated Rust E2E under public/report-demo/). DEV only —
+      // production never registers it.
+      path: "/report-demo",
+      name: "report-demo",
+      component: () =>
+        import.meta.env.DEV
+          ? import("@/views/replay/StaticReportDemoView")
+          : Promise.reject(new Error("dev-only route")),
+    },
+    {
       path: "/replay",
       name: "replay",
       component: () => import("@/views/replay/ReplayView"),

@@ -150,6 +150,9 @@ importers:
       '@wowsp/holo':
         specifier: workspace:*
         version: link:../holo
+      html-to-image:
+        specifier: ^1.11.13
+        version: 1.11.13
       mediabunny:
         specifier: ^1
         version: 1.62.0
@@ -2221,6 +2224,9 @@ packages:
 
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
+
+  html-to-image@1.11.13:
+    resolution: {integrity: sha512-cuOPoI7WApyhBElTTb9oqsawRvZ0rHhaHwghRLlTuffoD1B2aDemlCruLeZrUIIdvG7gs9xeELEPm6PhuASqrg==}
 
   immutable@5.1.9:
     resolution: {integrity: sha512-m8nVez3rwrgmWxtLMt1ZYXB2Lv7OKYn/disyxAlSDYAlKSlFoPPfIAmAM/M5xqL4m4C/wAPw7S2/CNaUii1Hxg==}
@@ -4893,6 +4899,8 @@ snapshots:
   highlight.js@11.12.0: {}
 
   hookable@5.5.3: {}
+
+  html-to-image@1.11.13: {}
 
   immutable@5.1.9: {}
 
