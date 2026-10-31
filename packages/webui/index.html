@@ -27,7 +27,17 @@
     <link rel="manifest" href="/site.webmanifest" />
     <title>WoWSP — World of WarShip Panel</title>
     <style>
-      html, body, #app { margin: 0; height: 100%; }
+      /* overflow:hidden from the FIRST frame: the document is never the app's
+         scroll region (the hikari scroll container inside the shell owns page
+         scrolling, see AppShell.scss), so a native document scrollbar is
+         always a defect. Pinning it here keeps the pre-mount loading screen —
+         a fixed, centered layer that cannot itself overflow — from ever
+         sharing the window with one (2026-10-31 report: a native scrollbar
+         painted beside the boot logo in the real webview; not reproducible in
+         a plain Chromium, so the pin is unconditional rather than
+         environment-guessed). theme.scss restates the rule for the app
+         lifetime. */
+      html, body, #app { margin: 0; height: 100%; overflow: hidden; }
       /* Loading screen: background follows the user's color-scheme preference.
          Uses prefers-color-scheme since the app's theme system hasn't loaded
          yet (it runs after mount). Once the app mounts, the loading screen

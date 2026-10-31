@@ -180,6 +180,13 @@ body {
   margin: 0;
   padding: 0;
   height: 100%;
+  /* The document never scrolls: the ONE page scroll region is the hikari
+     scroll container inside .app-shell (AppShell.scss) and every floating
+     layer is fixed, so a native document scrollbar is always a defect.
+     overflow:hidden pins that contract in CSS so no webview build can paint
+     one next to the app — or beside the boot loading screen, whose
+     first-frame twin lives in index.html's inline style. */
+  overflow: hidden;
 }
 #app {
   width: 100%;
