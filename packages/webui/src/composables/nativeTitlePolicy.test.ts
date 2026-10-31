@@ -53,6 +53,8 @@ const HEADING_PROPS = new Set([
   "HkEmptyState",
   "HkErrorLanding",
   "HkExpansionPanel",
+  // HkListRow: the row's main text label (hk-list-row-title), not a tooltip.
+  "HkListRow",
   "HkLogWindow",
   "HkMenu",
   "HkModal",

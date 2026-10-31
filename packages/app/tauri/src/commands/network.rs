@@ -70,11 +70,18 @@ pub struct NetworkConfig {
     /// the official Wargaming CDN. See commands/media.rs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resource_cdn: Option<String>,
-    /// ghproxy-style mirror prefix for GitHub downloads (resource packs,
-    /// mod catalog). Empty → direct GitHub, with the built-in mirror set as
-    /// fallback only. See commands/model_pack.rs.
+    /// LEGACY single-mirror override, deserialize-only compat: sanitize
+    /// folds a non-empty value into the HEAD of [`github_mirrors`] and the
+    /// field itself never survives a load or a save. The IPC (and old
+    /// on-disk files) still accept it so older writers keep working.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub github_mirror: Option<String>,
+    /// User-configured ghproxy-style mirror prefixes for GitHub downloads
+    /// (updates, resource packs, mod catalog), tried in order before the
+    /// official route; empty → direct GitHub, with the built-in mirror
+    /// ladder as fallback only. See commands/github_mirror.rs.
+    #[serde(default)]
+    pub github_mirrors: Vec<String>,
 }
 
 impl Default for NetworkConfig {
@@ -84,6 +91,7 @@ impl Default for NetworkConfig {
             proxy: None,
             resource_cdn: None,
             github_mirror: None,
+            github_mirrors: Vec::new(),
         }
     }
 }
@@ -144,23 +152,47 @@ pub fn sanitize(mut config: NetworkConfig) -> NetworkConfig {
     }
     config.proxy = sanitize_url_field(config.proxy, "proxy", true);
     config.resource_cdn = sanitize_url_field(config.resource_cdn, "resourceCdn", true);
-    // Audit wowsp-R1-1: the mirror fronts the installer channel —
-    // https only (see looks_like_https_mirror).
-    config.github_mirror = config
-        .github_mirror
-        .as_deref()
-        .map(str::trim)
-        .filter(|v| !v.is_empty() && looks_like_https_mirror(v))
-        .map(str::to_string)
-        .or_else(|| {
-            if let Some(v) = config.github_mirror.as_deref() {
-                tracing::warn!(
-                    "network config: ignoring non-https githubMirror {v:?} \
-                     (installer channel requires https)"
-                );
-            }
-            None
-        });
+    // Audit wowsp-R1-1 carried over to the list form: every mirror fronts
+    // the installer download channel — https only (see
+    // looks_like_https_mirror). Entries are trimmed, trailing '/' are all
+    // stripped (the saved config — and the IPC echo — stays slash-free,
+    // exactly like the ladder DTO), and empties / non-https values /
+    // duplicates are dropped (with the saved order preserved).
+    let mut mirrors: Vec<String> = Vec::with_capacity(config.github_mirrors.len());
+    for raw in config.github_mirrors.drain(..) {
+        let trimmed = raw.trim().trim_end_matches('/');
+        if trimmed.is_empty() {
+            tracing::warn!("network config: ignoring empty githubMirrors entry");
+            continue;
+        }
+        if !looks_like_https_mirror(trimmed) {
+            tracing::warn!(
+                "network config: ignoring non-https githubMirrors entry {trimmed:?} \
+                 (installer channel requires https)"
+            );
+            continue;
+        }
+        if !mirrors.iter().any(|m| m == trimmed) {
+            mirrors.push(trimmed.to_string());
+        }
+    }
+    // The legacy single-mirror override folds into the HEAD of the list
+    // (unless an identical entry is already there) and the field itself
+    // never survives sanitize — the list is the only stored form.
+    if let Some(legacy) = config.github_mirror.take() {
+        let trimmed = legacy.trim().trim_end_matches('/');
+        if trimmed.is_empty() {
+            tracing::warn!("network config: ignoring empty githubMirror entry");
+        } else if !looks_like_https_mirror(trimmed) {
+            tracing::warn!(
+                "network config: ignoring non-https githubMirror {trimmed:?} \
+                 (installer channel requires https)"
+            );
+        } else if !mirrors.iter().any(|m| m == trimmed) {
+            mirrors.insert(0, trimmed.to_string());
+        }
+    }
+    config.github_mirrors = mirrors;
     // "manual" without a usable URL would silently mean "no proxy at all"
     // — the safest reading of a half-broken manual config is the default.
     if config.mode == ProxyMode::Manual && config.proxy.is_none() {
@@ -181,8 +213,8 @@ struct NetworkConfigTomlFile {
     proxy: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     resource_cdn: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    github_mirror: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    github_mirrors: Vec<String>,
 }
 
 /// Serialize the canonical file text (header + flat TOML keys).
@@ -191,7 +223,7 @@ fn canonical_toml(config: &NetworkConfig) -> anyhow::Result<String> {
         mode: config.mode,
         proxy: config.proxy.clone(),
         resource_cdn: config.resource_cdn.clone(),
-        github_mirror: config.github_mirror.clone(),
+        github_mirrors: config.github_mirrors.clone(),
     };
     let body = toml::to_string(&file).map_err(|e| anyhow!("serialize network config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
@@ -244,6 +276,10 @@ pub struct NetworkConfigResponse {
     pub mode: ProxyMode,
     pub proxy: Option<String>,
     pub resource_cdn: Option<String>,
+    /// The user mirror list (sanitized, saved order).
+    pub github_mirrors: Vec<String>,
+    /// LEGACY display compat: the list head, `None` when the list is
+    /// empty — older webui builds render this single field.
     pub github_mirror: Option<String>,
     pub effective_proxy: Option<String>,
 }
@@ -251,11 +287,13 @@ pub struct NetworkConfigResponse {
 impl From<NetworkConfig> for NetworkConfigResponse {
     fn from(cfg: NetworkConfig) -> Self {
         let effective_proxy = effective_proxy(&cfg);
+        let github_mirrors = cfg.github_mirrors;
         Self {
             mode: cfg.mode,
             proxy: cfg.proxy,
             resource_cdn: cfg.resource_cdn,
-            github_mirror: cfg.github_mirror,
+            github_mirror: github_mirrors.first().cloned(),
+            github_mirrors,
             effective_proxy,
         }
     }
@@ -910,22 +948,22 @@ mod tests {
     }
 
     /// Field sanitization: whitespace-only URLs drop to None, scheme-less
-    /// URLs drop to None, manual-without-proxy resets to system, and a
-    /// scheme-less CDN does not survive a save.
+    /// URLs drop to None, manual-without-proxy resets to system, a
+    /// scheme-less CDN does not survive a save, and a mirror entry lands
+    /// in the list normalized (trimmed, trailing slash stripped).
     #[test]
     fn sanitize_drops_unusable_urls_and_half_manual() {
         let mut cfg = sanitize(NetworkConfig {
             mode: ProxyMode::Manual,
             proxy: Some("   ".into()),
             resource_cdn: Some("example.com/cdn".into()),
-            github_mirror: Some("  https://mirror.example/  ".into()),
+            github_mirrors: vec!["  https://mirror.example/  ".into()],
+            ..NetworkConfig::default()
         });
         assert_eq!(cfg.mode, ProxyMode::System, "manual without proxy → system");
         assert_eq!(cfg.resource_cdn, None);
-        assert_eq!(
-            cfg.github_mirror.as_deref(),
-            Some("https://mirror.example/")
-        );
+        assert_eq!(cfg.github_mirrors, vec!["https://mirror.example"]);
+        assert_eq!(cfg.github_mirror, None, "the legacy field never survives");
 
         cfg = sanitize(NetworkConfig {
             mode: ProxyMode::Manual,
@@ -950,5 +988,165 @@ mod tests {
             serde_json::to_value(ProxyMode::Manual).unwrap(),
             serde_json::json!("manual")
         );
+    }
+
+    /// The legacy single-mirror override folds into the HEAD of the list
+    /// (normalized) and the legacy field itself never survives sanitize.
+    /// A legacy value that duplicates a list entry adds nothing.
+    #[test]
+    fn legacy_github_mirror_folds_into_the_list_head() {
+        let cfg = sanitize(NetworkConfig {
+            github_mirror: Some("https://old.example".into()),
+            github_mirrors: vec![
+                "https://first.example/".into(),
+                "https://second.example".into(),
+            ],
+            ..NetworkConfig::default()
+        });
+        assert_eq!(
+            cfg.github_mirrors,
+            vec![
+                "https://old.example",
+                "https://first.example",
+                "https://second.example"
+            ]
+        );
+        assert_eq!(cfg.github_mirror, None, "the legacy field is consumed");
+
+        let cfg = sanitize(NetworkConfig {
+            github_mirror: Some("https://first.example".into()),
+            github_mirrors: vec![
+                "https://first.example".into(),
+                "https://second.example".into(),
+            ],
+            ..NetworkConfig::default()
+        });
+        assert_eq!(
+            cfg.github_mirrors,
+            vec!["https://first.example", "https://second.example"],
+            "an already-present legacy value does not move to the head"
+        );
+    }
+
+    /// Mirror-list entries: trimmed, trailing '/' all stripped, empties
+    /// dropped, non-https dropped, duplicates collapsed (first position
+    /// kept).
+    #[test]
+    fn github_mirrors_entries_are_sanitized() {
+        let cfg = sanitize(NetworkConfig {
+            github_mirrors: vec![
+                "  https://a.example  ".into(),
+                "https://a.example".into(),
+                "   ".into(),
+                "".into(),
+                "http://plain.example".into(),
+                "notaurl".into(),
+                "https://b.example//".into(),
+            ],
+            ..NetworkConfig::default()
+        });
+        assert_eq!(
+            cfg.github_mirrors,
+            vec!["https://a.example", "https://b.example"],
+            "trailing slashes are stripped, dupes and non-https dropped"
+        );
+    }
+
+    /// The IPC keeps accepting the legacy single field: a payload with
+    /// ONLY githubMirror deserializes and sanitize folds it into the
+    /// list; the camelCase list form round-trips through the same struct.
+    #[test]
+    fn ipc_accepts_legacy_and_list_mirror_shapes() {
+        let cfg: NetworkConfig =
+            serde_json::from_str(r#"{"mode":"none","githubMirror":"https://legacy.example"}"#)
+                .unwrap();
+        assert!(cfg.github_mirrors.is_empty(), "deserialization only");
+        let cfg = sanitize(cfg);
+        assert_eq!(cfg.github_mirrors, vec!["https://legacy.example"]);
+        assert_eq!(cfg.github_mirror, None);
+
+        let cfg: NetworkConfig = serde_json::from_str(
+            r#"{"mode":"none","githubMirrors":["https://a.example","https://b.example"]}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            cfg.github_mirrors,
+            vec!["https://a.example", "https://b.example"]
+        );
+    }
+
+    /// The IPC response keeps the legacy `githubMirror` display field
+    /// populated as the list head (`null` when the list is empty).
+    #[test]
+    fn response_keeps_the_legacy_display_field() {
+        let resp: NetworkConfigResponse = sanitize(NetworkConfig {
+            github_mirrors: vec!["https://a.example".into(), "https://b.example".into()],
+            ..NetworkConfig::default()
+        })
+        .into();
+        assert_eq!(
+            resp.github_mirrors,
+            vec!["https://a.example", "https://b.example"]
+        );
+        assert_eq!(resp.github_mirror.as_deref(), Some("https://a.example"));
+
+        let resp: NetworkConfigResponse = NetworkConfig::default().into();
+        assert!(resp.github_mirrors.is_empty());
+        assert_eq!(resp.github_mirror, None);
+    }
+
+    /// The canonical TOML writes only the list (legacy key never
+    /// re-emitted) and round-trips; an empty list omits the key entirely
+    /// and reloads as the default.
+    #[test]
+    fn github_mirrors_round_trip_through_the_toml_file() {
+        let cfg = sanitize(NetworkConfig {
+            mode: ProxyMode::None,
+            github_mirrors: vec!["https://one.example".into(), "https://two.example".into()],
+            ..NetworkConfig::default()
+        });
+        let text = canonical_toml(&cfg).unwrap();
+        assert!(text.contains("githubMirrors"), "{text}");
+        assert!(text.contains("\"https://one.example\""), "{text}");
+        assert!(text.contains("\"https://two.example\""), "{text}");
+        assert!(
+            !text.contains("githubMirror ="),
+            "the legacy key is never written back: {text}"
+        );
+        let parsed: NetworkConfig = toml::from_str(&text).unwrap();
+        assert_eq!(parsed, cfg, "the list round-trips through TOML");
+
+        let empty = sanitize(NetworkConfig {
+            mode: ProxyMode::None,
+            ..NetworkConfig::default()
+        });
+        let text = canonical_toml(&empty).unwrap();
+        assert!(!text.contains("githubMirror"), "{text}");
+        let parsed: NetworkConfig = toml::from_str(&text).unwrap();
+        assert_eq!(parsed, empty);
+        assert_eq!(parsed.github_mirrors, Vec::<String>::new());
+    }
+
+    /// An old on-disk file still carrying the legacy githubMirror key
+    /// loads: the value folds to the list head and the heal-write
+    /// re-persists the file in the list-only canonical shape.
+    #[test]
+    fn legacy_toml_file_migrates_to_the_mirror_list() {
+        let dir = temp_dir("mirror-migrate");
+        std::fs::write(
+            dir.join(NETWORK_CONFIG_FILE),
+            "mode = \"none\"\ngithubMirror = \"https://old.example\"\n",
+        )
+        .unwrap();
+        let cfg = load_config_from(&dir);
+        assert_eq!(cfg.github_mirrors, vec!["https://old.example"]);
+        assert_eq!(cfg.github_mirror, None);
+        let healed = std::fs::read_to_string(dir.join(NETWORK_CONFIG_FILE)).unwrap();
+        assert!(healed.contains("githubMirrors"), "{healed}");
+        assert!(
+            !healed.contains("githubMirror ="),
+            "the legacy key does not survive the heal-write: {healed}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

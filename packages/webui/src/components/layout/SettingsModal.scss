@@ -819,30 +819,6 @@
     flex-shrink: 0;
   }
 
-  &__mirror-presets {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.35rem;
-    margin-top: 0.45rem;
-  }
-
-  &__mirror-preset {
-    padding: 0.15rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid rgb(var(--color-border) / 50%);
-    background: transparent;
-    color: rgb(var(--color-muted));
-    font-size: var(--text-2xs);
-    cursor: pointer;
-    transition: color 0.15s ease, border-color 0.15s ease;
-
-    &:hover {
-      color: rgb(var(--color-text));
-      border-color: rgb(var(--color-primary) / 60%);
-    }
-  }
-
-
   &__installs {
     display: flex;
     flex-direction: column;

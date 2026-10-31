@@ -395,6 +395,33 @@ export function mockImportedListing(): Record<string, unknown>[] {
   return importedFiles.map((f) => liteForName(f.path));
 }
 
+// ── GitHub mirror ladder mock (browser dev; the Rust side always knows
+//    the real ladder, so the mock answers the static contract set — the
+//    official endpoint + the four built-ins, no user rows, since this
+//    mock has no persisted network config). The probe answers
+//    deterministically so every pill state is visible: one built-in row
+//    "times out" on purpose.
+const MOCK_MIRROR_LADDER = {
+  official: "https://github.com",
+  builtIn: [
+    "https://ghp.ci",
+    "https://gh-proxy.com",
+    "https://ghfast.top",
+    "https://ghproxy.net",
+  ],
+  user: [] as string[],
+};
+
+/** Fixed probe verdicts per prefix (ladder order is official → built-in →
+ *  user, so the mock folds rows back in that same order). */
+const MOCK_MIRROR_PROBE: Record<string, { ok: boolean; elapsedMs: number; error: string | null }> = {
+  "https://github.com": { ok: true, elapsedMs: 180, error: null },
+  "https://ghp.ci": { ok: true, elapsedMs: 250, error: null },
+  "https://gh-proxy.com": { ok: true, elapsedMs: 300, error: null },
+  "https://ghfast.top": { ok: true, elapsedMs: 220, error: null },
+  "https://ghproxy.net": { ok: false, elapsedMs: 8000, error: "timeout" },
+};
+
 /** Command-name → mock handler. `list_replays_meta` is NOT here — the web
  *  transport fetches the real mock-backend response and appends
  *  `mockImportedListing()` on top (see WebTransport.invoke). */
@@ -791,5 +818,27 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
         byCodeUnits(a.nickname, b.nickname),
     );
     return { candidates };
+  },
+
+  // Settings → updates: the GitHub mirror ladder + its reachability
+  // probe (static fixtures; see MOCK_MIRROR_LADDER above).
+  async github_mirror_ladder() {
+    return { ...MOCK_MIRROR_LADDER };
+  },
+
+  async github_mirror_probe() {
+    // One awaited call, like the real command: the backend fans the HEAD
+    // requests out and answers once — the mock sleeps once for the shape.
+    await delay(600);
+    return [...MOCK_MIRROR_LADDER.builtIn, ...MOCK_MIRROR_LADDER.user].reduce<
+      Record<string, unknown>[]
+    >(
+      (rows, prefix) => {
+        const hit = MOCK_MIRROR_PROBE[prefix] ?? { ok: false, elapsedMs: 8000, error: "timeout" };
+        rows.push({ prefix, ...hit });
+        return rows;
+      },
+      [{ prefix: MOCK_MIRROR_LADDER.official, ...MOCK_MIRROR_PROBE[MOCK_MIRROR_LADDER.official] }],
+    );
   },
 };

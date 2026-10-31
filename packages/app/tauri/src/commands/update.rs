@@ -83,6 +83,7 @@ use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{DOWNLOAD_PROGRESS_EVENT, DownloadProgress};
 
 use crate::commands::download_hub::{self, DownloadRequest};
+use crate::commands::github_mirror;
 use crate::commands::graceful_exit;
 use crate::commands::network::HttpPair;
 use crate::commands::release_digest::asset_sha256;
@@ -770,7 +771,14 @@ async fn resolve_latest() -> Result<(String, String)> {
         .first()
         .ok_or_else(|| anyhow!("no marker file declared in the update sources"))?;
     let clients = HttpPair::build(|b| b)?;
-    let candidates = race_sources(&clients, &watch.sources, marker, false).await?;
+    // User mirrors rotate into the source race ahead of the embedded
+    // ladder (see github_mirror::update_source_list) — a larger roster
+    // racing the same redirect, first answer still wins. This is only
+    // DISCOVERY: the download path enforces the truth (the version and
+    // digest come from the official channels, and every mirror byte is
+    // verified against that digest).
+    let sources = github_mirror::update_source_list(&watch.sources);
+    let candidates = race_sources(&clients, &sources, marker, false).await?;
     let winner = &candidates[0];
     Ok((
         winner.version.clone(),
@@ -984,8 +992,11 @@ async fn update_download_inner(app: &AppHandle, pass: &UpdatePass) -> Result<()>
     // Every source is probed in parallel with a 10 s cap each; all that
     // answer enter the artifact race.
     emit_phase(app, phase::RACE);
+    // Same user-mirror rotation as the resolution race (resolve_latest):
+    // the ladder gains the user's prefixes ahead of the embedded ones.
+    let race_sources_list = github_mirror::update_source_list(&watch.sources);
     let candidates = pass
-        .run(race_sources(&clients, &watch.sources, marker, true))
+        .run(race_sources(&clients, &race_sources_list, marker, true))
         .await?;
     let sources = download_sources(&version, &candidates);
     let expected_sha256 = official.sha256;

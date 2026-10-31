@@ -98,9 +98,11 @@ export function useSettingsBody(props: { active: boolean }) {
       // never at startup — so opening the section is what loads it.
       if (id === "changelog") void changelog.ensureLoaded();
       if (id === "updates") {
-        void updates.cacheStore.loadMirror().then(() => {
-          updates.mirrorDraft.value = updates.cacheStore.githubMirror ?? "";
-        });
+        // Re-sync the saved mirror list and lazy-load the ladder (both
+        // idempotent; the ladder falls back to its static set where the
+        // command is missing — browser dev).
+        void updates.cacheStore.loadMirror();
+        void updates.ensureLadder();
         return;
       }
       if (id === "resources") {
@@ -120,9 +122,8 @@ export function useSettingsBody(props: { active: boolean }) {
     () => props.active,
     (open) => {
       if (open && ui.section === "updates") {
-        void updates.cacheStore.loadMirror().then(() => {
-          updates.mirrorDraft.value = updates.cacheStore.githubMirror ?? "";
-        });
+        void updates.cacheStore.loadMirror();
+        void updates.ensureLadder();
       }
       if (open && ui.section === "resources") {
         void updates.refreshDataPackRow(false);
@@ -153,9 +154,8 @@ export function useSettingsBody(props: { active: boolean }) {
   // never triggers the watcher's loads (the pack cards mask it via their
   // boot-time store init — the rows have no such backstop).
   if (ui.section === "updates") {
-    void updates.cacheStore.loadMirror().then(() => {
-      updates.mirrorDraft.value = updates.cacheStore.githubMirror ?? "";
-    });
+    void updates.cacheStore.loadMirror();
+    void updates.ensureLadder();
   }
   if (ui.section === "resources") {
     void updates.refreshDataPackRow(false);

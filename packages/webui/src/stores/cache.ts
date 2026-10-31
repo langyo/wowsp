@@ -2,9 +2,9 @@
  * Resource-pack + auxiliary-cache state for the Settings → resources panel.
  * Owns the single pack's status/update snapshots, the in-flight pass
  * progress (fed by the unified `wowsp://download-progress` stream,
- * kind "res-pack") and the GitHub mirror
- * preference (persisted through network-config.toml, same file the network
- * section edits).
+ * kind "res-pack") and the GitHub mirror list
+ * (persisted through network-config.toml, same file the network section
+ * edits).
  *
  * The pack is content-addressed: `checkResUpdate` compares the local tree
  * hash against the `res-latest` manifest and reports the chain-patch path
@@ -67,9 +67,10 @@ export const useCacheStore = defineStore("resourceCache", () => {
   /** Whether the on-demand integrity check is running (the panel's
    *  check-integrity button spins while it does). */
   const integrityChecking = ref(false);
-  /** ghproxy-style mirror prefix; saved through setNetworkConfig so the
-   *  rest of the network config round-trips untouched. */
-  const githubMirror = ref<string | null>(null);
+  /** User-saved ghproxy-style mirror prefixes (the ladder's user rows);
+   *  saved through setNetworkConfig so the rest of the network config
+   *  round-trips untouched. */
+  const githubMirrors = ref<string[]>([]);
   let progressWired = false;
   /** Whether the APK-bundled baseline was already handed to the shell
    *  (mobile; idempotence guard for the fetch + report pass). */
@@ -234,28 +235,33 @@ export const useCacheStore = defineStore("resourceCache", () => {
     }
   }
 
-  /** Load the mirror preference from the network config (idempotent). */
+  /** Load the mirror list from the network config (idempotent). The
+   *  legacy single `githubMirror` slot folds in as the only user row
+   *  when the shell has not migrated the list yet. */
   async function loadMirror() {
     try {
       const cfg = await api.getNetworkConfig();
-      githubMirror.value = cfg.githubMirror ?? null;
+      githubMirrors.value = cfg.githubMirrors ?? (cfg.githubMirror ? [cfg.githubMirror] : []);
     } catch {
-      githubMirror.value = null;
+      githubMirrors.value = [];
     }
   }
 
-  /** Persist the mirror preference, spreading the rest of the config back
-   *  so unrelated fields (proxy, resource CDN) survive the round-trip. */
-  async function saveMirror(value: string | null) {
+  /** Persist the mirror list, spreading the rest of the config back so
+   *  unrelated fields (proxy, resource CDN) survive the round-trip. */
+  async function saveMirrors(list: string[]) {
     const current = await api.getNetworkConfig();
     const next: NetworkConfig = {
       ...current,
-      githubMirror: value?.trim() || null,
+      githubMirrors: list,
     };
-    // Adopt the sanitized response — the shell may correct the value; a
-    // backend without the response (mock / older shell) keeps what we sent.
+    // Adopt the sanitized response — the shell may correct the list; a
+    // backend without the response (mock / older shell) keeps what we sent,
+    // folding its legacy single-prefix echo back in when present.
     const saved = await api.setNetworkConfig(next);
-    githubMirror.value = saved?.githubMirror ?? next.githubMirror ?? null;
+    githubMirrors.value =
+      saved?.githubMirrors ??
+      (saved?.githubMirror ? [saved.githubMirror] : (next.githubMirrors ?? []));
   }
 
   /** Explicit pack pass (initial / migration / update — the Rust side
@@ -384,7 +390,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
     updatesLoading,
     updatesCheckedAt,
     integrityChecking,
-    githubMirror,
+    githubMirrors,
     anyUpdateAvailable,
     bundledServing,
     deltaStepCount,
@@ -394,7 +400,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
     checkUpdates,
     verifyIntegrity,
     loadMirror,
-    saveMirror,
+    saveMirrors,
     download,
     cancel,
     offerUpdatePrompt,

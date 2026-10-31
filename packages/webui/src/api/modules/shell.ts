@@ -76,10 +76,32 @@ export interface NetworkConfig {
   resourceCdn?: string | null;
   /** ghproxy-style mirror prefix for GitHub downloads (resource packs, mod
    *  catalog); empty → direct GitHub with the built-in mirrors as fallback.
-   *  See commands/model_pack.rs. */
+   *  See commands/model_pack.rs. Legacy single-prefix slot — kept in sync
+   *  with `githubMirrors` (its first entry) for older shells. */
   githubMirror?: string | null;
+  /** User-saved ghproxy-style mirror prefixes the downloader rotates
+   *  through (empty → direct GitHub + the built-ins only). */
+  githubMirrors?: string[] | null;
   /** OS proxy pre-resolved by the shell (read-only, for proxy-URL consumers). */
   effectiveProxy?: string | null;
+}
+
+/** The GitHub mirror ladder (mirrors the Rust GithubMirrorLadder): the
+ *  direct endpoint, the built-in ghproxy fallbacks and the user's saved
+ *  custom prefixes, listed official → built-in → user. */
+export interface GithubMirrorLadder {
+  official: string;
+  builtIn: string[];
+  user: string[];
+}
+
+/** One row of `github_mirror_probe` — a single ladder entry's
+ *  reachability answer. */
+export interface MirrorProbeRow {
+  prefix: string;
+  ok: boolean;
+  elapsedMs: number;
+  error: string | null;
 }
 
 /** One endpoint x one path result from `network_probe`. `ok` means the
@@ -361,4 +383,14 @@ export const shellApi = {
    *  (manual/env/registry), PAC/WPAD config, and any host the fallback
    *  chain has already handed to the direct path. */
   networkProbe: () => transport.invoke<NetworkProbeReport>(RPC.network_probe),
+  /** The GitHub mirror ladder: direct + built-in + the user's saved custom
+   *  prefixes (commands/github_mirror.rs) — the settings list's rows, in
+   *  ladder order. */
+  githubMirrorLadder: () =>
+    transport.invoke<GithubMirrorLadder>(RPC.github_mirror_ladder),
+  /** Probe every ladder entry once — one awaited call (the backend fans
+   *  the requests out, ~8s cap), one row per ladder entry in ladder
+   *  order. */
+  githubMirrorProbe: () =>
+    transport.invoke<MirrorProbeRow[]>(RPC.github_mirror_probe),
 };

@@ -1,8 +1,11 @@
-/** Updates-section state for SettingsBody: the GitHub mirror draft, the
- *  dynamic data-source rows and the two-step aux-cache clears. */
+/** Updates-section state for SettingsBody: the GitHub mirror ladder
+ *  (list + probe), the dynamic data-source rows and the two-step
+ *  aux-cache clears. */
 import { computed, ref } from "vue";
 
-import { api } from "@/api";
+import { useToast } from "@celestia-island/hikari";
+
+import { api, type GithubMirrorLadder, type MirrorProbeRow } from "@/api";
 import { t } from "@/i18n";
 import { useCacheStore } from "@/stores/cache";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
@@ -29,6 +32,20 @@ export function hash6(hash?: string | null): string {
   if (!hash) return t("settings.resVersionUnknown");
   return hash.slice(-6).toUpperCase();
 }
+
+/** The ladder served when `github_mirror_ladder` is missing (browser dev
+ *  / older shell): the same set the Rust side ships, so the list stays
+ *  renderable — user rows simply start empty. */
+const FALLBACK_LADDER: GithubMirrorLadder = {
+  official: "https://github.com",
+  builtIn: [
+    "https://ghp.ci",
+    "https://gh-proxy.com",
+    "https://ghfast.top",
+    "https://ghproxy.net",
+  ],
+  user: [],
+};
 
 /** Aux-cache scope → i18n keys (unknown future scopes render raw). */
 const AUX_LABELS: Record<string, { title: string; desc: string }> = {
@@ -60,46 +77,136 @@ export function auxDesc(scope: string): string {
   return key ? t(key) : "";
 }
 
+/** One display row of the mirror ladder. */
+export interface MirrorListRow {
+  prefix: string;
+  kind: "official" | "builtin" | "user";
+}
+
 export function useSettingsUpdatesState() {
   const cacheStore = useCacheStore();
   const updater = useUpdaterStore();
+  const toast = useToast();
 
-  /** Mirror input draft; commits through the cache store (which spreads
-   *  the rest of the network config). */
-  const mirrorDraft = ref("");
-  const mirrorSavedFlash = ref(false);
-  let mirrorFlashTimer: number | undefined;
+  // ── GitHub mirror ladder (settings list) ──────────────────────────────
+  // The ladder loads lazily when the section opens (ensureLadder, called
+  // by the settings body); until then the fallback set renders so the
+  // list never flashes empty in browser dev. probeState holds one entry
+  // per prefix: "testing" while the probe call is in flight, the
+  // backend's MirrorProbeRow afterwards — absent = never probed.
+  const ladder = ref<GithubMirrorLadder>(FALLBACK_LADDER);
+  const ladderLoading = ref(false);
+  const probing = ref(false);
+  const probeState = ref<Record<string, MirrorProbeRow | "testing">>({});
+  /** The add-row input draft. */
+  const newMirrorDraft = ref("");
+  let ladderLoaded = false;
+
+  /** Ladder rows in display order (official → built-in → user — the same
+   *  order the probe answers in). */
+  const mirrorRows = computed<MirrorListRow[]>(() => [
+    { prefix: ladder.value.official, kind: "official" },
+    ...ladder.value.builtIn.map((prefix) => ({ prefix, kind: "builtin" as const })),
+    ...ladder.value.user.map((prefix) => ({ prefix, kind: "user" as const })),
+  ]);
+
+  /** Load the ladder once per hook lifetime (idempotent; a missing
+   *  command falls back to the static set). */
+  async function ensureLadder() {
+    if (ladderLoaded || ladderLoading.value) return;
+    ladderLoading.value = true;
+    try {
+      ladder.value = await api.githubMirrorLadder();
+    } catch {
+      ladder.value = FALLBACK_LADDER;
+    } finally {
+      ladderLoaded = true;
+      ladderLoading.value = false;
+    }
+  }
+
+  /** Probe every ladder row once: mark all rows "testing", await the
+   *  single backend call, fold the rows back in by prefix. A refused
+   *  probe (older shell) drops the pending marks so rows fall back to
+   *  "untested" instead of spinning forever. */
+  async function probeMirrors() {
+    if (probing.value) return;
+    probing.value = true;
+    const pending: Record<string, MirrorProbeRow | "testing"> = {};
+    for (const row of mirrorRows.value) pending[row.prefix] = "testing";
+    probeState.value = pending;
+    try {
+      const folded = { ...pending };
+      for (const row of await api.githubMirrorProbe()) folded[row.prefix] = row;
+      probeState.value = folded;
+    } catch {
+      probeState.value = {};
+    } finally {
+      probing.value = false;
+    }
+  }
+
+  /** True while an add/remove save is in flight — a second click would
+   *  re-read the config before the first save's response lands and drop
+   *  its entry. */
+  const mirrorSaving = ref(false);
+
+  /** Add a custom mirror prefix: trimmed, trailing slashes stripped,
+   *  https-enforced, deduped against the whole ladder, persisted through
+   *  the cache store (which spreads the rest of the network config). The
+   *  ladder's user rows re-sync from the store's adopted (sanitized)
+   *  response. */
+  async function addMirror(raw: string) {
+    if (mirrorSaving.value) return;
+    await ensureLadder();
+    const url = raw.trim().replace(/\/+$/, "");
+    if (!url.startsWith("https://")) {
+      toast.warning(t("settings.mirrorAddInvalid"));
+      return;
+    }
+    if (mirrorRows.value.some((row) => row.prefix === url)) {
+      // Already on the ladder (built-in or user) — just clear the draft.
+      newMirrorDraft.value = "";
+      return;
+    }
+    mirrorSaving.value = true;
+    try {
+      await cacheStore.saveMirrors([...ladder.value.user, url]);
+      ladder.value = { ...ladder.value, user: [...cacheStore.githubMirrors] };
+      newMirrorDraft.value = "";
+      notifySettingsSaved();
+    } catch {
+      // best-effort — desktop persists it
+    } finally {
+      mirrorSaving.value = false;
+    }
+  }
+
+  /** Remove one custom mirror prefix (built-in rows cannot be removed —
+   *  the section only renders the control on user rows). */
+  async function removeMirror(url: string) {
+    if (mirrorSaving.value) return;
+    await ensureLadder();
+    if (!ladder.value.user.includes(url)) return;
+    mirrorSaving.value = true;
+    try {
+      await cacheStore.saveMirrors(ladder.value.user.filter((m) => m !== url));
+      ladder.value = { ...ladder.value, user: [...cacheStore.githubMirrors] };
+      const next = { ...probeState.value };
+      delete next[url];
+      probeState.value = next;
+      notifySettingsSaved();
+    } catch {
+      // best-effort — desktop persists it
+    } finally {
+      mirrorSaving.value = false;
+    }
+  }
+
   /** Two-step delete confirm per pack (id of the armed row). */
   const clearArmed = ref<string | null>(null);
   /** Two-step aux-cache clear confirm (scope of the armed row). */
   const auxArmed = ref<string | null>(null);
-  /** Common ghproxy presets — click to fill the input. The same set the
-   *  app rotates through automatically (see github_mirror.rs), plus ghp.ci
-   *  which the built-in ladder tries first. */
-  const MIRROR_PRESETS = [
-    "https://ghp.ci",
-    "https://ghfast.top",
-    "https://gh-proxy.com",
-    "https://ghproxy.net",
-  ] as const;
-
-  const mirrorDirty = computed(
-    () => (mirrorDraft.value.trim() || null) !== (cacheStore.githubMirror ?? null),
-  );
-
-  async function saveMirror() {
-    if (!mirrorDirty.value) return;
-    try {
-      await cacheStore.saveMirror(mirrorDraft.value || null);
-      mirrorDraft.value = cacheStore.githubMirror ?? "";
-      notifySettingsSaved();
-      mirrorSavedFlash.value = true;
-      window.clearTimeout(mirrorFlashTimer);
-      mirrorFlashTimer = window.setTimeout(() => (mirrorSavedFlash.value = false), 1600);
-    } catch {
-      // best-effort — desktop persists it
-    }
-  }
 
   /** True while an app update is pending (or streaming) — the resource
    *  pack must wait for it: app first, pack after the restart. */
@@ -179,13 +286,19 @@ export function useSettingsUpdatesState() {
   return {
     cacheStore,
     updater,
-    mirrorDraft,
-    mirrorSavedFlash,
+    ladder,
+    ladderLoading,
+    mirrorRows,
+    probing,
+    probeState,
+    mirrorSaving,
+    newMirrorDraft,
+    ensureLadder,
+    probeMirrors,
+    addMirror,
+    removeMirror,
     clearArmed,
     auxArmed,
-    MIRROR_PRESETS,
-    mirrorDirty,
-    saveMirror,
     appUpdatePending,
     dataPackVersion,
     dataPackBusy,

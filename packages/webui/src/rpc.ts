@@ -148,6 +148,12 @@ export const RPC = {
   get_network_config: "get_network_config",
   set_network_config: "set_network_config",
   network_probe: "network_probe",
+  // GitHub mirror ladder (commands/github_mirror.rs): the direct endpoint,
+  // the built-in ghproxy fallbacks and the user's saved custom prefixes,
+  // plus the one-shot reachability probe the settings list shows per row —
+  // see api/modules/shell.ts.
+  github_mirror_ladder: "github_mirror_ladder",
+  github_mirror_probe: "github_mirror_probe",
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
   // Chat translation (commands/chat_translate/): provider config storage,

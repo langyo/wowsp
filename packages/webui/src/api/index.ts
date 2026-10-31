@@ -45,6 +45,8 @@ export type {
   CloudBanCheckResult,
   CloudBanConfig,
   NetworkConfig,
+  GithubMirrorLadder,
+  MirrorProbeRow,
   NetworkProbeRow,
   NetworkProbeReport,
   SystemProxyContext,

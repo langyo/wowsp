@@ -8,7 +8,7 @@
  *  the `ai` feature out entirely, so inference/scoring surfaces are disabled
  *  with a pointer to the full installer instead of failing silently. */
 import { defineComponent, type PropType } from "vue";
-import { HkButton, HkSettingsGroup, HkSettingsHint } from "@celestia-island/hikari";
+import { HkButton, HkSettingsGroup, HkSettingsHint, HkTag } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -226,7 +226,19 @@ export default defineComponent({
           >
             <HkSettingsHint>{t("settings.resourcesBakedHint")}</HkSettingsHint>
             <div class="settings-modal__packs-head">
-              <span class="settings-modal__pack-name">{t("settings.resPackTitle")}</span>
+              <span class="settings-modal__pack-name">
+                {t("settings.resPackTitle")}
+                {cacheStore.anyUpdateAvailable ? (
+                  /* Update availability reads as a compact tag beside the
+                     title, not an inline banner paragraph. */
+                  <>
+                    {" "}
+                    <HkTag size="sm" variant="warning">
+                      {t("settings.cacheUpdateAvailable")}
+                    </HkTag>
+                  </>
+                ) : null}
+              </span>
               <HkButton
                 size="sm"
                 loading={cacheStore.updatesLoading}
@@ -238,12 +250,6 @@ export default defineComponent({
             <HkSettingsHint>
               {isMobileApp() ? t("settings.resPackMobileHint") : t("settings.resPackHint")}
             </HkSettingsHint>
-            {cacheStore.anyUpdateAvailable ? (
-              <p class="settings-modal__packs-banner">{t("settings.cacheUpdateBanner")}</p>
-            ) : null}
-            {updates.appUpdatePending.value ? (
-              <p class="settings-modal__packs-banner">{t("settings.resAfterApp")}</p>
-            ) : null}
             <div class="settings-modal__pack">
               <div class="settings-modal__pack-info">
                 <span class="settings-modal__pack-name">{t("settings.resPackName")}</span>
@@ -334,6 +340,17 @@ export default defineComponent({
                   )
                 ) : st?.present ? (
                   <>
+                    {updates.appUpdatePending.value ? (
+                      /* App updates go first: the reason rides the disabled
+                         buttons as a tag — data-hint carries the full
+                         sentence (data-hint is the app's only tooltip
+                         channel), not a paragraph banner. */
+                      <span data-hint={t("settings.resAfterApp")}>
+                        <HkTag size="sm" variant="warning">
+                          {t("settings.resAfterAppTag")}
+                        </HkTag>
+                      </span>
+                    ) : null}
                     {upd != null && !upd.updateAvailable && !st.bundled && !st.legacyStamp ? (
                       // Already current: the update slot becomes the
                       // integrity check — re-hash the tree on demand and
