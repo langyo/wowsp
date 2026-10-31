@@ -405,14 +405,17 @@ describe("vite.config.ts wiring (source-level guard)", () => {
   });
 
   it("feeds the gate from BOTH Android build signals", () => {
-    // The APK bundle (justfile) ...
+    // The FULL APK flavor (justfile android-apk-full) ...
     expect(source).toMatch(
       /const mobileBundle = process\.env\.WOWSP_MOBILE_BUNDLE === ['"]1['"]/,
     );
     // ... and Tauri's own `tauri android` pipeline, which exports
-    // TAURI_ENV_PLATFORM=android to the frontend build.
+    // TAURI_ENV_PLATFORM=android to the frontend build. The SLIM pin
+    // (WOWSP_MOBILE_BUNDLE=0, the distributed flavor) overrides both —
+    // its pack downloads on demand, so the dist must prune regardless.
+    expect(source).toMatch(/const slimPin = process\.env\.WOWSP_MOBILE_BUNDLE === ['"]0['"]/);
     expect(source).toMatch(
-      /const androidBundle = mobileBundle \|\| process\.env\.TAURI_ENV_PLATFORM === ['"]android['"]/,
+      /!slimPin && \(mobileBundle \|\| process\.env\.TAURI_ENV_PLATFORM === ['"]android['"]\)/,
     );
   });
 });
