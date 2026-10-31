@@ -322,6 +322,8 @@
   "changelogRefresh": "Refresh",
   "changelogCurrent": "Current",
   "changelogI18nFallback": "Release notes for your language aren't available yet — showing the English original.",
+  "changelogLoadingMore": "Loading older releases…",
+  "changelogEnd": "All releases shown.",
   "feedback": "Feedback",
   "feedbackHint": "The app keeps a rolling diagnostics log (UTF-8) to attach when reporting issues.",
   "feedbackRefresh": "Refresh",

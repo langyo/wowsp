@@ -61,12 +61,17 @@ SECTION RULES (lint-enforced; "hard" = CI fails):
   S7 soft  a translation whose content equals the canonical per-locale
            placeholder is PENDING — allowed (never a lint failure), tracked
            in the rolling translation issue. Untranslated == untranslated.
+  S8 hard  no JS-stringification litter (`[object Object]` and friends) in
+           any section — that is a translation pipeline bug rendering an
+           object into prose (the 2026-10-31 v0.6.8 incident: all seven
+           translations opened with `## [object Object]`); in the en-US
+           source it is only ever a WARNING (a legacy body may quote it).
 
 COMMANDS
   wrap    [--tag T] [--apply]   wrap a published body into the scaffold
                                 (en-US = verbatim old body, rest = placeholders)
   set     [--tag T] --lang L --file F [--apply]
-                                replace locale L's section (validates S4-S7
+                                replace locale L's section (validates S4-S8
                                 against the live en-US section first)
   show                          per-release, per-locale status table
   lint    [--tag T]             hard-validate scaffolded bodies; legacy
@@ -162,6 +167,11 @@ GLOSSARY: Dict[str, Dict[str, str]] = {
         "ko-KR": "전체 변경 로그", "ru-RU": "Полный список изменений",
         "fr-FR": "Journal des modifications complet", "es-ES": "Registro de cambios completo",
     },
+    "Other Changes": {
+        "zh-CN": "其他变更", "zh-TW": "其他變更", "ja-JP": "その他の変更",
+        "ko-KR": "기타 변경 사항", "ru-RU": "Другие изменения",
+        "fr-FR": "Autres changements", "es-ES": "Otros cambios",
+    },
     "✨ Features": {
         "zh-CN": "新功能", "zh-TW": "新功能", "ja-JP": "新機能",
         "ko-KR": "새 기능", "ru-RU": "Новые возможности",
@@ -232,6 +242,9 @@ TAG_LIKE_RE = re.compile(r"<[A-Za-z/!][^>\n]{0,200}>")
 DETAILS_LIKE_RE = re.compile(r"(?i)</?\s*details")
 URL_RE = re.compile(r"""https?://[^\s<>"'\)\]]+""")
 URL_TRAILING_RE = re.compile(r"[.,;:!?]+$")
+
+# S8 — JS stringification litter is never content (any `[object X]`).
+LITTER_RE = re.compile(r"\[object [A-Za-z]+\]")
 
 # S5 forbidden line shapes (translations only).
 BLOCKQUOTE_RE = re.compile(r"^>")
@@ -396,6 +409,17 @@ def check_raw_html(content: str, locale: str) -> List[str]:
     return []
 
 
+def check_litter(content: str, locale: str) -> List[str]:
+    """S8 — JS stringification litter. Hard for the seven translations;
+    for the en-US source only ever a WARNING (a legacy body may quote the
+    artifact verbatim), same split as S4b."""
+    for n, line in enumerate(content.split("\n"), 1):
+        m = LITTER_RE.search(line)
+        if m:
+            return ["%s: line %d: stringification litter %r (S8)" % (locale, n, m.group(0))]
+    return []
+
+
 def check_translation_subset(content: str, locale: str) -> List[str]:
     """S5 — translations stay inside the ReleaseMarkdown renderer subset."""
     violations: List[str] = []
@@ -446,8 +470,9 @@ def check_section(
     en_content: Optional[str],
 ) -> Tuple[List[str], List[str]]:
     """Per-section rule application: S3 opener shape, S4a everywhere,
-    S4b/S5/S6 for the seven translations. Returns (violations, warnings) —
-    warnings never fail the lint."""
+    S4b/S5/S6/S8 for the seven translations (S8 warns on en-US, like
+    S4b). Returns (violations, warnings) — warnings never fail the
+    lint."""
     violations: List[str] = []
     warnings: List[str] = []
     want_open = "<details open>" if locale == EN else "<details>"
@@ -455,10 +480,13 @@ def check_section(
         violations.append("%s: opener must be exactly %r (S3)" % (locale, want_open))
     violations.extend(check_delimiters(content, locale))
     html = check_raw_html(content, locale)
+    litter = check_litter(content, locale)
     if locale == EN:
         warnings.extend(html)
+        warnings.extend(litter)
     else:
         violations.extend(html)
+        violations.extend(litter)
     if not content.strip():
         violations.append("%s: empty section content (S7)" % locale)
         return violations, warnings
@@ -883,6 +911,15 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
     expect_violation("urls", _sample_body(locales, {**PENDING, "zh-CN": "## 更新内容\n\n- 一个链接都没有"}))
     # S7 — a near-miss placeholder (edited wording) is content, must satisfy S5.
     expect_violation("near-pending", _sample_body(locales, {**PENDING, "zh-CN": "🚧 还没翻译呢（随意改写的占位句子）"}))
+    # S8 — JS stringification litter fails a translation outright (the
+    # v0.6.8 incident shape); the en-US source only earns a warning.
+    litter = lint_release(_sample_body(locales, {**PENDING, "zh-CN": "## [object Object]"}), locales)
+    assert litter[0] == "violation" and any("S8" in v for v in litter[1]), litter
+    en_litter = lint_release(
+        _sample_body(locales).replace("**Full Changelog**", "[object Object] **Full Changelog**", 1),
+        locales,
+    )
+    assert en_litter[0] == "pending" and any("S8" in w for w in en_litter[2]), en_litter
 
     # Byte-stability: set_section on one locale leaves the rest untouched.
     body = _sample_body(locales)
