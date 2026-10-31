@@ -39,8 +39,15 @@
    chrome there — and shown below 768px, where AppShell swaps the sidebar
    for the nav drawer. It reuses hikari's caption-button chrome but must
    opt out of the bar's drag region itself (the actions cluster carries
-   no-drag; the left area does not). */
-.app-titlebar__menu {
+   no-drag; the left area does not).
+
+   The hide must out-rank hikari's OWN caption rule, which is scoped to
+   the bar since hikari 0.55.254 (`.hk-titlebar .hk-titlebar-btn`,
+   specificity (0,2,0)) — the old flat (0,1,0) hide won on import order
+   alone until that bump out-ranked it and the hamburger resurfaced on
+   the desktop bar. Mirror hikari's own one-level-above scoping: (0,3,0)
+   wins at any import order. */
+.app-titlebar .hk-titlebar .app-titlebar__menu {
   display: none;
   -webkit-app-region: no-drag;
   app-region: no-drag;
@@ -158,7 +165,9 @@
 }
 
 @media (max-width: 767px) {
-  .app-titlebar__menu {
+  /* Same (0,3,0) scoping as the hide above — at the old (0,1,0) this show
+     rule would LOSE to it and the phone drawer opener would vanish. */
+  .app-titlebar .hk-titlebar .app-titlebar__menu {
     display: flex;
   }
 

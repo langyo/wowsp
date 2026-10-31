@@ -2,7 +2,8 @@
  *  LAYOUT the hamburger becomes the current-account avatar — dog-tag
  *  emblem, nickname-initial letter, or the neutral disc when no account is
  *  shown — and the tap opens the nav drawer; desktop layout keeps the
- *  plain hamburger. (Layout is viewport-driven: the test drives
+ *  plain hamburger node (CSS-hidden there, see AppTitleBar.scss).
+ *  (Layout is viewport-driven: the test drives
  *  window.innerWidth, the same signal hikari's useBreakpoint reads.) */
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
