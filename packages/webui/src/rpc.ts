@@ -209,6 +209,8 @@ export const RPC = {
   logs_read_tail: "logs_read_tail",
   logs_export_bundle: "logs_export_bundle",
   mod_hub_scan_installed: "mod_hub_scan_installed",
+  mod_hub_boot_installer: "mod_hub_boot_installer",
+  mod_hub_disarm_boot_installer: "mod_hub_disarm_boot_installer",
   mod_hub_foreign_units: "mod_hub_foreign_units",
   mod_hub_list_assets: "mod_hub_list_assets",
   mod_hub_read_asset: "mod_hub_read_asset",

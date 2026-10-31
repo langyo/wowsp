@@ -356,6 +356,14 @@
       background: rgb(var(--color-border) / 10%);
       border: 1px solid rgb(var(--color-border) / 20%);
     }
+
+    // Contested tree (a WoWSP record claims files in a foreign tree) —
+    // amber, the warn family of the condition strips.
+    &--contested {
+      color: rgba(202, 138, 4, 1);
+      background: rgba(234, 179, 8, 0.12);
+      border: 1px solid rgba(234, 179, 8, 0.35);
+    }
   }
 
   &__spinner {
@@ -1062,6 +1070,80 @@
   }
 
   /* The chevron rotates with the strip's open state. */
+  .is-open {
+    transform: rotate(180deg);
+  }
+}
+
+// ── Boot re-installer strip (the PnFMods/ModsInstaller_* warning) ───────────
+
+.boot-installer {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: rgba(202, 138, 4, 1);
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: var(--radius-sm);
+
+  /* Head row: the collapsible trigger plus the DISARM action, always
+     reachable without expanding the row list. */
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+  }
+
+  &__title {
+    font-weight: 600;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  &__unit {
+    color: rgb(var(--color-muted));
+    font-family: var(--font-mono, monospace);
+    word-break: break-all;
+  }
+
+  &__rowname {
+    word-break: break-all;
+    border-bottom: 1px dashed rgba(234, 179, 8, 0.25);
+    padding-bottom: 0.25rem;
+
+    &:last-of-type {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+  }
+
+  &__more {
+    color: rgb(var(--color-muted));
+  }
+
+  /* Same chevron rotation as the loader-health strip. */
   .is-open {
     transform: rotate(180deg);
   }

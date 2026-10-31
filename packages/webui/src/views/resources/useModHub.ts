@@ -9,6 +9,7 @@ import { useToast } from "@celestia-island/hikari";
 
 import {
   api,
+  type BootInstallerInfo,
   type CatalogEntry,
   type CatalogProgress,
   type CatalogTag,
@@ -162,6 +163,12 @@ export function useModHub() {
   // dependency-disabled mods). Informational only: no auto-repair rides
   // this surface.
   const loaderHealth = ref<LoaderHealthReport | null>(null);
+  // The boot re-installer (PnFMods/ModsInstaller_*) — Aslain's re-applier
+  // that re-writes its descriptor XMLs at every game start, undoing WoWSP
+  // rewrites of the shared trees. Detected with the same scan pass; the
+  // strip's DISARM action owns its busy flag.
+  const bootInstaller = ref<BootInstallerInfo | null>(null);
+  const disarmBusy = ref(false);
   // `migrating` means "the wizard's execute step is in flight"; the ⋯ menu
   // entry and the stale banner button both disable on it. (Owned by the
   // wizard composable — see useMigrateWizard.)
@@ -800,6 +807,11 @@ export function useModHub() {
         return null;
       });
       if (!isCurrent()) return;
+      const boot = await api.modHubBootInstaller(root).catch((e) => {
+        console.warn("boot-installer detection failed", e);
+        return null;
+      });
+      if (!isCurrent()) return;
       const quarantined = await api.modHubSafeMode(root).catch(() => false);
       if (!isCurrent()) return;
       installed.value = mods;
@@ -807,6 +819,7 @@ export function useModHub() {
       staleBins.value = stale;
       loaderStatus.value = loader;
       loaderHealth.value = health;
+      bootInstaller.value = boot;
       safeMode.value = quarantined;
       // Same data the sidebar prompt polls — adopt it so the footer row
       // clears the moment a migration finishes, not on the next poll.
@@ -1155,6 +1168,36 @@ export function useModHub() {
     }
   }
 
+  // ── Boot re-installer disarm ──────────────────────────────────────────
+  // Removes the PnFMods/ModsInstaller_* unit and cuts every manifest row
+  // it would re-apply, so the next game start re-applies nothing (see the
+  // backend's boot_installer module for the full story). Single-flight
+  // with the standard mutation pre-checks; the confirm dialog lives in
+  // the view.
+  async function doDisarmBootInstaller() {
+    if (!gameRoot.value || disarmBusy.value || gameRunning() || safeModeBlocked()) {
+      return;
+    }
+    if (!(await requestModOpDisclaimer())) return;
+    disarmBusy.value = true;
+    try {
+      const report = await api.modHubDisarmBootInstaller(gameRoot.value);
+      toast.success(
+        t("resources.bootInstaller.done", {
+          files: report.removedFiles,
+          rows: report.cutRows,
+        }),
+      );
+      // The unit's files and manifest rows are gone — full refresh pass
+      // (ledger records that claimed its files may have been trimmed too).
+      await Promise.all([scan(), loadRecords()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      disarmBusy.value = false;
+    }
+  }
+
   async function confirmInstall() {
     if (!plan.value || installing.value || gameRunning() || safeModeBlocked()) return;
     if (!(await requestModOpDisclaimer())) return;
@@ -1485,6 +1528,16 @@ export function useModHub() {
         .length,
   );
 
+  /** The rows the disarm confirm dialog lists: the manifest rows a disarm
+   *  will actually cut (the detection's descriptor-matching set plus the
+   *  unit's own row), falling back to the raw descriptors when no
+   *  manifest pairs — the copy must match the cut set. */
+  const bootInstallerCutRows = computed(() => {
+    const info = bootInstaller.value;
+    if (!info) return [] as string[];
+    return info.manifestRows.length > 0 ? info.manifestRows : info.descriptors;
+  });
+
   const selectedRowKey = computed(() => {
     const sel = selection.value;
     if (sel?.mode === "catalog") return sel.entry.id;
@@ -1540,6 +1593,7 @@ export function useModHub() {
     staleBins.value = [];
     loaderStatus.value = null;
     loaderHealth.value = null;
+    bootInstaller.value = null;
     safeMode.value = false;
     selection.value = null;
     selectedPreset.value = "";
@@ -1598,6 +1652,10 @@ export function useModHub() {
     loaderHealth,
     loaderHealthErrors,
     loaderHealthOkCount,
+    bootInstaller,
+    bootInstallerCutRows,
+    disarmBusy,
+    doDisarmBootInstaller,
     safeMode,
     safeModeAsk,
     safeModeBusy,

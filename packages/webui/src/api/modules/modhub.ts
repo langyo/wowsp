@@ -53,6 +53,11 @@ export interface InstalledMod {
    *  Aslain-alias match against the online index) — drives the localized
    *  display name. Absent when nothing paired. */
   identity?: string | null;
+  /** True when this unit's paths overlap files a WoWSP ledger record
+   *  claims (same install + bin version) while the record is not the
+   *  unit's own and does not cover the whole tree — the "contested tree"
+   *  badge. Absent when false. */
+  contested?: boolean;
 }
 
 /** One unit the purge could not reinstall. */
@@ -353,6 +358,36 @@ export interface ForeignModUnit {
   version?: string | null;
   /** Catalog id this unit pairs against, when a match existed. */
   identity?: string | null;
+  /** True when the unit's tree overlaps files a WoWSP ledger record
+   *  claims (Aslain rows inherit the verdict of the installed unit
+   *  anchored under the same name). Absent when false. */
+  contested?: boolean;
+}
+
+/** The boot re-installer footprint of a live res_mods (mirrors
+ *  `wowsp_tauri_shared::BootInstallerInfo`): the PnFMods/ModsInstaller_*
+ *  unit Aslain's modpack ships, whose Main.py re-runs the installer at
+ *  every game start and re-applies its descriptor XMLs — the engine
+ *  behind WoWSP rewrites and Aslain rewrites undoing each other. */
+export interface BootInstallerInfo {
+  /** The unit's res_mods-relative tree root (e.g.
+   *  `PnFMods/ModsInstaller_4_3_1`). */
+  unitRelPath: string;
+  /** Version digit encoded in the directory name, when present. */
+  version?: string | null;
+  /** File names (stems) of the unit's mods/*.xml — the rows it would
+   *  re-apply at every game start, sorted. */
+  descriptors: string[];
+  /** installed_mods.xml rows whose names match those descriptors (or the
+   *  unit's own name) — exactly what a disarm cuts. */
+  manifestRows: string[];
+}
+
+/** What the disarm did: the unit tree removed and the foreign manifest
+ *  rows cut. */
+export interface BootInstallerDisarmReport {
+  removedFiles: number;
+  cutRows: number;
 }
 
 /** One previewable file under an installed unit (mirrors
@@ -564,6 +599,14 @@ export const modHubApi = {
   /** Write the missing PnFModsLoader.py marker back (gated). */
   modHubRestorePnfLoaderMarker: (gameRoot: string) =>
     transport.invoke<boolean>(RPC.mod_hub_restore_pnf_loader_marker, { gameRoot }),
+  /** The boot re-installer footprint (PnFMods/ModsInstaller_*), when one
+   *  lives in the tree — null means the strip stays hidden. */
+  modHubBootInstaller: (gameRoot: string) =>
+    transport.invoke<BootInstallerInfo | null>(RPC.mod_hub_boot_installer, { gameRoot }),
+  /** DISARM the boot re-installer: remove its unit and cut every manifest
+   *  row it would re-apply (gated like every res_mods mutation). */
+  modHubDisarmBootInstaller: (gameRoot: string) =>
+    transport.invoke<BootInstallerDisarmReport>(RPC.mod_hub_disarm_boot_installer, { gameRoot }),
   /** Move a stranded old-version res_mods into the current one (keep-new). */
   modHubMigrateStaleBin: (gameRoot: string, fromVersion: string) =>
     transport.invoke<MigrateReport>(RPC.mod_hub_migrate_stale_bin, {

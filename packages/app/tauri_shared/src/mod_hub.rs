@@ -105,6 +105,14 @@ pub struct InstalledMod {
     /// payloads stay byte-identical.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identity: Option<String>,
+    /// True when this unit's paths overlap files a WoWSP ledger record
+    /// claims (same install + bin version) — the "contested tree" badge:
+    /// two writers each believe they own the tree, and the foreign boot
+    /// re-installer keeps re-applying its side at every game start. Pure
+    /// scan-time computation. Absent when false (older payloads stay
+    /// byte-identical).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contested: bool,
 }
 
 /// Result of toggling one installed plugin's `.bak` state.
@@ -484,6 +492,50 @@ pub struct ForeignModUnit {
     pub version: Option<String>,
     /// Catalog id this unit pairs against, when a match existed.
     pub identity: Option<String>,
+    /// True when the unit's tree overlaps files a WoWSP ledger record
+    /// claims (see [`InstalledMod::contested`]; Aslain rows inherit the
+    /// verdict of the installed unit anchored under the same name).
+    /// Absent when false (older payloads stay byte-identical).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub contested: bool,
+}
+
+/// The boot re-installer footprint of a live `res_mods`: the
+/// `PnFMods/ModsInstaller_*` unit Aslain's modpack ships, whose `Main.py`
+/// re-runs the installer at EVERY game start and re-applies its descriptor
+/// XMLs (`mods/*.xml` inside the unit) — the engine behind WoWSP rewrites
+/// and Aslain rewrites undoing each other. `None` from the read command
+/// when no such unit lives in the tree.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootInstallerInfo {
+    /// The unit's res_mods-relative tree root, e.g.
+    /// `PnFMods/ModsInstaller_4_3_1` (spelling as on disk).
+    pub unit_rel_path: String,
+    /// The version digit encoded in the directory name (`4_3_1`), when the
+    /// family prefix carries one.
+    pub version: Option<String>,
+    /// File names (stems) of `PnFMods/ModsInstaller_*/mods/*.xml` — the
+    /// rows the installer would re-apply at every game start, sorted.
+    pub descriptors: Vec<String>,
+    /// `installed_mods.xml` rows whose name matches one of those
+    /// descriptors (or the unit's own name) — the rows currently pairing
+    /// with WoWSP-claimed files, i.e. exactly what a disarm cuts. Empty
+    /// when no manifest exists or nothing pairs.
+    pub manifest_rows: Vec<String>,
+}
+
+/// What [`mod_hub_disarm_boot_installer`] did: the unit tree removed and
+/// the foreign manifest rows cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BootInstallerDisarmReport {
+    /// Files removed with the unit tree (its own contents; ledger-backed
+    /// restores are counted separately by the unit uninstall).
+    pub removed_files: usize,
+    /// `installed_mods.xml` rows cut (the unit's own row plus every row
+    /// matching a descriptor it would re-apply).
+    pub cut_rows: usize,
 }
 
 /// What a stale-bin migration did: files moved into the current version's

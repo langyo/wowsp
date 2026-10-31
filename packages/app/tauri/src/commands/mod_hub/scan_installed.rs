@@ -28,7 +28,7 @@ pub fn mod_hub_scan_installed(game_root: String) -> CommandResult<Vec<InstalledM
         // classified list) and the foreign-row pairing below — a refresh racing
         // the scan cannot hand the two passes different name forms.
         let catalog = super::mod_catalog::load_cached_index();
-        let units = classify_installed_root(&res_mods, catalog.as_ref());
+        let mut units = classify_installed_root(&res_mods, catalog.as_ref());
         // The same sweep refreshes wowsp.toml's [foreign.*] sections — the scan
         // IS the recognition pass (Aslain manifest rows, ModStation's mods/
         // tree), and pairing verdicts ride along in the rows.
@@ -36,7 +36,27 @@ pub fn mod_hub_scan_installed(game_root: String) -> CommandResult<Vec<InstalledM
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or(res_mods.clone());
-        refresh_foreign_with(&res_mods, &ver_dir, catalog);
+        refresh_foreign_with(&res_mods, &ver_dir, catalog.as_ref());
+        // "Contested tree" overlay (P5): which units share files with a
+        // WoWSP ledger record of THIS install — the badge behind the
+        // boot-installer story. Same bin/root rule as the unit ops. Skipped
+        // without a catalog: the own-record exclusion needs it, and running
+        // the overlay blind would badge every WoWSP-managed unit with its
+        // own record (round-2 audit — a missing/corrupt cache must stay
+        // QUIET, not noisy).
+        if let (Some((bin_version, _)), Some(catalog_ref)) =
+            (latest_bin_version(&game_root), catalog.as_ref())
+        {
+            let ledger = super::mod_catalog::load_ledger();
+            super::installed_units::mark_contested_units(
+                &res_mods,
+                &mut units,
+                &ledger.installs,
+                catalog_ref,
+                &bin_version,
+                &game_root,
+            );
+        }
         Ok(units)
     }
 }
@@ -46,11 +66,9 @@ pub fn mod_hub_scan_installed(game_root: String) -> CommandResult<Vec<InstalledM
 fn refresh_foreign_with(
     res_mods: &Path,
     ver_dir: &Path,
-    catalog: Option<wowsp_tauri_shared::CatalogIndex>,
+    catalog: Option<&wowsp_tauri_shared::CatalogIndex>,
 ) {
-    for (installer, units) in
-        foreign::scan_foreign(res_mods, &ver_dir.join("mods"), catalog.as_ref())
-    {
+    for (installer, units) in foreign::scan_foreign(res_mods, &ver_dir.join("mods"), catalog) {
         super::manifest::hub_apply(super::manifest::ManifestOp::ReplaceForeign {
             res_mods: res_mods.to_path_buf(),
             installer,
@@ -73,19 +91,46 @@ pub fn mod_hub_foreign_units(
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| res_mods.clone());
     let catalog = super::mod_catalog::load_cached_index();
+    // Contested verdicts live on the INSTALLED units (Aslain rows anchor
+    // there by name); compute the same overlay once and let the manifest
+    // rows inherit it. ModStation trees sit outside res_mods — no WoWSP
+    // record can claim them, so they stay uncontested by construction.
+    let mut contested_by_name = std::collections::HashMap::new();
+    if let (Some((bin_version, _)), Some(catalog_ref)) =
+        (latest_bin_version(&game_root), catalog.as_ref())
+    {
+        let mut units = classify_installed_root(&res_mods, Some(catalog_ref));
+        let ledger = super::mod_catalog::load_ledger();
+        super::installed_units::mark_contested_units(
+            &res_mods,
+            &mut units,
+            &ledger.installs,
+            catalog_ref,
+            &bin_version,
+            &game_root,
+        );
+        contested_by_name.extend(units.into_iter().map(|u| (u.name, u.contested)));
+    }
+    let contested_verdicts = &contested_by_name;
     Ok(
         foreign::scan_foreign(&res_mods, &ver_dir.join("mods"), catalog.as_ref())
             .into_iter()
             .flat_map(|(installer, units)| {
-                units
-                    .into_iter()
-                    .map(move |(key, entry)| wowsp_tauri_shared::ForeignModUnit {
+                units.into_iter().map(move |(key, entry)| {
+                    let contested = installer == foreign::INSTALLER_ASLAIN
+                        && contested_verdicts
+                            .get(&entry.name)
+                            .copied()
+                            .unwrap_or(false);
+                    wowsp_tauri_shared::ForeignModUnit {
                         installer: installer.clone(),
                         key,
                         name: entry.name,
                         version: entry.version,
                         identity: entry.identity,
-                    })
+                        contested,
+                    }
+                })
             })
             .collect(),
     )

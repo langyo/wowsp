@@ -50,6 +50,8 @@
     "modstation": "WG ModStation"
   },
   "foreignBadge": "{source} によりインストール",
+  "contestedTree": "競合ツリー",
+  "contestedTreeHint": "WoWSP のインストール記録がこのツリー内のファイルを主張しており、外部ファイルも残っています。WoWSP の書き換えと外部インストーラーの起動時再適用が互いに上書きし合います。",
   "foreignManaged": "{name} は {source} によってインストールされました。ここから直接アンインストールできます（ファイルと {source} の登録行は一緒に整理されます）。WoWSP の管理に移行するには、ペアリングされたカタログ項目を開いて登録して再インストールしてください。",
   "foreignPaired": "カタログと照合済み",
   "foreignUnpaired": "カタログ照合なし",
@@ -189,6 +191,15 @@
       "disabledByDependency": "TTaro 系のモッドをひとつ再インストールして、共有フレームワークのデータを修復してください。"
     },
     "loadedOkSummary": "{count} 個のモッドが正常に読み込まれました"
+  },
+  "bootInstaller": {
+    "title": "外部インストーラーがゲーム起動のたびに {count} 件の行を再適用します",
+    "hint": "Aslain のブート再インストーラー（PnFMods/ModsInstaller_*）はゲーム起動のたびに再実行され、記述 XML を再適用して WoWSP の共有ツリーへの書き換えを上書きします。",
+    "more": "他 {count} 件",
+    "disarm": "無効化",
+    "confirmTitle": "ブートインストーラーを無効化",
+    "confirmBody": "ユニット {unit} を削除し、installed_mods.xml から {count} 件の行（{rows}）を切り取ります。次回のゲーム起動では何も再適用されなくなります。ユニット自身のファイルは削除され、WoWSP が記録した上書き前のオリジナルは復元されます。",
+    "done": "無効化しました——{files} 個のファイルを削除し、{rows} 件の行を切り取りました。"
   },
   "staleSidebarKey": "ゲームが更新されました",
   "staleSidebarText": "移行待ちのmodファイル {count} 個",

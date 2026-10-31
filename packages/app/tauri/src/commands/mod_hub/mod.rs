@@ -765,6 +765,7 @@ fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Re
 }
 
 pub(crate) mod assets;
+mod boot_installer;
 mod classify;
 pub(crate) mod foreign;
 mod install;
@@ -803,6 +804,12 @@ pub use assets::{
     __cmd__mod_hub_list_assets, __cmd__mod_hub_read_asset,
     __tauri_command_name_mod_hub_list_assets, __tauri_command_name_mod_hub_read_asset,
     mod_hub_list_assets, mod_hub_read_asset,
+};
+pub use boot_installer::{
+    __cmd__mod_hub_boot_installer, __cmd__mod_hub_disarm_boot_installer,
+    __tauri_command_name_mod_hub_boot_installer,
+    __tauri_command_name_mod_hub_disarm_boot_installer, mod_hub_boot_installer,
+    mod_hub_disarm_boot_installer,
 };
 pub use classify::{
     __cmd__mod_hub_classify_path, __tauri_command_name_mod_hub_classify_path, mod_hub_classify_path,

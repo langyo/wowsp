@@ -503,18 +503,28 @@ fn trim_covered_files(
 /// Drop one `<mod name="…"/>` row from Aslain's manifest after its unit was
 /// uninstalled. Best effort: a failed rewrite leaves the manifest untouched.
 fn remove_manifest_entry(res_mods: &Path, name: &str) {
+    remove_manifest_entries_where(res_mods, |row| row == name);
+}
+
+/// Cut every `<mod …/>` row whose name satisfies `keep` — the shared
+/// span-surgery behind [`remove_manifest_entry`] and the boot-installer
+/// disarm (which cuts a whole descriptor-named row SET in one rewrite).
+/// Returns how many rows were cut — attempted, that is: the rewrite is
+/// best-effort, a failed one leaves the rows for the next retry to cut.
+pub(crate) fn remove_manifest_entries_where(res_mods: &Path, keep: impl Fn(&str) -> bool) -> usize {
     let path = res_mods.join("installed_mods.xml");
     let Ok(body) = fs::read_to_string(&path) else {
-        return;
+        return 0;
     };
     let spans: Vec<(usize, usize)> = parse_installed_manifest(res_mods)
         .into_iter()
-        .filter(|e| e.name == name)
+        .filter(|e| keep(&e.name))
         .map(|e| e.span)
         .collect();
     if spans.is_empty() {
-        return;
+        return 0;
     }
+    let cut = spans.len();
     let mut out = String::with_capacity(body.len());
     let mut cursor = 0usize;
     for (start, end) in spans {
@@ -528,9 +538,14 @@ fn remove_manifest_entry(res_mods: &Path, name: &str) {
     // Atomic rewrite: a crash mid-write must not corrupt the manifest other
     // tools (Aslain's installer) also depend on.
     let tmp = path.with_file_name("installed_mods.xml.tmp");
-    fs::write(&tmp, &out)
+    if fs::write(&tmp, &out)
         .and_then(|_| fs::rename(&tmp, &path))
-        .ok();
+        .is_ok()
+    {
+        cut
+    } else {
+        0
+    }
 }
 
 /// Cut every Aslain-manifest row the scan-time pairing assigns to

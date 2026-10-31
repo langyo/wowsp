@@ -72,6 +72,7 @@ pub(crate) fn classify_installed_root(
             version: m.version.clone(),
             identity: unit_identity(&names, pairs.as_deref()),
             warnings: Vec::new(),
+            contested: false,
         });
     }
 
@@ -92,6 +93,7 @@ pub(crate) fn classify_installed_root(
             version: None,
             identity: unit_identity(&[cand.name.as_str()], pairs.as_deref()),
             warnings: Vec::new(),
+            contested: false,
         });
     }
 
@@ -254,6 +256,90 @@ fn unit_disabled_state(res_mods: &Path, paths: &[String]) -> bool {
         }
     }
     total > 0 && bak == total
+}
+
+/// Overlay the "contested tree" verdict: contested = true on every unit
+/// whose paths overlap files a WoWSP ledger record claims for THIS install
+/// (same bin version + root). Two writers each believing they own the tree
+/// is the P5 failure engine — WoWSP rewrites a shared tree, the foreign
+/// boot re-installer re-applies its side at the next game start — so the
+/// badge names exactly the trees where that can happen.
+///
+/// Two exclusions keep the badge meaningful instead of badging every
+/// WoWSP-managed unit with its own record:
+/// - the unit's OWN record never contests it: the record the unit's scan
+///   pairing resolves to (`identity` -> catalog entry), including a folded
+///   style family's legacy record ids (`supersedes`);
+/// - FULL coverage stays quiet: when the same-root records claim every file
+///   under the unit's paths, the tree is WoWSP's own writing (its install
+///   wrote the whole tree). A PARTIAL claim — foreign leftovers beside
+///   WoWSP's writes, or a shared component WoWSP wrote into a foreign
+///   tree — contests it.
+pub(crate) fn mark_contested_units(
+    res_mods: &Path,
+    units: &mut [InstalledMod],
+    installs: &[ModInstallRecord],
+    catalog: &CatalogIndex,
+    bin_version: &str,
+    game_root: &str,
+) {
+    let claimed_here: Vec<&ModInstallRecord> = installs
+        .iter()
+        .filter(|r| r.bin_version == bin_version)
+        .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
+        .collect();
+    if claimed_here.is_empty() {
+        return;
+    }
+    for unit in units.iter_mut() {
+        if unit.paths.is_empty() {
+            continue;
+        }
+        let own = unit
+            .identity
+            .as_deref()
+            .and_then(|id| catalog.mods.iter().find(|entry| entry.id == id));
+        // Record files claimed under this unit's paths (live names — the
+        // spelling records store; `unit_covers` neutralizes `.bak` twins).
+        let mut claimed = std::collections::BTreeSet::new();
+        for record in &claimed_here {
+            let is_own = own.is_some_and(|entry| {
+                entry.id == record.id
+                    || entry
+                        .supersedes
+                        .as_ref()
+                        .is_some_and(|table| table.contains_key(&record.id))
+            });
+            if is_own {
+                continue;
+            }
+            for file in &record.files {
+                if !file.starts_with("@game/") && unit_covers(&unit.paths, file) {
+                    claimed.insert(file.clone());
+                }
+            }
+        }
+        if claimed.is_empty() {
+            continue;
+        }
+        let on_disk: std::collections::BTreeSet<String> = unit
+            .paths
+            .iter()
+            .flat_map(|rel| unit_files(res_mods, rel))
+            .filter_map(|path| {
+                path.strip_prefix(res_mods)
+                    .ok()
+                    .map(|rel| rel.to_string_lossy().into_owned())
+            })
+            .map(|name| {
+                name.strip_suffix(".bak")
+                    .unwrap_or(&name)
+                    .replace('\\', "/")
+            })
+            .collect();
+        let covered = on_disk.intersection(&claimed).count();
+        unit.contested = covered > 0 && covered < on_disk.len();
+    }
 }
 
 /// Does any unit root cover a res_mods-relative file? Directory roots cover
