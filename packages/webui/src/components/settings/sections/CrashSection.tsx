@@ -12,6 +12,7 @@ import {
   HkConfirmDialog,
   HkLogWindow,
   HkModal,
+  HkScrollContainer,
   HkSettingsGroup,
   HkSpinner,
   HkSwitch,
@@ -543,7 +544,11 @@ export default defineComponent({
               },
             ]}
           >
-            <div class="crash-section__records">
+            {/* The capped window: hikari's scroll container owns the
+                scrollbar (auto-hiding overlay track); the record cards
+                scroll inside its viewport. */}
+            <HkScrollContainer class="crash-section__records">
+              <div class="crash-section__records-inner">
               {crash.history.map((r) => (
                 <div
                   key={r.id}
@@ -572,10 +577,16 @@ export default defineComponent({
                     </span>
                     {recordCause(r) ? (
                       <HkTag
+                        class="crash-section__record-cause"
                         variant={r.exceptionCode ? "danger" : "default"}
                         size="sm"
                       >
-                        {recordCause(r)}
+                        <span
+                          class="crash-section__record-cause-text"
+                          data-hint-overflow={recordCause(r) ?? ""}
+                        >
+                          {recordCause(r)}
+                        </span>
                       </HkTag>
                     ) : null}
                     <span class="crash-section__spacer" />
@@ -601,7 +612,8 @@ export default defineComponent({
                   </span>
                 </div>
               ))}
-            </div>
+              </div>
+            </HkScrollContainer>
           </HkModal>
 
           {/* ── one record detail window: hikari's log viewer — tabbed

@@ -174,12 +174,21 @@
 
 // ── the records window ─────────────────────────────────────────────────────
 
+/* The capped window: hikari's scroll container owns the scrollbar
+   (auto-hiding overlay track); the record cards scroll inside its
+   viewport. */
 .crash-section__records {
+  max-height: 60vh;
+}
+
+/* The cards' stack lives inside the viewport so the rhythm scrolls
+   with the rows; the 2px padding keeps focus rings clear of the clip
+   edge. */
+.crash-section__records-inner {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 60vh;
-  overflow-y: auto;
+  padding: 2px;
 }
 
 .crash-section__record {
@@ -260,10 +269,27 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .crash-section__record-time {
+  flex: none;
+  white-space: nowrap;
   font-weight: 600;
+}
+
+/* The direct-cause tag truncates inside the card (a long WER summary
+   line must never push the row past the window edge); hovering a
+   clipped tag pops the full text via the global overflow hint. */
+.crash-section__record-cause {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.crash-section__record-cause-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 // The per-record log window is hikari's HkLogWindow (overlay scrollbar,
