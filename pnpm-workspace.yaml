@@ -24,7 +24,9 @@ minimumReleaseAgeExclude:
   # pane's translated 24-sector GLOBE zone picker this host embeds as-is.
   # hikari 0.55.253 same-day pickup (hikari #972): the timezone globe's
   # holo-transparent base sphere and the folded-by-default HkMinimap3D port.
-  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75 || 0.55.128 || 0.55.131 || 0.55.133 || 0.55.176 || 0.55.177 || 0.55.182 || 0.55.191 || 0.55.193 || 0.55.202 || 0.55.214 || 0.55.215 || 0.55.224 || 0.55.225 || 0.55.230 || 0.55.234 || 0.55.238 || 0.55.239 || 0.55.241 || 0.55.243 || 0.55.244 || 0.55.246 || 0.55.249 || 0.55.250 || 0.55.253'
+  # hikari 0.55.254 same-day pickup (hikari #978): the minimap fold/reopen
+  # renderer re-bind (reopen is no longer empty) and RotateCcw reset-view icons.
+  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75 || 0.55.128 || 0.55.131 || 0.55.133 || 0.55.176 || 0.55.177 || 0.55.182 || 0.55.191 || 0.55.193 || 0.55.202 || 0.55.214 || 0.55.215 || 0.55.224 || 0.55.225 || 0.55.230 || 0.55.234 || 0.55.238 || 0.55.239 || 0.55.241 || 0.55.243 || 0.55.244 || 0.55.246 || 0.55.249 || 0.55.250 || 0.55.253 || 0.55.254'
   - '@celestia-island/tairitsu-transport@0.1.0'
   # Patched versions of the 2026-10 dev-toolchain advisories (undici/sharp/
   # brace-expansion) are younger than the minimum-release-age window.
