@@ -19,6 +19,8 @@ import {
   type TechTreeNode,
   type TechTreeRealm,
 } from "@/utils/techTreeData";
+import { useLanguage } from "@/i18n/useLanguage";
+import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { archetypeKey } from "@/utils/archetypeLabels";
 import { resolveNationFlag } from "@/utils/nationFlags";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
@@ -193,11 +195,34 @@ export default defineComponent({
       return mins.length ? Math.min(...mins) : 1;
     });
 
+    /**
+     * Human ship name for a tree node. The committed tree data carries raw
+     * location keys ('IDS_PASA020') for WG nodes, and the encyclopedia list
+     * that normally overlays them is network-first — a phone with a slow or
+     * unavailable WG API would otherwise render IDS keys everywhere. Order:
+     * encyclopedia entry -> bundled ship_names.json -> the node's display
+     * name, and a raw IDS key never reaches the UI (the node's index reads
+     * as a ship name far better than 'IDS_PASA020').
+     */
+    const { dataLanguage } = useLanguage();
+    function resolveShipName(shipId: number): string {
+      const candidates = [
+        props.byId.get(shipId)?.name,
+        shipNameFromOfflineDb(shipId, dataLanguage.value) ?? undefined,
+        techTreeNode(shipId, props.realm)?.name,
+      ];
+      for (const name of candidates) {
+        if (name && !/^IDS_/.test(name)) return name;
+      }
+      const node = techTreeNode(shipId, props.realm);
+      return node?.index || String(shipId);
+    }
     function shipLabel(cell: PosCell): string {
-      return cell.ship?.name ?? cell.node?.name ?? String(cell.shipId);
+      if (cell.ship?.name && !/^IDS_/.test(cell.ship.name)) return cell.ship.name;
+      return resolveShipName(cell.shipId);
     }
     function labelOf(shipId: number): string {
-      return props.byId.get(shipId)?.name ?? techTreeNode(shipId, props.realm)?.name ?? String(shipId);
+      return resolveShipName(shipId);
     }
 
     /**

@@ -48,15 +48,27 @@
 }
 
 /* Phone-layout account-avatar variant of the same caption button (the
-   drawer opener): a transparent round 28px target whose face is the
-   24px avatar — dog-tag emblem, nickname-initial disc, or the neutral
-   account disc (shittim-chest's .s-user-avatar-btn geometry). */
+   drawer opener): a transparent round target whose face is the 24px
+   avatar — dog-tag emblem, nickname-initial disc, or the neutral account
+   disc (shittim-chest's .s-user-avatar-btn geometry).
+
+   The face keeps ITS OWN flex centering: AccountAvatar and PlayerBadge are
+   flex discs that center their artwork, and an old `display: block` here
+   collapsed that — the phone avatar's person glyph sat in the disc's
+   TOP-LEFT corner (the "默认头像歪了" report). Only the stretching as a
+   caption-button flex item needs suppressing. */
 .app-titlebar__account {
   padding: 0;
 
   .account-avatar,
   .player-badge {
-    display: block;
+    flex: none;
+  }
+
+  /* Keep the drawer opener lit while its panel is open, so the avatar reads
+     as the toggle's pressed state instead of a stray header icon. */
+  &[aria-expanded="true"] {
+    background: rgb(var(--color-primary) / 14%);
   }
 }
 

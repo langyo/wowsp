@@ -14,7 +14,7 @@ use wowsp_tauri_shared::{CommandResult, PlayerStats};
 use super::clans::{ClanTagInfo, fetch_clan_info_for_accounts};
 use super::lookup_error::LookupError;
 use super::shared::{
-    AccountListEntry, WgResponse, account_list_one, account_nickname_by_id, encode_query,
+    AccountListEntry, WgError, WgResponse, account_list_one, account_nickname_by_id, encode_query,
     nickname_matches, parse_dog_tag, pick_verified_entry,
 };
 use super::stats_math::{PrAlgo, PvpStats, account_expected_pr_for, karma_of};
@@ -712,13 +712,35 @@ async fn resolve_names_on_realm(
                     encode_query(&name)
                 );
                 async move {
-                    let resp =
-                        super::upstream_health::recorded_get(pair_ref, host, "account/list", url)
-                            .await?;
-                    let list = resp
-                        .json::<WgResponse<Vec<AccountListEntry>>>()
-                        .await
-                        .map_err(|e| anyhow!("account/list parse: {e}"))?;
+                    // One retry on the intermittent 504/SOURCE_NOT_AVAILABLE
+                    // envelope (the ASIA pool answers it sporadically); a
+                    // second failure still fails the batch — a transient
+                    // outage must not degrade into a "not found" the frontend
+                    // would cache.
+                    let mut list = WgResponse::<Vec<AccountListEntry>> {
+                        status: String::new(),
+                        data: None,
+                        error: WgError::default(),
+                    };
+                    for attempt in 0..2 {
+                        let resp = super::upstream_health::recorded_get(
+                            pair_ref,
+                            host,
+                            "account/list",
+                            url.clone(),
+                        )
+                        .await?;
+                        list = resp
+                            .json::<WgResponse<Vec<AccountListEntry>>>()
+                            .await
+                            .map_err(|e| anyhow!("account/list parse: {e}"))?;
+                        if list.status == "ok" || attempt == 1 {
+                            break;
+                        }
+                        if !list.error.is_source_unavailable() {
+                            break;
+                        }
+                    }
                     if list.status != "ok" {
                         anyhow::bail!("account/list: {}", list.error.message.unwrap_or_default());
                     }

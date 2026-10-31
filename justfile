@@ -332,6 +332,13 @@ _build-android *FLAGS='':
     # downloads the resource pack on demand and ship data rides the
     # data-latest channel. WOWSP_MOBILE_BUNDLE=0 pins the prune even under
     # Tauri's own TAURI_ENV_PLATFORM=android.
+    #
+    # The 2D ship portraits ARE baked into dist (they are how the phone's
+    # encyclopedia draws its cards without a game install), but they are
+    # gitignored — a clean checkout has none, and only the installer script
+    # fetches them. Run the same skip-if-present fetch first so a
+    # clean-checkout APK is not portrait-less.
+    (cd scripts && python -c "import build_installers; build_installers.ensure_images('auto')")
     export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
         ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
         JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=0
