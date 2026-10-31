@@ -31,11 +31,6 @@
     text-transform: uppercase;
   }
 
-  &__label {
-    font-size: var(--text-xs);
-    color: inherit;
-  }
-
   // Size variants. Crests (vertical ~700×915) and flags (horizontal) share a
   // diameter; the img aspect is preserved by object-fit:contain.
   &--sm {
