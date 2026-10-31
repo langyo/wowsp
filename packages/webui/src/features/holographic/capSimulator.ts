@@ -5,7 +5,13 @@
  * same result; the per-zone simulator state (`capSim`) lives on the shared
  * map context.
  */
-import { KILL_PTS, SPECIAL_CAP_MAPS, capLetter, type CapZoneState } from "./capZones";
+import {
+  KILL_PTS,
+  SPECIAL_CAP_MAPS,
+  capLetter,
+  zoneIsLive,
+  type CapZoneState,
+} from "./capZones";
 import { sampleAt, hpAtTime, progressAtTime } from "./trajectoryMath";
 import type { EntityTrajectory } from "@/api";
 import type { TeamRole } from "./teamColors";
@@ -294,11 +300,32 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
     const zone = zones[i];
     const eid = zone.entityId;
     const samples = (zone.capSamples ?? []).map((s) => ({ time: s.time, value: s.value }));
+    // Operation points are CREATED mid-battle (EntityCreate time): until
+    // the playhead crosses that instant the zone does not exist yet — no
+    // ring, no letter, no chip, no simulation, no score. Pre-recording
+    // zones (PvP domination) are born before t=0 and never hit this.
+    if (!zoneIsLive(zone, t)) {
+      display.push({
+        letter: capLetter(zone, i),
+        live: false,
+        owner: 0,
+        progress: 0,
+        alliesIn: 0,
+        enemiesIn: 0,
+        contested: false,
+        capturing: false,
+        speed: 1 / 60,
+        etaSeconds: null,
+        captureTeam: 0,
+      });
+      continue;
+    }
     if (!scoringSet.has(eid)) {
       // Strike/event zone: rendered, never scored, no capture sim.
       const { ally, enemy } = shipsInZone(ctx, zone, t);
       display.push({
         letter: capLetter(zone, i),
+        live: true,
         owner: 0,
         progress: 0,
         alliesIn: ally,
@@ -312,10 +339,15 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
       continue;
     }
     // Capture simulation: replay from scratch on scrub-back, else advance.
+    // The sim clock starts at the zone's OWN birth time — a point created
+    // mid-battle must not accrue owner points for the stretch before it
+    // existed (scrubbing below the birth time hits the reset branch above
+    // and the dormant entry instead).
+    const simStart = Math.max(0, zone.kind?.creationTime ?? 0);
     let st = ctx.capSim.get(eid);
     if (!st || st.lastT > t) {
       st = {
-        lastT: 0,
+        lastT: simStart,
         progress: 0,
         owner: ownerAt(ctx, samples, 0, zone.kind?.initialTeam ?? null),
         prevHp: new Map(),
@@ -336,6 +368,7 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
       st.progress > 0.001 && st.progress < 1 && ally + enemy > 0;
     display.push({
       letter: capLetter(zone, i),
+      live: true,
       owner: st.owner,
       progress: st.progress,
       alliesIn: ally,
@@ -373,7 +406,7 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
   // they keep their per-frame cadence regardless.
   let sig = "";
   for (const d of display) {
-    sig += d.letter + ":" + d.owner + ":" + d.progress.toFixed(2) + ":" + d.alliesIn + ":" + d.enemiesIn + ":" + (d.contested ? "c" : "") + (d.capturing ? "t" : "") + ":" + d.etaSeconds + ":" + d.captureTeam + ";";
+    sig += d.letter + ":" + (d.live ? "L" : "x") + ":" + d.owner + ":" + d.progress.toFixed(2) + ":" + d.alliesIn + ":" + d.enemiesIn + ":" + (d.contested ? "c" : "") + (d.capturing ? "t" : "") + ":" + d.etaSeconds + ":" + d.captureTeam + ";";
   }
   if (sig !== ctx._capDisplaySig) {
     ctx._capDisplaySig = sig;

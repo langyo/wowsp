@@ -1398,9 +1398,14 @@ export default defineComponent({
     const capDisplay = ref<CapZoneState[]>([]);
 
     /** Shared scorebar state — the app's cap simulator + roster mapped onto
-     *  the @wowsp/holo contract (same component the marketing site uses). */
+     *  the @wowsp/holo contract (same component the marketing site uses).
+     *  Operations (行动) carry NO points victory — their win condition is
+     *  the script itself — so the score digits sit out there and the bar
+     *  degrades to the cap-occupation chips, which appear progressively as
+     *  the scenario creates each point (unborn zones never reach the caps
+     *  array). */
     const scorebarState = computed<HoloHudState>(() => {
-      const caps: HoloCapZone[] = capDisplay.value.map((c) => ({
+      const caps: HoloCapZone[] = capDisplay.value.filter((c) => c.live).map((c) => ({
         letter: c.letter,
         owner: c.owner === 1 ? "ally" : c.owner === 2 ? "enemy" : "neutral",
         progress: c.progress,
@@ -1431,8 +1436,10 @@ export default defineComponent({
         })),
       ];
       return {
-        scoreAlly: allyScore.value,
-        scoreEnemy: enemyScore.value,
+        // Score digits are a domination concept — ops hide them.
+        ...(props.operation
+          ? {}
+          : { scoreAlly: allyScore.value, scoreEnemy: enemyScore.value }),
         aliveAlly: 0, aliveEnemy: 0,
         time: hudCurrent.value,
         duration: duration.value,

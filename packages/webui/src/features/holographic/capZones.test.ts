@@ -1,6 +1,6 @@
 /** Unit tests for the capture-zone classification heuristics. */
 import { describe, expect, it } from "vitest";
-import { capLetter, isCaptureZone } from "./capZones";
+import { capLetter, isCaptureZone, zoneBirthTime, zoneIsLive } from "./capZones";
 import type { EntityTrajectory } from "@/api";
 
 /** Minimal zone trajectory: entityType 14 with only the fields the
@@ -92,5 +92,29 @@ describe("capLetter", () => {
 
   it("falls back to the list position without a point index", () => {
     expect(capLetter(zone({}), 2)).toBe("C");
+  });
+});
+
+describe("zone birth time (progressive op points)", () => {
+  it("reads the EntityCreate time as the birth instant", () => {
+    const t = zone({ kind: { ...zone({}).kind!, creationTime: 120 } });
+    expect(zoneBirthTime(t)).toBe(120);
+  });
+
+  it("treats pre-recording entities (-1) as live from the first frame", () => {
+    const t = zone({ kind: { ...zone({}).kind!, creationTime: -1 } });
+    expect(zoneBirthTime(t)).toBe(-1);
+    expect(zoneIsLive(t, 0)).toBe(true);
+  });
+
+  it("hides an op point until the playhead crosses its creation", () => {
+    const t = zone({ kind: { ...zone({}).kind!, creationTime: 120 } });
+    expect(zoneIsLive(t, 119.9)).toBe(false);
+    expect(zoneIsLive(t, 120)).toBe(true);
+    expect(zoneIsLive(t, 900)).toBe(true);
+  });
+
+  it("treats a missing kind as pre-recording (live immediately)", () => {
+    expect(zoneIsLive({ entityId: 1, samples: [] }, 0)).toBe(true);
   });
 });
