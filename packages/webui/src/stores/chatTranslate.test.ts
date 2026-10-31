@@ -7,7 +7,6 @@ const { chatMock, savedMock } = vi.hoisted(() => ({
     getChatTranslateConfig: vi.fn(),
     setChatTranslateConfig: vi.fn(),
     testChatTranslateProvider: vi.fn(),
-    getChatProviderRegistry: vi.fn(),
     debugTranslateText: vi.fn(),
   },
   savedMock: { notifySettingsSaved: vi.fn() },
@@ -409,83 +408,5 @@ describe("chat translation settings", () => {
     await store.load();
     expect(store.sendMode).toBe("off");
     expect(store.config.send.mode).toBe("off");
-  });
-
-  describe("shared provider registry", () => {
-    function registryFixture() {
-      return {
-        fetchedAt: 123,
-        stale: false,
-        providers: [
-          {
-            id: "deepseek_default",
-            providerId: "deepseek",
-            names: {
-              en: "DeepSeek",
-              zhs: "深度求索",
-              zht: "深度求索",
-              ja: "DeepSeek",
-              ko: "DeepSeek",
-              fr: "DeepSeek",
-              es: "DeepSeek",
-              ru: "DeepSeek",
-            },
-            baseUrl: "https://api.deepseek.com",
-            envVar: "DEEPSEEK_API_KEY",
-            defaultModel: "deepseek-flash",
-            models: [{ id: "deepseek-flash", name: "DeepSeek Flash" }],
-          },
-        ],
-      };
-    }
-
-    it("loads the catalog once, guards re-entry and passes refresh through", async () => {
-      const store = useChatTranslateStore();
-      await store.load();
-      let release!: (value: unknown) => void;
-      const gate = new Promise((resolve) => {
-        release = resolve;
-      });
-      chatMock.getChatProviderRegistry.mockReturnValueOnce(gate);
-      const first = store.loadRegistry();
-      await flushPromises();
-      expect(store.registryLoading).toBe(true);
-      // A second call while the first is in flight is a no-op.
-      await store.loadRegistry(true);
-      expect(chatMock.getChatProviderRegistry).toHaveBeenCalledTimes(1);
-      release(registryFixture());
-      await first;
-      expect(store.registryLoading).toBe(false);
-      expect(store.registryError).toBeNull();
-      expect(store.registry?.providers[0]?.id).toBe("deepseek_default");
-      expect(chatMock.getChatProviderRegistry).toHaveBeenCalledWith(false);
-      // An explicit refresh reaches the shell (cache bypass).
-      chatMock.getChatProviderRegistry.mockResolvedValueOnce({
-        ...registryFixture(),
-        fetchedAt: 500,
-        stale: true,
-      });
-      await store.loadRegistry(true);
-      expect(chatMock.getChatProviderRegistry).toHaveBeenLastCalledWith(true);
-      expect(store.registry?.stale).toBe(true);
-      expect(store.registry?.fetchedAt).toBe(500);
-    });
-
-    it("keeps the previous catalog and surfaces the error when a load fails", async () => {
-      const store = useChatTranslateStore();
-      await store.load();
-      chatMock.getChatProviderRegistry.mockResolvedValueOnce(registryFixture());
-      await store.loadRegistry();
-      expect(store.registry?.providers).toHaveLength(1);
-      chatMock.getChatProviderRegistry.mockRejectedValueOnce(
-        new Error("registry unavailable"),
-      );
-      await store.loadRegistry(true);
-      // The previously loaded catalog survives: the window can still pick
-      // from it while the error line explains the failed refresh.
-      expect(store.registry?.providers[0]?.id).toBe("deepseek_default");
-      expect(store.registryError).toContain("registry unavailable");
-      expect(store.registryLoading).toBe(false);
-    });
   });
 });

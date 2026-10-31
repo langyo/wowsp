@@ -575,16 +575,8 @@
     "testResponsePayload": "Respuesta estructurada",
     "testNoResult": "Aún no hay resultado: pulsa «Traducir».",
     "translateTestFailed": "La prueba de traducción falló: {msg}",
-    "providerPreset": "Proveedor",
-    "providerPresetCustom": "Personalizado",
-    "modelPreset": "Modelo",
-    "modelPresetCustom": "Modelo personalizado",
     "advancedParams": "Parámetros avanzados",
-    "advancedHint": "Solo ajústalos si tu proveedor lo pide.",
-    "registryLoading": "Cargando el catálogo de proveedores…",
-    "registryFailed": "No se pudo cargar el catálogo de proveedores; los campos de abajo siguen funcionando.",
-    "registryRefresh": "Actualizar catálogo de proveedores",
-    "registryStale": "No se pudo actualizar: se muestra la lista de proveedores en caché. Comprueba la red e inténtalo de nuevo."
+    "advancedHint": "Solo ajústalos si tu proveedor lo pide."
   },
   "sectionCrashed": "Esta sección de ajustes ha fallado; el resto de ajustes sigue funcionando."
 }

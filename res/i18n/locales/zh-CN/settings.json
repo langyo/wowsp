@@ -575,16 +575,8 @@
     "testResponsePayload": "结构化返回",
     "testNoResult": "还没有结果——先点击「翻译」。",
     "translateTestFailed": "翻译测试失败：{msg}",
-    "providerPreset": "服务商",
-    "providerPresetCustom": "自定义",
-    "modelPreset": "模型",
-    "modelPresetCustom": "自定义模型",
     "advancedParams": "高级参数",
-    "advancedHint": "除非服务商要求，否则无需调整。",
-    "registryLoading": "正在加载服务商目录…",
-    "registryFailed": "服务商目录加载失败；仍可手动填写下方字段。",
-    "registryRefresh": "刷新服务商目录",
-    "registryStale": "刷新失败——当前显示缓存的服务商列表。请检查网络后重试。"
+    "advancedHint": "除非服务商要求，否则无需调整。"
   },
   "sectionCrashed": "此设置区域出现错误——其余设置仍然可用，可点击重试。"
 }

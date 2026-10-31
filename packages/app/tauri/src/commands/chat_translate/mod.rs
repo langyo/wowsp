@@ -35,7 +35,6 @@ mod lang;
 mod live;
 pub(crate) mod outgoing;
 mod prompt;
-pub(crate) mod registry;
 mod translate;
 
 use anyhow::anyhow;

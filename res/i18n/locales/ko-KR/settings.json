@@ -575,16 +575,8 @@
     "testResponsePayload": "구조화 응답",
     "testNoResult": "아직 결과가 없습니다 — 「번역」을 누르세요.",
     "translateTestFailed": "번역 테스트 실패: {msg}",
-    "providerPreset": "제공자",
-    "providerPresetCustom": "사용자 지정",
-    "modelPreset": "모델",
-    "modelPresetCustom": "사용자 지정 모델",
     "advancedParams": "고급 매개변수",
-    "advancedHint": "제공자가 요구하지 않는 한 조정할 필요가 없습니다.",
-    "registryLoading": "제공자 목록을 불러오는 중…",
-    "registryFailed": "제공자 목록을 불러오지 못했습니다. 아래 항목은 직접 입력할 수 있습니다.",
-    "registryRefresh": "제공자 목록 새로 고침",
-    "registryStale": "새로 고치지 못했습니다. 캐시된 제공자 목록을 표시합니다. 네트워크를 확인한 후 다시 시도하세요."
+    "advancedHint": "제공자가 요구하지 않는 한 조정할 필요가 없습니다."
   },
   "sectionCrashed": "이 설정 섹션에서 오류가 발생했습니다. 나머지 설정은 계속 사용할 수 있습니다."
 }

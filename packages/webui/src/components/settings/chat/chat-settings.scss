@@ -166,25 +166,13 @@
   overflow-wrap: anywhere;
 }
 
-/* ── provider window: registry-driven pickers, full-width address/key rows
-   and the collapsed advanced-parameters panel ─────────────────────────── */
+/* ── provider window: full-width address/model/key rows and the collapsed
+   advanced-parameters panel ───────────────────────────────────────────── */
 
 .chat-settings__field {
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
-  min-width: 0;
-}
-
-.chat-settings__provider-select {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-}
-
-.chat-settings__provider-select > :first-child {
-  flex: 1 1 auto;
   min-width: 0;
 }
 
