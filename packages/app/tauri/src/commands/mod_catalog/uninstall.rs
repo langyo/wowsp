@@ -27,6 +27,68 @@ pub(crate) fn uninstall_path_key(name: &str) -> String {
     key
 }
 
+// ── Shared component trees (Aslain's Implicit runtime layout) ───────────────
+
+/// The runtime components every Aslain-dependent catalog pack clones into
+/// its own file list (the `<Implicit>` blocks of his profile): the
+/// TTaroModUtils / ModForge / ModsInstaller toolkit trees, the ttaro GUI
+/// and config trees with their unbound fragments. A component tree
+/// belongs to the COMPONENT, not to any one pack — it stays while any
+/// consumer remains and never blocks an uninstall. Keys are lowercase,
+/// forward-slash, res_mods-relative: the spelling both the ledger and
+/// the snapshot layers normalize to.
+const SHARED_COMPONENT_ROOTS: &[&str] = &[
+    "pnfmods/ttaromodutils/",
+    "pnfmods/modforge/",
+    // The family prefix, not a pinned version: Aslain bumps the toolkit
+    // digit per release (ModsInstaller_4_4_0, ...) and a pinned root would
+    // silently lapse back to private semantics — the exact uninstall
+    // refusals this component model exists to lift.
+    "pnfmods/modsinstaller_",
+    "gui/ttaro/",
+    "gui/ttaro_mod_config/",
+    // The unbound fragments are FILES with their own suffixes directly
+    // under gui/unbound2/PnFMods/ (TTaroModUtils2.unbound, ...), so this
+    // root keeps the family prefix WITHOUT a trailing slash — a slash
+    // would miss the real file shape. The over-approximation (a
+    // hypothetical TTaroModUtilsX/ sibling directory also matching) errs
+    // in the safe direction: such a file merely STAYS and never blocks.
+    "gui/unbound2/pnfmods/ttaromodutils",
+];
+
+/// The game-root half of the shared runtime: the gettext DLL the ttaro
+/// text stack loads (`@game/`-prefixed in the ledger).
+const SHARED_GAME_ROOT_DLL: &str = "@game/gettext_x64r.dll";
+
+/// The ttaro config catalog suffix — `texts/<locale>/ttaro-mod-config.mo`
+/// under any locale directory.
+const TTARO_CATALOG_SUFFIX: &str = "/ttaro-mod-config.mo";
+
+/// The shared component a ledger path belongs to, if any: tree roots map
+/// to the root itself, the single-file components (the gettext DLL, a
+/// locale's ttaro catalog) to their own path. The ROOT is the policy
+/// unit — a consumer of ANY file under a tree-rooted component keeps the
+/// whole component alive, even files it never listed itself.
+pub(crate) fn shared_component_root(rel: &str) -> Option<String> {
+    let key = rel.to_ascii_lowercase().replace('\\', "/");
+    if key == SHARED_GAME_ROOT_DLL
+        || (key.starts_with("texts/") && key.ends_with(TTARO_CATALOG_SUFFIX))
+    {
+        return Some(key);
+    }
+    SHARED_COMPONENT_ROOTS
+        .iter()
+        .find(|root| key.starts_with(*root))
+        .map(|root| (*root).to_string())
+}
+
+/// Is this ledger path part of a shared component tree? Such files never
+/// block an uninstall and stay on disk while another consumer of the
+/// same component lives (see `live_shared_component_keys`).
+pub(crate) fn is_shared_component_path(rel: &str) -> bool {
+    shared_component_root(rel).is_some()
+}
+
 /// Records are appended in installation order. A newer overlapping install
 /// snapshots this record's bytes; removing the older layer first would both
 /// clobber the current owner and leave a snapshot that resurrects it later.
@@ -75,6 +137,13 @@ pub(crate) fn validate_file_removal_order(
             if rel == "PnFModsLoader.py" {
                 continue; // The loader has a separate shared-owner policy.
             }
+            // A shared component tree never blocks: it belongs to the
+            // component, not to this record, and the rewind below keeps
+            // it alive for the newer consumer (Aslain-aligned semantics —
+            // private files keep the refusal below unchanged).
+            if is_shared_component_path(rel) {
+                continue;
+            }
             if !rel.starts_with("@game/")
                 && record.bin_version != newer.bin_version
                 && !removes_mirrors
@@ -120,8 +189,11 @@ pub async fn mod_catalog_uninstall(
 /// How a rewind treats files that another ledger record also claims.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RewindMode {
-    /// A user uninstall: the strict ownership ordering guard applies and every
-    /// recorded file is removed or restored.
+    /// A user uninstall: the strict ownership ordering guard applies and
+    /// every recorded file is removed or restored — except shared
+    /// component files another live consumer still uses, which stay on
+    /// disk with their snapshot layer dropped (see
+    /// [`live_shared_component_keys`]).
     Strict,
     /// A reinstall (the catalog install and the local same-name flow): the
     /// record is being replaced, so a file another record on the SAME game
@@ -147,6 +219,39 @@ fn shared_claims(
         .filter(|r| r.bin_version == record.bin_version)
         .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
         .flat_map(|r| r.files.iter())
+        .map(|rel| uninstall_path_key(rel))
+        .collect()
+}
+
+/// Shared-component keys another live record (same game root and
+/// bin_version, different id) still consumes, at component-ROOT
+/// granularity: a record claiming ANY file under the same root keeps the
+/// component alive, even files it never listed itself. Later installs
+/// win and STAY — the live bytes belong to the surviving consumers, so
+/// the dying record leaves them on disk and drops its own snapshot layer
+/// instead of restoring over them; the snapshot the LAST consumer
+/// eventually restores is the one its own install captured (kept in sync
+/// by `refresh_newer_snapshots`). Mirrors Aslain's Implicit shared-runtime
+/// layout: the component ships with every dependent and survives any one
+/// of them. Duplicate records of the same catalog id are one logical
+/// install and protect nothing, exactly like [`shared_claims`].
+fn live_shared_component_keys(
+    installs: &[ModInstallRecord],
+    record: &ModInstallRecord,
+    game_root: &str,
+) -> std::collections::HashSet<String> {
+    let live_roots: std::collections::HashSet<String> = installs
+        .iter()
+        .filter(|r| r.id != record.id)
+        .filter(|r| r.bin_version == record.bin_version)
+        .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
+        .flat_map(|r| r.files.iter())
+        .filter_map(|rel| shared_component_root(rel))
+        .collect();
+    record
+        .files
+        .iter()
+        .filter(|rel| shared_component_root(rel).is_some_and(|root| live_roots.contains(&root)))
         .map(|rel| uninstall_path_key(rel))
         .collect()
 }
@@ -195,9 +300,16 @@ fn rewind_from_ledger(
     else {
         return Err(anyhow!("{mod_id} has no install record"));
     };
+    // Strict keeps only surviving shared components on disk; a reinstall
+    // additionally leaves files another record on this root and bin claims
+    // by exact path (its owner's bytes win until the new install writes).
     let protected: std::collections::HashSet<String> = match mode {
-        RewindMode::Strict => std::collections::HashSet::new(),
-        RewindMode::Reinstall => shared_claims(installs, &record, game_root),
+        RewindMode::Strict => live_shared_component_keys(installs, &record, game_root),
+        RewindMode::Reinstall => {
+            let mut claims = shared_claims(installs, &record, game_root);
+            claims.extend(live_shared_component_keys(installs, &record, game_root));
+            claims
+        },
     };
     let mut kept_shared = 0usize;
 
@@ -216,8 +328,10 @@ fn rewind_from_ledger(
         if rel == "PnFModsLoader.py" {
             continue;
         }
-        // Reinstall mode: another record on this root and bin owns the file;
-        // leave its bytes (and its snapshot restore) alone.
+        // Another record on this root and bin owns this file (a
+        // reinstall's exact shared claim, or a shared component with a
+        // surviving consumer); leave its bytes (and its snapshot restore)
+        // alone.
         if protected.contains(&uninstall_path_key(rel)) {
             kept_shared += 1;
             continue;
@@ -254,20 +368,17 @@ fn rewind_from_ledger(
     }
     // Pre-release twins lose the same files (see preload_mirror) — one
     // hook covers every caller: the mod-list uninstall, unit uninstalls
-    // and the same-name reinstall rewind. A reinstall keeps files another
-    // record on this root and bin owns, so their mirrored copies stay too.
-    match mode {
-        RewindMode::Strict => mod_hub::preload_mirror::mirror_removed(game_root, &record.files),
-        RewindMode::Reinstall => {
-            let mirrored: Vec<String> = record
-                .files
-                .iter()
-                .filter(|rel| !protected.contains(&uninstall_path_key(rel)))
-                .cloned()
-                .collect();
-            mod_hub::preload_mirror::mirror_removed(game_root, &mirrored);
-        },
-    }
+    // and the same-name reinstall rewind. Files this rewind KEEPS (a
+    // shared component another consumer still lives on, a reinstall's
+    // exact shared claims) keep their mirrored copies too: a twin's copy
+    // of a shared path serves the surviving owner, not this record.
+    let mirrored: Vec<String> = record
+        .files
+        .iter()
+        .filter(|rel| !protected.contains(&uninstall_path_key(rel)))
+        .cloned()
+        .collect();
+    mod_hub::preload_mirror::mirror_removed(game_root, &mirrored);
     // A record still keyed at an older bin after the pin flipped: the
     // pre-release fan-out put its copies into the bin the client NOW
     // loads — remove them there too, or the mod survives its own
@@ -311,18 +422,26 @@ fn rewind_from_ledger(
         }
     }
 
-    if mode == RewindMode::Reinstall && kept_shared > 0 {
+    if kept_shared > 0 {
+        let why = match mode {
+            RewindMode::Strict => {
+                "uninstall kept shared component files another install still consumes"
+            },
+            RewindMode::Reinstall => "reinstall rewind kept files another install owns",
+        };
         tracing::info!(
             id = %record.id,
             bin = %record.bin_version,
             kept = kept_shared,
-            "reinstall rewind kept files another install on this root owns"
+            "{why}"
         );
     }
 
-    // Bring back whatever this install had snapshotted over. A reinstall keeps
-    // shared files at their owner's bytes, so their snapshot entries are not
-    // restored either.
+    // Bring back whatever this install had snapshotted over. Kept shared
+    // files (a reinstall's exact claims, a surviving shared component)
+    // stay at the live bytes, so their snapshot entries are not restored
+    // either — the layer copy is dropped together with the rest of the
+    // restore dir below.
     let mut restored = 0usize;
     if let Some(dir) = record.restore_dir.as_ref() {
         let restore = PathBuf::from(dir);

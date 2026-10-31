@@ -193,6 +193,11 @@ pub(crate) use ledger::{load_ledger, save_ledger};
 pub(crate) use reconcile::heal_record_names;
 #[cfg(test)]
 pub(crate) use reconcile::reconcile_core_with_grace;
+// Shared-component matcher + root classifier drive the uninstall-policy
+// tests alongside the matcher's own suite (production callers stay in
+// the uninstall submodule).
+#[cfg(test)]
+pub(crate) use uninstall::{is_shared_component_path, shared_component_root};
 
 pub(crate) use uninstall::{
     UninstallReport, rewind_for_reinstall, uninstall_from_ledger, validate_file_removal_order,

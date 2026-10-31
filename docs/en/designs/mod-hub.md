@@ -302,6 +302,17 @@ record`.
   half-loaded mods;
 - **Conflict policy**: later installs win, but the UI explicitly warns
   "this will overwrite N files from mod X".
+- **Shared component trees**: the runtime components every Aslain
+  dependent clones (TTaroModUtils, ModForge, `ModsInstaller_4_3_1`, the
+  ttaro GUI/config trees and their unbound fragments, the per-locale
+  `ttaro-mod-config.mo` catalogs, the `@game` gettext DLL) belong to the
+  component, not to any one pack — mirroring Aslain's `<Implicit>`
+  shared-runtime layout. They never block an uninstall: while another
+  consumer of the same component remains, the tree stays at the live
+  bytes (later installs win and stay) and the departing record's
+  snapshot layer is dropped; the LAST consumer's uninstall removes it
+  and restores its snapshot. Private files keep the newer-owner refusal
+  unchanged.
 
 #### 3.1 Managing installed plugins
 
@@ -607,8 +618,10 @@ app digest job of `release.yml`.
 - Shared runtime packages (Aslain's `<Implicit>` blocks — TTaroModUtils, the
   ModForge blueprint engine) are bundled into every `RequiresAny` dependent's
   package list, so installs are self-contained; several mods share one copy,
-  and the thread says so (if a sibling mod stops working after an uninstall,
-  reinstall any of them). Package-level `Requires`/`RequiresAny` attributes
+  and the thread says so (under Aslain a sibling mod can stop working after
+  an uninstall — reinstall any of them; WoWSP's shared-component policy
+  instead keeps the tree while any consumer remains, so its own uninstalls
+  never break the siblings). Package-level `Requires`/`RequiresAny` attributes
   are Aslain's conditional-variant selectors ("install the part matching your
   other choices"); WoWSP ships every package of an entry, as it always has, so
   they are deliberately not modeled. `UnpackTo`/`Preserve` need no modeling
