@@ -146,7 +146,13 @@ vi.mock("@/features/holographic/modelLoader", () => ({
   shipNameFromOfflineDb: () => "",
 }));
 vi.mock("@wowsp/holo", () => ({ tierToRoman: (tier: number) => String(tier) }));
-vi.mock("@/i18n", () => ({ t: (key: string) => key, te: () => false, i18n: {} }));
+// The i18n singleton carries the locale the DateTag capsule formats by —
+// a static zh-CN value keeps the stub honest without wiring vue-i18n here.
+vi.mock("@/i18n", () => ({
+  t: (key: string) => key,
+  te: () => false,
+  i18n: { global: { locale: { value: "zh-CN" } } },
+}));
 vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: "en" } }) }));
 
 // ── Child components ───────────────────────────────────────────────────────
@@ -261,7 +267,6 @@ vi.mock("@celestia-island/hikari", () => ({
       return () => h("div", slots.default?.() ?? []);
     },
   },
-  HkTag: { name: "HkTag", render: () => null },
   HkButton: {
     name: "HkButton",
     setup(_: unknown, { slots }: { slots: { default?: () => VNode[] } }) {

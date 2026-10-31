@@ -11,6 +11,8 @@ import { HkScrollContainer, HkSpinner, HkTabs } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
+import DateTag from "@/components/base/DateTag";
+import TypeSummaryChips from "@/components/stats/TypeSummaryChips";
 import ShipFilterBar from "@/components/ships/ShipFilterBar";
 import ShipDetailModal from "@/components/ships/ShipDetailModal";
 import { useShipDetail } from "@/composables/useShipDetail";
@@ -970,21 +972,17 @@ export default defineComponent({
                         : t("dashboard.rangeNoHistory")}
                   </p>
                 ) : null}
-                {/* Per-type summary cards */}
+                {/* Per-type summary chips — the shared component both
+                    water tables serve, so the two surfaces cannot drift
+                    (grey chip body, "CV 1,181 51.8%" content). */}
                 {typeSummary.value.length > 0 ? (
-                  <div class="lookup-view__typegrid">
-                    {typeSummary.value.map((ts) => (
-                      <div
-                        class="lookup-view__typecard"
-                        key={ts.type}
-                        data-hint-card={shipTypeHintCard(ts.code)}
-                      >
-                        <span class="lookup-view__typecard-code">{ts.code}</span>
-                        <span class="lookup-view__typecard-battles">{ts.battles.toLocaleString()}</span>
-                        <span style={{ color: winrateColor(ts.winrate) }}>{ts.winrate.toFixed(1)}%</span>
-                      </div>
-                    ))}
-                  </div>
+                  <TypeSummaryChips
+                    items={typeSummary.value.map((ts) => ({
+                      code: ts.code,
+                      battles: ts.battles,
+                      winrate: ts.winrate,
+                    }))}
+                  />
                 ) : null}
                 {/* Flat ship table — multi-key sorted by the filter chips'
                     fixed canonical order (earlier sorting category = primary key). Two
@@ -999,6 +997,22 @@ export default defineComponent({
                     </p>
                   ) : (
                     <div class="lookup-view__shiplist">
+                      {/* Column captions — the dashboard's table carries
+                          the same head row, so both water tables explain
+                          their number columns identically. The leading
+                          spacers mirror the row's icon/type/tier slots
+                          so the name caption sits over the name. */}
+                      <div class="lookup-view__shiplist-head">
+                        <span class="lookup-view__head-lead" />
+                        <span class="lookup-view__head-lead lookup-view__head-lead--wide" />
+                        <span class="lookup-view__head-lead lookup-view__head-lead--wide" />
+                        <span class="lookup-view__head-name">{t("stats.ships")}</span>
+                        <span class="lookup-view__head-num">{t("stats.battles")}</span>
+                        <span class="lookup-view__head-num">{t("stats.winrate")}</span>
+                        <span class="lookup-view__head-num lookup-view__head-num--dmg">{t("stats.avgDamage")}</span>
+                        <span class="lookup-view__head-num lookup-view__head-num--kd">{t("stats.kdRatio")}</span>
+                        <span class="lookup-view__head-date">{t("dashboard.lastBattle")}</span>
+                      </div>
                       {filteredShips.value.map((s) => {
                         const off = shipOfflineEntry(s.shipId);
                         // Encyclopedia type first (the offline DB misses
@@ -1050,9 +1064,14 @@ export default defineComponent({
                               {(s.frags / Math.max(1, s.battles)).toFixed(2)}
                             </span>
                             <span class="lookup-view__ship-date">
-                              {s.lastBattleTime
-                                ? new Date(s.lastBattleTime * 1000).toLocaleDateString()
-                                : "—"}
+                              {/* Locale-ordered Y/M/D capsule (hikari's
+                                  HkDateTag contract, local stopgap copy);
+                                  the em-dash keeps the no-data fallback. */}
+                              {s.lastBattleTime ? (
+                                <DateTag value={s.lastBattleTime * 1000} />
+                              ) : (
+                                "—"
+                              )}
                             </span>
                           </div>
                         );

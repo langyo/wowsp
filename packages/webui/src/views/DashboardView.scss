@@ -127,41 +127,11 @@
   font-size: var(--text-xs);
 }
 
-/* ── Per-ship-type summary chips (compact inline) ────────────────────── */
-.dash-type-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.3rem;
-}
-
-.dash-type-card {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  background: rgb(var(--color-bg));
-  border-radius: var(--radius-sm);
-  padding: 0.2rem 0.5rem;
-  font-size: var(--text-xs);
-  font-variant-numeric: tabular-nums;
-
-  &__code {
-    font-weight: 700;
-    color: rgb(var(--color-primary));
-  }
-
-  &__battles {
-    color: rgb(var(--color-text));
-    font-weight: 600;
-  }
-}
-
 /* ── Per-ship table ──────────────────────────────────────────────────── */
 .dash-ship-table {
-  background: rgb(var(--color-surface));
-  border: 1px solid rgb(var(--color-border) / 12%);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-
+  /* No card chrome: the list sits straight on the wallpaper like the
+     lookup ship list — the head row's bottom border is the only rule,
+     so both water tables read as the same surface. */
   &__head,
   &__row {
     display: grid;
@@ -172,13 +142,22 @@
   }
 
   &__head {
-    background: rgb(var(--color-bg));
     font-size: var(--text-2xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: rgb(var(--color-muted));
     font-weight: 600;
     border-bottom: 1px solid rgb(var(--color-border) / 15%);
+
+    /* Captions sit over their columns: the name leads left, every
+       number column is right-aligned like the values under it. */
+    span {
+      text-align: right;
+
+      &:first-child {
+        text-align: left;
+      }
+    }
   }
 
   &__row {
@@ -222,22 +201,32 @@
     }
   }
 
-  /* Uniform chip width so every row's name starts on the same line —
-     the widest code (CA/CL) sets the floor, shorter codes center. */
-  &__type-tag {
-    min-width: 46px;
-    justify-content: center;
+  /* Plain type code, the lookup list's grammar: a fixed 28px column so
+     every row's tier starts on the same line, centered, muted — no
+     pill. The explicit line-height pins the code and the tier to the
+     same box: the mono tier's taller default line box was centering
+     its glyphs a hair above the code's. */
+  &__ship-type {
+    flex: 0 0 28px;
+    text-align: center;
+    color: rgb(var(--color-muted));
+    font-size: 0.625rem;
+    font-weight: 600;
+    white-space: nowrap;
+    line-height: 12px;
   }
 
-  /* Roman tier between the tag and the name — the same column the
-     lookup list renders, mono and centered. */
+  /* Roman tier between the code and the name — mono and centered like
+     the lookup list's, same size and line box so the pair reads as one
+     aligned column across both water tables. */
   &__ship-tier {
-    flex: 0 0 32px;
+    flex: 0 0 28px;
     text-align: center;
     font-style: normal;
-    font-size: var(--text-xs);
+    font-size: 0.625rem;
     font-family: var(--font-mono);
-    color: rgb(var(--color-text) / 70%);
+    color: rgb(var(--color-text));
+    line-height: 12px;
   }
 
   &__ship-name {
@@ -252,7 +241,10 @@
   }
 
   &__col-date {
-    text-align: right;
+    /* The DateTag capsule carries its own ink; the column only anchors
+       it right and tones the em-dash fallback. */
+    display: flex;
+    justify-content: flex-end;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
   }
