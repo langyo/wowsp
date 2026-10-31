@@ -27,8 +27,9 @@ input content keeps the same sha256 and a republish is a client no-op
 (content-addressed manifest, see publish_data_pack.py).
 
 Slices are the SAME payload as every other pack path (`__torpedoAmmo`
-embedded, SLICE_FORMAT v2): `extract_gameparams.collect_ship_slices` does
-the work, so WG, Lesta and the committed bundle can never drift apart.
+and `__shellAmmo` embedded, SLICE_FORMAT v3):
+`extract_gameparams.collect_ship_slices` does the work, so WG, Lesta and
+the committed bundle can never drift apart.
 
 Sources (both default to the orchestrator cache `run.py` fills):
   --wg-gameparams     decoded WG GameParams.json
@@ -57,6 +58,7 @@ sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
 from build_techtree import _params_root  # noqa: E402
 from extract_gameparams import (  # noqa: E402
+    SHELL_AMMO_KEYS,
     SLICE_FORMAT,
     collect_ship_slices,
 )
@@ -193,12 +195,32 @@ def _selftest() -> int:
             "id": 1002,
             "name": "PJSB018_Yamato_1944",
             "typeinfo": {"type": "Ship"},
-            "A_Artillery": {"HP_AGM_1": {"numBarrels": 3}},
+            "A_Artillery": {
+                "HP_AGM_1": {"numBarrels": 3, "ammoList": ["PSHELL_HE", "PABSENT"]},
+                "SwitchableModeArtilleryModule": {
+                    "burstReloadTime": 1.7,
+                    "secondaryAmmoList": ["PSHELL_AP_ALT"],
+                    "shotsCount": 2,
+                },
+            },
         },
         "PTORP_A": {
             "name": "PTORP_A",
             "typeinfo": {"type": "Projectile", "species": "Torpedo"},
             "alphaDamage": 1000,
+        },
+        "PSHELL_HE": {
+            "name": "PSHELL_HE",
+            "typeinfo": {"type": "Projectile", "species": "Artillery"},
+            "alphaDamage": 5000,
+            "ammoType": "HE",
+            "unrelatedField": "drop me",
+        },
+        "PSHELL_AP_ALT": {
+            "name": "PSHELL_AP_ALT",
+            "typeinfo": {"type": "Projectile", "species": "Artillery"},
+            "alphaDamage": 9000,
+            "ammoType": "AP",
         },
     }
     lesta = {
@@ -250,6 +272,17 @@ def _selftest() -> int:
             assert "__torpedoAmmo" not in embedded, "Lesta slice carries no ammo block here"
             yamato = json.loads(zf.read("1002.json"))
             assert yamato.get("A_Artillery"), "WG slice preserved"
+            # Shape v3: the main battery's shells embed pruned (mount
+            # ammoList + the switchable mode's secondaryAmmoList), while
+            # unresolvable names stay out and no torpedo block appears.
+            shells = yamato.get("__shellAmmo")
+            assert shells is not None, "main-battery shells must embed"
+            assert sorted(shells) == ["PSHELL_AP_ALT", "PSHELL_HE"], shells
+            pruned = shells["PSHELL_HE"]
+            assert set(pruned) <= set(SHELL_AMMO_KEYS), pruned
+            assert "unrelatedField" not in pruned, "shell must be pruned"
+            assert pruned["alphaDamage"] == 5000, pruned
+            assert "__torpedoAmmo" not in yamato, "no torpedo launcher here"
             on_disk = json.loads(zf.read(MANIFEST_ENTRY))
             assert on_disk == manifest
     print("[shipdata] selftest OK")

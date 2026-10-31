@@ -308,7 +308,7 @@ def _load_slices(slices: Path) -> tuple[dict[str, dict], dict[str, str], dict[st
 
 
 def _load_lesta_bundle(bundle: Path) -> tuple[dict[str, dict], dict[str, str], dict[str, str], str | None]:
-    """Load the committed Lesta-only slice bundle (gzip JSON, slice format 2)."""
+    """Load the committed Lesta-only slice bundle (gzip JSON, current slice shape)."""
     print(f"[upgrade-chain] loading Lesta slice bundle {bundle} ...", flush=True)
     with gzip.open(bundle, "rt", encoding="utf-8") as fh:
         data = json.load(fh)

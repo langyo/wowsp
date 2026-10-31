@@ -199,11 +199,17 @@ fn write_bulk_fill_marker(data_dir: &Path, build: u32) {
 ///   2 — the ship entity plus `__torpedoAmmo`: the torpedo Projectile
 ///       entities its launcher `HP_*` slots reference via `ammoList`
 ///       (damage falloff tiers, ping-response homing, per-type damage —
-///       none of which the WG default_profile carries).
+///       none of which the WG default_profile carries);
+///   3 — the ship entity plus `__shellAmmo`: the MAIN BATTERY's artillery
+///       shells (every mount `ammoList` under the `A_Artillery` /
+///       `*_Artillery` blocks, plus the alternate-firing-mode
+///       `SwitchableModeArtilleryModule.secondaryAmmoList`), pruned to the
+///       panel-facing ballistics fields. Secondary/AA/torpedo blocks stay
+///       out, and so does the ~200-field projectile effect machinery.
 ///
 /// Bumping it wipes the per-ship cache once so every slice re-materializes
 /// in the new shape; same best-effort contract as the build-change wipe.
-const SLICE_FORMAT: u32 = 2;
+const SLICE_FORMAT: u32 = 3;
 /// Where the shape stamp lives: OUTSIDE "gameparams/", deliberately. Every
 /// invalidator wipes the whole "gameparams/" dir, so a stamp inside it
 /// would be destroyed by the build-change wipe and re-written by the shape
@@ -311,6 +317,144 @@ fn embed_torpedo_ammo(
     }
     if let Some(obj) = slice.as_object_mut() {
         obj.entry("__torpedoAmmo".to_string())
+            .or_insert_with(|| serde_json::Value::Object(ammo));
+    }
+}
+
+/// The shell fields the spec panel renders, alphabetically ordered so the
+/// Rust cache and the Python pack writers (scripts/extract_gameparams.py,
+/// which keeps the same tuple) emit identical JSON. Everything else on a
+/// Projectile entity — ~200 effect/path/armor-flag fields — is omitted.
+#[cfg(desktop)]
+const SHELL_AMMO_KEYS: [&str; 15] = [
+    "alphaDamage",
+    "alphaPiercingCS",
+    "alphaPiercingHE",
+    "ammoType",
+    "bulletAlwaysRicochetAt",
+    "bulletCapNormalizeMaxAngle",
+    "bulletDetonator",
+    "bulletDetonatorThreshold",
+    "bulletDiametr",
+    "bulletKrupp",
+    "bulletMass",
+    "bulletRicochetAt",
+    "bulletSpeed",
+    "burnProb",
+    "name",
+];
+
+#[cfg(desktop)]
+fn push_ammo_name(names: &mut Vec<String>, name: &str) {
+    if !names.iter().any(|n| n == name) {
+        names.push(name.to_string());
+    }
+}
+
+/// Main-battery shell entity names referenced by the slice: every mount
+/// `ammoList` under the main-battery blocks only (`A_Artillery` and the
+/// `A1_`/`AB_`/`B_`/`C_`/`X_` variant keys — they all end in
+/// "_Artillery"), plus the switchable firing mode's `secondaryAmmoList`
+/// alternate shells. `A_ATBA`/`A_AirDefense`/`A_Secondary` shells are
+/// deliberately not collected — the panel's alternate-fire switch describes
+/// the main battery, not the secondaries.
+#[cfg(desktop)]
+fn shell_ammo_names(slice: &serde_json::Value) -> Vec<String> {
+    let mut names: Vec<String> = Vec::new();
+    let Some(blocks) = slice.as_object() else {
+        return names;
+    };
+    for (key, block) in blocks {
+        if key != "A_Artillery" && !key.ends_with("_Artillery") {
+            continue;
+        }
+        let Some(block) = block.as_object() else {
+            continue;
+        };
+        for mount in block.values() {
+            let Some(ammo) = mount
+                .as_object()
+                .and_then(|m| m.get("ammoList"))
+                .and_then(|v| v.as_array())
+            else {
+                continue;
+            };
+            for name in ammo.iter().filter_map(|v| v.as_str()) {
+                push_ammo_name(&mut names, name);
+            }
+        }
+        // Alternate firing mode (burst switch): its own shell list.
+        let secondary = block
+            .get("SwitchableModeArtilleryModule")
+            .and_then(|m| m.as_object())
+            .and_then(|m| m.get("secondaryAmmoList"))
+            .and_then(|v| v.as_array());
+        for name in secondary.into_iter().flatten().filter_map(|v| v.as_str()) {
+            push_ammo_name(&mut names, name);
+        }
+    }
+    names
+}
+
+/// An artillery shell entity (`typeinfo.type == "Projectile"`,
+/// `species == "Artillery"`). Real data labels shells "Artillery" (not
+/// "Shell"); torpedoes share the Projectile type but carry
+/// `species == "Torpedo"` and stay out.
+#[cfg(desktop)]
+fn is_artillery_shell_projectile(entity: &serde_json::Value) -> bool {
+    entity
+        .get("typeinfo")
+        .and_then(|t| t.as_object())
+        .is_some_and(|t| {
+            t.get("type").and_then(|v| v.as_str()) == Some("Projectile")
+                && t.get("species").and_then(|v| v.as_str()) == Some("Artillery")
+        })
+}
+
+/// A shell entity pruned to [`SHELL_AMMO_KEYS`] (only the keys it carries).
+#[cfg(desktop)]
+fn prune_shell_entity(entity: &serde_json::Value) -> serde_json::Value {
+    let mut out = serde_json::Map::new();
+    for key in SHELL_AMMO_KEYS {
+        if let Some(value) = entity.get(key) {
+            out.insert(key.to_string(), value.clone());
+        }
+    }
+    serde_json::Value::Object(out)
+}
+
+/// Embed the main battery's referenced artillery shells under
+/// `__shellAmmo` (name → pruned entity). The webui spec panel reads shell
+/// ballistics (damage, penetration, ballistics, fuzes) and the
+/// alternate-firing-mode rows from it; slices without a main battery (or
+/// whose shells do not resolve) are untouched, and an existing
+/// `__shellAmmo` key (already-embedded input) wins — the same discipline
+/// as `embed_torpedo_ammo`.
+#[cfg(desktop)]
+fn embed_shell_ammo(
+    slice: &mut serde_json::Value,
+    lookup: &dyn Fn(&str) -> Option<serde_json::Value>,
+) {
+    if slice.get("__shellAmmo").is_some() {
+        return;
+    }
+    let names = shell_ammo_names(slice);
+    if names.is_empty() {
+        return;
+    }
+    let mut ammo = serde_json::Map::new();
+    for name in &names {
+        if let Some(entity) = lookup(name)
+            && is_artillery_shell_projectile(&entity)
+        {
+            ammo.insert(name.clone(), prune_shell_entity(&entity));
+        }
+    }
+    if ammo.is_empty() {
+        return;
+    }
+    if let Some(obj) = slice.as_object_mut() {
+        obj.entry("__shellAmmo".to_string())
             .or_insert_with(|| serde_json::Value::Object(ammo));
     }
 }
@@ -531,9 +675,9 @@ fn fill_ship_cache_from_pickle(
         return (0, 0, false);
     };
     let picks = group_pickle_ship_picks(&entries);
-    // Torpedo ammo embedding needs the full entity table (launchers
-    // reference ammo by internal name), so index the entries once and
-    // clone+embed per served slice.
+    // Ammo embedding (torpedoes and main-battery shells) needs the full
+    // entity table (mounts reference ammo by internal name), so index the
+    // entries once and clone+embed per served slice.
     let ammo_index: std::collections::HashMap<String, usize> = entries
         .iter()
         .enumerate()
@@ -550,6 +694,7 @@ fn fill_ship_cache_from_pickle(
                 .and_then(|i| to_json(&entries[*i].1).ok())
         };
         embed_torpedo_ammo(&mut slice, &lookup);
+        embed_shell_ammo(&mut slice, &lookup);
         Some(slice)
     };
     fill_ship_cache_exec(picks, slice_at, data_dir, game_root, build)
@@ -639,6 +784,7 @@ fn fill_ship_cache_from_json(
         let mut slice = pairs[idx].1.clone();
         let lookup = |name: &str| ammo_index.get(name).cloned();
         embed_torpedo_ammo(&mut slice, &lookup);
+        embed_shell_ammo(&mut slice, &lookup);
         Some(slice)
     };
     fill_ship_cache_exec(picks, slice_at, data_dir, game_root, build)
@@ -707,9 +853,10 @@ pub async fn get_ship_gameparams(
     invalidate_synced_cache_behind_bundle(&app);
 
     // 1b. Slice payload shape outdated? One marker read — when the cached
-    //     slices predate the current shape (v2 embeds torpedo ammo), drop
-    //     the whole per-ship cache BEFORE any read so the fill below
-    //     re-materializes every slice in the current shape.
+    //     slices predate the current shape (v2 embeds torpedo ammo, v3 the
+    //     main-battery shells), drop the whole per-ship cache BEFORE any
+    //     read so the fill below re-materializes every slice in the current
+    //     shape.
     invalidate_cache_on_stale_slice_format();
 
     // 1c. Game updated since the cache was filled? Drop stale slices BEFORE
@@ -1190,6 +1337,7 @@ fn ship_slice_from_pickle(pickle: &pickled::Value, ship_id: i64) -> Option<serde
             .and_then(|i| to_json(&entries[*i].1).ok())
     };
     embed_torpedo_ammo(&mut slice, &lookup);
+    embed_shell_ammo(&mut slice, &lookup);
     Some(slice)
 }
 
@@ -1336,6 +1484,7 @@ pub(crate) fn extract_ship_slice_from_parsed(
     let ammo_index = json_entity_index(parsed);
     let lookup = |name: &str| ammo_index.get(name).cloned();
     embed_torpedo_ammo(&mut slice, &lookup);
+    embed_shell_ammo(&mut slice, &lookup);
     Ok(slice)
 }
 
@@ -1859,7 +2008,9 @@ mod tests {
     /// submarine slices carry the embedded torpedo ammo. The Lesta-only subs
     /// have no install to fall back on, so a v1/pack-built-before-v2 regen
     /// would silently strip their per-type torpedo rows (and the sonar
-    /// durations) from the spec panel.
+    /// durations) from the spec panel. Since v3 the pack must equally carry
+    /// the pruned main-battery shells (`__shellAmmo`) every ship's mounts
+    /// reference — the alternate-firing-mode rows read nothing else.
     #[test]
     fn bundled_lesta_pack_uses_the_current_slice_shape() {
         let raw = inflate_bundled_pack().expect("bundled pack inflates");
@@ -1910,6 +2061,66 @@ mod tests {
             );
         }
         assert!(subs > 0, "expected the Lesta-only submarines in the pack");
+
+        // Slice shape v3: every main-battery hull must carry the pruned shell
+        // entities its mounts reference, or the spec panel's
+        // alternate-firing-mode rows render empty. Only whitelisted fields
+        // may ride along — the pack is a payload, not a GameParams dump.
+        let mut shell_ships = 0;
+        let mut embedded = 0;
+        for slice in ships.values().filter_map(|s| s.as_object()) {
+            let mut names: Vec<&str> = Vec::new();
+            for (key, block) in slice {
+                if key != "A_Artillery" && !key.ends_with("_Artillery") {
+                    continue;
+                }
+                let Some(block) = block.as_object() else {
+                    continue;
+                };
+                for mount in block.values() {
+                    if let Some(list) = mount
+                        .as_object()
+                        .and_then(|m| m.get("ammoList"))
+                        .and_then(|v| v.as_array())
+                    {
+                        names.extend(list.iter().filter_map(|n| n.as_str()));
+                    }
+                }
+            }
+            if names.is_empty() {
+                continue;
+            }
+            shell_ships += 1;
+            let name = slice.get("name").and_then(|v| v.as_str()).unwrap_or("?");
+            let ammo = slice
+                .get("__shellAmmo")
+                .and_then(|v| v.as_object())
+                .unwrap_or_else(|| panic!("packed ship {name} carries no __shellAmmo"));
+            if names.iter().any(|n| ammo.contains_key(*n)) {
+                embedded += 1;
+            }
+            for shell in ammo.values() {
+                let shell = shell.as_object().expect("pruned shell object");
+                assert!(
+                    shell.contains_key("name"),
+                    "packed ship {name}: shell entity lost its name"
+                );
+                for field in shell.keys() {
+                    assert!(
+                        SHELL_AMMO_KEYS.contains(&field.as_str()),
+                        "packed ship {name}: unpruned shell field {field}"
+                    );
+                }
+            }
+        }
+        assert!(
+            shell_ships > 100,
+            "expected the pack's main-battery ships, saw {shell_ships}"
+        );
+        assert_eq!(
+            embedded, shell_ships,
+            "every main-battery ship must embed a referenced shell"
+        );
     }
 
     /// Every airframe the bundled carriers embark must be labelled and
@@ -2385,7 +2596,7 @@ mod tests {
         fs::remove_dir_all(&dir).unwrap();
     }
 
-    // ── torpedo ammo embedding (slice format v2) ──────────────────────
+    // ── torpedo & main-battery shell ammo embedding (v2/v3) ──────────
 
     fn plist(items: &[pickled::Value]) -> pickled::Value {
         pickled::Value::List(items.to_vec().into())
@@ -2413,7 +2624,7 @@ mod tests {
             },
             "PSHELL_B": {
                 "name": "PSHELL_B",
-                "typeinfo": { "type": "Projectile", "species": "Shell" }
+                "typeinfo": { "type": "Projectile", "species": "Artillery" }
             }
         });
         let slice = extract_ship_slice_from_parsed(&parsed, 3434526416).unwrap();
@@ -2428,6 +2639,10 @@ mod tests {
                 .and_then(|v| v.get("alphaDamage"))
                 .and_then(|v| v.as_i64()),
             Some(72400)
+        );
+        assert!(
+            slice.get("__shellAmmo").is_none(),
+            "a torpedo block's shells are not main-battery ammo"
         );
     }
 
@@ -2508,6 +2723,292 @@ mod tests {
         assert!(cached.contains("__torpedoAmmo"));
         assert!(cached.contains("PTORP_A"));
         fs::remove_dir_all(&dir).unwrap();
+    }
+
+    // ── main-battery shell ammo embedding (slice format v3) ──────────
+
+    /// Slice shape v3: the served slice embeds the MAIN BATTERY's artillery
+    /// shells under `__shellAmmo` — every mount `ammoList` plus the
+    /// switchable firing mode's `secondaryAmmoList`, pruned to the panel
+    /// whitelist. AA/secondary blocks, non-shell projectiles and
+    /// unresolvable names stay out.
+    #[test]
+    fn embeds_main_battery_shell_ammo_into_json_slice() {
+        let parsed = serde_json::json!({
+            "PRSC709_Vyazma": {
+                "id": 3551442384_i64,
+                "name": "PRSC709_Vyazma",
+                "A_Artillery": {
+                    "HP_RGM_1": { "ammoList": ["PSHELL_HE", "PSHELL_AP"] },
+                    "HP_RGM_2": { "ammoList": ["PSHELL_HE"] },
+                    "SwitchableModeArtilleryModule": {
+                        "burstReloadTime": 1.7,
+                        "fullReloadTime": 45.0,
+                        "secondaryAmmoList": ["PSHELL_HE_ALT", "PSHELL_AP", "PABSENT"],
+                        "shotsCount": 2
+                    }
+                },
+                "A_ATBA": { "AuraFar": { "ammoList": ["PSHELL_AA"] } },
+                "A_Secondary": { "HP_S_1": { "ammoList": ["PSHELL_SECONDARY"] } },
+                "B_Artillery": { "HP_BGM_1": { "ammoList": ["PSHELL_B_HULL"] } },
+                "A_Torpedoes": { "HP_T_1": { "ammoList": ["PTORP_X"] } }
+            },
+            "PSHELL_HE": {
+                "name": "PSHELL_HE",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 5800.0,
+                "burnProb": 0.4,
+                "ammoType": "HE",
+                "bulletSpeed": 830.0,
+                "bulletKrupp": 250.0,
+                "unrelatedEffect": { "path": "particles/x.xml" }
+            },
+            "PSHELL_AP": {
+                "name": "PSHELL_AP",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 11500.0,
+                "ammoType": "AP",
+                "bulletSpeed": 800.0
+            },
+            "PSHELL_HE_ALT": {
+                "name": "PSHELL_HE_ALT",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 6600.0,
+                "ammoType": "HE",
+                "bulletSpeed": 700.0
+            },
+            "PSHELL_B_HULL": {
+                "name": "PSHELL_B_HULL",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 4000.0
+            },
+            "PSHELL_AA": {
+                "name": "PSHELL_AA",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 700.0
+            },
+            "PSHELL_SECONDARY": {
+                "name": "PSHELL_SECONDARY",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 1800.0
+            },
+            "PTORP_X": {
+                "name": "PTORP_X",
+                "typeinfo": { "type": "Projectile", "species": "Torpedo" },
+                "alphaDamage": 10000.0
+            }
+        });
+        let slice = extract_ship_slice_from_parsed(&parsed, 3551442384).unwrap();
+        let ammo = slice.get("__shellAmmo").unwrap().as_object().unwrap();
+        let mut names: Vec<&str> = ammo.keys().map(String::as_str).collect();
+        names.sort_unstable();
+        assert_eq!(
+            names,
+            ["PSHELL_AP", "PSHELL_B_HULL", "PSHELL_HE", "PSHELL_HE_ALT"],
+            "only main-battery shells embed: {names:?}"
+        );
+        assert!(
+            !ammo.contains_key("PSHELL_AA") && !ammo.contains_key("PSHELL_SECONDARY"),
+            "AA/secondary shells stay out: {ammo:?}"
+        );
+        assert!(!ammo.contains_key("PABSENT"), "unresolvable names stay out");
+        // The pruned entity carries the whitelist only — never the effect
+        // machinery, and never a torpedo.
+        let he = ammo.get("PSHELL_HE").and_then(|v| v.as_object()).unwrap();
+        let mut keys: Vec<&str> = he.keys().map(String::as_str).collect();
+        keys.sort_unstable();
+        assert_eq!(
+            keys,
+            [
+                "alphaDamage",
+                "ammoType",
+                "bulletKrupp",
+                "bulletSpeed",
+                "burnProb",
+                "name"
+            ],
+            "shell entity must be pruned to the whitelist: {he:?}"
+        );
+        assert_eq!(he.get("alphaDamage").and_then(|v| v.as_f64()), Some(5800.0));
+        // The torpedo block's own embed stays independent: it carries its
+        // torpedo and none of the main-battery shells.
+        let torpedoes = slice.get("__torpedoAmmo").unwrap().as_object().unwrap();
+        assert_eq!(torpedoes.len(), 1, "only the torpedo embeds: {torpedoes:?}");
+        assert!(torpedoes.contains_key("PTORP_X"));
+    }
+
+    /// Same shell embedding through the pickled single-ship path.
+    #[test]
+    fn embeds_main_battery_shell_ammo_into_pickle_slice() {
+        let pickle = pdict(&[
+            (
+                "PRSC709_Vyazma",
+                pdict(&[
+                    ("id", pickled::Value::I64(3551442384)),
+                    ("name", pstr("PRSC709_Vyazma")),
+                    (
+                        "A_Artillery",
+                        pdict(&[
+                            (
+                                "HP_RGM_1",
+                                pdict(&[("ammoList", plist(&[pstr("PSHELL_HE")]))]),
+                            ),
+                            (
+                                "SwitchableModeArtilleryModule",
+                                pdict(&[
+                                    ("burstReloadTime", pickled::Value::F64(1.7)),
+                                    ("secondaryAmmoList", plist(&[pstr("PSHELL_HE_ALT")])),
+                                    ("shotsCount", pickled::Value::I64(2)),
+                                ]),
+                            ),
+                        ]),
+                    ),
+                ]),
+            ),
+            (
+                "PSHELL_HE",
+                pdict(&[
+                    ("name", pstr("PSHELL_HE")),
+                    (
+                        "typeinfo",
+                        pdict(&[("type", pstr("Projectile")), ("species", pstr("Artillery"))]),
+                    ),
+                    ("alphaDamage", pickled::Value::F64(5800.0)),
+                    ("unrelatedField", pstr("drop me")),
+                ]),
+            ),
+            (
+                "PSHELL_HE_ALT",
+                pdict(&[
+                    ("name", pstr("PSHELL_HE_ALT")),
+                    (
+                        "typeinfo",
+                        pdict(&[("type", pstr("Projectile")), ("species", pstr("Artillery"))]),
+                    ),
+                    ("alphaDamage", pickled::Value::F64(6600.0)),
+                ]),
+            ),
+        ]);
+        let ship = ship_slice_from_pickle(&pickle, 3551442384).unwrap();
+        let ammo = ship.get("__shellAmmo").unwrap().as_object().unwrap();
+        assert!(ammo.contains_key("PSHELL_HE") && ammo.contains_key("PSHELL_HE_ALT"));
+        let he = ammo.get("PSHELL_HE").and_then(|v| v.as_object()).unwrap();
+        assert!(
+            he.get("unrelatedField").is_none(),
+            "pickle shell must be pruned"
+        );
+        assert_eq!(he.get("alphaDamage").and_then(|v| v.as_f64()), Some(5800.0));
+    }
+
+    /// The bulk JSON fill writes the shell shape into the cache files too.
+    #[test]
+    fn bulk_fill_json_embeds_shell_ammo_in_cache_files() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        let parsed = serde_json::json!({
+            "PRSC709_Vyazma": {
+                "id": 3551442384_i64,
+                "name": "PRSC709_Vyazma",
+                "A_Artillery": { "HP_RGM_1": { "ammoList": ["PSHELL_HE"] } }
+            },
+            "PSHELL_HE": {
+                "name": "PSHELL_HE",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 5800.0,
+                "unrelatedField": "drop me"
+            }
+        });
+        let (written, _skipped, aborted) = fill_ship_cache_from_json(&parsed, &dir, "", 0);
+        assert!(!aborted);
+        assert_eq!(written, 1);
+        let cached: serde_json::Value = serde_json::from_str(
+            &fs::read_to_string(dir.join("gameparams").join("3551442384.json")).unwrap(),
+        )
+        .unwrap();
+        let ammo = cached
+            .get("__shellAmmo")
+            .and_then(|v| v.as_object())
+            .unwrap();
+        assert!(ammo.contains_key("PSHELL_HE"));
+        assert!(ammo["PSHELL_HE"].get("unrelatedField").is_none());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The bulk pickle fill carries the shell shape as well (one ammo index
+    /// feeds both embeds).
+    #[test]
+    fn bulk_fill_pickle_embeds_shell_ammo_in_cache_files() {
+        let dir = crate::commands::pairing::tests::tempfile_dir();
+        let pickle = pdict(&[
+            (
+                "PRSC709_Vyazma",
+                pdict(&[
+                    ("id", pickled::Value::I64(3551442384)),
+                    ("name", pstr("PRSC709_Vyazma")),
+                    (
+                        "A_Artillery",
+                        pdict(&[(
+                            "HP_RGM_1",
+                            pdict(&[("ammoList", plist(&[pstr("PSHELL_HE")]))]),
+                        )]),
+                    ),
+                ]),
+            ),
+            (
+                "PSHELL_HE",
+                pdict(&[
+                    ("name", pstr("PSHELL_HE")),
+                    (
+                        "typeinfo",
+                        pdict(&[("type", pstr("Projectile")), ("species", pstr("Artillery"))]),
+                    ),
+                    ("alphaDamage", pickled::Value::F64(5800.0)),
+                ]),
+            ),
+        ]);
+        let (written, _skipped, aborted) = fill_ship_cache_from_pickle(&pickle, &dir, "", 0);
+        assert!(!aborted);
+        assert_eq!(written, 1);
+        let cached = fs::read_to_string(dir.join("gameparams").join("3551442384.json")).unwrap();
+        assert!(cached.contains("__shellAmmo"));
+        assert!(cached.contains("PSHELL_HE"));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A pre-embedded `__shellAmmo` wins (a pack path may hand the
+    /// materializer an already-embedded slice), and a slice with no main
+    /// battery stays bare.
+    #[test]
+    fn shell_ammo_embed_is_a_noop_on_embedded_or_unarmed_slices() {
+        let lookup = |_: &str| {
+            Some(serde_json::json!({
+                "name": "PSHELL_HE",
+                "typeinfo": { "type": "Projectile", "species": "Artillery" },
+                "alphaDamage": 5800.0
+            }))
+        };
+        let mut embedded = serde_json::json!({
+            "name": "PRSC709_Vyazma",
+            "A_Artillery": { "HP_RGM_1": { "ammoList": ["PSHELL_HE"] } },
+            "__shellAmmo": {
+                "PSHELL_HE": { "name": "PSHELL_HE", "alphaDamage": 1.0 }
+            }
+        });
+        embed_shell_ammo(&mut embedded, &lookup);
+        assert_eq!(
+            embedded["__shellAmmo"]["PSHELL_HE"]["alphaDamage"].as_f64(),
+            Some(1.0),
+            "a pre-embedded __shellAmmo must win"
+        );
+
+        let mut unarmed = serde_json::json!({
+            "name": "PJSS820_BA_I56",
+            "A_Torpedoes": { "HP_JGT_1": { "ammoList": ["PSHELL_HE"] } }
+        });
+        embed_shell_ammo(&mut unarmed, &lookup);
+        assert!(
+            unarmed.get("__shellAmmo").is_none(),
+            "non-main-battery blocks must not embed shells"
+        );
     }
 
     /// `latest_build_with_idx` picks the highest-numbered bin/<build>/ that
