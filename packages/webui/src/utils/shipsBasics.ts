@@ -35,10 +35,21 @@ let cache: Promise<ShipsBasics> | null = null;
 /** Fetch (once) and keep the bundled basics. Rejects only if the asset is
  *  genuinely unavailable — callers decide their own degraded display. */
 export function loadShipsBasics(): Promise<ShipsBasics> {
-  cache ??= fetch("/data/ships_basics.json").then((r) => {
-    if (!r.ok) throw new Error(`ships_basics.json HTTP ${r.status}`);
-    return r.json() as Promise<ShipsBasics>;
-  });
+  // Cache only a SUCCESSFUL load: a rejected fetch (cold webview hiccup, a
+  // truncated asset read) must stay retryable — the offline fallback is the
+  // phone's only data path and a one-shot failure would blank the whole
+  // encyclopedia for the session.
+  if (!cache) {
+    cache = fetch("/data/ships_basics.json").then((r) => {
+      if (!r.ok) throw new Error(`ships_basics.json HTTP ${r.status}`);
+      return r.json() as Promise<ShipsBasics>;
+    });
+    // Side chain: drop the memo so the NEXT call retries; the caller still
+    // receives the original rejection.
+    void cache.catch(() => {
+      cache = null;
+    });
+  }
   return cache;
 }
 

@@ -87,21 +87,42 @@ pub(crate) async fn account_list_one(
     host: &str,
     name: &str,
 ) -> Result<Option<AccountListEntry>, LookupError> {
-    let list: WgResponse<Vec<AccountListEntry>> = super::upstream_health::recorded_get(
-        clients,
-        host,
-        "account/list",
-        format!(
-            "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
-            encode_query(name)
-        ),
-    )
-    .await
-    .map_err(|e| LookupError::from(e.to_string()))?
-    .json()
-    .await
-    .map_err(|e| format!("account/list parse: {e}"))?;
+    // One retry on the intermittent 504/SOURCE_NOT_AVAILABLE envelope, then
+    // "no match": the add-player dialog asked a yes/no question and must not
+    // turn an upstream hiccup into an English error card (the desktop hits
+    // the same code — it is the ASIA pool, not the phone).
+    let mut list: WgResponse<Vec<AccountListEntry>> = WgResponse {
+        status: String::new(),
+        data: None,
+        error: WgError::default(),
+    };
+    for attempt in 0..2 {
+        let resp = super::upstream_health::recorded_get(
+            clients,
+            host,
+            "account/list",
+            format!(
+                "https://{host}/wows/account/list/?application_id={app_id}&search={}&limit=10",
+                encode_query(name)
+            ),
+        )
+        .await
+        .map_err(|e| LookupError::from(e.to_string()))?;
+        list = resp
+            .json()
+            .await
+            .map_err(|e| format!("account/list parse: {e}"))?;
+        if list.status == "ok" || attempt == 1 {
+            break;
+        }
+        if !list.error.is_source_unavailable() {
+            break;
+        }
+    }
     if list.status != "ok" {
+        if list.error.is_source_unavailable() {
+            return Ok(None);
+        }
         let msg = list.error.message.clone().unwrap_or_default();
         return Err(LookupError::api_with_detail(
             format!("account/list: {msg}"),
@@ -135,6 +156,11 @@ pub(super) async fn account_nickname_by_id(
         .await
         .map_err(|e| anyhow!("account/info parse: {e}"))?;
     if parsed.status != "ok" {
+        // Unknown ids and the ASIA pool's 504 both land here; the UID fast
+        // path treats either as "no such account".
+        if parsed.error.is_source_unavailable() {
+            return Ok(None);
+        }
         bail!("account/info: {}", parsed.error.message.unwrap_or_default());
     }
     Ok(parsed
@@ -293,10 +319,61 @@ pub(super) struct WgResponse<T> {
 }
 #[derive(Deserialize, Default)]
 pub(super) struct WgError {
+    /// WG numeric error code when one is carried (e.g. 504 for
+    /// SOURCE_NOT_AVAILABLE). Optional: not every upstream answers it.
+    #[serde(default)]
+    pub(super) code: Option<i64>,
     pub(super) message: Option<String>,
+}
+
+impl WgError {
+    /// WG answers code 504 / SOURCE_NOT_AVAILABLE (HTTP 200!) both for
+    /// zero-match searches and for intermittent backend-pool failures on
+    /// the ASIA cluster — the interactive lookups see it as "the upstream
+    /// cannot answer this name right now". Callers either retry once
+    /// (transient) or degrade to "no match"; it must never surface as a
+    /// raw English error card.
+    pub(super) fn is_source_unavailable(&self) -> bool {
+        self.code == Some(504) || self.message.as_deref() == Some("SOURCE_NOT_AVAILABLE")
+    }
 }
 #[derive(Clone, Deserialize)]
 pub(crate) struct AccountListEntry {
     pub(crate) account_id: i64,
     pub(crate) nickname: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WgResponse;
+
+    /// The ASIA pool answers HTTP 200 + code 504 / SOURCE_NOT_AVAILABLE for
+    /// zero-match searches AND sporadic backend failures; the classifier is
+    /// what lets the lookups retry once and then degrade instead of showing
+    /// the raw English text.
+    #[test]
+    fn source_unavailable_is_classified_by_code_or_message() {
+        let by_code: WgResponse<serde_json::Value> = serde_json::from_str(
+            r#"{"status":"error","error":{"code":504,"message":"SOURCE_NOT_AVAILABLE"}}"#,
+        )
+        .expect("parse");
+        assert!(by_code.error.is_source_unavailable());
+
+        let by_message: WgResponse<serde_json::Value> = serde_json::from_str(
+            r#"{"status":"error","error":{"message":"SOURCE_NOT_AVAILABLE"}}"#,
+        )
+        .expect("parse");
+        assert!(by_message.error.is_source_unavailable());
+
+        // A genuine credential error must keep surfacing as an error.
+        let invalid_id: WgResponse<serde_json::Value> = serde_json::from_str(
+            r#"{"status":"error","error":{"code":407,"message":"INVALID_APPLICATION_ID"}}"#,
+        )
+        .expect("parse");
+        assert!(!invalid_id.error.is_source_unavailable());
+
+        let ok: WgResponse<serde_json::Value> =
+            serde_json::from_str(r#"{"status":"ok","data":null}"#).expect("parse");
+        assert!(!ok.error.is_source_unavailable());
+    }
 }

@@ -133,6 +133,12 @@ pub async fn suggest_players(
     .await
     .map_err(|e| anyhow!("account/list parse: {e}"))?;
     if resp.status != "ok" {
+        // Autocomplete must stay silent on the ASIA pool's intermittent
+        // 504/SOURCE_NOT_AVAILABLE — an empty suggestion list reads as
+        // "keep typing", a raw English error reads as a broken app.
+        if resp.error.is_source_unavailable() {
+            return Ok(Vec::new());
+        }
         return Err(anyhow!("account/list: {}", resp.error.message.unwrap_or_default()).into());
     }
     Ok(resp
@@ -188,6 +194,9 @@ pub async fn suggest_clans(search: String, realm: String) -> CommandResult<Vec<C
     .await
     .map_err(|e| anyhow!("clans/list parse: {e}"))?;
     if resp.status != "ok" {
+        if resp.error.is_source_unavailable() {
+            return Ok(Vec::new());
+        }
         return Err(anyhow!("clans/list: {}", resp.error.message.unwrap_or_default()).into());
     }
     Ok(resp
@@ -226,6 +235,9 @@ async fn fetch_clan_node(
         .await
         .map_err(|e| anyhow!("clans/info parse: {e}"))?;
     if parsed.status != "ok" {
+        if parsed.error.is_source_unavailable() {
+            return Ok(None);
+        }
         bail!("clans/info: {}", parsed.error.message.unwrap_or_default());
     }
     Ok(parsed

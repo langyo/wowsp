@@ -2,6 +2,7 @@ import { defineStore } from "pinia";
 import { computed, ref, watch } from "vue";
 
 import { api, type GameVersionInfo, type ShipInfo } from "@/api";
+import { isMobileApp } from "@/utils/platform";
 import { basicsToShipInfo, loadShipsBasics } from "@/utils/shipsBasics";
 import { withLestaOverlay, withLestaResolution } from "@/utils/shipsLesta";
 import { useAccountStore } from "@/stores/account";
@@ -45,6 +46,36 @@ function localizeShips(list: ShipInfo[], lang: string): ShipInfo[] {
  *  API only carries one simplified Chinese (the harmonized CN translation)
  *  on every realm, so the 亚服简体 original names/texts can only come from
  *  the game client files. */
+/** Upper bound on ONE network leg of the encyclopedia load. The Rust side
+ *  fans out to up to 11 API pages with a 60 s ceiling each — a bad phone
+ *  network could keep the load pending for minutes and the view spins
+ *  forever (loading only clears when the load settles). Past the deadline
+ *  the load rejects and the bundled ship basics take over. Phones get a
+ *  tighter budget: the bundled fallback is complete and local. */
+const LOAD_DEADLINE_MS = isMobileApp() ? 12_000 : 30_000;
+
+/** Bound on the bundled Lesta-overlay chunk imports (local files; a phone
+ *  webview that stalls a chunk read must degrade, never wedge). */
+const OVERLAY_DEADLINE_MS = 5_000;
+
+function withDeadline<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error("encyclopedia load timed out"));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
 export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   const ships = ref<ShipInfo[]>([]);
   const version = ref<GameVersionInfo | null>(null);
@@ -171,8 +202,11 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
     loading.value = true;
     error.value = null;
     try {
-      const ver = await api.getGameVersion();
-      const fresh = await api.getShipEncyclopedia(realm, forceRefresh, apiLang);
+      const ver = await withDeadline(api.getGameVersion(), LOAD_DEADLINE_MS);
+      const fresh = await withDeadline(
+        api.getShipEncyclopedia(realm, forceRefresh, apiLang),
+        LOAD_DEADLINE_MS,
+      );
       if (await finalize(fresh, lang, seq)) {
         version.value = ver;
         loadedRealm.value = realm;
@@ -186,8 +220,8 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
       // stays as the user's preference to avoid a retry loop on every page visit.
       if (/INVALID_LANGUAGE/i.test(msg) && lang !== "en-US") {
         try {
-          const ver = await api.getGameVersion();
-          const fresh = await api.getShipEncyclopedia(realm, true, "en");
+          const ver = await withDeadline(api.getGameVersion(), LOAD_DEADLINE_MS);
+          const fresh = await withDeadline(api.getShipEncyclopedia(realm, true, "en"), LOAD_DEADLINE_MS);
           if (await finalize(fresh, lang, seq)) {
             version.value = ver;
             loadedRealm.value = realm;
@@ -225,11 +259,21 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
   async function finalize(fresh: ShipInfo[], lang: string, seq: number): Promise<boolean> {
     for (;;) {
       const realmAtStart = useShipsUiStore().treeRealm;
-      const overlaid = await withLestaOverlay(fresh, lang);
+      // Both overlays lazy-import bundled JSON chunks (ships_lesta.json,
+      // ships_wg_only.json) with NO catch on the import — a stalled chunk
+      // fetch on a phone webview would leave this await pending forever and
+      // wedge even the bundled fallback (it awaits the same chunk). Bound
+      // them: an unavailable overlay degrades to the un-overlaid list.
+      const overlaid = await withDeadline(withLestaOverlay(fresh, lang), OVERLAY_DEADLINE_MS).catch(
+        () => fresh,
+      );
       // The resolution union does not read the branch source — one await
       // races the same watcher the overlay does, and the identity re-check
       // below covers both.
-      const resolution = await withLestaResolution(fresh, lang);
+      const resolution = await withDeadline(
+        withLestaResolution(fresh, lang),
+        OVERLAY_DEADLINE_MS,
+      ).catch(() => fresh);
       if (seq !== loadSeq) return false;
       if (useShipsUiStore().treeRealm !== realmAtStart) continue;
       baseShips = fresh;
@@ -289,7 +333,9 @@ export const useEncyclopediaStore = defineStore("encyclopedia", () => {
       const base = baseShips;
       const lang = baseLang;
       if (!base || !lang) return;
-      const overlaid = await withLestaOverlay(base, lang);
+      const overlaid = await withDeadline(withLestaOverlay(base, lang), OVERLAY_DEADLINE_MS).catch(
+        () => base,
+      );
       if (baseShips === base && baseLang === lang && useShipsUiStore().treeRealm === realm) {
         ships.value = localizeShips(overlaid, lang);
       }
