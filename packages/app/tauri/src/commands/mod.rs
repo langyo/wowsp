@@ -39,6 +39,10 @@ pub mod decision_serve;
 // E18 wires the UI command.
 #[cfg(feature = "ai")]
 pub mod decision_score;
+// E25: static per-player decision reports (the shareable long-image
+// substrate) — reuses the debug cache's scoring pass.
+#[cfg(feature = "ai")]
+pub mod decision_report;
 // E24: the shipId → weapon-attribute table and the 10-wide routing vector
 // the attribute-routed fire MoE reads. Always compiled (the table is data);
 // only the models that consume it sit behind the ai feature.
