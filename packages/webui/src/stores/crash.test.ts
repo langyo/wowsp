@@ -25,6 +25,7 @@ vi.mock("@/api", () => ({
     restoreMod: vi.fn(),
     restartGame: vi.fn(),
     modHubSetSafeMode: vi.fn(),
+    modHubSafeMode: vi.fn(),
     safeguardEnabled: vi.fn(),
     setSafeguard: vi.fn(),
     scanRecentCrashes: vi.fn(),
@@ -52,6 +53,7 @@ const mocked = {
   restore: vi.mocked(api.restoreMod),
   restart: vi.mocked(api.restartGame),
   safeMode: vi.mocked(api.modHubSetSafeMode),
+  safeModeStatus: vi.mocked(api.modHubSafeMode),
   safeguardEnabled: vi.mocked(api.safeguardEnabled),
   setSafeguard: vi.mocked(api.setSafeguard),
   scanRecent: vi.mocked(api.scanRecentCrashes),
@@ -105,7 +107,8 @@ beforeEach(() => {
   mocked.quarantine.mockResolvedValue([] as never);
   mocked.restore.mockResolvedValue([] as never);
   mocked.restart.mockResolvedValue(restartInfo as never);
-  mocked.safeMode.mockResolvedValue([] as never);
+  mocked.safeMode.mockResolvedValue(true as never);
+  mocked.safeModeStatus.mockResolvedValue(false as never);
 });
 
 afterEach(() => {
@@ -427,6 +430,7 @@ describe("useCrashStore.safeModeAndRestart", () => {
 
     const info = await crash.safeModeAndRestart(GAME);
 
+    expect(mocked.safeModeStatus).toHaveBeenCalledWith(GAME);
     expect(mocked.safeMode).toHaveBeenCalledWith(GAME, true);
     expect(mocked.restart).toHaveBeenCalledWith(GAME);
     expect(info?.pid).toBe(99);
@@ -448,17 +452,51 @@ describe("useCrashStore.safeModeAndRestart", () => {
     const info = await crash.safeModeAndRestart(GAME);
 
     expect(info).toBeNull();
+    expect(mocked.safeModeStatus).not.toHaveBeenCalled();
     expect(mocked.safeMode).not.toHaveBeenCalled();
     expect(mocked.restart).not.toHaveBeenCalled();
     const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
     expect(texts).toContain(t("crash.errors.gameRunning"));
   });
 
-  it("degrades to a plain restart when no game root is known", async () => {
+  it("skips the flip when the client is already in safe mode, then restarts", async () => {
+    mocked.safeModeStatus.mockResolvedValueOnce(true as never);
     const crash = useCrashStore();
-    await crash.safeModeAndRestart("");
+
+    const info = await crash.safeModeAndRestart(GAME);
+
+    expect(mocked.safeModeStatus).toHaveBeenCalledWith(GAME);
     expect(mocked.safeMode).not.toHaveBeenCalled();
-    expect(mocked.restart).toHaveBeenCalledWith(undefined);
+    expect(mocked.restart).toHaveBeenCalledWith(GAME);
+    expect(info?.pid).toBe(99);
+    expect(crash.restarting).toBe(false);
+  });
+
+  it("refuses without a game root instead of restarting un-isolated", async () => {
+    const crash = useCrashStore();
+
+    const info = await crash.safeModeAndRestart("");
+
+    expect(info).toBeNull();
+    expect(mocked.safeModeStatus).not.toHaveBeenCalled();
+    expect(mocked.safeMode).not.toHaveBeenCalled();
+    expect(mocked.restart).not.toHaveBeenCalled();
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain(t("crash.toast.safeRestartNoRoot"));
+  });
+
+  it("aborts without restarting when the flip reports failure", async () => {
+    mocked.safeMode.mockResolvedValueOnce(false as never);
+    const crash = useCrashStore();
+
+    const info = await crash.safeModeAndRestart(GAME);
+
+    expect(info).toBeNull();
+    expect(mocked.safeMode).toHaveBeenCalledWith(GAME, true);
+    expect(mocked.restart).not.toHaveBeenCalled();
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain(t("crash.errors.safeModeUnconfirmed"));
+    expect(crash.restarting).toBe(false);
   });
 
   it("stops after a safe-mode failure without restarting", async () => {

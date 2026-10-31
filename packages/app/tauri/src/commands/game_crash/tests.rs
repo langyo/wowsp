@@ -538,6 +538,40 @@ mod evidence_parsers {
         "<Data Name='StorePath'>\\?\\C:\\ProgramData\\Microsoft\\Windows\\WER\\ReportArchive\\AppCrash_WorldOfWarships64.exe_deadbeef_1234abcd</Data>",
         "</EventData></Event>"
     );
+    /// Event 1001 leak PREdiction: names the STILL-RUNNING client in P1,
+    /// exactly like a crash report does.
+    const EVENT_1001_LEAK: &str = concat!(
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
+        "<System><Provider Name='Windows Error Reporting'/><EventID>1001</EventID>",
+        "<TimeCreated SystemTime='2026-10-31T07:51:47.0000000Z'/></System><EventData>",
+        "<Data Name='EventName'>RADAR_PRE_LEAK_64</Data>",
+        "<Data Name='P1'>WorldOfWarships64.exe</Data>",
+        "<Data Name='P2'>N/A</Data>",
+        "<Data Name='P3'>N/A</Data>",
+        "<Data Name='P4'>N/A</Data>",
+        "<Data Name='P5'>N/A</Data>",
+        "<Data Name='P6'>N/A</Data>",
+        "<Data Name='P7'>N/A</Data>",
+        "<Data Name='P8'>N/A</Data>",
+        "</EventData></Event>"
+    );
+    /// Event 1001 crash report with the same P1 spelling — a real crash
+    /// shape that must keep matching.
+    const EVENT_1001_APPCRASH: &str = concat!(
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
+        "<System><Provider Name='Windows Error Reporting'/><EventID>1001</EventID>",
+        "<TimeCreated SystemTime='2026-10-31T07:51:47.0000000Z'/></System><EventData>",
+        "<Data Name='EventName'>APPCRASH</Data>",
+        "<Data Name='P1'>WorldOfWarships64.exe</Data>",
+        "<Data Name='P2'>1.0.0.0</Data>",
+        "<Data Name='P3'>0c0000005</Data>",
+        "<Data Name='P4'>WorldOfWarships64.exe</Data>",
+        "<Data Name='P5'>1.0.0.0</Data>",
+        "<Data Name='P6'>0c0000005</Data>",
+        "<Data Name='P7'>N/A</Data>",
+        "<Data Name='P8'>N/A</Data>",
+        "</EventData></Event>"
+    );
 
     fn window_around(iso: &str) -> (i64, i64) {
         let t = parse_rfc3339_unix(iso).expect("fixture time");
@@ -624,6 +658,36 @@ mod evidence_parsers {
         ));
     }
 
+    /// The observed false positive: a RADAR_PRE_LEAK_64 event 1001 (a leak
+    /// PREdiction for a still-running client) names the image in P1 just
+    /// like a crash does. It must never match — not live (a later clean exit
+    /// inside the lookback would be falsely confirmed) and not in the
+    /// backfill's exact-name attribution.
+    #[test]
+    fn leak_prediction_events_never_match_the_client() {
+        let events = parse_wevtutil_xml(&format!("{EVENT_1001_LEAK}{EVENT_1001_APPCRASH}"));
+        assert_eq!(events.len(), 2);
+        let window = window_around("2026-10-31T07:51:47Z");
+        assert!(!event_is_crash_shaped(&events[0]));
+        assert!(event_is_crash_shaped(&events[1]));
+        assert!(
+            !event_matches_client(&events[0], "worldofwarships64.exe", None, window),
+            "a memory-leak prediction is not a crash"
+        );
+        assert!(
+            event_matches_client(&events[1], "worldofwarships64.exe", None, window),
+            "an APPCRASH-shaped 1001 still confirms the crash"
+        );
+        // The backfill attributes by exact P1 match without consulting
+        // event_matches_client, so the leak filter has to hold there too.
+        let images = vec!["worldofwarships64.exe".to_string()];
+        assert_eq!(attributed_image(&events[0], &images, window), None);
+        assert_eq!(
+            attributed_image(&events[1], &images, window).as_deref(),
+            Some("worldofwarships64.exe")
+        );
+    }
+
     #[test]
     fn event_evidence_extracts_codes_modules_and_report_paths() {
         let events = parse_wevtutil_xml(&format!("{EVENT_1000}{EVENT_1001}"));
@@ -632,8 +696,17 @@ mod evidence_parsers {
         assert_eq!(from_1000.source, SOURCE_EVENT_LOG);
         assert_eq!(from_1000.exception_code.as_deref(), Some("0xC0000005"));
         assert_eq!(from_1000.faulting_module.as_deref(), Some("nvldum.dll"));
+        assert_eq!(
+            from_1000.evidence_id.as_deref(),
+            Some("evt:460470"),
+            "the live evidence id matches the backfill's"
+        );
 
         let from_1001 = evidence_from_event(&events[1]);
+        assert_eq!(
+            from_1001.evidence_id, None,
+            "a 1001 without EventRecordID carries no evidence id"
+        );
         assert_eq!(from_1001.exception_code.as_deref(), Some("0xC0000005"));
         assert_eq!(
             from_1001.faulting_module.as_deref(),
@@ -784,6 +857,18 @@ fn backfill_tombstones_roundtrip_cap_and_heal() {
     super::super::appdata::write_json_in(dir.path(), BACKFILL_SEEN_FILE, "not json")
         .expect("write damaged");
     assert!(load_seen_in(dir.path()).is_empty());
+}
+
+/// The duplicate-artifact gate the live pass consults before appending: a
+/// tombstoned evidence id means this crash is already recorded.
+#[test]
+fn evidence_already_known_matches_tombstoned_ids() {
+    let dir = TempDir::new("evidence-known");
+    let id = "wgc:WorldOfWarships64-2026-10-31_15-50-26.crash";
+    assert!(!evidence_already_known(dir.path(), id));
+    save_seen_in(dir.path(), &[id.to_string()]);
+    assert!(evidence_already_known(dir.path(), id));
+    assert!(!evidence_already_known(dir.path(), "evt:460470"));
 }
 #[cfg(windows)]
 /// The registry lists the 32-bit image FIRST; the exact pass must win
@@ -961,6 +1046,251 @@ fn crash_report_image_discriminates_the_32_64_names() {
         Some("korabli64.exe"),
     );
     assert_eq!(crash_report_image("something-else.crash", &stems), None);
+}
+
+/// A synthetic WG crash-handler report: first line names the app + crash
+/// time, the Message block carries the actual cause.
+#[cfg(windows)]
+const REPORT_BODY: &str = concat!(
+    "Application D:/SteamLibrary/steamapps/common/World of Warships/bin/123/bin64/WorldOfWarships64.exe crashed 10.31.2026 at 15:50:26\n",
+    "\n",
+    "Message:\n",
+    "Unhandled exception\n"
+);
+
+/// The live pass must find a WG crash report written while the app was
+/// running — the observed shape where WER/event-log handoff is suppressed
+/// and <game>/crashes is the only durable evidence.
+#[cfg(windows)]
+#[test]
+fn game_report_evidence_finds_the_in_window_report() {
+    let dir = TempDir::new("game-report");
+    let rel = "crashes/WorldOfWarships64-2026-10-31_15-50-26.crash";
+    dir.touch(rel, REPORT_BODY);
+    // The read_dir spelling (canonical separators), not the fixture's.
+    let expected = dir
+        .path()
+        .join("crashes")
+        .join("WorldOfWarships64-2026-10-31_15-50-26.crash");
+    // An older in-window report: the newest wins.
+    dir.touch(
+        "crashes/WorldOfWarships64-2026-10-31_15-50-10.crash",
+        "Application D:/.../WorldOfWarships64.exe crashed 10.31.2026 at 15:50:10\n\nMessage:\nOlder failure\n",
+    );
+    let at = unix_now();
+    dir.set_mtime(
+        "crashes/WorldOfWarships64-2026-10-31_15-50-10.crash",
+        at - 5,
+    );
+    dir.set_mtime(rel, at);
+    let window = (at - EVIDENCE_SLACK_SECS, at + EVIDENCE_SLACK_SECS);
+    // A first root without a crashes folder must not abort the hunt.
+    let roots = vec![
+        dir.path().join("no-install").to_string_lossy().into_owned(),
+        dir.path().to_string_lossy().into_owned(),
+    ];
+    let evidence =
+        game_report_evidence("worldofwarships64.exe", &roots, window, None).expect("report found");
+    assert_eq!(evidence.source, SOURCE_GAME_REPORT);
+    assert_eq!(
+        evidence.evidence_id.as_deref(),
+        Some("wgc:WorldOfWarships64-2026-10-31_15-50-26.crash"),
+        "the live id is the same identity the backfill uses"
+    );
+    assert_eq!(
+        evidence.report_path.as_deref(),
+        Some(expected.to_string_lossy().as_ref())
+    );
+    assert_eq!(
+        evidence.summary, "Unhandled exception",
+        "the Message block carries the cause"
+    );
+    assert!(evidence.dump_path.is_none());
+}
+
+/// The crash-dialog-left-open shape: the pid lingers for minutes after the
+/// report was written, so last_seen (and the old window floor) sits far above
+/// the report's mtime. The process' session start is the correct floor.
+#[cfg(windows)]
+#[test]
+fn game_report_evidence_accepts_a_lingering_crashed_process() {
+    let dir = TempDir::new("game-report-lingering");
+    let root = vec![dir.path().to_string_lossy().into_owned()];
+    dir.touch(
+        "crashes/WorldOfWarships64-2026-10-31_15-50-26.crash",
+        REPORT_BODY,
+    );
+    let start = unix_now() - 360;
+    // The report was written a minute into the session; the process then
+    // lingered five more minutes before the watchdog saw it vanish.
+    dir.set_mtime(
+        "crashes/WorldOfWarships64-2026-10-31_15-50-26.crash",
+        start + 60,
+    );
+    let last_seen = start + 300;
+    let window = (
+        last_seen - EVIDENCE_SLACK_SECS,
+        last_seen + EVIDENCE_SLACK_SECS,
+    );
+    // Without the session start the old lower bound misses it...
+    assert!(game_report_evidence("worldofwarships64.exe", &root, window, None).is_none());
+    // ...and the start time widens the floor correctly.
+    let evidence = game_report_evidence("worldofwarships64.exe", &root, window, Some(start))
+        .expect("lingering report found");
+    assert_eq!(evidence.source, SOURCE_GAME_REPORT);
+    assert_eq!(
+        evidence.evidence_id.as_deref(),
+        Some("wgc:WorldOfWarships64-2026-10-31_15-50-26.crash")
+    );
+}
+
+/// Out-of-window reports and the other bitness' names never match.
+#[cfg(windows)]
+#[test]
+fn game_report_evidence_ignores_out_of_window_and_cross_bit_report() {
+    let dir = TempDir::new("game-report-filter");
+    let root = vec![dir.path().to_string_lossy().into_owned()];
+    let at = unix_now();
+    let window = (at - 60, at + 60);
+    // In the window but a 32-bit report name: the 64-bit image must not
+    // claim it.
+    dir.touch(
+        "crashes/WorldOfWarships-2026-10-31_15-50-26.crash",
+        REPORT_BODY,
+    );
+    dir.set_mtime("crashes/WorldOfWarships-2026-10-31_15-50-26.crash", at);
+    // A 64-bit report name with a stale mtime: outside the window.
+    dir.touch(
+        "crashes/WorldOfWarships64-2026-10-20_10-00-00.crash",
+        REPORT_BODY,
+    );
+    dir.set_mtime(
+        "crashes/WorldOfWarships64-2026-10-20_10-00-00.crash",
+        at - 3600,
+    );
+    assert!(game_report_evidence("worldofwarships64.exe", &root, window, None).is_none());
+    // Mirror image: the 32-bit image must not claim the 64-bit report
+    // (drop its own in-window 32-bit report first, or it would match that).
+    fs::remove_file(
+        dir.path()
+            .join("crashes/WorldOfWarships-2026-10-31_15-50-26.crash"),
+    )
+    .expect("remove 32-bit report");
+    dir.touch(
+        "crashes/WorldOfWarships64-2026-10-31_15-51-47.crash",
+        REPORT_BODY,
+    );
+    dir.set_mtime("crashes/WorldOfWarships64-2026-10-31_15-51-47.crash", at);
+    assert!(game_report_evidence("worldofwarships.exe", &root, window, None).is_none());
+    // A sibling that is not a .crash report never counts.
+    dir.touch("crashes/WorldOfWarships64-notes.txt", REPORT_BODY);
+    assert!(game_report_evidence("worldofwarships.exe", &root, window, None).is_none());
+}
+
+/// An empty crashes folder, a root without one, and no roots at all all
+/// answer "no evidence" instead of panicking.
+#[cfg(windows)]
+#[test]
+fn game_report_evidence_tolerates_missing_and_empty_folders() {
+    let at = unix_now();
+    let window = (at - 60, at + 60);
+    let empty = TempDir::new("game-report-empty");
+    fs::create_dir_all(empty.path().join("crashes")).expect("mkdirs");
+    let roots = vec![empty.path().to_string_lossy().into_owned()];
+    assert!(game_report_evidence("worldofwarships64.exe", &roots, window, None).is_none());
+    let bare = TempDir::new("game-report-bare");
+    let roots = vec![bare.path().to_string_lossy().into_owned()];
+    assert!(game_report_evidence("worldofwarships64.exe", &roots, window, None).is_none());
+    assert!(game_report_evidence("worldofwarships64.exe", &[], window, None).is_none());
+}
+
+/// Real reports are ~4.5 KB: the Message block sits near the TOP, while the
+/// tail is a stack-trace fragment (the old tail read produced summaries like
+/// ": WorldOfWarships64.exe!0x00007FF661CB52FC" — not a crash cause).
+#[cfg(windows)]
+#[test]
+fn crash_report_summary_reads_the_message_block_at_the_top() {
+    let dir = TempDir::new("game-report-summary");
+    let mut body = String::from(REPORT_BODY);
+    for i in 0..80 {
+        body.push_str(&format!(
+            "  {i}: WorldOfWarships64.exe!0x00007FF661CB52FC\n"
+        ));
+    }
+    body.push_str("System info:\n");
+    assert!(
+        body.len() > 2048,
+        "the fixture is a realistic oversized report"
+    );
+    let path = dir.touch("crashes/WorldOfWarships64-2026-10-31_15-51-47.crash", &body);
+    assert_eq!(crash_report_summary(&path), "Unhandled exception");
+}
+
+/// The live-bug regression at the collector call site: dropping the
+/// game-report hunt (or the root argument) must fail here, not just in the
+/// helper's own tests.
+#[cfg(windows)]
+#[test]
+fn collect_crash_evidence_finds_the_live_game_report() {
+    let dir = TempDir::new("collect-evidence");
+    let root = dir.path().to_string_lossy().into_owned();
+    dir.touch(
+        "crashes/WorldOfWarships64-2026-10-31_15-51-47.crash",
+        REPORT_BODY,
+    );
+    let at = unix_now();
+    dir.set_mtime("crashes/WorldOfWarships64-2026-10-31_15-51-47.crash", at);
+    let exe = dir
+        .path()
+        .join("bin/123/bin64/WorldOfWarships64.exe")
+        .to_string_lossy()
+        .into_owned();
+    let window = (at - EVIDENCE_SLACK_SECS, at + EVIDENCE_SLACK_SECS);
+    let evidence = collect_crash_evidence(
+        "worldofwarships64.exe",
+        Some(&exe),
+        Some(&root),
+        Some(at - 120),
+        4242,
+        window,
+    )
+    .expect("the live pass finds the game's own crash report");
+    assert_eq!(evidence.source, SOURCE_GAME_REPORT);
+    assert_eq!(
+        evidence.evidence_id.as_deref(),
+        Some("wgc:WorldOfWarships64-2026-10-31_15-51-47.crash")
+    );
+    assert_eq!(evidence.summary, "Unhandled exception");
+}
+
+/// The live hunt's root chain: the vanished process' validated root first,
+/// then the root its exe path implies — the install scan is only a last
+/// resort (a multi-install machine must not guess with the root in hand).
+#[cfg(windows)]
+#[test]
+fn live_game_roots_prefers_the_process_roots() {
+    let exe = "C:\\Games\\WoWS\\bin\\123\\bin64\\WorldOfWarships64.exe";
+    // The validated seen root wins; the exe-derived root is the same folder
+    // spelled differently, so the list stays one entry.
+    let roots = live_game_roots(Some(exe), Some("C:/Games/WoWS"));
+    assert_eq!(roots.len(), 1);
+    assert!(super::super::game_context::same_folder(
+        &roots[0],
+        "C:\\Games\\WoWS"
+    ));
+    // Without a validated root the exe-derived root still roots the hunt.
+    let roots = live_game_roots(Some(exe), None);
+    assert_eq!(roots, vec!["C:\\Games\\WoWS".to_string()]);
+    // A root the exe resolves into that differs from the seen root is kept
+    // after it, in preference order.
+    let roots = live_game_roots(
+        Some("D:\\Other\\bin\\1\\bin64\\WorldOfWarships64.exe"),
+        Some("C:\\Games\\WoWS"),
+    );
+    assert_eq!(
+        roots,
+        vec!["C:\\Games\\WoWS".to_string(), "D:\\Other".to_string()]
+    );
 }
 
 #[test]

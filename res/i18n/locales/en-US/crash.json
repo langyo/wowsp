@@ -7,7 +7,7 @@
     "restart": "Restart game",
     "analysis": "Analyze",
     "dismiss": "Dismiss",
-    "safeRestartFallback": "No game folder resolved — restarting as-is.",
+    "safeRestartNoRoot": "No game folder resolved — safe mode cannot be entered, so the client was NOT restarted. Pick the game install first.",
     "open": "Review crash"
   },
   "section": {
@@ -114,7 +114,8 @@
     "none": "Nothing found"
   },
   "errors": {
-    "gameRunning": "The game client is running — close it before restarting or switching safe mode."
+    "gameRunning": "The game client is running — close it before restarting or switching safe mode.",
+    "safeModeUnconfirmed": "Safe mode could not be confirmed on — the client was not restarted."
   },
   "modlist": {
     "pinnedBadge": "Crash suspect",

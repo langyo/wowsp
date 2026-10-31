@@ -9,8 +9,11 @@ import { nextTick } from "vue";
 
 import { createPinia, setActivePinia } from "pinia";
 
+import { useToast } from "@celestia-island/hikari";
+
 import type { CrashAnalysis, GameCrashRecord } from "@/api";
 import { initLocaleMessages, t } from "@/i18n";
+import { useConfigStore } from "@/stores/config";
 import { useCrashStore } from "@/stores/crash";
 
 vi.mock("@/api", () => ({
@@ -25,8 +28,14 @@ vi.mock("@/api", () => ({
     listQuarantinedMods: vi.fn(() => Promise.resolve([])),
     quarantineMod: vi.fn(),
     restoreMod: vi.fn(),
-    restartGame: vi.fn(),
-    modHubSetSafeMode: vi.fn(),
+    restartGame: vi.fn(() =>
+      Promise.resolve({
+        gameRoot: "D:/Games/World of Warships",
+        exePath: "D:/Games/World of Warships/bin/WorldOfWarships64.exe",
+        pid: 77,
+      }),
+    ),
+    modHubSetSafeMode: vi.fn(() => Promise.resolve(true)),
     modHubSafeMode: vi.fn(() => Promise.resolve(false)),
     safeguardEnabled: vi.fn(() => Promise.resolve(true)),
     setSafeguard: vi.fn(),
@@ -52,7 +61,12 @@ const mocked = {
   restore: vi.mocked(api.restoreSuspect),
   quarantineMod: vi.mocked(api.quarantineMod),
   listQuarantined: vi.mocked(api.listQuarantinedMods),
+  safeMode: vi.mocked(api.modHubSetSafeMode),
+  restart: vi.mocked(api.restartGame),
 };
+
+/** An install the section resolves only through the active selection. */
+const ACTIVE = "D:/Games/ActiveInstall";
 
 /** The suspects window's footer bulk action (teleported to body). */
 function bulkButton(): HTMLButtonElement | undefined {
@@ -371,6 +385,59 @@ describe("CrashSection", () => {
     await vi.waitFor(() => {
       expect(mocked.exportReport).toHaveBeenCalledWith("crash-1");
     });
+  });
+
+  /** Click the "Safe mode & restart" recovery button. */
+  async function clickSafeRestart(wrapper: ReturnType<typeof mount>) {
+    await vi.waitFor(() => {
+      expect(wrapper.find(".crash-section__actions").exists()).toBe(true);
+    });
+    const btn = wrapper
+      .find(".crash-section__actions")
+      .findAll("button")
+      .find((b) => b.text().includes(t("crash.toast.safeRestart")));
+    expect(btn).toBeTruthy();
+    await btn!.trigger("click");
+  }
+
+  it("safe-mode restart uses the active install when the record has no root", async () => {
+    // An event-log/backfill record carries no gameRoot; the section's
+    // effective install is the active selection. Isolation must target
+    // that install, then the relaunch must reuse it.
+    useConfigStore().activeInstall = { kind: "manual", path: ACTIVE };
+    mocked.list.mockResolvedValue([record({ gameRoot: null })]);
+    mocked.analyze.mockResolvedValue(analysis);
+    const wrapper = mount(CrashSection);
+    await clickSafeRestart(wrapper);
+    await vi.waitFor(() => {
+      expect(mocked.safeMode).toHaveBeenCalledWith(ACTIVE, true);
+    });
+    expect(mocked.restart).toHaveBeenCalledWith(ACTIVE);
+    // Isolation first, relaunch second.
+    expect(mocked.safeMode.mock.invocationCallOrder[0]).toBeLessThan(
+      mocked.restart.mock.invocationCallOrder[0]!,
+    );
+  });
+
+  it("refuses the safe-mode restart when no install can be resolved", async () => {
+    // No record root and no active install: nothing can be isolated, so
+    // neither safe mode nor the relaunch may fire — the refusal toast is
+    // the only outcome.
+    mocked.list.mockResolvedValue([record({ gameRoot: null })]);
+    mocked.analyze.mockResolvedValue(analysis);
+    const toast = useToast();
+    toast.toasts.splice(0, toast.toasts.length);
+    const wrapper = mount(CrashSection);
+    await clickSafeRestart(wrapper);
+    await vi.waitFor(() => {
+      expect(
+        toast.toasts.some((s) =>
+          s.messages.some((m) => m.text === t("crash.toast.safeRestartNoRoot")),
+        ),
+      ).toBe(true);
+    });
+    expect(mocked.safeMode).not.toHaveBeenCalled();
+    expect(mocked.restart).not.toHaveBeenCalled();
   });
 
   /** Open the records window (the reset action lives in its footer). */

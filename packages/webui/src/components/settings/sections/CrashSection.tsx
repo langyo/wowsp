@@ -281,9 +281,12 @@ export default defineComponent({
     }
 
     async function safeRestart() {
-      const root = selectedRecord.value?.gameRoot;
+      // The section's effective install (the record's root, else the
+      // active install) — a backend-resolved root the record lacks must
+      // still be isolated before any relaunch.
+      const root = gameRoot.value;
       if (!root) {
-        toast.info(t("crash.toast.safeRestartFallback"));
+        toast.error(t("crash.toast.safeRestartNoRoot"));
         return;
       }
       await crash.safeModeAndRestart(root);

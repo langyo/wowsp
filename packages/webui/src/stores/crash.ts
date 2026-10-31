@@ -347,20 +347,39 @@ export const useCrashStore = defineStore("crash", () => {
   }
 
   /** The crash card's primary move for a mod-suspected crash: flip the
-   *  install's mod hub safe mode ON, then relaunch. Refuses like restart
-   *  while the game is running (safe mode writes res_mods); a missing
-   *  gameRoot cannot flip anything, so it degrades to a plain restart —
-   *  the caller hints at the fallback when it knows the root is absent. */
+   *  install's mod hub safe mode ON (quarantining res_mods), then relaunch.
+   *  Refuses like restart while the game is running (safe mode writes
+   *  res_mods). Without a resolved install there is nothing to isolate, so
+   *  the call refuses with a toast and NEVER degrades to a plain restart:
+   *  relaunching the un-isolated client is exactly the mod reload that can
+   *  crash again. The relaunch only fires once isolation is CONFIRMED —
+   *  the install already reports safe mode, or the flip resolved true; a
+   *  throw or a false answer aborts without touching the client. */
   async function safeModeAndRestart(gameRoot: string): Promise<GameRestartInfo | null> {
     if (gameBlocked(gameRoot)) {
       toast.error(t("crash.errors.gameRunning"));
       return null;
     }
-    if (!gameRoot) return restart();
+    if (!gameRoot) {
+      toast.error(t("crash.toast.safeRestartNoRoot"));
+      return null;
+    }
     if (restarting.value) return null;
     restarting.value = true;
     try {
-      await api.modHubSetSafeMode(gameRoot, true);
+      // Already vanilla (e.g. the previous attempt's flip landed): skip
+      // the redundant flip and go straight to the relaunch. The status is
+      // also true when only a stranded twin sits in an old bin/ dir (game
+      // updated while safe mode was on) — still genuinely isolated: the
+      // live res_mods is the game-recreated husk and the hub refuses
+      // writes while safe mode reads active.
+      if (!(await api.modHubSafeMode(gameRoot))) {
+        const flipped = await api.modHubSetSafeMode(gameRoot, true);
+        if (!flipped) {
+          toast.error(t("crash.errors.safeModeUnconfirmed"));
+          return null;
+        }
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
       return null;

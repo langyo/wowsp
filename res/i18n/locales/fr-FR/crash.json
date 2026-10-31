@@ -7,7 +7,7 @@
     "restart": "Redémarrer le jeu",
     "analysis": "Voir l'analyse",
     "dismiss": "Ignorer",
-    "safeRestartFallback": "Dossier du jeu introuvable — redémarrage tel quel.",
+    "safeRestartNoRoot": "Dossier du jeu introuvable — impossible d'activer le mode sans échec, le client n'a donc PAS été redémarré. Sélectionnez d'abord l'installation du jeu.",
     "open": "Examiner le plantage"
   },
   "section": {
@@ -114,7 +114,8 @@
     "none": "Rien trouvé"
   },
   "errors": {
-    "gameRunning": "Le client du jeu est en cours d'exécution — fermez-le avant de redémarrer ou de changer de mode sans échec."
+    "gameRunning": "Le client du jeu est en cours d'exécution — fermez-le avant de redémarrer ou de changer de mode sans échec.",
+    "safeModeUnconfirmed": "L'activation du mode sans échec n'a pas pu être confirmée — le client n'a pas été redémarré."
   },
   "modlist": {
     "pinnedBadge": "Suspect de plantage",

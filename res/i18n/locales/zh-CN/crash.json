@@ -7,7 +7,7 @@
     "restart": "重启游戏",
     "analysis": "查看分析",
     "dismiss": "忽略",
-    "safeRestartFallback": "未能定位游戏目录，将直接重启。",
+    "safeRestartNoRoot": "未能定位游戏目录——无法进入安全模式，因此没有重启游戏。请先在设置中选择游戏目录。",
     "open": "查看崩溃分析"
   },
   "section": {
@@ -114,7 +114,8 @@
     "none": "没有发现"
   },
   "errors": {
-    "gameRunning": "游戏客户端正在运行 —— 请先关闭它，再重启或切换安全模式。"
+    "gameRunning": "游戏客户端正在运行 —— 请先关闭它，再重启或切换安全模式。",
+    "safeModeUnconfirmed": "无法确认已进入安全模式——未重启游戏。"
   },
   "modlist": {
     "pinnedBadge": "崩溃嫌疑",
