@@ -2624,15 +2624,21 @@ export default defineComponent({
                   {/* The reveal shortcut (top-right corner of the opened
                       replay): transparent ghost icon button that shows the
                       replay file pre-selected in the OS file manager. The
-                      native tooltip carries the label plus the replay's
-                      install-relative path (see revealRelPath). Desktop
-                      app only — phones have no file manager and a plain
-                      browser tab has no such command. */}
+                      hover hint rides the delegated data-hint channel as
+                      a card — the label as the head, the replay's
+                      install-relative path as the identity line (see
+                      revealRelPath); a native title attribute would trip
+                      nativeTitlePolicy fence. Desktop app only — phones
+                      have no file manager and a plain browser tab has no
+                      such command. */}
                   {isNative() && !isMobileApp() && parser.current.value.path ? (
                     <button
                       type="button"
                       class="replay-view__reveal"
-                      title={`${t("replay.reveal.tip")}\n${revealRelPath.value}`}
+                      data-hint-card={JSON.stringify({
+                        title: t("replay.reveal.tip"),
+                        subtitle: revealRelPath.value,
+                      })}
                       aria-label={t("replay.reveal.tip")}
                       onClick={onRevealReplay}
                     >
