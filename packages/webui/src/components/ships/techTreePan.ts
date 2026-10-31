@@ -27,6 +27,8 @@
  */
 import { onBeforeUnmount, ref, watch, type Ref } from "vue";
 
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
+
 import { WHEEL_LINE_PX } from "./optionStrip";
 
 export function useTechTreePan() {
@@ -36,6 +38,9 @@ export function useTechTreePan() {
   /** The real scroller: hikari's viewport inside the container root. */
   let viewportEl: HTMLElement | null = null;
   const panning = ref(false);
+  // The root DPI zoom the drag-pan converts against — see onPointerMove
+  // (`1` while the interface-scale preference is Auto).
+  const dpiScale = useAppliedDpiScale();
   /** Press origin and the scrollport offset it was taken at — the pan
    *  writes absolute values derived from them, so no per-move drift. */
   let pressX = 0;
@@ -96,8 +101,13 @@ export function useTechTreePan() {
   function onPointerMove(e: PointerEvent) {
     const el = viewportEl;
     if (e.pointerId !== panId || !el) return;
-    el.scrollLeft = baseSL - (e.clientX - pressX);
-    el.scrollTop = baseST - (e.clientY - pressY);
+    // The pointer deltas are visual px while scrollLeft/scrollTop are the
+    // tree's zoomed local space — divide by the applied scale or the pan
+    // runs scale× faster than the pointer under a manual interface scale
+    // (the hint family's zoom notes).
+    const z = dpiScale.value;
+    el.scrollLeft = baseSL - (e.clientX - pressX) / z;
+    el.scrollTop = baseST - (e.clientY - pressY) / z;
   }
 
   function teardownPan() {

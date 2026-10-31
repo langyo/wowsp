@@ -15,6 +15,7 @@ import {
 } from "vue";
 import { HkScrollContainer, OVERLAY_Z, ensureOverlayRoot } from "@celestia-island/hikari";
 import { t as i18nT } from "@/i18n";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import type { LearnedReplaySource } from "@/api";
 import "./ReplaySourcesTip.scss";
 
@@ -29,6 +30,13 @@ export default defineComponent({
     const anchorRef = ref<HTMLElement | null>(null);
     const open = ref(false);
     const style = ref<CSSProperties | null>(null);
+    // The panel teleports to the overlay root at body level — inside the
+    // root DPI zoom's subtree — so its written left/top paint in the
+    // zoomed local space while the chip's gBCR and window.innerWidth /
+    // innerHeight answer in root-visual px: every measured value is
+    // divided by the applied scale first, or the panel drifts scale× off
+    // its chip (the hint family's zoom notes).
+    const dpiScale = useAppliedDpiScale();
     let closeTimer = 0;
 
     function cancelClose(): void {
@@ -40,13 +48,17 @@ export default defineComponent({
       const el = anchorRef.value;
       if (!el || props.replays.length === 0) return;
       const r = el.getBoundingClientRect();
+      // Into the panel's zoomed local space (see the dpiScale note); the
+      // 8/6 gaps, the panel's ~274px width and ~244px max height are
+      // local constants.
+      const z = dpiScale.value;
       // Open downward; flip above the chip when the viewport's bottom
       // cannot host the panel's max height.
-      const below = r.bottom + 8;
-      const flip = r.bottom + 244 > window.innerHeight;
+      const below = r.bottom / z + 8;
+      const flip = r.bottom / z + 244 > window.innerHeight / z;
       style.value = {
-        left: `${Math.max(6, Math.min(r.left, window.innerWidth - 274))}px`,
-        top: flip ? `${Math.max(6, r.top - 8)}px` : `${below}px`,
+        left: `${Math.max(6, Math.min(r.left / z, window.innerWidth / z - 274))}px`,
+        top: flip ? `${Math.max(6, r.top / z - 8)}px` : `${below}px`,
         ...(flip ? { transform: "translateY(-100%)" } : null),
       };
       open.value = true;

@@ -49,13 +49,14 @@
  * scope to body and each open/close is polled to let the popover machine's
  * timer-driven enter/leave settle.
  */
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { createPinia } from "pinia";
 import { DOMWrapper, enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
 import ShipFilterBar, { type FilterState } from "./ShipFilterBar";
 import { panEngaged, stripWheelDelta } from "./optionStrip";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 import type { PlayerShipStats, ShipInfo, ShipModeBreakdown, ShipModeStats } from "@/api";
 
 const PERSIST_KEY = "wowsp.shipFilter.v6";
@@ -157,6 +158,48 @@ const order = (wrapper: ReturnType<typeof mountBar>) =>
   lastState(wrapper).ships.map((s) => s.shipId);
 const chip = (wrapper: ReturnType<typeof mountBar>, key: string) =>
   wrapper.find(`[data-chip="${key}"]`);
+
+describe("ShipFilterBar chip indent", () => {
+  it("measures the bar offset in the root zoom's local space", async () => {
+    // 125% interface scale: the rect difference answers in visual px while
+    // the consumed --sfb-indent (a CSS length inside the zoomed subtree)
+    // and the computed paddings are local — unconverted, a zoomed root
+    // over-measured the offset by (scale − 1) of itself.
+    document.documentElement.dataset.dpiScale = "125";
+    resetAppliedDpiScaleForTest();
+    // The bar (the chips row) sits 30 visual px from the viewport's left,
+    // its host row at 10 → a 20 visual px offset; computed paddings are 0
+    // in happy-dom.
+    const spy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        const left = this.classList.contains("ship-filter-bar") ? 30 : 10;
+        return {
+          left,
+          right: left + 200,
+          top: 0,
+          bottom: 20,
+          width: 200,
+          height: 20,
+          x: left,
+          y: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+    try {
+      const wrapper = mountBar();
+      // The onMounted measure lands after the mount tick.
+      await flushPromises();
+      // 20 visual ÷ 1.25 → 16 local, floored.
+      expect(wrapper.attributes("style")).toContain("--sfb-indent: 16px");
+    } finally {
+      spy.mockRestore();
+      delete document.documentElement.dataset.dpiScale;
+      document.documentElement.style.removeProperty("zoom");
+      resetAppliedDpiScaleForTest();
+    }
+  });
+});
 /** Popup options follow the category's option order: index 0 is 全部…. The
  *  popups teleport to body (HkPopover), so they are queried there. */
 const bodyPops = () => [

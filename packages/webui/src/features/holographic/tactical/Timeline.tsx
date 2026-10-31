@@ -25,6 +25,7 @@ import { useBreakpoint } from "@celestia-island/hikari";
 import { ChevronsLeft, Pause, Play, Plus, Trash2, ZoomIn, ZoomOut } from "@lucide/vue";
 import { HkIconButton, HkPopover, HkTooltip } from "@celestia-island/hikari";
 import { i18n, t as i18nT } from "@/i18n";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import type { TacticalActionKind, TacticalStep } from "./types";
 import type { ShipAction } from "./actions";
 import type { PlanTrack } from "./plan";
@@ -206,6 +207,10 @@ export default defineComponent({
     /** Collapsed accordion rows, by track key (survives doc edits). */
     const collapsed = ref<ReadonlySet<string>>(new Set<string>());
     const { isMobile } = useBreakpoint();
+    // The root DPI zoom the pointer math converts against — see localXY
+    // (the scale the document root is drawn at, `1` while the
+    // interface-scale preference is Auto).
+    const dpiScale = useAppliedDpiScale();
 
     // Re-fit when a new battle (different duration) mounts.
     watch(
@@ -774,7 +779,15 @@ export default defineComponent({
 
     function localXY(e: MouseEvent): { x: number; y: number } {
       const rect = canvasRef.value!.getBoundingClientRect();
-      return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      // clientX and the rect both answer in root-visual px while every
+      // geometry below is the zoomed local space (width.value from the
+      // ResizeObserver's contentRect, the laid marker positions, the
+      // tooltip's written left/top) — divide the pointer deltas by the
+      // applied scale, or scrubbing/zoom-at-cursor lands scale× past the
+      // pointer under a manual interface scale (the hint family's zoom
+      // notes).
+      const z = dpiScale.value;
+      return { x: (e.clientX - rect.left) / z, y: (e.clientY - rect.top) / z };
     }
 
     // ── Pointer interaction ──────────────────────────────────────────────

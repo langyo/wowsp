@@ -26,6 +26,7 @@ import { noteMapMinimapLoadError, resolveMapMinimapUrl } from "@/features/hologr
 import { t } from "@/i18n";
 import { displayMapName } from "@/utils/mapNames";
 import { isAnalysableSpace } from "@/utils/tacticsMaps";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import "./MapNameTag.scss";
 
 /** Hover-show delay: parity with the global data-hint tooltip. */
@@ -60,6 +61,13 @@ export default defineComponent({
     const cardEl = ref<HTMLElement | null>(null);
     const open = ref(false);
     const cardPos = ref<CSSProperties>({});
+    // The card teleports to <body> — inside the root DPI zoom's subtree —
+    // so its written left/top paint in the zoomed local space while the
+    // tag's gBCR and window.innerWidth/innerHeight answer in root-visual
+    // px: every measured value is divided by the applied scale first, or
+    // the card drifts scale× off its tag (the hint family's zoom notes;
+    // offsetWidth/offsetHeight are already local).
+    const dpiScale = useAppliedDpiScale();
 
     const cleanId = computed(() => props.spaceId?.replace(/^spaces\//, "") ?? null);
     /** The jump only promises what /tactics can board. */
@@ -109,11 +117,17 @@ export default defineComponent({
       const h = card.offsetHeight;
       // Below the tag, flipping above when the window's bottom edge is too
       // close; horizontally the card grows rightward from the tag's left
-      // edge and the clamp pulls it back for right-flush anchors.
-      let left = r.left;
-      let top = r.bottom + ANCHOR_GAP_PX;
-      if (top + h > window.innerHeight - EDGE_MARGIN_PX) top = r.top - ANCHOR_GAP_PX - h;
-      left = Math.min(Math.max(left, EDGE_MARGIN_PX), Math.max(window.innerWidth - w - EDGE_MARGIN_PX, EDGE_MARGIN_PX));
+      // edge and the clamp pulls it back for right-flush anchors. The rect
+      // and the viewport clamp divide into the card's zoomed local space
+      // (see the dpiScale note above).
+      const z = dpiScale.value;
+      let left = r.left / z;
+      let top = r.bottom / z + ANCHOR_GAP_PX;
+      if (top + h > window.innerHeight / z - EDGE_MARGIN_PX) top = r.top / z - ANCHOR_GAP_PX - h;
+      left = Math.min(
+        Math.max(left, EDGE_MARGIN_PX),
+        Math.max(window.innerWidth / z - w - EDGE_MARGIN_PX, EDGE_MARGIN_PX),
+      );
       top = Math.max(top, EDGE_MARGIN_PX);
       cardPos.value = {
         left: `${Math.round(left)}px`,

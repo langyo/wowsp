@@ -45,6 +45,11 @@ export function placeLiveCard(
   viewportWidth: number,
   viewportHeight: number,
 ): LiveCardPlacement {
+  // All five inputs are the card's LOCAL space — under the root DPI zoom
+  // (theme/dpiPrefs) a gBCR anchor or window.innerWidth/innerHeight answer
+  // in root-visual px and must be divided by useAppliedDpiScale() first,
+  // while offsetWidth/offsetHeight are already local. Callers convert; the
+  // pure math stays unit-agnostic.
   const left = Math.max(
     LIVE_CARD_EDGE_PX,
     Math.min(anchor.left, viewportWidth - cardWidth - LIVE_CARD_EDGE_PX),
