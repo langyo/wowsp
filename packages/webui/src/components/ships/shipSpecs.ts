@@ -29,9 +29,27 @@
  * carries none of it). Groups with multiple weapons of one kind (shell
  * types, torpedo types) carry `sections` — labelled row blocks the panel
  * renders with internal divider lines.
+ *
+ * Alternate firing mode (替代射击): ships like Vyazma / Laffey carry a
+ * `SwitchableModeArtilleryModule` on their main battery — a burst salvo
+ * with its own reload, optional range multiplier and a separate shell set
+ * (the slice's `__shellAmmo` embedding, shape v3). Passing `altFire` to
+ * buildShipSpecs() swaps the main-battery rows to that mode and annotates
+ * every changed value with a `delta` (value change vs. the normal mode, so
+ * the panel can tint improvements green and regressions red).
  */
 import { buildAntiAirRows } from "./antiAir";
 import { mainCaliberMm, resolveShipParts, roleHpSlots } from "./shipParts";
+/** A signed change against the normal firing mode, shown beside the value. */
+export interface SpecDelta {
+  /** Pre-formatted signed change, e.g. "+12.0 s" or "-8.9 km". */
+  text: string;
+  /** True when the change is an improvement (green), false for a regression
+   *  (red). The direction is judged per stat (lower reload is better, higher
+   *  penetration / speed / burst count is better). */
+  better: boolean;
+}
+
 export interface SpecRow {
   /** i18n key under `ships.spec.*`, e.g. "hp" → "ships.spec.hp". */
   key: string;
@@ -39,6 +57,9 @@ export interface SpecRow {
   value: string;
   /** Optional i18n key for a help tooltip explaining what this stat means. */
   hint?: string;
+  /** Present only when the alternate firing mode is on and the displayed
+   *  value differs from the normal-mode one. */
+  delta?: SpecDelta;
 }
 
 /**
@@ -55,7 +76,27 @@ export interface SpecSection {
   /** Optional raw suffix appended to the label (e.g. " · 10.0 km" to tell
    * two same-type torpedo sections apart). */
   suffix?: string;
+  /** Set on every shell block of a battery carrying a switchable (alternate
+   *  firing) module — the panel renders the per-shell-type mode toggle. */
+  altFire?: boolean;
   rows: SpecRow[];
+}
+
+/** `SwitchableModeArtilleryModule` — the main battery's alternate firing
+ *  mode. Numbers stay `unknown` (defensive reads, same as every raw field). */
+export interface SwitchableMainBattery {
+  burstReloadTime?: unknown;
+  fullReloadTime?: unknown;
+  shotsCount?: unknown;
+  modifiers?: Record<string, unknown>;
+  secondaryAmmoList?: unknown;
+}
+
+/** Options for buildShipSpecs(). */
+export interface BuildShipSpecsOptions {
+  /** Alternate firing mode on: artillery rows/sections switch to the burst
+   *  mode's values, annotated with deltas against the normal mode. */
+  altFire?: boolean;
 }
 
 export interface SpecGroup {
@@ -85,6 +126,20 @@ interface ShellEntry {
   burn_chance?: unknown;
   bullet_speed?: unknown;
   penetration?: unknown;
+}
+
+/** A shell Projectile entity out of the slice's embedded `__shellAmmo`
+ *  (shape v3) — the per-shell numbers the WG profile cannot carry (HE
+ *  penetration, AP ricochet / normalization angles). */
+interface ShellEntity {
+  ammoType?: unknown;
+  alphaDamage?: unknown;
+  burnProb?: unknown;
+  alphaPiercingHE?: unknown;
+  bulletSpeed?: unknown;
+  bulletRicochetAt?: unknown;
+  bulletAlwaysRicochetAt?: unknown;
+  bulletCapNormalizeMaxAngle?: unknown;
 }
 
 interface HullBlock {
@@ -263,15 +318,263 @@ function mainGunCaliber(art: unknown): number | null {
   return null;
 }
 
+function dict(v: unknown): Record<string, unknown> | null {
+  return v != null && typeof v === "object" && !Array.isArray(v)
+    ? (v as Record<string, unknown>)
+    : null;
+}
+
+/** Main-battery artillery blocks of a raw GameParams entry, top
+ *  configuration first. The role resolver (ShipUpgradeInfo chain) wins when
+ *  it answers; loose dumps / unusual upgrade tables fall back to every
+ *  top-level *_Artillery block (A1/AB/B variants of one hull). */
+function artilleryBlocks(gp: Record<string, unknown> | null | undefined): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  if (!gp) return out;
+  for (const block of resolveShipParts(gp, "top").artillery) {
+    const d = dict(block);
+    if (d && !out.includes(d)) out.push(d);
+  }
+  for (const [key, value] of Object.entries(gp)) {
+    const d = dict(value);
+    if (!d) continue;
+    if (key === "A_Artillery" || key.endsWith("_Artillery")) {
+      if (!out.includes(d)) out.push(d);
+    }
+  }
+  return out;
+}
+
+/** The main battery's switchable (alternate firing) module, if the ship has
+ *  one. The block carrying it may be any of the hull's artillery variants. */
+export function switchableMainBattery(gameparams: unknown): SwitchableMainBattery | null {
+  for (const block of artilleryBlocks(dict(gameparams))) {
+    const module = dict(block.SwitchableModeArtilleryModule);
+    if (module) return module as SwitchableMainBattery;
+  }
+  return null;
+}
+
+/** Whether the specs panel should offer the alternate-firing toggle. */
+export function hasSwitchableMainBattery(gameparams: unknown): boolean {
+  return switchableMainBattery(gameparams) != null;
+}
+
+/** The slice's pruned shell entities (shape v3), name → entity. */
+function shellAmmo(gameparams: unknown): Record<string, ShellEntity> {
+  const ammo = dict(dict(gameparams)?.__shellAmmo);
+  const out: Record<string, ShellEntity> = {};
+  if (!ammo) return out;
+  for (const [name, value] of Object.entries(ammo)) {
+    const d = dict(value);
+    if (d) out[name] = d as ShellEntity;
+  }
+  return out;
+}
+
+/** Stock shell entity of one ammo type, from the main battery's mounts. */
+function mainBatteryShell(
+  blocks: Record<string, unknown>[],
+  ammo: Record<string, ShellEntity>,
+  type: string,
+): ShellEntity | null {
+  for (const block of blocks) {
+    for (const mount of Object.values(block)) {
+      const list = dict(mount)?.ammoList;
+      if (!Array.isArray(list)) continue;
+      for (const name of list) {
+        const entity = typeof name === "string" ? ammo[name] : undefined;
+        if (entity && String(entity.ammoType) === type) return entity;
+      }
+    }
+  }
+  return null;
+}
+
+/** The alternate-firing mode's shell of one ammo type: the "_ALT" projectile
+ *  when the mode carries one, else the first matching entry (some modes list
+ *  only the regular shell, and burst-only modes list none). */
+function alternateShell(
+  mode: SwitchableMainBattery,
+  ammo: Record<string, ShellEntity>,
+  type: string,
+): ShellEntity | null {
+  const list = mode.secondaryAmmoList;
+  if (!Array.isArray(list)) return null;
+  let fallback: ShellEntity | null = null;
+  for (const name of list) {
+    if (typeof name !== "string") continue;
+    const entity = ammo[name];
+    if (!entity || String(entity.ammoType) !== type) continue;
+    if (name.includes("_ALT")) return entity;
+    fallback ??= entity;
+  }
+  return fallback;
+}
+
+/** Per-shell numbers the panel renders (all null when the data lacks them). */
+interface ShellStats {
+  damage: number | null;
+  fireChance: number | null;
+  hePen: number | null;
+  speed: number | null;
+  ricochet: number | null;
+  alwaysRicochet: number | null;
+  normalize: number | null;
+}
+
+/** Shell stats in the NORMAL firing mode: profile fields, refined by the
+ *  slice's shell entity when one is embedded (shape v3 — the profile carries
+ *  no HE/SAP penetration or AP ricochet/normalization numbers). */
+function baseShellStats(
+  profileShell: ShellEntry,
+  entity: ShellEntity | null,
+  type: string,
+  caliber: number | null,
+  nation?: string,
+): ShellStats {
+  // WG's burn_probability is ALREADY a percentage (10.0 = 10%); the entity's
+  // burnProb is a 0..1 fraction (0.4 = 40%).
+  const entityBurn = entity ? num(entity.burnProb) : null;
+  const profileBurn = num(profileShell.burn_probability) ?? num(profileShell.burn_chance);
+  const pierceHe = entity ? num(entity.alphaPiercingHE) : null;
+  return {
+    damage: (entity ? num(entity.alphaDamage) : null) ?? num(profileShell.damage),
+    fireChance:
+      type === "HE"
+        ? entityBurn != null && entityBurn >= 0
+          ? Math.round(entityBurn * 100)
+          : profileBurn
+        : null,
+    hePen:
+      type === "HE"
+        ? ((pierceHe != null && pierceHe > 0 ? Math.round(pierceHe) : null) ??
+          num(profileShell.penetration) ??
+          hePenFromCaliber(caliber, nation))
+        : null,
+    speed: (entity ? num(entity.bulletSpeed) : null) ?? num(profileShell.bullet_speed),
+    ricochet: entity ? num(entity.bulletRicochetAt) : null,
+    alwaysRicochet: entity ? num(entity.bulletAlwaysRicochetAt) : null,
+    normalize: entity ? num(entity.bulletCapNormalizeMaxAngle) : null,
+  };
+}
+
+/** Shell stats in the alternate firing mode: its own shell entity when the
+ *  mode fields one, else the stock shell with the mode's damage /
+ *  penetration multipliers applied. */
+function altShellStats(
+  base: ShellStats,
+  entity: ShellEntity | null,
+  mode: SwitchableMainBattery,
+  type: string,
+): ShellStats {
+  const modifiers = dict(mode.modifiers) ?? {};
+  // The mode's multipliers stack ON TOP of the selected shell (the vendored
+  // toolkit multiplies GMDamageCoeff × GMAPDamageCoeff for AP), whether that
+  // shell is the mode's own "_ALT" projectile or the stock one. The embedded
+  // _ALT entities carry BASE ballistics — no live ship combines them with a
+  // coefficient today, and a future one must keep the entity unmultiplied.
+  const damageCoeff =
+    (num(modifiers.GMDamageCoeff) ?? 1) *
+    (type === "AP" ? (num(modifiers.GMAPDamageCoeff) ?? 1) : 1);
+  const penCoeff = num(modifiers.GMPenetrationCoeffHE) ?? 1;
+  const burn = entity ? num(entity.burnProb) : null;
+  const pierceHe = entity ? num(entity.alphaPiercingHE) : null;
+  const rawDamage = (entity ? num(entity.alphaDamage) : null) ?? base.damage;
+  const heSource = (pierceHe != null && pierceHe > 0 ? pierceHe : null) ?? base.hePen;
+  return {
+    damage: rawDamage != null ? rawDamage * damageCoeff : null,
+    fireChance:
+      type === "HE" ? (burn != null && burn >= 0 ? Math.round(burn * 100) : base.fireChance) : null,
+    hePen:
+      type === "HE" && heSource != null ? Math.floor(heSource * penCoeff) : base.hePen,
+    speed: (entity ? num(entity.bulletSpeed) : null) ?? base.speed,
+    ricochet: (entity ? num(entity.bulletRicochetAt) : null) ?? base.ricochet,
+    alwaysRicochet: (entity ? num(entity.bulletAlwaysRicochetAt) : null) ?? base.alwaysRicochet,
+    normalize: (entity ? num(entity.bulletCapNormalizeMaxAngle) : null) ?? base.normalize,
+  };
+}
+
+/** Alternate-firing range: the mode's range multiplier, then the optional
+ *  absolute cap (GameParams metres). */
+function altFireRange(baseKm: number | null, mode: SwitchableMainBattery): number | null {
+  if (baseKm == null) return null;
+  const modifiers = dict(mode.modifiers) ?? {};
+  let km = baseKm * (num(modifiers.GMMaxDist) ?? 1);
+  const capMetres = num(modifiers.GMMaxDistAbsoluteCap);
+  if (capMetres != null && capMetres > 0) km = Math.min(km, capMetres / 1000);
+  return km;
+}
+
+/** Signed delta chip for one value pair; omitted when the change is below
+ *  the row's display precision. */
+function deltaOf(
+  base: number,
+  alt: number,
+  unit: string,
+  digits: number,
+  higherIsBetter: boolean,
+): SpecDelta | undefined {
+  const diff = alt - base;
+  const threshold = digits > 0 ? 10 ** -digits / 2 : 0.5;
+  if (!Number.isFinite(diff) || Math.abs(diff) < threshold) return undefined;
+  return {
+    text: `${diff > 0 ? "+" : ""}${fmtNum(diff, digits)}${unit}`,
+    better: higherIsBetter ? diff > 0 : diff < 0,
+  };
+}
+
+/** One formatted row, switching to the alt value (with a delta) when the
+ *  alternate firing mode is on. Returns null when the base value is absent. */
+function measuredRow(
+  key: string,
+  base: number | null,
+  alt: number | null,
+  unit: string,
+  digits: number,
+  higherIsBetter: boolean,
+  hint: string | undefined,
+  altFire: boolean,
+): SpecRow | null {
+  if (base == null) return null;
+  const shown = altFire && alt != null ? alt : base;
+  const row: SpecRow = { key, value: `${fmtNum(shown, digits)}${unit}` };
+  if (hint) row.hint = hint;
+  if (altFire && alt != null) {
+    const delta = deltaOf(base, alt, unit, digits, higherIsBetter);
+    if (delta) row.delta = delta;
+  }
+  return row;
+}
+
+/** DPM = damage × barrels × salvoes × 60 / reload (reload in seconds). */
+function dpmValue(
+  damage: number | null,
+  barrels: number | null,
+  reload: number | null,
+  salvoes: number,
+): number | null {
+  if (damage == null || barrels == null || reload == null || reload <= 0) return null;
+  return (damage * barrels * Math.max(1, salvoes) * 60) / reload;
+}
+
 /** Per-shell section: damage / muzzle velocity / fire chance / pen / DPM for
  *  one shell type — the main battery splits per shell so the panel can
- *  divide same-group weapon types with separator lines. */
+ *  divide same-group weapon types with separator lines. With a switchable
+ *  main battery, the section also (a) renders the alternate-firing toggle and
+ *  (b) swaps to the alt shell/mode values with deltas when that toggle is on. */
 function shellSections(
   shells: Record<string, unknown> | undefined,
   barrels: number | null,
   reload: number | null,
   caliber: number | null,
-  nation?: string,
+  nation: string | undefined,
+  ctx: {
+    mode: SwitchableMainBattery | null;
+    altFire: boolean;
+    ammo: Record<string, ShellEntity>;
+    blocks: Record<string, unknown>[];
+  },
 ): SpecSection[] {
   if (!shells || typeof shells !== "object") return [];
   const order: Array<[string, string, string | undefined]> = [
@@ -280,35 +583,71 @@ function shellSections(
     ["AP", "apShell", "apShellHint"],
     ["Cruise", "cruiseShell", undefined],
   ];
+  const { mode, altFire, ammo, blocks } = ctx;
   const out: SpecSection[] = [];
   for (const [key, labelKey, hintKey] of order) {
     const sh = shells[key];
     if (!sh || typeof sh !== "object" || !labelKey) continue;
-    const e = sh as ShellEntry;
+    const profileShell = sh as ShellEntry;
+    const base = baseShellStats(
+      profileShell,
+      mainBatteryShell(blocks, ammo, key),
+      key,
+      caliber,
+      nation,
+    );
+    const alt =
+      mode != null
+        ? altShellStats(base, alternateShell(mode, ammo, key), mode, key)
+        : null;
+    const on = altFire && mode != null && alt != null;
+    const altValue = (v: number | null) => (on ? v : null);
     const rows: SpecRow[] = [];
-    const dmg = fmtNum(e.damage);
-    if (dmg) rows.push({ key: "shellDamage", value: dmg, hint: "shellDamageHint" });
-    // HE fire chance in percent. WG's burn_probability is ALREADY a
-    // percentage (NC 406 mm HE = 36.0) — multiplying by 100 rendered
-    // 1000%-style values across the whole fleet.
+    const push = (row: SpecRow | null) => {
+      if (row) rows.push(row);
+    };
+    push(measuredRow("shellDamage", base.damage, altValue(alt?.damage ?? null), "", 0, true, "shellDamageHint", on));
+    // HE fire chance is a percentage (profile field already percent,
+    // entity burnProb a 0..1 fraction).
     if (key === "HE") {
-      const burn = num(e.burn_probability) ?? num(e.burn_chance);
-      if (burn != null) rows.push({ key: "fireChance", value: `${Math.round(burn)}%` });
-      const pen = num(e.penetration) ?? hePenFromCaliber(caliber, nation);
-      if (pen != null)
-        rows.push({ key: "hePenetration", value: `${pen} mm`, hint: "hePenetrationHint" });
+      push(measuredRow("fireChance", base.fireChance, altValue(alt?.fireChance ?? null), "%", 0, true, "fireChanceHint", on));
+      push(measuredRow("hePenetration", base.hePen, altValue(alt?.hePen ?? null), " mm", 0, true, "hePenetrationHint", on));
     }
-    const spd = num(e.bullet_speed);
-    if (spd != null) rows.push({ key: "shellSpeed", value: `${spd} ${speedUnit()}` });
-    // DPM = perShellDamage × barrels × 60 / reload — reload is seconds, so
-    // the ×60 converts to per-minute (a plain damage × barrels / reload
-    // silently showed damage per SECOND). Only HE/AP carry DPM rows (the
-    // historic set); SAP / Cruise sections stay without one.
-    if ((key === "HE" || key === "AP") && barrels != null && reload != null && reload > 0 && dmg) {
-      const dpm = (Number(dmg.replace(/[^0-9.-]/g, "")) * barrels * 60) / reload;
-      rows.push({ key: key === "AP" ? "apDpm" : "heDpm", value: fmtNum(dpm)! });
+    // AP ricochet / normalization angles only exist in the slice embedding —
+    // and they are exactly what premium/alternate AP shells change.
+    if (key === "AP" && mode != null) {
+      push(measuredRow("apRicochetAngle", base.ricochet, altValue(alt?.ricochet ?? null), "°", 0, true, "apRicochetAngleHint", on));
+      push(measuredRow("apAlwaysRicochetAngle", base.alwaysRicochet, altValue(alt?.alwaysRicochet ?? null), "°", 0, true, "apAlwaysRicochetAngleHint", on));
+      push(measuredRow("apNormalization", base.normalize, altValue(alt?.normalize ?? null), "°", 0, true, "apNormalizationHint", on));
     }
-    if (rows.length) out.push({ labelKey, hintKey, rows });
+    push(measuredRow("shellSpeed", base.speed, altValue(alt?.speed ?? null), ` ${speedUnit()}`, 0, true, "shellSpeedHint", on));
+    // Only HE/AP carry DPM rows (the historic set); SAP / Cruise stay without.
+    if (key === "HE" || key === "AP") {
+      // One alternate-mode cycle = the full reload AFTER the burst plus the
+      // burst's own shot spacing: fullReload + (shots - 1) × burstInterval.
+      // Using the full reload alone overstated DPM (Johnston: +33% instead of
+      // +1.7%) because it ignored the time the burst itself takes.
+      const salvoes = num(mode?.shotsCount) ?? 1;
+      const fullReload = mode != null ? num(mode.fullReloadTime) : null;
+      const burstInterval = (mode != null ? num(mode.burstReloadTime) : null) ?? 0;
+      const altReload =
+        fullReload != null && fullReload > 0
+          ? fullReload + Math.max(0, salvoes - 1) * Math.max(0, burstInterval)
+          : reload;
+      push(
+        measuredRow(
+          key === "AP" ? "apDpm" : "heDpm",
+          dpmValue(base.damage, barrels, reload, 1),
+          altValue(dpmValue(alt?.damage ?? base.damage, barrels, altReload, salvoes)),
+          "",
+          0,
+          true,
+          undefined,
+          on,
+        ),
+      );
+    }
+    if (rows.length) out.push({ labelKey, hintKey, altFire: mode != null, rows });
   }
   return out;
 }
@@ -540,8 +879,19 @@ function torpedoSections(gameparams: unknown): SpecSection[] {
  * without it the AA group is simply absent, matching the WG API's lack of
  * usable AA numbers, and submarines fall back to their WG sonar/battery
  * profile blocks).
+ *
+ * `options.altFire` switches the main battery to the ship's alternate
+ * firing mode (when it has one): burst/range/reload rows follow the
+ * `SwitchableModeArtilleryModule`, shell sections use the mode's own shells
+ * and mode multipliers, and every changed value carries a `delta` against
+ * the normal mode.
  */
-export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: unknown): SpecGroup[] {
+export function buildShipSpecs(
+  profile: Profile,
+  nation?: string,
+  gameparams?: unknown,
+  options?: BuildShipSpecsOptions,
+): SpecGroup[] {
   if (!profile || typeof profile !== "object") return [];
   const p = profile as Record<string, unknown>;
   const groups: SpecGroup[] = [];
@@ -567,12 +917,54 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
 
   // ── Main Battery (Firepower) ──────────────────────────────────────────
   const art = p.artillery as ArtilleryBlock | undefined;
+  const gpEntry = gameparams as Record<string, unknown> | null | undefined;
+  const mode = switchableMainBattery(gpEntry);
+  const altFire = options?.altFire === true && mode != null;
+  const ammo = shellAmmo(gpEntry);
+  const blocks = artilleryBlocks(gpEntry);
   const artRows: SpecRow[] = [];
-  const dist = fmtNum(art?.distance, 1);
-  if (dist) artRows.push({ key: "mainGunRange", value: `${dist} km`, hint: "mainGunRangeHint" });
+  const baseDistance = num(art?.distance);
+  const altDistance = altFire ? altFireRange(baseDistance, mode!) : null;
+  const distRow = measuredRow(
+    "mainGunRange",
+    baseDistance,
+    altDistance,
+    " km",
+    1,
+    true,
+    "mainGunRangeHint",
+    altFire,
+  );
+  if (distRow) artRows.push(distRow);
   const reload = num(art?.shot_delay);
-  if (reload != null)
-    artRows.push({ key: "mainGunReload", value: `${reload.toFixed(1)} s`, hint: "mainGunReloadHint" });
+  const altReload = altFire ? num(mode!.fullReloadTime) : null;
+  const reloadRow = measuredRow(
+    "mainGunReload",
+    reload,
+    altReload,
+    " s",
+    1,
+    false,
+    "mainGunReloadHint",
+    altFire,
+  );
+  if (reloadRow) artRows.push(reloadRow);
+  // Alternate firing mode's burst facts: a full reload is preceded by
+  // `shotsCount` quick salvoes spaced `burstReloadTime` apart. Modes with
+  // shotsCount == 1 are single-shot alternate-ammo switches (Hawaii, Togasa,
+  // Aragon, …) — they carry no burst, so no burst rows render.
+  if (altFire) {
+    const shots = num(mode!.shotsCount);
+    if (shots != null && shots > 1) {
+      const burstRow: SpecRow = { key: "burstCount", value: String(shots), hint: "burstCountHint" };
+      const burstDelta = deltaOf(1, shots, "", 0, true);
+      if (burstDelta) burstRow.delta = burstDelta;
+      artRows.push(burstRow);
+      const interval = num(mode!.burstReloadTime);
+      if (interval != null && interval > 0)
+        artRows.push({ key: "burstInterval", value: `${interval.toFixed(1)} s`, hint: "burstIntervalHint" });
+    }
+  }
   const barrels = num(hull?.artillery_barrels);
   if (barrels != null) artRows.push({ key: "mainGunBarrels", value: String(barrels) });
   // WG's default_profile carries NO caliber field at all (verified across the
@@ -580,7 +972,7 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
   // max_dispersion/rotation_time/shells/shot_delay/slots) — fall back to the
   // raw GameParams entry's widest turret barrelDiameter when it is loaded.
   const caliber =
-    mainGunCaliber(art) ?? mainCaliberMm(gameparams as Record<string, unknown> | null | undefined);
+    mainGunCaliber(art) ?? mainCaliberMm(gpEntry);
   if (caliber != null)
     artRows.push({ key: "mainGunCaliber", value: `${caliber} mm`, hint: "mainGunCaliberHint" });
   // Sigma: WG puts it at artillery.sigma (top-level of the artillery block).
@@ -591,11 +983,33 @@ export function buildShipSpecs(profile: Profile, nation?: string, gameparams?: u
   if (rot != null)
     artRows.push({ key: "turretTraverse", value: `${rot.toFixed(1)} s / 180°`, hint: "turretTraverseHint" });
   const disp = num(art?.max_dispersion);
-  if (disp != null)
-    artRows.push({ key: "maxDispersion", value: `${disp} m`, hint: "maxDispersionHint" });
+  if (disp != null) {
+    // Five switchable batteries tune accuracy with GMIdealRadius (a
+    // dispersion multiplier: Aragon ×0.68, Conde/Fiume/Oquendo ×0.8, Bazán
+    // ×0.9) — surface it as a (lower-is-better) delta instead of silently
+    // dropping it.
+    const idealRadius = altFire ? num(dict(mode!.modifiers)?.GMIdealRadius) : null;
+    const altDisp = idealRadius != null ? disp * idealRadius : null;
+    const dispRow = measuredRow(
+      "maxDispersion",
+      disp,
+      altDisp,
+      " m",
+      0,
+      false,
+      "maxDispersionHint",
+      altFire,
+    );
+    if (dispRow) artRows.push(dispRow);
+  }
   // Per-shell sections (damage / fire / velocity / DPM per type), divided by
   // separator lines when the battery fields several shell kinds at once.
-  const artSections = shellSections(art?.shells, barrels, reload, caliber, nation);
+  const artSections = shellSections(art?.shells, barrels, reload, caliber, nation, {
+    mode,
+    altFire,
+    ammo,
+    blocks,
+  });
   if (artRows.length || artSections.length)
     groups.push({ group: "artillery", icon: "Crosshair", rows: artRows, sections: artSections.length ? artSections : undefined });
 

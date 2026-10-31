@@ -184,9 +184,19 @@
 
   &__hint {
     display: inline-flex;
+    flex: none;
     align-items: center;
+    justify-content: center;
+    /* inline-flex baseline alignment made the 11px icon sit on the text
+       baseline (visibly low, and flush against the label) — centering it on
+       the line and reserving its own gap keeps every help icon even. */
+    line-height: 0;
     color: rgb(var(--color-muted) / 60%);
     cursor: help;
+
+    svg {
+      display: block;
+    }
 
     &:hover {
       color: rgb(var(--color-primary));
@@ -195,12 +205,40 @@
 
   &__value {
     margin: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.28rem;
     color: rgb(var(--color-text));
     font-weight: 600;
     white-space: nowrap;
     text-align: right;
     cursor: pointer;
     user-select: all;
+  }
+
+  /* Alternate-firing delta chip: the signed change against the normal mode,
+     tinted by whether the stat improved (green) or regressed (red). */
+  &__delta {
+    flex: none;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    padding: 0.1rem 0.24rem;
+    border-radius: var(--radius-xs);
+    user-select: none;
+    cursor: help;
+
+    &.is-better {
+      color: rgb(var(--color-success));
+      background: rgb(var(--color-success) / 12%);
+    }
+
+    &.is-worse {
+      color: rgb(var(--color-error));
+      background: rgb(var(--color-error) / 12%);
+    }
   }
 
   /* Internal sub-groups (shell types, torpedo types): a labelled row block
@@ -222,11 +260,100 @@
     gap: 0.3rem;
   }
 
+  /* Section head: label (+ help icon) left, alternate-firing toggle right. */
+  &__section-head {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    min-height: 1rem;
+  }
+
   &__section-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
     color: rgb(var(--color-primary) / 85%);
     font-size: var(--text-2xs);
     font-weight: 600;
     letter-spacing: 0.03em;
+  }
+}
+
+/* ── Alternate-firing mode switch (shell section head) ─────────────────────
+   A compact toggle: text label + pill track. The native checkbox stays in
+   the DOM for keyboard/AT support, visually replaced by the track. */
+.specs-alt {
+  margin-left: auto;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 0.25rem;
+  color: rgb(var(--color-muted) / 85%);
+  font-size: var(--text-2xs);
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+
+  &__text {
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+
+  &__input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &__track {
+    position: relative;
+    flex: none;
+    width: 1.45rem;
+    height: 0.8rem;
+    border: 1px solid rgb(var(--color-border) / 45%);
+    border-radius: 999px;
+    background: rgb(var(--color-muted) / 20%);
+    transition:
+      background var(--duration-short) var(--ease-standard),
+      border-color var(--duration-short) var(--ease-standard);
+  }
+
+  &__thumb {
+    position: absolute;
+    top: 50%;
+    left: 0.1rem;
+    width: 0.55rem;
+    height: 0.55rem;
+    border-radius: 50%;
+    background: rgb(var(--color-muted));
+    transform: translateY(-50%);
+    transition:
+      left var(--duration-short) var(--ease-standard),
+      background var(--duration-short) var(--ease-standard);
+  }
+
+  &__input:checked + .specs-alt__track {
+    background: rgb(var(--color-primary) / 55%);
+    border-color: rgb(var(--color-primary) / 70%);
+
+    .specs-alt__thumb {
+      left: calc(100% - 0.65rem);
+      background: rgb(var(--color-bg));
+    }
+  }
+
+  &__input:focus-visible + .specs-alt__track {
+    outline: 2px solid rgb(var(--color-primary) / 70%);
+    outline-offset: 2px;
+  }
+
+  &:hover &__text {
+    color: rgb(var(--color-text));
   }
 }
 

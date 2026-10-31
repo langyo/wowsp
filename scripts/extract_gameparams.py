@@ -26,8 +26,12 @@ APK embeds a pre-extracted pack under the webui's public dir:
 Slice payload shape v2 embeds, under "__torpedoAmmo", the torpedo
 Projectile entities the ship's launcher mounts reference via "ammoList"
 (per-type damage, falloff tiers, ping-response homing); v1 slices were the
-bare ship entity. This script and the Rust cache materializer must keep
-the shapes field-for-field interchangeable.
+bare ship entity. Shape v3 adds "__shellAmmo": the MAIN BATTERY's
+artillery shells (every mount "ammoList" under the A_Artillery /
+*_Artillery blocks, plus the switchable firing mode's "secondaryAmmoList"),
+each pruned to the panel-facing ballistics whitelist. AA/secondary/
+torpedo-block shells stay out. This script and the Rust cache materializer
+must keep the shapes field-for-field interchangeable.
 
 The directory is gitignored (like the GLB pack): it is derived data,
 regenerated from a local extract by the android just recipes before the
@@ -73,7 +77,28 @@ from build_techtree import _params_root  # noqa: E402
 # Slice payload shape this script writes (must equal SLICE_FORMAT in
 # packages/app/tauri/src/commands/gameparams.rs; the pack stamp makes a
 # shape bump re-extract an otherwise up-to-date pack).
-SLICE_FORMAT = 2
+SLICE_FORMAT = 3
+
+# Shell fields the spec panel renders, alphabetical and identical to
+# SHELL_AMMO_KEYS in commands/gameparams.rs: the Rust appdata cache and the
+# Python pack writers must embed field-for-field equal shells.
+SHELL_AMMO_KEYS = (
+    "alphaDamage",
+    "alphaPiercingCS",
+    "alphaPiercingHE",
+    "ammoType",
+    "bulletAlwaysRicochetAt",
+    "bulletCapNormalizeMaxAngle",
+    "bulletDetonator",
+    "bulletDetonatorThreshold",
+    "bulletDiametr",
+    "bulletKrupp",
+    "bulletMass",
+    "bulletRicochetAt",
+    "bulletSpeed",
+    "burnProb",
+    "name",
+)
 
 DEFAULT_OUT = ROOT / "packages/webui/src/res/data/gameparams"
 CACHE_DIR = Path(
@@ -140,7 +165,8 @@ def entity_index(data: object) -> dict[str, dict]:
 def collect_ship_slices(data: object) -> dict[int, dict]:
     """ship id → the armed ship entity (A_Artillery preferred), mirroring
     extract_ship_slice's candidate pick, with the referenced torpedo ammo
-    entities embedded (slice shape v2)."""
+    and main-battery shell entities embedded (slice shape v3:
+    __torpedoAmmo + __shellAmmo)."""
     armed_by_id: dict[int, list[dict]] = {}
     for entity in _entities(data):
         typeinfo = entity.get("typeinfo") or {}
@@ -158,7 +184,7 @@ def collect_ship_slices(data: object) -> dict[int, dict]:
     slices: dict[int, dict] = {}
     for ship_id, candidates in armed_by_id.items():
         pick = next((c for c in candidates if "A_Artillery" in c), candidates[0])
-        slices[ship_id] = embed_torpedo_ammo(pick, entities)
+        slices[ship_id] = embed_shell_ammo(embed_torpedo_ammo(pick, entities), entities)
     return slices
 
 
@@ -205,6 +231,71 @@ def embed_torpedo_ammo(entity: dict, entities: dict[str, dict]) -> dict:
     if not ammo:
         return entity
     return {**entity, "__torpedoAmmo": ammo}
+
+
+def _is_artillery_shell_projectile(entity: dict) -> bool:
+    """typeinfo Projectile/Artillery — real data labels shells "Artillery",
+    not "Shell". Torpedoes share the Projectile type but carry species
+    "Torpedo" and stay out (same filter as commands/gameparams.rs)."""
+    typeinfo = entity.get("typeinfo")
+    if not isinstance(typeinfo, dict):
+        return False
+    return typeinfo.get("type") == "Projectile" and typeinfo.get("species") == "Artillery"
+
+
+def _shell_ammo_names(entity: dict) -> list[str]:
+    """Main-battery shell names: every mount ammoList under the A_Artillery /
+    *_Artillery blocks (the A1_/AB_/B_/C_/X_ variants), plus the switchable
+    firing mode's secondaryAmmoList alternate shells. A_ATBA/A_AirDefense/
+    A_Secondary/torpedo blocks are deliberately not scanned — the panel's
+    alternate-fire switch describes the main battery."""
+    names: list[str] = []
+    for key, block in entity.items():
+        if key != "A_Artillery" and not str(key).endswith("_Artillery"):
+            continue
+        if not isinstance(block, dict):
+            continue
+        for mount in block.values():
+            if not isinstance(mount, dict):
+                continue
+            ammo_list = mount.get("ammoList")
+            if isinstance(ammo_list, list):
+                for name in ammo_list:
+                    if isinstance(name, str) and name not in names:
+                        names.append(name)
+        switch = block.get("SwitchableModeArtilleryModule")
+        if isinstance(switch, dict):
+            secondary = switch.get("secondaryAmmoList")
+            if isinstance(secondary, list):
+                for name in secondary:
+                    if isinstance(name, str) and name not in names:
+                        names.append(name)
+    return names
+
+
+def prune_shell_entity(entity: dict) -> dict:
+    """A shell entity pruned to SHELL_AMMO_KEYS (only the keys it carries) —
+    the decoded Projectile entry is ~200 fields, none of the effect/path
+    machinery is panel-facing."""
+    return {key: entity[key] for key in SHELL_AMMO_KEYS if key in entity}
+
+
+def embed_shell_ammo(entity: dict, entities: dict[str, dict]) -> dict:
+    """Slice shape v3: attach the main battery's referenced artillery shells
+    under "__shellAmmo" (name → pruned entity). Returns the input unchanged
+    when nothing embeds; never mutates the pick (it is shared with the
+    index), and an existing "__shellAmmo" key wins (the Rust embed's
+    or-insert)."""
+    if "__shellAmmo" in entity:
+        return entity
+    ammo: dict[str, dict] = {}
+    for name in _shell_ammo_names(entity):
+        candidate = entities.get(name)
+        if isinstance(candidate, dict) and _is_artillery_shell_projectile(candidate):
+            ammo[name] = prune_shell_entity(candidate)
+    if not ammo:
+        return entity
+    return {**entity, "__shellAmmo": ammo}
 
 
 def _price_cost(entity: dict) -> int | None:
@@ -312,7 +403,7 @@ def main() -> int:
             return False
         stamp = out_dir / "slice-format.txt"
         if not stamp.is_file():
-            return False  # pre-v2 pack: embed the torpedo ammo shape
+            return False  # pre-v2 pack: re-extract in the current shape
         return stamp.read_text(encoding="utf-8").strip() == str(SLICE_FORMAT)
 
     build = resolve_build(args.build, game)

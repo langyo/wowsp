@@ -58,12 +58,15 @@ produces for a Lesta install. Should a tree ship have no entity carrying its
 id (snapshot drift), the index-matched entry is packed anyway — better than
 leaving the UI with nothing, and the drift is warned about below.
 
-Slice payload shape v2 (matches extract_gameparams.py and SLICE_FORMAT in
+Slice payload shape v3 (matches extract_gameparams.py and SLICE_FORMAT in
 commands/gameparams.rs): every packed slice also carries "__torpedoAmmo" —
 the torpedo Projectile entities its launcher mounts reference, which feed
-the spec panel's per-type torpedo rows (damage, falloff, homing). The pack
-root records `"sliceFormat": <SLICE_FORMAT>` so a shape bump is visible and
-testable; the Rust loader reads `ships` and ignores the stamp.
+the spec panel's per-type torpedo rows (damage, falloff, homing) — and
+"__shellAmmo" — the MAIN BATTERY's artillery shells (mount ammoList plus
+the switchable firing mode's secondaryAmmoList), pruned to the panel's
+ballistics whitelist for the alternate-fire rows. The pack root records
+`"sliceFormat": <SLICE_FORMAT>` so a shape bump is visible and testable;
+the Rust loader reads `ships` and ignores the stamp.
 
 Usage:
     python scripts/extract/build_lesta_shipdata.py
@@ -86,9 +89,11 @@ from build_lesta_overlay import PORT_GROUPS  # noqa: E402
 from build_techtree import _params_root  # noqa: E402
 # Same slice-shape contract as the WG/mobile pack builder: the packed slices
 # carry the referenced torpedo Projectile entities under "__torpedoAmmo"
-# (slice shape v2) and the pack records the shape it was built for.
+# and the main battery's pruned artillery shells under "__shellAmmo" (slice
+# shape v3); the pack records the shape it was built for.
 from extract_gameparams import (  # noqa: E402
     SLICE_FORMAT,
+    embed_shell_ammo,
     embed_torpedo_ammo,
     entity_index,
 )
@@ -148,8 +153,9 @@ def main() -> int:
     if not dump:
         print(f"error: unrecognized GameParams root in {args.gameparams}", file=sys.stderr)
         return 1
-    # Name → entity index for the slice-shape-v2 embedding (shared with
-    # extract_gameparams.py so both pack paths stay field-for-field equal).
+    # Name → entity index for the slice-shape-v2/v3 ammo embedding (shared
+    # with extract_gameparams.py so both pack paths stay field-for-field
+    # equal).
     entities_by_name = entity_index(dump)
 
     lesta_tree = json.loads(args.lesta_tree.read_text(encoding="utf-8"))
@@ -200,7 +206,9 @@ def main() -> int:
                 flush=True,
             )
             picked = entry
-        slices[str(sid)] = embed_torpedo_ammo(picked, entities_by_name)
+        slices[str(sid)] = embed_shell_ammo(
+            embed_torpedo_ammo(picked, entities_by_name), entities_by_name
+        )
 
     # Non-tree port fleet (premiums / CLR clones / event hulls) — same
     # cohort build_lesta_overlay.py adds to the encyclopedia. Excluded by the
@@ -230,7 +238,9 @@ def main() -> int:
         if not isinstance(sid, int) or str(sid) in slices:
             continue
         picked = pick_slice(entities, sid) or entry
-        slices[str(sid)] = embed_torpedo_ammo(picked, entities_by_name)
+        slices[str(sid)] = embed_shell_ammo(
+            embed_torpedo_ammo(picked, entities_by_name), entities_by_name
+        )
         added += 1
     print(f"[lesta-shipdata] added {added} non-tree port ships (premium/event fleet)")
 

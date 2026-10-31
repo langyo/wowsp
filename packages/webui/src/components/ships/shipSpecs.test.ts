@@ -16,7 +16,13 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { buildShipSpecs, type SpecGroup, type SpecRow } from "./shipSpecs";
+import {
+  buildShipSpecs,
+  hasSwitchableMainBattery,
+  type Profile,
+  type SpecGroup,
+  type SpecRow,
+} from "./shipSpecs";
 
 /** A Mogami-shaped CL profile in the real WG default_profile shape
  *  (no caliber key anywhere — that is the live-data reality). */
@@ -341,5 +347,210 @@ describe("buildShipSpecs per-type torpedo sections", () => {
     expect(torp?.sections).toBeUndefined();
     expect(torp?.rows.map((r) => r.key)).toContain("torpDamage");
     expect(rowOf(groups, "torpedoes", "torpRange")?.value).toBe("14.0 km");
+  });
+});
+
+/** Vyazma-shaped main battery: 2×3 406 mm turrets, the alternate-firing
+ *  module (2-salvo burst, 45 s full reload, ×0.5727 range) and the shape-v3
+ *  __shellAmmo embedding (real WG 15.5.0 values, the ALT AP shell has the
+ *  longer 900 m/s muzzle velocity and the wider ricochet/normalization
+ *  angles). */
+function altFireProfile(): Profile {
+  return {
+    hull: { health: 64_200, artillery_barrels: 2 },
+    artillery: {
+      shot_delay: 33,
+      distance: 20.9,
+      max_dispersion: 266,
+      shells: {
+        HE: { damage: 5800, burn_probability: 40, bullet_speed: 830 },
+        AP: { damage: 13_250, bullet_speed: 830 },
+      },
+    },
+  } as unknown as Profile;
+}
+
+function altFireGameparams(withAltShells: boolean): Record<string, unknown> {
+  const ammo: Record<string, unknown> = {
+    PRPA208_HE: {
+      ammoType: "HE",
+      alphaDamage: 5800,
+      burnProb: 0.4,
+      alphaPiercingHE: 68,
+      bulletSpeed: 830,
+    },
+    PRPA209_AP: {
+      ammoType: "AP",
+      alphaDamage: 13_250,
+      bulletSpeed: 830,
+      bulletRicochetAt: 45,
+      bulletAlwaysRicochetAt: 60,
+      bulletCapNormalizeMaxAngle: 6,
+    },
+  };
+  if (withAltShells) {
+    ammo.PRPA210_HE_ALT = {
+      ammoType: "HE",
+      alphaDamage: 5800,
+      burnProb: 0.4,
+      alphaPiercingHE: 68,
+      bulletSpeed: 830,
+    };
+    ammo.PRPA211_AP_ALT = {
+      ammoType: "AP",
+      alphaDamage: 13_250,
+      bulletSpeed: 900,
+      bulletRicochetAt: 55,
+      bulletAlwaysRicochetAt: 65,
+      bulletCapNormalizeMaxAngle: 12,
+    };
+  }
+  return {
+    A_Artillery: {
+      HP_RGM_1: { ammoList: ["PRPA208_HE", "PRPA209_AP"], barrelDiameter: 0.406 },
+      HP_RGM_2: { ammoList: ["PRPA208_HE", "PRPA209_AP"] },
+      SwitchableModeArtilleryModule: {
+        burstReloadTime: 1.7,
+        fullReloadTime: 45,
+        modifiers: { GMMaxDist: 0.5727 },
+        shotsCount: 2,
+        secondaryAmmoList: withAltShells
+          ? ["PRPA210_HE_ALT", "PRPA209_AP", "PRPA211_AP_ALT"]
+          : [],
+      },
+    },
+    __shellAmmo: ammo,
+  } as Record<string, unknown>;
+}
+
+describe("buildShipSpecs alternate firing mode", () => {
+  it("is only offered when the main battery carries a switchable module", () => {
+    expect(hasSwitchableMainBattery(altFireGameparams(true))).toBe(true);
+    expect(hasSwitchableMainBattery(GAMEPARAMS)).toBe(false);
+    expect(hasSwitchableMainBattery(null)).toBe(false);
+    const off = buildShipSpecs(PROFILE, "japan", GAMEPARAMS);
+    expect(off.find((g) => g.group === "artillery")?.sections?.every((s) => !s.altFire)).toBe(true);
+  });
+
+  it("keeps the normal rows when the toggle is off", () => {
+    const groups = buildShipSpecs(altFireProfile(), "ussr", altFireGameparams(true));
+    expect(rowOf(groups, "artillery", "mainGunReload")?.value).toBe("33.0 s");
+    expect(rowOf(groups, "artillery", "mainGunReload")?.delta).toBeUndefined();
+    expect(rowOf(groups, "artillery", "mainGunRange")?.value).toBe("20.9 km");
+    expect(rowOf(groups, "artillery", "burstCount")).toBeUndefined();
+    // Even with the mode available, the stock shell values show when off.
+    expect(rowOf(groups, "artillery", "shellSpeed")?.value).toBe("830 m/s");
+    expect(rowOf(groups, "artillery", "shellSpeed")?.delta).toBeUndefined();
+  });
+
+  it("switches reload / range / burst rows to the mode with deltas", () => {
+    const groups = buildShipSpecs(altFireProfile(), "ussr", altFireGameparams(true), {
+      altFire: true,
+    });
+    const reload = rowOf(groups, "artillery", "mainGunReload");
+    expect(reload?.value).toBe("45.0 s");
+    expect(reload?.delta).toEqual({ text: "+12.0 s", better: false });
+    const range = rowOf(groups, "artillery", "mainGunRange");
+    expect(range?.value).toBe("12.0 km");
+    expect(range?.delta).toEqual({ text: "-8.9 km", better: false });
+    const burst = rowOf(groups, "artillery", "burstCount");
+    expect(burst?.value).toBe("2");
+    expect(burst?.delta).toEqual({ text: "+1", better: true });
+    expect(rowOf(groups, "artillery", "burstInterval")?.value).toBe("1.7 s");
+  });
+
+  it("swaps to the alternate shells and annotates every changed shell stat", () => {
+    const groups = buildShipSpecs(altFireProfile(), "ussr", altFireGameparams(true), {
+      altFire: true,
+    });
+    const sections = groups.find((g) => g.group === "artillery")?.sections ?? [];
+    const ap = sections.find((s) => s.labelKey === "apShell");
+    const speed = ap?.rows.find((r) => r.key === "shellSpeed");
+    expect(speed?.value).toBe("900 m/s");
+    expect(speed?.delta).toEqual({ text: "+70 m/s", better: true });
+    const ricochet = ap?.rows.find((r) => r.key === "apRicochetAngle");
+    expect(ricochet?.value).toBe("55°");
+    expect(ricochet?.delta).toEqual({ text: "+10°", better: true });
+    expect(ap?.rows.find((r) => r.key === "apAlwaysRicochetAngle")?.value).toBe("65°");
+    const normalization = ap?.rows.find((r) => r.key === "apNormalization");
+    expect(normalization?.value).toBe("12°");
+    expect(normalization?.delta).toEqual({ text: "+6°", better: true });
+    // The ALT AP shell keeps the same damage: no delta chip appears.
+    expect(ap?.rows.find((r) => r.key === "shellDamage")?.delta).toBeUndefined();
+    // DPM follows the 2-salvo burst over one full cycle — the 45 s reload
+    // PLUS the 1.7 s burst tail (the time the second salvo takes).
+    const dpm = ap?.rows.find((r) => r.key === "apDpm");
+    expect(dpm?.delta?.better).toBe(true);
+    expect(asNumber(dpm?.value ?? "")).toBeCloseTo((13_250 * 2 * 2 * 60) / (45 + 1.7), 0);
+    // The ALT HE shell is statistically identical to the stock HE shell.
+    const he = sections.find((s) => s.labelKey === "heShell");
+    expect(he?.rows.find((r) => r.key === "shellDamage")?.delta).toBeUndefined();
+    expect(he?.rows.find((r) => r.key === "hePenetration")?.value).toBe("68 mm");
+  });
+
+  it("hides the burst rows for single-shot alternate-ammo modes", () => {
+    // Hawaii / Togasa / Aragon-style modes switch shells/accuracy only:
+    // shotsCount 1 means there is no burst to report.
+    const gp = altFireGameparams(true);
+    const artillery = gp.A_Artillery as Record<string, unknown>;
+    artillery.SwitchableModeArtilleryModule = {
+      ...(artillery.SwitchableModeArtilleryModule as Record<string, unknown>),
+      shotsCount: 1,
+      burstReloadTime: 1,
+    };
+    const groups = buildShipSpecs(altFireProfile(), "ussr", gp, { altFire: true });
+    expect(rowOf(groups, "artillery", "burstCount")).toBeUndefined();
+    expect(rowOf(groups, "artillery", "burstInterval")).toBeUndefined();
+    expect(rowOf(groups, "artillery", "mainGunReload")?.value).toBe("45.0 s");
+  });
+
+  it("scales dispersion by the mode's GMIdealRadius", () => {
+    const gp = altFireGameparams(true);
+    const artillery = gp.A_Artillery as Record<string, unknown>;
+    artillery.SwitchableModeArtilleryModule = {
+      ...(artillery.SwitchableModeArtilleryModule as Record<string, unknown>),
+      modifiers: { GMMaxDist: 0.5727, GMIdealRadius: 0.8 },
+    };
+    const groups = buildShipSpecs(altFireProfile(), "ussr", gp, { altFire: true });
+    const dispersion = rowOf(groups, "artillery", "maxDispersion");
+    expect(dispersion?.value).toBe("213 m");
+    expect(dispersion?.delta).toEqual({ text: "-53 m", better: true });
+  });
+
+  it("stacks the mode's multipliers over an _ALT shell entity", () => {
+    // No live ship pairs an alternate projectile with damage/penetration
+    // coefficients today; pin the toolkit's order so a future data pairing
+    // cannot silently drop the multiplier (or double-count it).
+    const gp = altFireGameparams(true);
+    const artillery = gp.A_Artillery as Record<string, unknown>;
+    artillery.SwitchableModeArtilleryModule = {
+      ...(artillery.SwitchableModeArtilleryModule as Record<string, unknown>),
+      modifiers: { GMDamageCoeff: 1.5, GMAPDamageCoeff: 1.2, GMPenetrationCoeffHE: 1.5 },
+    };
+    // Give the _ALT shells distinct damage so the assertions prove the ALT
+    // entity (not the stock fallback) fed the multiplier pipeline.
+    const ammo = gp.__shellAmmo as Record<string, Record<string, unknown>>;
+    ammo.PRPA210_HE_ALT.alphaDamage = 6000;
+    ammo.PRPA211_AP_ALT.alphaDamage = 14_000;
+    const groups = buildShipSpecs(altFireProfile(), "ussr", gp, { altFire: true });
+    const sections = groups.find((g) => g.group === "artillery")?.sections ?? [];
+    const he = sections.find((s) => s.labelKey === "heShell");
+    const ap = sections.find((s) => s.labelKey === "apShell");
+    // 6000 × 1.5; floor(68 × 1.5); 14000 × 1.5 × 1.2.
+    expect(asNumber(he?.rows.find((r) => r.key === "shellDamage")?.value ?? "")).toBe(9000);
+    expect(he?.rows.find((r) => r.key === "hePenetration")?.value).toBe("102 mm");
+    expect(asNumber(ap?.rows.find((r) => r.key === "shellDamage")?.value ?? "")).toBe(25200);
+  });
+
+  it("keeps burst-only modes (no alternate shells) changing reload / DPM only", () => {
+    const groups = buildShipSpecs(altFireProfile(), "ussr", altFireGameparams(false), {
+      altFire: true,
+    });
+    expect(rowOf(groups, "artillery", "shellSpeed")?.value).toBe("830 m/s");
+    expect(rowOf(groups, "artillery", "shellSpeed")?.delta).toBeUndefined();
+    const reload = rowOf(groups, "artillery", "mainGunReload");
+    expect(reload?.value).toBe("45.0 s");
+    expect(reload?.delta?.better).toBe(false);
+    expect(rowOf(groups, "artillery", "heDpm")?.delta?.better).toBe(true);
   });
 });

@@ -20,7 +20,7 @@ import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
-import { buildShipSpecs } from "./shipSpecs";
+import { buildShipSpecs, hasSwitchableMainBattery, type SpecRow } from "./shipSpecs";
 import { aircraftNoticeSwitchKey, buildPlaneSpecs } from "./shipPlaneSpecs";
 import { buildConsumableSlots, consumableHintCard, type ConsumableSlotGroup } from "./consumables";
 import BuildPlanner from "./BuildPlanner";
@@ -675,10 +675,29 @@ const SpecsPanel = defineComponent({
   },
   setup(props) {
     const toast = useToast();
+    /** Alternate-firing mode: the game has ONE mode per turret (not one per
+     *  shell type), so every shell section of the main battery shares this
+     *  state and its toggle stays in sync. Resets to off whenever the modal
+     *  switches ships or the gameparams slice changes. */
+    const altFire = ref(false);
+    watch(
+      () => props.profile,
+      () => {
+        altFire.value = false;
+      },
+    );
+    watch(
+      () => props.gameparams,
+      (gp) => {
+        if (!gp || !hasSwitchableMainBattery(gp)) altFire.value = false;
+      },
+    );
     const groups = computed(() =>
       props.plane
         ? buildPlaneSpecs(props.plane.index)
-        : buildShipSpecs(props.profile, props.nation, props.gameparams),
+        : buildShipSpecs(props.profile, props.nation, props.gameparams, {
+            altFire: altFire.value,
+          }),
     );
     // Consumable slot groups join the unpacked GameParams (slot layout) with
     // the baked entity dictionary; names follow the 素材翻译 data language.
@@ -718,7 +737,7 @@ const SpecsPanel = defineComponent({
       // The ns argument namespaces the key per section: the same row key
       // (torpDamage) legitimately appears in two torpedo-type sections and
       // Vue needs unique sibling keys inside the one dl.
-      const renderRow = (row: { key: string; value: string; hint?: string }, ns = "") => (
+      const renderRow = (row: SpecRow, ns = "") => (
         <div class="specs-group__row" key={ns + row.key}>
           <dt class="specs-group__label">
             {t(`ships.spec.${row.key}`)}
@@ -732,7 +751,19 @@ const SpecsPanel = defineComponent({
             class="specs-group__value"
             data-hint={t("common.clickToCopy")}
             onClick={() => copy(String(row.value))}
-          >{row.value}</dd>
+          >
+            <span class="specs-group__value-text">{row.value}</span>
+            {row.delta ? (
+              <span
+                class={{
+                  "specs-group__delta": true,
+                  "is-better": row.delta.better,
+                  "is-worse": !row.delta.better,
+                }}
+                data-hint={t("ships.spec.deltaHint")}
+              >{row.delta.text}</span>
+            ) : null}
+          </dd>
         </div>
       );
       return (
@@ -757,15 +788,34 @@ const SpecsPanel = defineComponent({
                         <div class="specs-group__divider" aria-hidden="true" />
                       ) : null}
                       <div class="specs-group__section" key={sec.labelKey + (sec.suffix ?? "")}>
-                        <span class="specs-group__section-label">
-                          {t(`ships.spec.${sec.labelKey}`)}
-                          {sec.suffix ?? ""}
-                          {sec.hintKey ? (
-                            <span class="specs-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
-                              <HelpCircle size={11} />
-                            </span>
+                        <div class="specs-group__section-head">
+                          <span class="specs-group__section-label">
+                            {t(`ships.spec.${sec.labelKey}`)}
+                            {sec.suffix ?? ""}
+                            {sec.hintKey ? (
+                              <span class="specs-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
+                                <HelpCircle size={11} />
+                              </span>
+                            ) : null}
+                          </span>
+                          {sec.altFire ? (
+                            <label class="specs-alt" data-hint={t("ships.spec.altFireHint")}>
+                              <span class="specs-alt__text">{t("ships.spec.altFire")}</span>
+                              <input
+                                class="specs-alt__input"
+                                type="checkbox"
+                                checked={altFire.value}
+                                aria-label={t("ships.spec.altFireHint")}
+                                onChange={(e: Event) => {
+                                  altFire.value = (e.target as HTMLInputElement).checked;
+                                }}
+                              />
+                              <span class="specs-alt__track" aria-hidden="true">
+                                <span class="specs-alt__thumb" />
+                              </span>
+                            </label>
                           ) : null}
-                        </span>
+                        </div>
                         {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
                       </div>
                     </>
