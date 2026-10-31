@@ -204,9 +204,11 @@ describe("operation story objectives (pre-placed zones)", () => {
     const d = ctx.capDisplay.value[0];
     expect(d.live).toBe(true);
     expect(d.capturing).toBe(true);
-    // The reveal latch holds after the situation would clear.
+    // By t=100 the capture (started ≈30, 60 s for one ship) has long
+    // completed — resolve beats reveal: the latch only ever ADDS
+    // visibility, a resolved story objective leaves the board regardless.
     updateCapsAndScore(ctx, 100);
-    // …though by then the 60 s capture has long completed — see below.
+    expect(ctx.capDisplay.value[0].live).toBe(false);
   });
 
   it("vanishes once its capture completes (占领之后消失)", () => {
