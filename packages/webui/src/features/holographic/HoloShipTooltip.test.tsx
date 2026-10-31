@@ -21,13 +21,15 @@ import HoloShipTooltip from "./HoloShipTooltip";
 
 enableAutoUnmount(afterEach);
 
-const VEHICLE = {
+// A complete `VehicleEntry` — the literal already satisfied the interface, so
+// the assertion was pure noise (it only hid a future field being renamed).
+const VEHICLE: VehicleEntry = {
   id: 1,
   name: "alpha",
   relation: 1,
   shipId: 4286,
   shipName: "Izumo",
-} as unknown as VehicleEntry;
+};
 
 beforeAll(async () => {
   await initLocaleMessages();
