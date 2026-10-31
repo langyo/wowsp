@@ -2425,6 +2425,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hikari-host"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b5aed37b22b5d4bf333af5741be9e98178d1710b1608ba62087be5ab99b90d44"
+dependencies = [
+ "tauri",
+]
+
+[[package]]
 name = "hmac-sha256"
 version = "1.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7223,6 +7232,7 @@ dependencies = [
  "getrandom 0.4.3",
  "hex",
  "hifumi",
+ "hikari-host",
  "image",
  "lewton",
  "malkuth",

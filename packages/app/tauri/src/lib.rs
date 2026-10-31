@@ -24,9 +24,6 @@
 #![cfg_attr(mobile, allow(dead_code))]
 
 mod atomic_file;
-// Main-window close-request watchdog: the webui acknowledges `close-requested`
-// and an unanswered request force-quits a dead renderer (module docs).
-mod close_guard;
 mod commands;
 mod logging;
 mod os_prefs;
@@ -42,7 +39,7 @@ mod webview_args;
 
 use tauri::Manager;
 #[cfg(desktop)]
-use tauri::{Emitter, WindowEvent};
+use tauri::WindowEvent;
 
 /// Error strings every desktop-only command returns on mobile. The frontend
 /// transport surfaces command errors as rejected promises; the mobile UI
@@ -163,6 +160,17 @@ pub fn run() {
         // Default-browser hand-off for http(s) URLs (open_external) —
         // mobile-supported, replaces the Windows-only ShellExecuteW path.
         .plugin(tauri_plugin_opener::init())
+        // hikari-host: the shared close-request ack / force-close watchdog this
+        // shell used to carry as its own local module (retired by this
+        // migration). The plugin owns the `plugin:hikari-host|ack_close` IPC
+        // command; the
+        // window-event handler below forwards close requests into its helper.
+        // The force-exit hook is WoWSP's OWN graceful drain — playtime flush +
+        // malkuth drain — exactly like the close dialog's Quit path.
+        .plugin(hikari_host::tauri_shell::init_with(
+            hikari_host::tauri_shell::CloseGuardConfig::new()
+                .with_force_exit(crate::commands::graceful_exit),
+        ))
         // Clipboard reads (the manual-locate picker's paste-image button
         // rides `navigator.clipboard.read()`) otherwise fall into WebView2's
         // default permission flow: the Edge "let this site see your
@@ -210,7 +218,7 @@ pub fn run() {
                     }
                     return;
                 }
-                if let WindowEvent::CloseRequested { api, .. } = event {
+                if let WindowEvent::CloseRequested { .. } = event {
                     // Only the main window routes to the quit-confirm dialog.
                     // Tauri raises CloseRequested for programmatic close() too
                     // (same path as a user-initiated close), so without this
@@ -220,26 +228,18 @@ pub fn run() {
                     if window.label() != "main" {
                         return;
                     }
-                    // Arm the force-close watchdog BEFORE the emit: the
-                    // webui's ack can only arrive after the emit, so arming
-                    // first guarantees the ack's epoch bump is newer than
-                    // this token (arming afterwards could overwrite an ack
-                    // that landed in between, leaving the watchdog armed
-                    // against a webview that DID answer).
-                    let close_token =
-                        close_guard::arm_close_watchdog(window.app_handle().clone());
-                    // Prevent the default close. Emit an event to the frontend,
-                    // which shows a confirm dialog (quit vs. minimize to tray)
-                    // after first acknowledging the request with
-                    // `close_requested_ack` — the ack is what stands the
-                    // watchdog down; an unresponsive webview trips it instead.
-                    tracing::info!(
-                        window = %window.label(),
-                        close_token,
-                        "window close requested → emitting close-requested event to frontend",
+                    // hikari-host arms the force-close watchdog BEFORE emitting
+                    // its close-request event, prevents the default close and
+                    // emits it; the webview acks
+                    // `plugin:hikari-host|ack_close` as its listener's FIRST
+                    // action, which stands the watchdog down. An unanswered
+                    // request (dead/hung renderer) trips the force-exit hook —
+                    // WoWSP's graceful drain, passed at plugin registration.
+                    hikari_host::tauri_shell::handle_close_requested(
+                        window.app_handle(),
+                        window,
+                        event,
                     );
-                    api.prevent_close();
-                    let _ = window.app_handle().emit("close-requested", ());
                 }
             }
             // Maximized borderless windows keep DWM's rounded corners on
@@ -903,11 +903,6 @@ pub fn run() {
             commands::decision_tick::decision_scale_calibration,
             commands::decision_tick::decision_tick_state,
             commands::replay_probe::replay_visibility_probe,
-            // Frontend acknowledgement of `close-requested` (see
-            // src/close_guard.rs): bumps the close-guard epoch so the armed
-            // force-close watchdog stands down. Registered on every target —
-            // the IPC surface is shared and mobile never arms a watchdog.
-            commands::close_requested_ack,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())

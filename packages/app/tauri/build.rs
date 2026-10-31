@@ -65,7 +65,14 @@ fn main() {
         );
     }
 
-    tauri_build::build()
+    // Inlined-plugin ACL for hikari-host: the webview acknowledges the close
+    // request through `plugin:hikari-host|ack_close`, so tauri-build must
+    // generate that plugin's permission manifest (and only that command).
+    tauri_build::try_build(tauri_build::Attributes::new().plugin(
+        "hikari-host",
+        tauri_build::InlinedPlugin::new().commands(&["ack_close"]),
+    ))
+    .expect("failed to run tauri-build");
 }
 
 /// `branch:hash7` for the git checkout `start` sits in, or "" when git or
