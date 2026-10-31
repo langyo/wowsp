@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   adopt: vi.fn(), uninstall: vi.fn(), error: vi.fn(),
   success: vi.fn(), warning: vi.fn(), info: vi.fn(),
   migrationPlan: vi.fn(),
+  purgeBackups: vi.fn(),
   records: vi.fn(), catalog: vi.fn(), preview: vi.fn(),
   catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
   syncOn: true,
@@ -23,6 +24,7 @@ vi.mock("@/api", () => ({ api: {
   modHubPnfLoaderStatus: mocks.loader, modHubSafeMode: mocks.safe, modHubReconcile: mocks.reconcile,
   modHubUninstallUnit: mocks.uninstall,
   modHubMigrationPlan: mocks.migrationPlan,
+  modHubPurgeBackups: mocks.purgeBackups,
   modCatalogRefresh: mocks.catalog,
   modCatalogPreviewFiles: mocks.preview,
   modCatalogInstall: mocks.catalogInstall,
@@ -139,6 +141,7 @@ beforeEach(() => {
   mocks.reconcile.mockResolvedValue(null);
   mocks.records.mockResolvedValue([]);
   mocks.catalog.mockResolvedValue({ mods: [], sourceVersion: "test", fetchedAt: "" });
+  mocks.purgeBackups.mockResolvedValue([]);
 });
 
 describe("mod inventory root ownership", () => {

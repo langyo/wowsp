@@ -861,6 +861,20 @@ export function useModHub() {
   async function doPurgeReinstall(mode: "wowsp-only" | "adopt-foreign") {
     purgeAsk.value = null;
     if (!gameRoot.value || purgeBusy.value || gameRunning()) return;
+    // An unfinished purge marker means the previous reset never completed —
+    // resolve THAT backup (resume it or mark it done) before another
+    // rename strands a second half-state. The backend refuses too; this
+    // pre-check is what gives the localized message.
+    try {
+      const backups = await api.modHubPurgeBackups(gameRoot.value);
+      const unfinished = backups.find((b) => b.hasMarker);
+      if (unfinished) {
+        toast.error(t("resources.purgeBackups.blocked", { name: unfinished.dirName }));
+        return;
+      }
+    } catch {
+      // Listing failed — the backend's own gate still refuses authoritatively.
+    }
     purgeBusy.value = true;
     try {
       const report = await api.modHubPurgeReinstall(gameRoot.value, mode);

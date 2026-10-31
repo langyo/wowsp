@@ -251,8 +251,10 @@ pub(crate) fn quarantined_res_mods(game_root: &str) -> Vec<PathBuf> {
 
 /// Does the tree carry any regular files? A recreated husk (empty, or
 /// empty directories only) answers false; an unreadable tree answers true
-/// (conservative — never delete what we cannot inspect).
-fn tree_has_files(dir: &Path) -> bool {
+/// (conservative — never delete what we cannot inspect). Shared with the
+/// purge-backup resume pre-flight (an interrupted purge with a
+/// half-reinstalled live tree must not be resumed over).
+pub(crate) fn tree_has_files(dir: &Path) -> bool {
     let Ok(entries) = fs::read_dir(dir) else {
         return true;
     };
@@ -761,6 +763,7 @@ mod model_preview;
 pub(crate) mod pick_source;
 pub(crate) mod preload_mirror;
 pub(crate) mod purge;
+pub(crate) mod purge_backups;
 mod safe_mode;
 mod scan_installed;
 mod stale_migration;

@@ -3336,3 +3336,412 @@ fn adopt_units_respects_the_scope() {
     assert!(adopted.is_empty(), "catalog names win over adoption");
     fs::remove_dir_all(&tmp).ok();
 }
+
+// ── Purge backups: crash-resume markers, list, delete/dismiss, restore ─────
+
+/// A marker unit for the hand-built states below.
+fn marker_unit(id: &str) -> purge_backups::PurgePlanUnit {
+    purge_backups::PurgePlanUnit {
+        id: id.into(),
+        name: format!("Mod {id}"),
+        preset: Some("dark".into()),
+    }
+}
+
+#[test]
+fn purge_marker_lifecycle_writes_updates_and_removes() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_marker");
+    let _ = fs::remove_dir_all(&tmp);
+    let backup = tmp.join("res_mods.wowsp-purge-1");
+    fs::create_dir_all(&backup).unwrap();
+    let mut state = purge_backups::PurgeMarkerState {
+        mode: "adopt-foreign".into(),
+        planned: vec![marker_unit("a"), marker_unit("b")],
+        done: Vec::new(),
+        known: vec!["Local Skin".into()],
+        started_at: "2026-10-31T12:00:00+00:00".into(),
+    };
+    purge_backups::write_marker(&backup, &state).unwrap();
+    assert!(
+        purge_backups::marker_exists(&backup),
+        "presence = unfinished"
+    );
+    assert_eq!(purge_backups::read_marker(&backup).unwrap(), state);
+    // The on-disk shape is the documented camelCase JSON.
+    let raw = fs::read_to_string(backup.join(purge_backups::MARKER_NAME)).unwrap();
+    assert!(raw.contains("\"startedAt\""), "{raw}");
+
+    // Progress persistence: one unit completes, the marker refreshes, and
+    // the resume frontier (planned minus done) narrows to the rest.
+    state.done.push(marker_unit("a"));
+    purge_backups::write_marker(&backup, &state).unwrap();
+    let reread = purge_backups::read_marker(&backup).unwrap();
+    assert_eq!(
+        purge_backups::pending_units(&reread),
+        vec![marker_unit("b")]
+    );
+
+    // Removal: the flow finished — the backup is a plain snapshot again.
+    purge_backups::remove_marker(&backup);
+    assert!(!purge_backups::marker_exists(&backup));
+    assert!(purge_backups::read_marker(&backup).is_err());
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn purge_backups_list_reports_shape_newest_first() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_list");
+    let _ = fs::remove_dir_all(&tmp);
+    let b1 = tmp.join("bin/1/res_mods.wowsp-purge-100");
+    let b2 = tmp.join("bin/1/res_mods.wowsp-purge-200");
+    let b3 = tmp.join("bin/1/res_mods.wowsp-purge-200-1");
+    touch(&b1.join("gui/a.xml"));
+    touch(&b2.join("gui/b.xml"));
+    touch(&b3.join("gui/c.xml"));
+    touch(&b3.join("gui/d.xml"));
+    // A same-shaped dir whose stamp does not parse is not a purge backup.
+    touch(&tmp.join("bin/1/res_mods.wowsp-purge-abc/x.xml"));
+    purge_backups::write_marker(
+        &b1,
+        &purge_backups::PurgeMarkerState {
+            mode: "wowsp-only".into(),
+            planned: vec![marker_unit("a")],
+            done: Vec::new(),
+            known: Vec::new(),
+            started_at: "2026-10-31T12:00:00+00:00".into(),
+        },
+    )
+    .unwrap();
+
+    let root = tmp.to_string_lossy().into_owned();
+    let list = purge_backups::list_backups(&root).unwrap();
+    assert_eq!(
+        list.iter().map(|b| b.dir_name.clone()).collect::<Vec<_>>(),
+        vec![
+            "res_mods.wowsp-purge-200-1",
+            "res_mods.wowsp-purge-200",
+            "res_mods.wowsp-purge-100",
+        ],
+        "newest first; the same-second suffix twin was created last"
+    );
+    let first = &list[0];
+    assert_eq!(first.stamp, 200);
+    assert_eq!(first.file_count, 2);
+    assert!(!first.has_marker);
+    assert!(first.marker.is_none());
+    let unfinished = &list[2];
+    assert_eq!(unfinished.stamp, 100);
+    // gui/a.xml plus the marker file itself — the walk counts everything
+    // inside the backup dir, marker included.
+    assert_eq!(unfinished.file_count, 2);
+    assert!(unfinished.has_marker);
+    let marker = unfinished.marker.as_ref().unwrap();
+    assert_eq!(marker.mode, "wowsp-only");
+    assert_eq!(marker.planned, vec![marker_unit("a")]);
+    assert_eq!(
+        Path::new(&unfinished.path),
+        b1.as_path(),
+        "the row carries the absolute backup path"
+    );
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn purge_backup_delete_refuses_while_unfinished_and_dismiss_clears_it() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_delete");
+    let _ = fs::remove_dir_all(&tmp);
+    let backup = tmp.join("bin/1/res_mods.wowsp-purge-5");
+    touch(&backup.join("gui/a.xml"));
+    purge_backups::write_marker(
+        &backup,
+        &purge_backups::PurgeMarkerState {
+            mode: "wowsp-only".into(),
+            planned: vec![marker_unit("a")],
+            done: Vec::new(),
+            known: Vec::new(),
+            started_at: "2026-10-31T12:00:00+00:00".into(),
+        },
+    )
+    .unwrap();
+    let root = tmp.to_string_lossy().into_owned();
+    let name = "res_mods.wowsp-purge-5";
+
+    // Delete refuses while the marker is unfinished; the files survive.
+    let err = purge_backups::delete_backup(&root, name).unwrap_err();
+    assert!(err.to_string().contains("never finished"), "{err}");
+    assert!(backup.join("gui/a.xml").is_file());
+
+    // Dismiss removes ONLY the marker: the backup becomes a plain
+    // completed snapshot (files kept) and delete is allowed then.
+    purge_backups::dismiss_marker(&root, name).unwrap();
+    assert!(!purge_backups::marker_exists(&backup));
+    assert!(backup.join("gui/a.xml").is_file());
+    // A second dismiss has nothing to do.
+    assert!(purge_backups::dismiss_marker(&root, name).is_err());
+    purge_backups::delete_backup(&root, name).unwrap();
+    assert!(!backup.exists());
+
+    // Audit H-3: the resolver never trusts a webview-supplied path shape.
+    for bad in ["../res_mods", "bin/1/res_mods.wowsp-purge-5", "res_mods"] {
+        assert!(purge_backups::resolve_backup(&root, bad).is_err(), "{bad}");
+    }
+    assert!(purge_backups::resolve_backup(&root, "res_mods.wowsp-purge-404").is_err());
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn new_purge_refuses_while_a_backup_is_unfinished() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_gate");
+    let _ = fs::remove_dir_all(&tmp);
+    let done_backup = tmp.join("bin/1/res_mods.wowsp-purge-1");
+    let unfinished = tmp.join("bin/1/res_mods.wowsp-purge-5");
+    touch(&done_backup.join("gui/old.xml"));
+    touch(&unfinished.join("gui/new.xml"));
+    purge_backups::write_marker(
+        &unfinished,
+        &purge_backups::PurgeMarkerState {
+            mode: "wowsp-only".into(),
+            planned: vec![marker_unit("a"), marker_unit("b")],
+            done: vec![marker_unit("a")],
+            known: Vec::new(),
+            started_at: "2026-10-31T12:00:00+00:00".into(),
+        },
+    )
+    .unwrap();
+    let root = tmp.to_string_lossy().into_owned();
+
+    assert_eq!(
+        purge_backups::any_unfinished(&root).unwrap().as_deref(),
+        Some("res_mods.wowsp-purge-5"),
+        "the gate names the offender"
+    );
+    // Resolving it (here: dismiss) reopens the purge gate.
+    purge_backups::dismiss_marker(&root, "res_mods.wowsp-purge-5").unwrap();
+    assert_eq!(purge_backups::any_unfinished(&root).unwrap(), None);
+    fs::remove_dir_all(&tmp).ok();
+}
+
+/// A ledger row for the tolerant-resume fixtures below (the shape the
+/// verified install path writes for a completed unit).
+fn resume_record(id: &str, files: &[&str]) -> ModInstallRecord {
+    ModInstallRecord {
+        id: id.into(),
+        name: format!("Mod {id}"),
+        version: String::new(),
+        category: "battle".into(),
+        source: "mod-hub".into(),
+        preset: None,
+        discussion: None,
+        bin_version: "1".into(),
+        installed_at: String::new(),
+        files: files.iter().map(|f| f.to_string()).collect(),
+        restore_dir: None,
+        game_root: String::new(),
+    }
+}
+
+#[test]
+fn purge_resume_pending_units_subtract_done_in_planned_order() {
+    // Planned minus done, keyed by id, in planned order — the remainder a
+    // resume feeds back through the verified reinstall path.
+    let marker = purge_backups::PurgeMarkerState {
+        mode: "adopt-foreign".into(),
+        planned: vec![marker_unit("a"), marker_unit("b"), marker_unit("c")],
+        done: vec![marker_unit("b")],
+        known: Vec::new(),
+        started_at: String::new(),
+    };
+    assert_eq!(
+        purge_backups::pending_units(&marker),
+        vec![marker_unit("a"), marker_unit("c")],
+        "the resume re-enters the reinstall path with the remainder"
+    );
+}
+
+#[test]
+fn tolerant_resume_allows_exactly_the_done_units_claimed_files() {
+    let tmp = std::env::temp_dir().join("wowsp_tolerant_resume_ok");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("bin/1/res_mods");
+    // The incident shape: the loop finished unit a (its row + files), then
+    // died — the live tree carries exactly a's claimed files. The done
+    // row's '@game/' payload lives outside res_mods and is irrelevant.
+    touch(&rm.join("gui/a.xml"));
+    touch(&rm.join("PnFModsLoader.py"));
+    let marker = purge_backups::PurgeMarkerState {
+        mode: "wowsp-only".into(),
+        planned: vec![marker_unit("a"), marker_unit("b")],
+        done: vec![marker_unit("a")],
+        known: Vec::new(),
+        started_at: String::new(),
+    };
+    let installs = vec![
+        resume_record("a", &["gui/a.xml", "PnFModsLoader.py", "@game/x.dll"]),
+        // A pending unit's pre-purge row must NOT widen the allowed set.
+        resume_record("b", &["gui/b.xml"]),
+    ];
+    let root = tmp.to_string_lossy().into_owned();
+    purge_backups::ensure_live_tree_resumeable(&root, "1", &rm, &marker, &installs)
+        .expect("the done unit's claimed files are the resumable state");
+
+    // A bin mismatch (game updated between crash and resume) is not the
+    // claimed shape: the done rows live in the OLD bin, so nothing covers
+    // the live files.
+    let err = purge_backups::ensure_live_tree_resumeable(&root, "2", &rm, &marker, &installs)
+        .expect_err("rows of another bin never cover the live files");
+    assert!(err.to_string().contains("fresh purge"), "{err}");
+
+    // Empty tree always resumes — the crash happened mid-first-download.
+    let empty = tmp.join("bin/1/res_mods-empty-husk");
+    fs::create_dir_all(empty.join("gui")).unwrap(); // dirs only = no files
+    let no_done = purge_backups::PurgeMarkerState {
+        mode: "wowsp-only".into(),
+        planned: vec![marker_unit("a")],
+        done: Vec::new(),
+        known: Vec::new(),
+        started_at: String::new(),
+    };
+    purge_backups::ensure_live_tree_resumeable(&root, "1", &empty, &no_done, &installs)
+        .expect("an empty tree with done=[] is the mid-first-download crash");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn tolerant_resume_refuses_unknown_live_files() {
+    let tmp = std::env::temp_dir().join("wowsp_tolerant_resume_refuse");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("bin/1/res_mods");
+    touch(&rm.join("gui/a.xml"));
+    // One stray file next to the done unit's claimed copy.
+    touch(&rm.join("gui/stray-half-written.xml"));
+    let marker = purge_backups::PurgeMarkerState {
+        mode: "wowsp-only".into(),
+        planned: vec![marker_unit("a"), marker_unit("b")],
+        done: vec![marker_unit("a")],
+        known: Vec::new(),
+        started_at: String::new(),
+    };
+    let installs = vec![resume_record("a", &["gui/a.xml"])];
+    let root = tmp.to_string_lossy().into_owned();
+    let err = purge_backups::ensure_live_tree_resumeable(&root, "1", &rm, &marker, &installs)
+        .expect_err("an unclaimed live file is not resumable");
+    assert!(err.to_string().contains("fresh purge"), "{err}");
+
+    // done=[] with live files: nothing claims anything — same verdict.
+    let no_done = purge_backups::PurgeMarkerState {
+        mode: "wowsp-only".into(),
+        planned: vec![marker_unit("a")],
+        done: Vec::new(),
+        known: Vec::new(),
+        started_at: String::new(),
+    };
+    let err = purge_backups::ensure_live_tree_resumeable(&root, "1", &rm, &no_done, &installs)
+        .expect_err("done=[] with live files has no provenance");
+    assert!(err.to_string().contains("fresh purge"), "{err}");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn restore_merge_refuses_while_the_marker_is_unfinished() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_restore_gate");
+    let _ = fs::remove_dir_all(&tmp);
+    let backup = tmp.join("bin/1/res_mods.wowsp-purge-100");
+    touch(&backup.join("gui/b.xml"));
+    purge_backups::write_marker(
+        &backup,
+        &purge_backups::PurgeMarkerState {
+            mode: "wowsp-only".into(),
+            planned: vec![marker_unit("a")],
+            done: Vec::new(),
+            known: Vec::new(),
+            started_at: "2026-10-31T12:00:00+00:00".into(),
+        },
+    )
+    .unwrap();
+    let root = tmp.to_string_lossy().into_owned();
+
+    // Same policy as delete: resolve the marker first (resume or dismiss).
+    let err = purge_backups::restore_backup(&root, "res_mods.wowsp-purge-100").unwrap_err();
+    assert!(err.to_string().contains("never finished"), "{err}");
+    assert!(backup.is_dir(), "nothing moved under refusal");
+
+    // After the dismiss the merge proceeds (clean merge consumes it).
+    purge_backups::dismiss_marker(&root, "res_mods.wowsp-purge-100").unwrap();
+    let report = purge_backups::restore_backup(&root, "res_mods.wowsp-purge-100").unwrap();
+    assert_eq!(report.merged_files, 1);
+    assert!(report.backup_removed);
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn restore_merge_keeps_new_and_lands_backup_only_files() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_restore");
+    let _ = fs::remove_dir_all(&tmp);
+    let backup = tmp.join("bin/1/res_mods.wowsp-purge-100");
+    let live = tmp.join("bin/1/res_mods");
+    touch(&backup.join("gui/a.xml"));
+    fs::write(backup.join("gui/a.xml"), b"old").unwrap();
+    touch(&backup.join("gui/b.xml"));
+    fs::write(backup.join("gui/b.xml"), b"backup-only").unwrap();
+    touch(&backup.join("PnFModsLoader.py"));
+    fs::write(backup.join("PnFModsLoader.py"), b"# foreign loader").unwrap();
+    touch(&backup.join("installed_mods.xml"));
+    touch(&backup.join("PnFMods/Skin/Main.py"));
+    fs::write(backup.join("PnFMods/Skin/Main.py"), "print(1)").unwrap();
+    fs::create_dir_all(&live).unwrap();
+    touch(&live.join("gui/a.xml"));
+    fs::write(live.join("gui/a.xml"), b"newer live copy").unwrap();
+
+    let report =
+        purge_backups::restore_backup(&tmp.to_string_lossy(), "res_mods.wowsp-purge-100").unwrap();
+    // gui/b.xml and PnFMods/Skin/Main.py land; gui/a.xml conflicts.
+    assert_eq!(report.merged_files, 2, "{report:?}");
+    assert_eq!(report.conflict_files, 1);
+    // Skipped = 1 conflict + 2 bookkeeping (installed_mods.xml, marker).
+    assert_eq!(report.skipped_files, 3);
+    assert!(
+        !report.backup_removed,
+        "a conflicted merge keeps the backup"
+    );
+    assert!(backup.is_dir());
+    assert_eq!(
+        fs::read(live.join("gui/a.xml")).unwrap(),
+        b"newer live copy",
+        "keep-new: the live copy wins"
+    );
+    assert_eq!(fs::read(live.join("gui/b.xml")).unwrap(), b"backup-only");
+    // Bookkeeping never transplants; the loader marker is re-created from
+    // the backup's bytes for the PnF content that landed (migration rule).
+    assert!(!live.join("installed_mods.xml").exists());
+    assert_eq!(
+        fs::read(live.join("PnFModsLoader.py")).unwrap(),
+        b"# foreign loader"
+    );
+    // The kept backup stays whole — copy semantics never eat its files.
+    assert!(backup.join("gui/a.xml").is_file());
+    assert!(backup.join("gui/b.xml").is_file());
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn restore_merge_clean_deletes_the_backup() {
+    let tmp = std::env::temp_dir().join("wowsp_purge_restore_clean");
+    let _ = fs::remove_dir_all(&tmp);
+    let backup = tmp.join("bin/1/res_mods.wowsp-purge-100");
+    let live = tmp.join("bin/1/res_mods");
+    touch(&backup.join("gui/b.xml"));
+    touch(&backup.join("installed_mods.xml"));
+    fs::create_dir_all(&live).unwrap();
+
+    let report =
+        purge_backups::restore_backup(&tmp.to_string_lossy(), "res_mods.wowsp-purge-100").unwrap();
+    assert_eq!(report.merged_files, 1);
+    assert_eq!(report.conflict_files, 0);
+    // Only bookkeeping was skipped — not a conflict, so the backup goes.
+    assert_eq!(report.skipped_files, 1);
+    assert!(report.backup_removed);
+    assert!(!backup.exists());
+    assert!(live.join("gui/b.xml").is_file());
+    assert!(!live.join("installed_mods.xml").exists());
+    fs::remove_dir_all(&tmp).ok();
+}

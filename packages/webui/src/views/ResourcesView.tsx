@@ -46,6 +46,11 @@ import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
 import { renderCrashPins, renderCrashPinsWindow, useCrashPins } from "./resources/CrashPins";
+import {
+  renderPurgeBackups,
+  renderPurgeBackupsWindow,
+  usePurgeBackups,
+} from "./resources/PurgeBackups";
 import { useMigrateWizard } from "./resources/useMigrateWizard";
 import { useFileListWindow } from "./resources/useFileListWindow";
 import type { ResourcesCtx } from "./resources/context";
@@ -90,6 +95,12 @@ export default defineComponent({
   // The collapsed launcher row's secondary window (the suspect rows used
   // to inline above the installed list and squeeze the normal entries).
   const crashPinsOpen = ref(false);
+  // Purge-backup snapshots: the launcher row + secondary window for the
+  // res_mods.wowsp-purge-* trees. An unfinished marker means an
+  // interrupted purge (resume or mark it done); a resume/restore-merge
+  // rebuilds the live tree, so the installed rows rescan afterwards.
+  const purgeBackups = usePurgeBackups(hub.gameRoot, () => void hub.scan());
+  const purgeBackupsOpen = ref(false);
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
     const fileWindow = useFileListWindow(hub);
@@ -511,6 +522,11 @@ export default defineComponent({
                       crashPinsOpen.value = true;
                     })
                   : null}
+                {hub.source.value !== "online"
+                  ? renderPurgeBackups(purgeBackups, () => {
+                      purgeBackupsOpen.value = true;
+                    })
+                  : null}
                 {hub.source.value === "online"
                   ? hub.catalogShown.value.length === 0
                     ? catalogEmptyNote()
@@ -607,6 +623,16 @@ export default defineComponent({
             crashPinsOpen.value,
             (open: boolean) => {
               crashPinsOpen.value = open;
+            },
+          )}
+
+          {/* The purge-backup launcher's secondary window — snapshot rows
+              with resume / dismiss / restore-merge / delete. */}
+          {renderPurgeBackupsWindow(
+            purgeBackups,
+            purgeBackupsOpen.value,
+            (open: boolean) => {
+              purgeBackupsOpen.value = open;
             },
           )}
 
