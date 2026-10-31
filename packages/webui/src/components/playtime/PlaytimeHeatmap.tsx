@@ -3,6 +3,7 @@ import { computed, defineComponent, type PropType } from "vue";
 import { HkScrollContainer } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
+import { asPropType } from "@/utils/typing";
 import { buildHeatGrid, type HeatPoint, type HeatYear } from "./playtimeAgg";
 import "./PlaytimeHeatmap.scss";
 
@@ -34,7 +35,7 @@ export default defineComponent({
     hintOf: { type: Function as PropType<(value: number) => string>, required: true },
     now: { type: Object as () => Date, required: true },
     locale: { type: String, required: true },
-    year: { type: [Number, String] as unknown as PropType<HeatYear>, default: null },
+    year: { type: asPropType<HeatYear>([Number, String]), default: null },
   },
   setup(props) {
     const grid = computed(() =>

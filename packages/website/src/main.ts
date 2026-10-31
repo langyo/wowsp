@@ -37,7 +37,7 @@ const i18n = createI18n({
   messages,
 });
 
-document.documentElement.lang = (i18n.global.locale as unknown as { value: string }).value;
+document.documentElement.lang = i18n.global.locale.value;
 
 // Theme: the brand "ocean" preset + hikari's theme/font runtime drive every
 // --color-* token on the site (mode "system" follows the sun, matching the

@@ -31,6 +31,7 @@
   },
   "devDependencies": {
     "@types/node": "^26.6.5",
+    "@types/three": "^0.186",
     "@vitejs/plugin-vue": "^6",
     "@vitejs/plugin-vue-jsx": "^5",
     "@vue/test-utils": "^2",

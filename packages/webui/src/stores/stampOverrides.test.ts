@@ -23,7 +23,7 @@ vi.mock("@tauri-apps/api/event", () => ({ emit: emitMock }));
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (p: string) => p }));
 
 beforeEach(() => {
-  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
+  window.__TAURI_INTERNALS__ = {};
   apiMock.stampList.mockReset().mockResolvedValue([]);
   apiMock.stampImportBytes.mockReset();
   apiMock.stampReset.mockReset();
@@ -31,7 +31,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  delete window.__TAURI_INTERNALS__;
 });
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));

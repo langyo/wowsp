@@ -74,6 +74,7 @@ import {
   type SealLineOptions,
 } from "./aimcardLines";
 import { installNativeMenuBlock } from "@/utils/nativeMenu";
+import type { HostWindow } from "@/utils/typing";
 import "./aimcard.scss";
 
 // Desktop surface: never show the WebView's own context menu.
@@ -110,7 +111,10 @@ interface OverlayTauriApi {
     listen: (ev: string, h: (e: { payload: unknown }) => void) => Promise<() => void>;
   };
 }
-const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
+// The host injects the bridge before page load; main.ts declares it on
+// `Window` as `unknown` (no single shape serves the app and the overlay
+// entries), so each consumer names the surface it actually uses.
+const tauri = (window as HostWindow<{ __TAURI__?: OverlayTauriApi }>).__TAURI__;
 
 // ── Player markers (玩家标记) ── the aim head carries the same colored dot
 // the Tab table's rows do ("旁边多一个点"). Fetched lazily through the same

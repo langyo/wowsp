@@ -31,6 +31,7 @@ vi.mock("@/transport", async (importOriginal) => {
 });
 
 import type { EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 import type { ShipStatusIndex } from "./shipStatusModel";
 
 import HoloRosterOverlay from "./HoloRosterOverlay";
@@ -87,7 +88,7 @@ describe("HoloRosterOverlay tier column", () => {
       encyclopedia: new Map([
         // Only the fields the identity chain reads; the rest of the
         // encyclopedia shape is irrelevant here.
-        [4286, { id: 4286, name: "Izumo", tier: 9, type: "Battleship" } as unknown as ShipInfo],
+        [4286, fakeAs<ShipInfo>({ shipId: 4286, name: "Izumo", tier: 9, type: "Battleship" })],
       ]),
     });
     // The dedicated colgroup share + centered cells exist.

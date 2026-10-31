@@ -298,13 +298,24 @@ export interface MapInternalsDeps {
   selfTeam: ComputedRef<number | null>;
 }
 
+/** One object in the trajectory/ring overlay pool. Its members are not all
+ *  `THREE.Line`s: the shell traces and trajectory lines are lines, but the cap
+ *  rings are `Line2` (which extends Mesh) and the cap letters are `Sprite`.
+ *  What the pool actually needs is the disposable surface they share —
+ *  `geometry` + `material` — so that is the contract, and every push site is
+ *  checked against it instead of being cast to a `Line` it is not. */
+export type TrajectoryOverlay = THREE.Object3D & {
+  geometry: THREE.BufferGeometry;
+  material: THREE.Material;
+};
+
 /** The shared context handed to every extracted map function. Field-for-
  *  field these are the setup-closure holders HolographicMap.tsx used to
  *  keep as loose `let`/`const` variables. */
 export interface MapInternals extends MapInternalsDeps {
   // ── GPU pools & scene actors ─────────────────────────────────────────
-  /** Trajectory line objects (plus overlay rings/sprites cast to Line). */
-  trajectoryLines: THREE.Line[];
+  /** Trajectory lines + cap rings/sprites (see TrajectoryOverlay). */
+  trajectoryLines: TrajectoryOverlay[];
   /** Ship marker groups (one per vessel, incl. per-marker userData). */
   shipMarkers: THREE.Group[];
   /** Successfully loaded ship models, one per marker build — cloned as
@@ -332,7 +343,7 @@ export interface MapInternals extends MapInternalsDeps {
   _shellUp: THREE.Vector3;
   _shellDir: THREE.Vector3;
   /** Recorder aim line to the currently locked target (SetWeaponLock). */
-  lockLine: THREE.Mesh | null;
+  lockLine: THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial> | null;
   /** Aircraft formation cloud (one point per plane) — fallback for planes
    *  without a baked model; modeled planes render as GLB meshes instead. */
   planeCloud: THREE.Points | null;
@@ -649,7 +660,7 @@ export function clearActors(ctx: MapInternals) {
   if (ctx.lockLine) {
     scene.remove(ctx.lockLine);
     ctx.lockLine.geometry.dispose();
-    (ctx.lockLine.material as THREE.Material).dispose();
+    ctx.lockLine.material.dispose();
     ctx.lockLine = null;
   }
   if (ctx.planeCloud) {

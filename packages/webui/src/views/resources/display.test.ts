@@ -7,9 +7,10 @@ vi.mock("@/i18n/useLanguage", () => ({
 
 import { installedPresetOf, presetSwitched } from "./display";
 import type { CatalogEntry, ModInstallRecord } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 
 const entry = (presetIds: string[], supersedes?: Record<string, string>): CatalogEntry =>
-  ({
+  fakeAs<CatalogEntry>({
     id: "smi",
     category: "battle",
     version: "1",
@@ -23,7 +24,7 @@ const entry = (presetIds: string[], supersedes?: Record<string, string>): Catalo
     i18n: {},
     presets: presetIds.map((id) => ({ id, nameZh: id, nameEn: id, packages: [] })),
     ...(supersedes ? { supersedes } : {}),
-  }) as unknown as CatalogEntry;
+  });
 
 const record = (preset?: string | null): ModInstallRecord =>
   ({ id: "smi", version: "1", gameRoot: "C:/G", preset: preset ?? null }) as ModInstallRecord;

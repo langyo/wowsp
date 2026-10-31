@@ -4,6 +4,8 @@
  *  own grid tests (replay-corpus lib.rs) so a serialization flip would fail
  * here, not on the board. Pure — no DOM. */
 import { describe, expect, it } from "vitest";
+
+import { fakeAs } from "@/test-utils/fakes";
 import type { InsightsHeatGrid, MapInsightsDoc } from "../insightsLoader";
 import {
   drawHeatOverlay,
@@ -48,15 +50,15 @@ interface HeatPaint {
 function recordingCtx(): { ctx: CanvasRenderingContext2D; paints: HeatPaint[] } {
   const paints: HeatPaint[] = [];
   let cur: number[][] = [];
-  const ctx = {
+  const ctx = fakeAs<CanvasRenderingContext2D>({
     fillStyle: "",
     beginPath: () => {
       cur = [];
     },
     rect: (x: number, y: number, w: number, h: number) => cur.push([x, y, w, h]),
     fill: () => paints.push({ color: String(ctx.fillStyle), rects: cur }),
-  };
-  return { ctx: ctx as unknown as CanvasRenderingContext2D, paints };
+  });
+  return { ctx, paints };
 }
 
 function flatRect(r: number[]): { x: number; y: number; w: number; h: number } {

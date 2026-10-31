@@ -111,6 +111,7 @@ import { splitLiveRosterSides, type RosterSides } from "@/utils/rosterSides";
 // account — the shared store-free regex (utils/aiNames.ts) covers both.
 import { AI_NAME } from "@/utils/aiNames";
 import { installNativeMenuBlock } from "@/utils/nativeMenu";
+import type { HostWindow } from "@/utils/typing";
 import "./overlay.scss";
 
 // Desktop surface: the WebView's own right-click menu must never appear
@@ -300,8 +301,8 @@ interface PlayerComposition {
 }
 
 // main.ts declares Window.__TAURI__ as `unknown` for the whole project —
-// narrow it locally instead of redeclaring the global.
-const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
+// name the surface this entry uses instead of redeclaring the global.
+const tauri = (window as HostWindow<{ __TAURI__?: OverlayTauriApi }>).__TAURI__;
 
 // Realm is forwarded by create_overlay_window only when it was detected; an
 // empty value DISABLES the batch lookups below instead of falling back to a

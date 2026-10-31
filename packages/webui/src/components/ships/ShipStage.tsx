@@ -21,7 +21,7 @@ import { HkScrollContainer, HkSpinner, HkTabs, useBreakpoint, useToast } from "@
 import { readStageThemeMode, useImage, watchStageThemeMode, type StageThemeMode } from "@wowsp/holo";
 import { isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
-import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloUniforms } from "@/features/holographic/holoShader";
+import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloShaderMaterial, type HoloUniforms } from "@/features/holographic/holoShader";
 import { applyStageLook, colorForCategory, categoryBase, WEAPON_NAMES, HOLO_BASE_ALPHA } from "@/features/holographic/stageLook";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -1093,10 +1093,10 @@ export default defineComponent({
     // module (also used by the replay's recorder-ship panel). This thin wrapper
     // also stashes the uniforms on the component ref so the render loop can
     // drive the scanline animation each frame via `tickHoloUniforms`.
-    function makeHoloMaterial(): THREE.ShaderMaterial {
+    function makeHoloMaterial(): HoloShaderMaterial {
       const mat = sharedMakeHoloMaterial();
-      _allHoloUniforms.push(mat.uniforms as unknown as HoloUniforms);
-      if (!uniforms.value) uniforms.value = mat.uniforms as unknown as HoloUniforms;
+      _allHoloUniforms.push(mat.uniforms);
+      if (!uniforms.value) uniforms.value = mat.uniforms;
       return mat;
     }
 
@@ -1184,7 +1184,7 @@ export default defineComponent({
       // Each mesh is named after its semantic category and gets a distinct hue
       // drawn from pre-defined pools so the same part type is always the same
       // colour across every ship, but different types are clearly separable.
-      const materialCache = new Map<string, THREE.ShaderMaterial>();
+      const materialCache = new Map<string, HoloShaderMaterial>();
 
       const meshes: THREE.Mesh[] = [];
       model.traverse((child) => {
@@ -1206,7 +1206,7 @@ export default defineComponent({
           const c = colorForCategory(name, lookMode);
           mat.uniforms.baseColor.value.copy(c.base);
           mat.uniforms.fresnelColor.value.copy(c.fresnel);
-          applyStageLook(mat.uniforms as unknown as HoloUniforms, lookMode);
+          applyStageLook(mat.uniforms, lookMode);
           mat.userData.holoCategory = categoryBase(name);
           materialCache.set(name, mat);
         }

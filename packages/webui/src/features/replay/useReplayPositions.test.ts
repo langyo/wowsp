@@ -1,6 +1,7 @@
 import { effectScope, ref } from "vue";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ReplayMeta, type ReplayStream } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 import { useReplayPositions } from "./useReplayPositions";
 
 vi.mock("@/api", () => ({ api: { readReplayPositions: vi.fn() } }));
@@ -13,7 +14,7 @@ function deferred<T>() {
 }
 
 const meta = (path: string): ReplayMeta => ({ path, vehicles: [], raw: {} });
-const stream = { trajectories: [] } as unknown as ReplayStream;
+const stream = fakeAs<ReplayStream>({ trajectories: [] });
 
 function setup(initial: ReplayMeta | null = null) {
   const current = ref<ReplayMeta | null>(initial);

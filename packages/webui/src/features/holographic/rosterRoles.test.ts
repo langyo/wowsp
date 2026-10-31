@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ArenaPlayer, EntityTrajectory, ShipInfo, VehicleEntry } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 import {
   arenaIdentities,
   resolveMarkerContext,
@@ -212,7 +213,7 @@ describe("arena identities", () => {
     // Only `type` matters for this assertion — the rest of ShipInfo is
     // unused by the role resolution.
     const encyclopedia = new Map<number, ShipInfo>([
-      [300, { type: "Submarine" } as unknown as ShipInfo],
+      [300, fakeAs<ShipInfo>({ type: "Submarine" })],
     ]);
     const assignments = new Map<number, VehicleEntry | null>([[11, null], [12, null]]);
     // Entity 11 = the recorder → self; entity 12 = the other team → enemy.
@@ -264,7 +265,7 @@ describe("arena identities", () => {
     // identically; only the teamId branch can split them.
     const shipEntityIds = [0, 1, 2, 3, 4, 5, 6, 7, 8];
     const encyclopedia = new Map<number, ShipInfo>([
-      [910, { type: "Cruiser" } as unknown as ShipInfo],
+      [910, fakeAs<ShipInfo>({ type: "Cruiser" })],
     ]);
     const assignments = new Map<number, VehicleEntry | null>([
       [7, null],

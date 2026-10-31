@@ -44,6 +44,8 @@ vi.mock("@/api", () => ({
 import { initLocaleMessages, t } from "@/i18n";
 import { useGatewayStore } from "@/stores/gateway";
 import { useSessionStore } from "@/stores/session";
+import type { SessionSnapshot } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 import GatewayCaptchaHint, { REOPEN_DELAY_MS } from "./GatewayCaptchaHint";
 
@@ -82,9 +84,9 @@ async function mountHint(card: HTMLElement | null = anchorCard()) {
   gateway.pubPhase = "captcha";
   gateway.pubRoute = "r:asia:123";
   const session = useSessionStore();
-  session.snapshot = {
+  session.snapshot = fakeAs<SessionSnapshot>({
     display: { accountId: 123, nickname: "Tester", realm: "asia", registered: true, playing: false },
-  } as unknown as typeof session.snapshot;
+  });
   const anchor = ref<HTMLElement | null>(card);
   const wrapper = mount(GatewayCaptchaHint, {
     props: { anchor },

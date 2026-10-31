@@ -8,13 +8,14 @@ import {
 } from "./shipStatusModel";
 import { fmtSecs } from "./HoloShipStatus";
 import type { EntityTrajectory, ShellLaunchEvent, TorpedoLaunch } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 
 const launch = (
   time: number,
   ownerId: number,
   paramsId = 0,
 ): ShellLaunchEvent =>
-  ({
+  fakeAs<ShellLaunchEvent>({
     time,
     ownerId,
     paramsId,
@@ -29,10 +30,10 @@ const launch = (
     serverTimeLeft: 0,
     speed: 0,
     gunBarrelId: 0,
-  }) as unknown as ShellLaunchEvent;
+  });
 
 const torpLaunch = (time: number, ownerId: number): TorpedoLaunch =>
-  ({
+  fakeAs<TorpedoLaunch>({
     time,
     ownerId,
     paramsId: 0,
@@ -45,7 +46,7 @@ const torpLaunch = (time: number, ownerId: number): TorpedoLaunch =>
     dirY: 0,
     dirZ: 0,
     armed: true,
-  }) as unknown as TorpedoLaunch;
+  });
 
 /** Minimal ship trajectory: entityType 2 with a straight-line sample run. */
 const ship = (

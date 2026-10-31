@@ -21,6 +21,7 @@
 import { readonly, ref } from "vue";
 
 import { api } from "@/api";
+import { asIndexable } from "@/utils/typing";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 
 const APP_MEASUREMENT_ID = "G-BGD43VPDEJ";
@@ -108,7 +109,7 @@ export function initAnalytics(): void {
   if (import.meta.env.DEV) return;
   if (readKey(ONBOARDING_COMPLETED_KEY) === null) return;
   if (!isAnalyticsEnabled()) return;
-  (window as unknown as Record<string, unknown>)[GA_DISABLE_FLAG] = false;
+  asIndexable(window)[GA_DISABLE_FLAG] = false;
   if (tagReady) {
     trackPageView(window.location.pathname);
     return;
@@ -153,7 +154,7 @@ export function setAnalyticsEnabled(value: boolean): void {
   enabled.value = value;
   if (!value) lastReportedPath = null;
   if (typeof window !== "undefined") {
-    (window as unknown as Record<string, unknown>)[GA_DISABLE_FLAG] = !value;
+    asIndexable(window)[GA_DISABLE_FLAG] = !value;
   }
   try {
     if (value) localStorage.removeItem(DISABLED_KEY);

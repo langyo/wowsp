@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
+// Imported BEFORE the mocked modules below: the vi.mock factory for shotKit
+// runs while those imports evaluate, and it calls fakeAs.
+import { fakeAs } from "@/test-utils/fakes";
+
 import { PAD, type ShotFooterStrings } from "@/features/share/shotKit";
 
 import { COL_WIDTH, renderPostBattleShot, type ShotModel } from "./postBattleShot";
@@ -48,11 +52,11 @@ vi.mock("@/features/share/shotKit", async (importOriginal) => {
       mocks.stampDraws.push(args);
     },
     newShotCanvas: (width: number, height: number) => {
-      const canvas = {
+      const canvas = fakeAs<HTMLCanvasElement>({
         width: Math.round(width * real.SCALE),
         height: Math.round(height * real.SCALE),
-      };
-      const ctx = {
+      });
+      const ctx = fakeAs<CanvasRenderingContext2D>({
         canvas,
         fillStyle: "",
         strokeStyle: "",
@@ -61,7 +65,7 @@ vi.mock("@/features/share/shotKit", async (importOriginal) => {
         textBaseline: "alphabetic",
         font: "",
         globalAlpha: 1,
-        measureText: (s: string) => ({ width: s.length * 7 }),
+        measureText: (s: string) => fakeAs<TextMetrics>({ width: s.length * 7 }),
         fillText: (s: string, x: number) => {
           mocks.texts.push({ text: s, x, align: ctx.textAlign });
         },
@@ -75,12 +79,9 @@ vi.mock("@/features/share/shotKit", async (importOriginal) => {
         translate: () => {},
         rotate: () => {},
         drawImage: () => {},
-        createLinearGradient: () => ({ addColorStop: () => {} }),
-      };
-      return {
-        canvas: canvas as unknown as HTMLCanvasElement,
-        ctx: ctx as unknown as CanvasRenderingContext2D,
-      };
+        createLinearGradient: () => fakeAs<CanvasGradient>({ addColorStop: () => {} }),
+      });
+      return { canvas, ctx };
     },
   };
 });

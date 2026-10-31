@@ -12,6 +12,8 @@
  *  each removal shrink the chip exactly like a real bitmap seal would. */
 import { describe, expect, it } from "vitest";
 
+import { fakeAs } from "@/test-utils/fakes";
+
 import {
   alignMetricColumns,
   alignStatColumns,
@@ -57,7 +59,7 @@ function chip(
       w += SEAL_W[span.dataset.stamp ?? ""] ?? 0;
     }
     const left = side === "ally" ? anchoredEdge - w : anchoredEdge;
-    return {
+    return fakeAs<DOMRect>({
       left,
       right: left + w,
       width: w,
@@ -67,7 +69,7 @@ function chip(
       x: left,
       y: 0,
       toJSON: () => ({}),
-    } as unknown as DOMRect;
+    });
   };
   return el;
 }
@@ -200,7 +202,7 @@ function row(side: "ally" | "enemy", statW: number, face = "44.5%"): HTMLDivElem
   stat.className = "overlay-chip__stat";
   stat.textContent = face;
   stat.getBoundingClientRect = () =>
-    ({ width: statW, left: 0, right: statW, top: 0, bottom: 12, height: 12, x: 0, y: 0, toJSON: () => ({}) }) as unknown as DOMRect;
+    fakeAs<DOMRect>(({ width: statW, left: 0, right: statW, top: 0, bottom: 12, height: 12, x: 0, y: 0, toJSON: () => ({}) }));
   const name = document.createElement("span");
   name.className = "overlay-chip__name";
   name.textContent = "someone";
@@ -284,7 +286,7 @@ function metricRow(
     const b = document.createElement("b");
     b.dataset.col = String(col);
     b.getBoundingClientRect = () =>
-      ({ width: w, left: 0, right: w, top: 0, bottom: 12, height: 12, x: 0, y: 0, toJSON: () => ({}) }) as unknown as DOMRect;
+      fakeAs<DOMRect>(({ width: w, left: 0, right: w, top: 0, bottom: 12, height: 12, x: 0, y: 0, toJSON: () => ({}) }));
     stat.appendChild(b);
   }
   const name = document.createElement("span");

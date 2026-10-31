@@ -8,6 +8,10 @@
  *   - the storage key itself (external support tooling writes it).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as THREE from "three";
+
+import { fakeAs } from "@/test-utils/fakes";
+
 import {
   createPerfHud,
   PERF_HUD_HOVER_OPACITY,
@@ -15,13 +19,21 @@ import {
   perfHudRequested,
 } from "./perfHud";
 
-function fakeRenderer() {
-  return {
-    info: { render: { calls: 12, triangles: 340_000 } },
-    domElement: { width: 100, height: 50 },
+function fakeRenderer(): THREE.WebGLRenderer {
+  return fakeAs<THREE.WebGLRenderer>({
+    info: fakeAs<THREE.WebGLInfo>({
+      render: fakeAs<THREE.WebGLInfo["render"]>({
+        calls: 12,
+        triangles: 340_000,
+        frame: 0,
+        lines: 0,
+        points: 0,
+      }),
+    }),
+    domElement: fakeAs<HTMLCanvasElement>({ width: 100, height: 50 }),
     getPixelRatio: () => 2,
-    getContext: () => ({ getExtension: () => null, getParameter: () => 0 }),
-  } as unknown as import("three").WebGLRenderer;
+    getContext: () => fakeAs<WebGLRenderingContext>({ getExtension: () => null, getParameter: () => 0 }),
+  });
 }
 
 afterEach(() => {

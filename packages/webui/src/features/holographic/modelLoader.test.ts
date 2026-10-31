@@ -32,7 +32,7 @@ const STEM = "PRSS999";
 
 beforeAll(async () => {
   // Fake the Tauri asset protocol so URL construction has a converter to use.
-  (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
+  window.__TAURI_INTERNALS__ = {
     convertFileSrc: (p: string) => `http://asset.localhost/${encodeURIComponent(p)}`,
   };
   // Fake the shell's ensure_res_pack: cache root resolves immediately.

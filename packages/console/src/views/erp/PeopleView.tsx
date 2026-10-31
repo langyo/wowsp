@@ -17,6 +17,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { getErpMembers, getErpUsers, setErpMember, type ErpOrgUser } from "@/shared/api";
+import { asIndexable } from "@/shared/typing";
 
 import { useConfirm } from "./confirm";
 
@@ -181,7 +182,7 @@ export default defineComponent({
           dense
           loading={loading.value}
           error={error.value ?? undefined}
-          rows={users.value as unknown as Record<string, unknown>[]}
+          rows={users.value.map(asIndexable)}
           rowKey="open_id"
           emptyTitle="没有成员"
           emptyDescription="飞书组织下没有可见成员——请检查应用的通讯录数据权限是否设为「全部成员」。"

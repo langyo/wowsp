@@ -60,6 +60,7 @@
  * markup — one element per line, `textContent` only, no innerHTML anywhere.
  */
 import { installNativeMenuBlock } from "@/utils/nativeMenu";
+import type { HostWindow } from "@/utils/typing";
 import "./chat.scss";
 
 // Desktop surface: never show the WebView's own context menu.
@@ -183,7 +184,7 @@ interface OverlayTauriApi {
     listen: (ev: string, h: (e: { payload: unknown }) => void) => Promise<() => void>;
   };
 }
-const tauri = (window as unknown as { __TAURI__?: OverlayTauriApi }).__TAURI__;
+const tauri = (window as HostWindow<{ __TAURI__?: OverlayTauriApi }>).__TAURI__;
 
 // ── Player markers (玩家标记) ── the sender's nickname gains the same colored
 // dot the Tab table's rows carry. Chat lines carry a nickname only (no

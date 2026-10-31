@@ -564,9 +564,12 @@ export default defineComponent({
                     <HkCheckbox
                       size="sm"
                       // hikari's runtime maps a null modelValue to the
-                      // indeterminate dash (pinned by its own tests) — its
-                      // prop TYPE just never declared the null.
-                      modelValue={allChecked.value as unknown as boolean}
+                      // indeterminate dash (pinned by its own tests) but the
+                      // published prop type is `Boolean`, so the tri-state
+                      // value crosses that one upstream gap as an assertion.
+                      // hikari is a published dependency here — widening the
+                      // prop belongs upstream, not in this call site.
+                      modelValue={allChecked.value as boolean}
                       onUpdate:modelValue={() => onAllChecked()}
                     />
                     <span>{t("playtime.prTrendSelectAll")}</span>

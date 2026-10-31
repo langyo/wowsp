@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount, shallowMount } from "@vue/test-utils";
 import { h, reactive, type VNode } from "vue";
 import type { ClanInfo, PlayerStats } from "@/api";
+import { fakeAs } from "@/test-utils/fakes";
 
 const mocks = vi.hoisted(() => ({
   route: { path: "/lookup", query: {} as Record<string, string> },
@@ -128,7 +129,8 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 const player = (accountId: number, realm = "asia") => ({ accountId, realm, name: `Player${accountId}`, clanId: 42 }) as PlayerStats;
-const clan = (clanId: number, realm = "asia") => ({ clanId, realm, tag: `Clan${clanId}`, members: [] }) as unknown as ClanInfo;
+const clan = (clanId: number, realm = "asia") =>
+  fakeAs<ClanInfo>({ clanId, realm, tag: `Clan${clanId}`, members: [] });
 function mountLookup(query: Record<string, string> = {}) {
   mocks.route.query = query;
   // The history rail and the results region are hikari HkScrollContainers

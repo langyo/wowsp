@@ -160,7 +160,7 @@ describe("seedUiLocaleFromInstaller", () => {
 
     expect(invoke).toHaveBeenCalledWith("installer_language");
     expect(uiLocale.value).toBe("zh-TW");
-    expect((i18n.global.locale as unknown as { value: string }).value).toBe("zh-TW");
+    expect(i18n.global.locale.value).toBe("zh-TW");
   });
 
   it("never overrides a saved in-app choice", async () => {

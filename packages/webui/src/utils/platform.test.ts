@@ -6,10 +6,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 type Internals = Record<string, unknown> | undefined;
-const w = () => window as unknown as {
-  __TAURI_INTERNALS__?: Internals;
-  history: { pushState: (s: unknown, t: string, u: string) => void };
-};
+/** The host bridge tests stub on `window` (see test-utils/host-globals.d.ts)
+ *  and the real History API the browser already provides. */
+const w = () => window;
 
 let savedInternals: Internals;
 let savedUa: string;

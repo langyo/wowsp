@@ -79,8 +79,8 @@ beforeEach(() => {
   // invoke lands on mocks.invoke. Without this the browser fetch shim
   // would ECONNREFUSED against the dev-only mock backend and leave the
   // state card stuck on its un-enrolled defaults.
-  (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__ = {};
-  (window as unknown as Record<string, unknown>).__TAURI__ = {
+  window.__TAURI_INTERNALS__ = {};
+  window.__TAURI__ = {
     core: { invoke: mocks.invoke },
   };
   document.body.innerHTML = "";
@@ -88,8 +88,8 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  delete (window as unknown as Record<string, unknown>).__TAURI__;
-  delete (window as unknown as Record<string, unknown>).__TAURI_INTERNALS__;
+  delete window.__TAURI__;
+  delete window.__TAURI_INTERNALS__;
 });
 
 describe("SharingSection wizard", () => {

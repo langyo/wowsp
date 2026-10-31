@@ -29,7 +29,16 @@ import { isNative } from "@/utils/platform";
 
 export type DogtagMapEntry = [string, string] | [string, string, string];
 
-const entries = { ...mapRaw } as unknown as Record<string, DogtagMapEntry>;
+/** 2- or 3-element tuple per id: JSON module types keep the arrays the
+ *  bundled map literally holds (`string[]`), so the tuples are re-assembled
+ *  here — a row of any other length is skipped rather than asserted into a
+ *  shape the lookups would then index off the end of. The downloaded pack's
+ *  JSON is merged into the same record by initDogtagPack. */
+const entries: Record<string, DogtagMapEntry> = {};
+for (const [id, row] of Object.entries(mapRaw)) {
+  if (row.length === 2) entries[id] = [row[0], row[1]];
+  else if (row.length === 3) entries[id] = [row[0], row[1], row[2]];
+}
 
 /** Bumped when the pack's map is merged in; read by every lookup. */
 export const dogtagMapVersion = ref(0);

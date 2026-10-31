@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { describe, expect, it } from "vitest";
 
-import { makeHoloMaterial, type HoloUniforms } from "./holoShader";
+import { makeHoloMaterial } from "./holoShader";
 import {
   applyStageLook,
   categoryBase,
@@ -64,7 +64,7 @@ describe("stageLook", () => {
 
   it("stamps the slice-based look and leaves normal-driven terms dark", () => {
     const mat = makeHoloMaterial();
-    const u = mat.uniforms as unknown as HoloUniforms;
+    const u = mat.uniforms;
     applyStageLook(u, "light");
     expect(u.uBaseAlpha.value).toBe(HOLO_BASE_ALPHA.light);
     expect(u.uSliceGain.value).toBeGreaterThan(0);

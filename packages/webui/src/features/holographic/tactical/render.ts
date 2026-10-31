@@ -25,7 +25,6 @@ import {
   zoneRadiusAt,
   zoneSectorPoints,
   zoneIsSector,
-  type ZoneLike,
   type ZoneType,
 } from "./zones";
 import {
@@ -583,7 +582,7 @@ function drawZone(
   opts: RenderOptions,
   mode: DrawMode,
 ): void {
-  const z = el as unknown as ZoneLike;
+  const z = el;
   const t = opts.time;
   let radius: number;
   let alpha: number;

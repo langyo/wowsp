@@ -51,17 +51,12 @@ function interleavedGeometry(): THREE.BufferGeometry {
 describe("deinterleaveGeometry", () => {
   it("flattens interleaved attributes into plain BufferAttributes", () => {
     const g = interleavedGeometry();
-    expect(
-      (g.attributes.position as unknown as { isInterleavedBufferAttribute: boolean })
-        .isInterleavedBufferAttribute,
-    ).toBe(true);
+    const interleaved = g.attributes.position;
+    expect(interleaved instanceof THREE.InterleavedBufferAttribute).toBe(true);
     deinterleaveGeometry(g);
     const pos = g.attributes.position as THREE.BufferAttribute;
     const col = g.attributes.color as THREE.BufferAttribute;
-    expect(
-      (pos as unknown as { isInterleavedBufferAttribute?: boolean })
-        .isInterleavedBufferAttribute,
-    ).toBeUndefined();
+    expect(pos).not.toBeInstanceOf(THREE.InterleavedBufferAttribute);
     expect(pos.count).toBe(3);
     for (let v = 0; v < 3; v++) {
       expect(pos.getX(v)).toBeCloseTo(POSITIONS[v * 3], 6);

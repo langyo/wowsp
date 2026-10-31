@@ -587,13 +587,13 @@ export default defineComponent({
       });
     }
 
-    const statCells = (entry: MarkerEntry): VNode[] =>
+    const statCells = (entry: MarkerEntry): VNode =>
       rosterStatCols(
         entry.nickname,
         statsMap.value,
         statsLoading.value,
         (st, scope) => viewOf(st, scope),
-      ) as unknown as VNode[];
+      );
 
     /** The 精准搜索 face: realm select + name + lookup row over the
      *  classic note input, staged preview and color tabs. */
@@ -863,7 +863,7 @@ export default defineComponent({
             }}
             onToggle={(value: string) => toggleColor(value)}
             onAll={() => resetColors()}
-            icon={<Filter size={14} /> as unknown as VNode}
+            icon={<Filter size={14} />}
             hint={t("settings.markersFilterHint")}
             engaged={filterColors.value.size > 0}
           />

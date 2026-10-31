@@ -32,7 +32,7 @@ describe("dogtagAssets", () => {
     vi.unstubAllGlobals();
     convertFileSrc.mockClear();
     // The Tauri shell signal initDogtagPack gates on (see utils/platform).
-    (window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__ = {
+    window.__TAURI_INTERNALS__ = {
       convertFileSrc: () => "asset://localhost/x",
     };
   });
@@ -40,9 +40,9 @@ describe("dogtagAssets", () => {
   it("resolves lookups from the bundled map before the pack lands", async () => {
     const { default: bundled } = await import("@/data/dogtags_map.json");
     const mod = await import("./dogtagAssets");
-    const sample = Object.entries(bundled as unknown as Record<string, [string, string]>)[0];
-    const id = Number(sample[0]);
-    expect(mod.dogtagEntry(id)?.[0]).toBe(sample[1][0]);
+    const [sampleId, sampleRow] = Object.entries(bundled)[0];
+    const id = Number(sampleId);
+    expect(mod.dogtagEntry(id)?.[0]).toBe(sampleRow[0]);
     expect(mod.dogtagEntry(null)).toBeNull();
     expect(mod.dogtagEntry(1)).toBeNull();
   });
@@ -114,8 +114,7 @@ describe("dogtagAssets", () => {
     // res_cache_root with a Windows path, but without the Tauri shell
     // convertFileSrc would throw at call time — initDogtagPack must stay
     // unwired and every URL resolve from the bundled publicDir instead.
-    delete (window as unknown as { __TAURI_INTERNALS__?: unknown })
-      .__TAURI_INTERNALS__;
+    delete window.__TAURI_INTERNALS__;
     const fetchMock = mockFetch(PACK_MAP);
     vi.stubGlobal("fetch", fetchMock);
     const mod = await import("./dogtagAssets");

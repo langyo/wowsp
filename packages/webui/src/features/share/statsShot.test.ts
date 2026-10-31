@@ -1,5 +1,9 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
+// Imported BEFORE the mocked modules below: the vi.mock factory for shotKit
+// runs while those imports evaluate, and it calls fakeAs.
+import { fakeAs } from "@/test-utils/fakes";
+
 import { initLocaleMessages } from "@/i18n";
 
 import { FOOT_H, PAD } from "./shotKit";
@@ -28,18 +32,18 @@ vi.mock("./shotKit", async (importOriginal) => {
     footerMinWidth: () => 0,
     drawFooter: () => {},
     newShotCanvas: (width: number, height: number) => {
-      const canvas = {
+      const canvas = fakeAs<HTMLCanvasElement>({
         width: Math.round(width * real.SCALE),
         height: Math.round(height * real.SCALE),
-      };
+      });
       mocks.heights.push(height);
-      const ctx = {
+      const ctx = fakeAs<CanvasRenderingContext2D>({
         canvas,
         fillStyle: "",
         textAlign: "left",
         textBaseline: "alphabetic",
         font: "",
-        measureText: (s: string) => ({ width: s.length * 7 }),
+        measureText: (s: string) => fakeAs<TextMetrics>({ width: s.length * 7 }),
         fillText: (_s: string, _x: number, y: number) => {
           // Middle-baseline text boxes, the only baseline the renderer sets.
           const size = Number.parseFloat(/(\d+(?:\.\d+)?)px/.exec(ctx.font)?.[1] ?? "10");
@@ -60,20 +64,20 @@ vi.mock("./shotKit", async (importOriginal) => {
         // Only the untransformed icon draws (ship rows); seal glyphs live
         // under a rotate/translate this stub does not track, and no fixture
         // here carries a seal.
+        // The renderer only uses drawImage(img, dx, dy, dw, dh); the rest of
+        // the overload's tail keeps this assignable to the full signature.
         drawImage: (
           _img: unknown,
-          _x: number,
-          y: number,
-          _w: number,
-          h: number,
+          _dx: number,
+          dy: number,
+          _dw?: number,
+          dh?: number,
+          ..._tail: number[]
         ) => {
-          mocks.ops.push(y + h);
+          mocks.ops.push(dy + (dh ?? 0));
         },
-      };
-      return {
-        canvas: canvas as unknown as HTMLCanvasElement,
-        ctx: ctx as unknown as CanvasRenderingContext2D,
-      };
+      });
+      return { canvas, ctx };
     },
   };
 });

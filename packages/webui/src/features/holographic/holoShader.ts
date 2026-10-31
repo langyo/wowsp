@@ -67,8 +67,14 @@
  */
 import * as THREE from "three";
 
-/** Uniforms object shape for the holographic ShaderMaterial. */
-export interface HoloUniforms {
+/** Uniforms object shape for the holographic ShaderMaterial.
+ *
+ *  Deliberately a type alias, not an interface: aliases of object literals get
+ *  the implicit string index signature that `Record<string, IUniform>` needs,
+ *  which is what lets `HoloShaderMaterial.uniforms` narrow the open record
+ *  three declares instead of double-casting back to it. The key set stays
+ *  closed — an undeclared uniform is still a type error. */
+export type HoloUniforms = {
   time: { value: number };
   scanOffset: { value: number };
   baseColor: { value: THREE.Color };
@@ -121,6 +127,20 @@ export interface HoloUniforms {
   /** The facet key direction in OBJECT space (the ship's own frame: +Y up, bow
    *  along ±Z) so the tone pattern is fixed to the hull, not to the camera. */
   uFacetDir: { value: THREE.Vector3 };
+};
+
+/** A holographic ShaderMaterial whose `uniforms` keep the authored shape.
+ *
+ *  `THREE.ShaderMaterial` types `uniforms` as an open `Record<string, IUniform>`
+ *  — the library cannot know a shader's uniform names — so the table authored
+ *  by `makeHoloMaterial` is erased for every reader. Redeclaring the field on
+ *  a subclass restores the closed shape at the creation point, which is where
+ *  it is actually known: consumers then read `mat.uniforms.time` etc. with no
+ *  assertion anywhere (`HoloUniforms` is assignable to the open record, so the
+ *  override is checked, not forced). Nothing at runtime changes — `declare`
+ *  emits no field and the constructor is inherited. */
+export class HoloShaderMaterial extends THREE.ShaderMaterial {
+  declare uniforms: HoloUniforms;
 }
 
 export const HOLO_VERT = /* glsl */ `
@@ -328,12 +348,12 @@ export function makeHoloDepthMaterial(): THREE.ShaderMaterial {
   });
 }
 
-/** Create a fresh holographic ShaderMaterial with its own uniforms object.
- *  Returns the material; the uniforms are reachable via `mat.uniforms`. */
-export function makeHoloMaterial(): THREE.ShaderMaterial {
+/** Create a fresh holographic material with its own uniforms object. Returns
+ *  the material; the uniforms are reachable via `mat.uniforms`. */
+export function makeHoloMaterial(): HoloShaderMaterial {
   const fps: THREE.Vector3[] = [];
   for (let i = 0; i < 8; i++) fps.push(new THREE.Vector3());
-  return new THREE.ShaderMaterial({
+  return new HoloShaderMaterial({
     uniforms: {
       time: { value: 0 },
       scanOffset: { value: 0 },

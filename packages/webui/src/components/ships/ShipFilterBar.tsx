@@ -416,14 +416,18 @@ export default defineComponent({
           if (!s || typeof s !== "object") continue;
           let lo: number;
           let hi: number;
-          if (Array.isArray((s as { values?: unknown }).values)) {
+          const rawValues = (s as { values?: unknown }).values;
+          const legacyValues: readonly unknown[] | undefined = Array.isArray(rawValues)
+            ? rawValues
+            : undefined;
+          if (legacyValues) {
             // v5-and-older bracket pills → the corridor covering the picked
             // set: a non-contiguous pick (I–V plus X–★) widens to its hull —
             // the slider only expresses corridors, and the superset never
             // hides a ship the old filter showed.
             let min = TIER_MAX + 1;
             let max = TIER_MIN - 1;
-            for (const v of (s as unknown as { values: unknown[] }).values) {
+            for (const v of legacyValues) {
               const span = typeof v === "string" ? legacyBracketSpan(v) : null;
               if (!span) continue;
               min = Math.min(min, span[0]);

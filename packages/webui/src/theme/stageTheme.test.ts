@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { readStageThemeMode, watchStageThemeMode } from "@wowsp/holo";
 
+import { fakeAs } from "@/test-utils/fakes";
+
 /**
  * Contract tests for the shared 3D stage theme source (@wowsp/holo
  * stageTheme) — the ONE data source + refresh logic every 3D renderer
@@ -37,11 +39,18 @@ describe("readStageThemeMode", () => {
 
   it("falls back to the OS color scheme when no attribute is set", () => {
     setMode(null);
-    const mq = { matches: true };
-    const spy = vi.spyOn(window, "matchMedia").mockReturnValue(mq as unknown as MediaQueryList);
+    // The OS preference is a GETTER in the double (MediaQueryList.matches is
+    // read-only); flipping the backing flag is how a real media query changes.
+    let prefersDark = true;
+    const mq = fakeAs<MediaQueryList>({
+      get matches() {
+        return prefersDark;
+      },
+    });
+    const spy = vi.spyOn(window, "matchMedia").mockReturnValue(mq);
     try {
       expect(readStageThemeMode()).toBe("dark");
-      mq.matches = false;
+      prefersDark = false;
       expect(readStageThemeMode()).toBe("light");
     } finally {
       spy.mockRestore();

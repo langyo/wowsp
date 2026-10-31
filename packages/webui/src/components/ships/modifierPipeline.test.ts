@@ -26,13 +26,13 @@ const RAW_PROFILE = {
   concealment: { detect_distance_by_ship: 12.5 },
   torpedoes: { torpedo_speed: 60, shot_delay: 40 },
 };
-const PROFILE = RAW_PROFILE as unknown as Profile;
+const PROFILE: Profile = RAW_PROFILE;
 
 /** The real WG shape: identical profile minus the (nonexistent) max_caliber. */
 const NO_CALIBER_PROFILE = (() => {
   const artillery = { ...RAW_PROFILE.artillery } as Record<string, unknown>;
   delete artillery.max_caliber;
-  return { ...RAW_PROFILE, artillery } as unknown as Profile;
+  return { ...RAW_PROFILE, artillery };
 })();
 
 describe("recomputeStats", () => {
@@ -82,7 +82,7 @@ describe("recomputeStats", () => {
     const gunboatProfile = {
       ...RAW_PROFILE,
       artillery: { ...RAW_PROFILE.artillery, max_caliber: 127 },
-    } as unknown as Profile;
+    };
     const small = recomputeStats(gunboatProfile, "Destroyer", 8, build, 1);
     expect(small.modified.fireChanceOut).toBeCloseTo(43.5, 5);
   });

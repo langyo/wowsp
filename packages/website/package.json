@@ -16,12 +16,13 @@
     "@celestia-island/hikari": "^0.55.241",
     "@lucide/vue": "^1",
     "@wowsp/holo": "workspace:*",
-    "three": "^0.185",
+    "three": "^0.186",
     "vue": "^3",
     "vue-i18n": "^11",
     "vue-router": "^5"
   },
   "devDependencies": {
+    "@types/three": "^0.186",
     "@vitejs/plugin-vue": "^6",
     "@vitejs/plugin-vue-jsx": "^5",
     "sass": "^1",
