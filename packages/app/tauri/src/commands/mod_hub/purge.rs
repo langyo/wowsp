@@ -435,6 +435,8 @@ async fn adopt_and_register(
             files: unit.files,
             restore_dir: None,
             game_root: game_root.to_string(),
+            hashes: None,
+            snapshot_hashes: None,
         };
         let res_mods = manifest::res_mods_of(game_root, &record.bin_version);
         manifest::hub_apply(manifest::ManifestOp::UpsertManaged {

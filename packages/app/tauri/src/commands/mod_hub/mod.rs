@@ -54,6 +54,17 @@ pub(crate) struct PlanApply {
     pub written: Vec<String>,
     /// Directory holding pre-overwrite copies, `None` when nothing was replaced.
     pub restore_dir: Option<PathBuf>,
+    /// Content hashes (lowercase hex) of the SHARED-COMPONENT files this
+    /// install wrote, keyed by normalized res_mods-relative path — what the
+    /// ledger record stores so later handoffs can verify against these
+    /// bytes (see `mod_catalog::shared_file_hashes`). `None` when no shared
+    /// component was written.
+    pub hashes: Option<std::collections::HashMap<String, String>>,
+    /// Capture-time hashes of the RESTORE LAYERS the journal took of the
+    /// same shared files (the pre-overwrite bytes — see
+    /// `mod_catalog::snapshot_layer_hashes`). The record's uninstall
+    /// verifies layers against these, never against `hashes`.
+    pub snapshot_hashes: Option<std::collections::HashMap<String, String>>,
 }
 
 /// Locate the numeric `bin/<version>/` dir mods must target — the unified

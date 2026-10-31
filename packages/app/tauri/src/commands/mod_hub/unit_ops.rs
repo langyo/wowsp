@@ -121,6 +121,8 @@ fn bundled_plugin_record() -> ModInstallRecord {
         files: vec![bundled_plugin_entry()],
         restore_dir: None,
         game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
     }
 }
 
@@ -244,6 +246,9 @@ pub(crate) fn uninstall_unit_core(
     preflight_unit_uninstall(installs, &unit.paths, game_root)?;
     let mut removed = 0usize;
     let mut restored = 0usize;
+    // Sub-report warnings (e.g. snapshots skipped on hash verification
+    // failures) ride along to this aggregated report.
+    let mut warnings: Vec<String> = Vec::new();
 
     // Everything the ledger did not know about goes away directly — live
     // paths and their `.bak` twins alike. Ledger-covered files are also
@@ -313,6 +318,7 @@ pub(crate) fn uninstall_unit_core(
             let report = super::mod_catalog::uninstall_from_ledger(installs, &id, game_root)?;
             removed += report.removed_files;
             restored += report.restored_files;
+            warnings.extend(report.warnings);
             idx = idx.min(installs.len());
         } else {
             let (r, s) = trim_covered_files(&mut installs[idx], &covered, game_root)?;
@@ -345,6 +351,7 @@ pub(crate) fn uninstall_unit_core(
         name: unit.name.clone(),
         removed_files: removed,
         restored_files: restored,
+        warnings,
     })
 }
 

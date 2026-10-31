@@ -89,7 +89,7 @@ pub async fn mod_hub_install(
                     // A local reinstall overwrites the same shared files a
                     // catalog one does: keep the newer owners' snapshots in
                     // sync (best effort, never fails the install).
-                    super::mod_catalog::refresh_newer_snapshots(
+                    let refreshed = super::mod_catalog::refresh_newer_snapshots(
                         &game_root,
                         &applied.report.bin_version,
                         &applied.written,
@@ -109,6 +109,16 @@ pub async fn mod_hub_install(
                         entry: super::manifest::WowspManifest::entry_from_record(&record),
                     });
                     ledger.installs.push(record);
+                    // Refreshed layers now hold the bytes this install just
+                    // wrote — keep the owners' stored layer hashes in step
+                    // (same best-effort rule as the refresh itself).
+                    if let Some(written_hashes) = applied.hashes.as_ref() {
+                        super::mod_catalog::sync_snapshot_hashes(
+                            &mut ledger.installs,
+                            &refreshed,
+                            written_hashes,
+                        );
+                    }
                     // Say whose files this install clobbered (the journal
                     // already snapshotted them).
                     let conflicts = conflict_warnings(
@@ -120,6 +130,21 @@ pub async fn mod_hub_install(
                     );
                     applied.report.conflicts = conflicts.clone();
                     applied.report.warnings.extend(conflicts);
+                    // Same shared-file handoff signal as the catalog install:
+                    // bytes this local install wrote that diverge from what
+                    // another live record recorded warn through the report
+                    // (advisory only — see shared_divergence_warnings).
+                    if let Some(written_hashes) = applied.hashes.as_ref() {
+                        applied.report.warnings.extend(
+                            super::mod_catalog::shared_divergence_warnings(
+                                &ledger.installs,
+                                &id,
+                                &game_root,
+                                &applied.report.bin_version,
+                                written_hashes,
+                            ),
+                        );
+                    }
                     Ok(applied)
                 },
                 Err(e) => Err(e),
@@ -180,6 +205,8 @@ pub(crate) fn local_record(
             .as_ref()
             .map(|p| p.to_string_lossy().into_owned()),
         game_root: game_root.to_string(),
+        hashes: applied.hashes.clone(),
+        snapshot_hashes: applied.snapshot_hashes.clone(),
     }
 }
 
@@ -311,6 +338,17 @@ fn install_plan_inner(
         None
     };
     written.sort();
+    // Shared-component content hashes for the ledger record: computed from
+    // the live bytes the journal just placed (advisory handoff metadata,
+    // capped per file — see `mod_catalog::shared_file_hashes`).
+    let hashes = super::mod_catalog::shared_file_hashes(game_root, &bin_version, &written);
+    // Capture-time hashes of the restore LAYERS the journal took (the
+    // pre-overwrite bytes an uninstall will put back) — a separate map the
+    // restore verification runs against, never the written-bytes map
+    // (see `mod_catalog::snapshot_layer_hashes`).
+    let snapshot_hashes = restore_dir
+        .as_ref()
+        .and_then(|dir| super::mod_catalog::snapshot_layer_hashes(&written, dir));
     // Unified install: the pre-release twins receive the same files (see
     // preload_mirror) — best effort, surfacing as install warnings and the
     // report's positive mirrored-bins note. The loader marker rides along
@@ -339,6 +377,8 @@ fn install_plan_inner(
         },
         written,
         restore_dir,
+        hashes,
+        snapshot_hashes,
     })
 }
 

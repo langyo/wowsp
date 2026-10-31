@@ -361,6 +361,30 @@ pub struct ModInstallRecord {
     /// records written before the field existed — those match any root.
     #[serde(default)]
     pub game_root: String,
+    /// Per-file SHA-256 content hashes (lowercase hex) of the
+    /// SHARED-COMPONENT files this record wrote (see
+    /// `is_shared_component_path` on the app side), keyed by the
+    /// normalized res_mods-relative path (lowercase, forward slashes,
+    /// `.bak` stripped; `@game/…` game-root drops included). The
+    /// shared-file handoff paths verify against these: an uninstall skips
+    /// restoring a snapshot layer whose bytes no longer match, and a
+    /// later install warns when it writes DIFFERENT bytes over a shared
+    /// file this record claims. `None` on records written before the
+    /// field existed and on installs that touched no shared component —
+    /// every existing ledger loads unchanged.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hashes: Option<std::collections::HashMap<String, String>>,
+    /// Per-file SHA-256 of the RESTORE LAYERS this install captured —
+    /// keyed like `hashes` (normalized res_mods-relative path) but hashing
+    /// the PRE-overwrite snapshot copy, not the written bytes. The
+    /// uninstall path verifies each layer against THIS map before
+    /// restoring it (the written-bytes map above is never used for
+    /// restore verification: a healthy layer's bytes differ from what the
+    /// install wrote by definition). Only shared-component files with an
+    /// actually captured layer get an entry; `None` on pre-field records
+    /// and installs that overwrote nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub snapshot_hashes: Option<std::collections::HashMap<String, String>>,
 }
 
 /// One package's expected write map, for the read-only "what will this

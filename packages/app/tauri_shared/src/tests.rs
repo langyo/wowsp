@@ -2320,6 +2320,8 @@ fn mod_install_record_renames_bin_version_installed_at_and_restore_dir() {
         files: vec!["res_mods/0.15.7/gui/unbound/main.xml".into()],
         restore_dir: Some("backups/record-sentinel".into()),
         game_root: "D:/Games/WoWs".into(),
+        hashes: None,
+        snapshot_hashes: None,
     });
     assert_exact_keys(
         &v,
