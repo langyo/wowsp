@@ -61,7 +61,7 @@ WoWSP هو لوحة سطح مكتب للعبة **World of Warships** على نظ
 
 ## الترخيص
 
-يُرخَّص WoWSP بموجب **Synthetic Source License 1.0** ([النص الكامل](https://github.com/langyo/wowsp/blob/master/LICENSE)) — منح مكافئة لرخصة Apache-2.0 لقاعدة شيفرة مولَّدة بالذكاء الاصطناعي في معظمها، والالتزام الإضافي الوحيد عليها هو الإبقاء على إشعار الإفصاح عن التوليد بالذكاء الاصطناعي في كل نسخة وكل عمل مشتق. وتحتفظ النسخة المضمّنة من [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) برخصة **MIT** الأصلية؛ أما كل ما عداها في هذا المستودع — بما في ذلك خادم [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) المستقل — فهو مشمول برخصة SySL-1.0.
+يُرخَّص WoWSP بموجب **Synthetic Source License 1.0** ([النص الكامل](https://github.com/langyo/wowsp/blob/master/LICENSE)) — منح مكافئة لرخصة Apache-2.0 لقاعدة شيفرة مولَّدة بالذكاء الاصطناعي في معظمها، والالتزام الإضافي الوحيد عليها هو الإبقاء على إشعار الإفصاح عن التوليد بالذكاء الاصطناعي في كل نسخة وكل عمل مشتق. وتحتفظ [نُسخة game-assets المضمّنة](https://github.com/langyo/wowsp/tree/master/packages/tools/game-assets) — وهي فرع لـ [wows-toolkit](https://github.com/landaire/wows-toolkit) داخل الشجرة — برخصة **MIT** الأصلية؛ أما كل ما عداها في هذا المستودع — بما في ذلك خادم [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) المستقل — فهو مشمول برخصة SySL-1.0.
 
 ## الدعم
 

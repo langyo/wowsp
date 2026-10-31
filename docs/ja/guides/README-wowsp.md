@@ -61,7 +61,7 @@ Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/lat
 
 ## ライセンス
 
-WoWSP は **Synthetic Source License 1.0**（[全文](https://github.com/langyo/wowsp/blob/master/LICENSE)）の下で提供される — 実質的に AI 生成のコードベースに対して Apache-2.0 と同等の許諾を与えるライセンスであり、追加の義務はコピーおよび派生物すべてに AI 生成である旨の表示を維持することのみ。ベンダー取り込みした [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) スナップショットは上流の **MIT** ライセンスを維持し、リポジトリ内のそれ以外の一切 — スタンドアロンの [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) ワーカーを含む — は SySL-1.0 が適用される。
+WoWSP は **Synthetic Source License 1.0**（[全文](https://github.com/langyo/wowsp/blob/master/LICENSE)）の下で提供される — 実質的に AI 生成のコードベースに対して Apache-2.0 と同等の許諾を与えるライセンスであり、追加の義務はコピーおよび派生物すべてに AI 生成である旨の表示を維持することのみ。[wows-toolkit](https://github.com/landaire/wows-toolkit) のツリー内フォークである [game-assets](https://github.com/langyo/wowsp/tree/master/packages/tools/game-assets) は上流の **MIT** ライセンスを維持し、リポジトリ内のそれ以外の一切 — スタンドアロンの [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) ワーカーを含む — は SySL-1.0 が適用される。
 
 ## 支援
 

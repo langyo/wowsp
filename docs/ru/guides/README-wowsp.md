@@ -61,7 +61,7 @@ WoWSP — настольная панель для **«Мира кораблей
 
 ## Лицензия
 
-WoWSP распространяется по лицензии **Synthetic Source License 1.0** ([полный текст](https://github.com/langyo/wowsp/blob/master/LICENSE)) — она предоставляет права уровня Apache-2.0 для кодовой базы, в значительной степени сгенерированной ИИ, а её единственное дополнительное обязательство — сохранять уведомление о генерации ИИ в каждой копии и производной работе. Вендорный снапшот [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) сохраняет свою исходную лицензию **MIT**; всё остальное в этом репозитории — включая автономный воркер [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) — покрыто лицензией SySL-1.0.
+WoWSP распространяется по лицензии **Synthetic Source License 1.0** ([полный текст](https://github.com/langyo/wowsp/blob/master/LICENSE)) — она предоставляет права уровня Apache-2.0 для кодовой базы, в значительной степени сгенерированной ИИ, а её единственное дополнительное обязательство — сохранять уведомление о генерации ИИ в каждой копии и производной работе. Форк [game-assets](https://github.com/langyo/wowsp/tree/master/packages/tools/game-assets), ответвлённый от [wows-toolkit](https://github.com/landaire/wows-toolkit) внутри дерева репозитория, сохраняет свою исходную лицензию **MIT**; всё остальное в этом репозитории — включая автономный воркер [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) — покрыто лицензией SySL-1.0.
 
 ## Поддержка
 

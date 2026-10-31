@@ -61,7 +61,7 @@ Bug 回報與測試回饋：QQ 群 **[612331811](https://qm.qq.com/q/ExDBBawuLC)
 
 ## 授權條款
 
-WoWSP 採用 **Synthetic Source License 1.0** 授權（[全文](https://github.com/langyo/wowsp/blob/master/LICENSE)）— 針對實質上由 AI 生成的程式碼庫，給予等同 Apache-2.0 的授權，唯一額外義務是在每份副本與衍生作品中保留 AI 生成揭露聲明。內嵌（vendored）的 [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) 快照仍保留其上游的 **MIT** 授權；本儲存庫中的其他所有內容——包括獨立運作的 [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) worker——均涵蓋於 SySL-1.0。
+WoWSP 採用 **Synthetic Source License 1.0** 授權（[全文](https://github.com/langyo/wowsp/blob/master/LICENSE)）— 針對實質上由 AI 生成的程式碼庫，給予等同 Apache-2.0 的授權，唯一額外義務是在每份副本與衍生作品中保留 AI 生成揭露聲明。倉內的 [game-assets](https://github.com/langyo/wowsp/tree/master/packages/tools/game-assets)（[wows-toolkit](https://github.com/landaire/wows-toolkit) 的樹內分叉）仍保留其上游的 **MIT** 授權；本儲存庫中的其他所有內容——包括獨立運作的 [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) worker——均涵蓋於 SySL-1.0。
 
 ## 贊助作者
 
