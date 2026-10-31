@@ -72,5 +72,6 @@
     "byMode": "Par mode",
     "battles": "batailles",
     "unknown": "Inconnu"
-  }
+  },
+  "heatUnit": "batailles"
 }

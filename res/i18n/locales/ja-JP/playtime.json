@@ -72,5 +72,6 @@
     "byMode": "モード別",
     "battles": "戦闘",
     "unknown": "不明"
-  }
+  },
+  "heatUnit": "戦"
 }

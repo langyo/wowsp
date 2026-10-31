@@ -72,5 +72,6 @@
     "byMode": "按模式",
     "battles": "場",
     "unknown": "未知"
-  }
+  },
+  "heatUnit": "場"
 }

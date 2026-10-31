@@ -11,6 +11,8 @@ import {
 import {
   HkButton,
   HkConfirmDialog,
+  HkBarChart,
+  HkCalendarHeatmap,
   HkIconButton,
   HkPopover,
   HkScrollContainer,
@@ -23,13 +25,15 @@ import { tierToRoman } from "@wowsp/holo";
 
 import NationFlag from "@/components/base/NationFlag";
 import PlaytimeBreakdownPie from "@/components/playtime/PlaytimeBreakdownPie";
-import PlaytimeTrendChart from "@/components/playtime/PlaytimeTrendChart";
-import PlaytimeHeatmap from "@/components/playtime/PlaytimeHeatmap";
+
+
 import PrTrendSection from "@/components/playtime/PrTrendSection";
 import {
   bucketDaily,
   fmtDuration,
   parseDayKey,
+  fmtAxis,
+  heatDays,
   type HeatYear,
   type TrendRange,
 } from "@/components/playtime/playtimeAgg";
@@ -531,11 +535,6 @@ export default defineComponent({
             ],
     );
 
-    /** Heatmap hover hint — the day's battle count. */
-    function heatHint(n: number): string {
-      return t("playtime.heatDay", { n });
-    }
-
     const cards = computed(() => {
       const o = overview.value ?? (totalBattles.value > 0 ? ZERO_OVERVIEW : null);
       if (!o) return [];
@@ -868,7 +867,14 @@ export default defineComponent({
                       {t("playtime.rangeTotal", { v: fmtDuration(rangeTotal.value) })}
                     </span>
                   </div>
-                  <PlaytimeTrendChart buckets={buckets.value} />
+                  <HkBarChart
+                    bars={buckets.value.map((b) => ({
+                      label: b.label,
+                      value: b.seconds,
+                      hint: b.hint,
+                    }))}
+                    formatValue={fmtAxis}
+                  />
                 </section>
 
                 {/* ── Battle heatmap (battles per local day, scope-aware;
@@ -877,28 +883,21 @@ export default defineComponent({
                   <section class="play-section">
                     <div class="play-section__head">
                       <h3>{t("playtime.heatTitle")}</h3>
-                      <div class="play-heat-controls">
-                        <HkTabs
-                          variant="segmented"
-                          modelValue={heatYearKey.value}
-                          onUpdate:modelValue={(v: string) => (heatYearKey.value = v)}
-                          tabs={heatYearOptions.value}
-                        />
-                        <div class="play-heat-legend">
-                          <span>{t("playtime.heatLess")}</span>
-                          {[1, 2, 3, 4].map((level) => (
-                            <span key={level} class={`play-heat-legend__swatch is-${level}`} />
-                          ))}
-                          <span>{t("playtime.heatMore")}</span>
-                        </div>
-                      </div>
                     </div>
-                    <PlaytimeHeatmap
-                      points={battleHeat.value}
-                      hintOf={heatHint}
-                      now={now.value}
-                      locale={uiLocale.value}
-                      year={heatYear.value}
+                    <HkCalendarHeatmap
+                      days={heatDays(battleHeat.value, now.value, heatYear.value)}
+                      first={battleHeat.value[0]?.date ?? null}
+                      unit={t("playtime.heatUnit")}
+                      v-slots={{
+                        toolbar: () => (
+                          <HkTabs
+                            variant="segmented"
+                            modelValue={heatYearKey.value}
+                            onUpdate:modelValue={(v: string) => (heatYearKey.value = v)}
+                            tabs={heatYearOptions.value}
+                          />
+                        ),
+                      }}
                     />
                     <p class="playtime-view__note">{t("playtime.heatHint")}</p>
                   </section>
