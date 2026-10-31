@@ -6,17 +6,19 @@
  *    desc, dateless entries always sink, ties keep their input order),
  *    the date-range window (inclusive ISO bounds, dateless entries
  *    drop out once any bound is set), and the two single-select dimensions
- *    (player options ordered by occurrence with stale picks appended;
- *    client matching through sameGamePath with untagged entries excluded;
- *    player matching exact on the nickname);
+ *    (client matching through sameGamePath with untagged entries excluded;
+ *    the player SEARCH matching any participant's nickname by
+ *    case-insensitive substring, degrading to the recorder alone when a
+ *    row carries no roster, and a blank query being the identity);
  *  - the composable: persisted state round-trips through localStorage
  *    (modes/sort/client/player), corrupt / foreign blobs degrade to the
  *    default, the date range is session-only (never persisted), and the
  *    visible lists are the range-filtered + mode-filtered + client-filtered
  *    + player-filtered + sorted derivatives of both blocks;
  *  - the trigger: one icon-button FilterCategoryChip whose popup carries
- *    the mode multi-select, the direction-bearing 全部模式 pill, the two
- *    client/player HkSelects AND the date-range pair (its default slot);
+ *    the mode multi-select, the direction-bearing 全部模式 pill, the
+ *    client HkSelect + the player search HkInput AND the date-range pair
+ *    (its default slot);
  *    the mode popup's options toggle the emitted Set (and carry the mode
  *    color dot), the 全部模式 pill resets a selection and — with nothing
  *    picked — flips the match-time direction its ↑/↓ arrow displays; the
@@ -32,18 +34,18 @@
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { nextTick, ref } from "vue";
 import { DOMWrapper, enableAutoUnmount, mount } from "@vue/test-utils";
-import { HkDatePicker, HkSelect } from "@celestia-island/hikari";
+import { HkDatePicker, HkInput, HkSelect } from "@celestia-island/hikari";
 
 import ReplayListFilter, {
   FILTER_ANY,
   collectModeOptions,
-  collectPlayerOptions,
   filterByClient,
   filterByDateRange,
   filterByPlayer,
   filterReplays,
   replayDayKeyOf,
   replayModeKeyOf,
+  replaySearchableNamesOf,
   sortReplays,
   useReplayListFilter,
   type ReplaySortDir,
@@ -175,37 +177,51 @@ describe("replayModeKeyOf / filterReplays", () => {
   });
 });
 
-describe("collectPlayerOptions", () => {
-  it("orders by descending occurrence, ties broken by locale compare", () => {
-    // The user's own nickname usually dominates the rail, so the most-played
-    // entry must lead; the tie between Kaga and Zulu resolves deterministically.
-    expect(
-      collectPlayerOptions([
-        meta({ path: "a", playerName: "Zulu" }),
-        meta({ path: "b", playerName: "Yamato" }),
-        meta({ path: "c", playerName: "Yamato" }),
-        meta({ path: "d", playerName: "Kaga" }),
-        meta({ path: "e" }), // no nickname — never an option
-        meta({ path: "f", playerName: null }),
-        meta({ path: "g", playerName: "" }),
-      ]),
-    ).toEqual(["Yamato", "Kaga", "Zulu"]);
+describe("replaySearchableNamesOf / filterByPlayer (participant search)", () => {
+  it("searches the full human roster when the row carries one", () => {
+    const row = meta({
+      path: "a",
+      playerName: "Kaga",
+      playerNames: ["Kaga", "Yamato", "zuLu"],
+    });
+    expect(replaySearchableNamesOf(row)).toEqual(["Kaga", "Yamato", "zuLu"]);
+    // The search matches ANY participant — not only the recording account —
+    // case-insensitively, on a SUBSTRING (a fragment finds the player).
+    expect(filterByPlayer([row], "yam").map((r) => r.path)).toEqual(["a"]);
+    expect(filterByPlayer([row], "YAM").map((r) => r.path)).toEqual(["a"]);
+    expect(filterByPlayer([row], "zulu").map((r) => r.path)).toEqual(["a"]);
+    expect(filterByPlayer([row], "kag").map((r) => r.path)).toEqual(["a"]);
+    expect(filterByPlayer([row], "nobody")).toEqual([]);
   });
 
-  it("appends the persisted extras last, deduped and in their own order", () => {
-    const live = [meta({ path: "a", playerName: "Yamato" })];
-    // A stale pick absent from the data stays listed (and clearable);
-    // duplicates and the empty sentinel are dropped.
-    expect(collectPlayerOptions(live, ["Kaga", "", "Yamato", "Kaga"])).toEqual([
-      "Yamato",
-      "Kaga",
-    ]);
-    expect(collectPlayerOptions([], ["Kaga", "Yamato"])).toEqual(["Kaga", "Yamato"]);
-    expect(collectPlayerOptions([])).toEqual([]);
+  it("falls back to the recorder alone when the roster is absent / empty / null", () => {
+    const rows = [
+      meta({ path: "no-field", playerName: "Kaga" }),
+      meta({ path: "empty-roster", playerName: "Yamato", playerNames: [] }),
+      meta({ path: "null-roster", playerName: "Hood", playerNames: null }),
+      meta({ path: "anon", playerName: null }),
+    ];
+    expect(filterByPlayer(rows, "kag").map((r) => r.path)).toEqual(["no-field"]);
+    expect(filterByPlayer(rows, "yam").map((r) => r.path)).toEqual(["empty-roster"]);
+    expect(filterByPlayer(rows, "hoo").map((r) => r.path)).toEqual(["null-roster"]);
+    // An anonymous row (no roster, no recorder) matches nothing.
+    expect(filterByPlayer(rows, "zzz")).toEqual([]);
+  });
+
+  it("empty query is the identity (same reference)", () => {
+    const rows = [meta({ path: "a", playerName: "Kaga" })];
+    expect(filterByPlayer(rows, FILTER_ANY)).toBe(rows);
+    expect(filterByPlayer(rows, "")).toBe(rows);
+  });
+
+  it("whitespace-only query is the identity (same reference)", () => {
+    const rows = [meta({ path: "a", playerName: "Kaga" })];
+    expect(filterByPlayer(rows, "   ")).toBe(rows);
+    expect(filterByPlayer(rows, " \t ")).toBe(rows);
   });
 });
 
-describe("filterByClient / filterByPlayer", () => {
+describe("filterByClient", () => {
   const steam = "C:\\Games\\World_of_Warships";
   const rows = [
     meta({ path: "steam", installPath: steam, installKind: "steam", installRealm: "asia" }),
@@ -233,20 +249,6 @@ describe("filterByClient / filterByPlayer", () => {
     const kept = filterByClient(rows, steam).map((r) => r.path);
     expect(kept).toEqual(["steam", "steam-forward"]);
     expect(kept).not.toContain("phone");
-  });
-
-  it("filterByPlayer: identity for 全部, else an EXACT nickname match", () => {
-    const players = [
-      meta({ path: "kaga", playerName: "Kaga" }),
-      meta({ path: "KAGA", playerName: "KAGA" }),
-      meta({ path: "anon" }), // no nickname
-    ];
-    expect(filterByPlayer(players, FILTER_ANY)).toBe(players);
-    expect(filterByPlayer(players, "Kaga").map((r) => r.path)).toEqual(["kaga"]);
-    // Nicknames are case-sensitive proper nouns — "kaga" is a different user.
-    expect(filterByPlayer(players, "kaga")).toEqual([]);
-    // Picking any nickname drops the entries without one.
-    expect(filterByPlayer(players, "KAGA").map((r) => r.path)).toEqual(["KAGA"]);
   });
 });
 
@@ -344,7 +346,7 @@ describe("useReplayListFilter", () => {
     });
   });
 
-  it("restores and re-persists the client + player picks, degrading junk to 全部", async () => {
+  it("restores and re-persists the client pick + the player query, degrading junk to 全部", async () => {
     localStorage.setItem(
       PERSIST_KEY,
       JSON.stringify({
@@ -480,6 +482,9 @@ describe("useReplayListFilter", () => {
         path: "steam-kaga",
         matchGroup: "pvp",
         playerName: "Kaga",
+        // The roster carries teammates the recorder row alone would never
+        // surface — the search's whole point.
+        playerNames: ["Kaga", "Teammate"],
         installPath: steam,
         installKind: "steam",
         dateTime: "20260301_000000",
@@ -521,6 +526,12 @@ describe("useReplayListFilter", () => {
     expect(f.visibleList.value.map((r) => r.path)).toEqual(["steam-kaga", "steam-yamato"]);
     f.selectedPlayer.value = "Kaga";
     expect(f.visibleList.value.map((r) => r.path)).toEqual(["steam-kaga"]);
+    // A roster-only name (never the recorder) finds the same battle…
+    f.selectedPlayer.value = "team";
+    expect(f.visibleList.value.map((r) => r.path)).toEqual(["steam-kaga"]);
+    // …and the recorder fragment keeps matching on the way out (the later
+    // assertions below rely on the query matching ext-kaga's recorder).
+    f.selectedPlayer.value = "Kaga";
     // The external pick carries no install tag, so while the client dim is
     // engaged it stays filtered out; clearing THAT dim lets the nickname
     // pick alone bring it back (the two dimensions AND independently).
@@ -543,19 +554,24 @@ describe("useReplayListFilter", () => {
     expect(f.visibleExternal.value.map((r) => r.path)).toEqual(["ext-kaga"]);
   });
 
-  it("derives player options from both blocks, most-played first, keeping a stale pick", () => {
+  it("a persisted stale query survives the load and still narrows the blocks", () => {
+    // An old v1 blob's exact-nickname pick degrades to a fuzzy query: the
+    // same string is restored as the search text and keeps engaging the
+    // funnel even when the rail's data no longer matches it.
+    localStorage.setItem(PERSIST_KEY, JSON.stringify({ player: "GonePlayer" }));
     const list = ref([
-      meta({ path: "a", playerName: "Kaga" }),
-      meta({ path: "b", playerName: "Kaga" }),
-      meta({ path: "c", playerName: "Yamato" }),
-      meta({ path: "d" }),
+      meta({ path: "kaga", playerName: "Kaga" }),
+      meta({ path: "yamato", playerName: "Yamato" }),
     ]);
-    const f = useReplayListFilter(list, ref([meta({ path: "e", playerName: "Zulu" })]));
-    expect(f.playerOptions.value).toEqual(["Kaga", "Yamato", "Zulu"]);
+    const f = useReplayListFilter(list, ref([]));
+    expect(f.selectedPlayer.value).toBe("GonePlayer");
+    expect(f.filterActive.value).toBe(true);
+    expect(f.visibleList.value).toEqual([]);
 
-    // A persisted pick absent from the data stays listed (and clearable).
-    f.selectedPlayer.value = "Gone";
-    expect(f.playerOptions.value).toEqual(["Kaga", "Yamato", "Zulu", "Gone"]);
+    // Clearing the query (the sentinel) reopens the rail and disengages.
+    f.selectedPlayer.value = FILTER_ANY;
+    expect(f.filterActive.value).toBe(false);
+    expect(f.visibleList.value.map((r) => r.path)).toEqual(["kaga", "yamato"]);
   });
 });
 
@@ -725,15 +741,14 @@ describe("ReplayListFilter trigger", () => {
     expect(opts[2]!.querySelectorAll(".ship-filter-bar__dir")).toHaveLength(0);
   });
 
-  it("carries the client + player dropdowns above the date pair and emits their picks", async () => {
+  it("carries the client select + the player search above the date pair and emits their values", async () => {
     const wrapper = mountBar(new Set(), "desc", {
       selectedClient: FILTER_ANY,
       clientOptions: [
         { value: "D:/Games/World_of_Warships", label: "Steam · ASIA" },
         { value: "D:/Lesta/WoWS", label: "Lesta · RU" },
       ],
-      selectedPlayer: FILTER_ANY,
-      playerOptions: ["Kaga", "Yamato"],
+      selectedPlayer: "kag",
     });
     // Popup content mounts only while open (the chip mounts it into the
     // teleported panel).
@@ -741,13 +756,19 @@ describe("ReplayListFilter trigger", () => {
     await vi.waitFor(() => {
       expect(document.body.querySelectorAll(".ship-filter-bar__opt")).toHaveLength(3);
     });
+    // One select (client) + one search field (player) above the date pair —
+    // the trigger renders an INPUT for the player dimension, not a select:
+    // a fuzzy match over every participant's roster has no options list.
     const selects = wrapper.findAllComponents(HkSelect);
-    expect(selects).toHaveLength(2);
-    // Both rows sit inside their wrapper divs (the popup's slot), above the
-    // date pair — the panel stacks them in slot order.
+    expect(selects).toHaveLength(1);
+    const inputs = wrapper.findAllComponents(HkInput);
+    expect(inputs).toHaveLength(1);
     expect(
       document.body.querySelectorAll(".replay-view__pop-select .hk-select-wrapper"),
-    ).toHaveLength(2);
+    ).toHaveLength(1);
+    expect(
+      document.body.querySelectorAll(".replay-view__pop-date .hk-input-wrapper"),
+    ).toHaveLength(1);
     // Client: the 全部 option leads, then the host's install options.
     expect(selects[0]!.props("label")).toBe(t("replay.filter.client"));
     expect(selects[0]!.props("placeholder")).toBe(t("replay.filter.allClients"));
@@ -756,22 +777,26 @@ describe("ReplayListFilter trigger", () => {
       { value: "D:/Games/World_of_Warships", label: "Steam · ASIA" },
       { value: "D:/Lesta/WoWS", label: "Lesta · RU" },
     ]);
-    // Player: the 全部 option leads, then one row per nickname (verbatim).
-    expect(selects[1]!.props("label")).toBe(t("replay.filter.player"));
-    expect(selects[1]!.props("placeholder")).toBe(t("replay.filter.allPlayers"));
-    expect(selects[1]!.props("options")).toEqual([
-      { value: FILTER_ANY, label: t("replay.filter.allPlayers") },
-      { value: "Kaga", label: "Kaga" },
-      { value: "Yamato", label: "Yamato" },
-    ]);
-    // The selects are controlled by the host props; their picks ride out.
+    // Player: a controlled search field carrying the search placeholder
+    // and the persisted query verbatim (it is the initial search text).
+    expect(inputs[0]!.props("placeholder")).toBe(t("replay.filter.playerSearch"));
+    expect(inputs[0]!.props("modelValue")).toBe("kag");
+    // Typing rides out as the host-level query update (live filter); the
+    // raw value passes through — trimming is the filter's job.
+    inputs[0]!.vm.$emit("update:modelValue", "kaga ");
+    expect(wrapper.emitted("update:selectedPlayer")!.at(-1)![0]).toBe("kaga ");
+    // A non-empty query grows the × affix; activating it clears back to
+    // the FILTER_ANY sentinel.
+    expect(document.body.querySelectorAll(".replay-view__pop-player-clear")).toHaveLength(1);
+    const clearBtn = document.body.querySelector<HTMLElement>(".replay-view__pop-player-clear")!;
+    await new DOMWrapper(clearBtn).trigger("click");
+    expect(wrapper.emitted("update:selectedPlayer")!.at(-1)![0]).toBe(FILTER_ANY);
+    // The cleared state (controlled prop) drops the affordance again.
+    await wrapper.setProps({ selectedPlayer: FILTER_ANY });
+    expect(document.body.querySelectorAll(".replay-view__pop-player-clear")).toHaveLength(0);
+    // …and the client pick still rides out as before.
     selects[0]!.vm.$emit("update:modelValue", "D:/Lesta/WoWS");
     expect(wrapper.emitted("update:selectedClient")!.at(-1)![0]).toBe("D:/Lesta/WoWS");
-    selects[1]!.vm.$emit("update:modelValue", "Kaga");
-    expect(wrapper.emitted("update:selectedPlayer")!.at(-1)![0]).toBe("Kaga");
-    // 全部 (FILTER_ANY) is an ordinary option value — picking it clears.
-    selects[1]!.vm.$emit("update:modelValue", FILTER_ANY);
-    expect(wrapper.emitted("update:selectedPlayer")!.at(-1)![0]).toBe(FILTER_ANY);
   });
 
   it("the funnel wears the engaged look while only a client / player pick is set", async () => {

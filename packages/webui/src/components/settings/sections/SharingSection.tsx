@@ -49,7 +49,6 @@ import { useSettingsUiStore } from "@/stores/settingsUi";
 import ReplayListFilter, {
   FILTER_ANY,
   collectModeOptions,
-  collectPlayerOptions,
   filterByClient,
   filterByDateRange,
   filterByPlayer,
@@ -327,9 +326,6 @@ export default defineComponent({
 
     const modeOptions = computed(() =>
       collectModeOptions(allReplays.value, selectedModes.value),
-    );
-    const playerOptions = computed(() =>
-      collectPlayerOptions(allReplays.value, [selectedPlayer.value]),
     );
     const clientOptions = computed(() => {
       // The client dimension lists the installs the entries themselves
@@ -1236,7 +1232,6 @@ export default defineComponent({
                       clientOptions={clientOptions.value}
                       onUpdate:selectedClient={(v: string) => (selectedClient.value = v)}
                       selectedPlayer={selectedPlayer.value}
-                      playerOptions={playerOptions.value}
                       onUpdate:selectedPlayer={(v: string) => (selectedPlayer.value = v)}
                     />
                   </div>

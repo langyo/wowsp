@@ -18,12 +18,19 @@
  *     never selects an option).
  *
  * The host binds `attach` as the template ref on the HkScrollContainer
- * itself: the component's exposed handle resolves the scrolling viewport,
- * and the container root (the strip class, the grab cursor, data-panning)
- * is that viewport's parent. The composable only wires listeners while
- * the container is mounted.
+ * itself: the component's exposed handle is STORED, and the scrolling
+ * viewport is resolved through it LAZILY — after the mounting flush
+ * settles AND again at every event. Vue fires a function ref
+ * synchronously in the middle of the patch that mounts the container,
+ * while the child's own template ref (the viewport) is still a queued
+ * post-flush job — an eager resolve at ref-call time answered undefined
+ * and left both the wheel and the drag silently dead (the
+ * FilterCategoryChip popups mount the container inside HkPopover's
+ * teleported slot exactly this way). Event-time resolution is always late
+ * enough: by the first event the popup DOM has long settled. The
+ * composable only wires listeners while the container is mounted.
  */
-import { onBeforeUnmount, ref, watch, type Ref } from "vue";
+import { onBeforeUnmount, ref, shallowRef, watch, type Ref } from "vue";
 
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 
@@ -49,6 +56,12 @@ export function panEngaged(dx: number, dy: number, threshold: number): boolean {
   return Math.abs(dx) >= threshold || Math.abs(dy) >= threshold;
 }
 
+/** The slice of HkScrollContainer's exposed handle this composable
+ *  consumes: the live scrolling viewport, readable at any time. */
+interface ScrollContainerHandle {
+  getScrollElement?: () => HTMLElement | undefined;
+}
+
 /** Wire one strip container with the pan machinery. The host binds
  *  `attach` (template ref on the HkScrollContainer) and mirrors `panning`
  *  into data-panning; every listener — the drag-pan's pointerdown, the
@@ -61,8 +74,10 @@ export function useOptionStrip() {
   /** The container ROOT — the element the strip class, the grab cursor
    *  and data-panning live on, and the pointer surface for the drag. */
   const stripEl: Ref<HTMLElement | null> = ref(null);
-  /** The real scroller: hikari's viewport inside the container root. */
-  let viewportEl: HTMLElement | null = null;
+  /** The HkScrollContainer handle the host's function ref handed over.
+   *  The viewport itself is NEVER cached past an event: see
+   *  resolveViewport. */
+  const handle = shallowRef<ScrollContainerHandle | null>(null);
   const panning = ref(false);
   // The root DPI zoom the drag-pan converts against — see onPointerMove
   // (`1` while the interface-scale preference is Auto).
@@ -76,24 +91,47 @@ export function useOptionStrip() {
    *  that one) must not select an option. */
   let dragged = false;
 
+  /** Resolve the scrolling viewport through the stored handle, NOW.
+   *  getScrollElement() reads the container's own template ref at call
+   *  time, so this is correct whenever the container DOM exists — which
+   *  is every state in which an event can fire (a function ref fires
+   *  mid-patch, BEFORE that template ref lands, which is why attach only
+   *  stores the handle and the first resolve happens post-flush). The
+   *  container root (viewport.parentElement) rides along so the strip
+   *  class / grab cursor / listeners land on the right element. */
+  function resolveViewport(): HTMLElement | null {
+    const vp = handle.value?.getScrollElement?.() ?? null;
+    stripEl.value = vp?.parentElement ?? null;
+    return vp;
+  }
+
   /** Bind as the template ref on the HkScrollContainer rendering the
    *  strip. The ref value is the component's exposed handle; its
    *  getScrollElement() is the scrolling viewport, and that viewport's
-   *  parent is the container root. */
+   *  parent is the container root. Storing the handle is all attach does
+   *  synchronously — Vue invokes function refs in the middle of the
+   *  mounting patch, before the container's viewport template ref is
+   *  bound, so an eager getScrollElement() here can answer undefined.
+   *  The post watcher below settles the first resolve once the flush's
+   *  queued template-ref jobs have run. */
   function attach(target: unknown) {
     if (target == null) {
-      viewportEl = null;
+      handle.value = null;
       stripEl.value = null;
       return;
     }
-    const handle = target as { getScrollElement?: () => HTMLElement | undefined };
-    const vp = handle.getScrollElement?.() ?? null;
-    viewportEl = vp;
-    stripEl.value = vp?.parentElement ?? null;
+    handle.value = target as ScrollContainerHandle;
+    resolveViewport();
   }
 
+  // Post-flush first resolve: queued when attach stores the handle, run
+  // AFTER the same flush's template-ref jobs — the moment the viewport
+  // (and with it the container root) becomes resolvable and the pan
+  // listeners can attach.
+  watch(handle, () => resolveViewport(), { flush: "post" });
+
   function onWheel(e: WheelEvent) {
-    const el = viewportEl;
+    const el = resolveViewport();
     if (!el || el.scrollWidth <= el.clientWidth) return;
     const delta = stripWheelDelta(e.deltaMode, e.deltaX, e.deltaY);
     if (delta === 0) return;
@@ -110,7 +148,11 @@ export function useOptionStrip() {
   }
 
   function onPointerDown(e: PointerEvent) {
-    if (e.pointerType !== "mouse" || e.button !== 0 || !viewportEl) return;
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    // Live resolve (never trust a cached viewport across events — the
+    // popup may have remounted since the last one).
+    const el = resolveViewport();
+    if (!el) return;
     // A pan released off-strip leaves no click behind; clear the stale
     // swallow flag so this press's own click always lands (chip rule).
     dragged = false;
@@ -135,7 +177,7 @@ export function useOptionStrip() {
       stripEl.value?.setPointerCapture(e.pointerId);
     }
     e.preventDefault();
-    const el = viewportEl;
+    const el = resolveViewport();
     if (!el) return;
     // The pointer delta is visual px while scrollLeft is the strip's
     // zoomed local space — divide by the applied scale or the pan runs

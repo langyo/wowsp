@@ -16,7 +16,8 @@
     "client": "Client",
     "allClients": "Tous les clients",
     "player": "Joueur",
-    "allPlayers": "Tous les joueurs",
+    "playerSearch": "Rechercher des pseudos de joueurs...",
+    "playerClear": "Effacer la recherche de joueur",
     "dateFrom": "Date de début",
     "dateTo": "Date de fin",
     "dateRange": "Période"
@@ -24,6 +25,10 @@
   "external": {
     "tag": "Externe",
     "close": "Fermer"
+  },
+  "reveal": {
+    "tip": "Afficher dans l'Explorateur",
+    "failed": "Impossible d'ouvrir l'Explorateur"
   },
   "acquire": {
     "pickFiles": "Choisir des fichiers de replay",

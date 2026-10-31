@@ -1,5 +1,5 @@
 import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type CSSProperties, type VNode } from "vue";
-import { Copy, Eye, EyeOff, FileUp, FolderOpen, Laptop, RefreshCw, X } from "@lucide/vue";
+import { Copy, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useReplayPositions } from "@/features/replay/useReplayPositions";
@@ -2040,6 +2040,35 @@ export default defineComponent({
       if (!cur) return;
       void api.openStaticReportWindow(cur.path, entityId ?? null).catch(() => undefined);
     };
+    /** Reveal the opened replay in the OS file manager (desktop): the
+     *  backend re-validates the path (a replay-extension file that exists)
+     *  and hands it to the opener plugin's reveal — the file's folder opens
+     *  with the file pre-selected (support uploads / manual archiving). */
+    const onRevealReplay = () => {
+      const cur = parser.current.value;
+      if (!cur) return;
+      void api.revealReplay(cur.path).catch((e) =>
+        toast.error(`${t("replay.reveal.failed")}\n${(e as Error)?.message ?? ""}`),
+      );
+    };
+    /** The opened replay's path relative to its owning install root — the
+     *  reveal tooltip's second line ("replays\xxx.wowsreplay", archive
+     *  subfolders included). Falls back to the bare file name for rows the
+     *  scan cannot attribute to an install (external picks under unowned
+     *  roots, or a roster still decoding). */
+    const revealRelPath = computed(() => {
+      const cur = parser.current.value;
+      if (!cur) return "";
+      const lite = [...parser.external.value, ...scannedReplays.value].find(
+        (r) => r.path === cur.path,
+      );
+      const root = lite?.installPath;
+      if (root && cur.path.toLowerCase().startsWith(root.toLowerCase())) {
+        const rel = cur.path.slice(root.length).replace(/^[\\/]+/, "");
+        if (rel) return rel;
+      }
+      return cur.path.replace(/^.*[\\/]/, "");
+    });
     /** HolographicMap's exposed playback surface (see HoloMapHandle) — the
      *  chat panel reads its clock for the playhead and calls its pausing
      *  seek when a timeline dot/track is clicked. Null while no map mounts
@@ -2440,7 +2469,6 @@ export default defineComponent({
                     clientOptions={clientOptions.value}
                     onUpdate:selectedClient={(v: string) => (listFilter.selectedClient.value = v)}
                     selectedPlayer={listFilter.selectedPlayer.value}
-                    playerOptions={listFilter.playerOptions.value}
                     onUpdate:selectedPlayer={(v: string) => (listFilter.selectedPlayer.value = v)}
                   />
                 ) : null}
@@ -2592,6 +2620,24 @@ export default defineComponent({
                 <div class="replay-view__content">
                   {parser.error.value ? (
                     <ErrorCard error={parser.error.value} />
+                  ) : null}
+                  {/* The reveal shortcut (top-right corner of the opened
+                      replay): transparent ghost icon button that shows the
+                      replay file pre-selected in the OS file manager. The
+                      native tooltip carries the label plus the replay's
+                      install-relative path (see revealRelPath). Desktop
+                      app only — phones have no file manager and a plain
+                      browser tab has no such command. */}
+                  {isNative() && !isMobileApp() && parser.current.value.path ? (
+                    <button
+                      type="button"
+                      class="replay-view__reveal"
+                      title={`${t("replay.reveal.tip")}\n${revealRelPath.value}`}
+                      aria-label={t("replay.reveal.tip")}
+                      onClick={onRevealReplay}
+                    >
+                      <FolderSearch size={14} />
+                    </button>
                   ) : null}
                   <header class="replay-view__meta">
                     {/* The map as a jump tag (shared with the live head): hover

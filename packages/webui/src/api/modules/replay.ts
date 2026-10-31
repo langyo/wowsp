@@ -92,6 +92,13 @@ export interface ReplayMetaLite {
    *  rail titles each card with it (the renamed `ownShipName`, which used
    *  to hold this same nickname but never said so). */
   playerName?: string | null;
+  /** Every HUMAN participant's nickname (both sides, roster order; bots and
+   *  scripted scenario units excluded) — the rail's player-search filter
+   *  matches these, so a search finds any battle a given player fought in,
+   *  not only the ones this client recorded. Absent on payloads from an
+   *  older backend (phone pairing serves the same DTO) — callers fall back
+   *  to `playerName` alone. */
+  playerNames?: string[] | null;
   /** Number of players in the roster. */
   playerCount: number;
   /** Root path (GameInstall.path) of the install whose `replays/` folder
@@ -1022,6 +1029,9 @@ export const replayApi = {
    *  single-root behavior (`dir` or the active install's folder). */
   listReplaysMeta: (dir?: string, limit?: number, all?: boolean) =>
     transport.invoke<ReplayMetaLite[]>(RPC.list_replays_meta, { dir, limit, all }),
+  /** Reveal one replay file in the OS file manager (Explorer), pre-selected.
+   *  Desktop only — the phone shell has no file manager. */
+  revealReplay: (path: string) => transport.invoke<null>(RPC.replays_reveal, { path }),
   /** Inventory every playable map in a local game install (space id, VFS
    *  minimap path, backing .pkg volume + its mtime). Desktop only — the
    *  shell answers with an error on phones. */

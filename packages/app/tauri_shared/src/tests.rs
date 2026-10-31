@@ -181,6 +181,7 @@ fn replay_meta_lite_renames_player_and_install_fields() {
         enemy_count: 1,
         own_ship_id: Some(4282948544),
         player_name: Some("langyo".into()),
+        player_names: vec!["langyo".into(), "teammate".into()],
         player_count: 12,
         install_path: Some(r"C:\Games\World of Warships".into()),
         install_kind: Some(GameInstallKind::Steam),
@@ -190,6 +191,7 @@ fn replay_meta_lite_renames_player_and_install_fields() {
     for key in [
         "ownShipId",
         "playerName",
+        "playerNames",
         "playerCount",
         "dateTime",
         "matchGroup",
@@ -203,6 +205,8 @@ fn replay_meta_lite_renames_player_and_install_fields() {
     }
     assert_eq!(v["ownShipId"], 4_282_948_544_i64);
     assert_eq!(v["playerName"], "langyo");
+    assert_eq!(v["playerNames"][0], "langyo");
+    assert_eq!(v["playerNames"][1], "teammate");
     assert_eq!(v["installKind"], "steam");
     // The install tags are serde-defaulted: a payload from before they
     // existed parses instead of failing the whole list.
@@ -211,6 +215,10 @@ fn replay_meta_lite_renames_player_and_install_fields() {
     });
     let legacy: ReplayMetaLite = serde_json::from_value(legacy).unwrap();
     assert_eq!(legacy.enemy_count, 0, "enemyCount is serde-defaulted");
+    assert!(
+        legacy.player_names.is_empty(),
+        "playerNames is serde-defaulted"
+    );
 }
 
 /// Wire-critical payload: pin the EXACT key set so an additive field
@@ -266,6 +274,7 @@ fn replay_meta_lite_pins_the_exact_wire_key_set() {
         enemy_count: 0,
         own_ship_id: Some(4_279_574_672_i64),
         player_name: Some("Kremlin".into()),
+        player_names: vec!["Kremlin".into()],
         player_count: 7,
         install_path: Some(r"C:\Games\World of Warships".into()),
         install_kind: Some(GameInstallKind::Cn360),
@@ -286,6 +295,7 @@ fn replay_meta_lite_pins_the_exact_wire_key_set() {
             "enemyCount",
             "ownShipId",
             "playerName",
+            "playerNames",
             "playerCount",
             "installPath",
             "installKind",

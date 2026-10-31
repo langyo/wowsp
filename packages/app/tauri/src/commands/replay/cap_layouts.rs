@@ -352,6 +352,7 @@ mod tests {
             enemy_count: 0,
             own_ship_id: None,
             player_name: None,
+            player_names: Vec::new(),
             player_count: 0,
             install_path: None,
             install_kind: None,

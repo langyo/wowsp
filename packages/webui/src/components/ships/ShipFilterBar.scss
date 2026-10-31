@@ -298,6 +298,19 @@
   display: flex;
   width: fit-content;
   max-width: 100%;
+  /* __opts' wrap must not leak onto the scroll root (measured in a real
+     browser, 2026-10-31): the root is hikari's COLUMN flex container, and
+     a wrapping column sizes each flex line to its widest ITEM — the
+     viewport's own max-content (the full one-line track) — instead of the
+     panel cap, so the viewport grew as wide as its content, never
+     overflowed (scrollWidth == clientWidth) and NEITHER wheel nor drag
+     could move scrollLeft while the pills clipped at the strip edge.
+     nowrap restores hikari's single-line contract: the one flex line then
+     spans the container's (capped) inner width and the viewport actually
+     overflows. The phone sheet re-enables wrap at higher specificity
+     (.hk-popover-panel.hk-is-sheet .ship-filter-bar__opts), so the sheet's
+     wrapping group is untouched. */
+  flex-wrap: nowrap;
 
   /* The whole strip drags (the hint line says so), so the grab
      affordance rides over the option buttons too. Clicks still select:

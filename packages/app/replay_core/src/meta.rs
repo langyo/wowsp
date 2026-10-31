@@ -115,10 +115,12 @@ pub fn lite_and_client_version(path: &std::path::Path) -> (ReplayMetaLite, Optio
             event_type: None,
             bot_count: 0,
             scripted_unit_count: 0,
-            // Header unreadable — no roster, so no enemy-side entries.
+            // Header unreadable — no roster, so no enemy-side entries and
+            // no player vocabulary either.
             enemy_count: 0,
             own_ship_id: None,
             player_name: None,
+            player_names: Vec::new(),
             player_count: 0,
             install_path: None,
             install_kind: None,
@@ -219,6 +221,19 @@ pub fn lite_from_raw(
             own.map(|v| v.name.trim().to_owned())
                 .filter(|name| !name.is_empty())
         });
+    // The rail's player-search vocabulary: every roster nickname that is
+    // neither a `:Name:` bot nor a scripted unit (`IDS_*` / `#Name` —
+    // `is_bot_nickname` covers both), in roster order, duplicates kept
+    // (two slots with the same nickname really are two slots). Names are
+    // trimmed and empty slots dropped first, so a defensive-heal row never
+    // enters the search space nor trips the classifiers on stray
+    // whitespace.
+    let player_names = vehicles
+        .iter()
+        .map(|v| v.name.trim())
+        .filter(|name| !name.is_empty() && !is_bot_nickname(name))
+        .map(str::to_owned)
+        .collect();
 
     ReplayMetaLite {
         path,
@@ -233,6 +248,7 @@ pub fn lite_from_raw(
         enemy_count,
         own_ship_id,
         player_name,
+        player_names,
         player_count,
         // Filled by the scan that owns the root — see `scan_all_replays_meta`.
         install_path: None,

@@ -16,7 +16,8 @@
     "client": "클라이언트",
     "allClients": "모든 클라이언트",
     "player": "플레이어",
-    "allPlayers": "모든 플레이어",
+    "playerSearch": "플레이어 닉네임 검색...",
+    "playerClear": "플레이어 검색 지우기",
     "dateFrom": "시작 날짜",
     "dateTo": "종료 날짜",
     "dateRange": "기간"
@@ -24,6 +25,10 @@
   "external": {
     "tag": "외부",
     "close": "닫기"
+  },
+  "reveal": {
+    "tip": "파일 탐색기에서 보기",
+    "failed": "파일 탐색기를 열 수 없습니다"
   },
   "acquire": {
     "pickFiles": "리플레이 파일 선택",

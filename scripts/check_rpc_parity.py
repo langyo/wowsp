@@ -153,6 +153,7 @@ GATED_COMMANDS: list[str] = [
     "pairing_start",
     "pairing_stop",
     "pick_export_path",
+    "replays_reveal",
     "tactics_profile_open",
     "tactics_profile_save",
     "update_download",
