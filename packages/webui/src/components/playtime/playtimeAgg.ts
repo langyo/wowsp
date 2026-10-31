@@ -228,6 +228,50 @@ function mondayOnOrBefore(d: Date): Date {
  *  at least a year, at most three). `points` may be the time ledger's
  *  days or battle counts per day — only `date` / `value` are read.
  *  `locale` formats the month labels. */
+/**
+ * Dense daily series for hikari's HkCalendarHeatmap (the same-source
+ * migration of PlaytimeHeatmap): the SAME window math as buildHeatGrid —
+ * recent = HEAT_MIN_WEEKS trailing weeks, "all" = first activity through
+ * this week, a year = its full Jan 1..Dec 31 — but instead of a column
+ * grid it emits the flat zero-filled {date, value} list the library
+ * component builds its own grid from. Values come straight off `points`;
+ * days the ledger never touched stay explicit zeros (the component's
+ * hatched gap cells are reserved for pre-first-activity / future days).
+ */
+export function heatDays(
+  points: HeatPoint[],
+  now: Date,
+  year: HeatYear,
+): { date: string; value: number }[] {
+  const map = new Map(points.map((p) => [p.date, p.value]));
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+  let from: Date;
+  let to: Date;
+  if (year === "all") {
+    const weeks = heatWeeks(points, now);
+    const end = mondayOnOrBefore(today);
+    const start = new Date(end);
+    start.setDate(start.getDate() - (weeks - 1) * 7);
+    from = start;
+    to = today;
+  } else if (year === null) {
+    const end = mondayOnOrBefore(today);
+    const start = new Date(end);
+    start.setDate(start.getDate() - (HEAT_MIN_WEEKS - 1) * 7);
+    from = start;
+    to = today;
+  } else {
+    from = new Date(year, 0, 1, 12);
+    to = new Date(year, 11, 31, 12);
+  }
+  const out: { date: string; value: number }[] = [];
+  for (const d = new Date(from); d.getTime() <= to.getTime(); d.setDate(d.getDate() + 1)) {
+    const key = dayKey(d);
+    out.push({ date: key, value: map.get(key) ?? 0 });
+  }
+  return out;
+}
+
 export function buildHeatGrid(
   points: HeatPoint[],
   now: Date,

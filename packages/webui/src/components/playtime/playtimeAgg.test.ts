@@ -20,6 +20,33 @@ import {
  */
 const NOW = new Date(2026, 9, 5, 15, 0, 0);
 
+import { heatDays } from "./playtimeAgg";
+
+describe("heatDays (the hikari calendar-heatmap adapter)", () => {
+  const NOW = new Date(2026, 9, 15, 12); // Thursday 2026-10-15
+
+  it("recent window: 53 weeks back ending TODAY, dense with explicit zeros", () => {
+    const days = heatDays([{ date: "2026-10-14", value: 3 }], NOW, null);
+    expect(days[0].date).toBe("2025-10-13"); // the Monday 52 weeks back
+    expect(days[days.length - 1].date).toBe("2026-10-15"); // today — the trailing partial week is the component's to pad
+    expect(days.find((d) => d.date === "2026-10-14")).toEqual({ date: "2026-10-14", value: 3 });
+    expect(days.find((d) => d.date === "2026-10-13")).toEqual({ date: "2026-10-13", value: 0 });
+  });
+
+  it("a year window runs Jan 1 through Dec 31", () => {
+    const days = heatDays([], NOW, 2025);
+    expect(days).toHaveLength(365);
+    expect(days[0].date).toBe("2025-01-01");
+    expect(days[days.length - 1].date).toBe("2025-12-31");
+  });
+
+  it("the all window honors the 53-week floor (a short history keeps the year shape)", () => {
+    const days = heatDays([{ date: "2026-01-20", value: 1 }], NOW, "all");
+    expect(days[0].date).toBe("2025-10-13"); // heatWeeks floors at 53 weeks
+    expect(days[days.length - 1].date).toBe("2026-10-15"); // today
+  });
+});
+
 describe("fmtDuration / fmtAxis", () => {
   it("formats compact durations", () => {
     expect(fmtDuration(0)).toBe("0m");
