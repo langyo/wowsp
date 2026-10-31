@@ -12,7 +12,8 @@
  * is one IPC away).
  */
 import { computed, defineComponent, ref, type PropType } from "vue";
-import { Camera, Download, Loader2, X } from "@lucide/vue";
+import { HkButton, HkScrollContainer, HkSpinner, HkTag } from "@celestia-island/hikari";
+import { Camera, Download, X } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { StaticMoment, StaticReport, StaticRosterEntry } from "@/api";
 import "./StaticReportPanel.scss";
@@ -41,18 +42,20 @@ export function coverageClass(c: { samples: number; completeness: number }): str
 
 /** The caption params per category; the localized sentence comes from
  * the i18n table keyed by `replay.report.cat_<category>`. */
+/** Category → the HkTag variant (and marker class) it paints — one table
+ * so the card badge and the timeline marker can never disagree. */
+const CATEGORY_TONE: Record<
+  StaticMoment["category"],
+  { tone: string; tag: "success" | "danger" | "warning" | "info" }
+> = {
+  damageRealized: { tone: "good", tag: "success" },
+  missedOpportunity: { tone: "bad", tag: "danger" },
+  weakWindow: { tone: "bad", tag: "danger" },
+  forcedShot: { tone: "warn", tag: "warning" },
+  strongWindow: { tone: "ok", tag: "info" },
+};
 function categoryTone(category: StaticMoment["category"]): string {
-  switch (category) {
-    case "damageRealized":
-      return "good";
-    case "missedOpportunity":
-    case "weakWindow":
-      return "bad";
-    case "forcedShot":
-      return "warn";
-    default:
-      return "ok";
-  }
+  return CATEGORY_TONE[category].tone;
 }
 
 const Sparkline = defineComponent({
@@ -170,34 +173,31 @@ export default defineComponent({
       <div class="static-report-panel" role="dialog">
         <div class="static-report-panel__chrome">
           <span class="static-report-panel__title">{i18nT("replay.report.title")}</span>
-          {props.loading ? (
-            <Loader2 class="static-report-panel__spin" size={14} />
-          ) : null}
+          {props.loading ? <HkSpinner size={14} /> : null}
           <div class="static-report-panel__actions">
-            <button
-              class="static-report-panel__btn"
+            <HkButton
+              variant="secondary"
+              size="sm"
               disabled={exporting.value}
               onClick={() => void exportPng()}
             >
-              {exporting.value ? (
-                <Loader2 size={13} />
-              ) : (
-                <Download size={13} />
-              )}
+              {exporting.value ? null : <Download size={13} />}
               <span>{i18nT(exporting.value ? "replay.report.exporting" : "replay.report.export")}</span>
-            </button>
+            </HkButton>
             {props.onClose ? (
-              <button
-                class="static-report-panel__btn static-report-panel__btn--plain"
+              <HkButton
+                variant="ghost"
+                size="sm"
                 onClick={() => props.onClose()}
                 aria-label={i18nT("replay.report.close")}
               >
                 <X size={14} />
-              </button>
+              </HkButton>
             ) : null}
           </div>
         </div>
 
+        <HkScrollContainer class="static-report-panel__scroll">
         <div class="static-report-panel__export-root">
           {/* ── perspective picker (both teams, coverage-badged) ── */}
           <div class="srp-picker">
@@ -271,14 +271,14 @@ export default defineComponent({
             <div class="srp-head__id">
               <span class="srp-head__name">{me.value?.name ?? props.report.entityId}</span>
               {me.value?.isRecorder ? (
-                <span class="srp-head__tag">{i18nT("replay.report.recorder")}</span>
+                <HkTag variant="info" size="sm">{i18nT("replay.report.recorder")}</HkTag>
               ) : null}
               {me.value?.diedAt != null ? (
-                <span class="srp-head__tag srp-head__tag--dead">
+                <HkTag variant="danger" size="sm">
                   {i18nT("replay.report.diedAt", { t: Math.round(me.value.diedAt) })}
-                </span>
+                </HkTag>
               ) : (
-                <span class="srp-head__tag">{i18nT("replay.report.survived")}</span>
+                <HkTag variant="success" size="sm">{i18nT("replay.report.survived")}</HkTag>
               )}
               <span class="srp-head__map">
                 {props.report.mapName?.replace("spaces/", "") ?? ""} ·{" "}
@@ -347,18 +347,19 @@ export default defineComponent({
                       {String(Math.floor(m.t / 60)).padStart(2, "0")}:
                       {String(Math.floor(m.t % 60)).padStart(2, "0")}
                     </span>
-                    <span class={`srp-moment__cat srp-moment__cat--${categoryTone(m.category)}`}>
+                    <HkTag variant={CATEGORY_TONE[m.category].tag} size="sm">
                       {i18nT(`replay.report.cat_${m.category}`)}
-                    </span>
+                    </HkTag>
                     {props.onSeek ? (
-                      <button
-                        class="srp-moment__seek"
+                      <HkButton
+                        variant="secondary"
+                        size="xs"
                         onClick={() => props.onSeek?.(m.t)}
                         aria-label={i18nT("replay.report.seekHint")}
                       >
                         <Camera size={12} />
                         <span>{i18nT("replay.report.seek")}</span>
-                      </button>
+                      </HkButton>
                     ) : null}
                   </div>
                   <div class="srp-moment__body">
@@ -444,6 +445,7 @@ export default defineComponent({
             {props.report.modelSources.moveModel.split(/[\\/]/).pop()}
           </div>
         </div>
+        </HkScrollContainer>
       </div>
     );
   },
