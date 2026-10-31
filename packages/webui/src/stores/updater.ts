@@ -233,7 +233,7 @@ export const useUpdaterStore = defineStore("updater", () => {
     }
   }
 
-  async function check() {
+  async function check(opts: { quiet?: boolean } = {}) {
     if (portable.value) return;
     checking.value = true;
     error.value = null;
@@ -247,6 +247,12 @@ export const useUpdaterStore = defineStore("updater", () => {
       // global nag; the message just lands in `error`. Tauri rejects
       // commands with the raw Err string, not an Error instance.
       error.value = e instanceof Error ? e.message : String(e);
+      // Explicit checks say WHY they failed (transient toast); the
+      // startup auto-check passes quiet and stays silent — the pill on
+      // the updates card covers it.
+      if (!opts.quiet) {
+        toast.error(t("settings.updatesCheckFailed", { message: error.value }));
+      }
     } finally {
       checked.value = true;
       checking.value = false;
@@ -331,7 +337,7 @@ export const useUpdaterStore = defineStore("updater", () => {
    *  auto-check, delayed so launch I/O isn't contended). */
   function scheduleAutoCheck(delayMs = 5000) {
     if (portable.value) return;
-    setTimeout(() => void check(), delayMs);
+    setTimeout(() => void check({ quiet: true }), delayMs);
   }
 
   /** Resolve once the startup check has settled — immediately when the

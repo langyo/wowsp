@@ -59,9 +59,9 @@ export function useSettingsNetworkState() {
 
   async function saveNet() {
     // Re-fetch the CURRENT config so fields this section does not edit
-    // (githubMirror — saved from the cache section — and future additions)
-    // survive the round-trip instead of being reverted to mount-time
-    // snapshots.
+    // (the GitHub mirror list — saved from the updates section — and
+    // future additions) survive the round-trip instead of being reverted
+    // to mount-time snapshots.
     let base: NetworkConfig;
     try {
       base = await api.getNetworkConfig();
