@@ -175,6 +175,21 @@
   "pnfLoaderMissing": "检测到 PnF 模组，但缺少 PnFModsLoader.py 加载标记——它们在游戏中不会加载。",
   "pnfLoaderRestore": "补建加载标记",
   "pnfLoaderRestored": "已补建 PnFModsLoader.py，PnF 模组恢复加载。",
+  "loaderHealth": {
+    "title": "上次会话插件健康",
+    "framework": "TTaro 共享框架",
+    "kind": {
+      "signatureRefused": "签名校验失败",
+      "frameworkDataMissing": "框架数据缺失",
+      "disabledByDependency": "因缺少依赖被停用"
+    },
+    "hint": {
+      "signatureRefused": "重新安装该插件的目录条目以刷新其签名。",
+      "frameworkDataMissing": "重新安装任一 TTaro 系列插件以修复共享框架数据。",
+      "disabledByDependency": "重新安装任一 TTaro 系列插件以修复共享框架数据。"
+    },
+    "loadedOkSummary": "{count} 个插件正常加载"
+  },
   "staleSidebarKey": "游戏已更新",
   "staleSidebarText": "{count} 个插件文件待迁移",
   "staleSidebarTextProbe": "插件与游戏内探针待迁移",

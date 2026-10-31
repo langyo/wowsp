@@ -388,6 +388,40 @@ export interface PnfLoaderStatus {
   markerPresent: boolean;
 }
 
+/** One loader verdict kind from profile/python.log's recent sessions
+ *  (client.ts counterpart of the kind codes in
+ *  commands/mod_hub/loader_health.rs). */
+export type LoaderHealthKind =
+  | "signatureRefused"
+  | "frameworkDataMissing"
+  | "disabledByDependency"
+  | "loadedOk";
+
+/** One mod's loader verdict from the tail of profile/python.log — why it
+ *  did (or did not) load in the last session. */
+export interface LoaderHealthVerdict {
+  /** Mod name the log line carried; null for the shared-framework verdict
+   *  (it affects every TTaro dependent, not one mod). */
+  modName?: string | null;
+  kind: LoaderHealthKind;
+  /** Short cause line (the log shapes carry no secrets). */
+  detail: string;
+  /** Raw 'YYYY-MM-DD HH:MM:SS.mmm' stamp of the backing line. */
+  at: string;
+}
+
+/** Loader/runtime mod health parsed from an install's profile/python.log
+ *  tail (`mod_hub_loader_health`). */
+export interface LoaderHealthReport {
+  logPath: string;
+  linesScanned: number;
+  /** Newest stamp seen on any scanned line — the last session's moment. */
+  lastSessionAt?: string | null;
+  /** Errors first (signature refusals, the shared framework's missing
+   *  data, dependency-disabled mods), then the loaded-OK rows. */
+  verdicts: LoaderHealthVerdict[];
+}
+
 /** An older `bin/<version>/` whose `res_mods` still carries files —
  *  stranded by a game update, invisible to the hub's installed list. */
 export interface StaleBinInfo {
@@ -509,6 +543,11 @@ export const modHubApi = {
    *  PnFModsLoader.py marker loads nothing in game. */
   modHubPnfLoaderStatus: (gameRoot: string) =>
     transport.invoke<PnfLoaderStatus>(RPC.mod_hub_pnf_loader_status, { gameRoot }),
+  /** Loader/runtime mod health from the tail of profile/python.log —
+   *  signature refusals, the shared TTaro framework's missing data,
+   *  dependency-disabled mods and the quiet loaded-OK rows. */
+  modHubLoaderHealth: (gameRoot: string) =>
+    transport.invoke<LoaderHealthReport>(RPC.mod_hub_loader_health, { gameRoot }),
   /** Write the missing PnFModsLoader.py marker back (gated). */
   modHubRestorePnfLoaderMarker: (gameRoot: string) =>
     transport.invoke<boolean>(RPC.mod_hub_restore_pnf_loader_marker, { gameRoot }),

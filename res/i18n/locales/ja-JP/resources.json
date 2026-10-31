@@ -175,6 +175,21 @@
   "pnfLoaderMissing": "PnF MODはインストールされていますが、PnFModsLoader.pyマーカーがないためゲーム内で読み込まれません。",
   "pnfLoaderRestore": "ローダーマーカーを復元",
   "pnfLoaderRestored": "PnFModsLoader.pyを復元しました — PnF MODが再度読み込まれます。",
+  "loaderHealth": {
+    "title": "前回セッションのプラグイン状態",
+    "framework": "TTaro 共有フレームワーク",
+    "kind": {
+      "signatureRefused": "署名検証に失敗",
+      "frameworkDataMissing": "フレームワークデータの欠落",
+      "disabledByDependency": "依存関係の不足により無効化"
+    },
+    "hint": {
+      "signatureRefused": "カタログ項目を再インストールして署名を更新してください。",
+      "frameworkDataMissing": "TTaro 系のモッドをひとつ再インストールして、共有フレームワークのデータを修復してください。",
+      "disabledByDependency": "TTaro 系のモッドをひとつ再インストールして、共有フレームワークのデータを修復してください。"
+    },
+    "loadedOkSummary": "{count} 個のモッドが正常に読み込まれました"
+  },
   "staleSidebarKey": "ゲームが更新されました",
   "staleSidebarText": "移行待ちのmodファイル {count} 個",
   "staleSidebarTextProbe": "modとゲーム内プラグインが移行待ち",

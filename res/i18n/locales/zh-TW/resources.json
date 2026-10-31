@@ -175,6 +175,21 @@
   "pnfLoaderMissing": "偵測到 PnF 模組,但缺少 PnFModsLoader.py 載入標記——它們在遊戲中不會載入。",
   "pnfLoaderRestore": "補建載入標記",
   "pnfLoaderRestored": "已補建 PnFModsLoader.py,PnF 模組恢復載入。",
+  "loaderHealth": {
+    "title": "上次遊戲階段外掛健康",
+    "framework": "TTaro 共用框架",
+    "kind": {
+      "signatureRefused": "簽名驗證失敗",
+      "frameworkDataMissing": "框架資料缺失",
+      "disabledByDependency": "因缺少相依元件而被停用"
+    },
+    "hint": {
+      "signatureRefused": "重新安裝該外掛的目錄項目以重新整理簽名。",
+      "frameworkDataMissing": "重新安裝任一 TTaro 系列外掛以修復共用框架資料。",
+      "disabledByDependency": "重新安裝任一 TTaro 系列外掛以修復共用框架資料。"
+    },
+    "loadedOkSummary": "{count} 個外掛正常載入"
+  },
   "staleSidebarKey": "遊戲已更新",
   "staleSidebarText": "{count} 個插件檔案待遷移",
   "staleSidebarTextProbe": "插件與遊戲內探針待遷移",

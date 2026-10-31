@@ -175,6 +175,21 @@
   "pnfLoaderMissing": "PnF mods are installed but the PnFModsLoader.py marker is missing — they will not load in game.",
   "pnfLoaderRestore": "Restore the loader marker",
   "pnfLoaderRestored": "PnFModsLoader.py restored — PnF mods will load again.",
+  "loaderHealth": {
+    "title": "Last session plugin health",
+    "framework": "Shared TTaro framework",
+    "kind": {
+      "signatureRefused": "Signature check failed",
+      "frameworkDataMissing": "Framework data missing",
+      "disabledByDependency": "Disabled by a missing dependency"
+    },
+    "hint": {
+      "signatureRefused": "Reinstall this mod's catalog entry to refresh its signature.",
+      "frameworkDataMissing": "Reinstall any TTaro-family mod to repair the shared framework data.",
+      "disabledByDependency": "Reinstall any TTaro-family mod to repair the shared framework data."
+    },
+    "loadedOkSummary": "{count} mod(s) loaded OK"
+  },
   "staleSidebarKey": "Game updated",
   "staleSidebarText": "{count} mod file(s) to migrate",
   "staleSidebarTextProbe": "Mods & in-game plugin to migrate",

@@ -2265,8 +2265,12 @@ fn game_log_candidates(root: &Path) -> Vec<PathBuf> {
 /// Read at most the cap bytes from the END of one file (its mtime rides
 /// along), seek-based: a multi-hundred-MB python.log must never be
 /// slurped whole just to hand the analysis a 2 MiB window. Returns
-/// (window, total size, modified).
-fn read_tail(path: &Path, cap: u64) -> anyhow::Result<(Vec<u8>, u64, Option<SystemTime>)> {
+/// (window, total size, modified). Shared with the mod hub's loader-health
+/// pass (its python.log read is the same bounded-tail discipline).
+pub(crate) fn read_tail(
+    path: &Path,
+    cap: u64,
+) -> anyhow::Result<(Vec<u8>, u64, Option<SystemTime>)> {
     use std::io::{Read as _, Seek as _, SeekFrom};
     let mut file = fs::File::open(path).map_err(|e| anyhow!("open {}: {e}", path.display()))?;
     let meta = file.metadata()?;

@@ -175,6 +175,21 @@
   "pnfLoaderMissing": "PnF 모드가 설치되어 있지만 PnFModsLoader.py 마커가 없어 게임에서 로드되지 않습니다.",
   "pnfLoaderRestore": "로더 마커 복원",
   "pnfLoaderRestored": "PnFModsLoader.py를 복원했습니다 — PnF 모드가 다시 로드됩니다.",
+  "loaderHealth": {
+    "title": "최근 세션 플러그인 상태",
+    "framework": "TTaro 공유 프레임워크",
+    "kind": {
+      "signatureRefused": "서명 검증 실패",
+      "frameworkDataMissing": "프레임워크 데이터 누락",
+      "disabledByDependency": "의존성 누락으로 비활성화됨"
+    },
+    "hint": {
+      "signatureRefused": "카탈로그 항목을 다시 설치해 서명을 갱신하세요.",
+      "frameworkDataMissing": "TTaro 계열 모드를 하나 다시 설치해 공유 프레임워크 데이터를 복구하세요.",
+      "disabledByDependency": "TTaro 계열 모드를 하나 다시 설치해 공유 프레임워크 데이터를 복구하세요."
+    },
+    "loadedOkSummary": "{count}개 모드가 정상적으로 로드됨"
+  },
   "staleSidebarKey": "게임 업데이트됨",
   "staleSidebarText": "이전할 mod 파일 {count}개",
   "staleSidebarTextProbe": "mod 및 게임 내 플러그인 이전 대기",
