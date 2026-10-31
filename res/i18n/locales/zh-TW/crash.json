@@ -119,7 +119,9 @@
   },
   "modlist": {
     "pinnedBadge": "崩潰嫌疑",
-    "quarantinedBadge": "已隔離"
+    "quarantinedBadge": "已隔離",
+    "title": "崩潰嫌疑插件",
+    "manageHint": "開啟崩潰嫌疑管理視窗"
   },
   "safeguard": {
     "title": "崩潰檢測與兜底",

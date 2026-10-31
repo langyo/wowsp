@@ -119,7 +119,9 @@
   },
   "modlist": {
     "pinnedBadge": "Sospechoso del fallo",
-    "quarantinedBadge": "En cuarentena"
+    "quarantinedBadge": "En cuarentena",
+    "title": "Plugins sospechosos",
+    "manageHint": "Abrir la ventana de gestión de plugins sospechosos"
   },
   "safeguard": {
     "title": "Detección de fallos y red de seguridad",

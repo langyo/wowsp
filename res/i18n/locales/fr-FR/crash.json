@@ -119,7 +119,9 @@
   },
   "modlist": {
     "pinnedBadge": "Suspect de plantage",
-    "quarantinedBadge": "Mis en quarantaine"
+    "quarantinedBadge": "Mis en quarantaine",
+    "title": "Plugins suspects",
+    "manageHint": "Ouvrir la fenêtre de gestion des plugins suspects"
   },
   "safeguard": {
     "title": "Détection des plantages et filet de sécurité",

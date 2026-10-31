@@ -119,7 +119,9 @@
   },
   "modlist": {
     "pinnedBadge": "クラッシュ容疑",
-    "quarantinedBadge": "隔離済み"
+    "quarantinedBadge": "隔離済み",
+    "title": "クラッシュ容疑プラグイン",
+    "manageHint": "クラッシュ容疑の管理ウィンドウを開く"
   },
   "safeguard": {
     "title": "クラッシュ検出と安全ネット",

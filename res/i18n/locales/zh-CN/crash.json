@@ -119,7 +119,9 @@
   },
   "modlist": {
     "pinnedBadge": "崩溃嫌疑",
-    "quarantinedBadge": "已隔离"
+    "quarantinedBadge": "已隔离",
+    "title": "崩溃嫌疑插件",
+    "manageHint": "打开崩溃嫌疑管理窗口"
   },
   "safeguard": {
     "title": "崩溃检测与兜底",
