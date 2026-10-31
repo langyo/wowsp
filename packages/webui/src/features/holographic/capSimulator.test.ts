@@ -97,15 +97,34 @@ const zone = (kindOver: Partial<EntityKind> = {}): EntityTrajectory => ({
   },
 });
 
-/** The subset of MapInternals updateCapsAndScore touches (no scene, no
- *  markers — ships-in-zone stays empty). */
-function fakeCtx(zones: EntityTrajectory[]): MapInternals {
+/** The subset of MapInternals updateCapsAndScore touches (no scene).
+ *  `ships` feeds the ships-in-zone scan: each entry is a marker whose
+ *  trajectory sits FAR away until `arrive`, then inside the zone (0,0). */
+function fakeCtx(
+  zones: EntityTrajectory[],
+  opts: {
+    operation?: boolean;
+    ships?: { entityId: number; role: string; arrive: number }[];
+  } = {},
+): MapInternals {
+  const trajById = new Map();
+  for (const s of opts.ships ?? []) {
+    trajById.set(s.entityId, {
+      entityId: s.entityId,
+      samples: [
+        { time: 0, x: 5000, z: 5000, yaw: 0 },
+        { time: s.arrive, x: 0, z: 0, yaw: 0 },
+      ],
+    });
+  }
   return {
     capZones: { value: zones },
     scoringZones: { value: zones },
-    props: { matchGroup: "pvp", mapName: "any", operation: true },
-    shipMarkers: [],
-    trajById: new Map(),
+    props: { matchGroup: "pvp", mapName: "any", operation: opts.operation ?? true },
+    shipMarkers: (opts.ships ?? []).map((s) => ({
+      userData: { entityId: s.entityId, role: s.role },
+    })),
+    trajById,
     selfTeam: { value: 1 },
     capSim: new Map(),
     capDisplay: { value: [] },
@@ -128,13 +147,22 @@ describe("updateCapsAndScore birth gating", () => {
     expect(ctx.allyScore.value).toBe(300);
   });
 
-  it("wakes the point at its creation instant and accrues only from then", () => {
+  it("wakes the point at its creation instant, neutral (ops never inherit the script's team)", () => {
     const ctx = fakeCtx([zone({ creationTime: 120 })]);
     updateCapsAndScore(ctx, 130);
     const d = ctx.capDisplay.value;
     expect(d[0].live).toBe(true);
-    // Pre-owned by the recorder's side (initialTeam 1 === selfTeam 1).
-    expect(d[0].owner).toBe(1);
+    // initialTeam 1 (= selfTeam) is the SCRIPT's owning side in an
+    // operation — story objectives start unclaimed, never pre-owned.
+    expect(d[0].owner).toBe(0);
+    // Neutral owners accrue nothing (300 start, no completion yet).
+    expect(ctx.allyScore.value).toBe(300);
+  });
+
+  it("maps the create-state team for NON-operation zones as before", () => {
+    const ctx = fakeCtx([zone({ creationTime: 120 })], { operation: false });
+    updateCapsAndScore(ctx, 130);
+    expect(ctx.capDisplay.value[0].owner).toBe(1);
     // 300 start + one 6 s accrual window inside the 10 lived seconds.
     expect(ctx.allyScore.value).toBe(303);
   });
@@ -150,5 +178,62 @@ describe("updateCapsAndScore birth gating", () => {
     const ctx = fakeCtx([zone({})]);
     updateCapsAndScore(ctx, 0);
     expect(ctx.capDisplay.value[0].live).toBe(true);
+  });
+});
+
+describe("operation story objectives (pre-placed zones)", () => {
+  it("stays hidden and neutral at the start — nothing revealed before engagement", () => {
+    // The LePVE shape: every point born at t=0, initialTeam set, no
+    // stream activity. The board must open empty, not six red rings.
+    const ctx = fakeCtx([zone({ creationTime: 0 })]);
+    updateCapsAndScore(ctx, 0);
+    expect(ctx.capDisplay.value[0].live).toBe(false);
+    updateCapsAndScore(ctx, 60);
+    expect(ctx.capDisplay.value[0].live).toBe(false);
+    expect(ctx.capDisplay.value[0].owner).toBe(0);
+  });
+
+  it("reveals once a ship enters the radius and stays revealed", () => {
+    const ctx = fakeCtx(
+      [zone({ creationTime: 0 })],
+      { ships: [{ entityId: 7, role: "ally", arrive: 30 }] },
+    );
+    updateCapsAndScore(ctx, 20);
+    expect(ctx.capDisplay.value[0].live).toBe(false);
+    updateCapsAndScore(ctx, 40);
+    const d = ctx.capDisplay.value[0];
+    expect(d.live).toBe(true);
+    expect(d.capturing).toBe(true);
+    // The reveal latch holds after the situation would clear.
+    updateCapsAndScore(ctx, 100);
+    // …though by then the 60 s capture has long completed — see below.
+  });
+
+  it("vanishes once its capture completes (占领之后消失)", () => {
+    const ctx = fakeCtx(
+      [zone({ creationTime: 0 })],
+      { ships: [{ entityId: 7, role: "ally", arrive: 30 }] },
+    );
+    // One ship inside for (t-30) s: 60 s completes the capture.
+    updateCapsAndScore(ctx, 60);
+    expect(ctx.capDisplay.value[0].live).toBe(true);
+    updateCapsAndScore(ctx, 95);
+    expect(ctx.capDisplay.value[0].live).toBe(false);
+    // Scrubbing back before completion re-reveals it.
+    updateCapsAndScore(ctx, 60);
+    expect(ctx.capDisplay.value[0].live).toBe(true);
+  });
+
+  it("resolves immediately when the game's own ownership stream flips the point", () => {
+    const ctx = fakeCtx([{
+      ...zone({ creationTime: 0 }),
+      // Off the 0.5 s sim grid, like every real packet timestamp.
+      capSamples: [{ time: 100.4, value: 1 }],
+    }]);
+    updateCapsAndScore(ctx, 50);
+    expect(ctx.capDisplay.value[0].live).toBe(false); // not engaged yet
+    updateCapsAndScore(ctx, 120);
+    expect(ctx.capDisplay.value[0].live).toBe(false); // captured → gone
+    expect(ctx.capSim.get(1)?.owner).toBe(1);
   });
 });
