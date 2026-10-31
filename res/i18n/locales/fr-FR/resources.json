@@ -175,6 +175,21 @@
   "pnfLoaderMissing": "Des mods PnF sont installés mais le marqueur PnFModsLoader.py est absent — ils ne se chargeront pas en jeu.",
   "pnfLoaderRestore": "Restaurer le marqueur du chargeur",
   "pnfLoaderRestored": "PnFModsLoader.py restauré — les mods PnF se chargeront à nouveau.",
+  "loaderHealth": {
+    "title": "Santé des mods de la dernière session",
+    "framework": "Framework partagé TTaro",
+    "kind": {
+      "signatureRefused": "Échec de la vérification de signature",
+      "frameworkDataMissing": "Données du framework manquantes",
+      "disabledByDependency": "Désactivé faute de dépendance"
+    },
+    "hint": {
+      "signatureRefused": "Réinstallez la fiche catalogue de ce mod pour actualiser sa signature.",
+      "frameworkDataMissing": "Réinstallez un mod de la famille TTaro pour réparer les données du framework partagé.",
+      "disabledByDependency": "Réinstallez un mod de la famille TTaro pour réparer les données du framework partagé."
+    },
+    "loadedOkSummary": "{count} mod(s) chargé(s) correctement"
+  },
   "staleSidebarKey": "Jeu mis à jour",
   "staleSidebarText": "{count} fichier(s) de mod à migrer",
   "staleSidebarTextProbe": "Mods et plugin intégré à migrer",

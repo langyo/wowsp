@@ -2821,6 +2821,224 @@ fn pnf_loader_status_and_heal_cover_the_silent_death_shape() {
     fs::remove_dir_all(&game).ok();
 }
 
+// ── Loader/runtime health from profile/python.log ───────────────────────────
+
+/// The REAL 2026-10-31 lines from this machine's profile/python.log,
+/// verbatim (telemetry suffixes and all): every kind extracts with the
+/// right mod and stamp, the signature pair folds onto ONE verdict, and the
+/// two loaded-OK shapes land on their own names.
+#[test]
+fn loader_health_parses_the_real_session_lines() {
+    let real = "2026-10-31 15:45:22.465: ERROR: [Script] [ModsAPI] [TTaroModUtils] ERROR constants.json missing or invalid; (, Wargaming.net, 42)
+2026-10-31 15:45:34.761: ERROR: [Script] [ModsAPI 2.0] Mod BattleFrame_Torpedoes: signature time is invalid.; (, 49574208729179, 351)
+2026-10-31 15:45:34.761: INFO: [Script] [ModsAPI 2.0] Load mod BattleFrame_Torpedoes failed.; (, 49586039348709, 7)
+2026-10-31 15:45:34.764: INFO: [Script] [ConsumablesMonitor2, ModsAPI] installed.
+2026-10-31 15:45:34.764: INFO: [Script] [ModsAPI 2.0] Loaded user mod: ConsumablesMonitor2Py; (, 49591186137623, 391)
+2026-10-31 15:45:34.766: ERROR: [Script] [ThreeDimentionalRadar, ModsAPI] DISABLED -- TTaroModUtils is a required dependency and did not publish 13 of 13 setting(s): distanceOffset, otherTeam.active.color
+";
+    let report = super::loader_health::parse_loader_health(real);
+    assert_eq!(report.lines_scanned, 6);
+    assert_eq!(
+        report.last_session_at.as_deref(),
+        Some("2026-10-31 15:45:34.766"),
+        "the newest stamp seen on ANY line wins"
+    );
+    let v = &report.verdicts;
+    assert_eq!(v.len(), 5, "{v:?}");
+    // Errors first in the fixed kind order, loaded-OK rows last.
+    assert_eq!(
+        v.iter().map(|x| x.kind).collect::<Vec<_>>(),
+        vec![
+            "signatureRefused",
+            "frameworkDataMissing",
+            "disabledByDependency",
+            "loadedOk",
+            "loadedOk",
+        ]
+    );
+    assert_eq!(v[0].mod_name.as_deref(), Some("BattleFrame_Torpedoes"));
+    assert_eq!(v[0].detail, "signature time is invalid");
+    assert_eq!(v[0].at, "2026-10-31 15:45:34.761");
+    // The shared framework verdict belongs to no single mod.
+    assert_eq!(v[1].mod_name, None);
+    assert_eq!(
+        v[1].detail,
+        "TTaroModUtils: constants.json missing or invalid"
+    );
+    assert_eq!(v[1].at, "2026-10-31 15:45:22.465");
+    assert_eq!(v[2].mod_name.as_deref(), Some("ThreeDimentionalRadar"));
+    assert_eq!(
+        v[2].detail,
+        "TTaroModUtils did not publish 13 of 13 settings"
+    );
+    // The two load receipts are separate names — one verdict each.
+    assert_eq!(
+        v[3].mod_name.as_deref(),
+        Some("ConsumablesMonitor2"),
+        "the old-API receipt names the mod itself"
+    );
+    assert_eq!(
+        v[4].mod_name.as_deref(),
+        Some("ConsumablesMonitor2Py"),
+        "the ModsAPI 2.0 receipt carries the Py-suffixed name"
+    );
+    assert_eq!(v[3].detail, "loaded");
+}
+
+/// Repeated sessions dedupe per (mod, kind) with the NEWEST line's stamp —
+/// the log accumulates sessions, and the install's current state is the
+/// latest verdict.
+#[test]
+fn loader_health_dedupes_per_mod_and_kind_with_newest_stamp() {
+    let log = "2026-10-28 16:29:28.561: INFO: [Script] [ModsAPI 2.0] Load mod BuildViewerPy failed.; (, 49586039348709, 7)
+2026-10-28 16:29:28.561: INFO: [Script] [RegenMonitor, ModsAPI] installed.
+2026-10-29 13:47:49.574: ERROR: [Script] [ThreeDimentionalHydro, ModsAPI] DISABLED -- TTaroModUtils is a required dependency and did not publish 13 of 13 setting(s): distanceOffset
+2026-10-31 15:45:34.761: ERROR: [Script] [ModsAPI 2.0] Mod BuildViewerPy: signature time is invalid.; (, 49574208729179, 351)
+2026-10-31 15:45:34.766: ERROR: [Script] [ThreeDimentionalHydro, ModsAPI] DISABLED -- TTaroModUtils is a required dependency and did not publish 13 of 13 setting(s): distanceOffset
+2026-10-31 15:45:35.001: INFO: [Script] [RegenMonitor, ModsAPI] installed.
+";
+    let report = super::loader_health::parse_loader_health(log);
+    assert_eq!(report.verdicts.len(), 3, "{:?}", report.verdicts);
+    let sig = &report.verdicts[0];
+    assert_eq!(sig.kind, "signatureRefused");
+    assert_eq!(
+        sig.at, "2026-10-31 15:45:34.761",
+        "the refusal and its load-failed echo fold onto one newest-stamped verdict"
+    );
+    let disabled = &report.verdicts[1];
+    assert_eq!(disabled.kind, "disabledByDependency");
+    assert_eq!(
+        disabled.at, "2026-10-31 15:45:34.766",
+        "the newest session's line wins the stamp"
+    );
+    let ok = &report.verdicts[2];
+    assert_eq!(ok.kind, "loadedOk");
+    assert_eq!(ok.at, "2026-10-31 15:45:35.001");
+}
+
+/// Cross-kind supersession: a mod that failed earlier in the window and
+/// loaded fine LATER is healthy — the stale error row must not pin a red
+/// verdict under a last-session title. The shared-framework verdict
+/// (mod None) is never superseded.
+#[test]
+fn loader_health_supersedes_an_error_with_a_later_loaded_ok() {
+    let log = concat!(
+        "2026-10-28 16:29:28.561: ERROR: [Script] [ModsAPI 2.0] Mod BuildViewerPy: signature time is invalid.; (, 49574208729179, 351)\n",
+        "2026-10-31 15:45:35.001: INFO: [Script] [ModsAPI 2.0] Loaded user mod: BuildViewerPy; (, 49591186137623, 391)\n",
+        "2026-10-31 15:45:22.465: ERROR: [Script] [ModsAPI] [TTaroModUtils] ERROR constants.json missing or invalid; (, Wargaming.net, 42)\n",
+    );
+    let report = super::loader_health::parse_loader_health(log);
+    // BuildViewerPy's refusal is superseded by its later load; only the
+    // framework verdict and the loadedOk row remain.
+    assert_eq!(report.verdicts.len(), 2, "{:?}", report.verdicts);
+    assert_eq!(report.verdicts[0].kind, "frameworkDataMissing");
+    assert_eq!(report.verdicts[1].kind, "loadedOk");
+    // The wire shape the webui reads: camelCase modName (the strip's row
+    // label keys on it — a mismatch renders every row as the framework).
+    let wire = serde_json::to_value(&report.verdicts[0]).unwrap();
+    assert!(wire.get("modName").is_some(), "wire: {wire}");
+    assert!(wire.get("mod").is_none(), "wire: {wire}");
+}
+
+/// Sort: error kinds before loaded-OK, each group newest first; the verdict
+/// list caps at 64 (errors survive the cap — they lead the sort).
+#[test]
+fn loader_health_sorts_errors_first_and_caps_verdicts() {
+    let mut log = String::new();
+    // Newest-stamped refusal sorts ahead of an older one inside the group.
+    log.push_str("2026-10-28 16:00:00.000: ERROR: [Script] [ModsAPI 2.0] Mod OldFailure: signature time is invalid.; (, 1, 1)
+");
+    log.push_str("2026-10-31 16:00:00.000: ERROR: [Script] [ModsAPI 2.0] Mod NewFailure: signature time is invalid.; (, 1, 1)
+");
+    for i in 0..70 {
+        log.push_str(&format!(
+            "2026-10-30 12:00:{i:02}.000: INFO: [Script] [ModNumber{i}, ModsAPI] installed.
+"
+        ));
+    }
+    let report = super::loader_health::parse_loader_health(&log);
+    assert_eq!(report.verdicts.len(), 64, "the verdict list caps");
+    assert_eq!(report.verdicts[0].mod_name.as_deref(), Some("NewFailure"));
+    assert_eq!(report.verdicts[1].mod_name.as_deref(), Some("OldFailure"));
+    assert_eq!(report.verdicts[2].kind, "loadedOk");
+    assert_eq!(report.verdicts[63].kind, "loadedOk");
+}
+
+/// Tolerance: garbage, unstamped and mid-file-cut lines are skipped
+/// silently; empty input answers an empty report.
+#[test]
+fn loader_health_skips_malformed_lines_and_empty_input() {
+    let junk = "not a log line at all
+2026-10-31 15:45:34: ERROR: [Script] no milliseconds — the stamp shape fails
+alid.; (, 49586039348709, 7)
+2026-10-31 15:45:34.761: ERROR: [Script] [ModsAPI] an unknown error shape; (, 1, 1)
+2026-10-31 15:45:34.762: INFO: [Script] [ModsAPI]    [INFO]: mod SomeXml.xml already installed. Pass; (, 2, 2)
+";
+    let report = super::loader_health::parse_loader_health(junk);
+    assert_eq!(report.verdicts.len(), 0, "{:?}", report.verdicts);
+    assert_eq!(
+        report.last_session_at.as_deref(),
+        Some("2026-10-31 15:45:34.762"),
+        "stamps are tracked even on lines that produce no verdict"
+    );
+
+    let empty = super::loader_health::parse_loader_health("");
+    assert_eq!(empty.lines_scanned, 0);
+    assert_eq!(empty.verdicts.len(), 0);
+    assert_eq!(empty.last_session_at, None);
+}
+
+/// Command-level shape: a known root's python.log tail parses into the
+/// report, and a root with no log answers an EMPTY report (never an
+/// error — a never-launched install must stay quiet).
+#[test]
+fn loader_health_command_shapes_the_report_for_a_known_root() {
+    let game = std::env::temp_dir().join("wowsp_loader_health_cmd");
+    let _ = fs::remove_dir_all(&game);
+    fs::create_dir_all(game.join("profile")).unwrap();
+    fs::write(
+        game.join("profile/python.log"),
+        "2026-10-31 15:45:34.761: ERROR: [Script] [ModsAPI 2.0] Mod BattleFrame_Torpedoes: signature time is invalid.; (, 49574208729179, 351)
+2026-10-31 15:45:34.764: INFO: [Script] [ConsumablesMonitor2, ModsAPI] installed.
+",
+    )
+    .unwrap();
+    let root = game.to_string_lossy().into_owned();
+    super::test_allow_game_root(&root);
+
+    let report = mod_hub_loader_health(root.clone()).unwrap();
+    assert!(
+        report
+            .log_path
+            .replace('\\', "/")
+            .ends_with("profile/python.log"),
+        "{}",
+        report.log_path
+    );
+    assert_eq!(report.verdicts.len(), 2);
+    assert_eq!(report.verdicts[0].kind, "signatureRefused");
+    assert_eq!(
+        report.last_session_at.as_deref(),
+        Some("2026-10-31 15:45:34.764")
+    );
+
+    // No log yet — empty report, not an error.
+    fs::remove_file(game.join("profile/python.log")).unwrap();
+    let empty = mod_hub_loader_health(root).unwrap();
+    assert_eq!(empty.verdicts.len(), 0);
+    assert_eq!(empty.lines_scanned, 0);
+    assert_eq!(empty.last_session_at, None);
+
+    // Unknown roots are refused like every other game_root command.
+    let ghost = std::env::temp_dir()
+        .join(format!("wowsp-ghost-{}", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
+    assert!(mod_hub_loader_health(ghost).is_err());
+
+    fs::remove_dir_all(&game).ok();
+}
+
 /// The wizard migration deletes the source marker as bookkeeping — a REAL
 /// (non-empty) foreign loader must transplant its bytes to the destination
 /// instead of being downgraded to the bare 0-byte marker.

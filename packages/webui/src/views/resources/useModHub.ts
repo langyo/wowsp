@@ -15,6 +15,7 @@ import {
   type ForeignModUnit,
   type GameInstall,
   type InstalledMod,
+  type LoaderHealthReport,
   type ModInstallRecord,
   type ModKind,
   type PackagePlan,
@@ -156,6 +157,11 @@ export function useModHub() {
   // "everything silently dead" shape (banner + one-click heal).
   const loaderStatus = ref<PnfLoaderStatus | null>(null);
   const restoringLoader = ref(false);
+  // Loader/runtime mod health — the last python.log sessions' verdicts
+  // (signature refusals, the shared TTaro framework's missing data,
+  // dependency-disabled mods). Informational only: no auto-repair rides
+  // this surface.
+  const loaderHealth = ref<LoaderHealthReport | null>(null);
   // `migrating` means "the wizard's execute step is in flight"; the ⋯ menu
   // entry and the stale banner button both disable on it. (Owned by the
   // wizard composable — see useMigrateWizard.)
@@ -789,12 +795,18 @@ export function useModHub() {
         return null;
       });
       if (!isCurrent()) return;
+      const health = await api.modHubLoaderHealth(root).catch((e) => {
+        console.warn("loader-health detection failed", e);
+        return null;
+      });
+      if (!isCurrent()) return;
       const quarantined = await api.modHubSafeMode(root).catch(() => false);
       if (!isCurrent()) return;
       installed.value = mods;
       foreignUnits.value = foreign;
       staleBins.value = stale;
       loaderStatus.value = loader;
+      loaderHealth.value = health;
       safeMode.value = quarantined;
       // Same data the sidebar prompt polls — adopt it so the footer row
       // clears the moment a migration finishes, not on the next poll.
@@ -1459,6 +1471,20 @@ export function useModHub() {
     }
   }
 
+  // ── Loader/runtime health projections ──
+  /** The strip's error rows: everything that is not a quiet loaded-OK
+   *  verdict (the report already sorts errors ahead of the OK rows, so
+   *  filtering keeps that order). */
+  const loaderHealthErrors = computed(() =>
+    (loaderHealth.value?.verdicts ?? []).filter((v) => v.kind !== "loadedOk"),
+  );
+  /** The quiet "N loaded OK" summary line's count. */
+  const loaderHealthOkCount = computed(
+    () =>
+      (loaderHealth.value?.verdicts ?? []).filter((v) => v.kind === "loadedOk")
+        .length,
+  );
+
   const selectedRowKey = computed(() => {
     const sel = selection.value;
     if (sel?.mode === "catalog") return sel.entry.id;
@@ -1513,6 +1539,7 @@ export function useModHub() {
     foreignUnits.value = [];
     staleBins.value = [];
     loaderStatus.value = null;
+    loaderHealth.value = null;
     safeMode.value = false;
     selection.value = null;
     selectedPreset.value = "";
@@ -1568,6 +1595,9 @@ export function useModHub() {
     staleBins,
     loaderStatus,
     restoringLoader,
+    loaderHealth,
+    loaderHealthErrors,
+    loaderHealthOkCount,
     safeMode,
     safeModeAsk,
     safeModeBusy,

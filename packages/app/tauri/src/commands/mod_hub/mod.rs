@@ -758,6 +758,7 @@ mod classify;
 pub(crate) mod foreign;
 mod install;
 mod installed_units;
+mod loader_health;
 pub(crate) mod manifest;
 mod model_preview;
 pub(crate) mod pick_source;
@@ -796,6 +797,9 @@ pub use classify::{
     __cmd__mod_hub_classify_path, __tauri_command_name_mod_hub_classify_path, mod_hub_classify_path,
 };
 pub use install::{__cmd__mod_hub_install, __tauri_command_name_mod_hub_install, mod_hub_install};
+pub use loader_health::{
+    __cmd__mod_hub_loader_health, __tauri_command_name_mod_hub_loader_health, mod_hub_loader_health,
+};
 pub use model_preview::{
     __cmd__mod_hub_read_model, __tauri_command_name_mod_hub_read_model, mod_hub_read_model,
 };

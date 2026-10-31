@@ -2,6 +2,7 @@ import { defineComponent, ref, watch } from "vue";
 import {
   AlertTriangle,
   AudioLines,
+  ChevronDown,
   Ellipsis,
   FolderSearch,
   FolderSync,
@@ -101,6 +102,9 @@ export default defineComponent({
   // rebuilds the live tree, so the installed rows rescan afterwards.
   const purgeBackups = usePurgeBackups(hub.gameRoot, () => void hub.scan());
   const purgeBackupsOpen = ref(false);
+  // Last-session plugin health (loader verdicts from python.log): the
+  // collapsible strip's open state — collapsed by default, one line.
+  const loaderHealthOpen = ref(false);
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
     const fileWindow = useFileListWindow(hub);
@@ -335,6 +339,63 @@ export default defineComponent({
                     >
                       {t("resources.pnfLoaderRestore")}
                     </HkButton>
+                  </div>
+                )}
+
+              {hub.source.value === "installed" &&
+                hub.loaderHealthErrors.value.length > 0 &&
+                hub.gameRoot.value &&
+                !hub.safeMode.value && (
+                  <div class="loader-health">
+                    <button
+                      type="button"
+                      class="loader-health__head"
+                      aria-expanded={loaderHealthOpen.value}
+                      data-hint={t("resources.loaderHealth.title")}
+                      onClick={() => (loaderHealthOpen.value = !loaderHealthOpen.value)}
+                    >
+                      <AlertTriangle size={14} />
+                      <span class="loader-health__title">
+                        {t("resources.loaderHealth.title")}
+                      </span>
+                      <span class="loader-health__badge">
+                        {hub.loaderHealthErrors.value.length}
+                      </span>
+                      <ChevronDown
+                        size={14}
+                        class={{ "is-open": loaderHealthOpen.value }}
+                      />
+                    </button>
+                    {loaderHealthOpen.value && (
+                      <div class="loader-health__body">
+                        {hub.loaderHealthErrors.value.map((v, i) => (
+                          <div
+                            class="loader-health__row"
+                            key={`${v.modName ?? "framework"}-${v.kind}-${i}`}
+                          >
+                            <span class="loader-health__row-main">
+                              <span class="loader-health__row-name">
+                                {v.modName ?? t("resources.loaderHealth.framework")}
+                              </span>
+                              <span class="loader-health__row-kind">
+                                {t(`resources.loaderHealth.kind.${v.kind}`)}
+                              </span>
+                              <span class="loader-health__row-at">{v.at}</span>
+                            </span>
+                            <span class="loader-health__row-hint">
+                              {t(`resources.loaderHealth.hint.${v.kind}`)}
+                            </span>
+                          </div>
+                        ))}
+                        {hub.loaderHealthOkCount.value > 0 && (
+                          <div class="loader-health__ok">
+                            {t("resources.loaderHealth.loadedOkSummary", {
+                              count: hub.loaderHealthOkCount.value,
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 

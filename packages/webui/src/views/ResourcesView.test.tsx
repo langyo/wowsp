@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     activeInstall: { path: string; kind?: string; realm?: string | null } | null;
     installs?: { path: string; kind?: string; realm?: string | null }[];
   },
-  scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
+  scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), loaderHealth: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
   adopt: vi.fn(), uninstall: vi.fn(), error: vi.fn(),
   success: vi.fn(), warning: vi.fn(), info: vi.fn(),
   migrationPlan: vi.fn(),
@@ -21,7 +21,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/api", () => ({ api: {
   modHubScanInstalled: mocks.scan, modHubForeignUnits: mocks.foreign, modHubStaleVersions: mocks.stale,
-  modHubPnfLoaderStatus: mocks.loader, modHubSafeMode: mocks.safe, modHubReconcile: mocks.reconcile,
+  modHubPnfLoaderStatus: mocks.loader, modHubLoaderHealth: mocks.loaderHealth, modHubSafeMode: mocks.safe, modHubReconcile: mocks.reconcile,
   modHubUninstallUnit: mocks.uninstall,
   modHubMigrationPlan: mocks.migrationPlan,
   modHubPurgeBackups: mocks.purgeBackups,
@@ -137,6 +137,7 @@ beforeEach(() => {
   mocks.foreign.mockResolvedValue([]);
   mocks.stale.mockResolvedValue([]);
   mocks.loader.mockResolvedValue(null);
+  mocks.loaderHealth.mockResolvedValue(null);
   mocks.safe.mockResolvedValue(false);
   mocks.reconcile.mockResolvedValue(null);
   mocks.records.mockResolvedValue([]);
@@ -705,6 +706,7 @@ describe("multi-client sync", () => {
     expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
   });
 
+
   it("exposes the sync-all tools entry disabled below two clients", async () => {
     mocks.catalog.mockResolvedValue({ mods: [catEntry("mod-x")], sourceVersion: "test", fetchedAt: "" });
     const view = await shallowMount(ResourcesView, {
@@ -721,3 +723,62 @@ describe("multi-client sync", () => {
     expect(itemsAfter.find((i) => i.key === "sync-all")?.disabled).toBeFalsy();
   });
 });
+
+describe("last session plugin health strip", () => {
+  const verdict = (mod: string | null, kind: string, at = "2026-10-31 15:45:34.761") => ({
+    modName: mod, kind, detail: "detail", at,
+  });
+
+  it("stays hidden without error verdicts", async () => {
+    mocks.loaderHealth.mockResolvedValue({
+      logPath: "C:/TestGameA/profile/python.log",
+      linesScanned: 4,
+      lastSessionAt: "2026-10-31 15:45:34.764",
+      verdicts: [verdict("ConsumablesMonitor2", "loadedOk", "2026-10-31 15:45:34.764")],
+    });
+    const view = await mountInstalled();
+    expect(view.find(".loader-health").exists()).toBe(false);
+  });
+
+  it("renders each error verdict row with its suggestion plus the quiet summary", async () => {
+    mocks.loaderHealth.mockResolvedValue({
+      logPath: "C:/TestGameA/profile/python.log",
+      linesScanned: 8,
+      lastSessionAt: "2026-10-31 15:45:34.766",
+      verdicts: [
+        verdict("BattleFrame_Torpedoes", "signatureRefused"),
+        verdict(null, "frameworkDataMissing", "2026-10-31 15:45:22.465"),
+        verdict("ThreeDimentionalRadar", "disabledByDependency", "2026-10-31 15:45:34.766"),
+        verdict("ConsumablesMonitor2", "loadedOk", "2026-10-31 15:45:34.764"),
+      ],
+    });
+    const view = await mountInstalled();
+    expect(view.find(".loader-health").exists()).toBe(true);
+    // Collapsed by default: the head counts the errors, no rows yet.
+    expect(view.find(".loader-health__head").text()).toContain("resources.loaderHealth.title");
+    expect(view.find(".loader-health__head").text()).toContain("3");
+    expect(view.find(".loader-health__row").exists()).toBe(false);
+    await view.find(".loader-health__head").trigger("click");
+    // One row per ERROR verdict (the loaded-OK row is the summary line).
+    const rows = view.findAll(".loader-health__row");
+    expect(rows).toHaveLength(3);
+    expect(rows[0].text()).toContain("BattleFrame_Torpedoes");
+    expect(rows[0].text()).toContain("resources.loaderHealth.kind.signatureRefused");
+    expect(rows[0].text()).toContain("2026-10-31 15:45:34.761");
+    expect(rows[0].find(".loader-health__row-hint").text()).toBe(
+      "resources.loaderHealth.hint.signatureRefused",
+    );
+    // The shared-framework verdict names the framework label, not a mod.
+    expect(rows[1].find(".loader-health__row-name").text()).toBe(
+      "resources.loaderHealth.framework",
+    );
+    expect(rows[2].find(".loader-health__row-hint").text()).toBe(
+      "resources.loaderHealth.hint.disabledByDependency",
+    );
+    // The quiet "N loaded OK" line closes the strip.
+    expect(view.find(".loader-health__ok").text()).toBe(
+      "resources.loaderHealth.loadedOkSummary",
+    );
+  });
+});
+
