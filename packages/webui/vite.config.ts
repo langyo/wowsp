@@ -13,6 +13,10 @@ import UnoCSS from "unocss/vite";
 // notice about extensionless local imports (its future `configLoader: 'native'`
 // route cannot resolve them) — accepted and recorded in the PR.
 import { bootChromePluginsFor, WEBUI_PAGES } from "./src/bootChrome";
+// Pre-boot self-recovery (bootRecovery.ts): heals the WebView2 crash-recovery
+// origin and replaces a dead loading screen with a manual reload panel. Same
+// extensionless-import trade-off as bootChrome above.
+import { wowspBootRecovery } from "./src/bootRecovery";
 
 function readPkgVersion(pkgDir: string): string {
   try {
@@ -321,6 +325,17 @@ export default defineConfig({
     // when isMobileApp()), so injecting the three-button bar there would paint
     // dead chrome.
     ...bootChromePluginsFor(androidBundle),
+    // Pre-boot self-recovery, INLINE in index.html's <head> — after the
+    // <meta charset> declaration, which must stay inside the 1024-byte encoding
+    // prescan; the script itself must sit after it. A classic inline script
+    // still runs before the deferred module graph. Injected only into the main
+    // window: it heals the
+    // WebView2 crash-recovery origin (http://tauri.localhostundefined/), and
+    // when the Vue app still has not mounted after 15 s, replaces the static
+    // loading screen with a manual "reload" panel. Not platform-gated: a
+    // renderer death / stalled boot can strand a window on any target, and the
+    // script is a no-op on a healthy boot. See src/bootRecovery.ts.
+    wowspBootRecovery(),
     // @vitejs/plugin-vue-jsx (rolldown-vite mode) injects
     // optimizeDeps.rolldownOptions.transform.jsx = "preserve" so the
     // dep-scanner keeps JSX in its transform output. The scanner's

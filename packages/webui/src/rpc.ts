@@ -19,6 +19,10 @@ export const RPC = {
   app_migrations_pending: "app_migrations_pending",
   app_migration_completed: "app_migration_completed",
   quit_app: "quit_app",
+  // Alive-ack for Rust's close guard: the shell forces the window closed if a
+  // `close-requested` webview never answers, so AppShell acknowledges the event
+  // as its first action to stand the 5 s watchdog down (AppShell.tsx).
+  close_requested_ack: "close_requested_ack",
   open_external: "open_external",
   appdata_read: "appdata_read",
   appdata_write: "appdata_write",

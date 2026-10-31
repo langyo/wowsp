@@ -440,6 +440,14 @@ export default defineComponent({
       // close dialog is desktop-app-only anyway).
       if (isNative()) {
         unlistenClose = await listen("close-requested", () => {
+          // Acknowledge FIRST: Rust arms a 5 s force-close watchdog before it
+          // emits this event, and a webview that never answers it is killed
+          // when the watchdog fires (the dead-renderer fallback). The ack
+          // proves this listener is alive and stands the watchdog down BEFORE
+          // the async dialog/action work below, which may outlive the window.
+          // Fire-and-forget: an older shell without the command rejects, and
+          // that must never affect the quit dialog itself.
+          void invoke("close_requested_ack").catch(() => undefined);
           // The remembered action (AppShell's dialog checkbox / the settings'
           // closeBehavior radio — one store, one slot). "ask" is the stored
           // absence of a choice, and the store's loader already swept any

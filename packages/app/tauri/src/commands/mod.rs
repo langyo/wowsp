@@ -390,6 +390,17 @@ pub(crate) fn graceful_exit(app: &tauri::AppHandle) {
     app.exit(0);
 }
 
+/// Acknowledge a `close-requested` event: the webui's listener calls this as
+/// its FIRST action, bumping the close-guard epoch so the force-close watchdog
+/// armed by the window handler stands down (it must never kill a webview that
+/// did answer). The quit-vs-tray decision itself stays a webui concern — this
+/// command closes nothing. Only a renderer that never heard (or never answered)
+/// the event stays armed; see `crate::close_guard` for the full flow.
+#[tauri::command]
+pub fn close_requested_ack() {
+    crate::close_guard::CLOSE_GUARD.ack();
+}
+
 #[cfg(test)]
 mod window_gate_tests {
     use super::ensure_main_window_label;
