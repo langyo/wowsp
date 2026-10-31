@@ -330,3 +330,29 @@ function techTreeBranchesForTest(): Record<string, { card: string[]; groups: [st
 function branchFeaturesForTest(): unknown {
   return branchesRaw;
 }
+
+describe("branch feature re-shape (toBranchFeatures)", () => {
+  // The generator writes each group as a plain 2-element array, so every row
+  // arrives as `(string | string[])[]`; `toBranchFeatures` rebuilds the
+  // `[category, feats]` pair the UI destructures. A post-merge review emptied
+  // the feature half of every group and the whole suite stayed green, so these
+  // assertions pin the half that was invisible: a generic branch must still
+  // carry real feature keys, and each pair must be a string plus an array.
+  it("keeps the feature key list for a branch that has content", () => {
+    const branch = techTreeBranchInfo("GER_DD_150") ?? techTreeBranchInfo("FR_BB");
+    expect(branch, "a known branch record exists").not.toBeNull();
+    const groups = branch?.groups ?? [];
+    expect(groups.length).toBeGreaterThan(0);
+    for (const [category, feats] of groups) {
+      expect(typeof category).toBe("string");
+      expect(Array.isArray(feats)).toBe(true);
+      // The re-shape exists so `feats` is never `undefined` — assert real
+      // content in at least one row rather than merely a well-typed empty one.
+    }
+    expect(groups.some(([, feats]) => feats.length > 0)).toBe(true);
+  });
+
+  it("reports a branch with no feature keys as content-free", () => {
+    expect(techTreeBranchHasContent("__no_such_branch__")).toBe(false);
+  });
+});

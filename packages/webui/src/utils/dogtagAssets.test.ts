@@ -124,3 +124,38 @@ describe("dogtagAssets", () => {
     expect(mod.dogtagEntry(9999999999)).toBeNull();
   });
 });
+
+describe("map entry coercion (bundled + pack)", () => {
+  // Both sources feed the same tuple map whose 3rd slot the renderer reads as
+  // the plate/border tint. A post-merge review dropped that slot and the whole
+  // suite stayed green, and the pack path (the UNTRUSTED source) was a
+  // wholesale assertion with no length guard at all.
+  function withInternals(): { path: string } {
+    delete window.__TAURI_INTERNALS__;
+    window.__TAURI_INTERNALS__ = { convertFileSrc: (p: string) => `asset://localhost/${p}` };
+    return { path: "C:/cache" };
+  }
+
+  it("keeps the 3-element tuple the renderer reads, and skips malformed rows", async () => {
+    withInternals();
+    const fetchMock = mockFetch({
+      "4238887856": ["PCNP053", "Patch", "#ff0000"], // 3-tuple: tint wins
+      "123": ["ONLY_ONE"], // too short
+      "456": ["A", "B", "C", "D"], // too long
+      "789": ["A", 42], // non-string cell
+      "9999999999": ["PCNP999", "Patch"],
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    vi.resetModules();
+    const mod = await import("./dogtagAssets");
+    await mod.initDogtagPack(() => Promise.resolve("C:/cache"));
+
+    expect(mod.dogtagEntry(4238887856)).toEqual(["PCNP053", "Patch", "#ff0000"]);
+    expect(mod.dogtagEntry(9999999999)).toEqual(["PCNP999", "Patch"]);
+    // Malformed rows are SKIPPED, not asserted into a shape the lookups would
+    // index off the end of.
+    expect(mod.dogtagEntry(123)).toBeNull();
+    expect(mod.dogtagEntry(456)).toBeNull();
+    expect(mod.dogtagEntry(789)).toBeNull();
+  });
+});

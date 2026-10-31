@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@gltf-transform/cli": "^4",
-    "@types/three": "^0.185",
+    "@types/three": "^0.186",
     "@unocss/preset-wind": "^66",
     "oxlint": "^1",
     "sass": "^1",

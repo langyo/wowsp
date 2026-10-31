@@ -471,6 +471,12 @@ let installed = false;
 
 export function installGlobalTooltip(): void {
   if (installed || typeof document === "undefined") return;
+  // Resolve the overlay root BEFORE latching `installed`: hikari reports it as
+  // `HTMLElement | null` (it is genuinely absent where there is no document),
+  // and latching first would make one unexpected null permanently disable the
+  // bridge with no retry.
+  const overlayRoot = ensureOverlayRoot();
+  if (!overlayRoot) return;
   installed = true;
 
   const popup = document.createElement("div");
@@ -484,13 +490,6 @@ export function installGlobalTooltip(): void {
   // competes with: on <body> the root's document-space z (90000) would bury
   // the popup's ordinal (300) under every open modal's backdrop, hiding
   // in-modal hints (the ship-detail consumable cards) behind the dialog.
-  //
-  // hikari 0.56 reports the root as `HTMLElement | null` — it is genuinely
-  // absent where there is no document. The bridge only ever runs in a
-  // browser (the caller guards `typeof document`), so a null root here means
-  // there is nothing to attach to: skip the popup instead of throwing.
-  const overlayRoot = ensureOverlayRoot();
-  if (!overlayRoot) return;
   overlayRoot.appendChild(popup);
 
   // One persistent registration holds the tooltip z band for the app's

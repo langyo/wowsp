@@ -353,8 +353,12 @@ export function makeHoloDepthMaterial(): THREE.ShaderMaterial {
 export function makeHoloMaterial(): HoloShaderMaterial {
   const fps: THREE.Vector3[] = [];
   for (let i = 0; i < 8; i++) fps.push(new THREE.Vector3());
-  return new HoloShaderMaterial({
-    uniforms: {
+  // Typing the LITERAL (not just the class field) is what makes the closed
+  // shape VERIFIED rather than declared: `THREE.ShaderMaterial`'s constructor
+  // takes an open `Record<string, IUniform>` whose `value` is `any`, so
+  // without this annotation `time: { value: "0" }` compiles and renders
+  // garbage at runtime.
+  const uniforms: HoloUniforms = {
       time: { value: 0 },
       scanOffset: { value: 0 },
       baseColor: { value: new THREE.Color(0x0d6e8a) },
@@ -385,7 +389,10 @@ export function makeHoloMaterial(): HoloShaderMaterial {
       // the legacy fill); the ship stage opts in via applyStageLook.
       uSliceGain: { value: 0.0 },
       uSliceSpacing: { value: 4.0 },
-    },
+  };
+
+  return new HoloShaderMaterial({
+    uniforms,
     vertexShader: HOLO_VERT,
     fragmentShader: HOLO_FRAG,
     transparent: true,

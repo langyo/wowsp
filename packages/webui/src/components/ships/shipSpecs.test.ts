@@ -367,7 +367,7 @@ function altFireProfile(): Profile {
         AP: { damage: 13_250, bullet_speed: 830 },
       },
     },
-  } as unknown as Profile;
+  };
 }
 
 function altFireGameparams(withAltShells: boolean): Record<string, unknown> {

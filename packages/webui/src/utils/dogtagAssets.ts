@@ -34,10 +34,27 @@ export type DogtagMapEntry = [string, string] | [string, string, string];
  *  here — a row of any other length is skipped rather than asserted into a
  *  shape the lookups would then index off the end of. The downloaded pack's
  *  JSON is merged into the same record by initDogtagPack. */
+/** Accept a row only when it is the 2- or 3-element string tuple the lookups
+ *  index into; anything else is skipped instead of asserted into a shape whose
+ *  3rd slot the renderer reads. Shared by the bundled map and the downloaded
+ *  pack (the untrusted one). */
+function coerceRow(row: unknown): DogtagMapEntry | null {
+  if (!Array.isArray(row)) return null;
+  const cells: unknown[] = row;
+  if (cells.length === 2 || cells.length === 3) {
+    if (cells.every((cell) => typeof cell === "string")) {
+      return cells.length === 2
+        ? [cells[0] as string, cells[1] as string]
+        : [cells[0] as string, cells[1] as string, cells[2] as string];
+    }
+  }
+  return null;
+}
+
 const entries: Record<string, DogtagMapEntry> = {};
 for (const [id, row] of Object.entries(mapRaw)) {
-  if (row.length === 2) entries[id] = [row[0], row[1]];
-  else if (row.length === 3) entries[id] = [row[0], row[1], row[2]];
+  const coerced = coerceRow(row);
+  if (coerced) entries[id] = coerced;
 }
 
 /** Bumped when the pack's map is merged in; read by every lookup. */
@@ -74,8 +91,16 @@ export function initDogtagPack(fetchPack: () => Promise<string>): Promise<void> 
     try {
       const res = await fetch(convertFileSrc(`${root}/dogtags/dogtags_map.json`));
       if (res.ok) {
-        Object.assign(entries, (await res.json()) as Record<string, DogtagMapEntry>);
-        dogtagMapVersion.value++;
+        // The pack is the UNTRUSTED source: run its rows through the same
+        // coercion instead of asserting the whole document into the tuple map.
+        const parsed: unknown = await res.json();
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          for (const [id, row] of Object.entries(parsed)) {
+            const coerced = coerceRow(row);
+            if (coerced) entries[id] = coerced;
+          }
+          dogtagMapVersion.value++;
+        }
       }
     } catch {
       // Images still overlay; the bundled map keeps covering lookups.
