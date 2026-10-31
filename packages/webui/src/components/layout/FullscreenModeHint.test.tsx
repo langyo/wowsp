@@ -11,7 +11,7 @@
  * getBoundingClientRect is stubbed per mount.
  */
 import { createPinia, setActivePinia } from "pinia";
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { nextTick, ref } from "vue";
 
@@ -22,6 +22,7 @@ vi.mock("@/api", () => ({ api: mocks }));
 import { initLocaleMessages, t } from "@/i18n";
 import type { GameDisplayMode, GameProcessInfo } from "@/api";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 import FullscreenModeHint from "./FullscreenModeHint";
 
 enableAutoUnmount(afterEach);
@@ -82,6 +83,20 @@ beforeAll(async () => {
   await initLocaleMessages();
 });
 
+// The DPI singleton re-reads the documentElement per test: a zoom test's
+// scale must never leak into the unzoomed default.
+beforeEach(() => {
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
+});
+
+afterEach(() => {
+  delete document.documentElement.dataset.dpiScale;
+  document.documentElement.style.removeProperty("zoom");
+  resetAppliedDpiScaleForTest();
+});
+
 describe("FullscreenModeHint", () => {
   it("opens on its own above the status card while the client runs exclusive fullscreen", async () => {
     const { wrapper } = await mountHint(runningInfo("exclusiveFullscreen"), anchorCard());
@@ -92,6 +107,21 @@ describe("FullscreenModeHint", () => {
     // Anchored above the card: same left edge, top above the card's.
     expect(el?.style.left).toBe("16px");
     expect(Number.parseFloat(el?.style.top ?? "0")).toBeLessThan(700);
+    wrapper.unmount();
+  });
+
+  it("divides the anchor geometry by the applied root zoom", async () => {
+    // PluginUpdateHint's zoom regression, mirrored for the shared anchor
+    // grammar: at 125% the unconverted card drifted scale× off the
+    // sidebar (16 visual / 1.25 → 12.8 local; 700/1.25 − 10 → 550).
+    document.documentElement.dataset.dpiScale = "125";
+    resetAppliedDpiScaleForTest();
+    const { wrapper } = await mountHint(runningInfo("exclusiveFullscreen"), anchorCard());
+
+    const el = card();
+    expect(el).toBeTruthy();
+    expect(el?.style.left).toBe("12.8px");
+    expect(el?.style.top).toBe("550px");
     wrapper.unmount();
   });
 

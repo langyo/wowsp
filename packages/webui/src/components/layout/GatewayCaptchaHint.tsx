@@ -44,6 +44,7 @@ import { t, tError } from "@/i18n";
 import { useGatewayStore } from "@/stores/gateway";
 import { useShownPlayer } from "@/composables/useShownPlayer";
 import { gatewayRoute } from "@/features/replay/gateway/gatewayBattle";
+import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import "./GatewayCaptchaHint.scss";
 
 /** Hover-in delay before the hint opens (the global tooltip's rhythm). */
@@ -72,6 +73,9 @@ export default defineComponent({
     const gateway = useGatewayStore();
     const toast = useToast();
     const { shownPlayer } = useShownPlayer();
+    // The root DPI zoom the popup's coordinate math runs against — see
+    // applyStyle/place (PluginUpdateHint's conversion, verbatim).
+    const dpiScale = useAppliedDpiScale();
 
     const open = ref(false);
     const popStyle = ref<{ left: string; top: string; transform: string } | null>(null);
@@ -161,11 +165,17 @@ export default defineComponent({
       openTimer = closeTimer = reopenTimer = undefined;
     }
 
+    // The popup teleports to <body> — inside the root DPI zoom's subtree
+    // — so its left/top live in the zoomed local space and paint scale×
+    // larger: every visual-space measurement (gBCR, window.innerWidth /
+    // innerHeight) is divided by the applied scale first, or the card
+    // drifts scale× off its anchor (PluginUpdateHint's zoom notes).
     function applyStyle(): void {
       const half = (popEl.value?.offsetHeight ?? 0) / 2;
+      const innerH = window.innerHeight / dpiScale.value;
       const top = Math.max(
         EDGE_PX + half,
-        Math.min(anchorCenterY, window.innerHeight - EDGE_PX - half),
+        Math.min(anchorCenterY, innerH - EDGE_PX - half),
       );
       popStyle.value = {
         left: anchorLeft + "px",
@@ -177,8 +187,9 @@ export default defineComponent({
     function place(): boolean {
       const rect = (props.anchor?.value ?? wrapEl.value)?.getBoundingClientRect();
       if (!rect) return false;
-      anchorLeft = Math.min(rect.right + ANCHOR_GAP_PX, window.innerWidth - 340);
-      anchorCenterY = rect.top + rect.height / 2;
+      const z = dpiScale.value;
+      anchorLeft = Math.min(rect.right / z + ANCHOR_GAP_PX, window.innerWidth / z - 340);
+      anchorCenterY = (rect.top + rect.height / 2) / z;
       applyStyle();
       return true;
     }
@@ -263,6 +274,11 @@ export default defineComponent({
       if (open.value) place();
     }
     window.addEventListener("resize", onResize);
+    // A scale change never fires a resize event: while the card is up,
+    // re-anchor it in the new space (PluginUpdateHint's zoom watch).
+    watch(dpiScale, () => {
+      if (open.value) place();
+    });
     onBeforeUnmount(() => {
       clearTimers();
       window.removeEventListener("resize", onResize);
