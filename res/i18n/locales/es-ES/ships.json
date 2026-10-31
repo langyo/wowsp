@@ -790,7 +790,8 @@
   "model3d": {
     "downloadStart": "La vista 3D necesita el paquete de modelos (~1,2 GB) — descarga iniciada…",
     "ready": "Paquete de modelos listo",
-    "failed": "Falló la descarga del paquete de modelos — inténtalo más tarde"
+    "failed": "Falló la descarga del paquete de modelos — inténtalo más tarde",
+    "phoneHint": "Todavía no hay paquete de modelos 3D en este dispositivo: descárgalo en Ajustes ▸ Recursos (~1,2 GB); la vista 2D no se ve afectada."
   },
   "module": {
     "fireControl": "Control de tiro",

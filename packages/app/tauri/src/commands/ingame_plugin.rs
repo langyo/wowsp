@@ -124,45 +124,63 @@ pub struct IngamePluginStatus {
 /// settings page can poll it freely.
 #[tauri::command]
 pub fn ingame_plugin_status(game_root: String) -> CommandResult<IngamePluginStatus> {
-    let dir = super::game_context::res_mods_dir(std::path::Path::new(&game_root))?;
-    let entry = dir.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY);
-    let installed = entry.is_file();
-    let outdated = installed
-        && !(file_fresh(
-            &dir,
-            &format!("PnFMods/{MOD_DIR}/{MOD_ENTRY}"),
-            PLUGIN_SOURCE,
-        ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW));
-    let safe_mode = super::mod_hub::safe_mode_active(&game_root);
-    // The probe rides the safe-mode twin when it was live at the rename:
-    // any quarantined res_mods (the current one, or a twin stranded in an
-    // older bin/ by a game update) carrying the entry answers true.
-    let quarantined = !installed
-        && super::mod_hub::quarantined_res_mods(&game_root)
-            .iter()
-            .any(|twin| probe_entry(twin).is_file());
-    // Verdict trail for feedback bundles: the live surfaces poll this
-    // freely, and a presence flip the UI showed is exactly what support
-    // must be able to answer from the log afterwards — the filesystem
-    // verdict lands here beside the poller's own stream lines, so
-    // "the probe was there, then gone" separates an actual file change
-    // from a freshness/pending-list flip (user report 2026-10-31).
-    tracing::debug!(
-        installed,
-        outdated,
-        safe_mode,
-        quarantined,
-        res_mods = %dir.display(),
-        "ingame plugin status probed"
-    );
-    Ok(IngamePluginStatus {
-        installed,
-        safe_mode,
-        quarantined,
-        outdated,
-        res_mods: dir.to_string_lossy().into_owned(),
-        discussion: DISCUSSION_NUMBER,
-    })
+    // Mobile: there is no game install to probe — a plain "not installed"
+    // beats the bin-resolution error the empty game root would raise (the
+    // webui already gates the mod-hub surfaces; this covers stray polls).
+    #[cfg(mobile)]
+    {
+        let _ = &game_root;
+        return Ok(IngamePluginStatus {
+            installed: false,
+            safe_mode: false,
+            quarantined: false,
+            outdated: false,
+            res_mods: String::new(),
+            discussion: DISCUSSION_NUMBER,
+        });
+    }
+    #[cfg(desktop)]
+    {
+        let dir = super::game_context::res_mods_dir(std::path::Path::new(&game_root))?;
+        let entry = dir.join("PnFMods").join(MOD_DIR).join(MOD_ENTRY);
+        let installed = entry.is_file();
+        let outdated = installed
+            && !(file_fresh(
+                &dir,
+                &format!("PnFMods/{MOD_DIR}/{MOD_ENTRY}"),
+                PLUGIN_SOURCE,
+            ) && file_fresh(&dir, VIEW_DEST, PLUGIN_VIEW));
+        let safe_mode = super::mod_hub::safe_mode_active(&game_root);
+        // The probe rides the safe-mode twin when it was live at the rename:
+        // any quarantined res_mods (the current one, or a twin stranded in an
+        // older bin/ by a game update) carrying the entry answers true.
+        let quarantined = !installed
+            && super::mod_hub::quarantined_res_mods(&game_root)
+                .iter()
+                .any(|twin| probe_entry(twin).is_file());
+        // Verdict trail for feedback bundles: the live surfaces poll this
+        // freely, and a presence flip the UI showed is exactly what support
+        // must be able to answer from the log afterwards — the filesystem
+        // verdict lands here beside the poller's own stream lines, so
+        // "the probe was there, then gone" separates an actual file change
+        // from a freshness/pending-list flip (user report 2026-10-31).
+        tracing::debug!(
+            installed,
+            outdated,
+            safe_mode,
+            quarantined,
+            res_mods = %dir.display(),
+            "ingame plugin status probed"
+        );
+        Ok(IngamePluginStatus {
+            installed,
+            safe_mode,
+            quarantined,
+            outdated,
+            res_mods: dir.to_string_lossy().into_owned(),
+            discussion: DISCUSSION_NUMBER,
+        })
+    }
 }
 
 /// The embedded plugin source — the same bytes

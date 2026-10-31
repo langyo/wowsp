@@ -790,7 +790,8 @@
   "model3d": {
     "downloadStart": "The 3D view needs the model pack (~1.2 GB) — download started…",
     "ready": "Model pack ready",
-    "failed": "Model pack download failed — try again later"
+    "failed": "Model pack download failed — try again later",
+    "phoneHint": "No 3D model pack on this device yet — download it from Settings ▸ Resources (~1.2 GB); the 2D view is unaffected."
   },
   "module": {
     "fireControl": "Fire Control",

@@ -881,10 +881,23 @@ pub async fn get_ship_gameparams(
     //    one. Exactly one of the two returns compiles per target — the
     //    desktop flow below is untouched, cfg-gated into a helper.
     #[cfg(mobile)]
-    return Ok(bundled_asset_json(
-        &app,
-        &format!("data/gameparams/{ship_id}.json"),
-    )?);
+    {
+        // The full-flavor APK's baked offline pack, when present. The
+        // SLIM build ships none by design — a miss falls through to the
+        // on-demand sync below instead of erroring out.
+        if let Ok(v) = bundled_asset_json(&app, &format!("data/gameparams/{ship_id}.json")) {
+            return Ok(v);
+        }
+        // One single-flight data-latest refresh pass and a re-read of the
+        // synced bundle: the phone's real source for WG-realm ships. On a
+        // warm network this is seconds; offline it fails fast and the
+        // honest message below answers (the startup sync retries anyway).
+        let _ = super::data_pack::refresh_data_pack().await;
+        if let Some(slice) = hot_update_slice(ship_id) {
+            return Ok(slice);
+        }
+        return Err(anyhow!("舰船数据尚未同步到本机——请联网后重试，或稍候让启动同步完成。").into());
+    }
     #[cfg(desktop)]
     {
         // The handle only serves the mobile branch; keep desktop silent.
@@ -1247,10 +1260,23 @@ pub async fn get_upgrade_prices(
     // synced cache wins, bundled data beats the install error below.
     // Exactly one branch compiles per target.
     #[cfg(mobile)]
-    return Ok(bundled_asset_json(
-        &app,
-        "data/gameparams/upgrade-prices.json",
-    )?);
+    {
+        // Same shape as the per-ship slices above: the full flavor's baked
+        // pack first, then one single-flight data-latest refresh and a
+        // re-read of the synced cache, then the honest message.
+        if let Ok(v) = bundled_asset_json(&app, "data/gameparams/upgrade-prices.json") {
+            return Ok(v);
+        }
+        let _ = super::data_pack::refresh_data_pack().await;
+        if let Ok(Some(raw)) = read_appdata_json("gameparams/upgrade-prices.json") {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&raw) {
+                return Ok(v);
+            }
+        }
+        return Err(
+            anyhow!("配件价格数据尚未同步到本机——请联网后重试，或稍候让启动同步完成。").into(),
+        );
+    }
     #[cfg(desktop)]
     {
         // The handle only serves the mobile branch; keep desktop silent.
