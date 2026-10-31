@@ -9,16 +9,14 @@ import type { BreakdownEntry } from "./battleBreakdown";
 
 /**
  * The mounted presentational contract of one 游玩时间 breakdown donut —
- * the water-meter charts' (ShipDistCharts) presentation adapted to four
- * blocks per row: path-drawn ring, DOM legend rows UNDER it chunked into
- * 5-row columns, every row leading with the slice-color dot, percents
- * ONLY in the hover hint (never row text), and the slice↔legend hover
- * pairing (entering one side lifts the pair, dims the block's siblings).
- * A row's text label may swap for a legendIconOf glyph (the stats donuts'
- * flag rows) — the dot and the hint stay either way. The ring geometry
- * itself is donutGeometry's, already exact-string covered in
- * ShipDistCharts.test.ts — these tests pin what that file cannot see: how
- * the component wires it into DOM.
+ * same-source migrated onto hikari's HkDonutChart: the wrapper owns the
+ * props bridge (title + entries + palettes + the measure-word hint and
+ * the legendIconOf slot adapter); the chart beneath supplies the ring,
+ * the chunked legend and the hover pairing. These tests pin the WRAPPER's
+ * contract through the chart's DOM: per-entry ring paths, dot-led legend
+ * rows, the measure-word hint on BOTH views of a slice, the legendIconOf
+ * glyph swap (dot + hint stay), 5-row legend columns, and the empty
+ * state. The ring geometry itself is hikari's own suite's.
  */
 
 const COLORS: Record<string, string> = {
@@ -49,32 +47,26 @@ function mountPie(
 
 enableAutoUnmount(afterEach);
 
-describe("PlaytimeBreakdownPie", () => {
-  it("draws one ring path per entry and legend rows with dot + label only", () => {
+describe("PlaytimeBreakdownPie (HkDonutChart-backed)", () => {
+  it("renders the title, one ring path per entry and dot-led legend rows", () => {
     const w = mountPie(entriesOf([["a", 60], ["b", 30], ["c", 10]]));
-    const slices = w.findAll(".playtime-pie__slice");
+    expect(w.find(".playtime-breakdown-pie__title").text()).toBe("按舰种");
+    const slices = w.findAll(".hk-donut__slice");
     expect(slices).toHaveLength(3);
     expect(slices[0].attributes("d")).toContain("A"); // ring arcs, not strokes
-    const rows = w.findAll(".playtime-pie__legend-item");
+    const rows = w.findAll(".hk-donut__legend-row");
     expect(rows).toHaveLength(3);
     for (let i = 0; i < rows.length; i++) {
-      const dot = rows[i].find(".playtime-pie__legend-dot");
-      expect(dot.exists()).toBe(true);
-      expect(dot.attributes("style")).toContain(`background: ${COLORS[["a", "b", "c"][i]]}`);
-      expect(rows[i].text()).toBe(`label-${["a", "b", "c"][i]}`);
-      // Percent lives in the hint only, never in the row's text.
-      expect(rows[i].text()).not.toContain("%");
+      expect(rows[i].find(".hk-donut__legend-dot").exists()).toBe(true);
+      expect(rows[i].text()).toContain(`label-${["a", "b", "c"][i]}`);
     }
   });
 
-  it("hints the same string from a slice and its legend row", () => {
+  it("hints the measure-word string from a slice and its legend row", () => {
     const w = mountPie(entriesOf([["a", 60], ["b", 30], ["c", 10]]));
-    expect(w.findAll(".playtime-pie__slice")[0].attributes("data-hint")).toBe(
-      "label-a · 60 场 · 60%",
-    );
-    expect(w.findAll(".playtime-pie__legend-item")[0].attributes("data-hint")).toBe(
-      "label-a · 60 场 · 60%",
-    );
+    const expectHint = "label-a · 60 场 · 60%";
+    expect(w.findAll(".hk-donut__slice")[0].attributes("data-hint")).toBe(expectHint);
+    expect(w.findAll(".hk-donut__legend-row")[0].attributes("data-hint")).toBe(expectHint);
     // No native <title> tooltips — the app-wide data-hint convention.
     expect(w.find("title").exists()).toBe(false);
   });
@@ -87,16 +79,15 @@ describe("PlaytimeBreakdownPie", () => {
       (key, label, hint) =>
         key === "b" ? h("span", { class: "glyph", "data-label": label, "data-hint": hint }) : null,
     );
-    const rows = w.findAll(".playtime-pie__legend-item");
+    const rows = w.findAll(".hk-donut__legend-row");
     // The glyph replaces the text, not the row: dot and row hint stay.
     expect(rows[1].find(".glyph").exists()).toBe(true);
-    expect(rows[1].find(".playtime-pie__legend-text").exists()).toBe(false);
-    expect(rows[1].find(".playtime-pie__legend-dot").exists()).toBe(true);
+    expect(rows[1].find(".hk-donut__legend-dot").exists()).toBe(true);
     expect(rows[1].attributes("data-hint")).toBe("label-b · 40 场 · 40%");
     expect(rows[1].find(".glyph").attributes("data-label")).toBe("label-b");
     expect(rows[1].find(".glyph").attributes("data-hint")).toBe("label-b · 40 场 · 40%");
     // A null return keeps the text path untouched.
-    expect(rows[0].find(".playtime-pie__legend-text").text()).toBe("label-a");
+    expect(rows[0].text()).toContain("label-a");
     expect(rows[0].find(".glyph").exists()).toBe(false);
   });
 
@@ -104,25 +95,15 @@ describe("PlaytimeBreakdownPie", () => {
     const w = mountPie(
       entriesOf([["a", 5], ["b", 5], ["c", 5], ["d", 5], ["e", 5], ["f", 5], ["g", 5]]),
     );
-    const cols = w.findAll(".playtime-pie__legend-col");
+    const cols = w.findAll(".hk-donut__legend-col");
     expect(cols).toHaveLength(2);
-    expect(cols[0].findAll(".playtime-pie__legend-item")).toHaveLength(5);
-    expect(cols[1].findAll(".playtime-pie__legend-item")).toHaveLength(2);
+    expect(cols[0].findAll(".hk-donut__legend-row")).toHaveLength(5);
+    expect(cols[1].findAll(".hk-donut__legend-row")).toHaveLength(2);
   });
 
-  it("pairs a legend row's hover with its slice and dims the siblings", async () => {
-    const w = mountPie(entriesOf([["a", 60], ["b", 30], ["c", 10]]));
-    await w.findAll(".playtime-pie__legend-item")[1].trigger("mouseenter");
-    const rows = w.findAll(".playtime-pie__legend-item");
-    expect(rows[1].classes()).toContain("is-hot");
-    expect(rows[0].classes()).toContain("is-dim");
-    expect(rows[2].classes()).toContain("is-dim");
-    const slices = w.findAll(".playtime-pie__slice");
-    expect(slices[1].classes()).toContain("is-hot");
-    expect(slices[0].classes()).toContain("is-dim");
-    // Leaving clears the block's focus entirely.
-    await rows[1].trigger("mouseleave");
-    expect(w.findAll(".playtime-pie__legend-item")[1].classes()).not.toContain("is-hot");
-    expect(slices[1].classes()).not.toContain("is-hot");
+  it("renders the empty state when every entry is zero", () => {
+    const w = mountPie(entriesOf([["a", 0]]));
+    expect(w.find(".hk-donut--empty").exists()).toBe(true);
+    expect(w.findAll(".hk-donut__slice")).toHaveLength(0);
   });
 });

@@ -332,17 +332,17 @@ describe("mounted DOM legend", () => {
   it("leads every legend row of both donuts with the slice-color dot", () => {
     const wrapper = mount(ShipDistCharts, { props: { ships } });
     // Three ship types + three nations → three rows per legend, six total.
-    const rows = wrapper.findAll(".ship-dist-charts__legend-item");
+    const rows = wrapper.findAll(".hk-donut__legend-row");
     expect(rows).toHaveLength(6);
     for (const row of rows) {
       // The dot paints the slice color inline — without it a flag row
       // gives no cue which ring slice the nation owns.
-      const dot = row.find(".ship-dist-charts__legend-dot");
+      const dot = row.find(".hk-donut__legend-dot");
       expect(dot.exists()).toBe(true);
       expect(dot.attributes("style")).toContain("background");
     }
     // Both aggregations produced visible slices for the rows to map onto.
-    expect(wrapper.findAll(".ship-dist-charts__slice")).toHaveLength(6);
+    expect(wrapper.findAll(".hk-donut__slice")).toHaveLength(6);
   });
 
   it("pairs the dot with the name for ship types and with the flag for nations", () => {
@@ -406,8 +406,8 @@ describe("mounted DOM legend", () => {
   it("hovering a slice lifts it, dims its siblings and lights its legend row", async () => {
     const wrapper = mount(ShipDistCharts, { props: { ships } });
     const [typeBody, nationBody] = wrapper.findAll(".ship-dist-charts__pie-body");
-    const slices = typeBody!.findAll(".ship-dist-charts__slice");
-    const rows = typeBody!.findAll(".ship-dist-charts__legend-item");
+    const slices = typeBody!.findAll(".hk-donut__slice");
+    const rows = typeBody!.findAll(".hk-donut__legend-row");
     await slices[0]!.trigger("mouseenter");
     expect(slices[0]!.classes()).toContain("is-hot");
     expect(slices[1]!.classes()).toContain("is-dim");
@@ -415,8 +415,9 @@ describe("mounted DOM legend", () => {
     // The legend row of the same block follows the slice…
     expect(rows[0]!.classes()).toContain("is-hot");
     expect(rows[1]!.classes()).toContain("is-dim");
-    // …and the other blocks stay untouched (no cross-block leaking).
-    const nationSlices = nationBody!.findAll(".ship-dist-charts__slice");
+    // …and the other blocks stay untouched (no cross-block leaking:
+    // each HkDonutChart owns its own focus state).
+    const nationSlices = nationBody!.findAll(".hk-donut__slice");
     for (const slice of nationSlices) {
       expect(slice.classes()).not.toContain("is-hot");
       expect(slice.classes()).not.toContain("is-dim");
@@ -430,15 +431,15 @@ describe("mounted DOM legend", () => {
   it("hovering a legend row highlights its ring slice back", async () => {
     const wrapper = mount(ShipDistCharts, { props: { ships } });
     const [typeBody, nationBody] = wrapper.findAll(".ship-dist-charts__pie-body");
-    const rows = typeBody!.findAll(".ship-dist-charts__legend-item");
+    const rows = typeBody!.findAll(".hk-donut__legend-row");
     await rows[2]!.trigger("mouseenter");
     expect(rows[2]!.classes()).toContain("is-hot");
     expect(rows[0]!.classes()).toContain("is-dim");
-    const slices = typeBody!.findAll(".ship-dist-charts__slice");
+    const slices = typeBody!.findAll(".hk-donut__slice");
     expect(slices[2]!.classes()).toContain("is-hot");
     expect(slices[0]!.classes()).toContain("is-dim");
     // Nation block untouched by a type-block hover.
-    for (const slice of nationBody!.findAll(".ship-dist-charts__slice")) {
+    for (const slice of nationBody!.findAll(".hk-donut__slice")) {
       expect(slice.classes()).not.toContain("is-dim");
     }
   });
@@ -462,10 +463,10 @@ describe("mounted DOM legend", () => {
 
   it("a data swap under a held pointer clears the dead hover key", async () => {
     // The hovered element can unmount without firing mouseleave (browsers
-    // skip removed nodes); the watch on the aggregation must reset the
-    // block's key, or every surviving row would stay stuck at is-dim.
+    // skip removed nodes); HkDonutChart's entries watch resets the block's
+    // key (0.55.261+), or every surviving row would stay stuck at is-dim.
     const wrapper = mount(ShipDistCharts, { props: { ships } });
-    const slices = wrapper.findAll(".ship-dist-charts__slice");
+    const slices = wrapper.findAll(".hk-donut__slice");
     await slices[0]!.trigger("mouseenter");
     expect(slices[1]!.classes()).toContain("is-dim");
     await wrapper.setProps({ ships: [{ shipId: 33, battles: 4 }] });
@@ -473,7 +474,7 @@ describe("mounted DOM legend", () => {
     // nation donut's surviving slice too.
     const after = wrapper
       .findAll(".ship-dist-charts__pie-body")[0]!
-      .findAll(".ship-dist-charts__slice");
+      .findAll(".hk-donut__slice");
     // Only the destroyer survives — the vanished carrier key must not
     // dim it (nor leave it hot).
     expect(after).toHaveLength(1);
