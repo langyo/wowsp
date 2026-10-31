@@ -1,0 +1,15 @@
+{
+  "app": {
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": [
+          "$CACHE/**",
+          "$LOCALDATA/WoWSP/**",
+          "$DATA/WoWSP/wallpapers/**",
+          "$DATA/WoWSP/stamps/**"
+        ]
+      }
+    }
+  }
+}

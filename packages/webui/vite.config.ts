@@ -35,15 +35,21 @@ const pkgDir = import.meta.dirname;
 
 const mockTarget = process.env.WOWSP_MOCK_URL || 'http://localhost:8787';
 
-// Mobile-bundle builds (justfile android recipes) keep the baked GLBs and
-// the offline gameparams pack in dist so they embed into the APK's assets;
-// every other build prunes both (see pruneBakedGlb / pruneGameparams).
+// Mobile-bundle builds (the FULL android flavor, `just build android-apk-full`)
+// keep the baked GLBs and the offline gameparams pack in dist so they embed
+// into the APK's assets; every other build prunes both (see pruneBakedGlb /
+// pruneGameparams). The SLIM flavor — the distributed APK — pins
+// WOWSP_MOBILE_BUNDLE=0: its pack downloads on demand (Settings ▸ resources),
+// so the dist must prune even under Tauri's own android pipeline below.
 const mobileBundle = process.env.WOWSP_MOBILE_BUNDLE === '1';
+const slimPin = process.env.WOWSP_MOBILE_BUNDLE === '0';
 
-// Two build routes produce an Android bundle: the justfile recipes above
+// Two build routes produce an Android bundle: the full-flavor recipes
 // (WOWSP_MOBILE_BUNDLE=1) and Tauri's own `tauri android` pipeline, which
-// exports TAURI_ENV_PLATFORM=android to the frontend build.
-const androidBundle = mobileBundle || process.env.TAURI_ENV_PLATFORM === 'android';
+// exports TAURI_ENV_PLATFORM=android to the frontend build. The slim pin
+// overrides both — a distributed slim APK must never re-bloat by accident.
+const androidBundle =
+  !slimPin && (mobileBundle || process.env.TAURI_ENV_PLATFORM === 'android');
 
 // hikari imports highlight.js through its CJS `lib/` deep paths. With hikari
 // excluded from optimizeDeps those files are served raw in dev, and a raw CJS

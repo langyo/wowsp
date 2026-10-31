@@ -244,24 +244,39 @@ bundle-site:
 #   just check-android              → cargo check --target aarch64-linux-android
 #   just dev android [--release]    → cargo tauri android dev
 #   just build android *FLAGS       → cargo tauri android build
-#   just build android-apk          → one-ABI APK (canonical flags baked in)
+#   just build android-apk          → one-ABI SLIM APK (the distributed flavor)
+#   just build android-apk-full     → one-ABI FULL APK (resource pack embedded)
 #
-# The APK BUNDLES the resource pack: the recipes run fetch_models + the
-# offline GameParams extraction first (both idempotent — the model pull
-# skips the ~1.3 GB download when the local wowsp-res.json tree hash
-# already matches res-latest; the gameparams pack re-extracts only when
-# build.txt lags the installed game) and export WOWSP_MOBILE_BUNDLE=1 so
-# the webui build's prune steps keep models/*.glb + dogtags +
-# data/gameparams in dist (see packages/webui/vite.config.ts); the app
-# then serves them same-origin from the read-only APK assets — gameparams
-# through commands/gameparams.rs's bundled-asset fallback. Desktop `just
-# build tauri`/`package` is untouched — no env var, pruning stays on.
+# TWO flavors:
 #
-# NDK note: tauri-cli 2.11.x ignores NDK_HOME and always picks the NEWEST
-# NDK under $ANDROID_HOME/ndk — make sure 26.1 is the only/newest installed
-# one (a stray newer NDK silently wins toolchain selection). If a newer
-# NDK (e.g. 29.x) IS installed, temporarily move its directory aside for
-# the build and restore it afterwards, exactly like the R2 scaffold run.
+# SLIM (the default, what gets distributed): the resource pack and the
+# offline GameParams pack are NOT embedded — the APK ships ~80 MB instead
+# of ~500, the resource pack downloads on demand (设置 ▸ 资源, res_download
+# streams it with progress; the downloaded cache serves over the asset
+# protocol through tauri.android.conf.json's $CACHE scope) and ship data
+# comes from the data-latest channel / the compile-time Lesta snapshot
+# (commands/gameparams.rs's ladder). The recipes pin WOWSP_MOBILE_BUNDLE=0
+# so the webui build prunes the packs even under Tauri's own
+# TAURI_ENV_PLATFORM=android (see vite.config.ts), and no
+# fetch_models/extract_gameparams step runs — a slim build needs neither.
+#
+# FULL (`android-apk-full`, or `dev android`): the old behavior — the
+# recipes run fetch_models + the offline GameParams extraction first (both
+# idempotent — the model pull skips the ~1.3 GB download when the local
+# wowsp-res.json tree hash already matches res-latest; the gameparams pack
+# re-extracts only when build.txt lags the installed game) and export
+# WOWSP_MOBILE_BUNDLE=1 so the webui build's prune steps keep
+# models/*.glb + dogtags + data/gameparams in dist; the app then serves
+# them same-origin from the read-only APK assets. Desktop `just build
+# tauri`/`package` is untouched — no env var, pruning stays on.
+#
+# NDK note: pin 29.x. tauri-cli 2.12 HONORS NDK_HOME (2.11 always picked
+# the newest installed one), so the pin below is what builds actually use —
+# and 26.1 must NOT be pinned anymore: its old-style clang .cmd wrappers
+# mishandle a cdylib link's --version-script replay through %* ("was
+# unexpected at this time" on any cdylib dep like hifumi), which NDK 29's
+# rewritten wrappers fixed. cargo check (check-android below) links
+# nothing, so the wrapper class never matters there.
 
 # Machine-local SDK/JDK locations as OVERRIDABLE defaults:
 # `env_var_or_default` picks up ANDROID_HOME / NDK_HOME / JAVA_HOME from the
@@ -269,7 +284,7 @@ bundle-site:
 # export the vars — no file edits. NDK_HOME still derives from ANDROID_HOME
 # by default so the 26.1 pin below stays the source of truth.
 ANDROID_HOME := env_var_or_default("ANDROID_HOME", "C:/Users/langy/AppData/Local/Android/Sdk")
-NDK_HOME     := env_var_or_default("NDK_HOME", ANDROID_HOME / "ndk/26.1.10909125")
+NDK_HOME     := env_var_or_default("NDK_HOME", ANDROID_HOME / "ndk/29.0.13846066")
 NDK_TOOLCHAIN_BIN := NDK_HOME / "toolchains/llvm/prebuilt/windows-x86_64/bin"
 JAVA_HOME    := env_var_or_default("JAVA_HOME", "C:/Program Files/Amazon Corretto/jdk17.0.19_10")
 ANDROID_TARGET := "aarch64-linux-android"
@@ -295,15 +310,11 @@ check-android:
 
 # Wrappers around `cargo tauri android` with the same NDK env plus the JDK
 # gradle needs (AGP 8.x requires JDK 17). cargo-tauri configures the
-# per-target CC/linker env itself from the resolved NDK. Both export
-# WOWSP_MOBILE_BUNDLE=1 — it must reach tauri.conf.json's beforeBuildCommand
-# (`pnpm --filter @wowsp/webui build`) so the webui build keeps the GLBs and
-# the offline gameparams pack. The extract_gameparams step is idempotent:
-# it refreshes packages/webui/src/res/data/gameparams/ only when build.txt
-# lags the installed game (or the pack is missing/partial) and FAILS the
-# build when neither the cached GameParams.json nor a game install to
-# generate it from is available — an android APK without offline tech data
-# is a defect, not a degraded mode.
+# per-target CC/linker env itself from the resolved NDK. The build recipes
+# pin their flavor through WOWSP_MOBILE_BUNDLE (0 slim / 1 full) — it must
+# reach tauri.conf.json's beforeBuildCommand (`pnpm --filter @wowsp/webui
+# build`) so the webui build prunes (slim) or keeps (full) the GLBs and
+# the offline gameparams pack.
 _dev-android *FLAGS='':
     #!/usr/bin/env bash
     set -euo pipefail
@@ -317,23 +328,41 @@ _dev-android *FLAGS='':
 _build-android *FLAGS='':
     #!/usr/bin/env bash
     set -euo pipefail
-    # Skip-if-present fetches of the packs that ride into the APK assets:
-    # the GLB model pack (res-latest release) and the offline GameParams
-    # ship-data pack (re-extracted when the game build changed).
-    python scripts/fetch_models.py
-    python scripts/extract_gameparams.py
+    # SLIM (the distributed flavor): no pack fetch, no embed — the user
+    # downloads the resource pack on demand and ship data rides the
+    # data-latest channel. WOWSP_MOBILE_BUNDLE=0 pins the prune even under
+    # Tauri's own TAURI_ENV_PLATFORM=android.
     export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
         ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
-        JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=1
+        JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=0
     # The Android NDK's lld mangles non-ASCII rustc paths on Windows (GBK
     # bytes under a Chinese checkout path fail to open), so the Rust half
     # must build into an ASCII CARGO_TARGET_DIR. The resolver prints/creates
     # one (override: WOWSP_ANDROID_CARGO_TARGET); the Gradle/Android Studio
     # path mirrors the same candidate order in buildSrc/.../BuildTask.kt.
-    export CARGO_TARGET_DIR="$({{py}} scripts/android_cargo_target.py)"
+    export CARGO_TARGET_DIR="$(python scripts/android_cargo_target.py)"
     cargo tauri android build {{FLAGS}}
 
-# Single-ABI APK shortcut: the canonical `--debug --apk --target aarch64`
+# FULL flavor: the resource pack + offline GameParams pack ride into the
+# APK's read-only assets (~500 MB, works fully offline). Skip-if-present
+# fetches of the packs: the GLB model pack (res-latest release) and the
+# offline GameParams ship-data pack (re-extracted when the game build
+# changed). The extract_gameparams step FAILS the build when neither the
+# cached GameParams.json nor a game install to generate it from is
+# available — a full APK without offline tech data is a defect, not a
+# degraded mode.
+_build-android-full *FLAGS='':
+    #!/usr/bin/env bash
+    set -euo pipefail
+    python scripts/fetch_models.py
+    python scripts/extract_gameparams.py
+    export ANDROID_HOME={{ANDROID_HOME}} NDK_HOME={{NDK_HOME}} \
+        ANDROID_NDK_HOME={{NDK_HOME}} ANDROID_NDK_ROOT={{NDK_HOME}} \
+        JAVA_HOME="{{JAVA_HOME}}" WOWSP_MOBILE_BUNDLE=1
+    export CARGO_TARGET_DIR="$(python scripts/android_cargo_target.py)"
+    cargo tauri android build {{FLAGS}}
+
+# Single-ABI APK shortcuts: the canonical `--debug --apk --target aarch64`
 # from the section note above. Without an explicit --target, cargo tauri
 # android build compiles ALL FOUR ABIs (aarch64/armv7/i686/x86_64) — slow,
 # and the extra Rust targets are usually not even installed. Debug output
@@ -342,6 +371,9 @@ _build-android *FLAGS='':
 # gen/android/key.properties (gitignored) is wired into the gradle project.
 _build-android-apk *FLAGS='--debug':
     just _build-android --apk --target aarch64 {{FLAGS}}
+
+_build-android-apk-full *FLAGS='--debug':
+    just _build-android-full --apk --target aarch64 {{FLAGS}}
 
 # ── lint-msg ──────────────────────────────────────────────────────────
 #   just lint-msg              → check commit subjects on master..HEAD (AGENTS.md §1)
