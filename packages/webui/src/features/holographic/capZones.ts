@@ -74,6 +74,22 @@ export function zoneIsLive(t: EntityTrajectory, at: number): boolean {
   return born < 0 || at >= born;
 }
 
+/** Whether the zone needs a ship to physically enter its radius before it
+ *  may be revealed. Story-operation scripts pre-place every objective zone
+ *  at battle start and reveal them one by one as the story advances
+ *  (verified on a 15.9 story replay: six control points, all born at t=0
+ *  and owned by the script's team, ZERO ownership/progress/destroy traffic
+ *  for the whole battle — the replay carries no activation signal), so a
+ *  ship sailing into the radius is the only stream evidence an objective
+ *  went live. Birth stays the gate everywhere else: pre-recording zones
+ *  (PvP domination, −1) are live from the first frame and mid-battle
+ *  births (birth > 0) reveal at birth — there the EntityCreate itself IS
+ *  the script revealing the objective. Combine with the map's operation
+ *  flag at the call site; alone this only classifies the birth time. */
+export function zoneNeedsEngagement(t: EntityTrajectory): boolean {
+  return zoneBirthTime(t) === 0;
+}
+
 // ── Scoring rules (official: wiki.worldofwarships.com/Ship:Game_Modes) ──
 // Domination Random/Co-op: 3 areas → start 300, +3 per completed capture,
 // +3 every 5s per controlled area; 4 areas → start 200, +4, +4 every 9s.

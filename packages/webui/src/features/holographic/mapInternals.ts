@@ -234,6 +234,11 @@ export interface CapSimState {
   /** Score accumulated from this point (completion + accrual). */
   scoreAlly: number;
   scoreEnemy: number;
+  /** Battle second a ship first sailed into the zone — the operation story
+   *  objective's reveal latch (see capZones.zoneNeedsEngagement). Null =
+   *  nothing has entered yet. Latched by the forward walk, so it survives
+   *  frame-by-frame playback and is recomputed identically on scrub-back. */
+  revealAt: number | null;
 }
 
 /** Reactive inputs threaded from HolographicMap's setup. The extracted

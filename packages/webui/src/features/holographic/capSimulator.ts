@@ -10,6 +10,7 @@ import {
   SPECIAL_CAP_MAPS,
   capLetter,
   zoneIsLive,
+  zoneNeedsEngagement,
   type CapZoneState,
 } from "./capZones";
 import { sampleAt, hpAtTime, progressAtTime } from "./trajectoryMath";
@@ -113,6 +114,12 @@ function simulateZone(ctx: MapInternals,
         if (hpVal != null) st.prevHp.set(traj.entityId, hpVal);
       }
     }
+    // Operation story objectives reveal on first physical entry — latch the
+    // instant (see zoneNeedsEngagement; the walk always starts at the zone's
+    // birth, so a forward scrub re-derives the same latch).
+    if (ally + enemy > 0 && st.revealAt == null) {
+      st.revealAt = mid;
+    }
     const contested = ally > 0 && enemy > 0;
     if (st.owner === 0) {
       // Neutral: a single team present starts capturing it.
@@ -159,12 +166,34 @@ function simulateZone(ctx: MapInternals,
   st.lastT = t;
 }
 
+/** The dormant placeholder pushed for hidden zones (unborn, unrevealed or
+ *  resolved): every surface renders `live: false` as fully absent. */
+function dormantCap(letter: string): CapZoneState {
+  return {
+    letter,
+    live: false,
+    owner: 0,
+    progress: 0,
+    alliesIn: 0,
+    enemiesIn: 0,
+    contested: false,
+    capturing: false,
+    speed: 1 / 60,
+    etaSeconds: null,
+    captureTeam: 0,
+  };
+}
+
 /** Owner at time t from the raw capSamples stream; before the first
  *  ownership sample (or with no stream at all) fall back to the zone's
  *  initial team from the create state — zones captured from match start
  *  never emit ownership updates. teamId is a 0/1 SIDE number, so it maps
  *  to the owner code (1 = recorder's side) via the recorder's own team
- *  from the post-battle payload. */
+ *  from the post-battle payload. Operations pass null: their pre-placed
+ *  zones carry the SCRIPT's owning team (e.g. every objective born
+ *  team-1 in a story assault), which painted the whole board enemy-red
+ *  from the first frame — in-story objectives start unclaimed until the
+ *  game's own stream (or the capture sim) flips them. */
 function ownerAt(ctx: MapInternals,
   samples: { time: number; value: number }[],
   t: number,
@@ -305,19 +334,7 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
     // ring, no letter, no chip, no simulation, no score. Pre-recording
     // zones (PvP domination) are born before t=0 and never hit this.
     if (!zoneIsLive(zone, t)) {
-      display.push({
-        letter: capLetter(zone, i),
-        live: false,
-        owner: 0,
-        progress: 0,
-        alliesIn: 0,
-        enemiesIn: 0,
-        contested: false,
-        capturing: false,
-        speed: 1 / 60,
-        etaSeconds: null,
-        captureTeam: 0,
-      });
+      display.push(dormantCap(capLetter(zone, i)));
       continue;
     }
     if (!scoringSet.has(eid)) {
@@ -349,17 +366,43 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
       st = {
         lastT: simStart,
         progress: 0,
-        owner: ownerAt(ctx, samples, 0, zone.kind?.initialTeam ?? null),
+        owner: ownerAt(
+          ctx,
+          samples,
+          0,
+          // Operations never inherit the script's owning team — see ownerAt.
+          ctx.props.operation ? null : zone.kind?.initialTeam ?? null,
+        ),
         prevHp: new Map(),
         accrualT: 0,
         scoreAlly: 0,
         scoreEnemy: 0,
+        revealAt: null,
       };
       ctx.capSim.set(eid, st);
     }
     simulateZone(ctx, zone, eid, t, samples, capCompletePts, accrualEvery, accrualPts);
     allyScoreNow += st.scoreAlly;
     enemyScoreNow += st.scoreEnemy;
+    // Operation story objectives (行动剧情) leave the board twice: before
+    // the script activates them — a pre-placed point (born at t=0) has no
+    // activation signal in the replay, so it stays hidden until a ship
+    // first sails into its radius (zoneNeedsEngagement) — and once the
+    // objective RESOLVES, i.e. its capture completes (the sim crossing
+    // progress 1, or the game's own ownership stream flipping the point):
+    // a captured/lost story objective disappears instead of lingering to
+    // the end screen. PvP domination keeps points pinned; the operation
+    // flag is single-team-only, so co-op domination is untouched too.
+    if (ctx.props.operation) {
+      const unrevealed =
+        zoneNeedsEngagement(zone) &&
+        (st.revealAt == null || t < st.revealAt);
+      const resolved = st.progress >= 1 || st.owner !== 0;
+      if (unrevealed || resolved) {
+        display.push(dormantCap(capLetter(zone, i)));
+        continue;
+      }
+    }
     const { ally, enemy } = shipsInZone(ctx, zone, t);
     // Capturing requires someone INSIDE the point — a neutral point with
     // leftover progress (capture started, then everyone left) must not
