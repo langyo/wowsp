@@ -32,6 +32,7 @@ import {
 } from "./wallpaperBlur";
 import { api } from "@/api";
 import { isNative } from "@/transport";
+import { isMobileApp } from "@/utils/platform";
 
 const activeWallpaperId = ref(loadActiveWallpaperId());
 
@@ -109,11 +110,48 @@ export function useWallpaper() {
   // setActiveWallpaper lives at module level (refreshCustom's self-heal
   // shares it); the composable just re-exposes it.
 
+  /** The phone's image pick: a transient webview file input — the Android
+   *  WebView routes it to the system document/photo picker (wry implements
+   *  onShowFileChooser), so no native dialog is needed. Resolves null when
+   *  nothing was picked. */
+  function pickImageBytesMobile(): Promise<{ ext: string; bytes: Uint8Array } | null> {
+    return new Promise((resolve) => {
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = "image/*";
+      input.onchange = () => {
+        const file = input.files?.[0];
+        if (!file) {
+          resolve(null);
+          return;
+        }
+        const ext = (file.name.split(".").pop() ?? "").toLowerCase();
+        void file
+          .arrayBuffer()
+          .then(
+            (buf) => resolve({ ext, bytes: new Uint8Array(buf) }),
+            () => resolve(null),
+          );
+      };
+      // A picker dismissed without a choice never fires change — nothing
+      // to resolve, the promise just settles on the next pick's promise.
+      input.click();
+    });
+  }
+
   /** Native image picker → the file lands in the wallpapers folder → it
    *  becomes the active background right away (live preview everywhere).
-   *  Returns null when the user cancelled the dialog. */
+   *  Returns null when the user cancelled the dialog. The PHONE routes
+   *  through the webview file input (the raw-bytes command) — the native
+   *  rfd picker has no Android backend. */
   async function importCustom(): Promise<string | null> {
-    const imported = await api.wallpaperImport();
+    let imported: { id: string } | null;
+    if (isMobileApp()) {
+      const picked = await pickImageBytesMobile();
+      imported = picked ? await api.wallpaperImportBytes(picked.ext, picked.bytes) : null;
+    } else {
+      imported = await api.wallpaperImport();
+    }
     await refreshCustom();
     if (imported) setActiveWallpaper(imported.id);
     return imported?.id ?? null;

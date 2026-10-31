@@ -6,7 +6,7 @@
 //! solid background lives on the webui side — this module only manages the
 //! imported files, so no metadata JSON is needed.
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -32,8 +32,15 @@ fn is_image_file(name: &str) -> bool {
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
+    is_image_ext(&ext)
+}
+
+/// The extension allowlist behind [`is_image_file`] — shared with the
+/// byte-carried import, which validates a header-supplied extension exactly
+/// like the native-picker path trusted the picked file's name.
+fn is_image_ext(ext: &str) -> bool {
     matches!(
-        ext.as_str(),
+        ext,
         "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp" | "avif"
     )
 }
@@ -177,6 +184,89 @@ async fn import_image(src: &Path, ext: &str) -> Result<WallpaperFile> {
     to_entry(dir.join(dest_name)).ok_or_else(|| anyhow!("imported wallpaper missing after copy"))
 }
 
+/// Size ceiling for byte-carried wallpaper imports (the webview picker
+/// path): generous enough for 4K PNGs, small enough to bound the IPC body.
+const WALLPAPER_IMPORT_MAX_BYTES: usize = 48 * 1024 * 1024;
+
+/// Import the webui picker's image bytes (raw IPC body, same channel as
+/// [`crate::commands::stamps::stamp_import_bytes`]) into the wallpapers
+/// dir under a fresh `wallpaper-<nanos>.<ext>` name — the phone's path:
+/// the webview `<input type=file>` opens the system document picker, so no
+/// native dialog is involved. Works on desktop too (the webui just never
+/// routes there — its native picker keeps titles and filters).
+///
+/// Header contract with `api/modules/shell.ts` (`wallpaperImportBytes`):
+/// `x-wallpaper-ext` = canonical extension; body = the image file bytes.
+/// The extension is re-validated against the listing's allowlist — a
+/// bogus pair imports nothing.
+#[tauri::command]
+pub async fn wallpaper_import_bytes(
+    request: tauri::ipc::Request<'_>,
+) -> CommandResult<WallpaperFile> {
+    let headers = request.headers();
+    let ext = headers
+        .get("x-wallpaper-ext")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| anyhow!("missing x-wallpaper-ext header"))?
+        .to_ascii_lowercase();
+    let bytes = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        _ => return Err(anyhow!("expected raw body (pass a Uint8Array to invokeRaw)").into()),
+    };
+    let (ext_log, byte_len) = (ext.clone(), bytes.len());
+    let entry = tokio::task::spawn_blocking(move || {
+        let dir = wallpapers_dir()?;
+        import_wallpaper_bytes_in(&dir, &ext, &bytes)
+    })
+    .await
+    .map_err(|e| anyhow!("wallpaper import task failed: {e}"))??;
+    tracing::info!(
+        ext = %ext_log,
+        bytes = byte_len,
+        "custom wallpaper imported"
+    );
+    Ok(entry)
+}
+
+/// Validation + transactional write behind [`wallpaper_import_bytes`],
+/// split from it so tests can drive a fixture directory instead of the real
+/// data dir (same shape as stamps' `import_stamp_bytes_in`).
+fn import_wallpaper_bytes_in(dir: &Path, ext: &str, bytes: &[u8]) -> Result<WallpaperFile> {
+    if !is_image_ext(ext) {
+        return Err(anyhow!("unsupported wallpaper type: {ext}"));
+    }
+    if bytes.is_empty() {
+        bail!("wallpaper image is empty");
+    }
+    if bytes.len() > WALLPAPER_IMPORT_MAX_BYTES {
+        bail!(
+            "wallpaper image is {} bytes (max {})",
+            bytes.len(),
+            WALLPAPER_IMPORT_MAX_BYTES
+        );
+    }
+    let dest_name = format!(
+        "wallpaper-{}.{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| anyhow!("clock error: {e}"))?
+            .as_nanos(),
+        ext
+    );
+    let dest = dir.join(&dest_name);
+    let part = dir.join(format!("{dest_name}.part"));
+    // Same .part discipline as import_image: an interrupted or failing
+    // write can never leave a corrupt image the listing would pick up.
+    let result = std::fs::write(&part, bytes)
+        .and_then(|()| std::fs::rename(&part, &dest))
+        .map_err(|e| anyhow!("write wallpaper: {e}"));
+    if let Err(e) = result {
+        let _ = std::fs::remove_file(&part);
+        return Err(e);
+    }
+    to_entry(dest).ok_or_else(|| anyhow!("imported wallpaper missing after write"))
+}
+
 /// Delete an imported wallpaper by id (bare file name inside the dir).
 /// Idempotent (missing file is OK).
 #[tauri::command]
@@ -216,5 +306,34 @@ mod tests {
         // Non-image and empty ids are rejected.
         assert!(!is_valid_wallpaper_id("notes.txt"));
         assert!(!is_valid_wallpaper_id(""));
+    }
+
+    /// The byte-carried import (the phone's picker path) must reject what
+    /// the listing would never accept: a bogus extension imports nothing,
+    /// and an empty body is an error rather than a ghost entry.
+    #[test]
+    fn byte_import_validates_extension_and_body() {
+        let dir = std::env::temp_dir().join(format!("wowsp-wp-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+
+        // WallpaperFile is not Debug (unwrap_err needs T: Debug) — match
+        // the rejection out instead.
+        let err = match import_wallpaper_bytes_in(&dir, "exe", b"MZ") {
+            Err(e) => e,
+            Ok(_) => panic!("bogus extension must be rejected"),
+        };
+        assert!(err.to_string().contains("unsupported wallpaper type"));
+
+        let err = match import_wallpaper_bytes_in(&dir, "png", b"") {
+            Err(e) => e,
+            Ok(_) => panic!("empty body must be rejected"),
+        };
+        assert!(err.to_string().contains("empty"));
+
+        let entry =
+            import_wallpaper_bytes_in(&dir, "png", b"\x89PNG\r\n\x1a\nrest").expect("import");
+        assert!(entry.id.starts_with("wallpaper-"));
+        assert!(entry.id.ends_with(".png"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
