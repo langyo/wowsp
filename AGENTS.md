@@ -281,7 +281,8 @@ Before submitting, the relevant subset of `just lint` (or scoped
   `game-assets-core` tool packages are dependency sources and keep their
   historical formatting (in-tree forks of wows-toolkit, flattened under
   `packages/tools/` — no upstream sync; dependency bumps and fixes there
-  are WoWSP's own, see the packages' header comments). The ship GLB
+  are WoWSP's own, see the packages' header comments; upstream drift is
+  reviewed per §11). The ship GLB
   exporter is the Rust tool package `packages/tools/model-exporter`
   (a thin CLI over the game-assets library's ship-export API; build via
   `just build model-exporter`) — it replaced the vendored C++
@@ -418,3 +419,34 @@ edits ONLY the release body.
   and deletion stay reserved to the maintainer; tag pushes remain
   user-only (§4). Patch serially — one writer at a time (the script
   verifies every write by re-read).
+
+## 11. Upstream Drift Review — game-assets fork (mandatory)
+
+The `game-assets` / `game-assets-core` tool packages are a self-maintained
+fork of landaire/wows-toolkit's `wowsunpack` / `wows-core` with **no upstream
+sync** (§6): upstream commits are reference, not authority. The flip side is
+that upstream fixes never arrive by themselves — game-version adaptation
+(GameParams / entitydef / idx / `.geometry` format changes for a new client
+build) must be discovered and ported deliberately.
+
+At **every game version bump** (a new client build lands, GameParams
+parsing fails, or model export breaks on a build the fork has never seen),
+and periodically otherwise:
+
+1. Run `just upstream-drift` (wraps `scripts/upstream_drift.py`; needs `gh`
+   auth). It lists upstream commits touching the two forked crates since
+   the reviewed baseline (`scripts/upstream_drift_state.json`), flags the
+   ones that look like game-version adaptation, and reports the crate
+   version drift against upstream.
+2. Give every flagged commit a disposition: port it into the fork through
+   a normal PR, or record why it does not apply (keep the reasoning in the
+   PR description). Where the fork already fixed the same problem on its
+   own, verify the implementations agree instead of blindly re-porting.
+3. Close the review with `python scripts/upstream_drift.py
+   --mark-reviewed` inside the same PR so the baseline advances together
+   with the ported work. The script refuses to advance the baseline over
+   a truncated commit listing.
+4. If `gh` or the network is unavailable, note it and re-run later — a
+   game version bump without a recorded drift review is an open action
+   item, not a completed bump. The tool is advisory; the human reviewer
+   owns every port/skip decision.

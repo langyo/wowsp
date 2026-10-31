@@ -1,0 +1,5 @@
+{
+  "last_reviewed_date": "2026-08-04",
+  "last_reviewed_sha": null,
+  "last_reviewed_note": "Initial baseline: the vendored wowsunpack/wows-core intake was finalized 2026-08-03 (58d8fa19); the 2026-10 fork declaration (4c66d42a) assumed no later upstream sync. Day-precision filter, so intake-day commits are excluded by starting on 2026-08-04. See AGENTS.md §11."
+}

@@ -184,6 +184,15 @@ i18n-check *FLAGS='':
 sync-versions:
     @python scripts/sync_versions.py
 
+# Upstream drift review for the game-assets fork (AGENTS.md §11): lists
+# landaire/wows-toolkit commits touching the two forked crates since the
+# reviewed baseline (scripts/upstream_drift_state.json) and flags the
+# game-version adaptation candidates. Run at every game version bump.
+#   just upstream-drift                  → review report (needs gh auth)
+#   just upstream-drift --mark-reviewed  → advance the baseline after porting
+upstream-drift *FLAGS='':
+    @python scripts/upstream_drift.py {{FLAGS}}
+
 check:
     cargo check --workspace
 
