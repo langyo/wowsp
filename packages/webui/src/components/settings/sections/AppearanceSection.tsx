@@ -533,10 +533,11 @@ export default defineComponent({
                 celestia host drops at the bottom of its settings page):
                 summary + edit button, and the second-level editor picks
                 时区 (default, offline) / IP (the real-fix cascade) / 手动
-                (an explicit IANA zone plus hemisphere). The engine, storage
-                and last-write-wins refreshes all live in hikari; the
-                readout underneath stays ours — what the resolved strategy
-                currently paints. */}
+                (a translated 24-sector globe — HkTimeZoneGlobe, async-loaded
+                only when the manual pane opens — plus hemisphere). The
+                engine, storage and last-write-wins refreshes all live in
+                hikari; the readout underneath stays ours — what the
+                resolved strategy currently paints. */}
             <HkSettingsSub title={t("settings.geolocation")}>
               <HkSolarLocationSetting onApplied={() => notifySettingsSaved()} />
               <p class="settings-modal__geoline">
