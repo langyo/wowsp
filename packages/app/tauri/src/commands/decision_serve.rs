@@ -1207,7 +1207,7 @@ fn debug_fire_model() -> anyhow::Result<&'static Mutex<ScoreModel>> {
 }
 
 /// The process-global debug movement model (same cache semantics).
-fn debug_move_model() -> anyhow::Result<&'static Mutex<ScoreModel>> {
+pub(crate) fn debug_move_model() -> anyhow::Result<&'static Mutex<ScoreModel>> {
     DEBUG_MOVE_MODEL
         .get_or_init(|| {
             load_debug_model(
@@ -1237,19 +1237,56 @@ struct DebugCacheKey {
 /// The expensive artifacts of one replay: the E17 score report (full
 /// timeline) plus the per-ship row lists the movement advice snaps to, and
 /// the death-time table for the alive gate.
-struct DebugCacheEntry {
-    scores: ShipScoreReport,
+pub(crate) struct DebugCacheEntry {
+    pub(crate) scores: ShipScoreReport,
     /// entity id → rows sorted by `t` (team-known ships only — the E16
     /// export drops mirror-ambiguous hulls, the recorder included when its
     /// shipId collides; those ships get neither advice nor scores).
-    rows: BTreeMap<i32, Vec<MoveDatasetRow>>,
-    death: BTreeMap<i32, Option<f32>>,
-    los_loaded: bool,
-    map_name: Option<String>,
+    pub(crate) rows: BTreeMap<i32, Vec<MoveDatasetRow>>,
+    pub(crate) death: BTreeMap<i32, Option<f32>>,
+    pub(crate) los_loaded: bool,
+    pub(crate) map_name: Option<String>,
 }
 
 static DEBUG_REPORT_CACHE: OnceLock<Mutex<Option<(DebugCacheKey, DebugCacheEntry)>>> =
     OnceLock::new();
+
+/// Run `f` against the cached full-timeline artifacts for one replay
+/// (building them under the lock on first use — the same dedupe the debug
+/// report enjoys). The static report shares this cache: one scoring pass
+/// serves every consumer of a replay.
+pub(crate) fn with_debug_cache_entry<T>(
+    path: &Path,
+    los_dir: Option<&Path>,
+    f: impl FnOnce(&DebugCacheEntry) -> anyhow::Result<T>,
+) -> anyhow::Result<T> {
+    let fire = debug_fire_model()?;
+    let mv = debug_move_model()?;
+    let (fire_detail, move_detail) = {
+        let f = fire
+            .lock()
+            .map_err(|_| anyhow!("debug fire model mutex poisoned"))?;
+        let m = mv
+            .lock()
+            .map_err(|_| anyhow!("debug movement model mutex poisoned"))?;
+        (f.detail().to_string(), m.detail().to_string())
+    };
+    let key = DebugCacheKey {
+        replay_path: path.to_string_lossy().into_owned(),
+        los_dir: los_dir.map(|d| d.to_string_lossy().into_owned()),
+        fire_detail,
+        move_detail,
+    };
+    let cache = debug_report_cache();
+    let mut guard = cache
+        .lock()
+        .map_err(|_| anyhow!("decision debug cache mutex poisoned"))?;
+    if !guard.as_ref().is_some_and(|(k, _)| *k == key) {
+        let entry = build_debug_cache_entry(path, los_dir, &key.fire_detail, &key.move_detail)?;
+        *guard = Some((key, entry));
+    }
+    f(&guard.as_ref().expect("just populated").1)
+}
 
 fn debug_report_cache() -> &'static Mutex<Option<(DebugCacheKey, DebugCacheEntry)>> {
     DEBUG_REPORT_CACHE.get_or_init(|| Mutex::new(None))
