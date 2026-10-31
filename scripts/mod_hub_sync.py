@@ -81,6 +81,15 @@ SHOW_AND_TELL_CATEGORY = "DIC_kwDOTZ4Crs4DERxL"
 # An Aslain catalog id always carries its category prefix (Team_Panel_..., UI_...);
 # hand-published threads never do.
 ASLAIN_ID_RE = re.compile(r"^(Team_Panel|Team_Mini_Panel|Minimap|Chat|UI|Markers|Port_mods|texts)_")
+# Aslain <Implicit> packages WoWSP must never re-ship. Aslain's own manager
+# post-processes some shared files at install time per the user's component
+# selection; re-distributing them raw ships the un-substituted template.
+# Concretely ShipIdentity.unbound is OlliN's merged port-UI payload whose
+# "*_INSTALLED" component switches are resolved by Aslain's installer -- and
+# with every OlliN art component excluded from this catalog the raw file is
+# dead weight that also breaks port ship-name rendering for new collab ships
+# (Blue-Archive PJSS820 rendered a blank name, 2026-10-31).
+EXCLUDE_IMPLICIT_NAME_RE = re.compile(r"shipidentity", re.IGNORECASE)
 # The md5 prefix Aslain embeds in package filenames (zips only; the absolute-URL
 # 7z outliers carry no fingerprint at all).
 TOKEN_RE = re.compile(r"_([0-9a-f]{8})\.(?:zip|7z)$", re.IGNORECASE)
@@ -394,6 +403,8 @@ def bundle_implicit_packages(mods: list[dict], implicit: list[dict]) -> int:
     the same url or upstream token."""
     by_mod: dict = {}
     for pkg in implicit:
+        if EXCLUDE_IMPLICIT_NAME_RE.search(pkg.get("name", "")):
+            continue
         for mid in pkg["requires_any"]:
             by_mod.setdefault(mid, []).append(pkg)
     added = 0
@@ -1540,6 +1551,15 @@ def selftest() -> None:
     assert dep["requires_runtime"] is True
     assert dep["packages"][-1]["token"] == "729863db"
     assert bundle_implicit_packages([dep], implicit) == 0  # re-bundling: no-op
+    # the excluded OlliN ShipIdentity implicit never reaches dependents
+    dep_si = rec("battle.timer.clock2", "UI_Timers_BattleClock2", ["8be69ddb"])
+    implicit_si = [{"url": "u-si", "name": "Implicit_portmods_shipidentity_4d41c0e7.zip",
+                    "size_kb": 150, "order": 0, "token": "4d41c0e7", "sha256": "",
+                    "size_bytes": 0, "asset": "",
+                    "requires_any": ["UI_Timers_BattleClock2"]}]
+    assert bundle_implicit_packages([dep_si], implicit_si) == 0
+    assert "requires_runtime" not in dep_si
+    assert all("shipidentity" not in p["name"].lower() for p in dep_si["packages"])
     dep["packages"][0].update({"asset": "pkg-8be69ddb.zip", "sha256": "d" * 64,
                                "size_bytes": 2048})
     dep["packages"][-1].update({"asset": "pkg-729863db.zip", "sha256": "e" * 64,
