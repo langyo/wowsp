@@ -30,28 +30,29 @@
  *     Session-only by design (see useReplayListFilter).
  *   - ABOVE that date pair the popup carries the two single-select
  *     dimensions of the multi-client rail: 客户端 (the owning install, by
- *     installPath — the replay's server identity) and 玩家 (the recorder's
- *     nickname). Both are plain HkSelect dropdowns whose first option is
- *     the "" sentinel (FILTER_ANY): the rail lists replays from EVERY
- *     detected client, so "which install recorded this" and "which of my
- *     nicknames recorded this" are the two questions the mode/date
- *     dimensions cannot answer. The client options come from the HOST
- *     (installs are the host's data); the player options derive from the
- *     entries themselves (collectPlayerOptions). Both picks PERSIST —
- *     unlike the date window, they mean the same thing on the next visit —
- *     and both engage the funnel's look while set, same as the window.
+ *     installPath — the replay's server identity) and 玩家 (a SEARCH over
+ *     every participant's nickname — see filterByPlayer). The client side
+ *     is a plain HkSelect whose first option is the "" sentinel
+ *     (FILTER_ANY): the rail lists replays from EVERY detected client, so
+ *     "which install recorded this" is the question the mode/date
+ *     dimensions cannot answer; the option list comes from the HOST
+ *     (installs are the host's data). The player side is a free-text
+ *     HkInput search that live-filters as you type and matches ANY human
+ *     in a battle's roster — finding a player's battles to report them is
+ *     the point, not just the recording account. Both PERSIST — unlike
+ *     the date window, they mean the same thing on the next visit — and
+ *     both engage the funnel's look while set, same as the window.
  *
  * External picks (session-temporary files from outside the replays folder)
  * stay PINNED above the scanned list; the filter and the sort apply to both
  * blocks independently, so the pinning survives any selection. Selection
  * persists to localStorage; stored modes absent from the current list stay
- * listed (and clearable) in the chip until dropped — see
- * collectModeOptions; the same contract holds for a stale player pick.
+ * listed (and clearable) in the chip until dropped — see collectModeOptions.
  */
 import { computed, defineComponent, ref, watch, type PropType, type Ref } from "vue";
 
-import { Filter } from "@lucide/vue";
-import { HkDatePicker, HkSelect } from "@celestia-island/hikari";
+import { Filter, X } from "@lucide/vue";
+import { HkDatePicker, HkInput, HkSelect } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import type { ReplayMetaLite } from "@/api";
@@ -129,40 +130,37 @@ export function filterReplays<T extends ReplayMetaLite>(metas: T[], modes: Set<s
   return metas.filter((r) => modes.has(replayModeKeyOf(r)));
 }
 
-/** The 全部 sentinel of the two single-select dimensions (client / player):
- *  "" narrows nothing on its dimension. It is exactly the value the
- *  persistence loader substitutes for a missing pick, so a cleared dropdown
- *  and a fresh session read the same state — no separate null sentinel. */
+/** The cleared sentinel of the two text dimensions (the client pick and
+ *  the player search): "" narrows nothing on its dimension. It is exactly
+ *  the value the persistence loader substitutes for a missing pick, so a
+ *  cleared field and a fresh session read the same state — no separate
+ *  null sentinel. */
 export const FILTER_ANY = "";
 
-/** Player-nickname options for the filter's player dropdown: the distinct
- *  non-empty `playerName`s the rail actually holds, most-played FIRST
- *  (descending occurrence count — the user's own nickname usually wins),
- *  ties broken by locale compare so the row order is deterministic. The
- *  labels are the nicknames verbatim: a nickname is a proper noun and reads
- *  the same in every locale, so nothing is localized. `extras` (the
- *  persisted pick) are APPENDED LAST when absent from the data — a stale
- *  pick must stay listed (and clearable) instead of vanishing with its
- *  filter still engaged, the same contract as collectModeOptions. */
-export function collectPlayerOptions(
-  metas: Iterable<ReplayMetaLite>,
-  extras: Iterable<string> = [],
-): string[] {
-  const counts = new Map<string, number>();
-  for (const m of metas) {
-    const name = m.playerName;
-    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
-  }
-  const names = [...counts.entries()]
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .map(([name]) => name);
-  const listed = new Set(names);
-  for (const extra of extras) {
-    if (!extra || listed.has(extra)) continue;
-    listed.add(extra);
-    names.push(extra);
-  }
-  return names;
+/** The nicknames a replay entry is searchable by: every HUMAN roster name
+ *  when the lite row carries the roster (both sides, in roster order —
+ *  bots and scripted scenario units never enter it), else the recorder's
+ *  nickname alone. The roster list is a newer backend field (phone
+ *  pairing serves the same DTO), so an absent/empty list degrades to the
+ *  recorder-only fallback instead of matching nothing. */
+export function replaySearchableNamesOf(r: ReplayMetaLite): string[] {
+  if (r.playerNames && r.playerNames.length > 0) return r.playerNames;
+  return r.playerName ? [r.playerName] : [];
+}
+
+/** Keep only replays SOME participant's nickname matches `query` — a
+ *  case-insensitive SUBSTRING test over replaySearchableNamesOf (the full
+ *  human roster when the row carries one, the recorder alone otherwise):
+ *  the search exists to find a player's battles for reporting, and a
+ *  partial / case-mismatched fragment must still find them. A blank query
+ *  (empty or whitespace-only) is the identity and passes the input through
+ *  untouched. */
+export function filterByPlayer<T extends ReplayMetaLite>(metas: T[], query: string): T[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return metas;
+  return metas.filter((r) =>
+    replaySearchableNamesOf(r).some((name) => name.toLowerCase().includes(needle)),
+  );
 }
 
 /** Keep only replays whose owning install is `client` — the installPath the
@@ -176,17 +174,6 @@ export function collectPlayerOptions(
 export function filterByClient<T extends ReplayMetaLite>(metas: T[], client: string): T[] {
   if (!client) return metas;
   return metas.filter((r) => sameGamePath(r.installPath, client));
-}
-
-/** Keep only replays recorded by `player` — an EXACT (case-sensitive)
- *  match on the recorder's nickname, the same vocabulary
- *  collectPlayerOptions lists. Nicknames are user-chosen proper nouns, so
- *  case-folding them here would merge distinct accounts. `FILTER_ANY` is
- *  the identity; once a nickname is picked, entries without a playerName
- *  cannot equal it and drop out. */
-export function filterByPlayer<T extends ReplayMetaLite>(metas: T[], player: string): T[] {
-  if (!player) return metas;
-  return metas.filter((r) => r.playerName === player);
 }
 
 export type ReplaySortDir = "asc" | "desc";
@@ -259,7 +246,10 @@ interface PersistedFilter {
   sort: ReplaySortDir;
   /** Owning install's path — the client pick (FILTER_ANY = 全部客户端). */
   client: string;
-  /** Recorder's nickname — the player pick (FILTER_ANY = 全部玩家). */
+  /** The player SEARCH QUERY (FILTER_ANY = cleared). A v1 blob's old
+   *  exact-nickname pick degrades harmlessly: the same string now reads
+   *  as the initial query, and the case-insensitive substring match only
+   *  widens what it finds. */
   player: string;
 }
 
@@ -274,8 +264,8 @@ const DEFAULT_FILTER: PersistedFilter = {
  *  future blobs: anything unparseable degrades to the session default.
  *  Unknown fields (the retired mode-group sort of wowsp.replayFilter.v1)
  *  are ignored on read and dropped on the next write. The blob KEEPS the
- *  v1 key: the two single-select dimensions are additive, so an old blob
- *  simply loads with them at FILTER_ANY. */
+ *  v1 key: the client pick and the player query are additive, so an old
+ *  blob simply loads with them at FILTER_ANY. */
 function loadPersisted(): PersistedFilter {
   try {
     const raw = localStorage.getItem(PERSIST_KEY);
@@ -291,7 +281,8 @@ function loadPersisted(): PersistedFilter {
       sort: v?.sort === "asc" ? "asc" : "desc",
       // Wrong type (an old blob's number, a hand-edited object) degrades
       // to FILTER_ANY — never to a value that would filter: a pick must
-      // only ever come from a dropdown, which writes strings.
+      // only ever come from the dropdown / search field, which write
+      // strings.
       client: typeof v?.client === "string" ? v.client : FILTER_ANY,
       player: typeof v?.player === "string" ? v.player : FILTER_ANY,
     };
@@ -311,11 +302,11 @@ export function useReplayListFilter(
   const initial = loadPersisted();
   const selectedModes = ref(new Set<string>(initial.modes));
   const sortDir = ref<ReplaySortDir>(initial.sort);
-  // The two single-select dimensions — the owning install (client) and the
-  // recorder's nickname (player). Both PERSIST, unlike the date window
-  // below: a client or nickname pick means the same thing on the next
-  // visit (the same install is still there, the same nickname is still
-  // yours), so restoring it keeps the rail where the user left it; an
+  // The two text dimensions — the owning install (client) and the player
+  // search query. Both PERSIST, unlike the date window below: a client
+  // pick or a player query means the same thing on the next visit (the
+  // same install is still there; the same search still finds the same
+  // battles), so restoring it keeps the rail where the user left it; an
   // absolute date window would instead greet the next visit as a stale
   // slice of history.
   const selectedClient = ref<string>(initial.client);
@@ -346,10 +337,11 @@ export function useReplayListFilter(
     }
   });
 
-  /** One block's visible order: mode → date window → client → player, then
-   *  the match-time sort. Every narrowing is a pure filter, so the order
-   *  among them is immaterial — it is fixed HERE once so both blocks (the
-   *  external pin and the scanned list) run the exact same pipeline. */
+  /** One block's visible order: mode → date window → client → player
+   *  search, then the match-time sort. Every narrowing is a pure filter,
+   *  so the order among them is immaterial — it is fixed HERE once so both
+   *  blocks (the external pin and the scanned list) run the exact same
+   *  pipeline. */
   function visibleOf(block: readonly ReplayMetaLite[]): ReplayMetaLite[] {
     const byMode = filterReplays([...block], selectedModes.value);
     const byDate = filterByDateRange(byMode, dateFrom.value, dateTo.value);
@@ -359,11 +351,6 @@ export function useReplayListFilter(
 
   const modeOptions = computed(() =>
     collectModeOptions([...external.value, ...list.value], selectedModes.value),
-  );
-  // Nickname options span BOTH blocks (an external pick carries a nickname
-  // too), with the persisted pick as an extra so a stale one stays listed.
-  const playerOptions = computed(() =>
-    collectPlayerOptions([...external.value, ...list.value], [selectedPlayer.value]),
   );
   const visibleExternal = computed(() => visibleOf(external.value));
   const visibleList = computed(() => visibleOf(list.value));
@@ -384,7 +371,6 @@ export function useReplayListFilter(
     selectedClient,
     selectedPlayer,
     modeOptions,
-    playerOptions,
     visibleExternal,
     visibleList,
     filterActive,
@@ -396,7 +382,7 @@ export function useReplayListFilter(
  * hosting view owns the state so it can also consume the visible lists).
  * Renders the funnel icon button for the rail head's action row — the
  * popup (mode multi-select + the direction-bearing 全部模式 pill + the
- * client/player single-selects + the date-range pair in the chip's
+ * client select + the player search + the date-range pair in the chip's
  * default slot) opens anchored to it.
  */
 export default defineComponent({
@@ -419,9 +405,8 @@ export default defineComponent({
       type: Array as PropType<{ value: string; label: string }[]>,
       default: () => [],
     },
-    /** The recorder-nickname pick; FILTER_ANY = 全部玩家. */
+    /** The player search query; FILTER_ANY = the cleared field. */
     selectedPlayer: { type: String, default: FILTER_ANY },
-    playerOptions: { type: Array as PropType<string[]>, default: () => [] },
   },
   emits: {
     "update:selectedModes": (_modes: Set<string>) => true,
@@ -480,13 +465,14 @@ export default defineComponent({
         )}
       >
         {/* The two single-select rows lead the slot, above the date pair:
-            the owning client (install) and the recorder's nickname. The
-            rail lists replays from EVERY detected client, so these are the
-            questions mode/date cannot answer. Each is one HkSelect — it
-            renders its own label, so the rows carry no extra label span
-            (unlike the date row, whose pickers have none). A pick rides
-            out as the host-level update event; the FILTER_ANY sentinel is
-            both the 全部 option's value and the "cleared" state. */}
+            the owning client (install) and the player search. The rail
+            lists replays from EVERY detected client, so these are the
+            questions mode/date cannot answer. The client keeps the plain
+            HkSelect — it renders its own label, so the rows carry no
+            extra label span (unlike the date row, whose pickers have
+            none). A pick rides out as the host-level update event; the
+            FILTER_ANY sentinel is both the 全部 option's value and the
+            "cleared" state. */}
         <div class="replay-view__pop-row">
           <div class="replay-view__pop-select">
             <HkSelect
@@ -500,16 +486,37 @@ export default defineComponent({
               onUpdate:modelValue={(v: string) => emit("update:selectedClient", v)}
             />
           </div>
-          <div class="replay-view__pop-select">
-            <HkSelect
-              label={t("replay.filter.player")}
-              options={[
-                { value: FILTER_ANY, label: t("replay.filter.allPlayers") },
-                ...props.playerOptions.map((n) => ({ value: n, label: n })),
-              ]}
-              placeholder={t("replay.filter.allPlayers")}
+          {/* The player SEARCH — an HkInput, not a dropdown: it matches
+              ANY participant's nickname (filterByPlayer), so the options
+              list a dropdown would need is every roster of every battle.
+              Live-filters on input through the host-level update event;
+              the caption rides the date row's field-label voice (the
+              shared pop-row grid), and the × affix clears back to the
+              FILTER_ANY sentinel once a query is set. */}
+          <div class="replay-view__pop-date">
+            <span class="replay-view__pop-field-label">
+              {t("replay.filter.player")}
+            </span>
+            <HkInput
+              size="sm"
+              spellcheck={false}
               modelValue={props.selectedPlayer}
               onUpdate:modelValue={(v: string) => emit("update:selectedPlayer", v)}
+              placeholder={t("replay.filter.playerSearch")}
+              v-slots={{
+                suffix: props.selectedPlayer
+                  ? () => (
+                      <button
+                        type="button"
+                        class="replay-view__pop-player-clear"
+                        aria-label={t("replay.filter.playerClear")}
+                        onClick={() => emit("update:selectedPlayer", FILTER_ANY)}
+                      >
+                        <X size={12} />
+                      </button>
+                    )
+                  : undefined,
+              }}
             />
           </div>
         </div>

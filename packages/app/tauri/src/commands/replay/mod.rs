@@ -60,10 +60,12 @@
 // `wire`     — the header-read Tauri command over the lib's meta path.
 // `streams`  — packet-stream decoding: positions, live snapshots, HP anchoring.
 // `listing`  — replay directory walks + the list/pick commands.
+// `reveal`   — the show-in-file-manager command (one validated path).
 // `caps`     — (lib) capture-zone geometry; consumed by `cap_layouts`.
 
 mod cap_layouts;
 mod listing;
+mod reveal;
 mod streams;
 mod wire;
 
@@ -94,6 +96,7 @@ pub use listing::{
     __tauri_command_name_list_replays, __tauri_command_name_list_replays_meta,
     __tauri_command_name_pick_replay_files, list_replays, list_replays_meta, pick_replay_files,
 };
+pub use reveal::{__cmd__replays_reveal, __tauri_command_name_replays_reveal, replays_reveal};
 pub use streams::{
     __cmd__live_temp_replay, __cmd__read_live_replay_snapshot, __cmd__read_replay_positions,
     __cmd__read_replay_smoke_screens, __tauri_command_name_live_temp_replay,

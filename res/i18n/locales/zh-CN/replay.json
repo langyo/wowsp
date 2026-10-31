@@ -16,7 +16,8 @@
     "client": "客户端",
     "allClients": "全部客户端",
     "player": "玩家",
-    "allPlayers": "全部玩家",
+    "playerSearch": "搜索玩家昵称…",
+    "playerClear": "清除玩家搜索",
     "dateFrom": "开始日期",
     "dateTo": "结束日期",
     "dateRange": "时间段"
@@ -24,6 +25,10 @@
   "external": {
     "tag": "外部",
     "close": "关闭查看"
+  },
+  "reveal": {
+    "tip": "在资源管理器中查看",
+    "failed": "无法打开资源管理器"
   },
   "acquire": {
     "pickFiles": "选取录像文件",

@@ -60,6 +60,7 @@ export const RPC = {
   live_temp_replay: "live_temp_replay",
   list_replays: "list_replays",
   list_replays_meta: "list_replays_meta",
+  replays_reveal: "replays_reveal",
   list_game_maps: "list_game_maps",
   pick_replay_files: "pick_replay_files",
   pick_export_path: "pick_export_path",

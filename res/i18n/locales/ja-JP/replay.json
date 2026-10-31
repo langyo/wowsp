@@ -16,7 +16,8 @@
     "client": "クライアント",
     "allClients": "すべてのクライアント",
     "player": "プレイヤー",
-    "allPlayers": "すべてのプレイヤー",
+    "playerSearch": "プレイヤー名を検索…",
+    "playerClear": "プレイヤー検索をクリア",
     "dateFrom": "開始日",
     "dateTo": "終了日",
     "dateRange": "期間"
@@ -24,6 +25,10 @@
   "external": {
     "tag": "外部",
     "close": "閉じる"
+  },
+  "reveal": {
+    "tip": "エクスプローラーで表示",
+    "failed": "エクスプローラーを開けませんでした"
   },
   "acquire": {
     "pickFiles": "リプレイファイルを選択",

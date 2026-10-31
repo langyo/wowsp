@@ -104,6 +104,12 @@ tauri = { workspace = true, features = ["protocol-asset"] }
 # Cross-platform hand-off of http(s) URLs to the system default browser
 # (open_external; replaced the Windows-only ShellExecuteW path).
 tauri-plugin-opener = "^2"
+# Windows-friendly canonicalize for the replay reveal command
+# (commands/replay/reveal.rs): strips the \\?\ extended-length prefix
+# std::fs::canonicalize adds on Windows, which the shell's
+# folder-and-select call does not take. Already in the dependency tree
+# via tauri, so this direct edge adds no new code.
+dunce = "^1"
 # Installer-handoff reads (`commands/installer.rs`: the on-disk
 # `shun-manifest.json` the install flow writes, carrying the wizard
 # language). Runtime use is `targets::install::read_manifest` only — a

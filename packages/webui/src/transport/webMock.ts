@@ -52,7 +52,10 @@
  *  roster panels and the list card's own-ship tag — resolves in mock mode.
  *  `playerName` carries NICKNAMES (the recorder of each row) — the pairing
  *  list titles each entry with it, so a ship name there would read as a
- *  wrong value in a slot whose whole meaning is "whose replay is this". */
+ *  wrong value in a slot whose whole meaning is "whose replay is this".
+ *  `playerNames` rides along as the row's human roster (recorder included),
+ *  so mock mode exercises the rail's participant search like a real
+ *  backend payload. */
 const REMOTE_FIXTURE: Record<string, unknown>[] = [
   {
     path: "20260918_213010.wowsreplay",
@@ -62,6 +65,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapId: 17,
     ownShipId: 4276041424,
     playerName: "MockCaptain",
+    playerNames: ["MockCaptain", "MockAlly", "MockEnemy"],
     playerCount: 12,
     enemyCount: 12,
   },
@@ -73,6 +77,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapId: 18,
     ownShipId: 3760109008,
     playerName: "MockAlt",
+    playerNames: ["MockAlt", "MockRival"],
     playerCount: 14,
     enemyCount: 14,
   },
@@ -84,6 +89,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapId: 20,
     ownShipId: 4281219056,
     playerName: "MockCaptain",
+    playerNames: ["MockCaptain", "MockAlly"],
     playerCount: 12,
     enemyCount: 12,
   },
@@ -95,6 +101,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapId: 14,
     ownShipId: 4276041424,
     playerName: "MockCaptain",
+    playerNames: ["MockCaptain"],
     playerCount: 8,
     // Plain co-op: the enemy bot side is listed, so the single-team rule
     // must not relabel this mock row as an operation.
@@ -108,6 +115,7 @@ const REMOTE_FIXTURE: Record<string, unknown>[] = [
     mapId: 15,
     ownShipId: 4277090288,
     playerName: "MockAlt",
+    playerNames: ["MockAlt", "MockRival", "MockAlly"],
     playerCount: 12,
     enemyCount: 12,
   },

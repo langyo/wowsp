@@ -16,7 +16,8 @@
     "client": "用戶端",
     "allClients": "全部用戶端",
     "player": "玩家",
-    "allPlayers": "全部玩家",
+    "playerSearch": "搜尋玩家暱稱…",
+    "playerClear": "清除玩家搜尋",
     "dateFrom": "開始日期",
     "dateTo": "結束日期",
     "dateRange": "時間區間"
@@ -24,6 +25,10 @@
   "external": {
     "tag": "外部",
     "close": "關閉查看"
+  },
+  "reveal": {
+    "tip": "在檔案總管中查看",
+    "failed": "無法開啟檔案總管"
   },
   "acquire": {
     "pickFiles": "選取錄影檔案",

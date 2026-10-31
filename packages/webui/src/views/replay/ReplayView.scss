@@ -88,6 +88,34 @@
     white-space: nowrap;
   }
 
+  /* The player search's × clear affix (rides HkInput's suffix slot):
+     a small ghost round button matching the sm input's height. The panel
+     teleports to body level, so — like every __pop* rule here — the class
+     is flat. */
+  &__pop-player-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    cursor: pointer;
+    color: rgb(var(--color-muted));
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-full);
+    transition: color var(--duration-short) ease;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: -2px;
+    }
+  }
+
   /* The client / player single-select rows — above the date pair in the
      same popup. HkSelect renders its own label, so the row only supplies
      the stacking rhythm and re-reads that label in the date row's caption
@@ -689,6 +717,44 @@
     /* This state never scrolls, so it carries the column's right gutter
        here (the live roster scroller owns the window edge instead). */
     padding-right: 1.5rem;
+  }
+
+  /* The reveal shortcut — top-right corner of the opened replay (the
+     content box is the positioning parent): a transparent ghost icon
+     button in the rail head's 1.75rem square family. The native tooltip
+     carries the label + the replay's install-relative path. */
+  &__reveal {
+    position: absolute;
+    top: -0.375rem;
+    right: 0;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    color: rgb(var(--color-muted));
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: color var(--duration-short) ease,
+                background var(--duration-short) ease;
+
+    &:hover {
+      color: rgb(var(--color-text));
+      background: rgb(var(--color-border) / 25%);
+    }
+
+    &:active {
+      transform: scale(0.96);
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary));
+      outline-offset: -2px;
+    }
   }
 
   &__loading-overlay {

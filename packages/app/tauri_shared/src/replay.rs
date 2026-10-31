@@ -123,6 +123,14 @@ pub struct ReplayMetaLite {
     /// keeps a client shared by several accounts tellable apart.
     #[serde(default)]
     pub player_name: Option<String>,
+    /// Every HUMAN roster nickname — bots (`:Name:` co-op fills) and
+    /// scripted scenario units (`IDS_*` / `#Name`) excluded — in roster
+    /// order, duplicates kept (two slots with the same nickname are two
+    /// slots). This is the rail's player-search vocabulary: the list view
+    /// carries no roster to scan, so the player filter matches against
+    /// this list.
+    #[serde(default)]
+    pub player_names: Vec<String>,
     /// Number of LISTED players in the roster — everyone except the scripted
     /// scenario NPCs (`IDS_*` / `#Name`); the `:Name:` co-op bot fills count.
     /// Matches the frontend's player lists (utils/rosterSides): story-mode

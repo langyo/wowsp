@@ -16,7 +16,8 @@
     "client": "Cliente",
     "allClients": "Todos los clientes",
     "player": "Jugador",
-    "allPlayers": "Todos los jugadores",
+    "playerSearch": "Buscar apodos de jugadores...",
+    "playerClear": "Borrar la búsqueda de jugador",
     "dateFrom": "Fecha inicial",
     "dateTo": "Fecha final",
     "dateRange": "Período"
@@ -24,6 +25,10 @@
   "external": {
     "tag": "Externa",
     "close": "Cerrar"
+  },
+  "reveal": {
+    "tip": "Mostrar en el Explorador",
+    "failed": "No se pudo abrir el Explorador"
   },
   "acquire": {
     "pickFiles": "Elegir archivos de repetición",

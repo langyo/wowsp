@@ -7227,6 +7227,7 @@ dependencies = [
  "byteorder",
  "chrono",
  "dirs-next",
+ "dunce",
  "ed25519-dalek",
  "flate2",
  "futures",

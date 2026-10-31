@@ -16,7 +16,8 @@
     "client": "Client",
     "allClients": "All clients",
     "player": "Player",
-    "allPlayers": "All players",
+    "playerSearch": "Search player nicknames...",
+    "playerClear": "Clear player search",
     "dateFrom": "Start date",
     "dateTo": "End date",
     "dateRange": "Date range"
@@ -24,6 +25,10 @@
   "external": {
     "tag": "External",
     "close": "Close this replay"
+  },
+  "reveal": {
+    "tip": "Show in File Explorer",
+    "failed": "Could not open File Explorer"
   },
   "acquire": {
     "pickFiles": "Pick replay files",
