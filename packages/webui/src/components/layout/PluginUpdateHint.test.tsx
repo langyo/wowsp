@@ -16,7 +16,7 @@
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
-import { ref } from "vue";
+import { defineComponent, ref } from "vue";
 
 import { useToast } from "@celestia-island/hikari";
 
@@ -44,7 +44,7 @@ import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { installLabel } from "@/utils/installLabel";
-import PluginUpdateHint, { REOPEN_DELAY_MS } from "./PluginUpdateHint";
+import PluginUpdateHint, { REOPEN_DELAY_MS, SETTLED_LINGER_MS } from "./PluginUpdateHint";
 
 enableAutoUnmount(afterEach);
 
@@ -221,6 +221,173 @@ describe("PluginUpdateHint", () => {
     vi.advanceTimersByTime(180);
     await flushPromises();
     expect(pop()).toBeNull();
+  });
+
+  it("settles into a done line instead of vanishing when the pass empties the card", async () => {
+    // The pinned card IS the watching user. The probe updating flips
+    // probeOutdated (and with it the pin) — the card must close with the
+    // done line, not snap away the moment its last row leaves the list
+    // (user report 2026-10-31: that vanish read as "the probe is gone").
+    const { wrapper, updates } = await mountHint(
+      { probeOutdated: true, running: true },
+      anchorCard(),
+    );
+    expect(pop()?.textContent).toContain(t("resources.pluginUpdateCount", { count: 1 }));
+    // The pointer is ON the trigger: the settle is attended, so no
+    // self-close timer arms and the ordinary leave grace owns the close.
+    await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+
+    updates.perInstall[GAME].probeOutdated = false;
+    await flushPromises();
+
+    const settled = pop();
+    expect(settled).not.toBeNull();
+    expect(settled?.textContent).toContain(t("resources.pluginUpdateDone"));
+    expect(settled?.querySelector(".plugin-update-hint__warn")).toBeNull();
+    expect(settled?.querySelector(".plugin-update-hint__go")).toBeNull();
+
+    // The settled line is a close, not a new standing state: leaving the
+    // trigger dismisses it through the ordinary grace, and a later hover
+    // with nothing pending does not resurrect it.
+    await wrapper.find(".plugin-update-hint").trigger("mouseleave");
+    vi.advanceTimersByTime(180);
+    await flushPromises();
+    expect(pop()).toBeNull();
+
+    await wrapper.find(".plugin-update-hint").trigger("mouseenter");
+    vi.advanceTimersByTime(250);
+    await flushPromises();
+    expect(pop()).toBeNull();
+  });
+
+  it("closes an unattended settled card after its linger window", async () => {
+    // The realistic unattended shape: the game exited (pin gone) and the
+    // probe update landed right after — nobody's pointer is anywhere near
+    // the card. The done line still shows, but only for its read time.
+    const { updates, gameStatus } = await mountHint(
+      { probeOutdated: true, running: true },
+      anchorCard(),
+    );
+    expect(pop()).not.toBeNull();
+
+    gameStatus.process = {
+      running: false,
+      pid: null,
+      kind: null,
+      realm: null,
+      exePath: null,
+      matchedInstall: null,
+    };
+    updates.perInstall[GAME].probeOutdated = false;
+    await flushPromises();
+
+    expect(pop()?.textContent).toContain(t("resources.pluginUpdateDone"));
+    vi.advanceTimersByTime(SETTLED_LINGER_MS - 500);
+    await flushPromises();
+    expect(pop()).not.toBeNull();
+
+    vi.advanceTimersByTime(500);
+    await flushPromises();
+    expect(pop()).toBeNull();
+  });
+
+  it("a refill inside the linger window retires the done line, not the card", async () => {
+    // Finding 1 regression: a fresh stale episode refills the list while
+    // the unattended settle's self-close timer is still pending. The
+    // refill must clear the settled state (the done line gives way to the
+    // pending list again) AND the stale timer must not fire into the
+    // refilled card.
+    const { updates, gameStatus } = await mountHint(
+      { probeOutdated: true, running: true },
+      anchorCard(),
+    );
+    gameStatus.process = {
+      running: false,
+      pid: null,
+      kind: null,
+      realm: null,
+      exePath: null,
+      matchedInstall: null,
+    };
+    updates.perInstall[GAME].probeOutdated = false;
+    await flushPromises();
+    expect(pop()?.textContent).toContain(t("resources.pluginUpdateDone"));
+
+    updates.perInstall[GAME].probeOutdated = true;
+    await flushPromises();
+    expect(pop()?.textContent).toContain(t("resources.pluginUpdateCount", { count: 1 }));
+
+    vi.advanceTimersByTime(SETTLED_LINGER_MS + 200);
+    await flushPromises();
+    expect(pop()).not.toBeNull();
+    expect(pop()?.textContent).toContain(t("resources.pluginUpdateCount", { count: 1 }));
+  });
+
+  it("survives the Sidebar mount shape: plain tooltip, card, done line, plain tooltip", async () => {
+    // Round-2 finding regression: Sidebar used to swap PluginUpdateHint
+    // out for a plain HkTooltip the moment totalCount hit 0 — the same
+    // flush that arms the settle, so the done line never painted in
+    // production. This mounts the component the way Sidebar now does
+    // (always mounted, plainTooltip set) and drives one full episode.
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const config = useConfigStore();
+    const install: GameInstall = { kind: "steam", path: GAME, realm: "asia" };
+    config.activeInstall = install;
+    config.installs = [install];
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = { [GAME]: { mods: [], probeOutdated: false } };
+    const gameStatus = useGameStatusStore();
+    const setRunning = (running: boolean) => {
+      gameStatus.process = {
+        running,
+        pid: running ? 42 : null,
+        kind: running ? "steam" : null,
+        realm: running ? "asia" : null,
+        exePath: running ? `${GAME}\\WorldOfWarships.exe` : null,
+        matchedInstall: running ? install : null,
+      };
+    };
+    setRunning(false);
+
+    const anchor = ref<HTMLElement | null>(anchorCard());
+    const Host = defineComponent({
+      setup: () => () => (
+        <PluginUpdateHint anchor={anchor} plainTooltip={GAME}>
+          <button type="button">trigger</button>
+        </PluginUpdateHint>
+      ),
+    });
+    // VTU mounts the host DETACHED from the document (only the Teleported
+    // popup reaches document.body), so the span assertions ride the mount
+    // wrapper — document.querySelector would be vacuous here.
+    const host = mount(Host, { global: { plugins: [pinia] } });
+    await flushPromises();
+    const spanUp = () => host.find(".plugin-update-hint").exists();
+
+    // Empty at rest: the plain tooltip owns the row — no interactive span.
+    expect(spanUp()).toBe(false);
+    expect(pop()).toBeNull();
+
+    // A stale episode arms the card (pinned: game running + stale probe).
+    setRunning(true);
+    updates.perInstall[GAME].probeOutdated = true;
+    await flushPromises();
+    expect(spanUp()).toBe(true);
+    expect(pop()?.textContent).toContain(t("resources.pluginUpdateCount", { count: 1 }));
+
+    // The watched update empties it: the SAME mount must show the done
+    // line — exactly the flip the old Sidebar ternary unmounted through.
+    setRunning(false);
+    updates.perInstall[GAME].probeOutdated = false;
+    await flushPromises();
+    expect(pop()?.textContent).toContain(t("resources.pluginUpdateDone"));
+
+    // Unattended close returns the row to the plain tooltip.
+    vi.advanceTimersByTime(SETTLED_LINGER_MS);
+    await flushPromises();
+    expect(pop()).toBeNull();
+    expect(spanUp()).toBe(false);
   });
 
   it("clamps the centered top against the viewport bottom once measured", async () => {

@@ -21,7 +21,6 @@ import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useGatewayStore } from "@/stores/gateway";
 import { useSettingsUiStore } from "@/stores/settingsUi";
-import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useStaleBinsStore } from "@/stores/staleBins";
 import { useShownPlayer } from "@/composables/useShownPlayer";
 import { useClipboard } from "@/composables/useClipboard";
@@ -102,7 +101,6 @@ export default defineComponent({
     const gameStatus = useGameStatusStore();
     const gateway = useGatewayStore();
     const ui = useSettingsUiStore();
-    const pluginUpdates = usePluginUpdatesStore();
     const staleBins = useStaleBinsStore();
     const router = useRouter();
     const { copy } = useClipboard();
@@ -473,41 +471,19 @@ export default defineComponent({
               Phone app build: no local installs to switch — the whole row
               (and its settings section) is desktop-app territory. */}
           {!isMobileApp() ? (
-          // While ANY install's plugins await updates the selector wears
-          // a count badge and the hover surface becomes PluginUpdateHint
-          // (per-client stale-plugin list + one-click update across all
-          // of them; pinned open while the running client's probe plugin
-          // is stale); otherwise the plain path tooltip.
-          pluginUpdates.totalCount > 0 ? (
-          <PluginUpdateHint class="sidebar__footer-slot" anchor={statusCardEl}>
-            <button
-              type="button"
-              class="sidebar__footer-btn"
-              onClick={() => ui.show("gamePath")}
-            >
-              <span class="sidebar__footer-btn-key">{t("common.game.versionLabel")}</span>
-              <span class="sidebar__footer-btn-value">
-                {/* 22px matches the account avatar on the row below so the
-                    two text columns share one left edge. */}
-                <PlatformIcon kind={activeInstall.value?.kind} size={22} />
-                <span class="sidebar__footer-btn-text">
-                  {activeInstall.value
-                    ? kindLabel(activeInstall.value.kind)
-                    : t("common.gamePath.unset")}
-                </span>
-                {activeInstall.value?.realm ? (
-                  <HkTag variant="default" size="sm">
-                    {activeInstall.value.realm.toUpperCase()}
-                  </HkTag>
-                ) : null}
-              </span>
-            </button>
-          </PluginUpdateHint>
-          ) : (
-          <HkTooltip
+          // Always mounted, both states inside: while ANY install's
+          // plugins await updates the selector wears a count badge and the
+          // hover surface is the stale-plugin card (per-client list +
+          // one-click update across all of them; pinned open while the
+          // running client's probe plugin is stale; a settled done line
+          // when the watched pass empties it); otherwise the component
+          // renders the plain path tooltip itself. NEVER swap this wrapper
+          // on totalCount→0 — the settle's done line dies with the
+          // unmount (verification round 2, 2026-10-31).
+          <PluginUpdateHint
             class="sidebar__footer-slot"
-            text={activeInstallPath.value || t("common.gamePath.noneFound")}
-            placement="right"
+            anchor={statusCardEl}
+            plainTooltip={activeInstallPath.value || t("common.gamePath.noneFound")}
           >
             <button
               type="button"
@@ -531,8 +507,8 @@ export default defineComponent({
                 ) : null}
               </span>
             </button>
-          </HkTooltip>
-          )) : null}
+          </PluginUpdateHint>
+          ) : null}
 
           {/* active account — opens settings on the 账户 section. Shows the
               session-resolved identity: when a battle identified the

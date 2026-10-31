@@ -7,6 +7,7 @@ import {
   HkMenuPanel,
   HkScrollContainer,
   HkSpinner,
+  HkTooltip,
   scheduleCronAfter,
   type CronHandle,
 } from "@celestia-island/hikari";
@@ -31,6 +32,12 @@ const CLOSE_GRACE_MS = 180;
 export const REOPEN_DELAY_MS = 600;
 /** Gap between the anchor card's right edge and the popup. */
 const ANCHOR_GAP_PX = 10;
+/** How long an UNATTENDED settled card lingers before closing itself —
+ *  enough to read the done line, short enough that a card nobody holds
+ *  open does not stand beside the sidebar forever. An attended one (the
+ *  pointer on it) never arms this timer and closes through the ordinary
+ *  leave grace instead. Exported for the tests. */
+export const SETTLED_LINGER_MS = 4000;
 /** Viewport breathing room kept above/below the popup. */
 const EDGE_PX = 8;
 
@@ -77,8 +84,22 @@ interface HintEntry {
  * per-mount and cleared when a fresh stale episode begins from an empty
  * card, so a brand-new reminder is never silently pre-dismissed.
  *
- * Renders just the slot when nothing is outdated — the plain path
- * tooltip stays whatever the slot's parent wraps it in.
+ * When the watched pass runs the list to empty WHILE the card is up,
+ * it settles into a one-line "plugins updated" close instead of snapping
+ * away — the row leaving the pending list must never read as the plugin
+ * vanishing (user report 2026-10-31).
+ *
+ * Empty path: with `plainTooltip` set (the app's mount shape), the
+ * slot rides a right-placed HkTooltip with that text and the interactive
+ * span is not rendered at all; without it the span renders bare (the
+ * slot's own wrapper provides whatever plain tooltip it wants). Either
+ * way the component stays MOUNTED across the pending↔empty flip — the
+ * mount site must not swap it out on totalCount→0, or the settle's done
+ * line dies with the unmount (verification round 2, 2026-10-31).
+ *
+ * The settled card shares the game-status anchor with the other pinned
+ * hints (GatewayCaptchaHint et al.); the accepted-overlap pattern is the
+ * one FullscreenModeHint's header documents.
  */
 export default defineComponent({
   name: "PluginUpdateHint",
@@ -88,6 +109,15 @@ export default defineComponent({
      *  instead of hanging off the selector row's top-right corner. */
     anchor: {
       type: Object as PropType<Ref<HTMLElement | null | undefined>>,
+      default: undefined,
+    },
+    /** Plain-path tooltip text: while nothing is pending and no settle is
+     *  showing, the slot renders inside a right-placed HkTooltip carrying
+     *  this text instead of the interactive span — so the mount site keeps
+     *  ONE wrapper for both states and never unmounts this component
+     *  around the empty episode (which would kill the settle mid-close). */
+    plainTooltip: {
+      type: String,
       default: undefined,
     },
   },
@@ -119,6 +149,14 @@ export default defineComponent({
      *  that begins after the card fully emptied must announce itself
      *  again (watch below clears the park when the count returns). */
     const minimized = ref(false);
+    /** The watched pass just emptied the card: hold a settled done line
+     *  instead of vanishing under the reader's eyes. A pending row that
+     *  silently leaves the list reads as "the plugin disappeared" — the
+     *  update landing deserves its own visible close (user report
+     *  2026-10-31). Cleared by close() (grace, minimize), by the pin
+     *  lift's ordinary close, and by a fresh episode refilling the list
+     *  (the rise branch below) — it never outlives its episode. */
+    const settled = ref(false);
     /** Anchor snapshot behind the current popStyle: the popup's left
      *  edge and the vertical center its translateY(-50%) hangs on. */
     let anchorLeft = 0;
@@ -206,6 +244,7 @@ export default defineComponent({
 
     function close(): void {
       open.value = false;
+      settled.value = false;
       popStyle.value = null;
     }
 
@@ -222,13 +261,39 @@ export default defineComponent({
     // not inherit an old park — the badge counts up again and the card
     // has to be able to answer it (pinned or hover-open alike).
     watch(() => updates.totalCount, (n, was) => {
-      if (n > 0 && (was ?? 0) === 0) minimized.value = false;
+      // A fresh episode resets BOTH dismissal states: the park must not
+      // pre-dismiss a new reminder, and a settled done line must not
+      // outlive its episode — a lingering one would let the settle's
+      // self-close timer shut a card that has refilled with real pending
+      // rows, and would keep the pin-lift close below suppressed forever.
+      if (n > 0 && (was ?? 0) === 0) {
+        minimized.value = false;
+        settled.value = false;
+      }
+      // A pass the user is watching runs the list to empty: keep the card
+      // up with the done line. (Runs before the pinned watcher below, so
+      // the pin lifting off the same flip sees the settled state.)
+      if (n === 0 && (was ?? 0) > 0 && open.value) {
+        settled.value = true;
+        // Nobody holding the card open? Give the line its read time, then
+        // close it — a done card must not outstay the pointer's absence.
+        if (!hoverSpan.value && !hoverPop.value) {
+          closeTimer?.disconnect();
+          closeTimer = scheduleCronAfter(() => {
+            if (settled.value && !hoverSpan.value && !hoverPop.value) close();
+          }, SETTLED_LINGER_MS);
+        }
+      }
     });
 
     function onEnter(): void {
       hoverSpan.value = true;
-      if (updates.totalCount === 0) return;
+      // Cleared BEFORE the empty-path early return: re-entering the
+      // trigger must always cancel a pending close/linger grace, or a
+      // quick popup→trigger transit lets the grace fire under the pointer
+      // (the settle window is the one count-0 state this matters in).
       clearTimers();
+      if (updates.totalCount === 0) return;
       if (minimized.value) {
         // Parked card: a settled hover on the trigger unparks it —
         // REOPEN_DELAY_MS is the debounce that keeps a fleeting pass
@@ -262,7 +327,9 @@ export default defineComponent({
     // over from there). show() carries its own mount-timing retry.
     watch(pinned, (p) => {
       if (p) void show();
-      else if (!hoverSpan.value && !hoverPop.value) close();
+      // A settled card outlives its own pin too: the pin lifting BECAUSE
+      // the probe updated is the done moment, not a dismissal.
+      else if (!hoverSpan.value && !hoverPop.value && !settled.value) close();
     }, { immediate: true, flush: "post" });
 
     // A pinned card can outlive a viewport resize — re-anchor while up.
@@ -324,6 +391,20 @@ export default defineComponent({
           }}
         />
       );
+      // The plain path: nothing pending, no settle to finish, card closed —
+      // swap the ROOT for the app's plain tooltip so the interactive span
+      // (hover handlers, badge, popup) is not rendered at all. Class
+      // inheritance carries the mount site's class onto whichever root
+      // renders, exactly as the pre-swap wrapper swap did. Without
+      // plainTooltip the bare span below keeps rendering (slot-only),
+      // the contract unit tests mount against.
+      if (count === 0 && !open.value && props.plainTooltip != null) {
+        return (
+          <HkTooltip text={props.plainTooltip} placement="right">
+            {slots.default?.()}
+          </HkTooltip>
+        );
+      }
       const renderGroup = (g: PendingInstall) => {
         const entries = entriesOf(g);
         return (
@@ -347,13 +428,13 @@ export default defineComponent({
         >
           {slots.default?.()}
           {count > 0 ? <span class="plugin-update-hint__badge">{count}</span> : null}
-          {open.value && count > 0 ? (
+          {open.value && (count > 0 || settled.value) ? (
             <Teleport to="body">
               <div
                 class="plugin-update-hint__pop"
                 ref={popEl}
                 style={popStyle.value ?? undefined}
-                role={pinned.value ? "status" : "tooltip"}
+                role={pinned.value || settled.value ? "status" : "tooltip"}
                 onMouseenter={() => {
                   hoverPop.value = true;
                   clearTimers();
@@ -375,49 +456,59 @@ export default defineComponent({
                   <Minus size={12} />
                 </button>
                 <p class="plugin-update-hint__title">
-                  {multi
-                    ? t("resources.pluginUpdateCountMulti", { count, clients: groups.length })
-                    : t("resources.pluginUpdateCount", { count })}
+                  {count > 0 ? (
+                    multi
+                      ? t("resources.pluginUpdateCountMulti", { count, clients: groups.length })
+                      : t("resources.pluginUpdateCount", { count })
+                  ) : (
+                    /* The settled close: the watched pass emptied the card,
+                     * and the done line says so before the card goes away. */
+                    t("resources.pluginUpdateDone")
+                  )}
                 </p>
-                {pinned.value ? (
+                {pinned.value && count > 0 ? (
                   <p class="plugin-update-hint__warn">
                     <AlertTriangle size={13} class="plugin-update-hint__warn-icon" />
                     {t("resources.pluginUpdateStaleWarning")}
                   </p>
                 ) : null}
-                {/* The stale list scrolls when tall (hikari's scroll
-                    container owns the overlay scrollbar — this card keeps
-                    its rail standing so the cap never reads as a clip)
-                    and renders rows with the menu grammar: every row a
-                    button deep-linking its mod-hub page. */}
-                <HkScrollContainer class="plugin-update-hint__list">
-                  <HkMenuPanel
-                    class="plugin-update-hint__menu"
-                    label={t("resources.pluginUpdateBadge")}
-                  >
-                    {groups.map(renderGroup)}
-                  </HkMenuPanel>
-                </HkScrollContainer>
-                <button
-                  type="button"
-                  class="plugin-update-hint__go"
-                  disabled={updates.running || allRunning.value}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void updates.updateAll();
-                  }}
-                >
-                  {updates.running ? (
-                    <HkSpinner size="xs" tone="current" />
-                  ) : (
-                    <ArrowUpCircle size={13} />
-                  )}
-                  {updates.running
-                    ? t("resources.pluginUpdateRunning")
-                    : allRunning.value
-                      ? t("resources.pluginUpdateBlockedRunning")
-                      : t("resources.pluginUpdateOne")}
-                </button>
+                {count > 0 ? (
+                  <>
+                    {/* The stale list scrolls when tall (hikari's scroll
+                        container owns the overlay scrollbar — this card
+                        keeps its rail standing so the cap never reads as a
+                        clip) and renders rows with the menu grammar: every
+                        row a button deep-linking its mod-hub page. */}
+                    <HkScrollContainer class="plugin-update-hint__list">
+                      <HkMenuPanel
+                        class="plugin-update-hint__menu"
+                        label={t("resources.pluginUpdateBadge")}
+                      >
+                        {groups.map(renderGroup)}
+                      </HkMenuPanel>
+                    </HkScrollContainer>
+                    <button
+                      type="button"
+                      class="plugin-update-hint__go"
+                      disabled={updates.running || allRunning.value}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void updates.updateAll();
+                      }}
+                    >
+                      {updates.running ? (
+                        <HkSpinner size="xs" tone="current" />
+                      ) : (
+                        <ArrowUpCircle size={13} />
+                      )}
+                      {updates.running
+                        ? t("resources.pluginUpdateRunning")
+                        : allRunning.value
+                          ? t("resources.pluginUpdateBlockedRunning")
+                          : t("resources.pluginUpdateOne")}
+                    </button>
+                  </>
+                ) : null}
               </div>
             </Teleport>
           ) : null}
