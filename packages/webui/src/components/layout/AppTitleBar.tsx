@@ -42,14 +42,14 @@ import "./AppTitleBar.scss";
  * `action` emit with the button's id.
  *
  * The title block is provided through HkTitleBar's `left` slot so a nav
- * opener can ride ahead of it — hidden above 767px (desktop is
- * pixel-identical to the upstream default, a plain hamburger) while the
- * PHONE LAYOUT swaps the hamburger for the CURRENT-ACCOUNT avatar button
- * (dog-tag emblem / initial / neutral disc; the shittim-chest HeaderLeft
- * pattern) toggling the same nav drawer below. On the phone app build the
- * window caption buttons
- * (minimize/maximize/close) are dropped: the Android shell manages its
- * own window, and dead caption buttons would only mislead.
+ * opener can ride ahead of it — CSS-hidden at ≥768px, where the
+ * persistent desktop sidebar makes it dead chrome, while the PHONE
+ * LAYOUT (<768px) swaps the hamburger for the CURRENT-ACCOUNT avatar
+ * button (dog-tag emblem / initial / neutral disc; the shittim-chest
+ * HeaderLeft pattern) toggling the same nav drawer. On the phone app
+ * build the window caption buttons (minimize/maximize/close) are
+ * dropped: the Android shell manages its own window, and dead caption
+ * buttons would only mislead.
  *
  * Self-guards: outside Tauri (plain browser) it renders the bar inert —
  * browser chrome already provides window controls.
@@ -77,10 +77,12 @@ export default defineComponent({
     const mobileApp = isMobileApp();
     const route = useRoute();
     const router = useRouter();
-    // Phone LAYOUT (viewport, not the app-build gate): the hamburger
-    // becomes the CURRENT-ACCOUNT avatar button — the shittim-chest
-    // HeaderLeft pattern (phone opens the drawer from the account mark,
-    // desktop keeps the plain menu glyph).
+    // Phone LAYOUT (viewport, not the app-build gate): the opener is the
+    // CURRENT-ACCOUNT avatar button — the shittim-chest HeaderLeft
+    // pattern (the drawer opens from the account mark). The desktop
+    // hamburger below stays in the DOM but CSS-hidden at ≥768px (see
+    // AppTitleBar.scss — the persistent sidebar makes an opener dead
+    // chrome there).
     const { isMobile } = useBreakpoint();
     const { shownPlayer, dogTag } = useShownPlayer();
     let win: ReturnType<typeof getCurrentWindow> | null = null;
