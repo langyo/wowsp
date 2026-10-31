@@ -50,6 +50,8 @@
     "modstation": "WG ModStation"
   },
   "foreignBadge": "由 {source} 安裝",
+  "contestedTree": "衝突目錄樹",
+  "contestedTreeHint": "WoWSP 的安裝記錄宣告了此目錄樹中的部分檔案，且仍有外來檔案殘留——WoWSP 的改寫與外來安裝器每次啟動時的重新套用會互相覆蓋。",
   "foreignManaged": "{name} 由 {source} 安裝。你可以在這裡直接解除安裝（檔案與 {source} 的登記會同步清理）；如需納入 WoWSP 管理，請開啟配對的目錄條目註冊並重新安裝。",
   "foreignPaired": "已配對目錄條目",
   "foreignUnpaired": "未配對目錄條目",
@@ -189,6 +191,15 @@
       "disabledByDependency": "重新安裝任一 TTaro 系列外掛以修復共用框架資料。"
     },
     "loadedOkSummary": "{count} 個外掛正常載入"
+  },
+  "bootInstaller": {
+    "title": "一個外來安裝器會在每次啟動遊戲時重新套用 {count} 條記錄",
+    "hint": "Aslain 的啟動重裝器（PnFMods/ModsInstaller_*）在每次啟動遊戲時重新執行並重新套用其描述 XML，覆蓋 WoWSP 對共享目錄樹的改寫。",
+    "more": "還有 {count} 條",
+    "disarm": "解除武裝",
+    "confirmTitle": "解除啟動安裝器",
+    "confirmBody": "將刪除單元 {unit}，並從 installed_mods.xml 中切除 {count} 條記錄（{rows}），下次啟動遊戲時將不再重新套用任何內容。單元自身的檔案會被刪除；WoWSP 記錄過的被覆蓋原始檔案會還原。",
+    "done": "已解除——刪除 {files} 個檔案，切除 {rows} 條記錄。"
   },
   "staleSidebarKey": "遊戲已更新",
   "staleSidebarText": "{count} 個插件檔案待遷移",

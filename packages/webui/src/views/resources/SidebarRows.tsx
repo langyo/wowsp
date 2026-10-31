@@ -189,6 +189,17 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
             {t("resources.foreignSource.aslain")}
           </span>
         )}
+        {/* Contested tree: a WoWSP ledger record claims files in this
+            unit's tree while foreign files remain — the two writers undo
+            each other (see the boot-installer strip above). */}
+        {m.contested && (
+          <span
+            class="mod-row__badge mod-row__badge--contested"
+            data-hint={t("resources.contestedTreeHint")}
+          >
+            {t("resources.contestedTree")}
+          </span>
+        )}
       </span>
     </button>
   );
@@ -231,6 +242,18 @@ export function renderModstationStrip(ctx: ResourcesCtx) {
                   : t("resources.foreignUnpaired")}
               </span>
             </span>
+            {/* Same contested verdict as the installed rows (foreign rows
+                inherit it — see the backend scan). */}
+            {unit.contested && (
+              <span class="mod-row__tail">
+                <span
+                  class="mod-row__badge mod-row__badge--contested"
+                  data-hint={t("resources.contestedTreeHint")}
+                >
+                  {t("resources.contestedTree")}
+                </span>
+              </span>
+            )}
           </button>
         ))}
       </div>

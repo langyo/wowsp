@@ -158,6 +158,18 @@ fn copy_dir(
 /// Every recognized unit of the backup tree that should be put back:
 /// `known_names` are the units our ledger already recorded (always adopted);
 /// `adopt_foreign` additionally takes every other recognized unit.
+///
+/// Manifest-trace finding (P5): adoption lands NO copy of the backup's
+/// `installed_mods.xml`, so there is no manifest row set to cut here —
+/// `gather_candidates` treats the file as a scan marker (never a
+/// candidate, only `candidate.paths` are copied), the purge itself leaves
+/// it inside the backup (the fresh res_mods starts empty), and the only
+/// other path that folds backup files back — the purge-backup
+/// restore-merge — excludes it as migration bookkeeping
+/// (`stale_migration::is_migration_bookkeeping`). The Aslain row set
+/// therefore dies with the backup; the minimal correct cut is none.
+/// (Re-running Aslain's own installer writes a fresh manifest — the user
+/// re-arming the foreign side, not WoWSP resurrecting it.)
 pub(crate) fn adopt_units(
     backup: &Path,
     live: &Path,
@@ -168,6 +180,19 @@ pub(crate) fn adopt_units(
     let mut out: Vec<AdoptedUnit> = Vec::new();
     for candidate in scan_installed::gather_candidates(backup) {
         let name_lower = candidate.name.to_ascii_lowercase();
+        // The boot re-installer is never resurrected (P5): adopting
+        // `PnFMods/ModsInstaller_*` back into the live tree would re-arm
+        // the engine that re-applies Aslain's descriptors at every game
+        // start — the exact state a purge is meant to reset. The prefix
+        // matches the shared-component registry's family root (Aslain
+        // bumps the digit per release), via `boot_installer`'s one rule.
+        if candidate
+            .paths
+            .iter()
+            .any(|p| super::boot_installer::is_boot_installer_path(p))
+        {
+            continue;
+        }
         // A unit the catalog reinstall just replaced is never copied back.
         if catalog_names
             .iter()

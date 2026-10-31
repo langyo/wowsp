@@ -50,6 +50,8 @@
     "modstation": "WG ModStation"
   },
   "foreignBadge": "Instalado por {source}",
+  "contestedTree": "Árbol en disputa",
+  "contestedTreeHint": "Un registro de WoWSP reclama archivos en este árbol mientras quedan archivos externos: las reescrituras de WoWSP y las reaplicaciones del instalador externo se deshacen mutuamente.",
   "foreignManaged": "{name} fue instalado por {source}. Puedes desinstalarlo aquí mismo (los archivos y las filas de registro de {source} se limpian juntos), o abrir la entrada emparejada del catálogo para registrarlo y reinstalarlo bajo WoWSP.",
   "foreignPaired": "Emparejado con el catálogo",
   "foreignUnpaired": "Sin coincidencia",
@@ -189,6 +191,15 @@
       "disabledByDependency": "Reinstala cualquier mod de la familia TTaro para reparar los datos del framework compartido."
     },
     "loadedOkSummary": "{count} mod(s) cargados correctamente"
+  },
+  "bootInstaller": {
+    "title": "Un instalador externo reaplica {count} fila(s) en cada arranque del juego",
+    "hint": "El reinstalador de arranque de Aslain (PnFMods/ModsInstaller_*) se ejecuta en cada inicio del juego y reaplica sus XML descriptores, deshaciendo lo que WoWSP escribió en los árboles compartidos.",
+    "more": "+{count} más",
+    "disarm": "Desactivar",
+    "confirmTitle": "Desactivar el instalador de arranque",
+    "confirmBody": "Se eliminará la unidad {unit} y se cortarán {count} fila(s) ({rows}) de installed_mods.xml, de modo que no se reaplique nada en el próximo arranque del juego. Los archivos propios de la unidad se eliminan; los originales sobrescritos registrados por WoWSP se restauran.",
+    "done": "Desactivado: se eliminaron {files} archivo(s) y se cortaron {rows} fila(s)."
   },
   "staleSidebarKey": "Juego actualizado",
   "staleSidebarText": "{count} archivo(s) de mod por migrar",

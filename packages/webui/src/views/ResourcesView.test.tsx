@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
     installs?: { path: string; kind?: string; realm?: string | null }[];
   },
   scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), loaderHealth: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
+  bootInstaller: vi.fn(), disarm: vi.fn(),
   adopt: vi.fn(), uninstall: vi.fn(), error: vi.fn(),
   success: vi.fn(), warning: vi.fn(), info: vi.fn(),
   migrationPlan: vi.fn(),
@@ -22,6 +23,7 @@ vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () =>
 vi.mock("@/api", () => ({ api: {
   modHubScanInstalled: mocks.scan, modHubForeignUnits: mocks.foreign, modHubStaleVersions: mocks.stale,
   modHubPnfLoaderStatus: mocks.loader, modHubLoaderHealth: mocks.loaderHealth, modHubSafeMode: mocks.safe, modHubReconcile: mocks.reconcile,
+  modHubBootInstaller: mocks.bootInstaller, modHubDisarmBootInstaller: mocks.disarm,
   modHubUninstallUnit: mocks.uninstall,
   modHubMigrationPlan: mocks.migrationPlan,
   modHubPurgeBackups: mocks.purgeBackups,
@@ -138,6 +140,8 @@ beforeEach(() => {
   mocks.stale.mockResolvedValue([]);
   mocks.loader.mockResolvedValue(null);
   mocks.loaderHealth.mockResolvedValue(null);
+  mocks.bootInstaller.mockResolvedValue(null);
+  mocks.disarm.mockResolvedValue({ removedFiles: 3, cutRows: 2 });
   mocks.safe.mockResolvedValue(false);
   mocks.reconcile.mockResolvedValue(null);
   mocks.records.mockResolvedValue([]);
@@ -779,6 +783,97 @@ describe("last session plugin health strip", () => {
     expect(view.find(".loader-health__ok").text()).toBe(
       "resources.loaderHealth.loadedOkSummary",
     );
+  });
+});
+
+describe("boot re-installer strip", () => {
+  it("stays hidden without a boot installer in the tree", async () => {
+    mocks.bootInstaller.mockResolvedValue(null);
+    const view = await mountInstalled();
+    expect(view.find(".boot-installer").exists()).toBe(false);
+  });
+
+  it("stays hidden while safe mode is on (mutations refused)", async () => {
+    mocks.bootInstaller.mockResolvedValue({
+      unitRelPath: "PnFMods/ModsInstaller_4_3_1",
+      version: "4_3_1",
+      descriptors: ["Shot Timer"],
+      manifestRows: ["Shot Timer"],
+    });
+    mocks.safe.mockResolvedValue(true);
+    const view = await mountInstalled();
+    expect(view.find(".boot-installer").exists()).toBe(false);
+  });
+
+  it("lists the rows collapsed, then confirm runs the disarm and rescans", async () => {
+    mocks.bootInstaller.mockResolvedValue({
+      unitRelPath: "PnFMods/ModsInstaller_4_3_1",
+      version: "4_3_1",
+      descriptors: ["Shot Timer", "TeamHP"],
+      manifestRows: ["Shot Timer"],
+    });
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    const view = await mountInstalled();
+    expect(view.find(".boot-installer").exists()).toBe(true);
+    // Collapsed by default: the head names the strip, no rows yet.
+    expect(view.find(".boot-installer__head").text()).toContain(
+      "resources.bootInstaller.title",
+    );
+    expect(view.find(".boot-installer__rowname").exists()).toBe(false);
+    // Expanding lists the descriptor rows under the unit path.
+    await view.find(".boot-installer__head").trigger("click");
+    const rows = view.findAll(".boot-installer__rowname");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].text()).toBe("Shot Timer");
+    expect(view.find(".boot-installer__unit").text()).toContain(
+      "PnFMods/ModsInstaller_4_3_1",
+    );
+
+    // DISARM opens the confirm dialog naming the unit and the row list.
+    const disarmBtn = view
+      .findAllComponents({ name: "HkButton" })
+      .find((b) => "onClick" in (b.vm.$attrs as Record<string, unknown>))!;
+    (disarmBtn.vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    const dialog = view
+      .findAllComponents({ name: "HkConfirmDialog" })
+      .find((d) => d.props("open") === true)!;
+    expect(dialog.props("title")).toBe("resources.bootInstaller.confirmTitle");
+    expect(dialog.props("message")).toBe("resources.bootInstaller.confirmBody");
+
+    // Confirming runs the command, toasts the report and rescans.
+    dialog.vm.$emit("confirm");
+    await flushPromises();
+    expect(mocks.disarm).toHaveBeenCalledExactlyOnceWith("C:/TestGameA");
+    expect(mocks.success).toHaveBeenCalledWith("resources.bootInstaller.done");
+    // Mount's first scan + the disarm's refresh pass both hit the scan.
+    expect(mocks.scan.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mocks.records.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("contested tree badge", () => {
+  it("badges installed units the scan marks contested", async () => {
+    mocks.scan.mockResolvedValue([
+      { ...mod("Mod A"), relPath: "PnFMods/a", contested: true },
+      { ...mod("Mod B"), relPath: "PnFMods/b" },
+    ]);
+    const view = await mountInstalled();
+    const badges = view.findAll(".mod-row__badge--contested");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].text()).toBe("resources.contestedTree");
+    expect(badges[0].attributes("data-hint")).toBe("resources.contestedTreeHint");
+  });
+
+  it("badges contested foreign (ModStation) strip rows", async () => {
+    mocks.foreign.mockResolvedValue([
+      { installer: "modstation", key: "k1", name: "Station Mod", contested: true },
+      { installer: "modstation", key: "k2", name: "Station Plain" },
+    ]);
+    const view = await mountInstalled();
+    const badges = view.findAll(".mod-row__badge--contested");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].text()).toBe("resources.contestedTree");
   });
 });
 

@@ -28,7 +28,7 @@ use super::manifest::ForeignEntry;
 use super::scan_installed::parse_installed_manifest;
 use super::*;
 
-const INSTALLER_ASLAIN: &str = "aslain";
+pub(crate) const INSTALLER_ASLAIN: &str = "aslain";
 const INSTALLER_MODSTATION: &str = "modstation";
 
 /// Scan one install's foreign footprint: every known installer's detected

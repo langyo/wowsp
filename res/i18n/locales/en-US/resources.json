@@ -50,6 +50,8 @@
     "modstation": "WG ModStation"
   },
   "foreignBadge": "Installed by {source}",
+  "contestedTree": "Contested tree",
+  "contestedTreeHint": "A WoWSP record claims files in this tree while foreign files remain — WoWSP rewrites and the foreign installer's re-applies undo each other.",
   "foreignManaged": "{name} was installed by {source}. You can uninstall it right here (files and {source}'s registry rows are cleaned up together), or open the paired catalog entry to register & reinstall it under WoWSP.",
   "foreignPaired": "Paired with the catalog",
   "foreignUnpaired": "No catalog match",
@@ -189,6 +191,15 @@
       "disabledByDependency": "Reinstall any TTaro-family mod to repair the shared framework data."
     },
     "loadedOkSummary": "{count} mod(s) loaded OK"
+  },
+  "bootInstaller": {
+    "title": "A foreign installer re-applies {count} row(s) at every game start",
+    "hint": "Aslain's boot re-installer (PnFMods/ModsInstaller_*) re-runs at every game start and re-applies its descriptor XMLs, undoing WoWSP's writes to the shared trees.",
+    "more": "+{count} more",
+    "disarm": "Disarm",
+    "confirmTitle": "Disarm the boot installer",
+    "confirmBody": "The unit {unit} will be removed and {count} manifest row(s) ({rows}) cut from installed_mods.xml, so nothing is re-applied at the next game start. The unit's own files are deleted; overwritten originals recorded by WoWSP are restored.",
+    "done": "Disarmed — removed {files} file(s) and cut {rows} manifest row(s)."
   },
   "staleSidebarKey": "Game updated",
   "staleSidebarText": "{count} mod file(s) to migrate",

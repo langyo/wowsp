@@ -3987,3 +3987,382 @@ fn restore_merge_clean_deletes_the_backup() {
     assert!(!live.join("installed_mods.xml").exists());
     fs::remove_dir_all(&tmp).ok();
 }
+// ── Boot re-installer (P5): detection, disarm, contested trees ─────────────
+
+/// A minimal one-entry catalog for the contested/detection fixtures.
+fn tiny_catalog(id: &str, name: &str) -> wowsp_tauri_shared::CatalogIndex {
+    wowsp_tauri_shared::CatalogIndex {
+        source_version: String::new(),
+        game_version: String::new(),
+        fetched_at: String::new(),
+        source_sha256: String::new(),
+        mods: vec![wowsp_tauri_shared::CatalogEntry {
+            id: id.into(),
+            category: "battle".into(),
+            discussion: None,
+            version: "1".into(),
+            game: "*".into(),
+            bundled: false,
+            delisted: false,
+            presets: Vec::new(),
+            tags: Vec::new(),
+            title: name.into(),
+            name_zh: name.into(),
+            name_en: name.into(),
+            description: String::new(),
+            authors: Vec::new(),
+            i18n: Default::default(),
+            aliases: Vec::new(),
+            servers: Vec::new(),
+            preview: None,
+            supersedes: None,
+            packages: vec![wowsp_tauri_shared::CatalogPackage {
+                url: "https://x/a.zip".into(),
+                sha256: String::new(),
+                size: 1,
+                name: "a.zip".into(),
+            }],
+        }],
+    }
+}
+
+/// A ledger record fixture (the fields the contested overlay reads).
+fn ledger_record(id: &str, files: &[&str]) -> ModInstallRecord {
+    ModInstallRecord {
+        id: id.into(),
+        name: format!("Mod {id}"),
+        version: "1".into(),
+        category: "battle".into(),
+        source: "mod-hub".into(),
+        discussion: None,
+        preset: None,
+        bin_version: "1".into(),
+        installed_at: String::new(),
+        files: files.iter().map(|f| f.to_string()).collect(),
+        restore_dir: None,
+        game_root: String::new(),
+        hashes: None,
+        snapshot_hashes: None,
+    }
+}
+
+#[test]
+fn boot_installer_detection_enumerates_descriptors_and_manifest_rows() {
+    let tmp = std::env::temp_dir().join("wowsp_boot_detect");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("bin/1/res_mods");
+    fs::create_dir_all(&rm).unwrap();
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/Main.py"));
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/mods/Shot Timer.xml"));
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/mods/TeamHP.xml"));
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/mods/ignored.txt"));
+    touch(&rm.join("PnFMods/Other/Main.py"));
+    fs::write(
+        rm.join("installed_mods.xml"),
+        "<data><mod name=\"Shot Timer\" version=\"1\"/><mod name=\"TeamHP\"/>\
+         <mod name=\"Unrelated\"/></data>",
+    )
+    .unwrap();
+
+    let info = super::boot_installer::detect_boot_installer(&rm).expect("unit detected");
+    assert_eq!(info.unit_rel_path, "PnFMods/ModsInstaller_4_3_1");
+    assert_eq!(info.version.as_deref(), Some("4_3_1"));
+    assert_eq!(info.descriptors, vec!["Shot Timer", "TeamHP"]);
+    assert_eq!(info.manifest_rows, vec!["Shot Timer", "TeamHP"]);
+
+    // No unit dir → None; a sibling PnF mod never reads as the installer.
+    fs::remove_dir_all(rm.join("PnFMods/ModsInstaller_4_3_1")).unwrap();
+    assert!(super::boot_installer::detect_boot_installer(&rm).is_none());
+    let clean = tmp.join("bin/2/res_mods");
+    fs::create_dir_all(&clean).unwrap();
+    assert!(super::boot_installer::detect_boot_installer(&clean).is_none());
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn disarm_removes_the_unit_and_cuts_descriptor_rows() {
+    let tmp = std::env::temp_dir().join("wowsp_boot_disarm");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let rm = game.join("bin/1/res_mods");
+    fs::create_dir_all(&rm).unwrap();
+    touch(&rm.join("PnFModsLoader.py"));
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/Main.py"));
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/mods/Shot Timer.xml"));
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/mods/TeamHP.xml"));
+    touch(&rm.join("PnFMods/Other/Main.py"));
+    fs::write(
+        rm.join("installed_mods.xml"),
+        "<data><mod name=\"Shot Timer\" version=\"1\"/><mod name=\"TeamHP\"/>\
+         <mod name=\"Unrelated\"/></data>",
+    )
+    .unwrap();
+    let root = game.to_string_lossy().into_owned();
+    super::test_allow_game_root(&root);
+
+    let mut installs: Vec<ModInstallRecord> = Vec::new();
+    let report =
+        super::boot_installer::disarm_boot_installer_in(&root, &rm, &mut installs).unwrap();
+    assert_eq!(report.removed_files, 3, "{report:?}");
+    assert_eq!(report.cut_rows, 2, "{report:?}");
+    assert!(!rm.join("PnFMods/ModsInstaller_4_3_1").exists());
+    // The loader marker, the sibling mod and the unrelated row survive.
+    assert!(rm.join("PnFModsLoader.py").is_file());
+    assert!(rm.join("PnFMods/Other/Main.py").is_file());
+    let manifest = fs::read_to_string(rm.join("installed_mods.xml")).unwrap();
+    assert!(!manifest.contains("Shot Timer"));
+    assert!(!manifest.contains("TeamHP"));
+    assert!(manifest.contains("Unrelated"));
+
+    // A second disarm finds nothing left to remove.
+    let err =
+        super::boot_installer::disarm_boot_installer_in(&root, &rm, &mut installs).unwrap_err();
+    assert!(err.to_string().contains("nothing to disarm"), "{err}");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn disarm_sweeps_trees_the_ledger_restore_resurrects() {
+    let tmp = std::env::temp_dir().join("wowsp_boot_resurrect");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let rm = game.join("bin/1/res_mods");
+    fs::create_dir_all(&rm).unwrap();
+    touch(&rm.join("PnFModsLoader.py"));
+    // The flagship ordering (round-2 audit): Aslain installed the boot
+    // re-installer first, a WoWSP catalog pack then bundled the very same
+    // tree and snapshotted Aslain's bytes as its restore layers.
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/Main.py"));
+    touch(&rm.join("PnFMods/ModsInstaller_4_3_1/mods/Shot Timer.xml"));
+    // A leftover next-version family dir — swept in the same disarm.
+    touch(&rm.join("PnFMods/ModsInstaller_4_4_0/Main.py"));
+    touch(&rm.join("PnFMods/Other/Main.py"));
+    fs::write(
+        rm.join("installed_mods.xml"),
+        "<data><mod name=\"Shot Timer\" version=\"1\"/><mod name=\"Unrelated\"/></data>",
+    )
+    .unwrap();
+    let restore = tmp.join("restore-pack");
+    fs::create_dir_all(restore.join("PnFMods/ModsInstaller_4_3_1/mods")).unwrap();
+    fs::write(
+        restore.join("PnFMods/ModsInstaller_4_3_1/Main.py"),
+        b"# aslain installer",
+    )
+    .unwrap();
+    fs::write(
+        restore.join("PnFMods/ModsInstaller_4_3_1/mods/Shot Timer.xml"),
+        b"<aslain/>",
+    )
+    .unwrap();
+    let root = game.to_string_lossy().into_owned();
+    super::test_allow_game_root(&root);
+    // The WoWSP record claiming the unit files — its restore layers ARE
+    // Aslain's bytes, so the uninstall's ledger unwind resurrects exactly
+    // the tree the removal just deleted.
+    let mut installs = vec![ModInstallRecord {
+        id: "wowsp-pack".into(),
+        name: "WoWSP Pack".into(),
+        version: "1".into(),
+        category: "battle".into(),
+        source: "mod-hub".into(),
+        discussion: None,
+        preset: None,
+        bin_version: "1".into(),
+        installed_at: String::new(),
+        files: vec![
+            "PnFMods/ModsInstaller_4_3_1/Main.py".into(),
+            "PnFMods/ModsInstaller_4_3_1/mods/Shot Timer.xml".into(),
+        ],
+        restore_dir: Some(restore.to_string_lossy().into_owned()),
+        game_root: root.clone(),
+        hashes: None,
+        snapshot_hashes: None,
+    }];
+
+    // ONE shot: the sweep must delete what the restore brings back.
+    let report =
+        super::boot_installer::disarm_boot_installer_in(&root, &rm, &mut installs).unwrap();
+    assert!(
+        !rm.join("PnFMods/ModsInstaller_4_3_1").exists(),
+        "{report:?}"
+    );
+    assert!(!rm.join("PnFMods/ModsInstaller_4_3_1/Main.py").exists());
+    assert!(
+        !rm.join("PnFMods/ModsInstaller_4_3_1/mods/Shot Timer.xml")
+            .exists()
+    );
+    assert!(!rm.join("PnFMods/ModsInstaller_4_4_0").exists());
+    assert!(rm.join("PnFMods/Other/Main.py").is_file());
+    assert!(
+        installs.is_empty(),
+        "the fully-covered record left with its files"
+    );
+    let manifest = fs::read_to_string(rm.join("installed_mods.xml")).unwrap();
+    assert!(!manifest.contains("Shot Timer"));
+    assert!(manifest.contains("Unrelated"));
+    // 2 (unit 4_3_1) + 1 (unit 4_4_0) by the uninstalls, +2 resurrected
+    // files by the sweep — the counts pin the resurrection actually ran.
+    assert_eq!(report.removed_files, 5, "{report:?}");
+    assert_eq!(report.cut_rows, 1, "{report:?}");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn disarm_refuses_unknown_roots_and_safe_mode() {
+    let tmp = std::env::temp_dir().join("wowsp_boot_disarm_guards");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    touch(&game.join("bin/1/res_mods/PnFMods/ModsInstaller_4_3_1/Main.py"));
+    let root = game.to_string_lossy().into_owned();
+
+    // Unknown root — the known-root half of the game-closed guard fires
+    // before anything is touched (the running-client half is the same
+    // shared ensure_game_closed every mutation uses; a live client cannot
+    // be simulated without launching one, which stays forbidden).
+    let err = super::boot_installer::disarm_boot_installer_core(&root).unwrap_err();
+    assert!(
+        err.to_string().contains("unknown game install root"),
+        "{err}"
+    );
+    assert!(
+        game.join("bin/1/res_mods/PnFMods/ModsInstaller_4_3_1/Main.py")
+            .is_file()
+    );
+
+    // Known root but safe mode active — the quarantine refusal fires.
+    super::test_allow_game_root(&root);
+    fs::create_dir_all(game.join("bin/1/res_mods.wowsp-disabled")).unwrap();
+    let err = super::boot_installer::disarm_boot_installer_core(&root).unwrap_err();
+    assert!(err.to_string().contains("safe mode is active"), "{err}");
+    assert!(
+        game.join("bin/1/res_mods/PnFMods/ModsInstaller_4_3_1/Main.py")
+            .is_file()
+    );
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn contested_marks_partial_overlap_but_not_own_or_full() {
+    let tmp = std::env::temp_dir().join("wowsp_contested");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("bin/1/res_mods");
+    fs::create_dir_all(&rm).unwrap();
+    touch(&rm.join("PnFMods/SomeSkin/Main.py"));
+    fs::write(rm.join("PnFMods/SomeSkin/Main.py"), "print(1)").unwrap();
+    touch(&rm.join("PnFMods/SomeSkin/extra.xml"));
+    touch(&rm.join("PnFMods/Other/Main.py"));
+    touch(&rm.join("PnFMods/Other/extra.xml"));
+    let catalog = tiny_catalog("battle.skin.some", "SomeSkin");
+    let mut units = classify_installed_root(&rm, Some(&catalog));
+    assert_eq!(
+        units
+            .iter()
+            .find(|u| u.name == "SomeSkin")
+            .unwrap()
+            .identity
+            .as_deref(),
+        Some("battle.skin.some"),
+        "fixture must pair before the overlay is meaningful"
+    );
+
+    // The unit's OWN record never contests it — even when the record
+    // claims only part of the tree.
+    let installs = vec![ledger_record(
+        "battle.skin.some",
+        &["PnFMods/SomeSkin/Main.py"],
+    )];
+    super::installed_units::mark_contested_units(&rm, &mut units, &installs, &catalog, "1", "g");
+    assert!(
+        !units
+            .iter()
+            .find(|u| u.name == "SomeSkin")
+            .unwrap()
+            .contested
+    );
+
+    // ANOTHER record claiming one of the unit's files (partial — the unit
+    // keeps a file nobody claims) contests the tree.
+    let installs = vec![
+        ledger_record("battle.skin.some", &["PnFMods/SomeSkin/Main.py"]),
+        ledger_record("other.mod", &["PnFMods/SomeSkin/Main.py"]),
+    ];
+    super::installed_units::mark_contested_units(&rm, &mut units, &installs, &catalog, "1", "g");
+    assert!(
+        units
+            .iter()
+            .find(|u| u.name == "SomeSkin")
+            .unwrap()
+            .contested
+    );
+
+    // FULL coverage by other records is WoWSP's own writing — quiet.
+    let installs = vec![ledger_record(
+        "other.mod",
+        &["PnFMods/SomeSkin/Main.py", "PnFMods/SomeSkin/extra.xml"],
+    )];
+    super::installed_units::mark_contested_units(&rm, &mut units, &installs, &catalog, "1", "g");
+    assert!(
+        !units
+            .iter()
+            .find(|u| u.name == "SomeSkin")
+            .unwrap()
+            .contested
+    );
+
+    // Another install's records never count (different bin version)…
+    let installs = vec![ledger_record("other.mod", &["PnFMods/Other/Main.py"])];
+    super::installed_units::mark_contested_units(&rm, &mut units, &installs, &catalog, "9", "g");
+    assert!(!units.iter().any(|u| u.contested));
+    // …while on THIS bin the partial claim (extra.xml stays unclaimed)
+    // contests only the tree it touches.
+    super::installed_units::mark_contested_units(&rm, &mut units, &installs, &catalog, "1", "g");
+    assert!(units.iter().find(|u| u.name == "Other").unwrap().contested);
+    assert!(
+        !units
+            .iter()
+            .find(|u| u.name == "SomeSkin")
+            .unwrap()
+            .contested
+    );
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn adoption_skips_the_boot_re_installer_and_the_manifest() {
+    let tmp = std::env::temp_dir().join("wowsp_boot_adopt");
+    let _ = fs::remove_dir_all(&tmp);
+    let backup = tmp.join("res_mods.wowsp-purge-1");
+    let live = tmp.join("res_mods");
+    touch(&backup.join("PnFMods/ModsInstaller_4_3_1/Main.py"));
+    touch(&backup.join("PnFMods/ModsInstaller_4_3_1/mods/Shot Timer.xml"));
+    touch(&backup.join("PnFMods/SomeSkin/Main.py"));
+    fs::write(
+        backup.join("installed_mods.xml"),
+        "<data><mod name=\"Shot Timer\"/><mod name=\"SomeSkin\"/></data>",
+    )
+    .unwrap();
+
+    // Even the wowsp-only scope (SomeSkin known) must skip the installer.
+    let adopted =
+        purge::adopt_units(&backup, &live, &["SomeSkin".to_string()], &[], false).unwrap();
+    let names: Vec<_> = adopted.iter().map(|a| a.name.clone()).collect();
+    assert_eq!(names, vec!["SomeSkin".to_string()]);
+    assert_eq!(adopted[0].name, "SomeSkin");
+    assert!(live.join("PnFMods/SomeSkin/Main.py").is_file());
+    // The boot re-installer never comes back …
+    assert!(!live.join("PnFMods/ModsInstaller_4_3_1").exists());
+    // … and neither does the foreign manifest (adoption copies candidate
+    // paths only; installed_mods.xml is a scan marker — see adopt_units).
+    assert!(!live.join("installed_mods.xml").exists());
+
+    // The adopt-foreign scope skips the family just the same (any digit).
+    let backup2 = tmp.join("res_mods.wowsp-purge-2");
+    touch(&backup2.join("PnFMods/ModsInstaller_4_4_0/Main.py"));
+    touch(&backup2.join("PnFMods/SomeSkin/Main.py"));
+    let live2 = tmp.join("res_mods2");
+    let adopted = purge::adopt_units(&backup2, &live2, &[], &[], true).unwrap();
+    let names: Vec<_> = adopted.iter().map(|a| a.name.clone()).collect();
+    assert_eq!(names, vec!["SomeSkin".to_string()]);
+    assert!(!live2.join("PnFMods/ModsInstaller_4_4_0").exists());
+    fs::remove_dir_all(&tmp).ok();
+}

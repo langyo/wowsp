@@ -880,6 +880,8 @@ pub fn run() {
             commands::mod_hub::mod_hub_read_asset,
             commands::mod_hub::mod_hub_read_model,
             commands::mod_hub::mod_hub_scan_installed,
+            commands::mod_hub::mod_hub_boot_installer,
+            commands::mod_hub::mod_hub_disarm_boot_installer,
             commands::mod_hub::mod_hub_classify_path,
             commands::mod_hub::mod_hub_pick_source,
             commands::mod_hub::mod_hub_install,

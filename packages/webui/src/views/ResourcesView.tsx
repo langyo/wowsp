@@ -105,6 +105,11 @@ export default defineComponent({
   // Last-session plugin health (loader verdicts from python.log): the
   // collapsible strip's open state — collapsed by default, one line.
   const loaderHealthOpen = ref(false);
+  // Boot re-installer strip (PnFMods/ModsInstaller_*): same collapsible
+  // shape — collapsed by default, the DISARM action sits on the head row
+  // and its confirm dialog opens separately.
+  const bootInstallerOpen = ref(false);
+  const disarmAsk = ref(false);
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
     const fileWindow = useFileListWindow(hub);
@@ -391,6 +396,64 @@ export default defineComponent({
                           <div class="loader-health__ok">
                             {t("resources.loaderHealth.loadedOkSummary", {
                               count: hub.loaderHealthOkCount.value,
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+              {hub.source.value === "installed" &&
+                hub.bootInstaller.value &&
+                hub.gameRoot.value &&
+                !hub.safeMode.value && (
+                  <div class="boot-installer">
+                    <div class="boot-installer__row">
+                      <button
+                        type="button"
+                        class="boot-installer__head"
+                        aria-expanded={bootInstallerOpen.value}
+                        data-hint={t("resources.bootInstaller.hint")}
+                        onClick={() => (bootInstallerOpen.value = !bootInstallerOpen.value)}
+                      >
+                        <AlertTriangle size={14} />
+                        <span class="boot-installer__title">
+                          {t("resources.bootInstaller.title", {
+                            count: hub.bootInstaller.value.descriptors.length,
+                          })}
+                        </span>
+                        <ChevronDown
+                          size={14}
+                          class={{ "is-open": bootInstallerOpen.value }}
+                        />
+                      </button>
+                      <HkButton
+                        size="sm"
+                        variant="primary"
+                        disabled={hub.disarmBusy.value}
+                        loading={hub.disarmBusy.value}
+                        onClick={() => (disarmAsk.value = true)}
+                      >
+                        {t("resources.bootInstaller.disarm")}
+                      </HkButton>
+                    </div>
+                    {bootInstallerOpen.value && (
+                      <div class="boot-installer__body">
+                        <div class="boot-installer__unit">
+                          {hub.bootInstaller.value.unitRelPath}
+                          {hub.bootInstaller.value.version &&
+                            ` · v${hub.bootInstaller.value.version}`}
+                        </div>
+                        {hub.bootInstaller.value.descriptors.slice(0, 8).map((row) => (
+                          <div class="boot-installer__rowname" key={row}>
+                            {row}
+                          </div>
+                        ))}
+                        {hub.bootInstaller.value.descriptors.length > 8 && (
+                          <div class="boot-installer__more">
+                            {t("resources.bootInstaller.more", {
+                              count: hub.bootInstaller.value.descriptors.length - 8,
                             })}
                           </div>
                         )}
@@ -762,6 +825,29 @@ export default defineComponent({
             onConfirm={() => void hub.uninstallModstation()}
             onUpdate:open={(v: boolean) => {
               if (!v) hub.foreignTarget.value = null;
+            }}
+          />
+
+          {/* Boot re-installer disarm: the confirm names the unit, every row
+              it would re-apply and what removal does (files + manifest
+              rows), then runs with the strip button's spinner. */}
+          <HkConfirmDialog
+            open={disarmAsk.value}
+            title={t("resources.bootInstaller.confirmTitle")}
+            message={t("resources.bootInstaller.confirmBody", {
+              unit: hub.bootInstaller.value?.unitRelPath || "",
+              count: hub.bootInstallerCutRows.value.length,
+              rows: hub.bootInstallerCutRows.value.join(", "),
+            })}
+            confirmLabel={t("resources.bootInstaller.disarm")}
+            confirmVariant="primary"
+            loading={hub.disarmBusy.value}
+            onConfirm={() => {
+              disarmAsk.value = false;
+              void hub.doDisarmBootInstaller();
+            }}
+            onUpdate:open={(v: boolean) => {
+              if (!v) disarmAsk.value = false;
             }}
           />
 

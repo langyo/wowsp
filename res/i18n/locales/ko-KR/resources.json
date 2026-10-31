@@ -50,6 +50,8 @@
     "modstation": "WG ModStation"
   },
   "foreignBadge": "{source} 설치",
+  "contestedTree": "충돌 트리",
+  "contestedTreeHint": "WoWSP 설치 기록이 이 트리의 파일을 소유하고 있고 외부 파일도 남아 있습니다. WoWSP의 다시 쓰기와 외부 설치 관리자의 시작 시 재적용이 서로를 덮어씁니다.",
   "foreignManaged": "{name}은(는) {source}에서 설치했습니다. 여기서 바로 제거할 수 있습니다(파일과 {source}의 등록 행이 함께 정리됨). WoWSP 관리로 전환하려면 페어링된 카탈로그 항목을 열어 등록 후 다시 설치하세요.",
   "foreignPaired": "카탈로그와 매칭됨",
   "foreignUnpaired": "카탈로그 매칭 없음",
@@ -189,6 +191,15 @@
       "disabledByDependency": "TTaro 계열 모드를 하나 다시 설치해 공유 프레임워크 데이터를 복구하세요."
     },
     "loadedOkSummary": "{count}개 모드가 정상적으로 로드됨"
+  },
+  "bootInstaller": {
+    "title": "외부 설치 관리자가 게임을 시작할 때마다 {count}개 행을 다시 적용합니다",
+    "hint": "Aslain의 부트 재설치 관리자(PnFMods/ModsInstaller_*)는 게임을 시작할 때마다 다시 실행되어 기술 XML을 재적용하고 WoWSP가 공유 트리에 쓴 내용을 덮어씁니다.",
+    "more": "+{count}개 더",
+    "disarm": "무장 해제",
+    "confirmTitle": "부트 설치 관리자 무장 해제",
+    "confirmBody": "유닛 {unit}을(를) 제거하고 installed_mods.xml에서 {count}개 행({rows})을 잘라냅니다. 다음 게임 시작 시 아무것도 다시 적용되지 않습니다. 유닛 자체 파일은 삭제되며 WoWSP가 기록한 덮어쓰기 이전 원본은 복원됩니다.",
+    "done": "무장 해제 완료 — 파일 {files}개를 삭제하고 행 {rows}개를 잘라냈습니다."
   },
   "staleSidebarKey": "게임 업데이트됨",
   "staleSidebarText": "이전할 mod 파일 {count}개",

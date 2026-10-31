@@ -1865,12 +1865,15 @@ fn installed_mod_skips_texture_analysis_when_absent() {
         version: None,
         identity: None,
         warnings: Vec::new(),
+        contested: false,
     };
     let v = round_trips(plain.clone());
     assert!(!v.as_object().unwrap().contains_key("textureAnalysis"));
     // Empty warnings stay off the wire (older payloads have no such
     // field and still deserialize).
     assert!(!v.as_object().unwrap().contains_key("warnings"));
+    // A not-contested unit stays off the wire the same way.
+    assert!(!v.as_object().unwrap().contains_key("contested"));
     let legacy = serde_json::json!({
         "kind": "skin",
         "name": "old",

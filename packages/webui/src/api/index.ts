@@ -75,6 +75,8 @@ export type {
   AuxCacheStatus,
   ModKind,
   InstalledMod,
+  BootInstallerInfo,
+  BootInstallerDisarmReport,
   TextureFileKind,
   TextureAnalysis,
   PackagePlanEntry,
