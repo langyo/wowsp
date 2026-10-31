@@ -104,7 +104,11 @@ export function shipTypeBadgeShort(
   return TYPE_SHORT[type] ?? "?";
 }
 
-/** Localized consumable-slot label for a GameParams ability family. */
+/** Localized consumable-slot label for a GameParams ability family. The
+ *  AirDefenseDisp family remains live on the Lesta realm only (WG removed
+ *  Defensive AA Fire from every ship), while WG repurposed PCY087
+ *  (AuxiliaryTorpedoArmamentBooster) into the auxiliary/torpedo coordination
+ *  consumable — hence its own auxCoordination key. */
 const CONSUMABLE_KEY: Record<string, string> = {
   CrashCrew: "crashCrew",
   RegenCrew: "regenCrew",
@@ -118,7 +122,8 @@ const CONSUMABLE_KEY: Record<string, string> = {
   SubmarineLocator: "subLocator",
   TorpedoReloader: "torpReload",
   ArtilleryBooster: "artyReload",
-  AuxiliaryTorpedoArmamentBooster: "defensiveAA",
+  AuxiliaryTorpedoArmamentBooster: "auxCoordination",
+  AirDefenseDisp: "defensiveAA",
 };
 
 export function isKnownConsumable(family: string): boolean {

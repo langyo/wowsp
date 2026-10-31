@@ -689,6 +689,7 @@
     "subLocator": "Localizador de submarinos",
     "torpReload": "Potenciador de torpedos",
     "artyReload": "Potenciador de batería principal",
+    "auxCoordination": "Coordinación de armamento auxiliar y torpedos",
     "defensiveAA": "Fuego AA defensivo"
   },
   "techTree": {

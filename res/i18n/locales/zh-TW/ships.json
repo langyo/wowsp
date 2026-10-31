@@ -689,7 +689,8 @@
     "subLocator": "潛艦探測",
     "torpReload": "魚雷裝填助推器",
     "artyReload": "主砲裝填助推器",
-    "defensiveAA": "防空彈幕"
+    "auxCoordination": "魚雷與輔助武器協調",
+    "defensiveAA": "防禦用對空火力"
   },
   "techTree": {
     "realmHint": "科技樹分支來源：WG 為基準拓撲，Lesta 為用戶端自身研究線。",

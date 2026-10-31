@@ -15,8 +15,12 @@ variant specs) and in the game's own strings, so this bake snapshots them
 into a compact frontend-importable dictionary keyed by entity + variant.
 
 Scope: every `P[XC]Y<digits>_` entity carrying at least one CONSUMABLE spec
-(a dict variant with `group == "ship"`) — deliberately not just the entities
-the WG pack's per-ship slices reference, so Lesta-realm slices (the bundled
+(a dict variant with `group == "ship"`) from BOTH realms — the WG client
+plus the Lesta (Мир кораблей) client, whose entities and variants the WG
+dump lacks (Defensive AA Fire lives on Lesta; WG removed it — the realms
+legitimately differ and both must display). WG strings cover en/ja/zh/tw;
+Lesta-only entries carry zh from the Lesta mo dump. Deliberately not just
+the entities the per-ship slices reference, so realm slices (the bundled
 snapshot the Rust lookup answers from) and future client updates resolve
 without a re-bake.
 
@@ -24,11 +28,22 @@ Sources (same layout build_planner_data.py / extract_ship_consumable_kit.py
 read):
 
 * ``%LOCALAPPDATA%/WoWSP-extract/GameParams.json`` (`just extract`) — the
-  entity definitions.
+  WG entity definitions.
+* ``%LOCALAPPDATA%/WoWSP-extract/GameParams_lesta.json`` — the Lesta
+  realm's entity definitions, collected exactly like the WG ones and
+  merged in: Lesta-only entities whole (icon "" — the art sources below
+  are WG-client only), and on entities the WG bake already has, ONLY the
+  variants WG lacks (WG's own variant records win untouched). Optional —
+  when the file or the mo cache is missing the bake warns and stays
+  WG-only.
 * ``%LOCALAPPDATA%/WoWSP-extract/wowsinfo_lang.json`` (cached upstream
   wowsinfo/data lang.json) — `IDS_DOCK_CONSUME_TITLE_*` /
   `IDS_DOCK_CONSUME_DESCRIPTION_*` in en/ja/zh_sg/zh_tw (→ en/ja/zh/tw, the
   short codes every baked {names,desc} asset uses).
+* ``%LOCALAPPDATA%/WoWSP-extract/mo_zh.json`` — the Lesta client's zh
+  strings, filling the zh slot of merged-variant strings keys the WG langs
+  cannot resolve (never inventing: keys neither source resolves stay
+  absent).
 * ``wows_meta.json`` + the gui pkg — `/gui/consumables/consumable_*.png`
   sliced by (unpacked size, crc32) and converted to webp (--no-icons skips).
 
@@ -92,6 +107,10 @@ CACHE = Path(
 GAMEPARAMS_JSON = CACHE / "GameParams.json"
 LANG_JSON = CACHE / "wowsinfo_lang.json"
 META_JSON = CACHE / "wows_meta.json"
+# Lesta (Мир кораблей) counterpart dump + its zh strings — the same cache
+# dir; when either is missing the bake warns and stays WG-only.
+LESTA_GAMEPARAMS_JSON = CACHE / "GameParams_lesta.json"
+LESTA_MO_ZH_JSON = CACHE / "mo_zh.json"
 
 OUT_DATA = WEBUI / "data" / "consumable_details.json"
 OUT_ICONS = WEBUI / "res" / "images" / "consumables"
@@ -132,6 +151,30 @@ def strings_for(lang: dict[str, dict[str, str]], suffix: str) -> tuple[dict, dic
         return None
     return names, desc
 
+
+def strings_entry_for(
+    lang: dict[str, dict[str, str]],
+    mo_zh: dict[str, str] | None,
+    suffix: str,
+) -> tuple[dict, dict, bool] | None:
+    """({names}, {desc}, zh-filled?) for a MERGED (Lesta-side) variant's
+    strings key: the WG langs first (strings_for), then the zh slot filled
+    from the Lesta mo dump when the WG langs miss it — they simply do not
+    carry the Lesta realm's own keys. None when nothing resolves (never
+    invent strings)."""
+    resolved = strings_for(lang, suffix)
+    names, desc = ({}, {}) if resolved is None else resolved
+    zh_filled = False
+    if mo_zh:
+        if "zh" not in names and (v := mo_zh.get(TITLE_KEY.format(suffix))):
+            names["zh"] = v
+            zh_filled = True
+        if "zh" not in desc and (v := mo_zh.get(DESC_KEY.format(suffix))):
+            desc["zh"] = v
+            zh_filled = True
+    if not names and not desc:
+        return None
+    return names, desc, zh_filled
 
 
 def variant_record(spec: dict[str, Any], lang: dict) -> dict[str, Any] | None:
@@ -178,6 +221,119 @@ def variant_record(spec: dict[str, Any], lang: dict) -> dict[str, Any] | None:
     if spec.get("defaultActivationMode") == "AUTO":
         entry["a"] = 1
     return entry
+
+
+def collect_entities(
+    full: dict[str, Any], lang: dict[str, dict[str, str]],
+) -> dict[str, dict[str, Any]]:
+    """Every consumable ENTITY in a GameParams dump (either realm): the
+    `P[XC]Y<digits>_` entries carrying at least one dict variant with
+    `group == "ship"`, each with its compact variant records, the strings
+    keys they resolve to, and the raw specs / iconIDs the icon pass needs
+    (leading-underscore bookkeeping, dropped before the write).
+
+    Both realms go through this exact same path — same ENTITY_RE, same
+    family_of()/variant_record()/strings handling — so a Lesta record is
+    shaped like its WG counterpart in every field."""
+    entities: dict[str, dict[str, Any]] = {}
+    for name, e in full.items():
+        if not isinstance(name, str) or not ENTITY_RE.match(name) or not isinstance(e, dict):
+            continue
+        specs: list[tuple[str, dict[str, Any]]] = [
+            (vname, vdict)
+            for vname, vdict in e.items()
+            if isinstance(vdict, dict) and vdict.get("group") == "ship"
+        ]
+        if not specs:
+            continue
+        variants: dict[str, dict[str, Any]] = {}
+        icon_ids: dict[str, str] = {}
+        strings: dict[str, dict[str, dict[str, str]]] = {}
+        for variant_name, raw in specs:
+            spec = dict(raw, _entity=name)
+            rec = variant_record(spec, lang)
+            if rec is None:
+                continue
+            variants[variant_name] = rec
+            icon_ids[variant_name] = str(raw.get("iconIDs") or "")
+            for key in (rec["t"], rec.get("d")):
+                if key and key not in strings:
+                    resolved = strings_for(lang, key)
+                    if resolved:
+                        names, desc = resolved
+                        entry: dict[str, dict[str, str]] = {}
+                        if names:
+                            entry["names"] = names
+                        if desc:
+                            entry["desc"] = desc
+                        strings[key] = entry
+        if variants:
+            entities[name] = {
+                "family": family_of(name),
+                "icon": "",
+                "variants": variants,
+                "strings": strings,
+                "_specs": [raw for _vn, raw in specs],
+                "_icon_ids": icon_ids,
+            }
+    return entities
+
+
+def merge_lesta_entities(
+    entities: dict[str, dict[str, Any]],
+    lesta: dict[str, dict[str, Any]],
+    lang: dict[str, dict[str, str]],
+    mo_zh: dict[str, str] | None,
+    strings_table: dict[str, dict[str, dict[str, str]]],
+) -> Counter[str]:
+    """Fold the Lesta realm's collected entities into the WG bake — called
+    AFTER the icon pass, whose art sources (meta + pkg) are WG-client only:
+    an entity the WG bake already has gains ONLY the variants WG lacks
+    (WG's own variant records — strings, art overrides — win untouched),
+    and an entity WG lacks is added whole with icon "". Incoming variants'
+    strings resolve through the WG langs first; keys they cannot resolve
+    get their zh filled from the Lesta mo dump (strings_entry_for).
+    Returns the merge counters for the bake log."""
+    stats: Counter[str] = Counter()
+
+    def add_strings(rec: dict[str, Any]) -> None:
+        for key in (rec["t"], rec.get("d")):
+            if not key or key in strings_table:
+                continue
+            resolved = strings_entry_for(lang, mo_zh, key)
+            if resolved is None:
+                continue
+            names, desc, zh_filled = resolved
+            entry: dict[str, dict[str, str]] = {}
+            if names:
+                entry["names"] = names
+            if desc:
+                entry["desc"] = desc
+            strings_table[key] = entry
+            stats["strings"] += 1
+            if zh_filled:
+                stats["zh"] += 1
+
+    for name, lrec in sorted(lesta.items()):
+        wrec = entities.get(name)
+        if wrec is None:
+            entities[name] = {
+                "family": lrec["family"],
+                "icon": "",
+                "variants": dict(lrec["variants"]),
+            }
+            stats["entities"] += 1
+            stats["variants"] += len(lrec["variants"])
+            for vrec in lrec["variants"].values():
+                add_strings(vrec)
+        else:
+            for vname, vrec in lrec["variants"].items():
+                if vname in wrec["variants"]:
+                    continue
+                wrec["variants"][vname] = vrec
+                stats["variants"] += 1
+                add_strings(vrec)
+    return stats
 
 
 def pick_family_icons(
@@ -327,6 +483,14 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--pkg", default=None,
                     help="gui pkg file (default <game>/res_packages/gui_0001.pkg)")
     ap.add_argument("--no-icons", action="store_true", help="data only, skip the icon scan")
+    ap.add_argument("--lesta-gameparams", default=str(LESTA_GAMEPARAMS_JSON),
+                    help="Lesta (Мир кораблей) GameParams.json merged into "
+                         "the bake (default: the WoWSP-extract cache dump; "
+                         "missing file → warn + WG-only bake)")
+    ap.add_argument("--lesta-mo-zh", default=str(LESTA_MO_ZH_JSON),
+                    help="Lesta zh strings (flat mo dump) filling the zh slot "
+                         "of merged-variant keys the WG langs miss (default: "
+                         "the WoWSP-extract cache dump)")
     args = ap.parse_args(argv)
 
     if not GAMEPARAMS_JSON.is_file():
@@ -340,48 +504,25 @@ def main(argv: list[str]) -> int:
     full = json.loads(GAMEPARAMS_JSON.read_text(encoding="utf-8"))
     lang: dict[str, dict[str, str]] = json.loads(LANG_JSON.read_text(encoding="utf-8"))
 
-    # ── collect consumable entities ──────────────────────────────────────
-    entities: dict[str, dict[str, Any]] = {}
-    for name, e in full.items():
-        if not isinstance(name, str) or not ENTITY_RE.match(name) or not isinstance(e, dict):
-            continue
-        specs: list[tuple[str, dict[str, Any]]] = [
-            (vname, vdict)
-            for vname, vdict in e.items()
-            if isinstance(vdict, dict) and vdict.get("group") == "ship"
-        ]
-        if not specs:
-            continue
-        variants: dict[str, dict[str, Any]] = {}
-        icon_ids: dict[str, str] = {}
-        strings: dict[str, dict[str, dict[str, str]]] = {}
-        for variant_name, raw in specs:
-            spec = dict(raw, _entity=name)
-            rec = variant_record(spec, lang)
-            if rec is None:
-                continue
-            variants[variant_name] = rec
-            icon_ids[variant_name] = str(raw.get("iconIDs") or "")
-            for key in (rec["t"], rec.get("d")):
-                if key and key not in strings:
-                    resolved = strings_for(lang, key)
-                    if resolved:
-                        names, desc = resolved
-                        entry: dict[str, dict[str, str]] = {}
-                        if names:
-                            entry["names"] = names
-                        if desc:
-                            entry["desc"] = desc
-                        strings[key] = entry
-        if variants:
-            entities[name] = {
-                "family": family_of(name),
-                "icon": "",
-                "variants": variants,
-                "strings": strings,
-                "_specs": [raw for _vn, raw in specs],
-                "_icon_ids": icon_ids,
-            }
+    # The Lesta merge is optional: when either source cache is missing the
+    # bake warns and reproduces today's WG-only result.
+    lesta_gp = Path(args.lesta_gameparams)
+    lesta_zh = Path(args.lesta_mo_zh)
+    lesta_full: dict[str, Any] | None = None
+    mo_zh: dict[str, str] | None = None
+    if lesta_gp.is_file() and lesta_zh.is_file():
+        print(f"[consumables] loading {lesta_gp.name} + {lesta_zh.name} "
+              "(Lesta merge) …", flush=True)
+        lesta_full = json.loads(lesta_gp.read_text(encoding="utf-8"))
+        mo_zh = json.loads(lesta_zh.read_text(encoding="utf-8"))
+    else:
+        missing = lesta_gp if not lesta_gp.is_file() else lesta_zh
+        print(f"warn: {missing} not found — skipping the Lesta merge "
+              "(WG-only bake)", file=sys.stderr)
+
+    # ── collect consumable entities (WG, then Lesta through the same path) ──
+    entities = collect_entities(full, lang)
+    lesta = collect_entities(lesta_full, lang) if lesta_full is not None else {}
 
     # Merge per-entity strings into the shared table.
     strings_table: dict[str, dict[str, dict[str, str]]] = {}
@@ -455,6 +596,19 @@ def main(argv: list[str]) -> int:
     else:
         for rec in entities.values():
             rec.pop("icon")
+
+    # ── merge the Lesta realm ────────────────────────────────────────────
+    # Deliberately AFTER the icon pass: the art sources are WG-client only,
+    # so Lesta-only entities carry icon "" and incoming variants never
+    # displace a WG record or its art.
+    if lesta and mo_zh is not None:
+        mstats = merge_lesta_entities(entities, lesta, lang, mo_zh, strings_table)
+        print(f"[consumables] lesta merge: +{mstats['entities']} entities, "
+              f"+{mstats['variants']} variants, +{mstats['strings']} strings keys "
+              f"(zh filled from mo_zh: {mstats['zh']})")
+    referenced = sum(len(r["variants"]) for r in entities.values())
+    print(f"[consumables] total: {len(entities)} entities, {referenced} variants, "
+          f"{len(strings_table)} strings keys (both realms)")
 
     # ── write ────────────────────────────────────────────────────────────
     out = {

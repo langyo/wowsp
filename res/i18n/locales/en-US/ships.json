@@ -689,6 +689,7 @@
     "subLocator": "Submarine Surveillance",
     "torpReload": "Torpedo Reload Booster",
     "artyReload": "Main Battery Reload Booster",
+    "auxCoordination": "Auxiliary and Torpedo Weaponry Coordination",
     "defensiveAA": "Defensive AA Fire"
   },
   "techTree": {
