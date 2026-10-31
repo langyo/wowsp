@@ -85,5 +85,5 @@
 4. **BattleWave 点亮图标**这类「插件的前置皮肤」需要轻量依赖声明（manifest 可选字段
    `[dependencies] requires = ["battlewave"]`），否则用户单独安装不生效。
 5. 官方第一方补丁以 `输入法 23.3.26` 为基准样本：单 config 文件 + CC0，随安装器内置分发。
-6. `wowsunpack-vendor`（仓库已有 vendor）正是教程工具链里的官方 pkg 解包器同款，
+6. `packages/tools/game-assets`（wows-toolkit 的仓内 fork）正是教程工具链里的官方 pkg 解包器同款，
    Mod Hub 后续可用它做「提取预览」（贴图缩略图、音频试听转码）的技术底座。

@@ -63,7 +63,7 @@ Bugs and testing feedback: QQ group **[612331811](https://qm.qq.com/q/ExDBBawuLC
 
 ## License
 
-WoWSP is licensed under the **Synthetic Source License 1.0** ([full text](./LICENSE)) — Apache-2.0-equivalent grants for a substantially AI-generated codebase, whose only extra obligation is keeping the AI-generation disclosure notice on every copy and derivative. The vendored [wows-toolkit](./packages/tools/wowsunpack-vendor) snapshot keeps its upstream **MIT** license; everything else in this repository — including the standalone [pairing-relay](./packages/pairing-relay) worker — is covered by SySL-1.0.
+WoWSP is licensed under the **Synthetic Source License 1.0** ([full text](./LICENSE)) — Apache-2.0-equivalent grants for a substantially AI-generated codebase, whose only extra obligation is keeping the AI-generation disclosure notice on every copy and derivative. The in-tree [game-assets fork](./packages/tools/game-assets) of [wows-toolkit](https://github.com/landaire/wows-toolkit) keeps its upstream **MIT** license; everything else in this repository — including the standalone [pairing-relay](./packages/pairing-relay) worker — is covered by SySL-1.0.
 
 ## Support
 

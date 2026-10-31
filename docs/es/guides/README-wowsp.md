@@ -61,7 +61,7 @@ Errores y comentarios de las pruebas: grupo de QQ **[612331811](https://qm.qq.co
 
 ## Licencia
 
-WoWSP se distribuye bajo la **Synthetic Source License 1.0** ([texto completo](https://github.com/langyo/wowsp/blob/master/LICENSE)) — otorga permisos equivalentes a los de Apache-2.0 para una base de código sustancialmente generada por IA, cuya única obligación adicional es mantener el aviso de divulgación de generación por IA en cada copia y obra derivada. La instantánea de [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) integrada en el repositorio conserva su licencia **MIT** original; todo lo demás en este repositorio —incluido el worker independiente [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay)— está cubierto por la SySL-1.0.
+WoWSP se distribuye bajo la **Synthetic Source License 1.0** ([texto completo](https://github.com/langyo/wowsp/blob/master/LICENSE)) — otorga permisos equivalentes a los de Apache-2.0 para una base de código sustancialmente generada por IA, cuya única obligación adicional es mantener el aviso de divulgación de generación por IA en cada copia y obra derivada. El [fork de game-assets](https://github.com/langyo/wowsp/tree/master/packages/tools/game-assets) — derivado de [wows-toolkit](https://github.com/landaire/wows-toolkit) e integrado en el repositorio — conserva su licencia **MIT** original; todo lo demás en este repositorio —incluido el worker independiente [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay)— está cubierto por la SySL-1.0.
 
 ## Apoyar al autor
 

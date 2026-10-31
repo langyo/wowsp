@@ -61,7 +61,7 @@ Retours de bogues et de tests : groupe QQ **[612331811](https://qm.qq.com/q/ExDB
 
 ## Licence
 
-WoWSP est distribué sous la **Synthetic Source License 1.0** ([texte intégral](https://github.com/langyo/wowsp/blob/master/LICENSE)) — des droits équivalents à ceux d'Apache-2.0 pour une base de code substantiellement générée par IA, dont la seule obligation supplémentaire est de conserver la mention de divulgation de génération par IA sur chaque copie et chaque œuvre dérivée. L'instantané « vendored » de [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) conserve sa licence **MIT** d'origine ; tout le reste du dépôt — y compris le worker autonome [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) — est couvert par la SySL-1.0.
+WoWSP est distribué sous la **Synthetic Source License 1.0** ([texte intégral](https://github.com/langyo/wowsp/blob/master/LICENSE)) — des droits équivalents à ceux d'Apache-2.0 pour une base de code substantiellement générée par IA, dont la seule obligation supplémentaire est de conserver la mention de divulgation de génération par IA sur chaque copie et chaque œuvre dérivée. Le [fork game-assets](https://github.com/langyo/wowsp/tree/master/packages/tools/game-assets) — dérivé de [wows-toolkit](https://github.com/landaire/wows-toolkit) et intégré à l'arborescence — conserve sa licence **MIT** d'origine ; tout le reste du dépôt — y compris le worker autonome [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) — est couvert par la SySL-1.0.
 
 ## Soutenir le projet
 

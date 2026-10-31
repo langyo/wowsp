@@ -61,7 +61,7 @@ Windows 10/11 — [GitHub Releases](https://github.com/langyo/wowsp/releases/lat
 
 ## 라이선스
 
-WoWSP는 **Synthetic Source License 1.0**([전문](https://github.com/langyo/wowsp/blob/master/LICENSE)) 하에 배포된다 — 상당 부분 AI가 생성한 코드베이스에 Apache-2.0과 동등한 권리를 부여하며, 유일한 추가 의무는 모든 복제본과 파생물에 AI 생성 고지 문구를 유지하는 것이다. 벤더링한 [wows-toolkit](https://github.com/langyo/wowsp/tree/master/packages/tools/wowsunpack-vendor) 스냅샷은 업스트림 **MIT** 라이선스를 그대로 유지하며, 이 저장소의 그 외 모든 것 — 독립 실행형 [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) 워커를 포함해 — 는 SySL-1.0이 적용된다.
+WoWSP는 **Synthetic Source License 1.0**([전문](https://github.com/langyo/wowsp/blob/master/LICENSE)) 하에 배포된다 — 상당 부분 AI가 생성한 코드베이스에 Apache-2.0과 동등한 권리를 부여하며, 유일한 추가 의무는 모든 복제본과 파생물에 AI 생성 고지 문구를 유지하는 것이다. [wows-toolkit](https://github.com/landaire/wows-toolkit)를 트리 내에서 포킹한 [game-assets](https://github.com/langyo/wowsp/tree/master/packages/tools/game-assets)는 업스트림 **MIT** 라이선스를 그대로 유지하며, 이 저장소의 그 외 모든 것 — 독립 실행형 [pairing-relay](https://github.com/langyo/wowsp/tree/master/packages/pairing-relay) 워커를 포함해 — 는 SySL-1.0이 적용된다.
 
 ## 후원
 
