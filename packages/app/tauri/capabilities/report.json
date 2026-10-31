@@ -1,0 +1,19 @@
+{
+  "identifier": "report",
+  "description": "The AI battle report's secondary window (E25): event listening for its re-target channel (wowsp://report-params from the Rust opener), event emission at the main window for playhead seeks (wowsp://report-seek), frameless-titlebar window controls, and the read-only analysis commands the report needs (decision_static_report). State-changing app commands stay label-gated to the main window (audit P0-5): this window creates nothing, writes nothing, only reads analysis.",
+  "windows": [
+    "report"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "core:window:allow-close",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-start-dragging",
+    "core:window:allow-is-maximized",
+    "hikari-host:allow-ack-close"
+  ]
+}

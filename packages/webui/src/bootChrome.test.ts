@@ -142,6 +142,7 @@ describe("the page table is the single source of truth", () => {
     // behaviour change — it must be a conscious edit of this expectation.
     expect(WEBUI_PAGES.map((page) => [page.entry, page.html, page.bootChrome])).toEqual([
       ["main", "index.html", true],
+      ["report", "report.html", true],
       ["overlay", "overlay.html", false],
       ["aimcard", "aimcard.html", false],
       ["chat", "chat.html", false],
@@ -153,7 +154,7 @@ describe("the page table is the single source of truth", () => {
     expect(BOOT_CHROME_HTML_FILES).toEqual(
       WEBUI_PAGES.filter((page) => page.bootChrome).map((page) => page.html),
     );
-    expect(BOOT_CHROME_HTML_FILES).toEqual(["index.html"]);
+    expect(BOOT_CHROME_HTML_FILES).toEqual(["index.html", "report.html"]);
   });
 });
 

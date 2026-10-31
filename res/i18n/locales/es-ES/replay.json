@@ -661,6 +661,7 @@
     "outcome": "Resultado",
     "hpLost": "{v} PS enemigos",
     "noAttributed": "sin daño atribuido",
-    "modelNote": "La contribución mide el daño real, no la elegancia; el acuerdo no es una valoración."
+    "modelNote": "La contribución mide el daño real, no la elegancia; el acuerdo no es una valoración.",
+    "noTarget": "Abra una repetición y pulse «Informe de batalla IA»."
   }
 }

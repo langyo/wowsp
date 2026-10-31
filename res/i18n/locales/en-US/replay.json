@@ -661,6 +661,7 @@
     "outcome": "Outcome",
     "hpLost": "{v} enemy HP lost",
     "noAttributed": "no attributed loss",
-    "modelNote": "Contribution measures realised damage, not decision elegance; agreement is not a player rating."
+    "modelNote": "Contribution measures realised damage, not decision elegance; agreement is not a player rating.",
+    "noTarget": "Open a replay and press “AI battle report” in the replay view."
   }
 }

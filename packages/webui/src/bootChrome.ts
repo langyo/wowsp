@@ -60,6 +60,9 @@ export interface WebuiPage {
  */
 export const WEBUI_PAGES = [
   { entry: "main", html: "index.html", bootChrome: true },
+  // The AI battle report's secondary window (E25): a real app window with
+  // the frameless title bar, spawned on demand by the replay view.
+  { entry: "report", html: "report.html", bootChrome: true },
   { entry: "overlay", html: "overlay.html", bootChrome: false },
   { entry: "aimcard", html: "aimcard.html", bootChrome: false },
   { entry: "chat", html: "chat.html", bootChrome: false },

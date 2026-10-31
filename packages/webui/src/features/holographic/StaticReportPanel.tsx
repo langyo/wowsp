@@ -116,7 +116,9 @@ export default defineComponent({
     onSeek: { type: Function as PropType<(t: number) => void>, default: null },
     /** Perspective switch (refetch from the Rust cache). */
     onPick: { type: Function as PropType<(entityId: number) => void>, required: true },
-    onClose: { type: Function as PropType<() => void>, required: true },
+    /** Optional close affordance (the secondary window supplies its own
+     *  title-bar close; the in-map modal passed one). */
+    onClose: { type: Function as PropType<() => void>, default: null },
   },
   setup(props) {
     const exporting = ref(false);
@@ -184,13 +186,15 @@ export default defineComponent({
               )}
               <span>{i18nT(exporting.value ? "replay.report.exporting" : "replay.report.export")}</span>
             </button>
-            <button
-              class="static-report-panel__btn static-report-panel__btn--plain"
-              onClick={() => props.onClose()}
-              aria-label={i18nT("replay.report.close")}
-            >
-              <X size={14} />
-            </button>
+            {props.onClose ? (
+              <button
+                class="static-report-panel__btn static-report-panel__btn--plain"
+                onClick={() => props.onClose()}
+                aria-label={i18nT("replay.report.close")}
+              >
+                <X size={14} />
+              </button>
+            ) : null}
           </div>
         </div>
 

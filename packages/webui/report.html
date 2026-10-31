@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>WoWSP AI Battle Report</title>
+    <script type="module" src="/src/report/main.ts"></script>
+  </head>
+  <body>
+    <!-- The static decision report's secondary window (E25): a standalone
+         app window the replay view spawns on demand, so the report can sit
+         beside the 3D board while its 跳转 buttons drive the main window's
+         playhead. Params arrive via the window URL query and the
+         wowsp://report-params event (re-targeting an open window). See
+         src/report/main.ts. -->
+    <div id="app"></div>
+  </body>
+</html>
