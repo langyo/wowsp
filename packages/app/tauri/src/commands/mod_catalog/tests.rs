@@ -1399,6 +1399,309 @@ mod tests {
         assert!(text.contains("(id battle.heal.assistant)"), "{text}");
     }
 
+    /// The shared-component matcher: Aslain's Implicit runtime trees (and
+    /// only those) classify as shared — a dependent's own PnF tree, other
+    /// gettext catalogs, the loader marker and lookalike spellings stay
+    /// private.
+    #[test]
+    fn shared_component_matcher_classifies_the_aslain_runtime_trees() {
+        for rel in [
+            "PnFMods/TTaroModUtils/SchemaScanner.py",
+            "pnfmods/ttaromodutils/deep/nested.py",
+            "PnFMods/ModForge/Blueprints/bp.json",
+            "PnFMods/ModsInstaller_4_3_1/mods/SecondaryArmament.xml",
+            // The family prefix survives an Aslain toolkit bump.
+            "PnFMods/ModsInstaller_4_4_0/mods/SecondaryArmament.xml",
+            "gui/ttaro/index.css",
+            "gui/ttaro_mod_config/config.json",
+            "gui/unbound2/PnFMods/TTaroModUtils/SchemaScanner.unbound",
+            // The real unbound shape: suffixed FILES directly under the
+            // root, not a TTaroModUtils/ directory.
+            "gui/unbound2/PnFMods/TTaroModUtils2.unbound",
+            "texts/en/ttaro-mod-config.mo",
+            "texts/zh_CN/ttaro-mod-config.mo",
+            "@game/gettext_x64r.dll",
+            // OS-native separators from a snapshot layer compare equal.
+            "PnFMods\\TTaroModUtils\\Main.py",
+        ] {
+            assert!(is_shared_component_path(rel), "{rel} must be shared");
+        }
+        for rel in [
+            "PnFMods/ConsumablesMonitor2Py/Main.py",
+            // Lookalike spellings that are NOT the component trees.
+            "PnFMods/TTaroModUtilsX/other.py",
+            "gui/ttaro_mod.config/index.css",
+            "gui/own/a.css",
+            "texts/en/LC_MESSAGES/other.mo",
+            "PnFModsLoader.py",
+            "@game/own.dll",
+            "content/gameplay/x.dds",
+        ] {
+            assert!(!is_shared_component_path(rel), "{rel} must stay private");
+        }
+        // Root granularity: files across one component root agree,
+        // distinct components stay distinct, and the single-file
+        // components map to their own path.
+        assert_eq!(
+            shared_component_root("PnFMods/TTaroModUtils/SchemaScanner.py"),
+            shared_component_root("pnfmods/ttaromodutils/Other.py")
+        );
+        assert_ne!(
+            shared_component_root("PnFMods/TTaroModUtils/SchemaScanner.py"),
+            shared_component_root("PnFMods/ModForge/x.py")
+        );
+        assert_eq!(
+            shared_component_root("@game/gettext_x64r.dll"),
+            Some("@game/gettext_x64r.dll".into())
+        );
+    }
+
+    /// P1 shared-component semantics (Aslain-aligned): a shared runtime
+    /// tree cloned into every dependent's file list never blocks an
+    /// uninstall. Uninstalling the OLDER consumer now succeeds (it used
+    /// to be refused by the newer record's claim), keeps the shared file
+    /// at the live bytes and removes only the departing record's private
+    /// files; the LAST consumer's uninstall removes the shared file and
+    /// restores the snapshot layer its own install captured. A private
+    /// file's newer claim keeps refusing exactly as before.
+    #[test]
+    fn uninstall_keeps_a_shared_component_until_its_last_consumer() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_component_uninstall");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        touch(&rm.join("PnFMods/TTaroModUtils/SchemaScanner.py"));
+        fs::write(
+            rm.join("PnFMods/TTaroModUtils/SchemaScanner.py"),
+            b"shared b bytes",
+        )
+        .unwrap();
+        touch(&rm.join("gui/a-only.png"));
+        // B's install overwrote A's copy, so B's snapshot layer holds the
+        // bytes that were live before it (A's era).
+        let restore_b = tmp.join("restore-b");
+        touch(&restore_b.join("PnFMods/TTaroModUtils/SchemaScanner.py"));
+        fs::write(
+            restore_b.join("PnFMods/TTaroModUtils/SchemaScanner.py"),
+            b"shared a bytes",
+        )
+        .unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |id: &str, files: &[&str], restore: Option<&Path>| ModInstallRecord {
+            id: id.into(),
+            name: id.to_uppercase(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| (*f).to_string()).collect(),
+            restore_dir: restore.map(|p| p.to_string_lossy().into_owned()),
+            game_root: String::new(),
+        };
+        let mut installs = vec![
+            mk(
+                "a",
+                &["PnFMods/TTaroModUtils/SchemaScanner.py", "gui/a-only.png"],
+                None,
+            ),
+            mk(
+                "b",
+                &["PnFMods/TTaroModUtils/SchemaScanner.py"],
+                Some(&restore_b),
+            ),
+        ];
+
+        // The older record's uninstall is no longer refused by the newer
+        // record's claim on the shared file…
+        let report = uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+        assert_eq!(report.removed_files, 1, "only the private file goes");
+        // …the shared file STAYS at the live (newer) bytes…
+        assert_eq!(
+            fs::read(rm.join("PnFMods/TTaroModUtils/SchemaScanner.py")).unwrap(),
+            b"shared b bytes"
+        );
+        // …while the departing record's private files go as always.
+        assert!(!rm.join("gui/a-only.png").exists());
+        assert_eq!(installs.len(), 1);
+        assert_eq!(installs[0].id, "b");
+
+        // The LAST consumer takes the component with it and restores the
+        // snapshot layer its own install captured.
+        let report = uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
+        assert_eq!(report.restored_files, 1);
+        assert_eq!(
+            fs::read(rm.join("PnFMods/TTaroModUtils/SchemaScanner.py")).unwrap(),
+            b"shared a bytes"
+        );
+        assert!(installs.is_empty());
+        assert!(
+            !restore_b.exists(),
+            "the consumed snapshot layer is dropped"
+        );
+
+        // A PRIVATE file's newer claim still refuses, unchanged.
+        let mut installs = vec![
+            mk(
+                "c",
+                &["gui/private.css", "PnFMods/TTaroModUtils/SchemaScanner.py"],
+                None,
+            ),
+            mk("d", &["gui/private.css"], None),
+        ];
+        let err = validate_uninstall_order(&installs, "c", &game_root).unwrap_err();
+        assert!(err.to_string().contains("shares gui/private.css"), "{err}");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// A kept shared path keeps its PRELOAD-MIRROR twin too: the twin's
+    /// copy serves the surviving consumer, while the departing record's
+    /// private files lose theirs (mirror_removed must only ever see the
+    /// non-protected list — reverting that filter to record.files would
+    /// fail this test).
+    #[test]
+    fn shared_uninstall_keeps_the_preload_mirror_twin() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_mirror_twin");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        // The pin names bin 2 as the live build; bin 3 is the complete
+        // staged pre-release twin whose res_mods mirrors the live tree.
+        fs::create_dir_all(game.join("bin/2/idx")).unwrap();
+        fs::create_dir_all(game.join("bin/3/idx")).unwrap();
+        fs::write(
+            game.join("preferences.xml"),
+            "<root><last_server_version> 15,9,0,2 </last_server_version></root>",
+        )
+        .unwrap();
+        let live = game.join("bin/2/res_mods");
+        let twin = game.join("bin/3/res_mods");
+        for tree in [&live, &twin] {
+            fs::create_dir_all(tree.join("PnFMods/TTaroModUtils")).unwrap();
+            fs::write(tree.join("PnFMods/TTaroModUtils/S.py"), b"shared").unwrap();
+            fs::create_dir_all(tree.join("gui")).unwrap();
+            fs::write(tree.join("gui/a-only.png"), b"png").unwrap();
+        }
+        let game_root = game.to_string_lossy().into_owned();
+        let mk = |id: &str, files: &[&str]| ModInstallRecord {
+            id: id.into(),
+            name: id.to_uppercase(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "2".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| (*f).to_string()).collect(),
+            restore_dir: None,
+            game_root: String::new(),
+        };
+        let mut installs = vec![
+            mk("a", &["PnFMods/TTaroModUtils/S.py", "gui/a-only.png"]),
+            mk("b", &["PnFMods/TTaroModUtils/S.py"]),
+        ];
+
+        uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+
+        assert!(twin.join("PnFMods/TTaroModUtils/S.py").is_file());
+        assert!(
+            !twin.join("gui/a-only.png").exists(),
+            "the private file's mirrored copy goes with the live one"
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The Reinstall-mode protected set is shared claims UNION live
+    /// component roots: a shared file NO other record claims by exact
+    /// path still survives the reinstall rewind while a sibling consumer
+    /// keeps the component alive (the union only ever widens the kept
+    /// set — plain reinstalls see zero change).
+    #[test]
+    fn reinstall_keeps_a_shared_file_a_sibling_consumer_lives_on() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_reinstall_union");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        fs::create_dir_all(rm.join("PnFMods/ModForge")).unwrap();
+        fs::write(rm.join("PnFMods/ModForge/x.json"), b"x").unwrap();
+        fs::write(rm.join("PnFMods/ModForge/y.json"), b"y").unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |id: &str, files: &[&str]| ModInstallRecord {
+            id: id.into(),
+            name: id.to_uppercase(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| (*f).to_string()).collect(),
+            restore_dir: None,
+            game_root: String::new(),
+        };
+        // a claims x.json only; b keeps the SAME component root alive via
+        // y.json — no exact-path overlap anywhere.
+        let mut installs = vec![
+            mk("a", &["PnFMods/ModForge/x.json"]),
+            mk("b", &["PnFMods/ModForge/y.json"]),
+        ];
+
+        rewind_for_reinstall(&mut installs, "a", &game_root).unwrap();
+
+        assert!(
+            rm.join("PnFMods/ModForge/x.json").is_file(),
+            "the sibling consumer keeps the component — a's file survives the rewind"
+        );
+        assert!(rm.join("PnFMods/ModForge/y.json").is_file());
+        assert_eq!(installs.len(), 1, "the rewound record is dropped");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Component-ROOT granularity: a consumer claiming a DIFFERENT file
+    /// under the same shared root keeps files it never listed alive —
+    /// the tree belongs to the component, not to any one pack's file
+    /// list. Removal stays per-record as before, so a file only the
+    /// departed consumer listed is left as an orphan (the real catalog
+    /// clones identical file lists, so this shape is hypothetical).
+    #[test]
+    fn shared_component_root_granularity_spans_unclaimed_files() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_component_granularity");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        touch(&rm.join("PnFMods/TTaroModUtils/SchemaScanner.py"));
+        touch(&rm.join("PnFMods/TTaroModUtils/Other.py"));
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mk = |id: &str, files: &[&str]| ModInstallRecord {
+            id: id.into(),
+            name: id.to_uppercase(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: files.iter().map(|f| (*f).to_string()).collect(),
+            restore_dir: None,
+            game_root: String::new(),
+        };
+        let mut installs = vec![
+            mk("a", &["PnFMods/TTaroModUtils/SchemaScanner.py"]),
+            mk("b", &["PnFMods/TTaroModUtils/Other.py"]),
+        ];
+        uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+        assert!(
+            rm.join("PnFMods/TTaroModUtils/SchemaScanner.py").is_file(),
+            "another consumer of the same component root keeps unclaimed files"
+        );
+        // The last consumer's own files still go as always.
+        uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
+        assert!(!rm.join("PnFMods/TTaroModUtils/Other.py").exists());
+        assert!(installs.is_empty());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
     fn catalog_package(url: &str, sha256: &str) -> CatalogPackage {
         CatalogPackage {
             url: url.into(),
