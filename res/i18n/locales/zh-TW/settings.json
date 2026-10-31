@@ -322,6 +322,8 @@
   "changelogRefresh": "重新整理",
   "changelogCurrent": "目前版本",
   "changelogI18nFallback": "該版本還沒有你所用語言的更新說明，已顯示英文原文。",
+  "changelogLoadingMore": "正在載入更早的版本…",
+  "changelogEnd": "已顯示全部更新。",
   "feedback": "問題回報",
   "feedbackHint": "應用會滾動記錄診斷日誌（UTF-8 編碼），回報問題時可一鍵附上。",
   "feedbackRefresh": "重新整理",

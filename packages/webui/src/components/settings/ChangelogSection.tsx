@@ -1,4 +1,4 @@
-import { defineComponent, onMounted, ref } from "vue";
+import { defineComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { HkButton, HkSettingsGroup, HkSettingsHint, HkSpinner } from "@celestia-island/hikari";
@@ -29,11 +29,13 @@ function formatDate(locale: Locale, iso: string): string {
 
 /**
  * ChangelogSection — the settings' 更新日志 pane. One article per GitHub
- * release (newest first, straight from `changelog_list`): a version chip
- * with a 当前 badge on the running build, the publish date, and the
- * release body through ReleaseMarkdown. The feed is fetched by the
- * section activators in SettingsBody (`ensureLoaded`); this component
- * only renders store state — its own button is the explicit refresh.
+ * release (newest first, streamed from `changelog_list` in visible
+ * batches): a version chip with a 当前 badge on the running build, the
+ * publish date, and the release body through ReleaseMarkdown. The first
+ * batch is fetched by the section activators in SettingsBody
+ * (`ensureLoaded`); this component only renders store state — its own
+ * button is the explicit refresh, and a scroll sentinel at the list's
+ * tail keeps older releases streaming in as the user scrolls.
  */
 export default defineComponent({
   name: "ChangelogSection",
@@ -41,6 +43,26 @@ export default defineComponent({
     const changelog = useChangelogStore();
     const lang = useLanguage();
     const version = ref("");
+    const sentinel = ref<HTMLElement | null>(null);
+    let observer: IntersectionObserver | null = null;
+
+    /** One load triggered by the sentinel; after it lands, re-check the
+     *  sentinel once — IntersectionObserver only fires on intersection
+     *  CHANGES, so a batch too short to push the tail out of view would
+     *  otherwise stall the stream until the next scroll. */
+    function streamMore(): Promise<void> {
+      if (!changelog.hasMore || changelog.loadingMore || changelog.loading || changelog.error) {
+        return Promise.resolve();
+      }
+      return changelog.loadMore().then(rescan);
+    }
+
+    async function rescan() {
+      await nextTick();
+      const el = sentinel.value;
+      if (!el || !changelog.hasMore || changelog.error) return;
+      if (el.getBoundingClientRect().top <= window.innerHeight) void streamMore();
+    }
 
     onMounted(async () => {
       // Running build, for the 当前 badge (browser dev keeps "" — no
@@ -50,6 +72,32 @@ export default defineComponent({
       } catch {
         // Browser dev mode — no Tauri runtime.
       }
+      // The sentinel streams the next batch when it nears the viewport.
+      // Intersection against the implicit root already accounts for the
+      // settings pane's own scroll clipping (root null works inside the
+      // modal). jsdom/happy-dom test environments may not provide the
+      // observer — the tests drive the store directly instead.
+      if (typeof IntersectionObserver !== "undefined") {
+        observer = new IntersectionObserver(
+          (entries) => {
+            if (entries.some((e) => e.isIntersecting)) void streamMore();
+          },
+          { rootMargin: "160px 0px" },
+        );
+        watch(
+          [sentinel, () => changelog.hasMore],
+          ([el, more]) => {
+            observer?.disconnect();
+            if (el && more) observer?.observe(el);
+          },
+          { immediate: true },
+        );
+      }
+    });
+
+    onUnmounted(() => {
+      observer?.disconnect();
+      observer = null;
     });
 
     return () => (
@@ -119,6 +167,16 @@ export default defineComponent({
                 </article>
               );
             })}
+            {changelog.loadingMore ? (
+              <div class="changelog__more">
+                <HkSpinner size="sm" />
+                <span class="changelog__state-text">{t("settings.changelogLoadingMore")}</span>
+              </div>
+            ) : null}
+            {!changelog.hasMore && !changelog.error ? (
+              <p class="changelog__end">{t("settings.changelogEnd")}</p>
+            ) : null}
+            {changelog.hasMore ? <div ref={sentinel} class="changelog__sentinel" /> : null}
           </div>
         )}
       </HkSettingsGroup>

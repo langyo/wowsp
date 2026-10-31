@@ -322,6 +322,8 @@
   "changelogRefresh": "再読み込み",
   "changelogCurrent": "現在のバージョン",
   "changelogI18nFallback": "このリリースの更新内容はまだお使いの言語では提供されていません。英語の原文を表示しています。",
+  "changelogLoadingMore": "以前のリリースを読み込んでいます…",
+  "changelogEnd": "すべての更新を表示しました。",
   "feedback": "フィードバック",
   "feedbackHint": "アプリは診断ログをローリング記録します（UTF-8）。問題報告時に添付できます。",
   "feedbackRefresh": "更新",

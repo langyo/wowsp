@@ -322,6 +322,8 @@
   "changelogRefresh": "Actualizar",
   "changelogCurrent": "Actual",
   "changelogI18nFallback": "Las notas de esta versión aún no están disponibles en tu idioma; se muestra la versión en inglés.",
+  "changelogLoadingMore": "Cargando versiones anteriores…",
+  "changelogEnd": "Se han mostrado todas las actualizaciones.",
   "feedback": "Comentarios",
   "feedbackHint": "La aplicación mantiene un registro de diagnóstico rotativo (UTF-8) para adjuntar al informar de problemas.",
   "feedbackRefresh": "Actualizar",
