@@ -24,6 +24,9 @@
 #![cfg_attr(mobile, allow(dead_code))]
 
 mod atomic_file;
+// Main-window close-request watchdog: the webui acknowledges `close-requested`
+// and an unanswered request force-quits a dead renderer (module docs).
+mod close_guard;
 mod commands;
 mod logging;
 mod os_prefs;
@@ -217,9 +220,24 @@ pub fn run() {
                     if window.label() != "main" {
                         return;
                     }
+                    // Arm the force-close watchdog BEFORE the emit: the
+                    // webui's ack can only arrive after the emit, so arming
+                    // first guarantees the ack's epoch bump is newer than
+                    // this token (arming afterwards could overwrite an ack
+                    // that landed in between, leaving the watchdog armed
+                    // against a webview that DID answer).
+                    let close_token =
+                        close_guard::arm_close_watchdog(window.app_handle().clone());
                     // Prevent the default close. Emit an event to the frontend,
-                    // which shows a confirm dialog (quit vs. minimize to tray).
-                    tracing::info!(window = %window.label(), "window close requested → emitting close-requested event to frontend");
+                    // which shows a confirm dialog (quit vs. minimize to tray)
+                    // after first acknowledging the request with
+                    // `close_requested_ack` — the ack is what stands the
+                    // watchdog down; an unresponsive webview trips it instead.
+                    tracing::info!(
+                        window = %window.label(),
+                        close_token,
+                        "window close requested → emitting close-requested event to frontend",
+                    );
                     api.prevent_close();
                     let _ = window.app_handle().emit("close-requested", ());
                 }
@@ -886,6 +904,11 @@ pub fn run() {
             commands::decision_tick::decision_scale_calibration,
             commands::decision_tick::decision_tick_state,
             commands::replay_probe::replay_visibility_probe,
+            // Frontend acknowledgement of `close-requested` (see
+            // src/close_guard.rs): bumps the close-guard epoch so the armed
+            // force-close watchdog stands down. Registered on every target —
+            // the IPC surface is shared and mobile never arms a watchdog.
+            commands::close_requested_ack,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())
