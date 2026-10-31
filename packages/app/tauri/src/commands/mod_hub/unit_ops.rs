@@ -47,7 +47,7 @@ pub async fn mod_hub_set_unit_enabled(
             .find(|r| half_disable_violation(r, &unit.paths))
         {
             return Err(anyhow!(
-                "\"{}\" shares this group with \"{}\", which also installs files outside it — disabling the group would leave that mod half-active. Disable or uninstall \"{}\" from its own entry instead.",
+                "\"{}\" is part of the catalog mod \"{}\", which also installs files outside it — toggling this folder alone would leave that mod half-active. Uninstall \"{}\" from its own catalog entry instead (reinstalling brings it back; a catalog mod has no folder-level disable).",
                 unit.name, other.name, other.name
             )
             .into());
