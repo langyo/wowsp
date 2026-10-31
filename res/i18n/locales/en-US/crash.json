@@ -119,7 +119,9 @@
   },
   "modlist": {
     "pinnedBadge": "Crash suspect",
-    "quarantinedBadge": "Quarantined"
+    "quarantinedBadge": "Quarantined",
+    "title": "Crash-suspect plugins",
+    "manageHint": "Open the crash-suspect manager window"
   },
   "safeguard": {
     "title": "Crash detection & safety net",

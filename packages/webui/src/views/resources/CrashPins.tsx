@@ -1,15 +1,18 @@
 /** Crash-suspect pinning for the mod hub list (崩溃嫌疑置顶). The crash
  *  watchdog analysis names top-level res_mods entries as suspects; this
- *  module pins them ABOVE the installed list while they matter: a
- *  suspect that matches a scanned unit wears the amber crash badge, one
- *  that matches nothing reads as an UNKNOWN mod on a yellow warning row
- *  (the product spec), and quarantined entries stay pinned with a
- *  restore action until the user brings them back. Everything rides the
- *  crash store; failures stay quiet (no watchdog backend, no pins). */
+ *  module surfaces them as ONE collapsed launcher row above the installed
+ *  list (they used to pin as N rows and squeeze the normal entries out of
+ *  the viewport) that opens a secondary window with the management
+ *  surface: a suspect that matches a scanned unit wears the amber crash
+ *  badge, one that matches nothing reads as an UNKNOWN mod on a yellow
+ *  warning row (the product spec), and quarantined entries stay listed
+ *  with a restore action until the user brings them back. Everything
+ *  rides the crash store; failures stay quiet (no watchdog backend, no
+ *  pins). */
 import { ref, watch, type Ref } from "vue";
 
-import { HkButton, useToast } from "@celestia-island/hikari";
-import { RotateCcw, ShieldAlert, TriangleAlert } from "@lucide/vue";
+import { HkButton, HkModal, HkScrollContainer, useToast } from "@celestia-island/hikari";
+import { ChevronRight, RotateCcw, ShieldAlert, TriangleAlert } from "@lucide/vue";
 
 import { useCrashStore } from "@/stores/crash";
 import { t } from "@/i18n";
@@ -109,17 +112,92 @@ export function useCrashPins(gameRoot: Ref<string | null>) {
   return { crash, suspects, recordId, quarantine, restore };
 }
 
-/** The pinned block ABOVE the installed list. Renders nothing when the
- *  store carries no suspects and no quarantined entries. */
+/** The collapsed launcher row ABOVE the installed list — one line, not N:
+ *  the pinned rows used to squeeze the normal entries out of the sidebar
+ *  viewport, so they moved into the secondary window this row opens
+ *  (renderCrashPinsWindow). Renders nothing when the store carries no
+ *  suspects and no quarantined entries. */
 export function renderCrashPins(
   pins: ReturnType<typeof useCrashPins>,
-  installedList: InstalledMod[],
+  onOpen: () => void,
 ) {
   const suspects = pins.suspects.value;
   const quarantined = pins.crash.quarantined;
   if (suspects.length === 0 && quarantined.length === 0) return null;
   return (
     <div class="crash-pins">
+      <div
+        role="button"
+        tabindex={0}
+        class="crash-pins__row is-summary"
+        data-hint={t("crash.modlist.manageHint")}
+        onClick={onOpen}
+        onKeydown={(e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onOpen();
+          }
+        }}
+      >
+        <span class="crash-pins__icon">
+          <ShieldAlert size={14} />
+        </span>
+        <span class="crash-pins__body">
+          <span class="crash-pins__name">{t("crash.modlist.title")}</span>
+          <span class="crash-pins__badges">
+            <span class="crash-pins__badge">
+              {t("crash.modlist.pinnedBadge")} · {suspects.length}
+            </span>
+            {quarantined.length > 0 ? (
+              <span class="crash-pins__badge is-quarantined">
+                {t("crash.modlist.quarantinedBadge")} · {quarantined.length}
+              </span>
+            ) : null}
+          </span>
+        </span>
+        <ChevronRight size={14} class="crash-pins__chevron" />
+      </div>
+    </div>
+  );
+}
+
+/** The secondary window the launcher row opens — the suspect rows and the
+ *  quarantined-only rows with their quarantine / restore actions, exactly
+ *  the management surface the pinned block used to inline above the
+ *  installed list. */
+export function renderCrashPinsWindow(
+  pins: ReturnType<typeof useCrashPins>,
+  installedList: InstalledMod[],
+  open: boolean,
+  onUpdateOpen: (open: boolean) => void,
+) {
+  return (
+    <HkModal
+      modelValue={open}
+      onUpdate:modelValue={onUpdateOpen}
+      title={t("crash.modlist.title")}
+      width="40rem"
+    >
+      <HkScrollContainer class="crash-pins__scroll">
+        <div class="crash-pins crash-pins--window">
+          {renderCrashPinRows(pins, installedList)}
+        </div>
+      </HkScrollContainer>
+    </HkModal>
+  );
+}
+
+/** The management rows themselves — suspects first (a quarantined suspect
+ *  rides its own row with a restore action), then quarantined entries no
+ *  suspect row already covers. */
+function renderCrashPinRows(
+  pins: ReturnType<typeof useCrashPins>,
+  installedList: InstalledMod[],
+) {
+  const suspects = pins.suspects.value;
+  const quarantined = pins.crash.quarantined;
+  return (
+    <>
       {suspects.map((s) => {
         const unit = unitOfSuspect(installedList, s.name);
         const isQuarantined = quarantined.some(
@@ -211,6 +289,6 @@ export function renderCrashPins(
             </div>
           );
         })}
-    </div>
+    </>
   );
 }

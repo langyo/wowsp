@@ -1,4 +1,4 @@
-import { defineComponent, watch } from "vue";
+import { defineComponent, ref, watch } from "vue";
 import {
   AlertTriangle,
   AudioLines,
@@ -45,7 +45,7 @@ import { installLabelOf } from "@/utils/installLabel";
 import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
-import { renderCrashPins, useCrashPins } from "./resources/CrashPins";
+import { renderCrashPins, renderCrashPinsWindow, useCrashPins } from "./resources/CrashPins";
 import { useMigrateWizard } from "./resources/useMigrateWizard";
 import { useFileListWindow } from "./resources/useFileListWindow";
 import type { ResourcesCtx } from "./resources/context";
@@ -87,6 +87,9 @@ export default defineComponent({
     const hub = useModHub();
   // Crash-suspect pinning (崩溃嫌疑置顶): rides the crash store quietly.
   const crashPins = useCrashPins(hub.gameRoot);
+  // The collapsed launcher row's secondary window (the suspect rows used
+  // to inline above the installed list and squeeze the normal entries).
+  const crashPinsOpen = ref(false);
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
     const fileWindow = useFileListWindow(hub);
@@ -504,7 +507,9 @@ export default defineComponent({
             <HkScrollContainer class="resources-view__side-scroll">
               <div class="resources-view__side-inner">
                 {hub.source.value !== "online"
-                  ? renderCrashPins(crashPins, hub.installed.value)
+                  ? renderCrashPins(crashPins, () => {
+                      crashPinsOpen.value = true;
+                    })
                   : null}
                 {hub.source.value === "online"
                   ? hub.catalogShown.value.length === 0
@@ -593,6 +598,17 @@ export default defineComponent({
             </ul>
             <p class="resources-view__purge-note">{t("resources.purgeReinstallBackupNote")}</p>
           </HkModal>
+
+          {/* The collapsed crash-suspect launcher's secondary window — the
+              suspect / quarantined management rows live here now. */}
+          {renderCrashPinsWindow(
+            crashPins,
+            hub.installed.value,
+            crashPinsOpen.value,
+            (open: boolean) => {
+              crashPinsOpen.value = open;
+            },
+          )}
 
           <HkConfirmDialog
             open={!!hub.safeModeAsk.value}

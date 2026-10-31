@@ -119,7 +119,9 @@
   },
   "modlist": {
     "pinnedBadge": "크래시 의심",
-    "quarantinedBadge": "격리됨"
+    "quarantinedBadge": "격리됨",
+    "title": "크래시 의심 플러그인",
+    "manageHint": "크래시 의심 관리 창 열기"
   },
   "safeguard": {
     "title": "크래시 감지 및 세이프티 넷",

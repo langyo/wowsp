@@ -1,8 +1,8 @@
-// CrashPins — the pinned crash-suspect block above the mod hub installed
-// list. Suspects wear the amber danger family; the UNKNOWN-suspect row
-// (nothing in the scan claims the entry) carries the yellow warning
-// surface the product spec asks for. Compact rows: icon + name + badge
-// cluster + one action.
+// CrashPins — the crash-suspect launcher row above the mod hub installed
+// list plus the secondary window it opens. Suspects wear the amber danger
+// family; the UNKNOWN-suspect row (nothing in the scan claims the entry)
+// carries the yellow warning surface the product spec asks for. Compact
+// rows: icon + name + badge cluster + one action.
 
 .crash-pins {
   display: flex;
@@ -11,6 +11,34 @@
   padding: 6px 0 10px;
   border-bottom: 1px solid var(--hi-color-border);
   margin-bottom: 6px;
+
+  // The window's inner block: the separator/margin belong to the sidebar
+  // context only.
+  &.crash-pins--window {
+    padding: 2px 0 8px;
+    border-bottom: 0;
+    margin-bottom: 0;
+  }
+}
+
+// The one-line launcher: click (or Enter/Space) opens the manager window.
+.crash-pins__row.is-summary {
+  cursor: pointer;
+  user-select: none;
+
+  &:hover,
+  &:focus-visible {
+    background: rgb(var(--color-warning) / 20%);
+  }
+}
+
+.crash-pins__chevron {
+  flex: none;
+  color: var(--hi-color-text-secondary);
+}
+
+.crash-pins__scroll {
+  max-height: 56vh;
 }
 
 .crash-pins__row {
