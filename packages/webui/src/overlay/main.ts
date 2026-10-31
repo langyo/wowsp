@@ -35,6 +35,9 @@ import {
   damageColor,
   prTier,
   resolveStamps,
+  STAMP_WORDING,
+  stampTier,
+  stampWording,
   winrateColor,
   type StampKind,
 } from "@/utils/winrate";
@@ -432,23 +435,6 @@ function refreshPrefs(): void {
   }
 }
 
-// kind → Chinese label, copied from RatingStamp.tsx (bare DOM cannot reuse
-// that Vue component).
-const STAMP_TEXT: Record<StampKind, string> = {
-  miracle: "神了",
-  ape: "猴",
-  maggot: "蛆",
-  rat: "过街老鼠",
-  air: "空中小人",
-  sub: "水下小人",
-  airVeteran: "空中奶龙",
-  subVeteran: "水下奶蛙",
-  airMiracle: "空中神人",
-  subMiracle: "水下神人",
-  airApe: "空中小猴",
-  subApe: "水下小猴",
-};
-
 // Custom seal pictures (settings' seal customizer → commands::stamps):
 // kind → asset-protocol URL. Read at startup and RE-read whenever the main
 // window broadcasts a stamps-folder write (`wowsp://stamps-changed`, see
@@ -468,7 +454,7 @@ async function loadCustomStamps(invoke: OverlayTauriApi["core"]["invoke"]) {
     // dead image instead of falling back to the text seal.
     const next: Partial<Record<StampKind, string>> = {};
     for (const f of files) {
-      if ((Object.keys(STAMP_TEXT) as string[]).includes(f.kind)) {
+      if ((Object.keys(STAMP_WORDING) as string[]).includes(f.kind)) {
         next[f.kind as StampKind] = convertFileSrc(f.path);
       }
     }
@@ -692,21 +678,23 @@ function statPending(name: string): boolean {
   );
 }
 
-/** The seal node beside the chip numbers: the verdict wording as PLAIN
+/** The seal node beside the chip numbers: the seal's wording as PLAIN
  *  TEXT in cinnabar — the overlay deliberately skips the calligraphy
  *  bitmaps the in-app RatingStamp faces press (chips are too small for
- *  the 2x2 face) — or the user's custom picture when the seal customizer
- *  imported one. data-stamp carries the kind to chipFit's trim pass (comp
- *  seals before career verdicts when a chip must shrink to stay inside
- *  the window). */
+ *  the 2x2 face) — or the user's custom picture for a PRIMARY-tier seal
+ *  (the secondary tier has no icon capability; its wording is what the
+ *  customizer's label editor edits, and stampWording applies that map).
+ *  The stamps carry no tooltip. data-stamp carries the kind to chipFit's
+ *  trim pass (comp seals before career verdicts when a chip must shrink
+ *  to stay inside the window). */
 function stampNode(kind: StampKind): string {
   if (PREFS.sealsDisabled.has(kind)) return "";
-  const label = STAMP_TEXT[kind];
-  const custom = CUSTOM_STAMPS[kind];
+  const label = stampWording(kind, PREFS.sealLabels);
+  const custom = stampTier(kind) === "primary" ? CUSTOM_STAMPS[kind] : undefined;
   if (custom != null) {
-    return `<img class="overlay-stamp" data-stamp="${kind}" src="${custom}" alt="${label}" title="${label}">`;
+    return `<img class="overlay-stamp" data-stamp="${kind}" src="${custom}" alt="${label}">`;
   }
-  return `<span class="overlay-stamp" data-stamp="${kind}" title="${label}">${label}</span>`;
+  return `<span class="overlay-stamp" data-stamp="${kind}">${label}</span>`;
 }
 
 /** Scope → the muted word the COLUMN HEAD row prefixes onto a non-global

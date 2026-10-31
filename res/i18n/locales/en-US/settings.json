@@ -261,11 +261,15 @@
     "cardKarmaToggleDesc": "Show the karma figure as a superscript at the top-right of the nickname on player stat cards (my water table / lookup). On by default."
   },
   "sealCustomizer": {
-    "desc": "Seals come in two tiers: tier-1 single-character stamps (过街老鼠 included) and tier-2 four-character tags (the composition and merged seals). On the live / post-battle rosters, tier-1 seals press as the square stamp image at each entry's side, tier-2 seals as the small horizontal tag beside the score. Click a seal to set a custom picture for it; a customized seal goes back to its default face with one click (pictures live in the stamps folder of the app data directory). The switch toggles each seal; previews update live.",
+    "desc": "Seals come in two tiers: tier-1 single-character stamps (过街老鼠 included) and tier-2 four-character tags (the composition and merged seals). On the live / post-battle rosters, tier-1 seals press as the square stamp image at each entry's side, tier-2 seals as the small horizontal tag beside the score. Tier-1 stamps take a custom picture: click the stamp to set one, click a customized stamp again to remove it and restore the default (pictures live in the stamps folder of the app data directory). Tier-2 tags carry no picture — click a tag's text to edit its wording in the bubble (save applies, reset restores the default wording). The stamps show no hover tooltip; the switch toggles each seal, and previews update live.",
     "tier1": "Tier-1 seals (single-character)",
     "tier2": "Tier-2 seals (four-character)",
     "clickEdit": "Click to set a custom image",
     "clickRemove": "Click to remove the custom image and restore the default",
+    "labelEdit": "Click to edit the label text",
+    "labelInput": "Label text",
+    "labelSave": "Save",
+    "labelReset": "Reset",
     "pickFailed": "Failed to import the custom seal image",
     "resetFailed": "Failed to reset the seal to its default",
     "dialogTitle": "Custom seal image"

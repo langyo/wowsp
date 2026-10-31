@@ -25,8 +25,11 @@ import {
   damageColor,
   prTier,
   resolveStamps,
+  stampTier,
+  stampWording,
   winrateColor,
   type CareerStamp,
+  type SealLabelMap,
   type StampKind,
 } from "@/utils/winrate";
 import { AI_NAME } from "@/utils/aiNames";
@@ -86,11 +89,14 @@ export interface AimComposition {
   subVeteran: boolean;
 }
 
-/** The seal-line render options: the prefs' kill switches and the user's
- *  custom seal pictures (kind → asset URL, absent = the plain text seal). */
+/** The seal-line render options: the prefs' kill switches, the user's
+ *  custom seal pictures (kind → asset URL, absent = the plain text seal —
+ *  honored for PRIMARY-tier kinds only) and the custom tag wording from
+ *  the customizer's label editor (absent kind = the default wording). */
 export interface SealLineOptions {
   disabled: ReadonlySet<StampKind>;
   custom: Partial<Record<StampKind, string>>;
+  labels?: SealLabelMap;
 }
 
 /** The aim verdict's display name: the raw name when the target is a
@@ -104,24 +110,6 @@ export interface SealLineOptions {
 export function aimDisplayName(raw: string, bots: ReadonlySet<string>): string {
   return raw && (AI_NAME.test(raw) || bots.has(raw)) ? "" : raw;
 }
-
-/** kind → Chinese label, copied verbatim from the table page's STAMP_TEXT
- *  (main.ts) — the seal vocabulary is deliberately locale-free CJK, the
- *  same wording the tab chips and the in-app RatingStamp faces use. */
-export const STAMP_TEXT: Record<StampKind, string> = {
-  miracle: "神了",
-  ape: "猴",
-  maggot: "蛆",
-  rat: "过街老鼠",
-  air: "空中小人",
-  sub: "水下小人",
-  airVeteran: "空中奶龙",
-  subVeteran: "水下奶蛙",
-  airMiracle: "空中神人",
-  subMiracle: "水下神人",
-  airApe: "空中小猴",
-  subApe: "水下小猴",
-};
 
 /** The dots loader's shared period — 1.2s, the same clock the table
  *  page's .overlay-dots animation names; change the two together. */
@@ -254,19 +242,21 @@ export function shipLineHtml(
   ].join("");
 }
 
-/** One seal node: the verdict wording as PLAIN TEXT in the cinnabar plate —
- *  the overlay deliberately skips the calligraphy bitmaps the in-app
+/** One seal node: the seal's wording (the shared STAMP_WORDING, with the
+ *  label editor's custom text applied) as PLAIN TEXT in the cinnabar plate
+ *  — the overlay deliberately skips the calligraphy bitmaps the in-app
  *  RatingStamp faces press (too small at chip scale) — or the user's
- *  custom picture when the seal customizer imported one. A kill-switched
- *  kind renders nothing. */
+ *  custom picture for a PRIMARY-tier kind when the seal customizer
+ *  imported one (the secondary tier has no icon capability). A
+ *  kill-switched kind renders nothing. */
 export function stampNode(kind: StampKind, opts: SealLineOptions): string {
   if (opts.disabled.has(kind)) return "";
-  const label = STAMP_TEXT[kind];
-  const custom = opts.custom[kind];
+  const label = stampWording(kind, opts.labels);
+  const custom = stampTier(kind) === "primary" ? opts.custom[kind] : undefined;
   if (custom != null) {
-    return `<img class="aim-stamp" data-stamp="${kind}" src="${custom}" alt="${label}" title="${label}">`;
+    return `<img class="aim-stamp" data-stamp="${kind}" src="${custom}" alt="${label}">`;
   }
-  return `<span class="aim-stamp" data-stamp="${kind}" title="${label}">${label}</span>`;
+  return `<span class="aim-stamp" data-stamp="${kind}">${label}</span>`;
 }
 
 /** The seal cluster (line 4): the career verdict and the composition tags

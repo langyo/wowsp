@@ -1,10 +1,9 @@
 import { defineComponent, type PropType } from "vue";
 
-import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { statsPrefsState } from "@/stores/statsPrefs";
 import { stampOverrideUrl } from "@/stores/stampOverrides";
-import type { StampKind } from "@/utils/winrate";
+import { STAMP_WORDING, type StampKind } from "@/utils/winrate";
 import "./RatingStamp.scss";
 
 // The glyph webp files live under `src/res` (Vite's publicDir) and are
@@ -56,8 +55,9 @@ let stampSeq = 0;
  *  commands::stamps) replaces the whole seal face — the procedural frame is
  *  skipped so the user's art shows as-is.
  *
- *  Hovering a seal shows its award criteria (stats.json `stats.seal*Desc`
- *  keys) as the native tooltip — the same copy the seal customizer rows use.
+ *  The seals carry no hover tooltip (user feedback) — the award criteria
+ *  live in the seal customizer rows (stats.json `stats.seal*Desc` keys)
+ *  alone.
  *
  *  The water meter, the stat cards / shot banners and the live roster's
  *  row-end slot keep the square 2x2 faces. The in-game Tab overlay chips
@@ -87,36 +87,6 @@ const STAMP_GLYPHS: Record<StampKind, string> = {
   subMiracle: stampSubMiracle,
   airApe: stampAirApe,
   subApe: stampSubApe,
-};
-const STAMP_TEXT: Record<StampKind, string> = {
-  miracle: "神了",
-  ape: "猴",
-  maggot: "蛆",
-  rat: "过街老鼠",
-  air: "空中小人",
-  sub: "水下小人",
-  airVeteran: "空中奶龙",
-  subVeteran: "水下奶蛙",
-  airMiracle: "空中神人",
-  subMiracle: "水下神人",
-  airApe: "空中小猴",
-  subApe: "水下小猴",
-};
-/** Award-criteria tooltip keys (stats.json) — shared with the seal
- *  customizer rows; hover copy explains why a seal was earned. */
-const STAMP_DESC_KEYS: Record<StampKind, string> = {
-  miracle: "stats.sealMiracleDesc",
-  ape: "stats.sealApeDesc",
-  maggot: "stats.sealMaggotDesc",
-  rat: "stats.sealRatDesc",
-  air: "stats.sealAirDesc",
-  sub: "stats.sealSubDesc",
-  airVeteran: "stats.sealAirVeteranDesc",
-  subVeteran: "stats.sealSubVeteranDesc",
-  airMiracle: "stats.sealAirMiracleDesc",
-  subMiracle: "stats.sealSubMiracleDesc",
-  airApe: "stats.sealAirApeDesc",
-  subApe: "stats.sealSubApeDesc",
 };
 const STAMP_SEED: Record<StampKind, number> = {
   miracle: 7,
@@ -155,8 +125,7 @@ export default defineComponent({
       // kill switch from the seal customizer.
       if (!uiLocale.value.startsWith("zh")) return null;
       if (statsPrefsState.value.sealDisabled[props.kind]) return null;
-      const text = STAMP_TEXT[props.kind];
-      const desc = t(STAMP_DESC_KEYS[props.kind]);
+      const text = STAMP_WORDING[props.kind];
       const custom = stampOverrideUrl(props.kind);
       if (custom != null) {
         // User's own picture replaces the procedural face entirely (frame
@@ -171,7 +140,6 @@ export default defineComponent({
             style={{ objectFit: "contain" }}
             role="img"
             aria-label={text}
-            data-hint={desc}
           />
         );
       }
@@ -187,7 +155,6 @@ export default defineComponent({
           role="img"
           aria-label={text}
         >
-          <title>{desc}</title>
           <defs>
             {/* Two line weaves a hair apart in angle — their interference
                 leaves the faint moiré of a cheap rubber stamp. */}

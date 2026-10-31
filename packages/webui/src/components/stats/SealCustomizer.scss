@@ -1,8 +1,10 @@
-// Per-seal customization rows (settings modal's stats section). The preview
-// reuses RatingStamp itself, so a freshly imported custom picture shows up
-// in place with zero extra state — and the preview button IS the whole
-// control (click to customize / click again to remove); there is no button
-// column beside it.
+// Per-seal customization rows (settings modal's stats section). Tier 1's
+// preview reuses RatingStamp itself, so a freshly imported custom picture
+// shows up in place with zero extra state — and the preview button IS the
+// whole control (click to customize / click again to remove); there is no
+// button column beside it. Tier 2's control is the tag face itself: the
+// StampTag renders at the description's text size and clicking it opens the
+// small label-editor bubble (input + save / reset) anchored beneath it.
 
 .seal-customizer {
   display: flex;
@@ -125,6 +127,102 @@
       height: 0.45rem;
       border-radius: 50%;
       background: rgb(var(--color-accent));
+    }
+  }
+
+  /* The tier-2 control: the tag face itself, clickable. The StampTag
+     inside inherits this font-size, so the seal previews at exactly the
+     description's text size (its em-based plate scales along). */
+  &__label-wrap {
+    position: relative;
+    flex: none;
+  }
+
+  &__label {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.35rem;
+    margin: -0.25rem -0.35rem;
+    border: none;
+    border-radius: 0.45rem;
+    background: transparent;
+    cursor: pointer;
+    font-size: var(--text-sm);
+    color: inherit;
+    transition: background 0.12s ease;
+
+    &:hover,
+    &:focus-visible {
+      background: rgb(var(--color-border) / 18%);
+    }
+  }
+
+  /* The label-editor bubble: a tooltip-styled plate anchored under the tag
+     (no app-wide hover tooltip on the stamps any more — this click-open
+     bubble is the tier-2 affordance instead). */
+  &__editor {
+    position: absolute;
+    top: calc(100% + 0.4rem);
+    left: -0.35rem;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    padding: 0.5rem;
+    border: 1px solid rgb(var(--color-border) / 60%);
+    border-radius: 0.6rem;
+    background: rgb(var(--color-bg));
+    box-shadow: 0 6px 20px rgb(0 0 0 / 18%);
+  }
+
+  &__editor-input {
+    width: 11rem;
+    padding: 0.3rem 0.5rem;
+    border: 1px solid rgb(var(--color-border) / 80%);
+    border-radius: 0.4rem;
+    background: transparent;
+    color: rgb(var(--color-text));
+    font-size: var(--text-sm);
+
+    &:focus {
+      outline: none;
+      border-color: rgb(var(--color-accent));
+    }
+
+    &::placeholder {
+      color: rgb(var(--color-muted));
+    }
+  }
+
+  &__editor-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.4rem;
+  }
+
+  &__editor-btn {
+    padding: 0.22rem 0.6rem;
+    border: 1px solid rgb(var(--color-border) / 80%);
+    border-radius: 0.4rem;
+    background: transparent;
+    color: rgb(var(--color-text));
+    font-size: var(--text-xs);
+    cursor: pointer;
+    transition: background 0.12s ease;
+
+    &:hover,
+    &:focus-visible {
+      background: rgb(var(--color-border) / 18%);
+    }
+
+    &--primary {
+      border-color: rgb(var(--color-accent) / 60%);
+      color: rgb(var(--color-accent));
+
+      &:hover,
+      &:focus-visible {
+        background: rgb(var(--color-accent) / 12%);
+      }
     }
   }
 

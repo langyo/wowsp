@@ -3,7 +3,7 @@ import { ref } from "vue";
 
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { emitTauriEvent } from "@/utils/appEvents";
-import type { StampKind } from "@/utils/winrate";
+import type { SealLabelMap, StampKind } from "@/utils/winrate";
 
 /** Which backend formula produces the `pr` field: ApeRadar's weighted
  *  winrate (the shipped behavior) or wows-numbers expected values. */
@@ -146,6 +146,10 @@ export interface StatsPrefs {
   teamAvgEnabled: boolean;
   /** Per-seal visibility toggles (settings' seal customizer). */
   sealDisabled: SealDisableMap;
+  /** Per-seal custom wording for the secondary tier's tag faces (the
+   *  customizer's label editor). Absent kind = the default wording; only
+   *  tier-2 kinds are editable (the primary tier is picture art). */
+  sealLabels: SealLabelMap;
   /** The ordered roster columns every water-table surface renders (scope
    *  × metric pairs, left to right, at most OVERLAY_COLUMN_LIMIT). An
    *  empty list means no stat numbers at all — only the seal stamps (and
@@ -190,6 +194,7 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   postbattleRosterFull: false,
   teamAvgEnabled: false,
   sealDisabled: {},
+  sealLabels: {},
   // The four shipped columns — global career winrate / PR / battles /
   // avg damage, left to right — exactly what the retired chip toggles
   // defaulted to (each still individually removable / reorderable /
@@ -324,6 +329,20 @@ function parseSealDisabled(v: unknown): SealDisableMap {
   return out;
 }
 
+/** Validate a raw sealLabels map: known kinds only, string values, trimmed,
+ *  1–8 characters (the four-char default wording plus a little play; longer
+ *  entries would stretch the roster rows the tags press beside). */
+function parseSealLabels(v: unknown): SealLabelMap {
+  if (v == null || typeof v !== "object") return {};
+  const out: SealLabelMap = {};
+  for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+    if (!(STAMP_KINDS as readonly string[]).includes(k) || typeof val !== "string") continue;
+    const label = val.trim();
+    if (label.length > 0 && [...label].length <= 8) out[k as StampKind] = label;
+  }
+  return out;
+}
+
 function parsePrefs(raw: string | null): StatsPrefs | null {
   if (raw == null) return null;
   try {
@@ -411,6 +430,7 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
           ? j.teamAvgEnabled
           : legacyTeamAvgEnabledOf(j.overlayTeamAvg),
       sealDisabled: parseSealDisabled(j.sealDisabled),
+      sealLabels: parseSealLabels(j.sealLabels),
       overlayColumns,
       // Migration: a blob written before the battle-dimension split only
       // carries the retired `overlayStatsMode` enum — it seeds the battle
@@ -574,6 +594,18 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     save();
   }
 
+  /** The seal customizer's label editor write path: a non-empty trimmed
+   *  label sets the kind's custom wording, empty/null removes it (the
+   *  default wording shows again). */
+  function setSealLabel(kind: StampKind, label: string | null) {
+    const next: SealLabelMap = { ...prefs.value.sealLabels };
+    const trimmed = label?.trim() ?? "";
+    if (trimmed === "") delete next[kind];
+    else next[kind] = [...trimmed].slice(0, 8).join("");
+    prefs.value.sealLabels = next;
+    save();
+  }
+
   /** The one write path for the column list — add / remove / reorder all
    *  land here, revalidated so a buggy caller can never exceed the limit
    *  or duplicate a scope×metric pair. */
@@ -606,6 +638,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setPostbattleRosterFull,
     setTeamAvgEnabled,
     setSealDisabled,
+    setSealLabel,
     setOverlayColumns,
     setOverlayBattleScope,
   };

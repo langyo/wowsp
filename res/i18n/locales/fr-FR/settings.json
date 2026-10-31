@@ -261,11 +261,15 @@
     "cardKarmaToggleDesc": "Affiche le karma en haut à droite du pseudonyme sur les fiches de statistiques du joueur (mon compteur / recherche). Activé par défaut."
   },
   "sealCustomizer": {
-    "desc": "Les sceaux se répartissent en deux niveaux : les sceaux de niveau 1 sont à un seul caractère (« 过街老鼠 » compris) et ceux de niveau 2 à quatre caractères (sceaux de composition et fusionnés). Sur les panneaux de combat en direct et d'après-combat, les sceaux de niveau 1 s'impriment comme l'image carrée du sceau à côté de chaque entrée et ceux de niveau 2 comme une petite étiquette horizontale près du score. Cliquez sur un sceau pour lui associer une image personnalisée ; un sceau déjà personnalisé supprime son image et retrouve son visage par défaut en un seul clic (les images sont stockées dans le dossier stamps du répertoire de données de l'application). L'interrupteur à droite affiche ou masque chaque sceau ; l'aperçu est immédiat.",
+    "desc": "Les sceaux se répartissent en deux niveaux : les sceaux de niveau 1 sont à un seul caractère (« 过街老鼠 » compris) et ceux de niveau 2 à quatre caractères (sceaux de composition et fusionnés). Sur les panneaux de combat en direct et d'après-combat, les sceaux de niveau 1 s'impriment comme l'image carrée du sceau à côté de chaque entrée et ceux de niveau 2 comme une petite étiquette horizontale près du score. Les sceaux de niveau 1 acceptent une image personnalisée : cliquez sur le sceau pour la définir, puis recliquez sur un sceau déjà personnalisé pour la supprimer et restaurer l'image par défaut (les images sont stockées dans le dossier stamps du répertoire de données de l'application). Les sceaux de niveau 2 ne portent pas d'image : cliquez sur le texte de l'étiquette pour modifier sa formulation dans la bulle (Enregistrer applique, Rétablir restaure la formulation par défaut). Les sceaux n'affichent aucune infobulle au survol ; l'interrupteur à droite affiche ou masque chaque sceau, et l'aperçu est immédiat.",
     "tier1": "Sceaux de niveau 1 (un caractère)",
     "tier2": "Sceaux de niveau 2 (quatre caractères)",
     "clickEdit": "Cliquez pour définir une image personnalisée",
     "clickRemove": "Cliquez pour supprimer l'image personnalisée et restaurer la valeur par défaut",
+    "labelEdit": "Cliquez pour modifier le texte de l'étiquette",
+    "labelInput": "Texte de l'étiquette",
+    "labelSave": "Enregistrer",
+    "labelReset": "Rétablir",
     "pickFailed": "Échec de l'import de l'image du sceau",
     "resetFailed": "Échec de la réinitialisation du sceau",
     "dialogTitle": "Image de sceau personnalisée"

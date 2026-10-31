@@ -261,11 +261,15 @@
     "cardKarmaToggleDesc": "Muestra el karma en la esquina superior derecha del apodo en las fichas de estadísticas del jugador (mi marcador / búsqueda). Activado por defecto."
   },
   "sealCustomizer": {
-    "desc": "Los sellos tienen dos niveles: los sellos de nivel 1 son de un solo carácter (incluido «过街老鼠») y los de nivel 2, de cuatro caracteres (sellos de composición y fusionados). En los paneles de batalla en vivo y posterior, los sellos de nivel 1 se muestran como la imagen cuadrada del sello junto a cada entrada y los de nivel 2 como una pequeña etiqueta horizontal junto a la puntuación. Haz clic en un sello para asignarle una imagen personalizada; un sello ya personalizado vuelve a su aspecto predeterminado con un solo clic (las imágenes se guardan en la carpeta stamps del directorio de datos de la aplicación). El interruptor de la derecha activa o desactiva cada sello; la vista previa se actualiza al instante.",
+    "desc": "Los sellos tienen dos niveles: los sellos de nivel 1 son de un solo carácter (incluido «过街老鼠») y los de nivel 2, de cuatro caracteres (sellos de composición y fusionados). En los paneles de batalla en vivo y posterior, los sellos de nivel 1 se muestran como la imagen cuadrada del sello junto a cada entrada y los de nivel 2 como una pequeña etiqueta horizontal junto a la puntuación. Los sellos de nivel 1 admiten una imagen personalizada: haz clic en el sello para asignársela y vuelve a hacer clic en un sello ya personalizado para eliminarla y restaurar la predeterminada (las imágenes se guardan en la carpeta stamps del directorio de datos de la aplicación). Los sellos de nivel 2 no llevan imagen: haz clic en el texto de la etiqueta para editar su redacción en la burbuja (guardar aplica, restablecer devuelve la redacción predeterminada). Los sellos no muestran información emergente al pasar el ratón; el interruptor de la derecha activa o desactiva cada sello y la vista previa se actualiza al instante.",
     "tier1": "Sellos de nivel 1 (un carácter)",
     "tier2": "Sellos de nivel 2 (cuatro caracteres)",
     "clickEdit": "Haz clic para asignar una imagen personalizada",
     "clickRemove": "Haz clic para eliminar la imagen personalizada y restaurar la predeterminada",
+    "labelEdit": "Haz clic para editar el texto de la etiqueta",
+    "labelInput": "Texto de la etiqueta",
+    "labelSave": "Guardar",
+    "labelReset": "Restablecer",
     "pickFailed": "Error al importar la imagen del sello",
     "resetFailed": "Error al restaurar el sello",
     "dialogTitle": "Imagen de sello personalizada"

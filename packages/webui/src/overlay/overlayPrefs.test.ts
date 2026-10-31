@@ -55,6 +55,7 @@ describe("readOverlayDisplayPrefs", () => {
       weightedTeamWr: true,
       sealsOn: true, // PR master + seals both default on now
       sealsDisabled: new Set(),
+      sealLabels: {},
       prAlgo: "winrate",
       prOn: true,
     });
@@ -92,6 +93,18 @@ describe("readOverlayDisplayPrefs", () => {
     expect(p.sealsOn).toBe(true);
     expect(p.sealsDisabled).toEqual(new Set(["rat"]));
     expect(p.prAlgo).toBe("expected");
+  });
+
+  it("reads the custom seal labels off the blob", () => {
+    localStorage.setItem(
+      "wowsp-stats-prefs",
+      JSON.stringify({ sealLabels: { air: "空中仙人", voodoo: "恶魔", sub: "  " } }),
+    );
+    // Unknown kinds and blank strings drop out — only real labels land.
+    expect(readOverlayDisplayPrefs().sealLabels).toEqual({ air: "空中仙人" });
+    // No labels key → the empty map (every face keeps its default wording).
+    localStorage.setItem("wowsp-stats-prefs", JSON.stringify({ prEnabled: true }));
+    expect(readOverlayDisplayPrefs().sealLabels).toEqual({});
   });
 
   it("migrates the retired team-average toggles in parity with the store", () => {

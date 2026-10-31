@@ -40,7 +40,7 @@ import {
   type RosterStatViewSource,
 } from "@/utils/statView";
 import { scopedRosterView } from "@/utils/shipStatsScope";
-import type { StampKind } from "@/utils/winrate";
+import type { SealLabelMap, StampKind } from "@/utils/winrate";
 
 // The stat-view helpers the overlay renders through live in
 // utils/statView + utils/shipStatsScope (shared with the main-window
@@ -108,6 +108,10 @@ export interface OverlayDisplayPrefs {
   sealsOn: boolean;
   /** Per-kind seal kill switches (settings' seal customizer). */
   sealsDisabled: ReadonlySet<StampKind>;
+  /** Per-kind custom tag wording (the customizer's label editor) — the
+   *  overlay's plain-text seal chips press the same strings the DOM
+   *  StampTag faces do. */
+  sealLabels: SealLabelMap;
   /** `prAlgo` forwarded to the stats RPC while the PR rating is on. */
   prAlgo: PrAlgo | undefined;
   /** The PR master switch — the PR columns/averages double-gate on it,
@@ -147,6 +151,20 @@ function readBlob(): Record<string, unknown> | null {
 function readFlag(j: Record<string, unknown> | null, key: string, fallback: boolean): boolean {
   const v = j?.[key];
   return typeof v === "boolean" ? v : fallback;
+}
+
+/** The blob's custom seal labels, validated with the store's own contract:
+ *  known kinds only, non-empty trimmed strings (the cap lives in the
+ *  store's parseSealLabels — the overlay only guards its renders). */
+function readSealLabels(j: Record<string, unknown> | null): SealLabelMap {
+  const v = j?.sealLabels;
+  if (v == null || typeof v !== "object") return {};
+  const out: SealLabelMap = {};
+  for (const kind of STAMP_KINDS) {
+    const label = (v as Record<string, unknown>)[kind];
+    if (typeof label === "string" && label.trim() !== "") out[kind] = label.trim();
+  }
+  return out;
 }
 
 /** The one-shot prefs snapshot. See the module doc for the contract. */
@@ -207,6 +225,7 @@ export function readOverlayDisplayPrefs(): OverlayDisplayPrefs {
         );
       }),
     ),
+    sealLabels: readSealLabels(j),
     prAlgo,
     prOn: prEnabled,
   };
