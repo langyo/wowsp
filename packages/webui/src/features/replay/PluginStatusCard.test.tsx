@@ -136,6 +136,26 @@ describe("PluginStatusCard safe mode", () => {
     // The recovery rename is a mutation — no button while the game runs.
     expect(actionButton(wrapper).exists()).toBe(false);
   });
+
+  it("words the probe-rides-the-twin case as quarantined, not gone", async () => {
+    // The twin carries the probe: the copy must say it is intact and
+    // returns with the rename, not the generic cannot-install line.
+    mocks.ingamePluginStatus.mockResolvedValue({
+      ...SAFE_STATUS,
+      quarantined: true,
+    });
+    const wrapper = mountCard();
+    await flushPromises();
+
+    const card = wrapper.find(".plugin-status-card");
+    expect(card.classes()).toContain("plugin-status-card--safe-mode");
+    expect(card.text()).toContain(t("replay.live.pluginSafeModeQuarantinedDesc"));
+    expect(card.text()).not.toContain(t("replay.live.pluginSafeModeDesc"));
+    // The recovery still applies — the rename brings the probe back.
+    const btn = actionButton(wrapper);
+    expect(btn.exists()).toBe(true);
+    expect(btn.text()).toContain(t("replay.live.pluginSafeModeRepair"));
+  });
 });
 
 describe("PluginStatusCard normal branches", () => {

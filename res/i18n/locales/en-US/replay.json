@@ -296,6 +296,7 @@
     "pluginSafeModeRepair": "Turn mods back on and repair",
     "pluginSafeModeLater": "Not now",
     "pluginSafeModeRepaired": "Mods restored and the in-game plugin repaired",
+    "pluginSafeModeQuarantinedDesc": "The probe itself is quarantined with the mods — it is intact and comes back the moment safe mode lifts (the repair button does both). The game must be closed first.",
     "selfTitle": "My battle",
     "selfWaitingHint": "Enter a battle and this page streams your damage, medals and sinks as they happen",
     "selfSyncing": "Syncing battle feed",

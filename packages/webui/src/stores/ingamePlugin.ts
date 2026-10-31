@@ -54,6 +54,11 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
    *  this flag is what tells a quarantine apart from a genuinely missing
    *  plugin. Older shells omit the field; `=== true` reads them as off. */
   const safeMode = ref(false);
+  /** The probe itself rides a safe-mode twin — quarantined, not gone: it
+   *  comes back the moment safe mode lifts, so the surfaces word the
+   *  recovery as a rename, not a reinstall. Older shells omit the field
+   *  (`=== true` reads them as false). */
+  const quarantined = ref(false);
   /** Discussions thread backing the mod-hub page (for the page link). */
   const discussion = ref<number | null>(null);
 
@@ -75,6 +80,7 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     outdated.value = false;
     probed.value = false;
     safeMode.value = false;
+    quarantined.value = false;
     discussion.value = null;
   }
 
@@ -97,6 +103,7 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
       // Absent from older shells — `=== true` is the only read that keeps
       // an undefined payload from flashing the safe-mode variant.
       safeMode.value = status.safeMode === true;
+      quarantined.value = status.quarantined === true;
       discussion.value = status.discussion;
       probed.value = true;
     } catch {
@@ -265,6 +272,7 @@ export const useIngamePluginStore = defineStore("ingamePlugin", () => {
     outdated,
     probed,
     safeMode,
+    quarantined,
     discussion,
     busy,
     state,

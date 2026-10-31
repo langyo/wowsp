@@ -34,6 +34,7 @@ import { t } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
 import { useSettingsUiStore } from "@/stores/settingsUi";
 import { useGameStatusStore } from "@/stores/gameStatus";
+import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { sameGamePath } from "@/utils/gamePath";
 
 export const useCrashStore = defineStore("crash", () => {
@@ -380,6 +381,10 @@ export const useCrashStore = defineStore("crash", () => {
           return null;
         }
       }
+      // The quarantine rename just flipped the in-game plugin's presence:
+      // re-probe so the plugin surfaces report quarantined/absent instead
+      // of riding the pre-flip snapshot.
+      await useIngamePluginStore().refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
       return null;

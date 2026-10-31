@@ -221,6 +221,11 @@ export const shellApi = {
       /** True when the mod hub's safe mode has quarantined this install's
        *  `res_mods`; absent from older shells (treat as false). */
       safeMode?: boolean;
+      /** True when a safe-mode twin carries the probe — quarantined, not
+       *  gone: it returns the moment safe mode lifts. False with safeMode
+       *  on means a genuine absence (purge strand / never installed).
+       *  Absent from older shells (treat as false). */
+      quarantined?: boolean;
       resMods: string;
       discussion: number;
     }>(RPC.ingame_plugin_status, { gameRoot }),

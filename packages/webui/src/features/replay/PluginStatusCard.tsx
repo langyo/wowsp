@@ -86,6 +86,13 @@ export default defineComponent({
       const state = plugin.state;
       const busy = plugin.busy;
       if (safeMode) {
+        // Two different truths under one title: the probe riding the
+        // quarantine twin is INTACT and returns with the rename, while a
+        // probe no twin carries really is gone (purge strand / never
+        // installed) and needs the reinstall the repair button runs.
+        const descKey = plugin.quarantined
+          ? "replay.live.pluginSafeModeQuarantinedDesc"
+          : "replay.live.pluginSafeModeDesc";
         return (
           <div class="plugin-status-card plugin-status-card--safe-mode">
             <span class="plugin-status-card__icon">
@@ -93,7 +100,7 @@ export default defineComponent({
             </span>
             <span class="plugin-status-card__text">
               <strong>{t("replay.live.pluginSafeModeTitle")}</strong>
-              <span>{t("replay.live.pluginSafeModeDesc")}</span>
+              <span>{t(descKey)}</span>
             </span>
             {props.actions ? (
               <button
