@@ -146,3 +146,20 @@
     transition: none;
   }
 }
+
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────────
+   Touch hit band: the track box is only 18px tall (14px at size sm) — a
+   thumb-sized press lands on the labels row or the panel below instead of
+   the track. The visual rail (::before) and thumbs are centered transforms
+   and keep their exact geometry; only the interactive box grows, so the
+   pointer-capture drag/jump gesture gets a comfortable band. Desktop is
+   untouched. */
+@media (max-width: 767px) {
+  .range-slider__track {
+    height: 26px;
+  }
+
+  .range-slider[data-size="sm"] .range-slider__track {
+    height: 22px;
+  }
+}

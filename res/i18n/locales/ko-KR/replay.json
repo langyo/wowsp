@@ -165,6 +165,7 @@
     "sunkAt": "{time} 침몰",
     "aliveCount": "생존 {alive}/{total}",
     "ship": "함선",
+    "toggle": "스코어보드",
     "scopeGlobal": "전체",
     "scopeSolo": "솔로만",
     "scopeShip": "해당 함선만",

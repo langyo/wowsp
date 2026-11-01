@@ -165,6 +165,7 @@
     "sunkAt": "{time} に沈没",
     "aliveCount": "生存 {alive}/{total}",
     "ship": "艦艇",
+    "toggle": "スコアボード",
     "scopeGlobal": "グローバル",
     "scopeSolo": "ソロのみ",
     "scopeShip": "その艦のみ",

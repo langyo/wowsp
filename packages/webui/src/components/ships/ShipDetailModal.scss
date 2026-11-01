@@ -581,3 +581,28 @@
   border-color: rgb(190 120 255 / 50%);
   color: rgb(200 140 255);
 }
+
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────────
+   The detail modal docks as a bottom sheet (hikari): full width, body inner
+   padding 1rem, and .hk-modal-body-scroll hides horizontal overflow —
+   anything wider than the sheet is CLIPPED, never scrollable. Two phone
+   retunes:
+   - TrendBars is an intrinsically horizontal chart (one 30px-min column per
+     game version; a 15-version history runs ~540px). It scrolls in place
+     with slightly slimmer columns instead of losing its right half.
+   - The alternate-firing toggle sits in a shell-section head sized for a
+     mouse (23×13px track, text-2xs label); the whole label grows a touch
+     envelope so the switch is tappable with a thumb. */
+@media (max-width: 767px) {
+  .trend-bars {
+    overflow-x: auto;
+
+    &__col {
+      min-width: 26px;
+    }
+  }
+
+  .specs-alt {
+    padding: 0.4rem 0.25rem;
+  }
+}

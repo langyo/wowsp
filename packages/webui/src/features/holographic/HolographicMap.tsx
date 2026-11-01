@@ -1,7 +1,7 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as THREE from "three";
 import {
-  Brain, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline,
+  Brain, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline, Users,
 } from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
 import { useBreakpoint } from "@celestia-island/hikari";
@@ -2122,11 +2122,15 @@ export default defineComponent({
           height={160}
           onClick={() => { minimapZoom.value = true; }}
           style={{
-            width: "160px",
-            height: "160px",
+            // Phone (≤767px): the playback bar wraps to two lines, so the
+            // thumb shrinks and lifts above them — the transport line
+            // would otherwise sit on top of a 160px thumb (controls are
+            // z-4 over the z-3 canvas). Desktop keeps 160px at the corner.
+            width: isMobile.value ? "112px" : "160px",
+            height: isMobile.value ? "112px" : "160px",
             position: "absolute",
             right: "8px",
-            bottom: "8px",
+            bottom: isMobile.value ? "100px" : "8px",
             zIndex: "3",
             borderRadius: "4px",
             pointerEvents: "auto",
@@ -2268,6 +2272,29 @@ export default defineComponent({
           {!minimapZoom.value && selfCard.value ? (
             <HoloSelfCard card={selfCard.value} stats={selfStats.value} />
           ) : null}
+          {/* Phone-only scoreboard chip: the Tab HOLD that reveals the
+              desktop scoreboard has no touch equivalent — this toggles
+              the same overlay (the roster's phone close bar plays the
+              Tab-keyup half; the chip itself sits under the overlay
+              while it is open). */}
+          {isMobile.value ? (
+            <button
+              class={[
+                "holo-map__lbltoggle",
+                "holo-map__roster-toggle",
+                showRoster.value ? "holo-map__lbltoggle--on" : "",
+              ].filter(Boolean).join(" ")}
+              onClick={() => {
+                showRoster.value = !showRoster.value;
+                if (showRoster.value) ensureRosterStats();
+              }}
+              data-hint={i18nT("replay.roster.toggle")}
+              aria-label={i18nT("replay.roster.toggle")}
+              aria-expanded={showRoster.value}
+            >
+              <Users size={14} />
+            </button>
+          ) : null}
           <button
               class="holo-map__lbltoggle"
               onClick={() => { showLabels.value = !showLabels.value; }}
@@ -2380,6 +2407,7 @@ export default defineComponent({
             encyclopedia={props.encyclopedia}
             shipStatus={ctx.shipStatus}
             shipNameOrder={props.shipNameOrder}
+            onClose={isMobile.value ? () => { showRoster.value = false; } : undefined}
           />
         ) : null}
         {tipVehicle && tipAnchorEl.value ? (

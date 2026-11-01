@@ -266,3 +266,17 @@
     opacity: 1;
   }
 }
+
+/* Phone (≤767px): the sidebar becomes a near-full-width card docked
+   under the top HUD stack (scorebar + weather badge — HolographicMap.scss
+   re-stacks the right edge), capped to the map pane's inline size and to
+   a height that cannot outrun the ~52vh sheet pane the map floats in
+   (the desktop min(60vh, 520px) cap clips its bottom inside .holo-map's
+   overflow guard). Desktop ≥768px unchanged. */
+@media (max-width: 767px) {
+  .holo-score-panel {
+    top: 116px;
+    width: min(320px, calc(100cqw - 16px));
+    max-height: 46dvh;
+  }
+}

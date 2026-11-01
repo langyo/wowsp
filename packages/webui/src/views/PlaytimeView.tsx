@@ -867,7 +867,13 @@ export default defineComponent({
                       {t("playtime.rangeTotal", { v: fmtDuration(rangeTotal.value) })}
                     </span>
                   </div>
+                  {/* Phone frame: the 640-unit viewBox scaled into a
+                      ~369px column renders the 10px axis and MM-DD labels
+                      at ~5.5px — illegible. A 480-wide frame keeps every
+                      label ≥ ~7.5px effective while the 15-day slots still
+                      clear their labels; desktop keeps the 640 default. */}
                   <HkBarChart
+                    width={isMobile.value ? 480 : undefined}
                     bars={buckets.value.map((b) => ({
                       label: b.label,
                       value: b.seconds,

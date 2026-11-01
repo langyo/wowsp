@@ -1376,3 +1376,169 @@
   color: var(--holo-hud-dim);
 }
 
+/* ── Phone HUD layout (≤767px) ─────────────────────────────────────
+   The 3D pane rides the replay detail's level-3 sheet at roughly
+   100vw − 24px (~369px on a 393px viewport). Four desktop assumptions
+   break there and are re-flowed in this block; ≥768px keeps every rule
+   below inert.
+
+   1. The playback row is a single ~470px flex line (four toggle buttons
+      + a FIXED 200px scrub + clock + speed chip) — it clips at the pane
+      edge. Phone: the row spans the pane and wraps into two purposeful
+      lines (flex-order shuffle): transport (play · scrub · clock ·
+      speed) above, layer/camera toggles below. The scrub flexes to the
+      leftover width instead of the fixed 200px, and its track + thumb
+      grow to touch size.
+   2. Once the row wraps, the bottom-right minimap thumb (160px) sits
+      under the transport line — the thumb shrinks to 112px and lifts
+      above the two-line bar (sizes branch-set from HolographicMap.tsx
+      via isMobile; the inline style wins over stylesheet overrides, so
+      this cannot be CSS-only).
+   3. The kill feed moves out of the now-crowded bottom-left corner
+      (two-line bar + self card above it + lifted thumb) to the top
+      left, under the scorebar.
+   4. The right edge re-stacks below the shared scorebar (320px max,
+      centered — it claims the whole top at this width): weather badge,
+      then the AI heat strip / score panel (their own files). */
+@media (max-width: 767px) {
+  /* 1 — playback row: span the pane, wrap, reorder. */
+  .holo-map__controls {
+    right: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+    row-gap: 6px;
+    padding: 8px;
+  }
+  .holo-map__play { order: 1; }
+  .holo-map__scrub {
+    order: 2;
+    flex: 1 1 120px;
+    width: auto;
+    min-width: 96px;
+    height: 28px;
+
+    &::-webkit-slider-runnable-track {
+      height: 6px;
+      border-radius: 3px;
+    }
+    &::-webkit-slider-thumb {
+      width: 18px;
+      height: 18px;
+      margin-top: -6px; /* (track 6px − thumb 18px) / 2 → centred */
+    }
+    &::-moz-range-track,
+    &::-moz-range-progress {
+      height: 6px;
+      border-radius: 3px;
+    }
+    &::-moz-range-thumb {
+      width: 18px;
+      height: 18px;
+    }
+  }
+  .holo-map__time { order: 3; }
+  .holo-map__speed { order: 4; }
+  /* All four toggles (scoreboard chip · labels · AI · camera) keep their
+     DOM order on the second line — one order rule covers them. */
+  .holo-map__lbltoggle,
+  .holo-map__camera { order: 5; }
+
+  /* Sheet-docked speed menu (docked above): full-width rows read — and
+     tap — far better than the desktop 48px chips floating in the
+     full-bleed sheet. */
+  .holo-map__speed-opt {
+    min-width: 0;
+    padding: 0.7rem 1.25rem;
+    font-size: var(--text-sm);
+    text-align: center;
+  }
+
+  /* 3 — kill feed: top-left, clear of the two-line bar, the self card,
+     the lifted minimap thumb and the top-right weather/heat column. */
+  .holo-map__killfeed {
+    top: 112px;
+    bottom: auto;
+    right: 160px;
+    max-width: none;
+  }
+
+  /* 4 — weather badge drops below the scorebar's right end (on wide
+     panes it sits beside the centered bar; at ~369px they overlap). */
+  .holo-map__weather {
+    top: 56px;
+  }
+
+  /* Camera sheet rows: taller tap targets; the tier·class·HP meta line
+     ellipsizes instead of poking under the stats column (the sheet is
+     narrower than the 380px desktop panel). */
+  .holo-map__cam-menu {
+    width: 100%;
+  }
+  .holo-map__cam-item {
+    padding: 0.5rem 0.55rem;
+  }
+  .holo-map__cam-meta {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* Enlarged 2D view: the head pill (title + five icon buttons + badge)
+     cannot hold one line — wrap it. The reserved playback strip grows
+     with the two-line bar; the tactical dock's extra reserve is capped
+     so the canvas keeps a floor on short panes. */
+  .holo-map__mmzoom {
+    padding: 8px 8px 100px;
+
+    &--tac-space {
+      padding-bottom: min(336px, calc(100cqh - 160px));
+    }
+  }
+  .holo-map__mmzoom-head {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.4rem;
+  }
+
+  /* Tab scoreboard: 12px gutters (the desktop 2.2rem/1rem frame wastes
+     a fifth of the pane), and the live status chips WRAP inside their
+     cell — the ~94px phone status column would otherwise clip every
+     chip past the first behind the row's overflow guard. Rows grow
+     taller instead of hiding combat state. */
+  .holo-map__roster-inner {
+    display: block;
+    padding: 12px;
+  }
+  .holo-roster__td--status {
+    white-space: normal;
+  }
+  .holo-roster__st {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  /* Phone-only scoreboard close bar — the Tab keyup that retires the
+     desktop hold does not exist on touch (rendered from
+     HoloRosterOverlay only while an onClose handler is wired). */
+  .holo-map__roster-closebar {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    display: flex;
+    justify-content: flex-end;
+    margin: -4px -6px 4px 0;
+  }
+  .holo-map__roster-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--holo-hud-border);
+    border-radius: var(--radius-sm);
+    background: var(--holo-hud-menu);
+    color: var(--holo-hud-strong);
+    cursor: pointer;
+  }
+}
+

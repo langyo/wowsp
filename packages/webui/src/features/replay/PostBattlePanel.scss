@@ -834,6 +834,7 @@
     min-height: 44px;
   }
   .replay-view__postbattle-cell-btn {
+    gap: 0.35rem;
     padding: 0.4rem 0.4rem 0.4rem 0.5rem;
   }
   /* Full cards: the 10rem name track + fixed columns don't fit a phone
@@ -851,6 +852,35 @@
       minmax(0, 42%) minmax(0, 1fr) minmax(6ch, max-content);
     padding: 0.4rem 0.5rem;
   }
+  /* Compact roster rows keep their aligned columns but one text size
+     down. The ch tracks (header grid template AND the cells' inline
+     min-widths) are font-relative, so header and cells shrink TOGETHER
+     and stay aligned — and the identity stack reclaims ~4ch per column
+     (the shipped 4-column default squeezed the nickname to a sliver at
+     393px). Scoped to the results sheet's body so the live panel's own
+     roster and the markers section rows keep their geometry. */
+  .replay-view__modal-body .replay-view__postbattle-col-title--agg {
+    font-size: var(--text-2xs);
+  }
+
+  .replay-view__modal-body .replay-view__postbattle-cell-stat,
+  .replay-view__modal-body .replay-view__postbattle-cell-xp {
+    font-size: var(--text-2xs);
+  }
+
+  /* Own settlement chips (XP / credits) wrap instead of one long line in
+     long-locale builds. */
+  .replay-view__postbattle-settlement {
+    flex-wrap: wrap;
+    gap: 0.35rem 1rem;
+  }
+
+  /* Mode pill + map label: a long localized map name drops under the
+     pill rather than overflowing the sheet's edge. */
+  .replay-view__postbattle-head {
+    flex-wrap: wrap;
+  }
+
   .replay-view__postbattle-jump {
     min-height: 44px;
     align-self: stretch;

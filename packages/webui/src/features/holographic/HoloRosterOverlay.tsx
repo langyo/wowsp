@@ -31,6 +31,7 @@
  * in the game's sort key via the '[TAG]nick' display name).
  */
 import { computed, defineComponent, type PropType } from "vue";
+import { X } from "@lucide/vue";
 import { HkScrollContainer } from "@celestia-island/hikari";
 
 import { t as i18nT } from "@/i18n";
@@ -320,6 +321,11 @@ export default defineComponent({
      *  replay's own realm — the replay scoreboard must mirror the client
      *  the replay was recorded on, not the WG permutation. */
     shipNameOrder: { type: Boolean, default: false },
+    /** Phone-only dismissal: the desktop hold retires on Tab keyup, an
+     *  event touch never fires. Wired only on phone layouts (the parent
+     *  passes it under useBreakpoint().isMobile) — its presence both
+     *  arms the handler and renders the close bar. */
+    onClose: { type: Function as PropType<() => void>, default: undefined },
   },
   setup(props) {
     const { dataLanguage } = useLanguage();
@@ -412,6 +418,21 @@ export default defineComponent({
          stays on the class — it outranks hikari's relative root rule. */
       <HkScrollContainer class="holo-map__roster-overlay" aria-hidden="true">
         <div class="holo-map__roster-inner">
+          {/* Phone close bar (sticky at the scroll top): the overlay owns
+              the whole pane, so the opening chip is unreachable beneath
+              it — this plays the Tab-keyup half of the desktop hold. */}
+          {props.onClose ? (
+            <div class="holo-map__roster-closebar">
+              <button
+                class="holo-map__roster-close"
+                onClick={props.onClose}
+                data-hint={i18nT("common.close")}
+                aria-label={i18nT("common.close")}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          ) : null}
           <div class="holo-map__roster-board">
             {teamTable(allies.value, false, props.showKills, {
               markers,

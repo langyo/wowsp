@@ -148,4 +148,30 @@
   .async-search-combo__candidates {
     max-height: none;
   }
+
+  /* The error landing's desktop 21rem (336px) pin rides a max-content
+     anchored panel; inside the sheet it can brush or cross the sheet's
+     content box (a 393px viewport minus sheet chrome ≈ 345px), so it
+     fills the available width instead. Desktop anchored panels keep the
+     fixed pin. */
+  .async-search-combo__error .hk-error-landing {
+    width: auto;
+    max-width: 100%;
+  }
+}
+
+/* ── Phone (≤767px) ──────────────────────────────────────────────────────
+   The trigger widens past the desktop 34px square (it shares the search
+   rail's row with the segmented target picker) and the candidate rows in
+   the bottom sheet grow touch-height — they are the funnel's primary
+   pick action, and 6px padding made ~27px rows. Desktop anchored panels
+   are untouched. */
+@media (max-width: 767px) {
+  .async-search-combo__btn {
+    width: 40px;
+  }
+
+  .async-search-combo__candidate {
+    padding: 10px 8px;
+  }
 }

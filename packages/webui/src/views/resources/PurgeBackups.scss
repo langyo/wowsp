@@ -121,3 +121,13 @@
   font-size: var(--text-xs);
   color: var(--hi-color-text-secondary);
 }
+
+// Phone (≤767px): the window docks as a bottom sheet and the xs
+// resume / dismiss / restore / delete buttons are its primary decisions
+// — grow them from the ~22px xs box to a 32px touch target (the rows
+// keep their compact rhythm around the taller buttons).
+@media (max-width: 767px) {
+  .purge-backups__actions .hk-btn {
+    min-height: 2rem;
+  }
+}

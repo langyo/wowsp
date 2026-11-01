@@ -1833,8 +1833,54 @@
     padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
   }
 
+  /* Sidebar chrome drops to the phone vocabulary (12px gutters instead
+     of the desktop head's 16-17px). */
+  .resources-view__side-head {
+    padding: 0.75rem 0.75rem 0.6rem;
+  }
+
+  .resources-view__side-foot {
+    padding: 0.5rem 0.75rem 0.625rem;
+  }
+
+  /* The filter row may wrap: the source tabs (+ the unified-sync switch)
+     keep the first line and the search trigger with its ghost tool pair
+     wrap under it — a 393px viewport cannot seat all four on one row. */
+  .resources-view__row {
+    flex-wrap: wrap;
+    row-gap: 0.375rem;
+  }
+
+  /* Touch targets: the head/filter/detail ghost icon buttons grow from
+     their 24px box to a 36px square (min-* overrides the size class's
+     width/height; the rows grow around them). */
+  .resources-view__side-actions .hk-icon-button,
+  .resources-view__row .hk-icon-button,
+  .mod-detail__menu .hk-icon-button {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+
+  /* The pane card's own inset follows the same phone vocabulary (the
+     main column above already carries the page gutter). */
   .mod-detail {
     min-height: 22rem;
+    padding: 0.75rem;
+  }
+
+  /* Long relative paths in the install plan's file table wrap instead
+     of pushing the card past the sheet edge (mono paths have no break
+     opportunities of their own). */
+  .plan-card__files td {
+    overflow-wrap: anywhere;
+  }
+
+  /* Migration-wizard decide rows: the ignore/restore icon buttons get
+     the same 36px touch box (they were 24px — pixel-precision targets
+     inside a scrollable list). */
+  .mig-wizard__row .hk-icon-button {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
   }
 
   .mod-row {
@@ -2054,4 +2100,33 @@
   flex-direction: column;
   gap: 6px;
   font-size: var(--text-sm);
+}
+
+/* ── Phone layout for the plugin file-list window (≤767px): the desktop
+   side-by-side (a 15rem package list beside the path tree) collapses to
+   a column — 393px cannot seat both, and the tree's indent-heavy rows
+   need the width far more than the package names do. The package side
+   keeps its own capped scroller above; the tree takes the rest. Placed
+   AFTER the base rules on purpose: same-specificity overrides must win
+   by source order. ── */
+@media (max-width: 767px) {
+  .file-window {
+    flex-direction: column;
+    /* The sheet's own cap bounds the window; the desktop 62vh ceiling
+       would cut the stacked tree off mid-scroll instead. */
+    max-height: none;
+
+    &__side {
+      width: 100%;
+      flex: none;
+    }
+
+    &__side-scroll {
+      max-height: 22vh;
+    }
+
+    &__main {
+      max-height: 48vh;
+    }
+  }
 }

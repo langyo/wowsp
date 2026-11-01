@@ -526,6 +526,33 @@
   }
 }
 
+/* ── Phone sheet context (the sources menu's bottom-sheet form) ─────────
+   The menu rows already carry the 44px sheet grammar; the pieces inside
+   them did not. The pinned folder path was an ellipsized one-liner whose
+   full spelling only reached the user through the hover data-hint — dead
+   on touch, and the path IS the row's essential content (it disambiguates
+   same-leaf folders) — so in the sheet it wraps instead; a bottom sheet
+   has height to spare. The remove glyph grows from its 22px hover target,
+   and the destructive rebuild entry gains a real touch target. These
+   match only while HkPopover renders the menu as a sheet (phones). */
+.hk-popover-panel.hk-is-sheet .playtime-view__sources-path {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-all;
+  line-height: 1.4;
+}
+
+.hk-popover-panel.hk-is-sheet .playtime-view__sources-remove {
+  width: 32px;
+  height: 32px;
+}
+
+.hk-popover-panel.hk-is-sheet .playtime-view__sources-rebuild {
+  padding: 8px 12px;
+  font-size: var(--text-xs);
+}
+
 /* ── Battle breakdown (replay-derived rows: type / nation / tier / mode,
    one donut card per group) ───────────────────────────────────────────── */
 .playtime-breakdown {
@@ -688,6 +715,16 @@
 /* Narrow windows: the four donut blocks step 4 → 2 → 1 (a block keeps its
    150px ring plus legend columns down to ~160px, below which 2-up would
    squeeze the legends into all-ellipsis rows). */
+/* Donut block titles (PlaytimeBreakdownPie's __title div): the
+   pre-migration .playtime-pie__title rules (muted, 2xs, centered) were
+   dropped in the HkDonutChart move (ef06819b) and the title went
+   unstyled at every width — restored under the component's real class. */
+.playtime-breakdown-pie__title {
+  color: rgb(var(--color-muted));
+  font-size: var(--text-2xs);
+  text-align: center;
+}
+
 @media (max-width: 1023px) {
   .playtime-cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -698,12 +735,57 @@
   }
 }
 
+/* ── Phone layout (≤767px) ──────────────────────────────────────────────
+   The phone vocabulary every swept view shares: 12px page gutters (plus
+   the gesture-bar inset at the bottom — env() is 0 on desktop webviews),
+   12px card padding, and touch-sized controls in the toolbar row. */
 @media (max-width: 767px) {
+  .playtime-view__inner {
+    padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
   .playtime-cards {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .playtime-card {
+    padding: 12px;
+  }
+
   .playtime-breakdown {
     grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  /* One donut per row, but a many-entry legend (nations, long EN mode
+     names) chunks into fixed five-row columns that do NOT wrap inside
+     hikari's chart — three columns run past a ~345px card. Let the
+     columns themselves wrap under the ring instead of overflowing. */
+  .playtime-breakdown .hk-donut__legend {
+    flex-wrap: wrap;
+  }
+
+  /* Toolbar: the pills + refresh wrap instead of squeezing each other,
+     and every control clears a 36px touch target — the pills were a
+     ~24px hover-sized row and the refresh rode hikari's 24px icon
+     button (the size class vars are re-pinned here, not restyled). */
+  .playtime-view__toolbar {
+    flex-wrap: wrap;
+    gap: 8px;
+    min-height: 0;
+  }
+
+  .playtime-view__scope {
+    min-height: 36px;
+    padding: 6px 12px;
+  }
+
+  .playtime-view__scope-label {
+    max-width: 11rem;
+  }
+
+  .playtime-view__toolbar .hk-icon-button {
+    --hi-icon-button-size: 36px;
+    --hi-icon-button-icon-size: 18px;
   }
 }

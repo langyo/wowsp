@@ -145,27 +145,9 @@
     }
   }
 
-  /* Feedback diagnostics card folds too: label becomes its own heading
-     line, the mono value keeps the full second line and the meta / copy
-     button share the trailing cell (the desktop label track alone would
-     starve the value column at phone widths). */
-  .settings-page__body .feedback__card {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-
-  .settings-page__body .feedback__label {
-    grid-column: 1 / -1;
-  }
-
-  .settings-page__body .feedback__file,
-  .settings-page__body .feedback__dir {
-    grid-column: 1;
-  }
-
-  .settings-page__body .feedback__meta,
-  .settings-page__body .feedback__row > :nth-child(3) {
-    grid-column: 2;
-  }
+  /* The feedback diagnostics card's phone fold lives in
+     FeedbackSection.scss itself now (any host folds identically — the
+     phone settings SHEET has no page context for a scoped rule). */
 
   .settings-page__back-label {
     display: none;

@@ -642,5 +642,13 @@
       gap: 0.3rem 0.9rem;
       padding: 0;
     }
+
+    // Grid/compare body gutters join the phone vocabulary: the desktop
+    // 1.5rem side gutters cost 48px of a 393px viewport — the compare
+    // table's sticky identity columns alone claim 240px+, so every
+    // reclaimed pixel roughly doubles the visible data window.
+    &__body-inner {
+      padding: 0 0.75rem 1rem;
+    }
   }
 }

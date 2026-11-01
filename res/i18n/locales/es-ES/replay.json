@@ -165,6 +165,7 @@
     "sunkAt": "hundido a las {time}",
     "aliveCount": "{alive}/{total} vivos",
     "ship": "Buque",
+    "toggle": "Marcador",
     "scopeGlobal": "Global",
     "scopeSolo": "Solo únicamente",
     "scopeShip": "Solo este barco",

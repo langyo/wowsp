@@ -134,3 +134,16 @@
     letter-spacing: 0.03em;
   }
 }
+
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────────
+   On the phone sheet (full-width planner stack) the observer row pairs a
+   NOWRAP label with a nowrap "base ±Δ = modified" value that can run
+   ~130px on DPM rows. The label may not claim that room — it ellipsizes
+   (the full name stays on the row's help tooltip) so the delta math never
+   pushes past the card into the modal's hidden overflow. */
+@media (max-width: 767px) {
+  .do-group__label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

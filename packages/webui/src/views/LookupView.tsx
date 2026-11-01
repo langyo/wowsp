@@ -7,7 +7,7 @@ import ClanCard, { defaultRosterOrder, roleLabel } from "@/components/stats/Clan
 import LookupErrorNotice from "@/components/stats/LookupErrorNotice";
 import ShipDistCharts from "@/components/stats/ShipDistCharts";
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
-import { HkDateTag, HkScrollContainer, HkSpinner, HkTabs } from "@celestia-island/hikari";
+import { HkDateTag, HkScrollContainer, HkSpinner, HkTabs, useBreakpoint } from "@celestia-island/hikari";
 import { User, Users } from "@lucide/vue";
 
 import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
@@ -140,6 +140,11 @@ export default defineComponent({
     const ranked = useRankedStore();
     const loadingTasks = useLoadingTasksStore();
     const route = useRoute();
+    // Phone layout gate (hikari breakpoint, <768px): the dist charts drop
+    // their forced one-row scroll region and stack one block per row (the
+    // container query in ShipDistCharts.scss owns that collapse); desktop
+    // keeps the forced row byte-identical.
+    const { isMobile } = useBreakpoint();
     const mode = ref<LookupKind>(lastLookup.value?.kind ?? "player");
     const realm = ref(lastLookup.value?.realm ?? "asia");
     const realms = ["ru", "eu", "na", "asia", "cn"];
@@ -928,10 +933,13 @@ export default defineComponent({
                     {/* forcedRow keeps the histogram + both donuts on one
                         row at low window resolutions — the blocks shrink
                         to their floors and a horizontal scrollbar appears
-                        below them instead of stacking one per row. */}
+                        below them instead of stacking one per row. Phones
+                        (hikari isMobile) opt out: three stacked blocks read
+                        better than a ~700px-wide two-axis scroll strip inside
+                        the page's vertical scroller. */}
                     <ShipDistCharts
                       ships={shipRows.value.map((s) => ({ shipId: s.shipId, battles: s.battles }))}
-                      forcedRow
+                      forcedRow={!isMobile.value}
                     />
                   </div>
                 ) : null}

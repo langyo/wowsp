@@ -153,3 +153,32 @@
     }
   }
 }
+
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────────
+   The table already scrolls in place on BOTH axes (HkScrollContainer), so
+   phones keep the true-table treatment — only the geometry retunes:
+   - The three sticky identity columns claim 276px (44 + 56 + 176), leaving
+     a 393px viewport under 70px of visible data. The name column gives
+     up 48px (names ellipsize; the full name is one tap-of-the-row away in
+     the detail modal) and cells drop to 0.4rem side padding, roughly
+     doubling the data window.
+   - The remove control is a 24px icon button inside a 44px cell — the
+     touch floor says 36px, and the cell already has room for it. */
+@media (max-width: 767px) {
+  .ship-compare__table {
+    th,
+    td {
+      padding: 0 0.4rem;
+    }
+  }
+
+  .ship-compare__sticky--name {
+    width: 8rem;
+    min-width: 8rem;
+    max-width: 8rem;
+  }
+
+  .ship-compare__sticky--remove .hk-icon-button {
+    --hi-icon-button-size: 2.25rem;
+  }
+}
