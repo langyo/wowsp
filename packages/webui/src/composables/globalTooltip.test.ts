@@ -1,14 +1,12 @@
 /** Contract tests for the `data-hint-card` parser (hintCardFrom). The
  *  attribute JSON is anchor-supplied, so anything malformed or off-schema
  *  must degrade to "no card" instead of breaking the hint. Placement is
- *  upstream hikari's (applyTooltipPosition + popupBounds, tested there);
- *  AppTitleBar declares the chrome band via popupChrome. One geometry
- *  post-pass lives HERE: snapPopupToPixelGrid puts the shared popup on the
- *  device-pixel grid after placement — the paint algorithm pixel-snaps
- *  normal flow content but not a fixed element positioned through a
- *  transform, and the unsnapped fractional position is the reported blur.
+ *  upstream hikari's (applyTooltipPosition + popupBounds, tested there —
+ *  including the device-pixel snap since hikari #1024 / 0.55.269, which
+ *  retired this module's own snap post-pass); AppTitleBar declares the
+ *  chrome band via popupChrome.
  *
- *  The appended describe covers the OTHER half of the document-level hook:
+ *  The appended describes cover the OTHER halves of the document-level hook:
  *  installGlobalTooltip also installs hikari's native-title bridge, so a
  *  plain `title=` element (hikari's own components included) renders the
  *  house `.hk-tooltip-popup` instead of the browser bubble, while
@@ -24,7 +22,11 @@ import {
   vi,
 } from "vitest";
 
-import { hintCardFrom, installGlobalTooltip, snapPopupToPixelGrid } from "./globalTooltip";
+import {
+  hintCardFrom,
+  installGlobalTooltip,
+  touchHintTextFor,
+} from "./globalTooltip";
 
 /** Pin window.devicePixelRatio for a test (happy-dom reports a plain 1) —
  *  the snap grid is 1/DPR, so the rounding tests exercise the fractional-DPR
@@ -383,101 +385,6 @@ describe("globalTooltip native-title bridge", () => {
   });
 });
 
-/** snapPopupToPixelGrid — the fractional-position paint fix behind the
- *  "tooltip 文字太糊" report. The popup is position:fixed placed through an
- *  inline transform, so the paint algorithm does NOT pixel-snap it the way
- *  it snaps normal flow content: whatever fractional left/top placement
- *  computed gets rasterized and resampled, smearing glyphs, edges and icons
- *  into a uniform blur. These tests pin the written-coordinate contract:
- *  the visual-space delta onto the 1/devicePixelRatio grid, divided by the
- *  cumulative zoom before it is added onto the popup's local-space
- *  left/top — the same re-basing applyTooltipPosition's clamp shift uses.
- *  The element's measured box is stubbed (no layout engine); the stub is
- *  static across the helper's reads, which is exactly how happy-dom
- *  behaves. */
-describe("snapPopupToPixelGrid", () => {
-  /** A popup written at local (70, 92) whose measured VISUAL box sits at
-   *  (left, top). `zoom` simulates the root DPI scale on a wrapper. */
-  function popupWithBox(left: number, top: number, zoom?: string): HTMLElement {
-    const el = document.createElement("div");
-    el.style.left = "70px";
-    el.style.top = "92px";
-    el.getBoundingClientRect = () => rectAt(left, top, 100, 40);
-    const parent = document.createElement("div");
-    if (zoom) parent.style.zoom = zoom;
-    parent.appendChild(el);
-    document.body.appendChild(parent);
-    // The fixture leaves with the test even when an expect fails first.
-    onTestFinished(() => parent.remove());
-    return el;
-  }
-
-  it("snaps a fractional box onto whole CSS px at DPR 1", () => {
-    stubDevicePixelRatio(1);
-    const el = popupWithBox(9.6, 20.4);
-    snapPopupToPixelGrid(el);
-    expect(el.style.left).toBe("70.4px"); // 70 + (10 − 9.6)
-    expect(el.style.top).toBe("91.6px"); // 92 + (20 − 20.4)
-  });
-
-  it("snaps onto the half-px grid at DPR 2", () => {
-    stubDevicePixelRatio(2);
-    const el = popupWithBox(9.6, 20.4);
-    snapPopupToPixelGrid(el);
-    // Step 0.5: 9.6 → 9.5 (−0.1), 20.4 → 20.5 (+0.1).
-    expect(el.style.left).toBe("69.9px");
-    expect(el.style.top).toBe("92.1px");
-  });
-
-  it("lands exactly on the device grid at DPR 1.5 (Windows 150% scaling)", () => {
-    stubDevicePixelRatio(1.5);
-    const el = popupWithBox(10.2, 20.4);
-    snapPopupToPixelGrid(el);
-    // Step 1/1.5: 10.2 snaps to 10 (−0.2); 20.4 snaps to 31/1.5 (≈ +0.267).
-    expect(Number.parseFloat(el.style.left)).toBeCloseTo(69.8, 5);
-    expect(Number.parseFloat(el.style.top)).toBeCloseTo(92.2666667, 5);
-  });
-
-  it("lands exactly on the device grid at DPR 1.25 (Windows 125% scaling)", () => {
-    stubDevicePixelRatio(1.25);
-    const el = popupWithBox(10.2, 20.4);
-    snapPopupToPixelGrid(el);
-    // Step 1/1.25 = 0.8: 10.2 snaps to 13·0.8 = 10.4 (+0.2); 20.4 snaps to
-    // 26·0.8 = 20.8 (+0.4) — the float dust stays under 1e-13, well inside
-    // the closeTo window.
-    expect(Number.parseFloat(el.style.left)).toBeCloseTo(70.2, 5);
-    expect(Number.parseFloat(el.style.top)).toBeCloseTo(91.6, 5);
-  });
-
-  it("leaves a box that already sits on the grid untouched", () => {
-    stubDevicePixelRatio(1);
-    const el = popupWithBox(9, 20);
-    snapPopupToPixelGrid(el);
-    expect(el.style.left).toBe("70px");
-    expect(el.style.top).toBe("92px");
-  });
-
-  it("is a no-op without layout (zero box — happy-dom / display:none)", () => {
-    stubDevicePixelRatio(2);
-    const el = popupWithBox(0, 0);
-    el.getBoundingClientRect = () => rectAt(0, 0, 0, 0);
-    snapPopupToPixelGrid(el);
-    expect(el.style.left).toBe("70px");
-    expect(el.style.top).toBe("92px");
-  });
-
-  it("divides the visual delta by the cumulative zoom before writing", () => {
-    stubDevicePixelRatio(1);
-    // The wrapper's inline zoom 2 paints the popup's local px 2x in visual
-    // space, so the +0.4 visual correction must write as +0.2 local — the
-    // same division applyTooltipPosition's clamp shift applies to its own
-    // remainders (the root DPI pref is the real-world producer).
-    const el = popupWithBox(9.6, 20.4, "2");
-    snapPopupToPixelGrid(el);
-    expect(el.style.left).toBe("70.2px");
-    expect(el.style.top).toBe("91.8px");
-  });
-});
 
 /** place() wiring: the shared popup's FINAL written coordinates carry the
  *  snap. The anchor stub (left 10, width 120 → center 70; top 100, height
@@ -530,5 +437,58 @@ describe("globalTooltip place() snaps the shared popup onto the pixel grid", () 
     expect(popup.classList.contains("hk-tooltip-visible")).toBe(true);
     expect(popup.style.left).toBe("70.4px");
     expect(popup.style.top).toBe("91.6px");
+  });
+});
+describe("touchHintTextFor — the touch hint bar's one-line resolver", () => {
+  const el = (attrs: Record<string, string>): HTMLElement => {
+    const node = document.createElement("span");
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    document.body.appendChild(node);
+    onTestFinished(() => node.remove());
+    return node;
+  };
+
+  it("returns the plain hint, with qualifier chips appended", () => {
+    expect(touchHintTextFor(el({ "data-hint": "刷新战绩" }))).toBe("刷新战绩");
+    expect(
+      touchHintTextFor(
+        el({
+          "data-hint": "主炮组",
+          "data-hint-tags": JSON.stringify([
+            { text: "推荐", tone: "rec" },
+            { text: "史诗", tone: "epic" },
+          ]),
+        }),
+      ),
+    ).toBe("主炮组 · 推荐 · 史诗");
+  });
+
+  it("flattens a structured card to one line (badge, keys, values, chips)", () => {
+    const card = {
+      title: "大和",
+      badge: "X",
+      keys: [{ key: "G", text: "清除声呐标记" }],
+      rows: [
+        { label: "生存", value: "97,100" },
+        { label: "特性", chips: [{ text: "高隐蔽", tone: "good" }] },
+      ],
+    };
+    expect(
+      touchHintTextFor(el({ "data-hint-card": JSON.stringify(card) })),
+    ).toBe("大和 · X · G: 清除声呐标记 · 生存: 97,100 · 特性: 高隐蔽");
+  });
+
+  it("serves the overflow text only while the holder actually clips", () => {
+    const holder = el({ "data-hint-overflow": "完整的标签文本" });
+    // happy-dom has no layout: nothing clips by default, so the resolver
+    // must hold the hint back — the same gate the hover channel applies.
+    expect(touchHintTextFor(holder)).toBeNull();
+    Object.defineProperty(holder, "scrollWidth", { value: 240, configurable: true });
+    Object.defineProperty(holder, "clientWidth", { value: 100, configurable: true });
+    expect(touchHintTextFor(holder)).toBe("完整的标签文本");
+  });
+
+  it("falls through to the library's title chain when the app vocabulary is absent", () => {
+    expect(touchHintTextFor(el({ title: "hikari markup" }))).toBeNull();
   });
 });

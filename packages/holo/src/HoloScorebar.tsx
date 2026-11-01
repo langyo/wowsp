@@ -152,9 +152,25 @@ const ShipIcon = defineComponent({
         hp < maxHp;
       const pct = hurt ? Math.max(0, Math.min(1, hp! / maxHp!)) : 0;
       const interactive = !!(props.onEnter || props.onLeave);
+      // Touch summary for the long-press hint bar (the app installs
+      // hikari's touch bridge over data-hint): the rich hover card stays
+      // a hover affordance, but the same facts ride one flattened line.
+      // Language-neutral composition — names, numbers, glyphs only.
+      const touchHint = [
+        ship.name,
+        ship.shipType,
+        ship.dead
+          ? "✕"
+          : hurt && hp != null && maxHp != null
+            ? "HP " + Math.round(hp) + "/" + Math.round(maxHp)
+            : null,
+      ]
+        .filter((part) => part != null && part !== "")
+        .join(" · ");
       return (
         <span
           class={["holo-scorebar__slot", interactive ? "is-interactive" : ""].join(" ")}
+          data-hint={touchHint !== "" ? touchHint : undefined}
           onMouseenter={props.onEnter ? (e: MouseEvent) => props.onEnter!(ship, e.currentTarget as HTMLElement) : undefined}
           onMouseleave={props.onLeave ? () => props.onLeave!(ship) : undefined}
         >
