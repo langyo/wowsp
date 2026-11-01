@@ -241,6 +241,74 @@ pub async fn lookup_player_stats(
     Ok(stats)
 }
 
+/// Event carrying one settled slot of a CN roster batch — the UI paints
+/// the name the moment it resolves instead of waiting for the whole chunk
+/// (the CN arm resolves each miss serially in two stages, so a degraded
+/// vortex used to hold every row hostage for the full chunk). Wire shape
+/// mirrors the frontend's `RosterStatsProgress` (camelCase).
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct RosterStatsProgress {
+    /// The realm the batch ran on (always "cn" — only the CN arm resolves
+    /// per-name).
+    pub realm: String,
+    /// The roster name the slot settled for.
+    pub name: String,
+    /// The PR algorithm the batch ran under ([`PrAlgo::as_param`]) — a
+    /// pref flip between request and event must not adopt the stale
+    /// caliber.
+    pub algo: &'static str,
+    /// The settled row — EXACTLY what the batch answer array carries for
+    /// the slot (already PR-algo shaped; null = settled not-found).
+    pub stats: Option<PlayerStats>,
+}
+
+/// Event the roster batch streams its per-slot settlements on.
+pub(crate) const ROSTER_STATS_PROGRESS_EVENT: &str = "wowsp://roster-stats-progress";
+
+/// The command's progress sink: serializes one settled slot and emits it
+/// to every window. Emission failures are logged and swallowed — a dead
+/// webview must never fail the lookup it paints.
+struct RosterStatsProgressEmitter {
+    app: tauri::AppHandle,
+    realm: String,
+    algo: &'static str,
+}
+
+impl RosterStatsProgressEmitter {
+    fn emit(&self, name: &str, row: Option<&PlayerStats>) {
+        let payload = RosterStatsProgress {
+            realm: self.realm.clone(),
+            name: name.to_string(),
+            algo: self.algo,
+            stats: row.cloned(),
+        };
+        use tauri::Emitter;
+        if let Err(e) = self.app.emit(ROSTER_STATS_PROGRESS_EVENT, &payload) {
+            tracing::warn!(error = %e, "emit roster-stats progress failed");
+        }
+    }
+}
+
+/// The batch command's core for direct in-process callers (contribution's
+/// team-winrate enrichment) — no progress stream, byte-identical to the
+/// pre-streaming command behavior.
+pub(crate) async fn lookup_players_stats_batch_core(
+    names: Vec<String>,
+    realm: String,
+    pr_algo: Option<String>,
+    cross_realm: Option<bool>,
+) -> CommandResult<Vec<Option<PlayerStats>>> {
+    let algo = PrAlgo::from_param(pr_algo.as_deref());
+    if names.is_empty() {
+        return Ok(Vec::new());
+    }
+    if realm == "cn" {
+        return Ok(super::wg_api_cn::lookup_players_stats_batch(names, algo, None).await?);
+    }
+    Ok(lookup_roster(names, Vec::new(), realm, cross_realm.unwrap_or(false), algo).await?)
+}
+
 /// Look up many players in one shot (live-roster fast path): N× account/list
 /// resolved with bounded parallelism, then ONE account/info and ONE
 /// clans/accountinfo for all resolved ids combined. Returns one entry per input name,
@@ -275,21 +343,30 @@ pub async fn lookup_player_stats(
 /// cluster cannot explain (see [`lookup_roster`]). Omitted/None keeps the
 /// historical single-realm behavior; adopted entries carry their true
 /// realm in [`PlayerStats::realm`].
+///
+/// JS signature unchanged (the `AppHandle` is injected by Tauri, never
+/// passed by the caller): each CN slot settles → one
+/// [`ROSTER_STATS_PROGRESS_EVENT`] with the slot's final row, while the
+/// returned array stays the authoritative, ordered answer.
 #[tauri::command]
 pub async fn lookup_players_stats_batch(
+    app: tauri::AppHandle,
     names: Vec<String>,
     realm: String,
     pr_algo: Option<String>,
     cross_realm: Option<bool>,
 ) -> CommandResult<Vec<Option<PlayerStats>>> {
-    let algo = PrAlgo::from_param(pr_algo.as_deref());
-    if names.is_empty() {
-        return Ok(Vec::new());
+    if realm == "cn" && !names.is_empty() {
+        let algo = PrAlgo::from_param(pr_algo.as_deref());
+        let emitter = RosterStatsProgressEmitter {
+            app,
+            realm: realm.clone(),
+            algo: algo.as_param(),
+        };
+        let sink = |name: &str, row: Option<&PlayerStats>| emitter.emit(name, row);
+        return Ok(super::wg_api_cn::lookup_players_stats_batch(names, algo, Some(&sink)).await?);
     }
-    if realm == "cn" {
-        return Ok(super::wg_api_cn::lookup_players_stats_batch(names, algo).await?);
-    }
-    Ok(lookup_roster(names, Vec::new(), realm, cross_realm.unwrap_or(false), algo).await?)
+    lookup_players_stats_batch_core(names, realm, pr_algo, cross_realm).await
 }
 
 /// The WG clusters that can interleave rosters in cross-server Clan
@@ -346,13 +423,19 @@ pub(crate) async fn lookup_roster(
     // id-based path — ids and the cross-server pass are WG-cluster
     // concepts. The command above routes here after its own CN check, so
     // this guard exists for the in-game bridge, which calls in directly.
+    // No progress sink: the bridge is an internal caller and keeps the
+    // resolve-barrier-only contract.
     if realm == "cn" {
-        return super::wg_api_cn::lookup_players_stats_batch(names, algo).await;
+        return super::wg_api_cn::lookup_players_stats_batch(names, algo, None).await;
     }
     // Per-request timeout so one hung connection can't stall the roster all
-    // battle long.
-    let clients =
-        crate::commands::network::HttpPair::build(|b| b.timeout(Duration::from_secs(15)))?;
+    // battle long, plus a short connect budget: a dead host (or a proxy
+    // about to fall back to the direct twin) must fail its handshake in
+    // seconds instead of crawling toward the 15s total per attempt.
+    let clients = crate::commands::network::HttpPair::build(|b| {
+        b.timeout(Duration::from_secs(15))
+            .connect_timeout(Duration::from_secs(3))
+    })?;
 
     // The slot's exact account id, when the caller has one (> 0).
     let slot_id =

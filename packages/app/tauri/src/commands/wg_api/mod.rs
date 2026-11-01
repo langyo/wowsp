@@ -74,7 +74,9 @@ pub use roster::{
 // command modules (ship_stats / wg_composition / wg_api_cn; call sites
 // unchanged).
 pub(crate) use clans::clan_suggestion_of;
-pub(crate) use roster::{apply_batch_pr_algo, roster_cache_get, roster_cache_insert};
+pub(crate) use roster::{
+    apply_batch_pr_algo, lookup_players_stats_batch_core, roster_cache_get, roster_cache_insert,
+};
 pub(crate) use shared::{
     account_list_one, decode_wg_text, encode_query, nickname_matches, parse_dog_tag,
 };

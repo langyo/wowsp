@@ -362,6 +362,46 @@ function forgetShipLists(entries: ReadonlyArray<{ accountId: number; realm: stri
   for (const e of entries) shipListCache.delete(shipListCacheKey(e.realm, e.accountId));
 }
 
+// ── Roster-stats progress stream (the CN batch's per-slot settlements) ──
+// The backend's CN batch arm streams each settled slot on the
+// `wowsp://roster-stats-progress` event: one tick per slot carrying EXACTLY
+// the row the batch answer array carries for it (PR-algo shaped, null =
+// settled not-found), so surfaces paint names the moment they resolve
+// instead of waiting for the chunk's slowest lookup. One transport listener
+// per window fans out to a small registry of per-instance appliers; the
+// chunk resolution (runBatch) stays the authoritative barrier — the event
+// rows are identical data, so application is idempotent.
+
+type RosterProgressApplier = (name: string, st: RosterStat) => void;
+
+const rosterProgressAppliers = new Set<RosterProgressApplier>();
+let rosterProgressWired = false;
+
+/** Register the window's ONE transport listener for the progress stream
+ *  (idempotent). Writes the settled row into the module statCache under the
+ *  CURRENT pref key — the same `rosterCacheKey` tagging `applyStat` runs,
+ *  so the PR-algo cache-key discipline is never bypassed — then mirrors the
+ *  row into every registered pipeline. `?.`: contexts without a Tauri
+ *  event API (browser/webMock windows, unit tests) register nothing and
+ *  simply never hear ticks (the same guard the ship-stats progress
+ *  subscription keeps). */
+function wireRosterStatsProgress(): void {
+  if (rosterProgressWired) return;
+  rosterProgressWired = true;
+  void api.listenRosterStatsProgress?.((p) => {
+    const st = p.stats ? rosterStatOf(p.stats) : emptyStat(false);
+    if (statCache.size >= STAT_CACHE_MAX) statCache.clear();
+    statCache.set(rosterCacheKey(p.realm, p.name), st);
+    for (const apply of rosterProgressAppliers) {
+      try {
+        apply(p.name, st);
+      } catch {
+        // One broken applier never starves the others.
+      }
+    }
+  });
+}
+
 export function useRosterStats(options: UseRosterStatsOptions) {
   const stats = reactive(new Map<number, RosterStat>());
 
@@ -467,6 +507,23 @@ export function useRosterStats(options: UseRosterStatsOptions) {
       }
     });
   }
+
+  // ── Progress-stream half ─────────────────────────────────────────────
+  // Mirror one event-settled row into THIS pipeline's reactive slots — the
+  // same writes the chunk-apply path runs (slot copy, clan gate, ship-list
+  // unlock), minus the module cache write the stream listener already did.
+  // The arena's name match is the battle guard (a row for a name this
+  // battle does not field touches nothing); registered on setup, removed
+  // on unmount so a dead panel never writes.
+  wireRosterStatsProgress();
+  const applyProgressRow: RosterProgressApplier = (name, st) => {
+    for (const v of options.arena()?.vehicles ?? []) {
+      if (v.name === name && !AI_NAME.test(name)) stats.set(v.id, { ...st });
+    }
+    gateClanWinrate(name, st, battleGen);
+    ensureShipLists();
+  };
+  rosterProgressAppliers.add(applyProgressRow);
 
   // ── Ship-scoped attachment (the live pipeline's share) ────────────────
   // While any configured column needs per-ship data (a ship / ship-solo /
@@ -886,6 +943,7 @@ export function useRosterStats(options: UseRosterStatsOptions) {
   );
 
   onBeforeUnmount(() => {
+    rosterProgressAppliers.delete(applyProgressRow);
     battleGen += 1;
     if (batchTimer) clearTimeout(batchTimer);
     if (retryTimer) clearTimeout(retryTimer);

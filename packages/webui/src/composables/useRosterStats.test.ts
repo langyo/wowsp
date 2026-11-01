@@ -9,14 +9,26 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, type PlayerShipStats, type PlayerStats } from "@/api";
+import { api, type ArenaInfo, type PlayerShipStats, type PlayerStats } from "@/api";
 import { statsPrefsState } from "@/stores/statsPrefs";
-import { fetchRosterStatsByNames } from "./useRosterStats";
+import { fetchRosterStatsByNames, useRosterStats } from "./useRosterStats";
+
+// The progress bus is a module-scope singleton wired ONCE per window — the
+// transport-level registration only happens on the first useRosterStats
+// call, so the fired handler is whatever the first wiring captured. Record
+// it at the factory level (clearAllMocks keeps factory implementations).
+const progressStream = vi.hoisted(() => ({
+  handler: undefined as undefined | ((p: unknown) => void),
+}));
 
 vi.mock("@/api", () => ({
   api: {
     lookupPlayersStatsBatch: vi.fn(),
     lookupPlayerShipStats: vi.fn(),
+    listenRosterStatsProgress: vi.fn((h: (p: unknown) => void) => {
+      progressStream.handler = h;
+      return () => {};
+    }),
   },
 }));
 vi.mock("@/utils/clanWinrate", () => ({
@@ -212,5 +224,54 @@ describe("fetchRosterStatsByNames progressive arrival", () => {
     expect(out.size).toBe(1);
     expect(out.has("ok_g")).toBe(true);
     expect(out.has("fail_a")).toBe(false);
+  });
+});
+
+describe("roster-stats progress stream (CN per-slot events)", () => {
+  it("paints an event-settled row into the reactive slots the moment it lands", async () => {
+    const row = mockPlayer({ name: "stream_row", accountId: 7, pr: 900, winrate: 48 });
+    // The authoritative chunk carries the identical row — whichever lands
+    // first (event or resolve), the slot reads the same.
+    vi.mocked(api.lookupPlayersStatsBatch).mockResolvedValue([row]);
+    vi.mocked(api.lookupPlayerShipStats).mockResolvedValue([]);
+    const arena = {
+      dateTime: "2026-11-01 10:00:00",
+      vehicles: [{ id: 11, name: "stream_row" }],
+    } as unknown as ArenaInfo;
+    const { stats } = useRosterStats({ realm: () => "cn", arena: () => arena });
+    expect(progressStream.handler).toBeTypeOf("function");
+
+    progressStream.handler!({ realm: "cn", name: "stream_row", algo: "winrate", stats: row });
+    await vi.waitFor(() => {
+      const slot = stats.get(11);
+      expect(slot?.loading).toBe(false);
+      expect(slot?.winrate).toBe(48);
+      expect(slot?.accountId).toBe(7);
+    });
+  });
+
+  it("seeds the module statCache under the current pref key even for names this arena lacks", async () => {
+    vi.mocked(api.lookupPlayersStatsBatch).mockResolvedValue([]);
+    const arena = {
+      dateTime: "2026-11-01 10:00:00",
+      vehicles: [{ id: 11, name: "stream_row" }],
+    } as unknown as ArenaInfo;
+    useRosterStats({ realm: () => "cn", arena: () => arena });
+
+    // A row for a name NOT on the arena: no slot write, but the module
+    // cache is seeded (the stream listener writes unconditionally). The
+    // wired handler is the bus's ONE transport registration — this test
+    // fires it directly (the same stream, a different tick).
+    const row = mockPlayer({ name: "cache_only", accountId: 8, winrate: 51 });
+    progressStream.handler!({ realm: "cn", name: "cache_only", algo: "winrate", stats: row });
+
+    const warm = await fetchRosterStatsByNames(["cache_only"], "cn");
+    expect(warm.get("cache_only")?.winrate).toBe(51);
+    // The warm answer came from the cache — no RPC ever carried the name.
+    expect(
+      vi
+        .mocked(api.lookupPlayersStatsBatch)
+        .mock.calls.every((c) => !c[0].includes("cache_only")),
+    ).toBe(true);
   });
 });

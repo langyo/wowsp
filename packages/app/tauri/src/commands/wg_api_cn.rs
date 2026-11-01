@@ -47,16 +47,20 @@ use super::network::HttpPair;
 use super::wg_api::{PrAlgo, PvpStats, compute_pr, encode_query, nickname_matches, parse_dog_tag};
 use super::wg_realm;
 
-/// Concurrency cap for the batch name→account resolution, mirroring the WG
-/// path (the vortex service is unauthenticated; modest parallelism keeps a
-/// full roster polite).
-const BATCH_CONCURRENCY: usize = 4;
+/// Concurrency cap for the batch name→account resolution. The vortex is
+/// unauthenticated (no per-key rate limit to respect, unlike the WG path's
+/// shared per-IP budget), and the roster batch's fast stage budgets (see
+/// `roster_batch_pair`) make every settled wave cheap — 8 in flight keeps a
+/// full 24-name roster inside three waves instead of six.
+const BATCH_CONCURRENCY: usize = 8;
 
 /// How fast a transient batch-slot failure must have been for the one
-/// retry to fire. The vortex's documented hiccups (sporadic 503s, brief
-/// degradation windows) answer within moments and a retry lands them; a
-/// failure that already crawled to the 15s client timeout means the host
-/// is unreachable from this client (a black-holing proxy, a dead route) —
+/// retry to fire — STRICTLY under the floor. The vortex's documented
+/// hiccups (sporadic 503s, refused connects) fail within moments and a
+/// retry lands them; a failure that measured at or past the floor is a
+/// full stage-budget timeout (the roster batch's search budget sits
+/// exactly here — see `StageBudgets::ROSTER_BATCH`), meaning the host is
+/// unreachable from this client (a black-holing proxy, a dead route) —
 /// re-crawling every slot would double the roster's wait and change
 /// nothing.
 const TRANSIENT_RETRY_MAX_FIRST_ATTEMPT: Duration = Duration::from_secs(5);
@@ -96,6 +100,110 @@ pub(crate) fn vortex_stream_pair() -> Result<HttpPair> {
         b.read_timeout(Duration::from_secs(60))
             .user_agent(BROWSER_UA)
     })
+}
+
+// ── roster-batch fast budgets ─────────────────────────────────────────────
+// The live-roster batch must degrade FAST: under a hanging vortex the whole
+// chunk used to reject 30-60s in (each miss resolved serially in two 15s-
+// timeout stages, 4 names at a time), so the frontend retried into another
+// 30-60s burst and no row ever rendered. The budgets below settle a hung
+// name as failed within ~5s, a 6-name chunk within ~8s, and a full 24-name
+// roster within ~15s, while a healthy sub-second service answers exactly as
+// before (the budgets only ever bound the slow tail).
+
+/// Handshake ceiling for the roster batch's requests: a dead host (or a
+/// black-holing proxy about to fall back to the direct twin) must fail
+/// inside seconds, not crawl toward the 15s transport default.
+pub(crate) const ROSTER_CONNECT_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Total budget for one name-resolution round (the search endpoint; a
+/// numeric query's direct id probe rides it too — both are the stage that
+/// decides whether the name resolves at all).
+pub(crate) const ROSTER_SEARCH_TIMEOUT: Duration = Duration::from_secs(5);
+
+/// Total budget for one account/info request (the stats node).
+pub(crate) const ROSTER_INFO_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// Total budget for one clans (clan tag) request — best-effort data; a
+/// budget kill degrades to "no clan" like any other transport failure.
+pub(crate) const ROSTER_CLAN_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// The fast sibling of [`vortex_pair`] for the roster batch ONLY — every
+/// other consumer of the vortex transport (the interactive lookups, the
+/// suggesters, the clan card, `ship_stats`' stall-tolerant stream) keeps
+/// today's behavior. The 8s whole-request timeout IS the account/info and
+/// clan/info budget (one request each); the name-search stage wraps its
+/// resolution in the tighter 5s budget (see [`StageBudgets`]).
+pub(crate) fn roster_batch_pair() -> Result<HttpPair> {
+    crate::commands::network::HttpPair::build(|b| {
+        b.connect_timeout(ROSTER_CONNECT_TIMEOUT)
+            .timeout(ROSTER_INFO_TIMEOUT)
+            .user_agent(BROWSER_UA)
+    })
+}
+
+/// Per-stage wall-clock budgets one batch name-resolution runs under.
+/// [`StageBudgets::TRANSPORT_DEFAULT`] arms no stage timer at all — the
+/// interactive lookups keep riding each request's own client timeout,
+/// exactly the pre-budget behavior.
+#[derive(Clone, Copy)]
+struct StageBudgets {
+    /// The name→account resolution round.
+    search: Duration,
+    /// The account/info fetch.
+    info: Duration,
+    /// The clans (clan tag) fetch.
+    clan: Duration,
+}
+
+impl StageBudgets {
+    /// No stage timers: each request lives and dies by its client's own
+    /// timeout. The single-name interactive lookups run this way.
+    const TRANSPORT_DEFAULT: Self = Self {
+        search: Duration::ZERO,
+        info: Duration::ZERO,
+        clan: Duration::ZERO,
+    };
+    /// The roster batch's fast budgets. Bounds the WHOLE stage — including
+    /// the proxy→direct fallback chain inside one request — so a hanging
+    /// proxy cannot convert one 5s budget into 10s of attempts.
+    const ROSTER_BATCH: Self = Self {
+        search: ROSTER_SEARCH_TIMEOUT,
+        info: ROSTER_INFO_TIMEOUT,
+        clan: ROSTER_CLAN_TIMEOUT,
+    };
+}
+
+/// A stage-budget kill. Renders like any other transport failure so the
+/// batch's transient classification (and its warn logs) read the same as a
+/// timed-out request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct StageTimeout(Duration);
+
+impl std::fmt::Display for StageTimeout {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "CN vortex: request budget elapsed ({}s)",
+            self.0.as_secs()
+        )
+    }
+}
+
+/// Run `fut` under a wall-clock stage budget. `Duration::ZERO` arms no
+/// timer — the future rides its request's own client timeout (the
+/// interactive lookups' shape).
+async fn within<T, F: std::future::Future<Output = T>>(
+    budget: Duration,
+    fut: F,
+) -> Result<T, StageTimeout> {
+    if budget.is_zero() {
+        Ok(fut.await)
+    } else {
+        tokio::time::timeout(budget, fut)
+            .await
+            .map_err(|_| StageTimeout(budget))
+    }
 }
 
 /// GET one JSON document from the CN vortex/clans hosts. Non-2xx is an error
@@ -542,23 +650,43 @@ fn player_stats_of(
 /// with the batch path, which degrades it back to its message string
 /// (rosters render "no data", never a reason).
 async fn lookup_one(clients: &HttpPair, name: &str) -> Result<Option<PlayerStats>, LookupError> {
+    lookup_one_budgeted(clients, name, StageBudgets::TRANSPORT_DEFAULT).await
+}
+
+/// [`lookup_one`] under explicit stage budgets — the interactive lookups
+/// pass the transport defaults (no stage timers), the roster batch passes
+/// [`StageBudgets::ROSTER_BATCH`]. A stage kill surfaces as a transient
+/// transport failure (see [`StageTimeout`]); the clan stage, being
+/// best-effort, degrades to "no clan" exactly like its other failures.
+async fn lookup_one_budgeted(
+    clients: &HttpPair,
+    name: &str,
+    budgets: StageBudgets,
+) -> Result<Option<PlayerStats>, LookupError> {
     // anyhow→LookupError boundary: the structured rejection keeps its
     // `From<String>` bridge, so the anyhow error renders through its
     // Display (the historical message) on the way in.
-    let Some(entry) = resolve_entry(clients, name)
+    let Some(entry) = within(budgets.search, resolve_entry(clients, name))
         .await
+        .map_err(|stage| stage.to_string())?
         .map_err(|e| e.to_string())?
     else {
         return Ok(None);
     };
     let (info, clan) = tokio::join!(
-        account_info(clients, entry.account_id),
-        clan_for_account(clients, entry.account_id)
+        within(budgets.info, account_info(clients, entry.account_id)),
+        within(budgets.clan, clan_for_account(clients, entry.account_id)),
     );
     let node = info
+        .map_err(|stage| stage.to_string())?
         .map_err(|e| e.to_string())?
         .ok_or_else(|| LookupError::not_found_account(name, "cn"))?;
-    Ok(Some(player_stats_of(entry, &node, clan, true)))
+    Ok(Some(player_stats_of(
+        entry,
+        &node,
+        clan.unwrap_or(None),
+        true,
+    )))
 }
 
 /// CN arm of `wg_api::lookup_player_stats`. The expected PR algorithm works
@@ -629,11 +757,25 @@ fn slot_verdict(result: &Result<Option<PlayerStats>, LookupError>) -> SlotVerdic
 }
 
 /// Retry policy for a transient slot failure: exactly one quick second
-/// try, and only when the first attempt failed FAST (see
-/// [`TRANSIENT_RETRY_MAX_FIRST_ATTEMPT`]). Pure — unit-tested.
+/// try, and only when the first attempt failed FAST — strictly under the
+/// floor (see [`TRANSIENT_RETRY_MAX_FIRST_ATTEMPT`]): fast connection
+/// errors retry, full stage-budget timeouts never re-crawl. Pure —
+/// unit-tested.
 fn should_retry_transient(verdict: SlotVerdict, first_attempt: Duration) -> bool {
-    verdict == SlotVerdict::Transient && first_attempt <= TRANSIENT_RETRY_MAX_FIRST_ATTEMPT
+    verdict == SlotVerdict::Transient && first_attempt < TRANSIENT_RETRY_MAX_FIRST_ATTEMPT
 }
+
+/// Per-slot progress sink for the roster batch: fired once per settled
+/// slot with `(name, row)` where `row` is EXACTLY the `PlayerStats` the
+/// batch answer array carries for that slot (already PR-algo shaped; None
+/// = settled not-found) — an event-applied row and the resolve-applied row
+/// are interchangeable by construction. The realm and PR algorithm are
+/// constant per batch; the caller's closure captures them. Transient slot
+/// failures emit nothing (their absence is not a verdict — the response
+/// and the frontend's retry/backoff own them). Internal callers pass
+/// `None` and the batch behaves byte-identically to the pre-streaming
+/// contract.
+pub(crate) type SlotProgressFn<'a> = dyn Fn(&str, Option<&PlayerStats>) + Send + Sync + 'a;
 
 /// CN arm of `wg_api::lookup_players_stats_batch`. The shared session cache
 /// answers the hits on the spot; each miss is one full lookup (search +
@@ -641,6 +783,15 @@ fn should_retry_transient(verdict: SlotVerdict, first_attempt: Duration) -> bool
 /// endpoints) with bounded parallelism, so a roster that re-fires for the
 /// same names every battle window costs one resolution, not one per
 /// window.
+///
+/// Every request rides the fast budgets (see `roster_batch_pair` /
+/// `StageBudgets::ROSTER_BATCH`): a settled wave answers inside ~5-8s even
+/// against a hanging host, instead of the 15s-timeout serialization that
+/// made a degraded vortex hold every row hostage for 30-60s. Whenever
+/// `progress` is given, each settled slot is streamed out the moment its
+/// row is final (the cache hits right away, each miss as its lookup
+/// lands), so the UI paints names mid-chunk while the returned array
+/// stays the authoritative, ordered answer.
 ///
 /// Per-name resilience: the vortex is documented to hiccup (sporadic 503s,
 /// short degradation windows) and a battle roster costs it ~3 requests per
@@ -662,6 +813,7 @@ fn should_retry_transient(verdict: SlotVerdict, first_attempt: Duration) -> bool
 pub(crate) async fn lookup_players_stats_batch(
     names: Vec<String>,
     algo: PrAlgo,
+    progress: Option<&SlotProgressFn<'_>>,
 ) -> Result<Vec<Option<PlayerStats>>> {
     let mut answers: Vec<Option<PlayerStats>> = vec![None; names.len()];
     let mut misses: Vec<(usize, String)> = Vec::new();
@@ -673,6 +825,11 @@ pub(crate) async fn lookup_players_stats_batch(
                     super::wg_api::apply_batch_pr_algo(stats, algo);
                 }
                 answers[slot] = stats;
+                // A cache hit is settled NOW — stream it so its row paints
+                // without waiting for the chunk's slowest network miss.
+                if let Some(p) = progress {
+                    p(name, answers[slot].as_ref());
+                }
             },
             None => misses.push((slot, name.clone())),
         }
@@ -680,7 +837,7 @@ pub(crate) async fn lookup_players_stats_batch(
     if misses.is_empty() {
         return Ok(answers);
     }
-    let clients = vortex_pair()?;
+    let clients = roster_batch_pair()?;
     let miss_names: Vec<String> = misses.iter().map(|(_, n)| n.clone()).collect();
     let miss_count = miss_names.len();
     let results: Vec<Result<Option<PlayerStats>, LookupError>> = {
@@ -688,10 +845,12 @@ pub(crate) async fn lookup_players_stats_batch(
         stream::iter(miss_names)
             .map(|name| async move {
                 let started = std::time::Instant::now();
-                let mut attempt = lookup_one(pair_ref, &name).await;
+                let mut attempt =
+                    lookup_one_budgeted(pair_ref, &name, StageBudgets::ROSTER_BATCH).await;
                 if should_retry_transient(slot_verdict(&attempt), started.elapsed()) {
                     tokio::time::sleep(TRANSIENT_RETRY_PAUSE).await;
-                    attempt = lookup_one(pair_ref, &name).await;
+                    attempt =
+                        lookup_one_budgeted(pair_ref, &name, StageBudgets::ROSTER_BATCH).await;
                 }
                 attempt
             })
@@ -712,6 +871,12 @@ pub(crate) async fn lookup_players_stats_batch(
                 if let Some(mut stats) = stats {
                     super::wg_api::apply_batch_pr_algo(&mut stats, algo);
                     answers[*slot] = Some(stats);
+                }
+                // The slot's row is final (None included) — stream it the
+                // moment it lands. Transient slots emit nothing: their
+                // absence is not a verdict, the response owns it.
+                if let Some(p) = progress {
+                    p(name, answers[*slot].as_ref());
                 }
             },
             SlotVerdict::Transient => {
@@ -1613,13 +1778,14 @@ mod tests {
             SlotVerdict::Transient,
             Duration::from_millis(300)
         ));
-        assert!(should_retry_transient(
+        // The floor itself is EXCLUSIVE: the roster batch's search budget
+        // sits exactly here, so a failure measured at the floor is a full
+        // stage-budget timeout — the host is unreachable and the retry
+        // would double the roster's wait for nothing.
+        assert!(!should_retry_transient(
             SlotVerdict::Transient,
             TRANSIENT_RETRY_MAX_FIRST_ATTEMPT
         ));
-        // A failure that crawled to the client timeout means the host is
-        // unreachable — the retry would double the roster's wait for
-        // nothing.
         assert!(!should_retry_transient(
             SlotVerdict::Transient,
             TRANSIENT_RETRY_MAX_FIRST_ATTEMPT + Duration::from_millis(1)
@@ -1633,5 +1799,80 @@ mod tests {
             SlotVerdict::Miss,
             Duration::from_millis(50)
         ));
+    }
+
+    /// The roster batch's fast budgets are the documented ones (search 5s,
+    /// account/info + clan 8s each, connect 3s) and the interactive
+    /// lookups keep the transport defaults (no stage timers) — the
+    /// degraded-service tail the budgets bound must never creep into the
+    /// single-name cards.
+    #[test]
+    fn roster_batch_budgets_are_the_documented_ones() {
+        assert_eq!(StageBudgets::ROSTER_BATCH.search, Duration::from_secs(5));
+        assert_eq!(StageBudgets::ROSTER_BATCH.info, Duration::from_secs(8));
+        assert_eq!(StageBudgets::ROSTER_BATCH.clan, Duration::from_secs(8));
+        assert_eq!(ROSTER_CONNECT_TIMEOUT, Duration::from_secs(3));
+        assert_eq!(StageBudgets::TRANSPORT_DEFAULT.search, Duration::ZERO);
+        assert_eq!(StageBudgets::TRANSPORT_DEFAULT.info, Duration::ZERO);
+        assert_eq!(StageBudgets::TRANSPORT_DEFAULT.clan, Duration::ZERO);
+    }
+
+    #[tokio::test]
+    async fn stage_budget_kills_a_hung_future_and_passes_a_ready_one() {
+        // ZERO arms no timer — the future's own transport timeout rules.
+        assert_eq!(within(Duration::ZERO, std::future::ready(7u8)).await, Ok(7));
+        // A hung stage dies at its budget with the transport-shaped error.
+        let budget = Duration::from_millis(20);
+        assert_eq!(
+            within(budget, std::future::pending::<u8>()).await,
+            Err(StageTimeout(budget))
+        );
+        assert_eq!(
+            StageTimeout(budget).to_string(),
+            "CN vortex: request budget elapsed (0s)",
+            "the message reads like the transport timeouts the batch already handles"
+        );
+    }
+
+    /// The progress stream's core contract, exercised offline through the
+    /// session cache: every settled slot emits exactly once, carrying the
+    /// SHAPED row (PR-algo applied) — the same object the batch answer
+    /// array carries for that slot.
+    #[tokio::test]
+    async fn batch_progress_sink_emits_cache_hits_with_the_answer_row() {
+        let name = format!("progress-sink-{}", std::process::id());
+        let cached: PlayerStats = serde_json::from_value(serde_json::json!({
+            "accountId": 42_i64, "name": name, "realm": "cn",
+            "hidden": false, "pr": 1400
+        }))
+        .unwrap();
+        super::super::wg_api::roster_cache_insert("cn", &name, Some(cached));
+        let seen: std::sync::Mutex<Vec<(String, Option<PlayerStats>)>> =
+            std::sync::Mutex::new(Vec::new());
+        {
+            let seen_ref = &seen;
+            let sink = |n: &str, row: Option<&PlayerStats>| {
+                seen_ref.lock().unwrap().push((n.to_string(), row.cloned()));
+            };
+            let answers =
+                lookup_players_stats_batch(vec![name.clone()], PrAlgo::Expected, Some(&sink))
+                    .await
+                    .unwrap();
+            assert_eq!(answers.len(), 1);
+            assert_eq!(
+                answers[0].as_ref().unwrap().pr,
+                None,
+                "the expected algorithm answers PR=None (apply_batch_pr_algo)"
+            );
+        }
+        let seen = seen.into_inner().unwrap();
+        assert_eq!(seen.len(), 1, "one settled slot, exactly one emission");
+        assert_eq!(seen[0].0, name);
+        let row = seen[0].1.as_ref().expect("a cache hit carries its row");
+        assert_eq!(row.account_id, 42);
+        assert_eq!(
+            row.pr, None,
+            "the streamed row is the SHAPED row, never the raw cached one"
+        );
     }
 }
