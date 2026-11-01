@@ -311,6 +311,14 @@ export interface ModInstallRecord {
    *  same shared files (the pre-overwrite bytes the uninstall verifies
    *  before restoring). Absent on legacy records. */
   snapshotHashes?: Record<string, string> | null;
+  /** Component roots (registry spellings, e.g. `pnfmods/ttaromodutils/`)
+   *  whose shared runtime trees this pack depends on: the shared files
+   *  live in the per-component `shared.*` ledger record instead of this
+   *  one, and this edge is how the pack still counts as a consumer.
+   *  Empty on legacy records (their inlined shared files cover them).
+   *  Records whose id starts with `shared.` never pair with a catalog
+   *  entry and must stay off user-facing rows. */
+  sharedRoots?: string[];
 }
 
 /** One package's expected write map — the read-only classifier over an

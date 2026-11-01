@@ -189,6 +189,7 @@ fn uninstall_unit_removes_files_and_syncs_manifest() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     });
     let cam = classify_installed_root(&rm, None)
         .into_iter()
@@ -237,6 +238,7 @@ fn unit_uninstall_drops_loader_owning_record_not_a_zombie() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     };
 
     // Last PnF content in the tree: the record drops AND the 0-byte
@@ -743,6 +745,7 @@ impl OverlappingMods {
             game_root: game.to_string_lossy().into_owned(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let installs = vec![
             record("older", &older_restore),
@@ -1064,6 +1067,7 @@ fn unit_uninstall_trims_partially_overlapping_record() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     }];
     let report = uninstall_unit_core(game.to_str().unwrap(), &rm, &unit, &mut installs).unwrap();
     assert_eq!(report.restored_files, 1);
@@ -1100,6 +1104,7 @@ fn half_disable_violation_detects_mods_spanning_the_unit() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     };
     let paths = vec!["content".to_string()];
     // Same tree + files outside it: disabling the unit would half-disable
@@ -1347,6 +1352,7 @@ fn migrate_moves_stranded_files_and_repoints_ledger() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     }];
     let report = migrate_ledgerred(&game, "1", &mut installs).unwrap();
     assert_eq!(report.to_version, "2");
@@ -1837,6 +1843,7 @@ fn repoint_and_uninstall_respect_install_identity() {
         game_root: root.to_string_lossy().into_owned(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     };
     let mut installs = vec![
         mk(&a, "1", &["PnFMods/A/Main.py"]),
@@ -1920,6 +1927,7 @@ fn conflict_warnings_flag_overlapping_records() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     };
     let installs = vec![
         mk("a", "ModA", &["gui/a.png", "gui/b.png"]),
@@ -2479,6 +2487,102 @@ fn unit_uninstall_removes_preload_copies() {
     fs::remove_dir_all(&game).ok();
 }
 
+/// (P1 h) Unit uninstall of the shared component tree itself: the
+/// per-component `shared.*` record is fully covered by the unit and
+/// takes the full uninstall path — dropped from the ledger, its restore
+/// skipped where a surviving consumer (the pack's shared_roots edge)
+/// keeps the tree claimed, exactly the protected semantics a legacy
+/// record with inlined shared files gets today. The DEPENDENT pack
+/// record survives: its private files live outside the unit.
+#[test]
+fn unit_uninstall_of_a_shared_component_tree_is_coherent() {
+    let tmp = std::env::temp_dir().join("wowsp_shared_unit_uninstall");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let rm = game.join("bin/1/res_mods");
+    fs::create_dir_all(rm.join("PnFMods/TTaroModUtils")).unwrap();
+    fs::write(
+        rm.join("PnFMods/TTaroModUtils/SchemaScanner.py"),
+        b"gen bytes",
+    )
+    .unwrap();
+    touch(&rm.join("PnFMods/TTaroModUtils/Main.py"));
+    touch(&rm.join("gui/dependent.png"));
+    // The component record's generation layer (the pre-first-install
+    // bytes it would restore on a last-consumer uninstall).
+    let restore = tmp.join("restore-shared");
+    fs::create_dir_all(restore.join("PnFMods/TTaroModUtils")).unwrap();
+    fs::write(
+        restore.join("PnFMods/TTaroModUtils/SchemaScanner.py"),
+        b"vanilla bytes",
+    )
+    .unwrap();
+    let game_root = game.to_string_lossy().into_owned();
+    let mut installs = vec![
+        ModInstallRecord {
+            id: "dependent".into(),
+            name: "Dependent".into(),
+            version: "1.0".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["gui/dependent.png".into()],
+            restore_dir: None,
+            game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
+            shared_roots: vec!["pnfmods/ttaromodutils/".into()],
+        },
+        ModInstallRecord {
+            id: "shared.pnfmods.ttaromodutils".into(),
+            name: "Shared TTaro runtime (TTaroModUtils)".into(),
+            version: "1.0".into(),
+            category: "shared".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec![
+                "PnFMods/TTaroModUtils/Main.py".into(),
+                "PnFMods/TTaroModUtils/SchemaScanner.py".into(),
+            ],
+            restore_dir: Some(restore.to_string_lossy().into_owned()),
+            game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
+            shared_roots: Vec::new(),
+        },
+    ];
+
+    let unit = classify_installed_root(&rm, None)
+        .into_iter()
+        .find(|u| u.rel_path == "PnFMods/TTaroModUtils")
+        .expect("the component tree classifies as a unit");
+    uninstall_unit_core(&game_root, &rm, &unit, &mut installs).unwrap();
+
+    // The component record is gone (its files were unit-covered); the
+    // dependent pack record survives with its private file.
+    assert!(
+        !installs
+            .iter()
+            .any(|r| r.id == "shared.pnfmods.ttaromodutils")
+    );
+    let dependent = installs.iter().find(|r| r.id == "dependent").unwrap();
+    assert_eq!(dependent.files, vec!["gui/dependent.png".to_string()]);
+    assert!(rm.join("gui/dependent.png").is_file());
+    // The unit removal took the tree; the surviving consumer keeps the
+    // component claimed, so the generation layer is NOT restored over
+    // the user's explicit removal (the same protected semantics a
+    // legacy inlined dependent gets today).
+    assert!(!rm.join("PnFMods/TTaroModUtils/SchemaScanner.py").exists());
+    assert!(!rm.join("PnFMods/TTaroModUtils/Main.py").exists());
+    fs::remove_dir_all(&tmp).ok();
+}
+
 /// Ledger uninstall (mod list / reinstall rewind) mirrors the removal.
 #[test]
 fn ledger_uninstall_removes_preload_copies() {
@@ -2502,6 +2606,7 @@ fn ledger_uninstall_removes_preload_copies() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     }];
 
     crate::commands::mod_catalog::uninstall_from_ledger(
@@ -2654,6 +2759,7 @@ fn stale_record_uninstall_clears_live_bin_copies() {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     };
     let mut installs = vec![
         mk("m", "1", vec!["gui/mod.png", "gui/shared.png"]),
@@ -3779,6 +3885,7 @@ fn resume_record(id: &str, files: &[&str]) -> ModInstallRecord {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     }
 }
 
@@ -4043,6 +4150,7 @@ fn ledger_record(id: &str, files: &[&str]) -> ModInstallRecord {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     }
 }
 
@@ -4177,6 +4285,7 @@ fn disarm_sweeps_trees_the_ledger_restore_resurrects() {
         game_root: root.clone(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     }];
 
     // ONE shot: the sweep must delete what the restore brings back.

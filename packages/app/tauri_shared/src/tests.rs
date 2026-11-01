@@ -2335,6 +2335,7 @@ fn mod_install_record_renames_bin_version_installed_at_and_restore_dir() {
         game_root: "D:/Games/WoWs".into(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     });
     assert_exact_keys(
         &v,

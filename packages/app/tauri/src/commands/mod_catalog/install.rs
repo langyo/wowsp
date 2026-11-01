@@ -301,7 +301,27 @@ pub(crate) async fn mod_catalog_install_inner(
         .as_ref()
         .map(|m| m.keys().cloned().collect())
         .unwrap_or_default();
-    let (outcome, mut ledger) = tauri::async_runtime::spawn_blocking(move || {
+    let unpack_version = entry.version.clone();
+    let unpack_category = entry.category.clone();
+    let unpack_preset = preset.clone();
+    let unpack_discussion = entry.discussion;
+    // The same-id records this install is about to rewind (the entry plus
+    // its superseded variants) — captured BEFORE the rewind so the
+    // dropped-component cleanup below can diff their consumed component
+    // roots against the replacement's.
+    let mut unpack_rewind_ids: Vec<String> = vec![entry.id.clone()];
+    unpack_rewind_ids.extend(unpack_supersedes.iter().cloned());
+    let unpack_previous: Vec<ModInstallRecord> = ledger
+        .installs
+        .iter()
+        .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
+        .filter(|r| unpack_rewind_ids.contains(&r.id))
+        .cloned()
+        .collect();
+    let (outcome, ledger) = tauri::async_runtime::spawn_blocking(move || {
+        // The record build and the shared-component split commit ride
+        // inside the blocking task with the unpack: the snapshot-layer
+        // moves are fs work too.
         let outcome = unpack_and_install(
             &unpack_id,
             &unpack_name,
@@ -310,12 +330,71 @@ pub(crate) async fn mod_catalog_install_inner(
             &unpack_pkgs,
             &unpack_supersedes,
             &mut ledger.installs,
-        );
+        )
+        .and_then(|applied| {
+            // Say whose files this install clobbered (the journal already
+            // snapshotted them — the visibility half of the conflict
+            // policy). Computed BEFORE the split commit: the ledger still
+            // holds the previous generation's shared records, so the
+            // warning names the component or pack whose files were
+            // overwritten — a record the commit is about to create would
+            // trivially match itself.
+            let conflicts = mod_hub::conflict_warnings(
+                &applied.written,
+                &ledger.installs,
+                &unpack_id,
+                &applied.report.bin_version,
+                &unpack_root,
+            );
+            // Built exactly as installs built records before the split —
+            // full written list, the install's restore dir, the P4 hash
+            // maps. `commit_pack_record` splits the shared-component
+            // files out into per-component `shared.*` records and
+            // rewrites this one to private files + `shared_roots`.
+            let record = ModInstallRecord {
+                id: unpack_id.clone(),
+                name: applied.report.name.clone(),
+                version: unpack_version.clone(),
+                category: unpack_category.clone(),
+                source: "mod-hub".into(),
+                preset: unpack_preset.clone().filter(|p| !p.is_empty()),
+                discussion: unpack_discussion,
+                bin_version: applied.report.bin_version.clone(),
+                installed_at: Utc::now().to_rfc3339(),
+                files: applied.written.clone(),
+                restore_dir: applied
+                    .restore_dir
+                    .as_ref()
+                    .map(|p| p.to_string_lossy().into_owned()),
+                game_root: unpack_root.clone(),
+                hashes: applied.hashes.clone(),
+                snapshot_hashes: applied.snapshot_hashes.clone(),
+                shared_roots: Vec::new(),
+            };
+            match commit_pack_record(&mut ledger.installs, record, &unpack_root) {
+                Ok(record) => {
+                    // A pack update that DROPPED a component must not strand
+                    // it: roots the rewound records consumed that the
+                    // replacement no longer declares lose their component
+                    // record (files + generation layer) once no consumer
+                    // remains — same last-consumer semantics as a dependent's
+                    // uninstall.
+                    drop_removed_shared_roots(
+                        &mut ledger.installs,
+                        &unpack_previous,
+                        &record.shared_roots,
+                        &unpack_root,
+                    )?;
+                    Ok((applied, conflicts, record))
+                },
+                Err(e) => Err(e),
+            }
+        });
         (outcome, ledger)
     })
     .await
     .map_err(|e| anyhow!("install task: {e}"))?;
-    let unpacked = match outcome {
+    let (unpacked, conflicts, pack_record) = match outcome {
         Ok(done) => done,
         Err(e) => {
             // The rewind already changed the ledger even though the unpack
@@ -328,17 +407,7 @@ pub(crate) async fn mod_catalog_install_inner(
         },
     };
 
-    // Say whose files this install clobbered (the journal already
-    // snapshotted them — this is the visibility half of the conflict
-    // policy the design doc promises).
     let mut report = unpacked.report;
-    let conflicts = mod_hub::conflict_warnings(
-        &unpacked.written,
-        &ledger.installs,
-        &entry.id,
-        &report.bin_version,
-        &game_root,
-    );
     report.conflicts = conflicts.clone();
     report.warnings.extend(conflicts);
     // The version-compat verdict computed before the download: pinned onto
@@ -348,32 +417,14 @@ pub(crate) async fn mod_catalog_install_inner(
         report.warnings.push(warning);
     }
 
-    ledger.installs.push(ModInstallRecord {
-        id: entry.id.clone(),
-        name: report.name.clone(),
-        version: entry.version.clone(),
-        category: entry.category.clone(),
-        source: "mod-hub".into(),
-        preset: preset.clone().filter(|p| !p.is_empty()),
-        discussion: entry.discussion,
-        bin_version: report.bin_version.clone(),
-        installed_at: Utc::now().to_rfc3339(),
-        files: unpacked.written,
-        restore_dir: unpacked
-            .restore_dir
-            .as_ref()
-            .map(|p| p.to_string_lossy().into_owned()),
-        game_root: game_root.clone(),
-        hashes: unpacked.hashes,
-        snapshot_hashes: unpacked.snapshot_hashes,
-    });
-    // The shared on-disk manifest mirrors the record (id, scheme, …).
-    let record = ledger.installs.last().expect("record pushed above");
-    let record_res_mods = manifest::res_mods_of(&game_root, &record.bin_version);
+    // The shared on-disk manifest mirrors the record (id, scheme, …);
+    // per-component `shared.*` records carry no row — they never pair
+    // with a catalog entry.
+    let record_res_mods = manifest::res_mods_of(&game_root, &pack_record.bin_version);
     manifest::hub_apply(manifest::ManifestOp::UpsertManaged {
         res_mods: record_res_mods.clone(),
-        id: record.id.clone(),
-        entry: WowspManifest::entry_from_record(record),
+        id: pack_record.id.clone(),
+        entry: WowspManifest::entry_from_record(&pack_record),
     });
     save_ledger(&ledger)?;
 
@@ -392,7 +443,7 @@ pub(crate) async fn mod_catalog_install_inner(
     }
     let mods_dir = std::path::Path::new(&game_root)
         .join("bin")
-        .join(&record.bin_version)
+        .join(&pack_record.bin_version)
         .join("mods");
     for dir in mod_hub::foreign::modstation_dirs_for_entry(&mods_dir, &index, &entry.id) {
         match std::fs::remove_dir_all(&dir) {

@@ -314,6 +314,32 @@ record`.
   and restores its snapshot. Private files keep the newer-owner refusal
   unchanged.
 
+  The record model mirrors that ownership: at install, each component's
+  written files are attributed to one UPSERTED `shared.<root-slug>`
+  ledger record (e.g. `shared.pnfmods.ttaromodutils` for
+  `PnFMods/TTaroModUtils/…`) instead of being cloned into every
+  dependent's file list. The newest install defines the component's
+  generation — files replaced wholesale, exactly ONE snapshot layer per
+  content generation (the capture at that generation's own install,
+  never one layer per pack): a dependent re-shipping IDENTICAL bytes
+  adds only its own pack record and captures nothing, while DIFFERENT
+  bytes capture the old generation's bytes as the new layer and raise
+  the mixed-version divergence warning. Pack records keep only their
+  private files plus a `shared_roots` dependency edge, and dependents
+  are always COMPUTED, never stored: the edge union the inlined shared
+  file paths legacy ledgers carry (no migration — old records keep
+  every existing behavior). A component's lifetime is bound to that
+  consumer set: the last consumer out (catalog uninstall, unit
+  uninstall or a legacy departure alike) removes the `shared.*`
+  record, deletes its files and restores its generation layer (a
+  component whose file set SHRANK across a generation leaves the
+  shrunken-away files in no record — the root-granularity policy's
+  consequence: such strays ride along until the tree itself goes).
+  Reconcile
+  judges `shared.*` records like any other — files on disk mean alive —
+  and the webui never shows them as user-installed entries (they match
+  no catalog id; the records-driven sync rows filter them).
+
 #### 3.1 Managing installed plugins
 
 The installed list is anchored on **Aslain's

@@ -123,6 +123,7 @@ fn bundled_plugin_record() -> ModInstallRecord {
         game_root: String::new(),
         hashes: None,
         snapshot_hashes: None,
+        shared_roots: Vec::new(),
     }
 }
 

@@ -706,6 +706,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         set_managed_enabled(&dir, &[record], false);
         let mut again = entry("M2");
@@ -910,6 +911,7 @@ mod tests {
             game_root: "g".into(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         // Stale bin: the row (toggled off) + a tool config.
         let stale = format!(

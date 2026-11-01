@@ -393,6 +393,20 @@ pub struct ModInstallRecord {
     /// and installs that overwrote nothing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub snapshot_hashes: Option<std::collections::HashMap<String, String>>,
+    /// Component ROOTS (the registry spellings — lowercase,
+    /// forward-slash `pnfmods/ttaromodutils/`, `@game/gettext_x64r.dll`,
+    /// …) whose shared runtime trees this pack DEPENDS on: the
+    /// shared-component files it wrote live in the per-component
+    /// `shared.*` ledger record instead of this one, and this edge is how
+    /// the pack still counts as a consumer of the component (the union
+    /// computation — see the app-side `live_shared_component_keys` —
+    /// unions these roots with the inlined shared files LEGACY records
+    /// carry). Empty on records written before the field existed (their
+    /// inlined shared files cover them) and on installs that touched no
+    /// shared component; never present together with shared-component
+    /// entries in `files`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shared_roots: Vec<String>,
 }
 
 /// One package's expected write map, for the read-only "what will this
