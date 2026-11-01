@@ -1,5 +1,5 @@
 import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute } from "vue-router";
 
 import {
   HkBlockingToast,
@@ -23,7 +23,6 @@ import { useUpdaterStore } from "@/stores/updater";
 import { useCacheStore } from "@/stores/cache";
 import { useCapabilitiesStore } from "@/stores/capabilities";
 import { useNavUiStore } from "@/stores/navUi";
-import { useSettingsUiStore } from "@/stores/settingsUi";
 import { usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { useCloseBehaviorStore } from "@/stores/closeBehavior";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
@@ -40,6 +39,7 @@ import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import PluginInstallPromptModal from "@/features/replay/PluginInstallPromptModal";
 import DuplicateInstallPromptModal from "./DuplicateInstallPromptModal";
 import SettingsModal from "./SettingsModal";
+import SettingsSheet from "./SettingsSheet";
 import Sidebar from "./Sidebar";
 import AudioPlayerToast from "./AudioPlayerToast";
 import ModUpdateToast from "./ModUpdateToast";
@@ -71,9 +71,10 @@ import "./AppShell.scss";
  * Phone LAYOUT (viewport < 768px, hikari useBreakpoint): the persistent
  * sidebar becomes a left nav DRAWER (hamburger in the title bar toggles
  * it; hikari's back guard pushes a history entry so the Android back
- * gesture closes it; route changes close it too) and the settings modal
- * is not mounted — settingsUi.show() navigates to the /settings page
- * instead. The phone APP build (isMobileApp) additionally skips the
+ * gesture closes it; route changes close it too) and the settings window
+ * swaps its host for the bottom-sheet frame (SettingsSheet — same store
+ * flag, same body; hikari's HkModal backGuard handles the back gesture
+ * there too). The phone APP build (isMobileApp) additionally skips the
  * game-path setup prompt, the desktop updater and its toast surfaces.
  */
 export default defineComponent({
@@ -93,15 +94,14 @@ export default defineComponent({
     const capabilities = useCapabilitiesStore();
     void capabilities.load();
     const navUi = useNavUiStore();
-    const settingsUi = useSettingsUiStore();
     const closeBehavior = useCloseBehaviorStore();
     const ingamePlugin = useIngamePluginStore();
     const pluginPrompt = usePluginPromptStore();
     const dupInstall = useDuplicateInstallStore();
     const route = useRoute();
-    const router = useRouter();
     // Phone LAYOUT (viewport width — NOT the phone-app platform gate):
-    // drawer nav + settings page instead of sidebar + modal.
+    // drawer nav + the settings bottom-sheet host instead of sidebar +
+    // modal.
     const { isMobile } = useBreakpoint();
     // Phone APP build gate (see utils/platform): desktop-only features
     // (game-path prompt, updater, its toasts) stay off there.
@@ -197,18 +197,11 @@ export default defineComponent({
       () => navUi.close(),
     );
 
-    // Layout flip while the desktop settings modal is open (e.g. a narrow
-    // desktop window squeezed under 768px): hand the surface over to the
-    // settings page instead of the modal vanishing mid-interaction.
-    watch(isMobile, (phone) => {
-      if (phone && settingsUi.visible) {
-        settingsUi.hide();
-        void router.push({
-          path: "/settings",
-          query: { section: settingsUi.section },
-        });
-      }
-    });
+    // Layout flip while the settings window is open (a desktop window
+    // squeezed under 768px or back): the SAME store flag drives both
+    // hosts, and the mount below swaps SettingsSheet <-> SettingsModal
+    // reactively — nothing to hand over anymore (the old modal->page
+    // handover died with the /settings route page).
 
     async function handleCloseChoice(action: "quit" | "minimize") {
       // "Remember my choice" writes the SAME slot the settings' closeBehavior
@@ -621,13 +614,15 @@ export default defineComponent({
             the updater). */}
         {!mobileApp ? <DuplicateInstallPromptModal /> : null}
 
-        {/* Settings modal — the DESKTOP-layout surface of the shared
-            settings body, app-singleton, opened from the title-bar gear or
-            the sidebar's client / account buttons (optionally landing on a
-            section); state lives in the settingsUi store. Phone layout
-            never mounts it — settingsUi.show() routes to /settings there
-            (a full page with the same body). */}
-        {!isMobile.value ? <SettingsModal /> : null}
+        {/* Settings window — the shared settings body's app-singleton
+            host, opened from the title-bar gear or the sidebar's client /
+            account buttons (optionally landing on a section); state lives
+            in the settingsUi store. Both layouts raise the same store
+            flag: desktop mounts the modal frame, phone layout the
+            bottom-sheet frame (hikari docks HkModal at <=767px; its
+            backGuard makes the Android back gesture close it — the
+            shittim-chest every-window-pops-from-the-bottom convention). */}
+        {isMobile.value ? <SettingsSheet /> : <SettingsModal />}
       </div>
     );
   },

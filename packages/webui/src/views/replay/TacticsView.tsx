@@ -588,6 +588,9 @@ export default defineComponent({
                 anchorRef={renameAnchor.value}
                 placement="bottom-end"
                 closeOnBackdrop
+                /* Phones never float anchored menus (repo convention): the
+                 * rename panel docks as a bottom sheet. */
+                sheetOnMobile
                 title={t("tactics.profile.rename")}
               >
                 <div class="tac-topbar__rename">

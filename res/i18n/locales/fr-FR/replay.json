@@ -669,5 +669,8 @@
     "noAttributed": "aucun dégât attribué",
     "modelNote": "La contribution mesure les dégâts réels, pas l'élégance ; l'accord n'est pas une note.",
     "noTarget": "Ouvrez un replay puis pressez « Rapport de bataille IA »."
+  },
+  "detail": {
+    "title": "Détail de la bataille"
   }
 }
