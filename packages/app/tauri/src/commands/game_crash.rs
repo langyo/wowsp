@@ -2482,7 +2482,6 @@ fn mods_inventory_entries(root: &Path) -> Vec<ModEntry> {
 /// The newest FILE modified-time under one path, bounded. Directory
 /// mtimes are deliberately NOT considered (see the walker's own note);
 /// `own` is only the empty-or-unreadable-tree fallback.
-#[cfg(windows)]
 fn newest_mtime_under(path: &Path, own: std::time::SystemTime) -> Option<std::time::SystemTime> {
     /// (newest file mtime, any file seen) — directory mtimes are NOT
     /// mixed in: adding a file bumps the dir mtime anyway, so the files
