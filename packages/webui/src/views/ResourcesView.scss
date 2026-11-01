@@ -1377,8 +1377,18 @@
     gap: 0.375rem;
   }
 
-  /* Registry tags (licensed / AI 合成 / IP origins…) — kind-tinted. */
+  /* Registry tags (licensed / synthetic-made / IP origins…) — kind-tinted.
+     flex: none keeps a long tag from being squeezed below its content
+     width by the wrapping badges row; the inline-flex layout + the inner
+     text span own the never-wrap + ellipsis contract (author and server
+     names must stay one line, ellipsized when a pill hits its width). */
   &__tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex: none;
+    max-width: 100%;
+    overflow: hidden;
     padding: 0.0625rem 0.5rem;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
@@ -1400,21 +1410,30 @@
       border-color: rgb(168 85 247 / 40%);
     }
 
-    /* Server-applicability scope (通用 / 部分服务器 / 专属): the info
-       voice — a WHERE tag, not a provenance or ownership one. The
-       tooltip enumerates the applicable servers. */
+    /* Server applicability (通用 / 支持美服·亚服): the info voice — a
+       WHERE tag, not a provenance or ownership one. The tooltip spells
+       the applicable servers out in full. */
     &--servers {
       color: rgb(var(--color-info));
       background: rgb(var(--color-info) / 10%);
       border-color: rgb(var(--color-info) / 30%);
     }
 
-    /* The clickable author tag — a button reset to the pill look, with an
-       inline icon row and the same hover voice as the footer link. */
+    /* The tag's text half: one line, ellipsized when a very long name
+       would overflow its pill. */
+    &-text {
+      display: inline-block;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      vertical-align: bottom;
+    }
+
+    /* The clickable author tag — a button reset to the pill look (the
+       inline icon row comes from the base rule) with the same hover voice
+       as the footer link. */
     &--link {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.25rem;
       font: inherit;
       cursor: pointer;
       transition:
@@ -1474,24 +1493,6 @@
     color: rgb(var(--color-muted));
   }
 
-  /* The meta row's server half (元信息): one tiny tag per applicable
-     realm — quieter than the badges row's scope pill, this is metadata
-     spelling the badge out, not a second headline. */
-  &__meta-servers {
-    display: inline-flex;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-  }
-
-  &__meta-server {
-    padding: 0 0.375rem;
-    font-size: var(--text-2xs);
-    line-height: 1.45;
-    color: rgb(var(--color-muted));
-    background: rgb(var(--color-border) / 12%);
-    border-radius: 999px;
-    white-space: nowrap;
-  }
 
   /* The head's ⋯ cluster (open path / online page / file list): pinned
      right by the flex head — __id above owns the flexible middle. */

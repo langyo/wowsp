@@ -199,8 +199,9 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
     null;
   const schemeNote = activeScheme ? presetDesc(activeScheme) : "";
   const previewSrc = activeScheme?.preview ?? entry.preview;
-  // Server-applicability: the compressed scope badge + the realm list its
-  // tooltip and the meta row enumerate (universal folds to all five).
+  // Server-applicability: ONE tag above the fold — universal folds to
+  // 通用, a subset enumerates its realms inside the same tag; the tooltip
+  // spells the full list (universal folds to all five).
   const scope = serverScopeOf(entry.servers);
   const realms = applicableRealms(entry.servers);
   return (
@@ -238,16 +239,24 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           {isCatalogCat(entry.category) && (
             <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
           )}
-          {/* ONE compressed server-scope badge: 通用 / 部分服务器 / 专属.
-              The tooltip enumerates the applicable servers' localized
-              names; the meta row below spells them out. */}
+          {/* ONE server-applicability tag — universal folds to 通用,
+              a subset enumerates its realms inside the SAME tag
+              (支持美服·亚服) instead of scattering one tag per server.
+              The tooltip keeps the comma-spelled list. */}
           <span
             class="mod-detail__tag mod-detail__tag--servers"
+            data-scope={scope}
             data-hint={t("resources.servers.scopeHint", {
               servers: realms.map(realmLabel).join(", "),
             })}
           >
-            {t(`resources.servers.${scope}`)}
+            <span class="mod-detail__tag-text">
+              {scope === "universal"
+                ? t("resources.servers.universal")
+                : t("resources.servers.list", {
+                    servers: realms.map(realmLabel).join("·"),
+                  })}
+            </span>
           </span>
           {(entry.authors ?? []).map((a) =>
             a.url ? (
@@ -258,13 +267,13 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
                 onClick={() => openExternal(a.url)}
               >
                 <User size={12} />
-                {a.name}
+                <span class="mod-detail__tag-text">{a.name}</span>
                 <ExternalLink size={11} />
               </button>
             ) : (
               <span key={a.name} class="mod-detail__tag">
                 <User size={12} />
-                {a.name}
+                <span class="mod-detail__tag-text">{a.name}</span>
               </span>
             ),
           )}
@@ -336,15 +345,6 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           {kb > 0 && (
             <span>{t("resources.pkgCount", { count: entry.packages.length, kb })}</span>
           )}
-          {/* The meta row's server half (元信息): one small tag per
-              applicable realm — universal entries show all five. */}
-          <span class="mod-detail__meta-servers">
-            {realms.map((r) => (
-              <span key={r} class="mod-detail__meta-server">
-                {realmLabel(r)}
-              </span>
-            ))}
-          </span>
         </div>
         {/* The package-by-package file listing moved into the ⋯ menu's
             file-list window; the meta row above keeps the summary. */}

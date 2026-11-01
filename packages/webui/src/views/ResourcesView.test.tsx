@@ -73,7 +73,10 @@ vi.mock("@/stores/crash", () => ({
   }),
 }));
 vi.mock("@/stores/staleBins", () => ({ useStaleBinsStore: () => ({ adopt: mocks.adopt }) }));
-vi.mock("@/i18n", () => ({ t: (key: string) => key }));
+/* Keys pass through, but as a SPY so parameterized calls (the server tag's
+ * {servers} interpolation) are assertable — the pane's label contract
+ * lives in the ARGUMENTS, not in the rendered key echo. */
+vi.mock("@/i18n", () => ({ t: vi.fn((key: string) => key) }));
 vi.mock("@/i18n/useLanguage", () => ({ useLanguage: () => ({ uiLocale: { value: "en" }, dataLanguage: { value: "en" } }) }));
 vi.mock("@/features/modhub/AssetPreview", () => ({ default: { name: "AssetPreview", render: () => null } }));
 vi.mock("@/components/search/AsyncSearchCombo", () => ({ default: { name: "AsyncSearchCombo", render: () => null } }));
@@ -104,6 +107,8 @@ vi.mock("@celestia-island/hikari", () => {
   };
 });
 
+/* The mocked t, imported so parameterized calls are assertable. */
+import { t } from "@/i18n";
 import ResourcesView from "./ResourcesView";
 
 enableAutoUnmount(afterEach);
@@ -505,6 +510,86 @@ describe("catalog detail menu", () => {
       "https://github.com/user-attachments/assets/panel-classic.png",
     );
     expect(view.find(".mod-detail__preset-note").exists()).toBe(false);
+  });
+});
+
+describe("detail pane server tag + author tags", () => {
+  const catEntry = (servers: string[] | undefined, author = "Ren_Zotto_prpr") => ({
+    id: "text.font.east-asia", version: "1", category: "battle",
+    nameEn: "East Asia Font Pack", game: ">=15.9 <15.10",
+    title: "East Asia Font Pack", nameZh: "", description: "CJK filler.",
+    authors: [{ name: author, url: "" }],
+    packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+    i18n: {}, aliases: [], servers,
+  });
+  const mountEntry = async (servers?: string[]) => {
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry(servers)],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    return view;
+  };
+
+  it("folds all-server applicability into ONE universal tag at the top", async () => {
+    const view = await mountEntry(undefined);
+    const tag = view.find(".mod-detail__tag--servers");
+    expect(tag.exists()).toBe(true);
+    expect(tag.text()).toContain("resources.servers.universal");
+    // The old metadata-row scatter is gone: no per-realm tags anywhere.
+    expect(view.find(".mod-detail__meta-servers").exists()).toBe(false);
+    expect(view.find(".mod-detail__meta-server").exists()).toBe(false);
+  });
+
+  it("keeps a server SUBSET inside the same one tag instead of scattering", async () => {
+    const view = await mountEntry(["na", "asia"]);
+    const tag = view.find(".mod-detail__tag--servers");
+    expect(tag.text()).toContain("resources.servers.list");
+    expect(tag.attributes("data-scope")).toBe("exclusive");
+    // The realm names are interpolated into the same tag, dot-joined (the
+    // i18n mock echoes keys, so the ARGUMENTS are the assertion).
+    // realmLabel falls back to the uppercased code when the echoed mock
+    // has no translation, so the interpolation reads "NA·ASIA".
+    expect(vi.mocked(t)).toHaveBeenCalledWith("resources.servers.list", {
+      servers: "NA·ASIA",
+    });
+    // Still exactly one applicability tag, and no meta scatter.
+    expect(view.findAll(".mod-detail__tag--servers").length).toBe(1);
+    expect(view.find(".mod-detail__meta-server").exists()).toBe(false);
+  });
+
+  it("renders author names in a never-wrap text span", async () => {
+    const view = await mountEntry(undefined);
+    // Tag texts (server label + author) all live in the never-wrap span;
+    // the AUTHOR pill is the one carrying the name.
+    const texts = view.findAll(".mod-detail__tag-text").map((w) => w.text());
+    expect(texts).toContain("Ren_Zotto_prpr");
+  });
+
+  it("keeps the span between the icons on the linked author pill", async () => {
+    mocks.catalog.mockResolvedValue({
+      mods: [{
+        ...catEntry(undefined),
+        authors: [{ name: "Linked_Author", url: "https://example.com/a" }],
+      }],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    const link = view.find("button.mod-detail__tag--link");
+    expect(link.exists()).toBe(true);
+    expect(link.find(".mod-detail__tag-text").text()).toBe("Linked_Author");
   });
 });
 

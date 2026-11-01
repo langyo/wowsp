@@ -351,8 +351,7 @@
   },
   "servers": {
     "universal": "全サーバー共通",
-    "partial": "一部サーバーのみ",
-    "exclusive": "専用",
+    "list": "{servers}対応",
     "scopeHint": "対応サーバー：{servers}",
     "realm": {
       "ru": "RUサーバー",
