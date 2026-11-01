@@ -521,6 +521,18 @@ export function useModHub() {
     error?: string;
   }
 
+  /** The quiet install notes (overwrite/divergence lines) of one install
+   *  pass, deduped and pushed through hikari's NATIVE same-type fold:
+   *  consecutive info pushes merge into one rotating slot with a count
+   *  pill — one card, no flood (a per-line toast of its own flooded the
+   *  corner on every TTaro-family install: a dozen shared-runtime lines
+   *  × every fan-out client — user report 2026-11-01). The backend
+   *  mirrors conflicts into warnings, so the dedupe also collapses that
+   *  duplication. */
+  function toastReportNotes(notes: string[]): void {
+    for (const note of new Set(notes)) toast.info(note);
+  }
+
   /** One catalog op fanned out across every target, SEQUENTIALLY (the
    *  shared busy table is single-flight per mod id). Realm rule: an
    *  INSTALL skips target clients the entry does not apply to
@@ -530,6 +542,7 @@ export function useModHub() {
    * across roots), and ONE summary toast lands at the end: all good →
    *  success with the client count, mixed → warning with the capped
    *  failure fold, nothing landed → error. */
+
   async function fanOutMod(
     entry: CatalogEntry,
     op: "install" | "uninstall",
@@ -538,6 +551,8 @@ export function useModHub() {
     const targets = syncTargets.value;
     const outcomes: SyncClientOutcome[] = [];
     const failures: string[] = [];
+    // Quiet notes across EVERY target root, deduped, one card at the end.
+    const notes: string[] = [];
     for (const target of targets) {
       const label = syncLabelOf(target);
       if (op === "install" && !appliesToRealm(entry, realmOfInstall(target))) {
@@ -566,7 +581,8 @@ export function useModHub() {
           for (const v of r.mirroredBins ?? []) {
             toast.info(t("resources.mirroredBins", { version: v }));
           }
-          for (const c of r.conflicts ?? []) toast.info(c);
+          notes.push(...(r.conflicts ?? []));
+          notes.push(...(r.warnings ?? []));
         } else {
           // Uninstall only where a record actually pairs — a target that
           // never installed the entry has nothing to remove, and a raw
@@ -585,6 +601,7 @@ export function useModHub() {
         failures.push(`${label}: ${msg}`);
       }
     }
+    toastReportNotes(notes);
     const attempted = outcomes.length;
     const okCount = outcomes.filter((o) => o.ok).length;
     // Every target skipped by rule already spoke through its own toast —
@@ -646,7 +663,7 @@ export function useModHub() {
         for (const v of r.mirroredBins ?? []) {
           toast.info(t("resources.mirroredBins", { version: v }));
         }
-        for (const c of r.conflicts ?? []) toast.info(c);
+        toastReportNotes([...(r.conflicts ?? []), ...(r.warnings ?? [])]);
       }
       await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
     } catch (e) {

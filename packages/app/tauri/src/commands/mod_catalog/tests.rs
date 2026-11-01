@@ -2078,15 +2078,18 @@ mod tests {
             ],
         );
 
-        // The mixed-version warning names the file and both ids — the
-        // component record is the recorded claimer now.
+        // The mixed-version warning is AGGREGATED per component: label +
+        // root + differing-file count + both ids — the component record is
+        // the recorded claimer now.
         let warning = applied
             .report
             .warnings
             .iter()
             .find(|w| w.contains("mixed-version"))
             .expect("divergence warns");
-        assert!(warning.contains("gui/ttaro/index.css"), "{warning}");
+        assert!(warning.contains("Shared TTaro GUI tree"), "{warning}");
+        assert!(warning.contains("gui/ttaro/"), "{warning}");
+        assert!(warning.contains("1 file(s)"), "{warning}");
         assert!(warning.contains("(install b)"), "{warning}");
         assert!(warning.contains("(id shared.gui.ttaro)"), "{warning}");
 
@@ -3216,7 +3219,9 @@ mod tests {
             .iter()
             .find(|w| w.contains("mixed-version"))
             .unwrap();
-        assert!(warning.contains(shared), "{warning}");
+        // Aggregated per component: the root, not the individual file.
+        assert!(warning.contains("gui/ttaro/"), "{warning}");
+        assert!(warning.contains("1 file(s)"), "{warning}");
         assert!(warning.contains("(install a)"), "{warning}");
         assert!(warning.contains("(id b)"), "{warning}");
         assert_eq!(fs::read(rm.join(shared)).unwrap(), b"ttaro v2");

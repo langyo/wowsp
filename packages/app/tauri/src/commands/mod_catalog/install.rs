@@ -1118,12 +1118,14 @@ pub(crate) fn sync_snapshot_hashes(
 /// WITH a stored hash that no longer matches is the mixed-version
 /// shared-tree signal — two packs shipping different builds of the same
 /// runtime component. Takes the install's ALREADY-COMPUTED written-bytes
-/// map (see [`shared_file_hashes`]) so nothing is hashed twice. One
-/// warning per file, naming the file and both record ids; same-bytes
-/// reinstalls and claimers without hashes stay silent, and records keyed
-/// at another bin or game root own different physical files and never
-/// compare. Advisory only: the report warning is the whole effect,
-/// nothing is refused.
+/// map (see [`shared_file_hashes`]) so nothing is hashed twice. ONE
+/// aggregated warning per COMPONENT, naming the component and the
+/// differing-file count (a per-file line per dependent flooded the
+/// report — observed 2026-11-01); the per-file detail stays in the
+/// tracing stream. Same-bytes reinstalls and claimers without hashes
+/// stay silent, and records keyed at another bin or game root own
+/// different physical files and never compare. Advisory only: the
+/// report warning is the whole effect, nothing is refused.
 pub(crate) fn shared_divergence_warnings(
     installs: &[ModInstallRecord],
     own_id: &str,
@@ -1131,7 +1133,9 @@ pub(crate) fn shared_divergence_warnings(
     bin_version: &str,
     written_hashes: &std::collections::HashMap<String, String>,
 ) -> Vec<String> {
-    let mut out = Vec::new();
+    // component root -> (differing files, first mismatching claimer).
+    let mut per_component: std::collections::BTreeMap<String, (usize, String)> =
+        std::collections::BTreeMap::new();
     for (key, actual) in written_hashes {
         for claimer in installs {
             if claimer.id == own_id
@@ -1154,14 +1158,22 @@ pub(crate) fn shared_divergence_warnings(
                 recorded = %recorded,
                 "shared-component bytes diverged between installed records"
             );
-            out.push(format!(
-                "shared component file {key} was rewritten with different bytes (install {own_id}) — they no longer match the hash recorded by \"{}\" (id {}); the shared runtime tree is now mixed-version",
-                claimer.name, claimer.id
-            ));
+            let claimer_desc = format!("\"{}\" (id {})", claimer.name, claimer.id);
+            let root = super::uninstall::shared_component_root(key).unwrap_or_else(|| key.clone());
+            let entry = per_component.entry(root).or_insert((0, claimer_desc));
+            entry.0 += 1;
             break;
         }
     }
-    out
+    per_component
+        .into_iter()
+        .map(|(root, (count, claimer))| {
+            let label = super::shared_records::shared_record_label(&root);
+            format!(
+                "shared component {label} ({root}) updated with different bytes (install {own_id}): {count} file(s) no longer match the hash recorded by {claimer} — the shared runtime tree is now mixed-version; later install wins and the updater's uninstall restores the previous generation"
+            )
+        })
+        .collect()
 }
 
 /// Files sitting at the zip root next to `res_mods/` (game-root payloads).
