@@ -695,10 +695,18 @@ pub(crate) fn repoint_records(
     touched
 }
 
-/// Which other installed mods the freshly written files overlap — the
-/// design doc's conflict policy made real: later installs win, but the
-/// report must say whose files they clobbered (the overwrite itself is
-/// already snapshotted, so a later uninstall restores them).
+/// Which other installed mods the freshly written PRIVATE files overlap
+/// — the design doc's conflict policy made real: later installs win, but
+/// the report must say whose files they clobbered (the overwrite itself
+/// is already snapshotted, so a later uninstall restores them).
+/// Shared-component paths are deliberately EXCLUDED: under the component
+/// model a dependent install updating the shared runtime is an expected
+/// GENERATION change (later wins, snapshot layered, every consumer keeps
+/// working), not a conflict — counting them here flooded every TTaro
+/// pack's report with one line per legacy record that inlined the same
+/// shared files (observed 2026-11-01: a dozen "overwrites N file(s)"
+/// toasts per install, ×3 fan-out clients). The byte-level signal for
+/// shared updates lives in the divergence warnings instead.
 pub(crate) fn conflict_warnings(
     written: &[String],
     installs: &[ModInstallRecord],
@@ -714,7 +722,12 @@ pub(crate) fn conflict_warnings(
         {
             continue;
         }
-        let hits = written.iter().filter(|w| record.files.contains(*w)).count();
+        let hits = written
+            .iter()
+            .filter(|w| {
+                record.files.contains(*w) && !super::mod_catalog::is_shared_component_path(w)
+            })
+            .count();
         if hits > 0 {
             out.push(format!(
                 "overwrites {hits} file(s) also installed by {:?}",
