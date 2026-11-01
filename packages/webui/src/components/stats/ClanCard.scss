@@ -196,3 +196,51 @@
   text-align: right;
   font-family: var(--font-mono);
 }
+
+/* ── Phone layout (≤767px) ──────────────────────────────────────────────
+   The roster is a true table (name / role / four numeric columns): its
+   fixed tracks (84+64+62+64+74 = 348px + gaps) sum past a 393px viewport
+   and used to bleed the grid out of the card. The roster now scrolls IN
+   PLACE, head and rows sharing one min-width so captions stay over their
+   columns; member buttons grow touch-height (every row jumps to that
+   player's lookup) and sortable head cells get a tap band. The hero's big
+   numbers step down and the row wraps so winrate + battles + PR never
+   crush each other; card padding joins the 12px phone vocabulary.
+   Desktop rules above are untouched. */
+@media (max-width: 767px) {
+  .clan-card {
+    padding: 0.75rem;
+    gap: 0.625rem;
+  }
+
+  .clan-card__hero {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.625rem 0.75rem;
+  }
+
+  .clan-card__wr {
+    font-size: 1.5rem;
+  }
+
+  .clan-card__pr-num {
+    font-size: 1.1rem;
+  }
+
+  .clan-card__roster {
+    overflow-x: auto;
+  }
+
+  .clan-card__roster-head,
+  .clan-card__member {
+    min-width: 30rem;
+  }
+
+  .clan-card__member {
+    min-height: 38px;
+  }
+
+  .clan-card__sort {
+    min-height: 34px;
+  }
+}

@@ -495,4 +495,34 @@
   .lookup-view__scroll-inner {
     padding: 0 0 calc(0.75rem + env(safe-area-inset-bottom, 0px));
   }
+
+  /* The controls row (date-range strip + filter bar) tightens to the
+     phone gap vocabulary; the row already wraps. */
+  .lookup-view__controls {
+    gap: 8px;
+  }
+
+  /* Ship table — a TRUE table (icon/type/tier/name + four number columns
+     + date capsule): the fixed tracks alone outwidth a 393px viewport, so
+     the list scrolls IN PLACE instead of exploding the card column. Head
+     and rows share one min-width so the captions stay over their columns,
+     and rows grow touch-height — every row opens the ship detail modal.
+     The min-width must clear the tracks' OWN floor with room left for the
+     name: leads 22+28+28 + numbers 56+56+76+44 + date capsule ≈70 + eight
+     8px gaps + 12px padding ≈ 458px, so anything below that (the first
+     pass used 28rem = 448px) leaves the flexing name column at ZERO
+     width — 35rem (560px) restores a ≈100px name track. */
+  .lookup-view__shiplist {
+    overflow-x: auto;
+  }
+
+  .lookup-view__shiplist-head,
+  .lookup-view__ship {
+    min-width: 35rem;
+  }
+
+  .lookup-view__ship {
+    min-height: 38px;
+    padding-block: 8px;
+  }
 }

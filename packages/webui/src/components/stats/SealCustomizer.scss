@@ -238,7 +238,10 @@
 
 /* Phone widths: the row is stamp + criteria text + switch (the button pair
    is gone, so nothing needs its own line any more); the criteria copy wraps
-   inside the flexible text column exactly as before. */
+   inside the flexible text column exactly as before. The tier-2 tag face
+   and the editor bubble's 保存/重置 buttons are the rows' other tap
+   controls — desktop-sized they land ~30px/26px tall, so both grow a
+   touch band here (the tier-1 preview stamp is already 40px+padding). */
 @media (max-width: 767px) {
   .seal-customizer__row {
     gap: 0.6rem;
@@ -246,5 +249,13 @@
 
   .seal-customizer__preview {
     width: auto;
+  }
+
+  .seal-customizer__label {
+    min-height: 2.25rem;
+  }
+
+  .seal-customizer__editor-btn {
+    min-height: 36px;
   }
 }

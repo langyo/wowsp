@@ -173,13 +173,27 @@
 
   @media (max-width: 767px) {
     /* Phones: let the row scroll horizontally instead of crushing the
-       name column to nothing. */
+       name column to nothing. The min-width must clear the tracks' OWN
+       floor: 294px of columns + SEVEN 8px gaps (56px, not 48) + 12px
+       padding ≈ 362px — 22rem starved the flexing name to zero, and
+       26rem left it a bare 54px sliver. 28rem (448px) gives the ship
+       NAME — the row's primary identifier — a real ≈86px track while
+       still scrolling in place inside the modal's bottom sheet. */
     &__list {
       overflow-x: auto;
     }
 
     &__ship {
-      min-width: 22rem;
+      min-width: 28rem;
+    }
+
+    /* League bracket pills are the table's primary filter control on the
+       sheet — grow a touch band (desktop keeps the tight 0.15rem pill);
+       padding alone landed ~28px tall, so a min-height floors the tap
+       target at the phone band. */
+    &__bracket {
+      padding: 0.35rem 0.6rem;
+      min-height: 36px;
     }
   }
 }

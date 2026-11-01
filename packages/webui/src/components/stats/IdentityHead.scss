@@ -86,5 +86,19 @@
       width: 28px !important;
       height: 28px !important;
     }
+
+    /* Action pills (刷新 / 复制截图) and the clan-tag jump button grow
+       touch bands. The pills share ShareShotButton's desktop-tuned style
+       (~20px tall); scope the phone bump to the stats head so the pill
+       family keeps one voice on desktop surfaces. */
+    &__badges .share-shot-btn {
+      min-height: 34px;
+    }
+
+    &__tag--link {
+      display: inline-flex;
+      align-items: center;
+      min-height: 34px;
+    }
   }
 }
