@@ -140,8 +140,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.261
-        version: 0.55.261(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.269
+        version: 0.55.269(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -362,8 +362,8 @@ packages:
       three: ^0.185
       vue: ^*
 
-  '@celestia-island/hikari@0.55.261':
-    resolution: {integrity: sha512-9puUCUZXFc0qxGlHUHREKOCyU+J53jlOuJrdGkXJaBJt/C3EpHSnpdvbXRBUJlktYDAU4m+vAB1gsjkrPwaOMQ==}
+  '@celestia-island/hikari@0.55.269':
+    resolution: {integrity: sha512-VeVF7AUk6HZ8cgLk0yNRUlrfFQPbMf/Jq9RxR8E9X1s5SKJorLL/tjh143gBZuh22Mhy0HtsFSCJ2JJS7zF1Yw==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
@@ -1847,8 +1847,16 @@ packages:
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.335
 
+  '@xterm/addon-image@0.10.0-beta.331':
+    resolution: {integrity: sha512-ShBTb3QF0ul/i55lfRdJpcu0hlA4aJdqRdzzHdOCws2WUzSsG0SCfMhLjzaoO1dVUGNj2Z7PNLqiXnlyqOinbg==}
+    peerDependencies:
+      '@xterm/xterm': ^6.1.0-beta.336
+
   '@xterm/xterm@6.1.0-beta.335':
     resolution: {integrity: sha512-EuT2IsDmTId4VvghIbYlGCxVudHdqjaR+SRpULpSwhH/Dgw0xzbUfnIFgXGdzksiaXhbMh7y7QXt49PZCuGkRg==}
+
+  '@xterm/xterm@6.1.0-beta.336':
+    resolution: {integrity: sha512-QrvZZsffXsLW4Z3sba9GqimLvVwlb8b3W1NwZ+l6DdRnpH5pg5cFGWg2ceIburmfaGQ07YJHNekwxxlTcHZ3BA==}
 
   abbrev@5.0.0:
     resolution: {integrity: sha512-/XrFJgzQQQHpti1raDJC6m4ws6aNktmjBlhk8Fdlk7LwCEuDoieEJJY9OFHjfiFJFFRM2tK+Ky/IsfbbmlMu1w==}
@@ -3381,13 +3389,13 @@ snapshots:
       three: 0.186.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.261(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.269(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.186.0
       '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.330(@xterm/xterm@6.1.0-beta.335)
-      '@xterm/xterm': 6.1.0-beta.335
+      '@xterm/addon-image': 0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)
+      '@xterm/xterm': 6.1.0-beta.336
       dompurify: 3.4.17
       echarts: 6.1.0
       highlight.js: 11.12.0
@@ -4542,7 +4550,13 @@ snapshots:
     dependencies:
       '@xterm/xterm': 6.1.0-beta.335
 
+  '@xterm/addon-image@0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)':
+    dependencies:
+      '@xterm/xterm': 6.1.0-beta.336
+
   '@xterm/xterm@6.1.0-beta.335': {}
+
+  '@xterm/xterm@6.1.0-beta.336': {}
 
   abbrev@5.0.0: {}
 
