@@ -2016,6 +2016,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
         warnings: Vec::new(),
         conflicts: Vec::new(),
         mirrored_bins: Vec::new(),
+        skipped: None,
     });
     assert_exact_keys(&v, &["name", "binVersion", "wroteFiles", "warnings"]);
     // A report from a pre-conflicts build (no such field) still
@@ -2030,6 +2031,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
     assert_eq!(back.name, "old");
     assert!(back.conflicts.is_empty());
     assert!(back.mirrored_bins.is_empty());
+    assert!(back.skipped.is_none(), "legacy reports stay unskipped");
     // Non-empty conflicts serialize under the camelCase name.
     let v = round_trips(InstallReport {
         name: "x".into(),
@@ -2038,6 +2040,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
         warnings: Vec::new(),
         conflicts: vec!["overwrites 2 file(s)".into()],
         mirrored_bins: Vec::new(),
+        skipped: None,
     });
     assert_eq!(v["conflicts"][0], "overwrites 2 file(s)");
     // Non-empty mirrored bins serialize under the camelCase name.
@@ -2048,8 +2051,21 @@ fn install_report_renames_bin_version_and_wrote_files() {
         warnings: Vec::new(),
         conflicts: Vec::new(),
         mirrored_bins: vec!["13357625".into()],
+        skipped: None,
     });
     assert_eq!(v["mirroredBins"][0], "13357625");
+    // A version-gate skip serializes as "skipped" (the fan-out keys its
+    // quiet per-client skip on it); absent stays off the wire.
+    let v = round_trips(InstallReport {
+        name: "x".into(),
+        bin_version: String::new(),
+        wrote_files: 0,
+        warnings: Vec::new(),
+        conflicts: Vec::new(),
+        mirrored_bins: Vec::new(),
+        skipped: Some("game version mismatch".into()),
+    });
+    assert_eq!(v["skipped"], "game version mismatch");
 }
 
 /// Migration wizard plan (client.ts: MigrationPlan / PlanFile). `identity`

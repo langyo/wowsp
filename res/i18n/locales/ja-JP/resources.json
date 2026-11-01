@@ -372,6 +372,7 @@
     "partial": "{count} 個中 {ok} 個のクライアントを同期しました：{details}",
     "failed": "{count} 個のクライアントすべてで同期に失敗しました：{details}",
     "skippedByRule": "「{mod}」は {client} には適用されないためスキップしました",
+    "skippedByVersion": "{mod}：{client} をスキップしました——このパックの対応バージョンに含まれません",
     "skippedRunning": "「{names}」が実行中のためスキップしました——ゲームを終了してから再試行してください。",
     "nothingToDo": "他のクライアントはすべてこのクライアントの MOD 構成と一致しています。",
     "noCatalog": "オンラインカタログが未読み込みです——先にカタログを更新してから同期してください。",

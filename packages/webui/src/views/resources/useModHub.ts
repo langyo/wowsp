@@ -577,7 +577,28 @@ export function useModHub() {
       }
       try {
         if (op === "install") {
-          const r = await pluginUpdates.runMod(entry.id, target.path, preset);
+          // Version gate: the fan-out chose this CLIENT, the user did
+          // not — a pack whose published range confidently excludes the
+          // client's game version skips (quiet note) instead of
+          // warn-and-proceed. The ACTIVE root keeps warn-and-proceed:
+          // the user pressed Install on THAT client.
+          const isActive = target.path === gameRoot.value;
+          const r = await pluginUpdates.runMod(
+            entry.id,
+            target.path,
+            preset,
+            "install",
+            !isActive,
+          );
+          if (r.skipped) {
+            toast.info(
+              t("resources.sync.skippedByVersion", {
+                mod: localized(entry).name || entry.nameEn,
+                client: label,
+              }),
+            );
+            continue;
+          }
           for (const v of r.mirroredBins ?? []) {
             toast.info(t("resources.mirroredBins", { version: v }));
           }

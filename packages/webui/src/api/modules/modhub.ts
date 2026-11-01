@@ -177,6 +177,10 @@ export interface InstallReport {
   conflicts?: string[];
   /** Pre-release bin versions the files were mirrored into. */
   mirroredBins?: string[];
+  /** The install was SKIPPED before any byte moved — the fan-out's
+   *  version gate (the pack's published range confidently excludes this
+   *  client's game version). A quiet per-client skip, never a failure. */
+  skipped?: string;
 }
 
 // ── Mod Hub online catalog (mirrors wowsp_tauri_shared, commands/mod_catalog.rs) ──
@@ -694,11 +698,17 @@ export const modHubApi = {
   modTags: () => transport.invoke<CatalogTagIndex>(RPC.mod_tags),
   modCatalogRefresh: (force: boolean) =>
     transport.invoke<CatalogIndex>(RPC.mod_catalog_refresh, { force }),
-  modCatalogInstall: (modId: string, gameRoot: string, preset?: string) =>
+  modCatalogInstall: (
+    modId: string,
+    gameRoot: string,
+    preset?: string,
+    skipIncompatible?: boolean,
+  ) =>
     transport.invoke<InstallReport>(RPC.mod_catalog_install, {
       modId,
       gameRoot,
       preset: preset ?? null,
+      skipIncompatible: skipIncompatible ?? null,
     }),
   /** Read-only file preview: downloads the packages to a temp dir and
    *  classifies them there, never touching res_mods. */

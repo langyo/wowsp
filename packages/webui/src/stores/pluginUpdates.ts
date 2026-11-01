@@ -373,8 +373,11 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     gameRoot: string,
     preset?: string | null,
     op: "install" | "update" = "install",
+    skipIncompatible?: boolean,
   ): Promise<InstallReport> {
-    return withItem(id, op, () => api.modCatalogInstall(id, gameRoot, preset ?? undefined));
+    return withItem(id, op, () =>
+      api.modCatalogInstall(id, gameRoot, preset ?? undefined, skipIncompatible),
+    );
   }
 
   /**

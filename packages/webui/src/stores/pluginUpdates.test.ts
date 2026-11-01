@@ -211,8 +211,8 @@ describe("usePluginUpdatesStore.updateAll", () => {
     await updates.updateAll();
 
     expect(mocked.probeInstall).toHaveBeenCalledWith(GAME);
-    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, "lite");
-    expect(mocked.install).toHaveBeenNthCalledWith(2, "b", GAME, undefined);
+    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, "lite", undefined);
+    expect(mocked.install).toHaveBeenNthCalledWith(2, "b", GAME, undefined, undefined);
     expect(updates.done).toBe(3);
     expect(updates.running).toBe(false);
     // Ends with a freshness re-assessment.
@@ -587,7 +587,7 @@ describe("usePluginUpdatesStore all-installs batch", () => {
 
     // Active install (GAME) first: its probe, its mod, then OTHER's probe.
     expect(mocked.probeInstall).toHaveBeenNthCalledWith(1, GAME);
-    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, undefined);
+    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, undefined, undefined);
     expect(mocked.probeInstall).toHaveBeenNthCalledWith(2, OTHER);
     expect(updates.done).toBe(3);
   });

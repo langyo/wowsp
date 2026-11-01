@@ -44,7 +44,8 @@ vi.mock("@/stores/pluginUpdates", () => ({
   usePluginUpdatesStore: () => ({
     itemBusy: new Map(),
     syncFreshness: vi.fn(),
-    runMod: (id: string, root: string, preset?: string) => mocks.catalogInstall(id, root, preset),
+    runMod: (id: string, root: string, preset?: string, _op?: string, skip?: boolean) =>
+      mocks.catalogInstall(id, root, preset, skip),
     runModUninstall: (id: string, root: string) => mocks.catalogUninstall(id, root),
   }),
 }));
@@ -700,10 +701,53 @@ describe("multi-client sync", () => {
     // Active EU client first, the Lesta build (kind fallback → ru) next;
     // the CN client is skipped by rule (cn ∉ [eu, ru]).
     expect(mocks.catalogInstall).toHaveBeenCalledTimes(2);
-    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined);
-    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(2, "mod-x", "C:/RU", undefined);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined, false);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(2, "mod-x", "C:/RU", undefined, true);
     expect(mocks.info).toHaveBeenCalledWith("resources.sync.skippedByRule");
     expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
+  });
+
+  it("skips version-incompatible targets quietly instead of failing them", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    multiInstallConfig();
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry("mod-x")],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    // The Lesta client (kind fallback -> ru) reports a foreign version
+    // lineage: the backend's version gate answers report.skipped and the
+    // fan-out treats it as a RULE skip — quiet per-client note, no
+    // failure, no outcome. (Inline mount: the shared helper re-seeds the
+    // install mock wholesale.)
+    mocks.catalogInstall.mockImplementation(async (_id: string, root: string) =>
+      root === "C:/RU"
+        ? { name: "Mod X", binVersion: "", wroteFiles: 0, warnings: [], skipped: "mismatch" }
+        : { name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [] },
+    );
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    const installBtn = view
+      .findAllComponents({ name: "HkButton" })
+      .find((b) => "onClick" in (b.vm.$attrs as Record<string, unknown>))!;
+    (installBtn.vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    // Universal entry: EU + CN land, RU skips by version — three attempts.
+    expect(mocks.catalogInstall).toHaveBeenCalledTimes(3);
+    // The gate skips every FAN-OUT target; the ACTIVE root (EU) keeps
+    // warn-and-proceed.
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined, false);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(3, "mod-x", "C:/RU", undefined, true);
+    expect(mocks.info.mock.calls.map((c) => c[0])).toContain(
+      "resources.sync.skippedByVersion",
+    );
+    // Only the landed clients count — the skip is not a partial failure.
+    expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
+    expect(mocks.warning).not.toHaveBeenCalledWith(expect.stringContaining("resources.sync.partial"));
   });
 
   it("stays single-root while unified sync is off", async () => {
@@ -713,7 +757,7 @@ describe("multi-client sync", () => {
     await mountWithEntry();
     // Only the ACTIVE client's root is touched; the per-op toast stays.
     expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
-    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-x", "C:/EU", undefined);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-x", "C:/EU", undefined, undefined);
     expect(mocks.success).toHaveBeenCalledWith("resources.installedDone");
   });
 
@@ -789,8 +833,8 @@ describe("multi-client sync", () => {
     // CN receives the two missing mods (mod-cn by its realm rule);
     // its extra mod leaves (removal is realm-agnostic).
     expect(mocks.catalogInstall).toHaveBeenCalledTimes(2);
-    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-a", "C:/CN", undefined);
-    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-cn", "C:/CN", undefined);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-a", "C:/CN", undefined, undefined);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-cn", "C:/CN", undefined, undefined);
     expect(mocks.catalogUninstall).toHaveBeenCalledWith("mod-extra", "C:/CN");
     expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
   });

@@ -416,6 +416,7 @@ fn install_plan_inner(
             warnings,
             conflicts: Vec::new(),
             mirrored_bins,
+            skipped: None,
         },
         written,
         restore_dir,

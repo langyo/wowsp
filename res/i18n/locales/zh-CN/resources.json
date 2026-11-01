@@ -372,6 +372,7 @@
     "partial": "已同步 {ok}/{count} 个客户端：{details}",
     "failed": "{count} 个客户端全部同步失败：{details}",
     "skippedByRule": "「{mod}」不适用于 {client}，已跳过",
+    "skippedByVersion": "{mod}：已跳过 {client}——该插件支持的游戏版本不包含此客户端",
     "skippedRunning": "「{names}」正在运行，已跳过——关闭游戏后重试即可。",
     "nothingToDo": "其他客户端均已与本客户端的模组清单一致。",
     "noCatalog": "在线目录尚未加载——请先刷新目录再同步客户端。",

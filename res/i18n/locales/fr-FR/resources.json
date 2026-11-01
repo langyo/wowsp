@@ -372,6 +372,7 @@
     "partial": "{ok} client(s) sur {count} synchronisé(s) : {details}",
     "failed": "Échec de la synchronisation sur les {count} clients : {details}",
     "skippedByRule": "« {mod} » ne s'applique pas à {client} — ignoré",
+    "skippedByVersion": "{mod} : {client} ignoré — la plage de versions du pack n'inclut pas ce client",
     "skippedRunning": "« {names} » est en cours d'exécution — ignoré. Fermez le jeu puis réessayez.",
     "nothingToDo": "Les autres clients correspondent déjà à l'ensemble de mods de ce client.",
     "noCatalog": "Le catalogue en ligne n'est pas chargé — actualisez-le avant de synchroniser les clients.",
