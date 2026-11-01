@@ -394,6 +394,115 @@ fn suspects_rank_log_mentions_above_recent_changes() {
     assert_eq!(suspects[1].evidence, "recentChange");
 }
 
+// ── alive-time crash-report detection (the dialog-linger fix) ─────────────
+
+/// The WG crash handler writes its report BEFORE the process dies, so the
+/// alive-time scan must find a report THIS session wrote while the client
+/// still sits on the crash dialog — and nothing older.
+#[cfg(windows)]
+#[test]
+fn alive_report_evidence_finds_this_sessions_report_only() {
+    let dir = TempDir::new("alive-report");
+    let root = dir.path().to_string_lossy().into_owned();
+    let at = 1_799_000_000i64;
+    // This session: report written 60 s after start.
+    dir.touch(
+        "crashes/WorldOfWarships64-2026-11-01_21-18-38.crash",
+        "Application crashed\n\nMessage:\nUnhandled exception\n",
+    );
+    dir.set_mtime(
+        "crashes/WorldOfWarships64-2026-11-01_21-18-38.crash",
+        at + 60,
+    );
+    let exe = format!("{root}/bin/13357625/bin64/WorldOfWarships64.exe");
+    let evidence = alive_report_evidence("worldofwarships64.exe", &exe, Some(&root), at, at + 120)
+        .expect("the session report is found while the client lingers");
+    assert_eq!(evidence.source, SOURCE_GAME_REPORT);
+    assert_eq!(
+        evidence.evidence_id.as_deref(),
+        Some("wgc:WorldOfWarships64-2026-11-01_21-18-38.crash")
+    );
+
+    // A PREVIOUS session's report (mtime before this start) is not this
+    // crash — the floor is the session start.
+    dir.set_mtime(
+        "crashes/WorldOfWarships64-2026-11-01_21-18-38.crash",
+        at - 3600,
+    );
+    assert!(
+        alive_report_evidence("worldofwarships64.exe", &exe, Some(&root), at, at + 120).is_none()
+    );
+
+    // Another family's report never matches this image.
+    dir.touch("crashes/Korabli64-2026-11-01_21-18-38.crash", "x");
+    dir.set_mtime("crashes/Korabli64-2026-11-01_21-18-38.crash", at + 60);
+    assert!(
+        alive_report_evidence("worldofwarships64.exe", &exe, Some(&root), at, at + 120).is_none()
+    );
+}
+
+// ── per-mod suspect granularity (the isolation-advice fix) ────────────────
+
+/// PnFMods splits into per-mod inventory entries: a suspect named
+/// "PnFMods" flags every plugin at once and pins nothing actionable,
+/// while PnFMods/<Mod> maps one-to-one onto the mod hub units and
+/// quarantines by that nested path. Recency order is newest first.
+#[test]
+fn suspects_pin_per_mod_units_under_pnfmods_newest_first() {
+    let now = unix_secs(std::time::SystemTime::now());
+    let dir = TempDir::new("pnf-suspects");
+    dir.touch("bin/3/res_mods/PnFMods/ConsumablesMonitor2Py/Main.py", "x");
+    dir.set_mtime(
+        "bin/3/res_mods/PnFMods/ConsumablesMonitor2Py/Main.py",
+        now - 3600,
+    );
+    dir.touch("bin/3/res_mods/PnFMods/OldTimerPy/Main.py", "x");
+    dir.set_mtime(
+        "bin/3/res_mods/PnFMods/OldTimerPy/Main.py",
+        now - 90 * 24 * 3600,
+    );
+    dir.touch("bin/3/res_mods/PnFMods/RegenMonitorPy/Main.py", "x");
+    dir.set_mtime("bin/3/res_mods/PnFMods/RegenMonitorPy/Main.py", now - 1800);
+    dir.touch("bin/3/res_mods/gui/shared.xml", "x");
+
+    let mods = mods_inventory_entries(dir.path());
+    let names: Vec<&str> = mods.iter().map(|e| e.name.as_str()).collect();
+    assert!(
+        names.contains(&"PnFMods/ConsumablesMonitor2Py"),
+        "{names:?}"
+    );
+    assert!(names.contains(&"PnFMods/OldTimerPy"), "{names:?}");
+    assert!(names.contains(&"gui"), "{names:?}");
+    assert!(
+        !names.contains(&"PnFMods"),
+        "the bare top-level is split away, not kept alongside its units",
+    );
+
+    // Recent-change suspects: only the fresh units, NEWEST first.
+    let record = sample_record("gc-pnf", Some(dir.path().to_str().unwrap()));
+    let suspects = detect_suspect_mods(&[], &mods, parse_rfc3339_unix(&record.detected_at));
+    assert_eq!(
+        suspects.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+        vec![
+            "gui",
+            "PnFMods/RegenMonitorPy",
+            "PnFMods/ConsumablesMonitor2Py",
+        ],
+        "fresh entries only, newest change first — gui was touched now, the 30-day-old unit stays out",
+    );
+
+    // A log line naming res_mods/PnFMods/<Mod>/file resolves to the
+    // composed per-mod unit (not the bare "PnFMods").
+    let raw = [(
+        "python.log",
+        "21:18:26 ERROR: failed to load res_mods/PnFMods/OldTimerPy/gui/x.xml",
+    )];
+    let raw_refs: Vec<(&str, &str)> = raw.iter().map(|(name, text)| (*name, *text)).collect();
+    let suspects = detect_suspect_mods(&raw_refs, &mods, None);
+    assert_eq!(suspects[0].name, "PnFMods/OldTimerPy");
+    assert_eq!(suspects[0].evidence, "logMention");
+}
+
 #[test]
 fn res_mods_path_candidates_carry_both_segments_and_separators() {
     // Current layout: no version segment — the entry IS the first segment.
