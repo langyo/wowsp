@@ -351,8 +351,7 @@
   },
   "servers": {
     "universal": "通用",
-    "partial": "部分服务器适用",
-    "exclusive": "专属",
+    "list": "支持{servers}",
     "scopeHint": "适用于：{servers}",
     "realm": {
       "ru": "俄服",

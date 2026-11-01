@@ -351,8 +351,7 @@
   },
   "servers": {
     "universal": "전 서버 공통",
-    "partial": "일부 서버 전용",
-    "exclusive": "전용",
+    "list": "{servers} 지원",
     "scopeHint": "적용 서버: {servers}",
     "realm": {
       "ru": "러시아 서버",

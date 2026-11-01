@@ -351,8 +351,7 @@
   },
   "servers": {
     "universal": "Universal",
-    "partial": "Algunos servidores",
-    "exclusive": "Exclusivo",
+    "list": "Compatible con {servers}",
     "scopeHint": "Se aplica a: {servers}",
     "realm": {
       "ru": "Servidor RU",

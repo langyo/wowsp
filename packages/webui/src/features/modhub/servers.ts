@@ -6,11 +6,13 @@
  *
  * Semantics of `entry.servers`: absent/empty — or all five codes at
  * once — means the entry is UNIVERSAL (applies on every server);
- * otherwise only the listed realms apply. One or two realms read as an
- * EXCLUSIVE (专属) entry, three or four as a PARTIAL (部分服务器) one —
- * the compressed badge wording the detail pane shows. Everything here is
- * pure and i18n-free (labels live in views/resources/display.ts) so
- * servers.test.ts can assert the classification directly.
+ * otherwise only the listed realms apply. The detail pane renders ONE
+ * applicability tag: 通用 for universal, otherwise the applicable realm
+ * names inside that same tag (支持美服·亚服) — the scope classification
+ * below only decides universal-vs-enumerated (and the tag's data-scope
+ * hook). Everything here is pure and i18n-free (labels live in
+ * views/resources/display.ts) so servers.test.ts can assert the
+ * classification directly.
  */
 import type { CatalogEntry, GameInstall } from "@/api";
 
@@ -70,9 +72,10 @@ export function appliesToRealm(entry: CatalogEntry, realm: string | null): boole
 }
 
 /** The compressed scope a `servers` field reads as — the detail pane's
- *  one-badge summary: universal (通用), partial (部分服务器, 3-4 realms)
- *  or exclusive (专属, 1-2 realms). Counting is over the NORMALIZED list,
- *  so unknown codes and duplicates never inflate the bucket. */
+ *  one-tag summary decides universal (通用) versus an enumerated list
+ *  (1-2 realms = exclusive, 3-4 = partial, both rendered as the realm
+ *  names inside the same tag). Counting is over the NORMALIZED list, so
+ *  unknown codes and duplicates never inflate the bucket. */
 export function serverScopeOf(
   servers?: string[] | null,
 ): "universal" | "partial" | "exclusive" {

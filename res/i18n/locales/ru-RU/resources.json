@@ -351,8 +351,7 @@
   },
   "servers": {
     "universal": "Все серверы",
-    "partial": "Некоторые серверы",
-    "exclusive": "Эксклюзив",
+    "list": "Поддерживает {servers}",
     "scopeHint": "Подходит для: {servers}",
     "realm": {
       "ru": "Сервер RU",
