@@ -165,6 +165,7 @@
     "sunkAt": "coulé à {time}",
     "aliveCount": "{alive}/{total} en vie",
     "ship": "Navire",
+    "toggle": "Tableau des scores",
     "scopeGlobal": "Global",
     "scopeSolo": "Solo uniquement",
     "scopeShip": "Ce navire uniquement",

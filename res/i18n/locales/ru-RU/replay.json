@@ -165,6 +165,7 @@
     "sunkAt": "потоплен в {time}",
     "aliveCount": "Живых: {alive}/{total}",
     "ship": "Корабль",
+    "toggle": "Таблица счёта",
     "scopeGlobal": "Общая",
     "scopeSolo": "Только соло",
     "scopeShip": "Только этот корабль",

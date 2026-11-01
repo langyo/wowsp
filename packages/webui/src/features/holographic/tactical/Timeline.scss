@@ -185,3 +185,14 @@
     background: rgb(204 51 51 / 22%);
   }
 }
+
+/* Phone (≤767px): the head (transport quartet + clock + zoom trio +
+   fit chip) is borderline in the ~345px tactical dock once longer
+   locale labels stretch the clock/fit chips — wrap the tail instead of
+   clipping at the dock edge. Desktop ≥768px unchanged. */
+@media (max-width: 767px) {
+  .tac-timeline__head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+}

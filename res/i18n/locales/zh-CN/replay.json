@@ -165,6 +165,7 @@
     "sunkAt": "沉没于 {time}",
     "aliveCount": "存活 {alive}/{total}",
     "ship": "舰船",
+    "toggle": "记分板",
     "scopeGlobal": "全局（账号）",
     "scopeSolo": "仅单排（账号）",
     "scopeShip": "仅单船（本船）",

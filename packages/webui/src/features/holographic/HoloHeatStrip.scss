@@ -57,3 +57,16 @@
     z-index: 1;
   }
 }
+
+/* Phone (≤767px): the right edge is a stacked column — the shared
+   scorebar owns the top, the weather badge sits under it
+   (HolographicMap.scss re-stacks both) — and the bottom-right minimap
+   thumb (112px, lifted above the two-line playback bar) owns the
+   corner. The strip tucks between the two and stops short of the
+   thumb. Desktop ≥768px keeps the 64px/56px insets. */
+@media (max-width: 767px) {
+  .holo-heat-strip {
+    top: 116px;
+    bottom: 180px;
+  }
+}
