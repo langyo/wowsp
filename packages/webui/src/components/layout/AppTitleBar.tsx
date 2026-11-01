@@ -170,7 +170,17 @@ export default defineComponent({
     return () => (
       <div
         ref={(el) => (chromeEl.value = el as HTMLElement | null)}
-        class={["app-titlebar", { "app-titlebar--maximized": maximized.value }]}
+        class={[
+          "app-titlebar",
+          {
+            "app-titlebar--maximized": maximized.value,
+            // Marks the pages whose view switch owns the bar centre: the
+            // PHONE layout (≤767px) hides the title block while it does
+            // (see AppTitleBar.scss). Desktop shows both — title left,
+            // switch centred — exactly as before.
+            "app-titlebar--switched": centerSwitch.value !== null,
+          },
+        ]}
         onPointerdown={onPointerDown}
         onDblclick={onDblClick}
       >

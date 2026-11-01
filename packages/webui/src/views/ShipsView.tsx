@@ -1,8 +1,19 @@
 import { computed, defineComponent, nextTick, onUnmounted, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { ArrowLeftRight, GitBranch, List, RotateCcw, Ship } from "@lucide/vue";
+import { ChevronDown, RotateCcw, Ship } from "@lucide/vue";
 
-import { HkAlert, HkButton, HkInput, HkScrollContainer, HkSpinner, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
+import {
+  HkAlert,
+  HkButton,
+  HkInput,
+  HkPopover,
+  HkScrollContainer,
+  HkSpinner,
+  HkTag,
+  HkTabs,
+  useBreakpoint,
+  useToast,
+} from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
@@ -19,7 +30,7 @@ import { useGameStatusStore } from "@/stores/gameStatus";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLoadingTasksStore } from "@/stores/loadingTasks";
 import { useShipStatsStore } from "@/stores/shipStats";
-import { useShipsUiStore, type ShipsViewMode, type ShipsTreeRealm } from "@/stores/shipsUi";
+import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
 import { useTrendsStore } from "@/stores/trends";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -72,12 +83,25 @@ export default defineComponent({
     const toast = useToast();
 
     // ── view mode (tech-tree vs list vs compare) ──────────────────────
-    // The mode itself lives in shipsUi: its switch sits in the app title
-    // bar on desktop (AppTitleBar) and in the page header on phones —
-    // both write the one shared state.
+    // The mode itself lives in shipsUi: its switch rides the app title
+    // bar on every layout (AppTitleBar's centred pill — on phones the
+    // title block yields the bar centre to it), so the page renders no
+    // switch of its own anymore.
     const treeNation = ref<string>("japan");
     /** True once the first load attempt completes (success or fail). */
     const firstLoadDone = ref(false);
+
+    // Phone LAYOUT (viewport): drives the tree nation picker — the desktop
+    // nation rail collapses to a floating chip + popover (a bottom sheet
+    // on phones, per the HkPopover phone convention).
+    const { isMobile: phoneLayout } = useBreakpoint();
+    const nationPickerOpen = ref(false);
+    const nationChipBtn = ref<HTMLElement | null>(null);
+    /** Picking a nation from the popover applies it and closes the sheet. */
+    function pickNation(n: string) {
+      treeNation.value = n;
+      nationPickerOpen.value = false;
+    }
 
     // Tree-body wheel axis rule + background drag-pan (see techTreePan):
     // `attach` rides the tree HkScrollContainer's template ref below.
@@ -305,38 +329,13 @@ export default defineComponent({
         <header class="ships-view__header">
           <h1 class="ships-view__title">{t("ships.title")}</h1>
           <div class="ships-view__header-right">
-            {/* The view-mode switch rides the app title bar on desktop
-                (≥768px — AppTitleBar's centered pill); this header copy is
-                the phone-layout fallback, where the bar hosts the nav
-                drawer controls instead. Writes the shared shipsUi state. */}
-            <div class="ships-view__tabs">
-              <HkTabs
-                variant="segmented"
-                modelValue={shipsUi.viewMode}
-                onUpdate:modelValue={(v: string) => (shipsUi.viewMode = v as ShipsViewMode)}
-                tabs={[
-                  {
-                    key: "tree",
-                    label: t("ships.viewMode.tree"),
-                    icon: <GitBranch size={14} />,
-                  },
-                  {
-                    key: "grid",
-                    label: t("ships.viewMode.grid"),
-                    icon: <List size={14} />,
-                  },
-                  {
-                    key: "compare",
-                    label: t("ships.viewMode.compare"),
-                    icon: <ArrowLeftRight size={14} />,
-                  },
-                ]}
-              />
-            </div>
             {/* Tech-tree branch source: WG (reference topology, wowsinfo
                 bridge) vs Lesta (the client's own research graph). Replaces
                 the old passive realm tag — the data realm still follows the
-                sidebar's app-wide server selector. */}
+                sidebar's app-wide server selector. On the phone this row
+                also carries the reload button and the version/count meta
+                (the h1 and the old duplicate view-mode switch are gone —
+                the app title bar owns the switch on every layout). */}
             <div class="ships-view__realm" data-hint={t("ships.techTree.realmHint")}>
               <HkTabs
                 variant="segmented"
@@ -351,6 +350,17 @@ export default defineComponent({
                 <RotateCcw size={12} /> {t("ships.reload")}
               </HkButton>
             </div>
+            {/* Phone layout: the version/count pair joins the compact
+                header row as an inline twin of the desktop meta row below
+                — the media queries show exactly one copy per width. */}
+            {encyclopedia.version ? (
+              <div class="ships-view__meta ships-view__meta--inline">
+                <span>
+                  {t("ships.versionLabel")}: <strong>{encyclopedia.version.gameVersion}</strong>
+                </span>
+                <span>{t("ships.shipsCount", { n: filteredShips.value.length })}</span>
+              </div>
+            ) : null}
           </div>
         </header>
 
@@ -521,22 +531,86 @@ export default defineComponent({
               data-panning={treePan.panning.value ? "" : undefined}
             >
               <div class="ships-view__tree-inner">
-                {/* nation rail — vertical list of faction crests */}
-                <aside class="ships-view__nation-rail">
-                  {treeNations.value.map((n) => (
+                {/* Nation picker. Desktop (≥768px) keeps the sticky rail of
+                    faction crests; the phone layout collapses it to a
+                    compact chip (current nation + chevron) pinned at the
+                    canvas's top-left — a ~14-nation column would eat a
+                    quarter of a phone viewport. The chip opens an HkPopover
+                    listing the same rows at touch size; phones dock it as a
+                    bottom sheet (repo convention, ShipFilterBar) and a tap
+                    applies + closes. The anchor is a zero-box sticky
+                    wrapper (see ShipsView.scss): it pins like the rail
+                    while reserving no flex column for the chip. */}
+                {phoneLayout.value ? (
+                  <div class="ships-view__nation-chip-anchor">
                     <button
-                      class={[
-                        "ships-view__nation-btn",
-                        treeNation.value === n ? "ships-view__nation-btn--on" : "",
-                      ]}
-                      data-hint={nationLabel(n)}
-                      onClick={() => (treeNation.value = n)}
+                      type="button"
+                      ref={(el) => (nationChipBtn.value = el as HTMLElement | null)}
+                      class="ships-view__nation-chip"
+                      data-hint={t("ships.techTree.nationPicker")}
+                      aria-label={t("ships.techTree.nationPicker")}
+                      aria-expanded={nationPickerOpen.value}
+                      onClick={() => (nationPickerOpen.value = !nationPickerOpen.value)}
                     >
-                      <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
-                      <span class="ships-view__nation-name">{nationLabel(n)}</span>
+                      <NationFlag
+                        nation={treeNation.value}
+                        label={nationLabel(treeNation.value)}
+                        variant="flag"
+                        size="sm"
+                      />
+                      <span class="ships-view__nation-chip-name">
+                        {nationLabel(treeNation.value)}
+                      </span>
+                      <ChevronDown size={13} />
                     </button>
-                  ))}
-                </aside>
+                    <HkPopover
+                      modelValue={nationPickerOpen.value}
+                      onUpdate:modelValue={(v: boolean) => (nationPickerOpen.value = v)}
+                      anchorRef={nationChipBtn.value}
+                      placement="bottom-start"
+                      padding="md"
+                      title={t("ships.techTree.nationPicker")}
+                      /* Phones never float anchored menus: the picker
+                         docks as a bottom sheet; tapping a nation closes
+                         it again. */
+                      sheetOnMobile
+                      closeOnBackdrop={phoneLayout.value}
+                    >
+                      <div class="ships-view__nation-pop">
+                        {treeNations.value.map((n) => (
+                          <button
+                            key={n}
+                            type="button"
+                            class={[
+                              "ships-view__nation-btn",
+                              treeNation.value === n ? "ships-view__nation-btn--on" : "",
+                            ]}
+                            onClick={() => pickNation(n)}
+                          >
+                            <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
+                            <span class="ships-view__nation-name">{nationLabel(n)}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </HkPopover>
+                  </div>
+                ) : (
+                  <aside class="ships-view__nation-rail">
+                    {treeNations.value.map((n) => (
+                      <button
+                        class={[
+                          "ships-view__nation-btn",
+                          treeNation.value === n ? "ships-view__nation-btn--on" : "",
+                        ]}
+                        data-hint={nationLabel(n)}
+                        onClick={() => (treeNation.value = n)}
+                      >
+                        <NationFlag nation={n} label={nationLabel(n)} variant="flag" size="sm" />
+                        <span class="ships-view__nation-name">{nationLabel(n)}</span>
+                      </button>
+                    ))}
+                  </aside>
+                )}
                 {/* the tree itself */}
                 <div class="ships-view__tree-canvas">
                   {treeNation.value ? (
