@@ -769,8 +769,13 @@ async fn enrich_team_win_rates(
     // stay unclaimed).
     let mut stats_by_realm: HashMap<String, HashMap<String, f32>> = HashMap::new();
     for (realm, names) in &union_by_realm {
-        match super::wg_api::lookup_players_stats_batch(names.clone(), realm.clone(), None, None)
-            .await
+        match super::wg_api::lookup_players_stats_batch_core(
+            names.clone(),
+            realm.clone(),
+            None,
+            None,
+        )
+        .await
         {
             Ok(rows) => {
                 let map: HashMap<String, f32> = names

@@ -603,6 +603,17 @@ impl PrAlgo {
             _ => Self::Winrate,
         }
     }
+
+    /// The exact wire form [`PrAlgo::from_param`] parses — the roster batch's
+    /// progress events carry it so the frontend can tell which caliber a
+    /// streamed row was computed under (a mid-flight pref flip must not
+    /// adopt the stale numbers).
+    pub(crate) fn as_param(self) -> &'static str {
+        match self {
+            Self::Winrate => "winrate",
+            Self::Expected => "expected",
+        }
+    }
 }
 
 /// One per-ship PvP (randoms) row feeding the account-level expected PR.

@@ -296,6 +296,21 @@ export interface ShipStatsProgress {
   rows?: PlayerShipStats[] | null;
 }
 
+/** One settled slot of a CN roster batch on the progress stream — mirrors
+ *  commands::wg_api::RosterStatsProgress (event
+ *  `wowsp://roster-stats-progress`). `stats` is EXACTLY the row the batch
+ *  answer array carries for `name` (already PR-algo shaped; null = settled
+ *  not-found), so a listener-applied row and the resolve-applied row are
+ *  interchangeable; `algo` is the PR algorithm the batch ran under, so a
+ *  mid-flight pref flip can refuse the stale caliber. Only the CN arm
+ *  resolves per-name — events arrive for CN batches only. */
+export interface RosterStatsProgress {
+  realm: string;
+  name: string;
+  algo: string;
+  stats: PlayerStats | null;
+}
+
 /** Mirrors `wowsp_tauri_shared::StatsSnapshot`. */
 export interface StatsSnapshot {
   timestamp: number;
@@ -531,6 +546,14 @@ export const statsApi = {
    *  stand a source down. */
   listenShipStatsProgress: (handler: (progress: ShipStatsProgress) => void) =>
     transport.listen?.<ShipStatsProgress>("wowsp://ship-stats-progress", handler),
+  /** Streaming settle events for the CN roster batch (commands/wg_api/
+   *  roster.rs's `wowsp://roster-stats-progress`): one tick per settled
+   *  slot with its final row, so roster surfaces paint names the moment
+   *  they resolve instead of waiting for the whole chunk. The transport's
+   *  listen is optional — browser/webMock contexts (no Tauri event API)
+   *  simply never hear anything. */
+  listenRosterStatsProgress: (handler: (progress: RosterStatsProgress) => void) =>
+    transport.listen?.<RosterStatsProgress>("wowsp://roster-stats-progress", handler),
   /** Catalogue + rolling health of the upstream hosts — the data behind
    *  the title bar's fault chip. Stateless; the frontend renders the
    *  verdict (streak threshold, staleness). */

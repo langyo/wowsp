@@ -288,6 +288,94 @@ interface BatchStat {
   hidden: boolean;
 }
 
+/** One settled slot of the CN roster batch on the backend's
+ *  `wowsp://roster-stats-progress` event (mirrors
+ *  commands::wg_api::RosterStatsProgress; only the CN arm resolves
+ *  per-name, so events arrive for CN batches only). `stats` is EXACTLY the
+ *  row the batch answer array carries for `name` (null = settled
+ *  not-found), so an event-applied row and the resolve-applied row are
+ *  interchangeable; `algo` is the PR algorithm the batch ran under. */
+interface RosterStatsProgress {
+  realm: string;
+  name: string;
+  algo: string;
+  stats: BatchStat | null;
+}
+
+/** The settled "no data" cache entry (the null batch-answer row's shape). */
+const NO_DATA_STAT: Stat = {
+  accountId: null,
+  winrate: null,
+  avgDamage: null,
+  pr: null,
+  battles: null,
+  kd: null,
+  ranked: null,
+  global: null,
+  solo: null,
+  clanId: null,
+  clanTag: null,
+  hidden: false,
+};
+
+/** Map one batch-answer row onto the cached `Stat` shape — shared by the
+ *  chunk-apply path and the roster-stats progress event, so an
+ *  event-applied row and the resolve-applied row are interchangeable by
+ *  construction. */
+function statOfBatchRow(r: BatchStat): Stat {
+  return {
+    accountId: r.accountId ?? null,
+    winrate: r.winrate ?? null,
+    avgDamage: r.avgDamage ?? null,
+    pr: r.pr ?? null,
+    battles: r.battles ?? null,
+    kd: r.kdRatio ?? null,
+    ranked:
+      r.rankedBattles != null || r.rankedWinrate != null
+        ? {
+            winrate: r.rankedWinrate ?? null,
+            pr: r.rankedPr ?? null,
+            battles: r.rankedBattles ?? null,
+            avgDamage: r.rankedAvgDamage ?? null,
+            kd: r.rankedKdRatio ?? null,
+          }
+        : null,
+    global:
+      r.globalBattles != null || r.globalWinrate != null
+        ? {
+            winrate: r.globalWinrate ?? null,
+            pr: r.globalPr ?? null,
+            battles: r.globalBattles ?? null,
+            avgDamage: r.globalAvgDamage ?? null,
+            kd: r.globalKdRatio ?? null,
+          }
+        : null,
+    // The career solo split, data-only (PR derives per algorithm in the
+    // view — utils/shipStatsScope). A split the reliability guard rejects
+    // (soloSplitReliable — a transport that mirrors the unsplit pvp node
+    // into pvp_solo answers a "solo" share equal to the whole career)
+    // caches as null: the solo column shows the honest dash instead of the
+    // career numbers wearing a 单排 tag.
+    solo:
+      soloSplitReliable(r.soloBattles, r.battles) &&
+      (r.soloBattles != null || r.soloWr != null)
+        ? {
+            winrate: r.soloWr ?? null,
+            pr: null,
+            battles: r.soloBattles ?? null,
+            avgDamage: null,
+            kd: r.soloKdRatio ?? null,
+          }
+        : null,
+    clanId: r.clanId ?? null,
+    clanTag: r.clanTag ?? null,
+    // The cluster the answer resolved on — the window realm for same-realm
+    // rows, a foreign cluster for cross-server CW rows.
+    realm: r.realm ?? null,
+    hidden: r.hidden,
+  };
+}
+
 /** Composition-seal verdict from `lookup_players_composition` (mirrors
  *  `wowsp_tauri_shared::PlayerComposition`; the >200 battles gate, the >20%
  *  minor share and the >50% veteran tier are enforced backend-side — a
@@ -2139,75 +2227,11 @@ async function runBatch() {
         chunk.names.forEach((name, i) => {
           const r = results[i] ?? null;
           if (r) {
-            stats.set(cacheKey(name), {
-              accountId: r.accountId ?? null,
-              winrate: r.winrate ?? null,
-              avgDamage: r.avgDamage ?? null,
-              pr: r.pr ?? null,
-              battles: r.battles ?? null,
-              kd: r.kdRatio ?? null,
-              ranked:
-                r.rankedBattles != null || r.rankedWinrate != null
-                  ? {
-                      winrate: r.rankedWinrate ?? null,
-                      pr: r.rankedPr ?? null,
-                      battles: r.rankedBattles ?? null,
-                      avgDamage: r.rankedAvgDamage ?? null,
-                      kd: r.rankedKdRatio ?? null,
-                    }
-                  : null,
-              global:
-                r.globalBattles != null || r.globalWinrate != null
-                  ? {
-                      winrate: r.globalWinrate ?? null,
-                      pr: r.globalPr ?? null,
-                      battles: r.globalBattles ?? null,
-                      avgDamage: r.globalAvgDamage ?? null,
-                      kd: r.globalKdRatio ?? null,
-                    }
-                  : null,
-              // The career solo split, data-only (PR derives per algorithm
-              // in the view — utils/shipStatsScope). A split the
-              // reliability guard rejects (soloSplitReliable — a transport
-              // that mirrors the unsplit pvp node into pvp_solo answers a
-              // "solo" share equal to the whole career) caches as null:
-              // the solo column shows the honest dash instead of the
-              // career numbers wearing a 单排 tag.
-              solo:
-                soloSplitReliable(r.soloBattles, r.battles) &&
-                (r.soloBattles != null || r.soloWr != null)
-                  ? {
-                      winrate: r.soloWr ?? null,
-                      pr: null,
-                      battles: r.soloBattles ?? null,
-                      avgDamage: null,
-                      kd: r.soloKdRatio ?? null,
-                    }
-                  : null,
-              clanId: r.clanId ?? null,
-              clanTag: r.clanTag ?? null,
-              // The cluster the answer resolved on — the window realm for
-              // same-realm rows, a foreign cluster for cross-server CW rows.
-              realm: r.realm ?? null,
-              hidden: r.hidden,
-            });
+            stats.set(cacheKey(name), statOfBatchRow(r));
             notFoundLeft.delete(name);
             notFoundRetry.delete(name);
           } else {
-            stats.set(cacheKey(name), {
-              accountId: null,
-              winrate: null,
-              avgDamage: null,
-              pr: null,
-              battles: null,
-              kd: null,
-              ranked: null,
-              global: null,
-              solo: null,
-              clanId: null,
-              clanTag: null,
-              hidden: false,
-            });
+            stats.set(cacheKey(name), { ...NO_DATA_STAT });
             // Cache the "—" now, but keep a bounded re-queue armed: an empty
             // answer is sometimes a hiccup, not a verdict (see the retry
             // bookkeeping above).
@@ -2267,6 +2291,32 @@ async function runBatch() {
     // instead of waiting for the next anchor event.
     if (gen !== statsGeneration) scheduleBatch();
   }
+}
+
+/** Early-apply one settled CN batch slot from the backend's
+ *  `wowsp://roster-stats-progress` event (this page's non-Vue pipeline
+ *  mirrors the main window's roster stream): the chip lands in the cache
+ *  and renders the moment its name resolves instead of waiting for the
+ *  whole chunk. The chunk apply (runBatch) stays the authoritative barrier
+ *  — the event row is the SAME data, so this is idempotent. Guards mirror
+ *  the batch's own bookkeeping: the row's PR-algo caliber must equal the
+ *  one the window currently renders under (the statsGeneration contract —
+ *  a mid-flight prefs flip cleared the cache for the new caliber, and a
+ *  stale-caliber row here would pin itself AND block the re-query, since a
+ *  cached name never re-queues), and the name must be on the current
+ *  arena. The not-found re-queue budget stays the chunk path's business —
+ *  its response owns the retry bookkeeping. Registered in start(); a
+ *  no-tauri context (browser) never gets here. */
+function applyRosterStatsProgress(p: RosterStatsProgress): void {
+  if (!arena || !realm) return;
+  if (p.algo !== statsAlgo) return;
+  if (!arena.vehicles.some((v) => v.name === p.name)) return;
+  stats.set(cacheKey(p.name), p.stats ? statOfBatchRow(p.stats) : { ...NO_DATA_STAT });
+  render();
+  // The unlocks are idempotent (see the chunk path) — run them early too.
+  scheduleCompBatch();
+  scheduleClanGates();
+  scheduleShipLists();
 }
 
 /** Queue one composition-seal batch: every roster name whose career stats
@@ -2345,6 +2395,12 @@ async function start() {
     // The watcher's presentation-verify arm: paint the corner marker for
     // the layered-inclusive capture (see reportPaint's block comment).
     armVerifyMarker();
+  });
+  await listen("wowsp://roster-stats-progress", (e: { payload: unknown }) => {
+    // The CN roster batch's per-slot settlements (commands/wg_api/roster.rs)
+    // — early-apply so chips fill mid-chunk; see applyRosterStatsProgress.
+    const p = e.payload as RosterStatsProgress | null;
+    if (p && typeof p.name === "string") applyRosterStatsProgress(p);
   });
   await listen("wowsp://arena-info", (e: { payload: unknown }) => {
     const next = e.payload as ArenaInfo;
