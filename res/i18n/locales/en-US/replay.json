@@ -349,7 +349,8 @@
     "showName": "Show this nickname",
     "viewAll": "All players",
     "viewSelf": "My battle",
-    "selfUnavailable": "Personal report unavailable (decoded stream missing)"
+    "selfUnavailable": "Personal report unavailable (decoded stream missing)",
+    "divisionTag": "Div. {letter}"
   },
   "comp": {
     "main": "Main battery",

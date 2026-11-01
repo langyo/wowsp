@@ -349,7 +349,8 @@
     "showName": "顯示該暱稱",
     "viewAll": "全員戰績",
     "viewSelf": "我的戰績",
-    "selfUnavailable": "暫無法產生個人戰報（缺少解碼資料）"
+    "selfUnavailable": "暫無法產生個人戰報（缺少解碼資料）",
+    "divisionTag": "組隊{letter}"
   },
   "comp": {
     "main": "主砲",

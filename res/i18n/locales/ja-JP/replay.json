@@ -349,7 +349,8 @@
     "showName": "このニックネームを表示",
     "viewAll": "全員の成績",
     "viewSelf": "自分の成績",
-    "selfUnavailable": "個人レポートを生成できません（デコードデータなし）"
+    "selfUnavailable": "個人レポートを生成できません（デコードデータなし）",
+    "divisionTag": "分隊{letter}"
   },
   "comp": {
     "main": "主砲",

@@ -349,7 +349,8 @@
     "showName": "显示该昵称",
     "viewAll": "全员战绩",
     "viewSelf": "我的战绩",
-    "selfUnavailable": "暂无法生成个人战报（缺少解码数据）"
+    "selfUnavailable": "暂无法生成个人战报（缺少解码数据）",
+    "divisionTag": "组队{letter}"
   },
   "comp": {
     "main": "主炮",

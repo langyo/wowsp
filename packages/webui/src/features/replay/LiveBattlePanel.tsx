@@ -86,6 +86,7 @@ import { SETTINGS_ANCHOR_CALIBRATION_LIST, useSettingsUiStore } from "@/stores/s
 import { useLanguage } from "@/i18n/useLanguage";
 import { t } from "@/i18n";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
+import { divisionLetters } from "@/utils/divisions";
 import { displayMapName } from "@/utils/mapNames";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
@@ -147,6 +148,7 @@ import { useMarkersStore } from "@/stores/markers";
 import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import StampTag from "@/components/base/StampTag";
+import DivisionTag from "@/components/base/DivisionTag";
 import { HkSpinner } from "@celestia-island/hikari";
 import { resolveRuntimeShips, runtimeShipEpoch } from "./runtimeShipIdentity";
 import "./LiveBattlePanel.scss";
@@ -442,15 +444,28 @@ export default defineComponent({
     // the orders through the same sortKeyEpoch bumps.
     let telemetryRosterOrder: string[] | null = null;
     let telemetryShipNames: Record<string, string> | null = null;
+    // The roster's queued-division map (telemetry `divisions`, nickname →
+    // prebattle id) — the live roster's ONLY division source (nothing rides
+    // the arena file). Same lifecycle as the maps above: dropped on battle
+    // change and on a stale stream, and the letter maps re-derive through
+    // the divisionsEpoch bumps below.
+    let telemetryDivisions: Record<string, number> | null = null;
     watch(
       () => props.arena?.dateTime ?? null,
       (stamp) => {
         sunk.reset(stamp);
-        if (telemetrySortKeys || telemetryRosterOrder || telemetryShipNames) {
+        if (
+          telemetrySortKeys ||
+          telemetryRosterOrder ||
+          telemetryShipNames ||
+          telemetryDivisions != null
+        ) {
           telemetrySortKeys = null;
           telemetryRosterOrder = null;
           telemetryShipNames = null;
+          telemetryDivisions = null;
           sortKeyEpoch.value += 1;
+          divisionsEpoch.value += 1;
         }
       },
       { immediate: true },
@@ -461,6 +476,10 @@ export default defineComponent({
     // Same trick for the sort-key map: plain state + a bump on every
     // fresh telemetry event.
     const sortKeyEpoch = ref(0);
+    // The division map's twin trigger: the per-side letter maps below
+    // consume it, so a fresh (or dropped) divisions payload re-letters
+    // the roster.
+    const divisionsEpoch = ref(0);
     /** Predicted-order key inputs for one side: locale + per-vehicle clan
      *  tag + that side's trusted sunk set (+ the game-true sort keys when
      *  this battle's telemetry delivered them). */
@@ -678,6 +697,39 @@ export default defineComponent({
         // block (per-name realms + the local player's cluster) steers
         // stats routing even when alive-sets come from another source.
         plugin.applyTelemetryIdentity(payload);
+        // The division map is ground truth in EVERY roster mode — exactly
+        // like the identity block above it applies BEFORE the plugin-mode
+        // gate below (a roster whose stats come from another source still
+        // queued its players as divisions). Stale frames drop the map;
+        // fresh ones store it (empty → null), and the epoch bumps on
+        // CHANGE only — the Rust poller dedupes events on content, so
+        // consecutive frames usually agree.
+        if (Date.now() - payload.t > 30_000) {
+          if (telemetryDivisions != null) {
+            telemetryDivisions = null;
+            divisionsEpoch.value += 1;
+          }
+        } else {
+          const next =
+            payload.divisions && Object.keys(payload.divisions).length > 0
+              ? payload.divisions
+              : null;
+          let changed: boolean;
+          const prev = telemetryDivisions;
+          if (next == null || prev == null) {
+            changed = (next == null) !== (prev == null);
+          } else {
+            // Narrowing cannot follow a mutable closure variable into the
+            // callback — carry the current map in a const for the diff.
+            changed =
+              Object.keys(next).length !== Object.keys(prev).length ||
+              Object.entries(next).some(([n, d]) => prev[n] !== d);
+          }
+          if (changed) {
+            telemetryDivisions = next;
+            divisionsEpoch.value += 1;
+          }
+        }
         if (overlayCfg.roster !== "plugin" || !plugin.installed) return;
         if (!props.arena) return;
         // Stale file from a previous battle (game closed without a quit
@@ -689,11 +741,18 @@ export default defineComponent({
           // sort-key map goes with it — a dead plugin must not keep
           // pinning rows game-true.
           telemetryAuthoritative = false;
-          if (telemetrySortKeys || telemetryRosterOrder || telemetryShipNames) {
+          if (
+            telemetrySortKeys ||
+            telemetryRosterOrder ||
+            telemetryShipNames ||
+            telemetryDivisions != null
+          ) {
             telemetrySortKeys = null;
             telemetryRosterOrder = null;
             telemetryShipNames = null;
+            telemetryDivisions = null;
             sortKeyEpoch.value += 1;
+            divisionsEpoch.value += 1;
           }
           return;
         }
@@ -849,6 +908,26 @@ export default defineComponent({
         predictedOptionsFor("enemy"),
       ),
     );
+
+    // ── Division (组队) lettering over the DISPLAYED orders: each side
+    // letters independently from A (the tags read top-down like the rows
+    // they ride), first-appearance over the exact rows on screen. The ids
+    // come from the telemetry divisions map only (nothing rides the arena
+    // file); the epoch consumption re-letters when a fresh payload lands
+    // or a battle reset drops the map.
+    const divisionLetterRows = (side: "ally" | "enemy") =>
+      (side === "enemy" ? enemies.value : allies.value).map((e) => ({
+        name: e.vehicle.name,
+        div: telemetryDivisions?.[e.vehicle.name] ?? null,
+      }));
+    const allyDivisionLetters = computed(() => {
+      void divisionsEpoch.value;
+      return divisionLetters(divisionLetterRows("ally"));
+    });
+    const enemyDivisionLetters = computed(() => {
+      void divisionsEpoch.value;
+      return divisionLetters(divisionLetterRows("enemy"));
+    });
 
     /** Lookup jump for one roster player. The row's OWN resolved realm
      *  wins when present (cross-server CW rows resolve on another
@@ -1061,8 +1140,17 @@ export default defineComponent({
           agg,
           rows: entries.map((entry): ShotRow => {
             const v = entry.vehicle;
+            // The division tag rides the SAME per-side lettering the DOM
+            // rows press; the shot carries the ALREADY-LOCALIZED label so
+            // the canvas renderer paints strings only.
+            const divLetter = (
+              enemy ? enemyDivisionLetters : allyDivisionLetters
+            ).value.get(v.name);
             return {
               nick: masking.maskOf(v.name),
+              divisionTag: divLetter
+                ? t("replay.postbattle.divisionTag", { letter: divLetter })
+                : undefined,
               clanTag: stats.get(v.id)?.clanTag ?? null,
               shipName:
                 shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
@@ -1382,6 +1470,17 @@ export default defineComponent({
         // — user feedback): the single highest tier, in both densities.
         const nameLine = (
           <span class="live-battle__crow-name">
+            {/* Division tag (组队标签): the queued-division letter leads the
+                line, before every identity decoration — a battle fact, not
+                a stats artifact, so it renders under every locale with no
+                prefs gate. Solo rows (and a null telemetry map) render
+                nothing. */}
+            {(() => {
+              const letter = (
+                v.relation <= 1 ? allyDivisionLetters : enemyDivisionLetters
+              ).value.get(v.name);
+              return letter != null ? <DivisionTag letter={letter} /> : null;
+            })()}
             {/* Local player marker (玩家标记): the name ITSELF carries the
                 mark — an animated tint (see markerTint), nickname-first,
                 account id sharpens. */}

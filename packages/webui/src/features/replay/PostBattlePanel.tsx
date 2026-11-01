@@ -67,6 +67,7 @@ import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
 import KarmaSup from "@/components/base/KarmaSup";
 import StampTag from "@/components/base/StampTag";
+import DivisionTag from "@/components/base/DivisionTag";
 import StatsCard from "@/components/stats/StatsCard";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import {
@@ -94,6 +95,7 @@ import { shipTierOf } from "@/utils/shipClass";
 import { isScriptedUnitName } from "@/utils/aiNames";
 import { isListedPlayer } from "@/utils/rosterSides";
 import { hasSingleTeamRoster, modeColorOfKey } from "@/utils/modeColors";
+import { divisionLetters } from "@/utils/divisions";
 import { displayMapName } from "@/utils/mapNames";
 import { useLiveCompositions } from "@/composables/useLiveCompositions";
 import {
@@ -370,6 +372,35 @@ export default defineComponent({
         .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
         .sort((a, b) => b.xp - a.xp);
     });
+
+    // ── Division (组队) lettering: the prebattle ids come off the decoded
+    // stream's arena players (0/absent = solo — the results packet itself
+    // carries no division field), and each side letters INDEPENDENTLY over
+    // its own display order (both start at A), so the tags read top-down
+    // like the rows they ride.
+    const prebattleDivs = computed<Map<string, number>>(() => {
+      const map = new Map<string, number>();
+      for (const ap of props.stream?.arenaPlayers ?? []) {
+        if (ap.name && ap.prebattle) map.set(ap.name, ap.prebattle);
+      }
+      return map;
+    });
+    const allyDivisionLetters = computed(() =>
+      divisionLetters(
+        allies.value.map((p) => ({
+          name: p.name,
+          div: prebattleDivs.value.get(p.name) ?? null,
+        })),
+      ),
+    );
+    const enemyDivisionLetters = computed(() =>
+      divisionLetters(
+        enemies.value.map((p) => ({
+          name: p.name,
+          div: prebattleDivs.value.get(p.name) ?? null,
+        })),
+      ),
+    );
 
     const prefs = computed(() => statsPrefsState.value);
     /** Seals ride the PR cluster in the settings (the master toggle nests
@@ -735,8 +766,17 @@ export default defineComponent({
             // and draws the tier ahead of the ship name, so the copied sheet
             // and the panel agree.
             const seal = shotStampOf(p.name);
+            // The division tag rides the SAME per-side lettering the DOM
+            // rows press; the shot carries the ALREADY-LOCALIZED label so
+            // the canvas renderer paints strings only.
+            const divLetter = (
+              enemy ? enemyDivisionLetters : allyDivisionLetters
+            ).value.get(p.name);
             return {
               nick: masking.maskOf(p.name),
+              divisionTag: divLetter
+                ? t("replay.postbattle.divisionTag", { letter: divLetter })
+                : undefined,
               clanTag: nameStats.value.get(p.name)?.clanTag ?? null,
               shipName: p.shipName,
               bot: isAiName(p.name),
@@ -794,6 +834,16 @@ export default defineComponent({
       const st = selfTeam.value;
       const isEnemy = (p: (typeof rows.value)[number]) =>
         p.team !== null && (st != null ? p.team !== st : p.team === 1);
+      /** The row's division tag (组队标签) — the yellow StampTag sibling,
+       *  FIRST in the nickname line ahead of the identity-line seals.
+       *  Divisions are battle facts, so unlike the seals this renders under
+       *  every locale with no prefs gate; solo rows render nothing. */
+      const divisionTagOf = (p: (typeof rows.value)[number]): VNode | null => {
+        const letter = (
+          isEnemy(p) ? enemyDivisionLetters : allyDivisionLetters
+        ).value.get(p.name);
+        return letter != null ? <DivisionTag letter={letter} /> : null;
+      };
       const head = props.head;
       const colTitle = (label: string, list: typeof rows.value) => {
         const title = <span class="replay-view__postbattle-col-name">{label}</span>;
@@ -1091,6 +1141,9 @@ export default defineComponent({
                       retired the row-end square column). The tag cluster
                       clips first when the line runs out; the nick keeps a
                       minimum slot. */}
+                  {/* The division tag (组队标签) leads the line — battle
+                      fact first, the seal verdicts after it. */}
+                  {divisionTagOf(p)}
                   {identitySealsOf(p, false)}
                   {/* Local player marker (玩家标记): the name itself carries
                       the animated tint — nickname-first, account id sharpens. */}
@@ -1201,6 +1254,9 @@ export default defineComponent({
                       the user asked for. The card's name track is fixed at
                       10rem, so the tag cluster is the item that clips: the
                       nickname keeps its slot even on a three-seal row. */}
+                  {/* The division tag (组队标签) leads the line here too —
+                      battle fact first, both composition tags after it. */}
+                  {divisionTagOf(p)}
                   {identitySealsOf(p, true)}
                   {/* Local player marker (玩家标记): the name itself carries
                       the animated tint — nickname-first, account id sharpens. */}
