@@ -11,6 +11,8 @@ import {
 
 import {
   HkScrollContainer,
+  HTabs,
+  useBreakpoint,
   type HkSettingsSection,
 } from "@celestia-island/hikari";
 
@@ -72,6 +74,15 @@ export interface SettingsRailGroup {
  * a primary-color gradient at the edge it lies beyond, so "where did the
  * selection go" never hides behind the fold — painter and feather
  * contract live in the library.
+ *
+ * Phone anatomy (hikari's 2026-10-28 upstream direction, ported here):
+ * under the family's mobile breakpoint the grouped rail moves to the TOP
+ * of the window as the shared pill strip (HTabs) — flat, sections in rail
+ * order, icons one notch up — horizontally scrollable with edge fades,
+ * keeping the active tab scrolled into view by itself. The strip renders
+ * INSTEAD of the rail (a DOM branch, not a restyle), so desktop DOM stays
+ * byte-identical, and the flip is live on resize for every host of this
+ * shell (desktop modal, phone sheet and the /settings page alike).
  */
 /** Consumed slice of HkScrollContainer's exposed component ref (the ref
  *  yields the exposed handle, not an element — see the scrollers below). */
@@ -327,48 +338,93 @@ export const SettingsShell = defineComponent({
       emit("update:section", key);
     }
 
+    // Phone flips the nav to the top strip; desktop keeps the grouped
+    // rail. ONE breakpoint source (hikari useBreakpoint) drives BOTH the
+    // DOM branch and the data-phone attribute the imported
+    // HkSettingsDialog.scss keys its column layout on, so the two halves
+    // cannot drift (the upstream port — see HkSettingsDialog.tsx's "Phone
+    // anatomy" docblock). The rail bookkeeping above stays untouched:
+    // centerActiveRailItem() no-ops on phone (the strip renders no
+    // .hk-settings__rail-item and never binds railRef), while HTabs keeps
+    // its own active tab scrolled into view.
+    const { isMobile } = useBreakpoint();
+
     return () => (
-      <div class="hk-settings">
-        <HkScrollContainer
-          as="nav"
-          class="hk-settings__rail"
-          ref={railRef}
-          selectionHint
-          aria-label={props.navLabel}
-        >
-          {props.groups.map((group) => (
-            <Fragment key={group.key}>
-              <div class="hk-settings__rail-heading">{group.label}</div>
-              {group.sections.map((s) => {
+      <div class="hk-settings" data-phone={isMobile.value || undefined}>
+        {isMobile.value ? (
+          /* The shared pill strip IS the button-group primitive: it
+             scrolls horizontally with edge fades and carries the
+             tablist semantics the rail had as a nav landmark. The strip
+             is FLAT — group headings stay out (the pane's own cards
+             carry the structure), sections appear in rail order.
+             Panels stay with the shell's own pane (renderPanels off);
+             icons ride one notch up with the strip (18px vs the rail's
+             16); disabled entries pass through (HTabs renders them as
+             disabled triggers, and pick() keeps its guard). */
+          <div class="hk-settings__topnav">
+            <HTabs
+              modelValue={active()}
+              tabs={entries().map((s) => {
                 const Icon = s.icon;
-                const on = active() === s.key && !s.disabled;
-                // Overflow-gated hint (see composables/globalTooltip):
-                // long locale labels ellipsize in the narrow rail — the
-                // popup only fires when the label actually clips.
-                return (
-                  <button
-                    key={s.key}
-                    type="button"
-                    class={["hk-settings__rail-item", on ? "is-active" : ""]}
-                    aria-current={on ? "true" : undefined}
-                    aria-disabled={s.disabled || undefined}
-                    disabled={s.disabled}
-                    data-hint-overflow={s.label}
-                    data-hint-pos="right"
-                    onClick={() => pick(s.key)}
-                  >
-                    {typeof Icon === "function" ? (
-                      <span class="hk-settings__rail-icon" aria-hidden="true">
-                        <Icon size={16} />
-                      </span>
-                    ) : null}
-                    <span class="hk-settings__rail-label">{s.label}</span>
-                  </button>
-                );
+                return {
+                  key: s.key,
+                  label: s.label,
+                  // Same functional-component guard the rail applies —
+                  // Component covers object-form components too, which
+                  // JSX cannot invoke directly.
+                  icon:
+                    typeof Icon === "function" ? <Icon size={18} /> : undefined,
+                  disabled: s.disabled,
+                };
               })}
-            </Fragment>
-          ))}
-        </HkScrollContainer>
+              renderPanels={false}
+              ariaLabel={props.navLabel}
+              onUpdate:modelValue={(key: string) => pick(key)}
+            />
+          </div>
+        ) : (
+          /* Desktop keeps the grouped rail exactly as it was. */
+          <HkScrollContainer
+            as="nav"
+            class="hk-settings__rail"
+            ref={railRef}
+            selectionHint
+            aria-label={props.navLabel}
+          >
+            {props.groups.map((group) => (
+              <Fragment key={group.key}>
+                <div class="hk-settings__rail-heading">{group.label}</div>
+                {group.sections.map((s) => {
+                  const Icon = s.icon;
+                  const on = active() === s.key && !s.disabled;
+                  // Overflow-gated hint (see composables/globalTooltip):
+                  // long locale labels ellipsize in the narrow rail — the
+                  // popup only fires when the label actually clips.
+                  return (
+                    <button
+                      key={s.key}
+                      type="button"
+                      class={["hk-settings__rail-item", on ? "is-active" : ""]}
+                      aria-current={on ? "true" : undefined}
+                      aria-disabled={s.disabled || undefined}
+                      disabled={s.disabled}
+                      data-hint-overflow={s.label}
+                      data-hint-pos="right"
+                      onClick={() => pick(s.key)}
+                    >
+                      {typeof Icon === "function" ? (
+                        <span class="hk-settings__rail-icon" aria-hidden="true">
+                          <Icon size={16} />
+                        </span>
+                      ) : null}
+                      <span class="hk-settings__rail-label">{s.label}</span>
+                    </button>
+                  );
+                })}
+              </Fragment>
+            ))}
+          </HkScrollContainer>
+        )}
         <HkScrollContainer class="hk-settings__pane" ref={paneRef}>
           {slots[active()]?.()}
         </HkScrollContainer>

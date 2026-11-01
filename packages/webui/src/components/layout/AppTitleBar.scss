@@ -103,8 +103,10 @@
    32px caption (hikari has no size prop): track padding, trigger height
    and font step — every radius, border, color and transition stays
    hikari's own, so the switch reads as the exact same control family as
-   the dashboard's date-range tabs. Hidden on the phone layout where the
-   bar hosts the hamburger drawer controls instead. */
+   the dashboard's date-range tabs. On the phone layout the switch now
+   RIDES the bar too (the header-centre pattern — the bar raises to 48px
+   and the title block yields while the switch is active, see the media
+   query further down); the hamburger/avatar opener stays ahead of it. */
 .app-titlebar__views {
   position: absolute;
   left: 50%;
@@ -141,7 +143,25 @@
 }
 
 @media (max-width: 767px) {
-  .app-titlebar__views {
+  /* The switch keeps riding the phone bar (raised to 48px below): same
+     compact chrome as the caption, with a trigger a touch taller than the
+     desktop caption's 22px to sit proportionate in the 48px bar. Icons
+     stay 13px (fixed on the HkTabs items in the TSX) and the track never
+     scrolls (scrollable={false}) — even the three-way ships switch fits a
+     360px viewport once the title block yields. */
+  .app-titlebar .hk-titlebar .app-titlebar__views .hk-tabs-trigger {
+    height: 26px;
+    padding: 0 8px;
+  }
+
+  /* While a centre switch owns the bar, the title block (logo + title +
+     subtitle) yields the centre to it: the switch is absolutely centered
+     on the window and a visible title would crowd it on a phone-width
+     window. The modifier lives ON the .app-titlebar root (same element as
+     the page class), so the chain starts there: (0,3,0) — it out-ranks
+     hikari's own title chrome at any import order. Pages without a
+     switch keep the title exactly as before. */
+  .app-titlebar--switched .hk-titlebar .hk-titlebar-title {
     display: none;
   }
 }

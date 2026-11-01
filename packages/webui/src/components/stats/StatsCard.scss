@@ -211,4 +211,17 @@
     &__kpis { grid-template-columns: repeat(3, 1fr); }
     &__divisions { grid-template-columns: repeat(2, 1fr); }
   }
+
+  /* ── Phone (≤767px): padding pass ──
+     The card hugs a ~390px viewport: the card padding steps down to 12px
+     and the tile numbers one text-size step down — the hero winrate keeps
+     --text-2xl so the hierarchy survives the compaction (tile and grid
+     gaps are already 0.5rem/8px at every width). Desktop rules above are
+     untouched. */
+  @media (max-width: 767px) {
+    padding: 0.75rem;
+
+    &__division-wr { font-size: var(--text-sm); }
+    &__kpi-value { font-size: var(--text-sm); }
+  }
 }

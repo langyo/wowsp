@@ -693,6 +693,7 @@
     "defensiveAA": "Feu AA défensif"
   },
   "techTree": {
+    "nationPicker": "Choisir la nation",
     "realmHint": "Source des branches de l'arbre technologique : topologie de référence WG et lignes de recherche propres au client Lesta.",
     "title": "Arbre technologique",
     "branch": "Branche",

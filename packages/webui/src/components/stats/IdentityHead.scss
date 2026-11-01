@@ -58,4 +58,33 @@
     gap: 0.4rem;
     flex-shrink: 0;
   }
+
+  /* ── Phone (≤767px): the head stacks ──
+     Desktop shares ONE visual row (name line left, badges + actions
+     right); on a ~390px viewport that row crushes the nickname. Here the
+     name line takes the FULL first row — avatar stepped down to 28px,
+     tag + name + karma superscript keep their line — and the badges +
+     action pills wrap onto a second row below. The name keeps its
+     ellipsis track, so it only clips when genuinely longer than the row.
+     Desktop rules above are untouched. */
+  @media (max-width: 767px) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+
+    &__badges {
+      /* Very narrow phones wrap the pill row instead of overflowing. */
+      flex-wrap: wrap;
+    }
+
+    /* PlayerBadge paints its size as an INLINE width/height (36px from
+       StatsCard's avatar slot), so the stylesheet only wins with the
+       flag — the same inline-style carve-out theme.scss documents for
+       the confirm-dialog frame. Phone-only: desktop keeps the slot's
+       own size. */
+    &__name-line .player-badge {
+      width: 28px !important;
+      height: 28px !important;
+    }
+  }
 }

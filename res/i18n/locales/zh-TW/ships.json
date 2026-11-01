@@ -693,6 +693,7 @@
     "defensiveAA": "防禦用對空火力"
   },
   "techTree": {
+    "nationPicker": "選擇國家",
     "realmHint": "科技樹分支來源：WG 為基準拓撲，Lesta 為用戶端自身研究線。",
     "title": "科技樹",
     "branch": "分支",
