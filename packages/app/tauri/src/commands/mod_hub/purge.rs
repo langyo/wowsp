@@ -26,6 +26,27 @@ use super::scan_installed;
 use super::*;
 use wowsp_tauri_shared::{CommandResult, PurgeReinstallReport, PurgeSkip};
 
+/// The ledger rows a purge works over for one install: every record of
+/// that root EXCEPT the per-component `shared.*` records — they carry no
+/// catalog entry, so reinstalling them can only fail (the loop would
+/// skip, the run would go partial and the crash-resume marker would be
+/// stuck retrying the same id forever). They are recreated automatically
+/// when their dependents reinstall; this one filter feeds both the
+/// reinstall loop and `marker.planned` (the resume iterates the marker).
+pub(crate) fn purge_reinstall_set(
+    installs: &[ModInstallRecord],
+    game_root: &str,
+) -> Vec<ModInstallRecord> {
+    installs
+        .iter()
+        .filter(|record| {
+            (record.game_root.is_empty() || record.game_root.eq_ignore_ascii_case(game_root))
+                && !mod_catalog::is_shared_record_id(&record.id)
+        })
+        .cloned()
+        .collect()
+}
+
 /// Filesystem-safe slug for a generated local-install id.
 fn slug(text: &str) -> String {
     let mut out = String::new();
@@ -251,16 +272,11 @@ pub async fn mod_hub_purge_reinstall(
         .into());
     }
 
-    // Snapshot the ledger rows for THIS install before anything moves.
+    // Snapshot the ledger rows for THIS install before anything moves
+    // (per-component `shared.*` records excluded — see
+    // `purge_reinstall_set`).
     let ledger = mod_catalog::ledger::load_ledger();
-    let mine: Vec<ModInstallRecord> = ledger
-        .installs
-        .iter()
-        .filter(|record| {
-            record.game_root.is_empty() || record.game_root.eq_ignore_ascii_case(&game_root)
-        })
-        .cloned()
-        .collect();
+    let mine: Vec<ModInstallRecord> = purge_reinstall_set(&ledger.installs, &game_root);
     let (bin_version, _) = super::latest_bin_version(&game_root)
         .ok_or_else(|| anyhow!("no numeric bin/<version> under {game_root}/bin"))?;
 
@@ -462,6 +478,7 @@ async fn adopt_and_register(
             game_root: game_root.to_string(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let res_mods = manifest::res_mods_of(game_root, &record.bin_version);
         manifest::hub_apply(manifest::ManifestOp::UpsertManaged {

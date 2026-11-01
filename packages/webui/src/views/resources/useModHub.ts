@@ -946,10 +946,18 @@ export function useModHub() {
 
   /** The WoWSP-ledger catalog records of one root (source "mod-hub";
    *  legacy unstamped records count for every root, the pairing rule
-   * pluginUpdates uses). */
+   * pluginUpdates uses). Per-component `shared.*` records are excluded:
+   * they carry source "mod-hub" too but never pair with a catalog entry —
+   * left in, the sync plan would list (and uninstall) a shared runtime
+   * tree whose dependents still live on the target client. Every other
+   * records-driven surface pairs by catalog id and excludes them
+   * naturally. */
   const catalogRecordsOn = (root: string) =>
     records.value.filter(
-      (r) => r.source === "mod-hub" && (!r.gameRoot || sameGamePath(r.gameRoot, root)),
+      (r) =>
+        r.source === "mod-hub" &&
+        !r.id.startsWith("shared.") &&
+        (!r.gameRoot || sameGamePath(r.gameRoot, root)),
     );
 
   /** Build the reconcile plan off the in-memory catalog + a FRESH

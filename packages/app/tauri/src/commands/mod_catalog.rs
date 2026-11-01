@@ -164,6 +164,7 @@ pub(crate) mod install;
 pub(crate) mod ledger;
 mod pkg_cache;
 mod reconcile;
+mod shared_records;
 mod uninstall;
 mod version_guard;
 
@@ -205,6 +206,14 @@ pub(crate) use uninstall::{is_shared_component_path, shared_component_root, unin
 pub(crate) use uninstall::{
     UninstallReport, rewind_for_reinstall, uninstall_from_ledger, validate_file_removal_order,
     validate_uninstall_order,
+};
+// The shared-component record split (install side) + the computed-
+// dependents helpers; `shared_records` itself stays a private sibling so
+// only the re-exported surface is callable outside.
+#[cfg(test)]
+pub(crate) use shared_records::{claims_shared_root, shared_record_id, shared_record_label};
+pub(crate) use shared_records::{
+    commit_pack_record, drop_removed_shared_roots, is_shared_record_id,
 };
 // The Tauri commands ride with their macro twins (same pattern as
 // `commands::pairing`'s re-export block) so the generate_handler

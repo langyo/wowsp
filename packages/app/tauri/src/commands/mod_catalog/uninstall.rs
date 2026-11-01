@@ -211,9 +211,14 @@ enum RewindMode {
     Reinstall,
 }
 
-/// Ownership keys another record on the same game root and bin still claims.
+/// Ownership keys another record on the same game root still claims.
 /// Duplicate records of the same catalog id are one logical install and are
-/// rewound together, so they protect nothing.
+/// rewound together, so they protect nothing. Same-BIN claims protect any
+/// path; `@game/` paths protect ACROSS bins — a game-root drop (the loose
+/// gettext DLL) is physically one file no bin spelling owns separately, so
+/// a claimer keyed at another bin still names the very file this rewind is
+/// about to touch (res_mods files stay bin-scoped: a record keyed at
+/// another bin owns physically different files under a different tree).
 fn shared_claims(
     installs: &[ModInstallRecord],
     record: &ModInstallRecord,
@@ -222,9 +227,12 @@ fn shared_claims(
     installs
         .iter()
         .filter(|r| r.id != record.id)
-        .filter(|r| r.bin_version == record.bin_version)
         .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
-        .flat_map(|r| r.files.iter())
+        .flat_map(|r| {
+            r.files
+                .iter()
+                .filter(|f| f.starts_with("@game/") || r.bin_version == record.bin_version)
+        })
         .map(|rel| uninstall_path_key(rel))
         .collect()
 }
@@ -241,6 +249,14 @@ fn shared_claims(
 /// layout: the component ships with every dependent and survives any one
 /// of them. Duplicate records of the same catalog id are one logical
 /// install and protect nothing, exactly like [`shared_claims`].
+///
+/// The consumer computation is a UNION of the two claim spellings the
+/// ledger carries: LEGACY records keep their shared files inlined in
+/// `files` (the pre-split shape, kept forever — no migration), NEW-style
+/// pack records declare the dependency through `shared_roots` (their
+/// shared files live in the per-component `shared.*` record — see
+/// [`super::shared_records`]), and the per-component records themselves
+/// claim their own tree through their file lists.
 fn live_shared_component_keys(
     installs: &[ModInstallRecord],
     record: &ModInstallRecord,
@@ -251,8 +267,12 @@ fn live_shared_component_keys(
         .filter(|r| r.id != record.id)
         .filter(|r| r.bin_version == record.bin_version)
         .filter(|r| r.game_root.is_empty() || r.game_root == game_root)
-        .flat_map(|r| r.files.iter())
-        .filter_map(|rel| shared_component_root(rel))
+        .flat_map(|r| {
+            r.files
+                .iter()
+                .filter_map(|rel| shared_component_root(rel))
+                .chain(r.shared_roots.iter().cloned())
+        })
         .collect();
     record
         .files
@@ -270,7 +290,13 @@ pub(crate) fn uninstall_from_ledger(
     mod_id: &str,
     game_root: &str,
 ) -> anyhow::Result<UninstallReport> {
-    rewind_from_ledger(installs, mod_id, game_root, RewindMode::Strict)
+    rewind_from_ledger(
+        installs,
+        mod_id,
+        game_root,
+        RewindMode::Strict,
+        &std::collections::HashSet::new(),
+    )
 }
 
 /// Reinstall-mode rewind: like [`uninstall_from_ledger`], but the strict
@@ -284,7 +310,34 @@ pub(crate) fn rewind_for_reinstall(
     mod_id: &str,
     game_root: &str,
 ) -> anyhow::Result<UninstallReport> {
-    rewind_from_ledger(installs, mod_id, game_root, RewindMode::Reinstall)
+    rewind_from_ledger(
+        installs,
+        mod_id,
+        game_root,
+        RewindMode::Reinstall,
+        &std::collections::HashSet::new(),
+    )
+}
+
+/// [`rewind_for_reinstall`] plus EXTRA protected keys the caller knows a
+/// plain same-bin claim scan cannot see — the shared-record upsert's
+/// cross-bin case: the incoming install (at another bin) just rewrote the
+/// `@game/` file and is not in a claimable shape yet, so the rewind must
+/// be told to leave those entries at the fresh bytes (see
+/// [`super::shared_records::commit_pack_record`]).
+pub(crate) fn rewind_for_reinstall_protecting(
+    installs: &mut Vec<ModInstallRecord>,
+    mod_id: &str,
+    game_root: &str,
+    extra_protected: &std::collections::HashSet<String>,
+) -> anyhow::Result<UninstallReport> {
+    rewind_from_ledger(
+        installs,
+        mod_id,
+        game_root,
+        RewindMode::Reinstall,
+        extra_protected,
+    )
 }
 
 fn rewind_from_ledger(
@@ -292,6 +345,7 @@ fn rewind_from_ledger(
     mod_id: &str,
     game_root: &str,
     mode: RewindMode,
+    extra_protected: &std::collections::HashSet<String>,
 ) -> anyhow::Result<UninstallReport> {
     if mode == RewindMode::Strict {
         validate_uninstall_order(installs, mod_id, game_root)?;
@@ -314,6 +368,7 @@ fn rewind_from_ledger(
         RewindMode::Reinstall => {
             let mut claims = shared_claims(installs, &record, game_root);
             claims.extend(live_shared_component_keys(installs, &record, game_root));
+            claims.extend(extra_protected.iter().cloned());
             claims
         },
     };
@@ -474,6 +529,18 @@ fn rewind_from_ledger(
         id: record.id.clone(),
     });
 
+    // Shared components this record consumed: when it was the LAST
+    // consumer of a component root, the per-component `shared.*` record
+    // goes with it (files removed, generation layer restored) — the
+    // component's lifetime is bound to its consumers, the same
+    // ref-count policy the loader marker follows above. Strict user
+    // uninstalls only: a reinstall rewind is followed by a fresh
+    // install that re-declares the same dependency moments later.
+    let mut shared_reports = Vec::new();
+    if mode == RewindMode::Strict {
+        shared_reports = last_consumer_cleanup(installs, &record, game_root)?;
+    }
+
     // The 0-byte loader marker is a shared component: when the last record
     // referencing it is gone, drop our placeholder — a non-empty loader
     // shipped with a real modpack (Aslain & co.) is never ours to touch,
@@ -494,6 +561,17 @@ fn rewind_from_ledger(
             tracing::info!("removed the shared PnFModsLoader.py placeholder");
         }
     }
+    // Last-consumer sub-reports fold into this one — the user sees one
+    // uninstall covering the pack and the component trees it kept alive.
+    removed += shared_reports
+        .iter()
+        .map(|r| r.removed_files)
+        .sum::<usize>();
+    restored += shared_reports
+        .iter()
+        .map(|r| r.restored_files)
+        .sum::<usize>();
+    warnings.extend(shared_reports.into_iter().flat_map(|r| r.warnings));
     Ok(UninstallReport {
         id: record.id,
         name: record.name,
@@ -501,6 +579,94 @@ fn rewind_from_ledger(
         restored_files: restored,
         warnings,
     })
+}
+
+/// Shared-component records whose consumer set a departing record was
+/// the LAST member of: for every component root the record consumed
+/// (its `shared_roots` edges UNION the roots of its inlined shared files
+/// — legacy records), when no other live consumer remains (same game
+/// root and bin, excluding shared records themselves — a component kept
+/// alive only by its own record is dead by definition), the component's
+/// `shared.*` record is uninstalled together with the departure: files
+/// removed, generation layer restored. Called from the strict uninstall
+/// core, so the catalog uninstall, the unit uninstall's full-coverage
+/// pass and every other strict rewind ride along (mirroring the loader
+/// marker ref-count in [`rewind_from_ledger`]). The unit-uninstall
+/// PREFLIGHT need not model this: a cleanup fires exactly when no
+/// consumer claims the component, and a claiming record is the only
+/// thing whose absence the strict order guard would notice — so the
+/// cleanup can never meet a refusal the preflight did not simulate.
+fn last_consumer_cleanup(
+    installs: &mut Vec<ModInstallRecord>,
+    departed: &ModInstallRecord,
+    game_root: &str,
+) -> anyhow::Result<Vec<UninstallReport>> {
+    // A shared record's own uninstall IS the component uninstall — its
+    // departure follows from nobody.
+    if super::shared_records::is_shared_record_id(&departed.id) {
+        return Ok(Vec::new());
+    }
+    last_consumer_cleanup_for_roots(
+        installs,
+        &consumed_shared_roots(departed),
+        &departed.bin_version,
+        game_root,
+    )
+}
+
+/// [`last_consumer_cleanup`] for an EXPLICIT root set and bin — the shape
+/// the install flows need when a pack update DROPS a component (the
+/// previous same-id record consumed a root the replacement no longer
+/// declares; same helper, same Strict semantics — the component record is
+/// uninstalled with its files and layer once no consumer remains).
+pub(crate) fn last_consumer_cleanup_for_roots(
+    installs: &mut Vec<ModInstallRecord>,
+    roots: &[String],
+    bin_version: &str,
+    game_root: &str,
+) -> anyhow::Result<Vec<UninstallReport>> {
+    let mut reports = Vec::new();
+    for root in roots {
+        let id = super::shared_records::shared_record_id(root);
+        let same_root = |r: &ModInstallRecord| r.game_root.is_empty() || r.game_root == game_root;
+        // The component record must exist at the departure's own bin — a
+        // record keyed at another bin owns physically different files the
+        // departure never kept alive.
+        if !installs
+            .iter()
+            .any(|r| r.id == id && r.bin_version == bin_version && same_root(r))
+        {
+            continue;
+        }
+        // Another live consumer (union computation, shared records
+        // excluded) keeps the component.
+        if installs.iter().any(|r| {
+            !super::shared_records::is_shared_record_id(&r.id)
+                && r.bin_version == bin_version
+                && same_root(r)
+                && super::shared_records::claims_shared_root(r, root)
+        }) {
+            continue;
+        }
+        reports.push(uninstall_from_ledger(installs, &id, game_root)?);
+    }
+    Ok(reports)
+}
+
+/// Every component root a record consumes, deduped and sorted: its
+/// `shared_roots` edges UNION the roots of any inlined shared files it
+/// still carries (legacy records, or files a hand-built ledger inlined).
+pub(crate) fn consumed_shared_roots(record: &ModInstallRecord) -> Vec<String> {
+    let mut roots: Vec<String> = record.shared_roots.clone();
+    roots.extend(
+        record
+            .files
+            .iter()
+            .filter_map(|rel| shared_component_root(rel)),
+    );
+    roots.sort();
+    roots.dedup();
+    roots
 }
 
 /// Copy a snapshot tree back: entries under `@game/` land in the game root,

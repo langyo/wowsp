@@ -209,6 +209,7 @@ mod tests {
                 game_root: game.to_string_lossy().into_owned(),
                 hashes: None,
                 snapshot_hashes: None,
+                shared_roots: Vec::new(),
             }];
             let packages = vec![CatalogPackage {
                 url: "https://example.com/pack.zip".into(),
@@ -329,6 +330,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         }];
         let removed = uninstall_from_ledger(&mut installs, "test-mod", &game_root).unwrap();
         assert_eq!(removed.removed_files, 3);
@@ -376,6 +378,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         }];
         let report = uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
         assert_eq!(report.removed_files, 1);
@@ -434,6 +437,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         }];
 
         // Reinstall: rewind the old record first (exactly what
@@ -465,6 +469,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         });
 
         // Final uninstall rewinds to VANILLA, not to v1.
@@ -509,6 +514,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![
             mk("a", &["gui/shared.css", "gui/only-a.css"], Some(&restore_a)),
@@ -570,6 +576,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![
             mk("a", &["gui/shared.css", "gui/only-a.css"]),
@@ -649,6 +656,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![
             mk("a", "1", &restore_a),
@@ -709,6 +717,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![mk("a", "A"), mk("b", "B")];
         uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
@@ -774,6 +783,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let orphan = tmp.join("rr/orphan-restore");
         touch(&orphan.join("gui/dead.png"));
@@ -847,6 +857,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![
             mk("zombie", &["PnFModsLoader.py"]),
@@ -1125,6 +1136,7 @@ mod tests {
             game_root: game_root.clone(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         });
 
         // The folded entry installs another scheme; supersedes names the
@@ -1191,6 +1203,7 @@ mod tests {
                 game_root: game_root.clone(),
                 hashes: None,
                 snapshot_hashes: None,
+                shared_roots: Vec::new(),
             }),
         );
         assert!(res_mods.join("wowsp.toml").is_file());
@@ -1209,6 +1222,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         }];
         uninstall_from_ledger(&mut installs, "m", &game_root).unwrap();
         assert!(
@@ -1323,6 +1337,7 @@ mod tests {
                 game_root: String::new(),
                 hashes: None,
                 snapshot_hashes: None,
+                shared_roots: Vec::new(),
             }],
         };
         let json = serde_json::to_string_pretty(&ledger).unwrap();
@@ -1347,6 +1362,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         }
     }
 
@@ -1553,6 +1569,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![
             mk(
@@ -1652,6 +1669,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![
             mk("a", &["PnFMods/TTaroModUtils/S.py", "gui/a-only.png"]),
@@ -1697,6 +1715,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         // a claims x.json only; b keeps the SAME component root alive via
         // y.json — no exact-path overlap anywhere.
@@ -1745,6 +1764,7 @@ mod tests {
             game_root: String::new(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
         let mut installs = vec![
             mk("a", &["PnFMods/TTaroModUtils/SchemaScanner.py"]),
@@ -1759,6 +1779,1025 @@ mod tests {
         uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
         assert!(!rm.join("PnFMods/TTaroModUtils/Other.py").exists());
         assert!(installs.is_empty());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    // ── P1 full variant: shared.* component records ───────────────────────
+    //
+    // Drive a full catalog-style install (extract → classify → journal →
+    // split commit) without network: the record commits exactly like the
+    // install command does — private files plus shared_roots on the pack,
+    // one upserted shared.* record per component root.
+
+    fn install_pack(
+        tmp: &Path,
+        work_name: &str,
+        game_root: &str,
+        id: &str,
+        version: &str,
+        installs: &mut Vec<ModInstallRecord>,
+        entries: &[(&str, &[u8])],
+    ) -> mod_hub::PlanApply {
+        let work = tmp.join(work_name);
+        fs::create_dir_all(&work).unwrap();
+        zip_fixture(&package_archive(&work, 0), entries);
+        let packages = vec![CatalogPackage {
+            url: "https://github.com/langyo/wowsp/releases/download/mod-hub/p.zip".into(),
+            name: "p.zip".into(),
+            size: 0,
+            sha256: String::new(),
+        }];
+        // The same-id records this install is about to rewind — the
+        // dropped-component cleanup needs them (mirrors the install
+        // command's pre-rewind capture).
+        let previous: Vec<ModInstallRecord> = installs
+            .iter()
+            .filter(|r| r.id == id && (r.game_root.is_empty() || r.game_root == game_root))
+            .cloned()
+            .collect();
+        let applied = unpack_and_install(id, id, &work, game_root, &packages, &[], installs)
+            .expect("unpack_and_install");
+        // The record the install command builds (full written list, the
+        // journal's restore dir, the P4 hash maps) — commit_pack_record
+        // then splits the shared-component files out.
+        let record = ModInstallRecord {
+            id: id.into(),
+            name: applied.report.name.clone(),
+            version: version.into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: applied.report.bin_version.clone(),
+            installed_at: String::new(),
+            files: applied.written.clone(),
+            restore_dir: applied
+                .restore_dir
+                .as_ref()
+                .map(|p| p.to_string_lossy().into_owned()),
+            game_root: game_root.into(),
+            hashes: applied.hashes.clone(),
+            snapshot_hashes: applied.snapshot_hashes.clone(),
+            shared_roots: Vec::new(),
+        };
+        let committed =
+            commit_pack_record(installs, record, game_root).expect("commit_pack_record");
+        // Same dropped-component cleanup the install command runs after
+        // the commit: roots the rewound records consumed that the new
+        // pack no longer declares lose their component record.
+        drop_removed_shared_roots(installs, &previous, &committed.shared_roots, game_root)
+            .expect("drop_removed_shared_roots");
+        applied
+    }
+
+    /// Every regular file under `dir`, recursively.
+    fn tree_files(dir: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for ent in fs::read_dir(&d).unwrap().flatten() {
+                let p = ent.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    out.push(p);
+                }
+            }
+        }
+        out
+    }
+
+    fn sha_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(bytes))
+    }
+
+    /// (a) Fresh install: the shared tree lands in ONE per-component
+    /// shared.* record (files under the root only, its own restore dir
+    /// holding the single pre-install layer), and the pack record keeps
+    /// only its private files plus the shared_roots edge — no shared
+    /// entries in its file list, no hash maps, no layer copies.
+    #[test]
+    fn fresh_install_splits_shared_files_into_a_component_record() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_split_fresh");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+
+        let mut installs = Vec::new();
+        install_pack(
+            &tmp,
+            "work-a",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen-1 bytes"),
+                ("res_mods/gui/a-only.png", b"png"),
+            ],
+        );
+        assert_eq!(installs.len(), 2, "pack record + one component record");
+
+        let pack = installs.iter().find(|r| r.id == "a").unwrap();
+        assert_eq!(pack.files, vec!["gui/a-only.png".to_string()]);
+        assert_eq!(pack.shared_roots, vec!["gui/ttaro/".to_string()]);
+        assert_eq!(pack.hashes, None);
+        assert_eq!(pack.snapshot_hashes, None);
+        assert_eq!(pack.restore_dir, None, "no private layer was captured");
+
+        let shared = installs
+            .iter()
+            .find(|r| r.id == "shared.gui.ttaro")
+            .expect("the component record exists");
+        assert_eq!(shared.files, vec!["gui/ttaro/index.css".to_string()]);
+        assert_eq!(shared.name, "Shared TTaro GUI tree");
+        assert_eq!(shared.source, "mod-hub");
+        assert_eq!(shared.version, "1.0");
+        assert_eq!(shared.bin_version, "1");
+        assert_eq!(shared.game_root, game_root);
+        assert_eq!(
+            shared.hashes.as_ref().unwrap().get("gui/ttaro/index.css"),
+            Some(&sha_hex(b"gen-1 bytes"))
+        );
+        assert_eq!(
+            shared
+                .snapshot_hashes
+                .as_ref()
+                .unwrap()
+                .get("gui/ttaro/index.css"),
+            Some(&sha_hex(b"vanilla original")),
+            "the layer map hashes the CAPTURED pre-install bytes"
+        );
+
+        // ONE layer, in the component record's restore dir — and nowhere
+        // else (the pack's journal dir is gone once its layers moved out).
+        let layer_dir = PathBuf::from(shared.restore_dir.as_ref().unwrap());
+        let layers = tree_files(&layer_dir);
+        assert_eq!(layers.len(), 1, "one layer per content generation");
+        assert_eq!(fs::read(&layers[0]).unwrap(), b"vanilla original");
+        assert_eq!(
+            tree_files(&tmp.join("rr")).len(),
+            1,
+            "the pack kept no layer copy of its own"
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (b) Second dependent shipping IDENTICAL component bytes: the
+    /// generation is unchanged — no new layer is captured (the journal's
+    /// redundant capture is discarded), the component record keeps its
+    /// files and layer exactly, and only the pack record is added.
+    #[test]
+    fn second_dependent_with_identical_bytes_does_not_relayer() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_split_identical");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+
+        install_pack(
+            &tmp,
+            "work-a",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen-1 bytes"),
+                ("res_mods/gui/a-only.png", b"png"),
+            ],
+        );
+        let shared_before = installs
+            .iter()
+            .find(|r| r.id == "shared.gui.ttaro")
+            .cloned()
+            .unwrap();
+        let before_layers: Vec<Vec<u8>> =
+            tree_files(&PathBuf::from(shared_before.restore_dir.as_ref().unwrap()))
+                .iter()
+                .map(|p| fs::read(p).unwrap())
+                .collect();
+
+        let applied = install_pack(
+            &tmp,
+            "work-b",
+            &game_root,
+            "b",
+            "2.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen-1 bytes"),
+                ("res_mods/gui/b-only.png", b"png b"),
+            ],
+        );
+        assert!(
+            !applied
+                .report
+                .warnings
+                .iter()
+                .any(|w| w.contains("mixed-version")),
+            "identical bytes stay silent: {:?}",
+            applied.report.warnings
+        );
+
+        assert_eq!(installs.len(), 3, "a + shared + b");
+        let shared = installs
+            .iter()
+            .find(|r| r.id == "shared.gui.ttaro")
+            .unwrap();
+        assert_eq!(shared.files, shared_before.files);
+        assert_eq!(shared.hashes, shared_before.hashes);
+        assert_eq!(shared.snapshot_hashes, shared_before.snapshot_hashes);
+        assert_eq!(shared.restore_dir, shared_before.restore_dir);
+        // The generation layer is BYTE-identical and SINGLE — no re-capture.
+        let after_dir = PathBuf::from(shared.restore_dir.as_ref().unwrap());
+        let after_layers: Vec<Vec<u8>> = tree_files(&after_dir)
+            .iter()
+            .map(|p| fs::read(p).unwrap())
+            .collect();
+        assert_eq!(after_layers, before_layers);
+        assert_eq!(
+            tree_files(&tmp.join("rr")).len(),
+            1,
+            "still exactly one layer file in the restore root"
+        );
+        let pack_b = installs.iter().find(|r| r.id == "b").unwrap();
+        assert_eq!(pack_b.files, vec!["gui/b-only.png".to_string()]);
+        assert_eq!(pack_b.restore_dir, None);
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (c) Second dependent shipping DIFFERENT component bytes: a NEW
+    /// generation layer is captured (the old generation's bytes, straight
+    /// from the journal), the component record is replaced wholesale with
+    /// the new hashes, and the divergence warning path fires unchanged —
+    /// naming the file and both record ids.
+    #[test]
+    fn second_dependent_with_different_bytes_layers_a_new_generation() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_split_divergent");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+
+        install_pack(
+            &tmp,
+            "work-a",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen-1 bytes"),
+                ("res_mods/gui/a-only.png", b"png"),
+            ],
+        );
+        let applied = install_pack(
+            &tmp,
+            "work-b",
+            &game_root,
+            "b",
+            "2.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen-2 bytes"),
+                ("res_mods/gui/b-only.png", b"png b"),
+            ],
+        );
+
+        // The mixed-version warning names the file and both ids — the
+        // component record is the recorded claimer now.
+        let warning = applied
+            .report
+            .warnings
+            .iter()
+            .find(|w| w.contains("mixed-version"))
+            .expect("divergence warns");
+        assert!(warning.contains("gui/ttaro/index.css"), "{warning}");
+        assert!(warning.contains("(install b)"), "{warning}");
+        assert!(warning.contains("(id shared.gui.ttaro)"), "{warning}");
+
+        // Exactly ONE component record — replaced wholesale.
+        assert_eq!(
+            installs
+                .iter()
+                .filter(|r| r.id == "shared.gui.ttaro")
+                .count(),
+            1
+        );
+        let shared = installs
+            .iter()
+            .find(|r| r.id == "shared.gui.ttaro")
+            .unwrap();
+        assert_eq!(
+            shared.hashes.as_ref().unwrap().get("gui/ttaro/index.css"),
+            Some(&sha_hex(b"gen-2 bytes")),
+            "the record describes the NEW generation"
+        );
+        assert_eq!(
+            shared
+                .snapshot_hashes
+                .as_ref()
+                .unwrap()
+                .get("gui/ttaro/index.css"),
+            Some(&sha_hex(b"gen-1 bytes")),
+            "the new generation layer holds the OLD generation's bytes"
+        );
+        let layers = tree_files(&PathBuf::from(shared.restore_dir.as_ref().unwrap()));
+        assert_eq!(layers.len(), 1);
+        assert_eq!(fs::read(&layers[0]).unwrap(), b"gen-1 bytes");
+        // The live tree carries the new bytes, and the restore root still
+        // holds exactly the one generation layer.
+        assert_eq!(
+            fs::read(rm.join("gui/ttaro/index.css")).unwrap(),
+            b"gen-2 bytes"
+        );
+        assert_eq!(tree_files(&tmp.join("rr")).len(), 1);
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (d)+(e) Consumer-bound lifetime: uninstalling one dependent keeps
+    /// the tree, the component record and the OTHER dependent's files;
+    /// uninstalling the LAST dependent takes the component record with it
+    /// — files removed and the ORIGINAL pre-first-install bytes restored
+    /// from the generation layer.
+    #[test]
+    fn last_dependent_uninstall_removes_and_restores_the_component() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_split_last_consumer");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+        install_pack(
+            &tmp,
+            "work-a",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen-1 bytes"),
+                ("res_mods/gui/a-only.png", b"png"),
+            ],
+        );
+        install_pack(
+            &tmp,
+            "work-b",
+            &game_root,
+            "b",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen-1 bytes"),
+                ("res_mods/gui/b-only.png", b"png b"),
+            ],
+        );
+
+        // (d) dependent 1 leaves: tree + component record stay.
+        uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+        assert_eq!(
+            installs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["shared.gui.ttaro", "b"],
+            "the pack record goes, the component record stays"
+        );
+        assert!(
+            !rm.join("gui/a-only.png").exists(),
+            "the departing pack's private file goes"
+        );
+        assert_eq!(
+            fs::read(rm.join("gui/ttaro/index.css")).unwrap(),
+            b"gen-1 bytes",
+            "the shared tree stays at the live bytes"
+        );
+
+        // (e) the LAST dependent leaves: the component goes with it and
+        // the ORIGINAL pre-first-install bytes come back from the layer.
+        uninstall_from_ledger(&mut installs, "b", &game_root).unwrap();
+        assert!(
+            installs.is_empty(),
+            "the component record follows its consumers"
+        );
+        assert_eq!(
+            fs::read(rm.join("gui/ttaro/index.css")).unwrap(),
+            b"vanilla original",
+            "the generation layer restores the pre-first-install bytes"
+        );
+        assert!(
+            !rm.join("gui/b-only.png").exists(),
+            "the last pack's private file goes as always"
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (f) Legacy coexistence: a record with INLINED shared files (the
+    /// pre-split ledger shape) and a new-style dependent both count as
+    /// consumers through the union computation — the tree stays while
+    /// either lives, and the last one out removes it and restores the
+    /// component's generation layer.
+    #[test]
+    fn legacy_inlined_dependents_count_through_the_union_computation() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_split_legacy_union");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        // The legacy record's era put its own bytes live; its snapshot
+        // layer captured what IT overwrote (never used again — the
+        // component record's layer is the generation authority).
+        fs::write(rm.join("gui/ttaro/index.css"), b"legacy-era bytes").unwrap();
+        fs::write(rm.join("gui/legacy-only.png"), b"legacy png").unwrap();
+        let legacy_restore = tmp.join("restore-legacy");
+        fs::create_dir_all(legacy_restore.join("gui/ttaro")).unwrap();
+        fs::write(
+            legacy_restore.join("gui/ttaro/index.css"),
+            b"legacy layer bytes",
+        )
+        .unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = vec![ModInstallRecord {
+            id: "legacy".into(),
+            name: "Legacy".into(),
+            version: "0.9".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["gui/ttaro/index.css".into(), "gui/legacy-only.png".into()],
+            restore_dir: Some(legacy_restore.to_string_lossy().into_owned()),
+            game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
+            shared_roots: Vec::new(),
+        }];
+
+        // The new-style dependent rewrites the shared file; the component
+        // record captures the legacy-era bytes as its generation layer.
+        install_pack(
+            &tmp,
+            "work-d",
+            &game_root,
+            "d",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen bytes"),
+                ("res_mods/gui/d-only.png", b"d png"),
+            ],
+        );
+        assert_eq!(installs.len(), 3, "legacy + d + component record");
+
+        // The new-style dependent leaves FIRST: the legacy record's
+        // inlined shared file still consumes the component.
+        uninstall_from_ledger(&mut installs, "d", &game_root).unwrap();
+        assert!(installs.iter().any(|r| r.id == "shared.gui.ttaro"));
+        assert_eq!(
+            fs::read(rm.join("gui/ttaro/index.css")).unwrap(),
+            b"gen bytes",
+            "the tree stays while the legacy consumer lives"
+        );
+
+        // The LEGACY record leaves LAST: its rewind keeps the shared file
+        // (the component record claims the root), then the last-consumer
+        // cleanup removes the component and restores its generation layer.
+        uninstall_from_ledger(&mut installs, "legacy", &game_root).unwrap();
+        assert!(installs.is_empty());
+        assert_eq!(
+            fs::read(rm.join("gui/ttaro/index.css")).unwrap(),
+            b"legacy-era bytes",
+            "the component's generation layer is what comes back"
+        );
+        assert!(!rm.join("gui/legacy-only.png").exists());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (g) Wire compat: `sharedRoots` is additive. A ledger written
+    /// before the field existed loads with an empty list, an empty list
+    /// never puts a key on the wire, and a populated list round-trips
+    /// verbatim.
+    #[test]
+    fn install_records_without_shared_roots_deserialize_empty() {
+        let old = serde_json::json!({
+            "id": "a",
+            "name": "A",
+            "version": "1",
+            "category": "battle",
+            "source": "mod-hub",
+            "binVersion": "1",
+            "installedAt": "2026-01-01T00:00:00Z",
+            "files": ["gui/a.png"],
+            "restoreDir": null,
+            "gameRoot": ""
+        });
+        let record: ModInstallRecord = serde_json::from_value(old).unwrap();
+        assert!(record.shared_roots.is_empty());
+        // Empty stays off the wire entirely — old payloads stay
+        // byte-identical.
+        let wire = serde_json::to_value(&record).unwrap();
+        assert!(wire.get("sharedRoots").is_none());
+        // Populated lists round-trip verbatim.
+        let mut with_roots = record.clone();
+        with_roots.shared_roots = vec!["pnfmods/ttaromodutils/".into()];
+        let wire = serde_json::to_value(&with_roots).unwrap();
+        assert_eq!(
+            wire.get("sharedRoots"),
+            Some(&serde_json::json!(["pnfmods/ttaromodutils/"]))
+        );
+        let back: ModInstallRecord = serde_json::from_value(wire).unwrap();
+        assert_eq!(back.shared_roots, with_roots.shared_roots);
+    }
+
+    /// Identity + the union claim rule: slugs derive from the registry
+    /// spelling, shared records recognize themselves, and a record claims
+    /// a component root EITHER through a shared_roots edge OR through an
+    /// inlined shared file (never both on one well-formed record).
+    #[test]
+    fn shared_record_identity_and_union_claims() {
+        assert_eq!(
+            shared_record_id("pnfmods/ttaromodutils/"),
+            "shared.pnfmods.ttaromodutils"
+        );
+        assert_eq!(
+            shared_record_id("pnfmods/modsinstaller_"),
+            "shared.pnfmods.modsinstaller_"
+        );
+        assert_eq!(
+            shared_record_id("@game/gettext_x64r.dll"),
+            "shared.game.gettext_x64r.dll"
+        );
+        assert_eq!(
+            shared_record_id("texts/en/ttaro-mod-config.mo"),
+            "shared.texts.en.ttaro-mod-config.mo"
+        );
+        assert!(is_shared_record_id("shared.gui.ttaro"));
+        assert!(!is_shared_record_id("battle.panel.ttaro"));
+        assert_eq!(
+            shared_record_label("pnfmods/ttaromodutils/"),
+            "Shared TTaro runtime (TTaroModUtils)"
+        );
+
+        let mut r = ModInstallRecord {
+            id: "a".into(),
+            name: "A".into(),
+            version: "1".into(),
+            category: "battle".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["gui/own/a.css".into()],
+            restore_dir: None,
+            game_root: String::new(),
+            hashes: None,
+            snapshot_hashes: None,
+            shared_roots: Vec::new(),
+        };
+        assert!(!claims_shared_root(&r, "gui/ttaro/"));
+        r.shared_roots = vec!["gui/ttaro/".into()];
+        assert!(claims_shared_root(&r, "gui/ttaro/"), "the edge claims");
+        r.shared_roots.clear();
+        r.files.push("gui/ttaro/index.css".into());
+        assert!(
+            claims_shared_root(&r, "gui/ttaro/"),
+            "the inlined file claims"
+        );
+    }
+
+    /// Decision-6 verify: record aliveness is file-based, so a shared.*
+    /// record whose component files exist on disk survives reconcile even
+    /// though no catalog entry can ever claim its id; once the files are
+    /// gone it drops like any ghost (a future install recreates it).
+    #[test]
+    fn reconcile_judges_shared_records_by_their_files() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_reconcile");
+        let _ = fs::remove_dir_all(&tmp);
+        let rm = tmp.join("game/bin/1/res_mods");
+        let shared = "gui/ttaro/index.css";
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join(shared), b"gen bytes").unwrap();
+        let game_root = tmp.join("game").to_string_lossy().into_owned();
+        let mut installs = vec![ModInstallRecord {
+            id: "shared.gui.ttaro".into(),
+            name: "Shared TTaro GUI tree".into(),
+            version: "1.0".into(),
+            category: "shared".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec![shared.to_string()],
+            restore_dir: None,
+            game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
+            shared_roots: Vec::new(),
+        }];
+
+        let report =
+            reconcile_core_with_grace(&game_root, &mut installs, std::time::Duration::ZERO);
+        assert_eq!(report.dropped_records, 0, "files on disk = alive");
+        assert_eq!(installs.len(), 1);
+
+        fs::remove_file(rm.join(shared)).unwrap();
+        let report =
+            reconcile_core_with_grace(&game_root, &mut installs, std::time::Duration::ZERO);
+        assert_eq!(report.dropped_records, 1, "files gone = ghost");
+        assert!(installs.is_empty());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (R2-1) Purge regression: the purge reinstall set never contains a
+    /// per-component `shared.*` record — with one in the loop the install
+    /// of an id no catalog carries would fail, the run would go partial
+    /// and the crash-resume marker would be stuck retrying the same id
+    /// forever. The component comes back through its dependent's own
+    /// reinstall (the post-purge ledger is empty; the dependent reinstalls
+    /// and the split recreates the component record).
+    #[test]
+    fn purge_reinstall_set_skips_shared_records_and_dependents_recreate_them() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_purge_set");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+        install_pack(
+            &tmp,
+            "work-dep",
+            &game_root,
+            "dep",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen bytes"),
+                ("res_mods/gui/dep-only.png", b"png"),
+            ],
+        );
+        installs.push(ModInstallRecord {
+            id: "some-local".into(),
+            name: "Some local".into(),
+            version: String::new(),
+            category: "local".into(),
+            source: "local".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["gui/local.png".into()],
+            restore_dir: None,
+            game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
+            shared_roots: Vec::new(),
+        });
+        assert_eq!(installs.len(), 3, "dependent + component + local");
+
+        // The purge set: the dependent and the local row, never the
+        // component record (and never a foreign-root record either).
+        let set = mod_hub::purge::purge_reinstall_set(&installs, &game_root);
+        let ids: Vec<&str> = set.iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(ids, vec!["dep", "some-local"]);
+        // The planned half of the marker derives from the same set with
+        // the same source filter the command applies.
+        let planned: Vec<&str> = set
+            .iter()
+            .filter(|r| r.source == "mod-hub")
+            .map(|r| r.id.as_str())
+            .collect();
+        assert_eq!(planned, vec!["dep"], "no shared id can ever be planned");
+
+        // The purge dropped the ledger; the dependent's reinstall rebuilds
+        // the component record with its generation layer.
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let mut fresh = Vec::new();
+        install_pack(
+            &tmp,
+            "work-dep2",
+            &game_root,
+            "dep",
+            "1.0",
+            &mut fresh,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen bytes"),
+                ("res_mods/gui/dep-only.png", b"png"),
+            ],
+        );
+        let shared = fresh
+            .iter()
+            .find(|r| r.id == "shared.gui.ttaro")
+            .expect("the component record is reborn via the dependent");
+        assert_eq!(shared.files, vec!["gui/ttaro/index.css".to_string()]);
+        let layers = tree_files(&PathBuf::from(shared.restore_dir.as_ref().unwrap()));
+        assert_eq!(layers.len(), 1);
+        assert_eq!(fs::read(&layers[0]).unwrap(), b"vanilla original");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (R2-2) A pack update that DROPS a component must not strand it:
+    /// reinstalling the same id with a payload that no longer ships the
+    /// component removes the component record with its files (the vanilla
+    /// layer restored) — updating everything leaves nothing behind.
+    #[test]
+    fn pack_update_dropping_a_component_cleans_it_up() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_update_drops");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+        install_pack(
+            &tmp,
+            "work-v1",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen bytes"),
+                ("res_mods/gui/a-only.png", b"png v1"),
+            ],
+        );
+        assert!(installs.iter().any(|r| r.id == "shared.gui.ttaro"));
+
+        // v2 ships only the private file — the component is dropped.
+        install_pack(
+            &tmp,
+            "work-v2",
+            &game_root,
+            "a",
+            "2.0",
+            &mut installs,
+            &[("res_mods/gui/a-only.png", b"png v2")],
+        );
+        assert_eq!(
+            installs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["a"],
+            "the component record followed the dropped dependency",
+        );
+        assert!(!installs.iter().any(|r| r.id == "shared.gui.ttaro"));
+        assert_eq!(
+            fs::read(rm.join("gui/ttaro/index.css")).unwrap(),
+            b"vanilla original",
+            "the generation layer restored the pre-component bytes",
+        );
+        assert_eq!(fs::read(rm.join("gui/a-only.png")).unwrap(), b"png v2");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (R2-5i) A same-id REINSTALL of the only dependent keeps the
+    /// component alive: the last-consumer cleanup is a STRICT-uninstall
+    /// policy, and the reinstall rewind must not fire it (the fresh
+    /// install re-declares the same dependency moments later).
+    #[test]
+    fn same_id_reinstall_keeps_the_component_record() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_reinstall_keeps");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla original").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+        install_pack(
+            &tmp,
+            "work-v1",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen bytes"),
+                ("res_mods/gui/a-only.png", b"png v1"),
+            ],
+        );
+        install_pack(
+            &tmp,
+            "work-v2",
+            &game_root,
+            "a",
+            "2.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen bytes"),
+                ("res_mods/gui/a-only.png", b"png v2"),
+            ],
+        );
+        assert_eq!(
+            installs.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            vec!["shared.gui.ttaro", "a"],
+            "the component survived its only dependent's reinstall",
+        );
+        assert_eq!(
+            fs::read(rm.join("gui/ttaro/index.css")).unwrap(),
+            b"gen bytes",
+            "the tree stays at the live bytes",
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (R2-5ii) A pack with BOTH private and shared captured layers keeps
+    /// its private restore dir after the split — only the shared layers
+    /// move out, so the pack's uninstall can still restore what IT
+    /// overwrote.
+    #[test]
+    fn pack_keeps_its_private_layers_after_the_split() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_private_layers");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        let rm = game.join("bin/1/res_mods");
+        fs::create_dir_all(rm.join("gui/ttaro")).unwrap();
+        fs::write(rm.join("gui/ttaro/index.css"), b"vanilla shared").unwrap();
+        fs::write(rm.join("gui/a-only.png"), b"vanilla private").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+        install_pack(
+            &tmp,
+            "work-a",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/ttaro/index.css", b"gen shared"),
+                ("res_mods/gui/a-only.png", b"gen private"),
+            ],
+        );
+        let pack = installs.iter().find(|r| r.id == "a").unwrap();
+        let pack_dir = PathBuf::from(pack.restore_dir.as_ref().expect("private layer kept"));
+        let pack_layers = tree_files(&pack_dir);
+        assert_eq!(pack_layers.len(), 1, "only the private layer stays");
+        assert!(pack_layers[0].ends_with("gui/a-only.png"));
+        assert_eq!(fs::read(&pack_layers[0]).unwrap(), b"vanilla private");
+        let shared = installs
+            .iter()
+            .find(|r| r.id == "shared.gui.ttaro")
+            .unwrap();
+        let shared_layers = tree_files(&PathBuf::from(shared.restore_dir.as_ref().unwrap()));
+        assert_eq!(shared_layers.len(), 1);
+        assert_eq!(fs::read(&shared_layers[0]).unwrap(), b"vanilla shared");
+        assert_eq!(
+            tree_files(&tmp.join("rr")).len(),
+            2,
+            "exactly the private layer + the one generation layer",
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (R2-5iii) The `@game` layer relocation preserves the `@game/`
+    /// spelling — `restore_tree` maps that prefix back to the game root,
+    /// and the last-consumer uninstall proves the round trip by putting
+    /// the pre-install DLL bytes back at the game root.
+    #[test]
+    fn at_game_layers_relocate_with_their_prefix_spelling() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_atgame_spelling");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        fs::create_dir_all(game.join("bin/1/res_mods/gui")).unwrap();
+        fs::write(game.join("gettext_x64r.dll"), b"vanilla dll").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = Vec::new();
+        install_pack(
+            &tmp,
+            "work-a",
+            &game_root,
+            "a",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/a-only.png", b"png"),
+                ("gettext_x64r.dll", b"gen dll"),
+            ],
+        );
+        let shared = installs
+            .iter()
+            .find(|r| r.id == "shared.game.gettext_x64r.dll")
+            .expect("the game-root component record exists");
+        assert_eq!(shared.files, vec!["@game/gettext_x64r.dll".to_string()]);
+        let layer =
+            PathBuf::from(shared.restore_dir.as_ref().unwrap()).join("@game/gettext_x64r.dll");
+        assert!(layer.is_file(), "the layer keeps the @game/ spelling");
+        assert_eq!(fs::read(&layer).unwrap(), b"vanilla dll");
+
+        // The last consumer's uninstall walks the layer back to the game
+        // root through exactly that spelling.
+        uninstall_from_ledger(&mut installs, "a", &game_root).unwrap();
+        assert!(installs.is_empty());
+        assert_eq!(
+            fs::read(game.join("gettext_x64r.dll")).unwrap(),
+            b"vanilla dll",
+            "the pre-install DLL bytes came back",
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (R2-3) Cross-bin replace must not delete the freshly written
+    /// `@game` DLL: the existing component record keyed at ANOTHER bin
+    /// names the physically-single game-root file, and its rewind would
+    /// delete the DLL and restore the old layer over the new bytes. The
+    /// upsert protects those entries — last writer wins.
+    #[test]
+    fn cross_bin_component_replace_keeps_the_fresh_at_game_bytes() {
+        let tmp = std::env::temp_dir().join("wowsp_shared_crossbin_atgame");
+        let _ = fs::remove_dir_all(&tmp);
+        let game = tmp.join("game");
+        // The pin names bin 2 as the live build (the fresh install's
+        // target); bin 1 carries only the old component record's keying.
+        fs::create_dir_all(game.join("bin/1/idx")).unwrap();
+        fs::create_dir_all(game.join("bin/2/idx")).unwrap();
+        fs::write(
+            game.join("preferences.xml"),
+            "<root><last_server_version> 15,9,0,2 </last_server_version></root>",
+        )
+        .unwrap();
+        fs::create_dir_all(game.join("bin/2/res_mods/gui")).unwrap();
+        fs::write(game.join("gettext_x64r.dll"), b"dll gen-1").unwrap();
+        // The old component record: bin 1, its layer even older.
+        let restore_old = tmp.join("restore-old");
+        fs::create_dir_all(restore_old.join("@game")).unwrap();
+        fs::write(restore_old.join("@game/gettext_x64r.dll"), b"dll gen-0").unwrap();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let game_root = game.to_string_lossy().into_owned();
+        let mut installs = vec![ModInstallRecord {
+            id: "shared.game.gettext_x64r.dll".into(),
+            name: "Shared gettext runtime (gettext_x64r.dll)".into(),
+            version: "1.0".into(),
+            category: "shared".into(),
+            source: "mod-hub".into(),
+            discussion: None,
+            preset: None,
+            bin_version: "1".into(),
+            installed_at: String::new(),
+            files: vec!["@game/gettext_x64r.dll".into()],
+            restore_dir: Some(restore_old.to_string_lossy().into_owned()),
+            game_root: game_root.clone(),
+            hashes: None,
+            snapshot_hashes: None,
+            shared_roots: Vec::new(),
+        }];
+
+        // The dependent installs at the LIVE bin 2 and ships a new DLL.
+        install_pack(
+            &tmp,
+            "work-d",
+            &game_root,
+            "d",
+            "1.0",
+            &mut installs,
+            &[
+                ("res_mods/gui/d-only.png", b"png"),
+                ("gettext_x64r.dll", b"dll gen-2"),
+            ],
+        );
+
+        assert_eq!(
+            fs::read(game.join("gettext_x64r.dll")).unwrap(),
+            b"dll gen-2",
+            "the fresh DLL survives the cross-bin replace",
+        );
+        let shared: Vec<&ModInstallRecord> = installs
+            .iter()
+            .filter(|r| r.id == "shared.game.gettext_x64r.dll")
+            .collect();
+        assert_eq!(shared.len(), 1, "exactly one component record");
+        assert_eq!(shared[0].bin_version, "2", "keyed at the live bin");
+        let layer =
+            PathBuf::from(shared[0].restore_dir.as_ref().unwrap()).join("@game/gettext_x64r.dll");
+        assert_eq!(
+            fs::read(&layer).unwrap(),
+            b"dll gen-1",
+            "the new generation layer holds the overwritten bytes",
+        );
+        assert!(!restore_old.exists(), "the old record's layer died with it");
         fs::remove_dir_all(&tmp).ok();
     }
 
@@ -1901,6 +2940,7 @@ mod tests {
             game_root: game_root.clone(),
             hashes: None,
             snapshot_hashes: None,
+            shared_roots: Vec::new(),
         };
 
         // A tampered snapshot layer: its actual bytes hash to something
@@ -2016,6 +3056,7 @@ mod tests {
             game_root: String::new(),
             hashes: applied.hashes.clone(),
             snapshot_hashes: applied.snapshot_hashes.clone(),
+            shared_roots: Vec::new(),
         };
 
         // Clean hand-off: the layer map hashes the CAPTURED PRE-overwrite
@@ -2139,6 +3180,7 @@ mod tests {
                 game_root: String::new(),
                 hashes,
                 snapshot_hashes: None,
+                shared_roots: Vec::new(),
             }
         };
         // B (the newer owner) hashed the shared file's v1 bytes at ITS
@@ -2248,6 +3290,7 @@ mod tests {
                     game_root: String::new(),
                     hashes: None,
                     snapshot_hashes,
+                    shared_roots: Vec::new(),
                 }
             };
         // B (the newer owner) captured a layer of A's v1 bytes at its

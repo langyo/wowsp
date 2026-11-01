@@ -63,6 +63,16 @@ pub async fn mod_hub_install(
             })
             .map(|r| r.id.clone())
             .collect();
+        // The same-named records captured whole, before the rewind drops
+        // them: a local update that DROPS a component must not strand it
+        // (the dropped-roots cleanup below diffs their consumed component
+        // roots against the replacement's).
+        let previous: Vec<ModInstallRecord> = ledger
+            .installs
+            .iter()
+            .filter(|r| old.contains(&r.id))
+            .cloned()
+            .collect();
         // Owners recorded AFTER the rewound one: their snapshots of shared
         // files may hold the bytes this install replaces, so they must follow
         // the new bytes (see refresh_newer_snapshots). Captured before the
@@ -95,20 +105,6 @@ pub async fn mod_hub_install(
                         &applied.written,
                         &newer_owners,
                     );
-                    let record = local_record(&applied, &plan, &game_root);
-                    let id = record.id.clone();
-                    // Local installs speak the same wowsp.toml contract as
-                    // catalog ones — the manifest row is the shared half of
-                    // this record.
-                    super::manifest::hub_apply(super::manifest::ManifestOp::UpsertManaged {
-                        res_mods: super::manifest::res_mods_of(
-                            &game_root,
-                            &applied.report.bin_version,
-                        ),
-                        id: id.clone(),
-                        entry: super::manifest::WowspManifest::entry_from_record(&record),
-                    });
-                    ledger.installs.push(record);
                     // Refreshed layers now hold the bytes this install just
                     // wrote — keep the owners' stored layer hashes in step
                     // (same best-effort rule as the refresh itself).
@@ -119,8 +115,18 @@ pub async fn mod_hub_install(
                             written_hashes,
                         );
                     }
+                    let record = local_record(&applied, &plan, &game_root);
+                    let id = record.id.clone();
                     // Say whose files this install clobbered (the journal
-                    // already snapshotted them).
+                    // already snapshotted them), and the same shared-file
+                    // handoff signal as the catalog install: bytes that
+                    // diverge from what another live record stored warn
+                    // through the report (advisory only — see
+                    // shared_divergence_warnings). Both read the ledger
+                    // BEFORE the split commit: the previous generation's
+                    // shared records still own the shared files, so the
+                    // mixed-version signal names them — a record the commit
+                    // is about to create would trivially match itself.
                     let conflicts = conflict_warnings(
                         &applied.written,
                         &ledger.installs,
@@ -130,10 +136,6 @@ pub async fn mod_hub_install(
                     );
                     applied.report.conflicts = conflicts.clone();
                     applied.report.warnings.extend(conflicts);
-                    // Same shared-file handoff signal as the catalog install:
-                    // bytes this local install wrote that diverge from what
-                    // another live record recorded warn through the report
-                    // (advisory only — see shared_divergence_warnings).
                     if let Some(written_hashes) = applied.hashes.as_ref() {
                         applied.report.warnings.extend(
                             super::mod_catalog::shared_divergence_warnings(
@@ -145,6 +147,45 @@ pub async fn mod_hub_install(
                             ),
                         );
                     }
+                    // Same shared-component split as a catalog install: the
+                    // record commits with private files only plus
+                    // `shared_roots` edges, and per-component `shared.*`
+                    // records take the component files and their layers. A
+                    // failure here hands the (partially rewound) ledger to
+                    // the outer error path, which persists it.
+                    let record = match super::mod_catalog::commit_pack_record(
+                        &mut ledger.installs,
+                        record,
+                        &game_root,
+                    ) {
+                        Ok(record) => record,
+                        Err(e) => return (Err(e), ledger),
+                    };
+                    // An update that DROPPED a component must not strand it
+                    // (same last-consumer cleanup as the catalog flow):
+                    // roots the rewound records consumed that this install
+                    // no longer declares lose their component record once
+                    // no consumer remains.
+                    if let Err(e) = super::mod_catalog::drop_removed_shared_roots(
+                        &mut ledger.installs,
+                        &previous,
+                        &record.shared_roots,
+                        &game_root,
+                    ) {
+                        return (Err(e), ledger);
+                    }
+                    // Local installs speak the same wowsp.toml contract as
+                    // catalog ones — the manifest row is the shared half of
+                    // this record (per-component `shared.*` records carry
+                    // no row: they never pair with a catalog entry).
+                    super::manifest::hub_apply(super::manifest::ManifestOp::UpsertManaged {
+                        res_mods: super::manifest::res_mods_of(
+                            &game_root,
+                            &applied.report.bin_version,
+                        ),
+                        id,
+                        entry: super::manifest::WowspManifest::entry_from_record(&record),
+                    });
                     Ok(applied)
                 },
                 Err(e) => Err(e),
@@ -207,6 +248,7 @@ pub(crate) fn local_record(
         game_root: game_root.to_string(),
         hashes: applied.hashes.clone(),
         snapshot_hashes: applied.snapshot_hashes.clone(),
+        shared_roots: Vec::new(),
     }
 }
 
