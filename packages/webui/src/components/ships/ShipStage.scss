@@ -580,3 +580,26 @@
     transform: none;
   }
 }
+
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────────
+   The control row is absolutely pinned to the stage's top-right corner and
+   never wraps at desktop widths. On a 393px sheet the full cluster (gesture
+   hint + turntable + 全息/装甲 + carrier model pick + waterline + 3D/2D) runs
+   ~600px, so its left end ran past the stage's overflow edge and vanished —
+   unreachable controls, not just cropped chrome. Phones bound the cluster to
+   the stage's width and let it wrap into right-aligned rows; the nowrap hint
+   ellipsizes instead of shoving pills off-stage. */
+@media (max-width: 767px) {
+  .ship-stage__controls {
+    left: 0.6rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 0.4rem;
+  }
+
+  .ship-stage__hint {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+}

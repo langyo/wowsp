@@ -61,4 +61,14 @@
     padding: 0.05rem 0.3rem;
     border-radius: var(--radius-xs);
   }
+
+  /* Phones: the cards fly the camera (their only action) on tap — the
+     desktop pill is ~30px tall, under the touch-target floor. A little
+     vertical padding lifts them to a comfortable thumb hit without
+     changing the wrap math (labels/details stay nowrap). */
+  @media (max-width: 767px) {
+    &__btn {
+      padding-block: 0.5rem;
+    }
+  }
 }

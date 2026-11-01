@@ -1322,3 +1322,29 @@
   }
 }
 
+/* ── Phone layout (≤767px) ─────────────────────────────────────────────────
+   The planner rides the ship-detail modal, which docks as a bottom sheet
+   here (body inner ≈ 361px at a 393px viewport, and .hk-modal-body-scroll
+   HIDES horizontal overflow — anything wider clips). Two retunes:
+   - The skill tier rows pin fixed 56px columns inline (game-style plates;
+     ribbons/anchors are tuned to that box, so the tiles must not shrink).
+     Six columns plus the tier label need ~410px, wider than the sheet —
+     the ROW itself turns into an in-place horizontal scroller so the
+     tier label stays pinned beside it instead of the grid's right edge
+     clipping away (same trade as RankedShipTable's rows).
+   - The cost rows' fixed 72px slot column wraps localized labels
+     ("Очки навыков" already wraps at desktop width); the slot sizes to
+     its content on phones so label and price keep one line each. */
+@media (max-width: 767px) {
+  .skill-tier-v__row {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow-x: auto;
+  }
+
+  .planner-v__cost-row {
+    grid-template-columns: auto 1fr auto;
+    gap: 0.45rem;
+  }
+}
+
