@@ -1,17 +1,67 @@
 /** Contract tests for the `data-hint-card` parser (hintCardFrom). The
  *  attribute JSON is anchor-supplied, so anything malformed or off-schema
- *  must degrade to "no card" instead of breaking the hint. Popup geometry
- *  itself is upstream hikari's now (applyTooltipPosition + popupBounds,
- *  tested there); AppTitleBar declares the chrome band via popupChrome.
+ *  must degrade to "no card" instead of breaking the hint. Placement is
+ *  upstream hikari's (applyTooltipPosition + popupBounds, tested there);
+ *  AppTitleBar declares the chrome band via popupChrome. One geometry
+ *  post-pass lives HERE: snapPopupToPixelGrid puts the shared popup on the
+ *  device-pixel grid after placement — the paint algorithm pixel-snaps
+ *  normal flow content but not a fixed element positioned through a
+ *  transform, and the unsnapped fractional position is the reported blur.
  *
  *  The appended describe covers the OTHER half of the document-level hook:
  *  installGlobalTooltip also installs hikari's native-title bridge, so a
  *  plain `title=` element (hikari's own components included) renders the
  *  house `.hk-tooltip-popup` instead of the browser bubble, while
  *  `data-hint` anchors stay on the app's richer popup. */
-import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  onTestFinished,
+  vi,
+} from "vitest";
 
-import { hintCardFrom, installGlobalTooltip } from "./globalTooltip";
+import { hintCardFrom, installGlobalTooltip, snapPopupToPixelGrid } from "./globalTooltip";
+
+/** Pin window.devicePixelRatio for a test (happy-dom reports a plain 1) —
+ *  the snap grid is 1/DPR, so the rounding tests exercise the fractional-DPR
+ *  cases (Windows 125% scale → DPR 1.25, or DPR 2) explicitly. The restore registers on the
+ *  CURRENT test (onTestFinished), so a failing expect can never leak the
+ *  stubbed ratio into a later test. */
+function stubDevicePixelRatio(value: number): void {
+  const previous = window.devicePixelRatio;
+  Object.defineProperty(window, "devicePixelRatio", {
+    value,
+    configurable: true,
+    writable: true,
+  });
+  onTestFinished(() => {
+    Object.defineProperty(window, "devicePixelRatio", {
+      value: previous,
+      configurable: true,
+      writable: true,
+    });
+  });
+}
+
+/** A DOMRect stub over one box — happy-dom has no layout engine, so
+ *  placement and snapping read exactly what this answers. */
+function rectAt(left: number, top: number, width: number, height: number): DOMRect {
+  return {
+    width,
+    height,
+    left,
+    top,
+    right: left + width,
+    bottom: top + height,
+    x: left,
+    y: top,
+    toJSON: () => ({}),
+  } as DOMRect;
+}
 
 describe("hintCardFrom", () => {
   it("accepts a full card and keeps every populated field", () => {
@@ -330,5 +380,155 @@ describe("globalTooltip native-title bridge", () => {
     expect(el.getAttribute("title")).toBe("native fallback");
     expect(el.hasAttribute("data-hk-title")).toBe(false);
     expect(bridgeShown()).toBe(false);
+  });
+});
+
+/** snapPopupToPixelGrid — the fractional-position paint fix behind the
+ *  "tooltip 文字太糊" report. The popup is position:fixed placed through an
+ *  inline transform, so the paint algorithm does NOT pixel-snap it the way
+ *  it snaps normal flow content: whatever fractional left/top placement
+ *  computed gets rasterized and resampled, smearing glyphs, edges and icons
+ *  into a uniform blur. These tests pin the written-coordinate contract:
+ *  the visual-space delta onto the 1/devicePixelRatio grid, divided by the
+ *  cumulative zoom before it is added onto the popup's local-space
+ *  left/top — the same re-basing applyTooltipPosition's clamp shift uses.
+ *  The element's measured box is stubbed (no layout engine); the stub is
+ *  static across the helper's reads, which is exactly how happy-dom
+ *  behaves. */
+describe("snapPopupToPixelGrid", () => {
+  /** A popup written at local (70, 92) whose measured VISUAL box sits at
+   *  (left, top). `zoom` simulates the root DPI scale on a wrapper. */
+  function popupWithBox(left: number, top: number, zoom?: string): HTMLElement {
+    const el = document.createElement("div");
+    el.style.left = "70px";
+    el.style.top = "92px";
+    el.getBoundingClientRect = () => rectAt(left, top, 100, 40);
+    const parent = document.createElement("div");
+    if (zoom) parent.style.zoom = zoom;
+    parent.appendChild(el);
+    document.body.appendChild(parent);
+    // The fixture leaves with the test even when an expect fails first.
+    onTestFinished(() => parent.remove());
+    return el;
+  }
+
+  it("snaps a fractional box onto whole CSS px at DPR 1", () => {
+    stubDevicePixelRatio(1);
+    const el = popupWithBox(9.6, 20.4);
+    snapPopupToPixelGrid(el);
+    expect(el.style.left).toBe("70.4px"); // 70 + (10 − 9.6)
+    expect(el.style.top).toBe("91.6px"); // 92 + (20 − 20.4)
+  });
+
+  it("snaps onto the half-px grid at DPR 2", () => {
+    stubDevicePixelRatio(2);
+    const el = popupWithBox(9.6, 20.4);
+    snapPopupToPixelGrid(el);
+    // Step 0.5: 9.6 → 9.5 (−0.1), 20.4 → 20.5 (+0.1).
+    expect(el.style.left).toBe("69.9px");
+    expect(el.style.top).toBe("92.1px");
+  });
+
+  it("lands exactly on the device grid at DPR 1.5 (Windows 150% scaling)", () => {
+    stubDevicePixelRatio(1.5);
+    const el = popupWithBox(10.2, 20.4);
+    snapPopupToPixelGrid(el);
+    // Step 1/1.5: 10.2 snaps to 10 (−0.2); 20.4 snaps to 31/1.5 (≈ +0.267).
+    expect(Number.parseFloat(el.style.left)).toBeCloseTo(69.8, 5);
+    expect(Number.parseFloat(el.style.top)).toBeCloseTo(92.2666667, 5);
+  });
+
+  it("lands exactly on the device grid at DPR 1.25 (Windows 125% scaling)", () => {
+    stubDevicePixelRatio(1.25);
+    const el = popupWithBox(10.2, 20.4);
+    snapPopupToPixelGrid(el);
+    // Step 1/1.25 = 0.8: 10.2 snaps to 13·0.8 = 10.4 (+0.2); 20.4 snaps to
+    // 26·0.8 = 20.8 (+0.4) — the float dust stays under 1e-13, well inside
+    // the closeTo window.
+    expect(Number.parseFloat(el.style.left)).toBeCloseTo(70.2, 5);
+    expect(Number.parseFloat(el.style.top)).toBeCloseTo(91.6, 5);
+  });
+
+  it("leaves a box that already sits on the grid untouched", () => {
+    stubDevicePixelRatio(1);
+    const el = popupWithBox(9, 20);
+    snapPopupToPixelGrid(el);
+    expect(el.style.left).toBe("70px");
+    expect(el.style.top).toBe("92px");
+  });
+
+  it("is a no-op without layout (zero box — happy-dom / display:none)", () => {
+    stubDevicePixelRatio(2);
+    const el = popupWithBox(0, 0);
+    el.getBoundingClientRect = () => rectAt(0, 0, 0, 0);
+    snapPopupToPixelGrid(el);
+    expect(el.style.left).toBe("70px");
+    expect(el.style.top).toBe("92px");
+  });
+
+  it("divides the visual delta by the cumulative zoom before writing", () => {
+    stubDevicePixelRatio(1);
+    // The wrapper's inline zoom 2 paints the popup's local px 2x in visual
+    // space, so the +0.4 visual correction must write as +0.2 local — the
+    // same division applyTooltipPosition's clamp shift applies to its own
+    // remainders (the root DPI pref is the real-world producer).
+    const el = popupWithBox(9.6, 20.4, "2");
+    snapPopupToPixelGrid(el);
+    expect(el.style.left).toBe("70.2px");
+    expect(el.style.top).toBe("91.8px");
+  });
+});
+
+/** place() wiring: the shared popup's FINAL written coordinates carry the
+ *  snap. The anchor stub (left 10, width 120 → center 70; top 100, height
+ *  24) keeps the pure top placement alive — 92px of headroom clears the
+ *  popup's stubbed 40px box plus the gutter, so no flip fires — and the
+ *  popup's fractional stubbed box sits fully inside the viewport gutter, so
+ *  the clamp pass shifts nothing and the snap contributes the entire delta
+ *  (+0.4, −0.4) at DPR 1. */
+describe("globalTooltip place() snaps the shared popup onto the pixel grid", () => {
+  let host: HTMLElement;
+
+  beforeAll(() => {
+    // Idempotent: the bridge describe's install may have latched already.
+    installGlobalTooltip();
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    host = document.createElement("div");
+    document.body.appendChild(host);
+  });
+
+  afterEach(() => {
+    host.dispatchEvent(new Event("pointerover", { bubbles: true }));
+    document.dispatchEvent(new Event("scroll"));
+    host.remove();
+    vi.useRealTimers();
+  });
+
+  it("writes the snapped coordinates after the placement pass", () => {
+    stubDevicePixelRatio(1);
+    const el = document.createElement("span");
+    el.setAttribute("data-hint", "snap me");
+    el.getBoundingClientRect = () => rectAt(10, 100, 120, 24);
+    host.appendChild(el);
+
+    // The shared popup element exists from install; its box is stubbed
+    // BEFORE the hover so applyTooltipPosition's measure pass and the snap
+    // read the same (fractional) geometry — fractional, but well inside the
+    // viewport gutter so the clamp pass writes nothing and the snap is the
+    // only post-placement correction.
+    const popup = document.querySelector<HTMLElement>(
+      ".hk-tooltip-popup:not(.hk-tooltip-bridge)",
+    )!;
+    popup.getBoundingClientRect = () => rectAt(30.6, 40.4, 100, 40);
+
+    el.dispatchEvent(new MouseEvent("pointerover", { bubbles: true }));
+    vi.advanceTimersByTime(300);
+
+    expect(popup.classList.contains("hk-tooltip-visible")).toBe(true);
+    expect(popup.style.left).toBe("70.4px");
+    expect(popup.style.top).toBe("91.6px");
   });
 });

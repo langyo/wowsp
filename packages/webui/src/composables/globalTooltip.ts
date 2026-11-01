@@ -50,6 +50,16 @@
  * a hint anchored on the first row pops DOWN below the bar and nothing
  * floats over the window controls — flip, edge clamping and root-zoom
  * (DPI pref) compensation are all upstream behavior this hook inherits.
+ * One post-pass is this hook's own: the placed popup is snapped onto the
+ * device-pixel grid (snapPopupToPixelGrid). Placement coordinates are
+ * fractional almost by construction — the anchor center halves the trigger
+ * rect, the placement transform halves the popup box, the gutter shift
+ * adds its remainder, and the root DPI zoom multiplies the whole chain by
+ * a fractional factor — and unlike normal flow content (which the paint
+ * algorithm pixel-snaps) a fixed element positioned through an inline
+ * transform paints at that exact fractional device position, resampling
+ * the whole bubble into the uniform blur the hover cards were reported
+ * with ("tooltip 文字太糊").
  */
 import {
   ensureOverlayRoot,
@@ -467,6 +477,68 @@ const SHOW_DELAY_MS = 300;
 /** ≥ the popup's --hk-pop-in-duration fade (0.2s) before unmounting it. */
 const HIDE_FADE_MS = 220;
 
+/** Cumulative CSS `zoom` between `el` and the viewport root — hikari's
+ *  runtime cssZoom.ancestorZoom, ported verbatim (it is not re-exported
+ *  through the package's ./runtime entry; same precedent as
+ *  OverlayColumnsEditor's drag-ghost math): standardized zoom makes
+ *  getBoundingClientRect() report the ROOT VISUAL space while px written
+ *  inside the zoomed subtree paint in local space, so a visual-space delta
+ *  must be divided by this factor before it is added onto a written
+ *  coordinate. */
+function ancestorZoom(el: Element | null | undefined): number {
+  if (typeof window === "undefined" || !el) return 1;
+  let zoom = 1;
+  let cur: Element | null = el;
+  while (cur) {
+    // `zoom` is missing from older DOM style declarations — read it off a
+    // widened record instead of assuming the lib carries the property.
+    const raw = (window.getComputedStyle(cur) as CSSStyleDeclaration & { zoom?: string | number })
+      .zoom;
+    const v =
+      typeof raw === "number" ? raw : typeof raw === "string" ? Number.parseFloat(raw) : Number.NaN;
+    if (Number.isFinite(v) && v > 0) zoom *= v;
+    cur = cur.parentElement;
+  }
+  return zoom > 0 ? zoom : 1;
+}
+
+/** Nudge the placed popup so its top-left corner lands EXACTLY on the
+ *  device-pixel grid, killing the fractional-position paint blur.
+ *
+ *  Every tooltip this app draws paints through one shared popup
+ *  (`.hk-tooltip-popup`): position: fixed, placed with an inline
+ *  `translate(...)` transform (see applyTooltipPosition). The paint
+ *  algorithm pixel-snaps normal flow content, but a fixed element positioned
+ *  through a transform paints at its exact fractional device position —
+ *  Chromium rasterizes the popup's layer and resamples it at paint, which
+ *  smears every glyph, edge and icon into the uniform blur the stats-page
+ *  hover cards were reported with. Snapping the final visual rect onto the
+ *  physical grid (one snap step = 1/devicePixelRatio CSS px, so fractional
+ *  DPRs — Windows 125% scale → DPR 1.25 — land exactly on it too) removes
+ *  the resample without moving the popup a visible distance.
+ *
+ *  Runs AFTER applyTooltipPosition, so flip / cap / gutter-shift have all
+ *  been written; the ≤ half-device-pixel correction sits far below the
+ *  gutter margins that box just fit inside, so it never visibly re-violates
+ *  one. Without layout (happy-dom, display:none) the box measures zero and
+ *  the call is a no-op — the same guard applyTooltipPosition puts on its
+ *  own measure pass. */
+export function snapPopupToPixelGrid(popup: HTMLElement): void {
+  const box = popup.getBoundingClientRect();
+  if (!(box.width > 0 && box.height > 0)) return;
+  const dpr = window.devicePixelRatio;
+  const step = Number.isFinite(dpr) && dpr > 0 ? 1 / dpr : 1;
+  const dx = Math.round(box.left / step) * step - box.left;
+  const dy = Math.round(box.top / step) * step - box.top;
+  if (dx === 0 && dy === 0) return;
+  // The delta is measured in root visual px but the written coordinates are
+  // local (divided by the cumulative zoom) — the same re-basing the clamp
+  // shift inside applyTooltipPosition performs on its own remainders.
+  const z = ancestorZoom(popup);
+  popup.style.left = `${(Number.parseFloat(popup.style.left) || 0) + dx / z}px`;
+  popup.style.top = `${(Number.parseFloat(popup.style.top) || 0) + dy / z}px`;
+}
+
 let installed = false;
 
 export function installGlobalTooltip(): void {
@@ -525,6 +597,9 @@ export function installGlobalTooltip(): void {
     if (!anchor) return;
     const pos = (anchor.dataset.hintPos || "top") as TooltipPlacement;
     applyTooltipPosition(popup, anchor.getBoundingClientRect(), pos);
+    // Placement lands on fractional px almost always (halved anchor center,
+    // halved box, gutter remainders, root DPI zoom) — paint it sharp.
+    snapPopupToPixelGrid(popup);
   }
 
   function hideNow(): void {
