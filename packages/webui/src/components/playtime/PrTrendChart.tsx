@@ -1,8 +1,16 @@
 import { computed, defineComponent, type PropType } from "vue";
+import { useBreakpoint } from "@celestia-island/hikari";
 
 import { prTier, prTierLabel } from "@/utils/winrate";
 import { prTrendLayout, type PrTrendPoint } from "./prTrend";
 import "./PrTrendChart.scss";
+
+/** Phone frame width — the default 640-unit viewBox scaled into a ~369px
+ *  column renders the 10px axis numbers and x ticks at ~5.5px, past
+ *  legibility. 420 keeps them ≥ ~8.8px effective while the 66px tier-name
+ *  gutter and the five x ticks still clear each other (plot width 288).
+ *  hikari's isMobile (<768) matches the SCSS phone blocks exactly. */
+const PR_TREND_PHONE_FRAME_WIDTH = 420;
 
 /**
  * The PR trend line chart — one vertex per history interval, hand-drawn as
@@ -38,7 +46,10 @@ export default defineComponent({
     hintOf: { type: Function as PropType<(p: PrTrendPoint) => string>, required: true },
   },
   setup(props) {
-    const layout = computed(() => prTrendLayout(props.points));
+    const { isMobile } = useBreakpoint();
+    const layout = computed(() =>
+      prTrendLayout(props.points, isMobile.value ? { width: PR_TREND_PHONE_FRAME_WIDTH } : {}),
+    );
 
     return () => {
       const l = layout.value;

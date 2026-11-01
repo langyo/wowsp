@@ -250,8 +250,28 @@
   }
 }
 
-/* ── Responsive: collapse the table on narrow screens ────────────────── */
-@media (max-width: 640px) {
+/* ── Phone layout (≤767px) ──────────────────────────────────────────────
+   Page gutters: the old block padded the ROOT element, so a phone paid
+   that 0.9rem inset AND the inner column's desktop 1.5rem/2rem gutters on
+   top of it (~46px per side at 393px — less content width than the empty
+   state has). The root padding is gone (the scroll viewport sits flush
+   with the frame like every other view) and the inner column takes the
+   app's phone vocabulary: 12px gutters plus the gesture-bar inset at the
+   bottom (env() is 0 on desktop webviews). Desktop rules above are
+   untouched. */
+@media (max-width: 767px) {
+  .dashboard-view__inner {
+    padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Ship table: the six-column grid carries 390px of fixed number columns,
+     which crushes the name cell to a sliver anywhere below ~740px — and
+     the old ≤640 collapse split the row into two equal cells, so the
+     battle count took half of a 393px row while the ship name itself
+     ellipsized to a few glyphs behind the icon/type/tier triple. The
+     phone zone stacks instead: the name line claims the full row width
+     and the numbers pair up beneath it. Column captions die with the
+     grid (their order is restated by the row grammar itself). */
   .dash-ship-table {
     &__head {
       display: none;
@@ -260,14 +280,18 @@
     &__row {
       grid-template-columns: 1fr 1fr;
       gap: 0.3rem 0.5rem;
-      padding: 0.6rem 0.75rem;
+      padding: 0.6rem 0.5rem;
     }
-  }
-}
 
-/* ── Phone layout (≤767px): tighter page gutters ───────────────────────── */
-@media (max-width: 767px) {
-  .dashboard-view {
-    padding: 0.9rem 0.9rem calc(0.9rem + env(safe-area-inset-bottom, 0px));
+    &__col-name {
+      grid-column: 1 / -1;
+    }
+
+    /* The trailing date lands in the RIGHT cell of its pair row, so the
+       capsule right-aligns under the number columns instead of floating
+       at the left half's end. */
+    &__col-date {
+      grid-column: 2;
+    }
   }
 }

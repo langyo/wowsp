@@ -138,3 +138,46 @@
 .hk-popover-panel.hk-is-sheet .pr-trend-pop__list {
   max-height: 40vh;
 }
+
+/* The sheet's rows are touch targets: the desktop list's 3px-padded ~22px
+   rows ask for pixel-precise taps. The ship rows and the pinned select-all
+   row both take the sheet's 40px row grammar (the scope menu's own rows
+   sit at 44px; the checkbox rows keep 40 so five rows still clear the
+   list cap comfortably). */
+.hk-popover-panel.hk-is-sheet .pr-trend-pop__row {
+  min-height: 40px;
+}
+
+.hk-popover-panel.hk-is-sheet .pr-trend-pop__all {
+  min-height: 40px;
+  padding-block: 6px;
+}
+
+/* Narrower number tracks inside the sheet: the desktop 52/56/72 triple
+   reserves 180px — over half of a 393px sheet's content width — and
+   starves the ship-name column into all-ellipsis rows. 44/48/64 still
+   clears "12,345" / "51.8%" / "123,456" at the rows' text-xs while the
+   name column reclaims ~36px. The caption row shares the row grid, so
+   both selectors move together. */
+.hk-popover-panel.hk-is-sheet .pr-trend-pop__cols,
+.hk-popover-panel.hk-is-sheet .pr-trend-pop__row {
+  grid-template-columns: auto minmax(0, 1fr) 44px 48px 64px;
+}
+
+/* ── Phone layout (≤767px) ──────────────────────────────────────────────
+   The one ship-filter chip can list every active constraint
+   ("Battleship·Destroyer · VIII–★ · 3 ships") — wider than a 393px
+   controls row. The chip caps at the row and its label span ellipsizes
+   instead of pushing the head wide (the full label stays one tap away:
+   the chip opens the very popup that set those constraints). */
+@media (max-width: 767px) {
+  .pr-trend-section .ship-filter-bar__chip {
+    max-width: 100%;
+
+    > span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+}
