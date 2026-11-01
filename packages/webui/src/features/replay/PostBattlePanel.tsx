@@ -1373,12 +1373,20 @@ export default defineComponent({
                 { "replay-view__postbattle-matrix--single": enemyRows.length === 0 },
               ]}
             >
-              <div class="replay-view__postbattle-col">
+              {/* Rows stack inside the inner wrapper (the same
+                  .replay-view__postbattle-col__inner the replay view's own
+                  fallback matrix renders): a 4px pitch separates the row
+                  plates, so each row reads as its own item and the hover
+                  highlight's rounding has the dark ground it needs to show
+                  (user feedback: 项目之间应有一点距离、圆角一致 — the flush
+                  strip read as one slab and the highlight bled into the
+                  neighbours). */}
+              <div class="replay-view__postbattle-col__inner">
                 {colTitle(t("replay.roster.allies"), allies.value)}
                 {allies.value.map(rowOf)}
               </div>
               {enemyRows.length > 0 ? (
-                <div class="replay-view__postbattle-col">
+                <div class="replay-view__postbattle-col__inner">
                   {colTitle(t("replay.roster.enemies"), enemyRows)}
                   {enemyRows.map(rowOf)}
                 </div>

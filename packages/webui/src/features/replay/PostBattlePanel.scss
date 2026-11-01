@@ -310,6 +310,10 @@
   gap: 8px;
   padding: 4px 4px 4px 6px;
   border: none;
+  /* The hover highlight must carry the row wrapper's rounding — a
+     hard-cornered plate inside a 6px-radius row reads as a different
+     control (user feedback: 圆角设定一致). */
+  border-radius: inherit;
   background: none;
   color: inherit;
   text-align: left;
@@ -348,7 +352,13 @@
   gap: 4px;
   flex: 0 1 auto;
   min-width: 0;
-  overflow: hidden;
+  /* Clip horizontally only (the shrink-to-fit tag trim) — vertically the
+     plate must stay visible: StampTag's optical-centering translate pokes
+     its bottom border a hair past this box, and overflow: hidden would
+     shave the border line off (visible+clip is the one pair the spec
+     allows on separate axes). */
+  overflow-x: clip;
+  overflow-y: visible;
 }
 .replay-view__postbattle-cell-nick {
   flex: 0 1 auto;
@@ -431,7 +441,8 @@
   height: 22px;
   padding: 0;
   border: none;
-  border-radius: 5px;
+  /* One radius voice with the row plate and its hover highlight (6px). */
+  border-radius: 6px;
   background: transparent;
   color: rgb(var(--color-text) / 0.35);
   cursor: pointer;

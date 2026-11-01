@@ -535,7 +535,12 @@ export async function renderPostBattleShot(
         // included — the roster's identity line shows.
         const label = stampWording(sealTags[i], statsPrefsState.value.sealLabels);
         const tagW = sealTagWidth(ctx, label);
-        drawSealTag(ctx, nickX + tagW / 2, cy - 8, label);
+        // The plate centers on the passed y while the nick paints on the
+        // ALPHABETIC baseline (default canvas textBaseline), and a centered
+        // plate reads low against the lowercase body the same way the DOM
+        // face's box-centered plate read high (StampTag.scss's translate) —
+        // lift it by the body's half x-height so both faces optically agree.
+        drawSealTag(ctx, nickX + tagW / 2, cy - 11.5, label);
         nickX += tagW + (i < sealTags.length - 1 ? 6 : 0);
       }
       if (sealTags.length > 0) nickX += 2;
