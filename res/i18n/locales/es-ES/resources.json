@@ -372,6 +372,7 @@
     "partial": "{ok} de {count} clientes sincronizados: {details}",
     "failed": "Error de sincronización en los {count} clientes: {details}",
     "skippedByRule": "«{mod}» no se aplica a {client}; se omitió",
+    "skippedByVersion": "{mod}: se omitió {client} — el rango de versiones del paquete no incluye a ese cliente",
     "skippedRunning": "«{names}» está en ejecución; se omitió. Cierra el juego y vuelve a intentarlo.",
     "nothingToDo": "Los demás clientes ya coinciden con el conjunto de mods de este cliente.",
     "noCatalog": "El catálogo en línea no está cargado; actualízalo antes de sincronizar los clientes.",

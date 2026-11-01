@@ -164,6 +164,14 @@ pub struct InstallReport {
     pub bin_version: String,
     pub wrote_files: usize,
     pub warnings: Vec<String>,
+    /// The install was SKIPPED before any byte moved (the fan-out's
+    /// version gate: the pack's published range confidently excludes
+    /// this client's game version). Carries the same sentence the warn
+    /// path would log; the webui shows it as a quiet per-client skip,
+    /// never a failure. Absent on every landed report (wire-shape rule
+    /// as conflicts/mirroredBins).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped: Option<String>,
     /// Which other installed mods this install overwrote files of (also
     /// mirrored into `warnings`); kept separate so the UI can toast them
     /// without string-matching. Absent when empty so the wire shape of

@@ -88,6 +88,15 @@ pub async fn mod_catalog_install(
     // Named scheme to install (see CatalogPreset); None/empty resolves to
     // the entry's default package list (which mirrors the first preset).
     preset: Option<String>,
+    // The multi-client fan-out's version gate: a CONFIDENT range mismatch
+    // skips this client (report.skipped) instead of warn-and-proceed — the
+    // user chose the ACTIVE client, not this one, and auto-installing a
+    // pack the publisher excludes is how foreign-lineage clients (e.g.
+    // Lesta's date versions vs WG 15.x) collected every pack with a
+    // mismatch warning each (observed 2026-11-01: 22 warns, one client
+    // reporting 26.10.0). The active install path leaves it None/False:
+    // a mismatch warns and the human decides.
+    skip_incompatible: Option<bool>,
 ) -> CommandResult<InstallReport> {
     crate::commands::ensure_main_window_label(window.label())?;
     // Wrapped so every post-guard failure (download, unpack, ledger) lands in
@@ -95,7 +104,15 @@ pub async fn mod_catalog_install(
     // to be log-invisible, which made user reports impossible to diagnose.
     let log_id = mod_id.clone();
     let log_root = game_root.clone();
-    match mod_catalog_install_inner(mod_id, game_root, app, preset).await {
+    match mod_catalog_install_inner(
+        mod_id,
+        game_root,
+        app,
+        preset,
+        skip_incompatible.unwrap_or(false),
+    )
+    .await
+    {
         Ok(report) => Ok(report),
         Err(e) => {
             tracing::warn!(id = %log_id, game_root = %log_root, error = %e, "mod_catalog_install failed");
@@ -109,6 +126,7 @@ pub(crate) async fn mod_catalog_install_inner(
     game_root: String,
     app: AppHandle,
     preset: Option<String>,
+    skip_incompatible: bool,
 ) -> anyhow::Result<InstallReport> {
     // Every failure of this command is otherwise log-invisible (its early
     // guards return before any download or install line) — the entry line
@@ -159,6 +177,23 @@ pub(crate) async fn mod_catalog_install_inner(
     let version_warning =
         version_guard::compat_warning(&entry.game, client_game_version.as_deref());
     if let (Some(warning), Some(client)) = (&version_warning, client_game_version.as_deref()) {
+        if skip_incompatible {
+            tracing::info!(
+                id = %entry.id,
+                game = %entry.game,
+                client,
+                "mod_catalog_install skipped by the version gate (fan-out)"
+            );
+            return Ok(InstallReport {
+                name: entry.title.clone(),
+                bin_version: String::new(),
+                wrote_files: 0,
+                warnings: Vec::new(),
+                conflicts: Vec::new(),
+                mirrored_bins: Vec::new(),
+                skipped: version_warning,
+            });
+        }
         tracing::warn!(id = %entry.id, game = %entry.game, client, "{warning}");
     }
 

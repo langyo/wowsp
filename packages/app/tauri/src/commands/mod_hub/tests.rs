@@ -1960,6 +1960,7 @@ fn local_record_describes_local_install() {
             warnings: Vec::new(),
             conflicts: Vec::new(),
             mirrored_bins: Vec::new(),
+            skipped: None,
         },
         written: vec!["gui/a.png".into(), "ime_config.xml".into()],
         restore_dir: Some(PathBuf::from("R")),

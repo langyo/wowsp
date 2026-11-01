@@ -342,6 +342,10 @@ pub async fn mod_hub_purge_reinstall(
                 root,
                 app_handle,
                 record.preset.clone(),
+                // A purge reinstalls what the ledger already had on this
+                // exact root — a version mismatch would have warned the
+                // same way the first time; the resume must not drop units.
+                false,
             )
             .await
             {
@@ -558,6 +562,8 @@ pub async fn mod_hub_purge_backup_resume(
             root,
             app_handle,
             unit.preset.clone(),
+            // Same rule as the purge loop above: resume restores.
+            false,
         )
         .await
         {

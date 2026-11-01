@@ -372,6 +372,7 @@
     "partial": "{count}개 중 {ok}개 클라이언트를 동기화했습니다: {details}",
     "failed": "{count}개 클라이언트 모두 동기화에 실패했습니다: {details}",
     "skippedByRule": "\"{mod}\"은(는) {client}에 적용되지 않아 건너뛰었습니다",
+    "skippedByVersion": "{mod}: {client} 건너뜀 — 이 팩의 지원 버전에 해당 클라이언트가 포함되지 않습니다",
     "skippedRunning": "\"{names}\"이(가) 실행 중이라 건너뛰었습니다 — 게임을 종료한 후 다시 시도하세요.",
     "nothingToDo": "다른 클라이언트가 모두 이 클라이언트의 MOD 구성과 일치합니다.",
     "noCatalog": "온라인 카탈로그가 아직 로드되지 않았습니다 — 동기화 전에 카탈로그를 새로고침하세요.",
