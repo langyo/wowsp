@@ -21,6 +21,15 @@
   background: transparent;
   /* Keep the ink legible over bright sea/sky backgrounds. */
   filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+  /* Optical vertical centering against the nickname. The roster name lines
+     align flex BOXES, but Latin lowercase rides the baseline in the lower
+     part of its line box (ascent > descent), so a box-centered plate reads
+     high against the text body — a DPR-2 capture measured the plate center
+     ~2 CSS px above the nick's lowercase band (user feedback: 猴 and the
+     other seals sit visibly above the adjacent text). Nudge the plate down
+     onto the text's optical middle; translate is paint-only, so seal-less
+     rows keep the exact same line rhythm and nothing reflows. */
+  translate: 0 0.2em;
 }
 
 /* A user-imported custom picture replaces the text, pressed at the text
