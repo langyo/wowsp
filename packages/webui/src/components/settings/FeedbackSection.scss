@@ -104,6 +104,33 @@
     gap: var(--space-8);
     margin-top: var(--space-12);
   }
+
+  /* ── Phone (≤767px): the row grid folds ──
+     The label track alone would starve the mono value column at sheet
+     widths, so label becomes its own heading line, the value keeps the
+     full second line and the meta / copy button share the trailing cell.
+     Carried HERE (not in a page-context stylesheet) so every host folds
+     identically — the phone settings SHEET is the primary phone surface
+     and it has no page context. */
+  @media (max-width: 767px) {
+    &__card {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    &__label {
+      grid-column: 1 / -1;
+    }
+
+    &__file,
+    &__dir {
+      grid-column: 1;
+    }
+
+    &__meta,
+    &__row > :nth-child(3) {
+      grid-column: 2;
+    }
+  }
 }
 
 // Hardware-consent dialog (the export flow's disclosure step): warning

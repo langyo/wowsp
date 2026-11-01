@@ -1064,3 +1064,42 @@
 .settings-section-host {
   display: contents;
 }
+
+/* ── Phone layout (≤767px) for the section bodies the settings sheet
+   hosts. The resource-inventory rows stack (name above its chip cluster
+   — a right-aligned chip column beside a long localized name starves
+   both at 393px), the pack rows let their action cluster wrap under the
+   info block instead of squeezing it beside two buttons, and the
+   mirror-row remove controls grow from their 24px icon box to a 36px
+   touch target. Desktop (≥768px) is untouched. ── */
+@media (max-width: 767px) {
+  .settings-modal__res-inv-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.3rem;
+  }
+
+  .settings-modal__res-inv-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .settings-modal__res-inv-meta {
+    justify-content: flex-start;
+  }
+
+  .settings-modal__pack {
+    flex-wrap: wrap;
+  }
+
+  .settings-modal__pack-actions {
+    margin-left: auto;
+  }
+
+  /* Scoped to the settings hosts (sheet + desktop modal share the
+     contentClass) so the library's list rows elsewhere keep their box. */
+  .hk-settings-host .hk-list-row .hk-icon-button {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
+  }
+}

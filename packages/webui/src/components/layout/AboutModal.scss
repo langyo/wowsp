@@ -461,3 +461,16 @@
     animation-duration: 0.8s;
   }
 }
+
+/* ── Phone layout (≤767px): the version row and the link row center and
+   wrap — a long-locale update button ("Проверить обновления" with the
+   version inline) must not push the version tag out of the sheet.
+   Everything else is single-column already (the body is a centered flex
+   column with wrapping tag clusters). ── */
+@media (max-width: 767px) {
+  .about-modal__version,
+  .about-modal__links {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
