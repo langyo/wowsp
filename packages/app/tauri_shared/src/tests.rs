@@ -783,6 +783,7 @@ fn replay_stream_omits_empty_sections() {
             is_bot: false,
             avatar_id: Some(7_561_114),
             is_self: true,
+            prebattle: 0,
         }],
         self_team: Some(1),
         ..serde_json::from_value::<ReplayStream>(serde_json::json!({

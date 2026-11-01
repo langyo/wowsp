@@ -380,6 +380,14 @@ pub struct ArenaPlayer {
     /// CellPlayerCreate entity).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub is_self: bool,
+    /// The player's division (组队) id — the arena state's per-player
+    /// prebattle group (0 = solo; the 2-3 members of one division share
+    /// one id, always within one team). Verified on the 15.9.0 layout era
+    /// (the FixedDict pair that reads equal across a division's members);
+    /// decoded only there, so every older replay carries 0 and the
+    /// frontend renders no division tag.
+    #[serde(default, skip_serializing_if = "is_zero_i64")]
+    pub prebattle: i64,
 }
 
 fn is_zero_i64(v: &i64) -> bool {

@@ -229,8 +229,9 @@ const ARENA_TAIL_SHIFTS: [i64; 5] = [0, 1, -1, 2, -2];
 /// The player/bot blobs are pickle-proto-2 lists — one FixedDict pair list
 /// per player — read against the per-version [`ArenaFields`] indices. Only
 /// the identity fields survive (entity id, team, account/roster id,
-/// GameParams ship id, max health, name); any shape mismatch yields `None`
-/// (the frontend then falls back to its spawn-side heuristics).
+/// GameParams ship id, max health, name) plus the division pair on the
+/// 15.9+ layout era (see `arena_player_of`); any shape mismatch yields
+/// `None` (the frontend then falls back to its spawn-side heuristics).
 pub(super) fn decode_arena_state(
     args: &[u8],
     version: Option<(u32, u32, u32)>,
@@ -281,18 +282,32 @@ fn arena_player_list(
         .iter()
         .find(|&s| arena_layout_plausible(&pairs, &base.shifted(*s)))
         .unwrap_or(&0);
+    // The division pair's indices were pinned on the 15.9.0 capture (the
+    // newest ARENA_PLAYER_FIELDS row's insertion moved them off whatever
+    // the older eras carried) and only hold under the VERSION-KEYED row —
+    // a probed tail shift means an unpinned layout whose 27/29 are other
+    // fields. Both gates together keep the read off every layout it was
+    // never verified against.
+    let divisions = version.is_some_and(|v| v >= (15, 9, 0)) && fields == 0;
     pairs
         .iter()
-        .filter_map(|p| arena_player_of(p, &base.shifted(fields), bots))
+        .filter_map(|p| arena_player_of(p, &base.shifted(fields), bots, divisions))
         .collect()
 }
 
 /// One player's reads under one layout (see [`arena_player_list`]); `None`
-/// when the entity slot is absent or zero.
+/// when the entity slot is absent or zero. `divisions` enables the 15.9-era
+/// division-pair read (see the gate in [`arena_player_list`]): the two
+/// FixedDict slots a division's members carry EQUAL non-zero values (the
+/// prebattle group id) — read only when both agree, so an unpinned layout
+/// can never dress a random field pair up as a division id.
+const ARENA_DIVISION_A_IDX: i64 = 27;
+const ARENA_DIVISION_B_IDX: i64 = 29;
 fn arena_player_of(
     pairs: &[PyVal],
     f: &ArenaFields,
     bots: bool,
+    divisions: bool,
 ) -> Option<wowsp_tauri_shared::ArenaPlayer> {
     let field = |idx: i64| -> Option<&PyVal> {
         pairs.iter().find_map(|kv| match kv {
@@ -323,6 +338,17 @@ fn arena_player_of(
         Some(PyVal::Str(s)) => s.clone(),
         _ => String::new(),
     };
+    // The division pair (see the gate in arena_player_list): both slots
+    // must read and agree on a positive value — solo players carry 0/None
+    // there, and the equality check is what keeps a half-drifted layout
+    // from inventing ids.
+    let prebattle = if divisions {
+        let a = as_i64(field(ARENA_DIVISION_A_IDX)).unwrap_or(0);
+        let b = as_i64(field(ARENA_DIVISION_B_IDX)).unwrap_or(0);
+        if a == b && a > 0 { a } else { 0 }
+    } else {
+        0
+    };
     Some(wowsp_tauri_shared::ArenaPlayer {
         entity_id: entity_id as i32,
         team_id: as_i64(field(f.team_id)).unwrap_or(0) as i8,
@@ -335,6 +361,7 @@ fn arena_player_of(
             .filter(|v| *v > 0)
             .map(|v| v as i32),
         is_self: false,
+        prebattle,
     })
 }
 
@@ -353,7 +380,9 @@ fn arena_layout_plausible(pairs: &[&Vec<PyVal>], f: &ArenaFields) -> bool {
     for p in pairs {
         // `bots: false` — the produced entry's is_bot flag is the one field
         // the checks below never read; the layout probe itself is agnostic.
-        let Some(player) = arena_player_of(p, f, false) else {
+        // `divisions: false` for the same reason: the probe judges only the
+        // identity trio's shape.
+        let Some(player) = arena_player_of(p, f, false, false) else {
             continue;
         };
         with_entity += 1;

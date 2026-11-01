@@ -785,11 +785,19 @@ def build_roster(self_name="langyo", with_ship_names=True, drift_records=False,
     then carry the live build fields (shipConfigDump + crew params) planted
     by plant_build_fields; None keeps the historical field-less shape."""
     players = {}
+    # The division (组队) pairs: two allies and two foes share one prebattle
+    # id each — the grouping the telemetry's divisions bridge must carry
+    # verbatim. Everyone else plants no field at all (the solo / shape-less
+    # degrade the bridge must skip silently).
+    DIVISION_PAIRS = {"Ally01": 2000010001, "Ally04": 2000010001,
+                      "Foe01": 2000020002, "Foe03": 2000020002}
     for i in range(ROSTER_SIZE - ENEMY_COUNT):
         name = self_name if i == 0 else "Ally%02d" % i
         fields = {"name": name, "accountDBID": 310000000 + i,
                   "realm": "ru", "shipParamsId": 418000000 + i,
                   "isBot": False, "teamId": 1, "isAlive": True}
+        if name in DIVISION_PAIRS:
+            fields["prebattleID"] = DIVISION_PAIRS[name]
         if with_ship_names:
             fields["shipName"] = SHIP_LOCALIZED[name]
         if builds:
@@ -810,6 +818,8 @@ def build_roster(self_name="langyo", with_ship_names=True, drift_records=False,
         fields = {"name": name, "accountDBID": 320000000 + i,
                   "realm": "ru", "shipParamsId": 428000000 + i,
                   "isBot": False, "teamId": 2, "isAlive": True}
+        if name in DIVISION_PAIRS:
+            fields["prebattleID"] = DIVISION_PAIRS[name]
         if with_ship_names:
             fields["shipName"] = SHIP_LOCALIZED[name]
         if builds:
@@ -1370,6 +1380,32 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         if tele.get("shipNames") != expected_localized:
             failures.append("[%s] telemetry shipNames mismatch: %r"
                             % (label, tele.get("shipNames")))
+        # The division (组队) bridge: per-name prebattle ids off the same
+        # records. The planted pairs (Ally01+Ally04, Foe01+Foe03) share one
+        # id each and MUST land verbatim; everyone else (solo or field-less
+        # records, the bot included) stays out of the map. The drift pass's
+        # nameless record drops out (no name to key); the degraded-empty
+        # pass has no records, so the map degrades to EMPTY — the key stays
+        # present, never absent (an absent key means "this probe build
+        # predates the bridge").
+        expected_divisions = {}
+        if degraded != "empty":
+            for rec in roster.values():
+                try:
+                    div_name = rec["name"]
+                except KeyError:
+                    continue
+                if not div_name:
+                    continue
+                try:
+                    pid = rec["prebattleID"]
+                except KeyError:
+                    continue
+                if pid:
+                    expected_divisions[div_name] = pid
+        if tele.get("divisions") != expected_divisions:
+            failures.append("[%s] telemetry divisions=%r, expected %r"
+                            % (label, tele.get("divisions"), expected_divisions))
         # The game's own AI verdicts (bots): every `isBot` row plus the
         # scripted-name styles — the one judgment that catches event
         # PvEvP bots sailing under NORMAL nicknames, which no name-style
@@ -1721,8 +1757,9 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                             % (label, joined[-2000:]))
         # Battle quit: the quit-clear telemetry must blank EVERY keyed
         # field (players, sortKeys AND the ordering raw material —
-        # rosterOrder/shipNames), so a leftover file from a closed client
-        # can never keep pinning a consumer's tie base or name segment.
+        # rosterOrder/shipNames — plus the division bridge), so a leftover
+        # file from a closed client can never keep pinning a consumer's tie
+        # base, name segment or 组队 tags.
         if probe is not None:
             builds_session = probe.session
             probe.quit()
@@ -1738,6 +1775,9 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 if cleared.get("rosterOrder") != [] or cleared.get("shipNames") != {}:
                     failures.append("[%s] quit telemetry did not clear the order bridge: %r"
                                     % (label, cleared))
+                if cleared.get("divisions") != {}:
+                    failures.append("[%s] quit telemetry did not clear the division bridge: %r"
+                                    % (label, cleared.get("divisions")))
             if builds:
                 # The build bridge's quit-clear: players blanked, the
                 # finished battle's id preserved, v/t intact.

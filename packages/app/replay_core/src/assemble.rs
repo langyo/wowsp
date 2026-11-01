@@ -296,6 +296,7 @@ pub fn synthesize_lesta_arena_players(
             is_bot: false,
             avatar_id: None,
             is_self: true,
+            prebattle: 0,
         });
         if let Some(list) = entities_by_ship.get_mut(&self_entry.ship_id) {
             list.retain(|e| *e != eid);
@@ -327,6 +328,7 @@ pub fn synthesize_lesta_arena_players(
             is_bot: v.id < 0,
             avatar_id: None,
             is_self: v.relation == 0,
+            prebattle: 0,
         });
     }
     // Same-config groups (co-op fields MIRRORED bot fits — one of every
@@ -424,6 +426,7 @@ pub fn synthesize_lesta_arena_players(
                     is_bot: v.id < 0,
                     avatar_id: None,
                     is_self: false,
+                    prebattle: 0,
                 });
             }
             let pushed = free_entities.len();
@@ -814,6 +817,7 @@ mod tests {
             is_bot: false,
             avatar_id: None,
             is_self: true,
+            prebattle: 0,
         }];
         let stream = finish_self_stream(
             decoded,
