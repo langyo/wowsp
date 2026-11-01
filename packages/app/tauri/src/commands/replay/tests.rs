@@ -589,6 +589,7 @@ fn lesta_arena_synthesis_is_noop_when_unneeded() {
         is_bot: false,
         avatar_id: None,
         is_self: true,
+        prebattle: 0,
     }];
     let before: Vec<_> = populated
         .iter()
@@ -701,6 +702,7 @@ fn anchor_hp_streams_prepends_starting_health() {
         is_bot: false,
         avatar_id: None,
         is_self: false,
+        prebattle: 0,
     };
     // Damaged first reading at t=151.6 (the L-20 replay's own sub).
     let mut hp_map = std::collections::BTreeMap::from([

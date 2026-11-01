@@ -1749,6 +1749,93 @@ fn decodes_arena_state_players() {
     assert!(decode_arena_state(&[], Some((15, 8, 0))).is_none());
 }
 
+/// The division (组队) pair decode (15.9.0 layout era): two members share
+/// equal non-zero values in the FixedDict's division slots and surface as
+/// `prebattle`; a solo player (slots absent) and a mismatched pair stay 0,
+/// and the read is gated OFF below 15.9.0 — the pair's indices were only
+/// ever pinned on a 15.9.0 capture, so older layouts must not have their
+/// unrelated fields dressed up as division ids.
+#[test]
+fn decodes_arena_state_division_pairs() {
+    // The 15.9.0 human layout (ARENA_PLAYER_FIELDS' newest row): the tail
+    // trio sits one slot above the 0.11-era positions.
+    let (f_avatar, f_id, f_health, f_name, f_ship, f_params, f_team) =
+        (2i64, 11i64, 24i64, 25i64, 34i64, 35i64, 37i64);
+    let (d_a, d_b) = (27i64, 29i64);
+    let div_id = 672_417_374i64;
+    let a_name = "ZundaShake".to_string();
+    let b_name = "ayumochi".to_string();
+    let solo_name = "langyo".to_string();
+    let mismatch_name = "halfdrift".to_string();
+    let member_a = pickle_player(&[
+        (&f_avatar, &7_561_150i64),
+        (&f_id, &601i64),
+        (&f_health, &12_600i64),
+        (&f_name, &a_name),
+        (&f_ship, &7_561_151i64),
+        (&f_params, &4_076_255_216i64),
+        (&f_team, &1i64),
+        (&d_a, &div_id),
+        (&d_b, &div_id),
+    ]);
+    let member_b = pickle_player(&[
+        (&f_avatar, &7_561_152i64),
+        (&f_id, &602i64),
+        (&f_health, &30_200i64),
+        (&f_name, &b_name),
+        (&f_ship, &7_561_153i64),
+        (&f_params, &4_076_255_216i64),
+        (&f_team, &1i64),
+        (&d_a, &div_id),
+        (&d_b, &div_id),
+    ]);
+    let solo = pickle_player(&[
+        (&f_avatar, &7_561_154i64),
+        (&f_id, &603i64),
+        (&f_health, &17_500i64),
+        (&f_name, &solo_name),
+        (&f_ship, &7_561_155i64),
+        (&f_params, &4_076_255_216i64),
+        (&f_team, &1i64),
+    ]);
+    // A layout whose pair slots DISAGREE reads solo — the equality check is
+    // what keeps a half-drifted field from inventing a division.
+    let mismatch = pickle_player(&[
+        (&f_avatar, &7_561_156i64),
+        (&f_id, &604i64),
+        (&f_health, &20_000i64),
+        (&f_name, &mismatch_name),
+        (&f_ship, &7_561_157i64),
+        (&f_params, &4_076_255_216i64),
+        (&f_team, &1i64),
+        (&d_a, &div_id),
+        (&d_b, &(div_id + 1)),
+    ]);
+    let args = arena_args(
+        &pickle_list(&[&member_a, &member_b, &solo, &mismatch]),
+        &pickle_list(&[]),
+    );
+    let players =
+        decode_arena_state(&args, Some((15, 9, 0))).expect("15.9 arena state must decode");
+    let prebattle_of = |name: &str| {
+        players
+            .iter()
+            .find(|p| p.name == name)
+            .unwrap_or_else(|| panic!("row {name} missing"))
+            .prebattle
+    };
+    assert_eq!(prebattle_of("ZundaShake"), div_id);
+    assert_eq!(prebattle_of("ayumochi"), div_id);
+    assert_eq!(prebattle_of("langyo"), 0);
+    assert_eq!(prebattle_of("halfdrift"), 0);
+    // Below the pinned era the whole read is off: the same blob decodes
+    // with the 15.8-era layout (its own shape probes a shifted trio) and
+    // every row reads solo.
+    let players =
+        decode_arena_state(&args, Some((15, 8, 0))).expect("15.8 arena state must decode");
+    assert!(players.iter().all(|p| p.prebattle == 0));
+}
+
 /// Review M-1 regression: the arena-state method id must be gated on a
 /// PARSED version. Without one, the id would come from the newest table
 /// while `ArenaFields::for_version(None, _)` decodes with the OLDEST

@@ -248,6 +248,9 @@ export function drawFooter(
 /** Cinnabar seal ink — RatingStamp's frame color (RatingStamp.scss). */
 const STAMP_INK = "202 44 38";
 
+/** Division tag ink — DivisionTag.scss's yellow (the 组队 tag face). */
+const DIVISION_INK = "232 186 54";
+
 /** The seal glyph bitmaps (same assets the RatingStamp SVG embeds). */
 export const STAMP_URL: Record<StampKind, string> = {
   miracle: stampMiracle,
@@ -335,6 +338,40 @@ export function drawSealTag(
   ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2.6);
   ctx.stroke();
   ctx.fillStyle = rgba(STAMP_INK, 1);
+  ctx.fillText(label, cx, cy + 0.5);
+  ctx.restore();
+}
+
+/** The division tag face (DivisionTag, 组队标签) redrawn in canvas — the
+ *  localized wording as a horizontal transparent tag with a rounded yellow
+ *  border: drawSealTag's recipe pressed in a different ink (the DOM face is
+ *  DivisionTag.scss). `cx`/`cy` center the tag; the caller measures the
+ *  label at the shared tag font when it needs the extent (postBattleShot's
+ *  identity-line tag cluster). */
+export function divisionTagWidth(ctx: CanvasRenderingContext2D, label: string): number {
+  ctx.font = sealTagFont();
+  return ctx.measureText(label).width + 16;
+}
+export function drawDivisionTag(
+  ctx: CanvasRenderingContext2D,
+  cx: number,
+  cy: number,
+  label: string,
+): void {
+  ctx.save();
+  ctx.font = sealTagFont();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const w = divisionTagWidth(ctx, label);
+  const h = SEAL_TAG_FONT_PX * 1.6;
+  // The transparent plate: ground shows through, border + ink carry the
+  // tag (the DOM face's recipe, DivisionTag.scss).
+  ctx.strokeStyle = rgba(DIVISION_INK, 0.6);
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.roundRect(cx - w / 2, cy - h / 2, w, h, h / 2.6);
+  ctx.stroke();
+  ctx.fillStyle = rgba(DIVISION_INK, 1);
   ctx.fillText(label, cx, cy + 0.5);
   ctx.restore();
 }

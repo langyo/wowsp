@@ -58,6 +58,11 @@ export interface TelemetryPayload {
    *  verbatim off the game's own roster data; empty when the client's
    *  records carry no such field. */
   shipNames?: Record<string, string>;
+  /** Nickname → division (组队) id for the roster's queued divisions —
+   *  2-3 same-team members share one id; 0/absent = solo. Present only
+   *  while the in-game plugin runs (the live roster's sole division
+   *  source — nothing rides the arena file). */
+  divisions?: Record<string, number>;
   self?: { name?: string; realm?: string };
   identity?: Record<string, { account_id?: number; realm?: string }>;
   root?: string;

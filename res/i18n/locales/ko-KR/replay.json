@@ -349,7 +349,8 @@
     "showName": "이 닉네임 표시",
     "viewAll": "전체 전적",
     "viewSelf": "내 전적",
-    "selfUnavailable": "개인 리포트를 생성할 수 없습니다(디코딩 데이터 없음)"
+    "selfUnavailable": "개인 리포트를 생성할 수 없습니다(디코딩 데이터 없음)",
+    "divisionTag": "분대{letter}"
   },
   "comp": {
     "main": "주포",

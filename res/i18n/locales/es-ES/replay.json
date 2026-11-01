@@ -349,7 +349,8 @@
     "showName": "Mostrar este apodo",
     "viewAll": "Todos los jugadores",
     "viewSelf": "Mi batalla",
-    "selfUnavailable": "Informe personal no disponible (falta el stream decodificado)"
+    "selfUnavailable": "Informe personal no disponible (falta el stream decodificado)",
+    "divisionTag": "Div. {letter}"
   },
   "comp": {
     "main": "Artillería principal",

@@ -28,6 +28,8 @@ import {
   LOGO_URL,
   PAD,
   canvasToPngBytes,
+  divisionTagWidth,
+  drawDivisionTag,
   drawFooter,
   drawSealTag,
   ellipsize,
@@ -80,6 +82,13 @@ export interface ShotRow {
    *  column was retired with the DOM column (user feedback), so the
    *  renderer draws every seal on the identity line instead. */
   sealTags?: StampKind[];
+  /** The division tag's (组队标签) ALREADY-LOCALIZED label ("Div. A" /
+   *  组队A) — the caller resolves the letter off its per-side division
+   *  lettering and localizes it, so the renderer paints strings, never
+   *  ids. Painted FIRST on the identity line, ahead of the seal tags (the
+   *  DOM rows' order). Null/absent = the row is solo (or the surface has
+   *  no division data). */
+  divisionTag?: string | null;
   stats: ShotStat[];
 }
 
@@ -520,13 +529,23 @@ export async function renderPostBattleShot(
       // ellipsizes instead of painting over the WR column.
       const statLeft = cx + COL_WIDTH - 14 - statsW;
       const textW = Math.max(statLeft - 8 - tx, 60);
-      // Identity line: the small horizontal seal tags (StampTag's face)
-      // press BEFORE the nick, in the caller's order — 6px between adjacent
-      // tags, then 2px more before the nick starts. The cluster shrinks the
-      // nick's maxWidth so a tagged long nick still ellipsizes before the
-      // stat cells; the floor keeps at least a sliver of text.
+      // Identity line: the division tag (DivisionTag's yellow face,
+      // FIRST — the DOM rows' order) and the small horizontal seal tags
+      // (StampTag's face) press BEFORE the nick, in the caller's order —
+      // 6px between adjacent tags, then 2px more before the nick starts.
+      // The cluster shrinks the nick's maxWidth so a tagged long nick
+      // still ellipsizes before the stat cells; the floor keeps at least
+      // a sliver of text.
       const sealTags = row.sealTags ?? [];
       let nickX = tx;
+      // The division tag arrives ALREADY-LOCALIZED (ShotRow's contract) —
+      // no per-kind wording map to consult, just measure and press.
+      const divisionTag = row.divisionTag;
+      if (divisionTag) {
+        const tagW = divisionTagWidth(ctx, divisionTag);
+        drawDivisionTag(ctx, nickX + tagW / 2, cy - 11.5, divisionTag);
+        nickX += tagW + 6;
+      }
       for (let i = 0; i < sealTags.length; i++) {
         // The kinds arrive as StampKind ids; the seal-tag helpers take the
         // face WORDING — always map through stampWording (a raw "ape" would
@@ -543,7 +562,7 @@ export async function renderPostBattleShot(
         drawSealTag(ctx, nickX + tagW / 2, cy - 11.5, label);
         nickX += tagW + (i < sealTags.length - 1 ? 6 : 0);
       }
-      if (sealTags.length > 0) nickX += 2;
+      if (sealTags.length > 0 || divisionTag) nickX += 2;
       const nickW = Math.max(textW - (nickX - tx), 20);
       ctx.textAlign = "left";
       ctx.font = font(14.5, 600);

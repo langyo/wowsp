@@ -1,0 +1,30 @@
+/* The division tag face (组队标签, the yellow StampTag sibling) — the
+   content (wording, the no-gates rule) lives in DivisionTag.tsx; this
+   file carries the ink, the transparent tag plate and the rounded border,
+   the exact StampTag.scss recipe in yellow: sunflower ink over a
+   transparent ground, edged by a rounded yellow border — never a filled
+   pill, the ground shows through. */
+
+.division-tag {
+  /* Division yellow — the battle-fact ink the canvas share-shot face
+     presses too (shotKit's DIVISION_INK). */
+  color: rgb(232 186 54);
+  font-weight: 700;
+  white-space: nowrap;
+  line-height: 1.2em;
+  flex: none;
+  /* The transparent tag plate: the ground shows through, only the border
+     and the ink carry the tag — the horizontal small-tag face StampTag
+     presses, in a different ink. */
+  padding: 0.04em 0.4em;
+  border: 1px solid rgb(232 186 54 / 55%);
+  border-radius: 0.45em;
+  background: transparent;
+  /* Keep the ink legible over bright sea/sky backgrounds. */
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 70%));
+  /* Optical vertical centering against the nickname — the same nudge the
+     seal face applies (StampTag.scss documents the DPR-2 measurement);
+     translate is paint-only, so tag-less rows keep the exact same line
+     rhythm and nothing reflows. */
+  translate: 0 0.2em;
+}

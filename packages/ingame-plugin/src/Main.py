@@ -2422,6 +2422,7 @@ class Probe:
                                                             'sortKeys': {},
                                                             'rosterOrder': [],
                                                             'shipNames': {},
+                                                            'divisions': {},
                                                             'bots': []}))
         except:
             self.soft('telemetry clear failed=' + _exc_text(120))
@@ -2455,6 +2456,10 @@ class Probe:
         self.avatar_entity_ids = {}
         self.raw_isalive_seen = False
         self.last_order_cache = None
+        # The divisions bridge cache (see roster_divisions) is per battle
+        # with the rest of the roster derivations: a new battle must not
+        # inherit the previous roster's prebattle ids.
+        self.last_divisions_cache = None
         # The bot-name cache is per battle with the rest of the roster
         # derivations (see bot_names).
         self.last_bots_cache = None
@@ -2666,6 +2671,36 @@ class Probe:
         except:
             self.soft('roster order failed=' + _exc_text(120))
         return order, ship_names
+
+    def roster_divisions(self, records):
+        """Per-player division (组队) ids, straight off the game's records.
+
+        Every division-capable battle seats its players in prebattle
+        objects: the roster record's `prebattleID` is that group's id
+        (0 / absent = solo) and members SHARE one id — exactly the
+        grouping the companion's roster tags render (组队A / 组队B …).
+        `prebattleIndex` (the slot inside the division) is deliberately
+        NOT bridged: indexes repeat across divisions, so grouping by one
+        would merge strangers; the ID is the only safe join key. Bots and
+        solo players never enter the map; a build whose records expose
+        the field under another shape yields an empty map and the
+        consumer renders nothing. Nothing here ever raises.
+        """
+        divisions = {}
+        try:
+            for p in records.values():
+                try:
+                    nm = p['name']
+                except:
+                    continue
+                if not nm:
+                    continue
+                pid = _record_int(p, 'prebattleID', 0)
+                if pid:
+                    divisions[nm] = pid
+        except:
+            self.soft('roster divisions failed=' + _exc_text(120))
+        return divisions
 
     def bot_names(self):
         """This battle's AI names, straight off the game's own roster
@@ -3147,6 +3182,18 @@ class Probe:
             # fake. Same caching story as the order fields.
             stage = 'bots'
             bots = self.bot_names()
+            # The division (组队) bridge: per-name prebattle ids off the
+            # same records (roster_divisions above). Divisions are fixed
+            # at battle start, so the same transient-empty hold as the
+            # order fields applies — the local death screen blanks
+            # getPlayersInfo for a tick and must not blank the map
+            # mid-battle.
+            stage = 'divisions'
+            divisions = self.roster_divisions(self.latest_raw)
+            if divisions:
+                self.last_divisions_cache = divisions
+            elif self.last_divisions_cache is not None:
+                divisions = self.last_divisions_cache
             # Distinct from the earlier 'self' stage (the self_name
             # resolution): a failure here logs the realm scan precisely.
             stage = 'self-realm'
@@ -3168,6 +3215,7 @@ class Probe:
                                      'sortKeys': sort_keys,
                                      'rosterOrder': roster_order,
                                      'shipNames': ship_names,
+                                     'divisions': divisions,
                                      'bots': bots,
                                      # The walk's side membership (the same
                                      # fold lists the strips render): the

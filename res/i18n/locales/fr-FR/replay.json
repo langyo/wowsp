@@ -349,7 +349,8 @@
     "showName": "Afficher ce pseudo",
     "viewAll": "Tous les joueurs",
     "viewSelf": "Mon combat",
-    "selfUnavailable": "Rapport personnel indisponible (flux décodé manquant)"
+    "selfUnavailable": "Rapport personnel indisponible (flux décodé manquant)",
+    "divisionTag": "Div. {letter}"
   },
   "comp": {
     "main": "Artillerie principale",

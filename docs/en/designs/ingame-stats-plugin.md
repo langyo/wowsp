@@ -193,6 +193,24 @@ from `LAST_BATTLE_PVE`: the PvE flag also keys the anchor calibration's
 battle class, and an asymmetric battle fields a two-team Tab table
 whose anchor belongs in the PvP slot.
 
+**Division bridge (2026-11-02)** — the roster tags' division (组队)
+grouping now comes from the game's own records: telemetry gains
+`divisions` (name → the record's `prebattleID`, non-zero entries only —
+the shared prebattle id every member of one division carries, the exact
+grouping the client's own Tab scoreboard draws; solo players and bots
+stay out of the map, and the same transient-empty hold as the order
+fields covers the death screen's blank getPlayersInfo tick). The
+`prebattleIndex` slot is deliberately NOT bridged: indexes repeat
+across divisions, so grouping by one would merge strangers — the ID is
+the only safe join key. The /live panel letters each side's divisions
+(A, B, …) off this map and renders the yellow 组队 tag beside those
+nicknames; an absent or empty field (an older probe build, a plugin-less
+session) simply renders no tag. The replay side needs no plugin: the
+arena state's per-player FixedDict carries the same grouping, decoded
+into `ArenaPlayer::prebattle` on the 15.9+ layout era (see
+replay_core's `layout_tables` — the pair's indices were pinned on a
+15.9.0 capture and read only under the version-keyed row).
+
 **Side-membership bridge + frame-roster fallback (2026-10-22).** The
 records-dead build class (`getPlayersInfo` empty all battle — the
 2026-10-18/19 field reports; the 2026-10-22 support bundle's WGC

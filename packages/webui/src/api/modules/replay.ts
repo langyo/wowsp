@@ -413,6 +413,10 @@ export interface ArenaPlayer {
   avatarId?: number | null;
   /** True for the recorder's own entry. */
   isSelf?: boolean;
+  /** Division (组队) id from the arena's prebattle field: players who
+   *  queued as a division share one id (2-3 same-team members); 0/absent
+   *  = solo. Optional so older decoded payloads stay valid. */
+  prebattle?: number;
 }
 
 /** Entity creation metadata (mirrors `wowsp_tauri_shared::EntityKind`). The
