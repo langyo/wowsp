@@ -17,7 +17,11 @@
 //! * the WG game's own crash-handler reports under <game>/crashes
 //!   (WorldOfWarships64-YYYY-MM-DD_HH-MM-SS.crash) — on installs whose WER
 //!   handoff is suppressed this folder is the ONLY durable crash evidence,
-//!   so the live pass reads it as well as the boot backfill;
+//!   so the live pass reads it as well as the boot backfill. The handler
+//!   writes the report BEFORE the process dies, so the watchdog also scans
+//!   it every tick while a tracked client is STILL alive: the crash dialog
+//!   can keep a dead-in-dialog client up for minutes, and the prompt must
+//!   not wait for the exit to learn what the disk already knows;
 //! * the LocalDumps folder (%LOCALAPPDATA%/CrashDumps, one
 //!   name.pid.dmp file per crash).
 //!
@@ -865,6 +869,9 @@ fn watchdog_tick(app: &tauri::AppHandle) {
     for (pid, entry) in gone {
         classify_exit(app, pid, entry, now);
     }
+    // The crash dialog linger path: a still-alive client whose crash
+    // report already landed gets its prompt NOW, not at exit.
+    detect_crash_report_while_alive(app);
 }
 
 /// A tracked client vanished: hunt for crash evidence inside the window
@@ -888,7 +895,16 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
         reset_new_records(app);
         return;
     };
-    let record = build_crash_record(pid, &seen, &evidence);
+    persist_and_emit(app, pid, &seen, evidence);
+}
+
+/// Persist + broadcast one confirmed crash: dedupe against the tombstone
+/// list, append the record, tombstone the evidence, emit the event. The
+/// shared tail of both detection paths — the exit classifier and the
+/// alive-time report scan below.
+#[cfg(windows)]
+fn persist_and_emit(app: &tauri::AppHandle, pid: u32, seen: &SeenProcess, evidence: CrashEvidence) {
+    let record = build_crash_record(pid, seen, &evidence);
     let dir = match super::appdata::appdata_dir_path() {
         Ok(d) => d,
         Err(e) => {
@@ -896,11 +912,10 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
             return;
         },
     };
-    // The same artifact can confirm a SECOND exit — the crashed pid lingers,
-    // or the client is relaunched and exits cleanly inside the lookback. The
-    // tombstone list already names this crash, so a duplicate record must
-    // not be appended or broadcast. The crash was real, so the clean-exit
-    // reset must not run either.
+    // The same artifact can confirm a SECOND observation — the crashed pid
+    // lingers on the crash dialog, or the client is relaunched and exits
+    // cleanly inside the lookback. The tombstone list already names this
+    // crash, so a duplicate record must not be appended or broadcast.
     if let Some(evidence_id) = record.evidence_id.as_deref() {
         if evidence_already_known(&dir, evidence_id) {
             tracing::info!(
@@ -917,10 +932,10 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
     }
     if let Some(evidence_id) = &record.evidence_id {
         let _guard = SEEN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let mut seen = load_seen_in(&dir);
-        if !seen.iter().any(|s| s == evidence_id) {
-            seen.insert(0, evidence_id.clone());
-            save_seen_in(&dir, &seen);
+        let mut tombstones = load_seen_in(&dir);
+        if !tombstones.iter().any(|s| s == evidence_id) {
+            tombstones.insert(0, evidence_id.clone());
+            save_seen_in(&dir, &tombstones);
         }
     }
     use tauri::Emitter;
@@ -935,6 +950,77 @@ fn classify_exit(app: &tauri::AppHandle, pid: u32, seen: SeenProcess, now_unix: 
         source = %record.source,
         "game client crash detected"
     );
+}
+
+/// The WG crash handler writes its report BEFORE the process dies — the
+/// crash dialog can keep a dead-in-dialog client alive for minutes while
+/// the evidence already sits on disk (observed 2026-11-01: report at
+/// 21:18:38, exit classified 21:19:27 — a 49 s silent window the user
+/// reads as "no reaction"). Every tick, while a tracked client is STILL
+/// ALIVE, hunt a WG report THIS session wrote; one find means the crash
+/// is already determined and the prompt must not wait for the exit. The
+/// later exit classification re-finds the same artifact and dedupes via
+/// the tombstone list.
+#[cfg(windows)]
+fn detect_crash_report_while_alive(app: &tauri::AppHandle) {
+    let now = unix_now();
+    let mut tracked: Vec<(u32, SeenProcess)> = SEEN
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .iter()
+        .map(|(pid, seen)| (*pid, seen.clone()))
+        .collect();
+    // NEWEST session first: with two concurrent clients of one image and
+    // root, the younger session's start floor is the tighter one, so IT
+    // must claim the fresh report (the loser dedupes on the artifact id).
+    tracked.sort_by_key(|(_, seen)| std::cmp::Reverse(seen.start_unix.unwrap_or(0)));
+    let Ok(dir) = super::appdata::appdata_dir_path() else {
+        return;
+    };
+    for (pid, seen) in tracked {
+        let Some(start) = seen.start_unix else {
+            // No session start → no floor that excludes older sessions
+            // reports; the exit classifier still covers this client.
+            continue;
+        };
+        let Some(exe) = seen.exe_path.clone() else {
+            continue;
+        };
+        let Some(evidence) =
+            alive_report_evidence(&seen.image, &exe, seen.root.as_deref(), start, now)
+        else {
+            continue;
+        };
+        // A lingering dialog re-presents the same artifact every tick —
+        // skip the record build once the tombstone already names it.
+        if let Some(id) = evidence.evidence_id.as_deref() {
+            if evidence_already_known(&dir, id) {
+                continue;
+            }
+        }
+        persist_and_emit(app, pid, &seen, evidence);
+    }
+}
+
+/// The alive-time WG-report candidate of one tracked client: the report
+/// the crash handler wrote during THIS session (mtime from the session
+/// start to now + slack). Pure core over the live roots so the test can
+/// drive it against a temp tree.
+#[cfg(windows)]
+fn alive_report_evidence(
+    image: &str,
+    exe: &str,
+    root: Option<&str>,
+    start_unix: i64,
+    now_unix: i64,
+) -> Option<CrashEvidence> {
+    let roots = live_game_roots(Some(exe), root);
+    game_report_evidence(
+        image,
+        &roots,
+        (start_unix, now_unix + EVIDENCE_SLACK_SECS),
+        Some(start_unix),
+    )
 }
 
 /// The clean-exit auto-reset: a client that ran and left NO crash evidence
@@ -2348,17 +2434,98 @@ fn mods_inventory_entries(root: &Path) -> Vec<ModEntry> {
     };
     let mut mods: Vec<ModEntry> = entries
         .flatten()
-        .map(|entry| {
+        .flat_map(|entry| {
             let modified = entry.metadata().ok().and_then(|meta| meta.modified().ok());
-            ModEntry {
-                name: entry.file_name().to_string_lossy().into_owned(),
-                is_dir: entry.file_type().map(|t| t.is_dir()).unwrap_or(false),
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+            let mut out = vec![ModEntry {
+                name: name.clone(),
+                is_dir,
                 modified: rfc3339(modified),
+            }];
+            // PnFMods is the one top-level the whole plugin ecosystem piles
+            // into — a suspect named "PnFMods" flags EVERY plugin at once
+            // and pins nothing actionable (user report 2026-11-01: "no
+            // useful isolation advice"). Split it into its per-mod units:
+            // PnFMods/<Mod> entries carry their own mtimes, map one-to-one
+            // onto the mod hub's units, and quarantine by that nested path.
+            // Other roots (gui, texts) stay whole — shared trees, not units.
+            if is_dir && name.eq_ignore_ascii_case("pnfmods") {
+                out = Vec::new();
+                if let Ok(children) = fs::read_dir(entry.path()) {
+                    for child in children.flatten() {
+                        // The unit's moment is the NEWEST file inside its
+                        // tree (bounded walk): a directory mtime only moves
+                        // when entries are added or removed, so an
+                        // in-place file update — the classic mod-update
+                        // shape — would otherwise read as stale.
+                        let c_modified = child
+                            .metadata()
+                            .ok()
+                            .and_then(|meta| meta.modified().ok())
+                            .and_then(|own| newest_mtime_under(&child.path(), own));
+                        out.push(ModEntry {
+                            name: format!("{}/{}", name, child.file_name().to_string_lossy()),
+                            is_dir: child.file_type().map(|t| t.is_dir()).unwrap_or(false),
+                            modified: rfc3339(c_modified),
+                        });
+                    }
+                }
             }
+            out
         })
         .collect();
     mods.sort_by(|a, b| a.name.cmp(&b.name));
     mods
+}
+
+/// The newest FILE modified-time under one path, bounded. Directory
+/// mtimes are deliberately NOT considered (see the walker's own note);
+/// `own` is only the empty-or-unreadable-tree fallback.
+#[cfg(windows)]
+fn newest_mtime_under(path: &Path, own: std::time::SystemTime) -> Option<std::time::SystemTime> {
+    /// (newest file mtime, any file seen) — directory mtimes are NOT
+    /// mixed in: adding a file bumps the dir mtime anyway, so the files
+    /// alone carry the same signal, and a freshly CREATED directory
+    /// holding backdated content (a restore, a copy) must not read as
+    /// new on its birth stamp alone.
+    fn walk(
+        path: &Path,
+        best: Option<std::time::SystemTime>,
+        files_left: &mut usize,
+        depth_left: usize,
+    ) -> Option<std::time::SystemTime> {
+        if depth_left == 0 || *files_left == 0 {
+            return best;
+        }
+        let Ok(entries) = fs::read_dir(path) else {
+            return best;
+        };
+        let mut best = best;
+        for entry in entries.flatten() {
+            if *files_left == 0 {
+                break;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                best = walk(&entry.path(), best, files_left, depth_left - 1);
+            } else {
+                *files_left -= 1;
+                if let Ok(m) = meta.modified() {
+                    best = Some(match best {
+                        Some(b) if b >= m => b,
+                        _ => m,
+                    });
+                }
+            }
+        }
+        best
+    }
+    let mut files_left = 512usize;
+    // An empty or unreadable tree falls back to its own mtime.
+    Some(walk(path, None, &mut files_left, 5).unwrap_or(own))
 }
 
 /// Findings for one record + its collected context. `probe_seen` is the
@@ -2696,7 +2863,18 @@ fn detect_suspect_mods(
                 // Whichever segment the inventory claims wins (the current
                 // layout carries no version segment, older lines do); with
                 // no claim either way the first segment is the best guess.
-                let name = if mods.iter().any(|m| m.name.eq_ignore_ascii_case(&first)) {
+                // The inventory claims PnFMods at PER-MOD granularity
+                // (PnFMods/<Mod>), so a line naming
+                // res_mods/PnFMods/<Mod>/file resolves to that unit —
+                // falling back to whichever bare segment the inventory
+                // still carries (older trees, non-PnF roots).
+                let composed = second.as_deref().map(|s| format!("{}/{}", first, s));
+                let name = if let Some(comp) = composed
+                    .as_deref()
+                    .filter(|c| mods.iter().any(|m| m.name.eq_ignore_ascii_case(c)))
+                {
+                    comp.to_string()
+                } else if mods.iter().any(|m| m.name.eq_ignore_ascii_case(&first)) {
                     first
                 } else if let Some(second) =
                     second.filter(|s| mods.iter().any(|m| m.name.eq_ignore_ascii_case(s)))
@@ -2720,15 +2898,30 @@ fn detect_suspect_mods(
         }
     }
     if let Some(crash_unix) = crash_unix {
-        for entry in mods {
-            let fresh = entry
-                .modified
-                .as_deref()
-                .and_then(parse_rfc3339_unix)
-                .is_some_and(|t| t >= crash_unix - 24 * 3600 && t <= crash_unix + 60);
-            if fresh {
-                push_or_merge(entry.name.clone(), EVIDENCE_RECENT_CHANGE, None);
-            }
+        // Newest change first: with a whole install wave inside the window
+        // (the observed shape — every plugin reinstalled within the hour),
+        // recency ordering is the only differentiator the list has.
+        let mut fresh: Vec<&ModEntry> = mods
+            .iter()
+            .filter(|entry| {
+                entry
+                    .modified
+                    .as_deref()
+                    .and_then(parse_rfc3339_unix)
+                    .is_some_and(|t| t >= crash_unix - 24 * 3600 && t <= crash_unix + 60)
+            })
+            .collect();
+        fresh.sort_by_key(|entry| {
+            std::cmp::Reverse(
+                entry
+                    .modified
+                    .as_deref()
+                    .and_then(parse_rfc3339_unix)
+                    .unwrap_or(0),
+            )
+        });
+        for entry in fresh {
+            push_or_merge(entry.name.clone(), EVIDENCE_RECENT_CHANGE, None);
         }
     }
     suspects.sort_by_key(|s| match s.evidence.as_str() {

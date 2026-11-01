@@ -61,8 +61,9 @@ export interface LogExcerpt {
   highlights: string[];
 }
 
-/** Mirrors commands::game_crash::ModEntry — one top-level res_mods entry
- *  at analysis time. */
+/** Mirrors commands::game_crash::ModEntry — one entry at analysis time:
+ *  PnFMods is split into per-mod units (PnFMods/<Mod>), other roots list
+ *  whole. */
 export interface ModEntry {
   name: string;
   isDir: boolean;
