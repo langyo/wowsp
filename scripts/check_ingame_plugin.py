@@ -1294,11 +1294,15 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 fn = callbacks.pending
                 callbacks.pending = None
                 if fn is None:
+                    # hold_probe can be None when the plugin export
+                    # vanished — the diagnostic must not crash the
+                    # harness on the very path that reports a stall.
                     failures.append(
                         "[%s] scheduler stopped re-arming (scene-hold drive "
                         "tick %d, scene_ready=%r, hold ticks=%r)"
-                        % (label, drive_tick, hold_probe.scene_ready,
-                           hold_probe.scene_wait_ticks))
+                        % (label, drive_tick,
+                           hold_probe.scene_ready if hold_probe else None,
+                           hold_probe.scene_wait_ticks if hold_probe else None))
                     return
                 fn()
             if hold_probe is not None and not hold_probe.scene_ready:
