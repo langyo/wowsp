@@ -28,6 +28,7 @@ import ErrorCard from "@/components/base/ErrorCard";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useUpdaterStore } from "@/stores/updater";
 import { isMobileApp } from "@/utils/platform";
+import { useRouter } from "vue-router";
 import { resolveShipImage } from "@/utils/shipImages";
 import { t, i18n } from "@/i18n";
 import type { ShipInfo } from "@/api";
@@ -292,6 +293,9 @@ export default defineComponent({
     /** Set while the model pack downloads after a 3D toggle on a lite install. */
     const modelPackDownloading = ref(false);
     const errorMsg = ref<string | null>(null);
+  // Resource-jump affordance for the phone error overlay (see the error
+  // card's actionLabel): lands on the resource downloads.
+  const router = useRouter();
     /** Whether a baked 3D model resolves for this ship. */
     const hasModel = ref(true);
 
@@ -2072,7 +2076,19 @@ export default defineComponent({
               ) : null}
               {errorMsg.value ? (
                 <div class="ship-stage__overlay ship-stage__overlay--error">
-                  <ErrorCard error={errorMsg.value} />
+                  <ErrorCard
+                    error={errorMsg.value}
+                    actionLabel={
+                      isMobileApp() && !isModelPackReady()
+                        ? t("ships.detail.gameparamsResourcesAction")
+                        : ""
+                    }
+                    onAction={
+                      isMobileApp() && !isModelPackReady()
+                        ? () => void router.push("/resources")
+                        : undefined
+                    }
+                  />
                 </div>
               ) : null}
               {viewMode.value === "3d" && showArmor.value && armorReady.value ? (

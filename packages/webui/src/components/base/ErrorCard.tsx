@@ -1,13 +1,15 @@
-import { computed, defineComponent, type PropType } from "vue";
+import { computed, defineComponent, ref, type PropType, type VNode } from "vue";
 
 import {
   HkButton,
   HkErrorLanding,
   HkJsonTree,
+  useBreakpoint,
   type HErrorTone,
 } from "@celestia-island/hikari";
 
 import { t, tError } from "@/i18n";
+import "./ErrorCard.scss";
 
 /**
  * The app-wide standard for errors rendered INSIDE a page: hikari's error
@@ -52,6 +54,11 @@ export default defineComponent({
     retry: { type: Function as PropType<(() => void) | undefined>, default: undefined },
     /** Retry wording override; empty falls back to common.retry. */
     retryLabel: { type: String, default: "" },
+    /** A SECOND recovery affordance beside the retry — the recovery path
+     *  the card cannot guess (e.g. "open the resource downloads" when the
+     *  failure is a missing on-demand pack). Empty = nothing seats. */
+    actionLabel: { type: String, default: "" },
+    onAction: { type: Function as PropType<() => void>, default: undefined },
     /** Fill seating (hikari's landing `fill`): the host pane lays the card
      *  out as its shrinking region, so the card compresses its raw-details
      *  frame to FIT the pane instead of scrolling it. Opt-in — the default
@@ -103,7 +110,31 @@ export default defineComponent({
       }
     });
 
-    return () => (
+    // The raw-details pane is the card's biggest block; on a phone sheet
+    // it crushes everything above it, so the TOUCH layout starts with it
+    // COLLAPSED behind a toggle (desktop keeps the always-open pane the
+    // 2026-10 direction established). Desktop is byte-identical.
+    const { isMobile } = useBreakpoint();
+    const detailsOpen = ref(!isMobile.value);
+
+    return () => {
+      const rawTree = <HkJsonTree value={treeValue.value} ariaLabel="raw error details" />;
+      const actions: VNode[] = [];
+      if (props.retry) {
+        actions.push(
+          <HkButton key="error-card-retry" variant="primary" size="sm" onClick={() => props.retry?.()}>
+            {props.retryLabel || t("common.retry")}
+          </HkButton>,
+        );
+      }
+      if (props.actionLabel && props.onAction) {
+        actions.push(
+          <HkButton key="error-card-action" variant="secondary" size="sm" onClick={() => props.onAction?.()}>
+            {props.actionLabel}
+          </HkButton>,
+        );
+      }
+      return (
       <HkErrorLanding
         variant="inline"
         fill={props.fill}
@@ -117,17 +148,27 @@ export default defineComponent({
         {{
           // Always provided (HkErrorLanding freezes slot presence at mount);
           // HkJsonTree itself renders nothing for an empty value.
-          default: () => <HkJsonTree value={treeValue.value} ariaLabel="raw error details" />,
-          actions: () =>
-            props.retry
-              ? [
-                <HkButton key="error-card-retry" variant="primary" size="sm" onClick={() => props.retry?.()}>
-                  {props.retryLabel || t("common.retry")}
-                </HkButton>,
-              ]
-              : [],
+          default: () =>
+            isMobile.value ? (
+              <div class="error-card__details">
+                <button
+                  type="button"
+                  class={["error-card__details-toggle", detailsOpen.value ? "is-open" : ""]}
+                  onClick={() => (detailsOpen.value = !detailsOpen.value)}
+                  aria-expanded={detailsOpen.value}
+                >
+                  {t("common.rawDetails")}
+                  <span class="error-card__details-chev" aria-hidden="true">{detailsOpen.value ? "▴" : "▾"}</span>
+                </button>
+                {detailsOpen.value ? rawTree : null}
+              </div>
+            ) : (
+              rawTree
+            ),
+          actions: () => actions,
         }}
       </HkErrorLanding>
-    );
+      );
+    };
   },
 });

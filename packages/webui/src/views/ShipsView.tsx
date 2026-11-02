@@ -1,6 +1,6 @@
 import { computed, defineComponent, nextTick, onUnmounted, ref, Transition, watch } from "vue";
 import { RouterLink } from "vue-router";
-import { ChevronDown, RotateCcw, Ship } from "@lucide/vue";
+import { ChevronDown, RotateCcw, Ship, SlidersHorizontal } from "@lucide/vue";
 
 import {
   HkAlert,
@@ -203,6 +203,94 @@ export default defineComponent({
         tierRangeNarrowed(tierRange.value) ||
         selectedRarities.value.size > 0,
     );
+
+    /** How many DISTINCT filter axes carry a value — the phone trigger's
+     *  count badge (search counts through hasActiveFilters, not here: the
+     *  search box stays visible on the phone trigger row itself). */
+    const activeFilterCount = computed(
+      () =>
+        selectedNations.value.size +
+        selectedTypes.value.size +
+        selectedRarities.value.size +
+        (tierRangeNarrowed(tierRange.value) ? 1 : 0),
+    );
+
+    // Phone: the collapsed filter card's groups ride a bottom sheet.
+    const filtersOpen = ref(false);
+    const filterBtn = ref<HTMLElement | null>(null);
+
+    /** The four filter groups, shared by the desktop sticky card and the
+     *  phone sheet — one markup source, two containers. */
+    function renderFilterGroups() {
+      return (
+        <>
+          <div class="ships-view__filter-group">
+            <span class="ships-view__filter-label">{t("ships.tier")}</span>
+            {/* The shared tier corridor slider (TierRangeSelect) — the
+                same control the 水表 bar and the compare picker use. The
+                old per-tier chip row stopped at tier 10, silently locking
+                superships (★ 11) out of its own filter. */}
+            <TierRangeSelect
+              class="ships-view__tier-range"
+              modelValue={tierRange.value}
+              onUpdate:modelValue={(v: TierRange) => (tierRange.value = v)}
+            />
+          </div>
+
+          <div class="ships-view__filter-group">
+            <span class="ships-view__filter-label">{t("ships.filterType")}</span>
+            <div class="ships-view__chips">
+              {encyclopedia.types.map((tp) => (
+                <button
+                  class={[
+                    "ships-view__chip",
+                    selectedTypes.value.has(tp) ? "ships-view__chip--on" : "",
+                  ]}
+                  onClick={() => (selectedTypes.value = toggleSet(selectedTypes.value, tp))}
+                >
+                  {typeLabel(tp)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div class="ships-view__filter-group">
+            <span class="ships-view__filter-label">{t("ships.filterNation")}</span>
+            <div class="ships-view__chips">
+              {encyclopedia.nations.map((n) => (
+                <button
+                  class={[
+                    "ships-view__chip",
+                    selectedNations.value.has(n) ? "ships-view__chip--on" : "",
+                  ]}
+                  onClick={() => (selectedNations.value = toggleSet(selectedNations.value, n))}
+                >
+                  {nationLabel(n)}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div class="ships-view__filter-group">
+            <span class="ships-view__filter-label">{t("ships.rarity._label")}</span>
+            <div class="ships-view__chips">
+              {RARITY_ORDER.map((r) => (
+                <button
+                  class={[
+                    "ships-view__chip",
+                    `ships-view__chip--${r}`,
+                    selectedRarities.value.has(r) ? "ships-view__chip--on" : "",
+                  ]}
+                  onClick={() => (selectedRarities.value = toggleSet(selectedRarities.value, r))}
+                >
+                  {t(`ships.rarity.${r}`)}
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      );
+    }
 
     /** Nations the current realm's tree actually carries lines for — the
      *  tree rail must not offer a nation whose whole branch set belongs to
@@ -422,87 +510,72 @@ export default defineComponent({
           <div class="ships-view__status"><HkSpinner center size="md" /></div>
         ) : null}
 
-        {/* ── filter bar (grid mode only, sticky inside scroll body) ── */}
+        {/* ── filter bar (grid mode only, sticky inside scroll body) ──
+            PHONE: the whole filter card collapses behind a 筛选 trigger —
+            the four groups (tier corridor + type/nation/rarity chips) eat
+            the entire viewport when spread inline, stranding the ship
+            list (the actual content) below the fold. The groups ride a
+            bottom sheet; desktop keeps the sticky card untouched. */}
         {shipsUi.viewMode === "grid" ? (
-          <div class="ships-view__filters">
-            <div class="ships-view__filter-top">
-              <HkInput
-                modelValue={searchText.value}
-                onUpdate:modelValue={(v: string) => (searchText.value = v)}
-                placeholder={t("ships.search")}
-              />
-              {hasActiveFilters.value ? (
-                <button class="ships-view__clear" onClick={() => clearFilters()}>
-                  {t("ships.clear")}
+          phoneLayout.value ? (
+            <div class="ships-view__filters ships-view__filters--phone">
+              <div class="ships-view__filter-top">
+                <HkInput
+                  modelValue={searchText.value}
+                  onUpdate:modelValue={(v: string) => (searchText.value = v)}
+                  placeholder={t("ships.search")}
+                />
+                <button
+                  type="button"
+                  ref={(el) => (filterBtn.value = el as HTMLElement | null)}
+                  class={["ships-view__filter-trigger", hasActiveFilters.value ? "is-active" : ""].join(" ")}
+                  aria-expanded={filtersOpen.value}
+                  onClick={() => (filtersOpen.value = !filtersOpen.value)}
+                >
+                  <SlidersHorizontal size={13} />
+                  {t("ships.filterTrigger")}
+                  {activeFilterCount.value ? (
+                    <span class="ships-view__filter-count">{activeFilterCount.value}</span>
+                  ) : null}
                 </button>
-              ) : null}
-            </div>
-
-            <div class="ships-view__filter-group">
-              <span class="ships-view__filter-label">{t("ships.tier")}</span>
-              {/* The shared tier corridor slider (TierRangeSelect) — the
-                  same control the 水表 bar and the compare picker use. The
-                  old per-tier chip row stopped at tier 10, silently locking
-                  superships (★ 11) out of its own filter. */}
-              <TierRangeSelect
-                class="ships-view__tier-range"
-                modelValue={tierRange.value}
-                onUpdate:modelValue={(v: TierRange) => (tierRange.value = v)}
-              />
-            </div>
-
-            <div class="ships-view__filter-group">
-              <span class="ships-view__filter-label">{t("ships.filterType")}</span>
-              <div class="ships-view__chips">
-                {encyclopedia.types.map((tp) => (
-                  <button
-                    class={[
-                      "ships-view__chip",
-                      selectedTypes.value.has(tp) ? "ships-view__chip--on" : "",
-                    ]}
-                    onClick={() => (selectedTypes.value = toggleSet(selectedTypes.value, tp))}
-                  >
-                    {typeLabel(tp)}
-                  </button>
-                ))}
               </div>
+              <HkPopover
+                modelValue={filtersOpen.value}
+                onUpdate:modelValue={(v: boolean) => (filtersOpen.value = v)}
+                anchorRef={filterBtn.value}
+                placement="bottom-end"
+                padding="md"
+                title={t("ships.filterTrigger")}
+                sheetOnMobile
+                closeOnBackdrop={phoneLayout.value}
+              >
+                <div class="ships-view__filter-sheet">
+                  {hasActiveFilters.value ? (
+                    <button type="button" class="ships-view__clear" onClick={() => clearFilters()}>
+                      {t("ships.clear")}
+                    </button>
+                  ) : null}
+                  {renderFilterGroups()}
+                </div>
+              </HkPopover>
             </div>
-
-            <div class="ships-view__filter-group">
-              <span class="ships-view__filter-label">{t("ships.filterNation")}</span>
-              <div class="ships-view__chips">
-                {encyclopedia.nations.map((n) => (
-                  <button
-                    class={[
-                      "ships-view__chip",
-                      selectedNations.value.has(n) ? "ships-view__chip--on" : "",
-                    ]}
-                    onClick={() => (selectedNations.value = toggleSet(selectedNations.value, n))}
-                  >
-                    {nationLabel(n)}
+          ) : (
+            <div class="ships-view__filters">
+              <div class="ships-view__filter-top">
+                <HkInput
+                  modelValue={searchText.value}
+                  onUpdate:modelValue={(v: string) => (searchText.value = v)}
+                  placeholder={t("ships.search")}
+                />
+                {hasActiveFilters.value ? (
+                  <button class="ships-view__clear" onClick={() => clearFilters()}>
+                    {t("ships.clear")}
                   </button>
-                ))}
+                ) : null}
               </div>
+              {renderFilterGroups()}
             </div>
-
-            <div class="ships-view__filter-group">
-              <span class="ships-view__filter-label">{t("ships.rarity._label")}</span>
-              <div class="ships-view__chips">
-                {RARITY_ORDER.map((r) => (
-                  <button
-                    class={[
-                      "ships-view__chip",
-                      `ships-view__chip--${r}`,
-                      selectedRarities.value.has(r) ? "ships-view__chip--on" : "",
-                    ]}
-                    onClick={() => (selectedRarities.value = toggleSet(selectedRarities.value, r))}
-                  >
-                    {t(`ships.rarity.${r}`)}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
+          )
         ) : null}
 
         {/* ── view body: tree, grid or compare ── */}
