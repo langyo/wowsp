@@ -349,10 +349,19 @@
   }
 }
 
-.lookup-view__head-date {
-  flex: 0 0 auto;
-  min-width: 64px;
-  text-align: right;
+/* ONE fixed date track on BOTH the caption and the rows. The intrinsic
+   track widths differed (the caption is ≈42px, the row's capsule ≈71px),
+   so the pre-fix auto/min-width pair left the caption's center box a few
+   px off the capsule column — the caption and the capsule must share one
+   axis, and a fixed basis is the only way two flex rows with different
+   content can agree on a track. 80px holds the widest locale date capsule
+   (≈71px) with a little breathing room. */
+.lookup-view__head-date,
+.lookup-view__ship-date {
+  flex: 0 0 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .lookup-view__ship {
@@ -445,12 +454,10 @@
 }
 
 .lookup-view__ship-date {
-  /* The DateTag capsule carries its own ink; the column anchors it
-     right and tones the em-dash fallback. */
-  flex: 0 0 auto;
-  min-width: 64px;
-  display: flex;
-  justify-content: flex-end;
+  /* The DateTag capsule carries its own ink and centers in the fixed date
+     track (shared with .lookup-view__head-date above — the caption centers
+     over it); align-items centers the pill vertically in the row, and the
+     0.625rem line box tones the em-dash no-data fallback. */
   color: rgb(var(--color-muted) / 80%);
   font-size: 0.625rem;
 }
@@ -508,10 +515,10 @@
      and rows share one min-width so the captions stay over their columns,
      and rows grow touch-height — every row opens the ship detail modal.
      The min-width must clear the tracks' OWN floor with room left for the
-     name: leads 22+28+28 + numbers 56+56+76+44 + date capsule ≈70 + eight
-     8px gaps + 12px padding ≈ 458px, so anything below that (the first
-     pass used 28rem = 448px) leaves the flexing name column at ZERO
-     width — 35rem (560px) restores a ≈100px name track. */
+     name: leads 22+28+28 + numbers 56+56+76+44 + the fixed 80px date
+     track + eight 8px gaps + 12px padding ≈ 468px, so anything below
+     that (the first pass used 28rem = 448px) leaves the flexing name
+     column at ZERO width — 35rem (560px) restores a ≈92px name track. */
   .lookup-view__shiplist {
     overflow-x: auto;
   }

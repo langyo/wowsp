@@ -348,13 +348,19 @@ describe("mounted DOM legend", () => {
   it("pairs the dot with the name for ship types and with the flag for nations", () => {
     const wrapper = mount(ShipDistCharts, { props: { ships } });
     const [typeBody, nationBody] = wrapper.findAll(".ship-dist-charts__pie-body");
-    for (const row of typeBody!.findAll(".ship-dist-charts__legend-item")) {
-      expect(row.find(".ship-dist-charts__legend-text").exists()).toBe(true);
+    // hikari's legend row owns the dot + label cell; the legendIcon slot
+    // replaces the label's TEXT with the nation flag (NationFlag's
+    // flag-row contract), so the two blocks differ in the label cell only.
+    const typeRows = typeBody!.findAll(".hk-donut__legend-row");
+    const nationRows = nationBody!.findAll(".hk-donut__legend-row");
+    expect(typeRows).toHaveLength(3);
+    expect(nationRows).toHaveLength(3);
+    for (const row of typeRows) {
+      expect(row.find(".hk-donut__legend-label").exists()).toBe(true);
       expect(row.find(".nation-flag").exists()).toBe(false);
     }
-    for (const row of nationBody!.findAll(".ship-dist-charts__legend-item")) {
-      expect(row.find(".nation-flag").exists()).toBe(true);
-      expect(row.find(".ship-dist-charts__legend-text").exists()).toBe(false);
+    for (const row of nationRows) {
+      expect(row.find(".hk-donut__legend-label .nation-flag").exists()).toBe(true);
     }
   });
 
