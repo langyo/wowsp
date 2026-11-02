@@ -1,0 +1,17 @@
+{
+  "title": "Conflits de mods détectés",
+  "summary": "{count} problèmes de mods potentiels détectés : {names}",
+  "kind": {
+    "dangling_ref": "Ressource référencée introuvable",
+    "invalid_swf": "Fichier SWF corrompu",
+    "overlap": "Déclaration de chargement en double"
+  },
+  "review": "Examiner",
+  "dismiss": "Ignorer",
+  "modal": {
+    "title": "Détails des conflits de mods",
+    "hint": "Résolvez-les depuis la page de gestion du hub de mods : désactivez ou mettez à jour le mod concerné avant de lancer le jeu.",
+    "files": "Référencé par : {files}",
+    "empty": "Aucun problème de mod détecté."
+  }
+}

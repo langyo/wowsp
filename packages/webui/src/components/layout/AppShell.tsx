@@ -47,6 +47,7 @@ import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
 import UpdateStrandedToast from "./UpdateStrandedToast";
 import PiggyReminderToast from "./PiggyReminderToast";
+import ModConflictToast from "./ModConflictToast";
 import ManualLocateOverlay from "@/features/replay/ManualLocateOverlay";
 import WallpaperRenderer from "./WallpaperRenderer";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -539,6 +540,12 @@ export default defineComponent({
             piggy's greeting there. Renders nothing outside the desktop
             Tauri shell, so it mounts unconditionally in the same column. */}
         <PiggyReminderToast />
+        {/* Pre-launch mod-conflict alert card (commands/mod_integrity.rs):
+            asks the user to resolve mod problems the backend scanner proved
+            would break the game UI — the game-boot push plus a delayed
+            one-shot boot scan. Desktop-native only, renders nothing
+            otherwise, so it mounts unconditionally in the same column. */}
+        <ModConflictToast />
 
         {/* In-game manual-locate picker (cached-frame drag box for the
             live-battle panel's 手动定位 flow): renders nothing until the

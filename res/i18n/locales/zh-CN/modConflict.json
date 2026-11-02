@@ -1,0 +1,17 @@
+{
+  "title": "检测到模组冲突",
+  "summary": "发现 {count} 处潜在模组问题：{names}",
+  "kind": {
+    "dangling_ref": "资源引用缺失",
+    "invalid_swf": "SWF 文件损坏",
+    "overlap": "加载声明重复"
+  },
+  "review": "查看详情",
+  "dismiss": "知道了",
+  "modal": {
+    "title": "模组冲突详情",
+    "hint": "这些问题需要在模组中心的管理页处理——启动游戏前先停用或更新出问题的模组。",
+    "files": "引用方：{files}",
+    "empty": "未检测到模组问题。"
+  }
+}

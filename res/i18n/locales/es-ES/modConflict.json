@@ -1,0 +1,17 @@
+{
+  "title": "Conflictos de mods detectados",
+  "summary": "Se hallaron {count} posibles problemas de mods: {names}",
+  "kind": {
+    "dangling_ref": "Recurso referenciado inexistente",
+    "invalid_swf": "Archivo SWF dañado",
+    "overlap": "Declaración de carga duplicada"
+  },
+  "review": "Ver detalles",
+  "dismiss": "Descartar",
+  "modal": {
+    "title": "Detalles de los conflictos de mods",
+    "hint": "Se resuelven en la página de gestión del centro de mods: desactiva o actualiza el mod problemático antes de iniciar el juego.",
+    "files": "Referenciado por: {files}",
+    "empty": "No se detectaron problemas de mods."
+  }
+}
