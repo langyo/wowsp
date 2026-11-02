@@ -1,55 +1,59 @@
 /**
- * Lazy loaders for the game's OWN battle-HUD ship icons
- * (`/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`), extracted by
- * scripts/model_convert/extract_ship_icons.py and re-encoded to WebP. Used
- * by the hologram labels
- * (BattleIcon component) and the minimap canvas (drawImage).
+ * The ship-class icon provider's data layer — ONE source of art for every
+ * surface (DOM faces go through the BattleIcon component, canvas faces
+ * preload the same URLs here).
  *
- * The `outline` variant is a derived plate-free redraw of the white markers
- * (scripts/model_convert/derive_outline_marker_icons.py): the ship-class hint
- * cards tint it to the popup ink, and dropping the plate is what keeps the
- * glyph's interior gaps open at card size.
+ * The art is the game's battle-HUD marker set
+ * (`/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`), vectorised
+ * into SVG by `scripts/model_convert/trace_class_icons.py` so it renders
+ * crisp at every size and DPR (the 27 px bitmaps upscaled into jagged
+ * stair-steps at modern densities — user feedback).
+ *
+ * The `outline` variant is a plate-free redraw of the white markers
+ * (traced from their line ink): the ship-class hint cards tint it to the
+ * popup ink, and dropping the plate is what keeps the glyph's interior
+ * gaps open at card size.
  */
 // PublicDir art served at the root path (see utils/shipImages.ts) — URL
-// constants, not imports, keep the 32 HUD icons out of Vite's module
-// graph; the URLs are byte-identical to what the imports resolved to.
-const allyBattleship = "/images/ships/icon_ally_battleship.webp";
-const allyCruiser = "/images/ships/icon_ally_cruiser.webp";
-const allyDestroyer = "/images/ships/icon_ally_destroyer.webp";
-const allyAircarrier = "/images/ships/icon_ally_aircarrier.webp";
-const allySubmarine = "/images/ships/icon_ally_submarine.webp";
-const allyAuxiliary = "/images/ships/icon_ally_auxiliary.webp";
-const enemyBattleship = "/images/ships/icon_enemy_battleship.webp";
-const enemyCruiser = "/images/ships/icon_enemy_cruiser.webp";
-const enemyDestroyer = "/images/ships/icon_enemy_destroyer.webp";
-const enemyAircarrier = "/images/ships/icon_enemy_aircarrier.webp";
-const enemySubmarine = "/images/ships/icon_enemy_submarine.webp";
-const enemyAuxiliary = "/images/ships/icon_enemy_auxiliary.webp";
-const sunkBattleship = "/images/ships/icon_sunk_battleship.webp";
-const sunkCruiser = "/images/ships/icon_sunk_cruiser.webp";
-const sunkDestroyer = "/images/ships/icon_sunk_destroyer.webp";
-const sunkAircarrier = "/images/ships/icon_sunk_aircarrier.webp";
-const sunkSubmarine = "/images/ships/icon_sunk_submarine.webp";
-const sunkEnemyBattleship = "/images/ships/icon_sunk_enemy_battleship.webp";
-const sunkEnemyCruiser = "/images/ships/icon_sunk_enemy_cruiser.webp";
-const sunkEnemyDestroyer = "/images/ships/icon_sunk_enemy_destroyer.webp";
-const sunkEnemyAircarrier = "/images/ships/icon_sunk_enemy_aircarrier.webp";
-const sunkEnemySubmarine = "/images/ships/icon_sunk_enemy_submarine.webp";
-const whiteBattleship = "/images/ships/icon_white_battleship.webp";
-const whiteCruiser = "/images/ships/icon_white_cruiser.webp";
-const whiteDestroyer = "/images/ships/icon_white_destroyer.webp";
-const whiteAircarrier = "/images/ships/icon_white_aircarrier.webp";
-const whiteSubmarine = "/images/ships/icon_white_submarine.webp";
-const outlineBattleship = "/images/ships/icon_outline_battleship.webp";
-const outlineCruiser = "/images/ships/icon_outline_cruiser.webp";
-const outlineDestroyer = "/images/ships/icon_outline_destroyer.webp";
-const outlineAircarrier = "/images/ships/icon_outline_aircarrier.webp";
-const outlineSubmarine = "/images/ships/icon_outline_submarine.webp";
-const plainBattleship = "/images/ships/icon_battleship.webp";
-const plainCruiser = "/images/ships/icon_cruiser.webp";
-const plainDestroyer = "/images/ships/icon_destroyer.webp";
-const plainAircarrier = "/images/ships/icon_aircarrier.webp";
-const plainSubmarine = "/images/ships/icon_submarine.webp";
+// constants, not imports, keep the 37 HUD icons out of Vite's module
+// graph.
+const allyBattleship = "/images/ships/icon_ally_battleship.svg";
+const allyCruiser = "/images/ships/icon_ally_cruiser.svg";
+const allyDestroyer = "/images/ships/icon_ally_destroyer.svg";
+const allyAircarrier = "/images/ships/icon_ally_aircarrier.svg";
+const allySubmarine = "/images/ships/icon_ally_submarine.svg";
+const allyAuxiliary = "/images/ships/icon_ally_auxiliary.svg";
+const enemyBattleship = "/images/ships/icon_enemy_battleship.svg";
+const enemyCruiser = "/images/ships/icon_enemy_cruiser.svg";
+const enemyDestroyer = "/images/ships/icon_enemy_destroyer.svg";
+const enemyAircarrier = "/images/ships/icon_enemy_aircarrier.svg";
+const enemySubmarine = "/images/ships/icon_enemy_submarine.svg";
+const enemyAuxiliary = "/images/ships/icon_enemy_auxiliary.svg";
+const sunkBattleship = "/images/ships/icon_sunk_battleship.svg";
+const sunkCruiser = "/images/ships/icon_sunk_cruiser.svg";
+const sunkDestroyer = "/images/ships/icon_sunk_destroyer.svg";
+const sunkAircarrier = "/images/ships/icon_sunk_aircarrier.svg";
+const sunkSubmarine = "/images/ships/icon_sunk_submarine.svg";
+const sunkEnemyBattleship = "/images/ships/icon_sunk_enemy_battleship.svg";
+const sunkEnemyCruiser = "/images/ships/icon_sunk_enemy_cruiser.svg";
+const sunkEnemyDestroyer = "/images/ships/icon_sunk_enemy_destroyer.svg";
+const sunkEnemyAircarrier = "/images/ships/icon_sunk_enemy_aircarrier.svg";
+const sunkEnemySubmarine = "/images/ships/icon_sunk_enemy_submarine.svg";
+const whiteBattleship = "/images/ships/icon_white_battleship.svg";
+const whiteCruiser = "/images/ships/icon_white_cruiser.svg";
+const whiteDestroyer = "/images/ships/icon_white_destroyer.svg";
+const whiteAircarrier = "/images/ships/icon_white_aircarrier.svg";
+const whiteSubmarine = "/images/ships/icon_white_submarine.svg";
+const outlineBattleship = "/images/ships/icon_outline_battleship.svg";
+const outlineCruiser = "/images/ships/icon_outline_cruiser.svg";
+const outlineDestroyer = "/images/ships/icon_outline_destroyer.svg";
+const outlineAircarrier = "/images/ships/icon_outline_aircarrier.svg";
+const outlineSubmarine = "/images/ships/icon_outline_submarine.svg";
+const plainBattleship = "/images/ships/icon_battleship.svg";
+const plainCruiser = "/images/ships/icon_cruiser.svg";
+const plainDestroyer = "/images/ships/icon_destroyer.svg";
+const plainAircarrier = "/images/ships/icon_aircarrier.svg";
+const plainSubmarine = "/images/ships/icon_submarine.svg";
 
 const SHIP_ICONS: Record<string, Record<string, string>> = {
   ally: {
@@ -76,8 +80,9 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     submarine: sunkSubmarine,
   },
   // Sunk art for the ENEMY row: the sunk bitmap faces left like the ally
-  // art (see flip_sunk_icons.py), so the enemy variant is the mirrored copy
-  // keeping the enemy row's rightward direction.
+  // art (the mirrored copy the historical flip script derived; the
+  // current traced SVG set comes from the same mirrored source art), so
+  // the enemy variant keeps the enemy row's rightward direction.
   "sunk-enemy": {
     battleship: sunkEnemyBattleship,
     cruiser: sunkEnemyCruiser,
@@ -159,3 +164,4 @@ export function shipIcon(
   cache[key] = img;
   return img;
 }
+

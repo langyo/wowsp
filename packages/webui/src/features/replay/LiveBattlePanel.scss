@@ -585,10 +585,13 @@
     margin-top: -0.55em;
   }
 
-  /* The row's secondary tag (成分章) presses BESIDE THE NICKNAME — the
-     single highest tier, in both densities — at the same clan-tag register
-     the identity line uses. */
-  &__crow-name .stamp-tag {
+  /* The row's secondary tag (成分章) and the division tag press BESIDE THE
+     NICKNAME — the single highest tier, in both densities — at the same
+     clan-tag register the identity line uses. The division tag shares the
+     rule so the yellow face matches the 二级章 size (user feedback: it
+     rendered one size larger before). */
+  &__crow-name .stamp-tag,
+  &__crow-name .division-tag {
     font-size: 0.78em;
   }
 

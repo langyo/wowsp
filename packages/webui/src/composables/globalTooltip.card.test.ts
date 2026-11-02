@@ -50,7 +50,7 @@ describe("globalTooltip briefing paragraph", () => {
     hover(
       anchor({
         title: "重型巡洋舰",
-        markerUrl: "/images/ships/icon_outline_cruiser.webp",
+        markerUrl: "/images/ships/icon_outline_cruiser.svg",
         body: "第一段。\n第二段。",
       }),
     );
@@ -62,7 +62,7 @@ describe("globalTooltip briefing paragraph", () => {
     // globalTooltip.scss).
     const marker = p?.querySelector(".global-tooltip__card-marker");
     expect(marker?.tagName).toBe("IMG");
-    expect(marker?.getAttribute("src")).toBe("/images/ships/icon_outline_cruiser.webp");
+    expect(marker?.getAttribute("src")).toBe("/images/ships/icon_outline_cruiser.svg");
     expect(p?.querySelector(".global-tooltip__card-icon")).toBeNull();
     expect(p?.querySelector(".global-tooltip__card-body")?.textContent).toBe("第一段。\n第二段。");
   });

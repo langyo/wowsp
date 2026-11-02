@@ -30,11 +30,11 @@ describe("shipTypeHintCardOf", () => {
   it("uses the neutral (right-facing) minimap marker as outline line art", () => {
     for (const code of ["BB", "CV", "CA", "CL", "CA/CL", "DD", "SS"]) {
       const markerUrl = shipTypeHintCardOf(code)?.markerUrl ?? "";
-      expect(markerUrl).toMatch(/icon_outline_(battleship|aircarrier|cruiser|destroyer|submarine)\.webp$/);
+      expect(markerUrl).toMatch(/icon_outline_(battleship|aircarrier|cruiser|destroyer|submarine)\.svg$/);
     }
-    expect(shipTypeHintCardOf("CA")?.markerUrl).toMatch(/icon_outline_cruiser\.webp$/);
-    expect(shipTypeHintCardOf("CL")?.markerUrl).toMatch(/icon_outline_cruiser\.webp$/);
-    expect(shipTypeHintCardOf("SS")?.markerUrl).toMatch(/icon_outline_submarine\.webp$/);
+    expect(shipTypeHintCardOf("CA")?.markerUrl).toMatch(/icon_outline_cruiser\.svg$/);
+    expect(shipTypeHintCardOf("CL")?.markerUrl).toMatch(/icon_outline_cruiser\.svg$/);
+    expect(shipTypeHintCardOf("SS")?.markerUrl).toMatch(/icon_outline_submarine\.svg$/);
     // The plate-free art must ride the marker channel (CSS-tinted ink), never
     // the plain icon channel: tinting the plate-included white art would
     // collapse the glyph into one solid silhouette at the card's 20 px.

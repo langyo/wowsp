@@ -24,6 +24,12 @@ dist/
 # scripts/experiments/extract_glb_positions.ts). No exceptions.
 *.mjs
 
+# Agent/tool state dirs and SCRATCH experiments (the __scratch_* vitest
+# files hard-code local diag paths and say so in their headers) — local
+# debugging aids, never tree content.
+.mimosa/
+__scratch_*.test.ts
+
 # Environment variables
 .env
 .env.local
