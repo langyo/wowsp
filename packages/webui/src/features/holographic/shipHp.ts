@@ -69,13 +69,15 @@ export function resolveMaxHp(
  *  clients emit no EntityDestroy and the HP stream only reads 0 when the
  *  sink was OBSERVED — a ship killed while un-spotted keeps its last (often
  *  full) HP reading and stays "alive" through the whole playback. The
- *  post-battle payload is authoritative for WHO sank (`killerId`, index
- *  408 — null for survivors; using it rather than the `alive` flag, which
- *  reads false on layouts predating index 21). The sink MOMENT is not
- *  recoverable from the stream, so the ship's last observed moment stands
- *  in: it is the earliest instant the sink could have happened, and from
- *  there on the ship correctly renders sunk instead of sailing at full HP.
- *  Returns entityId → inferred death time. */
+ *  post-battle payload is authoritative for WHO sank: `killerId` (index
+ *  408) is null for survivors — parsePostBattle normalizes the wire's 0
+ *  "no killer" sentinel, which every survivor carries, so 0 never reaches
+ *  this function — and `alive` (index 21) is authoritative where the
+ *  layout carries that field. The sink MOMENT is not recoverable from the
+ *  stream, so the ship's last observed moment stands in: it is the earliest
+ *  instant the sink could have happened, and from there on the ship
+ *  correctly renders sunk instead of sailing at full HP. Returns entityId →
+ *  inferred death time. */
 export function inferDarkDeaths(
   trajectories: EntityTrajectory[],
   pb: PostBattleData | null,
@@ -118,8 +120,13 @@ export function inferDarkDeaths(
   for (const [name, p] of pbByName) {
     // killerId != null ⟹ definitely sank; ships with no killer attribution
     // are treated as survivors (a missing field must never mark the living
-    // dead).
-    if (p.killerId == null) continue;
+    // dead). The 0 "no killer" sentinel parsePostBattle normalizes away, so
+    // a survivor should already read null here — the `alive` half is the
+    // defensive layer: a BattleResults survivor is never a sink, and this
+    // guard keeps a raw sentinel from any future/degraded payload from
+    // stamping a death at its last observed moment (the replay's final
+    // frame for survivors — the whole-roster-sunk bug).
+    if (p.alive || p.killerId == null) continue;
     const v =
       vehicles.find((x) => (x.name ?? "").trim().toLowerCase() === name) ??
       (p.accountId ? vehicleByAccount.get(p.accountId) : undefined);

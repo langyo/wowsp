@@ -405,6 +405,7 @@
   "selfDamage": "Damage",
   "selfTaken": "Taken",
   "selfPlane": "Aircraft",
+  "shipSunk": "Sunk",
   "tactical": {
     "toggle": "Tactical board",
     "tools": {

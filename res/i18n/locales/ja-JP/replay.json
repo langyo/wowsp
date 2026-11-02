@@ -405,6 +405,7 @@
   "selfDamage": "与ダメージ",
   "selfTaken": "被ダメージ",
   "selfPlane": "航空",
+  "shipSunk": "撃沈",
   "tactical": {
     "toggle": "タクティカルボード",
     "tools": {

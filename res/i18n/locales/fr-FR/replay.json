@@ -405,6 +405,7 @@
   "selfDamage": "Dégâts",
   "selfTaken": "Subis",
   "selfPlane": "Aérien",
+  "shipSunk": "Coulé",
   "tactical": {
     "toggle": "Tableau tactique",
     "tools": {
