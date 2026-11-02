@@ -123,15 +123,23 @@
    grid. Each group has an icon + title header and a label/value row list.
    Rows align labels left, values right, with a consistent line height so
    values line up vertically within a group. The help icon next to a label
-   reveals the global data-hint tooltip explaining the stat. */
+   reveals the global data-hint tooltip explaining the stat.
+   The panel is a plain GRID, not a CSS-multicol flow: multicol balances
+   column heights by fragmenting content, and a dynamic in-panel change
+   (the alternate-firing toggle swaps rows in place) re-fragments every
+   column on engines whose balancer is stale — older WebView2 / Android
+   WebViews kept the pre-change column height and CLIPPED the cards at the
+   old bottom edge (mid-row slices over blank space below). Grid places
+   each card as a whole; cards in the same row band align tops via
+   align-items: start while every card keeps its own height. */
 .specs-panel {
-  columns: 220px;
-  column-gap: 0.6rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.6rem;
+  align-items: start;
 }
 
 .specs-group {
-  break-inside: avoid;
-  margin-bottom: 0.6rem;
   background: rgb(var(--color-bg));
   border: 1px solid rgb(var(--color-border) / 12%);
   border-radius: var(--radius-sm);
