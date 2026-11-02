@@ -142,7 +142,7 @@ export default defineComponent({
       if (names.length > 0) return names.join(", ");
       return rep.problems.length > 0
         ? kindLabel(rep.problems[0]!.kind)
-        : t("modConflict.empty");
+        : t("modConflict.modal.empty");
     }
 
     onMounted(() => {
@@ -250,7 +250,7 @@ export default defineComponent({
                 <div class="mod-conflict-modal__body">
                   {rep.problems.length === 0 ? (
                     <p class="mod-conflict-modal__empty">
-                      {t("modConflict.empty")}
+                      {t("modConflict.modal.empty")}
                     </p>
                   ) : (
                     <div class="mod-conflict-modal__list">
