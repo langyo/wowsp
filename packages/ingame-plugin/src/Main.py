@@ -2955,11 +2955,17 @@ class Probe:
     def tick(self):
         # The one-shot price catalog retry (see tick_price_catalog): the
         # login-sync bridge may only fill after load, so a bounded retry
-        # rides the normal scheduler cadence until it is done.
-        try:
-            self.tick_price_catalog('battle' if self.in_battle else 'port')
-        except:
-            self.soft('price catalog failed=' + _exc_text(120))
+        # rides the normal scheduler cadence until it is done. Skipped
+        # while the scene-swap hold is armed: the four economy
+        # collections are account-scoped (the login sync usually lands
+        # in port, and the per-session try budget outlives any battle),
+        # so deferring the walk past the hold costs nothing and keeps
+        # every getEntityCollections call out of the swap window.
+        if self.scene_ready:
+            try:
+                self.tick_price_catalog('battle' if self.in_battle else 'port')
+            except:
+                self.soft('price catalog failed=' + _exc_text(120))
         # The scene-swap hold's fallback (see SCENE_FALLBACK_TICKS):
         # once the budget lapses in battle ticks, the hold lifts WITHOUT
         # the SFM event — a build whose event bus withholds scene-up
