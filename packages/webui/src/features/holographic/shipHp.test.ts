@@ -5,7 +5,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { ArenaPlayer, EntityTrajectory, VehicleEntry } from "@/api";
-import type { PostBattleData, PostBattlePlayer } from "@/features/replay/postBattle";
+import {
+  parsePostBattle,
+  type PostBattleData,
+  type PostBattlePlayer,
+} from "@/features/replay/postBattle";
 import {
   applyDarkDeathInference,
   encyclopediaHullHealth,
@@ -129,6 +133,19 @@ const pbOf = (players: PostBattlePlayer[]): PostBattleData => ({
   raw: "",
 });
 
+/** Zeroed CLIENT_PUBLIC_RESULTS array with sparse overrides — modern
+ *  538-slot layout unless `len` asks for a legacy one (the builder the
+ *  postBattle tests use). */
+const pbArr = (overrides: Record<number, unknown>, len = 538): unknown[] => {
+  const a: unknown[] = new Array(len).fill(0);
+  Object.assign(a, overrides);
+  return a;
+};
+
+/** A BattleResults 0x22 payload carrying just the players table. */
+const resultsPayload = (rows: Record<number, unknown[]>): string =>
+  JSON.stringify({ playersPublicInfo: rows });
+
 describe("inferDarkDeaths", () => {
   const arena = (entityId: number, playerId: number): ArenaPlayer => ({
     entityId,
@@ -199,6 +216,64 @@ describe("inferDarkDeaths", () => {
     expect(
       inferDarkDeaths(trajs, null, vehicles, [arena(11, 7)]).size,
     ).toBe(0);
+  });
+
+  // ── End-to-end regression: BattleResults payload → inferDarkDeaths ─────
+  // The 15.9 whole-roster-sunk bug: real payloads carry the wire's 0 killer
+  // sentinel on every survivor and the stream observes survivors until the
+  // replay's final frame, so an un-normalized killerId inferred a death for
+  // the whole roster at that frame.
+
+  it("sinks only the dark-killed victim, not the survivor at the final frame", () => {
+    // Survivor: alive with the 0 sentinel, last observed at the replay end
+    // (t≈543.5 on the real 20261026_183956 replay). Victim: genuinely sank
+    // un-spotted, so its stream also freezes at its last observation
+    // (t≈543.1) at full HP.
+    const pb = parsePostBattle(
+      resultsPayload({
+        1001: pbArr({
+          1: "Survivor",
+          15: 46400,
+          20: 46400,
+          21: true, // is_alive — authoritative where the layout carries it
+          408: 0, // killer sentinel: survived
+        }),
+        1002: pbArr({
+          1: "DarkVictim",
+          15: 46400,
+          20: 46400, // never observed sinking: the stream keeps full HP
+          21: false,
+          408: 2040518414, // real killer account id
+        }),
+      }),
+    );
+    const trajs = [
+      shipTraj(11, 400, 543.5), // survivor: last seen at the replay end
+      shipTraj(12, 401, 543.1), // dark-killed victim: also last seen late
+    ];
+    const vehicles = [veh(1001, "Survivor", 400), veh(1002, "DarkVictim", 401)];
+    const inferred = inferDarkDeaths(trajs, pb, vehicles, [
+      arena(11, 1001),
+      arena(12, 1002),
+    ]);
+    expect(inferred.has(11)).toBe(false);
+    expect(inferred.get(12)).toBe(543.1);
+    expect(inferred.size).toBe(1);
+  });
+
+  it("treats a raw 0 killer id on a survivor as no killer (defensive)", () => {
+    // parsePostBattle already normalizes the sentinel away; this pins the
+    // defensive `alive` guard for any future/degraded PostBattleData
+    // producer that still carries the raw 0.
+    const trajs = [shipTraj(11, 400, 543.5)];
+    const vehicles = [veh(7, "Survivor", 400)];
+    const inferred = inferDarkDeaths(
+      trajs,
+      pbOf([{ ...pbPlayer("Survivor", 0), alive: true }]),
+      vehicles,
+      [arena(11, 7)],
+    );
+    expect(inferred.size).toBe(0);
   });
 });
 

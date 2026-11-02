@@ -406,6 +406,7 @@
   "selfDamage": "伤害",
   "selfTaken": "承伤",
   "selfPlane": "航空",
+  "shipSunk": "已击沉",
   "tactical": {
     "toggle": "战术板",
     "tools": {

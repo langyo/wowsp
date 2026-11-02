@@ -406,6 +406,7 @@
   "selfDamage": "Урон",
   "selfTaken": "Получено",
   "selfPlane": "Авиация",
+  "shipSunk": "Затонул",
   "tactical": {
     "toggle": "Тактическая доска",
     "tools": {

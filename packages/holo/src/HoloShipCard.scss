@@ -44,6 +44,17 @@
 
   &__text {
     flex: 0 0 auto;
+    /* Fixed-size readout slot: the plaque sits in a CONTENT-SIZED flex row
+       (the app's bottom-left shipcard row sizes itself to its children), so
+       its width follows the head's widest line. The HP numbers shrink
+       digit-for-digit as the hull takes damage, and a sunk ship swaps them
+       for a short localized label — without a reserved slot the plaque (and
+       the whole row beside the stats strip) would visibly resize at the
+       exact moment the ship sinks. 17ch fits the widest possible readout
+       ("999,999 / 999,999"); every locale's sunk label is far narrower and
+       right-aligns into the same box. */
+    min-inline-size: 17ch;
+    text-align: end;
     color: rgb(255 255 255 / 85%);
     font-family: var(--font-mono, ui-monospace, monospace);
     font-variant-numeric: tabular-nums;

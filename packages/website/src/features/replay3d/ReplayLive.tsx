@@ -902,6 +902,9 @@ export default defineComponent({
                     repairableHp: selfRep.value,
                     dead: selfDead.value,
                   }}
+                  /* Sunk ships show the localized 已击沉 label in the plaque's
+                     fixed readout slot instead of the "—" dash. */
+                  deadText={t("showcase.replay.live.dead")}
                 />
                 <div class="replay-live__controls">
                   <button

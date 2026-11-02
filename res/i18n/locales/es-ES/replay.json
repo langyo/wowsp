@@ -406,6 +406,7 @@
   "selfDamage": "Daño",
   "selfTaken": "Recibido",
   "selfPlane": "Aéreo",
+  "shipSunk": "Hundido",
   "tactical": {
     "toggle": "Pizarra táctica",
     "tools": {

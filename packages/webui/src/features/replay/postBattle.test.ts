@@ -79,6 +79,37 @@ describe("parsePostBattle field mapping", () => {
     expect(p.killerId).toBe(2040518414);
   });
 
+  it("normalizes the wire's 0 killer sentinel to null on a survivor", () => {
+    // Client 15.9 evidence (replay 20261026_183956_PBSD107-Jervis_41_Conquest):
+    // playersPublicInfo carries 0 for survivors — never null — while every
+    // sunk row carries a positive account id. Leaving that 0 on the row made
+    // the dark-death inference (shipHp.ts) treat every survivor as a
+    // definite sink.
+    const data = parsePostBattle(
+      payload(
+        arr({
+          1: "Survivor",
+          15: 19400,
+          20: 19400,
+          21: true, // is_alive
+          408: 0, // killer_db_id sentinel: no killer
+        }),
+      ),
+    );
+    const p = data!.players[0];
+    expect(p.alive).toBe(true);
+    expect(p.killerId).toBeNull();
+  });
+
+  it("keeps a positive killer account id on a sunk row", () => {
+    const data = parsePostBattle(
+      payload(arr({ 15: 19400, 20: 0, 21: false, 408: 12345 })),
+    );
+    const p = data!.players[0];
+    expect(p.alive).toBe(false);
+    expect(p.killerId).toBe(12345);
+  });
+
   it("sums plane kills from planes_killed_by_ship + planes_killed_by_plane", () => {
     const data = parsePostBattle(
       payload(
@@ -184,6 +215,14 @@ describe("parsePostBattle field mapping", () => {
     expect(p.damage).toBe(75309);
     expect(p.killerId).toBe(2026777155);
     expect(p.frags).toBe(2);
+  });
+
+  it("normalizes the 0 killer sentinel on the legacy shifted layout", () => {
+    // The insertion sits before the killer field, so 14.x arrays keep it 15
+    // slots earlier (393). A legacy survivor's 0 must normalize to null just
+    // like the modern 408 case.
+    const data = parsePostBattle(payload(arr({ 21: true, 393: 0 }, 485)));
+    expect(data!.players[0].killerId).toBeNull();
   });
 
   it("parses mode, self id and the recorder's private settlement", () => {

@@ -27,7 +27,10 @@ export default defineComponent({
   setup(props) {
     return () => (
       <div class="holo-map__shipcard">
-        <HoloShipCard data={props.card} />
+        {/* deadText: the localized 已击沉 label replaces the HP numbers once
+            the ship sinks — the plaque's fixed readout slot keeps the row
+            width stable across the flip. */}
+        <HoloShipCard data={props.card} deadText={i18nT("replay.shipSunk")} />
         {/* Self battle stats ride to the right of the hull plaque:
             icon + short label + number per stat, bottom-aligned with
             the plaque, content centred inside. Exactly four segments

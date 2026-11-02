@@ -8,6 +8,13 @@
  * supplies hp/maxHp and an optional repairable pool (the site approximates it
  * from the damage taken; the app can pass real values when the replay
  * provides them).
+ *
+ * A sunk ship replaces the numeric readout with the `deadText` label (the
+ * host localizes it — the app passes the 已击沉 string, the site its own).
+ * The readout slot itself keeps a FIXED inline size (see the SCSS), because
+ * the plaque sits in a content-sized flex row: without the reservation the
+ * short label would visibly shrink the whole bottom-left card at the exact
+ * moment the ship sinks.
  */
 import { defineComponent, type PropType } from "vue";
 import "./HoloShipCard.scss";
@@ -31,6 +38,9 @@ export interface HoloShipCardData {
   /** True once the ship is sunk. */
   dead?: boolean;
 }
+
+/** Fallback sunk label when the host passes no localized one. */
+const DEFAULT_DEAD_TEXT = "SUNK";
 
 /** Hull silhouettes per class, bow pointing RIGHT. Paths are 0..100 × 0..36.
  *  Solid hulls with visible freeboard and superstructure so the fallback
@@ -70,6 +80,10 @@ export default defineComponent({
   name: "HoloShipCard",
   props: {
     data: { type: Object as PropType<HoloShipCardData>, required: true },
+    /** Localized label shown in place of the HP numbers once `data.dead`
+     *  is set ("已击沉" in the app). Hosts without a translation keep the
+     *  English fallback. */
+    deadText: { type: String, default: DEFAULT_DEAD_TEXT },
   },
   setup(props) {
     const uid = `holo-ship-card-${++cardUid}`;
@@ -77,13 +91,22 @@ export default defineComponent({
       const d = props.data;
       const max = d.maxHp ?? d.hp ?? 0;
       const hp = d.hp ?? 0;
-      const rep = d.repairableHp ?? 0;
+      // A sunk hull has no repair party: drop the grey "repairable" segment
+      // (the app approximates that pool as 60% of the damage taken, which
+      // would otherwise paint most of the silhouette grey on a wreck).
+      const rep = d.dead ? 0 : d.repairableHp ?? 0;
       const total = Math.max(1, max + rep);
-      const hpPct = Math.max(0, Math.min(100, (hp / total) * 100));
+      // The label's HP lags at its last observed reading once the ship is
+      // gone — a wreck renders an EMPTY hull (HP is gone; the sunk label in
+      // the readout slot carries the state), never a stale colored fraction.
+      const hpPct = d.dead ? 0 : Math.max(0, Math.min(100, (hp / total) * 100));
       const repPct = Math.max(0, Math.min(100 - hpPct, (rep / total) * 100));
       const path = d.silhouette ?? silhouetteOf(d.shipType);
       const pngUrl = d.silhouetteUrl ?? null;
-      const showText = d.hp != null && d.maxHp != null;
+      // Sunk ships keep the readout slot (the localized label replaces the
+      // numbers) even when the HP stream never read the hull — the slot's
+      // fixed inline size is what holds the plaque's width steady.
+      const showText = (d.hp != null && d.maxHp != null) || d.dead === true;
       return (
         <div class={["holo-ship-card", d.dead ? "holo-ship-card--dead" : ""].join(" ")}>
           {d.name || showText ? (
@@ -92,7 +115,7 @@ export default defineComponent({
               {showText ? (
                 <span class="holo-ship-card__text">
                   {d.dead
-                    ? "—"
+                    ? props.deadText
                     : `${Math.round(d.hp!).toLocaleString()} / ${Math.round(d.maxHp!).toLocaleString()}`}
                 </span>
               ) : null}

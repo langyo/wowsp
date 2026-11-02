@@ -406,6 +406,7 @@
   "selfDamage": "가한 피해",
   "selfTaken": "받은 피해",
   "selfPlane": "항공",
+  "shipSunk": "침몰",
   "tactical": {
     "toggle": "택티컬 보드",
     "tools": {

@@ -23,7 +23,7 @@
  *   [69..74] secondary hits   [75] torpedo hits
  *   [87, 96] depth-charge hits
  *   [280, 281] planes killed (by ship / by carrier aircraft)
- *   [404] base exp            [408] killer account id
+ *   [404] base exp            [408] killer account id (0 = no killer)
  *   [412] scouting damage     [426] battle damage
  *
  * History: the first implementation guessed the ribbon counters from a
@@ -51,7 +51,10 @@ export interface PostBattlePlayer {
   frags: number;
   /** Remaining-HP percent (0..100) — remained HP (20) / max HP (15). */
   hpRatio: number | null;
-  /** Killer player accountId (index 408). */
+  /** Killer player accountId (index 408; 393 on the pre-15.2 layout) —
+   *  null when the ship survived. The wire carries the game's 0 "no killer"
+   *  sentinel (never null); only a POSITIVE account id counts as a kill, so
+   *  the sentinel is normalized away here (see the parse comment). */
   killerId: number | null;
   /** Settlement base exp (index 404) — bots report 0; null when the array
    *  is too short (older client layouts). */
@@ -161,6 +164,18 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         maxHp != null && remained != null ? Math.max(0, Math.round(maxHp - remained)) : 0;
       const hpRatio =
         maxHp != null && remained != null && maxHp > 0 ? (remained / maxHp) * 100 : null;
+      // Killer attribution (index 408; 393 on the legacy layout). The wire
+      // carries the game's 0 sentinel for SURVIVORS — never null: verified
+      // on client 15.9 replay 20261026_183956_PBSD107-Jervis_41_Conquest
+      // (24/24 playersPublicInfo rows non-null, 7 of them exactly 0; every
+      // sunk row carries a positive account id). Account ids start at 1, so
+      // only a positive value is a killer; 0 (or any other non-positive
+      // value) must become null BEFORE any consumer sees it. Left as 0,
+      // shipHp.ts::inferDarkDeaths reads the row as a definitive sink and
+      // puts every survivor's death at its last observed moment — the
+      // replay's final frame — which is the whole-roster-sunk bug.
+      const rawKiller = num(late(408));
+      const killerId = rawKiller != null && rawKiller > 0 ? rawKiller : null;
       players.push({
         accountId: Number(pidStr) || 0,
         name: typeof arr[1] === "string" ? (arr[1] as string) : `#${pidStr}`,
@@ -172,7 +187,7 @@ export function parsePostBattle(raw: string | null): PostBattleData | null {
         damageTaken,
         frags: num(32) ?? 0,
         hpRatio,
-        killerId: num(late(408)) ?? null,
+        killerId,
         exp: num(late(404)),
         ribbons: RIBBON_SOURCES.map(
           ([key, idx]): PostBattleRibbon => ({ key, value: sum(idx) }),
