@@ -96,6 +96,7 @@ export type {
   CatalogFilePreview,
   PackageFilePreview,
   ModInstallRecord,
+  ClientUsage,
   PnfLoaderStatus,
   LoaderHealthKind,
   LoaderHealthVerdict,

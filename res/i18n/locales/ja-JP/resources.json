@@ -361,6 +361,14 @@
       "cn": "中国サーバー"
     }
   },
+  "entryClients": {
+      "title": "{name} のクライアント",
+      "usage": "合計 {size} · {files} ファイル",
+      "usageFailed": "使用量を取得できません",
+      "notInstalled": "未インストール",
+      "openHint": "クリックでクライアントごとの導入状況を表示"
+  },
+    "skippedRunning": "「{names}」が実行中のためスキップしました——ゲームを終了してから再試行してください。",
   "sync": {
     "banner": "{client} を個別管理中",
     "toggleLabel": "マルチクライアント同期",
@@ -373,7 +381,6 @@
     "failed": "{count} 個のクライアントすべてで同期に失敗しました：{details}",
     "skippedByRule": "「{mod}」は {client} には適用されないためスキップしました",
     "skippedByVersion": "{mod}：{client} をスキップしました——このパックの対応バージョンに含まれません",
-    "skippedRunning": "「{names}」が実行中のためスキップしました——ゲームを終了してから再試行してください。",
     "nothingToDo": "他のクライアントはすべてこのクライアントの MOD 構成と一致しています。",
     "noCatalog": "オンラインカタログが未読み込みです——先にカタログを更新してから同期してください。",
     "noLedger": "インストール記録の読み取りに失敗しました——しばらくしてから再試行してください。"

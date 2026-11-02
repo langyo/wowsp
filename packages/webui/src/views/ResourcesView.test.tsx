@@ -16,6 +16,7 @@ const mocks = vi.hoisted(() => ({
   migrationPlan: vi.fn(),
   purgeBackups: vi.fn(),
   records: vi.fn(), catalog: vi.fn(), preview: vi.fn(),
+  clientUsage: vi.fn(),
   catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
   syncOn: true,
 }));
@@ -32,6 +33,7 @@ vi.mock("@/api", () => ({ api: {
   modCatalogInstall: mocks.catalogInstall,
   modCatalogUninstall: mocks.catalogUninstall,
   modHubRecords: mocks.records, modTags: async () => ({ tags: [] }),
+  modHubClientUsage: mocks.clientUsage,
 } }));
 vi.mock("@/stores/config", () => ({ useConfigStore: () => mocks.config }));
 vi.mock("@/stores/gameStatus", () => ({
@@ -151,6 +153,7 @@ beforeEach(() => {
   mocks.safe.mockResolvedValue(false);
   mocks.reconcile.mockResolvedValue(null);
   mocks.records.mockResolvedValue([]);
+  mocks.clientUsage.mockResolvedValue({ totalBytes: 4096, files: 4, units: 2 });
   mocks.catalog.mockResolvedValue({ mods: [], sourceVersion: "test", fetchedAt: "" });
   mocks.purgeBackups.mockResolvedValue([]);
 });
@@ -1003,6 +1006,81 @@ describe("contested tree badge", () => {
     const badges = view.findAll(".mod-row__badge--contested");
     expect(badges).toHaveLength(1);
     expect(badges[0].text()).toBe("resources.contestedTree");
+  });
+});
+
+describe("entry clients window", () => {
+  const catEntry = () => ({
+    id: "mod-x", version: "1", category: "battle", nameEn: "mod-x", game: "*",
+    title: "mod-x", nameZh: "", description: "",
+    authors: [], packages: [{ name: "a.zip", sha256: "ab", size: 2048 }],
+    i18n: {}, aliases: [],
+  });
+  const recordFixture = {
+    id: "mod-x", name: "Mod X", version: "1", category: "battle", source: "mod-hub",
+    discussion: null, binVersion: "1", installedAt: "2026-11-02T00:00:00Z",
+    files: [], gameRoot: "C:/EU",
+  };
+  async function mountPane() {
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry()], sourceVersion: "test", fetchedAt: "",
+    });
+    const view = shallowMount(ResourcesView, {
+      // The window is a real child component with its own fetch watch —
+      // keep it live under shallowMount.
+      global: {
+        stubs: { HkScrollContainer: false, LoadingNote: false, EntryClientsWindow: false },
+      },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    return view;
+  }
+
+  it("merges the installed state into the scope tag with the installed clients", async () => {
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [
+      { kind: "steam", realm: "eu", path: "C:/EU" },
+      { kind: "lesta", path: "C:/RU" },
+    ];
+    mocks.records.mockResolvedValue([recordFixture]);
+    const view = await mountPane();
+    const tag = view.find(".mod-detail__tag--click");
+    expect(tag.exists()).toBe(true);
+    // Installed: the tag reads 已安装 · <installed clients>, NOT the plain
+    // scope text — and the scope tag no longer appears separately.
+    expect(tag.text()).toContain("resources.installedBadge");
+    expect(tag.text()).toContain("EU");
+    expect(tag.text()).not.toContain("resources.servers.universal");
+    // The merged tag opens the window in the INSTALLED state too — the
+    // usage probe runs for every configured client root.
+    await tag.trigger("click");
+    await flushPromises();
+    expect(mocks.clientUsage).toHaveBeenCalledWith("C:/EU");
+    expect(mocks.clientUsage).toHaveBeenCalledWith("C:/RU");
+    const modal = view
+      .findAllComponents({ name: "HkModal" })
+      .find((m) => m.props("title") === "resources.entryClients.title");
+    expect(modal?.props("modelValue")).toBe(true);
+  });
+
+  it("falls back to the scope text and still opens the window when nothing is installed", async () => {
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [{ kind: "steam", realm: "eu", path: "C:/EU" }];
+    const view = await mountPane();
+    const tag = view.find(".mod-detail__tag--click");
+    expect(tag.text()).toContain("resources.servers.universal");
+    await tag.trigger("click");
+    await flushPromises();
+    // The click-through lists every configured client: the usage probe
+    // runs per client root, and the entry-clients modal is the one that
+    // opened (title names the entry).
+    expect(mocks.clientUsage).toHaveBeenCalledWith("C:/EU");
+    const modal = view
+      .findAllComponents({ name: "HkModal" })
+      .find((m) => m.props("title") === "resources.entryClients.title");
+    expect(modal?.props("modelValue")).toBe(true);
   });
 });
 

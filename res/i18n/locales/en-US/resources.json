@@ -361,6 +361,14 @@
       "cn": "CN server"
     }
   },
+  "entryClients": {
+      "title": "Clients of {name}",
+      "usage": "{size} · {files} files",
+      "usageFailed": "usage unavailable",
+      "notInstalled": "Not installed",
+      "openHint": "Click for per-client install details"
+  },
+    "skippedRunning": "{names} is running — skipped. Close the game and retry.",
   "sync": {
     "banner": "Managing {client} individually",
     "toggleLabel": "Multi-client sync",
@@ -373,7 +381,6 @@
     "failed": "Sync failed on all {count} client(s): {details}",
     "skippedByRule": "\"{mod}\" doesn't apply to {client} — skipped",
     "skippedByVersion": "{mod}: skipped {client} — the pack's game range excludes that client's version",
-    "skippedRunning": "{names} is running — skipped. Close the game and retry.",
     "nothingToDo": "Every other client already matches this client's mod set.",
     "noCatalog": "The online catalog is not loaded — refresh it before syncing clients.",
     "noLedger": "Could not read the install ledger — try again in a moment."

@@ -492,6 +492,26 @@ export function useModHub() {
   const recordOfEntry = (entry: CatalogEntry) =>
     recordOfEntryOn(entry, gameRoot.value);
 
+  /** The clients THIS entry is installed on (a record pairs per root) —
+   *  the merged install badge's server list and the entry-clients
+   *  window's per-client rows both read through here. */
+  const installedClientsOf = (entry: CatalogEntry) =>
+    config.installs.filter((i) => recordOfEntryOn(entry, i.path) !== undefined);
+
+  /** The entry-clients window: every configured client with THIS entry's
+   *  install state + the client's mod-tree footprint (opened by clicking
+   *  the merged install/scope tag on the detail pane). */
+  const entryClientsWindow = ref<{ open: boolean; entry: CatalogEntry | null }>({
+    open: false,
+    entry: null,
+  });
+  function openEntryClients(entry: CatalogEntry) {
+    entryClientsWindow.value = { open: true, entry };
+  }
+  function closeEntryClients() {
+    entryClientsWindow.value = { ...entryClientsWindow.value, open: false };
+  }
+
   /** Installed units are keyed by their primary path (unique per unit). */
   const unitKey = (m: InstalledMod) => m.relPath;
 
@@ -1779,6 +1799,12 @@ export function useModHub() {
     loadRecords,
     recordOf,
     recordOfEntry,
+    recordOfEntryOn,
+    installedClientsOf,
+    entryClientsWindow,
+    openEntryClients,
+    closeEntryClients,
+    clientLabelOf: syncLabelOf,
     unitKey,
     installMod,
     uninstallMod,
