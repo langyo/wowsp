@@ -112,6 +112,34 @@ JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
 # healthy build never reaches the count.
 ROSTER_GRACE_TICKS = 5
 
+# Battle ticks the scene-swap hold may stay armed before the fallback
+# latches the battle scene as up anyway (see scene_ready). The 2026-11-02
+# Asia crash chain (WorldOfWarships64-2026-11-02_17-42-03 and the
+# byte-identical 10-28/10-31/11-01 reports: "Unhandled exception" through
+# KERNELBASE/VCRUNTIME140 inside the engine's script layer) pinned the
+# shape: a LIVE battle's roster stabilizes while the client is still in
+# the loading scene (17:41:54 vs the HUD mount at 17:42:02.6), the 1 s
+# battle tick then walks the dataHub collections and updates the panel
+# data component every second, and the tick that lands INSIDE the
+# loading→battle scene swap touches half-torn-down engine objects — a
+# native crash no Python except can intercept (the plugin's own soft
+# latch stayed empty through 17:41:55-17:42:02). Training rooms never
+# crash because their roster stabilizes only AFTER the HUD mounts, so
+# the hold never arms there. The SFM scene-up event lifts the hold
+# within seconds on every client seen (python.log 17:39:45); the tick
+# fallback below only covers a build whose event bus withholds it —
+# sixty ticks (~60 s in battle) is past any observed loading screen,
+# and a hold that never lifts would be a worse failure than the
+# residual swap race it leaves on such a hypothetical build.
+SCENE_FALLBACK_TICKS = 60
+
+# The SFM events that mean the battle HUD scene is up (the swap window
+# has passed). request.showBattle fired and action.showBattle followed
+# 0.9 s later on the 2026-11-02 Asia client (python.log 17:39:45);
+# taskAnimationsReady rides the same mount burst as the third witness.
+SCENE_UP_EVENTS = ('request.showBattle', 'action.showBattle',
+                   'action.taskAnimationsReady')
+
 # builds.json bounds (see write_builds). The bridge carries the roster's
 # raw SHIP_CONFIG blobs; the app caps the roster at 64 players, an encoded
 # dump over the char bound is skipped (one oversized record must never
@@ -1204,6 +1232,16 @@ class Probe:
         self.grace_ticks = 0
         self.last_unstable = []
         self.session_fallback = ''
+        # The battle-scene swap hold (see SCENE_FALLBACK_TICKS): False =
+        # the loading→battle scene swap may still be ahead of this
+        # battle's ticks, so every engine-collection walk and the panel
+        # data component stand down. The SFM scene-up event latches it
+        # True (see event); the tick counter latches it past the
+        # fallback. Reset per battle in quit() ONLY — the SFM event can
+        # precede the roster stabilization within one battle (the
+        # training-room order), so the session open must not clear it.
+        self.scene_ready = False
+        self.scene_wait_ticks = 0
         # Entities the LAST write_telemetry walk saw (0 before the first
         # post-session tick): a walk-sourced session's battle-end signal
         # (see tick's empty branch).
@@ -1768,6 +1806,10 @@ class Probe:
         """Per-avatar live state from entity components (health path is
         TeamHP-proven; enemy values are spotting-dependent per its notes).
         Diagnostics-only since the panel moved to entity_walk()."""
+        if not self.scene_ready:
+            # The scene-swap hold (see SCENE_FALLBACK_TICKS): no entity
+            # walk while the loading scene may still swap under us.
+            return {}
         cc = self._cc()
         if cc is None or self.dh is None or self.const is None:
             return {}
@@ -2408,6 +2450,10 @@ class Probe:
         self.previous = None
         self.stable = 0
         self.details_reset()
+        # The scene latch resets at BATTLE end, not at the session open
+        # (see details_reset): the next battle's loading scene must hold
+        # the walks again.
+        self.scene_ready = False
         self.states = {}
         self.clear_players()
         self.last_raw = ''
@@ -2490,6 +2536,14 @@ class Probe:
         # before any walk-sourced consumption could read it, but a future
         # tick() reordering must not inherit the previous battle's width.
         self.walk_seen = 0
+        # The scene-swap hold's tick counter re-arms per battle (each new
+        # battle gets the full SCENE_FALLBACK_TICKS budget). The latch
+        # ITSELF is deliberately NOT reset here: the SFM scene-up event
+        # can precede the roster stabilization within ONE battle (the
+        # training-room order — HUD mount 17:39:45, roster stable
+        # 17:39:47), and clearing it at the session open would hold that
+        # battle hostage to the fallback. quit() owns the reset.
+        self.scene_wait_ticks = 0
 
     def clear_players(self):
         if _UI is None:
@@ -2803,6 +2857,12 @@ class Probe:
                 if self.event_log_count < 400:
                     self.event_log_count += 1
                     log('sfm event ' + _fmt(name))
+            if name in SCENE_UP_EVENTS and not self.scene_ready:
+                # The battle HUD scene is up — the loading→battle swap is
+                # behind this battle and the walks plus the panel data
+                # component may run again (see SCENE_FALLBACK_TICKS for
+                # why this latch exists at all).
+                self.scene_ready = True
             if name == 'input.tabModeIn' or name == 'input.tabModeOut':
                 # The strips' visibility driver: fires <=3 ms after the key
                 # and never for Tab typed in battle chat (design-doc-proven).
@@ -2849,6 +2909,11 @@ class Probe:
         alive beats a silent stream). Sorted and capped like players().
         On a client whose UiComponents withholds (the Lesta shape) the
         walk stands down and this returns [] — nothing is invented."""
+        if not self.scene_ready:
+            # The scene-swap hold (see SCENE_FALLBACK_TICKS): the walk
+            # cannot run while the loading scene may swap; the empty
+            # answer leaves the synthesis to a post-scene tick.
+            return []
         rows = []
         seen = {}
         try:
@@ -2895,6 +2960,19 @@ class Probe:
             self.tick_price_catalog('battle' if self.in_battle else 'port')
         except:
             self.soft('price catalog failed=' + _exc_text(120))
+        # The scene-swap hold's fallback (see SCENE_FALLBACK_TICKS):
+        # once the budget lapses in battle ticks, the hold lifts WITHOUT
+        # the SFM event — a build whose event bus withholds scene-up
+        # must not lose telemetry forever. The counter only accrues once
+        # the battle is live (session or the game's own battleStart
+        # latch), so port ticks never spend the budget.
+        if not self.scene_ready:
+            if self.session or self.in_battle:
+                self.scene_wait_ticks += 1
+                if self.scene_wait_ticks >= SCENE_FALLBACK_TICKS:
+                    self.scene_ready = True
+                    log('scene fallback armed ticks=' +
+                        _fmt(self.scene_wait_ticks))
         records = self.players_raw()
         # Stash this tick's raw roster records: write_telemetry reads their
         # isAlive as the authoritative alive source (see there — the entity
@@ -2922,7 +3000,7 @@ class Probe:
                 self.session = _fmt(_to_int(time.time() * 1000))
                 self.details_reset()
                 log('roster stable players=' + _fmt(len(roster)) + ' sample=' + json_encode_safe(roster[0]))
-        elif self.session:
+        elif self.session and self.scene_ready:
             if self.session_fallback == 'walk':
                 # A walk-sourced session has no records whose emptiness
                 # could end the battle (they were never populated — the
@@ -2951,6 +3029,14 @@ class Probe:
                 self.empty_ticks += 1
                 if self.empty_ticks >= TOOL_CONFIG['panel_fade_ticks']:
                     self.quit()
+        elif self.session:
+            # The scene-swap hold with a live session: the fade counters
+            # stand down. The walk has not run (its liveness signal is
+            # absent by design), and a records-empty burst during the
+            # loading scene is the loading itself, not a battle end —
+            # tearing the session down there would re-arm the exact
+            # mid-battle churn the fade windows above exist for.
+            pass
         else:
             self.empty_ticks = 0
         # The degraded-roster fallback: a battle whose records never
@@ -2983,10 +3069,11 @@ class Probe:
         if not self.builds_written:
             self.write_builds(self.latest_raw)
         # One-shot client order source probe (see client_order_probe): run
-        # on the FIRST stabilized tick — a replay can stop a second later,
-        # and the AvatarSystem collections are already built by then. It
-        # never feeds the strips or telemetry.
-        if not self.order_probe_done:
+        # on the FIRST stabilized tick AFTER the scene is up — a replay
+        # can stop a second later, and the AvatarSystem collections the
+        # probe samples are scene-scoped, so the hold defers it with the
+        # rest of the walks. It never feeds the strips or telemetry.
+        if not self.order_probe_done and self.scene_ready:
             self.client_order_probe()
             self.order_probe_done = True
 
@@ -3029,7 +3116,16 @@ class Probe:
         nothing; the fail-safe body omits it (no players map there
         either — an outage frame registers no battle).
         """
-        if not self.session:
+        if not self.session or not self.scene_ready:
+            # The scene-swap hold (see SCENE_FALLBACK_TICKS): the walk,
+            # the fold and the panel data component all cross into
+            # engine collections the loading→battle swap tears down, and
+            # a tick landing inside the swap is the 2026-11-02 Asia
+            # crash (native — no Python except can intercept it). The
+            # heartbeat above keeps reporting the battle phase;
+            # telemetry.json stays at its quit-clear until the scene is
+            # up (a frame without players is the documented outage
+            # shape, so consumers degrade exactly as designed).
             return
         # Stage markers: the soft-error text is often hidden by the
         # sandbox ('telemetry failed=?'), so the stage name makes a
@@ -3344,7 +3440,10 @@ class Probe:
         return out
 
     def refresh_panel(self):
-        if not self.session:
+        if not self.session or not self.scene_ready:
+            # The scene-swap hold (see SCENE_FALLBACK_TICKS): creating or
+            # updating the UI data component inside the loading→battle
+            # swap is part of the 2026-11-02 Asia crash window.
             return
         try:
             ally = self.panel_rows('ally')

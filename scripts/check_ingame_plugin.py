@@ -1030,8 +1030,9 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              raising_constants, fail_plain, ships, with_ship_names,
              drift_records, failures, raw_collection=True, aim_duck=False,
              degraded=None, builds=None, allow_soft=(), prices=None,
-             extra_ticks=0):
-    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s builds=%s prices=%s"
+             extra_ticks=0, with_scene_event=True,
+             scene_event_delayed=False):
+    label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s builds=%s prices=%s scene=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
                 "yes" if with_ui else "absent",
@@ -1044,7 +1045,9 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 "yes" if aim_duck else "no",
                 degraded or "no",
                 builds or "none",
-                prices or "none"))
+                prices or "none",
+                "delayed" if scene_event_delayed else
+                ("event" if with_scene_event else "fallback")))
     utils = StubUtils(encode_records, fail_plain)
     battle = StubBattle() if raw_collection else StubBattleNoRaw()
     events = StubEvents()
@@ -1196,6 +1199,22 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
             failures.append("[%s] onBattleStart was never registered" % label)
             return
         start()
+        # The battle HUD's scene-up SFM burst (live 2026-11-02 Asia
+        # python.log: request.showBattle then action.showBattle at the
+        # HUD mount). The probe holds EVERY engine-collection walk plus
+        # the panel data component behind its scene latch until one of
+        # these fires — the loading→battle scene swap was the 2026-11-02
+        # Asia live-crash window (native unhandled exception, training
+        # rooms immune because their roster stabilizes only after the
+        # mount). The passes simulate the client by firing the event
+        # here; the one hold-fallback pass (with_scene_event=False)
+        # proves the tick-budget fallback lifts the hold instead.
+        sfm = events.handlers.get("onSFMEvent")
+        if sfm is None:
+            failures.append("[%s] onSFMEvent was never registered" % label)
+            return
+        if with_scene_event and not scene_event_delayed:
+            sfm("action.showBattle", None)
         # Drive the FIRST tick alone and pin the heartbeat's phase: one
         # tick cannot have stabilized a roster yet (stability needs three
         # sightings), so only the game's own battleStart latch can make
@@ -1244,6 +1263,88 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                 failures.append("[%s] scheduler stopped re-arming" % label)
                 return
             fn()
+        # The scene-hold fallback pass needs the probe's own fallback
+        # budget to lapse (SCENE_FALLBACK_TICKS battle ticks) before the
+        # walks arm without the SFM event — read the budget out of the
+        # executed plugin (the constant is the contract, not a harness
+        # guess) and drive the scheduler past it plus a couple of
+        # post-arm ticks so the assertions below see full telemetry.
+        if not with_scene_event:
+            budget = env.get("SCENE_FALLBACK_TICKS")
+            if not isinstance(budget, int) or budget <= 0:
+                failures.append(
+                    "[%s] SCENE_FALLBACK_TICKS=%r missing from the plugin"
+                    % (label, budget))
+                return
+            # Pin the HOLD itself: without the SFM event the walks must
+            # have stood down so far — no telemetry frame yet (the file
+            # is only the quit-clear at this point), the walk-sourced
+            # signals untouched, the soft latch empty.
+            hold_probe = env.get("probe")
+            if hold_probe is not None:
+                if hold_probe.scene_ready:
+                    failures.append(
+                        "[%s] scene latch armed without the SFM event "
+                        "before the fallback budget" % label)
+                if hold_probe.last_error:
+                    failures.append(
+                        "[%s] the scene hold recorded a soft error: %r"
+                        % (label, hold_probe.last_error))
+            for drive_tick in range(budget):
+                fn = callbacks.pending
+                callbacks.pending = None
+                if fn is None:
+                    failures.append(
+                        "[%s] scheduler stopped re-arming (scene-hold drive "
+                        "tick %d, scene_ready=%r, hold ticks=%r)"
+                        % (label, drive_tick, hold_probe.scene_ready,
+                           hold_probe.scene_wait_ticks))
+                    return
+                fn()
+            if hold_probe is not None and not hold_probe.scene_ready:
+                failures.append(
+                    "[%s] the fallback never lifted the scene hold after "
+                    "%d ticks" % (label, budget))
+        # The LIVE-battle order pass (scene_event_delayed): the roster
+        # stabilizes DURING the loading scene — the 2026-11-02 Asia
+        # crash's exact precondition (stable 17:41:54, HUD mount
+        # 17:42:02.6) — and the scene-up event only fires afterwards.
+        # Pin the whole arc: the hold kept telemetry down while the
+        # session sat open pre-scene, the SFM event lifted it, and the
+        # very next tick delivers the full telemetry frame again.
+        if scene_event_delayed:
+            held = env.get("probe")
+            if held is None:
+                failures.append("[%s] probe missing for the delayed pass" % label)
+                return
+            if held.scene_ready or held.session == '' or held.roster == []:
+                failures.append(
+                    "[%s] delayed pass precondition broken: scene_ready=%r "
+                    "session set=%r roster=%d (expected a held, open "
+                    "session with a stabilized roster)"
+                    % (label, held.scene_ready, bool(held.session),
+                       len(held.roster)))
+                return
+            if os.path.exists("telemetry.json"):
+                failures.append(
+                    "[%s] telemetry.json appeared during the scene hold "
+                    "(the walk must stand down until the scene event)"
+                    % label)
+            sfm("action.showBattle", None)
+            for _ in range(2):
+                fn = callbacks.pending
+                callbacks.pending = None
+                if fn is None:
+                    failures.append("[%s] scheduler stopped re-arming" % label)
+                    return
+                fn()
+            if not held.scene_ready:
+                failures.append(
+                    "[%s] the scene event did not lift the hold" % label)
+            if not os.path.exists("telemetry.json"):
+                failures.append(
+                    "[%s] telemetry.json never landed after the scene "
+                    "event lifted the hold" % label)
 
         # ── artifact assertions ──────────────────────────────────────────
         # The expected rows mirror the probe's drift contract: a record
@@ -1891,6 +1992,31 @@ def main(argv):
         run_once(plugin_src, workdir, True, True, False, False, False,
                  "full", True, False, failures, degraded="churn")
 
+    # The scene-hold fallback pass (the 2026-11-02 Asia live-crash fix,
+    # see SCENE_FALLBACK_TICKS in Main.py): NO scene-up SFM event fires,
+    # so the probe must HOLD every engine-collection walk and the panel
+    # data component through the loading→battle swap window (the crash
+    # itself — training rooms never arm the hold because their roster
+    # stabilizes after the mount), and the tick-budget fallback must
+    # then lift the hold so telemetry still flows. The budget drive and
+    # the hold assertions live in run_once; the artifact assertions
+    # below prove the post-arm paths still deliver the full payload.
+    scene_passes = 0
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, True, False, False,
+                 "full", True, False, failures, with_scene_event=False)
+        scene_passes += 1
+
+    # The delayed-scene-event pass (the LIVE-battle order — the 2026-11-02
+    # Asia crash's exact precondition): the roster stabilizes while the
+    # loading scene is still up, the scene-up event fires only at the HUD
+    # mount, and the hold must bridge exactly that gap — telemetry down
+    # during it, full frame on the next tick after the event.
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, True, False, False,
+                 "full", True, False, failures, scene_event_delayed=True)
+        scene_passes += 1
+
     # The builds.json passes (the per-battle build bridge). The planted
     # records carry the live shapes: raw SHIP_CONFIG bytes (the WG family),
     # the base64 body Lesta's SafeClass repr hands over, the py2-str hex
@@ -1939,7 +2065,7 @@ def main(argv):
             print(" - " + line)
         return 1
     print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
-          % (len(passes) + 4 + build_passes + price_passes,
+          % (len(passes) + 4 + build_passes + price_passes + scene_passes,
              os.path.basename(os.path.normpath(plugin)),
              ", ".join(SAFE_BUILTINS)))
     return 0
