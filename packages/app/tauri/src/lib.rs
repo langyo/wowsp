@@ -681,6 +681,8 @@ pub fn run() {
             commands::game_crash::game_crash_quarantine_mod,
             commands::game_crash::game_crash_restore_mod,
             commands::game_crash::game_crash_restart,
+            // Pre-launch mod-conflict scan (commands/mod_integrity.rs).
+            commands::mod_integrity::mod_integrity_scan,
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
             commands::replay::read_replay_positions,

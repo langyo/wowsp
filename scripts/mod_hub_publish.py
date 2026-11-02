@@ -15,6 +15,9 @@ Stages (all idempotent, run them in order):
     python scripts/mod_hub_publish.py download    # packages -> cache + hashes
     python scripts/mod_hub_publish.py previews    # preview jpgs -> user-attachment urls
     python scripts/mod_hub_publish.py release     # ensure mod-hub release + upload zips
+    python scripts/mod_hub_publish.py validate    # package-content gate, offline
+                                                  # (also runs at the start of release;
+                                                  # --strict fails on unresolved refs)
     python scripts/mod_hub_publish.py discussions # one thread per mod (skips existing)
     python scripts/mod_hub_publish.py enrich      # rewrite live threads: aliases, rich
                                                   # descriptions, screenshot galleries
@@ -54,6 +57,7 @@ from pathlib import Path
 # Sibling module (same directory — sys.path[0] when run as
 # `python scripts/mod_hub_publish.py`).
 import mod_hub_families
+import mod_package_check
 import publish_digests
 
 REPO = "langyo/wowsp"
@@ -454,6 +458,73 @@ def rezip_sevenz(src: Path, binary: str) -> bytes:
         return buf.getvalue()
 
 
+# ------------------------------------------------- package content validation
+#
+# Crash report gc-20261101232118338-22840: a re-hosted package carried glue
+# XML whose swffile/url entries pointed at SWF assets that exist neither in
+# the package nor in the client - the game's Scaleform UI hit "Unknown file
+# format" at boot and hung (AppHangB1). The pure checks live in
+# mod_package_check.py (shared with the sync engine); this side owns the
+# release wiring: scan every package zip the release stage would upload,
+# hard-fail on a corrupt .swf member, and report unresolvable references
+# (WARN by default; fatal only under "validate --strict").
+
+
+def validate_packages(cache: Path) -> list[mod_package_check.PackageCheckReport]:
+    """Scan every package zip the release stage would upload.
+
+    "release" restages from cache/packages/<id>/<name>, so those are the
+    authoritative bytes to gate. Prints one summary line per package, then
+    raises mod_package_check.PackageContentError listing EVERY offending
+    member when any .swf member fails the FWS/CWS/ZWS magic check. Called
+    unconditionally at the top of "release", so no upload path can skip
+    the gate. Unresolved .swf references print as WARN and never raise
+    here - the standalone "validate --strict" stage is what fails on them.
+    """
+    state = downloaded_state(cache)
+    reports = []
+    for mod in state["mods"]:
+        for pkg in mod["packages"]:
+            path = cache / "packages" / mod["id"] / pkg["name"]
+            reports.append(
+                mod_package_check.scan_path(path, f"{mod['id']}/{pkg['name']}"))
+    for rep in reports:
+        print(f"  {rep.package}: members {rep.members_scanned}, "
+              f"swf magic ok {rep.swf_members_ok}, "
+              f"warn findings {len(rep.findings)}", flush=True)
+        for f in rep.findings:
+            print(f"    WARN {f.ref_basename} not in the package "
+                  f"(referenced by {', '.join(f.referencing_members)})",
+                  file=sys.stderr, flush=True)
+    mod_package_check.enforce_swf_magic(reports)
+    return reports
+
+
+def validate_stage(cache: Path, strict: bool = False) -> int:
+    """The "validate" stage: the release gate, run standalone (offline).
+
+    Prints the per-package summaries and exits non-zero on hard failures
+    (corrupt .swf members) or - under --strict only - on any unresolved
+    .swf reference finding."""
+    try:
+        reports = validate_packages(cache)
+    except mod_package_check.PackageContentError as exc:
+        print(f"validate: FAIL - {exc}", file=sys.stderr, flush=True)
+        return 1
+    except (OSError, zipfile.BadZipFile) as exc:
+        print(f"validate: FAIL - {exc}", file=sys.stderr, flush=True)
+        return 1
+    warns = sum(len(r.findings) for r in reports)
+    if strict and warns:
+        print(f"validate: FAIL (strict) - {warns} unresolved .swf reference "
+              f"finding(s) across {len(reports)} package(s)",
+              file=sys.stderr, flush=True)
+        return 1
+    print(f"validate: ok - {len(reports)} package(s), {warns} warn finding(s)"
+          + (" (warn-only; --strict fails on these)" if warns else ""))
+    return 0
+
+
 # ---------------------------------------------------------------- curate
 
 
@@ -728,6 +799,10 @@ def previews(cache: Path) -> None:
 
 
 def release(cache: Path) -> None:
+    # Content gate first, before anything touches gh or the network: a
+    # self-inconsistent package (corrupt .swf member, glue referencing
+    # assets nobody ships) must never upload; corrupt members raise here.
+    validate_packages(cache)
     state = downloaded_state(cache)
     # The release must exist before uploading; --clobber keeps re-runs cheap.
     out = subprocess.run(
@@ -1614,6 +1689,88 @@ def selftest() -> None:
     assert [p["id"] for p in rec2["presets"]] == ["v2"], rec2.get("presets")
     assert [p["name"] for p in rec2["packages"]] == ["t2.zip"], "first survivor backfills the default"
     assert fam2["supersedes"] == {"battle.marker.traffic-v2": "v2"}
+    # Package content validation (mod_package_check): the offline gate that
+    # keeps a self-inconsistent package off the release - corrupt .swf
+    # members hard-fail, glue referencing assets nobody ships surfaces as a
+    # warn finding (crash report gc-20261101232118338-22840).
+    def zbytes(members: dict) -> bytes:
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for name, data in members.items():
+                z.writestr(name, data)
+        return buf.getvalue()
+
+    # (a) FWS/CWS/ZWS magics pass; directory entries are not members.
+    rep = mod_package_check.scan_bytes(zbytes({
+        "docs/": "",
+        "gui/unbound/mods/a.swf": b"FWS\x06\x00",
+        "b.swf": b"CWS\x06\x00",
+        "c.swf": b"ZWS\x0c\x00",
+    }), "good.zip")
+    assert not rep.bad_swf_members, rep.bad_swf_members
+    assert (rep.members_scanned, rep.swf_members_ok) == (3, 3), rep
+    assert rep.findings == [], rep.findings
+
+    # (b) garbage-bytes .swf member hard-fails, member named in the error.
+    rep = mod_package_check.scan_bytes(zbytes({"bad.swf": b"\x00garbage"}), "bad.zip")
+    assert rep.bad_swf_members == ["bad.swf"], rep.bad_swf_members
+    assert rep.swf_members_ok == 0
+    try:
+        mod_package_check.enforce_swf_magic([rep])
+        raise AssertionError("garbage .swf member must hard-fail")
+    except mod_package_check.PackageContentError as exc:
+        assert "bad.swf" in str(exc)
+
+    # (c) glue referencing existing members -> no finding (case-insensitive
+    # basename match, both quote styles); non-swf refs are ignored.
+    glue = ('<swffile>gui/unbound/mods/a.swf</swffile>'
+            '<Movie url="b.SWF" source=\'b.swf\'>')
+    rep = mod_package_check.scan_bytes(zbytes({
+        "gui/uss_settings.xml": glue,
+        "gui/unbound/mods/a.swf": b"CWS\x06\x00",
+        "B.swf": b"CWS\x06\x00",
+    }), "ok.zip")
+    assert rep.findings == [], rep.findings
+
+    # (d) glue referencing an absent basename -> warn finding recorded with
+    # its referencing members (the crash report's exact shape).
+    rep = mod_package_check.scan_bytes(zbytes({
+        "gui/uss_settings.xml": glue + '<swffile>gui/unbound/mods/Post.swf</swffile>',
+        "gui_urls.xml": 'url="gui/unbound/mods/carousel_extended.swf"',
+        "gui/unbound/mods/a.swf": b"CWS\x06\x00",
+        "B.swf": b"CWS\x06\x00",
+    }), "missing.zip")
+    assert [f.ref_basename for f in rep.findings] == [
+        "carousel_extended.swf", "post.swf"], rep.findings
+    assert rep.findings[0].referencing_members == ["gui_urls.xml"]
+    assert rep.findings[1].referencing_members == ["gui/uss_settings.xml"]
+    assert rep.findings[1].as_dict() == {
+        "package": "missing.zip", "ref_basename": "post.swf",
+        "referencing_members": ["gui/uss_settings.xml"]}
+
+    # Oversized text members (>= 512 KB) are not scanned for references.
+    rep = mod_package_check.scan_bytes(zbytes({
+        "big.cfg": "x" * (512 * 1024 + 1) + '<swffile>gone.swf</swffile>',
+    }), "big.zip")
+    assert rep.findings == [], rep.findings
+
+    # (e) the stage wrapper: warn findings pass by default and fail under
+    # --strict; a corrupt .swf member fails either way.
+    with tempfile.TemporaryDirectory() as tmp:
+        cdir = Path(tmp)
+        pkgs = cdir / "packages" / "t.mod"
+        pkgs.mkdir(parents=True)
+        (pkgs / "p.zip").write_bytes(zbytes({
+            "gui/uss_settings.xml": '<swffile>gui/unbound/mods/gone.swf</swffile>',
+        }))
+        state = {"mods": [{"id": "t.mod", "packages": [{"name": "p.zip"}]}]}
+        (cdir / "downloaded.json").write_text(json.dumps(state), encoding="utf-8")
+        assert validate_stage(cdir, strict=False) == 0
+        assert validate_stage(cdir, strict=True) == 1
+        (pkgs / "q.zip").write_bytes(zbytes({"x.swf": b"garbage"}))
+        state["mods"].append({"id": "t.mod", "packages": [{"name": "q.zip"}]})
+        (cdir / "downloaded.json").write_text(json.dumps(state), encoding="utf-8")
+        assert validate_stage(cdir, strict=False) == 1, "hard fail ignores --strict"
     mod_hub_families.selftest()
     print("selftest ok")
 
@@ -1625,12 +1782,15 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument(
         "stage",
-        choices=["curate", "download", "previews", "release", "discussions",
-                 "update-bodies", "enrich", "migrate-assets", "index", "selftest"],
+        choices=["curate", "download", "previews", "release", "validate",
+                 "discussions", "update-bodies", "enrich", "migrate-assets",
+                 "index", "selftest"],
     )
     ap.add_argument("--only", help="enrich only: restrict to one slug")
     ap.add_argument("--cache-dir", default=str(Path(tempfile.gettempdir()) / "wowsp-modhub"))
     ap.add_argument("--dry-run", action="store_true", help="curate only: print the selection and exit")
+    ap.add_argument("--strict", action="store_true",
+                    help="validate only: unresolved .swf references fail the stage")
     args = ap.parse_args(argv)
     cache = Path(args.cache_dir)
     cache.mkdir(parents=True, exist_ok=True)
@@ -1652,6 +1812,8 @@ def main(argv: list[str] | None = None) -> int:
         migrate_assets(cache)
     elif args.stage == "index":
         index(cache)
+    elif args.stage == "validate":
+        return validate_stage(cache, strict=args.strict)
     elif args.stage == "selftest":
         selftest()
     return 0

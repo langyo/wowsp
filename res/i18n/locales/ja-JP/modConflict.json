@@ -1,0 +1,17 @@
+{
+  "title": "Modの競合を検出しました",
+  "summary": "潜在的な問題が{count}件あります: {names}",
+  "kind": {
+    "dangling_ref": "参照先アセットが見つかりません",
+    "invalid_swf": "破損したSWFファイル",
+    "overlap": "読み込み宣言の重複"
+  },
+  "review": "詳細を見る",
+  "dismiss": "閉じる",
+  "modal": {
+    "title": "Mod競合の詳細",
+    "hint": "解決はModハブの管理ページで行えます。ゲーム起動前に該当するModを無効化するか更新してください。",
+    "files": "参照元: {files}",
+    "empty": "Modの問題は検出されませんでした。"
+  }
+}

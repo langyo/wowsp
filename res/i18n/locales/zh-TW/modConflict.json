@@ -1,0 +1,17 @@
+{
+  "title": "偵測到模組衝突",
+  "summary": "發現 {count} 處潛在模組問題：{names}",
+  "kind": {
+    "dangling_ref": "資源引用缺失",
+    "invalid_swf": "SWF 檔案損毀",
+    "overlap": "載入宣告重複"
+  },
+  "review": "查看詳情",
+  "dismiss": "知道了",
+  "modal": {
+    "title": "模組衝突詳情",
+    "hint": "這些問題需要在模組中心的管理頁處理——啟動遊戲前先停用或更新出問題的模組。",
+    "files": "引用方：{files}",
+    "empty": "未偵測到模組問題。"
+  }
+}

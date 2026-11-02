@@ -3403,4 +3403,228 @@ mod tests {
             );
         }
     }
+
+    // ── mod-integrity install gate ──────────────────────────────────────
+
+    /// The gate tests share the process-global client-index seam
+    /// (`TEST_CLIENT_INDEX`): every gate test holds the shared
+    /// serialization lock (owned by the seam's home module, so BOTH
+    /// suites that depend on the seam queue on the same mutex) across
+    /// the whole test — the seam value must hold across the entire
+    /// unpack_and_install it drives.
+    fn gate_seam_guard() -> std::sync::MutexGuard<'static, ()> {
+        crate::commands::mod_integrity::TEST_CLIENT_INDEX_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
+    /// Point the scan's client index at a deterministic fixture set (the
+    /// `TEST_RESTORE_ROOT` pattern: never depend on a real install).
+    fn gate_client_index(entries: &[&str]) {
+        let set: std::collections::HashSet<String> =
+            entries.iter().map(|s| (*s).to_string()).collect();
+        *crate::commands::mod_integrity::TEST_CLIENT_INDEX
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = Some(std::sync::Arc::new(set));
+    }
+
+    fn gate_client_index_clear() {
+        *crate::commands::mod_integrity::TEST_CLIENT_INDEX
+            .lock()
+            .unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    /// Gate-test package: the classifier-accepted payload plus the glue /
+    /// swf files the scenario needs (all under res_mods/gui/).
+    fn gate_packages(work: &Path, extra: &[(&str, &[u8])]) -> Vec<CatalogPackage> {
+        fs::create_dir_all(work).unwrap();
+        let mut entries: Vec<(&str, &[u8])> = vec![("res_mods/gui/x/a.png", b"payload")];
+        entries.extend_from_slice(extra);
+        zip_fixture(&package_archive(work, 0), &entries);
+        vec![CatalogPackage {
+            url: "https://example.com/pack.zip".into(),
+            sha256: String::new(),
+            size: 0,
+            name: "pack.zip".into(),
+        }]
+    }
+
+    /// (a) The gc-20261101232118338-22840 class: glue referencing an asset
+    /// the package does not ship, the (empty) existing mods tree does not
+    /// provide and the client does not index — the install is REFUSED
+    /// before the first res_mods mutation, with every offender named.
+    #[test]
+    fn install_refuses_package_whose_glue_references_an_unshipped_swf() {
+        let _serial = gate_seam_guard();
+        let tmp = std::env::temp_dir().join(format!("wowsp-gate-dangling-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let work = tmp.join("work");
+        let game = tmp.join("game");
+        fs::create_dir_all(game.join("bin/1")).unwrap();
+        let game_root = game.to_string_lossy().into_owned();
+        let packages = gate_packages(
+            &work,
+            &[(
+                "res_mods/gui/battle.xml",
+                b"<element url=\"battle_stats.swf\"/>".as_slice(),
+            )],
+        );
+
+        gate_client_index(&[]);
+        let err = unpack_and_install(
+            "broken-mod",
+            "Broken mod",
+            &work,
+            &game_root,
+            &packages,
+            &[],
+            &mut Vec::new(),
+        )
+        .err()
+        .expect("a dangling swf reference must refuse the install");
+        gate_client_index_clear();
+
+        let message = err.to_string();
+        assert!(message.contains("Broken mod"), "{message}");
+        assert!(message.contains("battle_stats.swf"), "{message}");
+        assert!(
+            message.contains("which the package does not contain"),
+            "{message}"
+        );
+        assert!(
+            message.contains("report the package on the mod hub"),
+            "{message}"
+        );
+        // The gate fires BEFORE the rewind/first mutation: res_mods was
+        // never created.
+        assert!(!game.join("bin/1/res_mods").exists(), "{message}");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (b) Conservatism guard: the same shape, but the EXISTING res_mods
+    /// tree provides the referenced asset — the client index still does not
+    /// know it, so ONLY the tree's presence can save the install, which it
+    /// must (absence of evidence is not an accusation).
+    #[test]
+    fn install_accepts_reference_provided_by_existing_res_mods() {
+        let _serial = gate_seam_guard();
+        let tmp = std::env::temp_dir().join(format!("wowsp-gate-existing-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let work = tmp.join("work");
+        let game = tmp.join("game");
+        let res_mods = game.join("bin/1/res_mods");
+        fs::create_dir_all(res_mods.join("gui")).unwrap();
+        fs::write(res_mods.join("gui/capabilities.swf"), b"CWS0000").unwrap();
+        let game_root = game.to_string_lossy().into_owned();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let packages = gate_packages(
+            &work,
+            &[(
+                "res_mods/gui/battle.xml",
+                b"<element url=\"capabilities.swf\"/>".as_slice(),
+            )],
+        );
+
+        gate_client_index(&[]);
+        unpack_and_install(
+            "tree-provided",
+            "Tree provided",
+            &work,
+            &game_root,
+            &packages,
+            &[],
+            &mut Vec::new(),
+        )
+        .expect("a reference the existing mods tree provides must install");
+        gate_client_index_clear();
+
+        assert!(game.join("bin/1/res_mods/gui/battle.xml").is_file());
+        assert!(game.join("bin/1/res_mods/gui/capabilities.swf").is_file());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (c) A package shipping a corrupt .swf (bad magic) is refused — the
+    /// Scaleform loader hangs instead of erroring on such payloads.
+    #[test]
+    fn install_refuses_package_shipping_a_corrupt_swf() {
+        let _serial = gate_seam_guard();
+        let tmp = std::env::temp_dir().join(format!("wowsp-gate-badswf-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let work = tmp.join("work");
+        let game = tmp.join("game");
+        fs::create_dir_all(game.join("bin/1")).unwrap();
+        let game_root = game.to_string_lossy().into_owned();
+        let packages = gate_packages(
+            &work,
+            &[("res_mods/gui/broken.swf", b"this is text, not a swf")],
+        );
+
+        // No client index needed: the magic check is evidence enough.
+        let err = unpack_and_install(
+            "corrupt-swf",
+            "Corrupt swf",
+            &work,
+            &game_root,
+            &packages,
+            &[],
+            &mut Vec::new(),
+        )
+        .err()
+        .expect("a corrupt .swf must refuse the install");
+
+        let message = err.to_string();
+        assert!(message.contains("Corrupt swf"), "{message}");
+        assert!(message.contains("gui/broken.swf"), "{message}");
+        assert!(message.contains("not a valid SWF file"), "{message}");
+        assert!(!game.join("bin/1/res_mods").exists(), "{message}");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (d) Two files of one package claiming the same asset produce an
+    /// `overlap` finding — which is advisory and must NOT block the
+    /// install (the asset ships; overlap with existing mods is the user's
+    /// call, surfaced by the scan elsewhere).
+    #[test]
+    fn install_accepts_overlap_claims_without_blocking() {
+        let _serial = gate_seam_guard();
+        let tmp = std::env::temp_dir().join(format!("wowsp-gate-overlap-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let work = tmp.join("work");
+        let game = tmp.join("game");
+        fs::create_dir_all(game.join("bin/1")).unwrap();
+        let game_root = game.to_string_lossy().into_owned();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let packages = gate_packages(
+            &work,
+            &[
+                (
+                    "res_mods/gui/one.xml",
+                    b"<element url=\"dupe.swf\"/>".as_slice(),
+                ),
+                (
+                    "res_mods/gui/two.xml",
+                    b"<url source=\"dupe.swf\"/>".as_slice(),
+                ),
+                ("res_mods/gui/dupe.swf", b"CWS0000".as_slice()),
+            ],
+        );
+
+        gate_client_index(&[]);
+        unpack_and_install(
+            "overlap-mod",
+            "Overlap mod",
+            &work,
+            &game_root,
+            &packages,
+            &[],
+            &mut Vec::new(),
+        )
+        .expect("overlap claims are advisory and must not block the install");
+        gate_client_index_clear();
+
+        assert!(game.join("bin/1/res_mods/gui/one.xml").is_file());
+        assert!(game.join("bin/1/res_mods/gui/two.xml").is_file());
+        assert!(game.join("bin/1/res_mods/gui/dupe.swf").is_file());
+        fs::remove_dir_all(&tmp).ok();
+    }
 }

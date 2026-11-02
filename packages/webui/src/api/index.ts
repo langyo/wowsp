@@ -242,4 +242,6 @@ export type {
   PurgeReinstallReport,
   PurgeSkip,
   GameRestartInfo,
+  ModIntegrityProblem,
+  ModIntegrityReport,
 } from "./client";

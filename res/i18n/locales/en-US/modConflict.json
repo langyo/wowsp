@@ -1,0 +1,17 @@
+{
+  "title": "Mod conflicts detected",
+  "summary": "{count} potential mod problems found: {names}",
+  "kind": {
+    "dangling_ref": "Missing asset reference",
+    "invalid_swf": "Corrupt SWF file",
+    "overlap": "Duplicated load claim"
+  },
+  "review": "Review",
+  "dismiss": "Dismiss",
+  "modal": {
+    "title": "Mod conflict details",
+    "hint": "These are resolved on the mod hub's management page — disable or update the offending mod before launching the game.",
+    "files": "Referenced by: {files}",
+    "empty": "No mod problems detected."
+  }
+}

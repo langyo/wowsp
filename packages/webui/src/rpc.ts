@@ -193,6 +193,11 @@ export const RPC = {
   game_crash_quarantine_mod: "game_crash_quarantine_mod",
   game_crash_restore_mod: "game_crash_restore_mod",
   game_crash_restart: "game_crash_restart",
+  // Pre-launch mod-conflict scan (commands/mod_integrity.rs): the static
+  // "would this mod tree break the game UI?" pass over an install's mod
+  // trees, pushed unprompted as wowsp://mod-conflict — see
+  // api/modules/modintegrity.ts.
+  mod_integrity_scan: "mod_integrity_scan",
   update_check: "update_check",
   update_download: "update_download",
   update_cancel: "update_cancel",
