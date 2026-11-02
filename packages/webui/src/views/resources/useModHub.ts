@@ -329,6 +329,38 @@ export function useModHub() {
     }
   }
 
+  // Stale-while-revalidate swap: the backend's background revalidation
+  // replaced the cached index — reload SILENTLY (no spinner flip; the
+  // refresh now serves the new copy instantly, so this is one fast IPC).
+  // The listener handshake is async (Promise<unlisten>); when the view
+  // unmounts mid-handshake the resolved unlisten is released at once (the
+  // crash store's epoch-guard shape), so a lost race never leaks the
+  // listener onto a dead view.
+  let offCatalogSwap: (() => void) | null = null;
+  let catalogSwapDead = false;
+  void (async () => {
+    const off =
+      (await api.listenCatalogUpdated?.(() => {
+        void api
+          .modCatalogRefresh(false)
+          .then((index) => {
+            catalog.value = index.mods;
+            catalogSource.value = index.sourceVersion;
+            catalogFetched.value = index.fetchedAt;
+          })
+          .catch(() => {});
+      })) ?? null;
+    if (catalogSwapDead) {
+      off?.();
+      return;
+    }
+    offCatalogSwap = off;
+  })().catch(() => {});
+  onUnmounted(() => {
+    catalogSwapDead = true;
+    offCatalogSwap?.();
+  });
+
   async function loadRecords() {
     if (recordsLoading.value) return;
     recordsLoading.value = true;

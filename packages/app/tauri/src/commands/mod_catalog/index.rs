@@ -5,8 +5,82 @@
 use anyhow::anyhow;
 
 use super::*;
+
+/// Broadcast when a background revalidation replaced the cached index:
+/// open hub views reload silently (the next refresh serves the new copy
+/// instantly).
+pub(crate) const CATALOG_UPDATED_EVENT: &str = "wowsp://mod-catalog-updated";
+
+/// Background revalidation cadence: the fresh-cache hot path serves
+/// instantly, so this is how soon a moved release lands at the latest.
+const REVALIDATE_EVERY_SECS: i64 = 3600;
+
+/// One-process rate limiter decision (pure, for the cadence test).
+fn revalidation_due(last_unix: i64, now_unix: i64) -> bool {
+    last_unix <= 0 || now_unix - last_unix >= REVALIDATE_EVERY_SECS
+}
+
+static LAST_REVALIDATION: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+
+/// The stale-while-revalidate tail: digest-check the release OFF the hot
+/// path; when the asset moved, refetch + swap the cache + broadcast.
+/// Failures are quiet — the next due window retries, and the served copy
+/// never regresses.
+fn spawn_background_revalidation(app: tauri::AppHandle) {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let last = LAST_REVALIDATION.load(std::sync::atomic::Ordering::Relaxed);
+    if !revalidation_due(last, now) {
+        return;
+    }
+    LAST_REVALIDATION.store(now, std::sync::atomic::Ordering::Relaxed);
+    tauri::async_runtime::spawn(async move {
+        let Ok(clients) = crate::commands::network::HttpPair::build(|b| b) else {
+            return;
+        };
+        let Ok(remote) =
+            release_digest::fetch_official_sha256(&clients, INDEX_CHANNEL, INDEX_TAG, INDEX_ASSET)
+                .await
+        else {
+            return; // offline / degraded — a later window retries
+        };
+        let Some(index) = load_cached_index() else {
+            return;
+        };
+        if !index.source_sha256.is_empty() && index.source_sha256 == remote {
+            return; // release unchanged
+        }
+        tracing::info!("mod catalog release moved — background refetch");
+        let Ok((fresh, _)) = fetch_index().await else {
+            return;
+        };
+        // The swap must actually land before the broadcast — emitting on a
+        // failed write would make listeners re-serve the old copy (a no-op
+        // that masks the failure); the next window retries instead.
+        let swapped = data_file(INDEX_CACHE_FILE).and_then(|path| {
+            let json = serde_json::to_string(&fresh).map_err(|e| anyhow!("{e}"))?;
+            let tmp = path.with_extension("json.tmp");
+            fs::write(&tmp, json).map_err(|e| anyhow!("{e}"))?;
+            fs::rename(&tmp, &path).map_err(|e| anyhow!("{e}"))
+        });
+        if let Err(e) = swapped {
+            tracing::warn!(error = %e, "background catalog swap failed");
+            return;
+        }
+        use tauri::Emitter;
+        if let Err(e) = app.emit(CATALOG_UPDATED_EVENT, ()) {
+            tracing::warn!(error = %e, "emit catalog-updated failed");
+        }
+    });
+}
+
 #[tauri::command]
-pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
+pub async fn mod_catalog_refresh(
+    app: tauri::AppHandle,
+    force: bool,
+) -> CommandResult<CatalogIndex> {
     let mut cached = if force { None } else { load_cached_index() };
     if let Some(index) = cached.as_ref() {
         // A cache written by an older app build can lack the i18n maps
@@ -18,8 +92,20 @@ pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
         // instead of after the TTL. When the digest lookup fails
         // (offline), the TTL alone decides and the cache stays the
         // offline fallback if the fetch below fails too.
+        //
+        // The DIGEST CHECK NO LONGER BLOCKS the fresh hot path: a
+        // localized copy inside the TTL serves IMMEDIATELY (the field
+        // network measured 0.8-6.4 s per signed round-trip, paid on
+        // every hub open AND every freshness assessment — the "spinner
+        // on every open" report); a rate-limited background
+        // revalidation swaps the cache and broadcasts when the release
+        // moved. Past the TTL the digest stays the arbiter below.
         let localized = index.mods.iter().any(|m| !m.i18n.is_empty()) || index.mods.is_empty();
         let fresh = fetched_recently(&index.fetched_at);
+        if localized && fresh {
+            spawn_background_revalidation(app);
+            return Ok(index.clone());
+        }
         let clients = crate::commands::network::HttpPair::build(|b| b).ok();
         let digest = match clients {
             Some(clients) => release_digest::fetch_official_sha256(
@@ -37,7 +123,10 @@ pub async fn mod_catalog_refresh(force: bool) -> CommandResult<CatalogIndex> {
             (Some(remote), local) => local.is_empty() || remote == local,
             (None, _) => true,
         };
-        if localized && fresh && matches_release {
+        // (Already-fresh localized copies returned above; this stale
+        // path serves when the digest confirms the release or cannot be
+        // reached.)
+        if localized && matches_release {
             return Ok(index.clone());
         }
         if digest.is_some() && !matches_release {
@@ -434,4 +523,41 @@ pub(crate) fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogInde
         source_sha256: String::new(),
         mods,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The background revalidation cadence: first-ever run is due, a
+    /// recent run is not, and the window re-arms after the interval.
+    #[test]
+    fn revalidation_rearms_hourly() {
+        assert!(revalidation_due(0, 1_000), "never ran -> due");
+        assert!(!revalidation_due(1_000, 1_000 + 60), "fresh run -> not due");
+        assert!(!revalidation_due(999, 999 + REVALIDATE_EVERY_SECS - 1));
+        assert!(
+            revalidation_due(999, 999 + REVALIDATE_EVERY_SECS),
+            "the window re-arms after the full interval"
+        );
+    }
+
+    /// The TTL gate that guards the instant-serve hot path. Stamps are
+    /// built against the REAL now — the gate compares against it.
+    #[test]
+    fn fetched_recently_follows_the_ttl() {
+        let base = Utc::now();
+        let stamp = |hours_before: i64| {
+            chrono::DateTime::from_timestamp(base.timestamp() - hours_before * 3600, 0)
+                .unwrap()
+                .to_rfc3339()
+        };
+        assert!(fetched_recently(&stamp(INDEX_CACHE_TTL_HOURS - 1)));
+        assert!(!fetched_recently(&stamp(INDEX_CACHE_TTL_HOURS + 1)));
+        assert!(
+            fetched_recently(&base.to_rfc3339()),
+            "the fetch moment itself is inside the TTL"
+        );
+        assert!(!fetched_recently("not-a-stamp"), "unparseable -> stale");
+    }
 }
