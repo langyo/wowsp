@@ -150,12 +150,18 @@
     border-bottom: 1px solid rgb(var(--color-border) / 15%);
 
     /* Captions sit over their columns: the name leads left, every
-       number column is right-aligned like the values under it. */
+       number column is right-aligned like the values under it, and the
+       trailing date caption CENTERS over its capsule (the capsule is a
+       pill, not a number — see __col-date). */
     span {
       text-align: right;
 
       &:first-child {
         text-align: left;
+      }
+
+      &:last-child {
+        text-align: center;
       }
     }
   }
@@ -241,10 +247,19 @@
   }
 
   &__col-date {
-    /* The DateTag capsule carries its own ink; the column only anchors
-       it right and tones the em-dash fallback. */
+    /* The DateTag capsule is the column's content, not a number: it
+       CENTERS horizontally in the 90px date track (the head caption
+       centers with it, so caption and capsule share one axis — the old
+       right-anchored pill left its rounded edge on the number column's
+       right rule and read off the column). Vertically it centers in the
+       row like every data cell: the explicit align-items pins the pill
+       box to the row's optical center instead of relying on the flex
+       default, and the shared 1.5 line box matches the number cells
+       (the em-dash no-data fallback is text, not a capsule). */
     display: flex;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: center;
+    line-height: 1.5;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
   }
@@ -287,9 +302,10 @@
       grid-column: 1 / -1;
     }
 
-    /* The trailing date lands in the RIGHT cell of its pair row, so the
-       capsule right-aligns under the number columns instead of floating
-       at the left half's end. */
+    /* The trailing date lands in the RIGHT cell of its pair row — the
+       same centered-capsule contract as the desktop track, just inside
+       the pair cell (no right-edge hug, so it does not read as part of
+       the number column above it). */
     &__col-date {
       grid-column: 2;
     }
