@@ -647,6 +647,60 @@
     // 1.5rem side gutters cost 48px of a 393px viewport — the compare
     // table's sticky identity columns alone claim 240px+, so every
     // reclaimed pixel roughly doubles the visible data window.
+    // The collapsed filter card: the search row plus a 筛选 trigger that
+    // opens the groups in a bottom sheet — the groups themselves stay the
+    // shared markup (renderFilterGroups), just re-homed in the popover.
+    &__filters--phone {
+      padding: 0.6rem;
+
+      .ships-view__filter-top {
+        gap: 0.5rem;
+      }
+    }
+
+    &__filter-trigger {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex: none;
+      padding: 0 0.7rem;
+      min-height: 36px;
+      border: 1px solid rgb(var(--color-border) / 30%);
+      border-radius: var(--radius-md);
+      background: rgb(var(--color-surface));
+      color: rgb(var(--color-text));
+      font-size: var(--text-sm);
+      white-space: nowrap;
+
+      &.is-active {
+        border-color: rgb(var(--color-primary) / 55%);
+        color: rgb(var(--color-primary));
+      }
+    }
+
+    &__filter-count {
+      min-width: 1.15rem;
+      padding: 0 0.25rem;
+      border-radius: 999px;
+      background: rgb(var(--color-primary) / 15%);
+      color: rgb(var(--color-primary));
+      font-size: var(--text-2xs);
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.15rem;
+    }
+
+    &__filter-sheet {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      min-width: 0;
+
+      .ships-view__clear {
+        align-self: flex-end;
+      }
+    }
+
     &__body-inner {
       padding: 0 0.75rem 1rem;
     }
