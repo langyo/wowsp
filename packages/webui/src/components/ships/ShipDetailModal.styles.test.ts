@@ -1,18 +1,20 @@
 /**
  * Contract: the spec panel's help icons sit centered on their labels, and
- * the panel itself lays its group cards out as a GRID.
+ * the panel delegates its waterfall layout to hikari's HkMasonry.
  *
  * Section labels ("HE Shell", "AP Shell", …) used to be plain inline spans,
  * so their inline-flex help icon sat on the text baseline — visibly low and
  * flush against the label. The label must own a centered flex row with its
  * own gap, and the icon must not re-introduce line-box baseline drift.
  *
- * The panel must also never return to CSS multicol: multicol balances
- * column heights by fragmenting content, and a dynamic in-panel change
- * (the alternate-firing toggle swaps rows in place) re-fragments every
- * column on stale balancers — older WebView2 / Android WebViews kept the
- * pre-change column height and clipped the cards at the old bottom edge
- * (mid-row slices over blank space). Grid places each card as a whole.
+ * The panel must also never carry a layout of its own again: CSS multicol
+ * fragmented its cards and a stale balancer (older WebView2 / Android
+ * WebViews) clipped them at the pre-change column bottom edge (mid-row
+ * slices, 2026-11 report), and the interim grid wasted vertical space on
+ * row bands. HkMasonry packs measured cards into contiguous columns; this
+ * stylesheet only tunes the host (the masonry gap token and density), so
+ * .specs-panel must stay token-only and the fragmentation/grid machinery
+ * must never return.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -30,15 +32,16 @@ const scss = readFileSync(
 
 describe("ShipDetailModal specs help-icon alignment", () => {
 
-  it("lays the spec cards out as a grid, never as multicol columns", () => {
-    // Multicol fragmentation + in-place content changes (alt-firing toggle)
-    // clip cards on stale-balancer WebViews — grid is the whole-card layout.
+  it("keeps .specs-panel a token-only host of HkMasonry", () => {
+    // The waterfall packing lives in the component; this sheet may only set
+    // the density token. Any layout declaration here would fight the
+    // component's own .hk-masonry rules.
     expect(scss).toMatch(
-      /\.specs-panel\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(220px,\s*1fr\)\);[^}]*align-items:\s*start;/s,
+      /\.specs-panel\s*\{[^}]*--hk-masonry-gap:[^}]*\}/s,
     );
-    // The negative patterns pin the two-column rule out; the \n-anchor keeps
-    // "grid-template-columns:" from matching the bare "columns:" needle.
-    expect(scss).not.toMatch(/\.specs-panel\s*\{[^}]*\n  columns:/s);
+    expect(scss).not.toMatch(
+      /\.specs-panel\s*\{[^}]*\n  (display|grid-template-columns|align-items|columns|gap):/s,
+    );
     expect(scss).not.toMatch(/\.specs-group\s*\{[^}]*break-inside:/s);
   });
 

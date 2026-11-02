@@ -119,24 +119,20 @@
 }
 
 /* ── Player-friendly specs panel ──────────────────────────────────────────
-   Groups (Survivability / Main Battery / ...) are cards in a responsive
-   grid. Each group has an icon + title header and a label/value row list.
-   Rows align labels left, values right, with a consistent line height so
-   values line up vertically within a group. The help icon next to a label
-   reveals the global data-hint tooltip explaining the stat.
-   The panel is a plain GRID, not a CSS-multicol flow: multicol balances
-   column heights by fragmenting content, and a dynamic in-panel change
-   (the alternate-firing toggle swaps rows in place) re-fragments every
-   column on engines whose balancer is stale — older WebView2 / Android
-   WebViews kept the pre-change column height and CLIPPED the cards at the
-   old bottom edge (mid-row slices over blank space below). Grid places
-   each card as a whole; cards in the same row band align tops via
-   align-items: start while every card keeps its own height. */
+   Groups (Survivability / Main Battery / ...) are cards in a WATERFALL —
+   hikari's HkMasonry owns the column packing: measured shortest-column
+   placement, so every column reads as one contiguous card stack and an
+   in-place content change (the alternate-firing toggle swapping shell
+   rows) re-packs whole cards instead of fragmenting them the way the old
+   CSS-multicol layout did on stale-balancer WebViews (rows sliced
+   mid-glyph over blank space, 2026-11 report).
+   This class is therefore only the HOST TUNING for the component root
+   (it lands beside the component's own .hk-masonry class): the 220px min
+   column keeps the encyclopedia density and the gap rides the masonry
+   token. Any layout property here would fight the component — keep it
+   token-only. */
 .specs-panel {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 0.6rem;
-  align-items: start;
+  --hk-masonry-gap: 0.6rem;
 }
 
 .specs-group {
