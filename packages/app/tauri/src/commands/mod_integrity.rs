@@ -233,7 +233,7 @@ fn client_index_for(game_root: Option<&str>) -> Option<Arc<HashSet<String>>> {
 /// set as UNRELIABLE (a missing name may simply not have been visited).
 struct TreeWalk {
     /// Lowercased file basenames seen anywhere in the trees (the
-    /// conservative presence test — see [`collect_tree_basenames`]).
+    /// conservative presence test the dangling-reference scan reads).
     names: HashSet<String>,
     /// (absolute path, tree-relative slash path) of the glue files worth
     /// deep-reading, in walk order.
@@ -304,22 +304,6 @@ fn walk_trees(bases: &[PathBuf]) -> TreeWalk {
         }
     }
     walk
-}
-
-/// Lowercased basenames of every file in the trees — the conservative
-/// presence test: a reference whose basename exists ANYWHERE in any
-/// scanned tree counts as provided (the loader resolves .swf loads by
-/// basename along the mods path, so the directory a file sits in does
-/// not matter). Pnfmods/modforge subtrees are excluded (toolchain stub
-/// swfs — same carve-out as game_crash.rs); the walk is capped at the
-/// same 4000-entry budget.
-// The standalone presence-set half of the scanner: scan_trees reads the
-// names off its own single walk, and this wrapper is the API the planned
-// game_crash.rs refactor consumes (same forward-declared shape as the
-// scan command until that lands).
-#[allow(dead_code)]
-pub(crate) fn collect_tree_basenames(bases: &[PathBuf]) -> HashSet<String> {
-    walk_trees(bases).names
 }
 
 // ── overlap claims: the load directives two files can fight over ───────────
@@ -636,10 +620,6 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
 /// A missing mods tree answers an EMPTY report rather than an error — "no
 /// mods installed" is a clean bill, not a failure — and so does a root
 /// with no bin version yet; only a present, scannable tree can accuse.
-// Registered in lib.rs's generate_handler by the follow-up wiring commit;
-// until then the command fn has no in-crate caller (commands/ is a private
-// module, so pub alone does not count as a use).
-#[allow(dead_code)]
 #[tauri::command]
 pub async fn mod_integrity_scan(game_root: String) -> CommandResult<ModIntegrityReport> {
     // Bounded fs work (≤4000 entries, ≤400 small reads) — still kept off
@@ -834,13 +814,13 @@ mod tests {
     }
 
     #[test]
-    fn collect_tree_basenames_lowercases_and_skips_toolchain() {
+    fn walk_trees_lowercases_and_skips_toolchain() {
         let dir = TempDir::new("basenames");
         dir.touch("gui/Battle_stats.SWF", b"CWS0000");
         dir.touch("PnFMods/ModForge/Validate.py", b"stub.swf");
         dir.touch("PnFMods/ModForge/stubs/__forge_stub.swf", b"garbage");
         dir.touch("config.json", b"{}");
-        let names = collect_tree_basenames(&[dir.path().to_path_buf()]);
+        let names = walk_trees(&[dir.path().to_path_buf()]).names;
         assert!(names.contains("battle_stats.swf"), "{names:?}");
         assert!(names.contains("config.json"), "{names:?}");
         // The toolchain subtree contributes nothing — neither its glue nor
