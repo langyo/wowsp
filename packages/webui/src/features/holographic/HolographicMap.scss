@@ -1002,7 +1002,10 @@
   align-items: flex-start;
   gap: 2.25rem;
   width: 100%;
-  max-width: 1040px;
+  /* Wider than the historical 1040: the identity line now carries the
+     clan/division/marker tags BEFORE the nick, so the two side-by-side
+     tables need the extra room to keep names readable. */
+  max-width: 1160px;
 }
 
 /* AI analysis layer on: the four decision-score columns need room, so the
@@ -1054,9 +1057,9 @@
      the lamp/status columns slide out of view. The status strip keeps the
      remainder and dissolves its own overflow. */
   .holo-map__roster-board--ai {
-    .holo-roster__col--icon { width: 1.4rem; }
-    .holo-roster__col--player { width: 20%; }
-    .holo-roster__col--ship { width: 20%; }
+    .holo-roster__col--icon { width: 2.5rem; }
+    .holo-roster__col--player { width: 24%; }
+    .holo-roster__col--ship { width: 19%; }
     .holo-roster__col--contrib { width: 7ch; }
     .holo-roster__col--whole { width: 5ch; }
     .holo-roster__col--instant { width: 5ch; }
@@ -1064,6 +1067,11 @@
 
     .holo-roster__th,
     .holo-roster__td { padding-left: 0.35rem; padding-right: 0.35rem; }
+
+    /* Re-assert the icon cell's zero right padding (the rule above widens
+       every cell's padding): the marker + HP bar pair needs the full
+       column box or the bar's tail clips. */
+    .holo-roster__td--icon { padding-right: 0; }
   }
 }
 
@@ -1073,10 +1081,9 @@
    becomes the narrow remainder. */
 @container (max-width: 520px) {
   .holo-map__roster-board--ai {
-    .holo-roster__col--icon { width: 1.2rem; }
-    .holo-roster__col--player { width: 17%; }
-    .holo-roster__col--tier { width: 2.5ch; }
-    .holo-roster__col--ship { width: 17%; }
+    .holo-roster__col--icon { width: 2.45rem; }
+    .holo-roster__col--player { width: 14%; }
+    .holo-roster__col--ship { width: 16%; }
     .holo-roster__col--kills { width: 2.5ch; }
     .holo-roster__col--contrib { width: 6ch; }
     .holo-roster__col--whole { width: 4ch; }
@@ -1084,7 +1091,10 @@
     .holo-roster__col--lamp { width: 2.2ch; }
 
     .holo-roster__th,
-    .holo-roster__td { padding-left: 0.3rem; padding-right: 0.3rem; }
+    .holo-roster__td { padding-left: 0.25rem; padding-right: 0.25rem; }
+
+    /* The icon cell keeps its flush right edge (see the 899 tier note). */
+    .holo-roster__td--icon { padding-right: 0; }
   }
 }
 
@@ -1107,14 +1117,14 @@
   border-collapse: collapse;
 }
 
-.holo-roster__col--icon { width: 1.7rem; }
-.holo-roster__col--player { width: 28%; }
-/* Tier badge lives in its own fixed-width column (a plain ch share is
-   wide enough for the longest Roman numeral, VIII) — centering the
-   numerals there keeps every ship name starting at the same x, no
-   matter its tier. */
-.holo-roster__col--tier { width: 3ch; }
-.holo-roster__col--ship { width: 24%; }
+/* The icon cell carries the class marker plus the HP mini bar BESIDE it
+   (14px icon + 4px gap + 16px bar + the cell's left padding), so it is
+   wider than the bare icon and the name column starts right of the bar. */
+.holo-roster__col--icon { width: 2.6rem; }
+.holo-roster__col--player { width: 32%; }
+/* The ship cell = tier numeral + ship name on one line: it absorbs the
+   width the retired standalone tier column used to hold. */
+.holo-roster__col--ship { width: 27%; }
 .holo-roster__col--kills { width: 3.5ch; }
 /* AI decision-score columns (contribution · whole-game agreement · instant
    score · lamp): compact fixed shares so the four of them never push the
@@ -1136,7 +1146,6 @@
   white-space: nowrap;
 
   &--icon { padding-right: 0; }
-  &--tier { padding-left: 0; padding-right: 0; text-align: center; }
   &--num { text-align: center; }
 }
 
@@ -1148,7 +1157,6 @@
   text-overflow: ellipsis;
 
   &--icon { padding-right: 0; }
-  &--tier { padding-left: 0; padding-right: 0; text-align: center; }
   &--num { text-align: center; font-variant-numeric: tabular-nums; }
   &--lamp { padding-left: 0; padding-right: 0; text-align: center; }
 }
@@ -1174,31 +1182,97 @@
   td { opacity: 0.55; }
 }
 
+/* Tier numeral leads the ship cell on the SAME type size as the name —
+   only the ink sets it apart (strong numeral, dim ship name), left-aligned
+   like the rest of the cell. */
 .holo-roster__tier {
-  font-weight: 600;
   color: var(--holo-hud-strong);
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.35em;
+}
+
+.holo-roster__ship {
+  color: var(--holo-hud-dim);
+}
+
+/* Identity line before the nickname: [clan] [division tag] [marker tag]
+   [nick] — the battle facts lead, the game's own results-screen order. The
+   nick is the only elastic item (it ellipsises; the tags never shrink). */
+.holo-roster__identity {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: middle;
+}
+
+/* The game's own '[TAG]nick' convention: the clan tag is a dim prefix
+   (the Tab sort key already reads it as part of the display name). */
+.holo-roster__clan {
+  flex: none;
+  color: var(--holo-hud-dim);
+  opacity: 0.85;
   font-variant-numeric: tabular-nums;
 }
 
-/* Left icon column: the BattleIcon with the afloat HP mini bar hanging
-   under it — the top scorebar's slot-bar recipe (dark rail + team-coloured
-   fill driven by --hp-pct). Sunk rows and rows without an HP stream render
-   no bar at all, so appearing never shifts the row. */
+/* The division tag joins the roster's small-tag register (the post-battle
+   identity line's 0.78em face) instead of shouting over the nick. */
+.holo-roster__td--name .division-tag {
+  flex: none;
+  font-size: 0.78em;
+}
+
+/* Player-marker tag (消极作战 / 疑似作弊 / 隐藏高手): DivisionTag's
+   rubber-stamp face pressed in the marker's own ink — the ink and the 55%
+   border colour ride inline from MARKER_DOT_COLORS. */
+.holo-roster__marker-tag {
+  flex: none;
+  font-size: var(--text-2xs);
+  font-weight: 700;
+  line-height: 1.2em;
+  white-space: nowrap;
+  padding: 0.04em 0.4em;
+  border: 1px solid; // colour set inline (the marker ink at 55%)
+  border-radius: 0.45em;
+  background: transparent;
+  translate: 0 0.2em;
+}
+
+/* The nickname keeps the marker tint and owns the ellipsis when the
+   identity line runs out of room. */
+.holo-roster__nick {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Left icon cell: the BattleIcon with the afloat HP mini bar BESIDE it
+   (right of the icon, vertically centred) — the top scorebar's slot-bar
+   recipe (dark rail + team-coloured fill driven by --hp-pct). Sunk rows and
+   rows without an HP stream render no bar at all, so appearing never shifts
+   the row. */
 .holo-roster__icon {
   display: inline-flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   vertical-align: middle;
 }
 
 .holo-roster__hp {
   display: block;
   position: relative;
-  width: 14px;
+  flex: none;
+  width: 16px;
   height: 3px;
   border-radius: 2px;
-  background: rgb(9 13 22 / 65%);
+  /* Neutral mid-grey rail (not the top bar's dark-on-glass ink): the roster
+     sits on the scrim in BOTH themes, so the track must read on dark and
+     light grounds alike. */
+  background: rgb(120 132 148 / 55%);
   overflow: hidden;
   pointer-events: none;
 
@@ -1212,10 +1286,6 @@
 
   &--ally::after { background: #4ade80; }
   &--enemy::after { background: #f87171; }
-}
-
-.holo-roster__ship {
-  color: var(--holo-hud-dim);
 }
 
 .holo-roster__zero { color: var(--holo-hud-dim); opacity: 0.7; }

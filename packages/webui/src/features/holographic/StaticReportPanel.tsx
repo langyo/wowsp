@@ -4,18 +4,32 @@
  * One vertical column (the "long image" is exactly this DOM node exported
  * via html-to-image): header with the perspective picker and whole-game
  * scores, a coverage bar that paints the unresolvable segments instead of
- * papering over them, the instant-score sparkline with moment markers,
- * and one card per key decision — situation, action, the models' verdict,
- * and the realised outcome. `onSeek` jumps the 3D board's playhead so the
- * same report doubles as an in-app step-through; the picker switches any
- * roster perspective (the Rust side reuses its scoring cache, so a switch
- * is one IPC away).
+ * papering over them, the instant-score timeline through hikari's own
+ * HkTrendChart (with the coverage-gap / key-moment marks as a thin overlay
+ * the chart's props cannot express), and one card per key decision —
+ * situation, action, the models' verdict, and the realised outcome.
+ * `onSeek` jumps the 3D board's playhead so the same report doubles as an
+ * in-app step-through; the picker switches any roster perspective (the
+ * Rust side reuses its scoring cache, so a switch is one IPC away).
+ *
+ * CHROMELESS: the replay view embeds this column in its hikari window and
+ * renders the ONE window head itself (title/spinner/export/close); the
+ * `chromeless` prop drops the panel's own title row and card frame and the
+ * host drives the exposed exportPng through a component ref. The demo
+ * route keeps the standalone chrome.
  */
 import { computed, defineComponent, ref, type PropType } from "vue";
-import { HkButton, HkScrollContainer, HkSpinner, HkTag } from "@celestia-island/hikari";
-import { Camera, Download, X } from "@lucide/vue";
+import {
+  HkButton,
+  HkScrollContainer,
+  HkSpinner,
+  HkTag,
+  HkTrendChart,
+  type TrendPen,
+} from "@celestia-island/hikari";
+import { Camera, Check, Download, Minus, Percent, X } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
-import type { StaticMoment, StaticReport, StaticRosterEntry } from "@/api";
+import type { StaticCoverage, StaticMoment, StaticReport, StaticRosterEntry } from "@/api";
 import "./StaticReportPanel.scss";
 
 const pct = (v: number): string => Math.round(v * 100).toString();
@@ -40,6 +54,29 @@ export function coverageClass(c: { samples: number; completeness: number }): str
   return c.completeness > 0.9 ? "full" : "partial";
 }
 
+/** Coverage badge face — one hikari HkTag, variant picked by the coverage
+ *  class, and the state glyph comes from the lucide set (Check / Percent /
+ *  Minus) instead of a hand-rolled text glyph. Module-level so both picker
+ *  teams paint exactly the same face. */
+function coverageTag(coverage: StaticCoverage) {
+  const kind = coverageClass(coverage);
+  const variant = kind === "full" ? "success" : kind === "partial" ? "warning" : "danger";
+  return (
+    <HkTag variant={variant} size="sm" class="srp-picker__badge">
+      {kind === "full" ? (
+        <Check size={11} aria-hidden="true" />
+      ) : kind === "partial" ? (
+        <>
+          <Percent size={10} aria-hidden="true" />
+          <span>{pct(coverage.completeness)}</span>
+        </>
+      ) : (
+        <Minus size={11} aria-hidden="true" />
+      )}
+    </HkTag>
+  );
+}
+
 /** The caption params per category; the localized sentence comes from
  * the i18n table keyed by `replay.report.cat_<category>`. */
 /** Category → the HkTag variant (and marker class) it paints — one table
@@ -58,53 +95,126 @@ function categoryTone(category: StaticMoment["category"]): string {
   return CATEGORY_TONE[category].tone;
 }
 
-const Sparkline = defineComponent({
-  name: "StaticReportSparkline",
+/** Lead-in before battle-second 0 inside HkTrendChart's ROLLING WALL-CLOCK
+ *  window (seconds): the chart filters samples older than its window and
+ *  anchors the window at "now", so t=0 has to sit one headroom step inside
+ *  the left edge. The marks overlay maps battle time with the same frame. */
+const TREND_HEADROOM_S = 2;
+/** Frame height handed to HkTrendChart (px; .srp-trend mirrors the same
+ *  frame and its echarts grid insets in the stylesheet). */
+const TREND_HEIGHT_PX = 160;
+const TREND_HEIGHT = `${TREND_HEIGHT_PX}px`;
+
+/**
+ * The instant-score timeline, rendered through hikari's own HkTrendChart
+ * (echarts line chart) — the upstream face that replaces the hand-rolled
+ * SVG sparkline. HkTrendChart streams against a rolling WALL-CLOCK window,
+ * so a finished battle's battle-seconds are anchored to "now": the last
+ * sample lands at the right edge and the window spans the whole battle plus
+ * one headroom step. Whatever the chart's props cannot express — the
+ * coverage gaps and the key-moment marks — rides a thin overlay aligned to
+ * the chart's grid (see .srp-trend in the stylesheet).
+ */
+const TrendChart = defineComponent({
+  name: "StaticReportTrendChart",
   props: {
     report: { type: Object as PropType<StaticReport>, required: true },
   },
   setup(props) {
-    const W = 640;
-    const H = 56;
-    const path = computed(() => {
-      const tl = props.report.timeline;
-      if (tl.length < 2) return "";
-      const dur = Math.max(1, props.report.durationS);
-      return tl
-        .map((s, i) => {
-          const x = ((s.t / dur) * W).toFixed(1);
-          const y = (H - 4 - s.inst * (H - 10)).toFixed(1);
-          return `${i === 0 ? "M" : "L"}${x},${y}`;
-        })
-        .join(" ");
+    const duration = computed(() => Math.max(1, props.report.durationS));
+    const windowMs = computed(() => (duration.value + TREND_HEADROOM_S) * 1000);
+    /** Battle-second t -> % across the chart's time window. */
+    const frac = (tSec: number): number =>
+      ((tSec + TREND_HEADROOM_S) / (duration.value + TREND_HEADROOM_S)) * 100;
+
+    const pens = computed<TrendPen[]>(() => {
+      const anchor = Date.now();
+      return [
+        {
+          label: i18nT("replay.report.instScore"),
+          data: props.report.timeline.map((s) => ({
+            time: anchor - (duration.value - s.t) * 1000,
+            value: s.inst * 100,
+          })),
+        },
+      ];
     });
     const gaps = computed(() => {
-      const dur = Math.max(1, props.report.durationS);
       const me = props.report.roster.find((r) => r.entityId === props.report.entityId);
-      return (me?.coverage.gapSegments ?? []).map(([a, b]) => ({
-        x: (a / dur) * W,
-        w: Math.max(2, ((b - a) / dur) * W),
+      return (me?.coverage.gapSegments ?? []).map(([a, b], i) => ({
+        key: `gap-${i}`,
+        left: frac(a),
+        // Keep a hairline width for the shortest unresolvable segment.
+        width: Math.max(0.2, frac(b) - frac(a)),
       }));
     });
-    const markers = computed(() => {
-      const dur = Math.max(1, props.report.durationS);
-      return props.report.moments.map((m) => ({
-        x: (m.t / dur) * W,
-        tone: categoryTone(m.category),
+    const markers = computed(() =>
+      props.report.moments.map((m) => ({
         key: m.t,
-      }));
-    });
+        left: frac(m.t),
+        tone: categoryTone(m.category),
+      })),
+    );
+    /** X-axis labels painted by the overlay in BATTLE time. The chart's own
+     *  wall-clock labels are masked (the streaming window always ends at the
+     *  viewer's clock, so they neither describe the battle nor stay stable
+     *  across exports of the same report). */
+    const ticks = computed(() =>
+      [0, 0.25, 0.5, 0.75, 1].map((f, i) => {
+        const tSec = f * duration.value;
+        const mins = Math.floor(tSec / 60);
+        const secs = Math.floor(tSec % 60);
+        return {
+          key: `tick-${i}`,
+          left: frac(tSec),
+          anchor: i === 0 ? "start" : i === 4 ? "end" : "center",
+          label: `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`,
+        };
+      }),
+    );
     return () => (
-      <svg class="srp-spark" width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-        {gaps.value.map((g, i) => (
-          <rect key={`g${i}`} class="srp-spark__gap" x={g.x} y={0} width={g.w} height={H} />
-        ))}
-        <line class="srp-spark__mid" x1={0} y1={H / 2} x2={W} y2={H / 2} />
-        <path class="srp-spark__line" d={path.value} />
-        {markers.value.map((m) => (
-          <line key={m.key} class={`srp-spark__mark srp-spark__mark--${m.tone}`} x1={m.x} y1={0} x2={m.x} y2={H} />
-        ))}
-      </svg>
+      <div class="srp-trend">
+        <HkTrendChart
+          class="srp-trend__chart"
+          pens={pens.value}
+          height={TREND_HEIGHT}
+          timeWindowMs={windowMs.value}
+          showThresholds={false}
+        />
+        {/* Chart-unexpressible annotations only: HkTrendChart's props cover
+            pens/height/thresholds — not x-axis marks, range bands or battle
+            (rather than wall-clock) time labels. */}
+        <div class="srp-trend__overlay" aria-hidden="true">
+          {gaps.value.map((g) => (
+            <span
+              key={g.key}
+              class="srp-trend__gap"
+              style={{ left: `${g.left}%`, width: `${g.width}%` }}
+            />
+          ))}
+          {markers.value.map((m) => (
+            <span
+              key={m.key}
+              class={`srp-trend__mark srp-trend__mark--${m.tone}`}
+              style={{ left: `${m.left}%` }}
+            />
+          ))}
+        </div>
+        {/* The chart's bottom grid strip (labels + axis line) is covered and
+            repainted with battle time — see .srp-trend__axis. */}
+        <div class="srp-trend__axis" aria-hidden="true">
+          <span class="srp-trend__xmask" />
+          {ticks.value.map((tick) => (
+            <span
+              key={tick.key}
+              class={`srp-trend__xtick srp-trend__xtick--${tick.anchor}`}
+              style={{ left: `${tick.left}%` }}
+            >
+              {tick.label}
+            </span>
+          ))}
+        </div>
+      </div>
     );
   },
 });
@@ -122,8 +232,14 @@ export default defineComponent({
     /** Optional close affordance (the replay view's in-app modal passes
      *  one; the demo route renders without it). */
     onClose: { type: Function as PropType<() => void>, default: null },
+    /** Embedded in a host window that renders the ONE chrome (the replay
+     *  view's hikari modal head): hides this panel's own title/action row
+     *  and outer card frame so the host head is the only window chrome.
+     *  The export pipeline stays here — the host calls the exposed
+     *  `exportPng` from its head button. */
+    chromeless: { type: Boolean, default: false },
   },
-  setup(props) {
+  setup(props, { expose }) {
     const exporting = ref(false);
     const me = computed<StaticRosterEntry | undefined>(() =>
       props.report.roster.find((r) => r.entityId === props.report.entityId),
@@ -169,33 +285,46 @@ export default defineComponent({
       }
     };
 
+    // Chromeless hosts render the window head themselves; expose the capture
+    // pipeline for the host's export action (the standalone/demo chrome keeps
+    // its own button below). NOTE: the setup-context expose, not the
+    // `defineExpose` compiler macro — the latter is a runtime no-op outside
+    // an SFC `<script setup>`, silently leaving the host ref without the
+    // method.
+    expose({ exportPng });
+
     return () => (
-      <div class="static-report-panel" role="dialog">
-        <div class="static-report-panel__chrome">
-          <span class="static-report-panel__title">{i18nT("replay.report.title")}</span>
-          {props.loading ? <HkSpinner size={14} /> : null}
-          <div class="static-report-panel__actions">
-            <HkButton
-              variant="secondary"
-              size="sm"
-              disabled={exporting.value}
-              onClick={() => void exportPng()}
-            >
-              {exporting.value ? null : <Download size={13} />}
-              <span>{i18nT(exporting.value ? "replay.report.exporting" : "replay.report.export")}</span>
-            </HkButton>
-            {props.onClose ? (
+      <div
+        class={["static-report-panel", props.chromeless ? "static-report-panel--chromeless" : ""]}
+        role={props.chromeless ? undefined : "dialog"}
+      >
+        {props.chromeless ? null : (
+          <div class="static-report-panel__chrome">
+            <span class="static-report-panel__title">{i18nT("replay.report.title")}</span>
+            {props.loading ? <HkSpinner size={14} /> : null}
+            <div class="static-report-panel__actions">
               <HkButton
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                onClick={() => props.onClose()}
-                aria-label={i18nT("replay.report.close")}
+                disabled={exporting.value}
+                onClick={() => void exportPng()}
               >
-                <X size={14} />
+                {exporting.value ? null : <Download size={13} />}
+                <span>{i18nT(exporting.value ? "replay.report.exporting" : "replay.report.export")}</span>
               </HkButton>
-            ) : null}
+              {props.onClose ? (
+                <HkButton
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => props.onClose()}
+                  aria-label={i18nT("replay.report.close")}
+                >
+                  <X size={14} />
+                </HkButton>
+              ) : null}
+            </div>
           </div>
-        </div>
+        )}
 
         <HkScrollContainer class="static-report-panel__scroll">
         <div class="static-report-panel__export-root">
@@ -221,13 +350,7 @@ export default defineComponent({
                   >
                     <span class="srp-picker__dot" />
                     <span class="srp-picker__name">{r.name ?? r.entityId}</span>
-                    <span class={`srp-picker__badge srp-picker__badge--${coverageClass(r.coverage)}`}>
-                      {r.coverage.samples === 0
-                        ? "—"
-                        : r.coverage.completeness > 0.9
-                          ? "✓"
-                          : pct(r.coverage.completeness)}
-                    </span>
+                    {coverageTag(r.coverage)}
                   </button>
                 ))}
               </div>
@@ -253,13 +376,7 @@ export default defineComponent({
                   >
                     <span class="srp-picker__dot srp-picker__dot--enemy" />
                     <span class="srp-picker__name">{r.name ?? r.entityId}</span>
-                    <span class={`srp-picker__badge srp-picker__badge--${coverageClass(r.coverage)}`}>
-                      {r.coverage.samples === 0
-                        ? "—"
-                        : r.coverage.completeness > 0.9
-                          ? "✓"
-                          : pct(r.coverage.completeness)}
-                    </span>
+                    {coverageTag(r.coverage)}
                   </button>
                 ))}
               </div>
@@ -332,7 +449,7 @@ export default defineComponent({
             </div>
           </div>
 
-          <Sparkline report={props.report} />
+          <TrendChart report={props.report} />
 
           {/* ── moment cards ── */}
           <div class="srp-moments">

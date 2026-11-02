@@ -794,6 +794,18 @@ export default defineComponent({
       }
       return byPlayer;
     });
+    /** Player name -> division (组队) id from the decoded arena file's
+     *  prebattle field — the Tab roster's yellow 组队 tags. Older streams
+     *  carry no prebattle ids: the map stays empty and no tag renders. The
+     *  lettering itself is per-table in the overlay (each side starts at A),
+     *  mirroring the post-battle matrix. */
+    const prebattleByPlayer = computed<Map<string, number>>(() => {
+      const m = new Map<string, number>();
+      for (const ap of props.arenaPlayers) {
+        if (ap.name && ap.prebattle) m.set(ap.name, ap.prebattle);
+      }
+      return m;
+    });
     /** Roster rows for the ship-icon strip under the scorebar: team icons in
      *  roster order, sunk ships pushed to the far edge and greyed out. */
     interface ShipRowEntry {
@@ -2378,6 +2390,7 @@ export default defineComponent({
             encyclopedia={props.encyclopedia}
             shipStatus={ctx.shipStatus}
             shipNameOrder={props.shipNameOrder}
+            prebattle={prebattleByPlayer.value}
             aiOn={aiAnalysisOn.value}
             scoreReport={debugReport.value?.scores ?? null}
             scoreLoading={debugLoading.value}

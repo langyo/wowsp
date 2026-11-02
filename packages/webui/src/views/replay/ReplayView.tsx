@@ -1,5 +1,5 @@
 import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type CSSProperties, type VNode } from "vue";
-import { Copy, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw, X } from "@lucide/vue";
+import { Copy, Download, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useReplayPositions } from "@/features/replay/useReplayPositions";
@@ -2084,6 +2084,20 @@ export default defineComponent({
       staticReportSeq += 1;
       staticReportLoading.value = false;
     };
+    /** The embedded report's exposed long-image export: the shared window
+     *  head owns the button, StaticReportPanel owns the html-to-image
+     *  capture (its export root is the captured node). */
+    const reportPanelRef = ref<{ exportPng: () => Promise<void> } | null>(null);
+    const reportExporting = ref(false);
+    const onExportReport = async () => {
+      if (reportExporting.value) return;
+      reportExporting.value = true;
+      try {
+        await reportPanelRef.value?.exportPng();
+      } finally {
+        reportExporting.value = false;
+      }
+    };
     /** Reveal the opened replay in the OS file manager (desktop): the
      *  backend re-validates the path (a replay-extension file that exists)
      *  and hands it to the opener plugin's reveal — the file's folder opens
@@ -2489,30 +2503,6 @@ export default defineComponent({
                     {parser.error.value ? (
                       <ErrorCard error={parser.error.value} />
                     ) : null}
-                    {/* The reveal shortcut (top-right corner of the opened
-                        replay): transparent ghost icon button that shows the
-                        replay file pre-selected in the OS file manager. The
-                        hover hint rides the delegated data-hint channel as
-                        a card — the label as the head, the replay's
-                        install-relative path as the identity line (see
-                        revealRelPath); a native title attribute would trip
-                        nativeTitlePolicy fence. Desktop app only — phones
-                        have no file manager and a plain browser tab has no
-                        such command. */}
-                    {isNative() && !isMobileApp() && parser.current.value.path ? (
-                      <button
-                        type="button"
-                        class="replay-view__reveal"
-                        data-hint-card={JSON.stringify({
-                          title: t("replay.reveal.tip"),
-                          subtitle: revealRelPath.value,
-                        })}
-                        aria-label={t("replay.reveal.tip")}
-                        onClick={onRevealReplay}
-                      >
-                        <FolderSearch size={14} />
-                      </button>
-                    ) : null}
                     <header class="replay-view__meta">
                       {/* The map as a jump tag (shared with the live head): hover
                           previews the map's bundled minimap, click opens the map's
@@ -2587,6 +2577,31 @@ export default defineComponent({
                       >
                         {t("replay.report.title")}
                       </button>
+                      {/* The reveal shortcut — the meta row's LAST inline
+                          item (it used to float over the content corner):
+                          transparent ghost icon button that shows the replay
+                          file pre-selected in the OS file manager. The hover
+                          hint rides the delegated data-hint channel as a
+                          card — the label as the head, the replay's
+                          install-relative path as the identity line (see
+                          revealRelPath); a native title attribute would trip
+                          nativeTitlePolicy fence. Desktop app only — phones
+                          have no file manager and a plain browser tab has no
+                          such command. */}
+                      {isNative() && !isMobileApp() && parser.current.value.path ? (
+                        <button
+                          type="button"
+                          class="replay-view__reveal"
+                          data-hint-card={JSON.stringify({
+                            title: t("replay.reveal.tip"),
+                            subtitle: revealRelPath.value,
+                          })}
+                          aria-label={t("replay.reveal.tip")}
+                          onClick={onRevealReplay}
+                        >
+                          <FolderSearch size={14} />
+                        </button>
+                      ) : null}
                     </header>
                     {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
                       <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
@@ -2713,18 +2728,63 @@ export default defineComponent({
                           class="replay-view__modal-panel replay-view__report-panel"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          {/* The ONE hikari window head (the results/chat modal
+                              grammar): title + its own loading spinner on the
+                              left, the report's long-image export and the
+                              unified close on the right. The panel below is
+                              chromeless — it has no second title row. */}
+                          <div class="replay-view__modal-head">
+                            <div class="replay-view__modal-title">
+                              <span class="replay-view__report-title">
+                                <strong>{t("replay.report.title")}</strong>
+                                {staticReportLoading.value ? (
+                                  <HkSpinner size="xs" tone="current" />
+                                ) : null}
+                              </span>
+                            </div>
+                            <div class="replay-view__report-head-actions">
+                              {staticReport.value && !staticReportError.value ? (
+                                <HkButton
+                                  variant="secondary"
+                                  size="sm"
+                                  loading={reportExporting.value}
+                                  onClick={() => void onExportReport()}
+                                >
+                                  {reportExporting.value ? null : <Download size={13} />}
+                                  <span>
+                                    {t(
+                                      reportExporting.value
+                                        ? "replay.report.exporting"
+                                        : "replay.report.export",
+                                    )}
+                                  </span>
+                                </HkButton>
+                              ) : null}
+                              <HkIconButton
+                                class="hk-window-close replay-view__modal-close"
+                                size={32}
+                                variant="ghost"
+                                icon="close"
+                                aria-label={t("common.close")}
+                                onClick={closeStaticReport}
+                              />
+                            </div>
+                          </div>
                           {staticReportError.value ? (
-                            <ErrorCard
-                              title={t("replay.report.title")}
-                              error={staticReportError.value}
-                            />
+                            <div class="replay-view__report-body">
+                              <ErrorCard
+                                title={t("replay.report.title")}
+                                error={staticReportError.value}
+                              />
+                            </div>
                           ) : staticReport.value ? (
                             <StaticReportPanel
+                              ref={reportPanelRef}
+                              chromeless
                               report={staticReport.value}
                               loading={staticReportLoading.value}
                               onSeek={(t0) => mapRef.value?.seek(t0)}
                               onPick={(entityId) => void openStaticReport(entityId)}
-                              onClose={closeStaticReport}
                             />
                           ) : (
                             <div class="replay-view__placeholder replay-view__report-loading">

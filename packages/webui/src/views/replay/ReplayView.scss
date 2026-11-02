@@ -479,9 +479,9 @@
     }
   }
   /* AI battle report modal — a wide reading surface beside the 3D board.
-     The shared report column fills the frame and its own HkScrollContainer
-     owns the scrollbar; the column's standalone width / max-height caps
-     belonged to the deleted secondary window, so they are lifted here. */
+     It carries the results/chat modal head (the ONE hikari window chrome);
+     the chromeless report column fills the remaining body and its own
+     HkScrollContainer owns the scrollbar. */
   &__report-panel {
     width: min(1040px, 94vw);
     height: min(88vh, 900px);
@@ -497,6 +497,32 @@
       width: auto;
       max-height: none;
     }
+  }
+
+  /* The report head's title line — the battle-report label plus the
+     perspective-switch spinner (the results/chat heads have no spinner). */
+  &__report-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* The head's right-hand actions: the report's long-image export beside
+     the unified close control. */
+  &__report-head-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex: none;
+  }
+
+  /* Failure body (the report's ErrorCard) — scrolls inside the fixed
+     frame instead of stretching it past the viewport. */
+  &__report-body {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    padding: 0.75rem 1rem;
   }
 
   &__report-loading {
@@ -746,15 +772,12 @@
     padding-right: 1.5rem;
   }
 
-  /* The reveal shortcut — top-right corner of the opened replay (the
-     content box is the positioning parent): a transparent ghost icon
-     button in the rail head's 1.75rem square family. The native tooltip
+  /* The reveal shortcut — the meta row's last inline item (it used to
+     float over the content's top-right corner): a transparent ghost icon
+     button in the rail head's 1.75rem square family. The delegated hint
      carries the label + the replay's install-relative path. */
   &__reveal {
-    position: absolute;
-    top: -0.375rem;
-    right: 0;
-    z-index: 1;
+    flex: none;
     display: inline-flex;
     align-items: center;
     justify-content: center;
