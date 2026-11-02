@@ -56,6 +56,11 @@ pub async fn create_overlay_window(
         .build()
         .map_err(|e| anyhow!("create {} window: {e}", spec.label))?;
         post_create_window_setup(&win);
+        // The click-through window can never press the WebView2 error page's
+        // own reload button, so a failed page load must heal itself from the
+        // Rust side (page_load.rs) — arm the NavigationCompleted watcher
+        // before the watcher's first show can reveal the window.
+        super::page_load::install(&app, &win, spec.url_path);
     }
     start_overlay_tab_watch(app).await
 }
