@@ -1,10 +1,18 @@
 /**
- * Contract: the spec panel's help icons sit centered on their labels.
+ * Contract: the spec panel's help icons sit centered on their labels, and
+ * the panel itself lays its group cards out as a GRID.
  *
  * Section labels ("HE Shell", "AP Shell", …) used to be plain inline spans,
  * so their inline-flex help icon sat on the text baseline — visibly low and
  * flush against the label. The label must own a centered flex row with its
  * own gap, and the icon must not re-introduce line-box baseline drift.
+ *
+ * The panel must also never return to CSS multicol: multicol balances
+ * column heights by fragmenting content, and a dynamic in-panel change
+ * (the alternate-firing toggle swaps rows in place) re-fragments every
+ * column on stale balancers — older WebView2 / Android WebViews kept the
+ * pre-change column height and clipped the cards at the old bottom edge
+ * (mid-row slices over blank space). Grid places each card as a whole.
  */
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,6 +29,19 @@ const scss = readFileSync(
   .replace(/^\s*\/\/.*$/gm, "");
 
 describe("ShipDetailModal specs help-icon alignment", () => {
+
+  it("lays the spec cards out as a grid, never as multicol columns", () => {
+    // Multicol fragmentation + in-place content changes (alt-firing toggle)
+    // clip cards on stale-balancer WebViews — grid is the whole-card layout.
+    expect(scss).toMatch(
+      /\.specs-panel\s*\{[^}]*display:\s*grid;[^}]*grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(220px,\s*1fr\)\);[^}]*align-items:\s*start;/s,
+    );
+    // The negative patterns pin the two-column rule out; the \n-anchor keeps
+    // "grid-template-columns:" from matching the bare "columns:" needle.
+    expect(scss).not.toMatch(/\.specs-panel\s*\{[^}]*\n  columns:/s);
+    expect(scss).not.toMatch(/\.specs-group\s*\{[^}]*break-inside:/s);
+  });
+
   it("centers the section label row and keeps a gap before the icon", () => {
     expect(scss).toMatch(
       /&__section-label\s*\{[^}]*display:\s*inline-flex;[^}]*align-items:\s*center;[^}]*gap:\s*0\.25rem;/s,
