@@ -676,7 +676,10 @@
     "empty": "对比列表为空，点击“添加舰艇”开始。",
     "notApplicable": "不适用",
     "showing": "显示前 {shown} 艘 / 共 {total} 艘",
-    "count": "{n}"
+    "count": "{n}",
+    "fit": {
+      "stock": "白板配置"
+    }
   },
   "consumable": {
     "regenCrew": "维修小组",

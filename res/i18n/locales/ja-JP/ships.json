@@ -676,7 +676,10 @@
     "empty": "まだ何もありません。「艦艇を追加」から始めましょう。",
     "notApplicable": "なし",
     "showing": "先頭 {shown} 艘を表示 / 全 {total} 艘",
-    "count": "{n}"
+    "count": "{n}",
+    "fit": {
+      "stock": "初期装備"
+    }
   },
   "consumable": {
     "regenCrew": "修理班",

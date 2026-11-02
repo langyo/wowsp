@@ -676,7 +676,10 @@
     "empty": "Nada que comparar todavía: añade buques.",
     "notApplicable": "N/D",
     "showing": "Mostrando los primeros {shown} de {total}",
-    "count": "{n}"
+    "count": "{n}",
+    "fit": {
+      "stock": "Configuración de serie"
+    }
   },
   "consumable": {
     "regenCrew": "Equipo de reparación",

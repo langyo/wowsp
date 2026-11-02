@@ -3,6 +3,11 @@ import { X } from "@lucide/vue";
 
 import { HkButton, HkIconButton, HkScrollContainer, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
+import { api } from "@/api";
+import { useConfigStore } from "@/stores/config";
+import { useGameStatusStore } from "@/stores/gameStatus";
+import { shipCompareFits, type CompareShipFit } from "@/utils/shipCompareFits";
+
 import NationFlag from "@/components/base/NationFlag";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
 import { COMPARE_GROUPS, groupApplies, tierLabel, type CompareProfile } from "@/utils/shipCompare";
@@ -33,7 +38,8 @@ export default defineComponent({
     const encyclopedia = useEncyclopediaStore();
     const accounts = useAccountStore();
     const toast = useToast();
-
+    const config = useConfigStore();
+    const gameStatus = useGameStatusStore();
     const shipIds = ref<number[]>([]);
     const pickerOpen = ref(false);
     const groupKey = ref(COMPARE_GROUPS[0].key);
@@ -99,10 +105,58 @@ export default defineComponent({
         seen.add(s.shipId);
         addedCount += 1;
       }
+
       if (addedCount > 0) {
         toast.info(t("ships.compare.addedToast", { n: addedCount }));
       }
     }
+
+    // ── per-ship GameParams (weapon-fit variants) ───────────────────────
+    // The baseline row reads the WG default_profile (fully-upgraded ship,
+    // standard ammo). Weapon-fit sub-rows (alternate firing mode, stock
+    // hull fits, researchable torpedo alternates) need the per-ship
+    // GameParams slice — fetched lazily per compared hull, the same
+    // resolve-set discipline the lineup editor uses. Failures (no install,
+    // web build, slice-less hulls) simply leave a ship at its baseline row.
+    const gameRoot = computed(
+      () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
+    );
+    const gameparamsByShip = ref(new Map<number, unknown>());
+    const gameparamsPending = new Set<number>();
+
+    function loadGameparams(): void {
+      const root = gameRoot.value;
+      if (!root) return;
+      for (const s of ships.value) {
+        if (gameparamsByShip.value.has(s.shipId) || gameparamsPending.has(s.shipId)) continue;
+        gameparamsPending.add(s.shipId);
+        api
+          .getShipGameparams(s.shipId, root)
+          .then((gp) => {
+            const next = new Map(gameparamsByShip.value);
+            next.set(s.shipId, gp);
+            gameparamsByShip.value = next;
+          })
+          .catch(() => {
+            // no slice for this hull — the baseline row stays alone
+          });
+      }
+    }
+    watch([ships, gameRoot], loadGameparams, { immediate: true });
+
+    const fitsByShip = computed(() => {
+      const out = new Map<number, CompareShipFit[]>();
+      for (const s of ships.value) {
+        const gp = gameparamsByShip.value.get(s.shipId);
+        if (gp == null) continue;
+        out.set(
+          s.shipId,
+          shipCompareFits(s.defaultProfile as CompareProfile | null, s.nation, gp),
+        );
+      }
+      return out;
+    });
+
 
     function nationLabel(code: string): string {
       // Nation display names follow the 素材翻译 setting, same as the grid.
@@ -160,9 +214,9 @@ export default defineComponent({
                     </tr>
                   </thead>
                   <tbody>
-                    {ships.value.map((s) => {
+                    {ships.value.flatMap((s) => {
                       const profile = s.defaultProfile as CompareProfile | null;
-                      return (
+                      const mainRow = (
                         <tr key={s.shipId}>
                           <td class="ship-compare__sticky ship-compare__sticky--remove">
                             {/* Slot content wins over the icon prop. */}
@@ -199,6 +253,38 @@ export default defineComponent({
                             )}
                         </tr>
                       );
+                      // Weapon-fit sub-rows (alternate firing mode / stock
+                      // hull / torpedo alternates): indented under their
+                      // ship, only for the group the fit re-specs. A hull
+                      // whose slice has no variants renders none.
+                      const fits = (fitsByShip.value.get(s.shipId) ?? []).filter((fit) =>
+                        fit.groupKeys.includes(group.key),
+                      );
+                      const fitRows = groupApplies(group, profile)
+                        ? fits.map((fit) => (
+                            <tr key={s.shipId + ":" + fit.key} class="ship-compare__fit-row">
+                              <td class="ship-compare__sticky ship-compare__sticky--remove" />
+                              <td class="ship-compare__sticky ship-compare__sticky--tier" />
+                              <td class="ship-compare__sticky ship-compare__sticky--name">
+                                <div class="ship-compare__fit-inner">
+                                  <span class="ship-compare__fit-label">{t(fit.labelKey)}</span>
+                                  {fit.suffix ? (
+                                    <span class="ship-compare__fit-suffix">{fit.suffix}</span>
+                                  ) : null}
+                                </div>
+                              </td>
+                              {group.columns.map((c) => {
+                                const value = fit.values[c.key] ?? null;
+                                return (
+                                  <td key={c.key} class={value == null ? "ship-compare__fit-blank" : undefined}>
+                                    {value ?? "—"}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))
+                        : [];
+                      return [mainRow, ...fitRows];
                     })}
                   </tbody>
                 </table>

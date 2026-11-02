@@ -676,7 +676,10 @@
     "empty": "Nothing to compare yet — add ships to get started.",
     "notApplicable": "N/A",
     "showing": "Showing first {shown} of {total} ships",
-    "count": "{n}"
+    "count": "{n}",
+    "fit": {
+      "stock": "Stock fit"
+    }
   },
   "consumable": {
     "regenCrew": "Repair Party",

@@ -676,7 +676,10 @@
     "empty": "아직 비교할 함선이 없습니다. 함선을 추가해 시작하세요.",
     "notApplicable": "없음",
     "showing": "처음 {shown}척 표시 / 총 {total}척",
-    "count": "{n}"
+    "count": "{n}",
+    "fit": {
+      "stock": "기본 장비"
+    }
   },
   "consumable": {
     "regenCrew": "수리반",

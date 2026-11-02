@@ -182,3 +182,41 @@
     --hi-icon-button-size: 2.25rem;
   }
 }
+
+/* ── Weapon-fit sub-rows ───────────────────────────────────────────────────
+   A hull with more than one way to fight (alternate firing mode, stock
+   hull modules, researchable torpedo alternates) grows indented sub-rows
+   under its main row: the identity cell steps right with the fit label
+   (which 方案 this row speaks), values follow the same stat columns. Rows
+   are secondary ink by design — the baseline row stays the reference. */
+.ship-compare__fit-row {
+  .ship-compare__fit-inner {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35rem;
+    min-width: 0;
+    padding-left: 1.4rem;
+  }
+
+  .ship-compare__fit-label {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .ship-compare__fit-suffix {
+    color: rgb(var(--color-muted) / 70%);
+    font-size: var(--text-2xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  td {
+    color: rgb(var(--color-muted));
+    font-size: var(--text-xs);
+  }
+
+  .ship-compare__fit-blank {
+    color: rgb(var(--color-muted) / 45%);
+  }
+}
