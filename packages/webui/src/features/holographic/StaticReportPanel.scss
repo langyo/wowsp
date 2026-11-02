@@ -60,6 +60,19 @@
     flex: 1;
     min-height: 0;
   }
+
+  /* Embedded in the replay view's hikari window: the host modal panel owns
+     the frame, radius and the ONE head, and the report column fills the
+     remaining body. The dark reading surface stays (the report's own ink
+     and the html-to-image export are built on it). */
+  &--chromeless {
+    flex: 1;
+    min-height: 0;
+    width: auto;
+    max-height: none;
+    border: none;
+    border-radius: 0;
+  }
 }
 
 // ── perspective picker ──
@@ -128,26 +141,10 @@
     white-space: nowrap;
   }
 
+  /* The coverage face is hikari's HkTag (variant by coverageClass, icon
+     glyph from lucide); this hook only reserves its trailing slot in the chip. */
   &__badge {
-    font-size: 10px;
-    padding: 0 5px;
-    border-radius: 8px;
-    line-height: 15px;
-
-    &--full {
-      color: var(--srp-good);
-      background: rgba(76, 195, 138, 0.14);
-    }
-
-    &--partial {
-      color: var(--srp-warn);
-      background: rgba(210, 153, 34, 0.16);
-    }
-
-    &--none {
-      color: var(--srp-bad);
-      background: rgba(229, 83, 75, 0.14);
-    }
+    flex: none;
   }
 }
 
@@ -243,47 +240,109 @@
   }
 }
 
-// ── sparkline ──
-.srp-spark {
-  width: 100%;
-  height: 56px;
-  // The export column is a constrained flex column — without this the
-  // SVG (no intrinsic content height) flex-shrinks to 0 under overflow.
+// ── instant-score trend (hikari HkTrendChart + report-only overlay) ──
+// HkTrendChart draws on an echarts canvas with the library's LIGHT default
+// theme (dark ink, white-ish axes); the report is a dark reading surface, so
+// the canvas pixels are inverted to read light-on-dark (the standard
+// dark-echarts filter — the tooltip is a DOM node OUTSIDE the canvas and
+// keeps its native light styling, and the marks overlay is a sibling).
+// The overlay mirrors HkTrendChart's echarts grid insets (left 50 / right
+// 20 / top 30 / bottom 40) so its battle-time fractions line up with the
+// plotted timeline: coverage gaps are range bands, key moments are marks.
+.srp-trend {
+  position: relative;
   flex: none;
-  display: block;
+  background: var(--srp-card);
+  border: 1px solid var(--srp-line);
+  border-radius: 8px;
+  overflow: hidden;
+
+  canvas {
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  // The report is a finished battle, not a live stream: the chart is a
+  // reading surface, so its canvas takes no wheel-zoom/tooltip (which would
+  // also fight the modal's own scroller). See TrendChart in the component.
+  &__chart {
+    pointer-events: none;
+  }
+
+  // Battle-time annotations over the chart's own plot area. The insets
+  // mirror HkTrendChart's echarts grid (left 50 / right 20 / top 30 /
+  // bottom 40) and its 160 px frame height (TREND_HEIGHT_PX).
+  &__overlay {
+    position: absolute;
+    inset: 30px 20px 40px 50px;
+    pointer-events: none;
+  }
+
+  // The chart's bottom grid strip (echarts wall-clock labels + axis line):
+  // masked and repainted with battle time, because the streaming window is
+  // always anchored at the viewer's clock — meaningless in a finished-battle
+  // report and unstable across exports of the same report.
+  &__axis {
+    position: absolute;
+    left: 50px;
+    right: 20px;
+    bottom: 0;
+    height: 40px;
+    pointer-events: none;
+  }
+
+  &__xmask {
+    position: absolute;
+    inset: 0;
+    background: var(--srp-card);
+    border-top: 1px solid var(--srp-line);
+  }
+
+  &__xtick {
+    position: absolute;
+    top: 7px;
+    color: var(--srp-dim);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    transform: translateX(-50%);
+
+    &--start {
+      transform: none;
+    }
+
+    &--end {
+      transform: translateX(-100%);
+    }
+  }
 
   &__gap {
-    fill: rgba(229, 83, 75, 0.18);
-  }
-
-  &__mid {
-    stroke: #2a3342;
-    stroke-dasharray: 3 4;
-  }
-
-  &__line {
-    fill: none;
-    stroke: #57a6ff;
-    stroke-width: 1.6;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(229, 83, 75, 0.16);
   }
 
   &__mark {
-    stroke-width: 2;
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    opacity: 0.85;
 
     &--good {
-      stroke: var(--srp-good);
+      background: var(--srp-good);
     }
 
     &--bad {
-      stroke: var(--srp-bad);
+      background: var(--srp-bad);
     }
 
     &--warn {
-      stroke: var(--srp-warn);
+      background: var(--srp-warn);
     }
 
     &--ok {
-      stroke: var(--srp-ally);
+      background: var(--srp-ally);
     }
   }
 }

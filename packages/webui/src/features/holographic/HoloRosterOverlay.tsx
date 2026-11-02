@@ -8,14 +8,20 @@
  *   - kills credited so far (post-battle killer attribution joined with
  *     the crossed death times — hidden entirely when the replay carries
  *     no BattleResults packet),
- *   - the tier badge in its OWN fixed-width centered column, so the
- *     Roman numeral never shifts the ship name beside it (it used to be
- *     an inline prefix whose width swung the name with every tier),
+ *   - the tier numeral LEADING the ship cell (left-aligned, same type
+ *     size as the ship name, a subtler ink) instead of owning a
+ *     fixed-width centered column of its own,
  *   - sunk rows dimmed with their sinking time,
- *   - a thin team-coloured HP bar under the icon of every afloat row
- *     (the top scorebar's slot-bar recipe: dark rail + team-coloured fill
- *     read from the HP stream at the playhead and the roster's
- *     authoritative total HP),
+ *   - a thin team-coloured HP bar BESIDE the icon — right of it, the top
+ *     scorebar's slot-bar recipe: dark rail + team-coloured fill read from
+ *     the HP stream at the playhead and the roster's authoritative total
+ *     HP,
+ *   - an identity line before the nickname: the dim [clan] prefix (the
+ *     game's own name convention), the yellow division tag (组队A/B/…,
+ *     lettered per side from the arena's prebattle ids) and the player-
+ *     marker tag (消极作战 / 疑似作弊 / 隐藏高手) pressed in the marker's
+ *     own ink — the marker tag and the existing nickname tint both render
+ *     only when the player is marked,
  *   - ALIVE rows carrying the per-ship combat status chips — the same
  *     below-hull card the 3D chase view floats under each ship (see
  *     shipStatusModel / HoloShipStatus): firing/reload countdowns, smoke
@@ -52,12 +58,14 @@ import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { markerTintClass } from "@/features/markers/markerTint";
-import { markerColorLabel } from "@/features/markers/playerContextMenu";
+import { MARKER_DOT_COLORS, markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { RosterStat } from "@/composables/useRosterStats";
+import { divisionLetters } from "@/utils/divisions";
 import { gameTabRowCompare, type TabRowCompareOptions } from "@/utils/shipClass";
 import { isListedPlayer } from "@/utils/rosterSides";
 import BattleIcon from "@/components/base/BattleIcon";
+import DivisionTag from "@/components/base/DivisionTag";
 import { shipNameFromModelDb, shipNameFromOfflineDb, shipOfflineEntry } from "./modelLoader";
 import { tierRoman } from "@/features/replay/shipLiveStats";
 import {
@@ -114,6 +122,9 @@ interface TableCtx {
   scoreByEntity: Map<number, ShipScoreEntry>;
   /** trajectory entity id -> attacker display name (hit-chip source hints). */
   entityNameById: Map<number, string>;
+  /** player name -> division letter for THIS table's side (both sides
+   *  letter independently, so each table starts at A). */
+  divisionLetters: Map<string, string>;
 }
 
 function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: TableCtx) {
@@ -135,7 +146,6 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
         <colgroup>
           <col class="holo-roster__col--icon" />
           <col class="holo-roster__col--player" />
-          <col class="holo-roster__col--tier" />
           <col class="holo-roster__col--ship" />
           {showKills ? <col class="holo-roster__col--kills" /> : null}
           {/* AI columns live between 击杀 and 状态 (no kills column when the
@@ -155,9 +165,6 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
           <tr>
             <th class="holo-roster__th holo-roster__th--icon" />
             <th class="holo-roster__th">{i18nT("replay.tip.player")}</th>
-            {/* The tier column carries no title — the empty header cell
-                keeps 舰船 sitting over the ship NAME column. */}
-            <th class="holo-roster__th holo-roster__th--tier" />
             <th class="holo-roster__th">{i18nT("replay.roster.ship")}</th>
             {showKills ? <th class="holo-roster__th holo-roster__th--num">{i18nT("replay.roster.kills")}</th> : null}
             {ctx.aiOn ? (
@@ -180,6 +187,9 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
               r.alive && r.hp != null && r.maxHp != null && r.maxHp > 0
                 ? Math.round(Math.max(0, Math.min(1, r.hp / r.maxHp)) * 100)
                 : null;
+            const stats = ctx.stats.get(r.vehicle.name);
+            const markerColor = ctx.markers.colorOf(r.vehicle.name, stats?.accountId ?? null);
+            const divisionLetter = ctx.divisionLetters.get(r.vehicle.name) ?? null;
             return (
               <tr key={r.vehicle.id} class={r.alive ? "" : "holo-roster__row--dead"}>
                 <td class="holo-roster__td holo-roster__td--icon">
@@ -197,9 +207,10 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
                       }
                       size={14}
                     />
-                    {/* Same recipe as the top scorebar's slot mini bar: a dark
-                        rail with a team-coloured fill (--hp-pct). Sunk rows
-                        and rows with no HP stream render no bar at all. */}
+                    {/* Beside the icon (not under it), the top scorebar's slot
+                        mini-bar recipe: a dark rail with a team-coloured fill
+                        (--hp-pct). Sunk rows and rows with no HP stream render
+                        no bar at all. */}
                     {hpPct != null ? (
                       <span
                         class={[
@@ -215,37 +226,48 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
                 <td
                   class="holo-roster__td holo-roster__td--name"
                   data-player-name={r.vehicle.name}
-                  data-player-account={
-                    ctx.stats.get(r.vehicle.name)?.accountId != null
-                      ? String(ctx.stats.get(r.vehicle.name)?.accountId)
-                      : undefined
-                  }
-                  data-player-realm={ctx.stats.get(r.vehicle.name)?.realm ?? undefined}
+                  data-player-account={stats?.accountId != null ? String(stats.accountId) : undefined}
+                  data-player-realm={stats?.realm ?? undefined}
                 >
                   {/* No 「我」 label — the self row is marked by its WHITE
-                      ship icon (alive), the game's own convention. The name
-                      itself carries the marker tint (玩家标记); right-click
+                      ship icon (alive), the game's own convention. The
+                      identity line leads the nick with its battle facts:
+                      the dim [clan] prefix (the game's own display-name
+                      convention, already in the sort key), the yellow
+                      division tag and the player-marker tag. The nick
+                      itself keeps the marker tint (玩家标记); right-click
                       opens the shared menu (the overlay is aria-hidden
-                      chrome, but pointer events still flow to the binding). */}
-                  {(() => {
-                    const color = ctx.markers.colorOf(
-                      r.vehicle.name,
-                      ctx.stats.get(r.vehicle.name)?.accountId ?? null,
-                    );
-                    return (
+                      chrome, but pointer events still flow to the binding).
+                      Overflow clips the nick first (see the SCSS). */}
+                  <span class="holo-roster__identity">
+                    {stats?.clanTag ? (
+                      <span class="holo-roster__clan">[{stats.clanTag}]</span>
+                    ) : null}
+                    {divisionLetter ? <DivisionTag letter={divisionLetter} /> : null}
+                    {markerColor ? (
                       <span
-                        class={["holo-roster__nick", markerTintClass(color)]}
-                        data-hint={color ? markerColorLabel(color) : undefined}
+                        class="holo-roster__marker-tag"
+                        style={{
+                          color: MARKER_DOT_COLORS[markerColor],
+                          borderColor: MARKER_DOT_COLORS[markerColor] + "8c",
+                        }}
                       >
-                        {r.vehicle.name}
+                        {markerColorLabel(markerColor)}
                       </span>
-                    );
-                  })()}
+                    ) : null}
+                    <span
+                      class={["holo-roster__nick", markerTintClass(markerColor)]}
+                      data-hint={markerColor ? markerColorLabel(markerColor) : undefined}
+                    >
+                      {r.vehicle.name}
+                    </span>
+                  </span>
                 </td>
-                <td class="holo-roster__td holo-roster__td--tier">
-                  {r.tier ? <b class="holo-roster__tier">{r.tier}</b> : null}
-                </td>
-                <td class="holo-roster__td">
+                <td class="holo-roster__td holo-roster__td--ship">
+                  {/* Tier numeral LEADS the ship name on the same line and at
+                      the SAME type size — only the ink sets it apart (the
+                      ship name stays dim, the numeral uses the strong ink). */}
+                  {r.tier ? <span class="holo-roster__tier">{r.tier}</span> : null}
                   <span class="holo-roster__ship">{r.shipName}</span>
                 </td>
                 {showKills ? (
@@ -473,6 +495,10 @@ export default defineComponent({
      *  replay's own realm — the replay scoreboard must mirror the client
      *  the replay was recorded on, not the WG permutation. */
     shipNameOrder: { type: Boolean, default: false },
+    /** Player name -> division (组队) id from the decoded arena file's
+     *  prebattle field. Older streams carry none, so the map stays empty
+     *  and no division tag renders (0/absent = solo). */
+    prebattle: { type: Object as PropType<Map<string, number>>, default: () => new Map() },
     /** AI analysis layer on: adds the four decision-score columns after
      *  击杀 and the disclaimer/legend footer under the board. Optional so
      *  every mount that does not carry the layer keeps working. */
@@ -598,9 +624,22 @@ export default defineComponent({
       props.operation ? [] : rows.value.filter((r) => r.vehicle.relation > 1),
     );
 
+    /** Per-side division lettering: each table letters ITS OWN display
+     *  order independently (both sides start at A), exactly like the
+     *  post-battle matrix — derived from the arena's prebattle ids. */
+    const lettersFor = (list: RosterRow[]): Map<string, string> =>
+      divisionLetters(
+        list.map((r) => ({
+          name: r.vehicle.name,
+          div: props.prebattle.get(r.vehicle.name) ?? null,
+        })),
+      );
+    const allyDivisionLetters = computed(() => lettersFor(allies.value));
+    const enemyDivisionLetters = computed(() => lettersFor(enemies.value));
+
     return () => {
       const report = props.scoreReport;
-      const tableCtx = (): TableCtx => ({
+      const tableCtx = (letters: Map<string, string>): TableCtx => ({
         markers,
         stats: props.stats,
         shipStatus: props.shipStatus,
@@ -608,6 +647,7 @@ export default defineComponent({
         aiOn: props.aiOn,
         scoreByEntity: scoreByEntity.value,
         entityNameById: entityNameById.value,
+        divisionLetters: letters,
       });
       return (
         /* Scroll region: hikari's HkScrollContainer owns the scrollbar
@@ -639,9 +679,9 @@ export default defineComponent({
                 props.aiOn ? "holo-map__roster-board--ai" : "",
               ].filter(Boolean).join(" ")}
             >
-              {teamTable(allies.value, false, props.showKills, tableCtx())}
+              {teamTable(allies.value, false, props.showKills, tableCtx(allyDivisionLetters.value))}
               {enemies.value.length
-                ? teamTable(enemies.value, true, props.showKills, tableCtx())
+                ? teamTable(enemies.value, true, props.showKills, tableCtx(enemyDivisionLetters.value))
                 : null}
             </div>
             {/* AI footer: the E17 honesty disclaimer, the movement-layer

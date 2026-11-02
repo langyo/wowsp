@@ -1,9 +1,11 @@
 /**
  * Tests for the Tab scoreboard overlay:
  *
- *  - the tier badge renders in its OWN fixed-width column (a centered
- *    cell of its own), so the Roman numeral never shifts the ship name
- *    beside it — the ship cell holds the name only;
+ *  - the tier numeral LEADS the ship name in the ship cell (left-aligned,
+ *    same type size): the old standalone tier column is gone;
+ *  - the identity line before the nickname carries the dim [clan] prefix,
+ *    the per-side division tag (組隊A/B) and the player-marker tag in the
+ *    marker's own ink;
  *  - an alive row renders the per-ship combat chips at the playhead —
  *    the gun reload countdown, the just-launched torpedo flash, the fire
  *    dot and the freshest hit pill — exactly what the 3D below-hull card
@@ -11,8 +13,9 @@
  *  - hit pills are MERGED by damage source: one attacker's impacts arrive
  *    as a single pill with the summed damage, a ×N suffix and a source
  *    hint naming the attacker;
- *  - the icon column carries the top-scorebar-style HP mini bar for
- *    afloat rows with an HP stream, team-tinted, and none for sunk rows;
+ *  - the icon column carries the top-scorebar-style HP mini bar BESIDE the
+ *    class marker for afloat rows with an HP stream, team-tinted, and none
+ *    for sunk rows;
  *  - an alive ship with nothing showing renders the dim idle dash;
  *  - advancing the playhead past the activity retires the chips (the
  *    cell re-queries the status index every tick);
@@ -22,8 +25,9 @@
  *    continuous lamp colour), the board modifier and the footer strip.
  */
 import { describe, expect, it, beforeAll, afterEach, vi } from "vitest";
+import { nextTick } from "vue";
 import { createPinia, setActivePinia } from "pinia";
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
 import { initLocaleMessages, t as i18nT } from "@/i18n";
 
@@ -44,6 +48,7 @@ import type {
   ShipScoreSample,
   VehicleEntry,
 } from "@/api";
+import type { RosterStat } from "@/composables/useRosterStats";
 import { fakeAs } from "@/test-utils/fakes";
 import type { ShipStatusIndex } from "./shipStatusModel";
 import { aiLampColor } from "./rosterScore";
@@ -129,6 +134,8 @@ function mountOverlay(over: {
   rosterState?: RosterStateMap;
   shipStatus?: Map<number, ShipStatusIndex>;
   encyclopedia?: Map<number, ShipInfo>;
+  stats?: Map<string, RosterStat>;
+  prebattle?: Map<string, number>;
   time?: number;
   aiOn?: boolean;
   scoreReport?: ShipScoreReport | null;
@@ -141,9 +148,10 @@ function mountOverlay(over: {
       time: over.time ?? 100,
       rosterState: over.rosterState ?? new Map(),
       kills: new Map(),
-      stats: new Map(),
+      stats: over.stats ?? new Map(),
       encyclopedia: over.encyclopedia ?? new Map<number, ShipInfo>(),
       shipStatus: over.shipStatus ?? new Map(),
+      prebattle: over.prebattle ?? new Map(),
       aiOn: over.aiOn ?? false,
       scoreReport: over.scoreReport ?? null,
       scoreLoading: over.scoreLoading ?? false,
@@ -151,8 +159,8 @@ function mountOverlay(over: {
   });
 }
 
-describe("HoloRosterOverlay tier column", () => {
-  it("renders the tier badge in its own column, name cell holding only the name", () => {
+describe("HoloRosterOverlay ship identity cell", () => {
+  it("leads the ship name with the tier numeral in the SAME ship cell", () => {
     const wrapper = mountOverlay({
       vehicles: [V({ id: 1, name: "alpha", shipId: 4286, shipName: "fallback" })],
       encyclopedia: new Map([
@@ -161,15 +169,23 @@ describe("HoloRosterOverlay tier column", () => {
         [4286, fakeAs<ShipInfo>({ shipId: 4286, name: "Izumo", tier: 9, type: "Battleship" })],
       ]),
     });
-    // The dedicated colgroup share + centered cells exist.
-    expect(wrapper.find(".holo-roster__col--tier").exists()).toBe(true);
-    const tierCell = wrapper.find(".holo-roster__td--tier");
-    expect(tierCell.exists()).toBe(true);
-    expect(tierCell.text()).toBe("IX");
-    // The ship cell carries ONLY the name — the numeral no longer shifts it.
-    const shipCell = wrapper.find(".holo-roster__ship");
-    expect(shipCell.text()).toBe("Izumo");
-    expect(shipCell.element.querySelector("b")).toBeNull();
+    // The standalone tier column is gone (colgroup share + header + cell).
+    expect(wrapper.find(".holo-roster__col--tier").exists()).toBe(false);
+    expect(wrapper.find(".holo-roster__td--tier").exists()).toBe(false);
+    expect(wrapper.find("th.holo-roster__th--tier").exists()).toBe(false);
+    // The tier numeral and the ship name share ONE left-aligned cell, the
+    // numeral coming first on the same line.
+    const shipCell = wrapper.find(".holo-roster__td--ship");
+    expect(shipCell.exists()).toBe(true);
+    const tier = shipCell.find(".holo-roster__tier");
+    const name = shipCell.find(".holo-roster__ship");
+    expect(tier.text()).toBe("IX");
+    expect(name.text()).toBe("Izumo");
+    // No bold/oversized treatment — the numeral is a plain text run now.
+    expect(tier.element.tagName.toLowerCase()).not.toBe("b");
+    const kids = shipCell.element.children;
+    expect(kids[0].classList.contains("holo-roster__tier")).toBe(true);
+    expect(kids[1].classList.contains("holo-roster__ship")).toBe(true);
   });
 });
 
@@ -279,7 +295,7 @@ describe("HoloRosterOverlay live status cells", () => {
 });
 
 describe("HoloRosterOverlay HP mini bar", () => {
-  it("renders a team-tinted fill under the icon of an afloat row", () => {
+  it("renders a team-tinted fill BESIDE the icon of an afloat row", () => {
     const wrapper = mountOverlay({
       vehicles: [V({ id: 1, name: "hurt", relation: 0 })],
       rosterState: new Map([
@@ -300,6 +316,16 @@ describe("HoloRosterOverlay HP mini bar", () => {
     expect(bar.exists()).toBe(true);
     expect(bar.classes()).toContain("holo-roster__hp--ally");
     expect(bar.attributes("style")).toContain("--hp-pct: 25%");
+    // Beside the icon: the bar is the marker's SIBLING inside the icon
+    // stack (right of it), never a strip under it and never in the name cell.
+    const iconCell = wrapper.find(".holo-roster__td--icon");
+    const stack = iconCell.find(".holo-roster__icon");
+    expect(stack.exists()).toBe(true);
+    const kids = stack.element.children;
+    expect(kids).toHaveLength(2);
+    expect(kids[0].classList.contains("holo-roster__hp")).toBe(false);
+    expect(kids[1].classList.contains("holo-roster__hp")).toBe(true);
+    expect(wrapper.find(".holo-roster__td--name .holo-roster__hp").exists()).toBe(false);
   });
 
   it("tints enemy fills red", () => {
@@ -324,6 +350,84 @@ describe("HoloRosterOverlay HP mini bar", () => {
     });
     expect(wrapper.find(".holo-roster__hp").exists()).toBe(false);
     expect(wrapper.find(".holo-roster__row--dead").exists()).toBe(true);
+  });
+});
+
+describe("HoloRosterOverlay identity tags", () => {
+  const identityState: RosterStateMap = new Map([
+    [1, { traj: TRAJ(101), deathTime: null, maxHp: null }],
+    [2, { traj: TRAJ(102), deathTime: null, maxHp: null }],
+    [3, { traj: TRAJ(103), deathTime: null, maxHp: null }],
+    [4, { traj: TRAJ(201), deathTime: null, maxHp: null }],
+  ]);
+
+  it("renders the dim [clan] prefix before the nickname", () => {
+    const wrapper = mountOverlay({
+      vehicles: [V({ id: 1, name: "alpha", shipName: "Alpha" })],
+      rosterState: identityState,
+      stats: new Map([["alpha", fakeAs<RosterStat>({ clanTag: "TST" })]]),
+    });
+    const clan = wrapper.find(".holo-roster__clan");
+    expect(clan.text()).toBe("[TST]");
+    const identity = wrapper.find(".holo-roster__identity");
+    const kids = [...identity.element.children];
+    // Order: [clan] first, nickname last.
+    expect(kids[0].classList.contains("holo-roster__clan")).toBe(true);
+    expect(kids[kids.length - 1].classList.contains("holo-roster__nick")).toBe(true);
+  });
+
+  it("letters divisions per side and tags only division members", () => {
+    const wrapper = mountOverlay({
+      vehicles: [
+        V({ id: 1, name: "alpha", shipName: "Alpha" }),
+        V({ id: 2, name: "beta", shipName: "Beta" }),
+        V({ id: 3, name: "solo", shipName: "Solo" }),
+        V({ id: 4, name: "foe", relation: 2, shipName: "Foe" }),
+      ],
+      rosterState: identityState,
+      prebattle: new Map([
+        ["alpha", 7],
+        ["beta", 7],
+        ["foe", 7],
+        ["solo", 0],
+      ]),
+    });
+    const letterA = i18nT("replay.postbattle.divisionTag", { letter: "A" });
+    const tags = wrapper.findAll(".division-tag");
+    // alpha + beta (ally side, division 7 = A) and foe (enemy side, ALSO A:
+    // each table letters its own display order independently).
+    expect(tags).toHaveLength(3);
+    expect(tags.every((tag) => tag.text() === letterA)).toBe(true);
+    // The solo row (prebattle 0 / absent) carries no division tag.
+    const soloRow = wrapper.findAll("tbody tr").find((row) => row.text().includes("solo"))!;
+    expect(soloRow.find(".division-tag").exists()).toBe(false);
+  });
+
+  it("renders the marker tag in the marker's own ink, marked players only", async () => {
+    // The markers store loads through the mocked transport: seed the batch
+    // with one red-marked nickname.
+    mocks.invoke.mockResolvedValue([
+      { nickname: "marked", color: "red", accountId: null, note: null },
+    ]);
+    const wrapper = mountOverlay({
+      vehicles: [
+        V({ id: 1, name: "marked", shipName: "Marked" }),
+        V({ id: 2, name: "clean", shipName: "Clean" }),
+      ],
+      rosterState: identityState,
+    });
+    await flushPromises();
+    await nextTick();
+    const tag = wrapper.find(".holo-roster__marker-tag");
+    expect(tag.exists()).toBe(true);
+    expect(tag.text()).toBe(i18nT("settings.markersColorRed"));
+    // The stamp face carries the marker's own ink (red #e5484d), not the
+    // division yellow.
+    expect(tag.attributes("style") ?? "").toMatch(/e5484d|229, 72, 77/i);
+    // Only marked players get the tag.
+    const cleanRow = wrapper.findAll("tbody tr").find((row) => row.text().includes("clean"))!;
+    expect(cleanRow.find(".holo-roster__marker-tag").exists()).toBe(false);
+    mocks.invoke.mockResolvedValue([]);
   });
 });
 
@@ -358,25 +462,25 @@ describe("HoloRosterOverlay AI decision-score columns", () => {
     // sample at t=96 inst .75 -> 75.
     const rowFor = (name: string) =>
       on.findAll("tbody tr").find((row) => row.text().includes(name))!;
-    // Cells: icon, player, tier, ship, (no kills), contrib, whole, instant,
-    // lamp, status.
+    // Cells: icon, player, ship, (no kills), contrib, whole, instant, lamp,
+    // status — the tier column is gone, the ship cell holds tier + name.
     const scored = rowFor("scored").findAll("td");
-    expect(scored[4].text()).toBe("84.2k");
-    expect(scored[5].text()).toBe("62");
-    expect(scored[6].text()).toBe("75");
-    expect(scored[6].attributes("data-hint")).toBe(
+    expect(scored[3].text()).toBe("84.2k");
+    expect(scored[4].text()).toBe("62");
+    expect(scored[5].text()).toBe("75");
+    expect(scored[5].attributes("data-hint")).toBe(
       i18nT("replay.scores.confidence") + " 80",
     );
     // Continuous lamp colour: hue 0.75 * 120 = 90.0 (red→yellow→green).
-    const lamp = scored[7].find(".holo-roster__lamp");
+    const lamp = scored[6].find(".holo-roster__lamp");
     expect(lamp.exists()).toBe(true);
     expect(lamp.classes()).not.toContain("holo-roster__lamp--empty");
     expect(lamp.attributes("style") ?? "").toContain(aiLampColor(0.75));
     // The unscored row (no report entry): dim dash everywhere, empty lamp.
     const unscored = rowFor("unscored").findAll("td");
-    expect(unscored[4].text()).toBe("—");
-    expect(unscored[6].text()).toBe("—");
-    expect(unscored[7].find(".holo-roster__lamp--empty").exists()).toBe(true);
+    expect(unscored[3].text()).toBe("—");
+    expect(unscored[5].text()).toBe("—");
+    expect(unscored[6].find(".holo-roster__lamp--empty").exists()).toBe(true);
   });
 
   it("footer carries the disclaimer, the legend and the samples line", () => {
