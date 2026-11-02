@@ -10,12 +10,14 @@
  *  + the three marks; nothing picked falls back to all). Rows carry the
  *  same configured stat columns as the live roster (the stats prefs own
  *  the column list) and sort by the first configured column, descending.
- *  Removal shows an undo toast. Strictly local data — no login, no sync,
- *  no upload. */
+ *  The cloud ban-list toggle (CN only) leads the section above the
+ *  toolbar. Removal shows an undo toast. Strictly local data — no login,
+ *  no sync, no upload. */
 import { computed, defineComponent, ref, watch, type PropType } from "vue";
 import type { VNode } from "vue";
 import {
   HkButton,
+  HkEmptyState,
   HkIconButton,
   HkInput,
   HkModal,
@@ -30,7 +32,7 @@ import {
   useBreakpoint,
   useToast,
 } from "@celestia-island/hikari";
-import { Cloud, Filter, Plus, Search, X } from "@lucide/vue";
+import { Cloud, Filter, Plus, Search, Tag, X } from "@lucide/vue";
 
 import { t } from "@/i18n";
 import { MARKER_COLORS, useMarkersStore } from "@/stores/markers";
@@ -816,6 +818,28 @@ export default defineComponent({
     return () => (
       <HkSettingsGroup title={t("settings.markersTitle")}>
         <HkSettingsHint>{t("settings.markersHint")}</HkSettingsHint>
+        {/* The cloud ban-list toggle leads the section — it shapes what the
+         *  list below will contain (auto yellow marks), so it reads before
+         *  the toolbar, not as a foot note under it. */}
+        <div class="markers-section__cloud-row">
+          <HkSwitch
+            size="sm"
+            modelValue={cloudEnabled.value ?? false}
+            disabled={cloudEnabled.value == null}
+            onUpdate:modelValue={(v: boolean) => {
+              if (cloudEnabled.value != null) void setCloudEnabled(v);
+            }}
+          />
+          <span class="markers-section__cloud-label">
+            {t("settings.markersCloudToggle")}
+          </span>
+          <span
+            class="markers-section__cloud-hint"
+            data-hint={t("settings.markersCloudHint")}
+          >
+            {t("settings.markersCloudHintShort")}
+          </span>
+        </div>
         <div class="markers-section__toolbar">
           {/* Search collapses to an icon; the field lives in the popover. */}
           <button
@@ -886,11 +910,13 @@ export default defineComponent({
           </HkIconButton>
         </div>
         <HkScrollContainer class="markers-section__list">
-          <div class="markers-section__list-inner">
-            {rows.value.length === 0 ? (
-              <p class="markers-section__muted">{t("settings.markersEmpty")}</p>
-            ) : (
-              rows.value.map((entry) => (
+          {rows.value.length === 0 ? (
+            /* Nothing marked (or nothing survives the filters) — hikari's
+             *  centered empty-state block fills the list viewport. */
+            <HkEmptyState fit="fill" icon={Tag} title={t("settings.markersEmpty")} />
+          ) : (
+            <div class="markers-section__list-inner">
+              {rows.value.map((entry) => (
                 <div
                   class="markers-section__entry"
                   key={entry.nickname}
@@ -950,30 +976,10 @@ export default defineComponent({
                     </HkIconButton>
                   )}
                 </div>
-              ))
-            )}
-          </div>
+              ))}
+            </div>
+          )}
         </HkScrollContainer>
-        <div class="markers-section__cloud-row">
-          <HkSwitch
-            size="sm"
-            color="warning"
-            modelValue={cloudEnabled.value ?? false}
-            disabled={cloudEnabled.value == null}
-            onUpdate:modelValue={(v: boolean) => {
-              if (cloudEnabled.value != null) void setCloudEnabled(v);
-            }}
-          />
-          <span class="markers-section__cloud-label">
-            {t("settings.markersCloudToggle")}
-          </span>
-          <span
-            class="markers-section__cloud-hint"
-            data-hint={t("settings.markersCloudHint")}
-          >
-            {t("settings.markersCloudHintShort")}
-          </span>
-        </div>
         <HkModal
           modelValue={addOpen.value}
           onUpdate:modelValue={(v: boolean) => (addOpen.value = v)}
