@@ -40,14 +40,26 @@ export interface ShipActionChip {
   ammo?: string | null;
 }
 
-/** One row-two hit pill: shell ammo family (or torpedo) + damage taken. */
+/** One row-two hit pill: shell ammo family (or torpedo) + damage taken.
+ *  Impacts are MERGED by damage source — (attacker entity id, kind, ammo
+ *  family): one attacker's same-ammo hits inside the display TTL read as a
+ *  single pill with the summed damage and a hit count. A different
+ *  attacker, or the same attacker switching shell family (HE → AP), is a
+ *  different damage source and stays its own pill. */
 export interface ShipHitChip {
   key: string;
   kind: "shell" | "torpedo";
   /** HE / AP / SAP / CS for shells; null/unknown when the params id
    *  didn't resolve (the pill then omits the sprite). */
   ammo: string | null;
+  /** Summed damage of the merged impacts. */
   dmg: number;
+  /** Number of impacts merged into this pill. */
+  count: number;
+  /** Attacker entity id (the "who" half of the damage source). */
+  sourceId: number;
+  /** Time of the newest impact in the group. */
+  t: number;
 }
 
 /** One row-two damage-over-time chip: counts down from the class base
@@ -83,9 +95,10 @@ const HIT_RADIUS = 160;
 /** A shell impact only renders when HP actually dropped in this window
  *  around it (filters joined kills that were water splashes / bounces). */
 const HIT_DAMAGE_WINDOW_S = 1.6;
-/** How long a hit pill stays on the row. */
+/** How long an impact feeds the hit pills; impacts from the same damage
+ *  source inside this window merge into one pill. */
 const HIT_TTL_S = 2.5;
-/** Max hit pills shown at once (newest wins). */
+/** Max hit pills (damage-source groups) shown at once (newest wins). */
 const HIT_CAP = 3;
 /** HP rises merged with gaps up to this are one repair window. */
 const REPAIR_GAP_S = 1.5;
@@ -181,6 +194,9 @@ interface StoredHit {
   kind: "shell" | "torpedo";
   ammo: string | null;
   dmg: number;
+  /** Attacker entity id — the "who" half of the damage-source identity
+   *  that `shipStatusAt` merges by. */
+  sourceId: number;
 }
 
 /** One ignition: the first/last observed DoT ticks plus the countdown base
@@ -268,12 +284,34 @@ export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipS
     });
     break;
   }
-  const hits: ShipHitChip[] = [];
-  for (let i = idx.hits.length - 1; i >= 0 && hits.length < HIT_CAP; i--) {
+  // Merge the TTL window's impacts by DAMAGE SOURCE = (attacker entity id,
+  // kind, ammo family). Scanning newest-first keeps each group's newest
+  // impact as its anchor and yields groups newest-first for the row. The
+  // key is the source identity itself, so a source's pill keeps its DOM
+  // node while follow-up hits add to dmg/count.
+  const hitGroups = new Map<string, ShipHitChip>();
+  for (let i = idx.hits.length - 1; i >= 0; i--) {
     const h = idx.hits[i];
-    if (h.t < t - HIT_TTL_S || h.t > t) continue;
-    hits.push({ key: `${h.kind}-${h.t.toFixed(2)}-${i}`, kind: h.kind, ammo: h.ammo, dmg: h.dmg });
+    if (h.t > t) continue; // not landed yet (defensive; hits are t-sorted)
+    if (h.t < t - HIT_TTL_S) break; // older than every displayed impact
+    const sourceKey = `${h.kind}|${h.sourceId}|${h.ammo ?? ""}`;
+    const group = hitGroups.get(sourceKey);
+    if (group) {
+      group.dmg += h.dmg;
+      group.count++;
+    } else {
+      hitGroups.set(sourceKey, {
+        key: sourceKey,
+        kind: h.kind,
+        ammo: h.ammo,
+        dmg: h.dmg,
+        count: 1,
+        sourceId: h.sourceId,
+        t: h.t,
+      });
+    }
   }
+  const hits = [...hitGroups.values()].slice(0, HIT_CAP);
   const dots: ShipDotChip[] = [];
   for (const d of idx.dots) {
     if (t < d.t0) continue;
@@ -580,6 +618,7 @@ function attributeHits(
       kind: im.kind,
       ammo: im.kind === "shell" ? im.ammo : null,
       dmg: Math.round(dmg),
+      sourceId: im.ownerId,
     });
   }
   for (const idx of out.values()) idx.hits.sort((a, b) => a.t - b.t);

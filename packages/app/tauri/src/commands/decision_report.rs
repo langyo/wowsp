@@ -535,97 +535,27 @@ pub(crate) fn build_static_report(
     })
 }
 
-/// The report's secondary-window label (single instance: re-open re-targets).
-#[cfg(desktop)]
-pub const REPORT_WINDOW_LABEL: &str = "report";
-
-/// Spawn (or re-target + focus) the AI battle report's secondary window.
-///
-/// The window loads `report.html?replay=<urlencoded>&entity=<id|none>`;
-/// an already-open window is NOT stacked over — it receives the new
-/// target through the `wowsp://report-params` event and keeps its scroll
-/// position on a same-replay perspective switch. Main-window-only (audit
-/// P0-5): only the replay view may spawn windows.
-///
-/// Desktop-only: mobile has no secondary windows, and the builder APIs this
-/// uses (`decorations`/`shadow`/`center`) do not exist on the mobile
-/// runtime — an ungated registration broke the Android build outright. The
-/// webui hides the report pill on phones to match.
-#[cfg(desktop)]
-#[tauri::command]
-pub fn open_static_report_window(
-    window: tauri::Window,
-    app: tauri::AppHandle,
-    replay_path: String,
-    entity_id: Option<i32>,
-) -> CommandResult<()> {
-    crate::commands::ensure_main_window_label(window.label())?;
-    use tauri::{Emitter, Manager};
-    if let Some(existing) = app.get_webview_window(REPORT_WINDOW_LABEL) {
-        existing
-            .emit_to(
-                REPORT_WINDOW_LABEL,
-                "wowsp://report-params",
-                serde_json::json!({ "replayPath": replay_path, "entityId": entity_id }),
-            )
-            .map_err(|e| anyhow!("emit report params: {e}"))?;
-        existing
-            .set_focus()
-            .map_err(|e| anyhow!("focus report window: {e}"))?;
-        return Ok(());
-    }
-    let mut query = format!("replay={}", urlencode(&replay_path));
-    if let Some(id) = entity_id {
-        query.push_str(&format!("&entity={id}"));
-    }
-    tauri::WebviewWindowBuilder::new(
-        &app,
-        REPORT_WINDOW_LABEL,
-        tauri::WebviewUrl::App(format!("/report.html?{query}").into()),
-    )
-    .title("WoWSP AI Battle Report")
-    .inner_size(780.0, 860.0)
-    .min_inner_size(520.0, 480.0)
-    .resizable(true)
-    .decorations(false)
-    .shadow(true)
-    .center()
-    .build()
-    .map_err(|e| anyhow!("create report window: {e}"))?;
-    Ok(())
-}
-
-/// Percent-encode the path for a URL query value (the replay path carries
-/// CJK directory names on this codebase's home machines).
-fn urlencode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for b in s.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' | b'/' | b':' => {
-                out.push(b as char)
-            },
-            _ => out.push_str(&format!("%{b:02X}")),
-        }
-    }
-    out
-}
-
 /// The report command: any roster perspective, coverage-stated.
+///
+/// A cold call runs the multi-second scoring pass (replay export + model
+/// passes), so the command is async and the work happens on the blocking
+/// pool — a synchronous command would run on the main/IPC thread and freeze
+/// the whole app (tray/window unresponsive) for the duration.
 #[tauri::command]
-pub fn decision_static_report(
+pub async fn decision_static_report(
     replay_path: String,
     entity_id: Option<i32>,
     los_grid_dir: Option<String>,
 ) -> CommandResult<StaticReport> {
-    let path = Path::new(&replay_path);
-    if !path.is_file() {
-        return Err(anyhow!("replay not found: {replay_path}").into());
-    }
-    Ok(build_static_report(
-        path,
-        los_grid_dir.as_deref().map(Path::new),
-        entity_id,
-    )?)
+    Ok(tokio::task::spawn_blocking(move || {
+        let path = Path::new(&replay_path);
+        if !path.is_file() {
+            return Err(anyhow!("replay not found: {replay_path}"));
+        }
+        build_static_report(path, los_grid_dir.as_deref().map(Path::new), entity_id)
+    })
+    .await
+    .map_err(|e| anyhow!("decision static report task: {e}"))??)
 }
 
 #[cfg(test)]

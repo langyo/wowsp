@@ -163,6 +163,7 @@
     "fullMode": "Full mode",
     "kills": "Kills",
     "sunkAt": "sunk at {time}",
+    "hitSource": "from {name} ×{n}",
     "aliveCount": "{alive}/{total} alive",
     "ship": "Ship",
     "toggle": "Scoreboard",

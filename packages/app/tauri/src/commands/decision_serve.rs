@@ -1542,20 +1542,21 @@ pub async fn decision_debug_report(
     .map_err(|e| anyhow!("decision debug report task: {e}"))??)
 }
 
-/// End-to-end fire suggestions for one replay at one instant — the tactical
-/// board's flagship call: decode → tick features → per-decider model
-/// inference → [`DecisionSuggestionReport`]. `los_grid_dir` optionally
-/// points at a directory of E4 rasters laid out as
-/// `<dir>/<map short name>/terrain_los.npz` (the `decisions` pack ships
+/// The fire-suggestions builder (pure sync core — the command wraps it in
+/// `spawn_blocking`, tests call it directly).
+///
+/// End-to-end for one replay at one instant: decode → tick features →
+/// per-decider model inference → [`DecisionSuggestionReport`].
+/// `los_grid_dir` optionally points at a directory of E4 rasters laid out
+/// as `<dir>/<map short name>/terrain_los.npz` (the `decisions` pack ships
 /// exactly that layout and is the default when the argument is omitted).
-#[tauri::command]
-pub fn decision_fire_suggestions(
-    replay_path: String,
+fn build_fire_suggestions(
+    replay_path: &str,
     time_sec: f32,
-    los_grid_dir: Option<String>,
-) -> CommandResult<DecisionSuggestionReport> {
-    let stream = super::replay::decode_replay_stream_sync(&replay_path)?;
-    let vehicles = super::replay_probe::read_roster(&replay_path)?;
+    los_grid_dir: Option<&str>,
+) -> anyhow::Result<DecisionSuggestionReport> {
+    let stream = super::replay::decode_replay_stream_sync(replay_path)?;
+    let vehicles = super::replay_probe::read_roster(replay_path)?;
     // LOS rasters: explicit directory, else the decisions pack cache when
     // installed (missing dirs degrade to feature-less rows, never an error).
     let los_dir = los_grid_dir.map(std::path::PathBuf::from).or_else(|| {
@@ -1580,14 +1581,37 @@ pub fn decision_fire_suggestions(
             .lock()
             .map_err(|_| anyhow!("decision model mutex poisoned"))?,
     };
-    Ok(build_suggestions(
+    build_suggestions(
         &stream,
         &vehicles,
         time_sec,
         los.as_ref(),
         DEFAULT_EYE_HEIGHT,
         &mut model,
-    )?)
+    )
+}
+
+/// End-to-end fire suggestions for one replay at one instant — the tactical
+/// board's flagship call: decode → tick features → per-decider model
+/// inference → [`DecisionSuggestionReport`]. `los_grid_dir` optionally
+/// points at a directory of E4 rasters laid out as
+/// `<dir>/<map short name>/terrain_los.npz` (the `decisions` pack ships
+/// exactly that layout and is the default when the argument is omitted).
+///
+/// Decoding + the per-ship model forwards cost seconds on a cold replay, so
+/// the command is async and the work runs on the blocking pool — a
+/// synchronous command would stall the main thread (the E25 freeze bug).
+#[tauri::command]
+pub async fn decision_fire_suggestions(
+    replay_path: String,
+    time_sec: f32,
+    los_grid_dir: Option<String>,
+) -> CommandResult<DecisionSuggestionReport> {
+    Ok(tokio::task::spawn_blocking(move || {
+        build_fire_suggestions(&replay_path, time_sec, los_grid_dir.as_deref())
+    })
+    .await
+    .map_err(|e| anyhow!("decision fire suggestions task: {e}"))??)
 }
 
 #[cfg(test)]

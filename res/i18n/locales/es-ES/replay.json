@@ -163,6 +163,7 @@
     "fullMode": "Modo completo",
     "kills": "Hundimientos",
     "sunkAt": "hundido a las {time}",
+    "hitSource": "de {name} ×{n}",
     "aliveCount": "{alive}/{total} vivos",
     "ship": "Buque",
     "toggle": "Marcador",

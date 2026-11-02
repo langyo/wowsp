@@ -7,6 +7,8 @@ import { analyzeSpawnSymmetry, type EntitySide } from "@/features/replay/spawnSy
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
+import StaticReportPanel from "@/features/holographic/StaticReportPanel";
+import type { StaticReport } from "@/api";
 import PairingWizard from "@/features/replay/PairingWizard";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePairingStore } from "@/stores/pairing";
@@ -2047,14 +2049,40 @@ export default defineComponent({
      * `null` entity = the recorder (Rust-side default; the always-fully-
      * observable perspective). The Rust side caches the scoring pass, so
      * switching perspectives is one IPC round-trip. */
-    /** E25 static report: opens its own SECONDARY WINDOW (report.html,
-     * spawned/focused by the Rust opener — an open window is re-targeted
-     * via wowsp://report-params instead of stacked). `null` entity = the
-     * recorder (Rust-side default; the always-fully-observable view). */
-    const openStaticReport = (entityId?: number | null) => {
+    const showReport = ref(false);
+    const staticReport = ref<StaticReport | null>(null);
+    const staticReportLoading = ref(false);
+    const staticReportError = ref<string | null>(null);
+    /** Stale-response guard: a perspective switch can overlap the previous
+     *  fetch, and closing the modal must orphan an in-flight one — only the
+     *  newest request may land in the state above. */
+    let staticReportSeq = 0;
+    const openStaticReport = async (entityId?: number | null) => {
       const cur = parser.current.value;
       if (!cur) return;
-      void api.openStaticReportWindow(cur.path, entityId ?? null).catch(() => undefined);
+      const path = cur.path;
+      if (!path) return;
+      const seq = ++staticReportSeq;
+      showReport.value = true;
+      staticReportLoading.value = true;
+      staticReportError.value = null;
+      try {
+        const report = await api.decisionStaticReport(path, entityId ?? null);
+        if (seq !== staticReportSeq) return;
+        staticReport.value = report;
+      } catch (err) {
+        if (seq !== staticReportSeq) return;
+        staticReportError.value = String(err);
+      } finally {
+        if (seq === staticReportSeq) staticReportLoading.value = false;
+      }
+    };
+    /** Close the report modal and orphan any in-flight fetch (its reply
+     *  must not patch a panel the user already dismissed). */
+    const closeStaticReport = () => {
+      showReport.value = false;
+      staticReportSeq += 1;
+      staticReportLoading.value = false;
     };
     /** Reveal the opened replay in the OS file manager (desktop): the
      *  backend re-validates the path (a replay-extension file that exists)
@@ -2090,22 +2118,6 @@ export default defineComponent({
      *  seek when a timeline dot/track is clicked. Null while no map mounts
      *  (decode error) — the panel then renders without the playhead. */
     const mapRef = ref<HoloMapHandle | null>(null);
-    // Cross-window step-through: the report window's 跳转 buttons emit
-    // wowsp://report-seek at MAIN; this listener drives the 3D playhead.
-    let unlistenReportSeek: (() => void) | null = null;
-    onMounted(() => {
-      if (!isNative()) return;
-      void import("@tauri-apps/api/event")
-        .then(({ listen }) =>
-          listen<number>("wowsp://report-seek", (e) => {
-            const t0 = e.payload;
-            if (typeof t0 === "number") mapRef.value?.seek(t0);
-          }),
-        )
-        .then((fn) => (unlistenReportSeek = fn))
-        .catch(() => undefined);
-    });
-    onUnmounted(() => unlistenReportSeek?.());
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
     const duration = ref(0);
@@ -2569,17 +2581,12 @@ export default defineComponent({
                           {t("replay.chatLog")}
                         </button>
                       ) : null}
-                      {/* The static report opens a SECONDARY desktop window
-                          (report.html, Rust-spawned) — phones have no such
-                          window, so the pill stays desktop-only. */}
-                      {!isMobileApp() ? (
-                        <button
-                          class="replay-view__meta-item replay-view__pill"
-                          onClick={() => openStaticReport()}
-                        >
-                          {t("replay.report.title")}
-                        </button>
-                      ) : null}
+                      <button
+                        class="replay-view__meta-item replay-view__pill"
+                        onClick={() => (showReport.value ? closeStaticReport() : void openStaticReport())}
+                      >
+                        {t("replay.report.title")}
+                      </button>
                     </header>
                     {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
                       <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
@@ -2696,6 +2703,35 @@ export default defineComponent({
                               mapApi={mapRef.value}
                             />
                           </div>
+                        </div>
+                      </div>
+                    ) : null}
+
+                    {showReport.value ? (
+                      <div class="replay-view__modal" onClick={closeStaticReport}>
+                        <div
+                          class="replay-view__modal-panel replay-view__report-panel"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {staticReportError.value ? (
+                            <ErrorCard
+                              title={t("replay.report.title")}
+                              error={staticReportError.value}
+                            />
+                          ) : staticReport.value ? (
+                            <StaticReportPanel
+                              report={staticReport.value}
+                              loading={staticReportLoading.value}
+                              onSeek={(t0) => mapRef.value?.seek(t0)}
+                              onPick={(entityId) => void openStaticReport(entityId)}
+                              onClose={closeStaticReport}
+                            />
+                          ) : (
+                            <div class="replay-view__placeholder replay-view__report-loading">
+                              <HkSpinner size="md" tone="current" />
+                              <span>{t("replay.report.loading")}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
                     ) : null}

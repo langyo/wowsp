@@ -163,6 +163,7 @@
     "fullMode": "完整模式",
     "kills": "擊殺",
     "sunkAt": "沉沒於 {time}",
+    "hitSource": "來自 {name} ×{n}",
     "aliveCount": "存活 {alive}/{total}",
     "ship": "艦船",
     "toggle": "記分板",

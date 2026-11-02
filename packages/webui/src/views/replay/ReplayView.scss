@@ -478,6 +478,33 @@
       }
     }
   }
+  /* AI battle report modal — a wide reading surface beside the 3D board.
+     The shared report column fills the frame and its own HkScrollContainer
+     owns the scrollbar; the column's standalone width / max-height caps
+     belonged to the deleted secondary window, so they are lifted here. */
+  &__report-panel {
+    width: min(1040px, 94vw);
+    height: min(88vh, 900px);
+    /* The base panel caps at 82vh (content-driven modals); the report's
+       fixed reading frame owns its own height instead. */
+    max-height: none;
+    display: flex;
+    flex-direction: column;
+
+    .static-report-panel {
+      flex: 1;
+      min-height: 0;
+      width: auto;
+      max-height: none;
+    }
+  }
+
+  &__report-loading {
+    /* First-fetch placeholder: spinner over the localized loading hint. */
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
   &__chat-timeline {
     display: flex;
     flex-direction: column;

@@ -42,9 +42,7 @@ import type { Plugin } from "vite";
  */
 export function wowspBootRecovery(): Plugin {
   return bootRecoveryPlugin({
-    // The report window (report.html) is a second app window: its
-    // renderer death needs the same crash-origin heal as the main shell.
-    htmlFiles: ["index.html", "report.html"],
+    htmlFiles: ["index.html"],
     copy: {
       message:
         "WoWSP did not finish loading. The app window may have recovered from a crash; reloading usually fixes it.",

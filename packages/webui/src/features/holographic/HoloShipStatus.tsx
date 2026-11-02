@@ -147,7 +147,18 @@ function HitChip({ chip }: { chip: ShipHitChip }) {
       {src ? (
         <img class="holo-ship-status__hit-img" src={src} alt="" draggable={false} />
       ) : null}
+      {/* dmg is the damage source's MERGED total (see ShipHitChip) — the
+          suffix marks how many impacts summed into it. Inline sizing keeps
+          the pill's capsule metrics stable without a new stylesheet rule. */}
       <span class="holo-ship-status__dmg">-{chip.dmg.toLocaleString()}</span>
+      {chip.count > 1 ? (
+        <span
+          class="holo-ship-status__hit-count"
+          style={{ fontSize: "9px", lineHeight: 1, opacity: 0.8 }}
+        >
+          ×{chip.count}
+        </span>
+      ) : null}
     </span>
   );
 }

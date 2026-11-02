@@ -119,8 +119,8 @@ export default defineComponent({
     onSeek: { type: Function as PropType<(t: number) => void>, default: null },
     /** Perspective switch (refetch from the Rust cache). */
     onPick: { type: Function as PropType<(entityId: number) => void>, required: true },
-    /** Optional close affordance (the secondary window supplies its own
-     *  title-bar close; the in-map modal passed one). */
+    /** Optional close affordance (the replay view's in-app modal passes
+     *  one; the demo route renders without it). */
     onClose: { type: Function as PropType<() => void>, default: null },
   },
   setup(props) {

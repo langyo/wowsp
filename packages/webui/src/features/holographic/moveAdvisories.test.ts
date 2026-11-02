@@ -6,7 +6,7 @@
 import { describe, expect, it } from "vitest";
 import type { MovementAdvice, ShipScoreSample } from "@/api";
 import { adviceColorRgb, secondBearingRad } from "./moveAdvisories";
-import { formatContribution, scoreSampleAt } from "./HoloScorePanel";
+import { formatContribution, scoreSampleAt } from "./rosterScore";
 
 function advice(partial: Partial<MovementAdvice>): MovementAdvice {
   return {
