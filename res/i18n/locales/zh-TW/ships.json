@@ -676,7 +676,10 @@
     "empty": "對比列表為空，點擊「添加艦艇」開始。",
     "notApplicable": "不適用",
     "showing": "顯示前 {shown} 艘 / 共 {total} 艘",
-    "count": "{n}"
+    "count": "{n}",
+    "fit": {
+      "stock": "白板配置"
+    }
   },
   "consumable": {
     "regenCrew": "維修小組",
