@@ -361,6 +361,14 @@
       "cn": "國服"
     }
   },
+  "entryClients": {
+      "title": "{name} 的用戶端",
+      "usage": "共占用 {size} · {files} 個檔案",
+      "usageFailed": "占用不可用",
+      "notInstalled": "未安裝",
+      "openHint": "點擊查看各用戶端的安裝情況"
+  },
+    "skippedRunning": "「{names}」執行中，已略過——關閉遊戲後再試一次。",
   "sync": {
     "banner": "正在個別管理 {client}",
     "toggleLabel": "多用戶端同步",
@@ -373,7 +381,6 @@
     "failed": "{count} 個用戶端全部同步失敗：{details}",
     "skippedByRule": "「{mod}」不適用於 {client}，已略過",
     "skippedByVersion": "{mod}：已跳過 {client}——該插件支援的遊戲版本不包含此用戶端",
-    "skippedRunning": "「{names}」執行中，已略過——關閉遊戲後再試一次。",
     "nothingToDo": "其他用戶端均已與本用戶端的模組清單一致。",
     "noCatalog": "線上目錄尚未載入——請先重新整理目錄再同步用戶端。",
     "noLedger": "安裝記錄讀取失敗——請稍後再試一次。"

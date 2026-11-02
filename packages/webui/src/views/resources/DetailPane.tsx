@@ -239,25 +239,48 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           {isCatalogCat(entry.category) && (
             <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
           )}
-          {/* ONE server-applicability tag — universal folds to 通用,
-              a subset enumerates its realms inside the SAME tag
-              (支持美服·亚服) instead of scattering one tag per server.
-              The tooltip keeps the comma-spelled list. */}
-          <span
-            class="mod-detail__tag mod-detail__tag--servers"
-            data-scope={scope}
-            data-hint={t("resources.servers.scopeHint", {
-              servers: realms.map(realmLabel).join(", "),
-            })}
-          >
-            <span class="mod-detail__tag-text">
-              {scope === "universal"
-                ? t("resources.servers.universal")
-                : t("resources.servers.list", {
-                    servers: realms.map(realmLabel).join("·"),
-                  })}
-            </span>
-          </span>
+          {/* ONE state tag: the installed/scope MERGE — when the entry is
+              installed anywhere this reads 已安装 · <clients> (click opens
+              the per-client window); otherwise it stays the plain
+              server-applicability tag. BOTH states open the window, so
+              "installed where?" is always one click away. */}
+          {(() => {
+            const installedOn = ctx.installedClientsOf(entry);
+            const openClients = () => ctx.openEntryClients(entry);
+            if (installedOn.length > 0) {
+              return (
+                <button
+                  class="mod-detail__tag mod-detail__tag--servers mod-detail__badge--ok mod-detail__tag--click"
+                  data-scope={scope}
+                  data-hint={t("resources.entryClients.openHint")}
+                  onClick={openClients}
+                >
+                  <span class="mod-detail__tag-text">
+                    {t("resources.installedBadge")} ·{" "}
+                    {installedOn.map(ctx.clientLabelOf).join("·")}
+                  </span>
+                </button>
+              );
+            }
+            return (
+              <button
+                class="mod-detail__tag mod-detail__tag--servers mod-detail__tag--click"
+                data-scope={scope}
+                data-hint={t("resources.servers.scopeHint", {
+                  servers: realms.map(realmLabel).join(", "),
+                })}
+                onClick={openClients}
+              >
+                <span class="mod-detail__tag-text">
+                  {scope === "universal"
+                    ? t("resources.servers.universal")
+                    : t("resources.servers.list", {
+                        servers: realms.map(realmLabel).join("·"),
+                      })}
+                </span>
+              </button>
+            );
+          })()}
           {(entry.authors ?? []).map((a) =>
             a.url ? (
               <button
@@ -280,11 +303,6 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
           {record && !upToDate && (
             <span class="mod-detail__badge mod-detail__badge--warn">
               {t("resources.installedAt", { version: record.version })}
-            </span>
-          )}
-          {upToDate && (
-            <span class="mod-detail__badge mod-detail__badge--ok">
-              {t("resources.installedBadge")}
             </span>
           )}
           {(entry.tags ?? []).map((id) => {

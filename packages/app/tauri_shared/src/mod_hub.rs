@@ -155,6 +155,20 @@ pub struct PackagePlan {
     pub texture_analysis: Option<TextureAnalysis>,
 }
 
+/// Disk footprint of one game install's whole mod tree — the entry-
+/// clients window's per-client usage row (a stat-only bounded walk of
+/// `res_mods`; a missing tree answers zeros, never an error).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientUsage {
+    /// Sum of every regular file's length under `res_mods/`.
+    pub total_bytes: u64,
+    /// Regular files seen (the walk's caps bound this count).
+    pub files: u32,
+    /// Top-level entries under `res_mods/` (the units' roots).
+    pub units: u32,
+}
+
 /// Result of applying a [`PackagePlan`] to a game install.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

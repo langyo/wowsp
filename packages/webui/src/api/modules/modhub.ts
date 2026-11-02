@@ -167,6 +167,13 @@ export interface PackagePlan {
   textureAnalysis?: TextureAnalysis | null;
 }
 
+/** Disk footprint of one client's whole mod tree (stat-only walk). */
+export interface ClientUsage {
+  totalBytes: number;
+  files: number;
+  units: number;
+}
+
 /** Result of applying a plan to a game install. */
 export interface InstallReport {
   name: string;
@@ -561,6 +568,8 @@ export interface CatalogProgress {
 }
 
 export const modHubApi = {
+  modHubClientUsage: (gameRoot: string) =>
+    transport.invoke<ClientUsage>(RPC.mod_hub_client_usage, { gameRoot }),
   modHubScanInstalled: (gameRoot: string) =>
     transport.invoke<InstalledMod[]>(RPC.mod_hub_scan_installed, { gameRoot }),
   modHubForeignUnits: (gameRoot: string) =>

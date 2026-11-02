@@ -5,6 +5,66 @@ use super::installed_units::{classify_installed_root, display_file_name, existin
 use super::texture_analysis::analyze_override_tree;
 use super::*;
 
+// ── Client usage (the entry-clients window) ────────────────────────────────
+
+/// Disk footprint of one install's whole mod tree: a STAT-ONLY bounded
+/// walk of `res_mods` (sizes and counts, no content reads). The entry-
+/// clients window shows one row per configured client; this is its
+/// "total usage" cell. A missing or unreadable tree answers zeros —
+/// usage is informational, never an error.
+#[tauri::command]
+pub fn mod_hub_client_usage(game_root: String) -> CommandResult<ClientUsage> {
+    #[cfg(mobile)]
+    {
+        let _ = &game_root;
+        return Ok(ClientUsage::default());
+    }
+    #[cfg(desktop)]
+    {
+        let Ok(res_mods) = scan_root(&game_root) else {
+            return Ok(ClientUsage::default());
+        };
+        Ok(client_usage_under(&res_mods))
+    }
+}
+
+#[cfg(desktop)]
+fn client_usage_under(res_mods: &Path) -> ClientUsage {
+    /// Stat-only recursion: files sum their lengths, directories descend.
+    /// Caps mirror the content walkers (a hostile tree cannot spin this
+    /// unbounded) — a truncated walk under-reports, never lies.
+    fn walk(dir: &Path, usage: &mut ClientUsage, files_left: &mut u32, depth_left: u8) {
+        if depth_left == 0 || *files_left == 0 {
+            return;
+        }
+        let Ok(entries) = fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            if *files_left == 0 {
+                return;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                walk(&entry.path(), usage, files_left, depth_left - 1);
+            } else {
+                *files_left -= 1;
+                usage.files += 1;
+                usage.total_bytes += meta.len();
+            }
+        }
+    }
+    let mut usage = ClientUsage::default();
+    if let Ok(top) = fs::read_dir(res_mods) {
+        usage.units = top.flatten().count() as u32;
+    }
+    let mut files_left = 20_000u32;
+    walk(res_mods, &mut usage, &mut files_left, 8);
+    usage
+}
+
 // ── Scan installed ──────────────────────────────────────────────────────────
 
 #[tauri::command]

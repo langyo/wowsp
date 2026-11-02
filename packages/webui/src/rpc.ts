@@ -208,6 +208,7 @@ export const RPC = {
   logs_reveal_latest: "logs_reveal_latest",
   logs_read_tail: "logs_read_tail",
   logs_export_bundle: "logs_export_bundle",
+  mod_hub_client_usage: "mod_hub_client_usage",
   mod_hub_scan_installed: "mod_hub_scan_installed",
   mod_hub_boot_installer: "mod_hub_boot_installer",
   mod_hub_disarm_boot_installer: "mod_hub_disarm_boot_installer",

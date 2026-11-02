@@ -361,6 +361,14 @@
       "cn": "Serveur CN"
     }
   },
+  "entryClients": {
+      "title": "Clients de {name}",
+      "usage": "{size} au total · {files} fichiers",
+      "usageFailed": "utilisation indisponible",
+      "notInstalled": "Non installé",
+      "openHint": "Cliquez pour voir l'installation par client"
+  },
+    "skippedRunning": "« {names} » est en cours d'exécution — ignoré. Fermez le jeu puis réessayez.",
   "sync": {
     "banner": "Gestion individuelle : {client}",
     "toggleLabel": "Synchro multi-clients",
@@ -373,7 +381,6 @@
     "failed": "Échec de la synchronisation sur les {count} clients : {details}",
     "skippedByRule": "« {mod} » ne s'applique pas à {client} — ignoré",
     "skippedByVersion": "{mod} : {client} ignoré — la plage de versions du pack n'inclut pas ce client",
-    "skippedRunning": "« {names} » est en cours d'exécution — ignoré. Fermez le jeu puis réessayez.",
     "nothingToDo": "Les autres clients correspondent déjà à l'ensemble de mods de ce client.",
     "noCatalog": "Le catalogue en ligne n'est pas chargé — actualisez-le avant de synchroniser les clients.",
     "noLedger": "Impossible de lire le registre des installations — réessayez dans un instant."

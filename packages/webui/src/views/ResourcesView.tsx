@@ -47,6 +47,7 @@ import { mediaImageUrl } from "@/utils/media";
 import "./ResourcesView.scss";
 import { useModHub } from "./resources/useModHub";
 import { renderCrashPins, renderCrashPinsWindow, useCrashPins } from "./resources/CrashPins";
+import { renderEntryClientsWindow } from "./resources/EntryClientsWindow";
 import {
   renderPurgeBackups,
   renderPurgeBackupsWindow,
@@ -749,6 +750,10 @@ export default defineComponent({
               crashPinsOpen.value = open;
             },
           )}
+
+          {/* The merged install tag's click-through — every configured
+              client with this entry's install state + usage. */}
+          {renderEntryClientsWindow(hub)}
 
           {/* The purge-backup launcher's secondary window — snapshot rows
               with resume / dismiss / restore-merge / delete. */}

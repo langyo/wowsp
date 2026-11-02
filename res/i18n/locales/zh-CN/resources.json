@@ -361,6 +361,14 @@
       "cn": "国服"
     }
   },
+  "entryClients": {
+      "title": "{name} 的客户端",
+      "usage": "共占用 {size} · {files} 个文件",
+      "usageFailed": "占用不可用",
+      "notInstalled": "未安装",
+      "openHint": "点击查看各客户端的安装情况"
+  },
+    "skippedRunning": "「{names}」正在运行，已跳过——关闭游戏后重试即可。",
   "sync": {
     "banner": "正在单独管理 {client}",
     "toggleLabel": "多客户端同步",
@@ -373,7 +381,6 @@
     "failed": "{count} 个客户端全部同步失败：{details}",
     "skippedByRule": "「{mod}」不适用于 {client}，已跳过",
     "skippedByVersion": "{mod}：已跳过 {client}——该插件支持的游戏版本不包含此客户端",
-    "skippedRunning": "「{names}」正在运行，已跳过——关闭游戏后重试即可。",
     "nothingToDo": "其他客户端均已与本客户端的模组清单一致。",
     "noCatalog": "在线目录尚未加载——请先刷新目录再同步客户端。",
     "noLedger": "安装记录读取失败——请稍后重试。"

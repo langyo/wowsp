@@ -42,9 +42,9 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use wowsp_tauri_shared::{
-    InstallReport, InstalledMod, MigrateReport, MigrationPlan, ModInstallRecord, ModKind,
-    PackagePlan, PackagePlanEntry, PlanFile, PnfLoaderStatus, StaleBinInfo, TextureAnalysis,
-    UnitToggleReport,
+    ClientUsage, InstallReport, InstalledMod, MigrateReport, MigrationPlan, ModInstallRecord,
+    ModKind, PackagePlan, PackagePlanEntry, PlanFile, PnfLoaderStatus, StaleBinInfo,
+    TextureAnalysis, UnitToggleReport,
 };
 
 /// What [`install_plan`] did, beyond the user-facing report: the exact files
@@ -829,6 +829,9 @@ pub use safe_mode::{
 };
 pub use safe_mode::{
     __cmd__mod_hub_set_safe_mode, __tauri_command_name_mod_hub_set_safe_mode, mod_hub_set_safe_mode,
+};
+pub use scan_installed::{
+    __cmd__mod_hub_client_usage, __tauri_command_name_mod_hub_client_usage, mod_hub_client_usage,
 };
 pub use scan_installed::{
     __cmd__mod_hub_foreign_units, __tauri_command_name_mod_hub_foreign_units, mod_hub_foreign_units,
