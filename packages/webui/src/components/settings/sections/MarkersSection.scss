@@ -19,7 +19,8 @@ $marker-purple: #a855f7;
     margin: 0.4rem 0 0.2rem;
   }
 
-  /* The collapsed search trigger (mirror of the lookup combo button). */
+  /* The collapsed search trigger — a ghost toolbar icon button in the
+   *  funnel chip's image (no chrome until hover/engaged). */
   &__icon-btn {
     display: inline-flex;
     align-items: center;
@@ -27,20 +28,21 @@ $marker-purple: #a855f7;
     width: 1.75rem;
     height: 1.75rem;
     flex: none;
-    border: 1px solid rgb(var(--color-border) / 25%);
+    padding: 0;
+    border: none;
     border-radius: var(--radius-sm);
-    background: rgb(var(--color-surface));
+    background: transparent;
     color: rgb(var(--color-muted));
     cursor: pointer;
-    transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease;
+    transition: color 0.12s ease, background-color 0.12s ease;
 
     &:hover {
       color: rgb(var(--color-text));
+      background: var(--c-primary-light);
     }
 
     &--on {
       color: rgb(var(--color-primary));
-      border-color: rgb(var(--color-primary) / 25%);
       background: color-mix(in srgb, rgb(var(--color-primary)) 12%, rgb(var(--color-surface)));
     }
   }
@@ -156,9 +158,9 @@ $marker-purple: #a855f7;
   }
 
   /* ── Cloud ban-list (云端封禁名单): the per-row provenance badge and
-   * the list-foot toggle. The badge rides where a note would sit, in the
-   * mark-yellow ink family — a glance-level "this yellow came from the
-   * cloud, not from you" that the hover tooltip then explains fully. */
+   * the section-head toggle. The badge rides where a note would sit, in
+   * the mark-yellow ink family — a glance-level "this yellow came from
+   * the cloud, not from you" that the hover tooltip then explains fully. */
   &__cloud-badge {
     flex: none;
     display: inline-flex;
@@ -177,7 +179,9 @@ $marker-purple: #a855f7;
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 0.55rem;
+    /* Head row: hangs under the hint; the toolbar's own margin-top
+     *  supplies the gap to the controls below. */
+    margin-bottom: 0.1rem;
   }
 
   &__cloud-label {
