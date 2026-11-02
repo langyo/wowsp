@@ -1,0 +1,31 @@
+// ErrorCard — chrome for the phone-only raw-details collapse. The desktop
+// pane stays always-open (the 2026-10 direction); on touch the JSON tree
+// starts collapsed behind this toggle so a phone sheet is not crushed by
+// the one block nobody reads first.
+
+.error-card__details {
+  min-width: 0;
+}
+
+.error-card__details-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgb(var(--color-border) / 25%);
+  border-radius: var(--radius-sm);
+  background: none;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+  cursor: pointer;
+
+  &.is-open {
+    color: rgb(var(--color-text));
+  }
+}
+
+.error-card__details-chev {
+  font-size: 0.7em;
+  line-height: 1;
+}

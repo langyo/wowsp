@@ -90,6 +90,14 @@ export default defineComponent({
     const updater = useUpdaterStore();
     const toast = useToast();
     const router = useRouter();
+  /** Phone recovery jump: close the sheet first (the hikari back guard
+   *  rewinds its pushed history entry as a deferred macrotask — a
+   *  same-tick router.push races that rewind), then land on the resource
+   *  downloads where the data / 3D packs live. */
+  function goResources(): void {
+    emit("close");
+    setTimeout(() => void router.push("/resources"), 350);
+  }
     // Phone app build: there is no local game install to point the armor
     // error's recovery action at (the game-path settings section and setup
     // modal are desktop-only surfaces) — the banner's second action routes
@@ -559,29 +567,22 @@ export default defineComponent({
                 gamedata cache to the phone. */}
             {gpError.value ? (
               <>
-                <ErrorCard error={gpError.value} retry={retryGameparams} />
-                <div class="ship-detail__gp-recovery">
-                  {mobileApp ? (
-                    <HkButton
-                      size="sm"
-                      onClick={() => {
-                        emit("close");
-                        // The modal's hikari back guard rewinds its pushed
-                        // history entry on close (a deferred macrotask); a
-                        // same-tick router.push races that rewind and the
-                        // popstate strands the user on /ships. Let the close
-                        // settle (0.3s leave animation) before navigating.
-                        setTimeout(() => void router.push("/replay"), 350);
-                      }}
-                    >
-                      {t("ships.detail.gameparamsSyncAction")}
-                    </HkButton>
-                  ) : (
+                {/* The card carries the phone's primary recovery — jump to
+                    the resource downloads (data pack + 3D pack live there);
+                    desktop keeps the game-path setup path. */}
+                <ErrorCard
+                  error={gpError.value}
+                  retry={retryGameparams}
+                  actionLabel={mobileApp ? t("ships.detail.gameparamsResourcesAction") : ""}
+                  onAction={mobileApp ? goResources : undefined}
+                />
+                {!mobileApp ? (
+                  <div class="ship-detail__gp-recovery">
                     <HkButton size="sm" onClick={() => (showPathSetup.value = true)}>
                       {t("common.gamePath.setAction")}
                     </HkButton>
-                  )}
-                </div>
+                  </div>
+                ) : null}
               </>
             ) : null}
 

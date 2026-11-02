@@ -1,4 +1,5 @@
 {
+  "rawDetails": "原始錯誤詳情",
   "app": {
     "name": "WoWSP",
     "tagline": "戰艦世界戰況分析儀表板 — 錄影復盤與遊戲內覆蓋層"
