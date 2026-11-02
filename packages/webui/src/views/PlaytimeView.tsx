@@ -498,7 +498,7 @@ export default defineComponent({
      *  (the histogram's mark, never a text ★ glyph); I–X stay on the text
      *  path now that tierLabel returns the Roman numerals. */
     function tierLegendIcon(key: string) {
-      return key === "11" ? <Star class="playtime-pie__legend-star" size={11} /> : null;
+      return key === "11" ? <Star class="playtime-breakdown-pie__legend-star" size={11} /> : null;
     }
 
     const breakdownGroups = computed<BreakdownGroupVm[]>(

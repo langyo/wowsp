@@ -569,13 +569,14 @@
 
 /* One donut block — deliberately the water-meter charts' (ShipDistCharts)
    presentation: title centered over the group, the ring a FIXED 150px
-   square, and the legend rows below chunked into 5-row columns. Four
-   blocks share one row, so the legend sits UNDER the ring (the stats page
-   has three blocks per row and room to put it beside); the rows
-   themselves are the same dot + label shape, with percents only in the
-   hover hint — the nation and tier groups swap the label for a glyph
-   (the water-meter's flag / the supership star) via legendIconOf. */
-.playtime-pie {
+   square, and the legend rows below the ring chunked into 5-row columns.
+   Four blocks share one row, so the legend sits UNDER the ring (the stats
+   page has three blocks per row and room to put it beside). The ring,
+   legend and hover pairing now come from hikari's HkDonutChart, whose
+   default is the ring-beside-legend stats layout over an
+   intrinsically-sized svg — the host rules below restate this view's
+   column contract explicitly rather than relying on that default. */
+.playtime-breakdown-pie {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -587,144 +588,101 @@
     text-align: center;
   }
 
-  /* Fixed square canvas (ShipDistCharts' __pie contract): the ring keeps
-     its 150px diameter no matter how wide the legend columns run. */
-  &__ring {
-    display: block;
-    width: 150px;
-    height: 150px;
-    margin: 0 auto;
+  /* HkDonutChart host contract. The ring keeps its fixed 150px square no
+     matter how wide the legend columns run (the pre-migration fixed
+     canvas), and the svg is sized HERE because the bundled hikari leaves
+     the ring to its intrinsic size: CSS width/height beat both that
+     default and the width/height attributes a later hikari sizing fix
+     may add. */
+  .hk-donut {
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .hk-donut__ring-wrap {
     flex: none;
   }
 
-  &__slice {
-    stroke: none;
+  .hk-donut__ring {
+    display: block;
+    width: 150px;
+    height: 150px;
   }
 
-  /* Legend columns under the ring, centered as a group; `safe` falls back
-     to start when three nation columns outgrow a narrow block. */
-  &__legend {
-    display: flex;
+  /* Legend columns under the ring, centered as a group and wrapping on
+     narrow blocks (safe center falls back to start where three nation
+     columns still outgrow the block). The 2xs row type restores the
+     hand-rolled legend's compact grammar: at hikari's 13px row default
+     the fixed 5-row columns run past a 196px four-up block. */
+  .hk-donut__legend {
     justify-content: center;
     justify-content: safe center;
     gap: 10px;
     flex-wrap: wrap;
+    max-width: 100%;
     min-width: 0;
   }
 
-  &__legend-col {
-    display: flex;
-    flex-direction: column;
-    row-gap: 0.45rem;
+  .hk-donut__legend-col {
     min-width: 0;
   }
 
-  &__legend-item {
-    display: flex;
-    align-items: center;
+  .hk-donut__legend-row {
     justify-content: center;
     gap: 4px;
     min-width: 0;
     white-space: nowrap;
+    font-size: var(--text-2xs);
   }
 
-  &__legend-dot {
+  .hk-donut__legend-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* hikari paints an inline percent segment on every row; this view's
+     legend contract (percents live in the row's hover hint — the
+     pre-migration dot + label grammar) keeps the FOUR-up 196px blocks
+     compact enough for their fixed 150px rings and multi-column legends,
+     so the segment is suppressed. The row's data-hint still carries
+     "label · n 场 · p%". */
+  .hk-donut__legend-pct {
+    display: none;
+  }
+
+  /* The pre-migration 6px legend dot (hikari's 8px dot widens every row
+     and pushes the chunked columns past the block). */
+  .hk-donut__legend-dot {
     flex: 0 0 6px;
     width: 6px;
     height: 6px;
-    border-radius: 50%;
-  }
-
-  &__legend-text {
-    color: rgb(var(--color-text) / 0.75);
-    font-size: var(--text-2xs);
-    overflow: hidden;
-    text-overflow: ellipsis;
   }
 
   /* Flag legend rows — the stats legend's normalization: the sm flag img
      is 12px tall while the missing-asset letter badge is 16px, so one
      shared height keeps a mixed column (real flags + the "unknown"
      bucket's badge) on one row rhythm. */
-  &__legend .nation-flag {
+  .hk-donut__legend .nation-flag {
     height: 16px;
   }
 
-  /* The supership tier's legend star — the lucide glyph solid-filled like
-     the histogram's tier star, at the text rows' ink. */
+  /* The supership tier's legend star (PlaytimeView's tierLegendIcon
+     glyph) — solid-filled at the text rows' ink like the histogram's
+     tier star. */
   &__legend-star {
     flex: none;
     color: rgb(var(--color-text) / 0.75);
     fill: currentColor;
-  }
-
-  /* --- Hover focus (ShipDistCharts' paint-only contract): a slice and its
-     legend row share the block's hover key — hovering either side lifts
-     the pair and dims the block's siblings. Geometry never scales. --- */
-  &__slice,
-  &__legend-item {
-    transition:
-      opacity 0.16s ease,
-      filter 0.16s ease;
-  }
-
-  &__slice.is-dim,
-  &__legend-item.is-dim {
-    opacity: 0.3;
-  }
-
-  &__slice.is-hot {
-    filter: brightness(1.07) saturate(1.2);
-  }
-
-  &__legend-item.is-hot .playtime-pie__legend-text {
-    color: rgb(var(--color-text));
-  }
-
-  &__legend-item.is-hot .playtime-pie__legend-star {
-    color: rgb(var(--color-text));
-  }
-
-  &__legend-item.is-hot .playtime-pie__legend-dot {
-    box-shadow: 0 0 0 3px rgb(var(--color-text) / 0.14);
-  }
-
-  &__legend-text {
-    transition: color 0.16s ease;
-  }
-
-  &__legend-star {
-    transition: color 0.16s ease;
-  }
-
-  &__legend-dot {
-    transition: box-shadow 0.16s ease;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .playtime-pie__slice,
-  .playtime-pie__legend-item,
-  .playtime-pie__legend-text,
-  .playtime-pie__legend-star,
-  .playtime-pie__legend-dot {
-    transition: none;
   }
 }
 
 /* Narrow windows: the four donut blocks step 4 → 2 → 1 (a block keeps its
    150px ring plus legend columns down to ~160px, below which 2-up would
    squeeze the legends into all-ellipsis rows). */
-/* Donut block titles (PlaytimeBreakdownPie's __title div): the
-   pre-migration .playtime-pie__title rules (muted, 2xs, centered) were
-   dropped in the HkDonutChart move (ef06819b) and the title went
-   unstyled at every width — restored under the component's real class. */
-.playtime-breakdown-pie__title {
-  color: rgb(var(--color-muted));
-  font-size: var(--text-2xs);
-  text-align: center;
-}
-
 @media (max-width: 1023px) {
   .playtime-cards {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -755,14 +713,6 @@
   .playtime-breakdown {
     grid-template-columns: minmax(0, 1fr);
     gap: 12px;
-  }
-
-  /* One donut per row, but a many-entry legend (nations, long EN mode
-     names) chunks into fixed five-row columns that do NOT wrap inside
-     hikari's chart — three columns run past a ~345px card. Let the
-     columns themselves wrap under the ring instead of overflowing. */
-  .playtime-breakdown .hk-donut__legend {
-    flex-wrap: wrap;
   }
 
   /* Toolbar: the pills + refresh wrap instead of squeezing each other,

@@ -39,15 +39,14 @@
    Column mode needs no overrides: `align-items: stretch` (the default
    here) makes each block fill the full row, and the fixed heights and
    min() caps are harmless stacked one per line. At the 240px pie floor
-   the block interior still works: the fixed 150px donut square plus the
-   8px pie-body gap leaves 82px for the legend — two ~30px CJK text
-   columns fit and ellipsis trims long names, while a FULL three-column
-   flag legend (three 26px dot+flag rows + two 10px column gaps ≈ 98px)
-   exceeds it and letterboxes the ring down a few px (break-even ≈ 256px,
-   reached only when 11+ nations split three columns). The min() caps
-   keep the fixed min-widths from overflowing phone-narrow containers
-   (lookup mobile content ≈ 280px, postbattle sheet ≈ 266px): there each
-   block simply fills the full row width. */
+   the block interior still works: the 2xs legend rows keep a full
+   three-column flag legend (dot + flag + percent ≈ 53px per row, three
+   columns + two 10px gaps ≈ 179px) narrow enough that the 150px ring
+   shrinks a little (flex-basis shrink, 96px floor) instead of the row
+   overflowing, and ellipsis trims long names. The min() caps keep the
+   fixed min-widths from overflowing phone-narrow containers (lookup
+   mobile content ≈ 280px, postbattle sheet ≈ 266px): there each block
+   simply fills the full row width. */
 
 /* Below the one-row threshold, skip the greedy 2+1 packing entirely:
    collapse straight to a single column (three stacked rows). */
@@ -114,17 +113,23 @@
   text-align: center;
 }
 
-/* Donut svg and its DOM legend sit side by side, vertically centered.
-   The svg is a FIXED 150px square (see __pie below), so the legend only
-   ever shrinks (never grows) and the ring keeps a stable diameter. The
-   pair also centers horizontally in the block: legend widths differ per
-   data set (one CJK text column vs three flag columns), and left-packing
-   piled all the slack on the right — the narrow-legend donut hugged the
-   previous block while a wide gap yawned before the next one. `safe`
-   falls back to start alignment wherever the fixed square plus legend
-   overflow the block (phone-narrow hosts, or the 240px floor carrying a
-   full three-column flag legend); the plain `center` declaration keeps
-   older engines that drop `safe` at least centered. */
+/* Donut body: hikari's HkDonutChart renders the ring svg and its DOM
+   legend (and owns their paired hover focus). The host restates the
+   pre-migration contract here — the bundled hikari leaves the ring svg
+   at its intrinsic size and defaults to a wrapping stats row — so the
+   pair relies on this file: ring and legend sit side by side, vertically
+   centered, the ring a FIXED 150px square that only shrinks (down to a
+   96px floor) when a narrow pie column cannot fit it beside the legend,
+   and the legend only ever shrinks (label ellipsis) rather than pushing
+   the row wider. The pair also centers horizontally in the block: legend
+   widths differ per data set (one CJK text column vs three flag columns),
+   and left-packing piled all the slack on the right — the narrow-legend
+   donut hugged the previous block while a wide gap yawned before the
+   next one. `safe` falls back to start alignment wherever the fixed
+   square plus legend overflow the block (phone-narrow hosts, or the
+   240px floor carrying a full three-column flag legend); the plain
+   `center` declaration keeps older engines that drop `safe` at least
+   centered. */
 .ship-dist-charts__pie-body {
   display: flex;
   align-items: center;
@@ -133,71 +138,94 @@
   gap: 8px;
 }
 
+/* HkDonutChart root, scoped through the pie body (the component root is
+   hikari's .hk-donut; the host does not need a fallthrough class because
+   the body is the one host hook). */
+.ship-dist-charts__pie-body .hk-donut {
+  flex-wrap: nowrap;
+  justify-content: center;
+  justify-content: safe center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+}
+
 /* Fixed square canvas: both donuts render the identical 150×150 box (ring
    ≈ 102px) no matter how wide each legend runs. The old flex-grow box
    letterboxed the ring down whenever a wide legend (three nation text
    columns) squeezed it, so the two rings could render at different
    diameters side by side. Shrink permission stays (min-width 96px) as
-   the last resort: since the legend rows grew slice dots, a full
-   three-column flag legend (≈ 98px) plus the fixed square needs ≈ 256px,
-   so at the 240px floor (the ≈741–853px container band, or any host
-   narrower still) the ring letterboxes down a few px instead of the
-   row overflowing. */
-.ship-dist-charts__pie {
+   the last resort: a full three-column flag legend plus the square
+   exceeds the ≈240px pie floor, so the ring shrinks a few px instead of
+   the row overflowing. The svg itself is sized off this wrapper (100% of
+   it, square by aspect ratio): the explicit CSS square beats both
+   hikari's intrinsic default and the width/height attributes a later
+   hikari sizing fix may add. */
+.ship-dist-charts__pie-body .hk-donut__ring-wrap {
   flex: 0 1 auto;
   width: 150px;
   min-width: 96px;
-  display: block;
-  height: 150px;
 }
 
-.ship-dist-charts__legend {
-  display: flex;
+.ship-dist-charts__pie-body .hk-donut__ring {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+}
+
+/* Legend columns beside the ring: same 10px column gap, 6px dot and 2xs
+   row type as the pre-migration legend. hikari's row defaults (13px type,
+   8px dot, an inline percent segment) widen every row enough that the
+   fixed 150px ring would have to shrink inside the dashboard's 52rem
+   content column — the pre-migration legend contract (percents live in
+   the row's hover hint, see the toLegendItems docblock in
+   ShipDistCharts.tsx) keeps the rows at dot + label/flag, so the ring
+   stays 150 and only reaches its 96px floor on a truly narrow host.
+   Columns/rows may still shrink (label ellipsis) but never widen the
+   block. */
+.ship-dist-charts__pie-body .hk-donut__legend {
   flex: 0 1 auto;
   min-width: 0;
   gap: 10px;
+  align-items: flex-start;
 }
 
-/* One column of legend rows — fills top-to-bottom, the next column
-   continues to the right. A full 5-row column measures ≈ 104px (five
-   ~15px 2xs lines + 4 × 0.45rem gaps), which matches the donut RING, not
-   the whole svg: the 68% outer radius over the 150px-tall box paints
-   a ≈ 102px-diameter ring, so a filled column and the ring read as one
-   visual unit. */
-.ship-dist-charts__legend-col {
-  display: flex;
-  flex-direction: column;
-  row-gap: 0.45rem;
+.ship-dist-charts__pie-body .hk-donut__legend-col {
   min-width: 0;
 }
 
-.ship-dist-charts__legend-item {
-  display: flex;
-  align-items: center;
+.ship-dist-charts__pie-body .hk-donut__legend-row {
   gap: 4px;
   min-width: 0;
   white-space: nowrap;
+  font-size: var(--text-2xs);
 }
 
-.ship-dist-charts__legend-dot {
+.ship-dist-charts__pie-body .hk-donut__legend-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* hikari's inline percent segment is suppressed — the pre-migration legend
+   shows percents only in the hover hint (the row's data-hint carries
+   "label · 场次 n · p%"). */
+.ship-dist-charts__pie-body .hk-donut__legend-pct {
+  display: none;
+}
+
+.ship-dist-charts__pie-body .hk-donut__legend-dot {
   flex: 0 0 6px;
   width: 6px;
   height: 6px;
-  border-radius: 50%;
-}
-
-.ship-dist-charts__legend-text {
-  color: rgb(var(--color-text) / 0.75);
-  font-size: var(--text-2xs);
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 /* Flag legend rows: the sm flag img is 12px tall while the missing-asset
    letter badge is 16px — normalizing the row box to 16px keeps every row
    in a column on the same rhythm when a letter badge (the "other" bucket)
    shares a column with real flags. */
-.ship-dist-charts__legend .nation-flag {
+.ship-dist-charts__pie-body .hk-donut__legend .nation-flag {
   height: 16px;
 }
 
@@ -246,21 +274,12 @@
   stroke-width: 1;
 }
 
-/* Slices carry inline fills (palette colors, not theme variables); the
-   class exists as the hover/hint hook and keeps stroke paint out of the
-   ring gaps. */
-.ship-dist-charts__slice {
-  stroke: none;
-}
+/* --- Hover focus (the tier histogram's own pair; the donuts' focus now
+   lives inside HkDonutChart): hovering one bar dims its siblings and
+   lifts the hovered one. Paint-only — opacity/filter, geometry never
+   scales or moves. Each block (bar, both donuts + their legends) carries
+   its own hover key, so focus never leaks across blocks. --- */
 
-/* --- Hover focus: hovering one shape (or its legend row) dims its
-   siblings within the same block and lifts the hovered one. Paint-only —
-   opacity/filter, geometry never scales or moves. Each block (bar, both
-   donuts + their legends) carries its own hover key, so focus never
-   leaks across blocks; a donut's slice and legend row share the key, so
-   hovering either side lights the pair up. --- */
-
-.ship-dist-charts__slice,
 .ship-dist-charts__bar-rect {
   transition:
     opacity 0.16s ease,
@@ -269,53 +288,24 @@
 
 /* The dimmed tier's value label fades with its bar (same key in the TSX);
    tier numbers stay put — they belong to the axis, not to any bar. */
-.ship-dist-charts__bar-value,
-.ship-dist-charts__legend-item {
+.ship-dist-charts__bar-value {
   transition: opacity 0.16s ease;
 }
 
-.ship-dist-charts__slice.is-dim,
 .ship-dist-charts__bar-rect.is-dim,
-.ship-dist-charts__bar-value.is-dim,
-.ship-dist-charts__legend-item.is-dim {
+.ship-dist-charts__bar-value.is-dim {
   opacity: 0.3;
 }
 
 /* The lift is a gentle brightness/saturation push — the hovered shape
    keeps its exact footprint. */
-.ship-dist-charts__slice.is-hot,
 .ship-dist-charts__bar-rect.is-hot {
   filter: brightness(1.07) saturate(1.2);
 }
 
-/* Hovered legend row: full ink instead of the resting 75%, and a soft
-   halo on the dot tying the row to its ring slice — box-shadow, so the
-   row's layout never shifts. The two paints transition on the elements
-   that carry them, so the row lights up on the same 0.16s beat the
-   sibling dimming fades on. */
-.ship-dist-charts__legend-item.is-hot .ship-dist-charts__legend-text {
-  color: rgb(var(--color-text));
-}
-
-.ship-dist-charts__legend-item.is-hot .ship-dist-charts__legend-dot {
-  box-shadow: 0 0 0 3px rgb(var(--color-text) / 0.14);
-}
-
-.ship-dist-charts__legend-text {
-  transition: color 0.16s ease;
-}
-
-.ship-dist-charts__legend-dot {
-  transition: box-shadow 0.16s ease;
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .ship-dist-charts__slice,
   .ship-dist-charts__bar-rect,
-  .ship-dist-charts__bar-value,
-  .ship-dist-charts__legend-item,
-  .ship-dist-charts__legend-text,
-  .ship-dist-charts__legend-dot {
+  .ship-dist-charts__bar-value {
     transition: none;
   }
 }
