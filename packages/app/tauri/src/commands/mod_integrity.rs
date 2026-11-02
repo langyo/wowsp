@@ -115,13 +115,8 @@ pub(crate) fn swf_magic_ok(bytes: &[u8]) -> bool {
 /// Extract every `.swf` reference token from a text blob: XML/Python mod
 /// glue spells URLs and script paths bare, so the token charset is path-
 /// safe. Placeholder-bearing tokens are ignored — they are format strings,
-/// not real references.
-///
-/// Ported verbatim from `commands/game_crash.rs` (its proactive dangling-
-/// reference pass) so the two implementations cannot drift: until
-/// game_crash.rs switches over to this module, any edit here MUST be
-/// mirrored there and vice versa — the planned refactor is behavior-
-/// preserving by contract.
+/// not real references. The ONE implementation: `commands/game_crash.rs`'s
+/// proactive dangling-reference pass consumes this same fn.
 pub(crate) fn swf_refs_in_text(text: &str) -> Vec<String> {
     fn is_token_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | '\\' | '~')
@@ -142,8 +137,7 @@ pub(crate) fn swf_refs_in_text(text: &str) -> Vec<String> {
 
 /// The token as a reference: only `.swf` files count (the Scaleform crash
 /// class), reduced to the basename — idx tables store names only, and a
-/// basename match is the conservative presence test. Kept in lockstep with
-/// game_crash.rs's private twin (see [`swf_refs_in_text`]).
+/// basename match is the conservative presence test.
 fn push_swf_token(refs: &mut Vec<String>, token: &str) {
     let lower = token.replace('\\', "/").to_ascii_lowercase();
     if !lower.ends_with(".swf") || lower.len() <= 4 {
@@ -663,6 +657,97 @@ pub async fn mod_integrity_scan(game_root: String) -> CommandResult<ModIntegrity
     Ok(report)
 }
 
+// ── pre-launch conflict notify (the watchdog's launch signal) ───────────────
+
+/// Tauri event broadcast when a pre-launch mod-integrity scan finds
+/// problems. The payload is the serialized [`ModIntegrityReport`]; the
+/// webui owns the toast (and its re-toast policy) off this one event.
+pub const MOD_CONFLICT_EVENT: &str = "wowsp://mod-conflict";
+
+/// Game roots this boot already notified about — the once-per-boot dedupe:
+/// a client relaunching several times in one session must not re-toast the
+/// same tree (the webui's re-toast policy handles redisplay).
+static NOTIFIED_ROOTS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+
+/// The once-per-boot dedupe core: true the FIRST time a root is seen this
+/// boot, false afterwards. Kept separate from the spawn so the contract is
+/// testable without an AppHandle.
+fn should_notify_root(game_root: &str) -> bool {
+    let set = NOTIFIED_ROOTS.get_or_init(|| Mutex::new(HashSet::new()));
+    let mut guard = set.lock().unwrap_or_else(|p| p.into_inner());
+    guard.insert(game_root.to_string())
+}
+
+/// The pre-launch conflict check the crash watchdog fires the moment a NEW
+/// client pid is FIRST tracked — wowsp never launches the game itself
+/// (Steam does), so first-sight is the one reliable "game is starting"
+/// signal. Fire-and-forget: the bounded scan runs on the blocking pool, a
+/// missing mods tree skips silently, a clean scan logs one info line (the
+/// app log is a support surface), and only a report WITH problems emits
+/// [`MOD_CONFLICT_EVENT`] to all windows — once per boot per game root.
+/// Never blocks or fails the caller: every error path is swallowed into
+/// the log.
+pub fn scan_and_notify_async(app: tauri::AppHandle, game_root: String) {
+    tauri::async_runtime::spawn(async move {
+        let report = match tauri::async_runtime::spawn_blocking({
+            let game_root = game_root.clone();
+            move || match active_res_mods(&game_root) {
+                Some(base) => scan_trees(Some(&game_root), &[base]),
+                None => ModIntegrityReport {
+                    game_root,
+                    scanned_files: 0,
+                    problems: Vec::new(),
+                },
+            }
+        })
+        .await
+        {
+            Ok(report) => report,
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    game_root = %game_root,
+                    "pre-launch mod integrity scan task failed"
+                );
+                return;
+            },
+        };
+        // No mods tree (or nothing scanned): nothing to accuse — silence,
+        // same contract as mod_integrity_scan.
+        if report.problems.is_empty() {
+            if report.scanned_files > 0 {
+                tracing::info!(
+                    game_root = %game_root,
+                    scanned = report.scanned_files,
+                    "pre-launch mod integrity scan clean"
+                );
+            }
+            return;
+        }
+        if !should_notify_root(&game_root) {
+            return;
+        }
+        let problems = report.problems.len();
+        use tauri::Emitter;
+        if let Err(e) = app.emit(MOD_CONFLICT_EVENT, &report) {
+            tracing::warn!(error = %e, "emit mod-conflict event failed");
+            // The emit never happened — let the next launch retry instead
+            // of losing this boot's notification to a dead window.
+            if let Some(set) = NOTIFIED_ROOTS.get() {
+                set.lock()
+                    .unwrap_or_else(|p| p.into_inner())
+                    .remove(&game_root);
+            }
+            return;
+        }
+        tracing::warn!(
+            game_root = %game_root,
+            problems,
+            "mod conflicts detected before game launch"
+        );
+    });
+}
+
 // ── tests ───────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -942,5 +1027,25 @@ mod tests {
         assert_eq!(json["problems"][0]["path"], "gui/broken.swf", "{json}");
         assert!(json["problems"][0]["asset"].is_null(), "{json}");
         assert!(json["problems"][0]["files"].is_array(), "{json}");
+    }
+
+    /// The wire event name the webui listens for — a rename would silently
+    /// disconnect every pre-launch toast.
+    #[test]
+    fn mod_conflict_event_has_the_wire_name() {
+        assert_eq!(MOD_CONFLICT_EVENT, "wowsp://mod-conflict");
+    }
+
+    /// The once-per-boot dedupe: the first sight of a root notifies, every
+    /// repeat in the same boot stays silent (the webui's re-toast policy
+    /// owns redisplay, so the backend must not re-emit).
+    #[test]
+    fn once_per_boot_dedupe_marks_each_root_once() {
+        let root = "D:/game-dedupe-probe";
+        assert!(should_notify_root(root), "first sight notifies");
+        assert!(!should_notify_root(root), "repeat sight is silent");
+        // A DIFFERENT root still notifies (per-root, not global).
+        assert!(should_notify_root("D:/game-dedupe-probe-other"));
+        assert!(!should_notify_root("D:/game-dedupe-probe-other"));
     }
 }

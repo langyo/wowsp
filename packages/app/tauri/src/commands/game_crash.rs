@@ -60,8 +60,6 @@ use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 #[cfg(windows)]
-use std::sync::{Arc, OnceLock};
-#[cfg(windows)]
 use std::time::Duration;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -211,9 +209,12 @@ pub struct ModEntry {
 pub struct SuspectMod {
     /// Top-level res_mods entry name (folder or file).
     pub name: String,
-    /// logMention (the game log named it in an error-shaped line under
-    /// res_mods) — stronger than recentChange (modified inside the 24 h
-    /// before the crash).
+    /// The MECHANICAL evidence that pinned it: logMention (the game log
+    /// named it in an error-shaped line under res_mods), danglingRef (the
+    /// file references an asset the death window shows failing to load) or
+    /// missingAsset (the file references a client asset that exists in
+    /// neither tree nor index). Mere recency is deliberately not evidence —
+    /// see [`detect_suspect_mods`].
     pub evidence: String,
     /// The redacted log lines that named it (logMention only).
     pub log_lines: Vec<String>,
@@ -793,6 +794,10 @@ fn watchdog_tick(app: &tauri::AppHandle) {
     let procs = super::game_context::running_processes();
     let now = unix_now();
     let mut gone: Vec<(u32, SeenProcess)> = Vec::new();
+    // Game roots of clients FIRST tracked this tick — the pre-launch
+    // mod-conflict check's input (resolved inside the arm, fired outside
+    // the SEEN lock; see the notify loop below).
+    let mut fresh_roots: Vec<String> = Vec::new();
     {
         let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
         for proc in &procs {
@@ -842,6 +847,18 @@ fn watchdog_tick(app: &tauri::AppHandle) {
                             absent_polls: 0,
                         },
                     );
+                    // First sight of this pid = a client is starting (the
+                    // one reliable launch signal — Steam launches the game,
+                    // wowsp does not). Root resolution mirrors the
+                    // exit-evidence chain: the validated root first, then
+                    // the one the exe path implies.
+                    if let Some(root) = proc.validated_root.clone().or_else(|| {
+                        proc.exe_path
+                            .as_deref()
+                            .and_then(super::game_context::exe_game_root)
+                    }) {
+                        fresh_roots.push(root);
+                    }
                 },
             }
         }
@@ -868,6 +885,12 @@ fn watchdog_tick(app: &tauri::AppHandle) {
     }
     for (pid, entry) in gone {
         classify_exit(app, pid, entry, now);
+    }
+    // The pre-launch mod-conflict check: spawn + internal error swallowing
+    // (mod_integrity::scan_and_notify_async) — never blocks or fails the
+    // watchdog tick, and runs outside the SEEN lock.
+    for root in fresh_roots {
+        super::mod_integrity::scan_and_notify_async(app.clone(), root);
     }
     // The crash dialog linger path: a still-alive client whose crash
     // report already landed gets its prompt NOW, not at exit.
@@ -2194,6 +2217,22 @@ fn event_matches_client(
     false
 }
 
+/// True iff `module` looks like a module file name — the `name.dll` /
+/// `name.exe` / `name.sys` / `name.drv` shape, at least 5 chars — the
+/// hang-P4 plausibility gate (see [`evidence_from_event`]). `d009`, `N/A`
+/// and a bare `ntdll` fail; `nvwgf2k64.dll` passes.
+#[cfg(windows)]
+fn plausible_hang_module(module: &str) -> bool {
+    let lower = module.to_ascii_lowercase();
+    lower.len() >= 5
+        && lower
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-' | ' '))
+        && [".dll", ".exe", ".sys", ".drv"]
+            .iter()
+            .any(|ext| lower.ends_with(ext))
+}
+
 /// Evidence from one matched event: codes from Event 1000's structured
 /// fields or Event 1001's P-numbered payload, plus the 1001 StorePath.
 #[cfg(windows)]
@@ -2208,10 +2247,25 @@ fn evidence_from_event(event: &ParsedEvent) -> CrashEvidence {
     let exception_code = value("exceptioncode")
         .or_else(|| value("p8"))
         .and_then(|raw| normalize_exception_code(&raw));
+    // WER hang reports (EventName containing "apphang", e.g. AppHangB1) put
+    // an UNSTRUCTURED blob in P4 — unlike the APPCRASH/BEX64 payload, where
+    // modulename/P4 is the real faulting module the loader recorded. The
+    // real-world report gc-20261101232118338-22840 recorded `p4=d009` and
+    // the UI displayed it as the faulting module, sending the user hunting
+    // a module that does not exist — a wrong name is worse than no name, so
+    // a hang's module token is accepted only when it LOOKS like a module
+    // file name ([`plausible_hang_module`]). The event summary line below
+    // stays verbatim (forensics); only the structured field is filtered,
+    // and non-hang events keep the old behavior untouched.
+    let is_hang = event
+        .data
+        .iter()
+        .any(|(key, value)| key == "eventname" && value.to_ascii_lowercase().contains("apphang"));
     let faulting_module = value("modulename")
         .or_else(|| value("p4"))
         .map(|module| module.trim().trim_end_matches("_unloaded").to_string())
-        .filter(|module| !module.is_empty());
+        .filter(|module| !module.is_empty())
+        .filter(|module| !is_hang || plausible_hang_module(module));
     let report_path = value("storepath");
     let mut summary = format!(
         "Event {} ({})",
@@ -2699,10 +2753,13 @@ fn dangling_urls_from_text(text: &str) -> Vec<String> {
 
 /// Every mods tree the analysis may need to read: the active res_mods
 /// (as the game leaves it) AND the safe-mode twin (the set that was loaded
-/// when a crash predates the safe-mode answer), deduped.
+/// when a crash predates the safe-mode answer), deduped. The single-tree
+/// resolution is [`super::mod_integrity::active_res_mods`]; this plural
+/// twin stays local because the analysis needs BOTH trees — a crash may
+/// predate a quarantine, and the dangling files live in the twin.
 fn res_mods_bases(root: &Path) -> Vec<PathBuf> {
     let mut bases: Vec<PathBuf> = Vec::new();
-    if let Some(base) = res_mods_base(root) {
+    if let Some(base) = super::mod_integrity::active_res_mods(&root.to_string_lossy()) {
         bases.push(base);
     }
     if let Some((_, ver_dir)) = super::mod_hub::latest_bin_version(&root.to_string_lossy()) {
@@ -2712,19 +2769,6 @@ fn res_mods_bases(root: &Path) -> Vec<PathBuf> {
         }
     }
     bases
-}
-
-/// The mods tree the analysis reads (active res_mods, or the safe-mode
-/// twin — the crash may already have prompted the quarantine of
-/// everything, and the dangling files live in the twin).
-fn res_mods_base(root: &Path) -> Option<PathBuf> {
-    let (_, ver_dir) = super::mod_hub::latest_bin_version(&root.to_string_lossy())?;
-    let active = ver_dir.join("res_mods");
-    if active.is_dir() {
-        return Some(active);
-    }
-    let twin = super::mod_hub::disabled_res_mods(&ver_dir);
-    twin.is_dir().then_some(twin)
 }
 
 /// Bounded text-file walk caps: the reference scan stays cheap even on
@@ -2810,7 +2854,6 @@ fn dangling_ref_suspects(base: &Path, urls: &[String]) -> Vec<SuspectMod> {
 
 /// Evidence tags for the suspect ranking.
 const EVIDENCE_LOG_MENTION: &str = "logMention";
-const EVIDENCE_RECENT_CHANGE: &str = "recentChange";
 /// A mod file on disk REFERENCES an asset the crash's death window shows
 /// failing to load — the battle_stats.swf class of crash: the strongest
 /// localization signal there is (mechanical, not correlational).
@@ -2819,16 +2862,16 @@ pub const EVIDENCE_DANGLING_REF: &str = "danglingRef";
 /// tree nor the client index — static evidence, no crash required.
 pub const EVIDENCE_MISSING_ASSET: &str = "missingAsset";
 
-/// Pull the crash-culprit candidates out of the game log texts + the mods
-/// inventory: an error-shaped line naming a path under res_mods/ pins the
-/// entry it points at (the game logs mod failures with that path), and a
-/// recently-changed entry pins on recency alone. logMention outranks
-/// recentChange; equal ranks keep the inventory order.
-fn detect_suspect_mods(
-    raw_texts: &[(&str, &str)],
-    mods: &[ModEntry],
-    crash_unix: Option<i64>,
-) -> Vec<SuspectMod> {
+/// Pull the crash-culprit candidates out of the game log texts: an
+/// error-shaped line naming a path under res_mods/ pins the entry it
+/// points at (the game logs mod failures with that path). MECHANICAL
+/// evidence only: entries merely modified inside the crash window are
+/// deliberately NOT suspects — a normal plugin wave after an update used
+/// to surface a pile of "recentChange" suspects for mods that were fine.
+/// The single informational recentModChanges finding in
+/// [`build_findings`] keeps listing fresh names (one line, not N
+/// accusations); equal ranks keep the inventory order.
+fn detect_suspect_mods(raw_texts: &[(&str, &str)], mods: &[ModEntry]) -> Vec<SuspectMod> {
     let mut suspects: Vec<SuspectMod> = Vec::new();
     let mut push_or_merge = |name: String, evidence: &str, line: Option<String>| {
         if let Some(existing) = suspects
@@ -2894,33 +2937,6 @@ fn detect_suspect_mods(
                     Some(format!("[{log_name}] {line}")),
                 );
             }
-        }
-    }
-    if let Some(crash_unix) = crash_unix {
-        // Newest change first: with a whole install wave inside the window
-        // (the observed shape — every plugin reinstalled within the hour),
-        // recency ordering is the only differentiator the list has.
-        let mut fresh: Vec<&ModEntry> = mods
-            .iter()
-            .filter(|entry| {
-                entry
-                    .modified
-                    .as_deref()
-                    .and_then(parse_rfc3339_unix)
-                    .is_some_and(|t| t >= crash_unix - 24 * 3600 && t <= crash_unix + 60)
-            })
-            .collect();
-        fresh.sort_by_key(|entry| {
-            std::cmp::Reverse(
-                entry
-                    .modified
-                    .as_deref()
-                    .and_then(parse_rfc3339_unix)
-                    .unwrap_or(0),
-            )
-        });
-        for entry in fresh {
-            push_or_merge(entry.name.clone(), EVIDENCE_RECENT_CHANGE, None);
         }
     }
     suspects.sort_by_key(|s| match s.evidence.as_str() {
@@ -3058,7 +3074,7 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         let mut refs: Vec<ModReference> = Vec::new();
         if let Some(root_path) = root.as_deref().map(Path::new) {
             if let Some(root_str) = root.as_deref() {
-                if let Some(client) = client_asset_basenames(root_str) {
+                if let Some(client) = super::mod_integrity::client_asset_basenames(root_str) {
                     refs = dangling_mod_references(&res_mods_bases(root_path), &client);
                 }
             }
@@ -3096,11 +3112,7 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         .iter()
         .map(|(name, text)| (name.as_str(), text.as_str()))
         .collect();
-    let mut suspects = detect_suspect_mods(
-        &raw_refs,
-        &mods_inventory,
-        parse_rfc3339_unix(&record.detected_at),
-    );
+    let mut suspects = detect_suspect_mods(&raw_refs, &mods_inventory);
     for suspect in attributed {
         if !suspects.iter().any(|s| s.name == suspect.name) {
             suspects.push(suspect);
@@ -3149,89 +3161,17 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
 
 /// One mod file referencing an asset that exists in neither the mods tree
 /// nor the client index — the static sibling of the crash-log heuristic.
+/// The extraction primitives and the client index live in the shared
+/// scanner ([`super::mod_integrity::swf_refs_in_text`] /
+/// [`super::mod_integrity::client_asset_basenames`]); this walk stays
+/// local because its presence set deliberately differs (extension list
+/// with .yml/.ini, per-base budget, toolchain files still count present).
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ModReference {
     /// The referenced asset basename (lowercase, e.g. `battle_stats.swf`).
     asset: String,
     /// The referencing mod files (paths relative to their mods tree).
     files: Vec<String>,
-}
-
-/// Extract every `.swf` reference token from a text blob: XML/Python mod
-/// glue spells URLs and script paths bare, so the token charset is path-
-/// safe. Placeholder-bearing tokens are ignored — they are format
-/// strings, not real references.
-#[cfg(windows)]
-fn swf_refs_in_text(text: &str) -> Vec<String> {
-    fn is_token_char(c: char) -> bool {
-        c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | '\\' | '~')
-    }
-    let mut refs: Vec<String> = Vec::new();
-    let mut current = String::new();
-    for c in text.chars() {
-        if is_token_char(c) {
-            current.push(c);
-        } else {
-            push_swf_token(&mut refs, &current);
-            current.clear();
-        }
-    }
-    push_swf_token(&mut refs, &current);
-    refs
-}
-
-/// The token as a reference: only `.swf` files count (the Scaleform crash
-/// class), reduced to the basename — idx tables store names only, and a
-/// basename match is the conservative presence test.
-#[cfg(windows)]
-fn push_swf_token(refs: &mut Vec<String>, token: &str) {
-    let lower = token.replace('\\', "/").to_ascii_lowercase();
-    if !lower.ends_with(".swf") || lower.len() <= 4 {
-        return;
-    }
-    let base = lower.rsplit('/').next().unwrap_or(lower.as_str());
-    // Toolchain placeholders spell their stubs with a leading "__"
-    // (ModForge's __forge_stub.swf) — never a real load target.
-    if !base.is_empty() && !base.contains('%') && !base.starts_with("__") {
-        refs.push(base.to_string());
-    }
-}
-
-/// Every client asset basename the install index knows (all `bin/<ver>/idx`
-/// tables, lowercased). Cached per game root: the parse is a few MB and the
-/// analysis may run repeatedly.
-#[cfg(windows)]
-fn client_asset_basenames(game_root: &str) -> Option<Arc<HashSet<String>>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, Arc<HashSet<String>>>>> = OnceLock::new();
-    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    if let Some(hit) = cache.lock().ok().and_then(|m| m.get(game_root).cloned()) {
-        return Some(hit);
-    }
-    let (_, ver_dir) = super::game_context::latest_bin_dir(Path::new(game_root))?;
-    let idx_dir = ver_dir.join("idx");
-    let entries = fs::read_dir(&idx_dir).ok()?;
-    let mut set: HashSet<String> = HashSet::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let is_idx = path
-            .extension()
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("idx"));
-        if !is_idx {
-            continue;
-        }
-        let Ok(data) = fs::read(&path) else { continue };
-        let Ok(parsed) = game_assets::data::idx::parse(&data) else {
-            continue;
-        };
-        for resource in parsed.resources {
-            set.insert(resource.filename.to_ascii_lowercase());
-        }
-    }
-    let set = Arc::new(set);
-    if let Ok(mut map) = cache.lock() {
-        map.insert(game_root.to_string(), set.clone());
-    }
-    Some(set)
 }
 
 /// The mod tree files worth scanning for asset references: small text files
@@ -3299,7 +3239,7 @@ fn dangling_mod_references(bases: &[PathBuf], client: &HashSet<String>) -> Vec<M
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
-        for asset in swf_refs_in_text(&text) {
+        for asset in super::mod_integrity::swf_refs_in_text(&text) {
             if present.contains(&asset) || client.contains(&asset) || asset.len() > 200 {
                 continue;
             }

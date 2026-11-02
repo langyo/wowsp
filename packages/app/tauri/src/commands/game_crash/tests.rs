@@ -365,7 +365,7 @@ fn findings_stay_crash_scoped() {
 // ── suspect detection ────────────────────────────────────────────────────────
 
 #[test]
-fn suspects_rank_log_mentions_above_recent_changes() {
+fn suspects_come_from_log_mentions_not_recency() {
     let now = unix_secs(std::time::SystemTime::now());
     let dir = TempDir::new("suspects");
     dir.touch("bin/5/res_mods/logged_mod", "x");
@@ -373,10 +373,10 @@ fn suspects_rank_log_mentions_above_recent_changes() {
     dir.set_mtime("bin/5/res_mods/logged_mod", now - 7200);
     dir.set_mtime("bin/5/res_mods/recent_mod", now - 3600);
 
-    let record = sample_record("gc-suspects", Some(dir.path().to_str().unwrap()));
     let mods = mods_inventory_entries(dir.path());
-    // A game-log line naming the mod under res_mods/<version>/ is the
-    // stronger evidence even though both entries are equally fresh.
+    // A game-log line naming the mod under res_mods/ is MECHANICAL
+    // evidence; the equally-fresh entry without one stays out entirely —
+    // a normal plugin wave after an update must not become a suspect pile.
     let raw = [(
         "python.log",
         format!("12:00:00 ERROR: failed loading res_mods/123/logged_mod/gui/x.xml extra",),
@@ -385,13 +385,11 @@ fn suspects_rank_log_mentions_above_recent_changes() {
         .iter()
         .map(|(name, text)| (*name, text.as_str()))
         .collect();
-    let suspects = detect_suspect_mods(&raw_refs, &mods, parse_rfc3339_unix(&record.detected_at));
-    assert_eq!(suspects.len(), 2, "both suspects found");
+    let suspects = detect_suspect_mods(&raw_refs, &mods);
+    assert_eq!(suspects.len(), 1, "the log-named mod only");
     assert_eq!(suspects[0].name, "logged_mod");
     assert_eq!(suspects[0].evidence, "logMention");
     assert_eq!(suspects[0].log_lines.len(), 1);
-    assert_eq!(suspects[1].name, "recent_mod");
-    assert_eq!(suspects[1].evidence, "recentChange");
 }
 
 // ── alive-time crash-report detection (the dialog-linger fix) ─────────────
@@ -446,7 +444,8 @@ fn alive_report_evidence_finds_this_sessions_report_only() {
 /// PnFMods splits into per-mod inventory entries: a suspect named
 /// "PnFMods" flags every plugin at once and pins nothing actionable,
 /// while PnFMods/<Mod> maps one-to-one onto the mod hub units and
-/// quarantines by that nested path. Recency order is newest first.
+/// quarantines by that nested path. A log line resolves to the composed
+/// per-mod unit, and freshness alone suspects nothing.
 #[test]
 fn suspects_pin_per_mod_units_under_pnfmods_newest_first() {
     let now = unix_secs(std::time::SystemTime::now());
@@ -478,17 +477,12 @@ fn suspects_pin_per_mod_units_under_pnfmods_newest_first() {
         "the bare top-level is split away, not kept alongside its units",
     );
 
-    // Recent-change suspects: only the fresh units, NEWEST first.
-    let record = sample_record("gc-pnf", Some(dir.path().to_str().unwrap()));
-    let suspects = detect_suspect_mods(&[], &mods, parse_rfc3339_unix(&record.detected_at));
-    assert_eq!(
-        suspects.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
-        vec![
-            "gui",
-            "PnFMods/RegenMonitorPy",
-            "PnFMods/ConsumablesMonitor2Py",
-        ],
-        "fresh entries only, newest change first — gui was touched now, the 30-day-old unit stays out",
+    // Freshness alone suspects NOTHING: the whole fresh wave (gui touched
+    // now, two units reinstalled within the hour) stays out until
+    // mechanical evidence names one of them.
+    assert!(
+        detect_suspect_mods(&[], &mods).is_empty(),
+        "fresh entries without mechanical evidence are not suspects"
     );
 
     // A log line naming res_mods/PnFMods/<Mod>/file resolves to the
@@ -498,9 +492,55 @@ fn suspects_pin_per_mod_units_under_pnfmods_newest_first() {
         "21:18:26 ERROR: failed to load res_mods/PnFMods/OldTimerPy/gui/x.xml",
     )];
     let raw_refs: Vec<(&str, &str)> = raw.iter().map(|(name, text)| (*name, *text)).collect();
-    let suspects = detect_suspect_mods(&raw_refs, &mods, None);
+    let suspects = detect_suspect_mods(&raw_refs, &mods);
+    assert_eq!(suspects.len(), 1);
     assert_eq!(suspects[0].name, "PnFMods/OldTimerPy");
     assert_eq!(suspects[0].evidence, "logMention");
+}
+
+/// The conservative-suspects contract: mods modified inside the crash
+/// window with NO mechanical evidence produce ZERO suspects, while the
+/// single informational recentModChanges finding still lists them (one
+/// line of names, not N accusations).
+#[test]
+fn fresh_mods_without_mechanical_evidence_stay_unsuspected() {
+    let now = unix_secs(std::time::SystemTime::now());
+    let dir = TempDir::new("fresh-no-suspects");
+    dir.touch("bin/6/res_mods/updated_mod", "x");
+    dir.set_mtime("bin/6/res_mods/updated_mod", now - 1800);
+    dir.touch("bin/6/res_mods/PnFMods/FreshPy/Main.py", "x");
+    dir.set_mtime("bin/6/res_mods/PnFMods/FreshPy/Main.py", now - 600);
+
+    let record = sample_record("gc-fresh", Some(dir.path().to_str().unwrap()));
+    let crash_unix = parse_rfc3339_unix(&record.detected_at).expect("detection time");
+    let mods = mods_inventory_entries(dir.path());
+    assert_eq!(mods.len(), 2, "{mods:?}");
+    // Fixture precondition: BOTH entries sit inside the 24 h window.
+    assert!(
+        mods.iter().all(|e| e
+            .modified
+            .as_deref()
+            .and_then(parse_rfc3339_unix)
+            .is_some_and(|t| t >= crash_unix - 24 * 3600 && t <= crash_unix + 60)),
+        "both fixture entries are fresh: {mods:?}"
+    );
+
+    assert!(
+        detect_suspect_mods(&[], &mods).is_empty(),
+        "freshness alone is not evidence — zero suspects"
+    );
+
+    // The informational finding keeps listing them (the webui's one-line
+    // "these changed recently" hint).
+    let findings = build_findings(&record, &mods, &[], &[], false);
+    let recent = findings
+        .iter()
+        .find(|f| f.code == "recentModChanges")
+        .expect("recent mod changes still surfaced as a finding");
+    assert_eq!(recent.severity, "warning");
+    let detail = recent.detail.as_deref().expect("names");
+    assert!(detail.contains("updated_mod"), "{detail}");
+    assert!(detail.contains("FreshPy"), "{detail}");
 }
 
 #[test]
@@ -681,6 +721,51 @@ mod evidence_parsers {
         "<Data Name='P8'>N/A</Data>",
         "</EventData></Event>"
     );
+    /// WER hang report whose P4 carries the garbage blob the real-world
+    /// report gc-20261101232118338-22840 recorded (`p4=d009`) — the shape
+    /// that made the UI display a nonexistent faulting module.
+    const EVENT_1001_APPHANG_BAD_MODULE: &str = concat!(
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
+        "<System><Provider Name='Windows Error Reporting'/><EventID>1001</EventID>",
+        "<TimeCreated SystemTime='2026-11-01T12:00:00.0000000Z'/></System><EventData>",
+        "<Data Name='EventName'>AppHangB1</Data>",
+        "<Data Name='P1'>worldofwarships64.exe</Data>",
+        "<Data Name='P4'>d009</Data>",
+        "</EventData></Event>"
+    );
+    /// A hang report whose P4 is a bare name without a module extension —
+    /// fails the same plausibility gate.
+    const EVENT_1001_APPHANG_NO_EXT: &str = concat!(
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
+        "<System><Provider Name='Windows Error Reporting'/><EventID>1001</EventID>",
+        "<TimeCreated SystemTime='2026-11-01T12:00:00.0000000Z'/></System><EventData>",
+        "<Data Name='EventName'>AppHangB1</Data>",
+        "<Data Name='P1'>worldofwarships64.exe</Data>",
+        "<Data Name='P4'>ntdll</Data>",
+        "</EventData></Event>"
+    );
+    /// A hang report whose P4 IS a plausible module file name — kept.
+    const EVENT_1001_APPHANG_REAL_MODULE: &str = concat!(
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
+        "<System><Provider Name='Windows Error Reporting'/><EventID>1001</EventID>",
+        "<TimeCreated SystemTime='2026-11-01T12:00:00.0000000Z'/></System><EventData>",
+        "<Data Name='EventName'>AppHangB1</Data>",
+        "<Data Name='P1'>worldofwarships64.exe</Data>",
+        "<Data Name='P4'>nvwgf2k64.dll</Data>",
+        "</EventData></Event>"
+    );
+    /// A NON-hang report carrying the same garbage in P4: the structured
+    /// APPCRASH payload keeps its old behavior untouched (the filter is
+    /// hang-scoped).
+    const EVENT_1001_APPCRASH_BAD_MODULE: &str = concat!(
+        "<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>",
+        "<System><Provider Name='Windows Error Reporting'/><EventID>1001</EventID>",
+        "<TimeCreated SystemTime='2026-11-01T12:00:00.0000000Z'/></System><EventData>",
+        "<Data Name='EventName'>APPCRASH</Data>",
+        "<Data Name='P1'>worldofwarships64.exe</Data>",
+        "<Data Name='P4'>d009</Data>",
+        "</EventData></Event>"
+    );
 
     fn window_around(iso: &str) -> (i64, i64) {
         let t = parse_rfc3339_unix(iso).expect("fixture time");
@@ -829,6 +914,42 @@ mod evidence_parsers {
                 .is_some_and(|p| p.contains("AppCrash_WorldOfWarships64.exe")),
             "the StorePath report folder is adopted: {:?}",
             from_1001.report_path
+        );
+    }
+
+    /// The hang-module plausibility gate: a hang event's P4 is an
+    /// unstructured blob — `d009` (the real-world
+    /// gc-20261101232118338-22840 shape) and extension-less names drop out,
+    /// a real module file name survives, and the summary line stays
+    /// verbatim either way (forensics).
+    #[test]
+    fn hang_event_p4_is_plausibility_filtered() {
+        let dropped = evidence_from_event(&parse_wevtutil_xml(EVENT_1001_APPHANG_BAD_MODULE)[0]);
+        assert_eq!(
+            dropped.faulting_module, None,
+            "garbage hang P4 must not become a faulting module"
+        );
+        assert!(
+            dropped.summary.contains("p4=d009"),
+            "the summary stays verbatim: {}",
+            dropped.summary
+        );
+
+        let no_ext = evidence_from_event(&parse_wevtutil_xml(EVENT_1001_APPHANG_NO_EXT)[0]);
+        assert_eq!(no_ext.faulting_module, None);
+
+        let kept = evidence_from_event(&parse_wevtutil_xml(EVENT_1001_APPHANG_REAL_MODULE)[0]);
+        assert_eq!(kept.faulting_module.as_deref(), Some("nvwgf2k64.dll"));
+    }
+
+    /// Non-hang events keep the existing behavior: the same garbage token
+    /// in an APPCRASH payload's structured P4 is preserved as-is.
+    #[test]
+    fn non_hang_event_p4_keeps_the_existing_behavior() {
+        let events = parse_wevtutil_xml(EVENT_1001_APPCRASH_BAD_MODULE);
+        assert_eq!(
+            evidence_from_event(&events[0]).faulting_module.as_deref(),
+            Some("d009")
         );
     }
 
@@ -1565,13 +1686,16 @@ fn subject_tree_resolves_active_then_twin() {
 #[cfg(windows)]
 #[test]
 fn swf_references_extract_from_mod_glue() {
+    // The tokenizer is now owned by commands::mod_integrity (the shared
+    // scanner); this pins the exact contract the crash analyzer's
+    // dangling-reference pass consumes through it.
     let text = r#"<element url="battle_stats.swf">
         <swffile>../unbound/mods/SecondaryArmament.swf</swffile>
         <path> gui/fonts/WoWsSymbol.ttf </path>
         <format>%s.swf</format>
         <notaref>icon_default.png</notaref>
     "#;
-    let refs = swf_refs_in_text(text);
+    let refs = super::super::mod_integrity::swf_refs_in_text(text);
     assert!(refs.contains(&"battle_stats.swf".to_string()), "{refs:?}");
     assert!(
         refs.contains(&"secondaryarmament.swf".to_string()),
