@@ -781,6 +781,76 @@ pub(crate) fn entry_display_name(entry: &CatalogEntry) -> String {
     }
 }
 
+/// The catalog-package integrity gate over
+/// [`crate::commands::mod_integrity`]: scan the staged tree plus the
+/// install's existing active res_mods WITH the client index, before the
+/// first res_mods/ledger mutation. A package whose glue references an
+/// asset that the package does not contain, the existing mods tree does
+/// not provide and the client does not index — or whose .swf payloads are
+/// not SWF files at all — is the gc-20261101232118338-22840 class that
+/// hangs the game UI at boot; it must never reach res_mods. Every blocking
+/// finding lands in one single-line error so the report pane (and a hub
+/// report) can name them all. `overlap` findings never block: an overlap
+/// with the existing mods tree is the user's decision, surfaced by the
+/// scan command elsewhere.
+fn integrity_gate(
+    mod_id: &str,
+    display_name: &str,
+    staged: &Path,
+    game_root: &str,
+) -> anyhow::Result<()> {
+    let mut bases = vec![staged.to_path_buf()];
+    if let Some(existing) = crate::commands::mod_integrity::active_res_mods(game_root) {
+        bases.push(existing);
+    }
+    let report = crate::commands::mod_integrity::scan_trees(Some(game_root), &bases);
+    if report.problems.is_empty() {
+        return Ok(());
+    }
+    // The catalog title (not the classifier's directory label) is what the
+    // error names — the user reads it in the install toast.
+    let pkg = if display_name.is_empty() {
+        mod_id
+    } else {
+        display_name
+    };
+    const TAIL: &str = "refusing to install a package that would hang the game UI; report the package on the mod hub";
+    let clauses: Vec<String> = report
+        .problems
+        .iter()
+        .filter(|p| {
+            p.kind == crate::commands::mod_integrity::KIND_DANGLING_REF
+                || p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF
+        })
+        .map(|p| {
+            if p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF {
+                format!(
+                    "{pkg} ships {}, which is not a valid SWF file (bad FWS/CWS/ZWS magic) — {TAIL}",
+                    p.path.as_deref().unwrap_or("<unknown>"),
+                )
+            } else {
+                format!(
+                    "{pkg} ships mod glue that references {}, which the package does not contain, the existing mods tree does not provide, and the client does not index — {TAIL}",
+                    p.asset.as_deref().unwrap_or("<unknown>"),
+                )
+            }
+        })
+        .collect();
+    if clauses.is_empty() {
+        // Overlap-only: advisory here (the mod-hub UI surfaces it from the
+        // standalone scan), never an install blocker.
+        tracing::debug!(
+            id = %mod_id,
+            overlaps = report.problems.len(),
+            "mod-integrity scan found only overlap claims (advisory)"
+        );
+        return Ok(());
+    }
+    let message = clauses.join("; ");
+    tracing::warn!(id = %mod_id, game_root, "{message}");
+    bail!("{message}");
+}
+
 /// Extract every package archive (part order = index order) into `work`, then
 /// run the shared classify → install pipeline. Validate the full replacement
 /// before rewinding an existing install. Returns the applied plan — the
@@ -833,6 +903,13 @@ pub(crate) fn unpack_and_install(
         plan.name = display_name.to_string();
     }
     mod_hub::validate_plan(&plan)?;
+    // Mod-integrity gate: the staged tree is complete and nothing has been
+    // mutated yet — refuse a package of the gc-20261101232118338-22840
+    // class HERE, before the rewind, so the installed version, its ledger
+    // record and its restore snapshots stay untouched (the same
+    // "validate the full replacement before rewinding" contract the
+    // classifier and validate_plan enforce above).
+    integrity_gate(mod_id, display_name, &extract_root, game_root)?;
     // Rewind only once all archives and the classified plan are usable.
     // Corrupt or unsupported replacement packages must leave the installed
     // version, its ledger record and its restore snapshots untouched.

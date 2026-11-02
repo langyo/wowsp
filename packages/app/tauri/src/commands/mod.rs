@@ -81,6 +81,11 @@ pub mod media;
 pub mod mod_catalog;
 pub mod mod_hub;
 pub mod mod_install;
+// Mod-integrity scanning (commands/mod_integrity.rs): the ONE static
+// scanner behind the catalog install gate, the crash analyzer's proactive
+// dangling pass and the pre-launch scan command. Platform-free surface;
+// only the client-index lookup inside is Windows-scoped.
+pub mod mod_integrity;
 pub mod mod_tags;
 pub mod model_pack;
 pub mod network;
