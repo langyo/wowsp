@@ -1,13 +1,19 @@
 /**
- * Battle-icon component: the game's OWN HUD markers, used everywhere a
- * ship/aircraft type glyph is needed (hologram labels, minimap, scorebar).
+ * Battle-icon component — the DOM face of the project's ONE ship/aircraft
+ * class-glyph provider (the canvas faces preload and draw the same art
+ * through `shipIcons.ts`'s `shipIconUrl()`, so every surface shows
+ * identical art at every size).
  *
- * - Ships: `/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`
- *   (original game art, see features/holographic/shipIcons.ts)
+ * - Ships: traced SVG of the game's OWN HUD markers
+ *   (`/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`), served
+ *   from `res/images/ships/icon_*.svg`. The art was vectorised by
+ *   `scripts/model_convert/trace_class_icons.py` because the 27 px bitmap
+ *   upscaled into jagged stair-steps at modern display densities (user
+ *   feedback); the vector face renders crisp at ANY size and DPR.
  * - Planes: `/gui/battle_hud/markers/plane/...` art via `planeIcon()`.
  *
  * Variants follow the battle HUD: ally (green), enemy (red), white
- * (neutral), sunk (grey), plain (uncolored class icon).
+ * (neutral), sunk (dim grey), plain (uncolored class icon).
  */
 import { defineComponent, computed } from "vue";
 
@@ -41,6 +47,7 @@ export default defineComponent({
             height={props.size}
             alt=""
             draggable={false}
+            decoding="sync"
           />
         );
       }
@@ -52,6 +59,7 @@ export default defineComponent({
             height={props.size}
             alt=""
             draggable={false}
+            decoding="sync"
           />
         );
       }

@@ -31,7 +31,7 @@ import { useLanguage } from "@/i18n/useLanguage";
 import { leagueFromNumber, leagueTierWindow } from "@/utils/ranked";
 import { winrateColor } from "@/utils/winrate";
 import { shipOfflineEntry } from "@/features/holographic/modelLoader";
-import { shipIcon } from "@/features/holographic/shipIcons";
+import BattleIcon from "@/components/base/BattleIcon";
 import { shipTypeBadgeShort } from "@/features/replay/shipLiveStats";
 import { tierToRoman } from "@wowsp/holo";
 import type { PlayerShipStats, RankedSeasonStats } from "@/api";
@@ -226,7 +226,6 @@ export default defineComponent({
               <div class="ranked-ships__list">
                 {filteredShips.value.map((s) => {
                   const meta = metaOf(s.shipId);
-                  const icon = shipIcon(meta?.type ?? "", "plain");
                   // Per-ship badge, not the class-level code: cruisers split
                   // CA vs CL off the baked main-gun caliber of THIS row's
                   // ship (unbaked oddities keep the combined CA/CL code —
@@ -237,8 +236,11 @@ export default defineComponent({
                   return (
                     <div class="ranked-ships__ship" key={s.shipId}>
                       <span class="ranked-ships__ship-ico">
-                        {icon && icon.complete && icon.naturalWidth > 0 ? (
-                          <img src={icon.src} width={22} height={22} alt="" />
+                        {/* ONE class-glyph provider: the ranked row's icon is
+                            the shared BattleIcon (vector art), not a local
+                            img copy of the same URL. */}
+                        {meta?.type ? (
+                          <BattleIcon type={meta.type} variant="plain" size={22} />
                         ) : null}
                       </span>
                       <span

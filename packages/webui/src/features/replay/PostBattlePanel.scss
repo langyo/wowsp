@@ -411,15 +411,21 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* The identity-line seals (career verdict + 成分章 tags, StampTag) LEAD the
-   name line BEFORE the nickname — career first, composition after: the
-   four-char wording reads as part of the identity line, not as a
-   score-column ornament (user feedback retired the row-end square column;
-   the small-tag face is the one the user asked for). A step smaller so the
-   tag sings in the clan tag's register instead of shouting over the nick;
-   the name line's own flex gap separates it from the nick. */
+/* The identity-line seals (career verdict + 成分章 tags, StampTag) and the
+   division tag (DivisionTag) LEAD the name line BEFORE the nickname —
+   career first, composition after: the four-char wording reads as part of
+   the identity line, not as a score-column ornament (user feedback retired
+   the row-end square column; the small-tag face is the one the user asked
+   for). One step smaller so the tags sing in the clan tag's register
+   instead of shouting over the nick; the name line's own flex gap
+   separates them from the nick. The division tag joins the SAME size rule
+   as its seal sibling — a division tag rendered at the name line's base
+   size reads one size larger than the 二级章 face it must match (user
+   feedback: the yellow tag looked a circle bigger than the seals). */
 .replay-view__postbattle-cell-name .stamp-tag,
-.replay-view__postbattle-fcell-name .stamp-tag {
+.replay-view__postbattle-fcell-name .stamp-tag,
+.replay-view__postbattle-cell-name .division-tag,
+.replay-view__postbattle-fcell-name .division-tag {
   font-size: 0.78em;
 }
 /* Karma (业力) superscript — raised to the nickname's top-right corner in

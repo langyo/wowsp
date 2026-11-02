@@ -70,7 +70,7 @@ describe("hintCardFrom", () => {
     const card = hintCardFrom({
       title: "大和",
       badge: "X",
-      iconUrl: "/images/ships/icon_battleship.webp",
+      iconUrl: "/images/ships/icon_battleship.svg",
       subtitle: "日本 · 战列舰",
       subtitleFlagUrl: "/images/flags/japan.webp",
       rows: [{ label: "血量", value: "97,200" }],
@@ -78,7 +78,7 @@ describe("hintCardFrom", () => {
     expect(card).toEqual({
       title: "大和",
       badge: "X",
-      iconUrl: "/images/ships/icon_battleship.webp",
+      iconUrl: "/images/ships/icon_battleship.svg",
       subtitle: "日本 · 战列舰",
       subtitleFlagUrl: "/images/flags/japan.webp",
       rows: [{ label: "血量", value: "97,200" }],
