@@ -42,7 +42,9 @@ Design invariants (docs/en/designs/mod-hub.md, "Upstream sync automation"):
 - Proposal-gated additions. New upstream entries only appear in the report
   until their slug tables are curated; "--include-new" publishes exactly the
   slugs resolved through scripts/mod_hub_slugs.py.
-- Safety gates. zip magic/repack validation, digest-idempotent asset uploads,
+- Safety gates. zip magic/repack validation, package-content checks (.swf
+  member magic + glue-reference scan, mod_package_check), digest-idempotent
+  asset uploads,
   an asset-existence gate on the index (>25% missing refuses the upload,
   delisted/stale entries exempt), a post-publish read-back verification with
   rollback to the previous index bytes, and >=1s spacing between Discussion
@@ -69,6 +71,7 @@ from pathlib import Path
 # Sibling modules (same directory -- sys.path[0] when run as a script).
 import mod_hub_publish as pub  # noqa: E402 - repo-local
 import mod_index  # noqa: E402 - repo-local
+import mod_package_check  # noqa: E402 - repo-local
 from mod_hub_slugs import SLUG_MAP  # noqa: E402 - repo-local
 
 REPO = pub.REPO
@@ -1230,6 +1233,24 @@ def run_apply(args) -> int:
                 staged.write_bytes((cache / "packages" / rec["id"] / p["name"]).read_bytes())
                 uploads[p["asset"]] = staged
         if uploads:
+            # Package-content gate (crash gc-20261101232118338-22840): the
+            # staged bytes are the upload source of truth, so this staging
+            # dict is the single landing point before anything uploads. A
+            # corrupt .swf member aborts the run (same lane as the container
+            # check in download_record_packages); unresolvable .swf
+            # references ride the report as warnings - the app-side
+            # installer gate, with the client index, stays the authority
+            # on stock-asset references.
+            for name, staged in sorted(uploads.items()):
+                rep = mod_package_check.scan_path(staged, name)
+                if rep.bad_swf_members:
+                    raise SystemExit(
+                        f"{name}: corrupt .swf member(s) fail the FWS/CWS/ZWS "
+                        f"magic check: {', '.join(rep.bad_swf_members)}")
+                for f in rep.findings:
+                    report["warnings"].append(
+                        f"{name}: .swf reference {f.ref_basename} is not in the "
+                        f"package (referenced by {', '.join(f.referencing_members)})")
             ensure_release()
             report["actions"]["assets_uploaded"] = upload_assets(uploads, assets)
 
@@ -1569,6 +1590,27 @@ def selftest() -> None:
     sel_p["policy_skipped_ids"] = {"Markers_Orphan"}
     assert classify(sel_p, [thread("legacy.orphan", "Markers_Orphan", ["old-asset.zip"])])["stale"] == []
 
+    # package content gate (shared mod_package_check helpers): the scan
+    # names corrupt .swf members and records unresolvable glue refs --
+    # run_apply turns the former into a hard SystemExit and the latter
+    # into report warnings.
+    import io as _io
+    import zipfile as _zipfile
+
+    def _zbytes(members: dict) -> bytes:
+        buf = _io.BytesIO()
+        with _zipfile.ZipFile(buf, "w") as z:
+            for name, data in members.items():
+                z.writestr(name, data)
+        return buf.getvalue()
+
+    rep = mod_package_check.scan_bytes(_zbytes({
+        "gui/uss_settings.xml": '<swffile>gui/unbound/mods/gone.swf</swffile>',
+        "gui/unbound/mods/here.swf": b"CWS\x06\x00",
+    }), "pkg.zip")
+    assert rep.swf_members_ok == 1 and not rep.bad_swf_members, rep
+    assert [f.ref_basename for f in rep.findings] == ["gone.swf"], rep.findings
+    assert rep.findings[0].referencing_members == ["gui/uss_settings.xml"]
     print("selftest ok")
 
 
