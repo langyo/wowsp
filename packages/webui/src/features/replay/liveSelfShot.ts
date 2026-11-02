@@ -13,6 +13,7 @@
  * damage columns (dealt / received) with the shared estimate footnote.
  */
 import { shipIconUrl, type ShipIconVariant } from "@/features/holographic/shipIcons";
+import { SHIP_GLYPH_RASTER } from "@/features/holographic/shipIcons";
 import {
   FOOT_H,
   LOGO_URL,
@@ -199,7 +200,9 @@ export async function renderLiveSelfShot(
   // ── damage columns.
   const icons = await Promise.all([
     ...model.columns.flatMap((c) =>
-      c.rows.map((r) => loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "plain"))),
+      c.rows.map((r) =>
+        loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "plain"), SHIP_GLYPH_RASTER),
+      ),
     ),
     loadImage(LOGO_URL),
   ]);

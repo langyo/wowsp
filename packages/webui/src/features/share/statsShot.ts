@@ -14,6 +14,7 @@
  * sees — never hidden parameters or data the view does not show.
  */
 import { shipIconUrl } from "@/features/holographic/shipIcons";
+import { SHIP_GLYPH_RASTER } from "@/features/holographic/shipIcons";
 import type { CareerStamp, CompositionStamps, StampKind } from "@/utils/winrate";
 import { isMergedStamp, resolveStamps } from "@/utils/winrate";
 import {
@@ -441,7 +442,9 @@ export async function renderStatsShot(
     y += SHIP_HEAD_H;
 
     const icons = await Promise.all(
-      model.ships.map((s) => loadImage(shipIconUrl(s.shipType ?? null, "plain"))),
+      model.ships.map((s) =>
+        loadImage(shipIconUrl(s.shipType ?? null, "plain"), SHIP_GLYPH_RASTER),
+      ),
     );
     model.ships.forEach((ship, i) => {
       const cy = y + ROW_H / 2;

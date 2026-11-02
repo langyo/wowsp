@@ -137,7 +137,7 @@ export function shipTypeClass(type: string | null | undefined): string {
   return "";
 }
 
-/** Resolve the original game PNG URL for a ship, or null when unknown. */
+/** Resolve the traced SVG URL for a ship class, or null when unknown. */
 export function shipIconUrl(
   type: string | null | undefined,
   variant: ShipIconVariant = "plain",
@@ -145,6 +145,14 @@ export function shipIconUrl(
   const cls = shipTypeClass(type);
   return SHIP_ICONS[variant]?.[cls] ?? null;
 }
+
+/**
+ * Intrinsic raster size canvas faces load the traced class-glyph SVGs at
+ * (shotKit's `loadImage(url, raster)`). The art's viewBox is 27 px; drawn
+ * at 18–20 px logical slots on the 2x shot canvases, loading at 96 px keeps
+ * every draw a smooth downsample instead of a bitmap upscale.
+ */
+export const SHIP_GLYPH_RASTER = 96;
 
 const cache: Record<string, HTMLImageElement | null> = {};
 /** Lazy-loaded HTMLImageElement for a ship icon (null until decoded). */

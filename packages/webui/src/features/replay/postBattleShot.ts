@@ -22,6 +22,7 @@
  * draws (same-origin vite assets, so the canvas never taints).
  */
 import { shipIconUrl, type ShipIconVariant } from "@/features/holographic/shipIcons";
+import { SHIP_GLYPH_RASTER } from "@/features/holographic/shipIcons";
 import { bundledRibbonUrl } from "@/features/holographic/ribbonIcons";
 import {
   FOOT_H,
@@ -450,7 +451,9 @@ export async function renderPostBattleShot(
   // the class icons so the paint never waits twice on the network.
   const icons = await Promise.all([
     ...cols.flatMap((c) =>
-      c.rows.map((r) => loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "plain"))),
+      c.rows.map((r) =>
+        loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "plain"), SHIP_GLYPH_RASTER),
+      ),
     ),
     loadImage(LOGO_URL),
   ]);
@@ -458,7 +461,7 @@ export async function renderPostBattleShot(
   // The banner's own art (its class icon + the settlement ribbon run) joins
   // the same cached wave; both settle instantly when the host had no banner.
   const bannerIcon = self
-    ? await loadImage(shipIconUrl(self.shipType, self.iconVariant ?? "white"))
+    ? await loadImage(shipIconUrl(self.shipType, self.iconVariant ?? "white"), SHIP_GLYPH_RASTER)
     : null;
   const ribbonIcons = self
     ? await Promise.all(self.ribbons.map((r) => loadImage(bundledRibbonUrl(r.key))))

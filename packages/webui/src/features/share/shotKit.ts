@@ -119,17 +119,31 @@ export function readPalette(el?: HTMLElement | null): ShotPalette {
 /** Image cache for the bundled PNG/WebP assets (a full roster reuses the
  * same handful of class icons and seal glyphs dozens of times). */
 const imageCache = new Map<string, Promise<HTMLImageElement | null>>();
-export function loadImage(url: string | null): Promise<HTMLImageElement | null> {
+export function loadImage(
+  url: string | null,
+  raster?: number,
+): Promise<HTMLImageElement | null> {
   if (!url) return Promise.resolve(null);
-  let entry = imageCache.get(url);
+  const key = raster ? `${url}#${raster}` : url;
+  let entry = imageCache.get(key);
   if (!entry) {
     entry = new Promise((resolve) => {
       const img = new Image();
-      img.onload = () => resolve(img);
+      img.onload = () => {
+        if (raster) {
+          // SVG art re-rasterizes at the requested intrinsic size: a class
+          // glyph loaded at ~96 px drawn into its 20 px logical slot on the
+          // 2x shot canvas downsamples smoothly instead of magnifying the
+          // source stair-steps back into jaggies.
+          img.width = raster;
+          img.height = raster;
+        }
+        resolve(img);
+      };
       img.onerror = () => resolve(null);
       img.src = url;
     });
-    imageCache.set(url, entry);
+    imageCache.set(key, entry);
   }
   return entry;
 }
