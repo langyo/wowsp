@@ -52,7 +52,6 @@ import type { ShipLabel } from "./shipLabel";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
-import HoloScorePanel, { type ScoreRowMeta } from "./HoloScorePanel";
 import HoloHeatStrip from "./HoloHeatStrip";
 import HoloSelfCard from "./HoloSelfCard";
 import HoloShipStatus from "./HoloShipStatus";
@@ -596,7 +595,8 @@ export default defineComponent({
     // ── AI analysis layer (G4-b + E18 unified) ───────────────────────────
     /** Single toggle for the whole AI analysis overlay: fire suggestions on
      *  the 2D map, movement advice arrows (2D + 3D), entity confidence
-     *  badges, and the hold-Tab score panel. One button, one state. */
+     *  badges, and the hold-Tab roster's AI score columns. One button, one
+     *  state. */
     const aiAnalysisOn = ref(false);
     /** Latest report (null = nothing fetched / last call failed). Rendered
      *  by drawMinimap (minimapPainter.ts) onto the zoom canvas through the
@@ -621,9 +621,6 @@ export default defineComponent({
     /** True while a debug report call is in flight (cold calls are slow —
      *  the panel and the toggle badge say so). */
     const debugLoading = ref(false);
-    /** Hold-Tab reveals the score panel (the E18 sidebar). The layer must be
-     *  on first — Tab alone does nothing without AI analysis running. */
-    const scorePanelVisible = ref(false);
     let debugLastFetchT = -Infinity;
     let debugSeq = 0;
     let debugInFlight = false;
@@ -1109,11 +1106,19 @@ export default defineComponent({
       };
     });
 
+    // ── Hold-Tab roster (the map's ONE Tab consumer) ──────────────────
+    // Tab is CLAIMED for as long as the map is mounted: the listener sits
+    // in the CAPTURE phase (before any app-level handler) and
+    // preventDefault runs on every keydown — repeats included. A repeat
+    // with the default action intact walks the browser's focus ring one
+    // control per key event, which is exactly the drift this hold must
+    // stop. Only text-entry targets keep native Tab (see tabKeyGate.ts);
+    // buttons/links/selects no longer bail out. keydown shows the roster,
+    // keyup retires it, and a window blur or a hidden tab retires it too,
+    // so a hold can never strand the overlay once focus leaves.
     onMounted(() => {
       const onKey = (e: KeyboardEvent) => {
         if (e.key === "Tab") {
-          // Claim Tab for the roster overlay ONLY when the keystroke did
-          // not land inside a form control — otherwise let focus move.
           if (shouldReserveTabKey(e.target)) {
             e.preventDefault();
             showRoster.value = true;
@@ -1121,6 +1126,7 @@ export default defineComponent({
             // arm the one-shot roster stats batch on first hold too.
             ensureRosterStats();
           }
+          return;
         }
         if (e.key === "Alt") {
           showCapEta.value = true;
@@ -1128,17 +1134,30 @@ export default defineComponent({
         }
       };
       const onKeyUp = (e: KeyboardEvent) => {
-        if (e.key === "Tab") showRoster.value = false;
+        if (e.key === "Tab") {
+          showRoster.value = false;
+          return;
+        }
         if (e.key === "Alt") {
           showCapEta.value = false;
           updateMarkersAt(ctx, current.value);
         }
       };
-      window.addEventListener("keydown", onKey);
-      window.addEventListener("keyup", onKeyUp);
+      const retireRoster = (): void => {
+        showRoster.value = false;
+      };
+      const onVisibilityChange = (): void => {
+        if (document.visibilityState === "hidden") retireRoster();
+      };
+      window.addEventListener("keydown", onKey, true);
+      window.addEventListener("keyup", onKeyUp, true);
+      window.addEventListener("blur", retireRoster);
+      document.addEventListener("visibilitychange", onVisibilityChange);
       onBeforeUnmount(() => {
-        window.removeEventListener("keydown", onKey);
-        window.removeEventListener("keyup", onKeyUp);
+        window.removeEventListener("keydown", onKey, true);
+        window.removeEventListener("keyup", onKeyUp, true);
+        window.removeEventListener("blur", retireRoster);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
       });
     });
 
@@ -1530,20 +1549,6 @@ export default defineComponent({
       syncMoveAdvisories(ctx);
       api.value?.requestRender();
     });
-    /** The panel's instant column slides on a 1 s clock — the samples sit
-     *  on a 4 s grid, and the parent's 10 Hz hudCurrent would re-render the
-     *  whole list ten times a second for identical numbers. */
-    const scorePanelT = computed(() => Math.floor(hudCurrent.value));
-    /** entity id → HUD icon class + allegiance for the panel rows (joins
-     *  the same shipLabels the markers render). */
-    const scoreMetaOf = (id: number): ScoreRowMeta | null => {
-      const lbl = shipLabels.value.find((l) => l.entityId === id && l.kind !== "plane");
-      if (lbl) {
-        return { type: lbl.type, role: lbl.role === "enemy" ? "enemy" : "ally", dead: lbl.dead };
-      }
-      return { type: null, role: "ally", dead: false };
-    };
-
     /** First-person camera: keep the selected ship centered, camera trailing
      *  behind it along its heading. Called every render frame.
      *
@@ -1892,28 +1897,6 @@ export default defineComponent({
       }
     });
 
-    // ── Hold-Tab score panel (E18→E22) ───────────────────────────────────
-    // Tab reveals the AI score sidebar while held (keydown → show, keyup →
-    // hide). Only fires when the AI analysis layer is on — Tab alone does
-    // nothing. preventDefault stops the browser's own focus-cycle Tab.
-    function onTabDown(e: KeyboardEvent): void {
-      if (e.key !== "Tab" || e.repeat) return;
-      if (aiAnalysisOn.value && props.replayPath) {
-        e.preventDefault();
-        scorePanelVisible.value = true;
-      }
-    }
-    function onTabUp(e: KeyboardEvent): void {
-      if (e.key !== "Tab") return;
-      scorePanelVisible.value = false;
-    }
-    window.addEventListener("keydown", onTabDown);
-    window.addEventListener("keyup", onTabUp);
-    onBeforeUnmount(() => {
-      window.removeEventListener("keydown", onTabDown);
-      window.removeEventListener("keyup", onTabUp);
-    });
-
     onBeforeUnmount(() => {
       mapTornDown = true;
       endFreeLook();
@@ -2095,19 +2078,6 @@ export default defineComponent({
             open={rangeMenuOpen.value}
             rings={selfRingsView.value}
             onToggle={() => { rangeMenuOpen.value = !rangeMenuOpen.value; }}
-          />
-        ) : null}
-        {/* E18 AI score sidebar: rides the movement-advice toggle (the
-            panel is the honest-labeling half of that layer — whole-game
-            MODEL AGREEMENT + the instant score at the playhead). */}
-        {props.replayPath && aiAnalysisOn.value && scorePanelVisible.value ? (
-          <HoloScorePanel
-            report={debugReport.value}
-            loading={debugLoading.value}
-            playhead={scorePanelT.value}
-            labelOf={vehicleLabelOf}
-            metaOf={scoreMetaOf}
-            onClose={() => { scorePanelVisible.value = false; }}
           />
         ) : null}
         {/* Bottom-left event feed — sink notifications + player chat +
@@ -2305,9 +2275,10 @@ export default defineComponent({
             </button>
             {/* AI analysis toggle: one button, one state — fire suggestions
                 on the 2D map + movement advice arrows (2D/3D) + entity
-                confidence badges + hold-Tab score panel + the timeline
-                heatmap strip. Cold build takes seconds (full replay decode
-                + model pass); the loading badge says so. */}
+                confidence badges + the hold-Tab roster's four AI score
+                columns + the timeline heatmap strip. Cold build takes
+                seconds (full replay decode + model pass); the loading badge
+                says so. */}
             <button
               class={["holo-map__lbltoggle", aiAnalysisOn.value ? "holo-map__lbltoggle--on" : ""].filter(Boolean).join(" ")}
               onClick={() => {
@@ -2407,6 +2378,9 @@ export default defineComponent({
             encyclopedia={props.encyclopedia}
             shipStatus={ctx.shipStatus}
             shipNameOrder={props.shipNameOrder}
+            aiOn={aiAnalysisOn.value}
+            scoreReport={debugReport.value?.scores ?? null}
+            scoreLoading={debugLoading.value}
             onClose={isMobile.value ? () => { showRoster.value = false; } : undefined}
           />
         ) : null}

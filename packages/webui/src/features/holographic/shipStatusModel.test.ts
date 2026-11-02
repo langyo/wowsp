@@ -184,7 +184,14 @@ describe("hit pills", () => {
     );
     const snap = shipStatusAt(idx.get(1), 10.6);
     expect(snap?.hits).toHaveLength(1);
-    expect(snap?.hits[0]).toMatchObject({ kind: "shell", ammo: "AP", dmg: 2600 });
+    expect(snap?.hits[0]).toMatchObject({
+      kind: "shell",
+      ammo: "AP",
+      dmg: 2600,
+      count: 1,
+      sourceId: 99,
+      t: 10,
+    });
   });
 
   it("stays silent for splashes that took no HP", () => {
@@ -236,6 +243,142 @@ describe("hit pills", () => {
     expect(snap?.hits).toHaveLength(2);
     const total = snap!.hits.reduce((s, h) => s + h.dmg, 0);
     expect(total).toBe(3000);
+  });
+});
+
+describe("hit pills merge by damage source", () => {
+  it("merges one attacker's same-ammo hits into one pill with summed damage + count", () => {
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [
+          ship(1, {
+            hp: [
+              { time: 9, value: 20000 },
+              { time: 10.2, value: 18500 }, // 1500
+              { time: 10.6, value: 17600 }, // 900
+            ],
+          }),
+        ],
+        shellImpacts: [
+          impact({ t: 10.1, ammo: "HE", ownerId: 99 }),
+          impact({ t: 10.5, ammo: "HE", ownerId: 99 }),
+        ],
+      }),
+    );
+    const snap = shipStatusAt(idx.get(1), 10.7);
+    expect(snap?.hits).toHaveLength(1);
+    expect(snap?.hits[0]).toMatchObject({
+      kind: "shell",
+      ammo: "HE",
+      sourceId: 99,
+      dmg: 2400,
+      count: 2,
+      t: 10.5,
+    });
+  });
+
+  it("keeps a different attacker as a separate pill", () => {
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [
+          ship(1, {
+            hp: [
+              { time: 9, value: 20000 },
+              { time: 10.2, value: 18500 },
+              { time: 10.6, value: 17600 },
+            ],
+          }),
+        ],
+        shellImpacts: [
+          impact({ t: 10.1, ammo: "HE", ownerId: 99 }),
+          impact({ t: 10.5, ammo: "HE", ownerId: 88 }),
+        ],
+      }),
+    );
+    const snap = shipStatusAt(idx.get(1), 10.7);
+    expect(snap?.hits).toHaveLength(2);
+    // Newest impact first; each source keeps its own single-hit pill.
+    expect(snap?.hits.map((h) => h.sourceId)).toEqual([88, 99]);
+    expect(snap?.hits.map((h) => h.count)).toEqual([1, 1]);
+    expect(snap?.hits.map((h) => h.dmg)).toEqual([900, 1500]);
+  });
+
+  it("keeps the same attacker's HE and AP as separate sources", () => {
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [
+          ship(1, {
+            hp: [
+              { time: 9, value: 20000 },
+              { time: 10.2, value: 18500 },
+              { time: 10.6, value: 17600 },
+            ],
+          }),
+        ],
+        shellImpacts: [
+          impact({ t: 10.1, ammo: "HE", ownerId: 99 }),
+          impact({ t: 10.5, ammo: "AP", ownerId: 99 }),
+        ],
+      }),
+    );
+    const snap = shipStatusAt(idx.get(1), 10.7);
+    expect(snap?.hits).toHaveLength(2);
+    expect(snap?.hits).toMatchObject([
+      { sourceId: 99, ammo: "AP", count: 1, dmg: 900 },
+      { sourceId: 99, ammo: "HE", count: 1, dmg: 1500 },
+    ]);
+  });
+
+  it("shows only the newest HIT_CAP groups (old sources drop off)", () => {
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [
+          ship(1, {
+            hp: [
+              { time: 0, value: 20000 },
+              { time: 10.2, value: 19500 },
+              { time: 10.5, value: 19000 },
+              { time: 10.8, value: 18500 },
+              { time: 11.1, value: 18000 },
+            ],
+          }),
+        ],
+        shellImpacts: [
+          impact({ t: 10.1, ammo: "HE", ownerId: 11 }),
+          impact({ t: 10.4, ammo: "HE", ownerId: 12 }),
+          impact({ t: 10.7, ammo: "HE", ownerId: 13 }),
+          impact({ t: 11.0, ammo: "HE", ownerId: 14 }),
+        ],
+      }),
+    );
+    const snap = shipStatusAt(idx.get(1), 11.2);
+    expect(snap?.hits).toHaveLength(3);
+    expect(snap?.hits.map((h) => h.sourceId)).toEqual([14, 13, 12]);
+  });
+
+  it("stops merging a source once its impact leaves the display TTL", () => {
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [
+          ship(1, {
+            hp: [
+              { time: 0, value: 20000 },
+              { time: 10.2, value: 19000 },
+              { time: 13.2, value: 18000 },
+            ],
+          }),
+        ],
+        shellImpacts: [
+          impact({ t: 10, ammo: "HE", ownerId: 99 }),
+          impact({ t: 13, ammo: "HE", ownerId: 99 }),
+        ],
+      }),
+    );
+    // Both impacts are the same source, but the first is 3.3 s old: only
+    // the fresh hit shows (not a merged dmg of 2000).
+    const snap = shipStatusAt(idx.get(1), 13.3);
+    expect(snap?.hits).toHaveLength(1);
+    expect(snap?.hits[0]).toMatchObject({ sourceId: 99, dmg: 1000, count: 1, t: 13 });
   });
 });
 

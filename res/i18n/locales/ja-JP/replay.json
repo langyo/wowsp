@@ -163,6 +163,7 @@
     "fullMode": "フル表示",
     "kills": "撃沈",
     "sunkAt": "{time} に沈没",
+    "hitSource": "{name} から ×{n}",
     "aliveCount": "生存 {alive}/{total}",
     "ship": "艦艇",
     "toggle": "スコアボード",

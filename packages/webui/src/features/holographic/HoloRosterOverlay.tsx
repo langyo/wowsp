@@ -12,18 +12,32 @@
  *     Roman numeral never shifts the ship name beside it (it used to be
  *     an inline prefix whose width swung the name with every tier),
  *   - sunk rows dimmed with their sinking time,
+ *   - a thin team-coloured HP bar under the icon of every afloat row
+ *     (the top scorebar's slot-bar recipe: dark rail + team-coloured fill
+ *     read from the HP stream at the playhead and the roster's
+ *     authoritative total HP),
  *   - ALIVE rows carrying the per-ship combat status chips — the same
  *     below-hull card the 3D chase view floats under each ship (see
  *     shipStatusModel / HoloShipStatus): firing/reload countdowns, smoke
  *     and repair windows, fire / flooding dots and the freshest hit
- *     pills, re-queried on every HUD tick. A ship with nothing showing
- *     renders a dim dash — the static 存活 text carried no information
- *     the alive-count header doesn't already give; sunk rows keep their
- *     red sunk phrasing.
+ *     pills, re-queried on every HUD tick. Hit pills now MERGE by damage
+ *     source (attacker entity + shell family): the summed damage with a
+ *     ×N suffix once follow-up hits joined, and a tooltip naming the
+ *     attacker. A ship with nothing showing renders a dim dash — the
+ *     static 存活 text carried no information the alive-count header
+ *     doesn't already give; sunk rows keep their red sunk phrasing.
+ *   - while the AI analysis layer is on, four extra columns after 击杀:
+ *     the E21 contribution (window-attributed damage), the whole-game
+ *     E17/E18 model agreement, the instant score at the playhead (its
+ *     confidence in the tooltip) and a CONTINUOUS red -> yellow -> green
+ *     agreement lamp (rosterScore.ts's aiLampColor — never three fixed
+ *     buckets). A footer strip under the board carries the E17 honesty
+ *     disclaimer, the movement-layer glyph legend and the report's
+ *     samples / loading / no-data line.
  *   - the game's OWN row order (utils/shipClass's recovered Tab sort —
  *     alive rows first in class/tier/nation order, sunk rows re-sorted to
  *     the bottom; CN replays flip the within-(class, tier) order to the
- *     localized-ship-name permutation via `shipNameOrder` — Lesta
+ *     localized-ship-name permutation via shipNameOrder — Lesta
  *     renders its own key order, established by the 2026-10-10
  *     capture).
  *
@@ -55,14 +69,19 @@ import {
 } from "./shipStatusModel";
 import { actionIconUrl, dotIconUrl, torpedoIconUrl, AMMO_ICON } from "./statusIcons";
 import { fmtSecs } from "./HoloShipStatus";
-import type { ShipInfo, VehicleEntry } from "@/api";
+import { hpAtTime } from "./trajectoryMath";
+import { aiLampColor, formatContribution, scoreSampleAt } from "./rosterScore";
+import type { ShipInfo, ShipScoreEntry, ShipScoreReport, VehicleEntry } from "@/api";
 import type { HoloTipState } from "./HoloShipTooltip";
 
 /** mm:ss battle clock for sunk times. */
 function fmtClock(sec: number): string {
   const s = Math.max(0, Math.round(sec));
-  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
+  return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
 }
+
+/** Whole-number percentage for the AI score columns (0..100). */
+const pct = (v: number): string => Math.round(v * 100).toString();
 
 interface RosterRow {
   vehicle: VehicleEntry;
@@ -73,18 +92,28 @@ interface RosterRow {
   /** Battle seconds the ship sank at (null = still afloat at the playhead). */
   deathTime: number | null;
   kills: number;
+  /** HP at the playhead (null = sunk or no HP stream) and the roster's
+   *  authoritative total HP — the icon column's mini bar reads both. */
+  hp: number | null;
+  maxHp: number | null;
   /** The trajectory entity this roster entry joined with (null = no
-   *  stream) — the key into the per-ship status index. */
+   *  stream) — the key into the per-ship status index and the AI scores. */
   entityId: number | null;
 }
 
-/** Render-side context: the marker/stats join plus the live status index
- *  and the playhead the chips describe. */
+/** Render-side context: the marker/stats join plus the live status index,
+ *  the AI score rows and the playhead the chips describe. */
 interface TableCtx {
   markers: ReturnType<typeof useMarkersStore>;
   stats: Map<string, RosterStat>;
   shipStatus: Map<number, ShipStatusIndex>;
   time: number;
+  /** AI analysis layer on -> the four extra score columns render. */
+  aiOn: boolean;
+  /** entity id -> report row (empty while the layer is off / no report). */
+  scoreByEntity: Map<number, ShipScoreEntry>;
+  /** trajectory entity id -> attacker display name (hit-chip source hints). */
+  entityNameById: Map<number, string>;
 }
 
 function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: TableCtx) {
@@ -109,6 +138,17 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
           <col class="holo-roster__col--tier" />
           <col class="holo-roster__col--ship" />
           {showKills ? <col class="holo-roster__col--kills" /> : null}
+          {/* AI columns live between 击杀 and 状态 (no kills column when the
+              replay carries no BattleResults — they follow the ship name
+              then; the order is stable for one replay). */}
+          {ctx.aiOn ? (
+            <>
+              <col class="holo-roster__col--contrib" />
+              <col class="holo-roster__col--whole" />
+              <col class="holo-roster__col--instant" />
+              <col class="holo-roster__col--lamp" />
+            </>
+          ) : null}
           <col />
         </colgroup>
         <thead>
@@ -120,86 +160,179 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
             <th class="holo-roster__th holo-roster__th--tier" />
             <th class="holo-roster__th">{i18nT("replay.roster.ship")}</th>
             {showKills ? <th class="holo-roster__th holo-roster__th--num">{i18nT("replay.roster.kills")}</th> : null}
+            {ctx.aiOn ? (
+              <>
+                <th class="holo-roster__th holo-roster__th--num">{i18nT("replay.scores.contribution")}</th>
+                <th class="holo-roster__th holo-roster__th--num">{i18nT("replay.scores.whole")}</th>
+                <th class="holo-roster__th holo-roster__th--num">{i18nT("replay.scores.instant")}</th>
+                {/* The lamp carries no title — it is the colour form of the
+                    瞬时 / 认同 pair. */}
+                <th class="holo-roster__th holo-roster__th--lamp" />
+              </>
+            ) : null}
             <th class="holo-roster__th">{i18nT("replay.tip.status")}</th>
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.vehicle.id} class={r.alive ? "" : "holo-roster__row--dead"}>
-              <td class="holo-roster__td holo-roster__td--icon">
-                <BattleIcon
-                  type={r.type ?? ""}
-                  variant={
-                    r.alive
-                      ? r.vehicle.relation === 0
-                        ? "white"
-                        : enemy
-                          ? "enemy"
-                          : "ally"
-                    : "sunk"
-                  }
-                  size={14}
-                />
-              </td>
-              <td
-                class="holo-roster__td holo-roster__td--name"
-                data-player-name={r.vehicle.name}
-                data-player-account={
-                  ctx.stats.get(r.vehicle.name)?.accountId != null
-                    ? String(ctx.stats.get(r.vehicle.name)?.accountId)
-                    : undefined
-                }
-                data-player-realm={ctx.stats.get(r.vehicle.name)?.realm ?? undefined}
-              >
-                {/* No 「我」 label — the self row is marked by its WHITE
-                    ship icon (alive), the game's own convention. The name
-                    itself carries the marker tint (玩家标记); right-click
-                    opens the shared menu (the overlay is aria-hidden
-                    chrome, but pointer events still flow to the binding). */}
-                {(() => {
-                  const color = ctx.markers.colorOf(
-                    r.vehicle.name,
-                    ctx.stats.get(r.vehicle.name)?.accountId ?? null,
-                  );
-                  return (
-                    <span
-                      class={["holo-roster__nick", markerTintClass(color)]}
-                      data-hint={color ? markerColorLabel(color) : undefined}
-                    >
-                      {r.vehicle.name}
-                    </span>
-                  );
-                })()}
-              </td>
-              <td class="holo-roster__td holo-roster__td--tier">
-                {r.tier ? <b class="holo-roster__tier">{r.tier}</b> : null}
-              </td>
-              <td class="holo-roster__td">
-                <span class="holo-roster__ship">{r.shipName}</span>
-              </td>
-              {showKills ? (
-                <td class="holo-roster__td holo-roster__td--num">
-                  {r.kills > 0 ? <b>{r.kills}</b> : <span class="holo-roster__zero">0</span>}
-                </td>
-              ) : null}
-              <td class="holo-roster__td holo-roster__td--status">
-                {r.alive ? (
-                  <StatusCell ctx={ctx} entityId={r.entityId} />
-                ) : (
-                  /* Compact for the narrow status column — the full
-                     "已击毁 · 沉没于 mm:ss" phrasing lives in the tooltip. */
-                  <span class="holo-roster__sunk">
-                    {r.deathTime != null
-                      ? i18nT("replay.roster.sunkAt", { time: fmtClock(r.deathTime) })
-                      : i18nT("replay.legend.dead")}
+          {rows.map((r) => {
+            /** Fill percentage of the icon-column HP bar (null = no bar). */
+            const hpPct =
+              r.alive && r.hp != null && r.maxHp != null && r.maxHp > 0
+                ? Math.round(Math.max(0, Math.min(1, r.hp / r.maxHp)) * 100)
+                : null;
+            return (
+              <tr key={r.vehicle.id} class={r.alive ? "" : "holo-roster__row--dead"}>
+                <td class="holo-roster__td holo-roster__td--icon">
+                  <span class="holo-roster__icon">
+                    <BattleIcon
+                      type={r.type ?? ""}
+                      variant={
+                        r.alive
+                          ? r.vehicle.relation === 0
+                            ? "white"
+                            : enemy
+                              ? "enemy"
+                              : "ally"
+                          : "sunk"
+                      }
+                      size={14}
+                    />
+                    {/* Same recipe as the top scorebar's slot mini bar: a dark
+                        rail with a team-coloured fill (--hp-pct). Sunk rows
+                        and rows with no HP stream render no bar at all. */}
+                    {hpPct != null ? (
+                      <span
+                        class={[
+                          "holo-roster__hp",
+                          enemy ? "holo-roster__hp--enemy" : "holo-roster__hp--ally",
+                        ].join(" ")}
+                        aria-hidden="true"
+                        style={{ "--hp-pct": hpPct + "%" } as Record<string, string>}
+                      />
+                    ) : null}
                   </span>
-                )}
-              </td>
-            </tr>
-          ))}
+                </td>
+                <td
+                  class="holo-roster__td holo-roster__td--name"
+                  data-player-name={r.vehicle.name}
+                  data-player-account={
+                    ctx.stats.get(r.vehicle.name)?.accountId != null
+                      ? String(ctx.stats.get(r.vehicle.name)?.accountId)
+                      : undefined
+                  }
+                  data-player-realm={ctx.stats.get(r.vehicle.name)?.realm ?? undefined}
+                >
+                  {/* No 「我」 label — the self row is marked by its WHITE
+                      ship icon (alive), the game's own convention. The name
+                      itself carries the marker tint (玩家标记); right-click
+                      opens the shared menu (the overlay is aria-hidden
+                      chrome, but pointer events still flow to the binding). */}
+                  {(() => {
+                    const color = ctx.markers.colorOf(
+                      r.vehicle.name,
+                      ctx.stats.get(r.vehicle.name)?.accountId ?? null,
+                    );
+                    return (
+                      <span
+                        class={["holo-roster__nick", markerTintClass(color)]}
+                        data-hint={color ? markerColorLabel(color) : undefined}
+                      >
+                        {r.vehicle.name}
+                      </span>
+                    );
+                  })()}
+                </td>
+                <td class="holo-roster__td holo-roster__td--tier">
+                  {r.tier ? <b class="holo-roster__tier">{r.tier}</b> : null}
+                </td>
+                <td class="holo-roster__td">
+                  <span class="holo-roster__ship">{r.shipName}</span>
+                </td>
+                {showKills ? (
+                  <td class="holo-roster__td holo-roster__td--num">
+                    {r.kills > 0 ? <b>{r.kills}</b> : <span class="holo-roster__zero">0</span>}
+                  </td>
+                ) : null}
+                {ctx.aiOn ? (
+                  <AiScoreCells
+                    score={r.entityId != null ? ctx.scoreByEntity.get(r.entityId) ?? null : null}
+                    time={ctx.time}
+                  />
+                ) : null}
+                <td class="holo-roster__td holo-roster__td--status">
+                  {r.alive ? (
+                    <StatusCell ctx={ctx} entityId={r.entityId} />
+                  ) : (
+                    /* Compact for the narrow status column — the full
+                       "已击毁 · 沉没于 mm:ss" phrasing lives in the tooltip. */
+                    <span class="holo-roster__sunk">
+                      {r.deathTime != null
+                        ? i18nT("replay.roster.sunkAt", { time: fmtClock(r.deathTime) })
+                        : i18nT("replay.legend.dead")}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
+  );
+}
+
+/** One row's four AI score cells (contribution · whole-game agreement ·
+ *  instant score · continuous agreement lamp). Rendered only while the AI
+ *  analysis layer is on; a ship the report does not cover keeps the dim
+ *  dash in every column and an unlit lamp. */
+function AiScoreCells({ score, time }: { score: ShipScoreEntry | null; time: number }) {
+  const now = score ? scoreSampleAt(score.samples, Math.floor(time)) : null;
+  // Per-shot mean stays a tooltip fact (the old score panel's hint) — the
+  // column itself is too narrow for two numbers.
+  const contribHint =
+    score?.contribution != null && score.contributionShots
+      ? i18nT("replay.scores.perShot", {
+          value: formatContribution(score.contribution / Math.max(1, score.contributionShots)),
+        })
+      : undefined;
+  // Whole-game agreement decomposes into its fire / move halves — reuse the
+  // old panel's labels for the tooltip rather than growing new keys.
+  const wholeHint = score
+    ? (score.wholeFire != null
+        ? i18nT("replay.scores.fire") + " " + pct(score.wholeFire)
+        : i18nT("replay.scores.noFire")) +
+      " · " + i18nT("replay.scores.move") + " " + pct(score.wholeMove)
+    : undefined;
+  return (
+    <>
+      <td class="holo-roster__td holo-roster__td--num holo-roster__td--contrib" data-hint={contribHint}>
+        {score?.contribution != null ? (
+          <b>{formatContribution(score.contribution)}</b>
+        ) : (
+          <span class="holo-roster__idle">—</span>
+        )}
+      </td>
+      <td class="holo-roster__td holo-roster__td--num" data-hint={wholeHint}>
+        {score ? <b>{pct(score.wholeGame)}</b> : <span class="holo-roster__idle">—</span>}
+      </td>
+      <td
+        class="holo-roster__td holo-roster__td--num holo-roster__td--instant"
+        data-hint={now ? i18nT("replay.scores.confidence") + " " + pct(now.confidence) : undefined}
+      >
+        {now ? <b>{pct(now.inst)}</b> : <span class="holo-roster__idle">—</span>}
+      </td>
+      <td class="holo-roster__td holo-roster__td--lamp">
+        {now ? (
+          <span
+            class="holo-roster__lamp"
+            aria-hidden="true"
+            style={{ "--lamp-color": aiLampColor(now.inst) } as Record<string, string>}
+          />
+        ) : (
+          <span class="holo-roster__lamp holo-roster__lamp--empty" aria-hidden="true" />
+        )}
+      </td>
+    </>
   );
 }
 
@@ -218,7 +351,7 @@ function StatusCell({ ctx, entityId }: { ctx: TableCtx; entityId: number | null 
         <StatusDotChip key={d.key} chip={d} />
       ))}
       {st.hits.map((h) => (
-        <StatusHitChip key={h.key} chip={h} />
+        <StatusHitChip key={h.key} chip={h} entityNameById={ctx.entityNameById} />
       ))}
     </span>
   );
@@ -232,7 +365,7 @@ function StatusCell({ ctx, entityId }: { ctx: TableCtx; entityId: number | null 
 
 function StatusActionChip({ chip }: { chip: ShipActionChip }) {
   return (
-    <span class={["holo-roster__st-chip", `is-${chip.key}`, `is-${chip.phase}`]}>
+    <span class={["holo-roster__st-chip", "is-" + chip.key, "is-" + chip.phase]}>
       <span class="holo-roster__st-icon">
         <img
           class="holo-roster__st-img"
@@ -242,7 +375,7 @@ function StatusActionChip({ chip }: { chip: ShipActionChip }) {
         />
         <span
           class="holo-roster__st-bar"
-          style={{ width: `${Math.round(chip.frac * 100)}%` }}
+          style={{ width: Math.round(chip.frac * 100) + "%" }}
         />
       </span>
       {chip.phase !== "flash" && chip.secs != null ? (
@@ -254,12 +387,12 @@ function StatusActionChip({ chip }: { chip: ShipActionChip }) {
 
 function StatusDotChip({ chip }: { chip: ShipDotChip }) {
   return (
-    <span class={["holo-roster__st-chip", `is-${chip.key}`]}>
+    <span class={["holo-roster__st-chip", "is-" + chip.key]}>
       <span class="holo-roster__st-icon">
         <img class="holo-roster__st-img" src={dotIconUrl(chip.key)} alt="" draggable={false} />
         <span
           class="holo-roster__st-bar"
-          style={{ width: `${Math.round(chip.frac * 100)}%` }}
+          style={{ width: Math.round(chip.frac * 100) + "%" }}
         />
       </span>
       <span class="holo-roster__st-secs">{fmtSecs(chip.secs)}</span>
@@ -267,7 +400,17 @@ function StatusDotChip({ chip }: { chip: ShipDotChip }) {
   );
 }
 
-function StatusHitChip({ chip }: { chip: ShipHitChip }) {
+/** Merged hit pill: one damage source's impacts inside the display window
+ *  (see shipStatusModel's ShipHitChip) — ammo sprite, summed damage and a
+ *  ×N suffix once follow-up hits merged in. The tooltip names the source
+ *  through the roster's own entity join. */
+function StatusHitChip({
+  chip,
+  entityNameById,
+}: {
+  chip: ShipHitChip;
+  entityNameById: Map<number, string>;
+}) {
   // Torpedo hits show the torpedo sprite; shell hits the ammo family's
   // sprite; unresolvable params ids fall back to the bare damage number.
   const src =
@@ -276,17 +419,26 @@ function StatusHitChip({ chip }: { chip: ShipHitChip }) {
       : chip.ammo != null
         ? AMMO_ICON[chip.ammo]
         : undefined;
+  // A plane / squadron source has no roster row to take a name from — the
+  // pill then keeps its bare number (never a misattributed hint).
+  const source = entityNameById.get(chip.sourceId);
   return (
     <span
       class={[
         "holo-roster__st-hit",
         chip.kind === "torpedo" ? "is-torpedo" : "",
       ]}
+      data-hint={
+        source != null
+          ? i18nT("replay.roster.hitSource", { name: source, n: chip.count })
+          : undefined
+      }
     >
       {src ? (
         <img class="holo-roster__st-hit-img" src={src} alt="" draggable={false} />
       ) : null}
-      <span class="holo-roster__st-dmg">-{chip.dmg.toLocaleString()}</span>
+      <span class="holo-roster__st-dmg">{"-" + chip.dmg.toLocaleString()}</span>
+      {chip.count > 1 ? <span class="holo-roster__st-count">{"×" + chip.count}</span> : null}
     </span>
   );
 }
@@ -299,9 +451,9 @@ export default defineComponent({
     operation: { type: Boolean, default: false },
     /** Current battle seconds — the whole table describes THIS instant. */
     time: { type: Number, required: true },
-    /** Roster player id → live state (death time etc.), from the map. */
+    /** Roster player id -> live state (death time etc.), from the map. */
     rosterState: { type: Object as PropType<Map<number, HoloTipState>>, required: true },
-    /** Player id → kills credited by `time` (empty when unattributable). */
+    /** Player id -> kills credited by time (empty when unattributable). */
     kills: { type: Object as PropType<Map<number, number>>, required: true },
     /** False when the replay has no BattleResults — kills column hidden. */
     showKills: { type: Boolean, default: false },
@@ -313,14 +465,23 @@ export default defineComponent({
      *  encyclopedia knows them. */
     encyclopedia: { type: Object as PropType<Map<number, ShipInfo>>, required: true },
     /** Per-entity combat status index (see shipStatusModel.ts) — the
-     *  chips the alive rows re-query at `time`. Non-reactive by design:
+     *  chips the alive rows re-query at time. Non-reactive by design:
      *  it rebuilds with the actors, and the rows re-render on every
-     *  `time` tick regardless. */
+     *  time tick regardless. */
     shipStatus: { type: Object as PropType<Map<number, ShipStatusIndex>>, required: true },
     /** CN row order (localized ship name, pinyin-collated) for the open
      *  replay's own realm — the replay scoreboard must mirror the client
      *  the replay was recorded on, not the WG permutation. */
     shipNameOrder: { type: Boolean, default: false },
+    /** AI analysis layer on: adds the four decision-score columns after
+     *  击杀 and the disclaimer/legend footer under the board. Optional so
+     *  every mount that does not carry the layer keeps working. */
+    aiOn: { type: Boolean, default: false },
+    /** The debug report's full-timeline E17 scores (null while the first
+     *  call is in flight or after a failure) — resolved per row entity. */
+    scoreReport: { type: Object as PropType<ShipScoreReport | null>, default: null },
+    /** First-call / refresh indicator for the footer's loading line. */
+    scoreLoading: { type: Boolean, default: false },
     /** Phone-only dismissal: the desktop hold retires on Tab keyup, an
      *  event touch never fires. Wired only on phone layouts (the parent
      *  passes it under useBreakpoint().isMobile) — its presence both
@@ -335,8 +496,8 @@ export default defineComponent({
     const markers = useMarkersStore();
     void markers.ensureLoaded();
 
-    /** Ship identity (name / tier / type): WG encyclopedia → offline DB →
-     *  model DB → the descriptor's raw index name. */
+    /** Ship identity (name / tier / type): WG encyclopedia -> offline DB ->
+     *  model DB -> the descriptor's raw index name. */
     const identityOf = (v: VehicleEntry): { name: string; tier: string | null; type: string | null } => {
       const sid = v.shipId;
       const info = sid != null ? (props.encyclopedia.get(sid) as ShipInfo | undefined) : undefined;
@@ -354,6 +515,26 @@ export default defineComponent({
         type: info?.type ?? offline?.type ?? null,
       };
     };
+
+    /** The AI report's rows keyed by trajectory entity id (one lookup per
+     *  table cell — the report arrives as one flat ordered list). */
+    const scoreByEntity = computed<Map<number, ShipScoreEntry>>(() => {
+      const m = new Map<number, ShipScoreEntry>();
+      for (const entry of props.scoreReport?.perShip ?? []) m.set(entry.entityId, entry);
+      return m;
+    });
+
+    /** trajectory entity id -> attacker name: the roster's own vehicle ->
+     *  trajectory join read backwards. The hit pills' tooltips name the
+     *  damage source through it. */
+    const entityNameById = computed<Map<number, string>>(() => {
+      const m = new Map<number, string>();
+      for (const v of props.vehicles) {
+        const entityId = props.rosterState.get(v.id)?.traj?.entityId;
+        if (entityId != null && !m.has(entityId)) m.set(entityId, v.name);
+      }
+      return m;
+    });
 
     /** The game's own Tab row order: alive-first / sunk-last, then class,
      *  tier desc, and — per the replay's realm flavor — nation rank or
@@ -377,22 +558,28 @@ export default defineComponent({
         );
       const all = props.vehicles
         // Scripted scenario NPCs (story-mode ally flagships and their
-        // `IDS_*` kin) are not players — the scoreboard lists players
-        // only; `:Name:` co-op fills stay.
+        // IDS_* kin) are not players — the scoreboard lists players only;
+        // :Name: co-op fills stay.
         .filter(isListedPlayer)
         .map((v): RosterRow => {
           const st = props.rosterState.get(v.id);
           const deathTime = st?.deathTime ?? null;
+          const alive = deathTime == null || deathTime > props.time;
           const id = identityOf(v);
+          const traj = st?.traj ?? null;
           return {
             vehicle: v,
             shipName: id.name,
             tier: id.tier,
             type: id.type,
-            alive: deathTime == null || deathTime > props.time,
+            alive,
             deathTime,
             kills: props.kills.get(v.id) ?? 0,
-            entityId: st?.traj?.entityId ?? null,
+            // The bar freezes/vanishes with the hull — a sunk row keeps no
+            // live HP reading (its stream is dead there anyway).
+            hp: alive && traj ? hpAtTime(traj.hpSamples, props.time) : null,
+            maxHp: st?.maxHp ?? null,
+            entityId: traj?.entityId ?? null,
           };
         });
       return [
@@ -402,7 +589,7 @@ export default defineComponent({
     });
 
     // The relation split holds in operations (行动) too — their rosters
-    // carry real side semantics (allied escort waves ≤ 1, enemy warships
+    // carry real side semantics (allied escort waves <= 1, enemy warships
     // > 1), so the enemy scripted block never rolls into the allies table;
     // only the enemy TABLE stays hidden for them (scripted spawns, and a
     // list nobody reads).
@@ -411,46 +598,78 @@ export default defineComponent({
       props.operation ? [] : rows.value.filter((r) => r.vehicle.relation > 1),
     );
 
-    return () => (
-      /* Scroll region: hikari's HkScrollContainer owns the scrollbar
-         (auto-hiding overlay track on the pane's right edge); the board
-         scrolls inside its viewport. The absolute full-pane positioning
-         stays on the class — it outranks hikari's relative root rule. */
-      <HkScrollContainer class="holo-map__roster-overlay" aria-hidden="true">
-        <div class="holo-map__roster-inner">
-          {/* Phone close bar (sticky at the scroll top): the overlay owns
-              the whole pane, so the opening chip is unreachable beneath
-              it — this plays the Tab-keyup half of the desktop hold. */}
-          {props.onClose ? (
-            <div class="holo-map__roster-closebar">
-              <button
-                class="holo-map__roster-close"
-                onClick={props.onClose}
-                data-hint={i18nT("common.close")}
-                aria-label={i18nT("common.close")}
-              >
-                <X size={16} />
-              </button>
+    return () => {
+      const report = props.scoreReport;
+      const tableCtx = (): TableCtx => ({
+        markers,
+        stats: props.stats,
+        shipStatus: props.shipStatus,
+        time: props.time,
+        aiOn: props.aiOn,
+        scoreByEntity: scoreByEntity.value,
+        entityNameById: entityNameById.value,
+      });
+      return (
+        /* Scroll region: hikari's HkScrollContainer owns the scrollbar
+           (auto-hiding overlay track on the pane's right edge); the board
+           scrolls inside its viewport. The absolute full-pane positioning
+           stays on the class — it outranks hikari's relative root rule. */
+        <HkScrollContainer class="holo-map__roster-overlay" aria-hidden="true">
+          <div class="holo-map__roster-inner">
+            {/* Phone close bar (sticky at the scroll top): the overlay owns
+                the whole pane, so the opening chip is unreachable beneath
+                it — this plays the Tab-keyup half of the desktop hold. */}
+            {props.onClose ? (
+              <div class="holo-map__roster-closebar">
+                <button
+                  class="holo-map__roster-close"
+                  onClick={props.onClose}
+                  data-hint={i18nT("common.close")}
+                  aria-label={i18nT("common.close")}
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : null}
+            <div
+              class={[
+                "holo-map__roster-board",
+                // AI columns need room: the modifier stacks the two team
+                // tables and widens the board (see HolographicMap.scss).
+                props.aiOn ? "holo-map__roster-board--ai" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              {teamTable(allies.value, false, props.showKills, tableCtx())}
+              {enemies.value.length
+                ? teamTable(enemies.value, true, props.showKills, tableCtx())
+                : null}
             </div>
-          ) : null}
-          <div class="holo-map__roster-board">
-            {teamTable(allies.value, false, props.showKills, {
-              markers,
-              stats: props.stats,
-              shipStatus: props.shipStatus,
-              time: props.time,
-            })}
-            {enemies.value.length
-              ? teamTable(enemies.value, true, props.showKills, {
-                  markers,
-                  stats: props.stats,
-                  shipStatus: props.shipStatus,
-                  time: props.time,
-                })
-              : null}
+            {/* AI footer: the E17 honesty disclaimer, the movement-layer
+                legend and the report's samples / loading / no-data line. */}
+            {props.aiOn ? (
+              <div class="holo-map__roster-ai-foot">
+                <span class="holo-map__roster-ai-disclaimer hk-selectable">
+                  {i18nT("replay.scores.disclaimer")}
+                </span>
+                <span class="holo-map__roster-ai-legend">
+                  <span>{i18nT("replay.moveAdvice.holdMark")}</span>
+                  <span>{i18nT("replay.moveAdvice.second")}</span>
+                </span>
+                <span class="holo-map__roster-ai-samples hk-selectable">
+                  {props.scoreLoading
+                    ? i18nT("replay.moveAdvice.loading")
+                    : report
+                      ? i18nT("replay.scores.samples", {
+                          ships: report.perShip.length,
+                          rows: report.stats.rowsScored,
+                        })
+                      : i18nT("replay.scores.noData")}
+                </span>
+              </div>
+            ) : null}
           </div>
-        </div>
-      </HkScrollContainer>
-    );
+        </HkScrollContainer>
+      );
+    };
   },
 });

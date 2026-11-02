@@ -163,6 +163,7 @@
     "fullMode": "Полный режим",
     "kills": "Потоплено",
     "sunkAt": "потоплен в {time}",
+    "hitSource": "от {name} ×{n}",
     "aliveCount": "Живых: {alive}/{total}",
     "ship": "Корабль",
     "toggle": "Таблица счёта",

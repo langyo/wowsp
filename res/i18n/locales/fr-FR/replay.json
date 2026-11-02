@@ -163,6 +163,7 @@
     "fullMode": "Mode complet",
     "kills": "Coulés",
     "sunkAt": "coulé à {time}",
+    "hitSource": "de {name} ×{n}",
     "aliveCount": "{alive}/{total} en vie",
     "ship": "Navire",
     "toggle": "Tableau des scores",

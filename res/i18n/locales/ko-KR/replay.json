@@ -163,6 +163,7 @@
     "fullMode": "전체 모드",
     "kills": "격침",
     "sunkAt": "{time} 침몰",
+    "hitSource": "{name} 로부터 ×{n}",
     "aliveCount": "생존 {alive}/{total}",
     "ship": "함선",
     "toggle": "스코어보드",

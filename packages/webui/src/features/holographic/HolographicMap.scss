@@ -980,11 +980,13 @@
 }
 
 /* Former overlay layout + clearance, moved inside the viewport so the
-   board keeps scrolling with its padding. */
+   board keeps scrolling with its padding. Column (not row) so the AI
+   footer strip sits UNDER the board; each child centers itself. */
 .holo-map__roster-inner {
   display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  flex-direction: column;
+  justify-content: flex-start;
+  align-items: center;
   padding: 2.2rem 1rem;
 }
 
@@ -1001,6 +1003,27 @@
   gap: 2.25rem;
   width: 100%;
   max-width: 1040px;
+}
+
+/* AI analysis layer on: the four decision-score columns need room, so the
+   board widens and the two team tables STACK — side by side, each table
+   would shave the status strip down to a few masked pixels. The stacked
+   layout owns its own spacing, so the side-by-side divider rule below is
+   neutralized. */
+.holo-map__roster-board--ai {
+  flex-direction: column;
+  max-width: 1320px;
+  gap: 1rem;
+
+  & .holo-roster__team {
+    flex: 0 0 auto;
+  }
+
+  & .holo-roster__team + .holo-roster__team {
+    border-left: 0;
+    padding-left: 0;
+    margin-left: 0;
+  }
 }
 
 /* Side-by-side only: a visible divider between the two team columns (the
@@ -1024,6 +1047,44 @@
   .holo-map__roster-board {
     flex-direction: column;
     gap: 1rem;
+  }
+
+  /* AI columns are fixed ch shares: trim them (and the name/ship percentages)
+     on a narrow pane, otherwise the ten-column table overflows the board and
+     the lamp/status columns slide out of view. The status strip keeps the
+     remainder and dissolves its own overflow. */
+  .holo-map__roster-board--ai {
+    .holo-roster__col--icon { width: 1.4rem; }
+    .holo-roster__col--player { width: 20%; }
+    .holo-roster__col--ship { width: 20%; }
+    .holo-roster__col--contrib { width: 7ch; }
+    .holo-roster__col--whole { width: 5ch; }
+    .holo-roster__col--instant { width: 5ch; }
+    .holo-roster__col--lamp { width: 2.5ch; }
+
+    .holo-roster__th,
+    .holo-roster__td { padding-left: 0.35rem; padding-right: 0.35rem; }
+  }
+}
+
+/* Phone-width AI board: ten columns cannot keep their desktop shares even
+   stacked, so the fixed shares shrink again (contrib keeps enough for a
+   2-decimal k/M number) and the status column — already a dissolving strip —
+   becomes the narrow remainder. */
+@container (max-width: 520px) {
+  .holo-map__roster-board--ai {
+    .holo-roster__col--icon { width: 1.2rem; }
+    .holo-roster__col--player { width: 17%; }
+    .holo-roster__col--tier { width: 2.5ch; }
+    .holo-roster__col--ship { width: 17%; }
+    .holo-roster__col--kills { width: 2.5ch; }
+    .holo-roster__col--contrib { width: 6ch; }
+    .holo-roster__col--whole { width: 4ch; }
+    .holo-roster__col--instant { width: 4ch; }
+    .holo-roster__col--lamp { width: 2.2ch; }
+
+    .holo-roster__th,
+    .holo-roster__td { padding-left: 0.3rem; padding-right: 0.3rem; }
   }
 }
 
@@ -1055,6 +1116,13 @@
 .holo-roster__col--tier { width: 3ch; }
 .holo-roster__col--ship { width: 24%; }
 .holo-roster__col--kills { width: 3.5ch; }
+/* AI decision-score columns (contribution · whole-game agreement · instant
+   score · lamp): compact fixed shares so the four of them never push the
+   status strip out of reach. Contribution owns the widest number. */
+.holo-roster__col--contrib { width: 7ch; }
+.holo-roster__col--whole { width: 5ch; }
+.holo-roster__col--instant { width: 5ch; }
+.holo-roster__col--lamp { width: 3ch; }
 /* Status column takes the remainder — the live chips and 沉没于 mm:ss
    share it, even in the 425px-per-table side-by-side layout. */
 
@@ -1082,6 +1150,15 @@
   &--icon { padding-right: 0; }
   &--tier { padding-left: 0; padding-right: 0; text-align: center; }
   &--num { text-align: center; font-variant-numeric: tabular-nums; }
+  &--lamp { padding-left: 0; padding-right: 0; text-align: center; }
+}
+
+/* The status cell never wraps and never hard-clips. The strip itself is
+   the full-width flex row below: overflow stays hidden at the cell edge
+   and the strip's right-edge mask fades the last ~22px out, so chips past
+   the column dissolve instead of being cut mid-glyph. */
+.holo-roster__td--status {
+  overflow: hidden;
 }
 
 .holo-roster__title--ally { color: #4ade80; font-weight: 800; }
@@ -1103,6 +1180,40 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Left icon column: the BattleIcon with the afloat HP mini bar hanging
+   under it — the top scorebar's slot-bar recipe (dark rail + team-coloured
+   fill driven by --hp-pct). Sunk rows and rows without an HP stream render
+   no bar at all, so appearing never shifts the row. */
+.holo-roster__icon {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  vertical-align: middle;
+}
+
+.holo-roster__hp {
+  display: block;
+  position: relative;
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgb(9 13 22 / 65%);
+  overflow: hidden;
+  pointer-events: none;
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    width: var(--hp-pct, 100%);
+    border-radius: inherit;
+  }
+
+  &--ally::after { background: #4ade80; }
+  &--enemy::after { background: #f87171; }
+}
+
 .holo-roster__ship {
   color: var(--holo-hud-dim);
 }
@@ -1121,10 +1232,18 @@
    the countdown beside the tile instead of below it so every row keeps
    the table's line height. */
 .holo-roster__st {
-  display: inline-flex;
+  /* Full-width single-line flex row: chips that don't fit stay on the row
+     (never wrap — wrapping grew rows and buried the freshest chips) and
+     bleed past the strip, which clips at the cell edge and fades the last
+     ~22px out, so the overflow dissolves. */
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 4px;
-  vertical-align: middle;
+  width: 100%;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
+  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 22px), transparent);
 }
 
 .holo-roster__st-chip {
@@ -1233,9 +1352,73 @@
   color: #a5d8ff;
 }
 
+/* Hit-pill ×N suffix: how many impacts of one damage source merged into
+   the pill (see ShipHitChip). Same baseline as the damage, one step dimmer. */
+.holo-roster__st-count {
+  font-size: var(--text-2xs);
+  line-height: 1;
+  color: var(--holo-hud-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* AI agreement lamp: the CONTINUOUS red→yellow→green colour arrives inline
+   as --lamp-color (rosterScore.ts's aiLampColor) and doubles as the glow; a
+   ship without a decision sample yet keeps the dim unlit dot. Never three
+   fixed buckets — the hue itself is the score. */
+.holo-roster__lamp {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lamp-color, #6b7280);
+  box-shadow: 0 0 7px var(--lamp-color, transparent);
+  vertical-align: middle;
+
+  &--empty {
+    background: rgb(255 255 255 / 18%);
+    box-shadow: none;
+  }
+}
+
 .holo-roster__sunk {
   color: #f87171;
   font-variant-numeric: tabular-nums;
+}
+
+/* AI footer strip under the board: the E17 honesty disclaimer, the
+   movement-layer glyph legend and the report's samples / loading line. */
+.holo-map__roster-ai-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 0.35rem 1.1rem;
+  width: 100%;
+  max-width: 1320px;
+  margin-top: 0.7rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--holo-hud-border);
+  font-size: var(--text-2xs);
+  color: var(--holo-hud-dim);
+}
+
+.holo-map__roster-ai-disclaimer {
+  flex: 1 1 100%;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.holo-map__roster-ai-legend {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem 0.9rem;
+}
+
+.holo-map__roster-ai-samples {
+  color: var(--holo-hud-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* ── Weather-restriction badge (top-right, cyclone timeline) ─────────── */
@@ -1501,20 +1684,13 @@
   }
 
   /* Tab scoreboard: 12px gutters (the desktop 2.2rem/1rem frame wastes
-     a fifth of the pane), and the live status chips WRAP inside their
-     cell — the ~94px phone status column would otherwise clip every
-     chip past the first behind the row's overflow guard. Rows grow
-     taller instead of hiding combat state. */
+     a fifth of the pane). The status strip stays single-line with the
+     shared right-edge fade — wrapping it grew every row and buried the
+     freshest chips, so overflow dissolves instead (desktop rule, same on
+     phones). */
   .holo-map__roster-inner {
     display: block;
     padding: 12px;
-  }
-  .holo-roster__td--status {
-    white-space: normal;
-  }
-  .holo-roster__st {
-    flex-wrap: wrap;
-    row-gap: 2px;
   }
 
   /* Phone-only scoreboard close bar — the Tab keyup that retires the
