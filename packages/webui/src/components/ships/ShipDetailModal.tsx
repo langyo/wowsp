@@ -2,7 +2,7 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle, Radar, BatteryCharging } from "@lucide/vue";
 
-import { HAlert, HkButton, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
+import { HAlert, HkButton, HkMasonry, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -20,7 +20,7 @@ import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
-import { buildShipSpecs, hasSwitchableMainBattery, type SpecRow } from "./shipSpecs";
+import { buildShipSpecs, hasSwitchableMainBattery, type SpecGroup, type SpecRow } from "./shipSpecs";
 import { aircraftNoticeSwitchKey, buildPlaneSpecs } from "./shipPlaneSpecs";
 import { buildConsumableSlots, consumableHintCard, type ConsumableSlotGroup } from "./consumables";
 import BuildPlanner from "./BuildPlanner";
@@ -713,6 +713,20 @@ const SpecsPanel = defineComponent({
     const consumables = computed(() =>
       props.plane ? [] : buildConsumableSlots(props.gameparams, dataLanguage.value),
     );
+    /** One card stream for the masonry: spec groups in build order, then the
+     *  consumables card. HkMasonry packs these by measured height (see the
+     *  component contract) — the shortest column receives the next card, so
+     *  every column reads as one contiguous stack and an in-place content
+     *  change (the alternate-firing toggle) re-packs whole cards instead of
+     *  fragmenting them the way the old CSS-multicol layout did. */
+    type PanelCard =
+      | { key: string; kind: "group"; group: SpecGroup }
+      | { key: "consumables"; kind: "consumables" };
+    const panelItems = computed<PanelCard[]>(() => {
+      const list: PanelCard[] = groups.value.map((g) => ({ key: g.group, kind: "group", group: g }));
+      if (consumables.value.length > 0) list.push({ key: "consumables", kind: "consumables" });
+      return list;
+    });
     const iconFor = (name: string) => {
       switch (name) {
         case "Shield": return Shield;
@@ -772,66 +786,78 @@ const SpecsPanel = defineComponent({
           </dd>
         </div>
       );
-      return (
-        <div class="specs-panel">
-          {groups.value.map((g) => {
-            const Icon = iconFor(g.icon);
-            const sections = g.sections ?? [];
-            return (
-              <section class="specs-group">
-                <header class="specs-group__head">
-                  <Icon size={14} />
-                  <h5 class="specs-group__title">{t(`ships.spec.group.${g.group}`)}</h5>
-                </header>
-                <dl class="specs-group__rows">
-                  {g.rows.map((row) => renderRow(row))}
-                  {sections.map((sec, i) => (
-                    <>
-                      {/* Sub-groups (shell types, torpedo types) divide with
-                          an internal separator line; the first one only
-                          needs it when group-level rows sit above it. */}
-                      {i > 0 || g.rows.length > 0 ? (
-                        <div class="specs-group__divider" aria-hidden="true" />
-                      ) : null}
-                      <div class="specs-group__section" key={sec.labelKey + (sec.suffix ?? "")}>
-                        <div class="specs-group__section-head">
-                          <span class="specs-group__section-label">
-                            {t(`ships.spec.${sec.labelKey}`)}
-                            {sec.suffix ?? ""}
-                            {sec.hintKey ? (
-                              <span class="specs-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
-                                <HelpCircle size={11} />
-                              </span>
-                            ) : null}
+      const renderGroup = (g: SpecGroup) => {
+        const Icon = iconFor(g.icon);
+        const sections = g.sections ?? [];
+        return (
+          <section class="specs-group">
+            <header class="specs-group__head">
+              <Icon size={14} />
+              <h5 class="specs-group__title">{t(`ships.spec.group.${g.group}`)}</h5>
+            </header>
+            <dl class="specs-group__rows">
+              {g.rows.map((row) => renderRow(row))}
+              {sections.map((sec, i) => (
+                <>
+                  {/* Sub-groups (shell types, torpedo types) divide with
+                      an internal separator line; the first one only
+                      needs it when group-level rows sit above it. */}
+                  {i > 0 || g.rows.length > 0 ? (
+                    <div class="specs-group__divider" aria-hidden="true" />
+                  ) : null}
+                  <div class="specs-group__section" key={sec.labelKey + (sec.suffix ?? "")}>
+                    <div class="specs-group__section-head">
+                      <span class="specs-group__section-label">
+                        {t(`ships.spec.${sec.labelKey}`)}
+                        {sec.suffix ?? ""}
+                        {sec.hintKey ? (
+                          <span class="specs-group__hint" data-hint={t(`ships.spec.${sec.hintKey}`)}>
+                            <HelpCircle size={11} />
                           </span>
-                          {sec.altFire ? (
-                            <label class="specs-alt" data-hint={t("ships.spec.altFireHint")}>
-                              <span class="specs-alt__text">{t("ships.spec.altFire")}</span>
-                              <input
-                                class="specs-alt__input"
-                                type="checkbox"
-                                checked={altFire.value}
-                                aria-label={t("ships.spec.altFireHint")}
-                                onChange={(e: Event) => {
-                                  altFire.value = (e.target as HTMLInputElement).checked;
-                                }}
-                              />
-                              <span class="specs-alt__track" aria-hidden="true">
-                                <span class="specs-alt__thumb" />
-                              </span>
-                            </label>
-                          ) : null}
-                        </div>
-                        {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
-                      </div>
-                    </>
-                  ))}
-                </dl>
-              </section>
-            );
-          })}
-          {consumables.value.length ? <ConsumablesCard groups={consumables.value} /> : null}
-        </div>
+                        ) : null}
+                      </span>
+                      {sec.altFire ? (
+                        <label class="specs-alt" data-hint={t("ships.spec.altFireHint")}>
+                          <span class="specs-alt__text">{t("ships.spec.altFire")}</span>
+                          <input
+                            class="specs-alt__input"
+                            type="checkbox"
+                            checked={altFire.value}
+                            aria-label={t("ships.spec.altFireHint")}
+                            onChange={(e: Event) => {
+                              altFire.value = (e.target as HTMLInputElement).checked;
+                            }}
+                          />
+                          <span class="specs-alt__track" aria-hidden="true">
+                            <span class="specs-alt__thumb" />
+                          </span>
+                        </label>
+                      ) : null}
+                    </div>
+                    {sec.rows.map((row) => renderRow(row, sec.labelKey + ":"))}
+                  </div>
+                </>
+              ))}
+            </dl>
+          </section>
+        );
+      };
+      return (
+        <HkMasonry
+          class="specs-panel"
+          items={panelItems.value}
+          itemKeyOf={(card: unknown) => (card as PanelCard).key}
+          columnMinWidth={220}
+        >
+          {{
+            card: ({ item }: { item: PanelCard }) =>
+              item.kind === "consumables" ? (
+                <ConsumablesCard groups={consumables.value} />
+              ) : (
+                renderGroup(item.group)
+              ),
+          }}
+        </HkMasonry>
       );
     };
   },
