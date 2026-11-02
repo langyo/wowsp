@@ -185,6 +185,11 @@ winreg.workspace = true
 wmi.workspace = true
 # Windows screen capture for overlay roster positioning
 windows.workspace = true
+# WebView2 COM bindings for the overlay page-load recovery watcher
+# (commands/overlay/page_load.rs); windows-core supplies the PWSTR/BOOL
+# types of the same 0.62 line the bindings are generated against.
+webview2-com.workspace = true
+windows-core.workspace = true
 
 [build-dependencies]
 tauri-build.workspace = true

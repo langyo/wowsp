@@ -460,6 +460,7 @@ mod capture;
 mod diag;
 mod game_window;
 mod manual;
+mod page_load;
 mod paste;
 mod placement;
 mod reconcile;

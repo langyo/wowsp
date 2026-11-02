@@ -210,6 +210,16 @@ windows = { version = "^0.61", features = [
     "Win32_System_DataExchange",
 ] }
 
+# WebView2 COM plumbing for the overlay page-load recovery watcher
+# (commands/overlay/page_load.rs): a NavigationCompleted handler re-navigates
+# a click-through overlay window after a failed page load (the error card's
+# own reload button is unreachable through the click-through styling). Both
+# pins are exactly the lines wry pulls, so neither direct edge adds a new
+# crate to the lockfile; windows-core is the PWSTR/BOOL surface the
+# generated bindings reference.
+webview2-com = "^0.39"
+windows-core = "^0.62"
+
 # Image handling for capture analysis
 image = { version = "^0.25", default-features = false, features = ["png"] }
 ww2ogg = "^0.1"
