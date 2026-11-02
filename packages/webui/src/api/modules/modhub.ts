@@ -698,6 +698,10 @@ export const modHubApi = {
   modTags: () => transport.invoke<CatalogTagIndex>(RPC.mod_tags),
   modCatalogRefresh: (force: boolean) =>
     transport.invoke<CatalogIndex>(RPC.mod_catalog_refresh, { force }),
+  /** Background revalidation swapped the cached index — open views
+   *  reload silently (the next refresh serves the new copy instantly). */
+  listenCatalogUpdated: (handler: () => void) =>
+    transport.listen?.("wowsp://mod-catalog-updated", handler),
   modCatalogInstall: (
     modId: string,
     gameRoot: string,
