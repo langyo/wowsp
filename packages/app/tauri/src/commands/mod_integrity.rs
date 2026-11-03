@@ -57,6 +57,14 @@ pub struct ModIntegrityProblem {
     pub path: Option<String>,
     /// The tree-relative paths of the files referencing/claiming the asset.
     pub files: Vec<String>,
+    /// True when the finding's own files sit in the CALLER'S FIRST tree —
+    /// the catalog install gate's staged package (single-tree scans mark
+    /// everything). The install gate blocks only on staged findings: a
+    /// dangling reference the EXISTING tree carries was there before this
+    /// package arrived, and refusing the package neither cures it nor
+    /// names the real culprit (live report 2026-11-03: six pre-existing
+    /// CN-tree references pinned on the clean Radar Timer package).
+    pub staged: bool,
 }
 
 /// The result of one bounded scan over a set of mod trees.
@@ -235,11 +243,13 @@ struct TreeWalk {
     /// Lowercased file basenames seen anywhere in the trees (the
     /// conservative presence test the dangling-reference scan reads).
     names: HashSet<String>,
-    /// (absolute path, tree-relative slash path) of the glue files worth
-    /// deep-reading, in walk order.
-    glue: Vec<(PathBuf, String)>,
-    /// (absolute path, tree-relative slash path) of every .swf file.
-    swfs: Vec<(PathBuf, String)>,
+    /// (absolute path, tree-relative slash path, BASE INDEX — the staged /
+    /// existing attribution the install gate blocks on) of the glue files
+    /// worth deep-reading, in walk order.
+    glue: Vec<(PathBuf, String, usize)>,
+    /// (absolute path, tree-relative slash path, BASE INDEX) of every
+    /// .swf file.
+    swfs: Vec<(PathBuf, String, usize)>,
     /// Regular files processed (the report's scanned_files).
     scanned_files: usize,
     /// False when the entry budget truncated the walk.
@@ -258,7 +268,7 @@ fn walk_trees(bases: &[PathBuf]) -> TreeWalk {
         complete: true,
     };
     let mut seen = 0usize;
-    'outer: for base in bases {
+    'outer: for (base_idx, base) in bases.iter().enumerate() {
         let mut stack = vec![base.clone()];
         while let Some(dir) = stack.pop() {
             let Ok(entries) = fs::read_dir(&dir) else {
@@ -286,7 +296,17 @@ fn walk_trees(bases: &[PathBuf]) -> TreeWalk {
                     .strip_prefix(base)
                     .map(|p| p.to_string_lossy().replace('\\', "/"))
                     .unwrap_or_else(|_| name.clone());
-                if is_toolchain_subtree(&rel) {
+                // The ModForge carve-out must recognize the STAGED shape
+                // too: a catalog batch unpacks into a root that keeps the
+                // archive's own `res_mods/` prefix, while the live tree IS
+                // res_mods — the producer's operational code is scanner
+                // noise under either shape (live report 2026-11-03: the
+                // batch's Manifest.py constant hung the ASIA install).
+                let rel_lower = rel.to_ascii_lowercase();
+                let toolchain_rel = rel_lower
+                    .strip_prefix("res_mods/")
+                    .unwrap_or(rel_lower.as_str());
+                if is_toolchain_subtree(toolchain_rel) {
                     continue;
                 }
                 walk.scanned_files += 1;
@@ -296,9 +316,9 @@ fn walk_trees(bases: &[PathBuf]) -> TreeWalk {
                     && meta.len() <= GLUE_MAX_BYTES
                     && walk.glue.len() < GLUE_MAX_FILES
                 {
-                    walk.glue.push((path, rel));
+                    walk.glue.push((path, rel, base_idx));
                 } else if lower.ends_with(".swf") {
-                    walk.swfs.push((path, rel));
+                    walk.swfs.push((path, rel, base_idx));
                 }
             }
         }
@@ -528,7 +548,7 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
     // invalid_swf: the file's own leading bytes are the whole verdict — a
     // 3-byte read per .swf, no full-file load. Unreadable files stay
     // silent (cannot prove, do not accuse).
-    for (path, rel) in &walk.swfs {
+    for (path, rel, base_idx) in &walk.swfs {
         let invalid = match fs::File::open(path) {
             Ok(mut f) => {
                 let mut magic = [0u8; 3];
@@ -544,6 +564,7 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
                 asset: None,
                 path: Some(rel.clone()),
                 files: Vec::new(),
+                staged: *base_idx == 0,
             });
         }
     }
@@ -555,9 +576,9 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
     } else {
         None
     };
-    let mut dangling: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    let mut dangling: BTreeMap<String, Vec<(String, usize)>> = BTreeMap::new();
     let mut claims: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (path, rel) in &walk.glue {
+    for (path, rel, base_idx) in &walk.glue {
         let Ok(text) = fs::read_to_string(path) else {
             continue;
         };
@@ -570,8 +591,8 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
                     continue;
                 }
                 let files = dangling.entry(asset).or_default();
-                if !files.iter().any(|f| f == rel) {
-                    files.push(rel.clone());
+                if !files.iter().any(|f| f.0 == rel.as_str()) {
+                    files.push((rel.clone(), *base_idx));
                 }
             }
         }
@@ -584,11 +605,13 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
     }
     for (asset, mut files) in dangling {
         files.sort();
+        let staged = files.iter().any(|(_, base)| *base == 0);
         problems.push(ModIntegrityProblem {
             kind: KIND_DANGLING_REF.to_string(),
             asset: Some(asset),
             path: None,
-            files,
+            files: files.into_iter().map(|(rel, _)| rel).collect(),
+            staged,
         });
     }
     // Overlap only fires across DIFFERENT files: the per-claimant list is
@@ -601,6 +624,7 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
                 asset: Some(asset),
                 path: None,
                 files,
+                staged: true,
             });
         }
     }
@@ -998,6 +1022,7 @@ mod tests {
                 asset: None,
                 path: Some("gui/broken.swf".into()),
                 files: Vec::new(),
+                staged: true,
             }],
         };
         let json = serde_json::to_value(&report).unwrap();
@@ -1027,5 +1052,77 @@ mod tests {
         // A DIFFERENT root still notifies (per-root, not global).
         assert!(should_notify_root("D:/game-dedupe-probe-other"));
         assert!(!should_notify_root("D:/game-dedupe-probe-other"));
+    }
+
+    /// The toolchain carve-out must recognize the STAGED extraction shape:
+    /// a catalog batch unpacks into a root that keeps the archive's own
+    /// `res_mods/` prefix, and ModForge's manifest builder names its own
+    /// boot-time output (ForgeDefinitions.swf) — a producer reference,
+    /// not a dangling load (live report 2026-11-03: the ASIA sync refused
+    /// Radar Timer + ModForge on exactly this file).
+    #[test]
+    fn toolchain_carveout_tolerates_the_staged_res_mods_prefix() {
+        let dir = TempDir::new("toolchain-staged");
+        dir.touch(
+            "res_mods/PnFMods/ModForge/Manifest.py",
+            b"DEFINITIONS_SWF = PAYLOAD_DIR + 'ForgeDefinitions.swf'",
+        );
+        // A sibling view package's ForgeBlueprints manifest stays in scope:
+        // xml IS glue — only the producer's own subtree is exempt.
+        dir.touch(
+            "res_mods/ForgeBlueprints/RadarTimer.xml",
+            b"<element url=\"ghost.swf\"/>",
+        );
+        let _seam = seam_guard();
+        *TEST_CLIENT_INDEX.lock().unwrap() = Some(Arc::new(HashSet::new()));
+        let report = scan_trees(Some("D:/game"), &[dir.path().to_path_buf()]);
+        *TEST_CLIENT_INDEX.lock().unwrap() = None;
+        let dangling: Vec<_> = report
+            .problems
+            .iter()
+            .filter(|p| p.kind == KIND_DANGLING_REF)
+            .collect();
+        assert_eq!(dangling.len(), 1, "{:?}", report.problems);
+        assert_eq!(dangling[0].asset.as_deref(), Some("ghost.swf"));
+        assert!(
+            !dangling[0].files.iter().any(|f| f.contains("ModForge")),
+            "the producer's own code must not be accused: {:?}",
+            dangling[0].files
+        );
+    }
+
+    /// The staged/existing attribution: a finding whose referencing files
+    /// sit in the FIRST base (the gate's staged package) tags staged=true;
+    /// a finding only the SECOND base (the existing tree) carries tags
+    /// staged=false — the install gate blocks on the former and logs the
+    /// latter.
+    #[test]
+    fn scan_trees_tags_findings_with_staged_attribution() {
+        let _seam = seam_guard();
+        let staged = TempDir::new("attrib-staged");
+        let existing = TempDir::new("attrib-existing");
+        staged.touch(
+            "gui/staged_view.xml",
+            b"<element url=\"staged_ghost.swf\"/>",
+        );
+        existing.touch("gui/old_overlay.xml", b"<element url=\"old_ghost.swf\"/>");
+        *TEST_CLIENT_INDEX.lock().unwrap() = Some(Arc::new(HashSet::new()));
+        let report = scan_trees(
+            Some("D:/game"),
+            &[staged.path().to_path_buf(), existing.path().to_path_buf()],
+        );
+        *TEST_CLIENT_INDEX.lock().unwrap() = None;
+        let staged_finding = report
+            .problems
+            .iter()
+            .find(|p| p.asset.as_deref() == Some("staged_ghost.swf"))
+            .expect("staged dangle");
+        assert!(staged_finding.staged, "{:?}", staged_finding);
+        let existing_finding = report
+            .problems
+            .iter()
+            .find(|p| p.asset.as_deref() == Some("old_ghost.swf"))
+            .expect("existing dangle");
+        assert!(!existing_finding.staged, "{:?}", existing_finding);
     }
 }

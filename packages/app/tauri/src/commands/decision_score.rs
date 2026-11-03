@@ -1910,14 +1910,14 @@ mod tests {
         assert!((p.iter().sum::<f32>() - 1.0).abs() < 1e-5);
         // Ablation really zeroes the right columns (and nothing else).
         let mut ent2 = entity.clone();
-        ent2[0 * 15 + 10] = 0.7;
+        ent2[10] = 0.7;
         ent2[3 * 15 + 14] = 0.9;
         let mut glb2 = global.clone();
         glb2[14] = 0.5;
         glb2[26] = 1.0;
         glb2[25] = -0.25;
         let (ae, ag) = ablate_e11_tensors(&ent2, &glb2, 24);
-        assert_eq!(ae[0 * 15 + 10], 0.0);
+        assert_eq!(ae[10], 0.0);
         assert_eq!(ae[3 * 15 + 14], 0.0);
         assert_eq!(ag[14], 0.0);
         assert_eq!(ag[26], 0.0);
