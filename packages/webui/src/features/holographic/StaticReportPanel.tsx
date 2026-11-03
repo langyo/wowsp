@@ -12,17 +12,17 @@
  * in-app step-through; the picker switches any roster perspective (the
  * Rust side reuses its scoring cache, so a switch is one IPC away).
  *
- * CHROMELESS: the replay view embeds this column in its hikari window and
- * renders the ONE window head itself (title/spinner/export/close); the
- * `chromeless` prop drops the panel's own title row and card frame and the
- * host drives the exposed exportPng through a component ref. The demo
- * route keeps the standalone chrome.
+ * EMBEDDED (always, since 2026-11-03): the column mounts inside
+ * StaticReportModal — the replay view's first-class hikari window (the
+ * former hand-rolled overlay + this panel's own title/action row and the
+ * dev-only demo route died with the extraction). HkModal renders the ONE
+ * window head; this panel is chromeless by construction and the modal
+ * drives the exposed exportPng through a component ref.
  */
 import { computed, defineComponent, ref, type PropType } from "vue";
 import {
   HkButton,
   HkScrollContainer,
-  HkSpinner,
   HkTrendChart,
   TREND_CHART_GRID_BOTTOM,
   TREND_CHART_GRID_LEFT,
@@ -33,7 +33,7 @@ import {
 } from "@celestia-island/hikari";
 
 import AppTag from "@/components/base/AppTag";
-import { Camera, Check, Download, Minus, Percent, X } from "@lucide/vue";
+import { Camera, Check, Minus, Percent } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { StaticCoverage, StaticMoment, StaticReport, StaticRosterEntry } from "@/api";
 import "./StaticReportPanel.scss";
@@ -267,20 +267,11 @@ export default defineComponent({
   props: {
     report: { type: Object as PropType<StaticReport>, required: true },
     loading: { type: Boolean, default: false },
-    /** Battle-time seek (the 3D board playhead); optional so the demo
-     * route can render the panel without a map. */
+    /** Battle-time seek (the 3D board playhead); optional — the modal
+     * forwards the moments' jump through to its host. */
     onSeek: { type: Function as PropType<(t: number) => void>, default: null },
     /** Perspective switch (refetch from the Rust cache). */
     onPick: { type: Function as PropType<(entityId: number) => void>, required: true },
-    /** Optional close affordance (the replay view's in-app modal passes
-     *  one; the demo route renders without it). */
-    onClose: { type: Function as PropType<() => void>, default: null },
-    /** Embedded in a host window that renders the ONE chrome (the replay
-     *  view's hikari modal head): hides this panel's own title/action row
-     *  and outer card frame so the host head is the only window chrome.
-     *  The export pipeline stays here — the host calls the exposed
-     *  `exportPng` from its head button. */
-    chromeless: { type: Boolean, default: false },
   },
   setup(props, { expose }) {
     const exporting = ref(false);
@@ -328,47 +319,15 @@ export default defineComponent({
       }
     };
 
-    // Chromeless hosts render the window head themselves; expose the capture
-    // pipeline for the host's export action (the standalone/demo chrome keeps
-    // its own button below). NOTE: the setup-context expose, not the
-    // `defineExpose` compiler macro — the latter is a runtime no-op outside
-    // an SFC `<script setup>`, silently leaving the host ref without the
-    // method.
+    // The host (StaticReportModal) renders the window head; expose the
+    // capture pipeline for its export button. NOTE: the setup-context
+    // expose, not the `defineExpose` compiler macro — the latter is a
+    // runtime no-op outside an SFC `<script setup>`, silently leaving the
+    // host ref without the method.
     expose({ exportPng });
 
     return () => (
-      <div
-        class={["static-report-panel", props.chromeless ? "static-report-panel--chromeless" : ""]}
-        role={props.chromeless ? undefined : "dialog"}
-      >
-        {props.chromeless ? null : (
-          <div class="static-report-panel__chrome">
-            <span class="static-report-panel__title">{i18nT("replay.report.title")}</span>
-            {props.loading ? <HkSpinner size={14} /> : null}
-            <div class="static-report-panel__actions">
-              <HkButton
-                variant="secondary"
-                size="sm"
-                disabled={exporting.value}
-                onClick={() => void exportPng()}
-              >
-                {exporting.value ? null : <Download size={13} />}
-                <span>{i18nT(exporting.value ? "replay.report.exporting" : "replay.report.export")}</span>
-              </HkButton>
-              {props.onClose ? (
-                <HkButton
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => props.onClose()}
-                  aria-label={i18nT("replay.report.close")}
-                >
-                  <X size={14} />
-                </HkButton>
-              ) : null}
-            </div>
-          </div>
-        )}
-
+      <div class="static-report-panel">
         <HkScrollContainer class="static-report-panel__scroll">
         <div class="static-report-panel__export-root">
           {/* ── perspective picker (both teams, coverage-badged) ── */}

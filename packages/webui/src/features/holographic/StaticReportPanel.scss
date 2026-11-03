@@ -16,35 +16,19 @@
   --srp-ally: #57a6ff;
   --srp-enemy: #e07059;
 
+  /* The column always mounts embedded (StaticReportModal owns the window
+     chrome since the 2026-11-03 extraction — the standalone card frame and
+     its title/action row are gone): fill the host's reading frame, keep
+     the dark export surface. */
   display: flex;
   flex-direction: column;
-  width: min(720px, 92vw);
-  max-height: 86vh;
+  flex: 1;
+  min-height: 0;
+  width: auto;
+  max-height: none;
   background: var(--srp-bg);
-  border: 1px solid var(--srp-line);
-  border-radius: 10px;
   color: var(--srp-ink);
   overflow: hidden;
-
-  &__chrome {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--srp-line);
-    flex: none;
-  }
-
-  &__title {
-    font-weight: 600;
-    font-size: 14px;
-  }
-
-  &__actions {
-    margin-left: auto;
-    display: flex;
-    gap: 6px;
-  }
 
   // The scroll lives on the HkScrollContainer wrapper (own class below);
   // this inner column is the EXPORT TARGET — natural height, no overflow,
@@ -60,21 +44,7 @@
     flex: 1;
     min-height: 0;
   }
-
-  /* Embedded in the replay view's hikari window: the host modal panel owns
-     the frame, radius and the ONE head, and the report column fills the
-     remaining body. The dark reading surface stays (the report's own ink
-     and the html-to-image export are built on it). */
-  &--chromeless {
-    flex: 1;
-    min-height: 0;
-    width: auto;
-    max-height: none;
-    border: none;
-    border-radius: 0;
-  }
 }
-
 // ── perspective picker ──
 .srp-picker {
   display: flex;
