@@ -348,7 +348,14 @@
     "deleteDone": "Backup deleted",
     "blocked": "An interrupted purge is waiting in {name} — open Purge backup snapshots and resume it or mark it done first",
     "markerUnreadable": "Marker unreadable",
-    "resumeBlocked": "If resume refuses, the live res_mods holds files no completed unit claims: mark the backup done and run a fresh purge instead — it re-backs-up the half state and reinstalls clean."
+    "resumeBlocked": "If resume refuses, the live res_mods holds files no completed unit claims: mark the backup done and run a fresh purge instead — it re-backs-up the half state and reinstalls clean.",
+    "errors": {
+      "resumeUnclaimed": "live res_mods carries files this purge's units never installed — the half state cannot be resumed safely: mark the backup done, then run a fresh purge (the half state is backed up again and reinstalled clean).",
+      "resumeTooMany": "live res_mods carries too many files to resume — mark the backup done, then run a fresh purge.",
+      "deleteUnfinished": "this backup's purge never finished — resume it or mark it done before deleting.",
+      "dismissNothing": "this backup has no unfinished marker — nothing to dismiss.",
+      "restoreUnfinished": "this backup's purge never finished — resume it or mark it done before merging its files back."
+    }
   },
   "servers": {
     "universal": "Universal",

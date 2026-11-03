@@ -58,7 +58,33 @@ vi.mock("@celestia-island/hikari", async () => {
   };
 });
 
-import { renderPurgeBackups, renderPurgeBackupsWindow } from "./PurgeBackups";
+import { purgeErrorKey, renderPurgeBackups, renderPurgeBackupsWindow } from "./PurgeBackups";
+
+/** The backend refusal strings purge_backups.rs raises verbatim — the
+ *  mapper's contract is against THESE bytes (an em dash or a reworded
+ *  refusal must map or the toast falls back to the raw English). */
+const BACKEND_REFUSALS: [string, string][] = [
+  [
+    "the live res_mods carries files no completed unit of this purge claims — this half-state cannot be resumed safely: mark the backup done, then run a fresh purge (it moves the half state into a new backup and reinstalls clean)",
+    "resources.purgeBackups.errors.resumeUnclaimed",
+  ],
+  [
+    "the live res_mods carries more than 4096 files — not a resumable state; mark the backup done and run a fresh purge",
+    "resources.purgeBackups.errors.resumeTooMany",
+  ],
+  [
+    "this backup's purge never finished — resume it or mark it done before deleting the files",
+    "resources.purgeBackups.errors.deleteUnfinished",
+  ],
+  [
+    'backup "res_mods.wowsp-purge-1" has no unfinished-purge marker — nothing to dismiss',
+    "resources.purgeBackups.errors.dismissNothing",
+  ],
+  [
+    "this backup's purge never finished — resume it or mark it done before merging its files back",
+    "resources.purgeBackups.errors.restoreUnfinished",
+  ],
+];
 
 function backup(
   dirName: string,
@@ -283,5 +309,19 @@ describe("the backups window (renderPurgeBackupsWindow)", () => {
     await nextTick();
     await wrapper.find(".confirm-stub .confirm-ok").trigger("click");
     expect(pins.doDelete).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("purge refusal i18n mapping", () => {
+  it("maps every backend refusal to its error key", () => {
+    for (const [message, key] of BACKEND_REFUSALS) {
+      expect(purgeErrorKey(message)).toBe(key);
+    }
+  });
+
+  it("leaves unmapped messages raw (I/O diagnostics carry paths)", () => {
+    expect(purgeErrorKey("delete C:/game/bin/1/x: access denied")).toBeNull();
+    expect(purgeErrorKey("")).toBeNull();
   });
 });

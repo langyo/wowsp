@@ -348,7 +348,14 @@
     "deleteDone": "Copia eliminada",
     "blocked": "Una purga sin terminar espera en {name} — abre «Copias de seguridad de purga» y reanúdala o márcala como hecha primero",
     "markerUnreadable": "Marcador ilegible",
-    "resumeBlocked": "Si reanudar se rechaza, res_mods contiene archivos que ninguna unidad completada reclama: marca la copia como hecha y ejecuta una purga nueva — el estado a medias pasa a una copia nueva y se reinstala limpio."
+    "resumeBlocked": "Si reanudar se rechaza, res_mods contiene archivos que ninguna unidad completada reclama: marca la copia como hecha y ejecuta una purga nueva — el estado a medias pasa a una copia nueva y se reinstala limpio.",
+    "errors": {
+      "resumeUnclaimed": "live res_mods contiene archivos que ninguna unidad de esta purga instaló — el estado a medias no se puede reanudar de forma segura: marca la copia como completada y ejecuta una purga nueva (el estado a medias se copia de nuevo y se reinstala limpio).",
+      "resumeTooMany": "live res_mods contiene demasiados archivos para reanudar — marca la copia como completada y ejecuta una purga nueva.",
+      "deleteUnfinished": "la purga de esta copia nunca terminó — reanúdala o márcala como completada antes de borrar los archivos.",
+      "dismissNothing": "esta copia no tiene marcador de purga incompleta — nada que descartar.",
+      "restoreUnfinished": "la purga de esta copia nunca terminó — reanúdala o márcala como completada antes de volver a fusionar sus archivos."
+    }
   },
   "servers": {
     "universal": "Universal",

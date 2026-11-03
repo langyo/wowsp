@@ -348,7 +348,14 @@
     "deleteDone": "Sauvegarde supprimée",
     "blocked": "Une purge inachevée attend dans {name} — ouvrez « Sauvegardes de purge » et reprenez-la ou marquez-la terminée d'abord",
     "markerUnreadable": "Marqueur illisible",
-    "resumeBlocked": "Si la reprise est refusée, res_mods contient des fichiers qu'aucune unité terminée ne revendique : marquez la sauvegarde terminée puis relancez une purge — le demi-état part dans une nouvelle sauvegarde et se réinstalle proprement."
+    "resumeBlocked": "Si la reprise est refusée, res_mods contient des fichiers qu'aucune unité terminée ne revendique : marquez la sauvegarde terminée puis relancez une purge — le demi-état part dans une nouvelle sauvegarde et se réinstalle proprement.",
+    "errors": {
+      "resumeUnclaimed": "live res_mods contient des fichiers qu'aucune unité de cette purge n'a installés — l'état intermédiaire ne peut pas être repris sans risque : marquez la sauvegarde comme terminée, puis lancez une nouvelle purge (l'état intermédiaire est de nouveau sauvegardé et réinstallé proprement).",
+      "resumeTooMany": "live res_mods contient trop de fichiers pour être repris — marquez la sauvegarde comme terminée, puis lancez une nouvelle purge.",
+      "deleteUnfinished": "la purge de cette sauvegarde n'est jamais allée au bout — reprenez-la ou marquez-la terminée avant de supprimer les fichiers.",
+      "dismissNothing": "cette sauvegarde n'a pas de marqueur d'inachèvement — rien à rejeter.",
+      "restoreUnfinished": "la purge de cette sauvegarde n'est jamais allée au bout — reprenez-la ou marquez-la terminée avant de refusionner ses fichiers."
+    }
   },
   "servers": {
     "universal": "Universel",
