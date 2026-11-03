@@ -24,6 +24,7 @@
  */
 import { authoritativeRarity } from "./shipRarityData";
 import { authoritativeEvent } from "./shipEventData";
+import type { AppTagTone } from "@/components/base/AppTag";
 
 export type Rarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "event";
 
@@ -82,16 +83,16 @@ function deriveRarity(s: RaritySignals): Rarity {
 /** STag variant to use for each rarity tier (frame colour proxy). The
  *  event tier rides `default` + a custom violet class (hikari has no purple
  *  variant and every shipped one is taken by a band). */
-export const RARITY_VARIANT: Record<
-  Rarity,
-  "default" | "success" | "info" | "danger" | "warning"
-> = {
+export const RARITY_VARIANT: Record<Rarity, AppTagTone> = {
   common: "default", // white
   uncommon: "success", // green
   rare: "info", // blue
   epic: "danger", // red
   legendary: "warning", // orange
-  event: "default", // violet via the --event CSS modifier
+  // The event rarity is the violet 活动 voice — AppTag's event tone carries
+  // it natively since the 2026-11-03 tag unification (the literal-violet
+  // .hk-tag overrides died with it).
+  event: "event",
 };
 
 /** CSS modifier class for a ship card border, derived from rarity. */

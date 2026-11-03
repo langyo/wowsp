@@ -30,9 +30,10 @@
 .hk-tag.app-tag--danger  { --app-tag-tone: var(--color-error); }
 .hk-tag.app-tag--info    { --app-tag-tone: var(--color-info); }
 .hk-tag.app-tag--accent  { --app-tag-tone: var(--color-accent); }
-/* The violet 活动 voice — the literal recipe the duplicated
-   .ship-card__event-tag / .ship-detail__event-tag overrides pressed
-   (ShipsView.scss / ShipDetailModal.scss, deleted by this component). */
+/* The violet 活动 voice — the two literal-violet recipes the duplicated
+   .ship-card__event-tag / .ship-detail__event-tag / modhub --ai modifiers
+   pressed (ShipsView 190 120 255, ShipDetailModal 190 120 255, modhub
+   168 85 247) unify here on one canonical violet. */
 .hk-tag.app-tag--event   { --app-tag-tone: 168 85 247; }
 
 /* ── OUTLINE face (空心): transparent plate + tone border + tone ink ── */

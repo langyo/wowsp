@@ -459,16 +459,18 @@
 /* Event ships: the rarity tag becomes the violet 活动·<event name> tag
    (hikari ships no purple STag variant, so it rides default + this tint;
    the compound selector outspecifies .hk-tag-default without !important). */
-.ship-card__event-tag .hk-tag {
-  background: rgb(190 120 255 / 15%);
-  border-color: rgb(190 120 255 / 50%);
-  color: rgb(200 140 255);
-  /* Official names can be long (Arpeggio of Blue Steel -ARS NOVA-); the
-     card column is narrow, so the tag clips with an ellipsis instead of
-     forcing the row wider. The tooltip keeps the full name. */
+/* (the 活动 tag's violet face moved to AppTag tone="event" — 2026-11-03
+   tag unification; the wrapper keeps only the narrow-card clip.) */
+.ship-card__event-tag {
+  display: inline-flex;
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 0;
+
+  .app-tag {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 }
 
 .ship-card {
