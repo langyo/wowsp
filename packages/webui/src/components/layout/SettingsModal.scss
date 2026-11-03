@@ -531,17 +531,12 @@
     min-width: 0;
   }
 
-  /* Diagnostics panel: the effective policy row + the probe matrix. Rows
-     tint by verdict; errors truncate to one line instead of wrapping a
-     multi-line reqwest message into the layout. */
-  &__netdiag {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    margin-top: 0.625rem;
-  }
-
-  &__netdiagrow {
+  /* Diagnostics panel: the probe matrix and the service-health table are
+     hikari HkTables now (fixed left-aligned columns; the error pill's own
+     label styling ellipsizes a long reqwest message to one line), and the
+     group's flex gap owns the vertical rhythm. Bespoke styles remain only
+     for the effective-policy row and the plain verdict disclosures. */
+  &__netdiag-effective {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
@@ -549,26 +544,29 @@
   }
 
   &__netdiaglabel {
-    min-width: 3.5rem;
+    flex: none;
     color: rgb(var(--color-muted));
   }
 
+  /* Value + the PAC tag on one line; the inner text span ellipsizes so a
+     long proxy URL cannot push the tag off the row. */
   &__netdiagvalue {
     flex: 1;
     min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
     color: rgb(var(--color-text));
+  }
+
+  &__netdiagvaluetext {
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  &__netdiagok {
-    color: rgb(var(--color-primary));
-    font-variant-numeric: tabular-nums;
-  }
-
   &__netdiagerr {
-    flex: 1;
     min-width: 0;
     color: rgb(var(--color-error, 220 38 38));
     overflow: hidden;

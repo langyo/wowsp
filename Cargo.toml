@@ -116,6 +116,14 @@ reqwest = { version = "^0.13", default-features = false, features = [
     "socks",
 ] }
 
+# PAC (proxy auto-config) script evaluation for the system-proxy channel
+# (commands/pac.rs): a FindProxyForURL() body is arbitrary JavaScript, so the
+# downloader embeds a JS engine to evaluate it per request — boa is the
+# embeddable Rust interpreter (no external JS runtime). Its MSRV (1.91) sits
+# above the workspace's declared rust-version floor, but the repo's toolchain
+# pin is plain `stable` (rust-toolchain.toml), which always tracks newer.
+boa_engine = "^0.22"
+
 # File system watching (poll tempArenaInfo.json, replay dir, dev hot-reload)
 notify = "^7"
 

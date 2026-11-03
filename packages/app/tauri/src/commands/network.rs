@@ -5,7 +5,8 @@
 //! [`HttpPair`] twins or [`build_direct_http_client`] — so the
 //! Settings -> Network choice applies globally:
 //!
-//!   system  follow the OS proxy settings (env vars, then WinINET)
+//!   system  follow the OS proxy settings: env vars, then a configured
+//!           PAC script (commands/pac.rs), then the WinINET manual proxy
 //!   none    connect directly, ignore any proxy
 //!   manual  always use one fixed proxy URL (e.g. http://127.0.0.1:7890)
 //!
@@ -39,6 +40,15 @@ const LEGACY_NETWORK_CONFIG_FILE: &str = "network-config.json";
 /// come back on the next corrective write — that is fine.
 const FILE_HEADER: &str = "# WoWSP network settings. mode = \"system\" | \"none\" | \"manual\".\n\
                            # Invalid values are reset to the defaults by the app.\n";
+
+/// Targets that must never ride ANY proxy: loopback (locally served
+/// update artifacts, dev mirrors) and the RFC1918/link-local private
+/// ranges (LAN pairing traffic, whose peer is a phone on the same Wi-Fi,
+/// never something the user's outbound proxy could reach). Consumed as a
+/// reqwest NoProxy list by the fixed-proxy arm and, entry by entry, by
+/// the PAC closure in commands/pac.rs.
+pub(crate) const PROXY_BYPASS_LIST: &str =
+    "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16";
 
 /// The proxy strategy. Deserialized everywhere a `mode` string arrives (the
 /// TOML/JSON file, the `set_network_config` IPC) so a bad value can never
@@ -282,11 +292,18 @@ pub struct NetworkConfigResponse {
     /// empty — older webui builds render this single field.
     pub github_mirror: Option<String>,
     pub effective_proxy: Option<String>,
+    /// Which channel the decision resolved to ("manual" | "env" |
+    /// "registry" | "pac"). A PAC policy has no single proxy URL, so this
+    /// provenance is how the settings pane marks it BEFORE the first
+    /// probe — the config snapshot is the pane's only data until
+    /// 测试连接 runs.
+    pub proxy_source: Option<&'static str>,
 }
 
 impl From<NetworkConfig> for NetworkConfigResponse {
     fn from(cfg: NetworkConfig) -> Self {
         let effective_proxy = effective_proxy(&cfg);
+        let proxy_source = effective_proxy_source(&cfg);
         let github_mirrors = cfg.github_mirrors;
         Self {
             mode: cfg.mode,
@@ -295,13 +312,25 @@ impl From<NetworkConfig> for NetworkConfigResponse {
             github_mirror: github_mirrors.first().cloned(),
             github_mirrors,
             effective_proxy,
+            proxy_source,
         }
     }
 }
 
 #[tauri::command]
 pub fn get_network_config() -> CommandResult<NetworkConfigResponse> {
-    Ok(load_config().into())
+    let config = load_config();
+    // Merely opening the settings pane bootstraps a configured PAC
+    // script: a deduplicated background fetch (no await, no client
+    // needed) so this very read — and every later client build — sees
+    // the loaded engine as early as possible instead of only after the
+    // first real request happens to fire.
+    if matches!(config.mode, ProxyMode::System | ProxyMode::Unknown)
+        && super::pac::is_stale_or_empty()
+    {
+        super::pac::kick_refresh();
+    }
+    Ok(config.into())
 }
 
 /// Persist the config and return the SANITIZED result actually stored. The
@@ -326,44 +355,121 @@ pub fn set_network_config(config: NetworkConfig) -> CommandResult<NetworkConfigR
     Ok(config.into())
 }
 
-/// Resolve the proxy URL the config selects. "none" yields None (direct);
-/// "system" consults the OS settings; "manual" uses the pinned URL.
-pub fn effective_proxy(config: &NetworkConfig) -> Option<String> {
-    match config.mode {
-        ProxyMode::None => None,
-        ProxyMode::Manual => config
-            .proxy
-            .clone()
-            .map(|p| p.trim().to_string())
-            .filter(|p| !p.is_empty()),
-        // System (and Unknown, if an unsanitized config ever reaches here —
-        // the OS proxy is the safest reading of "we don't know").
-        ProxyMode::System | ProxyMode::Unknown => system_proxy(),
-    }
+/// Which outbound channel a config resolves to. The SINGLE decision
+/// http_builder_for / effective_proxy / effective_proxy_source /
+/// HttpPair::has_proxy share, so the proxy URL, its provenance label and
+/// the actual routing cannot drift apart (they used to be three
+/// independent reads of env/registry that could disagree).
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ProxyChannel {
+    /// No proxy — plain direct connections.
+    Direct,
+    /// One fixed proxy URL for every request; source labels where it
+    /// came from (the manual setting, an env var, the WinINET registry)
+    /// for the diagnostics provenance.
+    Fixed { url: String, source: &'static str },
+    /// The WinINET PAC script is configured AND loaded: routing is
+    /// decided per request by FindProxyForURL (no single URL exists),
+    /// through the engine in commands/pac.rs.
+    Pac,
 }
 
-/// Which channel [`effective_proxy`] resolved the proxy from — the
-/// diagnostics panel labels the provenance instead of showing a bare URL.
-/// `None` when no proxy is in effect.
-pub fn effective_proxy_source(config: &NetworkConfig) -> Option<&'static str> {
-    match config.mode {
-        ProxyMode::None => None,
-        ProxyMode::Manual => effective_proxy(config).map(|_| "manual"),
-        ProxyMode::System | ProxyMode::Unknown => {
-            effective_proxy(config)?;
-            if env_proxy().is_some() {
-                Some("env")
-            } else {
-                Some("registry")
-            }
+/// What the PAC engine currently knows about the configured script —
+/// the injected shape of the precedence core below (tests pin these
+/// without touching the registry, the env or the engine).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PacAvailability {
+    NotConfigured,
+    Loaded,
+    Unavailable,
+}
+
+/// The system-mode precedence core, dependency-injected for tests: env
+/// vars first (tools deliberately override the OS settings), then the PAC
+/// script while it is actually Loaded; when a PAC is configured but
+/// Unavailable (or not yet attempted) the WinINET manual proxy takes
+/// over — the fallback WinINET itself applies — and otherwise direct.
+fn system_channel_injected(
+    env: Option<String>,
+    pac: PacAvailability,
+    wininet: Option<String>,
+) -> ProxyChannel {
+    if let Some(url) = env {
+        return ProxyChannel::Fixed { url, source: "env" };
+    }
+    match pac {
+        PacAvailability::Loaded => ProxyChannel::Pac,
+        PacAvailability::NotConfigured | PacAvailability::Unavailable => match wininet {
+            Some(url) => ProxyChannel::Fixed {
+                url,
+                source: "registry",
+            },
+            None => ProxyChannel::Direct,
         },
     }
 }
 
-/// OS proxy detection: env vars first (tools commonly override WinINET with
-/// HTTP_PROXY/HTTPS_PROXY), then the Windows registry (WinINET).
-fn system_proxy() -> Option<String> {
-    env_proxy().or_else(wininet_proxy)
+/// The real system-mode read: env vars, the PAC engine's knowledge, the
+/// WinINET manual proxy.
+fn system_channel() -> ProxyChannel {
+    let env = env_proxy();
+    let pac = match super::pac::configured_url() {
+        None => PacAvailability::NotConfigured,
+        Some(url) => match super::pac::engine_status_for(Some(&url)) {
+            Some(super::pac::PacStatus::Loaded) => PacAvailability::Loaded,
+            _ => PacAvailability::Unavailable,
+        },
+    };
+    let wininet = wininet_proxy();
+    system_channel_injected(env, pac, wininet)
+}
+
+/// Which channel the config resolves to — everything proxy-shaped
+/// routes through this one decision.
+fn channel_for(config: &NetworkConfig) -> ProxyChannel {
+    match config.mode {
+        ProxyMode::None => ProxyChannel::Direct,
+        ProxyMode::Manual => {
+            match config
+                .proxy
+                .clone()
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+            {
+                Some(url) => ProxyChannel::Fixed {
+                    url,
+                    source: "manual",
+                },
+                None => ProxyChannel::Direct,
+            }
+        },
+        // System (and Unknown, if an unsanitized config ever reaches here —
+        // the OS proxy is the safest reading of "we don't know").
+        ProxyMode::System | ProxyMode::Unknown => system_channel(),
+    }
+}
+
+/// Resolve the proxy URL the config selects. "none" yields None (direct);
+/// "system" consults the OS settings; "manual" uses the pinned URL. A PAC
+/// channel has no single URL — routing there is per request — so it
+/// reads as None here.
+pub fn effective_proxy(config: &NetworkConfig) -> Option<String> {
+    match channel_for(config) {
+        ProxyChannel::Direct => None,
+        ProxyChannel::Fixed { url, .. } => Some(url),
+        ProxyChannel::Pac => None,
+    }
+}
+
+/// Which channel the config resolved to — the diagnostics panel labels
+/// the provenance instead of showing a bare URL. "pac" names the PAC
+/// engine's per-request routing. None when no proxy is in effect.
+pub fn effective_proxy_source(config: &NetworkConfig) -> Option<&'static str> {
+    match channel_for(config) {
+        ProxyChannel::Direct => None,
+        ProxyChannel::Fixed { source, .. } => Some(source),
+        ProxyChannel::Pac => Some("pac"),
+    }
 }
 
 /// The environment-variable half of [`system_proxy`] — the probes must
@@ -429,23 +535,34 @@ fn wininet_proxy() -> Option<String> {
     None
 }
 
-/// The WinINET picture the diagnostics panel shows. Two channels the
-/// built-in downloader cannot follow are called out explicitly: a PAC
-/// script (`AutoConfigURL`) and WPAD auto-detect are never evaluated by
-/// the Rust stack (reqwest has no PAC engine) — a PAC-only network that
-/// needs the proxy to reach the internet reads as "direct" here, so the
-/// panel must say so instead of silently failing.
+/// The WinINET picture the diagnostics panel shows. Of the two extra
+/// channels WinINET can configure, the PAC script (`AutoConfigURL`) is
+/// now FOLLOWED by the downloader while the engine in commands/pac.rs
+/// has it loaded (pacUrl/pacStatus expose that state, including the
+/// unavailable/degraded case); WPAD auto-detect remains the one channel
+/// the Rust stack cannot follow (reqwest has no discovery engine), so a
+/// WPAD-only network still reads as "direct" here and the panel must
+/// say so instead of silently failing.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemProxyContext {
     pub manual_proxy_enabled: bool,
     pub pac_configured: bool,
     pub auto_detect: bool,
+    /// The AutoConfigURL value (None when absent), so the frontend can
+    /// show WHERE the PAC script comes from.
+    pub pac_url: Option<String>,
+    /// "loaded" | "unavailable" for a configured script; null when no
+    /// PAC is configured. Unavailable covers fetch/parse/eval failure
+    /// AND the configured-but-not-yet-fetched window.
+    pub pac_status: Option<&'static str>,
 }
 
 /// Read the WinINET proxy context (never fails: an unreadable key reads as
 /// "nothing configured", the same degrade-to-default stance the rest of
-/// this module takes).
+/// this module takes). The PAC fields come from the pac module's SINGLE
+/// AutoConfigURL read site plus a pure status read \u2014 no fetch happens
+/// here (network_probe refreshes before it reports).
 #[cfg(windows)]
 pub fn system_proxy_context() -> SystemProxyContext {
     use winreg::RegKey;
@@ -460,18 +577,19 @@ pub fn system_proxy_context() -> SystemProxyContext {
         .get_value::<u32, _>("ProxyEnable")
         .map(|v| v != 0)
         .unwrap_or(false);
-    let pac_configured: bool = key
-        .get_value::<String, _>("AutoConfigURL")
-        .map(|v| !v.trim().is_empty())
-        .unwrap_or(false);
     let auto_detect: bool = key
         .get_value::<u32, _>("AutoDetect")
         .map(|v| v != 0)
         .unwrap_or(false);
+    let pac_url = super::pac::configured_url();
+    let pac_configured = pac_url.is_some();
+    let pac_status = super::pac::status_string_for(pac_url.as_deref());
     SystemProxyContext {
         manual_proxy_enabled,
         pac_configured,
         auto_detect,
+        pac_url,
+        pac_status,
     }
 }
 
@@ -514,6 +632,16 @@ pub fn http_client_builder() -> anyhow::Result<reqwest::ClientBuilder> {
 /// and the builder [`HttpPair::build`] shares so one config load feeds both
 /// clients of a pair.
 fn http_builder_for(config: &NetworkConfig) -> anyhow::Result<reqwest::ClientBuilder> {
+    builder_for_channel(config, &channel_for(config))
+}
+
+/// [`http_builder_for`] with the channel resolved once by the caller \u2014
+/// HttpPair::build_with reuses one channel decision for both twins so the
+/// registry/env reads (and the PAC status) cannot shift between them.
+fn builder_for_channel(
+    config: &NetworkConfig,
+    channel: &ProxyChannel,
+) -> anyhow::Result<reqwest::ClientBuilder> {
     let mut builder = reqwest::Client::builder()
         .user_agent("WoWSP/0.1 (https://github.com/langyo/wowsp)")
         .connect_timeout(std::time::Duration::from_secs(15))
@@ -545,21 +673,46 @@ fn http_builder_for(config: &NetworkConfig) -> anyhow::Result<reqwest::ClientBui
     {
         builder = builder.tls_certs_only(android_tls_roots()?);
     }
-    if let Some(url) = effective_proxy(config) {
-        let mut proxy =
-            reqwest::Proxy::all(url.clone()).map_err(|e| anyhow!("proxy {url}: {e}"))?;
-        // Loopback targets (locally served update artifacts, dev mirrors)
-        // must never ride the proxy — several proxies refuse or mangle
-        // requests back to the very machine they run on — and neither
-        // must the RFC1918/link-local private ranges: they carry LAN
-        // pairing traffic, whose peer is a phone on the same Wi-Fi,
-        // never something the user's outbound proxy could reach.
-        proxy = proxy.no_proxy(reqwest::NoProxy::from_string(
-            "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16",
-        ));
-        builder = builder.proxy(proxy);
-    } else if config.mode == ProxyMode::None {
-        builder = builder.no_proxy();
+    match channel {
+        ProxyChannel::Fixed { url, .. } => {
+            let mut proxy =
+                reqwest::Proxy::all(url.clone()).map_err(|e| anyhow!("proxy {url}: {e}"))?;
+            // Loopback targets (locally served update artifacts, dev mirrors)
+            // must never ride the proxy — several proxies refuse or mangle
+            // requests back to the very machine they run on — and neither
+            // must the RFC1918/link-local private ranges: they carry LAN
+            // pairing traffic, whose peer is a phone on the same Wi-Fi,
+            // never something the user's outbound proxy could reach.
+            proxy = proxy.no_proxy(reqwest::NoProxy::from_string(PROXY_BYPASS_LIST));
+            builder = builder.proxy(proxy);
+        },
+        // The PAC route: a per-request custom intercept answering
+        // FindProxyForURL (see commands/pac.rs — the closure also
+        // self-bypasses loopback/private targets, since reqwest's
+        // no_proxy list is dead config for custom intercepts).
+        ProxyChannel::Pac => {
+            builder = builder.proxy(super::pac::pac_proxy()?);
+        },
+        // System mode with nothing found (and Unknown) keeps reqwest's own
+        // system detection on \u2014 the historical fallback \u2014 while an
+        // explicit "none" config hard-disables every proxy.
+        ProxyChannel::Direct => {
+            if config.mode == ProxyMode::None {
+                builder = builder.no_proxy();
+            }
+        },
+    }
+    // PAC bootstrap: in system mode with a configured script the engine
+    // must eventually LOAD, or a PAC-only network silently rides the
+    // registry fallback forever. The builder path is sync and fires on
+    // every client build, so this only KICKS a deduplicated background
+    // refresh when the engine is empty/stale \u2014 requests built meanwhile
+    // keep the channel they resolved (typically the registry fallback,
+    // matching WinINET's own degraded behavior) until the script lands.
+    if matches!(config.mode, ProxyMode::System | ProxyMode::Unknown)
+        && super::pac::is_stale_or_empty()
+    {
+        super::pac::kick_refresh();
     }
     Ok(builder)
 }
@@ -610,9 +763,10 @@ pub struct NetworkProbeRow {
 }
 
 /// The whole diagnostics snapshot: the effective policy plus the probe
-/// matrix. `system` carries the two WinINET channels the downloader
-/// cannot follow (PAC / WPAD), and `direct_preferred_hosts` discloses
-/// hosts the fallback chain has already handed to the direct path — the
+/// matrix. `system` carries the WinINET picture with the PAC state the
+/// downloader now actually follows (pacUrl/pacStatus; WPAD stays the one
+/// unsupported channel), and `direct_preferred_hosts` discloses hosts
+/// the fallback chain has already handed to the direct path — the
 /// "proxy is broken right now, direct works" state, visible without
 /// reading logs.
 #[derive(Debug, Clone, Serialize)]
@@ -663,9 +817,14 @@ async fn probe_one(
 /// truth there), runs them sequentially so the two rows per endpoint
 /// never fight for the same socket budget, and includes the config
 /// provenance + WinINET context so the panel can explain a failure
-/// ("PAC configured but not evaluated") instead of just rendering red.
+/// ("PAC unavailable, riding the manual proxy") instead of just
+/// rendering red. The PAC engine is refreshed FIRST (awaited, deduped
+/// with any background kick) so the channel the probe pair builds with
+/// and the reported pacStatus reflect this-boot truth, not stale
+/// knowledge.
 #[tauri::command]
 pub async fn network_probe() -> CommandResult<NetworkProbeReport> {
+    super::pac::refresh_if_stale().await;
     let config = load_config();
     let effective = effective_proxy(&config);
     let pair = HttpPair::build(|b| b.timeout(PROBE_TIMEOUT))?;
@@ -718,25 +877,31 @@ impl HttpPair {
 
     /// [`build`]'s testable core: an explicit config instead of the
     /// persisted one. The builder is reconstructed per client (reqwest's
-    /// `ClientBuilder` is not `Clone`) — a cheap config transform.
+    /// `ClientBuilder` is not `Clone`) — a cheap config transform. The
+    /// channel is resolved ONCE for both twins so a registry/PAC state
+    /// flip between the two builds cannot produce mismatched twins.
     fn build_with(
         config: &NetworkConfig,
         configure: impl FnOnce(reqwest::ClientBuilder) -> reqwest::ClientBuilder + Copy,
     ) -> anyhow::Result<Self> {
-        let proxied = configure(http_builder_for(config)?)
+        let channel = channel_for(config);
+        let proxied = configure(builder_for_channel(config, &channel)?)
             .build()
             .map_err(|e| anyhow!("http client: {e}"))?;
         // no_proxy() both clears the policy proxy the base may carry and
         // disables system-proxy detection — the twin is direct by
         // construction, whatever the environment says.
-        let direct = configure(http_builder_for(config)?)
+        let direct = configure(builder_for_channel(config, &channel)?)
             .no_proxy()
             .build()
             .map_err(|e| anyhow!("http client: {e}"))?;
+        // A PAC channel DOES proxy (per request, through the engine) —
+        // the fallback arm must run so a failing PAC-resolved proxy
+        // degrades onto the direct twin like any other proxy would.
         Ok(Self {
             proxied,
             direct,
-            has_proxy: effective_proxy(config).is_some(),
+            has_proxy: channel != ProxyChannel::Direct,
         })
     }
 
@@ -1148,5 +1313,134 @@ mod tests {
             "the legacy key does not survive the heal-write: {healed}"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The system-mode precedence table (injected — no registry/env/
+    /// engine reads): env beats a loaded PAC, a loaded PAC beats the
+    /// registry manual proxy, an unavailable PAC falls back to the
+    /// registry proxy (WinINET's own degraded order), and nothing at all
+    /// is direct.
+    #[test]
+    fn system_channel_precedence_table() {
+        let env = "http://192.0.2.1:7890".to_string();
+        let reg = "http://192.0.2.2:7890".to_string();
+
+        // env always wins — even over a loaded PAC (tools deliberately
+        // override the OS settings).
+        assert_eq!(
+            system_channel_injected(
+                Some(env.clone()),
+                PacAvailability::Loaded,
+                Some(reg.clone())
+            ),
+            ProxyChannel::Fixed {
+                url: env.clone(),
+                source: "env"
+            }
+        );
+        assert_eq!(
+            system_channel_injected(Some(env.clone()), PacAvailability::Unavailable, None),
+            ProxyChannel::Fixed {
+                url: env.clone(),
+                source: "env"
+            }
+        );
+
+        // A loaded PAC beats the WinINET manual proxy.
+        assert_eq!(
+            system_channel_injected(None, PacAvailability::Loaded, Some(reg.clone())),
+            ProxyChannel::Pac
+        );
+
+        // PAC configured but unavailable (or not yet attempted): the
+        // registry manual proxy — WinINET's own fallback — then direct.
+        assert_eq!(
+            system_channel_injected(None, PacAvailability::Unavailable, Some(reg.clone())),
+            ProxyChannel::Fixed {
+                url: reg.clone(),
+                source: "registry"
+            }
+        );
+        assert_eq!(
+            system_channel_injected(None, PacAvailability::Unavailable, None),
+            ProxyChannel::Direct
+        );
+
+        // Nothing configured: the plain WinINET manual proxy, else direct.
+        assert_eq!(
+            system_channel_injected(
+                None,
+                PacAvailability::NotConfigured,
+                Some("http://192.0.2.3:7890".to_string()),
+            ),
+            ProxyChannel::Fixed {
+                url: "http://192.0.2.3:7890".to_string(),
+                source: "registry",
+            }
+        );
+        assert_eq!(
+            system_channel_injected(None, PacAvailability::NotConfigured, None),
+            ProxyChannel::Direct
+        );
+    }
+
+    /// The diagnostics IPC wire shape is contractual (the webui mirrors
+    /// the DTO): camelCase keys, pacUrl/pacStatus, null status when no
+    /// PAC is configured.
+    #[test]
+    fn system_proxy_context_wire_shape() {
+        let with_pac = SystemProxyContext {
+            manual_proxy_enabled: true,
+            pac_configured: true,
+            auto_detect: false,
+            pac_url: Some("http://wpad.example/wpad.dat".to_string()),
+            pac_status: Some("loaded"),
+        };
+        let json = serde_json::to_value(&with_pac).unwrap();
+        assert_eq!(json["pacUrl"], "http://wpad.example/wpad.dat");
+        assert_eq!(json["pacStatus"], "loaded");
+        assert_eq!(json["manualProxyEnabled"], true);
+        assert_eq!(json["pacConfigured"], true);
+        assert_eq!(json["autoDetect"], false);
+
+        let no_pac = SystemProxyContext::default();
+        let json = serde_json::to_value(&no_pac).unwrap();
+        assert_eq!(json["pacUrl"], serde_json::Value::Null);
+        assert_eq!(json["pacStatus"], serde_json::Value::Null);
+        assert_eq!(json["pacConfigured"], false);
+    }
+
+    /// Manual/none provenance labels survive the channel rewrite — the
+    /// Fixed arm now carries the source instead of recomputing it.
+    #[test]
+    fn channel_labels_manual_and_none_modes() {
+        let manual = NetworkConfig {
+            mode: ProxyMode::Manual,
+            proxy: Some("socks5://127.0.0.1:1080".into()),
+            ..NetworkConfig::default()
+        };
+        assert_eq!(
+            channel_for(&manual),
+            ProxyChannel::Fixed {
+                url: "socks5://127.0.0.1:1080".to_string(),
+                source: "manual",
+            }
+        );
+        assert_eq!(effective_proxy_source(&manual), Some("manual"));
+
+        // A manual URL that sanitize would have dropped resolves direct,
+        // and "none" never yields a channel at all.
+        let half_manual = NetworkConfig {
+            mode: ProxyMode::Manual,
+            proxy: None,
+            ..NetworkConfig::default()
+        };
+        assert_eq!(channel_for(&half_manual), ProxyChannel::Direct);
+        let none = NetworkConfig {
+            mode: ProxyMode::None,
+            ..NetworkConfig::default()
+        };
+        assert_eq!(channel_for(&none), ProxyChannel::Direct);
+        assert_eq!(effective_proxy(&none), None);
     }
 }

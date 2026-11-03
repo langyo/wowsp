@@ -74,7 +74,9 @@ export function useSettingsNetworkState() {
       proxy: normalizeProxyUrl(netCfg.value.proxy),
       resourceCdn: netCfg.value.resourceCdn?.trim() || null,
     };
+    // Read-only provenance fields the shell computes — never send them back.
     delete payload.effectiveProxy;
+    delete payload.proxySource;
     try {
       // The shell sanitizes before persisting and returns what actually
       // landed — adopt THAT so the form never claims a proxy the HTTP

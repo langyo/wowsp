@@ -84,6 +84,11 @@ export interface NetworkConfig {
   githubMirrors?: string[] | null;
   /** OS proxy pre-resolved by the shell (read-only, for proxy-URL consumers). */
   effectiveProxy?: string | null;
+  /** Which channel the shell's proxy decision resolved to ("manual" |
+   *  "env" | "registry" | "pac"; null = direct). Read-only provenance so
+   *  the settings pane can mark a PAC policy before the first probe — a
+   *  PAC policy has no single proxy URL, so this is its only signal. */
+  proxySource?: "manual" | "env" | "registry" | "pac" | null;
 }
 
 /** The GitHub mirror ladder (mirrors the Rust GithubMirrorLadder): the
@@ -119,12 +124,21 @@ export interface NetworkProbeRow {
 }
 
 /** WinINET proxy context: the manual-proxy switch (which the downloader
- *  honors) plus the PAC/WPAD channels it cannot follow — disclosed by
- *  the diagnostics panel instead of failing silently. */
+ *  honors), the PAC channel the downloader now resolves per target host
+ *  (reqwest fetches + evaluates the AutoConfigURL script), and the WPAD
+ *  channel it still cannot follow — disclosed by the diagnostics panel
+ *  instead of failing silently. */
 export interface SystemProxyContext {
   manualProxyEnabled: boolean;
-  /** A PAC script (AutoConfigURL) is configured; reqwest never evaluates it. */
+  /** A PAC script (AutoConfigURL) is configured; reqwest evaluates it per
+   *  target host. WPAD remains unsupported. */
   pacConfigured: boolean;
+  /** The WinINET AutoConfigURL value itself; null when no PAC is configured. */
+  pacUrl: string | null;
+  /** PAC script health: "loaded" = fetched + parsed OK; "unavailable" =
+   *  configured but the fetch/parse failed (the proxy chain fell back to
+   *  the manual proxy / direct); null when no PAC is configured. */
+  pacStatus: "loaded" | "unavailable" | null;
   /** WPAD auto-detect is enabled; reqwest never follows it. */
   autoDetect: boolean;
 }
@@ -133,8 +147,8 @@ export interface SystemProxyContext {
 export interface NetworkProbeReport {
   mode: "system" | "none" | "manual";
   effectiveProxy?: string | null;
-  /** "manual" | "env" | "registry" | null. */
-  proxySource?: string | null;
+  /** "manual" | "env" | "registry" | "pac" | null (null = direct). */
+  proxySource?: "manual" | "env" | "registry" | "pac" | null;
   system: SystemProxyContext;
   rows: NetworkProbeRow[];
   /** Hosts the fallback chain already handed to the direct path. */
@@ -388,8 +402,9 @@ export const shellApi = {
     transport.invoke<NetworkConfig>(RPC.set_network_config, { config }),
   /** One-shot 网络诊断 snapshot: probes GitHub + the WG API over the
    *  paths actually in effect and discloses the policy provenance
-   *  (manual/env/registry), PAC/WPAD config, and any host the fallback
-   *  chain has already handed to the direct path. */
+   *  (manual/env/registry/pac), PAC health + the AutoConfigURL, WPAD
+   *  config, and any host the fallback chain has already handed to the
+   *  direct path. */
   networkProbe: () => transport.invoke<NetworkProbeReport>(RPC.network_probe),
   /** The GitHub mirror ladder: direct + built-in + the user's saved custom
    *  prefixes (commands/github_mirror.rs) — the settings list's rows, in

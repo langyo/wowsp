@@ -29,6 +29,12 @@ toml.workspace = true
 # Error handling
 anyhow.workspace = true
 
+# PAC (proxy auto-config) script evaluation (commands/pac.rs) — see the
+# workspace def. Pure-Rust JS interpreter, so it compiles on every target
+# like the rest of commands/network.rs; on non-Windows the engine stays
+# inert (AutoConfigURL is a Windows registry read).
+boa_engine.workspace = true
+
 # Async runtime
 tokio.workspace = true
 # Bounded-parallel name resolution for the live-roster batch lookup
