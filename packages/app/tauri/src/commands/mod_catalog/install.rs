@@ -788,11 +788,15 @@ pub(crate) fn entry_display_name(entry: &CatalogEntry) -> String {
 /// asset that the package does not contain, the existing mods tree does
 /// not provide and the client does not index — or whose .swf payloads are
 /// not SWF files at all — is the gc-20261101232118338-22840 class that
-/// hangs the game UI at boot; it must never reach res_mods. Every blocking
-/// finding lands in one single-line error so the report pane (and a hub
-/// report) can name them all. `overlap` findings never block: an overlap
-/// with the existing mods tree is the user's decision, surfaced by the
-/// scan command elsewhere.
+/// hangs the game UI at boot; it must never reach res_mods. Blocking scope
+/// is the STAGED tree: a dangling reference the existing tree already
+/// carries pre-dates the package and is an advisory log line (2026-11-03:
+/// six stale CN-tree references pinned on the clean Radar Timer package,
+/// blocking a perfectly installable mod). Every blocking finding lands in
+/// one single-line error so the report pane (and a hub report) can name
+/// them all. `overlap` findings never block: an overlap with the existing
+/// mods tree is the user's decision, surfaced by the scan command
+/// elsewhere.
 fn integrity_gate(
     mod_id: &str,
     display_name: &str,
@@ -804,9 +808,6 @@ fn integrity_gate(
         bases.push(existing);
     }
     let report = crate::commands::mod_integrity::scan_trees(Some(game_root), &bases);
-    if report.problems.is_empty() {
-        return Ok(());
-    }
     // The catalog title (not the classifier's directory label) is what the
     // error names — the user reads it in the install toast.
     let pkg = if display_name.is_empty() {
@@ -815,13 +816,44 @@ fn integrity_gate(
         display_name
     };
     const TAIL: &str = "refusing to install a package that would hang the game UI; report the package on the mod hub";
-    let clauses: Vec<String> = report
+    // Blocking scope: findings whose own files sit in the STAGED package.
+    // The EXISTING tree's dangling references pre-date this package —
+    // refusing the package neither cures them nor names the real culprit
+    // (live report 2026-11-03: six stale CN-tree references pinned on the
+    // clean Radar Timer package, blocking a perfectly installable mod).
+    // They stay reported, as an advisory log line.
+    let blocking: Vec<&crate::commands::mod_integrity::ModIntegrityProblem> = report
         .problems
         .iter()
         .filter(|p| {
-            p.kind == crate::commands::mod_integrity::KIND_DANGLING_REF
-                || p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF
+            p.staged
+                && (p.kind == crate::commands::mod_integrity::KIND_DANGLING_REF
+                    || p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF)
         })
+        .collect();
+    let preexisting: Vec<&crate::commands::mod_integrity::ModIntegrityProblem> = report
+        .problems
+        .iter()
+        .filter(|p| {
+            !p.staged
+                && (p.kind == crate::commands::mod_integrity::KIND_DANGLING_REF
+                    || p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF)
+        })
+        .collect();
+    if preexisting.iter().any(|p| {
+        p.kind == crate::commands::mod_integrity::KIND_DANGLING_REF
+            || p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF
+    }) {
+        tracing::warn!(
+            id = %mod_id,
+            game_root,
+            existing = preexisting.len(),
+            "the existing mods tree already carries dangling references — \
+             advisory only, the install is not blocked by them"
+        );
+    }
+    let clauses: Vec<String> = blocking
+        .iter()
         .map(|p| {
             if p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF {
                 format!(
@@ -837,12 +869,12 @@ fn integrity_gate(
         })
         .collect();
     if clauses.is_empty() {
-        // Overlap-only: advisory here (the mod-hub UI surfaces it from the
-        // standalone scan), never an install blocker.
+        // Overlap-only or existing-tree-only: advisory here (the mod-hub UI
+        // surfaces the standalone scan), never an install blocker.
         tracing::debug!(
             id = %mod_id,
             overlaps = report.problems.len(),
-            "mod-integrity scan found only overlap claims (advisory)"
+            "mod-integrity scan found no staged blocking findings (advisory)"
         );
         return Ok(());
     }

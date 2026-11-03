@@ -23,6 +23,11 @@ export interface ModIntegrityProblem {
   path: string | null;
   /** Tree-relative paths of the files referencing/claiming the asset. */
   files: string[];
+  /** True when the finding's own files sit in the caller's first tree —
+   *  the catalog install gate's staged package (single-tree scans mark
+   *  everything). The install gate blocks only on staged findings; an
+   *  existing-tree finding pre-dates the package and is advisory. */
+  staged: boolean;
 }
 
 /** Mirrors commands::mod_integrity::ModIntegrityReport — one bounded scan

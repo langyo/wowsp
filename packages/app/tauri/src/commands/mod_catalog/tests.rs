@@ -3627,4 +3627,92 @@ mod tests {
         assert!(game.join("bin/1/res_mods/gui/dupe.swf").is_file());
         fs::remove_dir_all(&tmp).ok();
     }
+
+    /// (e) The gc-20261103 class: the EXISTING mods tree carries dangling
+    /// references (a half-finished TTaro install left overlays naming
+    /// forge outputs nothing provides) and a CLEAN package is installed
+    /// next to them. The tree's pre-existing dangles are advisory —
+    /// refusing the package neither cures them nor names the culprit —
+    /// so the install proceeds and the package's own files land.
+    #[test]
+    fn install_accepts_clean_package_despite_existing_tree_dangles() {
+        let _serial = gate_seam_guard();
+        let tmp =
+            std::env::temp_dir().join(format!("wowsp-gate-existdangle-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let work = tmp.join("work");
+        let game = tmp.join("game");
+        let res_mods = game.join("bin/1/res_mods");
+        fs::create_dir_all(res_mods.join("gui")).unwrap();
+        fs::write(
+            res_mods.join("gui/battle.xml"),
+            "<element class=\"lesta.unbound2.UbElement\" elementName=\"RadarTimer\" url=\"battle_stats.swf\"/>",
+        )
+        .unwrap();
+        let game_root = game.to_string_lossy().into_owned();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let packages = gate_packages(&work, &[("res_mods/gui/clean.txt", b"payload")]);
+
+        gate_client_index(&[]);
+        unpack_and_install(
+            "radar-timer",
+            "Radar Timer",
+            &work,
+            &game_root,
+            &packages,
+            &[],
+            &mut Vec::new(),
+        )
+        .expect("a clean package must install next to a dangling existing tree");
+        gate_client_index_clear();
+
+        assert!(res_mods.join("gui/clean.txt").is_file());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// (f) The ModForge toolchain carve-out must recognize the STAGED
+    /// extraction shape: a catalog batch unpacks into a root that keeps
+    /// the archive's own `res_mods/` prefix, and ModForge's manifest
+    /// builder names its own boot-time output (ForgeDefinitions.swf) —
+    /// a producer reference, not a dangling load (live report
+    /// 2026-11-03: the ASIA sync refused Radar Timer + ModForge on
+    /// exactly this file).
+    #[test]
+    fn install_accepts_modforge_toolchain_glue_under_staged_prefix() {
+        let _serial = gate_seam_guard();
+        let tmp =
+            std::env::temp_dir().join(format!("wowsp-gate-forgeprefix-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let work = tmp.join("work");
+        let game = tmp.join("game");
+        fs::create_dir_all(game.join("bin/1")).unwrap();
+        let game_root = game.to_string_lossy().into_owned();
+        let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+        let packages = gate_packages(
+            &work,
+            &[(
+                "res_mods/PnFMods/ModForge/Manifest.py",
+                b"DEFINITIONS_SWF = PAYLOAD_DIR + 'ForgeDefinitions.swf'".as_slice(),
+            )],
+        );
+
+        gate_client_index(&[]);
+        unpack_and_install(
+            "modforge",
+            "ModForge",
+            &work,
+            &game_root,
+            &packages,
+            &[],
+            &mut Vec::new(),
+        )
+        .expect("the producer's own forge-output reference must not block");
+        gate_client_index_clear();
+
+        assert!(
+            game.join("bin/1/res_mods/PnFMods/ModForge/Manifest.py")
+                .is_file()
+        );
+        fs::remove_dir_all(&tmp).ok();
+    }
 }
