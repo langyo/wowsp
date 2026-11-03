@@ -63,11 +63,37 @@ def _hull_model(entry: dict, fallback: bool) -> str | None:
     return None
 
 
-def _readable_name(gp_key: str) -> str:
+def _hull_stem(hull_model: str | None) -> str | None:
+    """The model directory stem as a GLB stem:
+    content/.../XSC501_Battle_Duck/XSC501_Battle_Duck.model → 'Battle_Duck'.
+
+    Event ships key their GameParams entries '<index>_<SPECIES>_<name>_<event>'
+    ('PXSB504_Battleship_Duck_FA2023' — the FA2023 bathtub ducks), so the
+    key-based readable name degenerates to the species word; the model dir
+    is the only place the real hull name lives."""
+    if not hull_model:
+        return None
+    stem = hull_model.replace("\\", "/").rsplit("/", 1)[-1]
+    stem = stem.removesuffix(".model")
+    # Strip the model index+tier prefix ("XSC501_"), mirroring the GP-key
+    # strip in _readable_name.
+    stem = re.sub(r"^[A-Z]{2}[ABCDSX]\d+_", "", stem)
+    return stem or None
+
+
+def _readable_name(gp_key: str, species: str | None = None,
+                   hull_stem: str | None = None) -> str:
     """PJSB018_Yamato_1944 → 'Yamato'; PASB017_Montana_1945 → 'Montana'.
 
     Mirrors convert_ship.py's filename logic: strip the type prefix (PJSA…),
     the leading tier number, and any trailing year/suffix tokens.
+
+    Event ships whose key embeds the class word
+    ('PXSB504_Battleship_Duck_FA2023') would resolve their first alphabetic
+    token to the species itself ("Battleship") — for those, fall back to the
+    hull model's directory stem ('Battle_Duck' / 'Battle_Duck_Light'), the
+    only token that both names the real hull and distinguishes the two duck
+    hulls from each other.
     """
     stem = gp_key
     # Strip the WG index prefix: P + nation(2) + class(1), e.g. "PVSD013".
@@ -82,6 +108,8 @@ def _readable_name(gp_key: str) -> str:
     # Prefer the first alphabetic token (the ship name).
     for p in cleaned:
         if p and p[0].isalpha():
+            if species and p.lower() == species.lower() and hull_stem:
+                return hull_stem
             return p
     return cleaned[-1] if cleaned else (parts[-1] if parts else "ship")
 
@@ -128,11 +156,13 @@ def main() -> int:
         origin = obj.get("originShipName")
         hull_model = _hull_model(obj, fallback=False)
         idx = key.split("_", 1)[0]
+        ti = obj.get("typeinfo")
         key_info[key] = {
             "shipId": ship_id,
             "index": idx,
             "originShipName": origin,
             "hullModel": hull_model,
+            "species": ti.get("species") if isinstance(ti, dict) else None,
         }
         if origin and origin != key:
             skin_count += 1
@@ -144,9 +174,11 @@ def main() -> int:
     for gp_key, info in key_info.items():
         origin = info["originShipName"]
         # baseName: skin → resolve origin's readable name; else own readable name.
-        base_name = _readable_name(gp_key)
-        if origin and origin in key_info and origin != gp_key:
-            base_name = _readable_name(origin)
+        base_name = _readable_name(gp_key, info["species"], _hull_stem(info["hullModel"]))
+        origin_info = key_info.get(origin) if origin else None
+        if origin_info and origin != gp_key:
+            base_name = _readable_name(
+                origin, origin_info["species"], _hull_stem(origin_info["hullModel"]))
             deduped += 1
         bridge_entry = ships.get(str(info["shipId"])) or ships.get(info["shipId"])
         name = (bridge_entry or {}).get("name", "")
@@ -176,9 +208,15 @@ def main() -> int:
             if not isinstance(ship_id, int) or str(ship_id) in out:
                 continue
             origin = obj.get("originShipName")
-            base_name = _readable_name(key)
+            extra_ti = obj.get("typeinfo")
+            extra_species = extra_ti.get("species") if isinstance(extra_ti, dict) else None
+            base_name = _readable_name(key, extra_species, _hull_stem(_hull_model(obj, fallback=True)))
             if origin and origin in extra_gp and origin != key:
-                base_name = _readable_name(origin)
+                origin_obj = extra_gp[origin]
+                origin_ti = origin_obj.get("typeinfo") if isinstance(origin_obj, dict) else None
+                origin_species = origin_ti.get("species") if isinstance(origin_ti, dict) else None
+                base_name = _readable_name(
+                    origin, origin_species, _hull_stem(_hull_model(origin_obj, fallback=True)))
             out[str(ship_id)] = {
                 "index": key.split("_", 1)[0],
                 "name": "",
