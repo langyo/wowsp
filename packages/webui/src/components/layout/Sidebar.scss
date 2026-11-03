@@ -365,7 +365,14 @@
      while the panel's width animates. During a rail -> expanded flip the
      host wears [data-pinning], which hikari's sheet uses to kill this
      panel's width transition (the expanded sidebar appears at full width
-     instantly; only the host's footprint animates). */
+     instantly; only the host's footprint animates).
+     THIS backdrop-filter is also a stacking context, which is exactly why
+     the rail toggle's elevation must NOT live on the toggle itself: a
+     local z here would be demoted into this context and lose to plain
+     positioned content painted later in tree order (the user-reported
+     amputated circle, fixed upstream in hikari 0.55.271 by carrying the
+     sidebar z band on .hk-sidebar-rail-host permanently — the host is the
+     elevation boundary, so this panel's context is harmless). */
   background: rgb(var(--color-surface));
   background: rgb(var(--color-surface) / min(100%, calc(55% + 45% * var(--ui-opacity, 1))));
   backdrop-filter: var(--wallpaper-blur-sidebar, blur(0px));
