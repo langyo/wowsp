@@ -190,6 +190,7 @@
       "frameworkDataMissing": "重新安裝任一 TTaro 系列外掛以修復共用框架資料。",
       "disabledByDependency": "重新安裝任一 TTaro 系列外掛以修復共用框架資料。"
     },
+    "locate": "定位外掛",
     "loadedOkSummary": "{count} 個外掛正常載入"
   },
   "bootInstaller": {

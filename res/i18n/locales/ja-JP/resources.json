@@ -190,6 +190,7 @@
       "frameworkDataMissing": "TTaro 系のモッドをひとつ再インストールして、共有フレームワークのデータを修復してください。",
       "disabledByDependency": "TTaro 系のモッドをひとつ再インストールして、共有フレームワークのデータを修復してください。"
     },
+    "locate": "モッドを表示",
     "loadedOkSummary": "{count} 個のモッドが正常に読み込まれました"
   },
   "bootInstaller": {

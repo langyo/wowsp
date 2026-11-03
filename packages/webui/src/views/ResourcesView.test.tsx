@@ -901,20 +901,58 @@ describe("last session plugin health strip", () => {
     expect(rows[0].text()).toContain("BattleFrame_Torpedoes");
     expect(rows[0].text()).toContain("resources.loaderHealth.kind.signatureRefused");
     expect(rows[0].text()).toContain("2026-10-31 15:45:34.761");
-    expect(rows[0].find(".loader-health__row-hint").text()).toBe(
+    // The hint line now carries the locate action, so its text is the
+    // suggestion plus the action label.
+    expect(rows[0].find(".loader-health__row-hint").text()).toContain(
       "resources.loaderHealth.hint.signatureRefused",
+    );
+    expect(rows[0].find(".loader-health__row-locate").text()).toBe(
+      "resources.loaderHealth.locate",
     );
     // The shared-framework verdict names the framework label, not a mod.
     expect(rows[1].find(".loader-health__row-name").text()).toBe(
       "resources.loaderHealth.framework",
     );
-    expect(rows[2].find(".loader-health__row-hint").text()).toBe(
+    expect(rows[2].find(".loader-health__row-hint").text()).toContain(
       "resources.loaderHealth.hint.disabledByDependency",
     );
     // The quiet "N loaded OK" line closes the strip.
     expect(view.find(".loader-health__ok").text()).toBe(
       "resources.loaderHealth.loadedOkSummary",
     );
+  });
+
+  it("locates the affected unit from a row's action", async () => {
+    mocks.scan.mockResolvedValue([
+      mod("TTaroModUtils"),
+      mod("BattleFrame_Torpedoes"),
+      mod("Mod A"),
+    ]);
+    mocks.loaderHealth.mockResolvedValue({
+      logPath: "C:/TestGameA/profile/python.log",
+      linesScanned: 8,
+      lastSessionAt: "2026-10-31 15:45:34.766",
+      verdicts: [
+        verdict("BattleFrame_Torpedoes", "signatureRefused"),
+        verdict(null, "frameworkDataMissing"),
+      ],
+    });
+    const view = await mountInstalled();
+    await view.find(".loader-health__head").trigger("click");
+    const rows = view.findAll(".loader-health__row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].find(".loader-health__row-locate").exists()).toBe(true);
+    // The named verdict locates its own unit straight into the pane.
+    await rows[0].find(".loader-health__row-locate").trigger("click");
+    await flushPromises();
+    expect(view.find(".mod-detail__name").text()).toContain(
+      "BattleFrame_Torpedoes",
+    );
+    // The shared-framework verdict lands on the framework unit itself —
+    // the probe by the name family the log carries.
+    await rows[1].find(".loader-health__row-locate").trigger("click");
+    await flushPromises();
+    expect(view.find(".mod-detail__name").text()).toContain("TTaroModUtils");
   });
 });
 

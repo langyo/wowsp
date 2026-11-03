@@ -1626,6 +1626,36 @@ export function useModHub() {
         .length,
   );
 
+  /** The strip row's locate action: jump the master list's selection to
+   *  the affected unit so the advice's "reinstall" has a visible target.
+   *  A named verdict selects that unit outright; the shared-framework
+   *  verdict (no mod name — it hits every TTaro dependent at once)
+   *  selects the framework unit itself, probed by the name family the
+   *  log carries ("TTaro*"). False = nothing on this install matches
+   *  the verdict any more (uninstalled since the log line) — the caller
+   *  leaves the list alone and the row's hint stays the explanation.
+   *  WoWSP cannot itself reinstall a foreign-installed unit (no source
+   *  for it), so this locates; the actual repair rides the unit's own
+   *  installer, exactly what the hint says. */
+  function locateLoaderHealth(modName: string | null | undefined): boolean {
+    const probe = (modName ?? "ttaro").toLowerCase();
+    const installedHit =
+      installed.value.find((m) => m.name.toLowerCase() === probe) ??
+      installed.value.find((m) => modMatches(m, probe));
+    if (installedHit) {
+      selectInstalled(installedHit);
+      return true;
+    }
+    const foreignHit = foreignUnits.value.find((u) =>
+      u.name.toLowerCase().includes(probe),
+    );
+    if (foreignHit) {
+      selectForeign(foreignHit);
+      return true;
+    }
+    return false;
+  }
+
   /** The rows the disarm confirm dialog lists: the manifest rows a disarm
    *  will actually cut (the detection's descriptor-matching set plus the
    *  unit's own row), falling back to the raw descriptors when no
@@ -1750,6 +1780,7 @@ export function useModHub() {
     loaderHealth,
     loaderHealthErrors,
     loaderHealthOkCount,
+    locateLoaderHealth,
     bootInstaller,
     bootInstallerCutRows,
     disarmBusy,
