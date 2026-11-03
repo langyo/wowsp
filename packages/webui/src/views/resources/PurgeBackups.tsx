@@ -17,6 +17,8 @@ import {
   HkScrollContainer,
   useToast,
 } from "@celestia-island/hikari";
+
+import AppTag from "@/components/base/AppTag";
 import { ChevronRight, Play, RotateCcw, Trash2, TriangleAlert, Undo2 } from "@lucide/vue";
 
 import { api } from "@/api";
@@ -184,13 +186,13 @@ export function renderPurgeBackups(
         <span class="purge-backups__body">
           <span class="purge-backups__name">{t("resources.purgeBackups.launcher")}</span>
           <span class="purge-backups__badges">
-            <span class="purge-backups__badge">
+            <AppTag tone="default">
               {t("resources.purgeBackups.count", { count: list.length })}
-            </span>
+              </AppTag>
             {unfinished > 0 ? (
-              <span class="purge-backups__badge is-unfinished">
+              <AppTag tone="warning" face="solid">
                 {t("resources.purgeBackups.unfinishedBadge", { count: unfinished })}
-              </span>
+                </AppTag>
             ) : null}
           </span>
         </span>
@@ -271,45 +273,45 @@ function renderPurgeBackupRows(pins: ReturnType<typeof usePurgeBackups>) {
             {b.dirName}
           </span>
           <span class="purge-backups__badges">
-            <span class="purge-backups__badge">{stampText}</span>
-            <span class="purge-backups__badge">
+            <AppTag tone="default">{stampText}</AppTag>
+            <AppTag tone="default">
               {t("resources.purgeBackups.files", { count: b.fileCount })}
-            </span>
+              </AppTag>
             {b.hasMarker ? (
               marker ? (
                 <>
-                  <span class="purge-backups__badge is-unfinished">
+                  <AppTag tone="warning" face="solid">
                     {t("resources.purgeBackups.unfinished")}
-                  </span>
-                  <span class="purge-backups__badge is-evidence">
+                    </AppTag>
+                  <AppTag face="outline">
                     {t("resources.purgeBackups.progress", {
                       done: marker.done.length,
                       planned: marker.planned.length,
                     })}
-                  </span>
-                  <span class="purge-backups__badge is-evidence">
+                  </AppTag>
+                  <AppTag face="outline">
                     {marker.mode === "adopt-foreign"
                       ? t("resources.purgeBackups.modeAdopt")
                       : t("resources.purgeBackups.modeOurs")}
-                  </span>
+                    </AppTag>
                 </>
               ) : (
                 // The marker file exists but does not parse: state unknown,
                 // so scope/progress would be a guess — resume stays hidden
                 // and dismiss is the only way out.
                 <>
-                  <span class="purge-backups__badge is-unfinished">
+                  <AppTag tone="warning" face="solid">
                     {t("resources.purgeBackups.unfinished")}
-                  </span>
-                  <span class="purge-backups__badge is-unfinished">
+                    </AppTag>
+                  <AppTag tone="warning" face="solid">
                     {t("resources.purgeBackups.markerUnreadable")}
-                  </span>
+                    </AppTag>
                 </>
               )
             ) : (
-              <span class="purge-backups__badge is-quarantined">
+              <AppTag tone="default">
                 {t("resources.purgeBackups.completed")}
-              </span>
+                </AppTag>
             )}
           </span>
         </span>

@@ -6,6 +6,8 @@ import { computed, defineComponent, ref, watch, type PropType } from "vue";
 import { HardDrive, FolderOpen } from "@lucide/vue";
 import { HkModal, HkScrollContainer } from "@celestia-island/hikari";
 
+import AppTag from "@/components/base/AppTag";
+
 import { useConfigStore } from "@/stores/config";
 import {
   api,
@@ -90,13 +92,13 @@ export const EntryClientsWindow = defineComponent({
                       {props.ctx.clientLabelOf(row.install)}
                     </span>
                     {row.record ? (
-                      <span class="entry-clients__state entry-clients__state--ok">
+                      <AppTag tone="success" mono>
                         {t("resources.installedBadge")} · {row.record.version}
-                      </span>
+                      </AppTag>
                     ) : (
-                      <span class="entry-clients__state">
+                      <AppTag face="outline">
                         {t("resources.entryClients.notInstalled")}
-                      </span>
+                      </AppTag>
                     )}
                   </div>
                   <div class="entry-clients__meta">

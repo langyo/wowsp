@@ -87,25 +87,7 @@
   gap: 4px;
 }
 
-.purge-backups__badge {
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: var(--text-xs);
-  background: rgb(var(--color-text) / 10%);
-  color: var(--hi-color-text-secondary);
-
-  &.is-unfinished {
-    background: var(--hi-color-warning);
-    color: #fff;
-    font-weight: 600;
-  }
-
-  &.is-evidence {
-    background: transparent;
-    border: 1px solid var(--hi-color-border);
-    color: var(--hi-color-text-secondary);
-  }
-}
+/* (the snapshot badges' faces moved to AppTag — 2026-11-03 tag unification) */
 
 .purge-backups__actions {
   flex: none;

@@ -12,6 +12,8 @@
 import { ref, watch, type Ref } from "vue";
 
 import { HkButton, HkModal, HkScrollContainer, useToast } from "@celestia-island/hikari";
+
+import AppTag from "@/components/base/AppTag";
 import { ChevronRight, RotateCcw, ShieldAlert, TriangleAlert } from "@lucide/vue";
 
 import { useCrashStore } from "@/stores/crash";
@@ -145,13 +147,13 @@ export function renderCrashPins(
         <span class="crash-pins__body">
           <span class="crash-pins__name">{t("crash.modlist.title")}</span>
           <span class="crash-pins__badges">
-            <span class="crash-pins__badge">
+            <AppTag tone="warning">
               {t("crash.modlist.pinnedBadge")} · {suspects.length}
-            </span>
+            </AppTag>
             {quarantined.length > 0 ? (
-              <span class="crash-pins__badge is-quarantined">
+              <AppTag tone="default">
                 {t("crash.modlist.quarantinedBadge")} · {quarantined.length}
-              </span>
+              </AppTag>
             ) : null}
           </span>
         </span>
@@ -220,19 +222,19 @@ function renderCrashPinRows(
                 {unit ? unit.name : s.name}
               </span>
               <span class="crash-pins__badges">
-                <span class="crash-pins__badge">{t("crash.modlist.pinnedBadge")}</span>
+                <AppTag tone="warning">{t("crash.modlist.pinnedBadge")}</AppTag>
                 {!unit ? (
-                  <span class="crash-pins__badge is-unknown">
+                  <AppTag tone="warning" face="solid">
                     {t("crash.suspects.unknownBadge")}
-                  </span>
+                  </AppTag>
                 ) : null}
-                <span class="crash-pins__badge is-evidence">
+                <AppTag face="outline">
                   {t("crash.suspects.evidence." + s.evidence)}
-                </span>
+                </AppTag>
                 {isQuarantined ? (
-                  <span class="crash-pins__badge is-quarantined">
+                  <AppTag tone="default">
                     {t("crash.modlist.quarantinedBadge")}
-                  </span>
+                  </AppTag>
                 ) : null}
               </span>
             </span>
@@ -272,9 +274,9 @@ function renderCrashPinRows(
               <span class="crash-pins__body">
                 <span class="crash-pins__name" data-hint-overflow={q.name}>{q.name}</span>
                 <span class="crash-pins__badges">
-                  <span class="crash-pins__badge is-quarantined">
+                  <AppTag tone="default">
                     {t("crash.modlist.quarantinedBadge")}
-                  </span>
+                  </AppTag>
                 </span>
               </span>
               <HkButton

@@ -92,30 +92,7 @@
   gap: 4px;
 }
 
-.crash-pins__badge {
-  padding: 0 6px;
-  border-radius: 999px;
-  font-size: var(--text-xs);
-  background: rgb(var(--color-warning) / 18%);
-  color: var(--hi-color-warning);
-
-  &.is-unknown {
-    background: var(--hi-color-warning);
-    color: #fff;
-    font-weight: 600;
-  }
-
-  &.is-evidence {
-    background: transparent;
-    border: 1px solid var(--hi-color-border);
-    color: var(--hi-color-text-secondary);
-  }
-
-  &.is-quarantined {
-    background: rgb(var(--color-text) / 10%);
-    color: var(--hi-color-text-secondary);
-  }
-}
+/* (the pin badges' faces moved to AppTag — 2026-11-03 tag unification) */
 
 // Phone (≤767px): the window docks as a bottom sheet and the xs
 // quarantine / restore buttons are its primary decisions — grow them

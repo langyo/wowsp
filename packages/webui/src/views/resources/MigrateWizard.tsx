@@ -13,6 +13,7 @@ import {
 } from "@celestia-island/hikari";
 
 import type { PlanFile } from "@/api";
+import AppTag from "@/components/base/AppTag";
 import ErrorCard from "@/components/base/ErrorCard";
 import {
   keptPending,
@@ -36,7 +37,7 @@ function renderMigGroup(ctx: ResourcesCtx, kind: "duplicate" | "superseded", fil
       >
         <ChevronDown size={14} class={["mig-wizard__chevron", { open }]} />
         <strong>{t(`resources.migrateGroup.${kind}`)}</strong>
-        <span class="mig-wizard__count">{files.length}</span>
+        <AppTag class="mig-wizard__count" tone="default">{files.length}</AppTag>
       </button>
       <p class="mig-wizard__hint">{t(`resources.migrateGroup.${kind}Hint`)}</p>
       {/* The raw file list's capped scroll region: hikari's overlay
@@ -267,7 +268,7 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
                       onUpdate:modelValue={(v: boolean) => ctx.toggleMigKeepAll(v)}
                     />
                     <strong>{t("resources.migrateGroup.decide")}</strong>
-                    <span class="mig-wizard__count">
+                    <AppTag class="mig-wizard__count" tone="default">
                       {(() => {
                         const { kept, pending } = keptPending(
                           ctx.decidePaths(),
@@ -279,7 +280,7 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
                           total: pending,
                         });
                       })()}
-                    </span>
+                    </AppTag>
                     <HkButton
                       variant="ghost"
                       size="sm"
@@ -322,7 +323,7 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
                         ]}
                       />
                       <strong>{t("resources.migrateGroup.ignored")}</strong>
-                      <span class="mig-wizard__count">{ctx.migDecide.value.ignore.size}</span>
+                      <AppTag class="mig-wizard__count" tone="default">{ctx.migDecide.value.ignore.size}</AppTag>
                     </button>
                     <p class="mig-wizard__hint">
                       {t("resources.migrateGroup.ignoredHint")}

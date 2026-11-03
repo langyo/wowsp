@@ -88,16 +88,10 @@
 
   /* The count pill — the replay list's count voice, scoped to the active
      source AND big category (exactly what the "all" chip counts). */
+  /* The count pill's face moved to AppTag (2026-11-03 tag unification);
+     the class keeps only the stack placement. */
   &__count {
     align-self: flex-start;
-    padding: 0.1rem 0.55rem;
-    background: rgb(var(--color-primary) / 12%);
-    border-radius: var(--radius-full);
-    color: rgb(var(--color-primary));
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
   }
 
   /* Filter-stack row: the source strip with its trailing ghost tools —
@@ -216,28 +210,13 @@
   to { transform: rotate(360deg); }
 }
 
-// ── Category filter chips ───────────────────────────────────────────────────
+// ── Category filter chips (AppTag interactive faces; container owns the
+//    wrap + gap only — 2026-11-03 tag unification) ──────────────────────
 
 .resources-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 0.375rem;
-
-  .chip {
-    padding: 0.25rem 0.625rem;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-    background: rgb(var(--color-bg));
-    border: 1px solid rgb(var(--color-border) / 20%);
-    border-radius: 999px;
-    cursor: pointer;
-    transition: color 0.15s, border-color 0.15s;
-
-    &--on {
-      color: rgb(var(--color-primary));
-      border-color: rgb(var(--color-primary) / 60%);
-    }
-  }
 }
 
 // ── Compact mod rows (list + search-combo tiles) ────────────────────────────
@@ -299,17 +278,13 @@
     white-space: nowrap;
   }
 
+  /* The version pill's face moved to AppTag (2026-11-03 tag unification);
+     the class keeps only the in-line layout contract. */
   &__ver {
     flex: none;
     max-width: 50%;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-size: var(--text-2xs);
-    font-weight: 500;
-    color: rgb(var(--color-muted));
-    background: rgb(var(--color-border) / 14%);
-    border-radius: 999px;
-    padding: 0 0.25rem;
   }
 
   &__sub {
@@ -326,45 +301,8 @@
     align-items: center;
   }
 
-  &__badge {
-    padding: 0.0625rem 0.375rem;
-    font-size: var(--text-xs);
-    border-radius: 999px;
-    white-space: nowrap;
-
-    &--ok {
-      color: rgb(var(--color-success));
-      background: rgb(var(--color-success) / 12%);
-      border: 1px solid rgb(var(--color-success) / 30%);
-    }
-
-    &--up {
-      color: rgb(var(--color-primary));
-      background: rgb(var(--color-primary) / 10%);
-      border: 1px solid rgb(var(--color-primary) / 35%);
-    }
-
-    &--off {
-      color: rgb(var(--color-muted));
-      background: rgb(var(--color-border) / 14%);
-      border: 1px solid rgb(var(--color-border) / 25%);
-    }
-
-    // Provenance (e.g. the Aslain modpack) — neutral, informational.
-    &--src {
-      color: rgb(var(--color-muted));
-      background: rgb(var(--color-border) / 10%);
-      border: 1px solid rgb(var(--color-border) / 20%);
-    }
-
-    // Contested tree (a WoWSP record claims files in a foreign tree) —
-    // amber, the warn family of the condition strips.
-    &--contested {
-      color: rgba(202, 138, 4, 1);
-      background: rgba(234, 179, 8, 0.12);
-      border: 1px solid rgba(234, 179, 8, 0.35);
-    }
-  }
+  /* (the row-state badges' face moved to AppTag — 2026-11-03 tag
+     unification; the __tail keeps its flex layout only.) */
 
   &__spinner {
     width: 0.875rem;
@@ -495,38 +433,8 @@
   }
 }
 
-.tex-tag {
-  padding: 0.0625rem 0.375rem;
-  font-size: var(--text-2xs);
-  line-height: 1.4;
-  color: rgb(var(--color-muted));
-  background: rgb(var(--color-border) / 12%);
-  border-radius: 999px;
-
-  &--cat {
-    color: rgb(var(--color-primary));
-    background: rgb(var(--color-primary) / 10%);
-  }
-}
-
-.tex-ship {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 0.0625rem 0.375rem;
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-2xs);
-  color: rgb(var(--color-text) / 85%);
-  background: rgb(var(--color-border) / 18%);
-  border-radius: 999px;
-
-  &--more {
-    flex: none;
-    color: rgb(var(--color-muted));
-    background: transparent;
-  }
-}
+// (the texture-analysis tag faces moved to AppTag — 2026-11-03 tag
+//  unification; the wrapping rows keep their flex/gap above.)
 
 // ── Install row + plan preview (folder-install pane flow) ───────────────────
 
@@ -601,13 +509,8 @@
     }
   }
 
-  &__badge {
-    font-size: var(--text-xs);
-    padding: 0.0625rem 0.5rem;
-    color: rgb(var(--accent));
-    border: 1px solid rgb(var(--accent) / 50%);
-    border-radius: 999px;
-  }
+  /* (the plan kind badge's face moved to AppTag — 2026-11-03 tag
+     unification) */
 
   &__detail {
     font-family: var(--font-mono, monospace);
@@ -1012,11 +915,10 @@
     font-weight: 600;
   }
 
+  /* The error count's face moved to AppTag (2026-11-03 tag unification);
+     the class keeps the trailing placement + numeric stability. */
   &__badge {
     margin-left: auto;
-    padding: 0 0.4rem;
-    border-radius: 999px;
-    background: rgba(234, 179, 8, 0.2);
     font-variant-numeric: tabular-nums;
   }
 
@@ -1403,112 +1305,13 @@
     gap: 0.375rem;
   }
 
-  /* Registry tags (licensed / synthetic-made / IP origins…) — kind-tinted.
-     flex: none keeps a long tag from being squeezed below its content
-     width by the wrapping badges row; the inline-flex layout + the inner
-     text span own the never-wrap + ellipsis contract (author and server
-     names must stay one line, ellipsized when a pill hits its width). */
-  &__tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    flex: none;
+  /* The registry / server-scope / author / install tags and the state
+     badges' faces all moved to AppTag (2026-11-03 tag unification). The
+     badges row keeps ONE layout contract: a long tag caps at the row
+     width so a wrapping pill can never stretch the pane. */
+  &__badges .app-tag {
     max-width: 100%;
     overflow: hidden;
-    padding: 0.0625rem 0.5rem;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-    background: rgb(var(--color-border) / 12%);
-    border: 1px solid rgb(var(--color-border) / 30%);
-    border-radius: 999px;
-    white-space: nowrap;
-
-    &--ip {
-      color: rgb(var(--color-primary));
-      background: rgb(var(--color-primary) / 10%);
-      border-color: rgb(var(--color-primary) / 35%);
-    }
-
-    /* AI 合成 deserves a louder voice — the provenance matters. */
-    &--ai {
-      color: rgb(168 85 247);
-      background: rgb(168 85 247 / 10%);
-      border-color: rgb(168 85 247 / 40%);
-    }
-
-    /* Server applicability (通用 / 支持美服·亚服): the info voice — a
-       WHERE tag, not a provenance or ownership one. The tooltip spells
-       the applicable servers out in full. */
-    &--servers {
-      color: rgb(var(--color-info));
-      background: rgb(var(--color-info) / 10%);
-      border-color: rgb(var(--color-info) / 30%);
-    }
-
-    /* The tag's text half: one line, ellipsized when a very long name
-       would overflow its pill. */
-    &-text {
-      display: inline-block;
-      min-width: 0;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-      vertical-align: bottom;
-    }
-
-    /* The clickable author tag — a button reset to the pill look (the
-       inline icon row comes from the base rule) with the same hover voice
-       as the footer link. */
-    &--link {
-      font: inherit;
-      cursor: pointer;
-      transition:
-        color 0.15s ease,
-        border-color 0.15s ease,
-        background-color 0.15s ease;
-
-      &:hover {
-        color: rgb(var(--color-primary));
-        border-color: rgb(var(--color-primary) / 45%);
-        background: rgb(var(--color-primary) / 8%);
-      }
-    }
-
-    /* The merged install/scope tag — same button reset, but the hover
-       keeps the tag's own voice color (installed green / scope info)
-       instead of repainting it primary. */
-    &--click {
-      font: inherit;
-      cursor: pointer;
-      transition:
-        filter 0.15s ease,
-        border-color 0.15s ease;
-
-      &:hover {
-        filter: brightness(1.08);
-        border-color: rgb(var(--color-text) / 45%);
-      }
-    }
-  }
-
-  &__badge {
-    padding: 0.0625rem 0.5rem;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-    border: 1px solid rgb(var(--color-border) / 30%);
-    border-radius: 999px;
-
-    &--ok {
-      color: rgb(var(--color-success));
-      background: rgb(var(--color-success) / 12%);
-      border-color: rgb(var(--color-success) / 30%);
-    }
-
-    &--warn {
-      color: rgb(var(--color-primary));
-      background: rgb(var(--color-primary) / 10%);
-      border-color: rgb(var(--color-primary) / 35%);
-    }
   }
 
   &__desc {
@@ -1713,13 +1516,8 @@
     }
   }
 
-  &__count {
-    padding: 0 0.375rem;
-    border-radius: 999px;
-    background: rgb(var(--color-border) / 20%);
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-  }
+  /* (the count chip's face moved to AppTag — 2026-11-03 tag unification;
+     the class stays for the group-head layout) */
 
   &__hint {
     margin: 0;
@@ -2203,19 +2001,10 @@
     font-weight: 600;
   }
 
+  /* (the client state tag's face moved to AppTag — 2026-11-03 tag
+     unification) */
   &__state {
     flex: none;
-    padding: 0.0625rem 0.5rem;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-    border: 1px solid rgb(var(--color-border) / 30%);
-    border-radius: 999px;
-
-    &--ok {
-      color: rgb(var(--color-success));
-      background: rgb(var(--color-success) / 12%);
-      border-color: rgb(var(--color-success) / 30%);
-    }
   }
 
   &__meta {

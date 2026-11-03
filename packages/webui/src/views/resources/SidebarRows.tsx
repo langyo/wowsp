@@ -4,6 +4,8 @@
 import { ImageIcon, Puzzle } from "@lucide/vue";
 import { HkScrollContainer } from "@celestia-island/hikari";
 
+import AppTag from "@/components/base/AppTag";
+
 import type { CatalogEntry, InstalledMod, ForeignModUnit } from "@/api";
 import { KIND_META, catIcon } from "@/features/modhub/taxonomy";
 import { t } from "@/i18n";
@@ -78,19 +80,13 @@ export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey:
         {busyInstall ? (
           <span class="mod-row__spinner" />
         ) : upToDate ? (
-          <span class="mod-row__badge mod-row__badge--ok">
-            {t("resources.installedBadge")}
-          </span>
+          <AppTag tone="success">{t("resources.installedBadge")}</AppTag>
         ) : record ? (
-          <span class="mod-row__badge mod-row__badge--up">
-            {t("resources.update")}
-          </span>
+          <AppTag tone="primary">{t("resources.update")}</AppTag>
         ) : entry.presets && entry.presets.length > 1 ? (
           /* Folded style family: say how many buttons the detail pane
              offers before the row is opened. */
-          <span class="mod-row__badge">
-            {t("resources.presetCount", { count: entry.presets.length })}
-          </span>
+          <AppTag>{t("resources.presetCount", { count: entry.presets.length })}</AppTag>
         ) : null}
       </span>
     </button>
@@ -163,7 +159,11 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
       <span class="mod-row__body">
         <span class="mod-row__name">
           {ctx.unitDisplayName(m)}
-          {m.version && <span class="mod-row__ver">{m.version}</span>}
+          {m.version && (
+            <AppTag class="mod-row__ver" tone="default">
+              {m.version}
+            </AppTag>
+          )}
         </span>
         <span class="mod-row__sub">
           {m.textureAnalysis?.ships?.length
@@ -180,25 +180,18 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
         {state ? (
           <span class="mod-row__spinner" />
         ) : m.disabled ? (
-          <span class="mod-row__badge mod-row__badge--off">
-            {t("resources.disabled")}
-          </span>
+          <AppTag tone="default">{t("resources.disabled")}</AppTag>
         ) : null}
         {ctx.isAslainUnit(m) && (
-          <span class="mod-row__badge mod-row__badge--src">
-            {t("resources.foreignSource.aslain")}
-          </span>
+          <AppTag tone="default">{t("resources.foreignSource.aslain")}</AppTag>
         )}
         {/* Contested tree: a WoWSP ledger record claims files in this
             unit's tree while foreign files remain — the two writers undo
             each other (see the boot-installer strip above). */}
         {m.contested && (
-          <span
-            class="mod-row__badge mod-row__badge--contested"
-            data-hint={t("resources.contestedTreeHint")}
-          >
+          <AppTag tone="warning" data-hint={t("resources.contestedTreeHint")}>
             {t("resources.contestedTree")}
-          </span>
+          </AppTag>
         )}
       </span>
     </button>
@@ -246,12 +239,9 @@ export function renderModstationStrip(ctx: ResourcesCtx) {
                 inherit it — see the backend scan). */}
             {unit.contested && (
               <span class="mod-row__tail">
-                <span
-                  class="mod-row__badge mod-row__badge--contested"
-                  data-hint={t("resources.contestedTreeHint")}
-                >
+                <AppTag tone="warning" data-hint={t("resources.contestedTreeHint")}>
                   {t("resources.contestedTree")}
-                </span>
+                </AppTag>
               </span>
             )}
           </button>
