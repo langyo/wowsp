@@ -2603,124 +2603,114 @@ export default defineComponent({
                         </button>
                       ) : null}
                     </header>
-                    {showResults.value && (battleResults.value || trajectories.value.length > 0) ? (
-                      <div class="replay-view__modal" onClick={() => (showResults.value = false)}>
-                        <div
-                          class="replay-view__modal-panel"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div class="replay-view__modal-head">
-                            <div class="replay-view__modal-title">
-                              <strong>{t("replay.results")}</strong>
-                              {!battleResults.value ? (
-                                <span class="replay-view__results-note">
-                                  {t("replay.resultsIncomplete")}
-                                </span>
-                              ) : null}
-                            </div>
-                            <HkIconButton
-                              class="hk-window-close replay-view__modal-close"
-                              size={32}
-                              variant="ghost"
-                              icon="close"
-                              aria-label={t("common.close")}
-                              onClick={() => (showResults.value = false)}
-                            />
-                          </div>
-                          {/* Results-body scroller: the hikari container owns the
-                              scrollbar (auto-hiding overlay track); the panel
-                              scrolls inside its viewport. Nothing pins in here,
-                              and no pin anywhere consumes a whitespace contract
-                              (the chat body's timeline pin rides strategy="none"). */}
-                          <HkScrollContainer class="replay-view__modal-body">
-                            <div class="replay-view__modal-body__inner">
-                              {battleResults.value ? (
-                                <PostBattlePanel
-                                  raw={battleResults.value}
-                                  head={{
-                                    matchGroup: parser.current.value.matchGroup,
-                                    scenario: parser.current.value.scenario,
-                                    eventType: parser.current.value.eventType,
-                                    botCount: parser.current.value.botCount ?? null,
-                                    scriptedUnitCount: parser.current.value.scriptedUnitCount ?? null,
-                                    mapName: parser.current.value.mapName,
-                                    realm: realm.value,
-                                    gameVersion: gameVersionOf(parser.current.value.raw),
-                                    battleTime: parser.current.value.dateTime
-                                      ? formatDateTime(parser.current.value.dateTime)
-                                      : null,
-                                    durationSec: duration.value > 0 ? duration.value : null,
-                                  }}
-                                  operation={isOperation.value}
-                                  stream={{
-                                    trajectories: trajectories.value,
-                                    recorderVehicleId: recorderVehicleId.value,
-                                    shotKills: shotKills.value,
-                                    damageStats: damageStats.value,
-                                    achievements: achievements.value,
-                                    arenaPlayers: arenaPlayers.value,
-                                    shellLaunches: shellLaunches.value,
-                                    torpedoes: torpedoes.value,
-                                  }}
-                                  roster={parser.current.value.vehicles}
-                                  builds={allyBuilds.value}
-                                  onClose={() => (showResults.value = false)}
-                                />
-                              ) : (
-                                <PostBattleFallbackPanel
-                                  vehicles={parser.current.value.vehicles}
-                                  trajectories={trajectories.value}
-                                  explosions={explosions.value}
-                                  shotKills={shotKills.value}
-                                  damageStats={damageStats.value}
-                                  realm={realm.value}
-                                  operation={isOperation.value}
-                                  shipNameOrder={shipNameOrder.value}
-                                  arenaPlayers={arenaPlayers.value}
-                                  inferredDeaths={inferredDeaths.value}
-                                  statsMode={fallbackStatsMode.value}
-                                  onClose={() => (showResults.value = false)}
-                                />
-                              )}
-                            </div>
-                          </HkScrollContainer>
-                        </div>
-                      </div>
-                    ) : null}
+                    {/* The 战后统计 as a first-class hikari window (2026-11-03): HkModal
+                        owns the chrome/motion — previously the hand-rolled
+                        .replay-view__modal overlay that popped in unanimated. The
+                        content gate (results packet or trajectory stream present) stays
+                        in the slot so the empty state never mounts; the panel REMAINS
+                        mounted through HkModal's leave transition. The slot closure
+                        re-widens parser.current — re-narrow it locally. */}
+                    <HkModal
+                      modelValue={showResults.value}
+                      onUpdate:modelValue={(v: boolean) => (showResults.value = v)}
+                      title={t("replay.results")}
+                      width="min(1100px, 94vw)"
+                      contentClass="replay-view__results-frame"
+                    >
+                      {{
+                        header: !battleResults.value
+                          ? () => (
+                              <span class="replay-view__results-note">{t("replay.resultsIncomplete")}</span>
+                            )
+                          : undefined,
+                        default: () => {
+                          const cur = parser.current.value;
+                          if (!cur) return null;
+                          return battleResults.value || trajectories.value.length > 0 ? (
+                            <HkScrollContainer class="replay-view__modal-body">
+                              <div class="replay-view__modal-body__inner">
+                                {battleResults.value ? (
+                                  <PostBattlePanel
+                                    raw={battleResults.value}
+                                    head={{
+                                      matchGroup: cur.matchGroup,
+                                      scenario: cur.scenario,
+                                      eventType: cur.eventType,
+                                      botCount: cur.botCount ?? null,
+                                      scriptedUnitCount: cur.scriptedUnitCount ?? null,
+                                      mapName: cur.mapName,
+                                      realm: realm.value,
+                                      gameVersion: gameVersionOf(cur.raw),
+                                      battleTime: cur.dateTime ? formatDateTime(cur.dateTime) : null,
+                                      durationSec: duration.value > 0 ? duration.value : null,
+                                    }}
+                                    operation={isOperation.value}
+                                    stream={{
+                                      trajectories: trajectories.value,
+                                      recorderVehicleId: recorderVehicleId.value,
+                                      shotKills: shotKills.value,
+                                      damageStats: damageStats.value,
+                                      achievements: achievements.value,
+                                      arenaPlayers: arenaPlayers.value,
+                                      shellLaunches: shellLaunches.value,
+                                      torpedoes: torpedoes.value,
+                                    }}
+                                    roster={cur.vehicles}
+                                    builds={allyBuilds.value}
+                                    onClose={() => (showResults.value = false)}
+                                  />
+                                ) : (
+                                  <PostBattleFallbackPanel
+                                    vehicles={cur.vehicles}
+                                    trajectories={trajectories.value}
+                                    explosions={explosions.value}
+                                    shotKills={shotKills.value}
+                                    damageStats={damageStats.value}
+                                    realm={realm.value}
+                                    operation={isOperation.value}
+                                    shipNameOrder={shipNameOrder.value}
+                                    arenaPlayers={arenaPlayers.value}
+                                    inferredDeaths={inferredDeaths.value}
+                                    statsMode={fallbackStatsMode.value}
+                                    onClose={() => (showResults.value = false)}
+                                  />
+                                )}
+                              </div>
+                            </HkScrollContainer>
+                          ) : null;
+                        },
+                      }}
+                    </HkModal>
 
-                    {showChat.value && chatCount.value > 0 ? (
-                      <div class="replay-view__modal" onClick={() => (showChat.value = false)}>
-                        <div
-                          class="replay-view__modal-panel replay-view__chat-panel"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div class="replay-view__modal-head">
-                            <div class="replay-view__modal-title">
-                              <strong>{t("replay.chatLog")}</strong>
+                    {/* The 聊天记录 as a first-class hikari window — same migration as
+                        the 战后统计 (2026-11-03). */}
+                    <HkModal
+                      modelValue={showChat.value}
+                      onUpdate:modelValue={(v: boolean) => (showChat.value = v)}
+                      title={t("replay.chatLog")}
+                      width="min(560px, 92vw)"
+                      contentClass="replay-view__chat-panel"
+                    >
+                      {{
+                        default: () => {
+                          const cur = parser.current.value;
+                          if (!cur) return null;
+                          return chatCount.value > 0 ? (
+                            <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
+                              <ChatLogPanel
+                                events={chatMessages.value}
+                                vehicles={cur.vehicles}
+                                trajectories={trajectories.value}
+                                arenaPlayers={arenaPlayers.value}
+                                duration={duration.value}
+                                realm={realm.value}
+                                mapApi={mapRef.value}
+                              />
                             </div>
-                            <HkIconButton
-                              class="hk-window-close replay-view__modal-close"
-                              size={32}
-                              variant="ghost"
-                              icon="close"
-                              aria-label={t("common.close")}
-                              onClick={() => (showChat.value = false)}
-                            />
-                          </div>
-                          <div class="replay-view__modal-body hk-scroll-pin-host" data-scroll-axis="vertical">
-                            <ChatLogPanel
-                              events={chatMessages.value}
-                              vehicles={parser.current.value.vehicles}
-                              trajectories={trajectories.value}
-                              arenaPlayers={arenaPlayers.value}
-                              duration={duration.value}
-                              realm={realm.value}
-                              mapApi={mapRef.value}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
+                          ) : null;
+                        },
+                      }}
+                    </HkModal>
 
                     {/* The AI 战报 as a first-class window (2026-11-03 extraction):
                         HkModal owns the chrome/motion (open animation, back guard,

@@ -336,57 +336,15 @@
     min-height: 0;
   }
 
-  /* Post-battle modal — full-viewport, centred */
-  &__modal {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(2, 4, 8, 0.72);
-    backdrop-filter: blur(3px);
-  }
-  &__modal-panel {
-    /* Wide enough for two 12-row roster columns without ellipsizing every
-     * mid-length nickname (the results matrix lives here), with the extra
-     * room the widened seal slot and the full-card mode need. */
-    width: min(1100px, 94vw);
-    max-height: 82vh;
+  /* Post-battle/chat windows ride HkModal's chrome and motion (2026-11-03:
+     the hand-rolled .replay-view__modal overlay — backdrop, surface,
+     custom head, and the phone sheet keyframes — died with the
+     migration). The contentClass frames below give each window its
+     reading height; HkModal caps the content at its own 70vh. */
+  &__results-frame {
+    height: min(70vh, 820px);
     display: flex;
     flex-direction: column;
-    background: rgb(var(--color-surface));
-    border: 1px solid rgb(var(--color-text) / 0.14);
-    border-radius: 10px;
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.7);
-    overflow: hidden;
-    color: rgb(var(--color-text));
-  }
-  &__modal-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.6rem 1rem;
-    border-bottom: 1px solid rgb(var(--color-text) / 0.1);
-    font-size: var(--text-base);
-  }
-  &__modal-title {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
-  &__results-note {
-    font-size: var(--text-xs);
-    font-weight: 400;
-    letter-spacing: 0.02em;
-    color: #ffd93d;
-  }
-  /* The close control is hikari's unified window-close affordance
-     (HkIconButton + hk-window-close, the HkModal grammar) — the class here
-     is only the placement hook; the chrome is the package's. */
-  &__modal-close {
-    flex: none;
   }
   /* Results-body scroller: the hikari container owns the scrollbar, so
      the body's padding moved to the inner wrapper (it scrolls with the
@@ -418,7 +376,8 @@
      flush RIGHT against the message column's LEFT edge, so names and texts
      read off two shared axes. */
   &__chat-panel {
-    width: min(560px, 92vw);
+    /* Reading frame (the window width itself rides HkModal's width prop). */
+    height: min(70vh, 640px);
 
     /* The LIST is the chat scroller, not the modal body. With the body
        scrolling, a content overflow of less than one row made wheel deltas
@@ -1004,38 +963,8 @@
       min-height: 52vh;
     }
 
-    /* ── bottom-sheet docking for the custom overlays ── */
-    &__modal {
-      align-items: flex-end;
-    }
-
-    &__modal-panel {
-      width: 100%;
-      max-width: none;
-      /* Same 2.25rem breathing over the bar that 4.25rem gave the old
-         32px bar (68 − 32); tracks --app-titlebar-h so a future raise
-         stays a one-var change. The status-bar safe area rides the same
-         env() term the bar itself offsets with (AppTitleBar.scss) —
-         without it a cutout device's bar bottom rose past this cap and
-         the sheet's top edge slid under the bar. */
-      max-height: calc(
-        100dvh - var(--app-titlebar-h, 48px) - env(safe-area-inset-top, 0px) - 2.25rem
-      );
-      border-radius: 12px 12px 0 0;
-      border-bottom: none;
-      animation: replay-sheet-up 0.24s var(--ease-standard, ease);
-    }
-
-    &__modal-head {
-      /* Grip-style breathing room; keep the close affordance ≥44px. */
-      padding: 0.55rem 0.75rem;
-
-      .replay-view__modal-close {
-        min-width: 44px;
-        min-height: 44px;
-        margin: -0.35rem -0.5rem -0.35rem 0;
-      }
-    }
+    /* (the overlays' bottom-sheet docking moved to HkModal's own phone
+       sheet — 2026-11-03; the gutters below are content, kept.) */
 
     /* Sheet gutters live on the inner wrapper now (padding on the root
        would stack with the inner's desktop inset); the chat body restates
@@ -1057,17 +986,6 @@
 
   .replay-card {
     min-height: 44px;
-  }
-}
-
-@keyframes replay-sheet-up {
-  from {
-    transform: translateY(16%);
-    opacity: 0.5;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
   }
 }
 
