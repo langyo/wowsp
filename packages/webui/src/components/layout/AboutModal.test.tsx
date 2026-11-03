@@ -73,8 +73,8 @@ const SHIP_TRIVIA_KEYS = [
   "trivia01", "trivia04", "trivia06", "trivia07", "trivia08", "trivia11",
   "trivia12", "trivia14", "trivia16", "trivia18", "trivia20", "trivia22",
   "trivia23", "trivia24", "trivia26", "trivia29", "trivia31", "trivia32",
-  "trivia33", "trivia35", "trivia36", "trivia39", "trivia41", "trivia43",
-  "trivia45", "trivia46",
+  "trivia33", "trivia35", "trivia36", "trivia39", "trivia41", "trivia42",
+  "trivia43", "trivia45", "trivia46",
 ] as const;
 
 const ABOUTS: Record<string, Record<string, string>> = Object.fromEntries(
@@ -190,7 +190,7 @@ describe("AboutContent trivia ship links", () => {
     await flushPromisesTick();
 
     // Trivia draws are random; poke the logo until a draw carries ship
-    // links (26 of 49 facts do) and click one — it must open the tech
+    // links (27 of 49 facts do) and click one — it must open the tech
     // tree's ship-detail modal and NOT restore the plain description.
     const logo = wrapper.find(".about-modal__logo");
     expect(logo.exists()).toBe(true);
