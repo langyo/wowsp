@@ -1,0 +1,32 @@
+/* StaticReportModal — the HkModal-hosted AI 战报 window. HkModal owns the
+   chrome/motion; this sheet only pins the reading frame the chromeless
+   panel scrolls inside (the former .replay-view__report-panel's fixed
+   height, now under HkModal's 70vh content cap). The sheet stays dark —
+   it is a share/export artifact — while the window chrome is themed. */
+.hk-modal-content.wowsp-report-modal {
+  height: min(66vh, 820px);
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+
+  .static-report-panel {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+.wowsp-report-modal__body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  overflow: auto;
+}
+
+.wowsp-report-modal__loading {
+  gap: 0.75rem;
+  color: rgb(var(--color-muted));
+}

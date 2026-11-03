@@ -450,59 +450,10 @@
       }
     }
   }
-  /* AI battle report modal — a wide reading surface beside the 3D board.
-     It carries the results/chat modal head (the ONE hikari window chrome);
-     the chromeless report column fills the remaining body and its own
-     HkScrollContainer owns the scrollbar. */
-  &__report-panel {
-    width: min(1040px, 94vw);
-    height: min(88vh, 900px);
-    /* The base panel caps at 82vh (content-driven modals); the report's
-       fixed reading frame owns its own height instead. */
-    max-height: none;
-    display: flex;
-    flex-direction: column;
-
-    .static-report-panel {
-      flex: 1;
-      min-height: 0;
-      width: auto;
-      max-height: none;
-    }
-  }
-
-  /* The report head's title line — the battle-report label plus the
-     perspective-switch spinner (the results/chat heads have no spinner). */
-  &__report-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  /* The head's right-hand actions: the report's long-image export beside
-     the unified close control. */
-  &__report-head-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex: none;
-  }
-
-  /* Failure body (the report's ErrorCard) — scrolls inside the fixed
-     frame instead of stretching it past the viewport. */
-  &__report-body {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
-    padding: 0.75rem 1rem;
-  }
-
-  &__report-loading {
-    /* First-fetch placeholder: spinner over the localized loading hint. */
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
+  /* (the AI 战报's fixed reading frame and head rules moved with the
+     window itself — the report now mounts in StaticReportModal on
+     hikari's HkModal chrome; 2026-11-03 extraction. The &__modal*
+     rules above still serve the results/chat overlays.) */
   &__chat-timeline {
     display: flex;
     flex-direction: column;

@@ -1,5 +1,5 @@
 import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type VNode } from "vue";
-import { Copy, Download, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw, X } from "@lucide/vue";
+import { Copy, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useReplayPositions } from "@/features/replay/useReplayPositions";
@@ -7,7 +7,7 @@ import { analyzeSpawnSymmetry, type EntitySide } from "@/features/replay/spawnSy
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
-import StaticReportPanel from "@/features/holographic/StaticReportPanel";
+import StaticReportModal from "@/features/replay/StaticReportModal";
 import type { StaticReport } from "@/api";
 import PairingWizard from "@/features/replay/PairingWizard";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -2097,20 +2097,8 @@ export default defineComponent({
         if (prev !== undefined && path !== prev) closeStaticReport();
       },
     );
-    /** The embedded report's exposed long-image export: the shared window
-     *  head owns the button, StaticReportPanel owns the html-to-image
-     *  capture (its export root is the captured node). */
-    const reportPanelRef = ref<{ exportPng: () => Promise<void> } | null>(null);
-    const reportExporting = ref(false);
-    const onExportReport = async () => {
-      if (reportExporting.value) return;
-      reportExporting.value = true;
-      try {
-        await reportPanelRef.value?.exportPng();
-      } finally {
-        reportExporting.value = false;
-      }
-    };
+    /* (the long-image export moved into StaticReportModal's own head —
+     *  the host no longer drills the panel ref / busy flag through.) */
     /** Reveal the opened replay in the OS file manager (desktop): the
      *  backend re-validates the path (a replay-extension file that exists)
      *  and hands it to the opener plugin's reveal — the file's folder opens
@@ -2734,79 +2722,21 @@ export default defineComponent({
                       </div>
                     ) : null}
 
-                    {showReport.value ? (
-                      <div class="replay-view__modal" onClick={closeStaticReport}>
-                        <div
-                          class="replay-view__modal-panel replay-view__report-panel"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {/* The ONE hikari window head (the results/chat modal
-                              grammar): title + its own loading spinner on the
-                              left, the report's long-image export and the
-                              unified close on the right. The panel below is
-                              chromeless — it has no second title row. */}
-                          <div class="replay-view__modal-head">
-                            <div class="replay-view__modal-title">
-                              <span class="replay-view__report-title">
-                                <strong>{t("replay.report.title")}</strong>
-                                {staticReportLoading.value ? (
-                                  <HkSpinner size="xs" tone="current" />
-                                ) : null}
-                              </span>
-                            </div>
-                            <div class="replay-view__report-head-actions">
-                              {staticReport.value && !staticReportError.value ? (
-                                <HkButton
-                                  variant="secondary"
-                                  size="sm"
-                                  loading={reportExporting.value}
-                                  onClick={() => void onExportReport()}
-                                >
-                                  {reportExporting.value ? null : <Download size={13} />}
-                                  <span>
-                                    {t(
-                                      reportExporting.value
-                                        ? "replay.report.exporting"
-                                        : "replay.report.export",
-                                    )}
-                                  </span>
-                                </HkButton>
-                              ) : null}
-                              <HkIconButton
-                                class="hk-window-close replay-view__modal-close"
-                                size={32}
-                                variant="ghost"
-                                icon="close"
-                                aria-label={t("common.close")}
-                                onClick={closeStaticReport}
-                              />
-                            </div>
-                          </div>
-                          {staticReportError.value ? (
-                            <div class="replay-view__report-body">
-                              <ErrorCard
-                                title={t("replay.report.title")}
-                                error={staticReportError.value}
-                              />
-                            </div>
-                          ) : staticReport.value ? (
-                            <StaticReportPanel
-                              ref={reportPanelRef}
-                              chromeless
-                              report={staticReport.value}
-                              loading={staticReportLoading.value}
-                              onSeek={(t0) => mapRef.value?.seek(t0)}
-                              onPick={(entityId) => void openStaticReport(entityId)}
-                            />
-                          ) : (
-                            <div class="replay-view__placeholder replay-view__report-loading">
-                              <HkSpinner size="md" tone="current" />
-                              <span>{t("replay.report.loading")}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ) : null}
+                    {/* The AI 战报 as a first-class window (2026-11-03 extraction):
+                        HkModal owns the chrome/motion (open animation, back guard,
+                        phone sheet) — previously a hand-rolled .replay-view__modal
+                        overlay that popped in unanimated. The host keeps ONLY the data
+                        layer (fetch + stale guard + out-of-band swap watch); the modal
+                        always mounts so HkModal's leave transition can play. */}
+                    <StaticReportModal
+                      open={showReport.value}
+                      report={staticReport.value}
+                      loading={staticReportLoading.value}
+                      error={staticReportError.value}
+                      onClose={closeStaticReport}
+                      onSeek={(t0) => mapRef.value?.seek(t0)}
+                      onPick={(entityId) => void openStaticReport(entityId)}
+                    />
 
                     <div class="replay-view__detail">
                       <div class="replay-view__map-wrap">
