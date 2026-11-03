@@ -25,6 +25,11 @@ import {
   HkSpinner,
   HkTag,
   HkTrendChart,
+  TREND_CHART_GRID_BOTTOM,
+  TREND_CHART_GRID_LEFT,
+  TREND_CHART_GRID_RIGHT,
+  TREND_CHART_GRID_TOP,
+  TREND_CHART_WIDTH,
   type TrendPen,
 } from "@celestia-island/hikari";
 import { Camera, Check, Download, Minus, Percent, X } from "@lucide/vue";
@@ -95,25 +100,58 @@ function categoryTone(category: StaticMoment["category"]): string {
   return CATEGORY_TONE[category].tone;
 }
 
-/** Lead-in before battle-second 0 inside HkTrendChart's ROLLING WALL-CLOCK
- *  window (seconds): the chart filters samples older than its window and
- *  anchors the window at "now", so t=0 has to sit one headroom step inside
- *  the left edge. The marks overlay maps battle time with the same frame. */
+/** Lead-in before battle-second 0 in HkTrendChart's window (seconds): the
+ *  window is [newest - timeWindowMs, newest], and the newest sample is the
+ *  battle end, so the headroom keeps battle-second 0 one step inside the
+ *  left edge. The marks overlay maps battle time with the same frame. */
 const TREND_HEADROOM_S = 2;
-/** Frame height handed to HkTrendChart (px; .srp-trend mirrors the same
- *  frame and its echarts grid insets in the stylesheet). */
+/** Frame height handed to HkTrendChart. A px height lifts into the SVG
+ *  viewBox (trendHeightPx), so this box is pixel-true vertically. */
 const TREND_HEIGHT_PX = 160;
 const TREND_HEIGHT = `${TREND_HEIGHT_PX}px`;
 
+/** HkTrendChart stretches its 640-wide viewBox across the container
+ *  (preserveAspectRatio="none"), so its exported horizontal grid insets are
+ *  fractions of that viewBox; the vertical insets are px because the px
+ *  height equals the viewBox height. Both are derived from the exported
+ *  TREND_CHART_GRID_* constants so this overlay can never drift from the
+ *  chart's own plot rectangle. */
+const TREND_PLOT_LEFT_PCT = (TREND_CHART_GRID_LEFT / TREND_CHART_WIDTH) * 100;
+const TREND_PLOT_RIGHT_PCT = (TREND_CHART_GRID_RIGHT / TREND_CHART_WIDTH) * 100;
+/** The thin marks/ticks overlay boxes: the chart's plot rectangle and its
+ *  (empty) label bands. */
+const TREND_PLOT_STYLE = {
+  left: `${TREND_PLOT_LEFT_PCT}%`,
+  right: `${TREND_PLOT_RIGHT_PCT}%`,
+  top: `${TREND_CHART_GRID_TOP}px`,
+  bottom: `${TREND_CHART_GRID_BOTTOM}px`,
+};
+const TREND_AXIS_STYLE = {
+  left: `${TREND_PLOT_LEFT_PCT}%`,
+  right: `${TREND_PLOT_RIGHT_PCT}%`,
+  bottom: "0",
+  height: `${TREND_CHART_GRID_BOTTOM}px`,
+};
+/** The chart paints neither axis labels nor a legend — the top grid band is
+ *  empty, so the report's own pen label sits there. */
+const TREND_LEGEND_STYLE = {
+  left: `${TREND_PLOT_LEFT_PCT}%`,
+  right: `${TREND_PLOT_RIGHT_PCT}%`,
+  top: "0",
+  height: `${TREND_CHART_GRID_TOP}px`,
+};
+
 /**
- * The instant-score timeline, rendered through hikari's own HkTrendChart
- * (echarts line chart) — the upstream face that replaces the hand-rolled
- * SVG sparkline. HkTrendChart streams against a rolling WALL-CLOCK window,
- * so a finished battle's battle-seconds are anchored to "now": the last
- * sample lands at the right edge and the window spans the whole battle plus
- * one headroom step. Whatever the chart's props cannot express — the
- * coverage gaps and the key-moment marks — rides a thin overlay aligned to
- * the chart's grid (see .srp-trend in the stylesheet).
+ * The instant-score timeline, rendered through hikari's own HkTrendChart —
+ * the dependency-free SVG chart (no canvas, no animation: the first render
+ * is the finished frame). Its time axis is plain numbers, so the report feeds
+ * BATTLE time directly and omits the optional `now` prop: the window then
+ * freezes at the newest sample (the battle end), making a mounted chart and
+ * its html-to-image export deterministically identical with no wall clock
+ * anywhere. Whatever the chart's props cannot express — the coverage gaps,
+ * the key-moment marks and battle-time axis labels — rides a thin overlay
+ * derived from the chart's exported grid constants (see .srp-trend in the
+ * stylesheet).
  */
 const TrendChart = defineComponent({
   name: "StaticReportTrendChart",
@@ -127,18 +165,18 @@ const TrendChart = defineComponent({
     const frac = (tSec: number): number =>
       ((tSec + TREND_HEADROOM_S) / (duration.value + TREND_HEADROOM_S)) * 100;
 
-    const pens = computed<TrendPen[]>(() => {
-      const anchor = Date.now();
-      return [
-        {
-          label: i18nT("replay.report.instScore"),
-          data: props.report.timeline.map((s) => ({
-            time: anchor - (duration.value - s.t) * 1000,
-            value: s.inst * 100,
-          })),
-        },
-      ];
-    });
+    const pens = computed<TrendPen[]>(() => [
+      {
+        label: i18nT("replay.report.instScore"),
+        data: props.report.timeline.map((s) => ({
+          // Battle seconds ride the chart's numeric time axis directly as
+          // battle-time ms (the chart's documented unit), and the window
+          // freezes at the newest sample because `now` is omitted.
+          time: s.t * 1000,
+          value: s.inst * 100,
+        })),
+      },
+    ]);
     const gaps = computed(() => {
       const me = props.report.roster.find((r) => r.entityId === props.report.entityId);
       return (me?.coverage.gapSegments ?? []).map(([a, b], i) => ({
@@ -155,10 +193,9 @@ const TrendChart = defineComponent({
         tone: categoryTone(m.category),
       })),
     );
-    /** X-axis labels painted by the overlay in BATTLE time. The chart's own
-     *  wall-clock labels are masked (the streaming window always ends at the
-     *  viewer's clock, so they neither describe the battle nor stay stable
-     *  across exports of the same report). */
+    /** X-axis labels painted by the overlay in BATTLE time: the chart has no
+     *  axis-label layer of its own, so this is its only time axis (and it is
+     *  deterministic — the window is frozen at the battle end). */
     const ticks = computed(() =>
       [0, 0.25, 0.5, 0.75, 1].map((f, i) => {
         const tSec = f * duration.value;
@@ -174,17 +211,21 @@ const TrendChart = defineComponent({
     );
     return () => (
       <div class="srp-trend">
+        {/* No `now`: the window freezes at the newest sample (battle end).
+            The width is passed explicitly so the SVG viewBox the overlay's
+            percentage insets are derived from is pinned, not a default. */}
         <HkTrendChart
-          class="srp-trend__chart"
           pens={pens.value}
           height={TREND_HEIGHT}
+          width={TREND_CHART_WIDTH}
           timeWindowMs={windowMs.value}
           showThresholds={false}
         />
-        {/* Chart-unexpressible annotations only: HkTrendChart's props cover
-            pens/height/thresholds — not x-axis marks, range bands or battle
-            (rather than wall-clock) time labels. */}
-        <div class="srp-trend__overlay" aria-hidden="true">
+        {/* Chart-unexpressible annotations only: HkTrendChart renders no
+            x-axis marks/bands and no axis labels, so the coverage gaps, the
+            key-moment marks and the battle-time ticks/legend live here, in
+            boxes derived from its exported grid constants. */}
+        <div class="srp-trend__overlay" style={TREND_PLOT_STYLE} aria-hidden="true">
           {gaps.value.map((g) => (
             <span
               key={g.key}
@@ -200,10 +241,7 @@ const TrendChart = defineComponent({
             />
           ))}
         </div>
-        {/* The chart's bottom grid strip (labels + axis line) is covered and
-            repainted with battle time — see .srp-trend__axis. */}
-        <div class="srp-trend__axis" aria-hidden="true">
-          <span class="srp-trend__xmask" />
+        <div class="srp-trend__axis" style={TREND_AXIS_STYLE} aria-hidden="true">
           {ticks.value.map((tick) => (
             <span
               key={tick.key}
@@ -213,6 +251,10 @@ const TrendChart = defineComponent({
               {tick.label}
             </span>
           ))}
+        </div>
+        <div class="srp-trend__legend" style={TREND_LEGEND_STYLE} aria-hidden="true">
+          <span class="srp-trend__legend-dot" />
+          <span>{i18nT("replay.report.instScore")}</span>
         </div>
       </div>
     );
