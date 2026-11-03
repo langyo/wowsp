@@ -100,9 +100,16 @@ export const TabHoldArt = defineComponent({
   },
 });
 
-/** Waiting-for-battle radar — a rotating sweep with two blinking contacts,
- *  shown while the game runs but no roster has appeared yet. */
-const SWEEP_WEDGE = "M32 32 L32 10 A22 22 0 0 1 51.1 19.7 Z";
+/** Waiting-for-battle radar — the needle is the beam's leading edge (the
+ *  sweep rotates clockwise) and the glow trails behind it, covering the 60°
+ *  the beam has already swept; two contacts flash as the beam crosses them.
+ *  Shown while the game runs but no roster has appeared yet.
+ *
+ *  The trail is two flat steps approximating a phosphor fade — brighter
+ *  right behind the needle, dimmer for the older half (each path keeps
+ *  exactly one flat class, per this file's convention). */
+const SWEEP_NEAR = "M32 32 L32 10 A22 22 0 0 0 21 12.95 Z";
+const SWEEP_FAR = "M32 32 L21 12.95 A22 22 0 0 0 12.95 21 Z";
 
 export const WaitingRadarArt = defineComponent({
   name: "WaitingRadarArt",
@@ -116,13 +123,23 @@ export const WaitingRadarArt = defineComponent({
         <circle class="live-guide-art__ln-muted" cx="32" cy="32" r="24" />
         <circle class="live-guide-art__ln-muted-thin" cx="32" cy="32" r="15.5" />
         <g class="live-guide-art__sweep">
-          <path class="live-guide-art__fill-soft" d={SWEEP_WEDGE} />
+          <path class="live-guide-art__sweep-near" d={SWEEP_NEAR} />
+          <path class="live-guide-art__fill-soft" d={SWEEP_FAR} />
           <path class="live-guide-art__ln-accent-thin" d="M32 32 L32 10" />
         </g>
         <circle class="live-guide-art__fill-accent" cx="32" cy="32" r="2.4" />
-        <circle class="live-guide-art__fill-accent live-guide-art__blip" cx="43" cy="40" r="2.4" />
+        {/* Contacts flash as the beam crosses them: the needle passes the
+            lower-right contact at ~126° clockwise from 12 o'clock and the
+            upper-left one at ~318° — each modifier class in the stylesheet
+            delays the flash to that exact pass. */}
         <circle
-          class="live-guide-art__fill-accent live-guide-art__blip live-guide-art__blip--late"
+          class="live-guide-art__fill-accent live-guide-art__blip live-guide-art__blip--lower-right"
+          cx="43"
+          cy="40"
+          r="2.4"
+        />
+        <circle
+          class="live-guide-art__fill-accent live-guide-art__blip live-guide-art__blip--upper-left"
           cx="21.5"
           cy="20.5"
           r="2"
