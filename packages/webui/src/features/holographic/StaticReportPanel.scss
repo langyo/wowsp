@@ -241,14 +241,14 @@
 }
 
 // ── instant-score trend (hikari HkTrendChart + report-only overlay) ──
-// HkTrendChart draws on an echarts canvas with the library's LIGHT default
-// theme (dark ink, white-ish axes); the report is a dark reading surface, so
-// the canvas pixels are inverted to read light-on-dark (the standard
-// dark-echarts filter — the tooltip is a DOM node OUTSIDE the canvas and
-// keeps its native light styling, and the marks overlay is a sibling).
-// The overlay mirrors HkTrendChart's echarts grid insets (left 50 / right
-// 20 / top 30 / bottom 40) so its battle-time fractions line up with the
-// plotted timeline: coverage gaps are range bands, key moments are marks.
+// HkTrendChart is the dependency-free SVG chart: no canvas, no animation,
+// and its ink rides the hikari theme tokens (rgb(var(--color-primary))), so a
+// scheme flip repaints it and there is nothing to invert. The component
+// paints no axis labels, no legend and no x-axis marks, so the report draws
+// those itself: coverage gaps, key-moment marks, battle-time ticks and the
+// pen label. Their geometry (the chart's plot rectangle) is derived from the
+// exported TREND_CHART_GRID_* constants as inline styles in the component;
+// only the static chrome lives here.
 .srp-trend {
   position: relative;
   flex: none;
@@ -257,44 +257,35 @@
   border-radius: 8px;
   overflow: hidden;
 
-  canvas {
-    filter: invert(1) hue-rotate(180deg);
-  }
-
-  // The report is a finished battle, not a live stream: the chart is a
-  // reading surface, so its canvas takes no wheel-zoom/tooltip (which would
-  // also fight the modal's own scroller). See TrendChart in the component.
-  &__chart {
-    pointer-events: none;
-  }
-
-  // Battle-time annotations over the chart's own plot area. The insets
-  // mirror HkTrendChart's echarts grid (left 50 / right 20 / top 30 /
-  // bottom 40) and its 160 px frame height (TREND_HEIGHT_PX).
-  &__overlay {
+  // Annotation layers ride ABOVE the chart but never intercept pointers.
+  &__overlay,
+  &__axis,
+  &__legend {
     position: absolute;
-    inset: 30px 20px 40px 50px;
     pointer-events: none;
   }
 
-  // The chart's bottom grid strip (echarts wall-clock labels + axis line):
-  // masked and repainted with battle time, because the streaming window is
-  // always anchored at the viewer's clock — meaningless in a finished-battle
-  // report and unstable across exports of the same report.
+  // The battle-time axis strip (the chart itself paints no labels).
   &__axis {
-    position: absolute;
-    left: 50px;
-    right: 20px;
-    bottom: 0;
-    height: 40px;
-    pointer-events: none;
+    border-top: 1px solid var(--srp-line);
   }
 
-  &__xmask {
-    position: absolute;
-    inset: 0;
-    background: var(--srp-card);
-    border-top: 1px solid var(--srp-line);
+  // Pen label in the plot's empty top grid band (the chart renders none).
+  &__legend {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    color: var(--srp-dim);
+    font-size: 11px;
+  }
+
+  // Same ink as the chart's first pen (trendPenColor(0)).
+  &__legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgb(var(--color-primary));
   }
 
   &__xtick {

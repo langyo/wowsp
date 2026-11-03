@@ -140,8 +140,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.271
-        version: 0.55.271(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.272
+        version: 0.55.272(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -362,8 +362,8 @@ packages:
       three: ^0.185
       vue: ^*
 
-  '@celestia-island/hikari@0.55.271':
-    resolution: {integrity: sha512-SVeONMvV//JrxGL74BvcyTTE8uyeQnhW51LfhYUdMmpjVHFRwbxbL5vEDitI3+hz2gFcGX4KgcNHuvoZY6LphA==}
+  '@celestia-island/hikari@0.55.272':
+    resolution: {integrity: sha512-iKS/ABwnDYdpOe96PwrlYGGDYfP11bHtFsqufPpjTWzWTHd6uMGr+TW0/3l7QmKq/hd5j5enI5cHwalfSSmNNg==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
@@ -3389,7 +3389,7 @@ snapshots:
       three: 0.186.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.271(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.272(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.186.0
@@ -3397,7 +3397,6 @@ snapshots:
       '@xterm/addon-image': 0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)
       '@xterm/xterm': 6.1.0-beta.336
       dompurify: 3.4.17
-      echarts: 6.1.0
       highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
       marked: 18.1.2
