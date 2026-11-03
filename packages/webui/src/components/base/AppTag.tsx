@@ -128,6 +128,9 @@ export default defineComponent({
     /** Monospace ink for version/telemetry strings (HkBadge's `mono`
      * contract: same prop name, one custom-property line of CSS). */
     mono: { type: Boolean, default: false },
+    /** Interactive only: forwarded onto the wrapper button (a busy shot
+     * button, a disabled toggle). Ignored on static tags. */
+    disabled: { type: Boolean, default: false },
   },
   emits: {
     close: () => true,
@@ -143,6 +146,10 @@ export default defineComponent({
         class?: unknown;
         [key: string]: unknown;
       };
+      // Interactive: the wrapper button carries every attr (data-hint,
+      // aria-pressed, disabled, onClick-through-emit...); the inner face
+      // span must not duplicate them.
+      const innerRest = props.interactive ? {} : rest;
       const tagClass = [
         "app-tag",
         `app-tag--${props.tone}`,
@@ -155,7 +162,7 @@ export default defineComponent({
       ];
       const tag = (
         <HkTag
-          {...rest}
+          {...innerRest}
           variant={HK_VARIANT[props.tone]}
           size={props.size}
           closable={props.closable && !props.interactive}
@@ -177,6 +184,7 @@ export default defineComponent({
           <button
             {...rest}
             type="button"
+            disabled={props.disabled || undefined}
             class={["app-tag-btn", hostClass]}
             onClick={(e: MouseEvent) => emit("click", e)}
           >

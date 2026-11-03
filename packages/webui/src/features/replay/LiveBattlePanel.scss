@@ -95,213 +95,16 @@
     padding-right: 1.5rem;
   }
 
-  &__pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.1rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid;
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-  }
-
-  &__pill--live {
-    border-color: rgb(var(--color-error) / 55%);
-    background: rgb(var(--color-error) / 16%);
-    color: rgb(var(--color-error));
-    letter-spacing: 0.06em;
-  }
-
-  /* Battle ended (replay file appeared), game on the results screen. */
-  &__pill--settling {
-    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
-    background: rgb(var(--color-warning, 251 191 36) / 16%);
-    color: rgb(var(--color-warning, 251 191 36));
-  }
-
-  /* Plugin connected, row order inferred: its alive/sunk states are
-     authoritative while the TAB row order is still the offline per-realm
-     inference (this battle's telemetry carried no covering sort-key map —
-     see features/replay/telemetryGrade.ts). Warning voice, the settling
-     pill's recipe. */
-  &__pill--telemetry-partial {
-    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
-    background: rgb(var(--color-warning, 251 191 36) / 16%);
-    color: rgb(var(--color-warning, 251 191 36));
-  }
-
-  /* Plugin connected AND the telemetry's game-true sort keys cover the
-     roster: the row order IS the client's (read off the avatars' ship
-     components — the same string the game's own Tab sort compares).
-     Success green, the manual-locate anchored pill's recipe. */
-  &__pill--telemetry-exact {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    background: rgb(var(--color-success, 74 222 128) / 16%);
-    color: rgb(var(--color-success, 74 222 128));
-  }
-
-  /* Battle over for good — the roster on screen is the last battle's,
-     kept until the next one starts. Muted: nothing is live here. */
-  &__pill--ended {
-    border-color: rgb(var(--color-text) / 30%);
-    background: rgb(var(--color-text) / 8%);
-    color: rgb(var(--color-muted));
-  }
-
-  /* Data labels (来源服务器) — not states: the quiet primary voice,
-     distinct from LIVE/settling/ended. (The serving-window focus pill
-     that used to sit here was dropped 2026-10-10: the realm pill plus
-     the bottom-left running-clients card already carry that data.) */
-  &__pill--realm {
-    border-color: rgb(var(--color-primary) / 40%);
-    background: rgb(var(--color-primary) / 10%);
-    color: rgb(var(--color-text) / 75%);
-  }
-
-  &__clock {
-    display: inline-flex;
-    align-items: baseline;
-    padding: 0.1rem 0.55rem;
-    border-radius: 999px;
-    background: rgb(var(--color-text) / 8%);
-    color: rgb(var(--color-text) / 85%);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: var(--text-2xs);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
+/* (the head's pill family — LIVE/settling/ended, realm, clock, telemetry
+   grades — moved to AppTag faces; 2026-11-03 tag unification. The dead
+   state voices died with their classes.) */
 
   /* The map tag rides with the head's info group (status and
      mode pills, clock): no auto margin, it just follows the row gap. Its
      compact pill voice is MapNameTag.scss's own base — no override needed. */
 
-  /* Head action pills (copy-shot / hide-nicknames / density) share one
-     voice: a quiet neutral pill; the nicknames and density toggles flip
-     green while their mode is on. The locate pill at the row's end picks
-     up its own state voices below. (The stats-source mode tag keeps the
-     same voice from its own sheet — LiveStatsModeChip.scss.) */
-  &__shot-btn,
-  &__mask-btn,
-  &__density-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.1rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid rgb(var(--color-text) / 20%);
-    background: transparent;
-    color: rgb(var(--color-text) / 75%);
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-    cursor: pointer;
-
-    &:disabled {
-      cursor: wait;
-      opacity: 0.6;
-    }
-  }
-
-  /* The head's right-corner action cluster starts at the copy-shot button
-     and runs to the locate-status pill — the auto margin pulls the whole
-     group to the right end of the line. */
-  &__shot-btn {
-    margin-left: auto;
-  }
-
-  /* Nicknames are masked: the toggle reads "show nicknames" in the same
-     success green as the locate pill's located/anchored states. */
-  &__mask-btn--on {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    color: rgb(var(--color-success, 74 222 128));
-  }
-
-  /* Compact rows are on: the density toggle reads "full mode" in the same
-     green. */
-  &__density-btn--on {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    color: rgb(var(--color-success, 74 222 128));
-  }
-
-  /* Locate pill — the head's manual-locate entry point as well as its
-     detection status display: a button again (the #1204 read-only stretch
-     is over), opening Settings → 游戏内显示校准 glided onto the anchor
-     list. Same pill voice as the head's action pills. */
-  &__locate-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.1rem 0.55rem;
-    border-radius: 999px;
-    border: 1px solid rgb(var(--color-text) / 20%);
-    background: transparent;
-    color: rgb(var(--color-muted));
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-    cursor: pointer;
-
-    &:focus-visible {
-      outline: 1px solid rgb(var(--color-text) / 0.4);
-    }
-  }
-
-  /* Idle hover: warm the quiet pill up to the action pills' resting voice.
-     Scoped to --idle on purpose — a bare &__locate-pill:hover would
-     out-specify the voiced states' base rules and wash their green/amber
-     label text to neutral on hover (their own hover blocks re-own only
-     border and background). */
-  &__locate-pill--idle:hover {
-    border-color: rgb(var(--color-text) / 35%);
-    color: rgb(var(--color-text) / 75%);
-  }
-
-  /* An anchored (manually calibrated) or automatically located roster
-     fills the pill in the success green — the same voices the old button
-     carried. */
-  &__locate-pill--manual,
-  &__locate-pill--detected {
-    border-color: rgb(var(--color-success, 74 222 128) / 55%);
-    background: rgb(var(--color-success, 74 222 128) / 16%);
-    color: rgb(var(--color-success, 74 222 128));
-
-    &:hover {
-      border-color: rgb(var(--color-success, 74 222 128) / 80%);
-      background: rgb(var(--color-success, 74 222 128) / 24%);
-    }
-  }
-
-  /* A settling automatic Tab pass — the warning amber the head's other
-     transitional pills use. */
-  &__locate-pill--searching {
-    border-color: rgb(var(--color-warning, 251 191 36) / 55%);
-    background: rgb(var(--color-warning, 251 191 36) / 16%);
-    color: rgb(var(--color-warning, 251 191 36));
-
-    &:hover {
-      border-color: rgb(var(--color-warning, 251 191 36) / 80%);
-      background: rgb(var(--color-warning, 251 191 36) / 24%);
-    }
-  }
-
-  /* A FAILED presentation verify — the overlay window was shown but its
-     content never reached the screen. The danger red, reserved for exactly
-     this verdict; rendered only while the watcher reports failed. */
-  &__locate-pill--failed {
-    border-color: rgb(var(--color-error) / 55%);
-    background: rgb(var(--color-error) / 16%);
-    color: rgb(var(--color-error));
-
-    &:hover {
-      border-color: rgb(var(--color-error) / 80%);
-      background: rgb(var(--color-error) / 24%);
-    }
-  }
+  /* (the action pills' and locate pill's faces moved to AppTag —
+     2026-11-03 tag unification) */
 
   /* Roster scroller — the hikari container owns the scrollbar (auto-hiding
      overlay track over the panel's right edge); the two-column grid and
@@ -432,21 +235,6 @@
   /* Cross-server Clan-Battles chip (欧服 etc.) — unlike the clan tag this
      IS a badge: it flags that the row's numbers came from another
      cluster's API, which only cross-server CW rows ever show. */
-  &__cross-realm {
-    display: inline-flex;
-    align-items: center;
-    flex: none;
-    height: 1.25em;
-    padding: 0 5px;
-    border-radius: 4px;
-    background: rgb(var(--color-accent) / 0.16);
-    color: rgb(var(--color-accent));
-    font-size: 0.68em;
-    font-weight: 600;
-    letter-spacing: 0.03em;
-    line-height: 1;
-    white-space: nowrap;
-  }
 
   /* ── Roster rows (the post-battle matrix's compact row look) ─────────
      ONE row shared by BOTH densities (compact is the shipped default):
@@ -547,21 +335,6 @@
     white-space: nowrap;
   }
 
-  &__crow-bot {
-    display: inline-flex;
-    align-items: center;
-    flex: none;
-    height: 1.2em;
-    margin-left: 6px;
-    padding: 0 5px;
-    border-radius: 4px;
-    background: rgb(var(--color-text) / 0.14);
-    color: rgb(var(--color-text) / 0.62);
-    font-size: 0.72em;
-    font-style: normal;
-    line-height: 1;
-  }
-
   /* Career seal slot: reserved whenever seals show at all (mirroring the
      post-battle matrix's own rule), so the shared stat columns keep their
      x position on every row — sealed or not, compact or full — and the
@@ -656,15 +429,6 @@
       .live-battle__mode-btn {
         padding-inline: 0.45rem;
       }
-    }
-
-    &__pill,
-    &__clock,
-    &__shot-btn,
-    &__mask-btn,
-    &__density-btn,
-    &__locate-pill {
-      padding-inline: 0.45rem;
     }
   }
 }

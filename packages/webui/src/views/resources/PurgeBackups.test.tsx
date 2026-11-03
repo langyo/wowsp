@@ -31,6 +31,14 @@ vi.mock("@celestia-island/hikari", async () => {
           props.modelValue ? h("div", { class: "modal-stub" }, slots.default?.()) : null;
       },
     }),
+    // AppTag's hikari base — a class-merging span passthrough.
+    HkTag: defineComponent({
+      name: "HkTag",
+      inheritAttrs: false,
+      setup(_, { slots, attrs }) {
+        return () => h("span", { ...attrs, class: ["hk-tag", attrs.class] }, [slots.icon?.(), slots.default?.()]);
+      },
+    }),
     HkScrollContainer: defineComponent({
       name: "HkScrollContainer",
       setup(_, { slots }) {

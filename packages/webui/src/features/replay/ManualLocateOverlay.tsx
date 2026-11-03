@@ -74,9 +74,10 @@ import {
   HkModal,
   HkNumberInput,
   HkSpinner,
-  HkTag,
   useToast,
 } from "@celestia-island/hikari";
+
+import AppTag from "@/components/base/AppTag";
 import { Copy, FileImage } from "@lucide/vue";
 
 import {
@@ -846,7 +847,7 @@ export default defineComponent({
                         onUpdate:modelValue={(v: number) => (teamAllies.value = v)}
                       />
                       {manual.calibration.class === "pve" ? (
-                        <HkTag size="sm">PvE</HkTag>
+                        <AppTag>PvE</AppTag>
                       ) : (
                         <>
                           <span class="ml-count__team">

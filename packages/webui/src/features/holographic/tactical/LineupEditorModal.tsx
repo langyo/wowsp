@@ -25,12 +25,13 @@ import {
   HkModal,
   HkPopupSelect,
   HkScrollContainer,
-  HkTag,
   HkTooltip,
   useToast,
   type HkIconButtonGroupOption,
   type HkMenuItem,
 } from "@celestia-island/hikari";
+
+import AppTag from "@/components/base/AppTag";
 import {
   ArrowLeftRight,
   Flag,
@@ -418,9 +419,9 @@ export default defineComponent({
                           <span class="lineup__row-tier">{tierLabel(unit.ship.tier)}</span>
                         ) : null}
                         <span class="lineup__row-name">{unit.name}</span>
-                        <HkTag size="sm" class="lineup__row-no">
+                        <AppTag class="lineup__row-no">
                           {String(index + 1).padStart(2, "0")}
-                        </HkTag>
+                        </AppTag>
                         <HkIconButton
                           size={24}
                           class="lineup__row-menu"

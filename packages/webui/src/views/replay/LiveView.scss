@@ -99,27 +99,8 @@
     color: rgb(var(--color-muted));
   }
 
-  &__pill {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    padding: 1px var(--space-6);
-    border-radius: 999px;
-    font-size: var(--text-3xs, 0.625rem);
-    font-weight: 600;
-    background: rgb(var(--color-border) / 20%);
-    color: rgb(var(--color-muted));
-
-    &.is-pending {
-      color: var(--hi-color-warning, #d29922);
-    }
-    &.is-online {
-      color: rgb(var(--color-success));
-    }
-    &.is-error {
-      color: rgb(var(--color-error, 220 80 80));
-    }
-  }
+  /* (the gateway status pill's face moved to AppTag — 2026-11-03 tag
+     unification) */
 
   &__actions {
     display: flex;

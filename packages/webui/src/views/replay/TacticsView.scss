@@ -71,24 +71,11 @@
 
   /* The archive tag: shows the formal (file-name-derived) profile label;
      the dot marks a confirmed silent save target. Click = rename. */
+  /* The archive tag's pill face moved to AppTag (2026-11-03 tag
+     unification); the class keeps the width cap and the icon ink. */
   &__profile-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
     max-width: 22rem;
-    padding: 0.3rem 0.75rem;
-    background: rgb(var(--color-surface));
-    border: 1px solid rgb(var(--color-border) / 20%);
-    border-radius: var(--radius-full);
-    color: rgb(var(--color-text));
-    font-size: var(--text-sm);
-    font-family: inherit;
-    cursor: pointer;
-    transition: border-color var(--duration-short) var(--ease-standard);
-
-    &:hover {
-      border-color: rgb(var(--color-primary) / 45%);
-    }
+    overflow: hidden;
 
     svg {
       flex-shrink: 0;
@@ -96,12 +83,7 @@
     }
   }
 
-  &__profile-tag-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 600;
-  }
+  /* (the name span dissolved into the AppTag label — 2026-11-03) */
 
   &__profile-tag-dot {
     flex-shrink: 0;

@@ -61,6 +61,7 @@ import {
   profileMetaOk,
   saveTacticsProfile,
 } from "@/features/holographic/tactical/profile";
+import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName, replaysDir } from "@/utils/mapNames";
@@ -565,20 +566,20 @@ export default defineComponent({
 
             <span ref={renameAnchor} class="tac-topbar__profile-wrap">
               <HkTooltip text={t("tactics.profile.rename")} placement="bottom">
-                <button
-                  type="button"
-                  class="tac-topbar__profile-tag"
+                <AppTag
+                  interactive
+                  face="outline"
                   onClick={() => {
                     renameText.value = session.value.profileName;
                     renameOpen.value = !renameOpen.value;
                   }}
                 >
                   <FileArchive size={12} />
-                  <span class="tac-topbar__profile-tag-name">{profileLabel.value}</span>
+                  {profileLabel.value}
                   {session.value.profilePath ? (
                     <span class="tac-topbar__profile-tag-dot" data-hint={session.value.profilePath} />
                   ) : null}
-                </button>
+                </AppTag>
               </HkTooltip>
               <HkPopover
                 modelValue={renameOpen.value}

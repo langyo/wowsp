@@ -20,6 +20,7 @@ import { defineComponent, ref, type PropType, type VNode } from "vue";
 import { Camera, Eye, EyeOff, Rows2, Rows3 } from "@lucide/vue";
 import { HkSpinner } from "@celestia-island/hikari";
 
+import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import {
   statsPrefsState,
@@ -486,31 +487,27 @@ export const PostBattleShareBar = defineComponent({
             through the shared prefs, so flips apply without host wiring.
             The self report reads no career stats; the chip sits out there. */}
         {!isSelf ? <LiveStatsModeChip /> : null}
-        <button
-          class={[
-            "replay-view__postbattle-tool",
-            { "replay-view__postbattle-tool--on": props.hideAll },
-          ]}
-          type="button"
+        <AppTag
+          interactive
+          face="outline"
+          tone={props.hideAll ? "primary" : "default"}
           onClick={() => emit("toggleAll")}
         >
           {props.hideAll ? <Eye size={13} /> : <EyeOff size={13} />}
           {props.hideAll
             ? t("replay.postbattle.showAll")
             : t("replay.postbattle.hideAll")}
-        </button>
+        </AppTag>
         {!isSelf ? (
           <span class="replay-view__postbattle-toolbar-hint">
             {t("replay.postbattle.maskHint")}
           </span>
         ) : null}
         {props.showModeToggle && !isSelf ? (
-          <button
-            class={[
-              "replay-view__postbattle-tool",
-              { "replay-view__postbattle-tool--on": props.fullMode },
-            ]}
-            type="button"
+          <AppTag
+            interactive
+            face="outline"
+            tone={props.fullMode ? "primary" : "default"}
             onClick={() => emit("toggleMode")}
           >
             {/* Icon + label show the mode a click switches TO — Rows2 = the
@@ -520,17 +517,18 @@ export const PostBattleShareBar = defineComponent({
             {props.fullMode
               ? t("replay.roster.compactMode")
               : t("replay.roster.fullMode")}
-          </button>
+          </AppTag>
         ) : null}
-        <button
-          class="replay-view__postbattle-tool replay-view__postbattle-tool--shot"
-          type="button"
+        <AppTag
+          interactive
+          face="outline"
+          tone="accent"
           disabled={props.shotBusy}
           onClick={() => emit("shot")}
         >
           {props.shotBusy ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
           {t("share.copyShot")}
-        </button>
+        </AppTag>
       </div>
       );
     };

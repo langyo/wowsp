@@ -113,6 +113,11 @@
   cursor: pointer;
 }
 
+.app-tag-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .app-tag-btn:focus-visible {
   outline: 2px solid rgb(var(--color-primary));
   outline-offset: 2px;

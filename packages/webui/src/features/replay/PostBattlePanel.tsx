@@ -52,7 +52,6 @@ import {
   onMounted,
   ref,
   watch,
-  type CSSProperties,
   type VNode,
 } from "vue";
 import { useRouter } from "vue-router";
@@ -60,6 +59,7 @@ import { Eye, EyeOff } from "@lucide/vue";
 import { HkIconButton, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import { type PlayerBuild, type PlayerStats, type VehicleEntry } from "@/api";
+import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -1378,12 +1378,9 @@ export default defineComponent({
           {head && (head.matchGroup || head.mapName) ? (
             <div class="replay-view__postbattle-head">
               {headModeKey.value ? (
-                <span
-                  class="replay-view__postbattle-head-pill"
-                  style={modeColorOfKey(headModeKey.value) as CSSProperties}
-                >
+                <AppTag color={modeColorOfKey(headModeKey.value).color}>
                   {modeLabelOfKey(headModeKey.value)}
-                </span>
+                </AppTag>
               ) : null}
               {head.mapName ? (
                 <span class="replay-view__postbattle-head-map">

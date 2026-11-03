@@ -24,6 +24,7 @@ import {
 } from "@celestia-island/hikari";
 import { Power, RefreshCw, Smartphone } from "@lucide/vue";
 
+import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
@@ -102,13 +103,21 @@ export default defineComponent({
           <div class="gateway-live__meta">
             <Smartphone size={13} class="gateway-live__meta-icon" />
             <code class="gateway-live__root">{gateway.config.root}</code>
-            <span
-              class={["gateway-live__pill", "is-" + statusVoice.value.tone]}
+            <AppTag
+              tone={
+                statusVoice.value.tone === "online"
+                  ? "success"
+                  : statusVoice.value.tone === "error"
+                    ? "danger"
+                    : statusVoice.value.tone === "pending"
+                      ? "warning"
+                      : "default"
+              }
               data-hint={gateway.subDetail ?? undefined}
               data-hint-pos="bottom"
             >
               {statusVoice.value.text}
-            </span>
+            </AppTag>
           </div>
         </div>
 

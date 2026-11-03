@@ -17,7 +17,9 @@ import {
   watch,
   type PropType,
 } from "vue";
-import { HkButton, HkModal, HkPopupSelect, HkTag, useToast } from "@celestia-island/hikari";
+import { HkButton, HkModal, HkPopupSelect, useToast } from "@celestia-island/hikari";
+
+import AppTag from "@/components/base/AppTag";
 import { Crosshair, Upload } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import { api, type LearnedCapLayout } from "@/api";
@@ -449,7 +451,7 @@ export default defineComponent({
               <p class="cap-edit__none">{i18nT("tactics.cap.none")}</p>
             )}
             <div class="cap-edit__count">
-              <HkTag size="sm">{i18nT("tactics.setup.capCount", { n: caps.value.length })}</HkTag>
+              <AppTag>{i18nT("tactics.setup.capCount", { n: caps.value.length })}</AppTag>
             </div>
           </div>
         </div>

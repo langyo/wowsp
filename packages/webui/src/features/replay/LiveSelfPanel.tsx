@@ -24,7 +24,6 @@ import {
   onMounted,
   ref,
   watch,
-  type CSSProperties,
 } from "vue";
 import { Camera, Eye, EyeOff } from "@lucide/vue";
 import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
@@ -32,6 +31,7 @@ import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 import type { ArenaInfo } from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import AppTag from "@/components/base/AppTag";
 import ErrorCard from "@/components/base/ErrorCard";
 import { shipNameFromOfflineDb } from "@/features/holographic/modelLoader";
 import { shareFooterStrings } from "@/features/share/shotKit";
@@ -174,9 +174,8 @@ export default defineComponent({
       const arena = props.arena;
       if (!arena?.matchGroup) return null;
       return (
-        <span
-          class="live-battle__pill"
-          style={
+        <AppTag
+          color={
             modeColor(
               arena.matchGroup,
               arena.scenario,
@@ -184,7 +183,7 @@ export default defineComponent({
               arena.botCount ?? 0,
               arena.scriptedUnitCount ?? 0,
               singleTeamRoster.value,
-            ) as CSSProperties
+            ).color
           }
         >
           {modeLabelOf(
@@ -195,7 +194,7 @@ export default defineComponent({
             arena.scriptedUnitCount ?? 0,
             singleTeamRoster.value,
           )}
-        </span>
+        </AppTag>
       );
     });
 
@@ -233,19 +232,15 @@ export default defineComponent({
                 pills, tags and actions (the "我的战绩" name still rides the
                 copy-shot watermark's title). */}
             {props.ended ? (
-              <span class="live-battle__pill live-battle__pill--ended">
-                {t("replay.live.ended")}
-              </span>
+              <AppTag tone="default">{t("replay.live.ended")}</AppTag>
             ) : props.settling ? (
-              <span class="live-battle__pill live-battle__pill--settling">
-                {t("replay.live.settling")}
-              </span>
+              <AppTag tone="warning">{t("replay.live.settling")}</AppTag>
             ) : (
-              <span class="live-battle__pill live-battle__pill--live">LIVE</span>
+              <AppTag tone="danger">LIVE</AppTag>
             )}
             {modePill.value}
             {!props.ended && clockLabel.value ? (
-              <span class="live-battle__clock">{clockLabel.value}</span>
+              <AppTag tone="default" mono>{clockLabel.value}</AppTag>
             ) : null}
             <MapNameTag
               class="live-battle__map"
@@ -255,21 +250,16 @@ export default defineComponent({
             {/* Snapshot sync state: the temp-replay decode's own clock —
                 同步至 M:SS while live, the settled badge once final. */}
             {m ? (
-              <span
-                class={[
-                  "live-battle__pill",
-                  m.final ? "live-battle__pill--ended" : "live-self__sync",
-                ]}
-              >
+              <AppTag tone={m.final ? "default" : "primary"} mono>
                 {m.final
                   ? t("replay.live.selfSettled")
                   : t("replay.live.selfSyncAt", { time: fmtClock(m.battleTime) })}
-              </span>
+              </AppTag>
             ) : (
-              <span class="live-battle__pill live-self__sync">
+              <AppTag tone="primary">
                 <HkSpinner size="xs" tone="current" />
                 {t("replay.live.selfSyncing")}
-              </span>
+              </AppTag>
             )}
             <button
               class="live-battle__shot-btn"
