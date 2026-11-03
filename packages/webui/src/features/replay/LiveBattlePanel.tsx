@@ -75,6 +75,7 @@ import { HkScrollContainer } from "@celestia-island/hikari";
 import type { ArenaInfo, OverlayDiag, OverlayStatus, VehicleEntry } from "@/api";
 import { api } from "@/api";
 import BattleIcon from "@/components/base/BattleIcon";
+import AppTag from "@/components/base/AppTag";
 import { useAccountStore } from "@/stores/account";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -1332,9 +1333,8 @@ export default defineComponent({
       }
 
       const modePill = props.arena.matchGroup ? (
-        <span
-          class="live-battle__pill"
-          style={
+        <AppTag
+          color={
             modeColor(
               props.arena.matchGroup,
               props.arena.scenario,
@@ -1342,7 +1342,7 @@ export default defineComponent({
               props.arena.botCount ?? 0,
               props.arena.scriptedUnitCount ?? 0,
               singleTeamRoster.value,
-            ) as CSSProperties
+            ).color
           }
         >
           {modeLabelOf(
@@ -1353,7 +1353,7 @@ export default defineComponent({
             props.arena.scriptedUnitCount ?? 0,
             singleTeamRoster.value,
           )}
-        </span>
+        </AppTag>
       ) : null;
 
       /** PR-tier row wash (a persisted stats pref, default on): rows whose
@@ -1505,12 +1505,12 @@ export default defineComponent({
               <KarmaSup value={st?.karma ?? null} class="live-battle__crow-karma" />
             ) : null}
             {crossRealmTagOf(st) ? (
-              <span class="live-battle__cross-realm">{crossRealmTagOf(st)}</span>
+              <AppTag tone="accent" pill={false}>{crossRealmTagOf(st)}</AppTag>
             ) : null}
             {st?.clanTag ? (
               <span class="live-battle__crow-clan">[{st.clanTag}]</span>
             ) : null}
-            {ai ? <em class="live-battle__crow-bot">{t("replay.bot")}</em> : null}
+            {ai ? <AppTag tone="default" pill={false}>{t("replay.bot")}</AppTag> : null}
             {highestStampTag(v.name, stamp)}
           </span>
         );
@@ -1608,15 +1608,11 @@ export default defineComponent({
                 (the "实时对局" name still rides the copy-shot watermark's
                 title). */}
             {props.ended ? (
-              <span class="live-battle__pill live-battle__pill--ended">
-                {t("replay.live.ended")}
-              </span>
+              <AppTag tone="default">{t("replay.live.ended")}</AppTag>
             ) : props.settling ? (
-              <span class="live-battle__pill live-battle__pill--settling">
-                {t("replay.live.settling")}
-              </span>
+              <AppTag tone="warning">{t("replay.live.settling")}</AppTag>
             ) : (
-              <span class="live-battle__pill live-battle__pill--live">LIVE</span>
+              <AppTag tone="danger">LIVE</AppTag>
             )}
             {/* The battle's own server (来源服务器): the roster's stats
                 resolve on THIS cluster for the roster's whole retention,
@@ -1625,12 +1621,9 @@ export default defineComponent({
                 refine it while fresh — but the bottom-left client-version
                 switcher cannot move it once latched (overlay.battleRealm). */}
             {realm.value ? (
-              <span
-                class="live-battle__pill live-battle__pill--realm"
-                data-hint={t("replay.live.battleRealmHint")}
-              >
+              <AppTag tone="primary" data-hint={t("replay.live.battleRealmHint")}>
                 {realmLabelOf(realm.value)}
-              </span>
+              </AppTag>
             ) : null}
             {/* The serving game window used to repeat here as its own pill
                 (kind · realm · PID) — dropped 2026-10-10: the realm pill
@@ -1640,7 +1633,7 @@ export default defineComponent({
                 answered. */}
             {modePill}
             {!props.ended && clockLabel.value ? (
-              <span class="live-battle__clock">{clockLabel.value}</span>
+              <AppTag tone="default" mono>{clockLabel.value}</AppTag>
             ) : null}
             {/* The map as a jump tag (shared with the replay-review head):
                 hover previews the map's bundled minimap, click opens the
@@ -1655,25 +1648,23 @@ export default defineComponent({
                 onto the clipboard — the share path itself, no separate
                 post-battle window in between. Copy feedback rides the
                 app's toast surface. */}
-            <button
-              class="live-battle__shot-btn"
-              type="button"
+            <AppTag
+              interactive
+              face="outline"
               disabled={shot.busy.value}
               onClick={() => void shot.copyShot()}
             >
               {shot.busy.value ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
               {t("share.copyShot")}
-            </button>
+            </AppTag>
             {/* Manual full stats refresh: wipes the backend session cache
                 and re-requests the WHOLE roster. Already-loaded rows keep
                 their values (a failed re-request must not blank the
                 panel); the spinner rides the button while in flight. */}
-            <button
-              class={[
-                "live-battle__mask-btn",
-                { "live-battle__mask-btn--on": rosterRefreshing.value },
-              ]}
-              type="button"
+            <AppTag
+              interactive
+              face="outline"
+              tone={rosterRefreshing.value ? "success" : "default"}
               disabled={rosterRefreshing.value}
               data-hint={t("replay.live.refreshStatsHint")}
               onClick={() => {
@@ -1687,33 +1678,29 @@ export default defineComponent({
             >
               {rosterRefreshing.value ? <HkSpinner size="xs" tone="current" /> : <RefreshCw size={13} />}
               {t("replay.live.refreshStats")}
-            </button>
+            </AppTag>
             {/* Roster density: the compact row (the post-battle matrix's
                 look) ⇄ the same row with the ship-meta strip added in the
                 middle (persisted stats pref). Icon and label both show the
                 mode a click switches TO — Rows2 = the compact row, Rows3 =
                 the full row with the middle strip. */}
-            <button
-              class={[
-                "live-battle__density-btn",
-                { "live-battle__density-btn--on": compact.value },
-              ]}
-              type="button"
+            <AppTag
+              interactive
+              face="outline"
+              tone={compact.value ? "success" : "default"}
               onClick={() => prefs.setLiveRosterCompact(!compact.value)}
             >
               {compact.value ? <Rows3 size={13} /> : <Rows2 size={13} />}
               {compact.value
                 ? t("replay.roster.fullMode")
                 : t("replay.roster.compactMode")}
-            </button>
+            </AppTag>
             {/* Hide-all-nicknames toggle — the post-battle share bar's
                 masking button, dressed in the head's pill voice. */}
-            <button
-              class={[
-                "live-battle__mask-btn",
-                { "live-battle__mask-btn--on": masking.hideAll.value },
-              ]}
-              type="button"
+            <AppTag
+              interactive
+              face="outline"
+              tone={masking.hideAll.value ? "success" : "default"}
               onClick={() => masking.toggleAll()}
             >
               {/* Icon = the action a click performs, matching the
@@ -1722,7 +1709,7 @@ export default defineComponent({
               {masking.hideAll.value
                 ? t("replay.live.showNicks")
                 : t("replay.live.hideNicks")}
-            </button>
+            </AppTag>
             {/* Telemetry-source grade: staged per the roster mode, the
                 plugin's presence and this battle's sort-key coverage —
                 exact (connected AND the telemetry's game-true sort keys
@@ -1733,11 +1720,15 @@ export default defineComponent({
                 capture inference still runs) > inference (default
                 pipeline). The pill is the honesty marker: the inferred
                 order is never presented as game-truth. */}
-            <span
-              class={[
-                "live-battle__pill",
-                `live-battle__pill--telemetry-${telemetryGrade.value}`,
-              ]}
+            <AppTag
+              tone={
+                telemetryGrade.value === "exact"
+                  ? "success"
+                  : telemetryGrade.value === "infer"
+                    ? "default"
+                    : "warning"
+              }
+              face={telemetryGrade.value === "infer" ? "outline" : "soft"}
               data-hint={
                 t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}Hint`)
               }
@@ -1752,7 +1743,7 @@ export default defineComponent({
                 <ScanEye size={12} />
               )}
               {t(`replay.live.telemetry${telemetryGrade.value[0].toUpperCase()}${telemetryGrade.value.slice(1)}`)}
-            </span>
+            </AppTag>
             {/* Locate pill — one widget, four voices, and the manual-locate
                 entry point: idle reads subdued ("manual locate" resting),
                 searching carries the automatic Tab pass's settling spinner,
@@ -1766,12 +1757,18 @@ export default defineComponent({
                 (and battles where Tab was never held) leave no overlay
                 status at all, and dropping the widget there would look
                 flaky. */}
-            <button
-              type="button"
-              class={[
-                "live-battle__locate-pill",
-                `live-battle__locate-pill--${locateState.value.cls}`,
-              ]}
+            <AppTag
+              interactive
+              face={locateState.value.cls === "idle" ? "outline" : "soft"}
+              tone={
+                locateState.value.cls === "manual" || locateState.value.cls === "detected"
+                  ? "success"
+                  : locateState.value.cls === "searching"
+                    ? "warning"
+                    : locateState.value.cls === "failed"
+                      ? "danger"
+                      : "default"
+              }
               data-hint={t("replay.live.locateHint")}
               onClick={openLocateSettings}
             >
@@ -1781,7 +1778,7 @@ export default defineComponent({
                 <LocateFixed size={13} />
               )}
               {locateState.value.text}
-            </button>
+            </AppTag>
             {/* Presentation alarm — rendered ONLY on a failed verify
                 verdict (the watcher showed the overlay window, asked the
                 page to paint a corner marker, and repeatedly photographed
@@ -1791,15 +1788,15 @@ export default defineComponent({
                 flags (MPO / transparency / WebView2 runtime). Hidden while
                 unverified/certified — no alarm without a verdict. */}
             {overlayDiag.value?.presentation === "failed" && (
-              <button
-                type="button"
-                class="live-battle__locate-pill live-battle__locate-pill--failed"
+              <AppTag
+                interactive
+                tone="danger"
                 data-hint={t("replay.live.presentFailedHint")}
                 onClick={openLocateSettings}
               >
                 <TriangleAlert size={13} />
                 {t("replay.live.presentFailed")}
-              </button>
+              </AppTag>
             )}
           </div>
           {/* Operations (行动) have no enemy list — the enemy side is all

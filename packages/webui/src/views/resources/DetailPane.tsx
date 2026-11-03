@@ -28,6 +28,7 @@ import {
 } from "@celestia-island/hikari";
 
 import type { CatalogEntry, InstalledMod, ForeignModUnit, ModInstallRecord, TextureAnalysis } from "@/api";
+import AppTag from "@/components/base/AppTag";
 import ErrorCard from "@/components/base/ErrorCard";
 import { KIND_META, catIcon, isCatalogCat } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
@@ -80,23 +81,23 @@ function renderTexAnalysis(a: TextureAnalysis) {
       {tags.length > 0 && (
         <div class="tex-analysis__tags">
           {tags.map((tag) => (
-            <span key={tag.key} class={["tex-tag", tag.cls]}>
+            <AppTag key={tag.key} tone={tag.cls === "tex-tag--cat" ? "primary" : "default"}>
               {tag.text}
-            </span>
+            </AppTag>
           ))}
         </div>
       )}
       {shownShips.length > 0 && (
         <div class="tex-analysis__ships" data-hint={a.ships.join("\n")}>
           {shownShips.map((s) => (
-            <span key={s} class="tex-ship">
+            <AppTag key={s} tone="default" mono>
               {s}
-            </span>
+            </AppTag>
           ))}
           {a.ships.length > shownShips.length && (
-            <span class="tex-ship tex-ship--more">
+            <AppTag tone="default" mono>
               {t("resources.tex.moreShips", { count: a.ships.length - shownShips.length })}
-            </span>
+            </AppTag>
           )}
         </div>
       )}
@@ -237,7 +238,7 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
         )}
         <div class="mod-detail__badges">
           {isCatalogCat(entry.category) && (
-            <span class="mod-detail__badge">{t(`resources.cat.${entry.category}`)}</span>
+            <AppTag face="outline">{t(`resources.cat.${entry.category}`)}</AppTag>
           )}
           {/* ONE state tag: the installed/scope MERGE — when the entry is
               installed anywhere this reads 已安装 · <clients> (click opens
@@ -249,75 +250,69 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
             const openClients = () => ctx.openEntryClients(entry);
             if (installedOn.length > 0) {
               return (
-                <button
-                  class="mod-detail__tag mod-detail__tag--servers mod-detail__badge--ok mod-detail__tag--click"
+                <AppTag
+                  interactive
+                  tone="success"
                   data-scope={scope}
                   data-hint={t("resources.entryClients.openHint")}
                   onClick={openClients}
                 >
-                  <span class="mod-detail__tag-text">
-                    {t("resources.installedBadge")} ·{" "}
-                    {installedOn.map(ctx.clientLabelOf).join("·")}
-                  </span>
-                </button>
+                  {t("resources.installedBadge")} ·{" "}
+                  {installedOn.map(ctx.clientLabelOf).join("·")}
+                </AppTag>
               );
             }
             return (
-              <button
-                class="mod-detail__tag mod-detail__tag--servers mod-detail__tag--click"
+              <AppTag
+                interactive
+                tone="info"
                 data-scope={scope}
                 data-hint={t("resources.servers.scopeHint", {
                   servers: realms.map(realmLabel).join(", "),
                 })}
                 onClick={openClients}
               >
-                <span class="mod-detail__tag-text">
-                  {scope === "universal"
-                    ? t("resources.servers.universal")
-                    : t("resources.servers.list", {
-                        servers: realms.map(realmLabel).join("·"),
-                      })}
-                </span>
-              </button>
+                {scope === "universal"
+                  ? t("resources.servers.universal")
+                  : t("resources.servers.list", {
+                      servers: realms.map(realmLabel).join("·"),
+                    })}
+              </AppTag>
             );
           })()}
           {(entry.authors ?? []).map((a) =>
             a.url ? (
-              <button
+              <AppTag
                 key={a.name}
-                class="mod-detail__tag mod-detail__tag--link"
+                interactive
                 data-hint={t("resources.authorPage")}
                 onClick={() => openExternal(a.url)}
               >
                 <User size={12} />
-                <span class="mod-detail__tag-text">{a.name}</span>
+                {a.name}
                 <ExternalLink size={11} />
-              </button>
+              </AppTag>
             ) : (
-              <span key={a.name} class="mod-detail__tag">
+              <AppTag key={a.name} tone="default">
                 <User size={12} />
-                <span class="mod-detail__tag-text">{a.name}</span>
-              </span>
+                {a.name}
+              </AppTag>
             ),
           )}
           {record && !upToDate && (
-            <span class="mod-detail__badge mod-detail__badge--warn">
+            <AppTag tone="primary">
               {t("resources.installedAt", { version: record.version })}
-            </span>
+            </AppTag>
           )}
           {(entry.tags ?? []).map((id) => {
             const tag = ctx.tagTable.value.get(id);
             return (
-              <span
+              <AppTag
                 key={id}
-                class={[
-                  "mod-detail__tag",
-                  tag?.kind === "ip" ? "mod-detail__tag--ip" : "",
-                  id === "ai-generated" ? "mod-detail__tag--ai" : "",
-                ]}
+                tone={tag?.kind === "ip" ? "primary" : id === "ai-generated" ? "event" : "default"}
               >
                 {tag ? tagLabel(tag) : id}
-              </span>
+              </AppTag>
             );
           })}
         </div>
@@ -475,7 +470,11 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
         <div class="mod-detail__id">
           <div class="mod-detail__name">
             {ctx.unitDisplayName(mod)}
-            {mod.version && <span class="mod-row__ver">{mod.version}</span>}
+            {mod.version && (
+              <AppTag class="mod-row__ver" tone="default" mono>
+                {mod.version}
+              </AppTag>
+            )}
           </div>
           <div class="mod-detail__en">{kindLabel(mod.kind)}</div>
         </div>
@@ -492,14 +491,10 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
         {(mod.disabled || ctx.isAslainUnit(mod)) && (
           <div class="mod-detail__badges">
             {mod.disabled && (
-              <span class="mod-detail__badge mod-detail__badge--warn">
-                {t("resources.disabled")}
-              </span>
+              <AppTag tone="primary">{t("resources.disabled")}</AppTag>
             )}
             {ctx.isAslainUnit(mod) && (
-              <span class="mod-detail__badge">
-                {t("resources.foreignSource.aslain")}
-              </span>
+              <AppTag face="outline">{t("resources.foreignSource.aslain")}</AppTag>
             )}
           </div>
         )}
@@ -615,15 +610,15 @@ function renderForeignDetail(ctx: ResourcesCtx, unit: ForeignModUnit) {
       <HkScrollContainer class="mod-detail__scroll">
         <div class="mod-detail__inner">
         <div class="mod-detail__badges">
-          <span class="mod-detail__badge">
+          <AppTag face="outline">
             {t("resources.foreignBadge", { source: installerLabel(unit.installer) })}
-          </span>
-          {unit.version && <span class="mod-detail__badge">v{unit.version}</span>}
-          {paired && (
-            <span class="mod-detail__badge mod-detail__badge--ok">
-              {t("resources.foreignPaired")}
-            </span>
+          </AppTag>
+          {unit.version && (
+            <AppTag face="outline" mono>
+              v{unit.version}
+            </AppTag>
           )}
+          {paired && <AppTag tone="success">{t("resources.foreignPaired")}</AppTag>}
         </div>
         <p class="mod-detail__desc">
           {t("resources.foreignManaged", {
@@ -815,7 +810,9 @@ function renderLocalDetail(ctx: ResourcesCtx) {
                 return <Icon size={18} />;
               })()}
               <strong>{ctx.plan.value.name}</strong>
-              <span class="plan-card__badge">{kindLabel(ctx.plan.value.kind)}</span>
+              <AppTag tone="accent" face="outline">
+                {kindLabel(ctx.plan.value.kind)}
+              </AppTag>
               {ctx.plan.value.detail && <span class="plan-card__detail">{ctx.plan.value.detail}</span>}
             </div>
             {ctx.plan.value.textureAnalysis && renderTexAnalysis(ctx.plan.value.textureAnalysis)}

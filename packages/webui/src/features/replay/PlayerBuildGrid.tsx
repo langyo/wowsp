@@ -13,6 +13,7 @@
  */
 import { defineComponent, type PropType } from "vue";
 
+import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import { AssetImage } from "@/components/base/AssetImage";
 import { tierRoman } from "./shipLiveStats";
@@ -73,9 +74,9 @@ export default defineComponent({
             {view.unplacedSkills.length > 0 ? (
               <div class="player-build__chips">
                 {view.unplacedSkills.map((skill) => (
-                  <span class="player-build__chip" key={skill.code} data-hint={skill.hint}>
+                  <AppTag face="outline" key={skill.code} data-hint={skill.hint}>
                     {skill.label}
-                  </span>
+                  </AppTag>
                 ))}
               </div>
             ) : null}

@@ -182,14 +182,8 @@
     font-variant-numeric: tabular-nums;
   }
 
-  &__count-server-tag {
-    padding: 0.05rem 0.4rem;
-    background: rgb(var(--color-border) / 30%);
-    border-radius: var(--radius-full);
-    color: rgb(var(--color-text));
-    font-weight: 600;
-    letter-spacing: 0.04em;
-  }
+  /* (the per-server tag's face moved to AppTag — 2026-11-03 tag
+     unification) */
 
   /* Rail scroller — the hikari container owns the scrollbar (auto-hiding
      overlay track over the rail's right edge); the former scroller padding
@@ -316,25 +310,8 @@
     color: rgb(var(--color-muted));
   }
 
-  &__pill {
-    padding: 0.1rem 0.55rem;
-    background: rgb(var(--color-accent) / 20%);
-    border-radius: var(--radius-full);
-    color: rgb(var(--color-accent));
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-    text-transform: uppercase;
-    border: none;
-    cursor: pointer;
-  }
-
-  /* Battle ended (its replay file just appeared) — results screen. */
-  &__pill--settling {
-    background: rgb(var(--color-warning) / 18%);
-    color: rgb(var(--color-warning));
-  }
+  /* (the mode/results/chat pills' faces moved to AppTag — 2026-11-03
+     tag unification; the results pill keeps only its decoding pulse.) */
 
   /* Post-battle results pill while the packet stream is still decoding. */
   &__results--loading {
@@ -347,13 +324,8 @@
   }
 
   &__count {
-    padding: 0.1rem 0.55rem;
-    background: rgb(var(--color-primary) / 12%);
-    border-radius: var(--radius-full);
-    color: rgb(var(--color-primary));
     font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
+    color: rgb(var(--color-muted));
     white-space: nowrap;
   }
 
@@ -910,47 +882,9 @@
     flex-shrink: 0;
   }
 
-  &__pill {
-    flex-shrink: 0;
-    padding: 0.1rem 0.55rem;
-    background: rgb(var(--color-accent) / 20%);
-    border-radius: var(--radius-full);
-    color: rgb(var(--color-accent));
-    font-size: var(--text-2xs);
-    font-weight: 600;
-    line-height: 1.5;
-    white-space: nowrap;
-    text-transform: uppercase;
-
-    &--live {
-      background: rgb(var(--color-error) / 18%);
-      color: rgb(var(--color-error));
-      letter-spacing: 0.06em;
-    }
-
-    /* Battle ended (replay file appeared), game on the results screen —
-       same warning amber as the live panel's settling pill. */
-    &--settling {
-      background: rgb(var(--color-warning) / 18%);
-      color: rgb(var(--color-warning));
-    }
-
-    /* Manually picked file from outside the game folder. */
-    &--external {
-      background: rgb(var(--color-primary) / 14%);
-      color: rgb(var(--color-primary));
-    }
-
-    /* The replay's server — which detected client's folder it came from.
-       The rail mixes every client's replays, so this is the card's own
-       answer to "whose history is this": muted, unlike the mode pill's
-       accent, because it labels rather than classifies. */
-    &--server {
-      background: rgb(var(--color-border) / 30%);
-      color: rgb(var(--color-muted));
-      letter-spacing: 0.04em;
-    }
-  }
+  /* (the card pill family's faces moved to AppTag — 2026-11-03 tag
+     unification; the dead --live/--settling variants die with it — no
+     TSX has rendered them since the live rail moved to LiveBattlePanel.) */
 
   /* Corner ✕ on external cards — a sibling of the card button (no nested
      buttons), pinned into the card's top-right corner. */

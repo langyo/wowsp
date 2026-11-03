@@ -26,6 +26,7 @@ import {
 } from "@celestia-island/hikari";
 
 import AsyncSearchCombo from "@/components/search/AsyncSearchCombo";
+import AppTag from "@/components/base/AppTag";
 import ErrorCard from "@/components/base/ErrorCard";
 import LoadingNote from "@/components/base/LoadingNote";
 import type { CatalogEntry, InstalledMod } from "@/api";
@@ -364,9 +365,9 @@ export default defineComponent({
                       <span class="loader-health__title">
                         {t("resources.loaderHealth.title")}
                       </span>
-                      <span class="loader-health__badge">
+                      <AppTag class="loader-health__badge" tone="warning">
                         {hub.loaderHealthErrors.value.length}
-                      </span>
+                      </AppTag>
                       <ChevronDown
                         size={14}
                         class={{ "is-open": loaderHealthOpen.value }}
@@ -511,14 +512,14 @@ export default defineComponent({
                   the ACTIVE source AND big category, i.e. exactly what the
                   "all" chip below counts; narrower chip/filter states show
                   in the list itself. */}
-              <span class="resources-view__count">
+              <AppTag class="resources-view__count" tone="primary">
                 {t("resources.countLine", {
                   count:
                     hub.source.value === "online"
                       ? hub.catalogInCat.value.length
                       : hub.installedInCat.value.length,
                 })}
-              </span>
+              </AppTag>
 
               {/* Big category — the row-filling segmented strip. */}
               <HkTabs
@@ -619,28 +620,32 @@ export default defineComponent({
                       (c) =>
                         catBig(c) === hub.bigCat.value && (hub.catCounts.value.get(c) ?? 0) > 0,
                     ).map((c) => (
-                      <button
+                      <AppTag
                         key={c}
-                        class={["chip", hub.catalogCats.value.has(c) && "chip--on"]}
+                        interactive
+                        tone={hub.catalogCats.value.has(c) ? "primary" : "default"}
+                        face="outline"
                         aria-pressed={hub.catalogCats.value.has(c)}
                         data-hint={t("resources.chipsHint")}
                         onClick={() => hub.toggleCatalogCat(c)}
                       >
                         {t(`resources.cat.${c}`)} · {hub.catCounts.value.get(c)}
-                      </button>
+                      </AppTag>
                     ))
                   : KIND_ORDER.filter(
                       (k) => KIND_BIG[k] === hub.bigCat.value && (hub.kindCounts.value.get(k) ?? 0) > 0,
                     ).map((k) => (
-                      <button
+                      <AppTag
                         key={k}
-                        class={["chip", hub.kindFilters.value.has(k) && "chip--on"]}
+                        interactive
+                        tone={hub.kindFilters.value.has(k) ? "primary" : "default"}
+                        face="outline"
                         aria-pressed={hub.kindFilters.value.has(k)}
                         data-hint={t("resources.chipsHint")}
                         onClick={() => hub.toggleKindFilter(k)}
                       >
                         {kindLabel(k)} · {hub.kindCounts.value.get(k)}
-                      </button>
+                      </AppTag>
                     ))}
               </div>
             </div>

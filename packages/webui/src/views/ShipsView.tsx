@@ -9,7 +9,6 @@ import {
   HkPopover,
   HkScrollContainer,
   HkSpinner,
-  HkTag,
   HkTabs,
   useBreakpoint,
   useToast,
@@ -17,6 +16,7 @@ import {
 
 import NationFlag from "@/components/base/NationFlag";
 import { AssetImage } from "@/components/base/AssetImage";
+import AppTag from "@/components/base/AppTag";
 import ErrorCard from "@/components/base/ErrorCard";
 import TechTreeView from "@/components/ships/TechTreeView";
 import { useTechTreePan } from "@/components/ships/techTreePan";
@@ -739,14 +739,14 @@ export default defineComponent({
                       <span class="ship-card__name">{encyclopedia.shipDisplayName(ship)}</span>
                     </div>
                   <div class="ship-card__tags">
-                    <HkTag variant="default" size="sm">{typeLabel(ship.type)} ({shipTypeBadgeShort(ship.type, ship.shipId)})</HkTag>
+                    <AppTag>{typeLabel(ship.type)} ({shipTypeBadgeShort(ship.type, ship.shipId)})</AppTag>
                     <NationFlag nation={ship.nation} label={nationLabel(ship.nation)} variant="flag" size="sm" />
                     {eventId ? (
-                      <span class="ship-card__event-tag" data-hint={eventTooltip(eventId)}>
-                        <HkTag variant={RARITY_VARIANT[rarity]} size="sm">{eventLabel(eventId)}</HkTag>
-                      </span>
+                      <AppTag tone="event" data-hint={eventTooltip(eventId)}>
+                        {eventLabel(eventId)}
+                      </AppTag>
                     ) : (
-                      <HkTag variant={RARITY_VARIANT[rarity]} size="sm">{t(`ships.rarity.${rarity}`)}</HkTag>
+                      <AppTag tone={RARITY_VARIANT[rarity]}>{t(`ships.rarity.${rarity}`)}</AppTag>
                     )}
                   </div>
                   <div class="ship-card__stats">

@@ -1,0 +1,141 @@
+/* AppTag — the app-owned overloads on hikari's HkTag base. Hikari's own
+   soft (tinted) face stays untouched for its six tones — the classes here
+   only ADD the solid/outline faces, the accent/event tones and the app's
+   pill radius, all keyed to .hk-tag-compound selectors so they win the
+   cascade regardless of sheet order. Every selector targets the AppTag
+   classes only: direct <HkTag> consumers keep hikari's stock face. */
+
+/* The app's label voice is the full pill (2026-11-03 audit: every migrated
+   surface pressed 999px pills). Compound selector beats .hk-tag's
+   radius-sm without an !important. */
+.hk-tag.app-tag--pill {
+  border-radius: var(--radius-full);
+}
+
+/* Mono ink for version/telemetry strings (same contract as HkBadge's
+   data-mono). */
+.hk-tag.app-tag--mono {
+  font-family: var(--font-mono, monospace);
+}
+
+/* ── Tone ink tokens for the app-owned faces ─────────────────────────
+   --app-tag-tone: the tone's fill/ink rgb triple (space-separated, for
+   rgb(var(--x) / a%)). The six hikari tones resolve through the theme
+   slots hikari's own tag CSS reads; accent/event carry their app
+   literals. */
+.hk-tag.app-tag--default { --app-tag-tone: var(--color-text); }
+.hk-tag.app-tag--primary { --app-tag-tone: var(--color-primary); }
+.hk-tag.app-tag--success { --app-tag-tone: var(--color-success); }
+.hk-tag.app-tag--warning { --app-tag-tone: var(--color-warning); }
+.hk-tag.app-tag--danger  { --app-tag-tone: var(--color-error); }
+.hk-tag.app-tag--info    { --app-tag-tone: var(--color-info); }
+.hk-tag.app-tag--accent  { --app-tag-tone: var(--color-accent); }
+/* The violet 活动 voice — the two literal-violet recipes the duplicated
+   .ship-card__event-tag / .ship-detail__event-tag / modhub --ai modifiers
+   pressed (ShipsView 190 120 255, ShipDetailModal 190 120 255, modhub
+   168 85 247) unify here on one canonical violet. */
+.hk-tag.app-tag--event   { --app-tag-tone: 168 85 247; }
+
+/* ── OUTLINE face (空心): transparent plate + tone border + tone ink ── */
+.hk-tag.app-tag--outline {
+  background: transparent;
+  border-color: rgb(var(--app-tag-tone) / 45%);
+  color: rgb(var(--app-tag-tone));
+}
+
+/* The neutral outline reads as a QUIET chip, not a disabled label: the
+   text ink is too loud for a border-only plate, so the default tone
+   outlines in the muted ink + border token (the category-chip-at-rest
+   voice the audit found under .chip / .mod-detail__badge). */
+.hk-tag.app-tag--default.app-tag--outline {
+  border-color: rgb(var(--color-border) / 60%);
+  color: rgb(var(--color-muted));
+}
+
+/* ── SOLID face (实心): filled tone, on-solid ink ────────────────────
+   Ink follows theme.scss's solid conventions: white on the yellow family
+   (user direction 2026-10-16 — every yellow-background surface carries
+   white ink) and on danger (2026-10-31); the scheme-computed
+   --color-on-primary on brand fills; plain text ink on the neutral
+   border-gray fill. */
+.hk-tag.app-tag--solid {
+  background: rgb(var(--app-tag-tone));
+  border-color: transparent;
+  color: rgb(var(--color-on-solid));
+}
+
+.hk-tag.app-tag--solid.app-tag--default {
+  background: rgb(var(--color-border));
+  color: rgb(var(--color-text));
+}
+
+.hk-tag.app-tag--solid.app-tag--primary {
+  color: rgb(var(--color-on-primary));
+}
+
+.hk-tag.app-tag--solid.app-tag--warning,
+.hk-tag.app-tag--solid.app-tag--accent,
+.hk-tag.app-tag--solid.app-tag--danger {
+  color: #fff;
+}
+
+/* ── ACCENT soft face: hikari has no accent tone, so the tinted recipe
+   is restated over --color-accent (same ratios hikari's soft face
+   presses: 14% bg / 24% border — the audit's accent pill voice). The
+   variant underneath is hikari's warning; these compound rules outrank
+   it. */
+.hk-tag.app-tag--accent:not(.app-tag--solid):not(.app-tag--outline) {
+  background: rgb(var(--color-accent) / 14%);
+  border-color: rgb(var(--color-accent) / 24%);
+  color: rgb(var(--color-accent));
+}
+
+/* ── EVENT soft face: same restatement for the violet voice (deletes the
+   two literal-violet .hk-tag overrides). */
+.hk-tag.app-tag--event:not(.app-tag--solid):not(.app-tag--outline) {
+  background: rgb(var(--app-tag-tone) / 15%);
+  border-color: rgb(var(--app-tag-tone) / 50%);
+  color: rgb(var(--app-tag-tone));
+}
+
+/* ── Interactive wrapper: a real button AROUND the tag face (HkTag is a
+   span). The button contributes nothing visual — zeroed chrome so the
+   tag face IS the hit target — and carries the focus ring. */
+.app-tag-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  line-height: 0;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.app-tag-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.app-tag-btn:focus-visible {
+  outline: 2px solid rgb(var(--color-primary));
+  outline-offset: 2px;
+  border-radius: var(--radius-full);
+}
+
+/* Hover affordance, per face: soft/outline deepen the border toward the
+   ink (currentColor IS the tone ink on those faces); solid lifts the
+   fill. */
+.app-tag-btn:hover .hk-tag.app-tag:not(.app-tag--solid) {
+  border-color: color-mix(in srgb, currentColor 55%, transparent);
+}
+
+.app-tag-btn:active .hk-tag.app-tag--solid {
+  filter: brightness(0.94);
+}
+
+.app-tag-btn:hover .hk-tag.app-tag--solid {
+  filter: brightness(1.05);
+}

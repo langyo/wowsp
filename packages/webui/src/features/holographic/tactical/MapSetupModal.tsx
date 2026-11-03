@@ -23,7 +23,9 @@
  * update, cap instantiation).
  */
 import { computed, defineComponent, onMounted, ref, watch, type PropType } from "vue";
-import { HkModal, HkScrollContainer, HkStepFlow, HkTabs, HkTag } from "@celestia-island/hikari";
+import { HkModal, HkScrollContainer, HkStepFlow, HkTabs } from "@celestia-island/hikari";
+
+import AppTag from "@/components/base/AppTag";
 import { t as i18nT } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { displayMapName } from "@/utils/mapNames";
@@ -414,9 +416,9 @@ export default defineComponent({
                           </span>
                           <span class="map-setup__item-id">{id}</span>
                           {mapLineage(id) === "legacy" ? (
-                            <HkTag size="sm" variant="warning">
+                            <AppTag tone="warning">
                               {i18nT("tactics.badge.legacy")}
-                            </HkTag>
+                            </AppTag>
                           ) : null}
                         </button>
                       ))
@@ -476,16 +478,16 @@ export default defineComponent({
                           >
                             <span class="map-setup__mode-head">
                               <strong>{learnedTitle(l)}</strong>
-                              <HkTag size="sm" variant="success">
+                              <AppTag tone="success">
                                 {i18nT("tactics.setup.measured")}
-                              </HkTag>
-                              <HkTag size="sm">{i18nT("tactics.setup.corpusSource")}</HkTag>
-                              <HkTag size="sm">
+                              </AppTag>
+                              <AppTag>{i18nT("tactics.setup.corpusSource")}</AppTag>
+                              <AppTag>
                                 {i18nT("tactics.setup.capCount", { n: l.caps.length })}
-                              </HkTag>
-                              <HkTag size="sm">
+                              </AppTag>
+                              <AppTag>
                                 {i18nT("tactics.setup.sampleCount", { n: entry.capsSample })}
-                              </HkTag>
+                              </AppTag>
                             </span>
                             <span class="map-setup__mode-desc">
                               {i18nT("tactics.setup.capsOnly", { n: l.caps.length })}
@@ -506,9 +508,9 @@ export default defineComponent({
                         >
                           <span class="map-setup__mode-head">
                             <strong>{learnedTitle(l)}</strong>
-                            <HkTag size="sm" variant="success">
+                            <AppTag tone="success">
                               {i18nT("tactics.setup.measured")}
-                            </HkTag>
+                            </AppTag>
                           </span>
                           <span class="map-setup__mode-desc">
                             {(() => {
@@ -551,9 +553,9 @@ export default defineComponent({
                     <span class="map-setup__mode-head">
                       <strong>{i18nT("tactics.setup.custom")}</strong>
                       {customCaps.value ? (
-                        <HkTag size="sm">
+                        <AppTag>
                           {i18nT("tactics.setup.capCount", { n: customCaps.value.length })}
-                        </HkTag>
+                        </AppTag>
                       ) : null}
                     </span>
                     <span class="map-setup__mode-desc">{i18nT("tactics.setup.customDesc")}</span>

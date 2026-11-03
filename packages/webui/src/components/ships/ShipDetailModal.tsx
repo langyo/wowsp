@@ -2,10 +2,11 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle, Radar, BatteryCharging } from "@lucide/vue";
 
-import { HAlert, HkButton, HkMasonry, HkModal, HkTag, HkTabs, useToast } from "@celestia-island/hikari";
+import { HAlert, HkButton, HkMasonry, HkModal, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ErrorCard from "@/components/base/ErrorCard";
+import AppTag from "@/components/base/AppTag";
 import GamePathSetupModal from "@/components/gamedetect/GamePathSetupModal";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
@@ -490,11 +491,11 @@ export default defineComponent({
 
             {/* identity header */}
             <div class="ship-detail__id">
-              <HkTag variant="primary">{tierToRoman(viewShip.value.tier)}</HkTag>
-              <HkTag variant="primary">{typeLabel(viewShip.value.type)} ({typeShort.value})</HkTag>
+              <AppTag tone="primary">{tierToRoman(viewShip.value.tier)}</AppTag>
+              <AppTag tone="primary">{typeLabel(viewShip.value.type)} ({typeShort.value})</AppTag>
               {/* Nation reads as one more identity tag: the flag + label sit
                   inside the same pill chrome as the tier / type chips. */}
-              <HkTag variant="primary">
+              <AppTag tone="primary">
                 <NationFlag
                   nation={viewShip.value.nation}
                   label={nationLabel(viewShip.value.nation)}
@@ -503,17 +504,15 @@ export default defineComponent({
                   aria-hidden="true"
                 />
                 {nationLabel(viewShip.value.nation)}
-              </HkTag>
+              </AppTag>
               {eventId.value ? (
-                <span class="ship-detail__event-tag" data-hint={eventTooltip(eventId.value)}>
-                  <HkTag variant={RARITY_VARIANT[rarity.value]}>
-                    {eventLabel(eventId.value)}
-                  </HkTag>
-                </span>
+                <AppTag tone="event" data-hint={eventTooltip(eventId.value)}>
+                  {eventLabel(eventId.value)}
+                </AppTag>
               ) : (
-                <HkTag variant={RARITY_VARIANT[rarity.value]}>
+                <AppTag tone={RARITY_VARIANT[rarity.value]}>
                   {t(`ships.rarity.${rarity.value}`)}
-                </HkTag>
+                </AppTag>
               )}
             </div>
 

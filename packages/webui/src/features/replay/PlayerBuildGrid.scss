@@ -188,12 +188,6 @@
     margin-top: 2px;
   }
 
-  &__chip {
-    padding: 0 5px;
-    border-radius: 999px;
-    border: 1px solid rgb(var(--color-text) / 18%);
-    color: rgb(var(--color-text) / 0.7);
-    font-size: 10px;
-    line-height: 1.6;
-  }
+  /* (the unplaced-skill chips' face moved to AppTag — 2026-11-03 tag
+     unification) */
 }

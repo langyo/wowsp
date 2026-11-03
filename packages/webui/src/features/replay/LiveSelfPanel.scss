@@ -23,14 +23,8 @@
     padding: 0 1.5rem 1rem 0;
   }
 
-  /* Snapshot-sync pill (同步至 M:SS): the neutral voice of the clock chip. */
-  &__sync {
-    border-color: rgb(var(--color-text) / 22%);
-    background: rgb(var(--color-text) / 8%);
-    color: rgb(var(--color-text) / 80%);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-variant-numeric: tabular-nums;
-  }
+  /* (the snapshot-sync pill's face moved to AppTag — 2026-11-03 tag
+     unification) */
 
   /* Battle on, stream not readable yet — the radar-scope interim state. */
   &__pending {

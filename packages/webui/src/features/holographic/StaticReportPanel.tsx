@@ -23,10 +23,11 @@ import {
   HkButton,
   HkScrollContainer,
   HkSpinner,
-  HkTag,
   HkTrendChart,
   type TrendPen,
 } from "@celestia-island/hikari";
+
+import AppTag from "@/components/base/AppTag";
 import { Camera, Check, Download, Minus, Percent, X } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
 import type { StaticCoverage, StaticMoment, StaticReport, StaticRosterEntry } from "@/api";
@@ -54,7 +55,7 @@ export function coverageClass(c: { samples: number; completeness: number }): str
   return c.completeness > 0.9 ? "full" : "partial";
 }
 
-/** Coverage badge face — one hikari HkTag, variant picked by the coverage
+/** Coverage badge face — one AppTag, tone picked by the coverage
  *  class, and the state glyph comes from the lucide set (Check / Percent /
  *  Minus) instead of a hand-rolled text glyph. Module-level so both picker
  *  teams paint exactly the same face. */
@@ -62,7 +63,7 @@ function coverageTag(coverage: StaticCoverage) {
   const kind = coverageClass(coverage);
   const variant = kind === "full" ? "success" : kind === "partial" ? "warning" : "danger";
   return (
-    <HkTag variant={variant} size="sm" class="srp-picker__badge">
+    <AppTag tone={variant} class="srp-picker__badge">
       {kind === "full" ? (
         <Check size={11} aria-hidden="true" />
       ) : kind === "partial" ? (
@@ -73,13 +74,13 @@ function coverageTag(coverage: StaticCoverage) {
       ) : (
         <Minus size={11} aria-hidden="true" />
       )}
-    </HkTag>
+    </AppTag>
   );
 }
 
 /** The caption params per category; the localized sentence comes from
  * the i18n table keyed by `replay.report.cat_<category>`. */
-/** Category → the HkTag variant (and marker class) it paints — one table
+/** Category → the AppTag tone (and marker class) it paints — one table
  * so the card badge and the timeline marker can never disagree. */
 const CATEGORY_TONE: Record<
   StaticMoment["category"],
@@ -388,14 +389,14 @@ export default defineComponent({
             <div class="srp-head__id">
               <span class="srp-head__name">{me.value?.name ?? props.report.entityId}</span>
               {me.value?.isRecorder ? (
-                <HkTag variant="info" size="sm">{i18nT("replay.report.recorder")}</HkTag>
+                <AppTag tone="info">{i18nT("replay.report.recorder")}</AppTag>
               ) : null}
               {me.value?.diedAt != null ? (
-                <HkTag variant="danger" size="sm">
+                <AppTag tone="danger">
                   {i18nT("replay.report.diedAt", { t: Math.round(me.value.diedAt) })}
-                </HkTag>
+                </AppTag>
               ) : (
-                <HkTag variant="success" size="sm">{i18nT("replay.report.survived")}</HkTag>
+                <AppTag tone="success">{i18nT("replay.report.survived")}</AppTag>
               )}
               <span class="srp-head__map">
                 {props.report.mapName?.replace("spaces/", "") ?? ""} ·{" "}
@@ -464,9 +465,9 @@ export default defineComponent({
                       {String(Math.floor(m.t / 60)).padStart(2, "0")}:
                       {String(Math.floor(m.t % 60)).padStart(2, "0")}
                     </span>
-                    <HkTag variant={CATEGORY_TONE[m.category].tag} size="sm">
+                    <AppTag tone={CATEGORY_TONE[m.category].tag}>
                       {i18nT(`replay.report.cat_${m.category}`)}
-                    </HkTag>
+                    </AppTag>
                     {props.onSeek ? (
                       <HkButton
                         variant="secondary"

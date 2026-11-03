@@ -32,6 +32,7 @@ import { HkScrollContainer } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import BattleIcon from "@/components/base/BattleIcon";
+import AppTag from "@/components/base/AppTag";
 import NationFlag from "@/components/base/NationFlag";
 import {
   nationNameFromDb,
@@ -261,9 +262,9 @@ export default defineComponent({
       const identity = (
         <span class="live-ship-meta__id">
           {tier.value ? (
-            <span class="live-ship-meta__tier" data-hint={`${t("replay.live.tier")} ${tier.value}`}>
+            <AppTag tone="primary" pill={false} data-hint={`${t("replay.live.tier")} ${tier.value}`}>
               {tier.value}
-            </span>
+            </AppTag>
           ) : null}
           <BattleIcon type={entry.value?.type ?? ""} variant="plain" size={13} />
           {typeShort.value ? <span class="live-ship-meta__type">{typeShort.value}</span> : null}
@@ -279,34 +280,31 @@ export default defineComponent({
       );
 
       const chipEls = chips.value.map((c) => (
-        <span class="live-ship-meta__chip" key={c.label}>
+        <AppTag class="live-ship-meta__chip" tone="default" pill={false} key={c.label}>
           <span class="live-ship-meta__chip-label">{c.label}</span>
           <span class="live-ship-meta__chip-value">{c.value}</span>
-        </span>
+        </AppTag>
       ));
 
       const badgeEls = [
         ...badges.value.map((f) => (
-          <span class="live-ship-meta__badge" key={f}>
+          <AppTag tone="success" face="outline" key={f}>
             {shipConsumableLabel(f)}
-          </span>
+          </AppTag>
         )),
         upgrades.value.length ? (
-          <span
-            class="live-ship-meta__badge live-ship-meta__badge--upg"
-            key="__upg"
-          >
+          <AppTag tone="default" face="outline" key="__upg">
             <Wrench size={10} />
             {"×"}
             {upgrades.value.length}
-          </span>
+          </AppTag>
         ) : null,
         flagCap.value ? (
-          <span class="live-ship-meta__badge live-ship-meta__badge--flag" key="__flag">
+          <AppTag tone="warning" face="outline" key="__flag">
             <Flag size={10} />
             {"×"}
             {flagCap.value}
-          </span>
+          </AppTag>
         ) : null,
       ];
 
@@ -327,9 +325,7 @@ export default defineComponent({
           >
             <div class="live-ship-card__inner">
               <div class="live-ship-card__head">
-                {tier.value ? (
-                  <span class="live-ship-card__tier">{tier.value}</span>
-                ) : null}
+                {tier.value ? <AppTag tone="primary" pill={false}>{tier.value}</AppTag> : null}
                 <BattleIcon type={entry.value?.type ?? ""} variant="plain" size={16} />
                 {typeLabel.value ? (
                   <span class="live-ship-card__type">{typeLabel.value}</span>
@@ -380,9 +376,9 @@ export default defineComponent({
               badges ride a second line below (ally rows only). */}
           <span class="live-ship-meta__row">
             {!entry.value && showBuild.value ? (
-              <span class="live-ship-meta__badge live-ship-meta__badge--build">
+              <AppTag tone="primary" face="outline">
                 {t("replay.live.build.title")}
-              </span>
+              </AppTag>
             ) : null}
             {identity}
             {chipEls.length ? (

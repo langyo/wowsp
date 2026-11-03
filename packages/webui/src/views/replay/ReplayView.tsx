@@ -1,4 +1,4 @@
-import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type CSSProperties, type VNode } from "vue";
+import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type VNode } from "vue";
 import { Copy, Download, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
@@ -84,6 +84,7 @@ import {
 } from "@celestia-island/hikari";
 import BattleIcon from "@/components/base/BattleIcon";
 import { AssetImage } from "@/components/base/AssetImage";
+import AppTag from "@/components/base/AppTag";
 import ErrorCard from "@/components/base/ErrorCard";
 import {
   nationNameFromDb,
@@ -2414,23 +2415,16 @@ export default defineComponent({
               })()}
               <span class="replay-card__pills">
                 {external ? (
-                  <span class="replay-card__pill replay-card__pill--external">
-                    {t("replay.external.tag")}
-                  </span>
+                  <AppTag tone="primary">{t("replay.external.tag")}</AppTag>
                 ) : null}
                 {/* The replay's server — which client's folder it came from.
                     The rail mixes every detected client now, so each card
                     says where it belongs; entries under no known install
                     (a picked file, the phone's managed dir) carry none. */}
-                {serverTag ? (
-                  <span class="replay-card__pill replay-card__pill--server">
-                    {serverTag}
-                  </span>
-                ) : null}
+                {serverTag ? <AppTag tone="default">{serverTag}</AppTag> : null}
                 {r.matchGroup ? (
-                  <span
-                    class="replay-card__pill"
-                    style={
+                  <AppTag
+                    color={
                       modeColor(
                         r.matchGroup,
                         r.scenario,
@@ -2442,7 +2436,7 @@ export default defineComponent({
                         // enemy side is a story operation (行动) even when
                         // its descriptor has no scenario/script fingerprint.
                         singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
-                      ) as CSSProperties
+                      ).color
                     }
                   >
                     {modeLabel(
@@ -2453,7 +2447,7 @@ export default defineComponent({
                       r.scriptedUnitCount ?? 0,
                       singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
                     )}
-                  </span>
+                  </AppTag>
                 ) : null}
               </span>
             </div>
@@ -2524,9 +2518,8 @@ export default defineComponent({
                         {formatDateTime(parser.current.value.dateTime)}
                       </span>
                       {parser.current.value.matchGroup ? (
-                        <span
-                          class="replay-view__meta-item replay-view__pill"
-                          style={
+                        <AppTag
+                          color={
                             (spawnSymmetryOperation.value
                               ? // Decode-time refinement: the spawn probe
                                 // promoted a plain-co-op descriptor label to
@@ -2539,7 +2532,7 @@ export default defineComponent({
                                   parser.current.value.botCount ?? 0,
                                   parser.current.value.scriptedUnitCount ?? 0,
                                   hasSingleTeamRoster(parser.current.value.vehicles),
-                                )) as CSSProperties
+                                )).color
                           }
                         >
                           {spawnSymmetryOperation.value
@@ -2552,43 +2545,50 @@ export default defineComponent({
                                 parser.current.value.scriptedUnitCount ?? 0,
                                 hasSingleTeamRoster(parser.current.value.vehicles),
                               )}
-                        </span>
+                        </AppTag>
                       ) : null}
-                      <span class="replay-view__meta-item replay-view__count">
+                      <AppTag tone="primary">
                         {formatPlayerCount(parser.current.value.vehicles, isOperation.value)}
-                      </span>
+                      </AppTag>
                       {duration.value > 0 ? (
                         <span class="replay-view__meta-item">
                           {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
                         </span>
                       ) : null}
                       {resultsLoading.value ? (
-                        <span class="replay-view__meta-item replay-view__pill replay-view__results replay-view__results--loading">
+                        <AppTag
+                          class="replay-view__results replay-view__results--loading"
+                          tone="accent"
+                        >
                           {t("replay.results")}
                           <HkSpinner size="xs" tone="current" />
-                        </span>
+                        </AppTag>
                       ) : battleResults.value || trajectories.value.length > 0 ? (
-                        <button
-                          class="replay-view__meta-item replay-view__pill replay-view__results"
+                        <AppTag
+                          class="replay-view__results"
+                          interactive
+                          tone="accent"
                           onClick={() => (showResults.value = !showResults.value)}
                         >
                           {t("replay.results")}
-                        </button>
+                        </AppTag>
                       ) : null}
                       {chatCount.value > 0 ? (
-                        <button
-                          class="replay-view__meta-item replay-view__pill"
+                        <AppTag
+                          interactive
+                          tone="accent"
                           onClick={() => (showChat.value = !showChat.value)}
                         >
                           {t("replay.chatLog")}
-                        </button>
+                        </AppTag>
                       ) : null}
-                      <button
-                        class="replay-view__meta-item replay-view__pill"
+                      <AppTag
+                        interactive
+                        tone="accent"
                         onClick={() => (showReport.value ? closeStaticReport() : void openStaticReport())}
                       >
                         {t("replay.report.title")}
-                      </button>
+                      </AppTag>
                       {/* The reveal shortcut — the meta row's LAST inline
                           item (it used to float over the content corner):
                           transparent ghost icon button that shows the replay
@@ -2985,7 +2985,7 @@ export default defineComponent({
                   <span class="replay-view__count-servers">
                     {serverBreakdown.value.map((s) => (
                       <span key={s.tag} class="replay-view__count-server">
-                        <span class="replay-view__count-server-tag">{s.tag}</span>
+                        <AppTag tone="default">{s.tag}</AppTag>
                         {s.count}
                       </span>
                     ))}

@@ -94,6 +94,15 @@ vi.mock("@celestia-island/hikari", () => {
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
     HkIconButton: component("HkIconButton"), HkModal: component("HkModal"), HkSwitch: component("HkSwitch"), HMenu: component("HMenu"),
     HkImagePreview: component("HkImagePreview"),
+    /* AppTag's hikari base — a class-merging span passthrough so the
+       migrated tags render for the DOM-contract assertions. */
+    HkTag: {
+      name: "HkTag",
+      inheritAttrs: false,
+      setup(_: unknown, { slots, attrs }: { slots: { icon?: () => VNode[]; default?: () => VNode[] }; attrs: Record<string, unknown> }) {
+        return () => h("span", { ...attrs, class: ["hk-tag", attrs.class] }, [slots.icon?.(), slots.default?.()]);
+      },
+    },
     /* The file-list window's additions (detail ⋯ menu + tree). */
     HkTree: component("HkTree"),
     // The view's scroll regions (sidebar list, pane bodies, wizard stacks)
@@ -132,7 +141,7 @@ async function mountInstalled() {
   const view = shallowMount(ResourcesView, {
     // LoadingNote renders too: the mid-scan empty note keeps its copy (the
     // ring is the stubbed HkSpinner), and the notes below assert on it.
-    global: { stubs: { HkScrollContainer: false, LoadingNote: false } },
+    global: { stubs: { HkScrollContainer: false, LoadingNote: false, AppTag: false, HkTag: false } },
   });
   view.findAllComponents({ name: "HkTabs" }).find((tabs) => tabs.props("modelValue") === "online")!
     .vm.$emit("update:modelValue", "installed");
@@ -296,19 +305,19 @@ describe("list filter chips & install lights", () => {
     const view = await mountInstalled();
     const rows = () => view.findAll(".mod-row").length;
     expect(rows()).toBe(2);
-    const chips = view.findAll(".resources-chips .chip");
+    const chips = view.findAll(".resources-chips .app-tag");
     expect(chips).toHaveLength(2);
     await chips[0].trigger("click");
     expect(rows()).toBe(1);
-    expect(view.findAll(".chip--on")).toHaveLength(1);
+    expect(view.findAll(".resources-chips .app-tag--primary")).toHaveLength(1);
     await chips[1].trigger("click");
     expect(rows()).toBe(2);
-    expect(view.findAll(".chip--on")).toHaveLength(2);
+    expect(view.findAll(".resources-chips .app-tag--primary")).toHaveLength(2);
     await chips[0].trigger("click");
     expect(rows()).toBe(1);
     await chips[1].trigger("click");
     expect(rows()).toBe(2);
-    expect(view.findAll(".chip--on")).toHaveLength(0);
+    expect(view.findAll(".resources-chips .app-tag--primary")).toHaveLength(0);
   });
 
   it("marks rows with corner lights: yellow stale, blue aslain, green otherwise", async () => {
@@ -350,7 +359,7 @@ describe("plugin file-list window", () => {
     // Same un-stub as mountInstalled: the scroll containers wrapping the
     // sidebar rows must render their slots for .mod-row to exist.
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -380,7 +389,7 @@ describe("catalog detail menu", () => {
     });
     mocks.records.mockResolvedValue(records);
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -418,7 +427,7 @@ describe("catalog detail menu", () => {
       { id: "smi", version: "1", gameRoot: "C:/TestGameA", preset: "sasagcy" },
     ]);
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -475,7 +484,7 @@ describe("catalog detail menu", () => {
       { id: "battle.panel.ttaro", version: "1", gameRoot: "C:/TestGameA", preset: null },
     ]);
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -533,7 +542,7 @@ describe("detail pane server tag + author tags", () => {
       fetchedAt: "",
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -543,7 +552,7 @@ describe("detail pane server tag + author tags", () => {
 
   it("folds all-server applicability into ONE universal tag at the top", async () => {
     const view = await mountEntry(undefined);
-    const tag = view.find(".mod-detail__tag--servers");
+    const tag = view.find(".mod-detail__badges [data-scope]");
     expect(tag.exists()).toBe(true);
     expect(tag.text()).toContain("resources.servers.universal");
     // The old metadata-row scatter is gone: no per-realm tags anywhere.
@@ -553,7 +562,7 @@ describe("detail pane server tag + author tags", () => {
 
   it("keeps a server SUBSET inside the same one tag instead of scattering", async () => {
     const view = await mountEntry(["na", "asia"]);
-    const tag = view.find(".mod-detail__tag--servers");
+    const tag = view.find(".mod-detail__badges [data-scope]");
     expect(tag.text()).toContain("resources.servers.list");
     expect(tag.attributes("data-scope")).toBe("exclusive");
     // The realm names are interpolated into the same tag, dot-joined (the
@@ -564,7 +573,7 @@ describe("detail pane server tag + author tags", () => {
       servers: "NA·ASIA",
     });
     // Still exactly one applicability tag, and no meta scatter.
-    expect(view.findAll(".mod-detail__tag--servers").length).toBe(1);
+    expect(view.findAll(".mod-detail__badges [data-scope]").length).toBe(1);
     expect(view.find(".mod-detail__meta-server").exists()).toBe(false);
   });
 
@@ -572,7 +581,7 @@ describe("detail pane server tag + author tags", () => {
     const view = await mountEntry(undefined);
     // Tag texts (server label + author) all live in the never-wrap span;
     // the AUTHOR pill is the one carrying the name.
-    const texts = view.findAll(".mod-detail__tag-text").map((w) => w.text());
+    const texts = view.findAll(".mod-detail__badges .app-tag").map((w) => w.text());
     expect(texts).toContain("Ren_Zotto_prpr");
   });
 
@@ -586,14 +595,16 @@ describe("detail pane server tag + author tags", () => {
       fetchedAt: "",
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
     await flushPromises();
-    const link = view.find("button.mod-detail__tag--link");
-    expect(link.exists()).toBe(true);
-    expect(link.find(".mod-detail__tag-text").text()).toBe("Linked_Author");
+    const link = view
+      .findAll("button.app-tag-btn")
+      .find((w) => w.text().includes("Linked_Author"));
+    expect(link).toBeDefined();
+    expect(link!.find(".app-tag").text()).toBe("Linked_Author");
   });
 });
 
@@ -608,7 +619,7 @@ describe("server-applicability filtering (left-sidebar client realm)", () => {
     mocks.catalog.mockResolvedValue({ mods, sourceVersion: "test", fetchedAt: "" });
     mocks.config.activeInstall = active as typeof mocks.config.activeInstall;
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     return view;
@@ -682,7 +693,7 @@ describe("multi-client sync", () => {
       name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [],
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -729,7 +740,7 @@ describe("multi-client sync", () => {
         : { name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [] },
     );
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     await view.findAll(".mod-row")[0].trigger("click");
@@ -772,7 +783,7 @@ describe("multi-client sync", () => {
         fetchedAt: "",
       });
       const view = await shallowMount(ResourcesView, {
-        global: { stubs: { HkScrollContainer: false } },
+        global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
       });
       await flushPromises();
       return view;
@@ -821,7 +832,7 @@ describe("multi-client sync", () => {
       id: "mod-extra", name: "Mod Extra", removedFiles: 1, restoredFiles: 0,
     });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     view.findComponent({ name: "HMenu" }).vm.$emit("select", "sync-all");
@@ -846,7 +857,7 @@ describe("multi-client sync", () => {
   it("exposes the sync-all tools entry disabled below two clients", async () => {
     mocks.catalog.mockResolvedValue({ mods: [catEntry("mod-x")], sourceVersion: "test", fetchedAt: "" });
     const view = await shallowMount(ResourcesView, {
-      global: { stubs: { HkScrollContainer: false } },
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
     });
     await flushPromises();
     const tools = view.findComponent({ name: "HMenu" });
@@ -1029,7 +1040,7 @@ describe("contested tree badge", () => {
       { ...mod("Mod B"), relPath: "PnFMods/b" },
     ]);
     const view = await mountInstalled();
-    const badges = view.findAll(".mod-row__badge--contested");
+    const badges = view.findAll('.mod-row__tail [data-hint="resources.contestedTreeHint"]');
     expect(badges).toHaveLength(1);
     expect(badges[0].text()).toBe("resources.contestedTree");
     expect(badges[0].attributes("data-hint")).toBe("resources.contestedTreeHint");
@@ -1041,7 +1052,7 @@ describe("contested tree badge", () => {
       { installer: "modstation", key: "k2", name: "Station Plain" },
     ]);
     const view = await mountInstalled();
-    const badges = view.findAll(".mod-row__badge--contested");
+    const badges = view.findAll('.mod-row__tail [data-hint="resources.contestedTreeHint"]');
     expect(badges).toHaveLength(1);
     expect(badges[0].text()).toBe("resources.contestedTree");
   });
@@ -1067,7 +1078,7 @@ describe("entry clients window", () => {
       // The window is a real child component with its own fetch watch —
       // keep it live under shallowMount.
       global: {
-        stubs: { HkScrollContainer: false, LoadingNote: false, EntryClientsWindow: false },
+        stubs: { HkScrollContainer: false, LoadingNote: false, EntryClientsWindow: false, AppTag: false, HkTag: false },
       },
     });
     await flushPromises();
@@ -1084,7 +1095,7 @@ describe("entry clients window", () => {
     ];
     mocks.records.mockResolvedValue([recordFixture]);
     const view = await mountPane();
-    const tag = view.find(".mod-detail__tag--click");
+    const tag = view.find(".mod-detail__badges [data-scope]");
     expect(tag.exists()).toBe(true);
     // Installed: the tag reads 已安装 · <installed clients>, NOT the plain
     // scope text — and the scope tag no longer appears separately.
@@ -1107,7 +1118,7 @@ describe("entry clients window", () => {
     mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
     mocks.config.installs = [{ kind: "steam", realm: "eu", path: "C:/EU" }];
     const view = await mountPane();
-    const tag = view.find(".mod-detail__tag--click");
+    const tag = view.find(".mod-detail__badges [data-scope]");
     expect(tag.text()).toContain("resources.servers.universal");
     await tag.trigger("click");
     await flushPromises();
