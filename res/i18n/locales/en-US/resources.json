@@ -51,6 +51,7 @@
   },
   "foreignBadge": "Installed by {source}",
   "contestedTree": "Contested tree",
+  "contestedDetail": "Files in this tree are also claimed by another installer's ledger and their bytes no longer match what that installer wrote: {files}. Reinstall this mod (or the other one) to settle which copy is current.",
   "contestedTreeHint": "A WoWSP record claims files in this tree while foreign files remain — WoWSP rewrites and the foreign installer's re-applies undo each other.",
   "foreignManaged": "{name} was installed by {source}. You can uninstall it right here (files and {source}'s registry rows are cleaned up together), or open the paired catalog entry to register & reinstall it under WoWSP.",
   "foreignPaired": "Paired with the catalog",

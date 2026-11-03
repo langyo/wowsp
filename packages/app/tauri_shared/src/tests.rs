@@ -1867,6 +1867,7 @@ fn installed_mod_skips_texture_analysis_when_absent() {
         identity: None,
         warnings: Vec::new(),
         contested: false,
+        contested_files: Vec::new(),
     };
     let v = round_trips(plain.clone());
     assert!(!v.as_object().unwrap().contains_key("textureAnalysis"));

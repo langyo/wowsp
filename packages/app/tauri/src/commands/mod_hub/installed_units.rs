@@ -1,5 +1,6 @@
 use super::scan_installed::{UnitCandidate, gather_candidates, parse_installed_manifest};
 use super::*;
+use crate::commands::mod_catalog::install::sha256_capped;
 use wowsp_tauri_shared::CatalogIndex;
 
 /// Classify one installed res_mods root into typed plugin units. When
@@ -73,6 +74,7 @@ pub(crate) fn classify_installed_root(
             identity: unit_identity(&names, pairs.as_deref()),
             warnings: Vec::new(),
             contested: false,
+            contested_files: Vec::new(),
         });
     }
 
@@ -94,6 +96,7 @@ pub(crate) fn classify_installed_root(
             identity: unit_identity(&[cand.name.as_str()], pairs.as_deref()),
             warnings: Vec::new(),
             contested: false,
+            contested_files: Vec::new(),
         });
     }
 
@@ -275,6 +278,16 @@ fn unit_disabled_state(res_mods: &Path, paths: &[String]) -> bool {
 ///   wrote the whole tree). A PARTIAL claim — foreign leftovers beside
 ///   WoWSP's writes, or a shared component WoWSP wrote into a foreign
 ///   tree — contests it.
+///
+/// Hash verification (2026-11-03 report: the ModForge tree flagged
+/// "contested" on blueprints other forge mods legitimately register
+/// into its ForgeBlueprints registry): a claimed file whose on-disk
+/// SHA-256 matches the claiming record's RECORDED hash is verified
+/// intact — coexistence, not a contest. Only files whose bytes no
+/// claimant can vouch for count. Shared registries designed for
+/// cross-writer accumulation (installed_mods.xml rows, the forge
+/// blueprint registry ForgeBlueprints/**) are excluded outright:
+/// entries accumulate there by design.
 pub(crate) fn mark_contested_units(
     res_mods: &Path,
     units: &mut [InstalledMod],
@@ -300,8 +313,14 @@ pub(crate) fn mark_contested_units(
             .as_deref()
             .and_then(|id| catalog.mods.iter().find(|entry| entry.id == id));
         // Record files claimed under this unit's paths (live names — the
-        // spelling records store; `unit_covers` neutralizes `.bak` twins).
-        let mut claimed = std::collections::BTreeSet::new();
+        // spelling records store; `unit_covers` neutralizes `.bak` twins),
+        // with each claim's RECORDED content hash when the record carries
+        // one. Shared registries designed for cross-writer accumulation
+        // (installed_mods.xml rows, the forge blueprint registry) are
+        // excluded outright: entries accumulate there by design, so a
+        // co-located claim is the registry working, not a turf war.
+        let mut claimed: std::collections::BTreeMap<String, Vec<Option<String>>> =
+            std::collections::BTreeMap::new();
         for record in &claimed_here {
             let is_own = own.is_some_and(|entry| {
                 entry.id == record.id
@@ -314,9 +333,18 @@ pub(crate) fn mark_contested_units(
                 continue;
             }
             for file in &record.files {
-                if !file.starts_with("@game/") && unit_covers(&unit.paths, file) {
-                    claimed.insert(file.clone());
+                if file.starts_with("@game/") || !unit_covers(&unit.paths, file) {
+                    continue;
                 }
+                if is_shared_registry_rel(file) {
+                    continue;
+                }
+                let recorded = record
+                    .hashes
+                    .as_ref()
+                    .and_then(|h| h.get(&file.replace('\\', "/").to_ascii_lowercase()))
+                    .cloned();
+                claimed.entry(file.clone()).or_default().push(recorded);
             }
         }
         if claimed.is_empty() {
@@ -337,9 +365,44 @@ pub(crate) fn mark_contested_units(
                     .replace('\\', "/")
             })
             .collect();
-        let covered = on_disk.intersection(&claimed).count();
-        unit.contested = covered > 0 && covered < on_disk.len();
+        // A claimed file contests the tree only when its on-disk bytes no
+        // longer match ANY claiming record's recorded hash — i.e. someone
+        // overwrote it beyond every recorded claim. A file whose bytes are
+        // identical to a claimant's recorded write is verified
+        // coexistence (2026-11-03: ModForge's ForgeBlueprints registry).
+        // Claims with no recorded hash cannot verify — conservative.
+        let mut contested_files: Vec<String> = Vec::new();
+        for (file, claims) in &claimed {
+            if !on_disk.contains(file) {
+                // The claim names a file the unit no longer has — stale
+                // residue, not a live fight over this tree.
+                continue;
+            }
+            let verified = claims
+                .iter()
+                .flatten()
+                .any(|hash| sha256_capped(&res_mods.join(file)).is_some_and(|hex| hex == *hash));
+            if !verified {
+                contested_files.push(file.clone());
+            }
+        }
+        contested_files.sort();
+        unit.contested_files = contested_files.clone();
+        unit.contested = !contested_files.is_empty() && contested_files.len() < on_disk.len();
     }
+}
+
+/// Shared registries a contested verdict must never accuse: files
+/// DESIGNED for cross-writer accumulation, where a co-located claim is
+/// the registry working rather than two writers fighting over one tree
+/// (2026-11-03 report: ModForge's ForgeBlueprints registry, which every
+/// forge mod's installer legitimately drops blueprints into, flagged
+/// the whole tree "contested"). Case-insensitive; `.bak` twins
+/// neutralized like [`unit_covers`].
+fn is_shared_registry_rel(rel: &str) -> bool {
+    let bare = rel.strip_suffix(".bak").unwrap_or(rel);
+    let lower = bare.to_ascii_lowercase();
+    lower == "installed_mods.xml" || lower.starts_with("forgeblueprints/") || lower == "wowsp.toml"
 }
 
 /// Does any unit root cover a res_mods-relative file? Directory roots cover

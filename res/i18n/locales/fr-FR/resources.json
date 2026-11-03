@@ -51,6 +51,7 @@
   },
   "foreignBadge": "Installé par {source}",
   "contestedTree": "Arbre contesté",
+  "contestedDetail": "Les fichiers de cet arbre sont également réclamés par le registre d'un autre installateur et ne correspondent plus à ce qu'il avait écrit : {files}. Réinstallez ce mod (ou l'autre) pour fixer la copie actuelle.",
   "contestedTreeHint": "Un enregistrement WoWSP revendique des fichiers dans cet arbre alors que des fichiers externes subsistent — les réécritures de WoWSP et les réapplications de l'installateur externe s'annulent mutuellement.",
   "foreignManaged": "{name} a été installé par {source}. Vous pouvez le désinstaller directement ici (les fichiers et les lignes d'enregistrement de {source} sont nettoyés ensemble), ou ouvrir l'entrée jumelée du catalogue pour l'enregistrer et le réinstaller sous WoWSP.",
   "foreignPaired": "Apparié au catalogue",

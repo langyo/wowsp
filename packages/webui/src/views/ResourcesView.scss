@@ -2029,3 +2029,30 @@
     white-space: nowrap;
   }
 }
+
+/* ── Contested-tree detail (2026-11-03): the pane shows WHICH files no
+   claimant's recorded hash verifies, instead of a bare badge with no
+   body. Warning-tinted, mono file list. */
+.mod-detail__contested {
+  margin: 0 0 0.75rem;
+  padding: 0.5rem 0.6rem;
+  background: rgb(var(--color-warning, 234 179 8) / 10%);
+  border: 1px solid rgb(var(--color-warning, 234 179 8) / 30%);
+  border-radius: var(--radius-sm, 0.375rem);
+}
+
+.mod-detail__contested-note {
+  margin: 0 0 0.375rem;
+  font-size: var(--text-xs, 0.75rem);
+  line-height: 1.45;
+  color: rgb(var(--color-warning, 234 179 8));
+}
+
+.mod-detail__contested-file {
+  display: block;
+  padding: 0.1rem 0.4rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--text-2xs, 0.6875rem);
+  color: rgb(var(--color-warning, 234 179 8));
+  word-break: break-all;
+}

@@ -58,6 +58,10 @@ export interface InstalledMod {
    *  unit's own and does not cover the whole tree — the "contested tree"
    *  badge. Absent when false. */
   contested?: boolean;
+  /** The concrete files whose bytes no claiming record's recorded hash
+   *  verifies — the "what exactly" behind a contested badge. Absent when
+   *  the tree is not contested. */
+  contestedFiles?: string[];
 }
 
 /** One unit the purge could not reinstall. */
