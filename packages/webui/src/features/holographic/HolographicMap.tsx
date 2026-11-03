@@ -131,7 +131,7 @@ for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
 
 import { useStatsStore } from "@/stores/stats";
 import { useMarkersStore } from "@/stores/markers";
-import { HkIconButton, HkTooltip } from "@celestia-island/hikari";
+import { HkIconButton, HkPopover, HkTooltip } from "@celestia-island/hikari";
 import TacticalBoard from "./tactical/TacticalBoard";
 import {
   TACTICAL_MAX_SCALE,
@@ -372,6 +372,9 @@ export default defineComponent({
     /** Playback speed multiplier; the dropdown sits next to the clock. */
     const playbackSpeed = ref(2);
     const speedMenuOpen = ref(false);
+    /** Anchor for the playback-speed popover: the wrapper around the
+     *  trigger button (the camera menu's triggerWrap pattern). */
+    const speedMenuAnchor = ref<HTMLSpanElement | null>(null);
     const PLAYBACK_SPEEDS = [0.5, 1, 2, 3, 5, 10] as const;
 
     // Phone layout signal: on ≤767px the two HUD pop-up menus (playback
@@ -443,8 +446,7 @@ export default defineComponent({
     });
     // Either HUD pop-up open → the phone sheet scrim shows (computed reads
     // both refs lazily, so declaring it here after the second ref is fine).
-    const hudSheetOpen = computed(() => speedMenuOpen.value || cameraMenuOpen.value);
-    watch(cameraMode, (m) => {
+        watch(cameraMode, (m) => {
       originalView.value = m === "original";
       if (m !== "follow") {
         endFreeLook();
@@ -2236,19 +2238,6 @@ export default defineComponent({
               onClick={(e: MouseEvent) => e.stopPropagation()}
             />
           ) : null}
-          {/* Phone sheet scrim: while a HUD pop-up menu is docked as a
-              bottom sheet (≤767px only — the CSS docks the panels), taps on
-              the scrim dismiss both menus, mirroring the hikari sheet
-              family's closeOnBackdrop. Desktop never renders it. */}
-          {isMobile.value && hudSheetOpen.value ? (
-            <div
-              class="holo-map__sheet-scrim"
-              onClick={() => {
-                speedMenuOpen.value = false;
-                cameraMenuOpen.value = false;
-              }}
-            />
-          ) : null}
           {/* In the 2D enlarged view the plaque + stats duplicate what the 3D
               view shows — hide them so the 2D map owns the screen. */}
           {!minimapZoom.value && selfCard.value ? (
@@ -2352,15 +2341,26 @@ export default defineComponent({
               }}
             />
             <span class="holo-map__time">{displayTime()}</span>            <div class="holo-map__speed">
-              <button
-                class="holo-map__speed-btn"
-                onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}
-                data-hint={i18nT("replay.playbackSpeed")}
+              <span ref={speedMenuAnchor} class="holo-map__speed-wrap">
+                <button
+                  class="holo-map__speed-btn"
+                  onClick={(e) => { e.stopPropagation(); speedMenuOpen.value = !speedMenuOpen.value; }}
+                  data-hint={i18nT("replay.playbackSpeed")}
+                >
+                  {playbackSpeed.value}×
+                </button>
+              </span>
+              <HkPopover
+                modelValue={speedMenuOpen.value}
+                onUpdate:modelValue={(v: boolean) => (speedMenuOpen.value = v)}
+                anchorRef={speedMenuAnchor.value}
+                placement="top-start"
+                sheetOnMobile
               >
-                {playbackSpeed.value}×
-              </button>
-              {speedMenuOpen.value ? (
-                <div class="holo-map__speed-menu" onClick={(e) => e.stopPropagation()}>
+                <div
+                  class="holo-map__speed-menu"
+                  {...{ onClick: (e: MouseEvent) => e.stopPropagation() }}
+                >
                   {PLAYBACK_SPEEDS.map((sp) => (
                     <button
                       key={sp}
@@ -2374,7 +2374,7 @@ export default defineComponent({
                     </button>
                   ))}
                 </div>
-              ) : null}
+              </HkPopover>
             </div>
           </div>
         ) : null}

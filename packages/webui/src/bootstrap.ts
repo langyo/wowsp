@@ -15,6 +15,7 @@ import {
   initTheme,
   installHkImageFallback,
   setLocale as setHikariLocale,
+  useReducedMotion,
   useTheme,
 } from "@celestia-island/hikari";
 
@@ -147,6 +148,15 @@ export function bootstrap(options: BootstrapOptions = {}): void {
       theme.setTheme(theme.currentTheme.value);
     }
   }
+
+  // Reduced-motion: wire the OS/user preference into hikari's animation bus
+  // AND the html.reduce-motion class — without this call the class hook
+  // (theme.scss) is dead code and hikari's own --hk-* durations keep
+  // animating under a reduced-motion OS setting (2026-11-03 audit P1).
+  // The latch makes the first caller the only one; no user pref source
+  // exists yet (system query decides — pass one when a settings toggle
+  // lands).
+  useReducedMotion();
 
   // Seed hikari's own i18n context (upstreamed components render their own
   // copy: confirm dialog buttons, empty states, …) from the detected app
