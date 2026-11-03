@@ -48,27 +48,39 @@
     fill: rgb(var(--color-primary));
   }
 
+  /* The sweep trail's near half: a brighter phosphor step right behind the
+     needle (the far half reuses `__fill-soft`). */
+  &__sweep-near {
+    fill: rgb(var(--color-primary) / 18%);
+  }
+
   /* The "Tab" label inside its keycap (svg <text> inherits font-family). */
   &__txt {
     fill: rgb(var(--color-primary));
     font-weight: 700;
   }
 
-  /* Radar sweep: wedge + leading edge rotate about the scope center. */
+  /* Radar sweep: glow trail + leading edge rotate about the scope center. */
   &__sweep {
     transform-origin: 32px 32px;
     animation: live-guide-art-sweep 2.6s linear infinite;
   }
 
-  /* Contacts light up as the beam passes, then fade. */
+  /* Contacts flash the moment the beam (the needle) crosses their angle,
+     then fade until the next pass. The needle crosses angle θ at θ/360 of
+     the 2.6s cycle, so each contact's delay is that instant minus a full
+     cycle — negative delays land mid-animation from the first frame:
+     lower-right contact at ~126° → −1.69s, upper-left at ~318° → −0.31s. */
   &__blip {
     animation: live-guide-art-blip 2.6s ease-out infinite;
   }
 
-  &__blip--late {
-    /* Negative delay: the late contact starts half a cycle back instead of
-       sitting at full opacity for the first 1.3s. */
-    animation-delay: -1.3s;
+  &__blip--lower-right {
+    animation-delay: -1.69s;
+  }
+
+  &__blip--upper-left {
+    animation-delay: -0.31s;
   }
 }
 
@@ -79,17 +91,19 @@
 }
 
 @keyframes live-guide-art-blip {
+  /* 0% = the beam crossing the contact: a quick flash, then a slow fade
+     that leaves the contact nearly dark right before the beam returns. */
   0% {
     opacity: 0;
   }
-  15% {
+  8% {
     opacity: 1;
   }
-  70% {
-    opacity: 0.85;
+  60% {
+    opacity: 0.55;
   }
   100% {
-    opacity: 0.25;
+    opacity: 0.08;
   }
 }
 
