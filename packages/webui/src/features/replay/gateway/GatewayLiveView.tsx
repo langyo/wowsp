@@ -1,14 +1,22 @@
 /** GatewayLiveView — the /live page body on the PHONE build: the
  *  account-routed receive side of gateway push (§6). The page auto-enters
  *  the WAITING state on mount (viewing is free — no connection until the
- *  user taps 开始连接), showing the active-account chip, the configured
- *  route entry and the waiting-for-battle hint. The connect button drives
- *  the handshake (health resolve → captcha bottom sheet when the node
- *  demands Turnstile → password sheet when it demands one → subscribe);
- *  pushed battle frames render through the EXISTING LiveBattlePanel with
- *  the mapped ArenaInfo, and host online/offline + bye flip the waiting /
- *  ended hints. Connection failures to a CUSTOM root surface as top-right
- *  toasts (see useGatewayLive).
+ *  user taps 开始连接). Two glass surfaces ride over the wallpaper:
+ *
+ *  - the head card — account chip, connection-status tag and the route
+ *    entry (plus a compact disconnect once a battle is on screen);
+ *  - the state hero (until the first pushed frame) — a per-state art
+ *    (GatewayLinkArt idle / WaitingRadarArt live / icon disc otherwise),
+ *    a headline + hint, and the BIG connect CTA (the old floating one-liner
+ *    was unreadable over a wallpaper and hid the primary action behind a
+ *    tiny button).
+ *
+ *  The connect button drives the handshake (health resolve → captcha bottom
+ *  sheet when the node demands Turnstile → password sheet when it demands
+ *  one → subscribe); pushed battle frames render through the EXISTING
+ *  LiveBattlePanel with the mapped ArenaInfo, and host online/offline + bye
+ *  flip the hero's voice. Connection failures to a CUSTOM root surface as
+ *  top-right toasts (see useGatewayLive).
  *
  *  HkModal docks as a bottom sheet under 768px automatically — the phone
  *  build is always under it there, so the captcha/password surfaces ride
@@ -22,16 +30,28 @@ import {
   HkModal,
   HkSpinner,
 } from "@celestia-island/hikari";
-import { Power, RefreshCw, Smartphone } from "@lucide/vue";
+import {
+  Hourglass,
+  MonitorOff,
+  MonitorSmartphone,
+  Power,
+  RefreshCw,
+  TriangleAlert,
+} from "@lucide/vue";
 
-import AppTag from "@/components/base/AppTag";
+import AppTag, { type AppTagTone } from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import LiveBattlePanel from "@/features/replay/LiveBattlePanel";
+import {
+  GatewayLinkArt,
+  WaitingRadarArt,
+} from "@/features/replay/liveGuideArt";
 import { useGatewayStore } from "@/stores/gateway";
 import { useShownPlayer } from "@/composables/useShownPlayer";
 import { useGatewayLive } from "./useGatewayLive";
+import "./GatewayLiveView.scss";
 
 export default defineComponent({
   name: "GatewayLiveView",
@@ -52,42 +72,83 @@ export default defineComponent({
       },
     );
 
-    /** The waiting screen's status pill voice. */
-    const statusVoice = computed(() => {
+    const connected = computed(() => gateway.subPhase === "online");
+
+    /** The head card's status tag voice (tone rides AppTag's faces). */
+    const statusVoice = computed<{ tone: AppTagTone; text: string }>(() => {
       switch (gateway.subPhase) {
         case "resolving":
         case "connecting":
-          return { tone: "pending", text: t("gateway.connecting") };
+          return { tone: "warning", text: t("gateway.connecting") };
         case "online":
-          return { tone: "online", text: t("gateway.online") };
+          return { tone: "success", text: t("gateway.online") };
         case "error":
-          return { tone: "error", text: t("gateway.errorState") };
+          return { tone: "danger", text: t("gateway.errorState") };
         default:
-          return { tone: "idle", text: t("gateway.idleState") };
+          return { tone: "default", text: t("gateway.idleState") };
       }
     });
-    const connected = computed(() => gateway.subPhase === "online");
 
-    /** The waiting hint: desktop presence first (the host is offline →
-     *  ask for the desktop side), then battle-over retention, then the
-     *  plain waiting-for-battle line. */
-    const waitingHint = computed(() => {
-      if (gateway.hostOnline === false) return t("gateway.waitingHost");
-      if (live.ended.value) return t("gateway.battleEndedHint");
-      return t("gateway.waitingBattle");
+    /** The hero's voice — the steady state the waiting card speaks.
+     *  Desktop presence first (the host is offline → ask for the desktop
+     *  side), then battle-over retention, then the connected / idle /
+     *  connecting pair. Dial errors keep their dedicated paragraph below
+     *  the head card (the status tag already turns red) — the hero only
+     *  ever speaks steady states, exactly like the old waiting hint. */
+    const heroVoice = computed(() => {
+      if (gateway.hostOnline === false)
+        return { tone: "offline", title: t("gateway.heroOfflineTitle"), hint: t("gateway.waitingHost") };
+      if (live.ended.value)
+        return { tone: "ended", title: t("gateway.heroEndedTitle"), hint: t("gateway.battleEndedHint") };
+      if (connected.value)
+        return { tone: "live", title: t("gateway.heroWaitingTitle"), hint: t("gateway.waitingBattle") };
+      return { tone: "idle", title: t("gateway.heroIdleTitle"), hint: t("gateway.heroIdleHint") };
     });
+
+    /** The dial is visibly in flight while the handshake runs or the
+     *  socket phase machine is resolving/connecting — the link art then
+     *  animates and a busy line rides under the hint. */
+    const dialing = computed(
+      () =>
+        live.connecting.value ||
+        gateway.subPhase === "resolving" ||
+        gateway.subPhase === "connecting",
+    );
+
+    /** The hero's art slot per voice: the device-link art while idle
+     *  (animated while dialing), the battle radar while connected, and a
+     *  tinted icon disc for the two quiet states. */
+    const heroMedia = () => {
+      if (heroVoice.value.tone === "live")
+        return <WaitingRadarArt class="gateway-live__hero-art" />;
+      if (heroVoice.value.tone === "idle")
+        return <GatewayLinkArt flow={dialing.value} class="gateway-live__hero-art" />;
+      const icon =
+        heroVoice.value.tone === "offline" ? (
+          <MonitorOff size={24} />
+        ) : heroVoice.value.tone === "ended" ? (
+          <Hourglass size={24} />
+        ) : (
+          <TriangleAlert size={24} />
+        );
+      return (
+        <span class={["gateway-live__hero-disc", `gateway-live__hero-disc--${heroVoice.value.tone}`]}>
+          {icon}
+        </span>
+      );
+    };
 
     return () => (
       <div class="gateway-live">
-        {/* The waiting head: account chip + route entry + status pill.
-            Stays rendered above the panel too, so the stop button and the
-            connection voice remain reachable mid-battle. */}
+        {/* The head card: account chip + status tag, then the route entry.
+            Stays rendered above the panel too, so the disconnect affordance
+            and the connection voice remain reachable mid-battle. */}
         <div class="gateway-live__head">
           <div class="gateway-live__account">
             {dogTag.value ? (
-              <PlayerBadge dogTag={dogTag.value} size={28} />
+              <PlayerBadge dogTag={dogTag.value} size={32} />
             ) : (
-              <AccountAvatar size={28} />
+              <AccountAvatar size={32} />
             )}
             <span class="gateway-live__account-body">
               <span class="gateway-live__account-name">
@@ -99,48 +160,31 @@ export default defineComponent({
                   : ""}
               </span>
             </span>
-          </div>
-          <div class="gateway-live__meta">
-            <Smartphone size={13} class="gateway-live__meta-icon" />
-            <code class="gateway-live__root">{gateway.config.root}</code>
             <AppTag
-              tone={
-                statusVoice.value.tone === "online"
-                  ? "success"
-                  : statusVoice.value.tone === "error"
-                    ? "danger"
-                    : statusVoice.value.tone === "pending"
-                      ? "warning"
-                      : "default"
-              }
+              class="gateway-live__status"
+              face={connected.value ? "solid" : "soft"}
+              tone={statusVoice.value.tone}
               data-hint={gateway.subDetail ?? undefined}
               data-hint-pos="bottom"
             >
               {statusVoice.value.text}
             </AppTag>
           </div>
-        </div>
-
-        {/* Connect / disconnect — viewing is free; the button owns the
-            socket (§6.1). */}
-        <div class="gateway-live__actions">
-          {connected.value ? (
-            <HkButton size="sm" variant="secondary" onClick={() => void live.disconnect()}>
-              <Power size={14} />
-              {t("gateway.disconnect")}
-            </HkButton>
-          ) : (
-            <HkButton
-              size="sm"
-              variant="primary"
-              loading={live.connecting.value}
-              disabled={!live.route.value || live.connecting.value}
-              onClick={() => void live.connect()}
-            >
-              <RefreshCw size={14} />
-              {t("gateway.connect")}
-            </HkButton>
-          )}
+          <div class="gateway-live__route">
+            <MonitorSmartphone size={13} class="gateway-live__route-icon" />
+            <code class="gateway-live__root">{gateway.config.root}</code>
+            {live.arena.value ? (
+              <HkButton
+                class="gateway-live__kick"
+                size="sm"
+                variant="secondary"
+                onClick={() => void live.disconnect()}
+              >
+                <Power size={13} />
+                {t("gateway.disconnect")}
+              </HkButton>
+            ) : null}
+          </div>
         </div>
 
         {live.inlineErrorText.value ? (
@@ -149,7 +193,7 @@ export default defineComponent({
 
         {/* The pushed battle: the EXISTING panel over the mapped ArenaInfo
             (relation → teams), ended flag on bye. Before the first frame
-            the waiting hint holds the body. */}
+            the state hero holds the body. */}
         {live.arena.value ? (
           <div class="gateway-live__body">
             <LiveBattlePanel
@@ -160,12 +204,47 @@ export default defineComponent({
           </div>
         ) : (
           <div class="gateway-live__waiting">
-            <p class="gateway-live__waiting-hint">{waitingHint.value}</p>
-            {gateway.subPhase === "resolving" || gateway.subPhase === "connecting" ? (
-              <p class="gateway-live__busy">
-                <HkSpinner size="xs" tone="current" />
-              </p>
-            ) : null}
+            <div class={["gateway-live__hero", `gateway-live__hero--${heroVoice.value.tone}`]}>
+              {heroMedia()}
+              <h3 class="gateway-live__hero-title">{heroVoice.value.title}</h3>
+              <p class="gateway-live__hero-hint">{heroVoice.value.hint}</p>
+              {dialing.value && !connected.value ? (
+                <p class="gateway-live__hero-busy">
+                  <HkSpinner size="xs" tone="current" />
+                  {t("gateway.connecting")}
+                </p>
+              ) : null}
+              {/* Connect / disconnect — viewing is free; the button owns
+                  the socket (§6.1). */}
+              <div class="gateway-live__hero-cta">
+                {connected.value ? (
+                  <HkButton
+                    block
+                    size="lg"
+                    variant="secondary"
+                    onClick={() => void live.disconnect()}
+                  >
+                    <Power size={15} />
+                    {t("gateway.disconnect")}
+                  </HkButton>
+                ) : (
+                  <HkButton
+                    block
+                    size="lg"
+                    variant="primary"
+                    loading={live.connecting.value}
+                    disabled={!live.route.value || live.connecting.value}
+                    onClick={() => void live.connect()}
+                  >
+                    <RefreshCw size={15} />
+                    {t("gateway.connect")}
+                  </HkButton>
+                )}
+              </div>
+              {!live.route.value ? (
+                <p class="gateway-live__hero-foot">{t("gateway.heroNoRoute")}</p>
+              ) : null}
+            </div>
           </div>
         )}
 
@@ -183,19 +262,19 @@ export default defineComponent({
           {{
             default: () => (
               <div class="gateway-live__sheet">
-            <p class="gateway-live__sheet-hint">{t("gateway.captchaHint")}</p>
-            {live.captchaSiteKey.value !== null ? (
-              <HkCaptchaWidget
-                siteKey={live.captchaSiteKey.value}
-                attempt={live.captchaAttempt.value}
-                onVerify={(token: string) => live.onCaptchaVerified(token)}
-              />
-            ) : (
-              <p class="gateway-live__busy">
-                <HkSpinner size="xs" tone="current" />
-                {t("gateway.captchaLoading")}
-              </p>
-            )}
+                <p class="gateway-live__sheet-hint">{t("gateway.captchaHint")}</p>
+                {live.captchaSiteKey.value !== null ? (
+                  <HkCaptchaWidget
+                    siteKey={live.captchaSiteKey.value}
+                    attempt={live.captchaAttempt.value}
+                    onVerify={(token: string) => live.onCaptchaVerified(token)}
+                  />
+                ) : (
+                  <p class="gateway-live__sheet-busy">
+                    <HkSpinner size="xs" tone="current" />
+                    {t("gateway.captchaLoading")}
+                  </p>
+                )}
               </div>
             ),
           }}

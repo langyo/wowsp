@@ -100,6 +100,61 @@ export const TabHoldArt = defineComponent({
   },
 });
 
+/** Gateway waiting hero — a desktop and a phone joined by a dashed link.
+ *  The idle face is static; with the `flow` prop (handshake / dial in
+ *  flight) the dashes march toward the phone and the packet dot pulses
+ *  (see liveGuideArt.scss — both honor prefers-reduced-motion). Rendered
+ *  by GatewayLiveView's waiting card on the phone build. */
+export const GatewayLinkArt = defineComponent({
+  name: "GatewayLinkArt",
+  props: {
+    flow: { type: Boolean, default: false },
+  },
+  setup(props) {
+    return () => (
+      <svg
+        viewBox="0 0 132 88"
+        class={["gw-link-art", props.flow ? "gw-link-art--flow" : null]}
+        aria-hidden="true"
+      >
+        {/* Desktop (left): screen with muted stat rows + a battle spark. */}
+        <rect
+          class="live-guide-art__fill-soft live-guide-art__ln-accent"
+          x="12"
+          y="20"
+          width="54"
+          height="38"
+          rx="3.5"
+        />
+        <path class="live-guide-art__ln-muted-thin" d="M20 30 H44" />
+        <path class="live-guide-art__ln-muted-thin" d="M20 37 H38" />
+        <path class="live-guide-art__ln-muted-thin" d="M20 44 H40" />
+        <path class="live-guide-art__ln-accent-thin" d="M46 46 l3.5 -8 2.5 5 3 -7" />
+        <path class="live-guide-art__ln-muted" d="M35 58 v7" />
+        <path class="live-guide-art__ln-muted" d="M26 65 H44" />
+        {/* The link: a dashed line that marches toward the phone in flow. */}
+        <path class="gw-link-art__link live-guide-art__ln-muted-thin" d="M68 44 H90" />
+        {/* The packet riding the link. */}
+        <circle class="gw-link-art__packet live-guide-art__fill-accent" cx="79" cy="44" r="2.4" />
+        {/* Phone (right): body, speaker slot, stat bars, home dot. */}
+        <rect
+          class="live-guide-art__fill-soft live-guide-art__ln-accent"
+          x="90"
+          y="16"
+          width="28"
+          height="56"
+          rx="5.5"
+        />
+        <path class="live-guide-art__ln-muted-thin" d="M99 23.5 H109" />
+        <path class="live-guide-art__ln-accent-thin" d="M98 38 h9" />
+        <path class="live-guide-art__ln-accent-thin" d="M98 44 h13" />
+        <path class="live-guide-art__ln-muted-thin" d="M98 50 h6" />
+        <circle class="live-guide-art__fill-accent" cx="104" cy="64" r="2" />
+      </svg>
+    );
+  },
+});
+
 /** Waiting-for-battle radar — the needle is the beam's leading edge (the
  *  sweep rotates clockwise) and the glow trails behind it, covering the 60°
  *  the beam has already swept; two contacts flash as the beam crosses them.
