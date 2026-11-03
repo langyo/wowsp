@@ -190,7 +190,7 @@ describe("AboutContent trivia ship links", () => {
     await flushPromisesTick();
 
     // Trivia draws are random; poke the logo until a draw carries ship
-    // links (27 of 49 facts do) and click one — it must open the tech
+    // links (27 of 46 facts do) and click one — it must open the tech
     // tree's ship-detail modal and NOT restore the plain description.
     const logo = wrapper.find(".about-modal__logo");
     expect(logo.exists()).toBe(true);
