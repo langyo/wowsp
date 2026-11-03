@@ -2,12 +2,16 @@
  * date-range tabs (the parent supplies the flex row): internally it lays
  * out as two fixed rows — the meta row (summary + search) pinned to the
  * tabs row's right end, the chip row claiming a full line below — so the
- * wrap point no longer drifts with the viewport. The chip chrome is
- * hikari's own facet-chip grammar (HkFilterChip — box, border, solid
- * surface); the date-range strip beside it renders hikari's segmented track
- * untouched. It is the chip's track-step BOX (not its fill) that keeps both
- * on one height, so the controls row reads as one family without either
- * side re-painting library chrome. */
+ * wrap point no longer drifts with the viewport. The three PURE facets
+ * (type/nation/mode) render hikari HkFilterChip outright — chip chrome and
+ * pill-group popup come from the library. The bespoke .ship-filter-bar__chip
+ * chrome below mirrors the same facet-chip grammar for the sort-carrying
+ * chips (tier/winrate/battles — the arrows and the 全部… cycle need it) and
+ * for FilterCategoryChip, which imports this sheet. The date-range strip
+ * beside it renders hikari's segmented track untouched. It is the chip's
+ * track-step BOX (not its fill) that keeps both on one height, so the
+ * controls row reads as one family without either side re-painting library
+ * chrome. */
 .ship-filter-bar {
   display: flex;
   flex-wrap: wrap;

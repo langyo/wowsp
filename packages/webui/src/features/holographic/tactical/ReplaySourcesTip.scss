@@ -1,7 +1,7 @@
-/* Hover provenance chip + teleported scrollable replay list (see the
- * component doc). The panel is fixed-positioned against the viewport and
- * lives in hikari's overlay root (tooltip band) so it clears the wizard
- * modal and the modes scroll column. */
+/* Hover provenance chip + HkPopover-hosted scrollable replay list (see the
+ * component doc). HkPopover owns the panel chrome, the anchored placement
+ * and the popup-registry layer — only the chip and the list content are
+ * styled here. */
 
 .rs-tip {
   display: inline-flex;
@@ -24,19 +24,6 @@
     white-space: nowrap;
   }
 
-  &__panel {
-    position: fixed;
-    /* The overlay root fences pointer-events: none — every interactive
-       teleport restores its own (HkModal/HkPopover do the same). */
-    pointer-events: auto;
-    width: 268px;
-    padding: 0.45rem 0.55rem 0.5rem;
-    border-radius: var(--radius-md);
-    border: 1px solid rgb(var(--color-border) / 30%);
-    background: rgb(var(--color-surface));
-    box-shadow: 0 8px 28px rgb(0 0 0 / 28%);
-  }
-
   &__head {
     font-size: var(--text-2xs);
     font-weight: 600;
@@ -45,6 +32,7 @@
   }
 
   &__list {
+    width: 268px;
     max-height: 13rem;
   }
 

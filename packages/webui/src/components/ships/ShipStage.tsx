@@ -17,7 +17,7 @@ import { healAntennaGaps } from "@/features/holographic/antennaHeal";
 import { deinterleaveGeometry } from "@/features/holographic/deinterleave";
 import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
-import { HkScrollContainer, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
+import { HkSelectPanel, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { readStageThemeMode, useImage, watchStageThemeMode, type StageThemeMode } from "@wowsp/holo";
 import { asModelChainError, isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
@@ -1709,24 +1709,6 @@ export default defineComponent({
       };
     });
 
-    function onModelPickDocPointerDown(e: PointerEvent): void {
-      const el = modelPickRef.value;
-      if (el && !el.contains(e.target as Node)) modelPickOpen.value = false;
-    }
-
-    function onModelPickDocKeyDown(e: KeyboardEvent): void {
-      if (e.key === "Escape") modelPickOpen.value = false;
-    }
-
-    watch(modelPickOpen, (open) => {
-      document.removeEventListener("pointerdown", onModelPickDocPointerDown);
-      document.removeEventListener("keydown", onModelPickDocKeyDown);
-      if (open) {
-        document.addEventListener("pointerdown", onModelPickDocPointerDown);
-        document.addEventListener("keydown", onModelPickDocKeyDown);
-      }
-    });
-
     function disposeScene() {
       cancelAnimationFrame(rafId);
       focusTween = null;
@@ -1805,8 +1787,6 @@ export default defineComponent({
       cancelAnimationFrame(showRafId);
       stopStageTheme?.();
       stopStageTheme = null;
-      document.removeEventListener("pointerdown", onModelPickDocPointerDown);
-      document.removeEventListener("keydown", onModelPickDocKeyDown);
       disposeScene();
     });
 
@@ -2252,8 +2232,9 @@ export default defineComponent({
                   </div>
                 ) : null}
                 {viewMode.value === "3d" && props.planeModels.length > 0 ? (
-                  <div class="ship-stage__model-pick" role="group" aria-label={t("ships.detail.stage.modelPicker")} ref={modelPickRef}>
+                  <>
                     <button
+                      ref={modelPickRef}
                       type="button"
                       class={["ship-stage__model-pick-btn", modelSelection.value !== "hull" ? "is-active" : ""].join(" ")}
                       data-hint={t("ships.detail.stage.modelPicker")}
@@ -2273,19 +2254,33 @@ export default defineComponent({
                       ) : null}
                       <ChevronDown size={11} strokeWidth={2.2} />
                     </button>
-                    {modelPickOpen.value ? (
-                      /* Dropdown list scrolls through hikari's scroll
-                         container (overlay thumb, native bar hidden); the
-                         airframes are grouped under their combat roles. */
-                      <HkScrollContainer class="ship-stage__model-pick-menu">
+                    {/* The dropdown surface is hikari's HkSelectPanel (the
+                        custom-trigger panel behind HkSelect): it owns the
+                        anchored placement (viewport flip, root-zoom local
+                        space), the outside-click close, Escape and the phone
+                        bottom sheet, and teleports to the overlay root so the
+                        stage's rounded overflow can no longer clip the menu.
+                        Its single scroll surface keeps the 250px cap
+                        (maxHeight); the airframes stay grouped under their
+                        combat roles. */}
+                    <HkSelectPanel
+                      open={modelPickOpen.value}
+                      onUpdate:open={(v: boolean) => { modelPickOpen.value = v; }}
+                      anchorRef={modelPickRef.value}
+                      title={t("ships.detail.stage.modelPicker")}
+                      placement="bottom-end"
+                      matchAnchorWidth={false}
+                      maxHeight="250px"
+                    >
+                      <div class="ship-stage__model-pick-menu">
                         <PlaneModelMenu
                           options={props.planeModels}
                           selected={modelSelection.value}
                           onSelect={setModelSelection}
                         />
-                      </HkScrollContainer>
-                    ) : null}
-                  </div>
+                      </div>
+                    </HkSelectPanel>
+                  </>
                 ) : null}
                 {viewMode.value === "3d" && modelSelection.value === "hull" ? (
                   <div class="ship-stage__wl" role="group">
