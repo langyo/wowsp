@@ -209,9 +209,8 @@
 
   /* Plain type code, the lookup list's grammar: a fixed 28px column so
      every row's tier starts on the same line, centered, muted — no
-     pill. The explicit line-height pins the code and the tier to the
-     same box: the mono tier's taller default line box was centering
-     its glyphs a hair above the code's. */
+     pill. Line box inherited like every other cell (the former 12px
+     pin rode the pair high against the name's ink; 2026-11-03). */
   &__ship-type {
     flex: 0 0 28px;
     text-align: center;
@@ -219,20 +218,17 @@
     font-size: 0.625rem;
     font-weight: 600;
     white-space: nowrap;
-    line-height: 12px;
   }
 
-  /* Roman tier between the code and the name — mono and centered like
-     the lookup list's, same size and line box so the pair reads as one
-     aligned column across both water tables. */
+  /* Roman tier between the code and the name — centered like the
+     lookup list's, same size, line box inherited like every other cell
+     so the whole row shares one baseline (2026-11-03). */
   &__ship-tier {
     flex: 0 0 28px;
     text-align: center;
     font-style: normal;
     font-size: 0.625rem;
-    font-family: var(--font-mono);
     color: rgb(var(--color-text));
-    line-height: 12px;
   }
 
   &__ship-name {

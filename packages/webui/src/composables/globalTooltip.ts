@@ -108,12 +108,6 @@ export interface HintCard {
   badge?: string;
   /** Decorative head icon (ship-class art); alt stays empty. */
   iconUrl?: string;
-  /** Head glyph from the game's battle HUD (the minimap ship markers),
-   *  supplied as plate-free outline line art so the popup's ink tint keeps
-   *  the strokes apart. The glyph carries no plate: the card CSS
-   *  filter-tints it to the popup's ink (dark on the light palette, white on
-   *  the dark one) — use `iconUrl` for ordinary colored art. */
-  markerUrl?: string;
   /** Identity line under the head ("日本 · 战列舰"). */
   subtitle?: string;
   /** Small flag image leading the subtitle line. */
@@ -145,7 +139,6 @@ export function hintCardFrom(parsed: unknown): HintCard | null {
   const card: HintCard = { title: o.title };
   if (typeof o.badge === "string" && o.badge.trim() !== "") card.badge = o.badge;
   if (typeof o.iconUrl === "string" && o.iconUrl.trim() !== "") card.iconUrl = o.iconUrl;
-  if (typeof o.markerUrl === "string" && o.markerUrl.trim() !== "") card.markerUrl = o.markerUrl;
   if (typeof o.subtitle === "string" && o.subtitle.trim() !== "") card.subtitle = o.subtitle;
   if (typeof o.subtitleFlagUrl === "string" && o.subtitleFlagUrl.trim() !== "") {
     card.subtitleFlagUrl = o.subtitleFlagUrl;
@@ -253,16 +246,6 @@ function renderCard(card: HintCard): HTMLElement {
 
   const head = document.createElement("div");
   head.className = "global-tooltip__card-head";
-  // A line-art HUD glyph, tinted to the popup's ink by CSS — no carrier
-  // plate behind it (see HintCard.markerUrl).
-  if (card.markerUrl) {
-    const marker = document.createElement("img");
-    marker.className = "global-tooltip__card-marker";
-    marker.src = card.markerUrl;
-    marker.alt = "";
-    marker.draggable = false;
-    head.appendChild(marker);
-  }
   if (card.iconUrl) {
     const icon = document.createElement("img");
     icon.className = "global-tooltip__card-icon";

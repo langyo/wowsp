@@ -193,10 +193,14 @@ describe("hintCardFrom briefing paragraph", () => {
     expect(hintCardFrom({ title: "潜艇", body: ["a"] })).toEqual({ title: "潜艇" });
   });
 
-  it("keeps the white-glyph marker channel apart from the plain icon", () => {
-    expect(
-      hintCardFrom({ title: "潜艇", markerUrl: "/m.webp", iconUrl: "/i.webp" }),
-    ).toEqual({ title: "潜艇", markerUrl: "/m.webp", iconUrl: "/i.webp" });
+  it("drops the retired tinted-marker channel; iconUrl survives", () => {
+    // 2026-11-03 icon unification: hint cards draw the rows' filled
+    // silhouette via iconUrl; a legacy card carrying only markerUrl
+    // degrades to its title.
+    expect(hintCardFrom({ title: "潜艇", markerUrl: "/m.webp", iconUrl: "/i.webp" })).toEqual({
+      title: "潜艇",
+      iconUrl: "/i.webp",
+    });
     expect(hintCardFrom({ title: "潜艇", markerUrl: "  " })).toEqual({ title: "潜艇" });
     expect(hintCardFrom({ title: "潜艇", markerUrl: 7 })).toEqual({ title: "潜艇" });
   });

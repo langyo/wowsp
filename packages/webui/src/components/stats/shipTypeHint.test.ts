@@ -27,18 +27,17 @@ describe("shipTypeHintCardOf", () => {
     expect(shipTypeHintCardOf("SS")?.title).toBe("潜艇");
   });
 
-  it("uses the neutral (right-facing) minimap marker as outline line art", () => {
+  it("uses the rows' filled silhouette (white variant) as the head glyph", () => {
     for (const code of ["BB", "CV", "CA", "CL", "CA/CL", "DD", "SS"]) {
-      const markerUrl = shipTypeHintCardOf(code)?.markerUrl ?? "";
-      expect(markerUrl).toMatch(/icon_outline_(battleship|aircarrier|cruiser|destroyer|submarine)\.svg$/);
+      const iconUrl = shipTypeHintCardOf(code)?.iconUrl ?? "";
+      expect(iconUrl).toMatch(/icon_white_(battleship|aircarrier|cruiser|destroyer|submarine)\.svg$/);
     }
-    expect(shipTypeHintCardOf("CA")?.markerUrl).toMatch(/icon_outline_cruiser\.svg$/);
-    expect(shipTypeHintCardOf("CL")?.markerUrl).toMatch(/icon_outline_cruiser\.svg$/);
-    expect(shipTypeHintCardOf("SS")?.markerUrl).toMatch(/icon_outline_submarine\.svg$/);
-    // The plate-free art must ride the marker channel (CSS-tinted ink), never
-    // the plain icon channel: tinting the plate-included white art would
-    // collapse the glyph into one solid silhouette at the card's 20 px.
-    expect(shipTypeHintCardOf("BB")?.iconUrl).toBeUndefined();
+    expect(shipTypeHintCardOf("CA")?.iconUrl).toMatch(/icon_white_cruiser\.svg$/);
+    expect(shipTypeHintCardOf("CL")?.iconUrl).toMatch(/icon_white_cruiser\.svg$/);
+    expect(shipTypeHintCardOf("SS")?.iconUrl).toMatch(/icon_white_submarine\.svg$/);
+    // The tinted outline-marker channel is gone (2026-11-03 unification):
+    // the card head draws the same filled art as the table rows, unfiltered.
+    expect("markerUrl" in (shipTypeHintCardOf("BB") ?? { title: "" })).toBe(false);
   });
 
   it("briefs the submarine as intro + itemized keys + a mechanics note", () => {
@@ -92,7 +91,7 @@ describe("shipTypeHintCardOf", () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.title).toBe("驱逐舰");
     expect(parsed!.body).toBe(shipTypeHintCardOf("DD")!.body);
-    expect(parsed!.markerUrl).toBe(shipTypeHintCardOf("DD")!.markerUrl);
+    expect(parsed!.iconUrl).toBe(shipTypeHintCardOf("DD")!.iconUrl);
     // The full SS card survives the round trip: keys list and note intact.
     const ss = hintCardFrom(JSON.parse(shipTypeHintCard("SS")!));
     expect(ss!.keys).toEqual(shipTypeHintCardOf("SS")!.keys);
