@@ -190,6 +190,7 @@
       "frameworkDataMissing": "Réinstallez un mod de la famille TTaro pour réparer les données du framework partagé.",
       "disabledByDependency": "Réinstallez un mod de la famille TTaro pour réparer les données du framework partagé."
     },
+    "locate": "Localiser le mod",
     "loadedOkSummary": "{count} mod(s) chargé(s) correctement"
   },
   "bootInstaller": {

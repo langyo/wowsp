@@ -190,6 +190,7 @@
       "frameworkDataMissing": "重新安装任一 TTaro 系列插件以修复共享框架数据。",
       "disabledByDependency": "重新安装任一 TTaro 系列插件以修复共享框架数据。"
     },
+    "locate": "定位插件",
     "loadedOkSummary": "{count} 个插件正常加载"
   },
   "bootInstaller": {

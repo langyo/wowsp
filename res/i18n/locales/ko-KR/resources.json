@@ -190,6 +190,7 @@
       "frameworkDataMissing": "TTaro 계열 모드를 하나 다시 설치해 공유 프레임워크 데이터를 복구하세요.",
       "disabledByDependency": "TTaro 계열 모드를 하나 다시 설치해 공유 프레임워크 데이터를 복구하세요."
     },
+    "locate": "모드 찾기",
     "loadedOkSummary": "{count}개 모드가 정상적으로 로드됨"
   },
   "bootInstaller": {

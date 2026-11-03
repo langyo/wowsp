@@ -390,6 +390,15 @@ export default defineComponent({
                             </span>
                             <span class="loader-health__row-hint">
                               {t(`resources.loaderHealth.hint.${v.kind}`)}
+                              <button
+                                type="button"
+                                class="loader-health__row-locate"
+                                onClick={() =>
+                                  hub.locateLoaderHealth(v.modName)
+                                }
+                              >
+                                {t("resources.loaderHealth.locate")}
+                              </button>
                             </span>
                           </div>
                         ))}
