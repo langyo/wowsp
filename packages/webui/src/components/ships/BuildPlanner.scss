@@ -765,41 +765,25 @@
   max-width: 100%;
 }
 
-/* Rich flag hover card — the game's dark tooltip look (name + flavor + one
-   line per modifier). Fixed-position so it escapes the modal's scroll
-   containers; pointer-events none keeps it from flickering on re-hover. */
+/* Rich flag hover card (name + flavor + one line per modifier). The card
+   rides hikari's HkPopover: the surface chrome, the fixed/teleported
+   placement that escapes the modal's scroll containers, the z-band, the
+   enter/leave motion (reduced-motion aware) and pointer events are all the
+   panel's — only the content styles ride here, on tokens. */
 .flag-card {
-  position: fixed;
-  /* Above the ship-detail modal (hikari modal band = 1000), below toasts. */
-  z-index: 1200;
   width: 250px;
-  padding: 0.5rem 0.65rem;
-  border: 1px solid rgb(255 255 255 / 18%);
-  border-radius: var(--radius-sm);
-  background: rgb(18 22 28 / 97%);
-  color: #e8eaed;
   font-size: var(--text-2xs);
   line-height: 1.45;
-  box-shadow: 0 6px 24px rgb(0 0 0 / 40%);
-  pointer-events: none;
-  // Fade in on show; the fade-out rides the transition below with the
-  // component holding the DOM through the 0.18s leave (delayed unmount).
-  animation: flag-card-in 0.16s ease-out;
-  transition: opacity 0.18s ease-in;
-
-  &--leave {
-    opacity: 0;
-  }
-
+  color: rgb(var(--color-text));
 
   &__name {
     font-weight: 700;
-    color: #fff;
+    color: rgb(var(--color-text));
     margin-bottom: 0.15rem;
   }
 
   &__flavor {
-    color: #cfd3d9;
+    color: rgb(var(--color-muted));
     font-style: italic;
     margin-bottom: 0.35rem;
   }
@@ -808,7 +792,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.1rem;
-    border-top: 1px solid rgb(255 255 255 / 12%);
+    border-top: 1px solid rgb(var(--color-border) / 40%);
     padding-top: 0.3rem;
   }
 
@@ -819,7 +803,7 @@
   }
 
   &__effect-label {
-    color: #aab0b8;
+    color: rgb(var(--color-muted));
   }
 
   &__effect-value {
@@ -828,31 +812,12 @@
     white-space: nowrap;
 
     &--good {
-      color: #6fd08c;
+      color: rgb(var(--color-success));
     }
 
     &--bad {
-      color: #e57373;
+      color: rgb(var(--color-error));
     }
-  }
-}
-
-@keyframes flag-card-in {
-  from {
-    opacity: 0;
-    transform: translateY(2px);
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .flag-card {
-    animation: none;
-    transition: none;
   }
 }
 

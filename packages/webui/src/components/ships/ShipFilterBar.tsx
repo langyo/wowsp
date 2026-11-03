@@ -8,8 +8,12 @@
  *
  * Interaction model:
  *   - Six filter categories — type / nation / tier / winrate / battles /
- *     mode — render as collapsed chips styled after the segmented
- *     button-group triggers.
+ *     mode — render as collapsed chips. The three PURE facets (type /
+ *     nation / mode) are hikari HkFilterChip outright — the facet member
+ *     of the filter family, upstreamed from this very component (chip
+ *     trigger + HkPillToggleGroup popup); the sort-carrying chips (tier /
+ *     winrate / battles) keep the bespoke chip + popover pair the
+ *     direction arrows and the 全部… sort cycle need.
  *   - Clicking a chip opens a popup hosting the category's control. Type,
  *     nation and mode are MULTI-SELECT: the chosen options OR together
  *     inside the category (categories still AND). Winrate and battles are
@@ -17,9 +21,9 @@
  *     thresholds that subsume each other (≥30 ∪ ≥100 = ≥30) only confuses;
  *     picking a bracket replaces the previous pick. The 正序/倒序 flag is
  *     SHARED by the whole category — a re-click of a picked option (or the
- *     popup's arrow toggle) flips every arrow in it at once. Ship types,
- *     nations and division modes are further special: pure filters with no
- *     direction at all, so re-clicking one of them simply deselects it.
+ *     popup's arrow toggle) flips every arrow in it at once. The pure
+ *     facets carry no direction at all: re-clicking a pick deselects it
+ *     and the pill group's all-pill clears the facet.
  *   - Tier is a RANGE, not a pick set: the popup hosts the shared
  *     TierRangeSelect dual-thumb slider (1–11 with ★ for superships — the
  *     same component the compare picker and the encyclopedia grid use).
@@ -28,20 +32,24 @@
  *     beside the 全部… pill flips that sort, and the 全部… pill itself runs
  *     the same three-click all-state cycle every other category has (with
  *     a corridor set it first resets the category).
- *   - The nation popup hosts its options as ONE capped horizontal strip
- *     (it never wraps or outruns the viewport): a hikari HkScrollContainer
- *     (axis horizontal, edge fades) panned by wheel or mouse drag (5px
- *     click/pan threshold, the pan's trailing click swallowed), touch pans
- *     natively; a hint line names the gesture. The phone sheet still wraps
- *     the track.
- *   - The 全部… option runs the all-state sort through a three-click cycle
- *     while nothing is picked: first click engages the "sort while
- *     unfiltered" mode in the category's canonical direction, the second
- *     flips it, the third switches it off entirely (the chip falls back to
- *     the gray state). With a concrete selection it resets the category to
- *     that same gray state. The direction arrow renders only while a sort
- *     is actually engaged. A chip that only sorts — sitting at 全部… —
- *     wears the intermediate --sort style.
+ *   - The pure facets' popups are HkFilterChip's own: the teleported
+ *     panel (sheet on phones) hosts HkPillToggleGroup — its ONE-LINE
+ *     pannable track (wheel / mouse drag / native touch, edge fades;
+ *     phones relax to a wrapping group) replaces the bespoke nation
+ *     scroll container, and the hint line rides hk-filter-chip-hint.
+ *     Those popovers carry hikari's own outside-click close
+ *     (closeOnBackdrop default), so the bar-level document close exempts
+ *     their panels.
+ *   - The sort categories' 全部… option runs the all-state sort through a
+ *     three-click cycle while nothing is picked: first click engages the
+ *     "sort while unfiltered" mode in the category's canonical direction,
+ *     the second flips it, the third switches it off entirely (the chip
+ *     falls back to the gray state). With a concrete selection it resets
+ *     the category to that same gray state. The direction arrow renders
+ *     only while a sort is actually engaged. A chip that only sorts —
+ *     sitting at 全部… — wears the intermediate --sort style. (The pure
+ *     facets lost this cycle with their HkFilterChip migration: their
+ *     all-pill is a plain clear.)
  *   - A category is a sort key while it has a concrete selection or an
  *     engaged 全部…-sort (pure categories — types/nations/modes — only
  *     via the latter, so their picks filter without reordering). Sort
@@ -60,7 +68,14 @@ import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } fro
 import type { PlayerShipStats } from "@/api";
 import { ArrowDown, ArrowUp, Search } from "@lucide/vue";
 
-import { HkPopover, HkScrollContainer, HkSearchInput, useBreakpoint } from "@celestia-island/hikari";
+import {
+  HkFilterChip,
+  HkPopover,
+  HkScrollContainer,
+  HkSearchInput,
+  useBreakpoint,
+  type HkPillToggleGroupOption,
+} from "@celestia-island/hikari";
 
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
@@ -79,7 +94,6 @@ import TierRangeSelect, {
   tierRangeText,
   type TierRange,
 } from "./TierRangeSelect";
-import { useOptionStrip } from "./optionStrip";
 import "./ShipFilterBar.scss";
 
 type CatKey = "type" | "nation" | "tier" | "winrate" | "battles" | "mode";
@@ -243,10 +257,12 @@ const SINGLE_CATS: readonly CatKey[] = ["winrate", "battles"];
 const isSingleSel = (key: OptCatKey) => SINGLE_CATS.includes(key);
 
 /** Pure-filter categories: multi-select picks with no sort direction — a
- *  re-click deselects, and only the 全部… option can engage a sort (by the
- *  category's canonical rank order). */
+ *  re-click deselects. These three are the facets MIGRATED onto hikari
+ *  HkFilterChip (its pill group's all-pill maps to the plain clear; the
+ *  bespoke 全部…-sort cycle stays with the sort categories only). */
+type PureCatKey = Extract<OptCatKey, "type" | "nation" | "mode">;
 const PURE_CATS: readonly CatKey[] = ["type", "nation", "mode"];
-const isPureCat = (key: OptCatKey) => PURE_CATS.includes(key);
+const isPureCat = (key: CatKey): key is PureCatKey => PURE_CATS.includes(key);
 
 /** Concrete option values of an option category in canonical (display)
  *  order — used to clamp stale multi-select storage down to the
@@ -391,6 +407,11 @@ export default defineComponent({
     /** The chip/filter/sort category order with this host's exclusions
      *  applied (static per instance — `exclude` never changes at runtime). */
     const order: CatKey[] = DEFAULT_ORDER.filter((k) => !props.exclude.includes(k));
+    // The right-most MIGRATED chip in this host's row — its popup opens
+    // leftwards (bottom-end) so it never leaves the strip (the bespoke
+    // popovers' rule; static per instance — `exclude` never changes).
+    const lastPureCat: PureCatKey | null =
+      [...order].reverse().find((k) => isPureCat(k)) ?? null;
     const encyclopedia = useEncyclopediaStore();
     // The root DPI zoom the indent measure converts against — see
     // measureChipIndent (`1` while the interface-scale preference is Auto).
@@ -577,6 +598,16 @@ export default defineComponent({
     function onDocPointerDown(e: PointerEvent) {
       const target = e.target as Node;
       if (chipsRow.value?.contains(target)) return;
+      // A press inside a teleported HkFilterChip panel (the migrated pure
+      // facets) is that popover's own business — it carries hikari's
+      // closeOnBackdrop shield (HkFilterChip keeps the default on);
+      // counting it here would kill the panel before a pill's click lands.
+      if (
+        target instanceof Element &&
+        target.closest(".hk-popover-panel")?.querySelector(".hk-filter-chip-body")
+      ) {
+        return;
+      }
       if (openPop.value != null && popPanelEls.get(openPop.value)?.contains(target)) return;
       if (searchOpen.value && searchPanelEl.value?.contains(target)) return;
       openPop.value = null;
@@ -688,6 +719,68 @@ export default defineComponent({
       ],
     }));
 
+    /** One pill's leading glyph: the nation flag badge / the ship-type
+     *  battle-HUD silhouette the bespoke popup buttons used to inline. */
+    function pillIcon(key: PureCatKey, value: string, label: string): unknown {
+      if (key === "nation") {
+        return <NationFlag nation={value} label={label} variant="flag" size="sm" />;
+      }
+      if (key === "type") {
+        return (
+          <img
+            class="ship-filter-bar__type-icon"
+            src={shipIconUrl(value, "white") ?? undefined}
+            alt=""
+            draggable={false}
+          />
+        );
+      }
+      return undefined;
+    }
+
+    /** A stale pick's display label — data-derived options can shrink under
+     *  a pick, and the chip must still name what it filters by. */
+    function staleOptionLabel(key: PureCatKey, value: string): string {
+      if (key === "nation") return nationOptionLabel(value);
+      if (key === "type") return t(`dashboard.shipType.${value}`, {}) || value;
+      const mode = MODE_FILTERS.find(([v]) => v === value);
+      return mode ? t(mode[1]) : value;
+    }
+
+    /** HkPillToggleGroup options for one migrated pure facet — the concrete
+     *  picks only (HkFilterChip renders its own leading all-pill from
+     *  allLabel), each carrying pillIcon's glyph. The glyphs are PREBUILT
+     *  vnodes on purpose — HkPillToggleGroup passes vnodes through
+     *  untouched, while a component OBJECT would be misread as one (its
+     *  icon normalization treats objects as vnodes). Built per render so
+     *  the vnodes are never reused across patches.
+     *
+     *  Stale picks ride along as appended pills: data-derived options can
+     *  shrink under a pick (nations derive from props.ships — a narrower
+     *  data slice may drop one), and HkFilterChip mirrors the chip label
+     *  from options ∩ selected only — a dropped pick would go INVISIBLE
+     *  (chip reads the all-label) while sel.values still filters the list
+     *  behind it. The appended pill keeps the state visible and lets the
+     *  pill itself deselect it. */
+    function pillOptions(key: PureCatKey): HkPillToggleGroupOption[] {
+      const concrete = catOptions.value[key]
+        .filter((o) => o.value !== "")
+        .map((o) => ({
+          value: o.value,
+          label: o.label,
+          icon: pillIcon(key, o.value, o.label),
+        }));
+      const known = new Set(concrete.map((o) => o.value));
+      const stale = sel.value[key].values
+        .filter((v) => v !== "" && !known.has(v))
+        .map((v) => ({
+          value: v,
+          label: staleOptionLabel(key, v),
+          icon: pillIcon(key, v, staleOptionLabel(key, v)),
+        }));
+      return [...concrete, ...stale];
+    }
+
     // ── Search hits (shipId → matched name) — fuzzy + multilingual ──
     const hitNames = computed(() => {
       const hits = new Map<number, string>();
@@ -774,6 +867,17 @@ export default defineComponent({
 
     const totalBattles = computed(() => filteredShips.value.reduce((a, s) => a + s.battles, 0));
 
+    /** The migrated pure facets' all-pill — the plain category clear: the
+     *  bespoke 全部… three-click all-sort cycle is a FilterCategoryChip-era
+     *  mechanic the thin HkFilterChip contract does not carry, so a pure
+     *  category now only ever filters. */
+    function clearCat(key: PureCatKey) {
+      const s = sel.value[key];
+      s.values = [];
+      s.allSort = false;
+      s.dir = DEFAULT_DIR[key];
+    }
+
     /** Click one option in an option-category popup. The 全部… option
      *  carries dual semantics: with a concrete selection it resets the whole
      *  category (filter AND all-state sort off, direction re-armed to
@@ -841,24 +945,6 @@ export default defineComponent({
       openPop.value = openPop.value === key ? null : key;
     }
 
-    // ── Nation option strip: a single pannable line ──
-    //    Fourteen flags cannot fit any sane popup width, and the old wrap
-    //    never engaged (HkPopover sizes its panel to max-content, so the
-    //    track always measured as ONE long line that ran off-screen). The
-    //    track is a hikari HkScrollContainer (axis horizontal + fade)
-    //    shared with every FilterCategoryChip popup: the library's
-    //    viewport scrolls and its data-h-overflow sensing drives the edge
-    //    fades, optionStrip normalizes the wheel (Firefox line mode) and
-    //    pans by mouse drag; touch pans natively. ──
-    const strip = useOptionStrip();
-    // A popover that closed before the pan's trailing click (window blur
-    // mid-drag — pointerup lost) must not carry the swallow flag into the
-    // reopened panel: the flag only ever eats the click of the pan that
-    // armed it, and that click can only land while the popup still stands.
-    watch(openPop, (key) => {
-      if (key !== "nation") strip.resetDragged();
-    });
-
     /** Popup explainer — five shapes: types/nations/modes are pure filters
      *  (re-click deselects; types get the dedicated wording, the others the
      *  generic multi-select hint), winrate/battles pick a single bracket,
@@ -874,15 +960,14 @@ export default defineComponent({
               ? t("ships.filter.hintSinglePop")
               : t("ships.filter.hintSortPop");
 
-    /** Chip tooltip — same split as the popup hint. */
+    /** Chip tooltip — the bespoke sort/tier chips only; the migrated pure
+     *  facets carry HkFilterChip's own native-title hint instead. */
     const chipTitle = (key: CatKey) =>
       key === "tier"
         ? t("ships.filter.hintTierChip")
-        : isPureCat(key)
-          ? t("ships.filter.hintTypeChip")
-          : isSingleSel(key)
-            ? t("ships.filter.hintSingleChip")
-            : t("ships.filter.hintSortChip");
+        : isSingleSel(key)
+          ? t("ships.filter.hintSingleChip")
+          : t("ships.filter.hintSortChip");
 
     const dirIcon = (dir: SortDir) =>
       dir === "desc" ? <ArrowDown size={11} class="ship-filter-bar__dir" /> : <ArrowUp size={11} class="ship-filter-bar__dir" />;
@@ -900,6 +985,30 @@ export default defineComponent({
             order is flex `order`'s job, not the markup's. */}
         <div class="ship-filter-bar__chips">
           {order.map((key) => {
+            // Migrated pure facets: hikari HkFilterChip — the chip trigger
+            // plus its own teleported pill-group popover (sheet on phones,
+            // hikari's outside-close shield). The wrapper div keeps the
+            // strip's anchor shape and the tests' data-chip handle.
+            if (isPureCat(key)) {
+              return (
+                <div key={key} class="ship-filter-bar__chip-anchor" data-chip={key}>
+                  <HkFilterChip
+                    label={t(CAT_DEFS[key].title)}
+                    allLabel={t(CAT_DEFS[key].allLabel)}
+                    options={pillOptions(key)}
+                    selected={new Set(sel.value[key].values)}
+                    open={openPop.value === key}
+                    placement={key === lastPureCat ? "bottom-end" : "bottom-start"}
+                    hint={popHint(key)}
+                    onUpdate:open={(v) => {
+                      openPop.value = v ? key : null;
+                    }}
+                    onToggle={(v) => clickOption(key, v)}
+                    onAll={() => clearCat(key)}
+                  />
+                </div>
+              );
+            }
             const def = key === "tier" ? TIER_DEF : CAT_DEFS[key];
             const optCur: CatSel | null = key === "tier" ? null : sel.value[key];
             const tierCur: TierSel | null = key === "tier" ? sel.value.tier : null;
@@ -911,7 +1020,11 @@ export default defineComponent({
             // Labels render in canonical option order (not click order) so a
             // ≥60% + 50–60% pick always reads "50–60%·≥60%"; the tier chip
             // reads its corridor ("VI – ★", "VIII") or falls back to 全部….
+            // (The migrated pure facets mirror their picks through
+            // HkFilterChip; this bespoke label only serves winrate/battles.)
             const byOrder = (a: string, b: string) => {
+              // The tier key never reaches the option branch — the corridor
+              // label wins in the ternary below — hence the OptCatKey cast.
               const opts = catOptions.value[key as OptCatKey];
               return (
                 opts.findIndex((o) => o.value === a) - opts.findIndex((o) => o.value === b)
@@ -922,16 +1035,7 @@ export default defineComponent({
                 ? tierRangeText(tierCur.lo, tierCur.hi)
                 : [...(optCur?.values ?? [])]
                     .sort(byOrder)
-                    .map(
-                      (v) =>
-                        catOptions.value[key as OptCatKey].find((o) => o.value === v)?.label ??
-                        // Stale picks can outlive their option rows (nation
-                        // options are data-derived, so a selected nation can
-                        // vanish from the current date range): resolve those
-                        // through the label chain so the chip still reads a
-                        // localized name instead of the raw code.
-                        (key === "nation" ? nationOptionLabel(v) : v),
-                    )
+                    .map((v) => catOptions.value[key as OptCatKey].find((o) => o.value === v)?.label ?? v)
                     .join("·")) || t(def.allLabel);
             return (
               <div key={key} class="ship-filter-bar__chip-anchor">
@@ -955,17 +1059,19 @@ export default defineComponent({
                   <span>{chipLabel}</span>
                   {isSortCat(key) ? dirIcon(curDir) : null}
                 </button>
-                {/* The popup teleports to body (HkPopover) — no overflow
-                    ancestor can clip it. On phones it docks as a bottom
-                    sheet (sheetOnMobile — hikari convention: phones never
-                    float anchored menus; the anchored desktop panel would
-                    clip at the screen edge and read translucent where the
-                    engine lacks backdrop-filter). The scrim + tap-outside
+                {/* The bespoke popover teleports to body (HkPopover) — no
+                    overflow ancestor can clip it. On phones it docks as a
+                    bottom sheet (sheetOnMobile — hikari convention: phones
+                    never float anchored menus; the anchored desktop panel
+                    would clip at the screen edge and read translucent where
+                    the engine lacks backdrop-filter). The scrim + tap-outside
                     close ride closeOnBackdrop on phones only: the sheet
                     branch renders its dismissal scrim from that prop, while
                     desktop keeps the bar-level pointerdown outside-close
                     with hikari's own listener off (chip re-click switching
-                    runs through onChipClick untouched either way). */}
+                    runs through onChipClick untouched either way). The
+                    migrated pure facets ride HkFilterChip's own popover,
+                    which keeps hikari's default outside-close on. */}
                 <HkPopover
                   modelValue={openPop.value === key}
                   onUpdate:modelValue={(v: boolean) => {
@@ -992,16 +1098,12 @@ export default defineComponent({
                       <span>{t(def.title)}</span>
                     </div>
                     {/* Category body: tier hosts the shared dual-thumb
-                        corridor slider plus its action row; the option
-                        categories keep the segmented track (multi-select for
-                        type/nation/mode, single for winrate/battles). The
-                        全部… pill carries the direction arrow only while its
-                        all-state sort is engaged; concrete pure categories
-                        (types/nations/modes) never show one. Nation options
-                        lead with their flag (NationFlag swaps to a letter
-                        badge when the asset is missing), and the nation
-                        track alone is a one-line pannable strip — wrapped
-                        only by the phone sheet (see the SCSS). */}
+                        corridor slider plus its action row; the two
+                        single-select categories keep the segmented track.
+                        The 全部… pill carries the direction arrow only
+                        while its all-state sort is engaged. (The pure
+                        facets left for HkFilterChip's pill group — their
+                        flags and type silhouettes ride its option icons.) */}
                     {key === "tier" ? (
                       <div class="ship-filter-bar__tier-pop">
                         <TierRangeSelect
@@ -1042,8 +1144,7 @@ export default defineComponent({
                     ) : (
                       (() => {
                         const cur = optCur!;
-                        const optKey = key as OptCatKey;
-                        const optButtons = catOptions.value[optKey].map((o) => {
+                        const optButtons = catOptions.value[key].map((o) => {
                           const isAll = o.value === "";
                           const on = isAll ? cur.values.length === 0 : cur.values.includes(o.value);
                           return (
@@ -1052,55 +1153,16 @@ export default defineComponent({
                               type="button"
                               class="ship-filter-bar__opt"
                               data-active={on || undefined}
-                              onClick={() => clickOption(optKey, o.value)}
+                              onClick={() => clickOption(key, o.value)}
                             >
-                              {optKey === "nation" && !isAll ? (
-                                <NationFlag nation={o.value} label={o.label} variant="flag" size="sm" />
-                              ) : null}
-                              {/* Type options lead with the game's white
-                                  battle-HUD silhouette (flipped to the
-                                  enemy row's rightward facing — the same
-                                  icon the PR trend popup's type row uses). */}
-                              {optKey === "type" && !isAll ? (
-                                <img
-                                  class="ship-filter-bar__type-icon"
-                                  src={shipIconUrl(o.value, "white") ?? undefined}
-                                  alt=""
-                                  draggable={false}
-                                />
-                              ) : null}
                               <span>{o.label}</span>
-                              {(isAll ? cur.allSort : on && !isPureCat(optKey)) ? dirIcon(cur.dir) : null}
+                              {(isAll ? cur.allSort : on) ? dirIcon(cur.dir) : null}
                             </button>
                           );
                         });
-                        // The nation track renders into the pannable strip
-                        // (a hikari HkScrollContainer, shared with every
-                        // FilterCategoryChip popup); every other category
-                        // keeps the plain wrapping track.
-                        return optKey === "nation" ? (
-                          <HkScrollContainer
-                            ref={strip.attach}
-                            class="ship-filter-bar__opts ship-filter-bar__opts--scroll"
-                            axis="horizontal"
-                            fade
-                            data-panning={strip.panning.value ? "" : undefined}
-                          >
-                            <div class="ship-filter-bar__opts-track">{optButtons}</div>
-                          </HkScrollContainer>
-                        ) : (
-                          <div class="ship-filter-bar__opts">{optButtons}</div>
-                        );
+                        return <div class="ship-filter-bar__opts">{optButtons}</div>;
                       })()
                     )}
-                    {/* The nation strip pans instead of wrapping — name the
-                        gesture. Hidden on the phone sheet, whose track wraps
-                        and has nothing to pan (SCSS). */}
-                    {key === "nation" ? (
-                      <div class="ship-filter-bar__pop-hint ship-filter-bar__scroll-hint">
-                        {t("ships.filter.nationScrollHint")}
-                      </div>
-                    ) : null}
                     <div class="ship-filter-bar__pop-hint">{popHint(key)}</div>
                   </div>
                 </HkPopover>

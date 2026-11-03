@@ -1,30 +1,37 @@
 /**
  * Tests for the chip-based ShipFilterBar interaction model (mixed
  *  multi/single select + the tier corridor slider):
- *  - six collapsed chips default to the inert grayed 全部… state; with
- *    nothing engaged the view keeps the historical battles-desc order;
+ *  - six collapsed chips default to the inert all state — the three PURE
+ *    facets (type/nation/mode) render hikari HkFilterChip triggers, the
+ *    sort categories keep the bespoke grayed 全部… chip; with nothing
+ *    engaged the view keeps the historical battles-desc order;
  *  - the popup hosts the category's control: type/nation/mode are
- *    multi-select (picks OR within the category), winrate/battles hold a
- *    SINGLE pick (a new bracket replaces the old one), and tier hosts the
- *    shared TierRangeSelect dual-thumb slider — the keyboard-driven tests
- *    below narrow its corridor through the teleported popup. Re-clicking
- *    a picked option (or the tier flip toggle) flips the category's SHARED
- *    正序/倒序 flag, and 全部… resets the category when a selection exists;
- *  - 全部… runs the all-state sort through a THREE-click cycle while
- *    nothing is picked: engage in the canonical direction (--sort style),
- *    flip, switch off entirely (the chip returns to the gray state) — and
- *    the direction arrow renders only while a sort is actually engaged;
- *  - concrete ship types and nations are pure filters: no arrows anywhere,
- *    re-clicking one deselects it, and only the 全部… option can make the
- *    category sort;
+ *    HkFilterChip pill groups (multi-select, picks OR within the
+ *    category, the leading all-pill clears the facet), winrate/battles
+ *    hold a SINGLE pick (a new bracket replaces the old one), and tier
+ *    hosts the shared TierRangeSelect dual-thumb slider — the
+ *    keyboard-driven tests below narrow its corridor through the
+ *    teleported popup. Re-clicking a picked option (or the tier flip
+ *    toggle) flips the sort categories' SHARED 正序/倒序 flag, and 全部…
+ *    resets the category when a selection exists;
+ *  - 全部… runs the all-state sort through a THREE-click cycle on the
+ *    sort categories while nothing is picked: engage in the canonical
+ *    direction (--sort style), flip, switch off entirely (the chip
+ *    returns to the gray state) — and the direction arrow renders only
+ *    while a sort is actually engaged;
+ *  - concrete ship types and nations are pure filters: no arrows
+ *    anywhere, re-clicking one deselects it, and the migrated facet's
+ *    all-pill only clears (the pure 全部…-sort cycle retired with the
+ *    HkFilterChip migration);
  *  - division modes (组队模式) filter on the per-ship mode breakdown the
- *    same pure multi-select way: every option — 单人/双人/三人/排位
+ *    same pure multi-select way: every pill — 单人/双人/三人/排位
  *    — keeps ships with battles > 0 in its bucket, picks OR together, and
  *    rows with NO breakdown (modes null) match nothing — they drop out
- *    while any mode option is selected and return when the category
- *    resets;
+ *    while any mode pill is picked and return when the facet clears; the
+ *    chip label mirrors the picks in canonical option order capped at
+ *    three + "+N";
  *  - nations are data-derived: only canonical nations PRESENT in the
- *    queried list get options (offline-DB spellings normalize onto the
+ *    queried list get pills (offline-DB spellings normalize onto the
  *    canonical codes), and event/rental ships with no canonical nation
  *    pass only while the selection is empty;
  *  - every other category's option group is RESIDENT: it never shrinks
@@ -39,14 +46,17 @@
  *  - stale multi-select storage of the now-single categories is clamped
  *    to one pick on load;
  *  - selections survive an unmount/remount cycle;
- *  - the nation popup alone renders its options as a pannable strip with
- *    a scroll hint (the other categories keep the plain track, and plain
- *    clicks still select), and the extracted pan helpers (wheel delta
- *    normalizer, 5px pan threshold) hold their contracts.
+ *  - the nation facet's pills ride hikari HkPillToggleGroup's own
+ *    one-line pannable strip with the facet hint line (the bespoke
+ *    scroll container and its gesture hint retired with the migration;
+ *    plain clicks still select), and the extracted pan helpers (wheel
+ *    delta normalizer, 5px pan threshold) hold their contracts.
  *
- * The option popups render through hikari HkPopover: their DOM teleports to
- * document.body (overflow ancestors can never clip them), so popup queries
- * scope to body and each open/close is polled to let the popover machine's
+ * The popups render through hikari HkPopover: the bespoke panels teleport
+ * to document.body as .ship-filter-bar__pop, the migrated pure facets'
+ * pill groups land in the same overlay root (.hk-popover-panel carrying
+ * HkFilterChip's .hk-filter-chip-body > .hk-pill-group) — all body-scoped
+ * queries, and each open/close is polled to let the popover machine's
  * timer-driven enter/leave settle.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
@@ -220,6 +230,40 @@ const activeOpts = (): DOMWrapper<HTMLElement>[] =>
     (el) => new DOMWrapper(el),
   );
 
+/** The migrated pure facets render hikari HkFilterChip: the chip trigger
+ *  (.hk-filter-chip — aria-expanded, the --on picked tint) sits inside the
+ *  [data-chip] anchor div, and its pill group teleports to the overlay root
+ *  (body scope) as a .hk-popover-panel body — pills carry aria-pressed and
+ *  the data-active tint, pill[0] is the all-pill. */
+const hkChip = (wrapper: ReturnType<typeof mountBar>, key: string) =>
+  wrapper.find(`[data-chip="${key}"] .hk-filter-chip`);
+const hkPillGroups = () => [
+  ...document.body.querySelectorAll<HTMLElement>(".hk-popover-panel .hk-pill-group"),
+];
+const hkPills = (): DOMWrapper<HTMLElement>[] =>
+  [
+    ...document.body.querySelectorAll<HTMLElement>(
+      ".hk-popover-panel .hk-pill-group .hk-pill-group-pill",
+    ),
+  ].map((el) => new DOMWrapper(el));
+const activeHkPills = (): DOMWrapper<HTMLElement>[] =>
+  [
+    ...document.body.querySelectorAll<HTMLElement>(
+      ".hk-popover-panel .hk-pill-group .hk-pill-group-pill[data-active]",
+    ),
+  ].map((el) => new DOMWrapper(el));
+
+/** Poll until exactly `count` HkFilterChip pill groups stand mounted in
+ *  body — the same settle-the-machine dance as waitPops (the migrated
+ *  facets' popovers run the identical HkPopover enter/leave timers). */
+async function waitHkPops(count: number) {
+  await flushPromises();
+  for (let i = 0; i < 100 && hkPillGroups().length !== count; i += 1) {
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(hkPillGroups().length).toBe(count);
+}
+
 /** Poll until exactly `count` popovers stand mounted in body — 1 means the
  *  opened panel is in AND any earlier panel has fully retired (the switch
  *  overlap would otherwise pollute the option queries). */
@@ -236,13 +280,25 @@ describe("ShipFilterBar chips", () => {
     localStorage.clear();
   });
 
-  it("renders six collapsed chips defaulting to the grayed 全部… state", async () => {
+  it("renders six collapsed chips defaulting to the inert all state", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    for (const key of ["type", "nation", "tier", "winrate", "battles", "mode"]) {
+    // The pure facets are hikari HkFilterChip triggers: closed, carrying
+    // the caret only — no picked tint, no direction arrow anywhere.
+    for (const key of ["type", "nation", "mode"]) {
+      const c = hkChip(wrapper, key);
+      expect(c.classes()).toContain("hk-filter-chip");
+      expect(c.classes()).not.toContain("hk-filter-chip--on");
+      expect(c.attributes("aria-haspopup")).toBe("dialog");
+      expect(c.attributes("aria-expanded")).toBe("false");
+      expect(c.find(".hk-filter-chip-caret").exists()).toBe(true);
+      expect(c.find(".ship-filter-bar__dir").exists()).toBe(false);
+      expect(c.find(".lucide-arrow-down").exists()).toBe(false);
+    }
+    // The sort categories keep the bespoke chips in the gray 全部… state.
+    for (const key of ["tier", "winrate", "battles"]) {
       expect(chip(wrapper, key).classes()).toContain("ship-filter-bar__chip--all");
-      // Nothing engaged → no direction arrow anywhere on the chips.
       expect(chip(wrapper, key).find(".ship-filter-bar__dir").exists()).toBe(false);
     }
     // Defaults keep the historical view: battles descending, stable ties.
@@ -450,47 +506,38 @@ describe("ShipFilterBar chips", () => {
     second.unmount();
   });
 
-  it("keeps ship types pure filters: no arrows, re-click deselects", async () => {
+  it("keeps ship types pure filters: no arrows, re-click deselects, the all-pill clears", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    await chip(wrapper, "type").trigger("click");
-    await waitPops(1);
-    // Option order: 全部舰种, Battleship, AirCarrier, Cruiser, Destroyer,
-    // Submarine — the full resident list, independent of the data.
-    expect(popOpts().length).toBe(6);
-    await popOpts()[1]!.trigger("click"); // Battleship
+    await hkChip(wrapper, "type").trigger("click");
+    await waitHkPops(1);
+    // Pill order: the all-pill first, then the full resident type list —
+    // independent of the data.
+    expect(hkPills().length).toBe(6);
+    await hkPills()[1]!.trigger("click"); // Battleship
     await flushPromises();
 
-    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--on");
+    expect(hkChip(wrapper, "type").classes()).toContain("hk-filter-chip--on");
     expect(order(wrapper)).toEqual([1, 2]); // filtered, battles-desc within
-    // No direction anywhere: not on the chip, not on the picked option.
-    expect(chip(wrapper, "type").find(".ship-filter-bar__dir").exists()).toBe(false);
-    expect(popOpts()[1]!.find(".ship-filter-bar__dir").exists()).toBe(false);
+    // No direction anywhere: not on the chip, not on the picked pill — and
+    // the pill reports itself pressed like a proper toggle set.
+    expect(hkChip(wrapper, "type").find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(hkChip(wrapper, "type").find(".lucide-arrow-down").exists()).toBe(false);
+    expect(hkPills()[1]!.attributes("aria-pressed")).toBe("true");
 
     // Re-clicking a type deselects it instead of flipping a direction.
-    await popOpts()[1]!.trigger("click");
+    await hkPills()[1]!.trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--all");
+    expect(hkChip(wrapper, "type").classes()).not.toContain("hk-filter-chip--on");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
 
-    // 全部舰种 is the only way to make the category sort: ascending first
-    // (no visible change here — BB happens to lead), then descending.
-    await popOpts()[0]!.trigger("click");
+    // The all-pill clears outright — the bespoke 全部… three-click all-sort
+    // cycle retired with the migration (a pure category only ever filters).
+    await hkPills()[0]!.trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--sort");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
-    await popOpts()[0]!.trigger("click");
-    await flushPromises();
-    expect(order(wrapper)).toEqual([4, 3, 5, 1, 2]); // DD → CA → BB
-
-    // The third 全部舰种 click switches the sort off entirely — the gray
-    // state and the historical battles-desc order return.
-    await popOpts()[0]!.trigger("click");
-    await flushPromises();
-    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--all");
-    expect(chip(wrapper, "type").find(".ship-filter-bar__dir").exists()).toBe(false);
-    expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
+    expect(activeHkPills().map((o) => o.text())).toEqual(["All types"]);
   });
 
   it("filters by nation (multi-select) with offline spellings normalized", async () => {
@@ -504,39 +551,39 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar(ships, meta);
     await flushPromises();
 
-    await chip(wrapper, "nation").trigger("click");
-    await waitPops(1);
-    // Options: 全部国家 + the five canonical nations PRESENT in the data,
+    await hkChip(wrapper, "nation").trigger("click");
+    await waitHkPops(1);
+    // Pills: the all-pill + the five canonical nations PRESENT in the data,
     // in tech-tree order (japan, usa, ussr, germany, uk) — the offline
-    // spellings normalized, "events" gets no option of its own.
-    expect(popOpts().length).toBe(6);
-    // Concrete options lead with the flag badge (letter fallback in the
+    // spellings normalized, "events" gets no pill of its own.
+    expect(hkPills().length).toBe(6);
+    // Concrete pills lead with the flag badge (letter fallback in the
     // test env — the wrapper span is what matters).
-    expect(popOpts()[1]!.find(".nation-flag").exists()).toBe(true);
+    expect(hkPills()[1]!.find(".nation-flag").exists()).toBe(true);
 
     // Japan (id 1) — pure filter, no direction arrow anywhere.
-    await popOpts()[1]!.trigger("click");
+    await hkPills()[1]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([1]);
-    expect(chip(wrapper, "nation").find(".ship-filter-bar__dir").exists()).toBe(false);
-    expect(chip(wrapper, "nation").classes()).toContain("ship-filter-bar__chip--on");
+    expect(hkChip(wrapper, "nation").find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(hkChip(wrapper, "nation").classes()).toContain("hk-filter-chip--on");
 
     // Multi-select ORs: + germany (id 4, the 10-battle DD).
-    await popOpts()[4]!.trigger("click");
+    await hkPills()[4]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([1, 4]);
 
     // Re-clicking a picked nation deselects it (pure filter, like types).
-    await popOpts()[1]!.trigger("click");
+    await hkPills()[1]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([4]);
 
-    // 全部国家 resets the set — every ship returns, the event curio
+    // The all-pill resets the set — every ship returns, the event curio
     // included (it passes only while the selection is empty).
-    await popOpts()[0]!.trigger("click");
+    await hkPills()[0]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4, 6]);
-    expect(chip(wrapper, "nation").classes()).toContain("ship-filter-bar__chip--all");
+    expect(hkChip(wrapper, "nation").classes()).not.toContain("hk-filter-chip--on");
   });
 
   it("derives the nation options from the queried data only", async () => {
@@ -546,9 +593,42 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar(ships, META);
     await flushPromises();
 
-    await chip(wrapper, "nation").trigger("click");
-    await waitPops(1);
-    expect(popOpts().length).toBe(4); // 全部 + japan + usa + germany
+    await hkChip(wrapper, "nation").trigger("click");
+    await waitHkPops(1);
+    expect(hkPills().length).toBe(4); // all + japan + usa + germany
+  });
+
+  it("keeps a stale data-derived nation pick visible and deselectable", async () => {
+    // Pick japan, then narrow the queried data until japan has no ships —
+    // the nation options are data-derived, so the pick goes stale. It must
+    // NOT silently filter behind an all-labelled chip: the chip keeps
+    // mirroring the resolved label and an appended pressed pill carries
+    // the deselect (the type facet's options are resident, so only nations
+    // can go stale).
+    const wrapper = mountBar();
+    await flushPromises();
+
+    await hkChip(wrapper, "nation").trigger("click");
+    await waitHkPops(1);
+    await hkPills()[1]!.trigger("click"); // japan
+    await flushPromises();
+    expect(hkChip(wrapper, "nation").classes()).toContain("hk-filter-chip--on");
+
+    // The data slice loses japan (ship 1 was its only ship).
+    await wrapper.setProps({ ships: SHIPS.filter((s) => s.shipId !== 1) });
+    await flushPromises();
+
+    // The chip still names the pick and the popup still offers it —
+    // appended after the concrete pills, wearing the pressed tint.
+    expect(hkChip(wrapper, "nation").text()).toContain("Japan");
+    const pillsNow = hkPills();
+    const stale = pillsNow[pillsNow.length - 1]!;
+    expect(stale.attributes("aria-pressed")).toBe("true");
+
+    // The stale pill deselects like any other.
+    await stale.trigger("click");
+    await flushPromises();
+    expect(hkChip(wrapper, "nation").classes()).not.toContain("hk-filter-chip--on");
   });
 
   it("keeps every type option resident when the queried data lacks the type", async () => {
@@ -558,26 +638,26 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar(SHIPS.filter((s) => s.shipId !== 4));
     await flushPromises();
 
-    await chip(wrapper, "type").trigger("click");
-    await waitPops(1);
-    // All five concrete types remain listed (plus 全部舰种), Destroyer
+    await hkChip(wrapper, "type").trigger("click");
+    await waitHkPops(1);
+    // All five concrete types remain listed (plus the all-pill), Destroyer
     // included, even though the data holds no destroyer.
-    expect(popOpts().length).toBe(6);
+    expect(hkPills().length).toBe(6);
 
-    await popOpts()[4]!.trigger("click"); // Destroyer
+    await hkPills()[4]!.trigger("click"); // Destroyer
     await flushPromises();
     // The filter applies normally and yields the empty result…
     expect(lastState(wrapper).ships).toEqual([]);
-    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--on");
-    // …while the chip keeps its resolved label and the pick stays active
-    // and re-clickable in the popup (no degradation, no dead state).
-    expect(chip(wrapper, "type").text()).toContain("Destroyer");
-    expect(activeOpts().map((o) => o.text())).toEqual(["Destroyer"]);
+    expect(hkChip(wrapper, "type").classes()).toContain("hk-filter-chip--on");
+    // …while the chip keeps its label and the pick stays active and
+    // re-clickable in the popup (no degradation, no dead state).
+    expect(hkChip(wrapper, "type").text()).toContain("Destroyer");
+    expect(activeHkPills().map((o) => o.text())).toEqual(["Destroyer"]);
 
-    // Re-click the still-listed Destroyer option → deselect → list returns.
-    await popOpts()[4]!.trigger("click");
+    // Re-click the still-listed Destroyer pill → deselect → list returns.
+    await hkPills()[4]!.trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "type").classes()).toContain("ship-filter-bar__chip--all");
+    expect(hkChip(wrapper, "type").classes()).not.toContain("hk-filter-chip--on");
     expect(order(wrapper)).toEqual([1, 2, 3, 5]);
   });
 
@@ -588,9 +668,9 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    await chip(wrapper, "type").trigger("click");
-    await waitPops(1);
-    await popOpts()[4]!.trigger("click"); // Destroyer → id 4 only
+    await hkChip(wrapper, "type").trigger("click");
+    await waitHkPops(1);
+    await hkPills()[4]!.trigger("click"); // Destroyer → id 4 only
     await flushPromises();
     expect(order(wrapper)).toEqual([4]);
 
@@ -598,17 +678,17 @@ describe("ShipFilterBar chips", () => {
     await wrapper.setProps({ ships: SHIPS.filter((s) => s.shipId !== 4) });
     await flushPromises();
     expect(lastState(wrapper).ships).toEqual([]);
-    expect(chip(wrapper, "type").text()).toContain("Destroyer");
+    expect(hkChip(wrapper, "type").text()).toContain("Destroyer");
 
     // Reopening the popup still shows the full resident group; deselect
     // recovers the range's ships. (The popup stayed open through the swap,
     // so the first chip click closes it and the second reopens.)
-    await chip(wrapper, "type").trigger("click");
-    await waitPops(0);
-    await chip(wrapper, "type").trigger("click");
-    await waitPops(1);
-    expect(popOpts().length).toBe(6);
-    await popOpts()[4]!.trigger("click");
+    await hkChip(wrapper, "type").trigger("click");
+    await waitHkPops(0);
+    await hkChip(wrapper, "type").trigger("click");
+    await waitHkPops(1);
+    expect(hkPills().length).toBe(6);
+    await hkPills()[4]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([1, 2, 3, 5]);
   });
@@ -780,96 +860,108 @@ describe("ShipFilterBar chips", () => {
     // Unfiltered: the no-breakdown row is just another ship, battles-desc.
     expect(order(wrapper)).toEqual([2, 1, 3, 5, 4]);
 
-    await chip(wrapper, "mode").trigger("click");
-    await waitPops(1);
-    // Resident option group: 全部组队模式 + 单人 + 双人 + 三人 + 排位.
-    expect(popOpts().length).toBe(5);
+    await hkChip(wrapper, "mode").trigger("click");
+    await waitHkPops(1);
+    // Resident pill group: the all-pill + 单人 + 双人 + 三人 + 排位.
+    expect(hkPills().length).toBe(5);
 
-    // 单人: every ship WITH solo battles — the trio-only ship (no solo
-    // battles at all) and the no-breakdown row are excluded.
-    await popOpts()[1]!.trigger("click");
+    // 单人 (Solo): every ship WITH solo battles — the trio-only ship (no
+    // solo battles at all) and the no-breakdown row are excluded.
+    await hkPills()[1]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 1, 4]);
-    expect(chip(wrapper, "mode").classes()).toContain("ship-filter-bar__chip--on");
-    // Pure category: no direction arrow on the chip or the picked option.
-    expect(chip(wrapper, "mode").find(".ship-filter-bar__dir").exists()).toBe(false);
-    expect(popOpts()[1]!.find(".ship-filter-bar__dir").exists()).toBe(false);
-    expect(chip(wrapper, "mode").text()).toContain("Solo");
+    expect(hkChip(wrapper, "mode").classes()).toContain("hk-filter-chip--on");
+    // Pure category: no direction arrow on the chip or the picked pill.
+    expect(hkChip(wrapper, "mode").find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(hkPills()[1]!.find(".ship-filter-bar__dir").exists()).toBe(false);
+    expect(hkChip(wrapper, "mode").text()).toContain("Solo");
 
     // Re-clicking a picked mode deselects it (pure filter, like types).
-    await popOpts()[1]!.trigger("click");
+    await hkPills()[1]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 1, 3, 5, 4]);
 
     // Multi-select ORs: 双人 then +三人 keeps ships played in either
     // division size (battles-desc within the pick — pure picks never
-    // reorder).
-    await popOpts()[2]!.trigger("click");
+    // reorder); the chip mirrors the picks in canonical option order.
+    await hkPills()[2]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2]);
-    await popOpts()[3]!.trigger("click");
+    await hkPills()[3]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 3]);
-    expect(chip(wrapper, "mode").text()).toContain("Duo");
-    expect(chip(wrapper, "mode").text()).toContain("Trio");
+    expect(hkChip(wrapper, "mode").text()).toContain("Duo");
+    expect(hkChip(wrapper, "mode").text()).toContain("Trio");
 
     // 排位 adds id 4 (its ranked battles qualify it; its solo battles
-    // are irrelevant to the ranked pick).
-    await popOpts()[4]!.trigger("click");
+    // are irrelevant to the ranked pick) — three picks still fit the chip.
+    await hkPills()[4]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 3, 4]);
+    expect(hkChip(wrapper, "mode").text()).toContain("Duo, Trio, Ranked");
 
-    // 全部组队模式 resets the set — every ship returns, the breakdown-less
-    // row included (it drops out only while a mode option is picked).
-    await popOpts()[0]!.trigger("click");
+    // The fourth pick trips HkFilterChip's label cap: three labels + "+N".
+    await hkPills()[1]!.trigger("click");
+    await flushPromises();
+    expect(order(wrapper)).toEqual([2, 1, 3, 4]); // battles-desc within the pick
+    expect(hkChip(wrapper, "mode").text()).toContain("Solo, Duo, Trio +1");
+
+    // The all-pill resets the set — every ship returns, the breakdown-less
+    // row included (it drops out only while a mode pill is picked).
+    await hkPills()[0]!.trigger("click");
     await flushPromises();
     expect(order(wrapper)).toEqual([2, 1, 3, 5, 4]);
-    expect(chip(wrapper, "mode").classes()).toContain("ship-filter-bar__chip--all");
+    expect(hkChip(wrapper, "mode").classes()).not.toContain("hk-filter-chip--on");
   });
 
   it("keeps a mode selection across an unmount/remount cycle", async () => {
     const first = mountBar(MODE_SHIPS, META);
     await flushPromises();
-    await chip(first, "mode").trigger("click");
-    await waitPops(1);
-    await popOpts()[2]!.trigger("click"); // 双人
+    await hkChip(first, "mode").trigger("click");
+    await waitHkPops(1);
+    await hkPills()[2]!.trigger("click"); // 双人
     await flushPromises();
     expect(order(first)).toEqual([2]);
     first.unmount();
 
     const second = mountBar(MODE_SHIPS, META);
     await flushPromises();
-    expect(chip(second, "mode").classes()).toContain("ship-filter-bar__chip--on");
+    expect(hkChip(second, "mode").classes()).toContain("hk-filter-chip--on");
     expect(order(second)).toEqual([2]);
     second.unmount();
   });
 
-  it("renders the nation popup alone as a pannable strip with a scroll hint", async () => {
+  it("renders the nation popup as hikari's own pannable pill strip with the hint line", async () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    await chip(wrapper, "nation").trigger("click");
-    await waitPops(1);
-    // Nation track: the strip modifier plus the gesture hint line beneath
-    // it (the popup itself is width-capped in CSS — not observable here).
-    expect(document.body.querySelector(".ship-filter-bar__opts--scroll")).not.toBeNull();
-    const hint = document.body.querySelector(".ship-filter-bar__scroll-hint");
+    await hkChip(wrapper, "nation").trigger("click");
+    await waitHkPops(1);
+    // The migrated facet's track IS hikari HkPillToggleGroup's one-line
+    // pannable strip (wheel / drag / touch + edge fades) — no bespoke
+    // scroll container, no gesture-hint line anymore; the facet hint
+    // rides HkFilterChip's own hint element.
+    expect(document.body.querySelector(".hk-popover-panel .hk-pill-group")).not.toBeNull();
+    const hint = document.body.querySelector(".hk-filter-chip-hint");
     expect(hint).not.toBeNull();
     expect(hint!.textContent).not.toBe("");
-
-    // Another category keeps the plain track: no strip class, no hint.
-    await chip(wrapper, "tier").trigger("click");
-    await waitPops(1);
     expect(document.body.querySelector(".ship-filter-bar__opts--scroll")).toBeNull();
     expect(document.body.querySelector(".ship-filter-bar__scroll-hint")).toBeNull();
 
+    // A bespoke category keeps its own panel: no pill group, no facet hint.
+    await chip(wrapper, "tier").trigger("click");
+    await waitPops(1);
+    await waitHkPops(0);
+    expect(document.body.querySelector(".hk-pill-group")).toBeNull();
+    expect(document.body.querySelector(".hk-filter-chip-hint")).toBeNull();
+
     // Back to the nation strip: a plain click (no pan movement) still
     // selects — the pan machinery never swallows threshold-free clicks.
-    await chip(wrapper, "nation").trigger("click");
-    await waitPops(1);
-    await popOpts()[1]!.trigger("click"); // japan
+    await hkChip(wrapper, "nation").trigger("click");
+    await waitHkPops(1);
+    await hkPills()[1]!.trigger("click"); // japan
     await flushPromises();
-    expect(chip(wrapper, "nation").classes()).toContain("ship-filter-bar__chip--on");
+    expect(hkChip(wrapper, "nation").classes()).toContain("hk-filter-chip--on");
   });
 });
 

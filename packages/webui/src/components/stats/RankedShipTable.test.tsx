@@ -184,22 +184,26 @@ const rows = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   );
 const bracketBtns = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   wrapper.findAll(".ranked-ships__bracket");
+// The pure facets (type/nation/mode) render hikari HkFilterChip inside the
+// [data-chip] anchor; the sort/tier chips keep the bespoke class — the
+// anchor is the one handle common to both, so enumerate it.
 const chips = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
-  Array.from(wrapper.findAll(".ship-filter-bar__chip")).map((c) => c.attributes("data-chip"));
+  Array.from(wrapper.findAll("[data-chip]")).map((c) => c.attributes("data-chip"));
 const badges = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   Array.from(wrapper.findAll(".ranked-ships__ship-type")).map((b) => b.text());
 
-/** The filter popups teleport to body (HkPopover) — poll for the machine's
- *  timer-driven enter to settle. */
+/** The migrated pure facets' pill groups teleport to body (HkPopover) —
+ *  poll for the machine's timer-driven enter to settle. */
 async function waitPop() {
   for (let i = 0; i < 40; i++) {
-    if (document.body.querySelector(".ship-filter-bar__pop")) return;
+    if (document.body.querySelector(".hk-popover-panel .hk-pill-group")) return;
     await new Promise((r) => setTimeout(r, 10));
   }
 }
+/** The mode facet's pill group (HkPillToggleGroup): pill[0] is the all-pill. */
 const popOpts = () =>
   Array.from(
-    document.body.querySelectorAll<HTMLElement>(".ship-filter-bar__pop .ship-filter-bar__opt"),
+    document.body.querySelectorAll<HTMLElement>(".hk-popover-panel .hk-pill-group-pill"),
   ).map((el) => new DOMWrapper(el));
 
 describe("RankedShipTable", () => {
@@ -262,10 +266,10 @@ describe("RankedShipTable", () => {
     // Open the 组队模式 popup and pick 双人 (div2). Only Yamato's row
     // carries a div2 split — a season slice without the splits would
     // empty the table here instead.
-    await wrapper.find('[data-chip="mode"]').trigger("click");
+    await wrapper.find('[data-chip="mode"] .hk-filter-chip').trigger("click");
     await waitPop();
     const opts = popOpts();
-    // Option order: 全部…, 单人, 双人, 三人, 排位.
+    // Pill order: the all-pill, then 单人, 双人, 三人, 排位.
     await opts[2]!.trigger("click");
     await flushPromises();
     expect(rows(wrapper)).toEqual(["Yamato"]);

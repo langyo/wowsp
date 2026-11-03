@@ -59,6 +59,10 @@ const HEADING_PROPS = new Set([
   "HkMenu",
   "HkModal",
   "HkPopover",
+  // HkSelectPanel: the select-family panel surface's title is the phone
+  // sheet's heading band + the popout's a11y name (the ShipStage airframe
+  // picker's custom-trigger panel), never a native tooltip attribute.
+  "HkSelectPanel",
   "HkSettingsGroup",
   "HkSettingsSub",
   "HkTitleBar",

@@ -300,11 +300,6 @@
      pill language as the rest of the control row — the trigger shows the
      staged model (plus its base/variant tag), the menu lists the hull first
      and then every baked airframe under its combat-role heading. */
-  &__model-pick {
-    position: relative;
-    display: inline-flex;
-  }
-
   &__model-pick-btn {
     display: inline-flex;
     align-items: center;
@@ -342,32 +337,19 @@
     white-space: nowrap;
   }
 
-  /* Dropdown list: hikari's scroll container owns the scrollbar (overlay
-     thumb on the menu's right edge; the native bar stays hidden). max-content
-     lets a long designation claim room past the trigger, the 280px cap keeps
-     the panel compact, and the 250px height cap scrolls taller menus INSIDE
-     the panel. The stage clips at its own rounded overflow and the control
-     row sits 0.6rem down, leaving ~277px below the trigger on a 322px stage:
-     a three-role carrier menu (~246px) fits with room to spare, while the
-     8-row / four-plus-role ones (~290px) would lose their last rows under
-     the stage edge unless the cap makes them scroll. */
+  /* Dropdown list content: the chrome, the anchored placement, the viewport
+     flip and the scroll surface are HkSelectPanel's (the custom-trigger
+     panel behind HkSelect, teleported to the overlay root — the stage's
+     rounded overflow can no longer clip the menu, so no absolute position,
+     z-index, surface paint or enter keyframe live here anymore). Only the
+     content width rides here: max-content lets a long designation claim
+     room past the trigger and the 280px cap keeps the panel compact, while
+     the panel's maxHeight keeps the 250px height cap scrolling taller menus
+     INSIDE the panel. */
   &__model-pick-menu {
-    position: absolute;
-    top: calc(100% + 4px);
-    right: 0;
-    z-index: 3;
     width: max-content;
-    min-width: 100%;
+    min-width: 12rem;
     max-width: 280px;
-    max-height: 250px;
-    border-radius: var(--radius-md);
-    background: rgb(var(--color-surface));
-    @supports (background: rgb(0 0 0 / calc(1% + 0% * var(--ui-opacity, 1)))) {
-      background: rgb(var(--color-surface) / min(100%, calc(92% + 8% * var(--ui-opacity, 1))));
-    }
-    border: 1px solid rgb(var(--color-border) / 30%);
-    box-shadow: 0 6px 18px rgb(0 0 0 / 30%);
-    animation: ship-stage-pop-in 0.16s ease;
   }
 
   &__model-pick-menu-inner {

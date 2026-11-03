@@ -4,14 +4,13 @@ import {
   h,
   onScopeDispose,
   ref,
-  Teleport,
   watch,
   type Component,
   type PropType,
 } from "vue";
 import { AlertTriangle, Ban, Coins, Lock, RotateCcw, Wrench, X } from "@lucide/vue";
 
-import { HkButton, HkTabs } from "@celestia-island/hikari";
+import { HkButton, HkPopover, HkTabs } from "@celestia-island/hikari";
 import { i18n, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import type { HintTag } from "@/composables/globalTooltip";
@@ -22,7 +21,6 @@ import { resolveNationFlag } from "@/utils/nationFlags";
 import { tierToRoman } from "@wowsp/holo";
 import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import NationFlag from "@/components/base/NationFlag";
 import type { ShipInfo } from "@/api";
 import {
@@ -560,81 +558,51 @@ export default defineComponent({
 
     // ── Flag hover card (game-style rich tooltip) ──────────────────────────
     // data-hint is text-only, so the name + flavor + per-modifier breakdown
-    // rides a custom fixed card anchored under the hovered tile.
-    const flagTip = ref<{ sig: SignalEntry; cx: number; bottom: number } | null>(null);
-    const flagTipEl = ref<HTMLElement | null>(null);
-    const flagTipPos = ref<Record<string, string>>({ left: "0px", top: "0px", visibility: "hidden" });
-    // The card teleports to <body> — inside the root DPI zoom's subtree —
-    // so its written left/top paint in the zoomed local space while gBCR
-    // and window.innerWidth/innerHeight answer in root-visual px: every
-    // measured value is divided by the applied scale first, or the card
-    // drifts scale× off its tile (the hint family's zoom notes).
-    const dpiScale = useAppliedDpiScale();
-    // Faded hover card: the DOM stays through a short leave transition
-    // (delayed unmount) instead of snapping; `mounted` drives the leave
-    // class while `flagTip` keeps serving the frozen content.
-    const flagTipMounted = ref(false);
+    // rides a rich hover card anchored under the hovered tile. HkPopover
+    // (hover composition — no built-in hover trigger) owns the anchored
+    // placement (viewport flip, the root DPI zoom's local space), the
+    // overlay-root teleport that escapes the modal's transform/overflow,
+    // the z-band and reduced motion; the panel's whole-surface mouse
+    // enter/leave emits carry the pointer INTO the card, and this side
+    // keeps only the short grace timer across that gap. One caveat stays
+    // host-side: HkPopover repositions on window RESIZE and on the anchor's
+    // own box changes, but NOT on an ancestor's scroll — the ship-detail
+    // modal body scrolls, so a wheel there would leave the panel floating
+    // off its tile (with the pointer parked on the panel, the grace would
+    // never fire). The capture-phase scroll hide from the hand-rolled card
+    // therefore stays: any scroll retracts the card immediately.
+    const FLAG_TIP_GRACE_MS = 180;
+    const flagTip = ref<{ sig: SignalEntry; el: HTMLElement } | null>(null);
     let flagTipHideTimer: number | undefined;
 
-    function hideFlagTip(): void {
-      window.removeEventListener("scroll", hideFlagTip, true);
+    function cancelFlagTipClose(): void {
       if (flagTipHideTimer !== undefined) {
         window.clearTimeout(flagTipHideTimer);
         flagTipHideTimer = undefined;
       }
-      if (!flagTipMounted.value) {
-        flagTip.value = null;
-        return;
-      }
-      flagTipMounted.value = false;
+    }
+    function showFlagTip(sig: SignalEntry, el: HTMLElement): void {
+      cancelFlagTipClose();
+      flagTip.value = { sig, el };
+      // Capture: the modal body scrolls, not the window (see the caveat).
+      window.addEventListener("scroll", hideFlagTip, true);
+    }
+    function hideFlagTipSoon(): void {
+      cancelFlagTipClose();
       flagTipHideTimer = window.setTimeout(() => {
         flagTipHideTimer = undefined;
         flagTip.value = null;
-      }, 180);
+      }, FLAG_TIP_GRACE_MS);
     }
-    function showFlagTip(sig: SignalEntry, el: HTMLElement): void {
-      if (flagTipHideTimer !== undefined) {
-        window.clearTimeout(flagTipHideTimer);
-        flagTipHideTimer = undefined;
-      }
-      const r = el.getBoundingClientRect();
-      // Into the card's zoomed local space (see the dpiScale note above).
-      const z = dpiScale.value;
-      flagTip.value = { sig, cx: (r.left + r.width / 2) / z, bottom: r.bottom / z };
-      flagTipMounted.value = true;
-      // Any scroll (capture: the modal body scrolls, not the window) moves a
-      // fixed card off its anchor — hide, same trade the global hint makes.
-      window.addEventListener("scroll", hideFlagTip, true);
+    function hideFlagTip(): void {
+      window.removeEventListener("scroll", hideFlagTip, true);
+      cancelFlagTipClose();
+      flagTip.value = null;
     }
-    // Measure the card after it mounts, then clamp into the viewport —
-    // flipped above the tile when there is no room below.
-    watch(
-      flagTip,
-      () => {
-        const el = flagTipEl.value;
-        const tip = flagTip.value;
-        if (!el || !tip) return;
-        const z = dpiScale.value;
-        // gBCR answers in visual px — the card's width/height divide into
-        // the same local space tip.cx/tip.bottom were converted to.
-        const card = el.getBoundingClientRect();
-        const cardW = card.width / z;
-        const cardH = card.height / z;
-        const m = 8;
-        const x = Math.max(m, Math.min(tip.cx - cardW / 2, window.innerWidth / z - cardW - m));
-        let y = tip.bottom + 8;
-        if (y + cardH > window.innerHeight / z - m) y = Math.max(m, tip.bottom - cardH - 8);
-        flagTipPos.value = { left: `${Math.round(x)}px`, top: `${Math.round(y)}px`, visibility: "visible" };
-      },
-      { flush: "post" },
-    );
     watch(section, hideFlagTip);
     onScopeDispose(() => {
       window.removeEventListener("scroll", hideFlagTip, true);
-      if (flagTipHideTimer !== undefined) {
-        window.clearTimeout(flagTipHideTimer);
-        flagTipHideTimer = undefined;
-      }
+      cancelFlagTipClose();
       flagTip.value = null;
     });
 
@@ -1176,9 +1144,9 @@ export default defineComponent({
             key={sig.index}
             onClick={() => toggleSignal(sig.index)}
             onMouseenter={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
-            onMouseleave={hideFlagTip}
+            onMouseleave={hideFlagTipSoon}
             onFocus={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
-            onBlur={hideFlagTip}
+            onBlur={hideFlagTipSoon}
           >
             {sig.tier != null ? (
               <span class="planner-v__flag-tier">{t(`ships.flags.tier${sig.tier}`)}</span>
@@ -1204,16 +1172,29 @@ export default defineComponent({
                 </div>
               ))
             : signals.map(tile)}
-          {tip ? (
-            /* Teleported to <body>: the ship-detail modal content carries a
-               transform, which would re-anchor a plain fixed card and its
-               overflow:hidden would clip it away entirely. */
-            <Teleport to="body">
-              <div
-                class={["flag-card", !flagTipMounted.value ? "flag-card--leave" : ""]}
-                ref={flagTipEl}
-                style={flagTipPos.value}
-              >
+          {/* The rich hover card rides hikari's HkPopover (hover
+              composition): the panel teleports to the overlay root — the
+              ship-detail modal content carries a transform that would
+              re-anchor a plain fixed card and its overflow:hidden would clip
+              it away entirely — and HkPopover owns placement, flip, the
+              zoom-space math and reduced motion. The card is enterable now:
+              the grace timer keeps it up while the pointer travels in. */}
+          <HkPopover
+            title={tip ? signalName(tip.sig) : ""}
+            modelValue={tip != null}
+            onUpdate:modelValue={(v: boolean) => {
+              if (!v) hideFlagTip();
+            }}
+            anchorRef={tip?.el ?? null}
+            placement="bottom"
+            offset={6}
+            backdrop={false}
+            closeOnBackdrop={false}
+            onMouseenter={cancelFlagTipClose}
+            onMouseleave={hideFlagTipSoon}
+          >
+            {tip ? (
+              <div class="flag-card">
                 <div class="flag-card__name">{signalName(tip.sig)}</div>
                 <div class="flag-card__flavor">{dataText(tip.sig.desc, "")}</div>
                 <div class="flag-card__effects">
@@ -1232,8 +1213,8 @@ export default defineComponent({
                   ))}
                 </div>
               </div>
-            </Teleport>
-          ) : null}
+            ) : null}
+          </HkPopover>
         </div>
       );
     }

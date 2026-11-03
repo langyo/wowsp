@@ -18,7 +18,7 @@
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
-import { defineComponent, h } from "vue";
+import { defineComponent, h, Teleport } from "vue";
 
 vi.mock("@/i18n", () => ({
   t: (key: string) => key,
@@ -95,7 +95,45 @@ vi.mock("@celestia-island/hikari", () => {
         return () => h("div", { class: "stub-" + name }, slots.default?.());
       },
     });
-  return { HkButton: stub("HkButton"), HkTabs: stub("HkTabs") };
+  return {
+    HkButton: stub("HkButton"),
+    HkTabs: stub("HkTabs"),
+    // Hover-popover stub mirroring the real surface's visible contract: the
+    // panel div teleports to body while open (the flag-card tests query it
+    // there, like the real overlay-root teleport).
+    HkPopover: defineComponent({
+      name: "HkPopover",
+      // Declare the full prop/emits surface the host passes so nothing
+      // falls through as extraneous attributes (the Vue warns would pollute
+      // the run); the stub renders only the open-gated panel body.
+      props: {
+        modelValue: { type: Boolean, default: false },
+        anchorRef: { type: Object, default: null },
+        placement: { type: String, default: "bottom" },
+        offset: { type: Number, default: 4 },
+        backdrop: { type: Boolean, default: true },
+        closeOnBackdrop: { type: Boolean, default: true },
+        title: { type: String, default: "" },
+        onMouseenter: { type: Function, default: undefined },
+        onMouseleave: { type: Function, default: undefined },
+      },
+      emits: ["update:modelValue"],
+      setup(props, { slots }) {
+        return () =>
+          props.modelValue
+            ? h(
+                Teleport,
+                { to: "body" },
+                {
+                  default: () => [
+                    h("div", { class: "hk-popover-panel" }, slots.default?.()),
+                  ],
+                },
+              )
+            : null;
+      },
+    }),
+  };
 });
 vi.mock("@/components/base/AssetImage", () => ({
   AssetImage: defineComponent({
@@ -116,7 +154,6 @@ vi.mock("./DataObserver", () => ({
 import BuildPlanner from "./BuildPlanner";
 import { emptyBuild } from "./modifierPipeline";
 import type { ShipInfo } from "@/api";
-import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
 
 enableAutoUnmount(afterEach);
 
@@ -209,50 +246,51 @@ describe("BuildPlanner 装备选择 panel", () => {
   });
 });
 
-describe("BuildPlanner flag hover card (root-zoom placement)", () => {
-  it("places the flag card in the root zoom's local space", async () => {
-    // 125% interface scale: the tile's rect answers in visual px while the
-    // teleported card's written left/top paint ×scale — unconverted, the
-    // card drifted scale× off its tile (the hint family's zoom report).
-    document.documentElement.dataset.dpiScale = "125";
-    resetAppliedDpiScaleForTest();
-    // happy-dom measures every box 0×0 — stub the tile AND the card to one
-    // 120×20 box at (10, 10). The card's measured width (120/1.25 = 96
-    // local) clamps the centered x onto the 8px edge margin.
-    const spy = vi
-      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
-      .mockReturnValue({
-        width: 120,
-        height: 20,
-        top: 10,
-        left: 10,
-        right: 130,
-        bottom: 30,
-        x: 10,
-        y: 10,
-        toJSON: () => ({}),
-      } as DOMRect);
-    try {
-      const wrapper = mount(BuildPlanner, {
-        props: { ship: minsk(), build: emptyBuild(), initialSection: "flags" },
-      });
-      const tile = wrapper.find(".planner-v__flag");
-      expect(tile.exists()).toBe(true);
-      await tile.trigger("mouseenter");
-      await flushPromises();
-
-      const card = document.body.querySelector<HTMLElement>(".flag-card");
-      expect(card).not.toBeNull();
-      // Tile center (10 + 60) visual / 1.25 → 56 local, minus half the
-      // card width (48) lands exactly on the 8px edge margin; bottom
-      // 30 / 1.25 = 24 plus the 8px hang-below gap → 32.
-      expect(card?.style.left).toBe("8px");
-      expect(card?.style.top).toBe("32px");
-    } finally {
-      spy.mockRestore();
-      delete document.documentElement.dataset.dpiScale;
-      document.documentElement.style.removeProperty("zoom");
-      resetAppliedDpiScaleForTest();
+describe("BuildPlanner flag hover card (HkPopover hover)", () => {
+  /** Poll until the teleported flag card is (not) present — placement,
+   *  viewport flip and the root DPI zoom's local space are HkPopover's
+   *  business (hikari's own anchored/rootzoom suites), so only the open
+   *  contract and the content are asserted here. */
+  async function waitCard(open: boolean) {
+    await flushPromises();
+    const here = () => document.body.querySelector<HTMLElement>(".flag-card") !== null;
+    for (let i = 0; i < 100; i += 1) {
+      if (here() === open) return;
+      await new Promise((r) => setTimeout(r, 10));
     }
+    expect(here()).toBe(open);
+  }
+
+  it("opens the rich card on tile hover with name and toned effects", async () => {
+    const wrapper = mount(BuildPlanner, {
+      props: { ship: minsk(), build: emptyBuild(), initialSection: "flags" },
+    });
+    const tile = wrapper.find(".planner-v__flag");
+    expect(tile.exists()).toBe(true);
+    await tile.trigger("mouseenter");
+    await waitCard(true);
+
+    const card = document.body.querySelector<HTMLElement>(".flag-card")!;
+    expect(card.querySelector(".flag-card__name")?.textContent).toBeTruthy();
+    // The effects table carries the token-toned good/bad values.
+    expect(card.querySelectorAll(".flag-card__effect").length).toBeGreaterThan(0);
+    expect(
+      card.querySelector(".flag-card__effect-value--good, .flag-card__effect-value--bad"),
+    ).not.toBeNull();
+    wrapper.unmount();
+    await waitCard(false);
+  });
+
+  it("retires the card after the grace once the tile is left", async () => {
+    const wrapper = mount(BuildPlanner, {
+      props: { ship: minsk(), build: emptyBuild(), initialSection: "flags" },
+    });
+    const tile = wrapper.find(".planner-v__flag");
+    await tile.trigger("mouseenter");
+    await waitCard(true);
+
+    await tile.trigger("mouseleave");
+    await waitCard(false);
+    wrapper.unmount();
   });
 });

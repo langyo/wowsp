@@ -1,93 +1,109 @@
 /**
- * Tests for the tactical board's replay-sources hover panel: the chip's
- * pointer show anchors the teleported fixed panel below the chip, and —
- * the zoom regression — converts the chip's visual-space rect and the
- * viewport clamps into the panel's zoomed local space (the root DPI zoom
- * paints the written left/top ×scale).
+ * Tests for the tactical board's replay-sources hover panel, now hosted by
+ * hikari HkPopover: the chip's hover opens the panel (placement, viewport
+ * flip and the root DPI zoom's local space are HkPopover's business —
+ * covered by hikari's own anchored/rootzoom suites), the panel's content
+ * renders the count heading and the replay rows, the anchor↔panel hover
+ * grace holds it open across the gap (and closes GRACE_MS after the panel
+ * is left), and a tip with no replays never opens at all.
  *
- * happy-dom measures every box 0×0, so getBoundingClientRect is stubbed
- * per test on the HTMLElement prototype.
+ * The popover teleports to document.body, so panel queries scope to body
+ * and open/close transitions are polled to let the popover machine's
+ * timer-driven enter/leave settle.
  */
-import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
 import { initLocaleMessages } from "@/i18n";
 import type { LearnedReplaySource } from "@/api";
-import { resetAppliedDpiScaleForTest } from "@/theme/dpiPrefs";
-import ReplaySourcesTip from "./ReplaySourcesTip";
+import ReplaySourcesTip, { GRACE_MS } from "./ReplaySourcesTip";
 
 enableAutoUnmount(afterEach);
 
-const REPLAYS: LearnedReplaySource[] = [{ name: "20260101_101010.wowsreplay", time: "12:34" }];
+const REPLAYS: LearnedReplaySource[] = [
+  { name: "20260101_101010.wowsreplay", time: "12:34" },
+  { name: "20260102_111111.wowsreplay", time: "09:00" },
+];
 
 beforeAll(async () => {
   await initLocaleMessages();
 });
 
 afterEach(() => {
-  vi.restoreAllMocks();
-  delete document.documentElement.dataset.dpiScale;
-  document.documentElement.style.removeProperty("zoom");
-  resetAppliedDpiScaleForTest();
   document.body.innerHTML = "";
 });
 
-function mountTip() {
+function mountTip(replays: LearnedReplaySource[] = REPLAYS) {
   return mount(ReplaySourcesTip, {
-    props: { label: "Sources (1)", replays: REPLAYS },
+    props: { label: "Sources (2)", replays },
   });
 }
 
-describe("ReplaySourcesTip placement", () => {
-  it("opens the panel below the chip at scale 1 (Auto)", async () => {
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-      width: 120,
-      height: 20,
-      top: 10,
-      left: 10,
-      right: 130,
-      bottom: 30,
-      x: 10,
-      y: 10,
-      toJSON: () => ({}),
-    } as DOMRect);
+/** Poll until the teleported popover panel is (not) present. */
+async function waitPanel(open: boolean) {
+  await flushPromises();
+  const here = () => document.body.querySelector<HTMLElement>(".rs-tip__head") !== null;
+  for (let i = 0; i < 100; i += 1) {
+    if (here() === open) return;
+    await new Promise((r) => setTimeout(r, 10));
+  }
+  expect(here()).toBe(open);
+}
+
+describe("ReplaySourcesTip hover panel", () => {
+  it("opens on chip hover and renders the count heading and replay rows", async () => {
     const wrapper = mountTip();
-    await wrapper.find(".rs-tip").trigger("pointerenter");
     await flushPromises();
 
-    const panel = document.body.querySelector<HTMLElement>(".rs-tip__panel");
-    expect(panel).not.toBeNull();
-    expect(panel?.style.left).toBe("10px");
-    expect(panel?.style.top).toBe("38px"); // bottom 30 + 8 gap
+    await wrapper.find(".rs-tip").trigger("pointerenter");
+    await waitPanel(true);
+
+    const head = document.body.querySelector<HTMLElement>(".rs-tip__head")!;
+    expect(head.textContent).toContain("2");
+    const items = document.body.querySelectorAll<HTMLElement>(".rs-tip__item");
+    expect(items.length).toBe(REPLAYS.length);
+    expect(items[0].textContent).toContain(REPLAYS[0].name);
+    expect(items[0].textContent).toContain(REPLAYS[0].time);
+
+    // The chip's label slot still carries the caller's text.
+    expect(wrapper.find(".rs-tip__chip").text()).toBe("Sources (2)");
+    wrapper.unmount();
+    await waitPanel(false);
+  });
+
+  it("holds the panel open across the anchor↔panel gap and closes after the grace", async () => {
+    const wrapper = mountTip();
+    await flushPromises();
+
+    await wrapper.find(".rs-tip").trigger("pointerenter");
+    await waitPanel(true);
+
+    // Leaving the chip starts the grace timer — the pointer is assumed to
+    // be traveling toward the panel.
+    await wrapper.find(".rs-tip").trigger("pointerleave");
+    await flushPromises();
+
+    // Arriving on the panel within the grace cancels the close, and the
+    // panel is still up well past the grace window.
+    document.body.querySelector<HTMLElement>(".hk-popover-panel")!
+      .dispatchEvent(new MouseEvent("mouseenter"));
+    await new Promise((r) => setTimeout(r, GRACE_MS + 120));
+    await waitPanel(true);
+
+    // Leaving the panel lets the grace run out and the panel retires.
+    document.body.querySelector<HTMLElement>(".hk-popover-panel")!
+      .dispatchEvent(new MouseEvent("mouseleave"));
+    await waitPanel(false);
     wrapper.unmount();
   });
 
-  it("places the panel in the root zoom's local space", async () => {
-    // 125% interface scale: unconverted, the panel drifted scale× right/
-    // down off its chip (the hint family's zoom report).
-    document.documentElement.dataset.dpiScale = "125";
-    resetAppliedDpiScaleForTest();
-    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
-      width: 120,
-      height: 20,
-      top: 10,
-      left: 10,
-      right: 130,
-      bottom: 30,
-      x: 10,
-      y: 10,
-      toJSON: () => ({}),
-    } as DOMRect);
-    const wrapper = mountTip();
-    await wrapper.find(".rs-tip").trigger("pointerenter");
+  it("never opens for a tip without replays", async () => {
+    const wrapper = mountTip([]);
     await flushPromises();
 
-    const panel = document.body.querySelector<HTMLElement>(".rs-tip__panel");
-    expect(panel).not.toBeNull();
-    // Chip left 10 visual / 1.25 → 8 local; bottom 30 / 1.25 = 24 plus
-    // the 8px gap → 32.
-    expect(panel?.style.left).toBe("8px");
-    expect(panel?.style.top).toBe("32px");
+    await wrapper.find(".rs-tip").trigger("pointerenter");
+    await new Promise((r) => setTimeout(r, GRACE_MS + 120));
+    expect(document.body.querySelector<HTMLElement>(".rs-tip__head")).toBeNull();
     wrapper.unmount();
   });
 });
