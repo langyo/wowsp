@@ -2084,6 +2084,18 @@ export default defineComponent({
       staticReportSeq += 1;
       staticReportLoading.value = false;
     };
+    /** An OUT-OF-BAND replay open (OS double-click on a .wowsreplay) swaps
+     *  the view under an open modal — the report describes ONE battle, so
+     *  retire the modal instead of silently showing the previous replay's
+     *  report. In-app switching cannot reach this: while the modal is up its
+     *  full-pane backdrop owns the view, so every ordinary switch happens
+     *  closed. */
+    watch(
+      () => parser.current.value?.path ?? null,
+      (path, prev) => {
+        if (prev !== undefined && path !== prev) closeStaticReport();
+      },
+    );
     /** The embedded report's exposed long-image export: the shared window
      *  head owns the button, StaticReportPanel owns the html-to-image
      *  capture (its export root is the captured node). */
