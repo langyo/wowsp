@@ -843,22 +843,60 @@ function payloadMatches(url: string, resp: Response, bytes: ArrayBuffer): boolea
   return !(resp.headers.get("content-type") ?? "").includes("text/html");
 }
 
-/** One fetch attempt: a validated hit, or the human-readable reason it
- *  missed (status / SPA fallback / transport error) for the caller to log
- *  and step past. */
+/** Why one source rung (pack-cache URL or embedded copy) missed — the
+ *  structured form the UI needs to tell a MISSING file (the pack simply
+ *  doesn't carry it) apart from a broken download path. */
+export interface ModelSourceMiss {
+  kind: "http" | "spa-fallback" | "transport";
+  /** HTTP status for kind "http". */
+  status?: number;
+  /** Transport error text for kind "transport". */
+  detail?: string;
+}
+
+/** Human-readable one-liner for a source miss (URL stays out — it rides
+ *  in the error prefix and the console.warn instead). */
+function describeSourceMiss(m: ModelSourceMiss): string {
+  if (m.kind === "http") return `HTTP ${m.status}`;
+  if (m.kind === "spa-fallback") return "missing file answered by the index.html SPA fallback";
+  return `transport failure (${m.detail ?? "unknown"})`;
+}
+
+/** True when the rung PROVED the file isn't there (404 / the SPA-fallback
+ *  HTML the asset resolver serves for unknown paths) — as opposed to a
+ *  proxy-eaten request or a server-side failure, which prove nothing. */
+function sourceMissIsAbsence(m: ModelSourceMiss): boolean {
+  return m.kind === "spa-fallback" || (m.kind === "http" && m.status === 404);
+}
+
+/** One fetch attempt: a validated hit, or the structured reason it missed
+ *  for the caller to log and step past. */
 async function fetchCandidate(
   url: string,
-): Promise<{ resp: Response; bytes: ArrayBuffer } | string> {
+): Promise<{ resp: Response; bytes: ArrayBuffer } | ModelSourceMiss> {
   try {
     const resp = await fetch(url);
-    if (!resp.ok) return `HTTP ${resp.status} fetching ${url}`;
+    if (!resp.ok) return { kind: "http", status: resp.status };
     const bytes = await resp.arrayBuffer();
     if (!payloadMatches(url, resp, bytes)) {
-      return `${url}: missing file answered by the index.html SPA fallback`;
+      return { kind: "spa-fallback" };
     }
     return { resp, bytes };
   } catch (e) {
-    return `${url}: ${(e as Error).message ?? String(e)}`;
+    return { kind: "transport", detail: (e as Error)?.message ?? String(e) };
+  }
+}
+
+/** Every source rung of one model URL missed. Carries the structured
+ *  misses so the chain wrapper can report "missing from the pack" vs a
+ *  genuine failure; the message keeps the historical sentence shape. */
+export class ModelResourceError extends Error {
+  readonly name = "ModelResourceError";
+  readonly misses: ModelSourceMiss[];
+
+  constructor(url: string, misses: ModelSourceMiss[]) {
+    super(`no usable source for ${url} (${misses.map(describeSourceMiss).join("; ")})`);
+    this.misses = misses;
   }
 }
 
@@ -870,19 +908,19 @@ export async function fetchModelResource(url: string): Promise<Response> {
     ? "/models/" + (decodeURIComponent(url).split("/models/")[1] ?? "")
     : url;
   const candidates = isAsset ? [url, embedded] : [url];
-  const misses: string[] = [];
+  const misses: ModelSourceMiss[] = [];
   for (const candidate of candidates) {
     const attempt = await fetchCandidate(candidate);
-    if (typeof attempt !== "string") {
+    if (!("kind" in attempt)) {
       return new Response(attempt.bytes, {
         status: attempt.resp.status,
         headers: attempt.resp.headers,
       });
     }
     misses.push(attempt);
-    console.warn(`[modelLoader] ${attempt}, trying next source`);
+    console.warn(`[modelLoader] ${describeSourceMiss(attempt)} for ${candidate}, trying next source`);
   }
-  throw new Error(`no usable source for ${url} (${misses.join("; ")})`);
+  throw new ModelResourceError(url, misses);
 }
 
 function fixGlbPadding(buffer: ArrayBuffer): ArrayBuffer {
@@ -939,13 +977,76 @@ async function loadGlbFromUrl(url: string): Promise<THREE.Group> {
   });
 }
 
+/** One failed candidate of a GLB URL chain, decoded for humans: the UI's
+ *  missing-model state reads `missing` (the pack simply doesn't carry the
+ *  file) instead of parsing the percent-encoded fetch sentence. */
+export interface ModelCandidateMiss {
+  /** Decoded pack-relative file path ("ships/PXSB504.glb"). */
+  file: string;
+  /** Original candidate URL (percent-encoded asset URL or origin path). */
+  url: string;
+  /** Every source rung proved the file is NOT in the pack. */
+  missing: boolean;
+  /** Compact human-readable reason. */
+  reason: string;
+}
+
+/** Decoded pack-relative file path of a model URL ("ships/PXSB504.glb"),
+ *  falling back to the raw URL when the layout doesn't match. Same split
+ *  rule as the embedded-copy recovery in fetchModelResource. */
+export function modelFileFromUrl(url: string): string {
+  try {
+    const tail = decodeURIComponent(url).split("/models/")[1];
+    if (tail) return tail;
+  } catch {
+    // Malformed percent-escape — keep the raw URL as the display form.
+  }
+  return url;
+}
+
+/** Structured view of one candidate's failure, for the aggregated error. */
+function describeCandidateMiss(url: string, e: unknown): ModelCandidateMiss {
+  const file = modelFileFromUrl(url);
+  if (e instanceof ModelResourceError) {
+    const missing = e.misses.every(sourceMissIsAbsence);
+    const reason = missing
+      ? "missing from the model pack"
+      : e.misses.map(describeSourceMiss).join("; ");
+    return { file, url, missing, reason };
+  }
+  // A parse failure: the file WAS fetched and served — present but broken.
+  const msg = (e as Error)?.message ?? String(e);
+  return { file, url, missing: false, reason: `GLTF parse failed: ${msg}` };
+}
+
+/** The aggregated chain failure — still an Error with the historical
+ *  "no usable source" sentence, but listing the DECODED pack-relative file
+ *  names instead of whole percent-encoded asset.localhost URLs (the raw
+ *  sentence landed verbatim on the ship stage's error card — 2026-11 user
+ *  direction), plus the structured per-candidate misses the stage turns
+ *  into a friendly missing-model state. */
+export class ModelChainError extends Error {
+  readonly name = "ModelChainError";
+  readonly misses: ModelCandidateMiss[];
+
+  constructor(urls: string[], misses: ModelCandidateMiss[]) {
+    super(`no usable source for ${misses.map((m) => m.file).join(", ")} (${misses.map((m) => m.reason).join("; ")})`);
+    this.misses = misses;
+  }
+}
+
+/** Narrow a thrown value to the structured chain failure (null otherwise). */
+export function asModelChainError(e: unknown): ModelChainError | null {
+  return e instanceof ModelChainError ? e : null;
+}
+
 /**
  * Load a GLB from a single URL, or walk an ordered candidate chain: the
  * first candidate that fetches AND parses into a THREE.Group wins; a fetch
  * miss (404 / SPA-fallback HTML / transport error) or a GLTF parse failure
  * steps to the next candidate. Only when every candidate fails does this
- * throw one aggregated error listing each miss. A single-string input keeps
- * its previous behavior (including the error message) unchanged.
+ * throw one aggregated ModelChainError carrying each decoded miss. A
+ * single-string input keeps its previous behavior unchanged.
  */
 export async function loadGlbModel(url: string | string[]): Promise<THREE.Group> {
   if (typeof url === "string") return loadGlbFromUrl(url);
@@ -953,17 +1054,17 @@ export async function loadGlbModel(url: string | string[]): Promise<THREE.Group>
     throw new Error("no usable source for an empty model URL chain");
   }
   if (url.length === 1) return loadGlbFromUrl(url[0]);
-  const misses: string[] = [];
+  const misses: ModelCandidateMiss[] = [];
   for (const candidate of url) {
     try {
       return await loadGlbFromUrl(candidate);
     } catch (e) {
-      const reason = (e as Error)?.message ?? String(e);
-      misses.push(`${candidate}: ${reason}`);
-      console.warn(`[modelLoader] ${candidate} failed (${reason}), trying next candidate`);
+      const miss = describeCandidateMiss(candidate, e);
+      misses.push(miss);
+      console.warn(`[modelLoader] ${miss.file} failed (${miss.reason}), trying next candidate`);
     }
   }
-  throw new Error(`no usable source for ${url.join(", ")} (${misses.join("; ")})`);
+  throw new ModelChainError(url, misses);
 }
 
 export function hasShipModels(): boolean {

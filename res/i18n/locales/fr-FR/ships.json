@@ -174,6 +174,8 @@
     "noPlaneSpecs": "Aucune caractéristique disponible pour cet avion.",
     "noImage": "Aucune image disponible.",
     "noModel": "Aucun modèle 3D généré pour ce navire pour l'instant. Exécutez `just convert-ship --name <model>` + `just bake-model` pour en générer un.",
+    "modelMissingTitle": "Aucun modèle 3D pour ce navire",
+    "modelMissingDesc": "Le pack de modèles ne contient pas de fichier de modèle pour ce navire — si le pack semble incomplet, retéléchargez-le depuis la page des ressources.",
     "noMyStats": "Liez un compte ; vous n'avez pas encore de batailles sur ce navire.",
     "ballisticsApprox": "Les courbes de pénétration sont une estimation dérivée de la masse des obus / airDrag / krupp — pas le modèle exact du jeu.",
     "noBallistics": "Aucune donnée de blindage / balistique n'a pu être extraite de GameParams pour ce navire.",

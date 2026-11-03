@@ -11,6 +11,7 @@ import type * as THREE from "three";
 
 import { registerRuntimeShipEntry, resetRuntimeShipEntries } from "@/utils/runtimeShipDb";
 import {
+  asModelChainError,
   fetchModelResource,
   initModelPack,
   loadGlbModel,
@@ -483,5 +484,141 @@ describe("minimap pack era fallback", () => {
     // representative stem + .png, through the wired cache root.
     const probed = decodeURIComponent(String(fetchSpy.mock.calls[0]![0]));
     expect(probed).toContain(`/models/maps/minimaps/${STEM}.png`);
+  });
+});
+
+// ── structured chain failure: missing model vs broken load ───────────────
+// The ship stage turns a whole-chain failure into a friendly "missing
+// model" card — it needs the STRUCTURED misses (decoded file names plus
+// the missing-vs-broken split) instead of parsing the percent-encoded
+// sentence (2026-11 user direction: 嘎嘎鸭-class failures dumped whole
+// asset.localhost URLs onto the error card).
+describe("loadGlbModel chain failure structure", () => {
+  const packUrl = (stem: string) =>
+    `http://asset.localhost/${encodeURIComponent(`C:/cache-root/models/ships/${stem}.glb`)}`;
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /** Cache rung answers 404; the embedded rung serves the SPA fallback
+   *  HTML under 200 — every rung of every candidate PROVES absence. */
+  function stubAllMissing(): void {
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      if (String(input).startsWith("http://asset.localhost/")) {
+        return Promise.resolve(new Response("gone", { status: 404 }));
+      }
+      return Promise.resolve(
+        new Response("<!DOCTYPE html><html><body></body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    });
+  }
+
+  it("classifies a whole-missing chain and decodes the file names", async () => {
+    stubAllMissing();
+    const err = await loadGlbModel([packUrl("PXSB504"), packUrl("Battleship")]).then(
+      () => null,
+      (e) => e,
+    );
+    const chain = asModelChainError(err);
+    expect(chain).not.toBeNull();
+    expect(chain!.message).toMatch(/no usable source/);
+    // The sentence lists decoded pack-relative names — no percent-encoded
+    // asset.localhost URLs on the error card anymore.
+    expect(chain!.message).toContain("ships/PXSB504.glb");
+    expect(chain!.message).not.toContain("asset.localhost");
+    expect(chain!.misses.map((m) => m.file)).toEqual([
+      "ships/PXSB504.glb",
+      "ships/Battleship.glb",
+    ]);
+    expect(chain!.misses.every((m) => m.missing)).toBe(true);
+    expect(chain!.misses[0]!.reason).toContain("missing from the model pack");
+  });
+
+  it("keeps a transport-failed candidate out of the missing bucket", async () => {
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const url = String(input);
+      // The first candidate's request dies in transport (proxy-eaten) —
+      // that proves nothing about the file; only the second candidate's
+      // rungs prove absence.
+      if (url === packUrl("Alive")) return Promise.reject(new TypeError("Failed to fetch"));
+      if (url.startsWith("http://asset.localhost/")) {
+        return Promise.resolve(new Response("gone", { status: 404 }));
+      }
+      return Promise.resolve(
+        new Response("<!DOCTYPE html><html><body></body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    });
+    const err = await loadGlbModel([packUrl("Alive"), packUrl("Gone")]).then(
+      () => null,
+      (e) => e,
+    );
+    const chain = asModelChainError(err);
+    expect(chain).not.toBeNull();
+    expect(chain!.misses[0]).toMatchObject({ file: "ships/Alive.glb", missing: false });
+    expect(chain!.misses[0]!.reason).toContain("transport failure");
+    expect(chain!.misses[1]).toMatchObject({ file: "ships/Gone.glb", missing: true });
+    expect(chain!.misses.some((m) => m.missing)).toBe(true);
+    expect(chain!.misses.every((m) => m.missing)).toBe(false);
+  });
+
+  it("reports a corrupt-but-served GLB as a parse failure, not missing", async () => {
+    // A payload that PASSES validation (glTF magic) but dies in
+    // GLTFLoader: the file IS in the pack — present but broken.
+    const json = new TextEncoder().encode("{ not json");
+    const bytes = new ArrayBuffer(20 + json.length);
+    const view = new DataView(bytes);
+    view.setUint32(0, 0x46546c67, true); // "glTF"
+    view.setUint32(4, 2, true); // version
+    view.setUint32(8, bytes.byteLength, true); // total length
+    view.setUint32(12, json.length, true); // JSON chunk length
+    view.setUint32(16, 0x4e4f534a, true); // "JSON"
+    new Uint8Array(bytes, 20).set(json);
+
+    // happy-dom's fetch refuses blob: URLs — serve the recorded blobs
+    // back through the stub so the real GLTFLoader path runs.
+    const blobs = new Map<string, Blob>();
+    vi.spyOn(URL, "createObjectURL").mockImplementation((obj: Blob | MediaSource) => {
+      const url = `blob:stub-${blobs.size}`;
+      blobs.set(url, obj as Blob);
+      return url;
+    });
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+    stubAllMissing();
+    vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string"
+          ? input
+          : input instanceof URL
+            ? input.href
+            : input.url;
+      if (url.startsWith("blob:")) {
+        const blob = blobs.get(url);
+        if (blob) return blob.arrayBuffer().then((b) => new Response(b));
+      }
+      if (url === packUrl("Broken")) return Promise.resolve(new Response(bytes));
+      if (String(input).startsWith("http://asset.localhost/")) {
+        return Promise.resolve(new Response("gone", { status: 404 }));
+      }
+      return Promise.resolve(
+        new Response("<!DOCTYPE html><html><body></body></html>", {
+          headers: { "content-type": "text/html" },
+        }),
+      );
+    });
+    const err = await loadGlbModel([packUrl("Broken"), packUrl("Gone")]).then(
+      () => null,
+      (e) => e,
+    );
+    const chain = asModelChainError(err);
+    expect(chain).not.toBeNull();
+    expect(chain!.misses[0]).toMatchObject({ file: "ships/Broken.glb", missing: false });
+    expect(chain!.misses[0]!.reason).toContain("GLTF parse failed");
+    expect(chain!.misses[1]!.missing).toBe(true);
   });
 });

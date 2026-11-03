@@ -174,6 +174,8 @@
     "noPlaneSpecs": "이 함재기의 제원 정보가 없습니다.",
     "noImage": "이미지가 없습니다.",
     "noModel": "이 함선은 아직 3D 모델이 베이크되지 않았습니다. `just convert-ship --name <model>` + `just bake-model`을 실행하여 생성하세요.",
+    "modelMissingTitle": "이 함선의 3D 모델이 없습니다",
+    "modelMissingDesc": "모델 팩에 이 함선의 모델 파일이 없습니다. 팩이 불완전해 보이면 리소스 페이지에서 다시 다운로드하세요.",
     "noMyStats": "계정을 연동했지만 이 함선의 전투 기록이 아직 없습니다.",
     "ballisticsApprox": "관통 곡선은 포탄 무게 / 공기 저항 / krupp를 기반으로 한 추정값이며, 게임 내 정확한 모델이 아닙니다.",
     "noBallistics": "GameParams에서 이 함선의 장갑 / 탄도 데이터를 추출할 수 없습니다.",

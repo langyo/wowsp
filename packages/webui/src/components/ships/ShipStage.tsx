@@ -19,7 +19,7 @@ import { Pause, Play, RotateCcw, X, ChevronDown, Plane } from "@lucide/vue";
 
 import { HkScrollContainer, HkSpinner, HkTabs, useBreakpoint, useToast } from "@celestia-island/hikari";
 import { readStageThemeMode, useImage, watchStageThemeMode, type StageThemeMode } from "@wowsp/holo";
-import { isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
+import { asModelChainError, isModelPackReady, initModelPack, shipModelUrlCandidates, shipArmorUrlCandidates, resolveFallbackModel, resolvePlaneModelUrl, loadGlbModel, type ShipModelSpec } from "@/features/holographic/modelLoader";
 import { api } from "@/api";
 import { makeHoloMaterial as sharedMakeHoloMaterial, makeHoloDepthMaterial, tickHoloUniforms, type HoloShaderMaterial, type HoloUniforms } from "@/features/holographic/holoShader";
 import { applyStageLook, colorForCategory, categoryBase, WEAPON_NAMES, HOLO_BASE_ALPHA } from "@/features/holographic/stageLook";
@@ -293,6 +293,12 @@ export default defineComponent({
     /** Set while the model pack downloads after a 3D toggle on a lite install. */
     const modelPackDownloading = ref(false);
     const errorMsg = ref<string | null>(null);
+    /** Friendly presentation for a MISSING model — every candidate file
+     *  proved absent from the pack (the chain error says so structurally).
+     *  The card then shows a localized situation line plus the compact
+     *  file list in the JSON tree, instead of the raw percent-encoded
+     *  fetch-chain sentence (2026-11 user direction); null = raw error. */
+    const missingModelError = ref<string[] | null>(null);
   // Resource-jump affordance for the phone error overlay (see the error
   // card's actionLabel): lands on the resource downloads.
   const router = useRouter();
@@ -1461,6 +1467,7 @@ export default defineComponent({
       await ensurePackWired();
       busyStart();
       errorMsg.value = null;
+      missingModelError.value = null;
       try {
         // Ordered candidate chain: ship_models index → baseName → display
         // name → offline-DB English name → CLR-stripped base. The substitute
@@ -1548,7 +1555,19 @@ export default defineComponent({
           return;
         }
         errorMsg.value = (e as Error).message || String(e);
-        toast.error(`3D model failed: ${errorMsg.value}`);
+        // A chain where every candidate file PROVED absent (404 / SPA-
+        // fallback HTML) is a missing model, not a broken load: name the
+        // situation and seat the resources-page jump instead of dumping
+        // the percent-encoded fetch chain (2026-11 user direction). The
+        // raw sentence stays in errorMsg as the copy payload's context.
+        const chain = asModelChainError(e);
+        if (chain && chain.misses.length > 0 && chain.misses.every((m) => m.missing)) {
+          missingModelError.value = chain.misses.map((m) => m.file);
+          toast.error(t("ships.detail.modelMissingTitle"));
+        } else {
+          missingModelError.value = null;
+          toast.error(`3D model failed: ${errorMsg.value}`);
+        }
       } finally {
         busyEnd();
       }
@@ -2076,15 +2095,28 @@ export default defineComponent({
               ) : null}
               {errorMsg.value ? (
                 <div class="ship-stage__overlay ship-stage__overlay--error">
+                  {/* fill: the overlay is a definite-height flex pane, so
+                      the card compresses its raw-details frame to FIT the
+                      stage instead of being scrolled past it by a native
+                      scrollbar; the frame's hikari overlay scrollbar takes
+                      over below its floor. See ShipStage.scss (`&--error`). */}
                   <ErrorCard
+                    fill
                     error={errorMsg.value}
+                    title={missingModelError.value ? t("ships.detail.modelMissingTitle") : ""}
+                    description={missingModelError.value ? t("ships.detail.modelMissingDesc") : ""}
+                    detail={
+                      missingModelError.value
+                        ? { problem: "missing-model", files: missingModelError.value }
+                        : undefined
+                    }
                     actionLabel={
-                      isMobileApp() && !isModelPackReady()
+                      missingModelError.value || (isMobileApp() && !isModelPackReady())
                         ? t("ships.detail.gameparamsResourcesAction")
                         : ""
                     }
                     onAction={
-                      isMobileApp() && !isModelPackReady()
+                      missingModelError.value || (isMobileApp() && !isModelPackReady())
                         ? () => void router.push("/resources")
                         : undefined
                     }

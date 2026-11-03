@@ -53,17 +53,59 @@
     background: rgb(7 13 24 / 75%);
     backdrop-filter: blur(2px);
 
-    /* Error variant: the inline error card replaces the old raw text. The
-       card (title + JSON pane + actions) can stand taller than the 320px
-       canvas, so the overlay becomes a block-flow scroll region — the
-       card's own min-height:100% + auto margins still center it when it
-       fits, and a taller card scrolls instead of spilling past the stage.
-       (Block, not centered flex: a centered flex scroll box makes the
-       top of an overflowing item unreachable.) */
+    /* Error variant: a fill-seating host. The pane is a definite-height
+       flex column (inset: 0 fixes the height) and the ErrorCard mounts
+       with hikari's `fill`: the inline error landing grows into the space
+       and COMPRESSES its raw-details frame down to the dial's floor below,
+       so the card fits the 320px stage instead of being scrolled past it
+       by this pane's native scrollbar (2026-11 user direction: fit the
+       pane; whatever scrolling remains is hikari's family overlay
+       scrollbar inside the details frame). The pane keeps a scroll escape
+       for a pathological geometry, but loses its native bar — the frame's
+       overlay scrollbar is the one visible chrome. */
     &--error {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      justify-content: flex-start;
+      padding: 0.75rem;
       overflow-y: auto;
-      padding: 1.5rem;
+      scrollbar-width: none;
+
+      &::-webkit-scrollbar {
+        display: none;
+      }
+    }
+  }
+
+  /* Compact stage dial for the seated error card. The landing's default
+     chrome (64px icon, 6rem details floor, roomy paddings) cannot seat in
+     the 320px canvas; trim it so the compressed card fits with the actions
+     row visible. Four classes = specificity (0,4,0), beating hikari's
+     is-inline rules at (0,3,0) regardless of bundle order. */
+  .ship-stage__overlay.ship-stage__overlay--error {
+    .hk-error-landing__card {
+      padding: 0.75rem 1.25rem 1rem;
+    }
+
+    .hk-error-landing__icon {
+      width: 44px;
+      height: 44px;
+      margin-bottom: 0.5rem;
+
+      svg {
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    .hk-error-landing__desc {
+      margin-top: 0.25rem;
+    }
+
+    .hk-error-landing__details-pane {
+      flex-basis: 4.5rem;
+      min-height: 3.5rem;
     }
   }
 

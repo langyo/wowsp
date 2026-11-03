@@ -174,6 +174,8 @@
     "noPlaneSpecs": "No specifications available for this aircraft.",
     "noImage": "No image available.",
     "noModel": "No 3D model baked for this ship yet. Run `just convert-ship --name <model>` + `just bake-model` to generate one.",
+    "modelMissingTitle": "No 3D model for this ship",
+    "modelMissingDesc": "The model pack has no model file for this ship — open the resources page to re-download the pack if it looks incomplete.",
     "noMyStats": "Bind an account and you have no battles in this ship yet.",
     "ballisticsApprox": "Penetration curves are an estimate derived from shell mass / airDrag / krupp — not the exact in-game model.",
     "noBallistics": "No armor / ballistics data could be extracted from GameParams for this ship.",
