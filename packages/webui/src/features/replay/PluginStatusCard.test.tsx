@@ -69,9 +69,11 @@ function mountCard(actions = true) {
   return wrapper;
 }
 
-/** Footer-less card: the one action button is inside the card body. */
+/** Footer-less card: the one action button is inside the card body —
+ *  hikari's HkButton (issue #1736 P2), so the host class hook is the
+ *  component's own .hk-btn. */
 const actionButton = (wrapper: ReturnType<typeof mountCard>) =>
-  wrapper.find<HTMLButtonElement>("button.plugin-status-card__btn");
+  wrapper.find<HTMLButtonElement>("button.hk-btn");
 
 beforeEach(() => {
   mocks.ingamePluginInstall.mockReset();

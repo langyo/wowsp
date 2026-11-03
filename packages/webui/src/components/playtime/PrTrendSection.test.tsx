@@ -94,6 +94,15 @@ vi.mock("@celestia-island/hikari", () => ({
         );
     },
   },
+  // TierRangeSelect's 全部… reset rides HkButton — button pass-through.
+  HkButton: {
+    name: "HkButton",
+    props: ["variant", "size", "disabled", "loading", "ariaLabel"],
+    emits: ["click"],
+    setup(_: unknown, { slots }: { slots: { default?: () => VNode[] } }) {
+      return () => h("button", { type: "button" }, slots.default?.() ?? []);
+    },
+  },
   HkCheckbox: {
     name: "HkCheckbox",
     props: ["modelValue", "size"],

@@ -55,7 +55,7 @@
 .pr-trend__dot {
   stroke: rgb(var(--color-bg));
   stroke-width: 1.5;
-  transition: r 0.16s ease;
+  transition: r var(--duration-short) var(--ease-standard);
 
   &:hover {
     r: 5;

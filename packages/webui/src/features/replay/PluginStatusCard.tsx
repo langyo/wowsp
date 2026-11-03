@@ -19,7 +19,7 @@
 import { defineComponent, ref } from "vue";
 import { AlertTriangle, Plug, RotateCcw } from "@lucide/vue";
 
-import { HkSpinner, useToast } from "@celestia-island/hikari";
+import { HkButton, useToast } from "@celestia-island/hikari";
 import { t, tError } from "@/i18n";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import "./PluginStatusCard.scss";
@@ -103,19 +103,20 @@ export default defineComponent({
               <span>{t(descKey)}</span>
             </span>
             {props.actions ? (
-              <button
+              /* The host class stays as the card's flex-row hook (the
+                 button must never squeeze); the warning-state tint in the
+                 SCSS keys on .hk-btn, and hikari's loading ring replaces
+                 the glyph while busy. */
+              <HkButton
                 class="plugin-status-card__btn"
-                type="button"
-                disabled={!!busy || repairing.value}
+                variant="outline"
+                size="sm"
+                loading={!!busy || repairing.value}
                 onClick={() => void repair()}
               >
-                {busy || repairing.value ? (
-                  <HkSpinner size="xs" tone="current" />
-                ) : (
-                  <RotateCcw size={13} />
-                )}
+                {!(busy || repairing.value) ? <RotateCcw size={13} /> : null}
                 {t("replay.live.pluginSafeModeRepair")}
-              </button>
+              </HkButton>
             ) : null}
           </div>
         );
@@ -150,23 +151,16 @@ export default defineComponent({
             <span>{t(descKey)}</span>
           </span>
           {props.actions && action ? (
-            <button
+            <HkButton
               class="plugin-status-card__btn"
-              type="button"
-              disabled={!!busy}
+              variant="outline"
+              size="sm"
+              loading={!!busy}
               onClick={() => void run(action)}
             >
-              {busy ? (
-                <HkSpinner size="xs" tone="current" />
-              ) : action === "uninstall" ? (
-                <RotateCcw size={13} />
-              ) : action === "update" ? (
-                <RotateCcw size={13} />
-              ) : (
-                <Plug size={13} />
-              )}
+              {busy ? null : action === "install" ? <Plug size={13} /> : <RotateCcw size={13} />}
               {t(labelKey)}
-            </button>
+            </HkButton>
           ) : null}
         </div>
       );

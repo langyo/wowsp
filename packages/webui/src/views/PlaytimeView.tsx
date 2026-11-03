@@ -16,6 +16,7 @@ import {
   HkIconButton,
   HkPopover,
   HkScrollContainer,
+  HkSpinner,
   HkTabs,
   useBreakpoint,
   useToast,
@@ -753,10 +754,11 @@ export default defineComponent({
                           disabled={rebuilding.value}
                           onClick={() => (rebuildArmed.value = true)}
                         >
-                          <RefreshCw
-                            size={12}
-                            class={rebuilding.value ? "playtime-view__spin" : undefined}
-                          />
+                          {rebuilding.value ? (
+                            <HkSpinner size="xs" tone="current" />
+                          ) : (
+                            <RefreshCw size={12} />
+                          )}
                           <span>{t("playtime.rebuild")}</span>
                         </button>
                       </div>
@@ -775,10 +777,11 @@ export default defineComponent({
                 aria-label={t("playtime.refresh")}
                 onClick={() => void store.refreshAll()}
               >
-                <RefreshCw
-                  size={15}
-                  class={store.refreshing ? "playtime-view__spin" : undefined}
-                />
+                {store.refreshing ? (
+                  <HkSpinner size="xs" tone="current" />
+                ) : (
+                  <RefreshCw size={15} />
+                )}
               </HkIconButton>
             </div>
             <HkConfirmDialog

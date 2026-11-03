@@ -50,6 +50,14 @@ function removeNotice(): void {
   document.getElementById(NOTICE_ID)?.remove();
 }
 
+// Raw DOM on purpose — this is NOT a hikari surface. The notice exists
+// for the one failure where the app's whole data path (every api.* call,
+// and the hikari components/stores layered on top of it) is untrustworthy:
+// the Tauri IPC channel itself is wedged. Rendering it through the app's
+// component stack would make the survival UI depend on the thing that is
+// broken, so it is built from bare document APIs with a plain t() lookup,
+// is idempotent by id, and tears itself down when a later probe answers.
+
 /** The blocking notice (idempotent: one instance). */
 function showNotice(): void {
   if (document.getElementById(NOTICE_ID)) return;

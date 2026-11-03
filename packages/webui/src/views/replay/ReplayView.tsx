@@ -2870,10 +2870,11 @@ export default defineComponent({
                   size="sm"
                   variant="ghost"
                   disabled={(!hasClient.value && !isMobileApp()) || refreshing.value}
+                  loading={refreshing.value}
                   onClick={() => void onRefresh()}
                   ariaLabel={t("replay.refresh")}
                 >
-                  <RefreshCw size={14} class={refreshing.value ? "replay-view__spin" : ""} />
+                  <RefreshCw size={14} />
                 </HkButton>
               </span>
             </div>

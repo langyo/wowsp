@@ -2,7 +2,7 @@
  *  the view context (they render INSIDE ResourcesView's own tree, so the
  *  row vnodes stay children of the view component). */
 import { ImageIcon, Puzzle } from "@lucide/vue";
-import { HkScrollContainer } from "@celestia-island/hikari";
+import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import AppTag from "@/components/base/AppTag";
 
@@ -78,7 +78,7 @@ export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey:
       </span>
       <span class="mod-row__tail">
         {busyInstall ? (
-          <span class="mod-row__spinner" />
+          <HkSpinner size={14} tone="current" />
         ) : upToDate ? (
           <AppTag tone="success">{t("resources.installedBadge")}</AppTag>
         ) : record ? (
@@ -178,7 +178,7 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
       </span>
       <span class="mod-row__tail">
         {state ? (
-          <span class="mod-row__spinner" />
+          <HkSpinner size={14} tone="current" />
         ) : m.disabled ? (
           <AppTag tone="default">{t("resources.disabled")}</AppTag>
         ) : null}

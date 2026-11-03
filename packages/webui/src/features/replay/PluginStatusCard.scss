@@ -44,7 +44,11 @@
       color: rgb(var(--color-warning));
     }
 
-    .plugin-status-card__btn {
+    /* The lifecycle button is hikari's HkButton (outline sm) — hikari has
+       no warning-tinted variant, so the card's warning semantics ride a
+       host override keyed to the .hk-btn class (specificity (0,2,0) beats
+       the variant's own (0,1,0) face). */
+    .hk-btn {
       color: rgb(var(--color-warning));
       background: rgb(var(--color-warning) / 12%);
       border-color: rgb(var(--color-warning) / 40%);
@@ -67,6 +71,15 @@
     color: rgb(var(--color-muted));
   }
 
+  /* The lifecycle button is hikari's HkButton (outline, sm — issue #1736
+     P2): all face chrome lives in the kit (the warning tint above keys on
+     .hk-btn). This class remains only the flex-row hook — the button must
+     never squeeze when a locale's copy runs long — and the test's
+     selector. */
+  &__btn {
+    flex: none;
+  }
+
   &__text {
     flex: 1;
     min-width: 0;
@@ -83,29 +96,6 @@
     span {
       font-size: var(--text-xs);
       color: rgb(var(--color-muted));
-    }
-  }
-
-  &__btn {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.35rem 0.7rem;
-    font-size: var(--text-xs);
-    color: rgb(var(--color-primary));
-    background: rgb(var(--color-primary) / 12%);
-    border: 1px solid rgb(var(--color-primary) / 40%);
-    border-radius: 8px;
-    cursor: pointer;
-
-    &:hover:not(:disabled) {
-      background: rgb(var(--color-primary) / 20%);
-    }
-
-    &:disabled {
-      opacity: 0.6;
-      cursor: default;
     }
   }
 }

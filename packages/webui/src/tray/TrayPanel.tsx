@@ -1,7 +1,7 @@
 import { computed, defineComponent, onBeforeUnmount, onMounted, watch } from "vue";
 import { Eye, LogOut, Smartphone } from "@lucide/vue";
 
-import { HkTag } from "@celestia-island/hikari";
+import { HkMenuActionItem, HkTag } from "@celestia-island/hikari";
 
 import AccountAvatar from "@/components/base/AccountAvatar";
 import PlayerBadge from "@/components/base/PlayerBadge";
@@ -225,21 +225,21 @@ export default defineComponent({
             )}
           </div>
 
-          {/* menu actions — the old native tray menu, as rows */}
+          {/* menu actions — the old native tray menu, as hikari's standard
+              menu-action rows (unified menu-item grammar: 34px rows, the
+              icon cell, danger on [data-danger]; see HkMenuActionItem) */}
           <div class="tray-panel__menu" role="menu">
-            <button type="button" class="tray-panel__menu-item" onClick={() => act("show")}>
-              <Eye size={15} class="tray-panel__menu-icon" />
-              <span>{t("tray.show")}</span>
-            </button>
-            <button
-              type="button"
-              class="tray-panel__menu-item"
-              data-danger
+            <HkMenuActionItem
+              icon={<Eye size={15} />}
+              label={t("tray.show")}
+              onClick={() => act("show")}
+            />
+            <HkMenuActionItem
+              icon={<LogOut size={15} />}
+              label={t("tray.quit")}
+              danger
               onClick={() => act("quit")}
-            >
-              <LogOut size={15} class="tray-panel__menu-icon" />
-              <span>{t("tray.quit")}</span>
-            </button>
+            />
         </div>
       </div>
     );

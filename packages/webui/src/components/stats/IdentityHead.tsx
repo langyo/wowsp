@@ -1,5 +1,6 @@
 import { defineComponent, type PropType } from "vue";
 
+import AppTag from "@/components/base/AppTag";
 import KarmaSup from "@/components/base/KarmaSup";
 import { t } from "@/i18n";
 import "./IdentityHead.scss";
@@ -31,7 +32,7 @@ export default defineComponent({
     name: { type: String, required: true },
     /** Clan tag rendered as `[TAG]` left of the name; null hides it. */
     tag: { type: String as PropType<string | null>, default: null },
-    /** Tag click → jump to the clan view; absent renders a plain span. */
+    /** Tag click → jump to the clan view; absent renders the static tag. */
     onTagClick: Function as PropType<() => void>,
     /** Extra class on the name heading (the marked-name tint rides
      *  here; clan cards omit it). */
@@ -47,18 +48,24 @@ export default defineComponent({
       <header class="id-head">
         <div class="id-head__name-line">
           {slots.avatar?.()}
+          {/* The clan tag is the app's AppTag pressed on hikari's HkTag —
+              hikari has no interactive tag, so the jump voice rides
+              AppTag's sanctioned interactive wrapper (a real <button>
+              around the tag face, the resources-chip pattern). The
+              bracket rendering is kept verbatim. */}
           {props.tag ? (
             props.onTagClick ? (
-              <button
-                type="button"
-                class="id-head__tag id-head__tag--link"
-                onClick={() => props.onTagClick?.()}
+              <AppTag
+                tone="primary"
+                face="outline"
+                interactive
                 data-hint={t("lookup.jumpClan")}
+                onClick={() => props.onTagClick?.()}
               >
                 [{props.tag}]
-              </button>
+              </AppTag>
             ) : (
-              <span class="id-head__tag">[{props.tag}]</span>
+              <AppTag tone="primary">[{props.tag}]</AppTag>
             )
           ) : null}
           <h3 class={["id-head__name", props.nameClass]}>{props.name}</h3>

@@ -20,6 +20,7 @@ import {
   HkIconButton,
   HkModal,
   HkScrollContainer,
+  HkSpinner,
   HkSwitch,
   HkTabs,
   HMenu,
@@ -591,7 +592,11 @@ export default defineComponent({
                   }
                   onClick={hub.refresh}
                 >
-                  <RefreshCw size={15} class={hub.refreshSpinning.value ? "spin" : undefined} />
+                  {hub.refreshSpinning.value ? (
+                    <HkSpinner size="xs" tone="current" />
+                  ) : (
+                    <RefreshCw size={15} />
+                  )}
                 </HkIconButton>
                 <HkIconButton
                   size={24}

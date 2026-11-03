@@ -34,6 +34,7 @@ import {
   HkButton,
   HkInput,
   HkModal,
+  HkProgressBar,
   HkScrollContainer,
   HkSpinner,
   HkTabs,
@@ -600,12 +601,15 @@ export default defineComponent({
                 </HkButton>
                 {gdState.value === "syncing" ? (
                   <span class="pairing-wizard__gamedata-body">
-                    <span class="pairing-wizard__gamedata-prog">
-                      <span
-                        class="pairing-wizard__gamedata-fill"
-                        style={{ width: `${gdPct.value}%` }}
-                      />
-                    </span>
+                    {/* No byte count yet? HkProgressBar's value prop falls
+                        to its null default, which is hikari's indeterminate
+                        shimmer — the retired bespoke bar rendered a 0-width
+                        track in that state. */}
+                    <HkProgressBar
+                      size="sm"
+                      class="pairing-wizard__gamedata-bar"
+                      value={gdPct.value > 0 ? gdPct.value : undefined}
+                    />
                     <span class="pairing-wizard__gamedata-note">
                       {gdPct.value > 0
                         ? `${gdPct.value}%`
@@ -683,10 +687,12 @@ export default defineComponent({
                             </span>
                             {st === "pulling" ? (
                               <span class="pairing-wizard__entry-progress">
-                                <span
-                                  class="pairing-wizard__entry-progress-fill"
-                                  style={{ width: `${pctOf(e.path)}%` }}
-                                />
+                                {/* The track is hikari's (xs = 2px); the
+                                    wrapper keeps only the pct label's
+                                    positioning context. The mono __entry-pct
+                                    span stays bespoke: hikari's own label
+                                    placement differs from this overlay. */}
+                                <HkProgressBar size="xs" value={pctOf(e.path)} />
                                 {prog && prog.total > 0 ? (
                                   <span class="pairing-wizard__entry-pct">
                                     {pctOf(e.path)}%

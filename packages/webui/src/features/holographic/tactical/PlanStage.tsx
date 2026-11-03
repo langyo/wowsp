@@ -23,8 +23,9 @@ import {
   watch,
   type PropType,
 } from "vue";
+import { Ruler } from "@lucide/vue";
 import { loadMapMinimapImage, loadMapBounds, type MapBounds } from "../modelLoader";
-import { useToast } from "@celestia-island/hikari";
+import { HkEmptyState, useToast } from "@celestia-island/hikari";
 import OverviewPanel from "./OverviewPanel";
 import { t as i18nT } from "@/i18n";
 import TacticalBoard from "./TacticalBoard";
@@ -683,7 +684,12 @@ export default defineComponent({
         {boundsReady.value && !fullBounds.value ? (
           // Art without world bounds (a space the bounds extractor has no row
           // for): there is no rect to project actions onto.
-          <div class="plan-stage__notice">{i18nT("tactics.plan.noBounds")}</div>
+          <HkEmptyState
+            class="plan-stage__bounds-empty"
+            fit="fill"
+            icon={Ruler}
+            title={i18nT("tactics.plan.noBounds")}
+          />
         ) : (
           <>
             <Teleport defer to={props.slotsTeleport ?? "body"} disabled={!props.slotsTeleport}>
