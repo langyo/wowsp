@@ -201,15 +201,6 @@
   }
 }
 
-/* Shared spinner glyph class (refresh icon, list rows). */
-.spin {
-  animation: resources-spin 0.9s linear infinite;
-}
-
-@keyframes resources-spin {
-  to { transform: rotate(360deg); }
-}
-
 // ── Category filter chips (AppTag interactive faces; container owns the
 //    wrap + gap only — 2026-11-03 tag unification) ──────────────────────
 
@@ -303,16 +294,6 @@
 
   /* (the row-state badges' face moved to AppTag — 2026-11-03 tag
      unification; the __tail keeps its flex layout only.) */
-
-  &__spinner {
-    width: 0.875rem;
-    height: 0.875rem;
-    flex: none;
-    border: 2px solid rgb(var(--color-primary) / 25%);
-    border-top-color: rgb(var(--color-primary));
-    border-radius: 50%;
-    animation: resources-spin 0.9s linear infinite;
-  }
 }
 
 // ── Row tiles: 40×40 rounded icon block, hue per kind ───────────────────────

@@ -27,7 +27,8 @@
   // Leave counterpart of the enter keyframe: the card fades and slides
   // out instead of snapping away when the pass ends (the component holds
   // itself mounted for this duration — a delayed unmount).
-  transition: opacity 260ms ease, transform 260ms ease;
+  transition: opacity var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard);
 
   &--leave {
     opacity: 0;

@@ -30,7 +30,8 @@
     cubic-bezier(0.22, 0.61, 0.36, 1);
   // Leave counterpart of the enter keyframe (delayed unmount in the
   // component keeps the card alive for the fold-out).
-  transition: opacity 260ms ease, transform 260ms ease;
+  transition: opacity var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard);
 
   &--leave {
     opacity: 0;

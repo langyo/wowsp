@@ -18,6 +18,8 @@
  */
 import { computed, defineComponent } from "vue";
 
+import { HkButton } from "@celestia-island/hikari";
+
 import RangeSlider from "@/components/base/RangeSlider";
 import { tierLabel } from "@/utils/shipCompare";
 import { t } from "@/i18n";
@@ -75,14 +77,18 @@ export default defineComponent({
         <div class="tier-range__head">
           <span class="tier-range__value">{readout.value}</span>
           {props.showReset && tierRangeNarrowed(range.value) ? (
-            <button
-              type="button"
-              class="tier-range__reset"
-              disabled={props.disabled || undefined}
+            /* The 全部… reset rides hikari's ghost HkButton (issue #1736
+               P2); xs is the kit's closest footprint for the compact
+               readout row — the hand-rolled 2xs pill and its SCSS rule
+               retired with the migration. */
+            <HkButton
+              variant="ghost"
+              size="xs"
+              disabled={props.disabled}
               onClick={() => emit("update:modelValue", [TIER_MIN, TIER_MAX])}
             >
               {t("ships.filter.tierAll")}
-            </button>
+            </HkButton>
           ) : null}
         </div>
         <RangeSlider

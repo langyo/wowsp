@@ -282,14 +282,14 @@
 
 .ship-dist-charts__bar-rect {
   transition:
-    opacity 0.16s ease,
-    filter 0.16s ease;
+    opacity var(--duration-short) var(--ease-standard),
+    filter var(--duration-short) var(--ease-standard);
 }
 
 /* The dimmed tier's value label fades with its bar (same key in the TSX);
    tier numbers stay put — they belong to the axis, not to any bar. */
 .ship-dist-charts__bar-value {
-  transition: opacity 0.16s ease;
+  transition: opacity var(--duration-short) var(--ease-standard);
 }
 
 .ship-dist-charts__bar-rect.is-dim,

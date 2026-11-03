@@ -291,10 +291,12 @@ Before submitting, the relevant subset of `just lint` (or scoped
   vendored checkouts — never path dependencies pointing at local directories
   outside this repo. hikari comes from the npm package
   `@celestia-island/hikari` (components are built on its public exports;
-  use granular style subpaths like `styles/theme/*` and
-  `styles/admin-tokens.scss`, never the `styles` aggregate entry, which
-  escapes the package), malkuth from its crates.io release, and
-  `game-assets` / `game-assets-core` stay vendored in-tree.
+  import styles through the `styles` aggregate entry — the canonical
+  theme + component sheet since hikari 0.52, whose header documents the
+  composition; the legacy Gen-1 granular theme sheets were removed from
+  the package, and remaining scoped sheets such as `styles/sidebar-rail.scss`
+  are `@use`d directly where wanted), malkuth from its crates.io release,
+  and `game-assets` / `game-assets-core` stay vendored in-tree.
 - **Error policy (mandatory)**: app-crate error flow is anyhow end-to-end —
   helpers return `anyhow::Result`, Tauri commands return
   `wowsp_tauri_shared::CommandResult` (the `CommandError(anyhow::Error)` IPC

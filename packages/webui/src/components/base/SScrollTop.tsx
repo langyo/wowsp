@@ -1,15 +1,17 @@
 import { defineComponent, onBeforeUnmount, ref, Transition } from "vue";
-import { ArrowUp } from "@lucide/vue";
 
-import "./SScrollTop.scss";
+import { HkFab } from "@celestia-island/hikari";
+
+import { t } from "@/i18n";
 
 /**
  * Floating "back to top" button. Appears when the scroll container is scrolled
  * past a threshold; click smoothly scrolls back to top. Tracks a parent scroll
  * container (passed as a CSS selector or the main content area by default).
  *
- * Position: fixed to the bottom-right, above any bottom bars. Uses the
- * --z-floating token so it stays above content but below modals/toasts.
+ * The scroll listening and visibility stay host-side (HkFab has no scroll
+ * logic); the button itself is hikari's glass HkFab — fixed to the
+ * bottom-right, sized sm, with the library's own z band (var(--hk-z-fab)).
  */
 export default defineComponent({
   name: "SScrollTop",
@@ -50,13 +52,14 @@ export default defineComponent({
     return () => (
       <Transition name="s-fade">
         {visible.value ? (
-          <button
-            class="s-scroll-top"
+          <HkFab
+            positioning="fixed"
+            size="sm"
+            variant="glass"
+            icon="ArrowUp"
+            ariaLabel={t("common.backToTop")}
             onClick={scrollToTop}
-            aria-label="Back to top"
-          >
-            <ArrowUp size={20} />
-          </button>
+          />
         ) : null}
       </Transition>
     );

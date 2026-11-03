@@ -226,62 +226,14 @@ body {
   font-size: var(--text-xs);
 }
 
-/* Menu actions — the tray menu's Show / Quit as rows. Pinned to the
-   bottom by the flex-grow cards above it: the window height
-   (PANEL_LOGICAL in commands/tray_panel.rs) fits the tallest state and
-   the two cards absorb every leftover pixel, so no dead void appears. */
+/* Menu actions — the tray menu's Show / Quit as hikari HkMenuActionItem
+   rows (the rows' own faces live in hikari's menu-item grammar; only the
+   host wrapper's rhythm is ours). Pinned to the bottom by the flex-grow
+   cards above it: the window height (PANEL_LOGICAL in
+   commands/tray_panel.rs) fits the tallest state and the two cards absorb
+   every leftover pixel, so no dead void appears. */
 .tray-panel__menu {
   display: flex;
   flex-direction: column;
   gap: 0.15rem;
-}
-
-.tray-panel__menu-item {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  padding: 0.45rem 0.65rem;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: rgb(var(--color-muted));
-  font-size: var(--text-sm);
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  transition: color var(--duration-short) var(--ease-standard),
-    background var(--duration-short) var(--ease-standard);
-
-  /* Reserved border (menu-item convention): the hover/danger washes
-     draw inside the same box with no layout shift. */
-  border: 1px solid transparent;
-
-  &:hover:not([data-danger]) {
-    color: rgb(var(--color-text));
-    background: rgb(var(--color-primary) / 10%);
-  }
-  &:focus-visible {
-    outline: 2px solid rgb(var(--color-primary));
-    outline-offset: 1px;
-  }
-
-  /* Danger rides the grammar's data-danger attribute — a rest face AND
-     a hover face (the old --danger class painted hover-only, so the
-     quit row read ordinary until pointed at). */
-  &[data-danger] {
-    color: rgb(var(--color-error));
-
-    &:hover {
-      color: rgb(var(--color-error));
-      background: rgb(var(--color-error) / 10%);
-    }
-  }
-}
-
-.tray-panel__menu-icon {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 1.1rem;
-  height: 1.1rem;
 }

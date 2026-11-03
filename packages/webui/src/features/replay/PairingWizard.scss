@@ -180,7 +180,7 @@
   }
 
   &__manual-chevron {
-    transition: transform 0.16s var(--ease-standard, ease);
+    transition: transform var(--duration-short) var(--ease-standard, ease);
 
     &.open { transform: rotate(180deg); }
   }
@@ -212,22 +212,13 @@
     gap: 0.5rem;
   }
 
-  &__gamedata-prog {
-    position: relative;
-    display: block;
+  /* The hikari bar (sm) takes the row slot the retired bespoke
+     __gamedata-prog/__gamedata-fill pair owned; an omitted value inside
+     it is the library's indeterminate shimmer (better than the old
+     0-width bar) before the first byte count lands. */
+  &__gamedata-bar {
     flex: 1;
-    height: 4px;
-    border-radius: 999px;
-    background: rgb(var(--color-border) / 30%);
-    overflow: hidden;
-  }
-
-  &__gamedata-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 999px;
-    background: rgb(var(--color-primary));
-    transition: width 0.18s var(--ease-standard, ease);
+    min-width: 0;
   }
 
   &__gamedata-note {
@@ -342,22 +333,13 @@
     text-overflow: ellipsis;
   }
 
+  /* Slim wrapper only: the track itself is hikari's (HkProgressBar xs =
+     2px). The retained rules keep the bar's rhythm inside the entry card
+     and the positioning context the mono __entry-pct overlay anchors to. */
   &__entry-progress {
     position: relative;
     display: block;
-    height: 4px;
-    border-radius: 999px;
-    background: rgb(var(--color-border) / 30%);
-    overflow: hidden;
     margin-top: 0.15rem;
-  }
-
-  &__entry-progress-fill {
-    position: absolute;
-    inset: 0 auto 0 0;
-    border-radius: 999px;
-    background: rgb(var(--color-primary));
-    transition: width 0.18s var(--ease-standard, ease);
   }
 
   &__entry-pct {

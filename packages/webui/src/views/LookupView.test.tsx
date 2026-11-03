@@ -87,6 +87,17 @@ vi.mock("@celestia-island/hikari", () => ({
     },
   },
   HkSpinner: { name: "HkSpinner", render: () => null },
+  // The refresh pill (real RefreshStatsButton) rides HkButton — a plain
+  // button pass-through keeps the pill's DOM presence in these suites.
+  HkButton: {
+    name: "HkButton",
+    props: ["variant", "size", "disabled", "loading", "ariaLabel"],
+    emits: ["click"],
+    setup(_: unknown, { slots }: { slots: { default?: () => VNode[] } }) {
+      return () => h("button", { type: "button" }, slots.default?.() ?? []);
+    },
+  },
+
   HkPopover: {
     name: "HkPopover",
     props: ["modelValue", "anchorRef", "placement", "title"],

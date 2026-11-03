@@ -16,16 +16,16 @@
  *
  * The popup frame follows the filter-bar popup pattern (FilterCategoryChip):
  * HkPopover teleported to body level and anchored bottom-start, outside
- * close via a document pointerdown listener while open (HkPopover's own
- * backdrop close stays off on desktop so re-clicking the open chip keeps
- * toggling it; Escape still closes), phones dock it as a bottom sheet.
- * Presses inside ANY hikari popover panel count as inside — the editor's
- * own add-connector opens a NESTED HkPopover that teleports to body
- * level, outside this anchor's subtree.
+ * close left to HkPopover's own backdrop shield — a document-level
+ * click-capture that exempts the anchor subtree (re-clicking the open chip
+ * still toggles it shut via its own onClick) and any popout layer stacked
+ * above: presses inside the editor's NESTED add-connector HkPopover
+ * (teleported to body level, outside this anchor's subtree) count as
+ * inside. Escape still closes; phones dock the popup as a bottom sheet.
  */
-import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineComponent, ref } from "vue";
 
-import { HkPopover, useBreakpoint } from "@celestia-island/hikari";
+import { HkPopover } from "@celestia-island/hikari";
 import { ShipWheel } from "@lucide/vue";
 
 import { t } from "@/i18n";
@@ -37,47 +37,8 @@ export default defineComponent({
   name: "LiveStatsModeChip",
   setup() {
     const prefs = useStatsPrefsStore();
-    const { isMobile } = useBreakpoint();
     const open = ref(false);
-    // Outside-close test roots — the chip anchor and the teleported panel
-    // (presses inside either must not count as outside, same contract as
-    // FilterCategoryChip).
-    const root = ref<HTMLElement | null>(null);
     const chipBtn = ref<HTMLButtonElement | null>(null);
-    const panelEl = ref<HTMLElement | null>(null);
-
-    function close() {
-      open.value = false;
-    }
-
-    function onDocPointerDown(e: PointerEvent) {
-      const target = e.target as Node;
-      if (root.value?.contains(target)) return;
-      if (panelEl.value?.contains(target)) return;
-      // The editor's add-connector opens a NESTED HkPopover that
-      // teleports to body level — outside this anchor's subtree, but a
-      // press inside the columns editor all the same; any hikari popover
-      // panel (the nested menu, its scrim) counts as inside.
-      if (
-        typeof Element !== "undefined" &&
-        target instanceof Element &&
-        target.closest(".hk-popover-panel, .hk-popover-scrim")
-      ) {
-        return;
-      }
-      close();
-    }
-
-    watch(
-      open,
-      (v) => {
-        if (v) document.addEventListener("pointerdown", onDocPointerDown, true);
-        else document.removeEventListener("pointerdown", onDocPointerDown, true);
-      },
-    );
-    onBeforeUnmount(() => {
-      document.removeEventListener("pointerdown", onDocPointerDown, true);
-    });
 
     /** The columns off the shipped defaults — the chip then wears its
      *  active face, exactly like the head's other toggles. */
@@ -94,7 +55,7 @@ export default defineComponent({
     );
 
     return () => (
-      <div ref={root} class="live-battle__mode-anchor">
+      <div class="live-battle__mode-anchor">
         <button
           ref={chipBtn}
           type="button"
@@ -110,17 +71,14 @@ export default defineComponent({
         </button>
         <HkPopover
           modelValue={open.value}
-          onUpdate:modelValue={(v: boolean) => {
-            if (!v) close();
-          }}
+          onUpdate:modelValue={(v: boolean) => (open.value = v)}
           anchorRef={chipBtn.value}
           placement="bottom-start"
-          closeOnBackdrop={isMobile.value}
           sheetOnMobile
           padding="lg"
           title={t("replay.live.statsSourceTitle")}
         >
-          <div ref={panelEl} class="live-battle__mode-pop">
+          <div class="live-battle__mode-pop">
             {/* The columns themselves — the identical editor the
                 settings' 显示内容 section renders (one shared store:
                 edits here show up there, and vice versa). */}
