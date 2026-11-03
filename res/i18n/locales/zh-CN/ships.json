@@ -174,6 +174,8 @@
     "noPlaneSpecs": "暂无该舰载机的性能参数。",
     "noImage": "无图片。",
     "noModel": "此舰艇尚未烘焙 3D 模型。运行 `just convert-ship --name <模型名>` + `just bake-model` 生成。",
+    "modelMissingTitle": "该舰暂无 3D 模型",
+    "modelMissingDesc": "模型资源包中没有这艘舰的模型文件——如果资源包不完整，可到资源页重新下载。",
     "noMyStats": "绑定账号后且你尚未在此舰上有对局。",
     "ballisticsApprox": "穿深曲线为基于弹重 / 空气阻力 / krupp 的估算值，非游戏精确公式。",
     "noBallistics": "无法从 GameParams 提取此舰艇的装甲 / 弹道数据。",

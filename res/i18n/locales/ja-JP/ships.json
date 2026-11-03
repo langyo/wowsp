@@ -174,6 +174,8 @@
     "noPlaneSpecs": "この艦載機の性能データはありません。",
     "noImage": "画像はありません。",
     "noModel": "この艦艇の 3D モデルはまだベイクされていません。`just convert-ship --name <モデル名>` + `just bake-model` を実行して生成してください。",
+    "modelMissingTitle": "この艦の 3D モデルがありません",
+    "modelMissingDesc": "モデルパックにこの艦のモデルファイルが含まれていません。パックが不完全な場合はリソースページから再ダウンロードしてください。",
     "noMyStats": "アカウントは連携済みですが、この艦での対戦はまだありません。",
     "ballisticsApprox": "貫通力の曲線は弾重 / 空気抵抗 / krupp から算出した推定値であり、ゲーム内の正確なモデルではありません。",
     "noBallistics": "この艦艇の装甲 / 弾道データを GameParams から抽出できませんでした。",

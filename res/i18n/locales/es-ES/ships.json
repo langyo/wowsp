@@ -174,6 +174,8 @@
     "noPlaneSpecs": "No hay especificaciones disponibles para esta aeronave.",
     "noImage": "No hay imagen disponible.",
     "noModel": "Este buque aún no tiene modelo 3D horneado. Ejecuta `just convert-ship --name <model>` + `just bake-model` para generar uno.",
+    "modelMissingTitle": "Sin modelo 3D para este buque",
+    "modelMissingDesc": "El paquete de modelos no incluye el archivo de modelo de este buque; si parece incompleto, vuelve a descargarlo desde la página de recursos.",
     "noMyStats": "Vincula una cuenta: aún no tienes batallas en este buque.",
     "ballisticsApprox": "Las curvas de penetración son una estimación derivada de la masa del proyectil / airDrag / krupp — no el modelo exacto del juego.",
     "noBallistics": "No se pudo extraer datos de blindaje / balística de GameParams para este buque.",
