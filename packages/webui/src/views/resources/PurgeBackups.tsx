@@ -25,6 +25,45 @@ import { t } from "@/i18n";
 import { formatLocalStamp } from "@/utils/format";
 import "./PurgeBackups.scss";
 
+/** The backend's purge refusals reach the UI as plain anyhow strings (the
+ *  CommandError contract), so the recurring rejections map onto i18n keys
+ *  by their stable markers; anything else toasts raw — I/O diagnostics
+ *  carry paths worth keeping verbatim. Markers are the exact substrings
+ *  purge_backups.rs raises (user report 2026-11-03: the tolerant-resume
+ *  refusal toasted in English over a fully localized dialog). */
+const PURGE_ERROR_KEYS: readonly (readonly [marker: string, key: string])[] = [
+  [
+    "carries files no completed unit of this purge claims",
+    "resources.purgeBackups.errors.resumeUnclaimed",
+  ],
+  [
+    "not a resumable state",
+    "resources.purgeBackups.errors.resumeTooMany",
+  ],
+  [
+    "never finished — resume it or mark it done before deleting",
+    "resources.purgeBackups.errors.deleteUnfinished",
+  ],
+  [
+    "has no unfinished-purge marker",
+    "resources.purgeBackups.errors.dismissNothing",
+  ],
+  [
+    "never finished — resume it or mark it done before merging",
+    "resources.purgeBackups.errors.restoreUnfinished",
+  ],
+];
+
+/** The i18n key for one backend purge refusal, or null when the message
+ *  is not one of the mapped rejections (exported for the mapper's own
+ *  tests — the table is the contract against purge_backups.rs). */
+export function purgeErrorKey(message: string): string | null {
+  for (const [marker, key] of PURGE_ERROR_KEYS) {
+    if (message.includes(marker)) return key;
+  }
+  return null;
+}
+
 /** The purge-backups state the resources view renders from: the list
  *  (refreshed on install switch and after every action), one busy row at
  *  a time, and the delete confirmation target. `onChanged` fires after a
@@ -68,7 +107,9 @@ export function usePurgeBackups(gameRoot: Ref<string>, onChanged?: () => void) {
     try {
       await op();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      const key = purgeErrorKey(message);
+      toast.error(key ? t(key) : message);
     } finally {
       busyDir.value = null;
     }
