@@ -246,7 +246,15 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
               server-applicability tag. BOTH states open the window, so
               "installed where?" is always one click away. */}
           {(() => {
-            const installedOn = ctx.installedClientsOf(entry);
+            // Only clients whose state is CURRENTLY INSTALLED make the
+            // merged list — a ledger record on a client the entry no
+            // longer applies to (or one whose version drifted) is the
+            // per-client window's story, not this tag's (2026-11-03: the
+            // RU/Lesta tag on a Lesta-unsupported entry).
+            const installedOn = ctx
+              .entryClientStatuses(entry)
+              .filter((s) => s.state === "installed")
+              .map((s) => s.install);
             const openClients = () => ctx.openEntryClients(entry);
             if (installedOn.length > 0) {
               return (

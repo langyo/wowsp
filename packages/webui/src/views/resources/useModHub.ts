@@ -32,6 +32,7 @@ import {
 } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
 import { appliesToRealm, realmOfInstall } from "@/features/modhub/servers";
+import { entryClientStatusesOf } from "@/features/modhub/entryClients";
 import { requestModOpDisclaimer } from "@/features/modhub/ModOpDisclaimer";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -497,6 +498,12 @@ export function useModHub() {
    *  window's per-client rows both read through here. */
   const installedClientsOf = (entry: CatalogEntry) =>
     config.installs.filter((i) => recordOfEntryOn(entry, i.path) !== undefined);
+
+  /** Per-client install statuses over every configured client (the
+   *  merged tag lists only the "installed" ones; the clients window and
+   *  the upcoming per-client tooltip render the full vocabulary). */
+  const entryClientStatuses = (entry: CatalogEntry) =>
+    entryClientStatusesOf(entry, config.installs, recordOfEntryOn);
 
   /** The entry-clients window: every configured client with THIS entry's
    *  install state + the client's mod-tree footprint (opened by clicking
@@ -1832,6 +1839,7 @@ export function useModHub() {
     recordOfEntry,
     recordOfEntryOn,
     installedClientsOf,
+    entryClientStatuses,
     entryClientsWindow,
     openEntryClients,
     closeEntryClients,
