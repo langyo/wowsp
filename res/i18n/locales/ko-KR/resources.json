@@ -51,6 +51,7 @@
   },
   "foreignBadge": "{source} 설치",
   "contestedTree": "충돌 트리",
+  "contestedDetail": "이 트리의 파일은 다른 설치기의 장부에도 기록되어 있으며 디스크 내용이 기록 시점과 일치하지 않습니다: {files}. 이 모드(또는 상대)를 다시 설치해 현재 사본을 확정하세요.",
   "contestedTreeHint": "WoWSP 설치 기록이 이 트리의 파일을 소유하고 있고 외부 파일도 남아 있습니다. WoWSP의 다시 쓰기와 외부 설치 관리자의 시작 시 재적용이 서로를 덮어씁니다.",
   "foreignManaged": "{name}은(는) {source}에서 설치했습니다. 여기서 바로 제거할 수 있습니다(파일과 {source}의 등록 행이 함께 정리됨). WoWSP 관리로 전환하려면 페어링된 카탈로그 항목을 열어 등록 후 다시 설치하세요.",
   "foreignPaired": "카탈로그와 매칭됨",

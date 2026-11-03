@@ -526,6 +526,20 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
             </div>
           );
         })()}
+        {mod.contested && (
+          <div class="mod-detail__contested">
+            <p class="mod-detail__contested-note">
+              {t("resources.contestedDetail", {
+                files: (mod.contestedFiles ?? []).join(", "),
+              })}
+            </p>
+            {(mod.contestedFiles ?? []).map((f) => (
+              <code key={f} class="mod-detail__contested-file">
+                {f}
+              </code>
+            ))}
+          </div>
+        )}
         {(mod.warnings ?? []).length > 0 && (
           <ul class="plan-card__warnings">
             {(mod.warnings ?? []).map((w, i) => (

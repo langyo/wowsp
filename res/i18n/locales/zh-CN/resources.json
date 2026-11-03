@@ -51,6 +51,7 @@
   },
   "foreignBadge": "由 {source} 安装",
   "contestedTree": "冲突目录树",
+  "contestedDetail": "此目录树中的文件同时被其他安装器的账本认领，且磁盘字节已与对方写入时不一致：{files}。重装本插件（或对方）以确认当前副本。",
   "contestedTreeHint": "WoWSP 的安装记录声明了此目录树中的部分文件，且仍有外来文件残留——WoWSP 的改写与外来安装器每次启动时的重新套用会互相覆盖。",
   "foreignManaged": "{name} 由 {source} 安装。你可以在这里直接卸载它（文件与 {source} 的登记会同步清理）；如需纳入 WoWSP 管理，请打开配对的目录条目注册并重新安装。",
   "foreignPaired": "已配对目录条目",

@@ -113,6 +113,12 @@ pub struct InstalledMod {
     /// byte-identical).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub contested: bool,
+    /// The files whose bytes NO claiming record's recorded hash verifies —
+    /// the concrete "who overwrote what" behind a true `contested` badge.
+    /// Empty unless `contested` is true; absent on the wire otherwise
+    /// (older payloads stay byte-identical).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contested_files: Vec<String>,
 }
 
 /// Result of toggling one installed plugin's `.bak` state.

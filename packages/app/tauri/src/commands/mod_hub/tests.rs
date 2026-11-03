@@ -4476,3 +4476,95 @@ fn adoption_skips_the_boot_re_installer_and_the_manifest() {
     assert!(!live2.join("PnFMods/ModsInstaller_4_4_0").exists());
     fs::remove_dir_all(&tmp).ok();
 }
+
+/// (2026-11-03) Hash verification + shared-registry carve-out:
+/// - a claim whose recorded hash MATCHES the on-disk bytes is
+///   verified coexistence — never contested;
+/// - a claim whose recorded hash DIFFERS (someone overwrote) IS
+///   contested;
+/// - claims on shared registries (ForgeBlueprints/**,
+///   installed_mods.xml, wowsp.toml) are excluded outright — entries
+///   accumulate there by design (the live ModForge report).
+#[test]
+fn contested_verifies_recorded_hashes_and_skips_shared_registries() {
+    use sha2::{Digest, Sha256};
+    let tmp = std::env::temp_dir().join("wowsp_contested_hash");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("bin/1/res_mods");
+    fs::create_dir_all(&rm).unwrap();
+    let hex = |bytes: &[u8]| hex::encode(Sha256::digest(bytes));
+    let verified = b"verified bytes";
+    let overwritten = b"overwritten bytes";
+    touch(&rm.join("PnFMods/SkinSkin/verified.txt"));
+    fs::write(rm.join("PnFMods/SkinSkin/verified.txt"), verified).unwrap();
+    touch(&rm.join("PnFMods/SkinSkin/overwritten.txt"));
+    fs::write(rm.join("PnFMods/SkinSkin/overwritten.txt"), overwritten).unwrap();
+    touch(&rm.join("PnFMods/SkinSkin/Main.py"));
+    fs::write(rm.join("PnFMods/SkinSkin/Main.py"), "print(1)").unwrap();
+    touch(&rm.join("ForgeBlueprints/Other.xml"));
+    fs::write(rm.join("ForgeBlueprints/Other.xml"), b"<mod/>").unwrap();
+    let catalog = tiny_catalog("battle.skin.skin", "SkinSkin");
+    let mut units = classify_installed_root(&rm, Some(&catalog));
+    assert_eq!(
+        units
+            .iter()
+            .find(|u| u.name == "SkinSkin")
+            .unwrap()
+            .identity
+            .as_deref(),
+        Some("battle.skin.skin"),
+    );
+
+    let mut claimant = ledger_record(
+        "other.pack",
+        &[
+            "PnFMods/SkinSkin/verified.txt",
+            "PnFMods/SkinSkin/overwritten.txt",
+            "ForgeBlueprints/Other.xml",
+        ],
+    );
+    let mut hashes = std::collections::HashMap::new();
+    hashes.insert("pnfmods/skinskin/verified.txt".to_string(), hex(verified));
+    // The recorded hash for the overwritten file names DIFFERENT
+    // bytes than what is on disk now.
+    hashes.insert(
+        "pnfmods/skinskin/overwritten.txt".to_string(),
+        hex(b"some older bytes"),
+    );
+    claimant.hashes = Some(hashes);
+    let installs = vec![
+        claimant,
+        ledger_record("other.pack2", &["ForgeBlueprints/Other.xml"]),
+    ];
+    super::installed_units::mark_contested_units(&rm, &mut units, &installs, &catalog, "1", "g");
+    let unit = units.iter().find(|u| u.name == "SkinSkin").unwrap();
+    // verified.txt matches its claimant's recorded hash — coexistence.
+    assert!(
+        !unit
+            .contested_files
+            .iter()
+            .any(|f| f.contains("verified.txt")),
+        "{:?}",
+        unit.contested_files
+    );
+    // overwritten.txt matches nothing — the live contest.
+    assert!(
+        unit.contested_files
+            .iter()
+            .any(|f| f.contains("overwritten.txt")),
+        "{:?}",
+        unit.contested_files
+    );
+    // The shared registry is exempt outright.
+    assert!(
+        !unit
+            .contested_files
+            .iter()
+            .any(|f| f.contains("ForgeBlueprints")),
+        "{:?}",
+        unit.contested_files
+    );
+    assert!(unit.contested, "a real overwrite must still contest");
+    // The wire carries the concrete file list for the pane.
+    assert_eq!(unit.contested_files.len(), 1);
+}

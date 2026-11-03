@@ -51,6 +51,7 @@
   },
   "foreignBadge": "Instalado por {source}",
   "contestedTree": "Árbol en disputa",
+  "contestedDetail": "Los archivos de este árbol también están reclamados por el libro de otro instalador y ya no coinciden con lo que escribió: {files}. Reinstala este mod (o el otro) para fijar la copia actual.",
   "contestedTreeHint": "Un registro de WoWSP reclama archivos en este árbol mientras quedan archivos externos: las reescrituras de WoWSP y las reaplicaciones del instalador externo se deshacen mutuamente.",
   "foreignManaged": "{name} fue instalado por {source}. Puedes desinstalarlo aquí mismo (los archivos y las filas de registro de {source} se limpian juntos), o abrir la entrada emparejada del catálogo para registrarlo y reinstalarlo bajo WoWSP.",
   "foreignPaired": "Emparejado con el catálogo",
