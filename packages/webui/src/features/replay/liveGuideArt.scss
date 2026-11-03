@@ -107,9 +107,54 @@
   }
 }
 
+/* ── Gateway link art (gw-link-art, GatewayLiveView's waiting hero) ──────
+   Same flat token-class anatomy as the guide art above; adds the dashed
+   desktop→phone link and its two motion parts. Flow (the --flow modifier
+   set while the handshake/dial is in flight) marches the dashes toward the
+   phone and pulses the packet dot; reduced motion freezes both. */
+.gw-link-art {
+  display: block;
+
+  &__link {
+    stroke-dasharray: 4 4;
+  }
+
+  &__packet {
+    opacity: 0.55;
+  }
+}
+
+.gw-link-art--flow {
+  .gw-link-art__link {
+    animation: gw-link-art-flow 0.9s linear infinite;
+  }
+
+  .gw-link-art__packet {
+    animation: gw-link-art-packet 1.8s ease-in-out infinite;
+  }
+}
+
+@keyframes gw-link-art-flow {
+  to {
+    stroke-dashoffset: -8;
+  }
+}
+
+@keyframes gw-link-art-packet {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .live-guide-art__sweep,
-  .live-guide-art__blip {
+  .live-guide-art__blip,
+  .gw-link-art__link,
+  .gw-link-art__packet {
     animation: none;
   }
 }

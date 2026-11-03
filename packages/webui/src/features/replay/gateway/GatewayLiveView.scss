@@ -1,0 +1,261 @@
+/* GatewayLiveView — the /live body on the PHONE build (the gateway push
+   receive side; see GatewayLiveView.tsx). Two glass surfaces float over the
+   wallpaper instead of the old bare chrome: the head card (account chip +
+   status tag + route entry) and the state hero (per-state art, headline,
+   hint, and the big connect CTA). Both ride the shared glass-panel recipe
+   so they stay readable over any wallpaper/theme and follow the ui-opacity
+   dial like every other floating panel. */
+
+@use "../../../theme/mixins" as *;
+
+.gateway-live {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+  flex: 1;
+  min-height: 0;
+  padding: var(--space-10) var(--space-12) calc(var(--space-10) + env(safe-area-inset-bottom, 0px));
+
+  /* ── Head card ─────────────────────────────────────────────────────────
+     Account chip + status tag on one row, the route entry (and, mid-battle,
+     the compact disconnect) on the next. */
+  &__head {
+    @include glass-panel;
+    border-radius: var(--radius-lg);
+    padding: var(--space-10) var(--space-12);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-8);
+    flex: none;
+  }
+
+  &__account {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    min-width: 0;
+
+    .player-badge,
+    .account-avatar {
+      flex: none;
+    }
+  }
+
+  &__account-body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  &__account-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    @include truncate;
+  }
+
+  &__account-realm {
+    font-size: var(--text-3xs, 0.625rem);
+    letter-spacing: 0.04em;
+    color: rgb(var(--color-muted));
+  }
+
+  &__status {
+    flex: none;
+  }
+
+  &__route {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    min-width: 0;
+  }
+
+  &__route-icon {
+    flex: none;
+    color: rgb(var(--color-muted));
+  }
+
+  &__root {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-muted));
+    @include truncate;
+  }
+
+  &__kick {
+    flex: none;
+    margin-left: var(--space-4);
+  }
+
+  /* Dial failures to the official node (custom ones toast instead). */
+  &__error {
+    margin: 0;
+    padding-inline: var(--space-4);
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.45;
+    color: rgb(var(--color-error));
+    flex: none;
+  }
+
+  /* ── State hero ────────────────────────────────────────────────────────
+     Owns the body until the first pushed frame. margin:auto centers the
+     card in the leftover space; when the viewport is too short the card
+     scrolls (the wrapper's overflow) instead of squashing. */
+  &__waiting {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+
+  &__hero {
+    @include glass-panel;
+    border-radius: var(--radius-lg);
+    margin: auto;
+    width: 100%;
+    max-width: 21rem;
+    padding: var(--space-16) var(--space-14) var(--space-14);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: var(--space-10);
+  }
+
+  &__hero-art {
+    width: 132px;
+    height: auto;
+    flex: none;
+  }
+
+  /* Quiet states (host offline / battle over / dial error) speak through a
+     tinted icon disc instead of the line-art. */
+  &__hero-disc {
+    width: 60px;
+    height: 60px;
+    border-radius: var(--radius-full);
+    display: grid;
+    place-items: center;
+    flex: none;
+
+    &--offline {
+      color: rgb(var(--color-warning));
+      background: rgb(var(--color-warning) / 12%);
+    }
+
+    &--ended {
+      color: rgb(var(--color-muted));
+      background: rgb(var(--color-muted) / 12%);
+    }
+
+    &--error {
+      color: rgb(var(--color-error));
+      background: rgb(var(--color-error) / 12%);
+    }
+  }
+
+  &__hero-title {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 700;
+    color: rgb(var(--color-text));
+  }
+
+  &__hero-hint {
+    margin: 0;
+    max-width: 24rem;
+    font-size: var(--text-sm);
+    line-height: 1.65;
+    color: rgb(var(--color-muted));
+  }
+
+  &__hero-busy {
+    margin: calc(-1 * var(--space-4)) 0 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-muted));
+
+    .hk-spinner-wrapper {
+      flex: none;
+    }
+  }
+
+  &__hero-cta {
+    width: 100%;
+    margin-top: var(--space-6);
+  }
+
+  &__hero-foot {
+    margin: calc(-1 * var(--space-4)) 0 0;
+    max-width: 100%;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  /* The pushed battle renders through the existing panel. */
+  &__body {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Bottom-sheet bodies (HkModal docks under 768px). */
+  &__sheet {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-10);
+  }
+
+  &__sheet-hint {
+    margin: 0;
+    font-size: var(--text-xs, 0.75rem);
+    line-height: 1.5;
+    color: rgb(var(--color-muted));
+  }
+
+  /* Spinner line inside a sheet (async sitekey landing) — the hero's busy
+     voice carries a negative top margin that would look wrong here. */
+  &__sheet-busy {
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    font-size: var(--text-xs, 0.75rem);
+    color: rgb(var(--color-muted));
+
+    .hk-spinner-wrapper {
+      flex: none;
+    }
+  }
+}
+
+/* Short viewports (landscape phones): tighten the hero so the CTA stays on
+   the first screen where possible — the wrapper scrolls only as a last
+   resort (see __waiting). */
+@media (max-height: 480px) {
+  .gateway-live {
+    &__hero {
+      gap: var(--space-8);
+      padding: var(--space-10) var(--space-14) var(--space-12);
+    }
+
+    &__hero-art {
+      width: 96px;
+    }
+
+    &__hero-disc {
+      width: 48px;
+      height: 48px;
+    }
+  }
+}
