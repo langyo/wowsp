@@ -16,12 +16,18 @@
  * What is pinned:
  *
  * 1. The granular entry resolves and its geometry rides along in the
- *    compiled output — the host/panel class family, the [data-peeking]
- *    z-rise (the "overlay, never reflow" contract), and BOTH toggle
- *    reveals (:hover for pointer, :focus-within for keyboard). Neither
- *    the host nor the panel clips any more: the toggle straddles the
- *    panel's content-facing border, so the CONTENT clip moved into
- *    .hk-sidebar-rail-clip (inside the panel).
+ *    compiled output — the host/panel class family, the sidebar z band
+ *    carried by the HOST rule permanently (hikari 0.55.271: the
+ *    "overlay, never reflow" contract widened — the straddling toggle
+ *    hangs over the content column in EVERY state, and wowsp's own glass
+ *    panel (a permanent backdrop-filter, i.e. a stacking context) demotes
+ *    the toggle's local z below plain positioned content painted later in
+ *    tree order, so the band must live on the host, the elevation
+ *    boundary), and BOTH toggle reveals (:hover for pointer,
+ *    :focus-within for keyboard). Neither the host nor the panel clips
+ *    any more: the toggle straddles the panel's content-facing border, so
+ *    the CONTENT clip moved into .hk-sidebar-rail-clip (inside the
+ *    panel).
  * 2. The toggle's straddle geometry (negative inset-inline-end by half the
  *    circle) — its outer half deliberately paints outside the panel.
  * 3. The pin window ([data-pinning]): the panel and any nested sidebar
@@ -105,10 +111,17 @@ describe("Sidebar rail stylesheet contract", () => {
     expect(hostGeom, "the host rule exists").not.toBeNull();
     expect(hostGeom).toContain("overflow: visible");
     expect(hostGeom).toContain("transition: width");
-    // The peek is an overlay only in Z now — there is no overflow flip.
-    const peeking = ruleBody(".hk-sidebar-rail-host[data-peeking]");
-    expect(peeking, "the peeking rule exists").not.toBeNull();
-    expect(peeking).toContain("z-index: var(--hk-z-sidebar, 900)");
+    // The sidebar z band rides the HOST rule PERMANENTLY (hikari
+    // 0.55.271): the toggle's overhanging half must paint above the
+    // content column in every state, and this app's glass panel (a
+    // permanent backdrop-filter on .sidebar__panel — i.e. a stacking
+    // context) demotes the toggle's own local z, so the band must live on
+    // the host, the elevation boundary. There is no bare peeking z rule
+    // left to tie the elevation to the peek state.
+    expect(hostGeom).toContain("z-index: var(--hk-z-sidebar, 900)");
+    expect(css).not.toContain(".hk-sidebar-rail-host[data-peeking] {");
+    // The peek shadow survives on the panel-scoped rules.
+    expect(css).toContain(".hk-sidebar-rail-host[data-peeking] .hk-sidebar-rail-panel");
     // The slide lever lives on the panel's WIDTH, never the host's.
     const panelGeom = ruleBody(".hk-sidebar-rail-panel");
     expect(panelGeom, "the panel rule exists").not.toBeNull();
@@ -136,6 +149,12 @@ describe("Sidebar rail stylesheet contract", () => {
     expect(toggle).toContain("inset-inline-end: calc(");
     expect(toggle).toMatch(/\/ -2/);
     expect(toggle).toContain("translate: 0 -50%");
+    // Elevation rides the FAB band token, never a raw number (hikari
+    // 0.55.271): the overlay-scrollbar thumb floats a raw 2 up to this
+    // panel, and the old z-index: 2 tie only won on DOM order — one
+    // markup reshuffle away from covering the circle's inner half.
+    expect(toggle).toContain("z-index: var(--hk-z-fab, 40)");
+    expect(toggle).not.toMatch(/z-index:\s*\d/);
   });
 
   it("the pin window snaps the panel while only the host animates", () => {
