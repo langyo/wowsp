@@ -86,8 +86,11 @@ function keysFor(key: string): HintCardKey[] {
 
 /** The card for one badge code, or null when the class has no briefing
  *  (`?` — unknown/auxiliary hulls) or the active locale carries no text.
- *  The head glyph is the class's minimap marker, drawn as outline line art
- *  and pointing right. */
+ *  The head glyph is the same filled class silhouette the table rows draw
+ *  (BattleIcon's white variant) — one icon source per glyph, per the
+ *  2026-11-03 user report: the former plate-free outline marker was a
+ *  hairline-stroke line art that rendered jagged at card size and rode a
+ *  CSS-filter tint channel no other hint card used. */
 export function shipTypeHintCardOf(code: string | null | undefined): HintCard | null {
   const key = HINT_KEY[(code ?? "").trim()];
   if (!key) return null;
@@ -96,16 +99,16 @@ export function shipTypeHintCardOf(code: string | null | undefined): HintCard | 
   // An unshipped/missing message resolves to the key path itself (vue-i18n's
   // miss behaviour) — never leak that into the popup.
   if (!title || !body || title.startsWith("ships.typeInfo.")) return null;
-  // The "outline" variant is the neutral minimap marker as line art — the
-  // same glyph the rows draw, with its plate dropped so the popup's ink tint
-  // keeps the interior gaps open at the card's 20 px (see HintCard.markerUrl).
-  const markerUrl = shipIconUrl(ICON_TYPE[key], "outline");
+  // The rows' exact source (BattleIcon's white variant, shipIcons.ts) — the
+  // filled silhouette reads smooth at card size, the former outline line
+  // art did not (2026-11-03 unification).
+  const iconUrl = shipIconUrl(ICON_TYPE[key], "white");
   const keys = keysFor(key);
   const noteKey = `ships.typeInfo.${key}.note`;
   const note = te(noteKey) ? t(noteKey) : "";
   return {
     title,
-    ...(markerUrl ? { markerUrl } : {}),
+    ...(iconUrl ? { iconUrl } : {}),
     body,
     ...(keys.length > 0 ? { keys } : {}),
     ...(!note || isMiss(note) ? {} : { note }),

@@ -397,33 +397,34 @@
 }
 
 .lookup-view__ship-tier {
-  /* 28px still clears the widest roman numeral (VIII) in the mono face;
-     the tight box keeps the tier from drifting right of the type code.
-     The explicit line-height pins the tier and the type code to the same
-     box: the mono face's taller default line box centered its glyphs a
-     hair ABOVE the code's (the row's flex centering balances boxes, not
-     glyph bodies). */
+  /* 28px still clears the widest roman numeral (VIII); centered so the
+     shorter codes don't strand a blank band. NO line-height pin and no
+     mono face: the pin gave the tier a 12px box against the name's
+     inherited 15px (10px × body 1.5), and flex centering balances boxes —
+     the roman ink rode ~2px HIGH vs the name (2026-11-03 user report,
+     still visible after #1627's tier↔type-only fix). Inheriting the
+     row's 1.5 puts every cell in the same box and one shared baseline;
+     RankedShipTable's unpinned tier proves the grammar. */
   flex: 0 0 28px;
   text-align: center;
   font-style: normal;
   color: rgb(var(--color-text));
-  font-family: var(--font-mono);
   font-size: 0.625rem;
-  line-height: 12px;
 }
 
 .lookup-view__ship-type {
   /* 28px keeps the combined CA/CL fallback legible; a resolved CA/CL badge
      sits well inside it. Centered so the shorter codes don't strand a
-     blank band ahead of the tier column. Same 12px line box as the tier —
-     the pair reads as one aligned column. */
+     blank band ahead of the tier column. The line box is inherited like
+     the tier's and the name's — one shared baseline across the whole row
+     (the former 12px pin rode the pair ~2px high vs the name's ink;
+     2026-11-03 user report). */
   flex: 0 0 28px;
   text-align: center;
   color: rgb(var(--color-muted));
   font-size: 0.625rem;
   font-weight: 600;
   white-space: nowrap;
-  line-height: 12px;
 }
 
 .lookup-view__ship-battles {

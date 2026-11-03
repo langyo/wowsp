@@ -46,24 +46,24 @@ describe("globalTooltip briefing paragraph", () => {
     vi.useRealTimers();
   });
 
-  it("renders the tinted marker, the paragraph and the wide-card class", () => {
+  it("renders the head icon, the paragraph and the wide-card class", () => {
     hover(
       anchor({
         title: "重型巡洋舰",
-        markerUrl: "/images/ships/icon_outline_cruiser.svg",
+        iconUrl: "/images/ships/icon_white_cruiser.svg",
         body: "第一段。\n第二段。",
       }),
     );
     const p = popup();
     expect(p?.classList.contains("global-tooltip--paragraph")).toBe(true);
     expect(p?.querySelector(".global-tooltip__card-title")?.textContent).toBe("重型巡洋舰");
-    // The line-art HUD glyph renders as a bare image — no plate span behind
-    // it; the CSS filter tint carries the contrast instead (see
-    // globalTooltip.scss).
-    const marker = p?.querySelector(".global-tooltip__card-marker");
-    expect(marker?.tagName).toBe("IMG");
-    expect(marker?.getAttribute("src")).toBe("/images/ships/icon_outline_cruiser.svg");
-    expect(p?.querySelector(".global-tooltip__card-icon")).toBeNull();
+    // The head glyph is the rows' filled silhouette, drawn as a bare
+    // unfiltered image (2026-11-03 icon unification — the tinted
+    // outline-marker channel is gone).
+    const icon = p?.querySelector(".global-tooltip__card-icon");
+    expect(icon?.tagName).toBe("IMG");
+    expect(icon?.getAttribute("src")).toBe("/images/ships/icon_white_cruiser.svg");
+    expect(p?.querySelector(".global-tooltip__card-marker")).toBeNull();
     expect(p?.querySelector(".global-tooltip__card-body")?.textContent).toBe("第一段。\n第二段。");
   });
 
