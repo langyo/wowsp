@@ -89,9 +89,14 @@ pub mod mod_integrity;
 pub mod mod_tags;
 pub mod model_pack;
 pub mod network;
+// PAC (proxy auto-config) engine behind the system-proxy channel: fetches
+// the WinINET AutoConfigURL script, evaluates FindProxyForURL per request
+// (boa on a dedicated thread - see the module docs) and answers the
+// diagnostics IPC (pacUrl / pacStatus + the pac proxy source label).
 pub mod open_external;
 #[cfg(desktop)]
 pub mod overlay;
+pub mod pac;
 #[cfg(mobile)]
 /// Mobile stand-ins for the overlay command surface. The desktop module
 /// (src/commands/overlay/) is a game-window capture stack — GDI BitBlt,
