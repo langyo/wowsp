@@ -49,7 +49,9 @@ describe("loadStatsPrefs", () => {
     // tier-weighted team winrate ship on. The team-averages line ships
     // off (dense already); the consumable-intel line above it has no
     // switch at all. Compact rows on the live panel ship on; compact rows
-    // post-battle (the full-card override off) stay the default. The
+    // post-battle (the full-card override off) stay the default; the
+    // post-battle AI confidence column ships ON (the switch owns the
+    // weighted sort too). The
     // PR-tier row wash ships on, and so do both karma (业力) superscripts
     // — the roster lists' and the stats cards' switches ship ON: the
     // figures ride answers the surfaces already pay for.
@@ -64,6 +66,7 @@ describe("loadStatsPrefs", () => {
       rosterKarmaEnabled: true,
       cardKarmaEnabled: true,
       postbattleRosterFull: false,
+      postbattleAiScore: true,
       teamAvgEnabled: false,
       sealDisabled: {},
       sealLabels: {},
@@ -423,6 +426,7 @@ describe("statsPrefs store", () => {
     store.setRosterKarmaEnabled(false);
     store.setCardKarmaEnabled(false);
     store.setPostbattleRosterFull(true);
+    store.setPostbattleAiScore(false);
     store.setTeamAvgEnabled(true);
     store.setOverlayColumns([
       { scope: "solo", metric: "winrate" },
@@ -444,6 +448,7 @@ describe("statsPrefs store", () => {
       rosterKarmaEnabled: false,
       cardKarmaEnabled: false,
       postbattleRosterFull: true,
+      postbattleAiScore: false,
       teamAvgEnabled: true,
       sealDisabled: {},
       sealLabels: {},

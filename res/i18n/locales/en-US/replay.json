@@ -351,7 +351,13 @@
     "viewAll": "All players",
     "viewSelf": "My battle",
     "selfUnavailable": "Personal report unavailable (decoded stream missing)",
-    "divisionTag": "Div. {letter}"
+    "divisionTag": "Div. {letter}",
+    "aiScore": "AI score",
+    "aiScoreTip": "Fire {fire}% · Move {move}% · Data coverage {cov}%",
+    "aiScoreTipMoveOnly": "Move {move}% · Data coverage {cov}%",
+    "teamAvgAi": "AI avg",
+    "aiSort": "AI confidence sort",
+    "aiSortHint": "Rank by the weighted AI score — the longer the ship was observable this battle, the more its placing trusts the AI verdict over the settlement-XP share"
   },
   "comp": {
     "main": "Main battery",

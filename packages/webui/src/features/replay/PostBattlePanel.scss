@@ -424,6 +424,18 @@
   text-align: right;
   font-family: var(--font-mono);
 }
+/* The AI confidence cell closes the compact row (the rightmost score,
+   where the retired seal track used to read): the fire+move whole-game
+   agreement as a percentage. Same mono/righted register as the XP cell
+   so the two read as one score block; the muted em dash covers join
+   misses while the switch stays on. */
+.replay-view__postbattle-cell-ai {
+  flex: 0 0 auto;
+  min-width: 5ch;
+  text-align: right;
+  font-family: var(--font-mono);
+  color: rgb(var(--color-text) / 0.85);
+}
 
 /* ── Full-card rows (the live roster's richer density, carried as a card) ──
    A sibling of the live panel's .live-battle__crow rows: that roster renders
@@ -558,10 +570,10 @@
   display: block;
   min-width: 0;
 }
-/* This panel's score track: the XP cell alone, pinned onto track 3 (the
-   retired seal track no longer follows it). The configured stat columns
-   ride the stat text strip inside the main track — damage included, so no
-   dedicated dmg track remains. */
+/* This panel's score track: the XP cell plus the AI confidence cell when
+   its switch is on, pinned onto track 3 (the retired seal track no longer
+   follows it). The configured stat columns ride the stat text strip inside
+   the main track — damage included, so no dedicated dmg track remains. */
 .replay-view__postbattle-fcell-score {
   grid-column: 3;
   justify-self: end;
@@ -573,6 +585,11 @@
 .replay-view__postbattle-fcell-xp {
   text-align: right;
   font-family: var(--font-mono);
+}
+.replay-view__postbattle-fcell-ai {
+  text-align: right;
+  font-family: var(--font-mono);
+  color: rgb(var(--color-text) / 0.85);
 }
 /* The detail head cluster rides HkModal's headerLead slot on all three
    sites (issue #1736 P2 wave item 4) — the header's own padding separates
@@ -764,7 +781,8 @@
   }
 
   .replay-view__modal-body .replay-view__postbattle-cell-stat,
-  .replay-view__modal-body .replay-view__postbattle-cell-xp {
+  .replay-view__modal-body .replay-view__postbattle-cell-xp,
+  .replay-view__modal-body .replay-view__postbattle-cell-ai {
     font-size: var(--text-2xs);
   }
 

@@ -418,15 +418,18 @@ export { rosterStatView };
  *  switcher (a segmented pair — hosts without a second view leave it off),
  *  the stats-source chip (the identical selector the live panel's head
  *  carries — one shared statsPrefs store, so a flip here re-resolves the
- *  roster and shows up in the live head / settings immediately), the
- *  hide-all-nicknames toggle (with the per-row eye hint), the optional
- *  roster-density toggle (compact rows ⇄ the expanded full cards — the live
- *  roster's richer density carried as a card here; rendered only when the
- *  host passes the props) and the copy-share-shot
- *  action. In the 我的 view the roster-only controls (stats chip, density,
- *  mask hint) sit out — the camera button then copies the self report.
- *  Shared by the results panel and the incomplete-results fallback so both
- *  post-battle windows expose the same controls. */
+ *  roster and shows up in the live head / settings immediately; the
+ *  results panel's mount also carries the popup's AI confidence switch
+ *  block, `showAiSort`), the hide-all-nicknames toggle (with the per-row
+ *  eye hint), the optional roster-density toggle (compact rows ⇄ the
+ *  expanded full cards — the live roster's richer density carried as a
+ *  card here; rendered only when the host passes the props) and the
+ *  copy-share-shot action. In the 我的 view the roster-only controls
+ *  (stats chip, density, mask hint) sit out; the camera button copies the
+ *  ONE combined sheet from EITHER view (the matrix plus the personal
+ *  banner — see postBattleShot.ts). Shared by the results panel and the
+ *  incomplete-results fallback so both post-battle windows expose the
+ *  same controls. */
 export const PostBattleShareBar = defineComponent({
   name: "PostBattleShareBar",
   props: {
@@ -438,6 +441,10 @@ export const PostBattleShareBar = defineComponent({
     /** Current density for the toggle: true = full cards, false = compact
      *  rows. The button always offers the switch TO the other mode. */
     fullMode: { type: Boolean, default: false },
+    /** Render the AI confidence switch inside the stats chip's popup (the
+     *  results panel alone — the fallback matrix has no settlement XP to
+     *  weight the sort with, so it never offers the switch). */
+    showAiSort: { type: Boolean, default: false },
     /** The active view when the host carries both (the roster matrix + the
      *  self report): renders the segmented 全员/我的 switcher up front and
      *  trims the toolbar to the controls that view honors. */
@@ -485,8 +492,10 @@ export const PostBattleShareBar = defineComponent({
         {/* Stats-source filter: ship/battle/solo dimensions, the same chip
             the live head mounts — the roster rows below already resolve
             through the shared prefs, so flips apply without host wiring.
-            The self report reads no career stats; the chip sits out there. */}
-        {!isSelf ? <LiveStatsModeChip /> : null}
+            The self report reads no career stats; the chip sits out there.
+            `showAiSort` adds the popup's second block (the AI confidence
+            switch — column + weighted sort, results panel only). */}
+        {!isSelf ? <LiveStatsModeChip aiSort={props.showAiSort} /> : null}
         <AppTag
           interactive
           face="outline"

@@ -6,9 +6,11 @@
  * flips the panel between this roster matrix and the self report
  * (我的战绩) — the shared SelfReportBody over the live panel's own model
  * builder, fed from the replay's decoded stream; the camera button copies
- * whichever view is showing. The matrix rows sort by
+ * the ONE combined sheet from either view. The matrix rows sort by
  * settlement base exp (裸经验 — bots report 0, legacy short arrays fall back
- * to an estimate) and carry the same roster dressing as the live-battle
+ * to an estimate) or, with the AI confidence switch on (the stats chip
+ * popup's second block), by the coverage-weighted AI key — see the AI
+ * paragraph below — and carry the same roster dressing as the live-battle
  * panel: clan tags, PR column, identity-line seal tags, team aggregates in
  * the column titles and the battle mode/map head. Rows default to the
  * compact one-line look; the share bar's mode toggle expands them to full
@@ -32,12 +34,25 @@
  * the SCSS), so every row's ship name starts at the same x whether the tier
  * is "I" / "VIII" / "★" or absent.
  *
+ * AI confidence scores: one `decision_static_report` call (shared with the
+ * 3D board / E25 战报 through the backend's scoring cache) joins every
+ * scoreable ship onto its row by the PLAYER nickname and drives BOTH the
+ * rightmost AI score column (the fire+move whole-game agreement as a
+ * percentage; tooltip carries the fire/move split and the data-coverage
+ * ratio) and, while the switch is on, the roster order — the coverage-
+ * weighted key `coverage × AI + (1 − coverage) × xp-share-of-own-team`
+ * (postBattleAiScore.ts): the longer the replay could actually observe a
+ * ship, the more its placing trusts the model's verdict over the game's
+ * own settlement score. The switch rides the stats chip popup's second
+ * block (default ON); without the AI capability, a failed report, or an
+ * empty join the column hides and the settlement-XP scoreboard stays.
+ *
  * Share-time privacy: nicknames can be masked wholesale or per player (the
  * row-end eye), and "复制截图" paints the combined sheet into a watermarked
- * PNG on the clipboard — the personal 我的战绩 banner above the roster matrix
- * (see postBattleShare.tsx / postBattleShot.ts), so a share no longer needs
- * one copy from each view. The share model is built from the masked display
- * strings, so a hidden nick cannot leak into the image.
+ * PNG on the clipboard — both teams' roster matrix on top, the personal
+ * 我的战绩 banner below it (see postBattleShare.tsx / postBattleShot.ts),
+ * one image from either view. The share model is built from the masked
+ * display strings, so a hidden nick cannot leak into the image.
  *
  * Clicking a player opens a second-level modal with the match result +
  * on-demand global stats (title bar chip while loading) and a jump link
@@ -58,7 +73,7 @@ import { useRouter } from "vue-router";
 import { Eye, EyeOff } from "@lucide/vue";
 import { HkModal, HkSpinner } from "@celestia-island/hikari";
 
-import { type PlayerBuild, type PlayerStats, type VehicleEntry } from "@/api";
+import { api, type PlayerBuild, type PlayerStats, type VehicleEntry } from "@/api";
 import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -107,11 +122,9 @@ import {
 import { postBattleModeKey } from "./postBattleMode";
 import { parsePostBattle, type PostBattleRibbon } from "./postBattle";
 import { buildSelfStats, type SelfStatsModel, type SelfStatsStream } from "./liveSelfStats";
-import { renderLiveSelfShot, type SelfShotModel } from "./liveSelfShot";
-import { buildSelfShotModel, selfShotBannerOf } from "./selfReportView";
+import type { SelfShotModel } from "./liveSelfShot";
+import { selfShotBannerOf } from "./selfReportView";
 import { tierRoman } from "./shipLiveStats";
-import { shareFooterStrings } from "@/features/share/shotKit";
-import { useShareImage } from "@/features/share/useShareImage";
 import LiveShipMeta from "./LiveShipMeta";
 import SelfReportBody from "./SelfReportBody";
 import {
@@ -137,6 +150,14 @@ import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { ShotColumn, ShotModel, ShotRow, ShotStat } from "./postBattleShot";
+import {
+  aiRecorderEntryOf,
+  aiScoreMapOf,
+  aiWeightedKey,
+  formatAiPct,
+  type AiScoreEntry,
+} from "./postBattleAiScore";
+import { useCapabilitiesStore } from "@/stores/capabilities";
 import "./PostBattlePanel.scss";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
@@ -223,6 +244,10 @@ export default defineComponent({
     /** Ally ship builds decoded off the same replay (ally-only IPC surface).
      *  Joined to the roster rows by name / unique ship id; empty = no grid. */
     builds: { type: Array as () => PlayerBuild[], default: () => [] },
+    /** The opened replay's filesystem path — the AI confidence fetch's key
+     *  (`decision_static_report`; null on hosts without one keeps the AI
+     *  column off and the settlement-XP order stays). */
+    replayPath: { type: String, default: null },
   },
   emits: ["close"],
   setup(props, { emit }) {
@@ -293,6 +318,125 @@ export default defineComponent({
       if (!pb) return null;
       return pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null;
     });
+
+    // ── AI confidence scores (the rightmost column + the weighted sort) ──
+    // One E25 static report per open: every scoreable ship's whole-game
+    // agreement + coverage profile, joined onto the rows by the PLAYER
+    // nickname. The fetch shares the backend's scoring cache with the 3D
+    // board and the 战报 modal, so a replay the board already analyzed
+    // answers instantly; a cold open pays the export+scoring pass once,
+    // asynchronously — the panel renders the settlement scoreboard first
+    // and re-orders/reactively re-renders the moment the report lands.
+    const capabilities = useCapabilitiesStore();
+    /** Player name → AI verdict; empty until the report lands. */
+    const aiScores = ref<Map<string, AiScoreEntry>>(new Map());
+    /** The recorder's own verdict — the combined shot's banner AI pair. */
+    const aiRecorder = ref<AiScoreEntry | null>(null);
+    const aiState = ref<"idle" | "loading" | "ready" | "failed">("idle");
+    let aiSeq = 0;
+    async function loadAiScores() {
+      const path = props.replayPath;
+      if (!path || !capabilities.aiInference) return;
+      if (aiState.value === "loading" || aiState.value === "ready") return;
+      const seq = ++aiSeq;
+      aiState.value = "loading";
+      try {
+        const report = await api.decisionStaticReport(path, null);
+        // A stale reply (a replay switch re-keyed the fetch, or the modal
+        // closed) must not patch the new battle's panel.
+        if (seq !== aiSeq) return;
+        const map = aiScoreMapOf(report);
+        if (map.size === 0) {
+          // Nothing joined (no models / nothing scoreable): hide the column
+          // rather than captioning a wall of dashes.
+          aiScores.value = new Map();
+          aiRecorder.value = null;
+          aiState.value = "failed";
+          return;
+        }
+        aiScores.value = map;
+        aiRecorder.value = aiRecorderEntryOf(report);
+        aiState.value = "ready";
+      } catch {
+        if (seq !== aiSeq) return;
+        aiState.value = "failed";
+      }
+    }
+    // The switch defaults ON, so the report usually loads with the panel;
+    // a late capability probe or a switch flipped on afterwards still
+    // triggers the one fetch. A replay swap resets the state (the parent
+    // remounts the panel per open, but the prop watch keeps an in-place
+    // swap honest too).
+    let aiLoadedPath: string | null = props.replayPath;
+    watch(
+      () => [
+        props.replayPath,
+        capabilities.aiInference,
+        statsPrefsState.value.postbattleAiScore,
+      ] as const,
+      () => {
+        if (props.replayPath !== aiLoadedPath) {
+          aiLoadedPath = props.replayPath;
+          aiSeq += 1;
+          aiState.value = "idle";
+          aiScores.value = new Map();
+          aiRecorder.value = null;
+        }
+        if (statsPrefsState.value.postbattleAiScore) void loadAiScores();
+      },
+      { immediate: true },
+    );
+    /** The AI score column renders with the switch on from the moment the
+     *  report starts loading (spinners while in flight) — one switch owns
+     *  the column AND the order it implies, so they can never disagree. */
+    const aiColOn = computed(
+      () =>
+        statsPrefsState.value.postbattleAiScore &&
+        (aiState.value === "loading" || aiState.value === "ready"),
+    );
+    /** The weighted ORDER waits for the landed report: until then the rows
+     *  keep the settlement scoreboard (an empty join would sort every row
+     *  by star share alone — identical, but explicit is cheaper to read). */
+    const aiSortOn = computed(
+      () => statsPrefsState.value.postbattleAiScore && aiState.value === "ready",
+    );
+    /** One row's AI verdict (join miss = undefined: pure star-share sort,
+     *  a dash in the column). */
+    const aiEntryOf = (name: string): AiScoreEntry | undefined =>
+      aiScores.value.get(name);
+    /** The AI cell's tooltip: the fire/move split plus the coverage ratio
+     *  that drives the sort weight. */
+    const aiTipOf = (p: (typeof rows.value)[number]): string => {
+      const e = aiEntryOf(p.name);
+      if (!e) return t("replay.postbattle.aiScore");
+      const cov = Math.round(e.coverage * 100);
+      return e.wholeFire != null
+        ? t("replay.postbattle.aiScoreTip", {
+            fire: Math.round(e.wholeFire * 100),
+            move: Math.round(e.wholeMove * 100),
+            cov,
+          })
+        : t("replay.postbattle.aiScoreTipMoveOnly", {
+            move: Math.round(e.wholeMove * 100),
+            cov,
+          });
+    };
+    /** The AI cell's body: the combined fire+move percentage, a spinner
+     *  while the report is in flight, a muted dash for a join miss. */
+    const aiCellBody = (p: (typeof rows.value)[number]): VNode => {
+      if (aiState.value === "loading") return <HkSpinner size="xs" tone="current" />;
+      const e = aiEntryOf(p.name);
+      return e ? <b>{formatAiPct(e.wholeGame)}</b> : <em>—</em>;
+    };
+    /** One team's mean whole-game agreement over its joined rows (the
+     *  column title's aggregate; null when nothing joined). */
+    const aiTeamMean = (list: (typeof rows.value)[number][]): number | null => {
+      const vals = list
+        .map((p) => aiEntryOf(p.name)?.wholeGame)
+        .filter((v): v is number => v != null);
+      return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+    };
+
     const detailOpen = ref(false);
     const selected = ref<(typeof rows.value)[number] | null>(null);
     const globalStats = ref<PlayerStats | null>(null);
@@ -359,18 +503,31 @@ export default defineComponent({
 
     /** Roster order: final settlement XP descending — the order the game's
      *  own results screen shows (top earner first), so the matrix reads as
-     *  a scoreboard. Legacy short arrays ride the damage/frags estimate. */
+     *  a scoreboard. Legacy short arrays ride the damage/frags estimate.
+     *  With the AI confidence switch on (and the report landed) each side
+     *  re-ranks by the coverage-weighted AI key instead: the better the
+     *  replay could observe a ship, the more its placing trusts the
+     *  model's verdict; a join miss rides its star share alone. Each team
+     *  normalises over its OWN roster, so both columns rank independently
+     *  (ties fall back to the settlement order). */
+    const sortRows = (list: (typeof rows.value)[number][]) => {
+      if (!aiSortOn.value) return [...list].sort((a, b) => b.xp - a.xp);
+      const total = list.reduce((sum, p) => sum + p.xp, 0);
+      const keyOf = (p: (typeof rows.value)[number]) =>
+        aiWeightedKey(aiEntryOf(p.name), p.xp, total);
+      return [...list].sort((a, b) => keyOf(b) - keyOf(a) || b.xp - a.xp);
+    };
     const allies = computed(() => {
       const st = selfTeam.value;
-      return rows.value
-        .filter((p) => (st != null ? p.team === st : p.team !== 1))
-        .sort((a, b) => b.xp - a.xp);
+      return sortRows(rows.value.filter((p) => (st != null ? p.team === st : p.team !== 1)));
     });
     const enemies = computed(() => {
       const st = selfTeam.value;
-      return rows.value
-        .filter((p) => p.team !== null && (st != null ? p.team !== st : p.team === 1))
-        .sort((a, b) => b.xp - a.xp);
+      return sortRows(
+        rows.value.filter(
+          (p) => p.team !== null && (st != null ? p.team !== st : p.team === 1),
+        ),
+      );
     });
 
     // ── Division (组队) lettering: the prebattle ids come off the decoded
@@ -627,28 +784,6 @@ export default defineComponent({
       };
     };
     const shot = useShareShot(buildShotModel, () => root.value);
-    /** The self report's own copy shot — the live panel's renderer over
-     *  the shared model, so the copied 我的战绩 matches the view beside
-     *  the button (nicks arrive masked). */
-    const selfShot = useShareImage(() =>
-      renderLiveSelfShot(
-        buildSelfShotModel(selfModel.value, {
-          title: t("replay.live.selfTitle"),
-          mode: headMode(),
-          mapLabel: props.head?.mapName
-            ? displayMapName(props.head.mapName, dataLanguage.value)
-            : null,
-          metaLine: selfModel.value?.final ? t("replay.live.selfSettled") : null,
-          selfLine: selfModel.value
-            ? `${masking.maskOf(selfModel.value.selfName ?? "")}${selfModel.value.selfShipId != null ? " · " + (shipNameFromOfflineDb(selfModel.value.selfShipId, dataLanguage.value) ?? "") : ""}`
-            : "",
-          lang: dataLanguage.value,
-          maskOf: masking.maskOf,
-          estimateNote: t("replay.live.selfEstimate"),
-        }),
-        { el: root.value, ...shareFooterStrings() },
-      ),
-    );
     /** The ship tier's Roman marker ("I" / "VIII", "★" for superships) or an
      *  empty string — the identity line's second row leads with it on a
      *  fixed-width track (PostBattlePanel.scss), so every row's ship name
@@ -674,7 +809,11 @@ export default defineComponent({
       const mode = headMode();
       /** One row's shot cells: the configured columns of the row's
        *  per-scope views (the exact columns the panel shows) plus the
-       *  settlement XP — dashes for bots / misses. */
+       *  settlement XP — dashes for bots / misses — and the AI confidence
+       *  cell once the report has LANDED (a copy taken mid-load omits the
+       *  column rather than captioning a wall of dashes that would read as
+       *  join misses), so the copied sheet never contradicts the roster
+       *  beside the button. */
       const statTexts = (p: (typeof rows.value)[number]): ShotStat[] => {
         const ai = isAiName(p.name);
         const st = ai ? undefined : nameStats.value.get(p.name);
@@ -682,6 +821,10 @@ export default defineComponent({
           ? rosterShotDashes()
           : rosterShotCells((scope) => colViewOf(scope, st, p.shipId ?? null));
         out.push({ text: p.xp.toLocaleString() });
+        if (aiSortOn.value) {
+          const e = aiEntryOf(p.name);
+          out.push(e ? { text: formatAiPct(e.wholeGame) } : { text: "—" });
+        }
         return out;
       };
       const mkCol = (
@@ -753,8 +896,17 @@ export default defineComponent({
           // The XP column closes the row (the last stat cell every row
           // carries), so the header must caption it too — label-only: a
           // single-battle figure has no team aggregate. The on-screen
-          // compact header renders the identical cell.
+          // compact header renders the identical cell. The AI column (when
+          // on) follows it and DOES carry a team mean.
           parts.push({ col: cols.length, label: t("replay.postbattle.xp") });
+          if (aiSortOn.value) {
+            const aiMean = aiTeamMean(list);
+            parts.push({
+              col: cols.length + 1,
+              label: t("replay.postbattle.aiScore"),
+              value: aiMean != null ? formatAiPct(aiMean) : "—",
+            });
+          }
           agg = parts;
         }
         return {
@@ -802,13 +954,18 @@ export default defineComponent({
       // The personal banner: the live self model (settlement payload merged
       // in by the panel's computed) reduced to the ShotSelf vocabulary. Null
       // when the decoded stream yields no self model — the matrix still
-      // copies, exactly as before the banner existed.
+      // copies, exactly as before the banner existed. The recorder's own AI
+      // percentage leads the banner's aux line when the column is on.
       const selfName = selfModel.value?.selfName ?? null;
       const selfBanner = selfShotBannerOf(selfModel.value, {
         title: t("replay.live.selfTitle"),
         lang: dataLanguage.value,
         maskOf: masking.maskOf,
         clanTag: selfName ? (nameStats.value.get(selfName)?.clanTag ?? null) : null,
+        aiPct:
+          aiSortOn.value && aiRecorder.value
+            ? formatAiPct(aiRecorder.value.wholeGame)
+            : null,
       });
       return {
         title: t("replay.results"),
@@ -852,9 +1009,11 @@ export default defineComponent({
         const title = <span class="replay-view__postbattle-col-name">{label}</span>;
         const cols = rosterColumns();
         // Full cards carry no aligned stat columns, so an empty column set
-        // leaves the title alone there. The compact header still renders its
-        // XP caption when every configured column is switched off.
-        if (cols.length === 0 && fullMode.value) {
+        // leaves the title alone there — unless the AI column is on, whose
+        // team mean then rides the title's right end alone (the rows below
+        // still carry the AI cell). The compact header still renders its XP
+        // caption when every configured column is switched off.
+        if (cols.length === 0 && fullMode.value && !aiColOn.value) {
           return <div class="replay-view__postbattle-col-title">{title}</div>;
         }
         /** One column's aggregate label — the aggregate flavor wording on
@@ -942,6 +1101,18 @@ export default defineComponent({
               </>,
             );
           });
+          // The AI column's team mean rides the inline run's tail when its
+          // switch is on — the same aggregate the compact header shows.
+          if (aiColOn.value) {
+            const aiMean = aiTeamMean(list);
+            if (parts.length > 0) parts.push(<>{" · "}</>);
+            parts.push(
+              <>
+                {t("replay.postbattle.teamAvgAi")}{" "}
+                {aiMean != null ? formatAiPct(aiMean) : "—"}
+              </>,
+            );
+          }
           return (
             <div class="replay-view__postbattle-col-title">
               {title}
@@ -955,8 +1126,14 @@ export default defineComponent({
         // label and a team mean (battles included); the XP cell carries the
         // 经验 caption WITHOUT a value — a per-battle result has no team
         // aggregate, but the last number needs a name.
-        const template = `minmax(0, 1fr) ${cols.map((c) => c.width).join(" ")} 6ch`;
+        const template = `minmax(0, 1fr) ${cols.map((c) => c.width).join(" ")} 6ch${
+          aiColOn.value ? " 6ch" : ""
+        }`;
         const fill = <span class="replay-view__postbattle-col-hfill" />;
+        // The AI column's header: the caption over the team mean of the
+        // joined rows (a dash when nothing joined — the column itself only
+        // renders with the switch on and a landed report).
+        const aiMean = aiTeamMean(list);
         return (
           <div
             class={[
@@ -978,8 +1155,18 @@ export default defineComponent({
             <span class="replay-view__postbattle-col-hlbl">
               {t("replay.postbattle.xp")}
             </span>
+            {aiColOn.value ? (
+              <span class="replay-view__postbattle-col-hlbl">
+                {t("replay.postbattle.aiScore")}
+              </span>
+            ) : null}
             {cols.map((c) => valueOf(c))}
             {fill}
+            {aiColOn.value ? (
+              <b class="replay-view__postbattle-col-hval">
+                {aiMean != null ? formatAiPct(aiMean) : "—"}
+              </b>
+            ) : null}
           </div>
         );
       };
@@ -1192,6 +1379,11 @@ export default defineComponent({
               >
                 {p.xp.toLocaleString()}
               </span>
+              {aiColOn.value ? (
+                <span class="replay-view__postbattle-cell-ai" data-hint={aiTipOf(p)}>
+                  {aiCellBody(p)}
+                </span>
+              ) : null}
             </button>
             {ai ? null : eyeBtn(p.name)}
           </div>
@@ -1303,9 +1495,10 @@ export default defineComponent({
                   />
                 ) : null}
               </span>
-              {/* The score track closes the card: the XP cell alone — the
-                  identity-line seals ride the main track's name line (the
-                  retired seal track no longer takes a column). */}
+              {/* The score track closes the card: the XP cell, then the AI
+                  confidence cell when its switch is on (the rightmost
+                  score, where the retired seal track used to read) — the
+                  identity-line seals ride the main track's name line. */}
               <span class="replay-view__postbattle-fcell-score">
                 <span
                   class="replay-view__postbattle-fcell-xp"
@@ -1313,6 +1506,14 @@ export default defineComponent({
                 >
                   {p.xp.toLocaleString()}
                 </span>
+                {aiColOn.value ? (
+                  <span
+                    class="replay-view__postbattle-fcell-ai"
+                    data-hint={aiTipOf(p)}
+                  >
+                    {aiCellBody(p)}
+                  </span>
+                ) : null}
               </span>
             </button>
             {ai ? null : eyeBtn(p.name)}
@@ -1394,20 +1595,18 @@ export default defineComponent({
           ) : null}
           <PostBattleShareBar
             hideAll={masking.hideAll.value}
-            shotBusy={view.value === "self" ? selfShot.busy.value : shot.busy.value}
+            shotBusy={shot.busy.value}
             showModeToggle
+            showAiSort
             fullMode={fullMode.value}
             view={props.stream ? view.value : undefined}
             onToggleAll={() => masking.toggleAll()}
             onShot={() => {
-              // The self view's camera copies the personal report; without
-              // a model there is nothing to render — sit out (the panel
-              // shows the selfUnavailable note instead).
-              if (view.value === "self") {
-                if (selfModel.value) void selfShot.copyShot();
-              } else {
-                void shot.copyShot();
-              }
+              // Either view copies the ONE combined sheet — both teams'
+              // matrix (the AI column included when its switch is on)
+              // above the personal banner; without a self model the matrix
+              // alone still copies, exactly as before.
+              void shot.copyShot();
             }}
             onToggleMode={toggleFullMode}
             onSetView={(v) => (view.value = v)}

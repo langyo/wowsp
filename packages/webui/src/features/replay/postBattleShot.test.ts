@@ -11,6 +11,7 @@ import { COL_WIDTH, renderPostBattleShot, type ShotModel } from "./postBattleSho
 interface TextOp {
   text: string;
   x: number;
+  y: number;
   align: string;
 }
 
@@ -66,8 +67,8 @@ vi.mock("@/features/share/shotKit", async (importOriginal) => {
         font: "",
         globalAlpha: 1,
         measureText: (s: string) => fakeAs<TextMetrics>({ width: s.length * 7 }),
-        fillText: (s: string, x: number) => {
-          mocks.texts.push({ text: s, x, align: ctx.textAlign });
+        fillText: (s: string, x: number, y: number) => {
+          mocks.texts.push({ text: s, x, y, align: ctx.textAlign });
         },
         fillRect: () => {},
         beginPath: () => {},
@@ -211,5 +212,28 @@ describe("post-battle share shot", () => {
 
     const plain = textOf("tama...");
     expect(plain.x).toBe(PAD + 12 + 28);
+  });
+
+  it("paints the personal banner BELOW the roster matrix", async () => {
+    reset();
+    const m = model();
+    m.self = {
+      title: "我的战绩",
+      nick: "FlySh...",
+      damage: "5,600",
+      damageLabel: "伤害",
+      ribbons: [],
+      aux: [{ label: "AI 评分", value: "62%" }],
+    };
+    await renderPostBattleShot(m, FOOTER);
+
+    // The combined sheet reads teams-first: every roster row (the LAST row's
+    // ship line included) sits above the banner's caption row, and the
+    // banner's aux line (the AI score pair) below that caption.
+    const bannerTitle = textOf("我的战绩");
+    const lastRowShip = textOf("最上");
+    expect(bannerTitle.y).toBeGreaterThan(lastRowShip.y);
+    const aux = textOf("AI 评分 62%");
+    expect(aux.y).toBeGreaterThan(bannerTitle.y);
   });
 });

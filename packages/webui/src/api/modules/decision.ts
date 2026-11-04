@@ -109,6 +109,10 @@ export interface StaticRosterEntry {
   entityId: number;
   shipId: number | null;
   name: string | null;
+  /** The PLAYER nickname (the replay roster vehicle's own name) — the join
+   *  key the post-battle panel's BattleResults rows match against, where
+   *  `name` (ship-name-preferred, display-facing) cannot serve. */
+  playerName: string | null;
   teamId: 0 | 1;
   isRecorder: boolean;
   diedAt: number | null;

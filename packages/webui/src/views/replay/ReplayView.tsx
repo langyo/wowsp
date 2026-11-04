@@ -2675,6 +2675,7 @@ export default defineComponent({
                                     }}
                                     roster={cur.vehicles}
                                     builds={allyBuilds.value}
+                                    replayPath={cur.path}
                                     onClose={() => (showResults.value = false)}
                                   />
                                 ) : (

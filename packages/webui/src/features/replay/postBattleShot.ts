@@ -4,10 +4,12 @@
  * clipboard copy (`api.copyImageToClipboard`) or a save-file fallback.
  *
  * One copied image carries BOTH halves the results window otherwise splits:
- * the personal banner (我的战绩 — identity, damage/frag headline, settlement
- * ribbons, one compressed secondary-stat line) rides above the two-column
- * roster matrix, so sharing the team water table no longer takes a second
- * copy from the self view. Hosts without a self model (the incomplete-results
+ * the two-column roster matrix leads (both teams' water table — the AI
+ * confidence cell included whenever its switch is on, an extra ShotStat like
+ * any other), and the personal banner (我的战绩 — identity, damage/frag
+ * headline, settlement ribbons, one compressed secondary-stat line) rides
+ * BELOW it, so sharing the team water table never takes a second copy from
+ * the self view. Hosts without a self model (the incomplete-results
  * fallback, payload edges) render the matrix alone.
  *
  * The image is a hand-drawn canvas composite built on the shared share-shot
@@ -164,7 +166,7 @@ export interface ShotModel {
   metaLine?: string | null;
   /** Short bot marker label appended after masked/plain nicks (t("replay.bot")). */
   botLabel?: string;
-  /** Personal banner above the matrix (我的战绩). Absent on hosts with no
+  /** Personal banner BELOW the matrix (我的战绩). Absent on hosts with no
    *  self model — the fallback matrix and legacy payload edges. */
   self?: ShotSelf | null;
   columns: ShotColumn[];
@@ -184,11 +186,11 @@ const ROW_H = 44;
 const HEAD_H = 66;
 const COL_TITLE_H = 34;
 
-/** Personal banner geometry, in logical units: the air under the head rule,
- *  the card's inner padding, the identity/headline row, and the optional
- *  ribbon + secondary-stat rows. selfBannerHeight() reserves exactly these
- *  before the canvas exists, so the matrices below can never overlap the
- *  banner. */
+/** Personal banner geometry, in logical units: the air around the card
+ *  (it rides below the roster matrix), the card's inner padding, the
+ *  identity/headline row, and the optional ribbon + secondary-stat rows.
+ *  selfBannerHeight() reserves exactly these before the canvas exists, so
+ *  the banner below can never overlap the matrices above or the footer. */
 const SELF_TOP_GAP = 12;
 const SELF_BOTTOM_GAP = 12;
 const SELF_INNER_PAD = 8;
@@ -213,8 +215,8 @@ function selfBannerHeight(self: ShotSelf): number {
   );
 }
 
-/** Paint the banner card. `top` is the card's own top edge (the head rule
- *  sits just above it, the roster columns start below SELF_BOTTOM_GAP). The
+/** Paint the banner card. `top` is the card's own top edge (the roster
+ *  matrix sits above it, the watermark footer below SELF_BOTTOM_GAP). The
  *  masked nick / pre-formatted figures arrive from the caller's model; the
  *  renderer only lays them out. */
 function drawSelfBanner(
@@ -466,12 +468,23 @@ export async function renderPostBattleShot(
   const ribbonIcons = self
     ? await Promise.all(self.ribbons.map((r) => loadImage(bundledRibbonUrl(r.key))))
     : [];
+  // The roster matrix leads — both teams' water table right under the head
+  // rule; the personal banner rides BELOW the matrix (teams first, the
+  // recorder's own report second — the user's combined-sheet layout), its
+  // top edge exactly the matrices' bottom plus the banner's top gap.
+  const columnsTop = HEAD_H;
   if (self) {
-    drawSelfBanner(ctx, palette, width, self, HEAD_H + SELF_TOP_GAP, bannerIcon, ribbonIcons);
+    const matrixBottom = columnsTop + COL_TITLE_H + maxRows * (ROW_H + 6);
+    drawSelfBanner(
+      ctx,
+      palette,
+      width,
+      self,
+      matrixBottom + SELF_TOP_GAP,
+      bannerIcon,
+      ribbonIcons,
+    );
   }
-  // The matrix starts below the banner (or under the head rule on hosts
-  // without one) — the reserved selfBlockH is exactly the banner's budget.
-  const columnsTop = HEAD_H + selfBlockH;
   let iconIdx = 0;
   for (let ci = 0; ci < cols.length; ci++) {
     const col = cols[ci];

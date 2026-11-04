@@ -138,6 +138,14 @@ export interface StatsPrefs {
    *  shared aligned row instead of a separate card). Compact rows stay the
    *  default. */
   postbattleRosterFull: boolean;
+  /** Post-battle AI confidence scores: the rightmost AI score column (the
+   *  fire+move whole-game agreement as a percentage) and the AI-weighted
+   *  roster sort — `coverage × AI + (1 − coverage) × xp-share of the team`
+   *  (see features/replay/postBattleAiScore.ts). One switch owns both, so
+   *  the column and the order it implies can never disagree. Default ON;
+   *  surfaces without AI data (no AI capability, report failure) hide the
+   *  column and fall back to the settlement-XP order on their own. */
+  postbattleAiScore: boolean;
   /** The Tab overlay's team-averages line under each side (mean winrate /
    *  mean PR / mean damage, one line, all-or-nothing). Ships off — the
    *  roster is dense already. The consumable-intel line above it (radar /
@@ -192,6 +200,7 @@ export const DEFAULT_STATS_PREFS: StatsPrefs = {
   rosterKarmaEnabled: true,
   cardKarmaEnabled: true,
   postbattleRosterFull: false,
+  postbattleAiScore: true,
   teamAvgEnabled: false,
   sealDisabled: {},
   sealLabels: {},
@@ -421,6 +430,10 @@ function parsePrefs(raw: string | null): StatsPrefs | null {
         typeof j.postbattleRosterFull === "boolean"
           ? j.postbattleRosterFull
           : DEFAULT_STATS_PREFS.postbattleRosterFull,
+      postbattleAiScore:
+        typeof j.postbattleAiScore === "boolean"
+          ? j.postbattleAiScore
+          : DEFAULT_STATS_PREFS.postbattleAiScore,
       // Migration: a blob written before the single-switch simplification
       // carries only the retired `overlayTeamAvg` per-item toggles — any
       // of them on seeds the whole line on; the healed rewrite then drops
@@ -581,6 +594,11 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     save();
   }
 
+  function setPostbattleAiScore(v: boolean) {
+    prefs.value.postbattleAiScore = v;
+    save();
+  }
+
   function setTeamAvgEnabled(v: boolean) {
     prefs.value.teamAvgEnabled = v;
     save();
@@ -636,6 +654,7 @@ export const useStatsPrefsStore = defineStore("statsPrefs", () => {
     setRosterKarmaEnabled,
     setCardKarmaEnabled,
     setPostbattleRosterFull,
+    setPostbattleAiScore,
     setTeamAvgEnabled,
     setSealDisabled,
     setSealLabel,

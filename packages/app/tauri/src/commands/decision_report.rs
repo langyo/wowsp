@@ -66,6 +66,11 @@ pub struct StaticRosterEntry {
     pub ship_id: Option<i64>,
     /// Resolved from the replay roster (ship display name preferred).
     pub name: Option<String>,
+    /// The PLAYER nickname (the replay roster vehicle's `name`), matched by
+    /// entity id with a unique-ship_id fallback — the join key the
+    /// post-battle panel's rows (BattleResults players) match against,
+    /// where `name` (ship-name-preferred) cannot serve.
+    pub player_name: Option<String>,
     /// Recorder-relative team: 0 = recorder's side, 1 = enemy.
     pub team_id: i8,
     pub is_recorder: bool,
@@ -356,28 +361,44 @@ pub(crate) fn build_static_report(
         // entity→player key. Try the id match first (validating its
         // ship_id), fall back to a unique-ship_id name; ambiguous hulls
         // (two players in one ship) stay unnamed rather than guessed.
+        // TWO name flavors resolve through the identical walk — the
+        // display name (ship name preferred) and the PLAYER nickname (the
+        // roster vehicle's own `name`, the post-battle panel's join key
+        // against BattleResults rows) — so the map pair is built once per
+        // flavor by a shared helper instead of twice by hand.
         let roster = super::replay_probe::read_roster(&path.to_string_lossy())?;
-        let name_by_id: BTreeMap<i64, String> = roster
-            .iter()
-            .map(|v| (v.id, v.ship_name.clone().unwrap_or_else(|| v.name.clone())))
-            .collect();
-        let mut name_by_ship: BTreeMap<i64, String> = BTreeMap::new();
-        let mut ship_seen_twice: std::collections::HashSet<i64> = std::collections::HashSet::new();
-        for v in &roster {
-            let n = v.ship_name.clone().unwrap_or_else(|| v.name.clone());
-            if name_by_ship.insert(v.ship_id, n).is_some() {
-                ship_seen_twice.insert(v.ship_id);
+        fn name_maps(
+            roster: &[wowsp_tauri_shared::VehicleEntry],
+            pick: fn(&wowsp_tauri_shared::VehicleEntry) -> String,
+        ) -> (BTreeMap<i64, String>, BTreeMap<i64, String>) {
+            let by_id: BTreeMap<i64, String> = roster.iter().map(|v| (v.id, pick(v))).collect();
+            let mut by_ship: BTreeMap<i64, String> = BTreeMap::new();
+            let mut ship_seen_twice: std::collections::HashSet<i64> =
+                std::collections::HashSet::new();
+            for v in roster {
+                if by_ship.insert(v.ship_id, pick(v)).is_some() {
+                    ship_seen_twice.insert(v.ship_id);
+                }
             }
-        }
-        for sid in ship_seen_twice {
-            name_by_ship.remove(&sid);
-        }
-        let resolve_name = |eid: i32, ship_id: Option<i64>| -> Option<String> {
-            if let Some(n) = name_by_id.get(&(eid as i64)) {
-                return Some(n.clone());
+            for sid in ship_seen_twice {
+                by_ship.remove(&sid);
             }
-            ship_id.and_then(|sid| name_by_ship.get(&sid).cloned())
-        };
+            (by_id, by_ship)
+        }
+        fn resolve_from(
+            maps: &(BTreeMap<i64, String>, BTreeMap<i64, String>),
+            eid: i32,
+            ship_id: Option<i64>,
+        ) -> Option<String> {
+            maps.0
+                .get(&(eid as i64))
+                .cloned()
+                .or_else(|| ship_id.and_then(|sid| maps.1.get(&sid).cloned()))
+        }
+        let display_name_maps = name_maps(&roster, |v| {
+            v.ship_name.clone().unwrap_or_else(|| v.name.clone())
+        });
+        let player_name_maps = name_maps(&roster, |v| v.name.clone());
 
         let mut roster: Vec<StaticRosterEntry> = Vec::new();
         for t in &stream.trajectories {
@@ -404,7 +425,8 @@ pub(crate) fn build_static_report(
             roster.push(StaticRosterEntry {
                 entity_id: eid,
                 ship_id: kind_ship_id,
-                name: resolve_name(eid, kind_ship_id),
+                name: resolve_from(&display_name_maps, eid, kind_ship_id),
+                player_name: resolve_from(&player_name_maps, eid, kind_ship_id),
                 team_id: per_ship.map_or(1, |e| e.team_id),
                 is_recorder: stream.recorder_vehicle_id == Some(eid),
                 died_at,

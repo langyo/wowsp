@@ -64,3 +64,33 @@
     margin: 0 -2px;
   }
 }
+
+/* The AI confidence switch block (post-battle hosts only, `aiSort`): a
+   hairline-separated second row under the editor — label + muted one-line
+   rule summary on the left, the hikari switch on the right, matching the
+   settings rows' label/switch register. */
+.live-battle__mode-ai {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgb(var(--color-text) / 12%);
+}
+
+.live-battle__mode-ai-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  color: rgb(var(--color-text) / 80%);
+}
+
+.live-battle__mode-ai-hint {
+  font-size: var(--text-3xs, 0.6875rem);
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.4;
+  color: rgb(var(--color-text) / 45%);
+}

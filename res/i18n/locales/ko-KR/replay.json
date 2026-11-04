@@ -351,7 +351,13 @@
     "viewAll": "전체 전적",
     "viewSelf": "내 전적",
     "selfUnavailable": "개인 리포트를 생성할 수 없습니다(디코딩 데이터 없음)",
-    "divisionTag": "분대{letter}"
+    "divisionTag": "분대{letter}",
+    "aiScore": "AI 점수",
+    "aiScoreTip": "포격 {fire}% · 기동 {move}% · 데이터 커버리지 {cov}%",
+    "aiScoreTipMoveOnly": "기동 {move}% · 데이터 커버리지 {cov}%",
+    "teamAvgAi": "AI 평균",
+    "aiSort": "AI 신뢰도 정렬",
+    "aiSortHint": "AI 점수 가중 정렬 — 이 전투에서 해당 함선을 관측한 시간이 길수록 AI 점수의 비중이 커지고, 나머지는 결산 경험치 비율로 순위를 매깁니다"
   },
   "comp": {
     "main": "주포",

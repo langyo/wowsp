@@ -153,6 +153,10 @@ export interface SelfBannerOptions {
   maskOf: MaskOf;
   /** The self row's clan tag when the roster lookup resolved one. */
   clanTag?: string | null;
+  /** The recorder's AI confidence percentage, PRE-FORMATTED ("62%") —
+   *  leads the banner's aux line when the AI column is on and the report
+   *  carried the recorder's verdict; null/absent adds no pair. */
+  aiPct?: string | null;
 }
 
 /** The personal banner of the COMBINED post-battle shot: the 我的战绩 report
@@ -167,6 +171,9 @@ export function selfShotBannerOf(
 ): ShotSelf | null {
   if (!m) return null;
   const aux: ShotPair[] = [];
+  if (opts.aiPct) {
+    aux.push({ label: t("replay.postbattle.aiScore"), value: opts.aiPct });
+  }
   if (m.potentialDamage != null) {
     aux.push({ label: t("replay.live.selfPotential"), value: m.potentialDamage.toLocaleString() });
   }
