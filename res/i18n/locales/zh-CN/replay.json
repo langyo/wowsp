@@ -351,7 +351,13 @@
     "viewAll": "全员战绩",
     "viewSelf": "我的战绩",
     "selfUnavailable": "暂无法生成个人战报（缺少解码数据）",
-    "divisionTag": "组队{letter}"
+    "divisionTag": "组队{letter}",
+    "aiScore": "AI 评分",
+    "aiScoreTip": "火力 {fire}% · 走位 {move}% · 数据覆盖 {cov}%",
+    "aiScoreTipMoveOnly": "走位 {move}% · 数据覆盖 {cov}%",
+    "teamAvgAi": "AI 均分",
+    "aiSort": "AI 置信度排序",
+    "aiSortHint": "按 AI 评分加权排序：本局可观测该船的时间越长，AI 评分权重越高，其余按结算经验占比"
   },
   "comp": {
     "main": "主炮",
