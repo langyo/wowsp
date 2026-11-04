@@ -1,0 +1,268 @@
+// ToastCardBase — the single card primitive behind the shell's bespoke
+// top-right toasts (UpdateToast / UpdateAppliedToast / UpdateStrandedToast
+// / ModUpdateToast / AudioPlayerToast / PiggyReminderToast). Sits in
+// hikari's toast column (same fixed top-right slot and z-band as HkToast /
+// HkBlockingToast) so every surface reads as one stack; the tone variants
+// carry the legacy per-card surfaces. The family shares ONE enter keyframe
+// and ONE --leave modifier (the base's delayed unmount drives the
+// fold-out, its timer reading --duration-normal off this same sheet) and
+// ONE indeterminate slide — the six per-card sheets each used to carry a
+// byte-identical copy. The slot is single-occupancy by design: two
+// simultaneous passes overlap exactly, the documented trade-off; no
+// stacking/queueing is added here.
+
+.toast-card {
+  position: fixed;
+  top: 4rem;
+  right: 1rem;
+  z-index: var(--hk-z-toast, 4000);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-8);
+  width: 22rem;
+  max-width: calc(100vw - 2rem);
+  padding: var(--space-12) var(--space-16);
+  border-radius: var(--radius-sm);
+  color: #fff;
+  font-size: var(--text-base);
+  line-height: 1.4;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(12px);
+  pointer-events: auto;
+  animation: toast-card-in var(--duration-normal) cubic-bezier(0.22, 0.61, 0.36, 1);
+  // Leave counterpart of the enter keyframe: the card fades and slides
+  // out instead of snapping away (the component holds itself mounted for
+  // this duration — a delayed unmount fed by the same token).
+  transition: opacity var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard);
+
+  &--leave {
+    opacity: 0;
+    transform: translateX(12px);
+    pointer-events: none;
+  }
+}
+
+// Surface variants — the legacy per-card backgrounds, tone for tone.
+.toast-card--info {
+  background: var(--hi-color-info, #58a6ff);
+}
+
+.toast-card--success {
+  background: var(--hi-color-success, #3fb950);
+}
+
+.toast-card--warning {
+  background: var(--hi-color-warning, #d29922);
+}
+
+// The piggy's own skin tone — a deepened shade of the About logo's glow
+// palette (AboutModal's peach gradient), keeping white text readable.
+.toast-card--piggy {
+  background: #f2917f;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast-card {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes toast-card-in {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.toast-card__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-8);
+}
+
+.toast-card__icon {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.toast-card__message {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  // Bold headline grammar (the success / warning / piggy cards): wraps
+  // instead of ellipsizing.
+  &--bold {
+    white-space: normal;
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+}
+
+// The never-shrinking readout beside the headline (the mod pass's live
+// percent + rate): its own flex child keeping its intrinsic width, so a
+// long headline can never cut the progress off the card. Tabular figures
+// keep the digits from jittering while the rate updates.
+.toast-card__meta {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.toast-card__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-8);
+}
+
+// Action pills. primary = the filled white pill (the card's main move —
+// the hikari secondary variant would sink into the colored surfaces);
+// outline = the translucent white outline (the quiet fallback that stays
+// legible without competing with the primary); quiet = the small outlined
+// text button (the pass card's 取消 — not a full pill).
+.toast-card__action {
+  padding: 0.25rem 0.9rem;
+  border-radius: 999px;
+  font-size: var(--text-base);
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: opacity var(--hi-duration-fast, 0.15s) ease;
+
+  &:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  &--primary {
+    border: none;
+    background: #fff;
+    color: var(--hi-color-info, #58a6ff);
+
+    &:hover {
+      opacity: 0.88;
+    }
+
+    &:active {
+      opacity: 0.78;
+    }
+  }
+
+  &--outline {
+    border: 1px solid rgb(255 255 255 / 45%);
+    background: transparent;
+    color: #fff;
+
+    &:hover {
+      background: rgb(255 255 255 / 18%);
+    }
+
+    &:active {
+      background: rgb(255 255 255 / 28%);
+    }
+  }
+
+  &--quiet {
+    padding: 0.15rem 0.7rem;
+    border: 1px solid rgb(255 255 255 / 45%);
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: #fff;
+    font-weight: 400;
+    line-height: 1.4;
+    transition: background-color var(--hi-duration-fast, 0.15s) ease;
+
+    &:hover {
+      background: rgb(255 255 255 / 18%);
+    }
+
+    &:active {
+      background: rgb(255 255 255 / 28%);
+    }
+  }
+}
+
+// Primary-pill ink per surface — the legacy per-card colors verbatim
+// (each tone darkens its own ink so the label stays legible on white).
+.toast-card--success .toast-card__action--primary {
+  color: var(--hi-color-success, #2da43e);
+}
+
+.toast-card--warning .toast-card__action--primary {
+  color: var(--hi-color-warning, #9e6a03);
+}
+
+.toast-card--piggy .toast-card__action--primary {
+  color: #d96a56;
+}
+
+// Quiet × next to the headline — the translucent outline grammar shared
+// by the success / warning / piggy cards' dismiss control.
+.toast-card__close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.4rem;
+  height: 1.4rem;
+  padding: 0;
+  border: 1px solid rgb(255 255 255 / 45%);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: #fff;
+  cursor: pointer;
+  transition: background-color var(--hi-duration-fast, 0.15s) ease;
+
+  &:hover {
+    background: rgb(255 255 255 / 18%);
+  }
+
+  &:active {
+    background: rgb(255 255 255 / 28%);
+  }
+}
+
+// Bottom progress bar: translucent track + white fill — the pass cards'
+// shared indicator. During the mirror race and the install hand-off the
+// percent is unknown, so the fill runs the classic indeterminate slide
+// (the audio seek rail's fill references this same keyframe).
+.toast-card__track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 28%);
+  overflow: hidden;
+}
+
+.toast-card__fill {
+  height: 100%;
+  border-radius: inherit;
+  background: rgb(255 255 255 / 95%);
+  transition: width 0.25s ease;
+
+  &--indeterminate {
+    width: 34%;
+    transition: none;
+    animation: toast-card-slide 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes toast-card-slide {
+  from {
+    transform: translateX(-110%);
+  }
+
+  to {
+    transform: translateX(300%);
+  }
+}

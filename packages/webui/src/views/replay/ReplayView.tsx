@@ -74,7 +74,6 @@ import ribbonNamesRaw from "@/data/ribbon_names.json";
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
 import {
   HkButton,
-  HkIconButton,
   HkModal,
   HkScrollContainer,
   HkScrollPin,
@@ -929,119 +928,128 @@ const PostBattleFallbackPanel = defineComponent({
             ) : null}
           </div>
 
-          {detailOpen.value && sel ? (
-            <div
-              class="replay-view__postbattle-modal"
-              onClick={() => (detailOpen.value = false)}
-            >
-              <div
-                class="hk-selectable replay-view__postbattle-modal-panel"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div class="replay-view__postbattle-modal-head">
-                  <span class="replay-view__postbattle-detail-head">
-                    <span class="replay-view__postbattle-detail-ico">
-                      <BattleIcon
-                        type={shipTypeOf(sel.vehicle.shipId)}
-                        variant={
-                          !sel.alive
-                            ? "sunk"
-                            : sel.vehicle.relation <= 1
-                              ? "ally"
-                              : "enemy"
-                        }
-                        size={24}
-                      />
-                    </span>
-                    <span class="replay-view__postbattle-detail-name">
-                      {masking.maskOf(sel.vehicle.name)}
-                      {isBot(sel) ? (
-                        <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
-                      ) : null}
-                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
-                    </span>
-                  </span>
-                  <HkIconButton
-                    class="hk-window-close replay-view__postbattle-modal-close"
-                    size={32}
-                    variant="ghost"
-                    icon="close"
-                    aria-label={t("common.close")}
-                    onClick={() => (detailOpen.value = false)}
-                  />
-                </div>
-                {/* Drill-down scroller: the hikari container owns the
-                    scrollbar; the body blocks stack directly in its
-                    viewport (no layout rules to preserve). */}
-                <HkScrollContainer class="replay-view__postbattle-modal-scroll">
-                  <div class="replay-view__postbattle-detail-body">
-                    <div class="replay-view__postbattle-detail-damage">
-                      <span class="replay-view__postbattle-detail-damage-num">
-                        {sel.damage.toLocaleString()}
+          {/* Level-2 modal: player detail — a first-class hikari window
+              (issue #1736 P2 wave item 4, the same migration as the results
+              panel's and the chat list's detail windows): HkModal owns the
+              chrome (unified window-close, Esc, focus trap, back guard,
+              overlay-root teleport, phone sheet) — previously a hand-rolled
+              fixed overlay. The window stays mounted through the leave
+              transition (the slots gate on `sel`) and the markup keeps the
+              shared post-battle detail classes; `hk-selectable` rides the
+              content class so the report stays copyable. */}
+          <HkModal
+            modelValue={detailOpen.value}
+            onUpdate:modelValue={(v: boolean) => (detailOpen.value = v)}
+            surfaceTitle={sel ? masking.maskOf(sel.vehicle.name) : undefined}
+            width="min(560px, 90vw)"
+            contentClass="replay-view__postbattle-detail hk-selectable"
+            footerActions={
+              sel && !isBot(sel)
+                ? [
+                    {
+                      label: t("replay.postbattle.fullStats"),
+                      variant: "outline" as const,
+                      onClick: jumpToLookup,
+                    },
+                  ]
+                : undefined
+            }
+          >
+            {{
+              headerLead: sel
+                ? () => (
+                    <span class="replay-view__postbattle-detail-head">
+                      <span class="replay-view__postbattle-detail-ico">
+                        <BattleIcon
+                          type={shipTypeOf(sel.vehicle.shipId)}
+                          variant={
+                            !sel.alive
+                              ? "sunk"
+                              : sel.vehicle.relation <= 1
+                                ? "ally"
+                                : "enemy"
+                          }
+                          size={24}
+                        />
                       </span>
-                      <span class="replay-view__postbattle-detail-damage-label">
-                        {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
-                        {sel.hpRatio != null
-                          ? " · " + t("replay.hpRemaining") + " " + Math.round(sel.hpRatio) + "%"
-                          : ""}
+                      <span class="replay-view__postbattle-detail-name">
+                        {masking.maskOf(sel.vehicle.name)}
+                        {isBot(sel) ? (
+                          <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                        ) : null}
+                        <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
                       </span>
-                    </div>
-                    <div class="replay-view__postbattle-detail-ribbons">
-                      {sel.ribbons.map((x) => {
-                        const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
-                        return (
-                          <span
-                            key={x.key}
-                            class="replay-view__postbattle-detail-ribbon"
-                            data-hint={`${name} ×${x.value}`}
-                          >
-                            <AssetImage
-                              src={bundledRibbonUrl(x.key)}
-                              width={40}
-                              height={15}
-                              alt=""
-                            />
-                            <em>{x.value}</em>
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <div class="replay-view__postbattle-global">
-                    <span class="replay-view__postbattle-global-note">
-                      {t("replay.noDamageData")}
                     </span>
-                  </div>
-                  {isBot(sel) ? (
+                  )
+                : undefined,
+              // HkModal's built-in .hk-modal-body-scroll owns scrolling —
+              // the inner HkScrollContainer retired with the bespoke chrome.
+              default: () =>
+                sel ? (
+                  <>
+                    <div class="replay-view__postbattle-detail-body">
+                      <div class="replay-view__postbattle-detail-damage">
+                        <span class="replay-view__postbattle-detail-damage-num">
+                          {sel.damage.toLocaleString()}
+                        </span>
+                        <span class="replay-view__postbattle-detail-damage-label">
+                          {t("replay.damageTaken")} {sel.damageTaken.toLocaleString()}
+                          {sel.hpRatio != null
+                            ? " · " + t("replay.hpRemaining") + " " + Math.round(sel.hpRatio) + "%"
+                            : ""}
+                        </span>
+                      </div>
+                      <div class="replay-view__postbattle-detail-ribbons">
+                        {sel.ribbons.map((x) => {
+                          const name = ribbonNames[x.key]?.[dataLanguage.value] ?? x.key;
+                          return (
+                            <span
+                              key={x.key}
+                              class="replay-view__postbattle-detail-ribbon"
+                              data-hint={`${name} ×${x.value}`}
+                            >
+                              <AssetImage
+                                src={bundledRibbonUrl(x.key)}
+                                width={40}
+                                height={15}
+                                alt=""
+                              />
+                              <em>{x.value}</em>
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div class="replay-view__postbattle-global">
                       <span class="replay-view__postbattle-global-note">
-                        {t("replay.botNote")}
+                        {t("replay.noDamageData")}
                       </span>
                     </div>
-                  ) : (
-                    <div class="replay-view__postbattle-global">
-                      {globalLoading.value ? (
-                        <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
-                          <HkSpinner size="md" tone="current" />
-                        </span>
-                      ) : globalStats.value ? (
-                        <StatsCard stats={globalStats.value} />
-                      ) : globalError.value ? (
+                    {isBot(sel) ? (
+                      <div class="replay-view__postbattle-global">
                         <span class="replay-view__postbattle-global-note">
-                          {t("replay.postbattle.globalFailed")}
+                          {t("replay.botNote")}
                         </span>
-                      ) : null}
-                    </div>
-                  )}
-                </HkScrollContainer>
-                {!isBot(sel) ? (
-                  <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
-                    {t("replay.postbattle.fullStats")}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
+                      </div>
+                    ) : (
+                      <div class="replay-view__postbattle-global">
+                        {globalLoading.value ? (
+                          <span class="replay-view__postbattle-global-note replay-view__postbattle-global-note--loading">
+                            <HkSpinner size="md" tone="current" />
+                          </span>
+                        ) : globalStats.value ? (
+                          <StatsCard stats={globalStats.value} />
+                        ) : globalError.value ? (
+                          <span class="replay-view__postbattle-global-note">
+                            {t("replay.postbattle.globalFailed")}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
+                  </>
+                ) : null,
+            }}
+          </HkModal>
         </div>
       );
     };
@@ -1591,46 +1599,62 @@ const ChatLogPanel = defineComponent({
               ))}
             </ul>
           </HkScrollContainer>
-          {/* Level-2 modal: the sender's stats (reuses the post-battle
-              modal chrome; sits fixed above the chat panel). */}
-          {sel ? (
-            <div class="replay-view__postbattle-modal" onClick={() => (selected.value = null)}>
-              <div
-                class="hk-selectable replay-view__postbattle-modal-panel"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <div class="replay-view__postbattle-modal-head">
-                  <span class="replay-view__postbattle-detail-head">
-                    <span class="replay-view__postbattle-detail-ico">
-                      {sel.shipId ? (
-                        <BattleIcon
-                          type={sel.shipType}
-                          variant={sel.enemy ? "enemy" : "ally"}
-                          size={24}
-                        />
-                      ) : null}
+          {/* Level-2 modal: the sender's stats — a first-class hikari window
+              (issue #1736 P2 wave item 4, the same chrome migration as the
+              two roster detail windows; keeps their shared post-battle
+              detail classes above the chat panel). `selected` drives the
+              open state: the window stays mounted through the leave
+              transition and the slots gate on `sel` (contentHold serves
+              the last frame mid-fold); `hk-selectable` rides the content
+              class so the report stays copyable. */}
+          <HkModal
+            modelValue={sel != null}
+            onUpdate:modelValue={(v: boolean) => {
+              if (!v) selected.value = null;
+            }}
+            surfaceTitle={sel ? sel.sender : undefined}
+            width="min(560px, 90vw)"
+            contentClass="replay-view__postbattle-detail hk-selectable"
+            footerActions={
+              sel && !sel.bot
+                ? [
+                    {
+                      label: t("replay.postbattle.fullStats"),
+                      variant: "outline" as const,
+                      onClick: jumpToLookup,
+                    },
+                  ]
+                : undefined
+            }
+          >
+            {{
+              headerLead: sel
+                ? () => (
+                    <span class="replay-view__postbattle-detail-head">
+                      <span class="replay-view__postbattle-detail-ico">
+                        {sel.shipId ? (
+                          <BattleIcon
+                            type={sel.shipType}
+                            variant={sel.enemy ? "enemy" : "ally"}
+                            size={24}
+                          />
+                        ) : null}
+                      </span>
+                      <span class="replay-view__postbattle-detail-name">
+                        {sel.sender}
+                        {sel.bot ? (
+                          <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                        ) : null}
+                        <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
+                      </span>
                     </span>
-                    <span class="replay-view__postbattle-detail-name">
-                      {sel.sender}
-                      {sel.bot ? (
-                        <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
-                      ) : null}
-                      <em class="replay-view__postbattle-detail-ship">{sel.shipName}</em>
-                    </span>
-                  </span>
-                  <HkIconButton
-                    class="hk-window-close replay-view__postbattle-modal-close"
-                    size={32}
-                    variant="ghost"
-                    icon="close"
-                    aria-label={t("common.close")}
-                    onClick={() => (selected.value = null)}
-                  />
-                </div>
-                {/* Drill-down scroller (hikari container owns the scrollbar;
-                    the note blocks stack directly in its viewport). */}
-                <HkScrollContainer class="replay-view__postbattle-modal-scroll">
-                  {sel.bot ? (
+                  )
+                : undefined,
+              // HkModal's built-in .hk-modal-body-scroll owns scrolling —
+              // the inner HkScrollContainer retired with the bespoke chrome.
+              default: () =>
+                sel ? (
+                  sel.bot ? (
                     <div class="replay-view__postbattle-global">
                       <span class="replay-view__postbattle-global-note">
                         {t("replay.botNote")}
@@ -1654,16 +1678,10 @@ const ChatLogPanel = defineComponent({
                         </span>
                       )}
                     </div>
-                  )}
-                </HkScrollContainer>
-                {!sel.bot ? (
-                  <button class="replay-view__postbattle-jump" onClick={jumpToLookup}>
-                    {t("replay.postbattle.fullStats")}
-                  </button>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
+                  )
+                ) : null,
+            }}
+          </HkModal>
         </>
       );
     };

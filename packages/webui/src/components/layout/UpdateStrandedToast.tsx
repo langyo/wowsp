@@ -1,14 +1,11 @@
-import { defineComponent, onBeforeUnmount, onMounted, ref, watch, Teleport } from "vue";
-import { TriangleAlert, X } from "@lucide/vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { TriangleAlert } from "@lucide/vue";
 
+import ToastCardBase, { type ToastCardAction, type ToastCardBaseInstance } from "./ToastCardBase";
 import { useUpdaterStore } from "@/stores/updater";
 import { isMobileApp, isNative } from "@/utils/platform";
 import { t } from "@/i18n";
 import "./UpdateStrandedToast.scss";
-
-/** Leave transition length — matches the --leave duration in the scss
- *  (same grammar as UpdateAppliedToast's folding card). */
-const LEAVE_MS = 260;
 
 /** How long the card lingers before folding away on its own — the
  *  recovery actions outlast the success card's 8 s: the wizard launch
@@ -25,32 +22,26 @@ const AUTO_DISMISS_MS = 60000;
  * never silently — and 打开下载页 falls back to the website when the
  * cached installer is gone. The card folds on either action (the
  * wizard's own flow stops this app at its install step); the ordinary
- * update banner keeps offering the silent retry independently. Renders
- * nothing outside the desktop Tauri shell, like its sibling cards.
+ * update banner keeps offering the silent retry independently. The
+ * assertive role and the body line under the headline are this card's
+ * own grammar; the surface, the quiet × and both pills are the base's.
+ * Renders nothing outside the desktop Tauri shell, like its sibling cards.
  */
 export default defineComponent({
   name: "UpdateStrandedToast",
   setup() {
     const updater = useUpdaterStore();
-
-    const mounted = ref(false);
-    const leaving = ref(false);
-    let leaveTimer: number | undefined;
+    const card = ref<ToastCardBaseInstance | null>(null);
     let autoTimer: number | undefined;
 
-    /** Fold the card out (delayed unmount) and stop the auto-dismiss. */
+    /** Stop the auto-dismiss, then fold the card out (the base's
+     *  delayed unmount keeps it alive for the --leave transition). */
     function dismiss() {
       if (autoTimer !== undefined) {
         window.clearTimeout(autoTimer);
         autoTimer = undefined;
       }
-      if (!mounted.value || leaving.value) return;
-      leaving.value = true;
-      leaveTimer = window.setTimeout(() => {
-        leaveTimer = undefined;
-        mounted.value = false;
-        leaving.value = false;
-      }, LEAVE_MS);
+      card.value?.dismiss();
     }
 
     onMounted(() => {
@@ -61,73 +52,72 @@ export default defineComponent({
       watch(
         () => updater.stranded,
         (stranded) => {
-          if (stranded && !mounted.value) {
-            mounted.value = true;
+          if (stranded && !card.value?.shown) {
+            card.value?.show();
             autoTimer = window.setTimeout(dismiss, AUTO_DISMISS_MS);
           }
         },
-        { immediate: true },
+        // flush:"post" — the verdict lands after mount, and the callback
+        // must run after the template-ref job binds the base instance
+        // (a pre-flush callback would see card.value null and the card
+        // would never rise).
+        { immediate: true, flush: "post" },
       );
     });
 
     onBeforeUnmount(() => {
       if (autoTimer !== undefined) window.clearTimeout(autoTimer);
-      if (leaveTimer !== undefined) window.clearTimeout(leaveTimer);
     });
 
     return () => {
-      if (!mounted.value || !updater.stranded) return null;
+      if (!updater.stranded) return null;
       const stranded = updater.stranded;
+      // The 干净重装 pill only while the cached installer is still
+      // runnable, disabled for the span of a recovery pass; the
+      // 打开下载页 fallback always.
+      const actions: ToastCardAction[] = [];
+      if (stranded.installer_ready) {
+        actions.push({
+          label: t("about.updateStrandedReinstall"),
+          kind: "primary",
+          class: "update-stranded__reinstall",
+          disabled: updater.recovering,
+          onClick: () => {
+            void updater.reinstallFromCache();
+            dismiss();
+          },
+        });
+      }
+      actions.push({
+        label: t("about.updateStrandedDownload"),
+        kind: "outline",
+        class: "update-stranded__download",
+        onClick: () => {
+          void updater.openDownloadPage();
+          dismiss();
+        },
+      });
       return (
-        <Teleport to="body">
-          <div
-            class={["update-stranded", leaving.value ? "update-stranded--leave" : ""]}
-            role="alert"
-          >
-            <div class="update-stranded__row">
-              <span class="update-stranded__icon">
-                <TriangleAlert size={16} />
-              </span>
-              <p class="update-stranded__message">{t("about.updateStrandedTitle")}</p>
-              <button
-                type="button"
-                class="update-stranded__close"
-                aria-label={t("common.close")}
-                onClick={dismiss}
-              >
-                <X size={14} />
-              </button>
-            </div>
-            <p class="update-stranded__body">
-              {t("about.updateStrandedBody", { version: stranded.expected })}
-            </p>
-            <div class="update-stranded__actions">
-              {stranded.installer_ready && (
-                <button
-                  type="button"
-                  class="update-stranded__reinstall"
-                  disabled={updater.recovering}
-                  onClick={() => {
-                    void updater.reinstallFromCache();
-                    dismiss();
-                  }}
-                >
-                  {t("about.updateStrandedReinstall")}
-                </button>
-              )}
-              <button
-                type="button"
-                class="update-stranded__download"
-                onClick={() => {
-                  void updater.openDownloadPage();
-                  dismiss();
-                }}
-              >
-                {t("about.updateStrandedDownload")}
-              </button>
-            </div>
-          </div>
-        </Teleport>
+        <ToastCardBase
+          ref={card}
+          tone="warning"
+          rootClass="update-stranded"
+          role="alert"
+          message={t("about.updateStrandedTitle")}
+          bold
+          close
+          onClose={dismiss}
+          actions={actions}
+        >
+          {{
+            icon: () => <TriangleAlert size={16} />,
+            body: () => (
+              <p class="update-stranded__body">
+                {t("about.updateStrandedBody", { version: stranded.expected })}
+              </p>
+            ),
+          }}
+        </ToastCardBase>
       );
     };
   },

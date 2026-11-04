@@ -1,14 +1,12 @@
-import { defineComponent, onBeforeUnmount, ref, Teleport, watch } from "vue";
+import { defineComponent, onMounted, ref, watch } from "vue";
 
 import { HkSpinner } from "@celestia-island/hikari";
 
+import ToastCardBase, { type ToastCardBaseInstance } from "./ToastCardBase";
 import { t } from "@/i18n";
 import { useUpdaterStore } from "@/stores/updater";
 import { isMobileApp } from "@/utils/platform";
 import "./UpdateToast.scss";
-
-/** Leave transition length — must match the --leave duration below. */
-const LEAVE_MS = 260;
 
 /** The phone app build never runs update passes (AppShell skips the
  *  updater there); the card renders nothing in that build even if some
@@ -18,31 +16,27 @@ const QUIET_BUILD = isMobileApp();
 /**
  * UpdateToast — the updater's live pass card (校验官方渠道 / 测镜像 /
  * 下载中 / 安装中), raised once the user answers 立即更新 and torn down
- * when the pass ends.
- * Visual language mirrors hikari's blocking-toast card (same fixed
- * top-right column, same `--hk-z-toast` band, same info-blue variant
- * surface) but is rendered here, not through `showBlockingToast`: the
- * pass needs a bottom progress bar, a spinner icon while the official
- * channels are verified and the mirrors race,
- * and a single 取消 action — the shared blocking card fixes the icon set
- * and always renders both buttons. No controls during install: once the
- * installer has spawned the app is about to be killed, so there is
- * nothing left to cancel.
+ * when the pass ends. Thin store wiring over ToastCardBase (which owns
+ * the Teleported slot, the enter/--leave motion and the delayed-unmount
+ * machine): the pass needs a bottom progress bar, a spinner icon while
+ * the official channels are verified and the mirrors race, and a single
+ * 取消 action — the shared blocking card fixes the icon set and always
+ * renders both buttons. No controls during install: once the installer
+ * has spawned the app is about to be killed, so there is nothing left
+ * to cancel.
  *
  * The pass ending plays a leave transition instead of snapping away: the
- * card stays mounted for the fade (delayed unmount, same pattern as the
- * global tooltip) and renders a frozen snapshot of the pass state so the
- * folding card keeps its text and progress instead of blanking. Renders
- * nothing while the store is idle, so it is safe to keep mounted
- * unconditionally at the shell level.
+ * base stays mounted for the fade while this wrapper serves a frozen
+ * snapshot of the pass state, so the folding card keeps its text and
+ * progress instead of blanking. Renders nothing while the store is idle,
+ * so it is safe to keep mounted unconditionally at the shell level.
  */
 export default defineComponent({
   name: "UpdateToast",
   setup() {
     const updater = useUpdaterStore();
+    const card = ref<ToastCardBaseInstance | null>(null);
 
-    const mounted = ref(false);
-    const leaving = ref(false);
     /** Frozen pass state served while the leave transition runs. */
     const held = ref<{ statusText: string; downloading: boolean; determinate: boolean; progress: number | null }>({
       statusText: "",
@@ -50,35 +44,29 @@ export default defineComponent({
       determinate: false,
       progress: null,
     });
-    let leaveTimer: number | undefined;
+
+    /** One running-flip evaluation — the sync watcher and the mount
+     *  replay (the immediate watcher fires before the base ref binds)
+     *  share it. */
+    function applyRunning(run: boolean) {
+      if (run) {
+        // A restart mid-leave cancels the pending unmount and restores
+        // the live card.
+        card.value?.show();
+      } else if (card.value?.shown && !card.value.leaving) {
+        held.value = {
+          statusText: updater.statusText,
+          downloading: updater.downloading,
+          determinate: updater.phase === "download" && updater.progress != null,
+          progress: updater.progress,
+        };
+        card.value.dismiss();
+      }
+    }
 
     watch(
       () => updater.running,
-      (run) => {
-        if (run) {
-          // A restart mid-leave cancels the pending unmount and restores
-          // the live card.
-          if (leaveTimer !== undefined) {
-            window.clearTimeout(leaveTimer);
-            leaveTimer = undefined;
-          }
-          leaving.value = false;
-          mounted.value = true;
-        } else if (mounted.value && !leaving.value) {
-          held.value = {
-            statusText: updater.statusText,
-            downloading: updater.downloading,
-            determinate: updater.phase === "download" && updater.progress != null,
-            progress: updater.progress,
-          };
-          leaving.value = true;
-          leaveTimer = window.setTimeout(() => {
-            leaveTimer = undefined;
-            mounted.value = false;
-            leaving.value = false;
-          }, LEAVE_MS);
-        }
-      },
+      applyRunning,
       // The store clears downloading/phase/progress in the same sync block
       // that drops `running` — a pre-flush watcher would sample the
       // already-cleared fallbacks. Sync fires at the running flip, while
@@ -87,12 +75,13 @@ export default defineComponent({
       { immediate: true, flush: "sync" },
     );
 
-    onBeforeUnmount(() => {
-      if (leaveTimer !== undefined) window.clearTimeout(leaveTimer);
-    });
+    // Replay the live state once the base card's ref exists — a pass
+    // already running at mount raises the card on the same clock the
+    // setup-time watcher used to.
+    onMounted(() => applyRunning(updater.running));
 
     return () => {
-      if (QUIET_BUILD || !mounted.value) return null;
+      if (QUIET_BUILD) return null;
       // Live store while running; the frozen snapshot while folding out.
       const live = updater.running;
       const statusText = live ? updater.statusText : held.value.statusText;
@@ -102,34 +91,35 @@ export default defineComponent({
         : held.value.determinate;
       const progress = live ? updater.progress : held.value.progress;
       return (
-        <Teleport to="body">
-          <div class={["update-toast", leaving.value ? "update-toast--leave" : ""]} role="status">
-            <div class="update-toast__row">
-              <span class="update-toast__icon">
-                <HkSpinner size="xs" tone="current" />
-              </span>
-              <p class="update-toast__message">{statusText}</p>
-              {downloading && (
-                <button
-                  type="button"
-                  class="update-toast__cancel"
-                  onClick={() => updater.cancelDownload()}
-                >
-                  {t("about.updateCancel")}
-                </button>
-              )}
-            </div>
-            <div class="update-toast__track">
-              <div
-                class={[
-                  "update-toast__fill",
-                  !determinate && "update-toast__fill--indeterminate",
-                ]}
-                style={determinate ? { width: `${progress}%` } : undefined}
-              />
-            </div>
-          </div>
-        </Teleport>
+        <ToastCardBase
+          ref={card}
+          tone="info"
+          rootClass="update-toast"
+          message={statusText}
+          actions={
+            downloading
+              ? [
+                  {
+                    label: t("about.updateCancel"),
+                    kind: "quiet",
+                    onClick: () => updater.cancelDownload(),
+                  },
+                ]
+              : []
+          }
+        >
+          {{
+            icon: () => <HkSpinner size="xs" tone="current" />,
+            progress: () => (
+              <div class="toast-card__track">
+                <div
+                  class={["toast-card__fill", !determinate && "toast-card__fill--indeterminate"]}
+                  style={determinate ? { width: `${progress}%` } : undefined}
+                />
+              </div>
+            ),
+          }}
+        </ToastCardBase>
       );
     };
   },
