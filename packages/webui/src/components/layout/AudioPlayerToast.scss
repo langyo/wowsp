@@ -1,86 +1,21 @@
-// AudioPlayerToast — the preview-audio controller card. Sits in
-// hikari's top-right toast column (same fixed slot and z-band as
-// HkToast / UpdateToast — the update pass card's exact geometry), same
-// info-blue surface: it reads as the download-progress card's sibling,
-// with a determinate seek bar instead. It can overlap the transient
-// toast stack while a line plays — same accepted trade-off as
-// UpdateToast, which shares the slot.
-
-.audio-player-toast {
-  position: fixed;
-  top: 4rem;
-  right: 1rem;
-  z-index: var(--hk-z-toast, 4000);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-  width: 22rem;
-  max-width: calc(100vw - 2rem);
-  padding: var(--space-12) var(--space-16);
-  border-radius: var(--radius-sm);
-  background: var(--hi-color-info, #58a6ff);
-  color: #fff;
-  font-size: var(--text-base);
-  line-height: 1.4;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
-  backdrop-filter: blur(12px);
-  pointer-events: auto;
-  animation: audio-player-toast-in var(--duration-normal)
-    cubic-bezier(0.22, 0.61, 0.36, 1);
-  // Leave counterpart of the enter keyframe: the card fades and slides
-  // out instead of snapping away when playback stops (the component
-  // holds itself mounted for this duration — a delayed unmount).
-  transition: opacity var(--duration-normal) var(--ease-standard),
-    transform var(--duration-normal) var(--ease-standard);
-
-  &--leave {
-    opacity: 0;
-    transform: translateX(12px);
-    pointer-events: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .audio-player-toast {
-    animation: none;
-    transition: none;
-  }
-}
-
-@keyframes audio-player-toast-in {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
-.audio-player-toast__row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-8);
-}
-
-.audio-player-toast__icon {
-  display: flex;
-  align-items: center;
-  flex-shrink: 0;
-}
+// AudioPlayerToast — the preview-audio controller card. The card surface
+// (info tone, fixed slot, enter/--leave motion) is ToastCardBase grammar
+// now; what stays genuinely card-specific: the composite message row
+// (mono name + pinned time), the re-tinted ghost icon buttons, and the
+// drag-to-scrub seek rail (its padded hit area and deliberately
+// transition-free fill can't come from the base's progress grammar; the
+// indeterminate slide references the base's one shared keyframe). It can
+// overlap the transient toast stack while a line plays — same accepted
+// trade-off as the other cards sharing the slot.
 
 // Message row: name (flexes, ellipsized) then the running time, the
-// updater toast's "下载中 45%" slot pattern.
+// updater toast's "下载中 45%" slot pattern — a composite the base's
+// plain headline <p> only carries via the message slot, so the row
+// grammar rides on the legacy hook.
 .audio-player-toast__message {
-  margin: 0;
-  flex: 1;
-  min-width: 0;
   display: flex;
   align-items: baseline;
   gap: var(--space-8);
-  white-space: nowrap;
 }
 
 .audio-player-toast__name {
@@ -118,10 +53,10 @@
   }
 }
 
-// Seek surface: the progress rail is the updater toast's exact indicator
-// (4px rail, white fill); the padding around it is the drag hit area and
-// the negative margin cancels it again, so the visual rhythm stays the
-// updater card's (8px flex gap above, 12px card padding below).
+// Seek surface: the progress rail is the family's 4px indicator; the
+// padding around it is the drag hit area and the negative margin cancels
+// it again, so the visual rhythm stays the pass cards' (8px flex gap
+// above, 12px card padding below).
 .audio-player-toast__seekbar {
   margin: -7px 0;
   padding: 7px 0;
@@ -147,16 +82,6 @@
 
   &--indeterminate {
     width: 34%;
-    animation: audio-player-toast-slide 1.4s ease-in-out infinite;
-  }
-}
-
-@keyframes audio-player-toast-slide {
-  from {
-    transform: translateX(-110%);
-  }
-
-  to {
-    transform: translateX(300%);
+    animation: toast-card-slide 1.4s ease-in-out infinite;
   }
 }

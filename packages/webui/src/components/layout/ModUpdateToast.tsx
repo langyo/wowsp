@@ -1,16 +1,14 @@
-import { defineComponent, onBeforeUnmount, ref, Teleport, watch } from "vue";
+import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 
 import { HkSpinner } from "@celestia-island/hikari";
 import { PackageCheck } from "@lucide/vue";
 
+import ToastCardBase, { type ToastCardBaseInstance } from "./ToastCardBase";
 import { t } from "@/i18n";
 import { MOD_PASS_CARD_GRACE_MS, usePluginUpdatesStore } from "@/stores/pluginUpdates";
 import { formatSpeed } from "@/utils/format";
 import { isMobileApp } from "@/utils/platform";
 import "./ModUpdateToast.scss";
-
-/** Leave transition length — must match the --leave duration below. */
-const LEAVE_MS = 260;
 
 /** The phone app build has no local plugins to update (Sidebar hides the
  *  trigger there); the card renders nothing even if state leaked in. */
@@ -18,13 +16,12 @@ const QUIET_BUILD = isMobileApp();
 
 /**
  * ModUpdateToast — the plugin batch-update pass card (一键更新 from the
- * client-version selector's hover hint). Same visual family as
- * UpdateToast (hikari's top-right toast column, info-blue surface,
- * bottom progress track): sequential plugin/mod updates with an overall
- * percent — indeterminate slide while the current item reports no
- * fraction (probe phase, mirror race). No cancel: catalog installs
- * cannot be aborted mid-flight, so the card simply runs to completion
- * and folds failures into an error toast at the end.
+ * client-version selector's hover hint). Thin store wiring over
+ * ToastCardBase: sequential plugin/mod updates with an overall percent —
+ * indeterminate slide while the current item reports no fraction (probe
+ * phase, mirror race). No cancel: catalog installs cannot be aborted
+ * mid-flight, so the card simply runs to completion and folds failures
+ * into an error toast at the end.
  *
  * The row is split in two on purpose: the step line (item name + count)
  * takes all the ellipsis, while the meta line (live "downloading N% ·
@@ -32,21 +29,22 @@ const QUIET_BUILD = isMobileApp();
  * sample exists — or the install verb) never shrinks, so a long mod name
  * can no longer swallow the progress readout. The leading icon swaps to
  * hikari's spinner during the install hand-off, the same work-in-flight
- * cue the app-updater card carries.
+ * cue the app-updater card carries; the full step text rides the base's
+ * data-hint headline for hover.
  *
  * The pass ending plays a leave transition instead of snapping away
- * (delayed unmount + frozen snapshot, the UpdateToast pattern; the meta
- * text AND the icon state are frozen too). Renders nothing while the
- * store is idle, so it is safe to keep mounted unconditionally at the
- * shell level.
+ * (delayed unmount + frozen snapshot in the base; the meta text AND the
+ * icon state are frozen too). The mount grace (MOD_PASS_CARD_GRACE_MS,
+ * owned by the store) keeps short-lived passes from flashing the card.
+ * Renders nothing while the store is idle, so it is safe to keep mounted
+ * unconditionally at the shell level.
  */
 export default defineComponent({
   name: "ModUpdateToast",
   setup() {
     const updates = usePluginUpdatesStore();
+    const card = ref<ToastCardBaseInstance | null>(null);
 
-    const mounted = ref(false);
-    const leaving = ref(false);
     /** Frozen pass state served while the leave transition runs. */
     const held = ref({
       stepText: "",
@@ -55,7 +53,6 @@ export default defineComponent({
       determinate: false,
       progress: 0,
     });
-    let leaveTimer: number | undefined;
     let mountTimer: number | undefined;
 
     /** The ellipsized line: which item the pass is on plus its step count. */
@@ -88,63 +85,63 @@ export default defineComponent({
       return "";
     }
 
+    /** One running-flip evaluation — the sync watcher and the mount
+     *  replay (an already-running pass at setup fires before the base
+     *  ref binds) share it. */
+    function applyRunning(run: boolean) {
+      if (run) {
+        // A restart mid-leave cancels the pending unmount and restores
+        // the live card.
+        if (card.value?.leaving) card.value.show();
+        if (mountTimer === undefined) {
+          // The mount grace (MOD_PASS_CARD_GRACE_MS, owned by the
+          // store): only a pass still running past the window earns
+          // the card.
+          mountTimer = window.setTimeout(() => {
+            mountTimer = undefined;
+            if (updates.running) card.value?.show();
+          }, MOD_PASS_CARD_GRACE_MS);
+        }
+      } else {
+        if (mountTimer !== undefined) {
+          // The pass died inside the grace — the card never mounts and
+          // no leave snapshot is taken (the frozen text of a dead pass
+          // is exactly the flash this guard exists to remove).
+          window.clearTimeout(mountTimer);
+          mountTimer = undefined;
+        }
+        if (card.value?.shown && !card.value.leaving) {
+          held.value = {
+            stepText: stepText(),
+            metaText: metaText(),
+            installing: updates.phase === "install",
+            determinate: updates.overallPercent != null,
+            progress: updates.overallPercent ?? 0,
+          };
+          card.value.dismiss();
+        }
+      }
+    }
+
     watch(
       () => updates.running,
-      (run) => {
-        if (run) {
-          // A restart mid-leave cancels the pending unmount and restores
-          // the live card.
-          if (leaveTimer !== undefined) {
-            window.clearTimeout(leaveTimer);
-            leaveTimer = undefined;
-          }
-          leaving.value = false;
-          if (mountTimer === undefined) {
-            // The mount grace (MOD_PASS_CARD_GRACE_MS, owned by the
-            // store): only a pass still running past the window earns
-            // the card.
-            mountTimer = window.setTimeout(() => {
-              mountTimer = undefined;
-              if (updates.running) mounted.value = true;
-            }, MOD_PASS_CARD_GRACE_MS);
-          }
-        } else {
-          if (mountTimer !== undefined) {
-            // The pass died inside the grace — the card never mounts and
-            // no leave snapshot is taken (the frozen text of a dead pass
-            // is exactly the flash this guard exists to remove).
-            window.clearTimeout(mountTimer);
-            mountTimer = undefined;
-          }
-          if (mounted.value && !leaving.value) {
-            held.value = {
-              stepText: stepText(),
-              metaText: metaText(),
-              installing: updates.phase === "install",
-              determinate: updates.overallPercent != null,
-              progress: updates.overallPercent ?? 0,
-            };
-            leaving.value = true;
-            leaveTimer = window.setTimeout(() => {
-              leaveTimer = undefined;
-              mounted.value = false;
-              leaving.value = false;
-            }, LEAVE_MS);
-          }
-        }
-      },
+      applyRunning,
       // Sync so the snapshot samples the still-live pass state at the
       // running flip — the store clears its fields in the same block.
       { immediate: true, flush: "sync" },
     );
 
+    // Replay the live state once the base card's ref exists — a pass
+    // already running at mount earns the card on the grace clock the
+    // setup-time watcher armed (the re-arm guard above keeps it single).
+    onMounted(() => applyRunning(updates.running));
+
     onBeforeUnmount(() => {
-      if (leaveTimer !== undefined) window.clearTimeout(leaveTimer);
       if (mountTimer !== undefined) window.clearTimeout(mountTimer);
     });
 
     return () => {
-      if (QUIET_BUILD || !mounted.value) return null;
+      if (QUIET_BUILD) return null;
       const live = updates.running;
       const step = live ? stepText() : held.value.stepText;
       const meta = live ? metaText() : held.value.metaText;
@@ -154,28 +151,26 @@ export default defineComponent({
       const determinate = live ? updates.overallPercent != null : held.value.determinate;
       const progress = live ? (updates.overallPercent ?? 0) : held.value.progress;
       return (
-        <Teleport to="body">
-          <div class={["mod-update-toast", leaving.value ? "mod-update-toast--leave" : ""]} role="status">
-            <div class="mod-update-toast__row">
-              <span class="mod-update-toast__icon">
-                {installing ? <HkSpinner size="xs" tone="current" /> : <PackageCheck size={14} />}
-              </span>
-              <p class="mod-update-toast__message" data-hint={step}>
-                {step}
-              </p>
-              {meta && <span class="mod-update-toast__meta">{meta}</span>}
-            </div>
-            <div class="mod-update-toast__track">
-              <div
-                class={[
-                  "mod-update-toast__fill",
-                  !determinate && "mod-update-toast__fill--indeterminate",
-                ]}
-                style={determinate ? { width: `${progress}%` } : undefined}
-              />
-            </div>
-          </div>
-        </Teleport>
+        <ToastCardBase
+          ref={card}
+          tone="info"
+          rootClass="mod-update-toast"
+          message={step}
+          hint={step}
+          meta={meta}
+        >
+          {{
+            icon: () => (installing ? <HkSpinner size="xs" tone="current" /> : <PackageCheck size={14} />),
+            progress: () => (
+              <div class="toast-card__track">
+                <div
+                  class={["toast-card__fill", !determinate && "toast-card__fill--indeterminate"]}
+                  style={determinate ? { width: `${progress}%` } : undefined}
+                />
+              </div>
+            ),
+          }}
+        </ToastCardBase>
       );
     };
   },

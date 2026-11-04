@@ -1,90 +1,80 @@
-import { defineComponent, onBeforeUnmount, ref, Teleport, watch } from "vue";
+import { defineComponent, onMounted, ref, watch } from "vue";
 import { Pause, Play, Volume2, X } from "@lucide/vue";
 import { HkIconButton, HkSpinner } from "@celestia-island/hikari";
 
+import ToastCardBase, { type ToastCardBaseInstance } from "./ToastCardBase";
 import { t } from "@/i18n";
 import { useAudioPlayerStore } from "@/stores/audioPlayer";
 import "./AudioPlayerToast.scss";
-
-/** Leave transition length — must match the --leave duration below. */
-const LEAVE_MS = 260;
 
 /**
  * AudioPlayerToast — the preview-audio controller card raised by the
  * audioPlayer store whenever a voice-line / audio preview starts playing.
  * hikari toasts support neither a progress bar nor custom actions, but a
- * player needs both — hence this shell-level card in hikari's top-right
- * toast column, built as the update pass card's twin: same surface and
- * slot, message row carrying the name (flexes, ellipsized) and a
- * pinned `0:12/2:34` next to the controls,
- * and the exact 4px progress rail below (indeterminate slide while the
- * .wem decode round-trip is in flight, rAF-smooth position while
- * rolling). Controls: stock hikari ghost HkIconButtons (play/pause,
- * stop — stop closes the card); the rail doubles as the seek surface
- * (pointer drag scrubs).
+ * player needs both — hence this shell-level card, thin store wiring over
+ * ToastCardBase: the composite message row carries the name (flexes,
+ * ellipsized, mono) and a pinned `0:12/2:34` next to the controls, and
+ * the 4px seek rail below doubles as the drag-to-scrub surface (its
+ * padded hit area and deliberately transition-free fill stay card-local;
+ * indeterminate slide while the .wem decode round-trip is in flight).
+ * Controls: stock hikari ghost HkIconButtons (play/pause, stop — stop
+ * closes the card), re-tinted white for the card's surface.
  *
  * The store tearing down plays a leave transition instead of snapping
- * away (delayed unmount + frozen snapshot, the UpdateToast pattern), so
- * the folding card keeps its text and progress. Renders nothing while
- * the store is idle, so it is safe to keep mounted unconditionally at
- * the shell level.
+ * away (delayed unmount + frozen snapshot in the base). Renders nothing
+ * while the store is idle, so it is safe to keep mounted unconditionally
+ * at the shell level.
  */
 export default defineComponent({
   name: "AudioPlayerToast",
   setup() {
     const player = useAudioPlayerStore();
+    const card = ref<ToastCardBaseInstance | null>(null);
 
-    const mounted = ref(false);
-    const leaving = ref(false);
     /** Frozen track state served while the leave transition runs. */
     const held = ref({ title: "", playing: false, loading: false, position: 0, duration: 0 });
-    let leaveTimer: number | undefined;
     // Seek-drag state (declared before the watcher below, which resets
     // it on the falling edge).
     const trackEl = ref<HTMLElement | null>(null);
     let seeking = false;
 
+    /** One active-flip evaluation — the sync watcher and the mount
+     *  replay (the immediate watcher fires before the base ref binds)
+     *  share it. */
+    function applyActive(active: boolean) {
+      if (active) {
+        // A new track mid-leave cancels the pending unmount and
+        // restores the live card.
+        card.value?.show();
+      } else if (card.value?.shown && !card.value.leaving) {
+        // A track swap can land mid-seek-drag: the dragged track node
+        // is about to fold away with the pointer still captured, so
+        // its pointerup will never fire — drop the flag here or plain
+        // hovers over the next track's bar would keep seeking.
+        seeking = false;
+        held.value = {
+          title: player.title,
+          playing: player.playing,
+          loading: player.loading,
+          position: player.position,
+          duration: player.duration,
+        };
+        card.value.dismiss();
+      }
+    }
+
     watch(
       () => player.active,
-      (active) => {
-        if (active) {
-          // A new track mid-leave cancels the pending unmount and
-          // restores the live card.
-          if (leaveTimer !== undefined) {
-            window.clearTimeout(leaveTimer);
-            leaveTimer = undefined;
-          }
-          leaving.value = false;
-          mounted.value = true;
-        } else if (mounted.value && !leaving.value) {
-          // A track swap can land mid-seek-drag: the dragged track node
-          // is about to fold away with the pointer still captured, so
-          // its pointerup will never fire — drop the flag here or plain
-          // hovers over the next track's bar would keep seeking.
-          seeking = false;
-          held.value = {
-            title: player.title,
-            playing: player.playing,
-            loading: player.loading,
-            position: player.position,
-            duration: player.duration,
-          };
-          leaving.value = true;
-          leaveTimer = window.setTimeout(() => {
-            leaveTimer = undefined;
-            mounted.value = false;
-            leaving.value = false;
-          }, LEAVE_MS);
-        }
-      },
-      // Sync so the snapshot samples the still-live pass state at the
+      applyActive,
+      // Sync so the snapshot samples the still-live track state at the
       // active flip — the store clears its fields in the same block.
       { immediate: true, flush: "sync" },
     );
 
-    onBeforeUnmount(() => {
-      if (leaveTimer !== undefined) window.clearTimeout(leaveTimer);
-    });
+    // Replay the live state once the base card's ref exists — a track
+    // already active at mount raises the card on the same clock the
+    // setup-time watcher used to.
+    onMounted(() => applyActive(player.active));
 
     /** m:ss — NaN/Infinity (no metadata yet) renders as 0:00. */
     function fmtTime(seconds: number): string {
@@ -121,7 +111,6 @@ export default defineComponent({
     }
 
     return () => {
-      if (!mounted.value) return null;
       // Live store while active; the frozen snapshot while folding out.
       const live = player.active;
       const title = live ? player.title : held.value.title;
@@ -131,20 +120,20 @@ export default defineComponent({
       const duration = live ? player.duration : held.value.duration;
       const pct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
       return (
-        <Teleport to="body">
-          <div class={["audio-player-toast", leaving.value ? "audio-player-toast--leave" : ""]} role="status">
-            <div class="audio-player-toast__row">
-              <span class="audio-player-toast__icon">
-                {loading ? <HkSpinner size="xs" tone="current" /> : <Volume2 size={14} />}
-              </span>
-              <p class="audio-player-toast__message">
+        <ToastCardBase ref={card} tone="info" rootClass="audio-player-toast">
+          {{
+            icon: () => (loading ? <HkSpinner size="xs" tone="current" /> : <Volume2 size={14} />),
+            message: () => (
+              <>
                 <span class="audio-player-toast__name">{title}</span>
                 {duration > 0 ? (
                   <span class="audio-player-toast__time">
                     {fmtTime(position)}/{fmtTime(duration)}
                   </span>
                 ) : null}
-              </p>
+              </>
+            ),
+            trailing: () => (
               <div class="audio-player-toast__actions">
                 <HkIconButton
                   size={24}
@@ -166,27 +155,26 @@ export default defineComponent({
                   <X size={16} />
                 </HkIconButton>
               </div>
-            </div>
-            <div
-              ref={trackEl}
-              class="audio-player-toast__seekbar"
-              onPointerdown={onPointerDown}
-              onPointermove={onPointerMove}
-              onPointerup={onPointerUp}
-              onPointercancel={onPointerUp}
-            >
-              <div class="audio-player-toast__track">
-                <div
-                  class={[
-                    "audio-player-toast__fill",
-                    loading && "audio-player-toast__fill--indeterminate",
-                  ]}
-                  style={!loading ? { width: `${pct}%` } : undefined}
-                />
+            ),
+            progress: () => (
+              <div
+                ref={trackEl}
+                class="audio-player-toast__seekbar"
+                onPointerdown={onPointerDown}
+                onPointermove={onPointerMove}
+                onPointerup={onPointerUp}
+                onPointercancel={onPointerUp}
+              >
+                <div class="audio-player-toast__track">
+                  <div
+                    class={["audio-player-toast__fill", loading && "audio-player-toast__fill--indeterminate"]}
+                    style={!loading ? { width: `${pct}%` } : undefined}
+                  />
+                </div>
               </div>
-            </div>
-          </div>
-        </Teleport>
+            ),
+          }}
+        </ToastCardBase>
       );
     };
   },
