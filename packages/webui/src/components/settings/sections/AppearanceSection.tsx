@@ -528,18 +528,16 @@ export default defineComponent({
 
             <HkDivider />
 
-            {/* Solar-location strategy — hikari's OWN shared row
+            {/* Solar-location strategy — hikari's OWN shared card
                 (HkSolarLocationSetting, the generic business part every
                 celestia host drops at the bottom of its settings page):
-                summary + edit button, and the second-level editor picks
-                时区 (default, offline) / IP (the real-fix cascade) / 手动
-                (a translated 24-sector globe — HkTimeZoneGlobe, async-loaded
-                only when the manual pane opens — plus hemisphere). The
-                engine, storage and last-write-wins refreshes all live in
-                hikari; the readout underneath stays ours — what the
-                resolved strategy currently paints. */}
+                this section already titles the group, so the card's own
+                header stays hidden (the empty title prop), and the
+                strategy guidance lives in the editor's first line — the
+                readout underneath stays ours: what the resolved strategy
+                currently paints. */}
             <HkSettingsSub title={t("settings.geolocation")}>
-              <HkSolarLocationSetting onApplied={() => notifySettingsSaved()} />
+              <HkSolarLocationSetting title="" onApplied={() => notifySettingsSaved()} />
               <p class="settings-modal__geoline">
                 <span>
                   {t("settings.currentPeriod")}: <strong>{appearance.periodLabel(period.value)}</strong>
@@ -550,7 +548,6 @@ export default defineComponent({
                   </span>
                 ) : null}
               </p>
-              <HkSettingsHint>{t("settings.geolocationHint")}</HkSettingsHint>
             </HkSettingsSub>
 
             {/* The scheme editor window — hosted at the appearance section's
