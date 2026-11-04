@@ -18,7 +18,7 @@
 //! [`SessionSnapshot`] from three inputs, and broadcasts it as ONE event
 //! (`wowsp://session-changed`) that both windows render from:
 //!
-//! 1. the process poller (below): `GameProcessInfo` every 3 s;
+//! 1. the process poller (below): `GameProcessInfo` every 0.5 s;
 //! 2. the arena watcher (`tempArenaInfo.json`): the local player is the
 //!    roster entry with `relation == 0` — the same identity rule the replay
 //!    parser uses — which pins the playing account per battle;
@@ -51,11 +51,17 @@ pub const SESSION_EVENT: &str = "wowsp://session-changed";
 /// The webui-owned account registry file (read back, never written here).
 const ACCOUNTS_FILE: &str = "accounts.json";
 
-/// Process-poll cadence. Same order as the main window's `getGameProcess`
-/// poll; the two pollers coexist (the webui store also feeds the mock
-/// backend in browser dev, where no Rust events exist).
+/// Process-poll cadence. Sub-second so surfaces react to a client START
+/// within one tick (~0.5 s) and to an exit within the two-snapshot
+/// confirmation (~1 s), instead of the old 3 s. The per-tick chain stays
+/// light — a Toolhelp snapshot (single-digit ms), a couple of
+/// process-handle queries and mtime-gated config/accounts reads — while
+/// the heavy inputs remain cached (the install scan behind its TTL,
+/// stat-cached preferences). The main window's `getGameProcess` poll
+/// coexists (the webui store also feeds the mock backend in browser dev,
+/// where no Rust events exist).
 #[cfg(desktop)]
-const POLL_INTERVAL: Duration = Duration::from_secs(3);
+const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 /// Everything the hub tracks. `plugin_ids` and the accounts cache are
 /// inputs, not part of the broadcast snapshot.
@@ -81,7 +87,7 @@ struct SessionState {
     /// [`note_playing_from_arena`]).
     last_noted_arena_mtime: i64,
     /// Last snapshot handed to [`SESSION_EVENT`] — the dedup gate that keeps
-    /// the 3 s poller silent while nothing visible changed.
+    /// poller silent while nothing visible changed.
     last_emitted: Option<SessionSnapshot>,
 }
 
@@ -314,7 +320,7 @@ const ARENA_FRESHNESS_SKEW_SECS: i64 = 5;
 
 /// Note the playing identity from a battle roster (the arena watcher's
 /// event path — battle start is the one moment the logged-in account becomes
-/// observable on the wire; the poll path re-notes on its 3 s cadence).
+/// observable on the wire; the poll path re-notes on its cadence).
 ///
 /// `arena_dir` names the replays folder the roster was read FROM. On
 /// multi-instance machines the live page may watch a client that is NOT the
@@ -566,7 +572,7 @@ fn refresh_accounts(state: &mut SessionState) {
         },
         Err(e) => {
             // A mid-write read should be impossible (atomic rename), but a
-            // hand-edited file must not turn the 3 s tick into a warn-per-
+            // hand-edited file must not turn the tick into a warn-per-
             // tick firehose: pin the cache to this mtime (keep the last
             // known data) and re-read only when the file moves again — the
             // webui's next persist heals it.
@@ -610,16 +616,34 @@ pub fn sync_active_account(
 
 // ── process poller ──────────────────────────────────────────────────────────
 
-/// Spawn the session poller (desktop setup): every tick, refresh the
-/// accounts cache, recompute the running-process info, clear the playing
-/// identity when the client exited, poll the battle roster for the playing
-/// identity (the hub's INDEPENDENT feed — it must not depend on any webview
-/// surface: the overlay's arena watcher only runs in table mode "detect",
-/// the live view's poll only while /live is open), and broadcast on any
-/// snapshot change. The first tick runs immediately so an early
-/// `get_session_state` (tray panel opening) never sees a stale offline
-/// process. Never spawned on mobile — no tray panel, no game process and no
-/// arena file to feed it.
+/// The poller's offline-confirmation fold: a RUNNING snapshot applies (and
+/// broadcasts) immediately; an offline one only on the second consecutive
+/// miss. One Toolhelp blip around game launch/exit churn must not flip the
+/// hub to "game exited" (the hazard the crash watchdog's
+/// ABSENCE_CONFIRMATIONS and playtime's debounce exist for) — a false
+/// broadcast would flicker every surface. Pure, so the blip sequences are
+/// unit-tested; `offline_polls` carries the streak across calls.
+#[cfg(any(desktop, test))]
+fn snapshot_applies(running: bool, offline_polls: &mut u32) -> bool {
+    if running {
+        *offline_polls = 0;
+        true
+    } else {
+        *offline_polls += 1;
+        *offline_polls >= 2
+    }
+}
+
+/// Spawn the session poller (desktop setup): every applied tick, refresh
+/// the accounts cache, recompute the running-process info, clear the
+/// playing identity when the client exited, and every OTHER applied tick
+/// poll the battle roster for the playing identity (the hub's INDEPENDENT
+/// feed — it must not depend on any webview surface: the overlay's arena
+/// watcher only runs in table mode "detect", the live view's poll only
+/// while /live is open); broadcast on any snapshot change. The first tick
+/// runs immediately so an early `get_session_state` (tray panel opening)
+/// never sees a stale offline process. Never spawned on mobile — no tray
+/// panel, no game process and no arena file to feed it.
 #[cfg(desktop)]
 pub fn spawn_session_poller(app: AppHandle) -> Result<()> {
     std::thread::Builder::new()
@@ -632,31 +656,48 @@ pub fn spawn_session_poller(app: AppHandle) -> Result<()> {
             // freshness gate still decides whether it re-notes.
             let mut arena_parsed_mtime: i64 = 0;
             let mut prev_pid: Option<u32> = None;
+            // Offline-confirmation streak for the apply gate, and the
+            // applied-tick clock the arena scan rides on.
+            let mut offline_polls: u32 = 0;
+            let mut applied_ticks: u32 = 0;
             loop {
                 let installs = super::game_context::cached_scan();
                 let info = super::appdata::compute_process_info(&installs);
-                // The playtime tracker rides the same 3 s heartbeat: opens,
+                // The playtime tracker rides the same heartbeat: opens,
                 // heartbeats and closes the client's playtime session in the
-                // AppData ledger (commands/playtime.rs).
+                // AppData ledger (commands/playtime.rs). Its exit debounce
+                // is wall-clock, so it must see EVERY snapshot, applied or
+                // not.
                 super::playtime::observe(&info);
-                if info.pid != prev_pid {
-                    arena_parsed_mtime = 0;
-                    prev_pid = info.pid;
-                }
-                with_state(|state| {
-                    refresh_accounts(state);
-                    apply_process_info(state, info.clone());
-                });
-                if info.running {
-                    if let Some((name, mtime)) =
-                        super::arena_info::newer_arena_local_player(arena_parsed_mtime)
-                    {
-                        arena_parsed_mtime = mtime;
-                        // The poller's arena read follows the backend-preferred
-                        // dir (newer_arena_local_player), so the note attributes to
-                        // the preferred process.
-                        note_playing_from_arena(&app, &name, Some(mtime), None);
+                if snapshot_applies(info.running, &mut offline_polls) {
+                    if info.pid != prev_pid {
+                        arena_parsed_mtime = 0;
+                        prev_pid = info.pid;
                     }
+                    with_state(|state| {
+                        refresh_accounts(state);
+                        apply_process_info(state, info.clone());
+                    });
+                    // The arena scan resolves its own process snapshot and,
+                    // on versioned replay layouts, walks the replays tree —
+                    // at every applied tick it would double that traffic, so
+                    // it rides every OTHER applied tick (≈1 s while a client
+                    // runs, still 3x faster than the retired 3 s poll; the
+                    // roster only changes when a battle starts). Keyed on
+                    // APPLIED ticks, not wall ticks, so a blip alternation
+                    // cannot starve the scan.
+                    if info.running && applied_ticks % 2 == 0 {
+                        if let Some((name, mtime)) =
+                            super::arena_info::newer_arena_local_player(arena_parsed_mtime)
+                        {
+                            arena_parsed_mtime = mtime;
+                            // The poller's arena read follows the backend-preferred
+                            // dir (newer_arena_local_player), so the note attributes to
+                            // the preferred process.
+                            note_playing_from_arena(&app, &name, Some(mtime), None);
+                        }
+                    }
+                    applied_ticks = applied_ticks.wrapping_add(1);
                 }
                 broadcast_if_changed(&app);
                 std::thread::sleep(POLL_INTERVAL);
@@ -705,6 +746,37 @@ mod tests {
             realm: Some(realm.to_string()),
             ..offline_process()
         }
+    }
+
+    #[test]
+    fn offline_flip_needs_two_consecutive_snapshots() {
+        let mut streak = 0;
+        assert!(
+            snapshot_applies(true, &mut streak),
+            "running applies at once"
+        );
+        assert!(
+            !snapshot_applies(false, &mut streak),
+            "one blip must not flip the hub offline"
+        );
+        assert!(
+            snapshot_applies(false, &mut streak),
+            "the second miss confirms the exit"
+        );
+        // A running snapshot resets the streak: the next single miss is a
+        // blip again, not a confirmed exit.
+        assert!(snapshot_applies(true, &mut streak));
+        assert!(!snapshot_applies(false, &mut streak));
+        assert!(snapshot_applies(false, &mut streak));
+    }
+
+    #[test]
+    fn boot_offline_snapshots_apply_on_the_second_tick() {
+        // The hub starts offline, so the delayed first apply changes
+        // nothing visible — it only keeps the fold uniform.
+        let mut streak = 0;
+        assert!(!snapshot_applies(false, &mut streak));
+        assert!(snapshot_applies(false, &mut streak));
     }
 
     #[test]

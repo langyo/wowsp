@@ -202,6 +202,11 @@ windows = { version = "^0.61", features = [
     "Win32_System_Diagnostics_ToolHelp",
     "Win32_System_Registry",
     "Win32_System_Threading",
+    # EvtQuery/EvtNext/EvtRender: the crash watchdog reads the Application
+    # event log in-process for Event 1000/1001 crash evidence (commands/
+    # game_crash.rs) — no wevtutil child, which would flash a terminal
+    # window on Windows-Terminal-host machines.
+    "Win32_System_EventLog",
     # Reparse-tag query for the mod hub source guard (mod_hub/mod.rs):
     # CreateFileW/DeviceIoControl read the tag of a reparse-point entry
     # without following it, so symlinks/junctions are refused while OneDrive

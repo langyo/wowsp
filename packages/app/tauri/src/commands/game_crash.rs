@@ -8,9 +8,12 @@
 //! evidence Windows leaves behind —
 //!
 //! * the Application event log (Event ID 1000 "Application Error" and
-//!   Event ID 1001 "Windows Error Reporting", queried with the system
-//!   wevtutil tool — no extra crate, and the query only runs at the moment
-//!   a client actually vanishes, never per tick);
+//!   Event ID 1001 "Windows Error Reporting", queried through the native
+//!   Event Log API (EvtQuery) — fully in-process, so no external tool is
+//!   ever spawned: a console-subsystem child (the old wevtutil route)
+//!   flashes a terminal window on machines whose default console host is
+//!   Windows Terminal, exactly when the player closes the game. The query
+//!   only runs at the moment a client actually vanishes, never per tick);
 //! * WER report folders (per-user and machine-wide ReportArchive /
 //!   ReportQueue, both exist in the wild: several systems redirect reports
 //!   to C:/ProgramData entirely);
@@ -81,11 +84,12 @@ const HISTORY_FILE: &str = "crash-history.json";
 const MAX_HISTORY: usize = 20;
 
 /// How often the watchdog polls the process list. The session poller runs
-/// every 3 s against the same primitives; a slower cadence costs nothing in
-/// promptness (the user-visible prompt is allowed to land a few seconds
-/// after the crash) and halves the OpenProcess traffic.
+/// every 500 ms against the same primitives (it owns the user-visible
+/// start/exit reaction); this thread only classifies exits, so a slower
+/// cadence still bounds the crash prompt to a few seconds after the
+/// disappearance without matching the session loop's process-query rate.
 #[cfg(windows)]
-const POLL_INTERVAL: Duration = Duration::from_secs(5);
+const POLL_INTERVAL: Duration = Duration::from_secs(2);
 
 /// A pid must be missing from this many consecutive polls before its exit
 /// is classified — one Toolhelp snapshot gap must not read as a crash.
@@ -1177,8 +1181,8 @@ fn collect_crash_evidence(
     local_dump_evidence(image, pid, window)
 }
 
-/// Query recent Application-log crash events (wevtutil, XML) and return the
-/// best match for this client + window.
+/// Query recent Application-log crash events (native EvtQuery, XML) and
+/// return the best match for this client + window.
 #[cfg(windows)]
 fn event_log_evidence(
     image: &str,
@@ -1193,7 +1197,8 @@ fn event_log_evidence(
         }
         // Event ID 1000 (Application Error) carries the structured
         // ExceptionCode / ModuleName pair — prefer it over a 1001; among
-        // equals the newest wins (wevtutil already returned newest-first).
+        // equals the newest wins (the reverse-direction query already
+        // returned newest-first).
         best = match best {
             Some(current) if current.event_id == Some(1000) => Some(current),
             Some(_) if event.event_id == Some(1000) => Some(event),
@@ -1208,8 +1213,8 @@ fn event_log_evidence(
     Some(evidence_from_event(event))
 }
 
-/// Run wevtutil for the last 15 minutes of Event 1000/1001 entries. The
-/// query only runs at a confirmed disappearance, never per tick.
+/// Read the last 15 minutes of Event 1000/1001 entries. The query only
+/// runs at a confirmed disappearance, never per tick.
 #[cfg(windows)]
 fn recent_crash_events() -> Option<Vec<ParsedEvent>> {
     // The live-classification lookback: generous around the disappearance
@@ -1218,61 +1223,119 @@ fn recent_crash_events() -> Option<Vec<ParsedEvent>> {
 }
 
 /// The parameterized query behind the live pass and the backfill harvest.
+/// In-process EvtQuery against the Application channel — the same query the
+/// old wevtutil route answered, without spawning a console tool (which
+/// flashed a terminal window on Windows-Terminal-host machines and cost a
+/// process spawn inside the exit classification).
 #[cfg(windows)]
 fn crash_events_since(lookback_ms: i64, cap: usize) -> Option<Vec<ParsedEvent>> {
-    let output = std::process::Command::new("wevtutil")
-        .args([
-            "qe",
-            "Application",
-            &format!(
-                "/q:*[System[(EventID=1000 or EventID=1001) and TimeCreated[timediff(@SystemTime) <= {lookback_ms}]]]"
-            ),
-            &format!("/c:{cap}"),
-            "/rd:true",
-            "/f:xml",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        tracing::debug!(
-            status = ?output.status,
-            "wevtutil query failed — event-log evidence unavailable"
-        );
-        return None;
+    use windows::Win32::System::EventLog::{
+        EVT_HANDLE, EvtClose, EvtNext, EvtQuery, EvtQueryChannelPath, EvtQueryReverseDirection,
+    };
+    use windows::core::PCWSTR;
+
+    let channel: Vec<u16> = "Application\0".encode_utf16().collect();
+    let query: Vec<u16> = format!(
+        "*[System[(EventID=1000 or EventID=1001) and TimeCreated[timediff(@SystemTime) <= {lookback_ms}]]]"
+    )
+    .encode_utf16()
+    .chain([0])
+    .collect();
+    unsafe {
+        let result_set = match EvtQuery(
+            None,
+            PCWSTR(channel.as_ptr()),
+            PCWSTR(query.as_ptr()),
+            EvtQueryChannelPath.0 | EvtQueryReverseDirection.0,
+        ) {
+            Ok(set) => set,
+            Err(e) => {
+                tracing::debug!(error = %e, "EvtQuery failed — event-log evidence unavailable");
+                return None;
+            },
+        };
+        // Reverse direction = newest first, the order the matcher's
+        // newest-wins tie-break already assumes. `pulled` bounds the RAW
+        // harvest as well: if renders systematically failed, the loop must
+        // not page through the whole lookback window.
+        let mut events = Vec::new();
+        let mut pulled = 0usize;
+        while events.len() < cap && pulled < cap {
+            let batch = (cap - events.len()).min(64);
+            let mut handles = vec![0isize; batch];
+            let mut returned: u32 = 0;
+            // The log running dry surfaces as ERROR_NO_MORE_ITEMS (Err) or
+            // a zero count — either ends the harvest.
+            if EvtNext(result_set, &mut handles, 1000, 0, &mut returned).is_err() || returned == 0 {
+                break;
+            }
+            pulled += returned as usize;
+            for raw in &handles[..returned as usize] {
+                if let Some(xml) = render_event_xml(*raw) {
+                    events.extend(parse_event_log_xml(&xml));
+                }
+                let _ = EvtClose(EVT_HANDLE(*raw));
+            }
+        }
+        let _ = EvtClose(result_set);
+        Some(events)
     }
-    Some(parse_wevtutil_xml(&decode_command_output(&output.stdout)))
 }
 
-/// Decode external-tool output: BOM-tagged UTF-16 when present, else a
-/// NUL-density heuristic (several Windows tools write UTF-16 to pipes
-/// without a BOM), else UTF-8 lossy.
+/// Render one event handle as its canonical Event XML block — byte-for-byte
+/// the shape wevtutil used to print (the same API underlies both), so the
+/// block parser and its unit fixtures serve the native producer unchanged.
+/// Failure returns None; the caller skips the event (the evidence chain has
+/// WER/report/dump fallbacks).
 #[cfg(windows)]
-fn decode_command_output(bytes: &[u8]) -> String {
-    fn utf16(bytes: &[u8], big_endian: bool) -> String {
-        let units: Vec<u16> = bytes
-            .chunks_exact(2)
-            .map(|pair| {
-                if big_endian {
-                    u16::from_be_bytes([pair[0], pair[1]])
-                } else {
-                    u16::from_le_bytes([pair[0], pair[1]])
-                }
-            })
-            .collect();
-        String::from_utf16_lossy(&units)
+fn render_event_xml(raw: isize) -> Option<String> {
+    use windows::Win32::System::EventLog::{EVT_HANDLE, EvtRender, EvtRenderEventXml};
+
+    let handle = EVT_HANDLE(raw);
+    let mut needed: u32 = 0;
+    let mut properties: u32 = 0;
+    let mut buffer: Vec<u8>;
+    unsafe {
+        // The sizing call fails with ERROR_INSUFFICIENT_BUFFER but still
+        // writes the byte count — the standard two-call EvtRender pattern.
+        if EvtRender(
+            None,
+            handle,
+            EvtRenderEventXml.0,
+            0,
+            None,
+            &mut needed,
+            &mut properties,
+        )
+        .is_err()
+            && needed == 0
+        {
+            return None;
+        }
+        buffer = vec![0u8; needed as usize];
+        if EvtRender(
+            None,
+            handle,
+            EvtRenderEventXml.0,
+            needed,
+            Some(buffer.as_mut_ptr().cast()),
+            &mut needed,
+            &mut properties,
+        )
+        .is_err()
+        {
+            return None;
+        }
     }
-    if bytes.len() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE {
-        return utf16(&bytes[2..], false);
-    }
-    if bytes.len() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF {
-        return utf16(&bytes[2..], true);
-    }
-    let as_utf8 = String::from_utf8_lossy(bytes);
-    let nul_count = as_utf8.matches('\u{0}').count();
-    if nul_count > bytes.len() / 8 {
-        return utf16(bytes, false);
-    }
-    as_utf8.into_owned()
+    let units: Vec<u16> = buffer
+        .chunks_exact(2)
+        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+        .collect();
+    let end = units
+        .iter()
+        .position(|&unit| unit == 0)
+        .unwrap_or(units.len());
+    Some(String::from_utf16_lossy(&units[..end]))
 }
 
 /// Scan WER report folders (per-user AND machine-wide ReportArchive /
@@ -2036,7 +2099,7 @@ fn backfill_recent(app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord
 
 // ── evidence parsing (pure, Windows-shaped input) ────────────────────────────
 
-/// One event extracted from wevtutil XML output.
+/// One event extracted from Event Log XML output.
 #[cfg(windows)]
 #[derive(Debug, Clone)]
 struct ParsedEvent {
@@ -2051,9 +2114,9 @@ struct ParsedEvent {
     data: Vec<(String, String)>,
 }
 
-/// Split concatenated wevtutil XML output into events and parse each block.
+/// Split concatenated Event Log XML blocks into events and parse each one.
 #[cfg(windows)]
-fn parse_wevtutil_xml(text: &str) -> Vec<ParsedEvent> {
+fn parse_event_log_xml(text: &str) -> Vec<ParsedEvent> {
     let mut events = Vec::new();
     let mut rest = text;
     while let Some(rel) = rest.find("<Event") {

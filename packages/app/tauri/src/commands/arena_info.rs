@@ -644,8 +644,8 @@ pub(crate) fn probe_fallback(app: &AppHandle, dir: &Path) -> Option<ArenaInfo> {
 /// identical (the file even shares the 8-byte-prefixed variant sometimes).
 // All commands here are async so they run on the Tauri async runtime
 // instead of the main/UI thread: `read_temp_arena_info` walks the replay
-// tree and is polled every 3 s, and a sync command would inline that walk
-// on the webview IPC (main) thread, stalling every queued request.
+// tree and is polled by the pages, and a sync command would inline that
+// walk on the webview IPC (main) thread, stalling every queued request.
 #[tauri::command]
 pub async fn read_temp_arena_info(
     app: AppHandle,
@@ -696,9 +696,9 @@ pub async fn read_temp_arena_info(
         // The poll normally just answers its caller, but when IT is the first
         // path to see a battle — or the path that finally reads the roster of
         // one delivered empty — the pages still owe an event: delivery is
-        // keyed on what the PAGES hold, not on who read first. This runs
-        // every 3 s, so a Lesta battle's roster reaches the pages within one
-        // poll even when the Tab watcher never refreshes (feedback
+        // keyed on what the PAGES hold, not on who read first. This runs on
+        // the pages' poll, so a Lesta battle's roster reaches the pages
+        // within one poll even when the Tab watcher never refreshes (feedback
         // 2026-10-29: the Tab panel stayed blank all battle exactly because
         // this path recorded the roster without emitting it).
         //
@@ -907,7 +907,7 @@ fn spawn_watcher(app: AppHandle, target_dir: PathBuf) -> anyhow::Result<Recommen
     // The 360 CN client's live arena file sits in the GAME ROOT, one level
     // above the replays dir (see the module docs) — watch that level too,
     // NON-recursively (a recursive watch would see the whole bin/ tree churn
-    // for nothing). A failure here only costs promptness: the 3 s polls and
+    // for nothing). A failure here only costs promptness: the page polls and
     // the Tab-held refresh still find the root-level file.
     let root_watch = target_dir.parent().map(std::path::Path::to_path_buf);
 
@@ -1084,7 +1084,8 @@ fn resolve_arena_dir(dir: Option<String>) -> anyhow::Result<PathBuf> {
 fn find_latest_arena_info(dir: &PathBuf) -> Option<PathBuf> {
     // Fast path: the game writes the file directly into <replays>/ — only
     // fall back to the recursive walk (versioned subfolders) when it is not
-    // there. The walk stats every file in the tree and runs on a 3 s poll.
+    // there. The walk stats every file in the tree and runs on the poller
+    // cadence, so the fast path matters.
     let mut best: Option<(PathBuf, SystemTime)> = None;
     let direct = dir.join("tempArenaInfo.json");
     if direct.is_file() {

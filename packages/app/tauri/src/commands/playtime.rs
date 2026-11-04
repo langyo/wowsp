@@ -4,8 +4,8 @@
 //! Design (mirrors the session hub's shape — one static `Mutex<Option<_>>`,
 //! a dedicated tick source, and a single command as the wire surface):
 //!
-//! * The session poller (commands/session.rs) feeds every 3 s process
-//!   snapshot into [`observe`]. A running client opens a session backdated
+//! * The session poller (commands/session.rs) feeds every process snapshot
+//!   (a 500 ms cadence) into [`observe`]. A running client opens a session backdated
 //!   to the process's creation time (the same "Steam counts the process,
 //!   not the battles" convention Steam's own playtime uses), heartbeats it
 //!   while it lives, and closes it on exit. Heartbeats persist at most once
@@ -109,9 +109,9 @@ struct PlaytimeState {
     /// Last successful persist (unix secs) — the heartbeat throttle clock.
     last_persist: i64,
     dirty: bool,
-    /// Consecutive not-running snapshots (the exit debounce, see
-    /// [`observe_transition`]).
-    misses: u32,
+    /// Start of the current not-running streak, unix secs (the exit
+    /// debounce, see [`observe_transition`]) — None while a client runs.
+    first_miss: Option<i64>,
 }
 
 static STATE: Mutex<Option<PlaytimeState>> = Mutex::new(None);
@@ -150,7 +150,7 @@ fn loaded_state(
             store,
             last_persist: 0,
             dirty: false,
-            misses: 0,
+            first_miss: None,
         });
     }
     Ok(slot
@@ -189,10 +189,16 @@ fn persist_store_in(dir: &Path, store: &PlaytimeStore) -> Result<()> {
 // ── observation (fed by the session poller) ────────────────────────────────
 
 /// Gap between two ticks that reads as "the machine slept or the poller
-/// stalled" (a healthy cadence is [`POLL_INTERVAL`]-shaped, 3 s): the open
-/// session splits at its last heartbeat instead of crediting the gap as
-/// playtime.
+/// stalled" (a healthy cadence is sub-second): the open session splits at
+/// its last heartbeat instead of crediting the gap as playtime.
 const GAP_SPLIT_SECS: i64 = 120;
+
+/// How long a not-running streak must last in wall clock before the open
+/// session closes. Time-based rather than tick-counted so the debounce
+/// keeps its meaning at any poll cadence (the session poller moved from
+/// 3 s ticks to 500 ms ticks; a two-tick debounce would have shrunk the
+/// guard from ~6 s to ~1 s).
+const EXIT_DEBOUNCE_SECS: i64 = 5;
 
 /// Fold one process snapshot into the ledger. Cheap per tick: no I/O unless
 /// a state transition happened or the minute-long heartbeat came due.
@@ -211,7 +217,7 @@ pub(super) fn observe(info: &wowsp_tauri_shared::GameProcessInfo) {
             info.running,
             proc_start,
             now,
-            &mut state.misses,
+            &mut state.first_miss,
         );
         state.dirty |= transition || heartbeat;
         if state.dirty && (transition || now - state.last_persist >= HEARTBEAT_FLUSH_SECS) {
@@ -225,19 +231,19 @@ pub(super) fn observe(info: &wowsp_tauri_shared::GameProcessInfo) {
 /// static/IO wrapper above only injects the clock and the process start).
 ///
 /// Returns whether a transition (open / close / split) happened and whether
-/// the open session heartbeated. `misses` counts consecutive not-running
-/// snapshots across calls.
+/// the open session heartbeated. `first_miss` carries the start of the
+/// current not-running streak across calls (None while a client runs).
 fn observe_transition(
     store: &mut PlaytimeStore,
     running: bool,
     proc_start: Option<i64>,
     now: i64,
-    misses: &mut u32,
+    first_miss: &mut Option<i64>,
 ) -> (bool, bool) {
     let mut transition = false;
     let mut heartbeat = false;
     if running {
-        *misses = 0;
+        *first_miss = None;
         let proc_start = proc_start.map(|s| s.min(now));
         match store.open {
             Some(mut open) => {
@@ -285,12 +291,14 @@ fn observe_transition(
             },
         }
     } else {
-        *misses += 1;
-        // Debounce: ONE not-running snapshot must not close a live session —
-        // the process snapshot transiently fails exactly around game
-        // launch/exit churn, and a close+reopen there would double-count the
-        // whole session. Two consecutive misses (≈6 s) read as a real exit.
-        if *misses >= 2 && store.open.is_some() {
+        // Debounce: a SHORT not-running streak must not close a live
+        // session — the process snapshot transiently fails exactly around
+        // game launch/exit churn, and a close+reopen there would
+        // double-count the whole session. The streak must outlast
+        // EXIT_DEBOUNCE_SECS of wall clock to read as a real exit.
+        let streak_start = (*first_miss).unwrap_or(now);
+        *first_miss = Some(streak_start);
+        if now - streak_start >= EXIT_DEBOUNCE_SECS && store.open.is_some() {
             close_open(store);
             transition = true;
         }
@@ -1091,7 +1099,7 @@ mod tests {
             true,
             Some(1000),
             1100,
-            &mut recovered.misses,
+            &mut recovered.first_miss,
         );
         persist_store_in(&fixture.0, &recovered.store).unwrap();
         let saved = load_store_in(&fixture.0).unwrap();
@@ -1475,9 +1483,9 @@ mod tests {
     /// Drive [`observe_transition`] through a scripted tick sequence of
     /// `(running, proc_start, now)` snapshots.
     fn drive(store: &mut PlaytimeStore, ticks: &[(bool, Option<i64>, i64)]) {
-        let mut misses: u32 = 0;
+        let mut first_miss: Option<i64> = None;
         for &(running, start, now) in ticks {
-            observe_transition(store, running, start, now, &mut misses);
+            observe_transition(store, running, start, now, &mut first_miss);
         }
     }
 
@@ -1503,7 +1511,8 @@ mod tests {
     fn a_blip_past_the_debounce_never_double_counts_or_mints_launches() {
         let t0 = ts(2026, 10, 5, 20, 0);
         let mut store = PlaytimeStore::default();
-        // Live 60s, TWO consecutive misses (close), live again on the SAME
+        // Live 60 s, a miss streak that stays UNDER the debounce (still
+        // open), then one that outlasts it (close), live again on the SAME
         // process, real exit: the split halves must tile the wall clock
         // exactly — no resurrected time, no phantom launch.
         drive(
@@ -1511,16 +1520,17 @@ mod tests {
             &[
                 (true, Some(t0), t0 + 60),
                 (false, None, t0 + 63),
-                (false, None, t0 + 66),    // second miss → close at t0+60
-                (true, Some(t0), t0 + 69), // reopen, floored at t0+60
-                (false, None, t0 + 72),
-                (false, None, t0 + 75), // real exit → close at t0+69
+                (false, None, t0 + 66), // 3 s of absence — under the 5 s debounce
+                (false, None, t0 + 69), // 6 s → close at the last heartbeat (+60)
+                (true, Some(t0), t0 + 72), // reopen, floored at t0+60
+                (false, None, t0 + 75),
+                (false, None, t0 + 81), // real exit → close at t0+72
             ],
         );
         assert!(store.open.is_none());
         assert_eq!(store.launches, 1, "the split was one game run");
         let total: u64 = store.sessions.iter().map(|s| s.duration()).sum();
-        assert_eq!(total, 69, "sessions tile [t0, t0+69) with no overlap");
+        assert_eq!(total, 72, "sessions tile [t0, t0+72) with no overlap");
         assert_eq!(store.sessions.len(), 2);
         assert_eq!(
             store.sessions[0],
@@ -1533,7 +1543,7 @@ mod tests {
             store.sessions[1],
             PlaytimeSession {
                 start: t0 + 60,
-                end: t0 + 69
+                end: t0 + 72
             }
         );
     }
@@ -1549,7 +1559,7 @@ mod tests {
                 // One hour later (machine slept): the gap must vanish.
                 (true, Some(t0), t0 + 60 + 3600),
                 (false, None, t0 + 60 + 3610),
-                (false, None, t0 + 60 + 3613),
+                (false, None, t0 + 60 + 3616), // past the debounce → close
             ],
         );
         assert!(store.open.is_none());

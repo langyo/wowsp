@@ -22,6 +22,11 @@ export const useSessionStore = defineStore("session", () => {
   const snapshot = ref<SessionSnapshot | null>(null);
   let started = false;
   let unlisten: (() => void) | null = null;
+  /** Subscription epoch: a stop()→start() race must orphan the FIRST
+   *  handshake (the started flag alone cannot — start() resets it before
+   *  the first listener resolves, and a rejecting straggler would null the
+   *  slot and orphan the live listener; crash.ts uses the same pattern). */
+  let epoch = 0;
 
   /** Fetch once (boot / retry). */
   async function refresh() {
@@ -36,19 +41,20 @@ export const useSessionStore = defineStore("session", () => {
   function start() {
     if (started) return;
     started = true;
+    const mine = ++epoch;
     void (async () => {
       try {
         const off = (await api.listenSessionChanged?.((s) => {
           snapshot.value = s;
         })) ?? null;
-        // stop() raced the subscription handshake — release immediately.
-        if (!started) {
+        // stop() (or a newer start()) raced the handshake — release now.
+        if (mine !== epoch) {
           off?.();
           return;
         }
         unlisten = off;
       } catch {
-        unlisten = null;
+        if (mine === epoch) unlisten = null;
       }
     })();
     void refresh();
@@ -56,6 +62,7 @@ export const useSessionStore = defineStore("session", () => {
 
   /** Stop the subscription (window unmount). */
   function stop() {
+    epoch += 1;
     unlisten?.();
     unlisten = null;
     started = false;

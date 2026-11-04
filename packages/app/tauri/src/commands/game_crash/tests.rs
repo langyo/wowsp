@@ -1,4 +1,4 @@
-//! Tests for the game-crash module. The pure parsers (wevtutil XML,
+//! Tests for the game-crash module. The pure parsers (Event Log XML,
 //! Report.wer key/value, code normalization) and the collectors (history,
 //! excerpts, mods inventory, findings, restart-root resolution) all run on
 //! synthetic temp-dir fixtures — nothing here touches a real game install
@@ -773,24 +773,8 @@ mod evidence_parsers {
     }
 
     #[test]
-    fn decodes_utf8_utf16_bom_and_bare_utf16_output() {
-        assert_eq!(decode_command_output(b"plain text"), "plain text");
-        let mut bom = vec![0xFF, 0xFE];
-        for unit in "plain text".encode_utf16() {
-            bom.extend_from_slice(&unit.to_le_bytes());
-        }
-        assert_eq!(decode_command_output(&bom), "plain text");
-        // Bare UTF-16LE: the NUL-density heuristic kicks in.
-        let mut bare = Vec::new();
-        for unit in "crash report".encode_utf16() {
-            bare.extend_from_slice(&unit.to_le_bytes());
-        }
-        assert_eq!(decode_command_output(&bare), "crash report");
-    }
-
-    #[test]
-    fn parses_wevtutil_xml_events_with_data_pairs() {
-        let events = parse_wevtutil_xml(&format!("{EVENT_1000}{EVENT_1001}"));
+    fn parses_event_log_xml_events_with_data_pairs() {
+        let events = parse_event_log_xml(&format!("{EVENT_1000}{EVENT_1001}"));
         assert_eq!(events.len(), 2);
         assert_eq!(events[0].event_id, Some(1000));
         assert_eq!(
@@ -820,7 +804,7 @@ mod evidence_parsers {
 
     #[test]
     fn events_match_the_client_by_every_recorded_shape() {
-        let events = parse_wevtutil_xml(&format!("{EVENT_1000}{EVENT_1001}"));
+        let events = parse_event_log_xml(&format!("{EVENT_1000}{EVENT_1001}"));
         let window = window_around("2026-10-27T18:52:13Z");
         let exe = format!("C:\\Games\\WoWS\\bin\\123\\bin64\\WorldOfWarships64.exe");
         assert!(event_matches_client(
@@ -859,7 +843,7 @@ mod evidence_parsers {
     /// backfill's exact-name attribution.
     #[test]
     fn leak_prediction_events_never_match_the_client() {
-        let events = parse_wevtutil_xml(&format!("{EVENT_1001_LEAK}{EVENT_1001_APPCRASH}"));
+        let events = parse_event_log_xml(&format!("{EVENT_1001_LEAK}{EVENT_1001_APPCRASH}"));
         assert_eq!(events.len(), 2);
         let window = window_around("2026-10-31T07:51:47Z");
         assert!(!event_is_crash_shaped(&events[0]));
@@ -884,7 +868,7 @@ mod evidence_parsers {
 
     #[test]
     fn event_evidence_extracts_codes_modules_and_report_paths() {
-        let events = parse_wevtutil_xml(&format!("{EVENT_1000}{EVENT_1001}"));
+        let events = parse_event_log_xml(&format!("{EVENT_1000}{EVENT_1001}"));
 
         let from_1000 = evidence_from_event(&events[0]);
         assert_eq!(from_1000.source, SOURCE_EVENT_LOG);
@@ -924,7 +908,7 @@ mod evidence_parsers {
     /// verbatim either way (forensics).
     #[test]
     fn hang_event_p4_is_plausibility_filtered() {
-        let dropped = evidence_from_event(&parse_wevtutil_xml(EVENT_1001_APPHANG_BAD_MODULE)[0]);
+        let dropped = evidence_from_event(&parse_event_log_xml(EVENT_1001_APPHANG_BAD_MODULE)[0]);
         assert_eq!(
             dropped.faulting_module, None,
             "garbage hang P4 must not become a faulting module"
@@ -935,10 +919,10 @@ mod evidence_parsers {
             dropped.summary
         );
 
-        let no_ext = evidence_from_event(&parse_wevtutil_xml(EVENT_1001_APPHANG_NO_EXT)[0]);
+        let no_ext = evidence_from_event(&parse_event_log_xml(EVENT_1001_APPHANG_NO_EXT)[0]);
         assert_eq!(no_ext.faulting_module, None);
 
-        let kept = evidence_from_event(&parse_wevtutil_xml(EVENT_1001_APPHANG_REAL_MODULE)[0]);
+        let kept = evidence_from_event(&parse_event_log_xml(EVENT_1001_APPHANG_REAL_MODULE)[0]);
         assert_eq!(kept.faulting_module.as_deref(), Some("nvwgf2k64.dll"));
     }
 
@@ -946,7 +930,7 @@ mod evidence_parsers {
     /// in an APPCRASH payload's structured P4 is preserved as-is.
     #[test]
     fn non_hang_event_p4_keeps_the_existing_behavior() {
-        let events = parse_wevtutil_xml(EVENT_1001_APPCRASH_BAD_MODULE);
+        let events = parse_event_log_xml(EVENT_1001_APPCRASH_BAD_MODULE);
         assert_eq!(
             evidence_from_event(&events[0]).faulting_module.as_deref(),
             Some("d009")
@@ -1165,7 +1149,7 @@ fn evidence_already_known_matches_tombstoned_ids() {
 /// phantom candidates (the first-backfill double-import bug).
 #[test]
 fn attributed_image_prefers_the_exact_name_over_the_substring() {
-    let events = parse_wevtutil_xml(evidence_parsers::EVENT_1000);
+    let events = parse_event_log_xml(evidence_parsers::EVENT_1000);
     let t = parse_rfc3339_unix("2026-10-27T18:52:13Z").unwrap();
     let window = (t - 30, t + 30);
     // 32-bit name first — the trap order.

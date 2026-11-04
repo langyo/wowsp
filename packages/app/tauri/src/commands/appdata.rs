@@ -248,7 +248,7 @@ fn process_info_of(
     // warn while the game runs exclusive fullscreen (the hold-Tab overlay
     // cannot draw over that mode). The matched install's root is
     // authoritative; an unmatched-but-running exe still carries its implied
-    // root. Stat-cached on the Rust side, so the 3 s poll stays cheap.
+    // root. Stat-cached on the Rust side, so the fast poll stays cheap.
     let display_mode = owned_matched
         .as_ref()
         .map(|m| PathBuf::from(&m.path))
