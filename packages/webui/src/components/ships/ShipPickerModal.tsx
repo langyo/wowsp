@@ -20,7 +20,7 @@ import { tierLabel } from "@/utils/shipCompare";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
-import { shipIconUrl } from "@/features/holographic/shipIcons";
+import ShipTypeGlyph from "@/components/base/ShipTypeGlyph";
 import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import "./ShipPickerModal.scss";
@@ -96,18 +96,12 @@ export default defineComponent({
       return t(`ships.type.${code}`, {}) || code;
     }
 
-    /** Option icons match the 水表 bar's popups: the white battle-HUD
-     *  silhouette for ship types, the nation flag for nations (NationFlag
-     *  swaps to a letter badge when the asset is missing). */
+    /** Option icons match the 水表 bar's popups: the mask-inked class
+     *  silhouette (ShipTypeGlyph) for ship types, the nation flag for
+     *  nations (NationFlag swaps to a letter badge when the asset is
+     *  missing). */
     function typeOptionIcon(code: string): VNode {
-      return (
-        <img
-          class="ship-filter-bar__type-icon"
-          src={shipIconUrl(code, "white") ?? undefined}
-          alt=""
-          draggable={false}
-        />
-      );
+      return <ShipTypeGlyph type={code} />;
     }
 
     function nationOptionIcon(code: string): VNode {

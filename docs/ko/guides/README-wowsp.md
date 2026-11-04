@@ -24,7 +24,8 @@
 
 </div>
 
-![WoWSP 대시보드](../screenshots/dashboard.webp)
+![WoWSP 대시보드](../screenshots/dashboard.webp#gh-light-mode-only)
+![WoWSP 대시보드](../screenshots/dashboard.dark.webp#gh-dark-mode-only)
 
 > [!IMPORTANT]
 > **WoWSP는 완전히 무료인 오픈소스로, 공식 [GitHub Releases](https://github.com/langyo/wowsp/releases)를 통해서만 배포된다. 이 프로그램에 돈을 요구하는 사람은 작성자가 아니다 — 결제하지 말고, 이미 결제했다면 환불을 요청하고 판매자를 신고하기 바란다.**

@@ -24,7 +24,8 @@
 
 </div>
 
-![WoWSP ダッシュボード](../screenshots/dashboard.webp)
+![WoWSP ダッシュボード](../screenshots/dashboard.webp#gh-light-mode-only)
+![WoWSP ダッシュボード](../screenshots/dashboard.dark.webp#gh-dark-mode-only)
 
 > [!IMPORTANT]
 > **WoWSP は完全無料のオープンソースであり、公式の [GitHub Releases](https://github.com/langyo/wowsp/releases) のみで配布される。金銭を要求してくる者は作者ではない — 支払わないこと。すでに支払ってしまった場合は返金を要求し、販売者を通報すること。**

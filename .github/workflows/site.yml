@@ -89,7 +89,10 @@ jobs:
           # <siteBase>docs/<lang>/screenshots/*.webp, and the rendered
           # README pages reference ../screenshots/ from /docs/guides/ —
           # hence the default language also lands at /docs/screenshots/.
-          for lang in en zh-CN zh-TW ja ko fr es ru; do
+          # Every folder ships both schemes (`<stem>.webp` +
+          # `<stem>.dark.webp`); ar mirrors the en captures because the
+          # app has no Arabic UI.
+          for lang in en zh-CN zh-TW ja ko fr es ru ar; do
             mkdir -p "_site/docs/$lang"
             cp -r "docs/$lang/screenshots" "_site/docs/$lang/screenshots"
           done

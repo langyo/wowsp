@@ -24,7 +24,8 @@
 
 </div>
 
-![WoWSP 儀表板](../screenshots/dashboard.webp)
+![WoWSP 儀表板](../screenshots/dashboard.webp#gh-light-mode-only)
+![WoWSP 儀表板](../screenshots/dashboard.dark.webp#gh-dark-mode-only)
 
 > [!IMPORTANT]
 > **WoWSP 完全免費開源，僅透過官方 [GitHub Releases](https://github.com/langyo/wowsp/releases) 發布。任何對它收費的人都不是作者 — 請勿付款；若您已付款，請申請退款並檢舉賣家。**

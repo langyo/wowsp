@@ -24,7 +24,8 @@
 
 </div>
 
-![Panel de control de WoWSP](../screenshots/dashboard.webp)
+![Panel de control de WoWSP](../screenshots/dashboard.webp#gh-light-mode-only)
+![Panel de control de WoWSP](../screenshots/dashboard.dark.webp#gh-dark-mode-only)
 
 > [!IMPORTANT]
 > **WoWSP es completamente gratuito y de código abierto, y se distribuye únicamente a través de las [GitHub Releases](https://github.com/langyo/wowsp/releases) oficiales. Cualquiera que cobre dinero por él no es el autor: no pagues; si ya lo has hecho, solicita un reembolso y denuncia al vendedor.**

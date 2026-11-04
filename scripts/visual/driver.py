@@ -67,7 +67,7 @@ class WowspDriver:
 
     # ── low-level HTTP ──────────────────────────────────────────────────
 
-    def _post(self, path: str, payload: dict) -> dict:
+    def _post(self, path: str, payload: dict, timeout: float = 10.0) -> dict:
         data = json.dumps(payload).encode()
         req = urllib.request.Request(
             f"{self.base_url}{path}",
@@ -76,7 +76,7 @@ class WowspDriver:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 return json.loads(resp.read().decode())
         except urllib.error.HTTPError as e:
             body = e.read().decode()
@@ -109,7 +109,7 @@ class WowspDriver:
         JS value. So this method only confirms the eval was dispatched, not its
         result. Existence/state assertions must be done visually via capture().
         """
-        return self._post("/eval", {"code": code})
+        return self._post("/eval", {"code": code}, timeout=20.0)
 
     def goto(self, path: str) -> None:
         """Navigate to a route by clicking the matching sidebar link.
@@ -178,7 +178,10 @@ class WowspDriver:
         """
         last_path = None
         for attempt in range(retries + 1):
-            resp = self._post("/capture", {"name": name})
+            # A capture right after a reload/theme flip can take a few
+            # seconds (the webview is still repainting); the 10s default
+            # used to time out here.
+            resp = self._post("/capture", {"name": name}, timeout=60.0)
             if not resp.get("path"):
                 if attempt < retries:
                     time.sleep(1.0)

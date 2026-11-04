@@ -1,0 +1,16 @@
+/* ShipTypeGlyph — see the component's docblock. The box is sized by the
+   component (chips: 22x12; table rows pass their square icon size). The
+   art's silhouettes are wide and short (≈18-20 x 9-11 units of a 27-unit
+   square canvas), so `150% auto` scales the canvas until the silhouette
+   fills the box; the extra mask area falls outside it, cropping the art's
+   empty padding without distorting the aspect (auto keeps it square). */
+.ship-type-glyph {
+  flex: none;
+  background-color: currentColor;
+  -webkit-mask: var(--ship-type-glyph) center / 150% auto no-repeat;
+  mask: var(--ship-type-glyph) center / 150% auto no-repeat;
+  /* No horizontal flip: the "plain" art already faces the direction the
+     app's rows draw (BattleIcon renders it unflipped in the tables), so
+     the chip glyphs match the rest of the app instead of inheriting the
+     old white-variant mirror. */
+}
