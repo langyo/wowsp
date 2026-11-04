@@ -1,9 +1,13 @@
-/* The water-table column editor (OverlayColumnsEditor): draggable cards
-   in ONE never-wrapping line + the plus-connector's add menu. Visual voice
-   follows the stats settings' row pattern (StatsPrefsControls.scss) and
-   hikari's surface tokens; the drag states mirror HkDraggableList.scss —
-   source dims to a dashed placeholder, the drop target wears a 2px inset
-   primary line, the ghost rides fixed under the pointer. */
+/* The water-table column editor (OverlayColumnsEditor): the cards row is
+   hikari's HkDraggableList primitive (axis="horizontal", hikari #1063).
+   The list sheet owns the drag machinery — the arm/ghost/placeholder
+   faces (data-dragging dim + dashed primary, the 2px inset
+   data-placeholder lines), the body-level ghost plate under --hk-z-drag,
+   and the reduced-motion guard for the transitions it declares all live
+   in HkDraggableList.scss now; the hand-rolled port's ghost/plate/band
+   rules retired with it (#1736). This sheet only dresses the primitive's
+   structural lanes with the editor's card voice and keeps the add menu +
+   the #1256 popover sizing. */
 
 .overlay-columns {
   display: flex;
@@ -36,80 +40,55 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* The cards row — ALWAYS one line of 1–5 cards (user spec: five cards
-   must never fold onto a second row). The row never wraps; the popover it
-   rides in sizes to this row's max-content width (HkPopover's max-content
-   panel), so all five cards get their natural widths wherever the viewport
-   allows. When the viewport cap squeezes the panel, the cards share that
-   deficit proportionally (flex-shrink, content basis) and the labels
-   ellipsize — the row still holds one line. The empty hint stretches
-   across the same row. */
-.overlay-columns__row {
-  display: flex;
-  flex-wrap: nowrap;
+/* The cards row — HkDraggableList axis="horizontal" IS the row: one
+   never-wrapping flex line of 1–5 card slots (the primitive's sheet owns
+   flex-row + nowrap and the min-width: 0 shrink). The popover it rides in
+   sizes to this row's max-content (HkPopover's max-content panel), which
+   is what widens the popup until all five cards fit — the #1256 fix — so
+   the host keeps the slots on a content basis with flex GROWTH (equal
+   stretching when the panel has spare width) and relies on the
+   primitive's min-width: 0 for the one viewport-capped case where a label
+   ellipsizes. ACCEPTED DELTA (#1736): there is no sub-767px wrap fallback
+   anymore — the primitive's horizontal axis never wraps, so on phones the
+   row stays one line and the labels ellipsize instead of folding onto a
+   second row (the popover docks as a bottom sheet there). */
+.overlay-columns .hk-draggable-list[data-axis="horizontal"] {
   gap: 8px;
-  min-height: 56px;
-  align-items: stretch;
 }
 
-.overlay-columns__card {
+/* The card face rides the primitive's row slot: the sheet paints every
+   drag state (source dim + dashed primary, the placeholder inset lines,
+   the hover stand-down under a live drag); the host supplies the geometry
+   and voice the retired hand-rolled card had. */
+.overlay-columns .hk-draggable-list-item {
   /* Content basis (auto, not 0): each card's natural width feeds the
      popover's max-content sizing, which is what widens the popup until all
      five fit — the #1256 wrap was the symptom of a FIXED-width popup
-     squeezing five zero-basis cards into "胜.." stubs. min-width: 0 keeps
-     the cards shrinkable for the one case where the viewport caps the
-     panel; only then does a label ellipsize, and the row still never
-     wraps. */
+     squeezing five zero-basis cards into "胜.." stubs. */
   flex: 1 1 auto;
-  min-width: 0;
-  display: flex;
-  align-items: center;
+  min-height: 56px;
   gap: 6px;
   padding: 8px 6px 8px 8px;
   border: 1px solid rgb(var(--color-text) / 0.12);
   border-radius: 8px;
   background: rgb(var(--color-text) / 0.04);
+  /* The whole card stays a grab surface, as the retired card was (the
+     primitive's own grab cursor + touch-action:none sit on the handle
+     lane alone). */
   cursor: grab;
   touch-action: none;
-  transition:
-    transform 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
-    border-color 150ms ease,
-    background 150ms ease;
-  user-select: none;
-  -webkit-user-select: none;
 }
 
-.overlay-columns__card:hover {
+.overlay-columns .hk-draggable-list-item:hover {
   border-color: rgb(var(--color-primary) / 0.5);
 }
 
-/* The dragged card's ORIGIN slot — hikari's data-dragging face: dimmed,
-   slightly shrunk, dashed primary outline (a ghost of the card stays
-   visible in place while the pointer carries the clone). */
-.overlay-columns__card[data-dragging] {
-  opacity: 0.35;
-  transform: scale(0.96);
-  border-style: dashed;
-  border-color: rgb(var(--color-primary));
-  background: rgb(var(--color-primary) / 0.04);
-  cursor: grabbing;
-}
-
-/* The drop target's edge line — inset primary, on the edge the dragged
-   card will land against (before = it moves leftward onto this slot,
-   after = rightward), mirroring HkDraggableList's placeholder rule. */
-.overlay-columns__card[data-placeholder="before"] {
-  box-shadow: inset 2px 0 0 0 rgb(var(--color-primary));
-}
-
-.overlay-columns__card[data-placeholder="after"] {
-  box-shadow: inset -2px 0 0 0 rgb(var(--color-primary));
-}
-
-/* While a drag is live the row's hover cue stands down (hikari's
-   data-dragging list rule): hover borders would read as targets. */
-.overlay-columns__row[data-dragging] .overlay-columns__card:hover {
+/* While a drag is live the row's hover cue stands down (the host twin of
+   the primitive's own rule — the extra specificity keeps the host hover
+   above from winning the cascade regardless of sheet import order). */
+.overlay-columns
+  .hk-draggable-list[data-dragging]
+  .hk-draggable-list-item:hover {
   border-color: rgb(var(--color-text) / 0.12);
 }
 
@@ -127,7 +106,9 @@
   /* Basis auto (not 0): the label's natural width must count toward the
      card's max-content — the width the popover itself is sized from — or
      the panel would measure the card too narrow and paint the label out
-     as an ellipsis even with room to spare. */
+     as an ellipsis even with room to spare. (The primitive's content lane
+     stretches a single-root slot via its > :only-child fill; the span
+     here is that root.) */
   flex: 1 1 auto;
 }
 
@@ -148,9 +129,10 @@
   text-overflow: ellipsis;
 }
 
-/* Empty state — the same row, one dashed slab inviting the plus. */
+/* Empty state — one dashed slab inviting the plus (rendered in place of
+   the list, not inside it). */
 .overlay-columns__empty {
-  flex: 1 1 0;
+  min-height: 56px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -159,40 +141,6 @@
   border-radius: 8px;
   font-size: var(--text-2xs);
   color: rgb(var(--color-text) / 0.5);
-}
-
-/* The drag GHOST — hikari's list-drag ghost, horizontal edition: the
-   pressed card's clone teleported to <body>, following the pointer via
-   the inline translate3d the tsx writes, translucent over an elevated
-   plate. No transform here: the tsx always writes the full translate3d
-   before the ghost paints — a class transform could never win the
-   cascade against it. Above page chrome but below every popup band, so
-   a drag never buries toasts or open popovers (hikari's --hk-z-drag). */
-.overlay-columns__ghost {
-  position: fixed;
-  top: 0;
-  left: 0;
-  margin: 0;
-  opacity: 0.85;
-  box-shadow:
-    0 8px 24px rgb(0 0 0 / 28%),
-    0 2px 6px rgb(0 0 0 / 18%);
-  border-radius: 8px;
-  background: rgb(var(--color-surface));
-  backdrop-filter: blur(2px);
-  pointer-events: none;
-  z-index: var(--hk-z-drag, 950);
-  will-change: transform;
-
-  > .overlay-columns__card {
-    margin: 0;
-    width: 100%;
-    border-color: transparent;
-    background: transparent;
-    box-shadow: none;
-    transform: none;
-    opacity: 1;
-  }
 }
 
 /* The add menu inside the popover: two labeled segmented groups + the
@@ -250,33 +198,13 @@
   }
 }
 
-/* Phones: five card labels cannot physically share one handset width —
-   the chip popup docks as a full-width bottom sheet there, and a forced
-   one-line row would squeeze every label to a single ellipsis glyph (the
-   exact #1256 symptom). Below the app's mobile breakpoint the row falls
-   back to wrapping with the cards' natural widths; the forced one-line
-   rule is a desktop popover rule. */
-@media (max-width: 767px) {
-  .overlay-columns__row {
-    flex-wrap: wrap;
-  }
-
-  /* Natural-width cards that never grow: a wrapped line keeps its cards at
-     the label's width (a lone tail card must not stretch across the whole
-     row), and the flex-shrink stays for the one long label a narrow phone
-     cannot fit. */
-  .overlay-columns__card {
-    flex: 0 1 auto;
-    min-width: max-content;
-  }
-}
-
-/* Reduced motion: the dragging press cue (scale + dim) must snap instead
-   of animating; the ghost itself is pointer-positioned — 1:1 direct
-   manipulation, not autonomous motion — so it is left alone (the same
-   guard HkDraggableList.scss carries). */
-@media (prefers-reduced-motion: reduce) {
-  .overlay-columns__card {
-    transition: border-color 150ms ease, background 150ms ease;
-  }
-}
+/* RETIRED with the drag port (#1736, hikari #1063 adoption):
+   - .overlay-columns__row (the primitive's list root IS the row) and its
+     sub-767px wrap fallback (accepted delta: the horizontal axis never
+     wraps — phones keep one line with ellipsizing labels);
+   - .overlay-columns__card (the face moved onto .hk-draggable-list-item
+     above) with its [data-dragging] / [data-placeholder] faces and the
+     row[data-dragging] hover stand-down (the primitive sheet paints them
+     with the same attr values);
+   - .overlay-columns__ghost and its reduced-motion guard (the primitive's
+     .hk-draggable-list-ghost under --hk-z-drag replaces both). */
