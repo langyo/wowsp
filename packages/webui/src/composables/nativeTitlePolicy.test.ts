@@ -65,6 +65,10 @@ const HEADING_PROPS = new Set([
   "HkSelectPanel",
   "HkSettingsGroup",
   "HkSettingsSub",
+  // HkSolarLocationSetting declares `title` as its card header label —
+  // an empty string HIDES the header (hosts that title their own
+  // section); never a native tooltip attribute.
+  "HkSolarLocationSetting",
   "HkTitleBar",
   "HMenu", // hikari exports the menu both as HkMenu and the HMenu alias
   "ImageSquareCropModal",
