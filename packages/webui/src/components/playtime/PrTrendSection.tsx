@@ -9,7 +9,13 @@ import {
   type VNode,
 } from "vue";
 
-import { HkCheckbox, HkPopover, HkScrollContainer, useBreakpoint } from "@celestia-island/hikari";
+import {
+  HkCheckbox,
+  HkPillToggleGroup,
+  HkPopover,
+  HkScrollContainer,
+  useBreakpoint,
+} from "@celestia-island/hikari";
 
 import { api, type ExpectedPrEntry, type ShipStatsHistoryPoint } from "@/api";
 import { shipIconUrl } from "@/features/holographic/shipIcons";
@@ -57,8 +63,8 @@ const TYPE_ORDER = ["Battleship", "AirCarrier", "Cruiser", "Destroyer", "Submari
  * Controls: a time-range segmented tabs row (7d / 30d / 90d / full career /
  * custom — the custom segment opens the LookupView's date-pair popover
  * pattern) and ONE ship-filter chip. The chip's popup stacks, top to
- * bottom: the water-meter's type button group and the shared tier corridor
- * slider (pinned), the
+ * bottom: the type facet (hikari's HkPillToggleGroup pill strip) and the
+ * shared tier corridor slider (pinned), the
  * range-scoped ship list with per-row checkboxes and battles / winrate /
  * avg-damage columns (scrollable, capped), and a pinned select-all row
  * whose checkbox goes indeterminate on a partial selection. The three
@@ -326,9 +332,12 @@ export default defineComponent({
         : t("playtime.prTrendShipAll");
     });
 
-    /** The white battle-HUD silhouette (right-facing via CSS flip), shared
-     *  with the water-meter's type popup. Null-safe: an unknown type never
-     *  reaches an option row. */
+    /** One type pill's leading glyph: the white battle-HUD silhouette
+     *  (right-facing via CSS flip), the same construction the water-meter's
+     *  pill options inline. PREBUILT vnode on purpose — HkPillToggleGroup
+     *  treats a component OBJECT as a vnode, so prebuilt is the safe form;
+     *  built per render call so vnodes are never reused across patches.
+     *  Null-safe: an unknown type never reaches an option row. */
     function typeIcon(typeKey: string): VNode {
       return (
         <img
@@ -453,32 +462,25 @@ export default defineComponent({
                   <div class="ship-filter-bar__pop-head">
                     <span>{t("playtime.prTrendShipFilterTitle")}</span>
                   </div>
-                  {/* The type button group + the tier corridor slider —
+                  {/* The type pill strip + the tier corridor slider —
                       pinned above the scrolling list (the panel is a flex
-                      column; only the list scrolls). */}
+                      column; only the list scrolls). The strip is hikari's
+                      HkPillToggleGroup: the host owns the set (typeSel,
+                      [] = the all state), the group only reports
+                      toggle(value) / all(). */}
                   <div class="pr-trend-pop__groups">
-                    <div class="ship-filter-bar__opts">
-                      <button
-                        type="button"
-                        class="ship-filter-bar__opt"
-                        data-active={typeSel.value.length === 0 || undefined}
-                        onClick={() => (typeSel.value = [])}
-                      >
-                        <span>{t("ships.filter.typeAll")}</span>
-                      </button>
-                      {typeOptions.value.map((o) => (
-                        <button
-                          key={o.value}
-                          type="button"
-                          class="ship-filter-bar__opt"
-                          data-active={typeSel.value.includes(o.value) || undefined}
-                          onClick={() => toggle(typeSel, o.value)}
-                        >
-                          {typeIcon(o.value)}
-                          <span>{o.label}</span>
-                        </button>
-                      ))}
-                    </div>
+                    <HkPillToggleGroup
+                      label={t("playtime.prTrendShipFilterTitle")}
+                      options={typeOptions.value.map((o) => ({
+                        value: o.value,
+                        label: o.label,
+                        icon: typeIcon(o.value),
+                      }))}
+                      selected={new Set(typeSel.value)}
+                      allLabel={t("ships.filter.typeAll")}
+                      onToggle={(v: string) => toggle(typeSel, v)}
+                      onAll={() => (typeSel.value = [])}
+                    />
                     {/* Tier narrows through the shared corridor slider
                         (TierRangeSelect — the same control every ship
                         filter uses now); its built-in reset row replaces
