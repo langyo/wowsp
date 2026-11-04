@@ -7,11 +7,12 @@
 import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { GameProcessInfo, GameProcessReport } from "@/api";
+import type { GameProcessInfo, GameProcessReport, SessionSnapshot } from "@/api";
 
 vi.mock("@/api", () => ({
   api: {
     getGameProcesses: vi.fn(),
+    listenSessionChanged: vi.fn(),
   },
 }));
 
@@ -85,5 +86,58 @@ describe("gameStatus multi-instance store", () => {
     expect(store.processes.map((p) => p.pid)).toEqual([300]);
     expect(store.preferredPid).toBe(300);
     expect(store.process.pid).toBe(300);
+  });
+});
+
+describe("gameStatus session-changed subscription", () => {
+  function boot() {
+    const store = useGameStatusStore();
+    useConfigStore().installs = [];
+    return store;
+  }
+
+  it("refetches on every session-changed push and unsubscribes on stop", async () => {
+    const off = vi.fn();
+    let push: (snapshot: SessionSnapshot) => void = () => {};
+    let subscribed = false;
+    vi.mocked(api.listenSessionChanged).mockImplementation(async (handler) => {
+      push = handler;
+      subscribed = true;
+      return off;
+    });
+    const store = boot();
+    vi.mocked(api.getGameProcesses).mockResolvedValue(report([proc(100, "asia")], 100));
+    store.start();
+    await vi.waitFor(() => expect(subscribed).toBe(true));
+    // The immediate boot fetch landed the running report.
+    expect(store.process.pid).toBe(100);
+    // The Rust hub pushes (client exited) — the store refetches at once
+    // instead of waiting out its 3 s safety-net poll.
+    vi.mocked(api.getGameProcesses).mockResolvedValue(report([], null));
+    push({} as SessionSnapshot);
+    await vi.waitFor(() => expect(store.process.running).toBe(false));
+    store.stop();
+    expect(off).toHaveBeenCalledOnce();
+  });
+
+  it("releases the straggler handshake when stop/start races the subscription", async () => {
+    const released = vi.fn();
+    const resolvers: ((off: () => void) => void)[] = [];
+    vi.mocked(api.listenSessionChanged).mockImplementation(
+      () => new Promise((resolve) => resolvers.push(resolve)),
+    );
+    vi.mocked(api.getGameProcesses).mockResolvedValue(report([], null));
+    const store = boot();
+    store.start(); // handshake 1 pending
+    store.stop(); // raced: unlisten is still null here
+    store.start(); // handshake 2 pending
+    expect(resolvers).toHaveLength(2);
+    // The OLD start's handshake is the straggler (epoch mismatch): it must
+    // release its own listener instead of leaking a second live one.
+    resolvers[1](() => released());
+    resolvers[0](() => released());
+    await vi.waitFor(() => expect(released).toHaveBeenCalledOnce());
+    store.stop();
+    expect(released).toHaveBeenCalledTimes(2);
   });
 });

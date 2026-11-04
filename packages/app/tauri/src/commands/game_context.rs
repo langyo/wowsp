@@ -100,7 +100,7 @@ pub(crate) fn resolve_root(preference: RootPreference) -> Option<ResolvedRoot> {
     let resolved = resolve_head(&running, active.as_deref(), preference).or_else(|| {
         // Last tier: the auto-detected install list. Cached — the scan walks
         // the registry and every Steam library, while the resolution itself
-        // runs on the 3 s roster poll.
+        // runs on the roster poll.
         cached_scan().first().map(|install| ResolvedRoot {
             root: PathBuf::from(&install.path),
             source: RootSource::DetectedScan,
@@ -300,9 +300,10 @@ pub(crate) fn persisted_active_path() -> Option<String> {
         .filter(|path| super::game_detect::is_game_dir(path))
 }
 
-/// Scan cache TTL: long enough to keep the 3 s roster poll from re-walking
-/// the registry + Steam libraries, short enough that a just-installed or
-/// just-removed client does not stick in the fallback chain.
+/// Scan cache TTL: long enough to keep the sub-second roster poll from
+/// re-walking the registry + Steam libraries, short enough that a
+/// just-installed or just-removed client does not stick in the fallback
+/// chain.
 const SCAN_TTL: Duration = Duration::from_secs(5);
 
 static SCAN_CACHE: Mutex<Option<(Instant, Vec<GameInstall>)>> = Mutex::new(None);
@@ -310,7 +311,7 @@ static SCAN_CACHE: Mutex<Option<(Instant, Vec<GameInstall>)>> = Mutex::new(None)
 /// [`super::game_detect::scan_game_installs`] with a short TTL. The
 /// `detect_game_install` command keeps the uncached scan (the settings UI
 /// re-detect button must see fresh state); the session poller shares this
-/// cache so the two 3 s cadences cost one registry walk per TTL window.
+/// cache so the poller cadences cost one registry walk per TTL window.
 pub(crate) fn cached_scan() -> Vec<GameInstall> {
     let mut guard = SCAN_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     if let Some((at, installs)) = guard.as_ref() {
@@ -504,7 +505,7 @@ struct DisplayModeCacheEntry {
 /// two windowed flavors, so an `EXCLUSIVE_FULLSCREEN` client is the state
 /// the webui warns about (the hold-Tab overlay stays invisible in that
 /// mode no matter what else is right). Read every time a process report is
-/// built — the 3 s poll included — but re-read from disk only when the
+/// built — the fast process poll included — but re-read from disk only when the
 /// file's stat moves (same contract as [`PIN_CACHE`]): the client rewrites
 /// the file when the player changes the mode in-game, so the warning both
 /// appears on launch and lifts the moment the setting changes. `None` when
