@@ -18,7 +18,7 @@ import {
 } from "@celestia-island/hikari";
 
 import { api, type ExpectedPrEntry, type ShipStatsHistoryPoint } from "@/api";
-import { shipIconUrl } from "@/features/holographic/shipIcons";
+import ShipTypeGlyph from "@/components/base/ShipTypeGlyph";
 import DateRangeTabs, { type DateRangeWindow } from "@/components/base/DateRangeTabs";
 import { tierLabel } from "@/utils/shipCompare";
 import { useAccountStore } from "@/stores/account";
@@ -332,21 +332,15 @@ export default defineComponent({
         : t("playtime.prTrendShipAll");
     });
 
-    /** One type pill's leading glyph: the white battle-HUD silhouette
-     *  (right-facing via CSS flip), the same construction the water-meter's
-     *  pill options inline. PREBUILT vnode on purpose — HkPillToggleGroup
-     *  treats a component OBJECT as a vnode, so prebuilt is the safe form;
-     *  built per render call so vnodes are never reused across patches.
-     *  Null-safe: an unknown type never reaches an option row. */
+    /** One type pill's leading glyph: the mask-inked class silhouette
+     *  (ShipTypeGlyph, right-facing via its CSS flip), the same glyph the
+     *  water-meter's pill options inline. PREBUILT vnode on purpose —
+     *  HkPillToggleGroup treats a component OBJECT as a vnode, so prebuilt
+     *  is the safe form; built per render call so vnodes are never reused
+     *  across patches. Null-safe: an unknown type never reaches an option
+     *  row. */
     function typeIcon(typeKey: string): VNode {
-      return (
-        <img
-          class="ship-filter-bar__type-icon"
-          src={shipIconUrl(typeKey, "white") ?? undefined}
-          alt=""
-          draggable={false}
-        />
-      );
+      return <ShipTypeGlyph type={typeKey} />;
     }
 
     /** `M/D` x labels — locale calendar rules without the year (the section

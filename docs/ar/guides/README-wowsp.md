@@ -24,7 +24,8 @@
 
 </div>
 
-![لوحة معلومات WoWSP](../screenshots/dashboard.webp)
+![لوحة معلومات WoWSP](../screenshots/dashboard.webp#gh-light-mode-only)
+![لوحة معلومات WoWSP](../screenshots/dashboard.dark.webp#gh-dark-mode-only)
 
 > [!IMPORTANT]
 > **برنامج WoWSP مجاني بالكامل ومفتوح المصدر، ويُوزَّع حصريًا عبر صفحة [GitHub Releases](https://github.com/langyo/wowsp/releases) الرسمية. أي شخص يطلب مقابلَه مالًا ليس هو المؤلف — لا تدفع؛ وإن كنت قد دفعت مسبقًا فاطلب استرداد مبلغك وأبلِغ عن البائع.**

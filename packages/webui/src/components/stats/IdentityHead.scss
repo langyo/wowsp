@@ -1,7 +1,8 @@
 /* Shared identity head (IdentityHead.tsx) — one implementation for both
-   stats cards: AppTag clan tag + large name + trailing badges. The tag's
-   faces live in AppTag (soft primary at rest, the interactive outline
-   voice when it jumps); only the layout chrome remains here. */
+   stats cards: bespoke clan tag + large name + trailing badges. The clan
+   tag is bracket TEXT, not a Tag shell (the pill around [TAG] read as a
+   chip floating beside the nickname); only the jump variant carries button
+   chrome, and only the invisible kind. */
 
 .id-head {
   display: flex;
@@ -14,6 +15,47 @@
     align-items: center;
     gap: 0.55rem;
     min-width: 0;
+  }
+
+  /* The clan tag: "[TAG]" bracket text in the primary ink, sized to the
+     name line's small scale. Static = plain span; the jump variant is a
+     real <button> stripped of chrome (same text face), hover = underline,
+     focus-visible = the app's standard ring. flex: none keeps a long tag
+     from squeezing the nickname's ellipsis track. */
+  &__tag {
+    flex: none;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    line-height: 1.2;
+    color: rgb(var(--color-primary));
+    white-space: nowrap;
+  }
+
+  &__tag--jump {
+    appearance: none;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    font-family: inherit;
+    font-size: var(--text-sm);
+    font-weight: 700;
+    line-height: 1.2;
+    color: rgb(var(--color-primary));
+    cursor: pointer;
+    border-radius: var(--radius-sm);
+    transition: color var(--duration-short) var(--ease-standard);
+
+    &:hover {
+      color: rgb(var(--color-primary) / 0.85);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
+    &:focus-visible {
+      outline: 2px solid rgb(var(--color-primary) / 60%);
+      outline-offset: 2px;
+    }
   }
 
   &__name {
@@ -70,14 +112,15 @@
     }
 
     /* The actions strip (刷新 / 复制截图 — hikari ghost xs HkButtons) and
-       the clan-tag jump button (AppTag's interactive .app-tag-btn
-       wrapper) grow touch bands; scoped to the stats head so the families
-       keep one voice on desktop surfaces. */
+       the clan-tag jump button grow touch bands; scoped to the stats head
+       so the families keep one voice on desktop surfaces. The jump keeps
+       its borderless text face — only the hit box grows. */
     &__badges .hk-btn {
       min-height: 34px;
     }
 
-    &__name-line .app-tag-btn {
+    &__name-line .id-head__tag--jump {
+      display: inline-flex;
       align-items: center;
       min-height: 34px;
     }

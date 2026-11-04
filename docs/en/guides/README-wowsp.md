@@ -24,7 +24,8 @@
 
 </div>
 
-![WoWSP dashboard](../screenshots/dashboard.webp)
+![WoWSP dashboard](../screenshots/dashboard.webp#gh-light-mode-only)
+![WoWSP dashboard](../screenshots/dashboard.dark.webp#gh-dark-mode-only)
 
 > [!IMPORTANT]
 > **WoWSP is completely free and open source, distributed only via the official [GitHub Releases](https://github.com/langyo/wowsp/releases). Anyone charging money for it is not the author — do not pay; if you already have, request a refund and report the seller.**

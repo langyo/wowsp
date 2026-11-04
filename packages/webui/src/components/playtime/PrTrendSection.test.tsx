@@ -465,9 +465,10 @@ describe("PrTrendSection range + ship popup", () => {
     expect(pills()[0].attributes("data-active")).toBeTruthy();
     expect(pills()[0].attributes("aria-pressed")).toBe("true");
     expect(pills()[1].attributes("aria-pressed")).toBe("false");
-    // The concrete pills carry the silhouette glyph (the wrapped icon
-    // vnode) ahead of the label.
-    expect(pills()[1].find(".hk-pill-group-icon img").exists()).toBe(true);
+    // The concrete pills carry the silhouette glyph ahead of the label:
+    // ShipTypeGlyph draws the class art as a mask-tinted span (the ink
+    // follows the pill, both schemes) instead of an <img>.
+    expect(pills()[1].find(".hk-pill-group-icon .ship-type-glyph").exists()).toBe(true);
     // Pick the first CONCRETE type (index 1) — one of BB/CV/CA/DD/SS — and
     // exactly one row survives.
     await pills()[1].trigger("click");

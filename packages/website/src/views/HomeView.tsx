@@ -4,7 +4,7 @@ import { RouterLink } from "vue-router";
 import {
   MonitorPlay, Eye, BarChart3, ChevronDown, ChevronRight, Download,
 } from "@lucide/vue";
-import { HkButton, HkImagePreview } from "@celestia-island/hikari";
+import { HkButton, HkImagePreview, useTheme } from "@celestia-island/hikari";
 import GithubMark from "@/components/GithubMark";
 import { LinkButton, Reveal, FitScale } from "@/components/ui";
 import { siteBase } from "@/composables/siteBase";
@@ -36,6 +36,13 @@ export default defineComponent({
       "zh-Hant": "zh-TW",
     };
     const docsLang = computed(() => DOCS_LANG[locale.value] ?? locale.value);
+    // Same shots in both schemes: the docs folders carry `<stem>.webp`
+    // (light, the file a single-image doc references) and
+    // `<stem>.dark.webp` (dark), and the gallery swaps on the site's own
+    // theme — a manual toggle, so the swap rides hikari's effectiveMode
+    // instead of a prefers-color-scheme media query.
+    const theme = useTheme();
+    const shotSuffix = computed(() => (theme.effectiveMode.value === "dark" ? ".dark" : ""));
     const galleryShots = [
       "dashboard", "lookup", "ships", "replay",
       "live", "tactics", "resources", "settings",
@@ -301,7 +308,7 @@ export default defineComponent({
             {galleryShots.map((key) => (
               <figure class="gallery__item" key={key}>
                 <HkImagePreview
-                  src={`${siteBase}docs/${docsLang.value}/screenshots/${key}.webp`}
+                  src={`${siteBase}docs/${docsLang.value}/screenshots/${key}${shotSuffix.value}.webp`}
                   alt={t(`showcase.gallery.shots.${key}`)}
                   ratio="16 / 10"
                 />

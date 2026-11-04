@@ -408,6 +408,9 @@ export const SettingsShell = defineComponent({
                       aria-current={on ? "true" : undefined}
                       aria-disabled={s.disabled || undefined}
                       disabled={s.disabled}
+                      // Stable section handle for e2e/visual automation: the
+                      // label is localized, the key is not.
+                      data-section={s.key}
                       data-hint-overflow={s.label}
                       data-hint-pos="right"
                       onClick={() => pick(s.key)}

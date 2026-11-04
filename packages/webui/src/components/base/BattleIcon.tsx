@@ -20,6 +20,7 @@ import { defineComponent, computed } from "vue";
 import { shipIconUrl } from "@/features/holographic/shipIcons";
 import type { ShipIconVariant } from "@/features/holographic/shipIcons";
 import planeIcon from "@/features/holographic/planeIcons";
+import ShipTypeGlyph from "@/components/base/ShipTypeGlyph";
 
 export default defineComponent({
   name: "BattleIcon",
@@ -50,6 +51,17 @@ export default defineComponent({
             decoding="sync"
           />
         );
+      }
+      // The "plain" glyph is the UNCOLORED class silhouette, so it must ink
+      // like the surrounding text. As an <img> it was white plate art and
+      // vanished on light surfaces (user report: "the outlines are almost
+      // gone" in the replay list), and at row size the art's canvas padding
+      // shrank it to a squiggle. ShipTypeGlyph draws the same SVG as a
+      // mask over currentColor — crisp, scheme-aware, and it fills the box.
+      // The colored HUD variants (ally/enemy/sunk/white) keep their <img>
+      // because their paint IS the information.
+      if (props.variant === "plain") {
+        return <ShipTypeGlyph type={props.type} width={props.size} height={props.size} />;
       }
       if (url.value) {
         return (

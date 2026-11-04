@@ -1,57 +1,51 @@
+/* Three chart blocks in ONE row of EQUAL thirds (user direction: the
+   histogram used to claim the larger share, so the two donuts read
+   squeezed beside it). Equal tracks are a grid's job — hikari's Vue kit
+   ships no layout container for this (its components are surface-level:
+   charts, pills, cards), so the split rides this component's own sheet.
+   `grid-auto-flow: column` + `1fr` tracks divide however many blocks the
+   host renders (one for `tiersOnly`, three normally) into equal columns,
+   the 12px gaps coming off the top first.
+
+   Stacking is phone-width-only. The host is the CONTENT COLUMN, not the
+   window (52rem on the dashboard, the lookup page's own column
+   elsewhere), so a smaller font-size preference or a narrower window can
+   shrink it well below a desktop window's width; the old 741px threshold
+   (sized around 200/240px flex floors) therefore stacked the three charts
+   one per row on desktop-sized windows. The collapse now waits for genuine
+   phone width (≤477px — the app's 800px minimum window still leaves the
+   dashboard host ≈496px), and above it the row never wraps: grid tracks
+   simply squeeze, which the blocks survive (the donut ring has its own
+   96px shrink floor, long legend names ellipsize).
+
+   The collapse query only matches an ancestor that is a size container
+   NAMED `ship-dist-host`, so BOTH hosts — `.lookup-view__dist`
+   (LookupView.scss) and `.dashboard-view__dist` (DashboardView.scss) —
+   must keep the named `container: ship-dist-host / inline-size`
+   declaration. The name is the contract: a future nesting refactor that
+   re-parents the charts under an unnamed (or differently named) container
+   can no longer silently re-bind the breakpoint to the wrong box; content
+   under a host without that named container ancestor never matches the
+   query.
+
+   Column mode (the phone collapse) needs no per-block overrides:
+   `align-items: stretch` makes each block fill the row, and the ring's
+   fixed 150px canvas and min() caps are harmless stacked one per line. */
 .ship-dist-charts {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
   width: 100%;
 }
 
-/* Tier histogram claims the larger share of the row; the container query
-   below makes row-vs-stacked an all-or-nothing choice — flex-wrap alone
-   would greedily keep bar + first donut on line 1 in a 452–741px band.
-   Flex bases 32 + 30 + 30 = 92% deliberately leave the remaining 8% for
-   the row's two 12px gaps, so all three blocks CAN share one line on wide
-   containers. One-row threshold (flex-wrap packs hypothetical sizes —
-   basis clamped up by min-width): the floors stop binding at 625px (bar
-   basis 0.32W ≥ 200px) and 800px (pie basis 0.30W ≥ 240px). In the
-   625–800px band the pies sit at their 240px floor, so the binding
-   constraint is 0.32W + 240 + 240 + 24 ≤ W (0.68W ≥ 504 → W ≥ 741.2);
-   above 800px all three bases are free and the 92% rule 0.92W + 24 ≤ W
-   holds automatically (any W ≥ 300); below 625px the sum of floors
-   200 + 240 + 240 + 24 = 704 never fits. One row therefore holds from
-   ≈741.2px up: the @container rule collapses straight to a single
-   column (three stacked rows) at ≤741px — skipping the old 2+1 band —
-   and the natural rules already fit one row from ≈741.2px, so the only
-   residual middle state is the 741–741.18px sub-pixel sliver (reachable
-   only via fractional zoom) where the legacy 2+1 packing can persist.
-
-   The query only matches an ancestor that is a size container NAMED
-   `ship-dist-host`, so BOTH hosts — `.lookup-view__dist`
-   (LookupView.scss) and `.dashboard-view__dist`
-   (DashboardView.scss) — must keep the named
-   `container: ship-dist-host / inline-size` declaration. The name is
-   the contract: a future nesting refactor that re-parents the charts
-   under an unnamed (or differently named) container can no longer
-   silently re-bind the breakpoint to the wrong box. Content under a
-   host without that named container ancestor never matches the query
-   and falls back to the legacy wrapped-row packing below.
-
-   Column mode needs no overrides: `align-items: stretch` (the default
-   here) makes each block fill the full row, and the fixed heights and
-   min() caps are harmless stacked one per line. At the 240px pie floor
-   the block interior still works: the 2xs legend rows keep a full
-   three-column flag legend (dot + flag + percent ≈ 53px per row, three
-   columns + two 10px gaps ≈ 179px) narrow enough that the 150px ring
-   shrinks a little (flex-basis shrink, 96px floor) instead of the row
-   overflowing, and ellipsis trims long names. The min() caps keep the
-   fixed min-widths from overflowing phone-narrow containers (lookup
-   mobile content ≈ 280px, postbattle sheet ≈ 266px): there each block
-   simply fills the full row width. */
-
-/* Below the one-row threshold, skip the greedy 2+1 packing entirely:
-   collapse straight to a single column (three stacked rows). */
-@container ship-dist-host (max-width: 741px) {
-  .ship-dist-charts { flex-direction: column; }
+/* Below the phone threshold, one full-width block per row. */
+@container ship-dist-host (max-width: 477px) {
+  .ship-dist-charts {
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+  }
 }
 
 /* Forced one-row variant (opt-in via the `forcedRow` prop — the lookup
@@ -59,17 +53,13 @@
    The root is a hikari horizontal scroll container (auto-hiding overlay
    bar below the row); the row rhythm lives on __row INSIDE the viewport,
    beyond the @container collapse's reach — that query still targets the
-   container element itself, where column is hikari's own root direction,
-   so a named `ship-dist-host` ancestor cannot stack this variant. Bases
-   drop to zero so the row packs proportionally at the wrapped mode's
-   32 : 30 : 30 ratio while flexing down to the min-width floors: one row
-   now holds from 704px (200 + 240 + 240 + two 12px gaps) up — below
-   ≈760px the pies' proportional share ((W−24)×30/92) dips under their
-   240px floor and they sit pinned there with the bar absorbing the
-   slack — and below 704px the floors bind, the row overflows and the
-   overlay scrollbar below the charts takes over. Overscroll containment
-   keeps a wheel-over-strip from chaining the page scroll once the row is
-   exhausted. */
+   container element itself, so a named `ship-dist-host` ancestor cannot
+   stack this variant. The tracks stay EQUAL under the same 1fr rule,
+   with a 240px per-column floor (a ring plus its legend at the minimum
+   readable width); once three floors plus the gaps exceed the viewport,
+   the row overflows and the overlay scrollbar below the charts takes
+   over. Overscroll containment keeps a wheel-over-strip from chaining
+   the page scroll once the row is exhausted. */
 .ship-dist-charts--forced-row {
   & > .hk-scroll-container-viewport {
     overscroll-behavior-x: contain;
@@ -77,30 +67,11 @@
 }
 
 .ship-dist-charts__row {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 1fr);
   gap: 12px;
   align-items: stretch;
-}
-
-.ship-dist-charts--forced-row .ship-dist-charts__bar {
-  flex: 32 1 0%;
-}
-
-.ship-dist-charts--forced-row .ship-dist-charts__piewrap {
-  flex: 30 1 0%;
-}
-
-.ship-dist-charts__bar {
-  flex: 1 1 32%;
-  min-width: min(200px, 100%);
-  display: block;
-  height: 150px;
-}
-
-.ship-dist-charts__piewrap {
-  flex: 1 1 30%;
-  min-width: min(240px, 100%);
 }
 
 .ship-dist-charts__pie-title {

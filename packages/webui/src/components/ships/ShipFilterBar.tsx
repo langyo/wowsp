@@ -80,7 +80,7 @@ import {
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { shipOfflineEntry, nationNameFromDb } from "@/features/holographic/modelLoader";
-import { shipIconUrl } from "@/features/holographic/shipIcons";
+import ShipTypeGlyph from "@/components/base/ShipTypeGlyph";
 import { canonicalNation } from "@/utils/nationFlags";
 import { tierLabel } from "@/utils/shipCompare";
 import NationFlag from "@/components/base/NationFlag";
@@ -720,20 +720,14 @@ export default defineComponent({
     }));
 
     /** One pill's leading glyph: the nation flag badge / the ship-type
-     *  battle-HUD silhouette the bespoke popup buttons used to inline. */
+     *  silhouette (ShipTypeGlyph: mask-inked, so it follows the chip's
+     *  own colour in both schemes). */
     function pillIcon(key: PureCatKey, value: string, label: string): unknown {
       if (key === "nation") {
         return <NationFlag nation={value} label={label} variant="flag" size="sm" />;
       }
       if (key === "type") {
-        return (
-          <img
-            class="ship-filter-bar__type-icon"
-            src={shipIconUrl(value, "white") ?? undefined}
-            alt=""
-            draggable={false}
-          />
-        );
+        return <ShipTypeGlyph type={value} />;
       }
       return undefined;
     }
