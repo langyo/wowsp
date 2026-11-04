@@ -2,10 +2,11 @@
  *  ship-distribution charts. chunkLegendItems must be pure, order-
  *  preserving and fully deterministic — the number of columns a donut's
  *  legend shows depends only on it (5 rows per column: 6 ship types →
- *  5+1 over two columns, 14 nations → 5+5+4 over three). donutSlices /
- *  tierBars generate the hand-drawn SVG paths, so their angle math,
- *  radii, layout and the degenerate full-circle arc all carry
- *  exact-string coverage here; the percentInt tests pin the
+ *  5+1 over two columns, 14 nations → 5+5+4 over three). donutSlices
+ *  generates the ring arcs, so its angle math, radii and the degenerate
+ *  full-circle arc all carry exact-string coverage here (the tier
+ *  histogram renders hikari's HkBarChart since the #1736 chart wave);
+ *  the percentInt tests pin the
  *  legend-hint/tooltip integer agreement against double rounding (legend
  *  rows show no percent text — percents live in the hover hint only).
  *
@@ -23,7 +24,6 @@ import ShipDistCharts, {
   chunkLegendItems,
   donutSlices,
   sliceHint,
-  tierBars,
   toLegendItems,
   type DistDatum,
 } from "./ShipDistCharts";
@@ -227,99 +227,6 @@ describe("donutSlices", () => {
   });
 });
 
-describe("tierBars", () => {
-  // Default frame: 320×150, side pad 8, top pad 22, baseline y=132, tier
-  // numbers at y=144 → plot height 110, eleven 304/11-unit slots (the
-  // supership bin makes the eleventh).
-  const VALUES = [0, 5, 10, 0, 0, 0, 0, 0, 0, 0, 2];
-
-  it("always returns one slot per tier, evenly spaced and in order", () => {
-    const { bars } = tierBars(VALUES);
-    expect(bars.map((b) => b.tier)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
-    expect(bars[0]!.centerX).toBe(21.82); // 8 + (304 / 11) × 0.5
-    const step = bars[1]!.centerX - bars[0]!.centerX;
-    for (let i = 1; i < bars.length; i++) {
-      expect(bars[i]!.centerX - bars[i - 1]!.centerX).toBeCloseTo(step, 1);
-    }
-    expect(step).toBeCloseTo(304 / 11, 1);
-  });
-
-  it("exposes the axis baseline frame", () => {
-    const layout = tierBars(VALUES);
-    expect(layout).toMatchObject({
-      width: 320,
-      height: 150,
-      baselineY: 132,
-      axisFrom: 8,
-      axisTo: 312,
-      tierLabelY: 144,
-    });
-  });
-
-  it("scales bar heights against the maximum bin", () => {
-    const { bars } = tierBars(VALUES);
-    expect(bars[2]!.barHeight).toBe(110); // max bin fills the plot
-    expect(bars[1]!.barHeight).toBe(55); // half
-    expect(bars[10]!.barHeight).toBe(22); // supership bin: 2/10 of the max
-    expect(bars[0]!.barHeight).toBe(0); // empty bin
-  });
-
-  it("rounds only the top corners and anchors at the baseline", () => {
-    const { bars } = tierBars(VALUES);
-    // Tier 3 (max): centered at 77.09, bar 12 wide, top at y=22, rx=2.
-    expect(bars[2]!.path).toBe(
-      "M 71.09 132 L 71.09 24 Q 71.09 22 73.09 22 L 81.09 22 Q 83.09 22 83.09 24 L 83.09 132 Z",
-    );
-    // Tier 2 (half height): same width, top at y=77.
-    expect(bars[1]!.path).toBe(
-      "M 43.45 132 L 43.45 79 Q 43.45 77 45.45 77 L 53.45 77 Q 55.45 77 55.45 79 L 55.45 132 Z",
-    );
-  });
-
-  it("empty bins carry no bar path and no value label", () => {
-    const { bars } = tierBars(VALUES);
-    expect(bars[0]!.path).toBe("");
-    expect(bars[0]!.labelY).toBeNull();
-    // Nonzero bins sit their label above the bar top.
-    expect(bars[2]!.labelY).toBe(17); // top 22 − 5
-    expect(bars[1]!.labelY).toBe(72); // top 77 − 5
-  });
-
-  it("keeps the fixed bar width clamped to the slot width", () => {
-    // 40 tiers on the 320 box → 7.6-unit slots shrink the 12-unit bar.
-    const { bars } = tierBars(new Array(40).fill(1));
-    expect(bars[0]!.barWidth).toBeCloseTo(7.6, 10);
-    // Default case: slots are 304/11 ≈ 27.64 wide, so the 12-unit bar
-    // survives.
-    expect(tierBars(VALUES).bars[0]!.barWidth).toBe(12);
-  });
-
-  it("renders all-zero data without dividing by zero", () => {
-    const { bars } = tierBars(new Array(11).fill(0));
-    expect(bars.every((b) => b.path === "" && b.labelY === null)).toBe(true);
-    expect(bars.every((b) => Number.isFinite(b.centerX))).toBe(true);
-  });
-
-  it("treats a NaN bin (and the max it poisons) as empty, never NaN geometry", () => {
-    const { bars } = tierBars([NaN, 5, 10, 0, 0, 0, 0, 0, 0, 0]);
-    expect(bars.every((b) => b.path === "" && b.labelY === null)).toBe(true);
-    expect(bars.every((b) => Number.isFinite(b.centerX))).toBe(true);
-  });
-
-  it("honors custom width/height/barWidth", () => {
-    const { bars, baselineY, axisTo } = tierBars([4, 2], {
-      width: 100,
-      height: 60,
-      barWidth: 5,
-    });
-    expect(baselineY).toBe(42); // 60 − 18
-    expect(axisTo).toBe(92); // 100 − 8
-    expect(bars[0]!.centerX).toBe(29); // 8 + 42 × 0.5
-    expect(bars[0]!.barWidth).toBe(5);
-    expect(bars[0]!.barHeight).toBe(20); // (60−18−22) × 1.0
-  });
-});
-
 describe("mounted DOM legend", () => {
   enableAutoUnmount(afterEach);
 
@@ -371,25 +278,33 @@ describe("mounted DOM legend", () => {
     // The supership's battles reach the eleventh bin: one bar renders,
     // and its hint keeps the numeric tier so the star mark stays
     // self-explanatory.
-    const bars = wrapper.findAll(".ship-dist-charts__bar-rect");
+    const bars = wrapper.findAll(".hk-bar-chart__bar");
     expect(bars).toHaveLength(1);
     expect(bars[0]!.attributes("data-hint")).toBe(
       `${t("ships.tier")} 11 · ${t("stats.dist.battles")} 3`,
     );
     // Tiers 1–10 keep their numeral; the supership slot swaps the numeral
-    // for the lucide Star icon — a nested <svg> sized and positioned over
-    // the slot like the numerals' glyph box, never a text ★ glyph.
-    expect(wrapper.findAll(".ship-dist-charts__tier-num")).toHaveLength(10);
-    const star = wrapper.find(".ship-dist-charts__tier-star");
+    // for the lucide Star icon via hikari's icon normalization — a nested
+    // <svg> centered on the slot, never a text ★ glyph.
+    expect(wrapper.findAll(".hk-bar-chart__x")).toHaveLength(10);
+    const star = wrapper.find(".hk-bar-chart__xmark");
     expect(star.exists()).toBe(true);
     expect(star.element.tagName.toLowerCase()).toBe("svg");
-    expect(star.attributes("width")).toBe("10");
-    // Slot 11 center x = 8 + (304/11) × 10.5 ≈ 298.18 → star box at 293.18;
-    // y centers the 10-unit box on the numerals' optical middle (144 − 8.5).
-    expect(star.attributes("x")).toBe("293.18");
-    expect(star.attributes("y")).toBe("135.5");
   });
 
+  it("hovering a bar raises it and dims its siblings via activeIndex", async () => {
+    const wrapper = mount(ShipDistCharts, { props: { ships } });
+    const bars = wrapper.findAll(".hk-bar-chart__bar");
+    await bars[1]!.trigger("mouseenter");
+    expect(bars[1]!.attributes("data-hot")).toBeDefined();
+    expect(bars[0]!.attributes("data-dim")).toBeDefined();
+    expect(bars[2]!.attributes("data-dim")).toBeDefined();
+    // The value labels do not dim (hikari renders them statically);
+    // mouseleave clears the pair.
+    await bars[1]!.trigger("mouseleave");
+    expect(bars[1]!.attributes("data-hot")).toBeUndefined();
+    expect(bars[0]!.attributes("data-dim")).toBeUndefined();
+  });
   it("carries the forced-row modifier class only when the prop is set", () => {
     // The class is the whole contract: the forced variant's root becomes
     // hikari's horizontal scroll container (ShipDistCharts.scss hangs the
@@ -428,7 +343,6 @@ describe("mounted DOM legend", () => {
       expect(slice.classes()).not.toContain("is-hot");
       expect(slice.classes()).not.toContain("is-dim");
     }
-    expect(wrapper.find(".ship-dist-charts__bar-rect").classes()).not.toContain("is-dim");
     await slices[0]!.trigger("mouseleave");
     expect(slices[0]!.classes()).not.toContain("is-hot");
     expect(slices[1]!.classes()).not.toContain("is-dim");
@@ -447,23 +361,6 @@ describe("mounted DOM legend", () => {
     // Nation block untouched by a type-block hover.
     for (const slice of nationBody!.findAll(".hk-donut__slice")) {
       expect(slice.classes()).not.toContain("is-dim");
-    }
-  });
-
-  it("hovering a bar dims the sibling bars and fades their value labels", async () => {
-    const wrapper = mount(ShipDistCharts, { props: { ships } });
-    const bars = wrapper.findAll(".ship-dist-charts__bar-rect");
-    await bars[1]!.trigger("mouseenter");
-    expect(bars[1]!.classes()).toContain("is-hot");
-    expect(bars[0]!.classes()).toContain("is-dim");
-    // Bars render in tier order (6, 8, 10 here) — the dimmed tier's value
-    // label fades with its bar, the hovered tier's keeps the resting ink.
-    const values = wrapper.findAll(".ship-dist-charts__bar-value");
-    expect(values[0]!.classes()).toContain("is-dim");
-    expect(values[1]!.classes()).not.toContain("is-dim");
-    // Tier numbers belong to the axis, never to a bar — no dim classes.
-    for (const num of wrapper.findAll(".ship-dist-charts__tier-num")) {
-      expect(num.classes()).not.toContain("is-dim");
     }
   });
 

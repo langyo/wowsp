@@ -7,18 +7,20 @@
  * stacking: the three blocks stay on one row at ANY container width and
  * the row scrolls horizontally once the blocks hit their size floors.
  *
- * Everything is computed -> SVG: geometry comes from the PURE helpers
- * donutSlices() / tierBars() (unit-tested in ShipDistCharts.test.ts),
- * and ink (text, axis line, bar fill) is styled from SCSS through CSS
- * variables — light/dark and brand-theme flips need NO re-render logic,
- * the DOM restyles itself. Slice fills stay inline attributes because
- * they come from the reactive palettes, not theme variables; the
- * computeds below read those palettes (and t()), so locale switches and
- * palette edits repaint the SVG live with zero watches.
+ * The donuts render hikari's HkDonutChart and the tier histogram hikari's
+ * HkBarChart — both dependency-free declarative SVG (no chart library),
+ * so the computeds below only shape the DATA: donutSlices() for the rings
+ * (unit-tested in ShipDistCharts.test.ts) and one bar entry per tier for
+ * the histogram. Ink (text, gridlines, bar fill) is styled from the
+ * components' own theme-token sheets — light/dark and brand-theme flips
+ * need NO re-render logic, the DOM restyles itself. Slice fills stay
+ * inline attributes because they come from the reactive palettes, not
+ * theme variables; the computeds read those palettes (and t()), so locale
+ * switches and palette edits repaint the charts live with zero watches.
  */
 import { computed, defineComponent, ref, watch } from "vue";
 import { Star } from "@lucide/vue";
-import { HkScrollContainer, HkDonutChart } from "@celestia-island/hikari";
+import { HkBarChart, HkDonutChart, HkScrollContainer } from "@celestia-island/hikari";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import NationFlag from "@/components/base/NationFlag";
@@ -31,11 +33,7 @@ import {
   shipTypeChartColor,
   shipTypeCssColor,
 } from "@/theme/shipTypeColors";
-import {
-  focusState,
-  fmt,
-  type DonutSlice,
-} from "./donutGeometry";
+import type { DonutSlice } from "./donutGeometry";
 import "./ShipDistCharts.scss";
 
 // Re-exported for the existing test/back-compat surface: the pure geometry
@@ -138,16 +136,11 @@ export interface DistDatum {
 }
 
 /** Supership tier: WG's post-X tier. Its histogram slot swaps the axis
- *  numeral for the lucide Star mark — the same ★ convention the ship
- *  table, picker and tech-tree view already use for tier 11. */
+ *  numeral for the lucide Star mark (passed to hikari's HkBarChart as the
+ *  bar's icon, which sizes/positions the nested <svg> itself) — the same
+ *  ★ convention the ship table, picker and tech-tree view already use for
+ *  tier 11. */
 const SUPERSHIP_TIER = 11;
-
-/** Star glyph box in bar-viewBox units: the numerals' 10-unit optical box
- *  (baseline y=144, digits span ≈137–144), so the mark reads as one of
- *  the axis labels, not an ornament. `x`/`y` position the nested <svg>
- *  the icon renders; ink (stroke via currentColor, solid fill) lives in
- *  SCSS with the other theme-variable-styled chart ink. */
-const TIER_STAR = { size: 10, dy: -8.5 };
 
 function aggregate(ships: DistDatum[]) {
   // Bin 0 unused; bins 1..11 — tier 11 is the supership tier the offline
@@ -173,122 +166,13 @@ function aggregate(ships: DistDatum[]) {
 }
 
 // ---------------------------------------------------------------------------
-// Pure SVG geometry: the donut ring helpers (polar / ringSegment / fullRing
-// / donutSlices) and the legend chunking live in donutGeometry.ts, shared
-// with PlaytimeBreakdownPie. What stays here is the tier histogram's own
-// geometry (tierBars). Angles are degrees in the screen coordinate system:
-// -90 = 12 o'clock, increasing clockwise.
+// The donut ring helpers (polar / ringSegment / fullRing / donutSlices)
+// and the legend chunking live in donutGeometry.ts, shared with
+// PlaytimeBreakdownPie; the tier histogram's geometry is hikari's own
+// barChart.ts (HkBarChart's pure layout). Angles are degrees in the screen
+// coordinate system: -90 = 12 o'clock, increasing clockwise.
 // ---------------------------------------------------------------------------
 
-/** One tier slot: the bar's path ("" for an empty bin — no invisible
- *  hit-target sliver), its value-label anchor (null when there is no
- *  label to show), and the always-rendered tier number position. */
-export interface TierBarSlot {
-  tier: number;
-  value: number;
-  centerX: number;
-  barWidth: number;
-  barHeight: number;
-  /** Empty string when the bin has no battles. */
-  path: string;
-  /** Text baseline above the bar top, null for zero bins. */
-  labelY: number | null;
-}
-
-/** Static frame parts the template draws once (axis baseline spans the
- *  plot; tier numbers hang below every slot). */
-export interface TierBarLayout {
-  width: number;
-  height: number;
-  baselineY: number;
-  axisFrom: number;
-  axisTo: number;
-  tierLabelY: number;
-  bars: TierBarSlot[];
-}
-
-/** Tier histogram bins (index 0 = tier 1) → per-slot geometry. Equal
- *  slots across the plot (eleven with the supership bin), each bar
- *  centered in its slot (as the retired ECharts category axis did),
- *  height proportional to the bin's share of the maximum, top corners
- *  rounded rx≈2 only (ECharts borderRadius [2,2,0,0]). Pure and
- *  length-agnostic; the default 320×150 viewBox and the 12-unit bar
- *  width reproduce the old fixed-pixel look at 1:1. */
-export function tierBars(
-  tiers: readonly number[],
-  opts: {
-    width?: number;
-    height?: number;
-    barWidth?: number;
-  } = {},
-): TierBarLayout {
-  const width = opts.width ?? 320;
-  const height = opts.height ?? 150;
-  // Grid mirrors the old ECharts option: left/right 8, top 22 (room for
-  // the value label above the tallest bar), bottom reserved for the tier
-  // numbers (baseline at height-18, number baseline 6 above the edge).
-  // The top pad keeps the 10-unit label font inside the box: the tallest
-  // bar's label baseline is y=17 and a 10-unit ascent ≈ 8 → glyph top 9.
-  const sidePad = 8;
-  const topPad = 22;
-  const baselineY = height - 18;
-  const tierLabelY = height - 6;
-  const slotW = (width - 2 * sidePad) / Math.max(1, tiers.length);
-  const barW = Math.min(opts.barWidth ?? 12, slotW);
-  const max = tiers.reduce((a, v) => Math.max(a, v), 0);
-  const plotH = baselineY - topPad;
-  const bars = tiers.map((value, i) => {
-    const centerX = fmt(sidePad + slotW * (i + 0.5));
-    // `!(… > 0)` (not `<= 0`) so a NaN bin — which also poisons the max
-    // reduce — renders an empty slot instead of NaN geometry.
-    if (!(value > 0) || !(max > 0)) {
-      return {
-        tier: i + 1,
-        value,
-        centerX,
-        barWidth: barW,
-        barHeight: 0,
-        path: "",
-        labelY: null,
-      };
-    }
-    const barHeight = (value / max) * plotH;
-    const top = baselineY - barHeight;
-    const x0 = centerX - barW / 2;
-    const x1 = centerX + barW / 2;
-    // Top-only corner rounding: up the left side, two quadratic corners
-    // across the top, down the right side, straight close along the
-    // baseline (rx clamped so a squat bar never inverts its corners).
-    const rx = Math.min(2, barW / 2, barHeight / 2);
-    const path = [
-      `M ${fmt(x0)} ${fmt(baselineY)}`,
-      `L ${fmt(x0)} ${fmt(top + rx)}`,
-      `Q ${fmt(x0)} ${fmt(top)} ${fmt(x0 + rx)} ${fmt(top)}`,
-      `L ${fmt(x1 - rx)} ${fmt(top)}`,
-      `Q ${fmt(x1)} ${fmt(top)} ${fmt(x1)} ${fmt(top + rx)}`,
-      `L ${fmt(x1)} ${fmt(baselineY)}`,
-      "Z",
-    ].join(" ");
-    return {
-      tier: i + 1,
-      value,
-      centerX,
-      barWidth: barW,
-      barHeight: fmt(barHeight),
-      path,
-      labelY: fmt(top - 5),
-    };
-  });
-  return {
-    width,
-    height,
-    baselineY,
-    axisFrom: sidePad,
-    axisTo: width - sidePad,
-    tierLabelY,
-    bars,
-  };
-}
 
 // ViewBox constants shared by the template below (donuts are square).
 const BAR_VIEWBOX = { width: 320, height: 150 };
@@ -309,8 +193,8 @@ export function sliceHint(s: DonutSlice): string {
   return `${s.label} · ${t("stats.dist.battles")} ${s.value} · ${s.percentInt}%`;
 }
 
-function barHint(b: TierBarSlot): string {
-  return `${t("ships.tier")} ${b.tier} · ${t("stats.dist.battles")} ${b.value}`;
+function barHint(tier: number, value: number): string {
+  return `${t("ships.tier")} ${tier} · ${t("stats.dist.battles")} ${value}`;
 }
 
 export default defineComponent({
@@ -336,7 +220,6 @@ export default defineComponent({
     // (t) / data-language (nation DB) / the ship-type palette ref, so
     // locale switches and palette edits repaint everything live.
     const dist = computed(() => aggregate(props.ships));
-    const tierLayout = computed(() => tierBars(dist.value.tiers.slice(1)));
     // Slice colors keyed by the aggregated code itself (not data order):
     // each fill resolves the palette from theme/shipTypeColors, so a class
     // keeps its color across players, filters and locale switches — and
@@ -423,7 +306,6 @@ export default defineComponent({
     );
 
     return () => {
-      const layout = tierLayout.value;
       // The three chart blocks, shared by both hosts below (only the
       // forcedRow prop changes who owns the row: a plain wrapped row, or
       // the one-row scroll region).
@@ -431,71 +313,32 @@ export default defineComponent({
         <>
           {/* ALL eleven tier bins always render — an unplayed tier stays
               an empty gap on the axis instead of the neighbours
-              stretching over it, and the fixed bar width keeps bars
-              identical no matter how many tiers carry battles. Zero bins
-              hide only their top value label (and their bar path). */}
-          <svg
-            class="ship-dist-charts__bar"
-            viewBox={`0 0 ${BAR_VIEWBOX.width} ${BAR_VIEWBOX.height}`}
-            preserveAspectRatio="xMidYMid meet"
-          >
-            <line
-              class="ship-dist-charts__axis"
-              x1={layout.axisFrom}
-              y1={layout.baselineY}
-              x2={layout.axisTo}
-              y2={layout.baselineY}
-            />
-            {layout.bars.map((b) => (
-              <g key={b.tier}>
-                {b.path ? (
-                  <path
-                    class={{
-                      "ship-dist-charts__bar-rect": true,
-                      ...focusState(hoverTier.value, b.tier),
-                    }}
-                    d={b.path}
-                    data-hint={barHint(b)}
-                    onMouseenter={() => {
-                      hoverTier.value = b.tier;
-                    }}
-                    onMouseleave={() => {
-                      hoverTier.value = null;
-                    }}
-                  />
-                ) : null}
-                {b.labelY != null ? (
-                  <text
-                    class={{
-                      "ship-dist-charts__bar-value": true,
-                      "is-dim": hoverTier.value != null && hoverTier.value !== b.tier,
-                    }}
-                    x={b.centerX}
-                    y={b.labelY}
-                  >
-                    {b.value}
-                  </text>
-                ) : null}
-                {b.tier === SUPERSHIP_TIER ? (
-                  // The supership slot's axis mark: the lucide Star as a
-                  // nested <svg> positioned over the slot center — an
-                  // icon component, never a text ★ glyph. The hover hint
-                  // keeps the numeric tier, so the mark stays
-                  // self-explanatory.
-                  <Star
-                    class="ship-dist-charts__tier-star"
-                    size={TIER_STAR.size}
-                    x={fmt(b.centerX - TIER_STAR.size / 2)}
-                    y={layout.tierLabelY + TIER_STAR.dy}
-                  />
-                ) : (
-                  <text class="ship-dist-charts__tier-num" x={b.centerX} y={layout.tierLabelY}>
-                    {b.tier}
-                  </text>
-                )}
-              </g>
-            ))}
-          </svg>
+              stretching over it: HkBarChart keeps zero-value slots on
+              the axis (label only, no bar path). showValues restores
+              the above-bar battle counts (empty slots carry none — the
+              old labelY-null behavior); the supership slot's axis mark
+              is the lucide Star passed as the bar's icon — an icon
+              component, never a text ★ glyph; the hover hint keeps the
+              numeric tier so the mark stays self-explanatory. The
+              hover event + activeIndex recreate the hot/dim pair
+              through hikari's own data-hot/data-dim classes. */}
+          <HkBarChart
+            bars={dist.value.tiers.slice(1).map((battles, index) => ({
+              label: String(index + 1),
+              value: battles,
+              hint: barHint(index + 1, battles),
+              icon: index + 1 === SUPERSHIP_TIER ? Star : undefined,
+            }))}
+            width={BAR_VIEWBOX.width}
+            height={BAR_VIEWBOX.height}
+            showValues
+            activeIndex={hoverTier.value == null ? null : hoverTier.value - 1}
+            onHover={(index: number | null) => {
+              hoverTier.value = index == null ? null : index + 1;
+            }}
+            formatValue={(v: number) => String(Math.round(v))}
+          />
+
           {!props.tiersOnly ? (
             <div class="ship-dist-charts__piewrap">
               <div class="ship-dist-charts__pie-title">{t("stats.dist.pieTitle")}</div>
