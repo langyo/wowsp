@@ -51,7 +51,10 @@ vi.mock("./PrTrendChart", () => ({
 // stay queryable; the real component's overlay-scrollbar machinery is
 // browser-only and irrelevant here); HkTabs mirrors the real guard (no
 // update for the active key); HkCheckbox renders the modelValue so
-// indeterminate (null) is observable.
+// indeterminate (null) is observable; HkPillToggleGroup mirrors the real
+// DOM shape (div.hk-pill-group[role=group], per-option pills carrying
+// data-active + aria-pressed, the all-pill leading when allLabel is set)
+// so the type-strip assertions read the real handles.
 vi.mock("@celestia-island/hikari", () => ({
   HkPopover: {
     name: "HkPopover",
@@ -64,6 +67,64 @@ vi.mock("@celestia-island/hikari", () => ({
     name: "HkScrollContainer",
     setup(_: unknown, { slots }: { slots: Record<string, () => VNode[]> }) {
       return () => h("div", slots.default?.());
+    },
+  },
+  // The real component's DOM contract (hikari HkPillToggleGroup.tsx): the
+  // strip root div.hk-pill-group[role=group]; the all-pill first when
+  // allLabel is set (data-active exactly when the set is empty); one
+  // pill.hk-pill-group-pill per option, data-active + aria-pressed from
+  // the set, icon vnode wrapped in .hk-pill-group-icon, label as text.
+  // The set itself is host-owned — the stub only reports toggle / all.
+  HkPillToggleGroup: {
+    name: "HkPillToggleGroup",
+    props: ["label", "options", "selected", "allLabel"],
+    emits: ["toggle", "all"],
+    setup(
+      props: {
+        label: string;
+        options: { value: string; label: string; icon?: VNode }[];
+        selected: Set<string>;
+        allLabel?: string;
+      },
+      { emit }: { emit: (ev: string, v?: string) => void },
+    ) {
+      const pill = (
+        opts: Record<string, unknown>,
+        children: string | (VNode | string | null)[],
+      ) => h("button", { type: "button", class: "hk-pill-group-pill", ...opts }, children);
+      return () =>
+        h(
+          "div",
+          { class: "hk-pill-group", role: "group", "aria-label": props.label },
+          [
+            ...(props.allLabel != null
+              ? [
+                  pill(
+                    {
+                      "data-active": props.selected.size === 0 || undefined,
+                      "aria-pressed": props.selected.size === 0 ? "true" : "false",
+                      onClick: () => emit("all"),
+                    },
+                    props.allLabel,
+                  ),
+                ]
+              : []),
+            ...(props.options ?? []).map((o) =>
+              pill(
+                {
+                  key: o.value,
+                  "data-active": props.selected.has(o.value) || undefined,
+                  "aria-pressed": props.selected.has(o.value) ? "true" : "false",
+                  onClick: () => emit("toggle", o.value),
+                },
+                [
+                  o.icon != null ? h("span", { class: "hk-pill-group-icon" }, [o.icon]) : null,
+                  o.label,
+                ],
+              ),
+            ),
+          ],
+        );
     },
   },
   HkTabs: {
@@ -392,17 +453,35 @@ describe("PrTrendSection range + ship popup", () => {
     await flushPromises();
     await wrapper.find("button.ship-filter-bar__chip").trigger("click");
     expect(wrapper.findAll(".pr-trend-pop__row")).toHaveLength(2);
-    // The type group now carries real options: [全部舰种, ...present types].
-    const typeOpts = wrapper.findAll(".pr-trend-pop__groups .ship-filter-bar__opt");
-    expect(typeOpts.length).toBeGreaterThanOrEqual(3); // 全部 + ≥2 types
+    // The type facet is hikari's pill strip now: the all-pill first, then
+    // the window-present types ([全部舰种, ...present types]). Pills carry
+    // the pressed-state toggle grammar; the all-pill is active exactly
+    // while nothing is picked.
+    const pills = () => wrapper.findAll(".pr-trend-pop__groups .hk-pill-group-pill");
+    expect(pills().length).toBeGreaterThanOrEqual(3); // 全部 + ≥2 types
+    expect(wrapper.find(".pr-trend-pop__groups .hk-pill-group").attributes("role")).toBe(
+      "group",
+    );
+    expect(pills()[0].attributes("data-active")).toBeTruthy();
+    expect(pills()[0].attributes("aria-pressed")).toBe("true");
+    expect(pills()[1].attributes("aria-pressed")).toBe("false");
+    // The concrete pills carry the silhouette glyph (the wrapped icon
+    // vnode) ahead of the label.
+    expect(pills()[1].find(".hk-pill-group-icon img").exists()).toBe(true);
     // Pick the first CONCRETE type (index 1) — one of BB/CV/CA/DD/SS — and
     // exactly one row survives.
-    await typeOpts[1].trigger("click");
+    await pills()[1].trigger("click");
     await nextTick();
     expect(wrapper.findAll(".pr-trend-pop__row")).toHaveLength(1);
-    // 全部 resets: both rows return.
-    await typeOpts[0].trigger("click");
+    expect(pills()[1].attributes("aria-pressed")).toBe("true");
+    expect(pills()[1].attributes("data-active")).toBeTruthy();
+    // The all-pill loses its active tint the moment a type is picked.
+    expect(pills()[0].attributes("data-active")).toBeUndefined();
+    expect(pills()[0].attributes("aria-pressed")).toBe("false");
+    // 全部 resets: both rows return, the all-pill leads active again.
+    await pills()[0].trigger("click");
     await nextTick();
     expect(wrapper.findAll(".pr-trend-pop__row")).toHaveLength(2);
+    expect(pills()[0].attributes("data-active")).toBeTruthy();
   });
 });

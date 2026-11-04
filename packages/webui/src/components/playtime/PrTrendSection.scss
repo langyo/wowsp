@@ -35,10 +35,12 @@
   flex-direction: column;
   gap: 4px;
 
-  /* The water-meter tracks are inline-flex shrink-to-fit; this popup's
-     flex-column would stretch them panel-wide instead — pin them to their
-     content (wrapping at the panel width, per the base track's wrap). */
-  .ship-filter-bar__opts {
+  /* The type facet is hikari's HkPillToggleGroup — a block-level flex
+     strip this popup's flex-column would stretch panel-wide. Pin it to
+     its content like the old bespoke track (inline-flex shrink-to-fit);
+     hikari's own max-width: 100% is the width relief — the desktop strip
+     pans its overflow one-line, the ≤767px sheet wraps it. */
+  .hk-pill-group {
     align-self: flex-start;
   }
 
