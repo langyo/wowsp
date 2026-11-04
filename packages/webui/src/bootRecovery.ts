@@ -33,20 +33,95 @@ import type { Plugin } from "vite";
  * `chat.html` / `tray.html` are bare shell-managed windows over the game, and
  * reloading a transparent overlay mid-battle is the wrong recovery. The
  * component defaults already match WoWSP's contract (`#loading-screen`, the
- * `hidden` dismissal class, `injectTo: "head"`), so only the host copy and
- * the entry list need stating here.
+ * `hidden` dismissal class, `injectTo: "head"`), so only the host copy (now
+ * carrying the panel's locale table) and the entry list need stating here.
+ *
+ * PANEL LOCALES (hikari #1056, published in 0.55.273): the failure panel
+ * resolves its copy through the plugin's locale-source order — the host's
+ * saved UI locale first (localStorage `wowsp-ui-locale`, the key
+ * `src/i18n/useLanguage.ts` reads and writes, passed as `copy.storageKey`),
+ * then the shell OS preference (`window.__WOWSP_OS_PREFS__`, seeded by the
+ * Tauri shell before page load — `packages/app/tauri/src/os_prefs.rs` —
+ * passed as the top-level `osPrefsGlobal` option so the plugin reads WoWSP's
+ * global instead of the boot-chrome family default
+ * `__CELESTIA_OS_PREFS__`), then `navigator.languages` /
+ * `navigator.language`, and finally the plain English `message` / `retry`
+ * fallback fields. Candidate matching walks exact tag → progressive
+ * trailing-subtag strip → primary subtag, with table insertion order as the
+ * tie-break — hence zh-CN listed before zh-TW. The table covers the eight UI
+ * locales plus the zh script/region variants a navigator may emit
+ * (`zh-Hans` / `zh-Hant` / `zh-HK` / `zh-MO`): the plugin strips candidate
+ * subtags only down to the primary language, so those variants are pinned
+ * explicitly instead of falling through to the first zh row. Terminology must
+ * stay aligned with the res/i18n/locales/<locale>/common.json "reload"
+ * strings — the retry label IS the app's reload verb; the panel styling came
+ * from the same upstream restyle (hikari seed tokens), so nothing host-side.
  *
  * The generated script is deterministic, ASCII-only and classic (non-module)
  * so the Tauri shell can hash it into the app CSP at compile time — see the
  * published plugin's docs for the full contract.
  */
+
+/** zh-CN panel copy — shared verbatim with the `zh-Hans` alias row. */
+const ZH_CN_COPY = {
+  message: "WoWSP 未能完成加载。应用窗口可能已从崩溃中恢复，重新加载通常可以解决问题。",
+  retry: "重新加载",
+};
+
+/** zh-TW panel copy — shared verbatim with `zh-Hant` / `zh-HK` / `zh-MO`. */
+const ZH_TW_COPY = {
+  message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。",
+  retry: "重新載入",
+};
+
 export function wowspBootRecovery(): Plugin {
   return bootRecoveryPlugin({
     htmlFiles: ["index.html"],
+    osPrefsGlobal: "__WOWSP_OS_PREFS__",
     copy: {
       message:
         "WoWSP did not finish loading. The app window may have recovered from a crash; reloading usually fixes it.",
       retry: "Reload",
+      storageKey: "wowsp-ui-locale",
+      locales: {
+        "en-US": {
+          message:
+            "WoWSP did not finish loading. The app window may have recovered from a crash; reloading usually fixes it.",
+          retry: "Reload",
+        },
+        "zh-CN": ZH_CN_COPY,
+        "zh-TW": ZH_TW_COPY,
+        "ja-JP": {
+          message: "WoWSP の読み込みが完了しませんでした。アプリのウィンドウはクラッシュから復帰した可能性があります。再読み込みすると通常は解決します。",
+          retry: "再読み込み",
+        },
+        "ko-KR": {
+          message: "WoWSP가 로딩을 완료하지 못했습니다. 앱 창이 비정상 종료에서 복구되었을 수 있습니다. 새로 고침하면 대개 해결됩니다.",
+          retry: "새로고침",
+        },
+        "ru-RU": {
+          message:
+            "WoWSP не завершил загрузку. Окно приложения, возможно, восстановилось после сбоя; перезагрузка обычно устраняет проблему.",
+          retry: "Перезагрузить",
+        },
+        "fr-FR": {
+          message:
+            "WoWSP n'a pas terminé de se charger. La fenêtre de l'application s'est peut-être rétablie après un plantage ; recharger corrige généralement le problème.",
+          retry: "Recharger",
+        },
+        "es-ES": {
+          message:
+            "WoWSP no terminó de cargarse. Es posible que la ventana de la aplicación se haya recuperado de un fallo; recargar suele solucionarlo.",
+          retry: "Recargar",
+        },
+        // Navigator aliases — the plugin strips candidate subtags only down
+        // to the primary language, so the Han/region variants that should
+        // NOT fall through to the first zh row are pinned explicitly:
+        "zh-Hans": ZH_CN_COPY,
+        "zh-Hant": ZH_TW_COPY,
+        "zh-HK": ZH_TW_COPY,
+        "zh-MO": ZH_TW_COPY,
+      },
     },
   });
 }

@@ -27,7 +27,8 @@ import { wowspBootRecovery } from "./bootRecovery";
  *   a. `vite.config.ts` actually registers the wrapper (a tested factory that
  *      nobody imports ships nothing);
  *   b. the wrapper really bakes the PUBLISHED script — same bytes as calling
- *      `bootRecoveryScript` from the installed package with the host options,
+ *      `bootRecoveryScript` from the installed package with the host options
+ *      (the copy table, its storage key and the OS-prefs global included),
  *      index.html only, with WoWSP's copy;
  *   c. the close handshake moved to hikari's runtime hook too: `AppShell`
  *      imports `useCloseRequest`, and no legacy close-event listener / ack
@@ -43,12 +44,55 @@ const WEBUI_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 /** packages/webui/src */
 const SRC_DIR = join(WEBUI_DIR, "src");
 
-/** The exact copy the wrapper hands the published plugin. */
+/** The exact copy options the wrapper hands the published plugin. */
 const WOWSP_COPY = {
   message:
     "WoWSP did not finish loading. The app window may have recovered from a crash; reloading usually fixes it.",
   retry: "Reload",
+  storageKey: "wowsp-ui-locale",
+  locales: {
+    "en-US": {
+      message:
+        "WoWSP did not finish loading. The app window may have recovered from a crash; reloading usually fixes it.",
+      retry: "Reload",
+    },
+    "zh-CN": { message: "WoWSP 未能完成加载。应用窗口可能已从崩溃中恢复，重新加载通常可以解决问题。", retry: "重新加载" },
+    "zh-TW": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+    "ja-JP": {
+      message: "WoWSP の読み込みが完了しませんでした。アプリのウィンドウはクラッシュから復帰した可能性があります。再読み込みすると通常は解決します。",
+      retry: "再読み込み",
+    },
+    "ko-KR": {
+      message: "WoWSP가 로딩을 완료하지 못했습니다. 앱 창이 비정상 종료에서 복구되었을 수 있습니다. 새로 고침하면 대개 해결됩니다.",
+      retry: "새로고침",
+    },
+    "ru-RU": {
+      message:
+        "WoWSP не завершил загрузку. Окно приложения, возможно, восстановилось после сбоя; перезагрузка обычно устраняет проблему.",
+      retry: "Перезагрузить",
+    },
+    "fr-FR": {
+      message:
+        "WoWSP n'a pas terminé de se charger. La fenêtre de l'application s'est peut-être rétablie après un plantage ; recharger corrige généralement le problème.",
+      retry: "Recharger",
+    },
+    "es-ES": {
+      message:
+        "WoWSP no terminó de cargarse. Es posible que la ventana de la aplicación se haya recuperado de un fallo; recargar suele solucionarlo.",
+      retry: "Recargar",
+    },
+    // Navigator aliases — the plugin strips candidate subtags only down to
+    // the primary language, so the Han/region variants that should NOT fall
+    // through to the first zh row are pinned explicitly:
+    "zh-Hans": { message: "WoWSP 未能完成加载。应用窗口可能已从崩溃中恢复，重新加载通常可以解决问题。", retry: "重新加载" },
+    "zh-Hant": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+    "zh-HK": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+    "zh-MO": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+  },
 };
+
+/** The top-level plugin option naming the shell's OS-prefs global. */
+const WOWSP_OS_PREFS_GLOBAL = "__WOWSP_OS_PREFS__";
 
 /**
  * The retired handshake strings, assembled from fragments so THIS file — the
@@ -64,6 +108,7 @@ function publishedScript(): string {
   return bootRecoveryScript({
     htmlFiles: ["index.html"],
     copy: WOWSP_COPY,
+    osPrefsGlobal: WOWSP_OS_PREFS_GLOBAL,
   });
 }
 
@@ -195,6 +240,10 @@ describe("boot recovery wiring — published delegation", () => {
     // Host copy.
     expect(script).toContain(JSON.stringify(WOWSP_COPY.message));
     expect(script).toContain(JSON.stringify(WOWSP_COPY.retry));
+    // Locale sources travel verbatim too (both names are ASCII): the panel
+    // consults the saved UI locale first, then the shell OS prefs global.
+    expect(script).toContain(JSON.stringify(WOWSP_COPY.storageKey));
+    expect(script).toContain(JSON.stringify(WOWSP_OS_PREFS_GLOBAL));
   });
 
   it("stays deterministic, ASCII-only and safe to inline", () => {
@@ -204,7 +253,8 @@ describe("boot recovery wiring — published delegation", () => {
     expect(first.startsWith("(function () {")).toBe(true);
     expect(first.endsWith("})();")).toBe(true);
     // ASCII: the script runs before <meta charset> resolves and is byte-hashed
-    // into the Tauri CSP at compile time.
+    // into the Tauri CSP at compile time. The CJK locale table arrives as
+    // \\uXXXX escapes baked by the published plugin, never as raw bytes.
     const foreign = [...first].filter((char) => {
       const code = char.charCodeAt(0);
       return code !== 9 && code !== 10 && (code < 32 || code > 126);
@@ -225,8 +275,69 @@ describe("boot recovery wiring — published delegation", () => {
     expect(wrapper).not.toContain("function isCorruptedAppOrigin");
     expect(wrapper).not.toContain("FAILURE_PANEL_CSS");
     expect(wrapper).not.toContain("location.replace");
-    // Thin: the wrapper is config + doc, not a reimplementation.
-    expect(wrapper.length).toBeLessThan(6000);
+    // The wrapper only ever CONFIGURES the published plugin — the host-side
+    // wiring needles below pin the two WoWSP-specific option names.
+    expect(wrapper).toContain('storageKey: "wowsp-ui-locale"');
+    expect(wrapper).toContain('osPrefsGlobal: "__WOWSP_OS_PREFS__"');
+    // Thin: the wrapper is config + doc, not a reimplementation. The bound
+    // grew 6000 → 16000 with the host translation TABLE (hikari #1056) — the
+    // growth is host translation DATA, not reimplementation.
+    expect(wrapper.length).toBeLessThan(16000);
+  });
+});
+
+// ── (b′) the wrapper's host locale table ───────────────────────────────────
+
+/**
+ * The eight UI locale codes, replicated from `src/i18n/index.ts`
+ * (SUPPORTED_LOCALES) instead of imported: this suite runs in the node vitest
+ * environment, and importing the i18n module would drag the vue-i18n +
+ * `import.meta.glob` runtime in with it. Keep the list in sync — the
+ * coverage assertion below is the consistency pin between the two tables.
+ */
+const SUPPORTED_UI_LOCALES = [
+  "en-US",
+  "zh-CN",
+  "zh-TW",
+  "ja-JP",
+  "ko-KR",
+  "ru-RU",
+  "fr-FR",
+  "es-ES",
+] as const;
+
+describe("boot recovery wiring — host locale table", () => {
+  it("covers every SUPPORTED_LOCALES entry (src/i18n/index.ts)", () => {
+    for (const tag of SUPPORTED_UI_LOCALES) {
+      expect(WOWSP_COPY.locales[tag], `${tag} missing from the panel table`).toBeDefined();
+    }
+  });
+
+  it("pins the zh script/region aliases a navigator can emit", () => {
+    for (const tag of ["zh-Hans", "zh-Hant", "zh-HK", "zh-MO"] as const) {
+      expect(WOWSP_COPY.locales[tag], `${tag} alias missing from the panel table`).toBeDefined();
+    }
+    // Same script ⇒ same copy: the alias rows must not drift from their
+    // canonical zh-CN / zh-TW entries.
+    expect(WOWSP_COPY.locales["zh-Hans"]).toEqual(WOWSP_COPY.locales["zh-CN"]);
+    expect(WOWSP_COPY.locales["zh-Hant"]).toEqual(WOWSP_COPY.locales["zh-TW"]);
+    expect(WOWSP_COPY.locales["zh-HK"]).toEqual(WOWSP_COPY.locales["zh-TW"]);
+    expect(WOWSP_COPY.locales["zh-MO"]).toEqual(WOWSP_COPY.locales["zh-TW"]);
+  });
+
+  it("lists zh-CN before zh-TW (primary-subtag tie-break)", () => {
+    const keys = Object.keys(WOWSP_COPY.locales);
+    const cn = keys.indexOf("zh-CN");
+    const tw = keys.indexOf("zh-TW");
+    expect(cn, "zh-CN must be a table row").toBeGreaterThanOrEqual(0);
+    expect(tw, "zh-CN must precede zh-TW so zh-* ties resolve to it").toBeGreaterThan(cn);
+  });
+
+  it("reads the saved UI locale and shell OS prefs under WoWSP's names", () => {
+    // The localStorage key src/i18n/useLanguage.ts reads and writes…
+    expect(WOWSP_COPY.storageKey).toBe("wowsp-ui-locale");
+    // …and the global packages/app/tauri/src/os_prefs.rs seeds pre-load.
+    expect(WOWSP_OS_PREFS_GLOBAL).toBe("__WOWSP_OS_PREFS__");
   });
 });
 
