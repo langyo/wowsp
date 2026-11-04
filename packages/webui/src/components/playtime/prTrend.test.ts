@@ -1,3 +1,13 @@
+/**
+ * The chart geometry cases (the retired prTrendLayout describe) left with
+ * the hand-drawn SVG: PrTrendChart now renders through hikari's
+ * HkTrendChart (its wowsp-migration extras — the stepped 250-multiple
+ * y domain, the tier guides, the axis/tick text and the clearance rule —
+ * are pinned by hikari's own trendGeometry.test.ts, and the mounted
+ * contract lives in PrTrendChart.test.tsx). This file keeps pinning the
+ * DATA derivation: the PR formula, the interval deltas, the catalog and
+ * the range window.
+ */
 import { describe, expect, it } from "vitest";
 
 import type { ExpectedPrEntry, ShipStatsHistoryPoint } from "@/api";
@@ -6,11 +16,8 @@ import {
   expectedPrFromTotals,
   expectedPrMap,
   filterIntervalsByRange,
-  PR_TREND_AXIS_TIER_CLEARANCE,
-  PR_TREND_FRAME,
   prOfInterval,
   prTrendIntervals,
-  prTrendLayout,
   prTrendShipCatalog,
 } from "./prTrend";
 
@@ -228,110 +235,5 @@ describe("filterIntervalsByRange", () => {
     // Both bounds required — an unfinished pick answers an empty series
     // rather than an unfiltered one.
     expect(filterIntervalsByRange(ivs, { key: "custom", fromSec: 9 * DAY, toSec: null }, NOW)).toEqual([]);
-  });
-});
-
-describe("prTrendLayout", () => {
-  it("maps points into the frame and pads the y domain to 250s", () => {
-    const l = prTrendLayout([
-      { t: 0, pr: 1000 },
-      { t: 1000, pr: 1500 },
-    ]);
-    expect(l.width).toBe(640);
-    // Range [1000,1500] padded by 125 each side → [875,1625] → 250-multiples
-    // [750,1750], span 1000 ≥ 500 stands.
-    expect(l.yMin).toBe(750);
-    expect(l.yMax).toBe(1750);
-    // First point at the left pad, last at the right edge; pr grows upward.
-    expect(l.vertices[0].x).toBe(l.sidePad);
-    expect(l.vertices[1].x).toBe(l.width - l.sidePad);
-    expect(l.vertices[1].y).toBeLessThan(l.vertices[0].y);
-    expect(l.path).toContain("M");
-    // Tier guides inside the domain only.
-    expect(l.guides.map((g) => g.pr)).toEqual([1350, 1750]);
-    // The left gutter is wide enough for the end-anchored tier names.
-    expect(PR_TREND_FRAME.sidePad).toBeGreaterThanOrEqual(60);
-    // Domain rows: floor 750@194, mid 1250@104 (18px from the 1350 guide —
-    // just past the 9px clearance, so its number survives), ceiling
-    // 1750@14 — the 1750 guide sits exactly on it, so the tier name claims
-    // the gutter and the ceiling number steps aside (gridline still draws).
-    expect(l.axis).toEqual([
-      { pr: 750, y: 194, label: true },
-      { pr: 1250, y: 104, label: true },
-      { pr: 1750, y: 14, label: false },
-    ]);
-    // Ticks cap at the point count and span the time range.
-    expect(l.xTicks).toHaveLength(2);
-    expect(l.xTicks[0].t).toBe(0);
-    expect(l.xTicks[1].t).toBe(1000);
-    // A longer series earns the 5-tick scale.
-    const many = prTrendLayout(
-      Array.from({ length: 12 }, (_, i) => ({ t: i * 100, pr: 1000 + i * 10 })),
-    );
-    expect(many.xTicks).toHaveLength(5);
-    expect(many.xTicks[0].t).toBe(0);
-    expect(many.xTicks[4].t).toBe(1100);
-  });
-
-  it("keeps a minimum y span of 500 for flat series and centers one point", () => {
-    const flat = prTrendLayout([
-      { t: 0, pr: 1200 },
-      { t: 10, pr: 1200 },
-    ]);
-    expect(flat.yMax - flat.yMin).toBeGreaterThanOrEqual(500);
-    expect(flat.yMin).toBe(1000);
-    expect(flat.yMax).toBe(1500);
-    const single = prTrendLayout([{ t: 5, pr: 1200 }]);
-    expect(single.vertices[0].x).toBe(single.sidePad + (single.width - 2 * single.sidePad) / 2);
-    expect(single.path).toBe("");
-    expect(single.xTicks).toHaveLength(1);
-  });
-
-  it("renders an empty frame for an empty series (no 1970 ticks)", () => {
-    // The section keeps the chart frame standing when a filter matches
-    // nothing: the layout must degrade to gridlines only.
-    const l = prTrendLayout([]);
-    expect(l.vertices).toEqual([]);
-    expect(l.path).toBe("");
-    expect(l.yMin).toBe(0);
-    expect(l.yMax).toBe(1250);
-    expect(l.xTicks).toEqual([]);
-    expect(l.guides.map((g) => g.pr)).toEqual([750]);
-    // The lone 750 guide (@86) clears every domain row (18px from the mid
-    // @104), so all three numbers keep their gutter.
-    expect(l.axis.map((a) => [a.pr, a.label])).toEqual([
-      [0, true],
-      [625, true],
-      [1250, true],
-    ]);
-  });
-
-  it("drops a domain number that collides with a tier label's row", () => {
-    // pr 650/800 → domain [500, 1000]: the 750 guide lands exactly on the
-    // mid row (@104), so the mid number gives way to the tierBelowAvg name
-    // while floor and ceiling keep theirs. The rule is >= clearance (9px),
-    // decided in the layout — the template renders whatever survives.
-    const l = prTrendLayout([
-      { t: 0, pr: 650 },
-      { t: 10, pr: 800 },
-    ]);
-    expect(l.yMin).toBe(500);
-    expect(l.yMax).toBe(1000);
-    expect(l.guides.map((g) => g.pr)).toEqual([750]);
-    expect(PR_TREND_AXIS_TIER_CLEARANCE).toBeGreaterThanOrEqual(8);
-    expect(l.axis).toEqual([
-      { pr: 500, y: 194, label: true },
-      { pr: 750, y: 104, label: false },
-      { pr: 1000, y: 14, label: true },
-    ]);
-  });
-
-  it("clamps the y floor at zero", () => {
-    const l = prTrendLayout([
-      { t: 0, pr: 100 },
-      { t: 10, pr: 200 },
-    ]);
-    expect(l.yMin).toBe(0);
-    expect(l.yMax).toBe(500);
   });
 });
