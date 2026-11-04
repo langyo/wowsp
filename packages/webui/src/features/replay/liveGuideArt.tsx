@@ -130,8 +130,9 @@ export const GatewayLinkArt = defineComponent({
         <path class="live-guide-art__ln-muted-thin" d="M20 37 H38" />
         <path class="live-guide-art__ln-muted-thin" d="M20 44 H40" />
         <path class="live-guide-art__ln-accent-thin" d="M46 46 l3.5 -8 2.5 5 3 -7" />
-        <path class="live-guide-art__ln-muted" d="M35 58 v7" />
-        <path class="live-guide-art__ln-muted" d="M26 65 H44" />
+        {/* Stand + base share the screen's centerline (rect x 12..66 → cx 39). */}
+        <path class="live-guide-art__ln-muted" d="M39 58 v7" />
+        <path class="live-guide-art__ln-muted" d="M30 65 H48" />
         {/* The link: a dashed line that marches toward the phone in flow. */}
         <path class="gw-link-art__link live-guide-art__ln-muted-thin" d="M68 44 H90" />
         {/* The packet riding the link. */}
