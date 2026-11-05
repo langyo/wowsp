@@ -4,6 +4,15 @@ description = "World of WarShip Panel — replay review & in-game overlay"
 cname = "wowsp.langyo.xyz"
 favicon = "./logo.webp"
 title_template = "{title} — World of WarShip Panel"
+# Top-bar menu entries (the docs site's top menu bar). Labels render
+# verbatim; keep them locale-neutral until the site ships per-locale menus.
+[[site.menu]]
+label = "GitHub"
+href = "https://github.com/langyo/wowsp"
+
+[[site.menu]]
+label = "Download"
+href = "https://wowsp.langyo.xyz/download"
 
 [languages]
 default = "en"
