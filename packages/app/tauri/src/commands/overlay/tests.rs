@@ -599,6 +599,7 @@ fn watch_commands_apply_in_fifo_order_to_the_fsm() {
             rect: game,
             row_centers: vec![1, 2, 3],
             team_split: 0.5,
+            text_grounded: true,
         },
         team_sizes: (5, 5),
         profile: overlay_detect::DetectProfile::WG,

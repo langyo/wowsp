@@ -19,7 +19,7 @@ const BRICK: (u8, u8, u8) = (167, 121, 114);
 /// Geometry mirrors the real client (~47% × table around 22% from top).
 /// Returns the frame plus the table rect in physical px.
 fn synth_header_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
-    synth_table(w, h, rows, 0, 0.92)
+    synth_table(w, h, rows, 0, 0.92, rows)
 }
 
 /// [`synth_header_table`] with the whole table drawn `x_shift` physical
@@ -27,18 +27,21 @@ fn synth_header_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) 
 /// horizontal-slide scenario the band verify's counter-evidence
 /// columns exist to catch.
 fn synth_header_table_at(w: u32, h: u32, rows: usize, x_shift: i32) -> (Vec<u8>, Rect, Vec<f32>) {
-    synth_table(w, h, rows, x_shift, 0.92)
+    synth_table(w, h, rows, x_shift, 0.92, rows)
 }
 
 /// [`synth_header_table`] with an explicit row-pitch factor (the ratio
 /// measured across real clients spans 0.89–0.95; the fit tests draw
-/// the extremes either side of the 0.92 prior).
+/// the extremes either side of the 0.92 prior) and a text-render count:
+/// only the first `text_rows` player rows carry name text (the battle-
+/// start fade-in shape when smaller than `rows`; the bars always land).
 fn synth_table(
     w: u32,
     h: u32,
     rows: usize,
     x_shift: i32,
     pitch_factor: f32,
+    text_rows: usize,
 ) -> (Vec<u8>, Rect, Vec<f32>) {
     let mut img = vec![0u8; (w * h * 4) as usize];
     let mut noise = Noise(0x1234_5678);
@@ -91,6 +94,9 @@ fn synth_table(
     for k in 0..rows {
         let yc = ty as f32 + bar_h as f32 + pitch as f32 * (k as f32 + 0.5);
         centers.push(yc);
+        if k >= text_rows {
+            continue;
+        }
         let y0 = yc as u32;
         for y in y0..(y0 + 8).min(ty + bar_h + pitch * (k as u32 + 1)) {
             for x in tx + 8..tx + 8 + text_w {
@@ -142,7 +148,7 @@ fn detect_failures_are_recorded_and_cleared() {
     assert!(!header_bars_present(&blank, w, h));
     await_label("no_header_bars");
     // A real table frame detects and CLEARS the slot.
-    let (img, _rect, _centers) = synth_table(400, 300, 6, 0, 0.92);
+    let (img, _rect, _centers) = synth_table(400, 300, 6, 0, 0.92, 6);
     assert!(detect_roster_with_band(&img, 400, 300, (6, 6), &DetectProfile::WG).is_some());
     assert!(
         detect_failure_snapshot().is_none(),
@@ -201,6 +207,7 @@ fn verify_row_grid_accepts_aligned_and_rejects_shifted_grid() {
         },
         row_centers: centers.clone(),
         team_split: 0.5,
+        text_grounded: true,
     };
     assert!(
         verify_row_grid(&img, w, h, &roster),
@@ -212,6 +219,7 @@ fn verify_row_grid_accepts_aligned_and_rejects_shifted_grid() {
         rect: roster.rect.clone(),
         row_centers: centers.iter().map(|&c| c + 12).collect(),
         team_split: 0.5,
+        text_grounded: true,
     };
     assert!(
         !verify_row_grid(&img, w, h, &shifted),
@@ -222,6 +230,7 @@ fn verify_row_grid_accepts_aligned_and_rejects_shifted_grid() {
         rect: roster.rect,
         row_centers: Vec::new(),
         team_split: 0.5,
+        text_grounded: true,
     };
     assert!(!verify_row_grid(&img, w, h, &empty));
 }
@@ -1569,6 +1578,74 @@ fn strip_luma_separates_alive_from_sunk() {
     assert_eq!(strip_max_luma(&[]), 0.0);
 }
 
+/// [`synth_table`] with only the first `text_rows` player rows' names
+/// rendered — the battle-start fade-in shape (header bars land early, the
+/// row text streams in below). Drives the text-grounding verdict.
+fn synth_faded_table(w: u32, h: u32, rows: usize, text_rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
+    synth_table(w, h, rows, 0, 0.92, text_rows.min(rows))
+}
+
+#[test]
+fn detect_marks_fade_in_frame_not_text_grounded() {
+    // Feedback 2026-11-05: a battle-start frame with the header bars but
+    // sparse row text used to count as a full detection — its
+    // prior-pitch grid got pinned, cached and STORED, and the slightly-off
+    // pitch drifted the table tail out over the following battles. Such a
+    // frame must still detect (the hint may use its position) but report
+    // `text_grounded == false` so the watcher refuses to trust it.
+    let (img, _rect, _centers) = synth_faded_table(3072, 1920, 12, 1);
+    let (_, det) = detect_roster_with_band(&img, 3072, 1920, (12, 12), &DetectProfile::WG)
+        .expect("header bars are fully rendered — detection succeeds");
+    assert!(
+        !det.text_grounded,
+        "a frame with one rendered row must not be text-grounded"
+    );
+    // The fully rendered table stays grounded — the guard must not reject
+    // healthy frames.
+    let (img, _rect, _centers) = synth_header_table(3072, 1920, 12);
+    let (_, det) = detect_roster_with_band(&img, 3072, 1920, (12, 12), &DetectProfile::WG)
+        .expect("full synth table detects");
+    assert!(det.text_grounded, "a fully rendered table is text-grounded");
+}
+
+#[test]
+fn fit_row_grid_reports_text_grounding() {
+    use super::roster::fit_row_grid;
+    // Grid prior: first row 110, pitch 20, six rows. A profile with four
+    // clean bands a hair off the prior grid → slope-fitted, grounded.
+    let mut profile = vec![0u32; 200];
+    for &(s, e) in &[(6usize, 13usize), (26, 33), (46, 53), (66, 73)] {
+        for v in &mut profile[s..e] {
+            *v = 100;
+        }
+    }
+    let (centers, pitch, grounded) = fit_row_grid(6, &profile, 100, 110.0, 20.0);
+    assert!(grounded, "four fitted bands ground the grid");
+    assert!((pitch - 20.0).abs() < 0.5, "measured pitch ≈ 20");
+    assert_eq!(centers.len(), 6);
+
+    // A single band (fade-in tail) degrades to the prior verbatim and
+    // reports UNGROUNDED.
+    let mut profile = vec![0u32; 200];
+    for v in &mut profile[6..13] {
+        *v = 100;
+    }
+    let (centers, pitch, grounded) = fit_row_grid(6, &profile, 100, 110.0, 20.0);
+    assert!(!grounded, "one band is not row-text evidence");
+    assert!((pitch - 20.0).abs() < f32::EPSILON, "prior pitch untouched");
+    assert_eq!(centers[0], 110.0, "prior grid verbatim");
+
+    // No text at all (bars only): ungrounded prior.
+    let profile = vec![0u32; 200];
+    let (_, _, grounded) = fit_row_grid(6, &profile, 100, 110.0, 20.0);
+    assert!(!grounded, "an empty profile cannot ground anything");
+
+    // Zero rows (green-only PVE enemy side): vacuously grounded.
+    let (centers, _, grounded) = fit_row_grid(0, &profile, 100, 110.0, 20.0);
+    assert!(grounded, "no rows → nothing to ground");
+    assert!(centers.is_empty());
+}
+
 /// Hand-built anchor for the revalidation move-decision tests (bypasses
 /// the detector; grid pitch 42 in the full-grid fixtures).
 fn anchor_with(rows: &[i32], detected: bool) -> wowsp_tauri_shared::OverlayAnchor {
@@ -1695,6 +1772,30 @@ fn revalidate_degenerate_single_row_grids_fall_back_to_roster_height() {
     assert!(!anchor_meaningfully_moved(&pinned, &near), "dy 300 ≤ 310");
     let far = anchor_with(&[500], true);
     assert!(anchor_meaningfully_moved(&pinned, &far), "dy 400 > 310");
+}
+
+#[test]
+fn revalidate_replaces_pin_on_tail_pitch_drift() {
+    // Feedback 2026-11-05: a wrong PITCH keeps row 0 exactly put while the
+    // tail slides out — the row-0 test is structurally blind to it, and
+    // the drift that poisoned this player's battles sat at ~31 px over 24
+    // rows (a full row at the bottom). The LAST row must trip the same
+    // half-pitch threshold the first row does.
+    let pinned = anchor_with(&[50, 92, 134, 176, 218, 260], true);
+    // Fresh pitch 37 vs pinned 42: row 0 identical, tail 25 px up — well
+    // past the 21 px threshold.
+    let drifted = anchor_with(&[50, 87, 124, 161, 198, 235], true);
+    assert!(
+        anchor_meaningfully_moved(&pinned, &drifted),
+        "tail 25 px > 21 with row 0 pinned must replace"
+    );
+    // Pitch jitter of ±1 px per row accumulates to 5 px at the tail —
+    // under the threshold, the pin holds (the anti-wander guarantee).
+    let jitter = anchor_with(&[50, 91, 132, 173, 214, 255], true);
+    assert!(
+        !anchor_meaningfully_moved(&pinned, &jitter),
+        "tail 5 px < 21 is jitter"
+    );
 }
 
 #[test]
@@ -1851,7 +1952,7 @@ fn rebuild_roster_from_band_resizes_the_grid_without_a_rescan() {
 #[test]
 fn rebuild_roster_from_band_keeps_the_measured_pitch() {
     let (w, h) = (2560u32, 1440u32);
-    let (img, _, _) = synth_table(w, h, 12, 0, 0.97);
+    let (img, _, _) = synth_table(w, h, 12, 0, 0.97, 12);
     let (band, det) =
         detect_roster_with_band(&img, w, h, (12, 12), &DetectProfile::WG).expect("detect");
     let measured = measured_pitch_from_centers(&det.row_centers, 12);
@@ -1879,7 +1980,7 @@ fn rebuild_roster_from_band_keeps_the_measured_pitch() {
 fn adaptive_pitch_tracks_the_true_row_pitch() {
     for factor in [0.86f32, 0.97f32] {
         let (w, h) = (1280u32, 720u32);
-        let (img, _, centers) = synth_table(w, h, 12, 0, factor);
+        let (img, _, centers) = synth_table(w, h, 12, 0, factor, 12);
         let det = detect_roster(&img, w, h, (12, 12), &DetectProfile::WG)
             .expect("table must be detected");
         assert_eq!(det.row_centers.len(), 24);
@@ -1909,7 +2010,7 @@ fn native_refinement_pins_edges_beyond_the_scale_grid() {
         off_grid += 1;
     }
     assert_ne!(off_grid.rem_euclid(scale), 0, "fixture must be off-grid");
-    let (img, rect, centers) = synth_table(w, h, 6, off_grid - tx, 0.92);
+    let (img, rect, centers) = synth_table(w, h, 6, off_grid - tx, 0.92, 6);
     assert_eq!(rect.x, off_grid);
     let det =
         detect_roster(&img, w, h, (6, 6), &DetectProfile::WG).expect("table must be detected");
@@ -2717,7 +2818,7 @@ fn sink_pipeline_replay_never_panics() {
     for &(w, h) in &sizes {
         for &(allies, enemies) in &shapes {
             let rows = allies.max(enemies).clamp(1, 12);
-            let (img, _table, _truth) = synth_table(w, h, rows, 0, 0.92);
+            let (img, _table, _truth) = synth_table(w, h, rows, 0, 0.92, rows);
             for profile in [
                 DetectProfile::WG,
                 DetectProfile::WG_NEXT,
