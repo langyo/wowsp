@@ -306,12 +306,20 @@ fn capture_roster_span(a: &wowsp_tauri_shared::OverlayAnchor) -> (i32, i32) {
 /// Whether a fresh detection of the SAME battle relocated the table enough to
 /// justify replacing the pinned anchor. A fallback anchor
 /// (`table_detected == false`) never replaces a confirmed pin, and
-/// degenerate grids never count as movement. Three move shapes count:
+/// degenerate grids never count as movement. Four move shapes count:
 ///
 /// - VERTICAL: the first row moved by more than half a row pitch (see
 ///   [`ANCHOR_MOVE_HALF_PITCH`]) — the panel moving as a WHOLE when HUD
 ///   phases change (the countdown "waiting players" layout sits ~190 px ≈
 ///   3.7 row pitches above the combat layout at 3072x1920), sunk re-sorts.
+/// - VERTICAL TAIL: the LAST row moved beyond the same threshold while the
+///   first did not — a grid whose PITCH is wrong (a top-aligned row 0 with
+///   a slightly-too-small pitch keeps the head put while the tail slides
+///   out; the cumulative error over the grid IS the evidence). Seen live
+///   (feedback 2026-11-05): fade-in detections stored pitches a few
+///   percent small, so every battle after the first drifted ~31 px ≈ a
+///   full row at the bottom while row 0 matched — invisible to the row-0
+///   test, certified by the stable-press votes.
 /// - HORIZONTAL: the table's left or right edge (capture coordinates, see
 ///   [`capture_roster_span`]) moved beyond the same half-pitch threshold —
 ///   the layout switch the row test is blind to, because the re-based rows
@@ -341,6 +349,22 @@ pub(crate) fn anchor_meaningfully_moved(
     let threshold = pitch * ANCHOR_MOVE_HALF_PITCH;
     let dy = (fresh.row_centers[0] - pinned.row_centers[0]).abs() as f32;
     if dy > threshold {
+        return true;
+    }
+    // Tail test, same-shape grids only: comparing the last row of grids
+    // with DIFFERENT row counts would contrast unrelated rows (a 1-row
+    // fresh grid against a 3-row pin's bottom). Shape changes void the
+    // pin through their own paths (battle change, roster heal); the tail
+    // test exists for the equal-count pitch drift.
+    let dy_last = if pinned.row_centers.len() == fresh.row_centers.len() {
+        match (pinned.row_centers.last(), fresh.row_centers.last()) {
+            (Some(&p), Some(&f)) => (f - p).abs() as f32,
+            _ => 0.0,
+        }
+    } else {
+        0.0
+    };
+    if dy_last > threshold {
         return true;
     }
     let (pinned_l, pinned_r) = capture_roster_span(pinned);

@@ -24,6 +24,19 @@ pub(crate) struct DetectedRoster {
     /// nickname column lives — and the frontend never reads this field
     /// anyway (rows map by the Tab sort key + the row centers).
     pub team_split: f32,
+    /// Whether the row grid was GROUNDED in this frame's own row text (each
+    /// populated side fitted at least two white-text bands — see
+    /// [`fit_row_grid`]). `false` marks a detection whose grid rests on the
+    /// header-derived PRIOR pitch — returned verbatim, or phase-shifted
+    /// after the measured pitch was rejected: a fade-in/countdown frame
+    /// whose rows are not rendered yet, or an all-dim table. The geometry is
+    /// plausible but unproven, so the Tab watcher refuses to pin, cache or
+    /// persist such detections (feedback 2026-11-05: battle-start fade
+    /// frames kept "succeeding" with a slightly-too-small pitch, poisoning
+    /// the calibration store ratchet-style while the chips slid a full row
+    /// out at the bottom). Cache rebuilds and store round-trips leave the
+    /// flag `false` — it describes THIS detection's evidence only.
+    pub text_grounded: bool,
 }
 
 /// Detect the team-list panel and its row grid in an RGBA frame.
@@ -85,7 +98,9 @@ pub(crate) fn detect_roster_with_band(
     // (measured 52/55 ≈ 0.95 and 48/54 ≈ 0.89 — bars and rows share the
     // same UI scale); each side's grid starts half a pitch under the shared
     // header. White-text bands only fine-tune the PHASE of each side's
-    // grid independently (± pitch/3) — they never gate the result.
+    // grid independently (± pitch/3) — they never gate the RESULT (the
+    // Option stays Some either way), but their presence does gate the
+    // detection's TRUST via `text_grounded` (see `fit_row_grid`).
     // White-text density profiles over the generous window below the header,
     // one per side — used ONLY for the per-side phase refinement below. A
     // GREEN-ONLY (single-team PVE) band has no right half: its enemy
@@ -129,14 +144,15 @@ pub(crate) fn detect_roster_with_band(
     } else {
         rows_wanted(expected_enemies)
     };
-    let (centers_l, pitch_l) = fit_row_grid(
+    let (centers_l, pitch_l, grounded_l) = fit_row_grid(
         rows_wanted(expected_allies),
         &profile_l,
         prof_top,
         first,
         pitch,
     );
-    let (centers_r, pitch_r) = fit_row_grid(enemies_wanted, &profile_r, prof_top, first, pitch);
+    let (centers_r, pitch_r, grounded_r) =
+        fit_row_grid(enemies_wanted, &profile_r, prof_top, first, pitch);
     let mut centers = centers_l;
     centers.extend(centers_r);
 
@@ -149,10 +165,13 @@ pub(crate) fn detect_roster_with_band(
     // Success clears the diagnostics slot (H-2): a stale refusal reason
     // must not outlive the detection that overcame it.
     super::clear_detect_failure();
-    Some((
-        band,
-        refine_roster_native(rgba, width, height, &det, header_bottom_prior),
-    ))
+    // Grounding verdict set AFTER the native refinement (which clones the
+    // struct around): both populated sides must carry their own row-text
+    // evidence. An empty enemy side (green-only PVE band) fit zero rows on
+    // purpose — `fit_row_grid` reports it vacuously grounded.
+    let mut out = refine_roster_native(rgba, width, height, &det, header_bottom_prior);
+    out.text_grounded = grounded_l && grounded_r;
+    Some((band, out))
 }
 
 /// Resolve which WG strip layout a JUST-detected table uses: the classic
@@ -264,24 +283,36 @@ pub(crate) fn resolve_wg_strip_profile(
 ///
 /// Fewer than two bands (occlusion, all-sunk dim rows) degrades to the
 /// prior grid verbatim; two bands keep the corrected pitch but only shift
-/// the phase (the old refinement behavior). Returns the centers and the
-/// pitch actually used, both in working px.
+/// the phase (the old refinement behavior). Returns the centers, the
+/// pitch actually used (both in working px), and whether the grid is
+/// TEXT-GROUNDED — `true` only when the returned grid carries this
+/// profile's own text evidence: a slope-fitted multi-band grid, or a
+/// phase shift against a MEASURED (gap-median) pitch, or a side with no
+/// rows to ground. Prior-verbatim degradations — and offset shifts whose
+/// gap median was rejected, leaving the prior pitch in force — report
+/// `false`: the caller must not pin, cache or persist those (a fade-in
+/// frame's rows are not rendered yet, so the prior pitch is a guess that
+/// can be off by fractions of a row per row — feedback 2026-11-05).
 pub(crate) fn fit_row_grid(
     rows: usize,
     profile: &[u32],
     prof_top: usize,
     first0: f32,
     pitch0: f32,
-) -> (Vec<f32>, f32) {
+) -> (Vec<f32>, f32, bool) {
     let uniform = |first: f32, pitch: f32| -> Vec<f32> {
         (0..rows).map(|i| first + pitch * i as f32).collect()
     };
-    if rows == 0 || pitch0 <= 0.0 {
-        return (Vec::new(), pitch0);
+    if rows == 0 {
+        // No side to ground (green-only PVE bands force zero enemy rows).
+        return (Vec::new(), pitch0, true);
+    }
+    if pitch0 <= 0.0 {
+        return (Vec::new(), pitch0, false);
     }
     let prof_max = profile.iter().copied().max().unwrap_or(0);
     if prof_max == 0 {
-        return (uniform(first0, pitch0), pitch0);
+        return (uniform(first0, pitch0), pitch0, false);
     }
     // Text-band centers (working px), half-px resolution.
     let thr = prof_max as f32 * ROW_TEXT_FRACTION;
@@ -305,7 +336,7 @@ pub(crate) fn fit_row_grid(
     }
     flush(&mut band_start, profile.len(), &mut bands);
     if bands.len() < 2 {
-        return (uniform(first0, pitch0), pitch0);
+        return (uniform(first0, pitch0), pitch0, false);
     }
     // ── Step 1: pitch from consecutive band gaps ──────────────────────────
     let mut contributions: Vec<f32> = bands
@@ -319,8 +350,15 @@ pub(crate) fn fit_row_grid(
     contributions.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let mut pitch = contributions[contributions.len() / 2];
     let plausible = 0.80 * pitch0..=1.05 * pitch0;
+    // `true` when the gap median was rejected and the grid's pitch fell
+    // back to the header-height prior: the offsets below may still phase-
+    // align real bands, but the PITCH itself stays the unmeasured
+    // heuristic — such a grid is not text-grounded (a prior pitch can be
+    // off by ~6% per row, drifting the table tail by more than a row).
+    let mut pitch_clamped = false;
     if !plausible.contains(&pitch) {
         pitch = pitch0;
+        pitch_clamped = true;
     }
     // ── Step 2: origin by least squares over re-assigned bands ────────────
     let mut pairs: Vec<(f32, f32)> = bands
@@ -356,7 +394,7 @@ pub(crate) fn fit_row_grid(
             let fit_pitch = cov / var;
             let fit_first = bmean - fit_pitch * kmean;
             if plausible.contains(&fit_pitch) && (fit_first - first0).abs() <= pitch0 {
-                return (uniform(fit_first, fit_pitch), fit_pitch);
+                return (uniform(fit_first, fit_pitch), fit_pitch, true);
             }
         }
         // The slope fit misbehaved (stray-dominated sample): keep the
@@ -367,7 +405,7 @@ pub(crate) fn fit_row_grid(
             .collect();
         offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let shift = offsets[offsets.len() / 2];
-        return (uniform(first0 + shift, pitch), pitch);
+        return (uniform(first0 + shift, pitch), pitch, !pitch_clamped);
     }
     if pairs.len() == 2 {
         let mut offsets: Vec<f32> = pairs
@@ -376,9 +414,11 @@ pub(crate) fn fit_row_grid(
             .collect();
         offsets.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let shift = offsets[offsets.len() / 2];
-        return (uniform(first0 + shift, pitch), pitch);
+        return (uniform(first0 + shift, pitch), pitch, !pitch_clamped);
     }
-    (uniform(first0, pitch), pitch)
+    // Bands exist but none paired with the grid (strays only): the prior
+    // grid stands ungrounded.
+    (uniform(first0, pitch), pitch, false)
 }
 
 /// Pure geometry shared by the full detector and the cache rebuild: header
@@ -456,6 +496,9 @@ pub(crate) fn finish_roster(
             .map(|&c| (c * scale as f32).round() as i32)
             .collect(),
         team_split,
+        // The caller (a cache rebuild or the full detector's pre-refine
+        // stage) owns the grounding verdict; rebuilds never set it.
+        text_grounded: false,
     }
 }
 

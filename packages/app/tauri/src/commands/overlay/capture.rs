@@ -163,14 +163,19 @@ pub(super) fn compute_anchor(
             // THIS frame below, and nulling the stamp would re-arm the
             // forced revalidation on every tick — a capture+detect hot loop
             // on exactly this always-fail client.)
+            //
+            // NO `note_unstable` here: one table-bearing frame is NOT
+            // evidence the stored entry is wrong — at battle start the
+            // countdown/fade layout simply is not where the entry says YET
+            // (feedback 2026-11-05: this path fired on every battle start
+            // and systematically suspected the entry). The same-frame
+            // detection below settles it — a confident result replaces the
+            // entry wholesale, a faded one stores nothing.
             tracing::info!(
                 "header band verify missed but a table is on frame — roster geometry cache retired early"
             );
             fsm.geometry_cache = None;
             fsm.geometry_verify_fails = 0;
-            if let Some(k) = cal_key.as_ref() {
-                fsm.calibration.note_unstable(k);
-            }
             frame_carries_table = true;
         } else {
             verify_missed = true;
@@ -182,11 +187,12 @@ pub(super) fn compute_anchor(
         // the cache and the calibration vote it kept earning, then detect
         // on THIS frame (the band is on frame — `frame_carries_table`
         // lets the scene gate's scan run without re-proving the table).
+        // As with the early retire above, no `note_unstable`: a fade-in
+        // frame's rows are not rendered yet, which is exactly what the
+        // grid probe misses — the same-frame detection's grounding verdict
+        // decides what (if anything) gets stored.
         fsm.geometry_cache = None;
         fsm.geometry_verify_fails = 0;
-        if let Some(k) = cal_key.as_ref() {
-            fsm.calibration.note_unstable(k);
-        }
         frame_carries_table = true;
     }
     if verify_missed {
@@ -243,7 +249,7 @@ pub(super) fn compute_anchor(
         (det.rect, det.row_centers, det.team_split, true)
     } else {
         match overlay_detect::detect_roster_with_band(&rgba, w, h, team_sizes, &profile) {
-            Some((band, det)) => {
+            Some((band, det)) if det.text_grounded => {
                 // The strip layout resolves HERE, once per detection: the
                 // classic and rework WG tables share this header geometry,
                 // and every strip read (this frame's luma pass, the sink
@@ -252,6 +258,21 @@ pub(super) fn compute_anchor(
                     overlay_detect::resolve_wg_strip_profile(&rgba, w, h, band, &det, &profile);
                 fresh = Some((band, det.clone()));
                 (det.rect, det.row_centers, det.team_split, true)
+            },
+            Some((_band, det)) => {
+                // FADE-IN GUARD (feedback 2026-11-05): the header was
+                // found but the row grid rests on the header-derived
+                // prior pitch — the rows below are not rendered (or not lit)
+                // yet, so the pitch is a guess that can drift the table
+                // tail by a full row. Such a detection never pins chips,
+                // never fills the geometry cache and never touches the
+                // calibration store: the hint alone may use its position
+                // (the band IS real), and the next capture re-judges.
+                tracing::info!(
+                    rows = det.row_centers.len(),
+                    "table found but the row grid is not text-grounded (fade-in or dim rows) — hint only, nothing pinned or stored"
+                );
+                (det.rect, det.row_centers, det.team_split, false)
             },
             None => {
                 // Overlay review H-2: carry the recorded WHY into the

@@ -192,6 +192,9 @@ impl From<StoredRoster> for DetectedRoster {
             rect: r.rect,
             row_centers: r.row_centers,
             team_split: r.team_split,
+            // Grounding is per-frame detection evidence; a store
+            // round-trip carries none.
+            text_grounded: false,
         }
     }
 }
@@ -225,8 +228,12 @@ pub(super) struct AnchorEntry {
     pub suspect: bool,
     /// True when the entry was hand-drawn in the settings calibration
     /// editor (not measured by the detector). Manual entries start
-    /// certified; they are still subject to the same suspect retirement
-    /// every measured entry is.
+    /// certified and are WRITE-PROTECTED: the detector never overwrites,
+    /// re-shapes or suspects them (feedback 2026-11-05 — a hand-calibrated
+    /// entry was marked suspect by a battle-start fade frame and then
+    /// clobbered by the next automatic detection, so every battle after
+    /// the manual recalibration went crooked). Only the editor (or a new
+    /// manual draw) rewrites a manual entry.
     #[serde(default)]
     pub manual: bool,
 }
@@ -1012,6 +1019,24 @@ impl CalibrationCtx {
             return;
         }
         self.sync_with_disk();
+        // WRITE-PROTECTION for hand-drawn entries: the player positioned
+        // those rows by eye against the real table, so a detector
+        // measurement — which on fade-in frames carries a header-derived
+        // pitch the human eye would never confirm — must not silently
+        // replace them (feedback 2026-11-05: each manual recalibration
+        // aligned exactly one battle, the next battle's automatic
+        // detection overwrote it and the chips went crooked again).
+        if self
+            .store
+            .entry(key.class)
+            .is_some_and(|e| e.manual && entry_matches_geometry(e, key))
+        {
+            tracing::info!(
+                class = ?key.class,
+                "anchor calibration: manual entry kept — automatic detection not stored"
+            );
+            return;
+        }
         let entry = AnchorEntry {
             kind: key.kind,
             client_key: key.client_key.clone(),
@@ -1036,8 +1061,11 @@ impl CalibrationCtx {
     /// entry is kept but marked SUSPECT: it no longer seeds the geometry
     /// cache or certifies (both would re-buy the failed verifies), while
     /// its proportions remain available to the remap fallback — a
-    /// hand-drawn or historically measured layout is still the best
-    /// proportional prior when detection cannot run at all.
+    /// historically measured layout is still the best proportional prior
+    /// when detection cannot run at all. Manual entries are exempt: a
+    /// hand-drawn band misses verification on every battle-start fade or
+    /// HUD-phase frame (the table is not where the entry says YET), and
+    /// those transient misses must not retire the player's own geometry.
     pub(super) fn note_unstable(&mut self, key: &LiveKey) {
         if self.path.is_none() {
             return;
@@ -1046,7 +1074,7 @@ impl CalibrationCtx {
         let slot = self.store.entry_mut(key.class);
         if slot
             .as_ref()
-            .is_some_and(|e| entry_matches_geometry(e, key) && !e.suspect)
+            .is_some_and(|e| entry_matches_geometry(e, key) && !e.suspect && !e.manual)
         {
             let entry = slot.as_mut().expect("checked above");
             entry.suspect = true;
@@ -1066,7 +1094,9 @@ impl CalibrationCtx {
     /// row grid take the rebuilt shape, so the remap fallback's shape
     /// comparison and the settings list keep describing the battles
     /// actually played instead of the ones long gone. No-op on any identity
-    /// mismatch, a suspect entry, or an unchanged shape.
+    /// mismatch, a suspect entry, a MANUAL entry (write-protected — the
+    /// remap fallback re-spreads other shapes from its proportions
+    /// anyway), or an unchanged shape.
     pub(super) fn note_shape(
         &mut self,
         key: &LiveKey,
@@ -1083,6 +1113,7 @@ impl CalibrationCtx {
                 return;
             };
             if entry.suspect
+                || entry.manual
                 || !entry_matches_geometry(entry, key)
                 || entry.team_sizes == team_sizes
             {
@@ -1337,6 +1368,7 @@ mod tests {
             },
             row_centers: vec![90, 140, 190, 240],
             team_split: 0.5,
+            text_grounded: true,
         };
         ctx.note_shape(&k, (10, 10), &rebuilt);
         let e = ctx.store.entry(BattleClass::Pvp).unwrap();
@@ -1505,6 +1537,7 @@ mod tests {
             },
             row_centers: vec![80, 120],
             team_split: 1.0,
+            text_grounded: true,
         };
         ctx.note_geometry(
             &resized,
@@ -1555,6 +1588,101 @@ mod tests {
         // A repeated unstable note on an already-suspect entry is a no-op,
         // and so is one with no stored entry at all.
         ctx.note_unstable(&k);
+    }
+
+    #[test]
+    fn manual_entries_survive_automatic_measurements() {
+        // Feedback 2026-11-05: the player hand-calibrated the table, the
+        // first battle aligned, and the NEXT battle's automatic detection
+        // (a fade-in frame) silently overwrote the hand-drawn entry —
+        // every following battle went crooked until the next manual redraw.
+        // A manual entry is the player's own ground truth: automatic
+        // measurements must not touch it.
+        let k = key(BattleClass::Pvp);
+        let mut ctx = ctx_with_entry(&k, STABLE_PRESSES_TO_CERTIFY);
+        ctx.store
+            .entry_mut(BattleClass::Pvp)
+            .as_mut()
+            .unwrap()
+            .manual = true;
+        let band = HeaderBand {
+            top: 30,
+            height: 12,
+            green: (200, 400),
+            red: None,
+        };
+        let det = DetectedRoster {
+            rect: wowsp_tauri_shared::Rect {
+                x: 200,
+                y: 30,
+                width: 200,
+                height: 400,
+            },
+            row_centers: vec![80, 120],
+            team_split: 1.0,
+            text_grounded: true,
+        };
+        ctx.note_geometry(&k, band, det, (12, 12), StoredProfile::WgNext);
+        let e = ctx.store.entry(BattleClass::Pvp).unwrap();
+        assert!(e.manual, "the manual flag survives");
+        assert_eq!(
+            e.roster.row_centers,
+            vec![100, 150, 200],
+            "the hand-drawn grid survives"
+        );
+        assert_eq!(e.team_sizes, (7, 7), "the hand-drawn shape survives");
+        assert_eq!(e.stable_presses, STABLE_PRESSES_TO_CERTIFY);
+        // A fade-driven instability note must not retire it either…
+        ctx.note_unstable(&k);
+        assert!(!ctx.store.entry(BattleClass::Pvp).unwrap().suspect);
+        // …and neither must a shape rewrite.
+        ctx.note_shape(
+            &k,
+            (12, 12),
+            &DetectedRoster {
+                rect: wowsp_tauri_shared::Rect {
+                    x: 200,
+                    y: 30,
+                    width: 200,
+                    height: 400,
+                },
+                row_centers: vec![80, 120],
+                team_split: 1.0,
+                text_grounded: true,
+            },
+        );
+        assert_eq!(
+            ctx.store.entry(BattleClass::Pvp).unwrap().team_sizes,
+            (7, 7),
+            "manual entries are never re-shaped"
+        );
+        // The protection is identity-scoped: a DIFFERENT window mode may
+        // still measure and store its own entry (the manual one stays).
+        let mut resized = k.clone();
+        resized.size = (1920, 1080);
+        ctx.note_geometry(
+            &resized,
+            band,
+            DetectedRoster {
+                rect: wowsp_tauri_shared::Rect {
+                    x: 200,
+                    y: 30,
+                    width: 200,
+                    height: 400,
+                },
+                row_centers: vec![80, 120],
+                team_split: 1.0,
+                text_grounded: true,
+            },
+            (12, 12),
+            StoredProfile::WgNext,
+        );
+        assert_eq!(
+            ctx.store.entry(BattleClass::Pvp).unwrap().size,
+            (1920, 1080),
+            "a different window mode overwrites as before"
+        );
+        assert!(!ctx.store.entry(BattleClass::Pvp).unwrap().manual);
     }
 
     #[test]
@@ -1637,9 +1765,14 @@ mod tests {
         assert!(e.manual);
         assert!(e.certified(), "a hand-drawn entry starts certified");
         assert!(ctx.certified(&k));
-        // It still suspects like any measured entry when its band fails.
+        // Manual entries are WRITE-PROTECTED: a failed band verify (the
+        // battle-start fade, a HUD-phase move) must not retire the
+        // player's own geometry (feedback 2026-11-05).
         ctx.note_unstable(&k);
-        assert!(!ctx.certified(&k));
+        assert!(
+            ctx.certified(&k),
+            "an instability note never suspects a manual entry"
+        );
     }
 
     #[test]
