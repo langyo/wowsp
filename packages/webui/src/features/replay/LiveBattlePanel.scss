@@ -103,6 +103,18 @@
      mode pills, clock): no auto margin, it just follows the row gap. Its
      compact pill voice is MapNameTag.scss's own base — no override needed. */
 
+  /* The head's right-corner action cluster starts at the copy-shot pill
+     and runs to the locate-status pill — this auto margin pulls the whole
+     group to the right end of the line and keeps the info group (LIVE /
+     realm / mode / clock / map / stats chip) on the left edge. The rule
+     rode the pre-unification button class and died with it in the
+     2026-11-03 tag unification, right-packing the whole fitting line onto
+     justify-content: flex-end; restored on the class the migrated AppTag
+     pill carries. */
+  &__shot-btn {
+    margin-inline-start: auto;
+  }
+
   /* (the action pills' and locate pill's faces moved to AppTag —
      2026-11-03 tag unification) */
 

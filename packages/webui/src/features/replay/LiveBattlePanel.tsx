@@ -1647,10 +1647,14 @@ export default defineComponent({
             {/* Copy-share-shot: the roster as a watermarked PNG straight
                 onto the clipboard — the share path itself, no separate
                 post-battle window in between. Copy feedback rides the
-                app's toast surface. */}
+                app's toast surface. The live-battle__shot-btn class is
+                the head's info/action split hook — the sheet's auto
+                margin on it opens the gap between the info pills and
+                this action cluster. */}
             <AppTag
               interactive
               face="outline"
+              class="live-battle__shot-btn"
               disabled={shot.busy.value}
               onClick={() => void shot.copyShot()}
             >

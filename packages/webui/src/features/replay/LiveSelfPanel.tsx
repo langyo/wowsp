@@ -261,28 +261,35 @@ export default defineComponent({
                 {t("replay.live.selfSyncing")}
               </AppTag>
             )}
-            <button
+            {/* Copy-share-shot: the roster head's same AppTag pill (the
+                unification deleted this head's raw-button pill voice —
+                migrated onto the base here). The live-battle__shot-btn
+                class is the head's info/action split hook, mirroring the
+                roster panel's sheet rule. */}
+            <AppTag
+              interactive
+              face="outline"
               class="live-battle__shot-btn"
-              type="button"
               disabled={shot.busy.value || !m}
               onClick={() => void shot.copyShot()}
             >
               {shot.busy.value ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
               {t("share.copyShot")}
-            </button>
-            <button
-              class={[
-                "live-battle__mask-btn",
-                { "live-battle__mask-btn--on": masking.hideAll.value },
-              ]}
-              type="button"
+            </AppTag>
+            {/* Hide-all-nicknames toggle — the roster head's masking
+                button, dressed in the same pill voice (green while the
+                mask is on). */}
+            <AppTag
+              interactive
+              face="outline"
+              tone={masking.hideAll.value ? "success" : "default"}
               onClick={() => masking.toggleAll()}
             >
               {masking.hideAll.value ? <Eye size={13} /> : <EyeOff size={13} />}
               {masking.hideAll.value
                 ? t("replay.live.showNicks")
                 : t("replay.live.hideNicks")}
-            </button>
+            </AppTag>
           </div>
 
           {/* Body scroller: the hikari container owns the scrollbar
