@@ -1,10 +1,11 @@
 /**
  * Live self-stats panel (我的战绩) — the .live-self panel-shell additions
  * on top of the shared .live-battle shell (LiveBattlePanel.scss, imported
- * by the component too, supplies the head/pill/button vocabulary). The
- * report body's own classes live in SelfReportBody.scss (shared with the
- * replay results modal's self view); what remains here is the body's
- * hikari scroll region, the sync pill and the pending states.
+ * by the component too, supplies the head/pill vocabulary — the head's
+ * action pills themselves are AppTag faces). The report body's own
+ * classes live in SelfReportBody.scss (shared with the replay results
+ * modal's self view); what remains here is the body's hikari scroll
+ * region, the sync pill and the pending states.
  */
 .live-self {
   /* The scrollable body under the pinned head: the hikari container owns
