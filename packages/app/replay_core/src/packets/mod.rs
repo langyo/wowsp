@@ -743,7 +743,9 @@ mod payloads;
 mod pickle;
 mod property_tables;
 
-pub use build::{ShipConfigRaw, VehicleBuildRaw, decode_ship_config_blob};
+pub use build::{
+    ShipConfigRaw, VehicleBuildRaw, decode_ship_config_blob, decode_ship_config_blob_auto,
+};
 
 #[cfg(test)]
 mod tests;

@@ -3658,6 +3658,67 @@ fn decodes_enemy_vehicle_build_from_the_reference_capture() {
     assert_eq!(build.learned_skills[3], [4, 12, 17, 18, 20, 23, 24, 25]);
 }
 
+/// The 15.10 shipConfig layout against the real replay (skips without
+/// `WOWSP_TEST_REPLAY`): structural invariants only. The reference-capture test
+/// above pins its own roster join; event battles list the descriptor's ship ids
+/// in a DIFFERENT id space than the create state's `shipConfig.ship_params_id`,
+/// so this test asserts the LAYOUT (every vehicle decodes, sections stay in
+/// bounds) instead of the join.
+#[test]
+fn vehicle_builds_decode_on_the_real_15_10_capture() {
+    let Some(decoded) = decoded_real_replay() else {
+        corpus_skip("vehicle_builds_decode_on_the_real_15_10_capture");
+        return;
+    };
+    let Some(version) = decoded.version.as_deref().and_then(parse_version_key) else {
+        eprintln!("skipped: replay carries no parsable version");
+        return;
+    };
+    if version < (15, 10, 0) {
+        eprintln!("skipped: replay {version:?} predates the 15.10 shipConfig pin");
+        return;
+    }
+    assert!(
+        !decoded.vehicle_builds.is_empty(),
+        "the 15.10 layout must decode the capture's vehicle builds"
+    );
+    assert_eq!(
+        decoded.vehicle_builds.len(),
+        decoded.diagnostics.builds_decoded as usize,
+        "diagnostics must count every decoded build"
+    );
+    let vehicles: std::collections::HashSet<i32> = decoded
+        .kinds
+        .iter()
+        .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+        .map(|(eid, _)| *eid)
+        .collect();
+    for build in &decoded.vehicle_builds {
+        assert!(
+            vehicles.contains(&build.entity_id),
+            "build entity {} must be a vehicle",
+            build.entity_id
+        );
+        assert!(build.ship_params_id != 0, "the dump's ship id must be set");
+        assert!(!build.units.is_empty(), "hull/module units must decode");
+        // 15.10 modernization = per-slot groups; the selected ids surface here.
+        assert!(
+            build.modernization.len() <= 10,
+            "slot count {} exceeds the pinned slot bound",
+            build.modernization.len()
+        );
+        assert!(build.abilities.len() <= 8, "ability slots exceed the bound");
+        assert!(
+            build.ecoboosts.len() <= 4,
+            "ecoboost slots exceed the bound"
+        );
+    }
+    eprintln!(
+        "[build-15.10] {} vehicle builds decoded, {} skipped",
+        decoded.diagnostics.builds_decoded, decoded.diagnostics.builds_skipped
+    );
+}
+
 #[test]
 fn vehicle_build_walk_rejects_a_desynced_create_state() {
     let payload = hex_literal(FIXTURE_ALLY_SELF_HEX);
@@ -3688,11 +3749,132 @@ fn builds_are_counted_as_skipped_on_older_client_versions() {
 }
 
 #[test]
-fn build_decode_is_pinned_to_the_15_9_era() {
+fn build_decode_is_pinned_to_the_15_9_and_15_10_eras() {
     assert!(super::build::builds_supported(Some((15, 9, 0))));
     assert!(super::build::builds_supported(Some((15, 9, 7))));
+    assert!(super::build::builds_supported(Some((15, 10, 0))));
+    assert!(super::build::builds_supported(Some((15, 10, 12))));
     assert!(!super::build::builds_supported(Some((15, 8, 1))));
+    assert!(!super::build::builds_supported(Some((15, 11, 0))));
     assert!(!super::build::builds_supported(None));
+}
+
+/// The 15.10 modernization section is a per-slot GROUP list (selected id +
+/// option list) instead of the flat id list: the same bytes must surface the
+/// selected ids under the 15.10 grammar and be refused under the 15.9 one.
+#[test]
+fn ship_config_slot_groups_are_15_10_gated() {
+    fn push_u32(blob: &mut Vec<u8>, value: u32) {
+        blob.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut blob = Vec::new();
+    // header: version, ship_params_id, element_count (patched below), unit
+    // count, one unit, 13.2+ unknown.
+    for value in [1u32, 4_065_212_112, 0, 1, 100, 0] {
+        push_u32(&mut blob, value);
+    }
+    // 15.10 slot groups: 3 slots — empty, selected=0xFF22_CD10 among two
+    // options, selected=0xFF32_CD10 among three options.
+    push_u32(&mut blob, 3);
+    push_u32(&mut blob, 0);
+    push_u32(&mut blob, 0);
+    push_u32(&mut blob, 0xff22_cd10);
+    push_u32(&mut blob, 2);
+    push_u32(&mut blob, 0xff12_cd10);
+    push_u32(&mut blob, 0xff22_cd10);
+    push_u32(&mut blob, 0xff32_cd10);
+    push_u32(&mut blob, 3);
+    push_u32(&mut blob, 0xff32_cd10);
+    push_u32(&mut blob, 0xff42_cd10);
+    push_u32(&mut blob, 0xff52_cd10);
+    // exteriors (empty), supply, color schemes (empty), 15.9 unknown.
+    for _ in 0..4 {
+        push_u32(&mut blob, 0);
+    }
+    // ability slots (2), ensign slots (0), ecoboost slots (1).
+    push_u32(&mut blob, 2);
+    push_u32(&mut blob, 0xff62_9fb0);
+    push_u32(&mut blob, 0xff12_9fb0);
+    push_u32(&mut blob, 0);
+    push_u32(&mut blob, 1);
+    push_u32(&mut blob, 0xff2f_efb0);
+    let element_count = (blob.len() as u32 - 12) / 4;
+    blob[8..12].copy_from_slice(&element_count.to_le_bytes());
+
+    let config = super::build::decode_ship_config_blob(&blob, (15, 10, 0))
+        .expect("15.10 slot groups decode");
+    assert_eq!(config.modernization, [0xff22_cd10, 0xff32_cd10]);
+    assert_eq!(config.abilities, [0xff62_9fb0, 0xff12_9fb0]);
+    assert_eq!(config.ecoboosts, [0xff2f_efb0]);
+    assert_eq!(config.units, [100]);
+
+    // The flat grammar over these bytes reads the slot count as a
+    // modernization count and then trips over the slot payloads; because a
+    // wrong-era walk can coincidentally land back on section boundaries, the
+    // version-less path prefers the NEWEST grammar (see the auto test below),
+    // while an explicit era stays the caller's assertion of the layout.
+    assert!(super::build::decode_ship_config_blob(&blob, (15, 10, 0)).is_some());
+
+    // The version-less auto path picks 15.10 by the element-count header.
+    let auto = super::build::decode_ship_config_blob_auto(&blob).expect("auto detects 15.10");
+    assert_eq!(auto.modernization, [0xff22_cd10, 0xff32_cd10]);
+    assert_eq!(auto.ship_params_id, 4_065_212_112);
+}
+
+/// 15.9's extra section is ExteriorStateKeeper.KillTagState — a COUNT plus that
+/// many (exterior_id, enabled) u32 PAIRS, not a lone unknown u32. A blob that
+/// actually carries kill tags must still land on the ability section: the
+/// pre-pin "skip one u32" model would read the first pair as the ability count
+/// and shift every later section.
+#[test]
+fn ship_config_kill_tag_pairs_are_walked() {
+    fn push_u32(blob: &mut Vec<u8>, value: u32) {
+        blob.extend_from_slice(&value.to_le_bytes());
+    }
+    let mut blob = Vec::new();
+    // header: version, ship_params_id, element_count (patched below), unit
+    // count, one unit, 13.2+ unknown.
+    for value in [1u32, 4_065_212_112, 0, 1, 100, 0] {
+        push_u32(&mut blob, value);
+    }
+    // modernization (flat, one id), exteriors (0), auto-buy flags (0), colors (0).
+    for value in [1u32, 0xff12_cfb0, 0, 0, 0] {
+        push_u32(&mut blob, value);
+    }
+    // kill-tag overrides: two entries — (0xFF12_AAAA, enabled), (0xFF22_BBBB, off).
+    push_u32(&mut blob, 2);
+    push_u32(&mut blob, 0xff12_aaaa);
+    push_u32(&mut blob, 1);
+    push_u32(&mut blob, 0xff22_bbbb);
+    push_u32(&mut blob, 0);
+    // ability slots (2), ensign slots (0), ecoboost slots (1).
+    push_u32(&mut blob, 2);
+    push_u32(&mut blob, 0xff62_9fb0);
+    push_u32(&mut blob, 0xff12_9fb0);
+    push_u32(&mut blob, 0);
+    push_u32(&mut blob, 1);
+    push_u32(&mut blob, 0xff2f_efb0);
+    let element_count = (blob.len() as u32 - 12) / 4;
+    blob[8..12].copy_from_slice(&element_count.to_le_bytes());
+
+    let config = super::build::decode_ship_config_blob(&blob, (15, 9, 0))
+        .expect("15.9 kill-tag section decodes");
+    assert_eq!(config.abilities, [0xff62_9fb0, 0xff12_9fb0]);
+    assert!(
+        config.ensigns.is_empty(),
+        "the kill-tag pairs must not shift ensigns"
+    );
+    assert_eq!(config.ecoboosts, [0xff2f_efb0]);
+
+    // Without the 15.9 gate the kill-tag COUNT is read as the ability count: the
+    // ability ids come out shifted (and the walk ends over the caps).
+    let older = super::build::decode_ship_config_blob(&blob, (15, 8, 1));
+    if let Some(older) = older {
+        assert_ne!(
+            older.abilities, config.abilities,
+            "the pre-15.9 order must not agree with the pinned one"
+        );
+    }
 }
 
 /// The 15.9 shipConfig inserted one u32 between the color-scheme section and
