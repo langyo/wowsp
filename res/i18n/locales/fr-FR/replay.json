@@ -687,7 +687,9 @@
     "nearestEvent": "Événement le plus proche",
     "momentAria": "Instant clé n° {n} · {t}",
     "fireModel": "Modèle de tir",
-    "moveModel": "Modèle de manœuvre"
+    "moveModel": "Modèle de manœuvre",
+    "modelAxis": "Accord",
+    "axisHint": "Plus haut = plus proche des attentes de l'IA"
   },
   "detail": {
     "title": "Détail de la bataille"

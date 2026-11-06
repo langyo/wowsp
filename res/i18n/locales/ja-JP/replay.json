@@ -687,7 +687,9 @@
     "nearestEvent": "直近のイベント",
     "momentAria": "キーフレーム #{n} · {t}",
     "fireModel": "射撃モデル",
-    "moveModel": "機動モデル"
+    "moveModel": "機動モデル",
+    "modelAxis": "一致度",
+    "axisHint": "高いほど AI の予想に近い"
   },
   "detail": {
     "title": "戦闘詳細"

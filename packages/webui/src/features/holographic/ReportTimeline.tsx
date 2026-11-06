@@ -69,6 +69,13 @@ const TRACK_HEIGHT_PX = 158;
 const TRACK_PAD_TOP_PX = 8;
 const TRACK_PAD_BOTTOM_PX = 8;
 const TRACK_VIEW_WIDTH = 1000;
+/** The score track's y-axis gutter: percentage labels, tick marks and the
+ *  vertical "model agreement" caption. The whole timeline body (ruler, lane,
+ *  callouts, track) is inset by the same width, so the time mapping stays
+ *  shared across the gutter. */
+const AXIS_WIDTH_PX = 54;
+/** Labelled ticks on the 0–1 score scale (top to bottom). */
+const AXIS_TICKS = [1, 0.75, 0.5, 0.25, 0];
 /** The two score models the report dissects: the fire model (only scored on
  *  can-fire rows) and the move model (every row). */
 type TrackModel = "fire" | "move";
@@ -650,16 +657,21 @@ export default defineComponent({
     function renderGaps(extraClass: string) {
       return (
         <div class={"srp-tl__gaps " + extraClass} aria-hidden="true">
-          {gaps.value.map(([from, to], index) => (
-            <span
-              key={index}
-              class="srp-tl__gap"
-              style={{
-                left: frac(from) + "%",
-                width: Math.max(0.25, frac(to) - frac(from)) + "%",
-              }}
-            />
-          ))}
+          {gaps.value.flatMap(([from, to], index) => {
+            // A tail gap can run past the player's last scored row, where the
+            // axis already ends: clamp it (and drop fully-dead tails) instead
+            // of spilling the hatch past the card's right edge.
+            if (from >= horizon.value) return [];
+            const left = frac(from);
+            const width = Math.max(0.25, frac(Math.min(to, horizon.value)) - left);
+            return [
+              <span
+                key={index}
+                class="srp-tl__gap"
+                style={{ left: left + "%", width: width + "%" }}
+              />,
+            ];
+          })}
         </div>
       );
     }
@@ -671,6 +683,7 @@ export default defineComponent({
           <span class="srp-tl__count">
             {t("replay.report.keyframes", { n: moments.value.length })}
           </span>
+          <span class="srp-tl__head-note">{t("replay.report.axisHint")}</span>
           <div class="srp-tl__legend">
             {legend.value.map((entry) => (
               <span key={entry.category} class="srp-tl__legend-item">
@@ -688,285 +701,312 @@ export default defineComponent({
           )}
         </header>
 
-        <div class="srp-tl__top">
-          {renderGaps("srp-tl__gaps--top")}
-          <div class="srp-tl__ruler" aria-hidden="true">
-            {ticks.value.map((tick, index) => (
-              <span
-                key={tick.t}
-                class={[
-                  "srp-tl__tick",
-                  index === 0 ? "srp-tl__tick--start" : "",
-                  index === ticks.value.length - 1 ? "srp-tl__tick--end" : "",
-                ]}
-                style={{ left: frac(tick.t) + "%" }}
-              >
-                {tick.label}
-              </span>
-            ))}
-          </div>
-          <div
-            ref={laneRef}
-            class="srp-tl__lane"
-            onPointermove={onPointerMove}
-            onPointerleave={clearHover}
-          >
-            <span class="srp-tl__axis" aria-hidden="true" />
-            {moments.value.map((moment, index) => (
-              <button
-                key={moment.t}
-                type="button"
-                class={[
-                  "srp-tl__kf",
-                  activeIndex.value === index ? "srp-tl__kf--active" : "",
-                  pinnedIndex.value === index ? "srp-tl__kf--pinned" : "",
-                ]}
-                style={{ left: frac(moment.t) + "%" }}
-                aria-label={t("replay.report.momentAria", {
-                  n: index + 1,
-                  t: formatClock(moment.t),
-                })}
-                aria-haspopup="dialog"
-                aria-expanded={pinnedIndex.value === index}
-                onClick={() => onMarkerClick(index)}
-                onFocus={() => {
-                  if (!props.capturing) hoverIndex.value = index;
-                }}
-                onBlur={() => {
-                  hoverIndex.value = null;
-                }}
-              >
-                <i
-                  class={
-                    "srp-tl__kf-glyph srp-tl__kf-glyph--" +
-                    categoryTone(moment.category)
-                  }
-                />
-              </button>
-            ))}
-            {moments.value.length === 0 ? (
-              <span class="srp-tl__empty">{t("replay.report.noMoments")}</span>
-            ) : null}
-            {readout.value && !activeMoment.value ? (
-              <div
-                class="srp-tl__readout"
-                style={readoutStyle.value}
-                role="status"
-              >
-                <span class="srp-tl__readout-time">
-                  {formatClock(readout.value.tSec)}
-                </span>
-                <span class="srp-tl__readout-sep">·</span>
-                <span>
-                  {t("replay.report.instScore")}{" "}
-                  {readout.value.inst == null
-                    ? "—"
-                    : pct(readout.value.inst) + "%"}
-                </span>
+        <div
+          class="srp-tl__plot"
+          style={{ paddingLeft: AXIS_WIDTH_PX + "px" }}
+        >
+          <div class="srp-tl__top">
+            {renderGaps("srp-tl__gaps--top")}
+            <div class="srp-tl__ruler" aria-hidden="true">
+              {ticks.value.map((tick, index) => (
                 <span
-                  class="srp-tl__readout-model"
-                  aria-label={
-                    t("replay.report.moveModel") +
-                    " " +
-                    (readout.value.move == null
-                      ? "—"
-                      : pct(readout.value.move) + "%")
-                  }
+                  key={tick.t}
+                  class={[
+                    "srp-tl__tick",
+                    index === 0 ? "srp-tl__tick--start" : "",
+                    index === ticks.value.length - 1 ? "srp-tl__tick--end" : "",
+                  ]}
+                  style={{ left: frac(tick.t) + "%" }}
                 >
-                  <i class="srp-tl__track-dot srp-tl__track-dot--move" />
-                  {readout.value.move == null
-                    ? "—"
-                    : pct(readout.value.move) + "%"}
+                  {tick.label}
                 </span>
-                <span
-                  class="srp-tl__readout-model"
-                  aria-label={
-                    t("replay.report.fireModel") +
-                    " " +
-                    (readout.value.fire == null
-                      ? "—"
-                      : pct(readout.value.fire) + "%")
-                  }
+              ))}
+            </div>
+            <div
+              ref={laneRef}
+              class="srp-tl__lane"
+              onPointermove={onPointerMove}
+              onPointerleave={clearHover}
+            >
+              <span class="srp-tl__axis" aria-hidden="true" />
+              {moments.value.map((moment, index) => (
+                <button
+                  key={moment.t}
+                  type="button"
+                  class={[
+                    "srp-tl__kf",
+                    activeIndex.value === index ? "srp-tl__kf--active" : "",
+                    pinnedIndex.value === index ? "srp-tl__kf--pinned" : "",
+                  ]}
+                  style={{ left: frac(moment.t) + "%" }}
+                  aria-label={t("replay.report.momentAria", {
+                    n: index + 1,
+                    t: formatClock(moment.t),
+                  })}
+                  aria-haspopup="dialog"
+                  aria-expanded={pinnedIndex.value === index}
+                  onClick={() => onMarkerClick(index)}
+                  onFocus={() => {
+                    if (!props.capturing) hoverIndex.value = index;
+                  }}
+                  onBlur={() => {
+                    hoverIndex.value = null;
+                  }}
                 >
-                  <i class="srp-tl__track-dot srp-tl__track-dot--fire" />
-                  {readout.value.fire == null
-                    ? "—"
-                    : pct(readout.value.fire) + "%"}
-                </span>
-                {readout.value.inGap ? (
-                  <span class="srp-tl__readout-gap">
-                    {t("replay.report.unresolved")}
+                  <i
+                    class={
+                      "srp-tl__kf-glyph srp-tl__kf-glyph--" +
+                      categoryTone(moment.category)
+                    }
+                  />
+                </button>
+              ))}
+              {moments.value.length === 0 ? (
+                <span class="srp-tl__empty">{t("replay.report.noMoments")}</span>
+              ) : null}
+              {readout.value && !activeMoment.value ? (
+                <div
+                  class="srp-tl__readout"
+                  style={readoutStyle.value}
+                  role="status"
+                >
+                  <span class="srp-tl__readout-time">
+                    {formatClock(readout.value.tSec)}
                   </span>
-                ) : null}
-                {readout.value.nearest != null ? (
-                  <span class="srp-tl__readout-near">
-                    {t("replay.report.nearestEvent")} #
-                    {readout.value.nearest + 1}{" "}
-                    {formatClock(moments.value[readout.value.nearest].t)}
+                  <span class="srp-tl__readout-sep">·</span>
+                  <span>
+                    {t("replay.report.instScore")}{" "}
+                    {readout.value.inst == null
+                      ? "—"
+                      : pct(readout.value.inst) + "%"}
                   </span>
-                ) : null}
-              </div>
-            ) : null}
-            {activeMoment.value ? (
-              <div
-                class="srp-tl__tip"
-                style={tipStyle.value}
-                role="dialog"
-                aria-label={t("replay.report.momentAria", {
-                  n: (activeIndex.value ?? 0) + 1,
-                  t: formatClock(activeMoment.value.t),
-                })}
-              >
-                <MomentHead
-                  moment={activeMoment.value}
-                  index={activeIndex.value ?? 0}
-                />
-                <MomentRows moment={activeMoment.value} />
-                <div class="srp-tl__tip-actions">
-                  {props.onSeek ? (
-                    <HkButton
-                      variant="secondary"
-                      size="xs"
-                      aria-label={t("replay.report.seekHint")}
-                      onClick={() => props.onSeek?.(activeMoment.value!.t)}
-                    >
-                      <Camera size={12} />
-                      <span>{t("replay.report.seek")}</span>
-                    </HkButton>
+                  <span
+                    class="srp-tl__readout-model"
+                    aria-label={
+                      t("replay.report.moveModel") +
+                      " " +
+                      (readout.value.move == null
+                        ? "—"
+                        : pct(readout.value.move) + "%")
+                    }
+                  >
+                    <i class="srp-tl__track-dot srp-tl__track-dot--move" />
+                    {readout.value.move == null
+                      ? "—"
+                      : pct(readout.value.move) + "%"}
+                  </span>
+                  <span
+                    class="srp-tl__readout-model"
+                    aria-label={
+                      t("replay.report.fireModel") +
+                      " " +
+                      (readout.value.fire == null
+                        ? "—"
+                        : pct(readout.value.fire) + "%")
+                    }
+                  >
+                    <i class="srp-tl__track-dot srp-tl__track-dot--fire" />
+                    {readout.value.fire == null
+                      ? "—"
+                      : pct(readout.value.fire) + "%"}
+                  </span>
+                  {readout.value.inGap ? (
+                    <span class="srp-tl__readout-gap">
+                      {t("replay.report.unresolved")}
+                    </span>
                   ) : null}
-                  {pinnedIndex.value != null ? (
-                    <button
-                      type="button"
-                      class="srp-tl__tip-close"
-                      onClick={() => {
-                        pinnedIndex.value = null;
-                      }}
-                    >
-                      {t("replay.report.close")}
-                    </button>
+                  {readout.value.nearest != null ? (
+                    <span class="srp-tl__readout-near">
+                      {t("replay.report.nearestEvent")} #
+                      {readout.value.nearest + 1}{" "}
+                      {formatClock(moments.value[readout.value.nearest].t)}
+                    </span>
                   ) : null}
                 </div>
-              </div>
-            ) : null}
+              ) : null}
+              {activeMoment.value ? (
+                <div
+                  class="srp-tl__tip"
+                  style={tipStyle.value}
+                  role="dialog"
+                  aria-label={t("replay.report.momentAria", {
+                    n: (activeIndex.value ?? 0) + 1,
+                    t: formatClock(activeMoment.value.t),
+                  })}
+                >
+                  <MomentHead
+                    moment={activeMoment.value}
+                    index={activeIndex.value ?? 0}
+                  />
+                  <MomentRows moment={activeMoment.value} />
+                  <div class="srp-tl__tip-actions">
+                    {props.onSeek ? (
+                      <HkButton
+                        variant="secondary"
+                        size="xs"
+                        aria-label={t("replay.report.seekHint")}
+                        onClick={() => props.onSeek?.(activeMoment.value!.t)}
+                      >
+                        <Camera size={12} />
+                        <span>{t("replay.report.seek")}</span>
+                      </HkButton>
+                    ) : null}
+                    {pinnedIndex.value != null ? (
+                      <button
+                        type="button"
+                        class="srp-tl__tip-close"
+                        onClick={() => {
+                          pinnedIndex.value = null;
+                        }}
+                      >
+                        {t("replay.report.close")}
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           </div>
-        </div>
 
-        {props.capturing ? (
-          <div
-            class="srp-tl__callouts"
-            style={{ height: calloutBandHeight.value + "px" }}
-          >
-            {callouts.value.map((callout) => (
+          {props.capturing ? (
+            <div
+              class="srp-tl__callouts"
+              style={{ height: calloutBandHeight.value + "px" }}
+            >
+              {callouts.value.map((callout) => (
+                <span
+                  key={"leader-" + callout.index}
+                  class={
+                    "srp-tl__leader srp-tl__leader--" +
+                    categoryTone(callout.moment.category)
+                  }
+                  style={{
+                    left: callout.xPx + "px",
+                    top: -LEADER_TOP_PX + "px",
+                    height:
+                      LEADER_TOP_PX +
+                      callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) +
+                      "px",
+                  }}
+                  aria-hidden="true"
+                />
+              ))}
+              {callouts.value.map((callout) => (
+                <div
+                  key={"callout-" + callout.index}
+                  class={
+                    "srp-tl__callout srp-tl__callout--" +
+                    categoryTone(callout.moment.category)
+                  }
+                  style={{
+                    left: callout.left + "px",
+                    top:
+                      callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) + "px",
+                    width: CALLOUT_WIDTH_PX + "px",
+                    height: CALLOUT_HEIGHT_PX + "px",
+                  }}
+                >
+                  <MomentHead moment={callout.moment} index={callout.index} />
+                  <MomentRows moment={callout.moment} />
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <div class="srp-tl__track" style={{ height: TRACK_HEIGHT_PX + "px" }}>
+            {renderGaps("srp-tl__gaps--track")}
+            <svg
+              class="srp-tl__score"
+              viewBox={"0 0 " + TRACK_VIEW_WIDTH + " " + TRACK_HEIGHT_PX}
+              preserveAspectRatio="none"
+              aria-hidden="true"
+            >
+              {TRACK_GRID.map((value) => (
+                <line
+                  key={value}
+                  class={
+                    "srp-tl__score-grid" +
+                    (value === 0.5 ? " srp-tl__score-grid--mid" : "")
+                  }
+                  x1="0"
+                  x2={TRACK_VIEW_WIDTH}
+                  y1={trackY(value)}
+                  y2={trackY(value)}
+                  vector-effect="non-scaling-stroke"
+                />
+              ))}
+              {trackMarks.value.map((mark, index) => (
+                <line
+                  key={index}
+                  class={"srp-tl__score-mark srp-tl__score-mark--" + mark.tone}
+                  x1={mark.x}
+                  x2={mark.x}
+                  y1="0"
+                  y2={TRACK_HEIGHT_PX}
+                  vector-effect="non-scaling-stroke"
+                />
+              ))}
+              <path
+                class="srp-tl__score-line srp-tl__score-line--move"
+                d={movePath.value}
+                vector-effect="non-scaling-stroke"
+              />
+              <path
+                class="srp-tl__score-line srp-tl__score-line--fire"
+                d={firePath.value}
+                vector-effect="non-scaling-stroke"
+              />
+            </svg>
+            {moveDots.value.map((dot, index) => (
               <span
-                key={"leader-" + callout.index}
-                class={
-                  "srp-tl__leader srp-tl__leader--" +
-                  categoryTone(callout.moment.category)
-                }
-                style={{
-                  left: callout.xPx + "px",
-                  top: -LEADER_TOP_PX + "px",
-                  height:
-                    LEADER_TOP_PX +
-                    callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) +
-                    "px",
-                }}
-                aria-hidden="true"
+                key={"move-" + index}
+                class="srp-tl__score-dot srp-tl__score-dot--move"
+                style={{ left: dot.left + "%", top: dot.top + "%" }}
               />
             ))}
-            {callouts.value.map((callout) => (
-              <div
-                key={"callout-" + callout.index}
-                class={
-                  "srp-tl__callout srp-tl__callout--" +
-                  categoryTone(callout.moment.category)
-                }
-                style={{
-                  left: callout.left + "px",
-                  top:
-                    callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) + "px",
-                  width: CALLOUT_WIDTH_PX + "px",
-                  height: CALLOUT_HEIGHT_PX + "px",
-                }}
+            {fireDots.value.map((dot, index) => (
+              <span
+                key={index}
+                class="srp-tl__score-dot"
+                style={{ left: dot.left + "%", top: dot.top + "%" }}
+              />
+            ))}
+            <span class="srp-tl__track-legend">
+              <span class="srp-tl__track-key">
+                <i class="srp-tl__track-dot srp-tl__track-dot--move" />
+                {t("replay.report.moveModel")}
+              </span>
+              {hasFire.value ? (
+                <span class="srp-tl__track-key">
+                  <i class="srp-tl__track-dot srp-tl__track-dot--fire" />
+                  {t("replay.report.fireModel")}
+                </span>
+              ) : null}
+            </span>
+          </div>
+          <div
+            class="srp-tl__yaxis"
+            role="img"
+            aria-label={t("replay.report.modelAxis") + " 0–100%"}
+            style={{
+              width: AXIS_WIDTH_PX + "px",
+              height: TRACK_HEIGHT_PX + "px",
+            }}
+          >
+            <span class="srp-tl__yaxis-title">
+              {t("replay.report.modelAxis")}
+            </span>
+            {AXIS_TICKS.map((value) => (
+              <span
+                key={value}
+                class="srp-tl__yaxis-mark"
+                style={{ top: trackY(value) + "px" }}
               >
-                <MomentHead moment={callout.moment} index={callout.index} />
-                <MomentRows moment={callout.moment} />
-              </div>
+                {Math.round(value * 100)}%
+                <i class="srp-tl__yaxis-tick" />
+              </span>
             ))}
           </div>
-        ) : null}
-
-        <div class="srp-tl__track" style={{ height: TRACK_HEIGHT_PX + "px" }}>
-          {renderGaps("srp-tl__gaps--track")}
-          <svg
-            class="srp-tl__score"
-            viewBox={"0 0 " + TRACK_VIEW_WIDTH + " " + TRACK_HEIGHT_PX}
-            preserveAspectRatio="none"
-            aria-hidden="true"
-          >
-            {TRACK_GRID.map((value) => (
-              <line
-                key={value}
-                class={
-                  "srp-tl__score-grid" +
-                  (value === 0.5 ? " srp-tl__score-grid--mid" : "")
-                }
-                x1="0"
-                x2={TRACK_VIEW_WIDTH}
-                y1={trackY(value)}
-                y2={trackY(value)}
-                vector-effect="non-scaling-stroke"
-              />
-            ))}
-            {trackMarks.value.map((mark, index) => (
-              <line
-                key={index}
-                class={"srp-tl__score-mark srp-tl__score-mark--" + mark.tone}
-                x1={mark.x}
-                x2={mark.x}
-                y1="0"
-                y2={TRACK_HEIGHT_PX}
-                vector-effect="non-scaling-stroke"
-              />
-            ))}
-            <path
-              class="srp-tl__score-line srp-tl__score-line--move"
-              d={movePath.value}
-              vector-effect="non-scaling-stroke"
-            />
-            <path
-              class="srp-tl__score-line srp-tl__score-line--fire"
-              d={firePath.value}
-              vector-effect="non-scaling-stroke"
-            />
-          </svg>
-          {moveDots.value.map((dot, index) => (
-            <span
-              key={"move-" + index}
-              class="srp-tl__score-dot srp-tl__score-dot--move"
-              style={{ left: dot.left + "%", top: dot.top + "%" }}
-            />
-          ))}
-          {fireDots.value.map((dot, index) => (
-            <span
-              key={index}
-              class="srp-tl__score-dot"
-              style={{ left: dot.left + "%", top: dot.top + "%" }}
-            />
-          ))}
-          <span class="srp-tl__track-legend">
-            <span class="srp-tl__track-key">
-              <i class="srp-tl__track-dot srp-tl__track-dot--move" />
-              {t("replay.report.moveModel")}
-            </span>
-            {hasFire.value ? (
-              <span class="srp-tl__track-key">
-                <i class="srp-tl__track-dot srp-tl__track-dot--fire" />
-                {t("replay.report.fireModel")}
-              </span>
-            ) : null}
-            <span class="srp-tl__track-scale">0–100%</span>
-          </span>
         </div>
       </section>
     );

@@ -423,6 +423,79 @@ describe("ReportTimeline interaction", () => {
     );
   });
 
+  it("labels the score track's y axis with percentages and the read hint", () => {
+    const w = mountTimeline();
+    const marks = w.findAll(".srp-tl__yaxis-mark");
+    expect(marks.map((mark) => mark.text())).toEqual([
+      "100%",
+      "75%",
+      "50%",
+      "25%",
+      "0%",
+    ]);
+    expect(w.find(".srp-tl__yaxis-title").text()).toBe(
+      "replay.report.modelAxis",
+    );
+    expect(w.find(".srp-tl__head-note").text()).toBe(
+      "replay.report.axisHint",
+    );
+  });
+
+  it("anchors the axis labels to the percentage grid", () => {
+    const w = mountTimeline();
+    const plot = w.find(".srp-tl__plot");
+    expect(plot.attributes("style")).toContain("padding-left: 54px");
+    expect(w.find(".srp-tl__yaxis").attributes("style")).toContain(
+      "height: 158px",
+    );
+    const tops = w.findAll(".srp-tl__yaxis-mark").map((mark) => {
+      const match = (mark.attributes("style") ?? "").match(/top: ([\d.]+)px/);
+      return match ? match[1] : null;
+    });
+    // trackY(1/.75/.5/.25/0) at TRACK_HEIGHT=158, pads 8/8.
+    expect(tops).toEqual(["8", "43.5", "79", "114.5", "150"]);
+  });
+
+  it("clamps a coverage gap that runs past the last scored row", () => {
+    const base = report();
+    const censored = report({
+      timeline: [
+        { t: 0, inst: 0.5, confidence: 0.5, fire: 0.4, fired: false, fireProb: 0.6, hpLost: null, move: 0.55 },
+        { t: 600, inst: 0.2, confidence: 0.6, fire: 0.3, fired: false, fireProb: 0.7, hpLost: null, move: 0.25 },
+      ],
+      roster: [
+        {
+          ...base.roster[0],
+          coverage: {
+            ...base.roster[0].coverage,
+            aliveTo: 900,
+            gapSegments: [
+              [560, 700],
+              [700, 900],
+            ],
+          },
+        },
+      ],
+      moments: [moment({ t: 100 })],
+    });
+    const w = mountTimeline({ data: censored });
+    // One span per layer (ruler/lane band + track band); the dead tail gap
+    // is dropped from both.
+    const gaps = w.findAll(".srp-tl__gap");
+    expect(gaps).toHaveLength(2);
+    const style = gaps[0].attributes("style") ?? "";
+    const left = Number(style.match(/left: ([\d.]+)%/)?.[1]);
+    const width = Number(style.match(/width: ([\d.]+)%/)?.[1]);
+    expect(left).toBeGreaterThan(90);
+    expect(left + width).toBeLessThanOrEqual(100.001);
+  });
+
+  it("renders the y axis in the captured image too", async () => {
+    const w = mountTimeline({ capturing: true });
+    expect(w.findAll(".srp-tl__yaxis-mark")).toHaveLength(5);
+    expect(w.find(".srp-tl__yaxis").exists()).toBe(true);
+  });
+
   it("renders the static annotation band in capture mode only", async () => {
     const w = mountTimeline({ capturing: true });
     await flushPromises();

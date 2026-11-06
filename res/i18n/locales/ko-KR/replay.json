@@ -687,7 +687,9 @@
     "nearestEvent": "가장 가까운 이벤트",
     "momentAria": "키프레임 #{n} · {t}",
     "fireModel": "사격 모델",
-    "moveModel": "기동 모델"
+    "moveModel": "기동 모델",
+    "modelAxis": "일치도",
+    "axisHint": "높을수록 AI 예상에 가깝습니다"
   },
   "detail": {
     "title": "전투 상세"

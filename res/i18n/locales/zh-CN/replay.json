@@ -687,7 +687,9 @@
     "nearestEvent": "最近事件",
     "momentAria": "关键帧 #{n} · {t}",
     "fireModel": "开火模型",
-    "moveModel": "走位模型"
+    "moveModel": "走位模型",
+    "modelAxis": "模型认同度",
+    "axisHint": "越高越符合 AI 预期"
   },
   "detail": {
     "title": "对局详情"
