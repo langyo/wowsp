@@ -3,10 +3,18 @@
  * exported PNG carries its own background), hikari tokens where they
  * exist, self-contained otherwise: the exported node must not depend on
  * parent-panel CSS variables that html-to-image cannot inline.
+ *
+ * The sheet is laid out as a reading frame around ReportTimeline: head
+ * (perspective dropdown + scores + coverage), the editor timeline (ruler,
+ * keyframe lane, annotation band, score track), footnote. Every coordinate
+ * inside the timeline rides percentage margins derived from the score
+ * chart's exported grid insets (see ReportTimeline.tsx), so the ruler, the
+ * keyframes and the curve can never drift apart.
  */
 .static-report-panel {
   --srp-bg: #0d1117;
   --srp-card: #161c26;
+  --srp-panel: #101722;
   --srp-line: #2a3342;
   --srp-ink: #d6dde8;
   --srp-dim: #9aa6b5;
@@ -45,110 +53,36 @@
     min-height: 0;
   }
 }
-// ── perspective picker ──
-.srp-picker {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
 
-  &__team {
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  &__label {
-    font-size: 11px;
-    color: var(--srp-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-  }
-
-  &__row {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-  }
-
-  &__chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 8px 3px 7px;
-    font-size: 12px;
-    color: var(--srp-ink);
-    background: var(--srp-card);
-    border: 1px solid var(--srp-line);
-    border-radius: 999px;
-    cursor: pointer;
-
-    &:disabled {
-      opacity: 0.38;
-      cursor: default;
-    }
-
-    &--self {
-      border-color: var(--srp-ally);
-      box-shadow: 0 0 0 1px var(--srp-ally) inset;
-    }
-  }
-
-  &__dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--srp-ally);
-
-    &--enemy {
-      background: var(--srp-enemy);
-    }
-  }
-
-  &__name {
-    max-width: 128px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* The coverage face is hikari's HkTag (variant by coverageClass, icon
-     glyph from lucide); this hook only reserves its trailing slot in the chip. */
-  &__badge {
-    flex: none;
-  }
-}
-
-// ── header ──
+// ── head: the selected perspective ──
 .srp-head {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
   padding: 12px;
   background: var(--srp-card);
   border: 1px solid var(--srp-line);
   border-radius: 8px;
 
-  &__id {
+  &__row {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-  }
-
-  &__name {
-    font-size: 16px;
-    font-weight: 700;
   }
 
   &__map {
     margin-left: auto;
     font-size: 11px;
     color: var(--srp-dim);
+    white-space: nowrap;
   }
 
   &__scores {
     display: flex;
+    align-items: flex-end;
     gap: 22px;
+    flex-wrap: wrap;
   }
 
   &__score {
@@ -163,6 +97,7 @@
 
     b {
       font-size: 19px;
+      line-height: 1.1;
     }
 
     &-sub {
@@ -174,7 +109,10 @@
   &__coverage {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 5px;
+    flex: 1;
+    min-width: 220px;
+    margin-left: auto;
 
     &-label {
       font-size: 11px;
@@ -192,7 +130,11 @@
   position: relative;
   height: 8px;
   border-radius: 4px;
-  background: linear-gradient(90deg, rgba(76, 195, 138, 0.5), rgba(76, 195, 138, 0.25));
+  background: linear-gradient(
+    90deg,
+    rgba(76, 195, 138, 0.5),
+    rgba(76, 195, 138, 0.25)
+  );
 
   &__gap {
     position: absolute;
@@ -210,85 +152,220 @@
   }
 }
 
-// ── instant-score trend (hikari HkTrendChart + report-only overlay) ──
-// HkTrendChart is the dependency-free SVG chart: no canvas, no animation,
-// and its ink rides the hikari theme tokens (rgb(var(--color-primary))), so a
-// scheme flip repaints it and there is nothing to invert. The component
-// paints no axis labels, no legend and no x-axis marks, so the report draws
-// those itself: coverage gaps, key-moment marks, battle-time ticks and the
-// pen label. Their geometry (the chart's plot rectangle) is derived from the
-// exported TREND_CHART_GRID_* constants as inline styles in the component;
-// only the static chrome lives here.
-.srp-trend {
+// ── perspective dropdown ──
+.srp-picker {
   position: relative;
   flex: none;
-  background: var(--srp-card);
-  border: 1px solid var(--srp-line);
-  border-radius: 8px;
-  overflow: hidden;
 
-  // Annotation layers ride ABOVE the chart but never intercept pointers.
-  &__overlay,
-  &__axis,
-  &__legend {
-    position: absolute;
-    pointer-events: none;
-  }
-
-  // The battle-time axis strip (the chart itself paints no labels).
-  &__axis {
-    border-top: 1px solid var(--srp-line);
-  }
-
-  // Pen label in the plot's empty top grid band (the chart renders none).
-  &__legend {
-    display: flex;
+  &__trigger {
+    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 6px;
-    color: var(--srp-dim);
-    font-size: 11px;
+    gap: 7px;
+    padding: 4px 9px 4px 8px;
+    font: inherit;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--srp-ink);
+    background: var(--srp-panel);
+    border: 1px solid var(--srp-line);
+    border-radius: 7px;
+    cursor: pointer;
+
+    &:disabled {
+      cursor: default;
+      opacity: 1; // capture mode: a static, fully readable name plate
+    }
+
+    &:hover:not(:disabled),
+    &[aria-expanded="true"] {
+      border-color: var(--srp-ally);
+    }
+
+    &:focus-visible {
+      outline: 2px solid var(--srp-ally);
+      outline-offset: 2px;
+    }
   }
 
-  // Same ink as the chart's first pen (trendPenColor(0)).
-  &__legend-dot {
+  &__dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: rgb(var(--color-primary));
+    flex: none;
+
+    &--ally {
+      background: var(--srp-ally);
+    }
+
+    &--enemy {
+      background: var(--srp-enemy);
+    }
   }
 
-  &__xtick {
-    position: absolute;
-    top: 7px;
-    color: var(--srp-dim);
-    font-size: 10px;
-    font-variant-numeric: tabular-nums;
+  &__name {
+    max-width: 220px;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
-    transform: translateX(-50%);
+  }
 
-    &--start {
-      transform: none;
-    }
+  &__chevron {
+    color: var(--srp-dim);
+    flex: none;
+  }
 
-    &--end {
-      transform: translateX(-100%);
+  &__menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 8;
+    width: 268px;
+    max-height: 320px;
+    overflow: auto;
+    padding: 6px;
+    background: var(--srp-panel);
+    border: 1px solid var(--srp-line);
+    border-radius: 8px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+  }
+
+  &__group {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+
+    & + & {
+      margin-top: 4px;
+      padding-top: 4px;
+      border-top: 1px solid var(--srp-line);
     }
   }
 
-  &__gap {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background: rgba(229, 83, 75, 0.16);
+  &__group-label {
+    padding: 3px 8px 2px;
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--srp-dim);
   }
 
-  &__mark {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    opacity: 0.85;
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 5px 8px;
+    font: inherit;
+    font-size: 12px;
+    color: var(--srp-ink);
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 5px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: rgba(87, 166, 255, 0.12);
+    }
+
+    &:focus-visible {
+      outline: 1px solid var(--srp-ally);
+      outline-offset: -1px;
+    }
+
+    &:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+
+    &--selected {
+      background: rgba(87, 166, 255, 0.16);
+    }
+  }
+
+  &__row-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex: none;
+
+    &--ally {
+      background: var(--srp-ally);
+    }
+
+    &--enemy {
+      background: var(--srp-enemy);
+    }
+  }
+
+  &__row-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* The coverage face is hikari's HkTag (variant by coverageClass, icon
+     glyph from lucide); this hook only reserves its trailing slot. */
+  &__badge {
+    flex: none;
+  }
+}
+
+// ── editor timeline ──
+.srp-tl {
+  position: relative;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--srp-card);
+  border: 1px solid var(--srp-line);
+  border-radius: 8px;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  &__title {
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+  }
+
+  &__count {
+    font-size: 11px;
+    color: var(--srp-dim);
+  }
+
+  &__legend {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-left: auto;
+    flex-wrap: wrap;
+  }
+
+  &__legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10.5px;
+    color: var(--srp-dim);
+    white-space: nowrap;
+  }
+
+  &__legend-dot {
+    width: 7px;
+    height: 7px;
+    flex: none;
+    border-radius: 1.5px;
+    transform: rotate(45deg);
 
     &--good {
       background: var(--srp-good);
@@ -306,136 +383,284 @@
       background: var(--srp-ally);
     }
   }
-}
 
-// ── moment cards ──
-.srp-moments {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  &__hint {
+    font-size: 10.5px;
+    color: var(--srp-dim);
+    opacity: 0.75;
+    white-space: nowrap;
+  }
+
+  &__top {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__gaps {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+  }
+
+  &__gap {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(229, 83, 75, 0.1);
+  }
+
+  &__ruler {
+    position: relative;
+    height: 17px;
+    font-size: 10px;
+    color: var(--srp-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__tick {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    white-space: nowrap;
+
+    &--start {
+      transform: none;
+    }
+
+    &--end {
+      transform: translateX(-100%);
+    }
+  }
+
+  &__lane {
+    position: relative;
+    height: 40px;
+    outline: none;
+  }
+
+  &__axis {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 2px;
+    margin-top: -1px;
+    border-radius: 1px;
+    background: var(--srp-line);
+  }
+
+  &__kf {
+    position: absolute;
+    top: 50%;
+    width: 26px;
+    height: 26px;
+    margin: -13px 0 0 -13px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 0;
+    border-radius: 50%;
+    cursor: pointer;
+    z-index: 2;
+
+    &:focus-visible {
+      outline: 2px solid var(--srp-ink);
+      outline-offset: 1px;
+    }
+  }
+
+  &__kf-glyph {
+    width: 12px;
+    height: 12px;
+    clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+    box-shadow: 0 0 0 2px var(--srp-card);
+    transition: transform 0.12s ease;
+
+    &--good {
+      background: var(--srp-good);
+    }
+
+    &--bad {
+      background: var(--srp-bad);
+    }
+
+    &--warn {
+      background: var(--srp-warn);
+    }
+
+    &--ok {
+      background: var(--srp-ally);
+    }
+  }
+
+  &__kf:hover &__kf-glyph,
+  &__kf--active &__kf-glyph {
+    transform: scale(1.45);
+  }
+
+  &__kf--pinned::after {
+    content: "";
+    position: absolute;
+    inset: 1px;
+    border: 1px solid var(--srp-ink);
+    border-radius: 50%;
+    opacity: 0.55;
+  }
 
   &__empty {
-    padding: 18px;
-    text-align: center;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 11px;
     color: var(--srp-dim);
-    font-size: 13px;
-  }
-}
-
-.srp-moment {
-  padding: 10px 12px;
-  background: var(--srp-card);
-  border: 1px solid var(--srp-line);
-  border-left: 3px solid var(--srp-ally);
-  border-radius: 8px;
-
-  &--good {
-    border-left-color: var(--srp-good);
+    white-space: nowrap;
   }
 
-  &--bad {
-    border-left-color: var(--srp-bad);
+  &__readout {
+    position: absolute;
+    top: calc(100% + 10px);
+    z-index: 7;
+    width: 186px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 6px;
+    padding: 6px 9px;
+    font-size: 10.5px;
+    line-height: 1.5;
+    color: var(--srp-ink);
+    background: var(--srp-panel);
+    border: 1px solid var(--srp-line);
+    border-radius: 6px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+    pointer-events: none;
   }
 
-  &--warn {
-    border-left-color: var(--srp-warn);
+  &__readout-time {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
-  &__head {
+  &__readout-sep {
+    color: var(--srp-dim);
+  }
+
+  &__readout-gap {
+    color: var(--srp-bad);
+  }
+
+  &__readout-near {
+    width: 100%;
+    color: var(--srp-dim);
+  }
+
+  /* The card is a CHILD of the lane and deliberately overlaps its bottom
+     edge: moving the pointer from the axis down onto the card must not
+     cross a dead gap (a pointerleave there would unmount the card before
+     its Jump/Close buttons could be clicked). */
+  &__tip {
+    position: absolute;
+    top: calc(100% - 2px);
+    z-index: 6;
+    width: 300px;
+    padding: 10px 12px;
+    background: var(--srp-panel);
+    border: 1px solid var(--srp-line);
+    border-radius: 8px;
+    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+  }
+
+  &__tip-actions {
     display: flex;
     align-items: center;
     gap: 8px;
-    margin-bottom: 8px;
+    margin-top: 8px;
   }
 
-  &__idx {
+  &__tip-close {
+    font: inherit;
     font-size: 11px;
     color: var(--srp-dim);
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 2px 4px;
+
+    &:hover {
+      color: var(--srp-ink);
+    }
   }
 
-  &__time {
+  &__moment-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 6px;
+  }
+
+  &__moment-idx {
+    font-size: 10.5px;
+    color: var(--srp-dim);
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__moment-time {
     font-size: 13px;
     font-weight: 700;
     font-variant-numeric: tabular-nums;
   }
 
-  &__cat {
-    font-size: 11px;
-    padding: 1px 8px;
-    border-radius: 8px;
-    background: #1d2634;
-
-    &--good {
-      color: var(--srp-good);
-    }
-
-    &--bad {
-      color: var(--srp-bad);
-    }
-
-    &--warn {
-      color: var(--srp-warn);
-    }
-
-    &--ok {
-      color: var(--srp-ally);
-    }
-  }
-
-  &__seek {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 11px;
-    padding: 3px 8px;
-    color: var(--srp-ink);
-    background: #1d2634;
-    border: 1px solid var(--srp-line);
-    border-radius: 6px;
-    cursor: pointer;
-  }
-
-  &__body {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 6px 14px;
-  }
-
-  &__stat {
+  &__rows {
     display: flex;
     flex-direction: column;
-    gap: 1px;
-    font-size: 12px;
+    gap: 2px;
+  }
 
-    span {
-      font-size: 10.5px;
-      color: var(--srp-dim);
-    }
+  &__row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 11px;
+    line-height: 1.35;
+  }
 
-    b {
-      font-weight: 600;
-      display: flex;
-      align-items: baseline;
-      gap: 6px;
-      flex-wrap: wrap;
-    }
+  &__row-label {
+    /* Natural width, never truncated: the localized labels differ a lot in
+       length (zh 4 chars, en "Advised heading") and a fixed column either
+       clips them or overlaps the value. The value column absorbs the
+       difference and wraps where a locale needs it. */
+    flex: 0 0 auto;
+    min-width: 3.4em;
+    color: var(--srp-dim);
+    white-space: nowrap;
+  }
 
-    &--outcome b {
+  &__row-value {
+    display: flex;
+    align-items: baseline;
+    gap: 5px;
+    flex-wrap: wrap;
+    font-weight: 600;
+    color: var(--srp-ink);
+
+    &--outcome {
       color: var(--srp-good);
     }
   }
 
-  &__delta,
-  &__actual,
-  &__prob {
-    font-size: 10.5px;
-    color: var(--srp-dim);
+  &__row-sub {
+    font-size: 10px;
     font-weight: 400;
+    color: var(--srp-dim);
   }
 
   &__range {
-    font-size: 10px;
+    font-size: 9.5px;
+    font-weight: 400;
     padding: 0 5px;
     border-radius: 7px;
 
@@ -448,6 +673,108 @@
       color: var(--srp-warn);
       background: rgba(210, 153, 34, 0.16);
     }
+  }
+
+  // ── capture-mode annotation band ──
+  &__callouts {
+    position: relative;
+    flex: none;
+  }
+
+  &__leader {
+    position: absolute;
+    width: 1px;
+    background: rgba(214, 221, 232, 0.2);
+    pointer-events: none;
+
+    &::after {
+      content: "";
+      position: absolute;
+      left: -2px;
+      bottom: -3px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: inherit;
+    }
+
+    &--good {
+      background: rgba(76, 195, 138, 0.45);
+    }
+
+    &--bad {
+      background: rgba(229, 83, 75, 0.45);
+    }
+
+    &--warn {
+      background: rgba(210, 153, 34, 0.45);
+    }
+
+    &--ok {
+      background: rgba(87, 166, 255, 0.45);
+    }
+  }
+
+  &__callout {
+    position: absolute;
+    z-index: 1;
+    padding: 6px 10px;
+    overflow: hidden;
+    background: var(--srp-panel);
+    border: 1px solid var(--srp-line);
+    border-left-width: 3px;
+    border-radius: 6px;
+
+    &--good {
+      border-left-color: var(--srp-good);
+    }
+
+    &--bad {
+      border-left-color: var(--srp-bad);
+    }
+
+    &--warn {
+      border-left-color: var(--srp-warn);
+    }
+
+    &--ok {
+      border-left-color: var(--srp-ally);
+    }
+  }
+
+  // ── score track (hikari HkTrendChart) ──
+  // The chart's own 40 px bottom band is empty (no x ticks are drawn), so
+  // the frame clips it: the plot's baseline lands exactly on the track's
+  // bottom edge.
+  &__track {
+    position: relative;
+    height: 150px;
+    overflow: hidden;
+  }
+
+  &__track-legend {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    color: var(--srp-dim);
+    pointer-events: none;
+  }
+
+  &__track-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgb(var(--color-primary));
+  }
+
+  &__gaps--top,
+  &__gaps--track {
+    z-index: 1;
   }
 }
 

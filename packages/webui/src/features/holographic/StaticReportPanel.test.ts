@@ -1,22 +1,154 @@
 /**
- * StaticReportPanel tests — the pure formatters the long image shares with
- * the live panel, plus the DOM-node → PNG-bytes capture contract the modal's
- * copy action drives (clipboard + toast live in the shared share kit).
+ * StaticReportPanel tests — the shared formatters, the DOM-node → PNG
+ * capture contract the modal's copy action drives, and the panel wiring: the
+ * head shows only the selected perspective behind the dropdown, the editor
+ * timeline replaces the old card wall, and capture mode renders the static
+ * annotation band BEFORE html-to-image clones the node.
  */
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, ref, watchEffect } from "vue";
 import { toBlob } from "html-to-image";
 
-import type { StaticReport } from "@/api";
-import StaticReportPanel, {
-  captureReportPng,
+import type { StaticMoment, StaticReport } from "@/api";
+import StaticReportPanel, { captureReportPng } from "./StaticReportPanel";
+import {
   coverageClass,
+  formatClock,
   formatHp,
   sectorLabel,
-} from "./StaticReportPanel";
+} from "./reportFormat";
 
 vi.mock("html-to-image", () => ({ toBlob: vi.fn() }));
+
+function moment(overrides: Partial<StaticMoment> = {}): StaticMoment {
+  return {
+    t: 100,
+    category: "damageRealized",
+    weight: 1,
+    hpFrac: 1,
+    speedKt: 18,
+    enemiesObserved: 2,
+    nearestEnemy: { entityId: 9, distM: 3800, bearingRelRad: 0.2, inRange: true },
+    fired: true,
+    fireProb: 0.08,
+    moveSector: 14,
+    advisedSector: 16,
+    advisedProb: 0.4,
+    inst: 0.08,
+    fireAlignment: 0.1,
+    moveAlignment: 0.2,
+    confidence: 0.62,
+    hpLostWindow: 9400,
+    hpFracAfter: 0.94,
+    ...overrides,
+  };
+}
+
+/** The smallest report the column can render end to end — one scored
+ *  perspective, one unscoreable hull (the disabled dropdown row), a short
+ *  score series and three key moments. */
+function sampleReport(): StaticReport {
+  return {
+    replayPath: "replays/20261106_1.wowsreplay",
+    replayId: "20261106_1",
+    mapName: "spaces/15_NE_north",
+    gameMode: "Domination",
+    durationS: 600,
+    losLoaded: false,
+    modelSources: { fire: "models/fire.onnx", moveModel: "models/move.onnx" },
+    entityId: 1,
+    roster: [
+      {
+        entityId: 1,
+        shipId: 1,
+        name: "me",
+        playerName: "me",
+        teamId: 0,
+        isRecorder: true,
+        diedAt: null,
+        coverage: {
+          aliveFrom: 0,
+          aliveTo: 600,
+          samples: 40,
+          gapSeconds: 19,
+          completeness: 0.97,
+          gapSegments: [[200, 219]],
+        },
+        whole: {
+          wholeGame: 0.59,
+          wholeFire: 0.83,
+          wholeMove: 0.42,
+          contribution: 59500,
+          contributionShots: 11,
+        },
+        outcome: null,
+      },
+      {
+        entityId: 9,
+        shipId: 9,
+        name: "foe",
+        playerName: "foe",
+        teamId: 1,
+        isRecorder: false,
+        diedAt: 300,
+        coverage: {
+          aliveFrom: 0,
+          aliveTo: 300,
+          samples: 0,
+          gapSeconds: 300,
+          completeness: 0,
+          gapSegments: [[0, 300]],
+        },
+        whole: null,
+        outcome: null,
+      },
+    ],
+    timeline: [
+      { t: 0, inst: 0.5, confidence: 0.5 },
+      { t: 100, inst: 0.08, confidence: 0.62 },
+      { t: 300, inst: 0.3, confidence: 0.7 },
+      { t: 600, inst: 0.2, confidence: 0.6 },
+    ],
+    moments: [
+      moment({ t: 100 }),
+      moment({ t: 250, category: "forcedShot", fired: false }),
+      moment({ t: 500, category: "strongWindow", hpLostWindow: null }),
+    ],
+  };
+}
+
+/** Mount the panel behind a host and hand back the exposed capture handle
+ *  through the SAME component-ref plumbing StaticReportModal uses. */
+function mountPanel(): {
+  handle: () => { capturePng: () => Promise<Uint8Array> };
+  wrapper: ReturnType<typeof mount>;
+} {
+  let handle: { capturePng: () => Promise<Uint8Array> } | null = null;
+  const Host = defineComponent({
+    name: "StaticReportPanelHost",
+    setup() {
+      const panelRef = ref<{ capturePng: () => Promise<Uint8Array> } | null>(null);
+      watchEffect(() => {
+        handle = panelRef.value;
+      });
+      return () =>
+        h(StaticReportPanel, {
+          ref: panelRef,
+          report: sampleReport(),
+          onPick: () => {},
+        });
+    },
+  });
+  const wrapper = mount(Host);
+  return {
+    handle: () => {
+      if (!handle) throw new Error("panel handle not mounted");
+      return handle;
+    },
+    wrapper,
+  };
+}
 
 describe("formatHp", () => {
   it("compacts damage values", () => {
@@ -37,6 +169,14 @@ describe("sectorLabel", () => {
   });
 });
 
+describe("formatClock", () => {
+  it("renders the mm:ss battle clock", () => {
+    expect(formatClock(0)).toBe("00:00");
+    expect(formatClock(65)).toBe("01:05");
+    expect(formatClock(1053)).toBe("17:33");
+  });
+});
+
 describe("coverageClass", () => {
   it("badges none / partial / full", () => {
     expect(coverageClass({ samples: 0, completeness: 0 })).toBe("none");
@@ -46,16 +186,13 @@ describe("coverageClass", () => {
 });
 
 describe("captureReportPng", () => {
-  beforeEach(() => {
-    vi.mocked(toBlob).mockReset();
-  });
-
   it("renders the export column at 2x into the PNG bytes the clipboard takes", async () => {
     const node = document.createElement("div");
     // The long image must capture the FULL column, not the scroll viewport:
     // the height handed to the renderer is the node's scrollHeight.
     Object.defineProperty(node, "scrollHeight", { value: 4321 });
     const bytes = new Uint8Array([9, 8, 7]);
+    vi.mocked(toBlob).mockReset();
     vi.mocked(toBlob).mockResolvedValue(new Blob([bytes], { type: "image/png" }));
 
     await expect(captureReportPng(node)).resolves.toEqual(bytes);
@@ -72,11 +209,13 @@ describe("captureReportPng", () => {
   });
 
   it("rejects when the renderer hands back no PNG", async () => {
+    vi.mocked(toBlob).mockReset();
     vi.mocked(toBlob).mockResolvedValue(null);
     await expect(captureReportPng(document.createElement("div"))).rejects.toThrow(/no PNG/);
   });
 
   it("propagates a renderer failure so the copy toast can report it", async () => {
+    vi.mocked(toBlob).mockReset();
     vi.mocked(toBlob).mockRejectedValue(new Error("svg render boom"));
     await expect(captureReportPng(document.createElement("div"))).rejects.toThrow(
       "svg render boom",
@@ -84,81 +223,51 @@ describe("captureReportPng", () => {
   });
 });
 
-/** The smallest report the column can render (one roster entry, one sample,
- *  no moments) — enough to mount the REAL panel for the ref wiring. */
-// Typed end to end (no double cast — the type-escape ratchet counts them):
-// every field of StaticReport is constructible here.
-const minimalReport: StaticReport = {
-  replayPath: "replays/20261106_1.wowsreplay",
-  replayId: "20261106_1",
-  mapName: "spaces/15_NE_north",
-  gameMode: "Domination",
-  durationS: 600,
-  losLoaded: false,
-  modelSources: { fire: "models/fire.onnx", moveModel: "models/move.onnx" },
-  entityId: 1,
-  roster: [
-    {
-      entityId: 1,
-      shipId: 3541776848,
-      name: "me",
-      playerName: "me",
-      teamId: 0,
-      isRecorder: true,
-      diedAt: null,
-      coverage: {
-        aliveFrom: 0,
-        aliveTo: 600,
-        samples: 10,
-        gapSeconds: 0,
-        completeness: 1,
-        gapSegments: [],
-      },
-      whole: {
-        wholeGame: 0.5,
-        wholeFire: 0.5,
-        wholeMove: 0.5,
-        contribution: 1000,
-        contributionShots: 2,
-      },
-      outcome: null,
-    },
-  ],
-  timeline: [{ t: 0, inst: 0.5, confidence: 0.9 }],
-  moments: [],
-};
+describe("StaticReportPanel wiring", () => {
+  it("shows only the selected perspective and mounts the editor timeline", () => {
+    const { handle, wrapper } = mountPanel();
+    expect(handle).toBeTruthy();
+    const trigger = wrapper.find(".srp-picker__trigger");
+    expect(trigger.exists()).toBe(true);
+    expect(trigger.text()).toContain("me");
+    // The old roster grid + card wall are gone.
+    expect(wrapper.find(".srp-picker__chip").exists()).toBe(false);
+    expect(wrapper.find(".srp-moment").exists()).toBe(false);
+    expect(wrapper.find(".srp-tl").exists()).toBe(true);
+    expect(wrapper.findAll(".srp-tl__kf")).toHaveLength(3);
+  });
 
-describe("exposed capturePng", () => {
-  it("captures the panel's own export root through the component-ref plumbing", async () => {
+  it("captures through the panel's own export root", async () => {
     vi.mocked(toBlob).mockReset();
     const bytes = new Uint8Array([4, 5, 6]);
     vi.mocked(toBlob).mockResolvedValue(new Blob([bytes], { type: "image/png" }));
-
-    // The SAME component-ref plumbing StaticReportModal uses: the host
-    // panelRef receives the panel's exposed handle, never its internals.
-    let handle: { capturePng: () => Promise<Uint8Array> } | null = null;
-    const Host = defineComponent({
-      name: "StaticReportPanelHost",
-      setup() {
-        const panelRef = ref<{ capturePng: () => Promise<Uint8Array> } | null>(null);
-        watchEffect(() => {
-          handle = panelRef.value;
-        });
-        return () =>
-          h(StaticReportPanel, {
-            ref: panelRef,
-            report: minimalReport,
-            onPick: () => {},
-          });
-      },
-    });
-    mount(Host);
+    const { handle } = mountPanel();
     await nextTick();
-
-    expect(handle).not.toBeNull();
-    await expect(handle!.capturePng()).resolves.toEqual(bytes);
-    // The capture targets the column's export root — not some other node.
+    await expect(handle().capturePng()).resolves.toEqual(bytes);
     const node = vi.mocked(toBlob).mock.calls[0][0] as HTMLElement;
     expect(node.classList.contains("static-report-panel__export-root")).toBe(true);
+  });
+
+  it("renders the static annotation band before the clone and drops it after", async () => {
+    vi.mocked(toBlob).mockReset();
+    const seen = { callouts: -1, hint: -1, height: 0 };
+    vi.mocked(toBlob).mockImplementation((async (node: HTMLElement) => {
+      seen.callouts = node.querySelectorAll(".srp-tl__callout").length;
+      seen.hint = node.querySelectorAll(".srp-tl__hint").length;
+      seen.height = node.scrollHeight;
+      return new Blob([new Uint8Array([1])], { type: "image/png" });
+    }) as never);
+    const { handle, wrapper } = mountPanel();
+    await nextTick();
+    const root = wrapper.find(".static-report-panel__export-root").element as HTMLElement;
+    Object.defineProperty(root, "scrollHeight", { value: 2400 });
+    await handle().capturePng();
+    // The annotation band existed when html-to-image took the clone...
+    expect(seen.callouts).toBe(3);
+    expect(seen.hint).toBe(0);
+    expect(seen.height).toBe(2400);
+    // ...and the interactive surface came back afterwards.
+    expect(wrapper.findAll(".srp-tl__callout")).toHaveLength(0);
+    expect(wrapper.find(".srp-tl__hint").exists()).toBe(true);
   });
 });

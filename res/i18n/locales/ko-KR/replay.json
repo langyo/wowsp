@@ -678,7 +678,14 @@
     "hpLost": "{v} 적 HP 감소",
     "noAttributed": "귀속 피해 없음",
     "modelNote": "기여도는 실제 피해를 측정하며 판단의 우아함이 아님. 일치도는 플레이어 평가가 아님.",
-    "noTarget": "리플레이 화면에서 대국을 연 뒤 'AI 전투 보고서'를 누르세요."
+    "noTarget": "리플레이 화면에서 대국을 연 뒤 'AI 전투 보고서'를 누르세요.",
+    "pickPlayer": "플레이어 선택",
+    "timeline": "주요 장면",
+    "keyframes": "키프레임 {n}개",
+    "timelineHint": "키프레임에 마우스를 올리면 상세 정보",
+    "unresolved": "관측되지 않음",
+    "nearestEvent": "가장 가까운 이벤트",
+    "momentAria": "키프레임 #{n} · {t}"
   },
   "detail": {
     "title": "전투 상세"
