@@ -689,7 +689,10 @@
     "fireModel": "射撃モデル",
     "moveModel": "機動モデル",
     "modelAxis": "一致度",
-    "axisHint": "高いほど AI の予想に近い"
+    "axisHint": "高いほど AI の予想に近い",
+    "aiNotice": "この結果は AI による診断であり、プレイヤーの長期的な実力ではありません。参考程度にご覧ください",
+    "aiVersion": "WoWSP AI {version} · 重み学習 {date}",
+    "replayHash": "リプレイハッシュ（末尾6桁）"
   },
   "detail": {
     "title": "戦闘詳細"

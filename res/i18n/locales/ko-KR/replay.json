@@ -689,7 +689,10 @@
     "fireModel": "사격 모델",
     "moveModel": "기동 모델",
     "modelAxis": "일치도",
-    "axisHint": "높을수록 AI 예상에 가깝습니다"
+    "axisHint": "높을수록 AI 예상에 가깝습니다",
+    "aiNotice": "이 결과는 AI 진단 결과로, 플레이어의 장기 실력을 대변하지 않습니다. 참고용입니다",
+    "aiVersion": "WoWSP AI {version} · 가중치 학습 {date}",
+    "replayHash": "리플레이 해시(끝 6자리)"
   },
   "detail": {
     "title": "전투 상세"

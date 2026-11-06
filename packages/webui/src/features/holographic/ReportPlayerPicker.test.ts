@@ -155,6 +155,51 @@ describe("ReportPlayerPicker", () => {
     expect(document.activeElement).toBe(rows[1].element);
   });
 
+  it("renders the host-resolved identity faces on trigger and rows", async () => {
+    const w = mountPicker({
+      identity: {
+        name: "me",
+        clanTag: "HOOD",
+        dogTag: null,
+        shipType: "Destroyer",
+        shipName: "Shimakaze",
+        tier: 10,
+      },
+      roster: new Map([
+        [
+          2,
+          {
+            clanTag: "ABC",
+            shipType: "Cruiser",
+            shipName: "Des Moines",
+            tier: 10,
+          },
+        ],
+      ]),
+    });
+    // Trigger: clan + nickname + tier/ship line, emblem fallback initial.
+    const trigger = w.find(".srp-picker__trigger");
+    expect(trigger.find(".srp-picker__clan").text()).toBe("[HOOD]");
+    expect(trigger.find(".srp-picker__name").text()).toBe("me");
+    expect(trigger.find(".srp-picker__ship").text()).toContain("Shimakaze");
+    // Requirement 4: the DISPLAY also carries the ship-class glyph.
+    expect(
+      trigger.find(".srp-picker__ship .ship-type-glyph").exists(),
+    ).toBe(true);
+    expect(trigger.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
+
+    await w.find(".srp-picker__trigger").trigger("click");
+    const rows = w.findAll(".srp-picker__row");
+    // Row 1 = the selected self row (check mark), row 2 = mate with a ship
+    // icon + clan + ship line from the roster faces.
+    const mate = rows[1];
+    expect(mate.find(".srp-picker__row-icon").exists()).toBe(true);
+    expect(mate.find(".srp-picker__row-line").text()).toContain("[ABC]");
+    expect(mate.find(".srp-picker__row-ship").text()).toContain("Des Moines");
+    expect(rows[0].find(".srp-picker__check").exists()).toBe(true);
+    expect(mate.find(".srp-picker__check").exists()).toBe(false);
+  });
+
   it("is a static name plate while the long image is captured", async () => {
     const w = mountPicker({ capturing: true });
     const trigger = w.find(".srp-picker__trigger");

@@ -685,6 +685,9 @@ pub fn run() {
             commands::mod_integrity::mod_integrity_scan,
             commands::res_mods::ribbon_skin_dir,
             commands::replay::read_replay_header,
+            // Streaming SHA-256 of one replay file (commands/replay/hash.rs)
+            // — the report sheet's short replay fingerprint.
+            commands::replay::replay_content_hash,
             commands::replay::read_replay_positions,
             commands::replay::read_replay_smoke_screens,
             // Per-(map, scenario) cap layouts learned from local replays

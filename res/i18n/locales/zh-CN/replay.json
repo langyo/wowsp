@@ -689,7 +689,10 @@
     "fireModel": "开火模型",
     "moveModel": "走位模型",
     "modelAxis": "模型认同度",
-    "axisHint": "越高越符合 AI 预期"
+    "axisHint": "越高越符合 AI 预期",
+    "aiNotice": "该结果为 AI 诊断结果，不代表玩家长期水平，仅供参考",
+    "aiVersion": "WoWSP AI {version} · 权重训练 {date}",
+    "replayHash": "录像哈希（后六位）"
   },
   "detail": {
     "title": "对局详情"

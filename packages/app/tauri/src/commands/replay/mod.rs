@@ -64,6 +64,7 @@
 // `caps`     — (lib) capture-zone geometry; consumed by `cap_layouts`.
 
 mod cap_layouts;
+mod hash;
 mod listing;
 mod reveal;
 mod streams;
@@ -90,6 +91,9 @@ pub use cap_layouts::{
     __cmd__get_map_cap_layouts, __cmd__get_replay_cap_layout,
     __tauri_command_name_get_map_cap_layouts, __tauri_command_name_get_replay_cap_layout,
     get_map_cap_layouts, get_replay_cap_layout,
+};
+pub use hash::{
+    __cmd__replay_content_hash, __tauri_command_name_replay_content_hash, replay_content_hash,
 };
 pub use listing::{
     __cmd__list_replays, __cmd__list_replays_meta, __cmd__pick_replay_files,

@@ -121,13 +121,26 @@ import ReplayListFilter, {
   type ReplaySortDir,
 } from "@/features/replay/ReplayListFilter";
 import { prAlgoForRequest, statsPrefsState, type OverlayColumnScope } from "@/stores/statsPrefs";
-import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
+import {
+  AI_NAME,
+  fetchRosterStatsByNames,
+  isAiName,
+  type RosterStat,
+} from "@/composables/useRosterStats";
 import { useRoute, useRouter } from "vue-router";
 import StatsCard from "@/components/stats/StatsCard";
 import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { PlayerStats } from "@/api";
+import {
+  createIdentityGate,
+  identityCacheKey,
+  type ReportRosterInfo,
+  type ReportSheetIdentity,
+  type ReportSheetMeta,
+  type ReportSheetView,
+} from "@/features/holographic/reportSheet";
 import "./ReplayView.scss";
 
 /** Localize a battle mode from its layered identity (matchGroup / scenario /
@@ -2089,6 +2102,7 @@ export default defineComponent({
         const report = await api.decisionStaticReport(path, entityId ?? null);
         if (seq !== staticReportSeq) return;
         staticReport.value = report;
+        void resolveReportIdentity(report);
       } catch (err) {
         if (seq !== staticReportSeq) return;
         staticReportError.value = String(err);
@@ -2103,6 +2117,157 @@ export default defineComponent({
       staticReportSeq += 1;
       staticReportLoading.value = false;
     };
+
+    // ── report sheet faces: identity, provenance, roster icons ──
+    /** The opened battle's per-player stats (clan tags for the picker rows). */
+    const reportRosterStats = ref<Map<string, RosterStat>>(new Map());
+    /** The opened replay's SHA-256 (the sheet prints its six-char tail). */
+    const replayHash = ref<string | null>(null);
+    /** The selected perspective's emblem/clan (resolved on demand). */
+    const reportIdentity = ref<ReportSheetIdentity | null>(null);
+    const identityCache = new Map<string, ReportSheetIdentity>();
+    const identityGate = createIdentityGate();
+    let sheetFacesSeq = 0;
+    const reportStatsStore = useStatsStore();
+
+    /** One open = one hash fetch + one roster batch. The seq guard keeps a
+     *  slow answer for a previously opened replay from patching the sheet. */
+    watch(
+      () => parser.current.value?.path ?? null,
+      (path) => {
+        const seq = ++sheetFacesSeq;
+        replayHash.value = null;
+        reportRosterStats.value = new Map();
+        reportIdentity.value = null;
+        // A new replay orphans any in-flight identity lookup of the old one.
+        identityGate.next();
+        if (!path) return;
+        // The hash and the roster faces are independent: hashing a multi-MB
+        // replay must not hold the picker's clan tags hostage.
+        void (async () => {
+          try {
+            const hash = await api.replayContentHash(path);
+            if (seq === sheetFacesSeq) replayHash.value = hash;
+          } catch {
+            /* optional provenance — the sheet simply omits the fingerprint */
+          }
+        })();
+        const names = (parser.current.value?.vehicles ?? [])
+          .map((vehicle) => vehicle.name)
+          .filter((name) => !isAiName(name));
+        if (names.length === 0) return;
+        void (async () => {
+          try {
+            const stats = await fetchRosterStatsByNames(names, realm.value);
+            if (seq === sheetFacesSeq) reportRosterStats.value = stats;
+          } catch {
+            /* clan tags are decorative — the rows fall back to the bare name */
+          }
+        })();
+      },
+      { immediate: true },
+    );
+
+    /** entityId → picker faces: ship class icon + ship name/tier + clan. */
+    const reportRosterFaces = computed<Map<number, ReportRosterInfo>>(() => {
+      const faces = new Map<number, ReportRosterInfo>();
+      const ships = encyclopedia.byId;
+      for (const vehicle of parser.current.value?.vehicles ?? []) {
+        const ship = vehicle.shipId != null ? ships.get(vehicle.shipId) : null;
+        faces.set(vehicle.id, {
+          clanTag: reportRosterStats.value.get(vehicle.name)?.clanTag ?? null,
+          shipType: ship?.type ?? null,
+          shipName: ship
+            ? encyclopedia.shipDisplayName(ship)
+            : (vehicle.shipName ?? null),
+          tier: ship?.tier ?? null,
+        });
+      }
+      return faces;
+    });
+
+    /** The head's battle provenance (the replay meta row's information). */
+    const reportSheetMeta = computed<ReportSheetMeta>(() => {
+      const cur = parser.current.value;
+      const operation = spawnSymmetryOperation.value;
+      return {
+        mapName: cur?.mapName ? displayMapName(cur.mapName, mapLang.value) : null,
+        modeLabel: !cur?.matchGroup
+          ? null
+          : operation
+            ? modeLabelOfKey("operation")
+            : modeLabel(
+                cur.matchGroup,
+                cur.scenario,
+                cur.eventType,
+                cur.botCount ?? 0,
+                cur.scriptedUnitCount ?? 0,
+                hasSingleTeamRoster(cur.vehicles),
+              ),
+        battleStart: cur?.dateTime ? formatDateTime(cur.dateTime) : null,
+        replayHash: replayHash.value,
+      };
+    });
+
+    /** Identity faces the report roster alone can answer (no network). */
+    function fallbackReportIdentity(report: StaticReport): ReportSheetIdentity {
+      const row = report.roster.find((entry) => entry.entityId === report.entityId);
+      const face = reportRosterFaces.value.get(report.entityId);
+      return {
+        name: row?.playerName ?? row?.name ?? String(report.entityId),
+        clanTag: face?.clanTag ?? null,
+        dogTag: null,
+        shipType: face?.shipType ?? null,
+        shipName: face?.shipName ?? null,
+        tier: face?.tier ?? null,
+      };
+    }
+
+    /** Resolve the perspective's emblem/clan off the shared stats store (the
+     *  same cache every water-table surface reads). Bots and offline profiles
+     *  keep the fallback identity; switches race-guard through identitySeq. */
+    async function resolveReportIdentity(report: StaticReport): Promise<void> {
+      const base = fallbackReportIdentity(report);
+      // Ticket BEFORE the cache check: a cache hit must still invalidate any
+      // in-flight lookup, or switching A -> B (pending) -> A lets B's late
+      // answer overwrite A's identity (2026-11-06 review).
+      const seq = identityGate.next();
+      const cacheKey = identityCacheKey(realm.value, base.name);
+      const cached = identityCache.get(cacheKey);
+      if (cached) {
+        reportIdentity.value = {
+          ...base,
+          clanTag: cached.clanTag ?? base.clanTag,
+          dogTag: cached.dogTag,
+        };
+        return;
+      }
+      reportIdentity.value = base;
+      if (isAiName(base.name) || !realm.value) return;
+      try {
+        const landed = await reportStatsStore.lookup(base.name, realm.value);
+        if (!identityGate.isCurrent(seq)) return;
+        const resolved: ReportSheetIdentity = {
+          ...base,
+          clanTag: landed.clanTag ?? base.clanTag,
+          dogTag: landed.dogTag ?? null,
+        };
+        identityCache.set(cacheKey, resolved);
+        reportIdentity.value = resolved;
+      } catch {
+        /* offline / hidden profile: the fallback identity stays */
+      }
+    }
+
+    const reportSheet = computed<ReportSheetView | null>(() => {
+      const report = staticReport.value;
+      if (!report) return null;
+      return {
+        identity: reportIdentity.value ?? fallbackReportIdentity(report),
+        meta: reportSheetMeta.value,
+        roster: reportRosterFaces.value,
+      };
+    });
     /** An OUT-OF-BAND replay open (OS double-click on a .wowsreplay) swaps
      *  the view under an open modal — the report describes ONE battle, so
      *  retire the modal instead of silently showing the previous replay's
@@ -2742,6 +2907,7 @@ export default defineComponent({
                       report={staticReport.value}
                       loading={staticReportLoading.value}
                       error={staticReportError.value}
+                      sheet={reportSheet.value}
                       onClose={closeStaticReport}
                       onSeek={(t0) => mapRef.value?.seek(t0)}
                       onPick={(entityId) => void openStaticReport(entityId)}

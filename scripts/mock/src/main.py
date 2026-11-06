@@ -11,6 +11,7 @@ Run:
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -941,6 +942,14 @@ def _load_replay_dump() -> dict[str, Any] | None:
         if p.exists():
             _REPLAY_DUMP = json.loads(p.read_text(encoding="utf-8"))
     return _REPLAY_DUMP
+
+
+@app.post("/api/replay_content_hash")
+async def cmd_replay_content_hash(request: Request) -> str:
+    """Deterministic stand-in: the browser has no replay bytes to hash, so
+    the dev shell fingerprints the path instead. Real builds hash the file."""
+    body = await request.json()
+    return hashlib.sha256(str(body.get("path", "")).encode("utf-8")).hexdigest()
 
 
 @app.post("/api/read_replay_positions")

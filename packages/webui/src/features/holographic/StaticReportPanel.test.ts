@@ -237,6 +237,64 @@ describe("StaticReportPanel wiring", () => {
     expect(wrapper.findAll(".srp-tl__kf")).toHaveLength(3);
   });
 
+  it("renders the host-resolved identity, provenance and shared footer", () => {
+    const wrapper = mount(StaticReportPanel, {
+      props: {
+        report: sampleReport(),
+        onPick: () => {},
+        sheet: {
+          identity: {
+            name: "me",
+            clanTag: "HOOD",
+            dogTag: null,
+            shipType: "Destroyer",
+            shipName: "Shimakaze",
+            tier: 10,
+          },
+          meta: {
+            mapName: "North",
+            modeLabel: "Domination",
+            battleStart: "2026-11-06 12:34",
+            replayHash:
+              "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          },
+          roster: new Map([
+            [
+              1,
+              {
+                clanTag: "HOOD",
+                shipType: "Destroyer",
+                shipName: "Shimakaze",
+                tier: 10,
+              },
+            ],
+          ]),
+        },
+      },
+    });
+    // Identity trigger: clan tag + ship line, emblem fallback (no dog tag).
+    expect(wrapper.find(".srp-picker__clan").text()).toBe("[HOOD]");
+    expect(wrapper.find(".srp-picker__ship").text()).toContain("X");
+    expect(wrapper.find(".srp-picker__ship").text()).toContain("Shimakaze");
+    expect(
+      wrapper.find(".srp-picker__ship .ship-type-glyph").exists(),
+    ).toBe(true);
+    expect(wrapper.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
+    // Battle provenance: map, mode, start, replay fingerprint tail.
+    expect(wrapper.find(".srp-head__meta-map").text()).toBe("North");
+    expect(wrapper.find(".srp-head__mode").text()).toBe("Domination");
+    expect(wrapper.text()).toContain("2026-11-06 12:34");
+    expect(wrapper.find(".srp-head__hash").text()).toBe("#abcdef");
+    // The long image closes on the shared watermark with the AI extras.
+    expect(wrapper.find(".shot-footer").exists()).toBe(true);
+    expect(wrapper.find(".shot-footer__note").text()).toBe(
+      "replay.report.aiNotice",
+    );
+    expect(wrapper.find(".shot-footer__meta").text()).toBe(
+      "replay.report.aiVersion",
+    );
+  });
+
   it("maps coverage gaps over the player's observed interval", () => {
     const report = sampleReport();
     report.roster[0].coverage = {

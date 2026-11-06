@@ -3,12 +3,16 @@
  *
  * One vertical column (the "long image" is exactly this DOM node captured
  * via html-to-image and copied to the clipboard): the selected player's
- * head (perspective dropdown, whole-game scores, coverage), the editor
- * timeline (ruler, keyframe lane, score track — with the annotation band
- * in capture mode) and the model footnote. `onSeek` jumps the 3D board's
- * playhead from the timeline's keyframe cards, so the same report doubles
- * as an in-app step-through; the picker switches any roster perspective
- * (the Rust side reuses its scoring cache, so a switch is one IPC away).
+ * identity head (emblem + clan + nickname + ship, whole-game scores and
+ * coverage) with the battle provenance in the right corner (map, mode,
+ * start, replay fingerprint, duration), the editor timeline (ruler,
+ * keyframe lane, score track — with the annotation band in capture mode),
+ * the model footnote and the SHARED WoWSP share footer (shotKit's canvas
+ * watermark as a DOM twin, plus the AI notice and model version).
+ * `onSeek` jumps the 3D board's playhead from the timeline's keyframe
+ * cards, so the same report doubles as an in-app step-through; the picker
+ * switches any roster perspective (the Rust side reuses its scoring cache,
+ * so a switch is one IPC away).
  *
  * EMBEDDED (always, since 2026-11-03): the column mounts inside
  * StaticReportModal — the replay view's first-class hikari window (the
@@ -31,11 +35,14 @@ import { computed, defineComponent, nextTick, ref, type PropType } from "vue";
 import { HkScrollContainer } from "@celestia-island/hikari";
 
 import AppTag from "@/components/base/AppTag";
+import ShotFooter from "@/features/share/ShotFooter";
+import { aiModelVersion } from "@/features/ai/modelVersion";
 import { t } from "@/i18n";
 import type { StaticReport, StaticRosterEntry } from "@/api";
 import ReportPlayerPicker from "./ReportPlayerPicker";
 import ReportTimeline from "./ReportTimeline";
 import { formatHp, pct } from "./reportFormat";
+import type { ReportSheetView } from "./reportSheet";
 import "./StaticReportPanel.scss";
 
 /** Ceiling on the long-image capture: past this the copy reports failure. */
@@ -97,6 +104,9 @@ export default defineComponent({
     onSeek: { type: Function as PropType<(t: number) => void>, default: null },
     /** Perspective switch (refetch from the Rust cache). */
     onPick: { type: Function as PropType<(entityId: number) => void>, required: true },
+    /** Host-resolved identity/meta/roster faces (avatar, clan, ship icon,
+     *  map/mode/start/hash). Null renders the plain report (tests, dev). */
+    sheet: { type: Object as PropType<ReportSheetView | null>, default: null },
   },
   setup(props, { expose }) {
     /** The exported long-image column — the capture's DOM root (a template
@@ -108,6 +118,30 @@ export default defineComponent({
     const capturing = ref(false);
     const me = computed<StaticRosterEntry | undefined>(() =>
       props.report.roster.find((row) => row.entityId === props.report.entityId),
+    );
+    /** Top-right battle provenance: map, mode, start time, replay hash tail
+     *  and duration — the header the replay's own meta row carries, trimmed
+     *  to fit the sheet. */
+    const mapLabel = computed(
+      () =>
+        props.sheet?.meta.mapName ??
+        props.report.mapName?.replace("spaces/", "") ??
+        "",
+    );
+    const modeLabel = computed(() => props.sheet?.meta.modeLabel ?? null);
+    const battleStart = computed(() => props.sheet?.meta.battleStart ?? null);
+    const hashTail = computed(() => {
+      const hash = props.sheet?.meta.replayHash;
+      return hash && hash.length > 6 ? hash.slice(-6) : null;
+    });
+    /** WoWSP AI identity: the model version line (app version + last weights
+     *  training date) from the single model-version source. */
+    const aiIdentity = aiModelVersion();
+    const aiVersionLine = computed(() =>
+      t("replay.report.aiVersion", {
+        version: aiIdentity.version,
+        date: aiIdentity.trainedAt,
+      }),
     );
     /** The coverage bar spans the player's OBSERVED interval (death time for
      *  a sunk ship), matching the timeline axis — mapping the gaps over the
@@ -154,6 +188,8 @@ export default defineComponent({
                 <ReportPlayerPicker
                   report={props.report}
                   capturing={capturing.value}
+                  identity={props.sheet?.identity ?? null}
+                  roster={props.sheet?.roster ?? null}
                   onPick={(entityId: number) => props.onPick(entityId)}
                 />
                 {me.value?.isRecorder ? (
@@ -168,12 +204,30 @@ export default defineComponent({
                 ) : (
                   <AppTag tone="success">{t("replay.report.survived")}</AppTag>
                 )}
-                <span class="srp-head__map">
-                  {props.report.mapName?.replace("spaces/", "") ?? ""} ·{" "}
-                  {t("replay.report.duration", {
-                    t: Math.round(props.report.durationS),
-                  })}
-                </span>
+                <div class="srp-head__meta">
+                  <span class="srp-head__meta-map">{mapLabel.value}</span>
+                  {modeLabel.value ? (
+                    <span class="srp-head__mode">{modeLabel.value}</span>
+                  ) : null}
+                  {battleStart.value ? (
+                    <span class="srp-head__meta-item">
+                      {battleStart.value}
+                    </span>
+                  ) : null}
+                  {hashTail.value ? (
+                    <span
+                      class="srp-head__hash"
+                      data-hint={t("replay.report.replayHash")}
+                    >
+                      #{hashTail.value}
+                    </span>
+                  ) : null}
+                  <span class="srp-head__meta-item">
+                    {t("replay.report.duration", {
+                      t: Math.round(props.report.durationS),
+                    })}
+                  </span>
+                </div>
               </div>
               <div class="srp-head__scores">
                 <div class="srp-head__score">
@@ -256,6 +310,14 @@ export default defineComponent({
               {props.report.modelSources.fire.split(/[\\/]/).pop()} ·{" "}
               {props.report.modelSources.moveModel.split(/[\\/]/).pop()}
             </div>
+            {/* The copied long image closes on the SAME WoWSP watermark every
+                share shot carries, plus the AI-specific notice and the AI
+                model version line. */}
+            <ShotFooter
+              class="srp-foot-shared"
+              notes={[t("replay.report.aiNotice")]}
+              meta={[aiVersionLine.value]}
+            />
           </div>
         </HkScrollContainer>
       </div>

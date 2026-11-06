@@ -7,11 +7,11 @@
    is themed. */
 .hk-modal-content.wowsp-report-modal {
   /* The 2026-11-06 timeline rewrite made the report a compact sheet (head +
-     editor timeline + footnote ≈ 510 px at the default width), so the old
-     66 vh reading frame shrank to a 640 px ceiling: the full report fits
-     without scrolling on ordinary windows, and shorter windows scroll the
-     panel's own HkScrollContainer. */
-  height: min(64vh, 640px);
+     editor timeline + footnote + the shared footer band ≈ 590 px at the
+     default width), so the sheet keeps a 66 vh / 700 px ceiling: the full
+     report fits without scrolling on ordinary windows, and shorter windows
+     scroll the panel's own HkScrollContainer. */
+  height: min(66vh, 700px);
   display: flex;
   flex-direction: column;
   padding: 0;

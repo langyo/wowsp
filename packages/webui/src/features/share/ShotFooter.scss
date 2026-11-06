@@ -1,0 +1,91 @@
+/**
+ * ShotFooter — the DOM twin of shotKit's drawFooter. Dark-sheet inks only
+ * (the exported long image must not depend on the app theme); the same three
+ * blocks the canvas footer draws, left brand / centered disclaimers / right
+ * provenance.
+ */
+.shot-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  min-height: 88px;
+  padding: 14px 18px;
+  background: rgba(22, 28, 38, 0.75);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--srp-ink, #d6dde8);
+  font-size: 11.5px;
+  line-height: 1.5;
+
+  &__brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: none;
+  }
+
+  &__logo {
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+    object-fit: cover;
+  }
+
+  &__brand-text {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+
+  &__name {
+    font-size: 19px;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+
+  &__tagline {
+    font-size: 12px;
+    color: var(--srp-dim, #8b98a8);
+  }
+
+  &__center {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    gap: 1px;
+    text-align: center;
+    min-width: 0;
+  }
+
+  &__note {
+    color: var(--srp-warn, #d29922);
+  }
+
+  &__right {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 1px;
+    text-align: right;
+  }
+
+  /** Canvas parity: drawFooter paints the QQ group at 12 px/600 and the
+   *  project URL at 12 px/400 — the DOM block must not read lighter than
+   *  every other share shot. */
+  &__qq {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &__url {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--srp-dim, #8b98a8);
+  }
+
+  &__meta {
+    color: var(--srp-dim, #8b98a8);
+  }
+}

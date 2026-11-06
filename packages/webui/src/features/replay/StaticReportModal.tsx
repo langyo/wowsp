@@ -7,6 +7,7 @@ import ErrorCard from "@/components/base/ErrorCard";
 import { t } from "@/i18n";
 import { useShareImage } from "@/features/share/useShareImage";
 import StaticReportPanel from "@/features/holographic/StaticReportPanel";
+import type { ReportSheetView } from "@/features/holographic/reportSheet";
 import "./StaticReportModal.scss";
 
 /**
@@ -48,6 +49,9 @@ export default defineComponent({
     report: { type: Object as PropType<StaticReport | null>, default: null },
     loading: { type: Boolean, default: false },
     error: { type: String as PropType<string | null>, default: null },
+    /** Host-resolved sheet faces (player identity, battle meta, roster ship
+     *  icons) — passed straight through to the chromeless panel. */
+    sheet: { type: Object as PropType<ReportSheetView | null>, default: null },
   },
   emits: {
     close: () => true,
@@ -117,6 +121,7 @@ export default defineComponent({
                 <StaticReportPanel
                   ref={panelRef}
                   report={props.report}
+                  sheet={props.sheet}
                   onSeek={(t0: number) => emit("seek", t0)}
                   onPick={(entityId: number) => emit("pick", entityId)}
                 />
