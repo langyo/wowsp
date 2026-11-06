@@ -15,6 +15,12 @@
  * outside pointer dismiss the menu. While the long image is being captured
  * the menu is forced shut, so the exported frame only ever shows the
  * selected player — no stray dropdown in the share image.
+ *
+ * Faces come from the host (reportSheet.ts): the trigger shows the player's
+ * in-game emblem (the shared PlayerBadge), [clan] tag, nickname and tier +
+ * ship name; rows mirror the 3D replay's player list — ship-class icon on
+ * the left, [clan] nickname + tier/ship on the right, coverage face and a
+ * check for the selected perspective.
  */
 import {
   computed,
@@ -29,9 +35,13 @@ import {
 import { Check, ChevronDown, Minus, Percent } from "@lucide/vue";
 
 import AppTag from "@/components/base/AppTag";
+import BattleIcon from "@/components/base/BattleIcon";
+import PlayerBadge from "@/components/base/PlayerBadge";
 import { t } from "@/i18n";
 import type { StaticCoverage, StaticReport, StaticRosterEntry } from "@/api";
+import { tierRoman } from "@/features/replay/shipLiveStats";
 import { coverageClass, pct } from "./reportFormat";
+import type { ReportRosterInfo, ReportSheetIdentity } from "./reportSheet";
 import "./StaticReportPanel.scss";
 
 /** Coverage face: full / partial(percent) / no data — the same three-state
@@ -62,6 +72,17 @@ export default defineComponent({
     report: { type: Object as PropType<StaticReport>, required: true },
     /** Capture mode: force-closed, trigger disabled (static frame only). */
     capturing: { type: Boolean, default: false },
+    /** The selected player's identity faces (emblem, clan, ship) — the host
+     *  resolves them; a null identity falls back to the bare nickname. */
+    identity: {
+      type: Object as PropType<ReportSheetIdentity | null>,
+      default: null,
+    },
+    /** entityId → per-row identity faces (ship icon, clan, ship name). */
+    roster: {
+      type: Object as PropType<Map<number, ReportRosterInfo> | null>,
+      default: null,
+    },
   },
   emits: {
     pick: (_entityId: number) => true,
@@ -89,6 +110,35 @@ export default defineComponent({
     const displayName = computed(() =>
       me.value ? (me.value.name ?? String(me.value.entityId)) : "—",
     );
+    /** The trigger's identity faces: the host-resolved identity wins, the
+     *  selected roster row is the fallback source of clan/ship. */
+    const triggerClan = computed(() => {
+      const row = me.value;
+      return (
+        props.identity?.clanTag ??
+        (row ? (props.roster?.get(row.entityId)?.clanTag ?? null) : null)
+      );
+    });
+    const triggerShip = computed(() => {
+      const row = me.value;
+      return (
+        props.identity?.shipName ??
+        (row ? (props.roster?.get(row.entityId)?.shipName ?? null) : null)
+      );
+    });
+    const triggerTier = computed(() => {
+      const row = me.value;
+      return (
+        props.identity?.tier ??
+        (row ? (props.roster?.get(row.entityId)?.tier ?? null) : null)
+      );
+    });
+    function rowInfo(row: StaticRosterEntry): ReportRosterInfo | null {
+      return props.roster?.get(row.entityId) ?? null;
+    }
+    function rosterName(row: StaticRosterEntry): string {
+      return row.name ?? String(row.entityId);
+    }
 
     /** Enabled rows of the opened menu — the roving-focus ring. */
     function menuRows(): HTMLButtonElement[] {
@@ -191,13 +241,33 @@ export default defineComponent({
           onClick={toggle}
           onKeydown={onTriggerKeydown}
         >
-          <span
-            class={
-              "srp-picker__dot srp-picker__dot--" +
-              (me.value?.teamId === 1 ? "enemy" : "ally")
-            }
-          />
-          <span class="srp-picker__name">{displayName.value}</span>
+          <span class="srp-picker__avatar">
+            <PlayerBadge dogTag={props.identity?.dogTag ?? null} size={28} />
+          </span>
+          <span class="srp-picker__identity">
+            <span class="srp-picker__name-line">
+              <span
+                class={
+                  "srp-picker__dot srp-picker__dot--" +
+                  (me.value?.teamId === 1 ? "enemy" : "ally")
+                }
+              />
+              {triggerClan.value ? (
+                <span class="srp-picker__clan">[{triggerClan.value}]</span>
+              ) : null}
+              <span class="srp-picker__name">{displayName.value}</span>
+            </span>
+            {triggerShip.value ? (
+              <span class="srp-picker__ship">
+                {tierRoman(triggerTier.value) ? (
+                  <span class="srp-picker__tier">
+                    {tierRoman(triggerTier.value)}
+                  </span>
+                ) : null}
+                {triggerShip.value}
+              </span>
+            ) : null}
+          </span>
           {props.capturing ? null : (
             <ChevronDown size={14} class="srp-picker__chevron" />
           )}
@@ -241,16 +311,52 @@ export default defineComponent({
                     }
                     onClick={() => choose(row)}
                   >
-                    <span
-                      class={
-                        "srp-picker__row-dot srp-picker__row-dot--" +
-                        (row.teamId === 1 ? "enemy" : "ally")
-                      }
-                    />
-                    <span class="srp-picker__row-name">
-                      {row.name ?? String(row.entityId)}
+                    {rowInfo(row)?.shipType ? (
+                      <span class="srp-picker__row-icon">
+                        <BattleIcon
+                          type={rowInfo(row)!.shipType!}
+                          variant={row.teamId === 1 ? "enemy" : "ally"}
+                          size={18}
+                        />
+                      </span>
+                    ) : (
+                      <span
+                        class={
+                          "srp-picker__row-dot srp-picker__row-dot--" +
+                          (row.teamId === 1 ? "enemy" : "ally")
+                        }
+                      />
+                    )}
+                    <span class="srp-picker__row-id">
+                      <span class="srp-picker__row-line">
+                        {rowInfo(row)?.clanTag ? (
+                          <span class="srp-picker__clan">
+                            [{rowInfo(row)!.clanTag}]
+                          </span>
+                        ) : null}
+                        <span class="srp-picker__row-name">
+                          {rosterName(row)}
+                        </span>
+                      </span>
+                      {rowInfo(row)?.shipName ? (
+                        <span class="srp-picker__row-ship">
+                          {tierRoman(rowInfo(row)!.tier) ? (
+                            <span class="srp-picker__tier">
+                              {tierRoman(rowInfo(row)!.tier)}
+                            </span>
+                          ) : null}
+                          {rowInfo(row)?.shipName}
+                        </span>
+                      ) : null}
                     </span>
                     <CoverageTag coverage={row.coverage} />
+                    {row.entityId === props.report.entityId ? (
+                      <Check
+                        size={12}
+                        class="srp-picker__check"
+                        aria-hidden="true"
+                      />
+                    ) : null}
                   </button>
                 ))}
               </div>

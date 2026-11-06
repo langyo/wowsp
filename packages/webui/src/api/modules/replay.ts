@@ -1064,6 +1064,10 @@ export function decodeReplayStreamPacked(buf: ArrayBuffer): ReplayStream {
 
 export const replayApi = {
   readReplayHeader: (path: string) => transport.invoke<ReplayMeta>(RPC.read_replay_header, { path }),
+  /** Lowercase SHA-256 hex of the replay file's bytes — the share sheet's
+   *  short replay fingerprint (the last six chars identify the battle). */
+  replayContentHash: (path: string) =>
+    transport.invoke<string>(RPC.replay_content_hash, { path }),
   readReplayPositions: (path: string): Promise<ReplayStream> => {
     // Tauri shell: packed bytes. Browser/mock: the same command answers
     // JSON objects (see the mock endpoints), so probe the capability.

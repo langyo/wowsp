@@ -689,7 +689,10 @@
     "fireModel": "Modelo de disparo",
     "moveModel": "Modelo de maniobra",
     "modelAxis": "Concordancia",
-    "axisHint": "Más alto = más cerca de la expectativa de la IA"
+    "axisHint": "Más alto = más cerca de la expectativa de la IA",
+    "aiNotice": "Este resultado es un diagnóstico de la IA, no representa el nivel a largo plazo del jugador; solo como referencia",
+    "aiVersion": "WoWSP AI {version} · pesos entrenados {date}",
+    "replayHash": "Hash del replay (últimos seis)"
   },
   "detail": {
     "title": "Detalle de la batalla"

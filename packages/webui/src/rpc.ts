@@ -55,6 +55,9 @@ export const RPC = {
   remove_replay_dir: "remove_replay_dir",
   ribbon_skin_dir: "ribbon_skin_dir",
   read_replay_header: "read_replay_header",
+  // Streaming SHA-256 of one replay file (commands/replay/hash.rs) — the
+  // report sheet's short replay fingerprint (last six hex chars).
+  replay_content_hash: "replay_content_hash",
   read_replay_positions: "read_replay_positions",
   read_live_replay_snapshot: "read_live_replay_snapshot",
   live_temp_replay: "live_temp_replay",

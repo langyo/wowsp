@@ -80,7 +80,8 @@ const FOOTER_GAP = 16;
 /** The bundled pig-mascot brand mark (public/ asset — same-origin, so the
  *  canvas never taints; same pattern as the HUD marker PNGs). */
 export const LOGO_URL = "/logo.webp";
-const GITHUB_URL = "github.com/langyo/wowsp";
+/** The project home shown in every share footer (canvas and DOM faces). */
+export const GITHUB_URL = "github.com/langyo/wowsp";
 
 /** Scratch 2d context for measuring text outside a live shot canvas — the
  *  footer minimum width budgets before any painting starts. */

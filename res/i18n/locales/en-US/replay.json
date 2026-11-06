@@ -689,7 +689,10 @@
     "fireModel": "Fire model",
     "moveModel": "Move model",
     "modelAxis": "Agreement",
-    "axisHint": "Higher means closer to the AI expectation"
+    "axisHint": "Higher means closer to the AI expectation",
+    "aiNotice": "This is an AI diagnosis, not a verdict on the player's long-term performance — for reference only",
+    "aiVersion": "WoWSP AI {version} · weights trained {date}",
+    "replayHash": "Replay hash (last six)"
   },
   "detail": {
     "title": "Battle detail"
