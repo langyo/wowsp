@@ -240,7 +240,10 @@ export default defineComponent({
         <button
           ref={triggerRef}
           type="button"
-          class="srp-picker__trigger"
+          class={[
+            "srp-picker__trigger",
+            props.capturing ? "srp-picker__trigger--static" : "",
+          ]}
           aria-haspopup="listbox"
           aria-expanded={open.value}
           disabled={props.capturing}
@@ -253,12 +256,6 @@ export default defineComponent({
           </span>
           <span class="srp-picker__identity">
             <span class="srp-picker__name-line">
-              <span
-                class={
-                  "srp-picker__dot srp-picker__dot--" +
-                  (me.value?.teamId === 1 ? "enemy" : "ally")
-                }
-              />
               {triggerClan.value ? (
                 <span class="srp-picker__clan">[{triggerClan.value}]</span>
               ) : null}
@@ -269,7 +266,7 @@ export default defineComponent({
                 {triggerShipType.value ? (
                   <BattleIcon
                     type={triggerShipType.value}
-                    variant="plain"
+                    variant={me.value?.teamId === 1 ? "enemy" : "ally"}
                     size={13}
                   />
                 ) : null}

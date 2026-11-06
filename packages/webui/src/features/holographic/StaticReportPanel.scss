@@ -202,6 +202,15 @@
       opacity: 1; // capture mode: a static, fully readable name plate
     }
 
+    /** Capture mode renders the identity as CONTENT, not as a control: the
+     *  exported long image must not carry a button frame, hover affordance
+     *  or dropdown chrome. */
+    &--static {
+      padding: 0;
+      background: transparent;
+      border-color: transparent;
+    }
+
     &:hover:not(:disabled),
     &[aria-expanded="true"] {
       border-color: var(--srp-ally);
@@ -210,21 +219,6 @@
     &:focus-visible {
       outline: 2px solid var(--srp-ally);
       outline-offset: 2px;
-    }
-  }
-
-  &__dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex: none;
-
-    &--ally {
-      background: var(--srp-ally);
-    }
-
-    &--enemy {
-      background: var(--srp-enemy);
     }
   }
 
