@@ -685,7 +685,9 @@
     "timelineHint": "悬停关键帧查看详情",
     "unresolved": "未被侦测",
     "nearestEvent": "最近事件",
-    "momentAria": "关键帧 #{n} · {t}"
+    "momentAria": "关键帧 #{n} · {t}",
+    "fireModel": "开火模型",
+    "moveModel": "走位模型"
   },
   "detail": {
     "title": "对局详情"

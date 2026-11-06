@@ -109,6 +109,15 @@ export default defineComponent({
     const me = computed<StaticRosterEntry | undefined>(() =>
       props.report.roster.find((row) => row.entityId === props.report.entityId),
     );
+    /** The coverage bar spans the player's OBSERVED interval (death time for
+     *  a sunk ship), matching the timeline axis — mapping the gaps over the
+     *  full battle left a misleading empty tail. */
+    const coverageWindow = computed(() => {
+      const coverage = me.value?.coverage;
+      const start = coverage?.aliveFrom ?? 0;
+      const end = coverage?.aliveTo ?? Math.max(1, props.report.durationS);
+      return { start, span: Math.max(1, end - start) };
+    });
 
     /** Capture this panel's long image to PNG bytes for the host's copy
      *  button (the modal owns the clipboard write + the toast through
@@ -221,12 +230,12 @@ export default defineComponent({
                         class="srp-coverage-bar__gap"
                         style={{
                           left:
-                            (from / Math.max(1, props.report.durationS)) * 100 +
+                            ((from - coverageWindow.value.start) /
+                              coverageWindow.value.span) *
+                              100 +
                             "%",
                           width:
-                            ((to - from) /
-                              Math.max(1, props.report.durationS)) *
-                              100 +
+                            ((to - from) / coverageWindow.value.span) * 100 +
                             "%",
                         }}
                       />

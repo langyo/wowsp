@@ -685,7 +685,9 @@
     "timelineHint": "Hover a keyframe for details",
     "unresolved": "Not observed",
     "nearestEvent": "Nearest event",
-    "momentAria": "Keyframe #{n} · {t}"
+    "momentAria": "Keyframe #{n} · {t}",
+    "fireModel": "Fire model",
+    "moveModel": "Move model"
   },
   "detail": {
     "title": "Battle detail"

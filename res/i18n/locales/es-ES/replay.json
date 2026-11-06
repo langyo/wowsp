@@ -685,7 +685,9 @@
     "timelineHint": "Pasa el cursor por un fotograma clave para ver los detalles",
     "unresolved": "No observado",
     "nearestEvent": "Evento más cercano",
-    "momentAria": "Fotograma clave n.º {n} · {t}"
+    "momentAria": "Fotograma clave n.º {n} · {t}",
+    "fireModel": "Modelo de disparo",
+    "moveModel": "Modelo de maniobra"
   },
   "detail": {
     "title": "Detalle de la batalla"

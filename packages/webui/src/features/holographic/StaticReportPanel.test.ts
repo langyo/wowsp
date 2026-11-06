@@ -105,10 +105,10 @@ function sampleReport(): StaticReport {
       },
     ],
     timeline: [
-      { t: 0, inst: 0.5, confidence: 0.5 },
-      { t: 100, inst: 0.08, confidence: 0.62 },
-      { t: 300, inst: 0.3, confidence: 0.7 },
-      { t: 600, inst: 0.2, confidence: 0.6 },
+      { t: 0, inst: 0.5, confidence: 0.5, fire: 0.4, fired: false, fireProb: 0.6, hpLost: null, move: 0.55 },
+      { t: 100, inst: 0.08, confidence: 0.62, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.2 },
+      { t: 300, inst: 0.3, confidence: 0.7, fire: 0.7, fired: true, fireProb: 0.7, hpLost: 1200, move: 0.4 },
+      { t: 600, inst: 0.2, confidence: 0.6, fire: 0.3, fired: false, fireProb: 0.7, hpLost: null, move: 0.25 },
     ],
     moments: [
       moment({ t: 100 }),
@@ -235,6 +235,22 @@ describe("StaticReportPanel wiring", () => {
     expect(wrapper.find(".srp-moment").exists()).toBe(false);
     expect(wrapper.find(".srp-tl").exists()).toBe(true);
     expect(wrapper.findAll(".srp-tl__kf")).toHaveLength(3);
+  });
+
+  it("maps coverage gaps over the player's observed interval", () => {
+    const report = sampleReport();
+    report.roster[0].coverage = {
+      ...report.roster[0].coverage,
+      aliveTo: 300,
+      gapSegments: [[100, 120]],
+    };
+    const wrapper = mount(StaticReportPanel, {
+      props: { report, onPick: () => {} },
+    });
+    const gap = wrapper.find(".srp-coverage-bar__gap");
+    // 100..120 s inside a 0..300 s observed interval, not the 600 s battle.
+    expect(gap.attributes("style")).toContain("left: 33.333333");
+    expect(gap.attributes("style")).toContain("width: 6.666666");
   });
 
   it("captures through the panel's own export root", async () => {

@@ -9,8 +9,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 
-import { HkTrendChart } from "@celestia-island/hikari";
-
 import ReportTimeline, {
   assignCalloutLanes,
   inCoverageGap,
@@ -86,10 +84,10 @@ function report(overrides: Partial<StaticReport> = {}): StaticReport {
       },
     ],
     timeline: [
-      { t: 0, inst: 0.5, confidence: 0.5 },
-      { t: 100, inst: 0.08, confidence: 0.62 },
-      { t: 300, inst: 0.3, confidence: 0.7 },
-      { t: 600, inst: 0.2, confidence: 0.6 },
+      { t: 0, inst: 0.5, confidence: 0.5, fire: 0.4, fired: false, fireProb: 0.6, hpLost: null, move: 0.55 },
+      { t: 100, inst: 0.08, confidence: 0.62, fire: 0.6, fired: true, fireProb: null, hpLost: 800, move: 0.2 },
+      { t: 300, inst: 0.3, confidence: 0.7, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.4 },
+      { t: 600, inst: 0.2, confidence: 0.6, fire: 0.3, fired: false, fireProb: 0.7, hpLost: null, move: 0.25 },
     ],
     moments: [
       moment({ t: 100 }),
@@ -112,6 +110,16 @@ function mountTimeline(options: {
       onSeek: options.onSeek,
     },
   });
+}
+
+/** Absolute (x, y) pairs of an SVG path's "M/L x y" command list. */
+function trackPoints(d: string | undefined): { x: number; y: number }[] {
+  const numbers = (d ?? "").match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
+  const points: { x: number; y: number }[] = [];
+  for (let i = 0; i + 1 < numbers.length; i += 2) {
+    points.push({ x: numbers[i], y: numbers[i + 1] });
+  }
+  return points;
 }
 
 describe("timeline geometry", () => {
@@ -262,14 +270,59 @@ describe("ReportTimeline interaction", () => {
     expect(readout.text()).toContain("#3");
   });
 
-  it("pins the score track to the whole-battle horizon", () => {
+  it("draws both evaluation models as edge-to-edge envelopes", () => {
     const w = mountTimeline();
-    const chart = w.findComponent(HkTrendChart);
-    // Battle seconds ride the chart as battle-time ms: window = [-2 s,
-    // duration] so the curve, ruler labels and keyframes share one mapping.
-    expect(chart.props("now")).toBe(600_000);
-    expect(chart.props("timeWindowMs")).toBe(602_000);
-    expect(chart.props("height")).toBe("190px");
+    const move = w.find(".srp-tl__score-line--move");
+    const fire = w.find(".srp-tl__score-line--fire");
+    expect(move.exists()).toBe(true);
+    expect(fire.exists()).toBe(true);
+    // The move model is scored on every row: the path reaches the track's
+    // right edge (viewBox width) at the data horizon.
+    const movePoints = trackPoints(move.attributes("d"));
+    expect(movePoints.length).toBe(4);
+    expect(movePoints[movePoints.length - 1].x).toBeCloseTo(1000, 0);
+    // The fire model only exists on can-fire rows: its dashed envelope
+    // bridges the unscored rows (one path), and only ISOLATED scored rows
+    // get a dot (the run 0/100 s can draw a segment; 600 s cannot).
+    const fireD = fire.attributes("d") ?? "";
+    expect((fireD.match(/M/g) ?? []).length).toBe(1);
+    expect((fireD.match(/L/g) ?? []).length).toBe(2);
+    expect(w.findAll(".srp-tl__score-dot")).toHaveLength(1);
+    const legend = w.find(".srp-tl__track-legend").text();
+    expect(legend).toContain("replay.report.moveModel");
+    expect(legend).toContain("replay.report.fireModel");
+  });
+
+  it("ends the axis at a sunk player's data horizon", () => {
+    const base = report();
+    const died = report({
+      durationS: 600,
+      roster: [
+        {
+          ...base.roster[0],
+          coverage: {
+            ...base.roster[0].coverage,
+            aliveTo: 300,
+            completeness: 1,
+            gapSegments: [],
+          },
+        },
+      ],
+      timeline: [
+        { t: 0, inst: 0.5, confidence: 0.5, fire: 0.4, fired: false, fireProb: 0.6, hpLost: null, move: 0.55 },
+        { t: 300, inst: 0.2, confidence: 0.6, fire: 0.3, fired: false, fireProb: 0.7, hpLost: null, move: 0.25 },
+      ],
+      moments: [moment({ t: 100 }), moment({ t: 250 })],
+    });
+    const w = mountTimeline({ data: died });
+    const ruler = w.find(".srp-tl__ruler").text();
+    expect(ruler).toContain("05:00");
+    expect(ruler).not.toContain("10:00");
+    // The final sample lands on the right edge — no dead tail.
+    const points = trackPoints(
+      w.find(".srp-tl__score-line--move").attributes("d"),
+    );
+    expect(points[points.length - 1].x).toBeCloseTo(1000, 0);
   });
 
   it("inks every keyframe with its category tone", () => {
@@ -295,6 +348,79 @@ describe("ReportTimeline interaction", () => {
     await nextTick();
     expect(w.find(".srp-tl__tip").exists()).toBe(false);
     expect(w.findAll(".srp-tl__callout")).toHaveLength(3);
+  });
+
+  it("falls back to the last scored row when the coverage horizon is unusable", () => {
+    const base = report();
+    const censored = report({
+      timeline: [
+        { t: 0, inst: 0.5, confidence: 0.5, fire: 0.4, fired: false, fireProb: 0.6, hpLost: null, move: 0.55 },
+        { t: 250, inst: 0.2, confidence: 0.6, fire: 0.3, fired: false, fireProb: 0.7, hpLost: null, move: 0.25 },
+      ],
+      roster: [
+        {
+          ...base.roster[0],
+          coverage: { ...base.roster[0].coverage, aliveTo: 0, gapSegments: [] },
+        },
+      ],
+      moments: [moment({ t: 100 })],
+    });
+    const w = mountTimeline({ data: censored });
+    const ruler = w.find(".srp-tl__ruler").text();
+    expect(ruler).toContain("04:10");
+    expect(ruler).not.toContain("10:00");
+    const points = trackPoints(
+      w.find(".srp-tl__score-line--move").attributes("d"),
+    );
+    expect(points[points.length - 1].x).toBeCloseTo(1000, 0);
+  });
+
+  it("hides the fire key when no row was scored by that model", () => {
+    const w = mountTimeline({
+      data: report({
+        timeline: [
+          { t: 0, inst: 0.5, confidence: 0.5, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.55 },
+          { t: 600, inst: 0.2, confidence: 0.6, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.25 },
+        ],
+      }),
+    });
+    const legend = w.find(".srp-tl__track-legend").text();
+    expect(legend).toContain("replay.report.moveModel");
+    expect(legend).not.toContain("replay.report.fireModel");
+    expect(w.find(".srp-tl__score-line--fire").attributes("d")).toBe("");
+    expect(w.findAll(".srp-tl__score-dot")).toHaveLength(0);
+  });
+
+  it("marks the move point when the series is a single row", () => {
+    const w = mountTimeline({
+      data: report({
+        timeline: [
+          { t: 0, inst: 0.5, confidence: 0.5, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.55 },
+        ],
+      }),
+    });
+    const dot = w.find(".srp-tl__score-dot--move");
+    expect(dot.exists()).toBe(true);
+    expect(dot.attributes("style")).toContain("left: 0.3322");
+  });
+
+  it("reports both model values in the axis readout", async () => {
+    const w = mountTimeline();
+    const lane = w.find(".srp-tl__lane");
+    const element = lane.element as HTMLElement;
+    (element.getBoundingClientRect as unknown as () => DOMRect) = () =>
+      ({ left: 0, top: 0, width: 1000, height: 40, right: 1000, bottom: 40, x: 0, y: 0, toJSON: () => ({}) }) as DOMRect;
+    await lane.trigger("pointermove", { clientX: 400, clientY: 20 });
+    const readout = w.find(".srp-tl__readout");
+    expect(readout.exists()).toBe(true);
+    const models = w.findAll(".srp-tl__readout-model");
+    expect(models).toHaveLength(2);
+    expect(models[0].attributes("aria-label")).toContain(
+      "replay.report.moveModel",
+    );
+    expect(models[1].attributes("aria-label")).toContain(
+      "replay.report.fireModel",
+    );
   });
 
   it("renders the static annotation band in capture mode only", async () => {
