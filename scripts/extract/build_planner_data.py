@@ -9,6 +9,10 @@ Data sources:
   - wowsinfo/data `lang.json` (en/ja/zh_sg/zh_tw): official localized names
     and descriptions — `IDS_SKILL_*` (skills), `IDS_TITLE_PCM*`/`IDS_DESC_PCM*`
     (modernizations), `IDS_PCEF*` (signal flags).
+  - the installed client's own gettext catalogs: per-locale fallback for the
+    upgrade TITLES the upstream lang.json lags (it currently misses the base
+    modules' `IDS_TITLE_PCM*_MOD_I` entries and the 15.10 event upgrades'),
+    see loc_with_client().
   - WoWSFT-Kotlin `skills.json`: per-class skill-tree layout (tier + column).
   - WoWs-ShipBuilder repo assets: the square skill icons + signal flag icons
     (upstream repo since went dark — cache first; for skills the ShipBuilder
@@ -171,6 +175,56 @@ def loc(lang: dict, key: str) -> dict:
     return out
 
 
+# ── Client-catalog fallback for planner display names ──────────────────
+# The upstream wowsinfo lang.json lags the live client: it currently lacks
+# every IDS_TITLE_PCM*_MOD_I entry the base upgrade modules use (and the
+# 15.10 event upgrades' names), so a fresh modernizations.json would blank
+# their labels and the build planner would fall back to raw entity names.
+# The client's own gettext catalogs carry them — read those once per run.
+# Locale tags mirror load_lang()'s table keys.
+_CLIENT_TEXTS: dict[str, dict[str, str]] | None = None
+CLIENT_LANG_DIRS = {"en": "en", "ja": "ja", "zh": "zh", "tw": "zh_tw"}
+
+
+def client_texts() -> dict[str, dict[str, str]]:
+    """The WG client's gettext catalogs keyed by the planner's locale tags."""
+    global _CLIENT_TEXTS
+    if _CLIENT_TEXTS is not None:
+        return _CLIENT_TEXTS
+    _CLIENT_TEXTS = {}
+    game = find_game_path()
+    if not game:
+        return _CLIENT_TEXTS
+    sys.path.insert(0, str(HERE.parent / "model_convert"))
+    try:
+        from extract_ship_names import latest_bin_dir, load_mo
+    except ImportError:
+        return _CLIENT_TEXTS
+    bin_dir = latest_bin_dir(pathlib.Path(game))
+    if bin_dir is None:
+        return _CLIENT_TEXTS
+    texts = bin_dir / "res" / "texts"
+    for tag, dirname in CLIENT_LANG_DIRS.items():
+        mo = texts / dirname / "LC_MESSAGES" / "global.mo"
+        if mo.is_file():
+            _CLIENT_TEXTS[tag] = load_mo(mo)
+    return _CLIENT_TEXTS
+
+
+def loc_with_client(lang: dict, key: str) -> dict:
+    """loc() over the upstream data, per-locale backfilled from the client."""
+    out = loc(lang, key)
+    client = client_texts()
+    for tag, table in client.items():
+        if tag not in out:
+            v = table.get(key)
+            if v:
+                # The catalogs typographically use NBSP; the planner's other
+                # strings (upstream lang.json) use plain spaces.
+                out[tag] = v.replace("\xa0", " ")
+    return out
+
+
 def skill_names(lang: dict, code: str) -> dict:
     s = snake_upper(code)
     return {"name": loc(lang, f"IDS_SKILL_{s}") or {}, "desc": loc(lang, f"IDS_SKILL_DESC_{s}") or {}}
@@ -220,7 +274,9 @@ def extract_modernizations(txt: str, lang: dict) -> list[dict]:
         rows.append({
             "index": e.get("index"),
             "name": name,
-            "names": loc(lang, "IDS_TITLE_" + name.upper()),
+            # Upstream lang.json lags the client on the upgrade titles (see
+            # loc_with_client) — descriptions keep the upstream-only behaviour.
+            "names": loc_with_client(lang, "IDS_TITLE_" + name.upper()),
             "desc": loc(lang, "IDS_DESC_" + name.upper()),
             "slot": slot_for(name, e.get("slot", -1)),
             "modifiers": mods,

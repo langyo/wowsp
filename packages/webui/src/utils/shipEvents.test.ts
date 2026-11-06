@@ -8,7 +8,8 @@
  *  - shipRarity() must resolve event ships to the "event" tier regardless
  *    of their bundled RarityCategory band (event attribution wins);
  *  - the anchor ship ids pin the generated map's keying (WG ship_id, not
- *    GameParams.id): Smolensk_H2020 / ARP Kongō / Wukong.
+ *    GameParams.id): Smolensk_H2020 / ARP Kongō / Wukong, plus the 2026
+ *    Bermuda Triangle hulls keyed by their GameParams `navalFlag`.
  *
  * Locale files are imported directly (not through vue-i18n) — this is a
  * data-integrity test, label composition itself is a two-concat.
@@ -63,6 +64,10 @@ describe("event rarity resolution", () => {
     // The RA3: Corona (红警3日冕) CN collab hull is NOT a Lunar New Year ship.
     expect(authoritativeEvent(3341759696)).toBe("collab_corona"); // 玄冥
     expect(EVENT_MAP["3751720144"]).toBe("lunar_new_year"); // 悟空
+    // 2026 Bermuda Triangle ("Horror From the Abyss") — no peculiarity, the
+    // navy flag marks them: PXSB020_Incomparable (enemy) / PXSC999_Siegfried_1510 (ally).
+    expect(authoritativeEvent(4273943824)).toBe("bermuda_2026"); // Incomparable
+    expect(authoritativeEvent(3247355152)).toBe("bermuda_2026"); // Siegfried
   });
 
   it("leaves non-event ships on their rarity band", () => {

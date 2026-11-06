@@ -70,7 +70,9 @@ def load_ships() -> list[dict]:
     if not files:
         print(f"error: no encyclopedia cache in {wowsp_dir}. Run the app first.", file=sys.stderr)
         sys.exit(1)
-    with open(files[-1]) as f:
+    # The app writes the cache as UTF-8; the locale-dependent default
+    # encoding (GBK on zh-CN Windows) fails on the CJK ship names.
+    with open(files[-1], encoding="utf-8") as f:
         data = json.load(f)
     return data.get("ships", data.get("data", []))
 
