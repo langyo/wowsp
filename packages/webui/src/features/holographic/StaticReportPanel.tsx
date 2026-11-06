@@ -41,7 +41,7 @@ import { t } from "@/i18n";
 import type { StaticReport, StaticRosterEntry } from "@/api";
 import ReportPlayerPicker from "./ReportPlayerPicker";
 import ReportTimeline from "./ReportTimeline";
-import { formatHp, pct } from "./reportFormat";
+import { formatDuration, formatHp, pct } from "./reportFormat";
 import type { ReportSheetView } from "./reportSheet";
 import "./StaticReportPanel.scss";
 
@@ -224,7 +224,7 @@ export default defineComponent({
                   ) : null}
                   <span class="srp-head__meta-item">
                     {t("replay.report.duration", {
-                      t: Math.round(props.report.durationS),
+                      t: formatDuration(props.report.durationS),
                     })}
                   </span>
                 </div>

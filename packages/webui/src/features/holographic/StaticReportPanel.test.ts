@@ -15,6 +15,7 @@ import StaticReportPanel, { captureReportPng } from "./StaticReportPanel";
 import {
   coverageClass,
   formatClock,
+  formatDuration,
   formatHp,
   sectorLabel,
 } from "./reportFormat";
@@ -158,6 +159,15 @@ describe("formatHp", () => {
   });
 });
 
+describe("formatDuration", () => {
+  it("renders M:SS, H:MM:SS past the hour, and a dash without data", () => {
+    expect(formatDuration(0)).toBe("—");
+    expect(formatDuration(59)).toBe("0:59");
+    expect(formatDuration(1053)).toBe("17:33");
+    expect(formatDuration(3661)).toBe("1:01:01");
+  });
+});
+
 describe("sectorLabel", () => {
   it("maps sectors to relative bearings and 16 to held", () => {
     // The i18n stub: the test locale resolves the held key verbatim.
@@ -279,7 +289,9 @@ describe("StaticReportPanel wiring", () => {
     expect(
       wrapper.find(".srp-picker__ship img").attributes("src"),
     ).toContain("icon_ally_destroyer");
-    expect(wrapper.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
+    // No dog tag in the fixture: the team-tinted initial plate stands in for
+    // the emblem (a bare PlayerBadge disc read as an unfinished download).
+    expect(wrapper.find(".srp-picker__avatar-initial").text()).toBe("M");
     // Battle provenance: map, mode, start, replay fingerprint tail.
     expect(wrapper.find(".srp-head__meta-map").text()).toBe("North");
     expect(wrapper.find(".srp-head__mode").text()).toBe("Domination");

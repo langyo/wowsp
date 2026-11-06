@@ -190,7 +190,8 @@ describe("ReportPlayerPicker", () => {
     expect(
       trigger.find(".srp-picker__ship img").attributes("src"),
     ).toContain("icon_ally_destroyer");
-    expect(trigger.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
+    // No dog tag: the initial plate stands in for the emblem.
+    expect(trigger.find(".srp-picker__avatar-initial").text()).toBe("M");
 
     await w.find(".srp-picker__trigger").trigger("click");
     const rows = w.findAll(".srp-picker__row");
@@ -202,6 +203,27 @@ describe("ReportPlayerPicker", () => {
     expect(mate.find(".srp-picker__row-ship").text()).toContain("Des Moines");
     expect(rows[0].find(".srp-picker__check").exists()).toBe(true);
     expect(mate.find(".srp-picker__check").exists()).toBe(false);
+  });
+
+  it("shows the real emblem badge when the lookup carries a dog tag", () => {
+    const w = mountPicker({
+      identity: {
+        name: "me",
+        clanTag: "HOOD",
+        dogTag: {
+          textureId: 1,
+          symbolId: 2,
+          borderColor: 0xff000000,
+          backgroundColor: 0xff001122,
+          backgroundId: 3,
+        },
+        shipType: "Destroyer",
+        shipName: "Shimakaze",
+        tier: 10,
+      },
+    });
+    expect(w.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
+    expect(w.find(".srp-picker__avatar-initial").exists()).toBe(false);
   });
 
   it("is a chrome-less static name plate while the long image is captured", async () => {

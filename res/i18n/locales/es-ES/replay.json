@@ -648,7 +648,7 @@
     "recorder": "grabador",
     "diedAt": "perdido a los {t} s",
     "survived": "sobrevivió",
-    "duration": "{t} s",
+    "duration": "Duración {t}",
     "contribution": "Contribución (daño ventana)",
     "perShot": "{v} por ventana",
     "wholeGame": "Acuerdo del modelo",

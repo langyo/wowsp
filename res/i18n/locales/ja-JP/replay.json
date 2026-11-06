@@ -648,7 +648,7 @@
     "recorder": "録画者",
     "diedAt": "{t}秒で沈没",
     "survived": "生存",
-    "duration": "{t}秒",
+    "duration": "再生時間 {t}",
     "contribution": "貢献（ウィンドウダメージ）",
     "perShot": "窓あたり{v}",
     "wholeGame": "モデル合意度",

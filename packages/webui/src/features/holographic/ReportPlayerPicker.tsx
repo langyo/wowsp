@@ -252,7 +252,23 @@ export default defineComponent({
           onKeydown={onTriggerKeydown}
         >
           <span class="srp-picker__avatar">
-            <PlayerBadge dogTag={props.identity?.dogTag ?? null} size={28} />
+            {props.identity?.dogTag ? (
+              <PlayerBadge dogTag={props.identity.dogTag} size={28} />
+            ) : (
+              // No emblem data yet (lookup pending / hidden / offline): a
+              // team-tinted initial plate instead of PlayerBadge's empty
+              // disc (2026-11-07 review: the plate read as an unfinished
+              // download).
+              <span
+                class={
+                  "srp-picker__avatar-initial srp-picker__avatar-initial--" +
+                  (me.value?.teamId === 1 ? "enemy" : "ally")
+                }
+                aria-hidden="true"
+              >
+                {(displayName.value || "?").slice(0, 1).toUpperCase()}
+              </span>
+            )}
           </span>
           <span class="srp-picker__identity">
             <span class="srp-picker__name-line">

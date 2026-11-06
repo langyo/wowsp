@@ -648,7 +648,7 @@
     "recorder": "recorder",
     "diedAt": "lost at {t}s",
     "survived": "survived",
-    "duration": "{t}s",
+    "duration": "Duration {t}",
     "contribution": "Contribution (window HP)",
     "perShot": "{v} / fired window",
     "wholeGame": "Model agreement",

@@ -648,7 +648,7 @@
     "recorder": "录制者",
     "diedAt": "{t} 秒阵亡",
     "survived": "存活",
-    "duration": "{t} 秒",
+    "duration": "时长 {t}",
     "contribution": "贡献（窗口伤害）",
     "perShot": "每窗口 {v}",
     "wholeGame": "模型认同度",

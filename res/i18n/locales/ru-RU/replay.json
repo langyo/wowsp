@@ -648,7 +648,7 @@
     "recorder": "рекордер",
     "diedAt": "потерян на {t} с",
     "survived": "выжил",
-    "duration": "{t} с",
+    "duration": "Длительность {t}",
     "contribution": "Вклад (урон в окне)",
     "perShot": "{v} за окно",
     "wholeGame": "Согласие модели",
