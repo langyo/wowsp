@@ -142,6 +142,19 @@ packages/webui/src/res/images/ships/_index.json
 dist-release/
 node_modules
 
+# Locally built Android release bundles (built for manual distribution
+# testing, uploaded through release channels — never committed): the
+# shun-built APKs and their AAB-style idsig sidecars, plus the
+# pairing-relay's local res-delta digest staging (published upstream as
+# res-delta-* release assets, never tracked).
+*.apk
+*.idsig
+packages/pairing-relay/digests/res/
+
+# ZCode workspace ignore rules (agent tooling config, machine-local like
+# .zcode/ above)
+.zcodeignore
+
 # Release-digest signing PRIVATE seeds must never be committed (only the
 # *.pub halves live in packages/app/tauri/res/keys/ — see its README).
 packages/app/tauri/res/keys/*.key
