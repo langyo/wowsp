@@ -85,7 +85,11 @@ from pathlib import Path
 SCRIPT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(SCRIPT_DIR))
 sys.path.insert(0, str(SCRIPT_DIR.parent))
-from build_lesta_overlay import PORT_GROUPS  # noqa: E402
+from build_lesta_overlay import (  # noqa: E402
+    PORT_GROUPS,
+    keep_hidden_collision_index,
+    wg_index_claims,
+)
 from build_techtree import _params_root  # noqa: E402
 # Same slice-shape contract as the WG/mobile pack builder: the packed slices
 # carry the referenced torpedo Projectile entities under "__torpedoAmmo"
@@ -133,7 +137,9 @@ def main() -> int:
         type=Path,
         default=WG_GAMEPARAMS_DEFAULT,
         help="decoded WG GameParams.json — broader exclusion base for the non-tree "
-        "walk (pass an empty string to fall back to the WG tree's indexes only)",
+        "walk, minus the reviewed hidden-placeholder collisions in "
+        "WG_HIDDEN_INDEX_KEEP (pass an empty string to fall back to the WG "
+        "tree's indexes only)",
     )
     ap.add_argument("--overlay", type=Path, default=SRC_DATA / "ships_lesta.json")
     ap.add_argument("--version", default=None, help="version stamp (default: the overlay's gameVersion)")
@@ -216,13 +222,9 @@ def main() -> int:
     # lookup time, so an id WG's own GameParams defines must never ride in.
     if args.wg_gameparams and args.wg_gameparams.is_file():
         wg_gp = _params_root(json.loads(args.wg_gameparams.read_text(encoding="utf-8")))
-        wg_known = {
-            e.get("index")
-            for e in wg_gp.values()
-            if isinstance(e, dict) and isinstance(e.get("index"), str)
-        }
+        wg_claims = wg_index_claims(wg_gp)
     else:
-        wg_known = wg_indexes
+        wg_claims = {idx: set() for idx in wg_indexes}
         print(
             "[lesta-shipdata] note: no WG GameParams dump — excluding non-tree ships "
             "by the WG tree's indexes only",
@@ -232,8 +234,17 @@ def main() -> int:
     added = 0
     for idx, entry in sorted(ship_by_index.items()):
         group = entry.get("group")
-        if idx in tree_indexes or idx in wg_known or group not in PORT_GROUPS:
+        if idx in tree_indexes or group not in PORT_GROUPS:
             continue
+        wg_groups = wg_claims.get(idx)
+        if wg_groups is not None:
+            if not keep_hidden_collision_index(idx, wg_groups):
+                continue
+            print(
+                f"[lesta-shipdata] keep {idx}: WG index collision is a hidden "
+                f"placeholder ({', '.join(sorted(wg_groups))}) — reviewed exception",
+                flush=True,
+            )
         sid = entry.get("id")
         if not isinstance(sid, int) or str(sid) in slices:
             continue
