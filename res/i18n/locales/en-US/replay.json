@@ -636,8 +636,8 @@
   },
   "report": {
     "title": "AI battle report",
-    "export": "Export image",
-    "exporting": "Rendering…",
+    "copy": "Copy image",
+    "copying": "Rendering…",
     "close": "Close",
     "loading": "Scoring the replay…",
     "allies": "Allies",

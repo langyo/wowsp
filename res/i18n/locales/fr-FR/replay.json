@@ -636,8 +636,8 @@
   },
   "report": {
     "title": "Rapport de bataille IA",
-    "export": "Exporter l'image",
-    "exporting": "Rendu…",
+    "copy": "Copier l'image",
+    "copying": "Rendu…",
     "close": "Fermer",
     "loading": "Analyse du replay…",
     "allies": "Alliés",

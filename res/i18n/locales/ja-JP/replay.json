@@ -636,8 +636,8 @@
   },
   "report": {
     "title": "AI 戦績レポート",
-    "export": "画像を書き出す",
-    "exporting": "レンダリング中…",
+    "copy": "画像をコピー",
+    "copying": "レンダリング中…",
     "close": "閉じる",
     "loading": "採点中…",
     "allies": "味方",
