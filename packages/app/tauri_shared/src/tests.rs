@@ -763,6 +763,10 @@ fn replay_stream_omits_empty_sections() {
         weather_notifications: Vec::new(),
         ally_builds: Vec::new(),
         self_team: None,
+        shield_damage_events: Vec::new(),
+        shield_state_events: Vec::new(),
+        shield_markers: Vec::new(),
+        gun_overheats: Vec::new(),
     };
     let v = round_trips(minimal);
     let obj = v.as_object().unwrap();
@@ -786,6 +790,10 @@ fn replay_stream_omits_empty_sections() {
             prebattle: 0,
         }],
         self_team: Some(1),
+        shield_damage_events: Vec::new(),
+        shield_state_events: Vec::new(),
+        shield_markers: Vec::new(),
+        gun_overheats: Vec::new(),
         ..serde_json::from_value::<ReplayStream>(serde_json::json!({
             "trajectories": []
         }))

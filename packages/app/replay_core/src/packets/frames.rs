@@ -80,6 +80,13 @@ pub(super) fn walk_frames(
     // Per-vehicle build payloads decoded out of the EntityCreate state stream
     // (both teams — the IPC exit filters to allies; see `packets::build`).
     let mut vehicle_builds: Vec<VehicleBuildRaw> = Vec::new();
+    // 15.10+ shield/gun-heat surfaces: the avatar's shield-damage broadcast,
+    // the vehicle-side lifecycle markers, the `state.shield` nested-HP
+    // timeline (classified after the walk, like the weather signals) and the
+    // per-gun overheat transitions.
+    let mut shield_damage_events: Vec<wowsp_tauri_shared::ShieldDamageEvent> = Vec::new();
+    let mut shield_markers: Vec<wowsp_tauri_shared::ShieldMarkerEvent> = Vec::new();
+    let mut gun_overheats: Vec<wowsp_tauri_shared::GunOverheatEvent> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -443,6 +450,53 @@ pub(super) fn walk_frames(
             .partial_cmp(&b.time)
             .unwrap_or(std::cmp::Ordering::Equal)
     });
+    // 15.10+ shield HP timeline: the same nested-property stream carries the
+    // Vehicle `state.shield` dict updates (SHIELD_STATE.maxHp / remainingHP
+    // UINT32 SetKey values). Classified after the walk — the bit path needs
+    // the entity kind (type 2 only) plus the exact-minor layout row and the
+    // property table's `state` index; every other nested payload is left to
+    // the capture-progress / weather consumers above.
+    let mut shield_state_events: Vec<wowsp_tauri_shared::ShieldStateEvent> = Vec::new();
+    if let (Some(g), Some(state_idx)) = (profile.gun_state, profile.state_property_index) {
+        let table =
+            version_key.and_then(super::property_tables::vehicle_property_table_for_version);
+        let prop_count = table.map(|t| usize::from(t.count)).unwrap_or(0);
+        for n in &nested {
+            if kinds.get(&n.entity_id).map(|k| k.entity_type) != Some(ENTITY_TYPE_VEHICLE) {
+                continue;
+            }
+            if let Some((is_max, value)) =
+                parse_shield_state_nested(&n.payload, g, state_idx, prop_count)
+            {
+                shield_state_events.push(wowsp_tauri_shared::ShieldStateEvent {
+                    time: n.time,
+                    entity_id: n.entity_id,
+                    value,
+                    is_max_hp: is_max,
+                });
+            }
+        }
+        shield_state_events.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    shield_markers.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    gun_overheats.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    shield_damage_events.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     // Resolve method calls into events once the entity types are known: the
     // method ids live in per-entity-type exposed-index tables (version-drifting,
     // see `method_tables`), and only the avatar entity (type 1) carries the
@@ -466,6 +520,34 @@ pub(super) fn walk_frames(
             {
                 if let Some(event) = decode_consumable_used(call.time, call.entity_id, &call.args) {
                     consumable_uses.push(event);
+                }
+            }
+            // 15.10+ shield/gun-heat vehicle streams: the zero-arg lifecycle
+            // markers (shieldRegen/shieldHit) and the 3-arg per-gun overheat
+            // transitions — same exact-minor pin as the shield-state walk.
+            if entity_type == Some(ENTITY_TYPE_VEHICLE) {
+                if let Some(g) = profile.gun_state {
+                    if call.args.is_empty() {
+                        if call.method_id == g.shield_regen_method {
+                            shield_markers.push(wowsp_tauri_shared::ShieldMarkerEvent {
+                                time: call.time,
+                                entity_id: call.entity_id,
+                                is_regen: true,
+                            });
+                        } else if call.method_id == g.shield_hit_method {
+                            shield_markers.push(wowsp_tauri_shared::ShieldMarkerEvent {
+                                time: call.time,
+                                entity_id: call.entity_id,
+                                is_regen: false,
+                            });
+                        }
+                    } else if call.method_id == g.set_gun_overheated_method {
+                        if let Some(event) =
+                            decode_gun_overheated(call.time, call.entity_id, &call.args)
+                        {
+                            gun_overheats.push(event);
+                        }
+                    }
                 }
             }
             continue;
@@ -535,6 +617,10 @@ pub(super) fn walk_frames(
             .is_some_and(|e| e.avatar_update_minimap_vision_info == call.method_id)
         {
             vision_events.extend(decode_minimap_vision(call.time, &call.args));
+        } else if m.avatar_receive_shield_damage_info == Some(call.method_id) {
+            if let Some(event) = decode_shield_damage_info(call.time, &call.args) {
+                shield_damage_events.push(event);
+            }
         }
     }
     // The arena's initial player/bot state: one onArenaStateReceived call on
@@ -723,6 +809,10 @@ pub(super) fn walk_frames(
         consumable_uses,
         engine_states,
         vehicle_builds,
+        shield_damage_events,
+        shield_state_events,
+        shield_markers,
+        gun_overheats,
     }
 }
 

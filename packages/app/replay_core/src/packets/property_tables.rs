@@ -44,232 +44,464 @@ pub struct VehiclePropertyTable {
 
 /// (major, minor, patch) -> Vehicle property map, ascending. Generated from
 /// the entity defs of each pinned version.
-pub static VEHICLE_PROPERTY_TABLES: &[((u16, u16, u16), VehiclePropertyTable)] = &[(
-    (15, 9, 0),
-    VehiclePropertyTable {
-        count: 54,
-        properties: &[
-            PropertyEntry {
-                name: "hasAirTargetsInRange",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "isAntiAirMode",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "buoyancyCurrentState",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "buoyancyRudderIndex",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "isOnForsage",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "teamId",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "uiEnabled",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "isAlive",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "speedSignDir",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "enginePower",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "engineDir",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "ignoreMapBorders",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "isBot",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "isFogHornOn",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "blockedControls",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "isInvisible",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "hasActiveMainSquadron",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "isInRageMode",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "oilLeakState",
-                fixed_width: Some(1),
-            },
-            PropertyEntry {
-                name: "burningFlags",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "targetLocalPos",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "torpedoLocalPos",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "laserTargetLocalPos",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "waveLocalPos",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "weaponLockFlags",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "serverSpeedRaw",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "respawnTime",
-                fixed_width: Some(2),
-            },
-            PropertyEntry {
-                name: "airDefenseDispRadius",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "health",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "regenerationHealth",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "regeneratedHealth",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "maxHealth",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "buoyancyCurrentWaterline",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "regenCrewHpLimit",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "buoyancy",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "visibilityFlags",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "owner",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "selectedWeapon",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "maxServerSpeedRaw",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "draught",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "ruddersAngle",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "deepRuddersAngle",
-                fixed_width: Some(4),
-            },
-            PropertyEntry {
-                name: "visibilityTime",
-                fixed_width: Some(8),
-            },
-            PropertyEntry {
-                name: "airDefenseTargetIds",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "antiAirAuras",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "effects",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "sounds",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "shipConfig",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "crewModifiersCompactParams",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "debugText",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "miscsPresetsStatus",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "triggeredSkillsData",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "deathSettings",
-                fixed_width: None,
-            },
-            PropertyEntry {
-                name: "state",
-                fixed_width: None,
-            },
-        ],
-        ship_config: 47,
-        crew_modifiers_compact_params: 48,
-    },
-)];
+pub static VEHICLE_PROPERTY_TABLES: &[((u16, u16, u16), VehiclePropertyTable)] = &[
+    (
+        (15, 9, 0),
+        VehiclePropertyTable {
+            count: 54,
+            properties: &[
+                PropertyEntry {
+                    name: "hasAirTargetsInRange",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isAntiAirMode",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "buoyancyCurrentState",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "buoyancyRudderIndex",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isOnForsage",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "teamId",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "uiEnabled",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isAlive",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "speedSignDir",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "enginePower",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "engineDir",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "ignoreMapBorders",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isBot",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isFogHornOn",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "blockedControls",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isInvisible",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "hasActiveMainSquadron",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isInRageMode",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "oilLeakState",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "burningFlags",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "targetLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "torpedoLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "laserTargetLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "waveLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "weaponLockFlags",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "serverSpeedRaw",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "respawnTime",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "airDefenseDispRadius",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "health",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "regenerationHealth",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "regeneratedHealth",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "maxHealth",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "buoyancyCurrentWaterline",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "regenCrewHpLimit",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "buoyancy",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "visibilityFlags",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "owner",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "selectedWeapon",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "maxServerSpeedRaw",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "draught",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "ruddersAngle",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "deepRuddersAngle",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "visibilityTime",
+                    fixed_width: Some(8),
+                },
+                PropertyEntry {
+                    name: "airDefenseTargetIds",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "antiAirAuras",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "effects",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "sounds",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "shipConfig",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "crewModifiersCompactParams",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "debugText",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "miscsPresetsStatus",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "triggeredSkillsData",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "deathSettings",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "state",
+                    fixed_width: None,
+                },
+            ],
+            ship_config: 47,
+            crew_modifiers_compact_params: 48,
+        },
+    ),
+    (
+        (15, 10, 0),
+        VehiclePropertyTable {
+            count: 55,
+            properties: &[
+                PropertyEntry {
+                    name: "hasAirTargetsInRange",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isAntiAirMode",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "buoyancyCurrentState",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "buoyancyRudderIndex",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isOnForsage",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "teamId",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "uiEnabled",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isAlive",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "speedSignDir",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "enginePower",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "engineDir",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "ignoreMapBorders",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isBot",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isFogHornOn",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "blockedControls",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isInvisible",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "hasActiveMainSquadron",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "isInRageMode",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "oilLeakState",
+                    fixed_width: Some(1),
+                },
+                PropertyEntry {
+                    name: "burningFlags",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "targetLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "torpedoLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "laserTargetLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "waveLocalPos",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "weaponLockFlags",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "serverSpeedRaw",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "respawnTime",
+                    fixed_width: Some(2),
+                },
+                PropertyEntry {
+                    name: "airDefenseDispRadius",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "health",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "regenerationHealth",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "regeneratedHealth",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "maxHealth",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "buoyancyCurrentWaterline",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "regenCrewHpLimit",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "buoyancy",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "visibilityFlags",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "owner",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "selectedWeapon",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "maxServerSpeedRaw",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "draught",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "ruddersAngle",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "deepRuddersAngle",
+                    fixed_width: Some(4),
+                },
+                PropertyEntry {
+                    name: "visibilityTime",
+                    fixed_width: Some(8),
+                },
+                PropertyEntry {
+                    name: "airDefenseTargetIds",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "antiAirAuras",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "effects",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "sounds",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "shipConfig",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "crewConfig",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "crewModifiersCompactParams",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "debugText",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "miscsPresetsStatus",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "triggeredSkillsData",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "deathSettings",
+                    fixed_width: None,
+                },
+                PropertyEntry {
+                    name: "state",
+                    fixed_width: None,
+                },
+            ],
+            ship_config: 47,
+            crew_modifiers_compact_params: 49,
+        },
+    ),
+];
 
 /// Resolve the property table for a parsed client version: the newest pinned
 /// row of the SAME (major, minor) era at or below the requested patch.

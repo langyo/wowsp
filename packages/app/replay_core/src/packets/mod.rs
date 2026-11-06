@@ -203,9 +203,18 @@ struct LayoutProfile {
     /// state projection) — only for versions whose ids/indices are pinned.
     e11: Option<E11MethodIds>,
     /// Vehicle build decode (create-state property walk → shipConfig + crew
-    /// modifiers). Pinned to the 15.9.x era (see `packets::build`); other
-    /// versions skip it and count a diagnostic.
+    /// modifiers). Pinned to the 15.9.x era (see `packets::build`; the 15.10
+    /// shipConfig BINARY is an open item there); other versions skip it and
+    /// count a diagnostic.
     builds: bool,
+    /// 15.10+ shield/gun-heat layout (method ids + the `state`-nested
+    /// SHIELD_STATE dict keys) — `None` on versions without the exact-minor
+    /// pin; all four streams then stay empty.
+    gun_state: Option<crate::layout_tables::VehicleGunStateRow>,
+    /// Exposed property index of the Vehicle `state` property (the nested
+    /// SHIELD_STATE's parent), resolved BY NAME from the version's property
+    /// table; `None` when no table is pinned for the version.
+    state_property_index: Option<u8>,
     /// The arena's initial state broadcast (onArenaStateReceived) — the
     /// authoritative ship-entity → team/player mapping. `None` when the
     /// version's exposed id isn't pinned (>0); the arena player list then
@@ -364,6 +373,22 @@ pub struct DecodedReplay {
     /// vehicles are kept here; the IPC exit filters to allies only. Empty on
     /// client versions without a pinned build layout (currently only 15.9.x).
     pub vehicle_builds: Vec<VehicleBuildRaw>,
+    /// Shield-damage broadcasts (Avatar `receiveShieldDamageInfo`, 15.10+):
+    /// one blocked-damage event per hit a shield absorbs, with the attacker
+    /// join. Empty on versions without a pinned id.
+    pub shield_damage_events: Vec<wowsp_tauri_shared::ShieldDamageEvent>,
+    /// Shield HP state timeline (Vehicle `state.shield` nested property,
+    /// 15.10+): `remainingHP`/`maxHp` updates as the shield absorbs, regens
+    /// and breaks. Empty on versions without the pinned dict layout.
+    pub shield_state_events: Vec<wowsp_tauri_shared::ShieldStateEvent>,
+    /// Zero-arg shield lifecycle markers on Vehicle entities (15.10+):
+    /// `shieldRegen` (the shield re-armed) / `shieldHit` (a hit was absorbed)
+    /// — the sound/visual cue broadcast, complementary to the damage stream.
+    pub shield_markers: Vec<wowsp_tauri_shared::ShieldMarkerEvent>,
+    /// Gun overheat transitions (Vehicle `setGunOverheated`, 15.10+): one
+    /// event per gun entering/leaving the overheated state. The heat LEVEL
+    /// itself never replicates (client-local), only this broadcast.
+    pub gun_overheats: Vec<wowsp_tauri_shared::GunOverheatEvent>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -540,10 +565,23 @@ fn build_layout_profile(
             .map(|m| m.avatar_on_arena_state_received)
             .filter(|id| *id > 0 && version_key.is_some()),
         // Build data is decoded from the SAME create-state stream, but its
-        // property index map + the shipConfig binary layout are pinned for
-        // the 15.9.x era only (see `packets::build`); Lesta containers use
-        // their own entity defs, so they stay off until pinned.
+        // property index map + the shipConfig binary layout are pinned per
+        // era (see `packets::build`); Lesta containers use their own entity
+        // defs, so they stay off until pinned.
         builds: !lesta && build::builds_supported(version_key),
+        gun_state: if !lesta {
+            crate::layout_tables::vehicle_gun_state_for(version_key)
+        } else {
+            None
+        },
+        // The shield-state bit walk needs the `state` property's exposed
+        // index — resolved by name from the version's generated property
+        // table (None = no table pinned, the walk stays off).
+        state_property_index: if !lesta {
+            build::state_property_index_for(version_key)
+        } else {
+            None
+        },
         lesta,
     }
 }
@@ -713,9 +751,9 @@ mod tests;
 use events::{
     args_is_plane_id, decode_achievement, decode_arena_state, decode_artillery_shots,
     decode_chat_message, decode_consumable_used, decode_damage_stat, decode_explosions,
-    decode_minimap_squadron_add, decode_minimap_squadron_move, decode_minimap_vision,
-    decode_shot_kills, decode_squadron_add, decode_squadron_update, decode_torpedo_directions,
-    decode_torpedo_salvos, decode_ward_added,
+    decode_gun_overheated, decode_minimap_squadron_add, decode_minimap_squadron_move,
+    decode_minimap_vision, decode_shield_damage_info, decode_shot_kills, decode_squadron_add,
+    decode_squadron_update, decode_torpedo_directions, decode_torpedo_salvos, decode_ward_added,
 };
 use frames::walk_frames;
 #[cfg(test)]
@@ -728,7 +766,7 @@ use payloads::{
     parse_battle_results, parse_camera, parse_camera_mode, parse_cell_player_create,
     parse_cruise_state, parse_entity_create, parse_entity_destroy, parse_entity_method,
     parse_map_name, parse_nested_property, parse_net_stats, parse_player_position, parse_position,
-    parse_property, parse_smoke_state, parse_version, parse_weapon_lock, parse_weather_nested,
-    scan_state_for_max_health, scan_state_for_ship_id,
+    parse_property, parse_shield_state_nested, parse_smoke_state, parse_version, parse_weapon_lock,
+    parse_weather_nested, scan_state_for_max_health, scan_state_for_ship_id,
 };
 use pickle::{PyVal, parse_pickle};

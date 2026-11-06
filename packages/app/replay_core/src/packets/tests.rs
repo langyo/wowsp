@@ -81,6 +81,8 @@ fn profile_for(lesta: bool) -> LayoutProfile {
         arena_state_method: None,
         e11: None,
         builds: false,
+        gun_state: None,
+        state_property_index: None,
         lesta,
     }
 }
@@ -2604,7 +2606,13 @@ fn cruise_state_consistent_with_speed_on_real_replay() {
                 .map(str::to_string);
         }
     }
-    if let Some(n) = u32::from_le_bytes(bytes[4..8].try_into().unwrap()).checked_sub(1) {
+    // Walk EVERY header block (not count-1): the container's block_count
+    // covers only the JSON-ish prelude — the packet stream follows it
+    // unframed, exactly as `packet_stream_after_blocks` walks it. The
+    // count-1 walk predates the 3-header-block containers (15.10) and
+    // stopped one block short there, decrypting garbage.
+    {
+        let n = u32::from_le_bytes(bytes[4..8].try_into().unwrap());
         for _ in 0..n {
             let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
             cur += 4 + bl;
@@ -3788,4 +3796,334 @@ fn decodes_every_vehicle_build_on_the_reference_capture() {
     // Decode-layer completeness: the enemy team's builds are decoded too (the
     // IPC exit is what drops them).
     assert!(enemies >= 1, "enemy builds must exist in the decode layer");
+}
+
+// ── 15.10 shield + gun-heat streams (Bermuda Triangle event era) ────────────
+
+/// `receiveShieldDamageInfo` args decode as
+/// `i32 victimId, i32 hitOwnerId, u32 shieldDamage, u8 hitYaw`; anything that
+/// is not exactly 13 bytes is rejected (the avatar arm's shape gate).
+#[test]
+fn decodes_shield_damage_info_args() {
+    let mut args = Vec::new();
+    args.extend_from_slice(&1201004i32.to_le_bytes());
+    args.extend_from_slice(&963613i32.to_le_bytes());
+    args.extend_from_slice(&770u32.to_le_bytes());
+    args.push(0x40);
+    let e = decode_shield_damage_info(20.3, &args).expect("13-byte args decode");
+    assert_eq!(e.time, 20.3);
+    assert_eq!(e.victim_id, 1201004);
+    assert_eq!(e.attacker_id, 963613);
+    assert_eq!(
+        e.shield_damage, 770,
+        "the SAP shield cap from the ammo panel"
+    );
+    assert_eq!(e.hit_yaw, 0x40);
+    assert!(decode_shield_damage_info(0.0, &args[..12]).is_none());
+    assert!(decode_shield_damage_info(0.0, &[]).is_none());
+}
+
+/// `setGunOverheated` args decode as `u8 weaponType, u8 gunID, BOOL
+/// isOverheated`; wrong lengths are rejected.
+#[test]
+fn decodes_gun_overheated_args() {
+    let e = decode_gun_overheated(61.0, 963613, &[0, 2, 1]).expect("3-byte args");
+    assert_eq!(e.entity_id, 963613);
+    assert_eq!(e.weapon_type, 0);
+    assert_eq!(e.gun_id, 2);
+    assert!(e.is_overheated);
+    let off = decode_gun_overheated(62.0, 963613, &[0, 2, 0]).expect("cool-down");
+    assert!(!off.is_overheated);
+    assert!(decode_gun_overheated(0.0, 963613, &[0, 2]).is_none());
+    assert!(decode_gun_overheated(0.0, 963613, &[]).is_none());
+}
+
+/// The nested `state.shield` byte path: the reference capture's exact
+/// payload shapes decode to their HP values, and every neighbouring
+/// fixed-dict key (ATBA targets, decals) with the same framing stays out.
+#[test]
+fn parses_shield_state_nested_byte_paths() {
+    let g = crate::layout_tables::vehicle_gun_state_for(Some((15, 10, 0))).expect("15.10 row");
+    // remainingHP update: `ED 68 <u32>` — key 3 (shield), stop, field 1.
+    let (is_max, v) = parse_shield_state_nested(&[0xED, 0x68, 0x2D, 0x12, 0x00, 0x00], g, 54, 55)
+        .expect("shield remainingHP update");
+    assert!(!is_max);
+    assert_eq!(v, 4653, "a reference-capture value");
+    // maxHp update: field selector 0.
+    let (is_max, v) = parse_shield_state_nested(&[0xED, 0x60, 0x88, 0x13, 0x00, 0x00], g, 54, 55)
+        .expect("shield maxHp update");
+    assert!(is_max);
+    assert_eq!(v, 5000);
+    // ATBA target (`ED B4 <entity id>`) shares byte 0 but not the key bits.
+    assert!(parse_shield_state_nested(&[0xED, 0xB4, 0xBD, 0x59, 0x12, 0x00], g, 54, 55).is_none());
+    // A descend-into-field marker (bit 4 set) is never a leaf SetKey.
+    assert!(parse_shield_state_nested(&[0xED, 0x78, 0x2D, 0x12, 0x00, 0x00], g, 54, 55).is_none());
+    // Wrong enclosing property index / wrong lengths / wrong table shape.
+    assert!(parse_shield_state_nested(&[0xED, 0x68, 0x2D, 0x12], g, 54, 55).is_none());
+    assert!(parse_shield_state_nested(&[0xEC, 0x68, 0x2D, 0x12, 0x00, 0x00], g, 54, 55).is_none());
+    assert!(
+        parse_shield_state_nested(&[0xED, 0x68, 0x2D, 0x12, 0x00, 0x00], g, 53, 55).is_none(),
+        "byte 0 encodes index 54, not 53"
+    );
+    assert!(
+        parse_shield_state_nested(&[0xED, 0x68, 0x2D, 0x12, 0x00, 0x00], g, 54, 65).is_none(),
+        "a 65-property table needs 7 path bits — the walk refuses"
+    );
+    assert!(
+        parse_shield_state_nested(&[0xED, 0x68, 0x2D, 0x12, 0x00, 0x00], g, 54, 0).is_none(),
+        "an empty table decodes nothing"
+    );
+}
+
+/// End-to-end: the frame walk lifts all four 15.10 surfaces — the avatar's
+/// shield-damage broadcast, the vehicle zero-arg markers, the per-gun
+/// overheat transitions and the nested shield-HP updates — and everything
+/// stays empty without the exact-minor pin.
+#[test]
+fn walk_frames_collects_shield_and_overheat_streams() {
+    fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(12 + payload.len());
+        f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        f.extend_from_slice(&ptype.to_le_bytes());
+        f.extend_from_slice(&time.to_le_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+    fn entity_create(eid: i32, etype: i16) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&etype.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&[0u8; 24]);
+        p
+    }
+    fn method_call(eid: i32, mid: i32, args: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&mid.to_le_bytes());
+        p.extend_from_slice(&(args.len() as u32).to_le_bytes());
+        p.extend_from_slice(args);
+        p
+    }
+    fn nested(eid: i32, blob: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.push(0);
+        p.extend_from_slice(&(blob.len() as u32).to_le_bytes());
+        p.extend_from_slice(blob);
+        p
+    }
+    let mut stream = Vec::new();
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(963613, ENTITY_TYPE_VEHICLE),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(963614, ENTITY_TYPE_AVATAR),
+    ));
+    // Shield damage on the avatar (id 87, 13-byte args).
+    let mut dmg = Vec::new();
+    dmg.extend_from_slice(&963613i32.to_le_bytes());
+    dmg.extend_from_slice(&963613i32.to_le_bytes());
+    dmg.extend_from_slice(&770u32.to_le_bytes());
+    dmg.push(181);
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        20.3,
+        &method_call(963614, 87, &dmg),
+    ));
+    // Zero-arg vehicle markers: shieldHit (1) then shieldRegen (0).
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        2.7,
+        &method_call(963613, 1, &[]),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        9.1,
+        &method_call(963613, 0, &[]),
+    ));
+    // Gun overheat on (21, 3-byte args).
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        61.0,
+        &method_call(963613, 21, &[0, 2, 1]),
+    ));
+    // Nested shield HP: remainingHP 4653 then maxHp 5000 (out of order in
+    // time on purpose — the walk sorts).
+    stream.extend(frame(
+        PACKET_NESTED_PROPERTY,
+        8.0,
+        &nested(963613, &[0xED, 0x60, 0x88, 0x13, 0x00, 0x00]),
+    ));
+    stream.extend(frame(
+        PACKET_NESTED_PROPERTY,
+        5.0,
+        &nested(963613, &[0xED, 0x68, 0x2D, 0x12, 0x00, 0x00]),
+    ));
+    // ATBA traffic on the same vehicle shares the framing, not the key —
+    // it must stay out of the shield timeline.
+    stream.extend(frame(
+        PACKET_NESTED_PROPERTY,
+        8.5,
+        &nested(963613, &[0xED, 0xB4, 0xBD, 0x59, 0x12, 0x00]),
+    ));
+    // An avatar-carried nested blob must not leak into the vehicle stream.
+    stream.extend(frame(
+        PACKET_NESTED_PROPERTY,
+        8.75,
+        &nested(963614, &[0xED, 0x68, 0x2D, 0x12, 0x00, 0x00]),
+    ));
+
+    let g = crate::layout_tables::vehicle_gun_state_for(Some((15, 10, 0))).expect("15.10 row");
+    // The avatar method ids must be pinned for the shield-damage arm to
+    // fire at all; the 15.10 row carries receiveShieldDamageInfo, the
+    // 15.9-era rows (like the pre-15.8 reference) carry None.
+    let profile = |gun: Option<crate::layout_tables::VehicleGunStateRow>, ver: (u32, u32, u32)| {
+        let client = format!("{},{},{},0", ver.0, ver.1, ver.2);
+        LayoutProfile {
+            methods: Some(method_ids_for_version(Some(client.as_str()))),
+            gun_state: gun,
+            state_property_index: gun.map(|_| 54),
+            ..profile_for(false)
+        }
+    };
+    let decoded = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile(Some(g), (15, 10, 0)),
+        Some((15, 10, 0)),
+    );
+    assert_eq!(decoded.shield_damage_events.len(), 1);
+    let e = &decoded.shield_damage_events[0];
+    assert_eq!(e.victim_id, 963613);
+    assert_eq!(e.attacker_id, 963613);
+    assert_eq!(e.shield_damage, 770);
+    assert_eq!(e.hit_yaw, 181);
+    assert_eq!(decoded.shield_markers.len(), 2, "hit + regen");
+    assert!(!decoded.shield_markers[0].is_regen, "hit first in time");
+    assert!(decoded.shield_markers[1].is_regen);
+    assert_eq!(decoded.gun_overheats.len(), 1);
+    assert!(decoded.gun_overheats[0].is_overheated);
+    assert_eq!(decoded.gun_overheats[0].gun_id, 2);
+    // The nested shield timeline: exactly the two HP updates, time-sorted,
+    // ATBA and avatar-side blobs filtered out.
+    assert_eq!(decoded.shield_state_events.len(), 2);
+    assert!((decoded.shield_state_events[0].time - 5.0).abs() < 1e-6);
+    assert!(!decoded.shield_state_events[0].is_max_hp);
+    assert_eq!(decoded.shield_state_events[0].value, 4653);
+    assert!(decoded.shield_state_events[1].is_max_hp);
+    assert_eq!(decoded.shield_state_events[1].value, 5000);
+
+    // Without the pin (an older client) every stream stays empty — the
+    // raw method calls still flow through the histogram untouched.
+    let off = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile(None, (15, 9, 0)),
+        Some((15, 9, 0)),
+    );
+    assert!(off.shield_damage_events.is_empty());
+    assert!(off.shield_markers.is_empty());
+    assert!(off.gun_overheats.is_empty());
+    assert!(off.shield_state_events.is_empty());
+}
+
+/// The 15.10 shield/overheat streams against the real replay (skips without
+/// `WOWSP_TEST_REPLAY`): structural invariants only — the corpus replay may
+/// be any 15.10+ capture, so exact counts stay with the reference-pinned
+/// diagnostics above. Pre-15.10 replays decode nothing by design.
+#[test]
+fn shield_streams_on_real_replay() {
+    let Some(decoded) = decoded_real_replay() else {
+        corpus_skip("shield_streams_on_real_replay");
+        return;
+    };
+    let Some(version) = decoded.version.as_deref().and_then(parse_version_key) else {
+        eprintln!("skipped: replay carries no parsable version");
+        return;
+    };
+    if version < (15, 10, 0) {
+        assert!(decoded.shield_damage_events.is_empty());
+        assert!(decoded.shield_state_events.is_empty());
+        assert!(decoded.shield_markers.is_empty());
+        assert!(decoded.gun_overheats.is_empty());
+        eprintln!("skipped: replay {version:?} predates the 15.10 shield pin");
+        return;
+    }
+    let vehicles: std::collections::HashSet<i32> = decoded
+        .kinds
+        .iter()
+        .filter(|(_, k)| k.entity_type == ENTITY_TYPE_VEHICLE)
+        .map(|(eid, _)| *eid)
+        .collect();
+    // The damage broadcast: victimId joins a live VEHICLE, hitOwnerId the
+    // attacker's owner entity — an avatar id when the broadcast names the
+    // attacker (the reference capture only names the recorder's own hits),
+    // the 0 sentinel otherwise.
+    let avatars: std::collections::HashSet<i32> = decoded
+        .kinds
+        .iter()
+        .filter(|(_, k)| k.entity_type == ENTITY_TYPE_AVATAR)
+        .map(|(eid, _)| *eid)
+        .collect();
+    for e in &decoded.shield_damage_events {
+        assert!(
+            vehicles.contains(&e.victim_id),
+            "victim {} must be a vehicle",
+            e.victim_id
+        );
+        assert!(
+            e.attacker_id == 0
+                || vehicles.contains(&e.attacker_id)
+                || avatars.contains(&e.attacker_id),
+            "attacker {} must be a vehicle, an avatar or the no-owner sentinel",
+            e.attacker_id
+        );
+    }
+    // The HP timeline stays within physical bounds and names vehicles.
+    let mut max_by_entity: std::collections::BTreeMap<i32, u32> = std::collections::BTreeMap::new();
+    for e in &decoded.shield_state_events {
+        assert!(
+            vehicles.contains(&e.entity_id),
+            "state entity must be a vehicle"
+        );
+        if e.is_max_hp {
+            max_by_entity.insert(e.entity_id, e.value);
+        } else if let Some(&max) = max_by_entity.get(&e.entity_id) {
+            assert!(
+                e.value <= max,
+                "remaining {} exceeds max {} for entity {}",
+                e.value,
+                max,
+                e.entity_id
+            );
+        }
+    }
+    for m in &decoded.shield_markers {
+        assert!(
+            vehicles.contains(&m.entity_id),
+            "marker entity must be a vehicle"
+        );
+    }
+    for g in &decoded.gun_overheats {
+        assert!(
+            vehicles.contains(&g.entity_id),
+            "overheat entity must be a vehicle"
+        );
+    }
+    eprintln!(
+        "[shield15] damage={} state={} markers={} overheat={} ships={}",
+        decoded.shield_damage_events.len(),
+        decoded.shield_state_events.len(),
+        decoded.shield_markers.len(),
+        decoded.gun_overheats.len(),
+        max_by_entity.len(),
+    );
 }

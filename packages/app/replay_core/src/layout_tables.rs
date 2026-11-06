@@ -160,13 +160,26 @@ pub(crate) struct E11Ids {
     pub vehicle_on_consumable_used: i32,
 }
 
-pub(crate) const E11_METHOD_IDS: [(Era, E11Ids); 1] = [(
-    (15, 8, 0),
-    E11Ids {
-        avatar_update_minimap_vision_info: 155,
-        vehicle_on_consumable_used: 72,
-    },
-)];
+pub(crate) const E11_METHOD_IDS: [(Era, E11Ids); 2] = [
+    // 15.10.0 (build 13533378, the Bermuda Triangle event client): def-derived
+    // from the authoritative entity defs (exposed_index.py). The whole exposed
+    // table shifted +1 at and above id 87 with receiveShieldDamageInfo's
+    // insertion (see method_tables' 15.10.0 row for the full accounting).
+    (
+        (15, 10, 0),
+        E11Ids {
+            avatar_update_minimap_vision_info: 156,
+            vehicle_on_consumable_used: 73,
+        },
+    ),
+    (
+        (15, 8, 0),
+        E11Ids {
+            avatar_update_minimap_vision_info: 155,
+            vehicle_on_consumable_used: 72,
+        },
+    ),
+];
 
 /// E11 ids are pinned per EXACT minor release, not per era-floor: the
 /// exposed indices re-shuffle every minor, so 15.9.0 must NOT ride the
@@ -178,6 +191,71 @@ pub(crate) fn e11_for(v: Option<Era>) -> Option<E11Ids> {
         .iter()
         .find(|((ra, ri, rp), _)| *ra == ma && *ri == mi && *rp <= pa)
         .map(|(_, ids)| *ids)
+}
+
+/// The 15.10.0 shield + gun-heat streams (the Bermuda Triangle event era's
+/// two new mechanics), pinned as one exact-minor row like the E11 ids — the
+/// same defs re-shuffle invalidates all of them together.
+///
+/// Three wire surfaces, def-derived from build 13533378's entity defs and
+/// wire-validated on the same-day event capture (2026-11-05):
+///
+/// - Vehicle client methods `shieldRegen` (no args) / `shieldHit` (no args) —
+///   the shield lifecycle markers, exposed ids 0/1 (wire counts on the
+///   reference capture: 19 regen / 661 hit);
+/// - Vehicle client method `setGunOverheated(weaponType UINT8, gunID UINT8,
+///   isOverheated BOOL)` — the gun-heat mechanic's boolean transition, exposed
+///   id 21 (zero calls on the reference capture — the heat LEVEL itself is
+///   client-local and never replicates, only this broadcast does);
+/// - the Vehicle `state` property's nested `SHIELD_STATE` fixed dict —
+///   `VEHICLE_STATE` puts `shield` at key 3 of 6, and `SHIELD_STATE`
+///   (`maxHp`/`remainingHP`, both UINT32) spans fields 0/1 of 2. The dict key
+///   indices pin the nested-property bit path (BigWorld SetKey walk,
+///   MSB-first bits, values byte-aligned); the enclosing `state` property's
+///   exposed index is resolved BY NAME from the generated property table,
+///   never pinned here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct VehicleGunStateRow {
+    pub shield_regen_method: i32,
+    pub shield_hit_method: i32,
+    pub set_gun_overheated_method: i32,
+    /// `VEHICLE_STATE`'s total key count (drives bits_required for the
+    /// level-2 key selector of the nested-property path).
+    pub vehicle_state_key_count: usize,
+    /// The `shield` key's index inside `VEHICLE_STATE`.
+    pub shield_state_key: usize,
+    /// `SHIELD_STATE`'s total key count (drives bits_required for the field
+    /// selector).
+    pub shield_field_count: usize,
+    /// The `maxHp` field index inside `SHIELD_STATE`.
+    pub max_hp_field: usize,
+    /// The `remainingHP` field index inside `SHIELD_STATE`.
+    pub remaining_hp_field: usize,
+}
+
+pub(crate) const VEHICLE_GUN_STATE_LAYOUT: [(Era, VehicleGunStateRow); 1] = [(
+    (15, 10, 0),
+    VehicleGunStateRow {
+        shield_regen_method: 0,
+        shield_hit_method: 1,
+        set_gun_overheated_method: 21,
+        vehicle_state_key_count: 6,
+        shield_state_key: 3,
+        shield_field_count: 2,
+        max_hp_field: 0,
+        remaining_hp_field: 1,
+    },
+)];
+
+/// Exact-minor lookup, same rule as [`e11_for`]: the exposed indices and dict
+/// key orders re-shuffle every minor, so a version resolves iff a row shares
+/// its (major, minor) and the row's patch floor is <= the version's patch.
+pub(crate) fn vehicle_gun_state_for(v: Option<Era>) -> Option<VehicleGunStateRow> {
+    let (ma, mi, pa) = v?;
+    VEHICLE_GUN_STATE_LAYOUT
+        .iter()
+        .find(|((ra, ri, rp), _)| *ra == ma && *ri == mi && *rp <= pa)
+        .map(|(_, row)| *row)
 }
 
 // ── Lookups ─────────────────────────────────────────────────────────────────
@@ -283,5 +361,26 @@ mod tests {
         assert_eq!(e11_for(Some((15, 9, 0))), None);
         assert_eq!(e11_for(Some((15, 7, 9))), None);
         assert_eq!(e11_for(None), None);
+    }
+
+    /// The shield/gun-heat layout rides its exact pinned minor like the E11
+    /// ids: 15.10.x carries the row, 15.9.x (whose defs predate all three
+    /// streams' exposed ids) and older resolve nothing.
+    #[test]
+    fn vehicle_gun_state_is_minor_exact() {
+        let row = vehicle_gun_state_for(Some((15, 10, 0))).expect("15.10 row pinned");
+        assert_eq!(row.shield_regen_method, 0);
+        assert_eq!(row.shield_hit_method, 1);
+        assert_eq!(row.set_gun_overheated_method, 21);
+        assert_eq!(row.shield_state_key, 3);
+        assert_eq!(row.remaining_hp_field, 1);
+        assert_eq!(
+            vehicle_gun_state_for(Some((15, 10, 9))).map(|r| r.set_gun_overheated_method),
+            Some(21),
+            "same-minor patches ride the row"
+        );
+        assert_eq!(vehicle_gun_state_for(Some((15, 9, 0))), None);
+        assert_eq!(vehicle_gun_state_for(Some((15, 11, 0))), None);
+        assert_eq!(vehicle_gun_state_for(None), None);
     }
 }

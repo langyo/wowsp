@@ -53,6 +53,10 @@ AVATAR_METHODS = [
     "receive_wardAdded",
     "receive_wardRemoved",
     "receiveShotKills",
+    # 15.10.0's shield-damage broadcast (Bermuda Triangle event era): args
+    # "i32 victimId, i32 hitOwnerId, u32 shieldDamage, u8 hitYaw". Newer than
+    # every reference def, so the id is pinned per version like damageStat.
+    "receiveShieldDamageInfo",
     "receiveDamageStat",
     "onChatMessage",
     "onAchievementEarned",
@@ -62,7 +66,7 @@ AVATAR_METHODS = [
 # Fields emitted as `Option<i32>`: the reference entity defs don't expose every
 # method the replay stream carries, so a missing def resolves to `None` (the
 # decoder then leaves that stream empty) instead of a bogus id.
-OPTIONAL_FIELDS = {"avatar_receive_damage_stat"}
+OPTIONAL_FIELDS = {"avatar_receive_damage_stat", "avatar_receive_shield_damage_info"}
 
 # Fields whose def-derived id is NOT trusted yet: newer reference defs started
 # shipping `receiveDamageStat` (they used to be absent — hence the Option), but
@@ -130,9 +134,62 @@ EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
         "avatar_on_achievement_earned": 58,
         "avatar_on_arena_state_received": 153,
     },
+    # 15.10.0 (build 13533378, the Bermuda Triangle event client): def-derived
+    # from the authoritative entity defs extracted from the local install
+    # (2026-11-05, `scripts/experiments/exposed_index.py` — the E10 rule set,
+    # interface inheritance + stable wire-size sort) and wire-validated on the
+    # same-day event capture. One new avatar client method,
+    # `receiveShieldDamageInfo` (args `i32 victimId, i32 hitOwnerId,
+    # u32 shieldDamage, u8 hitYaw` — the shield-damage broadcast of the
+    # 15.10 shield mechanic), inserts below the battle-effect cluster and
+    # shifts every exposed id ≥ 87 up by one (artillery 126→127, torpedoes
+    # 127→128, shotKills 130→131, explosions 131→132, updateSquadron 145→146,
+    # damageStat 163→164, chat 151→152, arena 153→154, minimapVision 155→156);
+    # ids below the insertion point keep their 15.8/15.9 values (verified
+    # def-for-def against build 13357625: 15.9.0's table is identical to the
+    # 15.8.0 pins, so 15.9 replays correctly ride the 15.8 row via the era
+    # floor and get no row of their own). Wire counts on the event capture
+    # match the def-derived ids: artillery=127 (956 calls), torpedoes=128 (48),
+    # shotKills=131 (777), explosions=132 (20), damageStat=164 (58),
+    # chat=152 (1), arenaState=154 (1), shieldDamageInfo=87 (200 calls, 13-byte
+    # args whose victim/attacker/damage fields join the shield HP stream).
+    (15, 10, 0): {
+        "avatar_receive_artillery_shots": 127,
+        "avatar_receive_torpedoes": 128,
+        "avatar_receive_shot_kills": 131,
+        "avatar_receive_explosions": 132,
+        "avatar_receive_torpedo_direction": 114,
+        "avatar_receive_add_squadron": 117,
+        "avatar_receive_update_squadron": 146,
+        "avatar_receive_add_minimap_squadron": 102,
+        "avatar_receive_update_minimap_squadron": 94,
+        "avatar_receive_remove_minimap_squadron": 49,
+        "avatar_receive_ward_added": 113,
+        "avatar_receive_ward_removed": 51,
+        "avatar_receive_damage_stat": 164,
+        "avatar_on_chat_message": 152,
+        "avatar_on_achievement_earned": 58,
+        "avatar_on_arena_state_received": 154,
+        "avatar_receive_shield_damage_info": 87,
+    },
 }
 
 EMPIRICAL_NOTES = {
+    (
+        15,
+        10,
+        0,
+    ): """    // 15.10.0 has no reference entity definitions yet — this row is derived
+    // from the authoritative entity defs of game build 13533378 extracted from
+    // the local install (see EMPIRICAL_OVERRIDES): receiveShieldDamageInfo (the
+    // 15.10 shield mechanic's damage broadcast, args `i32 victimId, i32
+    // hitOwnerId, u32 shieldDamage, u8 hitYaw`) inserts at 87 and shifts every
+    // exposed id ≥ 87 up by one; ids below 87 keep their 15.8/15.9 values.
+    // 15.9.0's def-derived table is identical to the 15.8.0 pins (verified
+    // against build 13357625), so no 15.9 row exists — those replays ride the
+    // 15.8 row via the era floor. The vehicle-side shield/overheat method ids
+    // are NOT avatar table material: they pin in `layout_tables`
+    // (VEHICLE_GUN_STATE_LAYOUT) next to the E11 exact-minor ids.""",
     (
         15,
         8,
@@ -143,7 +200,17 @@ EMPIRICAL_NOTES = {
     // battle-effect cluster shift it +3 (artillery 123→126, torpedoes
     // 124→127, shotKills 127→130, updateSquadron 142→145), while the
     // squadron add/minimap ids keep their 15.7 values; receiveDamageStat
-    // sits at 163. onChatMessage sits at 151 (args decode as plaintext
+    // sits at 163. E10 (2026-09-20): recomputed from the authoritative entity
+    // defs of game build 13187581 — 13/13 anchors reproduce exactly after
+    // adopting the two def-derived corrections (2026-09-21, user-approved
+    // decode behaviour change): explosions=131 (the same +3 cluster shift as
+    // artillery/torps/shotKills; 128 was the unshifted 15.7 carryover and
+    // names updateMissileWaypoints) and wardRemoved=51 (id 50 is
+    // receive_removeSquadron — it fires paired with
+    // removeMinimapSquadron@49 on identical PLANE_IDs while wardAdded never
+    // fires; the def-derived full table lives in the tests module with the
+    // evidence).
+    // onChatMessage sits at 151 (args decode as plaintext
     // chat: `i32 playerId, STRING namespace, STRING message, STRING unk` —
     // "battle_team" namespaces and real CJK/Latin text observed);
     // onAchievementEarned stays at 58 with args `i32 playerId, u32
@@ -668,6 +735,20 @@ fn parse_version_key(v: &str) -> Option<(u16, u16, u16)> {
 mod tests {
     use super::*;
 
+    /// Report a corpus-gated test as skipped (or fail when the corpus is
+    /// required). Mirrors `packets::tests::corpus_skip`: the 15.8.0 coverage
+    /// test below needs a real capture, so without `WOWSP_TEST_REPLAY` it must
+    /// SAY it skipped instead of passing silently.
+    fn corpus_skip(test_name: &str) {
+        eprintln!("skipped: set WOWSP_TEST_REPLAY (corpus-bound test: {test_name})");
+        if std::env::var_os("WOWSP_TEST_REQUIRE_CORPUS").is_some() {
+            panic!(
+                "WOWSP_TEST_REQUIRE_CORPUS is set but WOWSP_TEST_REPLAY is unset: \\
+                 cannot run corpus-bound test {test_name}"
+            );
+        }
+    }
+
     /// Version selection: exact, older-than-all, newer-than-all, malformed.
     #[test]
     fn selects_table_by_version() {
@@ -733,11 +814,10 @@ mod tests {
     }
 
     /// The full 15.8.0 Avatar table agrees with the pinned 15.8.0 row on
-    /// 11/13 ids; the two disagreements are the documented stale pins (see
-    /// the row's comment): the defs (and the whole +3-shifted cluster around
-    /// them) say explosions=131 and wardRemoved=51, while the row keeps the
-    /// empirically-shipped 128 and 50. This test pins the residual in code —
-    /// whoever resolves the two stale pins must update it deliberately.
+    /// every id since the 2026-09-21 adoption of the two def-derived
+    /// corrections (explosions=131, wardRemoved=51 — see the row's comment
+    /// for the wire evidence); this test pins that agreement in code so a
+    /// regeneration that reintroduces a stale pin fails loudly.
     #[test]
     fn exposed_table_15_8_matches_pinned_row() {
         let row = method_ids_for_version(Some("15,8,0,13187581"));
@@ -786,24 +866,19 @@ mod tests {
             avatar_method_name_15_8_0(row.avatar_receive_damage_stat.unwrap()),
             Some("receiveDamageStat")
         );
-        // Stale pin #1: explosions. The row ships the 15.7 carryover 128
-        // (updateMissileWaypoints in the def-derived table); the defs place
-        // receiveExplosions at 131, +3 like every verified neighbour in the
-        // battle-effect cluster.
+        // The two former stale pins were adopted from the def-derived table
+        // (2026-09-21, user-approved): explosions rides the +3 battle-effect
+        // cluster shift at 131 (128 is updateMissileWaypoints), and
+        // wardRemoved moved to 51 (50 is receive_removeSquadron, paired 1:1
+        // with removeMinimapSquadron@49 on identical PLANE_IDs).
         assert_eq!(
             avatar_method_name_15_8_0(row.avatar_receive_explosions),
-            Some("updateMissileWaypoints")
+            Some("receiveExplosions")
         );
-        assert_eq!(avatar_method_name_15_8_0(131), Some("receiveExplosions"));
-        // Stale pin #2: wardRemoved. The row ships 50, which the defs (and
-        // the wire — it fires paired with removeMinimapSquadron on identical
-        // PLANE_IDs while wardAdded never fires) identify as
-        // receive_removeSquadron; receive_wardRemoved sits at 51.
         assert_eq!(
             avatar_method_name_15_8_0(row.avatar_receive_ward_removed),
-            Some("receive_removeSquadron")
+            Some("receive_wardRemoved")
         );
-        assert_eq!(avatar_method_name_15_8_0(51), Some("receive_wardRemoved"));
     }
 
     /// E10 against the real replay (skips without `WOWSP_TEST_REPLAY`): every
@@ -813,6 +888,7 @@ mod tests {
     #[test]
     fn exposed_tables_cover_real_replay() {
         let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+            corpus_skip("exposed_tables_cover_real_replay");
             return;
         };
         let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
@@ -833,10 +909,11 @@ mod tests {
             }
             cur += bl;
         }
-        let decoded = crate::commands::packets::decode_replay(
+        let decoded = crate::packets::decode_replay(
             &bytes[cur..],
             &std::collections::HashSet::new(),
             client_version.as_deref(),
+            false,
         )
         .expect("decode must succeed");
         // (entity_type -> method id -> calls) on the wire.
@@ -867,7 +944,7 @@ mod tests {
         let is_15_8 = client_version.as_deref().and_then(parse_version_key) == Some((15, 8, 0));
         for (et, (distinct, resolved, calls, cov)) in stats {
             eprintln!(
-                "[e10] type {et}: {resolved}/{distinct} distinct ids ({:.0}%), \
+                "[e10] type {et}: {resolved}/{distinct} distinct ids ({:.0}%), \\
 {cov}/{calls} calls ({:.0}%)",
                 100.0 * resolved as f64 / distinct as f64,
                 100.0 * cov as f64 / calls as f64,

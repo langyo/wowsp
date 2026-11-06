@@ -155,6 +155,68 @@ PINNED = {
             ],
         ),
     },
+    (15, 10, 0): {
+        "Vehicle": (
+            55,
+            [
+                ("hasAirTargetsInRange", 1),
+                ("isAntiAirMode", 1),
+                ("buoyancyCurrentState", 1),
+                ("buoyancyRudderIndex", 1),
+                ("isOnForsage", 1),
+                ("teamId", 1),
+                ("uiEnabled", 1),
+                ("isAlive", 1),
+                ("speedSignDir", 1),
+                ("enginePower", 1),
+                ("engineDir", 1),
+                ("ignoreMapBorders", 1),
+                ("isBot", 1),
+                ("isFogHornOn", 1),
+                ("blockedControls", 1),
+                ("isInvisible", 1),
+                ("hasActiveMainSquadron", 1),
+                ("isInRageMode", 1),
+                ("oilLeakState", 1),
+                ("burningFlags", 2),
+                ("targetLocalPos", 2),
+                ("torpedoLocalPos", 2),
+                ("laserTargetLocalPos", 2),
+                ("waveLocalPos", 2),
+                ("weaponLockFlags", 2),
+                ("serverSpeedRaw", 2),
+                ("respawnTime", 2),
+                ("airDefenseDispRadius", 4),
+                ("health", 4),
+                ("regenerationHealth", 4),
+                ("regeneratedHealth", 4),
+                ("maxHealth", 4),
+                ("buoyancyCurrentWaterline", 4),
+                ("regenCrewHpLimit", 4),
+                ("buoyancy", 4),
+                ("visibilityFlags", 4),
+                ("owner", 4),
+                ("selectedWeapon", 4),
+                ("maxServerSpeedRaw", 4),
+                ("draught", 4),
+                ("ruddersAngle", 4),
+                ("deepRuddersAngle", 4),
+                ("visibilityTime", 8),
+                ("airDefenseTargetIds", 65535),
+                ("antiAirAuras", 65535),
+                ("effects", 65535),
+                ("sounds", 65535),
+                ("shipConfig", 65535),
+                ("crewConfig", 65535),
+                ("crewModifiersCompactParams", 65535),
+                ("debugText", 65535),
+                ("miscsPresetsStatus", 65535),
+                ("triggeredSkillsData", 65535),
+                ("deathSettings", 65535),
+                ("state", 65535),
+            ],
+        ),
+    },
 }
 
 
@@ -282,24 +344,29 @@ def rust_str(name):
 
 
 def emit_row(version, entity, count, props, ship_config, crew):
+    # The row tuple is re-indented one level (the slice now holds multiple
+    # row tuples); the shape matches rustfmt so the committed file stays
+    # byte-identical to the generator output.
     out = []
-    out.append("    (%d, %d, %d)," % version)
-    out.append("    %sPropertyTable {" % entity)
-    out.append("        count: %d," % count)
-    out.append("        properties: &[")
+    out.append("    (")
+    out.append("        (%d, %d, %d)," % version)
+    out.append("        %sPropertyTable {" % entity)
+    out.append("            count: %d," % count)
+    out.append("            properties: &[")
     for name, size in props:
         width = "None" if size == INF else "Some(%d)" % size
         # Struct literals are always multi-line under rustfmt's default
         # struct_lit_width heuristic: emit the formatted shape so the committed
         # file is byte-identical to the generator output.
-        out.append("            PropertyEntry {")
-        out.append("                name: %s," % rust_str(name))
-        out.append("                fixed_width: %s," % width)
-        out.append("            },")
-    out.append("        ],")
-    out.append("        ship_config: %d," % ship_config)
-    out.append("        crew_modifiers_compact_params: %d," % crew)
-    out.append("    },")
+        out.append("                PropertyEntry {")
+        out.append("                    name: %s," % rust_str(name))
+        out.append("                    fixed_width: %s," % width)
+        out.append("                },")
+    out.append("            ],")
+    out.append("            ship_config: %d," % ship_config)
+    out.append("            crew_modifiers_compact_params: %d," % crew)
+    out.append("        },")
+    out.append("    ),")
     return out
 
 
@@ -352,11 +419,11 @@ def emit(rows):
     lines.append("/// (major, minor, patch) -> Vehicle property map, ascending. Generated from")
     lines.append("/// the entity defs of each pinned version.")
     lines.append(
-        "pub static VEHICLE_PROPERTY_TABLES: &[((u16, u16, u16), VehiclePropertyTable)] = &[("
+        "pub static VEHICLE_PROPERTY_TABLES: &[((u16, u16, u16), VehiclePropertyTable)] = &["
     )
     for version, entity, count, props, ship_config, crew in rows:
         lines.extend(emit_row(version, entity, count, props, ship_config, crew))
-    lines.append(")];")
+    lines.append("];")
     lines.append("")
     lines.append("/// Resolve the property table for a parsed client version: the newest pinned")
     lines.append("/// row of the SAME (major, minor) era at or below the requested patch.")

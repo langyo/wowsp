@@ -201,6 +201,100 @@ pub(super) fn parse_weather_nested(payload: &[u8]) -> Option<WeatherSignal> {
     None
 }
 
+/// Classify one NestedPropertyUpdate (0x23) blob as a Vehicle `state.shield`
+/// field update and read its value (15.10+ shield mechanic).
+///
+/// The blob is a BigWorld nested-property SetKey walk: MSB-first path bits,
+/// the value byte-aligned after the path (BitReader.get_rest semantics —
+/// trailing path bits are DISCARDED, never consumed by the value). For a
+/// `state.shield.<field>` update on a version whose Vehicle table pins
+/// `state` at exposed index `state_idx`, the bit path is
+///
+/// ```text
+/// 1                      descend into the property list
+/// bits(prop_count) = 54  the `state` property's exposed index
+/// 1                      descend into VEHICLE_STATE
+/// bits(6) = 3            the `shield` key
+/// 0                      stop — SHIELD_STATE is the SetKey target
+/// bits(2) = 1            the field selector (0 = maxHp, 1 = remainingHP)
+/// ```
+///
+/// 13 path bits → 2 path bytes when (as on 15.10) prop_count = 55, so the
+/// whole update is 6 bytes: `ED`, `[key<<5 | 0<<4 | field<<3 | pad]`, then
+/// the u32 value. The reference capture (2026-11-05) streams 796 of them —
+/// 21 ships, every remainingHP ≤ that ship's maxHp, every broken shield
+/// ending the battle at 0.
+///
+/// `layout` carries the dict key/field indices; `state_idx` the enclosing
+/// property's exposed index. A payload that fails any byte of the path (or
+/// is not exactly 6 bytes) answers `None` — the caller keeps its other
+/// nested streams (capture progress, weather) untouched.
+pub(super) fn parse_shield_state_nested(
+    payload: &[u8],
+    layout: crate::layout_tables::VehicleGunStateRow,
+    state_idx: u8,
+    prop_count: usize,
+) -> Option<(bool, u32)> {
+    if payload.len() != 6 {
+        return None;
+    }
+    // Path byte 0: the descend marker, the `state` exposed index and the
+    // second descend marker — MSB-first in bits_required(prop_count) bits.
+    let prop_bits = bits_required(prop_count);
+    if prop_bits != 6 || prop_bits + 2 != 8 {
+        // The bit walk below assumes the 15.10+ 55-property shape (one path
+        // byte). A future version whose table count pushes the index past
+        // 6 bits must extend this decoder, not silently misparse.
+        return None;
+    }
+    if usize::from(state_idx) >= prop_count {
+        return None;
+    }
+    if payload[0] != (0x80 | (state_idx << 1) | 0x01) {
+        return None;
+    }
+    // Path byte 1: the 3-bit shield key, the stop marker, the field
+    // selector, 3 discarded pad bits.
+    let key_bits = bits_required(layout.vehicle_state_key_count);
+    if key_bits != 3 {
+        return None;
+    }
+    if (payload[1] >> 5) != layout.shield_state_key as u8 {
+        return None;
+    }
+    // Bit 4 must be 0 (stop descending — the target is the SHIELD_STATE dict
+    // itself; a 1 would descend INTO a field, which the final SetKey branch
+    // never does for a leaf update).
+    if payload[1] & 0x10 != 0 {
+        return None;
+    }
+    let field = usize::from((payload[1] >> 3) & 0x01);
+    if layout.shield_field_count != 2 {
+        return None;
+    }
+    let is_max = field == layout.max_hp_field;
+    let is_remaining = field == layout.remaining_hp_field;
+    if !is_max && !is_remaining {
+        return None;
+    }
+    let value = u32::from_le_bytes(payload[2..6].try_into().ok()?);
+    Some((is_max, value))
+}
+
+/// `ceil(log2(n))` — the reference BitReader::bits_required (0 for n < 1).
+pub(super) fn bits_required(n: usize) -> u32 {
+    if n < 2 {
+        return 0;
+    }
+    let mut bits = 0usize;
+    let mut v = n - 1;
+    while v > 0 {
+        bits += 1;
+        v >>= 1;
+    }
+    bits as u32
+}
+
 /// Parse a SetWeaponLock (0x30) payload: three u32s (weapon_type, lock_type,
 /// target_id).
 pub(super) fn parse_weapon_lock(

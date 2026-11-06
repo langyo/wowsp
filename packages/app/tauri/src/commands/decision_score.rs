@@ -1486,6 +1486,10 @@ mod tests {
             weather_transitions: Vec::new(),
             weather_notifications: Vec::new(),
             self_team: None,
+            shield_damage_events: Vec::new(),
+            shield_state_events: Vec::new(),
+            shield_markers: Vec::new(),
+            gun_overheats: Vec::new(),
         }
     }
 

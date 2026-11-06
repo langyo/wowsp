@@ -922,6 +922,68 @@ export interface ReplayStream {
   /** Ally ship builds decoded off the create states (self + team only; any
    *  empty array is omitted by the Rust side). */
   allyBuilds?: PlayerBuild[];
+  /** Shield-damage broadcasts (avatar receiveShieldDamageInfo, 15.10+):
+   *  one absorbed-hit event with the attacker join. Absent on older
+   *  versions. */
+  shieldDamageEvents?: ShieldDamageEvent[];
+  /** Shield HP state timeline (vehicle state.shield nested property,
+   *  15.10+). Absent on older versions. */
+  shieldStateEvents?: ShieldStateEvent[];
+  /** Zero-arg shield lifecycle markers (vehicle shieldRegen / shieldHit,
+   *  15.10+). Absent on older versions. */
+  shieldMarkers?: ShieldMarkerEvent[];
+  /** Gun overheat transitions (vehicle setGunOverheated, 15.10+). Absent
+   *  on older versions and on battles where no gun overheated. */
+  gunOverheats?: GunOverheatEvent[];
+}
+
+/** One shield-damage broadcast (avatar receiveShieldDamageInfo, 15.10+):
+ *  a shell hit a vehicle's shield and was absorbed. Mirrors
+ *  wowsp_tauri_shared::ShieldDamageEvent. */
+export interface ShieldDamageEvent {
+  time: number;
+  /** The vehicle whose shield absorbed the hit (joins entityId). */
+  victimId: number;
+  /** The vehicle that fired the hit; 0 when the broadcast carries no
+   *  owner (bot-owned damage on the reference capture). */
+  attackerId: number;
+  /** Damage the shield absorbed (the shell's shield-damage cap). */
+  shieldDamage: number;
+  /** The engine's 0..=255 quantized impact bearing. */
+  hitYaw: number;
+}
+
+/** One vehicle state.shield nested-property update (15.10+): either the
+ *  shield's remaining HP (falls with absorbed hits, regenerates between
+ *  engagements) or its maximum HP. Mirrors
+ *  wowsp_tauri_shared::ShieldStateEvent. */
+export interface ShieldStateEvent {
+  time: number;
+  entityId: number;
+  /** The streamed HP value (max HP when isMaxHp, else remaining HP). */
+  value: number;
+  /** True = maxHp update, false = remainingHP update. */
+  isMaxHp: boolean;
+}
+
+/** One zero-arg shield lifecycle marker (vehicle shieldRegen / shieldHit,
+ *  15.10+). Mirrors wowsp_tauri_shared::ShieldMarkerEvent. */
+export interface ShieldMarkerEvent {
+  time: number;
+  entityId: number;
+  /** True = shieldRegen (re-armed), false = shieldHit (absorbed). */
+  isRegen: boolean;
+}
+
+/** One gun overheat transition (vehicle setGunOverheated, 15.10+): the heat
+ *  level itself never replicates, only this per-gun boolean. Mirrors
+ *  wowsp_tauri_shared::GunOverheatEvent. */
+export interface GunOverheatEvent {
+  time: number;
+  entityId: number;
+  weaponType: number;
+  gunId: number;
+  isOverheated: boolean;
 }
 
 /** The running client's in-progress replay container

@@ -173,6 +173,10 @@ mod tests {
             consumable_uses: Vec::new(),
             engine_states: Vec::new(),
             vehicle_builds: Vec::new(),
+            shield_damage_events: Vec::new(),
+            shield_state_events: Vec::new(),
+            shield_markers: Vec::new(),
+            gun_overheats: Vec::new(),
         }
     }
 }

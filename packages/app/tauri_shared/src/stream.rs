@@ -639,6 +639,22 @@ pub struct ReplayStream {
     /// didn't match any entry (very old replays).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub self_team: Option<i8>,
+    /// Shield-damage broadcasts (Avatar `receiveShieldDamageInfo`, 15.10+).
+    /// Empty on older versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shield_damage_events: Vec<ShieldDamageEvent>,
+    /// Shield HP state timeline (Vehicle `state.shield` nested property,
+    /// 15.10+). Empty on older versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shield_state_events: Vec<ShieldStateEvent>,
+    /// Zero-arg shield lifecycle markers (Vehicle `shieldRegen`/`shieldHit`,
+    /// 15.10+). Empty on older versions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub shield_markers: Vec<ShieldMarkerEvent>,
+    /// Gun overheat transitions (Vehicle `setGunOverheated`, 15.10+). Empty
+    /// on older versions (and on battles where no gun overheated).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gun_overheats: Vec<GunOverheatEvent>,
 }
 
 /// Slim battle snapshot for the live self-stats view (我的战绩): the
@@ -1043,6 +1059,87 @@ pub struct ConsumableUseEvent {
     /// Target entity id for the `entity` usage variant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target_id: Option<u64>,
+}
+
+/// One shield-damage broadcast (Avatar `receiveShieldDamageInfo`, 15.10.0+
+/// shield mechanic): a shell hit a vehicle's shield and was absorbed. The
+/// args are `i32 victimId, i32 hitOwnerId, u32 shieldDamage, u8 hitYaw` —
+/// 13 bytes, verified against the 2026-11-05 Bermuda Triangle event capture
+/// (200 events; the 770-damage SAP shield cap among observed values).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShieldDamageEvent {
+    /// Seconds since match start.
+    pub time: f32,
+    /// The vehicle whose shield absorbed the hit (joins
+    /// `EntityTrajectory.entityId`).
+    pub victim_id: i32,
+    /// The attacker's owner entity: an AVATAR id when the broadcast names
+    /// the attacker (the reference capture names only the recorder's own
+    /// hits), a vehicle id, or `0` when no owner is broadcast (observed on
+    /// bot-owned damage). Join against both entity maps, never assume one.
+    pub attacker_id: i32,
+    /// Damage the shield absorbed (the shell's shield-damage cap, e.g. 770
+    /// for the event SAP ammo — matches the in-game ammo panel).
+    pub shield_damage: u32,
+    /// The engine's 0..=255 quantized impact bearing (relative to the
+    /// victim's heading) — raw, join-free.
+    pub hit_yaw: u8,
+}
+
+/// One `state.shield` nested-property update (Vehicle, 15.10.0+): either the
+/// shield's remaining HP (it falls with every absorbed hit and regenerates
+/// between engagements) or its maximum HP (a buff-driven ceiling change).
+/// Fold by entity for the shield HP timeline; a remainingHP of 0 is the
+/// broken-shield state.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShieldStateEvent {
+    /// Seconds since match start.
+    pub time: f32,
+    /// Vehicle entity the shield belongs to.
+    pub entity_id: i32,
+    /// The streamed HP value (max HP when `isMaxHp`, else the remaining
+    /// HP).
+    pub value: u32,
+    /// True = `maxHp` update, false = `remainingHP` update.
+    pub is_max_hp: bool,
+}
+
+/// One zero-arg shield lifecycle marker on a Vehicle entity (15.10.0+):
+/// `shieldRegen` (the shield re-armed after its offline window) or
+/// `shieldHit` (a hit was absorbed — the audio/visual cue the client plays).
+/// These fire alongside the damage/state streams; the markers carry no
+/// payload, they timestamp the transitions per vehicle.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShieldMarkerEvent {
+    /// Seconds since match start.
+    pub time: f32,
+    /// Vehicle entity whose shield changed state.
+    pub entity_id: i32,
+    /// True = `shieldRegen` (re-armed), false = `shieldHit` (absorbed).
+    pub is_regen: bool,
+}
+
+/// One gun overheat transition (Vehicle `setGunOverheated`, 15.10.0+ gun-heat
+/// mechanic): `u8 weaponType, u8 gunID, BOOL isOverheated`. The heat LEVEL
+/// itself never replicates (each client simulates its own guns; remote
+/// clients only see this boolean), so the timeline here is per-gun
+/// overheated/not transitions.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GunOverheatEvent {
+    /// Seconds since match start.
+    pub time: f32,
+    /// Vehicle entity whose gun changed overheat state.
+    pub entity_id: i32,
+    /// Raw weapon-type byte (the engine's WEAPON_TYPE enum).
+    pub weapon_type: u8,
+    /// Raw gun id within the weapon type.
+    pub gun_id: u8,
+    /// True = the gun entered the overheated (cooling-locked) state.
+    pub is_overheated: bool,
 }
 
 /// One per-vehicle engine-state change (Vehicle entity properties
