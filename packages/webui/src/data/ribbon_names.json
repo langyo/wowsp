@@ -66,7 +66,7 @@
     "es-ES": "Defendió"
   },
   "bomb": {
-    "zh-CN": "炸弹命中",
+    "zh-CN": "命中目标",
     "zh-SG": "命中",
     "zh-TW": "命中目標",
     "en-US": "Target hits",
@@ -121,15 +121,15 @@
     "es-ES": "Incapacitaciones"
   },
   "dbomb": {
-    "zh-CN": "深弹命中",
-    "zh-SG": "深弹命中",
-    "en-US": "Depth charge hits",
-    "zh-TW": "深彈命中",
-    "ja-JP": "爆雷命中",
+    "zh-CN": "命中目标",
+    "zh-SG": "命中",
+    "zh-TW": "命中目標",
+    "en-US": "Target hits",
+    "ja-JP": "目標に命中",
     "ko-KR": "폭뢰 명중",
-    "ru-RU": "Попадания глубинными бомбами",
-    "fr-FR": "Impacts de charges de profonde",
-    "es-ES": "Impactos de cargas de profundidad"
+    "ru-RU": "Попал",
+    "fr-FR": "Coups à la cible",
+    "es-ES": "Impactos en el objetivo"
   },
   "dbomb_mine": {
     "zh-CN": "水雷伤害",
@@ -209,7 +209,7 @@
     "es-ES": "Destruyó"
   },
   "main_caliber": {
-    "zh-CN": "主炮命中",
+    "zh-CN": "命中",
     "zh-SG": "命中",
     "zh-TW": "命中目標",
     "en-US": "Target hits",
@@ -241,6 +241,17 @@
     "fr-FR": "Coup à la cible",
     "es-ES": "Impactos en el objetivo"
   },
+  "phaser_laser": {
+    "zh-CN": "命中目标",
+    "zh-SG": "命中",
+    "zh-TW": "命中目標",
+    "en-US": "Target hits",
+    "ja-JP": "目標に命中",
+    "ko-KR": "고속탄 명중",
+    "ru-RU": "Попал",
+    "fr-FR": "Coups à la cible",
+    "es-ES": "Impactos en el objetivo"
+  },
   "plane": {
     "zh-CN": "击落",
     "zh-SG": "击落飞机",
@@ -253,7 +264,7 @@
     "es-ES": "Avión derribado"
   },
   "rocket": {
-    "zh-CN": "火箭命中",
+    "zh-CN": "命中",
     "zh-SG": "命中",
     "zh-TW": "命中目標",
     "en-US": "Target hits",
@@ -264,7 +275,7 @@
     "es-ES": "Impactos en el objetivo"
   },
   "secondary_caliber": {
-    "zh-CN": "副炮命中",
+    "zh-CN": "命中",
     "zh-SG": "命中",
     "zh-TW": "命中目標",
     "en-US": "Target hits",
@@ -273,6 +284,17 @@
     "ru-RU": "Попал",
     "fr-FR": "Coups à la cible",
     "es-ES": "Impactos en el objetivo"
+  },
+  "shield": {
+    "zh-CN": "命中护盾",
+    "zh-SG": "命中护盾",
+    "zh-TW": "命中護盾",
+    "en-US": "Shield hits",
+    "ja-JP": "シールドへの命中",
+    "ko-KR": "보호막 명중",
+    "ru-RU": "Попаданий по щитам",
+    "fr-FR": "Coups au bouclier",
+    "es-ES": "Impactos en el escudo"
   },
   "splane": {
     "zh-CN": "被战斗机击落",
@@ -297,7 +319,7 @@
     "es-ES": "Suprimió"
   },
   "torpedo": {
-    "zh-CN": "鱼雷命中",
+    "zh-CN": "命中",
     "zh-SG": "命中",
     "zh-TW": "命中目標",
     "en-US": "Target hits",

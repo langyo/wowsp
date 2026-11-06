@@ -3,18 +3,25 @@
 Which ships are EVENT ships, and of which event, is the game's own call:
 GameParams' `peculiarity` field attributes every hull to its event family
 (`azurlane`, `arpeggio`, `startrek_visible`, `halloween_16`, …) far more
-reliably than name suffixes. This script resolves, per Ship entity:
+reliably than name suffixes; the battle-mode fleets it leaves untagged are
+keyed by the `navalFlag` navy assignment. This script resolves, per Ship
+entity:
 
   1. exclusions — mode-support NPCs and bots (convoy escorts, invisible
      air units, capture helpers) are not player ships and get no badge;
-  2. `peculiarity` families → stable event ids (the collabs map 1:1; the
+  2. `navalFlag` families → stable event ids: the 2026 Bermuda Triangle
+     battle-mode hulls are plain Event-nation copies whose `peculiarity`
+     is `default`/`decorative` and whose `peculiarityFlag` is empty, so
+     the navy flag (`bermuda_2026_ally` / `bermuda_2026_enemy`) is their
+     only marker;
+  3. `peculiarity` families → stable event ids (the collabs map 1:1; the
      Halloween family splits by the `_H20xx` name-suffix year, with the
      unsuffixed 2016 bosses keyed by the ally/enemy peculiarity flags);
-  3. name/regex fallbacks for hulls the peculiarity system misses — Azur
+  4. name/regex fallbacks for hulls the peculiarity system misses — Azur
      Lane ships without the tag, the Piñata April-Fools hulls (their
      peculiarity is only `decorative`), the modern-era missile hulls, the
      Halloween-event submarines, and the Star Trek mode monsters;
-  4. plain `decorative` hulls (Black_, Gold_, STPatric_, East_, Cyber_,
+  5. plain `decorative` hulls (Black_, Gold_, STPatric_, East_, Cyber_,
      Olympian_, Pirate_… — permanently sold novelty variants) are
      deliberately NOT badged: they are premium series, not events.
 
@@ -80,6 +87,14 @@ PECULIARITY_EVENTS = {
 }
 HALLOWEEN_PECULIARITIES = {"halloween_16", "halloween_2016_ally", "halloween_2016_enemy"}
 
+# Battle-mode fleets whose only marker is GameParams' `navalFlag`: the 2026
+# Bermuda Triangle hulls are Event-nation copies with an empty
+# peculiarityFlag and a default/decorative peculiarity.
+NAVAL_FLAG_EVENTS = {
+    "bermuda_2026_ally": "bermuda_2026",
+    "bermuda_2026_enemy": "bermuda_2026",
+}
+
 # Name-regex fallbacks, applied in order when the peculiarity is default or
 # decorative. Regexes test the entity NAME (e.g. PXSC519_Azur_Azuma).
 NAME_RULES: list[tuple[str, re.Pattern[str]]] = [
@@ -115,12 +130,21 @@ NPC_INDEX_RE = re.compile(r"^PXSX\d+")
 
 
 def classify(
-    name: str, index: str, nation: str, peculiarity: str, flag: str, tags: list[str]
+    name: str,
+    index: str,
+    nation: str,
+    peculiarity: str,
+    flag: str,
+    naval_flag: str,
+    tags: list[str],
 ) -> str | None:
     """Event id for one ship entity, or None for a non-event ship."""
     if nation == "Events":
         if NPC_INDEX_RE.match(index) or index in ("PXSA001", "PXSA002", "PXSC503"):
             return None
+        hit = NAVAL_FLAG_EVENTS.get(naval_flag)
+        if hit:
+            return hit
         if index in STAR_TREK_MONSTERS:
             return "collab_star_trek"
         if MODERN_ERA_RE.search(name):
@@ -197,6 +221,7 @@ def main(argv: list[str]) -> int:
             nation=str(typeinfo.get("nation") or ""),
             peculiarity=str(ent.get("peculiarity") or ""),
             flag=str(ent.get("peculiarityFlag") or ""),
+            naval_flag=str(ent.get("navalFlag") or ""),
             tags=[str(t) for t in ent.get("tags") or [] if isinstance(t, str)],
         )
         if event is None:

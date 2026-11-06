@@ -298,6 +298,10 @@
       "en-US": "Low salvo damage (from tier VII)",
       "zh-Hans": "齐射伤害较低（自VII级起）"
     },
+    "FEAT_BAD_MC_ANGLES": {
+      "en-US": "Limited main battery gun aiming angles",
+      "zh-Hans": "主炮瞄准角度有限"
+    },
     "FEAT_BAD_MC_AP_DMG": {
       "en-US": "Low AP shell damage",
       "zh-Hans": "穿甲弹伤害较低"
@@ -394,6 +398,10 @@
       "en-US": "Low torpedo damage",
       "zh-Hans": "鱼雷伤害较低"
     },
+    "FEAT_BAD_TORP_DMG_8": {
+      "en-US": "Low torpedoes damage from Tier VIII",
+      "zh-Hans": "VIII级及以上鱼雷伤害较低"
+    },
     "FEAT_BAD_TORP_DONTHITDD": {
       "en-US": "Torpedoes rarely hit destroyers",
       "zh-Hans": "鱼雷难以命中驱逐舰"
@@ -401,6 +409,10 @@
     "FEAT_BAD_TORP_FEWTUBES": {
       "en-US": "Few torpedo tubes",
       "zh-Hans": "鱼雷发射管较少"
+    },
+    "FEAT_BAD_TORP_FEWTUBES_8": {
+      "en-US": "Few torpedo tubes from Tier VIII",
+      "zh-Hans": "VIII级以上战舰的鱼雷发射管数量较少"
     },
     "FEAT_BAD_TORP_FEWTUBES_9": {
       "en-US": "Few torpedo tubes (from tier IX)",
@@ -750,6 +762,10 @@
       "en-US": "Many aircraft per squadron",
       "zh-Hans": "中队飞机数量较多"
     },
+    "FEAT_GOOD_LARGE_SQUADRON": {
+      "en-US": "Large number of aircraft in a squadron",
+      "zh-Hans": "中队飞机数量较多"
+    },
     "FEAT_GOOD_MAIN_ACCURACY_5": {
       "en-US": "High main gun accuracy (from tier V)",
       "zh-Hans": "主炮精度较高（自V级起）"
@@ -885,6 +901,10 @@
     "FEAT_GOOD_PINGER_FIRERATE": {
       "en-US": "Fast sonar ping reload",
       "zh-Hans": "声呐脉冲装填较快"
+    },
+    "FEAT_GOOD_PLANES_ACCURATESTRIKE": {
+      "en-US": "High attack accuracy",
+      "zh-Hans": "攻击准度较高"
     },
     "FEAT_GOOD_PLANES_HEAL_8": {
       "en-US": "Aircraft can be repaired (from tier VIII)",
@@ -1077,6 +1097,10 @@
     "FEAT_GOOD_TORP_RELOAD": {
       "en-US": "Fast torpedo reload",
       "zh-Hans": "鱼雷装填较快"
+    },
+    "FEAT_GOOD_TORP_RELOAD_8": {
+      "en-US": "Rapid-reloading torpedo tubes from Tier VIII",
+      "zh-Hans": "VIII级及以上鱼雷发射管装填速度较快"
     },
     "FEAT_GOOD_TORP_SPECSINGLESHOTTUBES": {
       "en-US": "Torpedo tubes can fire singly",

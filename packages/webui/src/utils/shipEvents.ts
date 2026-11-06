@@ -33,6 +33,9 @@ export const EVENT_META: Record<string, EventMeta> = {
   halloween_2019: { since: "2019-10" },
   halloween_2020: { since: "2020-10" },
   halloween_2022: { since: "2022-10" },
+  // 2026 Bermuda Triangle battle mode ("Horror From the Abyss"): Event-nation
+  // hulls attributed by GameParams `navalFlag`, not by peculiarity.
+  bermuda_2026: { since: "15.10 · 2026-11" },
   space_battles: { since: "2018-04" },
   star_event: { since: null },
   postap_2022: { since: "2022" },

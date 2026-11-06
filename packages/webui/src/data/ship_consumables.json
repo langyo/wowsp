@@ -1125,9 +1125,6 @@
  "PASX003": [
   "CrashCrew"
  ],
- "PASX004": [
-  "CrashCrew"
- ],
  "PASX005": [
   "CrashCrew"
  ],
@@ -2275,6 +2272,10 @@
   "CrashCrewAuto",
   "FighterAuto"
  ],
+ "PGSA111": [
+  "CrashCrewAuto",
+  "FighterAuto"
+ ],
  "PGSA506": [
   "CrashCrewAuto",
   "FighterAuto"
@@ -3082,6 +3083,33 @@
   "RegenCrew",
   "SubmarineEnergyFreeze",
   "SubmarineLocator"
+ ],
+ "PHSB010": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PHSB016": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PHSB017": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew"
+ ],
+ "PHSB018": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PHSB019": [
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "RegenCrew"
  ],
  "PHSB710": [
   "CrashCrew",
@@ -5355,6 +5383,11 @@
   "SmokeGenerator",
   "SpeedBooster"
  ],
+ "PSSD719": [
+  "CrashCrew",
+  "SmokeGenerator",
+  "SpeedBooster"
+ ],
  "PUSB507": [
   "CrashCrew",
   "Fighter",
@@ -6089,6 +6122,17 @@
   "CrashCrew",
   "RegenCrew"
  ],
+ "PXSB020": [
+  "CrashCrew"
+ ],
+ "PXSB021": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
+ "PXSB023": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
  "PXSB027": [
   "CrashCrew",
   "CrashCrewSuper",
@@ -6196,6 +6240,10 @@
   "CrashCrew_H2020",
   "Regen_H2020"
  ],
+ "PXSC022": [
+  "CrashCrew",
+  "RegenCrew"
+ ],
  "PXSC027": [
   "CrashCrew",
   "CrashCrewSuper",
@@ -6253,6 +6301,9 @@
   "SpeedBooster_FA2022"
  ],
  "PXSC503": [
+  "CrashCrew"
+ ],
+ "PXSC999": [
   "CrashCrew"
  ],
  "PXSD001": [
@@ -6375,6 +6426,10 @@
   "GoDeep",
   "InvisibleRegen_H2020"
  ],
+ "PXSD026": [
+  "CrashCrew",
+  "SmokeGenerator"
+ ],
  "PXSD027": [
   "CrashCrew",
   "CrashCrewSuper",
@@ -6396,6 +6451,9 @@
   "CrashCrew",
   "SmokeGenerator",
   "SpeedBooster"
+ ],
+ "PXSD037": [
+  "SmokeGenerator"
  ],
  "PXSD041": [
   "ArmorBuff",
@@ -6447,6 +6505,9 @@
   "CrashCrew"
  ],
  "PXSX001": [
+  "CrashCrew"
+ ],
+ "PXSX004": [
   "CrashCrew"
  ],
  "PXSX016": [
@@ -6552,6 +6613,11 @@
  "PZSB709": [
   "CrashCrew",
   "RegenCrew"
+ ],
+ "PZSB710": [
+  "CrashCrew",
+  "RegenCrew",
+  "SonarSearch"
  ],
  "PZSB719": [
   "AirstrikeCountermeasures",
@@ -6706,6 +6772,14 @@
   "RegenCrew",
   "SmokeGenerator",
   "TorpedoReloader"
+ ],
+ "PZSC919": [
+  "ArtilleryBooster",
+  "AuxiliaryTorpedoArmamentBooster",
+  "CrashCrew",
+  "Fighter",
+  "RegenCrew",
+  "SonarSearch"
  ],
  "PZSD102": [
   "CrashCrew",

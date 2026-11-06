@@ -3,10 +3,10 @@
   "index": "PCM001",
   "name": "PCM001_MainGun_Mod_I",
   "names": {
-   "en": "Main Battery Modification 1",
-   "ja": "主砲改良 1",
-   "zh": "主炮组修改型1",
-   "tw": "主炮組修改型 1"
+   "en": "Main Battery Modification 1",
+   "ja": "主砲改良 1",
+   "zh": "主炮组修改型 1",
+   "tw": "主炮組修改型 1"
   },
   "desc": {},
   "slot": 0,
@@ -24,10 +24,10 @@
   "index": "PCM002",
   "name": "PCM002_Torpedo_Mod_I",
   "names": {
-   "en": "Torpedoes Modification 1",
-   "ja": "魚雷改良 1",
-   "zh": "鱼雷修改型1",
-   "tw": "魚雷修改型 1"
+   "en": "Torpedo Tubes Modification 1",
+   "ja": "魚雷発射管改良 1",
+   "zh": "鱼雷发射管修改型 1",
+   "tw": "魚雷發射管修改型 1"
   },
   "desc": {},
   "slot": 0,
@@ -100,10 +100,10 @@
   "index": "PCM004",
   "name": "PCM004_AirDefense_Mod_I",
   "names": {
-   "en": "AA Guns Modification 1",
-   "ja": "対空兵装改良 1",
-   "zh": "防空炮修改型1",
-   "tw": "防空炮修改型 1"
+   "en": "AA Guns Modification 1",
+   "ja": "対空兵装改良 1",
+   "zh": "防空炮修改型 1",
+   "tw": "防空炮修改型 1"
   },
   "desc": {},
   "slot": 0,
@@ -127,10 +127,10 @@
   "index": "PCM005",
   "name": "PCM005_SecondaryGun_Mod_I",
   "names": {
-   "en": "Secondary Battery Modification 1",
-   "ja": "副砲改良 1",
-   "zh": "副炮组修改型1",
-   "tw": "副炮組修改型 1"
+   "en": "Secondary Battery Modification 1",
+   "ja": "副砲改良 1",
+   "zh": "副炮组修改型 1",
+   "tw": "副炮組修改型 1"
   },
   "desc": {},
   "slot": 0,
@@ -154,10 +154,10 @@
   "index": "PCM007",
   "name": "PCM007_Torpedo_Mod_II",
   "names": {
-   "en": "Torpedoes Modification 2",
-   "ja": "魚雷改良 2",
-   "zh": "鱼雷修改型2",
-   "tw": "魚雷修改型 2"
+   "en": "Torpedo Tubes Modification 2",
+   "ja": "魚雷発射管改良 2",
+   "zh": "鱼雷发射管修改型 2",
+   "tw": "魚雷發射管修改型 2"
   },
   "desc": {},
   "slot": 0,
@@ -175,10 +175,10 @@
   "index": "PCM010",
   "name": "PCM010_Airplanes_Mod_II",
   "names": {
-   "en": "Air Groups Modification 2",
-   "ja": "飛行機隊改良 2",
-   "zh": "空军大队修改型2",
-   "tw": "航空大隊修改型 2"
+   "en": "Air Groups Modification 2",
+   "ja": "飛行機隊改良 2",
+   "zh": "空军大队修改型 2",
+   "tw": "航空大隊修改型 2"
   },
   "desc": {},
   "slot": 0,
@@ -195,10 +195,10 @@
   "index": "PCM011",
   "name": "PCM011_AirDefense_Mod_II",
   "names": {
-   "en": "AA Guns Modification 2",
-   "ja": "対空兵装改良 2",
-   "zh": "防空炮修改型2",
-   "tw": "防空炮修改型 2"
+   "en": "AA Guns Modification 2",
+   "ja": "対空兵装改良 2",
+   "zh": "防空炮修改型 2",
+   "tw": "防空炮修改型 2"
   },
   "desc": {},
   "slot": 0,
@@ -230,10 +230,10 @@
   "index": "PCM019",
   "name": "PCM019_SecondaryGun_Mod_III",
   "names": {
-   "en": "Secondary Battery Modification 2",
-   "ja": "副砲改良 2",
-   "zh": "副炮组修改型2",
-   "tw": "副炮組修改型 2"
+   "en": "Secondary Battery Modification 2",
+   "ja": "副砲改良 2",
+   "zh": "副炮组修改型 2",
+   "tw": "副炮組修改型 2"
   },
   "desc": {},
   "slot": 0,
@@ -685,7 +685,10 @@
    "PASC909_250TH_Fort_Worth",
    "PSSC729_Aragon",
    "PASB740_New_Jersey",
-   "PJSC021_Kurama"
+   "PJSC021_Kurama",
+   "PSSB919_Black_Victoria",
+   "PASC717_Honolulu",
+   "PISC739_La_Spezia"
   ]
  },
  {
@@ -802,10 +805,10 @@
   "index": "PCM088",
   "name": "PCM088_AirSupport_Mod_II",
   "names": {
-   "en": "Airstrike Modification 2",
-   "ja": "空襲改良 2",
-   "zh": "空袭修改型2",
-   "tw": "空襲修改型 2"
+   "en": "Anti-Submarine Aircraft Modification 2",
+   "ja": "対潜航空機改良 2",
+   "zh": "防御型反潜机2号修改型",
+   "tw": "反潛飛機修改型 2"
   },
   "desc": {},
   "slot": 0,
@@ -972,6 +975,451 @@
   ]
  },
  {
+  "index": "PXM001",
+  "name": "PXM001_Mod_1_Rune_Covered_Shell",
+  "names": {
+   "en": "Enhanced Anti-Ship Shells",
+   "ja": "強化型対艦砲弾",
+   "zh": "增强型反舰炮弹",
+   "tw": "強化反艦砲彈"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GLAlphaFactor": 1.05,
+   "GMAlphaFactor": 1.05
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM002",
+  "name": "PXM002_Mod_1_Crystal_Shrapnell",
+  "names": {
+   "en": "Enhanced Anti-Shield Shells",
+   "ja": "強化型対シールド砲弾",
+   "zh": "增强型反护盾炮弹",
+   "tw": "強化反護盾砲彈"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GLShieldFactor": 1.15,
+   "GMShieldFactor": 1.15
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM003",
+  "name": "PXM003_Mod_1_Cosmic_Gunpowder",
+  "names": {
+   "en": "Enhanced Rangefinder",
+   "ja": "強化型測距儀",
+   "zh": "增强型测距仪",
+   "tw": "強化測距儀"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GLMaxDist": 1.25,
+   "GMMaxDist": 1.25
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM004",
+  "name": "PXM004_Mod_1_Experimental_Autoloaders",
+  "names": {
+   "en": "Experimental Main Gun Autoloaders",
+   "ja": "試作型主砲自動装填装置",
+   "zh": "试验型主炮自动装填机",
+   "tw": "試驗型主炮自動裝填機"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GLShotDelay": 0.975,
+   "GMShotDelay": 0.975
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM005",
+  "name": "PXM005_Mod_2_Unnatural_Probabilities",
+  "names": {
+   "en": "Elemental Warheads",
+   "ja": "属性弾頭",
+   "zh": "元素弹头",
+   "tw": "元素彈頭"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "floodChanceFactor": 1.15,
+   "missileBurnChanceBonus": 0.15
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM006",
+  "name": "PXM006_Mod_2_Timeless_Ammunition",
+  "names": {
+   "en": "Experimental Reloading System",
+   "ja": "試作型装填システム",
+   "zh": "试验型装填系统",
+   "tw": "試驗型裝填系統"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GTShotDelay": 0.95,
+   "missileReloadCoeff": 0.95
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM007",
+  "name": "PXM007_Mod_2_Blessed_Explosives",
+  "names": {
+   "en": "Accelerated Auxiliary Armament",
+   "ja": "高速補助兵装",
+   "zh": "高效率辅助武器",
+   "tw": "速射輔助武器"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "missileSpeedMultiplier": 1.15,
+   "torpedoSpeedMultiplier": 1.15
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM008",
+  "name": "PXM008_Mod_2_Augurs_Guidance",
+  "names": {
+   "en": "Enhanced-Range Auxiliary Armament",
+   "ja": "射程延長型補助兵装",
+   "zh": "长程辅助武器",
+   "tw": "增程輔助武器"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "missileRangeCoefficient": 1.25,
+   "torpedoRangeCoefficient": 1.25
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM009",
+  "name": "PXM009_Mod_3_Revenant_Battery",
+  "names": {
+   "en": "Enhanced Secondary Battery",
+   "ja": "強化型副砲",
+   "zh": "强化型副炮组",
+   "tw": "強化副炮"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "GSAlphaFactor": 1.15,
+   "GSShieldFactor": 1.15
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM010",
+  "name": "PXM010_Mod_3_Spectral_Current",
+  "names": {
+   "en": "Advanced Propulsion System",
+   "ja": "先進型推進システム",
+   "zh": "高级推进系统",
+   "tw": "進階推進系統"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "speedCoef": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM011",
+  "name": "PXM011_Mod_3_Mistveil",
+  "names": {
+   "en": "Experimental Concealment System",
+   "ja": "試作型隠蔽システム",
+   "zh": "试验型隐蔽系统",
+   "tw": "試驗型隱蔽系統"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "visibilityFactor": 0.75,
+   "visibilityFactorByPlane": 0.75,
+   "visibilityFactorInSmoke": 0.75
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM012",
+  "name": "PXM012_Mod_3_Unyielding_Hull",
+  "names": {
+   "en": "Fortified Hull",
+   "ja": "要塞化船体",
+   "zh": "高强度舰体",
+   "tw": "加固艦身"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "healthHullCoeff": 1.1
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM013",
+  "name": "PXM013_Mod_4_Battle_Hardened_Mystics",
+  "names": {
+   "en": "Rapid-Reactivating Barrier",
+   "ja": "高速再展開バリア",
+   "zh": "低延迟型护盾",
+   "tw": "快速重啟屏障"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "shieldRegenerationDelayCoeff": 0.875
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM014",
+  "name": "PXM014_Mod_4_Quarters_of_the_Mystics",
+  "names": {
+   "en": "Fast-Regenerating Barrier",
+   "ja": "高速再生成バリア",
+   "zh": "快速恢复型护盾",
+   "tw": "高效再生屏障"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "shieldRegenCoeff": 1.2
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM015",
+  "name": "PXM015_Mod_4_Extra_Ritual_Circles",
+  "names": {
+   "en": "Fortified Barrier",
+   "ja": "要塞化バリア",
+   "zh": "高强度护盾",
+   "tw": "加固屏障"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "shieldMaxHpCoeff": 1.05
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM016",
+  "name": "PXM016_Mod_5_Additional_Personnel",
+  "names": {
+   "en": "Optimized Consumable Supply",
+   "ja": "消耗品補給最適化",
+   "zh": "消耗品补给优化",
+   "tw": "最佳化消耗品補給"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "allConsumableReloadTime": 0.925
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM017",
+  "name": "PXM017_Mod_5_Zero_Gravity_Storage",
+  "names": {
+   "en": "Extended Consumable Operation",
+   "ja": "消耗品運用強化",
+   "zh": "消耗品效果延长",
+   "tw": "延長消耗品作用時間"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "ConsumablesWorkTime": 1.075,
+   "consumableCapacityCoeff": 1.075
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
+  "index": "PXM018",
+  "name": "PXM018_Mod_5_Eternal_Barriers",
+  "names": {
+   "en": "Shield Regeneration Amplifier",
+   "ja": "シールド再生成増幅器",
+   "zh": "护盾再生强化器",
+   "tw": "護盾再生增幅器"
+  },
+  "desc": {},
+  "slot": 0,
+  "modifiers": {
+   "allyShieldRegenerationReloadCoeff": 0.875,
+   "shieldRegenerationReloadCoeff": 0.875
+  },
+  "shiptype": [],
+  "nation": [],
+  "shiplevel": [],
+  "tags": [
+   "unique"
+  ],
+  "ships": [
+   "PXSC999_Siegfried_1510"
+  ]
+ },
+ {
   "index": "PCM020",
   "name": "PCM020_DamageControl_Mod_I",
   "names": {
@@ -1030,10 +1478,10 @@
   "index": "PCM021",
   "name": "PCM021_Engine_Mod_I",
   "names": {
-   "en": "Propulsion Modification 1",
-   "ja": "推力改良 1",
-   "zh": "推进系统修改型1",
-   "tw": "推進系統修改型 1"
+   "en": "Propulsion Modification 1",
+   "ja": "推力改良 1",
+   "zh": "推进系统修改型 1",
+   "tw": "推進系統修改型 1"
   },
   "desc": {},
   "slot": 1,
@@ -1051,10 +1499,10 @@
   "index": "PCM022",
   "name": "PCM022_SteeringGear_Mod_I",
   "names": {
-   "en": "Steering Gears Modification 1",
-   "ja": "操舵装置改良 1",
-   "zh": "操舵装置修改型1",
-   "tw": "操舵裝置修改型 1"
+   "en": "Steering Gears Modification 1",
+   "ja": "操舵装置改良 1",
+   "zh": "操舵装置修改型 1",
+   "tw": "操舵裝置修改型 1"
   },
   "desc": {},
   "slot": 1,
@@ -1217,12 +1665,15 @@
    "PZSC730_Taejong",
    "PGSB719_Friedrich_Carl",
    "PSSC729_Aragon",
+   "PWSC014_Dragon",
+   "PWSC015_Kralj_Petar_I",
    "PWSC016_Tre_Kronor",
    "PWSC017_Hel",
    "PWSC018_Kriti",
    "PWSC019_Tirfing",
    "PWSC010_Vanadis",
-   "PWSS710_Orzel"
+   "PWSS710_Orzel",
+   "PJSC769_Ota"
   ]
  },
  {
@@ -1346,6 +1797,7 @@
    "PJSC739_Suzuya",
    "PJSC749_GM_Suzuya",
    "PJSC759_VL_Suzuya",
+   "PZSC919_Chao_Heng",
    "PJSC012_Ibuki_1944",
    "PJSC013_Kuma_1938",
    "PJSC018_Tone",
@@ -1465,6 +1917,7 @@
    "PASC707_Flint",
    "PASC708_Bridgeport",
    "PASC710_Salem",
+   "PASC717_Honolulu",
    "PASC718_AZUR_Montpelier",
    "PGSB108_Bismarck",
    "PGSB109_Friedrich_der_Grosse",
@@ -1654,7 +2107,8 @@
    "PGSB719_Friedrich_Carl",
    "PFSC720_Latouche_Treville",
    "PHSD708_Philips_van_Almonde",
-   "PJSC929_NL_Chikuma_2_Hyb"
+   "PJSC929_NL_Chikuma_2_Hyb",
+   "PZSB710_Jiuhua"
   ]
  },
  {
@@ -2303,10 +2757,10 @@
   "index": "PCM008",
   "name": "PCM008_FireControl_Mod_I",
   "names": {
-   "en": "Gun Fire Control System Modification 1",
-   "ja": "射撃管制装置改良 1",
-   "zh": "舰炮火控系统修改型1",
-   "tw": "艦炮射控系統修改型 1"
+   "en": "Gun Fire Control System Modification 1",
+   "ja": "射撃管制装置改良 1",
+   "zh": "舰炮火控系统修改型 1",
+   "tw": "艦炮射控系統修改型 1"
   },
   "desc": {},
   "slot": 2,
@@ -2702,7 +3156,10 @@
    "PZSC918_Azur_Harbin",
    "PVSC710_Almirante_Irizar",
    "PISB720_Conte_Verde",
-   "PJSC929_NL_Chikuma_2_Hyb"
+   "PJSC929_NL_Chikuma_2_Hyb",
+   "PZSC910_Black_Incheon",
+   "PJSC769_Ota",
+   "PASC717_Honolulu"
   ]
  },
  {
@@ -3046,7 +3503,9 @@
    "PFSA506_Bearn",
    "PBSA718_Theseus",
    "PJSA710_Shinano",
-   "PJSA920_Azur_Shinano"
+   "PJSA920_Azur_Shinano",
+   "PJSA718_Akagi",
+   "PGSA111_Oswald_Boelcke"
   ]
  },
  {
@@ -3140,7 +3599,8 @@
    "PBSB737_Royal_Sovereign",
    "PUSC710_Pioneer",
    "PISC908_East_Amalfi",
-   "PJSC905_East_Furutaka_1926"
+   "PJSC905_East_Furutaka_1926",
+   "PJSC769_Ota"
   ]
  },
  {
@@ -3632,7 +4092,9 @@
    "PFSA506_Bearn",
    "PBSA718_Theseus",
    "PJSA710_Shinano",
-   "PJSA920_Azur_Shinano"
+   "PJSA920_Azur_Shinano",
+   "PJSA718_Akagi",
+   "PGSA111_Oswald_Boelcke"
   ]
  },
  {
@@ -5920,12 +6382,12 @@
   "modifiers": {
    "GMMaxDist": 0.92,
    "GMRotationSpeed": {
-    "AirCarrier": 1.0,
-    "Auxiliary": 1.0,
-    "Battleship": 1.0,
-    "Cruiser": 1.0,
+    "AirCarrier": 2.0,
+    "Auxiliary": 2.0,
+    "Battleship": 2.0,
+    "Cruiser": 2.0,
     "Destroyer": 2.0,
-    "Submarine": 1.0
+    "Submarine": 2.0
    },
    "GMShotDelay": 0.94,
    "boostCoeffForsage": 0.12

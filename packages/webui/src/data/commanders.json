@@ -513,12 +513,13 @@
    {
     "id": "UniqueSkillTriggerRibbons1",
     "triggerType": "ribbons",
-    "activatorType": "RibbonActivator",
+    "activatorType": "HitsCountActivator",
     "maxTriggerNum": 1,
     "activator": {
+     "hitsCount": 100,
      "maxActivations": 1,
-     "requiredCount": 100,
-     "separateTracking": false,
+     "requiredCount": 1,
+     "separateTracking": true,
      "timeLimit": 0.0
     },
     "actions": [
@@ -535,12 +536,13 @@
    {
     "id": "UniqueSkillTriggerRibbons2",
     "triggerType": "ribbons",
-    "activatorType": "RibbonActivator",
+    "activatorType": "HitsCountActivator",
     "maxTriggerNum": 1,
     "activator": {
+     "hitsCount": 140,
      "maxActivations": 1,
-     "requiredCount": 140,
-     "separateTracking": false,
+     "requiredCount": 1,
+     "separateTracking": true,
      "timeLimit": 0.0
     },
     "actions": [
@@ -735,12 +737,13 @@
    {
     "id": "UniqueSkillTriggerRibbons1",
     "triggerType": "ribbons",
-    "activatorType": "RibbonActivator",
+    "activatorType": "HitsCountActivator",
     "maxTriggerNum": 1,
     "activator": {
+     "hitsCount": 100,
      "maxActivations": 1,
-     "requiredCount": 100,
-     "separateTracking": false,
+     "requiredCount": 1,
+     "separateTracking": true,
      "timeLimit": 0.0
     },
     "actions": [
@@ -1417,12 +1420,13 @@
    {
     "id": "UniqueSkillTriggerRibbon1",
     "triggerType": "ribbons",
-    "activatorType": "RibbonActivator",
+    "activatorType": "HitsCountActivator",
     "maxTriggerNum": 1,
     "activator": {
+     "hitsCount": 175,
      "maxActivations": 1,
-     "requiredCount": 175,
-     "separateTracking": false,
+     "requiredCount": 1,
+     "separateTracking": true,
      "timeLimit": 0.0
     },
     "actions": [

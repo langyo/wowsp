@@ -43,6 +43,7 @@ The game install is auto-detected the same way WoWSP's desktop shell does it
 | `bake_planes.py` | `export-model` | `GLB` under `packages/webui/src/res/models/planes/` + `props/` |
 | `extract_lesta_planes.py` | — (GameParams → tables) | rows in `src/data/plane_types.json` + `plane_models.json` |
 | `extract_plane_specs.py` | — (GameParams → tables) | rows in `src/data/plane_specs.json` (aircraft performance specs) |
+| `extract_wg_planes.py` | — (GameParams → tables) | appends the WG build's new airframes to `src/data/plane_types.json` + `plane_models.json` |
 | `bake_lesta_planes.py` | `export-model` (staged Lesta) | `GLB` under `packages/webui/src/res/models/planes/` (Lesta airframes) |
 | `bake_missing_ships.py` | (model-exporter) | backfills specific ship GLBs under `ships/` |
 
@@ -69,7 +70,13 @@ python scripts/model_convert/bake_planes.py --props-only
 - Plane GLBs are named by GameParams index (`PJAF206.glb`); the frontend maps
   a squadron's paramsId → index → GLB via `src/data/plane_types.json`.
 - `src/data/plane_models.json` (GP name → VFS `.geometry` path) comes from each
-  GameParams entry's `model` field — regenerate after a game update.
+  GameParams entry's `model` field. After a game update refresh the tables before
+  baking: `extract_wg_planes.py` appends the airframes the new build introduced
+  (idempotent — committed legacy rows are kept), then `extract_plane_types.py`
+  (roles) and `extract_plane_specs.py` (performance rows) re-derive their
+  columns, `bake_planes.py --planes <the names extract_wg_planes prints>` bakes
+  the models, and `extract_ship_squadrons.py` runs last (it stages only
+  airframes whose GLB exists).
 - Props are shared game models: `props/shell.glb` (all gun shells),
   `props/torpedo.glb`.
 - The bake only assembles correctly when `export-model` resolves the airframe's
