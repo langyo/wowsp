@@ -73,7 +73,7 @@ const TRACK_VIEW_WIDTH = 1000;
  *  vertical "model agreement" caption. The whole timeline body (ruler, lane,
  *  callouts, track) is inset by the same width, so the time mapping stays
  *  shared across the gutter. */
-const AXIS_WIDTH_PX = 50;
+const AXIS_WIDTH_PX = 54;
 /** Labelled ticks on the 0–1 score scale (top to bottom). */
 const AXIS_TICKS = [1, 0.75, 0.5, 0.25, 0];
 /** The two score models the report dissects: the fire model (only scored on
@@ -657,16 +657,21 @@ export default defineComponent({
     function renderGaps(extraClass: string) {
       return (
         <div class={"srp-tl__gaps " + extraClass} aria-hidden="true">
-          {gaps.value.map(([from, to], index) => (
-            <span
-              key={index}
-              class="srp-tl__gap"
-              style={{
-                left: frac(from) + "%",
-                width: Math.max(0.25, frac(to) - frac(from)) + "%",
-              }}
-            />
-          ))}
+          {gaps.value.flatMap(([from, to], index) => {
+            // A tail gap can run past the player's last scored row, where the
+            // axis already ends: clamp it (and drop fully-dead tails) instead
+            // of spilling the hatch past the card's right edge.
+            if (from >= horizon.value) return [];
+            const left = frac(from);
+            const width = Math.max(0.25, frac(Math.min(to, horizon.value)) - left);
+            return [
+              <span
+                key={index}
+                class="srp-tl__gap"
+                style={{ left: left + "%", width: width + "%" }}
+              />,
+            ];
+          })}
         </div>
       );
     }
@@ -678,6 +683,7 @@ export default defineComponent({
           <span class="srp-tl__count">
             {t("replay.report.keyframes", { n: moments.value.length })}
           </span>
+          <span class="srp-tl__head-note">{t("replay.report.axisHint")}</span>
           <div class="srp-tl__legend">
             {legend.value.map((entry) => (
               <span key={entry.category} class="srp-tl__legend-item">
@@ -976,12 +982,12 @@ export default defineComponent({
                   {t("replay.report.fireModel")}
                 </span>
               ) : null}
-              <span class="srp-tl__track-hint">{t("replay.report.axisHint")}</span>
             </span>
           </div>
           <div
             class="srp-tl__yaxis"
-            aria-hidden="true"
+            role="img"
+            aria-label={t("replay.report.modelAxis") + " 0–100%"}
             style={{
               width: AXIS_WIDTH_PX + "px",
               height: TRACK_HEIGHT_PX + "px",

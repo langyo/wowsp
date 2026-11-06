@@ -689,7 +689,7 @@
     "fireModel": "Modèle de tir",
     "moveModel": "Modèle de manœuvre",
     "modelAxis": "Accord",
-    "axisHint": "Plus haut = plus proche de l'attente de l'IA"
+    "axisHint": "Plus haut = plus proche des attentes de l'IA"
   },
   "detail": {
     "title": "Détail de la bataille"

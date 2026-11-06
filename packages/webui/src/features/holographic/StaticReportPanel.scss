@@ -6,10 +6,11 @@
  *
  * The sheet is laid out as a reading frame around ReportTimeline: head
  * (perspective dropdown + scores + coverage), the editor timeline (ruler,
- * keyframe lane, annotation band, score track), footnote. Every coordinate
- * inside the timeline rides percentage margins derived from the score
- * chart's exported grid insets (see ReportTimeline.tsx), so the ruler, the
- * keyframes and the curve can never drift apart.
+ * keyframe lane, annotation band, score track), footnote. The score track is
+ * a hand-drawn SVG with its own percentage axis; the ruler, the keyframes,
+ * the annotation band and both model envelopes ride one shared percentage
+ * mapping inside the plot box (see ReportTimeline.tsx's TRACK_/AXIS_
+ * constants), so they can never drift apart.
  */
 .static-report-panel {
   --srp-bg: #0d1117;
@@ -891,10 +892,10 @@
     }
   }
 
-  &__track-hint {
-    font-size: 10px;
-    opacity: 0.75;
-    white-space: nowrap;
+  &__head-note {
+    font-size: 10.5px;
+    color: var(--srp-dim);
+    opacity: 0.9;
   }
 
   &__track-legend {
