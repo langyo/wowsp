@@ -423,6 +423,30 @@ describe("ReportTimeline interaction", () => {
     );
   });
 
+  it("labels the score track's y axis with percentages and the read hint", () => {
+    const w = mountTimeline();
+    const marks = w.findAll(".srp-tl__yaxis-mark");
+    expect(marks.map((mark) => mark.text())).toEqual([
+      "100%",
+      "75%",
+      "50%",
+      "25%",
+      "0%",
+    ]);
+    expect(w.find(".srp-tl__yaxis-title").text()).toBe(
+      "replay.report.modelAxis",
+    );
+    expect(w.find(".srp-tl__track-hint").text()).toBe(
+      "replay.report.axisHint",
+    );
+  });
+
+  it("renders the y axis in the captured image too", async () => {
+    const w = mountTimeline({ capturing: true });
+    expect(w.findAll(".srp-tl__yaxis-mark")).toHaveLength(5);
+    expect(w.find(".srp-tl__yaxis").exists()).toBe(true);
+  });
+
   it("renders the static annotation band in capture mode only", async () => {
     const w = mountTimeline({ capturing: true });
     await flushPromises();

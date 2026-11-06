@@ -687,7 +687,9 @@
     "nearestEvent": "Nearest event",
     "momentAria": "Keyframe #{n} · {t}",
     "fireModel": "Fire model",
-    "moveModel": "Move model"
+    "moveModel": "Move model",
+    "modelAxis": "Agreement",
+    "axisHint": "Higher means closer to the AI expectation"
   },
   "detail": {
     "title": "Battle detail"

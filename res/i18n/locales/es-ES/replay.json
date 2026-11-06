@@ -687,7 +687,9 @@
     "nearestEvent": "Evento más cercano",
     "momentAria": "Fotograma clave n.º {n} · {t}",
     "fireModel": "Modelo de disparo",
-    "moveModel": "Modelo de maniobra"
+    "moveModel": "Modelo de maniobra",
+    "modelAxis": "Concordancia",
+    "axisHint": "Más alto = más cerca de la expectativa de la IA"
   },
   "detail": {
     "title": "Detalle de la batalla"

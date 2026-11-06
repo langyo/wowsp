@@ -391,10 +391,59 @@
     white-space: nowrap;
   }
 
+  /** The timeline body below the head: ruler, keyframe lane, annotation band
+   *  and score track, all inset by the y-axis gutter so they share one time
+   *  mapping. */
+  &__plot {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
   &__top {
     position: relative;
     display: flex;
     flex-direction: column;
+  }
+
+  &__yaxis {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    pointer-events: none;
+    border-right: 1px solid var(--srp-line);
+  }
+
+  &__yaxis-title {
+    position: absolute;
+    left: 1px;
+    top: 50%;
+    transform: translateY(-50%);
+    writing-mode: vertical-rl;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    color: var(--srp-dim);
+  }
+
+  &__yaxis-mark {
+    position: absolute;
+    right: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    transform: translateY(-50%);
+    font-size: 10px;
+    color: var(--srp-dim);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  &__yaxis-tick {
+    width: 5px;
+    height: 1px;
+    flex: none;
+    background: var(--srp-line);
   }
 
   // Absolute children need a resolved container box: without the horizontal
@@ -842,9 +891,10 @@
     }
   }
 
-  &__track-scale {
+  &__track-hint {
     font-size: 10px;
-    opacity: 0.65;
+    opacity: 0.75;
+    white-space: nowrap;
   }
 
   &__track-legend {
