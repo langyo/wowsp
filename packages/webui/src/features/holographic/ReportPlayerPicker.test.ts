@@ -182,6 +182,10 @@ describe("ReportPlayerPicker", () => {
     expect(trigger.find(".srp-picker__clan").text()).toBe("[HOOD]");
     expect(trigger.find(".srp-picker__name").text()).toBe("me");
     expect(trigger.find(".srp-picker__ship").text()).toContain("Shimakaze");
+    // Requirement 4: the DISPLAY also carries the ship-class glyph.
+    expect(
+      trigger.find(".srp-picker__ship .ship-type-glyph").exists(),
+    ).toBe(true);
     expect(trigger.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
 
     await w.find(".srp-picker__trigger").trigger("click");

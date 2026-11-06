@@ -276,6 +276,9 @@ describe("StaticReportPanel wiring", () => {
     expect(wrapper.find(".srp-picker__clan").text()).toBe("[HOOD]");
     expect(wrapper.find(".srp-picker__ship").text()).toContain("X");
     expect(wrapper.find(".srp-picker__ship").text()).toContain("Shimakaze");
+    expect(
+      wrapper.find(".srp-picker__ship .ship-type-glyph").exists(),
+    ).toBe(true);
     expect(wrapper.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
     // Battle provenance: map, mode, start, replay fingerprint tail.
     expect(wrapper.find(".srp-head__meta-map").text()).toBe("North");

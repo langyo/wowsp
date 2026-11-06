@@ -133,6 +133,13 @@ export default defineComponent({
         (row ? (props.roster?.get(row.entityId)?.tier ?? null) : null)
       );
     });
+    const triggerShipType = computed(() => {
+      const row = me.value;
+      return (
+        props.identity?.shipType ??
+        (row ? (props.roster?.get(row.entityId)?.shipType ?? null) : null)
+      );
+    });
     function rowInfo(row: StaticRosterEntry): ReportRosterInfo | null {
       return props.roster?.get(row.entityId) ?? null;
     }
@@ -259,6 +266,13 @@ export default defineComponent({
             </span>
             {triggerShip.value ? (
               <span class="srp-picker__ship">
+                {triggerShipType.value ? (
+                  <BattleIcon
+                    type={triggerShipType.value}
+                    variant="plain"
+                    size={13}
+                  />
+                ) : null}
                 {tierRoman(triggerTier.value) ? (
                   <span class="srp-picker__tier">
                     {tierRoman(triggerTier.value)}

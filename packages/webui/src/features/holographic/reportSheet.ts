@@ -45,3 +45,24 @@ export interface ReportSheetView {
   /** entityId → picker-face metadata (missing rows fall back to the dot). */
   roster: Map<number, ReportRosterInfo>;
 }
+
+/** Identity lookups outlive a perspective switch: the cache key must carry the
+ *  cluster (a nickname can exist on two realms with different clans/emblems). */
+export function identityCacheKey(realm: string, name: string): string {
+  return realm + "\u0000" + name;
+}
+
+/** Latest-wins ticket gate for the async identity lookups. Every resolve
+ *  takes a ticket BEFORE touching the cache: a cache HIT must also invalidate
+ *  any in-flight lookup, or switching A -> (pending) B -> back to A lets B's
+ *  late answer overwrite A's identity on the sheet (2026-11-06 review). */
+export function createIdentityGate(): {
+  next: () => number;
+  isCurrent: (ticket: number) => boolean;
+} {
+  let seq = 0;
+  return {
+    next: () => ++seq,
+    isCurrent: (ticket: number) => ticket === seq,
+  };
+}

@@ -71,7 +71,20 @@
     text-align: right;
   }
 
-  &__url,
+  /** Canvas parity: drawFooter paints the QQ group at 12 px/600 and the
+   *  project URL at 12 px/400 — the DOM block must not read lighter than
+   *  every other share shot. */
+  &__qq {
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &__url {
+    font-size: 12px;
+    font-weight: 400;
+    color: var(--srp-dim, #8b98a8);
+  }
+
   &__meta {
     color: var(--srp-dim, #8b98a8);
   }

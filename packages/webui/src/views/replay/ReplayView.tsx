@@ -133,11 +133,13 @@ import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { PlayerStats } from "@/api";
-import type {
-  ReportRosterInfo,
-  ReportSheetIdentity,
-  ReportSheetMeta,
-  ReportSheetView,
+import {
+  createIdentityGate,
+  identityCacheKey,
+  type ReportRosterInfo,
+  type ReportSheetIdentity,
+  type ReportSheetMeta,
+  type ReportSheetView,
 } from "@/features/holographic/reportSheet";
 import "./ReplayView.scss";
 
@@ -2124,7 +2126,7 @@ export default defineComponent({
     /** The selected perspective's emblem/clan (resolved on demand). */
     const reportIdentity = ref<ReportSheetIdentity | null>(null);
     const identityCache = new Map<string, ReportSheetIdentity>();
-    let identitySeq = 0;
+    const identityGate = createIdentityGate();
     let sheetFacesSeq = 0;
     const reportStatsStore = useStatsStore();
 
@@ -2132,28 +2134,36 @@ export default defineComponent({
      *  slow answer for a previously opened replay from patching the sheet. */
     watch(
       () => parser.current.value?.path ?? null,
-      async (path) => {
+      (path) => {
         const seq = ++sheetFacesSeq;
         replayHash.value = null;
         reportRosterStats.value = new Map();
         reportIdentity.value = null;
+        // A new replay orphans any in-flight identity lookup of the old one.
+        identityGate.next();
         if (!path) return;
-        try {
-          const hash = await api.replayContentHash(path);
-          if (seq === sheetFacesSeq) replayHash.value = hash;
-        } catch {
-          /* optional provenance — the sheet simply omits the fingerprint */
-        }
+        // The hash and the roster faces are independent: hashing a multi-MB
+        // replay must not hold the picker's clan tags hostage.
+        void (async () => {
+          try {
+            const hash = await api.replayContentHash(path);
+            if (seq === sheetFacesSeq) replayHash.value = hash;
+          } catch {
+            /* optional provenance — the sheet simply omits the fingerprint */
+          }
+        })();
         const names = (parser.current.value?.vehicles ?? [])
           .map((vehicle) => vehicle.name)
           .filter((name) => !isAiName(name));
         if (names.length === 0) return;
-        try {
-          const stats = await fetchRosterStatsByNames(names, realm.value);
-          if (seq === sheetFacesSeq) reportRosterStats.value = stats;
-        } catch {
-          /* clan tags are decorative — the rows fall back to the bare name */
-        }
+        void (async () => {
+          try {
+            const stats = await fetchRosterStatsByNames(names, realm.value);
+            if (seq === sheetFacesSeq) reportRosterStats.value = stats;
+          } catch {
+            /* clan tags are decorative — the rows fall back to the bare name */
+          }
+        })();
       },
       { immediate: true },
     );
@@ -2218,7 +2228,12 @@ export default defineComponent({
      *  keep the fallback identity; switches race-guard through identitySeq. */
     async function resolveReportIdentity(report: StaticReport): Promise<void> {
       const base = fallbackReportIdentity(report);
-      const cached = identityCache.get(base.name);
+      // Ticket BEFORE the cache check: a cache hit must still invalidate any
+      // in-flight lookup, or switching A -> B (pending) -> A lets B's late
+      // answer overwrite A's identity (2026-11-06 review).
+      const seq = identityGate.next();
+      const cacheKey = identityCacheKey(realm.value, base.name);
+      const cached = identityCache.get(cacheKey);
       if (cached) {
         reportIdentity.value = {
           ...base,
@@ -2228,17 +2243,16 @@ export default defineComponent({
         return;
       }
       reportIdentity.value = base;
-      const seq = ++identitySeq;
       if (isAiName(base.name) || !realm.value) return;
       try {
         const landed = await reportStatsStore.lookup(base.name, realm.value);
-        if (seq !== identitySeq) return;
+        if (!identityGate.isCurrent(seq)) return;
         const resolved: ReportSheetIdentity = {
           ...base,
           clanTag: landed.clanTag ?? base.clanTag,
           dogTag: landed.dogTag ?? null,
         };
-        identityCache.set(base.name, resolved);
+        identityCache.set(cacheKey, resolved);
         reportIdentity.value = resolved;
       } catch {
         /* offline / hidden profile: the fallback identity stays */
