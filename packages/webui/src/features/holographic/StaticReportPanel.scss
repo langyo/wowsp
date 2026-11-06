@@ -84,24 +84,18 @@
     color: var(--srp-dim);
   }
 
-  &__meta-map {
-    color: var(--srp-ink);
-    font-weight: 600;
-  }
-
-  &__mode {
-    padding: 1px 6px;
-    font-size: 10px;
-    color: var(--srp-ally);
-    background: rgba(87, 166, 255, 0.12);
-    border: 1px solid rgba(87, 166, 255, 0.28);
-    border-radius: 4px;
-    white-space: nowrap;
-  }
-
   &__hash {
     font-variant-numeric: tabular-nums;
     letter-spacing: 0.02em;
+  }
+
+  /** MapNameTag reads theme tokens that swing with the app theme; the sheet
+   *  is a fixed dark artifact, so the chip's inks pin to the sheet's own
+   *  palette (shape/radius/padding stay MapNameTag's). */
+  &__meta-map.map-tag {
+    color: var(--srp-ally);
+    border-color: rgba(87, 166, 255, 0.35);
+    background: rgba(87, 166, 255, 0.1);
   }
 
   &__scores {
@@ -542,7 +536,7 @@
 
   &__yaxis {
     position: absolute;
-    left: 0;
+    right: 100%;
     bottom: 0;
     pointer-events: none;
     border-right: 1px solid var(--srp-line);
@@ -938,7 +932,6 @@
   // the keyframe lane and both envelopes share one full-width timeline.
   &__track {
     position: relative;
-    overflow: hidden;
     border-radius: 6px;
     background: rgba(255, 255, 255, 0.015);
   }
@@ -1070,6 +1063,13 @@
   &__gaps--top,
   &__gaps--track {
     z-index: 1;
+  }
+
+  &__gaps--track {
+    /* Clip to the track's rounded corners without an overflow:hidden on the
+       track itself — the y-axis child lives outside this box in the gutter
+       and must stay visible. */
+    clip-path: inset(0 round 6px);
   }
 }
 

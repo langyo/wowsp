@@ -646,8 +646,7 @@
     "noData": "この艦の解析データなし",
     "gapNote": "―うち{s}秒は未発見で解析不能",
     "recorder": "録画者",
-    "diedAt": "{t}秒で沈没",
-    "survived": "生存",
+    "diedAt": "沈没 {t}",
     "duration": "再生時間 {t}",
     "contribution": "貢献（ウィンドウダメージ）",
     "perShot": "窓あたり{v}",
@@ -692,7 +691,8 @@
     "axisHint": "高いほど AI の予想に近い",
     "aiNotice": "この結果は AI による診断であり、プレイヤーの長期的な実力ではありません。参考程度にご覧ください",
     "aiVersion": "WoWSP AI {version} · 重み学習 {date}",
-    "replayHash": "リプレイハッシュ（末尾6桁）"
+    "replayHash": "リプレイハッシュ（末尾6桁）",
+    "survivedAtEnd": "戦闘終了まで生存"
   },
   "detail": {
     "title": "戦闘詳細"

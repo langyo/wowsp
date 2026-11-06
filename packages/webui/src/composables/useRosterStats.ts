@@ -19,7 +19,14 @@
  */
 import { onBeforeUnmount, reactive, watch } from "vue";
 
-import { api, type ArenaInfo, type PlayerShipStats, type PlayerStats, type VehicleEntry } from "@/api";
+import {
+  api,
+  type ArenaInfo,
+  type DogTag,
+  type PlayerShipStats,
+  type PlayerStats,
+  type VehicleEntry,
+} from "@/api";
 import { lookupClanWinrate } from "@/utils/clanWinrate";
 import { prAlgoForRequest, statsPrefsState } from "@/stores/statsPrefs";
 import { useStatsQueryStore } from "@/stores/statsQuery";
@@ -79,6 +86,10 @@ export interface RosterStat {
    *  by the nickname-top-right superscript (KarmaSup) on the roster
    *  surfaces, gated by the `rosterKarmaEnabled` pref. */
   karma: number | null;
+  /** The player's in-game emblem off the same batch answer — the AI
+   *  report sheet's avatar; null for bots / hidden profiles / realms
+   *  that don't serve emblems. */
+  dogTag?: DogTag | null;
   /** Resolved clan winrate for the rat gate: undefined = not judged yet
    *  (a hidden + clanful entry holds its stamp until this lands) or no
    *  judgment needed; a number passes to careerStamp's gate; null = the
@@ -140,6 +151,7 @@ const emptyStat = (loading: boolean): RosterStat => ({
   clanTag: null,
   realm: null,
   karma: null,
+  dogTag: null,
   hidden: false,
   loading,
 });
@@ -180,6 +192,7 @@ function rosterStatOf(r: {
   clanTag?: string | null;
   realm?: string | null;
   karma?: number | null;
+  dogTag?: DogTag | null;
   hidden: boolean;
 }): RosterStat {
   return {
@@ -233,6 +246,7 @@ function rosterStatOf(r: {
     clanTag: r.clanTag ?? null,
     realm: r.realm ?? null,
     karma: r.karma ?? null,
+    dogTag: r.dogTag ?? null,
     hidden: r.hidden,
     loading: false,
   };

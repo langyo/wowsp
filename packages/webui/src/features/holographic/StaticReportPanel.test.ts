@@ -21,6 +21,9 @@ import {
 } from "./reportFormat";
 
 vi.mock("html-to-image", () => ({ toBlob: vi.fn() }));
+// MapNameTag resolves its jump through the router; the sheet test only pins
+// its presence in the provenance line.
+vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 function moment(overrides: Partial<StaticMoment> = {}): StaticMoment {
   return {
@@ -262,8 +265,9 @@ describe("StaticReportPanel wiring", () => {
             tier: 10,
           },
           meta: {
-            mapName: "North",
+            mapLang: "zh-CN",
             modeLabel: "Domination",
+            modeColor: "#3f8cff",
             battleStart: "2026-11-06 12:34",
             replayHash:
               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -273,6 +277,7 @@ describe("StaticReportPanel wiring", () => {
               1,
               {
                 clanTag: "HOOD",
+                dogTag: null,
                 shipType: "Destroyer",
                 shipName: "Shimakaze",
                 tier: 10,
@@ -292,10 +297,12 @@ describe("StaticReportPanel wiring", () => {
     // No dog tag in the fixture: the team-tinted initial plate stands in for
     // the emblem (a bare PlayerBadge disc read as an unfinished download).
     expect(wrapper.find(".srp-picker__avatar-initial").text()).toBe("M");
-    // Battle provenance: map, mode, start, replay fingerprint tail.
-    expect(wrapper.find(".srp-head__meta-map").text()).toBe("North");
+    // Battle provenance: the header's own map chip, the mode tag, the start
+    // time, the green at-end fate, and the replay fingerprint tail.
+    expect(wrapper.find(".srp-head__meta .map-tag").exists()).toBe(true);
     expect(wrapper.find(".srp-head__mode").text()).toBe("Domination");
     expect(wrapper.text()).toContain("2026-11-06 12:34");
+    expect(wrapper.text()).toContain("replay.report.survivedAtEnd");
     expect(wrapper.find(".srp-head__hash").text()).toBe("#abcdef");
     // The long image closes on the shared watermark with the AI extras.
     expect(wrapper.find(".shot-footer").exists()).toBe(true);

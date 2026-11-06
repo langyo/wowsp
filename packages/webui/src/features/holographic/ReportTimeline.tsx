@@ -88,10 +88,12 @@ export const CALLOUT_WIDTH_PX = 220;
  *  cards never overlap, so it must be sized for the worst locale. */
 export const CALLOUT_HEIGHT_PX = 200;
 const CALLOUT_GAP_PX = 10;
-/** Lane centre (20) + the flex gap above the callout band (10): the leader
- *  line starts this far above the band so it visibly leaves the keyframe
- *  lane's centre line. */
-const LEADER_TOP_PX = 30;
+/** Lane centre (20) + the lane/track flex gap (10) + the score track (158)
+ *  + the track/band flex gap (10): the annotation band sits BELOW the score
+ *  track now, so each leader spans the whole media track on its way from
+ *  the keyframe down to its card — the "pull a line and mark it" read of
+ *  the 2026-11-06 request. */
+const LEADER_TOP_PX = TRACK_HEIGHT_PX + 40;
 /** Pointer slop for "hovering a keyframe" (its click target is 28 px). */
 const MARKER_HIT_PX = 12;
 /** Floating card width (hover/pinned) and the edge gutter it keeps. */
@@ -868,51 +870,6 @@ export default defineComponent({
             </div>
           </div>
 
-          {props.capturing ? (
-            <div
-              class="srp-tl__callouts"
-              style={{ height: calloutBandHeight.value + "px" }}
-            >
-              {callouts.value.map((callout) => (
-                <span
-                  key={"leader-" + callout.index}
-                  class={
-                    "srp-tl__leader srp-tl__leader--" +
-                    categoryTone(callout.moment.category)
-                  }
-                  style={{
-                    left: callout.xPx + "px",
-                    top: -LEADER_TOP_PX + "px",
-                    height:
-                      LEADER_TOP_PX +
-                      callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) +
-                      "px",
-                  }}
-                  aria-hidden="true"
-                />
-              ))}
-              {callouts.value.map((callout) => (
-                <div
-                  key={"callout-" + callout.index}
-                  class={
-                    "srp-tl__callout srp-tl__callout--" +
-                    categoryTone(callout.moment.category)
-                  }
-                  style={{
-                    left: callout.left + "px",
-                    top:
-                      callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) + "px",
-                    width: CALLOUT_WIDTH_PX + "px",
-                    height: CALLOUT_HEIGHT_PX + "px",
-                  }}
-                >
-                  <MomentHead moment={callout.moment} index={callout.index} />
-                  <MomentRows moment={callout.moment} />
-                </div>
-              ))}
-            </div>
-          ) : null}
-
           <div class="srp-tl__track" style={{ height: TRACK_HEIGHT_PX + "px" }}>
             {renderGaps("srp-tl__gaps--track")}
             <svg
@@ -983,7 +940,6 @@ export default defineComponent({
                 </span>
               ) : null}
             </span>
-          </div>
           <div
             class="srp-tl__yaxis"
             role="img"
@@ -1007,6 +963,51 @@ export default defineComponent({
               </span>
             ))}
           </div>
+          </div>
+          {props.capturing ? (
+            <div
+              class="srp-tl__callouts"
+              style={{ height: calloutBandHeight.value + "px" }}
+            >
+              {callouts.value.map((callout) => (
+                <span
+                  key={"leader-" + callout.index}
+                  class={
+                    "srp-tl__leader srp-tl__leader--" +
+                    categoryTone(callout.moment.category)
+                  }
+                  style={{
+                    left: callout.xPx + "px",
+                    top: -LEADER_TOP_PX + "px",
+                    height:
+                      LEADER_TOP_PX +
+                      callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) +
+                      "px",
+                  }}
+                  aria-hidden="true"
+                />
+              ))}
+              {callouts.value.map((callout) => (
+                <div
+                  key={"callout-" + callout.index}
+                  class={
+                    "srp-tl__callout srp-tl__callout--" +
+                    categoryTone(callout.moment.category)
+                  }
+                  style={{
+                    left: callout.left + "px",
+                    top:
+                      callout.lane * (CALLOUT_HEIGHT_PX + CALLOUT_GAP_PX) + "px",
+                    width: CALLOUT_WIDTH_PX + "px",
+                    height: CALLOUT_HEIGHT_PX + "px",
+                  }}
+                >
+                  <MomentHead moment={callout.moment} index={callout.index} />
+                  <MomentRows moment={callout.moment} />
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </section>
     );
