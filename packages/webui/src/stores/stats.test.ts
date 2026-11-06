@@ -44,6 +44,45 @@ beforeEach(() => {
   vi.resetAllMocks();
 });
 
+describe("stats store emblems", () => {
+  it("answers a cached emblem without touching the API", async () => {
+    const store = useStatsStore();
+    store.index.set("asia_langyo", 101);
+    store.cache.set("asia_101", mockStats({ dogTag: DOG_TAG }));
+    await expect(store.ensureEmblem("asia", "langyo")).resolves.toEqual(DOG_TAG);
+    expect(api.lookupPlayerStats).not.toHaveBeenCalled();
+  });
+
+  it("refreshes an emblem-less cache ONCE through the shared pipeline", async () => {
+    const store = useStatsStore();
+    store.index.set("asia_langyo", 101);
+    // A cache file written before emblems were captured carries no dog tag;
+    // the passive lookup would serve it forever.
+    store.cache.set("asia_101", mockStats({ dogTag: null }));
+    vi.mocked(api.lookupPlayerStats).mockResolvedValueOnce(
+      mockStats({ dogTag: DOG_TAG }),
+    );
+    await expect(store.ensureEmblem("asia", "langyo")).resolves.toEqual(DOG_TAG);
+    expect(api.lookupPlayerStats).toHaveBeenCalledTimes(1);
+    // The refreshed answer is cached now: the next call is free and instant.
+    await expect(store.ensureEmblem("asia", "langyo")).resolves.toEqual(DOG_TAG);
+    expect(api.lookupPlayerStats).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops retrying a failed emblem refresh for the session", async () => {
+    const store = useStatsStore();
+    store.index.set("asia_langyo", 101);
+    store.cache.set("asia_101", mockStats({ dogTag: null }));
+    vi.mocked(api.lookupPlayerStats).mockRejectedValue(new Error("offline"));
+    await expect(store.ensureEmblem("asia", "langyo")).resolves.toBeNull();
+    expect(api.lookupPlayerStats).toHaveBeenCalledTimes(1);
+    // One forced pull per player per session — a dead network must not become
+    // a retry storm when the user flips perspectives.
+    await expect(store.ensureEmblem("asia", "langyo")).resolves.toBeNull();
+    expect(api.lookupPlayerStats).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("stats store lookup", () => {
   it.each(["success", "failure"])("orders best-effort disk snapshots after an older write's %s", async (outcome) => {
     const store = useStatsStore();

@@ -8,5 +8,6 @@
   "shotQqGroup": "QQ 그룹: {n}",
   "topShips": "주력 함선",
   "moreShips": "외 {n}척",
-  "moreMembers": "외 {n}명"
+  "moreMembers": "외 {n}명",
+  "copyShotGenerating": "스크린샷을 생성하는 중…"
 }

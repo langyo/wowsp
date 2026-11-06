@@ -2127,6 +2127,9 @@ export default defineComponent({
      *  its disk/memory cache first (the sidebar emblem's own source), then
      *  one queued lookup per perspective. */
     const reportEmblem = ref<DogTag | null>(null);
+    /** Resolved emblems by realm|nickname (null = looked up, none available). */
+    const emblemMemo = new Map<string, DogTag | null>();
+    const emblemInflight = new Set<string>();
     let emblemSeq = 0;
     const sheetStats = useStatsStore();
 
@@ -2227,43 +2230,37 @@ export default defineComponent({
     /** Identity faces straight off the sheet's roster faces — the emblem
      *  rides the same roster batch as the clan tags, so the head shows the
      *  player's REAL in-game badge with no second lookup. */
+    /** Resolve the selected perspective's emblem through the SHARED stats
+     *  context (`ensureEmblem`): the view never queries the network itself —
+     *  the store owns the lookup queue, the cache and the emblem refresh. */
     async function resolveReportEmblem(
       report: StaticReport | null,
     ): Promise<void> {
       const row = report?.roster.find(
         (entry) => entry.entityId === report.entityId,
       );
-      const name = row?.playerName ?? row?.name ?? "";
-      const seq = ++emblemSeq;
-      let tag: DogTag | null = null;
-      if (name) {
-        // 1) the roster batch's own dog tag (the backend may start supplying
-        //    it without touching this path).
-        tag = reportRosterStats.value.get(name)?.dogTag ?? null;
-        // 2) the shared stats store's cache — nickname index -> account id ->
-        //    cached stats. Instant for every player the app already looked up
-        //    (the recorder included: the sidebar emblem lives here).
-        if (!tag) {
-          const accountId = sheetStats.index.get(
-            realm.value.toLowerCase() + "_" + name.toLowerCase(),
-          );
-          if (accountId != null) {
-            tag =
-              sheetStats.cache.get(realm.value + "_" + accountId)?.dogTag ??
-              null;
-          }
-        }
+      const name = (row?.playerName ?? row?.name ?? "").trim();
+      if (!name) {
+        reportEmblem.value = null;
+        return;
       }
-      if (seq !== emblemSeq) return;
-      reportEmblem.value = tag;
-      if (tag || !name || isAiName(name) || !realm.value) return;
-      // 3) one queued lookup per perspective; the store caches the answer.
+      const key = realm.value + "|" + name.toLowerCase();
+      if (emblemMemo.has(key)) {
+        reportEmblem.value = emblemMemo.get(key) ?? null;
+        return;
+      }
+      reportEmblem.value = null;
+      if (isAiName(name) || !realm.value) return;
+      if (emblemInflight.has(key)) return;
+      const seq = ++emblemSeq;
+      emblemInflight.add(key);
       try {
-        const landed = await sheetStats.lookup(name, realm.value);
+        const tag = await sheetStats.ensureEmblem(realm.value, name);
         if (seq !== emblemSeq) return;
-        reportEmblem.value = landed.dogTag ?? null;
-      } catch {
-        /* offline / hidden profile: the initial plate stays */
+        emblemMemo.set(key, tag);
+        reportEmblem.value = tag;
+      } finally {
+        emblemInflight.delete(key);
       }
     }
 

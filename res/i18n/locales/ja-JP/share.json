@@ -8,5 +8,6 @@
   "shotQqGroup": "QQグループ：{n}",
   "topShips": "よく使う艦艇",
   "moreShips": "他 {n} 隻",
-  "moreMembers": "他 {n} 名"
+  "moreMembers": "他 {n} 名",
+  "copyShotGenerating": "スクリーンショットを生成中…"
 }

@@ -140,7 +140,10 @@ export default defineComponent({
 
     // ── share shot (the post-battle panels' copy pipeline, one shared
     //    model builder with the results modal's self view). */
-    const shot = useShareImage(() =>
+    // The live model is the cache signature (it changes every update, so a
+    // repeat click on unchanged data copies instantly and fresh data renders).
+    const shot = useShareImage(
+      () =>
       renderLiveSelfShot(
         buildSelfShotModel(model.value, {
           title: t("replay.live.selfTitle"),
@@ -165,6 +168,8 @@ export default defineComponent({
           ...shareFooterStrings(),
         },
       ),
+      // Same-data repeat clicks copy instantly; a fresh live model re-renders.
+      { signature: () => JSON.stringify(model.value) },
     );
 
     // Reactive like the roster panel's own pill: the panel can mount while

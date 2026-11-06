@@ -29,9 +29,13 @@ const report = {
  *  factory, where vue is already initialised): the header button must
  *  re-render when the kit reports progress. */
 const share = vi.hoisted(() => ({
-  holder: { render: null as null | (() => Promise<Uint8Array>) },
+  holder: {
+    render: null as null | (() => Promise<Uint8Array>),
+    signature: null as null | (() => string | number),
+  },
   busy: { value: false } as { value: boolean },
   copyShot: vi.fn(),
+  reset: vi.fn(),
 }));
 
 vi.mock("@/features/share/useShareImage", async () => {

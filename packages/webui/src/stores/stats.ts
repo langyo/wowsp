@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-import { api, type PlayerStats } from "@/api";
+import { api, type DogTag, type PlayerStats } from "@/api";
 import { LookupError, type LookupErrorPayload } from "@/transport/types";
 import { prAlgoForRequest } from "@/stores/statsPrefs";
 import { useStatsQueryStore, type StatsQueryMessage } from "@/stores/statsQuery";
@@ -313,5 +313,51 @@ export const useStatsStore = defineStore("stats", () => {
     return readCacheFile(realm, accountId);
   }
 
-  return { cache, fetchedAt, index, loading, error, lookupError, lookup, loadCached };
+  /** Players whose emblem-less cache entry was already refreshed this
+   *  session (one forced pull per player, never a retry loop). */
+  const emblemRefreshed = new Set<string>();
+
+  /** Resolve one player's in-game emblem (dog tag) through the SHARED lookup
+   *  context — callers must NOT query the API around this (the stats store
+   *  owns the network, the queue, the dedupe and the persistence).
+   *
+   *  Passive lookups intentionally never refresh a cache file, and files
+   *  written before emblems were captured carry no dog tag — without this
+   *  refresh the emblem stays missing on every surface that renders it.
+   *  An emblem-less answer pulls ONE forced refresh through the same
+   *  pipeline (which writes the refreshed cache back to disk), so the
+   *  sidebar avatar, the AI report sheet and future consumers all see it. */
+  async function ensureEmblem(
+    realm: string,
+    nickname: string,
+  ): Promise<DogTag | null> {
+    if (!realm || !nickname) return null;
+    try {
+      const first = await lookup(nickname, realm);
+      if (first.dogTag) return first.dogTag;
+    } catch {
+      return null;
+    }
+    const key = indexKey(realm, nickname);
+    if (emblemRefreshed.has(key)) return null;
+    emblemRefreshed.add(key);
+    try {
+      const fresh = await lookup(nickname, realm, { force: true });
+      return fresh.dogTag ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  return {
+    cache,
+    fetchedAt,
+    index,
+    loading,
+    error,
+    lookupError,
+    lookup,
+    loadCached,
+    ensureEmblem,
+  };
 });
