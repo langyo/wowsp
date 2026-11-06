@@ -685,7 +685,9 @@
     "timelineHint": "Survolez un instant clé pour les détails",
     "unresolved": "Non observé",
     "nearestEvent": "Événement le plus proche",
-    "momentAria": "Instant clé n° {n} · {t}"
+    "momentAria": "Instant clé n° {n} · {t}",
+    "fireModel": "Modèle de tir",
+    "moveModel": "Modèle de manœuvre"
   },
   "detail": {
     "title": "Détail de la bataille"

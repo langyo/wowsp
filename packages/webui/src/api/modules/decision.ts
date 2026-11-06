@@ -132,7 +132,25 @@ export interface StaticReport {
   modelSources: { fire: string; moveModel: string };
   entityId: number;
   roster: StaticRosterEntry[];
-  timeline: { t: number; inst: number; confidence: number }[];
+  /** The chosen player's 4 s score grid (mirrors Rust `ShipScoreSample`):
+   *  the fire model only scored can-fire rows, the move model every row. */
+  timeline: {
+    t: number;
+    inst: number;
+    /** p(actual fire action) — null on non-can-fire rows. */
+    fire: number | null;
+    /** Whether the ship actually fired in the label window — null off
+     *  can-fire rows. */
+    fired: boolean | null;
+    /** Raw p(expert fires) — null off can-fire rows. */
+    fireProb: number | null;
+    /** Enemy HP lost in the label window attributed to this ship — null off
+     *  can-fire rows. */
+    hpLost: number | null;
+    /** Softmax mass on the actual move sector. */
+    move: number;
+    confidence: number;
+  }[];
   moments: StaticMoment[];
 }
 

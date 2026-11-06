@@ -685,7 +685,9 @@
     "timelineHint": "키프레임에 마우스를 올리면 상세 정보",
     "unresolved": "관측되지 않음",
     "nearestEvent": "가장 가까운 이벤트",
-    "momentAria": "키프레임 #{n} · {t}"
+    "momentAria": "키프레임 #{n} · {t}",
+    "fireModel": "사격 모델",
+    "moveModel": "기동 모델"
   },
   "detail": {
     "title": "전투 상세"

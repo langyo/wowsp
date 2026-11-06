@@ -397,10 +397,12 @@
     flex-direction: column;
   }
 
+  // Absolute children need a resolved container box: without the horizontal
+  // insets the shrink-to-fit width is 0 and every gap's left/width percentage
+  // resolves against it (the bands never rendered).
   &__gaps {
     position: absolute;
-    top: 0;
-    bottom: 0;
+    inset: 0;
     pointer-events: none;
   }
 
@@ -525,7 +527,7 @@
     position: absolute;
     top: calc(100% + 10px);
     z-index: 7;
-    width: 186px;
+    width: 268px;
     display: flex;
     flex-wrap: wrap;
     gap: 2px 6px;
@@ -538,6 +540,13 @@
     border-radius: 6px;
     box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
     pointer-events: none;
+  }
+
+  /** The two model values beside the instant score (same inks as the track). */
+  &__readout-model {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
   }
 
   &__readout-time {
@@ -742,34 +751,137 @@
     }
   }
 
-  // ── score track (hikari HkTrendChart) ──
-  // The chart's own 40 px bottom band is empty (no x ticks are drawn), so
-  // the frame clips it: the plot's baseline lands exactly on the track's
-  // bottom edge.
+  // ── score track: the two model envelopes (hand-drawn SVG) ──
+  // The SVG stretches edge to edge (no chart grid gutters), so the ruler,
+  // the keyframe lane and both envelopes share one full-width timeline.
   &__track {
     position: relative;
-    height: 150px;
     overflow: hidden;
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.015);
+  }
+
+  &__score {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 0;
+  }
+
+  &__score-grid {
+    stroke: rgba(214, 221, 232, 0.08);
+    stroke-width: 1;
+
+    &--mid {
+      stroke: rgba(214, 221, 232, 0.16);
+      stroke-dasharray: 3 4;
+    }
+  }
+
+  /** Keyframe hairlines: the editor marker lines that tie the lane above to
+   *  the envelopes below. */
+  &__score-mark {
+    stroke-width: 1;
+    opacity: 0.26;
+
+    &--good {
+      stroke: var(--srp-good);
+    }
+
+    &--bad {
+      stroke: var(--srp-bad);
+    }
+
+    &--warn {
+      stroke: var(--srp-warn);
+    }
+
+    &--ok {
+      stroke: var(--srp-ally);
+    }
+  }
+
+  &__score-line {
+    fill: none;
+    stroke-width: 2;
+    stroke-linejoin: round;
+    stroke-linecap: round;
+
+    &--fire {
+      /* The fire model only scores can-fire rows: the dashed envelope marks
+         that the line bridges unscored rows rather than asserting them. */
+      stroke: var(--srp-warn);
+      stroke-dasharray: 3 3;
+      opacity: 0.9;
+    }
+
+    &--move {
+      stroke: var(--srp-ally);
+    }
+  }
+
+  /** Model sample dots: the fire rows the model actually evaluated, and the
+   *  move model's only row when the series is a single point. */
+  &__score-dot {
+    position: absolute;
+    z-index: 1;
+    width: 3.5px;
+    height: 3.5px;
+    border-radius: 50%;
+    background: var(--srp-warn);
+    opacity: 0.85;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+
+    &--move {
+      width: 4.5px;
+      height: 4.5px;
+      background: var(--srp-ally);
+      opacity: 1;
+    }
+  }
+
+  &__track-scale {
+    font-size: 10px;
+    opacity: 0.65;
   }
 
   &__track-legend {
     position: absolute;
-    top: 6px;
-    left: 50%;
-    transform: translateX(-50%);
+    top: 4px;
+    right: 6px;
+    z-index: 2;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 12px;
+    padding: 2px 7px;
     font-size: 10.5px;
     color: var(--srp-dim);
+    background: rgba(13, 17, 23, 0.72);
+    border-radius: 6px;
     pointer-events: none;
+  }
+
+  &__track-key {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
   }
 
   &__track-dot {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: rgb(var(--color-primary));
+    flex: none;
+
+    &--fire {
+      background: var(--srp-warn);
+    }
+
+    &--move {
+      background: var(--srp-ally);
+    }
   }
 
   &__gaps--top,

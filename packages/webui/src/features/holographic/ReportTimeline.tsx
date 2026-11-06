@@ -13,14 +13,21 @@
  * The long image has no pointer: `capturing` swaps the interaction for a
  * static annotation band — each keyframe pulls a leader line down to a
  * compact detail callout, staggered into lanes so callouts never overlap
- * (the waterfall of annotations), with the instant-score curve kept as the
- * timeline's media track underneath. Same DOM, same data, no hover needed.
+ * (the waterfall of annotations), with the score track kept underneath.
+ * Same DOM, same data, no hover needed.
  *
- * The score curve IS hikari's HkTrendChart (dependency-free, deterministic,
- * no canvas): the `now` window is pinned to the report's battle horizon, so
- * the curve, the ruler labels and the keyframe positions all share one
- * exact time mapping (the chart's own grid insets are the only geometry the
- * overlays derive from — see the exported TREND_CHART_GRID_* constants).
+ * The axis ends at the SELECTED PLAYER's data horizon — their death time when
+ * sunk, the last scored row for a survivor whose tail was censored, and
+ * never past the battle — so the curve and the callouts fill the width to
+ * the last sample. Pinning the timeline to the whole battle left a dead
+ * right third on the curve whenever the player sank early.
+ *
+ * The score track is TWO overlaid envelopes, one per evaluation model: the
+ * fire model (scored only on can-fire rows) and the move model (every row),
+ * drawn as one hand-drawn full-width SVG. The same time mapping drives the
+ * ruler, the lane and both paths, and the SVG stretches edge to edge with
+ * non-scaling strokes — no chart grid gutters, no canvas, deterministic in
+ * the html-to-image export.
  */
 import {
   computed,
@@ -31,14 +38,7 @@ import {
   watch,
   type PropType,
 } from "vue";
-import {
-  HkButton,
-  HkTrendChart,
-  TREND_CHART_GRID_LEFT,
-  TREND_CHART_GRID_RIGHT,
-  TREND_CHART_WIDTH,
-  type TrendPen,
-} from "@celestia-island/hikari";
+import { HkButton } from "@celestia-island/hikari";
 import { Camera } from "@lucide/vue";
 
 import AppTag from "@/components/base/AppTag";
@@ -59,25 +59,19 @@ import "./StaticReportPanel.scss";
 /** Lead-in before battle-second 0: the first sample sits one step inside the
  *  plot instead of on its edge (the same frame the old sparkline used). */
 const HEADROOM_S = 2;
-/** The score track's rendered height. HkTrendChart lifts this px height
- *  into its viewBox, so its grid bands are pixel-true; the track frame is
- *  CLIPPED to the plot's bottom edge (the chart's 40 px bottom band is
- *  empty — the report's ruler lives above the lane instead), which keeps
- *  the card from carrying a dead strip under the curve. */
-const CHART_HEIGHT_PX = 190;
-const CHART_HEIGHT = CHART_HEIGHT_PX + "px";
-const CHART_PLOT_HEIGHT_PX = CHART_HEIGHT_PX - 40;
-/** HkTrendChart stretches its 640-wide viewBox across the host
- *  (preserveAspectRatio="none"), so its exported grid insets are fractions
- *  of that viewBox. The ruler, the keyframe lane and the annotation band
- *  all ride the SAME plot rectangle, so the time mapping can never drift
- *  from the curve beneath it. */
-const PLOT_LEFT_PCT = (TREND_CHART_GRID_LEFT / TREND_CHART_WIDTH) * 100;
-const PLOT_RIGHT_PCT = (TREND_CHART_GRID_RIGHT / TREND_CHART_WIDTH) * 100;
-const PLOT_INSET_STYLE = {
-  marginLeft: PLOT_LEFT_PCT + "%",
-  marginRight: PLOT_RIGHT_PCT + "%",
-};
+/** The score track: two hand-drawn model envelopes in ONE full-width SVG
+ *  (preserveAspectRatio="none", non-scaling strokes). Authored against this
+ *  viewBox; the path stretches to the card width, so the envelopes, the
+ *  ruler and the keyframe lane share the timeline EDGE TO EDGE — the old
+ *  chart's 50/20 px grid gutters were the dead left/right bands the
+ *  2026-11-06 screenshot report called out. */
+const TRACK_HEIGHT_PX = 158;
+const TRACK_PAD_TOP_PX = 8;
+const TRACK_PAD_BOTTOM_PX = 8;
+const TRACK_VIEW_WIDTH = 1000;
+/** The two score models the report dissects: the fire model (only scored on
+ *  can-fire rows) and the move model (every row). */
+type TrackModel = "fire" | "move";
 /** Annotation callouts (capture mode): fixed card box, vertical pitch and
  *  the leader segment that reaches from the lane's centre line. */
 export const CALLOUT_WIDTH_PX = 220;
@@ -95,7 +89,7 @@ const LEADER_TOP_PX = 30;
 const MARKER_HIT_PX = 12;
 /** Floating card width (hover/pinned) and the edge gutter it keeps. */
 const TIP_WIDTH_PX = 300;
-const READOUT_WIDTH_PX = 186;
+const READOUT_WIDTH_PX = 268;
 /** Ruler steps (battle seconds): the smallest step that keeps the label
  *  count at or below six, then the battle end is always pinned. */
 const RULER_STEPS = [15, 30, 60, 120, 300, 600, 900];
@@ -355,7 +349,6 @@ export default defineComponent({
       resizeObserver = null;
     });
 
-    const duration = computed(() => Math.max(1, props.report.durationS));
     const moments = computed(() => props.report.moments ?? []);
     const samples = computed(() => props.report.timeline ?? []);
     const me = computed<StaticRosterEntry | undefined>(() =>
@@ -363,8 +356,27 @@ export default defineComponent({
     );
     const gaps = computed(() => coverageGaps(me.value?.coverage));
 
-    const frac = (tSec: number): number => timelineFrac(tSec, duration.value);
-    const ticks = computed(() => rulerTicks(duration.value));
+    /** The axis ends where the selected player's DATA ends — their death
+     *  time for a sunk ship, the replay horizon for a survivor. Pinning the
+     *  timeline to the battle horizon instead left a dead empty right third
+     *  on the curve whenever the player sank early (2026-11-06 screenshot
+     *  report: "右边空一大块"). */
+    const horizon = computed(() => {
+      const battle = Math.max(1, props.report.durationS);
+      const series = props.report.timeline ?? [];
+      const last = series.length ? series[series.length - 1].t : 0;
+      const aliveTo = me.value?.coverage.aliveTo;
+      let end = battle;
+      // The last SCORED row wins over the death time: the score grid is not
+      // aligned with the trajectory, so capping at the death sample alone
+      // could still leave up to one grid step of dead tail.
+      if (aliveTo != null && aliveTo > 0) end = Math.min(end, aliveTo);
+      if (last > 0) end = Math.min(end, last);
+      return Math.max(1, end);
+    });
+
+    const frac = (tSec: number): number => timelineFrac(tSec, horizon.value);
+    const ticks = computed(() => rulerTicks(horizon.value));
 
     /** Legend entries for the categories actually present, in the fixed
      *  category order (one table drives marker, legend, badge and card). */
@@ -386,6 +398,8 @@ export default defineComponent({
       xPct: number;
       tSec: number;
       inst: number | null;
+      fire: number | null;
+      move: number | null;
       inGap: boolean;
       nearest: number | null;
     } | null>(null);
@@ -406,7 +420,7 @@ export default defineComponent({
       const xPct = Math.max(0, Math.min(100, (xPx / rect.width) * 100));
       const hit = markerHitIndex(
         xPct,
-        duration.value,
+        horizon.value,
         moments.value,
         rect.width,
       );
@@ -415,12 +429,15 @@ export default defineComponent({
         readout.value = null;
         return;
       }
-      const tSec = (xPct / 100) * (duration.value + HEADROOM_S) - HEADROOM_S;
+      const tSec = (xPct / 100) * (horizon.value + HEADROOM_S) - HEADROOM_S;
       const sampleIndex = nearestSampleIndex(samples.value, tSec);
+      const nearestSample = sampleIndex == null ? null : samples.value[sampleIndex];
       readout.value = {
         xPct,
         tSec,
-        inst: sampleIndex == null ? null : samples.value[sampleIndex].inst,
+        inst: nearestSample == null ? null : nearestSample.inst,
+        fire: nearestSample == null ? null : nearestSample.fire,
+        move: nearestSample == null ? null : nearestSample.move,
         inGap: inCoverageGap(gaps.value, tSec),
         nearest: nearestMomentIndex(moments.value, tSec),
       };
@@ -514,20 +531,93 @@ export default defineComponent({
       };
     });
 
-    // ── score track ──
-    const pens = computed<TrendPen[]>(() => [
-      {
-        label: t("replay.report.instScore"),
-        data: samples.value.map((sample) => ({
-          // Battle seconds ride the chart's numeric time axis directly as
-          // battle-time ms; `now` below pins the window to the horizon.
-          time: sample.t * 1000,
-          value: sample.inst * 100,
-        })),
-      },
-    ]);
-    const windowMs = computed(() => (duration.value + HEADROOM_S) * 1000);
-    const nowMs = computed(() => duration.value * 1000);
+    // ── score track: the two model envelopes, edge to edge ──
+    /** Track geometry in viewBox units: the whole width IS the timeline, so
+     *  the horizon sample lands exactly on the right edge. */
+    const trackX = (tSec: number): number =>
+      (timelineFrac(tSec, horizon.value) / 100) * TRACK_VIEW_WIDTH;
+    const trackY = (value: number): number => {
+      const clamped = Math.max(0, Math.min(1, value));
+      return (
+        TRACK_HEIGHT_PX -
+        TRACK_PAD_BOTTOM_PX -
+        clamped * (TRACK_HEIGHT_PX - TRACK_PAD_TOP_PX - TRACK_PAD_BOTTOM_PX)
+      );
+    };
+    /** A model's scored samples in time order. The fire model only exists on
+     *  can-fire rows; the envelope bridges the unscored rows (dashed stroke
+     *  in CSS) so it still reads as a curve, and the dots mark the rows the
+     *  model actually evaluated. */
+    function modelPoints(model: TrackModel): { t: number; value: number }[] {
+      return samples.value.flatMap((sample) => {
+        const value = model === "fire" ? sample.fire : sample.move;
+        return value == null ? [] : [{ t: sample.t, value }];
+      });
+    }
+    function modelPath(model: TrackModel): string {
+      return modelPoints(model)
+        .map(
+          (point, index) =>
+            (index === 0 ? "M " : "L ") +
+            trackX(point.t).toFixed(2) +
+            " " +
+            trackY(point.value).toFixed(2),
+        )
+        .join(" ");
+    }
+    const movePath = computed(() => modelPath("move"));
+    const firePath = computed(() => modelPath("fire"));
+    /** The fire key is only meaningful when the model scored at least one
+     *  row (a report without can-fire windows is a legitimate run). */
+    const hasFire = computed(() =>
+      samples.value.some((sample) => sample.fire != null),
+    );
+    /** A one-row move series draws no segment either — mark the point. */
+    const moveDots = computed(() => {
+      const points = modelPoints("move");
+      if (points.length !== 1) return [];
+      const [point] = points;
+      if (!point) return [];
+      return [
+        {
+          left: (trackX(point.t) / TRACK_VIEW_WIDTH) * 100,
+          top: (trackY(point.value) / TRACK_HEIGHT_PX) * 100,
+        },
+      ];
+    });
+    /** Dots only where the fire model's scored rows are ISOLATED (no scored
+     *  neighbour on either side): single unmarked vertices of the dashed
+     *  envelope. Inside a run the envelope already carries the sample, so no
+     *  bead chain is laid over it. DOM dots rather than SVG circles: the
+     *  stretched viewBox would flatten them. */
+    const fireDots = computed(() => {
+      const series = samples.value;
+      const scored = series.map((sample) => sample.fire != null);
+      return series.flatMap((sample, index) => {
+        if (!scored[index]) return [];
+        const left = scored[index - 1] === true;
+        const right = scored[index + 1] === true;
+        if (left || right) return [];
+        const value = sample.fire;
+        if (value == null) return [];
+        return [
+          {
+            left: (trackX(sample.t) / TRACK_VIEW_WIDTH) * 100,
+            top: (trackY(value) / TRACK_HEIGHT_PX) * 100,
+          },
+        ];
+      });
+    });
+    /** Readability guides at 25/50/75% (the track is a 0–100% score axis). */
+    const TRACK_GRID = [0.25, 0.5, 0.75];
+    /** Keyframe hairlines through the track: the editor marker lines that tie
+     *  the lane above to the envelopes below. */
+    const trackMarks = computed(() =>
+      moments.value.map((moment) => ({
+        x: trackX(moment.t),
+        tone: categoryTone(moment.category),
+      })),
+    );
 
     // ── capture-mode annotation band ──
     const callouts = computed(() => {
@@ -559,7 +649,7 @@ export default defineComponent({
 
     function renderGaps(extraClass: string) {
       return (
-        <div class={"srp-tl__gaps " + extraClass} style={PLOT_INSET_STYLE} aria-hidden="true">
+        <div class={"srp-tl__gaps " + extraClass} aria-hidden="true">
           {gaps.value.map(([from, to], index) => (
             <span
               key={index}
@@ -600,7 +690,7 @@ export default defineComponent({
 
         <div class="srp-tl__top">
           {renderGaps("srp-tl__gaps--top")}
-          <div class="srp-tl__ruler" style={PLOT_INSET_STYLE} aria-hidden="true">
+          <div class="srp-tl__ruler" aria-hidden="true">
             {ticks.value.map((tick, index) => (
               <span
                 key={tick.t}
@@ -618,7 +708,6 @@ export default defineComponent({
           <div
             ref={laneRef}
             class="srp-tl__lane"
-            style={PLOT_INSET_STYLE}
             onPointermove={onPointerMove}
             onPointerleave={clearHover}
           >
@@ -673,6 +762,36 @@ export default defineComponent({
                   {readout.value.inst == null
                     ? "—"
                     : pct(readout.value.inst) + "%"}
+                </span>
+                <span
+                  class="srp-tl__readout-model"
+                  aria-label={
+                    t("replay.report.moveModel") +
+                    " " +
+                    (readout.value.move == null
+                      ? "—"
+                      : pct(readout.value.move) + "%")
+                  }
+                >
+                  <i class="srp-tl__track-dot srp-tl__track-dot--move" />
+                  {readout.value.move == null
+                    ? "—"
+                    : pct(readout.value.move) + "%"}
+                </span>
+                <span
+                  class="srp-tl__readout-model"
+                  aria-label={
+                    t("replay.report.fireModel") +
+                    " " +
+                    (readout.value.fire == null
+                      ? "—"
+                      : pct(readout.value.fire) + "%")
+                  }
+                >
+                  <i class="srp-tl__track-dot srp-tl__track-dot--fire" />
+                  {readout.value.fire == null
+                    ? "—"
+                    : pct(readout.value.fire) + "%"}
                 </span>
                 {readout.value.inGap ? (
                   <span class="srp-tl__readout-gap">
@@ -735,10 +854,7 @@ export default defineComponent({
         {props.capturing ? (
           <div
             class="srp-tl__callouts"
-            style={{
-              ...PLOT_INSET_STYLE,
-              height: calloutBandHeight.value + "px",
-            }}
+            style={{ height: calloutBandHeight.value + "px" }}
           >
             {callouts.value.map((callout) => (
               <span
@@ -780,18 +896,76 @@ export default defineComponent({
           </div>
         ) : null}
 
-        <div class="srp-tl__track" style={{ height: CHART_PLOT_HEIGHT_PX + "px" }}>
+        <div class="srp-tl__track" style={{ height: TRACK_HEIGHT_PX + "px" }}>
           {renderGaps("srp-tl__gaps--track")}
-          <HkTrendChart
-            pens={pens.value}
-            height={CHART_HEIGHT}
-            timeWindowMs={windowMs.value}
-            now={nowMs.value}
-            showThresholds={false}
-          />
+          <svg
+            class="srp-tl__score"
+            viewBox={"0 0 " + TRACK_VIEW_WIDTH + " " + TRACK_HEIGHT_PX}
+            preserveAspectRatio="none"
+            aria-hidden="true"
+          >
+            {TRACK_GRID.map((value) => (
+              <line
+                key={value}
+                class={
+                  "srp-tl__score-grid" +
+                  (value === 0.5 ? " srp-tl__score-grid--mid" : "")
+                }
+                x1="0"
+                x2={TRACK_VIEW_WIDTH}
+                y1={trackY(value)}
+                y2={trackY(value)}
+                vector-effect="non-scaling-stroke"
+              />
+            ))}
+            {trackMarks.value.map((mark, index) => (
+              <line
+                key={index}
+                class={"srp-tl__score-mark srp-tl__score-mark--" + mark.tone}
+                x1={mark.x}
+                x2={mark.x}
+                y1="0"
+                y2={TRACK_HEIGHT_PX}
+                vector-effect="non-scaling-stroke"
+              />
+            ))}
+            <path
+              class="srp-tl__score-line srp-tl__score-line--move"
+              d={movePath.value}
+              vector-effect="non-scaling-stroke"
+            />
+            <path
+              class="srp-tl__score-line srp-tl__score-line--fire"
+              d={firePath.value}
+              vector-effect="non-scaling-stroke"
+            />
+          </svg>
+          {moveDots.value.map((dot, index) => (
+            <span
+              key={"move-" + index}
+              class="srp-tl__score-dot srp-tl__score-dot--move"
+              style={{ left: dot.left + "%", top: dot.top + "%" }}
+            />
+          ))}
+          {fireDots.value.map((dot, index) => (
+            <span
+              key={index}
+              class="srp-tl__score-dot"
+              style={{ left: dot.left + "%", top: dot.top + "%" }}
+            />
+          ))}
           <span class="srp-tl__track-legend">
-            <i class="srp-tl__track-dot" />
-            {t("replay.report.instScore")}
+            <span class="srp-tl__track-key">
+              <i class="srp-tl__track-dot srp-tl__track-dot--move" />
+              {t("replay.report.moveModel")}
+            </span>
+            {hasFire.value ? (
+              <span class="srp-tl__track-key">
+                <i class="srp-tl__track-dot srp-tl__track-dot--fire" />
+                {t("replay.report.fireModel")}
+              </span>
+            ) : null}
+            <span class="srp-tl__track-scale">0–100%</span>
           </span>
         </div>
       </section>
