@@ -237,6 +237,25 @@
     background: rgba(255, 255, 255, 0.04);
   }
 
+  &__avatar-initial {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--srp-ink);
+
+    &--ally {
+      background: rgba(87, 166, 255, 0.22);
+    }
+
+    &--enemy {
+      background: rgba(224, 112, 89, 0.22);
+    }
+  }
+
   &__identity {
     display: flex;
     flex-direction: column;

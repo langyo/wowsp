@@ -34,6 +34,18 @@ export function formatClock(tSec: number): string {
   return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
 }
 
+/** Battle duration as M:SS (H:MM:SS past the hour) — the head's
+ *  provenance line. Vitest. */
+export function formatDuration(sec: number): string {
+  if (!sec || sec <= 0) return "—";
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
+}
+
 /** Coverage badge class: full / partial / none. Exported for vitest. */
 export function coverageClass(c: { samples: number; completeness: number }): string {
   if (c.samples === 0) return "none";

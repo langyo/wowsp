@@ -648,7 +648,7 @@
     "recorder": "enregistreur",
     "diedAt": "perdu à {t} s",
     "survived": "survécu",
-    "duration": "{t} s",
+    "duration": "Durée {t}",
     "contribution": "Contribution (dégâts fenêtre)",
     "perShot": "{v} par fenêtre",
     "wholeGame": "Accord du modèle",

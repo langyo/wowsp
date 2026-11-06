@@ -648,7 +648,7 @@
     "recorder": "녹화자",
     "diedAt": "{t}초 격침",
     "survived": "생존",
-    "duration": "{t}초",
+    "duration": "지속 시간 {t}",
     "contribution": "기여도(윈도우 피해)",
     "perShot": "창당 {v}",
     "wholeGame": "모델 일치도",
