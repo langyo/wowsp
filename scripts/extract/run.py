@@ -495,6 +495,8 @@ def _run_lesta_overlay(gameparams: Path, lesta_game: str | None = None) -> str |
     # The non-tree port-fleet walk needs the WG dump's whole index set as
     # its exclusion base (hundreds of WG premiums never appear as tree side
     # leaves); the WG dump is a shared cache built earlier in the same run.
+    # Reviewed hidden-placeholder collisions (the scripts' WG_HIDDEN_INDEX_KEEP)
+    # ride through the same call so a data refresh cannot silently drop them.
     if GAMEPARAMS_JSON.exists():
         overlay_cmd[1:1] = ["--wg-gameparams", str(GAMEPARAMS_JSON)]
     _py(*overlay_cmd)

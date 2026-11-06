@@ -75,6 +75,58 @@ PORT_GROUPS = {
     "clan",
 }
 
+# WG GameParams groups whose entities are NOT WG-realm ships: disabled /
+# unavailable placeholders, demo and test hulls the WG client carries but its
+# port never surfaces. An index that only collides with such an entity does
+# not claim the id space, so a REVIEWED Lesta port ship may keep its entry.
+WG_HIDDEN_GROUPS = {
+    "disabled",
+    "unavailable",
+    "demoWithoutStats",
+    "pveOnly",
+    "coopOnly",
+}
+
+# Reviewed exceptions to the "an index the WG dump carries stays out" rule:
+# Lesta port ships that were published before the 15.10 WG data refresh started
+# carrying a HIDDEN placeholder at the same index (PXSC022_Kronshtadt,
+# "unavailable", vs the Lesta event hull PXSC022_Vodyanoi). The WG realm never
+# surfaces these ids, so keeping the Lesta slice cannot shadow a real WG ship —
+# unlike a collision with a WG tree/port ship (e.g. PGSD111_Z_57 earlyAccess
+# vs Lesta's Otto Weddigen), which MUST stay out. Keep this list tiny and
+# re-review it on every data refresh.
+WG_HIDDEN_INDEX_KEEP = {"PXSC022"}
+
+
+def wg_index_claims(wg_gp: dict) -> dict[str, set[str]]:
+    """WG GameParams index -> the groups of every entity carrying it."""
+    claims: dict[str, set[str]] = {}
+    for entry in wg_gp.values():
+        if not isinstance(entry, dict):
+            continue
+        idx = entry.get("index")
+        if not isinstance(idx, str):
+            continue
+        # `group` is usually a string but the dumps also carry list forms.
+        group = entry.get("group")
+        groups = group if isinstance(group, list) else [group]
+        claims.setdefault(idx, set()).update(g for g in groups if isinstance(g, str))
+    return claims
+
+
+def keep_hidden_collision_index(idx: str, wg_groups: set[str] | None) -> bool:
+    """Does a reviewed hidden-collision exception keep this Lesta index?
+
+    Only while EVERY WG entity behind the index is a hidden placeholder: if
+    the WG client ever turns one into a real ship, the exception stops
+    applying and the Lesta entry goes back to being excluded.
+    """
+    return (
+        idx in WG_HIDDEN_INDEX_KEEP
+        and bool(wg_groups)
+        and all(group in WG_HIDDEN_GROUPS for group in wg_groups)
+    )
+
 
 def _nation_from_gameparams(nation: str) -> str:
     renames = {"united_kingdom": "uk", "russia": "ussr", "europe": "pan_europe"}
@@ -219,9 +271,11 @@ def main() -> None:
         help="decoded WG GameParams.json — the broader exclusion base for the "
         "non-tree walk: a premium/event index the WG client carries (even "
         "unreleased) belongs to the WG realm's id space and must not get a "
-        "Lesta overlay entry. Without it the WG tree's indexes stand in "
-        "(release-hidden WG hulls then ride along; the encyclopedia's id "
-        "dedupe drops the overlap anyway).",
+        "Lesta overlay entry, except the reviewed hidden-placeholder "
+        "collisions in WG_HIDDEN_INDEX_KEEP (a WG entity that is itself "
+        "hidden/never port-visible does not claim the id). Without it the WG "
+        "tree's indexes stand in (release-hidden WG hulls then ride along; "
+        "the encyclopedia's id dedupe drops the overlap anyway).",
     )
     ap.add_argument("--version", default="lesta", help="version stamp for gameVersion")
     ap.add_argument("--out", required=True, help="ships_lesta.json output path")
@@ -339,13 +393,9 @@ def main() -> None:
     # by the WG tree's; tree indexes already emitted above are skipped.
     if args.wg_gameparams:
         wg_gp = _params_root(json.loads(Path(args.wg_gameparams).read_text(encoding="utf-8")))
-        wg_known = {
-            e.get("index")
-            for e in wg_gp.values()
-            if isinstance(e, dict) and isinstance(e.get("index"), str)
-        }
+        wg_claims = wg_index_claims(wg_gp)
     else:
-        wg_known = wg_indexes
+        wg_claims = {idx: set() for idx in wg_indexes}
         print(
             "[lesta-overlay] note: no --wg-gameparams — excluding non-tree ships by the "
             "WG tree only; WG release-hidden hulls may ride along (the encyclopedia's "
@@ -356,8 +406,17 @@ def main() -> None:
     added = 0
     for idx, (key, entry) in sorted(by_index.items()):
         group = entry.get("group")
-        if idx in tree_indexes or idx in wg_known or group not in PORT_GROUPS:
+        if idx in tree_indexes or group not in PORT_GROUPS:
             continue
+        wg_groups = wg_claims.get(idx)
+        if wg_groups is not None:
+            if not keep_hidden_collision_index(idx, wg_groups):
+                continue
+            print(
+                f"[lesta-overlay] keep {idx}: WG index collision is a hidden "
+                f"placeholder ({', '.join(sorted(wg_groups))}) — reviewed exception",
+                flush=True,
+            )
         sid = entry.get("id")
         if not isinstance(sid, int):
             continue

@@ -836,10 +836,15 @@ pub async fn get_ship_gameparams(
     //    install — deliberate: the encyclopedia, the names and the profiles
     //    around this lookup are the same snapshot, and a newer client's ids
     //    can mean different ships (they are regenerated between builds).
-    //    One id is shared with the WG client (4178458416: a hidden,
-    //    unplayable WG demo entity vs Lesta's real Otto Weddigen) — that id
-    //    is unreachable from any WG-realm surface (absent from tech_tree.json
-    //    and from playable/replay content), so it stays a Lesta answer here.
+    //    Two ids collide with WG GameParams entities, each handled by the
+    //    snapshot's scope rules (scripts/extract/build_lesta_shipdata.py):
+    //    • 4178458416 is WG's early-access Z-57 (a WG TREE ship since 15.10)
+    //      and is NOT carried here — WG surfaces resolve it from their own
+    //      install, so this lookup never answers Lesta's Otto Weddigen.
+    //    • 4271813904 collides only with a hidden WG placeholder
+    //      (PXSC022_Kronshtadt, group unavailable) that no WG-realm surface
+    //      can request, so the Lesta event hull (Vodyanoi) stays a Lesta
+    //      answer as a reviewed exception (WG_HIDDEN_INDEX_KEEP).
     //    Every other id falls through to the chain below.
     if let Some(slice) = bundled_lesta_slice(ship_id) {
         return Ok(slice);
@@ -1948,6 +1953,9 @@ mod tests {
     /// like the tree ships. The fairy-tale event hulls legitimately carry no
     /// A_Artillery (Koschei fields secondaries + air armament only), so the
     /// assert is on the hull block and id agreement instead.
+    /// Vodyanoi (4271813904) collides on index+id with a HIDDEN WG placeholder
+    /// (PXSC022_Kronshtadt, group unavailable) — no WG surface can request
+    /// that id, so the reviewed WG_HIDDEN_INDEX_KEEP exception carries it.
     #[test]
     fn bundled_lesta_pack_carries_the_port_fleet() {
         for (id, index, name) in [
@@ -1976,9 +1984,11 @@ mod tests {
 
     /// No WG-tree ship id may ride in the pack: the bundle wins over every
     /// install at lookup time, so a WG id in it would answer WG-realm armor
-    /// from the Lesta snapshot. (The single known Lesta/WG shared id —
-    /// 4178458416, a hidden WG demo entity vs Lesta's real Otto Weddigen —
-    /// is documented at the lookup site and unreachable from WG surfaces.)
+    /// from the Lesta snapshot. The one formerly-"shared" id, 4178458416,
+    /// became a WG tree ship in 15.10 (early-access Z-57), so the Lesta
+    /// snapshot's Otto Weddigen must NOT be carried for it anymore — the
+    /// port-fleet exceptions only cover hidden, unreachable WG placeholders
+    /// (see the lookup site comment and WG_HIDDEN_INDEX_KEEP).
     #[test]
     fn bundled_lesta_pack_stays_off_the_wg_tree() {
         const WG_TREE: &str = include_str!("../../../../webui/src/data/tech_tree.json");
@@ -1996,6 +2006,13 @@ mod tests {
                 "pack id {id} collides with a WG-tree ship"
             );
         }
+        // Regression pin: the id used to be carried for Lesta's Otto Weddigen
+        // back when WG had only a hidden demo entity for it; WG's Z-57 is a
+        // tree ship now, so the pack must no longer answer that id.
+        assert!(
+            bundled_lesta_slice(4_178_458_416).is_none(),
+            "4178458416 is WG's tree-owned Z-57 id — the Lesta snapshot must not carry it"
+        );
     }
 
     #[test]
