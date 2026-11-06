@@ -481,7 +481,12 @@ export default defineComponent({
       };
     }
 
-    const shot = useShareImage(() => renderStatsShot(buildShotModel(), { el: root.value }));
+    // The shot model's own content is the cache signature: a repeat click on
+    // the same card copies instantly, anything changed renders again.
+    const shot = useShareImage(
+      () => renderStatsShot(buildShotModel(), { el: root.value }),
+      { signature: () => JSON.stringify(buildShotModel()) },
+    );
 
     return () => (
       <div class="dashboard-view" ref={root}>

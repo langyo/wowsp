@@ -65,11 +65,30 @@ export default defineComponent({
     /** Copy the report's long image onto the clipboard: render → clipboard
      *  → toast, all owned by the shared kit (native IPC first, webview
      *  clipboard fallback, one toast on either outcome). */
-    const shot = useShareImage(async () => {
-      const panel = panelRef.value;
-      if (!panel) throw new Error("report panel is not mounted");
-      return panel.capturePng();
-    });
+    const shot = useShareImage(
+      async () => {
+        const panel = panelRef.value;
+        if (!panel) throw new Error("report panel is not mounted");
+        return panel.capturePng();
+      },
+      {
+        // The cached long image belongs to ONE report + perspective + sheet:
+        // any of these changing means re-render before copying (a repeated
+        // click on the same content re-copies instantly instead).
+        signature: () =>
+          [
+            props.report?.entityId ?? "",
+            props.report?.durationS ?? "",
+            props.report?.moments.length ?? "",
+            props.report?.timeline.length ?? "",
+            props.sheet?.identity.name ?? "",
+            props.sheet?.identity.clanTag ?? "",
+            props.sheet?.identity.dogTag ? 1 : 0,
+            props.sheet?.meta.battleStart ?? "",
+            props.sheet?.meta.replayHash ?? "",
+          ].join("|"),
+      },
+    );
 
     return () => (
       <HkModal

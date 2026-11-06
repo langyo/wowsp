@@ -8,5 +8,6 @@
   "shotQqGroup": "Groupe QQ : {n}",
   "topShips": "Navires les plus joués",
   "moreShips": "+{n} autres navires",
-  "moreMembers": "+{n} autres membres"
+  "moreMembers": "+{n} autres membres",
+  "copyShotGenerating": "Génération de la capture…"
 }

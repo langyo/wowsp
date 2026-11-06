@@ -71,8 +71,12 @@ export function useNickMasking() {
 /** Copy flow for the post-battle share shot: renders the model off-DOM via
  *  the shared copy pipeline, with the shot kit's localized watermark footer. */
 export function useShareShot(getModel: () => ShotModel, getEl: () => HTMLElement | null) {
-  return useShareImage(async () =>
-    renderPostBattleShot(getModel(), { el: getEl(), ...shareFooterStrings() }),
+  return useShareImage(
+    async () =>
+      renderPostBattleShot(getModel(), { el: getEl(), ...shareFooterStrings() }),
+    // The model is the cache signature: repeat clicks on the same result copy
+    // instantly, a new battle/result renders again.
+    { signature: () => JSON.stringify(getModel()) },
   );
 }
 

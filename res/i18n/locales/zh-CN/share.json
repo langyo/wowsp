@@ -8,5 +8,6 @@
   "shotQqGroup": "QQ群：{n}",
   "topShips": "常用舰船",
   "moreShips": "另有 {n} 艘舰船",
-  "moreMembers": "另有 {n} 名成员"
+  "moreMembers": "另有 {n} 名成员",
+  "copyShotGenerating": "正在生成截图…"
 }

@@ -8,5 +8,6 @@
   "shotQqGroup": "QQ-группа: {n}",
   "topShips": "Самые играемые корабли",
   "moreShips": "Ещё кораблей: {n}",
-  "moreMembers": "Ещё участников: {n}"
+  "moreMembers": "Ещё участников: {n}",
+  "copyShotGenerating": "Создание снимка экрана…"
 }

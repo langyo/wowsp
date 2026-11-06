@@ -706,11 +706,13 @@ export default defineComponent({
       };
     }
 
-    const playerShot = useShareImage(() =>
-      renderStatsShot(buildPlayerShotModel(), { el: root.value }),
+    const playerShot = useShareImage(
+      () => renderStatsShot(buildPlayerShotModel(), { el: root.value }),
+      { signature: () => JSON.stringify(buildPlayerShotModel()) },
     );
-    const clanShot = useShareImage(() =>
-      renderClanShot(buildClanShotModel(), { el: root.value }),
+    const clanShot = useShareImage(
+      () => renderClanShot(buildClanShotModel(), { el: root.value }),
+      { signature: () => JSON.stringify(buildClanShotModel()) },
     );
 
     return () => (
