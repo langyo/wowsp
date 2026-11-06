@@ -46,48 +46,57 @@ const SRC_DIR = join(WEBUI_DIR, "src");
 
 /** The exact copy options the wrapper hands the published plugin. */
 const WOWSP_COPY = {
+  title: "WoWSP did not finish loading",
   message:
-    "WoWSP did not finish loading. The app window may have recovered from a crash; reloading usually fixes it.",
+    "The app window may have recovered from a crash; reloading usually fixes it.",
   retry: "Reload",
   storageKey: "wowsp-ui-locale",
   locales: {
     "en-US": {
+      title: "WoWSP did not finish loading",
       message:
-        "WoWSP did not finish loading. The app window may have recovered from a crash; reloading usually fixes it.",
+        "The app window may have recovered from a crash; reloading usually fixes it.",
       retry: "Reload",
     },
-    "zh-CN": { message: "WoWSP 未能完成加载。应用窗口可能已从崩溃中恢复，重新加载通常可以解决问题。", retry: "重新加载" },
-    "zh-TW": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+    "zh-CN": { title: "WoWSP 未能完成加载", message: "应用窗口可能已从崩溃中恢复，重新加载通常可以解决问题。", retry: "重新加载" },
+    "zh-TW": { title: "WoWSP 未能完成載入", message: "應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
     "ja-JP": {
-      message: "WoWSP の読み込みが完了しませんでした。アプリのウィンドウはクラッシュから復帰した可能性があります。再読み込みすると通常は解決します。",
+      title: "WoWSP の読み込みが完了しませんでした",
+      message:
+        "アプリのウィンドウはクラッシュから復帰した可能性があります。再読み込みすると通常は解決します。",
       retry: "再読み込み",
     },
     "ko-KR": {
-      message: "WoWSP가 로딩을 완료하지 못했습니다. 앱 창이 비정상 종료에서 복구되었을 수 있습니다. 새로 고침하면 대개 해결됩니다.",
+      title: "WoWSP가 로딩을 완료하지 못했습니다",
+      message:
+        "앱 창이 비정상 종료에서 복구되었을 수 있습니다. 새로 고침하면 대개 해결됩니다.",
       retry: "새로고침",
     },
     "ru-RU": {
+      title: "WoWSP не завершил загрузку",
       message:
-        "WoWSP не завершил загрузку. Окно приложения, возможно, восстановилось после сбоя; перезагрузка обычно устраняет проблему.",
+        "Окно приложения, возможно, восстановилось после сбоя; перезагрузка обычно устраняет проблему.",
       retry: "Перезагрузить",
     },
     "fr-FR": {
+      title: "WoWSP n'a pas terminé de se charger",
       message:
-        "WoWSP n'a pas terminé de se charger. La fenêtre de l'application s'est peut-être rétablie après un plantage ; recharger corrige généralement le problème.",
+        "La fenêtre de l'application s'est peut-être rétablie après un plantage ; recharger corrige généralement le problème.",
       retry: "Recharger",
     },
     "es-ES": {
+      title: "WoWSP no terminó de cargarse",
       message:
-        "WoWSP no terminó de cargarse. Es posible que la ventana de la aplicación se haya recuperado de un fallo; recargar suele solucionarlo.",
+        "Es posible que la ventana de la aplicación se haya recuperado de un fallo; recargar suele solucionarlo.",
       retry: "Recargar",
     },
     // Navigator aliases — the plugin strips candidate subtags only down to
     // the primary language, so the Han/region variants that should NOT fall
     // through to the first zh row are pinned explicitly:
-    "zh-Hans": { message: "WoWSP 未能完成加载。应用窗口可能已从崩溃中恢复，重新加载通常可以解决问题。", retry: "重新加载" },
-    "zh-Hant": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
-    "zh-HK": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
-    "zh-MO": { message: "WoWSP 未能完成載入。應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+    "zh-Hans": { title: "WoWSP 未能完成加载", message: "应用窗口可能已从崩溃中恢复，重新加载通常可以解决问题。", retry: "重新加载" },
+    "zh-Hant": { title: "WoWSP 未能完成載入", message: "應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+    "zh-HK": { title: "WoWSP 未能完成載入", message: "應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
+    "zh-MO": { title: "WoWSP 未能完成載入", message: "應用程式視窗可能已從當機中復原，重新載入通常可以解決問題。", retry: "重新載入" },
   },
 };
 
@@ -237,7 +246,8 @@ describe("boot recovery wiring — published delegation", () => {
     expect(script).toContain('"#loading-screen"');
     expect(script).toContain('"hidden"');
     expect(script).toContain("setTimeout(");
-    // Host copy.
+    // Host copy — the landing card's headline, explanation and action.
+    expect(script).toContain(JSON.stringify(WOWSP_COPY.title));
     expect(script).toContain(JSON.stringify(WOWSP_COPY.message));
     expect(script).toContain(JSON.stringify(WOWSP_COPY.retry));
     // Locale sources travel verbatim too (both names are ASCII): the panel
