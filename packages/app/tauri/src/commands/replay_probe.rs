@@ -439,6 +439,10 @@ mod tests {
             weather_notifications: Vec::new(),
             ally_builds: Vec::new(),
             self_team: None,
+            shield_damage_events: Vec::new(),
+            shield_state_events: Vec::new(),
+            shield_markers: Vec::new(),
+            gun_overheats: Vec::new(),
         };
         let vehicles = vec![
             VehicleEntry {

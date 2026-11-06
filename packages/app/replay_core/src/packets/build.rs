@@ -68,16 +68,52 @@
 //! without a new capture experiment (a live probe dump of the parsed ShipConfig
 //! object, or a client-converter decompile). The decoder stops after ecoboosts,
 //! so the ambiguity cannot mis-parse any known section.
+//!
+//! ## OPEN ITEM — 15.10.0 shipConfig binary (build 13533378, 2026-11-05)
+//!
+//! The 15.10 create state keeps the SAME `shipConfig` exposed index (47) and
+//! the same length-prefixed blob framing (0xff escape included), so the walk
+//! reaches and frames the blob correctly — but the BINARY inside shifted
+//! again, and the 15.9 branch mis-parses at least the heat-mechanic hulls:
+//! decoding the Bermuda Triangle event capture's Siegfried-1510 create state
+//! (blob 252 bytes, element_count 60) yields modernization = [0; 10] (ten
+//! ZERO ids — real slots carry PCM0xx GameParams hashes) with every section
+//! after it empty, while a non-heat bot hull in the same battle (blob 172
+//! bytes, element_count 40) still decodes plausibly (ext=1, abilities=6,
+//! ecoboosts=4). The heat-guns blob is 80 bytes longer at the same slot
+//! count — an extra per-gun section the 15.9 layout does not know. Pinning
+//! it requires a capture experiment against the client's own parsed object
+//! (the probe `shipConfigDump` route that calibrated the 15.9 shift); until
+//! then the era gate above stays 15.9-only and 15.10 create states count as
+//! `builds_skipped` diagnostics. The create-state WALK side is already
+//! 15.10-ready: the property table row is pinned (55 properties, `crewConfig`
+//! inserted at 48) and `skip_variable_property` handles both the `crewConfig`
+//! USER_TYPE blob and the verified 0xff length escape.
 
 use super::property_tables::vehicle_property_table_for_version;
 
 /// The only client version era whose Vehicle property map + shipConfig binary
-/// layout is pinned (see the module docs; other versions skip).
+/// layout is pinned (see the module docs + the 15.10 OPEN ITEM below; other
+/// versions skip).
 pub(crate) const BUILD_SUPPORTED_ERA: (u32, u32) = (15, 9);
 
 /// Whether the build decoder should run for this parsed client version.
 pub(crate) fn builds_supported(version: Option<(u32, u32, u32)>) -> bool {
     matches!(version, Some((major, minor, _)) if (major, minor) == BUILD_SUPPORTED_ERA)
+}
+
+/// Exposed index of the Vehicle `state` property — the parent of the nested
+/// `SHIELD_STATE` dict — resolved BY NAME from the version's generated
+/// property table. `None` = no table pinned for the era (the shield-state
+/// bit walk stays off).
+pub(crate) fn state_property_index_for(version: Option<(u32, u32, u32)>) -> Option<u8> {
+    let version = version?;
+    let table = vehicle_property_table_for_version(version)?;
+    let idx = table
+        .properties
+        .iter()
+        .position(|entry| entry.name == "state")?;
+    u8::try_from(idx).ok()
 }
 
 /// One vehicle's decoded build — the DECODE layer keeps both teams' builds
@@ -130,15 +166,29 @@ impl<'a> Cursor<'a> {
     }
 }
 
-/// Read one 15.9 `shipConfig` property value (the u8 length prefix, then the
+/// Read one BigWorld compact USER_TYPE/blob length prefix. Plain form: a u8
+/// length. The 0xff escape (u16 length + one dummy byte before the body) is
+/// the engine's standard variable-length encoding — the same framing
+/// `events::read_wire_blob` documents for STRING/BLOB — and 15.10 replays
+/// EXERCISE it (2026-11-05 Bermuda Triangle capture: Siegfried-1510 create
+/// states carry 255+ byte shipConfig blobs; verified by walking the state and
+/// finding the crew payload cleanly past the escaped blob). Returns the
+/// length and the cursor positioned at the blob body.
+fn read_blob_length(cursor: &mut Cursor<'_>) -> Option<usize> {
+    let flag = cursor.u8()? as usize;
+    if flag != 0xff {
+        return Some(flag);
+    }
+    let lo = cursor.u8()? as usize;
+    let hi = cursor.u8()? as usize;
+    let _dummy = cursor.u8()?;
+    Some(lo | (hi << 8))
+}
+
+/// Read one `shipConfig` property value (variable-length prefix, then the
 /// ShipConfig binary) and decode it.
 fn read_ship_config(cursor: &mut Cursor<'_>, version: (u32, u32, u32)) -> Option<ShipConfigRaw> {
-    let len = cursor.u8()? as usize;
-    // A 0xff length escape was never observed and its framing is unverified:
-    // refuse the entity instead of mis-slicing the rest of the property stream.
-    if len == 0xff {
-        return None;
-    }
+    let len = read_blob_length(cursor)?;
     let blob = cursor.take(len)?;
     decode_ship_config_blob(blob, version)
 }
@@ -315,6 +365,17 @@ fn skip_variable_property(cursor: &mut Cursor<'_>, name: &str) -> Option<()> {
                 skip_string(cursor)?;
             }
             Some(())
+        },
+        // 15.10 inserted this USER_TYPE property (CrewConfig.converter — an
+        // opaque client-converted blob) between shipConfig and
+        // crewModifiersCompactParams. It streams like shipConfig: a
+        // variable-length prefix (0xff escape included — every reference
+        // sample is short, but the framing is the engine's standard) then an
+        // opaque body. Verified on the 15.10 event capture: skipping this
+        // shape lands the walk exactly on the crew payload of every vehicle.
+        "crewConfig" => {
+            let len = read_blob_length(cursor)?;
+            cursor.skip(len)
         },
         _ => None,
     }

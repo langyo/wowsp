@@ -59,6 +59,7 @@ pub static LESTA_METHOD_IDS: MethodIds = MethodIds {
     avatar_receive_ward_added: 114,
     avatar_receive_ward_removed: 55,
     avatar_receive_shot_kills: 126,
+    avatar_receive_shield_damage_info: None,
     avatar_receive_damage_stat: Some(166),
     avatar_on_chat_message: -1,
     avatar_on_achievement_earned: 160,

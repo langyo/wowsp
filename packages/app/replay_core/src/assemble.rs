@@ -523,6 +523,10 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         // ReplayStream shape stays build-free — several experiment modules
         // construct it literally).
         vehicle_builds: _,
+        shield_damage_events,
+        shield_state_events,
+        shield_markers,
+        gun_overheats,
     } = decoded;
     // The recorder's team slot comes from its own arena entry.
     let self_team = arena_players.iter().find(|p| p.is_self).map(|p| p.team_id);
@@ -676,6 +680,10 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         weather_transitions,
         weather_notifications,
         self_team,
+        shield_damage_events,
+        shield_state_events,
+        shield_markers,
+        gun_overheats,
     }
 }
 
@@ -764,6 +772,10 @@ mod tests {
             consumable_uses: Vec::new(),
             engine_states: Vec::new(),
             vehicle_builds: Vec::new(),
+            shield_damage_events: Vec::new(),
+            shield_state_events: Vec::new(),
+            shield_markers: Vec::new(),
+            gun_overheats: Vec::new(),
         }
     }
 

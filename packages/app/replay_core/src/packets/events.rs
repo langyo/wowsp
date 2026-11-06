@@ -1,4 +1,54 @@
 use super::*;
+/// Decode `receiveShieldDamageInfo` args (15.10.0's shield-damage broadcast):
+/// `i32 victimId, i32 hitOwnerId, u32 shieldDamage, u8 hitYaw` — 13 bytes.
+/// The victim id is a Vehicle entity; the attacker id is the owner entity
+/// the broadcast carries — an AVATAR id for the recorder's own hits, a
+/// vehicle id, or 0 when withheld (observed on bot-owned damage in the
+/// reference capture) — so consumers join it against both entity maps.
+/// The yaw is the engine's 0..=255 quantized impact bearing. Verified on the
+/// 2026-11-05 Bermuda Triangle capture: 200 calls, the 770-damage SAP shield
+/// cap among the observed values, every victim id a live vehicle.
+pub(super) fn decode_shield_damage_info(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::ShieldDamageEvent> {
+    if args.len() != 13 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::ShieldDamageEvent {
+        time,
+        victim_id: i32::from_le_bytes(read_bytes(args, 0)?),
+        attacker_id: i32::from_le_bytes(read_bytes(args, 4)?),
+        shield_damage: u32::from_le_bytes(read_bytes(args, 8)?),
+        hit_yaw: args[12],
+    })
+}
+
+/// Decode `setGunOverheated` args (15.10.0's gun-heat mechanic):
+/// `u8 weaponType, u8 gunID, BOOL isOverheated` — 3 bytes, one call per gun
+/// entering or leaving the overheated state. The heat LEVEL itself is
+/// client-local and never replicates (the per-gun heat percentage only shows
+/// on the owning client), so this boolean transition is the only wire trace.
+/// Verified against the 15.10.0 entity defs (exposed id 21); the reference
+/// capture carries no calls — the decoder arms on the pinned id and a
+/// 3-byte shape gate, so a misidentified id decodes nothing rather than
+/// plausible-looking garbage.
+pub(super) fn decode_gun_overheated(
+    time: f32,
+    entity_id: i32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::GunOverheatEvent> {
+    if args.len() != 3 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::GunOverheatEvent {
+        time,
+        entity_id,
+        weapon_type: args[0],
+        gun_id: args[1],
+        is_overheated: args[2] != 0,
+    })
+}
 /// Decode `receive_addSquadron` args: u32 paramsID, u8 totalNumPlanes, then
 /// the `SQUADRON_STATE` fixed dict — i64 planeID, u32 skinID, u8 isActive,
 /// u8 numPlanes, f32×3 position, ... — then i64 parentID, u32 maxHealth,

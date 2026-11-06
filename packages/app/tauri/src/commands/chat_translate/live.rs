@@ -334,8 +334,17 @@ fn container_changed(progress: &SourceProgress, current: &TempContainer) -> bool
 fn decode_snapshot(bytes: &[u8], path: &Path, fallback_key: &str) -> Option<ChatSnapshot> {
     let descriptor = wowsp_replay_core::meta::extract_descriptor_json(bytes)?;
     let raw: Value = serde_json::from_str(&descriptor).ok()?;
-    let client_version =
-        wowsp_replay_core::meta::client_version_from_raw(raw.get("clientVersionFromExe"));
+    // The RAW descriptor form (comma-separated "15,10,0,13533378") — the
+    // version table selector parses exactly that shape. The dot-numeric
+    // normalization lives in `client_version_from_raw` for the replay-share
+    // CONTRACT's comparison only; feeding its output here used to silently
+    // fall through to the newest method table (the selector cannot parse
+    // dots), which the 15.10 row exposed when the synthetic 15.8 fixture's
+    // chat id stopped matching the newest-table assumption.
+    let client_version = raw
+        .get("clientVersionFromExe")
+        .and_then(Value::as_str)
+        .map(str::to_string);
     let roster = wowsp_replay_core::meta::roster_from_raw(path, &raw);
     let battle_key = raw
         .get("dateTime")

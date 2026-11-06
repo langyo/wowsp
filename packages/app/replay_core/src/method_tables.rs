@@ -22,6 +22,7 @@ pub struct MethodIds {
     pub avatar_receive_ward_added: i32,
     pub avatar_receive_ward_removed: i32,
     pub avatar_receive_shot_kills: i32,
+    pub avatar_receive_shield_damage_info: Option<i32>,
     /// Server-authoritative cumulative damage stats (receiveDamageStat).
     /// `None` for versions whose exposed id hasn't been pinned yet — the
     /// decoder then leaves the stream empty and the frontend falls back to
@@ -58,6 +59,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 53,
             avatar_receive_shot_kills: 109,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 58,
@@ -79,6 +81,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 53,
             avatar_receive_shot_kills: 109,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 58,
@@ -100,6 +103,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 96,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 107,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 124,
             avatar_on_achievement_earned: 54,
@@ -121,6 +125,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 110,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 127,
             avatar_on_achievement_earned: 54,
@@ -142,6 +147,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 110,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 127,
             avatar_on_achievement_earned: 54,
@@ -163,6 +169,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 110,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 127,
             avatar_on_achievement_earned: 54,
@@ -184,6 +191,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 97,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 108,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 125,
             avatar_on_achievement_earned: 53,
@@ -205,6 +213,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 97,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 108,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 125,
             avatar_on_achievement_earned: 53,
@@ -226,6 +235,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 97,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 108,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 53,
@@ -247,6 +257,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 110,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 53,
@@ -268,6 +279,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 52,
@@ -289,6 +301,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 126,
             avatar_on_achievement_earned: 52,
@@ -310,6 +323,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 99,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 110,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
@@ -331,6 +345,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
@@ -352,6 +367,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
@@ -373,6 +389,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 98,
             avatar_receive_ward_removed: 47,
             avatar_receive_shot_kills: 109,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 128,
             avatar_on_achievement_earned: 52,
@@ -394,6 +411,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 100,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 112,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 132,
             avatar_on_achievement_earned: 53,
@@ -415,6 +433,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
@@ -436,6 +455,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
@@ -457,6 +477,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
@@ -478,6 +499,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 101,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 113,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 133,
             avatar_on_achievement_earned: 53,
@@ -499,6 +521,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -520,6 +543,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -541,6 +565,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -562,6 +587,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -583,6 +609,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -604,6 +631,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -625,6 +653,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -646,6 +675,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -667,6 +697,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -688,6 +719,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 114,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 134,
             avatar_on_achievement_earned: 53,
@@ -709,6 +741,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(1),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 54,
@@ -730,6 +763,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(78),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
@@ -751,6 +785,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(78),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
@@ -772,6 +807,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(78),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
@@ -793,6 +829,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(78),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
@@ -814,6 +851,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(78),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
@@ -835,6 +873,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 104,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 118,
+            avatar_receive_shield_damage_info: Some(79),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 138,
             avatar_on_achievement_earned: 53,
@@ -856,6 +895,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(78),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
@@ -877,6 +917,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 103,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 117,
+            avatar_receive_shield_damage_info: Some(78),
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 137,
             avatar_on_achievement_earned: 53,
@@ -898,6 +939,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
@@ -919,6 +961,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
@@ -940,6 +983,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
@@ -961,6 +1005,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 102,
             avatar_receive_ward_removed: 48,
             avatar_receive_shot_kills: 116,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 136,
             avatar_on_achievement_earned: 53,
@@ -982,6 +1027,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 124,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 144,
             avatar_on_achievement_earned: 54,
@@ -1003,6 +1049,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 124,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 144,
             avatar_on_achievement_earned: 54,
@@ -1024,6 +1071,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 124,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 144,
             avatar_on_achievement_earned: 54,
@@ -1045,6 +1093,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 107,
             avatar_receive_ward_removed: 49,
             avatar_receive_shot_kills: 122,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 142,
             avatar_on_achievement_earned: 54,
@@ -1066,6 +1115,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 50,
             avatar_receive_shot_kills: 124,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 57,
@@ -1087,6 +1137,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
@@ -1108,6 +1159,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
@@ -1129,6 +1181,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
@@ -1150,6 +1203,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 110,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 125,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 146,
             avatar_on_achievement_earned: 58,
@@ -1171,6 +1225,7 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 112,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 127,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: None,
             avatar_on_chat_message: 148,
             avatar_on_achievement_earned: 58,
@@ -1182,20 +1237,18 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
     // scripts/gen_method_tables.py): three avatar methods inserted below the
     // battle-effect cluster shift it +3 (artillery 123→126, torpedoes
     // 124→127, shotKills 127→130, updateSquadron 142→145), while the
-    // squadron add/minimap ids keep their 15.7 values; receiveDamageStat —
-    // absent from every shipped def table so far — sits at 163.
-    // E10 (2026-09-20): recomputed from the authoritative entity defs of
-    // game build 13187581 — 13/13 anchors reproduce exactly after adopting
-    // the two def-derived corrections (2026-09-21, user-approved decode
-    // behaviour change): explosions=131 (the same +3 cluster shift as
+    // squadron add/minimap ids keep their 15.7 values; receiveDamageStat
+    // sits at 163. E10 (2026-09-20): recomputed from the authoritative entity
+    // defs of game build 13187581 — 13/13 anchors reproduce exactly after
+    // adopting the two def-derived corrections (2026-09-21, user-approved
+    // decode behaviour change): explosions=131 (the same +3 cluster shift as
     // artillery/torps/shotKills; 128 was the unshifted 15.7 carryover and
     // names updateMissileWaypoints) and wardRemoved=51 (id 50 is
     // receive_removeSquadron — it fires paired with
     // removeMinimapSquadron@49 on identical PLANE_IDs while wardAdded never
     // fires; the def-derived full table lives in the tests module with the
     // evidence).
-    // squadron add/minimap ids keep their 15.7 values; receiveDamageStat
-    // sits at 163. onChatMessage sits at 151 (args decode as plaintext
+    // onChatMessage sits at 151 (args decode as plaintext
     // chat: `i32 playerId, STRING namespace, STRING message, STRING unk` —
     // "battle_team" namespaces and real CJK/Latin text observed);
     // onAchievementEarned stays at 58 with args `i32 playerId, u32
@@ -1218,10 +1271,44 @@ pub static METHOD_TABLES: &[((u16, u16, u16), MethodIds)] = &[
             avatar_receive_ward_added: 112,
             avatar_receive_ward_removed: 51,
             avatar_receive_shot_kills: 130,
+            avatar_receive_shield_damage_info: None,
             avatar_receive_damage_stat: Some(163),
             avatar_on_chat_message: 151,
             avatar_on_achievement_earned: 58,
             avatar_on_arena_state_received: 153,
+        },
+    ),
+    // 15.10.0 has no reference entity definitions yet — this row is derived
+    // from the authoritative entity defs of game build 13533378 extracted from
+    // the local install (see EMPIRICAL_OVERRIDES): receiveShieldDamageInfo (the
+    // 15.10 shield mechanic's damage broadcast, args `i32 victimId, i32
+    // hitOwnerId, u32 shieldDamage, u8 hitYaw`) inserts at 87 and shifts every
+    // exposed id ≥ 87 up by one; ids below 87 keep their 15.8/15.9 values.
+    // 15.9.0's def-derived table is identical to the 15.8.0 pins (verified
+    // against build 13357625), so no 15.9 row exists — those replays ride the
+    // 15.8 row via the era floor. The vehicle-side shield/overheat method ids
+    // are NOT avatar table material: they pin in `layout_tables`
+    // (VEHICLE_GUN_STATE_LAYOUT) next to the E11 exact-minor ids.
+    (
+        (15, 10, 0),
+        MethodIds {
+            avatar_receive_artillery_shots: 127,
+            avatar_receive_torpedoes: 128,
+            avatar_receive_explosions: 132,
+            avatar_receive_torpedo_direction: 114,
+            avatar_receive_add_squadron: 117,
+            avatar_receive_update_squadron: 146,
+            avatar_receive_add_minimap_squadron: 102,
+            avatar_receive_update_minimap_squadron: 94,
+            avatar_receive_remove_minimap_squadron: 49,
+            avatar_receive_ward_added: 113,
+            avatar_receive_ward_removed: 51,
+            avatar_receive_shot_kills: 131,
+            avatar_receive_shield_damage_info: Some(87),
+            avatar_receive_damage_stat: Some(164),
+            avatar_on_chat_message: 152,
+            avatar_on_achievement_earned: 58,
+            avatar_on_arena_state_received: 154,
         },
     ),
 ];
@@ -1641,11 +1728,10 @@ mod tests {
     }
 
     /// The full 15.8.0 Avatar table agrees with the pinned 15.8.0 row on
-    /// 11/13 ids; the two disagreements are the documented stale pins (see
-    /// the row's comment): the defs (and the whole +3-shifted cluster around
-    /// them) say explosions=131 and wardRemoved=51, while the row keeps the
-    /// empirically-shipped 128 and 50. This test pins the residual in code —
-    /// whoever resolves the two stale pins must update it deliberately.
+    /// every id since the 2026-09-21 adoption of the two def-derived
+    /// corrections (explosions=131, wardRemoved=51 — see the row's comment
+    /// for the wire evidence); this test pins that agreement in code so a
+    /// regeneration that reintroduces a stale pin fails loudly.
     #[test]
     fn exposed_table_15_8_matches_pinned_row() {
         let row = method_ids_for_version(Some("15,8,0,13187581"));
@@ -1772,7 +1858,8 @@ mod tests {
         let is_15_8 = client_version.as_deref().and_then(parse_version_key) == Some((15, 8, 0));
         for (et, (distinct, resolved, calls, cov)) in stats {
             eprintln!(
-                "[e10] type {et}: {resolved}/{distinct} distinct ids ({:.0}%), {cov}/{calls} calls ({:.0}%)",
+                "[e10] type {et}: {resolved}/{distinct} distinct ids ({:.0}%), \
+{cov}/{calls} calls ({:.0}%)",
                 100.0 * resolved as f64 / distinct as f64,
                 100.0 * cov as f64 / calls as f64,
             );
