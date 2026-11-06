@@ -490,6 +490,31 @@ describe("ReportTimeline interaction", () => {
     expect(left + width).toBeLessThanOrEqual(100.001);
   });
 
+  it("keeps the annotation band below the track inside the plot gutter", async () => {
+    const w = mountTimeline({ capturing: true });
+    // DOM order: the track opens, the y-axis rides INSIDE it, the track
+    // closes, and only then does the annotation band begin.
+    const html = w.html();
+    const at = (needle: string) => html.indexOf(needle);
+    const track = at('class="srp-tl__track"');
+    const yaxis = at('class="srp-tl__yaxis"');
+    const callouts = at('class="srp-tl__callouts"');
+    expect(track).toBeGreaterThan(-1);
+    expect(yaxis).toBeGreaterThan(track);
+    expect(callouts).toBeGreaterThan(yaxis);
+    expect(w.find(".srp-tl__track .srp-tl__yaxis").exists()).toBe(true);
+    // The plot keeps its y-axis gutter (the band rides the padded box, not
+    // the gutter).
+    expect(w.find(".srp-tl__plot").attributes("style")).toContain(
+      "padding-left: 54px",
+    );
+    // Leaders start exactly at the lane centre (20 + 10 + 158 + 10) and the
+    // lane-0 leader reaches the band top.
+    const leader = w.find(".srp-tl__leader").attributes("style") ?? "";
+    expect(leader).toContain("top: -198px");
+    expect(leader).toContain("height: 198px");
+  });
+
   it("renders the y axis in the captured image too", async () => {
     const w = mountTimeline({ capturing: true });
     expect(w.findAll(".srp-tl__yaxis-mark")).toHaveLength(5);

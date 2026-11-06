@@ -89,6 +89,15 @@
     letter-spacing: 0.02em;
   }
 
+  /** MapNameTag reads theme tokens that swing with the app theme; the sheet
+   *  is a fixed dark artifact, so the chip's inks pin to the sheet's own
+   *  palette (shape/radius/padding stay MapNameTag's). */
+  &__meta-map.map-tag {
+    color: var(--srp-ally);
+    border-color: rgba(87, 166, 255, 0.35);
+    background: rgba(87, 166, 255, 0.1);
+  }
+
   &__scores {
     display: flex;
     align-items: flex-end;
@@ -1054,6 +1063,13 @@
   &__gaps--top,
   &__gaps--track {
     z-index: 1;
+  }
+
+  &__gaps--track {
+    /* Clip to the track's rounded corners without an overflow:hidden on the
+       track itself — the y-axis child lives outside this box in the gutter
+       and must stay visible. */
+    clip-path: inset(0 round 6px);
   }
 }
 
