@@ -58,6 +58,7 @@ from pathlib import Path
 # `python scripts/mod_hub_publish.py`).
 import mod_hub_families
 import mod_package_check
+import mod_package_hygiene
 import publish_digests
 
 REPO = "langyo/wowsp"
@@ -650,6 +651,7 @@ def download(cache: Path) -> None:
         repacked_names = set(json.loads(repacked_path.read_text(encoding="utf-8")))
     done = 0
     dropped = 0
+    junk_total = 0
     for mod in state["mods"]:
         kept_packages = []
         for pkg in mod["packages"]:
@@ -698,6 +700,23 @@ def download(cache: Path) -> None:
                           f"(magic {data[:6].hex()})", file=sys.stderr, flush=True)
                     dropped += 1
                     continue
+            # Preview/screenshot junk never reaches the release: the
+            # publish-side twin of the app's install filter strips it from the
+            # bytes users download. Junk-free packages come back unchanged
+            # (same hash/size, no discussion-line churn).
+            cleaned, pruned_junk = mod_package_hygiene.strip_zip_bytes(data)
+            if pruned_junk:
+                data = cleaned
+                dest.write_bytes(data)
+                junk_total += pruned_junk
+                # The served size no longer matches Aslain's catalog entry:
+                # remember the package like a 7z repack so the size-drift
+                # warning stays quiet on later runs.
+                repacked_names.add(sidecar_key(mod["id"], pkg["name"]))
+                repacked_path.write_text(
+                    json.dumps(sorted(repacked_names), indent=1), encoding="utf-8")
+                print(f"  pruned {pruned_junk} preview/screenshot file(s): "
+                      f"{pkg['name']}", flush=True)
             pkg["sha256"] = hashlib.sha256(data).hexdigest()
             pkg["size_bytes"] = len(data)
             # Aslain's size describes the original container; a repacked
@@ -723,7 +742,8 @@ def download(cache: Path) -> None:
         print(f"dropped {before - len(state['mods'])} mods with no remaining packages",
               file=sys.stderr, flush=True)
     (cache / "downloaded.json").write_text(json.dumps(state, ensure_ascii=False, indent=1), encoding="utf-8")
-    print(f"{done} packages downloaded & hashed, {dropped} dropped -> {pkgs_dir}")
+    print(f"{done} packages downloaded & hashed, {dropped} dropped, "
+          f"{junk_total} preview/screenshot file(s) pruned -> {pkgs_dir}")
 
 
 def downloaded_state(cache: Path) -> dict:
@@ -1772,6 +1792,7 @@ def selftest() -> None:
         (cdir / "downloaded.json").write_text(json.dumps(state), encoding="utf-8")
         assert validate_stage(cdir, strict=False) == 1, "hard fail ignores --strict"
     mod_hub_families.selftest()
+    mod_package_hygiene.selftest()
     print("selftest ok")
 
 
