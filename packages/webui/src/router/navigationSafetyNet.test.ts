@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sanitizeHistoryUrl } from "@celestia-island/hikari/runtime";
 
+import { router } from "./index";
+
 /**
  * Field regression (2026-11-05): a history entry whose persisted router
  * state carried a garbage `current` segment ("undefined/") made every
@@ -18,6 +20,11 @@ import { sanitizeHistoryUrl } from "@celestia-island/hikari/runtime";
  * (see router/index.ts); these tests pin the two behaviors that close the
  * crash class: the History-prototype fold below the router, and the
  * self-heal once a navigation succeeds.
+ *
+ * The router module imports STATICALLY: the cold hikari + vue-router graph
+ * costs seconds through vitest's transform, and a dynamic import inside a
+ * test body put that cost under the 20s testTimeout ceiling (one field of
+ * the full suite blew it). Collection time is not per-test timed.
  */
 
 /** The exact state shape a poisoned producer leaves on the entry. */
@@ -39,12 +46,14 @@ describe("router navigation safety net", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
-    vi.resetModules();
   });
 
-  it("a push over a poisoned history entry folds, navigates, and heals the state", async () => {
+  // Explicit budgets: the bodies are milliseconds standalone, but on a
+  // loaded dev machine (full suite in parallel with the user's own node
+  // processes) a starved worker can blow the shared 20s ceiling on exactly
+  // the tests that await scheduler progress. CI runners are quiet.
+  it("a push over a poisoned history entry folds, navigates, and heals the state", { timeout: 60_000 }, async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const { router } = await import("./index");
 
     // First navigation after boot (the router's isReady() navigation) —
     // lands clean; this is what a healthy session looks like.
@@ -72,9 +81,8 @@ describe("router navigation safety net", () => {
     );
   });
 
-  it("a direct off-origin pushState producer is folded below the History API", async () => {
+  it("a direct off-origin pushState producer is folded below the History API", { timeout: 60_000 }, async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    await import("./index");
 
     window.history.pushState({}, "", "https://evil.example/poison");
 
