@@ -646,8 +646,7 @@
     "noData": "No resolvable data for this ship",
     "gapNote": " — unresolvable for {s}s (not observed)",
     "recorder": "recorder",
-    "diedAt": "lost at {t}s",
-    "survived": "survived",
+    "diedAt": "Lost at {t}",
     "duration": "Duration {t}",
     "contribution": "Contribution (window HP)",
     "perShot": "{v} / fired window",
@@ -692,7 +691,8 @@
     "axisHint": "Higher means closer to the AI expectation",
     "aiNotice": "This is an AI diagnosis, not a verdict on the player's long-term performance — for reference only",
     "aiVersion": "WoWSP AI {version} · weights trained {date}",
-    "replayHash": "Replay hash (last six)"
+    "replayHash": "Replay hash (last six)",
+    "survivedAtEnd": "Alive at battle end"
   },
   "detail": {
     "title": "Battle detail"

@@ -646,8 +646,7 @@
     "noData": "Aucune donnée pour ce navire",
     "gapNote": " — {s} s non observées (irrésolubles)",
     "recorder": "enregistreur",
-    "diedAt": "perdu à {t} s",
-    "survived": "survécu",
+    "diedAt": "Coulé à {t}",
     "duration": "Durée {t}",
     "contribution": "Contribution (dégâts fenêtre)",
     "perShot": "{v} par fenêtre",
@@ -692,7 +691,8 @@
     "axisHint": "Plus haut = plus proche des attentes de l'IA",
     "aiNotice": "Ce résultat est un diagnostic de l'IA, pas une évaluation du niveau à long terme du joueur — à titre indicatif",
     "aiVersion": "WoWSP AI {version} · poids entraînés {date}",
-    "replayHash": "Empreinte du replay (6 derniers)"
+    "replayHash": "Empreinte du replay (6 derniers)",
+    "survivedAtEnd": "En vie à la fin du combat"
   },
   "detail": {
     "title": "Détail de la bataille"

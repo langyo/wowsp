@@ -646,8 +646,7 @@
     "noData": "이 함선의 데이터 없음",
     "gapNote": "— 그중 {s}초는 미발견으로 해석 불가",
     "recorder": "녹화자",
-    "diedAt": "{t}초 격침",
-    "survived": "생존",
+    "diedAt": "격침 {t}",
     "duration": "지속 시간 {t}",
     "contribution": "기여도(윈도우 피해)",
     "perShot": "창당 {v}",
@@ -692,7 +691,8 @@
     "axisHint": "높을수록 AI 예상에 가깝습니다",
     "aiNotice": "이 결과는 AI 진단 결과로, 플레이어의 장기 실력을 대변하지 않습니다. 참고용입니다",
     "aiVersion": "WoWSP AI {version} · 가중치 학습 {date}",
-    "replayHash": "리플레이 해시(끝 6자리)"
+    "replayHash": "리플레이 해시(끝 6자리)",
+    "survivedAtEnd": "전투 종료까지 생존"
   },
   "detail": {
     "title": "전투 상세"

@@ -6,9 +6,12 @@
  */
 import type { DogTag } from "@/api";
 
-/** One roster row's display metadata (the picker's ship-icon faces). */
+/** One roster row's display metadata (the picker's ship-icon faces and the
+ *  identity head's emblem). */
 export interface ReportRosterInfo {
   clanTag: string | null;
+  /** The player's in-game emblem off the same roster batch. */
+  dogTag: DogTag | null;
   /** WG ship type for BattleIcon ("" when the encyclopedia lacks the ship). */
   shipType: string | null;
   shipName: string | null;
@@ -28,10 +31,12 @@ export interface ReportSheetIdentity {
 
 /** Which battle the report reads (the head's top-right meta line). */
 export interface ReportSheetMeta {
-  /** Localized official map name (null → the report's own space id). */
-  mapName: string | null;
+  /** Game-asset language for MapNameTag (the replay header's own map chip). */
+  mapLang: string | null;
   /** Localized game-mode label. */
   modeLabel: string | null;
+  /** Mode chip ink (AppTag `color`), the replay header's source. */
+  modeColor: string | null;
   /** Battle start ("YYYY-MM-DD HH:mm"), reparsed from the replay name. */
   battleStart: string | null;
   /** Full SHA-256 hex of the replay file; the sheet shows the tail. */
@@ -44,25 +49,4 @@ export interface ReportSheetView {
   meta: ReportSheetMeta;
   /** entityId → picker-face metadata (missing rows fall back to the dot). */
   roster: Map<number, ReportRosterInfo>;
-}
-
-/** Identity lookups outlive a perspective switch: the cache key must carry the
- *  cluster (a nickname can exist on two realms with different clans/emblems). */
-export function identityCacheKey(realm: string, name: string): string {
-  return realm + "\u0000" + name;
-}
-
-/** Latest-wins ticket gate for the async identity lookups. Every resolve
- *  takes a ticket BEFORE touching the cache: a cache HIT must also invalidate
- *  any in-flight lookup, or switching A -> (pending) B -> back to A lets B's
- *  late answer overwrite A's identity on the sheet (2026-11-06 review). */
-export function createIdentityGate(): {
-  next: () => number;
-  isCurrent: (ticket: number) => boolean;
-} {
-  let seq = 0;
-  return {
-    next: () => ++seq,
-    isCurrent: (ticket: number) => ticket === seq,
-  };
 }

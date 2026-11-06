@@ -35,13 +35,14 @@ import { computed, defineComponent, nextTick, ref, type PropType } from "vue";
 import { HkScrollContainer } from "@celestia-island/hikari";
 
 import AppTag from "@/components/base/AppTag";
+import MapNameTag from "@/features/replay/MapNameTag";
 import ShotFooter from "@/features/share/ShotFooter";
 import { aiModelVersion } from "@/features/ai/modelVersion";
 import { t } from "@/i18n";
 import type { StaticReport, StaticRosterEntry } from "@/api";
 import ReportPlayerPicker from "./ReportPlayerPicker";
 import ReportTimeline from "./ReportTimeline";
-import { formatDuration, formatHp, pct } from "./reportFormat";
+import { formatClock, formatDuration, formatHp, pct } from "./reportFormat";
 import type { ReportSheetView } from "./reportSheet";
 import "./StaticReportPanel.scss";
 
@@ -119,15 +120,9 @@ export default defineComponent({
     const me = computed<StaticRosterEntry | undefined>(() =>
       props.report.roster.find((row) => row.entityId === props.report.entityId),
     );
-    /** Top-right battle provenance: map, mode, start time, replay hash tail
-     *  and duration — the header the replay's own meta row carries, trimmed
-     *  to fit the sheet. */
-    const mapLabel = computed(
-      () =>
-        props.sheet?.meta.mapName ??
-        props.report.mapName?.replace("spaces/", "") ??
-        "",
-    );
+    /** Top-right battle provenance: map, mode, start time, fate, replay
+     *  hash tail and duration — the header the replay's own meta row
+     *  carries, trimmed to fit the sheet. */
     const modeLabel = computed(() => props.sheet?.meta.modeLabel ?? null);
     const battleStart = computed(() => props.sheet?.meta.battleStart ?? null);
     const hashTail = computed(() => {
@@ -195,25 +190,42 @@ export default defineComponent({
                 {me.value?.isRecorder ? (
                   <AppTag tone="info">{t("replay.report.recorder")}</AppTag>
                 ) : null}
-                {me.value?.diedAt != null ? (
-                  <AppTag tone="danger">
-                    {t("replay.report.diedAt", {
-                      t: Math.round(me.value.diedAt),
-                    })}
-                  </AppTag>
-                ) : (
-                  <AppTag tone="success">{t("replay.report.survived")}</AppTag>
-                )}
                 <div class="srp-head__meta">
-                  <span class="srp-head__meta-map">{mapLabel.value}</span>
+                  <MapNameTag
+                    class="srp-head__meta-map"
+                    spaceId={props.report.mapName}
+                    lang={props.sheet?.meta.mapLang ?? null}
+                  />
                   {modeLabel.value ? (
-                    <span class="srp-head__mode">{modeLabel.value}</span>
+                    <AppTag
+                      color={props.sheet?.meta.modeColor ?? undefined}
+                      class="srp-head__mode"
+                    >
+                      {modeLabel.value}
+                    </AppTag>
                   ) : null}
                   {battleStart.value ? (
                     <span class="srp-head__meta-item">
                       {battleStart.value}
                     </span>
                   ) : null}
+                  {me.value?.diedAt != null ? (
+                    <AppTag
+                      tone="danger"
+                      class="srp-head__fate"
+                      data-hint={t("replay.report.diedAt", {
+                        t: formatClock(me.value.diedAt),
+                      })}
+                    >
+                      {t("replay.report.diedAt", {
+                        t: formatClock(me.value.diedAt),
+                      })}
+                    </AppTag>
+                  ) : (
+                    <AppTag tone="success" class="srp-head__fate">
+                      {t("replay.report.survivedAtEnd")}
+                    </AppTag>
+                  )}
                   {hashTail.value ? (
                     <span
                       class="srp-head__hash"

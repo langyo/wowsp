@@ -646,8 +646,7 @@
     "noData": "该舰无可用数据",
     "gapNote": "——其中 {s} 秒未被侦测、无法解析",
     "recorder": "录制者",
-    "diedAt": "{t} 秒阵亡",
-    "survived": "存活",
+    "diedAt": "阵亡 {t}",
     "duration": "时长 {t}",
     "contribution": "贡献（窗口伤害）",
     "perShot": "每窗口 {v}",
@@ -692,7 +691,8 @@
     "axisHint": "越高越符合 AI 预期",
     "aiNotice": "该结果为 AI 诊断结果，不代表玩家长期水平，仅供参考",
     "aiVersion": "WoWSP AI {version} · 权重训练 {date}",
-    "replayHash": "录像哈希（后六位）"
+    "replayHash": "录像哈希（后六位）",
+    "survivedAtEnd": "对局结束后存活"
   },
   "detail": {
     "title": "对局详情"

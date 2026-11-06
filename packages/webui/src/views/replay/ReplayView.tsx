@@ -133,13 +133,11 @@ import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { PlayerStats } from "@/api";
-import {
-  createIdentityGate,
-  identityCacheKey,
-  type ReportRosterInfo,
-  type ReportSheetIdentity,
-  type ReportSheetMeta,
-  type ReportSheetView,
+import type {
+  ReportRosterInfo,
+  ReportSheetIdentity,
+  ReportSheetMeta,
+  ReportSheetView,
 } from "@/features/holographic/reportSheet";
 import "./ReplayView.scss";
 
@@ -2102,7 +2100,6 @@ export default defineComponent({
         const report = await api.decisionStaticReport(path, entityId ?? null);
         if (seq !== staticReportSeq) return;
         staticReport.value = report;
-        void resolveReportIdentity(report);
       } catch (err) {
         if (seq !== staticReportSeq) return;
         staticReportError.value = String(err);
@@ -2123,12 +2120,7 @@ export default defineComponent({
     const reportRosterStats = ref<Map<string, RosterStat>>(new Map());
     /** The opened replay's SHA-256 (the sheet prints its six-char tail). */
     const replayHash = ref<string | null>(null);
-    /** The selected perspective's emblem/clan (resolved on demand). */
-    const reportIdentity = ref<ReportSheetIdentity | null>(null);
-    const identityCache = new Map<string, ReportSheetIdentity>();
-    const identityGate = createIdentityGate();
     let sheetFacesSeq = 0;
-    const reportStatsStore = useStatsStore();
 
     /** One open = one hash fetch + one roster batch. The seq guard keeps a
      *  slow answer for a previously opened replay from patching the sheet. */
@@ -2138,9 +2130,6 @@ export default defineComponent({
         const seq = ++sheetFacesSeq;
         replayHash.value = null;
         reportRosterStats.value = new Map();
-        reportIdentity.value = null;
-        // A new replay orphans any in-flight identity lookup of the old one.
-        identityGate.next();
         if (!path) return;
         // The hash and the roster faces are independent: hashing a multi-MB
         // replay must not hold the picker's clan tags hostage.
@@ -2176,6 +2165,7 @@ export default defineComponent({
         const ship = vehicle.shipId != null ? ships.get(vehicle.shipId) : null;
         faces.set(vehicle.id, {
           clanTag: reportRosterStats.value.get(vehicle.name)?.clanTag ?? null,
+          dogTag: reportRosterStats.value.get(vehicle.name)?.dogTag ?? null,
           shipType: ship?.type ?? null,
           shipName: ship
             ? encyclopedia.shipDisplayName(ship)
@@ -2191,7 +2181,7 @@ export default defineComponent({
       const cur = parser.current.value;
       const operation = spawnSymmetryOperation.value;
       return {
-        mapName: cur?.mapName ? displayMapName(cur.mapName, mapLang.value) : null,
+        mapLang: mapLang.value,
         modeLabel: !cur?.matchGroup
           ? null
           : operation
@@ -2204,66 +2194,47 @@ export default defineComponent({
                 cur.scriptedUnitCount ?? 0,
                 hasSingleTeamRoster(cur.vehicles),
               ),
+        modeColor: !cur?.matchGroup
+          ? null
+          : operation
+            ? modeColorOfKey("operation").color
+            : modeColor(
+                cur.matchGroup,
+                cur.scenario,
+                cur.eventType,
+                cur.botCount ?? 0,
+                cur.scriptedUnitCount ?? 0,
+                hasSingleTeamRoster(cur.vehicles),
+              ).color,
         battleStart: cur?.dateTime ? formatDateTime(cur.dateTime) : null,
         replayHash: replayHash.value,
       };
     });
 
-    /** Identity faces the report roster alone can answer (no network). */
-    function fallbackReportIdentity(report: StaticReport): ReportSheetIdentity {
+    /** Identity faces straight off the sheet's roster faces — the emblem
+     *  rides the same roster batch as the clan tags, so the head shows the
+     *  player's REAL in-game badge with no second lookup. */
+    function reportIdentityFor(report: StaticReport): ReportSheetIdentity {
       const row = report.roster.find((entry) => entry.entityId === report.entityId);
       const face = reportRosterFaces.value.get(report.entityId);
       return {
         name: row?.playerName ?? row?.name ?? String(report.entityId),
         clanTag: face?.clanTag ?? null,
-        dogTag: null,
+        dogTag: face?.dogTag ?? null,
         shipType: face?.shipType ?? null,
         shipName: face?.shipName ?? null,
         tier: face?.tier ?? null,
       };
     }
 
-    /** Resolve the perspective's emblem/clan off the shared stats store (the
-     *  same cache every water-table surface reads). Bots and offline profiles
-     *  keep the fallback identity; switches race-guard through identitySeq. */
-    async function resolveReportIdentity(report: StaticReport): Promise<void> {
-      const base = fallbackReportIdentity(report);
-      // Ticket BEFORE the cache check: a cache hit must still invalidate any
-      // in-flight lookup, or switching A -> B (pending) -> A lets B's late
-      // answer overwrite A's identity (2026-11-06 review).
-      const seq = identityGate.next();
-      const cacheKey = identityCacheKey(realm.value, base.name);
-      const cached = identityCache.get(cacheKey);
-      if (cached) {
-        reportIdentity.value = {
-          ...base,
-          clanTag: cached.clanTag ?? base.clanTag,
-          dogTag: cached.dogTag,
-        };
-        return;
-      }
-      reportIdentity.value = base;
-      if (isAiName(base.name) || !realm.value) return;
-      try {
-        const landed = await reportStatsStore.lookup(base.name, realm.value);
-        if (!identityGate.isCurrent(seq)) return;
-        const resolved: ReportSheetIdentity = {
-          ...base,
-          clanTag: landed.clanTag ?? base.clanTag,
-          dogTag: landed.dogTag ?? null,
-        };
-        identityCache.set(cacheKey, resolved);
-        reportIdentity.value = resolved;
-      } catch {
-        /* offline / hidden profile: the fallback identity stays */
-      }
-    }
-
+    /** Identity faces straight off the sheet's roster faces — the emblem
+     *  rides the same roster batch as the clan tags, so the head shows the
+     *  player's REAL in-game badge with no second lookup. */
     const reportSheet = computed<ReportSheetView | null>(() => {
       const report = staticReport.value;
       if (!report) return null;
       return {
-        identity: reportIdentity.value ?? fallbackReportIdentity(report),
+        identity: reportIdentityFor(report),
         meta: reportSheetMeta.value,
         roster: reportRosterFaces.value,
       };
