@@ -192,6 +192,7 @@ pub(crate) async fn mod_catalog_install_inner(
                 conflicts: Vec::new(),
                 mirrored_bins: Vec::new(),
                 skipped: version_warning,
+                pruned_files: 0,
             });
         }
         tracing::warn!(id = %entry.id, game = %entry.game, client, "{warning}");

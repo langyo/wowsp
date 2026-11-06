@@ -107,6 +107,25 @@ export function installerLabel(installer: string): string {
   return installer;
 }
 
+/** The source tag of one known-mod relation row (the ledger's `source`
+ *  vocabulary plus the derived `shared` / `catalog` kinds). */
+export function relationSourceLabel(source: string): string {
+  switch (source) {
+    case "shared":
+      return t("resources.relatedSource.shared");
+    case "mod-hub":
+      return t("resources.relatedSource.managed");
+    case "local":
+      return t("resources.relatedSource.local");
+    case "catalog":
+      return t("resources.relatedSource.catalog");
+    case "aslain":
+      return t("resources.relatedSource.aslain");
+    default:
+      return installerLabel(source);
+  }
+}
+
 /** Big category of an installed unit's kind (preview routing). */
 export function bigOfKind(kind: string): string {
   return (KIND_BIG as Record<string, string>)[kind] ?? "function";

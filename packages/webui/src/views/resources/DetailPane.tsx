@@ -5,12 +5,15 @@
 import {
   AlertTriangle,
   Ban,
+  Boxes,
+  ChevronDown,
   CircleCheck,
   Ellipsis,
   ExternalLink,
   FolderOpen,
   FolderSearch,
   ImageIcon,
+  Link2,
   ListTree,
   MousePointerClick,
   Puzzle,
@@ -33,6 +36,7 @@ import ErrorCard from "@/components/base/ErrorCard";
 import { KIND_META, catIcon, isCatalogCat } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
 import { applicableRealms, serverScopeOf } from "@/features/modhub/servers";
+import type { UnitRelation } from "@/features/modhub/unitRelations";
 import AssetPreview from "@/features/modhub/AssetPreview";
 import { openExternal } from "@/utils/openExternal";
 import { mediaImageUrl } from "@/utils/media";
@@ -48,6 +52,7 @@ import {
   presetLabel,
   presetSwitched,
   realmLabel,
+  relationSourceLabel,
   tagLabel,
   texLabel,
 } from "./display";
@@ -457,6 +462,145 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
   );
 }
 
+/** The catalog entry a related row's id resolves to (exact id, else a
+ *  folded family's superseded legacy id). */
+function relationEntryOf(ctx: ResourcesCtx, catalogId: string): CatalogEntry | null {
+  return (
+    ctx.catalog.value.find(
+      (entry) =>
+        entry.id === catalogId || entry.supersedes?.[catalogId] !== undefined,
+    ) ?? null
+  );
+}
+
+/** The source tag's tone for one relation row. */
+function relationSourceTone(source: string): "default" | "primary" | "info" {
+  if (source === "mod-hub") return "primary";
+  if (source === "catalog") return "info";
+  return "default";
+}
+
+/** One related-mod row of the installed pane's bottom drawer. */
+function renderRelatedRow(ctx: ResourcesCtx, rel: UnitRelation) {
+  const entry = rel.catalogId ? relationEntryOf(ctx, rel.catalogId) : null;
+  return (
+    <div class="mod-detail__related-row" key={rel.key}>
+      <div class="mod-detail__related-main">
+        <span class="mod-detail__related-name">
+          {rel.name}
+          {rel.version && (
+            <AppTag class="mod-row__ver" tone="default" mono>
+              {rel.version}
+            </AppTag>
+          )}
+        </span>
+        <span class="mod-detail__related-badges">
+          <AppTag tone={relationSourceTone(rel.source)} face="outline">
+            {relationSourceLabel(rel.source)}
+          </AppTag>
+          {rel.own && <AppTag tone="success">{t("resources.relatedOwn")}</AppTag>}
+          {rel.shared && (
+            <AppTag tone="default" face="outline">
+              {t("resources.relatedShared")}
+            </AppTag>
+          )}
+          {rel.dependency && (
+            <AppTag tone="primary" face="outline">
+              {t("resources.relatedDependency")}
+            </AppTag>
+          )}
+          {entry && (
+            <button
+              class="mod-detail__link mod-detail__related-jump"
+              onClick={() => ctx.selectCatalog(entry)}
+            >
+              <Link2 size={12} />
+              {t("resources.relatedJump")}
+            </button>
+          )}
+        </span>
+        {(rel.files > 0 || rel.totalFiles > 0) && (
+          <span class="mod-detail__related-files">
+            {rel.files > 0 && (
+              <span>{t("resources.relatedFilesHere", { count: rel.files })}</span>
+            )}
+            {rel.totalFiles > 0 && (
+              <span>{t("resources.relatedFilesAll", { count: rel.totalFiles })}</span>
+            )}
+          </span>
+        )}
+      </div>
+      <div class="mod-detail__related-actions">
+        {rel.removable ? (
+          <button
+            class="mod-detail__danger mod-detail__related-remove"
+            data-hint={t("resources.relatedRemoveHint")}
+            onClick={() => ctx.requestRelatedRemove(rel)}
+          >
+            <Trash2 size={12} />
+            {t("resources.uninstall")}
+          </button>
+        ) : (
+          <span class="mod-detail__related-hint">
+            {t("resources.relatedSharedHint")}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The installed pane's bottom drawer: every known mod claiming files in
+ *  this unit, expandable directly above the action row. Collapsed by
+ *  default (`relatedOpen`) so a long association list never pushes the
+ *  pane's actions off screen; the expanded body scrolls inside its own
+ *  max-height. */
+function renderRelatedDrawer(ctx: ResourcesCtx, mod: InstalledMod) {
+  const relations = ctx.relationsOf(mod);
+  const open = ctx.relatedOpen.value;
+  return (
+    <div class="mod-detail__related">
+      <button
+        type="button"
+        class="mod-detail__related-head"
+        aria-expanded={open}
+        data-hint={t("resources.relatedTitle")}
+        onClick={ctx.toggleRelated}
+      >
+        <Boxes size={14} />
+        <span class="mod-detail__related-title">
+          {t("resources.relatedTitle")}
+        </span>
+        <AppTag tone="primary">
+          {t("resources.relatedCount", { count: relations.length })}
+        </AppTag>
+        <ChevronDown
+          size={14}
+          class={{ "mod-detail__related-chevron": true, "is-open": open }}
+        />
+      </button>
+      {open && (
+        <HkScrollContainer class="mod-detail__related-scroll">
+          <div class="mod-detail__related-body">
+            {relations.length === 0 ? (
+              <p class="mod-detail__related-empty">
+                {t("resources.relatedEmpty")}
+              </p>
+            ) : (
+              <>
+                <p class="mod-detail__related-total">
+                  {t("resources.relatedTotal", { count: relations.length })}
+                </p>
+                {relations.map((rel) => renderRelatedRow(ctx, rel))}
+              </>
+            )}
+          </div>
+        </HkScrollContainer>
+      )}
+    </div>
+  );
+}
+
 function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
   const meta = KIND_META[mod.kind];
   const Icon = meta.icon;
@@ -504,6 +648,32 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
             {ctx.isAslainUnit(mod) && (
               <AppTag face="outline">{t("resources.foreignSource.aslain")}</AppTag>
             )}
+          </div>
+        )}
+        {(mod.junkCount ?? 0) > 0 && (
+          <div class="mod-detail__junk">
+            <AlertTriangle size={14} />
+            <span
+              class="mod-detail__junk-text"
+              data-hint={(mod.junkFiles ?? []).join("\n")}
+            >
+              {t("resources.junkNotice", { count: mod.junkCount })}
+            </span>
+            <HkButton
+              size="sm"
+              variant="secondary"
+              loading={ctx.junkCleaning.value === mod.relPath}
+              disabled={
+                ctx.junkCleaning.value === mod.relPath ||
+                !!state ||
+                !ctx.gameRoot.value
+              }
+              onClick={() => void ctx.cleanUnitJunk(mod)}
+            >
+              {ctx.junkCleaning.value === mod.relPath
+                ? t("resources.junkCleaning")
+                : t("resources.junkClean")}
+            </HkButton>
           </div>
         )}
         {(() => {
@@ -574,6 +744,7 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
         {mod.paths.length === 0 && <p class="mod-detail__hint">{t("resources.manifestOnly")}</p>}
         </div>
       </HkScrollContainer>
+      {renderRelatedDrawer(ctx, mod)}
       <div class="mod-detail__foot">
         <div class="mod-detail__foot-row">
           {mod.paths.length > 0 ? (
@@ -812,6 +983,13 @@ function renderLocalDetail(ctx: ResourcesCtx) {
                   </li>
                 ))}
               </ul>
+            )}
+            {ctx.report.value.pruned > 0 && (
+              <p class="mod-detail__hint">
+                {t("resources.prunedPreviewFiles", {
+                  count: ctx.report.value.pruned,
+                })}
+              </p>
             )}
             {ctx.report.value.warnings.length > 0 && (
               <ul class="plan-card__warnings resources-report-warnings">

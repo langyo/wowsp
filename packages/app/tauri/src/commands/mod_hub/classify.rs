@@ -346,7 +346,14 @@ pub(crate) fn collect_plan_files(src: &Path, plan: &PackagePlan) -> anyhow::Resu
                         .unwrap_or(&path)
                         .to_string_lossy()
                         .replace('\\', "/");
-                    files.push(format!("{}/{}", entry.to_rel.trim_end_matches('/'), rel));
+                    let dest = format!("{}/{}", entry.to_rel.trim_end_matches('/'), rel);
+                    // Junk destinations are never written (see [`junk`]), so
+                    // the preview must not list them either — what the user
+                    // sees is exactly what the install puts down.
+                    if super::junk::is_junk_rel(&dest) {
+                        continue;
+                    }
+                    files.push(dest);
                 }
             }
         }

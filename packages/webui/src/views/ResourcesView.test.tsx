@@ -11,7 +11,7 @@ const mocks = vi.hoisted(() => ({
   },
   scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), loaderHealth: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
   bootInstaller: vi.fn(), disarm: vi.fn(),
-  adopt: vi.fn(), uninstall: vi.fn(), error: vi.fn(),
+  adopt: vi.fn(), uninstall: vi.fn(), cleanJunk: vi.fn(), error: vi.fn(),
   success: vi.fn(), warning: vi.fn(), info: vi.fn(),
   migrationPlan: vi.fn(),
   purgeBackups: vi.fn(),
@@ -26,6 +26,7 @@ vi.mock("@/api", () => ({ api: {
   modHubPnfLoaderStatus: mocks.loader, modHubLoaderHealth: mocks.loaderHealth, modHubSafeMode: mocks.safe, modHubReconcile: mocks.reconcile,
   modHubBootInstaller: mocks.bootInstaller, modHubDisarmBootInstaller: mocks.disarm,
   modHubUninstallUnit: mocks.uninstall,
+  modHubCleanUnitJunk: mocks.cleanJunk,
   modHubMigrationPlan: mocks.migrationPlan,
   modHubPurgeBackups: mocks.purgeBackups,
   modCatalogRefresh: mocks.catalog,
@@ -162,6 +163,7 @@ beforeEach(() => {
   mocks.safe.mockResolvedValue(false);
   mocks.reconcile.mockResolvedValue(null);
   mocks.records.mockResolvedValue([]);
+  mocks.cleanJunk.mockResolvedValue({ relPath: "PnFMods/test", removedFiles: 2 });
   mocks.clientUsage.mockResolvedValue({ totalBytes: 4096, files: 4, units: 2 });
   mocks.catalog.mockResolvedValue({ mods: [], sourceVersion: "test", fetchedAt: "" });
   mocks.purgeBackups.mockResolvedValue([]);
@@ -1130,6 +1132,203 @@ describe("entry clients window", () => {
       .findAllComponents({ name: "HkModal" })
       .find((m) => m.props("title") === "resources.entryClients.title");
     expect(modal?.props("modelValue")).toBe(true);
+  });
+});
+
+describe("installed-unit known-mod relations", () => {
+  const relatedRecord = (init: { id: string; name: string; files: string[] }) => ({
+    id: init.id,
+    name: init.name,
+    version: "1",
+    category: "battle",
+    source: "mod-hub",
+    binVersion: "1",
+    installedAt: "2026-11-01T00:00:00Z",
+    files: init.files,
+    gameRoot: "C:/TestGameA",
+  });
+  /** One installed unit whose tree two ledger records claim: its own
+   *  record (identity match) and a catch-all extra pack. */
+  async function mountRelated() {
+    mocks.scan.mockResolvedValue([
+      {
+        ...mod("Mod A"),
+        relPath: "PnFMods/a",
+        paths: ["PnFMods/a"],
+        identity: "mod-a",
+      } as InstalledMod,
+    ]);
+    mocks.records.mockResolvedValue([
+      relatedRecord({
+        id: "mod-a",
+        name: "Mod A",
+        files: ["PnFMods/a/main.py", "PnFMods/a/tex.dds"],
+      }),
+      relatedRecord({ id: "pack.extra", name: "Extra Pack", files: ["PnFMods/a/extra.txt"] }),
+    ]);
+    const view = await mountInstalled();
+    await view.find(".mod-row").trigger("click");
+    await flushPromises();
+    return view;
+  }
+
+  it("tags installed rows with the known-mod association count", async () => {
+    const view = await mountRelated();
+    const tags = view.findAll('.mod-row__tail [data-hint="resources.relatedTitle"]');
+    expect(tags).toHaveLength(1);
+    expect(tags[0].text()).toBe("resources.relatedCount");
+    expect(t).toHaveBeenCalledWith("resources.relatedCount", { count: 2 });
+  });
+
+  it("expands the pane's bottom drawer and lists each known mod", async () => {
+    const view = await mountRelated();
+    expect(view.find(".mod-detail__related").exists()).toBe(true);
+    // Collapsed by default: the head stays, the row list does not.
+    expect(view.findAll(".mod-detail__related-row")).toHaveLength(0);
+    await view.find(".mod-detail__related-head").trigger("click");
+    const rows = view.findAll(".mod-detail__related-row");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].find(".mod-detail__related-name").text()).toContain("Mod A");
+    expect(rows[0].text()).toContain("resources.relatedOwn");
+    expect(rows[0].text()).toContain("resources.relatedSource.managed");
+    expect(rows[0].text()).toContain("resources.relatedFilesHere");
+    expect(rows[1].find(".mod-detail__related-name").text()).toContain("Extra Pack");
+    // Managed ledger rows are removable from here; both carry the action.
+    expect(view.findAll(".mod-detail__related-remove")).toHaveLength(2);
+  });
+
+  it("removes a managed relation through the catalog uninstall and rescans", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    mocks.catalogUninstall.mockResolvedValue({
+      id: "mod-a",
+      name: "Mod A",
+      removedFiles: 3,
+      restoredFiles: 1,
+    });
+    const view = await mountRelated();
+    await view.find(".mod-detail__related-head").trigger("click");
+    await view.findAll(".mod-detail__related-remove")[0].trigger("click");
+    await flushPromises();
+    const dialog = view
+      .findAllComponents({ name: "HkConfirmDialog" })
+      .find(
+        (d) =>
+          d.props("open") === true &&
+          d.props("message") === "resources.relatedConfirmRemove",
+      );
+    expect(dialog).toBeTruthy();
+    // Nothing happens before the confirm.
+    expect(mocks.catalogUninstall).not.toHaveBeenCalled();
+    dialog!.vm.$emit("confirm");
+    await flushPromises();
+    expect(mocks.catalogUninstall).toHaveBeenCalledExactlyOnceWith("mod-a", "C:/TestGameA");
+    expect(mocks.success).toHaveBeenCalledWith("resources.uninstalledDone");
+    expect(mocks.scan.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mocks.records.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("shows a shared runtime row without a remove action", async () => {
+    mocks.scan.mockResolvedValue([
+      {
+        ...mod("TTaroModUtils"),
+        relPath: "PnFMods/TTaroModUtils",
+        paths: ["PnFMods/TTaroModUtils"],
+      } as InstalledMod,
+    ]);
+    mocks.records.mockResolvedValue([
+      relatedRecord({
+        id: "shared.pnfmods.ttaromodutils",
+        name: "Shared TTaro runtime",
+        files: ["PnFMods/TTaroModUtils/lib.lua"],
+      }),
+    ]);
+    const view = await mountInstalled();
+    await view.find(".mod-row").trigger("click");
+    await flushPromises();
+    await view.find(".mod-detail__related-head").trigger("click");
+    expect(view.findAll(".mod-detail__related-row")).toHaveLength(1);
+    // The component record is not removable on its own; the hint explains
+    // that it leaves with its last consumer.
+    expect(view.findAll(".mod-detail__related-remove")).toHaveLength(0);
+    expect(view.find(".mod-detail__related-hint").text()).toBe("resources.relatedSharedHint");
+    expect(view.find(".mod-detail__related-name").text()).toContain("Shared TTaro runtime");
+  });
+
+  it("routes a foreign relation's remove through the owning unit's uninstall", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    mocks.scan.mockResolvedValue([
+      {
+        ...mod("Aslain One"),
+        relPath: "PnFMods/AslainOne",
+        paths: ["PnFMods/AslainOne"],
+      } as InstalledMod,
+    ]);
+    mocks.records.mockResolvedValue([]);
+    mocks.foreign.mockResolvedValue([
+      { installer: "aslain", key: "aslain-one", name: "Aslain One", version: "2" },
+    ]);
+    mocks.uninstall.mockResolvedValue({
+      name: "Aslain One",
+      removedFiles: 1,
+      restoredFiles: 0,
+    });
+    const view = await mountInstalled();
+    await view.find(".mod-row").trigger("click");
+    await flushPromises();
+    await view.find(".mod-detail__related-head").trigger("click");
+    const remove = view.findAll(".mod-detail__related-remove");
+    expect(remove).toHaveLength(1);
+    await remove[0].trigger("click");
+    await flushPromises();
+    // Foreign rows have no ledger id: the remove opens the unit-uninstall
+    // confirm, which also cuts the Aslain manifest row.
+    const dialog = view
+      .findAllComponents({ name: "HkConfirmDialog" })
+      .find(
+        (d) =>
+          d.props("open") === true &&
+          d.props("message") === "resources.confirmUnitUninstall",
+      );
+    expect(dialog).toBeTruthy();
+    dialog!.vm.$emit("confirm");
+    await flushPromises();
+    expect(mocks.uninstall).toHaveBeenCalledExactlyOnceWith("PnFMods/AslainOne", "C:/TestGameA");
+  });
+});
+
+describe("installed-unit junk hygiene", () => {
+  it("warns about preview/screenshot junk and cleans it on demand", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    mocks.scan.mockResolvedValue([
+      {
+        ...mod("Junk Mod"),
+        relPath: "PnFMods/junk",
+        paths: ["PnFMods/junk"],
+        junkCount: 3,
+        junkFiles: ["screenshot.png", "preview.jpg"],
+      } as InstalledMod,
+    ]);
+    mocks.cleanJunk.mockResolvedValue({ relPath: "PnFMods/junk", removedFiles: 3 });
+    const view = await mountInstalled();
+    await view.find(".mod-row").trigger("click");
+    await flushPromises();
+    const strip = view.find(".mod-detail__junk");
+    expect(strip.exists()).toBe(true);
+    expect(strip.text()).toContain("resources.junkNotice");
+    expect(strip.find(".mod-detail__junk-text").attributes("data-hint")).toContain(
+      "screenshot.png",
+    );
+    // The strip's clean action rides HkButton (stubbed under shallowMount):
+    // invoke the handler its attrs carry.
+    const clean = view
+      .findAllComponents({ name: "HkButton" })
+      .find((b) => "onClick" in (b.vm.$attrs as Record<string, unknown>));
+    expect(clean).toBeTruthy();
+    (clean!.vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    expect(mocks.cleanJunk).toHaveBeenCalledExactlyOnceWith("C:/TestGameA", "PnFMods/junk");
+    expect(mocks.success).toHaveBeenCalledWith("resources.junkCleaned");
+    expect(mocks.scan.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 });
 

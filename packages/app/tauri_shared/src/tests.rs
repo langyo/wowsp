@@ -1876,6 +1876,8 @@ fn installed_mod_skips_texture_analysis_when_absent() {
         warnings: Vec::new(),
         contested: false,
         contested_files: Vec::new(),
+        junk_files: Vec::new(),
+        junk_count: 0,
     };
     let v = round_trips(plain.clone());
     assert!(!v.as_object().unwrap().contains_key("textureAnalysis"));
@@ -1884,6 +1886,10 @@ fn installed_mod_skips_texture_analysis_when_absent() {
     assert!(!v.as_object().unwrap().contains_key("warnings"));
     // A not-contested unit stays off the wire the same way.
     assert!(!v.as_object().unwrap().contains_key("contested"));
+    // Junk footprint stays off the wire while empty and rides the camelCase
+    // names when the unit carries some.
+    assert!(!v.as_object().unwrap().contains_key("junkFiles"));
+    assert!(!v.as_object().unwrap().contains_key("junkCount"));
     let legacy = serde_json::json!({
         "kind": "skin",
         "name": "old",
@@ -1898,6 +1904,12 @@ fn installed_mod_skips_texture_analysis_when_absent() {
     let mut warned = plain.clone();
     warned.warnings.push("conflict".into());
     assert_eq!(round_trips(warned)["warnings"][0], "conflict");
+    let mut junky = plain.clone();
+    junky.junk_files = vec!["gui/screenshots/a.png".into()];
+    junky.junk_count = 7;
+    let v = round_trips(junky);
+    assert_eq!(v["junkFiles"][0], "gui/screenshots/a.png");
+    assert_eq!(v["junkCount"], 7);
     assert_eq!(v["relPath"], "PnFMods/PJSB001");
     assert_eq!(v["kind"], "skin");
 
@@ -1966,6 +1978,17 @@ fn unit_toggle_report_renames_rel_path_and_renamed_files() {
     assert_exact_keys(&v, &["relPath", "disabled", "renamedFiles"]);
 }
 
+/// Result of cleaning one unit's preview/screenshot junk (client.ts:
+/// JunkCleanReport).
+#[test]
+fn junk_clean_report_renames_rel_path_and_removed_files() {
+    let v = round_trips(JunkCleanReport {
+        rel_path: "content".into(),
+        removed_files: 3,
+    });
+    assert_exact_keys(&v, &["relPath", "removedFiles"]);
+}
+
 /// Install plan preview + its copy list (client.ts: PackagePlanEntry /
 /// PackagePlan). `textureAnalysis` is skipped when absent, present when
 /// set — same rule as InstalledMod's.
@@ -2027,8 +2050,11 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: Vec::new(),
         mirrored_bins: Vec::new(),
         skipped: None,
+        pruned_files: 0,
     });
     assert_exact_keys(&v, &["name", "binVersion", "wroteFiles", "warnings"]);
+    // A junk-free install keeps its older wire shape (no prunedFiles key).
+    assert!(!v.as_object().unwrap().contains_key("prunedFiles"));
     // A report from a pre-conflicts build (no such field) still
     // deserializes — the field defaults to empty.
     let legacy = serde_json::json!({
@@ -2051,6 +2077,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: vec!["overwrites 2 file(s)".into()],
         mirrored_bins: Vec::new(),
         skipped: None,
+        pruned_files: 0,
     });
     assert_eq!(v["conflicts"][0], "overwrites 2 file(s)");
     // Non-empty mirrored bins serialize under the camelCase name.
@@ -2062,6 +2089,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: Vec::new(),
         mirrored_bins: vec!["13357625".into()],
         skipped: None,
+        pruned_files: 0,
     });
     assert_eq!(v["mirroredBins"][0], "13357625");
     // A version-gate skip serializes as "skipped" (the fan-out keys its
@@ -2074,8 +2102,21 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: Vec::new(),
         mirrored_bins: Vec::new(),
         skipped: Some("game version mismatch".into()),
+        pruned_files: 0,
     });
     assert_eq!(v["skipped"], "game version mismatch");
+    // Junk the copy skipped rides the report under the camelCase name.
+    let v = round_trips(InstallReport {
+        name: "x".into(),
+        bin_version: "1".into(),
+        wrote_files: 3,
+        warnings: Vec::new(),
+        conflicts: Vec::new(),
+        mirrored_bins: Vec::new(),
+        skipped: None,
+        pruned_files: 2,
+    });
+    assert_eq!(v["prunedFiles"], 2);
 }
 
 /// Migration wizard plan (client.ts: MigrationPlan / PlanFile). `identity`

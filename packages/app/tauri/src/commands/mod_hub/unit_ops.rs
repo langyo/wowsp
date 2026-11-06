@@ -356,6 +356,144 @@ pub(crate) fn uninstall_unit_core(
     })
 }
 
+// ── Unit junk cleanup ───────────────────────────────────────────────────────
+
+/// Remove the preview/screenshot junk (see [`super::junk`]) one installed unit
+/// carries: every junk file (live names and their `.bak` twins), the
+/// directories that empty out, and those paths from the ledger records that
+/// claimed them — so the records keep describing exactly what is still
+/// installed. Gated exactly like [`mod_hub_uninstall_unit`]: the tree is
+/// mutated, so the client must be closed and safe mode off.
+#[tauri::command]
+pub async fn mod_hub_clean_unit_junk(
+    game_root: String,
+    rel_path: String,
+) -> CommandResult<JunkCleanReport> {
+    let _gate = super::mod_catalog::mod_hub_gate().await;
+    ensure_game_closed(&game_root)?;
+    ensure_res_mods_active(&game_root)?;
+    let res_mods = scan_root(&game_root)?;
+    if !res_mods.is_dir() {
+        return Err(anyhow!("res_mods directory not found").into());
+    }
+    let unit = classify_installed_root(&res_mods, None)
+        .into_iter()
+        .find(|u| u.rel_path == rel_path)
+        .ok_or_else(|| anyhow!("no installed plugin at {rel_path}"))?;
+    let mut ledger = super::mod_catalog::load_ledger();
+    let report = clean_unit_junk_core(&game_root, &res_mods, &unit, &mut ledger.installs)?;
+    super::mod_catalog::save_ledger(&ledger)?;
+    tracing::info!(
+        rel = %report.rel_path,
+        removed = report.removed_files,
+        "mod_hub_clean_unit_junk done"
+    );
+    Ok(report)
+}
+
+/// Everything [`mod_hub_clean_unit_junk`] does once the unit is resolved —
+/// split out so tests can drive it against an in-memory record list instead
+/// of the real ledger.
+pub(crate) fn clean_unit_junk_core(
+    game_root: &str,
+    res_mods: &Path,
+    unit: &InstalledMod,
+    installs: &mut Vec<ModInstallRecord>,
+) -> anyhow::Result<JunkCleanReport> {
+    let mut removed_files = 0usize;
+    // Live names (`.bak` stripped) of the deleted files, deduped — the
+    // spellings the ledger records, the empty-parent pruning and the
+    // pre-release twin removals all work on.
+    let mut removed_rels: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    for rel in &unit.paths {
+        for file in unit_files(res_mods, rel) {
+            let Ok(stripped) = file.strip_prefix(res_mods) else {
+                continue;
+            };
+            let rel_name = stripped.to_string_lossy().replace('\\', "/");
+            if !super::junk::is_junk_rel(&rel_name) {
+                continue;
+            }
+            // Never delete through a link-shaped reparse point. The walk
+            // follows directory links, so a hand-made junction inside the
+            // unit tree could make a junk-named path resolve to bytes that
+            // are not this unit's payload (WoWSP's own install guards never
+            // create one, foreign trees can). The scan is read-only and
+            // stays blind to it; deletion is the one dangerous consumer.
+            if super::ensure_plain_source_entry(&file).is_err() {
+                continue;
+            }
+            fs::remove_file(&file).map_err(|e| anyhow!("remove {}: {e}", file.display()))?;
+            removed_files += 1;
+            let live = rel_name.strip_suffix(".bak").unwrap_or(&rel_name);
+            removed_rels.insert(live.to_string());
+        }
+    }
+    if removed_files == 0 {
+        return Ok(JunkCleanReport {
+            rel_path: unit.rel_path.clone(),
+            removed_files: 0,
+        });
+    }
+    // Directories the deletion emptied go too — `remove_dir` only succeeds on
+    // empty ones, so shared parents other units still use survive.
+    let pruned: Vec<String> = removed_rels.iter().cloned().collect();
+    prune_empty_parents(res_mods, &pruned);
+    // A pre-release twin holds its own copy of every written file (older
+    // builds mirrored junk too), so the copies go with the live bytes — a
+    // Steam build switch would otherwise resurrect the "cleaned" junk in
+    // the bin that becomes live.
+    super::preload_mirror::mirror_removed(game_root, &pruned);
+    // The ledger must stop claiming files that no longer exist. Records of
+    // another game install or bin are not ours to rewrite; the path key
+    // neutralizes case, separators and the `.bak` suffix like every other
+    // ownership comparison. Game-root spellings compare case-insensitively
+    // (Windows paths), mirroring the purge/reclaim filters.
+    let bin_version = res_mods
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let keys: std::collections::BTreeSet<String> = removed_rels
+        .iter()
+        .map(|rel| super::mod_catalog::uninstall_path_key(rel))
+        .collect();
+    for record in installs.iter_mut() {
+        if record.bin_version != bin_version
+            || (!record.game_root.is_empty() && !record.game_root.eq_ignore_ascii_case(game_root))
+        {
+            continue;
+        }
+        record
+            .files
+            .retain(|f| !keys.contains(&super::mod_catalog::uninstall_path_key(f)));
+        // Content hashes only describe live bytes: the entries of paths this
+        // clean deleted are dead weight (and would confuse the shared-file
+        // handoff warnings if the path ever returns).
+        if let Some(map) = record.hashes.as_mut() {
+            map.retain(|rel, _| !keys.contains(&super::mod_catalog::uninstall_path_key(rel)));
+        }
+        if let Some(map) = record.snapshot_hashes.as_mut() {
+            map.retain(|rel, _| !keys.contains(&super::mod_catalog::uninstall_path_key(rel)));
+        }
+    }
+    // A record whose ENTIRE payload was junk is a ghost: it would keep
+    // badging a catalog entry "installed" with nothing on disk. Drop it —
+    // unless it carries a shared-component dependency edge, whose lifetime
+    // bookkeeping belongs to the component's consumer set.
+    let same_tree = |record: &ModInstallRecord| {
+        record.bin_version == bin_version
+            && (record.game_root.is_empty() || record.game_root.eq_ignore_ascii_case(game_root))
+    };
+    installs.retain(|record| {
+        !(same_tree(record) && record.files.is_empty() && record.shared_roots.is_empty())
+    });
+    Ok(JunkCleanReport {
+        rel_path: unit.rel_path.clone(),
+        removed_files,
+    })
+}
+
 /// Simulate the complete newest-first ledger unwind before deleting any
 /// unit files. A partial record can keep a shared game-root DLL even after
 /// its covered res_mods files are removed, blocking an older full uninstall.

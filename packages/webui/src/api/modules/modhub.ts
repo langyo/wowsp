@@ -62,6 +62,13 @@ export interface InstalledMod {
    *  verifies — the "what exactly" behind a contested badge. Absent when
    *  the tree is not contested. */
   contestedFiles?: string[];
+  /** Sample of the preview/screenshot junk files under this unit's paths
+   *  (capped, res_mods-relative live names) — the warning strip's tooltip.
+   *  Absent when the scan found none (older payloads stay byte-identical). */
+  junkFiles?: string[];
+  /** Total preview/screenshot junk files under this unit's paths (the
+   *  sample above is capped). Absent when zero. */
+  junkCount?: number;
 }
 
 /** One unit the purge could not reinstall. */
@@ -146,6 +153,13 @@ export interface PurgeBackupRestoreReport {
   backupRemoved: boolean;
 }
 
+/** Result of cleaning one installed unit's preview/screenshot junk
+ *  (`mod_hub_clean_unit_junk`) — the warning strip's action. */
+export interface JunkCleanReport {
+  relPath: string;
+  removedFiles: number;
+}
+
 /** Result of toggling one installed plugin's `.bak` state. */
 export interface UnitToggleReport {
   relPath: string;
@@ -192,6 +206,10 @@ export interface InstallReport {
    *  version gate (the pack's published range confidently excludes this
    *  client's game version). A quiet per-client skip, never a failure. */
   skipped?: string;
+  /** Preview/screenshot junk files the install skipped instead of writing
+   *  (pack screenshots, Explorer noise). Absent when zero so junk-free
+   *  reports keep their older wire shape. */
+  prunedFiles?: number;
 }
 
 // ── Mod Hub online catalog (mirrors wowsp_tauri_shared, commands/mod_catalog.rs) ──
@@ -605,6 +623,12 @@ export const modHubApi = {
    *  snapshotted originals, syncs the Aslain manifest when relevant). */
   modHubUninstallUnit: (relPath: string, gameRoot: string) =>
     transport.invoke<UninstallReport>(RPC.mod_hub_uninstall_unit, { relPath, gameRoot }),
+  /** Delete the preview/screenshot junk files under one installed unit
+   *  (its `junkCount`/sample come from the scan): pack screenshots and
+   *  Explorer noise are never functional, so the unit's functional files
+   *  stay untouched and the ledger's file list drops the removed paths. */
+  modHubCleanUnitJunk: (gameRoot: string, relPath: string) =>
+    transport.invoke<JunkCleanReport>(RPC.mod_hub_clean_unit_junk, { gameRoot, relPath }),
   /** Uninstall a ModStation unit by manifest key — removes its whole tree
    *  under bin/<version>/mods/ (outside res_mods, invisible to unit ops). */
   modHubUninstallModstationUnit: (gameRoot: string, key: string) =>

@@ -33,6 +33,10 @@ import {
 import { listedEntries } from "@/features/modhub/catalogListed";
 import { appliesToRealm, realmOfInstall } from "@/features/modhub/servers";
 import { entryClientStatusesOf } from "@/features/modhub/entryClients";
+import {
+  relationsByUnit,
+  type UnitRelation,
+} from "@/features/modhub/unitRelations";
 import { requestModOpDisclaimer } from "@/features/modhub/ModOpDisclaimer";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
@@ -118,6 +122,8 @@ export function useModHub() {
     version: string;
     warnings: string[];
     mirrored: string[];
+    /** Preview/screenshot junk files the installer skipped (0 = none). */
+    pruned: number;
   } | null>(null);
 
   // ── Online catalog state ──
@@ -247,6 +253,35 @@ export function useModHub() {
   const gameRoot = computed(
     () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
   );
+
+  // ── Known-mod relations of every installed unit (关联 mod) ─────────
+  // Mods are not isolated directories: catch-all trees collect several
+  // packs' files and the shared runtime components are written by every
+  // dependent pack. One derivation serves both the list row's count tag
+  // and the detail pane's drawer, so the two surfaces can never disagree.
+  const unitRelations = computed<Map<string, UnitRelation[]>>(() =>
+    relationsByUnit(
+      installed.value,
+      records.value,
+      foreignUnits.value,
+      catalog.value,
+      gameRoot.value,
+    ),
+  );
+  // The related-mod drawer's open state — collapsed by default, reset on
+  // every pane change so a new selection never opens pre-expanded.
+  const relatedOpen = ref(false);
+  // The record relation awaiting its remove confirmation. Foreign /
+  // catalog rows do not land here: they reroute into the owning unit's
+  // uninstall flow (see requestRelatedRemove).
+  const relationTarget = ref<UnitRelation | null>(null);
+  const relationBusy = ref(false);
+  // relPath of the unit whose junk-clean pass is in flight.
+  const junkCleaning = ref<string | null>(null);
+  watch(selection, () => {
+    relatedOpen.value = false;
+  });
+
   let scanGeneration = 0;
   onBeforeUnmount(() => {
     scanGeneration++;
@@ -612,6 +647,9 @@ export function useModHub() {
     const failures: string[] = [];
     // Quiet notes across EVERY target root, deduped, one card at the end.
     const notes: string[] = [];
+    // Preview/screenshot junk every target's installer skipped — one quiet
+    // note for the whole fan-out (pruning is per-client, the total is not).
+    let prunedTotal = 0;
     for (const target of targets) {
       const label = syncLabelOf(target);
       if (op === "install" && !appliesToRealm(entry, realmOfInstall(target))) {
@@ -658,6 +696,7 @@ export function useModHub() {
             );
             continue;
           }
+          prunedTotal += r.prunedFiles ?? 0;
           for (const v of r.mirroredBins ?? []) {
             toast.info(t("resources.mirroredBins", { version: v }));
           }
@@ -682,6 +721,9 @@ export function useModHub() {
       }
     }
     toastReportNotes(notes);
+    if (prunedTotal > 0) {
+      toast.info(t("resources.prunedPreviewFiles", { count: prunedTotal }));
+    }
     const attempted = outcomes.length;
     const okCount = outcomes.filter((o) => o.ok).length;
     // Every target skipped by rule already spoke through its own toast —
@@ -737,6 +779,11 @@ export function useModHub() {
         // when it lands.
         const r = await pluginUpdates.runMod(entry.id, gameRoot.value, preset);
         toast.success(t("resources.installedDone", { name: r.name, version: entry.version }));
+        if ((r.prunedFiles ?? 0) > 0) {
+          toast.info(
+            t("resources.prunedPreviewFiles", { count: r.prunedFiles }),
+          );
+        }
         if (tookOverForeign) {
           toast.info(t("resources.registeredOverForeign", { name: r.name }));
         }
@@ -1315,7 +1362,11 @@ export function useModHub() {
         version: r.binVersion,
         warnings: r.warnings,
         mirrored: r.mirroredBins ?? [],
+        pruned: r.prunedFiles ?? 0,
       };
+      if (report.value.pruned > 0) {
+        toast.info(t("resources.prunedPreviewFiles", { count: report.value.pruned }));
+      }
       plan.value = null;
       // A local-package install writes ledger rows too — freshness sync.
       await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
@@ -1437,6 +1488,95 @@ export function useModHub() {
       });
     }
     return t("resources.pairedRelation.plain");
+  }
+
+  // ── Known-mod relations of one installed unit (关联 mod 管理) ───────
+  // The list row's count tag and the detail pane's drawer read the same
+  // computed map. Removal routes split by row kind: a ledger row leaves
+  // through the catalog uninstall (every recorded file in every directory,
+  // snapshots restored), while a foreign / unpaired-catalog row rides the
+  // owning unit's uninstall so the Aslain manifest row is cut with the
+  // files.
+
+  /** The known mods associated with one installed unit. */
+  function relationsOf(unit: InstalledMod): UnitRelation[] {
+    return unitRelations.value.get(unit.relPath) ?? [];
+  }
+
+  /** The association count the sidebar row's tail tag shows (0 = no tag). */
+  function unitRelationCountOf(unit: InstalledMod): number {
+    return relationsOf(unit).length;
+  }
+
+  function toggleRelated() {
+    relatedOpen.value = !relatedOpen.value;
+  }
+
+  /** Route one related row's remove click: ledger rows confirm in their
+   *  own dialog; foreign/catalog rows reuse the owning unit's uninstall
+   *  flow (unitTarget) so the Aslain manifest row goes with the files. */
+  function requestRelatedRemove(rel: UnitRelation) {
+    if (rel.kind === "record") {
+      relationTarget.value = rel;
+      return;
+    }
+    const owner = rel.ownerRelPath
+      ? installed.value.find((m) => m.relPath === rel.ownerRelPath)
+      : undefined;
+    if (owner) unitTarget.value = owner;
+  }
+
+  /** Remove one ledger-backed related mod. The catalog uninstall deletes
+   *  the mod's recorded files in EVERY directory and restores the
+   *  originals this install overwrote — the confirm copy says so. */
+  async function removeRelatedMod() {
+    const rel = relationTarget.value;
+    if (!rel?.recordId || !gameRoot.value) return;
+    if (gameRunning() || safeModeBlocked()) {
+      relationTarget.value = null;
+      return;
+    }
+    relationTarget.value = null;
+    if (!(await requestModOpDisclaimer())) return;
+    relationBusy.value = true;
+    try {
+      const r = await pluginUpdates.runModUninstall(rel.recordId, gameRoot.value);
+      toast.success(
+        t("resources.uninstalledDone", {
+          name: r.name,
+          removed: r.removedFiles,
+          restored:
+            r.restoredFiles > 0
+              ? t("resources.restoredPart", { count: r.restoredFiles })
+              : "",
+        }),
+      );
+      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      relationBusy.value = false;
+    }
+  }
+
+  /** Delete the preview/screenshot junk under one installed unit. The
+   *  scan surfaced it as junkCount/junkFiles; the backend removes only the
+   *  junk predicate's matches and keeps every functional file. */
+  async function cleanUnitJunk(mod: InstalledMod) {
+    if (!gameRoot.value || junkCleaning.value || gameRunning() || safeModeBlocked()) {
+      return;
+    }
+    if (!(await requestModOpDisclaimer())) return;
+    junkCleaning.value = mod.relPath;
+    try {
+      const r = await api.modHubCleanUnitJunk(gameRoot.value, mod.relPath);
+      toast.success(t("resources.junkCleaned", { count: r.removedFiles }));
+      await Promise.all([scan(), loadRecords()]);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      junkCleaning.value = null;
+    }
   }
 
   /** ModStation units live in bin/<ver>/mods/ — the res_mods scan never
@@ -1736,6 +1876,9 @@ export function useModHub() {
     unitTarget.value = null;
     foreignTarget.value = null;
     safeModeAsk.value = null;
+    relatedOpen.value = false;
+    relationTarget.value = null;
+    junkCleaning.value = null;
   }
 
   onMounted(() => {
@@ -1820,6 +1963,9 @@ export function useModHub() {
     catalogInCat,
     applicableCatalog,
     installedInCat,
+    unitRelations,
+    relationsOf,
+    unitRelationCountOf,
     aslainNames,
     modstationUnits,
     textureComponents,
@@ -1850,6 +1996,14 @@ export function useModHub() {
     toggleUnit,
     uninstallUnit,
     uninstallModstation,
+    relatedOpen,
+    toggleRelated,
+    relationTarget,
+    relationBusy,
+    requestRelatedRemove,
+    removeRelatedMod,
+    junkCleaning,
+    cleanUnitJunk,
     scan,
     safeModeBlocked,
     doSafeMode,
