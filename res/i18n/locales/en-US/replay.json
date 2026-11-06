@@ -678,7 +678,14 @@
     "hpLost": "{v} enemy HP lost",
     "noAttributed": "no attributed loss",
     "modelNote": "Contribution measures realised damage, not decision elegance; agreement is not a player rating.",
-    "noTarget": "Open a replay and press “AI battle report” in the replay view."
+    "noTarget": "Open a replay and press “AI battle report” in the replay view.",
+    "pickPlayer": "Select player",
+    "timeline": "Key moments",
+    "keyframes": "Keyframes · {n}",
+    "timelineHint": "Hover a keyframe for details",
+    "unresolved": "Not observed",
+    "nearestEvent": "Nearest event",
+    "momentAria": "Keyframe #{n} · {t}"
   },
   "detail": {
     "title": "Battle detail"

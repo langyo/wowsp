@@ -74,7 +74,7 @@ export default defineComponent({
           if (!v) emit("close");
         }}
         title={t("replay.report.title")}
-        width="min(1040px, 94vw)"
+        width="min(1180px, 94vw)"
         contentClass="wowsp-report-modal"
       >
         {{
@@ -117,7 +117,6 @@ export default defineComponent({
                 <StaticReportPanel
                   ref={panelRef}
                   report={props.report}
-                  loading={props.loading}
                   onSeek={(t0: number) => emit("seek", t0)}
                   onPick={(entityId: number) => emit("pick", entityId)}
                 />

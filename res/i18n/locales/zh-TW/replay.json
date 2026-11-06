@@ -678,7 +678,14 @@
     "hpLost": "造成 {v} 傷害",
     "noAttributed": "無可歸因傷害",
     "modelNote": "貢獻衡量實際造成的傷害而非決策優雅度；認同度不是玩家評級。",
-    "noTarget": "在錄影頁打開一場對局後點擊「AI 戰報」。"
+    "noTarget": "在錄影頁打開一場對局後點擊「AI 戰報」。",
+    "pickPlayer": "選擇玩家",
+    "timeline": "關鍵時刻",
+    "keyframes": "{n} 個關鍵影格",
+    "timelineHint": "將游標移到關鍵影格上查看詳情",
+    "unresolved": "未被偵測",
+    "nearestEvent": "最近事件",
+    "momentAria": "關鍵影格 #{n} · {t}"
   },
   "detail": {
     "title": "對局詳情"

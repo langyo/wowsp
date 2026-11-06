@@ -678,7 +678,14 @@
     "hpLost": "{v} PV ennemis",
     "noAttributed": "aucun dégât attribué",
     "modelNote": "La contribution mesure les dégâts réels, pas l'élégance ; l'accord n'est pas une note.",
-    "noTarget": "Ouvrez un replay puis pressez « Rapport de bataille IA »."
+    "noTarget": "Ouvrez un replay puis pressez « Rapport de bataille IA ».",
+    "pickPlayer": "Choisir un joueur",
+    "timeline": "Moments clés",
+    "keyframes": "Instants clés · {n}",
+    "timelineHint": "Survolez un instant clé pour les détails",
+    "unresolved": "Non observé",
+    "nearestEvent": "Événement le plus proche",
+    "momentAria": "Instant clé n° {n} · {t}"
   },
   "detail": {
     "title": "Détail de la bataille"

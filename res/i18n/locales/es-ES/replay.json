@@ -678,7 +678,14 @@
     "hpLost": "{v} PS enemigos",
     "noAttributed": "sin daño atribuido",
     "modelNote": "La contribución mide el daño real, no la elegancia; el acuerdo no es una valoración.",
-    "noTarget": "Abra una repetición y pulse «Informe de batalla IA»."
+    "noTarget": "Abra una repetición y pulse «Informe de batalla IA».",
+    "pickPlayer": "Seleccionar jugador",
+    "timeline": "Momentos clave",
+    "keyframes": "Fotogramas clave · {n}",
+    "timelineHint": "Pasa el cursor por un fotograma clave para ver los detalles",
+    "unresolved": "No observado",
+    "nearestEvent": "Evento más cercano",
+    "momentAria": "Fotograma clave n.º {n} · {t}"
   },
   "detail": {
     "title": "Detalle de la batalla"
