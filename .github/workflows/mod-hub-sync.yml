@@ -48,11 +48,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      # Token ladder for Discussion mutations: MODHUB_SYNC_TOKEN (optional PAT
+            # Token ladder for Discussion mutations: MODHUB_SYNC_TOKEN (optional PAT
       # with Discussions write), then RELEASE_OPS_TOKEN, then github.token.
-      # The first scheduled apply proved GITHUB_TOKEN cannot run Discussion
-      # mutations (Resource not accessible by integration) even with the
-      # discussions: write grant -- REST reads and issue writes still work.
+      # The first scheduled apply proved GITHUB_TOKEN cannot run Discussion      # mutations (Resource not accessible by integration) even with the      # discussions: write grant -- REST reads and issue writes still work.
       GH_TOKEN: ${{ secrets.MODHUB_SYNC_TOKEN || secrets.RELEASE_OPS_TOKEN || github.token }}
       GH_REPO: ${{ github.repository }}
     steps:
@@ -91,12 +89,6 @@ jobs:
 
       - name: Job summary and tracking issue
         if: always()
-        env:
-          # The report lane only writes an issue, and REST issue writes work
-          # on the run's own token even when the ladder PAT's write grants
-          # were narrowed (the 2026-11 runs died exactly there), so the
-          # report never rides the PAT.
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ ! -f sync-report.json ]; then
@@ -157,7 +149,7 @@ jobs:
           mkdir -p packages/pairing-relay/digests/mod-hub
           cp -a ../packages/pairing-relay/digests/mod-hub/. packages/pairing-relay/digests/mod-hub/
           cp ../packages/pairing-relay/wrangler.toml packages/pairing-relay/wrangler.toml
-          seq="$(python3 -c 'import json; print(json.load(open("packages/pairing-relay/digests/mod-hub/latest.json"))["seq"])"')"
+          seq="$(python3 -c 'import json; print(json.load(open("packages/pairing-relay/digests/mod-hub/latest.json"))["seq"])')"
           git add packages/pairing-relay
           if git diff --cached --quiet; then
             echo "digest doc already at seq $seq -- nothing to commit"
@@ -192,6 +184,15 @@ jobs:
             echo "::error::digest PR checks failed (rc=$rc): $out"
             exit 1
           done
+          # The wait loop above exhausts silently when a check stays queued
+          # forever (the type-escapes runner hang of 2026-11-06); merging the
+          # site deploy without the doc would waste the live-poll window on a
+          # guaranteed miss -- fail loudly instead.
+          state="$(gh pr view "$pr" --json state --jq .state)"
+          if [ "$state" != "MERGED" ]; then
+            echo "::error::digest PR #$pr never merged (state $state) -- checks stuck?"
+            exit 1
+          fi
           gh workflow run site.yml --ref master
           for attempt in $(seq 1 20); do
             read="$(curl -fsSL --max-time 20 "https://wowsp.langyo.xyz/api/digests/mod-hub" \
@@ -211,16 +212,13 @@ jobs:
       - name: Alarm on failure
         if: failure()
         env:
-          # Same as the report lane: the alarm only writes an issue, which
-          # works on the run's own token regardless of the ladder PAT's state.
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.RELEASE_OPS_TOKEN || github.token }}
         run: |
           set -euo pipefail
           title="Mod Hub sync failed -- the catalog needs a look"
           bodyfile="$(mktemp)"
           cat > "$bodyfile" <<EOF
           The Mod Hub Sync workflow failed. Safety notes: assets and threads may be ahead of the index (safe -- the old catalog stays servable), and a failed index publish rolls back to the previous bytes automatically. Re-run via Actions (Mod Hub Sync, mode=apply) or locally with python scripts/mod_hub_sync.py apply.
-          If the sync step's error says "Resource not accessible by personal access token", the ladder PAT lost its Discussions/Issues write grants -- repair RELEASE_OPS_TOKEN or set MODHUB_SYNC_TOKEN (see mod-hub-sync.yml).
           Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           EOF
           python3 scripts/mod_hub_sync.py issue --title "$title" --body-file "$bodyfile"
