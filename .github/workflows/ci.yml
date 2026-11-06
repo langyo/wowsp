@@ -2,10 +2,6 @@ name: CI
 
 on:
   workflow_dispatch:
-  push:
-    branches: [master]
-  pull_request:
-    branches: [master]
 
 # Full per-push triggering is kept deliberately (public repo, hosted runners);
 # concurrency + cancel-in-progress drops superseded runs for the same PR/ref
