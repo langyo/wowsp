@@ -628,6 +628,30 @@ like `>=15.9 <15.10` — without bumping `version`, therefore without a
 mass update prompt. Game minor-version bumps are followed
 automatically (maintainer's decision); no human gate.
 
+#### Resource hygiene (previews and screenshots)
+
+Re-hosted packages are stripped of non-functional promo material before
+they are zipped and uploaded: `scripts/mod_package_hygiene.py` is the
+publish-side twin of the app's install-time filter (`commands/mod_hub/
+junk.rs` — the two predicates carry the same truth table). Junk is an
+Explorer/OS metadata file (`desktop.ini`, `Thumbs.db`, …) or an image
+whose basename or ANY path segment names a screenshot/preview/showcase/
+thumbnail marker (English or Chinese); `.dds` and every normally named
+functional asset never match. A package that carries no junk keeps its
+bytes (and therefore its content address and discussion line) untouched,
+so junk-free assets never churn. Both engines run the filter: the manual
+publisher's `download` stage and the sync engine's
+`download_record_packages`.
+
+The filter runs at DOWNLOAD time in both engines, so every newly ingested
+version of a package is served already clean. The current re-hosted
+catalog was verified clean end to end (all 170 unique assets scanned: 604
+image members, every one functional `res_mods/gui` HUD art, zero
+preview/screenshot members) — promo material observed on a user's disk
+comes from a foreign installer's own tree, not from the hub's packages,
+and the app's install-time skip plus the per-unit clean command
+(`mod_hub_clean_unit_junk`) is the second line of defence there.
+
 #### Two-phase delisting
 
 When an upstream entry disappears / is disabled / leaves the sync

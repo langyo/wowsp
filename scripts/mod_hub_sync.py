@@ -72,6 +72,7 @@ from pathlib import Path
 import mod_hub_publish as pub  # noqa: E402 - repo-local
 import mod_index  # noqa: E402 - repo-local
 import mod_package_check  # noqa: E402 - repo-local
+import mod_package_hygiene  # noqa: E402 - repo-local
 from mod_hub_slugs import SLUG_MAP  # noqa: E402 - repo-local
 
 REPO = pub.REPO
@@ -586,6 +587,19 @@ def download_record_packages(rec: dict, cache: Path) -> None:
             else:
                 raise SystemExit(f"{rec['id']}/{p['name']}: not a zip archive "
                                  f"(magic {data[:6].hex()})")
+        # Preview/screenshot junk is stripped before hashing, so no newly
+        # ingested version can serve promo material (the app's install
+        # filter is the second half of the same rule). The upstream bytes
+        # are kept under raw_sha256 for diagnostics/reports.
+        raw = data
+        cleaned, pruned_junk = mod_package_hygiene.strip_zip_bytes(data)
+        if pruned_junk:
+            data = cleaned
+            dest.write_bytes(data)
+            print(f"  pruned {pruned_junk} preview/screenshot file(s): "
+                  f"{rec['id']}/{p['name']}", flush=True)
+        p["raw_sha256"] = sha256_hex(raw)
+        p["pruned_files"] = pruned_junk
         p["sha256"] = sha256_hex(data)
         p["size_bytes"] = len(data)
         p["asset"] = (f"pkg7-{p['sha256'][:12]}.zip" if p["token"] is None
@@ -1631,6 +1645,11 @@ def selftest() -> None:
     assert rep.swf_members_ok == 1 and not rep.bad_swf_members, rep
     assert [f.ref_basename for f in rep.findings] == ["gone.swf"], rep.findings
     assert rep.findings[0].referencing_members == ["gui/uss_settings.xml"]
+
+    # package hygiene: the publish-side twin of the app's preview/screenshot
+    # filter runs at download time (no served asset may carry promo material);
+    # the predicate's own truth table rides its selftest.
+    mod_package_hygiene.selftest()
     print("selftest ok")
 
 

@@ -89,6 +89,13 @@ jobs:
 
       - name: Job summary and tracking issue
         if: always()
+        env:
+          # Issue mutations need issues:write. The Discussion-capable PATs the
+          # job-level GH_TOKEN ladder prefers are NOT guaranteed to carry it
+          # (2026-11-06 run: "Resource not accessible by personal access
+          # token" killed the tracker after a successful sync), while the
+          # workflow's GITHUB_TOKEN grant covers issue writes.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ ! -f sync-report.json ]; then
@@ -116,11 +123,19 @@ jobs:
         run: |
           set -euo pipefail
           changed="$(python3 -c 'import json; print("yes" if json.load(open("sync-report.json"))["actions"]["index_changed"] else "no")')"
-          if [ "$changed" != "yes" ]; then
-            echo "index bytes unchanged -- the digest stays"
+          sha="$(python3 -c 'import json; print(json.load(open("sync-report.json"))["actions"]["index_sha256"])')"
+          # Re-point not only when THIS run changed the index: a run that died
+          # between the index upload and this step (2026-11-06: a quoting bug
+          # below) would otherwise leave the relay's cross-check pinning stale
+          # bytes forever, because later runs see an unchanged index. Compare
+          # the live digest document with the index this run just published.
+          live_sha="$(curl -fsSL --max-time 20 "https://wowsp.langyo.xyz/api/digests/mod-hub" \
+            | python3 -c 'import json,sys; print((json.load(sys.stdin).get("assets") or {}).get("mod-index.json",""))' 2>/dev/null || true)"
+          if [ "$changed" != "yes" ] && [ "$live_sha" = "$sha" ]; then
+            echo "index bytes unchanged and the relay digest already pins them -- nothing to do"
             exit 0
           fi
-          sha="$(python3 -c 'import json; print(json.load(open("sync-report.json"))["actions"]["index_sha256"])')"
+          echo "digest re-point needed (index changed=$changed, live='${live_sha:-unreachable}', want=$sha)"
           python3 scripts/publish_digests.py --channel mod-hub --tag mod-hub \
             --assets "mod-index.json=$sha" --latest --require-signed
           python3 - <<'PY'
@@ -156,7 +171,7 @@ jobs:
           mkdir -p packages/pairing-relay/digests/mod-hub
           cp -a ../packages/pairing-relay/digests/mod-hub/. packages/pairing-relay/digests/mod-hub/
           cp ../packages/pairing-relay/wrangler.toml packages/pairing-relay/wrangler.toml
-          seq="$(python3 -c 'import json; print(json.load(open("packages/pairing-relay/digests/mod-hub/latest.json"))["seq"])"')"
+          seq="$(python3 -c 'import json; print(json.load(open("packages/pairing-relay/digests/mod-hub/latest.json"))["seq"])')"
           git add packages/pairing-relay
           if git diff --cached --quiet; then
             echo "digest doc already at seq $seq -- nothing to commit"
@@ -210,7 +225,10 @@ jobs:
       - name: Alarm on failure
         if: failure()
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_OPS_TOKEN || github.token }}
+          # Same rule as the tracker above: GITHUB_TOKEN's issues:write grant
+          # is what the alarm needs; RELEASE_OPS_TOKEN may be a fine-grained
+          # PAT without Issues permission and used to fail this step.
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           title="Mod Hub sync failed -- the catalog needs a look"
