@@ -837,14 +837,19 @@ pub async fn get_ship_gameparams(
     //    around this lookup are the same snapshot, and a newer client's ids
     //    can mean different ships (they are regenerated between builds).
     //    Two ids collide with WG GameParams entities, each handled by the
-    //    snapshot's scope rules (scripts/extract/build_lesta_shipdata.py):
+    //    snapshot's scope rules (scripts/extract/build_lesta_overlay.py owns
+    //    the shared-index rules; build_lesta_shipdata.py reuses them):
     //    • 4178458416 is WG's early-access Z-57 (a WG TREE ship since 15.10)
     //      and is NOT carried here — WG surfaces resolve it from their own
     //      install, so this lookup never answers Lesta's Otto Weddigen.
-    //    • 4271813904 collides only with a hidden WG placeholder
-    //      (PXSC022_Kronshtadt, group unavailable) that no WG-realm surface
-    //      can request, so the Lesta event hull (Vodyanoi) stays a Lesta
-    //      answer as a reviewed exception (WG_HIDDEN_INDEX_KEEP).
+    //    • 4271813904 is the Lesta event hull Vodyanoi. WG's 15.10 GameParams
+    //      only carries a hidden placeholder for it (PXSC022_Kronshtadt,
+    //      group unavailable, tags ["catalogueHidden"], no port battle cards),
+    //      which is why the reviewed exception keeps the Lesta slice. Caveat:
+    //      WG's offline name bake still remembers the id as the older tier-10
+    //      event cruiser "Compulsion", so the bundle deliberately wins over a
+    //      WG install for it — the replay identity resolver skips ids the bake
+    //      already knows, which is what keeps that surface out of the way.
     //    Every other id falls through to the chain below.
     if let Some(slice) = bundled_lesta_slice(ship_id) {
         return Ok(slice);
@@ -1954,8 +1959,10 @@ mod tests {
     /// A_Artillery (Koschei fields secondaries + air armament only), so the
     /// assert is on the hull block and id agreement instead.
     /// Vodyanoi (4271813904) collides on index+id with a HIDDEN WG placeholder
-    /// (PXSC022_Kronshtadt, group unavailable) — no WG surface can request
-    /// that id, so the reviewed WG_HIDDEN_INDEX_KEEP exception carries it.
+    /// (PXSC022_Kronshtadt, group unavailable, tags ["catalogueHidden"], no
+    /// port battle cards) — the reviewed WG_HIDDEN_INDEX_KEEP exception carries
+    /// it; WG's offline bake still names the older id "Compulsion", which is
+    /// the documented caveat at the lookup site.
     #[test]
     fn bundled_lesta_pack_carries_the_port_fleet() {
         for (id, index, name) in [

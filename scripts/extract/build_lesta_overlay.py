@@ -76,25 +76,36 @@ PORT_GROUPS = {
 }
 
 # WG GameParams groups whose entities are NOT WG-realm ships: disabled /
-# unavailable placeholders, demo and test hulls the WG client carries but its
-# port never surfaces. An index that only collides with such an entity does
-# not claim the id space, so a REVIEWED Lesta port ship may keep its entry.
+# unavailable placeholders and demos the WG client carries but its catalogue
+# never surfaces (e.g. PXSC022_Kronshtadt: tags ["catalogueHidden"], no battle
+# cards). Deliberately excludes pveOnly / coopOnly: those are PLAYABLE modes
+# (PGSB920_Schlieffen is "catalogueHiddenIfMissing" and becomes visible once
+# owned), so a collision with one must keep the Lesta entry out.
+# An index that only collides with a genuine placeholder does not claim the id
+# space, so a REVIEWED Lesta port ship may keep its entry.
 WG_HIDDEN_GROUPS = {
     "disabled",
     "unavailable",
     "demoWithoutStats",
-    "pveOnly",
-    "coopOnly",
 }
 
 # Reviewed exceptions to the "an index the WG dump carries stays out" rule:
 # Lesta port ships that were published before the 15.10 WG data refresh started
-# carrying a HIDDEN placeholder at the same index (PXSC022_Kronshtadt,
-# "unavailable", vs the Lesta event hull PXSC022_Vodyanoi). The WG realm never
-# surfaces these ids, so keeping the Lesta slice cannot shadow a real WG ship —
-# unlike a collision with a WG tree/port ship (e.g. PGSD111_Z_57 earlyAccess
-# vs Lesta's Otto Weddigen), which MUST stay out. Keep this list tiny and
-# re-review it on every data refresh.
+# carrying a HIDDEN placeholder at the same index+id (PXSC022_Kronshtadt,
+# group "unavailable", tags ["catalogueHidden"], no battle cards — vs the Lesta
+# event hull PXSC022_Vodyanoi). Keeping the Lesta slice there does not shadow a
+# current WG port ship — unlike a collision with a WG tree/port ship (e.g.
+# PGSD111_Z_57 earlyAccess vs Lesta's Otto Weddigen), which MUST stay out.
+# Caveats, so this stays a tiny reviewed list rather than a rule:
+#   • WG's side may still REMEMBER the id from an older event: the offline
+#     name bake has 4271813904 = tier-10 event cruiser "Compulsion", and the
+#     bundle wins over any install for that id on every realm (the replay
+#     identity resolver skips ids the bake already knows, which is what keeps
+#     this harmless today).
+#   • The check is build-time: a stale bundle keeps answering until the next
+#     extract run; promoting the WG entity to a visible group/state disables
+#     the exception automatically and fails the port-fleet test.
+# Re-review this list on every data refresh.
 WG_HIDDEN_INDEX_KEEP = {"PXSC022"}
 
 
