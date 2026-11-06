@@ -65,12 +65,12 @@ const BUILDS_MAX_PLAYERS: usize = 64;
 const BUILDS_MAX_DUMP_CHARS: usize = 8192;
 const BUILDS_MAX_FILE_BYTES: usize = 1024 * 1024;
 
-/// The SHIP_CONFIG layout era the probe's dump is decoded with. The probe
-/// bridges the game's `shipConfigDump` verbatim and carries no client version
-/// stamp, so the pinned 15.9 era is assumed; a future client's shifted layout
-/// fails [`wowsp_replay_core::decode_ship_config_blob`]'s section sanity caps
-/// (0 items / over-cap counts) and the row is skipped instead of mis-read.
-const BUILDS_SHIP_CONFIG_ERA: (u32, u32, u32) = (15, 9, 0);
+// The probe bridges the game's `shipConfigDump` verbatim and carries no
+// client version stamp, so the dump is decoded by
+// [`wowsp_replay_core::decode_ship_config_blob_auto`]: it tries the pinned
+// layout eras newest-first and accepts only a decode that consumes the blob
+// exactly (the dump's own element-count header pins the length). An
+// unpinned future layout therefore skips the row instead of mis-reading ids.
 
 /// One `wowsp://ingame-builds` payload (camelCase on the wire).
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -661,7 +661,7 @@ fn probe_player_build(row: &ProbeBuildRow) -> Option<wowsp_tauri_shared::PlayerB
     let enc = row.dump_enc.as_deref()?;
     let dump = row.dump.as_deref()?;
     let blob = decode_probe_dump(enc, dump)?;
-    let config = wowsp_replay_core::decode_ship_config_blob(&blob, BUILDS_SHIP_CONFIG_ERA)?;
+    let config = wowsp_replay_core::decode_ship_config_blob_auto(&blob)?;
     // The dump's own header ship id is authoritative; a row-level id that
     // disagrees means a drifted record, so trust the parsed dump.
     if config.ship_params_id == 0 {
@@ -1787,8 +1787,21 @@ mod tests {
 
     /// A valid 15.9 SHIP_CONFIG blob: header, 1 unit, 1 modernization, no
     /// exteriors, 2 ability slots and 1 ecoboost. Mirrors the replay parser's
-    /// verified layout so the probe path exercises the SAME parser.
+    /// verified layout so the probe path exercises the SAME parser. The
+    /// element-count header is patched to its real value (the auto-detecting
+    /// era gate requires 12 + 4 × element_count == blob length).
     fn sample_ship_config_blob(ship_params_id: u32) -> Vec<u8> {
+        sample_ship_config_blob_era(ship_params_id, false)
+    }
+
+    /// The 15.10 companion: the same ship with the slot-group modernization
+    /// section — one empty slot, then one slot whose selected id is the second
+    /// of its two options.
+    fn sample_ship_config_blob_1510(ship_params_id: u32) -> Vec<u8> {
+        sample_ship_config_blob_era(ship_params_id, true)
+    }
+
+    fn sample_ship_config_blob_era(ship_params_id: u32, slot_groups: bool) -> Vec<u8> {
         fn push(out: &mut Vec<u8>, values: &[u32]) {
             for value in values {
                 out.extend_from_slice(&value.to_le_bytes());
@@ -1798,7 +1811,21 @@ mod tests {
         push(&mut blob, &[1, ship_params_id, 0, 1]); // version, ship, elem, units
         push(&mut blob, &[100]); // one hull slot
         push(&mut blob, &[0]); // >= 13.2 unknown
-        push(&mut blob, &[1, 0xff12_cfb0]); // modernization
+        if slot_groups {
+            // 15.10 slot groups: slot_count 2 — an empty slot (id 0, no
+            // options), then a slot whose selected id is the second of two
+            // options.
+            push(&mut blob, &[2, 0, 0]);
+            push(&mut blob, &[0xff22_cd10, 2]);
+            push(&mut blob, &[0xff12_cd10, 0xff22_cd10]);
+        } else {
+            // TWO modernization ids on purpose: the era auto-detect reads a flat
+            // section's first id as a slot id and its second id as an option
+            // COUNT, so a real (large GameParams) second id is what makes the
+            // 15.10 grammar refuse a 15.9 blob. A one-id section would leave the
+            // grammars indistinguishable on this synthetic sample.
+            push(&mut blob, &[2, 0xff12_cfb0, 0xff22_cfb0]);
+        }
         push(&mut blob, &[0]); // exteriors
         push(&mut blob, &[0]); // supply state
         push(&mut blob, &[0]); // color schemes
@@ -1806,6 +1833,8 @@ mod tests {
         push(&mut blob, &[2, 0xff62_9fb0, 0xff12_9fb0]); // ability slots
         push(&mut blob, &[0]); // ensign slots
         push(&mut blob, &[1, 0xff2f_efb0]); // ecoboost slots
+        let element_count = (blob.len() as u32 - 12) / 4;
+        blob[8..12].copy_from_slice(&element_count.to_le_bytes());
         blob
     }
 
@@ -1859,11 +1888,11 @@ mod tests {
         let from_b64 = decode_probe_dump("b64", &b64_body(&blob)).expect("base64 dump");
         assert_eq!(from_hex, from_b64);
         assert_eq!(from_hex, blob);
-        let config = wowsp_replay_core::decode_ship_config_blob(&from_hex, BUILDS_SHIP_CONFIG_ERA)
+        let config = wowsp_replay_core::decode_ship_config_blob_auto(&from_hex)
             .expect("planted blob decodes");
         assert_eq!(config.ship_params_id, 4_065_212_112);
         assert_eq!(config.units, [100]);
-        assert_eq!(config.modernization, [0xff12_cfb0]);
+        assert_eq!(config.modernization, [0xff12_cfb0, 0xff22_cfb0]);
         assert_eq!(config.abilities, [0xff62_9fb0, 0xff12_9fb0]);
         assert_eq!(config.ecoboosts, [0xff2f_efb0]);
         assert!(decode_probe_dump("hex", "abc").is_none());
@@ -1872,11 +1901,35 @@ mod tests {
         // A drifted blob (garbage after the header) fails the parser instead of
         // mis-reading ids.
         assert!(
-            wowsp_replay_core::decode_ship_config_blob(
-                &[1u8, 0, 0, 0, 9, 9, 9, 9, 255, 255],
-                BUILDS_SHIP_CONFIG_ERA
-            )
-            .is_none()
+            wowsp_replay_core::decode_ship_config_blob_auto(&[1u8, 0, 0, 0, 9, 9, 9, 9, 255, 255])
+                .is_none()
+        );
+    }
+
+    /// The version-less probe dump auto-detects the layout era: the 15.9 flat
+    /// modernization section and the 15.10 slot groups both decode, each to its
+    /// own selected ids, and the wrong era is refused instead of mis-read.
+    #[test]
+    fn probe_dump_auto_detects_the_layout_era() {
+        let flat = sample_ship_config_blob(4_065_212_112);
+        let grouped = sample_ship_config_blob_1510(4_065_212_113);
+        let flat_config =
+            wowsp_replay_core::decode_ship_config_blob_auto(&flat).expect("15.9 dump decodes");
+        assert_eq!(flat_config.ship_params_id, 4_065_212_112);
+        assert_eq!(flat_config.modernization, [0xff12_cfb0, 0xff22_cfb0]);
+        let grouped_config =
+            wowsp_replay_core::decode_ship_config_blob_auto(&grouped).expect("15.10 dump decodes");
+        assert_eq!(grouped_config.ship_params_id, 4_065_212_113);
+        assert_eq!(grouped_config.modernization, [0xff22_cd10]);
+        assert_eq!(grouped_config.abilities, [0xff62_9fb0, 0xff12_9fb0]);
+        // Explicit eras agree with the auto choice and refuse the other layout.
+        assert!(
+            wowsp_replay_core::decode_ship_config_blob(&grouped, (15, 9, 0)).is_none(),
+            "the 15.9 flat grammar must refuse the slot-group section"
+        );
+        assert!(
+            wowsp_replay_core::decode_ship_config_blob(&flat, (15, 10, 0)).is_none(),
+            "the 15.10 grammar must refuse the flat section"
         );
     }
 
@@ -1905,7 +1958,7 @@ mod tests {
         let ally = &builds[0];
         assert_eq!(ally.entity_id, 0, "probe builds join by name");
         assert_eq!(ally.ship_params_id, 4_065_212_112);
-        assert_eq!(ally.modernization, [0xff12_cfb0]);
+        assert_eq!(ally.modernization, [0xff12_cfb0, 0xff22_cfb0]);
         assert_eq!(ally.abilities, [0xff62_9fb0, 0xff12_9fb0]);
         assert_eq!(ally.crew_params_id, 310_000_000);
         assert!(ally.is_in_adaptation);

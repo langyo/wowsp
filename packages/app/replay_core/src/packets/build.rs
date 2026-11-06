@@ -22,10 +22,10 @@
 //! mis-index them.
 //!
 //! Variable-width properties use the BigWorld compact encoding: unsized ARRAY =
-//! `u8 count + elements`, STRING/BLOB = `u8 len + bytes`. A `0xff` length
-//! escape was never observed on the reference corpus (the largest observed
-//! shipConfig blob is 252 bytes), so the decoder REFUSES such an entity rather
-//! than guess at the escape framing — the caller counts it as skipped.
+//! `u8 count + elements`, STRING/BLOB = `u8 len + bytes`, with the engine's
+//! `0xff` escape (`u16 length + one dummy byte`) for bodies over 254 bytes —
+//! the 15.10 captures exercise the escape on >255-byte shipConfig blobs (see
+//! [`read_blob_length`]).
 //!
 //! ## Exposed-property table (generated, not pinned constants)
 //!
@@ -34,17 +34,25 @@
 //! (script: `scripts/gen_property_tables.py`, validated offline against the
 //! client's `entity_defs`), and this module resolves the two payloads BY NAME
 //! plus every property's fixed/variable width from it. The era gate below still
-//! pins which client versions may decode at all (15.9.x today); an unpinned
-//! version/era skips build decoding and counts a diagnostic instead of guessing
-//! indices.
+//! pins which client versions may decode at all (15.9 and 15.10 today); an
+//! unpinned version/era skips build decoding and counts a diagnostic instead of
+//! guessing indices.
 //!
 //! ## `shipConfig` binary version gates
 //!
-//! The binary itself is version-gated too: 13.2+ carries one extra u32 after the
-//! unit slots, and 15.9 inserted one extra u32 between the color-scheme section
-//! and the ability (consumable) section. The offsets are verified on 15.8.1 and
-//! 15.9.0 captures; the >= 15.9 branch is the one the 30-replay reference corpus
-//! exercises.
+//! The binary itself is version-gated too:
+//!
+//! - 13.2+ carries one extra u32 after the unit slots (exterior auto-buy flags:
+//!   camouflage/signals, then the per-slot purchase currency);
+//! - 15.9 inserted the ExteriorStateKeeper kill-tag overrides between the
+//!   color-scheme section and the ability (consumable) section — a COUNT plus
+//!   that many `(exterior_id, enabled)` u32 pairs (zero entries on every
+//!   reference capture, which is why the earlier pin read it as one unknown
+//!   u32);
+//! - 15.10 rewrote the modernization slots into per-slot groups (see below).
+//!
+//! The offsets are verified on 15.8.1, 15.9.0 and 15.10.0 captures; the >= 15.9
+//! branch is the one the 30-replay reference corpus exercises.
 //!
 //! ## `shipConfig` tail — OPEN ITEM (15.9.0, build 13357625)
 //!
@@ -69,37 +77,50 @@
 //! object, or a client-converter decompile). The decoder stops after ecoboosts,
 //! so the ambiguity cannot mis-parse any known section.
 //!
-//! ## OPEN ITEM — 15.10.0 shipConfig binary (build 13533378, 2026-11-05)
+//! ## 15.10.0 shipConfig binary (build 13533378, 2026-11-05) — pinned
 //!
-//! The 15.10 create state keeps the SAME `shipConfig` exposed index (47) and
-//! the same length-prefixed blob framing (0xff escape included), so the walk
-//! reaches and frames the blob correctly — but the BINARY inside shifted
-//! again, and the 15.9 branch mis-parses at least the heat-mechanic hulls:
-//! decoding the Bermuda Triangle event capture's Siegfried-1510 create state
-//! (blob 252 bytes, element_count 60) yields modernization = [0; 10] (ten
-//! ZERO ids — real slots carry PCM0xx GameParams hashes) with every section
-//! after it empty, while a non-heat bot hull in the same battle (blob 172
-//! bytes, element_count 40) still decodes plausibly (ext=1, abilities=6,
-//! ecoboosts=4). The heat-guns blob is 80 bytes longer at the same slot
-//! count — an extra per-gun section the 15.9 layout does not know. Pinning
-//! it requires a capture experiment against the client's own parsed object
-//! (the probe `shipConfigDump` route that calibrated the 15.9 shift); until
-//! then the era gate above stays 15.9-only and 15.10 create states count as
-//! `builds_skipped` diagnostics. The create-state WALK side is already
-//! 15.10-ready: the property table row is pinned (55 properties, `crewConfig`
-//! inserted at 48) and `skip_variable_property` handles both the `crewConfig`
-//! USER_TYPE blob and the verified 0xff length escape.
+//! 15.10 keeps the `shipConfig` exposed index (47), the length-prefixed
+//! blob framing (0xff escape included) and every section EXCEPT the
+//! modernization slots: that section became per-slot GROUPS —
+//!
+//! ```text
+//! u32 slot_count, then per slot: u32 selected_id, u32 option_count,
+//! u32[option_count] options
+//! ```
+//!
+//! The selected id is always one of the slot's options (and `0` for an
+//! empty slot), so the decode layer surfaces the SELECTED ids in
+//! `modernization` and skips the option lists (the client's upgrade-choice
+//! UI). Every later section (exteriors, auto-buy flags, colors, kill-tag
+//! overrides, abilities, ensigns, ecoboosts, tail) is unchanged.
+//!
+//! Evidence (2026-11-05 Bermuda Triangle captures, four battles): the new
+//! grammar consumes **all 161 shipConfig blobs exactly** — 15 Siegfried-1510
+//! heat-hull variants (252/268/284/300 bytes, slot_count 10, every populated
+//! slot's selected id present in its OWN option list) plus 146 bot hulls
+//! (slot_count 0, stock loadouts; their later sections read the same as the
+//! 15.9 grammar reads them). The 15.9 reference capture stays exact (104/104
+//! blobs), so this is a version gate, not a rewrite. The header's third u32
+//! is the element count = number of u32s after the 12-byte header
+//! (12 + 4 × element_count == blob length, on both eras and all 265 samples)
+//! — `decode_ship_config_blob_auto` uses exactly that to pick the era for a
+//! version-less dump.
+//!
+//! Cross-checked against upstream wowsunpack (2026-11-06): their #55 fix
+//! gates the same 15.9 kill-tag section, and their kill-tag model (count +
+//! pairs) is what the port above follows; their master still parses the
+//! modernization section as a flat count+ids list, so the 15.10 slot groups
+//! are this fork's own derivation (four captures, 161 blobs, exact walks).
 
 use super::property_tables::vehicle_property_table_for_version;
 
-/// The only client version era whose Vehicle property map + shipConfig binary
-/// layout is pinned (see the module docs + the 15.10 OPEN ITEM below; other
-/// versions skip).
-pub(crate) const BUILD_SUPPORTED_ERA: (u32, u32) = (15, 9);
+/// The client version eras whose Vehicle property map + shipConfig binary
+/// layout are pinned (see the module docs); other versions skip.
+pub(crate) const BUILD_SUPPORTED_ERAS: [(u32, u32); 2] = [(15, 9), (15, 10)];
 
 /// Whether the build decoder should run for this parsed client version.
 pub(crate) fn builds_supported(version: Option<(u32, u32, u32)>) -> bool {
-    matches!(version, Some((major, minor, _)) if (major, minor) == BUILD_SUPPORTED_ERA)
+    matches!(version, Some((major, minor, _)) if BUILD_SUPPORTED_ERAS.contains(&(major, minor)))
 }
 
 /// Exposed index of the Vehicle `state` property — the parent of the nested
@@ -225,27 +246,50 @@ fn read_section(cursor: &mut Cursor<'_>, cap: usize) -> Option<Vec<u32>> {
     Some(out)
 }
 
-/// Decode the `shipConfig` binary (port of the vendored wows-toolkit layout in
-/// `packages/tools/game-assets/src/data/ship_config.rs`, extended with the
-/// 15.9 section shift).
+/// Decode one raw `SHIP_CONFIG` blob of a KNOWN client era (no
+/// property-stream length prefix). Trailing bytes past the walked sections are
+/// tolerated (the tail is not decoded).
+///
+/// `version` selects the layout era: 13.2+ carries the extra unknown u32 after
+/// the unit slots, 15.9+ the extra unknown u32 before the ability slots, and
+/// 15.10+ the per-slot modernization groups (see the module docs).
+pub fn decode_ship_config_blob(blob: &[u8], version: (u32, u32, u32)) -> Option<ShipConfigRaw> {
+    decode_ship_config_era(blob, version).map(|(config, _consumed)| config)
+}
+
+/// Decode a version-less `SHIP_CONFIG` dump by trying the pinned eras
+/// newest-first, accepting only a decode that consumes the blob EXACTLY. The
+/// in-game probe bridges the game's own `shipConfigDump` with no client
+/// version stamp; this is its entry point. A future client layout answers
+/// `None` (the probe row is skipped) instead of mis-reading ids.
+///
+/// The header's third u32 is the element count — the number of u32s after the
+/// 12-byte header — so the exact expected length is `12 + 4 × element_count`;
+/// a blob that disagrees with its own header is refused outright.
+pub fn decode_ship_config_blob_auto(blob: &[u8]) -> Option<ShipConfigRaw> {
+    let element_count = u32::from_le_bytes(blob.get(8..12)?.try_into().ok()?) as usize;
+    if 12usize.checked_add(element_count.checked_mul(4)?)? != blob.len() {
+        return None;
+    }
+    [(15, 10, 0), (15, 9, 0)]
+        .into_iter()
+        .find_map(|era| decode_ship_config_era(blob, era).map(|(config, _)| config))
+}
+
+/// One era-parameterized `shipConfig` decode; returns the sections plus the
+/// bytes consumed (the auto-detecting path requires exact consumption).
 ///
 /// Verified layout (GameParams id prefixes used as the tell):
 /// ```text
 /// u32 version, u32 ship_params_id, u32 element_count, u32 unit_count,
 /// u32[unit_count] units, [>=13.2] u32 unknown,
-/// modernization[PCM*], exteriors[PCEP/PCEM/PCED cammo + PCEF signals],
+/// modernization: [<15.10] count + ids; [>=15.10] slot groups (see docs),
+/// exteriors[PCEP/PCEM/PCED cammo + PCEF signals],
 /// u32 supply_state, color_schemes: u32 count + (slot, scheme) u32 pairs,
 /// [>=15.9] u32 unknown (0 on every reference capture),
 /// abilities[PCY*], ensigns, ecoboosts[PCEA*], ...tail (not read)
 /// ```
-/// Decode one raw `SHIP_CONFIG` blob (no property-stream length prefix).
-///
-/// `version` selects the layout era: 13.2+ carries the extra unknown u32 after
-/// the unit slots and 15.9+ the extra unknown u32 before the ability slots. A
-/// caller that only knows the current layout (the in-game probe bridges a bare
-/// dump with no version stamp) passes a fixed era — a drifted future layout
-/// fails the section sanity caps and answers `None` instead of mis-reading ids.
-pub fn decode_ship_config_blob(blob: &[u8], version: (u32, u32, u32)) -> Option<ShipConfigRaw> {
+fn decode_ship_config_era(blob: &[u8], version: (u32, u32, u32)) -> Option<(ShipConfigRaw, usize)> {
     let mut cursor = Cursor::new(blob);
     let _blob_version = cursor.u32()?;
     let ship_params_id = cursor.u32()?;
@@ -262,32 +306,75 @@ pub fn decode_ship_config_blob(blob: &[u8], version: (u32, u32, u32)) -> Option<
     if version >= (13, 2, 0) {
         cursor.u32()?;
     }
-    let modernization = read_section(&mut cursor, 32)?;
+    // 15.10.0 rewrote the slots into per-slot groups: selected item + the
+    // slot's option list (see the module docs for the evidence).
+    let modernization = if version >= (15, 10, 0) {
+        read_modernization_slots(&mut cursor)?
+    } else {
+        read_section(&mut cursor, 32)?
+    };
     let exteriors = read_section(&mut cursor, 32)?;
-    let _supply_state = cursor.u32()?;
+    // Exterior auto-buy flags: bit 0 camouflage, bit 1 signals, higher bits
+    // the per-slot purchase currency (the predecessor of the 15.9 kill-tag
+    // section below; both are skipped as loadout bookkeeping).
+    let _exterior_auto_buy = cursor.u32()?;
     let color_scheme_count = cursor.u32()? as usize;
     if color_scheme_count > 64 {
         return None;
     }
     cursor.skip(color_scheme_count.checked_mul(8)?)?;
-    // 15.9.0 inserted one unknown u32 between the color schemes and the
-    // ability (consumable) slots — verified by decoding the same replay with
-    // both layouts and matching the GameParams id prefixes.
+    // 15.9.0 added the ExteriorStateKeeper kill-tag overrides between the color
+    // schemes and the ability (consumable) slots: a COUNT followed by that many
+    // (exterior_id, enabled) u32 PAIRS. Every reference capture carries zero
+    // entries, which is why the pre-pin forks modelled the whole section as one
+    // unknown u32; the section is variable-length, so walk the pairs.
     if version >= (15, 9, 0) {
-        cursor.u32()?;
+        let kill_tag_count = cursor.u32()? as usize;
+        if kill_tag_count > 64 {
+            return None;
+        }
+        cursor.skip(kill_tag_count.checked_mul(8)?)?;
     }
     let abilities = read_section(&mut cursor, 32)?;
     let ensigns = read_section(&mut cursor, 16)?;
     let ecoboosts = read_section(&mut cursor, 16)?;
-    Some(ShipConfigRaw {
-        ship_params_id,
-        units,
-        modernization,
-        exteriors,
-        abilities,
-        ensigns,
-        ecoboosts,
-    })
+    Some((
+        ShipConfigRaw {
+            ship_params_id,
+            units,
+            modernization,
+            exteriors,
+            abilities,
+            ensigns,
+            ecoboosts,
+        },
+        cursor.pos,
+    ))
+}
+
+/// 15.10+ modernization slots: `u32 slot_count` then per slot `u32
+/// selected_id, u32 option_count, u32[option_count] options`. The selected id
+/// is `0` for an empty slot and always one of the slot's options otherwise;
+/// the option lists are the client's upgrade-choice UI, so the decode layer
+/// surfaces the selected ids only.
+fn read_modernization_slots(cursor: &mut Cursor<'_>) -> Option<Vec<u32>> {
+    let slot_count = cursor.u32()? as usize;
+    if slot_count > 32 {
+        return None;
+    }
+    let mut selected = Vec::with_capacity(slot_count);
+    for _ in 0..slot_count {
+        let id = cursor.u32()?;
+        let option_count = cursor.u32()? as usize;
+        if option_count > 16 {
+            return None;
+        }
+        cursor.skip(option_count.checked_mul(4)?)?;
+        if id != 0 {
+            selected.push(id);
+        }
+    }
+    Some(selected)
 }
 
 /// Read one 15.9 `crewModifiersCompactParams` FIXED_DICT:
