@@ -304,14 +304,9 @@ describe("StaticReportPanel wiring", () => {
     expect(wrapper.text()).toContain("2026-11-06 12:34");
     expect(wrapper.text()).toContain("replay.report.survivedAtEnd");
     expect(wrapper.find(".srp-head__hash").text()).toBe("#abcdef");
-    // The long image closes on the shared watermark with the AI extras.
-    expect(wrapper.find(".shot-footer").exists()).toBe(true);
-    expect(wrapper.find(".shot-footer__note").text()).toBe(
-      "replay.report.aiNotice",
-    );
-    expect(wrapper.find(".shot-footer__meta").text()).toBe(
-      "replay.report.aiVersion",
-    );
+    // The WATERMARK is a share artifact: the interactive window must not
+    // grow a footer band (only the copied long image carries it).
+    expect(wrapper.find(".shot-footer").exists()).toBe(false);
   });
 
   it("maps coverage gaps over the player's observed interval", () => {
@@ -343,7 +338,15 @@ describe("StaticReportPanel wiring", () => {
 
   it("renders the static annotation band before the clone and drops it after", async () => {
     vi.mocked(toBlob).mockReset();
-    const seen = { callouts: -1, hint: -1, height: 0, staticPlate: false };
+    const seen = {
+      callouts: -1,
+      hint: -1,
+      height: 0,
+      staticPlate: false,
+      footer: false,
+      aiNote: "",
+      aiMeta: "",
+    };
     vi.mocked(toBlob).mockImplementation((async (node: HTMLElement) => {
       seen.callouts = node.querySelectorAll(".srp-tl__callout").length;
       seen.hint = node.querySelectorAll(".srp-tl__hint").length;
@@ -353,6 +356,10 @@ describe("StaticReportPanel wiring", () => {
       seen.staticPlate = node
         .querySelector(".srp-picker__trigger")
         ?.classList.contains("srp-picker__trigger--static") ?? false;
+      // The cloned share frame carries the watermark + AI extras...
+      seen.footer = node.querySelector(".shot-footer") != null;
+      seen.aiNote = node.querySelector(".shot-footer__note")?.textContent ?? "";
+      seen.aiMeta = node.querySelector(".shot-footer__meta")?.textContent ?? "";
       return new Blob([new Uint8Array([1])], { type: "image/png" });
     }) as never);
     const { handle, wrapper } = mountPanel();
@@ -365,6 +372,10 @@ describe("StaticReportPanel wiring", () => {
     expect(seen.hint).toBe(0);
     expect(seen.height).toBe(2400);
     expect(seen.staticPlate).toBe(true);
+    // ...while the window showed none (see the interactive test above).
+    expect(seen.footer).toBe(true);
+    expect(seen.aiNote).toBe("replay.report.aiNotice");
+    expect(seen.aiMeta).toBe("replay.report.aiVersion");
     // ...and the interactive surface came back afterwards.
     expect(wrapper.findAll(".srp-tl__callout")).toHaveLength(0);
     expect(wrapper.find(".srp-tl__hint").exists()).toBe(true);

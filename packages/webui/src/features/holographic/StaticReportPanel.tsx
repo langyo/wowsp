@@ -324,12 +324,16 @@ export default defineComponent({
             </div>
             {/* The copied long image closes on the SAME WoWSP watermark every
                 share shot carries, plus the AI-specific notice and the AI
-                model version line. */}
-            <ShotFooter
-              class="srp-foot-shared"
-              notes={[t("replay.report.aiNotice")]}
-              meta={[aiVersionLine.value]}
-            />
+                model version line. Capture-only: the watermark belongs to the
+                share artifact, not to the window (the window already carries
+                the modal chrome — 2026-11-07 review). */}
+            {capturing.value ? (
+              <ShotFooter
+                class="srp-foot-shared"
+                notes={[t("replay.report.aiNotice")]}
+                meta={[aiVersionLine.value]}
+              />
+            ) : null}
           </div>
         </HkScrollContainer>
       </div>
