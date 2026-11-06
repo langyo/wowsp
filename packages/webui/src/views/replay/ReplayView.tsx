@@ -132,7 +132,7 @@ import StatsCard from "@/components/stats/StatsCard";
 import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
-import type { PlayerStats } from "@/api";
+import type { DogTag, PlayerStats } from "@/api";
 import type {
   ReportRosterInfo,
   ReportSheetIdentity,
@@ -2121,6 +2121,14 @@ export default defineComponent({
     /** The opened replay's SHA-256 (the sheet prints its six-char tail). */
     const replayHash = ref<string | null>(null);
     let sheetFacesSeq = 0;
+    /** The selected perspective's in-game emblem. The roster batch does NOT
+     *  carry dog tags today (Rust fills them on the single-player lookup
+     *  only), so the sheet resolves the emblem from the shared stats store:
+     *  its disk/memory cache first (the sidebar emblem's own source), then
+     *  one queued lookup per perspective. */
+    const reportEmblem = ref<DogTag | null>(null);
+    let emblemSeq = 0;
+    const sheetStats = useStatsStore();
 
     /** One open = one hash fetch + one roster batch. The seq guard keeps a
      *  slow answer for a previously opened replay from patching the sheet. */
@@ -2148,7 +2156,12 @@ export default defineComponent({
         void (async () => {
           try {
             const stats = await fetchRosterStatsByNames(names, realm.value);
-            if (seq === sheetFacesSeq) reportRosterStats.value = stats;
+            if (seq === sheetFacesSeq) {
+              reportRosterStats.value = stats;
+              if (staticReport.value && !reportEmblem.value) {
+                void resolveReportEmblem(staticReport.value);
+              }
+            }
           } catch {
             /* clan tags are decorative — the rows fall back to the bare name */
           }
@@ -2214,13 +2227,60 @@ export default defineComponent({
     /** Identity faces straight off the sheet's roster faces — the emblem
      *  rides the same roster batch as the clan tags, so the head shows the
      *  player's REAL in-game badge with no second lookup. */
+    async function resolveReportEmblem(
+      report: StaticReport | null,
+    ): Promise<void> {
+      const row = report?.roster.find(
+        (entry) => entry.entityId === report.entityId,
+      );
+      const name = row?.playerName ?? row?.name ?? "";
+      const seq = ++emblemSeq;
+      let tag: DogTag | null = null;
+      if (name) {
+        // 1) the roster batch's own dog tag (the backend may start supplying
+        //    it without touching this path).
+        tag = reportRosterStats.value.get(name)?.dogTag ?? null;
+        // 2) the shared stats store's cache — nickname index -> account id ->
+        //    cached stats. Instant for every player the app already looked up
+        //    (the recorder included: the sidebar emblem lives here).
+        if (!tag) {
+          const accountId = sheetStats.index.get(
+            realm.value.toLowerCase() + "_" + name.toLowerCase(),
+          );
+          if (accountId != null) {
+            tag =
+              sheetStats.cache.get(realm.value + "_" + accountId)?.dogTag ??
+              null;
+          }
+        }
+      }
+      if (seq !== emblemSeq) return;
+      reportEmblem.value = tag;
+      if (tag || !name || isAiName(name) || !realm.value) return;
+      // 3) one queued lookup per perspective; the store caches the answer.
+      try {
+        const landed = await sheetStats.lookup(name, realm.value);
+        if (seq !== emblemSeq) return;
+        reportEmblem.value = landed.dogTag ?? null;
+      } catch {
+        /* offline / hidden profile: the initial plate stays */
+      }
+    }
+
+    /** A landed report (or a perspective switch) resolves its emblem; a
+     *  roster batch landing later retries while the plate is still shown. */
+    watch(
+      () => staticReport.value?.entityId ?? null,
+      () => void resolveReportEmblem(staticReport.value),
+    );
+
     function reportIdentityFor(report: StaticReport): ReportSheetIdentity {
       const row = report.roster.find((entry) => entry.entityId === report.entityId);
       const face = reportRosterFaces.value.get(report.entityId);
       return {
         name: row?.playerName ?? row?.name ?? String(report.entityId),
         clanTag: face?.clanTag ?? null,
-        dogTag: face?.dogTag ?? null,
+        dogTag: reportEmblem.value ?? face?.dogTag ?? null,
         shipType: face?.shipType ?? null,
         shipName: face?.shipName ?? null,
         tier: face?.tier ?? null,
