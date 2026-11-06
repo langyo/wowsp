@@ -177,15 +177,19 @@ describe("ReportPlayerPicker", () => {
         ],
       ]),
     });
-    // Trigger: clan + nickname + tier/ship line, emblem fallback initial.
+    // Trigger: emblem + clan + nickname on the first line, and the ship line
+    // leading with the TEAM-COLOURED ship-class glyph (the old blue/red dot
+    // moved here and became the class icon).
     const trigger = w.find(".srp-picker__trigger");
     expect(trigger.find(".srp-picker__clan").text()).toBe("[HOOD]");
     expect(trigger.find(".srp-picker__name").text()).toBe("me");
+    expect(trigger.find(".srp-picker__name-line .srp-picker__dot").exists()).toBe(
+      false,
+    );
     expect(trigger.find(".srp-picker__ship").text()).toContain("Shimakaze");
-    // Requirement 4: the DISPLAY also carries the ship-class glyph.
     expect(
-      trigger.find(".srp-picker__ship .ship-type-glyph").exists(),
-    ).toBe(true);
+      trigger.find(".srp-picker__ship img").attributes("src"),
+    ).toContain("icon_ally_destroyer");
     expect(trigger.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
 
     await w.find(".srp-picker__trigger").trigger("click");
@@ -200,10 +204,14 @@ describe("ReportPlayerPicker", () => {
     expect(mate.find(".srp-picker__check").exists()).toBe(false);
   });
 
-  it("is a static name plate while the long image is captured", async () => {
+  it("is a chrome-less static name plate while the long image is captured", async () => {
     const w = mountPicker({ capturing: true });
     const trigger = w.find(".srp-picker__trigger");
     expect(trigger.attributes("disabled")).toBeDefined();
+    // The copied image must not carry UI elements: no button frame modifier
+    // runs the static (transparent, padding-less) face, no chevron.
+    expect(trigger.classes()).toContain("srp-picker__trigger--static");
+    expect(w.find(".srp-picker__chevron").exists()).toBe(false);
     await trigger.trigger("click");
     expect(w.find(".srp-picker__menu").exists()).toBe(false);
   });

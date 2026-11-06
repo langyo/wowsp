@@ -277,8 +277,8 @@ describe("StaticReportPanel wiring", () => {
     expect(wrapper.find(".srp-picker__ship").text()).toContain("X");
     expect(wrapper.find(".srp-picker__ship").text()).toContain("Shimakaze");
     expect(
-      wrapper.find(".srp-picker__ship .ship-type-glyph").exists(),
-    ).toBe(true);
+      wrapper.find(".srp-picker__ship img").attributes("src"),
+    ).toContain("icon_ally_destroyer");
     expect(wrapper.find(".srp-picker__avatar .player-badge").exists()).toBe(true);
     // Battle provenance: map, mode, start, replay fingerprint tail.
     expect(wrapper.find(".srp-head__meta-map").text()).toBe("North");
@@ -324,11 +324,16 @@ describe("StaticReportPanel wiring", () => {
 
   it("renders the static annotation band before the clone and drops it after", async () => {
     vi.mocked(toBlob).mockReset();
-    const seen = { callouts: -1, hint: -1, height: 0 };
+    const seen = { callouts: -1, hint: -1, height: 0, staticPlate: false };
     vi.mocked(toBlob).mockImplementation((async (node: HTMLElement) => {
       seen.callouts = node.querySelectorAll(".srp-tl__callout").length;
       seen.hint = node.querySelectorAll(".srp-tl__hint").length;
       seen.height = node.scrollHeight;
+      // The cloned frame must carry the chrome-less identity, never the
+      // dropdown button.
+      seen.staticPlate = node
+        .querySelector(".srp-picker__trigger")
+        ?.classList.contains("srp-picker__trigger--static") ?? false;
       return new Blob([new Uint8Array([1])], { type: "image/png" });
     }) as never);
     const { handle, wrapper } = mountPanel();
@@ -340,6 +345,7 @@ describe("StaticReportPanel wiring", () => {
     expect(seen.callouts).toBe(3);
     expect(seen.hint).toBe(0);
     expect(seen.height).toBe(2400);
+    expect(seen.staticPlate).toBe(true);
     // ...and the interactive surface came back afterwards.
     expect(wrapper.findAll(".srp-tl__callout")).toHaveLength(0);
     expect(wrapper.find(".srp-tl__hint").exists()).toBe(true);
