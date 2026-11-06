@@ -1707,6 +1707,12 @@
   .mod-row {
     padding: 0.4375rem 0.5rem;
   }
+
+  /* The related-mod drawer's expanded body gets the phone's shorter cap
+     (the pane itself is only ~22rem tall there). */
+  .mod-detail__related-scroll {
+    max-height: 8.5rem;
+  }
 }
 
 // ── Plugin file-list window (secondary HkModal over the Resources view) ────
@@ -2036,4 +2042,182 @@
   font-size: var(--text-2xs, 0.6875rem);
   color: rgb(var(--color-warning, 234 179 8));
   word-break: break-all;
+}
+
+/* ── Junk hygiene strip + known-mod relation drawer (installed pane,
+   2026-11-06): a unit's tree is shared ground — the strip offers the
+   one-click clean of preview/screenshot junk the install skipped, the
+   drawer lists every known mod claiming files in the unit, pinned above
+   the pane's action row. ── */
+
+.mod-detail__junk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  color: rgba(202, 138, 4, 1);
+  background: rgba(234, 179, 8, 0.12);
+  border: 1px solid rgba(234, 179, 8, 0.35);
+  border-radius: var(--radius-sm);
+
+  > svg {
+    flex: none;
+  }
+}
+
+.mod-detail__junk-text {
+  flex: 1;
+  min-width: 8rem;
+}
+
+/* Bottom drawer above the pane's action row — collapsed by default so a
+   long association list never pushes the pinned actions out. */
+.mod-detail__related {
+  flex: none;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  margin-top: 0.625rem;
+  padding-top: 0.625rem;
+  border-top: 1px dashed rgb(var(--color-border) / 30%);
+}
+
+.mod-detail__related-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  font-size: var(--text-xs);
+  cursor: pointer;
+  text-align: left;
+
+  > svg {
+    flex: none;
+    color: rgb(var(--color-muted));
+  }
+
+  .is-open {
+    transform: rotate(180deg);
+  }
+}
+
+.mod-detail__related-title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  color: rgb(var(--color-muted));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mod-detail__related-head .app-tag {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+
+.mod-detail__related-chevron {
+  flex: none;
+  color: rgb(var(--color-muted));
+  transition: transform 0.15s ease;
+}
+
+.mod-detail__related-scroll {
+  max-height: 11rem;
+}
+
+.mod-detail__related-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+  padding-right: 0.25rem;
+}
+
+.mod-detail__related-total,
+.mod-detail__related-empty {
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: 1.45;
+  color: rgb(var(--color-muted));
+}
+
+.mod-detail__related-row {
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 0.375rem 0.5rem;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  background: rgb(var(--color-border) / 8%);
+  border-radius: var(--radius-xs);
+}
+
+.mod-detail__related-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.mod-detail__related-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.375rem;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: rgb(var(--color-text));
+  overflow-wrap: anywhere;
+}
+
+.mod-detail__related-badges {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.375rem;
+  min-width: 0;
+}
+
+.mod-detail__related-jump {
+  white-space: nowrap;
+}
+
+.mod-detail__related-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.625rem;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+  font-variant-numeric: tabular-nums;
+}
+
+.mod-detail__related-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-left: auto;
+}
+
+.mod-detail__related-remove {
+  font-size: var(--text-2xs);
+  padding: 0.2rem 0.4rem;
+}
+
+.mod-detail__related-hint {
+  max-width: 14rem;
+  font-size: var(--text-2xs);
+  line-height: 1.4;
+  color: rgb(var(--color-muted));
 }

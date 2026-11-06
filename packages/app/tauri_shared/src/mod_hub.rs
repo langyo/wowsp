@@ -119,6 +119,18 @@ pub struct InstalledMod {
     /// (older payloads stay byte-identical).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contested_files: Vec<String>,
+    /// Preview/screenshot "junk" files under this unit's paths (pack
+    /// screenshots, Explorer thumbnails — see the app-side junk predicate):
+    /// a sorted sample of at most 12 res_mods-relative LIVE names with the
+    /// `.bak` toggle suffix stripped. Absent when no junk was found
+    /// (older payloads stay byte-identical).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub junk_files: Vec<String>,
+    /// Total junk files the scan found under the unit's paths (the sample
+    /// above is capped, so this can be larger). Absent when zero, same
+    /// wire-shape rule.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub junk_count: u32,
 }
 
 /// Result of toggling one installed plugin's `.bak` state.
@@ -129,6 +141,15 @@ pub struct UnitToggleReport {
     /// State AFTER the toggle: true = files renamed to `.bak`.
     pub disabled: bool,
     pub renamed_files: usize,
+}
+
+/// What `mod_hub_clean_unit_junk` did: the unit it cleaned and how many junk
+/// files (live names and their `.bak` twins alike) it deleted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JunkCleanReport {
+    pub rel_path: String,
+    pub removed_files: usize,
 }
 
 /// One subtree copy the install performs: `fromRel` (relative to the package
@@ -203,6 +224,11 @@ pub struct InstallReport {
     /// when empty, same wire-shape rule as `conflicts`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub mirrored_bins: Vec<String>,
+    /// Preview/screenshot junk files the install skipped instead of writing
+    /// (pack screenshots, explorer noise — see the app-side junk predicate).
+    /// Absent when zero so junk-free reports keep their older wire shape.
+    #[serde(default, skip_serializing_if = "is_zero_usize")]
+    pub pruned_files: usize,
 }
 
 // ── Mod Hub online catalog (mirrors scripts/mod_hub_publish.py output) ──────
@@ -665,4 +691,12 @@ pub struct PurgeReinstallReport {
     /// Where the previous tree now lives (nothing is deleted before the
     /// caller holds this path — the user cleans it up once satisfied).
     pub backup_path: Option<String>,
+}
+
+fn is_zero_u32(v: &u32) -> bool {
+    *v == 0
+}
+
+fn is_zero_usize(v: &usize) -> bool {
+    *v == 0
 }

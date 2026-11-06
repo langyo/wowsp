@@ -226,6 +226,7 @@ export const RPC = {
   mod_hub_install: "mod_hub_install",
   mod_hub_set_unit_enabled: "mod_hub_set_unit_enabled",
   mod_hub_uninstall_unit: "mod_hub_uninstall_unit",
+  mod_hub_clean_unit_junk: "mod_hub_clean_unit_junk",
   mod_hub_uninstall_modstation_unit: "mod_hub_uninstall_modstation_unit",
   mod_hub_stale_versions: "mod_hub_stale_versions",
   mod_hub_pnf_loader_status: "mod_hub_pnf_loader_status",

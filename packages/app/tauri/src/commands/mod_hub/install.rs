@@ -315,6 +315,10 @@ fn install_plan_inner(
         written: Vec::new(),
     };
     let mut warnings = plan.warnings.clone();
+    // Junk files (pack screenshots, Explorer metadata — see [`junk`]) are
+    // skipped by the copy and reported: the user should know the pack shipped
+    // promo material that did not land in the game tree.
+    let mut pruned = 0usize;
     let wrote = {
         let mut wrote = 0usize;
         let mut touched_pnf = false;
@@ -326,7 +330,9 @@ fn install_plan_inner(
                     src.join(&entry.from_rel)
                 };
                 let to = res_mods.join(&entry.to_rel);
-                wrote += copy_tree(&from, &to, &mut journal)?;
+                let copied = copy_tree(&from, &to, &mut journal)?;
+                wrote += copied.written;
+                pruned += copied.pruned;
                 if entry.from_rel.eq_ignore_ascii_case("PnFMods") {
                     touched_pnf = true;
                 }
@@ -417,6 +423,7 @@ fn install_plan_inner(
             conflicts: Vec::new(),
             mirrored_bins,
             skipped: None,
+            pruned_files: pruned,
         },
         written,
         restore_dir,

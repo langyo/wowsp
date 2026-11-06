@@ -60,6 +60,7 @@ pub(crate) fn classify_installed_root(
         let texture_analysis = owned.iter().find_map(|c| c.analysis.clone());
         let mut names: Vec<&str> = vec![m.name.as_str()];
         names.extend(owned.iter().map(|c| c.name.as_str()));
+        let health = unit_health(res_mods, &paths);
         mods.push(InstalledMod {
             kind,
             name: m.name.clone(),
@@ -68,13 +69,15 @@ pub(crate) fn classify_installed_root(
             // Manifest-only rows key on the (unique) row name instead of a
             // path so uninstall can still resolve — and clean — them.
             rel_path: paths.first().cloned().unwrap_or_else(|| m.name.clone()),
-            disabled: unit_disabled_state(res_mods, &paths),
+            disabled: health.disabled,
             paths,
             version: m.version.clone(),
             identity: unit_identity(&names, pairs.as_deref()),
             warnings: Vec::new(),
             contested: false,
             contested_files: Vec::new(),
+            junk_count: health.junk_count,
+            junk_files: health.junk_files,
         });
     }
 
@@ -83,7 +86,7 @@ pub(crate) fn classify_installed_root(
         if owner[ci].is_some() {
             continue;
         }
-        let disabled = unit_disabled_state(res_mods, &cand.paths);
+        let health = unit_health(res_mods, &cand.paths);
         mods.push(InstalledMod {
             kind: cand.kind,
             name: cand.name.clone(),
@@ -91,12 +94,14 @@ pub(crate) fn classify_installed_root(
             texture_analysis: cand.analysis.clone(),
             rel_path: cand.paths.first().cloned().unwrap_or_default(),
             paths: cand.paths.clone(),
-            disabled,
+            disabled: health.disabled,
             version: None,
             identity: unit_identity(&[cand.name.as_str()], pairs.as_deref()),
             warnings: Vec::new(),
             contested: false,
             contested_files: Vec::new(),
+            junk_count: health.junk_count,
+            junk_files: health.junk_files,
         });
     }
 
@@ -245,20 +250,50 @@ pub(crate) fn unit_files(res_mods: &Path, rel: &str) -> Vec<PathBuf> {
     files
 }
 
-/// A unit counts as disabled when it has files and every one of them is a
-/// `.bak` twin.
-fn unit_disabled_state(res_mods: &Path, paths: &[String]) -> bool {
+/// Preview-junk names on the wire per unit (the full count rides separately).
+const JUNK_SAMPLE_CAP: usize = 12;
+
+/// One unit's health facts, all from the SAME by-unit walk: whether it is
+/// temporarily disabled (has files and every one is a `.bak` twin) and its
+/// preview/screenshot junk footprint ([`junk`]).
+struct UnitHealth {
+    disabled: bool,
+    junk_count: u32,
+    junk_files: Vec<String>,
+}
+
+/// Walk one unit's paths once for both verdicts. `junk_files` is a sorted,
+/// deduped sample of at most [`JUNK_SAMPLE_CAP`] LIVE names (the `.bak` toggle
+/// suffix stripped); `junk_count` counts every junk file on disk, `.bak` twins
+/// included.
+fn unit_health(res_mods: &Path, paths: &[String]) -> UnitHealth {
     let mut total = 0usize;
     let mut bak = 0usize;
+    let mut junk_count = 0u32;
+    let mut sample = std::collections::BTreeSet::new();
     for rel in paths {
         for file in unit_files(res_mods, rel) {
             total += 1;
             if file.to_string_lossy().ends_with(".bak") {
                 bak += 1;
             }
+            let Ok(stripped) = file.strip_prefix(res_mods) else {
+                continue;
+            };
+            let rel_name = stripped.to_string_lossy().replace('\\', "/");
+            if !super::junk::is_junk_rel(&rel_name) {
+                continue;
+            }
+            junk_count = junk_count.saturating_add(1);
+            let live = rel_name.strip_suffix(".bak").unwrap_or(&rel_name);
+            sample.insert(live.to_string());
         }
     }
-    total > 0 && bak == total
+    UnitHealth {
+        disabled: total > 0 && bak == total,
+        junk_count,
+        junk_files: sample.into_iter().take(JUNK_SAMPLE_CAP).collect(),
+    }
 }
 
 /// Overlay the "contested tree" verdict: contested = true on every unit

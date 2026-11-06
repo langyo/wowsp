@@ -82,6 +82,7 @@ export type {
   PackagePlanEntry,
   PackagePlan,
   InstallReport,
+  JunkCleanReport,
   CatalogPackage,
   CatalogPreset,
   CatalogEntry,

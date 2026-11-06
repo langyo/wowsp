@@ -42,9 +42,9 @@ use std::path::{Path, PathBuf};
 use sha2::{Digest, Sha256};
 
 use wowsp_tauri_shared::{
-    ClientUsage, InstallReport, InstalledMod, MigrateReport, MigrationPlan, ModInstallRecord,
-    ModKind, PackagePlan, PackagePlanEntry, PlanFile, PnfLoaderStatus, StaleBinInfo,
-    TextureAnalysis, UnitToggleReport,
+    ClientUsage, InstallReport, InstalledMod, JunkCleanReport, MigrateReport, MigrationPlan,
+    ModInstallRecord, ModKind, PackagePlan, PackagePlanEntry, PlanFile, PnfLoaderStatus,
+    StaleBinInfo, TextureAnalysis, UnitToggleReport,
 };
 
 /// What [`install_plan`] did, beyond the user-facing report: the exact files
@@ -725,24 +725,43 @@ pub(crate) fn ensure_plain_source_entry(path: &Path) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// What one [`copy_tree`] pass did: files it placed and junk files it skipped
+/// ([`junk`] — pack screenshots, preview folders, Explorer metadata).
+pub(crate) struct TreeCopy {
+    pub written: usize,
+    pub pruned: usize,
+}
+
 /// Copy a subtree (or a single mapped file) through the journal. Every source
 /// entry is inspected without following links ([`ensure_plain_source_entry`]):
 /// a link-shaped reparse point (symlink/junction) anywhere under the picked
 /// folder aborts the copy with the entry named, before its target bytes can be
 /// read; cloud placeholders pass and hydrate while they are copied.
-fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Result<usize> {
+///
+/// Junk DESTINATIONS ([`junk::is_junk_rel`] on the res_mods-relative path) are
+/// skipped instead of written; their directories are created lazily, so a
+/// junk-only subtree leaves no empty folder behind. The no-follow guards run
+/// on every entry either way.
+fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Result<TreeCopy> {
     if !from.exists() {
         return Err(anyhow!("{} does not exist", from.display()));
     }
     ensure_plain_source_entry(from)?;
+    let mut outcome = TreeCopy {
+        written: 0,
+        pruned: 0,
+    };
     if from.is_file() {
+        if is_junk_dest(journal, to) {
+            outcome.pruned = 1;
+            return Ok(outcome);
+        }
         fs::create_dir_all(to.parent().unwrap_or(to))
             .map_err(|e| anyhow!("create {}: {e}", to.display()))?;
         journal.place(from, to, Place::ResMods)?;
-        return Ok(1);
+        outcome.written = 1;
+        return Ok(outcome);
     }
-    fs::create_dir_all(to).map_err(|e| anyhow!("create {}: {e}", to.display()))?;
-    let mut count = 0usize;
     let mut stack = vec![(from.to_path_buf(), to.to_path_buf())];
     while let Some((src, dst)) = stack.pop() {
         for ent in fs::read_dir(&src)
@@ -753,15 +772,28 @@ fn copy_tree(from: &Path, to: &Path, journal: &mut InstallJournal) -> anyhow::Re
             ensure_plain_source_entry(&s)?;
             let d = dst.join(ent.file_name());
             if s.is_dir() {
-                fs::create_dir_all(&d).map_err(|e| anyhow!("create {}: {e}", d.display()))?;
                 stack.push((s, d));
+            } else if is_junk_dest(journal, &d) {
+                outcome.pruned += 1;
+                tracing::debug!(dest = %d.display(), "pruned junk file on install");
             } else {
+                // Lazy creation: a directory holding only junk never lands.
+                fs::create_dir_all(d.parent().unwrap_or(&d))
+                    .map_err(|e| anyhow!("create {}: {e}", d.display()))?;
                 journal.place(&s, &d, Place::ResMods)?;
-                count += 1;
+                outcome.written += 1;
             }
         }
     }
-    Ok(count)
+    Ok(outcome)
+}
+
+/// Does a destination count as junk? Asked in the res_mods-relative spelling
+/// ([`junk::is_junk_rel`]); a destination outside the res_mods root cannot be
+/// junk (the journal never writes one there).
+fn is_junk_dest(journal: &InstallJournal, dest: &Path) -> bool {
+    dest.strip_prefix(&journal.res_mods)
+        .is_ok_and(|rel| junk::is_junk_rel(&rel.to_string_lossy().replace('\\', "/")))
 }
 
 pub(crate) mod assets;
@@ -770,6 +802,7 @@ mod classify;
 pub(crate) mod foreign;
 mod install;
 mod installed_units;
+mod junk;
 mod loader_health;
 pub(crate) mod manifest;
 mod model_preview;
@@ -865,6 +898,10 @@ pub use stale_migration::{
     mod_hub_stale_versions,
 };
 pub use unit_ops::{
+    __cmd__mod_hub_clean_unit_junk, __tauri_command_name_mod_hub_clean_unit_junk,
+    mod_hub_clean_unit_junk,
+};
+pub use unit_ops::{
     __cmd__mod_hub_set_unit_enabled, __tauri_command_name_mod_hub_set_unit_enabled,
     mod_hub_set_unit_enabled,
 };
@@ -901,4 +938,6 @@ pub(crate) use stale_migration::{
 #[cfg(test)]
 pub(crate) use texture_analysis::ship_unit_name;
 #[cfg(test)]
-pub(crate) use unit_ops::{half_disable_violation, set_paths_state, uninstall_unit_core};
+pub(crate) use unit_ops::{
+    clean_unit_junk_core, half_disable_violation, set_paths_state, uninstall_unit_core,
+};

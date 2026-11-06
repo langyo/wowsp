@@ -823,6 +823,24 @@ export default defineComponent({
           {renderMigrateWizard(ctx)}
           {renderFileListWindow(ctx)}
 
+          {/* Related-mod removal (the installed pane's bottom drawer): a
+              ledger row leaves through the catalog uninstall, which deletes
+              its files in EVERY directory and restores the originals the
+              install overwrote — the confirm copy says exactly that. */}
+          <HkConfirmDialog
+            open={!!hub.relationTarget.value}
+            title={t("resources.uninstall")}
+            message={t("resources.relatedConfirmRemove", {
+              name: hub.relationTarget.value?.name || "",
+            })}
+            confirmLabel={t("resources.uninstall")}
+            loading={hub.relationBusy.value}
+            onConfirm={hub.removeRelatedMod}
+            onUpdate:open={(v: boolean) => {
+              if (!v) hub.relationTarget.value = null;
+            }}
+          />
+
           <HkConfirmDialog
             open={!!hub.unitTarget.value}
             title={t("resources.uninstall")}

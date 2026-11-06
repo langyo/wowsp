@@ -888,6 +888,7 @@ pub fn run() {
             commands::mod_hub::mod_hub_classify_path,
             commands::mod_hub::mod_hub_pick_source,
             commands::mod_hub::mod_hub_install,
+            commands::mod_hub::mod_hub_clean_unit_junk,
             commands::mod_hub::mod_hub_set_unit_enabled,
             commands::mod_hub::mod_hub_uninstall_unit,
             commands::mod_hub::mod_hub_uninstall_modstation_unit,

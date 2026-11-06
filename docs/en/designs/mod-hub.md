@@ -389,6 +389,50 @@ Each unit supports two operations:
   `.bak` twins of recorded files so disabled mods cannot survive as
   ghosts.
 
+**Known-mod relations.** One on-disk unit is not necessarily one mod: several
+known mods claim files inside the same tree. Shared runtime components
+(`PnFMods/TTaroModUtils`, `gui/ttaro`, the per-locale `ttaro-mod-config.mo`
+catalogs, the `@game` gettext DLL, the `PnFModsLoader.py` marker) are dropped
+in by every dependent pack, and catch-all override trees (`content/`,
+`gui/`) accumulate files from several packs. The installed list therefore
+annotates every row that has associations with the number of KNOWN mods
+associated with the unit,
+computed in the webui from data the client already holds: ledger records whose
+written-file list lands under the unit's paths, the consumer set of a shared
+component the unit carries (pack records whose `shared_roots` edge names it),
+and the foreign/Aslain or catalog pairing of the unit's own identity. Opening a
+row shows the detail pane's bottom **related mods** drawer (collapsed by
+default): each associated mod lists its role (own / shared component /
+dependent), the files it claims in this unit and in total, with a jump to its
+catalog entry when one exists. Managed rows offer a full uninstall — the same
+ledger rewind as the catalog uninstall, so every file the mod owns anywhere in
+`res_mods` (including its residual files in other trees and their `.bak`
+twins) is removed, overwritten originals are restored, and shared components
+whose last consumer leaves go with it. Aslain/manifest rows route through the
+unit uninstall (which also cuts `installed_mods.xml`), and a shared-component
+OWNER row is not removable on its own: the component's lifetime belongs to its
+consumers.
+
+**Junk pruning (previews and screenshots).** Aslain-ingested packs and several
+authors' payloads ship promo material — screenshots, preview folders,
+`desktop.ini`/`Thumbs.db` noise — that is not game payload and used to land in
+`res_mods`, polluting the mod tree. One predicate (`junk::is_junk_rel`) is the
+single source of truth: an image (`png/jpg/jpeg/gif/bmp/webp/tif/tiff`) whose
+basename or any path segment carries a screenshot/preview/showcase/thumbnail
+marker (English or Chinese), plus Explorer metadata files. The installer skips
+junk DESTINATIONS before their directories are created — a screenshot-only
+folder never lands, and the plan's file-list preview agrees with what is
+written — and reports the pruned count (`prunedFiles`) so the UI can say the
+pack's promo material did not land. Functional assets (HUD art, scene and
+gameplay textures, `.dds` payloads, `PnFMods` scripts) never match. Installs
+that already polluted a tree are cleaned explicitly: the scan annotates each
+unit with its junk footprint (`junkCount` plus a capped `junkFiles` sample),
+the detail pane shows the notice with a clean action, and
+`mod_hub_clean_unit_junk` (gated like every `res_mods` mutation) deletes the
+junk files and their `.bak` twins, prunes the emptied directories, and drops
+those paths from the ledger records' file lists so a later uninstall does not
+chase ghosts.
+
 **Safe mode** quarantines the whole current `res_mods` in one atomic
 rename (`res_mods` → `res_mods.wowsp-disabled`) — WG's "safe mode"
 support move: run the game with every res_mods mod bypassed, without

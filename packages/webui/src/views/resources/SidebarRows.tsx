@@ -142,6 +142,10 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
       : ctx.isAslainUnit(m)
         ? "blue"
         : "green";
+  // Known-mod association count: how many ledger records / shared-runtime
+  // consumers / foreign rows claim files inside this unit's tree (the
+  // detail drawer below lists them).
+  const relatedCount = ctx.unitRelationCountOf(m);
   return (
     <button
       key={m.relPath}
@@ -184,6 +188,14 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
         ) : null}
         {ctx.isAslainUnit(m) && (
           <AppTag tone="default">{t("resources.foreignSource.aslain")}</AppTag>
+        )}
+        {relatedCount > 0 && (
+          <AppTag
+            tone={relatedCount > 1 ? "primary" : "default"}
+            data-hint={t("resources.relatedTitle")}
+          >
+            {t("resources.relatedCount", { count: relatedCount })}
+          </AppTag>
         )}
         {/* Contested tree: a WoWSP ledger record claims files in this
             unit's tree while foreign files remain — the two writers undo

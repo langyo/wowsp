@@ -606,6 +606,246 @@ fn install_copies_tree_and_creates_missing_loader() {
 }
 
 #[test]
+fn install_prunes_preview_junk_and_reports_it() {
+    // Packs ship promo screenshots next to their payload. The installer
+    // skips junk DESTINATIONS instead of writing them (and never creates a
+    // junk-only folder), the preview lists exactly what lands, and the report
+    // carries the pruned count.
+    let pkg = std::env::temp_dir().join("wowsp_junk_install_pkg");
+    let game = std::env::temp_dir().join("wowsp_junk_install_game");
+    let _ = fs::remove_dir_all(&pkg);
+    let _ = fs::remove_dir_all(&game);
+    touch(&pkg.join("PnFMods/Skin/Main.py"));
+    touch(&pkg.join("PnFMods/Skin/tex.dds"));
+    touch(&pkg.join("PnFMods/Skin/screenshot_1.png"));
+    touch(&pkg.join("PnFMods/Skin/screenshots/preview_2.jpg"));
+    touch(&pkg.join("gui/screenshots/showcase.webp"));
+    touch(&pkg.join("gui/ribbons/ribbon.png"));
+    fs::create_dir_all(game.join("bin/1")).unwrap();
+    let _rr = test_restore_root_in(&game.join("rr"));
+
+    let plan = classify_package(&pkg).unwrap();
+    let files = collect_plan_files(&pkg, &plan).unwrap();
+    assert!(
+        !files
+            .iter()
+            .any(|f| f.contains("screenshot") || f.contains("showcase")),
+        "preview must not list junk: {files:?}"
+    );
+    assert!(files.contains(&"PnFMods/Skin/Main.py".to_string()));
+    assert!(files.contains(&"gui/ribbons/ribbon.png".to_string()));
+
+    let report = install_plan(&pkg, game.to_str().unwrap(), &plan)
+        .map(|applied| applied.report)
+        .unwrap();
+    assert_eq!(report.wrote_files, 3);
+    assert_eq!(report.pruned_files, 3);
+    let rm = game.join("bin/1/res_mods");
+    assert!(rm.join("PnFMods/Skin/Main.py").is_file());
+    assert!(rm.join("PnFMods/Skin/tex.dds").is_file());
+    assert!(rm.join("gui/ribbons/ribbon.png").is_file());
+    assert!(!rm.join("PnFMods/Skin/screenshot_1.png").exists());
+    assert!(!rm.join("gui/screenshots/showcase.webp").exists());
+    // Junk-only directories are never created.
+    assert!(!rm.join("PnFMods/Skin/screenshots").exists());
+    assert!(!rm.join("gui/screenshots").exists());
+
+    fs::remove_dir_all(&pkg).ok();
+    fs::remove_dir_all(&game).ok();
+}
+
+#[test]
+fn scan_surfaces_unit_junk_sample_and_count() {
+    let tmp = std::env::temp_dir().join("wowsp_unit_junk_scan");
+    let _ = fs::remove_dir_all(&tmp);
+    let rm = tmp.join("bin/1/res_mods");
+    touch(&rm.join("PnFMods/Skin/Main.py"));
+    touch(&rm.join("PnFMods/Skin/tex.dds"));
+    touch(&rm.join("PnFMods/Skin/screenshot_1.png"));
+    // The disabled twin of a junk file is still junk; the wire name is live.
+    touch(&rm.join("PnFMods/Skin/Preview_2.jpg.bak"));
+    for i in 0..15 {
+        touch(&rm.join(format!("PnFMods/Skin/screenshots/show_{i:02}.png")));
+    }
+    let unit = classify_installed_root(&rm, None)
+        .into_iter()
+        .find(|u| u.rel_path == "PnFMods/Skin")
+        .unwrap();
+    assert_eq!(unit.junk_count, 17, "every junk file on disk counts");
+    assert_eq!(unit.junk_files.len(), 12, "wire sample is capped");
+    assert!(
+        unit.junk_files
+            .iter()
+            .all(|f| f.ends_with(".png") || f.ends_with(".jpg")),
+        "{:?}",
+        unit.junk_files
+    );
+    assert!(!unit.junk_files.iter().any(|f| f.ends_with(".bak")));
+    let mut sorted = unit.junk_files.clone();
+    sorted.sort();
+    assert_eq!(unit.junk_files, sorted, "sample is sorted");
+    assert!(!unit.disabled, "live payload keeps the unit enabled");
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn clean_unit_junk_removes_files_prunes_dirs_and_trims_ledger() {
+    let tmp = std::env::temp_dir().join("wowsp_unit_junk_clean");
+    let _ = fs::remove_dir_all(&tmp);
+    let game = tmp.join("game");
+    let rm = game.join("bin/1/res_mods");
+    touch(&rm.join("PnFMods/Skin/Main.py"));
+    touch(&rm.join("PnFMods/Skin/tex.dds"));
+    touch(&rm.join("PnFMods/Skin/screenshot_1.png"));
+    touch(&rm.join("PnFMods/Skin/screenshots/preview_2.jpg"));
+    touch(&rm.join("PnFMods/Skin/screenshots/preview_2.jpg.bak"));
+    // A sibling unit under the shared PnFMods parent must survive pruning.
+    touch(&rm.join("PnFMods/Other/Main.py"));
+    let unit = classify_installed_root(&rm, None)
+        .into_iter()
+        .find(|u| u.rel_path == "PnFMods/Skin")
+        .unwrap();
+    assert_eq!(unit.junk_count, 3);
+    let mut installs = vec![ModInstallRecord {
+        id: "skin".into(),
+        name: "Skin".into(),
+        version: "1".into(),
+        category: "skin".into(),
+        source: "mod-hub".into(),
+        discussion: None,
+        preset: None,
+        bin_version: "1".into(),
+        installed_at: String::new(),
+        files: vec![
+            "PnFMods/Skin/Main.py".into(),
+            "PnFMods/Skin/tex.dds".into(),
+            "PnFMods/Skin/screenshot_1.png".into(),
+            "PnFMods/Skin/screenshots/preview_2.jpg".into(),
+        ],
+        restore_dir: None,
+        game_root: game.to_string_lossy().into_owned(),
+        // Content hashes of deleted paths would keep describing dead bytes.
+        hashes: Some(std::collections::HashMap::from([
+            ("pnfmods/skin/main.py".to_string(), "aaa".to_string()),
+            (
+                "pnfmods/skin/screenshot_1.png".to_string(),
+                "bbb".to_string(),
+            ),
+        ])),
+        snapshot_hashes: Some(std::collections::HashMap::from([(
+            "pnfmods/skin/screenshot_1.png".to_string(),
+            "ccc".to_string(),
+        )])),
+        shared_roots: Vec::new(),
+    }];
+    // A record whose entire payload was junk is a ghost (nothing on disk would
+    // back its "installed" badge) — the clean drops it.
+    installs.push(ModInstallRecord {
+        id: "junk-only".into(),
+        name: "Junk Only".into(),
+        version: "1".into(),
+        category: "skin".into(),
+        source: "mod-hub".into(),
+        discussion: None,
+        preset: None,
+        bin_version: "1".into(),
+        installed_at: String::new(),
+        files: vec![
+            "PnFMods/Skin/screenshot_1.png".into(),
+            "PnFMods/Skin/screenshots/preview_2.jpg".into(),
+        ],
+        restore_dir: None,
+        game_root: game.to_string_lossy().into_owned(),
+        hashes: Some(std::collections::HashMap::from([(
+            "pnfmods/skin/screenshots/preview_2.jpg".to_string(),
+            "ddd".to_string(),
+        )])),
+        snapshot_hashes: None,
+        shared_roots: Vec::new(),
+    });
+    let report = clean_unit_junk_core(&game.to_string_lossy(), &rm, &unit, &mut installs).unwrap();
+    assert_eq!(report.rel_path, "PnFMods/Skin");
+    assert_eq!(
+        report.removed_files, 3,
+        "live names and the .bak twin alike"
+    );
+    assert!(!rm.join("PnFMods/Skin/screenshot_1.png").exists());
+    assert!(
+        !rm.join("PnFMods/Skin/screenshots").exists(),
+        "emptied dir pruned"
+    );
+    assert!(rm.join("PnFMods/Skin/Main.py").is_file());
+    assert!(rm.join("PnFMods/Skin/tex.dds").is_file());
+    assert!(rm.join("PnFMods/Other/Main.py").is_file());
+    assert_eq!(
+        installs[0].files,
+        vec![
+            "PnFMods/Skin/Main.py".to_string(),
+            "PnFMods/Skin/tex.dds".to_string()
+        ],
+        "the ledger stops claiming deleted files only"
+    );
+    // The hash maps dropped their dead entries and kept the live one.
+    let hashes = installs[0].hashes.as_ref().unwrap();
+    assert_eq!(
+        hashes.len(),
+        1,
+        "hash entries of deleted paths are gone: {hashes:?}"
+    );
+    assert_eq!(
+        hashes.get("pnfmods/skin/main.py").map(String::as_str),
+        Some("aaa")
+    );
+    assert!(installs[0].snapshot_hashes.as_ref().unwrap().is_empty());
+    // The fully-junk record left the ledger; the live one stayed.
+    assert_eq!(installs.len(), 1, "the ghost record was dropped");
+    assert_eq!(installs[0].id, "skin");
+    // A second clean finds nothing (and keeps the trimmed record).
+    let again = clean_unit_junk_core(&game.to_string_lossy(), &rm, &unit, &mut installs).unwrap();
+    assert_eq!(again.removed_files, 0);
+    assert_eq!(installs[0].files.len(), 2);
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+/// Pre-release twins hold their own copy of every mirrored file — older
+/// installs mirrored junk too — so a junk clean must delete the twin copies
+/// with the live bytes, or a Steam build switch resurrects them.
+#[test]
+fn clean_unit_junk_removes_preload_copies() {
+    let game = preload_game_fixture("wowsp_unit_junk_preload");
+    let live = game.join("bin/1/res_mods");
+    let twin = game.join("bin/2/res_mods");
+    touch(&live.join("PnFMods/Skin/Main.py"));
+    touch(&live.join("PnFMods/Skin/screenshot_1.png"));
+    touch(&live.join("PnFMods/Skin/screenshots/deep/preview.png"));
+    touch(&twin.join("PnFMods/Skin/Main.py"));
+    touch(&twin.join("PnFMods/Skin/screenshot_1.png"));
+    touch(&twin.join("PnFMods/Skin/screenshots/deep/preview.png"));
+    let unit = classify_installed_root(&live, None)
+        .into_iter()
+        .find(|u| u.rel_path == "PnFMods/Skin")
+        .unwrap();
+    let mut installs: Vec<ModInstallRecord> = Vec::new();
+    let report =
+        clean_unit_junk_core(&game.to_string_lossy(), &live, &unit, &mut installs).unwrap();
+    assert_eq!(report.removed_files, 2);
+    assert!(!live.join("PnFMods/Skin/screenshot_1.png").exists());
+    assert!(
+        !twin.join("PnFMods/Skin/screenshot_1.png").exists(),
+        "the twin copy of a cleaned junk file must not survive the build switch"
+    );
+    assert!(!twin.join("PnFMods/Skin/screenshots").exists());
+    assert!(
+        twin.join("PnFMods/Skin/Main.py").is_file(),
+        "functional twin payload stays"
+    );
+
+    fs::remove_dir_all(&game).ok();
+}
+
+#[test]
 fn zip_files_get_structured_error() {
     // The archive probe sits behind the picker grant (audit H-3) — grant
     // the probed path the way the native pick would, then expect the
@@ -1961,6 +2201,7 @@ fn local_record_describes_local_install() {
             conflicts: Vec::new(),
             mirrored_bins: Vec::new(),
             skipped: None,
+            pruned_files: 0,
         },
         written: vec!["gui/a.png".into(), "ime_config.xml".into()],
         restore_dir: Some(PathBuf::from("R")),
