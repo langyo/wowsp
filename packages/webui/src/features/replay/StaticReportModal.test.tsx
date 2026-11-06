@@ -3,11 +3,12 @@
  * (2026-11-03 extraction): HkModal owns the chrome; the host's data layer
  * (open/report/loading/error) flows in as props and close/seek/pick flow
  * back out. The panel child is stubbed — its formatters carry their own
- * suite; this pins the WINDOW wiring.
+ * suite; this pins the WINDOW wiring, the header COPY action's trip through
+ * the shared copy-shot kit (features/share/useShareImage) included.
  */
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
-import { defineComponent, h } from "vue";
+import { defineComponent, h, nextTick } from "vue";
 
 import StaticReportModal from "./StaticReportModal";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -21,6 +22,34 @@ const report = {
   entityId: 7,
   roster: [],
 } as unknown as StaticReport;
+
+/** The copy kit, reduced to what the wiring test pins: the render callback
+ *  the modal hands it, the busy flag the header button reads, and the copy
+ *  trigger the header button calls. The flag is a REAL ref (created in the
+ *  factory, where vue is already initialised): the header button must
+ *  re-render when the kit reports progress. */
+const share = vi.hoisted(() => ({
+  holder: { render: null as null | (() => Promise<Uint8Array>) },
+  busy: { value: false } as { value: boolean },
+  copyShot: vi.fn(),
+}));
+
+vi.mock("@/features/share/useShareImage", async () => {
+  const { ref } = await import("vue");
+  share.busy = ref(false);
+  return {
+    useShareImage: (render: () => Promise<Uint8Array>) => {
+      share.holder.render = render;
+      return { busy: share.busy, copyShot: share.copyShot };
+    },
+  };
+});
+
+/** The panel's capture handle — what the modal's copy action ultimately
+ *  drives (the bytes the clipboard receives). */
+const panel = vi.hoisted(() => ({
+  capturePng: vi.fn(async () => new Uint8Array([1, 2, 3])),
+}));
 
 // The hikari window contract, reduced to what the wiring test pins: the
 // content class + title reach the modal surface, headerActions render, and
@@ -80,7 +109,7 @@ vi.mock("@/features/holographic/StaticReportPanel", () => ({
     name: "StaticReportPanel",
     props: ["report", "loading"],
     setup(_, { expose }) {
-      expose({ exportPng: vi.fn().mockResolvedValue(undefined) });
+      expose({ capturePng: panel.capturePng });
       return () => h("div", { class: "panel-stub" });
     },
   }),
@@ -91,6 +120,14 @@ function mountModal(overrides: Record<string, unknown> = {}) {
     props: { open: true, report: null, loading: false, error: null, ...overrides },
   });
 }
+
+beforeEach(() => {
+  share.busy.value = false;
+  share.holder.render = null;
+  share.copyShot.mockClear();
+  panel.capturePng.mockClear();
+  panel.capturePng.mockResolvedValue(new Uint8Array([1, 2, 3]));
+});
 
 describe("StaticReportModal", () => {
   it("mounts the hikari window with the unified title and reading frame", () => {
@@ -104,20 +141,41 @@ describe("StaticReportModal", () => {
   it("renders the embedded panel inside and forwards pick/seek through it", async () => {
     const w = mountModal({ report });
     expect(w.find(".panel-stub").exists()).toBe(true);
-    const panel = w.findComponent({ name: "StaticReportPanel" });
-    await panel.vm.$emit("pick", 42);
+    const child = w.findComponent({ name: "StaticReportPanel" });
+    await child.vm.$emit("pick", 42);
     await flushPromises();
     expect(w.emitted("pick")?.[0]).toEqual([42]);
-    await panel.vm.$emit("seek", 89000);
+    await child.vm.$emit("seek", 89000);
     await flushPromises();
     expect(w.emitted("seek")?.[0]).toEqual([89000]);
   });
 
-  it("offers the export action only once a report is in hand", () => {
+  it("offers the long-image copy action only once a report is in hand", () => {
     expect(mountModal().find(".hk-modal-stub-actions button").exists()).toBe(false);
     const withReport = mountModal({ report });
     expect(withReport.find(".hk-modal-stub-actions button").exists()).toBe(true);
-    expect(withReport.find(".hk-modal-stub-actions").text()).toContain("replay.report.export");
+    expect(withReport.find(".hk-modal-stub-actions").text()).toContain("replay.report.copy");
+  });
+
+  it("drives the shared copy pipeline with the panel's PNG bytes", async () => {
+    const w = mountModal({ report });
+    await w.find(".hk-modal-stub-actions button").trigger("click");
+    expect(share.copyShot).toHaveBeenCalledTimes(1);
+
+    // The render callback the modal handed the kit is the panel capture —
+    // the same call the clipboard write receives.
+    expect(share.holder.render).toBeTypeOf("function");
+    const bytes = await share.holder.render!();
+    expect(panel.capturePng).toHaveBeenCalledTimes(1);
+    expect(Array.from(bytes)).toEqual([1, 2, 3]);
+  });
+
+  it("surfaces the copy busy state on the header action", async () => {
+    const w = mountModal({ report });
+    share.busy.value = true;
+    await nextTick();
+    const actions = w.find(".hk-modal-stub-actions");
+    expect(actions.text()).toContain("replay.report.copying");
   });
 
   it("shows the loading placeholder while the first fetch runs", () => {
@@ -126,7 +184,7 @@ describe("StaticReportModal", () => {
     expect(w.find(".wowsp-report-modal__loading").text()).toContain("replay.report.loading");
   });
 
-  it("renders the failure card and hides the export with it", () => {
+  it("renders the failure card and hides the copy action with it", () => {
     const w = mountModal({ error: "boom" });
     const card = w.findComponent(ErrorCard);
     expect(card.exists()).toBe(true);

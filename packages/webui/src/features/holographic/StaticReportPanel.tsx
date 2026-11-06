@@ -1,13 +1,14 @@
 /**
  * StaticReportPanel — E25's shareable per-player decision report.
  *
- * One vertical column (the "long image" is exactly this DOM node exported
- * via html-to-image): header with the perspective picker and whole-game
- * scores, a coverage bar that paints the unresolvable segments instead of
- * papering over them, the instant-score timeline through hikari's own
- * HkTrendChart (with the coverage-gap / key-moment marks as a thin overlay
- * the chart's props cannot express), and one card per key decision —
- * situation, action, the models' verdict, and the realised outcome.
+ * One vertical column (the "long image" is exactly this DOM node captured
+ * via html-to-image and copied to the clipboard): header with the
+ * perspective picker and whole-game scores, a coverage bar that paints the
+ * unresolvable segments instead of papering over them, the instant-score
+ * timeline through hikari's own HkTrendChart (with the coverage-gap /
+ * key-moment marks as a thin overlay the chart's props cannot express), and
+ * one card per key decision — situation, action, the models' verdict, and
+ * the realised outcome.
  * `onSeek` jumps the 3D board's playhead so the same report doubles as an
  * in-app step-through; the picker switches any roster perspective (the
  * Rust side reuses its scoring cache, so a switch is one IPC away).
@@ -17,7 +18,11 @@
  * former hand-rolled overlay + this panel's own title/action row and the
  * dev-only demo route died with the extraction). HkModal renders the ONE
  * window head; this panel is chromeless by construction and the modal
- * drives the exposed exportPng through a component ref.
+ * drives the exposed capturePng through a component ref, then hands the
+ * bytes to the shared copy-shot flow (features/share/useShareImage) — the
+ * long image is COPIED to the clipboard, never downloaded: a WebView2
+ * download only landed in the user's Downloads folder with zero in-app
+ * feedback and read as "the button does nothing" (2026-11-06 report).
  */
 import { computed, defineComponent, ref, type PropType } from "vue";
 import {
@@ -262,6 +267,45 @@ const TrendChart = defineComponent({
   },
 });
 
+/** Ceiling on the long-image capture: past this the copy reports failure. */
+const CAPTURE_TIMEOUT_MS = 20_000;
+
+/** The report column's own capture → bytes contract (no clipboard, no
+ *  toast: both live in the shared share kit). Exported for vitest. */
+export async function captureReportPng(node: HTMLElement): Promise<Uint8Array> {
+  const { toBlob } = await import("html-to-image");
+  // skipFonts: embedding the app webfonts fetches every font URL, which
+  // hangs behind proxies / offline; the panel's own stack is a
+  // self-contained dark-surface CSS, so the system fallback is fine.
+  const render = toBlob(node, {
+    backgroundColor: "#0d1117",
+    // The panel scrolls inside the modal; capture the full column.
+    height: node.scrollHeight,
+    pixelRatio: 2,
+    skipFonts: true,
+    style: { maxHeight: "none", overflow: "visible" },
+  });
+  // The render is an SVG foreignObject pass: a stall must surface as a
+  // failed-copy toast, never as a spinner that never ends. (The race itself
+  // handles a late render rejection after the timeout won — the failure was
+  // already reported.)
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error("report capture timed out")),
+      CAPTURE_TIMEOUT_MS,
+    );
+  });
+  let blob: Blob | null;
+  try {
+    blob = await Promise.race([render, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+  if (!blob) throw new Error("report capture produced no PNG");
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
 export default defineComponent({
   name: "StaticReportPanel",
   props: {
@@ -274,7 +318,10 @@ export default defineComponent({
     onPick: { type: Function as PropType<(entityId: number) => void>, required: true },
   },
   setup(props, { expose }) {
-    const exporting = ref(false);
+    /** The exported long-image column — the capture's DOM root (a template
+     *  ref, not a document query: the panel must capture ITS root even if a
+     *  future host mounts a second report somewhere). */
+    const exportRootRef = ref<HTMLElement | null>(null);
     const me = computed<StaticRosterEntry | undefined>(() =>
       props.report.roster.find((r) => r.entityId === props.report.entityId),
     );
@@ -284,52 +331,27 @@ export default defineComponent({
       return { allies, enemies };
     });
 
-    const exportPng = async () => {
-      const node = document.querySelector<HTMLElement>(".static-report-panel__export-root");
-      if (!node || exporting.value) return;
-      exporting.value = true;
-      try {
-        const { toPng } = await import("html-to-image");
-        // skipFonts: embedding the app webfonts fetches every font URL,
-        // which hangs behind proxies / offline; the panel's own stack is
-        // self-contained dark-surface CSS, so the system fallback is fine.
-        // The race keeps the button from sticking if embedding stalls.
-        const render = toPng(node, {
-          backgroundColor: "#0d1117",
-          // The panel scrolls inside the modal; capture the full column.
-          height: node.scrollHeight,
-          pixelRatio: 2,
-          skipFonts: true,
-          style: { maxHeight: "none", overflow: "visible" },
-        });
-        const url = await Promise.race([
-          render,
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error("report export render timed out")), 20000),
-          ),
-        ]);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${props.report.replayId}_${props.report.entityId}_report.png`;
-        a.click();
-      } catch (err) {
-        console.warn("[report] export failed", err);
-      } finally {
-        exporting.value = false;
-      }
+    /** Capture this panel's long image to PNG bytes for the host's
+     *  copy button (the modal owns the clipboard write + the toast through
+     *  features/share/useShareImage). A thrown error reaches that toast as
+     *  the failure path — never a silent no-op. */
+    const capturePng = async (): Promise<Uint8Array> => {
+      const node = exportRootRef.value;
+      if (!node) throw new Error("report export root is not mounted");
+      return captureReportPng(node);
     };
 
-    // The host (StaticReportModal) renders the window head; expose the
-    // capture pipeline for its export button. NOTE: the setup-context
-    // expose, not the `defineExpose` compiler macro — the latter is a
-    // runtime no-op outside an SFC `<script setup>`, silently leaving the
-    // host ref without the method.
-    expose({ exportPng });
+    // The host (StaticReportModal) renders the window head; expose ONLY the
+    // capture — the clipboard and the toast belong to the shared copy shot
+    // kit. NOTE: the setup-context expose, not the `defineExpose` compiler
+    // macro — the latter is a runtime no-op outside an SFC
+    // `<script setup>`, silently leaving the host ref without the method.
+    expose({ capturePng });
 
     return () => (
       <div class="static-report-panel">
         <HkScrollContainer class="static-report-panel__scroll">
-        <div class="static-report-panel__export-root">
+        <div ref={exportRootRef} class="static-report-panel__export-root">
           {/* ── perspective picker (both teams, coverage-badged) ── */}
           <div class="srp-picker">
             <div class="srp-picker__team">

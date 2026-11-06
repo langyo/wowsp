@@ -2115,7 +2115,7 @@ export default defineComponent({
         if (prev !== undefined && path !== prev) closeStaticReport();
       },
     );
-    /* (the long-image export moved into StaticReportModal's own head —
+    /* (the long-image capture/copy moved into StaticReportModal's own head —
      *  the host no longer drills the panel ref / busy flag through.) */
     /** Reveal the opened replay in the OS file manager (desktop): the
      *  backend re-validates the path (a replay-extension file that exists)

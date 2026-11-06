@@ -636,8 +636,8 @@
   },
   "report": {
     "title": "AI 전투 보고서",
-    "export": "이미지 내보내기",
-    "exporting": "렌더링 중…",
+    "copy": "이미지 복사",
+    "copying": "렌더링 중…",
     "close": "닫기",
     "loading": "채점 중…",
     "allies": "아군",

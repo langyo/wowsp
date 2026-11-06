@@ -1,10 +1,11 @@
 import { defineComponent, ref, type PropType } from "vue";
-import { Download } from "@lucide/vue";
+import { Camera } from "@lucide/vue";
 import { HkButton, HkModal, HkSpinner } from "@celestia-island/hikari";
 
 import type { StaticReport } from "@/api";
 import ErrorCard from "@/components/base/ErrorCard";
 import { t } from "@/i18n";
+import { useShareImage } from "@/features/share/useShareImage";
 import StaticReportPanel from "@/features/holographic/StaticReportPanel";
 import "./StaticReportModal.scss";
 
@@ -19,10 +20,15 @@ import "./StaticReportModal.scss";
  * reporting, history-back guard, phone sheet docking) and this component
  * owns only the report-specific head actions.
  *
- * The long-image export button rides HkModal's `headerActions` slot; the
- * capture itself stays in StaticReportPanel (its exposed `exportPng`
- * targets the panel's export root), so the modal is the only owner of the
- * exporting flag and the host no longer drills it through.
+ * The long-image COPY action rides HkModal's `headerActions` slot: the
+ * capture itself stays in StaticReportPanel (its exposed `capturePng`
+ * renders the panel's export root to PNG bytes), while the clipboard write
+ * and the success/failure toast ride the shared copy-shot kit
+ * (features/share/useShareImage) — the SAME pipeline every 战绩图片 export
+ * uses. It used to trigger an `<a download>` click instead: WebView2
+ * dropped the file into the Downloads folder with no in-app feedback, so
+ * the button read as dead (2026-11-06 report), and the toast contract was
+ * missing either way.
  *
  * Props are the host's data layer, kept in ReplayView (parser-coupled
  * fetch, stale-response seq guard, out-of-band replay swap watch): open
@@ -32,8 +38,8 @@ import "./StaticReportModal.scss";
  * (perspective switch → the host refetches).
  *
  * The report sheet itself stays dark inside the themed chrome on purpose —
- * it is a share/export artifact (导出长图 captures the dark sheet); the
- * window CHROME is what this component unifies, not the sheet's palette.
+ * it is a share artifact (the copied long image captures the dark sheet),
+ * and the CHROME is what this component unifies, not the sheet's palette.
  */
 export default defineComponent({
   name: "StaticReportModal",
@@ -49,19 +55,17 @@ export default defineComponent({
     pick: (_entityId: number) => true,
   },
   setup(props, { emit }) {
-    /** The chromeless panel's capture handle — the header export button's
-     *  only job is to drive it (and own the busy flag). */
-    const panelRef = ref<{ exportPng: () => Promise<void> } | null>(null);
-    const exporting = ref(false);
-    const onExport = async () => {
-      if (exporting.value || !panelRef.value) return;
-      exporting.value = true;
-      try {
-        await panelRef.value.exportPng();
-      } finally {
-        exporting.value = false;
-      }
-    };
+    /** The chromeless panel's capture handle — the header action's only job
+     *  is to drive it. */
+    const panelRef = ref<{ capturePng: () => Promise<Uint8Array> } | null>(null);
+    /** Copy the report's long image onto the clipboard: render → clipboard
+     *  → toast, all owned by the shared kit (native IPC first, webview
+     *  clipboard fallback, one toast on either outcome). */
+    const shot = useShareImage(async () => {
+      const panel = panelRef.value;
+      if (!panel) throw new Error("report panel is not mounted");
+      return panel.capturePng();
+    });
 
     return () => (
       <HkModal
@@ -83,15 +87,15 @@ export default defineComponent({
                   <HkButton
                     variant="secondary"
                     size="sm"
-                    loading={exporting.value}
-                    onClick={() => void onExport()}
+                    loading={shot.busy.value}
+                    onClick={() => void shot.copyShot()}
                   >
-                    {exporting.value ? null : <Download size={13} />}
+                    {shot.busy.value ? null : <Camera size={13} />}
                     <span>
                       {t(
-                        exporting.value
-                          ? "replay.report.exporting"
-                          : "replay.report.export",
+                        shot.busy.value
+                          ? "replay.report.copying"
+                          : "replay.report.copy",
                       )}
                     </span>
                   </HkButton>

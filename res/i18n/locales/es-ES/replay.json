@@ -636,8 +636,8 @@
   },
   "report": {
     "title": "Informe de batalla IA",
-    "export": "Exportar imagen",
-    "exporting": "Renderizando…",
+    "copy": "Copiar imagen",
+    "copying": "Renderizando…",
     "close": "Cerrar",
     "loading": "Puntuando la repetición…",
     "allies": "Aliados",

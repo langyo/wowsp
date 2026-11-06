@@ -636,8 +636,8 @@
   },
   "report": {
     "title": "AI 戰報",
-    "export": "匯出長圖",
-    "exporting": "渲染中…",
+    "copy": "複製長圖",
+    "copying": "渲染中…",
     "close": "關閉",
     "loading": "評分中…",
     "allies": "友方",
