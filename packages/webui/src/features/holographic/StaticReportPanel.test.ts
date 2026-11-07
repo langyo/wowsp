@@ -427,6 +427,70 @@ describe("StaticReportPanel wiring", () => {
     expect(captureHostNode()).toBeNull();
   });
 
+  it("pins the score track's SVG paint inline on the offscreen copy, never the live one", async () => {
+    vi.mocked(toBlob).mockReset();
+    const bytes = new Uint8Array([8, 8, 8]);
+    vi.mocked(toBlob).mockResolvedValue(new Blob([bytes], { type: "image/png" }));
+    const { handle, wrapper } = mountPanel();
+    await nextTick();
+    const liveRoot = wrapper.find(".static-report-panel__export-root")
+      .element as HTMLElement;
+    // html-to-image deep-clones SVG subtrees and short-circuits its own style
+    // walk there, and the cloned frame renders WITHOUT the app stylesheets:
+    // the capture must hand it the score track's paint as INLINE styles.
+    // Stub the computed style the way a real browser reports the track's
+    // classes (fill: none + the blue move-model envelope).
+    const svgPaint: Record<string, string> = {
+      fill: "none",
+      stroke: "rgb(87, 166, 255)",
+      "stroke-width": "2px",
+      "stroke-linecap": "round",
+    };
+    const realGetComputedStyle = window.getComputedStyle.bind(window);
+    const spy = vi
+      .spyOn(window, "getComputedStyle")
+      .mockImplementation((element: Element) =>
+        element.namespaceURI === "http://www.w3.org/2000/svg"
+          ? ({
+              getPropertyValue: (name: string) => svgPaint[name] ?? "",
+            } as unknown as CSSStyleDeclaration)
+          : realGetComputedStyle(element),
+      );
+    try {
+      const { pending, offscreen } = await startCapture(
+        () => handle().capturePng(),
+        2400,
+      );
+      await pending;
+      // The walk read the SVG descendants' computed styles...
+      expect(spy).toHaveBeenCalled();
+      // ...and the OFFSCREEN copy (the node html-to-image clones) carries the
+      // stubbed paint as inline declarations — what the deep clone keeps.
+      const capturedPaths = offscreen.querySelectorAll(".srp-tl__score-line");
+      expect(capturedPaths).toHaveLength(2);
+      for (const path of capturedPaths) {
+        const style = path.getAttribute("style") ?? "";
+        expect(style).toContain("fill: none");
+        expect(style).toContain("rgb(87, 166, 255)");
+      }
+      // Grid lines were the bug's other casualty: they lost their stroke and
+      // vanished from the copied image.
+      const gridLine = offscreen.querySelector(".srp-tl__score-grid");
+      expect(gridLine?.getAttribute("style") ?? "").toContain(
+        "rgb(87, 166, 255)",
+      );
+      // The LIVE window never got the pin: a copy leaves it untouched.
+      const livePaths = liveRoot.querySelectorAll(".srp-tl__score-line");
+      expect(livePaths).toHaveLength(2);
+      for (const path of livePaths) {
+        expect(path.getAttribute("style")).toBeNull();
+      }
+      expect(captureHostNode()).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("renders the annotation band and share footer offscreen, never in the live window", async () => {
     vi.mocked(toBlob).mockReset();
     const seen = {

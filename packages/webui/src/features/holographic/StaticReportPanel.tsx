@@ -69,6 +69,87 @@ import "./StaticReportPanel.scss";
 /** Ceiling on the long-image capture: past this the copy reports failure. */
 const CAPTURE_TIMEOUT_MS = 20_000;
 
+/** The SVG presentation properties a capture must pin as INLINE styles.
+ *  Curated for this sheet: the paint that a class rule drives on the score
+ *  track and its grid / hairline lines (fill, stroke and their modifiers),
+ *  the inherited faces a future nested <g> / <text> would otherwise lose
+ *  (color — the resolution target of currentColor — plus the text and
+ *  transform properties), and the one geometry hint the track relies on
+ *  (vector-effect: non-scaling-stroke). Kept to a proof set rather than the
+ *  whole computed declaration: the clone only needs what the app stylesheet
+ *  used to supply. */
+const SVG_PRESENTATION_PROPS = [
+  "fill",
+  "fill-opacity",
+  "fill-rule",
+  "stroke",
+  "stroke-opacity",
+  "stroke-width",
+  "stroke-dasharray",
+  "stroke-dashoffset",
+  "stroke-linecap",
+  "stroke-linejoin",
+  "stroke-miterlimit",
+  "opacity",
+  "visibility",
+  "display",
+  "color",
+  "stop-color",
+  "stop-opacity",
+  "paint-order",
+  "shape-rendering",
+  "vector-effect",
+  "transform",
+  "transform-origin",
+  "font-family",
+  "font-size",
+  "font-weight",
+  "font-style",
+  "text-anchor",
+  "dominant-baseline",
+] as const;
+
+/**
+ * Pin the computed PRESENTATION styles of every SVG descendant under `root`
+ * as INLINE styles — the capture-time repair for html-to-image's SVG
+ * short-circuit.
+ *
+ * html-to-image 1.11.13 deep-clones an <svg> subtree (`cloneSingleNode` →
+ * `node.cloneNode(true)` for SVG) and its `cloneChildren` returns early for
+ * SVG nodes, so only HTML nodes get their computed styles inlined
+ * (`cloneCSSStyle`). The clone is then rendered through an SVG/foreignObject
+ * data URL WITHOUT the app stylesheets: every class-driven `fill`/`stroke`
+ * inside the score track is dropped, so each <path> falls back to SVG's
+ * default solid BLACK fill and the grid / hairline <line>s lose their
+ * strokes. Inline presentation declarations travel with the deep clone, so
+ * stamping the computed values here makes the copied long image paint
+ * exactly like the window.
+ *
+ * The caller passes the HIDDEN offscreen sheet only, so the live window is
+ * never mutated (a copy leaves it byte-identical). The <svg> roots themselves
+ * are decorated by html-to-image (its `decorate` pass runs on SVG clones
+ * too), hence descendants suffice. One `getComputedStyle` read per element,
+ * not per property: the report sheet carries a handful of SVG nodes, so the
+ * walk stays cheap.
+ */
+export function inlineSvgPresentationStyles(root: HTMLElement): void {
+  for (const svg of root.querySelectorAll("svg")) {
+    for (const element of svg.querySelectorAll<SVGElement>("*")) {
+      const style = element.style;
+      // Defensive: every SVGElement exposes .style, but the walk must never
+      // throw on an exotic descendant of a foreignObject.
+      if (!style) continue;
+      const computed = window.getComputedStyle(element);
+      for (const property of SVG_PRESENTATION_PROPS) {
+        const value = computed.getPropertyValue(property);
+        // Empty = the property does not apply here; a stray empty inline
+        // declaration would only bloat the cloned frame.
+        if (value) style.setProperty(property, value);
+      }
+    }
+  }
+}
+
 /** The report column's own capture → bytes contract (no clipboard, no
  *  toast: both live in the shared share kit). Exported for vitest. */
 export async function captureReportPng(node: HTMLElement): Promise<Uint8Array> {
@@ -414,6 +495,14 @@ export default defineComponent({
         await nextFrame();
         const node = captureRootRef.value;
         if (!node) throw new Error("report capture root is not mounted");
+        // html-to-image deep-clones SVG subtrees WITHOUT inlining their
+        // descendants' computed styles (see inlineSvgPresentationStyles), so
+        // the score track must reach the clone pre-pinned: otherwise its
+        // envelopes render as solid black slabs and the grid lines lose
+        // their strokes. Only the hidden offscreen copy is mutated here — it
+        // is torn down in the finally block and the live window stays
+        // byte-identical.
+        inlineSvgPresentationStyles(node);
         return await captureReportPng(node);
       } finally {
         // The host is a render effect: unmount it and wait for that pass so
