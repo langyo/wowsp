@@ -12,8 +12,9 @@
 import { onBeforeUnmount, onMounted, ref, shallowRef, watch, type Ref } from "vue";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { createPerfHud, perfHudRequested, type PerfHud } from "./perfHud";
+import { createPerfHud, type PerfHud } from "./perfHud";
 import { readStageThemeMode, watchStageThemeMode } from "@wowsp/holo";
+import { usePerfHudStore } from "@/stores/perfHud";
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 
 /** Orbit radius clamps as mounted, before fitCamera sizes them to the map.
@@ -65,9 +66,10 @@ export function useThreeScene(
   const api = shallowRef<ThreeScene | null>(null);
   let rafId = 0;
   let resizeObs: ResizeObserver | null = null;
-  /** Diagnostics overlay (null unless requested via ?perf=1 / the stored
-   *  wowsp.perf preference — see perfHud.perfHudRequested) — owned by the
-   *  mount scope but disposed from the unmount hook, hence this slot. */
+  /** Diagnostics overlay (null unless the session-only perfHud store has
+   *  it enabled — dev builds default on, release builds off, the settings'
+   *  feedback pane flips it live) — owned by the mount scope but disposed
+   *  from the unmount hook, hence this slot. */
   let perfHud: PerfHud | null = null;
   /** The armed devicePixelRatio media query + its disarm handle — cleaned
    *  up on unmount so a later monitor-scale flip cannot touch the disposed
@@ -75,6 +77,7 @@ export function useThreeScene(
   let disarmDprListener: (() => void) | null = null;
   let stopThemeWatch: (() => void) | null = null;
   let stopDpiWatch: (() => void) | null = null;
+  let stopPerfHudWatch: (() => void) | null = null;
   /** Removes the visibilitychange listener (which owns the loop's paused
    *  state) — unmount stops the loop for good, so nothing restarts it. */
   let stopVisibilityWatch: (() => void) | null = null;
@@ -168,7 +171,15 @@ export function useThreeScene(
       };
     };
     rearmDprListener();
-    perfHud = createPerfHud(perfHudRequested());
+    // The overlay follows the session-only toggle (stores/perfHud — dev
+    // builds start on, release builds off): a flip from the settings'
+    // feedback pane disposes and remounts it live, no scene rebuild.
+    const perfHudPrefs = usePerfHudStore();
+    perfHud = createPerfHud(perfHudPrefs.enabled);
+    stopPerfHudWatch = watch(() => perfHudPrefs.enabled, (on) => {
+      perfHud?.dispose();
+      perfHud = on ? createPerfHud(true) : null;
+    });
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -307,6 +318,7 @@ export function useThreeScene(
     perfHud = null;
     stopThemeWatch?.();
     stopDpiWatch?.();
+    stopPerfHudWatch?.();
     resizeObs?.disconnect();
     const a = api.value;
     if (a) {

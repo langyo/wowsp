@@ -373,6 +373,8 @@
   "feedbackQqGroup": "Grupo de QQ",
   "feedbackWeb": "Abrir el formulario",
   "feedbackHistoryBtn": "Historial de comentarios",
+  "perfHudToggle": "HUD de rendimiento",
+  "perfHudHint": "Superposición de diagnóstico temporal del mapa de repeticiones: FPS de renderizado, llamadas de dibujo e información de GPU. Activado por defecto en las builds de depuración y desactivado en las oficiales; el cambio dura solo esta ejecución y nunca se guarda.",
   "updatesAppTitle": "Aplicación",
   "updatesAppHint": "La aplicación sigue las etiquetas de versión de GitHub; una actualización solo descarga el instalador ligero — el paquete de recursos sigue por su propio canal.",
   "updatesAppName": "Aplicación WoWSP",

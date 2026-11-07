@@ -1,23 +1,16 @@
 /**
- * perfHud — the ?perf=1 diagnostics overlay. Pins the things that bit the
- * real-build measurement sessions:
- *   - activation (URL override beats the stored preference; the storage
- *     read is guarded),
- *   - the stable DOM hook (.holo-perf-hud class) and the report text that
- *     scripts and screenshots rely on,
- *   - the storage key itself (external support tooling writes it).
+ * perfHud — the replay map's performance diagnostics overlay. Pins the
+ * things that bit the real-build measurement sessions: the stable DOM
+ * hook (.holo-perf-hud class) and the report text that scripts and
+ * screenshots rely on. (Activation moved to stores/perfHud — the
+ * session-only toggle; the URL parameters and the stored flag are gone.)
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 
 import { fakeAs } from "@/test-utils/fakes";
 
-import {
-  createPerfHud,
-  PERF_HUD_HOVER_OPACITY,
-  PERF_HUD_STORAGE_KEY,
-  perfHudRequested,
-} from "./perfHud";
+import { createPerfHud, PERF_HUD_HOVER_OPACITY } from "./perfHud";
 
 function fakeRenderer(): THREE.WebGLRenderer {
   return fakeAs<THREE.WebGLRenderer>({
@@ -38,49 +31,7 @@ function fakeRenderer(): THREE.WebGLRenderer {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  localStorage.removeItem(PERF_HUD_STORAGE_KEY);
   document.querySelectorAll(".holo-perf-hud").forEach((el) => el.remove());
-});
-
-describe("perfHudRequested", () => {
-  const none = () => null;
-
-  it("uses the documented storage key (external tooling depends on it)", () => {
-    expect(PERF_HUD_STORAGE_KEY).toBe("wowsp.perf");
-  });
-
-  it("?perf=1 forces it on", () => {
-    expect(perfHudRequested("?perf=1", none)).toBe(true);
-  });
-
-  it("?perf=0 forces it off even with the stored preference", () => {
-    expect(perfHudRequested("?perf=0", () => "1")).toBe(false);
-  });
-
-  it("falls back to the stored wowsp.perf preference", () => {
-    expect(perfHudRequested("", () => "1")).toBe(true);
-    expect(perfHudRequested("?foo=bar", () => "0")).toBe(false);
-    expect(perfHudRequested("", none)).toBe(false);
-  });
-
-  it("a non-1/0 perf value falls through to the stored preference", () => {
-    expect(perfHudRequested("?perf=true", none)).toBe(false);
-    expect(perfHudRequested("?perf=true", () => "1")).toBe(true);
-    expect(perfHudRequested("?perf=", () => "1")).toBe(true);
-  });
-
-  it("reads the real localStorage through the default probe", () => {
-    localStorage.setItem(PERF_HUD_STORAGE_KEY, "1");
-    expect(perfHudRequested("")).toBe(true);
-    expect(perfHudRequested("?perf=0")).toBe(false);
-  });
-
-  it("guards a throwing localStorage (privacy modes)", () => {
-    vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
-      throw new Error("denied");
-    });
-    expect(perfHudRequested("")).toBe(false);
-  });
 });
 
 describe("createPerfHud", () => {

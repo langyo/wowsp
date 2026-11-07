@@ -373,6 +373,8 @@
   "feedbackQqGroup": "Groupe QQ",
   "feedbackWeb": "Ouvrir le formulaire",
   "feedbackHistoryBtn": "Historique des retours",
+  "perfHudToggle": "HUD de performance",
+  "perfHudHint": "Superposition de diagnostic temporaire sur la carte de replay : FPS de rendu, draw calls et infos GPU. Activé par défaut dans les builds de debug, désactivé dans les builds release ; ce réglage ne dure que cette session et n'est jamais enregistré.",
   "updatesAppTitle": "Application",
   "updatesAppHint": "L'application suit les tags de version GitHub ; une mise à jour ne télécharge que l'installateur allégé — le pack de ressources suit via son propre canal.",
   "updatesAppName": "Application WoWSP",

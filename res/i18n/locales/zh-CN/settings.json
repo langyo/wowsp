@@ -373,6 +373,8 @@
   "feedbackQqGroup": "QQ 群",
   "feedbackWeb": "打开反馈表单",
   "feedbackHistoryBtn": "历史反馈",
+  "perfHudToggle": "性能诊断 HUD",
+  "perfHudHint": "回放地图的临时诊断浮层（渲染帧率、绘制调用、GPU 信息）。调试构建默认开启，正式构建默认关闭；此开关仅本次运行有效，不会被保存。",
   "updatesAppTitle": "应用更新",
   "updatesAppHint": "应用本体跟随 GitHub 版本号更新；更新时只下载精简安装包，资源包会通过自己的通道单独跟进。",
   "updatesAppName": "WoWSP 应用本体",

@@ -21,6 +21,7 @@ vi.mock("@/transport", () => ({ transport: { invoke: mocks.invoke }, isNative: (
 vi.mock("@tauri-apps/api/app", () => ({ getVersion: () => Promise.resolve("0.6.0") }));
 
 import FeedbackSection from "./FeedbackSection";
+import { usePerfHudStore } from "@/stores/perfHud";
 
 enableAutoUnmount(afterEach);
 
@@ -115,5 +116,42 @@ describe("FeedbackSection export consent dialog", () => {
     footerButton(t("settings.feedbackHwExportFull")).click();
     await flushPromises();
     expect(exportCalls()).toEqual([[RPC.logs_export_bundle, { includeHardware: true }]]);
+  });
+});
+
+describe("FeedbackSection perf HUD toggle", () => {
+  /** The session-only perf HUD switch (stores/perfHud): release builds
+   *  must be able to reach the overlay WITHOUT DevTools or a stored
+   *  flag — this pane is the only activation surface. */
+  async function openPane() {
+    const wrapper = mount(FeedbackSection, {
+      attachTo: document.body,
+      global: { plugins: [createPinia()] },
+    });
+    await flushPromises();
+    return wrapper;
+  }
+
+  it("renders the switch on by default (dev build) and flips the store", async () => {
+    const wrapper = await openPane();
+    const store = usePerfHudStore();
+    expect(store.enabled).toBe(true); // vitest runs as a dev build
+
+    const sw = wrapper.find(".feedback__perf .hk-switch");
+    expect(sw.exists()).toBe(true);
+    expect(sw.attributes("data-checked")).toBeDefined();
+
+    await wrapper.find(".feedback__perf .hk-switch-track").trigger("click");
+    expect(store.enabled).toBe(false);
+    expect(
+      wrapper.find(".feedback__perf .hk-switch").attributes("data-checked"),
+    ).toBeUndefined();
+  });
+
+  it("flipping never persists (session-only — no wowsp.perf flag)", async () => {
+    const wrapper = await openPane();
+    await wrapper.find(".feedback__perf .hk-switch-track").trigger("click");
+    await wrapper.find(".feedback__perf .hk-switch-track").trigger("click");
+    expect(localStorage.getItem("wowsp.perf")).toBeNull();
   });
 });
