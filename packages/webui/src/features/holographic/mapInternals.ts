@@ -432,6 +432,9 @@ export interface MapInternals extends MapInternalsDeps {
   planeRoleById: Map<number, string>;
   /** planeId → the carrier card label id that shows it. */
   planeLabelOfPlane: Map<number, number>;
+  /** planeId → controlling ship's entity id (the carrier join the aircraft
+   *  follow camera and the AI-report jump read; null when unresolved). */
+  planeCarrierOf: Map<number, number | null>;
 
   // ── Minimap base art (see loadMinimapBase) ────────────────────────────
   minimapImage: HTMLImageElement | null;
@@ -532,6 +535,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeLabelCarriers: new Map(),
     planeRoleById: new Map(),
     planeLabelOfPlane: new Map(),
+    planeCarrierOf: new Map(),
 
     minimapImage: null,
     minimapBounds: null,
@@ -675,6 +679,7 @@ export function clearActors(ctx: MapInternals) {
     ctx.planeCloud = null;
   }
   ctx.planeTrails = [];
+  ctx.planeCarrierOf.clear();
   ctx.allyAlive.value = ctx.allyTotal.value;
   ctx.enemyAlive.value = ctx.enemyTotal.value;
   ctx.capStatus.value = [0, 0, 0];

@@ -396,7 +396,20 @@
     "me": "Me",
     "allies": "Allies",
     "enemies": "Enemies",
-    "battles": "battles"
+    "battles": "battles",
+    "aircraft": "Aircraft",
+    "recorded": "Recorded camera: {mode}",
+    "jumpPlaneCamera": "Jump to nearest aircraft view",
+    "planeCamera": "Following aircraft",
+    "mode": {
+      "airplanes": "Aircraft view",
+      "followingPlanes": "Following aircraft",
+      "followingShip": "Following ship",
+      "followingShells": "Following shells",
+      "freeFlying": "Free flight",
+      "overheadMap": "Overhead map",
+      "other": "Other view"
+    }
   },
   "classes": {
     "battleship": "Battleship",
