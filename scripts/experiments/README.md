@@ -34,6 +34,7 @@
 
 | E23 | 域外泛化验证（留出语料） | in-sample 验证的 ρ 有多少水分：own+apac 训练 → eu+na 打分 | ✅ | X2 域外 ρ=+0.383（in-sample +0.376，**零退化**）；fire 决策级 hp-lost ρ 0.915→0.830；走位 top-1 持平 |
 | E24 | 武备属性前置路由（shipId→属性表） | 路由器读武备属性而非船名：分类/校准能否提升、代价是什么 | ⚠️ | 定版：AUPRC 0.3560 / ECE 0.0266 / headA 误报 40/2490 历代最好；hp-lost ρ 0.915→0.600 仍退化——**双模型分工定案**：评分用 E19、建议用 E24（int8 有 0.911 头 A 偏移，交付只走 fp32） |
+| E26 | 鱼雷决策数据集 + 试点（P1） | 从 `TorpedoLaunch` 导出「能否发射 / 专家是否点击」监督，鱼雷点击决策是否可学（预注册 headB AUPRC≥2×base 且 top-decile lift≥1.5×） | ⚠️ | own 86k 行/161 局（canLaunch 55.5%、launched 0.98%）；**headA AUPRC 0.985 可学；headB 0.0109 = 1.12×base、top-lift 1.01× → 预注册 FAIL**（4 s 节奏协议 bug 已修复，E26b 探索性复跑见下） |
 - **语料**：King of the Sea XIX 全量公开录像爬取入册（用户授权；四赛区
   618 场 / 1047 局 / 2054 个 `.wowsreplay`，HEAD 实测 3.4GB、magic 全验，
   归档 `replay-archive/kots-xix/<region>/`）——语料 163 → **2217 局**；
@@ -251,6 +252,108 @@
 
 > 另有训练侧三主题网络调研（数据规模化获取 / 无环境评估协议 / 可导出 ONNX 的
 > 实体编码结构），结论见文末「研究纪要」。
+
+### E26 · 鱼雷决策数据集与试点（P1 Python 侧）⚠️ 头 A 可学；头 B 预注册 FAIL（4 s 节奏数据集）
+
+- **动机**：鱼雷是 DD/CL/BB/SS 的主武器之一（CV 的空投鱼雷是当前唯一已建模的 CV
+  攻击），`receiveTorpedoes`→`TorpedoLaunch` 早已解码，但此前没有任何「发不发
+  鱼雷」的决策监督。E26 补上导出 + 可学性试点（Rust 导出 = task-7，Python 训练 =
+  本脚本 `train_torpedo_model.py`）。
+- **数据定义（`TorpedoDatasetRow`，`fire_dataset.rs` E26 段）**：`DecisionRowCore`
+  v2（entity 15 / global 27）+ `labelACanLaunch` / `labelBLaunched` /
+  `ownTorpReloadFrac` / `ownTorpRangeM`。一次玩家点击按 owner+≤2 s 聚合
+  （`salvo_id` 是 pack 级不是点击级，一次点击会拆成 0.3–1.0 s 间隔的多个 salvo）；
+  decider = 有鱼雷能力的 team-known 船（DD/CL/CA/BB/SS），**排除 CV**（空投
+  owner=CV 但不是舰投决策）；labelA = 装填完成（GameParams `torpReload` 优先，
+  否则 click 间隔 p10，clamp [10,300] s）且射程内（属性表 `torpRange`）有
+  observed-now 敌舰；labelB = `(t, t+2 s]` 内有点击；core 的 `ownReloadFrac` /
+  `ownRangeM` 在本族承载**鱼雷**装填/射程语义。
+- **预注册（先落盘 `out/torpedo_model/e26-preregistration.md`，脚本 sha256 冻结）**：
+  5 折 GroupKFold by replayId（<5 局如实降级）；hidden 192 / batch 4096 / 12 epochs /
+  Adam 1e-3 / label smoothing 0.05 / seed 0 / CPU / max-rows 250k；
+  **PRIMARY 验收线 = headB OOF AUPRC ≥ 2×base 且 top-decile launch-rate lift ≥ 1.5×**；
+  DD/CL/BB/SS 分类别报告（n<30 或正例<10 只描述）；头部 A/B 基线 = 常数基率
+  （no-skill）+「labelA 行全 1」规则；不达标**不调参重试**。
+- **数据规模（own shard 全量，4 s 决策节奏，修复前导出）**：163 局 →
+  163 exported / 0 failed → **85,681 行 / 161 局有行（2 局 0 行）/ 1,067 deciders**；
+  canLaunch **47,511（55.5%）**；launched **465（can 行内 0.98%）**；`featureVersion`
+  全 2、标签契约 0 违例；JSONL 0.32 GB。
+
+  | 类别 | rows | canLaunch | launched | 正类率 | 头 A OOF AUPRC | 头 B OOF AUPRC |
+  |---|---|---|---|---|---|---|
+  | DD | 25,070 | 10,324 | 214 | 2.07% | 0.958 | 0.0186 |
+  | CL/CA | 40,030 | 25,070 | 156 | 0.62% | 0.990 | 0.0098 |
+  | BB | 15,761 | 10,572 | 47 | 0.44% | 0.994 | 0.00446 |
+  | SS | 4,820 | 1,545 | 48 | 3.11% | 0.944 | 0.0293 |
+
+- **结果（OOF pooled，4 s 数据集）**：头 A **AUPRC 0.9853 / AUC 0.9852 / ECE 0.0538**
+  （base 0.5545）——「能不能发射」基本由装填+射程规则决定，管线/标签口径自洽；
+  头 B **AUPRC 0.01094（=1.12× base 0.00979）/ AUC 0.5464 / logloss 0.0678
+  （差于常数基线 0.0550）/ Brier 0.01033 / ECE 0.0250 / top-decile 实际发射率
+  0.989%（lift 1.011×）**；每折 AUPRC 0.0107–0.0150、top-lift 1.129±0.219
+  （fold 0–2 1.22–1.43，fold 3–4 0.82–0.94）。基线：no-skill AUPRC 0.00939 /
+  logloss 0.0550；labelA 规则 AUPRC 同、logloss 15.96。
+- **判定（预注册，如实）**：headB AUPRC 1.12× < 2×、top-lift 1.01× < 1.5× →
+  **FAIL（两条都不过）**。这是 4 s 节奏数据集上的诚实 negative result，不隐藏、
+  不调参重试。
+- **数据协议 bug（E26 的 FAIL 不能当模型定论）**：本轮导出的决策节奏是 4 s
+  （`MOVE_DECISION_INTERVAL_S`），而 labelB 窗口是 2 s——落在 `(t+2, t+4)` 的
+  真实 launch 永远无法被标成正例、对应行还被标成 hold，约一半正例被吞、负例被
+  污染。task-9 已把节奏改回 2 s（与 label 窗口对齐），E26b 用**同一脚本/超参**
+  在同一批 replay 上探索性复跑；**E26b 不改变本节预注册验收结论，只给方向**。
+- **局限**：own 单切片（含 Halloween/event 局，未按 gameMode 过滤）、CPU 试点、
+  无 class one-hot/attrs、CV 空投只存在流里未建模（decider 侧排除）、SS 正例 48
+  （描述性）、headB 仅 465 正例使 OOF 估计区间很宽、2 局 0 行。已知近似：
+  多配置船取各鱼雷段 `shotDelay` 最小值、无属性表船用 10 km 兜底、多管按最后
+  一次 click 计时、盲射不 censor——这些都会给 labelA/B 带噪声，E26b 同样适用。
+- **产物**：`out/torpedo_model/{dataset_own.jsonl, dataset_own_2s.jsonl,
+  pilot_own_metrics.json, pilot_own_2s_metrics.json, e26-preregistration.md}`；脚本
+  `scripts/experiments/train_torpedo_model.py`
+  （`--selftest` PASS 且不依赖 torch）；Rust 导出与测试见 task-7/task-9。
+- 下一步（E26b 仍弱时）：更长/点击对齐的标签窗口、鱼雷几何与管位特征（发射管
+  相对目标舷角、距离分桶、预估命中时间、DoT/进水）、KoTS 全量 + GPU、SS 专项头；
+  共享 v2 特征下「点击时机」可能天然弱（与 E15「命中是随机结果」同型）。
+
+### E26b · 探索性复跑（2 s 决策节奏，**不改变 E26 预注册结论**）⚠️ 方向改善但仍未过线
+
+- **背景**：E26 的 4 s 决策网格与 2 s labelB 窗口错配——落在 `(t+2, t+4)` 的真实
+  click 永远无法成为正例、对应行还被标成 hold（约一半正例被吞、负例被污染）。
+  task-9 把决策节奏改回 2 s（与 window 对齐；单局 899→1794 rows、launched 5→8）。
+  E26b 用**同一导出器（修后）/同一脚本/同一超参**在同一批 replay 上复跑，定位
+  **exploratory**：不改变 E26 的预注册 FAIL 结论，也不以本次结果宣称 PASS。
+- **数据规模（2 s）**：own 163 局 → 163 exported / 0 failed → **170,863 行 /
+  161 局有行 / 1,067 deciders**（≈2× E26 的 85,681 行，符合 cadence 减半）；
+  canLaunch **94,220（55.1%）**；launched **957（can 行内 1.02%）**；标签契约
+  0 违例；JSONL 639 MB。版本：14.5 121,030 / 15.9 21,194 / 15.8 19,872 / 更老
+  8,767；gameMode：pvp 114,230 / brawl 26,834 / event 15,003 / ranked 10,466 /
+  pve 4,330（本切片未过滤）。
+
+  | 类别 | rows | canLaunch | launched | 正类率 | 头 A AUPRC | 头 B AUPRC | 头 B/base |
+  |---|---|---|---|---|---|---|---|
+  | DD | 49,965 | 20,298 | 420 | 2.07% | 0.971 | 0.0225 | 1.09× |
+  | CL/CA | 79,847 | 49,857 | 323 | 0.65% | 0.992 | 0.0090 | 1.39× |
+  | BB | 31,439 | 21,062 | 113 | 0.54% | 0.996 | 0.0104 | 1.94× |
+  | SS | 9,612 | 3,003 | 101 | 3.36% | 0.951 | 0.0385 | 1.14× |
+
+- **结果（OOF pooled，2 s）**：头 A AUPRC **0.9889** / AUC 0.9889 / ECE 0.0441；
+  头 B **AUPRC 0.01349（=1.33× base 0.01016；E26 4 s 为 1.12×）/ AUC 0.5873
+  （4 s：0.5464）/ logloss 0.0687（仍差于常数基线 0.0567）/ ECE 0.0245 /
+  top-decile launch-rate lift 1.484（4 s：1.011）**；每折 lift 1.18 / 1.71 / 1.82
+  / 1.55 / 1.33（均值≈1.52、std≈0.24），每折 AUPRC 0.0131–0.0166。基线：
+  no-skill AUPRC 0.00990 / logloss 0.0567；labelA 规则 AUPRC 同 / logloss 15.95。
+- **判定（exploratory）**：两条预注册线仍不过（AUPRC 1.33× < 2×、top-lift 1.484
+  < 1.5×）→ **FAIL（方向改善，但不足以宣称可学）**。与 4 s 相比 AUC +0.041、
+  top-lift +0.47、AUPRC 倍数 +0.21——cadence bug 确实压低了信号，但剩余信号仍弱。
+- **诚实解读**：① 头 A 0.989 很稳 → 「装填+射程」规则可学、导出/特征/切分无泄漏；
+  ② 头 B AUC 0.587、top-lift 1.48 → 有**微弱**排序信号（高于随机），但 AUPRC 远
+  低于预注册线、logloss 差于常数 → 共享 v2 特征对「点击时机」的可分性不足；
+  ③ 957 正例的 fold 间 lift 波动 ±0.23，个别 fold 的 1.82 不能当稳定性证据。
+- **下一步（不以调参过线为前提）**：更长/点击对齐的标签（click-level 事件建模，
+  而不是仅窗口二分类）；鱼雷几何/管位特征（发射管相对目标舷角、距离分桶、预估
+  命中时间、目标 DoT/进水、被侦测状态）；`pos_weight`/focal 只作为不平衡研究项；
+  KoTS 全量（本切片未跑）+ GPU；SS 专项头（101 正例，仅描述）。
+- **局限**：own 单切片（含 event/pve/brawl；pve 4,330 行无真实对抗标签）、CPU、
+  无 class one-hot/attrs、CV 空投未建模、未跑 KoTS、161 局 5 折。
 
 ## 目标路线图（G1–G5）
 

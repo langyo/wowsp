@@ -20,6 +20,11 @@ table train_fire_model.py --attr-table consumes:
             the slice is a Ship with a non-empty species — the Rust reader
             (ship_attrs.rs) treats a missing key as Other and keeps the
             fire-decision semantics unchanged for it.
+  torpReload smallest positive HP_* shotDelay (seconds) across the hull's
+            *_Torpedoes sections — the authoritative per-launcher torpedo
+            reload the E26 labelA uses instead of the observed click gap.
+            Written ONLY when a torpedo section exists (the Rust reader
+            treats a missing key as 0.0 = unknown).
 
 Unit note — torpedo maxDist is NOT meters: GameParams scales torpedo
 distances by 70/3 (cross-checked: the Gambra's PUPT014 lists maxDist
@@ -72,6 +77,25 @@ def ship_class(d: dict) -> str | None:
     return species
 
 
+def torp_reload_s(d: dict) -> float | None:
+    """Smallest positive HP_* shotDelay (seconds) across the torpedo sections.
+
+    GameParams stores the launcher reload in each `HP_<launcher>` sub-dict's
+    `shotDelay` (Daring = 125.0); the smallest one is the hull's fastest
+    launcher reload. None when the hull carries no torpedo section, so the
+    key is omitted and the Rust reader keeps 0.0 (unknown).
+    """
+    best = None
+    for section in _sections(d, "Torpedoes"):
+        for key, hp in section.items():
+            if not (key.startswith("HP_") and isinstance(hp, dict)):
+                continue
+            delay = hp.get("shotDelay")
+            if isinstance(delay, (int, float)) and delay > 0:
+                best = delay if best is None else min(best, float(delay))
+    return None if best is None else round(float(best), 1)
+
+
 def ship_attrs(d: dict) -> dict:
     hulls = _sections(d, "Hull")
     arts = _sections(d, "Artillery")
@@ -105,6 +129,9 @@ def ship_attrs(d: dict) -> dict:
     cls = ship_class(d)
     if cls is not None:
         out["cls"] = cls
+    torp_reload = torp_reload_s(d)
+    if torp_reload is not None:
+        out["torpReload"] = torp_reload
     return out
 
 
@@ -191,9 +218,16 @@ def main(argv: list[str] | None = None) -> int:
     # abort here instead of degrading CV/SS back to main-battery semantics.
     live_cv = sum(1 for v in table.values() if v.get("cls") == "AirCarrier")
     live_ss = sum(1 for v in table.values() if v.get("cls") == "Submarine")
+    # E26 torpedo-reload liveness: the torpedo dataset's labelA gates on this
+    # column, so an extraction regression must abort here (an all-missing
+    # column would silently fall back to observed click gaps everywhere).
+    live_torp_reload = sum(
+        1 for v in table.values() if v.get("torpReload", 0.0) > 0
+    )
     print(
         f"[e24] {len(table)} ships | torp {live_torp} | smoke-firing {live_smoke} "
-        f"| radar {live_radar} | hydro {live_hydro} | CV {live_cv} | SS {live_ss}"
+        f"| radar {live_radar} | hydro {live_hydro} | CV {live_cv} | SS {live_ss} "
+        f"| torpReload {live_torp_reload}"
     )
     if live_torp == 0 or live_smoke == 0 or live_radar == 0 or live_hydro == 0:
         raise SystemExit("[e24] a routing column came out dead — extraction regression")
@@ -201,6 +235,11 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(
             "[e24] a hull-class column came out dead (no AirCarrier/Submarine) "
             "— extraction regression"
+        )
+    if live_torp_reload <= 300:
+        raise SystemExit(
+            f"[e24] torpedo-reload column came out dead ({live_torp_reload} "
+            "hulls > 0, expected > 300) — extraction regression"
         )
 
     out = Path(args.out)
