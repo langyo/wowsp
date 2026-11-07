@@ -479,6 +479,34 @@
   e26d_core_metrics.json, e26d_core.log, e26d-preregistration.md}`；node3
   `/mnt/work/wowsp-kots/e26d/{code,run}`（e26c 数据未动）。
 
+#### 交付导出（T2 模型候选，node3）
+
+- **最终模型训练口径（非 OOF）**：E26d torp2 特征（global 38）在**全部** 3,111,384 行 /
+  2,215 局上做一次训练（无 CV；hidden 192 / batch 4096 / 12 epochs / lr 1e-3 /
+  smoothing 0.05 / float16 输入 / cuda），loss 0.3406 → 0.2877，训练 57.2 s
+  （含加载 300.4 s）；checkpoint 492,962 B（含 state_dict/hidden/feature_version/
+  feature_set/feature_names/extra_dim）。**E26d 的 5 折 OOF（headB AUPRC 0.037051 =
+  2.286×base、top-lift 2.662×、AUC 0.7084）仍是唯一诚实的泛化估计**；最终模型为
+  全量重训，无 held-out，其 in-sample 参考只用于导出 sanity。
+- **ONNX 契约（与 app 现有 Fire24 一致）**：opset 17、静态 batch 1、无 attrs；
+  inputs = `entity` [1,24,15] fp32、`global_feat` [1,38] fp32、`mask` [1,24] fp32；
+  outputs = `logitA` [1,1]、`logitB` [1,1]（onnx.checker 通过）。
+  - fp32.onnx **492,411 B**，sha256 `a7e36f3844cd5b4ba8ffed108113a8d5301fabc9953b0cb0e998d07167ae8d9e`
+  - int8.onnx（动态量化 QInt8）**136,214 B**，sha256 `61cfe2ea30858a12f44628cc0130d8508ccc4caf6c987ca5bd7a397010d0db75`
+- **torch-vs-ORT fp32 一致性**：1,000 行 max|Δlogit| A **2.38e-6** / B **1.91e-6**
+  （阈值 1e-4，assert 通过）；本机独立复核：ORT 输出与 parity_vectors 存储值完全一致，
+  checkpoint 重建 logits 差 ≤ 9.5e-7。
+- **int8 vs fp32（10 万行随机样本，in-sample 参考）**：headB AUPRC 0.034806 →
+  **0.034577**、logloss 0.08333 → **0.08306**；headA AUPRC 0.999986 → **0.999985**、
+  logloss 0.02726 → **0.02713**；max|Δp| A 0.342（个别行）、B 9.5e-3。→ 排序/校准
+  基本无损（头 A 少数行概率偏移，仅排序使用无碍）。
+- **产物**：`out/torpedo_model/final/{fp32.onnx, int8.onnx, checkpoint.pt, metrics.json}`；
+  `parity_vectors.json`（200 行：entity/global/mask 平铺 + fp32/int8 logits +
+  shipId/replayId/t/region/class/标签 + torp2 11 维），node3
+  `/mnt/work/wowsp-kots/e26d/final` 同源，训练日志 `out/torpedo_model/e26d_final.log`。
+- **性质**：这是研究训练产出的**交付候选**，不是最终 pack 发布——决策包清单/端上注册
+  与 Rust/webui 集成由维护者构建；本轮未触碰 app Rust/webui，也未 commit。
+
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |
