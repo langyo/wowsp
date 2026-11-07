@@ -159,15 +159,38 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - name: Cache cargo
+      - name: Cache cargo (app)
+        # The key hashes the ROOT lock only: the shun checkout below drops
+        # shun/Cargo.lock into the tree before this step runs, and
+        # '**/Cargo.lock' would sweep it in — every shun pin bump then
+        # invalidated the app cache's exact key (restore-keys only softened
+        # that). The root lock covers every workspace member, so scoping
+        # the hash to it is lossless.
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target/
-          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('Cargo.lock') }}
           restore-keys: ${{ runner.os }}-cargo-release-
+
+      - name: Cache cargo (shun prebuild)
+        # The installer leg compiles the pinned shun checkout with
+        # --target-dir resolved to shun/target (the shun CLI pins it against
+        # the checkout — not this repo's target/), so the release rebuilt
+        # the whole tauri+egui shell tree from zero on EVERY tag even while
+        # SHUN_TAG never moved; the registry cache above saves downloads,
+        # not compiled artifacts (measured: the Build shun installers step
+        # at 48.5 min on v0.6.8, the shun shell alone a ~6 min cold compile).
+        # Key on the pin itself: the same tag restores a fully warm shell
+        # compile; a pin bump falls back to the previous tag's tree, whose
+        # dependency set overlaps almost entirely.
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6
+        with:
+          path: shun/target/release
+          key: ${{ runner.os }}-shun-${{ env.SHUN_TAG }}
+          restore-keys: ${{ runner.os }}-shun-
 
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
