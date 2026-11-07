@@ -13,15 +13,6 @@
    track apart, so per-metric tracks read as lurching gaps (user feedback).
    The inline minWidth from rosterColumns() mirrors the header grids'
    tracks; the min-width below is the bare fallback. */
-/* A scoped column's tag (单排/单船/单船单排/舰种 …) inside the full card's stat
-   text line — the muted small face, so the tag reads as a qualifier of
-   the number it prefixes, never as a value. */
-.replay-view__statline-scope {
-  font-size: 0.85em;
-  opacity: 0.68;
-  margin-right: 2px;
-}
-
 .replay-view__postbattle-cell-stat {
   flex: 0 0 auto;
   text-align: right;

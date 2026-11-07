@@ -167,20 +167,7 @@
      one pad covers both densities. */
   &--pad-eye { padding-right: 34px; }
 }
-/* Full-card mode's aggregate: no aligned columns sit under the title, so
-   the numbers ride its right end as inline text (its own treatment — the
-   live roster aligns its equivalents under the shared two-line header). */
-.replay-view__postbattle-col-aggtext {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  letter-spacing: normal;
-  white-space: nowrap;
 
-  b {
-    font-weight: 600;
-  }
-}
 /* With a team aggregate the title becomes a two-line mini table header
    (tiny label over a mono value) on a grid mirroring the row cells —
    [name][enabled roster columns][xp], the exact template set INLINE per
@@ -227,7 +214,12 @@
    button and the per-row mask toggle; the wrapper is a div so the eye
    stays a real button (no nested buttons). The identity-line seals ride
    INSIDE the button, on the name line BEFORE the nick, so they sit inside
-   the row's hover/click surface. */
+   the row's hover/click surface.
+   The hover plate lives on the WRAPPER and keys off the row button
+   (:has): it lights the whole row — the eye gutter included — so the eye
+   no longer sits on an unlit notch at the row's end (2026-11-07 review).
+   The eye is not the row button, so a direct hover on the eye leaves the
+   row dark and lights only the eye's own plate. */
 .replay-view__postbattle-cell {
   display: flex;
   align-items: center;
@@ -236,8 +228,14 @@
   padding: 0 4px 0 0;
   border-radius: 6px;
   background: rgb(var(--color-text) / 0.04);
+  transition: background 0.15s;
   color: rgb(var(--color-text));
   font-size: var(--text-xs);
+
+  &:has(> .replay-view__postbattle-cell-btn:hover) {
+    background: rgb(var(--color-text) / 0.1);
+    .replay-view__postbattle-cell-eye { color: rgb(var(--color-text) / 0.55); }
+  }
 
   &--dead { opacity: 0.55; }
   &--self {
@@ -262,8 +260,6 @@
   text-align: left;
   font: inherit;
   cursor: pointer;
-  transition: background 0.15s;
-  &:hover { background: rgb(var(--color-text) / 0.1); }
   &:focus-visible { outline: 1px solid rgb(var(--color-text) / 0.4); }
 }
 .replay-view__postbattle-cell-ico {
@@ -279,7 +275,9 @@
 /* The name line no longer clips: the nickname carries its own ellipsis
    (below), and the division tag's rubber-stamp shadow must stay visible —
    the old overflow:hidden sheared its bottom edge off (2026-11-07 review).
-   The seals cluster keeps its own horizontal-only clip for the shrink rule. */
+   Nothing here clips or shrinks a stamp: the cluster wraps its tags (below)
+   and, on a narrow sheet, this line itself may wrap the whole identity onto
+   a second row (see the narrow-window block at the end of the sheet). */
 .replay-view__postbattle-cell-name {
   display: flex;
   align-items: center;
@@ -288,41 +286,25 @@
   overflow: visible;
 }
 /* Identity-line seal tags (career verdict + 成分章, StampTag) lead the name
-   line as ONE SHRINKABLE cluster: when a fixed name track (the full card's
-   10rem) runs out, the cluster is the item that gives way — its trailing tag
-   clips first, while the nickname keeps the readable minimum below. The
-   identity must survive its decorations. */
+   line as ONE cluster. The cluster NEVER shrinks or clips (2026-11-07
+   review: a stamp must always render whole — the old shrink rule sheared
+   tags mid-glyph): the nickname below is the item that gives way, and the
+   full card stacks this cluster on its own line. */
 .replay-view__postbattle-cell-seals,
 .replay-view__postbattle-fcell-seals {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  flex-wrap: wrap;
+  gap: 2px 4px;
+  /* Tags never clip and never shrink away: on a row too narrow for the
+     whole cluster, the stamps WRAP inside it (the row grows a line) while
+     the nickname keeps its readable floor and the clan tag ellipsizes.
+     min-width keeps at least a couple of stamps per line. */
   flex: 0 1 auto;
-  min-width: 0;
-  /* Clip horizontally only (the shrink-to-fit tag trim) — vertically the
-     plate must stay visible: StampTag's optical-centering translate pokes
-     its bottom border a hair past this box, and overflow: hidden would
-     shave the border line off (visible+clip is the one pair the spec
-     allows on separate axes). */
-  overflow-x: clip;
+  min-width: 6em;
+  /* Vertically the plate must stay visible: StampTag's optical-centering
+     translate pokes its bottom border a hair past its line box. */
   overflow-y: visible;
-}
-/* The yellow alert at the nickname's top-right: every seal the row could not
-   carry inline lives behind this marker, listed in its hover tooltip in
-   display order (2026-11-07 review: the old red dot read as an error state
-   and its 8px hover target was easy to miss, so the marker became a small
-   warning glyph — and the nickname's own hint repeats the list). Sits in the
-   superscript register so it never pushes the identity line; the retired
-   dot's 8px box becomes the lucide glyph's own 10px box at the same offset. */
-.replay-view__postbattle-seal-alert {
-  flex: 0 0 auto;
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: 1px 1px 0 -2px;
-  color: rgb(var(--color-warning));
-  cursor: help;
 }
 .replay-view__postbattle-cell-nick {
   flex: 0 1 auto;
@@ -336,7 +318,12 @@
 /* Clan tag ([HOOD] etc.) after the nick — muted identity metadata, same
    voice as the live panel's clan tags. */
 .replay-view__postbattle-cell-clan {
-  flex: none;
+  /* Metadata, not identity: it gives way (ellipsis) before a seal ever has
+     to — the row hint still carries the untruncated clan. */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   color: rgb(var(--color-text) / 0.5);
   font-size: 0.78em;
   font-weight: 500;
@@ -394,10 +381,14 @@
 }
 /* Karma (业力) superscript — raised to the nickname's top-right corner in
    both row densities (compact cell + full card). KarmaSup's own sheet
-   carries the base geometry; this nudges it above the row's center line.
-   flex: none so the nick never loses its ellipsis slot to the badge. */
+   carries the base geometry; this nudges it above the row's center line. */
 .replay-view__postbattle-cell-karma,
 .replay-view__postbattle-fcell-karma {
+  /* Superscript register; shrinkable so a crowded name line never overflows
+     because of the badge (it is decorative, the tooltip carries the rest). */
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
   margin-top: -0.55em;
 }
 /* Per-row nickname mask toggle. Muted until hovered — the share flow's
@@ -416,6 +407,9 @@
   background: transparent;
   color: rgb(var(--color-text) / 0.35);
   cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+  /* The eye's OWN hover — it only lights when the pointer sits on the eye
+     itself (the row's :has plate keys off the row button, never the eye). */
   &:hover {
     color: rgb(var(--color-text) / 0.8);
     background: rgb(var(--color-text) / 8%);
@@ -430,10 +424,10 @@
   text-align: right;
   font-family: var(--font-mono);
 }
-/* The AI confidence cell closes the compact row (the rightmost score,
-   where the retired seal track used to read): the fire+move whole-game
-   agreement as a percentage. Same mono/righted register as the XP cell
-   so the two read as one score block; the muted em dash covers join
+/* The AI confidence cell closes the row's data line in BOTH densities (the
+   rightmost score, where the retired seal track used to read): the fire+move
+   whole-game agreement as a percentage. Same mono/righted register as the XP
+   cell so the two read as one score block; the muted em dash covers join
    misses while the switch stays on. */
 .replay-view__postbattle-cell-ai {
   flex: 0 0 auto;
@@ -443,14 +437,15 @@
   color: rgb(var(--color-text) / 0.85);
 }
 
-/* ── Full-card rows (the live roster's richer density, carried as a card) ──
-   A sibling of the live panel's .live-battle__crow rows: that roster renders
-   ONE shared row in both densities (full only inserts the LiveShipMeta strip
-   in the middle), while this card keeps its own fixed name/ship/stat text
-   stack, an elastic-but-clipping middle for the LiveShipMeta strip, then
-   its own XP number. The two share the idea, not the exact geometry. The
-   whole card is the drill-down button (hover and clicks cover the
-   identity-line seals on its name line); the mask eye rides outside it. */
+/* ── Full-card rows (the richer density, carried as a card) ──
+   The card is the compact row's hover hint laid out for real: the identity
+   stack on the left carries the SAME three lines (nick + clan / every tag /
+   ship tier + name), while the right block stacks the compact row's aligned
+   data line (configured columns, XP, then the AI score) over the
+   LiveShipMeta strip's two ship lines. The header both densities share is
+   the two-line mini table header, so this data line lands exactly on its
+   aggregate tracks. The whole card minus the eye is the drill-down button;
+   its plate/hover live on the wrapper (see the compact row's comment). */
 .replay-view__postbattle-fcell {
   display: flex;
   align-items: stretch;
@@ -458,8 +453,15 @@
   width: 100%;
   padding: 0 4px 0 0;
   border-radius: 6px;
+  background: rgb(var(--color-text) / 0.04);
+  transition: background 0.15s;
   color: rgb(var(--color-text));
   font-size: var(--text-xs);
+
+  &:has(> .replay-view__postbattle-fcell-btn:hover) {
+    background: rgb(var(--color-text) / 0.1);
+    .replay-view__postbattle-cell-eye { color: rgb(var(--color-text) / 0.55); }
+  }
 
   /* Sunk in-battle: the window's own dead-row voice (0.55, no grayscale)
      — a post-battle matrix is mostly dead rows, so the live panel's
@@ -478,42 +480,52 @@
 .replay-view__postbattle-fcell .replay-view__postbattle-cell-eye {
   align-self: center;
 }
+/* The card mirrors the header's OWN track template (written inline by
+   rosterTemplate(), the same string the aggregate header grid takes): the
+   identity stack owns the first track, the data cells take the configured
+   column tracks on the first row, and the ship strip spans those same
+   tracks on the two rows below. The 4px right padding matches the compact
+   row's button, so both densities put their numbers on the same x. */
 .replay-view__postbattle-fcell-btn {
   flex: 1 1 auto;
   min-width: 0;
   display: grid;
-  grid-template-columns: 10rem minmax(0, 1fr) minmax(6ch, max-content);
-  column-gap: 10px;
-  align-items: center;
-  padding: 7px 9px;
+  column-gap: 8px;
+  align-items: start;
+  padding: 7px 4px 7px 9px;
   border: none;
   border-radius: 6px;
-  background: rgb(var(--color-text) / 0.04);
+  background: none;
   color: inherit;
   text-align: left;
   font: inherit;
   font-size: var(--text-xs);
+  /* The template's ch tracks must measure the SAME monospace ch the header
+     grid uses (both grids share rosterTemplate()); inheriting the UI face
+     here sized 7.5ch a hair narrower and every column drifted ~4px off the
+     header. */
+  font-family: var(--font-mono);
   cursor: pointer;
-  transition: background 0.15s;
-  &:hover { background: rgb(var(--color-text) / 0.1); }
   &:focus-visible { outline: 1px solid rgb(var(--color-text) / 0.4); }
 }
 .replay-view__postbattle-fcell-main {
   grid-column: 1;
+  grid-row: 1 / 4;
   min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
+  /* The identity reads in the UI face; only the grid container needs mono
+     for its ch tracks. */
+  font-family: var(--font-sans);
 }
 .replay-view__postbattle-fcell-name {
   display: flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  /* The card's name track is a fixed 10rem (the LiveShipMeta strip owns the
-     elastic middle). With the extra-seal policy the line carries at most one
-     small tag plus the dot, so it no longer needs the clipping fallback —
-     and the division tag's stamp shadow must stay visible (2026-11-07). */
+  /* The seals stack on their own line under this one (see the fcell-seals
+     rule); the division tag's rubber-stamp shadow must stay visible. */
   overflow: visible;
   font-size: var(--text-sm);
 }
@@ -534,9 +546,16 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-/* Second identity line (inside the main track): tier marker + ship name —
-   the same flex line as the compact row, so the fixed tier track keeps the
-   ship name's start x consistent across cards. */
+/* Line 2: the whole seal cluster on its own line. */
+.replay-view__postbattle-fcell-seals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+/* Line 3: tier marker + ship name — the same flex line as the compact row,
+   so the fixed tier track keeps the ship name's start x consistent. */
 .replay-view__postbattle-fcell-ship {
   display: flex;
   align-items: baseline;
@@ -545,56 +564,25 @@
   color: rgb(var(--color-text) / 0.45);
   font-size: var(--text-xs);
 }
-.replay-view__postbattle-fcell-stat {
-  display: flex;
-  align-items: center;
-  font-size: var(--text-xs);
-  color: rgb(var(--color-text) / 0.7);
-
-  b { font-weight: 600; }
+/* Right block: the wrapper dissolves into the card grid — its data cells
+   take the header's column tracks on the first row, the ship strip spans
+   the SAME track run on the two rows below (so the strip gets the whole
+   aligned column band instead of a squeezed middle track). */
+.replay-view__postbattle-fcell-side,
+.replay-view__postbattle-fcell-data {
+  display: contents;
 }
-.replay-view__postbattle-fcell-statline {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Hidden profile: a red notice, not a bare "—" (same voice as the live
-   panel's roster lines). */
-.replay-view__postbattle-fcell-hidden {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: rgb(var(--color-error));
-}
-/* LiveShipMeta host: pins the middle grid track; an empty ship keeps the
-   track reserved so the columns keep their geometry. */
+/* LiveShipMeta host: the strip owns the aligned column band's lower rows,
+   so its parameters/badges render as fully as those tracks allow. */
 .replay-view__postbattle-fcell-meta {
-  grid-column: 2;
+  grid-column: 2 / -1;
+  grid-row: 2 / 4;
   display: block;
   min-width: 0;
-}
-/* This panel's score track: the XP cell plus the AI confidence cell when
-   its switch is on, pinned onto track 3 (the retired seal track no longer
-   follows it). The configured stat columns ride the stat text strip inside
-   the main track — damage included, so no dedicated dmg track remains. */
-.replay-view__postbattle-fcell-score {
-  grid-column: 3;
-  justify-self: end;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-}
-.replay-view__postbattle-fcell-xp {
-  text-align: right;
-  font-family: var(--font-mono);
-}
-.replay-view__postbattle-fcell-ai {
-  text-align: right;
-  font-family: var(--font-mono);
-  color: rgb(var(--color-text) / 0.85);
+  overflow: hidden;
+  /* The card grid container runs mono (see its ch tracks); the ship strip
+     keeps the UI face it has everywhere else. */
+  font-family: var(--font-sans);
 }
 /* The detail head cluster rides HkModal's headerLead slot on all three
    sites (issue #1736 P2 wave item 4) — the header's own padding separates
@@ -752,6 +740,54 @@
   color: rgb(var(--color-text) / 0.7);
   b { color: rgb(var(--color-text)); font-family: var(--font-mono); margin-right: 3px; }
 }
+/* ── Narrow desktop windows (768–1060px) ──
+   The modal rides 94vw there, so the aligned column band eats the identity
+   track down to the stamped identity's min-content: the compact identity
+   line wraps (stamps whole, row grows) instead of clipping or spilling into
+   the first stat column. */
+@media (max-width: 1060px) {
+  .replay-view__postbattle-cell-name {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  /* Let the stamps pack one-per-line instead of holding a 6em floor the
+     shrunken name track cannot honour. */
+  .replay-view__postbattle-cell-seals {
+    min-width: 0;
+  }
+}
+
+/* Two team columns at 961–1060px still pinch the full card's fixed tracks:
+   stack identity → data line → ship strip there. Above 960 the matrix keeps
+   two columns; at ≤960 it stacks to one column and the card's desktop
+   two-track grid fits again (see the blocks below). display:flex drops the
+   inline grid template the desktop card carries. */
+@media (min-width: 961px) and (max-width: 1060px) {
+  .replay-view__postbattle-fcell-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    row-gap: 4px;
+  }
+  .replay-view__postbattle-fcell-data {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 8px;
+  }
+}
+
+/* ── Very narrow desktop windows (≤960px) ──
+   Two team columns stop paying their way once each row's aligned stat band
+   eats the identity track down to a single stamp: stack the matrix into ONE
+   column (the phone rule's shape without its tap-density retune), so the
+   rows get the sheet's full width. */
+@media (max-width: 960px) {
+  .replay-view__postbattle-matrix {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ── Phone layout (≤767px): the drill-down window's sheet branch is
  HkModal's (tested equivalent); only the panel's OWN body retunes here. */
 @media (max-width: 767px) {
@@ -767,20 +803,25 @@
     gap: 0.35rem;
     padding: 0.4rem 0.4rem 0.4rem 0.5rem;
   }
-  /* Full cards: the 10rem name track + fixed columns don't fit a phone
-     sheet — shrink the name track and let the ship-meta middle collapse
-     first (compact rows remain the comfortable phone look). */
+  /* Full cards: the header's column tracks need a desktop sheet — stack
+     the card on phones (identity, then the stat cells as one wrapping line,
+     then the ship strip). display:flex drops the inline grid template.
+     Compact rows remain the comfortable phone look. */
   .replay-view__postbattle-fcell {
     min-height: 44px;
   }
   .replay-view__postbattle-fcell-btn {
-    /* THREE tracks on phones (the desktop template's shape, narrower name
-       + meta): the score track stays ELASTIC so the widest XP count the
-       columns resolve never pins short. main → 1, meta → 2, score → 3 —
-       same pins as desktop (the retired seal track was the 4th). */
-    grid-template-columns:
-      minmax(0, 42%) minmax(0, 1fr) minmax(6ch, max-content);
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    row-gap: 4px;
     padding: 0.4rem 0.5rem;
+  }
+  .replay-view__postbattle-fcell-data {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 4px 8px;
   }
   /* Compact roster rows keep their aligned columns but one text size
      down. The ch tracks (header grid template AND the cells' inline

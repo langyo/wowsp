@@ -10,13 +10,14 @@
  * batch + global lookup) off the wire, so the window wiring is the only
  * thing under test.
  *
- * Two later review pins ride here as well: the retired mode/map head row
- * (a passed `head` identity must not bring it back) and the hidden-seal
- * marker — the red dot became a yellow lucide alert whose hint now also
- * answers a hover on the nickname itself. The seal pin needs the opposite
- * fixture setup (a realmful roster + zh UI, the composition sweep's gates),
- * so it mounts its own payload while the window tests keep the realmless
- * one.
+ * Three later review pins ride here as well: the retired mode/map head row
+ * (a passed `head` identity must not bring it back), the complete
+ * identity-line seals (every seal the row owns presses inline, whole — the
+ * old one-tag cap clipped or hid the rest) and the three-line row hover
+ * hint (clan-tagged nick / every tag / ship tier + name) the mask eye must
+ * not steal. The seal pin needs the opposite fixture setup (a realmful
+ * roster + zh UI, the composition sweep's gates), so it mounts its own
+ * payload while the window tests keep the realmless one.
  */
 import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +25,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { initLocaleMessages, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import PostBattlePanel, { type PostBattleHead } from "./PostBattlePanel";
+import { NICK_MASK } from "./postBattleShare";
 
 enableAutoUnmount(afterEach);
 
@@ -48,12 +50,13 @@ vi.mock("@/api", () => ({
     upstreamHealth: vi.fn(async () => []),
     copyImageToClipboard: vi.fn(async () => true),
     // The seal pin's two on-wire paths: the composition sweep behind the
-    // hidden-seal list (one verdict per queried name — every human in its
-    // roster is an air main, i.e. the 空中小人 seal) and the realmful
-    // roster's stats batch (empty answers leave every stat cell dashed, so
-    // no career verdict can take the inline slot from the composition tag).
+    // identity-line seals (one verdict per queried name — every human in
+    // its roster is BOTH an air and a sub main, so the row must press both
+    // 空中小人 and 水下小人 whole) and the realmful roster's stats batch
+    // (empty answers leave every stat cell dashed, so no career verdict
+    // joins the composition tags on the line).
     lookupPlayersComposition: vi.fn(async (names: string[]) =>
-      names.map(() => ({ air: true, sub: false, airVeteran: false, subVeteran: false })),
+      names.map(() => ({ air: true, sub: true, airVeteran: false, subVeteran: false })),
     ),
     lookupPlayersStatsBatch: vi.fn(async () => []),
   },
@@ -221,7 +224,7 @@ describe("PostBattlePanel player-detail window", () => {
   });
 });
 
-describe("PostBattlePanel head row and seal alert", () => {
+describe("PostBattlePanel head row, inline seals and row hint", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
@@ -239,7 +242,7 @@ describe("PostBattlePanel head row and seal alert", () => {
     expect(wrapper.find(".replay-view__postbattle-toolbar").exists()).toBe(true);
   });
 
-  it("turns the seal dot into a yellow alert with the hint on the nickname too", async () => {
+  it("presses every seal inline and puts the complete identity on the row hint", async () => {
     const { uiLocale } = useLanguage();
     const prevLocale = uiLocale.value;
     // The composition sweep (and the seal gates it feeds) only runs under a
@@ -249,21 +252,93 @@ describe("PostBattlePanel head row and seal alert", () => {
     try {
       const wrapper = mountPanel({ raw: RAW_WITH_REALM });
       await vi.waitFor(() => {
-        expect(wrapper.find(".replay-view__postbattle-seal-alert").exists()).toBe(true);
+        expect(wrapper.find(".replay-view__postbattle-cell-seals").text()).toContain(
+          "空中小人",
+        );
       });
-      const alert = wrapper.find(".replay-view__postbattle-seal-alert");
-      // The retired red dot is gone; a lucide alert glyph marks the row.
+      // BOTH composition classes press on the identity line, whole — the
+      // retired one-tag cap / alert marker must not swallow either.
+      const seals = wrapper.find(".replay-view__postbattle-cell-seals");
+      expect(seals.text()).toContain("空中小人");
+      expect(seals.text()).toContain("水下小人");
+      expect(wrapper.find(".replay-view__postbattle-seal-alert").exists()).toBe(false);
       expect(wrapper.find(".replay-view__postbattle-seal-dot").exists()).toBe(false);
-      expect(alert.find("svg").exists()).toBe(true);
-      // The hidden seals stay reachable from the icon's own tooltip...
-      expect(alert.attributes("data-hint")).toContain("空中小人");
-      // ...and from the nickname itself (the user's ask): hovering the name
-      // lists the same seals, on top of any player-marker label.
-      expect(
-        wrapper.find(".replay-view__postbattle-cell-nick").attributes("data-hint"),
-      ).toContain("空中小人");
+      // The row's hover hint is the complete identity: line 1 the nickname
+      // (clan-tagged when the profile has one), line 2 every tag one by one,
+      // line 3 the ship. The seals are listed there too, so a long row that
+      // ellipsizes its nick still reads whole on hover.
+      const hint =
+        wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint") ?? "";
+      const lines = hint.split("\n");
+      expect(lines[0]).toBe("AdmiralA");
+      expect(lines[1]).toContain("空中小人");
+      expect(lines[1]).toContain("水下小人");
+      // The eye keeps its own mask hint: a direct hover on the eye never
+      // shows the row card (its own hover is the only one that lights it).
+      const eye = wrapper.find(".replay-view__postbattle-cell-eye");
+      expect(eye.attributes("data-hint")).toBe(t("replay.postbattle.hideName"));
     } finally {
       uiLocale.value = prevLocale;
     }
+  });
+
+  it("masks the nickname inside the row hint (the hint is a new surface)", async () => {
+    const wrapper = mountPanel();
+    // The toolbar's hide-all-nicknames toggle masks every row; the hint is a
+    // separate render channel and must ride the same mask.
+    const toggle = wrapper
+      .findAll(".replay-view__postbattle-toolbar button")
+      .find((button) => button.text().includes(t("replay.postbattle.hideAll")));
+    expect(toggle).toBeTruthy();
+    await toggle!.trigger("click");
+    await vi.waitFor(() => {
+      expect(wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint")).toContain(
+        NICK_MASK,
+      );
+    });
+    const hint = wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint") ?? "";
+    expect(hint.split("\n")[0]).toBe(NICK_MASK);
+    expect(hint).not.toContain("AdmiralA");
+  });
+
+  it("gives the full card the compact header's aligned columns and its identity lines", async () => {
+    const wrapper = mountPanel();
+    // Both densities share the two-line aggregate header — the full card no
+    // longer squeezes its aggregates into one inline run (2026-11-07 review).
+    const header = wrapper.find(".replay-view__postbattle-col-title--agg");
+    expect(header.exists()).toBe(true);
+    expect(header.find(".replay-view__postbattle-col-hlbl").exists()).toBe(true);
+    expect(header.findAll(".replay-view__postbattle-col-hval").length).toBeGreaterThan(0);
+    // Flip to the full density through the toolbar's own toggle.
+    const toggle = wrapper
+      .findAll(".replay-view__postbattle-toolbar button")
+      .find((button) => button.text().includes(t("replay.roster.fullMode")));
+    expect(toggle).toBeTruthy();
+    await toggle!.trigger("click");
+    await vi.waitFor(() => {
+      expect(wrapper.find(".replay-view__postbattle-fcell").exists()).toBe(true);
+    });
+    // The header keeps the same two-line grid in full mode.
+    const fullHeader = wrapper.find(".replay-view__postbattle-col-title--agg");
+    expect(fullHeader.exists()).toBe(true);
+    // The card's left stack carries the row hint's three lines; its right
+    // block stacks the compact row's aligned data line over the ship strip.
+    const card = wrapper.find(".replay-view__postbattle-fcell");
+    expect(card.find(".replay-view__postbattle-fcell-main").exists()).toBe(true);
+    expect(card.find(".replay-view__postbattle-fcell-ship").exists()).toBe(true);
+    const data = card.find(".replay-view__postbattle-fcell-data");
+    expect(data.exists()).toBe(true);
+    expect(data.find(".replay-view__postbattle-cell-xp").exists()).toBe(true);
+    expect(card.find(".replay-view__postbattle-fcell-meta").exists()).toBe(true);
+    // The hint anchors on the identity stack, NOT the whole card: the ship
+    // strip's own hover card owns the right block and two popups must never
+    // stack, so the button itself carries no hint.
+    expect(card.attributes("data-hint")).toBeUndefined();
+    expect(
+      card.find(".replay-view__postbattle-fcell-btn").attributes("data-hint"),
+    ).toBeUndefined();
+    expect(
+      card.find(".replay-view__postbattle-fcell-main").attributes("data-hint"),
+    ).toContain("AdmiralA");
   });
 });

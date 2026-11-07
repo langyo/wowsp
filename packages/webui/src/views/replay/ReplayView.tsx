@@ -58,6 +58,7 @@ import { scopedRosterView } from "@/utils/shipStatsScope";
 import {
   PostBattleShareBar,
   rosterColumns,
+  rosterRowHint,
   rosterShotCells,
   rosterShotDashes,
   rosterStatCols,
@@ -796,118 +797,124 @@ const PostBattleFallbackPanel = defineComponent({
           </div>
         );
       };
-      const cell = (r: (typeof rows.value)[number]) => (
-        <div
-          class={[
-            "replay-view__postbattle-cell",
-            !r.alive ? "replay-view__postbattle-cell--dead" : "",
-          ]}
-        >
-          <button
-            class="replay-view__postbattle-cell-btn"
-            type="button"
-            data-player-name={isBot(r) ? undefined : r.vehicle.name}
-            data-player-account={
-              nameStats.value.get(r.vehicle.name)?.accountId != null
-                ? String(nameStats.value.get(r.vehicle.name)?.accountId)
-                : undefined
-            }
-            data-player-realm={realm.value}
-            onClick={() => openPlayer(r)}
+      const cell = (r: (typeof rows.value)[number]) => {
+        const name = r.vehicle.name;
+        const bot = isBot(r);
+        const stat = nameStats.value.get(name);
+        const color = bot ? null : markers.colorOf(name, stat?.accountId ?? null);
+        const tier =
+          tierRoman(r.vehicle.shipId != null ? shipTierOf(r.vehicle.shipId) : null) ?? "";
+        // The row's complete hover hint (same three lines as the results
+        // panel's rows): clan-tagged nick / every tag / tier + ship. The
+        // one-line identity below can only ellipsize; this is where the
+        // whole name, the marker label and the ship survive.
+        const tags: string[] = [];
+        if (color != null) tags.push(markerColorLabel(color));
+        if (bot) tags.push(t("replay.bot"));
+        return (
+          <div
+            class={[
+              "replay-view__postbattle-cell",
+              !r.alive ? "replay-view__postbattle-cell--dead" : "",
+            ]}
           >
-            <span class="replay-view__postbattle-cell-ico">
-              <BattleIcon
-                type={shipTypeOf(r.vehicle.shipId)}
-                variant={
-                  !r.alive
-                    ? "sunk"
-                    : r.vehicle.relation === 0
-                      ? "white"
-                      : r.vehicle.relation <= 1
-                        ? "ally"
-                        : "enemy"
-                }
-                size={20}
-              />
-            </span>
-            <span class="replay-view__postbattle-cell-main">
-              <span class="replay-view__postbattle-cell-name">
-                {/* Local player marker (玩家标记): the name itself carries the
-                    animated tint (nickname-first; account id sharpens when
-                    the row has stats for it). */}
-                {(() => {
-                  const color = isBot(r)
-                    ? null
-                    : markers.colorOf(
-                        r.vehicle.name,
-                        nameStats.value.get(r.vehicle.name)?.accountId ?? null,
-                      );
-                  return (
-                    <span
-                      class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
-                      data-hint={color ? markerColorLabel(color) : undefined}
-                    >
-                      {masking.maskOf(r.vehicle.name)}
-                    </span>
-                  );
-                })()}
-                {nameStats.value.get(r.vehicle.name)?.clanTag ? (
-                  <span class="replay-view__postbattle-cell-clan">
-                    [{nameStats.value.get(r.vehicle.name)?.clanTag}]
-                  </span>
-                ) : null}
-                {isBot(r) ? (
-                  <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
-                ) : null}
-              </span>
-              {/* Second line: the ship tier's Roman marker on the same
-                  fixed-width track as the results matrix (the tier spans
-                  reserve the track even when absent so every ship name
-                  starts at the same x), then the ship name itself. */}
-              <span class="replay-view__postbattle-cell-sub">
-                <span class="replay-view__postbattle-cell-tier">
-                  {tierRoman(r.vehicle.shipId != null ? shipTierOf(r.vehicle.shipId) : null) ?? ""}
-                </span>
-                <span class="replay-view__postbattle-cell-ship">{r.shipName}</span>
-              </span>
-            </span>
-            {rosterStatCols(
-              r.vehicle.name,
-              nameStats.value,
-              nameStatsLoading.value,
-              (st, scope) => colViewOf(scope, st, r.vehicle.shipId),
-            )}
-            {/* No dead-state text cell after the stat columns: a sunk row
-                already reads as sunk through its icon variant + the row's
-                dead dimming, and a text slot there would act as one more
-                column — pushing the row's numbers off the header's aligned
-                tracks (user feedback: the standalone 已击毁 marker is gone
-                from every post-battle roster). */}
-          </button>
-          {isBot(r) ? null : (
             <button
-              class={[
-                "replay-view__postbattle-cell-eye",
-                { "replay-view__postbattle-cell-eye--on": masking.isHidden(r.vehicle.name) },
-              ]}
+              class="replay-view__postbattle-cell-btn"
               type="button"
-              data-hint={
-                masking.isHidden(r.vehicle.name)
-                  ? t("replay.postbattle.showName")
-                  : t("replay.postbattle.hideName")
+              data-hint={rosterRowHint({
+                name: masking.maskOf(name),
+                clanTag: stat?.clanTag ?? null,
+                tags,
+                tier,
+                shipName: r.shipName,
+              })}
+              data-player-name={bot ? undefined : name}
+              data-player-account={
+                stat?.accountId != null ? String(stat.accountId) : undefined
               }
-              aria-label={
-                masking.isHidden(r.vehicle.name)
-                  ? t("replay.postbattle.showName")
-                  : t("replay.postbattle.hideName")
-              }
-              onClick={() => masking.toggleOne(r.vehicle.name)}
+              data-player-realm={realm.value}
+              onClick={() => openPlayer(r)}
             >
-              {masking.isHidden(r.vehicle.name) ? <EyeOff size={12} /> : <Eye size={12} />}
+              <span class="replay-view__postbattle-cell-ico">
+                <BattleIcon
+                  type={shipTypeOf(r.vehicle.shipId)}
+                  variant={
+                    !r.alive
+                      ? "sunk"
+                      : r.vehicle.relation === 0
+                        ? "white"
+                        : r.vehicle.relation <= 1
+                          ? "ally"
+                          : "enemy"
+                  }
+                  size={20}
+                />
+              </span>
+              <span class="replay-view__postbattle-cell-main">
+                <span class="replay-view__postbattle-cell-name">
+                  {/* Local player marker (玩家标记): the name itself carries the
+                      animated tint (nickname-first; account id sharpens when
+                      the row has stats for it); its wording rides the row hint
+                      above so the whole name keeps the hover. */}
+                  <span
+                    class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
+                  >
+                    {masking.maskOf(name)}
+                  </span>
+                  {stat?.clanTag ? (
+                    <span class="replay-view__postbattle-cell-clan">[{stat.clanTag}]</span>
+                  ) : null}
+                  {bot ? (
+                    <em class="replay-view__postbattle-bot">{t("replay.bot")}</em>
+                  ) : null}
+                </span>
+                {/* Second line: the ship tier's Roman marker on the same
+                    fixed-width track as the results matrix (the tier spans
+                    reserve the track even when absent so every ship name
+                    starts at the same x), then the ship name itself. */}
+                <span class="replay-view__postbattle-cell-sub">
+                  <span class="replay-view__postbattle-cell-tier">{tier}</span>
+                  <span class="replay-view__postbattle-cell-ship">{r.shipName}</span>
+                </span>
+              </span>
+              {rosterStatCols(
+                r.vehicle.name,
+                nameStats.value,
+                nameStatsLoading.value,
+                (st, scope) => colViewOf(scope, st, r.vehicle.shipId),
+              )}
+              {/* No dead-state text cell after the stat columns: a sunk row
+                  already reads as sunk through its icon variant + the row's
+                  dead dimming, and a text slot there would act as one more
+                  column — pushing the row's numbers off the header's aligned
+                  tracks (user feedback: the standalone 已击毁 marker is gone
+                  from every post-battle roster). */}
             </button>
-          )}
-        </div>
-      );
+            {isBot(r) ? null : (
+              <button
+                class={[
+                  "replay-view__postbattle-cell-eye",
+                  { "replay-view__postbattle-cell-eye--on": masking.isHidden(r.vehicle.name) },
+                ]}
+                type="button"
+                data-hint={
+                  masking.isHidden(r.vehicle.name)
+                    ? t("replay.postbattle.showName")
+                    : t("replay.postbattle.hideName")
+                }
+                aria-label={
+                  masking.isHidden(r.vehicle.name)
+                    ? t("replay.postbattle.showName")
+                    : t("replay.postbattle.hideName")
+                }
+                onClick={() => masking.toggleOne(r.vehicle.name)}
+              >
+                {masking.isHidden(r.vehicle.name) ? <EyeOff size={12} /> : <Eye size={12} />}
+              </button>
+            )}
+          </div>
+        );
+      };
       const sel = selected.value;
       return (
         <div class="replay-view__postbattle" ref={root}>
