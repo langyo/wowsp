@@ -88,9 +88,38 @@ pub struct DecisionsPackStatus {
     /// Size of the installed advice model file (0 when absent).
     #[serde(default)]
     pub advice_model_bytes: u64,
+    /// Whether `torpedo_model.onnx` is installed (optional E26/P2 torpedo
+    /// decision model; the post-battle torpedo diagnostics card is N/A
+    /// without it, and the report never falls back to another model).
+    #[serde(default)]
+    pub torpedo_model_present: bool,
+    /// Size of the installed torpedo model file (0 when absent).
+    #[serde(default)]
+    pub torpedo_model_bytes: u64,
     /// Map short names that already have a `terrain_los.npz` raster,
     /// sorted ascending.
     pub los_maps: Vec<String>,
+}
+
+/// Per-ship torpedo-decision diagnostics (P2 / T2 "torp2" model, E26).
+///
+/// DIAGNOSTIC-ONLY block: it never feeds the whole-game score, the
+/// post-battle AI ranking or the tactical board (delivery plan Q4 — the
+/// saturating agreement mean must not be presented as a skill number). Every
+/// number is computed over the replay's torpedo decision rows; the whole
+/// block is `null` when the optional torpedo model is not installed.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoScores {
+    /// Mean E17-style agreement p(actual action) over can-launch windows.
+    pub agreement: f32,
+    /// Mean head-B probability p(expert launches) over can-launch windows.
+    pub mean_prob: f32,
+    /// labelA windows: a reloaded decision point with an observed enemy
+    /// inside torpedo range (the opportunity count / volume signal).
+    pub can_launch_windows: u32,
+    /// Observed torpedo clicks (labelB positives), i.e. actual launches.
+    pub launches: u32,
 }
 
 // ═══════════════════════════════════════════════════════════════════════

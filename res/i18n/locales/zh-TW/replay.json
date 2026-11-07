@@ -735,7 +735,10 @@
     "replayHashHint": "SHA-256 校驗值 · 點擊複製完整雜湊",
     "notApplicable": "不適用",
     "moveOnly": "僅走位 {m}%",
-    "classNotCovered": "此艦種尚無開火判定模型（僅顯示走位認同度）"
+    "classNotCovered": "此艦種尚無開火判定模型（僅顯示走位認同度）",
+    "torpedoAgreement": "魚雷認同度",
+    "torpedoDetail": "認同 {a}% · 均值 {p}% · 可發射 {n} · 實發 {l}（僅診斷，不計入總分）",
+    "torpedoNotCovered": "此艦無魚雷模型或不適用"
   },
   "detail": {
     "title": "對局詳情"

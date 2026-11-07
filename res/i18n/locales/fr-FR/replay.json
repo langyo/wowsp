@@ -735,7 +735,10 @@
     "replayHashHint": "Empreinte SHA-256 · Cliquez pour copier le hachage complet",
     "notApplicable": "N/D",
     "moveOnly": "Manœuvre seule {m}%",
-    "classNotCovered": "Aucun modèle de décision de tir ne couvre cette classe de navire (accord de manœuvre uniquement)."
+    "classNotCovered": "Aucun modèle de décision de tir ne couvre cette classe de navire (accord de manœuvre uniquement).",
+    "torpedoAgreement": "Accord torpilles",
+    "torpedoDetail": "accord {a}% · moyenne {p}% · tirs possibles {n} · tirs {l} (diagnostic uniquement, hors score total)",
+    "torpedoNotCovered": "Aucun modèle torpille pour ce navire"
   },
   "detail": {
     "title": "Détail de la bataille"

@@ -326,6 +326,7 @@
   "resourcesDecisionsModelInstalled": "模型已安装（{size}）",
   "resourcesDecisionsModelMissing": "模型缺失",
   "resourcesDecisionsAdviceInstalled": "建议模型已安装（{size}）",
+  "resourcesDecisionsTorpedoInstalled": "鱼雷模型已安装（{size}）",
   "resourcesDecisionsAbsent": "未安装。",
   "resourcesDecisionsUnknown": "无法读取模型包状态。",
   "resourcesDecisionsDemoInUse": "当前使用内置演示模型。",

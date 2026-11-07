@@ -59,6 +59,7 @@ fn decisions_pack_status_at(dir: &Path) -> DecisionsPackStatus {
     let model = dir.join("fire_model.onnx");
     let move_model = dir.join("move_model.onnx");
     let advice_model = dir.join("advice_fire_model.onnx");
+    let torpedo_model = dir.join("torpedo_model.onnx");
     let mut los_maps = Vec::new();
     if present {
         if let Ok(entries) = std::fs::read_dir(dir) {
@@ -100,6 +101,10 @@ fn decisions_pack_status_at(dir: &Path) -> DecisionsPackStatus {
         advice_model_bytes: std::fs::symlink_metadata(&advice_model)
             .map(|meta| meta.len())
             .unwrap_or(0),
+        torpedo_model_present: is_nonempty_file(&torpedo_model),
+        torpedo_model_bytes: std::fs::symlink_metadata(&torpedo_model)
+            .map(|meta| meta.len())
+            .unwrap_or(0),
         los_maps,
     }
 }
@@ -129,6 +134,7 @@ mod tests {
         std::fs::write(dir.join("fire_model.onnx"), [1u8; 4]).unwrap();
         std::fs::write(dir.join("move_model.onnx"), [1u8; 6]).unwrap();
         std::fs::write(dir.join("advice_fire_model.onnx"), [1u8; 8]).unwrap();
+        std::fs::write(dir.join("torpedo_model.onnx"), [1u8; 10]).unwrap();
         std::fs::write(dir.join("map_a/terrain_los.npz"), [0u8; 8]).unwrap();
         std::fs::write(dir.join("map_b/terrain_los.npz"), []).unwrap();
         std::fs::write(dir.join("map_b/other.bin"), [0u8; 2]).unwrap();
@@ -141,6 +147,8 @@ mod tests {
         assert_eq!(status.move_model_bytes, 6);
         assert!(status.advice_model_present);
         assert_eq!(status.advice_model_bytes, 8);
+        assert!(status.torpedo_model_present);
+        assert_eq!(status.torpedo_model_bytes, 10);
         assert_eq!(status.los_maps, vec!["map_a".to_string()]);
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -157,6 +165,8 @@ mod tests {
         assert!(!status.model_present);
         assert!(!status.move_model_present);
         assert!(!status.advice_model_present);
+        assert!(!status.torpedo_model_present);
+        assert_eq!(status.torpedo_model_bytes, 0);
         assert_eq!(status.size_bytes, 0);
         assert!(status.los_maps.is_empty());
     }

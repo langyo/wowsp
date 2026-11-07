@@ -735,7 +735,10 @@
     "replayHashHint": "SHA-256 校验值 · 点击复制完整哈希",
     "notApplicable": "不适用",
     "moveOnly": "仅走位 {m}%",
-    "classNotCovered": "该舰种暂无开火判定模型（仅显示走位认同度）"
+    "classNotCovered": "该舰种暂无开火判定模型（仅显示走位认同度）",
+    "torpedoAgreement": "鱼雷认同度",
+    "torpedoDetail": "认同 {a}% · 均值 {p}% · 可发射 {n} · 实发 {l}（仅诊断，不计入总分）",
+    "torpedoNotCovered": "该舰无鱼雷模型或不适用"
   },
   "detail": {
     "title": "对局详情"

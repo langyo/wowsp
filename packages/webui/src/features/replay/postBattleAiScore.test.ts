@@ -28,13 +28,14 @@ const rosterEntry = (over: Partial<StaticRosterEntry>): StaticRosterEntry => ({
   shipId: null,
   shipClass: null,
   fireApplicable: true,
+  torpedoApplicable: true,
   name: null,
   playerName: "Alpha",
   teamId: 0,
   isRecorder: false,
   diedAt: null,
   coverage: { aliveFrom: 0, aliveTo: 600, samples: 150, gapSeconds: 0, completeness: 1, gapSegments: [] },
-  whole: { wholeGame: 0.7, wholeFire: 0.65, wholeMove: 0.8, contribution: null, contributionShots: null },
+  whole: { wholeGame: 0.7, wholeFire: 0.65, wholeMove: 0.8, contribution: null, contributionShots: null, torpedo: null },
   outcome: null,
   ...over,
 });
@@ -72,7 +73,7 @@ describe("aiScoreMapOf", () => {
     const map = aiScoreMapOf(
       report([
         rosterEntry({
-          whole: { wholeGame: 1.4, wholeFire: null, wholeMove: -0.2, contribution: null, contributionShots: null },
+          whole: { wholeGame: 1.4, wholeFire: null, wholeMove: -0.2, contribution: null, contributionShots: null, torpedo: null },
           coverage: { aliveFrom: 0, aliveTo: 600, samples: 1, gapSeconds: 0, completeness: 2, gapSegments: [] },
         }),
       ]),

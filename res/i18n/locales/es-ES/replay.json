@@ -735,7 +735,10 @@
     "replayHashHint": "Huella SHA-256 · Haz clic para copiar el hash completo",
     "notApplicable": "N/D",
     "moveOnly": "Solo movimiento {m}%",
-    "classNotCovered": "Ningún modelo de decisión de tiro cubre esta clase de barco (solo acuerdo de movimiento)."
+    "classNotCovered": "Ningún modelo de decisión de tiro cubre esta clase de barco (solo acuerdo de movimiento).",
+    "torpedoAgreement": "Acuerdo de torpedos",
+    "torpedoDetail": "acuerdo {a}% · media {p}% · lanzables {n} · lanzados {l} (solo diagnóstico, fuera de la puntuación total)",
+    "torpedoNotCovered": "Sin modelo de torpedos para este barco"
   },
   "detail": {
     "title": "Detalle de la batalla"

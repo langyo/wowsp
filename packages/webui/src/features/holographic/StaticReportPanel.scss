@@ -153,6 +153,23 @@
     }
   }
 
+  /** E26/P2 torpedo diagnostics — an independent card beside the model
+   *  agreement. Its detail line carries four numbers and is longer than the
+   *  other score subs, so it keeps its own measure and wraps instead of
+   *  stretching the head row. */
+  &__score--torpedo {
+    max-width: 300px;
+  }
+
+  /** N/A face (model missing / hull not applicable): intentionally not the
+   *  19px number type — a missing model is not a score. */
+  &__score-na {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.5;
+    color: var(--srp-dim);
+  }
+
   &__coverage {
     display: flex;
     flex-direction: column;

@@ -735,7 +735,10 @@
     "replayHashHint": "SHA-256 チェックサム · クリックで完全なハッシュをコピー",
     "notApplicable": "対象外",
     "moveOnly": "機動のみ {m}%",
-    "classNotCovered": "この艦種には砲撃判断モデルがありません（機動の一致度のみ表示）。"
+    "classNotCovered": "この艦種には砲撃判断モデルがありません（機動の一致度のみ表示）。",
+    "torpedoAgreement": "魚雷一致度",
+    "torpedoDetail": "一致度 {a}% · 平均 {p}% · 発射可能 {n} · 発射 {l}（診断のみ・総合スコアには含まない）",
+    "torpedoNotCovered": "この艦の魚雷モデルなし／対象外"
   },
   "detail": {
     "title": "戦闘詳細"

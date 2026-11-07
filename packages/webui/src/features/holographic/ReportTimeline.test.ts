@@ -55,7 +55,7 @@ function report(overrides: Partial<StaticReport> = {}): StaticReport {
     gameMode: "Domination",
     durationS: 600,
     losLoaded: false,
-    modelSources: { fire: "models/fire.onnx", moveModel: "models/move.onnx" },
+    modelSources: { fire: "models/fire.onnx", moveModel: "models/move.onnx", torpedoModel: null },
     entityId: 1,
     roster: [
       {
@@ -63,6 +63,7 @@ function report(overrides: Partial<StaticReport> = {}): StaticReport {
         shipId: 1,
         shipClass: "Destroyer",
         fireApplicable: true,
+        torpedoApplicable: true,
         name: "me",
         playerName: "me",
         teamId: 0,
@@ -82,6 +83,7 @@ function report(overrides: Partial<StaticReport> = {}): StaticReport {
           wholeMove: 0.42,
           contribution: 59500,
           contributionShots: 11,
+          torpedo: null,
         },
         outcome: null,
       },

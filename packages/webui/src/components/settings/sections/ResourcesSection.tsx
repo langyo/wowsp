@@ -489,6 +489,15 @@ export default defineComponent({
                       })}
                     </span>
                   ) : null}
+                  {/* E26/P2 torpedo slot: the report side shows N/A without
+                      it, so the pack card reports presence + on-disk size. */}
+                  {d?.present && d.torpedoModelPresent ? (
+                    <span class="settings-modal__pack-desc">
+                      {t("settings.resourcesDecisionsTorpedoInstalled", {
+                        size: formatBytes(d.torpedoModelBytes),
+                      })}
+                    </span>
+                  ) : null}
                   {d?.present ? (
                     <span class="settings-modal__pack-desc">
                       {t("settings.resourcesDecisionsLos", {

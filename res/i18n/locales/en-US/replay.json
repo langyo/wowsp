@@ -735,7 +735,10 @@
     "replayHashHint": "SHA-256 fingerprint · Click to copy the full hash",
     "notApplicable": "N/A",
     "moveOnly": "Move-only {m}%",
-    "classNotCovered": "No fire-decision model covers this ship class (movement agreement only)."
+    "classNotCovered": "No fire-decision model covers this ship class (movement agreement only).",
+    "torpedoAgreement": "Torpedo agreement",
+    "torpedoDetail": "agreement {a}% · mean {p}% · can-launch {n} · launches {l} (diagnostic only, not part of the total score)",
+    "torpedoNotCovered": "No torpedo model for this ship"
   },
   "detail": {
     "title": "Battle detail"

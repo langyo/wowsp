@@ -49,7 +49,7 @@
 use anyhow::bail;
 use std::collections::{BTreeMap, BTreeSet};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use wowsp_tauri_shared::{
     ConsumableUseEvent, EngineStateSample, EntityTrajectory, PlayerBuild, PositionSample,
     ReplayStream, ShellLaunchEvent, ShotKillEvent, SmokeScreenEvent, VehicleEntry, VisionEvent,
@@ -1616,7 +1616,7 @@ const OUTCOME_HP_MIN_DELTA: u32 = 50;
 /// One entity slot of the export row. Ordered per ship list: observed-now
 /// slots first (by distance), then stale intel (by distance) — slot ORDER is
 /// deterministic, truncation (16 enemies / 8 friends) keeps the nearest.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FireDatasetSlot {
     pub entity_id: i32,
@@ -1680,7 +1680,7 @@ pub struct FireDatasetSlot {
 /// [`FireDatasetRow`] (fire labels + outcome fields) and [`MoveDatasetRow`]
 /// (movement labels); flatten does not rename keys, so the fire JSON
 /// schema stays byte-compatible with the pre-E16 export.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DecisionRowCore {
     // ── metadata ──
