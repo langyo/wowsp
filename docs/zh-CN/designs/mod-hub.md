@@ -356,6 +356,13 @@ job 模式。
 #### 安全闸
 
 - 每个下载包做 zip magic / 解压 / repack 校验；
+- 每个下载包都做**内容**层面的包集合审计：载荷只有原始 OlliN
+  `ShipIdentity.unbound` 模板（`res_mods/gui/unbound2/!shipidentity/`）的包会被剔除
+  ——Aslain 在安装时才解析模板里的 `*_INSTALLED` 组件开关，WoWSP 直接分发未解析模板
+  会让新联动船的港口船名变空白（#1634）；模板混入功能载荷的包拒绝发布（须由维护者拆分）；
+- 同一条目的两个包写同一目标路径且字节不同时发布并告警，不再让安装顺序决定谁覆盖谁
+  （安装合并固定保留第一个包的副本并在报告中说明冲突；字节相同的重复目标静默放行，作为共享运行时去重）；
+  已发布条目里的历史重复目标只上报，由维护者在上游另行消解；
 - 资产上传按 digest 幂等（相同 sha → 跳过）；
 - index 资产存在性闸：缺失超过 25% 拒绝上传 index（delisted / stale 条目豁免）；
 - 发布后回读校验已发布的 index；
@@ -388,7 +395,9 @@ job 模式。
 - 手动触发：Actions 页 `workflow_dispatch`，或
   `gh workflow run mod-hub-sync.yml -f mode=apply`；
 - 新条目策展：补 slug 登记表（见上），然后以 `include_new=true` 跑 apply；
-- stale 复核：关闭 Discussion 即下架；上游恢复则下次同步自动摘除标记。
+- stale 复核：关闭 Discussion 即下架；上游恢复则下次同步自动摘除标记；
+- 内容闸迁移：改动包内容闸后跑一次 `apply --reaudit`——它会强制下载并审计同步范围内的
+  每个条目（含差异判为 unchanged 的条目）；日常运行保持增量，只审计包确实变化的条目。
 
 #### 合规姿态
 

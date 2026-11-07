@@ -703,6 +703,19 @@ app digest job of `release.yml`.
 #### Safety gates
 
 - zip magic / unpack / repack validation for every downloaded package;
+- content-based package-set audit on every downloaded package: a package
+  whose payload is nothing but the raw OlliN `ShipIdentity.unbound` template
+  (`res_mods/gui/unbound2/!shipidentity/`) is excluded — Aslain resolves the
+  template's `*_INSTALLED` component switches at install time, so WoWSP would
+  ship the unresolved template and blank new collab ships' port names (#1634);
+  a package mixing that template into functional payload refuses the publish
+  (the maintainer must split the template out of the package);
+- two packages of one entry writing the same target path with different bytes
+  publish with a warning instead of an install-order last-wins (the app's
+  install merge keeps the first package's copy deterministically and reports
+  the conflict; byte-identical duplicate targets stay silent, as shared-runtime
+  dedupe); legacy duplicates in already-published entries are reported so the
+  maintainer can resolve them upstream;
 - asset uploads are digest-idempotent (same sha → skip);
 - index asset-existence gate: more than 25% missing assets refuses the
   index upload (delisted / stale entries are exempt);
@@ -747,6 +760,10 @@ JSON block, so agents and humans read the same source). A failed
   apply with `include_new=true`;
 - Stale review: closing the Discussion delists the entry; if upstream
   comes back, the next sync clears the stale mark automatically.
+- Content-guard migration: after changing the package content guard, run
+  `apply --reaudit` once — it forces a download + audit pass over every
+  in-scope entry, including the ones the diff would call unchanged (regular
+  runs stay incremental and only audit entries whose packages changed).
 
 #### Compliance posture
 
