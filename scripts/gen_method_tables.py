@@ -58,6 +58,21 @@ AVATAR_METHODS = [
     # every reference def, so the id is pinned per version like damageStat.
     "receiveShieldDamageInfo",
     "receiveDamageStat",
+    # E27 squadron-state avatar methods (the plane-follow card's HP /
+    # per-plane HP / damage / boost / consumable / death streams). The
+    # reference defs ship them through 15.7; the 15.8+ rows pin the ids via
+    # EMPIRICAL_OVERRIDES (def-derived with exposed_index.py, anchors
+    # matched) — every field is Option so an unpinned version resolves
+    # `None` and decodes nothing instead of plausible garbage.
+    "receive_squadronHealth",
+    "receive_squadronPlanesHealth",
+    "receive_squadronDamage",
+    "receive_changeThrottleMode",
+    "squadronConsumableUsed",
+    "squadronConsumableStopWorking",
+    "receive_planeDeath",
+    "receive_squadronNotify",
+    "receive_deactivateSquadron",
     "onChatMessage",
     "onAchievementEarned",
     "onArenaStateReceived",
@@ -66,7 +81,19 @@ AVATAR_METHODS = [
 # Fields emitted as `Option<i32>`: the reference entity defs don't expose every
 # method the replay stream carries, so a missing def resolves to `None` (the
 # decoder then leaves that stream empty) instead of a bogus id.
-OPTIONAL_FIELDS = {"avatar_receive_damage_stat", "avatar_receive_shield_damage_info"}
+OPTIONAL_FIELDS = {
+    "avatar_receive_damage_stat",
+    "avatar_receive_shield_damage_info",
+    "avatar_receive_squadron_health",
+    "avatar_receive_squadron_planes_health",
+    "avatar_receive_squadron_damage",
+    "avatar_receive_change_throttle_mode",
+    "avatar_squadron_consumable_used",
+    "avatar_squadron_consumable_stop_working",
+    "avatar_receive_plane_death",
+    "avatar_receive_squadron_notify",
+    "avatar_receive_deactivate_squadron",
+}
 
 # Fields whose def-derived id is NOT trusted yet: newer reference defs started
 # shipping `receiveDamageStat` (they used to be absent — hence the Option), but
@@ -133,6 +160,23 @@ EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
         "avatar_on_chat_message": 151,
         "avatar_on_achievement_earned": 58,
         "avatar_on_arena_state_received": 153,
+        # E27 squadron-state ids (2026-11-08): def-derived via
+        # scripts/experiments/exposed_index.py from the 15.9.0 entity defs
+        # (defs/defs159, build 13357625 — verified def-for-def identical to
+        # the 15.8.0 pins for every previously shipped field, so this row
+        # serves both versions and 15.9 replays ride it via the era floor),
+        # updateSquadron/artillery/damageStat anchors matched. Wire-validated
+        # on the E27 capture wave (health fraction 1.0→decaying, boost
+        # toggles, Used→StopWorking consumable windows, per-death arrays).
+        "avatar_receive_squadron_health": 84,
+        "avatar_receive_squadron_planes_health": 94,
+        "avatar_receive_squadron_damage": 87,
+        "avatar_receive_change_throttle_mode": 62,
+        "avatar_squadron_consumable_used": 149,
+        "avatar_squadron_consumable_stop_working": 68,
+        "avatar_receive_plane_death": 147,
+        "avatar_receive_squadron_notify": 61,
+        "avatar_receive_deactivate_squadron": 59,
     },
     # 15.10.0 (build 13533378, the Bermuda Triangle event client): def-derived
     # from the authoritative entity defs extracted from the local install
@@ -171,6 +215,24 @@ EMPIRICAL_OVERRIDES: dict[tuple[int, int, int], dict[str, int]] = {
         "avatar_on_achievement_earned": 58,
         "avatar_on_arena_state_received": 154,
         "avatar_receive_shield_damage_info": 87,
+        # E27 squadron-state ids (2026-11-08): recomputed from the
+        # authoritative entity defs of game build 13533378 (defs1510
+        # extraction, scripts/experiments/exposed_index.py); anchors
+        # updateSquadron=146 / artillery=127 / damageStat=164 / chat=152
+        # reproduce the shipped row exactly. The 15.10 shield insert at 87
+        # shifts every exposed id >= 87 up one (planesHealth 94→95, damage
+        # 87→88, consumableUsed 149→150, planeDeath 147→148); ids below 87
+        # keep their 15.8/15.9 values (health=84, throttle=62,
+        # stopWorking=68, notify=61, deactivate=59).
+        "avatar_receive_squadron_health": 84,
+        "avatar_receive_squadron_planes_health": 95,
+        "avatar_receive_squadron_damage": 88,
+        "avatar_receive_change_throttle_mode": 62,
+        "avatar_squadron_consumable_used": 150,
+        "avatar_squadron_consumable_stop_working": 68,
+        "avatar_receive_plane_death": 148,
+        "avatar_receive_squadron_notify": 61,
+        "avatar_receive_deactivate_squadron": 59,
     },
 }
 
@@ -189,7 +251,14 @@ EMPIRICAL_NOTES = {
     // against build 13357625), so no 15.9 row exists — those replays ride the
     // 15.8 row via the era floor. The vehicle-side shield/overheat method ids
     // are NOT avatar table material: they pin in `layout_tables`
-    // (VEHICLE_GUN_STATE_LAYOUT) next to the E11 exact-minor ids.""",
+    // (VEHICLE_GUN_STATE_LAYOUT) next to the E11 exact-minor ids.
+    // The E27 squadron-state ids (health=84, planesHealth=95, damage=88,
+    // throttle=62, consumableUsed=150, stopWorking=68, planeDeath=148,
+    // notify=61, deactivate=59) are recomputed from the authoritative
+    // entity defs of game build 13533378 (defs1510 extraction,
+    // scripts/experiments/exposed_index.py); anchors updateSquadron=146 /
+    // artillery=127 / damageStat=164 / chat=152 reproduce the shipped row
+    // exactly, and the shield insert at 87 explains every id that moved.""",
     (
         15,
         8,
@@ -217,7 +286,15 @@ EMPIRICAL_NOTES = {
     // achievementId` whose ids match the playersPublicInfo achievement
     // list in the same capture. onArenaStateReceived sits at 153 (args
     // `i64 arenaId, i8 teamBuildTypeId, BLOB×3` — the players blob pickles
-    // the full 24-player roster; shape-verified against the descriptor).""",
+    // the full 24-player roster; shape-verified against the descriptor).
+    // The E27 squadron-state ids (health=84, planesHealth=94, damage=87,
+    // throttle=62, consumableUsed=149, stopWorking=68, planeDeath=147,
+    // notify=61, deactivate=59) are def-derived via
+    // scripts/experiments/exposed_index.py from the 15.9.0 entity defs
+    // (defs/defs159, build 13357625 — verified def-for-def identical to the
+    // 15.8.0 pins for every previously shipped field),
+    // updateSquadron/artillery/damageStat anchors matched; this row serves
+    // 15.8 and 15.9 alike (15.9 replays ride it via the era floor).""",
 }
 
 
@@ -654,6 +731,50 @@ def main() -> None:
             "    /// BLOB botsData` — the authoritative per-player entity/team mapping",
             "    /// the roster join is built from.",
         ],
+        "avatar_receive_squadron_health": [
+            "    /// Squadron total HP fraction (receive_squadronHealth): `u64 PLANE_ID,",
+            "    /// f32 hp` where hp is the 0..1 fraction of full squadron HP (1.0 at",
+            "    /// launch, decaying as planes take damage). `None` on versions whose",
+            "    /// exposed id isn't pinned — the stream then stays empty.",
+        ],
+        "avatar_receive_squadron_planes_health": [
+            "    /// Per-plane HP packing (receive_squadronPlanesHealth): `u64 PLANE_ID,",
+            "    /// u64 packed` — a solved 3-bits-per-flying-plane health-band",
+            "    /// bitfield (unpack helpers in tauri_shared; evidence in",
+            "    /// scripts/experiments/sq_planes_health.md); the decoder keeps",
+            "    /// the RAW u64 so the wire stays lossless.",
+        ],
+        "avatar_receive_squadron_damage": [
+            "    /// Squadron damage tick (receive_squadronDamage): `u64 PLANE_ID,",
+            "    /// f32 damage, u8 hitType`.",
+        ],
+        "avatar_receive_change_throttle_mode": [
+            "    /// Engine-mode toggle (receive_changeThrottleMode): `u64 PLANE_ID,",
+            "    /// i8 mode` — 0 cruise, 1 engine boost (the plane-follow card's",
+            "    /// BOOST signal; only {0,1} observed on the wire).",
+        ],
+        "avatar_squadron_consumable_used": [
+            "    /// Squadron consumable activation (squadronConsumableUsed): `u64",
+            "    /// PLANE_ID, u8 consumableType` (observed 20/21/22; the def says",
+            "    /// CONSUMABLE_USAGE_PARAMS but 14.5 wires ONE byte).",
+        ],
+        "avatar_squadron_consumable_stop_working": [
+            "    /// Squadron consumable effect-window end",
+            "    /// (squadronConsumableStopWorking): same shape as Used; Used →",
+            "    /// StopWorking brackets the active window.",
+        ],
+        "avatar_receive_plane_death": [
+            "    /// Plane-loss report (receive_planeDeath): `u64 PLANE_ID, ARRAY<u8>",
+            "    /// deadIndexes (u8 count prefix), u8 reason, i64 attackerId`.",
+        ],
+        "avatar_receive_squadron_notify": [
+            "    /// Squadron notify enum (receive_squadronNotify): `u64 PLANE_ID,",
+            "    /// i8 notify` (observed 1/2/4/5, semantics unanalysed).",
+        ],
+        "avatar_receive_deactivate_squadron": [
+            "    /// Squadron deactivation (receive_deactivateSquadron): `u64 PLANE_ID,",
+            "    /// u8 reason` (observed 0..5 — recall/destroyed/fuel transitions).",
+        ],
     }
 
     out = sys.stdout
@@ -791,6 +912,25 @@ mod tests {
             ] {
                 assert!(id > 0, "unpopulated id in table {v:?}");
             }
+            // The E27 squadron-state fields are Option: a def that predates a
+            // method legitimately resolves None, so only the rows that PIN
+            // them (the 15.8/15.9 and 15.10 empirical overrides) must carry
+            // a live id — never a plain `> 0` over every row.
+            if matches!(v, (15, 8, 0) | (15, 10, 0)) {
+                for id in [
+                    t.avatar_receive_squadron_health,
+                    t.avatar_receive_squadron_planes_health,
+                    t.avatar_receive_squadron_damage,
+                    t.avatar_receive_change_throttle_mode,
+                    t.avatar_squadron_consumable_used,
+                    t.avatar_squadron_consumable_stop_working,
+                    t.avatar_receive_plane_death,
+                    t.avatar_receive_squadron_notify,
+                    t.avatar_receive_deactivate_squadron,
+                ] {
+                    assert!(id.unwrap_or(0) > 0, "unpinned E27 id in table {v:?}");
+                }
+            }
         }
     }
 
@@ -878,6 +1018,45 @@ mod tests {
         assert_eq!(
             avatar_method_name_15_8_0(row.avatar_receive_ward_removed),
             Some("receive_wardRemoved")
+        );
+        // The nine E27 squadron-state pins resolve to their method names in
+        // the same def-derived full table (2026-11-08): each id matches the
+        // wire-validated stream shape on the E27 capture wave.
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_receive_squadron_health.unwrap()),
+            Some("receive_squadronHealth")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_receive_squadron_planes_health.unwrap()),
+            Some("receive_squadronPlanesHealth")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_receive_squadron_damage.unwrap()),
+            Some("receive_squadronDamage")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_receive_change_throttle_mode.unwrap()),
+            Some("receive_changeThrottleMode")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_squadron_consumable_used.unwrap()),
+            Some("squadronConsumableUsed")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_squadron_consumable_stop_working.unwrap()),
+            Some("squadronConsumableStopWorking")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_receive_plane_death.unwrap()),
+            Some("receive_planeDeath")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_receive_squadron_notify.unwrap()),
+            Some("receive_squadronNotify")
+        );
+        assert_eq!(
+            avatar_method_name_15_8_0(row.avatar_receive_deactivate_squadron.unwrap()),
+            Some("receive_deactivateSquadron")
         );
     }
 

@@ -389,6 +389,29 @@ pub struct DecodedReplay {
     /// event per gun entering/leaving the overheated state. The heat LEVEL
     /// itself never replicates (client-local), only this broadcast.
     pub gun_overheats: Vec<wowsp_tauri_shared::GunOverheatEvent>,
+    // E27 squadron-state streams (avatar methods — the plane-follow card's
+    // HP / boost / consumable / death timelines). Each stream is gated on
+    // its per-version Option id, so versions without a pin decode empty.
+    /// Squadron total-HP fractions (avatar receive_squadronHealth).
+    pub squadron_health: Vec<wowsp_tauri_shared::SquadronHealthEvent>,
+    /// Raw per-plane HP packings (avatar receive_squadronPlanesHealth).
+    pub squadron_planes_health: Vec<wowsp_tauri_shared::SquadronPlanesHealthEvent>,
+    /// Damage ticks (avatar receive_squadronDamage).
+    pub squadron_damage: Vec<wowsp_tauri_shared::SquadronDamageEvent>,
+    /// Engine-mode toggles (avatar receive_changeThrottleMode) — the boost
+    /// signal for the plane-follow card.
+    pub squadron_throttle: Vec<wowsp_tauri_shared::SquadronThrottleEvent>,
+    /// Consumable lifecycle (avatar squadronConsumableUsed /
+    /// squadronConsumableStopWorking) — Used→StopWorking brackets the active
+    /// window.
+    pub squadron_consumables: Vec<wowsp_tauri_shared::SquadronConsumableEvent>,
+    /// Plane-loss reports (avatar receive_planeDeath) — dead formation
+    /// slots, reason and attacking vehicle id per call.
+    pub plane_deaths: Vec<wowsp_tauri_shared::PlaneDeathEvent>,
+    /// Notify enums (avatar receive_squadronNotify), raw.
+    pub squadron_notifies: Vec<wowsp_tauri_shared::SquadronNotifyEvent>,
+    /// Deactivation reasons (avatar receive_deactivateSquadron), raw.
+    pub squadron_deactivations: Vec<wowsp_tauri_shared::SquadronDeactivateEvent>,
 }
 
 /// A raw nested-property update captured from the stream (entity id + the
@@ -754,8 +777,11 @@ use events::{
     args_is_plane_id, decode_achievement, decode_arena_state, decode_artillery_shots,
     decode_chat_message, decode_consumable_used, decode_damage_stat, decode_explosions,
     decode_gun_overheated, decode_minimap_squadron_add, decode_minimap_squadron_move,
-    decode_minimap_vision, decode_shield_damage_info, decode_shot_kills, decode_squadron_add,
-    decode_squadron_update, decode_torpedo_directions, decode_torpedo_salvos, decode_ward_added,
+    decode_minimap_vision, decode_plane_death, decode_shield_damage_info, decode_shot_kills,
+    decode_squadron_add, decode_squadron_consumable, decode_squadron_damage,
+    decode_squadron_deactivate, decode_squadron_health, decode_squadron_notify,
+    decode_squadron_planes_health, decode_squadron_throttle, decode_squadron_update,
+    decode_torpedo_directions, decode_torpedo_salvos, decode_ward_added,
 };
 use frames::walk_frames;
 #[cfg(test)]

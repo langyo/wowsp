@@ -177,6 +177,14 @@ mod tests {
             shield_state_events: Vec::new(),
             shield_markers: Vec::new(),
             gun_overheats: Vec::new(),
+            squadron_health: Vec::new(),
+            squadron_planes_health: Vec::new(),
+            squadron_damage: Vec::new(),
+            squadron_throttle: Vec::new(),
+            squadron_consumables: Vec::new(),
+            plane_deaths: Vec::new(),
+            squadron_notifies: Vec::new(),
+            squadron_deactivations: Vec::new(),
         }
     }
 }

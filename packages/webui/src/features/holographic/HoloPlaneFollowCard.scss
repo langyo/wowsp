@@ -30,6 +30,10 @@
   color: var(--holo-hud-text, rgb(255 255 255 / 92%));
   font-size: var(--text-xs);
   white-space: nowrap;
+  /* Narrow-map pressure valve: __who (min-width: 0) yields first, and if
+     the fixed extras still overflow the cap the pill CLIPS inside its own
+     rounded glass instead of spilling past the row width. */
+  overflow: hidden;
   pointer-events: none;
   animation: holo-planecard-in 160ms ease-out;
 }
@@ -117,6 +121,56 @@
   color: rgb(var(--color-primary));
   font-size: 0.625rem;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+
+  /* Engine-boost twin: same chip geometry, warm amber ink — boost is
+     engine state, not ordnance, so it must not read as a second attack
+     run. amber-600 stays legible on both HUD glasses (dark glass / white
+     paper), where the amber-500 of the HP ramp would wash out on light. */
+  &--boost {
+    background: rgb(217 119 6 / 16%);
+    color: #d97706;
+  }
+}
+
+/* Total-HP bar (the E27 health fraction): a FIXED-width track so the pill
+   never re-splats as the fraction ticks down — only the fill's inline
+   width moves. Sits on the row's middle line (the root's center
+   alignment), deliberately off the numbers' baseline row. */
+.holo-planecard__hp {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 14%);
+  overflow: hidden;
+}
+
+.holo-planecard__hpfill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  /* Width + ramp color arrive inline from the 10 Hz snapshot; the short
+     linear transitions bridge ticks into a smooth decay. */
+  transition:
+    width 100ms linear,
+    background-color 100ms linear;
+}
+
+/* Active-consumable chips: quieter than the badges — bordered neutral
+   glass (the hud-chip token), at most three, right of the strength
+   cluster; unknown type ids render through the generic consOther label. */
+.holo-planecard__chip {
+  flex: 0 0 auto;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 14%));
+  border-radius: 999px;
+  background: var(--holo-hud-chip, rgb(0 0 0 / 40%));
+  color: var(--holo-hud-text, rgb(255 255 255 / 92%));
+  font-size: 0.625rem;
+  font-weight: 500;
   letter-spacing: 0.04em;
   line-height: 1.4;
 }

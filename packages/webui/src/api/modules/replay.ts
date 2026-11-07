@@ -591,11 +591,17 @@ export interface DiagnosticCounts {
   gunMarkers?: number;
 }
 
-/** An aircraft-squadron creation (receive_addSquadron on the avatar). */
+/** An aircraft-squadron creation (receive_addSquadron on the avatar).
+ *  `totalNumPlanes` is the hangar total; `numPlanes` the planes actually
+ *  LAUNCHED — the denominator of every squadronHealth fraction (partial
+ *  launches from a depleted hangar exist: 6 of 10 → hp 0.6667 = 4/6).
+ *  Both optional: pre-field payloads deserialize without them. */
 export interface SquadronCreate {
   time: number;
   planeId: number;
   paramsId: number;
+  totalNumPlanes?: number;
+  numPlanes?: number;
   x: number;
   y: number;
   z: number;
@@ -643,6 +649,142 @@ export interface MinimapSquadronMove {
 export interface MinimapSquadronRemove {
   time: number;
   planeId: number;
+}
+
+/* ── Squadron-state streams (experiment E27, one IPC payload — see
+ *  SquadronStateEvents / readReplaySquadronStates) ─────────────────────── */
+
+/** Which half of the squadron-consumable lifecycle an event records: the
+ *  activation (`squadronConsumableUsed`) or the effect-window END
+ *  (`squadronConsumableStopWorking`). A Used with no matching StopWorking is
+ *  a consumable still active at stream end (or a squadron that died with it
+ *  on) — the active window is the Used→StopWorking bracket. Mirrors
+ *  `wowsp_tauri_shared::SquadronConsumableKind` (camelCase wire). */
+export type SquadronConsumableKind = "used" | "stopWorking";
+
+/** One squadron total-HP tick (receive_squadronHealth on the avatar, E27):
+ *  `hp` is the squadron's TOTAL HP as a 0..1 fraction (1.0 at launch,
+ *  decaying as planes take damage), NOT an absolute value. Mirrors
+ *  `wowsp_tauri_shared::SquadronHealthEvent`. Empirically validated on the
+ *  14.5.0.0 Shokaku reference capture: every hp in 0..=1 with step-downs
+ *  aligned to damage ticks and plane deaths. */
+export interface SquadronHealthEvent {
+  time: number;
+  planeId: number;
+  /** Squadron HP fraction, 0..=1. */
+  hp: number;
+}
+
+/** One per-plane HP packing (receive_squadronPlanesHealth on the avatar,
+ *  E27): `packed` is the RAW u64 — 3 bits per plane LSB-first, band digits
+ *  1 = HP > 3/4, 2 = (1/4, 3/4], 4 = <= 1/4, digit count = flying planes
+ *  (see planeFollow.ts unpackSquadronBands for the TS twin). Mirrors
+ *  `wowsp_tauri_shared::SquadronPlanesHealthEvent`. */
+export interface SquadronPlanesHealthEvent {
+  time: number;
+  planeId: number;
+  /** Raw packed per-plane HP bands (kept verbatim; decode via
+   *  unpackSquadronBands). */
+  packed: number;
+}
+
+/** One squadron damage tick (receive_squadronDamage on the avatar, E27).
+ *  `hitType` is a raw id (0 observed on the reference capture). Mirrors
+ *  `wowsp_tauri_shared::SquadronDamageEvent` (14.5-validated). */
+export interface SquadronDamageEvent {
+  time: number;
+  planeId: number;
+  damage: number;
+  /** Raw hit-type id (0 observed so far). */
+  hitType: number;
+}
+
+/** One engine-mode toggle (receive_changeThrottleMode on the avatar, E27):
+ *  0 = cruise, 1 = engine boost — the BOOST signal of the plane-follow
+ *  card. Values beyond {0,1} are unobserved, so the raw mode rides along.
+ *  Mirrors `wowsp_tauri_shared::SquadronThrottleEvent` (14.5-validated). */
+export interface SquadronThrottleEvent {
+  time: number;
+  planeId: number;
+  /** 0 = cruise, 1 = engine boost; raw otherwise. */
+  mode: number;
+}
+
+/** One squadron-consumable lifecycle event (squadronConsumableUsed /
+ *  squadronConsumableStopWorking on the avatar, E27): the wire carries one
+ *  byte — the consumable type id (20/21/22 observed) — and `kind` says
+ *  which half of the lifecycle fired. Mirrors
+ *  `wowsp_tauri_shared::SquadronConsumableEvent` (14.5-validated). */
+export interface SquadronConsumableEvent {
+  time: number;
+  planeId: number;
+  /** Consumable type id (20/21/22 observed). */
+  consumableType: number;
+  /** Which lifecycle half this event is. */
+  kind: SquadronConsumableKind;
+}
+
+/** One plane-loss report (receive_planeDeath on the avatar, E27): one call
+ *  can report several planes lost at once (flak bursts) — `deadIndexes`
+ *  are formation slots. Mirrors
+ *  `wowsp_tauri_shared::PlaneDeathEvent` (14.5-validated). */
+export interface PlaneDeathEvent {
+  time: number;
+  planeId: number;
+  /** Formation-slot indexes of the planes lost in this call. */
+  deadIndexes: number[];
+  /** Raw death reason (1 observed). */
+  reason: number;
+  /** Attacking vehicle entity id (joins EntityTrajectory.entityId). */
+  attackerId: number;
+}
+
+/** One squadron notify (receive_squadronNotify on the avatar, E27): the
+ *  value is a raw notify enum (1/2/4/5 observed; semantics unanalysed).
+ *  Mirrors `wowsp_tauri_shared::SquadronNotifyEvent` (14.5-validated). */
+export interface SquadronNotifyEvent {
+  time: number;
+  planeId: number;
+  /** Raw notify enum (1/2/4/5 observed). */
+  notify: number;
+}
+
+/** One squadron deactivation (receive_deactivateSquadron on the avatar,
+ *  E27): the reason the squadron stopped being (0..5 observed — the
+ *  recall/death/out-of-fuel family; kept raw until every value is named).
+ *  Mirrors `wowsp_tauri_shared::SquadronDeactivateEvent`
+ *  (14.5-validated). */
+export interface SquadronDeactivateEvent {
+  time: number;
+  planeId: number;
+  /** Raw deactivation reason (0..5 observed). */
+  reason: number;
+}
+
+/** The E27 squadron-state aggregate the plane-follow card consumes: the
+ *  nine avatar-method streams (read_replay_squadron_states) in one IPC
+ *  payload. Streams are independent timelines keyed by `planeId`; every
+ *  array is OPTIONAL because the backend skips empty vectors on the wire,
+ *  and a version whose method ids are not pinned decodes to none of them
+ *  (consumers read with ?? []). Mirrors
+ *  `wowsp_tauri_shared::SquadronStateEvents`. */
+export interface SquadronStateEvents {
+  /** Total-HP fractions (receive_squadronHealth). */
+  health?: SquadronHealthEvent[];
+  /** Raw per-plane HP band packings (receive_squadronPlanesHealth). */
+  planesHealth?: SquadronPlanesHealthEvent[];
+  /** Damage ticks (receive_squadronDamage). */
+  damage?: SquadronDamageEvent[];
+  /** Engine-mode toggles (receive_changeThrottleMode) — the boost signal. */
+  throttle?: SquadronThrottleEvent[];
+  /** Consumable lifecycle (squadronConsumableUsed / …StopWorking). */
+  consumables?: SquadronConsumableEvent[];
+  /** Plane-loss reports (receive_planeDeath). */
+  planeDeaths?: PlaneDeathEvent[];
+  /** Notify enums (receive_squadronNotify). */
+  notifies?: SquadronNotifyEvent[];
+  /** Deactivation reasons (receive_deactivateSquadron). */
+  deactivations?: SquadronDeactivateEvent[];
 }
 
 /** A fighter-patrol ward (receive_wardAdded): the circle aircraft hold while
@@ -1083,6 +1225,14 @@ export const replayApi = {
     }
     return transport.invoke<ReplayStream>(RPC.read_replay_positions, { path });
   },
+  /** The E27 squadron-state streams of one replay (see SquadronStateEvents)
+   *  — the plane-follow card's HP / boost / consumable readouts. Plain JSON,
+   *  not the packed-MathPipe bytes of readReplayPositions: the payload is a
+   *  few thousand small events, far below the size that motivated packing.
+   *  Call through features/holographic/squadronStatesLoader.ts, which fetches
+   *  once per replay path. */
+  readReplaySquadronStates: (path: string) =>
+    transport.invoke<SquadronStateEvents>(RPC.read_replay_squadron_states, { path }),
   /** Live self-stats feed (我的战绩): locate the running client's in-progress
    *  `temp.*replay` container. Null when no battle is being recorded. */
   liveTempReplay: () => transport.invoke<LiveTempReplay | null>(RPC.live_temp_replay),

@@ -908,8 +908,9 @@ impl CruiseSample {
 }
 
 /// An aircraft-squadron creation (`receive_addSquadron` on the avatar): the
-/// squadron's game-params id and its spawn position. Method id resolves via
-/// the decoder's per-version tables.
+/// squadron's game-params id, its spawn position and the two plane counts
+/// the health streams join against. Method id resolves via the decoder's
+/// per-version tables.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SquadronCreate {
@@ -918,6 +919,19 @@ pub struct SquadronCreate {
     pub plane_id: u64,
     /// GameParams id of the aircraft type.
     pub params_id: u32,
+    /// Hangar TOTAL for this squadron type (addSquadron arg byte 4). A
+    /// depleted hangar launches fewer planes than this — 23 of 224
+    /// squadrons on the 14.5.0.0 Shokaku reference capture (2025-07-08)
+    /// launched partial (e.g. 6 of 10).
+    #[serde(default)]
+    pub total_num_planes: u8,
+    /// Planes ACTUALLY launched (addSquadron arg byte 18) — the denominator
+    /// of every [`SquadronHealthEvent`] fraction and the digit count of the
+    /// launch-time packed per-plane health: a 6-of-10 launch reading
+    /// hp 0.6667 is 4/6 exact, not 4/10. Pre-field payloads (and fixtures
+    /// built before it) deserialize with 0.
+    #[serde(default)]
+    pub num_planes: u8,
     pub x: f32,
     pub y: f32,
     pub z: f32,
@@ -946,6 +960,282 @@ pub struct SquadronPlane {
     /// attack-run signal (a diving wedge is dropping ordnance).
     #[serde(default)]
     pub pitch: i8,
+}
+
+/// Which half of the squadron-consumable stream an event belongs to: the
+/// activation (`squadronConsumableUsed`) or the effect-window END
+/// (`squadronConsumableStopWorking`). A Used with no matching StopWorking is
+/// a consumable still active at stream end (or a squadron that died with it
+/// on) — the active window is the Used→StopWorking bracket.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SquadronConsumableKind {
+    Used,
+    StopWorking,
+}
+
+/// One squadron total-HP tick (`receive_squadronHealth` on the avatar, E27):
+/// def signature `receive_squadronHealth(PLANE_ID, FLOAT)`. The float is the
+/// squadron's TOTAL HP as a 0..1 fraction (1.0 at launch, decaying as planes
+/// take damage), NOT an absolute value — join [`SquadronCreate`] for the
+/// plane count and scale on the frontend. Empirically validated on the
+/// 14.5.0.0 Shokaku reference capture (2025-07-08): 4,978 calls, every hp in
+/// 0..=1 and step-downs aligned with damage ticks and plane deaths.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronHealthEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    /// Squadron HP fraction, 0..=1.
+    pub hp: f32,
+}
+
+/// One per-plane HP packing (`receive_squadronPlanesHealth` on the avatar,
+/// E27): def signature `receive_squadronPlanesHealth(PLANE_ID, UINT64)`. The
+/// u64 is a per-plane health-band bitfield — 3 bits per flying plane, plane
+/// 0 = least significant digit (see the unpack helpers right below and
+/// `scripts/experiments/sq_planes_health.md` for the evidence: 815
+/// synchronized samples / 167 squadrons / 0 violations on the 14.5.0.0
+/// Shokaku reference capture, 2025-07-08). The event carries the RAW u64 so
+/// the wire stays lossless; consumers unpack through
+/// [`unpack_squadron_planes_health`] / [`plane_health_band`].
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronPlanesHealthEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    /// Raw packed per-plane HP bands (unpack via the helpers below).
+    pub packed: u64,
+}
+
+// ── E27: the receive_squadronPlanesHealth u64, unpacked ──────────────────────
+//
+// Packing solved empirically by the packed-crack analysis (validated on the
+// 14.5.0.0 Shokaku reference capture 2025-07-08: 815 synchronized
+// packed/float samples across 167 squadrons with 0 violations; 155 fresh
+// death transitions all consistent; 3,825 digit instances use only {1, 2, 4}
+// — full evidence in scripts/experiments/sq_planes_health.md, reproducers in
+// scripts/experiments/sq_planes_health_unpack.rs / _analyze.mjs):
+//
+// * 3 bits (one octal digit) per **flying** plane, plane 0 = least
+//   significant digit; digit count = number of planes currently flying.
+// * digit 1 (2^0) = plane HP above 3/4 of its maximum (full),
+//   digit 2 (2^1) = HP in (1/4, 3/4] (damaged),
+//   digit 4 (2^2) = HP at or below 1/4 (critical).
+//   No other digit value occurs on the capture; dead slots are simply
+//   absent (the integer truncates trailing zero slots), and every observed
+//   receive_planeDeath dead index equals digit_count − 1 at that moment —
+//   a death removes the TOP digit (180/180 on the capture).
+// * The companion receive_squadronHealth float equals Σ(plane HP) /
+//   numPlanes at spawn ([`SquadronCreate::num_planes`], NOT the hangar
+//   total — partial-hangar launches exist), which is what pinned the band
+//   edges.
+// * receive_addSquadron's trailing u64 planeHealth uses the same encoding.
+
+/// Per-plane health band decoded from one 3-bit field of the packed u64.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PlaneHealthBand {
+    /// HP above 3/4 of the plane's maximum.
+    Full,
+    /// HP in (1/4, 3/4].
+    Damaged,
+    /// HP at or below 1/4.
+    Critical,
+}
+
+/// Bits per plane field in the packed u64.
+pub const PLANE_HEALTH_BITS: u32 = 3;
+/// Largest squadron that still fits the u64 (21 × 3 = 63 bits).
+pub const MAX_SQUADRON_PLANES: usize = 21;
+
+/// Split the packed u64 into raw 3-bit fields, plane 0 first (least
+/// significant). Trailing zero fields (non-flying slots) are dropped by the
+/// wire format itself, so the returned length IS the flying-plane count and
+/// no `0` entries occur on well-formed captures.
+pub fn squadron_planes_health_digits(packed: u64) -> Vec<u8> {
+    let mut digits = Vec::new();
+    let mut v = packed;
+    while v != 0 {
+        digits.push((v & 7) as u8);
+        v >>= PLANE_HEALTH_BITS;
+    }
+    digits
+}
+
+/// One plane's health band inside the packed u64. `None` is HONEST missing
+/// data, never a guess: the index is at or beyond the flying-plane count
+/// (dead / never-launched slot), or the 3-bit field is one of the digit
+/// values {3, 5, 6, 7} that never occur on real captures — a future format
+/// change must surface as absent data instead of a plausible-but-wrong
+/// label.
+pub fn plane_health_band(packed: u64, index: usize) -> Option<PlaneHealthBand> {
+    let digit = *squadron_planes_health_digits(packed).get(index)?;
+    plane_health_digit_band(digit)
+}
+
+/// Full unpack: per-plane health bands, plane 0 first. Index in the returned
+/// Vec is the plane index — the same index space receive_planeDeath's dead
+/// array uses at the moment of death (a death drops the top digit).
+pub fn unpack_squadron_planes_health(packed: u64) -> Vec<Option<PlaneHealthBand>> {
+    squadron_planes_health_digits(packed)
+        .iter()
+        .map(|&d| plane_health_digit_band(d))
+        .collect()
+}
+
+/// Map one raw 3-bit field to its band; only {1, 2, 4} were ever observed.
+fn plane_health_digit_band(digit: u8) -> Option<PlaneHealthBand> {
+    match digit {
+        1 => Some(PlaneHealthBand::Full),
+        2 => Some(PlaneHealthBand::Damaged),
+        4 => Some(PlaneHealthBand::Critical),
+        _ => None,
+    }
+}
+
+/// Inverse of [`unpack_squadron_planes_health`] for round-tripping fixtures.
+pub fn pack_squadron_planes_health(bands: &[PlaneHealthBand]) -> u64 {
+    let mut packed: u64 = 0;
+    for (slot, band) in bands.iter().enumerate() {
+        let digit = match band {
+            PlaneHealthBand::Full => 1u64,
+            PlaneHealthBand::Damaged => 2,
+            PlaneHealthBand::Critical => 4,
+        };
+        packed |= digit << (PLANE_HEALTH_BITS * slot as u32);
+    }
+    packed
+}
+
+/// One squadron damage tick (`receive_squadronDamage` on the avatar, E27):
+/// def signature `receive_squadronDamage(PLANE_ID, FLOAT, UINT8)`. The float
+/// is the damage amount and the u8 the hit type (0 on the reference capture;
+/// kept raw until more values are observed). Empirically validated on the
+/// 14.5.0.0 Shokaku reference capture (2025-07-08).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronDamageEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    pub damage: f32,
+    /// Raw hit-type id (0 observed so far).
+    pub hit_type: u8,
+}
+
+/// One engine-mode toggle (`receive_changeThrottleMode` on the avatar, E27):
+/// def signature `receive_changeThrottleMode(PLANE_ID, INT8)`. Mode 0 =
+/// cruise, 1 = engine boost — the BOOST signal of the plane-follow card.
+/// Observed domain on the 14.5.0.0 Shokaku reference capture (2025-07-08):
+/// 699 calls alternating strictly between 0 and 1; values beyond {0,1} are
+/// unobserved, so the raw i8 is kept.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronThrottleEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    /// 0 = cruise, 1 = engine boost; raw i8 otherwise.
+    pub mode: i8,
+}
+
+/// One squadron-consumable lifecycle event (`squadronConsumableUsed` /
+/// `squadronConsumableStopWorking` on the avatar, E27): def signature names
+/// CONSUMABLE_USAGE_PARAMS, but the 14.5 wire carries ONE byte — the
+/// consumable type id (observed 20/21/22). The two methods share this shape;
+/// [`SquadronConsumableKind`] says which half of the lifecycle fired.
+/// Empirically validated on the 14.5.0.0 Shokaku reference capture
+/// (2025-07-08).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronConsumableEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    /// Consumable type id (20/21/22 observed).
+    pub consumable_type: u8,
+    /// Which lifecycle half this event is.
+    pub kind: SquadronConsumableKind,
+}
+
+/// One plane-loss report (`receive_planeDeath` on the avatar, E27): def
+/// signature `receive_planeDeath(PLANE_ID, ARRAY<UINT8>, UINT8, INT64)`. The
+/// ARRAY prefix is a single u8 count (empirically confirmed — NOT u16/u32),
+/// then that many dead-plane indexes (formation slots, 0-based), the death
+/// reason (1 observed) and the attacker's vehicle entity id. One call can
+/// report several planes lost at once (flak bursts). Empirically validated
+/// on the 14.5.0.0 Shokaku reference capture (2025-07-08): 150+ calls.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaneDeathEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    /// Formation-slot indexes of the planes lost in this call.
+    pub dead_indexes: Vec<u8>,
+    /// Raw death reason (1 observed).
+    pub reason: u8,
+    /// Attacking vehicle entity id (joins EntityTrajectory.entityId).
+    pub attacker_id: i64,
+}
+
+/// One squadron notify (`receive_squadronNotify` on the avatar, E27): def
+/// signature `receive_squadronNotify(PLANE_ID, INT8)`. The i8 is a notify
+/// enum (observed 1/2/4/5 on the reference capture); semantics unanalysed,
+/// kept raw. Empirically validated on the 14.5.0.0 Shokaku reference capture
+/// (2025-07-08).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronNotifyEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    /// Raw notify enum (1/2/4/5 observed).
+    pub notify: i8,
+}
+
+/// One squadron deactivation (`receive_deactivateSquadron` on the avatar,
+/// E27): def signature `receive_deactivateSquadron(PLANE_ID, UINT8)`. The u8
+/// is the reason the squadron stopped being (observed 0..5 — the
+/// recall/death/out-of-fuel family); kept raw until every value is named.
+/// Empirically validated on the 14.5.0.0 Shokaku reference capture
+/// (2025-07-08).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronDeactivateEvent {
+    pub time: f32,
+    pub plane_id: u64,
+    /// Raw deactivation reason (0..5 observed).
+    pub reason: u8,
+}
+
+/// The E27 squadron-state aggregate the plane-follow card consumes: the nine
+/// avatar-method streams (`read_replay_squadron_states`) in one IPC
+/// payload. Streams are independent timelines keyed by `plane_id`; a version
+/// whose method ids are not pinned decodes to empty vectors.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SquadronStateEvents {
+    /// Total-HP fractions (receive_squadronHealth).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub health: Vec<SquadronHealthEvent>,
+    /// Raw per-plane HP packings (receive_squadronPlanesHealth).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub planes_health: Vec<SquadronPlanesHealthEvent>,
+    /// Damage ticks (receive_squadronDamage).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub damage: Vec<SquadronDamageEvent>,
+    /// Engine-mode toggles (receive_changeThrottleMode) — the boost signal.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub throttle: Vec<SquadronThrottleEvent>,
+    /// Consumable lifecycle (squadronConsumableUsed / …StopWorking).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumables: Vec<SquadronConsumableEvent>,
+    /// Plane-loss reports (receive_planeDeath).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plane_deaths: Vec<PlaneDeathEvent>,
+    /// Notify enums (receive_squadronNotify).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub notifies: Vec<SquadronNotifyEvent>,
+    /// Deactivation reasons (receive_deactivateSquadron).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub deactivations: Vec<SquadronDeactivateEvent>,
 }
 
 /// One smoke-screen entity lifecycle (entityType 4 = SmokeScreen, experiment

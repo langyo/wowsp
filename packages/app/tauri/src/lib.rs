@@ -690,6 +690,9 @@ pub fn run() {
             commands::replay::replay_content_hash,
             commands::replay::read_replay_positions,
             commands::replay::read_replay_smoke_screens,
+            // E27 squadron-state streams (health / boost / consumables /
+            // plane deaths) — the plane-follow card's data source.
+            commands::replay::read_replay_squadron_states,
             // Per-(map, scenario) cap layouts learned from local replays
             // (commands/replay/cap_layouts.rs) — the map-setup wizard's
             // "measured" layouts.

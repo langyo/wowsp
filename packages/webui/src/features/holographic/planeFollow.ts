@@ -6,12 +6,23 @@
  * right now (squadronAttacking), and the per-plane samples to judge that
  * from (squadronSamplesAt).
  *
+ * The second half reads the E27 squadron-state streams
+ * (readReplaySquadronStates — squadron HP fraction, engine boost, open
+ * consumable windows) as step lookups (squadronHpAt / throttleAt /
+ * activeConsumablesAt), aggregated for the card by planeCardExtras.
+ *
  * Reads the SAME trail table followTargets.ts answers the camera from —
  * one trail per (planeId, formation index), id = planeId * 16 + index —
  * so the card can never disagree with what the camera actually follows.
  * No Vue / DOM / three.js state; refreshed at the 10 Hz hudCurrent cadence
  * (see HolographicMap's planeCardState watch), not per rendered frame.
  */
+import type {
+  SquadronConsumableEvent,
+  SquadronHealthEvent,
+  SquadronStateEvents,
+  SquadronThrottleEvent,
+} from "@/api";
 import type { PlaneTrailLike } from "./followTargets";
 import { planeTrailExpiry } from "./planeFormation";
 import { samplesUpTo } from "./trajectoryMath";
@@ -102,4 +113,138 @@ export function squadronSamplesAt(
     if (idx >= 0) out.push(trail.samples[idx]);
   }
   return out;
+}
+
+/* ── E27 squadron-state stream lookups (readReplaySquadronStates) ────────
+ * The decoded streams are independent timelines keyed by planeId, each
+ * already in packet (time) order; the card asks "what is the state at t"
+ * a few times per hudCurrent tick. Undefined streams are pre-E27 replays
+ * (the backend skips empty vectors) and read as no-data everywhere. */
+
+/** The last event of one plane's stream at or before t — the step-lookup
+ *  core every stream reader below shares. Linear scan (latest time wins;
+ *  on equal times the later array entry wins, matching wire order), which
+ *  stays cheap at the card's 10 Hz cadence: the reference capture's whole
+ *  health stream is ~5k events, so a scan costs a few thousand
+ *  comparisons a few times per second. Null when the stream holds no
+ *  sample of this plane at or before t. */
+function lastSquadronEventAt<E extends { time: number; planeId: number }>(
+  events: readonly E[] | undefined,
+  planeId: number,
+  t: number,
+): E | null {
+  let best: E | null = null;
+  for (const event of events ?? []) {
+    if (event.planeId !== planeId || event.time > t) continue;
+    if (best === null || event.time >= best.time) best = event;
+  }
+  return best;
+}
+
+/** The squadron's TOTAL-HP fraction (0..1) at t: the last health sample at
+ *  or before t. Null before the first sample — the card hides the bar then
+ *  (pre-E27 replays never grow one at all). */
+export function squadronHpAt(
+  health: readonly SquadronHealthEvent[] | undefined,
+  planeId: number,
+  t: number,
+): number | null {
+  const event = lastSquadronEventAt(health, planeId, t);
+  return event === null ? null : event.hp;
+}
+
+/** The engine mode at t: the last throttle toggle at or before t (0 =
+ *  cruise, 1 = boost), or null before the first sample. The caller treats
+ *  null as cruise — exactly what an unboosted launch looks like. */
+export function throttleAt(
+  throttle: readonly SquadronThrottleEvent[] | undefined,
+  planeId: number,
+  t: number,
+): number | null {
+  const event = lastSquadronEventAt(throttle, planeId, t);
+  return event === null ? null : event.mode;
+}
+
+/** Consumable type ids whose effect window is open at t: a "used" event
+ *  opens a type's window, the matching "stopWorking" closes it — so a type
+ *  is active exactly when its LATEST event at or before t is "used" (a
+ *  Used with no StopWorking stays open: still active at stream end, or the
+ *  squadron died with it on). Ascending order for a stable chip row. */
+export function activeConsumablesAt(
+  consumables: readonly SquadronConsumableEvent[] | undefined,
+  planeId: number,
+  t: number,
+): number[] {
+  const latest = new Map<number, SquadronConsumableEvent>();
+  for (const event of consumables ?? []) {
+    if (event.planeId !== planeId || event.time > t) continue;
+    const prev = latest.get(event.consumableType);
+    if (prev === undefined || event.time >= prev.time) {
+      latest.set(event.consumableType, event);
+    }
+  }
+  const active: number[] = [];
+  for (const [consumableType, event] of latest) {
+    if (event.kind === "used") active.push(consumableType);
+  }
+  active.sort((a, b) => a - b);
+  return active;
+}
+
+/** Observed squadron-consumable type ids → the pill chip's i18n key. The
+ *  ids are the E27 wire's raw consumable byte (20/21/22 on the reference
+ *  capture); their NAMES live in the locale files, which the lead owns —
+ *  this map only routes ids to keys and invents nothing. */
+export const CONSUMABLE_LABEL: Readonly<Record<number, string>> = {
+  20: "replay.planeCard.cons20",
+  21: "replay.planeCard.cons21",
+  22: "replay.planeCard.cons22",
+};
+
+/** The i18n key for one consumable type id: mapped ids get their named
+ *  key, anything else the generic fallback — an unknown id must still
+ *  render a chip, not a blank. */
+export function consumableLabelKey(consumableType: number): string {
+  return CONSUMABLE_LABEL[consumableType] ?? "replay.planeCard.consOther";
+}
+
+/** Everything the pill card adds on top of the trail-derived strength, in
+ *  one call: the squadron's HP fraction (null before the first health
+ *  sample), whether engine boost is on (last throttle mode == 1 — null and
+ *  cruise both read as not boosting), and the open consumable windows.
+ *  HolographicMap calls this once per planeCardState refresh (10 Hz); a
+ *  null / stream-less aggregate (pre-E27 replay, failed load) degrades to
+ *  the pre-E27 card. */
+export function planeCardExtras(
+  events: Readonly<SquadronStateEvents> | null | undefined,
+  planeId: number,
+  t: number,
+): { hp: number | null; boost: boolean; consumables: number[] } {
+  return {
+    hp: squadronHpAt(events?.health, planeId, t),
+    boost: throttleAt(events?.throttle, planeId, t) === 1,
+    consumables: activeConsumablesAt(events?.consumables, planeId, t),
+  };
+}
+
+/** One HP band per still-flying plane, from the cracked planesHealth u64
+ *  (packed-crack, task-5): 3 bits per plane, LSB first — digit 1 =
+ *  HP > 3/4, 2 = (1/4, 3/4], 4 = <= 1/4 (digits 3/5/6/7 never occur;
+ *  anything else passes through raw). The DIGIT COUNT is the flying plane
+ *  count — a death drops the TOP digit — and trailing zero digits are
+ *  empty formation slots, so unpacking stops at the first 0 (16 slots ×
+ *  3 bits = 48 bits, beyond JS's 32-bit shift domain — hence arithmetic,
+ *  not >>>). Available for a per-plane band readout; the pill's total bar
+ *  reads the health float stream instead (it is smoother and already
+ *  normalized). */
+export function unpackSquadronBands(packed: number): number[] {
+  const bands: number[] = [];
+  let rest = packed;
+  for (let slot = 0; slot < 16 && rest > 0; slot++) {
+    const digit = rest % 8;
+    if (digit === 0) break;
+    bands.push(digit);
+    rest = Math.floor(rest / 8);
+  }
+  return bands;
 }

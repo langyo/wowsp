@@ -435,7 +435,12 @@
   },
   "planeCard": {
     "attacking": "攻擊中",
-    "followingHull": "無升空中隊 — 跟隨艦體"
+    "followingHull": "無升空中隊 — 跟隨艦體",
+    "boost": "加速",
+    "cons20": "消耗品 20",
+    "cons21": "消耗品 21",
+    "cons22": "消耗品 22",
+    "consOther": "消耗品"
   },
   "classes": {
     "battleship": "戰列艦",

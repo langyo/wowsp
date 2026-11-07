@@ -801,6 +801,352 @@ fn dump_packet_stats() {
     }
 }
 
+/// E27 probe: dump every avatar EntityMethod call whose id is one of the
+/// squadron-state candidates (health / per-plane health / damage / throttle
+/// / consumables / plane death) on a real replay, with the raw args
+/// interpreted under the def-derived layouts. Pins the wire semantics
+/// (the planesHealth u64 packing, the throttle-mode enum, the planeDeath
+/// ARRAY prefix) before the decoders land.
+///
+/// Ids are version-dependent: pass them via
+/// WOWSP_TEST_SQSTATE_IDS=id:name,id:name,... (defaults: the 14.5.0 table
+/// from the reference entity defs). Run with
+/// WOWSP_TEST_REPLAY=path/to/replay.wowsreplay -- --nocapture.
+#[test]
+fn dump_squadron_state_methods() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("dump_squadron_state_methods");
+        return;
+    };
+    // 14.5.0 exposed ids (reference entity defs, anchor-validated against
+    // the shipped (14, 5, 0) method-table row: updateSquadron=132,
+    // addSquadron=107 both match).
+    let default_ids = "79:squadronHealth,87:squadronPlanesHealth,81:squadronDamage,57:changeThrottleMode,60:squadronConsumableUsed,74:squadronConsumableSelected,75:squadronConsumableEnabled,61:squadronConsumablePaused,63:squadronConsumableInterrupted,64:squadronConsumableStopWorking,134:planeDeath,56:squadronNotify,54:deactivateSquadron,49:squadronOutOfFuel,50:dropJato,132:updateSquadron";
+    let spec = std::env::var("WOWSP_TEST_SQSTATE_IDS")
+        .unwrap_or_else(|_| default_ids.to_string());
+    let ids: Vec<(i32, &str)> = spec
+        .split(',')
+        .filter_map(|pair| {
+            let (id, name) = pair.split_once(':')?;
+            Some((id.trim().parse().ok()?, name.trim()))
+        })
+        .collect();
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let mut cur = 8;
+    for _ in 0..block_count {
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+        cur += 4 + bl;
+    }
+    let decrypted = decrypt_stream(&bytes[cur..]).expect("decrypt");
+    let inflated = inflate_zlib(&decrypted).expect("inflate");
+    let mut counts: std::collections::BTreeMap<i32, usize> = std::collections::BTreeMap::new();
+    let mut samples: std::collections::BTreeMap<i32, Vec<(f32, Vec<u8>)>> =
+        std::collections::BTreeMap::new();
+    let mut c = 0usize;
+    while c + 12 <= inflated.len() {
+        let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
+        let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
+        let time = f32::from_le_bytes(inflated[c + 8..c + 12].try_into().unwrap());
+        let end = c + 12 + size;
+        if size > super::frames::MAX_FRAME_BYTES || end > inflated.len() {
+            break;
+        }
+        let payload = &inflated[c + 12..end];
+        c = end;
+        if ptype != 0x08 || payload.len() < 12 {
+            continue;
+        }
+        let mid = i32::from_le_bytes(payload[4..8].try_into().unwrap());
+        let alen = u32::from_le_bytes(payload[8..12].try_into().unwrap()) as usize;
+        let args = &payload[12..(12 + alen).min(payload.len())];
+        if !ids.iter().any(|(id, _)| *id == mid) {
+            continue;
+        }
+        *counts.entry(mid).or_default() += 1;
+        let entry = samples.entry(mid).or_default();
+        if entry.len() < 24 {
+            entry.push((time, args.to_vec()));
+        }
+    }
+    for (id, name) in &ids {
+        let n = counts.get(id).copied().unwrap_or(0);
+        eprintln!("--- id {id} ({name}): {n} calls");
+        for (time, args) in samples.get(id).into_iter().flatten() {
+            let hex = args.iter().map(|b| format!("{b:02x}")).collect::<String>();
+            let plane_id = if args.len() >= 8 {
+                u64::from_le_bytes(args[0..8].try_into().unwrap())
+            } else {
+                0
+            };
+            eprintln!("  t={time:9.2} len={} planeId={plane_id} {hex}", args.len());
+            // Field interpretations per the def layouts (PLANE_ID i64 first).
+            match *name {
+                "squadronHealth" if args.len() >= 12 => {
+                    let hp = f32::from_le_bytes(args[8..12].try_into().unwrap());
+                    eprintln!("      hp={hp:.1}");
+                }
+                "squadronPlanesHealth" if args.len() >= 16 => {
+                    let packed = u64::from_le_bytes(args[8..16].try_into().unwrap());
+                    let nibbles: Vec<u8> =
+                        (0..16).map(|i| ((packed >> (i * 4)) & 0xf) as u8).collect();
+                    eprintln!("      packed={packed:016x} nibbles={nibbles:?}");
+                }
+                "squadronDamage" if args.len() >= 13 => {
+                    let dmg = f32::from_le_bytes(args[8..12].try_into().unwrap());
+                    eprintln!("      damage={dmg:.1} type={}", args[12]);
+                }
+                "changeThrottleMode" if args.len() >= 9 => {
+                    eprintln!("      mode={}", args[8] as i8);
+                }
+                "planeDeath" if args.len() >= 12 => {
+                    let pfx16 =
+                        u16::from_le_bytes(args[8..10].try_into().unwrap());
+                    let pfx32 =
+                        u32::from_le_bytes(args[8..12].try_into().unwrap());
+                    eprintln!(
+                        "      arrayPrefix u16={pfx16} u32={pfx32} remaining_bytes={}",
+                        args.len() - 8
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+    // E27 decode assertions (the decoders this probe pins): the same replay
+    // through the real decoder must produce the streams. Structural checks
+    // always run when the streams decode; the count floors are calibrated on
+    // the reference capture's AVATAR-GATED decode (14.5.0.0 Shokaku,
+    // 2025-07-08: health 4858, throttle 561, consumables 30, deaths 195) and
+    // are gated on that exact version so a different corpus replay only runs
+    // the joins. The floors sit below the raw id counts on purpose: the raw
+    // streams carry non-avatar calls on the same numeric ids (the len-129/99
+    // blobs above), which the decoder's avatar gate correctly excludes
+    // (throttle: 699 raw → 561 avatar; health: 4978 → 4858; notify: 104 → 84).
+    let Some(decoded) = decoded_real_replay() else {
+        eprintln!("skipped: decoded-stream assertions (decode failed)");
+        return;
+    };
+    let health_ids: std::collections::HashSet<u64> =
+        decoded.squadron_health.iter().map(|e| e.plane_id).collect();
+    for e in &decoded.squadron_planes_health {
+        assert!(
+            health_ids.contains(&e.plane_id),
+            "planesHealth plane {} never appears in the health stream",
+            e.plane_id
+        );
+    }
+    eprintln!(
+        "[e27] health={} planesHealth={} damage={} throttle={} consumables={} deaths={} notify={} deactivate={}",
+        decoded.squadron_health.len(),
+        decoded.squadron_planes_health.len(),
+        decoded.squadron_damage.len(),
+        decoded.squadron_throttle.len(),
+        decoded.squadron_consumables.len(),
+        decoded.plane_deaths.len(),
+        decoded.squadron_notifies.len(),
+        decoded.squadron_deactivations.len(),
+    );
+    if decoded.version.as_deref().and_then(parse_version_key) == Some((14, 5, 0)) {
+        assert!(
+            decoded.squadron_health.len() >= 4000,
+            "reference capture carries 4858 avatar-gated health calls \
+             (4978 raw minus non-avatar calls), got {}",
+            decoded.squadron_health.len()
+        );
+        assert!(
+            decoded.squadron_throttle.len() >= 500,
+            "reference capture carries 561 avatar-gated throttle toggles \
+             (699 raw minus non-avatar calls), got {}",
+            decoded.squadron_throttle.len()
+        );
+        assert!(
+            decoded.squadron_consumables.len() >= 15,
+            "reference capture carries 15+ consumable events, got {}",
+            decoded.squadron_consumables.len()
+        );
+        assert!(
+            decoded.plane_deaths.len() >= 150,
+            "reference capture carries 150+ planeDeath calls, got {}",
+            decoded.plane_deaths.len()
+        );
+    }
+}
+
+/// packed-crack (E27 follow-up): dump the FULL synchronized series of the
+/// squadron-state avatar method streams — per planeId: health float, packed
+/// per-plane-health u64, plane deaths, throttle, consumables, plus the
+/// addSquadron spawn blobs (which carry totalNumPlanes/numPlanes and a
+/// trailing u64 planeHealth of their own) — as JSON lines for offline
+/// analysis of the receive_squadronPlanesHealth u64 packing.
+///
+/// Unlike dump_squadron_state_methods (first 24 samples per method id, no
+/// entity-type filter) this keeps EVERY call and only accepts calls whose
+/// entity is an avatar — the numeric ids collide with other entity types'
+/// methods and those payloads are differently shaped (the len-129/99/50
+/// blobs seen in the raw id-79/57/56 streams on the reference capture).
+///
+/// Output: scripts/experiments/out/sq_planes_health_dump.jsonl (one JSON
+/// object per call in walk order; the "eid" field keeps the receiving
+/// avatar so duplicated per-avatar broadcasts can be de-duplicated
+/// offline). Run with WOWSP_TEST_REPLAY=path -- --nocapture.
+#[test]
+fn dump_sq_planes_health_series() {
+    let Some(path) = std::env::var("WOWSP_TEST_REPLAY").ok() else {
+        corpus_skip("dump_sq_planes_health_series");
+        return;
+    };
+    // 14.5.0 avatar exposed ids (see dump_squadron_state_methods for the
+    // def-provenance note).
+    let ids: &[(&str, i32)] = &[
+        ("add", 107),
+        ("upd", 132),
+        ("hp", 79),
+        ("packed", 87),
+        ("dmg", 81),
+        ("thr", 57),
+        ("death", 134),
+        ("deact", 54),
+        ("notify", 56),
+        ("consUsed", 60),
+        ("consInt", 63),
+        ("consStop", 64),
+    ];
+    let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("read {path}: {e}"));
+    let block_count = u32::from_le_bytes(bytes[4..8].try_into().unwrap()) as usize;
+    let mut cur = 8;
+    for _ in 0..block_count {
+        let bl = u32::from_le_bytes(bytes[cur..cur + 4].try_into().unwrap()) as usize;
+        cur += 4 + bl;
+    }
+    let decrypted = decrypt_stream(&bytes[cur..]).expect("decrypt");
+    let inflated = inflate_zlib(&decrypted).expect("inflate");
+    let mut avatars: std::collections::HashSet<i32> = std::collections::HashSet::new();
+    let mut events: Vec<serde_json::Value> = Vec::new();
+    let mut c = 0usize;
+    while c + 12 <= inflated.len() {
+        let size = u32::from_le_bytes(inflated[c..c + 4].try_into().unwrap()) as usize;
+        let ptype = u32::from_le_bytes(inflated[c + 4..c + 8].try_into().unwrap());
+        let time = f32::from_le_bytes(inflated[c + 8..c + 12].try_into().unwrap());
+        let end = c + 12 + size;
+        if size > super::frames::MAX_FRAME_BYTES || end > inflated.len() {
+            break;
+        }
+        let payload = &inflated[c + 12..end];
+        c = end;
+        match ptype {
+            // CellPlayerCreate marks avatar entities (type 1); an
+            // EntityCreate with type 1 would too.
+            0x01 if payload.len() >= 4 => {
+                avatars.insert(i32::from_le_bytes(payload[0..4].try_into().unwrap()));
+            }
+            0x05 if payload.len() >= 6 => {
+                if i16::from_le_bytes(payload[4..6].try_into().unwrap()) == 1 {
+                    avatars.insert(i32::from_le_bytes(payload[0..4].try_into().unwrap()));
+                }
+            }
+            0x08 if payload.len() >= 12 => {
+                let eid = i32::from_le_bytes(payload[0..4].try_into().unwrap());
+                let mid = i32::from_le_bytes(payload[4..8].try_into().unwrap());
+                let alen = u32::from_le_bytes(payload[8..12].try_into().unwrap()) as usize;
+                let args = &payload[12..(12 + alen).min(payload.len())];
+                let Some((name, _)) = ids.iter().find(|(_, id)| *id == mid) else {
+                    continue;
+                };
+                if !avatars.contains(&eid) || args.len() < 8 {
+                    continue;
+                }
+                let plane_id = u64::from_le_bytes(args[0..8].try_into().unwrap());
+                let mut ev = serde_json::json!({
+                    "m": name, "t": time, "eid": eid, "planeId": plane_id,
+                });
+                match *name {
+                    // receive_addSquadron: u32 paramsID, u8 totalNumPlanes,
+                    // i64 planeID, ... (see decode_squadron_add).
+                    "add" if args.len() >= 31 => {
+                        ev["planeId"] =
+                            u64::from_le_bytes(args[5..13].try_into().unwrap()).into();
+                        ev["paramsId"] =
+                            u32::from_le_bytes(args[0..4].try_into().unwrap()).into();
+                        ev["totalNumPlanes"] = args[4].into();
+                        ev["numPlanes"] = args[18].into();
+                        ev["hex"] = args
+                            .iter()
+                            .map(|b| format!("{b:02x}"))
+                            .collect::<String>()
+                            .into();
+                    }
+                    "upd" if args.len() >= 13 => {
+                        ev["dt"] = f32::from_le_bytes(args[8..12].try_into().unwrap()).into();
+                        ev["count"] = args[12].into();
+                    }
+                    "hp" if args.len() >= 12 => {
+                        ev["hp"] = f32::from_le_bytes(args[8..12].try_into().unwrap()).into();
+                    }
+                    "packed" if args.len() >= 16 => {
+                        ev["packed"] =
+                            u64::from_le_bytes(args[8..16].try_into().unwrap()).into();
+                    }
+                    "dmg" if args.len() >= 13 => {
+                        ev["damage"] =
+                            f32::from_le_bytes(args[8..12].try_into().unwrap()).into();
+                        ev["hitType"] = args[12].into();
+                    }
+                    "thr" if args.len() >= 9 => {
+                        ev["mode"] = (args[8] as i8).into();
+                    }
+                    "death" if args.len() >= 9 => {
+                        let n = args[8] as usize;
+                        let idx_end = (9 + n).min(args.len());
+                        ev["dead"] = args[9..idx_end].to_vec().into();
+                        if args.len() >= 18 + n {
+                            ev["reason"] = args[9 + n].into();
+                            ev["attacker"] = i64::from_le_bytes(
+                                args[10 + n..18 + n].try_into().unwrap(),
+                            )
+                            .into();
+                        }
+                    }
+                    "deact" | "notify" if args.len() >= 9 => {
+                        ev["v"] = args[8].into();
+                    }
+                    "consUsed" | "consInt" | "consStop" if args.len() >= 9 => {
+                        ev["ctype"] = args[8].into();
+                    }
+                    _ => {}
+                }
+                events.push(ev);
+            }
+            _ => {}
+        }
+    }
+    let out_dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../../scripts/experiments/out"
+    );
+    std::fs::create_dir_all(out_dir).expect("create out dir");
+    let out_path = format!("{out_dir}/sq_planes_health_dump.jsonl");
+    let mut body = String::new();
+    for ev in &events {
+        body.push_str(&ev.to_string());
+        body.push('\n');
+    }
+    std::fs::write(&out_path, body).expect("write dump");
+    let mut counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+    let mut squadrons: std::collections::BTreeSet<u64> = std::collections::BTreeSet::new();
+    for ev in &events {
+        *counts.entry(ev["m"].as_str().unwrap_or("?")).or_default() += 1;
+        if ev["m"] == "packed" {
+            squadrons.insert(ev["planeId"].as_u64().unwrap_or(0));
+        }
+    }
+    eprintln!("wrote {} events to {out_path}", events.len());
+    for (name, n) in &counts {
+        eprintln!("  {name}: {n}");
+    }
+    eprintln!("  distinct planeIds in packed stream: {}", squadrons.len());
+}
+
 /// Diagnostic: for each ship EntityCreate, list every roster shipId found
 /// in its state stream (offset -> id) to see whether 15.7 state streams
 /// still carry the correct unique shipId when the descriptor shares one.
@@ -1061,6 +1407,393 @@ fn decodes_minimap_squadron_stream() {
     assert!(decode_minimap_squadron_move(0.0, &mv[..12]).is_none());
     assert!(args_is_plane_id(&mv[..8]));
     assert!(!args_is_plane_id(&mv));
+}
+
+// ── E27 squadron-state decoders (synthetic byte-exact fixtures) ──────────────
+//
+// Wire layouts per the def signatures, confirmed on the 14.5.0.0 Shokaku
+// reference capture: PLANE_ID u64 LE at offset 0 in every stream, then the
+// method's own fields. Every decoder gates on the exact arg length, so a
+// wrong-length payload decodes nothing.
+
+/// receive_squadronHealth: `PLANE_ID u64, hpFraction f32` — 12 bytes. The
+/// fraction rides verbatim (0..=1); a wrong length decodes nothing.
+#[test]
+fn decodes_squadron_health_stream() {
+    let plane_id: u64 = 631874 | (2 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.extend_from_slice(&0.7275f32.to_le_bytes());
+    let e = decode_squadron_health(31.5, &args).expect("must parse");
+    assert_eq!(e.plane_id, plane_id);
+    assert!((e.hp - 0.7275).abs() < 1e-6);
+    assert!((e.time - 31.5).abs() < 1e-6);
+    // Launch-fraction and zero-fraction boundaries stay readable.
+    let mut full = plane_id.to_le_bytes().to_vec();
+    full.extend_from_slice(&1.0f32.to_le_bytes());
+    assert!((decode_squadron_health(0.0, &full).unwrap().hp - 1.0).abs() < 1e-6);
+    assert!(decode_squadron_health(0.0, &args[..11]).is_none());
+    assert!(decode_squadron_health(0.0, &[0u8; 13]).is_none());
+}
+
+/// receive_squadronPlanesHealth: `PLANE_ID u64, packed u64` — 16 bytes, the
+/// packing kept RAW (the bit layout is under analysis; never guess here).
+#[test]
+fn decodes_squadron_planes_health_stream() {
+    let plane_id: u64 = 631874 | (7 << 32);
+    let packed: u64 = 0x11_22_33_44_55_66_77_88;
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.extend_from_slice(&packed.to_le_bytes());
+    let e = decode_squadron_planes_health(42.25, &args).expect("must parse");
+    assert_eq!(e.plane_id, plane_id);
+    assert_eq!(e.packed, packed);
+    assert!((e.time - 42.25).abs() < 1e-6);
+    assert!(decode_squadron_planes_health(0.0, &args[..15]).is_none());
+    assert!(decode_squadron_planes_health(0.0, &[0u8; 17]).is_none());
+}
+
+/// receive_squadronDamage: `PLANE_ID u64, damage f32, hitType u8` — 13 bytes.
+#[test]
+fn decodes_squadron_damage_stream() {
+    let plane_id: u64 = 631874 | (1 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.extend_from_slice(&1234.5f32.to_le_bytes());
+    args.push(0u8); // hit type 0 = the only value observed so far
+    let e = decode_squadron_damage(55.0, &args).expect("must parse");
+    assert_eq!(e.plane_id, plane_id);
+    assert!((e.damage - 1234.5).abs() < 1e-3);
+    assert_eq!(e.hit_type, 0);
+    assert!(decode_squadron_damage(0.0, &args[..12]).is_none());
+    assert!(decode_squadron_damage(0.0, &[0u8; 14]).is_none());
+}
+
+/// receive_changeThrottleMode: `PLANE_ID u64, mode i8` — 9 bytes. Observed
+/// domain {0, 1} (699 alternating calls on the reference capture); the raw
+/// i8 is kept so an unobserved value still rides the wire.
+#[test]
+fn decodes_squadron_throttle_stream() {
+    let plane_id: u64 = 631874 | (3 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.push(1u8); // engine boost
+    let e = decode_squadron_throttle(61.0, &args).expect("must parse");
+    assert_eq!(e.plane_id, plane_id);
+    assert_eq!(e.mode, 1);
+    args[8] = 0; // cruise
+    assert_eq!(decode_squadron_throttle(62.0, &args).unwrap().mode, 0);
+    assert!(decode_squadron_throttle(0.0, &args[..8]).is_none());
+    assert!(decode_squadron_throttle(0.0, &[0u8; 10]).is_none());
+}
+
+/// squadronConsumableUsed / squadronConsumableStopWorking: `PLANE_ID u64,
+/// consumableType u8` — 9 bytes each; the kind tag distinguishes the
+/// lifecycle halves (the def's CONSUMABLE_USAGE_PARAMS diverges from the
+/// one-byte wire).
+#[test]
+fn decodes_squadron_consumable_streams() {
+    let plane_id: u64 = 631874 | (4 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.push(21u8);
+    let used =
+        decode_squadron_consumable(70.0, &args, wowsp_tauri_shared::SquadronConsumableKind::Used)
+            .expect("must parse");
+    assert_eq!(used.plane_id, plane_id);
+    assert_eq!(used.consumable_type, 21);
+    assert_eq!(used.kind, wowsp_tauri_shared::SquadronConsumableKind::Used);
+    let stop = decode_squadron_consumable(
+        88.5,
+        &args,
+        wowsp_tauri_shared::SquadronConsumableKind::StopWorking,
+    )
+    .expect("must parse");
+    assert_eq!(stop.consumable_type, 21);
+    assert_eq!(stop.kind, wowsp_tauri_shared::SquadronConsumableKind::StopWorking);
+    assert!((stop.time - 88.5).abs() < 1e-6);
+    assert!(decode_squadron_consumable(
+        0.0,
+        &args[..8],
+        wowsp_tauri_shared::SquadronConsumableKind::Used
+    )
+    .is_none());
+    assert!(decode_squadron_consumable(
+        0.0,
+        &[0u8; 10],
+        wowsp_tauri_shared::SquadronConsumableKind::StopWorking
+    )
+    .is_none());
+}
+
+/// receive_planeDeath: `PLANE_ID u64, ARRAY<u8> (u8 count prefix!), u8
+/// reason, i64 attackerId`. The count prefix is ONE byte (empirically
+/// pinned — NOT u16/u32): the zero-index case is 18 bytes, and a
+/// multi-element call reads count indexes before the reason/attacker tail.
+#[test]
+fn decodes_plane_death_stream() {
+    let plane_id: u64 = 631874 | (5 << 32);
+    // count = 0: 8 + 1 + 0 + 1 + 8 = 18 bytes.
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.push(0u8); // array count
+    args.push(1u8); // reason
+    args.extend_from_slice(&631880i64.to_le_bytes()); // attacker
+    let e = decode_plane_death(101.0, &args).expect("must parse");
+    assert_eq!(e.plane_id, plane_id);
+    assert!(e.dead_indexes.is_empty());
+    assert_eq!(e.reason, 1);
+    assert_eq!(e.attacker_id, 631880);
+    // count = 3 (a flak burst): indexes [0, 2, 5] then reason + attacker.
+    let mut multi = Vec::new();
+    multi.extend_from_slice(&plane_id.to_le_bytes());
+    multi.push(3u8);
+    multi.extend_from_slice(&[0u8, 2, 5]);
+    multi.push(1u8);
+    multi.extend_from_slice(&(-631881i64).to_le_bytes());
+    let m = decode_plane_death(102.5, &multi).expect("must parse");
+    assert_eq!(m.dead_indexes, vec![0, 2, 5]);
+    assert_eq!(m.reason, 1);
+    assert_eq!(m.attacker_id, -631881);
+    assert!((m.time - 102.5).abs() < 1e-6);
+    // A truncated index list (count 3, only 2 present) decodes nothing —
+    // break, never panic.
+    assert!(decode_plane_death(0.0, &multi[..19]).is_none());
+    // Below the 18-byte floor.
+    assert!(decode_plane_death(0.0, &args[..17]).is_none());
+}
+
+/// receive_squadronNotify: `PLANE_ID u64, notify i8` — 9 bytes, raw enum
+/// (1/2/4/5 observed on the reference capture).
+#[test]
+fn decodes_squadron_notify_stream() {
+    let plane_id: u64 = 631874 | (6 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.push(4u8);
+    let e = decode_squadron_notify(33.0, &args).expect("must parse");
+    assert_eq!(e.plane_id, plane_id);
+    assert_eq!(e.notify, 4);
+    assert!(decode_squadron_notify(0.0, &args[..8]).is_none());
+    assert!(decode_squadron_notify(0.0, &[0u8; 10]).is_none());
+}
+
+/// receive_deactivateSquadron: `PLANE_ID u64, reason u8` — 9 bytes, raw
+/// reason (0..5 observed).
+#[test]
+fn decodes_squadron_deactivate_stream() {
+    let plane_id: u64 = 631874 | (8 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.push(3u8);
+    let e = decode_squadron_deactivate(240.0, &args).expect("must parse");
+    assert_eq!(e.plane_id, plane_id);
+    assert_eq!(e.reason, 3);
+    assert!((e.time - 240.0).abs() < 1e-6);
+    assert!(decode_squadron_deactivate(0.0, &args[..8]).is_none());
+    assert!(decode_squadron_deactivate(0.0, &[0u8; 10]).is_none());
+}
+
+/// receive_addSquadron: the two count bytes ride the wire — byte 4 is the
+/// hangar TOTAL (totalNumPlanes), byte 18 the planes actually LAUNCHED
+/// (numPlanes — the health fraction's denominator; 23/224 reference-capture
+/// squadrons launch partial from a depleted hangar, e.g. 6 of 10 →
+/// hp 0.6667 = 4/6 exact).
+#[test]
+fn decodes_squadron_add_plane_counts() {
+    let plane_id: u64 = 631874 | (11 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&4287037136u32.to_le_bytes()); // paramsID
+    args.push(10); // totalNumPlanes — the hangar total
+    args.extend_from_slice(&plane_id.to_le_bytes()); // planeID
+    args.extend_from_slice(&0x1234_5678u32.to_le_bytes()); // skinID
+    args.push(1); // isActive
+    args.push(6); // numPlanes — partial launch, 6 of 10 flying
+    args.extend_from_slice(&(-58.4f32).to_le_bytes()); // pos.x
+    args.extend_from_slice(&25.0f32.to_le_bytes()); // pos.y
+    args.extend_from_slice(&321.8f32.to_le_bytes()); // pos.z
+    assert_eq!(args.len(), 31, "the byte offsets below are exact");
+    let s = decode_squadron_add(93.0, &args).expect("must parse");
+    assert_eq!(s.params_id, 4287037136);
+    assert_eq!(s.plane_id, plane_id);
+    assert_eq!(s.total_num_planes, 10);
+    assert_eq!(s.num_planes, 6);
+    assert!((s.x + 58.4).abs() < 1e-3);
+    assert!((s.y - 25.0).abs() < 1e-3);
+    assert!((s.z - 321.8).abs() < 1e-3);
+    // The 31-byte floor still gates short payloads out.
+    assert!(decode_squadron_add(0.0, &args[..30]).is_none());
+}
+
+/// End-to-end dispatch: the frame walk lifts all nine E27 streams off
+/// AVATAR EntityMethod calls under the pinned 15.8.0 ids, ignores the same
+/// numeric ids on other entity types (the probe showed type collisions with
+/// differently-shaped payloads), and decodes nothing when the version
+/// resolves no table (the Option gate).
+#[test]
+fn walk_frames_collects_squadron_state_streams() {
+    fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(12 + payload.len());
+        f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        f.extend_from_slice(&ptype.to_le_bytes());
+        f.extend_from_slice(&time.to_le_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+    fn entity_create(eid: i32, etype: i16) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&etype.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&[0u8; 24]);
+        p
+    }
+    fn method_call(eid: i32, mid: i32, args: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&mid.to_le_bytes());
+        p.extend_from_slice(&(args.len() as u32).to_le_bytes());
+        p.extend_from_slice(args);
+        p
+    }
+    const AVATAR: i32 = 700;
+    const VEHICLE: i32 = 701;
+    let plane_id: u64 = 631874 | (9 << 32);
+    let mut stream = Vec::new();
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(AVATAR, ENTITY_TYPE_AVATAR),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(VEHICLE, ENTITY_TYPE_VEHICLE),
+    ));
+    // 15.8.0 pins: health=84, planesHealth=94, damage=87, throttle=62,
+    // consumableUsed=149, stopWorking=68, planeDeath=147, notify=61,
+    // deactivate=59 (see method_tables).
+    let mut health = plane_id.to_le_bytes().to_vec();
+    health.extend_from_slice(&0.5f32.to_le_bytes());
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        10.0,
+        &method_call(AVATAR, 84, &health),
+    ));
+    let mut packed = plane_id.to_le_bytes().to_vec();
+    packed.extend_from_slice(&0xABCD_EF01_2345_6789u64.to_le_bytes());
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        11.0,
+        &method_call(AVATAR, 94, &packed),
+    ));
+    let mut dmg = plane_id.to_le_bytes().to_vec();
+    dmg.extend_from_slice(&99.25f32.to_le_bytes());
+    dmg.push(0);
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        12.0,
+        &method_call(AVATAR, 87, &dmg),
+    ));
+    let mut thr = plane_id.to_le_bytes().to_vec();
+    thr.push(1);
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        13.0,
+        &method_call(AVATAR, 62, &thr),
+    ));
+    let mut con = plane_id.to_le_bytes().to_vec();
+    con.push(20);
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        14.0,
+        &method_call(AVATAR, 149, &con),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        15.0,
+        &method_call(AVATAR, 68, &con),
+    ));
+    let mut death = plane_id.to_le_bytes().to_vec();
+    death.push(2u8); // two dead planes
+    death.extend_from_slice(&[1u8, 3]);
+    death.push(1); // reason
+    death.extend_from_slice(&631880i64.to_le_bytes());
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        16.0,
+        &method_call(AVATAR, 147, &death),
+    ));
+    let mut note = plane_id.to_le_bytes().to_vec();
+    note.push(2);
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        17.0,
+        &method_call(AVATAR, 61, &note),
+    ));
+    let mut deact = plane_id.to_le_bytes().to_vec();
+    deact.push(5);
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        18.0,
+        &method_call(AVATAR, 59, &deact),
+    ));
+    // The scope guard: the SAME numeric id (84) fired on a VEHICLE entity
+    // must not decode — other entity types carry these ids with different
+    // payloads (E27 probe evidence).
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        19.0,
+        &method_call(VEHICLE, 84, &health),
+    ));
+
+    let profile = LayoutProfile {
+        methods: Some(method_ids_for_version(Some("15,8,0,13187581"))),
+        ..profile_for(false)
+    };
+    let decoded = walk_frames(&stream, &std::collections::HashSet::new(), false, &profile, None);
+    assert_eq!(decoded.squadron_health.len(), 1);
+    assert_eq!(decoded.squadron_health[0].plane_id, plane_id);
+    assert!((decoded.squadron_health[0].hp - 0.5).abs() < 1e-6);
+    assert_eq!(decoded.squadron_planes_health.len(), 1);
+    assert_eq!(decoded.squadron_planes_health[0].packed, 0xABCD_EF01_2345_6789);
+    assert_eq!(decoded.squadron_damage.len(), 1);
+    assert!((decoded.squadron_damage[0].damage - 99.25).abs() < 1e-3);
+    assert_eq!(decoded.squadron_throttle.len(), 1);
+    assert_eq!(decoded.squadron_throttle[0].mode, 1);
+    assert_eq!(decoded.squadron_consumables.len(), 2);
+    assert_eq!(decoded.squadron_consumables[0].kind, wowsp_tauri_shared::SquadronConsumableKind::Used);
+    assert_eq!(
+        decoded.squadron_consumables[1].kind,
+        wowsp_tauri_shared::SquadronConsumableKind::StopWorking
+    );
+    assert_eq!(decoded.plane_deaths.len(), 1);
+    assert_eq!(decoded.plane_deaths[0].dead_indexes, vec![1, 3]);
+    assert_eq!(decoded.plane_deaths[0].attacker_id, 631880);
+    assert_eq!(decoded.squadron_notifies.len(), 1);
+    assert_eq!(decoded.squadron_notifies[0].notify, 2);
+    assert_eq!(decoded.squadron_deactivations.len(), 1);
+    assert_eq!(decoded.squadron_deactivations[0].reason, 5);
+
+    // No method table (pre-0.11.6 replays): every stream stays empty even
+    // though the raw calls flowed through the histogram.
+    let off = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile_for(false),
+        None,
+    );
+    assert!(off.squadron_health.is_empty());
+    assert!(off.squadron_planes_health.is_empty());
+    assert!(off.squadron_damage.is_empty());
+    assert!(off.squadron_throttle.is_empty());
+    assert!(off.squadron_consumables.is_empty());
+    assert!(off.plane_deaths.is_empty());
+    assert!(off.squadron_notifies.is_empty());
+    assert!(off.squadron_deactivations.is_empty());
+    assert_eq!(off.method_histogram.len(), decoded.method_histogram.len());
 }
 
 /// receive_wardAdded: both arg layouts (37 bytes pre-13.2.0, +wardType

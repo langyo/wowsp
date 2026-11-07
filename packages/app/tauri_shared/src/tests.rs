@@ -1207,11 +1207,25 @@ fn squadron_events_rename_plane_id_and_formation_index() {
         time: 161.5,
         plane_id: 162,
         params_id: 425_005,
+        total_num_planes: 10,
+        num_planes: 6,
         x: 1.5,
         y: 300.5,
         z: 2.5,
     });
-    assert_exact_keys(&v, &["time", "planeId", "paramsId", "x", "y", "z"]);
+    assert_exact_keys(
+        &v,
+        &[
+            "time",
+            "planeId",
+            "paramsId",
+            "totalNumPlanes",
+            "numPlanes",
+            "x",
+            "y",
+            "z",
+        ],
+    );
 
     let v = round_trips(SquadronPlane {
         time: 171.5,
@@ -1226,6 +1240,220 @@ fn squadron_events_rename_plane_id_and_formation_index() {
     assert_exact_keys(
         &v,
         &["time", "planeId", "index", "x", "y", "z", "yaw", "pitch"],
+    );
+}
+
+// ── E27: the receive_squadronPlanesHealth u64 unpack (ported verbatim from
+// scripts/experiments/sq_planes_health_unpack.rs — packed-crack's
+// dependency-free solver; fixtures are real capture values. The public API
+// here is the two-arg plane_health_band(packed, index), so the original
+// single-digit calls in unknown_digit_is_none ride single-digit packed
+// values instead — same semantics, same fixtures.) ──────────────────────────
+
+/// 8590780220 t=30.78 — 10 healthy planes (paramsId 4076830416, hp 1.0):
+/// ten octal ones, the wire's repeating-0x249 signature.
+#[test]
+fn ten_full_planes() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x0000_0000_0924_9249),
+        vec![Some(PlaneHealthBand::Full); 10]
+    );
+}
+
+/// 8590780220 melt: each death drops the top digit, damage re-appears on
+/// the new top plane (t=109.10 → 114.38, planeDeath[5] at 114.38).
+#[test]
+fn damage_walks_then_death_drops_top() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x0000_0000_0001_1249), // t=109.10
+        vec![
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Damaged)
+        ]
+    );
+    assert_eq!(
+        unpack_squadron_planes_health(0x0000_0000_0002_1249), // t=112.79
+        vec![
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Critical)
+        ]
+    );
+    assert_eq!(
+        unpack_squadron_planes_health(0x0000_0000_0000_1249), // t=114.38
+        vec![Some(PlaneHealthBand::Full); 5]
+    );
+}
+
+/// 8590780230 t=104.49 — the mystery post-planeDeath sample: 12 planes
+/// with plane 11 at HP 0.7456 (float 0.9788 × 12 − 11): a plain damaged
+/// band, no post-death anomaly (the 104.09 planeDeath was another
+/// squadron entirely).
+#[test]
+fn twelve_planes_one_damaged() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x4_4924_9249),
+        [
+            vec![Some(PlaneHealthBand::Full); 11],
+            vec![Some(PlaneHealthBand::Damaged)]
+        ]
+        .concat()
+    );
+}
+
+/// 4410932258630 t=980.35 — three planes damaged at once (slots 0/2/4),
+/// slot 5 critical: multiple simultaneous non-full bands.
+#[test]
+fn multiple_damaged_planes() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x2_228a),
+        vec![
+            Some(PlaneHealthBand::Damaged),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Damaged),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Damaged),
+            Some(PlaneHealthBand::Critical)
+        ]
+    );
+}
+
+/// Single-plane patrol fighter 214749210410 t=104.09: a healthy lone
+/// plane is [Full] — digit 1 is the FULL band, not "1 HP left".
+#[test]
+fn single_plane_full() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x1),
+        vec![Some(PlaneHealthBand::Full)]
+    );
+}
+
+/// 2-plane catapult fighter 42950518588 t=42.37 (hp 1.0): the lead's
+/// "single-plane" squadron is actually a pair.
+#[test]
+fn two_plane_catapult_fighter() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x9),
+        vec![Some(PlaneHealthBand::Full), Some(PlaneHealthBand::Full)]
+    );
+}
+
+/// Partial-hangar launch 1108102407996 (6 of 10 flying): mid-melt state
+/// t=372.96 = [critical, damaged, damaged] (hp 0.1868 × 6 = 1.12 =
+/// 0.2 + 0.46 + 0.46, band-consistent).
+#[test]
+fn partial_launch_melt() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x94),
+        vec![
+            Some(PlaneHealthBand::Critical),
+            Some(PlaneHealthBand::Damaged),
+            Some(PlaneHealthBand::Damaged)
+        ]
+    );
+}
+
+/// Heal tug-of-war 2207614035772 t=683.92 vs 684.23: the same plane
+/// flips Damaged↔Full across the 3/4 threshold while its heal consumable
+/// fights continuous AA (float 0.7808 vs 0.7689 × 10).
+#[test]
+fn heal_flips_band_back() {
+    assert_eq!(
+        unpack_squadron_planes_health(0x44_9249), // t=683.92
+        vec![
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Full),
+            Some(PlaneHealthBand::Damaged)
+        ]
+    );
+    assert_eq!(
+        unpack_squadron_planes_health(0x24_9249), // t=684.23
+        vec![Some(PlaneHealthBand::Full); 8]
+    );
+}
+
+/// Unknown digits surface as None instead of a guessed band: digit 3 and
+/// digit 7 never occur on real captures, an index at/beyond the flying
+/// count is absent data, and the empty packed value has no plane 0.
+#[test]
+fn unknown_digit_is_none() {
+    assert_eq!(plane_health_band(0x3, 0), None); // digit 3
+    assert_eq!(plane_health_band(0x7, 0), None); // digit 7
+    assert_eq!(plane_health_band(0x1, 1), None); // index beyond the count
+    assert_eq!(plane_health_band(0x1, 0), Some(PlaneHealthBand::Full));
+    assert_eq!(plane_health_band(0, 0), None); // empty squadron
+    assert_eq!(
+        unpack_squadron_planes_health(0x3),
+        vec![Option::<PlaneHealthBand>::None]
+    );
+}
+
+/// Empty squadron (0 = no flying planes, e.g. post-deactivation).
+#[test]
+fn empty_squadron() {
+    assert!(unpack_squadron_planes_health(0).is_empty());
+    assert!(squadron_planes_health_digits(0).is_empty());
+}
+
+/// Round-trip over every corpus-shaped fixture.
+#[test]
+fn pack_round_trip() {
+    let fixtures = [
+        0x0u64,
+        0x1,
+        0x9,
+        0x249,
+        0x1249,
+        0x11249,
+        0x21249,
+        0x4249,
+        0x9249,
+        0x249_249,
+        0x0924_9249,
+        0x449_2492_49,
+        0x449_2492_89,
+        0x94,
+        0x2_228a,
+        0x2492_4924_9, // 12 full planes
+    ];
+    for &f in &fixtures {
+        let bands: Vec<PlaneHealthBand> = unpack_squadron_planes_health(f)
+            .into_iter()
+            .map(|b| b.expect("corpus fixture uses only known digits"))
+            .collect();
+        assert_eq!(pack_squadron_planes_health(&bands), f, "fixture {f:x}");
+    }
+    // 21 planes (63 bits) still pack; that is the capacity ceiling.
+    let max_bands = vec![PlaneHealthBand::Full; MAX_SQUADRON_PLANES];
+    assert_eq!(pack_squadron_planes_health(&max_bands).count_ones(), 21);
+}
+
+/// The band enum rides the IPC wire camelCase (the module's serde contract).
+#[test]
+fn plane_health_band_renames_variants() {
+    assert_eq!(
+        round_trips(PlaneHealthBand::Full),
+        serde_json::json!("full")
+    );
+    assert_eq!(
+        round_trips(PlaneHealthBand::Damaged),
+        serde_json::json!("damaged")
+    );
+    assert_eq!(
+        round_trips(PlaneHealthBand::Critical),
+        serde_json::json!("critical")
     );
 }
 

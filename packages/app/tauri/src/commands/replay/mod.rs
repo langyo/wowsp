@@ -103,10 +103,11 @@ pub use listing::{
 pub use reveal::{__cmd__replays_reveal, __tauri_command_name_replays_reveal, replays_reveal};
 pub use streams::{
     __cmd__live_temp_replay, __cmd__read_live_replay_snapshot, __cmd__read_replay_positions,
-    __cmd__read_replay_smoke_screens, __tauri_command_name_live_temp_replay,
-    __tauri_command_name_read_live_replay_snapshot, __tauri_command_name_read_replay_positions,
-    __tauri_command_name_read_replay_smoke_screens, live_temp_replay, read_live_replay_snapshot,
-    read_replay_positions, read_replay_smoke_screens,
+    __cmd__read_replay_smoke_screens, __cmd__read_replay_squadron_states,
+    __tauri_command_name_live_temp_replay, __tauri_command_name_read_live_replay_snapshot,
+    __tauri_command_name_read_replay_positions, __tauri_command_name_read_replay_smoke_screens,
+    __tauri_command_name_read_replay_squadron_states, live_temp_replay, read_live_replay_snapshot,
+    read_replay_positions, read_replay_smoke_screens, read_replay_squadron_states,
 };
 pub use wire::{
     __cmd__read_replay_header, __tauri_command_name_read_replay_header, read_replay_header,

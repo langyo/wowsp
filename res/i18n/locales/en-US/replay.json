@@ -435,7 +435,12 @@
   },
   "planeCard": {
     "attacking": "Attacking",
-    "followingHull": "No aircraft airborne — following hull"
+    "followingHull": "No aircraft airborne — following hull",
+    "boost": "Boost",
+    "cons20": "Consumable 20",
+    "cons21": "Consumable 21",
+    "cons22": "Consumable 22",
+    "consOther": "Consumable"
   },
   "classes": {
     "battleship": "Battleship",
