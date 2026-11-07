@@ -38,6 +38,7 @@ W, H = 20.0, 11.0  # the marker art box
 RIM = 0.9          # ink rim width (silhouette minus plate)
 SLASH_W = 1.1      # speed-slash / divider line width
 EDGE = 0.5         # silhouette inset from the art box
+SLASH_SHIFT = 1.1  # how far the hull slashes sit toward the bow side
 
 # ── palettes (sampled from the original markers) ──
 ALLY = ('#50e8b0', '#0b1f16')
@@ -106,10 +107,11 @@ def hull_bow(hull_right, plate_right, lines_, *, deck_plate_right=None, bow_plat
 
 
 def cruiser():
-    # One slash: centred on the hull (the old one sat right of centre) and
-    # clearly diagonal, not near-vertical.
+    # One slash: clearly diagonal, and biased toward the hull's bow side —
+    # the hull-centre placement still read as skewed LEFT against the marker's
+    # hull-plus-bow mass (2026-11-07 review), so it sits SLASH_SHIFT right.
     hull_right = 12.4
-    mid = (EDGE + hull_right) / 2
+    mid = (EDGE + hull_right) / 2 + SLASH_SHIFT
     dx = 3.0
     return hull_bow(
         hull_right,
@@ -119,10 +121,10 @@ def cruiser():
 
 
 def battleship():
-    # Two parallel slashes, symmetric about the hull centre and steeper than
-    # the first pass (the review asked for a clearly diagonal cut).
+    # Two parallel slashes, symmetric about the shifted cut line (same
+    # bow-side bias as the cruiser) and clearly diagonal.
     hull_right = 12.4
-    mid = (EDGE + hull_right) / 2
+    mid = (EDGE + hull_right) / 2 + SLASH_SHIFT
     dx = 2.6
     gap = 1.6
     return hull_bow(
@@ -136,15 +138,16 @@ def battleship():
 
 
 def aircarrier():
-    # The deck is ONE block with a horizontal divider line (two bars left a
-    # see-through seam), and the bow chevron is DETACHED from the deck by an
-    # ink band, the way the marker art reads (2026-11-07 review).
-    deck_right = 10.8
-    bow_base = 13.0
+    # The deck reads as TWO deck rectangles that do not touch: the divider
+    # line must run the deck's FULL width to the ink rim (a short one left a
+    # connecting sliver on the bow side, 2026-11-07 review). The bow chevron
+    # is detached from the deck by a narrow ink band — close, not adrift.
+    deck_right = 11.6
+    bow_base = 12.6
     return hull_bow(
         13.4,
         W - 1.4,
-        [line(EDGE + 0.2, H / 2, deck_right - 0.4, H / 2)],
+        [line(EDGE + RIM, H / 2, deck_right, H / 2)],
         deck_plate_right=deck_right,
         bow_plate_base=bow_base,
         bow_outer_base=13.4,
