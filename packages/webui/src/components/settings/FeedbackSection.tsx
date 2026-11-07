@@ -9,11 +9,13 @@ import {
   HkSettingsGroup,
   HkSettingsHint,
   HkSpinner,
+  HkSwitch,
   useToast,
 } from "@celestia-island/hikari";
 
 import { api, type LogsOverview } from "@/api";
 import { useAccountStore } from "@/stores/account";
+import { usePerfHudStore } from "@/stores/perfHud";
 import { t, type Locale } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { useClipboard } from "@/composables/useClipboard";
@@ -77,6 +79,7 @@ export default defineComponent({
   setup() {
     const toast = useToast();
     const accounts = useAccountStore();
+    const perfHud = usePerfHudStore();
     const lang = useLanguage();
     const { copy } = useClipboard();
 
@@ -301,6 +304,22 @@ export default defineComponent({
             <PackageOpen size={14} />
             {t("settings.feedbackExport")}
           </HkButton>
+        </div>
+
+        {/* The perf HUD's session-only toggle (stores/perfHud): packaged
+            release builds start dark, dev builds start lit, and this flip
+            lives only until the app closes — the switch exists because a
+            packaged build has neither DevTools nor the old localStorage
+            flag to reach the overlay any more. */}
+        <div class="feedback__perf">
+          <div class="feedback__perf-text">
+            <span class="feedback__label">{t("settings.perfHudToggle")}</span>
+            <span class="feedback__perf-hint">{t("settings.perfHudHint")}</span>
+          </div>
+          <HkSwitch
+            modelValue={perfHud.enabled}
+            onUpdate:modelValue={(v: boolean) => perfHud.setEnabled(v)}
+          />
         </div>
 
         <HkSettingsHint>{t("settings.feedbackOnlineHint")}</HkSettingsHint>

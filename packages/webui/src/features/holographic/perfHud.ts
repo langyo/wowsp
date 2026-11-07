@@ -1,5 +1,5 @@
 /**
- * ?perf=1 diagnostics overlay for the holographic replay map — the
+ * The holographic replay map's performance diagnostics overlay — the
  * measurement battery behind every render-cost change. Reports, straight
  * from the render loop:
  *   - rendered fps plus p50/p95 frame interval over a 2 s window
@@ -15,12 +15,14 @@
  * when the cursor rests on it, it dims itself far down so it never hides
  * the UI underneath.
  *
- * Activation (see {@link perfHudRequested}):
- *   - `?perf=1` on the page URL forces it on for this load;
- *   - `?perf=0` forces it off (wins over the stored preference);
- *   - otherwise localStorage `wowsp.perf = "1"` keeps it on across
- *     reloads — the support-session form: set it once, leave it up, and
- *     clear it with `localStorage.removeItem("wowsp.perf")`.
+ * Activation (see stores/perfHud — the session-only toggle): dev builds
+ * default ON, packaged release builds default OFF, and the settings'
+ * feedback pane flips it either way for the current app run only —
+ * nothing is persisted. The earlier `?perf=1` / `?perf=0` URL parameters
+ * and the stored `wowsp.perf` localStorage flag are gone on purpose: a
+ * flag that support tooling could set but no packaged user could ever
+ * clear kept the overlay stuck on across releases (it leaked into
+ * v0.6.9's release build on a machine still carrying the flag).
  */
 import * as THREE from "three";
 
@@ -32,33 +34,6 @@ const REPORT_MS = 500;
 export const PERF_HUD_HOVER_OPACITY = 0.15;
 /** Hover fade duration, ms. */
 const HOVER_FADE_MS = 150;
-
-/** localStorage key that keeps the overlay up across reloads. */
-export const PERF_HUD_STORAGE_KEY = "wowsp.perf";
-
-/** Decide whether the overlay is requested: the URL parameter is the
- *  one-shot override (`?perf=0` beats the stored preference, so a support
- *  session can be silenced without clearing storage), otherwise the stored
- *  `wowsp.perf = "1"` keeps it on. Storage access is guarded — embedded
- *  webviews can throw on it in privacy modes.
- *
- *  `search` and the storage probe are injectable so the decision is
- *  unit-testable without touching the real location. */
-export function perfHudRequested(
-  search: string = typeof location !== "undefined" ? location.search : "",
-  readStored: () => string | null = () => {
-    try {
-      return localStorage.getItem(PERF_HUD_STORAGE_KEY);
-    } catch {
-      return null;
-    }
-  },
-): boolean {
-  const param = new URLSearchParams(search).get("perf");
-  if (param === "1") return true;
-  if (param === "0") return false;
-  return readStored() === "1";
-}
 
 /** Whether a client-space point sits inside a box. The right/bottom edges
  *  compare exclusively, so a zero-area box (no layout yet — fresh test DOM,

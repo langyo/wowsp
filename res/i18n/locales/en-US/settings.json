@@ -373,6 +373,8 @@
   "feedbackQqGroup": "QQ group",
   "feedbackWeb": "Open the feedback form",
   "feedbackHistoryBtn": "Feedback history",
+  "perfHudToggle": "Performance HUD",
+  "perfHudHint": "Temporary overlay for the replay map: render fps, draw calls and GPU info. Debug builds start with it on, release builds off — flipping it here lasts only this run and is never saved.",
   "updatesAppTitle": "Application",
   "updatesAppHint": "The app binary follows the GitHub version tags; an update always downloads the slim installer — the resource pack follows on its own channel.",
   "updatesAppName": "WoWSP application",

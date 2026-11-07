@@ -373,6 +373,8 @@
   "feedbackQqGroup": "QQ 그룹",
   "feedbackWeb": "피드백 양식 열기",
   "feedbackHistoryBtn": "피드백 기록",
+  "perfHudToggle": "성능 HUD",
+  "perfHudHint": "리플레이 맵의 임시 진단 오버레이(렌더링 FPS, 드로우 콜, GPU 정보)입니다. 디버그 빌드는 기본적으로 켜져 있고, 정식 빌드는 꺼져 있습니다. 이 스위치는 이번 실행에만 유효하며 저장되지 않습니다.",
   "updatesAppTitle": "앱 업데이트",
   "updatesAppHint": "앱 본체는 GitHub 버전 태그를 따릅니다. 업데이트 시 슬림 설치 관리자만 내려받으며, 리소스 팩은 자체 채널을 통해 별도로 진행됩니다.",
   "updatesAppName": "WoWSP 앱 본체",

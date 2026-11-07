@@ -373,6 +373,8 @@
   "feedbackQqGroup": "QQ グループ",
   "feedbackWeb": "フィードバックフォームを開く",
   "feedbackHistoryBtn": "フィードバック履歴",
+  "perfHudToggle": "パフォーマンス HUD",
+  "perfHudHint": "リプレイマップの一時的な診断オーバーレイ（描画 FPS、ドローコール、GPU 情報）。デバッグビルドでは既定でオン、リリースビルドではオフです。この切り替えは今回の起動中のみ有効で、保存されません。",
   "updatesAppTitle": "アプリ本体",
   "updatesAppHint": "アプリ本体は GitHub のバージョンタグに従います。更新時は軽量インストーラーのみをダウンロードし、リソースパックは独自の経路で別途更新されます。",
   "updatesAppName": "WoWSP アプリ本体",
