@@ -1,5 +1,6 @@
 // Trace the game's 28x28 HUD ship-class icons into vector polygons for
-// HolographicMap's SHIP_GLYPH_POLYS. Pipeline: dump_icon_grids.ps1 exports
+// the shared glyph atlas in packages/holo/src/shipGlyph.ts (SHIP_GLYPH_POLYS;
+// the app and the site both draw it). Pipeline: dump_icon_grids.ps1 exports
 // each icon_<class>.png's alpha channel to D:\icon_<class>.txt ('#' >160,
 // '+' 60..160, '.' <60); this script extracts connected components (the
 // engraved separators are transparent, so classes split into 1-3 solid
