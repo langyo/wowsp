@@ -11,7 +11,11 @@
      default width), so the sheet keeps a 66 vh / 700 px ceiling: the full
      report fits without scrolling on ordinary windows, and shorter windows
      scroll the panel's own HkScrollContainer. */
-  height: min(66vh, 700px);
+  /* Content-sized: the compact report hugs the window (no slack band under
+     the sheet, no needless scroll); the cap only engages when the content
+     genuinely overflows a short window (2026-11-07 review). */
+  height: auto;
+  max-height: min(88vh, 820px);
   display: flex;
   flex-direction: column;
   padding: 0;

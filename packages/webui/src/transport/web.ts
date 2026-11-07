@@ -17,8 +17,25 @@ import { MOCK_COMMANDS, mockImportedListing, mockListen } from "./webMock";
 
 const GET_COMMANDS = new Set<string>([RPC.detect_game_install, RPC.list_replays]);
 
+/** True in the browser-only dev session with NO backend (`just dev webui`):
+ *  the webui still boots, but every RPC fails fast with one message instead
+ *  of fetching into the dead /api proxy target — Vite logged an ECONNREFUSED
+ *  stack per call on startup (2026-11-07 report). `just dev mock` and the e2e
+ *  harness never set the flag, and the Tauri shell uses its own transport. */
+export function noBackendDevSession(): boolean {
+  return typeof __WOWSP_NO_BACKEND__ !== "undefined" && __WOWSP_NO_BACKEND__;
+}
+
 export class WebTransport implements Transport {
   async invoke<T = unknown>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+    if (noBackendDevSession()) {
+      throw new RpcError(
+        "this browser-only dev session has no backend — run `just dev mock` " +
+          "for the mock backend, or `just dev` for the desktop shell",
+        cmd,
+      );
+    }
+
     // Client-side mock commands (no FastAPI counterpart until phase P).
     const mock = MOCK_COMMANDS[cmd];
     if (mock) {

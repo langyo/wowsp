@@ -27,6 +27,10 @@ namespace JSX {
 }
 
 declare const __APP_VERSION__: string;
+/** True in the browser-only dev session (`just dev webui`, no backend) —
+ *  the web transport fails fast instead of fetching into the dead /api
+ *  proxy target. */
+declare const __WOWSP_NO_BACKEND__: boolean;
 
 declare module "*.vue" {
   import type { DefineComponent } from "vue";

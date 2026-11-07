@@ -404,7 +404,12 @@ def run_native(args: argparse.Namespace) -> int:
 
         if args.webui_only:
             procs: list[subprocess.Popen] = []
-            start_vite(procs)
+            # Browser-only session: no mock backend runs, so the webui's
+            # transport must fail fast instead of fetching every RPC into a
+            # dead proxy target (one ECONNREFUSED stack per call flooded the
+            # dev terminal — 2026-11-07 report). `just dev mock` omits the
+            # flag and serves the FastAPI backend as before.
+            start_vite(procs, extra_env={"WOWSP_NO_BACKEND": "1"})
             procs[0].wait()
             return 0
         cmd = ["cargo", "tauri", "dev"]
