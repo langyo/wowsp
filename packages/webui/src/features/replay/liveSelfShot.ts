@@ -20,6 +20,7 @@ import {
   PAD,
   canvasToPngBytes,
   drawFooter,
+  drawShipIcon,
   font,
   footerMinWidth,
   loadImage,
@@ -201,7 +202,10 @@ export async function renderLiveSelfShot(
   const icons = await Promise.all([
     ...model.columns.flatMap((c) =>
       c.rows.map((r) =>
-        loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "plain"), SHIP_GLYPH_RASTER),
+        // Neutral "white" face by default: the shot paints on the caller's
+        // theme palette and the plain art is white-only (invisible on a
+        // light-palette card). Sunk rows keep their inverted state face.
+        loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "white"), SHIP_GLYPH_RASTER),
       ),
     ),
     loadImage(LOGO_URL),
@@ -231,8 +235,7 @@ export async function renderLiveSelfShot(
       ctx.fill();
 
       let tx = cx + 12;
-      const icon = icons[iconIdx++];
-      if (icon) ctx.drawImage(icon, tx, rcy - 9, 18, 18);
+      drawShipIcon(ctx, icons[iconIdx++], tx, rcy - 9, 18);
       tx += 26;
 
       // Damage figure (mono, right-aligned) + kill marker after it.

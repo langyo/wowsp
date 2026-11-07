@@ -20,8 +20,10 @@
  * must carry the watermark footer regardless of the window state the panel
  * happens to be in.
  *
- * Ship class icons are the same bundled HUD-marker PNGs the minimap canvas
- * draws (same-origin vite assets, so the canvas never taints).
+ * Ship class icons are the same bundled HUD-marker SVGs every DOM face
+ * draws (same-origin vite assets, so the canvas never taints) — the neutral
+ * "white" face paints on both theme palettes and the sunk state keeps its
+ * inverted face.
  */
 import { shipIconUrl, type ShipIconVariant } from "@/features/holographic/shipIcons";
 import { SHIP_GLYPH_RASTER } from "@/features/holographic/shipIcons";
@@ -35,6 +37,7 @@ import {
   drawDivisionTag,
   drawFooter,
   drawSealTag,
+  drawShipIcon,
   ellipsize,
   font,
   footerMinWidth,
@@ -74,7 +77,7 @@ export interface ShotRow {
   bot?: boolean;
   /** Sunk / dead: the whole row renders dimmed, like the panel's dead cells. */
   dim?: boolean;
-  /** Ship-class HUD icon (bundled PNG url) + its variant. */
+  /** Ship-class HUD icon (bundled SVG url) + its variant. */
   shipType?: string | null;
   iconVariant?: ShipIconVariant;
   /** Small horizontal seal tags — the DOM StampTag face's wording
@@ -115,7 +118,7 @@ export interface ShotSelf {
   clanTag?: string | null;
   /** Ship display name; null drops the suffix. */
   shipName?: string | null;
-  /** Ship-class HUD icon (bundled PNG url) + its variant. */
+  /** Ship-class HUD icon (bundled SVG url) + its variant. */
   shipType?: string | null;
   iconVariant?: ShipIconVariant;
   /** Sunk: the identity carries the caller's localized marker. */
@@ -272,7 +275,7 @@ function drawSelfBanner(
   ctx.textAlign = "left";
   let tx = left;
   if (icon) {
-    ctx.drawImage(icon, tx, cy - 9, 18, 18);
+    drawShipIcon(ctx, icon, tx, cy - 9, 18);
     tx += 26;
   }
   const identityW = Math.max(headLeft - tx, 80);
@@ -451,10 +454,13 @@ export async function renderPostBattleShot(
 
   // Column titles (+ aggregate) and rows. The footer's logo loads alongside
   // the class icons so the paint never waits twice on the network.
+  // Neutral "white" face by default: the shot canvas paints on the caller's
+  // theme palette, and the plain art is white-only — a light-palette card
+  // swallowed it. Sunk rows keep their inverted state face.
   const icons = await Promise.all([
     ...cols.flatMap((c) =>
       c.rows.map((r) =>
-        loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "plain"), SHIP_GLYPH_RASTER),
+        loadImage(shipIconUrl(r.shipType, r.iconVariant ?? "white"), SHIP_GLYPH_RASTER),
       ),
     ),
     loadImage(LOGO_URL),
@@ -534,10 +540,7 @@ export async function renderPostBattleShot(
 
       // Ship class icon.
       let tx = cx + 12;
-      const icon = icons[iconIdx++];
-      if (icon) {
-        ctx.drawImage(icon, tx, cy - 10, 20, 20);
-      }
+      drawShipIcon(ctx, icons[iconIdx++], tx, cy - 10, 20);
       tx += 28;
 
       // Nick (+clan, +bot) and ship name stacked. The draw width stops

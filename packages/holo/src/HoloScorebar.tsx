@@ -112,8 +112,11 @@ function shipIconUrlFor(ship: HoloShip): string | null {
     : ship.role === "enemy"
       ? "enemy"
       : "ally";
-  // Sunk auxiliaries have no sunk art — fall back to the same side's sunk
-  // cruiser icon so a missing asset never blanks a slot in the strip.
+  // A host may register only the five main classes (the site's own PNG set
+  // does), so a sunk auxiliary can miss its art there — fall back to the
+  // same side's sunk cruiser icon rather than blank the slot. The desktop
+  // app registers the auxiliary faces too, so this stays a host-compat
+  // guard, not an art gap.
   let url = holoShipIconUrl(ship.shipType, variant);
   if (!url && variant === "sunk") url = holoShipIconUrl("cruiser", "sunk");
   if (!url && variant === "sunk-enemy") url = holoShipIconUrl("cruiser", "sunk-enemy");
