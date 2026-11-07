@@ -27,6 +27,7 @@ import {
   useToast,
 } from "@celestia-island/hikari";
 
+import LinkButton from "@/shared/LinkButton";
 import { asIndexable } from "@/shared/typing";
 
 import {
@@ -340,9 +341,14 @@ export default defineComponent({
       "cell-updatedAt": ({ row }: { row: AdminContributor }) => <span>{fmtTime(row.updatedAt)}</span>,
       "cell-actions": ({ row }: { row: AdminContributor }) => (
         <div class="erp-row-actions">
-          <a href={replayAdminArchiveUrl(row.anonId)} target="_blank" rel="noreferrer">
+          <LinkButton
+            size="sm"
+            variant="ghost"
+            external
+            href={replayAdminArchiveUrl(row.anonId)}
+          >
             下载
-          </a>
+          </LinkButton>
           <HButton
             size="sm"
             variant="secondary"

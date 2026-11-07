@@ -27,6 +27,22 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+// Anchor ink — hikari's reset deliberately leaves <a> on the UA default
+// (#0000EE), which reads near-invisible as dark-on-dark under the night
+// theme; the webui's theme.scss carries this same host rule. Links that
+// should read as hikari buttons use shared/LinkButton, whose hk-btn class
+// rules outrank this bare selector and keep the variant's own ink.
+a {
+  color: rgb(var(--color-primary));
+}
+
+// A LinkButton anchor wears hk-btn (a <button>-grade affordance): the UA
+// underline would otherwise draw through its label, so drop it for anchors
+// only — plain text links keep the underline as their affordance.
+a.hk-btn {
+  text-decoration: none;
+}
+
 // Definite-height chain: HkAdminShell sizes itself with `height: 100%`
 // so the sidebar and the content region span the viewport and scroll
 // INTERNALLY (`s-admin-shell-body`/`-main`/`-scroll` are all flex:1 +
