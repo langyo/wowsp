@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import gc
+import hashlib
 import json
 import math
 import sys
@@ -130,6 +131,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=0.0,
         help="secondary ablation only: focal-BCE gamma on head B (>0 replaces plain BCE; 0 = off)",
     )
+    p.add_argument(
+        "--final-fit",
+        action="store_true",
+        help="T2 delivery mode: train ONE model on ALL rows (no CV) and export ONNX (fp32+int8) + parity vectors",
+    )
+    p.add_argument(
+        "--export-dir",
+        default="",
+        help="final-fit output dir (default: <repo>/scripts/experiments/out/torpedo_model/final)",
+    )
+    p.add_argument("--parity-rows", type=int, default=1000, help="final-fit: torch-vs-ORT fp32 parity rows")
+    p.add_argument("--parity-vector-rows", type=int, default=200, help="final-fit: rows stored in parity_vectors.json")
+    p.add_argument("--int8-eval-rows", type=int, default=100000, help="final-fit: rows for the int8-vs-fp32 metric sample")
     p.add_argument("--metrics-out", default=None, help="write the full metrics JSON here")
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
@@ -340,6 +354,7 @@ def load_torpedo_rows(
     yb = np.full(n_pre, np.nan, dtype=np.float32)
     ship_ids = np.full(n_pre, -1, dtype=np.int64)
     gid = np.zeros(n_pre, dtype=np.int32)
+    times = np.zeros(n_pre, dtype=np.float32)
     gid_map: dict[str, int] = {}
     regions: list[str] = []
     cls_arr: list[str] = []
@@ -397,6 +412,8 @@ def load_torpedo_rows(
                 ya[rows] = a
                 yb[rows] = b
                 ship_ids[rows] = -1 if ship_id is None else ship_id
+                tv = row.get("t")
+                times[rows] = float(tv) if tv is not None else -1.0
                 gname = str(row.get("replayId") or path.stem)
                 gi = gid_map.get(gname)
                 if gi is None:
@@ -417,7 +434,7 @@ def load_torpedo_rows(
         return a[:rows]
 
     Xe, Xg, Xm = trim(Xe), trim(Xg), trim(Xm)
-    ya, yb, ship_ids, gid = trim(ya), trim(yb), trim(ship_ids), trim(gid)
+    ya, yb, ship_ids, gid, times = trim(ya), trim(yb), trim(ship_ids), trim(gid), trim(times)
     region_arr = np.array(regions, dtype=object)
     region_counts: dict[str, int] = {}
     for reg in regions:
@@ -432,6 +449,7 @@ def load_torpedo_rows(
         "label_a": ya,
         "label_b": yb,
         "ship_id": ship_ids,
+        "t": times,
         "group": gid,
         "group_names": list(gid_map.keys()),
         "region": region_arr,
@@ -1041,6 +1059,460 @@ def print_report(metrics: dict) -> None:
     print(f"total train seconds {metrics['training']['total_seconds']}")
 
 
+# ── T2 delivery: final fit (all rows) + ONNX export ─────────────────────────
+
+
+def final_export_dir(args: argparse.Namespace) -> Path:
+    if args.export_dir:
+        return Path(args.export_dir)
+    return HERE / "out" / "torpedo_model" / "final"
+
+
+def select_eval_subset(data: dict, n_eval: int, seed: int) -> dict:
+    """Deterministic (seeded permutation) row subset kept on the HOST for the
+    ONNX parity/int8 checks and the parity vectors — selected BEFORE the full
+    corpus is moved to the device so the host arrays can be freed afterwards."""
+    n = data["rows"]
+    rng = np.random.default_rng(seed)
+    take = min(n_eval, n)
+    idx = np.sort(rng.permutation(n)[:take]).astype(np.int64)
+    return {
+        "idx": idx,
+        "rows": int(take),
+        "entity": data["entity"][idx].astype(np.float32),  # float16 storage -> fp32
+        "global": data["global"][idx].astype(np.float32),
+        "mask": data["mask"][idx].astype(np.float32),
+        "label_a": data["label_a"][idx].astype(np.float32),
+        "label_b": data["label_b"][idx].astype(np.float32),
+        "class": data["class"][idx],
+        "region": data["region"][idx],
+        "ship_id": data["ship_id"][idx],
+        "group": data["group"][idx],
+        "t": data["t"][idx],
+        "group_names": data["group_names"],
+    }
+
+
+def sha256_file(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def train_final_model(
+    *,
+    torch,
+    args: argparse.Namespace,
+    entity,
+    glob,
+    mask,
+    y_a,
+    y_b,
+    b_mask,
+    entity_dim: int,
+    global_dim: int,
+    device,
+    log_fn,
+):
+    """Train ONE model on ALL rows (no CV) with the E26c/E26d hyperparameters."""
+    nn = torch.nn
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    model = tfm.build_model(hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
+    model.to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    bce = nn.BCEWithLogitsLoss(reduction="none")
+    eps = args.label_smoothing
+    n = int(entity.shape[0])
+    losses: list[float] = []
+    t0 = time.time()
+    for epoch in range(args.epochs):
+        model.train()
+        perm = torch.randperm(n, device=device)
+        tot, cnt = 0.0, 0
+        for st in range(0, n, args.batch_size):
+            idx = perm[st : st + args.batch_size]
+            la, lb = model(entity[idx].float(), glob[idx].float(), mask[idx].float())
+            loss_a = bce_smoothed_loss(bce, la, y_a[idx], eps).mean()
+            m = b_mask[idx]
+            loss_b = (bce_smoothed_loss(bce, lb, y_b[idx], eps) * m).sum() / m.sum().clamp(min=1.0)
+            loss = loss_a + loss_b
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            tot += float(loss.item()) * len(idx)
+            cnt += len(idx)
+        losses.append(tot / max(cnt, 1))
+        log_fn(f"[e26] final-fit epoch {epoch + 1}/{args.epochs} loss {losses[-1]:.4f} ({time.time() - t0:.1f}s)")
+    log_fn(f"[e26] final-fit done: {args.epochs} epochs on {n:,} rows in {time.time() - t0:.1f}s")
+    return model, losses
+
+
+def _ort_forward_rows(sess, entity, glob, mask) -> tuple[np.ndarray, np.ndarray]:
+    """Batch-1 ORT forward loop (the export is static batch 1)."""
+    la = np.empty(len(glob), dtype=np.float32)
+    lb = np.empty(len(glob), dtype=np.float32)
+    for i in range(len(glob)):
+        out = sess.run(
+            None,
+            {
+                "entity": entity[i : i + 1].astype(np.float32),
+                "global_feat": glob[i : i + 1].astype(np.float32),
+                "mask": mask[i : i + 1].astype(np.float32),
+            },
+        )
+        la[i] = np.asarray(out[0]).reshape(-1)[0]
+        lb[i] = np.asarray(out[1]).reshape(-1)[0]
+    return la, lb
+
+
+def export_final_model(
+    *,
+    torch,
+    model,
+    data: dict,
+    subset: dict,
+    args: argparse.Namespace,
+    out_dir: Path,
+    train_losses: list[float],
+    device_str: str,
+    log_fn,
+    entity_dim: int,
+    global_dim: int,
+):
+    """Export fp32 + int8 ONNX with the app Fire24-compatible contract, then
+    validate torch-vs-ORT parity and int8 degradation. Returns the metrics dict."""
+    import tempfile
+    import shutil
+
+    import numpy as _np
+    import onnx
+    import onnxruntime as ort
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    nn = torch.nn
+    model = model.cpu().eval()
+
+    # Checkpoint BEFORE export (E24 lesson: never lose a 1-epoch-scale fit...
+    # and here the deliverable is the checkpoint itself).
+    ckpt_path = out_dir / "checkpoint.pt"
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "hidden": args.hidden,
+            "feature_version": FEATURE_VERSION,
+            "feature_set": data["feature_set"],
+            "extra_dim": data["extra_dim"],
+            "entity_dim": entity_dim,
+            "global_dim": global_dim,
+            "feature_names": data["feature_names"],
+            "epochs": args.epochs,
+            "loss_last": float(train_losses[-1]),
+            "torch": torch.__version__,
+        },
+        ckpt_path,
+    )
+    log_fn(f"[e26] checkpoint -> {ckpt_path} ({ckpt_path.stat().st_size:,} bytes)")
+
+    class ExportWrapper(nn.Module):
+        def __init__(self, inner) -> None:
+            super().__init__()
+            self.inner = inner
+
+        def forward(self, entity, global_feat, mask):
+            la, lb = self.inner(entity, global_feat, mask)
+            return la.unsqueeze(-1), lb.unsqueeze(-1)  # [B, 1] app contract
+
+    wrapper = ExportWrapper(model).eval()
+    ex = torch.from_numpy(subset["entity"][:1]).float()
+    gx = torch.from_numpy(subset["global"][:1]).float()
+    mx = torch.from_numpy(subset["mask"][:1]).float()
+    fp32_path = out_dir / "fp32.onnx"
+    in_names = ["entity", "global_feat", "mask"]
+    out_names = ["logitA", "logitB"]
+    try:
+        torch.onnx.export(
+            wrapper,
+            (ex, gx, mx),
+            str(fp32_path),
+            input_names=in_names,
+            output_names=out_names,
+            opset_version=17,
+            dynamo=False,
+        )
+    except TypeError:
+        torch.onnx.export(
+            wrapper,
+            (ex, gx, mx),
+            str(fp32_path),
+            input_names=in_names,
+            output_names=out_names,
+            opset_version=17,
+        )
+    onnx.checker.check_model(onnx.load(str(fp32_path)))
+    log_fn(f"[e26] fp32 ONNX -> {fp32_path} ({fp32_path.stat().st_size:,} bytes)")
+
+    # int8 dynamic quantization in an ASCII-safe temp dir (E19 pitfall).
+    int8_path = out_dir / "int8.onnx"
+    with tempfile.TemporaryDirectory() as td:
+        tmp_in = Path(td) / "fp32.onnx"
+        tmp_out = Path(td) / "int8.onnx"
+        shutil.copyfile(fp32_path, tmp_in)
+        try:
+            quantize_dynamic(str(tmp_in), str(tmp_out), weight_type=QuantType.QInt8)
+        except TypeError:
+            quantize_dynamic(str(tmp_in), str(tmp_out))
+        shutil.copyfile(tmp_out, int8_path)
+    onnx.checker.check_model(onnx.load(str(int8_path)))
+    log_fn(f"[e26] int8 ONNX -> {int8_path} ({int8_path.stat().st_size:,} bytes)")
+
+    # Contract printout (names + declared shapes).
+    m32 = onnx.load(str(fp32_path))
+    def _shapes(gm):
+        return [
+            (i.name, [d.dim_value if d.HasField("dim_value") else d.dim_param for d in i.type.tensor_type.shape.dim])
+            for i in gm.graph.input
+        ], [
+            (o.name, [d.dim_value if d.HasField("dim_value") else d.dim_param for d in o.type.tensor_type.shape.dim])
+            for o in gm.graph.output
+        ]
+    in_shapes, out_shapes = _shapes(m32)
+    log_fn(f"[e26] ONNX inputs: {in_shapes}")
+    log_fn(f"[e26] ONNX outputs: {out_shapes}")
+    assert [n for n, _ in in_shapes] == in_names
+    assert [n for n, _ in out_shapes] == out_names
+
+    so = ort.SessionOptions()
+    sess_fp32 = ort.InferenceSession(str(fp32_path), so, providers=["CPUExecutionProvider"])
+    sess_int8 = ort.InferenceSession(str(int8_path), so, providers=["CPUExecutionProvider"])
+
+    # 1) torch (CPU) vs ORT fp32 on --parity-rows deterministic rows: logits.
+    npair = min(args.parity_rows, subset["rows"])
+    e_p = torch.from_numpy(subset["entity"][:npair])
+    g_p = torch.from_numpy(subset["global"][:npair])
+    m_p = torch.from_numpy(subset["mask"][:npair])
+    with torch.no_grad():
+        t_la, t_lb = model(e_p, g_p, m_p)
+    t_la = t_la.numpy().reshape(-1)
+    t_lb = t_lb.numpy().reshape(-1)
+    o_la, o_lb = _ort_forward_rows(sess_fp32, subset["entity"], subset["global"], subset["mask"])
+    par_a = float(np.max(np.abs(o_la[:npair] - t_la)))
+    par_b = float(np.max(np.abs(o_lb[:npair] - t_lb)))
+    tolerance = 1e-4
+    parity_ok = bool(par_a < tolerance and par_b < tolerance)
+    log_fn("[e26] parity fp32 torch-vs-ORT over "
+           f"{npair} rows: max|dlogit| A {par_a:.2e} B {par_b:.2e} (< {tolerance:.0e}) -> {parity_ok}")
+    assert parity_ok, "fp32 torch-vs-ORT parity failed"
+
+    # 2) int8 vs fp32 metrics on the deterministic eval subset (in-sample
+    # reference: the final fit uses every row, so this is NOT held-out).
+    i8_la, i8_lb = _ort_forward_rows(sess_int8, subset["entity"], subset["global"], subset["mask"])
+    p32_a = tfm.sigmoid(o_la)
+    p32_b = tfm.sigmoid(o_lb)
+    p8_a = tfm.sigmoid(i8_la)
+    p8_b = tfm.sigmoid(i8_lb)
+    dpa = float(np.max(np.abs(p8_a - p32_a)))
+    dpb = float(np.max(np.abs(p8_b - p32_b)))
+    can = subset["label_a"] == 1.0
+    y_b_can = subset["label_b"][can]
+    ref = {
+        "rows": subset["rows"],
+        "in_sample": True,
+        "headA_auprc_fp32": _num(tfm.average_precision(subset["label_a"], p32_a)),
+        "headA_auprc_int8": _num(tfm.average_precision(subset["label_a"], p8_a)),
+        "headA_logloss_fp32": _num(tfm.log_loss(subset["label_a"], p32_a)),
+        "headA_logloss_int8": _num(tfm.log_loss(subset["label_a"], p8_a)),
+        "headB_auprc_fp32": _num(tfm.average_precision(y_b_can, p32_b[can])),
+        "headB_auprc_int8": _num(tfm.average_precision(y_b_can, p8_b[can])),
+        "headB_logloss_fp32": _num(tfm.log_loss(y_b_can, p32_b[can])),
+        "headB_logloss_int8": _num(tfm.log_loss(y_b_can, p8_b[can])),
+        "maxAbsProbDiffA": dpa,
+        "maxAbsProbDiffB": dpb,
+    }
+    log_fn(
+        f"[e26] int8 vs fp32 on {subset['rows']:,} rows: max|dp| A {dpa:.2e} B {dpb:.2e}; "
+        f"AUPRC-B fp32 {ref['headB_auprc_fp32']} int8 {ref['headB_auprc_int8']}; "
+        f"logloss-B fp32 {ref['headB_logloss_fp32']} int8 {ref['headB_logloss_int8']}"
+    )
+
+    # 3) parity vectors (>= --parity-vector-rows): tensors + fp32/int8 logits +
+    # row metadata + the 11 torp2 derived dims (part of the 38-wide global).
+    nvec = min(args.parity_vector_rows, subset["rows"])
+    extra_dim = int(data["extra_dim"])
+    vectors = []
+    for i in range(nvec):
+        vectors.append(
+            {
+                "entity": subset["entity"][i].reshape(-1).tolist(),
+                "global": subset["global"][i].tolist(),
+                "mask": subset["mask"][i].tolist(),
+                "torp2Extras": subset["global"][i, 27:27 + extra_dim].tolist() if extra_dim else [],
+                "logitA_fp32": float(o_la[i]),
+                "logitB_fp32": float(o_lb[i]),
+                "logitA_int8": float(i8_la[i]),
+                "logitB_int8": float(i8_lb[i]),
+                "shipId": int(subset["ship_id"][i]),
+                "replayId": subset["group_names"][int(subset["group"][i])],
+                "t": float(subset["t"][i]),
+                "region": str(subset["region"][i]),
+                "class": str(subset["class"][i]),
+                "labelACanLaunch": bool(subset["label_a"][i] == 1.0),
+                "labelBLaunched": None if np.isnan(subset["label_b"][i]) else bool(subset["label_b"][i] == 1.0),
+            }
+        )
+    vectors_path = out_dir / "parity_vectors.json"
+    vectors_path.write_text(json.dumps({"rows": vectors}, indent=1), encoding="utf-8")
+    log_fn(f"[e26] parity vectors -> {vectors_path} ({nvec} rows)")
+
+    def _fentry(p: Path) -> dict:
+        return {"path": str(p), "bytes": p.stat().st_size, "sha256": sha256_file(p)}
+
+    metrics = {
+        "_lineage": "E26d torp2 final-fit ONNX delivery candidate (T2 model)",
+        "mode": "final-fit (ALL rows, no CV; the E26d OOF numbers remain the honest estimate)",
+        "data": {
+            "rows": data["rows"],
+            "replays": len(data["group_names"]),
+            "feature_set": data["feature_set"],
+            "extra_dim": data["extra_dim"],
+            "feature_version": FEATURE_VERSION,
+            "class_counts": data["class_counts"],
+            "region_counts": data["region_counts"],
+            "labels": {
+                "canLaunch": int(data["label_a"].sum()),
+                "launched_true": int(np.nansum(data["label_b"])),
+                "labelB_null": int(np.isnan(data["label_b"]).sum()),
+            },
+        },
+        "training": {
+            "epochs": args.epochs,
+            "hidden": args.hidden,
+            "batch_size": args.batch_size,
+            "lr": args.lr,
+            "label_smoothing": args.label_smoothing,
+            "device": device_str,
+            "loss_first": _num(train_losses[0]),
+            "loss_last": _num(train_losses[-1]),
+            "loss_curve": [_num(x) for x in train_losses],
+        },
+        "reference_oof": {
+            "source": "E26d torp2 5-fold OOF (scripts/experiments/out/torpedo_model/e26d_torp2_metrics.json)",
+            "headB_auprc": 0.03705068555520497,
+            "headB_auprc_multiple_of_base": 2.286065230588968,
+            "headB_topDecileLift": 2.661953046068418,
+            "headA_auprc": 0.9998866615209074,
+        },
+        "export": {
+            "contract": {"inputs": {n: s for n, s in in_shapes}, "outputs": {n: s for n, s in out_shapes}},
+            "fp32": _fentry(fp32_path),
+            "int8": _fentry(int8_path),
+            "checkpoint": _fentry(ckpt_path),
+            "opset": 17,
+            "torch": torch.__version__,
+            "onnx": onnx.__version__,
+            "onnxruntime": ort.__version__,
+        },
+        "parity_fp32": {
+            "rows": int(npair),
+            "maxAbsLogitDiffA": par_a,
+            "maxAbsLogitDiffB": par_b,
+            "tolerance": tolerance,
+            "passed": parity_ok,
+        },
+        "int8_vs_fp32": ref,
+        "parity_vectors": {"path": str(vectors_path), "rows": nvec},
+    }
+    metrics_path = out_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(metrics, indent=1, ensure_ascii=False), encoding="utf-8")
+    log_fn(f"[e26] metrics -> {metrics_path}")
+    return metrics
+
+
+def run_final_fit(args: argparse.Namespace) -> int:
+    """T2 delivery pipeline: load the full corpus, train ONE model on all rows,
+    export fp32+int8 ONNX, validate torch-vs-ORT parity, write parity vectors."""
+    import torch
+
+    log = lambda s: print(s, flush=True)  # noqa: E731
+    if args.feature_set != "torp2":
+        raise SystemExit("[e26] --final-fit requires --feature-set torp2 (the E26d delivery feature set)")
+    device = torch.device("cuda" if (args.device in ("auto", "cuda") and torch.cuda.is_available()) else "cpu")
+    torch.set_num_threads(max(1, torch.get_num_threads()))
+    log(f"[e26] FINAL FIT on {device} (torch {torch.__version__})")
+
+    classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
+    paths = resolve_data_paths(args)
+    t0 = time.time()
+    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype, args.feature_set)
+    log(f"[e26] loaded {data['rows']:,} rows / {len(data['group_names'])} replays in {time.time() - t0:.1f}s "
+        f"(arrays {data['array_bytes'] / 1e9:.2f} GB)")
+    log(f"[e26] class counts: {json.dumps(data['class_counts'], ensure_ascii=False)}")
+
+    subset = select_eval_subset(data, args.int8_eval_rows, args.seed)
+    log(f"[e26] host eval subset: {subset['rows']:,} rows (int8 metrics + parity vectors)")
+
+    entity = torch.from_numpy(data["entity"])
+    glob = torch.from_numpy(data["global"])
+    mask = torch.from_numpy(data["mask"])
+    y_a = torch.from_numpy(data["label_a"])
+    y_b = torch.from_numpy(np.nan_to_num(data["label_b"], nan=0.0))
+    b_mask_np = (data["label_a"] == 1.0) & np.isfinite(data["label_b"])
+    b_mask = torch.from_numpy(b_mask_np.astype(np.float32))
+    entity_dim = int(entity.shape[2])
+    global_dim = int(glob.shape[1])
+    if device.type == "cuda":
+        entity = entity.to(device)
+        glob = glob.to(device)
+        mask = mask.to(device)
+        y_a = y_a.to(device)
+        y_b = y_b.to(device)
+        b_mask = b_mask.to(device)
+        # host copies no longer needed (the eval subset above is a compact copy)
+        data["entity"] = None
+        data["global"] = None
+        data["mask"] = None
+        gc.collect()
+    log(f"[e26] tensors: entity {entity.numel() * entity.element_size() / 1e9:.2f} GB {entity.dtype} on {entity.device}")
+
+    model, losses = train_final_model(
+        torch=torch,
+        args=args,
+        entity=entity,
+        glob=glob,
+        mask=mask,
+        y_a=y_a,
+        y_b=y_b,
+        b_mask=b_mask,
+        entity_dim=entity_dim,
+        global_dim=global_dim,
+        device=device,
+        log_fn=log,
+    )
+
+    out_dir = final_export_dir(args)
+    metrics = export_final_model(
+        torch=torch,
+        model=model,
+        data=data,
+        subset=subset,
+        args=args,
+        out_dir=out_dir,
+        train_losses=losses,
+        device_str=str(device),
+        log_fn=log,
+        entity_dim=entity_dim,
+        global_dim=global_dim,
+    )
+    log(f"[e26] DELIVERY CANDIDATE ready under {out_dir}")
+    log(f"[e26] fp32 {metrics['export']['fp32']['bytes']:,} bytes sha256={metrics['export']['fp32']['sha256']}")
+    log(f"[e26] int8 {metrics['export']['int8']['bytes']:,} bytes sha256={metrics['export']['int8']['sha256']}")
+    log(f"[e26] parity {metrics['parity_fp32']}")
+    log(f"[e26] int8_vs_fp32 {metrics['int8_vs_fp32']}")
+    return 0
+
 # ── self-test (torch-free) ──────────────────────────────────────────────────
 
 
@@ -1267,6 +1739,35 @@ def run_selftest() -> int:
     assert d_torp2["global"][0, 27] == 1.0, "row 0 is a Destroyer -> cls_dd"
     assert d_core["feature_set"] == "core" and d_torp2["feature_set"] == "torp2"
 
+    # 9. T2 delivery mode: CLI flags + eval-subset selector + default export dir.
+    fa = parse_args(["--final-fit", "--export-dir", str(root / "final")])
+    assert fa.final_fit is True and str(fa.export_dir).endswith("final")
+    assert fa.parity_rows >= 1000 and fa.parity_vector_rows >= 200
+    assert parse_args([]).final_fit is False
+    assert final_export_dir(parse_args([])).as_posix().endswith("out/torpedo_model/final")
+    fake = {
+        "rows": 10,
+        "entity": np.zeros((10, tfm.SLOTS, tfm.ENTITY_DIM_V2), dtype=np.float16),
+        "global": np.zeros((10, 38), dtype=np.float32),
+        "mask": np.zeros((10, tfm.SLOTS), dtype=np.float16),
+        "label_a": np.zeros(10, dtype=np.float32),
+        "label_b": np.full(10, np.nan, dtype=np.float32),
+        "class": np.array(["Destroyer"] * 10, dtype=object),
+        "region": np.array(["own"] * 10, dtype=object),
+        "ship_id": np.arange(10, dtype=np.int64),
+        "group": np.arange(10, dtype=np.int32),
+        "t": np.arange(10, dtype=np.float32),
+        "group_names": [f"r{i}" for i in range(10)],
+    }
+    sub1 = select_eval_subset(fake, 100000, seed=0)
+    sub2 = select_eval_subset(fake, 100000, seed=0)
+    assert sub1["rows"] == 10 and np.array_equal(sub1["idx"], sub2["idx"])
+    assert sub1["entity"].dtype == np.float32 and sub1["entity"].shape == (10, 24, 15)
+    assert sub1["global"].shape == (10, 38) and sub1["t"].shape == (10,)
+    assert sub1["group_names"][int(sub1["group"][0])] == "r0"
+    sub3 = select_eval_subset(fake, 4, seed=7)
+    assert sub3["rows"] == 4 and len(set(sub3["idx"].tolist())) == 4
+
     print("PASS")
     return 0
 
@@ -1278,6 +1779,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.selftest:
         return run_selftest()
+    if args.final_fit:
+        return run_final_fit(args)
     metrics = run_training(args)
     if args.metrics_out:
         out = Path(args.metrics_out)
