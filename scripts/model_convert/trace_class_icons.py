@@ -54,11 +54,20 @@ OUT_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "images" / "ships"
 
 Z = 16                # working supersample for sub-pixel contour extraction
 BLUR_SRC = 0.45       # Gaussian sigma in SOURCE pixels (cancels WebP alpha noise)
-RDP_EPS_SRC = 0.030   # simplification tolerance in SOURCE pixels
+RDP_EPS_SRC = 0.090   # simplification tolerance in SOURCE pixels: absorbs the
+                      # sub-pixel wobble of the 27 px source on long edges (a
+                      # 0.03 tolerance kept it as a visibly wavy hull)
 MIN_AREA_SRC = 0.20   # drop specks smaller than this (source px^2)
 MIN_IOU = 0.90        # per-region soft-coverage IoU floor
 MAX_MAE = 0.06        # per-region mean absolute coverage error ceiling
 MIN_BINARY_IOU = 0.85 # sanity floor against the hard source silhouette
+# Hairline ink layers (the hull ring / the speed slashes) cover only a few
+# source pixels: a sub-pixel contour shift eats a large share of their area,
+# so their IoU is hypersensitive while the actual coverage error stays tiny.
+# Such layers are judged on the coverage error alone; layers that tile the
+# glyph keep the strict IoU floor.
+THIN_LAYER_MEAN_COVERAGE = 0.25
+THIN_LAYER_MAX_MAE = 0.02
 
 
 def luminance(rgb: np.ndarray) -> np.ndarray:
@@ -311,6 +320,14 @@ def iou(a: np.ndarray, b: np.ndarray) -> float:
     return float((A & B).sum() / union) if union else 1.0
 
 
+def layer_ok(ref: np.ndarray, score: float, mae: float) -> bool:
+    """Fidelity gate for one layer: the strict IoU+MAE pair, with the
+    documented hairline exemption (see THIN_LAYER_*)."""
+    if score >= MIN_IOU and mae <= MAX_MAE:
+        return True
+    return float(ref.mean()) <= THIN_LAYER_MEAN_COVERAGE and mae <= THIN_LAYER_MAX_MAE
+
+
 def coverage_score(got: np.ndarray, ref: np.ndarray) -> tuple[float, float]:
     """Fidelity of a traced layer against its sub-pixel reference coverage.
 
@@ -386,6 +403,23 @@ def decompose(img: Image.Image) -> dict:
     }
 
 
+CROP_MARGIN_SRC = 0.35  # breathing room around the cropped silhouette (src px)
+
+
+def contour_bbox(layers: list[dict]) -> tuple[float, float, float, float] | None:
+    """Union bounding box of every emitted contour, in source pixels."""
+    xs: list[float] = []
+    ys: list[float] = []
+    for layer in layers:
+        for loop in layer["contours"]:
+            for x, y in loop:
+                xs.append(x)
+                ys.append(y)
+    if not xs:
+        return None
+    return min(xs), min(ys), max(xs), max(ys)
+
+
 def write_svg(layers: list[dict], size: int, out: Path) -> None:
     body = []
     for layer in layers:
@@ -395,9 +429,23 @@ def write_svg(layers: list[dict], size: int, out: Path) -> None:
         opacity = layer.get("opacity", 1.0)
         op = "" if abs(opacity - 1.0) < 1e-6 else f' fill-opacity="{opacity:.3f}"'
         body.append(f'<path d="{d}" fill="{layer["color"]}" fill-rule="evenodd"{op}/>')
+    # The art is CROPPED to the silhouette: the game marker's 27 px canvas
+    # carries ~40% empty padding, which forced consumers to zoom the mask
+    # (150%) and resample the raster — and still read small. A cropped
+    # viewBox lets every consumer render the silhouette 1:1 in its own box.
+    box = contour_bbox(layers)
+    if box is None:
+        raise SystemExit(f"empty trace for {out.name}")
+    x0, y0, x1, y1 = box
+    x0 -= CROP_MARGIN_SRC
+    y0 -= CROP_MARGIN_SRC
+    x1 += CROP_MARGIN_SRC
+    y1 += CROP_MARGIN_SRC
+    w = x1 - x0
+    h = y1 - y0
     svg = (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{size}" height="{size}" '
-        f'viewBox="0 0 {size} {size}">' + "".join(body) + "</svg>"
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{w:.2f}" height="{h:.2f}" '
+        f'viewBox="{x0:.2f} {y0:.2f} {w:.2f} {h:.2f}">' + "".join(body) + "</svg>"
     )
     out.write_text(svg, encoding="utf-8")
 
@@ -486,9 +534,10 @@ def trace_icon(path: Path, out_dir: Path) -> tuple[bool, str]:
         s_sil, m_sil = coverage_score(got_sil, info["sil_cov"])
         s_line, m_line = coverage_score(got_line, ref_line)
         s_plate, m_plate = coverage_score(got_plate, info["plate_cov"])
-        if (
-            s_sil < MIN_IOU or s_line < MIN_IOU or s_plate < MIN_IOU
-            or m_sil > MAX_MAE or m_line > MAX_MAE or m_plate > MAX_MAE
+        if not (
+            layer_ok(info["sil_cov"], s_sil, m_sil)
+            and layer_ok(ref_line, s_line, m_line)
+            and layer_ok(info["plate_cov"], s_plate, m_plate)
         ):
             return False, (
                 f"{path.name}: sil {s_sil:.3f}/{m_sil:.3f} "

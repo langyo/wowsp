@@ -384,6 +384,10 @@ export default defineConfig({
   },
   define: {
     __APP_VERSION__: JSON.stringify(readPkgVersion(pkgDir)),
+    // `just dev webui` runs a browser-only session with NO backend behind the
+    // /api proxy, so the browser transport fails fast instead of fetching
+    // into the dead target (2026-11-07 report).
+    __WOWSP_NO_BACKEND__: JSON.stringify(process.env.WOWSP_NO_BACKEND === "1"),
   },
   publicDir: resolve(pkgDir, 'src/res'),
   base: '/',

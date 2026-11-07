@@ -65,6 +65,18 @@
 
 // ── head: the selected perspective ──
 .static-report-panel--capture {
+  /* The sheet's own palette below pins the SHELL; the embedded hikari
+     components (AppTag, HkCopyBadge, MapNameTag, badges) read the APP theme
+     tokens instead, so a light-theme window would clone white pills into the
+     dark share image. Re-pin the dark token set for this subtree — the same
+     values [data-mode="dark"] uses — so the captured frame is uniformly
+     dark whatever theme the window runs in (2026-11-07 review). */
+  --color-text: 220 228 238;
+  --color-muted: 150 160 175;
+  --color-border: 50 60 75;
+  --color-background: 12 18 30;
+  --color-surface: 22 30 46;
+  --color-surface-raised: 30 39 56;
   --srp-bg: #0d1117;
   --srp-card: #161c26;
   --srp-panel: #101722;
