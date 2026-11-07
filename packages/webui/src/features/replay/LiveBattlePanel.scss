@@ -183,8 +183,9 @@
   }
 
   /* The roster header — ONE aligned render path for BOTH densities:
-     compact rows and the full rows (which merely add the ship-meta strip in
-     the middle) put their stat cells on the exact same grid. The title
+     compact rows and the full cards (whose side block carries the stat line
+     over the ship strip) put their stat cells on the exact same grid. The
+     title
      becomes the two-line mini table header (tiny label over a mono value) on
      a grid mirroring the roster rows' stat columns — [name][enabled
      rosterColumns() widths], the exact template set INLINE per render (the
@@ -248,14 +249,13 @@
      IS a badge: it flags that the row's numbers came from another
      cluster's API, which only cross-server CW rows ever show. */
 
-  /* ── Roster rows (the post-battle matrix's compact row look) ─────────
-     ONE row shared by BOTH densities (compact is the shipped default):
-     battle icon, nick/clan + ship stack, the shared rosterStatCols columns
-     (their own SCSS) and the career seal. Full density only adds the
-     LiveShipMeta strip between the identity stack and the stat columns (see
-     &__crow-main--split below) — every shared piece keeps the same x, so
-     both densities line up under the one aligned column header. The whole
-     row is the lookup jump, so hover and clicks cover the seal too. */
+  /* ── Roster rows ────────────────────────────────────────────────────
+     Compact rows keep the post-battle matrix's one-line look (the shipped
+     default): battle icon, nick/clan + ship stack, the shared rosterStatCols
+     columns (their own SCSS) and the career seal. The full card below is the
+     post-battle full card's shape; both densities put their stat cells on
+     the ONE aligned column header's tracks. The whole row is the lookup
+     jump, so hover and clicks cover the seal too. */
   &__crow {
     display: flex;
     align-items: center;
@@ -287,33 +287,78 @@
     flex-direction: column;
   }
 
-  /* Full density only: the main block turns horizontal — a fixed-width
-     identity stack, then the ship-meta strip filling the middle ground.
-     Compact rows keep the plain column stack above, so both densities
-     render the identical outer line (icon · main · stat columns · seal). */
-  &__crow-main--split {
-    flex-direction: row;
-    align-items: center;
-    gap: 10px;
+  /* ── Full card (the post-battle full card's shape) ──────────────────
+     The compact row's shared line becomes a card: the left stack carries the
+     three identity lines (clan-tagged nick / every composition seal / tier +
+     ship), the right block stacks the compact row's aligned stat line over
+     the LiveShipMeta strip's two ship lines, and the career-seal slot stays
+     reserved at the end so the shared header keeps every column's x. The
+     compact row above is untouched (icon · main · stat columns · seal). */
+  &__crow--full {
+    align-items: flex-start;
   }
 
-  /* The full row's identity stack: the same nick/clan + ship-name lines the
-     compact main block renders, pinned to a 10rem-ish track and allowed to
-     shrink — long names ellipsize inside it (min-width: 0). */
-  &__crow-id {
-    flex: 0 1 10rem;
-    min-width: 0;
+  &__crow--full > &__crow-main {
+    gap: 1px;
+  }
+
+  /* Line 2: every composition seal (the compact row presses only the highest
+     one beside the nick). Tags stay whole — the cluster wraps instead of
+     clipping. */
+  &__crow-tags {
     display: flex;
-    flex-direction: column;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 4px;
+    min-width: 0;
   }
 
-  /* The meta strip is a direct child of the split main block: it fills the
-     remaining middle width and clips inside it (LiveShipMeta's own row /
-     chips / badges carry the overflow rules), so it can never push the
-     aligned stat columns or the seal slot around. */
-  &__crow-main--split > .live-ship-meta {
+  /* Line 3: the tier numeral on the fixed track the post-battle rows use,
+     then the ship name — every card's ship name starts at the same x. */
+  &__crow-shipline {
+    display: flex;
+    align-items: baseline;
+    gap: 0.35em;
+    min-width: 0;
+  }
+
+  &__crow-tier {
+    flex: 0 0 4.2ch;
+    text-align: center;
+    font-family: var(--font-mono);
+    font-style: normal;
+    color: rgb(var(--color-text) / 0.55);
+  }
+
+  /* Right block: the aligned stat line over the ship strip's two lines. The
+     grid tracks are the configured columns' ch widths (inline template, the
+     same rosterColumns specs the header grid uses); the mono container face
+     makes those ch tracks measure the header's own units. */
+  &__crow-side {
+    flex: 0 0 auto;
+    display: grid;
+    align-items: center;
+    column-gap: 8px;
+    row-gap: 2px;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+  }
+
+  /* The ship strip spans the whole aligned column band under the stat line —
+     it gets the full band width instead of a squeezed middle track. */
+  &__crow-side > .live-ship-meta {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    font-family: var(--font-sans, inherit);
+  }
+
+  /* No configured stat columns: the header is the bare team title, so the
+     side block is just the ship strip — let it share the free width instead
+     of reserving a fixed stat band. */
+  &__crow-side--plain {
     flex: 1 1 auto;
     min-width: 0;
+    display: block;
   }
 
   &__crow-name {
@@ -376,7 +421,8 @@
      rule so the yellow face matches the 二级章 size (user feedback: it
      rendered one size larger before). */
   &__crow-name .stamp-tag,
-  &__crow-name .division-tag {
+  &__crow-name .division-tag,
+  &__crow-tags .stamp-tag {
     font-size: 0.78em;
   }
 
@@ -441,6 +487,32 @@
       .live-battle__mode-btn {
         padding-inline: 0.45rem;
       }
+    }
+  }
+
+  /* ── Narrow panel: stacked full cards ────────────────────────────────
+     Each roster column is half the panel, and the full card's fixed pieces
+     (stat band + seal slot ≈ 298px) leave the identity stack under ~160px
+     once the panel drops below ~980px: stack the card — identity full width
+     first, then the aligned stat line (right-aligned on its own tracks, the
+     seal slot beside it) with the ship strip beneath. A container query for
+     the same reason as the head's tier: the budget is THIS panel's width. */
+  @container (max-width: 980px) {
+    &__crow--full {
+      flex-wrap: wrap;
+      align-items: flex-start;
+    }
+
+    &__crow--full > &__crow-main {
+      flex: 1 1 100%;
+    }
+
+    /* Grows into the free width; justify-content: end parks the fixed
+       tracks on the row's right edge, so the cells keep landing on the
+       shared header's columns. */
+    &__crow--full > &__crow-side {
+      flex: 1 1 auto;
+      justify-content: end;
     }
   }
 }

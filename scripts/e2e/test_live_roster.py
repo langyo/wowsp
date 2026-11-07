@@ -3,11 +3,13 @@ their stat cells on the shared column header's tracks.
 
 The user-visible contract this guards: the roster column header is ONE
 template — the configured stats columns' order and spacing — and the compact
-rows and the full rows both use it. The full density may only add the
-ship-meta strip in the middle of each row; it must never move the stat
-columns off their header cells, in either roster, with the career-seal slot
-reserved or dropped. Compact rows are the shipped default for a fresh
-profile; the full density is one persisted pref flip away.
+rows and the full cards both use it. The full card is the post-battle full
+card's shape (three identity lines on the left, a right block stacking the
+aligned stat line over the LiveShipMeta strip's two lines, the career-seal
+slot still reserved at the end) and must never move the stat columns off
+their header cells, in either roster, with the career-seal slot reserved or
+dropped. Compact rows are the shipped default for a fresh profile; the full
+density is one persisted pref flip away.
 
 Runs entirely against the FastAPI mock backend (the session fixture boots
 mock + Vite) — no game client is ever involved (AGENTS.md section 0). The
@@ -60,7 +62,16 @@ MEASURE_JS = r"""
       hvals: [...col.querySelectorAll('.live-battle__col-hval')].map((e) => e.getBoundingClientRect().right),
       rowCells: rows.map((r) => [...r.querySelectorAll('.replay-view__postbattle-cell-stat')].map((e) => e.getBoundingClientRect().right)),
       rowCount: rows.length,
-      splitRows: rows.filter((r) => !!r.querySelector('.live-battle__crow-main--split')).length,
+      fullRows: rows.filter((r) => r.classList.contains('live-battle__crow--full')).length,
+      sides: col.querySelectorAll('.live-battle__crow-side').length,
+      // The full card drops the leading class icon (the ship strip carries
+      // the class glyph) and always renders its tier + ship line.
+      fullRowIcons: rows
+        .filter((r) => r.classList.contains('live-battle__crow--full'))
+        .reduce((n, r) => n + r.querySelectorAll('.live-battle__crow-ico').length, 0),
+      fullRowShiplines: rows.filter(
+        (r) => r.classList.contains('live-battle__crow--full') && !!r.querySelector('.live-battle__crow-shipline'),
+      ).length,
       metas: col.querySelectorAll('.live-ship-meta').length,
       sealSlots: col.querySelectorAll('.live-battle__crow-stampslot').length,
     };
@@ -148,8 +159,8 @@ def test_live_roster_ships_compact_rows_by_default(browser, vite_base_url):
     context, page = _open_live(browser, vite_base_url, prefs=None)
     try:
         metrics = _wait_roster(page)
-        assert all(col["splitRows"] == 0 for col in metrics), (
-            "fresh profile should default to compact rows, got the full-mode split"
+        assert all(col["fullRows"] == 0 for col in metrics), (
+            "fresh profile should default to compact rows, got the full cards"
         )
         assert all(col["metas"] == 0 for col in metrics), (
             "compact rows must not render the full mode's ship-meta strip"
@@ -164,25 +175,38 @@ def test_live_roster_ships_compact_rows_by_default(browser, vite_base_url):
 def test_live_roster_density_aligns_under_the_column_header(
     browser, vite_base_url, compact
 ):
-    """Both densities put every stat cell on its header column; the full mode's
-    only structural addition is the ship-meta strip in the middle of the row."""
+    """Both densities put every stat cell on its header column; the full card
+    adds the three-line identity stack and the right block (stat line over the
+    ship-meta strip) without moving a single column."""
     context, page = _open_live(browser, vite_base_url, prefs=_prefs(liveRosterCompact=compact))
     try:
         metrics = _wait_roster(page)
         label = "compact" if compact else "full"
         if compact:
-            assert all(col["splitRows"] == 0 for col in metrics), (
-                "compact rows must not carry the full-mode split"
+            assert all(col["fullRows"] == 0 for col in metrics), (
+                "compact rows must not carry the full card's identity/data block"
+            )
+            assert all(col["sides"] == 0 for col in metrics), (
+                "compact rows must not render the full card's side block"
             )
             assert all(col["metas"] == 0 for col in metrics), (
                 "compact rows must not render the ship-meta strip"
             )
         else:
-            assert all(col["splitRows"] == col["rowCount"] for col in metrics), (
-                "full rows should all carry the middle meta split"
+            assert all(col["fullRows"] == col["rowCount"] for col in metrics), (
+                "full rows should all carry the full-card class"
+            )
+            assert all(col["sides"] == col["rowCount"] for col in metrics), (
+                "full cards should each render the right-side identity/data block"
+            )
+            assert all(col["fullRowIcons"] == 0 for col in metrics), (
+                "full cards drop the leading class icon (the ship strip carries it)"
+            )
+            assert all(col["fullRowShiplines"] == col["rowCount"] for col in metrics), (
+                "full cards should each render the tier + ship identity line"
             )
             assert all(col["metas"] == col["rowCount"] for col in metrics), (
-                "full rows should each render the ship-meta strip"
+                "full cards should each render the ship-meta strip"
             )
         assert all(col["sealSlots"] == col["rowCount"] for col in metrics), (
             "the career-seal slot should be reserved on every row when seals show"
