@@ -1,22 +1,17 @@
 #!/usr/bin/env python3
-"""Author the battle-HUD ship-class markers as GEOMETRY, not traced pixels.
+"""Author the battle-HUD ship-class markers as flat GEOMETRY.
 
-The faces used to be 27 px WebP bitmaps; the first vectorisation pass traced
-them, which baked the bitmap's pixel stair-steps into the paths (a hull edge
-came out as a run of straight segments, the 'steep slashes' of the
-2026-11-07 review). The markers are simple GEOMETRIC art — a rounded hull,
-a bow wedge and the speed slashes — so there is nothing to trace: this
-script draws them directly with the SVG primitives and emits the whole
-37-file variant set the app imports.
+The faces used to be 27 px WebP bitmaps; tracing them baked pixel
+stair-steps into the paths (2026-11-07 review: the slashes came out as runs
+of straight segments). The markers are simple flat art, so this script draws
+them directly: straight-edged polygons and straight ink lines only — no
+curves, no arcs, no tracing.
 
-Geometry space is the marker's 20 x 11 art box (x right = bow, y down):
-
-  destroyer    a full wedge (vertical stern edge, pointed bow)
-  cruiser      rounded hull + bow wedge + one speed slash
-  battleship   rounded hull + bow wedge + two speed slashes
-  aircarrier   two deck bars + bow wedge
-  submarine    a narrow hull bar + bow wedge
-  auxiliary    a long rounded hull + short bow wedge (no slash)
+Art box: 20 x 11 (x right = bow, y down). The ink OUTLINE is the silhouette;
+the plate is the same silhouette inset, so the rim shows; the speed slashes
+(and the carrier's deck divider) are straight ink lines drawn over the
+plate, which keeps the gaps part of the ink body instead of see-through
+holes (the 'drafty' carrier of 2026-11-07).
 
 Variants (37 files, the names shipIcons.ts imports):
 
@@ -39,7 +34,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_DIR = REPO_ROOT / 'packages' / 'webui' / 'src' / 'res' / 'images' / 'ships'
 
-W, H = 20.0, 11.0  # the marker art box (the game canvas' silhouette bounds)
+W, H = 20.0, 11.0  # the marker art box
+RIM = 0.9          # ink rim width (silhouette minus plate)
+SLASH_W = 1.1      # speed-slash / divider line width
+EDGE = 0.5         # silhouette inset from the art box
 
 # ── palettes (sampled from the original markers) ──
 ALLY = ('#50e8b0', '#0b1f16')
@@ -49,91 +47,95 @@ SUNK_INK = ('#000000', '#ffffff')
 OUTLINE_INK = '#ffffff'
 
 
-def rrect(x, y, w, h, r):
-    'Rounded-rect subpath (clockwise).'
-    right, bottom = x + w, y + h
-    return (
-        f'M{x + r:.2f} {y:.2f}H{right - r:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {right:.2f} {y + r:.2f}'
-        f'V{bottom - r:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {right - r:.2f} {bottom:.2f}'
-        f'H{x + r:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {x:.2f} {bottom - r:.2f}'
-        f'V{y + r:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {x + r:.2f} {y:.2f}Z'
-    )
+def rect(x0, y0, x1, y1):
+    return f'M{x0} {y0}H{x1}V{y1}H{x0}Z'
 
 
-def hull(x, y, w, h, r):
-    'Hull body: rounded STERN corners, square bow-side edge (the bow wedge\'s'
-    '    base is flush against it).'
-    '    '
-    right, bottom = x + w, y + h
-    return (
-        f'M{x + r:.2f} {y:.2f}H{right:.2f}V{bottom:.2f}H{x + r:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {x:.2f} {bottom - r:.2f}'
-        f'V{y + r:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {x + r:.2f} {y:.2f}Z'
-    )
+def tri(x0, y0, tipx, tipy, x1, y1):
+    return f'M{x0} {y0}L{tipx} {tipy}L{x1} {y1}Z'
 
 
-def stern_wedge(stern_x, tip_x, y0=0.0, y1=H, r=1.2):
-    'Wedge with a vertical rounded-stern edge and a pointed bow.'
-    mid = (y0 + y1) / 2
-    return (
-        f'M{stern_x + r:.2f} {y0:.2f}'
-        f'L{tip_x:.2f} {mid:.2f}'
-        f'L{stern_x + r:.2f} {y1:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {stern_x:.2f} {y1 - r:.2f}'
-        f'V{y0 + r:.2f}'
-        f'A{r:.2f} {r:.2f} 0 0 1 {stern_x + r:.2f} {y0:.2f}Z'
-    )
+def line(x0, y0, x1, y1):
+    return f'M{x0} {y0}L{x1} {y1}'
 
 
-def wedge(base_x, tip_x, y0=0.0, y1=H):
-    'Bow wedge: a triangle from the hull edge to the bow tip (mid-height).'
-    return (
-        f'M{base_x:.2f} {y0:.2f}L{tip_x:.2f} {(y0 + y1) / 2:.2f}L{base_x:.2f} {y1:.2f}Z'
-    )
+def hull_rect(right):
+    return (EDGE, EDGE, right, H - EDGE)
+
+
+def hull_plate(right):
+    return (EDGE + RIM, EDGE + RIM, right, H - EDGE - RIM)
+
+
+def bow_outer(x):
+    return tri(x, EDGE, W - EDGE, H / 2, x, H - EDGE)
+
+
+def bow_plate(x, plate_right):
+    return tri(x, EDGE + RIM, plate_right, H / 2, x, H - EDGE - RIM)
+
+
+# ── per-class geometry ──
+# Every shape is flat: hull rectangles, bow triangles, straight lines.
 
 
 def destroyer():
-    # One wedge for the whole hull: vertical stern edge, pointed bow.
-    return {'outer': stern_wedge(0.0, W, 0.0, H), 'plate': stern_wedge(0.9, W - 1.1, 0.9, H - 0.9), 'slashes': []}
+    # A full flat wedge: vertical stern edge, pointed bow.
+    return dict(
+        outer=f'M{EDGE} {EDGE}L{W - EDGE} {H / 2}L{EDGE} {H - EDGE}Z',
+        plate=f'M{EDGE + RIM} {EDGE + RIM}L{W - EDGE - RIM} {H / 2}L{EDGE + RIM} {H - EDGE - RIM}Z',
+        lines=[],
+    )
+
+
+def hull_bow(hull_right, plate_right, lines_):
+    # Hull + bow as ONE flat silhouette; the plate is the inset union, and
+    # the ink shows around it and through the slash lines.
+    x0, y0, x1, y1 = hull_rect(hull_right)
+    px0, py0, px1, py1 = hull_plate(hull_right)
+    outer = rect(x0, y0, x1, y1) + bow_outer(hull_right)
+    plate = rect(px0, py0, px1, py1) + bow_plate(hull_right, plate_right)
+    return dict(outer=outer, plate=plate, lines=lines_)
 
 
 def cruiser():
-    outer = hull(0, 0, 12.2, H, 2.2) + wedge(12.2, W)
-    plate = hull(0.9, 0.9, 11.3, H - 1.8, 1.5) + wedge(11.3, W - 1.1, 0.9, H - 0.9)
-    return {'outer': outer, 'plate': plate, 'slashes': [((10.6, 0.8), (6.2, 10.2))]}
+    return hull_bow(12.4, W - 1.4, [line(10.9, EDGE + 0.2, 7.9, H - EDGE - 0.2)])
 
 
 def battleship():
-    outer = hull(0, 0, 12.2, H, 2.2) + wedge(12.2, W)
-    plate = hull(0.9, 0.9, 11.3, H - 1.8, 1.5) + wedge(11.3, W - 1.1, 0.9, H - 0.9)
-    return {
-        'outer': outer,
-        'plate': plate,
-        'slashes': [((9.4, 0.8), (5.0, 10.2)), ((12.6, 0.8), (8.2, 10.2))],
-    }
+    return hull_bow(
+        12.4,
+        W - 1.4,
+        [
+            line(9.2, EDGE + 0.2, 6.2, H - EDGE - 0.2),
+            line(11.6, EDGE + 0.2, 8.6, H - EDGE - 0.2),
+        ],
+    )
 
 
 def aircarrier():
-    outer = rrect(0, 0, 12.2, 4.5, 1.6) + rrect(0, 6.5, 12.2, 4.5, 1.6) + wedge(12.2, W)
-    plate = rrect(0.9, 0.9, 11.3, 2.9, 1.2) + rrect(0.9, 7.1, 11.3, 2.9, 1.2) + wedge(11.3, W - 1.1, 0.9, H - 0.9)
-    return {'outer': outer, 'plate': plate, 'slashes': []}
+    # ONE deck block with a horizontal divider line: two bars left a
+    # see-through seam down the middle (2026-11-07 review).
+    return hull_bow(
+        12.4,
+        W - 1.4,
+        [line(EDGE + 0.2, H / 2, 12.0, H / 2)],
+    )
 
 
 def submarine():
-    outer = rrect(0, 0, 3.1, H, 1.4) + stern_wedge(5.0, W)
-    plate = rrect(0.8, 0.8, 1.9, H - 1.6, 0.9) + stern_wedge(5.9, W - 1.1, 0.9, H - 0.9)
-    return {'outer': outer, 'plate': plate, 'slashes': []}
+    # A hull BAR, then ink, then the bow wedge: the bar's plate and the bow's
+    # plate are separate islands inside ONE silhouette.
+    x0, y0, x1, y1 = EDGE, EDGE, 5.6, H - EDGE
+    outer = rect(x0, y0, x1, y1) + bow_outer(x1)
+    plate = rect(EDGE + RIM, EDGE + RIM, 3.4, H - EDGE - RIM) + bow_plate(
+        6.2, W - 1.4
+    )
+    return dict(outer=outer, plate=plate, lines=[])
 
 
 def auxiliary():
-    outer = hull(0, 0, 15.0, H, 2.2) + wedge(15.0, W)
-    plate = hull(0.9, 0.9, 13.9, H - 1.8, 1.5) + wedge(14.1, W - 1.1, 0.9, H - 0.9)
-    return {'outer': outer, 'plate': plate, 'slashes': []}
+    return hull_bow(14.8, W - 1.4, [])
 
 
 SHAPES = {
@@ -146,59 +148,50 @@ SHAPES = {
 }
 
 
-def svg(body: str, width: float = W, height: float = H) -> str:
+def svg(body, width=W, height=H):
     return (
-        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width:.2f}" height="{height:.2f}" '
-        f'viewBox="0 0 {width:.2f} {height:.2f}">{body}</svg>'
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">{body}</svg>'
     )
 
 
-def slash_d(slashes) -> str:
-    return ''.join(f'M{a[0]:.2f} {a[1]:.2f}L{b[0]:.2f} {b[1]:.2f}' for a, b in slashes)
-
-
-def write_plain(shape: dict) -> str:
-    # The mask face: ONE solid silhouette (no rim/slash detail — the mask
-    # only reads alpha, and the game's plain marker is a solid plate).
+def write_plain(shape):
+    # The mask face: ONE solid silhouette (the mask only reads the alpha).
     return svg(f'<path d="{shape["outer"]}" fill="#fff"/>')
 
 
-def write_two_ink(shape: dict, plate_color: str, ink: str) -> str:
+def write_two_ink(shape, plate_color, ink):
     body = f'<path d="{shape["outer"]}" fill="{ink}"/>'
     body += f'<path d="{shape["plate"]}" fill="{plate_color}"/>'
-    if shape['slashes']:
+    for d in shape['lines']:
         body += (
-            f'<path d="{slash_d(shape["slashes"])}" fill="none" stroke="{ink}" '
-            'stroke-width="1.1" stroke-linecap="round"/>'
+            f'<path d="{d}" fill="none" stroke="{ink}" '
+            f'stroke-width="{SLASH_W}" stroke-linecap="butt"/>'
         )
     return svg(body)
 
 
-def write_outline(shape: dict) -> str:
-    # White ink, no plate: the hint cards press this face.
+def write_outline(shape):
     body = (
         f'<path d="{shape["outer"]}" fill="none" stroke="{OUTLINE_INK}" '
-        'stroke-width="1.1" stroke-linejoin="round"/>'
+        f'stroke-width="{SLASH_W}"/>'
     )
-    if shape['slashes']:
+    for d in shape['lines']:
         body += (
-            f'<path d="{slash_d(shape["slashes"])}" fill="none" stroke="{OUTLINE_INK}" '
-            'stroke-width="1.1" stroke-linecap="round"/>'
+            f'<path d="{d}" fill="none" stroke="{OUTLINE_INK}" '
+            f'stroke-width="{SLASH_W}"/>'
         )
     return svg(body)
 
 
-def write_sunk(shape: dict) -> str:
-    # A sunk hull: translucent black fill under a faint white rim.
-    body = (
+def write_sunk(shape):
+    return svg(
         f'<path d="{shape["outer"]}" fill="{SUNK_INK[0]}" fill-opacity="0.55" '
-        f'stroke="{SUNK_INK[1]}" stroke-opacity="0.3" stroke-width="1.0" '
-        'stroke-linejoin="round"/>'
+        f'stroke="{SUNK_INK[1]}" stroke-opacity="0.3" stroke-width="1.0"/>'
     )
-    return svg(body)
 
 
-def main() -> int:
+def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     written = 0
     for cls, factory in SHAPES.items():
@@ -212,15 +205,16 @@ def main() -> int:
             f'icon_sunk_enemy_{cls}.svg': write_sunk(shape),
             f'icon_outline_{cls}.svg': write_outline(shape),
         }
-        # The plain family has no auxiliary face (the app only imports the
-        # coloured auxiliaries); the sunk family has no auxiliary either.
         if cls == 'auxiliary':
             # The auxiliary only has the two team faces in shipIcons.ts.
-            files.pop(f'icon_{cls}.svg')
-            files.pop(f'icon_sunk_{cls}.svg')
-            files.pop(f'icon_sunk_enemy_{cls}.svg')
-            files.pop(f'icon_white_{cls}.svg')
-            files.pop(f'icon_outline_{cls}.svg')
+            for name in (
+                f'icon_{cls}.svg',
+                f'icon_sunk_{cls}.svg',
+                f'icon_sunk_enemy_{cls}.svg',
+                f'icon_white_{cls}.svg',
+                f'icon_outline_{cls}.svg',
+            ):
+                files.pop(name)
         for name, body in files.items():
             (OUT_DIR / name).write_text(body, encoding='utf-8')
             written += 1
