@@ -1,9 +1,10 @@
 /**
  * ReportTimeline tests — the editor timeline's pure geometry (time mapping,
  * ruler, keyframe hit-testing, callout lane packing) and its interaction
- * contract: keyframes open the situation card on hover/focus, clicks pin and
- * unpin it, the axis reports the position under the cursor, and capture mode
- * swaps all of that for the static annotation band.
+ * contract: keyframes open the situation card on hover/focus, clicking one
+ * jumps straight to its moment (no pinned card, no in-card button), the axis
+ * reports the position under the cursor, and capture mode swaps all of that
+ * for the static annotation band.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
@@ -205,43 +206,41 @@ describe("ReportTimeline interaction", () => {
     expect(w.find(".srp-tl__hint").exists()).toBe(true);
   });
 
-  it("pins the situation card on click and unpins on a second click", async () => {
+  it("floats the situation card on focus with no in-card action", async () => {
     const w = mountTimeline();
-    const markers = w.findAll(".srp-tl__kf");
-    await markers[0].trigger("click");
+    const marker = w.findAll(".srp-tl__kf")[0];
+    await marker.trigger("focus");
     await nextTick();
     expect(w.find(".srp-tl__tip").exists()).toBe(true);
     expect(w.find(".srp-tl__tip").text()).toContain("#1");
     expect(w.find(".srp-tl__tip").text()).toContain("01:40");
-
-    await markers[0].trigger("click");
-    await nextTick();
-    expect(w.find(".srp-tl__tip").exists()).toBe(false);
-
-    await markers[1].trigger("click");
-    await nextTick();
-    expect(w.find(".srp-tl__tip").text()).toContain("#2");
-  });
-
-  it("dismisses a pinned card with Escape", async () => {
-    const w = mountTimeline();
-    await w.findAll(".srp-tl__kf")[0].trigger("click");
-    await nextTick();
-    expect(w.find(".srp-tl__tip").exists()).toBe(true);
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    // Read-only card: the old Jump/Close buttons vanished while the pointer
+    // travelled to them (2026-11-07 report); the jump lives on the keyframe
+    // button itself now.
+    expect(w.find(".srp-tl__tip button").exists()).toBe(false);
+    await marker.trigger("blur");
     await nextTick();
     expect(w.find(".srp-tl__tip").exists()).toBe(false);
   });
 
-  it("seeks through the pinned card's jump action", async () => {
+  it("jumps straight from a clicked keyframe — no pinned step", async () => {
     const onSeek = vi.fn();
     const w = mountTimeline({ onSeek });
     await w.findAll(".srp-tl__kf")[1].trigger("click");
-    await nextTick();
-    const jump = w.find(".srp-tl__tip-actions button");
-    expect(jump.exists()).toBe(true);
-    await jump.trigger("click");
     expect(onSeek).toHaveBeenCalledWith(250);
+    // A click is the jump, not a pin: no card stays on screen (the host
+    // closes the whole report window and lands the replay).
+    expect(w.find(".srp-tl__tip").exists()).toBe(false);
+    expect(w.find(".srp-tl__tip-actions").exists()).toBe(false);
+  });
+
+  it("jumps from the keyboard-activated keyframe too", async () => {
+    const onSeek = vi.fn();
+    const w = mountTimeline({ onSeek });
+    const marker = w.findAll(".srp-tl__kf")[2];
+    await marker.trigger("focus");
+    await marker.trigger("click");
+    expect(onSeek).toHaveBeenCalledWith(500);
   });
 
   it("reports the position under the cursor", async () => {
@@ -337,13 +336,13 @@ describe("ReportTimeline interaction", () => {
     ]);
   });
 
-  it("drops a pinned card when capture mode starts", async () => {
+  it("drops the hover card when capture mode starts", async () => {
     const w = mountTimeline();
-    await w.findAll(".srp-tl__kf")[0].trigger("click");
+    await w.findAll(".srp-tl__kf")[0].trigger("focus");
     await nextTick();
     expect(w.find(".srp-tl__tip").exists()).toBe(true);
-    // Keyboard-activated copy fires no pointerdown, so capture entry itself
-    // must clear the interaction surface.
+    // Keyboard focus fires no pointerleave, so capture entry itself must
+    // clear the interaction surface.
     await w.setProps({ capturing: true });
     await nextTick();
     expect(w.find(".srp-tl__tip").exists()).toBe(false);
@@ -522,14 +521,17 @@ describe("ReportTimeline interaction", () => {
   });
 
   it("renders the static annotation band in capture mode only", async () => {
-    const w = mountTimeline({ capturing: true });
+    const onSeek = vi.fn();
+    const w = mountTimeline({ capturing: true, onSeek });
     await flushPromises();
     expect(w.findAll(".srp-tl__callout")).toHaveLength(3);
     expect(w.findAll(".srp-tl__leader")).toHaveLength(3);
     expect(w.find(".srp-tl__hint").exists()).toBe(false);
-    // No interaction surface is mounted into the static frame.
+    // No interaction surface is mounted into the static frame: a keyframe
+    // click cannot seek or float a card while capturing.
     await w.findAll(".srp-tl__kf")[0].trigger("click");
     await nextTick();
+    expect(onSeek).not.toHaveBeenCalled();
     expect(w.find(".srp-tl__tip").exists()).toBe(false);
     // The callouts carry the same detail rows the hover card does.
     expect(w.find(".srp-tl__callout").text()).toContain("#1");

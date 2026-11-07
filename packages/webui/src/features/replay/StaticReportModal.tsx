@@ -35,7 +35,8 @@ import "./StaticReportModal.scss";
  * fetch, stale-response seq guard, out-of-band replay swap watch): open
  * flag, the report (or null while the first fetch runs), the loading and
  * error flags. Events mirror the panel's: `close` (HkModal dismissed),
- * `seek` (moment jump → the host drives the battle map), `pick`
+ * `seek` (keyframe pick → the host closes this window, seeks the battle
+ * map and locks the 3D camera to the analyzed player), `pick`
  * (perspective switch → the host refetches).
  *
  * The report sheet itself stays dark inside the themed chrome on purpose —

@@ -250,6 +250,17 @@ describe("StaticReportPanel wiring", () => {
     expect(wrapper.findAll(".srp-tl__kf")).toHaveLength(3);
   });
 
+  it("forwards a timeline keyframe click to the host seek", async () => {
+    const onSeek = vi.fn();
+    const wrapper = mount(StaticReportPanel, {
+      props: { report: sampleReport(), onPick: () => {}, onSeek },
+    });
+    await wrapper.findAll(".srp-tl__kf")[1].trigger("click");
+    // The panel is a pass-through: the modal/host owns the close + seek +
+    // camera focus, but the chosen battle second must survive the hop.
+    expect(onSeek).toHaveBeenCalledWith(250);
+  });
+
   it("renders the host-resolved identity, provenance and shared footer", () => {
     const wrapper = mount(StaticReportPanel, {
       props: {

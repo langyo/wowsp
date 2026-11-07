@@ -9,10 +9,11 @@
  * keyframe lane, score track — with the annotation band in capture mode),
  * the model footnote and the SHARED WoWSP share footer (shotKit's canvas
  * watermark as a DOM twin, plus the AI notice and model version).
- * `onSeek` jumps the 3D board's playhead from the timeline's keyframe
- * cards, so the same report doubles as an in-app step-through; the picker
- * switches any roster perspective (the Rust side reuses its scoring cache,
- * so a switch is one IPC away).
+ * `onSeek` is the timeline's one-click return to the battle: clicking a
+ * keyframe forwards through the modal to the host, which closes the report,
+ * seeks the 3D board's playhead to that moment and focuses the camera on
+ * the analyzed player. The picker switches any roster perspective (the Rust
+ * side reuses its scoring cache, so a switch is one IPC away).
  *
  * EMBEDDED (always, since 2026-11-03): the column mounts inside
  * StaticReportModal — the replay view's first-class hikari window (the
@@ -100,8 +101,8 @@ export default defineComponent({
   name: "StaticReportPanel",
   props: {
     report: { type: Object as PropType<StaticReport>, required: true },
-    /** Battle-time seek (the 3D board playhead); optional — the modal
-     * forwards the timeline cards' jump through to its host. */
+    /** Keyframe pick (battle-time seek + camera focus); optional — the
+     * modal forwards the timeline's jump through to its host. */
     onSeek: { type: Function as PropType<(t: number) => void>, default: null },
     /** Perspective switch (refetch from the Rust cache). */
     onPick: { type: Function as PropType<(entityId: number) => void>, required: true },

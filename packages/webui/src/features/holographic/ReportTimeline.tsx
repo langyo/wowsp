@@ -4,11 +4,15 @@
  * Replaces the old wall of key-moment CARDS: battle time is a horizontal
  * ruler, every key moment is a keyframe diamond on the lane, and the detail
  * lives behind the interaction. Hovering (or keyboard-focusing) a keyframe
- * floats its full situation card; clicking pins it (touch included) and the
- * card carries the jump action that seeks the 3D board to the moment. The
- * axis itself reports the position under the cursor — battle time, instant
- * score, whether the player was unresolvable there, and the nearest
- * keyframe — so "what happened around here" is one hover away.
+ * floats its full situation card; CLICKING the keyframe is the jump itself —
+ * the host leaves the report, seeks the replay to that moment and locks the
+ * 3D chase camera to the analyzed player. The card used to carry the Jump
+ * button, but it unmounted as soon as the pointer left the 12 px marker
+ * slop, so the button was unreachable (2026-11-07 report); the keyframe
+ * itself is the whole target now. The axis reports the position under the
+ * cursor — battle time, instant score, whether the player was unresolvable
+ * there, and the nearest keyframe — so "what happened around here" is one
+ * hover away.
  *
  * The long image has no pointer: `capturing` swaps the interaction for a
  * static annotation band — each keyframe pulls a leader line down to a
@@ -38,8 +42,6 @@ import {
   watch,
   type PropType,
 } from "vue";
-import { HkButton } from "@celestia-island/hikari";
-import { Camera } from "@lucide/vue";
 
 import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
@@ -96,7 +98,7 @@ const CALLOUT_GAP_PX = 10;
 const LEADER_TOP_PX = TRACK_HEIGHT_PX + 40;
 /** Pointer slop for "hovering a keyframe" (its click target is 28 px). */
 const MARKER_HIT_PX = 12;
-/** Floating card width (hover/pinned) and the edge gutter it keeps. */
+/** Floating hover card width and the edge gutter it keeps. */
 const TIP_WIDTH_PX = 300;
 const READOUT_WIDTH_PX = 268;
 /** Ruler steps (battle seconds): the smallest step that keeps the label
@@ -330,8 +332,9 @@ export default defineComponent({
     report: { type: Object as PropType<StaticReport>, required: true },
     /** Export mode: render the annotation band, drop every hover surface. */
     capturing: { type: Boolean, default: false },
-    /** Battle-time seek (the 3D board playhead); the tooltip's jump action
-     *  and the host's own prop both ride it. */
+    /** Keyframe pick: the host leaves the report and lands the replay on
+     *  this battle second (playhead seek + 3D camera focus). The timeline
+     *  stays host-agnostic — it only reports the chosen moment. */
     onSeek: { type: Function as PropType<(t: number) => void>, default: null },
   },
   setup(props) {
@@ -400,9 +403,8 @@ export default defineComponent({
         }));
     });
 
-    // ── interaction: hover card, pinned card, axis readout ──
+    // ── interaction: hover card, axis readout, keyframe jump ──
     const hoverIndex = ref<number | null>(null);
-    const pinnedIndex = ref<number | null>(null);
     const readout = ref<{
       xPct: number;
       tSec: number;
@@ -412,10 +414,10 @@ export default defineComponent({
       inGap: boolean;
       nearest: number | null;
     } | null>(null);
-    /** The card on screen: a pin outranks the transient hover. */
-    const activeIndex = computed(() => pinnedIndex.value ?? hoverIndex.value);
+    /** The card on screen: hover/focus only — there is no pinned state any
+     *  more, because a click is the jump itself (see onMarkerClick). */
     const activeMoment = computed(() => {
-      const index = activeIndex.value;
+      const index = hoverIndex.value;
       return index == null ? null : (moments.value[index] ?? null);
     });
 
@@ -457,55 +459,28 @@ export default defineComponent({
       readout.value = null;
     }
 
-    /** Entering capture mode drops every interaction surface: a card pinned
-     *  by keyboard (no pointerdown to unpin it) must never be cloned into
-     *  the long image. */
+    /** Entering capture mode drops every interaction surface: a card left
+     *  up by keyboard focus must never be cloned into the long image. */
     watch(
       () => props.capturing,
       (capturing) => {
         if (capturing) {
           hoverIndex.value = null;
-          pinnedIndex.value = null;
           readout.value = null;
         }
       },
     );
 
+    /** A keyframe click IS the jump: no pinned state and no in-card button.
+     *  The host (the report window) closes itself, seeks the replay to the
+     *  moment and focuses the analyzed player. The old Jump button was
+     *  unreachable because the card unmounted while the pointer travelled
+     *  to it (2026-11-07 report), so the keyframe is the whole target. */
     function onMarkerClick(index: number) {
       if (props.capturing) return;
-      pinnedIndex.value = pinnedIndex.value === index ? null : index;
+      const moment = moments.value[index];
+      if (moment) props.onSeek?.(moment.t);
     }
-
-    /** Clicking anywhere else (or Escape) dismisses a pinned card. */
-    function onDocumentPointerDown(event: PointerEvent) {
-      if (pinnedIndex.value == null) return;
-      const target = event.target;
-      if (
-        target instanceof Element &&
-        target.closest(".srp-tl__kf, .srp-tl__tip")
-      ) {
-        return;
-      }
-      pinnedIndex.value = null;
-    }
-    /** Escape dismisses the pinned card and only the card: the listener
-     *  runs in the CAPTURE phase and swallows the key, so the hosting
-     *  HkModal's own Escape (close the window) never sees it while a card
-     *  is pinned. */
-    function onDocumentKeydown(event: KeyboardEvent) {
-      if (event.key === "Escape" && pinnedIndex.value != null) {
-        event.stopPropagation();
-        pinnedIndex.value = null;
-      }
-    }
-    onMounted(() => {
-      document.addEventListener("pointerdown", onDocumentPointerDown, true);
-      document.addEventListener("keydown", onDocumentKeydown, true);
-    });
-    onBeforeUnmount(() => {
-      document.removeEventListener("pointerdown", onDocumentPointerDown, true);
-      document.removeEventListener("keydown", onDocumentKeydown, true);
-    });
 
     /** Floating card horizontal placement: centred on the keyframe, clamped
      *  inside the plot so it never leaves the sheet. */
@@ -737,16 +712,13 @@ export default defineComponent({
                   type="button"
                   class={[
                     "srp-tl__kf",
-                    activeIndex.value === index ? "srp-tl__kf--active" : "",
-                    pinnedIndex.value === index ? "srp-tl__kf--pinned" : "",
+                    hoverIndex.value === index ? "srp-tl__kf--active" : "",
                   ]}
                   style={{ left: frac(moment.t) + "%" }}
-                  aria-label={t("replay.report.momentAria", {
+                  aria-label={t("replay.report.jumpMomentAria", {
                     n: index + 1,
                     t: formatClock(moment.t),
                   })}
-                  aria-haspopup="dialog"
-                  aria-expanded={pinnedIndex.value === index}
                   onClick={() => onMarkerClick(index)}
                   onFocus={() => {
                     if (!props.capturing) hoverIndex.value = index;
@@ -832,39 +804,15 @@ export default defineComponent({
                   style={tipStyle.value}
                   role="dialog"
                   aria-label={t("replay.report.momentAria", {
-                    n: (activeIndex.value ?? 0) + 1,
+                    n: (hoverIndex.value ?? 0) + 1,
                     t: formatClock(activeMoment.value.t),
                   })}
                 >
                   <MomentHead
                     moment={activeMoment.value}
-                    index={activeIndex.value ?? 0}
+                    index={hoverIndex.value ?? 0}
                   />
                   <MomentRows moment={activeMoment.value} />
-                  <div class="srp-tl__tip-actions">
-                    {props.onSeek ? (
-                      <HkButton
-                        variant="secondary"
-                        size="xs"
-                        aria-label={t("replay.report.seekHint")}
-                        onClick={() => props.onSeek?.(activeMoment.value!.t)}
-                      >
-                        <Camera size={12} />
-                        <span>{t("replay.report.seek")}</span>
-                      </HkButton>
-                    ) : null}
-                    {pinnedIndex.value != null ? (
-                      <button
-                        type="button"
-                        class="srp-tl__tip-close"
-                        onClick={() => {
-                          pinnedIndex.value = null;
-                        }}
-                      >
-                        {t("replay.report.close")}
-                      </button>
-                    ) : null}
-                  </div>
                 </div>
               ) : null}
             </div>

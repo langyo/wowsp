@@ -2,9 +2,11 @@
  * Contract tests for StaticReportModal — the AI 战报's first-class window
  * (2026-11-03 extraction): HkModal owns the chrome; the host's data layer
  * (open/report/loading/error) flows in as props and close/seek/pick flow
- * back out. The panel child is stubbed — its formatters carry their own
- * suite; this pins the WINDOW wiring, the header COPY action's trip through
- * the shared copy-shot kit (features/share/useShareImage) included.
+ * back out (seek is a keyframe pick: the host closes this window, seeks the
+ * replay and focuses the analyzed player). The panel child is stubbed — its
+ * formatters carry their own suite; this pins the WINDOW wiring, the header
+ * COPY action's trip through the shared copy-shot kit
+ * (features/share/useShareImage) included.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
