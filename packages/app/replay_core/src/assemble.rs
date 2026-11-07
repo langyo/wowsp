@@ -527,6 +527,17 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         shield_state_events,
         shield_markers,
         gun_overheats,
+        // E27 squadron-state streams: served by their own command
+        // (`read_replay_squadron_states`) straight off `DecodedReplay` —
+        // `ReplayStream` stays construct-literally frozen.
+        squadron_health: _,
+        squadron_planes_health: _,
+        squadron_damage: _,
+        squadron_throttle: _,
+        squadron_consumables: _,
+        plane_deaths: _,
+        squadron_notifies: _,
+        squadron_deactivations: _,
     } = decoded;
     // The recorder's team slot comes from its own arena entry.
     let self_team = arena_players.iter().find(|p| p.is_self).map(|p| p.team_id);
@@ -776,6 +787,14 @@ mod tests {
             shield_state_events: Vec::new(),
             shield_markers: Vec::new(),
             gun_overheats: Vec::new(),
+            squadron_health: Vec::new(),
+            squadron_planes_health: Vec::new(),
+            squadron_damage: Vec::new(),
+            squadron_throttle: Vec::new(),
+            squadron_consumables: Vec::new(),
+            plane_deaths: Vec::new(),
+            squadron_notifies: Vec::new(),
+            squadron_deactivations: Vec::new(),
         }
     }
 

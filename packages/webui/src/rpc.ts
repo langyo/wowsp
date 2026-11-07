@@ -328,6 +328,9 @@ export const RPC = {
   decision_tick_state: "decision_tick_state",
   replay_visibility_probe: "replay_visibility_probe",
   read_replay_smoke_screens: "read_replay_smoke_screens",
+  // E27 squadron-state streams — the plane-follow card's HP/boost/
+  // consumable/death timelines.
+  read_replay_squadron_states: "read_replay_squadron_states",
   // ── Player markers (玩家标记) — commands/markers/: the LOCAL, user-
   //    built colored marker list (red / yellow / purple). No login, no
   //    sync, no upload. ──

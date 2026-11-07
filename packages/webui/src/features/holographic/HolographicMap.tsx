@@ -65,7 +65,14 @@ import {
 } from "./cameraModes";
 import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
 import { planeTrailExpiry } from "./planeFormation";
-import { squadronAttacking, squadronSamplesAt, squadronStrength } from "./planeFollow";
+import {
+  planeCardExtras,
+  squadronAttacking,
+  squadronSamplesAt,
+  squadronStrength,
+} from "./planeFollow";
+import { loadSquadronStates } from "./squadronStatesLoader";
+import type { SquadronStateEvents } from "@/api";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
 import { activeWards, planeSmoothPosAt, torpedoPosAt } from "./minimapFx";
@@ -1424,6 +1431,23 @@ export default defineComponent({
       return planeId == null ? id : PLANE_CARD_LABEL_ID_BASE + id;
     });
     // ── Plane-follow pill card (HoloPlaneFollowCard, bottom-left) ──────
+    /** E27 squadron-state streams (HP fractions / throttle boosts /
+     *  consumable windows) for THIS replay, fetched once per path — the
+     *  decoder side-command read_replay_squadron_states. Null until the
+     *  load settles and permanently null on streams-less replays; the card
+     *  then simply keeps its pre-E27 look (hp/boost/consumables hidden). */
+    const squadronStates = ref<SquadronStateEvents | null>(null);
+    watch(
+      () => props.replayPath,
+      async (path) => {
+        if (!path) {
+          squadronStates.value = null;
+          return;
+        }
+        squadronStates.value = await loadSquadronStates(path);
+      },
+      { immediate: true },
+    );
     /** Snapshot of the chased carrier's air state for the pill card; null
      *  whenever follow mode is not on a carrier AIRCRAFT (the parent then
      *  hides the card). Derived from the same trail tables followSelected
@@ -1480,6 +1504,13 @@ export default defineComponent({
           total: strength.total,
           attacking: squadronAttacking(squadronSamplesAt(ctx.planeTrails, planeId, t)),
           airborne: true,
+          // E27 live readouts off the decoded state streams: total-HP
+          // fraction, engine-boost flag, open consumable windows. Absent
+          // streams (older replay / load failure) leave them undefined and
+          // the card degrades to the strength-only look.
+          ...(squadronStates.value
+            ? planeCardExtras(squadronStates.value, planeId, t)
+            : {}),
         };
       },
       { immediate: true },

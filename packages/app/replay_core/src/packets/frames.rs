@@ -87,6 +87,16 @@ pub(super) fn walk_frames(
     let mut shield_damage_events: Vec<wowsp_tauri_shared::ShieldDamageEvent> = Vec::new();
     let mut shield_markers: Vec<wowsp_tauri_shared::ShieldMarkerEvent> = Vec::new();
     let mut gun_overheats: Vec<wowsp_tauri_shared::GunOverheatEvent> = Vec::new();
+    // E27 squadron-state streams (avatar methods, resolved after the walk
+    // like the other method-gated families below).
+    let mut squadron_health: Vec<wowsp_tauri_shared::SquadronHealthEvent> = Vec::new();
+    let mut squadron_planes_health: Vec<wowsp_tauri_shared::SquadronPlanesHealthEvent> = Vec::new();
+    let mut squadron_damage: Vec<wowsp_tauri_shared::SquadronDamageEvent> = Vec::new();
+    let mut squadron_throttle: Vec<wowsp_tauri_shared::SquadronThrottleEvent> = Vec::new();
+    let mut squadron_consumables: Vec<wowsp_tauri_shared::SquadronConsumableEvent> = Vec::new();
+    let mut plane_deaths: Vec<wowsp_tauri_shared::PlaneDeathEvent> = Vec::new();
+    let mut squadron_notifies: Vec<wowsp_tauri_shared::SquadronNotifyEvent> = Vec::new();
+    let mut squadron_deactivations: Vec<wowsp_tauri_shared::SquadronDeactivateEvent> = Vec::new();
     let mut cur = 0usize;
     while cur + 12 <= inflated.len() {
         let Some(size) = read_bytes(inflated, cur)
@@ -621,6 +631,53 @@ pub(super) fn walk_frames(
             if let Some(event) = decode_shield_damage_info(call.time, &call.args) {
                 shield_damage_events.push(event);
             }
+        } else if m.avatar_receive_squadron_health == Some(call.method_id) {
+            // E27 squadron-state streams (see the decoders in `events`):
+            // every id is Option — an unpinned version leaves the stream
+            // empty instead of decoding garbage.
+            if let Some(e) = decode_squadron_health(call.time, &call.args) {
+                squadron_health.push(e);
+            }
+        } else if m.avatar_receive_squadron_planes_health == Some(call.method_id) {
+            if let Some(e) = decode_squadron_planes_health(call.time, &call.args) {
+                squadron_planes_health.push(e);
+            }
+        } else if m.avatar_receive_squadron_damage == Some(call.method_id) {
+            if let Some(e) = decode_squadron_damage(call.time, &call.args) {
+                squadron_damage.push(e);
+            }
+        } else if m.avatar_receive_change_throttle_mode == Some(call.method_id) {
+            if let Some(e) = decode_squadron_throttle(call.time, &call.args) {
+                squadron_throttle.push(e);
+            }
+        } else if m.avatar_squadron_consumable_used == Some(call.method_id) {
+            if let Some(e) = decode_squadron_consumable(
+                call.time,
+                &call.args,
+                wowsp_tauri_shared::SquadronConsumableKind::Used,
+            ) {
+                squadron_consumables.push(e);
+            }
+        } else if m.avatar_squadron_consumable_stop_working == Some(call.method_id) {
+            if let Some(e) = decode_squadron_consumable(
+                call.time,
+                &call.args,
+                wowsp_tauri_shared::SquadronConsumableKind::StopWorking,
+            ) {
+                squadron_consumables.push(e);
+            }
+        } else if m.avatar_receive_plane_death == Some(call.method_id) {
+            if let Some(e) = decode_plane_death(call.time, &call.args) {
+                plane_deaths.push(e);
+            }
+        } else if m.avatar_receive_squadron_notify == Some(call.method_id) {
+            if let Some(e) = decode_squadron_notify(call.time, &call.args) {
+                squadron_notifies.push(e);
+            }
+        } else if m.avatar_receive_deactivate_squadron == Some(call.method_id) {
+            if let Some(e) = decode_squadron_deactivate(call.time, &call.args) {
+                squadron_deactivations.push(e);
+            }
         }
     }
     // The arena's initial player/bot state: one onArenaStateReceived call on
@@ -813,6 +870,14 @@ pub(super) fn walk_frames(
         shield_state_events,
         shield_markers,
         gun_overheats,
+        squadron_health,
+        squadron_planes_health,
+        squadron_damage,
+        squadron_throttle,
+        squadron_consumables,
+        plane_deaths,
+        squadron_notifies,
+        squadron_deactivations,
     }
 }
 

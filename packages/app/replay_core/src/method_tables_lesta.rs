@@ -42,6 +42,12 @@
 //!   to `i64, i8, BLOB×5, VECTOR3`, which the decoder already tolerates
 //!   (it reads the leading blobs and ignores trailing bytes), but no call
 //!   ever fires inside a recording.
+//!
+//! The E27 squadron-state fields (health / planesHealth / damage / throttle
+//! / consumables / planeDeath / notify / deactivate) are `None` here: no
+//! Lesta exposed-index computation has been run for them yet, so those
+//! streams decode empty on `.korablireplay` containers until the ids are
+//! pinned from a capture.
 
 use super::method_tables::MethodIds;
 
@@ -64,6 +70,17 @@ pub static LESTA_METHOD_IDS: MethodIds = MethodIds {
     avatar_on_chat_message: -1,
     avatar_on_achievement_earned: 160,
     avatar_on_arena_state_received: 156,
+    // E27 squadron-state ids: unpinned on Lesta (see the module docs) — the
+    // Option gate leaves every one of those streams empty.
+    avatar_receive_squadron_health: None,
+    avatar_receive_squadron_planes_health: None,
+    avatar_receive_squadron_damage: None,
+    avatar_receive_change_throttle_mode: None,
+    avatar_squadron_consumable_used: None,
+    avatar_squadron_consumable_stop_working: None,
+    avatar_receive_plane_death: None,
+    avatar_receive_squadron_notify: None,
+    avatar_receive_deactivate_squadron: None,
 };
 
 #[cfg(test)]
@@ -93,5 +110,16 @@ mod tests {
         assert_eq!(t.avatar_on_arena_state_received, 156);
         // Chat is disabled on Lesta (-1 matches no wire id).
         assert_eq!(t.avatar_on_chat_message, -1);
+        // Every E27 squadron-state id stays unpinned on Lesta for now — a
+        // pinned id here without a capture behind it would decode garbage.
+        assert_eq!(t.avatar_receive_squadron_health, None);
+        assert_eq!(t.avatar_receive_squadron_planes_health, None);
+        assert_eq!(t.avatar_receive_squadron_damage, None);
+        assert_eq!(t.avatar_receive_change_throttle_mode, None);
+        assert_eq!(t.avatar_squadron_consumable_used, None);
+        assert_eq!(t.avatar_squadron_consumable_stop_working, None);
+        assert_eq!(t.avatar_receive_plane_death, None);
+        assert_eq!(t.avatar_receive_squadron_notify, None);
+        assert_eq!(t.avatar_receive_deactivate_squadron, None);
     }
 }

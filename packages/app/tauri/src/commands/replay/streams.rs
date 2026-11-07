@@ -301,6 +301,47 @@ pub async fn read_replay_smoke_screens(
     )
 }
 
+/// Sync squadron-state decode (experiment E27) — the plane-follow card's
+/// nine avatar-method streams in one aggregate. Rides the shared decode
+/// prologue (same preamble as `decode_replay_stream_sync`); the streams are
+/// MOVED out of the `DecodedReplay` before grouping would drop them, so this
+/// never re-reads the file. `ReplayStream` itself gains nothing (it is
+/// construct-literally frozen — same rule as the smoke screens).
+fn read_squadron_states_sync(
+    path: &str,
+) -> anyhow::Result<wowsp_tauri_shared::SquadronStateEvents> {
+    let (mut decoded, _roster) = decode_replay_file_decoded(std::path::Path::new(path))?;
+    Ok(wowsp_tauri_shared::SquadronStateEvents {
+        health: std::mem::take(&mut decoded.squadron_health),
+        planes_health: std::mem::take(&mut decoded.squadron_planes_health),
+        damage: std::mem::take(&mut decoded.squadron_damage),
+        throttle: std::mem::take(&mut decoded.squadron_throttle),
+        consumables: std::mem::take(&mut decoded.squadron_consumables),
+        plane_deaths: std::mem::take(&mut decoded.plane_deaths),
+        notifies: std::mem::take(&mut decoded.squadron_notifies),
+        deactivations: std::mem::take(&mut decoded.squadron_deactivations),
+    })
+}
+
+/// The E27 squadron-state streams of one `.wowsreplay`: squadron HP
+/// fraction timeline, raw per-plane HP packings, damage ticks, engine-boost
+/// toggles, consumable lifecycle windows, plane-loss reports (dead formation
+/// slots + attacker), notify enums and deactivation reasons — every stream
+/// keyed by the composite plane id. Versions whose method ids are not pinned
+/// decode to empty vectors. Served separately from
+/// `read_replay_positions` for the same reason as the smoke screens: the
+/// stream's own consumers never need it.
+#[tauri::command]
+pub async fn read_replay_squadron_states(
+    path: String,
+) -> CommandResult<wowsp_tauri_shared::SquadronStateEvents> {
+    Ok(
+        tokio::task::spawn_blocking(move || read_squadron_states_sync(&path))
+            .await
+            .map_err(|e| anyhow!("replay squadron states task failed: {e}"))??,
+    )
+}
+
 /// The running client's in-progress replay container (`temp.wowsreplay` /
 /// `temp.korablireplay`), as surfaced to the live self-stats view. `size` is
 /// the current byte length — the frontend re-decodes only when it grew, so

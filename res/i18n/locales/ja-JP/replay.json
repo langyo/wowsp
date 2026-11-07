@@ -435,7 +435,12 @@
   },
   "planeCard": {
     "attacking": "攻撃中",
-    "followingHull": "航空機なし — 艦体を追従中"
+    "followingHull": "航空機なし — 艦体を追従中",
+    "boost": "ブースト",
+    "cons20": "消耗品 20",
+    "cons21": "消耗品 21",
+    "cons22": "消耗品 22",
+    "consOther": "消耗品"
   },
   "classes": {
     "battleship": "戦艦",

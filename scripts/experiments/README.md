@@ -37,6 +37,16 @@
 | E26 | 鱼雷决策数据集 + 试点（P1） | 从 `TorpedoLaunch` 导出「能否发射 / 专家是否点击」监督，鱼雷点击决策是否可学（预注册 headB AUPRC≥2×base 且 top-decile lift≥1.5×） | ⚠️ | own 86k 行/161 局（canLaunch 55.5%、launched 0.98%）；**headA AUPRC 0.985 可学；headB 0.0109 = 1.12×base、top-lift 1.01× → 预注册 FAIL**（4 s 节奏协议 bug 已修复，E26b 探索性复跑见下） |
 | E26c | 全量语料鱼雷 scale 测试（node3 GPU） | headB 弱是「数据少」还是「特征不行」：全量 2,215 局同协议复跑（scale-only，不改特征） | ⚠️ | 3,111,384 行/2,215 局（canLaunch 1,052,311、launched 17,055 = 1.62%）；**headA 0.998；headB AUPRC 1.91×base（差 2× 线 0.09）、top-decile lift 2.33×（过线）→ MIXED**；AUC 0.675 vs own-only 0.587——scale 显著有效但未完全过线，下一步转 E26d 特征/标签 |
 | E26d | 鱼雷几何/类别特征迭代（torp2，node3 全量） | 从现有行派生 11 维几何+类别特征，能否把 headB 推过 2×base 且 top-decile lift≥1.5× | ✅ | 3,111,384 行/2,215 局，global 27→38；**headB AUPRC 0.03705 = 2.29×base、top-decile lift 2.66×、AUC 0.7084 → 预注册 PASS**；headA 0.99989；E26c core 复跑逐位一致（0.0309248/2.3307） |
+| E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
+
+### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
+
+- **动机**：#1833 合入的飞机跟随卡片缺三样真数据——中队实时血量、引擎加速、消耗品状态（用户点名「飞行重整 / 拉烟」）；updateSquadron 只带位置/朝向/俯仰。
+- **def 权威源**：reference checkout（≤15.7）+ 本地提取 defs159（15.9，CN360 build 13357822）与 defs1510（15.10，Steam build 13533378）经 `exposed_index.py` 复算 exposed id；锚点（updateSquadron/artillery/damageStat/chat）在 14.5 / 15.8 / 15.9 / 15.10 四个版本全部对上出货表 → 九方法 id 三版本钉死（15.8≡15.9：84/94/87/62/149/68/147/61/59；15.10 盾插位 +1：84/95/88/62/150/68/148/61/59）。Lesta 表留 None 待实证。
+- **实证语料**：Steam 安装里的 14.5.0 翔鹤 CV 录像（`replays/14.5.0.0/20250708_192303_PJSA108-Shokaku_37_Ridge`，录制者=CV）——探针 `dump_squadron_state_methods`（corpus 门控）逐字节定布局：squadronHealth 的 float 是 **0..1 总血量分数**；changeThrottleMode 是 **0=巡航/1=加速** 二值（561 次真实调用，覆盖敌我双方中队）；squadronConsumableUsed 线上只有 **1 字节类型 id**（20/21/22，def 写 CONSUMABLE_USAGE_PARAMS 属 def/线分歧）配对 StopWorking=窗口关闭；planeDeath 的 ARRAY 前缀是 **u8 计数**（非 u16/u32）+ u8 理由 + i64 凶手。Avatar 实体门控必要：同数字 id 在车辆实体上承载完全不同的载荷（探针的 len-129/99 噪声）。
+- **逐机油量位域破解**（`sq_planes_health.md`）：u64 = **每机 3 bit 的八进制位域**（1=HP>3/4、2=(1/4,3/4]、4=≤1/4；位数=在飞数，坠机=顶位截断，180/180；0x249 重复纹样=八进制全 1，误导了 nibble/BCD 假设）；伴随 float 分母=**addSquadron 第 18 字节的出击机数**（23/224 局从打空的机库部分出击）——两字节现入 SquadronCreate。815 个同步样本 0 违例，B12 边界被 0.755/0.746 对钉死。
+- **落地**：九解码器 + `read_replay_squadron_states` IPC + 解包助手（`PlaneHealthBand` 族）+ 卡片三态（HP 条/加速徽标/消耗品 chips，`planeCardExtras` 10Hz 派生）。消耗品 id→名称映射待 GameParams 侧研究，chips 暂以「消耗品 N」诚实展示。
+- **语料门控测试的已知边界**：vehicle-build 与 cruise-state 两个**预先存在**的 corpus 测试各自期望特定的参考录像（15.9 配装捕获 / 有持续停车窗口的盘），喂其它录像会各自失败——master 同样失败，非本支回归（CI 无 WOWSP_TEST_REPLAY 时全跳过）。
 - **语料**：King of the Sea XIX 全量公开录像爬取入册（用户授权；四赛区
   618 场 / 1047 局 / 2054 个 `.wowsreplay`，HEAD 实测 3.4GB、magic 全验，
   归档 `replay-archive/kots-xix/<region>/`）——语料 163 → **2217 局**；

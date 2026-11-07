@@ -56,6 +56,11 @@ pub(super) fn decode_gun_overheated(
 /// `position` are decoded; they are byte-identical across every shipped
 /// definition (0.11.6–15.7.0 — later versions append tail fields after
 /// `position`), so the fixed offsets are safe without version gating.
+/// The two count bytes are load-bearing (E27 follow-up): the health
+/// fraction's denominator is numPlanes (byte 18, planes actually LAUNCHED),
+/// not totalNumPlanes (byte 4, the hangar total) — 23/224 squadrons on the
+/// reference capture launch partial from a depleted hangar (6 of 10 →
+/// hp 0.6667 = 4/6 exact).
 pub(super) fn decode_squadron_add(
     time: f32,
     args: &[u8],
@@ -72,6 +77,8 @@ pub(super) fn decode_squadron_add(
         time,
         plane_id,
         params_id,
+        total_num_planes: args[4],
+        num_planes: args[18],
         x,
         y,
         z,
@@ -1085,6 +1092,174 @@ pub(super) fn decode_squadron_update(
         });
     }
     out
+}
+
+// ── E27: squadron-state avatar methods ─────────────────────────────────────
+//
+// Nine avatar EntityMethod streams the plane-follow card consumes (HP /
+// per-plane HP / damage / boost / consumables / deaths / notifies /
+// deactivations). Wire layouts are def-authoritative and were confirmed
+// empirically on the 14.5.0.0 Shokaku reference capture (2025-07-08); every
+// fn gates on the exact arg length so a mis-identified method id decodes
+// nothing rather than plausible-looking garbage (same rule as
+// `decode_gun_overheated`).
+
+/// Decode `receive_squadronHealth` args: `u64 planeId, f32 hpFraction` —
+/// 12 bytes. The float is the squadron's TOTAL HP as a 0..1 fraction (1.0 at
+/// launch, decaying); the absolute value needs the squadron's max HP from
+/// elsewhere. 4,858 avatar-gated calls on the reference capture (4,978
+/// raw — the numeric id also fires on other entity types with differently
+/// shaped payloads, which the avatar dispatch excludes).
+pub(super) fn decode_squadron_health(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::SquadronHealthEvent> {
+    if args.len() != 12 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::SquadronHealthEvent {
+        time,
+        plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
+        hp: f32::from_le_bytes(read_bytes(args, 8)?),
+    })
+}
+
+/// Decode `receive_squadronPlanesHealth` args: `u64 planeId, u64 packed` —
+/// 16 bytes. The u64 is the SOLVED per-plane health-band bitfield (3 bits
+/// per flying plane — see `wowsp_tauri_shared::unpack_squadron_planes_health`
+/// and scripts/experiments/sq_planes_health.md); the decoder keeps the RAW
+/// value so the wire stays lossless.
+pub(super) fn decode_squadron_planes_health(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::SquadronPlanesHealthEvent> {
+    if args.len() != 16 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::SquadronPlanesHealthEvent {
+        time,
+        plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
+        packed: u64::from_le_bytes(read_bytes(args, 8)?),
+    })
+}
+
+/// Decode `receive_squadronDamage` args: `u64 planeId, f32 damage, u8
+/// hitType` — 13 bytes. Hit type 0 on the reference capture; kept raw.
+pub(super) fn decode_squadron_damage(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::SquadronDamageEvent> {
+    if args.len() != 13 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::SquadronDamageEvent {
+        time,
+        plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
+        damage: f32::from_le_bytes(read_bytes(args, 8)?),
+        hit_type: args[12],
+    })
+}
+
+/// Decode `receive_changeThrottleMode` args: `u64 planeId, i8 mode` — 9
+/// bytes. Mode 0 = cruise, 1 = engine boost (561 avatar-gated alternating
+/// calls on the reference capture); values beyond {0,1} are unobserved, so
+/// the raw i8 is kept. This is the BOOST signal for the plane-follow card.
+pub(super) fn decode_squadron_throttle(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::SquadronThrottleEvent> {
+    if args.len() != 9 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::SquadronThrottleEvent {
+        time,
+        plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
+        mode: args[8] as i8,
+    })
+}
+
+/// Decode `squadronConsumableUsed` / `squadronConsumableStopWorking` args:
+/// `u64 planeId, u8 consumableType` — 9 bytes. The def names
+/// CONSUMABLE_USAGE_PARAMS but the 14.5 wire carries ONE byte (divergence
+/// documented at the type); `kind` distinguishes the lifecycle half the
+/// dispatching arm saw.
+pub(super) fn decode_squadron_consumable(
+    time: f32,
+    args: &[u8],
+    kind: wowsp_tauri_shared::SquadronConsumableKind,
+) -> Option<wowsp_tauri_shared::SquadronConsumableEvent> {
+    if args.len() != 9 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::SquadronConsumableEvent {
+        time,
+        plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
+        consumable_type: args[8],
+        kind,
+    })
+}
+
+/// Decode `receive_planeDeath` args: `u64 planeId, ARRAY<u8> deadIndexes,
+/// u8 reason, i64 attackerId`. The ARRAY prefix is a single u8 count
+/// (empirically confirmed — NOT the u16/u32 a naive BigWorld read would
+/// try), then count × u8 formation-slot indexes, the raw reason (1 observed)
+/// and the attacking VEHICLE entity id. One call can report several planes
+/// lost at once (195 calls on the reference capture, len 19 = one dead
+/// index each).
+pub(super) fn decode_plane_death(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::PlaneDeathEvent> {
+    if args.len() < 18 {
+        return None;
+    }
+    let plane_id = u64::from_le_bytes(read_bytes(args, 0)?);
+    let count = args[8] as usize;
+    // planeId(8) + count(1) + indexes(count) + reason(1) + attackerId(8).
+    if args.len() < 18 + count {
+        return None;
+    }
+    Some(wowsp_tauri_shared::PlaneDeathEvent {
+        time,
+        plane_id,
+        dead_indexes: args[9..9 + count].to_vec(),
+        reason: args[9 + count],
+        attacker_id: i64::from_le_bytes(read_bytes(args, 10 + count)?),
+    })
+}
+
+/// Decode `receive_squadronNotify` args: `u64 planeId, i8 notify` — 9
+/// bytes. Notify enum, observed 1/2/4/5 on the reference capture; semantics
+/// unanalysed, kept raw.
+pub(super) fn decode_squadron_notify(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::SquadronNotifyEvent> {
+    if args.len() != 9 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::SquadronNotifyEvent {
+        time,
+        plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
+        notify: args[8] as i8,
+    })
+}
+
+/// Decode `receive_deactivateSquadron` args: `u64 planeId, u8 reason` — 9
+/// bytes. Reason observed 0..5 (the recall/death/out-of-fuel family); kept
+/// raw until every value is named.
+pub(super) fn decode_squadron_deactivate(
+    time: f32,
+    args: &[u8],
+) -> Option<wowsp_tauri_shared::SquadronDeactivateEvent> {
+    if args.len() != 9 {
+        return None;
+    }
+    Some(wowsp_tauri_shared::SquadronDeactivateEvent {
+        time,
+        plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
+        reason: args[8],
+    })
 }
 
 /// Decode `receiveExplosions` args: `u8 count` × {f32×3 position, u32

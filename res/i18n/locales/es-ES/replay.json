@@ -435,7 +435,12 @@
   },
   "planeCard": {
     "attacking": "Atacando",
-    "followingHull": "Sin aeronaves en vuelo — siguiendo el casco"
+    "followingHull": "Sin aeronaves en vuelo — siguiendo el casco",
+    "boost": "Turbo",
+    "cons20": "Consumible 20",
+    "cons21": "Consumible 21",
+    "cons22": "Consumible 22",
+    "consOther": "Consumible"
   },
   "classes": {
     "battleship": "Acorazado",
