@@ -174,7 +174,12 @@ export default defineComponent({
     expose({ capturePng });
 
     return () => (
-      <div class="static-report-panel">
+      <div
+      class={[
+        "static-report-panel",
+        capturing.value ? "static-report-panel--capture" : "",
+      ]}
+    >
         <HkScrollContainer class="static-report-panel__scroll">
           <div ref={exportRootRef} class="static-report-panel__export-root">
             {/* ── head: the selected perspective, scores, coverage ── */}

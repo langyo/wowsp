@@ -363,7 +363,11 @@ export default defineComponent({
         })
         .catch(() => {});
       void accounts.load();
-      gameStatus.start();
+      // The process watch only makes sense inside the desktop shell: a
+      // browser dev preview has no IPC bridge behind the /api shim, so its
+      // 3 s poll would only flood the Vite proxy with ECONNREFUSED
+      // (2026-11-07 report).
+      if (isNative()) gameStatus.start();
       session.start();
       // Crash watchdog mirror (wowsp://game-crash + the retained list);
       // quiet everywhere the backend has no watchdog (browser dev, phone).
