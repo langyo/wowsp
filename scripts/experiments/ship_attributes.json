@@ -6,7 +6,8 @@
   "torpRange": 17571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 2.0
  },
  "3247387984": {
   "vis": 15.76,
@@ -60,7 +61,8 @@
   "torpRange": 5700.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 50.0
  },
  "3248437232": {
   "vis": 15.19,
@@ -78,7 +80,8 @@
   "torpRange": 9999.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 110.0
  },
  "3249485808": {
   "vis": 16.24,
@@ -96,7 +99,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 100.0
  },
  "3256759600": {
   "vis": 7.39,
@@ -105,7 +109,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3256760112": {
   "vis": 8.01,
@@ -114,7 +119,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3256792528": {
   "vis": 15.33,
@@ -132,7 +138,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 71.0
  },
  "3256792848": {
   "vis": 12.76,
@@ -195,7 +202,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 120.0
  },
  "3258890000": {
   "vis": 11.52,
@@ -213,7 +221,8 @@
   "torpRange": 11442.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3309254640": {
   "vis": 15.89,
@@ -231,7 +240,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 104.0
  },
  "3319740208": {
   "vis": 15.56,
@@ -240,7 +250,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 160.0
  },
  "3319740400": {
   "vis": 15.2,
@@ -258,7 +269,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 105.0
  },
  "3321837360": {
   "vis": 15.89,
@@ -276,7 +288,8 @@
   "torpRange": 17142.9,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3330192848": {
   "vis": 16.3,
@@ -294,7 +307,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 147.0
  },
  "3330193360": {
   "vis": 11.351,
@@ -303,7 +317,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3330193392": {
   "vis": 15.04,
@@ -330,7 +345,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 160.0
  },
  "3330226128": {
   "vis": 15.19,
@@ -375,7 +391,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 69.0
  },
  "3331241680": {
   "vis": 10.83,
@@ -384,7 +401,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3331274160": {
   "vis": 14.48,
@@ -411,7 +429,8 @@
   "torpRange": 15700.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 125.0
  },
  "3332290256": {
   "vis": 10.83,
@@ -420,7 +439,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3332323024": {
   "vis": 17.46,
@@ -438,7 +458,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3332323152": {
   "vis": 15.71,
@@ -510,7 +531,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 103.0
  },
  "3340154832": {
   "vis": 6.62,
@@ -519,7 +541,8 @@
   "torpRange": 18571.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 75.0
  },
  "3340154864": {
   "vis": 5.86,
@@ -528,7 +551,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 40.0
  },
  "3340645584": {
   "vis": 7.16,
@@ -537,7 +561,8 @@
   "torpRange": 15700.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 125.0
  },
  "3340645680": {
   "vis": 7.39,
@@ -546,7 +571,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3340645840": {
   "vis": 7.39,
@@ -555,7 +581,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 129.0
  },
  "3340646192": {
   "vis": 7.51,
@@ -564,7 +591,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3340678352": {
   "vis": 13.79,
@@ -573,7 +601,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "3340678608": {
   "vis": 17.46,
@@ -591,7 +620,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3340679120": {
   "vis": 13.62,
@@ -600,7 +630,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3340679152": {
   "vis": 16.06,
@@ -681,7 +712,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 125.0
  },
  "3341727696": {
   "vis": 12.76,
@@ -690,7 +722,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3341727728": {
   "vis": 15.64,
@@ -699,7 +732,8 @@
   "torpRange": 13071.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 109.0
  },
  "3341759696": {
   "vis": 16.7,
@@ -717,7 +751,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 86.0
  },
  "3341759952": {
   "vis": 14.92,
@@ -771,7 +806,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 133.0
  },
  "3342776048": {
   "vis": 14.01,
@@ -780,7 +816,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "3342776112": {
   "vis": 14.49,
@@ -789,7 +826,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3342808816": {
   "vis": 14.49,
@@ -807,7 +845,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 110.0
  },
  "3342808912": {
   "vis": 16.24,
@@ -852,7 +891,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "3344905936": {
   "vis": 15.36,
@@ -870,7 +910,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3352180720": {
   "vis": 7.16,
@@ -879,7 +920,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 170.0
  },
  "3352213296": {
   "vis": 14.67,
@@ -888,7 +930,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3352246256": {
   "vis": 14.1,
@@ -942,7 +985,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 60.0
  },
  "3356374864": {
   "vis": 6.63,
@@ -951,7 +995,8 @@
   "torpRange": 11425.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 87.0
  },
  "3360569040": {
   "vis": 6.9,
@@ -960,7 +1005,8 @@
   "torpRange": 28585.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 131.0
  },
  "3360569328": {
   "vis": 7.32,
@@ -969,7 +1015,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 116.0
  },
  "3360601904": {
   "vis": 15.81,
@@ -978,7 +1025,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 112.0
  },
  "3360602096": {
   "vis": 12.27,
@@ -1023,7 +1071,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 104.0
  },
  "3361650480": {
   "vis": 15.54,
@@ -1032,7 +1081,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3362666192": {
   "vis": 7.53,
@@ -1041,7 +1091,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 157.0
  },
  "3362732016": {
   "vis": 16.41,
@@ -1059,7 +1110,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "3363780304": {
   "vis": 16.76,
@@ -1095,7 +1147,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3434526416": {
   "vis": 7.12,
@@ -1104,7 +1157,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 45.0
  },
  "3435018064": {
   "vis": 8.3,
@@ -1113,7 +1167,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "3435083760": {
   "vis": 17.29,
@@ -1131,7 +1186,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 170.0
  },
  "3436099280": {
   "vis": 12.46,
@@ -1140,7 +1196,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3436099408": {
   "vis": 14.66,
@@ -1167,7 +1224,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3437180368": {
   "vis": 15.3,
@@ -1194,7 +1252,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3437180912": {
   "vis": 15.71,
@@ -1212,7 +1271,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3439605008": {
   "vis": 11.52,
@@ -1230,7 +1290,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 114.0
  },
  "3445503824": {
   "vis": 9.58,
@@ -1239,7 +1300,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "3445503984": {
   "vis": 7.33,
@@ -1248,7 +1310,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 103.0
  },
  "3445536112": {
   "vis": 12.13,
@@ -1257,7 +1320,8 @@
   "torpRange": 19285.7,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3445536208": {
   "vis": 14.17,
@@ -1266,7 +1330,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3445536592": {
   "vis": 16.06,
@@ -1275,7 +1340,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3445536720": {
   "vis": 12.52,
@@ -1284,7 +1350,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3445536752": {
   "vis": 11.52,
@@ -1293,7 +1360,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "3445569264": {
   "vis": 15.19,
@@ -1320,7 +1388,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3447600976": {
   "vis": 8.21,
@@ -1329,7 +1398,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "3447666672": {
   "vis": 15.19,
@@ -1365,7 +1435,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 82.0
  },
  "3499013840": {
   "vis": 12.6,
@@ -1374,7 +1445,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 180.0
  },
  "3509499600": {
   "vis": 12.6,
@@ -1383,7 +1455,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 180.0
  },
  "3511629776": {
   "vis": 14.14,
@@ -1410,7 +1483,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 180.0
  },
  "3519985392": {
   "vis": 15.03,
@@ -1419,7 +1493,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "3520017872": {
   "vis": 16.2,
@@ -1437,7 +1512,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "3522082512": {
   "vis": 12.76,
@@ -1446,7 +1522,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3522115536": {
   "vis": 13.37,
@@ -1464,7 +1541,8 @@
   "torpRange": 23571.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 125.0
  },
  "3529422608": {
   "vis": 12.42,
@@ -1491,7 +1569,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 120.0
  },
  "3529455600": {
   "vis": 15.89,
@@ -1509,7 +1588,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "3530470608": {
   "vis": 12.83,
@@ -1518,7 +1598,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 128.0
  },
  "3530470832": {
   "vis": 14.2,
@@ -1527,7 +1608,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 115.0
  },
  "3530471120": {
   "vis": 10.83,
@@ -1536,7 +1618,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 105.0
  },
  "3530471152": {
   "vis": 14.01,
@@ -1545,7 +1628,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 140.0
  },
  "3530471216": {
   "vis": 13.79,
@@ -1554,7 +1638,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 80.0
  },
  "3530471408": {
   "vis": 15.64,
@@ -1563,7 +1648,8 @@
   "torpRange": 13071.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 109.0
  },
  "3530503632": {
   "vis": 17.3,
@@ -1590,7 +1676,8 @@
   "torpRange": 11430.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 128.0
  },
  "3531486928": {
   "vis": 6.46,
@@ -1599,7 +1686,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 95.0
  },
  "3531519792": {
   "vis": 10.5,
@@ -1608,7 +1696,8 @@
   "torpRange": 13568.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "3531519984": {
   "vis": 15.04,
@@ -1626,7 +1715,8 @@
   "torpRange": 12128.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3532568272": {
   "vis": 12.76,
@@ -1635,7 +1725,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3532601296": {
   "vis": 14.84,
@@ -1644,7 +1735,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 40.0
  },
  "3539384016": {
   "vis": 7.12,
@@ -1653,7 +1745,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 45.0
  },
  "3539875632": {
   "vis": 7.86,
@@ -1662,7 +1755,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "3539875824": {
   "vis": 8.03,
@@ -1671,7 +1765,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 73.0
  },
  "3539907792": {
   "vis": 14.32,
@@ -1689,7 +1784,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 100.0
  },
  "3539908368": {
   "vis": 13.34,
@@ -1707,7 +1803,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 147.0
  },
  "3539908432": {
   "vis": 14.34,
@@ -1716,7 +1813,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 85.0
  },
  "3539908592": {
   "vis": 15.04,
@@ -1779,7 +1877,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 150.0
  },
  "3540923696": {
   "vis": 8.32,
@@ -1788,7 +1887,8 @@
   "torpRange": 15000.0,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "3540924112": {
   "vis": 6.63,
@@ -1797,7 +1897,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3540924208": {
   "vis": 7.2,
@@ -1806,7 +1907,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 95.0
  },
  "3540924368": {
   "vis": 7.19,
@@ -1815,7 +1917,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 57.0
  },
  "3540924400": {
   "vis": 7.16,
@@ -1824,7 +1927,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 170.0
  },
  "3540956368": {
   "vis": 14.88,
@@ -1842,7 +1946,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "3540956624": {
   "vis": 15.54,
@@ -1851,7 +1956,8 @@
   "torpRange": 8571.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 74.0
  },
  "3540956880": {
   "vis": 10.83,
@@ -1860,7 +1966,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 105.0
  },
  "3540956912": {
   "vis": 11.03,
@@ -1869,7 +1976,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3540957008": {
   "vis": 14.66,
@@ -1887,7 +1995,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 80.0
  },
  "3540957168": {
   "vis": 12.23,
@@ -1914,7 +2023,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 110.0
  },
  "3540989264": {
   "vis": 15.56,
@@ -1986,7 +2096,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 122.0
  },
  "3541972432": {
   "vis": 7.9,
@@ -1995,7 +2106,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 130.0
  },
  "3541972688": {
   "vis": 6.63,
@@ -2004,7 +2116,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 104.0
  },
  "3541972816": {
   "vis": 7.42,
@@ -2013,7 +2126,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3541972944": {
   "vis": 7.2,
@@ -2022,7 +2136,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 66.0
  },
  "3542004944": {
   "vis": 11.36,
@@ -2040,7 +2155,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 55.0
  },
  "3542005456": {
   "vis": 11.52,
@@ -2049,7 +2165,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "3542005552": {
   "vis": 14.84,
@@ -2058,7 +2175,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3542005712": {
   "vis": 11.36,
@@ -2085,7 +2203,8 @@
   "torpRange": 8571.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 80.0
  },
  "3542038256": {
   "vis": 14.39,
@@ -2130,7 +2249,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3543021360": {
   "vis": 7.98,
@@ -2139,7 +2259,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "3543021520": {
   "vis": 6.3,
@@ -2148,7 +2269,8 @@
   "torpRange": 9998.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "3543053520": {
   "vis": 12.67,
@@ -2157,7 +2279,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 134.0
  },
  "3543053680": {
   "vis": 11.8,
@@ -2166,7 +2289,8 @@
   "torpRange": 9999.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 110.0
  },
  "3543054032": {
   "vis": 12.76,
@@ -2175,7 +2299,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3543054064": {
   "vis": 14.26,
@@ -2193,7 +2318,8 @@
   "torpRange": 13568.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 80.0
  },
  "3543054320": {
   "vis": 10.9,
@@ -2220,7 +2346,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 45.0
  },
  "3543087056": {
   "vis": 14.84,
@@ -2229,7 +2356,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 40.0
  },
  "3543577808": {
   "vis": 6.4,
@@ -2238,7 +2366,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 40.0
  },
  "3544102736": {
   "vis": 12.92,
@@ -2247,7 +2376,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 60.0
  },
  "3544102864": {
   "vis": 11.1,
@@ -2256,7 +2386,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 115.0
  },
  "3545183952": {
   "vis": 15.71,
@@ -2274,7 +2405,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 62.0
  },
  "3549869840": {
   "vis": 5.8,
@@ -2283,7 +2415,8 @@
   "torpRange": 18571.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 65.0
  },
  "3549869904": {
   "vis": 5.74,
@@ -2301,7 +2434,8 @@
   "torpRange": 18571.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 75.0
  },
  "3549870064": {
   "vis": 5.86,
@@ -2310,7 +2444,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 40.0
  },
  "3550360880": {
   "vis": 9.27,
@@ -2328,7 +2463,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 130.0
  },
  "3550361040": {
   "vis": 7.62,
@@ -2337,7 +2473,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 106.0
  },
  "3550361296": {
   "vis": 7.66,
@@ -2346,7 +2483,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 104.0
  },
  "3550361328": {
   "vis": 9.83,
@@ -2364,7 +2502,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "3550361424": {
   "vis": 7.83,
@@ -2373,7 +2512,8 @@
   "torpRange": 28571.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3550361584": {
   "vis": 7.41,
@@ -2382,7 +2522,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 140.0
  },
  "3550393552": {
   "vis": 13.79,
@@ -2391,7 +2532,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "3550393648": {
   "vis": 11.5,
@@ -2400,7 +2542,8 @@
   "torpRange": 19285.7,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "3550393680": {
   "vis": 11.8,
@@ -2418,7 +2561,8 @@
   "torpRange": 8571.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3550393808": {
   "vis": 13.62,
@@ -2436,7 +2580,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3550394096": {
   "vis": 13.54,
@@ -2445,7 +2590,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3550394128": {
   "vis": 13.34,
@@ -2472,7 +2618,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3550394352": {
   "vis": 13.44,
@@ -2580,7 +2727,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 79.0
  },
  "3551409616": {
   "vis": 6.87,
@@ -2589,7 +2737,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 125.0
  },
  "3551409968": {
   "vis": 7.2,
@@ -2598,7 +2747,8 @@
   "torpRange": 11425.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3551410160": {
   "vis": 7.16,
@@ -2607,7 +2757,8 @@
   "torpRange": 19585.7,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "3551442384": {
   "vis": 16.94,
@@ -2625,7 +2776,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3551474896": {
   "vis": 16.86,
@@ -2634,7 +2786,8 @@
   "torpRange": 14286.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 131.0
  },
  "3551475120": {
   "vis": 16.76,
@@ -2679,7 +2832,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 122.0
  },
  "3552458032": {
   "vis": 7.4,
@@ -2688,7 +2842,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "3552458448": {
   "vis": 6.63,
@@ -2697,7 +2852,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 101.0
  },
  "3552458512": {
   "vis": 7.38,
@@ -2706,7 +2862,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3552490832": {
   "vis": 13.26,
@@ -2724,7 +2881,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "3552491280": {
   "vis": 11.32,
@@ -2751,7 +2909,8 @@
   "torpRange": 11442.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "3552491504": {
   "vis": 11.7,
@@ -2823,7 +2982,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 50.0
  },
  "3553539792": {
   "vis": 12.76,
@@ -2832,7 +2992,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3553539824": {
   "vis": 9.6,
@@ -2841,7 +3002,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3553540048": {
   "vis": 11.0,
@@ -2859,7 +3021,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 98.0
  },
  "3553572048": {
   "vis": 15.07,
@@ -2904,7 +3067,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 73.0
  },
  "3554588464": {
   "vis": 12.76,
@@ -2913,7 +3077,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3554621136": {
   "vis": 15.71,
@@ -2931,7 +3096,8 @@
   "torpRange": 14286.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 60.0
  },
  "3555636944": {
   "vis": 12.76,
@@ -2940,7 +3106,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3555669712": {
   "vis": 15.71,
@@ -2967,7 +3134,8 @@
   "torpRange": 7842.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "3560912592": {
   "vis": 17.46,
@@ -2985,7 +3153,8 @@
   "torpRange": 17142.9,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3655218960": {
   "vis": 7.33,
@@ -2994,7 +3163,8 @@
   "torpRange": 17155.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "3655218992": {
   "vis": 7.6,
@@ -3003,7 +3173,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3655219184": {
   "vis": 8.03,
@@ -3012,7 +3183,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 73.0
  },
  "3655251408": {
   "vis": 12.4,
@@ -3021,7 +3193,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3655251664": {
   "vis": 9.78,
@@ -3030,7 +3203,8 @@
   "torpRange": 28585.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 81.0
  },
  "3655251920": {
   "vis": 14.14,
@@ -3057,7 +3231,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3655284688": {
   "vis": 13.09,
@@ -3066,7 +3241,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 96.0
  },
  "3655317296": {
   "vis": 13.58,
@@ -3102,7 +3278,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "3660461904": {
   "vis": 6.98,
@@ -3111,7 +3288,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 84.0
  },
  "3660462032": {
   "vis": 6.46,
@@ -3120,7 +3298,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 106.0
  },
  "3666786288": {
   "vis": 15.04,
@@ -3138,7 +3317,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3666818896": {
   "vis": 15.89,
@@ -3165,7 +3345,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 109.0
  },
  "3667801808": {
   "vis": 6.63,
@@ -3174,7 +3355,8 @@
   "torpRange": 28585.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 112.0
  },
  "3667802064": {
   "vis": 6.76,
@@ -3183,7 +3365,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 66.0
  },
  "3667834576": {
   "vis": 11.52,
@@ -3192,7 +3375,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "3667834672": {
   "vis": 14.84,
@@ -3201,7 +3385,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3667867440": {
   "vis": 15.89,
@@ -3210,7 +3395,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3667867632": {
   "vis": 16.06,
@@ -3264,7 +3450,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 76.0
  },
  "3668883440": {
   "vis": 11.52,
@@ -3282,7 +3469,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 68.0
  },
  "3669898960": {
   "vis": 6.81,
@@ -3291,7 +3479,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 73.0
  },
  "3669964624": {
   "vis": 16.41,
@@ -3309,7 +3498,8 @@
   "torpRange": 28571.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 167.0
  },
  "3676223216": {
   "vis": 12.76,
@@ -3318,7 +3508,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "3679369200": {
   "vis": 10.66,
@@ -3327,7 +3518,8 @@
   "torpRange": 6428.6,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 98.0
  },
  "3699291600": {
   "vis": 12.84,
@@ -3336,7 +3528,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 74.0
  },
  "3708761808": {
   "vis": 15.89,
@@ -3345,7 +3538,8 @@
   "torpRange": 28585.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 150.0
  },
  "3709777360": {
   "vis": 14.01,
@@ -3354,7 +3548,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3709777872": {
   "vis": 11.74,
@@ -3363,7 +3558,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3719247568": {
   "vis": 14.14,
@@ -3372,7 +3568,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 150.0
  },
  "3720263120": {
   "vis": 13.58,
@@ -3381,7 +3578,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3720263632": {
   "vis": 11.7,
@@ -3390,7 +3588,8 @@
   "torpRange": 11400.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3720263664": {
   "vis": 11.43,
@@ -3399,7 +3598,8 @@
   "torpRange": 6428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 87.0
  },
  "3720296272": {
   "vis": 13.93,
@@ -3417,7 +3617,8 @@
   "torpRange": 14284.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 95.0
  },
  "3729732816": {
   "vis": 14.84,
@@ -3435,7 +3636,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 150.0
  },
  "3729733616": {
   "vis": 15.86,
@@ -3453,7 +3655,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3730749392": {
   "vis": 11.48,
@@ -3462,7 +3665,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3730749424": {
   "vis": 11.7,
@@ -3489,7 +3693,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3730782032": {
   "vis": 15.71,
@@ -3507,7 +3712,8 @@
   "torpRange": 13071.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 98.0
  },
  "3730814960": {
   "vis": 13.79,
@@ -3543,7 +3749,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3740153648": {
   "vis": 7.2,
@@ -3552,7 +3759,8 @@
   "torpRange": 11425.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3740153840": {
   "vis": 7.16,
@@ -3561,7 +3769,8 @@
   "torpRange": 19585.7,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "3740185808": {
   "vis": 14.67,
@@ -3570,7 +3779,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3740186416": {
   "vis": 12.59,
@@ -3597,7 +3807,8 @@
   "torpRange": 28585.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 150.0
  },
  "3741202128": {
   "vis": 6.63,
@@ -3606,7 +3817,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 112.0
  },
  "3741234640": {
   "vis": 11.17,
@@ -3615,7 +3827,8 @@
   "torpRange": 11430.0,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3741234992": {
   "vis": 14.49,
@@ -3624,7 +3837,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3741235152": {
   "vis": 11.0,
@@ -3633,7 +3847,8 @@
   "torpRange": 11442.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "3741235184": {
   "vis": 15.04,
@@ -3660,7 +3875,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 45.0
  },
  "3741267792": {
   "vis": 15.89,
@@ -3723,7 +3939,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "3743364816": {
   "vis": 15.36,
@@ -3750,7 +3967,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "3746477520": {
   "vis": 10.3,
@@ -3777,7 +3995,8 @@
   "torpRange": 28571.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 167.0
  },
  "3750638896": {
   "vis": 6.7,
@@ -3786,7 +4005,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 85.0
  },
  "3750639408": {
   "vis": 7.04,
@@ -3795,7 +4015,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 85.0
  },
  "3750639568": {
   "vis": 7.03,
@@ -3804,7 +4025,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 133.0
  },
  "3750639600": {
   "vis": 7.54,
@@ -3813,7 +4035,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3750672080": {
   "vis": 14.67,
@@ -3831,7 +4054,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3750672176": {
   "vis": 14.67,
@@ -3840,7 +4064,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3750672368": {
   "vis": 11.7,
@@ -3894,7 +4119,8 @@
   "torpRange": 17871.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 35.0
  },
  "3751687376": {
   "vis": 7.53,
@@ -3903,7 +4129,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 122.0
  },
  "3751687888": {
   "vis": 6.63,
@@ -3912,7 +4139,8 @@
   "torpRange": 28585.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 112.0
  },
  "3751687984": {
   "vis": 7.68,
@@ -3921,7 +4149,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3751720144": {
   "vis": 13.27,
@@ -3930,7 +4159,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 85.0
  },
  "3751720400": {
   "vis": 12.84,
@@ -3939,7 +4169,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 74.0
  },
  "3751720752": {
   "vis": 14.84,
@@ -3948,7 +4179,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3751720912": {
   "vis": 11.36,
@@ -3966,7 +4198,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 85.0
  },
  "3751753168": {
   "vis": 16.14,
@@ -3984,7 +4217,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3751753552": {
   "vis": 15.89,
@@ -4047,7 +4281,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "3752736208": {
   "vis": 8.42,
@@ -4056,7 +4291,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 93.0
  },
  "3752736720": {
   "vis": 6.76,
@@ -4065,7 +4301,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 66.0
  },
  "3752769232": {
   "vis": 12.4,
@@ -4074,7 +4311,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3752769264": {
   "vis": 9.6,
@@ -4083,7 +4321,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3752769328": {
   "vis": 12.77,
@@ -4092,7 +4331,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "3752802000": {
   "vis": 16.33,
@@ -4110,7 +4350,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 110.0
  },
  "3752802256": {
   "vis": 14.84,
@@ -4137,7 +4378,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3753817456": {
   "vis": 10.66,
@@ -4155,7 +4397,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "3753817936": {
   "vis": 13.8,
@@ -4164,7 +4407,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3753818064": {
   "vis": 11.7,
@@ -4173,7 +4417,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "3753850320": {
   "vis": 15.02,
@@ -4191,7 +4436,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "3756963280": {
   "vis": 10.66,
@@ -4209,7 +4455,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 60.0
  },
  "3759585264": {
   "vis": 5.76,
@@ -4218,7 +4465,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 55.0
  },
  "3760075984": {
   "vis": 7.16,
@@ -4227,7 +4475,8 @@
   "torpRange": 15700.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 125.0
  },
  "3760076080": {
   "vis": 7.93,
@@ -4245,7 +4494,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "3760076208": {
   "vis": 7.68,
@@ -4254,7 +4504,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3760076496": {
   "vis": 7.51,
@@ -4263,7 +4514,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 153.0
  },
  "3760076752": {
   "vis": 8.16,
@@ -4281,7 +4533,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 130.0
  },
  "3760108912": {
   "vis": 12.13,
@@ -4290,7 +4543,8 @@
   "torpRange": 19285.7,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3760109008": {
   "vis": 17.58,
@@ -4317,7 +4571,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "3760109392": {
   "vis": 12.06,
@@ -4335,7 +4590,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3760109552": {
   "vis": 15.04,
@@ -4434,7 +4690,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 60.0
  },
  "3761125104": {
   "vis": 8.81,
@@ -4443,7 +4700,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "3761125136": {
   "vis": 7.93,
@@ -4461,7 +4719,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 85.0
  },
  "3761157328": {
   "vis": 11.0,
@@ -4470,7 +4729,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3761157488": {
   "vis": 11.58,
@@ -4479,7 +4739,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3761157584": {
   "vis": 15.71,
@@ -4506,7 +4767,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3761157968": {
   "vis": 14.84,
@@ -4542,7 +4804,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 86.0
  },
  "3761190352": {
   "vis": 14.92,
@@ -4578,7 +4841,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3761190864": {
   "vis": 14.9,
@@ -4605,7 +4869,8 @@
   "torpRange": 17571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 61.0
  },
  "3761682128": {
   "vis": 5.94,
@@ -4614,7 +4879,8 @@
   "torpRange": 14000.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 55.0
  },
  "3761682384": {
   "vis": 5.67,
@@ -4623,7 +4889,8 @@
   "torpRange": 14298.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 30.0
  },
  "3762173136": {
   "vis": 7.16,
@@ -4632,7 +4899,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 109.0
  },
  "3762173232": {
   "vis": 7.29,
@@ -4641,7 +4909,8 @@
   "torpRange": 17142.9,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "3762173744": {
   "vis": 7.51,
@@ -4650,7 +4919,8 @@
   "torpRange": 12128.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "3762173776": {
   "vis": 8.21,
@@ -4659,7 +4929,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "3762173936": {
   "vis": 7.16,
@@ -4668,7 +4939,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 122.0
  },
  "3762205904": {
   "vis": 13.29,
@@ -4677,7 +4949,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 133.0
  },
  "3762206032": {
   "vis": 11.9,
@@ -4695,7 +4968,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3762206160": {
   "vis": 14.06,
@@ -4704,7 +4978,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "3762206480": {
   "vis": 11.52,
@@ -4722,7 +4997,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "3762206544": {
   "vis": 11.87,
@@ -4731,7 +5007,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3762206672": {
   "vis": 11.74,
@@ -4740,7 +5017,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3762206704": {
   "vis": 11.7,
@@ -4776,7 +5054,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3762239216": {
   "vis": 14.49,
@@ -4794,7 +5073,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "3762239312": {
   "vis": 16.24,
@@ -4884,7 +5164,8 @@
   "torpRange": 25714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 35.0
  },
  "3763221872": {
   "vis": 6.3,
@@ -4893,7 +5174,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "3763221968": {
   "vis": 7.33,
@@ -4902,7 +5184,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 92.0
  },
  "3763222224": {
   "vis": 6.79,
@@ -4911,7 +5194,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "3763222256": {
   "vis": 6.98,
@@ -4920,7 +5204,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "3763254608": {
   "vis": 11.52,
@@ -4938,7 +5223,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "3763255024": {
   "vis": 10.83,
@@ -4947,7 +5233,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 71.0
  },
  "3763255088": {
   "vis": 10.48,
@@ -4956,7 +5243,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3763255120": {
   "vis": 11.17,
@@ -5010,7 +5298,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 68.0
  },
  "3763287888": {
   "vis": 16.41,
@@ -5064,7 +5353,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "3764270416": {
   "vis": 6.63,
@@ -5073,7 +5363,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "3764270832": {
   "vis": 6.98,
@@ -5082,7 +5373,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 45.0
  },
  "3764270896": {
   "vis": 6.81,
@@ -5091,7 +5383,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 68.0
  },
  "3764270928": {
   "vis": 7.51,
@@ -5100,7 +5393,8 @@
   "torpRange": 11400.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "3764271056": {
   "vis": 6.63,
@@ -5109,7 +5403,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "3764271088": {
   "vis": 6.98,
@@ -5118,7 +5413,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 85.0
  },
  "3764303056": {
   "vis": 9.26,
@@ -5127,7 +5423,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 79.0
  },
  "3764303152": {
   "vis": 11.7,
@@ -5136,7 +5433,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "3764303216": {
   "vis": 9.78,
@@ -5145,7 +5443,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "3764303280": {
   "vis": 11.16,
@@ -5163,7 +5462,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "3764303600": {
   "vis": 11.7,
@@ -5172,7 +5472,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 71.0
  },
  "3764303664": {
   "vis": 12.76,
@@ -5181,7 +5482,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3764303696": {
   "vis": 12.92,
@@ -5190,7 +5492,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "3764335888": {
   "vis": 10.0,
@@ -5208,7 +5511,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 21.0
  },
  "3764336432": {
   "vis": 14.63,
@@ -5262,7 +5566,8 @@
   "torpRange": 6428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 47.0
  },
  "3765319664": {
   "vis": 7.16,
@@ -5271,7 +5576,8 @@
   "torpRange": 7842.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 66.0
  },
  "3765351888": {
   "vis": 13.27,
@@ -5280,7 +5586,8 @@
   "torpRange": 7157.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "3765352144": {
   "vis": 11.0,
@@ -5289,7 +5596,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "3765352176": {
   "vis": 11.47,
@@ -5298,7 +5606,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 47.0
  },
  "3765352400": {
   "vis": 10.66,
@@ -5307,7 +5616,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "3765384528": {
   "vis": 14.3,
@@ -5361,7 +5671,8 @@
   "torpRange": 9999.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "3766433040": {
   "vis": 10.0,
@@ -5388,7 +5699,8 @@
   "torpRange": 5700.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 10.0
  },
  "3767416176": {
   "vis": 6.29,
@@ -5397,7 +5709,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 62.0
  },
  "3767416784": {
   "vis": 6.46,
@@ -5406,7 +5719,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 63.0
  },
  "3767448784": {
   "vis": 9.88,
@@ -5415,7 +5729,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 42.0
  },
  "3767448848": {
   "vis": 14.56,
@@ -5442,7 +5757,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 39.0
  },
  "3767449584": {
   "vis": 10.66,
@@ -5487,7 +5803,8 @@
   "torpRange": 5700.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 15.0
  },
  "3768465392": {
   "vis": 5.59,
@@ -5496,7 +5813,8 @@
   "torpRange": 6428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 11.0
  },
  "3768497424": {
   "vis": 7.5,
@@ -5541,7 +5859,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "3769546000": {
   "vis": 7.5,
@@ -5559,7 +5878,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 129.0
  },
  "3865982416": {
   "vis": 8.92,
@@ -5568,7 +5888,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 69.0
  },
  "3867587856": {
   "vis": 6.11,
@@ -5577,7 +5898,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 45.0
  },
  "3969824208": {
   "vis": 16.3,
@@ -5604,7 +5926,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 117.0
  },
  "3972445456": {
   "vis": 4.19,
@@ -5613,7 +5936,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 35.0
  },
  "4065212112": {
   "vis": 7.53,
@@ -5622,7 +5946,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 157.0
  },
  "4069438928": {
   "vis": 11.0,
@@ -5631,7 +5956,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "4074157872": {
   "vis": 5.57,
@@ -5640,7 +5966,8 @@
   "torpRange": 20001.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 60.0
  },
  "4074158064": {
   "vis": 5.86,
@@ -5649,7 +5976,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 40.0
  },
  "4074648880": {
   "vis": 9.07,
@@ -5658,7 +5986,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 106.0
  },
  "4074649040": {
   "vis": 7.39,
@@ -5667,7 +5996,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 129.0
  },
  "4074649296": {
   "vis": 7.68,
@@ -5676,7 +6006,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 157.0
  },
  "4074649392": {
   "vis": 8.01,
@@ -5685,7 +6016,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4074649424": {
   "vis": 8.61,
@@ -5694,7 +6026,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 142.0
  },
  "4074681808": {
   "vis": 15.83,
@@ -5703,7 +6036,8 @@
   "torpRange": 11442.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "4074682064": {
   "vis": 12.4,
@@ -5712,7 +6046,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 100.0
  },
  "4074682192": {
   "vis": 14.32,
@@ -5730,7 +6065,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4074682352": {
   "vis": 12.06,
@@ -5757,7 +6093,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 160.0
  },
  "4074715088": {
   "vis": 16.2,
@@ -5766,7 +6103,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 45.0
  },
  "4074715120": {
   "vis": 16.8,
@@ -5793,7 +6131,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 60.0
  },
  "4075697872": {
   "vis": 6.81,
@@ -5802,7 +6141,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 104.0
  },
  "4075697968": {
   "vis": 7.86,
@@ -5811,7 +6151,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4075730384": {
   "vis": 14.88,
@@ -5829,7 +6170,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "4075730768": {
   "vis": 14.66,
@@ -5847,7 +6189,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4075730928": {
   "vis": 11.87,
@@ -5874,7 +6217,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 140.0
  },
  "4075763664": {
   "vis": 14.88,
@@ -5883,7 +6227,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 55.0
  },
  "4075763696": {
   "vis": 16.2,
@@ -5901,7 +6246,8 @@
   "torpRange": 17858.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 50.0
  },
  "4076255216": {
   "vis": 5.96,
@@ -5910,7 +6256,8 @@
   "torpRange": 15715.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 42.0
  },
  "4076745936": {
   "vis": 7.33,
@@ -5919,7 +6266,8 @@
   "torpRange": 14286.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "4076746032": {
   "vis": 8.51,
@@ -5928,7 +6276,8 @@
   "torpRange": 12128.6,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 60.0
  },
  "4076746192": {
   "vis": 7.51,
@@ -5937,7 +6286,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 92.0
  },
  "4076746448": {
   "vis": 6.63,
@@ -5946,7 +6296,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 101.0
  },
  "4076746544": {
   "vis": 7.76,
@@ -5955,7 +6306,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4076778960": {
   "vis": 14.1,
@@ -5964,7 +6316,8 @@
   "torpRange": 5742.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 131.0
  },
  "4076779216": {
   "vis": 12.5,
@@ -5973,7 +6326,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "4076779344": {
   "vis": 15.19,
@@ -5991,7 +6345,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4076779504": {
   "vis": 11.52,
@@ -6018,7 +6373,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "4076812240": {
   "vis": 14.51,
@@ -6027,7 +6383,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 80.0
  },
  "4076812272": {
   "vis": 15.2,
@@ -6045,7 +6402,8 @@
   "torpRange": 16431.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 35.0
  },
  "4077794608": {
   "vis": 7.21,
@@ -6054,7 +6412,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4077794768": {
   "vis": 7.51,
@@ -6063,7 +6422,8 @@
   "torpRange": 9999.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "4077795024": {
   "vis": 6.46,
@@ -6072,7 +6432,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 94.0
  },
  "4077795120": {
   "vis": 6.98,
@@ -6081,7 +6442,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "4077827792": {
   "vis": 11.88,
@@ -6090,7 +6452,8 @@
   "torpRange": 18557.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "4077828048": {
   "vis": 10.83,
@@ -6099,7 +6462,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4077828080": {
   "vis": 11.52,
@@ -6117,7 +6481,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "4077860816": {
   "vis": 12.98,
@@ -6126,7 +6491,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 95.0
  },
  "4078352176": {
   "vis": 5.66,
@@ -6135,7 +6501,8 @@
   "torpRange": 16431.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 50.0
  },
  "4078352368": {
   "vis": 6.36,
@@ -6144,7 +6511,8 @@
   "torpRange": 14288.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 42.0
  },
  "4078843184": {
   "vis": 7.0,
@@ -6153,7 +6521,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4078843344": {
   "vis": 6.81,
@@ -6162,7 +6531,8 @@
   "torpRange": 9999.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 66.0
  },
  "4078843600": {
   "vis": 6.46,
@@ -6171,7 +6541,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 73.0
  },
  "4078876368": {
   "vis": 10.9,
@@ -6180,7 +6551,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "4078876624": {
   "vis": 11.17,
@@ -6189,7 +6561,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4078876656": {
   "vis": 11.52,
@@ -6216,7 +6589,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 95.0
  },
  "4079891760": {
   "vis": 6.6,
@@ -6225,7 +6599,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4079891920": {
   "vis": 7.11,
@@ -6234,7 +6609,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 67.0
  },
  "4079924944": {
   "vis": 10.52,
@@ -6243,7 +6619,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 120.0
  },
  "4079925200": {
   "vis": 11.5,
@@ -6252,7 +6629,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 53.0
  },
  "4079957808": {
   "vis": 11.6,
@@ -6270,7 +6648,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 95.0
  },
  "4081006384": {
   "vis": 10.53,
@@ -6288,7 +6667,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 95.0
  },
  "4081039312": {
   "vis": 11.7,
@@ -6315,7 +6695,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 95.0
  },
  "4165907728": {
   "vis": 12.0,
@@ -6351,7 +6732,8 @@
   "torpRange": 19285.7,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 139.0
  },
  "4178457904": {
   "vis": 7.51,
@@ -6360,7 +6742,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4178458064": {
   "vis": 9.7,
@@ -6369,7 +6752,8 @@
   "torpRange": 14284.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 131.0
  },
  "4178458320": {
   "vis": 6.9,
@@ -6378,7 +6762,8 @@
   "torpRange": 28585.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 131.0
  },
  "4178458416": {
   "vis": 7.54,
@@ -6387,7 +6772,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4178458608": {
   "vis": 7.32,
@@ -6396,7 +6782,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 116.0
  },
  "4178490832": {
   "vis": 15.67,
@@ -6414,7 +6801,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "4178491184": {
   "vis": 15.81,
@@ -6423,7 +6811,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 112.0
  },
  "4178491216": {
   "vis": 16.1,
@@ -6432,7 +6821,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 110.0
  },
  "4178491344": {
   "vis": 11.7,
@@ -6441,7 +6831,8 @@
   "torpRange": 17142.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4178491376": {
   "vis": 13.58,
@@ -6540,7 +6931,8 @@
   "torpRange": 16428.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 47.0
  },
  "4179015408": {
   "vis": 5.94,
@@ -6549,7 +6941,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 70.0
  },
  "4179015472": {
   "vis": 5.57,
@@ -6558,7 +6951,8 @@
   "torpRange": 20001.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 60.0
  },
  "4179015632": {
   "vis": 6.1,
@@ -6567,7 +6961,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 40.0
  },
  "4179015664": {
   "vis": 5.86,
@@ -6576,7 +6971,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 40.0
  },
  "4179506384": {
   "vis": 7.2,
@@ -6585,7 +6981,8 @@
   "torpRange": 19285.7,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 129.0
  },
  "4179506480": {
   "vis": 7.39,
@@ -6594,7 +6991,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "4179506640": {
   "vis": 9.7,
@@ -6603,7 +7001,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 127.0
  },
  "4179506928": {
   "vis": 8.9,
@@ -6612,7 +7011,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4179506992": {
   "vis": 7.51,
@@ -6621,7 +7021,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4179507024": {
   "vis": 9.58,
@@ -6630,7 +7031,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "4179507152": {
   "vis": 7.37,
@@ -6639,7 +7041,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 125.0
  },
  "4179539152": {
   "vis": 12.13,
@@ -6648,7 +7051,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 126.0
  },
  "4179539280": {
   "vis": 11.26,
@@ -6657,7 +7061,8 @@
   "torpRange": 15000.0,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "4179539376": {
   "vis": 14.5,
@@ -6666,7 +7071,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "4179539408": {
   "vis": 17.46,
@@ -6684,7 +7090,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 71.0
  },
  "4179539728": {
   "vis": 12.76,
@@ -6702,7 +7109,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4179539792": {
   "vis": 16.06,
@@ -6711,7 +7119,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4179539920": {
   "vis": 11.17,
@@ -6720,7 +7129,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4179572176": {
   "vis": 16.53,
@@ -6819,7 +7229,8 @@
   "torpRange": 15000.0,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 117.0
  },
  "4180555056": {
   "vis": 7.39,
@@ -6828,7 +7239,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 100.0
  },
  "4180555216": {
   "vis": 8.73,
@@ -6837,7 +7249,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 123.0
  },
  "4180555504": {
   "vis": 8.18,
@@ -6846,7 +7259,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4180555568": {
   "vis": 7.33,
@@ -6855,7 +7269,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4180555600": {
   "vis": 9.26,
@@ -6864,7 +7279,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "4180555728": {
   "vis": 7.03,
@@ -6873,7 +7289,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 133.0
  },
  "4180587728": {
   "vis": 11.97,
@@ -6882,7 +7299,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 125.0
  },
  "4180587856": {
   "vis": 12.7,
@@ -6891,7 +7309,8 @@
   "torpRange": 15000.0,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "4180587952": {
   "vis": 14.5,
@@ -6900,7 +7319,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "4180587984": {
   "vis": 15.54,
@@ -6909,7 +7329,8 @@
   "torpRange": 11442.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 117.0
  },
  "4180588272": {
   "vis": 14.54,
@@ -6918,7 +7339,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "4180588304": {
   "vis": 12.34,
@@ -6936,7 +7358,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4180588368": {
   "vis": 14.49,
@@ -6945,7 +7368,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4180588496": {
   "vis": 12.76,
@@ -6954,7 +7378,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4180588528": {
   "vis": 13.21,
@@ -7026,7 +7451,8 @@
   "torpRange": 15714.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 41.0
  },
  "4181112560": {
   "vis": 6.07,
@@ -7035,7 +7461,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 65.0
  },
  "4181112624": {
   "vis": 5.61,
@@ -7044,7 +7471,8 @@
   "torpRange": 17858.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 50.0
  },
  "4181112784": {
   "vis": 6.1,
@@ -7053,7 +7481,8 @@
   "torpRange": 15715.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 40.0
  },
  "4181112816": {
   "vis": 5.96,
@@ -7062,7 +7491,8 @@
   "torpRange": 15715.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 42.0
  },
  "4181603536": {
   "vis": 7.16,
@@ -7071,7 +7501,8 @@
   "torpRange": 13585.7,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 117.0
  },
  "4181603632": {
   "vis": 7.2,
@@ -7080,7 +7511,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 59.0
  },
  "4181603792": {
   "vis": 9.12,
@@ -7089,7 +7521,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "4181604048": {
   "vis": 7.53,
@@ -7098,7 +7531,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 101.0
  },
  "4181604080": {
   "vis": 8.17,
@@ -7107,7 +7541,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "4181604144": {
   "vis": 7.68,
@@ -7116,7 +7551,8 @@
   "torpRange": 13585.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4181604176": {
   "vis": 7.93,
@@ -7125,7 +7561,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4181604304": {
   "vis": 6.81,
@@ -7134,7 +7571,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 96.0
  },
  "4181636304": {
   "vis": 11.68,
@@ -7143,7 +7581,8 @@
   "torpRange": 15700.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 125.0
  },
  "4181636432": {
   "vis": 12.6,
@@ -7152,7 +7591,8 @@
   "torpRange": 8571.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4181636528": {
   "vis": 14.2,
@@ -7161,7 +7601,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "4181636560": {
   "vis": 12.84,
@@ -7170,7 +7611,8 @@
   "torpRange": 5742.9,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 74.0
  },
  "4181636848": {
   "vis": 14.01,
@@ -7179,7 +7621,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 95.0
  },
  "4181636880": {
   "vis": 12.14,
@@ -7197,7 +7640,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "4181636944": {
   "vis": 13.27,
@@ -7206,7 +7650,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4181637072": {
   "vis": 11.36,
@@ -7215,7 +7660,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "4181637104": {
   "vis": 12.22,
@@ -7332,7 +7778,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 50.0
  },
  "4182652112": {
   "vis": 6.81,
@@ -7341,7 +7788,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "4182652208": {
   "vis": 6.86,
@@ -7350,7 +7798,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 59.0
  },
  "4182652368": {
   "vis": 8.92,
@@ -7359,7 +7808,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 77.0
  },
  "4182652624": {
   "vis": 7.16,
@@ -7368,7 +7818,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "4182652656": {
   "vis": 7.27,
@@ -7377,7 +7828,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "4182652720": {
   "vis": 7.51,
@@ -7386,7 +7838,8 @@
   "torpRange": 12128.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4182652752": {
   "vis": 7.33,
@@ -7395,7 +7848,8 @@
   "torpRange": 11400.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4182652880": {
   "vis": 7.08,
@@ -7404,7 +7858,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "4182684880": {
   "vis": 10.31,
@@ -7413,7 +7868,8 @@
   "torpRange": 14957.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4182685008": {
   "vis": 11.23,
@@ -7422,7 +7878,8 @@
   "torpRange": 11430.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "4182685104": {
   "vis": 13.8,
@@ -7431,7 +7888,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "4182685136": {
   "vis": 12.92,
@@ -7440,7 +7898,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "4182685424": {
   "vis": 13.54,
@@ -7449,7 +7908,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 71.0
  },
  "4182685456": {
   "vis": 11.52,
@@ -7467,7 +7927,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "4182685520": {
   "vis": 13.44,
@@ -7476,7 +7937,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4182685648": {
   "vis": 11.17,
@@ -7485,7 +7947,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "4182685680": {
   "vis": 12.06,
@@ -7521,7 +7984,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 68.0
  },
  "4182718288": {
   "vis": 15.36,
@@ -7548,7 +8012,8 @@
   "torpRange": 15714.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 44.0
  },
  "4183209712": {
   "vis": 6.16,
@@ -7557,7 +8022,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 55.0
  },
  "4183209776": {
   "vis": 5.66,
@@ -7566,7 +8032,8 @@
   "torpRange": 16431.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 50.0
  },
  "4183209936": {
   "vis": 5.53,
@@ -7575,7 +8042,8 @@
   "torpRange": 14284.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 45.0
  },
  "4183209968": {
   "vis": 6.36,
@@ -7584,7 +8052,8 @@
   "torpRange": 14288.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Submarine"
+  "cls": "Submarine",
+  "torpReload": 42.0
  },
  "4183700688": {
   "vis": 6.81,
@@ -7593,7 +8062,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 73.0
  },
  "4183700784": {
   "vis": 6.86,
@@ -7602,7 +8072,8 @@
   "torpRange": 14286.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 59.0
  },
  "4183700944": {
   "vis": 7.51,
@@ -7611,7 +8082,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "4183701200": {
   "vis": 0.0,
@@ -7620,7 +8092,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 73.0
  },
  "4183701232": {
   "vis": 7.12,
@@ -7629,7 +8102,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "4183701296": {
   "vis": 7.33,
@@ -7638,7 +8112,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4183701328": {
   "vis": 7.51,
@@ -7647,7 +8122,8 @@
   "torpRange": 11400.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4183701456": {
   "vis": 6.63,
@@ -7656,7 +8132,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 95.0
  },
  "4183733456": {
   "vis": 9.96,
@@ -7665,7 +8142,8 @@
   "torpRange": 13514.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "4183733584": {
   "vis": 9.86,
@@ -7674,7 +8152,8 @@
   "torpRange": 11430.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "4183733680": {
   "vis": 11.7,
@@ -7683,7 +8162,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 80.0
  },
  "4183733712": {
   "vis": 12.76,
@@ -7692,7 +8172,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "4183734000": {
   "vis": 14.06,
@@ -7701,7 +8182,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 47.0
  },
  "4183734032": {
   "vis": 11.52,
@@ -7719,7 +8201,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "4183734096": {
   "vis": 12.92,
@@ -7728,7 +8211,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 60.0
  },
  "4183734224": {
   "vis": 9.96,
@@ -7737,7 +8221,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "4183734256": {
   "vis": 13.74,
@@ -7845,7 +8330,8 @@
   "torpRange": 9128.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 66.0
  },
  "4184749360": {
   "vis": 6.62,
@@ -7854,7 +8340,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 55.0
  },
  "4184749520": {
   "vis": 6.81,
@@ -7863,7 +8350,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "4184749776": {
   "vis": 0.0,
@@ -7881,7 +8369,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "4184749872": {
   "vis": 6.32,
@@ -7890,7 +8379,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 61.0
  },
  "4184749904": {
   "vis": 6.98,
@@ -7899,7 +8389,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4184750032": {
   "vis": 6.63,
@@ -7908,7 +8399,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 95.0
  },
  "4184782032": {
   "vis": 9.96,
@@ -7917,7 +8409,8 @@
   "torpRange": 13514.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 98.0
  },
  "4184782160": {
   "vis": 9.5,
@@ -7926,7 +8419,8 @@
   "torpRange": 11430.0,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 72.0
  },
  "4184782256": {
   "vis": 9.87,
@@ -7935,7 +8429,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 88.0
  },
  "4184782288": {
   "vis": 13.79,
@@ -7944,7 +8439,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "4184782576": {
   "vis": 11.27,
@@ -7953,7 +8449,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 55.0
  },
  "4184782608": {
   "vis": 11.87,
@@ -7971,7 +8468,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 68.0
  },
  "4184782672": {
   "vis": 12.22,
@@ -7980,7 +8478,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 84.0
  },
  "4184782800": {
   "vis": 9.87,
@@ -7989,7 +8488,8 @@
   "torpRange": 10028.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 71.0
  },
  "4184815056": {
   "vis": 13.27,
@@ -8043,7 +8543,8 @@
   "torpRange": 10457.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 62.0
  },
  "4185797936": {
   "vis": 6.62,
@@ -8052,7 +8553,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 55.0
  },
  "4185798096": {
   "vis": 6.46,
@@ -8061,7 +8563,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 41.0
  },
  "4185798384": {
   "vis": 6.34,
@@ -8070,7 +8573,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4185798448": {
   "vis": 6.11,
@@ -8079,7 +8583,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 38.0
  },
  "4185798480": {
   "vis": 6.63,
@@ -8088,7 +8593,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4185798608": {
   "vis": 6.29,
@@ -8097,7 +8603,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 62.0
  },
  "4185830736": {
   "vis": 8.0,
@@ -8106,7 +8613,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 62.0
  },
  "4185830832": {
   "vis": 10.18,
@@ -8115,7 +8623,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4185830864": {
   "vis": 9.6,
@@ -8124,7 +8633,8 @@
   "torpRange": 7157.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 39.0
  },
  "4185831152": {
   "vis": 10.77,
@@ -8133,7 +8643,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 47.0
  },
  "4185831184": {
   "vis": 11.7,
@@ -8151,7 +8662,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 42.0
  },
  "4185831248": {
   "vis": 12.92,
@@ -8160,7 +8672,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 84.0
  },
  "4185831376": {
   "vis": 10.13,
@@ -8169,7 +8682,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 62.0
  },
  "4185863632": {
   "vis": 13.21,
@@ -8259,7 +8773,8 @@
   "torpRange": 10457.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 41.0
  },
  "4186846480": {
   "vis": 30.0,
@@ -8277,7 +8792,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 40.0
  },
  "4186846672": {
   "vis": 5.94,
@@ -8286,7 +8802,8 @@
   "torpRange": 7142.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 35.0
  },
  "4186846960": {
   "vis": 6.17,
@@ -8295,7 +8812,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 85.0
  },
  "4186847024": {
   "vis": 6.46,
@@ -8304,7 +8822,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 38.0
  },
  "4186847056": {
   "vis": 6.46,
@@ -8313,7 +8832,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 35.0
  },
  "4186847184": {
   "vis": 6.11,
@@ -8322,7 +8842,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 45.0
  },
  "4186879312": {
   "vis": 9.56,
@@ -8358,7 +8879,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 21.0
  },
  "4186879760": {
   "vis": 9.43,
@@ -8385,7 +8907,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 84.0
  },
  "4186879952": {
   "vis": 9.78,
@@ -8394,7 +8917,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 41.0
  },
  "4186912016": {
   "vis": 30.0,
@@ -8448,7 +8972,8 @@
   "torpRange": 12000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 32.0
  },
  "4187895056": {
   "vis": 30.0,
@@ -8466,7 +8991,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 30.0
  },
  "4187895248": {
   "vis": 5.59,
@@ -8475,7 +9001,8 @@
   "torpRange": 7142.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 33.0
  },
  "4187895536": {
   "vis": 6.06,
@@ -8484,7 +9011,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4187895600": {
   "vis": 5.24,
@@ -8493,7 +9021,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 38.0
  },
  "4187895632": {
   "vis": 5.76,
@@ -8502,7 +9031,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 35.0
  },
  "4187895760": {
   "vis": 5.24,
@@ -8511,7 +9041,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 53.0
  },
  "4187927824": {
   "vis": 30.0,
@@ -8520,7 +9051,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 25.0
  },
  "4187927888": {
   "vis": 8.56,
@@ -8691,7 +9223,8 @@
   "torpRange": 12142.8,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 55.0
  },
  "4236129552": {
   "vis": 10.0,
@@ -8700,7 +9233,8 @@
   "torpRange": 14285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 55.0
  },
  "4236195088": {
   "vis": 18.0,
@@ -8709,7 +9243,8 @@
   "torpRange": 10000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 100.0
  },
  "4237243664": {
   "vis": 18.0,
@@ -8718,7 +9253,8 @@
   "torpRange": 10000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 160.0
  },
  "4238292240": {
   "vis": 14.0,
@@ -8727,7 +9263,8 @@
   "torpRange": 20000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 50.0
  },
  "4239340816": {
   "vis": 16.0,
@@ -8736,7 +9273,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 145.0
  },
  "4240356624": {
   "vis": 15.0,
@@ -8745,7 +9283,8 @@
   "torpRange": 12142.8,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4241405200": {
   "vis": 12.0,
@@ -8754,7 +9293,8 @@
   "torpRange": 18571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 180.0
  },
  "4242453776": {
   "vis": 11.0,
@@ -8763,7 +9303,8 @@
   "torpRange": 18571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 65.0
  },
  "4244911376": {
   "vis": 9.7,
@@ -8781,7 +9322,8 @@
   "torpRange": 14285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 60.0
  },
  "4250809616": {
   "vis": 6.0,
@@ -8790,7 +9332,8 @@
   "torpRange": 14285.7,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "4251858192": {
   "vis": 8.0,
@@ -8799,7 +9342,8 @@
   "torpRange": 28571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 40.0
  },
  "4252907504": {
   "vis": 8.051,
@@ -8808,7 +9352,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 80.0
  },
  "4253299984": {
   "vis": 5.24,
@@ -8826,7 +9371,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 85.0
  },
  "4255004656": {
   "vis": 7.63,
@@ -8835,7 +9381,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4255037136": {
   "vis": 11.52,
@@ -8844,7 +9391,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "4256053232": {
   "vis": 7.13,
@@ -8853,7 +9401,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 95.0
  },
  "4256085712": {
   "vis": 7.51,
@@ -8880,7 +9429,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 104.0
  },
  "4259264496": {
   "vis": 13.79,
@@ -8898,7 +9448,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 75.0
  },
  "4262343952": {
   "vis": 8.0,
@@ -8925,7 +9476,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 76.0
  },
  "4265588720": {
   "vis": 13.01,
@@ -8952,7 +9504,8 @@
   "torpRange": 7200.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 32.0
  },
  "4266571024": {
   "vis": 9.0,
@@ -8979,7 +9532,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 47.0
  },
  "4267620048": {
   "vis": 9.8,
@@ -8988,7 +9542,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "4267685872": {
   "vis": 9.86,
@@ -9006,7 +9561,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 12.0
  },
  "4268635856": {
   "vis": 6.01,
@@ -9015,7 +9571,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 47.0
  },
  "4269683984": {
   "vis": 5.0,
@@ -9024,7 +9581,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 30.0
  },
  "4269684432": {
   "vis": 0.0,
@@ -9033,7 +9591,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 39.0
  },
  "4269717488": {
   "vis": 0.0,
@@ -9042,7 +9601,8 @@
   "torpRange": 7842.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 44.0
  },
  "4270732560": {
   "vis": 5.82,
@@ -9051,7 +9611,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 40.0
  },
  "4272829712": {
   "vis": 6.3,
@@ -9060,7 +9621,8 @@
   "torpRange": 5714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 30.0
  },
  "4272830448": {
   "vis": 7.16,
@@ -9069,7 +9631,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 106.0
  },
  "4272862928": {
   "vis": 12.22,
@@ -9078,7 +9641,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 147.0
  },
  "4272895696": {
   "vis": 16.67,
@@ -9096,7 +9660,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 60.0
  },
  "4273911760": {
   "vis": 14.14,
@@ -9105,7 +9670,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 106.0
  },
  "4273911792": {
   "vis": 13.44,
@@ -9132,7 +9698,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 20.0
  },
  "4274926928": {
   "vis": 7.551,
@@ -9141,7 +9708,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 81.0
  },
  "4274927440": {
   "vis": 7.42,
@@ -9150,7 +9718,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "4274927600": {
   "vis": 6.81,
@@ -9159,7 +9728,8 @@
   "torpRange": 7842.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 44.0
  },
  "4274959664": {
   "vis": 11.3,
@@ -9168,7 +9738,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 130.0
  },
  "4274959728": {
   "vis": 12.96,
@@ -9177,7 +9748,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4274960144": {
   "vis": 11.83,
@@ -9195,7 +9767,8 @@
   "torpRange": 13568.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 110.0
  },
  "4274992432": {
   "vis": 14.13,
@@ -9204,7 +9777,8 @@
   "torpRange": 21428.6,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 115.0
  },
  "4274992464": {
   "vis": 15.76,
@@ -9222,7 +9796,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 30.0
  },
  "4275975504": {
   "vis": 7.51,
@@ -9231,7 +9806,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 128.0
  },
  "4275976016": {
   "vis": 7.37,
@@ -9240,7 +9816,8 @@
   "torpRange": 15711.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 125.0
  },
  "4276008240": {
   "vis": 10.9,
@@ -9249,7 +9826,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 130.0
  },
  "4276008304": {
   "vis": 13.28,
@@ -9258,7 +9836,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4276008656": {
   "vis": 10.83,
@@ -9267,7 +9846,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 76.0
  },
  "4276008720": {
   "vis": 11.52,
@@ -9285,7 +9865,8 @@
   "torpRange": 13568.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 110.0
  },
  "4276041008": {
   "vis": 13.79,
@@ -9294,7 +9875,8 @@
   "torpRange": 17142.9,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 115.0
  },
  "4276041040": {
   "vis": 15.19,
@@ -9330,7 +9912,8 @@
   "torpRange": 5714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 30.0
  },
  "4277024080": {
   "vis": 7.28,
@@ -9339,7 +9922,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 114.0
  },
  "4277024464": {
   "vis": 6.01,
@@ -9348,7 +9932,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 47.0
  },
  "4277024592": {
   "vis": 6.98,
@@ -9357,7 +9942,8 @@
   "torpRange": 14284.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 85.0
  },
  "4277056816": {
   "vis": 10.47,
@@ -9366,7 +9952,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 110.0
  },
  "4277056880": {
   "vis": 11.17,
@@ -9375,7 +9962,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4277057328": {
   "vis": 12.76,
@@ -9384,7 +9972,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 100.0
  },
  "4277089552": {
   "vis": 18.0,
@@ -9402,7 +9991,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 85.0
  },
  "4277090288": {
   "vis": 17.29,
@@ -9420,7 +10010,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 50.0
  },
  "4278072656": {
   "vis": 6.81,
@@ -9429,7 +10020,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "4278073168": {
   "vis": 6.81,
@@ -9438,7 +10030,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 87.0
  },
  "4278105360": {
   "vis": 30.0,
@@ -9447,7 +10040,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 15.0
  },
  "4278105392": {
   "vis": 10.0,
@@ -9456,7 +10050,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4278105456": {
   "vis": 10.78,
@@ -9465,7 +10060,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4278105904": {
   "vis": 12.32,
@@ -9474,7 +10070,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 100.0
  },
  "4278138128": {
   "vis": 18.0,
@@ -9492,7 +10089,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 100.0
  },
  "4279121168": {
   "vis": 7.76,
@@ -9501,7 +10099,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 60.0
  },
  "4279121232": {
   "vis": 6.46,
@@ -9510,7 +10109,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 98.0
  },
  "4279121744": {
   "vis": 6.63,
@@ -9519,7 +10119,8 @@
   "torpRange": 11425.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 87.0
  },
  "4279153968": {
   "vis": 9.7,
@@ -9528,7 +10129,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4279154032": {
   "vis": 10.48,
@@ -9537,7 +10139,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4279154384": {
   "vis": 8.03,
@@ -9546,7 +10149,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 58.0
  },
  "4279186704": {
   "vis": 30.0,
@@ -9555,7 +10159,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 8.0
  },
  "4279186736": {
   "vis": 12.4,
@@ -9564,7 +10169,8 @@
   "torpRange": 11428.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 100.0
  },
  "4280169744": {
   "vis": 6.3,
@@ -9573,7 +10179,8 @@
   "torpRange": 5714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 30.0
  },
  "4280169808": {
   "vis": 6.29,
@@ -9582,7 +10189,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 79.0
  },
  "4280170192": {
   "vis": 0.0,
@@ -9600,7 +10208,8 @@
   "torpRange": 7842.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 66.0
  },
  "4280202544": {
   "vis": 7.83,
@@ -9618,7 +10227,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 62.0
  },
  "4280202960": {
   "vis": 10.3,
@@ -9627,7 +10237,8 @@
   "torpRange": 17142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 81.0
  },
  "4280235312": {
   "vis": 11.37,
@@ -9636,7 +10247,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 100.0
  },
  "4281218320": {
   "vis": 4.86,
@@ -9645,7 +10257,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 25.0
  },
  "4281218384": {
   "vis": 5.89,
@@ -9654,7 +10267,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 58.0
  },
  "4281219056": {
   "vis": 7.33,
@@ -9663,7 +10277,8 @@
   "torpRange": 23571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 103.0
  },
  "4281251088": {
   "vis": 10.67,
@@ -9672,7 +10287,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 10.0
  },
  "4281251184": {
   "vis": 9.78,
@@ -9681,7 +10297,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 41.0
  },
  "4281251536": {
   "vis": 11.0,
@@ -9690,7 +10307,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 42.0
  },
  "4281284304": {
   "vis": 16.76,
@@ -9744,7 +10362,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "4282333168": {
   "vis": 15.19,
@@ -9771,7 +10390,8 @@
   "torpRange": 10714.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 15.0
  },
  "4283348240": {
   "vis": 10.67,
@@ -9816,7 +10436,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 20.0
  },
  "4284364112": {
   "vis": 7.68,
@@ -9825,7 +10446,8 @@
   "torpRange": 14285.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 97.0
  },
  "4284364496": {
   "vis": 0.0,
@@ -9843,7 +10465,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 120.0
  },
  "4284396816": {
   "vis": 15.54,
@@ -9852,7 +10475,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4284396848": {
   "vis": 11.74,
@@ -9861,7 +10485,8 @@
   "torpRange": 21428.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 125.0
  },
  "4284396912": {
   "vis": 12.34,
@@ -9870,7 +10495,8 @@
   "torpRange": 19285.7,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4284397328": {
   "vis": 12.04,
@@ -9888,7 +10514,8 @@
   "torpRange": 13568.6,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 110.0
  },
  "4284429584": {
   "vis": 12.61,
@@ -9906,7 +10533,8 @@
   "torpRange": 21428.6,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 115.0
  },
  "4284429648": {
   "vis": 16.0,
@@ -9942,7 +10570,8 @@
   "torpRange": 5742.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 123.0
  },
  "4285445392": {
   "vis": 14.0,
@@ -9951,7 +10580,8 @@
   "torpRange": 14271.4,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "4285445840": {
   "vis": 11.7,
@@ -9960,7 +10590,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "4285478160": {
   "vis": 12.61,
@@ -9987,7 +10618,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 90.0
  },
  "4286461936": {
   "vis": 7.16,
@@ -9996,7 +10628,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 109.0
  },
  "4286494416": {
   "vis": 12.76,
@@ -10005,7 +10638,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 70.0
  },
  "4286527184": {
   "vis": 14.74,
@@ -10041,7 +10675,8 @@
   "torpRange": 5142.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 30.0
  },
  "4287510224": {
   "vis": 0.0,
@@ -10068,7 +10703,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 102.0
  },
  "4287575312": {
   "vis": 15.87,
@@ -10104,7 +10740,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 87.0
  },
  "4288591120": {
   "vis": 10.06,
@@ -10113,7 +10750,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 96.0
  },
  "4288591856": {
   "vis": 10.66,
@@ -10122,7 +10760,8 @@
   "torpRange": 6428.6,
   "hasRadar": 1,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 98.0
  },
  "4288623888": {
   "vis": 15.71,
@@ -10158,7 +10797,8 @@
   "torpRange": 15000.0,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 76.5
  },
  "4289607376": {
   "vis": 0.0,
@@ -10176,7 +10816,8 @@
   "torpRange": 9128.6,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 88.0
  },
  "4289640144": {
   "vis": 11.87,
@@ -10185,7 +10826,8 @@
   "torpRange": 14271.4,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 90.0
  },
  "4289640432": {
   "vis": 13.09,
@@ -10194,7 +10836,8 @@
   "torpRange": 7842.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 66.0
  },
  "4289672464": {
   "vis": 19.07,
@@ -10221,7 +10864,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 49.0
  },
  "4290721040": {
   "vis": 15.89,
@@ -10230,7 +10874,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "4290721776": {
   "vis": 13.62,
@@ -10266,7 +10911,8 @@
   "torpRange": 5742.9,
   "hasRadar": 1,
   "hasHydro": 0,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 74.0
  },
  "4291737040": {
   "vis": 0.0,
@@ -10275,7 +10921,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 69.0
  },
  "4291737584": {
   "vis": 8.56,
@@ -10302,7 +10949,8 @@
   "torpRange": 13071.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 70.0
  },
  "4292753104": {
   "vis": 0.0,
@@ -10311,7 +10959,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 22.0
  },
  "4292753392": {
   "vis": 5.76,
@@ -10320,7 +10969,8 @@
   "torpRange": 7144.3,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 22.0
  },
  "4292785424": {
   "vis": 14.0,
@@ -10329,7 +10979,8 @@
   "torpRange": 12857.1,
   "hasRadar": 0,
   "hasHydro": 1,
-  "cls": "Cruiser"
+  "cls": "Cruiser",
+  "torpReload": 101.0
  },
  "4292785968": {
   "vis": 9.26,
@@ -10356,7 +11007,8 @@
   "torpRange": 8571.4,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Battleship"
+  "cls": "Battleship",
+  "torpReload": 90.0
  },
  "4292851696": {
   "vis": 11.52,
@@ -10374,7 +11026,8 @@
   "torpRange": 9985.7,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 20.0
  },
  "4293801424": {
   "vis": 6.79,
@@ -10383,7 +11036,8 @@
   "torpRange": 11442.9,
   "hasRadar": 0,
   "hasHydro": 0,
-  "cls": "Destroyer"
+  "cls": "Destroyer",
+  "torpReload": 69.0
  },
  "4293801680": {
   "vis": 0.0,

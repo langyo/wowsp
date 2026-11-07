@@ -3205,11 +3205,427 @@ pub fn export_move_dataset_dir(
     Ok((rows, summary))
 }
 
+// ── E26: torpedo-decision dataset ───────────────────────────────────────────
+//
+// "Given this tick and this intel, should this hull launch torpedoes?" — the
+// primary-weapon twin of the E9 fire export, aimed at the hulls whose main
+// armament is the torpedo (DD / CL / CA / SS). Supervision comes from the
+// decoded receiveTorpedoes stream: one PLAYER CLICK is reconstructed by
+// clustering launches per owner with a <= 2 s gap, because salvo_id is
+// pack-level, not click-level (one click arrives as several salvo ids
+// 0.3-1.0 s apart; a Marceau match shows 8 salvos for 4 clicks).
+//
+// Design decisions:
+//   * DECIDERS: hulls with a torpedo armament (the attribute table's
+//     torpRange > 0 or at least one observed launch), MINUS carriers — a
+//     carrier's torpedo events are AIR-DROPPED ordnance owned by the ship
+//     entity, and a CV's table torpRange is 0, so including them would mix
+//     airborne drops into the ship-launch labels.
+//   * labelA "tubes ready AND an observed-now enemy inside torpedo range":
+//     the reload is the GameParams torpReload shotDelay when the attribute
+//     table carries it (authoritative per-launcher value), otherwise a p10
+//     of observed click intervals clamped to [10, 300] s; fewer than two
+//     observed clicks => 0.0 (tubes start loaded).
+//   * CADENCE = THE LABEL WINDOW: decision points every DECISION_INTERVAL_S
+//     (2 s), identical to the fire family. The labelB window is
+//     LABEL_WINDOW_S (2 s), so every decision point can label a click in
+//     (t, t + 2 s]; a 4 s cadence would leave launches in (t + 2, t + 4)
+//     unlabelable and score those holds as false negatives (the E26 pilot's
+//     export protocol bug).
+//   * labelB "the expert clicked": a click starts in (t, t + 2 s].
+//   * Features: the SAME v2 pipeline as fire/move. DecisionRowCore's
+//     ownReloadFrac / ownRangeM are repurposed for the TORPEDO reload /
+//     range in this family (documented on the row type).
+//   * Outcome fields are omitted (row budget; torpedo HITS are the E21/E22
+//     attribution path, not this exporter's job).
+
+/// Two launches within this gap belong to the same player click.
+pub const TORP_CLICK_MERGE_S: f32 = 2.0;
+/// Torpedo-reload estimate clamp band (seconds) used only when the attribute
+/// table has no torpReload column value for the hull.
+pub const TORP_RELOAD_MIN_S: f32 = 10.0;
+pub const TORP_RELOAD_MAX_S: f32 = 300.0;
+
+/// One exported torpedo-decision point (E26, one JSONL line): the shared v2
+/// feature core plus the click-level launch labels. Rows sit on the 2 s
+/// DECISION_INTERVAL_S grid — the same width as the labelB window, so a click
+/// in (t, t + 2 s] is labelable from every point (a 4 s grid would swallow
+/// half of each click's window).
+///
+/// NOTE: the flattened core's ownReloadFrac and ownRangeM carry TORPEDO
+/// semantics in this family (tube reload fraction, torpedo range in metres);
+/// the row also spells them out as own_torp_reload_frac / own_torp_range_m.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoDatasetRow {
+    #[serde(flatten)]
+    pub core: DecisionRowCore,
+    pub label_a_can_launch: bool,
+    pub label_b_launched: Option<bool>,
+    /// (t - last click) / reload, clamped to [0, 1]; 1.0 = all tubes ready
+    /// (no click yet, or the hull's reload is unknown).
+    pub own_torp_reload_frac: f32,
+    /// Engagement range used by labelA (metres).
+    pub own_torp_range_m: f32,
+}
+
+impl BatchRow for TorpedoDatasetRow {
+    fn set_replay_id(&mut self, replay_id: String) {
+        self.core.replay_id = Some(replay_id);
+    }
+}
+
+/// Torpedo-export totals for one replay (E26).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoDatasetExportStats {
+    pub owners: usize,
+    pub rows: usize,
+    pub rows_can_launch: usize,
+    pub rows_launched: usize,
+    pub positive_rate_among_can_launch: f32,
+}
+
+impl BatchStats for TorpedoDatasetExportStats {
+    fn owners(&self) -> usize {
+        self.owners
+    }
+
+    fn rows(&self) -> usize {
+        self.rows
+    }
+}
+
+/// Click-level torpedo state of one owner (E26).
+struct OwnerTorpContext {
+    /// Player clicks (first launch time of each cluster), time-sorted.
+    clicks: Vec<f32>,
+    /// Reload used by labelA (seconds; 0.0 = tubes ready / unknown).
+    reload_s: f32,
+    /// Torpedo range used by labelA (metres).
+    range_m: f32,
+    /// Whether this hull is a torpedo-decision decider at all.
+    capable: bool,
+}
+
+/// Cluster per-owner launch times into player clicks: a consecutive gap of at
+/// most TORP_CLICK_MERGE_S joins the previous cluster (salvo_id is NOT the
+/// click key — one click arrives as several salvo ids 0.3-1.0 s apart).
+fn merge_torp_clicks(times: &[f32]) -> Vec<f32> {
+    let mut clicks: Vec<f32> = Vec::new();
+    let mut last: Option<f32> = None;
+    for &t in times {
+        if last.is_none_or(|prev| t - prev > TORP_CLICK_MERGE_S) {
+            clicks.push(t);
+        }
+        last = Some(t);
+    }
+    clicks
+}
+
+/// Reload for labelA: the GameParams shotDelay when known (authoritative),
+/// else a p10 of the observed click intervals clamped to the plausible band;
+/// fewer than two observed clicks => 0.0 (tubes start loaded).
+fn estimate_torp_reload(clicks: &[f32], attr_reload_s: f32) -> f32 {
+    if attr_reload_s > 0.0 {
+        return attr_reload_s;
+    }
+    if clicks.len() < 2 {
+        return 0.0;
+    }
+    let intervals: Vec<f32> = clicks.windows(2).map(|w| w[1] - w[0]).collect();
+    percentile(intervals, 0.10)
+        .unwrap_or(0.0)
+        .clamp(TORP_RELOAD_MIN_S, TORP_RELOAD_MAX_S)
+}
+
+/// Build the per-owner torpedo context for every ship (owners that never
+/// launched still carry an empty click list — they are the false-negative
+/// supervision).
+fn torp_contexts(stream: &ReplayStream, ships: &[ShipInfo<'_>]) -> BTreeMap<i32, OwnerTorpContext> {
+    let mut by_owner: BTreeMap<i32, Vec<f32>> = BTreeMap::new();
+    for torp in &stream.torpedoes {
+        by_owner.entry(torp.owner_id).or_default().push(torp.time);
+    }
+    for times in by_owner.values_mut() {
+        times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    }
+    let table = super::ship_attrs::embedded_table().ok();
+    let mut out = BTreeMap::new();
+    for ship in ships {
+        let id = ship.traj.entity_id;
+        let ship_id = ship.traj.kind.as_ref().and_then(|k| k.ship_id);
+        let attrs = table.map_or(super::ship_attrs::ShipAttrs::NEUTRAL, |t| t.of(ship_id));
+        let is_carrier = table
+            .is_some_and(|t| t.class_of(ship_id) == Some(super::ship_attrs::ShipClass::AirCarrier));
+        let clicks = merge_torp_clicks(by_owner.get(&id).map_or(&[][..], Vec::as_slice));
+        let capable = !is_carrier && (attrs.torp_range_m > 0.0 || !clicks.is_empty());
+        let range_m = if attrs.torp_range_m > 0.0 {
+            attrs.torp_range_m
+        } else {
+            // Launch history but no table range: conservative 10 km floor so
+            // the row's range gate is never unbounded.
+            10_000.0
+        };
+        let reload_s = estimate_torp_reload(&clicks, attrs.torp_reload_s);
+        out.insert(
+            id,
+            OwnerTorpContext {
+                clicks,
+                reload_s,
+                range_m,
+                capable,
+            },
+        );
+    }
+    out
+}
+
+/// Build every exportable torpedo-decision row of the replay (E26).
+/// Deciders: team-known ships with a torpedo armament (carriers excluded).
+/// Cadence: DECISION_INTERVAL_S (2 s), aligned with the 2 s labelB window.
+/// Gates: own state observable at t (E7 own-observable semantics). Everything
+/// feature-side is the fire v2 pipeline via build_decision_row_core.
+#[allow(clippy::too_many_arguments)]
+pub fn export_torpedo_dataset(
+    stream: &ReplayStream,
+    ships: &[ShipInfo<'_>],
+    los: Option<&LosGrid>,
+    eye_height: f32,
+    _params: &FireSampleParams,
+    replay_id: Option<&str>,
+    game_mode: Option<&str>,
+    events: &FeatureEvents<'_>,
+) -> (Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats) {
+    let contexts = torp_contexts(stream, ships);
+    let idx = build_feature_index(
+        events,
+        &stream.ally_builds,
+        &stream.weather_transitions,
+        &stream.weather_notifications,
+    );
+    let mut rows = Vec::new();
+    let mut owners = 0usize;
+    for ship in ships {
+        if ship.team_ambiguous || ship.team_id.is_none() {
+            continue;
+        }
+        let id = ship.traj.entity_id;
+        let Some(ctx) = contexts.get(&id) else {
+            continue;
+        };
+        if !ctx.capable {
+            continue;
+        }
+        owners += 1;
+        let (ally_radar, ally_hydro) = ally_build_fracs(&idx, ship);
+        let (from, to) = alive_window(ship);
+        let mut t = from + 5.0;
+        while t <= to {
+            // Own state must be observable (recorder view) — the E7 gate.
+            let Some(own) = last_sample_before(&ship.traj.samples, t) else {
+                t += DECISION_INTERVAL_S;
+                continue;
+            };
+            if t - own.time > GAP_THRESHOLD {
+                t += DECISION_INTERVAL_S;
+                continue;
+            }
+            let last_click = ctx.clicks.iter().rev().find(|&&c| c <= t).copied();
+            let torp_reload_frac = match last_click {
+                Some(c) if ctx.reload_s > 0.0 => ((t - c) / ctx.reload_s).clamp(0.0, 1.0),
+                _ => 1.0,
+            };
+            // Reload completes within the label window (the E7 margin: one
+            // decision interval, matching the fire family).
+            let effective_reload = (ctx.reload_s - DECISION_INTERVAL_S).max(0.0);
+            let reloaded = !ctx
+                .clicks
+                .iter()
+                .any(|&c| c <= t && t - c < effective_reload);
+            // labelA: tubes ready AND an observed-now enemy inside torpedo range.
+            let label_a = reloaded && nearest_enemy(ship, ships, own, t, ctx.range_m).is_some();
+            // labelB: a click starts in (t, t + label window].
+            let label_b =
+                label_a.then(|| ctx.clicks.iter().any(|&c| c > t && c <= t + LABEL_WINDOW_S));
+            let core = build_decision_row_core(
+                stream,
+                ships,
+                ship,
+                own,
+                t,
+                los,
+                eye_height,
+                torp_reload_frac,
+                ctx.range_m,
+                ally_radar,
+                ally_hydro,
+                replay_id,
+                game_mode,
+                events,
+                &idx,
+            );
+            rows.push(TorpedoDatasetRow {
+                core,
+                label_a_can_launch: label_a,
+                label_b_launched: label_b,
+                own_torp_reload_frac: torp_reload_frac,
+                own_torp_range_m: ctx.range_m,
+            });
+            t += DECISION_INTERVAL_S;
+        }
+    }
+    let rows_can_launch = rows.iter().filter(|r| r.label_a_can_launch).count();
+    let rows_launched = rows
+        .iter()
+        .filter(|r| r.label_b_launched == Some(true))
+        .count();
+    let stats = TorpedoDatasetExportStats {
+        owners,
+        rows: rows.len(),
+        rows_can_launch,
+        rows_launched,
+        positive_rate_among_can_launch: if rows_can_launch == 0 {
+            0.0
+        } else {
+            rows_launched as f32 / rows_can_launch as f32
+        },
+    };
+    (rows, stats)
+}
+
+/// Torpedo batch summary (E26): corpus-level totals over the per-file stats.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoDatasetBatchSummary {
+    pub root_dir: String,
+    pub files_seen: usize,
+    pub files_exported: usize,
+    pub files_failed: usize,
+    pub deciders: usize,
+    pub rows: usize,
+    pub rows_can_launch: usize,
+    pub rows_launched: usize,
+    pub positive_rate_among_can_launch: f32,
+    pub per_file: Vec<DatasetBatchFile<TorpedoDatasetExportStats>>,
+}
+
+/// Torpedo-family wrapper over ingest_batch_files: pools the per-file launch
+/// totals into the corpus summary.
+pub fn ingest_torpedo_replay_files<I, F>(
+    root: &std::path::Path,
+    files: I,
+    process: F,
+) -> (Vec<TorpedoDatasetRow>, TorpedoDatasetBatchSummary)
+where
+    I: IntoIterator<Item = std::path::PathBuf>,
+    F: FnMut(
+        &std::path::Path,
+    ) -> anyhow::Result<(Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats)>,
+{
+    let (rows, per_file) = ingest_batch_files::<TorpedoDatasetRow, TorpedoDatasetExportStats, I, F>(
+        root, files, process,
+    );
+    let mut summary = TorpedoDatasetBatchSummary {
+        root_dir: root.to_string_lossy().into_owned(),
+        files_seen: per_file.len(),
+        files_exported: 0,
+        files_failed: 0,
+        deciders: 0,
+        rows: 0,
+        rows_can_launch: 0,
+        rows_launched: 0,
+        positive_rate_among_can_launch: 0.0,
+        per_file: Vec::new(),
+    };
+    for f in per_file {
+        let DatasetBatchFile {
+            replay_id,
+            file_name,
+            outcome,
+        } = f;
+        let outcome = match outcome {
+            DatasetBatchOutcome::Exported { stats } => {
+                summary.files_exported += 1;
+                summary.deciders += stats.owners;
+                summary.rows += stats.rows;
+                summary.rows_can_launch += stats.rows_can_launch;
+                summary.rows_launched += stats.rows_launched;
+                DatasetBatchOutcome::Exported { stats }
+            },
+            DatasetBatchOutcome::Failed { reason } => {
+                summary.files_failed += 1;
+                DatasetBatchOutcome::Failed { reason }
+            },
+        };
+        summary.per_file.push(DatasetBatchFile {
+            replay_id,
+            file_name,
+            outcome,
+        });
+    }
+    summary.positive_rate_among_can_launch = if summary.rows_can_launch == 0 {
+        0.0
+    } else {
+        summary.rows_launched as f32 / summary.rows_can_launch as f32
+    };
+    (rows, summary)
+}
+
+/// Decode + export ONE replay file's torpedo rows (the process closure used by
+/// export_torpedo_dataset_dir); failure semantics identical to
+/// export_replay_file.
+pub fn export_torpedo_replay_file(
+    path: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+) -> anyhow::Result<(Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats)> {
+    let path_str = path.to_string_lossy().into_owned();
+    let (stream, ev) = super::replay::decode_replay_stream_with_events(&path_str)?;
+    let vehicles = super::replay_probe::read_roster(&path_str)?;
+    let ships = ship_infos(&stream, &vehicles);
+    let los = los_for_replay(stream.map_name.as_deref(), los_dir);
+    let game_mode = read_game_mode(path);
+    let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
+    Ok(export_torpedo_dataset(
+        &stream,
+        &ships,
+        los.as_ref(),
+        eye_height,
+        params,
+        None, // stamped by ingest_torpedo_replay_files from the path
+        game_mode.as_deref(),
+        &events,
+    ))
+}
+
+/// Folder -> torpedo dataset (E26). Same walk and tolerance as
+/// export_decision_dataset_dir, torpedo rows out.
+pub fn export_torpedo_dataset_dir(
+    dir: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+) -> anyhow::Result<(Vec<TorpedoDatasetRow>, TorpedoDatasetBatchSummary)> {
+    if !dir.is_dir() {
+        bail!("batch root {} is not a directory", dir.to_string_lossy());
+    }
+    let mut files = Vec::new();
+    collect_replay_files(dir, &mut files);
+    files.sort();
+    let (rows, summary) = ingest_torpedo_replay_files(dir, files, |path| {
+        export_torpedo_replay_file(path, los_dir, eye_height, params)
+    });
+    Ok((rows, summary))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::decision_tick::DEFAULT_EYE_HEIGHT;
     use super::super::replay_probe::read_roster;
     use super::*;
+    use wowsp_tauri_shared::TorpedoLaunch;
 
     fn sample(t: f32, eid: i32, x: f32, z: f32) -> PositionSample {
         PositionSample {
@@ -5503,6 +5919,298 @@ mod tests {
                 eprintln!("[e16] wrote {} rows to {}", rows.len(), out);
             },
             Err(_) => eprintln!("[e16] WOWSP_MOVE_DATASET_OUT not set - dataset not written"),
+        }
+    }
+
+    // ── E26: torpedo-decision dataset ───────────────────────────────────
+
+    fn torp(time: f32, owner: i32, salvo: i32) -> TorpedoLaunch {
+        TorpedoLaunch {
+            time,
+            owner_id: owner,
+            params_id: 0,
+            salvo_id: salvo,
+            shot_id: 0,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            dir_x: 1.0,
+            dir_y: 0.0,
+            dir_z: 0.0,
+            armed: true,
+        }
+    }
+
+    /// E26 click clustering: different salvo ids inside one click merge (<= 2 s
+    /// gap), a > 2 s gap opens a new click; carriers are not ship-launch
+    /// deciders (their torpedo events are air-dropped ordnance owned by the CV
+    /// ship entity).
+    #[test]
+    fn torpedo_clicks_cluster_and_carriers_are_excluded() {
+        let dd = trajectory(
+            9,
+            Some(4_179_507_152), // Daring: torpReload 125 s
+            (0..400)
+                .map(|i| sample(i as f32 * 0.5, 9, 10.0, 0.0))
+                .collect(),
+        );
+        let carrier = trajectory(
+            10,
+            Some(3_256_858_064), // Admiral Orlov (AirCarrier)
+            (0..400)
+                .map(|i| sample(i as f32 * 0.5, 10, 200.0, 200.0))
+                .collect(),
+        );
+        let stream = ReplayStream {
+            trajectories: vec![dd, carrier],
+            torpedoes: vec![
+                torp(100.0, 9, 1),
+                torp(100.3, 9, 2), // same click, different salvo id
+                torp(101.0, 9, 1),
+                torp(112.0, 9, 3),  // second click (> 2 s gap)
+                torp(120.0, 10, 1), // CV air drop, owner = CV ship entity
+            ],
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 0, 4_179_507_152),
+            roster_entry(2, 0, 3_256_858_064),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let contexts = torp_contexts(&stream, &ships);
+        let dd_ctx = contexts.get(&9).expect("dd context");
+        assert_eq!(dd_ctx.clicks, vec![100.0, 112.0]);
+        assert!(
+            (dd_ctx.reload_s - 125.0).abs() < 1e-3,
+            "attrs reload {}",
+            dd_ctx.reload_s
+        );
+        assert!((dd_ctx.range_m - 14_271.4).abs() < 1.0);
+        assert!(dd_ctx.capable);
+        let cv_ctx = contexts.get(&10).expect("cv context");
+        assert!(!cv_ctx.capable, "carrier air drops must not be deciders");
+        assert_eq!(cv_ctx.clicks, vec![120.0]);
+    }
+
+    /// E26 labels on a synthetic stream: a Daring firing two clicks at an
+    /// in-range target yields can-launch negatives and one launched positive
+    /// inside the 2 s window; a torpedo-less battleship and an (excluded)
+    /// carrier produce no rows; the row serializes with the documented keys.
+    #[test]
+    fn synthetic_torpedo_dataset_export_labels() {
+        let params = FireSampleParams::default();
+        // DD 9 (team 1) at (10, 0); enemy BB 8 (team 0) at (50, 0) ≈ 234 m.
+        let dd = trajectory(
+            9,
+            Some(4_179_507_152),
+            (0..400)
+                .map(|i| sample(i as f32 * 0.5, 9, 10.0, 0.0))
+                .collect(),
+        );
+        let bb = trajectory(
+            8,
+            Some(3_247_387_984), // torpedo-less battleship
+            (0..400)
+                .map(|i| sample(i as f32 * 0.5, 8, 50.0, 0.0))
+                .collect(),
+        );
+        let carrier = trajectory(
+            10,
+            Some(3_256_858_064),
+            (0..400)
+                .map(|i| sample(i as f32 * 0.5, 10, 200.0, 0.0))
+                .collect(),
+        );
+        let stream = ReplayStream {
+            trajectories: vec![dd, bb, carrier],
+            torpedoes: vec![
+                torp(99.0, 9, 1),
+                torp(99.3, 9, 2),   // same click
+                torp(130.0, 9, 3),  // second click
+                torp(120.0, 10, 1), // CV drop (excluded)
+            ],
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 2, 4_179_507_152),
+            roster_entry(2, 0, 3_247_387_984),
+            roster_entry(3, 0, 3_256_858_064),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let (rows, stats) = export_torpedo_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            Some("replayT"),
+            Some("pvp"),
+            &FeatureEvents::empty(),
+        );
+        assert_eq!(stats.owners, 1, "only the Daring is a decider");
+        assert!(stats.rows > 0);
+        let present: BTreeSet<i32> = rows.iter().map(|r| r.core.owner_entity_id).collect();
+        assert_eq!(present.into_iter().collect::<Vec<_>>(), vec![9]);
+        // t=97: the click at 99.0 starts inside (97, 99] -> launched positive.
+        let launched = rows
+            .iter()
+            .find(|r| r.core.owner_entity_id == 9 && (r.core.t - 97.0).abs() < 0.1)
+            .expect("t=97 row");
+        assert!(launched.label_a_can_launch);
+        assert_eq!(launched.label_b_launched, Some(true));
+        assert!((launched.own_torp_range_m - 14_271.4).abs() < 1.0);
+        assert!((launched.own_torp_reload_frac - 1.0).abs() < 1e-6);
+        // t=101 sits inside the 125 s reload -> no launch decision on the table.
+        let reloading = rows
+            .iter()
+            .find(|r| r.core.owner_entity_id == 9 && (r.core.t - 101.0).abs() < 0.1)
+            .expect("t=101 row");
+        assert!(!reloading.label_a_can_launch);
+        assert_eq!(reloading.label_b_launched, None);
+        assert!(reloading.own_torp_reload_frac < 0.05);
+        // labelB is censored exactly off labelA, and the counters agree.
+        assert!(
+            rows.iter()
+                .all(|r| r.label_b_launched.is_some() == r.label_a_can_launch)
+        );
+        assert_eq!(
+            stats.rows_can_launch,
+            rows.iter().filter(|r| r.label_a_can_launch).count()
+        );
+        assert_eq!(
+            stats.rows_launched,
+            rows.iter()
+                .filter(|r| r.label_b_launched == Some(true))
+                .count()
+        );
+        // Wire shape: camelCase flattened row + the own-torpedo columns.
+        let js = serde_json::to_value(&launched).expect("serialize row");
+        assert_eq!(js["labelACanLaunch"], true);
+        assert_eq!(js["labelBLaunched"], true);
+        assert!(js.get("ownTorpReloadFrac").is_some());
+        assert!(js.get("ownTorpRangeM").is_some());
+        assert!(js.get("t").is_some(), "flattened core key");
+        assert!(js.get("ownReloadFrac").is_some(), "flattened core key");
+    }
+
+    /// E26 against real replay bytes — same env contract as the E16 batch test:
+    /// WOWSP_TEST_REPLAY_DIR / WOWSP_TEST_REPLAY selects the input;
+    /// WOWSP_TORPEDO_DATASET_OUT writes the aggregated JSONL (training input).
+    /// Skips when neither env var is set.
+    #[test]
+    fn e26_torpedo_export_on_real_replays() {
+        let replay_dir = match std::env::var("WOWSP_TEST_REPLAY_DIR") {
+            Ok(dir) => std::path::PathBuf::from(dir),
+            Err(_) => match std::env::var("WOWSP_TEST_REPLAY") {
+                Ok(file) => {
+                    let root = std::env::temp_dir().join(format!(
+                        "wowsp_torp_batch_real_{}_{}",
+                        std::process::id(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0)
+                    ));
+                    std::fs::create_dir_all(&root).expect("mkdir");
+                    let name = std::path::Path::new(&file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "real.wowsreplay".into());
+                    std::fs::copy(&file, root.join(&name)).expect("copy real replay");
+                    std::fs::write(
+                        root.join("zz_corrupt.wowsreplay"),
+                        [0x5Au8, 0x01, 0xFF, 0x00, 0x33, 0x77, 0x11, 0x42, 0x00, 0x99],
+                    )
+                    .expect("write corrupt");
+                    std::fs::write(root.join("zz_empty.wowsreplay"), b"").expect("write empty");
+                    root
+                },
+                Err(_) => {
+                    eprintln!("[e26] WOWSP_TEST_REPLAY_DIR / WOWSP_TEST_REPLAY not set - skipping");
+                    return;
+                },
+            },
+        };
+        let params = FireSampleParams::default();
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let (rows, summary) = export_torpedo_dataset_dir(
+            &replay_dir,
+            los_dir.as_deref(),
+            DEFAULT_EYE_HEIGHT,
+            &params,
+        )
+        .expect("batch runs");
+        eprintln!(
+            "[e26] batch {}: {} seen / {} exported / {} failed -> {} rows, {} deciders; canLaunch {} launched {} (rate {:.3})",
+            summary.root_dir,
+            summary.files_seen,
+            summary.files_exported,
+            summary.files_failed,
+            summary.rows,
+            summary.deciders,
+            summary.rows_can_launch,
+            summary.rows_launched,
+            summary.positive_rate_among_can_launch
+        );
+        assert!(summary.files_exported >= 1, "nothing exported");
+        assert!(summary.rows > 0);
+        assert_eq!(summary.rows, rows.len());
+        assert_eq!(
+            summary.rows_can_launch,
+            rows.iter().filter(|r| r.label_a_can_launch).count()
+        );
+        assert_eq!(
+            summary.rows_launched,
+            rows.iter()
+                .filter(|r| r.label_b_launched == Some(true))
+                .count()
+        );
+        let ids: BTreeSet<&str> = summary
+            .per_file
+            .iter()
+            .filter(|f| matches!(f.outcome, DatasetBatchOutcome::Exported { .. }))
+            .map(|f| f.replay_id.as_str())
+            .collect();
+        assert!(rows.iter().all(|r| {
+            r.core
+                .replay_id
+                .as_deref()
+                .is_some_and(|id| ids.contains(id))
+        }));
+        for f in &summary.per_file {
+            if let DatasetBatchOutcome::Failed { reason } = &f.outcome {
+                assert!(!reason.is_empty());
+            }
+        }
+        match std::env::var("WOWSP_TORPEDO_DATASET_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create dataset parent dir");
+                }
+                use std::io::Write;
+                let mut f = std::fs::File::create(&out_path).expect("create dataset file");
+                for r in &rows {
+                    writeln!(f, "{}", serde_json::to_string(r).expect("serialize row"))
+                        .expect("write row");
+                }
+                let written = std::fs::read_to_string(&out_path)
+                    .expect("read back dataset")
+                    .lines()
+                    .count();
+                assert_eq!(written, rows.len(), "JSONL line count must equal rows");
+                eprintln!("[e26] wrote {} rows to {}", written, out);
+            },
+            Err(_) => {
+                eprintln!("[e26] WOWSP_TORPEDO_DATASET_OUT not set - dataset not written")
+            },
         }
     }
 }

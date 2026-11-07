@@ -87,6 +87,10 @@ pub struct ShipAttrs {
     pub mb_range_m: f32,
     /// Torpedo range, m.
     pub torp_range_m: f32,
+    /// Per-launcher torpedo reload, seconds (the table's optional
+    /// `torpReload` column: the smallest positive HP_* shotDelay in the
+    /// hull's torpedo sections); 0.0 = unknown / no torpedo armament.
+    pub torp_reload_s: f32,
     /// Surveillance radar consumable present.
     pub has_radar: bool,
     /// Hydrophone / sonar consumable present.
@@ -103,6 +107,7 @@ impl ShipAttrs {
         vis_smoke_km: 0.0,
         mb_range_m: 15000.0,
         torp_range_m: 0.0,
+        torp_reload_s: 0.0,
         has_radar: false,
         has_hydro: false,
         ship_class: ShipClass::Other,
@@ -168,6 +173,15 @@ impl ShipAttrTable {
                 .and_then(|x| x.as_str())
                 .map(ShipClass::from_species)
                 .unwrap_or(ShipClass::Other);
+            // Optional additive column (E26): missing / non-numeric /
+            // non-positive values mean "unknown torpedo reload", never an
+            // error (tables generated before the column still load).
+            let torp_reload_s = o
+                .get("torpReload")
+                .and_then(|x| x.as_f64())
+                .filter(|v| v.is_finite() && *v > 0.0)
+                .map(|v| v as f32)
+                .unwrap_or(0.0);
             ships.insert(
                 ship_id,
                 ShipAttrs {
@@ -175,6 +189,7 @@ impl ShipAttrTable {
                     vis_smoke_km: num("visSmoke")?,
                     mb_range_m: num("mbRange")?,
                     torp_range_m: num("torpRange")?,
+                    torp_reload_s,
                     has_radar: flag("hasRadar")?,
                     has_hydro: flag("hasHydro")?,
                     ship_class,
@@ -419,6 +434,41 @@ mod tests {
         let carrier = ShipAttrTable::from_json(&attrs(r#", "cls": "AirCarrier""#))
             .expect("carrier column parses");
         assert!(!carrier.fire_applicable(Some(123)));
+    }
+
+    /// The E26 torpedo-reload column: the authoritative per-launcher reload
+    /// (Daring = 125 s), alive across the torpedo roster, and optional — a
+    /// table generated before the column still parses with 0.0 (unknown).
+    #[test]
+    fn torpedo_reload_column_parses() {
+        let t = table();
+        let daring = t.of(Some(4_179_507_152));
+        assert!(
+            (daring.torp_reload_s - 125.0).abs() <= 1.0,
+            "Daring reload {}",
+            daring.torp_reload_s
+        );
+        assert!(
+            t.ships.values().filter(|a| a.torp_reload_s > 0.0).count() > 300,
+            "torpedo-reload column looks dead"
+        );
+        let base_attrs = |extra: &str| {
+            format!(
+                r#"{{"9": {{"vis": 1, "visSmoke": 0, "mbRange": 2, "torpRange": 0, "hasRadar": 0, "hasHydro": 0{extra}}}}}"#
+            )
+        };
+        // Old table (no column) / non-numeric / non-positive → 0.0, no error.
+        let no_col = ShipAttrTable::from_json(&base_attrs("")).expect("old table parses");
+        assert_eq!(no_col.of(Some(9)).torp_reload_s, 0.0);
+        let bad_text = ShipAttrTable::from_json(&base_attrs(r#", "torpReload": "fast""#))
+            .expect("non-numeric reload is not an error");
+        assert_eq!(bad_text.of(Some(9)).torp_reload_s, 0.0);
+        let negative = ShipAttrTable::from_json(&base_attrs(r#", "torpReload": -5"#))
+            .expect("negative reload is not an error");
+        assert_eq!(negative.of(Some(9)).torp_reload_s, 0.0);
+        let reload = ShipAttrTable::from_json(&base_attrs(r#", "torpReload": 87.5"#))
+            .expect("numeric reload parses");
+        assert!((reload.of(Some(9)).torp_reload_s - 87.5).abs() < 1e-6);
     }
 
     #[test]
