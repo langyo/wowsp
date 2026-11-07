@@ -11,9 +11,12 @@
  * to an estimate) or, with the AI confidence switch on (the stats chip
  * popup's second block), by the coverage-weighted AI key — see the AI
  * paragraph below — and carry the same roster dressing as the live-battle
- * panel: clan tags, PR column, identity-line seal tags, team aggregates in
- * the column titles and the battle mode/map head. Rows default to the
- * compact one-line look; the share bar's mode toggle expands them to full
+ * panel: clan tags, PR column, identity-line seal tags and team aggregates
+ * in the column titles. (The mode/map head row above the toolbar was
+ * retired 2026-11-07 — the user read it as an extra element; the `head`
+ * prop still feeds the copied sheet's mode pill and the stats-source
+ * scope.) Rows default to the compact one-line look; the share bar's mode
+ * toggle expands them to full
  * cards in the live roster's richer-density spirit (name/ship/stat stack +
  * the LiveShipMeta ship strip; the live roster adds the same strip to its
  * shared aligned row instead), a persisted stats pref. The share bar also
@@ -70,11 +73,16 @@ import {
   type VNode,
 } from "vue";
 import { useRouter } from "vue-router";
-import { Eye, EyeOff } from "@lucide/vue";
+import { CircleAlert, Eye, EyeOff } from "@lucide/vue";
 import { HkModal, HkSpinner } from "@celestia-island/hikari";
 
-import { api, type PlayerBuild, type PlayerStats, type VehicleEntry } from "@/api";
-import AppTag from "@/components/base/AppTag";
+import {
+  api,
+  type MarkerColor,
+  type PlayerBuild,
+  type PlayerStats,
+  type VehicleEntry,
+} from "@/api";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -164,9 +172,12 @@ import "./PostBattlePanel.scss";
 
 const ribbonNames = ribbonNamesRaw as Record<string, Partial<Record<string, string>>>;
 
-/** Battle identity pills for the panel head — the same layered mode identity
- *  the live panel reads off tempArenaInfo (replay context: the replay's
- *  arena header; live context: the retained arena store). */
+/** Battle identity the panel resolves its canonical mode key from — the
+ *  copied sheet's mode pill / map label / meta line and the stats-source
+ *  battle scope. The same layered identity the live panel reads off
+ *  tempArenaInfo (replay context: the replay's arena header; live context:
+ *  the retained arena store). Not a DOM head row: the panel's mode/map head
+ *  was retired 2026-11-07. */
 export interface PostBattleHead {
   matchGroup?: string | null;
   scenario?: string | null;
@@ -219,18 +230,19 @@ export default defineComponent({
   name: "PostBattlePanel",
   props: {
     raw: { type: String, required: true },
-    /** Battle identity for the head pills (mode + map); null renders no
-     *  head row (the replay modal's own title carries the context). */
+    /** Battle identity behind the copied sheet's mode pill / map label and
+     *  the "follow the battle" stats-source scope; null copies no mode pill
+     *  (the replay modal's own title carries the on-screen context). */
     head: {
       type: Object as () => PostBattleHead | null,
       default: null,
     },
     /** Operation battle (行动): the roster renders as ONE full-width allies
-     *  column, matching the live panel / fallback panel. The head pill also
-     *  takes it as a one-way label promotion (see postBattleMode.ts): the
-     *  parent resolves this from the descriptor verdict OR the decode-time
-     *  spawn probe, so a probe-promoted battle carries true here while its
-     *  descriptor still reads plain co-op. */
+     *  column, matching the live panel / fallback panel. The share shot's
+     *  mode pill also takes it as a one-way label promotion (see
+     *  postBattleMode.ts): the parent resolves this from the descriptor
+     *  verdict OR the decode-time spawn probe, so a probe-promoted battle
+     *  carries true here while its descriptor still reads plain co-op. */
     operation: { type: Boolean, default: false },
     /** The replay's decoded packet stream — the families the 我的战绩 view
      *  runs through the live panel's own model builder (buildSelfStats);
@@ -766,7 +778,7 @@ export default defineComponent({
      *  its enemy bot team). Same argument every other mode surface forwards
      *  into the classifier (hasSingleTeamRoster in utils/modeColors). */
     const singleTeamRoster = computed(() => hasSingleTeamRoster(props.roster));
-    /** The head pill's resolved canonical mode key — empty when there is no
+    /** The share shot's resolved canonical mode key — empty when there is no
      *  battle identity to render. `props.operation` may promote a plain-co-op
      *  descriptor key to 行动 (the decode-time spawn probe's verdict), see
      *  postBattleMode.ts. */
@@ -775,7 +787,7 @@ export default defineComponent({
         ? postBattleModeKey(props.head, singleTeamRoster.value, props.operation)
         : "",
     );
-    /** The head's battle-mode pill data, shared by both shot models. */
+    /** The copied sheet's battle-mode pill data, shared by both shot models. */
     const headMode = (): SelfShotModel["mode"] => {
       if (!headModeKey.value) return null;
       const c = modeColorOfKey(headModeKey.value);
@@ -1006,7 +1018,6 @@ export default defineComponent({
         ).value.get(p.name);
         return letter != null ? <DivisionTag letter={letter} /> : null;
       };
-      const head = props.head;
       const colTitle = (label: string, list: typeof rows.value) => {
         const title = <span class="replay-view__postbattle-col-name">{label}</span>;
         const cols = rosterColumns();
@@ -1238,7 +1249,7 @@ export default defineComponent({
        *  single-character (一级章) verdict. A 四字 composition tag or any
        *  second seal would crowd the row past its track (the old cluster
        *  clipped the extras mid-glyph, 2026-11-07 review), so those move
-       *  behind the red dot below instead. */
+       *  behind the yellow alert below instead. */
       const inlineSealKind = (
         p: (typeof rows.value)[number],
         full: boolean,
@@ -1248,7 +1259,8 @@ export default defineComponent({
         return stampTier(kinds[0]) === "primary" ? kinds[0] : null;
       };
       /** The seals hidden from the row by {@link inlineSealKind}, in display
-       *  order — the dot's tooltip lists them all. */
+       *  order — the alert's tooltip and the nickname's own hint list them
+       *  all. */
       const hiddenSealsOf = (
         p: (typeof rows.value)[number],
         full: boolean,
@@ -1260,6 +1272,13 @@ export default defineComponent({
           label: stampWording(kind, prefs.value.sealLabels),
         }));
       };
+      /** The hidden seals as their display wording — the ONE list the alert
+       *  icon's tooltip and the nickname's own hint share, so the two hover
+       *  targets can never disagree. */
+      const hiddenSealLabelsOf = (
+        p: (typeof rows.value)[number],
+        full: boolean,
+      ): string[] => hiddenSealsOf(p, full).map((seal) => seal.label);
       /** Those kinds rendered as the single inline small-tag face. */
       const identitySealsOf = (
         p: (typeof rows.value)[number],
@@ -1279,26 +1298,43 @@ export default defineComponent({
           </span>
         );
       };
-      /** The red dot at the nickname's top-right: the row's seals moved out
-       *  of the line, their order and wording preserved in one hover tooltip
-       *  (the data-hint channel, so the phone build reads the same list). */
-      const sealDotOf = (
+      /** The yellow alert at the nickname's top-right: the row's seals moved
+       *  out of the identity line, their order and wording preserved in one
+       *  hover tooltip (the data-hint channel, so the phone build reads the
+       *  same list). The nickname's own hint repeats the list, so hovering
+       *  the name — not only this superscript marker — explains it. */
+      const sealAlertOf = (
         p: (typeof rows.value)[number],
         full: boolean,
       ): VNode | null => {
-        const hidden = hiddenSealsOf(p, full);
-        if (hidden.length === 0) return null;
-        const labels = hidden.map((seal) => seal.label);
+        const labels = hiddenSealLabelsOf(p, full);
+        if (labels.length === 0) return null;
         return (
           <span
-            class="replay-view__postbattle-seal-dot"
+            class="replay-view__postbattle-seal-alert"
             data-hint={labels.join(" · ")}
             aria-label={labels.join(" · ")}
             role="img"
           >
-            <i aria-hidden="true" />
+            <CircleAlert size={10} aria-hidden="true" />
           </span>
         );
+      };
+      /** A nickname's hover hint — the local player marker's label (when one
+       *  is set) first, then the hidden seals in display order, one " · "
+       *  line (user feedback: the seal list must answer a hover on the name
+       *  itself, not only on the small alert marker). Undefined when the row
+       *  has neither, so a plain row carries no tooltip. */
+      const nickHintOf = (
+        color: MarkerColor | null,
+        p: (typeof rows.value)[number],
+        full: boolean,
+      ): string | undefined => {
+        const parts = [
+          color ? markerColorLabel(color) : null,
+          ...hiddenSealLabelsOf(p, full),
+        ].filter((part): part is string => part != null);
+        return parts.length > 0 ? parts.join(" · ") : undefined;
       };
       /** Per-row nickname-mask eye — a sibling AFTER the row button so it
        *  stays a real button (no nested buttons). */
@@ -1377,21 +1413,24 @@ export default defineComponent({
                   {divisionTagOf(p)}
                   {identitySealsOf(p, false)}
                   {/* Local player marker (玩家标记): the name itself carries
-                      the animated tint — nickname-first, account id sharpens. */}
+                      the animated tint — nickname-first, account id sharpens.
+                      Its tooltip combines the marker label with the hidden
+                      seals, the same list the alert icon carries. */}
                   {(() => {
                     const color = ai ? null : markers.colorOf(p.name, p.accountId);
                     return (
                       <span
                         class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
-                        data-hint={color ? markerColorLabel(color) : undefined}
+                        data-hint={nickHintOf(color, p, false)}
                       >
                         {masking.maskOf(p.name)}
                       </span>
                     );
                   })()}
-                  {/* Seals moved out of the line: the red dot's tooltip lists
-                      them all in order (2026-11-07 review). */}
-                  {sealDotOf(p, false)}
+                  {/* Seals moved out of the line: the yellow alert's tooltip
+                      lists them all in order, and the nick hint above repeats
+                      the list (2026-11-07 review). */}
+                  {sealAlertOf(p, false)}
                   {/* Karma (业力) superscript at the nickname's top-right —
                       same register as the live panel's rows (the stats
                       prefs' own switch; missing figures render nothing). */}
@@ -1498,21 +1537,24 @@ export default defineComponent({
                   {divisionTagOf(p)}
                   {identitySealsOf(p, true)}
                   {/* Local player marker (玩家标记): the name itself carries
-                      the animated tint — nickname-first, account id sharpens. */}
+                      the animated tint — nickname-first, account id sharpens.
+                      Its tooltip combines the marker label with the hidden
+                      seals, the same list the alert icon carries. */}
                   {(() => {
                     const color = ai ? null : markers.colorOf(p.name, p.accountId);
                     return (
                       <span
                         class={["replay-view__postbattle-fcell-nick", markerTintClass(color)]}
-                        data-hint={color ? markerColorLabel(color) : undefined}
+                        data-hint={nickHintOf(color, p, true)}
                       >
                         {masking.maskOf(p.name)}
                       </span>
                     );
                   })()}
-                  {/* Seals moved out of the line: the red dot's tooltip lists
-                      them all in order (2026-11-07 review). */}
-                  {sealDotOf(p, true)}
+                  {/* Seals moved out of the line: the yellow alert's tooltip
+                      lists them all in order, and the nick hint above repeats
+                      the list (2026-11-07 review). */}
+                  {sealAlertOf(p, true)}
                   {/* Karma superscript — the same top-right-of-nick
                       register as the compact row and the live panel. */}
                   {prefs.value.rosterKarmaEnabled ? (
@@ -1626,20 +1668,6 @@ export default defineComponent({
       })();
       return (
         <div class="replay-view__postbattle" ref={root}>
-          {head && (head.matchGroup || head.mapName) ? (
-            <div class="replay-view__postbattle-head">
-              {headModeKey.value ? (
-                <AppTag color={modeColorOfKey(headModeKey.value).color}>
-                  {modeLabelOfKey(headModeKey.value)}
-                </AppTag>
-              ) : null}
-              {head.mapName ? (
-                <span class="replay-view__postbattle-head-map">
-                  {displayMapName(head.mapName, dataLanguage.value)}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
           <PostBattleShareBar
             hideAll={masking.hideAll.value}
             shotBusy={shot.busy.value}

@@ -1,6 +1,8 @@
 /**
- * Post-battle head mode resolution — the pure rule behind the results
- * panel's mode pill (label + colour) and the share shot's mode line.
+ * Post-battle head mode resolution — the pure rule behind the copied
+ * post-battle sheet's mode pill (label + colour) and meta/provenance line.
+ * (The results panel's own mode/map DOM head was retired 2026-11-07; the
+ * rule now feeds the share shot and the stats-source scope only.)
  *
  * The panel receives the battle identity as bare descriptor fields
  * (`PostBattleHead`) plus two facts its callers already resolved:
@@ -13,13 +15,14 @@
  *     `isOperation`): the descriptor classifier's verdict OR the
  *     decode-time spawn-symmetry probe's promotion. When it is TRUE for a
  *     battle whose descriptor still yields `"cooperative"` (the probe
- *     promoted a two-sided story battle), the head pill must take the
- *     verdict as a one-way promotion or it would disagree with the viewer
- *     header right above the modal.
+ *     promoted a two-sided story battle), the copied sheet's mode pill must
+ *     take the verdict as a one-way promotion or it would disagree with the
+ *     viewer header the shot belongs to.
  *
  * Extracted as a pure helper (rather than inlined in the component) so the
- * DOM pill and the two share models resolve through ONE tested rule, and so
- * the panel's rendering code stays free of classifier plumbing.
+ * copied sheet's mode pill, its provenance line and the stats scope resolve
+ * through ONE tested rule, and so the panel's rendering code stays free of
+ * classifier plumbing.
  */
 import { modeKey } from "@/utils/modeColors";
 

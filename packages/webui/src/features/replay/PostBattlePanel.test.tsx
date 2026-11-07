@@ -9,12 +9,21 @@
  * players carry no realm — that keeps every on-mount stats path (roster
  * batch + global lookup) off the wire, so the window wiring is the only
  * thing under test.
+ *
+ * Two later review pins ride here as well: the retired mode/map head row
+ * (a passed `head` identity must not bring it back) and the hidden-seal
+ * marker — the red dot became a yellow lucide alert whose hint now also
+ * answers a hover on the nickname itself. The seal pin needs the opposite
+ * fixture setup (a realmful roster + zh UI, the composition sweep's gates),
+ * so it mounts its own payload while the window tests keep the realmless
+ * one.
  */
 import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { initLocaleMessages, t } from "@/i18n";
-import PostBattlePanel from "./PostBattlePanel";
+import { useLanguage } from "@/i18n/useLanguage";
+import PostBattlePanel, { type PostBattleHead } from "./PostBattlePanel";
 
 enableAutoUnmount(afterEach);
 
@@ -38,6 +47,15 @@ vi.mock("@/api", () => ({
     listenMarkersChanged: vi.fn(async () => () => undefined),
     upstreamHealth: vi.fn(async () => []),
     copyImageToClipboard: vi.fn(async () => true),
+    // The seal pin's two on-wire paths: the composition sweep behind the
+    // hidden-seal list (one verdict per queried name — every human in its
+    // roster is an air main, i.e. the 空中小人 seal) and the realmful
+    // roster's stats batch (empty answers leave every stat cell dashed, so
+    // no career verdict can take the inline slot from the composition tag).
+    lookupPlayersComposition: vi.fn(async (names: string[]) =>
+      names.map(() => ({ air: true, sub: false, airVeteran: false, subVeteran: false })),
+    ),
+    lookupPlayersStatsBatch: vi.fn(async () => []),
   },
 }));
 
@@ -49,11 +67,16 @@ function ppiRow(opts: {
   shipId: number;
   exp?: number;
   damage?: number;
+  /** WG realm code (CLIENT_PUBLIC_RESULTS [9]). Omitted by the window
+   *  fixtures so every on-mount stats path bails before the wire; the seal
+   *  fixture passes one — the composition sweep keys `${realm}:${name}`. */
+  realm?: string;
 }): unknown[] {
   const arr: unknown[] = new Array(538).fill(null);
   arr[1] = opts.name;
   arr[6] = opts.team;
   arr[7] = opts.shipId;
+  if (opts.realm) arr[9] = opts.realm;
   arr[15] = 20000; // max hull HP
   arr[20] = 9000; // remained hull HP
   arr[21] = true; // survived
@@ -77,9 +100,37 @@ const RAW = JSON.stringify({
   privateDataList: [[], [], [], [], [], [], [], [450000, 0, 0, 1200]],
 });
 
-function mountPanel() {
+/** The window fixtures plus a realmful twin for the seal pin. Same battle
+ *  shape; every player carries a realm so the composition sweep has a key
+ *  to ask under (a realmless roster idles both the sweep and the stats
+ *  batch, which is exactly why the window tests use that one). */
+const RAW_WITH_REALM = JSON.stringify({
+  accountDBID: 1001,
+  commonList: [],
+  playersPublicInfo: {
+    "1001": ppiRow({
+      name: "AdmiralA",
+      team: 0,
+      shipId: 101,
+      exp: 1200,
+      damage: 56000,
+      realm: "asia",
+    }),
+    "2001": ppiRow({
+      name: "EnemyB",
+      team: 1,
+      shipId: 102,
+      exp: 300,
+      damage: 12000,
+      realm: "asia",
+    }),
+  },
+  privateDataList: [[], [], [], [], [], [], [], [450000, 0, 0, 1200]],
+});
+
+function mountPanel(props: { raw?: string; head?: PostBattleHead | null } = {}) {
   return mount(PostBattlePanel, {
-    props: { raw: RAW, head: null, operation: false },
+    props: { raw: RAW, head: null, operation: false, ...props },
   });
 }
 
@@ -167,5 +218,52 @@ describe("PostBattlePanel player-detail window", () => {
     });
     // jumpToLookup also tears down the replay view behind the window.
     expect(wrapper.emitted("close")).toHaveLength(1);
+  });
+});
+
+describe("PostBattlePanel head row and seal alert", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it("renders no battle-identity head row even when a head identity is passed", () => {
+    // The mode pill + map label row above the toolbar was retired
+    // (2026-11-07 review: the user read it as an extra element). The battle
+    // identity still feeds the copied sheet's mode pill, so the prop stays —
+    // it just must never repaint the DOM row.
+    const wrapper = mountPanel({
+      head: { matchGroup: "pvp", mapName: "42_Neighbors" },
+    });
+    expect(wrapper.find(".replay-view__postbattle-head").exists()).toBe(false);
+    expect(wrapper.find(".replay-view__postbattle-toolbar").exists()).toBe(true);
+  });
+
+  it("turns the seal dot into a yellow alert with the hint on the nickname too", async () => {
+    const { uiLocale } = useLanguage();
+    const prevLocale = uiLocale.value;
+    // The composition sweep (and the seal gates it feeds) only runs under a
+    // zh UI — the module-singleton ref the panel reads, set before mount so
+    // the first render already asks for the roster's verdicts.
+    uiLocale.value = "zh-CN";
+    try {
+      const wrapper = mountPanel({ raw: RAW_WITH_REALM });
+      await vi.waitFor(() => {
+        expect(wrapper.find(".replay-view__postbattle-seal-alert").exists()).toBe(true);
+      });
+      const alert = wrapper.find(".replay-view__postbattle-seal-alert");
+      // The retired red dot is gone; a lucide alert glyph marks the row.
+      expect(wrapper.find(".replay-view__postbattle-seal-dot").exists()).toBe(false);
+      expect(alert.find("svg").exists()).toBe(true);
+      // The hidden seals stay reachable from the icon's own tooltip...
+      expect(alert.attributes("data-hint")).toContain("空中小人");
+      // ...and from the nickname itself (the user's ask): hovering the name
+      // lists the same seals, on top of any player-marker label.
+      expect(
+        wrapper.find(".replay-view__postbattle-cell-nick").attributes("data-hint"),
+      ).toContain("空中小人");
+    } finally {
+      uiLocale.value = prevLocale;
+    }
   });
 });

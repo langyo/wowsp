@@ -345,8 +345,9 @@
     /* The results panel mounts straight into HkModal's body: the body's own
        scroller owns the scroll now (the nested HkScrollContainer and its
        inner wrapper retired — they stacked a second gutter on HkModal's
-       1.5rem body inset, leaving a dead band above the battle head;
-       2026-11-07 report). The matrix is data-first, so desktop tightens the
+       1.5rem body inset, leaving a dead band above the panel's first content;
+       2026-11-07 report; the mode/map head row retired 2026-11-07). The
+       matrix is data-first, so desktop tightens the
        body inset: 8px under the header divider and a fixed 16px band below
        the scrollport (a scrolled row never ends flush on the window's
        bottom edge); the sides keep the standard 24px so the matrix aligns
