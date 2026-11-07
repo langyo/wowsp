@@ -675,39 +675,39 @@ export function drawMinimap(ctx: MapInternals) {
     c2d.restore();
   }
 
-  // Smoke screens (entityType 4): white start/end rings + remaining
-  // seconds, fading out after each puff's lifetime (90s past its last
-  // update, or the recorded leave time).
+  // Smoke screens (entityType 4): one FILLED translucent disc per alive
+  // puff — the laid smoke band, not the old start/end rings — plus the
+  // cluster's remaining-seconds tag at the band's head puff. Each puff
+  // lives [t0, endT] (90s past the update that laid it, capped by the
+  // recorded leave) and its alpha fades with remaining life, so the band
+  // visibly dissipates instead of switching off. Mirrors the 3D instanced
+  // discs (markerUpdate's ctx.smokeDiscs) at the same 45 m world radius.
   {
-    c2d.strokeStyle = "rgba(255,255,255,0.85)";
-    c2d.fillStyle = "rgba(255,255,255,0.95)";
-    c2d.lineWidth = 1;
+    // World→canvas scale off the same rect the wx/wz helpers project
+    // through (px per world meter), so the band tracks map crops/zoom.
+    const pxPerM = w / (dbW || 1);
+    const rPx = Math.max(1, 45 * pxPerM);
     for (const cl of ctx.smokeClusters) {
       if (t < cl.t0 || t > cl.endT) continue;
-      let cur = t;
-      if (t > cl.lastT) {
-        const span = Math.max(1, cl.lastT - cl.t0);
-        cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
-        if (cur > cl.lastT) cur = cl.lastT;
-      }
-      const pStart = sampleAt(cl.traj, cur);
-      if (!pStart) continue;
-      const pEnd = sampleAt(cl.traj, cl.lastT);
-      const drift =
-        pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
-      const showBoth = pEnd != null && drift >= 1000;
-      c2d.beginPath();
-      c2d.arc(wx(pStart.x), wz(-pStart.z), 3, 0, Math.PI * 2);
-      c2d.stroke();
-      if (showBoth && pEnd) {
+      for (const puff of cl.puffs) {
+        if (t < puff.t0 || t > puff.endT) continue;
+        const span = puff.endT - puff.t0;
+        const gone = span > 0 ? (t - puff.t0) / span : 0;
+        const alpha = Math.max(0.05, 0.38 * (1 - gone));
         c2d.beginPath();
-        c2d.arc(wx(pEnd.x), wz(-pEnd.z), 3, 0, Math.PI * 2);
-        c2d.stroke();
+        c2d.arc(wx(puff.x), wz(-puff.z), rPx, 0, Math.PI * 2);
+        c2d.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+        c2d.fill();
       }
+      // Countdown once per cluster, at the band's head puff (the 3D tag
+      // parks on the same point — see markerUpdate).
+      const head = cl.puffs.length > 0 ? cl.puffs[0] : null;
+      if (!head) continue;
       c2d.font = "bold 8px sans-serif";
       c2d.textAlign = "center";
       c2d.textBaseline = "bottom";
-      c2d.fillText(`${Math.ceil(cl.endT - t)}s`, wx(pStart.x), wz(-pStart.z) - 4);
+      c2d.fillStyle = "rgba(255,255,255,0.95)";
+      c2d.fillText(`${Math.ceil(cl.endT - t)}s`, wx(head.x), wz(-head.z) - 4);
     }
   }
   // Aircraft — one in-game type icon per FORMATION (squadron centre),
@@ -948,16 +948,20 @@ export function drawMinimap(ctx: MapInternals) {
             started = true;
             prevT = s.time;
           }
-          // sampleAt hands back a RAW sample object whenever the pose is
-          // frozen — at the polyline's end (gap hold / past the stream)
-          // or at the pre-gap sample when t parks exactly on a
-          // re-detection sample the marker hasn't jumped to yet. Either
-          // way the tail must not draw: re-lining it would drag the line
-          // back across the very gap the pen just lifted over. Only a
-          // genuinely interpolating pose (a fresh object) extends it.
+          // The tail extends the polyline only when it actually moves:
+          // a frozen pose (gap hold / past the stream) and a playhead
+          // parked exactly on the last sample repeat coordinates the loop
+          // already drew, and re-lining a repeated point is a zero-length
+          // segment at best — skip those by VALUE (sampleAt always hands
+          // back a fresh normalized pose object these days, so reference
+          // identity says nothing about interpolation any more).
           const tail = sampleAt(tr, t);
-          const prevDrawn = n >= 2 ? tr.samples[n - 2] : undefined;
-          if (tail && tail !== tr.samples[n - 1] && tail !== prevDrawn) {
+          const lastDrawn = tr.samples[n - 1];
+          if (
+            tail &&
+            lastDrawn &&
+            (tail.x !== lastDrawn.x || tail.z !== lastDrawn.z)
+          ) {
             zctx.lineTo(zwx(tail.x), zwz(-tail.z));
           }
           zctx.stroke();
@@ -1024,38 +1028,33 @@ export function drawMinimap(ctx: MapInternals) {
         drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, dead ? 26 : 34, color);
         zctx.restore();
       }
-      // Smoke screens — white start/end rings + remaining seconds on
-      // the enlarged map (same lifetime/dissipation rules as minimap).
-      zctx.strokeStyle = "rgba(255,255,255,0.85)";
-      zctx.fillStyle = "rgba(255,255,255,0.95)";
-      zctx.lineWidth = 1.4;
+      // Smoke screens — the same filled puff band as the thumb pass, at
+      // the view window's scale (45 m radius through zwx/zwz's rect), so
+      // zooming magnifies the band with the terrain. Each puff fades with
+      // its remaining life; the countdown parks once per cluster at the
+      // band's head puff and stays upright under map rotation.
+      const zpxPerM = zw / (vfull.maxX - vfull.minX || 1);
+      const zrPx = Math.max(2, 45 * zpxPerM);
       for (const cl of ctx.smokeClusters) {
         if (t < cl.t0 || t > cl.endT) continue;
-        let cur = t;
-        if (t > cl.lastT) {
-          const span = Math.max(1, cl.lastT - cl.t0);
-          cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
-          if (cur > cl.lastT) cur = cl.lastT;
-        }
-        const pStart = sampleAt(cl.traj, cur);
-        if (!pStart) continue;
-        const pEnd = sampleAt(cl.traj, cl.lastT);
-        const drift =
-          pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
-        const showBoth = pEnd != null && drift >= 1000;
-        zctx.beginPath();
-        zctx.arc(zwx(pStart.x), zwz(-pStart.z), 6, 0, Math.PI * 2);
-        zctx.stroke();
-        if (showBoth && pEnd) {
+        for (const puff of cl.puffs) {
+          if (t < puff.t0 || t > puff.endT) continue;
+          const span = puff.endT - puff.t0;
+          const gone = span > 0 ? (t - puff.t0) / span : 0;
+          const alpha = Math.max(0.05, 0.38 * (1 - gone));
           zctx.beginPath();
-          zctx.arc(zwx(pEnd.x), zwz(-pEnd.z), 6, 0, Math.PI * 2);
-          zctx.stroke();
+          zctx.arc(zwx(puff.x), zwz(-puff.z), zrPx, 0, Math.PI * 2);
+          zctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+          zctx.fill();
         }
+        const head = cl.puffs.length > 0 ? cl.puffs[0] : null;
+        if (!head) continue;
         zctx.font = "bold 12px sans-serif";
         zctx.textAlign = "center";
         zctx.textBaseline = "bottom";
+        zctx.fillStyle = "rgba(255,255,255,0.95)";
         zctx.save();
-        zctx.translate(zwx(pStart.x), zwz(-pStart.z));
+        zctx.translate(zwx(head.x), zwz(-head.z));
         // Smoke timer text stays upright under map rotation.
         if (rotRad !== 0) zctx.rotate(-rotRad);
         zctx.fillText(`${Math.ceil(cl.endT - t)}s`, 0, -7);

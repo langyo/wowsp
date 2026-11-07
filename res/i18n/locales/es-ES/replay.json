@@ -433,6 +433,10 @@
       "other": "Otra vista"
     }
   },
+  "planeCard": {
+    "attacking": "Atacando",
+    "followingHull": "Sin aeronaves en vuelo — siguiendo el casco"
+  },
   "classes": {
     "battleship": "Acorazado",
     "cruiser": "Crucero",
@@ -446,6 +450,7 @@
   "selfFrags": "Hundimientos",
   "selfDamage": "Daño",
   "selfTaken": "Recibido",
+  "selfDepth": "Inmersión {meters} m",
   "selfPlane": "Aéreo",
   "shipSunk": "Hundido",
   "tactical": {

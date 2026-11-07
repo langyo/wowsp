@@ -1,0 +1,131 @@
+/**
+ * Plane-follow pill card — chrome matches the bottom-left HUD cards (the
+ * holo-hud-* tokens the map root sets, same glass the plaque row and the
+ * self-stats strip wear). The component hangs off .holo-map__controls like
+ * HoloSelfCard does; this sheet owns everything about it so
+ * HolographicMap.scss stays untouched.
+ *
+ * Placement: the plaque row occupies the band directly above the playback
+ * bar (left-anchored, content-sized, capped at 100cqw − 192px to clear the
+ * minimap thumb). The pill shares that band but hangs off the cap's RIGHT
+ * edge — the row is content-sized well below the cap at every realistic
+ * width, so the two never meet; anchoring to the cap (instead of the row)
+ * is what keeps this file independent of HolographicMap.scss.
+ */
+.holo-planecard {
+  position: absolute;
+  left: calc(100cqw - 204px);
+  translate: -100% 0;
+  bottom: calc(100% + 8px);
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: calc(100cqw - 216px);
+  padding: 5px 12px;
+  background: var(--holo-hud-bg, rgb(8 12 20 / 62%));
+  border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 14%));
+  border-radius: 999px;
+  box-shadow: var(--holo-hud-shadow);
+  color: var(--holo-hud-text, rgb(255 255 255 / 92%));
+  font-size: var(--text-xs);
+  white-space: nowrap;
+  pointer-events: none;
+  animation: holo-planecard-in 160ms ease-out;
+}
+
+@keyframes holo-planecard-in {
+  from {
+    opacity: 0;
+    translate: -100% 6px;
+  }
+  to {
+    opacity: 1;
+    translate: -100% 0;
+  }
+}
+
+.holo-planecard__ico {
+  flex: 0 0 auto;
+  opacity: 0.85;
+  color: rgb(var(--color-primary));
+}
+
+.holo-planecard__who {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Player nickname first (the label's name), hull second and dimmer — the
+   kill feed's ship-over-name order flipped: here the PLAYER is who the
+   follow entry names. Both truncate with ellipsis; line-height 1.25 keeps
+   Latin descenders (the kill feed's q/y/p/g lesson) inside the box. */
+.holo-planecard__player {
+  font-weight: 600;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.holo-planecard__ship {
+  color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Strength readout: rigid mono numerals so the pill never re-splats as the
+   alive count ticks down (same tabular discipline as the selfstat strip). */
+.holo-planecard__strength {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  flex: 0 0 auto;
+  padding-left: 2px;
+}
+
+.holo-planecard__num {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--holo-hud-strong, #fff);
+
+  &--dim {
+    font-weight: 400;
+    color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
+  }
+}
+
+.holo-planecard__slash {
+  color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
+  line-height: 1;
+}
+
+/* Attack-run badge: a small accent chip riding the numbers — accent ink on
+   a translucent primary wash, like the lbltoggle's active state. */
+.holo-planecard__badge {
+  flex: 0 0 auto;
+  margin-left: 5px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgb(var(--color-primary) / 15%);
+  color: rgb(var(--color-primary));
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+}
+
+/* Hull-fallback line (nothing airborne at the playhead): muted, no
+   numbers — the camera is parked on the carrier hull. */
+.holo-planecard__hull {
+  flex: 0 0 auto;
+  padding-left: 2px;
+  color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
+  line-height: 1.25;
+}

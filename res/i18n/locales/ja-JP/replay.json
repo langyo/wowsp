@@ -433,6 +433,10 @@
       "other": "その他の視点"
     }
   },
+  "planeCard": {
+    "attacking": "攻撃中",
+    "followingHull": "航空機なし — 艦体を追従中"
+  },
   "classes": {
     "battleship": "戦艦",
     "cruiser": "巡洋艦",
@@ -446,6 +450,7 @@
   "selfFrags": "撃沈",
   "selfDamage": "与ダメージ",
   "selfTaken": "被ダメージ",
+  "selfDepth": "潜水深度 {meters} m",
   "selfPlane": "航空",
   "shipSunk": "撃沈",
   "tactical": {

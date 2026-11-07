@@ -12,7 +12,8 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t as i18nT } from "@/i18n";
 import achievementNamesRaw from "@/data/achievement_names.json";
-import { sampleAt, hpAtTime, UNSEEN_GAP_S } from "./trajectoryMath";
+import { sampleAt, hpAtTime, angleDiff, UNSEEN_GAP_S } from "./trajectoryMath";
+import { SCENE_THEMES, scenePalette } from "./useThreeScene";
 import { clampXZ } from "./sceneUtils";
 import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
@@ -31,7 +32,11 @@ import { shipStatusAt } from "./shipStatusModel";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { ShipInfo, SquadronPlane, VehicleEntry, WeaponLockEvent } from "@/api";
 import type { FeedEntry } from "./HoloEventFeed";
-import type { MapInternals, ShellTraceSlot } from "./mapInternals";
+import type {
+  MapInternals,
+  PlaneAnchorAnim,
+  ShellTraceSlot,
+} from "./mapInternals";
 
 /** Widest of the per-kind caps — chat can burst, so keep a little headroom
  *  over the old kill-only limit of 4. */
@@ -48,6 +53,67 @@ const achievementNames = achievementNamesRaw as Record<
   string,
   { key: string; type: string; names: Partial<Record<string, string>> }
 >;
+
+/** Eased 3D formation anchor at playhead t: interpolate the squadron's
+ *  index-0 trail piecewise-linearly (the raw last-sample-at-or-before-t
+ *  anchor stepped between update packets, and both the rendered wedge and
+ *  the chase camera inherited the jerk), then ease it through the shared
+ *  per-plane PlaneAnchorAnim state with the same exponential decay the
+ *  minimap trails use (tau 0.28 s). Seeks and backwards scrubs snap.
+ *  Returns a SquadronPlane-shaped pose so the formation placement below
+ *  keeps reading `anchor.s.x/y/z/yaw` unchanged. */
+const PLANE_ANCHOR_TAU_S = 0.28;
+function easedAnchorAt(
+  samples: SquadronPlane[],
+  t: number,
+  planeId: number,
+  state: Map<number, PlaneAnchorAnim>,
+): SquadronPlane | null {
+  const n = samples.length;
+  if (n === 0) return null;
+  let a = samples[0];
+  let b = samples[0];
+  if (t >= samples[n - 1].time) {
+    a = b = samples[n - 1];
+  } else if (t > samples[0].time) {
+    let lo = 0;
+    let hi = n - 1;
+    while (hi - lo > 1) {
+      const mid = (lo + hi) >> 1;
+      if (samples[mid].time <= t) lo = mid;
+      else hi = mid;
+    }
+    a = samples[lo];
+    b = samples[hi];
+  }
+  const span = b.time - a.time;
+  const f = span > 1e-6 ? Math.min(1, Math.max(0, (t - a.time) / span)) : 1;
+  const rawX = a.x + (b.x - a.x) * f;
+  const rawY = a.y + (b.y - a.y) * f;
+  const rawZ = a.z + (b.z - a.z) * f;
+  const rawYaw = a.yaw + angleDiff(a.yaw, b.yaw) * f;
+  const prev = state.get(planeId);
+  // Same playhead twice (thumb + zoom canvases) reuses the eased pose;
+  // backwards time, long gaps (scrub / new sortie) snap to the raw pose.
+  if (prev && t === prev.t) {
+    return {
+      time: t, planeId, index: 0, x: prev.x, y: prev.y, z: prev.z, yaw: prev.yaw,
+    };
+  }
+  const jumped =
+    !prev || t < prev.t || Math.hypot(rawX - prev.x, rawZ - prev.z) > 200;
+  if (jumped) {
+    state.set(planeId, { x: rawX, y: rawY, z: rawZ, yaw: rawYaw, t });
+    return { time: t, planeId, index: 0, x: rawX, y: rawY, z: rawZ, yaw: rawYaw };
+  }
+  const alpha = 1 - Math.exp(-(t - prev.t) / PLANE_ANCHOR_TAU_S);
+  const x = prev.x + (rawX - prev.x) * alpha;
+  const y = prev.y + (rawY - prev.y) * alpha;
+  const z = prev.z + (rawZ - prev.z) * alpha;
+  const yaw = prev.yaw + angleDiff(prev.yaw, rawYaw) * alpha;
+  state.set(planeId, { x, y, z, yaw, t });
+  return { time: t, planeId, index: 0, x, y, z, yaw };
+}
 
 /** Roster entry by player id — chat/achievement events carry roster ids
  *  (descriptor `vehicles[].id`), not vehicle entity ids. */
@@ -410,7 +476,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       continue;
     }
     marker.visible = true;
-    marker.position.set(s.x, 0, -s.z);
+    // Submarines carry their real altitude in the sample y (0 = surface,
+    // negative = submerged) — place the hull at depth so the 3D scene
+    // shows an actual dive under the translucent sea plane. Every other
+    // hull sits on the surface (y ≈ 0 in the stream anyway). The label's
+    // depth readout mirrors the same sample (content-gated below).
+    const markerType = marker.userData.type as string | undefined;
+    const isSub = !!markerType && markerType.toLowerCase().includes("submarine");
+    const depthY = isSub ? Math.max(-35, Math.min(0, s.y)) : 0;
+    marker.position.set(s.x, depthY, -s.z);
     marker.rotation.y = Math.PI - s.yaw;
     // Keep the minimap's heading in sync — userData.yaw must track the
     // playhead, not just the initial load.
@@ -420,6 +494,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       if (contentDue) {
         const currentHp = hpAtTime(traj.hpSamples, tEff);
         if (currentHp != null) label.hp = currentHp;
+        // Submerged submarines badge their depth on the floating label
+        // (positive meters below surface); surfaced ships clear it.
+        label.depthMeters =
+          isSub && s.y < -0.5 ? Math.max(1, Math.round(-s.y)) : null;
         // maxHp never changes mid-playback — it is resolved once at actor
         // build from the arena's build health (see actorBuild / shipHp.ts),
         // so there is no per-frame fallback to seed here.
@@ -479,56 +557,74 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     );
     (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
   });
-  // Smoke screens: white start/end rings + a floating remaining-seconds
-  // tag. The start ring walks toward the end while the smoke dissipates
-  // (WoWS smoke fades from the launch point); each cluster shows both
-  // endpoints only when the drift is >= 1 km, otherwise a single puff.
-  for (const cl of ctx.smokeClusters) {
-    const hide = () => {
-      cl.rings[0].visible = false;
-      cl.rings[1].visible = false;
-      if (cl.timeSprite) cl.timeSprite.visible = false;
-    };
-    if (t < cl.t0 || t > cl.endT) {
-      hide();
-      continue;
-    }
-    // Dissipation walk: after the last recorded update the start point
-    // slides from the launch position toward the end position.
-    let cur = t;
-    if (t > cl.lastT) {
-      const span = Math.max(1, cl.lastT - cl.t0);
-      cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
-      if (cur > cl.lastT) cur = cl.lastT;
-    }
-    const pStart = sampleAt(cl.traj, cur);
-    if (!pStart) {
-      hide();
-      continue;
-    }
-    const pEnd = sampleAt(cl.traj, cl.lastT);
-    const drift =
-      pEnd != null ? Math.hypot(pStart.x - pEnd.x, pStart.z - pEnd.z) : 0;
-    const showBoth = pEnd != null && drift >= 1000;
-    cl.rings[0].visible = true;
-    cl.rings[0].position.set(pStart.x, 2.5, -pStart.z);
-    cl.rings[1].visible = showBoth;
-    if (showBoth && pEnd) cl.rings[1].position.set(pEnd.x, 2.5, -pEnd.z);
-    const sprite = cl.timeSprite;
-    if (sprite) {
-      const secs = Math.ceil(cl.endT - t);
-      const text = `${secs}s`;
-      // Ink tone lives in userData.tone — osdContrast flips and repaints it
-      // between playhead ticks; this repaint picks up whichever tone is
-      // current whenever the countdown text itself changes.
-      const tone = (sprite.userData.tone as OsdTone | undefined) ?? "light";
-      if (sprite.userData.text !== text) {
-        sprite.userData.text = text;
-        paintSmokeCountdown(sprite.userData.canvas as HTMLCanvasElement, text, tone);
-        (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
+  // Smoke screens: translucent puff discs from the shared instanced pool
+  // (actorBuild) + a floating remaining-seconds tag per cluster. Each puff
+  // lives [t0, endT] and fades toward the water colour as it dissipates —
+  // surface ships and carriers lay identical smoke, and the band now reads
+  // as smoke in every view (the 2D painters draw the same puffs).
+  {
+    const discs = ctx.smokeDiscs;
+    let used = 0;
+    if (discs) {
+      const water = new THREE.Color(
+        scenePalette() === SCENE_THEMES.light ? 0xc2d5e4 : 0x071827,
+      );
+      const smoke = new THREE.Color(0xf3f6f8);
+      const fade = new THREE.Color();
+      const mat4 = new THREE.Matrix4();
+      for (const cl of ctx.smokeClusters) {
+        for (const puff of cl.puffs) {
+          if (used >= discs.instanceMatrix.count) break;
+          if (t < puff.t0 || t > puff.endT) continue;
+          // Dissipation: the puff's colour sinks into the water as its
+          // lifetime runs out (per-instance alpha is not a thing, so the
+          // fade rides the instance colour — reads the same on both
+          // themes because the target IS the water tone).
+          const life = Math.max(1, puff.endT - puff.t0);
+          const gone = Math.min(1, Math.max(0, (t - puff.t0) / life));
+          fade.copy(smoke).lerp(water, gone * 0.85);
+          discs.setColorAt(used, fade);
+          mat4.makeScale(45, 1, 45);
+          mat4.setPosition(puff.x, 0.8, -puff.z);
+          discs.setMatrixAt(used, mat4);
+          used++;
+        }
       }
-      sprite.position.set(pStart.x, 34, -pStart.z);
-      sprite.visible = true;
+      discs.count = used;
+      discs.instanceMatrix.needsUpdate = true;
+      if (discs.instanceColor) discs.instanceColor.needsUpdate = true;
+      discs.visible = used > 0;
+    }
+    for (const cl of ctx.smokeClusters) {
+      const hideSprite = () => {
+        if (cl.timeSprite) cl.timeSprite.visible = false;
+      };
+      if (t < cl.t0 || t > cl.endT) {
+        hideSprite();
+        continue;
+      }
+      // Countdown tag parks at the cluster start (the band's head puff).
+      const pStart = cl.puffs.length > 0 ? cl.puffs[0] : null;
+      if (!pStart) {
+        hideSprite();
+        continue;
+      }
+      const sprite = cl.timeSprite;
+      if (sprite) {
+        const secs = Math.ceil(cl.endT - t);
+        const text = `${secs}s`;
+        // Ink tone lives in userData.tone — osdContrast flips and repaints it
+        // between playhead ticks; this repaint picks up whichever tone is
+        // current whenever the countdown text itself changes.
+        const tone = (sprite.userData.tone as OsdTone | undefined) ?? "light";
+        if (sprite.userData.text !== text) {
+          sprite.userData.text = text;
+          paintSmokeCountdown(sprite.userData.canvas as HTMLCanvasElement, text, tone);
+          (sprite.material as THREE.SpriteMaterial).map!.needsUpdate = true;
+        }
+        sprite.position.set(pStart.x, 34, -pStart.z);
+        sprite.visible = true;
+      }
     }
   }
   // Aircraft formations: full squadrons (GameParams size, e.g. 8 planes)
@@ -542,25 +638,22 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     const activeSlots = ctx.planeCloudActive;
     if (activeSlots.length > 0) activeSlots.fill(0);
     let anyPoints = false;
-    // Sample helper: last sample at or before t.
-    const sampleOf = (samples: SquadronPlane[]): SquadronPlane | null => {
-      let s: SquadronPlane | null = null;
-      for (const sp of samples) {
-        if (sp.time > t) break;
-        s = sp;
-      }
-      return s;
-    };
-    // Formation anchors: index-0 trail of each planeId (position + yaw),
-    // alive between its first update and one shared grace window after the
-    // last one (PLANE_TRAIL_GRACE_S, also used by the follow target).
-    // Reused scratch map — the old code allocated a fresh Map per tick.
+    // Formation anchors: index-0 trail of each planeId (eased position +
+    // yaw), alive between its first update and one shared grace window
+    // after the last one (PLANE_TRAIL_GRACE_S, also used by the follow
+    // target). Reused scratch map — the old code allocated a fresh Map
+    // per tick.
     const formationAnchor = ctx.planeAnchorScratch;
     formationAnchor.clear();
     for (const trail of ctx.planeTrails) {
       const planeId = Math.floor(trail.id / 16);
       if (trail.id % 16 !== 0) continue;
-      const s = sampleOf(trail.samples);
+      const s = easedAnchorAt(
+        trail.samples,
+        t,
+        planeId,
+        ctx.planeAnchorAnim,
+      );
       if (!s) continue;
       const born = trail.samples[0].time;
       const expiry = planeTrailExpiry(

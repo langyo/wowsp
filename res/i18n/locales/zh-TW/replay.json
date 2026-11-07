@@ -433,6 +433,10 @@
       "other": "其他視角"
     }
   },
+  "planeCard": {
+    "attacking": "攻擊中",
+    "followingHull": "無升空中隊 — 跟隨艦體"
+  },
   "classes": {
     "battleship": "戰列艦",
     "cruiser": "巡洋艦",
@@ -446,6 +450,7 @@
   "selfFrags": "擊沉",
   "selfDamage": "傷害",
   "selfTaken": "承受傷害",
+  "selfDepth": "下潛 {meters} 公尺",
   "selfPlane": "航空",
   "shipSunk": "已擊沉",
   "tactical": {

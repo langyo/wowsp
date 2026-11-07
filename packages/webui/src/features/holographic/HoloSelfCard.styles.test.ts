@@ -11,6 +11,13 @@
  *
  * 17ch covers the widest possible readout ("999,999 / 999,999"); every
  * locale's sunk label is far narrower and right-aligns into the same box.
+ *
+ * The plaque itself is pinned to a FIXED 16rem width (no min/max span):
+ * a content-sized plaque made the bottom-left footprint drift with every
+ * replay's ship names — one replay's plaque sat visibly wider than
+ * another's. Fixed width + ellipsizing name + the reserved readout slot
+ * keep the row geometry constant.
+ *
  * Source assertions on the shared @wowsp/holo stylesheet — same
  * conventions as the other *.styles.test.ts contracts.
  */
@@ -37,5 +44,16 @@ describe("HoloShipCard fixed readout slot", () => {
 
   it("keeps the readout on one line (no wrap-driven width drift)", () => {
     expect(scss).toMatch(/&__text\s*\{[^}]*white-space:\s*nowrap;/s);
+  });
+});
+
+describe("HoloShipCard fixed plaque width", () => {
+  it("pins the plaque to a fixed 16rem width", () => {
+    expect(scss).toMatch(/\.holo-ship-card\s*\{[^}]*width:\s*16rem;/s);
+  });
+
+  it("keeps no content-sized min/max width on the plaque", () => {
+    expect(scss).not.toContain("min-width: 12rem");
+    expect(scss).not.toContain("max-width: 20rem");
   });
 });

@@ -46,8 +46,16 @@ import {
   FOLLOW_DIST_MAX,
   FOLLOW_DIST_MIN,
   initialFollowFraming,
+  smoothChasePose,
+  type ChaseSmoothState,
 } from "./followCamera";
-import { activeSquadronOf, anchorFollowPose, formationFollowPose } from "./followTargets";
+import {
+  activeSquadronOf,
+  anchorFollowPose,
+  carrierHasAnySortie,
+  formationFollowPose,
+  latestSortiePlaneId,
+} from "./followTargets";
 import {
   cameraModeAt,
   isPlaneCameraMode,
@@ -57,6 +65,7 @@ import {
 } from "./cameraModes";
 import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
 import { planeTrailExpiry } from "./planeFormation";
+import { squadronAttacking, squadronSamplesAt, squadronStrength } from "./planeFollow";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
 import { activeWards, planeSmoothPosAt, torpedoPosAt } from "./minimapFx";
@@ -84,6 +93,7 @@ import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
 import HoloHeatStrip from "./HoloHeatStrip";
 import HoloSelfCard from "./HoloSelfCard";
+import HoloPlaneFollowCard, { type HoloPlaneFollowState } from "./HoloPlaneFollowCard";
 import HoloShipStatus from "./HoloShipStatus";
 import HoloWeatherBadge from "./HoloWeatherBadge";
 import HoloRangeMenu from "./HoloRangeMenu";
@@ -479,6 +489,12 @@ export default defineComponent({
      *  memory outlives a cleared target so plane → gap → clear → ship still
      *  resets to the ship stock. */
     let followFraming = initialFollowFraming();
+    /** Damped chase-pivot memory (followCamera.smoothChasePose): the smoothed
+     *  pose the previous stamped frame emitted, keyed on the playhead. Null
+     *  right after a target pick — the next stamped frame snaps onto the raw
+     *  pose and easing starts from there (the raw pose steps between squadron
+     *  update packets; stamping it directly jittered every plane chase). */
+    let chaseSmooth: ChaseSmoothState | null = null;
     /** A wheel/pinch landed since the last adoption. */
     let dollySeen = false;
     // The orbit radius bounds in force when follow began (fitCamera's
@@ -1242,6 +1258,14 @@ export default defineComponent({
       };
     });
 
+    /** Recorder submarine depth for the shipcard's depth pill — mirrors
+     *  ShipLabel.depthMeters (positive meters below surface; null while
+     *  surfaced or on a non-submarine hull, refreshed per playhead tick). */
+    const selfDepth = computed<{ meters: number } | null>(() => {
+      const l = shipLabels.value.find((x) => x.role === "self");
+      return l?.depthMeters != null ? { meters: l.depthMeters } : null;
+    });
+
     // ── Hold-Tab roster (the map's ONE Tab consumer) ──────────────────
     // Tab is CLAIMED for as long as the map is mounted: the listener sits
     // in the CAPTURE phase (before any app-level handler) and
@@ -1326,11 +1350,14 @@ export default defineComponent({
       };
     }
     /** Follow-menu roster grouped by allegiance: self alone, then allies,
-     *  then enemies (roster order within each group). Carriers with a
-     *  squadron in the air at the playhead get an extra aircraft row right
-     *  below their hull row — picking it chases that squadron instead of the
-     *  hull (see selectAircraft). The row is rebuilt from the live squadron
-     *  tables so it appears/disappears with the sortie. */
+     *  then enemies (roster order within each group). Carriers that flew
+     *  ANY sortie in the replay get an extra aircraft row right below their
+     *  hull row — picking it chases the airborne squadron when one is up
+     *  and the hull otherwise (see selectAircraft / followSelected's
+     *  fallback chain). The row is offered at EVERY playhead: gating it on
+     *  the live squadron made it flicker in and out with the sorties, and
+     *  carriers spend most of a match without anything up, so the plane
+     *  view was practically unfindable. */
     const cameraShipGroups = computed(() => {
       const groups: { key: string; title: string; items: ShipLabel[] }[] = [];
       const self: ShipLabel[] = [];
@@ -1342,19 +1369,27 @@ export default defineComponent({
         if (l.role === "self") self.push(l);
         else if (l.role === "ally") ally.push(l);
         else enemy.push(l);
-        const planeId = activeSquadronOf(
-          ctx.planeTrails,
-          ctx.planeCarrierOf,
-          ctx.minimapTrailEnd,
-          l.entityId,
-          t,
-        );
-        if (planeId == null) continue;
         // Aircraft rows are carrier-only: a battleship's catapult fighter
         // (or a hybrid typed BB) would otherwise turn every jump into a
         // plane chase. Unknown/offline ship types have no class to filter
         // on — their airborne squadron is the only carrier evidence left.
         if (!/^AirCarrier/i.test(l.type ?? "") && l.type != null) continue;
+        // The row gate is "flew any sortie in this replay", not "airborne
+        // right now" — picking stays safe at any playhead because the
+        // camera falls back to the hull when the formation is not up.
+        if (!carrierHasAnySortie(ctx.planeTrails, ctx.planeCarrierOf, l.entityId)) continue;
+        // Row icon: the squadron actually being flown at the playhead when
+        // one is up (picking chases it), otherwise the carrier's latest
+        // launch — so the icon never degrades between sorties.
+        const planeId =
+          activeSquadronOf(
+            ctx.planeTrails,
+            ctx.planeCarrierOf,
+            ctx.minimapTrailEnd,
+            l.entityId,
+            t,
+          ) ?? latestSortiePlaneId(ctx.planeTrails, ctx.planeCarrierOf, l.entityId);
+        if (planeId == null) continue;
         const row = aircraftMenuRow(l, planeId);
         if (l.role === "self") self.push(row);
         else if (l.role === "ally") ally.push(row);
@@ -1388,6 +1423,67 @@ export default defineComponent({
       );
       return planeId == null ? id : PLANE_CARD_LABEL_ID_BASE + id;
     });
+    // ── Plane-follow pill card (HoloPlaneFollowCard, bottom-left) ──────
+    /** Snapshot of the chased carrier's air state for the pill card; null
+     *  whenever follow mode is not on a carrier AIRCRAFT (the parent then
+     *  hides the card). Derived from the same trail tables followSelected
+     *  answers the camera from, so the card can never disagree with what
+     *  the camera actually chases. */
+    const planeCardState = ref<HoloPlaneFollowState | null>(null);
+    // Light gate: the hudCurrent shadow clock (10 Hz, seeks sync it) plus
+    // the follow intent — NOT the per-frame `current`, which would
+    // re-derive 165×/s for a seconds-resolution pill (see hudCurrent's
+    // rationale). shipLabels rides along so a name resolving late after a
+    // seek still lands on the card.
+    watch(
+      [hudCurrent, selectedEntityId, followAircraft, shipLabels],
+      ([t, carrierId, aircraft]) => {
+        if (carrierId == null || !aircraft) {
+          planeCardState.value = null;
+          return;
+        }
+        const label = shipLabels.value.find((l) => l.entityId === carrierId);
+        if (!label) {
+          // The roster settles a beat after a seek; hide until it does.
+          planeCardState.value = null;
+          return;
+        }
+        const planeId = activeSquadronOf(
+          ctx.planeTrails,
+          ctx.planeCarrierOf,
+          ctx.minimapTrailEnd,
+          carrierId,
+          t,
+        );
+        if (planeId == null) {
+          // No formation up at t: the camera rides the hull fallback and
+          // the card says so instead of a dead strength readout.
+          planeCardState.value = {
+            carrierName: label.name,
+            shipName: label.shipName,
+            alive: 0,
+            total: 0,
+            attacking: false,
+            airborne: false,
+          };
+          return;
+        }
+        const strength =
+          squadronStrength(ctx.planeTrails, planeId, ctx.minimapTrailEnd, t) ?? {
+            alive: 0,
+            total: 0,
+          };
+        planeCardState.value = {
+          carrierName: label.name,
+          shipName: label.shipName,
+          alive: strength.alive,
+          total: strength.total,
+          attacking: squadronAttacking(squadronSamplesAt(ctx.planeTrails, planeId, t)),
+          airborne: true,
+        };
+      },
+      { immediate: true },
+    );
     /** Pointer-down position for click-vs-drag discrimination: a click that
      *  moved more than a few px is an OrbitControls drag, and must NOT select
      *  a ship (selecting locks the camera via followSelected — dragging would
@@ -2229,11 +2325,29 @@ export default defineComponent({
         ctrl.target.copy(pos);
         return;
       }
+      // Damped chase: ease the pivot + yaw toward the raw pose (frame-rate-
+      // independent α, keyed on the playhead — see smoothChasePose). The raw
+      // aircraft pose steps between squadron update packets and the direct
+      // stamp made every plane chase jitter; only the pivot and yaw are
+      // smoothed — the zoom distance below stays the user's own. Scrubs,
+      // seeks and target picks snap (dt <= 0 / big jumps / a null state).
+      // The free-look path above stays unsmoothed: it glues the pivot to the
+      // raw pose by contract.
+      const smoothed = smoothChasePose(
+        chaseSmooth,
+        { x: pos.x, y: pos.y, z: pos.z, yaw },
+        current.value,
+      );
+      chaseSmooth = smoothed.state;
+      // Re-seat the scratch on the smoothed pose: the dolly readback above
+      // already measured the raw radius, and `pos` is either _followPos or
+      // the live marker position (which must never be written to).
+      _followPos.set(smoothed.x, smoothed.y, smoothed.z);
       // Chase pose at the current distance (the solver bakes the stock
       // 22-up-per-55-back pitch into the axis, so zooming never flattens
       // onto the horizon); the pivot stays glued to the target.
-      applyFollowPose(cam, pos, yaw, followFraming.dist);
-      ctrl.target.copy(pos);
+      applyFollowPose(cam, _followPos, smoothed.yaw, followFraming.dist);
+      ctrl.target.copy(_followPos);
     }
 
     /** Replay the recorder's original camera when the original-view toggle is
@@ -2281,6 +2395,8 @@ export default defineComponent({
       entityId: number | null,
       opts: { aircraft?: boolean; distance?: number } = {},
     ) {
+      const prevId = selectedEntityId.value;
+      const prevAircraft = followAircraft.value;
       selectedEntityId.value = entityId;
       followAircraft.value = entityId != null && opts.aircraft === true;
       // Clicking a target switches to chase mode; clicking empty space
@@ -2297,6 +2413,13 @@ export default defineComponent({
         // Clearing the target must not leave an AI/aircraft preset behind for
         // the next manual pick.
         followFraming = followFramingCleared(followFraming);
+      }
+      // A different target (or a hull↔aircraft intent flip on the same hull)
+      // teleports the chase pivot: drop the smoother so the first stamped
+      // frame of the new chase lands on the raw pose instead of gliding
+      // across the map from the old one.
+      if (entityId !== prevId || followAircraft.value !== prevAircraft) {
+        chaseSmooth = null;
       }
       // Following a real target hands RMB to the free-look orbit (the
       // per-frame assignment in followSelected re-asserts it; this covers the
@@ -2469,6 +2592,9 @@ export default defineComponent({
         selectedEntityId.value = null;
         followAircraft.value = false;
         followFraming = followFramingCleared(followFraming);
+        // A new replay is a new world — the damped pivot must not glide
+        // from the previous battle's last pose onto this one's.
+        chaseSmooth = null;
         if (cameraMode.value === "follow") cameraMode.value = "free";
         if (ready.value) {
           current.value = 0;
@@ -2741,6 +2867,7 @@ export default defineComponent({
                         : null,
                   hp: lbl.hp,
                   maxHp: lbl.maxHp,
+                  depthMeters: lbl.depthMeters,
                   dead: lbl.dead,
                   ghostText: lbl.ghostText,
                   visible: true,
@@ -2972,7 +3099,14 @@ export default defineComponent({
           {/* In the 2D enlarged view the plaque + stats duplicate what the 3D
               view shows — hide them so the 2D map owns the screen. */}
           {!minimapZoom.value && selfCard.value ? (
-            <HoloSelfCard card={selfCard.value} stats={selfStats.value} />
+            <HoloSelfCard card={selfCard.value} stats={selfStats.value} depth={selfDepth.value} />
+          ) : null}
+          {/* Plane-follow pill: rides beside the hull plaque (same band,
+              right-aligned to the row's cap — see HoloPlaneFollowCard.scss)
+              and only while the chase is on a carrier AIRCRAFT; the hull
+              fallback state renders the muted hull line instead. */}
+          {!minimapZoom.value && planeCardState.value ? (
+            <HoloPlaneFollowCard state={planeCardState.value} />
           ) : null}
           {/* Phone-only scoreboard chip: the Tab HOLD that reveals the
               desktop scoreboard has no touch equivalent — this toggles

@@ -160,10 +160,24 @@ export interface ShellTraceSlot {
   shell: THREE.Object3D;
 }
 
+/** One smoke puff: a point of the laid smoke band. Each SmokeScreen
+ *  entity update the recorder observed drops one puff at the laying
+ *  ship's position; the puff lives from its update until 90 s later
+ *  (WoWS smoke lifetime), capped by the entity's recorded leave. World
+ *  XZ — the same convention as cluster sx/sz (scene z is mirrored). */
+export interface SmokePuff {
+  x: number;
+  z: number;
+  t0: number;
+  endT: number;
+}
+
 /** One smoke-screen cluster (entityType 4 = SmokeScreen). Each cluster
- *  holds a start ring + end ring (white circles) and a remaining-time
- *  sprite. Puffs spawned within 300 m of each other merge into one
- *  cluster — the one with the longest lifetime wins. */
+ *  keeps the puff points of the smoke band it merges (puffs spawned
+ *  within 300 m of each other collapse together — the one with the
+ *  longest lifetime wins) and a remaining-time sprite. The band renders
+ *  as translucent discs from the shared instanced pool (ctx.smokeDiscs);
+ *  the old per-cluster ring meshes are gone. */
 export interface SmokeClusterState {
   traj: EntityTrajectory;
   t0: number;
@@ -171,8 +185,20 @@ export interface SmokeClusterState {
   endT: number;
   sx: number;
   sz: number;
-  rings: THREE.Mesh[];
+  puffs: SmokePuff[];
   timeSprite: THREE.Sprite | null;
+}
+
+/** Eased 3D formation anchor (planeId-keyed): the raw squadron anchor
+ *  steps between update packets, so markerUpdate eases it with the same
+ *  exponential decay the minimap trails use — the 3D formation glides
+ *  instead of jumping, and the chase camera inherits the smoothness. */
+export interface PlaneAnchorAnim {
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  t: number;
 }
 
 /** Fighter-patrol ward: one flat ring + area fill per receive_wardAdded,
@@ -333,6 +359,10 @@ export interface MapInternals extends MapInternalsDeps {
   modelWaiters: { marker: THREE.Group; traj: EntityTrajectory }[];
   /** Smoke-screen clusters (entityType 4 = SmokeScreen). */
   smokeClusters: SmokeClusterState[];
+  /** Shared translucent-disc pool the smoke bands render through — one
+   *  InstancedMesh rewritten per tick (markerUpdate) instead of a mesh
+   *  per ring. Null until actorBuild creates it; disposed in clearActors. */
+  smokeDiscs: THREE.InstancedMesh | null;
   /** Shell flight states (see ShellTraceState). */
   shellStates: ShellTraceState[];
   /** Fixed pool of trace GPU objects, assigned to airborne shells each
@@ -361,6 +391,8 @@ export interface MapInternals extends MapInternalsDeps {
   planeCloudActive: Uint8Array;
   /** Per-frame formation anchor table — cleared and reused every playhead
    *  tick instead of allocating a fresh Map per frame. */
+  /** planeId → eased 3D formation anchor (see PlaneAnchorAnim). */
+  planeAnchorAnim: Map<number, PlaneAnchorAnim>;
   planeAnchorScratch: Map<
     number,
     { s: SquadronPlane; born: number; expiry: number }
@@ -500,6 +532,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     loadedModelPool: [],
     modelWaiters: [],
     smokeClusters: [],
+    smokeDiscs: null,
     shellStates: [],
     shellTraceSlots: [],
     wardRings: [],
@@ -511,6 +544,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeCloud: null,
     colorsCloud: new Float32Array(0),
     planeCloudActive: new Uint8Array(0),
+    planeAnchorAnim: new Map(),
     planeAnchorScratch: new Map(),
     planeTrails: [],
     planeSmoothState: new Map(),
@@ -620,11 +654,6 @@ export function clearActors(ctx: MapInternals) {
   ctx.selfRings = [];
   ctx.capSim.clear();
   for (const cl of ctx.smokeClusters) {
-    for (const ring of cl.rings) {
-      scene.remove(ring);
-      ring.geometry.dispose();
-      (ring.material as THREE.Material).dispose();
-    }
     if (cl.timeSprite) {
       scene.remove(cl.timeSprite);
       const mat = cl.timeSprite.material as THREE.SpriteMaterial;
@@ -633,6 +662,13 @@ export function clearActors(ctx: MapInternals) {
     }
   }
   ctx.smokeClusters = [];
+  if (ctx.smokeDiscs) {
+    scene.remove(ctx.smokeDiscs);
+    ctx.smokeDiscs.geometry.dispose();
+    (ctx.smokeDiscs.material as THREE.Material).dispose();
+    ctx.smokeDiscs = null;
+  }
+  ctx.planeAnchorAnim.clear();
   ctx.shipStatus.clear();
   for (const slot of ctx.shellTraceSlots) {
     scene.remove(slot.line);

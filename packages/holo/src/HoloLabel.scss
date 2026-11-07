@@ -144,6 +144,35 @@
     white-space: nowrap;
   }
 
+  /* Depth tag (submerged submarine): a compact chip right of the HP bar,
+     same translucent chip treatment as the ghost countdown. Inherits the
+     HP ink + mono face from &__hp, so the OSD tone pin and the light-theme
+     flip tint it with zero extra palette entries. */
+  &__depth {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    /* Never flexed away by the HP bar: the tag is the only part of the
+       label that carries the submarine's dive state. */
+    flex: none;
+    padding: 0 0.2rem;
+    background: var(--label-ink-hp-bar-bg);
+    border-radius: 2px;
+    font-size: 0.85em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  /* Down-pointing triangle: a pure CSS border glyph (no icon font, no
+     emoji) so the tag stays text-only and inherits currentcolor ink. */
+  &__depth-arrow {
+    width: 0;
+    height: 0;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+    border-top: 4px solid currentcolor;
+  }
+
   &__ghost-time {
     width: 100%;
     padding: 0.1rem 0.25rem;

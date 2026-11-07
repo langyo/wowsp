@@ -40,13 +40,16 @@ export function samplesUpTo(samples: { time: number }[], t: number): number {
  *  crashed the whole map render (TypeError: reading 'time'). Callers treat
  *  it like an un-spotted ship: no pose to draw. */
 export function sampleAt(
-  traj: { samples: { time: number; x: number; z: number; yaw: number }[] },
+  traj: {
+    samples: { time: number; x: number; z: number; y?: number; yaw: number }[];
+  },
   t: number,
-): { time: number; x: number; z: number; yaw: number } | undefined {
+): { time: number; x: number; z: number; y: number; yaw: number } | undefined {
   const ss = traj.samples;
   if (ss.length === 0) return undefined;
-  if (t <= ss[0].time) return ss[0];
-  if (t >= ss[ss.length - 1].time) return ss[ss.length - 1];
+  if (t <= ss[0].time) return { ...ss[0], y: ss[0].y ?? 0 };
+  const last = ss[ss.length - 1];
+  if (t >= last.time) return { ...last, y: last.y ?? 0 };
   // Binary search: called per frame from the capture simulation and the
   // aircraft cloud, so keep it O(log n).
   let lo = 0;
@@ -59,11 +62,15 @@ export function sampleAt(
   const a = ss[lo];
   const b = ss[hi];
   // Un-spotted gap: freeze at the last known pose until re-detection.
-  if (b.time - a.time > UNSEEN_GAP_S) return a;
+  if (b.time - a.time > UNSEEN_GAP_S) return { ...a, y: a.y ?? 0 };
   const f = (t - a.time) / (b.time - a.time || 1);
   return {
     ...a,
     x: a.x + (b.x - a.x) * f,
+    // Altitude rides the same interpolation — submarines carry their real
+    // depth here (0 = surface, negative = submerged); planar streams are
+    // all-zero so callers can read it unconditionally.
+    y: (a.y ?? 0) + ((b.y ?? 0) - (a.y ?? 0)) * f,
     z: a.z + (b.z - a.z) * f,
     yaw: a.yaw + angleDiff(a.yaw, b.yaw) * f,
   };

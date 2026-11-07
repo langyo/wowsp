@@ -21,6 +21,11 @@ export interface HoloLabelData {
   iconUrl?: string | null;
   hp?: number | null;
   maxHp?: number | null;
+  /** Submerged-submarine depth readout: POSITIVE meters below the surface.
+   *  Rendered as a compact tag beside the HP chip (same ~10 Hz content
+   *  throttle the host's per-tick label refresh already runs on). Null /
+   *  omitted for surface ships and non-submarines — nothing renders. */
+  depthMeters?: number | null;
   dead?: boolean;
   /** Ghost (unseen/sunk) state: dashed border + countdown instead of HP. */
   ghostText?: string | null;
@@ -158,6 +163,16 @@ export default defineComponent({
                     {Math.round(shownHp).toLocaleString()}
                     {l.maxHp != null ? ` / ${Math.round(l.maxHp).toLocaleString()}` : ""}
                   </span>
+                </span>
+              ) : null}
+              {/* Submerged submarine: compact depth tag beside the HP chip.
+                  Positive meters below surface; a host that never sets
+                  depthMeters (the marketing sandbox) renders exactly as
+                  before. Rides the same content throttle as the HP numbers. */}
+              {l.depthMeters != null ? (
+                <span class="holo-label__depth">
+                  <span class="holo-label__depth-arrow" aria-hidden="true" />
+                  {`${l.depthMeters} m`}
                 </span>
               ) : null}
             </span>

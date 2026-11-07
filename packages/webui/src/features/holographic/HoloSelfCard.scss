@@ -1,0 +1,45 @@
+/**
+ * HoloSelfCard — bottom-left shipcard chrome owned by the component itself
+ * (HolographicMap.scss is the map host's stylesheet, not ours). Only the
+ * submarine depth pill lives here today; it draws from the shared HUD
+ * tokens (hudTokens.scss, mixed onto .holo-map) so it follows the app
+ * theme exactly like the stats strip beside it.
+ */
+.holo-map__depthbadge {
+  /* Compact pill between the plaque and the stats strip: icon + one
+     localized readout, bottom-aligned by the shipcard row. Rigid (no
+     shrink): the row wraps below ~680px before the pill is ever squeezed,
+     and a clipped depth readout reads as garbage rather than shrinking
+     gracefully. */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+  padding: 0.45rem 0.55rem;
+  background: var(--holo-hud-bg, rgb(8 12 20 / 62%));
+  border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
+  border-radius: 8px;
+  color: var(--holo-hud-text, rgb(255 255 255 / 92%));
+  font-size: 0.8125rem;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Icon rides the stat-icon pattern (14px, slightly dimmed) so the pill
+   reads as part of the same HUD family. */
+.holo-map__depthbadge-ico {
+  opacity: 0.85;
+  line-height: 0;
+}
+
+/* The meters readout uses the same mono/tabular treatment as the stat
+   numbers — digits never re-splat the pill width while diving. */
+.holo-map__depthbadge-num {
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--holo-hud-strong, #ffffff);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}

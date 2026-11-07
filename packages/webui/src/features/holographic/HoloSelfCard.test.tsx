@@ -8,7 +8,10 @@
  *    (hp/maxHp null) — the readout slot must exist for the width contract;
  *  - HoloSelfCard passes the app's own 已击沉 wording (replay.shipSunk);
  *  - afloat ships keep the numeric "hp / max" readout and never show the
- *    sunk label.
+ *    sunk label;
+ *  - the recorder's submarine depth pill renders the localized
+ *    replay.selfDepth readout between plaque and stats strip, and renders
+ *    nothing for surface ships / non-submarines (depth null).
  *
  * The width half of the contract (the readout slot keeps a fixed inline
  * size so sinking can't shrink the bottom-left row) is pinned by the
@@ -111,5 +114,42 @@ describe("HoloSelfCard sunk plaque", () => {
     expect(w.find(".holo-ship-card__text").text()).toBe(
       `${fmt(12400)} / ${fmt(12400)}`,
     );
+  });
+});
+
+describe("HoloSelfCard depth badge", () => {
+  it("renders the localized depth pill while the recorder is submerged", () => {
+    const w = mount(HoloSelfCard, {
+      props: { card: ALIVE, stats: null, depth: { meters: 12 } },
+    });
+    const badge = w.find(".holo-map__depthbadge");
+    expect(badge.exists()).toBe(true);
+    // The readout is the localized replay.selfDepth message (the parent
+    // rounds the meters; this test pins the rendering, not the locales).
+    expect(badge.text()).toBe(i18nT("replay.selfDepth", { meters: 12 }));
+    // Down-glyph rides the stat-icon pattern (a 14px lucide svg).
+    expect(w.find(".holo-map__depthbadge-ico").exists()).toBe(true);
+  });
+
+  it("renders no badge for surface ships / non-submarines", () => {
+    const w = mount(HoloSelfCard, {
+      props: { card: ALIVE, stats: null, depth: null },
+    });
+    expect(w.find(".holo-map__depthbadge").exists()).toBe(false);
+  });
+
+  it("sits between the plaque and the stats strip in the shipcard row", () => {
+    const w = mount(HoloSelfCard, {
+      props: {
+        card: ALIVE,
+        stats: { hits: 1, damage: 2, frags: 0, taken: 0, planeDamage: 0 },
+        depth: { meters: 7 },
+      },
+    });
+    const kids = Array.from(w.find(".holo-map__shipcard").element.children);
+    expect(kids.length).toBe(3);
+    expect(kids[0].classList.contains("holo-ship-card")).toBe(true);
+    expect(kids[1].classList.contains("holo-map__depthbadge")).toBe(true);
+    expect(kids[2].classList.contains("holo-map__selfstats")).toBe(true);
   });
 });

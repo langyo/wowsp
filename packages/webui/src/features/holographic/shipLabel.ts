@@ -25,6 +25,11 @@ export interface ShipLabel {
   type: string | null;
   hp: number | null;
   maxHp: number | null;
+  /** Submarine depth in meters — a POSITIVE number = meters below the
+   *  surface — refreshed per playhead tick (markerUpdate reads the same
+   *  PositionSample altitude that submerges the 3D marker). null/undefined
+   *  for surface ships and for a surfaced submarine: no depth badge. */
+  depthMeters?: number | null;
   /** "plane" renders the aircraft icon + carrier name instead of the ship glyph. */
   kind?: "ship" | "plane";
   /** Aircraft type name (fighter/dive/...) for plane labels. */

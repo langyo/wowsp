@@ -2,12 +2,15 @@
  * Recorder ship health plaque (shared HoloShipCard) plus the self battle
  * stats strip beside it, extracted verbatim from HolographicMap.tsx as a
  * self-contained leaf component. The parent owns the derived data (card +
- * live stats) and the visibility conditions; this only renders them.
+ * live stats + depth) and the visibility conditions; this only renders
+ * them. A submerged recorder submarine additionally shows a compact depth
+ * pill between plaque and stats strip (see the depth prop).
  */
 import { defineComponent, type PropType } from "vue";
-import { Crosshair, Shield, Skull, Swords } from "@lucide/vue";
+import { ArrowDownFromLine, Crosshair, Shield, Skull, Swords } from "@lucide/vue";
 import { HoloShipCard, type HoloShipCardData } from "@wowsp/holo";
 import { t as i18nT } from "@/i18n";
+import "./HoloSelfCard.scss";
 
 /** Live self statistics under the plaque (hits / frags / damage / taken). */
 export interface HoloSelfStats {
@@ -23,6 +26,10 @@ export default defineComponent({
   props: {
     card: { type: Object as PropType<HoloShipCardData>, required: true },
     stats: { type: Object as PropType<HoloSelfStats | null>, default: null },
+    /** Recorder submarine depth: positive rounded meters below the surface
+     *  (parent mirrors ShipLabel.depthMeters into this shape per playhead
+     *  tick). null = surface ship / not a submarine — no badge renders. */
+    depth: { type: Object as PropType<{ meters: number } | null>, default: null },
   },
   setup(props) {
     return () => (
@@ -31,6 +38,18 @@ export default defineComponent({
             the ship sinks — the plaque's fixed readout slot keeps the row
             width stable across the flip. */}
         <HoloShipCard data={props.card} deadText={i18nT("replay.shipSunk")} />
+        {/* Submerged recorder submarine: compact depth pill between the
+            plaque and the stats strip (icon pattern matches the stat
+            icons; styling lives in HoloSelfCard.scss — the shared HUD
+            tokens keep it on-theme in both modes). */}
+        {props.depth ? (
+          <span class="holo-map__depthbadge">
+            <ArrowDownFromLine size={14} class="holo-map__depthbadge-ico" />
+            <b class="holo-map__depthbadge-num">
+              {i18nT("replay.selfDepth", { meters: props.depth.meters })}
+            </b>
+          </span>
+        ) : null}
         {/* Self battle stats ride to the right of the hull plaque:
             icon + short label + number per stat, bottom-aligned with
             the plaque, content centred inside. Exactly four segments

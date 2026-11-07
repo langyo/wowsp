@@ -433,6 +433,10 @@
       "other": "기타 시점"
     }
   },
+  "planeCard": {
+    "attacking": "공격 중",
+    "followingHull": "항공기 없음 — 함체 추적 중"
+  },
   "classes": {
     "battleship": "전함",
     "cruiser": "순양함",
@@ -446,6 +450,7 @@
   "selfFrags": "격침",
   "selfDamage": "가한 피해",
   "selfTaken": "받은 피해",
+  "selfDepth": "잠수 {meters} m",
   "selfPlane": "항공",
   "shipSunk": "침몰",
   "tactical": {
