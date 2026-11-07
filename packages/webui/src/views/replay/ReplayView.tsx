@@ -2849,7 +2849,12 @@ export default defineComponent({
                         content gate (results packet or trajectory stream present) stays
                         in the slot so the empty state never mounts; the panel REMAINS
                         mounted through HkModal's leave transition. The slot closure
-                        re-widens parser.current — re-narrow it locally. */}
+                        re-widens parser.current — re-narrow it locally. The body mounts
+                        DIRECTLY in HkModal's default slot: HkModal's own scroll body
+                        owns the scrolling, like the post-battle detail windows above
+                        (the old nested HkScrollContainer stacked a second scroller and
+                        its own inner padding on top of HkModal's 1.5rem gutter, leaving
+                        a dead band above the battle head — 2026-11-07 report). */}
                     <HkModal
                       modelValue={showResults.value}
                       onUpdate:modelValue={(v: boolean) => (showResults.value = v)}
@@ -2867,57 +2872,55 @@ export default defineComponent({
                           const cur = parser.current.value;
                           if (!cur) return null;
                           return battleResults.value || trajectories.value.length > 0 ? (
-                            <HkScrollContainer class="replay-view__modal-body">
-                              <div class="replay-view__modal-body__inner">
-                                {battleResults.value ? (
-                                  <PostBattlePanel
-                                    raw={battleResults.value}
-                                    head={{
-                                      matchGroup: cur.matchGroup,
-                                      scenario: cur.scenario,
-                                      eventType: cur.eventType,
-                                      botCount: cur.botCount ?? null,
-                                      scriptedUnitCount: cur.scriptedUnitCount ?? null,
-                                      mapName: cur.mapName,
-                                      realm: realm.value,
-                                      gameVersion: gameVersionOf(cur.raw),
-                                      battleTime: cur.dateTime ? formatDateTime(cur.dateTime) : null,
-                                      durationSec: duration.value > 0 ? duration.value : null,
-                                    }}
-                                    operation={isOperation.value}
-                                    stream={{
-                                      trajectories: trajectories.value,
-                                      recorderVehicleId: recorderVehicleId.value,
-                                      shotKills: shotKills.value,
-                                      damageStats: damageStats.value,
-                                      achievements: achievements.value,
-                                      arenaPlayers: arenaPlayers.value,
-                                      shellLaunches: shellLaunches.value,
-                                      torpedoes: torpedoes.value,
-                                    }}
-                                    roster={cur.vehicles}
-                                    builds={allyBuilds.value}
-                                    replayPath={cur.path}
-                                    onClose={() => (showResults.value = false)}
-                                  />
-                                ) : (
-                                  <PostBattleFallbackPanel
-                                    vehicles={cur.vehicles}
-                                    trajectories={trajectories.value}
-                                    explosions={explosions.value}
-                                    shotKills={shotKills.value}
-                                    damageStats={damageStats.value}
-                                    realm={realm.value}
-                                    operation={isOperation.value}
-                                    shipNameOrder={shipNameOrder.value}
-                                    arenaPlayers={arenaPlayers.value}
-                                    inferredDeaths={inferredDeaths.value}
-                                    statsMode={fallbackStatsMode.value}
-                                    onClose={() => (showResults.value = false)}
-                                  />
-                                )}
-                              </div>
-                            </HkScrollContainer>
+                            <>
+                              {battleResults.value ? (
+                                <PostBattlePanel
+                                  raw={battleResults.value}
+                                  head={{
+                                    matchGroup: cur.matchGroup,
+                                    scenario: cur.scenario,
+                                    eventType: cur.eventType,
+                                    botCount: cur.botCount ?? null,
+                                    scriptedUnitCount: cur.scriptedUnitCount ?? null,
+                                    mapName: cur.mapName,
+                                    realm: realm.value,
+                                    gameVersion: gameVersionOf(cur.raw),
+                                    battleTime: cur.dateTime ? formatDateTime(cur.dateTime) : null,
+                                    durationSec: duration.value > 0 ? duration.value : null,
+                                  }}
+                                  operation={isOperation.value}
+                                  stream={{
+                                    trajectories: trajectories.value,
+                                    recorderVehicleId: recorderVehicleId.value,
+                                    shotKills: shotKills.value,
+                                    damageStats: damageStats.value,
+                                    achievements: achievements.value,
+                                    arenaPlayers: arenaPlayers.value,
+                                    shellLaunches: shellLaunches.value,
+                                    torpedoes: torpedoes.value,
+                                  }}
+                                  roster={cur.vehicles}
+                                  builds={allyBuilds.value}
+                                  replayPath={cur.path}
+                                  onClose={() => (showResults.value = false)}
+                                />
+                              ) : (
+                                <PostBattleFallbackPanel
+                                  vehicles={cur.vehicles}
+                                  trajectories={trajectories.value}
+                                  explosions={explosions.value}
+                                  shotKills={shotKills.value}
+                                  damageStats={damageStats.value}
+                                  realm={realm.value}
+                                  operation={isOperation.value}
+                                  shipNameOrder={shipNameOrder.value}
+                                  arenaPlayers={arenaPlayers.value}
+                                  inferredDeaths={inferredDeaths.value}
+                                  statsMode={fallbackStatsMode.value}
+                                  onClose={() => (showResults.value = false)}
+                                />
+                              )}
+                            </>
                           ) : null;
                         },
                       }}
