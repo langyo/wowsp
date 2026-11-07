@@ -2350,6 +2350,19 @@ export default defineComponent({
      *  seek when a timeline dot/track is clicked. Null while no map mounts
      *  (decode error) — the panel then renders without the playhead. */
     const mapRef = ref<HoloMapHandle | null>(null);
+    /** The AI report's keyframe jump: leave the report window, land the
+     *  replay on the clicked battle second, and lock the 3D chase camera to
+     *  the analyzed perspective — one click from the report back into the
+     *  battle, replacing the in-card Jump button that unmounted while the
+     *  pointer travelled to it (2026-11-07 report). The report's entityId is
+     *  the perspective the timeline describes, so the camera lands on the
+     *  exact ship being read. */
+    const jumpToReportMoment = (t0: number) => {
+      const entityId = staticReport.value?.entityId ?? null;
+      closeStaticReport();
+      mapRef.value?.seek(t0);
+      if (entityId != null) mapRef.value?.focusEntity(entityId);
+    };
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */
     const duration = ref(0);
@@ -2935,7 +2948,9 @@ export default defineComponent({
                         phone sheet) — previously a hand-rolled .replay-view__modal
                         overlay that popped in unanimated. The host keeps ONLY the data
                         layer (fetch + stale guard + out-of-band swap watch); the modal
-                        always mounts so HkModal's leave transition can play. */}
+                        always mounts so HkModal's leave transition can play. A keyframe
+                        click is a full jump: the host closes this window, seeks the
+                        replay and focuses the camera on the analyzed player. */}
                     <StaticReportModal
                       open={showReport.value}
                       report={staticReport.value}
@@ -2943,7 +2958,7 @@ export default defineComponent({
                       error={staticReportError.value}
                       sheet={reportSheet.value}
                       onClose={closeStaticReport}
-                      onSeek={(t0) => mapRef.value?.seek(t0)}
+                      onSeek={jumpToReportMoment}
                       onPick={(entityId) => void openStaticReport(entityId)}
                     />
 

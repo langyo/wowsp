@@ -704,15 +704,6 @@
     transform: scale(1.45);
   }
 
-  &__kf--pinned::after {
-    content: "";
-    position: absolute;
-    inset: 1px;
-    border: 1px solid var(--srp-ink);
-    border-radius: 50%;
-    opacity: 0.55;
-  }
-
   &__empty {
     position: absolute;
     left: 50%;
@@ -767,10 +758,10 @@
     color: var(--srp-dim);
   }
 
-  /* The card is a CHILD of the lane and deliberately overlaps its bottom
-     edge: moving the pointer from the axis down onto the card must not
-     cross a dead gap (a pointerleave there would unmount the card before
-     its Jump/Close buttons could be clicked). */
+  /* A READ-ONLY hover/focus card. It carries no buttons any more (the jump
+     moves onto the keyframe itself, 2026-11-07 report) and pointer-events:
+     none keeps it from stealing the lane's hover tracking while the pointer
+     crosses it. */
   &__tip {
     position: absolute;
     top: calc(100% - 2px);
@@ -781,27 +772,7 @@
     border: 1px solid var(--srp-line);
     border-radius: 8px;
     box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
-  }
-
-  &__tip-actions {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 8px;
-  }
-
-  &__tip-close {
-    font: inherit;
-    font-size: 11px;
-    color: var(--srp-dim);
-    background: none;
-    border: 0;
-    cursor: pointer;
-    padding: 2px 4px;
-
-    &:hover {
-      color: var(--srp-ink);
-    }
+    pointer-events: none;
   }
 
   &__moment-head {

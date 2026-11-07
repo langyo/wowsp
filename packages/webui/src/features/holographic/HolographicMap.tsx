@@ -159,12 +159,16 @@ import "./HolographicMap.scss";
  *  arrive unwrapped (numbers) through the expose proxy but stay reactive, so
  *  a reader re-evaluates as playback advances; `seek` pauses and jumps.
  *  Lets overlays like the chat-log panel draw a live playhead and jump to a
- *  message without HolographicMap lifting its clock out. */
+ *  message without HolographicMap lifting its clock out. `focusEntity` is
+ *  the programmatic chase-camera target the AI report's keyframe jump uses:
+ *  it selects the analyzed ship exactly like clicking its marker would. */
 export interface HoloMapHandle {
   current: number;
   duration: number;
   playing: boolean;
   seek: (t: number) => void;
+  /** Chase the given ship with the 3D camera (`null` = free orbit). */
+  focusEntity: (entityId: number | null) => void;
 }
 
 export default defineComponent({
@@ -1660,7 +1664,8 @@ export default defineComponent({
     /** Select a ship by clicking either its 3D marker or its label. Clicking
      *  the empty scene clears the selection. Labels have pointer-events: none
      *  (so they can't break OrbitControls drag), so clicks reach the canvas
-     *  and pick the nearest visible marker via raycast. */
+     *  and pick the nearest visible marker via raycast. Programmatic callers
+     *  (HoloMapHandle.focusEntity) reuse the same selection path. */
     function selectShip(entityId: number | null) {
       selectedEntityId.value = entityId;
       // Clicking a ship switches to chase mode; clicking empty space returns
@@ -1671,6 +1676,15 @@ export default defineComponent({
       // frames before that runs).
       const ctrl = api.value?.controls;
       if (ctrl) ctrl.mouseButtons.RIGHT = entityId != null ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
+    }
+
+    /** External camera focus (the AI report's keyframe jump): put the chase
+     *  camera on one ship just like a marker click, then repaint at once —
+     *  the caller is an event outside this scene, so no pointer move will
+     *  invalidate the frame for us. Null returns to the free orbit. */
+    function focusEntity(entityId: number | null): void {
+      selectShip(entityId);
+      api.value?.requestRender();
     }
 
     /** Canvas click → raycast the nearest visible ship marker (within a
@@ -1941,11 +1955,13 @@ export default defineComponent({
     });
 
     // Public playback surface (see HoloMapHandle) — read by the replay view's
-    // chat-log panel for its playhead + dot seeks. NOTE: this must go through
-    // the setup context's `expose` — the `defineExpose` import from "vue" is
-    // a <script setup> compiler macro whose runtime stub is a silent no-op,
-    // which is exactly what it did when called from this JSX component.
-    expose({ current, duration, playing, seek: seekBattleTime });
+    // chat-log panel for its playhead + dot seeks, and by the AI report's
+    // keyframe jump for the replay seek + chase-camera focus. NOTE: this must
+    // go through the setup context's `expose` — the `defineExpose` import
+    // from "vue" is a <script setup> compiler macro whose runtime stub is a
+    // silent no-op, which is exactly what it did when called from this JSX
+    // component.
+    expose({ current, duration, playing, seek: seekBattleTime, focusEntity });
 
     return () => {
       // Shared playhead-derived kill board (tooltip + Tab scoreboard read
