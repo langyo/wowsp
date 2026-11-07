@@ -29,9 +29,12 @@ export interface CameraShipGroup {
   items: ShipLabel[];
 }
 
-/** Locale keys for the recorder's camera modes (Camera 0x25 frames). The
- *  wire names are the replay decoder's; anything outside this table — a mode
- *  a future client build adds — reads as the generic "other view". */
+/** Locale keys for the recorder's camera modes (the CameraMode 0x27 stream
+ *  that annotates the 0x25 recorder frames). This is a deliberately curated
+ *  set of the modes a replay viewer actually meets; the dock/dev/replay-FPC
+ *  enum values are not translated and read as the generic "other view".
+ *  Unknown raw ids never reach this table (cameraModes.cameraModeAt answers
+ *  null for them, so the parent passes no caption at all). */
 const RECORDED_MODE_KEYS: Partial<Record<RecordedCameraMode, string>> = {
   airplanes: "replay.camera.mode.airplanes",
   followingPlanes: "replay.camera.mode.followingPlanes",
@@ -66,10 +69,9 @@ export default defineComponent({
      *  check rejects null, so the nullable shape is a defaulted prop, not a
      *  required one — the parent always passes it either way. */
     selectedId: { type: Number as PropType<number | null>, default: null },
-    /** Camera mode the REPLAY itself was captured with (Camera 0x25), or
-     *  null when the replay carries no recorder-camera windows. Only
-     *  non-null while the "original" mode is active, so the caption always
-     *  annotates the recorder view it describes. */
+    /** Current CameraMode (0x27) of the recorder at the playhead, or null
+     *  when the replay carries no mode samples (or an unknown id). The
+     *  caption annotates what the 0x25 recorder view was doing. */
     recordedMode: { type: String as PropType<RecordedCameraMode | null>, default: null },
     /** Whether the replay has a camera window following planes (drives the
      *  jump-to-aircraft shortcut). */
@@ -164,7 +166,9 @@ export default defineComponent({
           <span class="holo-map__cam-ship">{item.shipName}</span>
           <span class="holo-map__cam-meta">{i18nT("replay.camera.aircraft")}</span>
         </span>
-        <span class="holo-map__cam-name">{item.name}</span>
+        {item.scripted ? null : (
+          <span class="holo-map__cam-name">{item.name}</span>
+        )}
       </button>
     );
 

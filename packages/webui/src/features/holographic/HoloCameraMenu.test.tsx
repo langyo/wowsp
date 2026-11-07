@@ -203,6 +203,19 @@ describe("HoloCameraMenu aircraft rows", () => {
       "auxiliary_ally.webp",
     );
   });
+
+  it("hides the player name on scripted aircraft rows (the carrier name is the identity)", () => {
+    const scripted = label({ ...PLANE, scripted: true, name: "" });
+    const { wrapper } = mountMenu({
+      groups: [{ key: "enemy", title: "Enemies", items: [scripted] }],
+    });
+    const row = wrapper.find(".holo-map__cam-item--plane");
+    expect(row.exists()).toBe(true);
+    expect(row.find(".holo-map__cam-name").exists()).toBe(false);
+    // The carrier label and the aircraft subtitle still carry the identity.
+    expect(row.find(".holo-map__cam-ship").text()).toBe("Hakuryū");
+    expect(row.find(".holo-map__cam-meta").text()).toBe(i18nT("replay.camera.aircraft"));
+  });
 });
 
 describe("HoloCameraMenu recorded camera caption", () => {
@@ -223,7 +236,7 @@ describe("HoloCameraMenu recorded camera caption", () => {
     );
   });
 
-  it("localizes every decoded recorder mode", () => {
+  it("localizes the curated recorder modes (the menu's supported set)", () => {
     const modes = [
       "airplanes",
       "followingPlanes",

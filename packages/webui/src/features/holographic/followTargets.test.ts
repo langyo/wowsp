@@ -2,7 +2,11 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import type { SquadronPlane } from "@/api";
-import { activeSquadronOf, formationFollowPose } from "./followTargets";
+import {
+  activeSquadronOf,
+  anchorFollowPose,
+  formationFollowPose,
+} from "./followTargets";
 
 /** One aircraft update sample at match time `time`. */
 const sp = (time: number, planeId = 1, index = 0): SquadronPlane => ({
@@ -103,6 +107,9 @@ describe("activeSquadronOf", () => {
 });
 
 describe("formationFollowPose", () => {
+  /** One formation mesh positioned in scene space. `yaw` is the REAL WoWS
+   *  heading; the mesh stores three.js rotation.y = π − yaw (markerUpdate's
+   *  placement convention), exactly like the live aircraft layer. */
   const mesh = (
     x: number,
     y: number,
@@ -112,7 +119,7 @@ describe("formationFollowPose", () => {
   ) => {
     const obj = new THREE.Object3D();
     obj.position.set(x, y, z);
-    obj.rotation.y = yaw;
+    obj.rotation.y = Math.PI - yaw;
     obj.visible = visible;
     return obj;
   };
@@ -150,6 +157,63 @@ describe("formationFollowPose", () => {
       y: 100,
       z: 0,
       yaw: 1.5,
+    });
+  });
+
+  it("converts the three.js rotation back to the real WoWS heading", () => {
+    // North-facing formation: rotation.y = π, real yaw = 0 → the chase
+    // camera hangs at +Z (behind), not in front (regression for the raw
+    // rotation.y hand-off).
+    const north = mesh(0, 100, 0, 0);
+    expect(north.rotation.y).toBeCloseTo(Math.PI);
+    expect(formationFollowPose([north])?.yaw).toBeCloseTo(0);
+    expect(formationFollowPose([mesh(0, 100, 0, Math.PI / 2)])?.yaw).toBeCloseTo(
+      Math.PI / 2,
+    );
+  });
+});
+
+describe("anchorFollowPose", () => {
+  const sample = (time: number, x: number, y: number, z: number, yaw: number) => ({
+    time,
+    planeId: 3,
+    index: 0,
+    x,
+    y,
+    z,
+    yaw,
+  });
+
+  it("returns null for a missing anchor trail / before its first sample", () => {
+    expect(anchorFollowPose([], 3, 10)).toBeNull();
+    const trails = [{ id: 3 * 16, samples: [sample(10, 5, 90, 7, 0.2)] }];
+    expect(anchorFollowPose(trails, 3, 9.9)).toBeNull();
+    expect(anchorFollowPose(trails, 4, 20)).toBeNull();
+  });
+
+  it("maps the last anchor sample into scene space with its real heading", () => {
+    const trails = [
+      {
+        id: 3 * 16,
+        samples: [
+          sample(10, 5, 40, 7, 0.2),
+          sample(20, 16, 120, -30, 1.1),
+        ],
+      },
+    ];
+    // Last sample at or before t: scene z mirrored, altitude lifted to the
+    // formation floor, real yaw untouched.
+    expect(anchorFollowPose(trails, 3, 20)).toEqual({
+      x: 16,
+      y: 120,
+      z: 30,
+      yaw: 1.1,
+    });
+    expect(anchorFollowPose(trails, 3, 15)).toEqual({
+      x: 5,
+      y: 60,
+      z: -7,
+      yaw: 0.2,
     });
   });
 });

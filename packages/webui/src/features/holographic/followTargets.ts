@@ -3,21 +3,18 @@
  *
  * The map renders aircraft squadrons as per-plane trails (id = planeId * 16 +
  * formation index; see planeWarfare.buildPlaneTrails) and keeps the GLB model
- * pools positioned per playhead tick. This pure module answers the two
- * questions the aircraft-chase camera asks every frame: WHICH squadron of a
- * carrier is airborne at time t (activeSquadronOf), and WHERE the visible
- * aircraft of one rendered formation pool currently are
- * (formationFollowPose). No Vue / DOM / renderer state — only samples and
- * already-positioned scene objects.
+ * pools positioned per playhead tick. This pure module answers the questions
+ * the aircraft-chase camera asks every frame: WHICH squadron of a carrier is
+ * airborne at time t (activeSquadronOf), WHERE the visible aircraft of one
+ * rendered formation pool currently are (formationFollowPose), and — when
+ * the formation has no rendered model this tick — what recorded anchor pose
+ * to fall back to (anchorFollowPose). No Vue / DOM / renderer state — only
+ * samples and already-positioned scene objects.
  */
 import type * as THREE from "three";
 import type { SquadronPlane } from "@/api";
 import { samplesUpTo } from "./trajectoryMath";
-
-/** Grace after a trail's last observed sample before the squadron counts as
- *  gone — mirrors the formation-anchor lifetime in markerUpdate's per-frame
- *  anchor pass (the last packet can trail the visible patrol by a beat). */
-const TRAIL_GRACE_S = 5;
+import { PLANE_TRAIL_GRACE_S } from "./planeFormation";
 
 /** One aircraft's sample trail, keyed by the composite plane id
  *  (planeId * 16 + formation index) — the shape of MapInternals.planeTrails. */
@@ -63,7 +60,7 @@ export function activeSquadronOf(
     // Alive until ~5 s after the last sample or the remove event, whichever
     // comes first (removeAt precedes the trail's end when shot down).
     const last = samples[samples.length - 1].time;
-    const expiry = Math.min(last + TRAIL_GRACE_S, removeAt.get(planeId) ?? Infinity);
+    const expiry = Math.min(last + PLANE_TRAIL_GRACE_S, removeAt.get(planeId) ?? Infinity);
     if (born > t || t > expiry) continue;
     if (born > bestBorn) {
       bestBorn = born;
@@ -74,14 +71,18 @@ export function activeSquadronOf(
 }
 
 /** Pose the chase camera should hang behind for one rendered formation pool:
- *  the centroid of the currently VISIBLE aircraft meshes plus the formation
- *  yaw (the first visible mesh's rotation.y — every member of one formation
- *  carries the same heading, and mesh positions are scene-space because the
- *  pools are added straight to the scene root).
+ *  the centroid of the currently VISIBLE aircraft meshes plus the formation's
+ *  real WoWS heading (every member of one formation carries the same heading,
+ *  and mesh positions are scene-space because the pools are added straight to
+ *  the scene root).
  *
- *  Null when no aircraft of the formation is visible (pool missing, model
- *  still loading, or a stale build pass parked the squadron below the sea) —
- *  callers then fall back to the carrier hull or the free radar camera. */
+ *  The meshes carry three.js `rotation.y = π − yaw` (markerUpdate's placement
+ *  convention), while followCamera.applyFollowPose consumes the REAL yaw —
+ *  returning the raw rotation here put the camera in front of the formation.
+ *  The conversion lives here so every caller speaks the same convention.
+ *
+ *  Null when no aircraft of the formation is visible (pool missing or model
+ *  still loading) — callers then try anchorFollowPose, then the carrier hull. */
 export function formationFollowPose(
   pool: THREE.Object3D[] | undefined,
 ): { x: number; y: number; z: number; yaw: number } | null {
@@ -90,15 +91,37 @@ export function formationFollowPose(
   let x = 0;
   let y = 0;
   let z = 0;
-  let yaw = 0;
+  let rotationY = 0;
   for (const mesh of pool) {
     if (!mesh.visible) continue;
-    if (count === 0) yaw = mesh.rotation.y;
+    if (count === 0) rotationY = mesh.rotation.y;
     x += mesh.position.x;
     y += mesh.position.y;
     z += mesh.position.z;
     count++;
   }
   if (count === 0) return null;
-  return { x: x / count, y: y / count, z: z / count, yaw };
+  return { x: x / count, y: y / count, z: z / count, yaw: Math.PI - rotationY };
+}
+
+/** Recorded anchor pose for a formation without a rendered model this tick
+ *  (Points fallback, model pack missing, or the GLB pool still loading): the
+ *  last index-0 sample at or before t, mapped into scene space the way the
+ *  per-frame formation anchor does (z mirrored, altitude lifted to the
+ *  formation floor) and the recorded REAL heading (SquadronPlane.yaw, 0 =
+ *  north). Null when the anchor trail has no sample by t. */
+export function anchorFollowPose(
+  planeTrails: readonly PlaneTrailLike[],
+  planeId: number,
+  t: number,
+): { x: number; y: number; z: number; yaw: number } | null {
+  const anchorId = planeId * 16;
+  for (const trail of planeTrails) {
+    if (trail.id !== anchorId || trail.samples.length === 0) continue;
+    const idx = samplesUpTo(trail.samples, t) - 1;
+    if (idx < 0) return null;
+    const s = trail.samples[idx];
+    return { x: s.x, y: Math.max(60, s.y), z: -s.z, yaw: s.yaw };
+  }
+  return null;
 }

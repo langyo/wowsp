@@ -421,7 +421,7 @@
     "battles": "batailles",
     "aircraft": "Aéronefs",
     "recorded": "Caméra enregistrée : {mode}",
-    "jumpPlaneCamera": "Aller à la vue aéronef la plus proche",
+    "jumpPlaneCamera": "Passer à la vue aéronef la plus proche",
     "planeCamera": "Suivi d'un aéronef",
     "mode": {
       "airplanes": "Vue aéronefs",

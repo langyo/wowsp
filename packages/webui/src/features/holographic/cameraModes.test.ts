@@ -128,6 +128,17 @@ describe("planeCameraWindows", () => {
     ]);
   });
 
+  it("clips a window whose closing sample lands past the replay duration", () => {
+    // The 0x27 stream can run past the decoded trajectory horizon: the
+    // window must end at the playable clock, never outside it.
+    expect(planeCameraWindows([s(10, 6), s(60, 8)], 50)).toEqual([
+      { start: 10, end: 50, id: 6 },
+    ]);
+    // A window that opens past the horizon collapses entirely.
+    expect(planeCameraWindows([s(50, 6), s(60, 8)], 40)).toEqual([]);
+    expect(planeCameraWindows([s(50, 6)], 40)).toEqual([]);
+  });
+
   it("keeps an airplanes↔followingPlanes crossing in ONE window", () => {
     expect(planeCameraWindows([s(10, 1), s(20, 6), s(30, 8)], 100)).toEqual([
       { start: 10, end: 30, id: 1 },

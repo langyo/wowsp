@@ -8,6 +8,10 @@
  * game-assets-core's CameraMode enum; it is frozen here as the DEFAULT table
  * so the webui can label a replay's recorded view without a GameParams
  * lookup. Unknown ids (other client builds, dev-only modes) answer null.
+ * KEEP IN SYNC with the Rust authority:
+ * packages/tools/game-assets-core/src/game_constants.rs (BattleConstants'
+ * default camera_modes map, ids 1..23) — that map is the source of truth if
+ * a client build ever reorders the enum.
  *
  * Pure module — no Vue / DOM / three.js state, unit-testable on plain samples.
  */
@@ -140,8 +144,13 @@ export function planeCameraWindows(
         openId = sample.value;
       }
     } else if (openStart >= 0) {
-      if (sample.time > openStart) {
-        out.push({ start: openStart, end: sample.time, id: openId });
+      // Clip the closing edge to the replay duration: a mode change recorded
+      // past the decoded horizon must not produce a window whose end (or
+      // whole span) lies beyond the playable clock, or "jump to nearest"
+      // would seek outside the replay.
+      const end = Math.min(sample.time, dur);
+      if (end > openStart) {
+        out.push({ start: openStart, end, id: openId });
       }
       openStart = -1;
     }

@@ -21,7 +21,7 @@ import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./
 import { isAiName, isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
-import { formationOffsets } from "./planeFormation";
+import { formationOffsets, PLANE_TRAIL_GRACE_S } from "./planeFormation";
 import { updateStormZone } from "./weatherScene";
 import { syncMoveAdvisories } from "./moveAdvisories";
 import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
@@ -564,7 +564,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const born = trail.samples[0].time;
       const removed = ctx.minimapTrailEnd.get(planeId);
       const expiry = Math.min(
-        trail.samples[trail.samples.length - 1].time + 5,
+        trail.samples[trail.samples.length - 1].time + PLANE_TRAIL_GRACE_S,
         removed ?? Infinity,
       );
       if (t >= born && t <= expiry) {
@@ -850,8 +850,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         if (!trail || trail.samples.length === 0) continue;
         const first = trail.samples[0].time;
         const last = trail.samples[trail.samples.length - 1].time;
-        // Squadron is gone 5s after its last sample — no lingering labels.
-        if (t >= first && t <= last + 5) {
+        // Squadron is gone one grace window after its last sample — no
+        // lingering labels (same constant as the anchor / follow target) —
+        // but never past the minimap remove event (early landing / shot
+        // down), which can precede the trail's end.
+        const expiry = Math.min(
+          last + PLANE_TRAIL_GRACE_S,
+          ctx.minimapTrailEnd.get(planeId) ?? Infinity,
+        );
+        if (t >= first && t <= expiry) {
           visible = true;
           break;
         }

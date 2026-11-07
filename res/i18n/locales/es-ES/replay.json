@@ -421,7 +421,7 @@
     "battles": "batallas",
     "aircraft": "Aeronaves",
     "recorded": "Cámara grabada: {mode}",
-    "jumpPlaneCamera": "Ir a la vista de aeronave más cercana",
+    "jumpPlaneCamera": "Ir a la vista de la aeronave más cercana",
     "planeCamera": "Siguiendo una aeronave",
     "mode": {
       "airplanes": "Vista de aeronaves",
