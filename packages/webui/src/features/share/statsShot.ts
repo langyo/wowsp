@@ -24,6 +24,7 @@ import {
   STAMP_URL,
   canvasToPngBytes,
   drawFooter,
+  drawShipIcon,
   drawStampSeal,
   ellipsize,
   footerMinWidth,
@@ -441,9 +442,13 @@ export async function renderStatsShot(
     ctx.textAlign = "left";
     y += SHIP_HEAD_H;
 
+    // The NEUTRAL "white" face (light plate + black ink), not the plain
+    // silhouette: the shot canvas paints on the caller's theme palette, and
+    // the plain art is white-only, so a light-palette card swallowed it
+    // (2026-11-07 follow-up review).
     const icons = await Promise.all(
       model.ships.map((s) =>
-        loadImage(shipIconUrl(s.shipType ?? null, "plain"), SHIP_GLYPH_RASTER),
+        loadImage(shipIconUrl(s.shipType ?? null, "white"), SHIP_GLYPH_RASTER),
       ),
     );
     model.ships.forEach((ship, i) => {
@@ -454,8 +459,7 @@ export async function renderStatsShot(
       ctx.fill();
 
       let tx = PAD + 12;
-      const icon = icons[i];
-      if (icon) ctx.drawImage(icon, tx, cy - 10, 20, 20);
+      drawShipIcon(ctx, icons[i], tx, cy - 10, 20);
       tx += 28;
       ctx.font = font(14, 600);
       ctx.fillStyle = rgba(palette.text, 1);

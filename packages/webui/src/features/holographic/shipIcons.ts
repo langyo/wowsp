@@ -22,7 +22,7 @@
  * - `outline`: the plate-free line-art alpha mask (strokes are alpha only).
  */
 // PublicDir art served at the root path (see utils/shipImages.ts) — URL
-// constants, not imports, keep the 37 HUD icons out of Vite's module
+// constants, not imports, keep the 42 HUD icons out of Vite's module
 // graph.
 const allyBattleship = "/images/ships/icon_ally_battleship.svg";
 const allyCruiser = "/images/ships/icon_ally_cruiser.svg";
@@ -41,26 +41,31 @@ const sunkCruiser = "/images/ships/icon_sunk_cruiser.svg";
 const sunkDestroyer = "/images/ships/icon_sunk_destroyer.svg";
 const sunkAircarrier = "/images/ships/icon_sunk_aircarrier.svg";
 const sunkSubmarine = "/images/ships/icon_sunk_submarine.svg";
+const sunkAuxiliary = "/images/ships/icon_sunk_auxiliary.svg";
 const sunkEnemyBattleship = "/images/ships/icon_sunk_enemy_battleship.svg";
 const sunkEnemyCruiser = "/images/ships/icon_sunk_enemy_cruiser.svg";
 const sunkEnemyDestroyer = "/images/ships/icon_sunk_enemy_destroyer.svg";
 const sunkEnemyAircarrier = "/images/ships/icon_sunk_enemy_aircarrier.svg";
 const sunkEnemySubmarine = "/images/ships/icon_sunk_enemy_submarine.svg";
+const sunkEnemyAuxiliary = "/images/ships/icon_sunk_enemy_auxiliary.svg";
 const whiteBattleship = "/images/ships/icon_white_battleship.svg";
 const whiteCruiser = "/images/ships/icon_white_cruiser.svg";
 const whiteDestroyer = "/images/ships/icon_white_destroyer.svg";
 const whiteAircarrier = "/images/ships/icon_white_aircarrier.svg";
 const whiteSubmarine = "/images/ships/icon_white_submarine.svg";
+const whiteAuxiliary = "/images/ships/icon_white_auxiliary.svg";
 const outlineBattleship = "/images/ships/icon_outline_battleship.svg";
 const outlineCruiser = "/images/ships/icon_outline_cruiser.svg";
 const outlineDestroyer = "/images/ships/icon_outline_destroyer.svg";
 const outlineAircarrier = "/images/ships/icon_outline_aircarrier.svg";
 const outlineSubmarine = "/images/ships/icon_outline_submarine.svg";
+const outlineAuxiliary = "/images/ships/icon_outline_auxiliary.svg";
 const plainBattleship = "/images/ships/icon_battleship.svg";
 const plainCruiser = "/images/ships/icon_cruiser.svg";
 const plainDestroyer = "/images/ships/icon_destroyer.svg";
 const plainAircarrier = "/images/ships/icon_aircarrier.svg";
 const plainSubmarine = "/images/ships/icon_submarine.svg";
+const plainAuxiliary = "/images/ships/icon_auxiliary.svg";
 
 const SHIP_ICONS: Record<string, Record<string, string>> = {
   ally: {
@@ -85,6 +90,7 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     destroyer: sunkDestroyer,
     aircarrier: sunkAircarrier,
     submarine: sunkSubmarine,
+    auxiliary: sunkAuxiliary,
   },
   // The dead state REPLACES the team marker, so both rows carry the same
   // inverted face; the atlas keeps the second key because the shared
@@ -95,6 +101,7 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     destroyer: sunkEnemyDestroyer,
     aircarrier: sunkEnemyAircarrier,
     submarine: sunkEnemySubmarine,
+    auxiliary: sunkEnemyAuxiliary,
   },
   white: {
     battleship: whiteBattleship,
@@ -102,6 +109,7 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     destroyer: whiteDestroyer,
     aircarrier: whiteAircarrier,
     submarine: whiteSubmarine,
+    auxiliary: whiteAuxiliary,
   },
   // Plate-free line art (see the module comment): a tint-mask face whose
   // white strokes carry only alpha, so any ink can draw it.
@@ -111,6 +119,7 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     destroyer: outlineDestroyer,
     aircarrier: outlineAircarrier,
     submarine: outlineSubmarine,
+    auxiliary: outlineAuxiliary,
   },
   plain: {
     battleship: plainBattleship,
@@ -118,6 +127,7 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     destroyer: plainDestroyer,
     aircarrier: plainAircarrier,
     submarine: plainSubmarine,
+    auxiliary: plainAuxiliary,
   },
 };
 
@@ -128,9 +138,8 @@ export type ShipIconVariant = "ally" | "enemy" | "sunk" | "sunk-enemy" | "white"
  *  a BB icon for ships no database could classify); "" misses every atlas
  *  row, so `shipIconUrl` answers null and the icon slots render their
  *  empty placeholder instead (BattleIcon's bare span, the shots' skipped
- *  image). Every caller already tolerates a null URL: the sunk/white
- *  variants never had an auxiliary row, so null was always a possible
- *  answer here. */
+ *  image). Every class now carries every face, so null only answers for a
+ *  hull no database could classify. */
 export function shipTypeClass(type: string | null | undefined): string {
   const t = (type ?? "").toLowerCase();
   if (t.includes("battleship")) return "battleship";

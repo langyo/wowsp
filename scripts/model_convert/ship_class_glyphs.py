@@ -27,7 +27,7 @@ engraving as PUNCHED SLITS: the ink lines AND the plate seams (the ink band
 between plate islands — the carrier's detached bow, the submarine's bar/bow
 joint) are cut out of the silhouette.
 
-Variants (37 files, the names shipIcons.ts imports):
+Variants (6 classes x 7 faces = 42 files, the names shipIcons.ts imports):
 
   icon_<class>.svg          plain  — silhouette + punched engraving (CSS mask)
   icon_ally_<class>.svg     ally   — mint plate, black ink
@@ -36,6 +36,11 @@ Variants (37 files, the names shipIcons.ts imports):
   icon_sunk_<class>.svg     sunk   — inverted state marker: black plate, white ink
   icon_sunk_enemy_<class>.svg       the same inverted state face
   icon_outline_<class>.svg  outline— white line-art alpha mask, no plate
+
+Every class carries every face. The auxiliary hull used to stop at the two
+team faces, which left dead or neutral auxiliary rows with an empty icon
+slot (a sunk auxiliary also missed the minimap art); it draws from the same
+shape set now.
 
 Usage:
     python scripts/model_convert/ship_class_glyphs.py
@@ -335,16 +340,6 @@ def main():
             f'icon_sunk_enemy_{cls}.svg': write_sunk(shape),
             f'icon_outline_{cls}.svg': write_outline(shape),
         }
-        if cls == 'auxiliary':
-            # The auxiliary only has the two team faces in shipIcons.ts.
-            for name in (
-                f'icon_{cls}.svg',
-                f'icon_sunk_{cls}.svg',
-                f'icon_sunk_enemy_{cls}.svg',
-                f'icon_white_{cls}.svg',
-                f'icon_outline_{cls}.svg',
-            ):
-                files.pop(name)
         for name, body in files.items():
             (OUT_DIR / name).write_text(body, encoding='utf-8')
             written += 1

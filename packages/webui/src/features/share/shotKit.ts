@@ -149,6 +149,34 @@ export function loadImage(
   return entry;
 }
 
+/** The class-glyph art box is 20 x 11 (the generator's W x H): SVG images
+ *  crop to it, so a square destination would stretch the marker ~1.8x
+ *  vertically (the DOM's <img> letterboxes instead). */
+const SHIP_GLYPH_ASPECT = 11 / 20;
+
+/** Ship-class glyphs on the shot canvases are drawn at the SAME 80% visual
+ *  weight the DOM's BattleIcon gives its <img> faces (a 10%-per-side inset,
+ *  see BattleIcon.tsx) AND at the art's own aspect: drawImage stretches an
+ *  SVG image to its destination rect, so the height must follow the 20 x 11
+ *  box and the art centres vertically the way the DOM's letterboxed <img>
+ *  does. Callers pass the marker's full box; this helper insets the drawn
+ *  art inside it, keeping the box's own slot maths (text x-offsets, row
+ *  heights) untouched. */
+const SHIP_ICON_INSET = 0.1;
+export function drawShipIcon(
+  ctx: CanvasRenderingContext2D,
+  icon: HTMLImageElement | null,
+  x: number,
+  y: number,
+  size: number,
+): void {
+  if (!icon) return;
+  const pad = size * SHIP_ICON_INSET;
+  const w = size - pad * 2;
+  const h = w * SHIP_GLYPH_ASPECT;
+  ctx.drawImage(icon, x + pad, y + (size - h) / 2, w, h);
+}
+
 /** Localized strings the fixed promo footer carries (the QQ number itself
  *  comes from about.qqGroupNumber). */
 export interface ShotFooterStrings {

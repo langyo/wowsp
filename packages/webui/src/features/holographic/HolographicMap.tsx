@@ -114,7 +114,8 @@ import {
 } from "@wowsp/holo";
 
 // The shared scorebar renders the game's own HUD icons — register the
-// bundled URLs once (same PNGs the minimap canvas uses).
+// bundled URLs once (the same SVG class art every other face draws; every
+// class, auxiliary included, carries the full face set).
 for (const variant of ["ally", "enemy", "sunk", "sunk-enemy"] as const) {
   registerHoloShipIcons(variant, {
     battleship: shipIconUrl("battleship", variant) ?? undefined,
