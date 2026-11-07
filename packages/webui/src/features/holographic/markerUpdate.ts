@@ -21,7 +21,7 @@ import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./
 import { isAiName, isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
-import { formationOffsets } from "./planeFormation";
+import { formationOffsets, PLANE_TRAIL_GRACE_S } from "./planeFormation";
 import { updateStormZone } from "./weatherScene";
 import { syncMoveAdvisories } from "./moveAdvisories";
 import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
@@ -552,7 +552,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       return s;
     };
     // Formation anchors: index-0 trail of each planeId (position + yaw),
-    // alive between its first update and ~2 min after the last one.
+    // alive between its first update and one shared grace window after the
+    // last one (PLANE_TRAIL_GRACE_S, also used by the follow target).
     // Reused scratch map — the old code allocated a fresh Map per tick.
     const formationAnchor = ctx.planeAnchorScratch;
     formationAnchor.clear();
@@ -564,7 +565,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const born = trail.samples[0].time;
       const removed = ctx.minimapTrailEnd.get(planeId);
       const expiry = Math.min(
-        trail.samples[trail.samples.length - 1].time + 5,
+        trail.samples[trail.samples.length - 1].time + PLANE_TRAIL_GRACE_S,
         removed ?? Infinity,
       );
       if (t >= born && t <= expiry) {
@@ -821,8 +822,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     }
   }
   // Aircraft labels (one per carrier): sync name/HP from the carrier and
-  // show while any of its squadrons is in the air (visible window =
-  // first update .. last update + 2 min).
+  // show while any of its squadrons is in the air (visible window = first
+  // update .. one PLANE_TRAIL_GRACE_S past the last update, capped by the
+  // minimap remove event).
   {
     const labels = ctx.shipLabels.value;
     for (const [labelId, carrierId] of ctx.planeLabelCarriers) {
@@ -850,8 +852,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         if (!trail || trail.samples.length === 0) continue;
         const first = trail.samples[0].time;
         const last = trail.samples[trail.samples.length - 1].time;
-        // Squadron is gone 5s after its last sample — no lingering labels.
-        if (t >= first && t <= last + 5) {
+        // Squadron is gone one grace window after its last sample — no
+        // lingering labels (same constant as the anchor / follow target) —
+        // but never past the minimap remove event (early landing / shot
+        // down), which can precede the trail's end.
+        const expiry = Math.min(
+          last + PLANE_TRAIL_GRACE_S,
+          ctx.minimapTrailEnd.get(planeId) ?? Infinity,
+        );
+        if (t >= first && t <= expiry) {
           visible = true;
           break;
         }

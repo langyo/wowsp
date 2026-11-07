@@ -25,6 +25,18 @@ export const FOLLOW_DIST_DEFAULT = Math.hypot(CHASE_RUN, CHASE_RISE);
 export const FOLLOW_DIST_MIN = 32;
 export const FOLLOW_DIST_MAX = 2000;
 
+/** Aircraft-follow chase distance: a squadron is far smaller than a hull, so
+ *  the stock ship framing would fill the view with a wingtip — this pulled
+ *  back preset keeps the whole formation readable while the camera still
+ *  hangs behind it. Lives in the same clamp range as every follow distance. */
+export const PLANE_FOLLOW_DIST_DEFAULT = 110;
+
+/** AI-report keyframe-jump framing, deliberately pulled back from the stock
+ *  chase range so a jump lands on a readable shot instead of hugging the
+ *  hull / formation (avoid face-hugging); tunable, inside the clamp range. */
+export const AI_FOCUS_SHIP_DIST = 180;
+export const AI_FOCUS_PLANE_DIST = 160;
+
 /** Clamp a follow distance to the chase zoom range. */
 export function clampFollowDist(dist: number): number {
   return THREE.MathUtils.clamp(dist, FOLLOW_DIST_MIN, FOLLOW_DIST_MAX);

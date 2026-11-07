@@ -2380,13 +2380,17 @@ export default defineComponent({
      *  the analyzed perspective — one click from the report back into the
      *  battle, replacing the in-card Jump button that unmounted while the
      *  pointer travelled to it (2026-11-07 report). The report's entityId is
-     *  the perspective the timeline describes, so the camera lands on the
-     *  exact ship being read. */
+     *  the perspective the timeline describes; carrier perspectives hand the
+     *  camera to the squadron that is airborne at that battle second, and
+     *  every jump starts from the wider AI framing instead of a hull
+     *  close-up (both resolved inside HolographicMap.focusEntity). */
     const jumpToReportMoment = (t0: number) => {
       const entityId = staticReport.value?.entityId ?? null;
       closeStaticReport();
       mapRef.value?.seek(t0);
-      if (entityId != null) mapRef.value?.focusEntity(entityId);
+      if (entityId != null) {
+        mapRef.value?.focusEntity(entityId, { time: t0, preferAircraft: true });
+      }
     };
     /** Match duration (seconds) — the max sample time across all trajectories.
      *  Only knowable after the packet stream is decoded; shown in the detail. */

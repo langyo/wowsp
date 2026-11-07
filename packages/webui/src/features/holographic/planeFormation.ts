@@ -10,6 +10,13 @@
  */
 import type { SquadronPlane } from "@/api";
 
+/** Extra seconds a squadron keeps rendering (and stays followable) after its
+ *  last observed position sample — the last packet trails the visible patrol
+ *  by a beat. Shared by the per-frame formation anchor pass (markerUpdate)
+ *  and the follow-camera target resolver (followTargets), so the two never
+ *  drift apart. */
+export const PLANE_TRAIL_GRACE_S = 5;
+
 /** Per-plane local offsets inside ONE flight group (the group's own wedge):
  *  1 → single, 2 → side by side, 3 → arrow (1 lead + 2 wing), 4+ → 2 up front
  *  and the rest trailing. Positive oz is BACKWARD along the heading (the

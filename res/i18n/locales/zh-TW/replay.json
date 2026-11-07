@@ -418,7 +418,20 @@
     "me": "我",
     "allies": "友方",
     "enemies": "敵方",
-    "battles": "場"
+    "battles": "場",
+    "aircraft": "艦載機",
+    "recorded": "錄像機位：{mode}",
+    "jumpPlaneCamera": "跳到最近的飛機視角",
+    "planeCamera": "跟隨飛機",
+    "mode": {
+      "airplanes": "飛機視角",
+      "followingPlanes": "跟隨飛機",
+      "followingShip": "跟隨艦船",
+      "followingShells": "跟隨砲彈",
+      "freeFlying": "自由飛行",
+      "overheadMap": "俯瞰地圖",
+      "other": "其他視角"
+    }
   },
   "classes": {
     "battleship": "戰列艦",
