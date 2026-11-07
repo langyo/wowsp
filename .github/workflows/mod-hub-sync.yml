@@ -206,17 +206,29 @@ jobs:
             echo "::error::digest PR checks failed (rc=$rc): $out"
             exit 1
           done
+          # The wait loop above exhausts silently when a check stays queued
+          # forever (the type-escapes runner congestion of 2026-11-06/07);
+          # dispatching the site deploy without the doc merged would waste
+          # the whole live-poll window on a guaranteed miss. Re-added here
+          # after the #1782 conflict resolution dropped the #1767 original:
+          # the poll running without the merge is exactly how the 2026-11-07
+          # 00:40 run died (live stuck at seq 3 while the PR stayed open).
+          state="$(gh pr view "$pr" --json state --jq .state)"
+          if [ "$state" != "MERGED" ]; then
+            echo "::error::digest PR #$pr never merged (state $state) -- checks stuck?"
+            exit 1
+          fi
           gh workflow run site.yml --ref master
-          for attempt in $(seq 1 20); do
+          for attempt in $(seq 1 40); do
             read="$(curl -fsSL --max-time 20 "https://wowsp.langyo.xyz/api/digests/mod-hub" \
               | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("tag",""), d.get("seq",0))' 2>/dev/null || true)"
             tag="$(echo "$read" | awk '{print $1}')"
             seq_live="$(echo "$read" | awk '{print $2}')"
             if [ "$tag" = "mod-hub" ] && [ "${seq_live:-0}" -ge "$seq" ] 2>/dev/null; then
-              echo "live /api/digests/mod-hub serves mod-hub at seq $seq_live (attempt $attempt/20)"
+              echo "live /api/digests/mod-hub serves mod-hub at seq $seq_live (attempt $attempt/40)"
               exit 0
             fi
-            echo "live is '${read:-unreachable}', want tag=mod-hub seq>=$seq (attempt $attempt/20)"
+            echo "live is '${read:-unreachable}', want tag=mod-hub seq>=$seq (attempt $attempt/40)"
             sleep 60
           done
           echo "::error::live /api/digests/mod-hub never re-pointed"
