@@ -233,6 +233,12 @@ const ReportSheetBody = defineComponent({
     const me = computed<StaticRosterEntry | undefined>(() =>
       props.report.roster.find((row) => row.entityId === props.report.entityId),
     );
+    /** The fire model has no label space for this ship class (AirCarrier /
+     *  Submarine: zero positive fire examples in the training corpus), so
+     *  its fire component and contribution are null BY CONTRACT. The head
+     *  must say "not applicable" instead of a misleading face: the
+     *  whole-game score then is the movement component alone. */
+    const fireUnsupported = computed(() => me.value?.fireApplicable === false);
     /** Top-right battle provenance: map, mode, start time, fate, replay
      *  hash tail and duration — the header the replay's own meta row
      *  carries, trimmed to fit the sheet. */
@@ -354,11 +360,17 @@ const ReportSheetBody = defineComponent({
                 {t("replay.report.contribution")}
               </span>
               <b>
-                {me.value?.whole?.contribution != null
-                  ? formatHp(me.value.whole.contribution)
-                  : "—"}
+                {fireUnsupported.value
+                  ? t("replay.report.notApplicable")
+                  : me.value?.whole?.contribution != null
+                    ? formatHp(me.value.whole.contribution)
+                    : "—"}
               </b>
-              {me.value?.whole?.contributionShots ? (
+              {/* No per-window mean for an unsupported class: the
+                  contribution is null by contract (zero fire positives),
+                  not a missing measurement. */}
+              {!fireUnsupported.value &&
+              me.value?.whole?.contributionShots ? (
                 <span class="srp-head__score-sub">
                   {t("replay.report.perShot", {
                     v: formatHp(
@@ -374,14 +386,23 @@ const ReportSheetBody = defineComponent({
                 {t("replay.report.wholeGame")}
               </span>
               <b>{me.value ? pct(me.value.whole!.wholeGame) : "—"}%</b>
+              {/* Unsupported classes never render the trivial fire face:
+                  the whole-game score is the movement component alone, so
+                  the sub-line says "move-only" instead of "fire —". */}
               <span class="srp-head__score-sub">
-                {t("replay.report.fireMove", {
-                  f:
-                    me.value?.whole?.wholeFire != null
-                      ? pct(me.value.whole.wholeFire)
-                      : "—",
-                  m: me.value ? pct(me.value.whole!.wholeMove) : "—",
-                })}
+                {fireUnsupported.value
+                  ? t("replay.report.moveOnly", {
+                      m: me.value?.whole
+                        ? pct(me.value.whole.wholeMove)
+                        : "—",
+                    })
+                  : t("replay.report.fireMove", {
+                      f:
+                        me.value?.whole?.wholeFire != null
+                          ? pct(me.value.whole.wholeFire)
+                          : "—",
+                      m: me.value ? pct(me.value.whole!.wholeMove) : "—",
+                    })}
               </span>
             </div>
             <div class="srp-head__coverage">
@@ -413,6 +434,11 @@ const ReportSheetBody = defineComponent({
                   />
                 ))}
               </div>
+              {fireUnsupported.value ? (
+                <span class="srp-head__class-note">
+                  {t("replay.report.classNotCovered")}
+                </span>
+              ) : null}
             </div>
           </div>
         </div>

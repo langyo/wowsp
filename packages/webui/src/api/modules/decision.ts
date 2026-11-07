@@ -108,6 +108,15 @@ export interface StaticMoment {
 export interface StaticRosterEntry {
   entityId: number;
   shipId: number | null;
+  /** Ship class from the model pack's class vocabulary ("AirCarrier",
+   *  "Submarine", "Battleship", …) — null when the hull could not be
+   *  attributed to a class. */
+  shipClass: string | null;
+  /** Whether the fire-decision model covers this ship class. False for
+   *  AirCarrier / Submarine: the full training corpus holds zero positive
+   *  fire examples for them, so the fire component and the contribution
+   *  stay null and the whole-game score degrades to movement alone. */
+  fireApplicable: boolean;
   name: string | null;
   /** The PLAYER nickname (the replay roster vehicle's own name) — the join
    *  key the post-battle panel's BattleResults rows match against, where
@@ -236,6 +245,15 @@ export type ShipOutcome =
 export interface ShipScoreEntry {
   entityId: number;
   shipId: number | null;
+  /** Ship class from the model pack's class vocabulary ("AirCarrier",
+   *  "Submarine", "Battleship", …) — null when the hull could not be
+   *  attributed to a class. */
+  shipClass: string | null;
+  /** Whether the fire-decision model covers this ship class. False for
+   *  AirCarrier / Submarine: the full training corpus holds zero positive
+   *  fire examples for them, so the fire component and the contribution
+   *  stay null and the whole-game score degrades to movement alone. */
+  fireApplicable: boolean;
   /** Recorder-relative team: 0 = recorder's side, 1 = enemy. */
   teamId: 0 | 1;
   isRecorder: boolean;

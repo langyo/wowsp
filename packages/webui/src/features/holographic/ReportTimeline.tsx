@@ -271,19 +271,25 @@ function MomentRows(props: { moment: StaticMoment }) {
           )}
         </span>
       </div>
-      <div class="srp-tl__row">
-        <span class="srp-tl__row-label">{t("replay.report.fireAction")}</span>
-        <span class="srp-tl__row-value">
-          {moment.fired == null
-            ? "—"
-            : moment.fired
+      {/* No fire decision was on the table here (a non-can-fire row — e.g.
+          every row of an AirCarrier / Submarine, whose fire model is not
+          applicable): rendering an em dash was meaningless noise, so the
+          row is dropped entirely. */}
+      {moment.fired != null ? (
+        <div class="srp-tl__row">
+          <span class="srp-tl__row-label">
+            {t("replay.report.fireAction")}
+          </span>
+          <span class="srp-tl__row-value">
+            {moment.fired
               ? t("replay.report.fired")
               : t("replay.report.held")}
-          {moment.fireProb != null ? (
-            <span class="srp-tl__row-sub">p={pct(moment.fireProb)}%</span>
-          ) : null}
-        </span>
-      </div>
+            {moment.fireProb != null ? (
+              <span class="srp-tl__row-sub">p={pct(moment.fireProb)}%</span>
+            ) : null}
+          </span>
+        </div>
+      ) : null}
       <div class="srp-tl__row">
         <span class="srp-tl__row-label">{t("replay.report.moveAdvice")}</span>
         <span class="srp-tl__row-value">

@@ -627,7 +627,8 @@
     "noData": "Sin datos de puntuación",
     "samples": "{ships} barcos · {rows} puntos de decisión",
     "contribution": "Contrib.",
-    "perShot": "Por disparo {value}"
+    "perShot": "Por disparo {value}",
+    "fireNotCovered": "Sin cobertura"
   },
   "aiAnalysis": {
     "toggle": "Análisis IA",
@@ -690,7 +691,10 @@
     "aiVersion": "WoWSP AI {version} · pesos entrenados {date}",
     "replayHash": "Hash del replay (últimos seis)",
     "survivedAtEnd": "Vivo al final del combate",
-    "replayHashHint": "Huella SHA-256 · Haz clic para copiar el hash completo"
+    "replayHashHint": "Huella SHA-256 · Haz clic para copiar el hash completo",
+    "notApplicable": "N/D",
+    "moveOnly": "Solo movimiento {m}%",
+    "classNotCovered": "Ningún modelo de decisión de tiro cubre esta clase de barco (solo acuerdo de movimiento)."
   },
   "detail": {
     "title": "Detalle de la batalla"

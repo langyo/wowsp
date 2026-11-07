@@ -627,7 +627,8 @@
     "noData": "점수 데이터 없음",
     "samples": "{ships}척 · {rows}개 결정 지점",
     "contribution": "기여",
-    "perShot": "발당 평균 {value}"
+    "perShot": "발당 평균 {value}",
+    "fireNotCovered": "미지원"
   },
   "aiAnalysis": {
     "toggle": "AI 분석",
@@ -690,7 +691,10 @@
     "aiVersion": "WoWSP AI {version} · 가중치 학습 {date}",
     "replayHash": "리플레이 해시(끝 6자리)",
     "survivedAtEnd": "전투 종료까지 생존",
-    "replayHashHint": "SHA-256 체크섬 · 클릭하여 전체 해시 복사"
+    "replayHashHint": "SHA-256 체크섬 · 클릭하여 전체 해시 복사",
+    "notApplicable": "해당 없음",
+    "moveOnly": "기동만 {m}%",
+    "classNotCovered": "이 함종에는 사격 판단 모델이 없습니다(기동 일치도만 표시)."
   },
   "detail": {
     "title": "전투 상세"

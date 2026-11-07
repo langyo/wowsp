@@ -101,6 +101,8 @@ const SAMPLE = (t: number, inst: number, confidence: number): ShipScoreSample =>
 const SCORE_ENTRY = (entityId: number, over: Partial<ShipScoreEntry> = {}): ShipScoreEntry => ({
   entityId,
   shipId: null,
+  shipClass: null,
+  fireApplicable: true,
   teamId: 0,
   isRecorder: false,
   wholeGame: 0.62,
@@ -481,6 +483,40 @@ describe("HoloRosterOverlay AI decision-score columns", () => {
     expect(unscored[3].text()).toBe("—");
     expect(unscored[5].text()).toBe("—");
     expect(unscored[6].find(".holo-roster__lamp--empty").exists()).toBe(true);
+  });
+
+  it("marks an uncovered class as not covered instead of a fire score", () => {
+    const wrapper = mountOverlay({
+      vehicles,
+      rosterState: state,
+      aiOn: true,
+      scoreReport: SCORE_REPORT([
+        SCORE_ENTRY(101, {
+          shipClass: "AirCarrier",
+          fireApplicable: false,
+          wholeFire: null,
+          contribution: null,
+          contributionShots: null,
+        }),
+      ]),
+    });
+    const scored = wrapper
+      .findAll("tbody tr")
+      .find((row) => row.text().includes("scored"))!
+      .findAll("td");
+    // Contribution stays a dash — never a 0 placeholder — with a hint
+    // explaining the class sits outside the fire model's label space.
+    expect(scored[3].text()).toBe("—");
+    expect(scored[3].attributes("data-hint")).toBe(
+      i18nT("replay.report.classNotCovered"),
+    );
+    // The fire slot of the whole-game hint says "not covered", not the
+    // trivial "no can-fire rows" phrasing.
+    const hint = scored[4].attributes("data-hint") ?? "";
+    expect(hint).toContain(i18nT("replay.scores.fireNotCovered"));
+    expect(hint).not.toContain(i18nT("replay.scores.noFire"));
+    // The whole-game number itself still renders (movement-only agreement).
+    expect(scored[4].text()).toBe("62");
   });
 
   it("footer carries the disclaimer, the legend and the samples line", () => {

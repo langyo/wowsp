@@ -64,6 +64,13 @@ const MOMENT_BUDGET: usize = 8;
 pub struct StaticRosterEntry {
     pub entity_id: i32,
     pub ship_id: Option<i64>,
+    /// Hull class from the embedded GameParams attribute table (the canonical
+    /// `AirCarrier` / `Submarine` / ... spelling); `null` when the shipId is
+    /// unknown to that table. Unscored roster rows carry it too.
+    pub ship_class: Option<String>,
+    /// Whether the main-battery fire semantics apply to this hull (`false` for
+    /// carriers / submarines). The webui hides the fire copy for those rows.
+    pub fire_applicable: bool,
     /// Resolved from the replay roster (ship display name preferred).
     pub name: Option<String>,
     /// The PLAYER nickname (the replay roster vehicle's `name`), matched by
@@ -400,6 +407,10 @@ pub(crate) fn build_static_report(
         });
         let player_name_maps = name_maps(&roster, |v| v.name.clone());
 
+        // Class-aware fire applicability for the roster badges: the embedded
+        // table is a compile-time artifact, and a parse failure degrades to
+        // the pre-classification behaviour (unknown class / applicable).
+        let attr_table = super::ship_attrs::embedded_table().ok();
         let mut roster: Vec<StaticRosterEntry> = Vec::new();
         for t in &stream.trajectories {
             if !t.kind.as_ref().is_some_and(|k| k.entity_type == 2) {
@@ -422,9 +433,25 @@ pub(crate) fn build_static_report(
                 contribution_shots: e.contribution_shots,
             });
             let kind_ship_id = t.kind.as_ref().and_then(|k| k.ship_id);
+            // Prefer the scored entry's values: per_ship is built from the
+            // rows' shipId (the same join the scoring gate used), while the
+            // trajectory's EntityCreate occasionally lacks shipId. The
+            // embedded-table lookup is the fallback, so the roster badge can
+            // never disagree with decision_score's fire gate.
+            let ship_class = per_ship.and_then(|e| e.ship_class.clone()).or_else(|| {
+                attr_table
+                    .and_then(|t| t.class_of(kind_ship_id))
+                    .map(|c| c.as_str().to_string())
+            });
+            let fire_applicable = per_ship.map_or_else(
+                || attr_table.is_none_or(|t| t.fire_applicable(kind_ship_id)),
+                |e| e.fire_applicable,
+            );
             roster.push(StaticRosterEntry {
                 entity_id: eid,
                 ship_id: kind_ship_id,
+                ship_class,
+                fire_applicable,
                 name: resolve_from(&display_name_maps, eid, kind_ship_id),
                 player_name: resolve_from(&player_name_maps, eid, kind_ship_id),
                 team_id: per_ship.map_or(1, |e| e.team_id),

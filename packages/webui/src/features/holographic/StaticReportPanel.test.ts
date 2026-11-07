@@ -69,6 +69,8 @@ function sampleReport(): StaticReport {
       {
         entityId: 1,
         shipId: 1,
+        shipClass: "Destroyer",
+        fireApplicable: true,
         name: "me",
         playerName: "me",
         teamId: 0,
@@ -94,6 +96,8 @@ function sampleReport(): StaticReport {
       {
         entityId: 9,
         shipId: 9,
+        shipClass: null,
+        fireApplicable: true,
         name: "foe",
         playerName: "foe",
         teamId: 1,
@@ -665,5 +669,59 @@ describe("StaticReportPanel wiring", () => {
     expect(captureHostNode()).toBeNull();
     expect(wrapper.findAll(".srp-tl__callout")).toHaveLength(0);
     expect(wrapper.find(".srp-tl__hint").exists()).toBe(true);
+  });
+});
+
+describe("StaticReportPanel fire applicability", () => {
+  /** The recorder re-attributed to a class the fire model does not cover:
+   *  the Rust side nulls the fire component and the contribution, and the
+   *  head must say so instead of rendering a meaningless face. */
+  function uncoveredReport(): StaticReport {
+    const report = sampleReport();
+    report.roster[0] = {
+      ...report.roster[0],
+      shipClass: "AirCarrier",
+      fireApplicable: false,
+      whole: {
+        wholeGame: 0.42,
+        wholeFire: null,
+        wholeMove: 0.42,
+        contribution: null,
+        contributionShots: null,
+      },
+    };
+    return report;
+  }
+
+  it("degrades the head for an uncovered class", () => {
+    const wrapper = mount(StaticReportPanel, {
+      props: { report: uncoveredReport(), onPick: () => {} },
+    });
+    const scores = wrapper.findAll(".srp-head__score");
+    expect(scores).toHaveLength(2);
+    // Contribution: "not applicable", never a dash and never a per-window
+    // mean on a null contribution.
+    expect(scores[0].text()).toContain("replay.report.notApplicable");
+    expect(scores[0].text()).not.toContain("replay.report.perShot");
+    // Whole-game: movement-only sub-line, the fire face never renders.
+    expect(scores[1].text()).toContain("replay.report.moveOnly");
+    expect(scores[1].text()).not.toContain("replay.report.fireMove");
+    // The one-line explanation rides the head's coverage column.
+    expect(wrapper.find(".srp-head__class-note").text()).toBe(
+      "replay.report.classNotCovered",
+    );
+  });
+
+  it("keeps the fire face for a covered class", () => {
+    const wrapper = mount(StaticReportPanel, {
+      props: { report: sampleReport(), onPick: () => {} },
+    });
+    expect(wrapper.find(".srp-head__class-note").exists()).toBe(false);
+    const scores = wrapper.findAll(".srp-head__score");
+    // Contribution 59500 -> 59.5k with its per-window mean; fire/move face.
+    expect(scores[0].text()).toContain("59.5k");
+    expect(scores[0].text()).toContain("replay.report.perShot");
+    expect(scores[1].text()).toContain("replay.report.fireMove");
+    expect(scores[1].text()).not.toContain("replay.report.moveOnly");
   });
 });
