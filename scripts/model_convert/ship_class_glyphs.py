@@ -88,38 +88,66 @@ def destroyer():
     )
 
 
-def hull_bow(hull_right, plate_right, lines_):
-    # Hull + bow as ONE flat silhouette; the plate is the inset union, and
-    # the ink shows around it and through the slash lines.
+def hull_bow(hull_right, plate_right, lines_, *, deck_plate_right=None, bow_plate_base=None, bow_outer_base=None):
+    # Hull + bow as ONE flat silhouette (the ink wraps both, so the gap
+    # between the deck plate and the bow plate is INK, never a hole). The
+    # plates themselves can be separate islands — the carrier wants its bow
+    # visibly detached from the deck, exactly like the marker art.
     x0, y0, x1, y1 = hull_rect(hull_right)
-    px0, py0, px1, py1 = hull_plate(hull_right)
-    outer = rect(x0, y0, x1, y1) + bow_outer(hull_right)
-    plate = rect(px0, py0, px1, py1) + bow_plate(hull_right, plate_right)
+    outer = rect(x0, y0, x1, y1) + bow_outer(bow_outer_base or hull_right)
+    deck_right = deck_plate_right if deck_plate_right is not None else hull_right
+    px0, py0, px1, py1 = hull_plate(deck_right)
+    plate = rect(px0, py0, px1, py1)
+    if bow_plate_base is not None:
+        plate += bow_plate(bow_plate_base, plate_right)
+    else:
+        plate += bow_plate(hull_right, plate_right)
     return dict(outer=outer, plate=plate, lines=lines_)
 
 
 def cruiser():
-    return hull_bow(12.4, W - 1.4, [line(10.9, EDGE + 0.2, 7.9, H - EDGE - 0.2)])
+    # One slash: centred on the hull (the old one sat right of centre) and
+    # clearly diagonal, not near-vertical.
+    hull_right = 12.4
+    mid = (EDGE + hull_right) / 2
+    dx = 3.0
+    return hull_bow(
+        hull_right,
+        W - 1.4,
+        [line(mid + dx, EDGE + 0.25, mid - dx, H - EDGE - 0.25)],
+    )
 
 
 def battleship():
+    # Two parallel slashes, symmetric about the hull centre and steeper than
+    # the first pass (the review asked for a clearly diagonal cut).
+    hull_right = 12.4
+    mid = (EDGE + hull_right) / 2
+    dx = 2.6
+    gap = 1.6
     return hull_bow(
-        12.4,
+        hull_right,
         W - 1.4,
         [
-            line(9.2, EDGE + 0.2, 6.2, H - EDGE - 0.2),
-            line(11.6, EDGE + 0.2, 8.6, H - EDGE - 0.2),
+            line(mid - gap + dx, EDGE + 0.25, mid - gap - dx, H - EDGE - 0.25),
+            line(mid + gap + dx, EDGE + 0.25, mid + gap - dx, H - EDGE - 0.25),
         ],
     )
 
 
 def aircarrier():
-    # ONE deck block with a horizontal divider line: two bars left a
-    # see-through seam down the middle (2026-11-07 review).
+    # The deck is ONE block with a horizontal divider line (two bars left a
+    # see-through seam), and the bow chevron is DETACHED from the deck by an
+    # ink band, the way the marker art reads (2026-11-07 review).
+    deck_right = 10.8
+    bow_base = 13.0
     return hull_bow(
-        12.4,
+        13.4,
         W - 1.4,
-        [line(EDGE + 0.2, H / 2, 12.0, H / 2)],
+        [line(EDGE + 0.2, H / 2, deck_right - 0.4, H / 2)],
+        deck_plate_right=deck_right,
+        bow_plate_base=bow_base,
+        bow_outer_base=13.4,
     )
 
 
