@@ -939,6 +939,13 @@ pub struct SquadronPlane {
     pub y: f32,
     pub z: f32,
     pub yaw: f32,
+    /// Per-plane attitude pitch (i8, degrees; negative = nose down). The
+    /// updateSquadron wire has carried the byte all along (each plane entry
+    /// is 20 B: f32×3 position, f32 yaw, u16 time, u8 type, i8 pitch) — the
+    /// decoder kept only the head 16 B until the plane-view labels needed an
+    /// attack-run signal (a diving wedge is dropping ordnance).
+    #[serde(default)]
+    pub pitch: i8,
 }
 
 /// One smoke-screen entity lifecycle (entityType 4 = SmokeScreen, experiment

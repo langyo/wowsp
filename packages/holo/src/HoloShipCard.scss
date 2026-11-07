@@ -1,12 +1,17 @@
 /* HoloShipCard — recorder ship health plaque. The hull silhouette is the
    health bar: dim empty base + health-coloured fill clipped left→right + an
-   optional grey repairable segment. */
+   optional grey repairable segment.
+   The plaque's width is DELIBERATELY FIXED (16rem): the plaque sits beside
+   live readouts in content-sized rows (the app's bottom-left shipcard), so
+   a content-sized width made the footprint drift with every replay's ship
+   names — one replays' plaque sat visibly wider than another's. A fixed
+   width pins the row layout; the name ellipsizes inside it, the 17ch HP
+   readout stays right-aligned, and the hull silhouette spans the full box. */
 .holo-ship-card {
   display: inline-flex;
   flex-direction: column;
   gap: 3px;
-  min-width: 12rem;
-  max-width: 20rem;
+  width: 16rem;
   padding: 0.4rem 0.6rem;
   border-radius: 8px;
   background: rgb(96 108 126 / 42%);
@@ -44,15 +49,13 @@
 
   &__text {
     flex: 0 0 auto;
-    /* Fixed-size readout slot: the plaque sits in a CONTENT-SIZED flex row
-       (the app's bottom-left shipcard row sizes itself to its children), so
-       its width follows the head's widest line. The HP numbers shrink
-       digit-for-digit as the hull takes damage, and a sunk ship swaps them
-       for a short localized label — without a reserved slot the plaque (and
-       the whole row beside the stats strip) would visibly resize at the
-       exact moment the ship sinks. 17ch fits the widest possible readout
-       ("999,999 / 999,999"); every locale's sunk label is far narrower and
-       right-aligns into the same box. */
+    /* Fixed-size readout slot: the plaque's width is pinned (see above),
+       but the head row still flexes — the HP numbers shrink digit-for-digit
+       as the hull takes damage and a sunk ship swaps them for a short
+       localized label, so without a reserved slot the name would swallow
+       the freed space and the readout would wander. 17ch fits the widest
+       possible readout ("999,999 / 999,999"); every locale's sunk label is
+       far narrower and right-aligns into the same box. */
     min-inline-size: 17ch;
     text-align: end;
     color: rgb(255 255 255 / 85%);

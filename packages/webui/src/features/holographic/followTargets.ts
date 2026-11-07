@@ -70,6 +70,57 @@ export function activeSquadronOf(
   return bestPlaneId;
 }
 
+/** Whether THIS carrier flew any sortie anywhere in the replay: true when
+ *  one of its index-0 anchor trails (id % 16 === 0, the only trails that
+ *  speak for a squadron — see activeSquadronOf) carries at least one sample.
+ *  Deliberately ignores the playhead AND the trail-expiry windows: the
+ *  camera menu's aircraft row must be offered at every playhead, because
+ *  gating it on activeSquadronOf made the row flicker in and out with the
+ *  live formation — carriers spend most of a match without anything up, so
+ *  users could not find the plane view at all. Picking the row stays safe
+ *  at any playhead: the camera itself falls back to the hull whenever no
+ *  squadron is actually airborne (followSelected's fallback chain). */
+export function carrierHasAnySortie(
+  planeTrails: readonly PlaneTrailLike[],
+  carrierOf: ReadonlyMap<number, number | null>,
+  carrierId: number,
+): boolean {
+  for (const trail of planeTrails) {
+    if (trail.id % 16 !== 0) continue;
+    if (carrierOf.get(Math.floor(trail.id / 16)) !== carrierId) continue;
+    if (trail.samples.length > 0) return true;
+  }
+  return false;
+}
+
+/** A representative sortie plane id of one carrier: its most recently
+ *  LAUNCHED index-0 trail with samples, expiry ignored (the same
+ *  newest-launch preference activeSquadronOf applies, minus the airborne
+ *  gate). Feeds the camera menu's aircraft-row icon — the row now exists at
+ *  every playhead, so when nothing is airborne the icon still names the
+ *  latest formation's plane type instead of degrading to none. Null when
+ *  the carrier never flew (callers gate on carrierHasAnySortie first). */
+export function latestSortiePlaneId(
+  planeTrails: readonly PlaneTrailLike[],
+  carrierOf: ReadonlyMap<number, number | null>,
+  carrierId: number,
+): number | null {
+  let bestPlaneId: number | null = null;
+  let bestBorn = -Infinity;
+  for (const trail of planeTrails) {
+    if (trail.id % 16 !== 0) continue;
+    const planeId = Math.floor(trail.id / 16);
+    if (carrierOf.get(planeId) !== carrierId) continue;
+    if (trail.samples.length === 0) continue;
+    const born = trail.samples[0].time;
+    if (born > bestBorn) {
+      bestBorn = born;
+      bestPlaneId = planeId;
+    }
+  }
+  return bestPlaneId;
+}
+
 /** Pose the chase camera should hang behind for one rendered formation pool:
  *  the centroid of the currently VISIBLE aircraft meshes plus the formation's
  *  real WoWS heading (every member of one formation carries the same heading,

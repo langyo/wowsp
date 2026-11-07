@@ -1,4 +1,5 @@
-/** Unit tests for the holographic map's follow-mode chase pose solver. */
+/** Unit tests for the holographic map's follow-mode chase pose solver
+ *  (framing state machine, pose stamping, damped chase pivot). */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import {
@@ -7,6 +8,8 @@ import {
   applyFollowPose,
   CHASE_RISE,
   CHASE_RUN,
+  CHASE_SMOOTH_TAU_S,
+  CHASE_SNAP_DIST,
   clampFollowDist,
   FOLLOW_DIST_DEFAULT,
   FOLLOW_DIST_MAX,
@@ -16,8 +19,11 @@ import {
   followFramingZoomed,
   initialFollowFraming,
   PLANE_FOLLOW_DIST_DEFAULT,
+  smoothChasePose,
   stockFollowDist,
+  type ChaseSmoothState,
 } from "./followCamera";
+import { angleDiff } from "./trajectoryMath";
 
 describe("clampFollowDist", () => {
   it("keeps in-range distances untouched", () => {
@@ -180,5 +186,115 @@ describe("applyFollowPose", () => {
     const before = target.clone();
     applyFollowPose(cam, target, 0.5, 200);
     expect(target.equals(before)).toBe(true);
+  });
+});
+
+describe("smoothChasePose", () => {
+  // dt that makes α exactly 0.5: 1 − e^(−τ·ln2/τ). Halfway per step keeps
+  // every expectation below exact and frame-rate independent.
+  const HALF_DT = CHASE_SMOOTH_TAU_S * Math.LN2;
+
+  it("snaps onto the raw pose from a null state", () => {
+    expect(smoothChasePose(null, { x: 10, y: 20, z: 30, yaw: 1 }, 100)).toEqual({
+      state: { x: 10, y: 20, z: 30, yaw: 1, t: 100 },
+      x: 10,
+      y: 20,
+      z: 30,
+      yaw: 1,
+      snapped: true,
+    });
+  });
+
+  it("eases halfway per τ·ln2 step and converges toward the raw pose", () => {
+    // Start pose and target sit ~102 units apart (inside the snap band:
+    // a bigger step would be a cut) so the run is pure easing.
+    const from = { x: 0, y: 0, z: 0, yaw: 0 };
+    const target = { x: 80, y: 40, z: -50, yaw: 2.5 };
+    // First frame: the null state snaps onto the raw start pose.
+    const first = smoothChasePose(null, from, 0);
+    expect(first.snapped).toBe(true);
+    let state = first.state;
+    // The next step halves the gap (α = 1 − e^(−τ·ln2/τ) = 0.5).
+    let r = smoothChasePose(state, target, HALF_DT);
+    expect(r.snapped).toBe(false);
+    expect(r.x).toBeCloseTo(40, 9);
+    expect(r.y).toBeCloseTo(20, 9);
+    expect(r.z).toBeCloseTo(-25, 9);
+    expect(r.yaw).toBeCloseTo(1.25, 9);
+    // Every further step halves the remaining distance; after 40 steps the
+    // residual is float noise. Same replay-time convergence at any fps.
+    state = r.state;
+    let r2 = r;
+    for (let i = 2; i <= 40; i++) {
+      r2 = smoothChasePose(state, target, i * HALF_DT);
+      state = r2.state;
+      expect(r2.snapped).toBe(false);
+    }
+    expect(r2.x).toBeCloseTo(80, 9);
+    expect(r2.y).toBeCloseTo(40, 9);
+    expect(r2.z).toBeCloseTo(-50, 9);
+    expect(angleDiff(r2.yaw, 2.5)).toBeCloseTo(0, 9);
+  });
+
+  it("snaps when the pivot jumps beyond the snap threshold", () => {
+    const state: ChaseSmoothState = { x: 0, y: 0, z: 0, yaw: 0, t: 10 };
+    // A scrub / AI jump: far beyond CHASE_SNAP_DIST → raw pose, re-seeded.
+    const far = smoothChasePose(
+      state,
+      { x: CHASE_SNAP_DIST + 1, y: 0, z: 0, yaw: 0.3 },
+      10 + HALF_DT,
+    );
+    expect(far.snapped).toBe(true);
+    expect(far.x).toBe(CHASE_SNAP_DIST + 1);
+    expect(far.state).toEqual({
+      x: CHASE_SNAP_DIST + 1,
+      y: 0,
+      z: 0,
+      yaw: 0.3,
+      t: 10 + HALF_DT,
+    });
+    // Exactly at the threshold is still motion (strictly farther snaps).
+    const at = smoothChasePose(
+      { ...state },
+      { x: CHASE_SNAP_DIST, y: 0, z: 0, yaw: 0 },
+      10 + HALF_DT,
+    );
+    expect(at.snapped).toBe(false);
+    expect(at.x).toBeCloseTo(CHASE_SNAP_DIST / 2, 9);
+  });
+
+  it("snaps on a paused clock (dt = 0) and on backwards time", () => {
+    const state: ChaseSmoothState = { x: 5, y: 6, z: 7, yaw: 0.2, t: 30 };
+    const raw = { x: 6, y: 7, z: 8, yaw: 0.3 };
+    // Same playhead (paused render tick): stamp the raw pose, don't ease.
+    expect(smoothChasePose(state, raw, 30)).toEqual({
+      state: { ...raw, t: 30 },
+      x: 6,
+      y: 7,
+      z: 8,
+      yaw: 0.3,
+      snapped: true,
+    });
+    // A seek left of the state's playhead: snap, don't glide backwards.
+    expect(smoothChasePose(state, raw, 20).snapped).toBe(true);
+    expect(smoothChasePose(state, raw, 20).x).toBe(6);
+  });
+
+  it("takes the yaw through the shortest arc across the ±π seam", () => {
+    // yaw −3 → +3: the raw difference is +6, the shortest arc is −0.283…
+    // (a formation turning through south must rotate the short way). With
+    // α = 0.5 the step lands exactly on −π — NOT on 0 (the naive lerp).
+    const state: ChaseSmoothState = { x: 0, y: 0, z: 0, yaw: -3, t: 0 };
+    const r = smoothChasePose(state, { x: 0, y: 0, z: 0, yaw: 3 }, HALF_DT);
+    expect(r.snapped).toBe(false);
+    expect(r.yaw).toBeCloseTo(-Math.PI, 6);
+    // Convergence ends on an angle equivalent to the raw yaw.
+    let s = r.state;
+    let out = r;
+    for (let i = 2; i <= 30; i++) {
+      out = smoothChasePose(s, { x: 0, y: 0, z: 0, yaw: 3 }, i * HALF_DT);
+      s = out.state;
+    }
+    expect(angleDiff(out.yaw, 3)).toBeCloseTo(0, 9);
   });
 });

@@ -8,8 +8,6 @@
  * shellWarfare.ts / planeWarfare.ts; per-frame state in markerUpdate.ts.
  */
 import * as THREE from "three";
-import { Line2 } from "three/examples/jsm/lines/Line2.js";
-import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import {
   resolveShipModelCandidatesForEntry,
@@ -30,8 +28,8 @@ import {
 import { sampleAt } from "./trajectoryMath";
 import { capLetter } from "./capZones";
 import {
-  CAP_RING_PX, SMOKE_RING_PX, WARD_RING_PX,
-  circlePositions, makeOverlayRing, OVERLAY_RING_ORDER, paintCapSprite,
+  CAP_RING_PX, WARD_RING_PX,
+  makeOverlayRing, OVERLAY_RING_ORDER, paintCapSprite,
 } from "./screenOverlays";
 import { clearActors, fitCamera, resolveRoleQuick, type MapInternals } from "./mapInternals";
 import { updateMarkersAt } from "./markerUpdate";
@@ -48,6 +46,17 @@ import { asIndexable } from "@/utils/typing";
 import type { EntityTrajectory } from "@/api";
 import type { ShipLabel } from "./shipLabel";
 import { parsePostBattle } from "@/features/replay/postBattle";
+
+/** WoWS smoke lifetime per puff (s) — each SmokeScreen update point
+ *  fades out 90 s after it was laid, capped by the entity's leave. */
+const SMOKE_PUFF_LIFE_S = 90;
+/** Per-entity puff cap after stride thinning — bounds the shared disc
+ *  pool against dense recorder streams (first + last always kept). */
+const SMOKE_PUFFS_PER_ENTITY = 32;
+/** InstancedMesh capacity of the shared smoke-disc pool. 64 clusters ×
+ *  32 puffs fits comfortably; overflows are dropped per tick (the band
+ *  thins instead of failing). */
+const SMOKE_DISC_CAP = 2048;
 
 /** Build the trajectory lines + ship markers from the decoded data.
  *
@@ -100,14 +109,14 @@ export function rebuildActors(ctx: MapInternals) {
   );
   const assignments = ctx.rosterAssignments;
 
-  // Smoke screens (entityType 4 = SmokeScreen): white ring markers at
-  // the smoke's START point (and END point when the drift exceeds 1 km)
-  // with a floating remaining-seconds tag. No volumetric puffs — the
-  // rings trace the smoke band. WoWS smoke lasts ~90s; without a destroy
-  // packet each puff expires 90s after its last recorded position
-  // update. While dissipating, the start ring walks from the launch
-  // point toward the end point. Clusters of puffs at (almost) the same
-  // spot collapse into one marker: the one with the longest lifetime.
+  // Smoke screens (entityType 4 = SmokeScreen): each entity update the
+  // recorder observed drops one PUFF at the laying ship's position, and
+  // the puffs together form the smoke band — rendered as translucent
+  // discs from one shared instanced pool (the old 1-2 ring markers could
+  // not read as smoke). WoWS smoke lasts ~90 s per puff; without a
+  // destroy packet that is the whole life, with one it caps every puff.
+  // Clusters of puffs at (almost) the same spot collapse into one
+  // cluster: its countdown sprite follows the longest lifetime.
   ctx.smokeClusters.length = 0;
   {
     const smokes = ctx.props.trajectories
@@ -119,6 +128,24 @@ export function rebuildActors(ctx: MapInternals) {
       const endT = ctx.props.leavesMap[tr.entityId] ?? lastT + 90;
       const s0 = sampleAt(tr, t0);
       if (!s0) continue;
+      // Puff points from this entity's update track, thinned to a bounded
+      // stride so a dense recorder stream cannot balloon the disc pool
+      // (first + last kept — the band's head and tail anchor the shape).
+      const leave = ctx.props.leavesMap[tr.entityId];
+      let puffs = tr.samples.map((s) => ({
+        x: s.x,
+        z: s.z,
+        t0: s.time,
+        endT: Math.min(s.time + SMOKE_PUFF_LIFE_S, leave ?? s.time + SMOKE_PUFF_LIFE_S),
+      }));
+      if (puffs.length > SMOKE_PUFFS_PER_ENTITY) {
+        const stride = (puffs.length - 1) / (SMOKE_PUFFS_PER_ENTITY - 1);
+        const thinned: typeof puffs = [];
+        for (let i = 0; i < SMOKE_PUFFS_PER_ENTITY; i++) {
+          thinned.push(puffs[Math.round(i * stride)]);
+        }
+        puffs = thinned;
+      }
       let cluster = ctx.smokeClusters.find(
         (c) => Math.hypot(c.sx - s0.x, c.sz - s0.z) < 300,
       );
@@ -130,41 +157,44 @@ export function rebuildActors(ctx: MapInternals) {
           endT,
           sx: s0.x,
           sz: s0.z,
-          rings: [],
+          puffs,
           timeSprite: null,
         };
         ctx.smokeClusters.push(cluster);
-      } else if (endT > cluster.endT) {
-        cluster.traj = tr;
-        cluster.t0 = t0;
-        cluster.lastT = lastT;
-        cluster.endT = endT;
+      } else {
+        cluster.puffs.push(...puffs);
+        if (endT > cluster.endT) {
+          cluster.traj = tr;
+          cluster.t0 = t0;
+          cluster.lastT = lastT;
+          cluster.endT = endT;
+        }
       }
     }
-    // Screen-space ring (constant pixel width) shared by every cluster of
-    // this build; the old world-space RingGeometry turned into a fat
-    // donut when the camera dollied in. 43 = the old RingGeometry(40, 46)
-    // centerline radius.
-    const smokeRingGeom = new LineGeometry();
-    smokeRingGeom.setPositions(circlePositions(43));
-    const smokeRingMat = new LineMaterial({
+    // Shared translucent-disc pool: one InstancedMesh rewritten per tick
+    // (markerUpdate) instead of a ring mesh per cluster. Screen-space
+    // size is gone on purpose — the band is world-scaled (45 m puffs), so
+    // dollying in now reads as smoke rather than a fat donut. The discs
+    // ride above the weather mask like the other gameplay overlays
+    // (see weatherScene.STORM_ORDER).
+    const discGeom = new THREE.CircleGeometry(1, 20);
+    discGeom.rotateX(-Math.PI / 2);
+    const discMat = new THREE.MeshBasicMaterial({
       color: 0xffffff,
       transparent: true,
-      opacity: 0.75,
+      opacity: 0.34,
       depthWrite: false,
-      linewidth: SMOKE_RING_PX,
+      side: THREE.DoubleSide,
     });
-    ctx.overlayLineMats.push(smokeRingMat);
+    const discs = new THREE.InstancedMesh(discGeom, discMat, SMOKE_DISC_CAP);
+    discs.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    discs.count = 0;
+    discs.frustumCulled = false;
+    discs.renderOrder = OVERLAY_RING_ORDER;
+    discs.raycast = () => {}; // never intercept picks
+    scene.add(discs);
+    ctx.smokeDiscs = discs;
     for (const cl of ctx.smokeClusters) {
-      for (let i = 0; i < 2; i++) {
-        const ring = new Line2(smokeRingGeom, smokeRingMat);
-        ring.visible = false;
-        // Smoke rings ride above the weather mask like the other
-        // gameplay rings (see weatherScene.STORM_ORDER).
-        ring.renderOrder = OVERLAY_RING_ORDER;
-        scene.add(ring);
-        cl.rings.push(ring);
-      }
       // 4x supersampled relative to its constant on-screen height so the
       // countdown stays crisp at any zoom.
       const cvs = document.createElement("canvas");

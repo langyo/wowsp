@@ -1221,8 +1221,12 @@ fn squadron_events_rename_plane_id_and_formation_index() {
         y: 301.5,
         z: 4.5,
         yaw: 5.5,
+        pitch: -12,
     });
-    assert_exact_keys(&v, &["time", "planeId", "index", "x", "y", "z", "yaw"]);
+    assert_exact_keys(
+        &v,
+        &["time", "planeId", "index", "x", "y", "z", "yaw", "pitch"],
+    );
 }
 
 /// Battle chat + achievements (client.ts: ChatEvent / AchievementEvent).

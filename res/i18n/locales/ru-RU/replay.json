@@ -433,6 +433,10 @@
       "other": "Другой вид"
     }
   },
+  "planeCard": {
+    "attacking": "Атака",
+    "followingHull": "Авиации нет — следуем за корпусом"
+  },
   "classes": {
     "battleship": "Линкор",
     "cruiser": "Крейсер",
@@ -446,6 +450,7 @@
   "selfFrags": "Фраги",
   "selfDamage": "Урон",
   "selfTaken": "Получено",
+  "selfDepth": "Погружение {meters} м",
   "selfPlane": "Авиация",
   "shipSunk": "Затонул",
   "tactical": {

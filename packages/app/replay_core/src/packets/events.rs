@@ -1068,6 +1068,10 @@ pub(super) fn decode_squadron_update(
         let Some(yaw) = read_bytes(args, off + 12).map(f32::from_le_bytes) else {
             break;
         };
+        // Attitude pitch (i8 degrees, negative = nose down) — the attack-run
+        // signal the plane-view labels read. Byte 19 of the 20-byte entry
+        // (after the u16 time + u8 type the decoder skips).
+        let pitch = args[off + 19] as i8;
         off += 20;
         out.push(wowsp_tauri_shared::SquadronPlane {
             time,
@@ -1077,6 +1081,7 @@ pub(super) fn decode_squadron_update(
             y,
             z,
             yaw,
+            pitch,
         });
     }
     out

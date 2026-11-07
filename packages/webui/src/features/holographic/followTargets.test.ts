@@ -5,7 +5,9 @@ import type { SquadronPlane } from "@/api";
 import {
   activeSquadronOf,
   anchorFollowPose,
+  carrierHasAnySortie,
   formationFollowPose,
+  latestSortiePlaneId,
 } from "./followTargets";
 
 /** One aircraft update sample at match time `time`. */
@@ -215,5 +217,63 @@ describe("anchorFollowPose", () => {
       z: -7,
       yaw: 0.2,
     });
+  });
+});
+
+describe("carrierHasAnySortie", () => {
+  it("is false without trails, without samples, or for other carriers", () => {
+    expect(carrierHasAnySortie([], new Map(), 7)).toBe(false);
+    // Empty anchor trail: a create without a single update is no sortie.
+    expect(
+      carrierHasAnySortie([{ id: 1 * 16, samples: [] }], new Map([[1, 7]]), 7),
+    ).toBe(false);
+    // Formation-member trails don't speak for the squadron.
+    expect(
+      carrierHasAnySortie([trail(1, [10, 20], 1)], new Map([[1, 7]]), 7),
+    ).toBe(false);
+    expect(
+      carrierHasAnySortie([trail(1, [10, 20])], new Map([[1, 8]]), 7),
+    ).toBe(false);
+    // Unresolved carrier (null) never matches a real carrier id.
+    expect(
+      carrierHasAnySortie([trail(1, [10, 20])], new Map([[1, null]]), 7),
+    ).toBe(false);
+  });
+
+  it("is true whenever the carrier flew ANY sampled sortie, time ignored", () => {
+    const carrierOf = new Map<number, number | null>([[3, 7]]);
+    // A sortie late in the replay counts even at playhead 0 — the menu row
+    // must exist before the formation ever launches.
+    expect(carrierHasAnySortie([trail(3, [900, 950])], carrierOf, 7)).toBe(true);
+    expect(carrierHasAnySortie([trail(3, [10, 20])], carrierOf, 7)).toBe(true);
+    // A long-finished sortie (remove event long past) still counts: expiry
+    // is not this function's business.
+    expect(carrierHasAnySortie([trail(3, [10, 100])], carrierOf, 7)).toBe(true);
+  });
+});
+
+describe("latestSortiePlaneId", () => {
+  it("returns the carrier's most recently launched sampled sortie", () => {
+    const carrierOf = new Map<number, number | null>([
+      [3, 7],
+      [4, 7],
+      [5, 8],
+    ]);
+    expect(
+      latestSortiePlaneId([trail(3, [10, 30]), trail(4, [20, 40])], carrierOf, 7),
+    ).toBe(4);
+    // A later-born sortie of ANOTHER carrier doesn't win for carrier 7.
+    expect(
+      latestSortiePlaneId(
+        [trail(3, [10, 30]), trail(4, [20, 40]), trail(5, [50, 60])],
+        carrierOf,
+        7,
+      ),
+    ).toBe(4);
+    expect(latestSortiePlaneId([], carrierOf, 7)).toBeNull();
+    // Empty-sampled and foreign trails don't provide a representative.
+    expect(
+      latestSortiePlaneId([{ id: 6 * 16, samples: [] }], new Map([[6, 7]]), 7),
+    ).toBeNull();
   });
 });

@@ -49,11 +49,13 @@ describe("sampleAt", () => {
   });
 
   it("clamps to the first sample before the span", () => {
-    expect(sampleAt(two, -5)).toBe(two.samples[0]);
+    // sampleAt returns a normalized pose copy (altitude y folded in), so
+    // the clamp is by VALUE and must match as a subset of the pose shape.
+    expect(sampleAt(two, -5)).toMatchObject(two.samples[0]);
   });
 
   it("clamps to the last sample after the span", () => {
-    expect(sampleAt(two, 100)).toBe(two.samples[1]);
+    expect(sampleAt(two, 100)).toMatchObject(two.samples[1]);
   });
 
   it("interpolates linearly between neighbours (yaw along the short way)", () => {

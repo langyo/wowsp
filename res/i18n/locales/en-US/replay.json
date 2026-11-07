@@ -433,6 +433,10 @@
       "other": "Other view"
     }
   },
+  "planeCard": {
+    "attacking": "Attacking",
+    "followingHull": "No aircraft airborne — following hull"
+  },
   "classes": {
     "battleship": "Battleship",
     "cruiser": "Cruiser",
@@ -446,6 +450,7 @@
   "selfFrags": "Frags",
   "selfDamage": "Damage",
   "selfTaken": "Taken",
+  "selfDepth": "Dived {meters} m",
   "selfPlane": "Aircraft",
   "shipSunk": "Sunk",
   "tactical": {

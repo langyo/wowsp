@@ -603,7 +603,10 @@ export interface SquadronCreate {
 
 /** One aircraft position sample (receive_updateSquadron on the avatar).
  *  Each update packet carries `count` planes of one squadron; `index` is the
- *  position within that formation, so (planeId, index) is one aircraft. */
+ *  position within that formation, so (planeId, index) is one aircraft.
+ *  `pitch` is the plane's attitude in degrees (negative = nose down) — the
+ *  attack-run signal the plane-follow card reads. Optional: pre-pitch
+ *  decoded payloads (and every fixture built before it) simply omit it. */
 export interface SquadronPlane {
   time: number;
   planeId: number;
@@ -612,6 +615,7 @@ export interface SquadronPlane {
   y: number;
   z: number;
   yaw: number;
+  pitch?: number;
 }
 
 /** A squadron marker appearing on the minimap (receive_addMinimapSquadron).

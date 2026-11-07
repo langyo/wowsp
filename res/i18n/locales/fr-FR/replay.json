@@ -433,6 +433,10 @@
       "other": "Autre vue"
     }
   },
+  "planeCard": {
+    "attacking": "Attaque en cours",
+    "followingHull": "Aucun appareil en vol — coque suivie"
+  },
   "classes": {
     "battleship": "Cuirassé",
     "cruiser": "Croiseur",
@@ -446,6 +450,7 @@
   "selfFrags": "Destructions",
   "selfDamage": "Dégâts",
   "selfTaken": "Subis",
+  "selfDepth": "Immersion {meters} m",
   "selfPlane": "Aérien",
   "shipSunk": "Coulé",
   "tactical": {
