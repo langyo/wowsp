@@ -84,10 +84,11 @@
      assumes an OPAQUE frame: over a translucent frame the cover re-paints
      the same fill ON TOP of the already-painted body, and the stacked alpha
      surfaces as two visibly denser 24px bands above and below the settings
-     shell. The settings body never scrolls anyway (the host contract keeps
-     the shell fitting), and no wowsp modal relies on the mask — let the
-     padding read as the plain surface it is. Phone sheets stay opaque, so
-     their covers are invisible either way. */
+     shell. The settings body never scrolls anyway (the content-fit cap in
+     SettingsShell.scss keeps the shell inside the capped band), and no
+     wowsp modal relies on the mask — let the padding read as the plain
+     surface it is. Phone sheets stay opaque, so their covers are invisible
+     either way. */
   :root {
     --hk-scroll-pin-cover-bg: transparent;
   }
