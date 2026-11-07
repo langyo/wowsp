@@ -50,6 +50,14 @@ checks the pinned tag out into ``shun/`` and exports it). The CLI builds
 shun's own shell with our manifest embedded; the first run is a full
 cargo build of that workspace, later runs are incremental.
 
+The shell compile itself is skippable: shun >= 0.6.33 publishes a GENERIC
+shell per tag, and the default lane downloads that asset (``$SHUN_TAG`` /
+``--shun-tag``, cached under ``target/shun-shell``, verified against its
+``.sha256`` sidecar) and stamps it instead of compiling — ``shun build
+--shell``. ``--shell-binary`` / ``$SHUN_SHELL_BIN`` point at a local
+generic shell; ``--shell-source`` always compiles (shell hotfix lane,
+also the fallback when the pinned tag predates the asset).
+
 Artifacts land in ``target/release/bundle/installer/`` as
 ``WoWSP_<version>_x64-installer-webview2.exe``,
 ``WoWSP_<version>_x64-installer-lite.exe``, the legacy alias
@@ -668,12 +676,83 @@ def resolve_shun_repo(explicit: str | None) -> Path:
     return repo
 
 
+# The GENERIC installer shell published by the pinned shun tag's release:
+# downloading it and stamping skips the whole tauri+egui shell compile the
+# compile lane pays on every release (the shell alone is a ~6 min cold
+# build on the release runner — see shun::stamp for the container format).
+SHELL_ASSET = "shun-installer-windows-x64.exe"
+SHELL_CACHE = TARGET / "shun-shell"
+SHUN_RELEASE_REPO = "celestia-island/shun"
+
+
+def resolve_shell_binary(args) -> Path | None:
+    """The generic shell binary for the stamp lane, or None for the
+    compile lane.
+
+    Precedence: --shell-binary / $SHUN_SHELL_BIN wins (an explicitly
+    provided generic shell); AUTO (the default) downloads the shell asset
+    published for the pinned shun tag ($SHUN_TAG or --shun-tag, cached
+    under target/shun-shell and verified against the release's sha256
+    sidecar) and falls back to the compile lane when the pinned tag
+    predates the asset (v0.6.32 and older) or the download fails;
+    --shell-source forces the compile lane (shell hotfixes before the
+    next shun tag lands)."""
+    explicit = args.shell_binary or os.environ.get("SHUN_SHELL_BIN")
+    if explicit:
+        path = Path(explicit)
+        if not path.is_file():
+            sys.exit(f"generic shell binary missing: {path}")
+        return path
+    if args.shell_source:
+        print("[shell] --shell-source: compiling the shell from source")
+        return None
+    tag = args.shun_tag or os.environ.get("SHUN_TAG")
+    if not tag:
+        print("[shell] no SHUN_TAG known — compiling the shell from source")
+        return None
+    exe = SHELL_CACHE / SHELL_ASSET
+    sha_path = SHELL_CACHE / f"{SHELL_ASSET}.sha256"
+    if exe.is_file() and sha_path.is_file():
+        expected = sha_path.read_text(encoding="utf-8").split()[0].lower()
+        if _sha256(exe) == expected:
+            print(f"[shell] reusing cached generic shell: {exe}")
+            return exe
+        print("[shell] cached shell failed its sha256 — redownloading")
+    SHELL_CACHE.mkdir(parents=True, exist_ok=True)
+    print(f"[shell] downloading the generic shell asset for {tag} …")
+    result = subprocess.run(
+        ["gh", "release", "download", tag, "--repo", SHUN_RELEASE_REPO,
+         "--pattern", SHELL_ASSET, "--pattern", f"{SHELL_ASSET}.sha256",
+         "--dir", str(SHELL_CACHE), "--clobber"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=300,
+    )
+    if result.returncode != 0 or not exe.is_file():
+        print(
+            f"[shell] no generic shell asset for {tag} "
+            f"(gh: {(result.stderr or '').strip()[:160] or 'asset missing'}) — "
+            "compiling the shell from source"
+        )
+        return None
+    expected = sha_path.read_text(encoding="utf-8").split()[0].lower()
+    actual = _sha256(exe)
+    if actual != expected:
+        sys.exit(
+            f"downloaded generic shell failed its sha256 sidecar "
+            f"({actual[:12]}… != {expected[:12]}…) — refusing to stamp"
+        )
+    print(f"[shell] generic shell verified: {exe}")
+    return exe
+
+
 def build_variant(
-    shun_repo: Path, stage: Path, variant: str, out_name: str
+    shun_repo: Path, stage: Path, variant: str, out_name: str, shell_binary: Path | None
 ) -> Path:
     """Drive `shun build` for one variant and collect the artifact under
     its published name."""
-    print(f"[installer:{variant}] shun build --variant {variant} …")
+    if shell_binary is not None:
+        print(f"[installer:{variant}] shun build --variant {variant} (stamped generic shell) …")
+    else:
+        print(f"[installer:{variant}] shun build --variant {variant} (compiling the shell) …")
     env = {
         **os.environ,
         # The multi-hundred-MB embedded payload defeats LTO (the link step
@@ -682,19 +761,25 @@ def build_variant(
         "CARGO_PROFILE_RELEASE_LTO": "off",
         "RUSTC_WRAPPER": "",
     }
+    cmd = [
+        "cargo", "run", "--release",
+        "--manifest-path", shun_repo / "Cargo.toml",
+        "-p", "shun",
+        "--", "build",
+        "--manifest", stage / "shun.toml",
+        "--variant", variant,
+        "--out", stage / "out",
+        # Artifacts are published unsigned (--no-sign): release CI
+        # uploads them as-is, and a local build has no signing config.
+        "--no-sign",
+    ]
+    if shell_binary is not None:
+        # The stamp lane: the CLI appends the product container onto the
+        # generic shell and patches its identity — no shell compile.
+        # (Conflicts with --shell-src/--target, neither of which we pass.)
+        cmd += ["--shell", shell_binary]
     subprocess.run(
-        [
-            "cargo", "run", "--release",
-            "--manifest-path", shun_repo / "Cargo.toml",
-            "-p", "shun",
-            "--", "build",
-            "--manifest", stage / "shun.toml",
-            "--variant", variant,
-            "--out", stage / "out",
-            # Artifacts are published unsigned (--no-sign): release CI
-            # uploads them as-is, and a local build has no signing config.
-            "--no-sign",
-        ],
+        cmd,
         check=True,
         env=env,
         # The shun CLI resolves its default `shell/` (and its target
@@ -752,6 +837,25 @@ def main() -> int:
         help="path to a shun checkout to build with (default: $SHUN_REPO, "
         "else a sibling checkout at ../shun)",
     )
+    ap.add_argument(
+        "--shell-binary",
+        default=None,
+        help="path to a GENERIC shun shell exe to stamp (default: "
+        "$SHUN_SHELL_BIN, else the asset published for the pinned shun "
+        "tag — see --shun-tag)",
+    )
+    ap.add_argument(
+        "--shun-tag",
+        default=None,
+        help="shun release tag to fetch the generic shell asset from "
+        "(default: $SHUN_TAG, which release CI exports); a tag with no "
+        "asset falls back to compiling the shell",
+    )
+    ap.add_argument(
+        "--shell-source",
+        action="store_true",
+        help="always compile the shell from source (the shell hotfix lane)",
+    )
     args = ap.parse_args()
 
     variants = [f.strip() for f in args.flavors.split(",") if f.strip()]
@@ -768,6 +872,7 @@ def main() -> int:
     # shun checkout).
     needs_shun = any(f in variants for f in ("webview2", "lite"))
     shun_repo = resolve_shun_repo(args.shun_repo) if needs_shun else None
+    shell_binary = resolve_shell_binary(args) if needs_shun else None
 
     # The portraits ride publicDir into the webui dist and from there into
     # the app binary itself — they must be on disk BEFORE build_app, which
@@ -836,7 +941,9 @@ def main() -> int:
     # is staged, so its payload stays slim.
     if "lite" in variants:
         stage_payload(STAGE, app_exe, "lite")
-        lite = build_variant(shun_repo, STAGE, "lite", f"WoWSP_{version}_x64-installer-lite.exe")
+        lite = build_variant(
+            shun_repo, STAGE, "lite", f"WoWSP_{version}_x64-installer-lite.exe", shell_binary
+        )
         # The legacy bare name stays live for pre-v0.3.1 updaters (see the
         # module docstring): a byte-identical copy of the lite installer.
         alias = OUT / f"WoWSP_{version}_x64-installer.exe"
@@ -849,7 +956,11 @@ def main() -> int:
         stage_res(payload, res_tree, res_version)
         stage_webview2(payload, wv2)
         build_variant(
-            shun_repo, STAGE, "webview2", f"WoWSP_{version}_x64-installer-webview2.exe"
+            shun_repo,
+            STAGE,
+            "webview2",
+            f"WoWSP_{version}_x64-installer-webview2.exe",
+            shell_binary,
         )
 
     # The single-exe 便捷版: its own `--no-default-features --features
