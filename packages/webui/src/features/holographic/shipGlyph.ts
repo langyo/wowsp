@@ -4,13 +4,18 @@
  * drawing — no three.js, no reactive state.
  */
 
-/** Ship-class glyph polygons TRACED from the game's own 28×28 HUD
- *  bitmaps (scripts/trace_icons.ts: connected-component boundary
- *  extraction + Douglas-Peucker). Each class is a list of solid
+/** Ship-class glyph polygons for the 2D canvases. The five engraved
+ *  classes are TRACED from the game's own 28×28 HUD bitmaps
+ *  (scripts/trace_icons.ts: connected-component boundary extraction +
+ *  Douglas-Peucker); the auxiliary marker has no engraving, so its single
+ *  polygon is authored from the same hull + bow geometry the SVG faces
+ *  use. Each class is a list of solid
  *  polygons; the GAPS between them reproduce the icons' engraved class
  *  separators — battleship: two slanted cuts, cruiser: one, carrier:
  *  deck line + bow joint, submarine: tail joint, destroyer: plain
- *  triangle. Bow points RIGHT (+x) at 0 rotation. */
+ *  triangle, auxiliary: a plain hull + bow silhouette with no engraving
+ *  (the same shape the SVG faces author, see the generator script).
+ *  Bow points RIGHT (+x) at 0 rotation. */
 const SHIP_GLYPH_POLYS: Record<string, number[][][]> = {
   destroyer: [
     [[5.5, 9.5], [21.5, 13.5], [5.5, 17.5]],
@@ -32,6 +37,12 @@ const SHIP_GLYPH_POLYS: Record<string, number[][][]> = {
   submarine: [
     [[5.5, 9.5], [6.5, 9.5], [6.5, 17.5], [5.5, 17.5]],
     [[9.5, 10.5], [21.5, 13.5], [9.5, 16.5]],
+  ],
+  // Kept in lockstep with @wowsp/holo's table — the glyph suite pins both
+  // copies' drawn polygons (and the holo table's auxiliary entry). No ink
+  // lines on this face, so it stays ONE polygon.
+  auxiliary: [
+    [[5.5, 9.5], [18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [5.5, 17.5]],
   ],
 };
 
@@ -67,7 +78,9 @@ export function drawShipGlyph(
         ? "aircarrier"
         : t.includes("submarine")
           ? "submarine"
-          : "cruiser"; // auxiliary + unknown fall back to cruiser
+          : t.includes("auxiliary")
+            ? "auxiliary"
+            : "cruiser"; // unknown hulls fall back to cruiser
   const polys = SHIP_GLYPH_POLYS[cls];
   const s = size / 28;
   const hex = `#${color.toString(16).padStart(6, "0")}`;
