@@ -112,6 +112,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=["float16", "float32"],
         help="entity/mask storage dtype in RAM (default float16 for the full corpus; cast to float32 per training batch)",
     )
+    p.add_argument(
+        "--feature-set",
+        default="core",
+        choices=["core", "torp2"],
+        help="core = E26c features exactly (global 27); torp2 = +11 derived torpedo-geometry/class dims (global 38)",
+    )
+    p.add_argument(
+        "--pos-weight",
+        type=float,
+        default=0.0,
+        help="secondary ablation only: BCE pos_weight on head B (0 = off, bit-identical to E26c)",
+    )
+    p.add_argument(
+        "--focal-gamma",
+        type=float,
+        default=0.0,
+        help="secondary ablation only: focal-BCE gamma on head B (>0 replaces plain BCE; 0 = off)",
+    )
     p.add_argument("--metrics-out", default=None, help="write the full metrics JSON here")
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
@@ -203,11 +221,73 @@ def region_of(path: Path) -> str:
 def array_bytes(*arrs) -> int:
     return int(sum(a.nbytes for a in arrs if a is not None))
 
+# torp2 derived feature block (E26d): geometry + class, computed FROM THE ROW
+# alone (no re-export). Order is part of the model input contract.
+TORP2_NAMES = [
+    "cls_dd",
+    "cls_ca",
+    "cls_bb",
+    "cls_ss",
+    "cls_unknown",
+    "obs_enemies_frac",
+    "in_range_enemies_frac",
+    "closest_in_range_frac",
+    "in_range_within_45deg_frac",
+    "in_range_within_20deg_frac",
+    "reload_ready",
+]
+TORP2_DIM = len(TORP2_NAMES)
+# Class one-hot order: DD, (CL+CA), BB, SS, unknown. CV rows never reach the
+# loader (the exporter drops them; the loader skips defensively).
+CLASS_ONEHOT = {"Destroyer": 0, "Cruiser": 1, "Battleship": 2, "Submarine": 3}
+
+
+def derive_torp2_extras(row: dict, cls: str) -> list[float]:
+    """11 derived dims from the raw row (E26d torp2 feature set).
+
+    Geometry is taken from the SAME exported enemy slots the model sees; only
+    observed-now enemies count (stale intel is not a launchable target).
+    """
+    oh = [0.0, 0.0, 0.0, 0.0, 0.0]
+    oh[CLASS_ONEHOT.get(cls, 4)] = 1.0
+    own_range = row.get("ownRangeM")
+    try:
+        own_range = float(own_range) if own_range is not None else 0.0
+    except (TypeError, ValueError):
+        own_range = 0.0
+    enemies = row.get("enemies") or []
+    observed = []
+    for e in enemies:
+        if not e.get("observedNow"):
+            continue
+        observed.append(e)
+    in_range = []
+    if own_range > 0.0:
+        for e in observed:
+            d = e.get("distM")
+            if d is not None and float(d) <= own_range:
+                in_range.append(e)
+    n_obs = min(len(observed), 12)
+    n_in = min(len(in_range), 8)
+    closest = 0.0
+    if in_range and own_range > 0.0:
+        dmin = min(float(e["distM"]) for e in in_range)
+        closest = min(max(1.0 - dmin / own_range, 0.0), 1.0)
+    frac45 = frac20 = 0.0
+    if in_range:
+        absb = [abs(float(e["bearingRelRad"])) for e in in_range]
+        frac45 = sum(1 for b in absb if b <= math.pi / 4.0) / len(absb)
+        frac20 = sum(1 for b in absb if b <= math.pi / 9.0) / len(absb)
+    reload = row.get("ownReloadFrac")
+    ready = 1.0 if (reload is not None and float(reload) >= 0.999) else 0.0
+    return oh + [n_obs / 12.0, n_in / 8.0, closest, frac45, frac20, ready]
+
 def load_torpedo_rows(
     paths: list[Path],
     max_rows: int,
     classes: dict[int, str],
     feature_dtype: str = "float16",
+    feature_set: str = "core",
 ) -> dict:
     """Stream the JSONL corpus into featurized arrays.
 
@@ -222,10 +302,18 @@ def load_torpedo_rows(
 
     Entity and mask blocks use --feature-dtype (default float16: ~2x smaller, cast
     back to float32 per training batch); the global block stays float32.
+    --feature-set torp2 appends TORP2_DIM derived dims to the global block, in place
+    (global width becomes 27 + 11 = 38, one preallocated array — no concat copy).
     """
     dtypes = {"float16": np.float16, "float32": np.float32}
     if feature_dtype not in dtypes:
         raise SystemExit(f"[e26] unknown --feature-dtype {feature_dtype!r}")
+    if feature_set not in ("core", "torp2"):
+        raise SystemExit(f"[e26] unknown --feature-set {feature_set!r}")
+    extra_dim = TORP2_DIM if feature_set == "torp2" else 0
+    feature_names = [f"global_{i}" for i in range(tfm.GLOBAL_DIM_V2)] + (
+        list(TORP2_NAMES) if extra_dim else []
+    )
     edt = dtypes[feature_dtype]
     mdt = np.float16 if feature_dtype == "float16" else np.float32
     budget = max_rows if max_rows and max_rows > 0 else None
@@ -246,7 +334,7 @@ def load_torpedo_rows(
     esize = np.dtype(edt).itemsize
     msize = np.dtype(mdt).itemsize
     Xe = np.zeros((n_pre, tfm.SLOTS, tfm.ENTITY_DIM_V2), dtype=edt)
-    Xg = np.zeros((n_pre, tfm.GLOBAL_DIM_V2), dtype=np.float32)
+    Xg = np.zeros((n_pre, tfm.GLOBAL_DIM_V2 + extra_dim), dtype=np.float32)
     Xm = np.zeros((n_pre, tfm.SLOTS), dtype=mdt)
     ya = np.zeros(n_pre, dtype=np.float32)
     yb = np.full(n_pre, np.nan, dtype=np.float32)
@@ -302,7 +390,9 @@ def load_torpedo_rows(
                 e, m = tfm.entity_matrix_and_mask(row, FEATURE_VERSION)
                 g = tfm.global_vector(row, FEATURE_VERSION)
                 Xe[rows] = e
-                Xg[rows] = g
+                Xg[rows, : tfm.GLOBAL_DIM_V2] = g
+                if extra_dim:
+                    Xg[rows, tfm.GLOBAL_DIM_V2 :] = derive_torp2_extras(row, cls)
                 Xm[rows] = m
                 ya[rows] = a
                 yb[rows] = b
@@ -355,6 +445,9 @@ def load_torpedo_rows(
         "bad_json_rows": bad_json,
         "class_counts": cls_counts,
         "max_rows": budget,
+        "feature_set": feature_set,
+        "extra_dim": extra_dim,
+        "feature_names": feature_names,
         "loader_mode": "two-pass-full" if two_pass else "single-pass-budget",
         "feature_dtype": feature_dtype,
         "pass1_seconds": round(count_s, 1),
@@ -435,8 +528,25 @@ def train_fold(
     model = tfm.build_model(hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
     model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
-    bce = nn.BCEWithLogitsLoss(reduction="none")
+    bce_a = nn.BCEWithLogitsLoss(reduction="none")
+    pos_weight = getattr(args, "pos_weight", 0.0) or 0.0
+    focal_gamma = getattr(args, "focal_gamma", 0.0) or 0.0
+    bce_b = nn.BCEWithLogitsLoss(
+        reduction="none",
+        pos_weight=None if pos_weight <= 0.0 else torch.tensor([pos_weight], device=device),
+    )
     eps = args.label_smoothing
+
+    def head_b_loss(logits, target):
+        """Head-B elementwise loss: BCE (+ optional pos_weight) with optional
+        focal modulation. The reweighting knobs are SECONDARY ablations only;
+        both default off, which is bit-identical to E26c."""
+        el = bce_smoothed_loss(bce_b, logits, target, eps)
+        if focal_gamma > 0.0:
+            p = torch.sigmoid(logits)
+            pt = torch.where(target > 0.5, p, 1.0 - p)
+            el = el * (1.0 - pt).clamp(min=0.0) ** focal_gamma
+        return el
 
     idx_t = torch.from_numpy(train_idx).to(device)
     losses: list[float] = []
@@ -454,8 +564,8 @@ def train_fold(
             ya_b = y_a[idx].to(device)
             yb_b = y_b[idx].to(device)
             bm = b_mask_all[idx].to(device)
-            loss_a = bce_smoothed_loss(bce, la, ya_b, eps).mean()
-            loss_b = (bce_smoothed_loss(bce, lb, yb_b, eps) * bm).sum() / bm.sum().clamp(min=1.0)
+            loss_a = bce_smoothed_loss(bce_a, la, ya_b, eps).mean()
+            loss_b = (head_b_loss(lb, yb_b) * bm).sum() / bm.sum().clamp(min=1.0)
             loss = loss_a + loss_b
             opt.zero_grad()
             loss.backward()
@@ -675,11 +785,12 @@ def run_training(args: argparse.Namespace) -> dict:
     classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
     paths = resolve_data_paths(args)
     t0 = time.time()
-    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype)
+    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype, args.feature_set)
     load_s = time.time() - t0
     log(
         f"[e26] loaded {data['rows']:,} rows from {len(data['files'])} file(s) "
-        f"(loader {data['loader_mode']}, feature dtype {data['feature_dtype']}, pass-1 "
+        f"(feature set {data['feature_set']} (+{data['extra_dim']} derived dims), loader {data['loader_mode']}, "
+        f"feature dtype {data['feature_dtype']}, pass-1 "
         f"{data['pass1_seconds']:.1f}s; skipped files {len(data['files_skipped'])}, AirCarrier rows "
         f"skipped {data['skipped_aircarrier']}, inconsistent labelB {data['inconsistent_labelb']}, "
         f"bad json {data['bad_json_rows']}) in {load_s:.1f}s"
@@ -723,7 +834,8 @@ def run_training(args: argparse.Namespace) -> dict:
         free_b, total_b = torch.cuda.mem_get_info()
         log(f"[e26] cuda mem after load: free {free_b / 1e9:.1f} GB / total {total_b / 1e9:.1f} GB")
     entity_dim = tfm.ENTITY_DIM_V2
-    global_dim = tfm.GLOBAL_DIM_V2
+    global_dim = int(glob.shape[1])
+    log(f"[e26] feature names ({global_dim}): {', '.join(data['feature_names'])}")
 
     split = make_split(data["group"], args.folds, args.seed)
     fold = split["fold"]
@@ -821,6 +933,12 @@ def run_training(args: argparse.Namespace) -> dict:
             "max_rows": args.max_rows,
             "loader_mode": data["loader_mode"],
             "feature_dtype": data["feature_dtype"],
+            "feature_set": data["feature_set"],
+            "extra_dim": data["extra_dim"],
+            "feature_names": data["feature_names"],
+            "reweight_head": "B",
+            "pos_weight": args.pos_weight,
+            "focal_gamma": args.focal_gamma,
             "pass1_seconds": data["pass1_seconds"],
             "array_bytes": data["array_bytes"],
             "theoretical_bytes": data["theoretical_bytes"],
@@ -1101,6 +1219,53 @@ def run_selftest() -> int:
         np.array([True] * 40),
     )
     assert pr["apac"]["rows"] == 40 and pr["apac"]["launched"] == 10 and pr["apac"]["auprc_headB"] is not None
+
+    # 8. E26d torp2 derived features: geometry/class dims + core bit-compatibility.
+    assert TORP2_DIM == 11 and len(TORP2_NAMES) == 11
+    base = synth()
+    ex = derive_torp2_extras(base, "Destroyer")
+    assert ex[0] == 1.0 and ex[1:5] == [0.0, 0.0, 0.0, 0.0], ex
+    assert abs(ex[5] - 1.0 / 12.0) < 1e-9, ex  # one observed enemy
+    assert abs(ex[6] - 1.0 / 8.0) < 1e-9, ex  # 5 km <= 10 km range
+    assert abs(ex[7] - 0.5) < 1e-9, ex        # 1 - 5000/10000
+    assert abs(ex[8] - 1.0) < 1e-9, ex        # 0.5 rad = 28.6 deg <= 45
+    assert abs(ex[9] - 0.0) < 1e-9, ex        # 28.6 deg > 20
+    assert ex[10] == 0.0, ex                  # reload 0.5 -> not ready
+    empty = synth()
+    empty["enemies"] = []
+    ex_empty = derive_torp2_extras(empty, "unknown")
+    assert ex_empty == [0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], ex_empty
+    boundary = synth()
+    boundary["enemies"] = [
+        {"distM": 20000.0, "bearingRelRad": 0.0, "observedNow": True},          # observed, out of range
+        {"distM": 9000.0, "bearingRelRad": math.pi / 9.0, "observedNow": True},  # exactly 20 deg
+        {"distM": 8000.0, "bearingRelRad": math.pi / 4.0, "observedNow": True},  # exactly 45 deg
+        {"distM": 5000.0, "bearingRelRad": 2.0, "observedNow": False},           # stale -> ignored
+    ]
+    ex_b = derive_torp2_extras(boundary, "Battleship")
+    assert ex_b[2] == 1.0, ex_b
+    assert abs(ex_b[5] - 3.0 / 12.0) < 1e-9, ex_b   # 3 observed
+    assert abs(ex_b[6] - 2.0 / 8.0) < 1e-9, ex_b    # 2 in range
+    assert abs(ex_b[7] - 0.2) < 1e-9, ex_b          # closest 8 km -> 0.2
+    assert abs(ex_b[8] - 1.0) < 1e-9, ex_b          # 20 and 45 deg both <= 45
+    assert abs(ex_b[9] - 0.5) < 1e-9, ex_b          # only 20 deg <= 20
+    ready = synth()
+    ready["ownReloadFrac"] = 0.999
+    assert derive_torp2_extras(ready, "Destroyer")[10] == 1.0
+    ready["ownReloadFrac"] = 0.9989
+    assert derive_torp2_extras(ready, "Destroyer")[10] == 0.0
+    assert derive_torp2_extras(synth(), "Cruiser")[1] == 1.0
+    assert derive_torp2_extras(synth(), "Submarine")[3] == 1.0
+    # core stays 27-wide; torp2 appends exactly 11 dims and keeps the first 27
+    # columns byte-identical (E26c compatibility).
+    d_core = load_torpedo_rows([tmp], max_rows=0, classes=classes)
+    d_torp2 = load_torpedo_rows([tmp], max_rows=0, classes=classes, feature_set="torp2")
+    assert d_core["global"].shape[1] == tfm.GLOBAL_DIM_V2 == 27, d_core["global"].shape
+    assert d_torp2["global"].shape[1] == 38 and d_torp2["extra_dim"] == 11
+    assert len(d_torp2["feature_names"]) == 38 and d_torp2["feature_names"][27] == "cls_dd"
+    assert np.array_equal(d_core["global"], d_torp2["global"][:, :27]), "core columns drifted"
+    assert d_torp2["global"][0, 27] == 1.0, "row 0 is a Destroyer -> cls_dd"
+    assert d_core["feature_set"] == "core" and d_torp2["feature_set"] == "torp2"
 
     print("PASS")
     return 0
