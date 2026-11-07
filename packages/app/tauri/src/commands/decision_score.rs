@@ -214,6 +214,17 @@ pub enum ShipOutcome {
 pub struct ShipScoreEntry {
     pub entity_id: i32,
     pub ship_id: Option<i64>,
+    /// Hull class from the embedded GameParams attribute table (the canonical
+    /// `AirCarrier` / `Submarine` / ... spelling); `null` when the shipId is
+    /// unknown to that table.
+    pub ship_class: Option<String>,
+    /// Whether the main-battery fire-decision semantics apply to this hull.
+    /// Carriers / submarines have no player main battery, so their samples
+    /// carry no fire term (fire / fired / fireProb / hpLost are all null) and
+    /// wholeFire / contribution stay null — the UI must not show a fabricated
+    /// fire agreement for them. Unknown hulls stay `true` (the conservative
+    /// pre-classification behaviour).
+    pub fire_applicable: bool,
     /// Recorder-relative team: 0 = recorder's side, 1 = enemy.
     pub team_id: i8,
     pub is_recorder: bool,
@@ -1085,6 +1096,10 @@ where
 {
     let fire_ctxs = fire_action_contexts(stream);
     let outcome_ctx = window_outcome_context(stream);
+    // Class-aware fire applicability (P1 honesty gate): the embedded table is
+    // a compile-time artifact; a parse failure must not brick scoring, it
+    // just falls back to the pre-classification (everything applicable).
+    let attr_table = super::ship_attrs::embedded_table().ok();
     // entity -> team (recorder-relative 0/1) from the rows themselves — the
     // attribution query skips same-team and unknown hulls.
     let teams: BTreeMap<i32, i8> = rows
@@ -1117,7 +1132,12 @@ where
             );
         }
         let ctx = fire_ctxs.get(&row.core.owner_entity_id);
-        let can_fire = can_fire_at(row, ctx);
+        // Carriers / submarines do not have a player main battery: gating BOTH
+        // the can-fire rule and the fired label keeps their samples free of
+        // the fabricated fire term (and out of the run counters). Surface
+        // hulls and unknown ids are untouched.
+        let fire_applicable = attr_table.is_none_or(|t| t.fire_applicable(row.core.ship_id));
+        let can_fire = fire_applicable && can_fire_at(row, ctx);
         let fired = can_fire && fired_in_label_window(ctx, row.core.t, LABEL_WINDOW_S);
         let c = instant_components(can_fire, fired, fire_prob, &move_probs, row.move_sector);
         stats.rows_scored += 1;
@@ -1176,9 +1196,15 @@ where
                 Some(idx) => idx.join(acc.ship_id),
                 None => ShipOutcome::Missing,
             };
+            let ship_class = attr_table
+                .and_then(|t| t.class_of(acc.ship_id))
+                .map(|c| c.as_str().to_string());
+            let fire_applicable = attr_table.is_none_or(|t| t.fire_applicable(acc.ship_id));
             ShipScoreEntry {
                 entity_id,
                 ship_id: acc.ship_id,
+                ship_class,
+                fire_applicable,
                 team_id: acc.team_id,
                 is_recorder: acc.is_recorder,
                 whole_game: if n > 0 { acc.inst_sum / n as f32 } else { 0.0 },
@@ -1429,8 +1455,6 @@ mod tests {
         );
         assert_eq!(ally, 0.0);
     }
-
-    use super::*;
 
     // ── synthetic fixtures (fire_dataset / decision_serve test pattern) ──
 
@@ -1870,6 +1894,96 @@ mod tests {
         assert!(samp.get("confidence").is_some());
         assert_eq!(js["perShip"][0]["outcome"]["status"], "ok");
         assert_eq!(js["perShip"][1]["outcome"]["status"], "ambiguous");
+    }
+
+    /// P1 honesty gate: carriers / submarines must not receive a fabricated
+    /// fire term. A CV row reports shipClass + fireApplicable=false, no fire
+    /// component on any sample, wholeFire / contribution null; a surface hull
+    /// on the same fixtures keeps the pre-gating behaviour; an unknown shipId
+    /// stays applicable (conservative fallback).
+    #[test]
+    fn fire_applicability_gates_carrier_rows() {
+        let mut stream = minimal_stream(None);
+        // Surface decider 9 fires a main-battery salvo at t=100 (row t=99).
+        let mut shells = Vec::new();
+        for b in 0..4u16 {
+            shells.push(shell(100.0 + b as f32 * 0.2, 9, b, 2.0));
+        }
+        stream.shell_launches = shells;
+
+        let enemy = || vec![synth_slot(8, 8_000.0, true)];
+        let cv = {
+            let mut core = synth_core(31, 1, 150.0, enemy());
+            core.ship_id = Some(3_256_858_064); // Admiral Orlov (AirCarrier)
+            move_row(core, 0)
+        };
+        let surface = {
+            let mut core = synth_core(9, 1, 99.0, enemy());
+            core.ship_id = Some(3_249_452_400); // Gambra (Cruiser)
+            move_row(core, 0)
+        };
+        let unknown = {
+            let mut core = synth_core(32, 1, 150.0, enemy());
+            core.ship_id = Some(-1);
+            move_row(core, 0)
+        };
+        let mut probs = [0.01f32; 17];
+        probs[0] = 0.84;
+        let probs = probs.to_vec();
+        let report = build_ship_scores(
+            &stream,
+            &[cv, surface, unknown],
+            "classGating",
+            None,
+            None,
+            ScoreModelSources {
+                fire: "synthetic".into(),
+                move_model: "synthetic".into(),
+            },
+            |_row| Ok((0.8f32, probs.clone())),
+        )
+        .expect("build report");
+
+        let cv = report.per_ship.iter().find(|s| s.entity_id == 31).unwrap();
+        assert_eq!(cv.ship_class.as_deref(), Some("AirCarrier"));
+        assert!(!cv.fire_applicable);
+        assert!(cv.whole_fire.is_none());
+        assert!(cv.contribution.is_none());
+        assert!(cv.contribution_shots.is_none());
+        assert_eq!(cv.samples.len(), 1);
+        for sample in &cv.samples {
+            assert!(sample.fire.is_none() && sample.fired.is_none());
+            assert!(sample.fire_prob.is_none() && sample.hp_lost.is_none());
+            // Move-only instant score (sector 0 carries 0.84 of the mass).
+            assert!((sample.inst - 0.84).abs() < 1e-6, "inst {}", sample.inst);
+        }
+        assert!((cv.whole_game - 0.84).abs() < 1e-6);
+
+        let surface = report.per_ship.iter().find(|s| s.entity_id == 9).unwrap();
+        assert_eq!(surface.ship_class.as_deref(), Some("Cruiser"));
+        assert!(surface.fire_applicable);
+        assert_eq!(surface.samples[0].fired, Some(true));
+        assert!((surface.samples[0].fire.unwrap() - 0.8).abs() < 1e-6);
+        assert!((surface.whole_fire.unwrap() - 0.8).abs() < 1e-6);
+
+        let unknown = report.per_ship.iter().find(|s| s.entity_id == 32).unwrap();
+        assert!(unknown.ship_class.is_none());
+        assert!(unknown.fire_applicable);
+        assert_eq!(unknown.samples[0].fired, Some(false));
+        assert!((unknown.samples[0].fire.unwrap() - 0.2).abs() < 1e-6);
+
+        // Run counters only count the applicable rows (surface + unknown).
+        assert_eq!(report.stats.rows_scored, 3);
+        assert_eq!(report.stats.rows_can_fire, 2);
+        assert_eq!(report.stats.rows_fired, 1);
+
+        // Wire shape: both new fields ride every per-ship row.
+        let js = serde_json::to_value(&report).expect("serialize");
+        let rows = js["perShip"].as_array().expect("perShip array");
+        let cv_js = rows.iter().find(|r| r["entityId"] == 31).unwrap();
+        assert_eq!(cv_js["shipClass"], "AirCarrier");
+        assert_eq!(cv_js["fireApplicable"], false);
+        assert!(cv_js["wholeFire"].is_null());
     }
 
     // ── 5. real models (skips when the experiment artifacts are absent) ──

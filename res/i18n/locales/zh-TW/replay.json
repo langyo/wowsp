@@ -628,7 +628,8 @@
     "noData": "暫無評分資料",
     "samples": "{ships} 艘船 · {rows} 個決策點",
     "contribution": "貢獻",
-    "perShot": "每發均值 {value}"
+    "perShot": "每發均值 {value}",
+    "fireNotCovered": "未涵蓋"
   },
   "aiAnalysis": {
     "toggle": "AI 分析",
@@ -691,7 +692,10 @@
     "aiVersion": "WoWSP AI {version} · 權重訓練 {date}",
     "replayHash": "錄像雜湊（後六位）",
     "survivedAtEnd": "對局結束後存活",
-    "replayHashHint": "SHA-256 校驗值 · 點擊複製完整雜湊"
+    "replayHashHint": "SHA-256 校驗值 · 點擊複製完整雜湊",
+    "notApplicable": "不適用",
+    "moveOnly": "僅走位 {m}%",
+    "classNotCovered": "此艦種尚無開火判定模型（僅顯示走位認同度）"
   },
   "detail": {
     "title": "對局詳情"

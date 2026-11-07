@@ -26,6 +26,8 @@ const entry = (over: Partial<AiScoreEntry>): AiScoreEntry => ({
 const rosterEntry = (over: Partial<StaticRosterEntry>): StaticRosterEntry => ({
   entityId: 1,
   shipId: null,
+  shipClass: null,
+  fireApplicable: true,
   name: null,
   playerName: "Alpha",
   teamId: 0,
@@ -102,6 +104,54 @@ describe("aiRecorderEntryOf", () => {
     expect(
       aiRecorderEntryOf(report([rosterEntry({ isRecorder: true, whole: null })])),
     ).toBeNull();
+  });
+});
+
+describe("fire applicability", () => {
+  it("skips roster rows whose class the fire model does not cover", () => {
+    const map = aiScoreMapOf(
+      report([
+        rosterEntry({ entityId: 1, playerName: "Alpha" }),
+        rosterEntry({
+          entityId: 2,
+          playerName: "Carrier",
+          shipClass: "AirCarrier",
+          fireApplicable: false,
+        }),
+        rosterEntry({
+          entityId: 3,
+          playerName: "Sub",
+          shipClass: "Submarine",
+          fireApplicable: false,
+        }),
+      ]),
+    );
+    expect(map.has("Alpha")).toBe(true);
+    // The fire-label space holds zero positive examples for these classes:
+    // a movement-only score never enters the AI ranking.
+    expect(map.has("Carrier")).toBe(false);
+    expect(map.has("Sub")).toBe(false);
+    expect(map.size).toBe(1);
+    // No entry -> the weighted key falls back to the star share alone.
+    expect(aiWeightedKey(map.get("Carrier"), 3000, 12000)).toBeCloseTo(0.25);
+  });
+
+  it("omits an unsupported recorder from the share banner verdict", () => {
+    expect(
+      aiRecorderEntryOf(
+        report([
+          rosterEntry({
+            isRecorder: true,
+            shipClass: "Submarine",
+            fireApplicable: false,
+          }),
+        ]),
+      ),
+    ).toBeNull();
+    // A covered recorder still yields its verdict.
+    expect(
+      aiRecorderEntryOf(report([rosterEntry({ isRecorder: true })]))?.wholeGame,
+    ).toBe(0.7);
   });
 });
 

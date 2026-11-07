@@ -628,7 +628,8 @@
     "noData": "スコアデータなし",
     "samples": "{ships} 隻 · {rows} 決定点",
     "contribution": "貢献",
-    "perShot": "1発平均 {value}"
+    "perShot": "1発平均 {value}",
+    "fireNotCovered": "未対応"
   },
   "aiAnalysis": {
     "toggle": "AI 分析",
@@ -691,7 +692,10 @@
     "aiVersion": "WoWSP AI {version} · 重み学習 {date}",
     "replayHash": "リプレイハッシュ（末尾6桁）",
     "survivedAtEnd": "戦闘終了まで生存",
-    "replayHashHint": "SHA-256 チェックサム · クリックで完全なハッシュをコピー"
+    "replayHashHint": "SHA-256 チェックサム · クリックで完全なハッシュをコピー",
+    "notApplicable": "対象外",
+    "moveOnly": "機動のみ {m}%",
+    "classNotCovered": "この艦種には砲撃判断モデルがありません（機動の一致度のみ表示）。"
   },
   "detail": {
     "title": "戦闘詳細"

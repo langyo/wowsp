@@ -628,7 +628,8 @@
     "noData": "No score data",
     "samples": "{ships} ships · {rows} decision points",
     "contribution": "Contrib",
-    "perShot": "Per shot {value}"
+    "perShot": "Per shot {value}",
+    "fireNotCovered": "Not covered"
   },
   "aiAnalysis": {
     "toggle": "AI analysis",
@@ -691,7 +692,10 @@
     "aiVersion": "WoWSP AI {version} · weights trained {date}",
     "replayHash": "Replay hash (last six)",
     "survivedAtEnd": "Alive at battle end",
-    "replayHashHint": "SHA-256 fingerprint · Click to copy the full hash"
+    "replayHashHint": "SHA-256 fingerprint · Click to copy the full hash",
+    "notApplicable": "N/A",
+    "moveOnly": "Move-only {m}%",
+    "classNotCovered": "No fire-decision model covers this ship class (movement agreement only)."
   },
   "detail": {
     "title": "Battle detail"

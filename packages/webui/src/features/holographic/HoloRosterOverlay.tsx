@@ -309,20 +309,32 @@ function teamTable(rows: RosterRow[], enemy: boolean, showKills: boolean, ctx: T
  *  dash in every column and an unlit lamp. */
 function AiScoreCells({ score, time }: { score: ShipScoreEntry | null; time: number }) {
   const now = score ? scoreSampleAt(score.samples, Math.floor(time)) : null;
+  /** The fire model has no label space for this class (AirCarrier /
+   *  Submarine): the report's fire component is null BY CONTRACT, not a
+   *  missing observation — the tooltip says "not covered" instead of the
+   *  misleading "no can-fire rows" phrasing. */
+  const fireUnsupported = score?.fireApplicable === false;
   // Per-shot mean stays a tooltip fact (the old score panel's hint) — the
-  // column itself is too narrow for two numbers.
+  // column itself is too narrow for two numbers. An unsupported class keeps
+  // the dash in the contribution cell (the value is null by contract, never
+  // a 0 placeholder); its hint explains why.
   const contribHint =
     score?.contribution != null && score.contributionShots
       ? i18nT("replay.scores.perShot", {
           value: formatContribution(score.contribution / Math.max(1, score.contributionShots)),
         })
-      : undefined;
+      : fireUnsupported
+        ? i18nT("replay.report.classNotCovered")
+        : undefined;
   // Whole-game agreement decomposes into its fire / move halves — reuse the
-  // old panel's labels for the tooltip rather than growing new keys.
+  // old panel's labels for the tooltip rather than growing new keys. A class
+  // the fire model does not cover says so in the fire slot.
   const wholeHint = score
-    ? (score.wholeFire != null
-        ? i18nT("replay.scores.fire") + " " + pct(score.wholeFire)
-        : i18nT("replay.scores.noFire")) +
+    ? (fireUnsupported
+        ? i18nT("replay.scores.fireNotCovered")
+        : score.wholeFire != null
+          ? i18nT("replay.scores.fire") + " " + pct(score.wholeFire)
+          : i18nT("replay.scores.noFire")) +
       " · " + i18nT("replay.scores.move") + " " + pct(score.wholeMove)
     : undefined;
   return (

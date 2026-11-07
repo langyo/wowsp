@@ -628,7 +628,8 @@
     "noData": "Aucune donnée de score",
     "samples": "{ships} navires · {rows} points de décision",
     "contribution": "Contrib.",
-    "perShot": "Par tir {value}"
+    "perShot": "Par tir {value}",
+    "fireNotCovered": "Non couvert"
   },
   "aiAnalysis": {
     "toggle": "Analyse IA",
@@ -691,7 +692,10 @@
     "aiVersion": "WoWSP AI {version} · poids entraînés {date}",
     "replayHash": "Empreinte du replay (6 derniers)",
     "survivedAtEnd": "En vie à la fin du combat",
-    "replayHashHint": "Empreinte SHA-256 · Cliquez pour copier le hachage complet"
+    "replayHashHint": "Empreinte SHA-256 · Cliquez pour copier le hachage complet",
+    "notApplicable": "N/D",
+    "moveOnly": "Manœuvre seule {m}%",
+    "classNotCovered": "Aucun modèle de décision de tir ne couvre cette classe de navire (accord de manœuvre uniquement)."
   },
   "detail": {
     "title": "Détail de la bataille"

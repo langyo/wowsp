@@ -22,6 +22,12 @@
  * independently). Rows without an entry (join miss, unscoreable ship) keep
  * coverage 0 and ride the star share alone — a missing report therefore
  * degrades to exactly the pre-AI settlement-XP order.
+ *
+ * A ship whose class the fire model does not cover (AirCarrier /
+ * Submarine: the fire-label space has zero positive examples) is treated
+ * as having NO entry even when the Rust side scored it: its whole-game
+ * number would be movement-only, and ranking it as an AI performance
+ * would quietly compare two different score spaces.
  */
 import type { StaticReport } from "@/api/modules/decision";
 
@@ -55,6 +61,12 @@ const clamp01 = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v))
 export function aiScoreMapOf(report: StaticReport): Map<string, AiScoreEntry> {
   const map = new Map<string, AiScoreEntry>();
   for (const r of report.roster) {
+    // The fire-label space holds ZERO positive examples for AirCarrier /
+    // Submarine, so their whole-game score is the movement component alone:
+    // it is not an AI verdict on their battle record. Keep them out (the
+    // panel then shows the same dash as a join miss and the sort key falls
+    // back to the settlement XP) rather than rank a partial score.
+    if (r.fireApplicable === false) continue;
     if (!r.playerName || !r.whole) continue;
     const entry: AiScoreEntry = {
       teamId: r.teamId,
@@ -80,6 +92,9 @@ export function aiScoreMapOf(report: StaticReport): Map<string, AiScoreEntry> {
  * recorder has no scoreable rows — the banner then simply omits the pair. */
 export function aiRecorderEntryOf(report: StaticReport): AiScoreEntry | null {
   for (const r of report.roster) {
+    // Same rule as aiScoreMapOf: an uncovered class carries a movement-only
+    // whole-game number, which is not an AI verdict (see there).
+    if (r.fireApplicable === false) continue;
     if (r.isRecorder && r.whole) {
       return {
         teamId: r.teamId,

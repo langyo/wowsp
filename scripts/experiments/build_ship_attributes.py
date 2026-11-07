@@ -15,6 +15,11 @@ table train_fire_model.py --attr-table consumes:
   hasRadar  1 if any consumable name matches rls|radar (RLS = the Russian
             abbreviation WG uses internally for the surveillance radar)
   hasHydro  1 if any consumable name matches sonar|hydro
+  cls       hull class from typeinfo.species (AirCarrier / Submarine /
+            Battleship / Cruiser / Destroyer / Auxiliary), written ONLY when
+            the slice is a Ship with a non-empty species — the Rust reader
+            (ship_attrs.rs) treats a missing key as Other and keeps the
+            fire-decision semantics unchanged for it.
 
 Unit note — torpedo maxDist is NOT meters: GameParams scales torpedo
 distances by 70/3 (cross-checked: the Gambra's PUPT014 lists maxDist
@@ -51,6 +56,22 @@ def _sections(d: dict, family: str) -> list[dict]:
     ]
 
 
+def ship_class(d: dict) -> str | None:
+    """Hull class from the slice's `typeinfo` block, or None.
+
+    Only a Ship-typed entry with a non-empty species names a hull class; any
+    other slice (or a missing/malformed typeinfo) yields no key, which the
+    Rust reader treats as `Other` (fire semantics unchanged).
+    """
+    ti = d.get("typeinfo")
+    if not isinstance(ti, dict) or ti.get("type") != "Ship":
+        return None
+    species = ti.get("species")
+    if not isinstance(species, str) or not species:
+        return None
+    return species
+
+
 def ship_attrs(d: dict) -> dict:
     hulls = _sections(d, "Hull")
     arts = _sections(d, "Artillery")
@@ -72,7 +93,7 @@ def ship_attrs(d: dict) -> dict:
         vals = [v for v in vals if v > 0.5]  # 1e-06 sentinels read as zero
         return round(min(vals), 3) if vals else 0.0
 
-    return {
+    out = {
         "vis": hull_min("visibilityFactor"),
         "visSmoke": hull_min("visibilityCoefGKInSmoke"),
         # farthest artillery section = top fire control (match-representative)
@@ -81,6 +102,10 @@ def ship_attrs(d: dict) -> dict:
         "hasRadar": 1 if any(("rls" in a or "radar" in a) for a in low) else 0,
         "hasHydro": 1 if any(("sonar" in a or "hydro" in a) for a in low) else 0,
     }
+    cls = ship_class(d)
+    if cls is not None:
+        out["cls"] = cls
+    return out
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -99,6 +124,17 @@ def main(argv: list[str] | None = None) -> int:
             "ship_attributes.json — commit the diff when the pack updates; "
             "tracked like ships_basics.json so training nodes without the "
             "game pack can consume it)"
+        ),
+    )
+    p.add_argument(
+        "--baseline",
+        default=None,
+        help=(
+            "optional existing table JSON whose shipId set restricts the "
+            "output. Every baseline shipId must still be generated (a missing "
+            "one is a hard error, never a silent drop); slices the pack gained "
+            "after the baseline was cut are reported and dropped, so a "
+            "single-purpose regen cannot smuggle unrelated data into the diff"
         ),
     )
     args = p.parse_args(argv)
@@ -120,6 +156,29 @@ def main(argv: list[str] | None = None) -> int:
             continue
         table[f.stem] = ship_attrs(d)
 
+    # Optional baseline restriction: keep the tracked table's row set stable
+    # across gamepack drift so a focused regen (e.g. adding the class column)
+    # cannot smuggle unrelated new slices into the diff. Every baseline key
+    # must still be generated — a vanished ship is a hard error, not a drop.
+    if args.baseline:
+        base_table = json.loads(Path(args.baseline).read_text(encoding="utf-8"))
+        if not isinstance(base_table, dict) or not base_table:
+            raise SystemExit("[e24] --baseline must be a non-empty JSON object")
+        generated = set(table)
+        missing = sorted(set(base_table) - generated)
+        if missing:
+            raise SystemExit(
+                f"[e24] baseline has {len(missing)} shipId(s) the pack no longer "
+                f"yields (first: {missing[:5]}) — refusing to drop hulls silently"
+            )
+        kept = {k: table[k] for k in base_table}
+        dropped = len(generated) - len(kept)
+        table = kept
+        print(
+            f"[e24] baseline {args.baseline}: retained {len(table)} / "
+            f"dropped {dropped} pack slice(s) added after the baseline"
+        )
+
     # liveness gate: the two columns the first E24 table shipped dead must
     # now be alive — a silent regression here quietly amputates the router
     # input again.
@@ -127,16 +186,29 @@ def main(argv: list[str] | None = None) -> int:
     live_smoke = sum(1 for v in table.values() if v["visSmoke"] > 0)
     live_radar = sum(1 for v in table.values() if v["hasRadar"])
     live_hydro = sum(1 for v in table.values() if v["hasHydro"])
+    # Classification liveness: the scoring/report gate derives fire
+    # applicability from this column, so a silent extraction regression must
+    # abort here instead of degrading CV/SS back to main-battery semantics.
+    live_cv = sum(1 for v in table.values() if v.get("cls") == "AirCarrier")
+    live_ss = sum(1 for v in table.values() if v.get("cls") == "Submarine")
     print(
         f"[e24] {len(table)} ships | torp {live_torp} | smoke-firing {live_smoke} "
-        f"| radar {live_radar} | hydro {live_hydro}"
+        f"| radar {live_radar} | hydro {live_hydro} | CV {live_cv} | SS {live_ss}"
     )
     if live_torp == 0 or live_smoke == 0 or live_radar == 0 or live_hydro == 0:
         raise SystemExit("[e24] a routing column came out dead — extraction regression")
+    if live_cv == 0 or live_ss == 0:
+        raise SystemExit(
+            "[e24] a hull-class column came out dead (no AirCarrier/Submarine) "
+            "— extraction regression"
+        )
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    out.write_text(json.dumps(table, indent=1), encoding="utf-8")
+    # Deterministic LF: text-mode writes on Windows would emit CRLF and turn
+    # every regeneration into a whole-file diff.
+    with out.open("w", encoding="utf-8", newline="\n") as fh:
+        fh.write(json.dumps(table, indent=1))
     print(f"[e24] wrote {out} ({out.stat().st_size:,} bytes)")
     return 0
 

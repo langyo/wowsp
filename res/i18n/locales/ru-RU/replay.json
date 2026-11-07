@@ -628,7 +628,8 @@
     "noData": "Нет данных оценки",
     "samples": "{ships} кораблей · {rows} точек решений",
     "contribution": "Вклад",
-    "perShot": "На выстрел {value}"
+    "perShot": "На выстрел {value}",
+    "fireNotCovered": "Не охвачено"
   },
   "aiAnalysis": {
     "toggle": "AI-анализ",
@@ -691,7 +692,10 @@
     "aiVersion": "WoWSP AI {version} · веса обучены {date}",
     "replayHash": "Хеш реплея (последние 6 символов)",
     "survivedAtEnd": "Выжил до конца боя",
-    "replayHashHint": "Контрольная сумма SHA-256 · Нажмите, чтобы скопировать полный хэш"
+    "replayHashHint": "Контрольная сумма SHA-256 · Нажмите, чтобы скопировать полный хэш",
+    "notApplicable": "Не применимо",
+    "moveOnly": "Только манёвр {m}%",
+    "classNotCovered": "Для этого класса кораблей нет модели решений об огне (отображается только согласие по манёвру)."
   },
   "detail": {
     "title": "Детали боя"

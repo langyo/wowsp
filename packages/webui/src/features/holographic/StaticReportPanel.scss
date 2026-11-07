@@ -171,6 +171,14 @@
       color: var(--srp-warn);
     }
   }
+
+  /** "No fire-decision model covers this class" — the one-line honesty note
+   *  under the coverage column when the row's fireApplicable is false. */
+  &__class-note {
+    font-size: 11px;
+    line-height: 1.4;
+    color: var(--srp-warn);
+  }
 }
 
 .srp-coverage-bar {

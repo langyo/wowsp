@@ -65,6 +65,10 @@ function rosterEntry(overrides: Partial<StaticRosterEntry>): StaticRosterEntry {
   return {
     entityId: 1,
     shipId: null,
+    // Wire fields the head/overlay never read here, but StaticRosterEntry
+    // carries them (fire applicability of the hull's class).
+    shipClass: null,
+    fireApplicable: true,
     name: null,
     playerName: null,
     teamId: 0,

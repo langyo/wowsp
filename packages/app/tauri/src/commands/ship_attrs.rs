@@ -30,6 +30,52 @@ use std::sync::OnceLock;
 /// Width of the routing input (the training script's `ATTR_DIM`).
 pub const ATTR_DIM: usize = 10;
 
+/// Hull class from the GameParams `typeinfo.species` vocabulary. The table
+/// carries it as the optional `cls` column (added for the AI scoring/report
+/// "fire decision applies to this hull" gate); a slice without it — or an
+/// unknown species — degrades to [`ShipClass::Other`], which keeps the
+/// pre-classification (fire-applicable) behaviour.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShipClass {
+    Battleship,
+    Cruiser,
+    Destroyer,
+    AirCarrier,
+    Submarine,
+    Auxiliary,
+    Other,
+}
+
+impl ShipClass {
+    /// Map a GameParams `typeinfo.species` string onto the class enum.
+    /// Unknown / future species are `Other`, never an error: the table is a
+    /// data artifact and a new ship class must not brick the scorer.
+    pub fn from_species(species: &str) -> ShipClass {
+        match species {
+            "Battleship" => Self::Battleship,
+            "Cruiser" => Self::Cruiser,
+            "Destroyer" => Self::Destroyer,
+            "AirCarrier" => Self::AirCarrier,
+            "Submarine" => Self::Submarine,
+            "Auxiliary" => Self::Auxiliary,
+            _ => Self::Other,
+        }
+    }
+
+    /// The canonical wire / display string (the GameParams spelling).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Battleship => "Battleship",
+            Self::Cruiser => "Cruiser",
+            Self::Destroyer => "Destroyer",
+            Self::AirCarrier => "AirCarrier",
+            Self::Submarine => "Submarine",
+            Self::Auxiliary => "Auxiliary",
+            Self::Other => "Other",
+        }
+    }
+}
+
 /// Per-ship weapon attributes in the raw table's units.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShipAttrs {
@@ -45,6 +91,9 @@ pub struct ShipAttrs {
     pub has_radar: bool,
     /// Hydrophone / sonar consumable present.
     pub has_hydro: bool,
+    /// Hull class from the table's optional `cls` column; `Other` when the
+    /// column is absent or the species is unknown.
+    pub ship_class: ShipClass,
 }
 
 impl ShipAttrs {
@@ -56,6 +105,7 @@ impl ShipAttrs {
         torp_range_m: 0.0,
         has_radar: false,
         has_hydro: false,
+        ship_class: ShipClass::Other,
     };
 
     /// The normalized 6-wide own-ship block.
@@ -109,6 +159,15 @@ impl ShipAttrTable {
                     None => bail!("ship attributes: ship {ship_id} lacks numeric '{name}'"),
                 }
             };
+            // Optional additive column: absent / non-string / unknown
+            // species all read as Other (the conservative, fire-applicable
+            // class), so tables generated before the column existed still
+            // load.
+            let ship_class = o
+                .get("cls")
+                .and_then(|x| x.as_str())
+                .map(ShipClass::from_species)
+                .unwrap_or(ShipClass::Other);
             ships.insert(
                 ship_id,
                 ShipAttrs {
@@ -118,6 +177,7 @@ impl ShipAttrTable {
                     torp_range_m: num("torpRange")?,
                     has_radar: flag("hasRadar")?,
                     has_hydro: flag("hasHydro")?,
+                    ship_class,
                 },
             );
         }
@@ -132,6 +192,26 @@ impl ShipAttrTable {
         ship_id
             .and_then(|id| self.ships.get(&id).copied())
             .unwrap_or(ShipAttrs::NEUTRAL)
+    }
+
+    /// Hull class of one shipId; `None` when the id is unknown to the table.
+    pub fn class_of(&self, ship_id: Option<i64>) -> Option<ShipClass> {
+        ship_id
+            .and_then(|id| self.ships.get(&id))
+            .map(|a| a.ship_class)
+    }
+
+    /// Whether the main-battery fire decision applies to this hull.
+    ///
+    /// Carriers and submarines have no player main battery, so their scoring
+    /// rows must not fabricate a "can fire / agrees with holding fire" term.
+    /// Unknown ids fall back to `true` (conservative: never downgrade a hull
+    /// the table cannot classify).
+    pub fn fire_applicable(&self, ship_id: Option<i64>) -> bool {
+        !matches!(
+            self.class_of(ship_id),
+            Some(ShipClass::AirCarrier | ShipClass::Submarine)
+        )
     }
 
     /// Own 6 dims + 4 team-composition dims, mirroring the Python
@@ -234,6 +314,18 @@ mod tests {
         assert!(t.ships.values().any(|a| a.vis_smoke_km > 0.0));
         assert!(t.ships.values().any(|a| a.has_radar));
         assert!(t.ships.values().any(|a| a.has_hydro));
+        // The AI scoring/report gate reads the hull class: the table must name
+        // carriers and submarines (the fire-inapplicable classes).
+        assert!(
+            t.ships
+                .values()
+                .any(|a| a.ship_class == ShipClass::AirCarrier)
+        );
+        assert!(
+            t.ships
+                .values()
+                .any(|a| a.ship_class == ShipClass::Submarine)
+        );
     }
 
     #[test]
@@ -275,6 +367,58 @@ mod tests {
         assert!((v[7] - want_v).abs() < 1e-6);
         assert!((v[8] - want_r).abs() < 1e-6);
         assert!((v[9] - want_v).abs() < 1e-6);
+    }
+
+    /// The class column and the fire-applicability gate: carriers and
+    /// submarines are inapplicable, every surface class stays applicable, and
+    /// unknown ids fall back to `true` (never downgrade an unclassified hull).
+    #[test]
+    fn class_and_fire_applicability() {
+        let t = table();
+        // Admiral Orlov / BA Arona's Whale / Gambra / a battleship.
+        assert_eq!(t.class_of(Some(3_256_858_064)), Some(ShipClass::AirCarrier));
+        assert!(!t.fire_applicable(Some(3_256_858_064)));
+        assert_eq!(t.class_of(Some(3_434_526_416)), Some(ShipClass::Submarine));
+        assert!(!t.fire_applicable(Some(3_434_526_416)));
+        assert_eq!(t.class_of(Some(3_249_452_400)), Some(ShipClass::Cruiser));
+        assert!(t.fire_applicable(Some(3_249_452_400)));
+        assert_eq!(t.class_of(Some(3_247_387_984)), Some(ShipClass::Battleship));
+        assert!(t.fire_applicable(Some(3_247_387_984)));
+        // Unknown / absent ids: no class, but applicable (conservative).
+        assert_eq!(t.class_of(Some(-1)), None);
+        assert_eq!(t.class_of(None), None);
+        assert!(t.fire_applicable(Some(-1)));
+        assert!(t.fire_applicable(None));
+        // Species spelling is the wire contract.
+        assert_eq!(ShipClass::AirCarrier.as_str(), "AirCarrier");
+        assert_eq!(ShipClass::Submarine.as_str(), "Submarine");
+        assert_eq!(ShipClass::from_species("Submarine"), ShipClass::Submarine);
+        assert_eq!(ShipClass::from_species("Battlecarrier"), ShipClass::Other);
+        assert_eq!(ShipClass::Other.as_str(), "Other");
+    }
+
+    /// The `cls` column is optional-additive: tables generated before it
+    /// existed (and malformed/missing values) still load as `Other`, which
+    /// keeps the fire semantics unchanged.
+    #[test]
+    fn optional_class_column_degrades_to_other() {
+        let attrs = |cls: &str| {
+            format!(
+                r#"{{"123": {{"vis": 1, "visSmoke": 0, "mbRange": 2, "torpRange": 0, "hasRadar": 0, "hasHydro": 0{cls}}}}}"#
+            )
+        };
+        let no_cls = ShipAttrTable::from_json(&attrs("")).expect("table without cls parses");
+        assert_eq!(no_cls.class_of(Some(123)), Some(ShipClass::Other));
+        assert!(no_cls.fire_applicable(Some(123)));
+        let unknown = ShipAttrTable::from_json(&attrs(r#", "cls": "Battlecarrier""#))
+            .expect("unknown species is not an error");
+        assert_eq!(unknown.class_of(Some(123)), Some(ShipClass::Other));
+        let non_string = ShipAttrTable::from_json(&attrs(r#", "cls": 42"#))
+            .expect("non-string cls is not an error");
+        assert_eq!(non_string.class_of(Some(123)), Some(ShipClass::Other));
+        let carrier = ShipAttrTable::from_json(&attrs(r#", "cls": "AirCarrier""#))
+            .expect("carrier column parses");
+        assert!(!carrier.fire_applicable(Some(123)));
     }
 
     #[test]

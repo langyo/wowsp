@@ -61,6 +61,8 @@ function report(overrides: Partial<StaticReport> = {}): StaticReport {
       {
         entityId: 1,
         shipId: 1,
+        shipClass: "Destroyer",
+        fireApplicable: true,
         name: "me",
         playerName: "me",
         teamId: 0,
@@ -388,6 +390,49 @@ describe("ReportTimeline interaction", () => {
     expect(legend).not.toContain("replay.report.fireModel");
     expect(w.find(".srp-tl__score-line--fire").attributes("d")).toBe("");
     expect(w.findAll(".srp-tl__score-dot")).toHaveLength(0);
+  });
+
+  it("drops the fire-decision row when no fire decision existed", async () => {
+    const noFire = report({
+      timeline: [
+        { t: 0, inst: 0.5, confidence: 0.5, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.55 },
+        { t: 600, inst: 0.2, confidence: 0.6, fire: null, fired: null, fireProb: null, hpLost: null, move: 0.25 },
+      ],
+      moments: [moment({ t: 100, fired: null, fireProb: null })],
+    });
+    const w = mountTimeline({ data: noFire });
+    // An all-null fire series is a legitimate report (an uncovered class):
+    // the fire envelope stays empty instead of drawing a bogus path.
+    expect(w.find(".srp-tl__score-line--fire").attributes("d")).toBe("");
+    expect(w.findAll(".srp-tl__score-dot")).toHaveLength(0);
+    await w.findAll(".srp-tl__kf")[0].trigger("focus");
+    await nextTick();
+    const tip = w.find(".srp-tl__tip");
+    expect(tip.exists()).toBe(true);
+    // No "Fire decision —" row: nothing was on the table.
+    expect(tip.text()).not.toContain("replay.report.fireAction");
+    // The row returns as soon as the moment carries the fired flag.
+    const withFire = mountTimeline();
+    await withFire.findAll(".srp-tl__kf")[0].trigger("focus");
+    await nextTick();
+    expect(withFire.find(".srp-tl__tip").text()).toContain(
+      "replay.report.fireAction",
+    );
+  });
+
+  it("drops the fire-decision row from captured callouts too", async () => {
+    const noFire = report({
+      moments: [
+        moment({ t: 100, fired: null, fireProb: null }),
+        moment({ t: 250, category: "forcedShot", fired: false }),
+      ],
+    });
+    const w = mountTimeline({ data: noFire, capturing: true });
+    await flushPromises();
+    const callouts = w.findAll(".srp-tl__callout");
+    expect(callouts).toHaveLength(2);
+    expect(callouts[0].text()).not.toContain("replay.report.fireAction");
+    expect(callouts[1].text()).toContain("replay.report.fireAction");
   });
 
   it("marks the move point when the series is a single row", () => {

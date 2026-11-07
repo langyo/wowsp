@@ -628,7 +628,8 @@
     "noData": "暂无评分数据",
     "samples": "{ships} 艘船 · {rows} 个决策点",
     "contribution": "贡献",
-    "perShot": "每发均值 {value}"
+    "perShot": "每发均值 {value}",
+    "fireNotCovered": "未覆盖"
   },
   "aiAnalysis": {
     "toggle": "AI 分析",
@@ -691,7 +692,10 @@
     "aiVersion": "WoWSP AI {version} · 权重训练 {date}",
     "replayHash": "录像哈希（后六位）",
     "survivedAtEnd": "对局结束后存活",
-    "replayHashHint": "SHA-256 校验值 · 点击复制完整哈希"
+    "replayHashHint": "SHA-256 校验值 · 点击复制完整哈希",
+    "notApplicable": "不适用",
+    "moveOnly": "仅走位 {m}%",
+    "classNotCovered": "该舰种暂无开火判定模型（仅显示走位认同度）"
   },
   "detail": {
     "title": "对局详情"
