@@ -12,18 +12,26 @@
  * mapping inside the plot box (see ReportTimeline.tsx's TRACK_/AXIS_
  * constants), so they can never drift apart.
  */
+/* The sheet follows the APP theme: every ink/line/surface comes from the
+   hikari tokens, so the window matches the surrounding chrome in both modes.
+   The exported long image pins its branded dark palette instead (below) —
+   the share artifact must look the same whatever theme the window runs in. */
 .static-report-panel {
-  --srp-bg: #0d1117;
-  --srp-card: #161c26;
-  --srp-panel: #101722;
-  --srp-line: #2a3342;
-  --srp-ink: #d6dde8;
-  --srp-dim: #9aa6b5;
-  --srp-good: #4cc38a;
-  --srp-bad: #e5534b;
-  --srp-warn: #d29922;
-  --srp-ally: #57a6ff;
-  --srp-enemy: #e07059;
+  --srp-bg: rgb(var(--color-background));
+  --srp-card: rgb(var(--color-surface));
+  --srp-panel: rgb(var(--color-surface));
+  --srp-line: rgb(var(--color-border) / 70%);
+  --srp-ink: rgb(var(--color-text));
+  --srp-dim: rgb(var(--color-muted));
+  --srp-good: rgb(var(--color-success));
+  --srp-bad: rgb(var(--color-error));
+  --srp-warn: rgb(var(--color-warning));
+  --srp-ally: rgb(var(--color-info));
+  --srp-enemy: rgb(var(--color-error));
+  /* Inner "lifted" wash (track, lanes, chips) — one token that reads in both
+     modes instead of a white-alpha tuned for the dark sheet. */
+  --srp-lift: rgb(var(--color-text) / 4%);
+  --srp-lift-strong: rgb(var(--color-text) / 7%);
 
   /* The column always mounts embedded (StaticReportModal owns the window
      chrome since the 2026-11-03 extraction — the standalone card frame and
@@ -56,6 +64,22 @@
 }
 
 // ── head: the selected perspective ──
+.static-report-panel--capture {
+  --srp-bg: #0d1117;
+  --srp-card: #161c26;
+  --srp-panel: #101722;
+  --srp-line: #2a3342;
+  --srp-ink: #d6dde8;
+  --srp-dim: #9aa6b5;
+  --srp-good: #4cc38a;
+  --srp-bad: #e5534b;
+  --srp-warn: #d29922;
+  --srp-ally: #57a6ff;
+  --srp-enemy: #e07059;
+  --srp-lift: rgba(255, 255, 255, 0.015);
+  --srp-lift-strong: rgba(255, 255, 255, 0.04);
+}
+
 .srp-head {
   display: flex;
   flex-direction: column;
@@ -228,7 +252,7 @@
     overflow: hidden;
     border: 1px solid var(--srp-line);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--srp-lift-strong);
   }
 
   &__avatar-initial {
@@ -303,19 +327,16 @@
     flex: none;
   }
 
+  /* The panel content rides hikari's HkSelectPanel surface, which TELEPORTS
+     to <body> — outside the sheet's palette scope. These rows therefore read
+     the APP theme tokens (the same ones the surrounding chrome uses), never
+     the sheet's --srp-* variables. */
   &__menu {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 8;
-    width: 300px;
-    max-height: 340px;
-    overflow: auto;
-    padding: 6px;
-    background: var(--srp-panel);
-    border: 1px solid var(--srp-line);
-    border-radius: 8px;
-    box-shadow: 0 16px 36px rgba(0, 0, 0, 0.55);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 300px;
+    padding: 2px;
   }
 
   &__group {
@@ -326,7 +347,7 @@
     & + & {
       margin-top: 4px;
       padding-top: 4px;
-      border-top: 1px solid var(--srp-line);
+      border-top: 1px solid rgb(var(--color-border) / 60%);
     }
   }
 
@@ -335,7 +356,7 @@
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--srp-dim);
+    color: rgb(var(--color-muted));
   }
 
   &__row {
@@ -346,7 +367,7 @@
     padding: 5px 8px;
     font: inherit;
     font-size: 12px;
-    color: var(--srp-ink);
+    color: rgb(var(--color-text));
     text-align: left;
     background: transparent;
     border: 0;
@@ -354,11 +375,11 @@
     cursor: pointer;
 
     &:hover:not(:disabled) {
-      background: rgba(87, 166, 255, 0.12);
+      background: rgb(var(--color-primary) / 8%);
     }
 
     &:focus-visible {
-      outline: 1px solid var(--srp-ally);
+      outline: 1px solid rgb(var(--color-primary));
       outline-offset: -1px;
     }
 
@@ -368,7 +389,7 @@
     }
 
     &--selected {
-      background: rgba(87, 166, 255, 0.16);
+      background: rgb(var(--color-primary) / 12%);
     }
   }
 
@@ -379,11 +400,11 @@
     flex: none;
 
     &--ally {
-      background: var(--srp-ally);
+      background: rgb(var(--color-info));
     }
 
     &--enemy {
-      background: var(--srp-enemy);
+      background: rgb(var(--color-error));
     }
   }
 
@@ -425,12 +446,12 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 10px;
-    color: var(--srp-dim);
+    color: rgb(var(--color-muted));
   }
 
   &__check {
     flex: none;
-    color: var(--srp-ally);
+    color: rgb(var(--color-primary));
   }
 
   /* The coverage face is hikari's HkTag (variant by coverageClass, icon
@@ -933,7 +954,7 @@
   &__track {
     position: relative;
     border-radius: 6px;
-    background: rgba(255, 255, 255, 0.015);
+    background: var(--srp-lift);
   }
 
   &__score {
@@ -1034,7 +1055,8 @@
     padding: 2px 7px;
     font-size: 10.5px;
     color: var(--srp-dim);
-    background: rgba(13, 17, 23, 0.72);
+    background: var(--srp-panel);
+    border: 1px solid var(--srp-line);
     border-radius: 6px;
     pointer-events: none;
   }

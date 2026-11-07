@@ -1,12 +1,9 @@
-/**
- * ReportPlayerPicker tests — the report head's perspective dropdown: the
- * trigger shows only the selected player, the menu groups both teams with
- * coverage faces, unscoreable hulls stay listed but disabled, choosing a row
- * emits the perspective switch and closes, and Escape / capture mode close
- * the menu without selecting.
- */
+/** ReportPlayerPicker: the head's perspective dropdown. The trigger is the
+ *  report's identity head; the OPENED panel is hikari's HkSelectPanel — the
+ *  standard dropdown surface, teleported to <body>, so menu queries go
+ *  through the document. */
 import { afterEach, describe, expect, it } from "vitest";
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount, type VueWrapper } from "@vue/test-utils";
 import { nextTick } from "vue";
 
 import ReportPlayerPicker from "./ReportPlayerPicker";
@@ -73,13 +70,29 @@ function report(): StaticReport {
 function mountPicker(props: Record<string, unknown> = {}) {
   return mount(ReportPlayerPicker, {
     props: { report: report(), capturing: false, ...props },
-    // Focus assertions need the tree to live in the document.
     attachTo: document.body,
   });
 }
 
+/** The panel content lives in the teleported hikari surface. */
+function panel(): HTMLElement | null {
+  return document.body.querySelector<HTMLElement>(".srp-picker__menu");
+}
+function panelRows(): HTMLElement[] {
+  return Array.from(document.body.querySelectorAll<HTMLElement>(".srp-picker__row"));
+}
+
+/** Opens the dropdown and waits for the panel surface to mount. */
+async function openPicker(w: VueWrapper): Promise<HTMLElement> {
+  await w.find(".srp-picker__trigger").trigger("click");
+  await nextTick();
+  const el = panel();
+  expect(el).not.toBeNull();
+  return el!;
+}
+
 describe("ReportPlayerPicker", () => {
-  it("shows only the selected player on the trigger", () => {
+  it("shows only the selected player on the trigger", async () => {
     const w = mountPicker();
     const trigger = w.find(".srp-picker__trigger");
     expect(trigger.exists()).toBe(true);
@@ -87,58 +100,66 @@ describe("ReportPlayerPicker", () => {
     expect(trigger.text()).not.toContain("mate");
     expect(trigger.text()).not.toContain("foe");
     expect(trigger.attributes("aria-expanded")).toBe("false");
+    await openPicker(w);
+    expect(trigger.attributes("aria-expanded")).toBe("true");
   });
 
-  it("groups both teams in the opened menu", async () => {
+  it("renders the roster groups inside hikari's dropdown panel", async () => {
     const w = mountPicker();
-    await w.find(".srp-picker__trigger").trigger("click");
-    const menu = w.find(".srp-picker__menu");
-    expect(menu.exists()).toBe(true);
-    expect(w.find(".srp-picker__trigger").attributes("aria-expanded")).toBe("true");
-    expect(menu.text()).toContain("replay.report.allies");
-    expect(menu.text()).toContain("replay.report.enemies");
-    expect(menu.text()).toContain("mate");
-    expect(menu.text()).toContain("foe");
+    await openPicker(w);
+    const menu = panel()!;
+    expect(menu.textContent).toContain("replay.report.allies");
+    expect(menu.textContent).toContain("replay.report.enemies");
+    expect(menu.textContent).toContain("mate");
+    expect(menu.textContent).toContain("foe");
+    // The surface is HkSelectPanel's (the standard dropdown chrome).
+    expect(document.body.querySelector(".hk-select-popover, .hk-select-popout, .hk-select-sheet-panel")).not.toBeNull();
   });
 
   it("emits the picked perspective and closes", async () => {
     const w = mountPicker();
-    await w.find(".srp-picker__trigger").trigger("click");
-    const rows = w.findAll(".srp-picker__row");
-    const mate = rows.find((row) => row.text().includes("mate"));
+    await openPicker(w);
+    const mate = panelRows().find((row) => row.textContent?.includes("mate"));
     expect(mate).toBeTruthy();
-    await mate!.trigger("click");
+    mate!.click();
+    await nextTick();
     expect(w.emitted("pick")).toEqual([[2]]);
-    expect(w.find(".srp-picker__menu").exists()).toBe(false);
+    expect(w.find(".srp-picker__trigger").attributes("aria-expanded")).toBe("false");
   });
 
   it("keeps unscoreable hulls listed but disabled", async () => {
     const w = mountPicker();
-    await w.find(".srp-picker__trigger").trigger("click");
-    const rows = w.findAll(".srp-picker__row");
-    const foe = rows.find((row) => row.text().includes("foe"));
+    await openPicker(w);
+    const foe = panelRows().find((row) => row.textContent?.includes("foe"));
     expect(foe).toBeTruthy();
-    expect(foe!.attributes("disabled")).toBeDefined();
-    await foe!.trigger("click");
+    expect(foe!.hasAttribute("disabled")).toBe(true);
+    foe!.click();
+    await nextTick();
     expect(w.emitted("pick")).toBeUndefined();
-    expect(w.find(".srp-picker__menu").exists()).toBe(true);
+    expect(w.find(".srp-picker__trigger").attributes("aria-expanded")).toBe("true");
   });
 
   it("closes on Escape without emitting", async () => {
     const w = mountPicker();
-    await w.find(".srp-picker__trigger").trigger("click");
-    expect(w.find(".srp-picker__menu").exists()).toBe(true);
-    document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await openPicker(w);
+    // The panel forwards keys to its owner; the trigger's handler consumes
+    // the Escape so the hosting dialog stays open.
+    const escape = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    w.find(".srp-picker__trigger").element.dispatchEvent(escape);
     await nextTick();
-    expect(w.find(".srp-picker__menu").exists()).toBe(false);
+    expect(w.find(".srp-picker__trigger").attributes("aria-expanded")).toBe("false");
     expect(w.emitted("pick")).toBeUndefined();
   });
 
   it("returns focus to the trigger after a selection", async () => {
     const w = mountPicker();
-    await w.find(".srp-picker__trigger").trigger("click");
-    const mate = w.findAll(".srp-picker__row").find((row) => row.text().includes("mate"));
-    await mate!.trigger("click");
+    await openPicker(w);
+    const mate = panelRows().find((row) => row.textContent?.includes("mate"));
+    mate!.click();
     await nextTick();
     expect(document.activeElement).toBe(w.find(".srp-picker__trigger").element);
   });
@@ -147,12 +168,15 @@ describe("ReportPlayerPicker", () => {
     const w = mountPicker();
     await w.find(".srp-picker__trigger").trigger("keydown", { key: "ArrowDown" });
     await nextTick();
-    expect(w.find(".srp-picker__menu").exists()).toBe(true);
-    const rows = w.findAll(".srp-picker__row:not(:disabled)");
-    expect(rows).toHaveLength(2);
-    expect(document.activeElement).toBe(rows[0].element);
-    await w.find(".srp-picker__menu").trigger("keydown", { key: "ArrowDown" });
-    expect(document.activeElement).toBe(rows[1].element);
+    expect(panel()).not.toBeNull();
+    const rows = panelRows().filter((row) => !row.hasAttribute("disabled"));
+    expect(rows.length).toBe(2);
+    expect(document.activeElement).toBe(rows[0]);
+    panel()!.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true }),
+    );
+    await nextTick();
+    expect(document.activeElement).toBe(rows[1]);
   });
 
   it("renders the host-resolved identity faces on trigger and rows", async () => {
@@ -177,9 +201,6 @@ describe("ReportPlayerPicker", () => {
         ],
       ]),
     });
-    // Trigger: emblem + clan + nickname on the first line, and the ship line
-    // leading with the TEAM-COLOURED ship-class glyph (the old blue/red dot
-    // moved here and became the class icon).
     const trigger = w.find(".srp-picker__trigger");
     expect(trigger.find(".srp-picker__clan").text()).toBe("[HOOD]");
     expect(trigger.find(".srp-picker__name").text()).toBe("me");
@@ -187,22 +208,19 @@ describe("ReportPlayerPicker", () => {
       false,
     );
     expect(trigger.find(".srp-picker__ship").text()).toContain("Shimakaze");
-    expect(
-      trigger.find(".srp-picker__ship img").attributes("src"),
-    ).toContain("icon_ally_destroyer");
-    // No dog tag: the initial plate stands in for the emblem.
+    expect(trigger.find(".srp-picker__ship img").attributes("src")).toContain(
+      "icon_ally_destroyer",
+    );
     expect(trigger.find(".srp-picker__avatar-initial").text()).toBe("M");
 
-    await w.find(".srp-picker__trigger").trigger("click");
-    const rows = w.findAll(".srp-picker__row");
-    // Row 1 = the selected self row (check mark), row 2 = mate with a ship
-    // icon + clan + ship line from the roster faces.
-    const mate = rows[1];
-    expect(mate.find(".srp-picker__row-icon").exists()).toBe(true);
-    expect(mate.find(".srp-picker__row-line").text()).toContain("[ABC]");
-    expect(mate.find(".srp-picker__row-ship").text()).toContain("Des Moines");
-    expect(rows[0].find(".srp-picker__check").exists()).toBe(true);
-    expect(mate.find(".srp-picker__check").exists()).toBe(false);
+    await openPicker(w);
+    const rows = panelRows();
+    const mate = rows.find((row) => row.textContent?.includes("mate"))!;
+    expect(mate.querySelector(".srp-picker__row-icon")).not.toBeNull();
+    expect(mate.querySelector(".srp-picker__row-line")?.textContent).toContain("[ABC]");
+    expect(mate.querySelector(".srp-picker__row-ship")?.textContent).toContain("Des Moines");
+    expect(rows[0].querySelector(".srp-picker__check")).not.toBeNull();
+    expect(mate.querySelector(".srp-picker__check")).toBeNull();
   });
 
   it("shows the real emblem badge when the lookup carries a dog tag", () => {
@@ -230,11 +248,10 @@ describe("ReportPlayerPicker", () => {
     const w = mountPicker({ capturing: true });
     const trigger = w.find(".srp-picker__trigger");
     expect(trigger.attributes("disabled")).toBeDefined();
-    // The copied image must not carry UI elements: no button frame modifier
-    // runs the static (transparent, padding-less) face, no chevron.
     expect(trigger.classes()).toContain("srp-picker__trigger--static");
     expect(w.find(".srp-picker__chevron").exists()).toBe(false);
     await trigger.trigger("click");
-    expect(w.find(".srp-picker__menu").exists()).toBe(false);
+    await nextTick();
+    expect(panel()).toBeNull();
   });
 });

@@ -5,16 +5,16 @@
  * report head now only shows the perspective being read, and the switch
  * lives behind this dropdown (both teams, coverage badge per row; hulls the
  * exporter could not score stay listed but disabled, never silently
- * dropped). The sheet is the report's own dark surface, so the menu is a
- * plain absolutely-positioned list styled by StaticReportPanel.scss rather
- * than a themed hikari popover — opening it never repaints the sheet in the
- * app's light scheme.
+ * dropped).
  *
- * The trigger is a real button (Enter/Space opens), the rows are
- * role="option" buttons (Tab reaches them, Enter selects), Escape and any
- * outside pointer dismiss the menu. While the long image is being captured
- * the menu is forced shut, so the exported frame only ever shows the
- * selected player — no stray dropdown in the share image.
+ * The TRIGGER is the report's own identity head (emblem, [clan] nickname,
+ * tier + ship) — content, not a generic form field. The PANEL is hikari's
+ * standard dropdown surface (HkSelectPanel, the very surface HkSelect opens)
+ * so the popout chrome, z-stacking, outside-click/Escape, the mobile bottom
+ * sheet and the back gesture all come from the shared component; the rows
+ * only supply their content. While the long image is being captured the
+ * panel is forced shut, so the exported frame only ever shows the selected
+ * player — no stray dropdown in the share image.
  *
  * Faces come from the host (reportSheet.ts): the trigger shows the player's
  * in-game emblem (the shared PlayerBadge), [clan] tag, nickname and tier +
@@ -22,16 +22,8 @@
  * the left, [clan] nickname + tier/ship on the right, coverage face and a
  * check for the selected perspective.
  */
-import {
-  computed,
-  defineComponent,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
-  ref,
-  watch,
-  type PropType,
-} from "vue";
+import { computed, defineComponent, nextTick, ref, watch, type PropType } from "vue";
+import { HkSelectPanel } from "@celestia-island/hikari";
 import { Check, ChevronDown, Minus, Percent } from "@lucide/vue";
 
 import AppTag from "@/components/base/AppTag";
@@ -88,7 +80,6 @@ export default defineComponent({
     pick: (_entityId: number) => true,
   },
   setup(props, { emit }) {
-    const rootRef = ref<HTMLElement | null>(null);
     const triggerRef = ref<HTMLButtonElement | null>(null);
     const menuRef = ref<HTMLElement | null>(null);
     const open = ref(false);
@@ -195,36 +186,26 @@ export default defineComponent({
       rows[next].focus();
     }
     function onTriggerKeydown(event: KeyboardEvent) {
+      if (event.key === "Escape" && open.value) {
+        // The opened panel is the topmost layer: one Escape closes only it,
+        // never the hosting HkModal (the panel forwards keys to its owner —
+        // this is that owner's consume).
+        event.preventDefault();
+        event.stopPropagation();
+        closeMenu(true);
+        return;
+      }
       if (event.key !== "ArrowDown" || open.value) return;
       event.preventDefault();
       open.value = true;
       void nextTick(() => menuRows()[0]?.focus());
     }
 
-    function onDocumentPointerDown(event: PointerEvent) {
-      if (!open.value) return;
-      const root = rootRef.value;
-      if (root && event.target instanceof Node && root.contains(event.target)) {
-        return;
-      }
-      open.value = false;
-    }
-    /** Escape closes the menu first; swallow it so the hosting HkModal does
-     *  not also close the window on the same key press. */
-    function onDocumentKeydown(event: KeyboardEvent) {
-      if (event.key === "Escape" && open.value) {
-        event.stopPropagation();
-        closeMenu(true);
-      }
-    }
-
-    onMounted(() => {
-      document.addEventListener("pointerdown", onDocumentPointerDown, true);
-      document.addEventListener("keydown", onDocumentKeydown, true);
-    });
-    onBeforeUnmount(() => {
-      document.removeEventListener("pointerdown", onDocumentPointerDown, true);
-      document.removeEventListener("keydown", onDocumentKeydown, true);
+    /** The hikari panel owns outside-click/Escape closing (it reports the
+     *  close through update:open); a close that came from the panel still
+     *  hands focus back to the trigger. */
+    watch(open, (isOpen, wasOpen) => {
+      if (wasOpen && !isOpen) void nextTick(() => triggerRef.value?.focus());
     });
 
     // A capture must never freeze an open menu into the share image.
@@ -236,7 +217,7 @@ export default defineComponent({
     );
 
     return () => (
-      <div class="srp-picker" ref={rootRef}>
+      <div class="srp-picker">
         <button
           ref={triggerRef}
           type="button"
@@ -299,97 +280,112 @@ export default defineComponent({
             <ChevronDown size={14} class="srp-picker__chevron" />
           )}
         </button>
-        {open.value && !props.capturing ? (
-          <div
-            ref={menuRef}
-            class="srp-picker__menu"
-            role="listbox"
-            aria-label={t("replay.report.pickPlayer")}
-            onKeydown={onMenuKeydown}
-          >
-            {groups.value.map((group) => (
+        {/* Hikari's own dropdown surface (the one HkSelect opens): the panel
+            chrome, scroll, z-stacking, outside-click/Escape and the mobile
+            bottom sheet are the shared component's; this slot supplies the
+            roster rows. */}
+        <HkSelectPanel
+          open={open.value && !props.capturing}
+          onUpdate:open={(v: boolean) => {
+            if (props.capturing) return;
+            open.value = v;
+          }}
+          anchorRef={triggerRef.value ?? null}
+          title={t("replay.report.pickPlayer")}
+          placement="bottom-start"
+          offset={4}
+          maxHeight="min(60vh, 520px)"
+          onKeydown={onMenuKeydown}
+        >
+          {{
+            default: () => (
               <div
-                key={group.key}
-                class="srp-picker__group"
-                role="group"
-                aria-label={group.label}
+                ref={menuRef}
+                class="srp-picker__menu"
+                role="listbox"
+                aria-label={t("replay.report.pickPlayer")}
               >
-                <span class="srp-picker__group-label">{group.label}</span>
-                {group.rows.map((row) => (
-                  <button
-                    key={row.entityId}
-                    type="button"
-                    role="option"
-                    aria-selected={row.entityId === props.report.entityId}
-                    disabled={row.coverage.samples === 0}
-                    class={[
-                      "srp-picker__row",
-                      row.entityId === props.report.entityId
-                        ? "srp-picker__row--selected"
-                        : "",
-                    ]}
-                    data-hint={
-                      row.coverage.samples === 0
-                        ? t("replay.report.noData")
-                        : t("replay.report.coverage") +
-                          ": " +
-                          pct(row.coverage.completeness) +
-                          "%"
-                    }
-                    onClick={() => choose(row)}
+                {groups.value.map((group) => (
+                  <div
+                    key={group.key}
+                    class="srp-picker__group"
+                    role="group"
+                    aria-label={group.label}
                   >
-                    {rowInfo(row)?.shipType ? (
-                      <span class="srp-picker__row-icon">
-                        <BattleIcon
-                          type={rowInfo(row)!.shipType!}
-                          variant={row.teamId === 1 ? "enemy" : "ally"}
-                          size={18}
-                        />
-                      </span>
-                    ) : (
-                      <span
-                        class={
-                          "srp-picker__row-dot srp-picker__row-dot--" +
-                          (row.teamId === 1 ? "enemy" : "ally")
+                    <span class="srp-picker__group-label">{group.label}</span>
+                    {group.rows.map((row) => (
+                      <button
+                        key={row.entityId}
+                        type="button"
+                        role="option"
+                        aria-selected={row.entityId === props.report.entityId}
+                        disabled={row.coverage.samples === 0}
+                        class={[
+                          "srp-picker__row",
+                          row.entityId === props.report.entityId
+                            ? "srp-picker__row--selected"
+                            : "",
+                        ]}
+                        data-hint={
+                          row.coverage.samples === 0
+                            ? t("replay.report.noData")
+                            : t("replay.report.coverage") +
+                              ": " +
+                              pct(row.coverage.completeness) +
+                              "%"
                         }
-                      />
-                    )}
-                    <span class="srp-picker__row-id">
-                      <span class="srp-picker__row-line">
-                        {rowInfo(row)?.clanTag ? (
-                          <span class="srp-picker__clan">
-                            [{rowInfo(row)!.clanTag}]
+                        onClick={() => choose(row)}
+                      >
+                        {rowInfo(row)?.shipType ? (
+                          <span class="srp-picker__row-icon">
+                            <BattleIcon
+                              type={rowInfo(row)!.shipType!}
+                              variant={row.teamId === 1 ? "enemy" : "ally"}
+                              size={18}
+                            />
                           </span>
-                        ) : null}
-                        <span class="srp-picker__row-name">
-                          {rosterName(row)}
-                        </span>
-                      </span>
-                      {rowInfo(row)?.shipName ? (
-                        <span class="srp-picker__row-ship">
-                          {tierRoman(rowInfo(row)!.tier) ? (
-                            <span class="srp-picker__tier">
-                              {tierRoman(rowInfo(row)!.tier)}
+                        ) : (
+                          <span
+                            class={
+                              "srp-picker__row-dot srp-picker__row-dot--" +
+                              (row.teamId === 1 ? "enemy" : "ally")
+                            }
+                          />
+                        )}
+                        <span class="srp-picker__row-id">
+                          <span class="srp-picker__row-line">
+                            {rowInfo(row)?.clanTag ? (
+                              <span class="srp-picker__clan">
+                                [{rowInfo(row)!.clanTag}]
+                              </span>
+                            ) : null}
+                            <span class="srp-picker__row-name">
+                              {rosterName(row)}
+                            </span>
+                          </span>
+                          {rowInfo(row)?.shipName ? (
+                            <span class="srp-picker__row-ship">
+                              {tierRoman(rowInfo(row)!.tier) ? (
+                                <span class="srp-picker__tier">
+                                  {tierRoman(rowInfo(row)!.tier)}
+                                </span>
+                              ) : null}
+                              {rowInfo(row)?.shipName}
                             </span>
                           ) : null}
-                          {rowInfo(row)?.shipName}
                         </span>
-                      ) : null}
-                    </span>
-                    <CoverageTag coverage={row.coverage} />
-                    {row.entityId === props.report.entityId ? (
-                      <Check
-                        size={12}
-                        class="srp-picker__check"
-                        aria-hidden="true"
-                      />
-                    ) : null}
-                  </button>
+                        <CoverageTag coverage={row.coverage} />
+                        {row.entityId === props.report.entityId ? (
+                          <Check size={14} class="srp-picker__check" />
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
                 ))}
               </div>
-            ))}
-          </div>
-        ) : null}
+            ),
+          }}
+        </HkSelectPanel>
       </div>
     );
   },
