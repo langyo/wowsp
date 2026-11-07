@@ -57,10 +57,19 @@ const DEFAULT_PALETTE: ShotPalette = {
   accent: "255 180 60",
 };
 
-const FONT_STACK =
-  'ui-sans-serif, system-ui, "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif';
-const MONO_STACK =
-  'ui-monospace, "Cascadia Mono", Consolas, "Segoe UI", monospace, sans-serif';
+/* The share typography mirrors the APP's font tokens — theme.scss's
+ * --font-sans / --font-mono lists verbatim (canvas cannot read custom
+ * properties, so the mirror is kept in sync by hand; shotKit.test.ts
+ * diffs the two and fails on drift). The DOM-captured AI report long
+ * image inherits those very tokens, so every share artifact — these
+ * hand-drawn canvases included — resolves the SAME family lists in the
+ * SAME engine and the copied images speak one voice (2026-11-08: the
+ * old private stacks drifted from the DOM tokens and the stats cards
+ * rendered different faces from the AI report shot). */
+export const FONT_STACK =
+  '"Inter", ui-sans-serif, system-ui, -apple-system, blinkmacsystemfont, "Segoe UI", roboto, sans-serif';
+export const MONO_STACK =
+  'ui-monospace, "JetBrains Mono", sfmono-regular, "Fira Code", Menlo, Consolas, monospace';
 
 /** Fixed 2× supersampling: share shots keep crisp small text when pasted
  *  into HiDPI chat clients. All draw code works in logical units. */

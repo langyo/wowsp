@@ -301,10 +301,15 @@ const ReportSheetBody = defineComponent({
                   (never selectable, hover says click-to-copy, one shared
                   clipboard toast). The cloned share frame renders the
                   same tags INERT (disabled drops the button semantics and
-                  tooltip) — a screenshot is not interactive. */}
+                  tooltip) — a screenshot is not interactive. All three
+                  carry the mono face: the telemetry digits share the
+                  stats shots' "numbers in mono" voice, and one face per
+                  row keeps the chip run typographically single-voiced
+                  (2026-11-08 review). */}
               {battleStart.value ? (
                 <HkCopyBadge
                   size="sm"
+                  mono
                   class="srp-head__time"
                   value={battleStart.value}
                   disabled={props.capturing}
