@@ -291,12 +291,16 @@
   display: flex;
   flex-direction: column;
 }
+/* The name line no longer clips: the nickname carries its own ellipsis
+   (below), and the division tag's rubber-stamp shadow must stay visible —
+   the old overflow:hidden sheared its bottom edge off (2026-11-07 review).
+   The seals cluster keeps its own horizontal-only clip for the shrink rule. */
 .replay-view__postbattle-cell-name {
   display: flex;
   align-items: center;
   gap: 4px;
   min-width: 0;
-  overflow: hidden;
+  overflow: visible;
 }
 /* Identity-line seal tags (career verdict + 成分章, StampTag) lead the name
    line as ONE SHRINKABLE cluster: when a fixed name track (the full card's
@@ -317,6 +321,29 @@
      allows on separate axes). */
   overflow-x: clip;
   overflow-y: visible;
+}
+/* The red dot at the nickname's top-right: every seal the row could not
+   carry inline lives behind this marker, listed in its hover tooltip in
+   display order (2026-11-07 review). Sits in the superscript register so it
+   never pushes the identity line. */
+.replay-view__postbattle-seal-dot {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 8px;
+  height: 8px;
+  margin: 1px 1px 0 -2px;
+  cursor: help;
+
+  & > i {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: rgb(var(--color-error));
+    box-shadow: 0 0 0 1px rgb(var(--color-surface));
+  }
 }
 .replay-view__postbattle-cell-nick {
   flex: 0 1 auto;
@@ -505,11 +532,10 @@
   gap: 6px;
   min-width: 0;
   /* The card's name track is a fixed 10rem (the LiveShipMeta strip owns the
-     elastic middle): a career verdict + BOTH composition tags can exceed it.
-     The seal cluster below is the shrinkable item (it clips a trailing tag
-     at this track edge before painting over the ship-meta strip next door),
-     and the nick keeps a readable minimum instead of collapsing to zero. */
-  overflow: hidden;
+     elastic middle). With the extra-seal policy the line carries at most one
+     small tag plus the dot, so it no longer needs the clipping fallback —
+     and the division tag's stamp shadow must stay visible (2026-11-07). */
+  overflow: visible;
   font-size: var(--text-sm);
 }
 .replay-view__postbattle-fcell-nick {
