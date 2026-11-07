@@ -54,9 +54,13 @@ OUT_DIR = REPO_ROOT / "packages" / "webui" / "src" / "res" / "images" / "ships"
 
 Z = 16                # working supersample for sub-pixel contour extraction
 BLUR_SRC = 0.45       # Gaussian sigma in SOURCE pixels (cancels WebP alpha noise)
-RDP_EPS_SRC = 0.090   # simplification tolerance in SOURCE pixels: absorbs the
-                      # sub-pixel wobble of the 27 px source on long edges (a
-                      # 0.03 tolerance kept it as a visibly wavy hull)
+RDP_EPS_SRC = 0.140   # simplification tolerance in SOURCE pixels: with the
+                      # spline output this is the segment budget (a dense L
+                      # chain of a curve was the real defect) — the spline
+                      # reproduces the curvature between the kept vertices
+CONTOUR_SMOOTH_SRC = 0.20  # extra Gaussian (source px) on the UPSAMPLED
+                      # coverage before contouring: a 27 px bitmap's
+                      # stair-steps would otherwise survive as a wavy hull
 MIN_AREA_SRC = 0.20   # drop specks smaller than this (source px^2)
 MIN_IOU = 0.90        # per-region soft-coverage IoU floor
 MAX_MAE = 0.06        # per-region mean absolute coverage error ceiling
@@ -264,6 +268,9 @@ def trace_field(coverage: np.ndarray) -> list[list[tuple[float, float]]]:
     """Sub-pixel contours of one soft coverage field, in source pixel coords."""
     smooth = gaussian_blur(coverage, BLUR_SRC)
     big = upsample(smooth)
+    # Flatten the bitmap's pixel-level stair-steps before contouring: the
+    # spline can only be as clean as the points it passes through.
+    big = gaussian_blur(big, CONTOUR_SMOOTH_SRC * Z)
     loops = marching_squares(big, 0.5)
     out: list[list[tuple[float, float]]] = []
     for loop in loops:
@@ -279,16 +286,106 @@ def trace_field(coverage: np.ndarray) -> list[list[tuple[float, float]]]:
     return out
 
 
+# A contour point whose turn is sharper than this is a real CORNER (the
+# marker's notch ends, the stroke caps): the curve must pass through it with a
+# sharp break instead of rounding it off.
+CORNER_DEG = 38.0
+# Catmull-Rom tension: 1/6 is the classic uniform spline (C1 continuity).
+SPLINE_TENSION = 1.0 / 6.0
+
+
+def _turn_degrees(
+    prev: tuple[float, float],
+    here: tuple[float, float],
+    nxt: tuple[float, float],
+) -> float:
+    """Absolute direction change at `here`, in degrees (0 = straight on)."""
+    ax, ay = here[0] - prev[0], here[1] - prev[1]
+    bx, by = nxt[0] - here[0], nxt[1] - here[1]
+    if (ax == 0 and ay == 0) or (bx == 0 and by == 0):
+        return 0.0
+    cross = ax * by - ay * bx
+    dot = ax * bx + ay * by
+    return abs(math.degrees(math.atan2(cross, dot)))
+
+
+def smooth_contour(
+    contour: list[tuple[float, float]],
+) -> list[tuple[tuple[float, float], tuple[float, float], tuple[float, float]]]:
+    """Fit a closed cubic-Bezier loop through one traced contour.
+
+    The marching-squares contour is a dense polyline: emitting it literally
+    makes every slight slope a run of straight segments (the steep slashes of
+    the first crop, user review 2026-11-07). A uniform Catmull-Rom spline
+    through the SAME vertices reproduces the curve with a handful of Bezier
+    commands instead of hundreds of line segments. Points that turn sharply
+    (CORNER_DEG) keep a hard break: their adjacent control points collapse
+    onto the corner, so the notch ends stay crisp.
+
+    Returns (control1, control2, end) triples, one per segment; the loop is
+    closed (the last segment ends on the first point).
+    """
+    n = len(contour)
+    corners = [
+        _turn_degrees(contour[i - 1], contour[i], contour[(i + 1) % n]) > CORNER_DEG
+        for i in range(n)
+    ]
+    segs = []
+    for i in range(n):
+        p0 = contour[i]
+        p1 = contour[(i + 1) % n]
+        prev = contour[(i - 1) % n]
+        after = contour[(i + 2) % n]
+        # A corner pins the control point to its vertex (linear approach);
+        # smooth points take the Catmull-Rom tangent.
+        c1 = (
+            (p0[0], p0[1])
+            if corners[i]
+            else (
+                p0[0] + (p1[0] - prev[0]) * SPLINE_TENSION,
+                p0[1] + (p1[1] - prev[1]) * SPLINE_TENSION,
+            )
+        )
+        c2 = (
+            (p1[0], p1[1])
+            if corners[(i + 1) % n]
+            else (
+                p1[0] - (after[0] - p0[0]) * SPLINE_TENSION,
+                p1[1] - (after[1] - p0[1]) * SPLINE_TENSION,
+            )
+        )
+        segs.append((c1, c2, p1))
+    return segs
+
+
+def _fmt(value: float) -> str:
+    """Compact coordinate: two decimals, trailing zeros dropped."""
+    text = f"{value:.2f}".rstrip("0").rstrip(".")
+    return "0" if text in ("", "-0") else text
+
+
 def path_data(contours: list[list[tuple[float, float]]]) -> str:
+    """SVG path for the traced layers: closed cubic-Bezier loops.
+
+    Concise by construction — one M plus one C per spline vertex — instead of
+    a dense L chain, so the shipped icons are not a polyline approximation of
+    a curve (2026-11-07 review: can draw it with a much simpler path).
+    """
     parts = []
     for contour in contours:
         if len(contour) < 3:
             continue
-        parts.append(
-            "M" + "L".join(f"{x:.2f} {y:.2f}" for x, y in contour) + "Z"
-        )
+        segs = smooth_contour(contour)
+        start = contour[0]
+        d = [f"M{_fmt(start[0])} {_fmt(start[1])}"]
+        for c1, c2, end in segs:
+            d.append(
+                f"C{_fmt(c1[0])} {_fmt(c1[1])} {_fmt(c2[0])} {_fmt(c2[1])} "
+                f"{_fmt(end[0])} {_fmt(end[1])}"
+            )
+        d.append("Z")
+        parts.append("".join(d))
     return "".join(parts)
-
 
 def hex_color(rgb: np.ndarray) -> str:
     return "#" + "".join(f"{max(0, min(255, round(float(v)))):02x}" for v in rgb[:3])
