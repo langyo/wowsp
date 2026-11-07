@@ -35,6 +35,7 @@
 | E23 | 域外泛化验证（留出语料） | in-sample 验证的 ρ 有多少水分：own+apac 训练 → eu+na 打分 | ✅ | X2 域外 ρ=+0.383（in-sample +0.376，**零退化**）；fire 决策级 hp-lost ρ 0.915→0.830；走位 top-1 持平 |
 | E24 | 武备属性前置路由（shipId→属性表） | 路由器读武备属性而非船名：分类/校准能否提升、代价是什么 | ⚠️ | 定版：AUPRC 0.3560 / ECE 0.0266 / headA 误报 40/2490 历代最好；hp-lost ρ 0.915→0.600 仍退化——**双模型分工定案**：评分用 E19、建议用 E24（int8 有 0.911 头 A 偏移，交付只走 fp32） |
 | E26 | 鱼雷决策数据集 + 试点（P1） | 从 `TorpedoLaunch` 导出「能否发射 / 专家是否点击」监督，鱼雷点击决策是否可学（预注册 headB AUPRC≥2×base 且 top-decile lift≥1.5×） | ⚠️ | own 86k 行/161 局（canLaunch 55.5%、launched 0.98%）；**headA AUPRC 0.985 可学；headB 0.0109 = 1.12×base、top-lift 1.01× → 预注册 FAIL**（4 s 节奏协议 bug 已修复，E26b 探索性复跑见下） |
+| E26c | 全量语料鱼雷 scale 测试（node3 GPU） | headB 弱是「数据少」还是「特征不行」：全量 2,215 局同协议复跑（scale-only，不改特征） | ⚠️ | 3,111,384 行/2,215 局（canLaunch 1,052,311、launched 17,055 = 1.62%）；**headA 0.998；headB AUPRC 1.91×base（差 2× 线 0.09）、top-decile lift 2.33×（过线）→ MIXED**；AUC 0.675 vs own-only 0.587——scale 显著有效但未完全过线，下一步转 E26d 特征/标签 |
 - **语料**：King of the Sea XIX 全量公开录像爬取入册（用户授权；四赛区
   618 场 / 1047 局 / 2054 个 `.wowsreplay`，HEAD 实测 3.4GB、magic 全验，
   归档 `replay-archive/kots-xix/<region>/`）——语料 163 → **2217 局**；
@@ -354,6 +355,65 @@
   KoTS 全量（本切片未跑）+ GPU；SS 专项头（101 正例，仅描述）。
 - **局限**：own 单切片（含 event/pve/brawl；pve 4,330 行无真实对抗标签）、CPU、
   无 class one-hot/attrs、CV 空投未建模、未跑 KoTS、161 局 5 折。
+
+### E26c · 全量语料 scale 测试（node3 GPU，**exploratory scale-only**）⚠️ MIXED：排序显著变好，主验收差 0.09
+
+- **问题**：E26/E26b 的 headB 弱是「数据少」还是「特征不行」？在 node3
+  （yuzu-linux-node-3，RTX 5880 Ada，**与 llama-server 共享 GPU**——只用剩余显存、
+  未 kill 任何进程）用**全量 2 s 语料**、**同一脚本/特征/标签/超参**复跑
+  （scale-only：唯一变化是数据量与硬件）。预注册：
+  `out/torpedo_model/e26c-scale-preregistration.md`（含 2 次冻结后 sha 修正的
+  透明披露：CUDA 路径 label 保留 bug、--data 多路径 CLI；协议/验收线未改）。
+- **数据（lead 导出 4/4，0 failed）**：own 170,863 + apac 1,021,498 +
+  eu 1,432,164 + na 486,859 = **3,111,384 行 / 2,215 个有行 replay**
+  （vs E26b own 170,863 行/161 局，约 18×）；canLaunch **1,052,311（33.8%）**、
+  launched **17,055（can 行内 1.62%）**；labelB null 2,059,073；region 分布
+  eu 46% / apac 33% / na 16% / own 5.5%。
+- **加载/协议**：`--max-rows 0` 两遍式（pass-1 仅数行 11.6 s，pass-2 精确预分配；
+  无 list/np.append），entity/mask **float16**、global float32（数组 2.79 GB），
+  整库一次性上 GPU、host 副本随即释放；5 折 GroupKFold by replayId（2,215 局，
+  fold 622k 行）；hidden 192 / batch 4096 / 12 epochs / Adam 1e-3 / smoothing 0.05 /
+  seed 0；torch 2.5.1+cu121 / CUDA；**训练 236.9 s**（5 折各 46.5–49.1 s），
+  未 OOM、未降级、llama 不受影响。
+- **指标（pooled OOF，3.11M 行）**：headA **AUPRC 0.9983 / AUC 0.9993 /
+  ECE 0.0369**（base 0.3382）；headB **AUPRC 0.030925（= 1.91× base 0.016207）/
+  AUC 0.6752 / logloss 0.0909（仍差于常数基线 0.0829）/ Brier 0.01644
+  （常数 0.01595）/ ECE 0.0245 / top-decile 实际发射率 3.78%（= 2.33× base）**；
+  每折 lift 2.27–2.46（2.357±0.071）、AUPRC 0.0302–0.0327、AUC 0.677–0.684。
+  基线：no-skill AUPRC 0.01684 / logloss 0.08289；labelA 规则 logloss 15.86。
+- **判定（预注册）**：AUPRC 1.91× < 2×（**未过**）、top-decile lift 2.33× ≥ 1.5×
+  （过）→ **MIXED**（只过一条：方向记录，不宣称可学；fold 间 std 仅 0.001，
+  说明这是稳定差距而非噪声）。
+- **与 E26/E26b 对比（同指标）**：headB AUPRC 倍数 **1.12× → 1.33× → 1.91×**；
+  AUC **0.546 → 0.587 → 0.675**（+0.088 vs E26b）；top-lift **1.01× → 1.48× →
+  2.33×**；ECE 稳定在 0.025；logloss 仍略差于常数（排序有用，但输出概率校准
+  还不能直接当概率用）。**18× 数据带来明显但「刚好卡线」的排序提升**——结论：
+  不是纯数据量问题，但 scale 显著有效；AUPRC 主验收线未过 → 瓶颈开始转向
+  特征/标签（E26d）。
+- **按类别**（headB AUPRC / 该类 base）：
+
+  | 类别 | rows | canLaunch | launched | 正类率 | 头A AUPRC | 头B AUPRC | 头B/base |
+  |---|---|---|---|---|---|---|---|
+  | DD | 1,831,164 | 466,730 | 10,949 | 2.35% | 0.9971 | 0.0356 | 1.52× |
+  | CL/CA | 1,040,934 | 465,559 | 5,009 | 1.08% | 0.9992 | 0.0236 | 2.20× |
+  | BB | 229,674 | 117,019 | 996 | 0.85% | 0.9994 | 0.0195 | 2.29× |
+  | SS | 9,612 | 3,003 | 101 | 3.36% | 0.9749 | 0.0469 | 1.39× |
+
+  → 信号不均：BB/CL 已 >2×，**DD（1.52×）与 SS（1.39×）最低**；SS 行数仍只有
+  9,612（own 切片），不足以单独下结论。
+- **按区域**（headB AUPRC / base）：apac 1,021,498 行 **0.0333**（1.97×）；
+  eu 1,432,164 **0.0305**（1.81×）；na 486,859 **0.0305**（1.86×）；
+  own 170,863 **0.0258**（2.54×）→ 区域一致、无单区域塌陷；own 倍数最高但基数最小。
+- **局限**：仍无类别 one-hot/attrs/鱼雷几何特征；labelB 是 2 s 窗口的 click
+  二值化（非 click-level 序列）；全量语料含 event/pve 行未过滤；own 只占 5.5%，
+  CV 空投未建模；GPU 与 llama 共享但仅用剩余显存；主验收 MIXED → 不宣称可学。
+- **下一步 E26d（特征/标签，不再堆数据）**：鱼雷几何/管位（发射管相对目标舷角、
+  距离分桶、预估命中时间、目标 DoT/进水、被侦测状态）、类别与武器 kind one-hot、
+  click-level 序列标签/更长窗口；`pos_weight`/focal 作为不平衡研究项（不是
+  「调参过线」）；可选 KoTS-only vs own-only 分训做域对照、SS 专项头。
+- **产物**：本机 `out/torpedo_model/e26c_scale_metrics.json` + `e26c_scale.log`
+  （node3 run/ 同源）；数据/脚本/结果留在 node3
+  `/mnt/work/wowsp-kots/e26c/{data,code,run}`。
 
 ## 目标路线图（G1–G5）
 
