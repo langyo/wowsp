@@ -75,7 +75,11 @@ export default defineComponent({
       {
         // The cached long image belongs to ONE report + perspective + sheet:
         // any of these changing means re-render before copying (a repeated
-        // click on the same content re-copies instantly instead).
+        // click on the same content re-copies instantly instead). The ship
+        // faces are part of the identity head and land ASYNC (encyclopedia
+        // realm list, stats batch): a copy made before they resolve must not
+        // pin the image without the tier/ship line, so they ride the
+        // signature too (2026-11-07 review).
         signature: () =>
           [
             props.report?.entityId ?? "",
@@ -85,6 +89,9 @@ export default defineComponent({
             props.sheet?.identity.name ?? "",
             props.sheet?.identity.clanTag ?? "",
             props.sheet?.identity.dogTag ? 1 : 0,
+            props.sheet?.identity.shipType ?? "",
+            props.sheet?.identity.shipName ?? "",
+            props.sheet?.identity.tier ?? "",
             props.sheet?.meta.battleStart ?? "",
             props.sheet?.meta.replayHash ?? "",
           ].join("|"),

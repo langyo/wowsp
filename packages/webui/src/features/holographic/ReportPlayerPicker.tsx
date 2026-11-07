@@ -18,9 +18,11 @@
  *
  * Faces come from the host (reportSheet.ts): the trigger shows the player's
  * in-game emblem (the shared PlayerBadge), [clan] tag, nickname and tier +
- * ship name; rows mirror the 3D replay's player list — ship-class icon on
- * the left, [clan] nickname + tier/ship on the right, coverage face and a
- * check for the selected perspective.
+ * ship name; rows lead with the SHIP (class glyph, tier numeral and ship
+ * name in one fixed-width column) and carry the [clan] nickname after it,
+ * then the coverage face and a check for the selected perspective. A row
+ * whose hull no source can resolve keeps the ship column's width with a
+ * neutral dash — never the old team-dot fallback (2026-11-07 user request).
  */
 import { computed, defineComponent, nextTick, ref, watch, type PropType } from "vue";
 import { HkSelectPanel } from "@celestia-island/hikari";
@@ -134,8 +136,13 @@ export default defineComponent({
     function rowInfo(row: StaticRosterEntry): ReportRosterInfo | null {
       return props.roster?.get(row.entityId) ?? null;
     }
+    /** The row's identity line: the PLAYER nickname. `row.name` is the
+     *  ship-name-preferred display name (the Rust resolver's choice — the
+     *  trigger head reads it), so `playerName` comes first; a shell that
+     *  predates the field falls back to the display name rather than
+     *  dropping the row's only name. */
     function rosterName(row: StaticRosterEntry): string {
-      return row.name ?? String(row.entityId);
+      return row.playerName ?? row.name ?? String(row.entityId);
     }
 
     /** Enabled rows of the opened menu — the roving-focus ring. */
@@ -313,73 +320,78 @@ export default defineComponent({
                     aria-label={group.label}
                   >
                     <span class="srp-picker__group-label">{group.label}</span>
-                    {group.rows.map((row) => (
-                      <button
-                        key={row.entityId}
-                        type="button"
-                        role="option"
-                        aria-selected={row.entityId === props.report.entityId}
-                        disabled={row.coverage.samples === 0}
-                        class={[
-                          "srp-picker__row",
-                          row.entityId === props.report.entityId
-                            ? "srp-picker__row--selected"
-                            : "",
-                        ]}
-                        data-hint={
-                          row.coverage.samples === 0
-                            ? t("replay.report.noData")
-                            : t("replay.report.coverage") +
-                              ": " +
-                              pct(row.coverage.completeness) +
-                              "%"
-                        }
-                        onClick={() => choose(row)}
-                      >
-                        {rowInfo(row)?.shipType ? (
-                          <span class="srp-picker__row-icon">
-                            <BattleIcon
-                              type={rowInfo(row)!.shipType!}
-                              variant={row.teamId === 1 ? "enemy" : "ally"}
-                              size={18}
-                            />
+                    {group.rows.map((row) => {
+                      const face = rowInfo(row);
+                      const tier = tierRoman(face?.tier);
+                      return (
+                        <button
+                          key={row.entityId}
+                          type="button"
+                          role="option"
+                          aria-selected={row.entityId === props.report.entityId}
+                          disabled={row.coverage.samples === 0}
+                          class={[
+                            "srp-picker__row",
+                            row.entityId === props.report.entityId
+                              ? "srp-picker__row--selected"
+                              : "",
+                          ]}
+                          data-hint={
+                            row.coverage.samples === 0
+                              ? t("replay.report.noData")
+                              : t("replay.report.coverage") +
+                                ": " +
+                                pct(row.coverage.completeness) +
+                                "%"
+                          }
+                          onClick={() => choose(row)}
+                        >
+                          {/* Far left: the SHIP column (船种 glyph / 船等级 /
+                              船名), a fixed-width slot so both groups' rows
+                              align and the identity column starts at one x.
+                              A hull no source resolves keeps the slot and
+                              shows a neutral dash — never the old team dot
+                              (the group label already names the side;
+                              2026-11-07 user request). */}
+                          <span class="srp-picker__row-ship">
+                            {face?.shipType ? (
+                              <span class="srp-picker__row-icon">
+                                <BattleIcon
+                                  type={face.shipType}
+                                  variant={row.teamId === 1 ? "enemy" : "ally"}
+                                  size={18}
+                                />
+                              </span>
+                            ) : (
+                              <span
+                                class="srp-picker__row-icon"
+                                aria-hidden="true"
+                              />
+                            )}
+                            {tier ? (
+                              <span class="srp-picker__row-tier">{tier}</span>
+                            ) : null}
+                            <span class="srp-picker__row-shipname">
+                              {face?.shipName ?? "—"}
+                            </span>
                           </span>
-                        ) : (
-                          <span
-                            class={
-                              "srp-picker__row-dot srp-picker__row-dot--" +
-                              (row.teamId === 1 ? "enemy" : "ally")
-                            }
-                          />
-                        )}
-                        <span class="srp-picker__row-id">
-                          <span class="srp-picker__row-line">
-                            {rowInfo(row)?.clanTag ? (
+                          <span class="srp-picker__row-id">
+                            {face?.clanTag ? (
                               <span class="srp-picker__clan">
-                                [{rowInfo(row)!.clanTag}]
+                                [{face.clanTag}]
                               </span>
                             ) : null}
                             <span class="srp-picker__row-name">
                               {rosterName(row)}
                             </span>
                           </span>
-                          {rowInfo(row)?.shipName ? (
-                            <span class="srp-picker__row-ship">
-                              {tierRoman(rowInfo(row)!.tier) ? (
-                                <span class="srp-picker__tier">
-                                  {tierRoman(rowInfo(row)!.tier)}
-                                </span>
-                              ) : null}
-                              {rowInfo(row)?.shipName}
-                            </span>
+                          <CoverageTag coverage={row.coverage} />
+                          {row.entityId === props.report.entityId ? (
+                            <Check size={14} class="srp-picker__check" />
                           ) : null}
-                        </span>
-                        <CoverageTag coverage={row.coverage} />
-                        {row.entityId === props.report.entityId ? (
-                          <Check size={14} class="srp-picker__check" />
-                        ) : null}
-                      </button>
-                    ))}
+                        </button>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
