@@ -36,12 +36,23 @@ import { rebuildActors } from "./actorBuild";
 import { updateMarkersAt } from "./markerUpdate";
 import { updateLabelPositions, updateOverlayScale } from "./labelOverlay";
 import {
+  AI_FOCUS_PLANE_DIST,
+  AI_FOCUS_SHIP_DIST,
   applyFollowPose,
   clampFollowDist,
   FOLLOW_DIST_DEFAULT,
   FOLLOW_DIST_MAX,
   FOLLOW_DIST_MIN,
+  PLANE_FOLLOW_DIST_DEFAULT,
 } from "./followCamera";
+import { activeSquadronOf, formationFollowPose } from "./followTargets";
+import {
+  cameraModeAt,
+  isPlaneCameraMode,
+  nearestPlaneCameraWindow,
+  type RecordedCameraMode,
+} from "./cameraModes";
+import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
 import { disposeStormZone } from "./weatherScene";
@@ -163,13 +174,26 @@ import "./HolographicMap.scss";
  *  message without HolographicMap lifting its clock out. `focusEntity` is
  *  the programmatic chase-camera target the AI report's keyframe jump uses:
  *  it selects the analyzed ship exactly like clicking its marker would. */
+export interface HoloFocusOptions {
+  /** Playhead the aircraft/carrier decision is made for. Callers that seek
+   *  first pass the target time so the jump does not depend on watcher
+   *  ordering; omitted = the live clock. */
+  time?: number;
+  /** When the target is an aircraft carrier with a squadron in the air at
+   *  `time`, chase that squadron instead of the hull. */
+  preferAircraft?: boolean;
+  /** Initial chase distance override (clamped). Omitted = the AI-report
+   *  framing default for the resolved target kind. */
+  distance?: number;
+}
+
 export interface HoloMapHandle {
   current: number;
   duration: number;
   playing: boolean;
   seek: (t: number) => void;
   /** Chase the given ship with the 3D camera (`null` = free orbit). */
-  focusEntity: (entityId: number | null) => void;
+  focusEntity: (entityId: number | null, options?: HoloFocusOptions) => void;
 }
 
 export default defineComponent({
@@ -433,6 +457,11 @@ export default defineComponent({
     // its zoom range. followSelected captures it lazily — the mode can flip
     // before the scene is ready, and only a stamped frame touches bounds.
     let followStockDist: { min: number; max: number } | null = null;
+    // ── Aircraft-chasing follow mode ────────────────────────────────────
+    /** Chase the target carrier's currently airborne squadron instead of its
+     *  hull. Set by the camera menu's aircraft row and by the AI report's
+     *  keyframe jump when the analyzed perspective is an aircraft carrier. */
+    const followAircraft = ref(false);
     // Mark the dolly source on the canvas OrbitControls listens on; the
     // events still reach OrbitControls untouched (this only raises a flag).
     watch(api, (a, _prev, onCleanup) => {
@@ -469,6 +498,7 @@ export default defineComponent({
           }
         }
         selectedEntityId.value = null;
+        followAircraft.value = false;
       } else {
         // Entering the chase: forget wheel events that belonged to the free
         // camera — the first follow frame stamps the remembered follow
@@ -476,6 +506,34 @@ export default defineComponent({
         dollySeen = false;
       }
     });
+    // ── Recorded camera mode (0x27) ─────────────────────────────────────
+    /** Recorded camera mode at the playhead (0x27 CameraMode stream; the id
+     *  table is the client's CAMERA_MODE enum — see cameraModes.ts). */
+    const recordedCameraModeNow = computed<RecordedCameraMode | null>(() =>
+      cameraModeAt(props.cameraModes, current.value),
+    );
+    /** Original-view playback currently sits inside a recorded PLANETTRACKER
+     *  segment (the recorder was chasing aircraft) — drives the HUD badge. */
+    const inPlaneCameraMode = computed(
+      () => cameraMode.value === "original" && isPlaneCameraMode(recordedCameraModeNow.value),
+    );
+    /** Nearest recorded aircraft-camera segment (null = none in this replay). */
+    const nearestPlaneCameraWin = computed(() =>
+      nearestPlaneCameraWindow(props.cameraModes, duration.value, current.value),
+    );
+    /** Jump to the nearest recorded aircraft-camera segment and hand the view
+     *  back to the recorder's camera — the replay itself already followed the
+     *  planes then, so no synthetic follow target is needed for this route. */
+    function jumpToPlaneCamera(): void {
+      const win = nearestPlaneCameraWin.value;
+      // 0x27 mode segments annotate the recorder's OWN camera (0x25 frames);
+      // without frames there is no original view to hand the playhead to.
+      if (!win || props.cameraFrames.length === 0) return;
+      seekBattleTime(win.start);
+      cameraMode.value = "original";
+      cameraMenuOpen.value = false;
+      api.value?.requestRender();
+    }
     /** Player stats shown in the follow menu (entityId → "WR% · battles").
      *  Resolved lazily when the menu opens; missing/failed lookups render "—". */
     const followStats = ref<Map<number, string>>(new Map());
@@ -1181,19 +1239,65 @@ export default defineComponent({
     });
 
     const shipLabels = ref<ShipLabel[]>([]);
+    /** Synthetic menu row for one carrier's airborne squadron: the id is the
+     *  aircraft-card namespace (PLANE_CARD_LABEL_ID_BASE + carrier id), the
+     *  row carries the carrier's identity so the menu can render it as a
+     *  plane-icon sub-row right under the hull row. */
+    function aircraftMenuRow(carrier: ShipLabel, planeId: number): ShipLabel {
+      return {
+        entityId: PLANE_CARD_LABEL_ID_BASE + carrier.entityId,
+        role: carrier.role,
+        name: carrier.name,
+        shipName: carrier.shipName,
+        tier: carrier.tier,
+        type: carrier.type,
+        hp: carrier.hp,
+        maxHp: carrier.maxHp,
+        kind: "plane",
+        planeType: ctx.planeTypesById.get(planeId * 16) ?? null,
+        x: 0,
+        y: 0,
+        visible: true,
+        dead: false,
+        status: null,
+        belowX: 0,
+        belowY: 0,
+        belowVisible: false,
+      };
+    }
     /** Follow-menu roster grouped by allegiance: self alone, then allies,
-     *  then enemies (roster order within each group). Plane entities are
-     *  excluded — only ships can be followed. */
+     *  then enemies (roster order within each group). Carriers with a
+     *  squadron in the air at the playhead get an extra aircraft row right
+     *  below their hull row — picking it chases that squadron instead of the
+     *  hull (see selectAircraft). The row is rebuilt from the live squadron
+     *  tables so it appears/disappears with the sortie. */
     const cameraShipGroups = computed(() => {
       const groups: { key: string; title: string; items: ShipLabel[] }[] = [];
       const self: ShipLabel[] = [];
       const ally: ShipLabel[] = [];
       const enemy: ShipLabel[] = [];
+      const t = current.value;
       for (const l of shipLabels.value) {
         if (l.kind === "plane" || !l.shipName) continue;
         if (l.role === "self") self.push(l);
         else if (l.role === "ally") ally.push(l);
         else enemy.push(l);
+        // Aircraft rows are carrier-only: a battleship's catapult fighter
+        // (or a hybrid typed BB) would otherwise turn every jump into a
+        // plane chase. The carrier cards' existing label set stays as-is.
+        if (!/^AirCarrier/i.test(l.type ?? "")) continue;
+        const planeId = activeSquadronOf(
+          ctx.planeTrails,
+          ctx.planeCarrierOf,
+          ctx.minimapTrailEnd,
+          l.entityId,
+          t,
+        );
+        if (planeId == null) continue;
+        const row = aircraftMenuRow(l, planeId);
+        if (l.role === "self") self.push(row);
+        else if (l.role === "ally") ally.push(row);
+        else enemy.push(row);
       }
       if (self.length > 0) {
         groups.push({ key: "self", title: i18nT("replay.camera.me"), items: self });
@@ -1568,21 +1672,48 @@ export default defineComponent({
       syncMoveAdvisories(ctx);
       api.value?.requestRender();
     });
-    /** First-person camera: keep the selected ship centered, camera trailing
-     *  behind it along its heading. Called every render frame.
+    /** First-person camera: keep the selected target centered, camera
+     *  trailing behind it along its heading. Called every render frame. The
+     *  target is the hull marker, or in aircraft mode the carrier's current
+     *  squadron — both resolve into one position + yaw for the chase solver.
      *
      *  The marker's model points along local +Z and carries rotation.y =
      *  PI - yaw, so its world forward is (sin(yaw), 0, -cos(yaw)) in
      *  three.js space (north = -Z). The camera sits behind that: minus the
      *  forward vector. */
+    const _followPos = new THREE.Vector3();
     function followSelected() {
       const id = selectedEntityId.value;
       if (id == null) return;
       const ctrl = api.value?.controls;
       const cam = api.value?.camera;
       if (!ctrl || !cam) return;
-      const marker = ctx.shipMarkers.find((m) => m.userData.entityId === id);
-      if (!marker || !marker.visible) return;
+      // Aircraft target: chase the carrier's current squadron formation.
+      // Formations with no rendered model this tick (Points fallback) yield
+      // null and the camera falls back to the hull, so it never freezes.
+      let aircraft: { x: number; y: number; z: number; yaw: number } | null = null;
+      if (followAircraft.value) {
+        const planeId = activeSquadronOf(
+          ctx.planeTrails,
+          ctx.planeCarrierOf,
+          ctx.minimapTrailEnd,
+          id,
+          current.value,
+        );
+        if (planeId != null) aircraft = formationFollowPose(ctx.planeMeshes.get(planeId));
+      }
+      let pos: THREE.Vector3;
+      let yaw: number;
+      if (aircraft) {
+        _followPos.set(aircraft.x, aircraft.y, aircraft.z);
+        pos = _followPos;
+        yaw = aircraft.yaw;
+      } else {
+        const marker = ctx.shipMarkers.find((m) => m.userData.entityId === id);
+        if (!marker || !marker.visible) return;
+        pos = marker.position;
+        yaw = marker.rotation.y;
+      }
       // RMB orbits in follow mode (the hold-to-free-look gesture); the mode
       // watcher restores the stock pan mapping when follow is left. Applied
       // per-frame so a mode flip before scene readiness still lands.
@@ -1601,17 +1732,16 @@ export default defineComponent({
       }
       ctrl.minDistance = FOLLOW_DIST_MIN;
       ctrl.maxDistance = FOLLOW_DIST_MAX;
-      const pos = marker.position;
       // Adopt wheel/pinch dolly once per flag: the radius right after a
-      // dolly carries at most one frame of the ship's own motion (a few
+      // dolly carries at most one frame of the target's own motion (a few
       // units even at 8× playback — invisible against a ≥5% wheel notch).
       // Every other frame keeps the remembered distance, so the chase zoom
-      // can never ride the ship's wake.
+      // can never ride the target's wake.
       if (dollySeen) {
         dollySeen = false;
         followDist = clampFollowDist(cam.position.distanceTo(pos));
       }
-      // Held-RMB free look: keep the orbit pivot glued to the (moving) ship
+      // Held-RMB free look: keep the orbit pivot glued to the (moving) target
       // and hand the camera pose to OrbitControls until the button releases.
       // No extra controls.update() here — the tick loop already runs one per
       // frame, and doubling it would decay the damping inertia twice as fast.
@@ -1621,8 +1751,8 @@ export default defineComponent({
       }
       // Chase pose at the current distance (the solver bakes the stock
       // 22-up-per-55-back pitch into the axis, so zooming never flattens
-      // onto the horizon); the pivot stays glued to the ship.
-      applyFollowPose(cam, pos, marker.rotation.y, followDist);
+      // onto the horizon); the pivot stays glued to the target.
+      applyFollowPose(cam, pos, yaw, followDist);
       ctrl.target.copy(pos);
     }
 
@@ -1662,29 +1792,83 @@ export default defineComponent({
       cam.updateProjectionMatrix();
     }
 
-    /** Select a ship by clicking either its 3D marker or its label. Clicking
-     *  the empty scene clears the selection. Labels have pointer-events: none
-     *  (so they can't break OrbitControls drag), so clicks reach the canvas
-     *  and pick the nearest visible marker via raycast. Programmatic callers
-     *  (HoloMapHandle.focusEntity) reuse the same selection path. */
-    function selectShip(entityId: number | null) {
+    /** Shared follow-target switch used by marker clicks, the camera menu
+     *  and the AI report's programmatic focus. `aircraft` chases the
+     *  carrier's squadron instead of its hull; `distance` overrides the
+     *  remembered chase range (the AI jump's wide framing). Clicking empty
+     *  space (null) clears the selection and returns to free orbit. */
+    function applyFollowTarget(
+      entityId: number | null,
+      opts: { aircraft?: boolean; distance?: number } = {},
+    ) {
       selectedEntityId.value = entityId;
-      // Clicking a ship switches to chase mode; clicking empty space returns
-      // to the free orbit camera.
+      followAircraft.value = entityId != null && opts.aircraft === true;
+      // Clicking a target switches to chase mode; clicking empty space
+      // returns to the free orbit camera.
       cameraMode.value = entityId != null ? "follow" : "free";
-      // Following a real ship hands RMB to the free-look orbit (the per-frame
-      // assignment in followSelected re-asserts it; this covers the first
-      // frames before that runs).
+      if (entityId != null) {
+        if (opts.distance != null) followDist = clampFollowDist(opts.distance);
+        else if (followAircraft.value) followDist = clampFollowDist(PLANE_FOLLOW_DIST_DEFAULT);
+        dollySeen = false;
+      }
+      // Following a real target hands RMB to the free-look orbit (the
+      // per-frame assignment in followSelected re-asserts it; this covers the
+      // first frames before that runs).
       const ctrl = api.value?.controls;
       if (ctrl) ctrl.mouseButtons.RIGHT = entityId != null ? THREE.MOUSE.ROTATE : THREE.MOUSE.PAN;
     }
 
+    /** Select a ship by clicking either its 3D marker or its label. Labels
+     *  have pointer-events: none (so they can't break OrbitControls drag), so
+     *  clicks reach the canvas and pick the nearest visible marker. */
+    function selectShip(entityId: number | null) {
+      applyFollowTarget(entityId);
+    }
+
+    /** Chase a carrier's currently airborne squadron (camera-menu air row). */
+    function selectAircraft(carrierId: number) {
+      applyFollowTarget(carrierId, { aircraft: true, distance: PLANE_FOLLOW_DIST_DEFAULT });
+    }
+
+    /** Camera-menu pick: aircraft rows carry the PLANE_CARD_LABEL_ID_BASE
+     *  namespace; everything else is a ship entity id. */
+    function pickCameraTarget(id: number) {
+      if (id >= PLANE_CARD_LABEL_ID_BASE) selectAircraft(id - PLANE_CARD_LABEL_ID_BASE);
+      else selectShip(id);
+    }
+
+    /** Ship type for an entity: the rebuilt label first, then the roster +
+     *  encyclopedia join (a focus can arrive while the labels are still
+     *  settling after a seek). */
+    function shipTypeOf(entityId: number): string | null {
+      const label = shipLabels.value.find((l) => l.entityId === entityId);
+      if (label?.type) return label.type;
+      const vehicle = props.vehicles.find((v) => v.id === entityId);
+      return (vehicle ? props.encyclopedia.get(vehicle.shipId)?.type : null) ?? null;
+    }
     /** External camera focus (the AI report's keyframe jump): put the chase
-     *  camera on one ship just like a marker click, then repaint at once —
-     *  the caller is an event outside this scene, so no pointer move will
-     *  invalidate the frame for us. Null returns to the free orbit. */
-    function focusEntity(entityId: number | null): void {
-      selectShip(entityId);
+     *  camera on one ship, preferring its airborne squadron when the analyzed
+     *  perspective is an aircraft carrier, and start from the wide AI framing
+     *  so the jump lands on readable context instead of a hull close-up.
+     *  Null returns to the free orbit. */
+    function focusEntity(entityId: number | null, options: HoloFocusOptions = {}): void {
+      const t = options.time ?? current.value;
+      let aircraft = false;
+      if (entityId != null && options.preferAircraft === true) {
+        if (/^AirCarrier/i.test(shipTypeOf(entityId) ?? "")) {
+          aircraft = activeSquadronOf(
+            ctx.planeTrails,
+            ctx.planeCarrierOf,
+            ctx.minimapTrailEnd,
+            entityId,
+            t,
+          ) != null;
+        }
+      }
+      applyFollowTarget(entityId, {
+        aircraft,
+        distance: options.distance ?? (aircraft ? AI_FOCUS_PLANE_DIST : AI_FOCUS_SHIP_DIST),
+      });
       api.value?.requestRender();
     }
 
@@ -2078,6 +2262,9 @@ export default defineComponent({
         ) : null}
         {/* Follow-mode free look: centered mode banner while RMB is held. */}
         {freeLook.value ? <div class="holo-map__freelook">{i18nT("replay.camera.freeLook")}</div> : null}
+        {/* Original-view playback inside a recorded aircraft-camera segment
+            (the recorder was chasing planes — see cameraModes). */}
+        {inPlaneCameraMode.value ? <div class="holo-map__cam-badge">{i18nT("replay.camera.planeCamera")}</div> : null}
         {props.replayPath ? (
           <>
           <div class="holo-map__scorebar-wrap">
@@ -2329,12 +2516,21 @@ export default defineComponent({
                 mode={cameraMode.value}
                 open={cameraMenuOpen.value}
                 hasOriginalFrames={props.cameraFrames.length > 0}
+                recordedMode={cameraMode.value === "original" ? recordedCameraModeNow.value : null}
+                hasPlaneCameraWindow={
+                  props.cameraFrames.length > 0 && nearestPlaneCameraWin.value != null
+                }
                 groups={cameraShipGroups.value}
                 followStats={followStats.value}
-                selectedId={selectedEntityId.value}
+                selectedId={
+                  followAircraft.value && selectedEntityId.value != null
+                    ? PLANE_CARD_LABEL_ID_BASE + selectedEntityId.value
+                    : selectedEntityId.value
+                }
                 onToggleMenu={() => { cameraMenuOpen.value = !cameraMenuOpen.value; }}
                 onPickMode={(m) => { cameraMode.value = m; cameraMenuOpen.value = false; }}
-                onPickShip={(id) => { selectShip(id); cameraMenuOpen.value = false; }}
+                onJumpPlaneCamera={jumpToPlaneCamera}
+                onPickShip={(id) => { pickCameraTarget(id); cameraMenuOpen.value = false; }}
               />
             ) : null}
             <button class="holo-map__play" onClick={togglePlay}>

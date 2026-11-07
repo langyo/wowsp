@@ -395,7 +395,20 @@
     "me": "自分",
     "allies": "味方",
     "enemies": "敵",
-    "battles": "戦"
+    "battles": "戦",
+    "aircraft": "艦載機",
+    "recorded": "記録カメラ：{mode}",
+    "jumpPlaneCamera": "最寄りの航空機視点へ移動",
+    "planeCamera": "航空機を追跡中",
+    "mode": {
+      "airplanes": "航空機視点",
+      "followingPlanes": "航空機を追跡",
+      "followingShip": "艦船を追跡",
+      "followingShells": "砲弾を追跡",
+      "freeFlying": "自由飛行",
+      "overheadMap": "俯瞰マップ",
+      "other": "その他の視点"
+    }
   },
   "classes": {
     "battleship": "戦艦",

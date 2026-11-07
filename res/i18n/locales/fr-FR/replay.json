@@ -395,7 +395,20 @@
     "me": "Moi",
     "allies": "Alliés",
     "enemies": "Ennemis",
-    "battles": "batailles"
+    "battles": "batailles",
+    "aircraft": "Aéronefs",
+    "recorded": "Caméra enregistrée : {mode}",
+    "jumpPlaneCamera": "Aller à la vue aéronef la plus proche",
+    "planeCamera": "Suivi d'un aéronef",
+    "mode": {
+      "airplanes": "Vue aéronefs",
+      "followingPlanes": "Suivi des aéronefs",
+      "followingShip": "Suivi d'un navire",
+      "followingShells": "Suivi des obus",
+      "freeFlying": "Vol libre",
+      "overheadMap": "Vue du dessus",
+      "other": "Autre vue"
+    }
   },
   "classes": {
     "battleship": "Cuirassé",

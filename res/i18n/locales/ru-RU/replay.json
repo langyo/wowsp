@@ -395,7 +395,20 @@
     "me": "Я",
     "allies": "Союзники",
     "enemies": "Противники",
-    "battles": "боёв"
+    "battles": "боёв",
+    "aircraft": "Палубная авиация",
+    "recorded": "Записанная камера: {mode}",
+    "jumpPlaneCamera": "Перейти к ближайшей камере самолёта",
+    "planeCamera": "Слежение за самолётом",
+    "mode": {
+      "airplanes": "Вид на авиацию",
+      "followingPlanes": "Слежение за самолётами",
+      "followingShip": "Слежение за кораблём",
+      "followingShells": "Слежение за снарядами",
+      "freeFlying": "Свободный полёт",
+      "overheadMap": "Вид сверху",
+      "other": "Другой вид"
+    }
   },
   "classes": {
     "battleship": "Линкор",
