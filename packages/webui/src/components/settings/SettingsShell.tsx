@@ -62,11 +62,15 @@ export interface SettingsRailGroup {
  * list is actually in sight, not just highlighted off-screen.
  *
  * Both scrollers are hikari HkScrollContainers (the app-wide overlay
- * scrollbar contract): the hosts keep the shell geometry (rail width,
- * pane flex, the modal host's flush-edge trick), the viewports scroll –
- * native bars hidden, the auto-hiding overlay chrome drawn by the
- * library. The rail+pane BEM classes stay on the hosts so every shell
- * selector (here, the modal's and the page's) keeps working unchanged.
+ * scrollbar contract): the imported stylesheet owns the shell geometry
+ * (rail width, pane flex, the modal host's flush-edge trick) EXCEPT the
+ * three host rules SettingsShell.scss overrides for the desktop
+ * content-fit frame — the shell height, its body-inner height pin and the
+ * rail's size containment (see that file's content-fit docblock). The
+ * viewports scroll – native bars hidden, the auto-hiding overlay chrome
+ * drawn by the library. The rail+pane BEM classes stay on the hosts so
+ * every shell selector (here, the modal's and the page's) keeps working
+ * unchanged.
  *
  * The rail carries hikari's own selectionHint prop (adopted from the
  * app-local twin once 0.55.229 shipped it upstream): with a long grouped

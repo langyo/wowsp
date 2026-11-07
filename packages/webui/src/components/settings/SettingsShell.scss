@@ -2,8 +2,15 @@
 // settings grammar. Every rail/pane class comes from the shipped
 // HkSettingsDialog stylesheet (imported by SettingsShell.tsx, so it lands
 // in the bundle BEFORE this file and these rules win on equal
-// specificity); only the cluster heading styles and the scroll-ownership
-// re-anchoring below are local.
+// specificity). Local extensions: the cluster heading styles, the
+// scroll-ownership re-anchoring, and (since 2026-11-08) the desktop
+// modal's content-fit frame — the last one OVERRIDES two shipped host
+// rules: the stable .hk-settings-host .hk-settings height
+// (var(--hk-settings-height, calc(70vh - 6.5rem))) and the
+// .hk-settings-host .hk-modal-body-inner height pin (100%). Both are
+// hikari contract values to re-check on every hikari bump: if the default
+// band formula or the body-inner pin changes, the override below must
+// follow (see its docblock).
 //
 // The title speaks the pane's own sub-block vocabulary
 // (.hk-settings-sub-title: small caps, muted) so it reads as structure,
@@ -11,12 +18,13 @@
 //
 // Scroll ownership (2026-10-18): both shell scrollers are hikari
 // HkScrollContainers — the native thin bars are gone, the auto-hiding
-// overlay chrome draws instead. The hosts keep every shell geometry rule
-// from the imported stylesheet (rail width, border, pane flex, and the
-// modal host's flush-edge negative margin); the paired-class rules pin
-// the two things the container anatomy replaces (the hosts' own
-// overflow-y: auto, and the paddings/gaps whose home is now the
-// viewport, because the slot content and rail entries are its children).
+// overlay chrome draws instead. The hosts keep the imported stylesheet's
+// shell geometry (rail width, border, pane flex, and the modal host's
+// flush-edge negative margin; the content-fit block below additionally
+// owns the host height contract); the paired-class rules pin the two
+// things the container anatomy replaces (the hosts' own overflow-y: auto,
+// and the paddings/gaps whose home is now the viewport, because the slot
+// content and rail entries are its children).
 
 .hk-settings__rail.hk-scroll-container,
 .hk-settings__pane.hk-scroll-container {
@@ -58,6 +66,67 @@
     @media (max-width: 767px) {
       padding-right: var(--space-20);
     }
+  }
+}
+
+/* ── Content-fit desktop frame (2026-11-08) ─────────────────────────────
+   The DESKTOP MODAL's shell no longer stands at hikari's constant frame
+   height. User report: the 玩家标记 (markers) section's single card sat at
+   the top of a half-empty window with an empty band under it, and the same
+   dead band showed in every short section ("类似的地方也要修"). The shell
+   now hugs the ACTIVE section's cards — short sections shrink the whole
+   window to their content, long ones cap exactly where they used to.
+
+   Three load-bearing pieces; removing any one of them brings the dead band
+   (or the frozen frame) back:
+
+   1. The shell is content-sized (`height: auto`), overriding hikari's
+      shipped `.hk-settings-host .hk-settings` height:
+      var(--hk-settings-height, calc(70vh - 6.5rem)). That formula is kept
+      ONLY as the max-height cap. The cap still bounds long sections, so
+      the pane remains the sole scrollbar owner (the frame still fits
+      under HkModal's body gutter, keeping the floating body bar idle,
+      exactly as before).
+
+   2. The rail must stop DRIVING the shell height. A HkScrollContainer's
+      intrinsic height is its entries' height — taller than most sections
+      — so with an auto shell the rail alone would keep the dead band
+      alive. `contain: size` zeroes the rail's intrinsic contribution;
+      the shell then sizes from the pane's cards, and the flex
+      `align-items: stretch` hands the finished height back to the rail,
+      whose own HkScrollContainer viewport scrolls every entry into reach
+      (the rail stays fully usable at whatever shell height the section
+      asks for).
+
+   3. Hikari's host rule pins .hk-modal-body-inner at height: 100% —
+      correct while the shell was a constant frame, fatal for an auto
+      one: the pin feeds the OLD body height back into HkModal's
+      useSizeMorph content probe, so a released frame measures its own
+      previous height and the window can never shrink (the same freeze
+      class as the 2026-11-04 phone sheet that sized its pane mid-card).
+      The inner goes auto too; the morph then measures the cards directly
+      and pins the shrinking frame naturally.
+
+   SCOPE: desktop modal host only (≥768px). Hikari's own media query owns
+   the phone sheet contract below 768px (the shell fills the docked body
+   there), and the /settings PAGE never carries `.hk-settings-host`, so
+   both keep their existing sizing untouched. */
+
+@media (min-width: 768px) {
+  .hk-settings-host .hk-modal-body-inner {
+    height: auto;
+  }
+
+  .hk-settings-host .hk-settings {
+    height: auto;
+    max-height: var(--hk-settings-height, calc(70vh - 6.5rem));
+  }
+
+  .hk-settings-host .hk-settings__rail.hk-scroll-container {
+    /* Intrinsic height 0: the pane's cards, never the nav list, drive the
+       auto shell (see the docblock above). The rail's own viewport still
+       scrolls the entries at whatever height the flex stretch hands it. */
+    contain: size;
   }
 }
 
