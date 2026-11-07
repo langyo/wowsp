@@ -65,7 +65,15 @@ minimumReleaseAgeExclude:
   # compiled component sheet) and takes host-provided per-locale `title`
   # rows — WoWSP supplies its eight UI headlines alongside the existing
   # messages.
-  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75 || 0.55.128 || 0.55.131 || 0.55.133 || 0.55.176 || 0.55.177 || 0.55.182 || 0.55.191 || 0.55.193 || 0.55.202 || 0.55.214 || 0.55.215 || 0.55.224 || 0.55.225 || 0.55.230 || 0.55.234 || 0.55.238 || 0.55.239 || 0.55.241 || 0.55.243 || 0.55.244 || 0.55.246 || 0.55.249 || 0.55.250 || 0.55.253 || 0.55.254 || 0.55.259 || 0.55.261 || 0.55.269 || 0.55.270 || 0.55.271 || 0.55.272 || 0.55.273 || 0.55.275 || 0.55.276 || 0.55.282 || 0.55.302'
+  # hikari 0.55.311 same-day pickup (hikari #1149): the desktop modal
+  # opens and closes as ONE compositor animation — whole-window
+  # translateY(10px) scale(0.97) + fade — after the 0.55.307–310 layout
+  # height ride was retired (it animated the frame's height and read as
+  # jank on content-heavy windows). All three hikari consumers move onto
+  # the same release (one lock resolution) — the app's windows and the
+  # console's HModal dialogs ride the new default, the website stays in
+  # lockstep — and the host sheets are re-audited against it in this bump.
+  - '@celestia-island/hikari@0.40.18 || 0.55.34 || 0.55.36 || 0.55.53 || 0.55.74 || 0.55.75 || 0.55.128 || 0.55.131 || 0.55.133 || 0.55.176 || 0.55.177 || 0.55.182 || 0.55.191 || 0.55.193 || 0.55.202 || 0.55.214 || 0.55.215 || 0.55.224 || 0.55.225 || 0.55.230 || 0.55.234 || 0.55.238 || 0.55.239 || 0.55.241 || 0.55.243 || 0.55.244 || 0.55.246 || 0.55.249 || 0.55.250 || 0.55.253 || 0.55.254 || 0.55.259 || 0.55.261 || 0.55.269 || 0.55.270 || 0.55.271 || 0.55.272 || 0.55.273 || 0.55.275 || 0.55.276 || 0.55.282 || 0.55.302 || 0.55.311'
   - '@celestia-island/tairitsu-transport@0.1.0'
   # Patched versions of the 2026-10 dev-toolchain advisories (undici/sharp/
   # brace-expansion) are younger than the minimum-release-age window.

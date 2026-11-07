@@ -4,9 +4,30 @@
    os_prefs + a future presets.ts. Scrollbar chrome is hikari's
    overlay system (see the Scrollbars note below), not a token here. */
 
-/* === Theme Transition === */
+/* === Theme Transition ===
+   The app-wide retint fades colours on every element while a palette/mode
+   switch lands (hikari's applyTheme adds `s-theme-transitioning` to <html>
+   for ~300 ms). The blanket must NOT reach hikari's own window motion: its
+   HkModal enter/leave classes (0,1,0) sit BELOW this rule's descendant
+   selector (0,1,1), so a window opened or closed inside the switch window
+   used to lose the `transform` leg of hikari 0.55.311's whole-window zoom +
+   rise — and the scrim its own fade timing — while the colour legs
+   survived; the window snapped into place instead of flying. The
+   exemptions ride `:where(...)` so they add ZERO specificity: the rule
+   keeps its original (0,1,1) weight, which the HkInput autofill re-arm
+   below (0,2,2) still deliberately outranks. Only the elements IN FLIGHT
+   are exempt — at rest the frame and the scrim keep the ordinary retint
+   fade. */
 html.s-theme-transitioning,
-html.s-theme-transitioning *,
+html.s-theme-transitioning
+  :not(
+    :where(
+      .hk-modal-content-enter-active,
+      .hk-modal-content-leave-active,
+      .hk-modal-overlay-enter-active,
+      .hk-modal-overlay-leave-active
+    )
+  ),
 html.s-theme-transitioning *::before,
 html.s-theme-transitioning *::after {
   transition:

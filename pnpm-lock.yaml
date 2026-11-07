@@ -44,8 +44,8 @@ importers:
   packages/console:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.241
-        version: 0.55.241(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.311
+        version: 0.55.311(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -97,8 +97,8 @@ importers:
   packages/website:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.241
-        version: 0.55.241(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.311
+        version: 0.55.311(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -140,8 +140,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.302
-        version: 0.55.302(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.311
+        version: 0.55.311(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -355,15 +355,8 @@ packages:
     resolution: {integrity: sha512-c+xgSWboV2pdwXP67BUWDVRHi2BO5Q3KwxyFVs7taVTY+fsK47/L51ZXQoV9rozHJDNHvJ4v4WEsI/IlxV2l2A==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
-  '@celestia-island/hikari@0.55.241':
-    resolution: {integrity: sha512-llwQBsLvdp8JOeUqYotJRtHWVYC6JoHzyzsgz3ZTWNU+IO5Rn7D9OtcsI4N/ZhfizyoxYUiAxHVTebXoPFrReA==}
-    peerDependencies:
-      '@types/three': ^*
-      three: ^0.185
-      vue: ^*
-
-  '@celestia-island/hikari@0.55.302':
-    resolution: {integrity: sha512-Cl1GTTZ5kDtjUWDOz7rOZOL/ekQIDl4H0A7gFSlBO3Gt3jS7qU8hh/MsIp7y9RZXI+N3SgOEmwh9yeoX/TLDKQ==}
+  '@celestia-island/hikari@0.55.311':
+    resolution: {integrity: sha512-fT8+OQwY7j76+afSEdsOJlgiaCGu6F4tjS04LbQGtQk4ocfSEMGH478OC754V4G+lRyGHRTLYR1kZ7huIpeRQA==}
     peerDependencies:
       '@types/three': ^*
       three: ^0.185
@@ -1842,18 +1835,10 @@ packages:
   '@xterm/addon-fit@0.11.0':
     resolution: {integrity: sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g==}
 
-  '@xterm/addon-image@0.10.0-beta.330':
-    resolution: {integrity: sha512-nqp4blbna8By6+i8Ud4gZUw/IbRcqtYES/vqkpRWHjQ47gkSdeTSpCJo8JwXKykZ9M0T+zdjB95FTk9IuNi+eg==}
-    peerDependencies:
-      '@xterm/xterm': ^6.1.0-beta.335
-
   '@xterm/addon-image@0.10.0-beta.331':
     resolution: {integrity: sha512-ShBTb3QF0ul/i55lfRdJpcu0hlA4aJdqRdzzHdOCws2WUzSsG0SCfMhLjzaoO1dVUGNj2Z7PNLqiXnlyqOinbg==}
     peerDependencies:
       '@xterm/xterm': ^6.1.0-beta.336
-
-  '@xterm/xterm@6.1.0-beta.335':
-    resolution: {integrity: sha512-EuT2IsDmTId4VvghIbYlGCxVudHdqjaR+SRpULpSwhH/Dgw0xzbUfnIFgXGdzksiaXhbMh7y7QXt49PZCuGkRg==}
 
   '@xterm/xterm@6.1.0-beta.336':
     resolution: {integrity: sha512-QrvZZsffXsLW4Z3sba9GqimLvVwlb8b3W1NwZ+l6DdRnpH5pg5cFGWg2ceIburmfaGQ07YJHNekwxxlTcHZ3BA==}
@@ -2096,9 +2081,6 @@ packages:
 
   eastasianwidth@0.2.0:
     resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
-
-  echarts@6.1.0:
-    resolution: {integrity: sha512-q0yaFPggC9FUdsWH4blavRWFmxdrIodbkoKNAjJudAI6CA9gNPxHtV2RcZNEepZVlk4yvBYkOkbk6HIVpIyHZA==}
 
   editorconfig@3.0.2:
     resolution: {integrity: sha512-T0ix8GhtxyKVfUFEcvdNDt3YGqlwkFHbD4/5bgFUDgFmxhI/cSRAeJ87/Sz//Cq8Eam6JX/e23RkoFO71P7aAA==}
@@ -2853,9 +2835,6 @@ packages:
     resolution: {integrity: sha512-aZbgViZrg1QNcG+LULa7nhZpJTZSLm/mXnHXnbAbjmN5aSa0y7V+wvv6+4WaBtpISJzThKy+PIPxc1Nq1EJ9mg==}
     engines: {node: '>= 14.0.0'}
 
-  tslib@2.3.0:
-    resolution: {integrity: sha512-N82ooyxVNm6h1riLCoyS9e3fuJ3AMG2zIZs2Gd1ATcSFjSA23Q0fzjjZeh0jbJvWVDZ0cJT8yaNNaaXHzueNjg==}
-
   tslib@2.8.1:
     resolution: {integrity: sha512-oJFu94HQb+KVduSUQL7wnpmqnfmLsOA/nAh6b6EH0wCEoK0/mPeXU6c3wKDV83MkOuHPRHtSXKKU99IBazS/2w==}
 
@@ -3169,9 +3148,6 @@ packages:
   youch@4.1.0-beta.10:
     resolution: {integrity: sha512-rLfVLB4FgQneDr0dv1oddCVZmKjcJ6yX6mS4pU82Mq/Dt9a3cLZQ62pDBL4AUO+uVrCvtWz3ZFUL2HFAFJ/BXQ==}
 
-  zrender@6.1.0:
-    resolution: {integrity: sha512-oEGMDB6pOP2S6OwRR4PdVv610zrjnA3Bh+JnSG12fYJlBKjtNAoEb5fSUoCOOINlH96I2fU38/A2UpRKs67xYQ==}
-
 snapshots:
 
   '@antfu/install-pkg@1.1.0':
@@ -3359,37 +3335,21 @@ snapshots:
       '@babel/helper-string-parser': 8.0.6
       '@babel/helper-validator-identifier': 8.0.6
 
-  '@celestia-island/hikari@0.55.241(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.311(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.186.0
       '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.330(@xterm/xterm@6.1.0-beta.335)
-      '@xterm/xterm': 6.1.0-beta.335
+      '@xterm/addon-image': 0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)
+      '@xterm/xterm': 6.1.0-beta.336
       dompurify: 3.4.17
-      echarts: 6.1.0
       highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
       marked: 18.1.2
       three: 0.185.1
       vue: 3.5.43(typescript@7.0.2)
 
-  '@celestia-island/hikari@0.55.241(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
-    dependencies:
-      '@celestia-island/tairitsu-transport': 0.2.0
-      '@types/three': 0.186.0
-      '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.330(@xterm/xterm@6.1.0-beta.335)
-      '@xterm/xterm': 6.1.0-beta.335
-      dompurify: 3.4.17
-      echarts: 6.1.0
-      highlight.js: 11.12.0
-      lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
-      marked: 18.1.2
-      three: 0.186.1
-      vue: 3.5.43(typescript@7.0.2)
-
-  '@celestia-island/hikari@0.55.302(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.311(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.186.0
@@ -4545,15 +4505,9 @@ snapshots:
 
   '@xterm/addon-fit@0.11.0': {}
 
-  '@xterm/addon-image@0.10.0-beta.330(@xterm/xterm@6.1.0-beta.335)':
-    dependencies:
-      '@xterm/xterm': 6.1.0-beta.335
-
   '@xterm/addon-image@0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)':
     dependencies:
       '@xterm/xterm': 6.1.0-beta.336
-
-  '@xterm/xterm@6.1.0-beta.335': {}
 
   '@xterm/xterm@6.1.0-beta.336': {}
 
@@ -4763,11 +4717,6 @@ snapshots:
   duplexer@0.1.2: {}
 
   eastasianwidth@0.2.0: {}
-
-  echarts@6.1.0:
-    dependencies:
-      tslib: 2.3.0
-      zrender: 6.1.0
 
   editorconfig@3.0.2:
     dependencies:
@@ -5567,8 +5516,6 @@ snapshots:
 
   triple-beam@1.4.1: {}
 
-  tslib@2.3.0: {}
-
   tslib@2.8.1:
     optional: true
 
@@ -5863,7 +5810,3 @@ snapshots:
       '@speed-highlight/core': 1.2.24
       cookie: 1.1.1
       youch-core: 0.3.3
-
-  zrender@6.1.0:
-    dependencies:
-      tslib: 2.3.0
