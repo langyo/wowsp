@@ -461,8 +461,9 @@ export const PostBattleShareBar = defineComponent({
             onClick={() => emit("toggleMode")}
           >
             {/* Icon + label show the mode a click switches TO — Rows2 = the
-                compact row, Rows3 = the full mode (the same row plus the
-                middle info on the live roster, a full card in this panel). */}
+                compact row, Rows3 = the full mode (a full card in this panel
+                and the post-battle panel alike; the live roster's full card
+                carries the ship strip in its right block). */}
             {props.fullMode ? <Rows2 size={13} /> : <Rows3 size={13} />}
             {props.fullMode
               ? t("replay.roster.compactMode")

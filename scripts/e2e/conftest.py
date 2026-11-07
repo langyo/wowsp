@@ -116,20 +116,28 @@ def vite_base_url(mock_url: str) -> str:
 
 def _kill_tree(proc: subprocess.Popen) -> None:
     """Terminate a spawned server AND its children — pnpm wraps node,
-    which wraps vite; a bare terminate() orphans the vite child."""
-    proc.terminate()
-    try:
-        proc.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        proc.kill()
+    which wraps vite. The TREE is killed BEFORE the parent dies: a bare
+    terminate() reaps the wrapper first, orphaning the vite child (which
+    keeps its port and several hundred MB alive across sessions, and the
+    leaked dev servers eventually starve Playwright's browser). On Windows
+    /T walks the tree and /F is required for node processes that swallow
+    console controls."""
     if os.name == "nt":
-        # /T walks the (possibly orphaned) child tree, /F is required for
-        # node processes that swallow console controls.
         subprocess.run(
             ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
             capture_output=True,
             check=False,
         )
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+        return
+    proc.terminate()
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        proc.kill()
 
 
 @pytest.fixture(scope="session")

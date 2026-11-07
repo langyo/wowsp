@@ -4,34 +4,39 @@
  * pipeline — see `composables/useRosterStats.ts`) and the elapsed battle
  * clock.
  *
- * Every roster row shares ONE layout, whichever density the persisted stats
- * pref picks: a leading class battle icon (team/sunk variant), the nick/clan
- * + ship-name stack, the shared WR/PR/battles/avg-damage columns
- * (`rosterStatCols`, the same cells the post-battle matrix renders) and the
- * career-seal slot. The density toggle only ADDS info to that row — it never
- * re-lays it out:
- *   - compact (the shipped default): exactly that row;
- *   - full: the same row plus the ship's combat card (`LiveShipMeta` — tier,
- *     class, nation, parameter ranges, and on ally rows the consumable/
- *     module/flag summary) in the MIDDLE, between the identity stack and the
- *     stat columns. Hovering the meta strip floats the condensed ship card.
- * The ship name leads with the game's class battle icon, and — per a stats
- * pref, default on — every row washes with its player's PR-tier color (red
- * band red, purple band purple; see prTintVars). The panel's head carries no
- * title — status pills, tags and actions only (the /live page title lives in
- * the view's title bar).
+ * The two densities share the ONE aligned stat-column header but lay the row
+ * out differently (a persisted stats pref picks):
+ *   - compact (the shipped default): the post-battle matrix's one-line look —
+ *     a leading class battle icon (team/sunk variant), the nick/clan +
+ *     ship-name stack, the shared WR/PR/battles/avg-damage columns
+ *     (`rosterStatCols`, the same cells the post-battle matrix renders) and
+ *     the career-seal slot;
+ *   - full: the post-battle full card's shape — a three-line identity stack
+ *     (clan-tagged nick / every composition seal / tier + ship name) on the
+ *     left, a right block stacking the same aligned stat line over the ship's
+ *     combat card (`LiveShipMeta` — tier, class, nation, parameter ranges,
+ *     and on ally rows the consumable/module/flag summary), and the
+ *     career-seal slot still reserved at the end. Hovering the meta strip
+ *     floats the condensed ship card.
+ * Both densities put their stat cells on the same header tracks (the full
+ * card's side grid takes the header's own ch template); a narrow panel stacks
+ * the full card — identity first, then the aligned line + ship strip. The
+ * compact row's ship name leads with the game's class battle icon, and — per
+ * a stats pref, default on — every row washes with its player's PR-tier color
+ * (red band red, purple band purple; see prTintVars). The panel's head
+ * carries no title — status pills, tags and actions only (the /live page
+ * title lives in the view's title bar).
  *
  * Every human row is clickable and jumps to the lookup (水表) view for that
  * player; hidden profiles keep muted "—" cells with the hidden-profile
  * tooltip instead of fake numbers. Each column title additionally carries
  * the team's aggregate per the chip toggles — all over the players whose
  * stats landed, in the roster's resolved stats-source view. The header is
- * ONE aligned render path for BOTH densities (the full row's extra middle
- * info changes nothing about the columns): the title is the two-line mini
- * table header (a per-column label over a per-column mean — winrate / PR /
- * battles / avg damage, exactly the shared rosterColumns() grid) so every
- * average sits on its own column, above the stat cells of compact and full
- * rows alike.
+ * ONE aligned render path for BOTH densities (the full card's side grid
+ * takes its exact ch template): the title is the two-line mini table header
+ * (a per-column label over a per-column mean — winrate / PR / battles / avg
+ * damage, exactly the shared rosterColumns() grid) so every average sits on
+ * its own column, above the stat cells of compact and full rows alike.
  *
  * The head also carries the share actions: a copy-share-shot button (the
  * roster painted onto a watermarked PNG, same pipeline as the post-battle
@@ -124,8 +129,10 @@ import {
   prTier,
   winrateColor,
   type CareerStamp,
+  type StampKind,
 } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
+import { tierRoman } from "./shipLiveStats";
 import {
   columnsNeedShipStats,
   overlayColumnDims,
@@ -192,10 +199,9 @@ export default defineComponent({
     const accounts = useAccountStore();
     const router = useRouter();
     const prefs = useStatsPrefsStore();
-    /** Roster density: the compact row (the post-battle matrix's look, the
-     *  shipped default) or the same row with the ship-meta strip added in
-     *  the middle — a persisted stats pref flipped from the head's density
-     *  toggle. */
+    /** Roster density: the compact one-line row (the post-battle matrix's
+     *  look, the shipped default) or the post-battle full card's shape —
+     *  a persisted stats pref flipped from the head's density toggle. */
     const compact = computed(() => prefs.prefs.liveRosterCompact);
     /** The career-seal slot's visibility — the header's right-edge
      *  compensation and the row's reserved slot read this ONE predicate (PR
@@ -1188,9 +1194,10 @@ export default defineComponent({
     }
 
     /** A column title (我方/敌方) with the team aggregate — ONE render path
-     *  for BOTH roster densities. Full rows add the ship-meta strip in the
-     *  middle but keep the compact row's exact pieces, so their stat cells
-     *  land on the same aligned columns: the title is the two-line mini
+     *  for BOTH roster densities. The full card lays its rows out differently
+     *  (identity stack + side block) but its side grid takes the same column
+     *  specs, so both densities' stat cells land on the same aligned columns:
+     *  the title is the two-line mini
      *  table header in both modes (a per-column label over a per-column team
      *  mean on a grid mirroring the row's stat columns — rosterColumns()),
      *  every average landing exactly on its own column. The header reserves
@@ -1386,55 +1393,68 @@ export default defineComponent({
         } as CSSProperties;
       };
 
-      /** The row's secondary seal (成分章) — the single highest tier the
-       *  player carries: a 奶龙 / 奶蛙 (veteran) tag outranks a minor one, and
-       *  air wins a same-tier tie (resolveStamps' canonical order). Pressed
-       *  beside the nickname in BOTH densities (the rows are too short for a
-       *  square 2x2 face, and the four-char wording reads as part of the
-       *  identity line — user feedback), so it no longer competes with the
-       *  row-end verdict slot: a 神了 / 猴 row carries BOTH faces (the tag
-       *  here, the stamp at the row end). Null when nothing qualifies. The
-       *  full density adds ONLY the middle ship-meta strip, never extra
-       *  identity-line tags. */
+      /** The row's secondary seal (成分章) kinds — the composition verdicts
+       *  the player carries, air before sub (resolveStamps' canonical order).
+       *  A 蛆 / 过街老鼠 career verdict suppresses them: a hidden profile's
+       *  stats cannot grade a composition (the same floor every seal surface
+       *  applies). The compact row presses only the highest one beside the
+       *  nickname; the full card lists them ALL on its own identity line (the
+       *  post-battle full card's three-line identity, 2026-11-07). StampTag
+       *  applies the zh-locale + per-kind kill-switch gates itself. */
+      const compSealKindsOf = (
+        name: string,
+        career: CareerStamp | null,
+      ): StampKind[] => {
+        if (!sealsShown.value || career === "maggot" || career === "rat") return [];
+        const comp = compositions.value.get(name);
+        if (!comp) return [];
+        const kinds: StampKind[] = [];
+        if (comp.air) kinds.push(comp.airVeteran ? "airVeteran" : "air");
+        if (comp.sub) kinds.push(comp.subVeteran ? "subVeteran" : "sub");
+        return kinds;
+      };
+      /** The single highest composition kind — the compact row's inline tag:
+       *  a 奶龙 / 奶蛙 (veteran) tag outranks a minor one, and when both
+       *  classes tie the sub-veteran face survives while air wins otherwise. */
+      const topCompSealKind = (kinds: StampKind[]): StampKind | null => {
+        if (kinds.length === 0) return null;
+        if (kinds.length === 1) return kinds[0];
+        const [air, sub] = kinds;
+        return sub === "subVeteran" && air !== "airVeteran" ? sub : air;
+      };
+      /** The compact row's single inline composition tag. */
       const highestStampTag = (
         name: string,
         career: CareerStamp | null,
       ): VNode | null => {
-        if (!sealsShown.value || career === "maggot" || career === "rat") return null;
-        const comp = compositions.value.get(name);
-        if (!comp) return null;
-        if (comp.air && comp.sub) {
-          // Both classes: air wins the same-tier tie, but a sub-veteran
-          // (奶蛙) outranks a minor air tag — the veteran face survives.
-          if (comp.subVeteran && !comp.airVeteran) return <StampTag kind="subVeteran" />;
-          return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
-        }
-        if (comp.air) return <StampTag kind={comp.airVeteran ? "airVeteran" : "air"} />;
-        if (comp.sub) return <StampTag kind={comp.subVeteran ? "subVeteran" : "sub"} />;
-        return null;
+        const kind = topCompSealKind(compSealKindsOf(name, career));
+        return kind != null ? <StampTag kind={kind} /> : null;
       };
 
-      // Both densities render the SAME row pieces — the full row is the
-      // compact row plus the ship-meta strip in the middle — so they share a
-      // name-keyed view of this panel's id-keyed stats for the shared
-      // rosterStatCols cells. Rows still loading drop out of the view (their
-      // columns then carry the spinner like every surface).
+      // Both densities render the same shared stat cells (rosterStatCols), so
+      // they share a name-keyed view of this panel's id-keyed stats. Rows
+      // still loading drop out of the view (their columns then carry the
+      // spinner like every surface).
       const nameStats = new Map<string, RosterStat>();
       for (const v of props.arena.vehicles) {
         const st = stats.get(v.id);
         if (st && !st.loading) nameStats.set(v.name, st);
       }
 
-      /** One roster row, shared by BOTH densities (compact is the shipped
-       *  default): battle icon, nick/clan + ship stack, the shared per-scope
-       *  stat columns and the career seal. `full` only inserts the ship-meta
-       *  strip between the identity stack and the stat columns — the rest of
-       *  the line (and therefore every column's x) is identical in both
-       *  modes. The whole row is the lookup jump (hover and clicks cover the
-       *  seal), sunk rows dim, and the PR-tier wash rides the same custom
-       *  properties. Both rosters read the configured columns in the same
-       *  order (the enemy side no longer mirrors — user feedback); operations
-       *  render the allies column only (left side). */
+      /** One roster row in BOTH densities (compact is the shipped default).
+       *  Compact keeps the post-battle matrix's one-line look: battle icon,
+       *  nick/clan + ship stack, the shared per-scope stat columns and the
+       *  career seal. The full card mirrors the post-battle full card
+       *  (2026-11-07 review): its left stack carries the SAME three identity
+       *  lines (clan-tagged nick / EVERY composition seal / tier + ship) and
+       *  its right block stacks the compact row's aligned stat line over the
+       *  LiveShipMeta strip's two ship lines, with the career-seal slot still
+       *  reserved at the end so the shared header keeps every column's x. The
+       *  whole row is the lookup jump (hover and clicks cover the seal), sunk
+       *  rows dim, and the PR-tier wash rides the same custom properties.
+       *  Both rosters read the configured columns in the same order (the
+       *  enemy side no longer mirrors — user feedback); operations render the
+       *  allies column only (left side). */
       const rosterRow = (entry: TabOrderedVehicle, full: boolean) => {
         const v = entry.vehicle;
         const ai = isAiName(v.name);
@@ -1463,11 +1483,20 @@ export default defineComponent({
               class="live-battle__crow-stamp"
             />
           ) : null;
+        /** The composition seals this row carries — the compact row presses
+         *  only the highest one inline; the full card lists them ALL on its
+         *  own identity line (so the compact render does no work for it). */
+        const compKinds = full ? compSealKindsOf(v.name, stamp) : [];
+        /** Tier numeral for the full card's ship line (the compact row leaves
+         *  the tier to the ship-meta strip). */
+        const tier = full
+          ? tierRoman(v.shipId != null ? shipTierOf(v.shipId) : null) ?? ""
+          : "";
         // The identity line: nick / cross-realm chip / clan tag / marker dot
-        // / bot tag — the shared voice both densities render. The secondary
-        // seal (成分章) presses BESIDE the nickname (the four-char wording
-        // reads as part of the identity line, not as a stat-column ornament
-        // — user feedback): the single highest tier, in both densities.
+        // / bot tag — the shared voice both densities render. The compact row
+        // presses its single highest 成分章 BESIDE the nickname (the four-char
+        // wording reads as part of the identity line); the full card moves
+        // every composition seal onto its own line (see fullIdentity below).
         const nameLine = (
           <span class="live-battle__crow-name">
             {/* Division tag (组队标签): the queued-division letter leads the
@@ -1511,7 +1540,7 @@ export default defineComponent({
               <span class="live-battle__crow-clan">[{st.clanTag}]</span>
             ) : null}
             {ai ? <AppTag tone="default" pill={false}>{t("replay.bot")}</AppTag> : null}
-            {highestStampTag(v.name, stamp)}
+            {full ? null : highestStampTag(v.name, stamp)}
           </span>
         );
         const identity = (
@@ -1520,7 +1549,71 @@ export default defineComponent({
             <span class="live-battle__crow-ship">{shipName}</span>
           </>
         );
-        const content = (
+        /** The configured stat columns — the full card's side grid takes
+         *  their ch track widths inline (the header grid's own specs). */
+        const cols = rosterColumns();
+        /** The shared per-scope stat cells — the aligned columns both
+         *  densities put on the header's tracks (compact: the row's own flex
+         *  line; full: the right block's data row). */
+        const statCells = rosterStatCols(
+          v.name,
+          nameStats,
+          Boolean(st?.loading || (shipScopeOn.value && st?.shipsLoading)),
+          (stat, scope) => colViewOf(scope, stat, v.shipId),
+        );
+        /** Full-card identity stack — the three lines the compact hint cannot
+         *  show: clan-tagged nick, every composition seal, tier + ship. */
+        const fullIdentity = !full ? null : (
+          <span class="live-battle__crow-main">
+            {nameLine}
+            {compKinds.length > 0 ? (
+              <span class="live-battle__crow-tags">
+                {compKinds.map((kind) => (
+                  <StampTag kind={kind} />
+                ))}
+              </span>
+            ) : null}
+            <span class="live-battle__crow-shipline">
+              <span class="live-battle__crow-tier">{tier}</span>
+              <span class="live-battle__crow-ship">{shipName}</span>
+            </span>
+          </span>
+        );
+        const content = full ? (
+          <>
+            {/* Full card (the post-battle full card's shape): the three
+                identity lines on the left, then a right block stacking the
+                compact row's aligned stat line over the LiveShipMeta strip's
+                two ship lines, then the reserved career-seal slot. */}
+            {fullIdentity}
+            <span
+              class={[
+                "live-battle__crow-side",
+                // No configured columns: the header falls back to the bare
+                // team title, so the side is just the ship strip and takes
+                // the free width instead of a fixed stat band.
+                { "live-battle__crow-side--plain": cols.length === 0 },
+              ]}
+              style={
+                cols.length > 0
+                  ? { gridTemplateColumns: cols.map((c) => c.width).join(" ") }
+                  : undefined
+              }
+            >
+              {statCells}
+              {v.shipId != null ? (
+                <LiveShipMeta
+                  shipId={v.shipId}
+                  ally={v.relation <= 1}
+                  build={buildViewFor(v)}
+                />
+              ) : null}
+            </span>
+            {sealSlotShown.value ? (
+              <span class="live-battle__crow-stampslot">{seal}</span>
+            ) : null}
+          </>
+        ) : (
           <>
             <span class="live-battle__crow-ico">
               {v.shipId != null ? (
@@ -1539,30 +1632,8 @@ export default defineComponent({
                 />
               ) : null}
             </span>
-            {full ? (
-              // Full density: the compact row plus the ship-meta strip in the
-              // MIDDLE — the identity stack pins to its 10rem track, the strip
-              // fills (and clips inside) the remaining middle ground, and the
-              // stat columns stay exactly where the compact row puts them.
-              <span class="live-battle__crow-main live-battle__crow-main--split">
-                <span class="live-battle__crow-id">{identity}</span>
-                {v.shipId != null ? (
-                  <LiveShipMeta
-                    shipId={v.shipId}
-                    ally={v.relation <= 1}
-                    build={buildViewFor(v)}
-                  />
-                ) : null}
-              </span>
-            ) : (
-              <span class="live-battle__crow-main">{identity}</span>
-            )}
-            {rosterStatCols(
-              v.name,
-              nameStats,
-              Boolean(st?.loading || (shipScopeOn.value && st?.shipsLoading)),
-              (stat, scope) => colViewOf(scope, stat, v.shipId),
-            )}
+            <span class="live-battle__crow-main">{identity}</span>
+            {statCells}
             {/* Seal slot reserved whenever seals show at all (PR + settings
                 master) — the matrix's own alignment rule: rows without a
                 seal (bots, misses, verdict holds) keep the stat columns at
@@ -1576,6 +1647,7 @@ export default defineComponent({
         );
         const classes = [
           "live-battle__crow",
+          { "live-battle__crow--full": full },
           { "live-battle__crow--link": !ai },
           { "live-battle__crow--sunk": entry.sunk },
         ];
@@ -1684,10 +1756,9 @@ export default defineComponent({
               {t("replay.live.refreshStats")}
             </AppTag>
             {/* Roster density: the compact row (the post-battle matrix's
-                look) ⇄ the same row with the ship-meta strip added in the
-                middle (persisted stats pref). Icon and label both show the
-                mode a click switches TO — Rows2 = the compact row, Rows3 =
-                the full row with the middle strip. */}
+                look) ⇄ the post-battle-style full card (persisted stats
+                pref). Icon and label both show the mode a click switches TO
+                — Rows2 = the compact row, Rows3 = the full card. */}
             <AppTag
               interactive
               face="outline"
