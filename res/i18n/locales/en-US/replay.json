@@ -692,7 +692,8 @@
     "aiNotice": "This is an AI diagnosis, not a verdict on the player's long-term performance — for reference only",
     "aiVersion": "WoWSP AI {version} · weights trained {date}",
     "replayHash": "Replay hash (last six)",
-    "survivedAtEnd": "Alive at battle end"
+    "survivedAtEnd": "Alive at battle end",
+    "replayHashHint": "SHA-256 fingerprint · Click to copy the full hash"
   },
   "detail": {
     "title": "Battle detail"

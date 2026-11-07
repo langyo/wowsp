@@ -297,13 +297,17 @@ describe("StaticReportPanel wiring", () => {
     // No dog tag in the fixture: the team-tinted initial plate stands in for
     // the emblem (a bare PlayerBadge disc read as an unfinished download).
     expect(wrapper.find(".srp-picker__avatar-initial").text()).toBe("M");
-    // Battle provenance: the header's own map chip, the mode tag, the start
-    // time, the green at-end fate, and the replay fingerprint tail.
+    // Battle provenance: the header's own map chip, the mode tag, the green
+    // at-end fate, and the telemetry TAGS (start / fingerprint / duration —
+    // house HkCopyBadge pills, interactive only inside WoWSP).
     expect(wrapper.find(".srp-head__meta .map-tag").exists()).toBe(true);
     expect(wrapper.find(".srp-head__mode").text()).toBe("Domination");
-    expect(wrapper.text()).toContain("2026-11-06 12:34");
+    expect(wrapper.find(".srp-head__time").text()).toBe("2026-11-06 12:34");
     expect(wrapper.text()).toContain("replay.report.survivedAtEnd");
-    expect(wrapper.find(".srp-head__hash").text()).toBe("#abcdef");
+    const hashTag = wrapper.find(".srp-head__hash");
+    expect(hashTag.text()).toBe("#abcdef");
+    expect(hashTag.attributes("role")).toBe("button");
+    expect(wrapper.find(".srp-head__duration").exists()).toBe(true);
     // The WATERMARK is a share artifact: the interactive window must not
     // grow a footer band (only the copied long image carries it).
     expect(wrapper.find(".shot-footer").exists()).toBe(false);
@@ -346,6 +350,7 @@ describe("StaticReportPanel wiring", () => {
       footer: false,
       aiNote: "",
       aiMeta: "",
+      hashRole: "",
     };
     vi.mocked(toBlob).mockImplementation((async (node: HTMLElement) => {
       seen.callouts = node.querySelectorAll(".srp-tl__callout").length;
@@ -356,6 +361,10 @@ describe("StaticReportPanel wiring", () => {
       seen.staticPlate = node
         .querySelector(".srp-picker__trigger")
         ?.classList.contains("srp-picker__trigger--static") ?? false;
+      // The telemetry tags are INERT in the share frame (a copied image is
+      // not interactive): no button role on the fingerprint pill.
+      seen.hashRole =
+        node.querySelector(".srp-head__hash")?.getAttribute("role") ?? "";
       // The cloned share frame carries the watermark + AI extras...
       seen.footer = node.querySelector(".shot-footer") != null;
       seen.aiNote = node.querySelector(".shot-footer__note")?.textContent ?? "";
@@ -372,6 +381,7 @@ describe("StaticReportPanel wiring", () => {
     expect(seen.hint).toBe(0);
     expect(seen.height).toBe(2400);
     expect(seen.staticPlate).toBe(true);
+    expect(seen.hashRole).toBe("");
     // ...while the window showed none (see the interactive test above).
     expect(seen.footer).toBe(true);
     expect(seen.aiNote).toBe("replay.report.aiNotice");

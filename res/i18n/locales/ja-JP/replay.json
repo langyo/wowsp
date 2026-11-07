@@ -692,7 +692,8 @@
     "aiNotice": "この結果は AI による診断であり、プレイヤーの長期的な実力ではありません。参考程度にご覧ください",
     "aiVersion": "WoWSP AI {version} · 重み学習 {date}",
     "replayHash": "リプレイハッシュ（末尾6桁）",
-    "survivedAtEnd": "戦闘終了まで生存"
+    "survivedAtEnd": "戦闘終了まで生存",
+    "replayHashHint": "SHA-256 チェックサム · クリックで完全なハッシュをコピー"
   },
   "detail": {
     "title": "戦闘詳細"

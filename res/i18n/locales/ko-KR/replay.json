@@ -692,7 +692,8 @@
     "aiNotice": "이 결과는 AI 진단 결과로, 플레이어의 장기 실력을 대변하지 않습니다. 참고용입니다",
     "aiVersion": "WoWSP AI {version} · 가중치 학습 {date}",
     "replayHash": "리플레이 해시(끝 6자리)",
-    "survivedAtEnd": "전투 종료까지 생존"
+    "survivedAtEnd": "전투 종료까지 생존",
+    "replayHashHint": "SHA-256 체크섬 · 클릭하여 전체 해시 복사"
   },
   "detail": {
     "title": "전투 상세"

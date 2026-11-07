@@ -90,7 +90,7 @@ import {
   shipNameFromOfflineDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
-import { gameTabRowCompare, shipTierOf } from "@/utils/shipClass";
+import { gameTabRowCompare, shipNameOf, shipTierOf } from "@/utils/shipClass";
 import { realmUsesShipNameOrder } from "@/utils/realms";
 import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
 import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
@@ -2183,9 +2183,15 @@ export default defineComponent({
           clanTag: reportRosterStats.value.get(vehicle.name)?.clanTag ?? null,
           dogTag: reportRosterStats.value.get(vehicle.name)?.dogTag ?? null,
           shipType: ship?.type ?? null,
+          // The encyclopedia name follows 素材翻译; when its lookup misses
+          // (unloaded realm / id outside the loaded list) the BAKED ship
+          // database still answers in the configured language before the
+          // replay's raw client name is used — the picker must never mix
+          // languages (2026-11-07 review).
           shipName: ship
             ? encyclopedia.shipDisplayName(ship)
-            : (vehicle.shipName ?? null),
+            : shipNameOf(vehicle.shipId ?? -1, dataLanguage.value) ||
+              (vehicle.shipName ?? null),
           tier: ship?.tier ?? null,
         });
       }
