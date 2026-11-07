@@ -4,10 +4,11 @@
  * preload the same URLs here).
  *
  * The art is the game's battle-HUD marker set
- * (`/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`), vectorised
- * into SVG by `scripts/model_convert/trace_class_icons.py` so it renders
- * crisp at every size and DPR (the 27 px bitmaps upscaled into jagged
- * stair-steps at modern densities — user feedback).
+ * (`/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`), authored as
+ * GEOMETRY by `scripts/model_convert/ship_class_glyphs.py` (a rounded hull,
+ * a bow wedge, the speed slashes) so it renders crisp at every size and DPR
+ * — no bitmap tracing: the first vector pass traced the 27 px markers and
+ * baked their stair-steps into the paths (2026-11-07 review).
  *
  * The `outline` variant is a plate-free redraw of the white markers
  * (traced from their line ink): the ship-class hint cards tint it to the
