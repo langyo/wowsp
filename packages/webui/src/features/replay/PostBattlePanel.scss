@@ -808,15 +808,15 @@
      min-widths) are font-relative, so header and cells shrink TOGETHER
      and stay aligned — and the identity stack reclaims ~4ch per column
      (the shipped 4-column default squeezed the nickname to a sliver at
-     393px). Scoped to the results sheet's body so the live panel's own
+     393px). Scoped to the results sheet's window so the live panel's own
      roster and the markers section rows keep their geometry. */
-  .replay-view__modal-body .replay-view__postbattle-col-title--agg {
+  .replay-view__results-frame .replay-view__postbattle-col-title--agg {
     font-size: var(--text-2xs);
   }
 
-  .replay-view__modal-body .replay-view__postbattle-cell-stat,
-  .replay-view__modal-body .replay-view__postbattle-cell-xp,
-  .replay-view__modal-body .replay-view__postbattle-cell-ai {
+  .replay-view__results-frame .replay-view__postbattle-cell-stat,
+  .replay-view__results-frame .replay-view__postbattle-cell-xp,
+  .replay-view__results-frame .replay-view__postbattle-cell-ai {
     font-size: var(--text-2xs);
   }
 

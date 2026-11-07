@@ -336,22 +336,45 @@
      the hand-rolled .replay-view__modal overlay — backdrop, surface,
      custom head, and the phone sheet keyframes — died with the
      migration). The contentClass frames below give each window its
-     reading height; HkModal caps the content at its own 70vh. */
+     reading height; HkModal caps the body at its own 70vh. */
   &__results-frame {
     height: min(70vh, 820px);
     display: flex;
     flex-direction: column;
+
+    /* The results panel mounts straight into HkModal's body: the body's own
+       scroller owns the scroll now (the nested HkScrollContainer and its
+       inner wrapper retired — they stacked a second gutter on HkModal's
+       1.5rem body inset, leaving a dead band above the battle head;
+       2026-11-07 report). The matrix is data-first, so desktop tightens the
+       body inset: 8px under the header divider and a fixed 16px band below
+       the scrollport (a scrolled row never ends flush on the window's
+       bottom edge); the sides keep the standard 24px so the matrix aligns
+       with the title. Phone sheets keep HkModal's own gutters + safe area. */
+    .hk-modal-body {
+      @media (min-width: 768px) {
+        padding: 0.5rem 0 1rem;
+        --hk-scroll-pad-top: 0;
+        --hk-scroll-pad-bottom: 1rem;
+      }
+    }
+
+    /* HkModal's body is the scrollport now: keep the results scroll from
+       chaining to the page behind it (the retired HkScrollContainer carried
+       this contract; the desktop shell never scrolls, so it only matters on
+       the phone sheet). */
+    .hk-modal-body-scroll {
+      overscroll-behavior: contain;
+    }
   }
-  /* Results-body scroller: the hikari container owns the scrollbar, so
-     the body's padding moved to the inner wrapper (it scrolls with the
-     content). The chat body below keeps the base class but stays a plain
-     non-scrolling element. */
+  /* Chat window's body: a plain non-scrolling wrapper (the chat list runs
+     its own hikari scroller below the pinned timeline). */
   &__modal-body {
     /* Flex child of a max-height column: without min-height:0 it refuses
        to shrink and the panel's overflow:hidden silently clips it. */
     flex: 1 1 auto;
     min-height: 0;
-    /* Never chain the results body's scroll to the page behind it (phone
+    /* Never chain the body's scroll to the page behind it (phone
        sheet-family containment; the desktop shell never scrolls, so this
        is a no-op there) — the scrollport is the container's viewport. */
     & > .hk-scroll-container-viewport {
@@ -360,10 +383,6 @@
     /* No --hk-scroll-pad-top here: the chat body's timeline pin rides
        strategy="none" (see ChatLogPanel), so no pin consumes a whitespace
        contract — the body's own padding IS the gutter above the header. */
-  }
-
-  &__modal-body__inner {
-    padding: 0.6rem 1rem;
   }
 
   /* Chat log modal — narrower than the results panel. Top: mini timeline
@@ -953,15 +972,10 @@
     /* (the overlays' bottom-sheet docking moved to HkModal's own phone
        sheet — 2026-11-03; the gutters below are content, kept.) */
 
-    /* Sheet gutters live on the inner wrapper now (padding on the root
-       would stack with the inner's desktop inset); the chat body restates
-       at the same (0,2,0) specificity as its desktop rule to keep its own
-       gutter — and the safe-area term — on the sheet. Both top pads stay
-       equal (0.5rem) by convention. */
-    &__modal-body__inner {
-      padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    }
-
+    /* The results sheet now mounts straight into HkModal's body, which
+       carries the phone gutters (1rem + safe-area) by itself — only the
+       chat body still restates its own sheet gutter (the safe-area term
+       included). Both top pads stay equal (0.5rem) by convention. */
     &__chat-panel .replay-view__modal-body {
       padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
     }
