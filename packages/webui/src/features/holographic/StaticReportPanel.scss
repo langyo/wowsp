@@ -118,6 +118,32 @@
     flex-wrap: wrap;
     font-size: 11px;
     color: var(--srp-dim);
+
+    /* One pill for the whole provenance row (2026-11-08 review: the row
+       mixed three chip families whose stock boxes disagree — the map tag
+       rode a 1.5 line height and wider padding (~20px tall) beside
+       18px HkTag/HkBadge faces, AppTag's HkTag face rendered weight 500
+       against HkBadge's 600, and the time badge was the only sans face
+       among mono telemetry). Every chip shares one box — a 20px pill at
+       --text-2xs/600 with one inline padding — so the exported long image
+       reads a single even chip run. The direct-child floor stretches the
+       short faces up to the map tag's height; the family selectors below
+       carry the typography so they win the cascade over hikari's own
+       rules regardless of sheet order. */
+    > * {
+      min-height: 20px;
+      border-radius: var(--radius-full);
+    }
+
+    > .hk-tag,
+    > .hk-badge,
+    > .map-tag {
+      font-size: var(--text-2xs);
+      line-height: 1.4;
+      font-weight: 600;
+      padding-block: 1px;
+      padding-inline: 8px;
+    }
   }
 
   &__hash {
