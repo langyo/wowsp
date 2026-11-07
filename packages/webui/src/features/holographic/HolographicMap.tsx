@@ -40,20 +40,23 @@ import {
   AI_FOCUS_PLANE_DIST,
   AI_FOCUS_SHIP_DIST,
   applyFollowPose,
-  clampFollowDist,
-  FOLLOW_DIST_DEFAULT,
+  followFramingCleared,
+  followFramingFor,
+  followFramingZoomed,
   FOLLOW_DIST_MAX,
   FOLLOW_DIST_MIN,
-  PLANE_FOLLOW_DIST_DEFAULT,
+  initialFollowFraming,
 } from "./followCamera";
 import { activeSquadronOf, anchorFollowPose, formationFollowPose } from "./followTargets";
 import {
   cameraModeAt,
   isPlaneCameraMode,
   nearestPlaneCameraWindow,
+  planeCameraJumpTarget,
   type RecordedCameraMode,
 } from "./cameraModes";
 import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
+import { planeTrailExpiry } from "./planeFormation";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
 import { activeWards, planeSmoothPosAt, torpedoPosAt } from "./minimapFx";
@@ -469,22 +472,13 @@ export default defineComponent({
     // other frame re-stamps the remembered distance from scratch, exactly
     // like the old hard stamp — drift-free by construction, and the zoom
     // PERSISTS across re-selections instead of snapping back to stock.
-    let followDist = FOLLOW_DIST_DEFAULT;
-    /** The current followDist is a ONE-SHOT preset (AI-report framing / an
-     *  aircraft pick), not the user's remembered wheel zoom: the next manual
-     *  target pick resets to that target kind's stock distance instead of
-     *  carrying the preset into unrelated selections. */
-    let followDistFocus = false;
-    /** Drop a one-shot focus preset, restoring the stock framing for the kind
-     *  that owned it: clearing the target (empty-space click / replay switch)
-     *  must not leave the preset behind for the next same-kind pick. */
-    function clearFollowDistPreset(aircraft: boolean): void {
-      if (!followDistFocus) return;
-      followDist = clampFollowDist(
-        aircraft ? PLANE_FOLLOW_DIST_DEFAULT : FOLLOW_DIST_DEFAULT,
-      );
-      followDistFocus = false;
-    }
+    /** Remembered chase framing — distance, a possibly-pending one-shot
+     *  preset (AI-report / explicit distance) and the last target kind. The
+     *  state machine lives in followCamera.ts: a kind switch or pending preset
+     *  resets to stock, the user's wheel zoom otherwise survives, and the kind
+     *  memory outlives a cleared target so plane → gap → clear → ship still
+     *  resets to the ship stock. */
+    let followFraming = initialFollowFraming();
     /** A wheel/pinch landed since the last adoption. */
     let dollySeen = false;
     // The orbit radius bounds in force when follow began (fitCamera's
@@ -532,10 +526,9 @@ export default defineComponent({
             followStockDist = null;
           }
         }
-        const wasAircraft = followAircraft.value;
         selectedEntityId.value = null;
         followAircraft.value = false;
-        clearFollowDistPreset(wasAircraft);
+        followFraming = followFramingCleared(followFraming);
       } else {
         // Entering the chase: forget wheel events that belonged to the free
         // camera — the first follow frame stamps the remembered follow
@@ -570,17 +563,22 @@ export default defineComponent({
     /** Jump to the nearest recorded aircraft-camera segment and hand the view
      *  back to the recorder's camera — the replay itself already followed the
      *  planes then, so no synthetic follow target is needed for this route.
-     *  A playhead already inside the segment only switches the view (no
-     *  rewind); outside it, seek to the segment start. */
+     *  A playhead whose 0x27 mode is ALREADY an aircraft camera only switches
+     *  the view (no rewind); otherwise seek to the segment start. The test
+     *  reads the recorded mode rather than the window boundary because the
+     *  last window's end is synthesized from the replay duration and can equal
+     *  a playhead that is still in followingPlanes. */
     function jumpToPlaneCamera(): void {
       // 0x27 mode segments annotate the recorder's OWN camera (0x25 frames);
       // without frames there is no original view to hand the playhead to.
       if (props.cameraFrames.length === 0) return;
-      const win = nearestPlaneCameraWindow(props.cameraModes, duration.value, current.value);
-      if (!win) return;
-      if (current.value < win.start || current.value > win.end) {
-        seekBattleTime(win.start);
-      }
+      const target = planeCameraJumpTarget(
+        props.cameraModes,
+        duration.value,
+        current.value,
+      );
+      if (!target) return;
+      if (target.seekTo != null) seekBattleTime(target.seekTo);
       cameraMode.value = "original";
       cameraMenuOpen.value = false;
       api.value?.requestRender();
@@ -647,9 +645,8 @@ export default defineComponent({
     // follow the camera is not performing.
     watch(selectedEntityId, (id) => {
       if (id != null) return;
-      const wasAircraft = followAircraft.value;
       followAircraft.value = false;
-      clearFollowDistPreset(wasAircraft);
+      followFraming = followFramingCleared(followFraming);
       if (cameraMode.value === "follow") cameraMode.value = "free";
     });
     // Hold-RMB free look inside follow mode: while held, followSelected
@@ -1852,9 +1849,12 @@ export default defineComponent({
         if (seenPlanes.has(planeId)) continue;
         const samples = trail.samples;
         if (samples.length === 0) continue;
-        // Same visibility window as the painter: from the first sample to
-        // five seconds past the last one (the trail lifespan cap).
-        if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
+        // Same visibility window as the painter: the shared plane trail
+        // expiry (grace capped by the minimap remove event).
+        if (t < samples[0].time || t > planeTrailExpiry(
+          samples[samples.length - 1].time,
+          ctx.minimapTrailEnd.get(planeId),
+        )) continue;
         const pose = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
         if (!pose) continue;
         seenPlanes.add(planeId);
@@ -2214,10 +2214,12 @@ export default defineComponent({
       // can never ride the target's wake.
       if (dollySeen) {
         dollySeen = false;
-        followDist = clampFollowDist(cam.position.distanceTo(pos));
         // A wheel/pinch zoom is the user's own framing: it supersedes a
-        // one-shot AI/aircraft preset, so later same-kind picks keep it.
-        followDistFocus = false;
+        // pending AI/aircraft preset (the helper keeps the kind memory).
+        followFraming = followFramingZoomed(
+          followFraming,
+          cam.position.distanceTo(pos),
+        );
       }
       // Held-RMB free look: keep the orbit pivot glued to the (moving) target
       // and hand the camera pose to OrbitControls until the button releases.
@@ -2230,7 +2232,7 @@ export default defineComponent({
       // Chase pose at the current distance (the solver bakes the stock
       // 22-up-per-55-back pitch into the axis, so zooming never flattens
       // onto the horizon); the pivot stays glued to the target.
-      applyFollowPose(cam, pos, yaw, followDist);
+      applyFollowPose(cam, pos, yaw, followFraming.dist);
       ctrl.target.copy(pos);
     }
 
@@ -2279,31 +2281,22 @@ export default defineComponent({
       entityId: number | null,
       opts: { aircraft?: boolean; distance?: number } = {},
     ) {
-      const wasAircraft = followAircraft.value;
       selectedEntityId.value = entityId;
       followAircraft.value = entityId != null && opts.aircraft === true;
       // Clicking a target switches to chase mode; clicking empty space
       // returns to the free orbit camera.
       cameraMode.value = entityId != null ? "follow" : "free";
       if (entityId != null) {
-        // The user's remembered wheel zoom survives same-kind picks; a
-        // target-kind switch — or a preset from the AI jump / aircraft row —
-        // starts that target's stock distance instead of leaking the preset
-        // into unrelated selections.
-        if (opts.distance != null) {
-          followDist = clampFollowDist(opts.distance);
-          followDistFocus = true;
-        } else if (followDistFocus || wasAircraft !== followAircraft.value) {
-          followDist = clampFollowDist(
-            followAircraft.value ? PLANE_FOLLOW_DIST_DEFAULT : FOLLOW_DIST_DEFAULT,
-          );
-          followDistFocus = false;
-        }
+        followFraming = followFramingFor(
+          followFraming,
+          followAircraft.value ? "aircraft" : "ship",
+          opts.distance,
+        );
         dollySeen = false;
       } else {
         // Clearing the target must not leave an AI/aircraft preset behind for
         // the next manual pick.
-        clearFollowDistPreset(wasAircraft);
+        followFraming = followFramingCleared(followFraming);
       }
       // Following a real target hands RMB to the free-look orbit (the
       // per-frame assignment in followSelected re-asserts it; this covers the
@@ -2473,10 +2466,9 @@ export default defineComponent({
         // The chase target belongs to ONE replay too (entity ids repeat):
         // drop the follow, the aircraft intent and any one-shot framing
         // instead of carrying a stale target into the next battle.
-        const wasAircraft = followAircraft.value;
         selectedEntityId.value = null;
         followAircraft.value = false;
-        clearFollowDistPreset(wasAircraft);
+        followFraming = followFramingCleared(followFraming);
         if (cameraMode.value === "follow") cameraMode.value = "free";
         if (ready.value) {
           current.value = 0;

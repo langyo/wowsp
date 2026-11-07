@@ -5,6 +5,7 @@ import {
   cameraModeIdAt,
   isPlaneCameraMode,
   nearestPlaneCameraWindow,
+  planeCameraJumpTarget,
   planeCameraWindows,
   recordedCameraMode,
   type RecordedCameraMode,
@@ -116,6 +117,32 @@ describe("cameraModeAt", () => {
   });
 });
 
+describe("planeCameraJumpTarget", () => {
+  it("answers null when the replay never recorded an aircraft camera", () => {
+    expect(planeCameraJumpTarget(undefined, 100, 10)).toBeNull();
+    expect(planeCameraJumpTarget([s(10, 8)], 100, 10)).toBeNull();
+  });
+
+  it("only switches the view while the recorded mode is already an aircraft camera", () => {
+    const stream = [s(10, 6), s(30, 8)];
+    expect(planeCameraJumpTarget(stream, 100, 15)).toEqual({ seekTo: null });
+    // The synthesized last-window end equals the replay duration while the
+    // recorded mode can still read followingPlanes → no rewind there.
+    expect(planeCameraJumpTarget([s(10, 6)], 42, 42)).toEqual({ seekTo: null });
+  });
+
+  it("seeks to the nearest segment start outside the recorded aircraft camera", () => {
+    // At the exclusive end the closing 0x27 sample already left the aircraft
+    // camera, so the press seeks back to that segment's start.
+    expect(planeCameraJumpTarget([s(10, 6), s(30, 8)], 100, 30)).toEqual({
+      seekTo: 10,
+    });
+    expect(planeCameraJumpTarget([s(10, 6), s(30, 8)], 100, 5)).toEqual({
+      seekTo: 10,
+    });
+  });
+});
+
 describe("planeCameraWindows", () => {
   it("returns no windows for an empty stream", () => {
     expect(planeCameraWindows(undefined, 100)).toEqual([]);
@@ -126,6 +153,10 @@ describe("planeCameraWindows", () => {
     expect(planeCameraWindows([s(10, 6)], 42)).toEqual([
       { start: 10, end: 42, id: 6 },
     ]);
+    // The synthesized end still reads followingPlanes at cameraModeAt: the
+    // jump path keys off the recorded mode, not the window boundary, so a
+    // playhead at the replay end is not rewound.
+    expect(cameraModeAt([s(10, 6)], 42)).toBe("followingPlanes");
   });
 
   it("clips a window whose closing sample lands past the replay duration", () => {

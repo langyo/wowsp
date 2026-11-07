@@ -21,7 +21,7 @@ import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./
 import { isAiName, isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
-import { formationOffsets, PLANE_TRAIL_GRACE_S } from "./planeFormation";
+import { formationOffsets, planeTrailExpiry } from "./planeFormation";
 import { updateStormZone } from "./weatherScene";
 import { syncMoveAdvisories } from "./moveAdvisories";
 import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
@@ -563,10 +563,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const s = sampleOf(trail.samples);
       if (!s) continue;
       const born = trail.samples[0].time;
-      const removed = ctx.minimapTrailEnd.get(planeId);
-      const expiry = Math.min(
-        trail.samples[trail.samples.length - 1].time + PLANE_TRAIL_GRACE_S,
-        removed ?? Infinity,
+      const expiry = planeTrailExpiry(
+        trail.samples[trail.samples.length - 1].time,
+        ctx.minimapTrailEnd.get(planeId),
       );
       if (t >= born && t <= expiry) {
         formationAnchor.set(planeId, { s, born, expiry });
@@ -853,13 +852,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         const first = trail.samples[0].time;
         const last = trail.samples[trail.samples.length - 1].time;
         // Squadron is gone one grace window after its last sample — no
-        // lingering labels (same constant as the anchor / follow target) —
-        // but never past the minimap remove event (early landing / shot
-        // down), which can precede the trail's end.
-        const expiry = Math.min(
-          last + PLANE_TRAIL_GRACE_S,
-          ctx.minimapTrailEnd.get(planeId) ?? Infinity,
-        );
+        // lingering labels (the SAME planeTrailExpiry every aircraft surface
+        // reads, including the minimap remove event).
+        const expiry = planeTrailExpiry(last, ctx.minimapTrailEnd.get(planeId));
         if (t >= first && t <= expiry) {
           visible = true;
           break;

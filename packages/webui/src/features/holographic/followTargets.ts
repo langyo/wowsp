@@ -14,7 +14,7 @@
 import type * as THREE from "three";
 import type { SquadronPlane } from "@/api";
 import { samplesUpTo } from "./trajectoryMath";
-import { PLANE_TRAIL_GRACE_S } from "./planeFormation";
+import { planeTrailExpiry } from "./planeFormation";
 
 /** One aircraft's sample trail, keyed by the composite plane id
  *  (planeId * 16 + formation index) — the shape of MapInternals.planeTrails. */
@@ -27,8 +27,8 @@ export interface PlaneTrailLike {
  *
  *  Only the formation's index-0 anchor trail speaks for the squadron
  *  (id % 16 === 0); the wingmen trails share its lifetime. A squadron is
- *  alive from its launch (first sample) to five seconds after its last
- *  observed sample — but never past the minimap remove event (landed / shot
+ *  alive from its launch (first sample) to planeTrailExpiry(last sample) —
+ *  the shared grace window capped by the minimap remove event (landed / shot
  *  down / recalled) when the replay recorded one, so a squadron that is
  *  removed early disappears on time even though its trail keeps extending.
  *
@@ -57,10 +57,10 @@ export function activeSquadronOf(
     // landed, so the last sample at or before t has to exist.
     if (samplesUpTo(samples, t) === 0) continue;
     const born = samples[0].time;
-    // Alive until ~5 s after the last sample or the remove event, whichever
-    // comes first (removeAt precedes the trail's end when shot down).
+    // Alive until the shared trail expiry (grace window capped by the
+    // remove event — removeAt precedes the trail's end when shot down).
     const last = samples[samples.length - 1].time;
-    const expiry = Math.min(last + PLANE_TRAIL_GRACE_S, removeAt.get(planeId) ?? Infinity);
+    const expiry = planeTrailExpiry(last, removeAt.get(planeId));
     if (born > t || t > expiry) continue;
     if (born > bestBorn) {
       bestBorn = born;
