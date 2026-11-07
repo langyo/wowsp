@@ -9,6 +9,7 @@
  */
 import { drawShipGlyph } from "./shipGlyph";
 import { planeIcon } from "./planeIcons";
+import { planeTrailExpiry } from "./planeFormation";
 import { sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
 import { frustumCorners } from "./sceneUtils";
@@ -722,9 +723,12 @@ export function drawMinimap(ctx: MapInternals) {
       if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
       const samples = trail.samples;
       if (samples.length === 0) continue;
-      // Visibility window: appear with the first sample, linger briefly
-      // after the last one (then the formation is gone).
-      if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
+      // Visibility window: appear with the first sample, linger until the
+      // shared trail expiry (grace capped by the minimap remove event).
+      if (t < samples[0].time || t > planeTrailExpiry(
+        samples[samples.length - 1].time,
+        ctx.minimapTrailEnd.get(planeId),
+      )) continue;
       const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
       if (s == null) continue;
       drawn.add(planeId);
@@ -1068,8 +1072,11 @@ export function drawMinimap(ctx: MapInternals) {
           if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
           const samples = trail.samples;
           if (samples.length === 0) continue;
-          // Same visibility window as the thumb pass.
-          if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
+          // Same visibility window as the thumb pass (shared expiry).
+          if (t < samples[0].time || t > planeTrailExpiry(
+            samples[samples.length - 1].time,
+            ctx.minimapTrailEnd.get(planeId),
+          )) continue;
           const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
           if (s == null) continue;
           drawn.add(planeId);

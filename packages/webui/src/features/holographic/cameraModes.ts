@@ -182,3 +182,22 @@ export function nearestPlaneCameraWindow(
   }
   return best;
 }
+
+/** What a "jump to the nearest aircraft camera" press should do at playhead
+ *  `t`. Null when the replay recorded no aircraft-camera segment at all;
+ *  otherwise the seek target — null when `t` already sits in a recorded
+ *  aircraft camera (only the view switches), or the nearest segment's start
+ *  when it does not. The recorded 0x27 MODE decides, not the window edge: the
+ *  last window's end is synthesized from the replay duration and can still
+ *  read followingPlanes there, and an exclusive ending sample already left
+ *  the aircraft camera at the boundary. */
+export function planeCameraJumpTarget(
+  samples: HpSample[] | undefined,
+  duration: number,
+  t: number,
+): { seekTo: number | null } | null {
+  const win = nearestPlaneCameraWindow(samples, duration, t);
+  if (!win) return null;
+  if (isPlaneCameraMode(cameraModeAt(samples, t))) return { seekTo: null };
+  return { seekTo: win.start };
+}

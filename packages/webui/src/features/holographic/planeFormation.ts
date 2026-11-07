@@ -1,12 +1,15 @@
 /**
- * Squadron formation layout math for the holographic map's aircraft layer.
+ * Squadron formation math + the shared aircraft-trail lifetime for the
+ * holographic map's aircraft layer.
  *
- * Three pure helpers, extracted verbatim from HolographicMap.tsx: the
+ * The layout helpers were extracted verbatim from HolographicMap.tsx: the
  * per-plane offsets inside ONE flight group, the filled-wedge layout over
  * flight GROUPS, and the greedy clustering that infers a squadron's group
- * layout from its launch positions. No three.js / DOM / reactive state —
- * consumed by rebuildActors (model placement) and the per-frame formation
- * orbit in updateMarkersAt.
+ * layout from its launch positions. planeTrailExpiry pins the ONE lifetime
+ * rule every aircraft surface reads (3D anchors, follow camera, 2D painter,
+ * minimap hover). No three.js / DOM / reactive state — consumed by
+ * rebuildActors (model placement), updateMarkersAt (formation orbit) and the
+ * follow/painter paths.
  */
 import type { SquadronPlane } from "@/api";
 
@@ -16,6 +19,19 @@ import type { SquadronPlane } from "@/api";
  *  and the follow-camera target resolver (followTargets), so the two never
  *  drift apart. */
 export const PLANE_TRAIL_GRACE_S = 5;
+
+/** Last time a formation trail is still visible/followable: one grace window
+ *  after its last observed sample, capped by the minimap remove event
+ *  (landed / shot down / recalled). Shared by the 3D anchor pass, the camera
+ *  target resolver, the 2D painter and the minimap hover pick, so every
+ *  aircraft surface disappears on the same tick instead of the 2D side
+ *  lingering for its own hard-coded window. */
+export function planeTrailExpiry(
+  lastSampleTime: number,
+  removeAt?: number,
+): number {
+  return Math.min(lastSampleTime + PLANE_TRAIL_GRACE_S, removeAt ?? Infinity);
+}
 
 /** Per-plane local offsets inside ONE flight group (the group's own wedge):
  *  1 → single, 2 → side by side, 3 → arrow (1 lead + 2 wing), 4+ → 2 up front

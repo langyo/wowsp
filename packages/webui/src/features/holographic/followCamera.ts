@@ -42,6 +42,74 @@ export function clampFollowDist(dist: number): number {
   return THREE.MathUtils.clamp(dist, FOLLOW_DIST_MIN, FOLLOW_DIST_MAX);
 }
 
+/** Which kind of follow target the framing state belongs to. */
+export type FollowTargetKind = "ship" | "aircraft";
+
+/** Remembered follow framing across target picks: the chase distance (stock,
+ *  a pending one-shot preset, or the user's wheel zoom), whether that distance
+ *  is still a pending preset, and the kind of the LAST follow target. The kind
+ *  memory outlives clearing the target, so plane → hull-gap → empty-space
+ *  clear → ship still resets to the ship stock instead of keeping the plane
+ *  range. */
+export interface FollowFramingState {
+  dist: number;
+  preset: boolean;
+  kind: FollowTargetKind | null;
+}
+
+/** Stock chase distance for one target kind. */
+export function stockFollowDist(kind: FollowTargetKind): number {
+  return kind === "aircraft" ? PLANE_FOLLOW_DIST_DEFAULT : FOLLOW_DIST_DEFAULT;
+}
+
+/** Fresh framing state: ship stock, no pending preset, no kind memory. */
+export function initialFollowFraming(): FollowFramingState {
+  return { dist: FOLLOW_DIST_DEFAULT, preset: false, kind: null };
+}
+
+/** Advance the framing for a newly picked target. An explicit requested
+ *  distance (the AI-report framing) becomes a pending one-shot; a target-kind
+ *  switch or a still-pending preset restarts at that kind's stock distance;
+ *  otherwise the user's remembered wheel zoom survives. */
+export function followFramingFor(
+  state: FollowFramingState,
+  kind: FollowTargetKind,
+  requestedDist?: number,
+): FollowFramingState {
+  if (requestedDist != null) {
+    return { dist: clampFollowDist(requestedDist), preset: true, kind };
+  }
+  // A null kind (nothing picked yet) counts as a change: the very first
+  // aircraft pick must start at the aircraft stock, not the initial ship one.
+  const kindChanged = state.kind !== kind;
+  if (state.preset || kindChanged) {
+    return { dist: clampFollowDist(stockFollowDist(kind)), preset: false, kind };
+  }
+  return { ...state, kind };
+}
+
+/** Adopt a wheel/pinch zoom: the user's own framing supersedes a pending
+ *  one-shot preset; the kind memory is unchanged. */
+export function followFramingZoomed(
+  state: FollowFramingState,
+  dist: number,
+): FollowFramingState {
+  return { ...state, dist: clampFollowDist(dist), preset: false };
+}
+
+/** Drop the target: abandon a pending preset (restoring the last kind's stock
+ *  framing) but KEEP the kind memory for the next pick. */
+export function followFramingCleared(
+  state: FollowFramingState,
+): FollowFramingState {
+  if (!state.preset) return state;
+  return {
+    dist: clampFollowDist(stockFollowDist(state.kind ?? "ship")),
+    preset: false,
+    kind: state.kind,
+  };
+}
+
 /** Scratch direction, normalized per call and never handed out. */
 const _dir = new THREE.Vector3();
 

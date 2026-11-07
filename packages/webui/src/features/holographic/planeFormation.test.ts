@@ -1,10 +1,33 @@
 /** Unit tests for the squadron formation layout math (pure functions). */
 import { describe, expect, it } from "vitest";
-import { formationOffsets, groupInnerOffsets, inferGrouping } from "./planeFormation";
+import {
+  formationOffsets,
+  groupInnerOffsets,
+  inferGrouping,
+  PLANE_TRAIL_GRACE_S,
+  planeTrailExpiry,
+} from "./planeFormation";
 import type { SquadronPlane } from "@/api";
 
 const sp = (time: number, x: number, z: number): SquadronPlane => ({
   time, planeId: 1, index: 0, x, y: 20, z, yaw: 0,
+});
+
+describe("planeTrailExpiry", () => {
+  it("adds the shared grace window when the replay recorded no remove", () => {
+    expect(planeTrailExpiry(100)).toBe(100 + PLANE_TRAIL_GRACE_S);
+    expect(planeTrailExpiry(43.5, undefined)).toBe(43.5 + PLANE_TRAIL_GRACE_S);
+  });
+
+  it("caps the grace window at an earlier minimap remove (landed/shot down)", () => {
+    expect(planeTrailExpiry(100, 101)).toBe(101);
+    expect(planeTrailExpiry(100, 100)).toBe(100);
+  });
+
+  it("keeps the grace window when the remove lands after it", () => {
+    expect(planeTrailExpiry(100, 500)).toBe(100 + PLANE_TRAIL_GRACE_S);
+    expect(planeTrailExpiry(0, Infinity)).toBe(PLANE_TRAIL_GRACE_S);
+  });
 });
 
 describe("groupInnerOffsets", () => {
