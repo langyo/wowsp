@@ -6,10 +6,10 @@
  * card (Feishu OAuth redirect, with the ?login=failed&reason=… copy the
  * old page showed); ok:true opens the HkAdminShell with the whoami
  * identity in the header, the sidebar as the sole navigator (the header
- * tab row was removed — it only duplicated the sidebar), and the
- * feedback status filter riding the header's centre group while the
- * feedback view is active. Every mutation confirms through
- * HkConfirmDialog; errors toast.
+ * tab row was removed — it only duplicated the sidebar), and the active
+ * view's filter (feedback status / replay scope) riding the header's
+ * centre group. The sidebar also carries the 贡献名单 (lifetime credits)
+ * page. Every mutation confirms through HkConfirmDialog; errors toast.
  */
 
 import { defineComponent, onMounted, ref, watch, type PropType } from "vue";
@@ -28,16 +28,17 @@ import {
   HTabs,
   setLocale,
 } from "@celestia-island/hikari";
-import { MessageSquareText, Package, Users } from "@lucide/vue";
+import { MessageSquareText, Package, Trophy, Users } from "@lucide/vue";
 
 import { erpLogin, erpLogout, getErpSession, type ErpSession } from "@/shared/api";
 
+import CreditsView from "./erp/CreditsView";
 import FeedbackView, { FEEDBACK_STATUS_TABS } from "./erp/FeedbackView";
-import ReplayAdminView from "./erp/ReplayAdminView";
+import ReplayAdminView, { REPLAY_SCOPE_TABS, type ReplayScope } from "./erp/ReplayAdminView";
 import PeopleView from "./erp/PeopleView";
 import { useConfirm } from "./erp/confirm";
 
-type ViewKey = "feedback" | "replays" | "people";
+type ViewKey = "feedback" | "replays" | "credits" | "people";
 
 /** The ?login=failed&reason=… copy — same strings the retired page
  *  toasts (relay-core/src/erp.rs showLogin). */
@@ -129,9 +130,12 @@ export default defineComponent({
     const view = ref<ViewKey>("feedback");
     const loggingOut = ref(false);
 
-    // The feedback status filter rides the header's centre group, so its
-    // state must live HERE (the header and the table both bind it).
+    // Both per-view filters ride the header's centre group, so their
+    // state must live HERE (the header and each table both bind it).
     const statusFilter = ref("");
+    // The replay scope defaults to "recorded": identities with no
+    // recordings on the cloud stay hidden until 全部 is picked.
+    const replayScope = ref<ReplayScope>("recorded");
 
     const { state: confirmState, confirm, onConfirm, onCancel } = useConfirm();
 
@@ -190,9 +194,9 @@ export default defineComponent({
     );
 
     // Bound slot objects — an inline literal is not normalized to slots
-    // (the same gotcha HkAdminTablePage documents). Reactive props
-    // (the status filter) ride inline instead so they re-bind on render.
-    const replaysSlots = { onSessionLost: loseSession };
+    // (the same gotcha HkAdminTablePage documents). Reactive props (the
+    // header filters, the session) ride inline instead so they re-bind
+    // on render.
     const peopleSlots = { onSessionLost: loseSession };
 
     const navFeedbackSlots = {
@@ -202,6 +206,10 @@ export default defineComponent({
     const navReplaysSlots = {
       icon: () => <Package size={16} />,
       default: () => "录像征集",
+    };
+    const navCreditsSlots = {
+      icon: () => <Trophy size={16} />,
+      default: () => "贡献名单",
     };
     const navPeopleSlots = {
       icon: () => <Users size={16} />,
@@ -227,12 +235,12 @@ export default defineComponent({
           onLogout={askLogout}
         >
           {{
-            // The header's centre group carries the FEEDBACK STATUS
-            // FILTER while that view is active — the balanced three-zone
-            // grid pins it to the true viewport middle (the shittim-chest
-            // console grammar). The former view-switcher tab row is gone:
-            // it only duplicated the sidebar nav. Other views leave the
-            // centre empty.
+            // The header's centre group carries the ACTIVE VIEW'S FILTER
+            // — the feedback status tabs or the replays 有录像/全部 scope
+            // tabs — the balanced three-zone grid pins it to the true
+            // viewport middle (the shittim-chest console grammar). The
+            // former view-switcher tab row is gone: it only duplicated
+            // the sidebar nav. Other views leave the centre empty.
             center: () =>
               view.value === "feedback" ? (
                 <HTabs
@@ -240,6 +248,13 @@ export default defineComponent({
                   modelValue={statusFilter.value}
                   onUpdate:modelValue={(v: string) => (statusFilter.value = v)}
                   tabs={FEEDBACK_STATUS_TABS}
+                />
+              ) : view.value === "replays" ? (
+                <HTabs
+                  variant="segmented"
+                  modelValue={replayScope.value}
+                  onUpdate:modelValue={(v: string) => (replayScope.value = v as ReplayScope)}
+                  tabs={REPLAY_SCOPE_TABS}
                 />
               ) : null,
             "avatar-modal": (modal: { open: boolean; onUpdateOpen: (v: boolean) => void }) => (
@@ -285,6 +300,15 @@ export default defineComponent({
             >
               {navReplaysSlots}
             </HNavItem>
+            <HNavItem
+              active={view.value === "credits"}
+              onClick={() => {
+                view.value = "credits";
+                p.onNavigate();
+              }}
+            >
+              {navCreditsSlots}
+            </HNavItem>
             {session.value?.admin ? (
               <HNavItem
                 active={view.value === "people"}
@@ -323,7 +347,9 @@ export default defineComponent({
         view.value === "feedback" ? (
           <FeedbackView onSessionLost={loseSession} filter={statusFilter.value} />
         ) : view.value === "replays" ? (
-          <ReplayAdminView {...replaysSlots} />
+          <ReplayAdminView onSessionLost={loseSession} scope={replayScope.value} />
+        ) : view.value === "credits" ? (
+          <CreditsView onSessionLost={loseSession} />
         ) : session.value?.admin ? (
           <PeopleView {...peopleSlots} />
         ) : null,
