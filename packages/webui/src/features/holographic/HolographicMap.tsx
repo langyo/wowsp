@@ -18,7 +18,7 @@ import {
 } from "./modelLoader";
 import { clearShipMarkerCache } from "./shipMarker";
 import { clearPropMarkerCache } from "./propMarker";
-import { hpAtTime } from "./trajectoryMath";
+import { hpAtTime, sampleAt, UNSEEN_GAP_S } from "./trajectoryMath";
 import { shouldReserveTabKey } from "./tabKeyGate";
 import { arenaIdentities, resolveRosterAssignments } from "./rosterRoles";
 import { encyclopediaHullHealth, resolveMaxHp } from "./shipHp";
@@ -31,6 +31,7 @@ import {
   fitCamera,
   loadMinimapBase,
   resolveRoleQuick,
+  sceneMapRect,
 } from "./mapInternals";
 import { rebuildActors } from "./actorBuild";
 import { updateMarkersAt } from "./markerUpdate";
@@ -44,10 +45,25 @@ import {
 } from "./followCamera";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
+import { activeWards, planeSmoothPosAt, torpedoPosAt } from "./minimapFx";
+import {
+  pickMinimapTarget,
+  type MinimapHoverTarget,
+  type MinimapPickCap,
+  type MinimapPickInput,
+  type MinimapPickPlane,
+  type MinimapPickShip,
+  type MinimapPickSmoke,
+  type MinimapPickTorpedo,
+  type MinimapPickView,
+  type MinimapPickWard,
+} from "./minimapPick";
+import MinimapHoverTip from "./MinimapHoverTip";
+import type { TeamRole } from "./teamColors";
 import { disposeStormZone } from "./weatherScene";
 import { applyOsdTones, createOsdContrast, OSD_REFRESH_S } from "./osdContrast";
 import { buildSelfShotLedger, querySelfShotLedger } from "./selfShotLedger";
-import { isCaptureZone, type CapZoneState } from "./capZones";
+import { capLetter, isCaptureZone, type CapZoneState } from "./capZones";
 import type { ShipLabel } from "./shipLabel";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
@@ -296,6 +312,10 @@ export default defineComponent({
       if (mmAccum >= MM_REDRAW_S) {
         mmAccum = 0;
         drawMinimap(ctx);
+        // ~5 Hz live hover refresh: while a 2D tooltip is open and the
+        // replay plays, a moving torpedo / aircraft / smoke cluster keeps
+        // its card numbers current under a stationary cursor.
+        refreshMinimapHoverTip();
       }
       // Range-ring radius ease steps on the RAF clock (not the playhead)
       // so spotter/smoke transitions keep breathing while paused.
@@ -1525,6 +1545,348 @@ export default defineComponent({
       shipLabels,
     });
 
+    // ── Enlarged 2D map hover tooltips ──────────────────────────────────
+    // The "2D view" overlay gets a hover card for every entity on the map.
+    // The picker (minimapPick.ts) mirrors the painter's projection +
+    // world-frame rotation exactly; this block only snapshots the shared
+    // MapInternals state into its plain-data input and owns the card's
+    // cursor anchor. Positions come from the SAME shared helpers the painter
+    // uses (planeSmoothPosAt / torpedoPosAt / activeWards and the identical
+    // smoke dissipation math), so a marker and its tooltip can never drift.
+    /** Picked entity under the cursor (null = no card). The card itself is
+     *  Teleported to <body>; only the cursor anchor (client px) + the
+     *  display snapshot live here. */
+    const hoverTip = ref<{ x: number; y: number; target: MinimapHoverTarget } | null>(null);
+    /** Last pointer position over the 2D stage (client px) — the anchor the
+     *  ~5 Hz live re-pick runs from while the replay plays. */
+    let hoverClientX = 0;
+    let hoverClientY = 0;
+    /** True between the first pointer move and pointer leave. */
+    let hoverActive = false;
+    /** performance.now() of the last live re-pick (5 Hz gate). */
+    let hoverRefreshedAt = 0;
+    const HOVER_REFRESH_MS = 200;
+    /** Content signature of the card currently on screen — pointer moves that
+     *  stay on the same entity (and move the cursor by less than a couple of
+     *  px) only jog the card a hair, so re-rendering the whole map HUD for
+     *  them would be wasted work. */
+    let hoverShownSig = "";
+    /** Cursor anchor written with the current card (client px). */
+    let hoverShownX = Number.NaN;
+    let hoverShownY = Number.NaN;
+    /** Cursor travel (px) that still re-anchors an unchanged card. */
+    const HOVER_MOVE_EPS_PX = 2;
+
+    /** Drop the card (pointer left, view closed, edit mode, replay switch). */
+    function hideHoverTip(): void {
+      hoverActive = false;
+      hoverShownSig = "";
+      hoverShownX = Number.NaN;
+      hoverShownY = Number.NaN;
+      if (hoverTip.value !== null) hoverTip.value = null;
+    }
+
+    /** Cheap content signature: during playback a target that did not change
+     *  must not re-render the card five times a second. */
+    function hoverSignature(target: MinimapHoverTarget): string {
+      switch (target.kind) {
+        case "ship":
+          return `s:${target.entityId}:${Math.round(target.hp ?? -1)}:${target.dead ? 1 : 0}:${target.unspotted ? 1 : 0}`;
+        case "plane":
+          return `p:${target.planeId}:${target.role}:${target.count}:${target.carrierLabel ?? ""}`;
+        case "torpedo":
+          return `t:${target.role}:${target.ownerLabel}:${Math.round(target.ageS * 10)}:${Math.round(target.remainingS)}`;
+        case "smoke":
+          return `m:${Math.round(target.remainingS)}`;
+        case "cap":
+          return `c:${target.letter}:${target.owner}:${Math.round(target.etaS ?? -1)}`;
+        case "ward":
+          return `w:${target.role}:${Math.round(target.radiusWorld)}:${target.ownerLabel ?? ""}`;
+      }
+    }
+
+    /** Display label for an entity: the actor-built label table carries the
+     *  authoritative roster join (player nickname, scripted-NPC ship name);
+     *  fall back to the same vehicle label the tactical board uses. */
+    function hoverLabelOf(entityId: number): string {
+      const lbl = ctx.shipLabels.value.find((l) => l.entityId === entityId);
+      if (lbl && lbl.name) return lbl.name;
+      const entry = ctx.rosterAssignments.get(entityId) ?? null;
+      return vehicleLabelOf(entry?.id ?? entityId);
+    }
+
+    /** Snapshot every hoverable entity at the current playhead through the
+     *  painter's own view window (world rect + rotation). Null while the 2D
+     *  view is hidden or the tactical annotation mode owns the surface. */
+    function buildMinimapPickInput(): MinimapPickInput | null {
+      if (!minimapZoom.value || tacticalOn.value) return null;
+      const full = computeFullMapBounds(ctx);
+      if (!full) return null;
+      const view = computeViewBounds(ctx, full);
+      if (!(view.maxX > view.minX) || !(view.maxZ > view.minZ)) return null;
+      const t = current.value;
+      const pickView: MinimapPickView = {
+        minX: view.minX,
+        maxX: view.maxX,
+        minZ: view.minZ,
+        maxZ: view.maxZ,
+        rotationDeg: mmRotationDeg.value,
+      };
+
+      // Ships: pose from the marker the painter draws (dead ships freeze at
+      // their last pose), metadata from the actor-built label table + the
+      // roster join. Unobserved ships sit out exactly like the painter's
+      // enemy/ghost rules (t < firstT).
+      const ships: MinimapPickShip[] = [];
+      // owner entity id → role, reused by the torpedo pass below (the
+      // painter's own tint table).
+      const roleOf = new Map<number, TeamRole>();
+      for (const m of ctx.shipMarkers) {
+        const role = m.userData.role as TeamRole | undefined;
+        if (!role) continue;
+        const entityId = m.userData.entityId as number;
+        roleOf.set(entityId, role);
+        const firstT = m.userData.firstT as number | undefined;
+        if (t < (firstT ?? Infinity)) continue;
+        const traj = ctx.trajById.get(entityId);
+        const pose = traj ? sampleAt(traj, t) : undefined;
+        if (!pose) continue;
+        const deathTime = m.userData.deathTime as number | null;
+        const dead = deathTime != null && t >= deathTime;
+        // The frozen pose's anchor time is the last observed sample — an
+        // enemy dark past the unseen gap is showing its last-known position.
+        const unspotted = role === "enemy" && !dead && t - pose.time > UNSEEN_GAP_S;
+        const entry = ctx.rosterAssignments.get(entityId) ?? null;
+        const roster = entry ? rosterState.value.get(entry.id) : undefined;
+        const lbl = ctx.shipLabels.value.find((l) => l.entityId === entityId);
+        ships.push({
+          entityId,
+          role,
+          x: m.position.x,
+          // Scene z = -worldZ; the picker/tooltip speak world coordinates.
+          z: -m.position.z,
+          // The label table resolves the authoritative roster join (player
+          // nickname; scripted NPCs fall back to their ship name).
+          label: lbl?.name || vehicleLabelOf(entry?.id ?? entityId),
+          shipName: lbl?.shipName || entry?.shipName || "",
+          shipType: (m.userData.type as string | null | undefined) ?? lbl?.type ?? null,
+          hp: hpAtTime(traj?.hpSamples, t) ?? lbl?.hp ?? null,
+          maxHp: roster?.maxHp ?? lbl?.maxHp ?? null,
+          dead,
+          unspotted,
+        });
+      }
+
+      // Aircraft: one candidate per FORMATION anchor trail (id % 16 === 0),
+      // smoothed by the same per-trail easing state the painter advances.
+      const planes: MinimapPickPlane[] = [];
+      const seenPlanes = new Set<number>();
+      for (const trail of ctx.planeTrails) {
+        if (trail.id % 16 !== 0) continue;
+        const planeId = Math.floor(trail.id / 16);
+        if (seenPlanes.has(planeId)) continue;
+        const samples = trail.samples;
+        if (samples.length === 0) continue;
+        // Same visibility window as the painter: from the first sample to
+        // five seconds past the last one (the trail lifespan cap).
+        if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
+        const pose = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
+        if (!pose) continue;
+        seenPlanes.add(planeId);
+        const labelId = ctx.planeLabelOfPlane.get(planeId);
+        const carrierId = labelId != null ? ctx.planeLabelCarriers.get(labelId) : undefined;
+        planes.push({
+          planeId,
+          planeType: ctx.planeTypesById.get(trail.id) ?? "attack",
+          role: (ctx.planeRoleById.get(planeId) as TeamRole | undefined) ?? "enemy",
+          count: ctx.planeFormations.get(planeId)?.count ?? 0,
+          carrierLabel: carrierId != null ? hoverLabelOf(carrierId) : null,
+          x: pose.x,
+          z: pose.z,
+        });
+      }
+
+      // Torpedoes: the 3D run state (base/dir/t0, already re-anchored by the
+      // homing passes) projected exactly like the painter's triangles.
+      const torpedoes: MinimapPickTorpedo[] = [];
+      const mapRect = sceneMapRect(ctx);
+      for (const tm of ctx.torpedoMeshes) {
+        if (!tm.mesh.visible) continue;
+        const age = t - tm.t0;
+        if (age < 0 || t > tm.endT) continue;
+        const scene = torpedoPosAt({ base: tm.base, dir: tm.dir }, age, mapRect);
+        const ownerTraj = ctx.trajById.get(tm.ownerId);
+        torpedoes.push({
+          x: scene.x,
+          // torpedoPosAt answers SCENE coords; the picker speaks world.
+          z: -scene.z,
+          ownerLabel: hoverLabelOf(tm.ownerId),
+          role: roleOf.get(tm.ownerId) ?? (ownerTraj ? resolveRoleQuick(ctx, ownerTraj) : "enemy"),
+          ageS: age,
+          remainingS: tm.endT - t,
+        });
+      }
+
+      // Smoke screens: the painter's dissipation rule (after the last puff
+      // lands, the marker sinks back toward the cluster's start pose).
+      const smokes: MinimapPickSmoke[] = [];
+      for (const cl of ctx.smokeClusters) {
+        if (t < cl.t0 || t > cl.endT) continue;
+        let cur = t;
+        if (t > cl.lastT) {
+          const span = Math.max(1, cl.lastT - cl.t0);
+          cur = cl.t0 + ((t - cl.lastT) * span) / Math.max(1, cl.endT - cl.lastT);
+          if (cur > cl.lastT) cur = cl.lastT;
+        }
+        const pose = sampleAt(cl.traj, cur);
+        if (!pose) continue;
+        smokes.push({ x: pose.x, z: -pose.z, remainingS: cl.endT - t });
+      }
+
+      // Capture points: live zones only (unborn operation points sit out),
+      // painted at their true world radius.
+      const caps: MinimapPickCap[] = [];
+      const capDisplayNow = ctx.capDisplay.value;
+      ctx.capZones.value.forEach((zone, i) => {
+        const state = capDisplayNow[i];
+        if (state?.live === false) return;
+        const ownerRaw = state?.owner ?? 0;
+        caps.push({
+          x: zone.kind?.initialX ?? 0,
+          z: zone.kind?.initialZ ?? 0,
+          letter: capLetter(zone, i),
+          owner: ownerRaw === 1 ? 1 : ownerRaw === 2 ? 2 : 0,
+          etaS: state?.etaSeconds ?? null,
+          radiusWorld: zone.kind?.radius ?? 0,
+        });
+      });
+
+      // Fighter-patrol wards: alive window from the shared helper (add → the
+      // first later remove), owner role resolved like actorBuild's rings.
+      const wards: MinimapPickWard[] = [];
+      for (const w of activeWards(props.wards, props.wardRemoves, t)) {
+        const ownerTraj =
+          ctx.trajById.get(w.ownerId) ??
+          props.trajectories.find((tr) => tr.entityId === w.ownerId);
+        wards.push({
+          x: w.x,
+          z: w.z,
+          role: ownerTraj ? resolveRoleQuick(ctx, ownerTraj) : "enemy",
+          radiusWorld: Math.max(60, w.radius || 0),
+          ownerLabel: ownerTraj ? hoverLabelOf(w.ownerId) : null,
+        });
+      }
+
+      return { view: pickView, ships, planes, torpedoes, smokes, caps, wards };
+    }
+
+    /** Client px → the enlarged canvas's 760-unit logical space (null while
+     *  the canvas is detached or has no layout box). */
+    function minimapLogicalAt(
+      clientX: number,
+      clientY: number,
+    ): { lx: number; ly: number } | null {
+      const cvs = zoomCanvas.value;
+      if (!cvs) return null;
+      const rect = cvs.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return null;
+      return {
+        lx: ((clientX - rect.left) / rect.width) * TACTICAL_SIZE,
+        ly: ((clientY - rect.top) / rect.height) * TACTICAL_SIZE,
+      };
+    }
+
+    /** Pick and show/hide the card for one pointer position. */
+    function updateHoverTipAt(clientX: number, clientY: number): void {
+      const p = minimapLogicalAt(clientX, clientY);
+      if (!p || p.lx < 0 || p.ly < 0 || p.lx > TACTICAL_SIZE || p.ly > TACTICAL_SIZE) {
+        hideHoverTip();
+        return;
+      }
+      const input = buildMinimapPickInput();
+      if (!input) {
+        hideHoverTip();
+        return;
+      }
+      const target = pickMinimapTarget(input, p.lx, p.ly);
+      if (!target) {
+        hideHoverTip();
+        return;
+      }
+      // Same entity within a couple of px: the card is already there and
+      // current — only nudge it when the cursor actually travelled.
+      const sig = hoverSignature(target);
+      if (
+        sig === hoverShownSig &&
+        Math.abs(clientX - hoverShownX) < HOVER_MOVE_EPS_PX &&
+        Math.abs(clientY - hoverShownY) < HOVER_MOVE_EPS_PX
+      ) {
+        return;
+      }
+      hoverShownSig = sig;
+      hoverShownX = clientX;
+      hoverShownY = clientY;
+      hoverTip.value = { x: clientX, y: clientY, target };
+    }
+
+    /** Capture-phase pointerdown listener, spread into the stage's JSX. Vue's
+     *  runtime-dom supports the `.capture` event modifier spelled
+     *  `onPointerdownCapture`, but @vue/runtime-dom's JSX attribute types
+     *  omit the modifier variants — the spread keeps the listener typed
+     *  without an `as any`. Capture phase is required because the tactical
+     *  board's canvas stops pointerdown propagation (a bubble listener on the
+     *  stage would never see it). */
+    const hoverStageCapture = { onPointerdownCapture: hideHoverTip };
+
+    /** Pointer move over the 2D stage. The event bubbles up from the
+     *  tactical board's own canvas; a held button means pan/draw, not hover. */
+    function onMinimapStagePointerMove(e: PointerEvent): void {
+      if (!minimapZoom.value || tacticalOn.value) return;
+      if (e.buttons !== 0) {
+        hideHoverTip();
+        return;
+      }
+      hoverClientX = e.clientX;
+      hoverClientY = e.clientY;
+      hoverActive = true;
+      updateHoverTipAt(e.clientX, e.clientY);
+    }
+
+    /** ~5 Hz live re-pick while the replay plays under a stationary cursor:
+     *  a moving torpedo / plane / smoke cluster keeps its card numbers
+     *  current. Called from the minimap redraw block (16 Hz canvas cadence). */
+    function refreshMinimapHoverTip(): void {
+      if (!playing.value || !hoverActive || hoverTip.value === null) return;
+      const now = performance.now();
+      if (now - hoverRefreshedAt < HOVER_REFRESH_MS) return;
+      hoverRefreshedAt = now;
+      const input = buildMinimapPickInput();
+      if (!input) {
+        hideHoverTip();
+        return;
+      }
+      const p = minimapLogicalAt(hoverClientX, hoverClientY);
+      if (!p) return;
+      const target = pickMinimapTarget(input, p.lx, p.ly);
+      if (!target) {
+        hideHoverTip();
+        return;
+      }
+      // Same entity and same numbers → leave the card (and its DOM) alone.
+      const sig = hoverSignature(target);
+      if (sig === hoverSignature(hoverTip.value.target)) return;
+      hoverShownSig = sig;
+      hoverShownX = hoverClientX;
+      hoverShownY = hoverClientY;
+      hoverTip.value = { x: hoverClientX, y: hoverClientY, target };
+    }
+
+    // The card belongs to the enlarged 2D view: hide it when that view
+    // closes or the tactical annotation mode takes the surface over.
+    watch([minimapZoom, tacticalOn], () => {
+      hideHoverTip();
+    });
+
     // Combat-range indicators: the recorder's stock ranges resolve once the
     // roster lands (self shipId) and rebuild with the actors; the 3D ring
     // pool follows the playhead via updateMarkersAt. The prefs singleton is
@@ -1777,6 +2139,8 @@ export default defineComponent({
           window.clearTimeout(tipHideTimer);
           tipHideTimer = null;
         }
+        // A 2D-map hover describes the PREVIOUS replay's entity stream.
+        hideHoverTip();
         if (ready.value) {
           current.value = 0;
           hudCurrent.value = 0;
@@ -1968,6 +2332,8 @@ export default defineComponent({
       // Shared playhead-derived kill board (tooltip + Tab scoreboard read
       // the same numbers in the same frame). Computed only while one of
       // them is on screen — otherwise it'd run every playback frame.
+      // Narrow once: the JSX below reads the card snapshot several times.
+      const hoveredTip = hoverTip.value;
       const killsNow =
         tipVehicleId.value != null || showRoster.value
           ? killsByPlayerAt(hudCurrent.value)
@@ -2213,7 +2579,13 @@ export default defineComponent({
                 it (timeline + toolbar at the bottom edge). Clicks on the map
                 no longer close the overlay (drawing/selection needs them);
                 the scrim around it still does. */}
-            <div class="holo-map__mmzoom-stage" onClick={(e: MouseEvent) => e.stopPropagation()}>
+            <div
+              class="holo-map__mmzoom-stage"
+              {...hoverStageCapture}
+              onClick={(e: MouseEvent) => e.stopPropagation()}
+              onPointermove={(e: PointerEvent) => onMinimapStagePointerMove(e)}
+              onPointerleave={hideHoverTip}
+            >
               <canvas
                 ref={zoomCanvas}
                 width={TACTICAL_SIZE}
@@ -2240,6 +2612,16 @@ export default defineComponent({
                 baseCanvas={() => zoomCanvas.value}
                 overlayCanvas={() => minimapCanvas.value}
               />
+              {/* Hover card for the entity under the cursor — Teleported to
+                  <body> by the component, so it never inherits the stage's
+                  stacking/clip context. */}
+              {hoveredTip ? (
+                <MinimapHoverTip
+                  target={hoveredTip.target}
+                  x={hoveredTip.x}
+                  y={hoveredTip.y}
+                />
+              ) : null}
             </div>
           </div>
         ) : null}

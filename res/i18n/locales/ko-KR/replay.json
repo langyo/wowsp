@@ -187,7 +187,30 @@
     "trails": "함선 궤적",
     "grid": "맵 그리드(A–J / 1–10)",
     "rotateCcw": "맵 반시계 방향 90° 회전",
-    "rotateCw": "맵 시계 방향 90° 회전"
+    "rotateCw": "맵 시계 방향 90° 회전",
+    "tip": {
+      "title": "호버 정보",
+      "hp": "HP",
+      "status": "상태",
+      "sunk": "격침됨",
+      "lastKnown": "마지막 확인 위치",
+      "ship": "함선",
+      "torpedo": "어뢰",
+      "plane": "항공기",
+      "smoke": "연막",
+      "ward": "전투기 초계 구역",
+      "cap": "점령 지점",
+      "owner": "소유",
+      "team": "진영",
+      "age": "비행 시간",
+      "remaining": "남은 시간",
+      "radius": "반경",
+      "squadron": "비행대",
+      "carrier": "항공모함",
+      "capturing": "점령 중 · {n}초",
+      "neutral": "중립",
+      "player": "플레이어"
+    }
   },
   "decisions": {
     "toggle": "발포 제안",

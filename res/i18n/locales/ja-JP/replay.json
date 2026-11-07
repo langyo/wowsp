@@ -187,7 +187,30 @@
     "trails": "艦艇の航跡",
     "grid": "マップグリッド（A–J / 1–10）",
     "rotateCcw": "マップを反時計回りに90°回転",
-    "rotateCw": "マップを時計回りに90°回転"
+    "rotateCw": "マップを時計回りに90°回転",
+    "tip": {
+      "title": "ホバー詳細",
+      "hp": "耐久",
+      "status": "状態",
+      "sunk": "撃沈",
+      "lastKnown": "最後の確認位置",
+      "ship": "艦艇",
+      "torpedo": "魚雷",
+      "plane": "航空機",
+      "smoke": "煙幕",
+      "ward": "戦闘機哨戒区域",
+      "cap": "占領地点",
+      "owner": "所有",
+      "team": "陣営",
+      "age": "飛行時間",
+      "remaining": "残り時間",
+      "radius": "半径",
+      "squadron": "飛行隊",
+      "carrier": "空母",
+      "capturing": "占領中 · {n} 秒",
+      "neutral": "中立",
+      "player": "プレイヤー"
+    }
   },
   "decisions": {
     "toggle": "射撃提案",

@@ -2,13 +2,24 @@
  * The 2D minimap painter, extracted verbatim from HolographicMap.tsx:
  * the small battle thumbnail AND the enlarged pan/zoom overlay canvas,
  * sharing the world-rect projection helpers in mapInternals.ts. Pure
- * canvas-2D drawing over the shared map context — no state of its own.
+ * canvas-2D drawing over the shared map context — no state of its own:
+ * the motion/inference helpers (aircraft easing, unspotted-gap links,
+ * ward alive windows) are pure functions in minimapFx.ts, and their only
+ * persistent state lives in the context (planeSmoothState).
  */
 import { drawShipGlyph } from "./shipGlyph";
 import { planeIcon } from "./planeIcons";
 import { sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
-import { clampXZ, frustumCorners } from "./sceneUtils";
+import { frustumCorners } from "./sceneUtils";
+import {
+  activeWards,
+  planeSmoothPosAt,
+  TORPEDO_TRI_PX_ENLARGED,
+  TORPEDO_TRI_PX_THUMB,
+  torpedoPosAt,
+  trailGapLinks,
+} from "./minimapFx";
 import { gridEdgeLabels, MAP_GRID_COLUMNS } from "./tactical/mapGrid";
 import { TACTICAL_SIZE } from "./tactical/render";
 import { capLetter } from "./capZones";
@@ -29,7 +40,6 @@ import {
   RING_COLOR,
 } from "./rangeRings";
 import type { MapBounds } from "./modelLoader";
-import type { SquadronPlane } from "@/api";
 import {
   SECOND_SECTOR_DRAW_MIN,
   adviceCssColor,
@@ -187,10 +197,62 @@ function drawRangeRings(
   g.restore();
 }
 
+/** Fighter-patrol ward areas (receive_wardAdded): a translucent filled
+ *  disc with a dashed rim at the ward's true world radius, tinted by the
+ *  owning carrier's team role (green = recorder side, red = enemy). This
+ *  is the 2D twin of the 3D ward rings (actorBuild): the same alive
+ *  window (add → first remove after it, see activeWards) and the same
+ *  60-unit fallback radius for radius-less entries. Drawn UNDER the ship
+ *  glyphs / trails, so a patrol area never hides the units or paths. */
+function drawWardCircles(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  t: number,
+  projX: (x: number) => number,
+  projZ: (zScene: number) => number,
+  span: number,
+  size: number,
+  opts: { linePx: number; dash: [number, number]; fillAlpha: number; rimAlpha: number },
+): void {
+  const wards = activeWards(ctx.props.wards, ctx.props.wardRemoves, t);
+  if (wards.length === 0) return;
+  // The two role tints only differ in hue; build both style strings once
+  // per canvas redraw instead of per ward (this runs ~16×/s per canvas).
+  const fillAlly = `rgba(74, 222, 128, ${opts.fillAlpha})`;
+  const fillEnemy = `rgba(204, 51, 51, ${opts.fillAlpha})`;
+  const rimAlly = `rgba(74, 222, 128, ${opts.rimAlpha})`;
+  const rimEnemy = `rgba(204, 51, 51, ${opts.rimAlpha})`;
+  for (const w of wards) {
+    // Owner role resolves exactly like the 3D ward ring's tint: the
+    // trajectory lookup first, then the raw list; an unknown carrier
+    // reads as enemy.
+    const owner =
+      ctx.trajById.get(w.ownerId) ??
+      ctx.props.trajectories.find((tr) => tr.entityId === w.ownerId);
+    const enemy = !owner || resolveRoleQuick(ctx, owner) === "enemy";
+    const radiusWorld = Math.max(60, w.radius || 0);
+    const radiusPx = (radiusWorld / (span || 1)) * size;
+    const cx = projX(w.x);
+    const cy = projZ(-w.z);
+    g.beginPath();
+    g.arc(cx, cy, radiusPx, 0, Math.PI * 2);
+    g.fillStyle = enemy ? fillEnemy : fillAlly;
+    g.fill();
+    g.setLineDash(opts.dash);
+    g.lineWidth = opts.linePx;
+    g.strokeStyle = enemy ? rimEnemy : rimAlly;
+    g.stroke();
+    g.setLineDash([]);
+  }
+}
+
 /** In-flight torpedoes on the 2D map (the in-game minimap's triangle
- *  markers): apex along the run direction, tinted by the firing side. The
- *  3D torpedo states already carry the playhead-advanced base/dir/t0, so
- *  the painter only projects their live positions. */
+ *  markers): apex along the run direction, tinted by the firing side.
+ *  Positions come from the shared torpedoPosAt (launch anchor + run
+ *  direction × the shared torpedo speed, clamped to the playable map
+ *  rect exactly like the 3D fish) and the triangle half-width is one of
+ *  the shared TORPEDO_TRI_PX_* sizes — deliberately tiny, because a full
+ *  salvo must not bury the fleets below it. */
 function drawTorpedoes(
   g: CanvasRenderingContext2D,
   ctx: MapInternals,
@@ -200,8 +262,9 @@ function drawTorpedoes(
   triPx: number,
 ): void {
   if (ctx.torpedoMeshes.length === 0) return;
-  // Clamped to the map rect exactly like the 3D fish, so long-lived
-  // un-joined torpedoes park at the edge instead of sailing off-map.
+  // Playable-map rect handed to torpedoPosAt for the same edge clamp the
+  // 3D fish get: long-lived un-joined torpedoes park instead of sailing
+  // off-map (and off-canvas).
   const mapRect = sceneMapRect(ctx);
   // entityId → role for the owning side's tint (self white, ally green,
   // enemy red — the ship glyph palette).
@@ -213,8 +276,7 @@ function drawTorpedoes(
     if (!tm.mesh.visible) continue;
     const age = t - tm.t0;
     if (age < 0) continue;
-    const raw = { x: tm.base.x + tm.dir.x * 7 * age, z: tm.base.z + tm.dir.z * 7 * age };
-    const p = mapRect ? clampXZ(raw.x, raw.z, mapRect) : raw;
+    const p = torpedoPosAt({ base: tm.base, dir: tm.dir }, age, mapRect);
     const px = projX(p.x);
     const py = projZ(p.z);
     const color = roleOf.get(tm.ownerId);
@@ -562,6 +624,15 @@ export function drawMinimap(ctx: MapInternals) {
     }
   });
 
+  // Fighter-patrol ward areas under the ship glyphs (the 2D twin of the
+  // 3D ward rings): translucent team-tinted disc + dashed rim.
+  drawWardCircles(c2d, ctx, t, wx, wz, dbW, w, {
+    linePx: 1.2,
+    dash: [5, 4],
+    fillAlpha: 0.12,
+    rimAlpha: 0.5,
+  });
+
   // Ship markers: the game's own HUD class icons, tinted by team via the
   // variant (ally/enemy/sunk). Falls back to a plain dot until the icon
   // image decodes.
@@ -640,19 +711,22 @@ export function drawMinimap(ctx: MapInternals) {
   }
   // Aircraft — one in-game type icon per FORMATION (squadron centre),
   // not per plane: a full 8-plane group reads as a single moving marker.
+  // The pose is the shared smoothed trail pose (planeSmoothPosAt), so a
+  // coarse or jumpy squadron stream glides instead of stepping. This
+  // thumb pass runs FIRST and advances the shared easing state; the
+  // enlarged pass below reuses the same eased pose at this playhead.
   {
     const drawn = new Set<number>();
     for (const trail of ctx.planeTrails) {
       const planeId = Math.floor(trail.id / 16);
       if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
       const samples = trail.samples;
-      let s: SquadronPlane | null = null;
-      for (const sp of samples) {
-        if (sp.time > t) break;
-        s = sp;
-      }
-      if (s == null) continue;
+      if (samples.length === 0) continue;
+      // Visibility window: appear with the first sample, linger briefly
+      // after the last one (then the formation is gone).
       if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
+      const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
+      if (s == null) continue;
       drawn.add(planeId);
       const icon = planeIcon(ctx.planeTypesById.get(trail.id) ?? "attack");
       if (icon && icon.complete && icon.naturalWidth > 0) {
@@ -672,8 +746,9 @@ export function drawMinimap(ctx: MapInternals) {
   }
 
   // In-flight torpedoes: side-tinted triangles pointing along the run
-  // (the in-game minimap marker).
-  drawTorpedoes(c2d, ctx, t, wx, wz, 4);
+  // (the in-game minimap marker), at the shared thumb half-width so a
+  // salvo reads as markers instead of burying the fleet.
+  drawTorpedoes(c2d, ctx, t, wx, wz, TORPEDO_TRI_PX_THUMB);
 
   // Camera frustum — hidden while the enlarged 2D view covers the
   // scene: the 3D camera is not what the user is looking at (and the
@@ -828,6 +903,14 @@ export function drawMinimap(ctx: MapInternals) {
         }
         zctx.restore();
       });
+      // Fighter-patrol ward areas (under the trails + glyphs): the same
+      // world-radius disc as the 3D rings, tinted by the owner's role.
+      drawWardCircles(zctx, ctx, t, zwx, zwz, vfull.maxX - vfull.minX, zw, {
+        linePx: 1.6,
+        dash: [8, 6],
+        fillAlpha: 0.1,
+        rimAlpha: 0.5,
+      });
       if (ctx.minimapShowTrails.value) {
         for (const tr of ctx.props.trajectories) {
           if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
@@ -843,9 +926,11 @@ export function drawMinimap(ctx: MapInternals) {
           // clipped at the playhead (the full recorded path read as trails
           // running everywhere BUT the ships), the pen lifts across
           // un-spotted gaps (>4 s — same freeze rule the marker follows,
-          // so fog never draws a straight line to the re-spot), and the
-          // tail extends to the exact interpolated pose the marker sits
-          // at — line and glyph always meet.
+          // so fog never draws a solid straight line to the re-spot), and
+          // the tail extends to the exact interpolated pose the marker
+          // sits at — line and glyph always meet. Short dark windows are
+          // bridged underneath by a translucent dashed inference line
+          // (below); long losses keep the open pen-lift.
           const n = samplesUpTo(tr.samples, t);
           if (n === 0) continue;
           zctx.beginPath();
@@ -872,6 +957,34 @@ export function drawMinimap(ctx: MapInternals) {
             zctx.lineTo(zwx(tail.x), zwz(-tail.z));
           }
           zctx.stroke();
+          // Short un-spotted windows the playhead has fully crossed: the
+          // recorded pose froze while the ship was dark, then jumped on
+          // re-detection — bridge that stretch with a translucent dashed
+          // inference line (trailGapLinks keeps 4 s < gap <= 20 s; longer
+          // losses are genuine and stay open). Drawn AFTER the solid trail
+          // so the two read as one path and role-tinted like it.
+          const links = trailGapLinks(tr.samples, t);
+          if (links.length > 0) {
+            zctx.strokeStyle =
+              role === "enemy"
+                ? "rgba(204, 51, 51, 0.35)"
+                : role === "self"
+                  ? "rgba(255, 255, 255, 0.4)"
+                  : "rgba(60, 180, 120, 0.35)";
+            zctx.lineWidth = 1.2;
+            zctx.setLineDash([6, 6]);
+            zctx.lineCap = "round";
+            for (const link of links) {
+              zctx.beginPath();
+              zctx.moveTo(zwx(link.fromX), zwz(-link.fromZ));
+              zctx.lineTo(zwx(link.toX), zwz(-link.toZ));
+              zctx.stroke();
+            }
+            // Restore the shared world-frame state the glyph pass expects
+            // (dash + cap were only borrowed by the inference lines).
+            zctx.setLineDash([]);
+            zctx.lineCap = "butt";
+          }
         }
       }
       for (const m of ctx.shipMarkers) {
@@ -944,20 +1057,21 @@ export function drawMinimap(ctx: MapInternals) {
         zctx.fillText(`${Math.ceil(cl.endT - t)}s`, 0, -7);
         zctx.restore();
       }
-      // Aircraft — one icon per formation (squadron centre).
+      // Aircraft — one icon per formation (squadron centre). The pose is
+      // the SAME eased pose the thumb pass advanced at this playhead
+      // (planeSmoothPosAt's same-t cache), so the two canvases can never
+      // disagree and no easing is applied twice per frame.
       {
         const drawn = new Set<number>();
         for (const trail of ctx.planeTrails) {
           const planeId = Math.floor(trail.id / 16);
           if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
           const samples = trail.samples;
-          let s: SquadronPlane | null = null;
-          for (const sp of samples) {
-            if (sp.time > t) break;
-            s = sp;
-          }
-          if (s == null) continue;
+          if (samples.length === 0) continue;
+          // Same visibility window as the thumb pass.
           if (t < samples[0].time || t > samples[samples.length - 1].time + 5) continue;
+          const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
+          if (s == null) continue;
           drawn.add(planeId);
           const icon = planeIcon(ctx.planeTypesById.get(trail.id) ?? "attack");
           if (icon && icon.complete && icon.naturalWidth > 0) {
@@ -978,8 +1092,10 @@ export function drawMinimap(ctx: MapInternals) {
         }
       }
       // In-flight torpedoes at the enlarged scale (inside the rotated
-      // world frame so the run direction follows the map's orientation).
-      drawTorpedoes(zctx, ctx, t, zwx, zwz, 8);
+      // world frame so the run direction follows the map's orientation),
+      // at the shared enlarged half-width — smaller than the old 8 px
+      // wedges, which buried the fleets under a full salvo.
+      drawTorpedoes(zctx, ctx, t, zwx, zwz, TORPEDO_TRI_PX_ENLARGED);
       // AI fire-suggestion overlay (G4-b) — rings / dashed fire lines /
       // target reticles over the glyphs, through the same projection.
       drawDecisionSuggestions(zctx, ctx, t, zwx, zwz, rotRad, DECISION_TEAM_PROB_MIN);
