@@ -29,21 +29,6 @@
   vertical-align: middle;
 }
 
-/* Battle identity head: mode pill + map label, the same dressing the live
-   panel carries in its own head row. */
-.replay-view__postbattle-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 8px;
-}
-/* (the results head mode pill's face moved to AppTag — 2026-11-03 tag
-   unification) */
-.replay-view__postbattle-head-map {
-  color: rgb(var(--color-muted));
-  font-size: var(--text-xs);
-}
-
 /* Share toolbar: stats-source chip + hide-all-nicknames toggle + per-row
    eye hint (left) and the copy-share-shot action (right); copy feedback
    rides the global toast surface instead of an inline note. (The chip's
@@ -322,28 +307,22 @@
   overflow-x: clip;
   overflow-y: visible;
 }
-/* The red dot at the nickname's top-right: every seal the row could not
+/* The yellow alert at the nickname's top-right: every seal the row could not
    carry inline lives behind this marker, listed in its hover tooltip in
-   display order (2026-11-07 review). Sits in the superscript register so it
-   never pushes the identity line. */
-.replay-view__postbattle-seal-dot {
+   display order (2026-11-07 review: the old red dot read as an error state
+   and its 8px hover target was easy to miss, so the marker became a small
+   warning glyph — and the nickname's own hint repeats the list). Sits in the
+   superscript register so it never pushes the identity line; the retired
+   dot's 8px box becomes the lucide glyph's own 10px box at the same offset. */
+.replay-view__postbattle-seal-alert {
   flex: 0 0 auto;
   align-self: flex-start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 8px;
-  height: 8px;
   margin: 1px 1px 0 -2px;
+  color: rgb(var(--color-warning));
   cursor: help;
-
-  & > i {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: rgb(var(--color-error));
-    box-shadow: 0 0 0 1px rgb(var(--color-surface));
-  }
 }
 .replay-view__postbattle-cell-nick {
   flex: 0 1 auto;
@@ -825,11 +804,5 @@
   .replay-view__postbattle-settlement {
     flex-wrap: wrap;
     gap: 0.35rem 1rem;
-  }
-
-  /* Mode pill + map label: a long localized map name drops under the
-     pill rather than overflowing the sheet's edge. */
-  .replay-view__postbattle-head {
-    flex-wrap: wrap;
   }
 }

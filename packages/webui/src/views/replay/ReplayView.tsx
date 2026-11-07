@@ -2862,7 +2862,8 @@ export default defineComponent({
                         owns the scrolling, like the post-battle detail windows above
                         (the old nested HkScrollContainer stacked a second scroller and
                         its own inner padding on top of HkModal's 1.5rem gutter, leaving
-                        a dead band above the battle head — 2026-11-07 report). */}
+                        a dead band above the panel's first content — 2026-11-07
+                        report; the old mode/map head row retired 2026-11-07). */}
                     <HkModal
                       modelValue={showResults.value}
                       onUpdate:modelValue={(v: boolean) => (showResults.value = v)}

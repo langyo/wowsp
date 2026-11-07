@@ -2,8 +2,8 @@
  * Unit tests for the post-battle head mode rule (postBattleMode.ts): the
  * descriptor classifier + the single-team roster shape + the parent's
  * one-way operation promotion must resolve exactly like every other mode
- * surface (replay cards / viewer header), so the results-modal pill and the
- * share shot never disagree with the battle's real label.
+ * surface (replay cards / viewer header), so the copied shot's mode pill
+ * and the panel's stats scope never disagree with the battle's real label.
  */
 import { describe, expect, it } from "vitest";
 

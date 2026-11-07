@@ -1,6 +1,8 @@
-"""Results-window reading frame: the post-battle matrix starts at the header
-divider, not below a dead band, and never ends flush on the window's bottom
-edge.
+"""Results-window reading frame: the post-battle panel's first content starts
+at the header divider, not below a dead band, and the matrix never ends flush
+on the window's bottom edge. The mode/map head row was retired 2026-11-07, so
+the share toolbar is that first content — a future row re-added above it must
+move the top-gap anchor below with it.
 
 Regression this guards (2026-11-07 report): the results modal stacked its own
 HkScrollContainer + inner wrapper padding on top of HkModal's body inset
@@ -38,14 +40,19 @@ MEASURE_JS = r"""
   const header = frame.querySelector('.hk-modal-header');
   const scroll = frame.querySelector('.hk-modal-body-scroll');
   const panel = frame.querySelector('.replay-view__postbattle');
-  const head = panel.querySelector('.replay-view__postbattle-head');
+  // The share toolbar is the panel's first content row: the battle-identity
+  // mode/map head that used to sit above it was retired 2026-11-07, so the
+  // no-dead-band guard anchors here. A future row re-added above the toolbar
+  // must move this anchor again.
+  const firstRow = panel.querySelector('.replay-view__postbattle-toolbar');
+  if (!firstRow) throw new Error('post-battle toolbar not found in results frame');
   const fr = frame.getBoundingClientRect();
   const hr = header.getBoundingClientRect();
   const sr = scroll.getBoundingClientRect();
   const pr = panel.getBoundingClientRect();
-  const headR = head.getBoundingClientRect();
+  const firstRowR = firstRow.getBoundingClientRect();
   return {
-    topGap: headR.top - hr.bottom,
+    topGap: firstRowR.top - hr.bottom,
     bottomGutter: fr.bottom - sr.bottom,
     sideInset: pr.left - fr.left,
     scrolls: scroll.scrollHeight > scroll.clientHeight,
