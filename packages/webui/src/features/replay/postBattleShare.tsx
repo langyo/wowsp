@@ -6,11 +6,12 @@
  * above the roster matrix, see postBattleShot.ts) to a watermarked PNG and
  * pushes it onto the system clipboard (the copy flow itself lives in the
  * shared share kit — features/share/useShareImage.ts), and the aligned
- * roster-stat columns
- * (`rosterStatCols` / `rosterColumns` / `rosterStatLine`) every roster row
+ * roster-stat columns (`rosterStatCols` / `rosterColumns`) every roster row
  * renders — the column LIST (scope × metric, order included) follows the
  * stats prefs' overlayColumns, and each column's numbers resolve through
- * its own scope over the panel-wide battle mode (utils/statView).
+ * its own scope over the panel-wide battle mode (utils/statView). The rows'
+ * complete hover hint (`rosterRowHint`) also lives here, so the results
+ * panel and the fallback matrix phrase it the same way.
  *
  * Masking state is deliberately per-view and ephemeral — it is a share-time
  * privacy choice, not a preference. The fixed-width mask is NOT
@@ -68,6 +69,36 @@ export function useNickMasking() {
   return { hideAll, hiddenNames, isHidden, toggleAll, toggleOne, maskOf };
 }
 
+/** One roster row's complete hover hint, line by line:
+ *   (1) the clan-tagged nickname ("[HOOD] langyo"),
+ *   (2) every tag the row carries, one by one ("组队A · 猴 · 空中小人" — the
+ *       four-char composition seals included, which the one-line identity
+ *       cannot always fit whole),
+ *   (3) the ship's tier + name ("VIII 雷电").
+ *  Rows can only ellipsize their own text (the compact identity line is a
+ *  single line, the full card's tracks are fixed), so this hint is where the
+ *  whole identity survives. Empty lines drop out; the caller passes the
+ *  already-masked nickname and pre-localized tag words. The trailing newline
+ *  join rides the global hint popup's pre-line white-space. */
+export function rosterRowHint(opts: {
+  name: string;
+  clanTag?: string | null;
+  /** Localized tag words, in display order. */
+  tags?: readonly string[];
+  tier?: string | null;
+  shipName?: string | null;
+}): string {
+  const clan = opts.clanTag?.trim();
+  const lines: string[] = [clan ? `[${clan}] ${opts.name}` : opts.name];
+  const tags = (opts.tags ?? []).map((tag) => tag.trim()).filter((tag) => tag !== "");
+  if (tags.length > 0) lines.push(tags.join(" · "));
+  const ship = [opts.tier?.trim(), opts.shipName?.trim()]
+    .filter((part): part is string => part != null && part !== "")
+    .join(" ");
+  if (ship !== "") lines.push(ship);
+  return lines.join("\n");
+}
+
 /** Copy flow for the post-battle share shot: renders the model off-DOM via
  *  the shared copy pipeline, with the shot kit's localized watermark footer. */
 export function useShareShot(getModel: () => ShotModel, getEl: () => HTMLElement | null) {
@@ -83,8 +114,8 @@ export function useShareShot(getModel: () => ShotModel, getEl: () => HTMLElement
 /** One configured roster-stat column of a roster row — the prefs'
  *  scope × metric pair dressed for render (labels, fixed track width).
  *  The LIST (order included) comes straight off the stats prefs, so every
- *  surface — compact rows, aggregate headers, full-card strips, share
- *  shots — renders the identical column set. */
+ *  surface — compact rows, aggregate headers, the full card's aligned data
+ *  line, share shots — renders the identical column set. */
 export interface RosterColumnSpec {
   /** Stable `${scope}:${metric}` id (keys React-style lists, keys the
    *  shot aggregate's column origins). */
@@ -283,100 +314,6 @@ export function rosterStatCols(
       })}
     </>
   );
-}
-
-/** The full card's stat text line: the configured columns' numbers inline
- *  (`52.3% WR · 1733 PR · 12,345 场次 · 89.2k 场均`), each resolved
- *  through its own scope, values tier-colored (PR keeps its rainbow 彩表
- *  band; battles renders red under 200, plain above — a count carries no
- *  tier). Scoped columns prefix their short tag ("单船 52.3% WR"). An
- *  enabled number with no value keeps its slot with a bare "—"
- *  placeholder; the line is null when NO column is configured — callers
- *  then render their own "—". Loading / hidden states stay with the
- *  caller (each panel owns its pipeline). */
-export function rosterStatLine(viewOf: (scope: OverlayColumnScope) => RosterModeNumbers) {
-  const parts: VNode[] = [];
-  for (const col of rosterColumns()) {
-    const view = viewOf(col.scope);
-    const tagKey = SCOPE_TAG_KEY[col.scope];
-    const tag = tagKey ? <span class="replay-view__statline-scope">{t(tagKey)}</span> : null;
-    const label =
-      col.metric === "winrate"
-        ? "WR"
-        : col.metric === "pr"
-          ? "PR"
-          : t(METRIC_KEY[col.metric]);
-    if (col.metric === "winrate") {
-      parts.push(
-        <>
-          {tag}
-          <b
-            style={
-              view.winrate != null ? { color: winrateColor(view.winrate) } : undefined
-            }
-          >
-            {view.winrate != null ? `${view.winrate.toFixed(1)}%` : "—"}
-          </b>{" "}
-          {label}
-        </>,
-      );
-    } else if (col.metric === "pr") {
-      const tier = prTier(view.pr);
-      parts.push(
-        <>
-          {tag}
-          <b
-            class={tier.rainbow ? "rainbow-text" : undefined}
-            style={tier.rainbow ? undefined : { color: tier.color }}
-          >
-            {view.pr ?? "—"}
-          </b>{" "}
-          PR
-        </>,
-      );
-    } else if (col.metric === "battles") {
-      // Thin-sample red on the account column only — a scoped count under
-      // 200 is the norm, not a warning.
-      const color = col.scope === "global" ? battlesColor(view.battles) : undefined;
-      parts.push(
-        <>
-          {tag}
-          <b style={color ? { color } : undefined}>
-            {view.battles != null ? Math.round(view.battles).toLocaleString() : "—"}
-          </b>{" "}
-          {t("replay.roster.battles")}
-        </>,
-      );
-    } else if (col.metric === "kd") {
-      // The game's two-decimal face, plain ink — no color band exists for a
-      // kills/deaths ratio.
-      parts.push(
-        <>
-          {tag}
-          <b>{view.kd != null ? view.kd.toFixed(2) : "—"}</b> {label}
-        </>,
-      );
-    } else {
-      parts.push(
-        <>
-          {tag}
-          <b style={view.avgDamage != null ? { color: damageColor(view.avgDamage) } : undefined}>
-            {view.avgDamage != null
-              ? Math.round(view.avgDamage).toLocaleString()
-              : "—"}
-          </b>{" "}
-          {label}
-        </>,
-      );
-    }
-  }
-  if (parts.length === 0) return null;
-  const line: VNode[] = [];
-  parts.forEach((p, i) => {
-    if (i > 0) line.push(<>{" · "}</>);
-    line.push(p);
-  });
-  return <>{line}</>;
 }
 
 /** Dashed cells for as many columns as are configured — the share-shot face

@@ -355,7 +355,6 @@
     "aiScore": "AI 評分",
     "aiScoreTip": "火力 {fire}% · 走位 {move}% · 資料覆蓋 {cov}%",
     "aiScoreTipMoveOnly": "走位 {move}% · 資料覆蓋 {cov}%",
-    "teamAvgAi": "AI 均分",
     "aiSort": "AI 置信度排序",
     "aiSortHint": "按 AI 評分加權排序：本局可觀測該船的時間越長，AI 評分權重越高，其餘按結算經驗占比"
   },

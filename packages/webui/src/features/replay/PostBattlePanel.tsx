@@ -16,26 +16,46 @@
  * retired 2026-11-07 — the user read it as an extra element; the `head`
  * prop still feeds the copied sheet's mode pill and the stats-source
  * scope.) Rows default to the compact one-line look; the share bar's mode
- * toggle expands them to full
- * cards in the live roster's richer-density spirit (name/ship/stat stack +
- * the LiveShipMeta ship strip; the live roster adds the same strip to its
- * shared aligned row instead), a persisted stats pref. The share bar also
- * leads with the stats-source chip — the identical selector the live
- * panel's head mounts (one shared statsPrefs store; a flip re-resolves
- * these rows immediately).
+ * toggle expands them to full cards, a persisted stats pref. BOTH
+ * densities share the same two-line aggregate header (labels over team
+ * means, right-aligned on the row columns — 2026-11-07 review: the full
+ * header used to squeeze its aggregates into one inline run). The full
+ * card reads as the compact row's hover hint laid out for real: its left
+ * stack carries the three identity lines (clan-tagged nick / every tag /
+ * ship tier + name) and its right block stacks the compact row's aligned
+ * data line (configured columns, XP, then the AI score) over the
+ * LiveShipMeta ship strip's two lines, so the strip gets the whole column
+ * band instead of a squeezed middle track. The share bar also leads with
+ * the stats-source chip — the identical selector the live panel's head
+ * mounts (one shared statsPrefs store; a flip re-resolves these rows
+ * immediately).
  *
  * Identity-line seals: the career verdict (神了 / 猴 / 蛆 / 过街老鼠) and the
  * composition tags (空中小人 / 水下小人 plus the 奶龙 / 奶蛙 veteran tiers)
  * press as the SMALL-TAG StampTag face BEFORE the nickname — career first,
  * composition after (user feedback: the roster should carry the small-tag
  * version of the 猴 seal, on the identity line where it reads as part of who
- * the player is). A compact row keeps only its highest composition kind, a
- * full card carries both classes. The old right-edge career-seal column and
- * its reserved track are retired: at the row end the square face read as one
- * more score column and stole width from the stat cells. The second identity
- * line leads with the ship tier's Roman numeral on a fixed-width track (see
- * the SCSS), so every row's ship name starts at the same x whether the tier
+ * the player is). BOTH densities press EVERY seal the row owns (2026-11-07
+ * review: a tag must always show whole — the one-tag cap that clipped or hid
+ * the rest is gone): a crowded compact line wraps the stamp cluster instead
+ * of clipping it and lets the clan tag ellipsize, while the nickname keeps a
+ * readable floor. The old right-edge career-seal column and its reserved
+ * track are retired: at the row end the square face read as one more score
+ * column and stole width from the stat cells. The second identity line
+ * leads with the ship tier's Roman numeral on a fixed-width track (see the
+ * SCSS), so every row's ship name starts at the same x whether the tier
  * is "I" / "VIII" / "★" or absent.
+ *
+ * Row hover hint: every row (both densities) carries ONE data-hint on its
+ * drill-down button — line 1 the clan-tagged nickname, line 2 every tag one
+ * by one (division / local marker / seals, the four-char composition tags
+ * included), line 3 the ship tier and name. The compact identity is a single
+ * line and the full card's tracks are fixed, so this hint is where the
+ * complete identity survives (the global popup keeps the newlines). A full
+ * card anchors the hint on its identity stack rather than the whole button,
+ * so the ship strip's own hover card keeps the right block to itself. The
+ * mask eye sits OUTSIDE the row button and keeps its own mask-toggle hint: a
+ * direct hover on the eye must not trade that hint for the row card.
  *
  * AI confidence scores: one `decision_static_report` call (shared with the
  * 3D board / E25 战报 through the backend's scoring cache) joins every
@@ -73,7 +93,7 @@ import {
   type VNode,
 } from "vue";
 import { useRouter } from "vue-router";
-import { CircleAlert, Eye, EyeOff } from "@lucide/vue";
+import { Eye, EyeOff } from "@lucide/vue";
 import { HkModal, HkSpinner } from "@celestia-island/hikari";
 
 import {
@@ -109,7 +129,6 @@ import {
   damageColor,
   prTier,
   winrateColor,
-  stampTier,
   stampWording,
   type CareerStamp,
   type StampKind,
@@ -142,8 +161,8 @@ import {
   rosterColumns,
   rosterShotCells,
   rosterShotDashes,
+  rosterRowHint,
   rosterStatCols,
-  rosterStatLine,
   useNickMasking,
   useShareShot,
   type RosterColumnSpec,
@@ -1013,22 +1032,21 @@ export default defineComponent({
        *  Divisions are battle facts, so unlike the seals this renders under
        *  every locale with no prefs gate; solo rows render nothing. */
       const divisionTagOf = (p: (typeof rows.value)[number]): VNode | null => {
-        const letter = (
-          isEnemy(p) ? enemyDivisionLetters : allyDivisionLetters
-        ).value.get(p.name);
+        const letter = divisionLetterOf(p);
         return letter != null ? <DivisionTag letter={letter} /> : null;
       };
+      /** The aligned stat-columns grid template — ONE string shared by the
+       *  two-line aggregate header and the full card's data line, so the
+       *  numbers land on the header tracks in both densities (compact rows
+       *  take their widths from the same rosterColumns specs in a flex line,
+       *  which is why the two layouts end on the same right edge). */
+      const rosterTemplate = (): string =>
+        `minmax(0, 1fr) ${rosterColumns()
+          .map((c) => c.width)
+          .join(" ")} 6ch${aiColOn.value ? " 6ch" : ""}`;
       const colTitle = (label: string, list: typeof rows.value) => {
         const title = <span class="replay-view__postbattle-col-name">{label}</span>;
         const cols = rosterColumns();
-        // Full cards carry no aligned stat columns, so an empty column set
-        // leaves the title alone there — unless the AI column is on, whose
-        // team mean then rides the title's right end alone (the rows below
-        // still carry the AI cell). The compact header still renders its XP
-        // caption when every configured column is switched off.
-        if (cols.length === 0 && fullMode.value && !aiColOn.value) {
-          return <div class="replay-view__postbattle-col-title">{title}</div>;
-        }
         /** One column's aggregate label — the aggregate flavor wording on
          *  global columns (weighted/plain team WR etc.), the column's own
          *  head (scope tag + metric) on scoped ones. */
@@ -1099,49 +1117,16 @@ export default defineComponent({
             </b>
           );
         };
-        // Full cards carry no aligned stat columns under the title, so the
-        // aggregate rides the title's right end as inline text — its own
-        // column-title treatment (the live roster aligns its equivalents
-        // under the shared two-line header): one labeled mean per configured
-        // column, each in its own scope's view.
-        if (fullMode.value) {
-          const parts: VNode[] = [];
-          cols.forEach((col, i) => {
-            if (i > 0) parts.push(<>{" · "}</>);
-            parts.push(
-              <>
-                {labelOf(col)} {valueOf(col, "")}
-              </>,
-            );
-          });
-          // The AI column's team mean rides the inline run's tail when its
-          // switch is on — the same aggregate the compact header shows.
-          if (aiColOn.value) {
-            const aiMean = aiTeamMean(list);
-            if (parts.length > 0) parts.push(<>{" · "}</>);
-            parts.push(
-              <>
-                {t("replay.postbattle.teamAvgAi")}{" "}
-                {aiMean != null ? formatAiPct(aiMean) : "—"}
-              </>,
-            );
-          }
-          return (
-            <div class="replay-view__postbattle-col-title">
-              {title}
-              <span class="replay-view__postbattle-col-aggtext">{parts}</span>
-            </div>
-          );
-        }
-        // Compact rows: a two-line mini table header on a grid mirroring
-        // the row columns (rosterColumns + the XP cell), so each aggregate
-        // number lands exactly on its column. Every stat column carries a
-        // label and a team mean (battles included); the XP cell carries the
-        // 经验 caption WITHOUT a value — a per-battle result has no team
-        // aggregate, but the last number needs a name.
-        const template = `minmax(0, 1fr) ${cols.map((c) => c.width).join(" ")} 6ch${
-          aiColOn.value ? " 6ch" : ""
-        }`;
+        // BOTH densities share ONE two-line mini table header on a grid
+        // mirroring the row columns (rosterColumns + the XP cell), so each
+        // aggregate number lands exactly on its column — the full card's
+        // right-block data line renders the same columns (2026-11-07
+        // review: the full header used to squeeze its aggregates into one
+        // inline run and none of them sat over the row numbers). Every stat
+        // column carries a label and a team mean (battles included); the XP
+        // cell carries the 经验 caption WITHOUT a value — a per-battle
+        // result has no team aggregate, but the last number needs a name.
+        const template = rosterTemplate();
         const fill = <span class="replay-view__postbattle-col-hfill" />;
         // The AI column's header: the caption over the team mean of the
         // joined rows (a dash when nothing joined — the column itself only
@@ -1194,6 +1179,10 @@ export default defineComponent({
           ? careerStamp(stat.pr, stat.battles, stat.winrate, stat.hidden, stat.clanWinrate)
           : null;
       };
+      /** The row's division letter (组队标签), or null for a solo row — the
+       *  tag face and the row hint read this one lookup. */
+      const divisionLetterOf = (p: (typeof rows.value)[number]): string | null =>
+        (isEnemy(p) ? enemyDivisionLetters : allyDivisionLetters).value.get(p.name) ?? null;
       /** The identity-line seal kinds for one row — the career verdict FIRST,
        *  the composition tags after, all pressed as the SMALL-TAG StampTag
        *  face BEFORE the nickname (user feedback: the roster wants the
@@ -1202,17 +1191,15 @@ export default defineComponent({
        *  and stole a track from the stat cells). The gates are the ones the
        *  faces always carried: zh UI only, the seals master switch (career),
        *  the verdict holds in stampOf, the 蛆 / 过街老鼠 floors suppressing the
-       *  composition, and the per-kind kill switch. The share model reads the
-       *  same helper, so the copied sheet and the DOM never disagree.
+       *  composition, and the per-kind kill switch.
        *
-       *  `full` picks the density's composition count: a full card shows BOTH
-       *  classes (air then sub) while a compact row keeps only the highest
-       *  one — a 奶龙 / 奶蛙 (veteran) tag outranks a minor one, and air wins a
-       *  same-tier tie (the old highestStampTag rule, kept verbatim). */
-      const sealTagKindsOf = (
-        p: (typeof rows.value)[number],
-        full: boolean,
-      ): StampKind[] => {
+       *  BOTH densities press EVERY seal the row owns (2026-11-07 review: a
+       *  tag must always show whole — the old one-tag cap either clipped the
+       *  trailing tag mid-glyph or hid it behind a marker; the row gives the
+       *  identity line its width and lets the nick ellipsize instead, and the
+       *  hover hint repeats the whole list). Air precedes sub, matching the
+       *  order the composition tags always read in. */
+      const sealTagKindsOf = (p: (typeof rows.value)[number]): StampKind[] => {
         if (!uiLocale.value.startsWith("zh")) return [];
         const kinds: StampKind[] = [];
         const career = sealsShown.value ? stampOf(p) : null;
@@ -1220,72 +1207,24 @@ export default defineComponent({
         if (compSealsOn.value && career !== "maggot" && career !== "rat") {
           const comp = compositions.value.get(p.name);
           if (comp) {
-            if (full) {
-              if (comp.air) kinds.push(comp.airVeteran ? "airVeteran" : "air");
-              if (comp.sub) kinds.push(comp.subVeteran ? "subVeteran" : "sub");
-            } else if (comp.air && comp.sub) {
-              // Both classes: air wins the same-tier tie, but a sub-veteran
-              // (奶蛙) outranks a minor air tag — the veteran face survives.
-              kinds.push(
-                comp.subVeteran && !comp.airVeteran
-                  ? "subVeteran"
-                  : comp.airVeteran
-                    ? "airVeteran"
-                    : "air",
-              );
-            } else if (comp.air) {
-              kinds.push(comp.airVeteran ? "airVeteran" : "air");
-            } else if (comp.sub) {
-              kinds.push(comp.subVeteran ? "subVeteran" : "sub");
-            }
+            if (comp.air) kinds.push(comp.airVeteran ? "airVeteran" : "air");
+            if (comp.sub) kinds.push(comp.subVeteran ? "subVeteran" : "sub");
           }
         }
         // Per-kind kill switch: StampTag would skip a disabled face itself,
-        // but the share model reads this helper too — filter here so the
-        // copied image mirrors the DOM exactly.
+        // but the row hint reads this helper too — filter here so the hint can
+        // never advertise a face the row does not paint.
         return kinds.filter((kind) => !prefs.value.sealDisabled[kind]);
       };
-      /** The identity line carries at most ONE seal inline — and only a lone
-       *  single-character (一级章) verdict. A 四字 composition tag or any
-       *  second seal would crowd the row past its track (the old cluster
-       *  clipped the extras mid-glyph, 2026-11-07 review), so those move
-       *  behind the yellow alert below instead. */
-      const inlineSealKind = (
-        p: (typeof rows.value)[number],
-        full: boolean,
-      ): StampKind | null => {
-        const kinds = sealTagKindsOf(p, full);
-        if (kinds.length !== 1) return null;
-        return stampTier(kinds[0]) === "primary" ? kinds[0] : null;
-      };
-      /** The seals hidden from the row by {@link inlineSealKind}, in display
-       *  order — the alert's tooltip and the nickname's own hint list them
-       *  all. */
-      const hiddenSealsOf = (
-        p: (typeof rows.value)[number],
-        full: boolean,
-      ): { kind: StampKind; label: string }[] => {
-        const inline = inlineSealKind(p, full);
-        if (inline != null) return [];
-        return sealTagKindsOf(p, full).map((kind) => ({
-          kind,
-          label: stampWording(kind, prefs.value.sealLabels),
-        }));
-      };
-      /** The hidden seals as their display wording — the ONE list the alert
-       *  icon's tooltip and the nickname's own hint share, so the two hover
-       *  targets can never disagree. */
-      const hiddenSealLabelsOf = (
-        p: (typeof rows.value)[number],
-        full: boolean,
-      ): string[] => hiddenSealsOf(p, full).map((seal) => seal.label);
-      /** Those kinds rendered as the single inline small-tag face. */
+      /** The row's seal tags as the small-tag faces — the ONE cluster both
+       *  densities paint (the full card stacks it on its own line; a compact
+       *  row keeps it on the name line). */
       const identitySealsOf = (
         p: (typeof rows.value)[number],
         full: boolean,
       ): VNode | null => {
-        const kind = inlineSealKind(p, full);
-        if (kind == null) return null;
+        const kinds = sealTagKindsOf(p);
+        if (kinds.length === 0) return null;
         return (
           <span
             class={
@@ -1294,47 +1233,40 @@ export default defineComponent({
                 : "replay-view__postbattle-cell-seals"
             }
           >
-            <StampTag kind={kind} />
+            {kinds.map((kind) => (
+              <StampTag kind={kind} />
+            ))}
           </span>
         );
       };
-      /** The yellow alert at the nickname's top-right: the row's seals moved
-       *  out of the identity line, their order and wording preserved in one
-       *  hover tooltip (the data-hint channel, so the phone build reads the
-       *  same list). The nickname's own hint repeats the list, so hovering
-       *  the name — not only this superscript marker — explains it. */
-      const sealAlertOf = (
+      /** One row's hover hint — the complete identity in the lines the row
+       *  itself can only ellipsize: (1) the clan-tagged nickname, (2) every
+       *  tag one by one (the division tag, the local marker, each seal — the
+       *  four-char composition tags included), (3) the ship tier and name.
+       *  The global hint popup keeps the supplied newlines (pre-line), and
+       *  the nickname rides maskOf so a hidden nick never leaks by hover. */
+      const rowHintOf = (
         p: (typeof rows.value)[number],
-        full: boolean,
-      ): VNode | null => {
-        const labels = hiddenSealLabelsOf(p, full);
-        if (labels.length === 0) return null;
-        return (
-          <span
-            class="replay-view__postbattle-seal-alert"
-            data-hint={labels.join(" · ")}
-            aria-label={labels.join(" · ")}
-            role="img"
-          >
-            <CircleAlert size={10} aria-hidden="true" />
-          </span>
-        );
-      };
-      /** A nickname's hover hint — the local player marker's label (when one
-       *  is set) first, then the hidden seals in display order, one " · "
-       *  line (user feedback: the seal list must answer a hover on the name
-       *  itself, not only on the small alert marker). Undefined when the row
-       *  has neither, so a plain row carries no tooltip. */
-      const nickHintOf = (
         color: MarkerColor | null,
-        p: (typeof rows.value)[number],
-        full: boolean,
-      ): string | undefined => {
-        const parts = [
-          color ? markerColorLabel(color) : null,
-          ...hiddenSealLabelsOf(p, full),
-        ].filter((part): part is string => part != null);
-        return parts.length > 0 ? parts.join(" · ") : undefined;
+      ): string => {
+        const ai = isAiName(p.name);
+        const tags: string[] = [];
+        const letter = divisionLetterOf(p);
+        if (letter != null) {
+          tags.push(t("replay.postbattle.divisionTag", { letter }));
+        }
+        if (color != null) tags.push(markerColorLabel(color));
+        for (const kind of sealTagKindsOf(p)) {
+          tags.push(stampWording(kind, prefs.value.sealLabels));
+        }
+        if (ai) tags.push(t("replay.bot"));
+        return rosterRowHint({
+          name: masking.maskOf(p.name),
+          clanTag: ai ? null : (nameStats.value.get(p.name)?.clanTag ?? null),
+          tags,
+          tier: tierLabelOf(p),
+          shipName: p.shipName,
+        });
       };
       /** Per-row nickname-mask eye — a sibling AFTER the row button so it
        *  stays a real button (no nested buttons). */
@@ -1364,6 +1296,7 @@ export default defineComponent({
         const enemy = !props.operation && isEnemy(p);
         const ai = isAiName(p.name);
         const stat = ai ? undefined : nameStats.value.get(p.name);
+        const color = ai ? null : markers.colorOf(p.name, p.accountId);
         return (
           <div
             class={[
@@ -1373,11 +1306,14 @@ export default defineComponent({
             ]}
             key={p.accountId}
           >
-            {/* The whole row minus the eye is the drill-down button: hover
-                and clicks cover the identity-line seals on the name line too. */}
+            {/* The whole row minus the eye is the drill-down button: hover,
+                clicks and the complete identity hint all ride it, while the
+                eye stays a sibling (a direct hover there keeps its own
+                mask-toggle hint instead of the row card). */}
             <button
               class="replay-view__postbattle-cell-btn"
               type="button"
+              data-hint={rowHintOf(p, color)}
               data-player-name={ai ? undefined : p.name}
               data-player-account={p.accountId != null ? String(p.accountId) : undefined}
               data-player-realm={p.realm ?? undefined}
@@ -1402,35 +1338,21 @@ export default defineComponent({
               </span>
               <span class="replay-view__postbattle-cell-main">
                 <span class="replay-view__postbattle-cell-name">
-                  {/* The identity-line seals lead the name BEFORE the nick —
-                      career verdict first, then the compact row's single
-                      highest composition tag (small-tag faces; user feedback
-                      retired the row-end square column). The tag cluster
-                      clips first when the line runs out; the nick keeps a
-                      minimum slot. */}
-                  {/* The division tag (组队标签) leads the line — battle
-                      fact first, the seal verdicts after it. */}
+                  {/* The division tag (组队标签) leads the line — battle fact
+                      first — then EVERY seal the row owns as small-tag faces
+                      (2026-11-07 review: a tag never clips or hides; the nick
+                      below ellipsizes instead, and the row hint carries the
+                      complete text). */}
                   {divisionTagOf(p)}
                   {identitySealsOf(p, false)}
                   {/* Local player marker (玩家标记): the name itself carries
                       the animated tint — nickname-first, account id sharpens.
-                      Its tooltip combines the marker label with the hidden
-                      seals, the same list the alert icon carries. */}
-                  {(() => {
-                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
-                    return (
-                      <span
-                        class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
-                        data-hint={nickHintOf(color, p, false)}
-                      >
-                        {masking.maskOf(p.name)}
-                      </span>
-                    );
-                  })()}
-                  {/* Seals moved out of the line: the yellow alert's tooltip
-                      lists them all in order, and the nick hint above repeats
-                      the list (2026-11-07 review). */}
-                  {sealAlertOf(p, false)}
+                      The marker's wording rides the row hint. */}
+                  <span
+                    class={["replay-view__postbattle-cell-nick", markerTintClass(color)]}
+                  >
+                    {masking.maskOf(p.name)}
+                  </span>
                   {/* Karma (业力) superscript at the nickname's top-right —
                       same register as the live panel's rows (the stats
                       prefs' own switch; missing figures render nothing). */}
@@ -1456,10 +1378,7 @@ export default defineComponent({
                 Boolean(shipScopeOn.value && nameStats.value.get(p.name)?.shipsLoading),
                 (st, scope) => colViewOf(scope, st, p.shipId ?? null),
               )}
-              <span
-                class="replay-view__postbattle-cell-xp"
-                data-hint={t("replay.postbattle.xp")}
-              >
+              <span class="replay-view__postbattle-cell-xp">
                 {p.xp.toLocaleString()}
               </span>
               {aiColOn.value ? (
@@ -1472,40 +1391,19 @@ export default defineComponent({
           </div>
         );
       };
-      /** Full-card row (the live roster's richer density, carried as a
-       *  card here): identity-line seals + name, the tier-marked ship line,
-       *  the stat strip (EVERY configured column now, damage included — one
-       *  text line per scope), the LiveShipMeta strip, then the XP column.
-       *  Like the compact row, the whole card minus the eye is one button. */
+      /** Full-card row — the richer density reads as the compact hover hint's
+       *  three lines on the left (clan-tagged nick / every tag one by one /
+       *  ship tier + name) and a right block that stacks the compact row's
+       *  aligned data line (the configured columns, XP, then the AI score)
+       *  over the LiveShipMeta strip's two ship lines. The header above is
+       *  the compact two-line grid in both densities, so this data line lands
+       *  on the aggregate columns' tracks. Like the compact row, the whole
+       *  card minus the eye is one button (hover/click/hint alike). */
       const fullCell = (p: (typeof allies.value)[number]) => {
         const enemy = !props.operation && isEnemy(p);
         const ai = isAiName(p.name);
         const stat = ai ? undefined : nameStats.value.get(p.name);
-        const statLine = () => {
-          if (ai) return "—";
-          // Absent = still querying (progressive arrival: the row spins
-          // until ITS entry lands); arrived rows render immediately.
-          if (!stat || (shipScopeOn.value && stat.shipsLoading)) {
-            return <HkSpinner size="xs" tone="current" />;
-          }
-          if (stat.hidden) {
-            return (
-              <span class="replay-view__postbattle-fcell-hidden">
-                {t("replay.live.hiddenProfile")}
-              </span>
-            );
-          }
-          // The configured columns' numbers, each in its own scope — the
-          // shared rosterStatLine text line every full-card surface renders.
-          const line = rosterStatLine((scope) =>
-            colViewOf(scope, stat, p.shipId ?? null),
-          );
-          return line != null ? (
-            <span class="replay-view__postbattle-fcell-statline">{line}</span>
-          ) : (
-            "—"
-          );
-        };
+        const color = ai ? null : markers.colorOf(p.name, p.accountId);
         return (
           <div
             class={[
@@ -1518,45 +1416,28 @@ export default defineComponent({
             <button
               class="replay-view__postbattle-fcell-btn"
               type="button"
+              style={{ gridTemplateColumns: rosterTemplate() }}
               data-player-name={ai ? undefined : p.name}
               data-player-account={p.accountId != null ? String(p.accountId) : undefined}
               data-player-realm={p.realm ?? undefined}
               onClick={() => openDetail(p)}
             >
-              <span class="replay-view__postbattle-fcell-main">
+              {/* Left: the three identity lines the compact row can only put
+                  in its hover hint — nick + clan, every tag, then the ship.
+                  The hint anchors HERE, not on the whole button: the ship
+                  strip's own hover card owns the card's right block, and two
+                  popups must never stack. */}
+              <span
+                class="replay-view__postbattle-fcell-main"
+                data-hint={rowHintOf(p, color)}
+              >
                 <span class="replay-view__postbattle-fcell-name">
-                  {/* The identity-line seals lead the name BEFORE the nick —
-                      the career verdict first, then BOTH composition classes
-                      (the full card keeps air + sub, where a compact row
-                      keeps only its highest); the small-tag StampTag face
-                      the user asked for. The card's name track is fixed at
-                      10rem, so the tag cluster is the item that clips: the
-                      nickname keeps its slot even on a three-seal row. */}
-                  {/* The division tag (组队标签) leads the line here too —
-                      battle fact first, both composition tags after it. */}
                   {divisionTagOf(p)}
-                  {identitySealsOf(p, true)}
-                  {/* Local player marker (玩家标记): the name itself carries
-                      the animated tint — nickname-first, account id sharpens.
-                      Its tooltip combines the marker label with the hidden
-                      seals, the same list the alert icon carries. */}
-                  {(() => {
-                    const color = ai ? null : markers.colorOf(p.name, p.accountId);
-                    return (
-                      <span
-                        class={["replay-view__postbattle-fcell-nick", markerTintClass(color)]}
-                        data-hint={nickHintOf(color, p, true)}
-                      >
-                        {masking.maskOf(p.name)}
-                      </span>
-                    );
-                  })()}
-                  {/* Seals moved out of the line: the yellow alert's tooltip
-                      lists them all in order, and the nick hint above repeats
-                      the list (2026-11-07 review). */}
-                  {sealAlertOf(p, true)}
-                  {/* Karma superscript — the same top-right-of-nick
-                      register as the compact row and the live panel. */}
+                  <span
+                    class={["replay-view__postbattle-fcell-nick", markerTintClass(color)]}
+                  >
+                    {masking.maskOf(p.name)}
+                  </span>
                   {prefs.value.rosterKarmaEnabled ? (
                     <KarmaSup value={stat?.karma ?? null} class="replay-view__postbattle-fcell-karma" />
                   ) : null}
@@ -1565,44 +1446,44 @@ export default defineComponent({
                   ) : null}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
                 </span>
+                {/* Line 2: EVERY seal the row owns, one by one. */}
+                {identitySealsOf(p, true)}
                 <span class="replay-view__postbattle-fcell-ship">
                   <span class="replay-view__postbattle-fcell-tier">{tierLabelOf(p)}</span>
                   <span class="replay-view__postbattle-fcell-shipname">{p.shipName}</span>
                 </span>
-                <span class="replay-view__postbattle-fcell-stat">{statLine()}</span>
               </span>
-              {/* Ship identity + parameters ride the card's middle ground
-                  (ally rows get the consumable badges too); the host span
-                  pins grid track 2, and a ship missing from the offline DBs
-                  leaves the track reserved so nothing slides. */}
-              <span class="replay-view__postbattle-fcell-meta">
-                {p.shipId != null ? (
-                  <LiveShipMeta
-                    shipId={p.shipId}
-                    ally={!enemy}
-                    build={enemy ? null : buildOf(p.name, p.shipId)}
-                  />
-                ) : null}
-              </span>
-              {/* The score track closes the card: the XP cell, then the AI
-                  confidence cell when its switch is on (the rightmost
-                  score, where the retired seal track used to read) — the
-                  identity-line seals ride the main track's name line. */}
-              <span class="replay-view__postbattle-fcell-score">
-                <span
-                  class="replay-view__postbattle-fcell-xp"
-                  data-hint={t("replay.postbattle.xp")}
-                >
-                  {p.xp.toLocaleString()}
-                </span>
-                {aiColOn.value ? (
-                  <span
-                    class="replay-view__postbattle-fcell-ai"
-                    data-hint={aiTipOf(p)}
-                  >
-                    {aiCellBody(p)}
+              {/* Right: the data line (the compact row's aligned columns, so
+                  the header's aggregates sit right above them) over the ship
+                  strip's two lines. The strip owns the whole right block now,
+                  so its parameters/badges render as fully as the column
+                  allows instead of being squeezed into a narrow middle. */}
+              <span class="replay-view__postbattle-fcell-side">
+                <span class="replay-view__postbattle-fcell-data">
+                  {rosterStatCols(
+                    p.name,
+                    nameStats.value,
+                    Boolean(shipScopeOn.value && nameStats.value.get(p.name)?.shipsLoading),
+                    (st, scope) => colViewOf(scope, st, p.shipId ?? null),
+                  )}
+                  <span class="replay-view__postbattle-cell-xp">
+                    {p.xp.toLocaleString()}
                   </span>
-                ) : null}
+                  {aiColOn.value ? (
+                    <span class="replay-view__postbattle-cell-ai" data-hint={aiTipOf(p)}>
+                      {aiCellBody(p)}
+                    </span>
+                  ) : null}
+                </span>
+                <span class="replay-view__postbattle-fcell-meta">
+                  {p.shipId != null ? (
+                    <LiveShipMeta
+                      shipId={p.shipId}
+                      ally={!enemy}
+                      build={enemy ? null : buildOf(p.name, p.shipId)}
+                    />
+                  ) : null}
+                </span>
               </span>
             </button>
             {ai ? null : eyeBtn(p.name)}

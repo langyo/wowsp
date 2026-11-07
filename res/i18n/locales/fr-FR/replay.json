@@ -355,7 +355,6 @@
     "aiScore": "Score IA",
     "aiScoreTip": "Tir {fire}% · Déplacement {move}% · Couverture des données {cov}%",
     "aiScoreTipMoveOnly": "Déplacement {move}% · Couverture des données {cov}%",
-    "teamAvgAi": "Moy. IA",
     "aiSort": "Tri par confiance IA",
     "aiSortHint": "Classement par score IA pondéré — plus le navire a été observable pendant cette bataille, plus le verdict de l'IA pèse ; le reste repose sur la part d'expérience de règlement"
   },

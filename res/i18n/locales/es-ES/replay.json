@@ -355,7 +355,6 @@
     "aiScore": "Puntuación IA",
     "aiScoreTip": "Disparo {fire}% · Movimiento {move}% · Cobertura de datos {cov}%",
     "aiScoreTipMoveOnly": "Movimiento {move}% · Cobertura de datos {cov}%",
-    "teamAvgAi": "Media IA",
     "aiSort": "Orden por confianza IA",
     "aiSortHint": "Ordena por la puntuación IA ponderada — cuanto más tiempo se pudo observar al barco en esta batalla, más pesa el veredicto de la IA; el resto depende de la proporción de experiencia de liquidación"
   },
