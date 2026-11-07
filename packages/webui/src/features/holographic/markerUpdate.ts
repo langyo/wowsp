@@ -822,8 +822,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     }
   }
   // Aircraft labels (one per carrier): sync name/HP from the carrier and
-  // show while any of its squadrons is in the air (visible window =
-  // first update .. last update + 2 min).
+  // show while any of its squadrons is in the air (visible window = first
+  // update .. one PLANE_TRAIL_GRACE_S past the last update, capped by the
+  // minimap remove event).
   {
     const labels = ctx.shipLabels.value;
     for (const [labelId, carrierId] of ctx.planeLabelCarriers) {

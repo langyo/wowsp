@@ -2112,8 +2112,11 @@ export default defineComponent({
       const cam = api.value?.camera;
       if (!ctrl || !cam) return;
       // Aircraft target: chase the carrier's current squadron formation.
-      // Fallback chain: rendered GLB centroid → recorded anchor sample (Points
-      // fallback / model pack missing / model still loading) → carrier hull.
+      // Fallback chain: rendered GLB centroid → Points cloud slot (the
+      // synthetic patrol centre the dots are drawn at, with its tangent
+      // heading) → recorded anchor sample (model pack missing / still
+      // loading) → carrier hull (its last recorded pose when the marker is
+      // hidden or the hull is sunk).
       let aircraft: { x: number; y: number; z: number; yaw: number } | null = null;
       if (followAircraft.value) {
         const planeId = activeSquadronOf(
