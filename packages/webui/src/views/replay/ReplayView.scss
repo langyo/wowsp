@@ -367,24 +367,6 @@
       overscroll-behavior: contain;
     }
   }
-  /* Chat window's body: a plain non-scrolling wrapper (the chat list runs
-     its own hikari scroller below the pinned timeline). */
-  &__modal-body {
-    /* Flex child of a max-height column: without min-height:0 it refuses
-       to shrink and the panel's overflow:hidden silently clips it. */
-    flex: 1 1 auto;
-    min-height: 0;
-    /* Never chain the body's scroll to the page behind it (phone
-       sheet-family containment; the desktop shell never scrolls, so this
-       is a no-op there) — the scrollport is the container's viewport. */
-    & > .hk-scroll-container-viewport {
-      overscroll-behavior: contain;
-    }
-    /* No --hk-scroll-pad-top here: the chat body's timeline pin rides
-       strategy="none" (see ChatLogPanel), so no pin consumes a whitespace
-       contract — the body's own padding IS the gutter above the header. */
-  }
-
   /* Chat log modal — narrower than the results panel. Top: mini timeline
      (one channel-tinted dot per message, playhead tracking the battle
      clock, click = seek); below: a message grid whose sender column sits
@@ -394,23 +376,36 @@
     /* Reading frame (the window width itself rides HkModal's width prop). */
     height: min(70vh, 640px);
 
-    /* The LIST is the chat scroller, not the modal body. With the body
-       scrolling, a content overflow of less than one row made wheel deltas
-       read as dead: the rows slid UNDER the translucent bleed pin faster
-       than the fold revealed the clipped half line, so the only visible
-       change was the first message being half-swallowed by the timeline.
-       Here the timeline rides a static header (the body no longer
-       scrolls, so the sticky pin never offsets) and every scroll delta
-       moves all rows against the scroller's own crisp top clip. The
-       body's padding stays ON the body (the base rule dropped it when
-       the results body became a container): it is the empty gutter above
-       the header's box — nothing bleeds into it (see ChatLogPanel's
-       strategy="none"). */
+    /* HkModal's body-inner is a block, so the panel must hand the frame
+       height down to the wrapper: the message LIST is the scroller, not
+       the modal body. Without that height chain the modal body scrolled
+       the whole window and the list's own hikari scroller stayed inert —
+       the pre-migration overlay's wrapper also still stacked its 0.6rem
+       padding on HkModal's 1.5rem gutter, the same dead band the results
+       window had (2026-11-07 report). The body never scrolls now, so the
+       timeline above the list stays put and every wheel delta moves the
+       rows against the list's own crisp clip. Desktop uses the results
+       sheet's data-first gutters (8px under the divider, fixed 16px below
+       the scrollport); phone sheets keep HkModal's 1rem + safe area. */
+    .hk-modal-body-scroll {
+      overflow: hidden;
+    }
+    .hk-modal-body-inner {
+      height: 100%;
+    }
+    @media (min-width: 768px) {
+      .hk-modal-body {
+        padding: 0.5rem 0 1rem;
+        --hk-scroll-pad-top: 0;
+        --hk-scroll-pad-bottom: 0;
+      }
+    }
     .replay-view__modal-body {
       display: flex;
       flex-direction: column;
       overflow: hidden;
-      padding: 0.6rem 1rem;
+      height: 100%;
+      min-height: 0;
     }
     /* The hikari scroller wrapping the message <ul> (the grid stays on
        the list so the rows keep their shared subgrid axes). */
@@ -972,14 +967,9 @@
     /* (the overlays' bottom-sheet docking moved to HkModal's own phone
        sheet — 2026-11-03; the gutters below are content, kept.) */
 
-    /* The results sheet now mounts straight into HkModal's body, which
-       carries the phone gutters (1rem + safe-area) by itself — only the
-       chat body still restates its own sheet gutter (the safe-area term
-       included). Both top pads stay equal (0.5rem) by convention. */
-    &__chat-panel .replay-view__modal-body {
-      padding: 0.5rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
-    }
-
+    /* Both replay windows now mount straight into HkModal's body, which
+       carries the phone's 1rem gutter; the top-level safe-area rule below
+       restores the home-bar clearance for them. */
     &__chat-panel {
       width: 100%;
     }
@@ -987,6 +977,17 @@
 
   .replay-card {
     min-height: 44px;
+  }
+}
+
+/* HkModal's phone sheet hardcodes its body-inner padding to 1rem (the
+   package's safe-area gutter only feeds the pinned covers in this version),
+   so the two replay reading frames restate the home-bar clearance their
+   pre-migration inner wrappers carried. The frames are teleported to the
+   overlay root, outside .replay-view — hence a top-level selector. */
+@media (max-width: 767px) {
+  :is(.replay-view__results-frame, .replay-view__chat-panel) .hk-modal-body-inner {
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 }
 
