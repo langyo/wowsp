@@ -4,13 +4,17 @@
  * links (`/api/replays/admin/archive?anon_id=…`), the confirmed drain
  * (POST {anonIds}), the RAW wanted-ruleset editor (GET answers
  * `{exists, raw}`, POST takes the JSON text verbatim — `handle_admin_wanted`),
- * lifetime credits (`handle_admin_credits`), and the rename / backfill
- * forms (`handle_admin_rename` / `handle_admin_backfill` body shapes).
- * Every mutation arms the shared HkConfirmDialog first; 401/403 hands
- * the surface back to login.
+ * and the rename / backfill forms (`handle_admin_rename` /
+ * `handle_admin_backfill` body shapes).
+ * The 有录像/全部 SCOPE FILTER rides the shell header (ErpApp owns its
+ * state and binds the segmented group there; this view only reads it
+ * through props) and defaults to hiding identities with no recordings on
+ * the cloud. The lifetime credits roster (贡献名单) is its own page
+ * (CreditsView). Every mutation arms the shared HkConfirmDialog first;
+ * 401/403 hands the surface back to login.
  */
 
-import { computed, defineComponent, onMounted, ref } from "vue";
+import { computed, defineComponent, onMounted, ref, type PropType } from "vue";
 import {
   HButton,
   HCard,
@@ -31,7 +35,6 @@ import LinkButton from "@/shared/LinkButton";
 import { asIndexable } from "@/shared/typing";
 
 import {
-  getReplayAdminCredits,
   getReplayAdminList,
   getReplayAdminWanted,
   isAuthError,
@@ -43,7 +46,6 @@ import {
   type AdminContributor,
   type BackfillMember,
   type BackfillOk,
-  type CreditsResponse,
   type DrainResult,
   type ReplayAdminList,
   type WantedDoc,
@@ -59,10 +61,24 @@ const REALM_OPTIONS = REALMS.map((r) => ({ value: r, label: r.toUpperCase() }));
 
 const HEX64 = /^[0-9a-f]{64}$/;
 
+/** The 贡献者 table's scope — the header's segmented group (ErpApp owns
+ *  the state; this view only reads it). "recorded" is the default ON
+ *  filter: it hides identities with nothing on the cloud right now
+ *  (stagedCount 0 AND archiveBytes 0 — drained, backfilled or
+ *  registered-only rows); "all" reveals them. */
+export type ReplayScope = "recorded" | "all";
+
+export const REPLAY_SCOPE_TABS = [
+  { key: "recorded", label: "有录像" },
+  { key: "all", label: "全部" },
+];
+
 export default defineComponent({
   name: "ReplayAdminView",
   props: {
     onSessionLost: { type: Function, required: true },
+    /** The header's 有录像/全部 scope — owned by ErpApp. */
+    scope: { type: String as PropType<ReplayScope>, default: "recorded" },
   },
   setup(props) {
     const toast = useToast();
@@ -70,7 +86,6 @@ export default defineComponent({
 
     const list = ref<ReplayAdminList | null>(null);
     const wanted = ref<WantedRaw | null>(null);
-    const credits = ref<CreditsResponse | null>(null);
     const loading = ref(true);
     const error = ref<string | null>(null);
 
@@ -78,16 +93,9 @@ export default defineComponent({
       loading.value = true;
       error.value = null;
       try {
-        // Credits are presentation-only — a failure there must not blank
-        // the operational tables, so it degrades to null on its own.
-        const [l, w, c] = await Promise.all([
-          getReplayAdminList(),
-          getReplayAdminWanted(),
-          getReplayAdminCredits().catch(() => null),
-        ]);
+        const [l, w] = await Promise.all([getReplayAdminList(), getReplayAdminWanted()]);
         list.value = l as ReplayAdminList;
         wanted.value = w as WantedRaw;
-        credits.value = c as CreditsResponse | null;
       } catch (e) {
         if (isAuthError(e)) {
           props.onSessionLost();
@@ -107,6 +115,27 @@ export default defineComponent({
     const watermark = computed(() => list.value?.watermark ?? null);
     const stagedIds = computed(() =>
       contributors.value.filter((c) => c.stagedCount > 0).map((c) => c.anonId),
+    );
+
+    /** "Has recordings on the cloud right now" == staged shards OR the
+     *  staged archive blob still in R2; drain zeroes archiveBytes, and
+     *  backfilled / registered-only identities are 0/0. */
+    const hasCloudRecordings = (c: AdminContributor): boolean =>
+      c.stagedCount > 0 || c.archiveBytes > 0;
+    const visibleContributors = computed(() =>
+      props.scope === "all" ? contributors.value : contributors.value.filter(hasCloudRecordings),
+    );
+    /** Identities with nothing on the cloud right now (drained, backfilled
+     *  or registered-only) — the rows the default scope keeps hidden. */
+    const noRecordingCount = computed(
+      () => contributors.value.filter((c) => !hasCloudRecordings(c)).length,
+    );
+    /** The summary line's contributor clause — counts the hidden remainder
+     *  in both scopes so "全部" is discoverable from the default one. */
+    const scopeSummary = computed(() =>
+      props.scope === "all"
+        ? `${contributors.value.length} 位贡献者${noRecordingCount.value ? `（含 ${noRecordingCount.value} 位无录像）` : ""}`
+        : `${visibleContributors.value.length} 位有录像${noRecordingCount.value ? `（已隐藏 ${noRecordingCount.value} 位无录像）` : ""}`,
     );
 
     /** The stored ruleset parsed LENIENTLY for display; the server is
@@ -362,9 +391,6 @@ export default defineComponent({
           </HButton>
         </div>
       ),
-      "cell-count": ({ row }: { row: { name: string; realm: string; count: number } }) => (
-        <span>{row.count}</span>
-      ),
     };
 
     const ruleSlots = {
@@ -396,7 +422,7 @@ export default defineComponent({
               <span class="erp-muted">
                 水位 {fmtBytes(watermark.value?.stagedBytes)} / {fmtBytes(watermark.value?.limitBytes)}
                 {" · "}
-                {contributors.value.length} 位贡献者
+                {scopeSummary.value}
                 {" · "}
                 需求单：
                 {wanted.value?.exists
@@ -468,31 +494,19 @@ export default defineComponent({
                   { key: "updatedAt", title: "最近活动", width: "160px" },
                   { key: "actions", title: "操作", width: "230px" },
                 ]}
-                rows={contributors.value.map(asIndexable)}
+                rows={visibleContributors.value.map(asIndexable)}
                 rowKey="anonId"
                 hover
+                emptyText={
+                  contributors.value.length === 0
+                    ? "还没有任何贡献者。"
+                    : "当前没有有云上录像的贡献者——切到「全部」查看历史署名。"
+                }
               >
                 {tableSlots}
               </HTable>
-              {!contributors.value.length ? <p class="erp-muted">还没有任何贡献者。</p> : null}
             </HCard>
 
-            <HCard>
-              <h3 class="erp-section-title">署名积分（发布名单的累计口径）</h3>
-              <HTable
-                columns={[
-                  { key: "name", title: "署名", width: "220px" },
-                  { key: "realm", title: "服务器", width: "120px" },
-                  { key: "count", title: "累计采纳" },
-                ]}
-                rows={(credits.value?.contributors ?? []).map(asIndexable)}
-                rowKey="name"
-                hover
-              >
-                {tableSlots}
-              </HTable>
-              {!credits.value ? <p class="erp-muted">积分列表暂不可用（加载失败已跳过）。</p> : null}
-            </HCard>
           </>
         )}
 
