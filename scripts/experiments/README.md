@@ -36,6 +36,7 @@
 | E24 | 武备属性前置路由（shipId→属性表） | 路由器读武备属性而非船名：分类/校准能否提升、代价是什么 | ⚠️ | 定版：AUPRC 0.3560 / ECE 0.0266 / headA 误报 40/2490 历代最好；hp-lost ρ 0.915→0.600 仍退化——**双模型分工定案**：评分用 E19、建议用 E24（int8 有 0.911 头 A 偏移，交付只走 fp32） |
 | E26 | 鱼雷决策数据集 + 试点（P1） | 从 `TorpedoLaunch` 导出「能否发射 / 专家是否点击」监督，鱼雷点击决策是否可学（预注册 headB AUPRC≥2×base 且 top-decile lift≥1.5×） | ⚠️ | own 86k 行/161 局（canLaunch 55.5%、launched 0.98%）；**headA AUPRC 0.985 可学；headB 0.0109 = 1.12×base、top-lift 1.01× → 预注册 FAIL**（4 s 节奏协议 bug 已修复，E26b 探索性复跑见下） |
 | E26c | 全量语料鱼雷 scale 测试（node3 GPU） | headB 弱是「数据少」还是「特征不行」：全量 2,215 局同协议复跑（scale-only，不改特征） | ⚠️ | 3,111,384 行/2,215 局（canLaunch 1,052,311、launched 17,055 = 1.62%）；**headA 0.998；headB AUPRC 1.91×base（差 2× 线 0.09）、top-decile lift 2.33×（过线）→ MIXED**；AUC 0.675 vs own-only 0.587——scale 显著有效但未完全过线，下一步转 E26d 特征/标签 |
+| E26d | 鱼雷几何/类别特征迭代（torp2，node3 全量） | 从现有行派生 11 维几何+类别特征，能否把 headB 推过 2×base 且 top-decile lift≥1.5× | ✅ | 3,111,384 行/2,215 局，global 27→38；**headB AUPRC 0.03705 = 2.29×base、top-decile lift 2.66×、AUC 0.7084 → 预注册 PASS**；headA 0.99989；E26c core 复跑逐位一致（0.0309248/2.3307） |
 - **语料**：King of the Sea XIX 全量公开录像爬取入册（用户授权；四赛区
   618 场 / 1047 局 / 2054 个 `.wowsreplay`，HEAD 实测 3.4GB、magic 全验，
   归档 `replay-archive/kots-xix/<region>/`）——语料 163 → **2217 局**；
@@ -414,6 +415,69 @@
 - **产物**：本机 `out/torpedo_model/e26c_scale_metrics.json` + `e26c_scale.log`
   （node3 run/ 同源）；数据/脚本/结果留在 node3
   `/mnt/work/wowsp-kots/e26c/{data,code,run}`。
+
+### E26d · 鱼雷几何/类别特征迭代（torp2，node3 全量）✅ PASS：headB 2.29×base、top-lift 2.66×（预注册主分析）
+
+- **假设（预注册 `out/torpedo_model/e26d-preregistration.md`，先落盘后跑）**：在
+  与 E26c **完全相同**的数据（3,111,384 行 / 2,215 局）、2 s 标签、5 折
+  GroupKFold（seed 0）、超参与硬件下，把**由现有行派生**的 11 维 torp2 特征拼进
+  global 块（27→38），使 headB pooled OOF 达到 E26/E26c 同一验收线：
+  **AUPRC ≥ 2×base 且 top-decile lift ≥ 1.5×**。主分析 = torp2（无 reweight）；
+  验收线未改、未调参、未根据结果改协议。预注册含 1 次冻结后 CUDA hotfix sha 的
+  透明披露（`data["global"]` 被释放后取维度改为 `glob.shape[1]`；协议/超参/验收线未改）。
+- **11 维 torp2 特征（全部由 row 现算，不重导出）**：①–⑤ 类别 one-hot
+  DD / CL+CA / BB / SS / unknown；⑥ observed 敌舰数/12；⑦ 射程内 observed 敌舰数/8
+  （`distM ≤ ownRangeM`）；⑧ 最近射程内敌舰距离占比 `1 − min(distM/ownRangeM)`；
+  ⑨ 射程内 `|bearingRelRad| ≤ 45°` 比例；⑩ ≤20° 比例；⑪ 装填就绪二值
+  （`ownReloadFrac ≥ 0.999`）。`--feature-set core`（默认）与 E26c 逐位一致。
+- **数据/切分/算力**：同 E26c——own 170,863 + apac 1,021,498 + eu 1,432,164 +
+  na 486,859 = 3,111,384 行/2,215 局；canLaunch 1,052,311（33.8%）、launched
+  17,055（1.62%）；两遍式加载 + float16（数组 2.92 GB），整库上 GPU；node3
+  RTX 5880 Ada（与 llama 共享、未 kill），torch 2.5.1+cu121；hidden 192 /
+  batch 4096 / 12 epochs / lr 1e-3 / smoothing 0.05；**训练 236.0 s**，未 OOM。
+- **主结果（pooled OOF）**：headB **AUPRC 0.037051（= 2.286× base 0.016207）/
+  AUC 0.7084 / logloss 0.09004（仍略差于常数 0.08289）/ Brier 0.01640
+  （常数 0.01594）/ ECE 0.0246 / top-decile 实际发射率 4.31%（= lift 2.662×）**；
+  每折 AUPRC 0.0366–0.0385（0.03759±0.00062）、lift 2.556–2.770（2.698±0.075）、
+  AUC 0.704–0.717。headA **AUPRC 0.99989 / AUC 0.99998 / ECE 0.0259 / logloss
+  0.0291**（类别 one-hot 让"能否发射"的规则几乎完全确定）。基线：no-skill
+  AUPRC 0.01684 / logloss 0.08289；labelA 规则 logloss 15.86。
+- **判定**：AUPRC 2.29× ≥ 2× 且 top-decile lift 2.66× ≥ 1.5× → **PASS**（预注册
+  两条都过；这是 E26 系列第一次过主验收线，且未调参过线）。
+- **与 E26c（core）对比**：headB AUPRC 0.030925 → **0.037051**（1.91× → **2.29×**，
+  +19.8%）；AUC 0.6752 → **0.7084**；top-lift 2.331 → **2.662**；headA
+  0.99826 → **0.99989**。**core 复跑 sanity 与 E26c 逐位一致**（5 折 AUPRC
+  0.0309608/0.0302013/0.0306312/0.0326273/0.0327289、总 AUPRC 0.03092482702170834、
+  lift 2.330674724436389 完全相同）——证实 `--feature-set core` 与 E26c 兼容
+  （float16 + GPU 下仍确定性一致），torp2 的全部差异来自新特征。
+- **按类别（headB AUPRC / 该类 base；括号为 E26c core 值）**：
+
+  | 类别 | rows | canLaunch | launched | 正类率 | headB AUPRC（core → torp2） | torp2/base |
+  |---|---|---|---|---|---|---|
+  | DD | 1,831,164 | 466,730 | 10,949 | 2.35% | 0.0356 → **0.04187** | 1.78× |
+  | CL/CA | 1,040,934 | 465,559 | 5,009 | 1.08% | 0.02363 → **0.02618** | 2.43× |
+  | BB | 229,674 | 117,019 | 996 | 0.85% | 0.01948 → **0.02236** | 2.63× |
+  | SS | 9,612 | 3,003 | 101 | 3.36% | 0.04690 → **0.05067** | 1.51× |
+
+- **按区域（headB AUPRC；括号为 core）**：apac 1,021,498 行 0.03330 → **0.03927**
+  （2.32×）；eu 1,432,164 0.03050 → **0.03652**（2.16×）；na 486,859 0.03052 →
+  **0.03685**（2.25×）；own 170,863 0.02578 → **0.03209**（3.16×）——四个区域全部
+  提升，无单区域塌陷。
+- **secondary ablation（未跑，如实记录）**：`--pos-weight` / `--focal-gamma` 两个
+  开关已实现（只作用于 head B，默认关闭、与 E26c 逐位一致），但因时间与 lead 指示
+  **本轮未运行**；主判定只用预注册的 torp2 无 reweight 结果。
+- **局限/解读**：排序（AUPRC/AUC/top-lift）第一次过线，但 **logloss/Brier 仍略差于
+  常数基线**——输出概率的校准还不能直接当概率用（只适合排序/分层）；SS 仅 9,612 行
+  101 正例（结果描述性）；语料仍含 event/pve 未过滤；torp2 是粗粒度几何（槽位
+  bearing/距离代理），不是 click-level 序列、无真实管位/DoT/命中概率；GPU 与 llama
+  共享但仅用剩余显存。
+- **下一步**：click-level 序列标签（发射事件建模，而非窗口二分类）；SS 专项
+  （鱼雷管数/制导/深度）；命中结果标签（shotKills join）与 DoT/进水；概率校准
+  （temperature/Platt 或 focal，目标 logloss < 常数基线）；KoTS-only vs own-only
+  域对照；端上部署（ONNX 契约）留待特征定版后。
+- **产物**：本机 `out/torpedo_model/{e26d_torp2_metrics.json, e26d_torp2.log,
+  e26d_core_metrics.json, e26d_core.log, e26d-preregistration.md}`；node3
+  `/mnt/work/wowsp-kots/e26d/{code,run}`（e26c 数据未动）。
 
 ## 目标路线图（G1–G5）
 
