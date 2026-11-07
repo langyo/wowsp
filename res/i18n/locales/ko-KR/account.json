@@ -16,5 +16,7 @@
   "noAccounts": "아직 연동된 계정이 없습니다. '플레이어 추가'에서 닉네임을 검색해 연동하세요.",
   "setPreferred": "우선으로 설정",
   "preferredBadge": "대표 계정",
-  "autoSwitched": "{name}(으)로 전환되었습니다"
+  "autoSwitched": "{name}(으)로 전환되었습니다",
+  "suspectOnline": "접속 추정",
+  "suspectOnlineHint": "최근 약 20분 안에 전투 기록이 있어 이 계정이 사용 중일 가능성이 있습니다."
 }

@@ -5,7 +5,7 @@
 //! Split from [`listing`] like [`reveal`]: the walk/list module stays a
 //! directory scan, and this module owns the one validated read.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 use sha2::{Digest, Sha256};
 use std::io::Read;
 use std::path::PathBuf;
@@ -51,8 +51,8 @@ fn resolve_replay_file(raw: &str) -> Result<PathBuf> {
 
 /// Streaming SHA-256 over one file (64 KiB windows).
 fn hash_file(path: &std::path::Path) -> Result<String> {
-    let mut file = std::fs::File::open(path)
-        .map_err(|e| anyhow!("open {}: {e}", path.display()))?;
+    let mut file =
+        std::fs::File::open(path).map_err(|e| anyhow!("open {}: {e}", path.display()))?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];
     loop {

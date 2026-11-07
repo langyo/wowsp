@@ -78,7 +78,8 @@ pub(crate) use roster::{
     apply_batch_pr_algo, lookup_players_stats_batch_core, roster_cache_get, roster_cache_insert,
 };
 pub(crate) use shared::{
-    account_list_one, decode_wg_text, encode_query, nickname_matches, parse_dog_tag,
+    account_last_battle_times, account_list_one, decode_wg_text, encode_query, nickname_matches,
+    parse_dog_tag,
 };
 pub(crate) use stats_math::{
     ExpectedPrRow, PrAlgo, PvpStats, account_expected_pr_for, compute_pr, expected_ship_pr,

@@ -17,6 +17,7 @@ import FullscreenModeHint from "@/components/layout/FullscreenModeHint";
 import GatewayCaptchaHint from "@/components/layout/GatewayCaptchaHint";
 import PluginUpdateHint from "@/components/layout/PluginUpdateHint";
 import PlatformIcon from "@/components/base/PlatformIcon";
+import { useAccountOnlineStore } from "@/stores/accountOnline";
 import { useConfigStore } from "@/stores/config";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useGatewayStore } from "@/stores/gateway";
@@ -200,6 +201,11 @@ export default defineComponent({
     // source of truth; see composables/useShownPlayer.ts for the
     // resolution chain and the cache-only hydration policy).
     const { shownPlayer, dogTag } = useShownPlayer();
+
+    // 疑似在线 badge (账号列表在线状态): start the ~90s poll once for the
+    // whole shell — the sidebar row and the account manager cards read it.
+    const online = useAccountOnlineStore();
+    void online.ensurePolling();
 
     // The account row's avatar: the real dog-tag emblem when the cached
     // stats carry one, else the neutral AccountAvatar disc. The old
@@ -534,6 +540,16 @@ export default defineComponent({
                   <HkTag variant="default" size="sm">
                     {shownPlayer.value.realm.toUpperCase()}
                   </HkTag>
+                  {/* 疑似在线: a battle finished within the recent window
+                      (stores/accountOnline) — "probably still around",
+                      never a guarantee; a locally-playing account already
+                      carries the definitive 正在游戏 tag instead. */}
+                  {!shownPlayer.value.playing &&
+                  online.suspectOf(shownPlayer.value.realm, shownPlayer.value.accountId) ? (
+                    <HkTag variant="success" size="sm">
+                      {t("account.suspectOnline")}
+                    </HkTag>
+                  ) : null}
                   {shownPlayer.value.playing ? (
                     <HkTag variant="primary" size="sm">
                       {t("tray.playing")}

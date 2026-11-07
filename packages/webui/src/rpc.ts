@@ -348,6 +348,10 @@ export const RPC = {
   cloud_ban_dismiss: "cloud_ban_dismiss",
   cloud_ban_get_config: "cloud_ban_get_config",
   cloud_ban_set_config: "cloud_ban_set_config",
+  // ── Account online probes (账号列表「疑似在线」标记) — commands/
+  //    account_online.rs: one batched WG account/info + CN vortex poll
+  //    over the bound accounts. Read-only; the store owns the pacing. ──
+  account_online_check: "account_online_check",
 } as const;
 
 export type RpcCommand = (typeof RPC)[keyof typeof RPC];

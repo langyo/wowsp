@@ -8,6 +8,7 @@
  * this file composes the `api` object and re-exports every symbol so
  * `@/api/client` importers see the exact same surface as before the split.
  */
+import { accountOnlineApi } from "./modules/accountOnline";
 import { shellApi } from "./modules/shell";
 import { markersApi } from "./modules/markers";
 import { gameApi } from "./modules/game";
@@ -24,6 +25,7 @@ import { localBattlesApi } from "./modules/localBattles";
 import { gameCrashApi } from "./modules/gamecrash";
 import { modIntegrityApi } from "./modules/modintegrity";
 
+export * from "./modules/accountOnline";
 export * from "./modules/shell";
 export * from "./modules/markers";
 export * from "./modules/game";
@@ -42,6 +44,7 @@ export * from "./modules/modintegrity";
 
 export const api = {
   ...decisionApi,
+  ...accountOnlineApi,
   ...shellApi,
   ...markersApi,
   ...gameApi,
