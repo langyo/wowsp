@@ -38,6 +38,7 @@ Dependencies: numpy (always), torch (training; NOT needed for --selftest).
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import math
 import sys
@@ -76,7 +77,13 @@ MIN_CLASS_N = 30  # below this a class is described, never judged
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    p.add_argument("--data", action="append", default=[], help="torpedo JSONL file(s); repeatable")
+    p.add_argument(
+        "--data",
+        nargs="+",
+        action="append",
+        default=[],
+        help="torpedo JSONL file(s); accepts several paths per flag and/or repeated flags",
+    )
     p.add_argument("--data-dir", action="append", default=[], help="directory of *.jsonl (sorted)")
     p.add_argument(
         "--max-rows",
@@ -88,18 +95,30 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--epochs", type=int, default=12)
     p.add_argument("--hidden", type=int, default=192)
     p.add_argument("--batch-size", type=int, default=4096)
+    p.add_argument(
+        "--eval-batch-size",
+        type=int,
+        default=0,
+        help="validation forward batch (0 = max(batch-size, 8192); full-corpus folds do not fit whole)",
+    )
     p.add_argument("--lr", type=float, default=1e-3)
     p.add_argument("--label-smoothing", type=float, default=0.05)
     p.add_argument("--folds", type=int, default=5, help="target GroupKFold folds (degraded when fewer replays)")
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"])
+    p.add_argument(
+        "--feature-dtype",
+        default="float16",
+        choices=["float16", "float32"],
+        help="entity/mask storage dtype in RAM (default float16 for the full corpus; cast to float32 per training batch)",
+    )
     p.add_argument("--metrics-out", default=None, help="write the full metrics JSON here")
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
 
 
 def resolve_data_paths(args: argparse.Namespace) -> list[Path]:
-    paths: list[Path] = [Path(p) for p in args.data]
+    paths: list[Path] = [Path(p) for group in args.data for p in group]
     for d in args.data_dir:
         paths.extend(sorted(Path(d).glob("*.jsonl")))
     seen: set[Path] = set()
@@ -154,53 +173,111 @@ def row_labels(row: dict) -> tuple[float, float, bool]:
     return 0.0, float("nan"), b is None
 
 
+
+def count_corpus_rows(paths: list[Path]) -> tuple[int, list[dict], float]:
+    """Pass 1 of the full-corpus loader: count NON-EMPTY lines per file WITHOUT
+    JSON parsing, so pass 2 can preallocate exactly (no list/append growth).
+    Returns (total non-empty lines, per-file records, seconds)."""
+    t0 = time.time()
+    total = 0
+    files: list[dict] = []
+    for path in paths:
+        n = 0
+        with path.open("rb") as f:
+            for line in f:
+                if line.strip():
+                    n += 1
+        total += n
+        files.append({"path": str(path), "bytes": path.stat().st_size, "lines": n, "rows_used": 0})
+    return total, files, time.time() - t0
+
+
+def region_of(path: Path) -> str:
+    """Dataset region tag from the export file name (dataset_kots_apac_2s -> apac)."""
+    for token in path.stem.split("_"):
+        if token in ("own", "apac", "eu", "na"):
+            return token
+    return "unknown"
+
+
+def array_bytes(*arrs) -> int:
+    return int(sum(a.nbytes for a in arrs if a is not None))
+
 def load_torpedo_rows(
     paths: list[Path],
     max_rows: int,
     classes: dict[int, str],
+    feature_dtype: str = "float16",
 ) -> dict:
-    """Stream the JSONL corpus into featurized front-loaded arrays (pilot
-    budget = first --max-rows rows in file order)."""
+    """Stream the JSONL corpus into featurized arrays.
+
+    Two loader modes:
+      * --max-rows > 0 (pilot): single pass preallocated to the budget — the
+        historical E26 behaviour (first N rows in file order; later files are
+        skipped and reported).
+      * --max-rows 0 (full corpus): TWO passes — pass 1 counts non-empty lines
+        per file without JSON parsing, pass 2 preallocates EXACTLY and fills.
+        There is no list / np.append growth path: the old full-corpus fallback
+        was quadratic and unusable at multi-million rows.
+
+    Entity and mask blocks use --feature-dtype (default float16: ~2x smaller, cast
+    back to float32 per training batch); the global block stays float32.
+    """
+    dtypes = {"float16": np.float16, "float32": np.float32}
+    if feature_dtype not in dtypes:
+        raise SystemExit(f"[e26] unknown --feature-dtype {feature_dtype!r}")
+    edt = dtypes[feature_dtype]
+    mdt = np.float16 if feature_dtype == "float16" else np.float32
     budget = max_rows if max_rows and max_rows > 0 else None
-    n_max = budget if budget is not None else 0
-
-    # Preallocate when a budget exists (entity block dominates: N*24*15 floats).
-    if n_max:
-        Xe = np.zeros((n_max, tfm.SLOTS, tfm.ENTITY_DIM_V2), dtype=np.float32)
-        Xg = np.zeros((n_max, tfm.GLOBAL_DIM_V2), dtype=np.float32)
-        Xm = np.zeros((n_max, tfm.SLOTS), dtype=np.float32)
+    two_pass = budget is None
+    t0 = time.time()
+    count_s = 0.0
+    files_skipped: list[str] = []
+    if two_pass:
+        n_pre, files, count_s = count_corpus_rows(paths)
+        print(f"[e26] pass-1: {n_pre:,} non-empty rows across {len(files)} file(s) in {count_s:.1f}s", flush=True)
     else:
-        ents: list[np.ndarray] = []
-        globs: list[np.ndarray] = []
-        masks: list[np.ndarray] = []
-    ya = np.zeros(n_max or 0, dtype=np.float32)
-    yb = np.full(n_max or 0, np.nan, dtype=np.float32)
-    ship_ids: list[int | None] = []
-    groups: list[str] = []
-    cls_counts: dict[str, int] = {k: 0 for k in CLASS_ORDER}
+        n_pre = int(budget)
+        files = [{"path": str(p), "bytes": p.stat().st_size, "lines": None, "rows_used": 0} for p in paths]
+    if n_pre <= 0:
+        raise SystemExit("[e26] no rows to load")
 
+    # Preallocate exactly (the float16 entity block dominates memory: N*24*15*2 B).
+    esize = np.dtype(edt).itemsize
+    msize = np.dtype(mdt).itemsize
+    Xe = np.zeros((n_pre, tfm.SLOTS, tfm.ENTITY_DIM_V2), dtype=edt)
+    Xg = np.zeros((n_pre, tfm.GLOBAL_DIM_V2), dtype=np.float32)
+    Xm = np.zeros((n_pre, tfm.SLOTS), dtype=mdt)
+    ya = np.zeros(n_pre, dtype=np.float32)
+    yb = np.full(n_pre, np.nan, dtype=np.float32)
+    ship_ids = np.full(n_pre, -1, dtype=np.int64)
+    gid = np.zeros(n_pre, dtype=np.int32)
+    gid_map: dict[str, int] = {}
+    regions: list[str] = []
+    cls_arr: list[str] = []
+    cls_counts: dict[str, int] = {k: 0 for k in CLASS_ORDER}
+    file_index = {f["path"]: f for f in files}
     rows = 0
     skipped_cv = 0
     inconsistent = 0
     bad_json = 0
-    files: list[dict] = []
-    files_skipped: list[str] = []
     for path in paths:
         if budget is not None and rows >= budget:
             files_skipped.append(str(path))
             continue
-        used = 0
+        entry = file_index[str(path)]
+        region = region_of(path)
         lines_total = 0
         with path.open("r", encoding="utf-8") as f:
             for line in f:
                 lines_total += 1
                 if budget is not None and rows >= budget:
                     continue  # keep counting lines for an honest sampling note
-                s = line.strip()
-                if not s:
+                st = line.strip()
+                if not st:
                     continue
                 try:
-                    row = json.loads(s)
+                    row = json.loads(st)
                 except json.JSONDecodeError:
                     bad_json += 1
                     continue
@@ -220,54 +297,56 @@ def load_torpedo_rows(
                 if not ok:
                     inconsistent += 1
                     continue
+                if rows >= n_pre:
+                    raise SystemExit(f"[e26] {path}: more usable rows than pass-1 counted ({n_pre:,}) — corpus changed mid-run?")
                 e, m = tfm.entity_matrix_and_mask(row, FEATURE_VERSION)
                 g = tfm.global_vector(row, FEATURE_VERSION)
-                if n_max:
-                    Xe[rows] = e
-                    Xg[rows] = g
-                    Xm[rows] = m
-                else:
-                    ents.append(e)
-                    globs.append(g)
-                    masks.append(m)
-                if n_max:
-                    ya[rows] = a
-                    yb[rows] = b
-                else:
-                    ya = np.append(ya, a)
-                    yb = np.append(yb, b)
-                ship_ids.append(ship_id)
-                groups.append(str(row.get("replayId") or path.stem))
+                Xe[rows] = e
+                Xg[rows] = g
+                Xm[rows] = m
+                ya[rows] = a
+                yb[rows] = b
+                ship_ids[rows] = -1 if ship_id is None else ship_id
+                gname = str(row.get("replayId") or path.stem)
+                gi = gid_map.get(gname)
+                if gi is None:
+                    gi = len(gid_map)
+                    gid_map[gname] = gi
+                gid[rows] = gi
+                regions.append(region)
+                cls_arr.append(cls)
                 cls_counts[cls] = cls_counts.get(cls, 0) + 1
                 rows += 1
-                used += 1
-        files.append(
-            {
-                "path": str(path),
-                "bytes": path.stat().st_size,
-                "lines": lines_total,
-                "rows_used": used,
-            }
-        )
+                entry["rows_used"] += 1
+        entry["lines"] = lines_total
+        entry["region"] = region
     if rows == 0:
         raise SystemExit("[e26] no usable rows loaded")
 
-    if n_max:
-        Xe, Xg, Xm = Xe[:rows], Xg[:rows], Xm[:rows]
-        ya, yb = ya[:rows], yb[:rows]
-    else:
-        Xe = np.stack(ents)
-        Xg = np.stack(globs)
-        Xm = np.stack(masks)
+    def trim(a):
+        return a[:rows]
+
+    Xe, Xg, Xm = trim(Xe), trim(Xg), trim(Xm)
+    ya, yb, ship_ids, gid = trim(ya), trim(yb), trim(ship_ids), trim(gid)
+    region_arr = np.array(regions, dtype=object)
+    region_counts: dict[str, int] = {}
+    for reg in regions:
+        region_counts[reg] = region_counts.get(reg, 0) + 1
+    array_b = array_bytes(Xe, Xg, Xm, ya, yb, ship_ids, gid)
+    theoretical = rows * (tfm.SLOTS * tfm.ENTITY_DIM_V2 * esize + tfm.GLOBAL_DIM_V2 * 4 + tfm.SLOTS * msize + 12)
+    load_s = time.time() - t0
     return {
         "entity": Xe,
         "global": Xg,
         "mask": Xm,
         "label_a": ya,
         "label_b": yb,
-        "ship_id": np.array([-1 if s is None else s for s in ship_ids], dtype=np.int64),
-        "group": np.array(groups, dtype=object),
-        "class": np.array([class_of(s, classes) for s in ship_ids], dtype=object),
+        "ship_id": ship_ids,
+        "group": gid,
+        "group_names": list(gid_map.keys()),
+        "region": region_arr,
+        "region_counts": region_counts,
+        "class": np.array(cls_arr, dtype=object),
         "rows": rows,
         "files": files,
         "files_skipped": files_skipped,
@@ -276,6 +355,12 @@ def load_torpedo_rows(
         "bad_json_rows": bad_json,
         "class_counts": cls_counts,
         "max_rows": budget,
+        "loader_mode": "two-pass-full" if two_pass else "single-pass-budget",
+        "feature_dtype": feature_dtype,
+        "pass1_seconds": round(count_s, 1),
+        "load_seconds": round(load_s, 1),
+        "array_bytes": array_b,
+        "theoretical_bytes": int(theoretical),
     }
 
 
@@ -336,33 +421,41 @@ def train_fold(
     global_dim: int,
     b_mask_all,
     log_fn,
+    device,
 ):
-    """Train one fold, return (p_a_val, p_b_val, epoch_losses, seconds)."""
+    """Train one fold, return (p_a_val, p_b_val, epoch_losses, seconds).
+
+    Inputs may live in float16 (E26c full-corpus mode) and/or on the GPU;
+    each batch is cast to float32 on the model device. Validation runs in
+    fixed-size batches because a whole fold's activation tensors do not fit
+    on a 15 GB node at multi-million-row scale."""
     nn = torch.nn
     torch.manual_seed(args.seed + fold)
     np.random.seed(args.seed + fold)
     model = tfm.build_model(hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
-    model.to(args._device_torch)
+    model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     bce = nn.BCEWithLogitsLoss(reduction="none")
     eps = args.label_smoothing
 
-    idx_t = torch.from_numpy(train_idx)
-    y_a_t = y_a
-    y_b_t = y_b
-    bmask_t = b_mask_all
+    idx_t = torch.from_numpy(train_idx).to(device)
     losses: list[float] = []
     t0 = time.time()
     for epoch in range(args.epochs):
         model.train()
-        perm = idx_t[torch.randperm(len(idx_t))]
+        perm = idx_t[torch.randperm(len(idx_t), device=device)]
         tot, cnt = 0.0, 0
-        for s in range(0, len(perm), args.batch_size):
-            idx = perm[s : s + args.batch_size]
-            la, lb = model(entity[idx], glob[idx], mask[idx])
-            loss_a = bce_smoothed_loss(bce, la, y_a_t[idx], eps).mean()
-            m = bmask_t[idx]
-            loss_b = (bce_smoothed_loss(bce, lb, y_b_t[idx], eps) * m).sum() / m.sum().clamp(min=1.0)
+        for st in range(0, len(perm), args.batch_size):
+            idx = perm[st : st + args.batch_size]
+            xb = entity[idx].to(device, non_blocking=True).float()
+            gb = glob[idx].to(device, non_blocking=True).float()
+            mb = mask[idx].to(device, non_blocking=True).float()
+            la, lb = model(xb, gb, mb)
+            ya_b = y_a[idx].to(device)
+            yb_b = y_b[idx].to(device)
+            bm = b_mask_all[idx].to(device)
+            loss_a = bce_smoothed_loss(bce, la, ya_b, eps).mean()
+            loss_b = (bce_smoothed_loss(bce, lb, yb_b, eps) * bm).sum() / bm.sum().clamp(min=1.0)
             loss = loss_a + loss_b
             opt.zero_grad()
             loss.backward()
@@ -373,11 +466,19 @@ def train_fold(
         log_fn(f"  fold {fold} epoch {epoch + 1}/{args.epochs} loss {losses[-1]:.4f} ({time.time() - t0:.1f}s)")
 
     model.eval()
+    eval_batch = getattr(args, "eval_batch_size", 0) or max(args.batch_size, 8192)
+    p_a = np.empty(len(val_idx), dtype=np.float32)
+    p_b = np.empty(len(val_idx), dtype=np.float32)
     with torch.no_grad():
-        v_idx = torch.from_numpy(val_idx)
-        la, lb = model(entity[v_idx], glob[v_idx], mask[v_idx])
-        p_a = torch.sigmoid(la).cpu().numpy()
-        p_b = torch.sigmoid(lb).cpu().numpy()
+        for st in range(0, len(val_idx), eval_batch):
+            vidx_np = val_idx[st : st + eval_batch]
+            vidx = torch.from_numpy(vidx_np).to(device)
+            xb = entity[vidx].to(device, non_blocking=True).float()
+            gb = glob[vidx].to(device, non_blocking=True).float()
+            mb = mask[vidx].to(device, non_blocking=True).float()
+            la, lb = model(xb, gb, mb)
+            p_a[st : st + len(vidx_np)] = torch.sigmoid(la).float().cpu().numpy()
+            p_b[st : st + len(vidx_np)] = torch.sigmoid(lb).float().cpu().numpy()
     return p_a, p_b, losses, time.time() - t0
 
 
@@ -489,6 +590,34 @@ def per_class_metrics(data: dict, p_a: np.ndarray, p_b: np.ndarray, b_mask: np.n
         out[cls] = entry
     return out
 
+def per_region_metrics(data: dict, p_a: np.ndarray, p_b: np.ndarray, b_mask: np.ndarray) -> dict:
+    """Descriptive per-region slice (own / apac / eu / na), same shape as per_class."""
+    out: dict[str, dict] = {}
+    for reg in sorted(set(data["region"].tolist())):
+        m = data["region"] == reg
+        n = int(m.sum())
+        if n == 0:
+            continue
+        can = int(data["label_a"][m].sum())
+        launched = int(np.nansum(data["label_b"][m]))
+        entry = {
+            "rows": n,
+            "canLaunch": can,
+            "launched": launched,
+            "positiveRate": _num(launched / can) if can else None,
+            "auprc_headA": None,
+            "auprc_headB": None,
+        }
+        if n >= MIN_CLASS_N:
+            entry["auprc_headA"] = _num(tfm.average_precision(data["label_a"][m], p_a[m]))
+            mb = m & b_mask
+            if int(mb.sum()) >= MIN_CLASS_N and int(np.nansum(data["label_b"][mb])) > 0:
+                entry["auprc_headB"] = _num(tfm.average_precision(data["label_b"][mb], p_b[mb]))
+        out[reg] = entry
+    return out
+
+
+
 
 def summarize_per_fold(fold_reports: list[dict]) -> dict:
     keys = [
@@ -546,15 +675,22 @@ def run_training(args: argparse.Namespace) -> dict:
     classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
     paths = resolve_data_paths(args)
     t0 = time.time()
-    data = load_torpedo_rows(paths, args.max_rows, classes)
+    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype)
     load_s = time.time() - t0
     log(
         f"[e26] loaded {data['rows']:,} rows from {len(data['files'])} file(s) "
-        f"(skipped files {len(data['files_skipped'])}, AirCarrier rows skipped {data['skipped_aircarrier']}, "
-        f"inconsistent labelB {data['inconsistent_labelb']}, bad json {data['bad_json_rows']}) "
-        f"in {load_s:.1f}s"
+        f"(loader {data['loader_mode']}, feature dtype {data['feature_dtype']}, pass-1 "
+        f"{data['pass1_seconds']:.1f}s; skipped files {len(data['files_skipped'])}, AirCarrier rows "
+        f"skipped {data['skipped_aircarrier']}, inconsistent labelB {data['inconsistent_labelb']}, "
+        f"bad json {data['bad_json_rows']}) in {load_s:.1f}s"
+    )
+    log(
+        f"[e26] arrays {data['array_bytes'] / 1e9:.2f} GB allocated (theoretical "
+        f"{data['theoretical_bytes'] / 1e9:.2f} GB, entity {data['entity'].dtype}, mask "
+        f"{data['mask'].dtype}, global {data['global'].dtype})"
     )
     log(f"[e26] class counts: {json.dumps(data['class_counts'], ensure_ascii=False)}")
+    log(f"[e26] region counts: {json.dumps(data['region_counts'], ensure_ascii=False)}")
 
     entity = torch.from_numpy(data["entity"])
     glob = torch.from_numpy(data["global"])
@@ -563,6 +699,29 @@ def run_training(args: argparse.Namespace) -> dict:
     y_b = torch.from_numpy(np.nan_to_num(data["label_b"], nan=0.0))
     b_mask_np = (data["label_a"] == 1.0) & np.isfinite(data["label_b"])
     b_mask = torch.from_numpy(b_mask_np.astype(np.float32))
+    if device.type == "cuda":
+        # Move the whole corpus once (float16 entity keeps this ~2 GB) and free the
+        # host copies; batches are cast to float32 on the GPU per step.
+        entity = entity.to(device)
+        glob = glob.to(device)
+        mask = mask.to(device)
+        y_a = y_a.to(device)
+        y_b = y_b.to(device)
+        b_mask = b_mask.to(device)
+        # Free the host copies of the big arrays only — labels/classes/regions stay
+        # on the host because the OOF metrics and per-class slices read them.
+        data["entity"] = None
+        data["global"] = None
+        data["mask"] = None
+        gc.collect()
+    log(
+        f"[e26] tensors on {device}: entity {entity.numel() * entity.element_size() / 1e9:.2f} GB "
+        f"{entity.dtype}, global {glob.numel() * glob.element_size() / 1e9:.2f} GB, "
+        f"mask {mask.numel() * mask.element_size() / 1e9:.2f} GB"
+    )
+    if device.type == "cuda":
+        free_b, total_b = torch.cuda.mem_get_info()
+        log(f"[e26] cuda mem after load: free {free_b / 1e9:.1f} GB / total {total_b / 1e9:.1f} GB")
     entity_dim = tfm.ENTITY_DIM_V2
     global_dim = tfm.GLOBAL_DIM_V2
 
@@ -596,6 +755,7 @@ def run_training(args: argparse.Namespace) -> dict:
             global_dim=global_dim,
             b_mask_all=b_mask,
             log_fn=log,
+            device=args._device_torch,
         )
         p_a[val_idx] = fa
         p_b[val_idx] = fb
@@ -630,6 +790,7 @@ def run_training(args: argparse.Namespace) -> dict:
     }
     baselines = no_skill_baselines(data["label_b"][b_mask_np])
     per_class = per_class_metrics(data, p_a, p_b, b_mask_np)
+    per_region = per_region_metrics(data, p_a, p_b, b_mask_np)
 
     hb = oof["headB"]
     base = hb.get("baseRate") or 0.0
@@ -658,7 +819,14 @@ def run_training(args: argparse.Namespace) -> dict:
             "global_dim": global_dim,
             "data_paths": [str(p) for p in paths],
             "max_rows": args.max_rows,
-            "sampling": "first N rows in file order (pilot budget); files after the budget are skipped",
+            "loader_mode": data["loader_mode"],
+            "feature_dtype": data["feature_dtype"],
+            "pass1_seconds": data["pass1_seconds"],
+            "array_bytes": data["array_bytes"],
+            "theoretical_bytes": data["theoretical_bytes"],
+            "sampling": "first N rows in file order (pilot budget); files after the budget are skipped"
+            if data["max_rows"]
+            else "FULL corpus: two-pass exact preallocation (no sampling)",
             "epochs": args.epochs,
             "hidden": args.hidden,
             "batch_size": args.batch_size,
@@ -685,6 +853,7 @@ def run_training(args: argparse.Namespace) -> dict:
             "inconsistent_labelb": data["inconsistent_labelb"],
             "bad_json_rows": data["bad_json_rows"],
             "class_counts": data["class_counts"],
+            "region_counts": data["region_counts"],
             "labels": {
                 "rows": int(n),
                 "canLaunch": int(data["label_a"].sum()),
@@ -704,6 +873,7 @@ def run_training(args: argparse.Namespace) -> dict:
         "metrics_oof_pooled": oof,
         "baselines_headB": baselines,
         "per_class": per_class,
+        "per_region": per_region,
         "per_fold": {
             "folds": fold_reports,
             "summary_mean_std": summarize_per_fold(fold_reports),
@@ -739,6 +909,11 @@ def print_report(metrics: dict) -> None:
     print("\nper class:")
     for cls, e in metrics["per_class"].items():
         print(f"  {CLASS_LABEL.get(cls, cls):7s} rows {e['rows']:7,} canLaunch {e['canLaunch']:7,} "
+              f"launched {e['launched']:6,} posRate {e['positiveRate']} "
+              f"AUPRC-A {e['auprc_headA']} AUPRC-B {e['auprc_headB']}")
+    print("\nper region:")
+    for reg, e in metrics.get("per_region", {}).items():
+        print(f"  {reg:7s} rows {e['rows']:8,} canLaunch {e['canLaunch']:8,} "
               f"launched {e['launched']:6,} posRate {e['positiveRate']} "
               f"AUPRC-A {e['auprc_headA']} AUPRC-B {e['auprc_headB']}")
     acc = metrics["acceptance"]
@@ -888,6 +1063,44 @@ def run_selftest() -> int:
     )
     assert pc["Destroyer"]["rows"] == 40 and pc["Destroyer"]["launched"] == 10
     assert pc["Destroyer"]["auprc_headB"] is not None
+
+    # 6. E26c full-corpus loader: two-pass mode, float16 storage, exact count.
+    assert data["loader_mode"] == "single-pass-budget", data["loader_mode"]
+    assert data2["loader_mode"] == "two-pass-full", data2["loader_mode"]
+    assert data2["feature_dtype"] == "float16", data2["feature_dtype"]
+    assert data2["entity"].dtype == np.float16, data2["entity"].dtype
+    assert data2["mask"].dtype == np.float16, data2["mask"].dtype
+    assert data2["global"].dtype == np.float32, data2["global"].dtype
+    assert data2["rows"] == data2["entity"].shape[0] == data2["group"].shape[0]
+    assert data2["array_bytes"] > 0 and data2["theoretical_bytes"] > 0
+    assert data2["pass1_seconds"] >= 0.0
+    # float16 values still carry the featurizer sentinels/one-hots (§2 shape test
+    # above asserts the float32 path; the loader stores the same values narrowed).
+    assert float(data2["entity"][0, 0, 8]) == 1.0  # entityType==2 one-hot survives narrowing
+    # --feature-dtype float32 keeps the historical storage for pilot reproduction.
+    data_f32 = load_torpedo_rows([tmp], max_rows=0, classes=classes, feature_dtype="float32")
+    assert data_f32["entity"].dtype == np.float32 and data_f32["mask"].dtype == np.float32
+    assert data_f32["rows"] == data2["rows"]
+    # Group ids are interned integers (per-replay groups feed GroupKFold unchanged).
+    assert data2["group"].dtype == np.int32 and len(data2["group_names"]) >= 1
+    assert make_split(data2["group"], 5, seed=0)["n_groups"] == len(data2["group_names"])
+
+    # 7. Region tagging from the export file name + per-region aggregation.
+    apac = root / "dataset_kots_apac_2s.jsonl"
+    apac.write_text(tmp.read_text(encoding="utf-8"), encoding="utf-8")
+    data_apac = load_torpedo_rows([apac], max_rows=0, classes=classes)
+    assert data_apac["region_counts"] == {"apac": 5}, data_apac["region_counts"]
+    pr = per_region_metrics(
+        {
+            "region": np.array(["apac"] * 40, dtype=object),
+            "label_a": np.array([1.0] * 40),
+            "label_b": np.array([1.0] * 10 + [0.0] * 30),
+        },
+        np.linspace(0.9, 0.1, 40),
+        np.linspace(0.9, 0.1, 40),
+        np.array([True] * 40),
+    )
+    assert pr["apac"]["rows"] == 40 and pr["apac"]["launched"] == 10 and pr["apac"]["auprc_headB"] is not None
 
     print("PASS")
     return 0
