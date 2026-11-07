@@ -6,10 +6,10 @@
  *
  * - Ships: traced SVG of the game's OWN HUD markers
  *   (`/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`), served
- *   from `res/images/ships/icon_*.svg`. The art was vectorised by
- *   `scripts/model_convert/trace_class_icons.py` because the 27 px bitmap
- *   upscaled into jagged stair-steps at modern display densities (user
- *   feedback); the vector face renders crisp at ANY size and DPR.
+ *   from `res/images/ships/icon_*.svg`. The markers are GEOMETRY (a rounded
+ *   hull, a bow wedge, the speed slashes) authored directly by
+ *   `scripts/model_convert/ship_class_glyphs.py` — no bitmap tracing, so the
+ *   faces render crisp at ANY size and DPR.
  * - Planes: `/gui/battle_hud/markers/plane/...` art via `planeIcon()`.
  *
  * Variants follow the battle HUD: ally (green), enemy (red), white
