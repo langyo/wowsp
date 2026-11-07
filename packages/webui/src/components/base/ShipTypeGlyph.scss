@@ -1,12 +1,15 @@
 /* ShipTypeGlyph — see the component's docblock. The box is sized by the
    component (chips: 22x12; table rows pass their square icon size).
-   The traced art is CROPPED to the silhouette (the tracer bakes the crop
-   into the viewBox), so the mask renders it 1:1 instead of resampling a
-   padded canvas — that padding maths is what left the old glyph both
-   oversized and fuzzy at small sizes (2026-11-07 review). The 80% inset
-   mirrors the bitmap-era visual weight: the game canvas carried ~20% of
-   empty margin that the old <img> rendering kept, and the cropped art must
-   not suddenly grow to the full box. */
+   The generated art's viewBox is the marker itself (a 0.5 art-unit margin),
+   so the mask renders it 1:1 instead of resampling a padded 27 px canvas —
+   that padding maths is what left the old glyph both oversized and fuzzy at
+   small sizes (2026-11-07 review). The 80% inset mirrors the bitmap-era
+   visual weight: the old canvas carried ~20% of empty margin that the
+   bitmap <img> rendering kept, and the tight art must not suddenly grow to
+   the full box. BattleIcon gives its <img> faces the SAME inset so one
+   `size` weighs the same whichever face draws it. The mask face is one
+   alpha channel, so the class engraving rides the art as PUNCHED SLITS (see
+   shipIcons.ts) — the gap where the black ink sits. */
 .ship-type-glyph {
   flex: none;
   background-color: currentColor;

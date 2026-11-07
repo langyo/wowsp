@@ -13,21 +13,36 @@ the plate is the same silhouette inset, so the rim shows; the speed slashes
 plate, which keeps the gaps part of the ink body instead of see-through
 holes (the 'drafty' carrier of 2026-11-07).
 
+INK RULE (2026-11-07 review: the ink line has to be black on every face).
+The ink is BLACK on every plate face. The game's own markers ink black too:
+the green/red tint the first pass sampled off the WebP copies was chroma
+bleed around the thin black lines, not paint. Team identity lives in the
+PLATE only. The one deliberate exception is the SUNK face, which INVERTS
+the pair (black plate, white ink) so the dead state reads as its own state
+marker — the review's "special icon-marking nature". (The outline face is
+not a plate face: it is an alpha mask, and its white strokes carry only the
+alpha the mask reads.) The plain mask face
+cannot paint a black line at all (one alpha channel), so it keeps the class
+engraving as PUNCHED SLITS: the ink lines AND the plate seams (the ink band
+between plate islands — the carrier's detached bow, the submarine's bar/bow
+joint) are cut out of the silhouette.
+
 Variants (37 files, the names shipIcons.ts imports):
 
-  icon_<class>.svg          plain  — one solid silhouette (CSS mask)
-  icon_ally_<class>.svg     ally   — mint plate, dark-green ink
-  icon_enemy_<class>.svg    enemy  — salmon plate, dark-red ink
+  icon_<class>.svg          plain  — silhouette + punched engraving (CSS mask)
+  icon_ally_<class>.svg     ally   — mint plate, black ink
+  icon_enemy_<class>.svg    enemy  — salmon plate, black ink
   icon_white_<class>.svg    white  — light plate, black ink
-  icon_sunk_<class>.svg     sunk   — translucent black hull, faint rim
-  icon_sunk_enemy_<class>.svg       the same sunk face
-  icon_outline_<class>.svg  outline— white ink, no plate (hint cards)
+  icon_sunk_<class>.svg     sunk   — inverted state marker: black plate, white ink
+  icon_sunk_enemy_<class>.svg       the same inverted state face
+  icon_outline_<class>.svg  outline— white line-art alpha mask, no plate
 
 Usage:
     python scripts/model_convert/ship_class_glyphs.py
 """
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -40,11 +55,14 @@ SLASH_W = 1.1      # speed-slash / divider line width
 EDGE = 0.5         # silhouette inset from the art box
 SLASH_SHIFT = 1.1  # how far the hull slashes sit toward the bow side
 
-# ── palettes (sampled from the original markers) ──
-ALLY = ('#50e8b0', '#0b1f16')
-ENEMY = ('#f85030', '#2a0a06')
-WHITE = ('#e8e8e8', '#000000')
-SUNK_INK = ('#000000', '#ffffff')
+# ── palettes ──
+# One black ink for every plate face (see the INK RULE above); the plate is
+# the only per-team colour. The sunk face flips the pair.
+INK = '#000000'
+ALLY = ('#50e8b0', INK)
+ENEMY = ('#f85030', INK)
+WHITE = ('#e8e8e8', INK)
+SUNK_PLATE, SUNK_INK = INK, '#ffffff'
 OUTLINE_INK = '#ffffff'
 
 
@@ -86,10 +104,11 @@ def destroyer():
         outer=f'M{EDGE} {EDGE}L{W - EDGE} {H / 2}L{EDGE} {H - EDGE}Z',
         plate=f'M{EDGE + RIM} {EDGE + RIM}L{W - EDGE - RIM} {H / 2}L{EDGE + RIM} {H - EDGE - RIM}Z',
         lines=[],
+        seams=[],
     )
 
 
-def hull_bow(hull_right, plate_right, lines_, *, deck_plate_right=None, bow_plate_base=None, bow_outer_base=None):
+def hull_bow(hull_right, plate_right, lines_, *, deck_plate_right=None, bow_plate_base=None, bow_outer_base=None, seams=None):
     # Hull + bow as ONE flat silhouette (the ink wraps both, so the gap
     # between the deck plate and the bow plate is INK, never a hole). The
     # plates themselves can be separate islands — the carrier wants its bow
@@ -103,7 +122,7 @@ def hull_bow(hull_right, plate_right, lines_, *, deck_plate_right=None, bow_plat
         plate += bow_plate(bow_plate_base, plate_right)
     else:
         plate += bow_plate(hull_right, plate_right)
-    return dict(outer=outer, plate=plate, lines=lines_)
+    return dict(outer=outer, plate=plate, lines=lines_, seams=seams or [])
 
 
 def cruiser():
@@ -151,6 +170,9 @@ def aircarrier():
         deck_plate_right=deck_right,
         bow_plate_base=bow_base,
         bow_outer_base=13.4,
+        # The deck/bow ink band: the plain face punches it as a seam so the
+        # chevron still reads detached in the one-colour mask.
+        seams=[rect(deck_right, EDGE + RIM, bow_base, H - EDGE - RIM)],
     )
 
 
@@ -162,7 +184,10 @@ def submarine():
     plate = rect(EDGE + RIM, EDGE + RIM, 3.4, H - EDGE - RIM) + bow_plate(
         6.2, W - 1.4
     )
-    return dict(outer=outer, plate=plate, lines=[])
+    # The bar/bow ink gap: punched in the plain face, or the mask glyph reads
+    # as one blunt arrow and loses the class's own silhouette.
+    seams = [rect(3.4, EDGE + RIM, 6.2, H - EDGE - RIM)]
+    return dict(outer=outer, plate=plate, lines=[], seams=seams)
 
 
 def auxiliary():
@@ -186,9 +211,84 @@ def svg(body, width=W, height=H):
     )
 
 
+def _clip_to_band(points, y_min, y_max):
+    """Clip a convex polygon to the horizontal band [y_min, y_max].
+
+    The slice's butt corners poke a hair past the hull's top/bottom edge
+    (the slash centreline stops 0.25 art units short of it, the stroke's
+    half-width is 0.55) — and under even-odd fill the part that lands
+    OUTSIDE the silhouette would be painted back in as a white spur. The
+    slashes only ever cross those two horizontal edges, so a band clip is
+    exactly the silhouette clip they need."""
+
+    def clip(pts, y, keep_above):
+        out = []
+        for i, cur in enumerate(pts):
+            prev = pts[i - 1]
+            cur_in = cur[1] >= y if keep_above else cur[1] <= y
+            prev_in = prev[1] >= y if keep_above else prev[1] <= y
+            if cur_in:
+                if not prev_in:
+                    out.append(cross(prev, cur, y))
+                out.append(cur)
+            elif prev_in:
+                out.append(cross(prev, cur, y))
+        return out
+
+    def cross(a, b, y):
+        t = (y - a[1]) / (b[1] - a[1])
+        return (a[0] + (b[0] - a[0]) * t, y)
+
+    clipped = clip(points, y_min, True)
+    if clipped:
+        clipped = clip(clipped, y_max, False)
+    return clipped
+
+
+def slash_quad(line_d):
+    """The ink line's footprint, clipped to the art's horizontal ink edge —
+    the plain face PUNCHES it out of the silhouette (even-odd), so the
+    engraving survives in the one-alpha-channel mask face the rows and chips
+    draw."""
+    (x0, y0), (x1, y1) = (
+        tuple(float(v) for v in point.split())
+        for point in line_d[1:].split('L')
+    )
+    dx, dy = x1 - x0, y1 - y0
+    length = math.hypot(dx, dy) or 1.0
+    nx, ny = -dy / length * SLASH_W / 2, dx / length * SLASH_W / 2
+    quad = [
+        (x0 + nx, y0 + ny),
+        (x1 + nx, y1 + ny),
+        (x1 - nx, y1 - ny),
+        (x0 - nx, y0 - ny),
+    ]
+    quad = _clip_to_band(quad, EDGE, H - EDGE)
+    if len(quad) < 3:
+        return ''
+
+    def n(v):
+        # Trim float noise: the generated art is read (and diffed) as text.
+        return f'{v:.3f}'.rstrip('0').rstrip('.')
+
+    return 'M' + 'L'.join(f'{n(x)} {n(y)}' for x, y in quad) + 'Z'
+
+
 def write_plain(shape):
-    # The mask face: ONE solid silhouette (the mask only reads the alpha).
-    return svg(f'<path d="{shape["outer"]}" fill="#fff"/>')
+    # The mask face: ONE solid silhouette with the engraving punched through
+    # (it is drawn as a CSS mask over the surrounding text ink, so an ink
+    # line can only read as the gap the ink would occupy). BOTH parts of the
+    # engraving are punched: the speed slashes / deck divider lines, and the
+    # plate seams — the ink bands between plate islands (the carrier's
+    # detached bow, the submarine's bar/bow joint) that the plate face shows
+    # as black gaps.
+    engraving = ''.join(slash_quad(d) for d in shape['lines'])
+    # (slash_quad clips its quad to the silhouette's top/bottom ink edge — a
+    # raw stroke footprint would paint a sub-pixel white spur outside it.)
+    engraving += ''.join(shape['seams'])
+    return svg(
+        f'<path d="{shape["outer"]}{engraving}" fill="#fff" fill-rule="evenodd"/>'
+    )
 
 
 def write_two_ink(shape, plate_color, ink):
@@ -216,10 +316,9 @@ def write_outline(shape):
 
 
 def write_sunk(shape):
-    return svg(
-        f'<path d="{shape["outer"]}" fill="{SUNK_INK[0]}" fill-opacity="0.55" '
-        f'stroke="{SUNK_INK[1]}" stroke-opacity="0.3" stroke-width="1.0"/>'
-    )
+    # The inverted state marker: the plate/ink pair flips (black plate, white
+    # ink) so a dead ship reads as its own marker instead of a dimmed team one.
+    return write_two_ink(shape, SUNK_PLATE, SUNK_INK)
 
 
 def main():
