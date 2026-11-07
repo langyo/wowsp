@@ -71,6 +71,25 @@ pub(crate) fn classify_path(source_path: &str) -> CommandResult<PackagePlan> {
     Ok(plan)
 }
 
+/// Every top-level payload root the classifier recognizes and installs
+/// (`res_mods`-relative, matched case-insensitively like the signature checks
+/// in [`classify_package_layout`]). A top-level DIRECTORY outside this set is
+/// never installed; [`classify_package`] reports it so a real payload root
+/// this allowlist is missing surfaces instead of being dropped silently.
+const RECOGNIZED_PAYLOAD_ROOTS: &[&str] = &[
+    "banks",
+    "PnFMods",
+    "content",
+    "particles",
+    "spaces",
+    "texts",
+    "system",
+    "camouflage",
+    "gui",
+    "ModSchemas",
+    "ForgeBlueprints",
+];
+
 /// Classify the contents of an unpacked package directory.
 pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
     // The picked root itself can be a link: a junction root would redirect
@@ -79,6 +98,10 @@ pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
     // guards take over from here down.
     super::ensure_plain_source_entry(src)?;
     let mut plan = classify_package_layout(src)?;
+    // The directory the layout was actually read from — shifts one layer down
+    // when a wrapper is peeled, so the unknown-root check below inspects the
+    // payload root instead of the wrapper folder itself.
+    let mut layout_root = src.to_path_buf();
 
     // Real-world packs often ship behind a single naming-wrapper folder
     // (<系列名>/<本体>/{PnFMods,content,…}, e.g. 莫斯科日奈换色版). When the
@@ -106,11 +129,64 @@ pub(crate) fn classify_package(src: &Path) -> anyhow::Result<PackagePlan> {
                 plan.warnings.extend(candidate.warnings);
                 plan.warnings
                     .push(format!("unwrapped single-layer folder \"{wrapper}\""));
+                layout_root = inner;
             }
         }
     }
 
+    // Unknown-top-level-root warning: the fixed allowlist used to drop real
+    // payload trees silently — the 2026-11 TTaro runtime diagnosis proved it
+    // (installed TTaroModUtils without `ModSchemas` failed with
+    // "constants.json missing or invalid"/"indexed 0 mod(s)", ModForge with
+    // "0 manifest(s)"). Checked AFTER the wrapper peel and only for a plan
+    // that installs something, so a bare wrapper folder is never reported.
+    if !plan.entries.is_empty() {
+        let unknown = unrecognized_top_level_dirs(&layout_root)?;
+        if !unknown.is_empty() {
+            const LISTED: usize = 6;
+            let joined = unknown
+                .iter()
+                .take(LISTED)
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let more = match unknown.len().saturating_sub(LISTED) {
+                0 => String::new(),
+                n => format!(" (and {n} more)"),
+            };
+            plan.warnings.push(format!(
+                "unrecognized top-level folder(s) not installed: {joined}{more} — extend the classifier if this is a real payload root"
+            ));
+        }
+    }
+
     Ok(plan)
+}
+
+/// Top-level DIRECTORIES the plan leaves behind: not a recognized payload
+/// root, not an Explorer/promo junk folder ([junk](super::junk) — pack
+/// screenshots are pruned by install, not a payload-root gap), not a
+/// dot-folder. Sorted, so the warning the caller builds is deterministic.
+fn unrecognized_top_level_dirs(src: &Path) -> anyhow::Result<Vec<String>> {
+    let mut unknown = Vec::new();
+    for entry in read_plain_entries(src)? {
+        if !entry.path().is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') || super::junk::is_junk_dir_name(&name) {
+            continue;
+        }
+        if RECOGNIZED_PAYLOAD_ROOTS
+            .iter()
+            .any(|root| name.eq_ignore_ascii_case(root))
+        {
+            continue;
+        }
+        unknown.push(name);
+    }
+    unknown.sort();
+    Ok(unknown)
 }
 
 /// Read one package directory, refusing link-shaped reparse entries before they
@@ -282,6 +358,19 @@ fn classify_package_layout(src: &Path) -> anyhow::Result<PackagePlan> {
         let lower = file.to_ascii_lowercase();
         if lower.ends_with(".xml") && lower != "mod.xml" && src.join(file).is_file() {
             push_entry(&mut plan, &mut kinds_seen, file, file, ModKind::Patch);
+        }
+    }
+    // TTaroModUtils' shared data trees: `ModSchemas/` (constants.json, the
+    // per-mod *.schema.json descriptors and Migrations) and
+    // `ForgeBlueprints/` (ModForge's registry XML) belong to the toolkit,
+    // not to any one dependent — the 2026-11 TTaro runtime diagnosis proved
+    // the fixed allowlist silently dropped them (installed TTaroModUtils:
+    // "constants.json missing or invalid", indexed 0 mods; ModForge: 0
+    // manifests). Pushed after the main-payload blocks so `plan.kind` keeps
+    // deriving from that payload.
+    for top in ["ModSchemas", "ForgeBlueprints"] {
+        if has(top) {
+            push_entry(&mut plan, &mut kinds_seen, top, top, ModKind::Textures);
         }
     }
 

@@ -637,34 +637,77 @@ pub async fn mod_catalog_preview_files(
     // The WorkDir guard rides along into the closure, so the whole temp
     // tree (zips + unpacked roots) is dropped the moment the pass ends.
     let classified = tauri::async_runtime::spawn_blocking(move || -> Vec<PackageFilePreview> {
+        // Split extraction: one tree per package (the same split the install
+        // path merges). Per-package classification is exactly what the
+        // ledger cannot reconstruct.
+        let roots: Vec<PathBuf> = (0..packages.len())
+            .map(|i| work.0.join(format!("pkg-{i:02}")))
+            .collect();
+        let mut extract_errors: Vec<Option<String>> = Vec::with_capacity(packages.len());
+        for (i, root) in roots.iter().enumerate() {
+            let archive = work.0.join(format!("pkg-{i:02}.zip"));
+            extract_errors.push(
+                extract_zip(&archive, root, &mut Vec::new())
+                    .err()
+                    .map(|e| e.to_string()),
+            );
+        }
+        // Duplicate targets are a property of the SET: the same split trees
+        // the install merges let the preview show which copy the install
+        // would keep and which it would ignore (detection only — the preview
+        // already extracted the payload once, no second full copy). A
+        // package that failed to unpack has no tree to compare, so detection
+        // needs every root.
+        let conflicts = if roots.len() > 1 && extract_errors.iter().all(Option::is_none) {
+            detect_package_conflicts(&roots).unwrap_or_else(|e| {
+                tracing::debug!(error = %e, "preview duplicate-target detection failed");
+                Vec::new()
+            })
+        } else {
+            Vec::new()
+        };
+        // The later package is the one whose copy the install ignores; its
+        // row names both sides so the window shows what is kept/ignored.
+        let mut conflicts_by_package: Vec<Vec<String>> = vec![Vec::new(); packages.len()];
+        for conflict in &conflicts {
+            if let Some(list) = conflicts_by_package.get_mut(conflict.later_package) {
+                list.push(package_conflict_warning(conflict, &packages));
+            }
+        }
         packages
             .iter()
             .enumerate()
             .map(|(i, pkg)| {
-                let archive = work.0.join(format!("pkg-{i:02}.zip"));
-                let root = work.0.join(format!("pkg-{i:02}"));
-                let mut visited = Vec::new();
-                let outcome = extract_zip(&archive, &root, &mut visited).and_then(|()| {
-                    // Same layout resolution an install applies: a package
-                    // laid out against the game root classifies from its
-                    // `res_mods/` folder, and its loose root DLLs are
-                    // game-root drops (`@game/…` — the window's second tree).
-                    let (plan_root, loose_names) = package_install_layout(&root)?;
-                    let plan = mod_hub::classify_package(&plan_root)
-                        .map_err(|e| anyhow!("classify failed: {e}"))?;
-                    let mut files = mod_hub::collect_plan_files(&plan_root, &plan)?;
-                    for name in loose_names {
-                        files.push(format!("@game/{name}"));
-                    }
-                    files.sort();
-                    files.dedup();
-                    Ok(PackageFilePreview {
+                if let Some(err) = &extract_errors[i] {
+                    return PackageFilePreview {
                         name: pkg.name.clone(),
                         size: pkg.size,
-                        files,
-                        warnings: plan.warnings,
-                    })
-                });
+                        files: Vec::new(),
+                        warnings: vec![err.clone()],
+                    };
+                }
+                let outcome =
+                    package_install_layout(&roots[i]).and_then(|(plan_root, loose_names)| {
+                        // Same layout resolution an install applies: a package
+                        // laid out against the game root classifies from its
+                        // `res_mods/` folder, and its loose root DLLs are
+                        // game-root drops (`@game/…` — the window's second tree).
+                        let mut plan = mod_hub::classify_package(&plan_root)
+                            .map_err(|e| anyhow!("classify failed: {e}"))?;
+                        let mut files = mod_hub::collect_plan_files(&plan_root, &plan)?;
+                        for name in loose_names {
+                            files.push(format!("@game/{name}"));
+                        }
+                        files.sort();
+                        files.dedup();
+                        plan.warnings.append(&mut conflicts_by_package[i]);
+                        Ok(PackageFilePreview {
+                            name: pkg.name.clone(),
+                            size: pkg.size,
+                            files,
+                            warnings: plan.warnings,
+                        })
+                    });
                 match outcome {
                     Ok(preview) => preview,
                     Err(e) => PackageFilePreview {
@@ -884,6 +927,51 @@ fn integrity_gate(
     bail!("{message}");
 }
 
+/// Bound on duplicate-target warnings in one install report: a pathological
+/// package set must not flood the report pane (the summary line right after
+/// the cap keeps the full count visible).
+const MAX_PACKAGE_CONFLICT_WARNINGS: usize = 5;
+
+/// One warning line per target two packages of the same catalog entry map to
+/// with DIFFERENT bytes: the earlier package's copy was kept on disk, the
+/// later one's was ignored (nothing silently last-wins anymore — see the
+/// extract module's `merge_package_trees`).
+fn package_conflict_warning(conflict: &PackageConflict, packages: &[CatalogPackage]) -> String {
+    let label = |index: usize| {
+        packages
+            .get(index)
+            .map(|p| p.name.as_str())
+            .filter(|name| !name.is_empty())
+            .map(str::to_string)
+            .unwrap_or_else(|| format!("package {}", index + 1))
+    };
+    format!(
+        "package set writes conflicting duplicate target: {} (package {} kept, package {} ignored)",
+        conflict.rel,
+        label(conflict.first_package),
+        label(conflict.later_package),
+    )
+}
+
+/// Report the conflicting duplicate targets the package merge found (bounded,
+/// plus a summary line when the cap truncates the list) through the plan's
+/// warning channel — the install report renders it verbatim.
+fn push_package_conflict_warnings(
+    warnings: &mut Vec<String>,
+    conflicts: &[PackageConflict],
+    packages: &[CatalogPackage],
+) {
+    for conflict in conflicts.iter().take(MAX_PACKAGE_CONFLICT_WARNINGS) {
+        warnings.push(package_conflict_warning(conflict, packages));
+    }
+    if conflicts.len() > MAX_PACKAGE_CONFLICT_WARNINGS {
+        warnings.push(format!(
+            "… and {} more conflicting duplicate target(s) across the package set",
+            conflicts.len() - MAX_PACKAGE_CONFLICT_WARNINGS
+        ));
+    }
+}
+
 /// Extract every package archive (part order = index order) into `work`, then
 /// run the shared classify → install pipeline. Validate the full replacement
 /// before rewinding an existing install. Returns the applied plan — the
@@ -909,12 +997,31 @@ pub(crate) fn unpack_and_install(
     installs: &mut Vec<ModInstallRecord>,
 ) -> anyhow::Result<mod_hub::PlanApply> {
     let extract_root = work.join("unpacked");
+    // The work dir may be REUSED (the test suite drives the same tree twice):
+    // start from empty split/merged trees, or stale files read as finished
+    // merges — an already-populated dest would make every merged file look
+    // byte-identical and the written list come back empty.
+    if extract_root.exists() {
+        fs::remove_dir_all(&extract_root).map_err(|e| anyhow!("clear unpack dir: {e}"))?;
+    }
     fs::create_dir_all(&extract_root).map_err(|e| anyhow!("create unpack dir: {e}"))?;
-    let mut files = Vec::new();
+    // Split extraction, then merge: two packages of one catalog entry used
+    // to unzip into the SAME tree, so an overlapping target path silently
+    // last-won — the live ShipIdentity case (2026-11-04) let a reduced
+    // variant overwrite the complete `ShipIdentity.unbound` and blank the
+    // port ship name. The merge keeps the FIRST package's bytes and reports
+    // every differing duplicate through the report's warning channel.
+    let mut pkg_roots: Vec<PathBuf> = Vec::with_capacity(packages.len());
     for i in 0..packages.len() {
         let archive = package_archive(work, i);
-        extract_zip(&archive, &extract_root, &mut files)?;
+        let pkg_root = work.join(format!("unpacked-pkg-{i}"));
+        if pkg_root.exists() {
+            fs::remove_dir_all(&pkg_root).map_err(|e| anyhow!("clear package unpack dir: {e}"))?;
+        }
+        extract_zip(&archive, &pkg_root, &mut Vec::new())?;
+        pkg_roots.push(pkg_root);
     }
+    let (files, package_conflicts) = merge_package_trees(&pkg_roots, &extract_root)?;
     // The unpacked tree must still look like a mod; reuse the same classifier
     // the local-folder flow uses so both paths agree on what is installable.
     if files.is_empty() {
@@ -929,6 +1036,10 @@ pub(crate) fn unpack_and_install(
         .map(|name| extract_root.join(name))
         .collect();
     let mut plan = mod_hub::classify_package(&plan_root)?;
+    // Duplicate-target conflicts are a property of the PACKAGE SET, not the
+    // merged tree: surface them through the plan's warning channel (the
+    // install report renders it verbatim) so nothing silently last-wins.
+    push_package_conflict_warnings(&mut plan.warnings, &package_conflicts, packages);
     // The classifier named the plan after the directory it inspected; the
     // record, the report and the conflict messages must speak the catalog
     // title instead (see [`entry_display_name`]).

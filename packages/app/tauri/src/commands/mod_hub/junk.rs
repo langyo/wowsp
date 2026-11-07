@@ -52,8 +52,16 @@ pub(crate) fn is_junk_rel(rel: &str) -> bool {
     if !JUNK_IMAGE_EXTS.contains(&ext) {
         return false;
     }
-    bare.split('/')
-        .any(|segment| JUNK_MARKERS.iter().any(|marker| segment.contains(marker)))
+    bare.split('/').any(is_junk_dir_name)
+}
+
+/// Is a directory NAME branded as preview/screenshot junk? The directory
+/// counterpart of the segment test in [`is_junk_rel`]: a top-level folder
+/// named after a marker (`Screenshots/`, `预览/`, …) holds promo art, never
+/// game payload — the classifier's unrecognized-root warning skips it.
+pub(crate) fn is_junk_dir_name(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    JUNK_MARKERS.iter().any(|marker| lower.contains(marker))
 }
 
 #[cfg(test)]

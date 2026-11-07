@@ -487,6 +487,95 @@ fn classify_peels_single_wrapper_layer() {
     assert!(froms.contains(&"莫斯科日奈/content"), "{froms:?}");
 
     assert!(plan.warnings.iter().any(|w| w.contains("unwrapped")));
+    // The wrapper folder itself is never reported as an unrecognized
+    // payload root: the check runs after the peel, on the inner layout.
+    assert!(
+        !plan.warnings.iter().any(|w| w.contains("unrecognized")),
+        "{:?}",
+        plan.warnings
+    );
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn classify_installs_ttaro_schema_and_blueprint_roots() {
+    // 2026-11 TTaro runtime diagnosis: the fixed root allowlist silently
+    // dropped ModSchemas/ and ForgeBlueprints/, so the installed
+    // TTaroModUtils came up with "constants.json missing or invalid" and
+    // indexed 0 mods, ModForge with 0 manifests. Both roots install
+    // verbatim beside the main payload.
+    let tmp = std::env::temp_dir().join("wowsp_ttaro_roots_test");
+    let _ = fs::remove_dir_all(&tmp);
+    touch(&tmp.join("ModSchemas/Data/constants.json"));
+    touch(&tmp.join("ModSchemas/ttaro-x.schema.json"));
+    touch(&tmp.join("ForgeBlueprints/TTaroModUtils.xml"));
+    touch(&tmp.join("PnFMods/TTaroModUtils/Main.py"));
+    touch(&tmp.join("gui/unbound2/x.unbound"));
+    touch(&tmp.join("PnFModsLoader.py"));
+
+    let plan = classify_package(&tmp).unwrap();
+    // The main payload still derives the kind; the shared data roots are
+    // appended after it.
+    assert_eq!(plan.kind, ModKind::Skin);
+    for root in ["ModSchemas", "ForgeBlueprints"] {
+        assert!(
+            plan.entries
+                .iter()
+                .any(|e| e.from_rel == root && e.to_rel == root),
+            "missing 1:1 entry for {root}: {:?}",
+            plan.entries
+        );
+    }
+    let files = collect_plan_files(&tmp, &plan).unwrap();
+    for expected in [
+        "ModSchemas/Data/constants.json",
+        "ModSchemas/ttaro-x.schema.json",
+        "ForgeBlueprints/TTaroModUtils.xml",
+    ] {
+        assert!(
+            files.contains(&expected.to_string()),
+            "{expected} must be installed: {files:?}"
+        );
+    }
+    // Recognized roots never trigger the unknown-folder warning.
+    assert!(
+        !plan.warnings.iter().any(|w| w.contains("unrecognized")),
+        "{:?}",
+        plan.warnings
+    );
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn classify_warns_about_unrecognized_top_level_folders() {
+    // A payload root the allowlist is missing must surface instead of being
+    // dropped silently — the 2026-11 TTaro crash shape; it still never
+    // installs.
+    let tmp = std::env::temp_dir().join("wowsp_unknown_root_test");
+    let _ = fs::remove_dir_all(&tmp);
+    touch(&tmp.join("PnFMods/A/Main.py"));
+    touch(&tmp.join("MysteryRoot/data.json"));
+
+    let plan = classify_package(&tmp).unwrap();
+    let warning = plan
+        .warnings
+        .iter()
+        .find(|w| w.contains("unrecognized top-level folder"))
+        .unwrap_or_else(|| panic!("no unknown-root warning: {:?}", plan.warnings));
+    assert!(warning.contains("MysteryRoot"), "{warning}");
+    assert!(
+        !plan
+            .entries
+            .iter()
+            .any(|e| e.to_rel.contains("MysteryRoot")),
+        "unknown roots never install: {:?}",
+        plan.entries
+    );
+    let files = collect_plan_files(&tmp, &plan).unwrap();
+    assert!(
+        !files.iter().any(|f| f.contains("MysteryRoot")),
+        "{files:?}"
+    );
     fs::remove_dir_all(&tmp).ok();
 }
 

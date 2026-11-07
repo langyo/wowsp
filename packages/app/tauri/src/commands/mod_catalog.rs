@@ -171,7 +171,9 @@ mod version_guard;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use extract::extract_zip;
+pub(crate) use extract::{
+    PackageConflict, detect_package_conflicts, extract_zip, merge_package_trees,
+};
 
 // Test-only re-exports: the suite (a child of this module) drives private
 // helpers through these names without widening any production surface.

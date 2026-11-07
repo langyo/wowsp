@@ -12,6 +12,7 @@ module is the one entry point the scheduled workflow
     python scripts/mod_hub_sync.py apply --dry-run         # plan without any write
     python scripts/mod_hub_sync.py apply --include-new     # also publish new entries
     python scripts/mod_hub_sync.py apply --no-gc           # skip asset pruning
+    python scripts/mod_hub_sync.py apply --reaudit         # one-shot content re-audit of the whole live scope
     python scripts/mod_hub_sync.py index-only              # re-crawl + republish index
     python scripts/mod_hub_sync.py render-summary --json r.json
     python scripts/mod_hub_sync.py upsert-issue --json r.json
@@ -42,9 +43,12 @@ Design invariants (docs/en/designs/mod-hub.md, "Upstream sync automation"):
 - Proposal-gated additions. New upstream entries only appear in the report
   until their slug tables are curated; "--include-new" publishes exactly the
   slugs resolved through scripts/mod_hub_slugs.py.
-- Safety gates. zip magic/repack validation, package-content checks (.swf
-  member magic + glue-reference scan, mod_package_check), digest-idempotent
-  asset uploads,
+- Safety gates. zip magic/repack validation, a content-based package-set
+  audit before staging (raw OlliN ShipIdentity template exclusion, plus
+  legacy-conflicting duplicate-target reporting, see audit_package_set),
+  package-content checks (.swf member magic + glue-reference scan,
+  mod_package_check),
+  digest-idempotent asset uploads,
   an asset-existence gate on the index (>25% missing refuses the upload,
   delisted/stale entries exempt), a post-publish read-back verification with
   rollback to the previous index bytes, and >=1s spacing between Discussion
@@ -57,6 +61,7 @@ import argparse
 import concurrent.futures
 import datetime
 import hashlib
+import io
 import json
 import posixpath
 import re
@@ -66,6 +71,7 @@ import tempfile
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 
 # Sibling modules (same directory -- sys.path[0] when run as a script).
@@ -93,7 +99,26 @@ ASLAIN_ID_RE = re.compile(r"^(Team_Panel|Team_Mini_Panel|Minimap|Chat|UI|Markers
 # with every OlliN art component excluded from this catalog the raw file is
 # dead weight that also breaks port ship-name rendering for new collab ships
 # (Blue-Archive PJSS820 rendered a blank name, 2026-10-31).
+#
+# This filename match is only the PUBLISH-TIME implicit-name guard: it drops an
+# <Implicit> package whose own name says "ShipIdentity". Component-variant
+# carriers re-bundle the same template under unrelated names, so the filename
+# regex never caught them (the live 2026-11-06/07 assets still carried the raw
+# template inside dependent entries). The CONTENT guard -- package_entries() +
+# audit_package_set() over every package we are about to publish -- is the
+# authoritative one for those variants.
 EXCLUDE_IMPLICIT_NAME_RE = re.compile(r"shipidentity", re.IGNORECASE)
+# The raw OlliN ShipIdentity template and the directory that holds it. Aslain
+# substitutes the per-component "*_INSTALLED" switches at install time; WoWSP
+# has no resolution step, so serving the raw template blanks new collab ships'
+# port/carousel names (#1634). A package whose whole payload is this template
+# is excluded; one that mixes it with functional payload refuses the publish.
+SHIP_IDENTITY_TEMPLATE_PATH = "gui/unbound2/!shipidentity/shipidentity.unbound"
+SHIP_IDENTITY_TEMPLATE_DIR = "res_mods/gui/unbound2/!shipidentity/"
+SHIP_IDENTITY_EXCLUDE_REASON = (
+    "raw OlliN ShipIdentity template; Aslain resolves its *_INSTALLED switches "
+    "at install time, see #1634"
+)
 # The md5 prefix Aslain embeds in package filenames (zips only; the absolute-URL
 # 7z outliers carry no fingerprint at all).
 TOKEN_RE = re.compile(r"_([0-9a-f]{8})\.(?:zip|7z)$", re.IGNORECASE)
@@ -562,7 +587,107 @@ def resolve_content_changed(entry: dict) -> bool:
     return changed
 
 
+def promote_reaudit(plan: dict) -> int:
+    """Force the content guard over the whole live scope (returns the number
+    of promoted entries). A guard only sees packages that get downloaded, so
+    entries the diff calls "unchanged" would keep serving their already
+    published packages unaudited -- exactly how the live raw-OlliN
+    ShipIdentity assets survived #1634. Promoting them into the download lane
+    is explicit (apply --reaudit), so normal runs stay incremental; entries
+    frozen by a "manual" sync policy stay held out."""
+    promoted = [e for e in plan["unchanged"]
+                if e["record"].get("policy") != "manual"]
+    plan["unchanged"] = [e for e in plan["unchanged"]
+                         if e["record"].get("policy") == "manual"]
+    for e in promoted:
+        e["reason"] = "content re-audit (--reaudit)"
+        e["needs_download"] = True
+        e["content_changed"] = None
+    plan["changed"].extend(promoted)
+    return len(promoted)
+
+
 # --------------------------------------------------------------------- downloads
+
+
+def package_entries(data: bytes) -> list[tuple[str, int, int]]:
+    """Inventory a package zip as (member name, uncompressed size, CRC-32).
+
+    The content guard consumes this instead of trusting the upstream
+    filename: component-variant carriers re-bundle the same payload under
+    names that carry no marker. Directory placeholders are kept in the
+    inventory; the audit's payload rule filters them out."""
+    with zipfile.ZipFile(io.BytesIO(data)) as zf:
+        return [(info.filename, info.file_size, info.CRC) for info in zf.infolist()]
+
+
+def _payload_entries(entries: list[tuple[str, int, int]]) -> list[tuple[str, int, int]]:
+    """res_mods payload files only: skip directory placeholders and members
+    outside res_mods (zip-root natives ride the installer's @game drop path,
+    so they cannot collide with res_mods targets)."""
+    return [(name, size, crc) for name, size, crc in entries
+            if name.lower().startswith("res_mods/") and not name.endswith("/")]
+
+
+def audit_package_set(
+    entries_by_package: list[tuple[str, list[tuple[str, int, int]]]],
+) -> tuple[list[int], list[str], list[str]]:
+    """Content-based publish guard for one entry's package set.
+
+    Returns (kept package indices, one exclusion reason per dropped package,
+    warnings for legacy package-set anomalies) and raises ValueError only for
+    the one shape we cannot publish safely:
+
+    - a package whose payload includes the raw OlliN ShipIdentity template is
+      excluded when that template is its whole payload (Aslain resolves the
+      template's "*_INSTALLED" switches at install time; WoWSP has no such
+      step and would blank new collab ships' port names, #1634), while a
+      package mixing the template into functional payload refuses to publish
+      (the maintainer must split it);
+    - two kept packages claiming the same target path (case-insensitive) with
+      identical (file_size, CRC) bytes are shared-runtime dedupe and stay
+      silent. Differing bytes are a LEGACY package-set anomaly: the live
+      catalog carries several (battle.monitor.afk, battle.marker.consumables),
+      so the publish continues with a warning -- the app's install merge now
+      keeps the FIRST package's copy deterministically and reports the
+      conflict, instead of letting extraction order decide. Maintainers
+      resolve the upstream duplicate separately; hard-failing here would make
+      the content-guard migration (apply --reaudit) impossible on live data.
+
+    Pure function over already-inventoried zips so the offline selftest can
+    drive every rule.
+    """
+    kept: list[int] = []
+    excluded: list[str] = []
+    warnings: list[str] = []
+    claimed: dict[str, tuple[int, int, int]] = {}
+    for idx, (pkg_name, entries) in enumerate(entries_by_package):
+        payload = _payload_entries(entries)
+        template = [e for e in payload
+                    if e[0].lower().endswith(SHIP_IDENTITY_TEMPLATE_PATH)]
+        if template:
+            if all(e[0].lower().startswith(SHIP_IDENTITY_TEMPLATE_DIR)
+                   for e in payload):
+                excluded.append(SHIP_IDENTITY_EXCLUDE_REASON)
+                continue
+            raise ValueError(
+                f"{pkg_name}: contains the raw OlliN ShipIdentity template "
+                f"({template[0][0]}) mixed with functional payload; refusing to "
+                "publish -- split the template out of the package")
+        for rel, size, crc in payload:
+            key = rel.lower()
+            prior = claimed.get(key)
+            if prior is None:
+                claimed[key] = (idx, size, crc)
+            elif prior[0] != idx and (prior[1], prior[2]) != (size, crc):
+                warnings.append(
+                    f"legacy duplicate target {rel!r} is written by both "
+                    f"{entries_by_package[prior[0]][0]!r} and {pkg_name!r} with "
+                    "different content; publishing both (the app keeps the first "
+                    "package's copy and reports the conflict) -- resolve the "
+                    "upstream duplicate separately")
+        kept.append(idx)
+    return kept, excluded, warnings
 
 
 def download_record_packages(rec: dict, cache: Path) -> None:
@@ -604,9 +729,57 @@ def download_record_packages(rec: dict, cache: Path) -> None:
         p["size_bytes"] = len(data)
         p["asset"] = (f"pkg7-{p['sha256'][:12]}.zip" if p["token"] is None
                       else f"pkg-{p['token']}.zip")
+        # In-memory inventory for the content guard below: auditing must not
+        # re-read a multi-hundred-MB package from disk just to list members.
+        p["_entries"] = package_entries(data)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=DOWNLOAD_WORKERS) as ex:
         list(ex.map(one, rec["packages"]))
+
+    # Content guard: the upstream filename is not trustworthy -- the live
+    # 2026-11-06/07 assets were component-variant packages whose names carried
+    # no marker yet re-bundled the raw OlliN ShipIdentity template into
+    # dependent entries. Audit the zips we just staged (the upload source of
+    # truth); only the raw-template shapes are fatal, legacy duplicate targets
+    # ride the report as warnings (see audit_package_set).
+    entries_by_package = [(p["name"], p["_entries"]) for p in rec["packages"]]
+    kept: list[int] = list(range(len(rec["packages"])))
+    excluded_reasons: list[str] = []
+    audit_warnings: list[str] = []
+    try:
+        kept, excluded_reasons, audit_warnings = audit_package_set(entries_by_package)
+    except ValueError as exc:
+        raise SystemExit(f"{rec['id']}: {exc}") from None
+    finally:
+        # Never leak the in-memory inventory into the record/JSON:
+        # thread bodies and mod-index.json only ever see url/sha/name/size.
+        for p in rec["packages"]:
+            p.pop("_entries", None)
+    if audit_warnings:
+        # Reporting metadata only: run_apply folds these into the report.
+        rec["audit_warnings"] = list(audit_warnings)
+        for msg in audit_warnings:
+            print(f"  warning {rec['id']}: {msg}", flush=True)
+    if excluded_reasons:
+        excluded_idx = [i for i in range(len(rec["packages"]))
+                        if i not in set(kept)]
+        # Reporting metadata only: never serialized into thread bodies or
+        # mod-index.json (rebuild_body/gate_index never read it).
+        rec["excluded_packages"] = []
+        for idx, reason in zip(excluded_idx, excluded_reasons):
+            p = rec["packages"][idx]
+            print(f"  excluded {rec['id']}/{p['name']}: {reason}", flush=True)
+            rec["excluded_packages"].append({"name": p["name"], "reason": reason})
+        # Drop the excluded packages, keep the survivors' upstream order and
+        # renumber the order keys (body builder + staging walk this list).
+        rec["packages"] = [rec["packages"][i] for i in kept]
+        for order, p in enumerate(rec["packages"]):
+            p["order"] = order
+    if not rec["packages"]:
+        raise SystemExit(
+            f"{rec['id']}: the content guard excluded every package "
+            f"({len(excluded_reasons)} raw OlliN ShipIdentity template "
+            "package(s)); refusing to publish an entry with no package")
 
 
 def release_assets() -> dict:
@@ -1199,10 +1372,20 @@ def run_apply(args) -> int:
     plan["changed"] = [e for e in plan["changed"] if e["record"].get("policy") != "manual"]
     held_new = [e for e in plan["new"] if e["record"].get("policy") == "manual"]
     plan["new"] = [e for e in plan["new"] if e["record"].get("policy") != "manual"]
+    # One-shot guard migration: after a content guard changes, run
+    # "apply --reaudit" once so already-published packages are re-downloaded
+    # and re-audited; regular runs only audit entries whose packages changed.
+    reaudited = promote_reaudit(plan) if args.reaudit else 0
     report = build_report("apply", selection, threads, plan, started, args.dry_run)
     report["held_manual"] = [e["record"]["id"] for e in held_manual] + \
         [e["record"]["id"] for e in held_new]
     report["counts"]["held_manual"] = len(held_manual) + len(held_new)
+    if args.reaudit:
+        report["reaudit_entries"] = reaudited
+        report["counts"]["reaudited"] = reaudited
+        report["warnings"].append(
+            f"re-audit: forced a download + content-guard pass over "
+            f"{reaudited} previously-unchanged entries")
     cv = selection["content_version"]
     if plan["new"] and not args.include_new:
         report["warnings"].append(
@@ -1238,6 +1421,21 @@ def run_apply(args) -> int:
         for e in plan["new"]:
             if "." in e["record"]["id"]:
                 download_record_packages(e["record"], cache)
+
+    # Content-guard findings are report data, not just console noise: legacy
+    # duplicate targets warn (the app install keeps the first package's copy
+    # deterministically and reports the conflict) and the excluded raw-OlliN
+    # template packages are listed so a maintainer sees exactly what dropped.
+    if not args.dry_run:
+        for e in plan["changed"] + [e for e in plan["new"]
+                                    if args.include_new and "." in e["record"]["id"]]:
+            rec = e["record"]
+            for msg in rec.get("audit_warnings") or []:
+                report["warnings"].append(f"{rec['id']}: {msg}")
+            for item in rec.get("excluded_packages") or []:
+                report.setdefault("excluded_packages", []).append(
+                    {"id": rec["id"], "package": item.get("name", ""),
+                     "reason": item.get("reason", "")})
 
     # 2) stage + upload content-addressed assets for changed/new entries
     uploads: dict = {}
@@ -1624,6 +1822,16 @@ def selftest() -> None:
     sel_p["policy_skipped_ids"] = {"Markers_Orphan"}
     assert classify(sel_p, [thread("legacy.orphan", "Markers_Orphan", ["old-asset.zip"])])["stale"] == []
 
+    # apply --reaudit: promote unchanged live entries into the download+audit
+    # lane (one-shot guard migration) while manual-policy ones stay held
+    plan_r = {"unchanged": [{"record": m_auto}, {"record": m_man}],
+              "changed": [], "new": []}
+    assert promote_reaudit(plan_r) == 1
+    assert [e["record"]["id"] for e in plan_r["changed"]] == ["battle.panel.same"]
+    assert plan_r["changed"][0]["needs_download"] is True
+    assert plan_r["changed"][0]["reason"] == "content re-audit (--reaudit)"
+    assert [e["record"]["id"] for e in plan_r["unchanged"]] == ["ui.achievement.held"]
+
     # package content gate (shared mod_package_check helpers): the scan
     # names corrupt .swf members and records unresolvable glue refs --
     # run_apply turns the former into a hard SystemExit and the latter
@@ -1645,6 +1853,71 @@ def selftest() -> None:
     assert rep.swf_members_ok == 1 and not rep.bad_swf_members, rep
     assert [f.ref_basename for f in rep.findings] == ["gone.swf"], rep.findings
     assert rep.findings[0].referencing_members == ["gui/uss_settings.xml"]
+
+    # content-based package-set guard: a filename regex cannot catch
+    # component-variant carriers that re-bundle the raw OlliN ShipIdentity
+    # template under unrelated names (the live 2026-11-06/07 assets), so the
+    # sync audits the zips themselves before anything is staged.
+    import zlib as _zlib
+
+    template_rel = "res_mods/gui/unbound2/!shipidentity/ShipIdentity.unbound"
+    normal_rel = "res_mods/gui/unbound2/other.xml"
+
+    # package_entries(): (name, size, CRC-32) round-trip of an in-memory zip
+    entries = package_entries(_zbytes({template_rel: b"template-bytes",
+                                       normal_rel: b"<x/>"}))
+    assert entries == [
+        (template_rel, len(b"template-bytes"), _zlib.crc32(b"template-bytes")),
+        (normal_rel, len(b"<x/>"), _zlib.crc32(b"<x/>")),
+    ], entries
+
+    def _pkg(name, members):
+        return name, package_entries(_zbytes(members))
+
+    # both ShipIdentity variants are excluded; the functional package is kept
+    normal_pkg = _pkg("pkg-normal.zip", {normal_rel: b"<x/>"})
+    kept, excluded, audit_warnings = audit_package_set([
+        _pkg("pkg-fba8f907.zip", {template_rel: b"# reduced: no macro"}),
+        normal_pkg,
+        _pkg("pkg-3d9a010e.zip", {template_rel: b"# complete: macro defined"}),
+    ])
+    assert audit_warnings == [], audit_warnings
+    assert kept == [1], kept
+    assert len(excluded) == 2, excluded
+    assert excluded == [SHIP_IDENTITY_EXCLUDE_REASON] * 2, excluded
+    assert "#1634" in excluded[0], excluded[0]
+
+    # template mixed into functional payload refuses to publish
+    try:
+        audit_package_set([_pkg("pkg-mixed.zip",
+                                {template_rel: b"t", normal_rel: b"<x/>"})])
+    except ValueError as exc:
+        assert "mixed with functional payload" in str(exc), exc
+    else:
+        raise AssertionError("a mixed ShipIdentity package must refuse to publish")
+
+    # conflicting duplicate target (same path, different bytes): the live
+    # catalog carries real cases (battle.monitor.afk, battle.marker.consumables),
+    # so publishing proceeds with both packages and a warning; the app's install
+    # merge keeps the first copy deterministically. Hard-failing here would make
+    # the content-guard migration (apply --reaudit) impossible on live data.
+    kept, excluded, audit_warnings = audit_package_set([
+        ("pkg-a.zip", [("res_mods/gui/shared.xml", 4, 111)]),
+        ("pkg-b.zip", [("res_mods/GUI/Shared.xml", 4, 222)]),
+    ])
+    assert kept == [0, 1] and excluded == [], (kept, excluded)
+    assert len(audit_warnings) == 1, audit_warnings
+    assert "legacy duplicate target" in audit_warnings[0], audit_warnings[0]
+    assert "res_mods/GUI/Shared.xml" in audit_warnings[0], audit_warnings[0]
+    assert "pkg-a.zip" in audit_warnings[0] and "pkg-b.zip" in audit_warnings[0], audit_warnings[0]
+
+    # byte-identical duplicate target = shared-runtime dedupe, accepted silently
+    kept, excluded, audit_warnings = audit_package_set([
+        ("pkg-a.zip", [("res_mods/gui/shared.xml", 4, 111)]),
+        ("pkg-b.zip", [("res_mods/GUI/Shared.xml", 4, 111)]),
+    ])
+    assert kept == [0, 1] and excluded == [] and audit_warnings == [], \
+        (kept, excluded, audit_warnings)
 
     # package hygiene: the publish-side twin of the app's preview/screenshot
     # filter runs at download time (no served asset may carry promo material);
@@ -1678,6 +1951,9 @@ def main(argv: list[str] | None = None) -> int:
     aply.add_argument("--include-new", action="store_true",
                       help="publish new entries whose slugs are curated")
     aply.add_argument("--no-gc", action="store_true", help="skip unreferenced-asset pruning")
+    aply.add_argument("--reaudit", action="store_true",
+                      help="force a download + content-guard audit of every in-scope "
+                           "entry once (run after changing the package content guard)")
     idx = sub.add_parser("index-only", help="re-crawl threads and republish mod-index.json")
     common(idx)
     common(sub.add_parser("render-summary", help="print the markdown summary of a report json"))
