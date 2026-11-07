@@ -18,16 +18,38 @@
  * not steal. The seal pin needs the opposite fixture setup (a realmful
  * roster + zh UI, the composition sweep's gates), so it mounts its own
  * payload while the window tests keep the realmless one.
+ *
+ * The sticky head block (toolbar + hoisted team column-header grid pinned at
+ * the scroll window's top edge) gets its structural pins here: happy-dom has
+ * no layout, so the tests pin the DOM contract the CSS sticky rule relies on
+ * (block placement, header cells hoisted out of the matrix columns while the
+ * matrix keeps two columns, each team's title staying inside its own stacked
+ * column at the ≤960px matrix breakpoint, and the live resize swap) while the
+ * real-browser geometry is covered by scripts/e2e/test_results_layout.py.
  */
+import { nextTick } from "vue";
 import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 import { initLocaleMessages, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import PostBattlePanel, { type PostBattleHead } from "./PostBattlePanel";
+import type { SelfStatsStream } from "./liveSelfStats";
 import { NICK_MASK } from "./postBattleShare";
 
 enableAutoUnmount(afterEach);
+
+// happy-dom's innerWidth is a fixed getter — plain assignment is silently
+// ignored, so shadow it with a controllable accessor (the same signal
+// hikari's useBreakpoint reads while the panel sets up). The sticky-head pins
+// run at the desktop default (>960px, two-column matrix); the stacked and
+// resize pins flip it per case and restore it in a finally. (Same harness
+// trick as AppTitleBar.test.tsx.)
+let viewportWidth = 1024;
+Object.defineProperty(window, "innerWidth", {
+  get: () => viewportWidth,
+  configurable: true,
+});
 
 beforeAll(async () => {
   await initLocaleMessages();
@@ -131,7 +153,28 @@ const RAW_WITH_REALM = JSON.stringify({
   privateDataList: [[], [], [], [], [], [], [], [450000, 0, 0, 1200]],
 });
 
-function mountPanel(props: { raw?: string; head?: PostBattleHead | null } = {}) {
+/** A decoded-but-empty stream: enough for the 全员/我的 switcher to render
+ *  (the self view's source), while buildSelfStats bails to its empty report. */
+const EMPTY_STREAM: SelfStatsStream = {
+  trajectories: [],
+  recorderVehicleId: null,
+  shotKills: [],
+  damageStats: [],
+  achievements: [],
+  arenaPlayers: [],
+  battleResults: null,
+  shellLaunches: [],
+  torpedoes: [],
+};
+
+function mountPanel(
+  props: {
+    raw?: string;
+    head?: PostBattleHead | null;
+    operation?: boolean;
+    stream?: SelfStatsStream | null;
+  } = {},
+) {
   return mount(PostBattlePanel, {
     props: { raw: RAW, head: null, operation: false, ...props },
   });
@@ -221,6 +264,159 @@ describe("PostBattlePanel player-detail window", () => {
     });
     // jumpToLookup also tears down the replay view behind the window.
     expect(wrapper.emitted("close")).toHaveLength(1);
+  });
+});
+
+describe("PostBattlePanel sticky head block", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+
+  it("pins the toolbar + a hoisted two-cell header grid in ONE sticky block above the matrix", () => {
+    const wrapper = mountPanel();
+    const root = wrapper.element as HTMLElement;
+    const stickyEl = root.querySelector(".replay-view__postbattle-sticky") as HTMLElement | null;
+    expect(stickyEl).toBeTruthy();
+    // The block is the panel's FIRST child (the sticky pin needs the top
+    // edge it paints to be the panel's own top edge) and the toolbar opens
+    // it — the toolbar's 8px margin gap must stay inside the block's paint.
+    expect(root.firstElementChild).toBe(stickyEl);
+    expect(
+      (stickyEl as HTMLElement).firstElementChild?.classList.contains(
+        "replay-view__postbattle-toolbar",
+      ),
+    ).toBe(true);
+    // The header seat rides the block only while the header grid is in it.
+    expect(
+      (stickyEl as HTMLElement).classList.contains(
+        "replay-view__postbattle-sticky--with-head",
+      ),
+    ).toBe(true);
+    const sticky = wrapper.find(".replay-view__postbattle-sticky");
+    const thead = sticky.find(".replay-view__postbattle-thead");
+    expect(thead.exists()).toBe(true);
+    // Desktop width (happy-dom's default 1024): roster view, both teams'
+    // column titles moved up into the header grid.
+    expect(thead.findAll(".replay-view__postbattle-col-title")).toHaveLength(2);
+    // DOM order contract: the sticky block precedes the scrolling matrix.
+    const matrixEl = root.querySelector(".replay-view__postbattle-matrix") as HTMLElement | null;
+    expect(matrixEl).toBeTruthy();
+    const children = [...root.children];
+    expect(children.indexOf(stickyEl as HTMLElement)).toBeLessThan(
+      children.indexOf(matrixEl as HTMLElement),
+    );
+    // At two-column width the matrix columns carry rows only — a title left
+    // inside a column would scroll away from the pinned header (and double
+    // the titles); the stacked layout puts it back per column.
+    const inners = wrapper.findAll(".replay-view__postbattle-col__inner");
+    expect(inners).toHaveLength(2);
+    for (const inner of inners) {
+      expect(inner.find(".replay-view__postbattle-col-title").exists()).toBe(false);
+      expect(inner.findAll(".replay-view__postbattle-cell").length).toBeGreaterThan(0);
+    }
+  });
+
+  it("mirrors the single-column matrix with the header grid's --single variant (operations)", () => {
+    const wrapper = mountPanel({ operation: true });
+    const matrix = wrapper.find(".replay-view__postbattle-matrix");
+    expect(matrix.classes()).toContain("replay-view__postbattle-matrix--single");
+    const thead = wrapper.find(".replay-view__postbattle-thead");
+    expect(thead.exists()).toBe(true);
+    expect(thead.classes()).toContain("replay-view__postbattle-thead--single");
+    // Operations have no enemy roster: one full-width column, one title.
+    expect(thead.findAll(".replay-view__postbattle-col-title")).toHaveLength(1);
+  });
+
+  it("keeps the toolbar sticky with no header row in the 我的战绩 self view", async () => {
+    const wrapper = mountPanel({ stream: EMPTY_STREAM });
+    // The switcher only renders when a decoded stream backs the self report;
+    // the second segmented button is the 我的战绩 face.
+    const switchBtns = wrapper.findAll(".replay-view__postbattle-viewswitch-btn");
+    expect(switchBtns).toHaveLength(2);
+    await switchBtns[1].trigger("click");
+    // The self report replaces the matrix, but the toolbar keeps its pinned
+    // block — with no roster header grid under it (and no header seat).
+    const sticky = wrapper.find(".replay-view__postbattle-sticky");
+    expect(sticky.exists()).toBe(true);
+    expect(sticky.find(".replay-view__postbattle-toolbar").exists()).toBe(true);
+    expect(sticky.classes()).not.toContain(
+      "replay-view__postbattle-sticky--with-head",
+    );
+    expect(wrapper.find(".replay-view__postbattle-thead").exists()).toBe(false);
+    expect(wrapper.find(".replay-view__postbattle-matrix").exists()).toBe(false);
+  });
+
+  it("keeps each team title inside its own column while the matrix stacks (≤960px)", () => {
+    // 900px is the narrow-desktop stack PR #1820 added; 700px is the phone
+    // stack. Both put the matrix into ONE column, so both must move the
+    // titles back into their columns and keep only the toolbar in the block
+    // — a hoisted two-cell header would cap the ALLIES rows with the
+    // ENEMIES' title.
+    for (const width of [900, 700]) {
+      viewportWidth = width;
+      try {
+        const wrapper = mountPanel();
+        const sticky = wrapper.find(".replay-view__postbattle-sticky");
+        expect(sticky.exists()).toBe(true);
+        expect(sticky.find(".replay-view__postbattle-toolbar").exists()).toBe(true);
+        expect(sticky.classes()).not.toContain(
+          "replay-view__postbattle-sticky--with-head",
+        );
+        expect(wrapper.find(".replay-view__postbattle-thead").exists()).toBe(false);
+        // Each stacked team gets its title back as its column's FIRST child,
+        // followed by that team's rows.
+        const inners = wrapper.findAll(".replay-view__postbattle-col__inner");
+        expect(inners).toHaveLength(2);
+        for (const inner of inners) {
+          expect(inner.findAll(".replay-view__postbattle-col-title")).toHaveLength(1);
+          expect(
+            (inner.element.firstElementChild as HTMLElement | null)?.classList.contains(
+              "replay-view__postbattle-col-title",
+            ),
+          ).toBe(true);
+          expect(inner.findAll(".replay-view__postbattle-cell").length).toBeGreaterThan(0);
+        }
+      } finally {
+        viewportWidth = 1024;
+        // The composable's resize listener must see the desktop width again
+        // before the auto-unmount, so no later mount inherits a stack width.
+        window.dispatchEvent(new Event("resize"));
+      }
+    }
+  });
+
+  it("swaps the header grid between the sticky block and the columns on a live resize", async () => {
+    const wrapper = mountPanel();
+    try {
+      expect(wrapper.find(".replay-view__postbattle-thead").exists()).toBe(true);
+      viewportWidth = 900;
+      window.dispatchEvent(new Event("resize"));
+      await nextTick();
+      // The single stacked-matrix signal drives thead, --with-head and the
+      // in-column titles together — a live resize must move all three.
+      expect(wrapper.find(".replay-view__postbattle-thead").exists()).toBe(false);
+      expect(wrapper.find(".replay-view__postbattle-sticky").classes()).not.toContain(
+        "replay-view__postbattle-sticky--with-head",
+      );
+      for (const inner of wrapper.findAll(".replay-view__postbattle-col__inner")) {
+        expect(inner.findAll(".replay-view__postbattle-col-title")).toHaveLength(1);
+      }
+      viewportWidth = 1024;
+      window.dispatchEvent(new Event("resize"));
+      await nextTick();
+      expect(wrapper.find(".replay-view__postbattle-thead").exists()).toBe(true);
+      expect(wrapper.find(".replay-view__postbattle-sticky").classes()).toContain(
+        "replay-view__postbattle-sticky--with-head",
+      );
+      for (const inner of wrapper.findAll(".replay-view__postbattle-col__inner")) {
+        expect(inner.findAll(".replay-view__postbattle-col-title")).toHaveLength(0);
+      }
+    } finally {
+      // A failing assertion must not leave later mounts at the stacked width.
+      viewportWidth = 1024;
+      window.dispatchEvent(new Event("resize"));
+    }
   });
 });
 

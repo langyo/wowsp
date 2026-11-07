@@ -133,9 +133,54 @@
     grid-template-columns: 1fr;
   }
 }
+/* The sticky head block — the panel's FIRST child (PostBattlePanel.tsx):
+   the share toolbar and, on a two-column matrix, the hoisted team header
+   grid below it. The results window scrolls the whole panel inside
+   HkModal's body scroller, so the top rows ride ONE sticky block: it pins
+   at the scrollport's top edge while the matrix rows scroll underneath.
+   One block means no JS height measurement and one shared paint edge — the
+   opaque surface background makes rows vanish under it. The 我的战绩 self
+   view and the stacked matrix (≤960px, the SAME threshold the matrix uses)
+   render the toolbar alone here: their titles ride their own columns. */
+.replay-view__postbattle-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  /* Opaque on purpose (the channel that hides the scrolled rows) — not the
+     --hk-modal-bg family: the pin must read as one solid band at every
+     ui-opacity setting. */
+  background: rgb(var(--color-surface));
+  /* The header cells' seat — only when the hoisted header grid is inside
+     the block: the old title→row 4px pitch, now the block's own bottom
+     padding (the matrix starts right below it, so at rest the header→rows
+     gap is unchanged). The self view / stacked layouts carry no header in
+     the block, so their toolbar→content gap stays the plain 8px margin. */
+  &--with-head {
+    padding-bottom: 4px;
+  }
+}
+/* The hoisted team header grid: the matrix's own two-track template + gap,
+   so each cell sits exactly above its column. This template MUST move
+   together with .replay-view__postbattle-matrix (here, the --single
+   variant) — header and matrix grids have to stay identical or the titles
+   drift off their columns. Rendered only while the matrix keeps two
+   columns (PostBattlePanel.tsx hoists it at >960px, or for the
+   single-sided operations roster). */
+.replay-view__postbattle-thead {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: stretch;
+
+  /* Single-sided battle (operations): mirror the matrix's one-column rule. */
+  &--single {
+    grid-template-columns: 1fr;
+  }
+}
 /* Column scroller — the hikari container owns the scrollbar (auto-hiding
-   overlay track); the column's stacking rhythm moved to the inner wrapper
-   so the column title scrolls with the rows. */
+   overlay track). On a two-column matrix the column titles live in the
+   sticky header grid above and the inner wrapper stacks rows only; on the
+   stacked drawer each title rides its column's first child again. */
 .replay-view__postbattle-col {
   min-height: 0;
   /* A grid item's automatic min-width is its min-content — without this
@@ -144,11 +189,19 @@
      sheet's right edge. */
   min-width: 0;
 }
+/* Rows-only stack on the two-column matrix (the titles are hoisted into the
+   sticky header grid above, so the 4px pitch here is only the row-to-row
+   rhythm — the header→first-row gap comes from the sticky block's
+   padding-bottom); the stacked layout keeps its title as the first child. */
 .replay-view__postbattle-col__inner {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
+/* One team's column title — a cell of the sticky header grid on a
+   two-column matrix (its width comes from the shared grid track), or the
+   first child of its own column on the stacked layout; the per-column
+   bottom border and labels stay in both placements. */
 .replay-view__postbattle-col-title {
   display: flex;
   align-items: baseline;

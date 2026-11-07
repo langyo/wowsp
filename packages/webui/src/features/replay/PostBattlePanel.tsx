@@ -94,7 +94,7 @@ import {
 } from "vue";
 import { useRouter } from "vue-router";
 import { Eye, EyeOff } from "@lucide/vue";
-import { HkModal, HkSpinner } from "@celestia-island/hikari";
+import { HkModal, HkSpinner, useBreakpoint } from "@celestia-island/hikari";
 
 import {
   api,
@@ -781,6 +781,13 @@ export default defineComponent({
      *  the toolbar's segmented 全员/我的 switch. Ephemeral per open (a
      *  share-time choice, not a preference). */
     const view = ref<"roster" | "self">("roster");
+    /** The viewport width behind ONE layout decision: whether the roster
+     *  matrix still splits into two team columns (it stacks into one at
+     *  ≤960px, PostBattlePanel.scss) and therefore whether the hoisted team
+     *  header grid can exist at all (see `hoistHeader` in the render). The
+     *  hikari breakpoint is reactive, so a window resize re-renders the
+     *  panel and the header placement follows the CSS matrix rules. */
+    const { width } = useBreakpoint();
     /** The personal report (我的战绩) — the exact pure model the live
      *  panel runs, fed from the replay's decoded stream; the battle
      *  results ride the `raw` prop. */
@@ -1493,6 +1500,19 @@ export default defineComponent({
       const rowOf = fullMode.value ? fullCell : cell;
       const sel = selected.value;
       const enemyRows = props.operation ? [] : enemies.value;
+      /** Does the matrix currently stack its two team columns into ONE?
+       *  (PostBattlePanel.scss: `@media (max-width: 960px)`; a single-sided
+       *  operations roster is one column at every width, so it never
+       *  "stacks".) The hoisted header grid may only exist while the matrix
+       *  keeps two columns — a two-cell ALLIES/ENEMIES header over a stacked
+       *  single column would cap the allies rows with the enemy title. This
+       *  one signal drives the thead render, the sticky block's
+       *  `--with-head` seat and the in-column titles together. */
+      const matrixStacked = width.value <= 960 && enemyRows.length > 0;
+      /** Can the header grid ride the sticky block? Roster view on a
+       *  two-column matrix only; the 我的战绩 self view and the stacked
+       *  layouts keep each title in its own column. */
+      const hoistHeader = !matrixStacked && view.value !== "self";
       /** The killer attribution line — pre-text + killer chip + post-text
        *  (word order varies per locale). The chip carries the killer's
        *  white class icon and ship name; when the killer sits in this
@@ -1549,24 +1569,58 @@ export default defineComponent({
       })();
       return (
         <div class="replay-view__postbattle" ref={root}>
-          <PostBattleShareBar
-            hideAll={masking.hideAll.value}
-            shotBusy={shot.busy.value}
-            showModeToggle
-            showAiSort
-            fullMode={fullMode.value}
-            view={props.stream ? view.value : undefined}
-            onToggleAll={() => masking.toggleAll()}
-            onShot={() => {
-              // Either view copies the ONE combined sheet — both teams'
-              // matrix (the AI column included when its switch is on)
-              // above the personal banner; without a self model the matrix
-              // alone still copies, exactly as before.
-              void shot.copyShot();
-            }}
-            onToggleMode={toggleFullMode}
-            onSetView={(v) => (view.value = v)}
-          />
+          {/* The sticky head block: the share toolbar always, plus (roster
+              view on a two-column matrix ONLY) the hoisted team column
+              headers. The whole block pins at the scroller's top edge
+              (PostBattlePanel.scss) while the matrix rows run underneath —
+              ONE block, so no JS height measurement is needed and the
+              toolbar's 8px margin gap is painted by the block wherever the
+              header joins it. The header grid mirrors the matrix template,
+              so each title stays exactly above its column; the two-column
+              columns therefore carry rows only. When the matrix stacks into
+              one column (≤960px, `matrixStacked`) or the 我的战绩 self view is
+              active, the title rides its column instead (see the matrix
+              below) and the block holds the toolbar alone. */}
+          <div
+            class={[
+              "replay-view__postbattle-sticky",
+              // The header seat (the old title→row 4px pitch) only belongs
+              // to the block when the hoisted header grid is inside it.
+              { "replay-view__postbattle-sticky--with-head": hoistHeader },
+            ]}
+          >
+            <PostBattleShareBar
+              hideAll={masking.hideAll.value}
+              shotBusy={shot.busy.value}
+              showModeToggle
+              showAiSort
+              fullMode={fullMode.value}
+              view={props.stream ? view.value : undefined}
+              onToggleAll={() => masking.toggleAll()}
+              onShot={() => {
+                // Either view copies the ONE combined sheet — both teams'
+                // matrix (the AI column included when its switch is on)
+                // above the personal banner; without a self model the matrix
+                // alone still copies, exactly as before.
+                void shot.copyShot();
+              }}
+              onToggleMode={toggleFullMode}
+              onSetView={(v) => (view.value = v)}
+            />
+            {hoistHeader ? (
+              <div
+                class={[
+                  "replay-view__postbattle-thead",
+                  { "replay-view__postbattle-thead--single": enemyRows.length === 0 },
+                ]}
+              >
+                {colTitle(t("replay.roster.allies"), allies.value)}
+                {enemyRows.length > 0
+                  ? colTitle(t("replay.roster.enemies"), enemyRows)
+                  : null}
+              </div>
+            ) : null}
+          </div>
           {view.value === "self" ? (
             <div class="replay-view__postbattle-self">
               {selfModel.value ? (
@@ -1591,14 +1645,19 @@ export default defineComponent({
                   highlight's rounding has the dark ground it needs to show
                   (user feedback: 项目之间应有一点距离、圆角一致 — the flush
                   strip read as one slab and the highlight bled into the
-                  neighbours). */}
+                  neighbours). On a two-column matrix the column TITLES live
+                  in the sticky header grid above, so these wrappers carry
+                  rows only; on the stacked layout (≤960px) each title
+                  returns as its own column's first child and scrolls with
+                  its team (a hoisted pair would cap the ALLIES rows with the
+                  ENEMY title). */}
               <div class="replay-view__postbattle-col__inner">
-                {colTitle(t("replay.roster.allies"), allies.value)}
+                {hoistHeader ? null : colTitle(t("replay.roster.allies"), allies.value)}
                 {allies.value.map(rowOf)}
               </div>
               {enemyRows.length > 0 ? (
                 <div class="replay-view__postbattle-col__inner">
-                  {colTitle(t("replay.roster.enemies"), enemyRows)}
+                  {hoistHeader ? null : colTitle(t("replay.roster.enemies"), enemyRows)}
                   {enemyRows.map(rowOf)}
                 </div>
               ) : null}
