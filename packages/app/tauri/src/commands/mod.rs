@@ -20,6 +20,10 @@ pub(crate) fn ensure_main_window_label(label: &str) -> CommandResult<()> {
     }
 }
 
+// Account-list online probes (左下角账号列表「疑似在线」标记): one batched
+// WG account/info sweep + CN vortex lean probe. Read-only, every window;
+// the webui store owns the pacing.
+pub mod account_online;
 pub mod app_migrations;
 pub mod appdata;
 pub mod arena_info;

@@ -6,6 +6,7 @@ import { HkButton, HkDraggableList, HkInput, HkModal, HkScrollContainer, HkSelec
 import ErrorCard from "@/components/base/ErrorCard";
 import PlayerBadge from "@/components/base/PlayerBadge";
 import { useAccountStore, type AccountProfile } from "@/stores/account";
+import { useAccountOnlineStore } from "@/stores/accountOnline";
 import { useStatsStore } from "@/stores/stats";
 import { winrateColor } from "@/utils/winrate";
 import { t } from "@/i18n";
@@ -50,6 +51,7 @@ export default defineComponent({
   setup(props) {
     const accounts = useAccountStore();
     const stats = useStatsStore();
+    const online = useAccountOnlineStore();
 
     const searchRealm = ref("asia");
     const searchName = ref("");
@@ -161,6 +163,9 @@ export default defineComponent({
         found.value = null;
         searchName.value = "";
         addOpen.value = false;
+        // The fresh bind gets its 疑似在线 badge on an immediate poll
+        // instead of waiting for the next ~90s tick.
+        void online.pollOnce();
       } catch (e) {
         searchError.value = (e as Error).message;
       } finally {
@@ -237,6 +242,20 @@ export default defineComponent({
                 <span class="acct-card__clan">[{s.clanTag}]</span>
               ) : null}
               <span class="acct-card__name">{a.nickname}</span>
+              {/* 疑似在线: a battle finished within the recent window
+                  (stores/accountOnline) — "probably still around"; the
+                  wrapper span carries the tooltip for the tag. */}
+              {online.suspectOf(a.realm, a.accountId) ? (
+                <span
+                  class="acct-card__online"
+                  aria-label={t("account.suspectOnline")}
+                  data-hint={t("account.suspectOnlineHint")}
+                >
+                  <HkTag variant="success" size="sm">
+                    {t("account.suspectOnline")}
+                  </HkTag>
+                </span>
+              ) : null}
             </div>
             <div class="acct-card__meta">
               <HkTag variant="default" size="sm">{a.realm.toUpperCase()}</HkTag>

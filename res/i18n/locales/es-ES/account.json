@@ -16,5 +16,7 @@
   "noAccounts": "Aún no hay cuentas vinculadas. Usa «Añadir jugador» para buscar un apodo y vincular una.",
   "setPreferred": "Marcar como preferida",
   "preferredBadge": "Cuenta principal",
-  "autoSwitched": "Cambiado a {name}"
+  "autoSwitched": "Cambiado a {name}",
+  "suspectOnline": "Posiblemente en línea",
+  "suspectOnlineHint": "Una batalla terminó en los últimos ~20 minutos; es posible que esta cuenta esté en uso."
 }

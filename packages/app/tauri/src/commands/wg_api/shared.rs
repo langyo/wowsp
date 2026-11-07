@@ -171,6 +171,64 @@ pub(super) async fn account_nickname_by_id(
         .and_then(|n| n.as_str())
         .map(|s| s.to_owned()))
 }
+
+/// The WG documented batch cap for account/info's account_id list
+/// (407 ACCOUNT_ID_LIST_LIMIT_EXCEEDED beyond it).
+const ACCOUNT_INFO_BATCH_MAX: usize = 100;
+
+/// Batched account/info → per-id `last_battle_time` (the account list's
+/// 疑似在线 badge poll). One request per input chunk (`ACCOUNT_INFO_BATCH_MAX`
+/// ids), `fields` trimmed to the two keys the badge needs so a poll stays a
+/// few hundred bytes per id. Input order preserved. Per-id `None` covers
+/// the unknown-id (empty data object) and dropped-key shapes alike — the
+/// badge only ever appears on POSITIVE fresh evidence, so a transient
+/// upstream failure simply hides it for one poll. Parse helper pure;
+/// unit-tested.
+pub(crate) async fn account_last_battle_times(
+    clients: &HttpPair,
+    app_id: &str,
+    host: &str,
+    account_ids: &[i64],
+) -> Result<Vec<Option<i64>>> {
+    let mut out = Vec::with_capacity(account_ids.len());
+    for chunk in account_ids.chunks(ACCOUNT_INFO_BATCH_MAX) {
+        let id_list = chunk
+            .iter()
+            .map(|id| id.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        let resp = super::upstream_health::recorded_get(
+            clients,
+            host,
+            "account/info",
+            format!(
+                "https://{host}/wows/account/info/?application_id={app_id}\
+                 &account_id={id_list}&fields=account_id,last_battle_time",
+            ),
+        )
+        .await?;
+        let parsed: WgResponse<serde_json::Value> = resp
+            .json()
+            .await
+            .map_err(|e| anyhow!("account/info parse: {e}"))?;
+        if parsed.status != "ok" {
+            bail!("account/info: {}", parsed.error.message.unwrap_or_default());
+        }
+        for id in chunk {
+            out.push(last_battle_time_of(parsed.data.as_ref(), *id));
+        }
+    }
+    Ok(out)
+}
+
+/// `data.<id>.last_battle_time` off one account/info answer. Pure;
+/// unit-tested.
+fn last_battle_time_of(data: Option<&serde_json::Value>, account_id: i64) -> Option<i64> {
+    data.and_then(|d| d.get(account_id.to_string()))
+        .and_then(|v| v.get("last_battle_time"))
+        .and_then(|v| v.as_i64())
+}
+
 /// Named HTML entities that show up in WG-escaped clan text (players type
 /// quotes, arrows, dashes); anything outside this table must arrive
 /// numeric-encoded or it passes through visibly.
@@ -345,7 +403,7 @@ pub(crate) struct AccountListEntry {
 
 #[cfg(test)]
 mod tests {
-    use super::WgResponse;
+    use super::{WgResponse, last_battle_time_of};
 
     /// The ASIA pool answers HTTP 200 + code 504 / SOURCE_NOT_AVAILABLE for
     /// zero-match searches AND sporadic backend failures; the classifier is
@@ -375,5 +433,22 @@ mod tests {
         let ok: WgResponse<serde_json::Value> =
             serde_json::from_str(r#"{"status":"ok","data":null}"#).expect("parse");
         assert!(!ok.error.is_source_unavailable());
+    }
+
+    /// The badge poll's per-id read: a present node yields the stamp, an
+    /// unknown id (WG answers an empty/missing node for it) and a missing
+    /// data object both yield None.
+    #[test]
+    fn last_battle_time_of_reads_the_batch_data_map() {
+        let data = serde_json::json!({
+            "571108101": { "nickname": "Flambass", "last_battle_time": 1_724_841_778 },
+            "572484232": { "nickname": "Flambass2" },
+        });
+        assert_eq!(
+            last_battle_time_of(Some(&data), 571_108_101),
+            Some(1_724_841_778)
+        );
+        assert_eq!(last_battle_time_of(Some(&data), 1), None);
+        assert_eq!(last_battle_time_of(None, 571_108_101), None);
     }
 }

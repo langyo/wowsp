@@ -828,6 +828,10 @@ pub fn run() {
             commands::wg_api::suggest_players,
             commands::wg_api::suggest_clans,
             commands::wg_api::lookup_clan_info,
+            // Account-list online probes (账号列表「疑似在线」标记): the
+            // batched WG account/info + CN vortex poll. Read-only, every
+            // window; the frontend store paces the ~90s poll.
+            commands::account_online::account_online_check,
             commands::encyclopedia::get_game_version,
             commands::encyclopedia::get_ship_encyclopedia,
             commands::ship_stats::lookup_player_ship_stats,

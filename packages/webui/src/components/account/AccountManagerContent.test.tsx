@@ -22,7 +22,7 @@
  * first one filled the cache (the dialog passes `force`).
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
-import { createPinia } from "pinia";
+import { createPinia, setActivePinia } from "pinia";
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 
 import { RPC } from "@/rpc";
@@ -34,6 +34,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/transport", () => ({ transport: { invoke: mocks.invoke } }));
 
 import AccountManagerContent from "./AccountManagerContent";
+import { useAccountStore } from "@/stores/account";
+import { useAccountOnlineStore } from "@/stores/accountOnline";
 import type { PlayerStats } from "@/api";
 
 enableAutoUnmount(afterEach);
@@ -207,5 +209,39 @@ describe("add-player dialog search", () => {
 
     expect(previewCard()).toBeNull();
     expect(searchIsBusy()).toEqual({ loadingClass: false, ring: false });
+  });
+});
+
+/** 疑似在线 badge (账号列表在线状态): the store's per-account flags drive
+ *  a green tag beside each card's nickname — only accounts the poll
+ *  flagged fresh get one (stores/accountOnline). */
+describe("suspect-online badge", () => {
+  it("renders the tag only on cards the poll flagged fresh", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const accounts = useAccountStore();
+    accounts.accounts = [
+      { accountId: 1024000001, nickname: "RingProbeOne", realm: "asia" },
+      { accountId: 2002, nickname: "QuietOne", realm: "eu" },
+    ];
+    const online = useAccountOnlineStore();
+    const nowSec = Date.now() / 1000;
+    mocks.invoke.mockImplementation((cmd: string) => {
+      if (cmd === RPC.account_online_check) {
+        return Promise.resolve([
+          { accountId: 1024000001, realm: "asia", lastBattleTime: nowSec - 60, checkedAt: nowSec },
+          { accountId: 2002, realm: "eu", lastBattleTime: null, checkedAt: nowSec },
+        ]);
+      }
+      if (cmd === RPC.appdata_read) return Promise.resolve(null);
+      return Promise.resolve(undefined);
+    });
+    await online.pollOnce();
+
+    const wrapper = mount(AccountManagerContent, { global: { plugins: [pinia] } });
+    await flushPromises();
+
+    expect(wrapper.findAll(".acct-card__online")).toHaveLength(1);
+    expect(wrapper.find(".acct-card__name").text()).toBe("RingProbeOne");
   });
 });

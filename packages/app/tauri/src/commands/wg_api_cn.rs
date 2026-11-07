@@ -317,6 +317,9 @@ fn normalize_player(node: &serde_json::Value) -> serde_json::Value {
         "leveling_tier": basic.and_then(|b| b.get("leveling_tier")).and_then(|v| v.as_i64()),
         "leveling_points": basic.and_then(|b| b.get("leveling_points")).and_then(|v| v.as_i64()),
         "karma": basic.and_then(|b| b.get("karma")).and_then(|v| v.as_i64()),
+        // Same lift as karma: the account list's 疑似在线 badge reads the
+        // CN answer's last_battle_time (WG clusters serve it top-level).
+        "last_battle_time": basic.and_then(|b| b.get("last_battle_time")).and_then(|v| v.as_i64()),
         "statistics": stats_json,
         "dog_tag": node.get("dog_tag").filter(|v| !v.is_null()),
     })
@@ -557,6 +560,26 @@ async fn clan_for_account(clients: &HttpPair, account_id: i64) -> Option<(String
 
 // ── player stats assembly ─────────────────────────────────────────────────
 
+/// Lean online probe for the account list's 疑似在线 badge: one nickname →
+/// its exact CN account → the info node's `last_battle_time`. Search + info
+/// only — no clan/dog-tag/PR extraction, no caching; the poller owns the
+/// pacing (a handful of bound accounts every ~90s, far under what the
+/// anonymous vortex serves the profile site). `account_info` already
+/// returns the node NORMALIZED (its own `map(normalize_player)`), so the
+/// badge read is the top-level key the lift put there — a second
+/// normalize pass would find no `statistics.basic` and silently null this
+/// forever. `Ok(None)` = no exact hit / unknown id / no fresh figure — the
+/// badge simply stays hidden for that account that round.
+pub(crate) async fn probe_last_battle_time(clients: &HttpPair, name: &str) -> Result<Option<i64>> {
+    let Some(account) = account_list_one(clients, name).await? else {
+        return Ok(None);
+    };
+    let Some(node) = account_info(clients, account.account_id).await? else {
+        return Ok(None);
+    };
+    Ok(get_i64(&node, "last_battle_time"))
+}
+
 /// Build a `PlayerStats` from a normalized player node. Shared by the single
 /// lookup and the batch path (mirrors `player_stats_from_info`).
 fn player_stats_of(
@@ -637,9 +660,11 @@ fn player_stats_of(
         // the same fantasy rating out of the co-op counters.
         global_pr: if coop_fallback { None } else { p.global.pr },
         global_kd_ratio: p.global.kd_ratio,
-        // CN runs an isolated account pool — no cross-realm arbitration
-        // ever reads it (see wg_api's cross-server pass).
-        last_battle_time: None,
+        // The CN vortex carries its own last_battle_time (normalized
+        // basic node — see normalize_player's lift). The cross-realm
+        // arbiter never reads CN (isolated account pool), but the
+        // account list's 疑似在线 badge polls it like any realm.
+        last_battle_time: get_i64(node, "last_battle_time"),
     }
 }
 
@@ -1365,6 +1390,13 @@ mod tests {
         // The vortex basic node's karma lifts onto the top-level slot the
         // shared karma_of read (WG clusters serve it under statistics.basic).
         assert_eq!(node.get("karma").unwrap(), 0);
+        // The same lift carries last_battle_time (the account list's
+        // 疑似在线 badge reads it; WG clusters serve it top-level already).
+        assert_eq!(node.get("last_battle_time").unwrap(), 1_702_903_865);
+        // The online probe reads this node EXACTLY like this — one
+        // normalize pass (account_info maps it), top-level key. A second
+        // pass finds no statistics.basic and would silently null it.
+        assert_eq!(get_i64(&node, "last_battle_time"), Some(1_702_903_865));
 
         // The normalized node feeds the shared WG extractor verbatim.
         let p = PvpStats::extract(node.get("statistics"));

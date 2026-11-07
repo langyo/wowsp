@@ -16,5 +16,7 @@
   "noAccounts": "尚未绑定账户。点击「新增玩家」搜索昵称以绑定。",
   "setPreferred": "设为首选",
   "preferredBadge": "主账号",
-  "autoSwitched": "已切换到 {name}"
+  "autoSwitched": "已切换到 {name}",
+  "suspectOnline": "疑似在线",
+  "suspectOnlineHint": "最近约 20 分钟内有战斗记录，该账号可能正在使用"
 }

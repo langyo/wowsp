@@ -16,5 +16,7 @@
   "noAccounts": "No accounts bound yet. Use Add player to search a nickname and bind one.",
   "setPreferred": "Make preferred",
   "preferredBadge": "Primary account",
-  "autoSwitched": "Switched to {name}"
+  "autoSwitched": "Switched to {name}",
+  "suspectOnline": "Possibly online",
+  "suspectOnlineHint": "A battle finished within the last ~20 minutes — this account may be in use."
 }

@@ -16,5 +16,7 @@
   "noAccounts": "まだアカウントが連携されていません。「プレイヤーを追加」からニックネームを検索して連携してください。",
   "setPreferred": "優先に設定",
   "preferredBadge": "メインアカウント",
-  "autoSwitched": "{name} に切り替えました"
+  "autoSwitched": "{name} に切り替えました",
+  "suspectOnline": "オンラインの可能性",
+  "suspectOnlineHint": "直近約20分以内に戦闘の記録があり、このアカウントは使用中の可能性があります。"
 }
