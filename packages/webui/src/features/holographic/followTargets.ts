@@ -106,10 +106,12 @@ export function formationFollowPose(
 
 /** Recorded anchor pose for a formation without a rendered model this tick
  *  (Points fallback, model pack missing, or the GLB pool still loading): the
- *  last index-0 sample at or before t, mapped into scene space the way the
- *  per-frame formation anchor does (z mirrored, altitude lifted to the
- *  formation floor) and the recorded REAL heading (SquadronPlane.yaw, 0 =
- *  north). Null when the anchor trail has no sample by t. */
+ *  last index-0 sample at or before t, mapped into scene space (z mirrored,
+ *  altitude lifted to the formation floor) with the recorded REAL heading
+ *  (SquadronPlane.yaw, 0 = north). This is the last-resort fallback: callers
+ *  prefer the visible Points cloud slot when one is on screen, because the
+ *  synthetic patrol centre is where the dots are actually drawn. Null when
+ *  the anchor trail has no sample by t. */
 export function anchorFollowPose(
   planeTrails: readonly PlaneTrailLike[],
   planeId: number,

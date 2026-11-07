@@ -44,7 +44,8 @@ const RECORDED_MODE_KEYS: Partial<Record<RecordedCameraMode, string>> = {
   overheadMap: "replay.camera.mode.overheadMap",
 };
 
-/** Localized name of a recorded-camera mode, "other view" for unknown ones. */
+/** Localized name of a recorded-camera mode, "other view" for the curated
+ *  set's unlisted enum values (unknown raw ids never reach the menu). */
 function recordedModeLabel(mode: RecordedCameraMode): string {
   return i18nT(RECORDED_MODE_KEYS[mode] ?? "replay.camera.mode.other");
 }

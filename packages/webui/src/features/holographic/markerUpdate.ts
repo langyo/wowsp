@@ -552,7 +552,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       return s;
     };
     // Formation anchors: index-0 trail of each planeId (position + yaw),
-    // alive between its first update and ~2 min after the last one.
+    // alive between its first update and one shared grace window after the
+    // last one (PLANE_TRAIL_GRACE_S, also used by the follow target).
     // Reused scratch map — the old code allocated a fresh Map per tick.
     const formationAnchor = ctx.planeAnchorScratch;
     formationAnchor.clear();

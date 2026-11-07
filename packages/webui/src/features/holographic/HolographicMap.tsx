@@ -18,7 +18,7 @@ import {
 } from "./modelLoader";
 import { clearShipMarkerCache } from "./shipMarker";
 import { clearPropMarkerCache } from "./propMarker";
-import { hpAtTime, sampleAt, UNSEEN_GAP_S } from "./trajectoryMath";
+import { hpAtTime, sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { shouldReserveTabKey } from "./tabKeyGate";
 import { arenaIdentities, resolveRosterAssignments } from "./rosterRoles";
 import { encyclopediaHullHealth, resolveMaxHp } from "./shipHp";
@@ -475,6 +475,16 @@ export default defineComponent({
      *  target pick resets to that target kind's stock distance instead of
      *  carrying the preset into unrelated selections. */
     let followDistFocus = false;
+    /** Drop a one-shot focus preset, restoring the stock framing for the kind
+     *  that owned it: clearing the target (empty-space click / replay switch)
+     *  must not leave the preset behind for the next same-kind pick. */
+    function clearFollowDistPreset(aircraft: boolean): void {
+      if (!followDistFocus) return;
+      followDist = clampFollowDist(
+        aircraft ? PLANE_FOLLOW_DIST_DEFAULT : FOLLOW_DIST_DEFAULT,
+      );
+      followDistFocus = false;
+    }
     /** A wheel/pinch landed since the last adoption. */
     let dollySeen = false;
     // The orbit radius bounds in force when follow began (fitCamera's
@@ -522,8 +532,10 @@ export default defineComponent({
             followStockDist = null;
           }
         }
+        const wasAircraft = followAircraft.value;
         selectedEntityId.value = null;
         followAircraft.value = false;
+        clearFollowDistPreset(wasAircraft);
       } else {
         // Entering the chase: forget wheel events that belonged to the free
         // camera — the first follow frame stamps the remembered follow
@@ -635,8 +647,9 @@ export default defineComponent({
     // follow the camera is not performing.
     watch(selectedEntityId, (id) => {
       if (id != null) return;
+      const wasAircraft = followAircraft.value;
       followAircraft.value = false;
-      followDistFocus = false;
+      clearFollowDistPreset(wasAircraft);
       if (cameraMode.value === "follow") cameraMode.value = "free";
     });
     // Hold-RMB free look inside follow mode: while held, followSelected
@@ -2124,11 +2137,17 @@ export default defineComponent({
               // Parked slots sink below the seabed; keep the anchor fallback
               // for those instead of following a place no camera can see.
               if (y > -1000) {
+                // Heading = the patrol-circle tangent the dots actually move
+                // along (markerUpdate.ts's formation orbit, R=50,
+                // ang = t*0.22 + planeId-seed): a dot cloud has no per-plane
+                // heading of its own, and the recorded anchor yaw would point
+                // the chase camera sideways against the visible motion.
+                const ang = current.value * 0.22 + (planeId % 7) * 0.9;
                 aircraft = {
                   x: cloudAttr.getX(slot),
                   y,
                   z: cloudAttr.getZ(slot),
-                  yaw: anchorFollowPose(ctx.planeTrails, planeId, current.value)?.yaw ?? 0,
+                  yaw: Math.atan2(-Math.sin(ang), Math.cos(ang)),
                 };
               }
             }
@@ -2146,13 +2165,26 @@ export default defineComponent({
         yaw = aircraft.yaw;
       } else {
         const marker = ctx.shipMarkers.find((m) => m.userData.entityId === id);
-        if (!marker || !marker.visible) return;
-        pos = marker.position;
-        // Markers carry three.js rotation.y = π − yaw and the real heading in
-        // userData.yaw (markerUpdate). The chase solver wants the REAL yaw —
-        // feeding it rotation.y parks the camera in front of the hull.
-        const storedYaw = marker.userData.yaw;
-        yaw = typeof storedYaw === "number" ? storedYaw : Math.PI - marker.rotation.y;
+        if (marker && marker.visible) {
+          pos = marker.position;
+          // Markers carry three.js rotation.y = π − yaw and the real heading
+          // in userData.yaw (markerUpdate). The chase solver wants the REAL
+          // yaw — feeding it rotation.y parks the camera in front of the hull.
+          const storedYaw = marker.userData.yaw;
+          yaw = typeof storedYaw === "number" ? storedYaw : Math.PI - marker.rotation.y;
+        } else {
+          // Sunk/unobserved hull with no aircraft up (an AI jump onto a dead
+          // carrier): the marker is hidden, but the trajectory still has the
+          // last recorded pose — follow that instead of freezing the camera.
+          const traj = ctx.trajById.get(id);
+          const idx = traj ? samplesUpTo(traj.samples, current.value) - 1 : -1;
+          const sample = traj && idx >= 0 ? traj.samples[idx] : undefined;
+          if (!sample) return;
+          // Planar hull sample (y ≈ 0): scene z is mirrored.
+          _followPos.set(sample.x, sample.y, -sample.z);
+          pos = _followPos;
+          yaw = sample.yaw;
+        }
       }
       // RMB orbits in follow mode (the hold-to-free-look gesture); the mode
       // watcher restores the stock pan mapping when follow is left. Applied
@@ -2265,6 +2297,10 @@ export default defineComponent({
           followDistFocus = false;
         }
         dollySeen = false;
+      } else {
+        // Clearing the target must not leave an AI/aircraft preset behind for
+        // the next manual pick.
+        clearFollowDistPreset(wasAircraft);
       }
       // Following a real target hands RMB to the free-look orbit (the
       // per-frame assignment in followSelected re-asserts it; this covers the
@@ -2282,7 +2318,10 @@ export default defineComponent({
 
     /** Chase a carrier's currently airborne squadron (camera-menu air row). */
     function selectAircraft(carrierId: number) {
-      applyFollowTarget(carrierId, { aircraft: true, distance: PLANE_FOLLOW_DIST_DEFAULT });
+      // No explicit distance: the hull→aircraft kind switch already starts at
+      // PLANE_FOLLOW_DIST_DEFAULT, and repeated aircraft picks keep the user's
+      // wheel zoom instead of resetting it every time.
+      applyFollowTarget(carrierId, { aircraft: true });
     }
 
     /** Camera-menu pick: aircraft rows carry the PLANE_CARD_LABEL_ID_BASE
@@ -2431,9 +2470,10 @@ export default defineComponent({
         // The chase target belongs to ONE replay too (entity ids repeat):
         // drop the follow, the aircraft intent and any one-shot framing
         // instead of carrying a stale target into the next battle.
+        const wasAircraft = followAircraft.value;
         selectedEntityId.value = null;
         followAircraft.value = false;
-        followDistFocus = false;
+        clearFollowDistPreset(wasAircraft);
         if (cameraMode.value === "follow") cameraMode.value = "free";
         if (ready.value) {
           current.value = 0;
@@ -3003,9 +3043,7 @@ export default defineComponent({
                 <span class="holo-map__ai-loading" />
               ) : null}
             </button>
-            {props.cameraFrames.length > 0 ||
-            props.cameraModes.length > 0 ||
-            cameraMode.value !== "free" ? (
+            {props.cameraFrames.length > 0 || cameraMode.value !== "free" ? (
               <HoloCameraMenu
                 mode={cameraMode.value}
                 open={cameraMenuOpen.value}
@@ -3016,7 +3054,7 @@ export default defineComponent({
                 hasPlaneCameraWindow={hasPlaneCameraWindow.value}
                 groups={cameraMenuOpen.value ? cameraShipGroups.value : []}
                 followStats={followStats.value}
-                selectedId={selectedMenuId.value}
+                selectedId={cameraMenuOpen.value ? selectedMenuId.value : null}
                 onToggleMenu={() => { cameraMenuOpen.value = !cameraMenuOpen.value; }}
                 onPickMode={(m) => { cameraMode.value = m; cameraMenuOpen.value = false; }}
                 onJumpPlaneCamera={jumpToPlaneCamera}

@@ -8,8 +8,9 @@
  *    right, show NO tier/class/HP/stats, and follow through the same
  *    onPickShip callback (selected state compared by the synthesized
  *    plane entity id);
- *  - the recorded-camera caption under the mode buttons localizes every
- *    decoder mode and degrades unknown ones to the generic "other view";
+ *  - the recorded-camera caption under the mode buttons localizes the
+ *    curated decoder modes and degrades uncurated enum values to the generic
+ *    "other view";
  *  - the jump-to-nearest-aircraft shortcut renders only when the replay
  *    carries a plane camera window and fires its callback on click.
  *
@@ -253,10 +254,11 @@ describe("HoloCameraMenu recorded camera caption", () => {
     }
   });
 
-  it("degrades an unknown recorder mode to the other-view label", () => {
-    const { wrapper } = mountMenu({
-      recordedMode: "cinematic" as RecordedCameraMode,
-    });
+  it("degrades an uncurated known recorder mode to the other-view label", () => {
+    // CameraMode values outside the menu's curated set (e.g. the dock/dev
+    // modes) read as "other view"; unknown RAW ids never reach the menu
+    // because cameraModes.cameraModeAt answers null for them.
+    const { wrapper } = mountMenu({ recordedMode: "dock" });
     expect(wrapper.find(".holo-map__cam-recorded").text()).toBe(
       i18nT("replay.camera.recorded", { mode: i18nT("replay.camera.mode.other") }),
     );
