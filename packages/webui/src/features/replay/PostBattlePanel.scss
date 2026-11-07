@@ -627,6 +627,14 @@
   gap: 8px;
 }
 .replay-view__postbattle-detail-ico { display: inline-flex; }
+/* The sunk face is the INVERTED marker (black plate, white ink); at full
+   opacity its white ink outshines the live team plates. The roster rows dim
+   their dead rows themselves, but the detail head has no row-level dim — so
+   the dead state dims the glyph here with the same recipe the live rows use. */
+.replay-view__postbattle-detail-ico--dead {
+  opacity: 0.55;
+  filter: grayscale(0.9);
+}
 .replay-view__postbattle-detail-name {
   font-weight: 600;
   font-size: var(--text-base);

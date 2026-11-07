@@ -1727,7 +1727,12 @@ export default defineComponent({
               headerLead: sel
                 ? () => (
                     <span class="replay-view__postbattle-detail-head">
-                      <span class="replay-view__postbattle-detail-ico">
+                      <span
+                        class={[
+                          "replay-view__postbattle-detail-ico",
+                          !sel.alive && "replay-view__postbattle-detail-ico--dead",
+                        ]}
+                      >
                         {sel.shipId != null ? (
                           <BattleIcon
                             type={shipOfflineEntry(sel.shipId)?.type ?? ""}

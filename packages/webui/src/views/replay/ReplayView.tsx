@@ -970,7 +970,12 @@ const PostBattleFallbackPanel = defineComponent({
               headerLead: sel
                 ? () => (
                     <span class="replay-view__postbattle-detail-head">
-                      <span class="replay-view__postbattle-detail-ico">
+                      <span
+                        class={[
+                          "replay-view__postbattle-detail-ico",
+                          !sel.alive && "replay-view__postbattle-detail-ico--dead",
+                        ]}
+                      >
                         <BattleIcon
                           type={shipTypeOf(sel.vehicle.shipId)}
                           variant={
@@ -1076,7 +1081,12 @@ function shipTypeOf(shipId: number): string {
 
 /** The `data-hint-card` JSON for a replay card's own-ship tag — identity +
  *  basic parameters off the offline ship DB, pre-localized per the global
- *  tooltip's string-only contract (the popup renders via DOM APIs). */
+ *  tooltip's string-only contract (the popup renders via DOM APIs). The
+ *  HEAD GLYPH is the "white" face (light plate + black ink), not "plain":
+ *  the popup draws the URL as an <img>, and the plain face is a white-only
+ *  silhouette that disappears on the light scheme — the white face carries
+ *  its own plate, and it is the exact art the class hint cards beside it
+ *  already show (the tooltip's icon slot is theirs). */
 function ownShipHintCard(
   entry: NonNullable<ReturnType<typeof shipOfflineEntry>>,
   name: string,
@@ -1094,7 +1104,7 @@ function ownShipHintCard(
   return JSON.stringify({
     title: name,
     badge: entry.tier != null ? tierToRoman(entry.tier) : undefined,
-    iconUrl: entry.type ? (shipIconUrl(entry.type, "plain") ?? undefined) : undefined,
+    iconUrl: entry.type ? (shipIconUrl(entry.type, "white") ?? undefined) : undefined,
     subtitleFlagUrl: nation ? (resolveNationFlag(nation, "flag") ?? undefined) : undefined,
     subtitle: subtitle.length > 0 ? subtitle.join(" · ") : undefined,
     rows:

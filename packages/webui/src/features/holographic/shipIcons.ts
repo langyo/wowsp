@@ -5,15 +5,21 @@
  *
  * The art is the game's battle-HUD marker set
  * (`/gui/battle_hud/markers/ship/icon_{variant}_{class}.png`), authored as
- * GEOMETRY by `scripts/model_convert/ship_class_glyphs.py` (a rounded hull,
+ * GEOMETRY by `scripts/model_convert/ship_class_glyphs.py` (a flat hull,
  * a bow wedge, the speed slashes) so it renders crisp at every size and DPR
  * — no bitmap tracing: the first vector pass traced the 27 px markers and
  * baked their stair-steps into the paths (2026-11-07 review).
  *
- * The `outline` variant is a plate-free redraw of the white markers
- * (traced from their line ink): the ship-class hint cards tint it to the
- * popup ink, and dropping the plate is what keeps the glyph's interior
- * gaps open at card size.
+ * Face roles (the generator's INK RULE):
+ * - `ally` / `enemy`: team plate, BLACK ink — the team colour lives in the
+ *   plate only (the old dark-green/dark-red inks were WebP chroma bleed).
+ * - `white`: light plate, black ink — the neutral face the tooltip and the
+ *   class hint cards draw.
+ * - `sunk` / `sunk-enemy`: the INVERTED state marker (black plate, white
+ *   ink) — a dead ship reads as its own marker, not a dimmed team one.
+ * - `plain`: the one-colour silhouette drawn as a CSS mask, with the
+ *   engraving punched through as transparent slits.
+ * - `outline`: the plate-free line-art alpha mask (strokes are alpha only).
  */
 // PublicDir art served at the root path (see utils/shipImages.ts) — URL
 // constants, not imports, keep the 37 HUD icons out of Vite's module
@@ -80,10 +86,9 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     aircarrier: sunkAircarrier,
     submarine: sunkSubmarine,
   },
-  // Sunk art for the ENEMY row: the sunk bitmap faces left like the ally
-  // art (the mirrored copy the historical flip script derived; the
-  // current traced SVG set comes from the same mirrored source art), so
-  // the enemy variant keeps the enemy row's rightward direction.
+  // The dead state REPLACES the team marker, so both rows carry the same
+  // inverted face; the atlas keeps the second key because the shared
+  // scorebar asks for each row's own variant.
   "sunk-enemy": {
     battleship: sunkEnemyBattleship,
     cruiser: sunkEnemyCruiser,
@@ -98,9 +103,8 @@ const SHIP_ICONS: Record<string, Record<string, string>> = {
     aircarrier: whiteAircarrier,
     submarine: whiteSubmarine,
   },
-  // Plate-free line art derived from the white markers (see the module
-  // comment): ink-tinted consumers that draw the glyph small — the
-  // ship-class hint cards — need the interior gaps the plate would fill.
+  // Plate-free line art (see the module comment): a tint-mask face whose
+  // white strokes carry only alpha, so any ink can draw it.
   outline: {
     battleship: outlineBattleship,
     cruiser: outlineCruiser,
@@ -138,7 +142,7 @@ export function shipTypeClass(type: string | null | undefined): string {
   return "";
 }
 
-/** Resolve the traced SVG URL for a ship class, or null when unknown. */
+/** Resolve the class-glyph SVG URL for a ship class, or null when unknown. */
 export function shipIconUrl(
   type: string | null | undefined,
   variant: ShipIconVariant = "plain",
@@ -148,8 +152,8 @@ export function shipIconUrl(
 }
 
 /**
- * Intrinsic raster size canvas faces load the traced class-glyph SVGs at
- * (shotKit's `loadImage(url, raster)`). The art's viewBox is 27 px; drawn
+ * Intrinsic raster size canvas faces load the class-glyph SVGs at
+ * (shotKit's `loadImage(url, raster)`). The art's viewBox is 20 x 11; drawn
  * at 18–20 px logical slots on the 2x shot canvases, loading at 96 px keeps
  * every draw a smooth downsample instead of a bitmap upscale.
  */

@@ -6,12 +6,13 @@
  * (`features/holographic/shipIcons.ts`). The HUD set is WHITE plate art
  * built for the dark battle map: as an <img> at chip size it vanished on
  * light surfaces, kept its black plate outline (the "white" variant is
- * two-tone) and, because the 27px canvas keeps ~40% vertical padding,
- * shrank into a squiggle. The "plain" variant is the bare silhouette, so
+ * two-tone) and, because the 27 px HUD canvas kept ~40% padding, shrank into
+ * a squiggle. The "plain" variant is the bare silhouette — with the class
+ * engraving punched through as transparent slits — so
  * the glyph is drawn as a CSS MASK over the surrounding text ink instead
  * (`background-color: currentColor`): it follows the scheme, the pill's
- * active tint and the DPR, and the mask box crops the art's empty padding
- * so the silhouette actually fills the chip row.
+ * active tint and the DPR. The mask box insets the tight art to 80% so the
+ * silhouette keeps the bitmap-era visual weight in the chip row.
  */
 import { defineComponent } from "vue";
 
