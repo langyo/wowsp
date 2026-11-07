@@ -1,0 +1,160 @@
+/* MinimapHoverTip — the compact hover card for entities on the enlarged 2D
+   minimap ("2D view").
+
+   Teleported to <body>, OUTSIDE .holo-map, so the map HUD's custom
+   properties do not resolve here: the card is self-contained dark glass.
+   The recipe is deliberately TRANSLUCENT — rgba(6,10,18,0.72) plus a
+   backdrop blur — so the game's map art stays readable through the card and
+   the hover reads as an annotation pinned to the map rather than a panel
+   floating over it (the map art is dark in both app themes, hence one dark
+   glass recipe for both).
+
+   z-index 900: above every map HUD band (2D overlay z 3, playback controls
+   z 4/5, roster strip/overlays up to z 10) and below the rich ship tooltip
+   (z 1000). The Tab roster's full-window layer captures the pointer while it
+   is open, so a map hover cannot be open behind it in the first place.
+   pointer-events:none — the card must never steal the hover it describes. */
+.mm-hover-tip {
+  /* Team accent, re-pointed by the role modifiers below. */
+  --mm-tip-accent: #e2e8f0;
+
+  position: fixed;
+  z-index: 900;
+  box-sizing: border-box;
+  min-width: 148px;
+  max-width: min(260px, 46vw);
+  padding: 0.5rem 0.65rem 0.5rem 0.8rem;
+  border-radius: 8px;
+  /* The genuinely semi-transparent glass: 72% ink + 8px blur, so a ship
+     marker or island silhouette behind the card still shows through. */
+  background: rgba(6, 10, 18, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: rgb(226, 232, 240);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Team accent stripe along the card's left edge (the map's own palette:
+   self white, ally green, enemy red, neutral slate). */
+.mm-hover-tip__accent {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  border-radius: 8px 0 0 8px;
+  background: var(--mm-tip-accent);
+}
+
+/* ── Role modifiers (accent family) ─────────────────────────────────── */
+.mm-hover-tip--self { --mm-tip-accent: #ffffff; }
+.mm-hover-tip--ally { --mm-tip-accent: #4ade80; }
+.mm-hover-tip--enemy { --mm-tip-accent: #cc3333; }
+.mm-hover-tip--neutral { --mm-tip-accent: rgba(226, 232, 240, 0.6); }
+/* Sunk hulls hover as grey ghosts — the team stripe steps back too. */
+.mm-hover-tip--dead { --mm-tip-accent: #8a97a5; }
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+.mm-hover-tip__head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.mm-hover-tip__dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--mm-tip-accent);
+  box-shadow: 0 0 6px var(--mm-tip-accent);
+}
+
+.mm-hover-tip__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.mm-hover-tip__title {
+  font-weight: 700;
+  font-size: 0.78rem;
+  color: rgb(241, 245, 249);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mm-hover-tip__subtitle {
+  font-size: 0.65rem;
+  color: rgba(226, 232, 240, 0.65);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Label/value rows ───────────────────────────────────────────────── */
+.mm-hover-tip__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 0.35rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.mm-hover-tip__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.mm-hover-tip__row-label {
+  flex: none;
+  font-size: 0.65rem;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+.mm-hover-tip__row-value {
+  font-weight: 600;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mm-hover-tip__row-value--dim {
+  font-weight: 500;
+  color: rgba(226, 232, 240, 0.55);
+}
+
+/* ── Ship hull bar (the only kind that carries one) ─────────────────── */
+.mm-hover-tip__hpbar {
+  position: relative;
+  height: 4px;
+  margin-top: 0.35rem;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.mm-hover-tip__hpbar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: inherit;
+  background: var(--mm-tip-accent);
+  transition: width 0.12s linear;
+}
+
+.mm-hover-tip__hpbar-fill--self { background: #ffffff; }
+.mm-hover-tip__hpbar-fill--ally { background: #4ade80; }
+.mm-hover-tip__hpbar-fill--enemy { background: #cc3333; }

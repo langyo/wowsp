@@ -61,6 +61,7 @@ import type { FeedEntry } from "./HoloEventFeed";
 import type { TacticalView } from "./tactical/render";
 import type { OsdContrast } from "./osdContrast";
 import type { MoveAdviceArrowSlot } from "./moveAdvisories";
+import type { PlaneAnimState } from "./minimapFx";
 
 /** The subset of HolographicMap's props the extracted map modules read.
  *  Structurally satisfied by the component's reactive props object. */
@@ -366,6 +367,10 @@ export interface MapInternals extends MapInternalsDeps {
   >;
   /** Per-plane sample lists grouped by plane id, sorted by time. */
   planeTrails: { id: number; samples: SquadronPlane[] }[];
+  /** Per-trail aircraft motion smoothing state (see minimapFx.ts) — the 2D
+   *  painter advances it once per redraw and the hover picker reads the same
+   *  eased poses, so a marker and its tooltip can never disagree. */
+  planeSmoothState: Map<number, PlaneAnimState>;
   /** Real aircraft models: planeId → 3D model pool (one per slot). */
   planeMeshes: Map<number, THREE.Object3D[]>;
   /** planeId → formation render state. */
@@ -505,6 +510,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeCloudActive: new Uint8Array(0),
     planeAnchorScratch: new Map(),
     planeTrails: [],
+    planeSmoothState: new Map(),
     planeMeshes: new Map(),
     planeFormations: new Map(),
     capRings: [],
@@ -675,6 +681,7 @@ export function clearActors(ctx: MapInternals) {
     ctx.planeCloud = null;
   }
   ctx.planeTrails = [];
+  ctx.planeSmoothState.clear();
   ctx.allyAlive.value = ctx.allyTotal.value;
   ctx.enemyAlive.value = ctx.enemyTotal.value;
   ctx.capStatus.value = [0, 0, 0];

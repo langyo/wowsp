@@ -187,7 +187,30 @@
     "trails": "Trajectoires des navires",
     "grid": "Grille de la carte (A–J / 1–10)",
     "rotateCcw": "Pivoter la carte de 90° anti-horaire",
-    "rotateCw": "Pivoter la carte de 90° horaire"
+    "rotateCw": "Pivoter la carte de 90° horaire",
+    "tip": {
+      "title": "Détails au survol",
+      "hp": "PV",
+      "status": "État",
+      "sunk": "Coulé",
+      "lastKnown": "Dernière position connue",
+      "ship": "Navire",
+      "torpedo": "Torpille",
+      "plane": "Aéronef",
+      "smoke": "Écran de fumée",
+      "ward": "Patrouille de chasseurs",
+      "cap": "Point de capture",
+      "owner": "Propriétaire",
+      "team": "Camp",
+      "age": "En vol",
+      "remaining": "Temps restant",
+      "radius": "Rayon",
+      "squadron": "Escadrille",
+      "carrier": "Porte-avions",
+      "capturing": "Capture · {n} s",
+      "neutral": "Neutre",
+      "player": "Joueur"
+    }
   },
   "decisions": {
     "toggle": "Suggestions de tir",

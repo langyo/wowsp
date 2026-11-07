@@ -187,7 +187,30 @@
     "trails": "船隻軌跡",
     "grid": "地圖網格（A–J / 1–10）",
     "rotateCcw": "地圖逆時針旋轉 90°",
-    "rotateCw": "地圖順時針旋轉 90°"
+    "rotateCw": "地圖順時針旋轉 90°",
+    "tip": {
+      "title": "懸停詳情",
+      "hp": "血量",
+      "status": "狀態",
+      "sunk": "已擊沉",
+      "lastKnown": "最後已知位置",
+      "ship": "戰艦",
+      "torpedo": "魚雷",
+      "plane": "飛機",
+      "smoke": "煙霧",
+      "ward": "戰鬥機巡邏區",
+      "cap": "佔領點",
+      "owner": "歸屬",
+      "team": "陣營",
+      "age": "已飛行",
+      "remaining": "剩餘時間",
+      "radius": "半徑",
+      "squadron": "編隊",
+      "carrier": "航母",
+      "capturing": "佔領中 · {n} 秒",
+      "neutral": "中立",
+      "player": "玩家"
+    }
   },
   "decisions": {
     "toggle": "開火建議",

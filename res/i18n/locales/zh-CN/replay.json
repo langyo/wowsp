@@ -187,7 +187,30 @@
     "trails": "船只轨迹",
     "grid": "地图网格（A–J / 1–10）",
     "rotateCcw": "地图逆时针旋转 90°",
-    "rotateCw": "地图顺时针旋转 90°"
+    "rotateCw": "地图顺时针旋转 90°",
+    "tip": {
+      "title": "悬停详情",
+      "hp": "血量",
+      "status": "状态",
+      "sunk": "已击沉",
+      "lastKnown": "最后已知位置",
+      "ship": "战舰",
+      "torpedo": "鱼雷",
+      "plane": "飞机",
+      "smoke": "烟雾",
+      "ward": "战斗机巡逻区",
+      "cap": "占领点",
+      "owner": "归属",
+      "team": "阵营",
+      "age": "已飞行",
+      "remaining": "剩余时间",
+      "radius": "半径",
+      "squadron": "编队",
+      "carrier": "航母",
+      "capturing": "占领中 · {n} 秒",
+      "neutral": "中立",
+      "player": "玩家"
+    }
   },
   "decisions": {
     "toggle": "开火建议",
