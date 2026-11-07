@@ -113,15 +113,6 @@
     letter-spacing: 0.02em;
   }
 
-  /** MapNameTag reads theme tokens that swing with the app theme; the sheet
-   *  is a fixed dark artifact, so the chip's inks pin to the sheet's own
-   *  palette (shape/radius/padding stay MapNameTag's). */
-  &__meta-map.map-tag {
-    color: var(--srp-ally);
-    border-color: rgba(87, 166, 255, 0.35);
-    background: rgba(87, 166, 255, 0.1);
-  }
-
   &__scores {
     display: flex;
     align-items: flex-end;

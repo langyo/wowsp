@@ -692,7 +692,8 @@
     "aiNotice": "Ce résultat est un diagnostic de l'IA, pas une évaluation du niveau à long terme du joueur — à titre indicatif",
     "aiVersion": "WoWSP AI {version} · poids entraînés {date}",
     "replayHash": "Empreinte du replay (6 derniers)",
-    "survivedAtEnd": "En vie à la fin du combat"
+    "survivedAtEnd": "En vie à la fin du combat",
+    "replayHashHint": "Empreinte SHA-256 · Cliquez pour copier le hachage complet"
   },
   "detail": {
     "title": "Détail de la bataille"

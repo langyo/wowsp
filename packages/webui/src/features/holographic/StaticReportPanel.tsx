@@ -32,7 +32,7 @@
  * surface keeps behind hover/tap.
  */
 import { computed, defineComponent, nextTick, ref, type PropType } from "vue";
-import { HkScrollContainer } from "@celestia-island/hikari";
+import { HkCopyBadge, HkScrollContainer } from "@celestia-island/hikari";
 
 import AppTag from "@/components/base/AppTag";
 import MapNameTag from "@/features/replay/MapNameTag";
@@ -209,10 +209,21 @@ export default defineComponent({
                       {modeLabel.value}
                     </AppTag>
                   ) : null}
+                  {/* The provenance TELEMETRY (time / replay fingerprint /
+                      duration) is tag-ified: the house HkCopyBadge contract
+                      (never selectable, hover says click-to-copy, one shared
+                      clipboard toast). The cloned share frame renders the
+                      same tags INERT (disabled drops the button semantics and
+                      tooltip) — a screenshot is not interactive. */}
                   {battleStart.value ? (
-                    <span class="srp-head__meta-item">
+                    <HkCopyBadge
+                      size="sm"
+                      class="srp-head__time"
+                      value={battleStart.value}
+                      disabled={capturing.value}
+                    >
                       {battleStart.value}
-                    </span>
+                    </HkCopyBadge>
                   ) : null}
                   {me.value?.diedAt != null ? (
                     <AppTag
@@ -232,18 +243,28 @@ export default defineComponent({
                     </AppTag>
                   )}
                   {hashTail.value ? (
-                    <span
+                    <HkCopyBadge
+                      size="sm"
+                      mono
                       class="srp-head__hash"
-                      data-hint={t("replay.report.replayHash")}
+                      value={props.sheet?.meta.replayHash ?? ""}
+                      tooltip={t("replay.report.replayHashHint")}
+                      disabled={capturing.value}
                     >
                       #{hashTail.value}
-                    </span>
+                    </HkCopyBadge>
                   ) : null}
-                  <span class="srp-head__meta-item">
+                  <HkCopyBadge
+                    size="sm"
+                    mono
+                    class="srp-head__duration"
+                    value={formatDuration(props.report.durationS)}
+                    disabled={capturing.value}
+                  >
                     {t("replay.report.duration", {
                       t: formatDuration(props.report.durationS),
                     })}
-                  </span>
+                  </HkCopyBadge>
                 </div>
               </div>
               <div class="srp-head__scores">
