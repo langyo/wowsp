@@ -23,9 +23,10 @@ marker — the review's "special icon-marking nature". (The outline face is
 not a plate face: it is an alpha mask, and its white strokes carry only the
 alpha the mask reads.) The plain mask face
 cannot paint a black line at all (one alpha channel), so it keeps the class
-engraving as PUNCHED SLITS: the ink lines AND the plate seams (the ink band
-between plate islands — the carrier's detached bow, the submarine's bar/bow
-joint) are cut out of the silhouette.
+engraving as PUNCHED SLITS: the ink lines AND the carrier's deck/bow plate
+seam (the ink band between the deck and bow plates) are cut out of the
+silhouette. The submarine needs no punch: its bar and bow are authored as
+two DETACHED silhouette islands, so the gap is open on every face.
 
 Variants (6 classes x 7 faces = 42 files, the names shipIcons.ts imports):
 
@@ -182,17 +183,22 @@ def aircarrier():
 
 
 def submarine():
-    # A hull BAR, then ink, then the bow wedge: the bar's plate and the bow's
-    # plate are separate islands inside ONE silhouette.
-    x0, y0, x1, y1 = EDGE, EDGE, 5.6, H - EDGE
-    outer = rect(x0, y0, x1, y1) + bow_outer(x1)
-    plate = rect(EDGE + RIM, EDGE + RIM, 3.4, H - EDGE - RIM) + bow_plate(
-        6.2, W - 1.4
+    # A hull BAR and the bow wedge as TWO DETACHED silhouette islands. The
+    # game's own marker splits the bar from the bow with a transparent gap
+    # (the trace pass's connected components find two separate bands), and
+    # the joined silhouette authored earlier still read as one connected
+    # shape (2026-11-08 review: the bar must sit SEPARATE from the bow, not
+    # ink-bridged to it). Each island keeps its own full rim, so every face
+    # shows bar | open gap | wedge and no punched slit is needed. The gap is
+    # wider than the outline face's stroke pair (2 x SLASH_W / 2 = 1.1) — a
+    # narrower slit would let the two strokes kiss and bridge the line art.
+    bar_right = 3.9  # bar plate's right edge (3.0) + RIM
+    bow_base = 5.6   # bow plate's base (6.5) - RIM; the gap runs 3.9..5.6
+    outer = rect(EDGE, EDGE, bar_right, H - EDGE) + bow_outer(bow_base)
+    plate = rect(EDGE + RIM, EDGE + RIM, 3.0, H - EDGE - RIM) + bow_plate(
+        6.5, W - 1.4
     )
-    # The bar/bow ink gap: punched in the plain face, or the mask glyph reads
-    # as one blunt arrow and loses the class's own silhouette.
-    seams = [rect(3.4, EDGE + RIM, 6.2, H - EDGE - RIM)]
-    return dict(outer=outer, plate=plate, lines=[], seams=seams)
+    return dict(outer=outer, plate=plate, lines=[], seams=[])
 
 
 def auxiliary():
@@ -285,8 +291,8 @@ def write_plain(shape):
     # line can only read as the gap the ink would occupy). BOTH parts of the
     # engraving are punched: the speed slashes / deck divider lines, and the
     # plate seams — the ink bands between plate islands (the carrier's
-    # detached bow, the submarine's bar/bow joint) that the plate face shows
-    # as black gaps.
+    # detached bow) that the plate face shows as black gaps. Disjoint
+    # silhouettes (the submarine's bar/bow gap) need no punch.
     engraving = ''.join(slash_quad(d) for d in shape['lines'])
     # (slash_quad clips its quad to the silhouette's top/bottom ink edge — a
     # raw stroke footprint would paint a sub-pixel white spur outside it.)
