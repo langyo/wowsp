@@ -101,6 +101,8 @@ import {
   damageColor,
   prTier,
   winrateColor,
+  stampTier,
+  stampWording,
   type CareerStamp,
   type StampKind,
 } from "@/utils/winrate";
@@ -1232,21 +1234,39 @@ export default defineComponent({
         // copied image mirrors the DOM exactly.
         return kinds.filter((kind) => !prefs.value.sealDisabled[kind]);
       };
-      /** Those kinds rendered as the small-tag faces the name line leads
-       *  with (career verdict, then composition) — the head of both the
-       *  compact row's and the full card's nickname line. The tags ride a
-       *  cluster span that is the line's SHRINKABLE item (see the seals rule
-       *  in PostBattlePanel.scss): when a fixed name track runs out, the
-       *  cluster clips a trailing tag before the nickname loses its slot —
-       *  the identity must survive its decorations. */
+      /** The identity line carries at most ONE seal inline — and only a lone
+       *  single-character (一级章) verdict. A 四字 composition tag or any
+       *  second seal would crowd the row past its track (the old cluster
+       *  clipped the extras mid-glyph, 2026-11-07 review), so those move
+       *  behind the red dot below instead. */
+      const inlineSealKind = (
+        p: (typeof rows.value)[number],
+        full: boolean,
+      ): StampKind | null => {
+        const kinds = sealTagKindsOf(p, full);
+        if (kinds.length !== 1) return null;
+        return stampTier(kinds[0]) === "primary" ? kinds[0] : null;
+      };
+      /** The seals hidden from the row by {@link inlineSealKind}, in display
+       *  order — the dot's tooltip lists them all. */
+      const hiddenSealsOf = (
+        p: (typeof rows.value)[number],
+        full: boolean,
+      ): { kind: StampKind; label: string }[] => {
+        const inline = inlineSealKind(p, full);
+        if (inline != null) return [];
+        return sealTagKindsOf(p, full).map((kind) => ({
+          kind,
+          label: stampWording(kind, prefs.value.sealLabels),
+        }));
+      };
+      /** Those kinds rendered as the single inline small-tag face. */
       const identitySealsOf = (
         p: (typeof rows.value)[number],
         full: boolean,
       ): VNode | null => {
-        const tags = sealTagKindsOf(p, full).map((kind) => (
-          <StampTag key={kind} kind={kind} />
-        ));
-        if (tags.length === 0) return null;
+        const kind = inlineSealKind(p, full);
+        if (kind == null) return null;
         return (
           <span
             class={
@@ -1255,7 +1275,28 @@ export default defineComponent({
                 : "replay-view__postbattle-cell-seals"
             }
           >
-            {tags}
+            <StampTag kind={kind} />
+          </span>
+        );
+      };
+      /** The red dot at the nickname's top-right: the row's seals moved out
+       *  of the line, their order and wording preserved in one hover tooltip
+       *  (the data-hint channel, so the phone build reads the same list). */
+      const sealDotOf = (
+        p: (typeof rows.value)[number],
+        full: boolean,
+      ): VNode | null => {
+        const hidden = hiddenSealsOf(p, full);
+        if (hidden.length === 0) return null;
+        const labels = hidden.map((seal) => seal.label);
+        return (
+          <span
+            class="replay-view__postbattle-seal-dot"
+            data-hint={labels.join(" · ")}
+            aria-label={labels.join(" · ")}
+            role="img"
+          >
+            <i aria-hidden="true" />
           </span>
         );
       };
@@ -1348,6 +1389,9 @@ export default defineComponent({
                       </span>
                     );
                   })()}
+                  {/* Seals moved out of the line: the red dot's tooltip lists
+                      them all in order (2026-11-07 review). */}
+                  {sealDotOf(p, false)}
                   {/* Karma (业力) superscript at the nickname's top-right —
                       same register as the live panel's rows (the stats
                       prefs' own switch; missing figures render nothing). */}
@@ -1466,6 +1510,9 @@ export default defineComponent({
                       </span>
                     );
                   })()}
+                  {/* Seals moved out of the line: the red dot's tooltip lists
+                      them all in order (2026-11-07 review). */}
+                  {sealDotOf(p, true)}
                   {/* Karma superscript — the same top-right-of-nick
                       register as the compact row and the live panel. */}
                   {prefs.value.rosterKarmaEnabled ? (
