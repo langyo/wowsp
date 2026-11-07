@@ -1,11 +1,16 @@
 /**
- * Ship-class glyphs TRACED from the game's own 28×28 HUD bitmaps
- * (scripts/trace_icons.ts: connected-component boundary extraction +
- * Douglas–Peucker). Each class is a list of solid polygons; the GAPS
- * between them reproduce the icons' engraved class separators —
+ * Ship-class glyphs for the 2D canvases. The five ENGRAVED classes are
+ * traced from the game's own 28×28 HUD bitmaps (scripts/trace_icons.ts:
+ * connected-component boundary extraction + Douglas–Peucker); the
+ * auxiliary marker carries no engraving, so its single polygon is authored
+ * from the same hull + bow geometry the SVG faces use. Each class is a
+ * list of solid polygons; the GAPS between them reproduce the icons'
+ * engraved class separators —
  * battleship: two slanted cuts, cruiser: one, carrier: deck line + bow
- * joint, submarine: tail joint, destroyer: plain triangle. Bow points
- * RIGHT (+x) at 0 rotation.
+ * joint, submarine: tail joint, destroyer: plain triangle, auxiliary: a
+ * plain hull + bow silhouette with no engraving (it mirrors the shape the
+ * SVG faces author, see scripts/model_convert/ship_class_glyphs.py). Bow
+ * points RIGHT (+x) at 0 rotation.
  *
  * Vector instead of the raster HUD PNGs: anti-aliased at any scale or
  * rotation (the PNGs alias when rotated), tintable per team, and no
@@ -33,6 +38,12 @@ export const SHIP_GLYPH_POLYS: Record<string, number[][][]> = {
     [[5.5, 9.5], [6.5, 9.5], [6.5, 17.5], [5.5, 17.5]],
     [[9.5, 10.5], [21.5, 13.5], [9.5, 16.5]],
   ],
+  // No ink lines on the auxiliary face, so it stays ONE polygon: the long
+  // hull plus the short bow wedge the SVG art draws (hull_right 14.8 of the
+  // 20-unit art box, mapped onto this 28-unit atlas cell).
+  auxiliary: [
+    [[5.5, 9.5], [18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [5.5, 17.5]],
+  ],
 };
 
 /** Map a WG ship-type string onto the glyph-atlas class key. */
@@ -42,7 +53,8 @@ export function glyphClassOf(type: string | null | undefined): keyof typeof SHIP
   if (t.includes("battleship")) return "battleship";
   if (t.includes("aircarrier") || t.includes("aircar")) return "aircarrier";
   if (t.includes("submarine")) return "submarine";
-  return "cruiser"; // auxiliary + unknown fall back to cruiser
+  if (t.includes("auxiliary")) return "auxiliary";
+  return "cruiser"; // unknown hulls fall back to cruiser
 }
 
 /**

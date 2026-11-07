@@ -13,7 +13,7 @@ import { describe, expect, it } from "vitest";
 
 import { fakeAs } from "@/test-utils/fakes";
 import { drawShipGlyph as drawLocal } from "./shipGlyph";
-import { drawShipGlyph as drawHolo } from "@wowsp/holo";
+import { drawShipGlyph as drawHolo, glyphClassOf, SHIP_GLYPH_POLYS } from "@wowsp/holo";
 
 type Pt = { x: number; y: number };
 
@@ -48,6 +48,49 @@ function bbox(paths: Pt[][]): { minX: number; minY: number; maxX: number; maxY: 
   return { minX: Math.min(...xs), minY: Math.min(...ys), maxX: Math.max(...xs), maxY: Math.max(...ys) };
 }
 
+/** Either copy's painter signature (both accept these arguments). */
+type GlyphDraw = (
+  ctx: CanvasRenderingContext2D,
+  type: string | undefined,
+  x: number,
+  y: number,
+  size: number,
+  color: number,
+) => void;
+
+/** Recorded polygon paths of one draw, for cross-copy comparison. */
+function pathsOf(draw: GlyphDraw, type: string): Pt[][] {
+  const { rec, ctx } = recordingCtx();
+  draw(ctx, type, 100, 80, 34, 0x4ade80);
+  return rec.paths;
+}
+
+describe("ship-class atlas", () => {
+  it("draws auxiliary hulls with their own glyph, not the cruiser fallback", () => {
+    // The five engraved classes are raster-traced; the auxiliary marker
+    // carries no engraving, so its single polygon is authored from the same
+    // hull + bow geometry the SVG faces use.
+    expect(glyphClassOf("Auxiliary")).toBe("auxiliary");
+    expect(glyphClassOf("auxiliary")).toBe("auxiliary");
+    expect(glyphClassOf("UnknownHull")).toBe("cruiser");
+    expect(SHIP_GLYPH_POLYS.auxiliary).toEqual([
+      [[5.5, 9.5], [18.5, 9.5], [22.5, 13.5], [18.5, 17.5], [5.5, 17.5]],
+    ]);
+
+    // One pentagon — the cruiser fallback would record two polygons.
+    const local = pathsOf(drawLocal, "Auxiliary");
+    expect(local).toHaveLength(1);
+    expect(local[0]).toHaveLength(5);
+    expect(pathsOf(drawHolo, "Auxiliary")).toEqual(local);
+  });
+
+  it("keeps the app-local table in step with @wowsp/holo's", () => {
+    for (const type of ["Destroyer", "Cruiser", "Battleship", "AirCarrier", "Submarine", "Auxiliary"]) {
+      expect(pathsOf(drawLocal, type), type).toEqual(pathsOf(drawHolo, type));
+    }
+  });
+});
+
 for (const [name, draw] of [["app copy", drawLocal], ["@wowsp/holo copy", drawHolo]] as const) {
   describe(`drawShipGlyph anchor centring (${name})`, () => {
     const ANCHOR = { x: 100, y: 80 };
@@ -57,7 +100,7 @@ for (const [name, draw] of [["app copy", drawLocal], ["@wowsp/holo copy", drawHo
       // the pre-fix offset that showed every trail ending at the icon's
       // bottom-right corner. The traced art itself sits within 0.5 atlas
       // units of the cell centre, so 1 px is a tight bound.
-      for (const type of ["Destroyer", "Cruiser", "Battleship", "AirCarrier", "Submarine"]) {
+      for (const type of ["Destroyer", "Cruiser", "Battleship", "AirCarrier", "Submarine", "Auxiliary"]) {
         const { rec, ctx } = recordingCtx();
         draw(ctx, type, ANCHOR.x, ANCHOR.y, 34, 0x4ade80);
         const b = bbox(rec.paths);
@@ -74,7 +117,7 @@ for (const [name, draw] of [["app copy", drawLocal], ["@wowsp/holo copy", drawHo
       // anchor must stay inside the icon's outline box — under the old
       // half-cell offset it fell OUTSIDE for every heading, so trails
       // always met the icon's corner instead of its middle.
-      for (const type of ["Destroyer", "Cruiser", "Battleship", "AirCarrier", "Submarine"]) {
+      for (const type of ["Destroyer", "Cruiser", "Battleship", "AirCarrier", "Submarine", "Auxiliary"]) {
         for (let h = 0; h < 8; h++) {
           const rot = (h * Math.PI) / 4 - Math.PI / 2;
           const { rec, ctx } = recordingCtx();
