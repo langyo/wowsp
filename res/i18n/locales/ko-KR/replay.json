@@ -418,7 +418,20 @@
     "me": "나",
     "allies": "아군",
     "enemies": "적군",
-    "battles": "전"
+    "battles": "전",
+    "aircraft": "함재기",
+    "recorded": "녹화 카메라: {mode}",
+    "jumpPlaneCamera": "가장 가까운 항공기 시점으로 이동",
+    "planeCamera": "항공기 추적 중",
+    "mode": {
+      "airplanes": "항공기 시점",
+      "followingPlanes": "항공기 추적",
+      "followingShip": "함선 추적",
+      "followingShells": "포탄 추적",
+      "freeFlying": "자유 비행",
+      "overheadMap": "조감 지도",
+      "other": "기타 시점"
+    }
   },
   "classes": {
     "battleship": "전함",

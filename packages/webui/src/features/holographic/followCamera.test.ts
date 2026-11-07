@@ -2,6 +2,8 @@
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import {
+  AI_FOCUS_PLANE_DIST,
+  AI_FOCUS_SHIP_DIST,
   applyFollowPose,
   CHASE_RISE,
   CHASE_RUN,
@@ -9,6 +11,7 @@ import {
   FOLLOW_DIST_DEFAULT,
   FOLLOW_DIST_MAX,
   FOLLOW_DIST_MIN,
+  PLANE_FOLLOW_DIST_DEFAULT,
 } from "./followCamera";
 
 describe("clampFollowDist", () => {
@@ -20,6 +23,14 @@ describe("clampFollowDist", () => {
   it("clamps to the chase zoom range", () => {
     expect(clampFollowDist(1)).toBe(FOLLOW_DIST_MIN);
     expect(clampFollowDist(99999)).toBe(FOLLOW_DIST_MAX);
+  });
+
+  it("passes the aircraft-follow and AI-focus presets through unclamped", () => {
+    expect(clampFollowDist(PLANE_FOLLOW_DIST_DEFAULT)).toBe(
+      PLANE_FOLLOW_DIST_DEFAULT,
+    );
+    expect(clampFollowDist(AI_FOCUS_SHIP_DIST)).toBe(AI_FOCUS_SHIP_DIST);
+    expect(clampFollowDist(AI_FOCUS_PLANE_DIST)).toBe(AI_FOCUS_PLANE_DIST);
   });
 });
 

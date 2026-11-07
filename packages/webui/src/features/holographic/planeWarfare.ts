@@ -16,6 +16,12 @@ import type { MapInternals } from "./mapInternals";
 import type { ShipLabel } from "./shipLabel";
 import type { MinimapSquadronAdd, SquadronPlane } from "@/api";
 
+/** First synthetic label id of the per-carrier aircraft cards (one card per
+ *  carrier, see resolvePlaneCarriers). The camera menu's aircraft rows reuse
+ *  the same namespace to name the carrier they chase. Real entity ids are
+ *  far below it, so the namespace can never collide. */
+export const PLANE_CARD_LABEL_ID_BASE = 2_000_000_000;
+
 /** Assemble ctx.planeTrails from the 3D + minimap squadron streams and
  *  populate the type/index tables. Returns the first create per squadron
  *  — the carrier resolver needs it later in the same build. */
@@ -254,6 +260,7 @@ export function resolvePlaneCarriers(
   // launch; later creates are mid-air sortie positions).
   ctx.planeLabelCarriers.clear();
   ctx.planeRoleById.clear();
+  ctx.planeCarrierOf.clear();
   const planeCarrierOf = new Map<number, number | null>();
   const createFirst = new Map<number, { x: number; z: number; time: number; paramsId: number }>();
   for (const c of ctx.props.squadronCreates) {
@@ -308,6 +315,9 @@ export function resolvePlaneCarriers(
       owner != null && ctx.shipMarkers.some((m) => m.userData.entityId === owner);
     const carrierId = owned ? owner : (cvId ?? anyId);
     planeCarrierOf.set(planeId, carrierId);
+    // Persist the join for the follow camera / AI-report aircraft jump:
+    // the local map dies with this build pass.
+    ctx.planeCarrierOf.set(planeId, carrierId);
     const carrierMarker = carrierId == null
       ? null
       : ctx.shipMarkers.find((m) => m.userData.entityId === carrierId);
@@ -331,7 +341,7 @@ export function resolvePlaneCarriers(
   for (const [carrierId, info] of carriersOfPlanes) {
     const planeType = PLANE_TYPES[String(info.paramsId)]?.type ?? "attack";
     newLabels.push({
-      entityId: 2_000_000_000 + Number(carrierId),
+      entityId: PLANE_CARD_LABEL_ID_BASE + Number(carrierId),
       role: "self",
       name: "",
       shipName: "",
@@ -349,7 +359,7 @@ export function resolvePlaneCarriers(
       belowY: 0,
       belowVisible: false,
     });
-    ctx.planeLabelCarriers.set(2_000_000_000 + Number(carrierId), carrierId);
+    ctx.planeLabelCarriers.set(PLANE_CARD_LABEL_ID_BASE + Number(carrierId), carrierId);
   }
   // Re-tint the aircraft layer now that roles are final: the cloud and
   // formation builds ran EARLIER in this pass, when planeRoleById was
@@ -383,7 +393,7 @@ export function resolvePlaneCarriers(
   ctx.planeLabelOfPlane.clear();
   for (const [planeId, carrierId] of planeCarrierOf) {
     if (carrierId != null) {
-      ctx.planeLabelOfPlane.set(planeId, 2_000_000_000 + Number(carrierId));
+      ctx.planeLabelOfPlane.set(planeId, PLANE_CARD_LABEL_ID_BASE + Number(carrierId));
     }
   }
 }

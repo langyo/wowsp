@@ -94,6 +94,29 @@
     animation: holo-freelook-in 160ms ease-out;
   }
 
+  /* Recorded-camera banner: the replay's own camera was following an
+     aircraft (parent-supplied through recordedMode). Same centered pill as
+     the free-look banner above — it only REPORTS the recorded state, never
+     an interaction target. */
+  &__cam-badge {
+    position: absolute;
+    top: 9%;
+    left: 50%;
+    translate: -50% 0;
+    padding: 5px 14px;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: rgb(var(--color-primary));
+    background: var(--holo-hud-bg);
+    border: 1px solid var(--holo-hud-border);
+    border-radius: 999px;
+    box-shadow: var(--holo-hud-shadow);
+    pointer-events: none;
+    z-index: 6;
+    animation: holo-freelook-in 160ms ease-out;
+  }
+
   @keyframes holo-freelook-in {
     from {
       opacity: 0;
@@ -739,6 +762,35 @@
   background: rgba(60, 180, 120, 0.25);
   border-color: rgba(60, 180, 120, 0.6);
 }
+/* The replay's own camera mode (Camera 0x25) as a caption under the mode
+   buttons: it annotates what the BUTTONS switch, so it stays dim and out
+   of the tap path. */
+.holo-map__cam-recorded {
+  padding: 0 0.35rem 0.2rem;
+  font-size: 0.625rem;
+  color: var(--holo-hud-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Jump to the nearest aircraft camera: same chip family as the mode
+   buttons, one full-width action row above the roster. */
+.holo-map__cam-planejump {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  width: 100%;
+  margin-bottom: 0.15rem;
+  padding: 0.3rem 0.5rem;
+  font-size: var(--text-xs);
+  color: var(--holo-hud-text);
+  background: var(--holo-hud-soft);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.holo-map__cam-planejump:hover { background: var(--holo-hud-hover); }
 .holo-map__cam-group-title {
   padding: 0.25rem 0.35rem 0.15rem;
   font-size: 0.625rem;
@@ -808,6 +860,23 @@
   font-family: var(--font-mono);
   color: var(--holo-hud-dim);
   white-space: nowrap;
+}
+/* Aircraft follow row: carriers' air groups carry no tier/class/HP/stats,
+   so the two-line ship grid collapses to icon | body | name. The 13px
+   plane art must never inflate the row: the icon box is exactly its size
+   and its inline flex line ignores the image baseline. */
+.holo-map__cam-item--plane {
+  grid-template-areas: "ico body name";
+
+  .holo-map__cam-ico {
+    width: 13px;
+    height: 13px;
+    line-height: 0;
+
+    img {
+      display: block;
+    }
+  }
 }
 
 /* ── Phone sheet docking (≤767px) ─────────────────────────────────────
