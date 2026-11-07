@@ -69,6 +69,7 @@ function rosterEntry(overrides: Partial<StaticRosterEntry>): StaticRosterEntry {
     // carries them (fire applicability of the hull's class).
     shipClass: null,
     fireApplicable: true,
+    torpedoApplicable: true,
     name: null,
     playerName: null,
     teamId: 0,
@@ -96,7 +97,7 @@ function report(roster: StaticRosterEntry[]): StaticReport {
     gameMode: "Domination",
     durationS: 600,
     losLoaded: false,
-    modelSources: { fire: "models/fire.onnx", moveModel: "models/move.onnx" },
+    modelSources: { fire: "models/fire.onnx", moveModel: "models/move.onnx", torpedoModel: null },
     entityId: RECORDER_ENTITY,
     roster,
     timeline: [],

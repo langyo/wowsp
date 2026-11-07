@@ -103,6 +103,8 @@ const SCORE_ENTRY = (entityId: number, over: Partial<ShipScoreEntry> = {}): Ship
   shipId: null,
   shipClass: null,
   fireApplicable: true,
+  torpedoApplicable: true,
+  torpedo: null,
   teamId: 0,
   isRecorder: false,
   wholeGame: 0.62,
@@ -122,6 +124,7 @@ const SCORE_REPORT = (perShip: ShipScoreEntry[]): ShipScoreReport => ({
   replayVersion: null,
   perShip,
   modelSources: { fire: "test-fire", moveModel: "test-move" },
+  torpedoSource: null,
   stats: {
     shipsScored: perShip.length,
     rowsScored: 120,

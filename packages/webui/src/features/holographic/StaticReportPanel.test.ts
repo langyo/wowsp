@@ -7,11 +7,12 @@
  * mode (the 2026-11-07 user request: no temporary page mutation for a
  * screenshot).
  */
-import { describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { defineComponent, h, nextTick, ref, watchEffect } from "vue";
 import { toBlob } from "html-to-image";
 
+import { initLocaleMessages, t as i18nT } from "@/i18n";
 import type { StaticMoment, StaticReport } from "@/api";
 import StaticReportPanel, { captureReportPng } from "./StaticReportPanel";
 import type { ReportSheetView } from "./reportSheet";
@@ -63,7 +64,11 @@ function sampleReport(): StaticReport {
     gameMode: "Domination",
     durationS: 600,
     losLoaded: false,
-    modelSources: { fire: "models/fire.onnx", moveModel: "models/move.onnx" },
+    modelSources: {
+      fire: "models/fire.onnx",
+      moveModel: "models/move.onnx",
+      torpedoModel: "models/torpedo.onnx",
+    },
     entityId: 1,
     roster: [
       {
@@ -71,6 +76,7 @@ function sampleReport(): StaticReport {
         shipId: 1,
         shipClass: "Destroyer",
         fireApplicable: true,
+        torpedoApplicable: true,
         name: "me",
         playerName: "me",
         teamId: 0,
@@ -90,6 +96,14 @@ function sampleReport(): StaticReport {
           wholeMove: 0.42,
           contribution: 59500,
           contributionShots: 11,
+          // E26/P2 torpedo diagnostics: an independent dimension (numbers
+          // -> the head's torpedo card; never part of wholeGame).
+          torpedo: {
+            agreement: 0.62,
+            meanProb: 0.016,
+            canLaunchWindows: 14,
+            launches: 3,
+          },
         },
         outcome: null,
       },
@@ -98,6 +112,7 @@ function sampleReport(): StaticReport {
         shipId: 9,
         shipClass: null,
         fireApplicable: true,
+        torpedoApplicable: true,
         name: "foe",
         playerName: "foe",
         teamId: 1,
@@ -682,12 +697,16 @@ describe("StaticReportPanel fire applicability", () => {
       ...report.roster[0],
       shipClass: "AirCarrier",
       fireApplicable: false,
+      // A carrier has no torpedo model either — the independent card shows
+      // its own N/A without disturbing the fire face.
+      torpedoApplicable: false,
       whole: {
         wholeGame: 0.42,
         wholeFire: null,
         wholeMove: 0.42,
         contribution: null,
         contributionShots: null,
+        torpedo: null,
       },
     };
     return report;
@@ -698,7 +717,7 @@ describe("StaticReportPanel fire applicability", () => {
       props: { report: uncoveredReport(), onPick: () => {} },
     });
     const scores = wrapper.findAll(".srp-head__score");
-    expect(scores).toHaveLength(2);
+    expect(scores).toHaveLength(3);
     // Contribution: "not applicable", never a dash and never a per-window
     // mean on a null contribution.
     expect(scores[0].text()).toContain("replay.report.notApplicable");
@@ -723,5 +742,80 @@ describe("StaticReportPanel fire applicability", () => {
     expect(scores[0].text()).toContain("replay.report.perShot");
     expect(scores[1].text()).toContain("replay.report.fireMove");
     expect(scores[1].text()).not.toContain("replay.report.moveOnly");
+  });
+});
+
+describe("StaticReportPanel torpedo diagnostics", () => {
+  // The card interpolates four numbers; load the real message table so the
+  // assertions compare the same localized strings the card renders (the rest
+  // of the suite runs on the raw key echo).
+  beforeAll(async () => {
+    await initLocaleMessages();
+  });
+
+  /** The head's E26/P2 torpedo card — an independent dimension. */
+  const torpedoCard = (wrapper: ReturnType<typeof mount>) =>
+    wrapper.find(".srp-head__score--torpedo");
+
+  it("renders the four diagnostic numbers when the model scores the ship", () => {
+    const wrapper = mount(StaticReportPanel, {
+      props: { report: sampleReport(), onPick: () => {} },
+    });
+    const card = torpedoCard(wrapper);
+    expect(card.exists()).toBe(true);
+    // Agreement headline (0.62 -> 62%) and the full detail line: mean
+    // probability (one decimal — the ~1.6% base rate must not round into a
+    // false "2%"), can-launch volume and actual launches.
+    expect(card.find("b").text()).toBe("62%");
+    expect(card.text()).toContain(
+      i18nT("replay.report.torpedoDetail", {
+        a: "62",
+        p: "1.6",
+        n: 14,
+        l: 3,
+      }),
+    );
+    expect(card.text()).not.toContain(i18nT("replay.report.torpedoNotCovered"));
+    // The independent block never leaks into the whole-game face.
+    const scores = wrapper.findAll(".srp-head__score");
+    expect(scores[1].text()).toContain("59%");
+    expect(scores[1].text()).toContain(
+      i18nT("replay.report.fireMove", { f: "83", m: "42" }),
+    );
+  });
+
+  it("renders N/A when the torpedo model is not installed", () => {
+    const report = sampleReport();
+    report.modelSources = { ...report.modelSources, torpedoModel: null };
+    report.roster[0] = {
+      ...report.roster[0],
+      whole: { ...report.roster[0].whole!, torpedo: null },
+    };
+    const wrapper = mount(StaticReportPanel, {
+      props: { report, onPick: () => {} },
+    });
+    const card = torpedoCard(wrapper);
+    expect(card.find(".srp-head__score-na").text()).toBe(
+      i18nT("replay.report.torpedoNotCovered"),
+    );
+    // Never a 0 score and never a percentage face.
+    expect(card.text()).not.toMatch(/\d+%/);
+  });
+
+  it("renders N/A for a hull the torpedo model does not cover", () => {
+    const report = sampleReport();
+    report.roster[0] = {
+      ...report.roster[0],
+      torpedoApplicable: false,
+      whole: { ...report.roster[0].whole!, torpedo: null },
+    };
+    const wrapper = mount(StaticReportPanel, {
+      props: { report, onPick: () => {} },
+    });
+    const card = torpedoCard(wrapper);
+    expect(card.find(".srp-head__score-na").text()).toBe(
+      i18nT("replay.report.torpedoNotCovered"),
+    );
+    expect(card.text()).not.toMatch(/\d+%/);
   });
 });

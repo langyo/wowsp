@@ -735,7 +735,10 @@
     "replayHashHint": "SHA-256 체크섬 · 클릭하여 전체 해시 복사",
     "notApplicable": "해당 없음",
     "moveOnly": "기동만 {m}%",
-    "classNotCovered": "이 함종에는 사격 판단 모델이 없습니다(기동 일치도만 표시)."
+    "classNotCovered": "이 함종에는 사격 판단 모델이 없습니다(기동 일치도만 표시).",
+    "torpedoAgreement": "어뢰 일치도",
+    "torpedoDetail": "일치도 {a}% · 평균 {p}% · 발사 가능 {n} · 발사 {l}(진단용, 총점 미포함)",
+    "torpedoNotCovered": "이 함선의 어뢰 모델 없음/해당 없음"
   },
   "detail": {
     "title": "전투 상세"

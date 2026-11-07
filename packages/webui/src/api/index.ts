@@ -55,6 +55,7 @@ export type {
   DecisionSuggestionReport,
   StaticCoverage,
   StaticWholeScores,
+  TorpedoScores,
   StaticMomentCategory,
   StaticEnemySnapshot,
   StaticMoment,

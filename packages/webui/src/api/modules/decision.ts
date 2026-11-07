@@ -57,6 +57,23 @@ export interface StaticCoverage {
   gapSegments: [number, number][];
 }
 
+/** One hull's torpedo-decision diagnostics (E26 / P2 torpedo model).
+ *  A SEPARATE dimension BY DESIGN: it never folds into `wholeGame`, the
+ *  contribution or any ranking — the head-B base rate is ~1.6 %, and the
+ *  mean-type aggregation E17/E20 showed saturates into a meaningless
+ *  "everyone agrees" face. The card is a diagnostic, not a rating. */
+export interface TorpedoScores {
+  /** E17-style mean agreement over the can-launch windows, [0, 1]. */
+  agreement: number;
+  /** Mean head-B p(launch) over those windows, [0, 1]. */
+  meanProb: number;
+  /** Can-launch windows scored — the opportunity VOLUME behind the means
+   *  (E20's lesson: keep the volume next to the saturated mean). */
+  canLaunchWindows: number;
+  /** Launch actions actually taken inside those windows. */
+  launches: number;
+}
+
 /** Whole-game headline numbers (E21/E22 semantics). */
 export interface StaticWholeScores {
   wholeGame: number;
@@ -64,6 +81,10 @@ export interface StaticWholeScores {
   wholeMove: number;
   contribution: number | null;
   contributionShots: number | null;
+  /** Torpedo diagnostics — null when the torpedo model is not installed or
+   *  the hull's class is not torpedo-applicable (CV / unknown). Never part
+   *  of `wholeGame`. */
+  torpedo: TorpedoScores | null;
 }
 
 /** Why a moment was selected (drives the localized caption). */
@@ -117,6 +138,9 @@ export interface StaticRosterEntry {
    *  fire examples for them, so the fire component and the contribution
    *  stay null and the whole-game score degrades to movement alone. */
   fireApplicable: boolean;
+  /** Whether the torpedo-decision model applies to this hull (Submarine /
+   *  destroyer / …; false for AirCarrier and unknown classes). */
+  torpedoApplicable: boolean;
   name: string | null;
   /** The PLAYER nickname (the replay roster vehicle's own name) — the join
    *  key the post-battle panel's BattleResults rows match against, where
@@ -138,7 +162,13 @@ export interface StaticReport {
   gameMode: string | null;
   durationS: number;
   losLoaded: boolean;
-  modelSources: { fire: string; moveModel: string };
+  /** Model provenance. `torpedoModel` is the E26 torpedo model path, null
+   *  when the model is not installed (the report then shows N/A). */
+  modelSources: {
+    fire: string;
+    moveModel: string;
+    torpedoModel: string | null;
+  };
   entityId: number;
   roster: StaticRosterEntry[];
   /** The chosen player's 4 s score grid (mirrors Rust `ShipScoreSample`):
@@ -179,6 +209,10 @@ export interface DecisionsPackStatus {
    *  optional — the board falls back to the scoring fire model). */
   adviceModelPresent: boolean;
   adviceModelBytes: number;
+  /** Whether `torpedo_model.onnx` is installed (E26/P2 torpedo model;
+   *  optional — the report shows N/A without it). */
+  torpedoModelPresent: boolean;
+  torpedoModelBytes: number;
   /** Map short names that carry a `terrain_los.npz` raster. */
   losMaps: string[];
 }
@@ -254,6 +288,13 @@ export interface ShipScoreEntry {
    *  fire examples for them, so the fire component and the contribution
    *  stay null and the whole-game score degrades to movement alone. */
   fireApplicable: boolean;
+  /** Whether the torpedo-decision model applies to this hull (P2 contract). */
+  torpedoApplicable: boolean;
+  /** Torpedo diagnostics — an INDEPENDENT dimension: never part of
+   *  `wholeGame`/the contribution and never used for ranking. Null when the
+   *  model is missing, the hull is not torpedo-applicable, or no can-launch
+   *  row was scored. */
+  torpedo: TorpedoScores | null;
   /** Recorder-relative team: 0 = recorder's side, 1 = enemy. */
   teamId: 0 | 1;
   isRecorder: boolean;
@@ -282,6 +323,9 @@ export interface ShipScoreReport {
   /** Ordered by entity id. */
   perShip: ShipScoreEntry[];
   modelSources: { fire: string; moveModel: string };
+  /** Torpedo model provenance (P2 contract) — null when the model is not
+   *  installed; the torpedo block is then null for every ship. */
+  torpedoSource: string | null;
   stats: {
     shipsScored: number;
     rowsScored: number;

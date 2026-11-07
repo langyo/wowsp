@@ -59,7 +59,11 @@ import MapNameTag from "@/features/replay/MapNameTag";
 import ShotFooter from "@/features/share/ShotFooter";
 import { aiModelVersion } from "@/features/ai/modelVersion";
 import { t } from "@/i18n";
-import type { StaticReport, StaticRosterEntry } from "@/api";
+import type {
+  StaticReport,
+  StaticRosterEntry,
+  TorpedoScores,
+} from "@/api";
 import ReportPlayerPicker from "./ReportPlayerPicker";
 import ReportTimeline from "./ReportTimeline";
 import { formatClock, formatDuration, formatHp, pct } from "./reportFormat";
@@ -203,6 +207,48 @@ function nextFrame(): Promise<void> {
  *  live root, so this only backstops headless hosts / pre-layout mounts. */
 const CAPTURE_FALLBACK_WIDTH_PX = 1128;
 
+/** One-decimal percentage for probability means: the torpedo head-B base
+ *  rate is ~1.6 %, which must not round into a false "2 %" face. */
+const pct1 = (v: number): string => (v * 100).toFixed(1);
+
+/**
+ * The head's torpedo diagnostics card (E26 / P2). A SEPARATE dimension by
+ * design: it never feeds `wholeGame`, the contribution or any ranking, so
+ * the card carries the diagnostic numbers and nothing that reads as a
+ * player rating. `scores == null` means the torpedo model is missing or the
+ * hull's class is not torpedo-applicable — render N/A, never a 0 score.
+ */
+function TorpedoCard(props: {
+  scores: TorpedoScores | null;
+  applicable: boolean;
+}) {
+  const scores = props.scores;
+  return (
+    <div class="srp-head__score srp-head__score--torpedo">
+      <span class="srp-head__score-label">
+        {t("replay.report.torpedoAgreement")}
+      </span>
+      {scores != null && props.applicable ? (
+        <>
+          <b>{pct(scores.agreement)}%</b>
+          <span class="srp-head__score-sub">
+            {t("replay.report.torpedoDetail", {
+              a: pct(scores.agreement),
+              p: pct1(scores.meanProb),
+              n: scores.canLaunchWindows,
+              l: scores.launches,
+            })}
+          </span>
+        </>
+      ) : (
+        <span class="srp-head__score-na">
+          {t("replay.report.torpedoNotCovered")}
+        </span>
+      )}
+    </div>
+  );
+}
+
 /**
  * The sheet body — the head (perspective dropdown, scores, coverage), the
  * editor timeline, the model footnote and (capture mode only) the shared
@@ -239,6 +285,11 @@ const ReportSheetBody = defineComponent({
      *  must say "not applicable" instead of a misleading face: the
      *  whole-game score then is the movement component alone. */
     const fireUnsupported = computed(() => me.value?.fireApplicable === false);
+    /** E26/P2 torpedo diagnostics: an INDEPENDENT dimension carried by the
+     *  whole block. Null = the torpedo model is not installed or this hull's
+     *  class is not torpedo-applicable — the head then renders N/A, never a
+     *  zero score, and the value never touches `wholeGame` or any ranking. */
+    const torpedo = computed(() => me.value?.whole?.torpedo ?? null);
     /** Top-right battle provenance: map, mode, start time, fate, replay
      *  hash tail and duration — the header the replay's own meta row
      *  carries, trimmed to fit the sheet. */
@@ -405,6 +456,15 @@ const ReportSheetBody = defineComponent({
                     })}
               </span>
             </div>
+            {/* E26/P2 torpedo diagnostics — an independent small card: a
+                diagnostic read, never part of the whole-game score / the
+                contribution / any ranking. A missing model or a
+                non-applicable hull renders N/A (the numbers are null by
+                contract), never a 0 score. */}
+            <TorpedoCard
+              scores={torpedo.value}
+              applicable={me.value?.torpedoApplicable !== false}
+            />
             <div class="srp-head__coverage">
               <span class="srp-head__coverage-label">
                 {t("replay.report.coverage")}:{" "}

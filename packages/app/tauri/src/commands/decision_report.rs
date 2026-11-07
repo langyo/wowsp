@@ -36,7 +36,7 @@ use anyhow::anyhow;
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::Path;
-use wowsp_tauri_shared::CommandResult;
+use wowsp_tauri_shared::{CommandResult, TorpedoScores};
 
 use super::decision_score::{ShipScoreReport, ShipScoreSample, softmax};
 use super::decision_serve::{debug_move_model, with_debug_cache_entry};
@@ -71,6 +71,14 @@ pub struct StaticRosterEntry {
     /// Whether the main-battery fire semantics apply to this hull (`false` for
     /// carriers / submarines). The webui hides the fire copy for those rows.
     pub fire_applicable: bool,
+    /// Whether the optional torpedo-decision diagnostic covers this hull.
+    /// Requires BOTH the torpedo model to be installed AND the class/armament
+    /// verdict (DD / CL / CA / BB / SS with torpedoes; carriers are N/A) —
+    /// false for EVERY hull when the model is missing, scored or not, so the
+    /// scored and unscored rows share one meaning. The UI shows N/A — never a
+    /// 0 — whenever this is false.
+    #[serde(default)]
+    pub torpedo_applicable: bool,
     /// Resolved from the replay roster (ship display name preferred).
     pub name: Option<String>,
     /// The PLAYER nickname (the replay roster vehicle's `name`), matched by
@@ -123,6 +131,11 @@ pub struct StaticWholeScores {
     pub whole_move: f32,
     pub contribution: Option<f64>,
     pub contribution_shots: Option<u32>,
+    /// T2 torpedo diagnostics (DIAGNOSTIC ONLY — not part of whole_game,
+    /// contribution or any ranking). `null` when the model is absent or the
+    /// hull is not covered.
+    #[serde(default)]
+    pub torpedo: Option<TorpedoScores>,
 }
 
 /// Why a moment was selected — drives the caption in the UI.
@@ -337,6 +350,15 @@ fn coverage_of(samples: &[ShipScoreSample], alive_from: f32, alive_to: f32) -> S
 
 // ── report assembly ─────────────────────────────────────────────────────────
 
+/// Roster fallback for hulls the scoring pass did not cover: claim torpedo
+/// coverage only when the model is installed AND the class/armament verdict
+/// applies. Without the model EVERY hull reports false — exactly the scored
+/// path's rule — so `torpedoApplicable` never depends on whether a hull got
+/// score rows.
+pub(crate) fn torpedo_roster_applicable(model_installed: bool, ship_id: Option<i64>) -> bool {
+    model_installed && super::decision_score::torpedo_applicable_for(ship_id, false)
+}
+
 /// Build the full report for one entity off a warm cache entry.
 pub(crate) fn build_static_report(
     path: &Path,
@@ -411,6 +433,9 @@ pub(crate) fn build_static_report(
         // table is a compile-time artifact, and a parse failure degrades to
         // the pre-classification behaviour (unknown class / applicable).
         let attr_table = super::ship_attrs::embedded_table().ok();
+        // Model presence comes from the already-built report (the optional
+        // ladder ran inside the cache build) — no extra model probe/decode.
+        let torpedo_installed = scores.torpedo_source.is_some();
         let mut roster: Vec<StaticRosterEntry> = Vec::new();
         for t in &stream.trajectories {
             if !t.kind.as_ref().is_some_and(|k| k.entity_type == 2) {
@@ -431,6 +456,7 @@ pub(crate) fn build_static_report(
                 whole_move: e.whole_move,
                 contribution: e.contribution,
                 contribution_shots: e.contribution_shots,
+                torpedo: e.torpedo,
             });
             let kind_ship_id = t.kind.as_ref().and_then(|k| k.ship_id);
             // Prefer the scored entry's values: per_ship is built from the
@@ -447,11 +473,19 @@ pub(crate) fn build_static_report(
                 || attr_table.is_none_or(|t| t.fire_applicable(kind_ship_id)),
                 |e| e.fire_applicable,
             );
+            // The model-installed gate is part of the field's contract: with
+            // no model the scored rows are false too, so the unscored
+            // fallback must not claim class coverage either.
+            let torpedo_applicable = per_ship.map_or_else(
+                || torpedo_roster_applicable(torpedo_installed, kind_ship_id),
+                |e| e.torpedo_applicable,
+            );
             roster.push(StaticRosterEntry {
                 entity_id: eid,
                 ship_id: kind_ship_id,
                 ship_class,
                 fire_applicable,
+                torpedo_applicable,
                 name: resolve_from(&display_name_maps, eid, kind_ship_id),
                 player_name: resolve_from(&player_name_maps, eid, kind_ship_id),
                 team_id: per_ship.map_or(1, |e| e.team_id),
@@ -575,6 +609,9 @@ pub(crate) fn build_static_report(
             model_sources: json!({
                 "fire": scores.model_sources.fire,
                 "moveModel": scores.model_sources.move_model,
+                // None when the optional torpedo model is not installed —
+                // the diagnostics card is N/A, never a fabricated score.
+                "torpedoModel": scores.torpedo_source,
             }),
             entity_id,
             roster,
@@ -711,6 +748,51 @@ mod tests {
             picked
                 .iter()
                 .all(|&i| moment_candidate(&samples[i]).is_some())
+        );
+    }
+
+    /// One meaning for `torpedoApplicable` across scored and unscored rows:
+    /// the model being installed is the outer gate (no model = every hull
+    /// false, matching the scored path), and only then does the
+    /// class/armament verdict apply (DD/SS true, carrier / torpedo-less BB /
+    /// unknown hull false).
+    #[test]
+    fn roster_torpedo_applicable_requires_the_installed_model() {
+        const DARING_DD: i64 = 4_179_507_152;
+        const ORLOV_CV: i64 = 3_256_858_064;
+        const SUBMARINE: i64 = 3_434_526_416;
+        const NO_TUBES_BB: i64 = 3_247_387_984;
+        for ship_id in [
+            Some(DARING_DD),
+            Some(SUBMARINE),
+            Some(ORLOV_CV),
+            Some(NO_TUBES_BB),
+            None,
+        ] {
+            assert!(
+                !torpedo_roster_applicable(false, ship_id),
+                "model missing must be false for {ship_id:?}"
+            );
+        }
+        assert!(
+            torpedo_roster_applicable(true, Some(DARING_DD)),
+            "Daring DD"
+        );
+        assert!(
+            torpedo_roster_applicable(true, Some(SUBMARINE)),
+            "submarine"
+        );
+        assert!(
+            !torpedo_roster_applicable(true, Some(ORLOV_CV)),
+            "carrier stays N/A"
+        );
+        assert!(
+            !torpedo_roster_applicable(true, Some(NO_TUBES_BB)),
+            "torpedo-less battleship"
+        );
+        assert!(
+            !torpedo_roster_applicable(true, None),
+            "unknown hull stays N/A"
         );
     }
 
