@@ -16,14 +16,43 @@ import StaticReportModal from "./StaticReportModal";
 import ErrorCard from "@/components/base/ErrorCard";
 import { HkModal } from "@celestia-island/hikari";
 import type { StaticReport } from "@/api";
+import type { ReportSheetView } from "@/features/holographic/reportSheet";
 
 enableAutoUnmount(afterEach);
 
 const report = {
   replayId: "20261103_1",
   entityId: 7,
+  durationS: 600,
   roster: [],
+  moments: [],
+  timeline: [],
 } as unknown as StaticReport;
+
+/** The host-resolved sheet; the copy signature reads its identity faces. */
+function sheet(
+  identity: Partial<ReportSheetView["identity"]> = {},
+): ReportSheetView {
+  return {
+    identity: {
+      name: "me",
+      clanTag: "HOOD",
+      dogTag: null,
+      shipType: null,
+      shipName: null,
+      tier: null,
+      ...identity,
+    },
+    meta: {
+      mapLang: "zh-CN",
+      modeLabel: null,
+      modeColor: null,
+      battleStart: null,
+      replayHash: null,
+    },
+    roster: new Map(),
+  };
+}
 
 /** The copy kit, reduced to what the wiring test pins: the render callback
  *  the modal hands it, the busy flag the header button reads, and the copy
@@ -44,8 +73,12 @@ vi.mock("@/features/share/useShareImage", async () => {
   const { ref } = await import("vue");
   share.busy = ref(false);
   return {
-    useShareImage: (render: () => Promise<Uint8Array>) => {
+    useShareImage: (
+      render: () => Promise<Uint8Array>,
+      opts?: { signature?: () => string | number },
+    ) => {
       share.holder.render = render;
+      share.holder.signature = opts?.signature ?? null;
       return { busy: share.busy, copyShot: share.copyShot };
     },
   };
@@ -174,6 +207,21 @@ describe("StaticReportModal", () => {
     const bytes = await share.holder.render!();
     expect(panel.capturePng).toHaveBeenCalledTimes(1);
     expect(Array.from(bytes)).toEqual([1, 2, 3]);
+  });
+
+  it("keys the cached long image on the identity's late ship faces", async () => {
+    const w = mountModal({ report, sheet: sheet() });
+    expect(share.holder.signature).toBeTypeOf("function");
+    const bare = share.holder.signature!();
+    // The same content re-copies from the cache (the signature is stable).
+    expect(share.holder.signature!()).toBe(bare);
+    // Facts the sheet only learns ASYNC (encyclopedia realm list / stats
+    // batch) must re-render a copy made before they landed — the identity
+    // head prints them, so a stale cached image would show a bare name.
+    await w.setProps({
+      sheet: sheet({ shipType: "Battleship", shipName: "Yamato", tier: 10 }),
+    });
+    expect(share.holder.signature!()).not.toBe(bare);
   });
 
   it("surfaces the copy busy state on the header action", async () => {

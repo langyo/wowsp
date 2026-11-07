@@ -9,7 +9,7 @@
  * keyframe lane, score track — with the annotation band in capture mode),
  * the model footnote and the SHARED WoWSP share footer (shotKit's canvas
  * watermark as a DOM twin, plus the AI notice and model version).
- * `onSeek` is the timeline's one-click return to the battle: clicking a
+ * onSeek is the timeline's one-click return to the battle: clicking a
  * keyframe forwards through the modal to the host, which closes the report,
  * seeks the 3D board's playhead to that moment and focuses the camera on
  * the analyzed player. The picker switches any roster perspective (the Rust
@@ -31,8 +31,27 @@
  * wall of key-moment cards became ReportTimeline — an editor-style
  * waterfall whose capture mode renders the annotation cards the interactive
  * surface keeps behind hover/tap.
+ *
+ * 2026-11-07 OFFSCREEN CAPTURE (user request: do not temporarily modify the
+ * page when producing the screenshot): capturePng used to flip a capturing
+ * ref on the LIVE panel, so the open window visibly mutated for a few frames
+ * (annotation band appeared, picker/chevrons disabled, watermark footer
+ * mounted) before html-to-image cloned it. The sheet body is now a
+ * subcomponent rendered TWICE: the live window always renders the
+ * interactive sheet (capturing=false), while capturePng mounts a hidden,
+ * far-off-viewport Teleport host on <body> that renders the same sheet with
+ * capture mode on, waits for its lane measurement to settle, and hands THAT
+ * node to html-to-image. The visible window never changes during a copy —
+ * the capture-mode sheet exists only offscreen.
  */
-import { computed, defineComponent, nextTick, ref, type PropType } from "vue";
+import {
+  computed,
+  defineComponent,
+  nextTick,
+  ref,
+  Teleport,
+  type PropType,
+} from "vue";
 import { HkCopyBadge, HkScrollContainer } from "@celestia-island/hikari";
 
 import AppTag from "@/components/base/AppTag";
@@ -84,8 +103,8 @@ export async function captureReportPng(node: HTMLElement): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-/** Two frames: capture mode mounts the annotation band and re-lays the lane
- *  grid against the measured plot width, so html-to-image must clone a
+/** Two frames: the offscreen copy mounts the annotation band and re-lays the
+ *  lane grid against the measured plot width, so html-to-image must clone a
  *  settled layout rather than the mid-swap one. */
 function nextFrame(): Promise<void> {
   return new Promise((resolve) => {
@@ -97,27 +116,39 @@ function nextFrame(): Promise<void> {
   });
 }
 
-export default defineComponent({
-  name: "StaticReportPanel",
+/** Width fallback for the offscreen column when the live root reports no
+ *  layout width (the modal's reading frame is min(1180px, 94vw); 1128 is its
+ *  content width at the default window). A real browser always measures the
+ *  live root, so this only backstops headless hosts / pre-layout mounts. */
+const CAPTURE_FALLBACK_WIDTH_PX = 1128;
+
+/**
+ * The sheet body — the head (perspective dropdown, scores, coverage), the
+ * editor timeline, the model footnote and (capture mode only) the shared
+ * WoWSP watermark footer. One component, rendered by the live window with
+ * capturing=false and by the hidden capture host with capturing=true, so the
+ * copied long image and the window can never drift apart.
+ */
+const ReportSheetBody = defineComponent({
+  name: "ReportSheetBody",
   props: {
     report: { type: Object as PropType<StaticReport>, required: true },
-    /** Keyframe pick (battle-time seek + camera focus); optional — the
-     * modal forwards the timeline's jump through to its host. */
-    onSeek: { type: Function as PropType<(t: number) => void>, default: null },
-    /** Perspective switch (refetch from the Rust cache). */
-    onPick: { type: Function as PropType<(entityId: number) => void>, required: true },
     /** Host-resolved identity/meta/roster faces (avatar, clan, ship icon,
      *  map/mode/start/hash). Null renders the plain report (tests, dev). */
     sheet: { type: Object as PropType<ReportSheetView | null>, default: null },
+    /** Export mode: static annotation band, inert tags, no dropdown chrome,
+     *  watermark footer. Always false on the live window. */
+    capturing: { type: Boolean, default: false },
+    /** Keyframe pick (battle-time seek + camera focus); optional — the
+     *  modal forwards the timeline's jump through to its host. */
+    onSeek: { type: Function as PropType<(t: number) => void>, default: null },
+    /** Perspective switch (refetch from the Rust cache). */
+    onPick: {
+      type: Function as PropType<(entityId: number) => void>,
+      required: true,
+    },
   },
-  setup(props, { expose }) {
-    /** The exported long-image column — the capture's DOM root (a template
-     *  ref, not a document query: the panel must capture ITS root even if a
-     *  future host mounts a second report somewhere). */
-    const exportRootRef = ref<HTMLElement | null>(null);
-    /** Capture mode: the timeline swaps its hover surface for the static
-     *  annotation band; the picker is forced shut so the frame is clean. */
-    const capturing = ref(false);
+  setup(props) {
     const me = computed<StaticRosterEntry | undefined>(() =>
       props.report.roster.find((row) => row.entityId === props.report.entityId),
     );
@@ -149,21 +180,248 @@ export default defineComponent({
       return { start, span: Math.max(1, end - start) };
     });
 
+    return () => (
+      <>
+        {/* ── head: the selected perspective, scores, coverage ── */}
+        <div class="srp-head">
+          <div class="srp-head__row">
+            <ReportPlayerPicker
+              report={props.report}
+              capturing={props.capturing}
+              identity={props.sheet?.identity ?? null}
+              roster={props.sheet?.roster ?? null}
+              onPick={(entityId: number) => props.onPick(entityId)}
+            />
+            {me.value?.isRecorder ? (
+              <AppTag tone="info">{t("replay.report.recorder")}</AppTag>
+            ) : null}
+            <div class="srp-head__meta">
+              <MapNameTag
+                class="srp-head__meta-map"
+                spaceId={props.report.mapName}
+                lang={props.sheet?.meta.mapLang ?? null}
+              />
+              {modeLabel.value ? (
+                <AppTag
+                  color={props.sheet?.meta.modeColor ?? undefined}
+                  class="srp-head__mode"
+                >
+                  {modeLabel.value}
+                </AppTag>
+              ) : null}
+              {/* The provenance TELEMETRY (time / replay fingerprint /
+                  duration) is tag-ified: the house HkCopyBadge contract
+                  (never selectable, hover says click-to-copy, one shared
+                  clipboard toast). The cloned share frame renders the
+                  same tags INERT (disabled drops the button semantics and
+                  tooltip) — a screenshot is not interactive. */}
+              {battleStart.value ? (
+                <HkCopyBadge
+                  size="sm"
+                  class="srp-head__time"
+                  value={battleStart.value}
+                  disabled={props.capturing}
+                >
+                  {battleStart.value}
+                </HkCopyBadge>
+              ) : null}
+              {me.value?.diedAt != null ? (
+                <AppTag
+                  tone="danger"
+                  class="srp-head__fate"
+                  data-hint={t("replay.report.diedAt", {
+                    t: formatClock(me.value.diedAt),
+                  })}
+                >
+                  {t("replay.report.diedAt", {
+                    t: formatClock(me.value.diedAt),
+                  })}
+                </AppTag>
+              ) : (
+                <AppTag tone="success" class="srp-head__fate">
+                  {t("replay.report.survivedAtEnd")}
+                </AppTag>
+              )}
+              {hashTail.value ? (
+                <HkCopyBadge
+                  size="sm"
+                  mono
+                  class="srp-head__hash"
+                  value={props.sheet?.meta.replayHash ?? ""}
+                  tooltip={t("replay.report.replayHashHint")}
+                  disabled={props.capturing}
+                >
+                  #{hashTail.value}
+                </HkCopyBadge>
+              ) : null}
+              <HkCopyBadge
+                size="sm"
+                mono
+                class="srp-head__duration"
+                value={formatDuration(props.report.durationS)}
+                disabled={props.capturing}
+              >
+                {t("replay.report.duration", {
+                  t: formatDuration(props.report.durationS),
+                })}
+              </HkCopyBadge>
+            </div>
+          </div>
+          <div class="srp-head__scores">
+            <div class="srp-head__score">
+              <span class="srp-head__score-label">
+                {t("replay.report.contribution")}
+              </span>
+              <b>
+                {me.value?.whole?.contribution != null
+                  ? formatHp(me.value.whole.contribution)
+                  : "—"}
+              </b>
+              {me.value?.whole?.contributionShots ? (
+                <span class="srp-head__score-sub">
+                  {t("replay.report.perShot", {
+                    v: formatHp(
+                      me.value.whole.contribution! /
+                        me.value.whole.contributionShots,
+                    ),
+                  })}
+                </span>
+              ) : null}
+            </div>
+            <div class="srp-head__score">
+              <span class="srp-head__score-label">
+                {t("replay.report.wholeGame")}
+              </span>
+              <b>{me.value ? pct(me.value.whole!.wholeGame) : "—"}%</b>
+              <span class="srp-head__score-sub">
+                {t("replay.report.fireMove", {
+                  f:
+                    me.value?.whole?.wholeFire != null
+                      ? pct(me.value.whole.wholeFire)
+                      : "—",
+                  m: me.value ? pct(me.value.whole!.wholeMove) : "—",
+                })}
+              </span>
+            </div>
+            <div class="srp-head__coverage">
+              <span class="srp-head__coverage-label">
+                {t("replay.report.coverage")}:{" "}
+                {me.value ? pct(me.value.coverage.completeness) : "—"}%
+                {me.value && me.value.coverage.gapSeconds > 12 ? (
+                  <span class="srp-head__coverage-note">
+                    {t("replay.report.gapNote", {
+                      s: Math.round(me.value.coverage.gapSeconds),
+                    })}
+                  </span>
+                ) : null}
+              </span>
+              <div class="srp-coverage-bar">
+                {(me.value?.coverage.gapSegments ?? []).map(([from, to], i) => (
+                  <div
+                    key={i}
+                    class="srp-coverage-bar__gap"
+                    style={{
+                      left:
+                        ((from - coverageWindow.value.start) /
+                          coverageWindow.value.span) *
+                          100 +
+                        "%",
+                      width:
+                        ((to - from) / coverageWindow.value.span) * 100 + "%",
+                    }}
+                  />
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <ReportTimeline
+          report={props.report}
+          capturing={props.capturing}
+          onSeek={props.onSeek ?? undefined}
+        />
+
+        <div class="srp-foot">
+          {t("replay.report.modelNote")} ·{" "}
+          {props.report.modelSources.fire.split(/[\\/]/).pop()} ·{" "}
+          {props.report.modelSources.moveModel.split(/[\\/]/).pop()}
+        </div>
+        {/* The copied long image closes on the SAME WoWSP watermark every
+            share shot carries, plus the AI-specific notice and the AI
+            model version line. Capture-only: the watermark belongs to the
+            share artifact, not to the window (the window already carries
+            the modal chrome — 2026-11-07 review). */}
+        {props.capturing ? (
+          <ShotFooter
+            class="srp-foot-shared"
+            notes={[t("replay.report.aiNotice")]}
+            meta={[aiVersionLine.value]}
+          />
+        ) : null}
+      </>
+    );
+  },
+});
+
+export default defineComponent({
+  name: "StaticReportPanel",
+  props: {
+    report: { type: Object as PropType<StaticReport>, required: true },
+    /** Keyframe pick (battle-time seek + camera focus); optional — the
+     * modal forwards the timeline's jump through to its host. */
+    onSeek: { type: Function as PropType<(t: number) => void>, default: null },
+    /** Perspective switch (refetch from the Rust cache). */
+    onPick: { type: Function as PropType<(entityId: number) => void>, required: true },
+    /** Host-resolved identity/meta/roster faces (avatar, clan, ship icon,
+     *  map/mode/start/hash). Null renders the plain report (tests, dev). */
+    sheet: { type: Object as PropType<ReportSheetView | null>, default: null },
+  },
+  setup(props, { expose }) {
+    /** The LIVE long-image column. It is only ever MEASURED (its client
+     *  width seeds the offscreen copy) — the visible window renders the
+     *  interactive sheet and is never mutated for a capture. A template ref,
+     *  not a document query: the panel must capture its OWN column even if a
+     *  future host mounts a second report somewhere. */
+    const exportRootRef = ref<HTMLElement | null>(null);
+    /** Capture mode is buffered: while true, a hidden Teleport host on <body>
+     *  renders a second copy of the sheet with capture mode ON. The live
+     *  window's capturing is always false. */
+    const captureHost = ref(false);
+    /** Width handed to the offscreen column — the live export root's own
+     *  content width, so the copied image keeps the window's proportions. */
+    const captureWidth = ref(CAPTURE_FALLBACK_WIDTH_PX);
+    /** The offscreen copy's export root (the node html-to-image clones). */
+    const captureRootRef = ref<HTMLElement | null>(null);
+
     /** Capture this panel's long image to PNG bytes for the host's copy
      *  button (the modal owns the clipboard write + the toast through
      *  features/share/useShareImage). A thrown error reaches that toast as
      *  the failure path — never a silent no-op. */
     const capturePng = async (): Promise<Uint8Array> => {
-      const node = exportRootRef.value;
-      if (!node) throw new Error("report export root is not mounted");
-      capturing.value = true;
+      const liveRoot = exportRootRef.value;
+      if (!liveRoot) throw new Error("report export root is not mounted");
+      const measured = liveRoot.clientWidth;
+      captureWidth.value =
+        measured > 0 ? measured : CAPTURE_FALLBACK_WIDTH_PX;
+      captureHost.value = true;
       try {
         await nextTick();
+        // The annotation band measures the OFFSCREEN lane's real width and
+        // the band height re-lays the column: two frames so the clone sees
+        // the settled sheet, never the freshly mounted one.
         await nextFrame();
         await nextFrame();
+        const node = captureRootRef.value;
+        if (!node) throw new Error("report capture root is not mounted");
         return await captureReportPng(node);
       } finally {
-        capturing.value = false;
+        // The host is a render effect: unmount it and wait for that pass so
+        // the resolve means "the offscreen sheet is gone" — a caller can
+        // never observe a lingering copy, and a failed render still cleans
+        // up (the copy toast owns the failure).
+        captureHost.value = false;
+        await nextTick();
       }
     };
 
@@ -175,194 +433,64 @@ export default defineComponent({
     expose({ capturePng });
 
     return () => (
-      <div
-      class={[
-        "static-report-panel",
-        capturing.value ? "static-report-panel--capture" : "",
-      ]}
-    >
+      <div class="static-report-panel">
         <HkScrollContainer class="static-report-panel__scroll">
           <div ref={exportRootRef} class="static-report-panel__export-root">
-            {/* ── head: the selected perspective, scores, coverage ── */}
-            <div class="srp-head">
-              <div class="srp-head__row">
-                <ReportPlayerPicker
-                  report={props.report}
-                  capturing={capturing.value}
-                  identity={props.sheet?.identity ?? null}
-                  roster={props.sheet?.roster ?? null}
-                  onPick={(entityId: number) => props.onPick(entityId)}
-                />
-                {me.value?.isRecorder ? (
-                  <AppTag tone="info">{t("replay.report.recorder")}</AppTag>
-                ) : null}
-                <div class="srp-head__meta">
-                  <MapNameTag
-                    class="srp-head__meta-map"
-                    spaceId={props.report.mapName}
-                    lang={props.sheet?.meta.mapLang ?? null}
-                  />
-                  {modeLabel.value ? (
-                    <AppTag
-                      color={props.sheet?.meta.modeColor ?? undefined}
-                      class="srp-head__mode"
-                    >
-                      {modeLabel.value}
-                    </AppTag>
-                  ) : null}
-                  {/* The provenance TELEMETRY (time / replay fingerprint /
-                      duration) is tag-ified: the house HkCopyBadge contract
-                      (never selectable, hover says click-to-copy, one shared
-                      clipboard toast). The cloned share frame renders the
-                      same tags INERT (disabled drops the button semantics and
-                      tooltip) — a screenshot is not interactive. */}
-                  {battleStart.value ? (
-                    <HkCopyBadge
-                      size="sm"
-                      class="srp-head__time"
-                      value={battleStart.value}
-                      disabled={capturing.value}
-                    >
-                      {battleStart.value}
-                    </HkCopyBadge>
-                  ) : null}
-                  {me.value?.diedAt != null ? (
-                    <AppTag
-                      tone="danger"
-                      class="srp-head__fate"
-                      data-hint={t("replay.report.diedAt", {
-                        t: formatClock(me.value.diedAt),
-                      })}
-                    >
-                      {t("replay.report.diedAt", {
-                        t: formatClock(me.value.diedAt),
-                      })}
-                    </AppTag>
-                  ) : (
-                    <AppTag tone="success" class="srp-head__fate">
-                      {t("replay.report.survivedAtEnd")}
-                    </AppTag>
-                  )}
-                  {hashTail.value ? (
-                    <HkCopyBadge
-                      size="sm"
-                      mono
-                      class="srp-head__hash"
-                      value={props.sheet?.meta.replayHash ?? ""}
-                      tooltip={t("replay.report.replayHashHint")}
-                      disabled={capturing.value}
-                    >
-                      #{hashTail.value}
-                    </HkCopyBadge>
-                  ) : null}
-                  <HkCopyBadge
-                    size="sm"
-                    mono
-                    class="srp-head__duration"
-                    value={formatDuration(props.report.durationS)}
-                    disabled={capturing.value}
-                  >
-                    {t("replay.report.duration", {
-                      t: formatDuration(props.report.durationS),
-                    })}
-                  </HkCopyBadge>
-                </div>
-              </div>
-              <div class="srp-head__scores">
-                <div class="srp-head__score">
-                  <span class="srp-head__score-label">
-                    {t("replay.report.contribution")}
-                  </span>
-                  <b>
-                    {me.value?.whole?.contribution != null
-                      ? formatHp(me.value.whole.contribution)
-                      : "—"}
-                  </b>
-                  {me.value?.whole?.contributionShots ? (
-                    <span class="srp-head__score-sub">
-                      {t("replay.report.perShot", {
-                        v: formatHp(
-                          me.value.whole.contribution! /
-                            me.value.whole.contributionShots,
-                        ),
-                      })}
-                    </span>
-                  ) : null}
-                </div>
-                <div class="srp-head__score">
-                  <span class="srp-head__score-label">
-                    {t("replay.report.wholeGame")}
-                  </span>
-                  <b>{me.value ? pct(me.value.whole!.wholeGame) : "—"}%</b>
-                  <span class="srp-head__score-sub">
-                    {t("replay.report.fireMove", {
-                      f:
-                        me.value?.whole?.wholeFire != null
-                          ? pct(me.value.whole.wholeFire)
-                          : "—",
-                      m: me.value ? pct(me.value.whole!.wholeMove) : "—",
-                    })}
-                  </span>
-                </div>
-                <div class="srp-head__coverage">
-                  <span class="srp-head__coverage-label">
-                    {t("replay.report.coverage")}:{" "}
-                    {me.value ? pct(me.value.coverage.completeness) : "—"}%
-                    {me.value && me.value.coverage.gapSeconds > 12 ? (
-                      <span class="srp-head__coverage-note">
-                        {t("replay.report.gapNote", {
-                          s: Math.round(me.value.coverage.gapSeconds),
-                        })}
-                      </span>
-                    ) : null}
-                  </span>
-                  <div class="srp-coverage-bar">
-                    {(me.value?.coverage.gapSegments ?? []).map(([from, to], i) => (
-                      <div
-                        key={i}
-                        class="srp-coverage-bar__gap"
-                        style={{
-                          left:
-                            ((from - coverageWindow.value.start) /
-                              coverageWindow.value.span) *
-                              100 +
-                            "%",
-                          width:
-                            ((to - from) / coverageWindow.value.span) * 100 +
-                            "%",
-                        }}
-                      />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <ReportTimeline
+            <ReportSheetBody
               report={props.report}
-              capturing={capturing.value}
+              sheet={props.sheet}
+              capturing={false}
               onSeek={props.onSeek ?? undefined}
+              onPick={props.onPick}
             />
-
-            <div class="srp-foot">
-              {t("replay.report.modelNote")} ·{" "}
-              {props.report.modelSources.fire.split(/[\\/]/).pop()} ·{" "}
-              {props.report.modelSources.moveModel.split(/[\\/]/).pop()}
-            </div>
-            {/* The copied long image closes on the SAME WoWSP watermark every
-                share shot carries, plus the AI-specific notice and the AI
-                model version line. Capture-only: the watermark belongs to the
-                share artifact, not to the window (the window already carries
-                the modal chrome — 2026-11-07 review). */}
-            {capturing.value ? (
-              <ShotFooter
-                class="srp-foot-shared"
-                notes={[t("replay.report.aiNotice")]}
-                meta={[aiVersionLine.value]}
-              />
-            ) : null}
           </div>
         </HkScrollContainer>
+        {/* The capture-mode sheet lives ONLY here: a fixed, far-off-viewport
+            duplicate with real layout (html-to-image needs computed styles,
+            so no display:none / visibility:hidden) that never paints over
+            the window and never creates scrollbars (fixed + negative left,
+            pointer-events:none). Teleported to <body> so no ancestor
+            transform/overflow/contain in the modal can clip or rescale the
+            captured layout. */}
+        {captureHost.value ? (
+          <Teleport to="body">
+            <div
+              class="static-report-panel__capture-host"
+              aria-hidden="true"
+              // A copy must not add a tab stop to the window: the offscreen
+              // sheet carries the same buttons as the live one, and inert
+              // removes them from focus / the a11y tree (aria-hidden hides
+              // the text, inert stops the Tab key landing off-viewport).
+              inert={true}
+              style={{
+                position: "fixed",
+                left: "-30000px",
+                top: "0px",
+                width: captureWidth.value + "px",
+                pointerEvents: "none",
+                zIndex: -1,
+              }}
+            >
+              <div
+                class="static-report-panel static-report-panel--capture"
+                style={{ width: captureWidth.value + "px" }}
+              >
+                <div
+                  ref={captureRootRef}
+                  class="static-report-panel__export-root"
+                >
+                  <ReportSheetBody
+                    report={props.report}
+                    sheet={props.sheet}
+                    capturing={true}
+                    onSeek={props.onSeek ?? undefined}
+                    onPick={props.onPick}
+                  />
+                </div>
+              </div>
+            </div>
+          </Teleport>
+        ) : null}
       </div>
     );
   },

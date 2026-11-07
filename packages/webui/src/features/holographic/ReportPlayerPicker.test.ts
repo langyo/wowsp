@@ -199,6 +199,15 @@ describe("ReportPlayerPicker", () => {
             tier: 10,
           },
         ],
+        [
+          9,
+          {
+            clanTag: null,
+            shipType: "Battleship",
+            shipName: "Yamato",
+            tier: 10,
+          },
+        ],
       ]),
     });
     const trigger = w.find(".srp-picker__trigger");
@@ -216,11 +225,65 @@ describe("ReportPlayerPicker", () => {
     await openPicker(w);
     const rows = panelRows();
     const mate = rows.find((row) => row.textContent?.includes("mate"))!;
-    expect(mate.querySelector(".srp-picker__row-icon")).not.toBeNull();
-    expect(mate.querySelector(".srp-picker__row-line")?.textContent).toContain("[ABC]");
-    expect(mate.querySelector(".srp-picker__row-ship")?.textContent).toContain("Des Moines");
+    // Far left is the SHIP column: class glyph, tier numeral, ship name —
+    // the first child of the row, so the identity starts after it.
+    expect(
+      mate.firstElementChild?.classList.contains("srp-picker__row-ship"),
+    ).toBe(true);
+    expect(
+      mate.querySelector(".srp-picker__row-icon img")?.getAttribute("src"),
+    ).toContain("icon_ally_cruiser");
+    expect(mate.querySelector(".srp-picker__row-tier")?.textContent).toBe("X");
+    expect(mate.querySelector(".srp-picker__row-shipname")?.textContent).toBe(
+      "Des Moines",
+    );
+    // Then the player identity: [clan] nickname on one line.
+    const mateId = mate.querySelector(".srp-picker__row-id")?.textContent ?? "";
+    expect(mateId).toContain("[ABC]");
+    expect(mateId).toContain("mate");
     expect(rows[0].querySelector(".srp-picker__check")).not.toBeNull();
     expect(mate.querySelector(".srp-picker__check")).toBeNull();
+    // Enemy rows keep the enemy plate variant of the class glyph.
+    const foe = rows.find((row) => row.textContent?.includes("foe"))!;
+    expect(
+      foe.querySelector(".srp-picker__row-icon img")?.getAttribute("src"),
+    ).toContain("icon_enemy_battleship");
+    // The old team-dot fallback is gone from every row.
+    expect(document.body.querySelector(".srp-picker__row-dot")).toBeNull();
+  });
+
+  it("renders a neutral dash for hulls no ship source resolves", async () => {
+    const w = mountPicker();
+    await openPicker(w);
+    const rows = panelRows();
+    expect(rows.length).toBe(3);
+    for (const row of rows) {
+      // Never the old team dot, even with no host-resolved face at all.
+      expect(row.querySelector(".srp-picker__row-dot")).toBeNull();
+      expect(row.querySelector(".srp-picker__row-shipname")?.textContent).toBe(
+        "—",
+      );
+      // The glyph slot stays reserved (empty, no image) so the fixed-width
+      // ship column does not collapse.
+      expect(row.querySelector(".srp-picker__row-icon img")).toBeNull();
+      expect(
+        row.querySelector(".srp-picker__row-icon")?.textContent ?? "",
+      ).toBe("");
+    }
+  });
+
+  it("shows the player nickname on the identity line, not the display name", async () => {
+    // The report roster's name field is ship-name-preferred; the row identity
+    // must read the PLAYER nickname or the ship column and the name would
+    // repeat the hull.
+    const rep = report();
+    rep.roster[1] = { ...rep.roster[1], name: "Shimakaze", playerName: "kirov" };
+    const w = mountPicker({ report: rep });
+    await openPicker(w);
+    const mate = panelRows().find((row) => row.textContent?.includes("kirov"))!;
+    const idText = mate.querySelector(".srp-picker__row-id")?.textContent ?? "";
+    expect(idText).toContain("kirov");
+    expect(idText).not.toContain("Shimakaze");
   });
 
   it("shows the real emblem badge when the lookup carries a dog tag", () => {

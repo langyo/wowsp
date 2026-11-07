@@ -90,7 +90,15 @@ import {
   shipNameFromOfflineDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
-import { gameTabRowCompare, shipNameOf, shipTierOf } from "@/utils/shipClass";
+import {
+  gameTabRowCompare,
+  shipNameOf,
+  shipTierOf,
+  // Alias: this module keeps a local `shipTypeOf` (the modal's summary
+  // cards read the offline DB directly) — the report sheet's fallback
+  // resolver binds the SHARED helper (baked DB + runtime registrations).
+  shipTypeOf as shipClassTypeOf,
+} from "@/utils/shipClass";
 import { realmUsesShipNameOrder } from "@/utils/realms";
 import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
 import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
@@ -133,11 +141,12 @@ import { markerTintClass } from "@/features/markers/markerTint";
 import { markerColorLabel } from "@/features/markers/playerContextMenu";
 import { useMarkersStore } from "@/stores/markers";
 import type { DogTag, PlayerStats } from "@/api";
-import type {
-  ReportRosterInfo,
-  ReportSheetIdentity,
-  ReportSheetMeta,
-  ReportSheetView,
+import {
+  buildReportRosterFaces,
+  type ReportRosterInfo,
+  type ReportSheetIdentity,
+  type ReportSheetMeta,
+  type ReportSheetView,
 } from "@/features/holographic/reportSheet";
 import "./ReplayView.scss";
 
@@ -2183,30 +2192,29 @@ export default defineComponent({
       { immediate: true },
     );
 
-    /** entityId → picker faces: ship class icon + ship name/tier + clan. */
-    const reportRosterFaces = computed<Map<number, ReportRosterInfo>>(() => {
-      const faces = new Map<number, ReportRosterInfo>();
-      const ships = encyclopedia.byId;
-      for (const vehicle of parser.current.value?.vehicles ?? []) {
-        const ship = vehicle.shipId != null ? ships.get(vehicle.shipId) : null;
-        faces.set(vehicle.id, {
-          clanTag: reportRosterStats.value.get(vehicle.name)?.clanTag ?? null,
-          dogTag: reportRosterStats.value.get(vehicle.name)?.dogTag ?? null,
-          shipType: ship?.type ?? null,
-          // The encyclopedia name follows 素材翻译; when its lookup misses
-          // (unloaded realm / id outside the loaded list) the BAKED ship
-          // database still answers in the configured language before the
-          // replay's raw client name is used — the picker must never mix
-          // languages (2026-11-07 review).
-          shipName: ship
-            ? encyclopedia.shipDisplayName(ship)
-            : shipNameOf(vehicle.shipId ?? -1, dataLanguage.value) ||
-              (vehicle.shipName ?? null),
-          tier: ship?.tier ?? null,
-        });
-      }
-      return faces;
-    });
+    /** entityId → picker faces: ship class icon + ship name/tier + clan.
+     *
+     *  The join is keyed by the STATIC REPORT's own roster entity ids — the
+     *  panel/picker look rows up by `report.roster[].entityId` (BigWorld
+     *  stream ids), while the old map was keyed by the descriptor roster's
+     *  `vehicles[].id` (arena/account ids in a ~5.3e8 space). A real
+     *  replay's two id sets never intersect, so every row missed and the
+     *  picker drew its blue/red fallback dot (2026-11-07 report). The pure
+     *  join lives in reportSheet.ts; only the store bindings belong here:
+     *  the encyclopedia (async, realm-scoped) first, the baked/runtime ship
+     *  DB as the still-loading fallback, and the battle's stats batch for
+     *  the clan tag / emblem. */
+    const reportRosterFaces = computed<Map<number, ReportRosterInfo>>(() =>
+      buildReportRosterFaces(staticReport.value, {
+        shipOf: (shipId) => encyclopedia.byId.get(shipId) ?? null,
+        shipDisplayName: (ship) => encyclopedia.shipDisplayName(ship),
+        shipTypeOf: (shipId) => shipClassTypeOf(shipId),
+        shipTierOf: (shipId) => shipTierOf(shipId),
+        shipNameOf: (shipId, language) => shipNameOf(shipId, language),
+        language: dataLanguage.value,
+        statOf: (playerName) => reportRosterStats.value.get(playerName) ?? null,
+      }),
+    );
 
     /** The head's battle provenance (the replay meta row's information). */
     const reportSheetMeta = computed<ReportSheetMeta>(() => {

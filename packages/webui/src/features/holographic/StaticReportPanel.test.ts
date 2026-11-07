@@ -2,8 +2,10 @@
  * StaticReportPanel tests — the shared formatters, the DOM-node → PNG
  * capture contract the modal's copy action drives, and the panel wiring: the
  * head shows only the selected perspective behind the dropdown, the editor
- * timeline replaces the old card wall, and capture mode renders the static
- * annotation band BEFORE html-to-image clones the node.
+ * timeline replaces the old card wall, and a copy renders its capture-mode
+ * sheet in a hidden OFFSCREEN host — the visible window never enters capture
+ * mode (the 2026-11-07 user request: no temporary page mutation for a
+ * screenshot).
  */
 import { describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
@@ -12,6 +14,7 @@ import { toBlob } from "html-to-image";
 
 import type { StaticMoment, StaticReport } from "@/api";
 import StaticReportPanel, { captureReportPng } from "./StaticReportPanel";
+import type { ReportSheetView } from "./reportSheet";
 import {
   coverageClass,
   formatClock,
@@ -122,9 +125,45 @@ function sampleReport(): StaticReport {
   };
 }
 
+/** The host-resolved sheet (identity faces + battle provenance): the
+ *  inert-telemetry / static identity assertions need the replay fingerprint
+ *  tag to exist. */
+function sampleSheet(): ReportSheetView {
+  return {
+    identity: {
+      name: "me",
+      clanTag: "HOOD",
+      dogTag: null,
+      shipType: "Destroyer",
+      shipName: "Shimakaze",
+      tier: 10,
+    },
+    meta: {
+      mapLang: "zh-CN",
+      modeLabel: "Domination",
+      modeColor: "#3f8cff",
+      battleStart: "2026-11-06 12:34",
+      replayHash:
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    },
+    roster: new Map([
+      [
+        1,
+        {
+          clanTag: "HOOD",
+          dogTag: null,
+          shipType: "Destroyer",
+          shipName: "Shimakaze",
+          tier: 10,
+        },
+      ],
+    ]),
+  };
+}
+
 /** Mount the panel behind a host and hand back the exposed capture handle
  *  through the SAME component-ref plumbing StaticReportModal uses. */
-function mountPanel(): {
+function mountPanel(sheet: ReportSheetView | null = null): {
   handle: () => { capturePng: () => Promise<Uint8Array> };
   wrapper: ReturnType<typeof mount>;
 } {
@@ -140,6 +179,7 @@ function mountPanel(): {
         h(StaticReportPanel, {
           ref: panelRef,
           report: sampleReport(),
+          sheet,
           onPick: () => {},
         });
     },
@@ -152,6 +192,40 @@ function mountPanel(): {
     },
     wrapper,
   };
+}
+
+/** The offscreen capture host is Teleported to <body> (the VTU mount itself
+ *  stays detached), so the captured sheet is found through the document —
+ *  never through the mount wrapper. */
+function captureHostNode(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    ".static-report-panel__capture-host",
+  );
+}
+
+function captureExportRoot(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    ".static-report-panel__capture-host .static-report-panel__export-root",
+  );
+}
+
+/** Start a capture and wait for the offscreen sheet to mount. happy-dom has
+ *  no layout engine, so the offscreen column's natural height is pinned on
+ *  the mounted node before the renderer runs (a real browser reports it from
+ *  layout). Returns while the capture is still in flight. */
+async function startCapture(
+  capturePng: () => Promise<Uint8Array>,
+  scrollHeight = 2400,
+): Promise<{ pending: Promise<Uint8Array>; offscreen: HTMLElement }> {
+  const pending = capturePng();
+  await nextTick();
+  const offscreen = captureExportRoot();
+  if (!offscreen) throw new Error("offscreen capture sheet did not mount");
+  Object.defineProperty(offscreen, "scrollHeight", {
+    value: scrollHeight,
+    configurable: true,
+  });
+  return { pending, offscreen };
 }
 
 describe("formatHp", () => {
@@ -266,36 +340,7 @@ describe("StaticReportPanel wiring", () => {
       props: {
         report: sampleReport(),
         onPick: () => {},
-        sheet: {
-          identity: {
-            name: "me",
-            clanTag: "HOOD",
-            dogTag: null,
-            shipType: "Destroyer",
-            shipName: "Shimakaze",
-            tier: 10,
-          },
-          meta: {
-            mapLang: "zh-CN",
-            modeLabel: "Domination",
-            modeColor: "#3f8cff",
-            battleStart: "2026-11-06 12:34",
-            replayHash:
-              "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-          },
-          roster: new Map([
-            [
-              1,
-              {
-                clanTag: "HOOD",
-                dogTag: null,
-                shipType: "Destroyer",
-                shipName: "Shimakaze",
-                tier: 10,
-              },
-            ],
-          ]),
-        },
+        sheet: sampleSheet(),
       },
     });
     // Identity trigger: clan tag + ship line, emblem fallback (no dog tag).
@@ -340,38 +385,84 @@ describe("StaticReportPanel wiring", () => {
     expect(gap.attributes("style")).toContain("width: 6.666666");
   });
 
-  it("captures through the panel's own export root", async () => {
+  it("captures the offscreen copy of the export column, never the live node", async () => {
     vi.mocked(toBlob).mockReset();
     const bytes = new Uint8Array([4, 5, 6]);
     vi.mocked(toBlob).mockResolvedValue(new Blob([bytes], { type: "image/png" }));
-    const { handle } = mountPanel();
+    const { handle, wrapper } = mountPanel();
     await nextTick();
-    await expect(handle().capturePng()).resolves.toEqual(bytes);
+    const liveRoot = wrapper.find(".static-report-panel__export-root")
+      .element as HTMLElement;
+    const { pending, offscreen } = await startCapture(
+      () => handle().capturePng(),
+      4321,
+    );
+    // The raw node handed to html-to-image is the OFFSCREEN column, mounted
+    // under the hidden Teleport host — not the window's own export root.
+    const host = captureHostNode();
+    expect(host?.contains(offscreen)).toBe(true);
+    expect(offscreen.closest(".static-report-panel--capture")).not.toBeNull();
+    // The host is a REAL-LAYOUT fixed layer parked far off-viewport (no
+    // display:none / visibility:hidden: html-to-image reads computed
+    // styles), inert so a copy never adds a tab stop, and pinned to the
+    // live column's width (happy-dom reports 0 → the 1128 fallback).
+    expect(host?.style.position).toBe("fixed");
+    expect(host?.style.left).toBe("-30000px");
+    expect(host?.style.top).toBe("0px");
+    expect(host?.style.pointerEvents).toBe("none");
+    expect(host?.style.zIndex).toBe("-1");
+    expect(host?.style.display).toBe("");
+    expect(host?.style.visibility).toBe("");
+    expect(host?.getAttribute("inert")).not.toBeNull();
+    expect(host?.style.width).toBe("1128px");
+    expect(offscreen.parentElement?.style.width).toBe("1128px");
+    const captured = await pending;
+    expect(captured).toEqual(bytes);
     const node = vi.mocked(toBlob).mock.calls[0][0] as HTMLElement;
-    expect(node.classList.contains("static-report-panel__export-root")).toBe(true);
+    expect(node).toBe(offscreen);
+    expect(node).not.toBe(liveRoot);
+    // The offscreen height is the offscreen column's natural height (the
+    // long image), and the host is gone once the bytes come back.
+    expect(vi.mocked(toBlob).mock.calls[0][1]).toMatchObject({ height: 4321 });
+    expect(captureHostNode()).toBeNull();
   });
 
-  it("renders the static annotation band before the clone and drops it after", async () => {
+  it("renders the annotation band and share footer offscreen, never in the live window", async () => {
     vi.mocked(toBlob).mockReset();
     const seen = {
       callouts: -1,
       hint: -1,
       height: 0,
       staticPlate: false,
+      captureClass: false,
       footer: false,
       aiNote: "",
       aiMeta: "",
       hashRole: "",
     };
+    const live = {
+      callouts: -1,
+      captureClass: false,
+      footer: false,
+      hashRole: "",
+      pickerDisabled: true,
+    };
+    let liveRoot: HTMLElement | null = null;
     vi.mocked(toBlob).mockImplementation((async (node: HTMLElement) => {
       seen.callouts = node.querySelectorAll(".srp-tl__callout").length;
       seen.hint = node.querySelectorAll(".srp-tl__hint").length;
       seen.height = node.scrollHeight;
       // The cloned frame must carry the chrome-less identity, never the
       // dropdown button.
-      seen.staticPlate = node
-        .querySelector(".srp-picker__trigger")
-        ?.classList.contains("srp-picker__trigger--static") ?? false;
+      seen.staticPlate =
+        node
+          .querySelector(".srp-picker__trigger")
+          ?.classList.contains("srp-picker__trigger--static") ?? false;
+      // The capture palette is pinned on the offscreen wrapper.
+      seen.captureClass =
+        node
+          .closest(".static-report-panel")
+          ?.classList.contains("static-report-panel--capture") ?? false;
       // The telemetry tags are INERT in the share frame (a copied image is
       // not interactive): no button role on the fingerprint pill.
       seen.hashRole =
@@ -380,24 +471,134 @@ describe("StaticReportPanel wiring", () => {
       seen.footer = node.querySelector(".shot-footer") != null;
       seen.aiNote = node.querySelector(".shot-footer__note")?.textContent ?? "";
       seen.aiMeta = node.querySelector(".shot-footer__meta")?.textContent ?? "";
+      // ...and at this SAME instant the LIVE window (what the user sees)
+      // carries none of the capture-only chrome.
+      live.callouts =
+        liveRoot?.querySelectorAll(".srp-tl__callout").length ?? -1;
+      live.captureClass =
+        liveRoot?.closest(".static-report-panel--capture") != null;
+      live.footer = liveRoot?.querySelector(".shot-footer") != null;
+      live.hashRole =
+        liveRoot?.querySelector(".srp-head__hash")?.getAttribute("role") ?? "";
+      live.pickerDisabled =
+        liveRoot
+          ?.querySelector(".srp-picker__trigger")
+          ?.hasAttribute("disabled") ?? true;
       return new Blob([new Uint8Array([1])], { type: "image/png" });
     }) as never);
-    const { handle, wrapper } = mountPanel();
+    const { handle, wrapper } = mountPanel(sampleSheet());
     await nextTick();
-    const root = wrapper.find(".static-report-panel__export-root").element as HTMLElement;
-    Object.defineProperty(root, "scrollHeight", { value: 2400 });
-    await handle().capturePng();
+    liveRoot = wrapper.find(".static-report-panel__export-root")
+      .element as HTMLElement;
+    const { pending, offscreen } = await startCapture(
+      () => handle().capturePng(),
+      2400,
+    );
+    await pending;
     // The annotation band existed when html-to-image took the clone...
     expect(seen.callouts).toBe(3);
     expect(seen.hint).toBe(0);
     expect(seen.height).toBe(2400);
     expect(seen.staticPlate).toBe(true);
+    expect(seen.captureClass).toBe(true);
     expect(seen.hashRole).toBe("");
-    // ...while the window showed none (see the interactive test above).
+    // ...and so did the watermark + AI extras...
     expect(seen.footer).toBe(true);
     expect(seen.aiNote).toBe("replay.report.aiNotice");
     expect(seen.aiMeta).toBe("replay.report.aiVersion");
-    // ...and the interactive surface came back afterwards.
+    // ...while the window showed NONE of it: no annotation band, no footer,
+    // still-interactive telemetry tags and picker.
+    expect(live.callouts).toBe(0);
+    expect(live.captureClass).toBe(false);
+    expect(live.footer).toBe(false);
+    expect(live.hashRole).toBe("button");
+    expect(live.pickerDisabled).toBe(false);
+    // ...and the offscreen sheet is gone afterwards, the window untouched.
+    expect(captureHostNode()).toBeNull();
+    expect(offscreen.isConnected).toBe(false);
+    expect(wrapper.findAll(".srp-tl__callout")).toHaveLength(0);
+    expect(wrapper.find(".srp-tl__hint").exists()).toBe(true);
+  });
+
+  it("never puts the live window into capture mode", async () => {
+    vi.mocked(toBlob).mockReset();
+    vi.mocked(toBlob).mockResolvedValue(
+      new Blob([new Uint8Array([7])], { type: "image/png" }),
+    );
+    const { handle, wrapper } = mountPanel(sampleSheet());
+    await nextTick();
+    const liveRoot = wrapper.find(".static-report-panel__export-root")
+      .element as HTMLElement;
+    /** The sheet's own DOM as the user sees it — a copy must leave it
+     *  byte-identical (no class/attribute/text mutation, not even a
+     *  transient frame). */
+    const liveMarkup = liveRoot.outerHTML;
+    /** The REAL live DOM assertions: no capture class, no annotation band,
+     *  no watermark footer, interactive tags and picker. */
+    const interactive = () => {
+      expect(wrapper.find(".static-report-panel").classes()).not.toContain(
+        "static-report-panel--capture",
+      );
+      expect(wrapper.findAll(".srp-tl__callout")).toHaveLength(0);
+      expect(wrapper.find(".srp-tl__hint").exists()).toBe(true);
+      expect(wrapper.find(".shot-footer").exists()).toBe(false);
+      expect(wrapper.find(".srp-head__hash").attributes("role")).toBe("button");
+      const trigger = wrapper.find(".srp-picker__trigger");
+      expect(trigger.attributes("disabled")).toBeUndefined();
+      expect(trigger.classes()).not.toContain("srp-picker__trigger--static");
+    };
+
+    // BEFORE: plain interactive window, no capture host lingering.
+    interactive();
+    expect(captureHostNode()).toBeNull();
+
+    // DURING: capture mode lives ONLY in the offscreen copy.
+    const { pending, offscreen } = await startCapture(
+      () => handle().capturePng(),
+      2400,
+    );
+    expect(offscreen.querySelectorAll(".srp-tl__callout")).toHaveLength(3);
+    expect(offscreen.querySelector(".shot-footer")).not.toBeNull();
+    expect(
+      offscreen
+        .querySelector(".srp-picker__trigger")
+        ?.classList.contains("srp-picker__trigger--static"),
+    ).toBe(true);
+    expect(
+      offscreen
+        .querySelector(".srp-picker__trigger")
+        ?.hasAttribute("disabled"),
+    ).toBe(true);
+    interactive();
+    await pending;
+
+    // AFTER: offscreen host removed; the window never entered capture mode
+    // and its own DOM is bit-for-bit what it was before the copy started.
+    expect(captureHostNode()).toBeNull();
+    interactive();
+    expect(liveRoot.outerHTML).toBe(liveMarkup);
+  });
+
+  it("tears the offscreen host down when the renderer fails", async () => {
+    vi.mocked(toBlob).mockReset();
+    vi.mocked(toBlob).mockRejectedValue(new Error("svg render boom"));
+    const { handle, wrapper } = mountPanel();
+    await nextTick();
+    const pending = handle().capturePng();
+    // Attach the rejection expectation FIRST: the render runs on the frame
+    // timers below, so the failure must never surface as an unhandled one.
+    const settled = expect(pending).rejects.toThrow("svg render boom");
+    await nextTick();
+    const offscreen = captureExportRoot();
+    expect(offscreen).not.toBeNull();
+    Object.defineProperty(offscreen!, "scrollHeight", {
+      value: 2400,
+      configurable: true,
+    });
+    await settled;
+    // Failure path still unmounts the hidden host (the copy toast owns the
+    // user-facing error) and leaves the window untouched.
+    expect(captureHostNode()).toBeNull();
     expect(wrapper.findAll(".srp-tl__callout")).toHaveLength(0);
     expect(wrapper.find(".srp-tl__hint").exists()).toBe(true);
   });
