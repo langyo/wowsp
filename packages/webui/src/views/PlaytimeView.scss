@@ -168,43 +168,6 @@
   }
 }
 
-/* ── Heatmap legend (少 → 多 swatches, mirrors the cell ramp) + the year
-   switcher to its left (GitHub-style year tabs); the pair wraps on a
-   narrow column. ────────────────────────────────────────────────────── */
-.play-heat-controls {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-
-.play-heat-legend {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--text-2xs);
-  color: rgb(var(--color-muted));
-
-  &__swatch {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-
-    &.is-1 {
-      background: rgb(var(--color-primary) / 25%);
-    }
-    &.is-2 {
-      background: rgb(var(--color-primary) / 45%);
-    }
-    &.is-3 {
-      background: rgb(var(--color-primary) / 70%);
-    }
-    &.is-4 {
-      background: rgb(var(--color-primary));
-    }
-  }
-}
-
 /* ── Toolbar (battle-derived content only — see the view's docs): a slim
    right-aligned row above the cards. The scope pill opens the client menu
    (all clients / one option per detected install / one per pinned replay
