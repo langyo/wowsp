@@ -16,6 +16,7 @@
 
 - [アーキテクチャ設計](./designs/architecture.md)
 - [ゲーム内戦績プラグイン](./designs/ingame-stats-plugin.md)
+- [AI モデル配信](./designs/ai-models.md)
 
 # License
 

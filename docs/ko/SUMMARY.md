@@ -16,6 +16,7 @@
 
 - [아키텍처 설계](./designs/architecture.md)
 - [게임 내 전적 플러그인](./designs/ingame-stats-plugin.md)
+- [AI 모델 배포](./designs/ai-models.md)
 
 # License
 
