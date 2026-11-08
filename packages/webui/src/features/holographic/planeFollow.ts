@@ -21,6 +21,7 @@ import type {
   SquadronConsumableEvent,
   SquadronConsumableType,
   SquadronHealthEvent,
+  SquadronPlanesHealthEvent,
   SquadronStateEvents,
   SquadronThrottleEvent,
 } from "@/api";
@@ -164,6 +165,21 @@ export function throttleAt(
 ): number | null {
   const event = lastSquadronEventAt(throttle, planeId, t);
   return event === null ? null : event.mode;
+}
+
+/** The squadron's alive-in-flight plane count at t: the last planesHealth
+ *  sample at or before t, counted by its packed u64's digit count
+ *  (packed-crack: 3 bits per plane, LSB first — a death drops the top
+ *  digit, so the digit count IS the flying count). Null before the first
+ *  sample — pre-E27 replays never grow one, and the caller falls back to
+ *  the trail-derived strength. */
+export function squadronFlyingAt(
+  planesHealth: readonly SquadronPlanesHealthEvent[] | undefined,
+  planeId: number,
+  t: number,
+): number | null {
+  const event = lastSquadronEventAt(planesHealth, planeId, t);
+  return event === null ? null : unpackSquadronBands(event.packed).length;
 }
 
 /** Semantic squadron-consumable types whose effect window is open at t: a

@@ -205,11 +205,12 @@
       "age": "En vuelo",
       "remaining": "Tiempo restante",
       "radius": "Radio",
-      "squadron": "Escuadrón",
       "carrier": "Portaaviones",
       "capturing": "Capturando · {n} s",
       "neutral": "Neutral",
-      "player": "Jugador"
+      "player": "Jugador",
+      "flying": "En vuelo",
+      "launched": "Desplegados"
     }
   },
   "decisions": {

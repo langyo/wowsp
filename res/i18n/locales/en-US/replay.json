@@ -205,11 +205,12 @@
       "age": "In flight",
       "remaining": "Time left",
       "radius": "Radius",
-      "squadron": "Squadron",
       "carrier": "Carrier",
       "capturing": "Capturing · {n}s",
       "neutral": "Neutral",
-      "player": "Player"
+      "player": "Player",
+      "flying": "Flying",
+      "launched": "Launched"
     }
   },
   "decisions": {

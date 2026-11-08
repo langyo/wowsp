@@ -101,8 +101,22 @@ export interface MinimapPickPlane {
    *  scout / attack) — the tooltip maps it onto ships.plane.* labels. */
   planeType: string;
   role: TeamRole;
-  /** Formation size (GameParams squadron count). */
+  /** GameParams attack-group size — kept for the pool-size/hover-signature
+   *  join but NEVER user-facing: it is the attack-group size (423/936
+   *  plane_types entries are 1), not the flying squadron strength, and the
+   *  编队 ×1 tooltip it fed was the misleading report. The decoded fields
+   *  below are what renders. */
   count: number;
+  /** Planes launched this sortie (SquadronCreate.numPlanes, E27) — null on
+   *  replays whose 3D stream predates the field. */
+  launched?: number | null;
+  /** Planes alive in flight right now — the planesHealth packed u64's
+   *  digit count (E27), or the trail-derived live members when the state
+   *  stream is absent (pre-E27 replays). */
+  flying?: number | null;
+  /** Squadron total-HP fraction 0..1 (SquadronHealthEvent, E27) — null
+   *  before the first sample and on pre-E27 replays. */
+  hp?: number | null;
   /** Controlling carrier's display label (null when unresolved). */
   carrierLabel: string | null;
   /** World position (z north-positive). */
@@ -188,6 +202,14 @@ export type MinimapHoverTarget =
       planeType: string;
       role: TeamRole;
       count: number;
+      /** Planes launched this sortie (E27 numPlanes) — see
+       *  MinimapPickPlane; null on pre-E27 replays. */
+      launched?: number | null;
+      /** Planes alive in flight (E27 planesHealth digit count or the
+       *  trail-derived fallback). */
+      flying?: number | null;
+      /** Squadron total-HP fraction 0..1 (E27), null when unknown. */
+      hp?: number | null;
       carrierLabel: string | null;
     }
   | {
@@ -433,6 +455,9 @@ export function pickMinimapTarget(
       planeType: s.planeType,
       role: s.role,
       count: s.count,
+      launched: s.launched,
+      flying: s.flying,
+      hp: s.hp,
       carrierLabel: s.carrierLabel,
     };
   }

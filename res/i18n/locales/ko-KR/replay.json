@@ -205,11 +205,12 @@
       "age": "비행 시간",
       "remaining": "남은 시간",
       "radius": "반경",
-      "squadron": "비행대",
       "carrier": "항공모함",
       "capturing": "점령 중 · {n}초",
       "neutral": "중립",
-      "player": "플레이어"
+      "player": "플레이어",
+      "flying": "비행 중",
+      "launched": "출격"
     }
   },
   "decisions": {

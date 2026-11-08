@@ -68,6 +68,8 @@ import { planeTrailExpiry } from "./planeFormation";
 import {
   planeCardExtras,
   squadronAttacking,
+  squadronFlyingAt,
+  squadronHpAt,
   squadronSamplesAt,
   squadronStrength,
 } from "./planeFollow";
@@ -1882,7 +1884,10 @@ export default defineComponent({
         case "ship":
           return `s:${target.entityId}:${Math.round(target.hp ?? -1)}:${target.dead ? 1 : 0}:${target.unspotted ? 1 : 0}`;
         case "plane":
-          return `p:${target.planeId}:${target.role}:${target.count}:${target.carrierLabel ?? ""}`;
+          // The decoded strength fields tick at the streams' cadence — key
+          // the signature on them so the card re-places as 在飞/出击/血量
+          // change, not only when the anchor pose or carrier moves.
+          return `p:${target.planeId}:${target.role}:${target.flying ?? -1}/${target.launched ?? -1}:${target.hp != null ? Math.round(target.hp * 100) : -1}:${target.carrierLabel ?? ""}`;
         case "torpedo":
           return `t:${target.role}:${target.ownerLabel}:${Math.round(target.ageS * 10)}:${Math.round(target.remainingS)}`;
         case "smoke":
@@ -1968,6 +1973,17 @@ export default defineComponent({
 
       // Aircraft: one candidate per FORMATION anchor trail (id % 16 === 0),
       // smoothed by the same per-trail easing state the painter advances.
+      // The tooltip's 在飞/出击/血量 rows ride the DECODED E27 streams (the
+      // GameParams group count is the attack-group size and misled); a
+      // trail-derived fallback covers pre-E27 replays and the window
+      // between the stream load settling and this snapshot.
+      const states = squadronStates.value;
+      const launchedOf = new Map<number, number>();
+      for (const c of props.squadronCreates) {
+        const n = c.numPlanes ?? c.totalNumPlanes ?? 0;
+        const prev = launchedOf.get(c.planeId) ?? 0;
+        if (n > prev) launchedOf.set(c.planeId, n);
+      }
       const planes: MinimapPickPlane[] = [];
       const seenPlanes = new Set<number>();
       for (const trail of ctx.planeTrails) {
@@ -1987,11 +2003,19 @@ export default defineComponent({
         seenPlanes.add(planeId);
         const labelId = ctx.planeLabelOfPlane.get(planeId);
         const carrierId = labelId != null ? ctx.planeLabelCarriers.get(labelId) : undefined;
+        const strength = squadronStrength(ctx.planeTrails, planeId, ctx.minimapTrailEnd, t);
         planes.push({
           planeId,
           planeType: ctx.planeTypesById.get(trail.id) ?? "attack",
           role: (ctx.planeRoleById.get(planeId) as TeamRole | undefined) ?? "enemy",
           count: ctx.planeFormations.get(planeId)?.count ?? 0,
+          launched:
+            launchedOf.get(planeId) ?? strength?.total ?? null,
+          flying:
+            (states ? squadronFlyingAt(states.planesHealth, planeId, t) : null) ??
+            strength?.alive ??
+            null,
+          hp: states ? squadronHpAt(states.health, planeId, t) : null,
           carrierLabel: carrierId != null ? hoverLabelOf(carrierId) : null,
           x: pose.x,
           z: pose.z,

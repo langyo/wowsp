@@ -85,14 +85,25 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
   // member maps to its squadron's type. The minimap stream names the
   // same paramsId and covers squadrons the 3D stream missed.
   ctx.planeTypesById.clear();
+  // The idx map must clear with the type map: trail ids are small ints
+  // that collide across replays, so a previous replay's entries would
+  // survive (and the conditional set below cannot overwrite them with a
+  // paramsId whose PLANE_TYPES lookup misses) — the next squadron of the
+  // same id would wear the dead replay's model.
+  ctx.planeIndexById.clear();
   const typesOf = (paramsId: number, planeId: number) => {
-    const type = PLANE_TYPES[String(paramsId)]?.type ?? "attack";
-    const index = PLANE_TYPES[String(paramsId)]?.index;
+    const info = PLANE_TYPES[String(paramsId)];
+    const type = info?.type ?? "attack";
+    const index = info?.index;
     for (let i = 0; i < 16; i++) {
-      if (!ctx.planeTypesById.has(planeId * 16 + i)) {
-        ctx.planeTypesById.set(planeId * 16 + i, type);
-        if (index) ctx.planeIndexById.set(planeId * 16 + i, index);
-      }
+      const key = planeId * 16 + i;
+      // Last DEFINED writer wins, per map: both streams carry the same
+      // paramsId per planeId in practice, but when one stream's lookup
+      // misses PLANE_TYPES the old first-writer-wins guard let it poison
+      // the slot forever — the other stream's good paramsId could never
+      // repair the type or the model idx.
+      ctx.planeTypesById.set(key, type);
+      if (index) ctx.planeIndexById.set(key, index);
     }
   };
   for (const c of ctx.props.squadronCreates) typesOf(c.paramsId, c.planeId);
@@ -177,11 +188,26 @@ export function buildPlaneCloud(ctx: MapInternals, scene: THREE.Scene) {
 /** Per-formation GLB model pools, launched async and epoch-guarded. */
 export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoch: number) {
   // Real aircraft models: per FORMATION (one GLB clone per squadron slot —
-  // the GameParams squadron size, e.g. 8), arranged in a wedge each frame.
-  // Trails whose model fails/misses keep the Points fallback.
+  // the squadron's DECODED launch size, e.g. 8), arranged in a wedge each
+  // frame. Trails whose model fails/misses keep the Points fallback.
   ctx.planeMeshes.clear();
   ctx.planeFormations.clear();
   {
+    // Decoded launch size per planeId (E27): SquadronCreate.numPlanes is the
+    // planes actually LAUNCHED. The GameParams `count` this used to fall back
+    // to is the ATTACK-GROUP size (423/936 plane_types entries are 1), never
+    // the flying squadron strength — sizing pools from it rendered ONE model
+    // where a dozen planes flew. Max over the planeId's creates (re-launches
+    // may differ); the GameParams entry stays the last-resort fallback for
+    // squadrons the decoded stream never saw.
+    const launchOf = new Map<number, number>();
+    const paramsOf = new Map<number, number>();
+    for (const c of ctx.props.squadronCreates) {
+      const n = c.numPlanes ?? c.totalNumPlanes ?? 0;
+      const prev = launchOf.get(c.planeId) ?? 0;
+      if (n > prev) launchOf.set(c.planeId, n);
+      if (!paramsOf.has(c.planeId)) paramsOf.set(c.planeId, c.paramsId);
+    }
     // Group trails by planeId first.
     const byPlane = new Map<number, { idx: string; role: string; count: number; trail: { id: number; samples: SquadronPlane[] } }[]>();
     for (const trail of ctx.planeTrails) {
@@ -194,16 +220,13 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
         list = [];
         byPlane.set(planeId, list);
       }
-      const typeKey = PLANE_TYPES[String(
-        ctx.props.squadronCreates.find((c) => c.planeId === planeId)?.paramsId,
-      )];
-      const count = (typeKey?.count ?? 3);
+      const typeKey = PLANE_TYPES[String(paramsOf.get(planeId))];
+      const count = Math.max(1, launchOf.get(planeId) ?? typeKey?.count ?? 3);
       if (list.length === 0) {
         ctx.planeFormations.set(planeId, { count, groupSize: 1, groupCount: count, meshes: [] });
       }
       list.push({ idx, role, count, trail });
     }
-    const seenKey = new Set<string>();
     for (const [planeId, entries] of byPlane) {
       // Infer the group layout from the launch positions (clusters of
       // planes spawned together = one flight group).
@@ -214,18 +237,19 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       const first = entries[0];
       const url = resolvePlaneModelUrl(first.idx);
       if (!url) continue;
-      const seen = `${first.idx}:${first.role}`;
-      const build = seenKey.has(seen)
-        ? null
-        : buildPropMarker({
-            url,
-            color: TEAM_COLOR[first.role as TeamRole] ?? 0x78d2ff,
-            axis: "z",
-            targetLen: 7,
-            opacity: 0.95,
-          }).catch(() => null);
-      seenKey.add(seen);
-      if (!build) continue;
+      // EVERY squadron clones its own pool — a CV match flies many sorties
+      // of the SAME airframe on the SAME side, and the shared-build dedupe
+      // that used to stand here left every later squadron of a seen
+      // (idx, role) pair without a pool, i.e. as dots. propMarker's glbCache
+      // already collapses the fetch + parse per URL; only the cheap clone
+      // is per squadron.
+      const build = buildPropMarker({
+        url,
+        color: TEAM_COLOR[first.role as TeamRole] ?? 0x78d2ff,
+        axis: "z",
+        targetLen: 7,
+        opacity: 0.95,
+      }).catch(() => null);
       const formationForPool = ctx.planeFormations.get(planeId)!;
       build.then((proto) => {
         if (epoch !== ctx.markerEpoch || !ctx.api.value?.scene || !proto) return;
@@ -240,6 +264,17 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
         }
         ctx.planeMeshes.set(planeId, pool);
       });
+    }
+    if (import.meta.env.VITE_WOWSP_DEBUG_PLANE_JOIN) {
+      // Env-gated diagnostic (the webui twin of replay_core's WOWSP_TEST_*
+      // gates): how many squadrons entered the pool build and how many
+      // trail ids still lack a model idx. Run the dev server with
+      // VITE_WOWSP_DEBUG_PLANE_JOIN=1 to trace a replay whose squadrons
+      // stay in the Points cloud.
+      const noIdx = ctx.planeTrails.filter((t) => !ctx.planeIndexById.get(t.id)).length;
+      console.debug(
+        `[planeWarfare] plane pools: ${byPlane.size} squadrons with a model idx, ${noIdx} trails without one, epoch ${epoch}`,
+      );
     }
   }
 }
