@@ -437,10 +437,11 @@
     "attacking": "공격 중",
     "followingHull": "항공기 없음 — 함체 추적 중",
     "boost": "부스트",
-    "cons20": "소모품 20",
-    "cons21": "소모품 21",
-    "cons22": "소모품 22",
-    "consOther": "소모품"
+    "cons20": "엔진 부스트",
+    "cons21": "전투기 소환",
+    "cons22": "소화",
+    "consOther": "소모품",
+    "cons42": "연막"
   },
   "classes": {
     "battleship": "전함",

@@ -437,10 +437,11 @@
     "attacking": "Attacking",
     "followingHull": "No aircraft airborne — following hull",
     "boost": "Boost",
-    "cons20": "Consumable 20",
-    "cons21": "Consumable 21",
-    "cons22": "Consumable 22",
-    "consOther": "Consumable"
+    "cons20": "Engine boost",
+    "cons21": "Patrol fighters",
+    "cons22": "Fire extinguishing",
+    "consOther": "Consumable",
+    "cons42": "Smoke screen"
   },
   "classes": {
     "battleship": "Battleship",
