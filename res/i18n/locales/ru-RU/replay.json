@@ -205,11 +205,12 @@
       "age": "В полёте",
       "remaining": "Осталось",
       "radius": "Радиус",
-      "squadron": "Эскадрилья",
       "carrier": "Авианосец",
       "capturing": "Захват · {n} с",
       "neutral": "Нейтральная",
-      "player": "Игрок"
+      "player": "Игрок",
+      "flying": "В полёте",
+      "launched": "Вылет"
     }
   },
   "decisions": {

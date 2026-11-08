@@ -205,11 +205,12 @@
       "age": "En vol",
       "remaining": "Temps restant",
       "radius": "Rayon",
-      "squadron": "Escadrille",
       "carrier": "Porte-avions",
       "capturing": "Capture · {n} s",
       "neutral": "Neutre",
-      "player": "Joueur"
+      "player": "Joueur",
+      "flying": "En vol",
+      "launched": "Déployés"
     }
   },
   "decisions": {

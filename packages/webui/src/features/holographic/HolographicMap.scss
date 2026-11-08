@@ -819,9 +819,15 @@
   cursor: pointer;
 }
 .holo-map__cam-item:hover { background: var(--holo-hud-hover); }
+/* Selection ring: an INSET box-shadow, not an outline. Rows are
+   width:100% inside the HkScrollContainer viewport, and an outline draws
+   OUTSIDE the border box — its left/right sides landed in the clipped
+   scroll gutter and the yellow ring showed cut on both sides (user
+   screenshot). Inset shadows live inside the row's own box, so the full
+   ring is visible at every scroll position with zero layout change. */
 .holo-map__cam-item--on {
   background: rgba(255, 215, 94, 0.14);
-  outline: 1px solid rgba(255, 215, 94, 0.5);
+  box-shadow: inset 0 0 0 1px rgba(255, 215, 94, 0.5);
 }
 .holo-map__cam-item--dead { opacity: 0.45; }
 .holo-map__cam-ico {

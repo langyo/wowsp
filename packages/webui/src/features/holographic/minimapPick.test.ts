@@ -331,3 +331,39 @@ describe("pickMinimapTarget ward ring band", () => {
     expect(pickMinimapTarget(input({ wards: [w] }), 400, 380)).toBeNull();
   });
 });
+
+describe("pickMinimapTarget decoded squadron fields", () => {
+  // The tooltip's flying/launched/hp rows ride these E27 fields through
+  // the pick result; the GameParams count stays input-only (it must
+  // never reach a user-facing row again - the misleading x1 report).
+  it("carries launched / flying / hp from the input to the target", () => {
+    const p = plane({
+      count: 1,
+      launched: 6,
+      flying: 4,
+      hp: 0.62,
+      ...worldAt(380, 380),
+    });
+    expect(pickMinimapTarget(input({ planes: [p] }), 380, 380)).toEqual({
+      kind: "plane",
+      planeId: 7,
+      planeType: "torpedo",
+      role: "enemy",
+      count: 1,
+      launched: 6,
+      flying: 4,
+      hp: 0.62,
+      carrierLabel: "Carrier",
+    });
+  });
+
+  it("keeps the decoded fields absent when the caller supplies none", () => {
+    const p = plane({ ...worldAt(380, 380) });
+    const hit = pickMinimapTarget(input({ planes: [p] }), 380, 380);
+    const field = (k: string) =>
+      hit && hit.kind === "plane" ? (hit as Record<string, unknown>)[k] : false;
+    expect(field("launched")).toBeUndefined();
+    expect(field("flying")).toBeUndefined();
+    expect(field("hp")).toBeUndefined();
+  });
+});

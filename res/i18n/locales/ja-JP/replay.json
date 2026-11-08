@@ -205,11 +205,12 @@
       "age": "飛行時間",
       "remaining": "残り時間",
       "radius": "半径",
-      "squadron": "飛行隊",
       "carrier": "空母",
       "capturing": "占領中 · {n} 秒",
       "neutral": "中立",
-      "player": "プレイヤー"
+      "player": "プレイヤー",
+      "flying": "飛行中",
+      "launched": "出撃"
     }
   },
   "decisions": {

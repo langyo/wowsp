@@ -165,10 +165,23 @@ function describeTarget(
       const rows: TipRow[] = [
         { label: t("replay.minimap.tip.team"), value: t(ROLE_KEY[target.role]) },
       ];
-      if (target.count > 0) {
+      // Decoded squadron strength (E27), two rows — 在飞 X / 出击 Y. The
+      // 编队 ×GameParams-count row this replaces showed the ATTACK-GROUP
+      // size (423/936 plane_types entries are 1), never the flying
+      // squadron — the misleading ×1 report. A trail-derived fallback
+      // (flying/launched from the live formation members) keeps the rows
+      // meaningful on pre-E27 replays; when even that is absent the rows
+      // drop out instead of showing a wrong number.
+      if (target.flying != null) {
+        rows.push({ label: t("replay.minimap.tip.flying"), value: String(target.flying) });
+      }
+      if (target.launched != null) {
+        rows.push({ label: t("replay.minimap.tip.launched"), value: String(target.launched) });
+      }
+      if (target.hp != null) {
         rows.push({
-          label: t("replay.minimap.tip.squadron"),
-          value: `×${target.count}`,
+          label: t("replay.minimap.tip.hp"),
+          value: `${Math.round(Math.max(0, Math.min(1, target.hp)) * 100)}%`,
         });
       }
       if (target.carrierLabel) {

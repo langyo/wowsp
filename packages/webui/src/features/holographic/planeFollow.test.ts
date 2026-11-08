@@ -14,6 +14,7 @@ import {
   consumableLabelKey,
   planeCardExtras,
   squadronAttacking,
+  squadronFlyingAt,
   squadronHpAt,
   squadronSamplesAt,
   squadronStrength,
@@ -436,5 +437,36 @@ describe("unpackSquadronBands", () => {
     const bands = unpackSquadronBands(packed);
     expect(bands).toHaveLength(16);
     expect(bands.every((band) => band === 4)).toBe(true);
+  });
+});
+describe("squadronFlyingAt", () => {
+  const phEv = (time: number, planeId: number, packed: number) => ({
+    time, planeId, packed,
+  });
+
+  it("is null on an absent stream and before the first sample", () => {
+    // Pre-E27 replay: the backend skips empty vectors on the wire — the
+    // tooltip falls back to the trail-derived strength then.
+    expect(squadronFlyingAt(undefined, 1, 100)).toBeNull();
+    expect(squadronFlyingAt([], 1, 100)).toBeNull();
+    const stream = [phEv(10, 1, 12)];
+    expect(squadronFlyingAt(stream, 1, 9.9)).toBeNull();
+  });
+
+  it("counts the packed u64's digit count at the last sample at or before t", () => {
+    // 12 = octal 14 → digits [4, 1] → two planes flying.
+    const stream = [phEv(10, 1, 5), phEv(20, 1, 12), phEv(30, 1, 4)];
+    expect(squadronFlyingAt(stream, 1, 10)).toBe(1);
+    expect(squadronFlyingAt(stream, 1, 20)).toBe(2);
+    expect(squadronFlyingAt(stream, 1, 25)).toBe(2);
+    expect(squadronFlyingAt(stream, 1, 30)).toBe(1);
+    expect(squadronFlyingAt(stream, 1, 999)).toBe(1);
+  });
+
+  it("only reads the asked plane's stream", () => {
+    const stream = [phEv(10, 1, 12), phEv(10, 2, 4)];
+    expect(squadronFlyingAt(stream, 1, 15)).toBe(2);
+    expect(squadronFlyingAt(stream, 2, 15)).toBe(1);
+    expect(squadronFlyingAt(stream, 3, 15)).toBeNull();
   });
 });

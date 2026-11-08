@@ -205,11 +205,12 @@
       "age": "已飛行",
       "remaining": "剩餘時間",
       "radius": "半徑",
-      "squadron": "編隊",
       "carrier": "航母",
       "capturing": "佔領中 · {n} 秒",
       "neutral": "中立",
-      "player": "玩家"
+      "player": "玩家",
+      "flying": "在飛",
+      "launched": "出擊"
     }
   },
   "decisions": {
