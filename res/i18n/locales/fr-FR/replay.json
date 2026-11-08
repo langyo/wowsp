@@ -745,7 +745,9 @@
     "classNotCovered": "Aucun modèle de décision de tir ne couvre cette classe de navire (accord de manœuvre uniquement).",
     "torpedoAgreement": "Accord torpilles",
     "torpedoDetail": "accord {a}% · moyenne {p}% · tirs possibles {n} · tirs {l} (diagnostic uniquement, hors score total)",
-    "torpedoNotCovered": "Aucun modèle torpille pour ce navire"
+    "torpedoNotCovered": "Aucun modèle torpille pour ce navire",
+    "torpedoEffectiveness": "Efficacité attendue {e}% ({l} tirs ; conditionnel, diagnostic uniquement — pas un taux de coup au but)",
+    "torpedoEffectivenessThin": "Échantillon faible ({l} tirs) — à titre indicatif"
   },
   "detail": {
     "title": "Détail de la bataille"

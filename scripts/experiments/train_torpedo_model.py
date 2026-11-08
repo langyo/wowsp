@@ -152,6 +152,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--parity-vector-rows", type=int, default=200, help="final-fit: rows stored in parity_vectors.json")
     p.add_argument("--int8-eval-rows", type=int, default=100000, help="final-fit: rows for the int8-vs-fp32 metric sample")
     p.add_argument(
+        "--final-fit-torp4",
+        action="store_true",
+        help="T4 delivery: final-fit the 3-head torp4 model (49 dims), bake T_B/T_C into the ONNX wrapper, fp32 only",
+    )
+    p.add_argument("--torpedo-temp-b", type=float, default=0.7564, help="T4: headB temperature baked into the export (E26e-g OOF T)")
+    p.add_argument("--torpedo-temp-c", type=float, default=1.0723, help="T4: headC temperature baked into the export (E26e-g OOF T)")
+    p.add_argument(
         "--save-oof",
         default="",
         help="E26e: save per-row OOF predictions + metadata to this .npz (float32 probs; training unchanged)",
@@ -2884,6 +2891,438 @@ def run_final_fit(args: argparse.Namespace) -> int:
     log(f"[e26] int8_vs_fp32 {metrics['int8_vs_fp32']}")
     return 0
 
+
+
+# ── T4 delivery: torp4 (49 dims) 3-head final fit + temperature-baked ONNX ──
+
+
+def train_final_model_torp4(
+    *,
+    torch,
+    args: argparse.Namespace,
+    entity,
+    glob,
+    mask,
+    y_a,
+    y_b,
+    b_mask,
+    y_c,
+    c_mask,
+    entity_dim: int,
+    global_dim: int,
+    device,
+    log_fn,
+):
+    """One 3-head model on ALL rows; headC adds lambda_C * loss_C (E26e-g recipe)."""
+    nn = torch.nn
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    model = build_three_head_model(torch, hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
+    model.to(device)
+    opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+    bce = nn.BCEWithLogitsLoss(reduction="none")
+    eps = args.label_smoothing
+    w_c = float(getattr(args, "head_c_weight", 0.1))
+    n = int(entity.shape[0])
+    losses: list[float] = []
+    t0 = time.time()
+    for epoch in range(args.epochs):
+        model.train()
+        perm = torch.randperm(n, device=device)
+        tot, cnt = 0.0, 0
+        for st in range(0, n, args.batch_size):
+            idx = perm[st : st + args.batch_size]
+            la, lb, lc = model(entity[idx].float(), glob[idx].float(), mask[idx].float())
+            loss_a = bce_smoothed_loss(bce, la, y_a[idx], eps).mean()
+            m = b_mask[idx]
+            loss_b = (bce_smoothed_loss(bce, lb, y_b[idx], eps) * m).sum() / m.sum().clamp(min=1.0)
+            cm = c_mask[idx]
+            loss_c = (bce_smoothed_loss(bce, lc, y_c[idx], eps) * cm).sum() / cm.sum().clamp(min=1.0)
+            loss = loss_a + loss_b + w_c * loss_c
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            tot += float(loss.item()) * len(idx)
+            cnt += len(idx)
+        losses.append(tot / max(cnt, 1))
+        log_fn(f"[e26] torp4 final-fit epoch {epoch + 1}/{args.epochs} loss {losses[-1]:.4f} ({time.time() - t0:.1f}s)")
+    log_fn(f"[e26] torp4 final-fit done: {args.epochs} epochs on {n:,} rows in {time.time() - t0:.1f}s")
+    return model, losses
+
+
+def tempered_logits(lb, lc, t_b: float, t_c: float):
+    """T4 export contract: logitA raw, logitB/T_B, logitC/T_C (app applies sigmoid)."""
+    return lb / float(t_b), lc / float(t_c)
+
+
+def export_torp4_model(
+    *,
+    torch,
+    model,
+    data: dict,
+    subset: dict,
+    args: argparse.Namespace,
+    out_dir: Path,
+    train_losses: list[float],
+    device_str: str,
+    log_fn,
+    entity_dim: int,
+    global_dim: int,
+    temp_b: float,
+    temp_c: float,
+):
+    """Export the 3-head torp4 model as fp32 ONNX with T_B/T_C baked in.
+
+    Contract (app-compatible): inputs entity[1,24,15] / global_feat[1,49] / mask[1,24];
+    outputs logitA (raw), logitB (logit/T_B), logitC (logit/T_C). The app still
+    applies sigmoid. Temperature comes from the E26e-g OOF fit (not re-fitted on
+    the all-rows final fit, whose in-sample logits are over-confident).
+    """
+    import onnx
+    import onnxruntime as ort
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    nn = torch.nn
+    model = model.cpu().eval()
+
+    ckpt_path = out_dir / "checkpoint.pt"
+    torch.save(
+        {
+            "model": model.state_dict(),
+            "hidden": args.hidden,
+            "feature_version": FEATURE_VERSION,
+            "feature_set": data["feature_set"],
+            "extra_dim": data["extra_dim"],
+            "entity_dim": entity_dim,
+            "global_dim": global_dim,
+            "feature_names": data["feature_names"],
+            "epochs": args.epochs,
+            "loss_last": float(train_losses[-1]),
+            "torch": torch.__version__,
+            "head_c_weight": float(getattr(args, "head_c_weight", 0.1)),
+            "temp_b": float(temp_b),
+            "temp_c": float(temp_c),
+        },
+        ckpt_path,
+    )
+    log_fn(f"[e26] checkpoint -> {ckpt_path} ({ckpt_path.stat().st_size:,} bytes)")
+
+    class ExportWrapper(nn.Module):
+        def __init__(self, inner, t_b: float, t_c: float) -> None:
+            super().__init__()
+            self.inner = inner
+            self.t_b = float(t_b)
+            self.t_c = float(t_c)
+
+        def forward(self, entity, global_feat, mask):
+            la, lb, lc = self.inner(entity, global_feat, mask)
+            lb, lc = tempered_logits(lb, lc, self.t_b, self.t_c)
+            return la.unsqueeze(-1), lb.unsqueeze(-1), lc.unsqueeze(-1)
+
+    wrapper = ExportWrapper(model, temp_b, temp_c).eval()
+    ex = torch.from_numpy(subset["entity"][:1]).float()
+    gx = torch.from_numpy(subset["global"][:1]).float()
+    mx = torch.from_numpy(subset["mask"][:1]).float()
+    fp32_path = out_dir / "fp32.onnx"
+    in_names = ["entity", "global_feat", "mask"]
+    out_names = ["logitA", "logitB", "logitC"]
+    try:
+        torch.onnx.export(
+            wrapper,
+            (ex, gx, mx),
+            str(fp32_path),
+            input_names=in_names,
+            output_names=out_names,
+            opset_version=17,
+            dynamo=False,
+        )
+    except TypeError:
+        torch.onnx.export(
+            wrapper,
+            (ex, gx, mx),
+            str(fp32_path),
+            input_names=in_names,
+            output_names=out_names,
+            opset_version=17,
+        )
+    onnx.checker.check_model(onnx.load(str(fp32_path)))
+    log_fn(f"[e26] torp4 fp32 ONNX -> {fp32_path} ({fp32_path.stat().st_size:,} bytes)")
+
+    m32 = onnx.load(str(fp32_path))
+
+    def _shapes(gm):
+        return [
+            (i.name, [d.dim_value if d.HasField("dim_value") else d.dim_param for d in i.type.tensor_type.shape.dim])
+            for i in gm.graph.input
+        ], [
+            (o.name, [d.dim_value if d.HasField("dim_value") else d.dim_param for d in o.type.tensor_type.shape.dim])
+            for o in gm.graph.output
+        ]
+
+    in_shapes, out_shapes = _shapes(m32)
+    log_fn(f"[e26] ONNX inputs: {in_shapes}")
+    log_fn(f"[e26] ONNX outputs: {out_shapes}")
+    assert [n for n, _ in in_shapes] == in_names
+    assert [n for n, _ in out_shapes] == out_names
+
+    so = ort.SessionOptions()
+    sess = ort.InferenceSession(str(fp32_path), so, providers=["CPUExecutionProvider"])
+
+    def _ort_rows(n_rows: int):
+        la = np.empty(n_rows, dtype=np.float32)
+        lb = np.empty(n_rows, dtype=np.float32)
+        lc = np.empty(n_rows, dtype=np.float32)
+        for i in range(n_rows):
+            out = sess.run(
+                None,
+                {
+                    "entity": subset["entity"][i : i + 1].astype(np.float32),
+                    "global_feat": subset["global"][i : i + 1].astype(np.float32),
+                    "mask": subset["mask"][i : i + 1].astype(np.float32),
+                },
+            )
+            la[i] = np.asarray(out[0]).reshape(-1)[0]
+            lb[i] = np.asarray(out[1]).reshape(-1)[0]
+            lc[i] = np.asarray(out[2]).reshape(-1)[0]
+        return la, lb, lc
+
+    npair = min(args.parity_rows, subset["rows"])
+    e_p = torch.from_numpy(subset["entity"][:npair])
+    g_p = torch.from_numpy(subset["global"][:npair])
+    m_p = torch.from_numpy(subset["mask"][:npair])
+    with torch.no_grad():
+        w_la, w_lb, w_lc = wrapper(e_p, g_p, m_p)
+    t_la = w_la.numpy().reshape(-1)
+    t_lb = w_lb.numpy().reshape(-1)
+    t_lc = w_lc.numpy().reshape(-1)
+    o_la, o_lb, o_lc = _ort_rows(subset["rows"])
+    par_a = float(np.max(np.abs(o_la[:npair] - t_la)))
+    par_b = float(np.max(np.abs(o_lb[:npair] - t_lb)))
+    par_c = float(np.max(np.abs(o_lc[:npair] - t_lc)))
+    tolerance = 1e-4
+    parity_ok = bool(par_a < tolerance and par_b < tolerance and par_c < tolerance)
+    log_fn(
+        "[e26] torp4 parity torch-vs-ORT over "
+        f"{npair} rows: max|dlogit| A {par_a:.2e} B {par_b:.2e} C {par_c:.2e} (< {tolerance:.0e}) -> {parity_ok}"
+    )
+    assert parity_ok, "torp4 fp32 torch-vs-ORT parity failed"
+
+    nvec = min(args.parity_vector_rows, subset["rows"])
+    vectors = []
+    global_dim = int(subset["global"].shape[1])
+    for i in range(nvec):
+        vectors.append(
+            {
+                "entity": subset["entity"][i].reshape(-1).tolist(),
+                "global": subset["global"][i].tolist(),
+                "mask": subset["mask"][i].tolist(),
+                "torp2Extras": subset["global"][i, 27:38].tolist(),
+                "torp3Extras": subset["global"][i, 38:44].tolist(),
+                "torp4Extras": subset["global"][i, 44:49].tolist(),
+                "logitA": float(o_la[i]),
+                "logitB_calibrated": float(o_lb[i]),
+                "logitC_calibrated": float(o_lc[i]),
+                "shipId": int(subset["ship_id"][i]),
+                "replayId": subset["group_names"][int(subset["group"][i])],
+                "t": float(subset["t"][i]),
+                "region": str(subset["region"][i]),
+                "class": str(subset["class"][i]),
+            }
+        )
+    vectors_path = out_dir / "parity_vectors.json"
+    vectors_path.write_text(json.dumps({"rows": vectors}, indent=1), encoding="utf-8")
+    log_fn(f"[e26] torp4 parity vectors -> {vectors_path} ({nvec} rows)")
+
+    def _fentry(p: Path) -> dict:
+        return {"path": str(p), "bytes": p.stat().st_size, "sha256": sha256_file(p)}
+
+    metrics = {
+        "_lineage": "T4 torpedo diagnostic delivery: torp4 (49 dims) 3-head final fit, temperature-baked fp32 ONNX",
+        "mode": "final-fit torp4 (ALL rows, no CV; E26e-g OOF numbers remain the honest estimate)",
+        "diagnostic_only": True,
+        "data": {
+            "rows": data["rows"],
+            "replays": len(data["group_names"]),
+            "feature_set": data["feature_set"],
+            "extra_dim": data["extra_dim"],
+            "global_dim": global_dim,
+            "feature_version": FEATURE_VERSION,
+            "class_counts": data["class_counts"],
+            "region_counts": data["region_counts"],
+            "attribute_coverage": data.get("attribute_coverage"),
+            "click_coverage": data.get("click_quality"),
+            "labels": {
+                "canLaunch": int(data["label_a"].sum()),
+                "launched_true": int(np.nansum(data["label_b"])),
+                "headC_positives_any_hit": int(np.nansum(data["label_c_any_hit"])),
+            },
+        },
+        "training": {
+            "epochs": args.epochs,
+            "hidden": args.hidden,
+            "batch_size": args.batch_size,
+            "lr": args.lr,
+            "label_smoothing": args.label_smoothing,
+            "head_c_weight": float(getattr(args, "head_c_weight", 0.1)),
+            "device": device_str,
+            "loss_first": _num(train_losses[0]),
+            "loss_last": _num(train_losses[-1]),
+            "loss_curve": [_num(x) for x in train_losses],
+        },
+        "temperature": {
+            "source": "E26e-g OOF global temperature fits (out/torpedo_model/e26e-g/e26e_g_metrics.json)",
+            "headB": float(temp_b),
+            "headC": float(temp_c),
+            "headA": 1.0,
+            "applied_to": "logitB/T_B, logitC/T_C in the ONNX wrapper; logitA raw; app applies sigmoid",
+        },
+        "reference_oof": {
+            "source": "E26e-g torp4 5-fold OOF (scripts/experiments/out/torpedo_model/e26e-g/e26e_g_metrics.json)",
+            "headB_auprc": 0.04212608911173331,
+            "headB_topDecileLift": 2.9052813260566084,
+            "headC_auprc": 0.2656412810721318,
+            "headC_outcome_lift": 2.1996514278071597,
+        },
+        "export": {
+            "contract": {"inputs": {n: s for n, s in in_shapes}, "outputs": {n: s for n, s in out_shapes}},
+            "fp32": _fentry(fp32_path),
+            "checkpoint": _fentry(ckpt_path),
+            "opset": 17,
+            "torch": torch.__version__,
+            "onnx": onnx.__version__,
+            "onnxruntime": ort.__version__,
+        },
+        "parity_fp32": {
+            "rows": int(npair),
+            "maxAbsLogitDiffA": par_a,
+            "maxAbsLogitDiffB": par_b,
+            "maxAbsLogitDiffC": par_c,
+            "tolerance": tolerance,
+            "passed": parity_ok,
+        },
+        "parity_vectors": {"path": str(vectors_path), "rows": nvec},
+    }
+    metrics_path = out_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(metrics, indent=1, ensure_ascii=False), encoding="utf-8")
+    log_fn(f"[e26] metrics -> {metrics_path}")
+    return metrics
+
+
+def run_final_fit_torp4(args: argparse.Namespace) -> int:
+    """T4 diagnostic delivery: torp4 (49 dims) + 3 heads, all rows, fp32 ONNX."""
+    import torch
+
+    log = lambda s: print(s, flush=True)  # noqa: E731
+    if args.feature_set != "torp4":
+        raise SystemExit("[e26] --final-fit-torp4 requires --feature-set torp4")
+    if not args.head_c:
+        raise SystemExit("[e26] --final-fit-torp4 requires --head-c (3 heads)")
+    if not args.outcome:
+        raise SystemExit("[e26] --final-fit-torp4 requires --outcome (4 sidecar JSONL in --data order)")
+    if not getattr(args, "click_context", None):
+        raise SystemExit("[e26] --final-fit-torp4 requires --click-context (one sidecar per --data file)")
+    temp_b = float(getattr(args, "torpedo_temp_b", 0.7564))
+    temp_c = float(getattr(args, "torpedo_temp_c", 1.0723))
+    if temp_b <= 0 or temp_c <= 0:
+        raise SystemExit("[e26] temperatures must be positive")
+    device = torch.device("cuda" if (args.device in ("auto", "cuda") and torch.cuda.is_available()) else "cpu")
+    torch.set_num_threads(max(1, torch.get_num_threads()))
+    log(f"[e26] T4 FINAL FIT (torp4, 3 heads) on {device} (torch {torch.__version__}); T_B={temp_b} T_C={temp_c}")
+
+    classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
+    paths = resolve_data_paths(args)
+    ship_attrs = resolve_ship_attrs(args)
+    click_sidecars = [Path(p) for p in args.click_context]
+    t0 = time.time()
+    data = load_torpedo_rows(
+        paths,
+        args.max_rows,
+        classes,
+        args.feature_dtype,
+        args.feature_set,
+        ship_attrs=ship_attrs,
+        click_sidecars=click_sidecars,
+    )
+    log(f"[e26] loaded {data['rows']:,} rows / {len(data['group_names'])} replays in {time.time() - t0:.1f}s")
+    log(f"[e26] click coverage: {json.dumps(data.get('click_quality'), ensure_ascii=False)}")
+    outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
+    label_c_np = (outcome["hits"] > 0).astype(np.float32)
+    c_mask_np = (data["label_b"] == 1.0) & (outcome["fired"] >= 1)
+    data["label_c_any_hit"] = label_c_np
+    log(
+        "[e26] headC labels: launched rows "
+        + format(int(c_mask_np.sum()), ",")
+        + " / any-hit positives "
+        + format(int(label_c_np[c_mask_np].sum()), ",")
+    )
+
+    subset = select_eval_subset(data, args.int8_eval_rows, args.seed)
+    log(f"[e26] host eval subset: {subset['rows']:,} rows (ONNX parity + parity vectors)")
+    entity = torch.from_numpy(data["entity"])
+    glob = torch.from_numpy(data["global"])
+    mask = torch.from_numpy(data["mask"])
+    y_a = torch.from_numpy(data["label_a"])
+    y_b = torch.from_numpy(np.nan_to_num(data["label_b"], nan=0.0))
+    b_mask = torch.from_numpy(((data["label_a"] == 1.0) & np.isfinite(data["label_b"])).astype(np.float32))
+    y_c = torch.from_numpy(label_c_np)
+    c_mask = torch.from_numpy(c_mask_np.astype(np.float32))
+    entity_dim = int(entity.shape[2])
+    global_dim = int(glob.shape[1])
+    if device.type == "cuda":
+        entity = entity.to(device)
+        glob = glob.to(device)
+        mask = mask.to(device)
+        y_a = y_a.to(device)
+        y_b = y_b.to(device)
+        b_mask = b_mask.to(device)
+        y_c = y_c.to(device)
+        c_mask = c_mask.to(device)
+        data["entity"] = None
+        data["global"] = None
+        data["mask"] = None
+        gc.collect()
+    log(f"[e26] tensors: entity {entity.numel() * entity.element_size() / 1e9:.2f} GB {entity.dtype} on {entity.device}")
+
+    model, losses = train_final_model_torp4(
+        torch=torch,
+        args=args,
+        entity=entity,
+        glob=glob,
+        mask=mask,
+        y_a=y_a,
+        y_b=y_b,
+        b_mask=b_mask,
+        y_c=y_c,
+        c_mask=c_mask,
+        entity_dim=entity_dim,
+        global_dim=global_dim,
+        device=device,
+        log_fn=log,
+    )
+    out_dir = final_export_dir(args)
+    metrics = export_torp4_model(
+        torch=torch,
+        model=model,
+        data=data,
+        subset=subset,
+        args=args,
+        out_dir=out_dir,
+        train_losses=losses,
+        device_str=str(device),
+        log_fn=log,
+        entity_dim=entity_dim,
+        global_dim=global_dim,
+        temp_b=temp_b,
+        temp_c=temp_c,
+    )
+    log(f"[e26] T4 DELIVERY ready under {out_dir}")
+    log(
+        f"[e26] fp32 {metrics['export']['fp32']['bytes']:,} bytes sha256={metrics['export']['fp32']['sha256']}"
+    )
+    log(f"[e26] parity {metrics['parity_fp32']}")
+    return 0
+
+
 # ── self-test (torch-free) ──────────────────────────────────────────────────
 
 
@@ -3188,6 +3627,14 @@ def run_selftest() -> int:
     fa = parse_args(["--final-fit", "--export-dir", str(root / "final")])
     assert fa.final_fit is True and str(fa.export_dir).endswith("final")
     assert fa.parity_rows >= 1000 and fa.parity_vector_rows >= 200
+    # T4: torp4 3-head final-fit flags + temperature-baked logit contract.
+    f4 = parse_args(["--final-fit-torp4", "--export-dir", str(root / "final4")])
+    assert f4.final_fit_torp4 is True
+    assert abs(f4.torpedo_temp_b - 0.7564) < 1e-12 and abs(f4.torpedo_temp_c - 1.0723) < 1e-12
+    assert parse_args([]).final_fit_torp4 is False
+    t_b, t_c = tempered_logits(np.array([0.7564, -1.0]), np.array([1.0723, 2.0]), 0.7564, 1.0723)
+    assert abs(float(t_b[0]) - 1.0) < 1e-12 and abs(float(t_c[0]) - 1.0) < 1e-12
+    assert abs(float(t_b[1]) - (-1.0 / 0.7564)) < 1e-12 and abs(float(t_c[1]) - (2.0 / 1.0723)) < 1e-12
     assert parse_args([]).final_fit is False
     assert final_export_dir(parse_args([])).as_posix().endswith("out/torpedo_model/final")
     fake = {
@@ -3461,6 +3908,8 @@ def main(argv: list[str] | None = None) -> int:
             out.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
             print(f"[e26] metrics -> {out}")
         return 0
+    if getattr(args, "final_fit_torp4", False):
+        return run_final_fit_torp4(args)
     if args.final_fit:
         return run_final_fit(args)
     metrics = run_training(args)

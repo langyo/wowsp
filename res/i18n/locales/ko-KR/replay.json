@@ -745,7 +745,9 @@
     "classNotCovered": "이 함종에는 사격 판단 모델이 없습니다(기동 일치도만 표시).",
     "torpedoAgreement": "어뢰 일치도",
     "torpedoDetail": "일치도 {a}% · 평균 {p}% · 발사 가능 {n} · 발사 {l}(진단용, 총점 미포함)",
-    "torpedoNotCovered": "이 함선의 어뢰 모델 없음/해당 없음"
+    "torpedoNotCovered": "이 함선의 어뢰 모델 없음/해당 없음",
+    "torpedoEffectiveness": "기대 효과 {e}%(발사 {l}회 조건, 진단용이며 명중률 아님)",
+    "torpedoEffectivenessThin": "표본 부족({l}회 발사) — 참고용"
   },
   "detail": {
     "title": "전투 상세"

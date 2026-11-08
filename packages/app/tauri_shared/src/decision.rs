@@ -96,6 +96,13 @@ pub struct DecisionsPackStatus {
     /// Size of the installed torpedo model file (0 when absent).
     #[serde(default)]
     pub torpedo_model_bytes: u64,
+    /// Whether `torpedo4_model.onnx` is installed (T4 three-head diagnostic
+    /// model; preferred over the legacy `torpedo_model.onnx` two-head slot).
+    #[serde(default)]
+    pub torpedo4_model_present: bool,
+    /// Size of the installed T4 torpedo model file (0 when absent).
+    #[serde(default)]
+    pub torpedo4_model_bytes: u64,
     /// Map short names that already have a `terrain_los.npz` raster,
     /// sorted ascending.
     pub los_maps: Vec<String>,
@@ -120,6 +127,12 @@ pub struct TorpedoScores {
     pub can_launch_windows: u32,
     /// Observed torpedo clicks (labelB positives), i.e. actual launches.
     pub launches: u32,
+    /// Conditional expected effectiveness: mean headC P(hit | launched) over
+    /// the launched windows (`None` when the model has no headC, there was
+    /// no launch in the window, or the context predates T4). DIAGNOSTIC ONLY:
+    /// the hit labels are a proxied fish-level signal, not a hit rate.
+    #[serde(default)]
+    pub effectiveness: Option<f32>,
 }
 
 // ═══════════════════════════════════════════════════════════════════════

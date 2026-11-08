@@ -327,6 +327,7 @@
   "resourcesDecisionsModelMissing": "Modèle manquant",
   "resourcesDecisionsAdviceInstalled": "Modèle de conseils installé ({size})",
   "resourcesDecisionsTorpedoInstalled": "Modèle torpille installé ({size})",
+  "resourcesDecisionsTorpedo4Installed": "Modèle torpille Torp4 installé ({size})",
   "resourcesDecisionsAbsent": "Non installé.",
   "resourcesDecisionsUnknown": "Impossible de lire l'état du pack.",
   "resourcesDecisionsDemoInUse": "Le modèle de démo intégré est utilisé.",

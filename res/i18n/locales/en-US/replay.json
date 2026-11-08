@@ -745,7 +745,9 @@
     "classNotCovered": "No fire-decision model covers this ship class (movement agreement only).",
     "torpedoAgreement": "Torpedo agreement",
     "torpedoDetail": "agreement {a}% · mean {p}% · can-launch {n} · launches {l} (diagnostic only, not part of the total score)",
-    "torpedoNotCovered": "No torpedo model for this ship"
+    "torpedoNotCovered": "No torpedo model for this ship",
+    "torpedoEffectiveness": "Expected effectiveness {e}% ({l} launched; conditional, diagnostic only — not a hit rate)",
+    "torpedoEffectivenessThin": "Thin sample ({l} launches) — treat with caution"
   },
   "detail": {
     "title": "Battle detail"

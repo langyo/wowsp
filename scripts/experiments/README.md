@@ -45,6 +45,7 @@
 | E26e-f | torp3 属性特征 + λ_C=0.1 | torp3（torp2 + 6 维 hull 鱼雷属性：speed/damage/detect/count/deep/ETA）在 λ_C=0.1 下能否恢复 headB（AUPRC≥0.0365 且 top-lift≥2.55）并保持 headC（outcome lift≥2.30） | ⚠️ | headB **0.039022 = 2.408×base**、top-lift **2.789**、AUC 0.7141（全面超过 E26e-b 的 0.037051/2.662/0.7084 ✓）；headC outcome lift **2.2329**（<2.30 ✗）/ρ 1.0/CI [2.040,2.413] → (a) ✓、(b) ✗ = **MIXED**：torp3 显著恢复 headB、headC 基本持平 |
 | E26e-g | torp4 click-context 特征 | torp4（torp3 + 5 维 click-context：lastClickAge/clicks30s/fish30s/lastClickFish/totalClicks）在 λ_C=0.1 下能否把 headC outcome lift 推过 2.30 且 headB 非退化（AUPRC≥0.039022、top-lift≥2.789） | ⚠️ | headB **0.042126 = 2.599×base**、top-lift **2.905**、AUC **0.7273**（非退化 ✓，且较 torp3 再提升）；headC outcome lift **2.1997**（<2.30 ✗，且略低于 torp3 2.2329）/ρ 0.988/CI [1.998,2.378] → (a) ✗、(b) ✓ = **MIXED**：click 特征强力提升 headB，但 headC outcome 无增益（代理标签上限仍属假设，CI 重叠） |
 | E26e-h | headC 训练目标对齐 fish-level | `--head-c-target any\|fish_rate\|fish_weighted` 能否把 headC outcome lift 推过 2.30（torp4，λ_C=0.1） | ⚠️ | fish_weighted（primary）：headC **2.1981**（<2.30 ✗）、headB 0.041189（−2.2%，超 1% 容忍 ✗）→ FAIL；fish_rate（secondary）：headC **2.3069**（≥2.30，仅 +0.0069；CI 下界 2.099<2.30）、headB 0.042086/2.912（AUC 0.72633；strict AUPRC 比 0.042126 低 **0.00004**，仅在 1% 容忍内）→ **严格预注册（1% 容忍线“仅报告”）= MIXED**；若把 1% 容忍当非退化则可记 PASS，但主结论按严格读法为 MIXED；soft per-fish 目标仅边际、原始 ECE 0.057 需 T=1.387 校准 |
+| T4 | torp4 诊断包交付（A） | final-fit 3 头 torp4（49 维）+ 温度烤图 fp32 ONNX + tracked parity fixture | ✅ | fp32 **502,518 B** sha `0b1f4efd…`；T_B **0.7564** / T_C **1.0723**（E26e-g OOF）；torch-vs-ORT 1,000 行 maxΔ 7.2e-6/2.9e-6/3.8e-6；fixture **48 行** 109,365 B（boundary 覆盖 + clickContext/attrs 复算块），fixture-vs-ONNX 1.43e-6；**诊断-only，不进总分** |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
 ### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
@@ -1069,6 +1070,58 @@
 **交付建议（若产品要上线研究模型）**：以 **torp4 + 温度后处理**作为独立的可选诊断包（新 ONNX 契约/决策包版本），不改变总分；若当前 model pack 仍使用 E26d 候选的两头模型（E26d 小节明确其为交付候选、非最终发布），升级需单独的交付 PR（Rust/WebUI/版本管理）与验证。
 
 **剩余局限**：命中为代理标签；click 特征粗糙（无目标/管位/DoT 几何）；SS 101 launched、na/own 样本薄；未做 server damageStat 逐条对齐；未做端上部署/概率分级；λ_C 固定 0.1 未再扫；fish_rate 仅单 seed/单次训练且边际过线，不能作为稳健结论。
+### T4 · torp4 诊断包交付（**诊断-only，不进总分**）
+
+- **裁决/定位**：一次升到 **torp4（49 维，= 27 core + 11 torp2 + 6 torp3 + 5 torp4）**、3 头
+  （logitA/B/C），作为**独立诊断卡**交付；不改 E26 主决策分/总分。
+- **模型契约（app 侧兼容）**：输入 `entity[1,24,15]` / `global_feat[1,49]` / `mask[1,24]`；
+  输出 `logitA`（原值）、`logitB = logitB_raw / T_B`、`logitC = logitC_raw / T_C`（[1,1] 各一）；
+  app 仍 `sigmoid(out)`。opset17、静态 shape、**fp32 only（不做 int8）**。
+- **温度（烤图，不重拟合）**：T_B=**0.7564**、T_C=**1.0723**（E26e-g 5 折 OOF 全局温度）；
+  headA 温度 1.0。final-fit 用全量行训练（无 CV），其 in-sample logits 过自信，因此沿用 OOF 温度；
+  若未来端上需要重新校准，应另立实验在**留出集**上拟合，而不是用 final-fit 自身样本。
+- **训练口径**：3,111,384 行 / 2,215 局全量；torp4 + click sidecar（E26e-g 复用）；hidden192 /
+  12 epochs / batch4096 / lr1e-3 / smoothing0.05 / λ_C=0.1 / float16 / cuda；node3：加载 393.2 s、
+  训练 130.2 s（loss 0.3769→0.3250）、导出+parity ~20 s。
+- **产物（`out/torpedo_model/final_torp4/`，out ignored 不进 git；已从 node3 拉回）**：
+
+  | 文件 | size | sha256 |
+  |---|---|---|
+  | `fp32.onnx` | **502,518 B** | `0b1f4efd7995991f3717d433179fe7eb12dba7b9de86f4bb0c2377e15a8ad908` |
+  | `checkpoint.pt` | 503,010 B | `4f3935541396a5a393c4a65878710d897399f61080e14885cdc89b4e0960da26` |
+  | `metrics.json` | 3,199 B | `adfab78435df8e0926db85d902e38fde457dca99f810c44f8e376b2dbe0507c6` |
+  | `parity_vectors.json`（200 行） | 1,089,149 B | `4daadeec2a234740c77c84cfd75cfdadafe1894c8008bb882fd48ccb44ab4a8f` |
+
+  ONNX 校验：`onnx.checker` 通过；torch(CPU wrapper) vs onnxruntime 1,000 行 max|Δlogit|
+  **A 7.15e-6 / B 2.86e-6 / C 3.81e-6**（<1e-4，passed）。
+- **parity fixture（tracked，供 B 的 Rust parity 测试）**：
+  `packages/app/tauri/src/commands/fixtures/torpedo4_parity.json`（JSONL，**48 行**，109,365 B，
+  sha256 `3fe2bff7d0452b9469351cb80f27d557b61a2357d89dab33ace406318f5a6835`）。每行：
+  `decisionRow`（core v2，app 侧可用既有 featurizer 复算 entity/global）+ `torp2Extras[11]` +
+  `torp3Extras[6]` + `torp4Extras[5]` + **`clickContext`（5 键：计算 torp4Extras 的精确输入）** +
+  **`attrs`（5 键：计算 torp3Extras 的精确输入/变体零值）** + `global49[49]` +
+  `logitA/logitB/logitC`（**温度已烤**）+ `scenario` 标签。边界覆盖（各 6 行）：正常 DD/CL/BB/SS；无敌人；敌舰超射程；极近敌舰
+  ETA clamp=1；无 click（sidecar 哨兵 -1）；hull 不在属性表（torp3 全 0）；属性表条目缺 5 字段；
+  stale 目标+友军混合（并覆盖 labelACanLaunch/labelBLaunched 两种）。
+- **fixture 生成（可复现，固定顺序）**：
+  `python scripts/experiments/export_torpedo4_parity.py --checkpoint out/torpedo_model/final_torp4/checkpoint.pt
+  --onnx out/torpedo_model/final_torp4/fp32.onnx --out packages/app/tauri/src/commands/fixtures/torpedo4_parity.json`；
+  脚本用训练脚本**同一套 derive 函数**（torp2/torp3/torp4，double 中间）生成 global49，再用 checkpoint
+  的导出 wrapper 计算期望 logits，并在写盘后自检：global49 与 decisionRow 复算一致（≤1e-9）、
+  fixture vs ONNX max|Δlogit| **1.43e-6**（<1e-5）。`--seed` 仅用于行顺序（行内容确定）。
+- **手动放置（诊断模式）**：把 `fp32.onnx` 复制为
+  `%LOCALAPPDATA%\WoWSP\decisions\torpedo4_model.onnx`（诊断卡读取该文件；app 侧归一化/接线由 B 负责）；
+  `torpedo4_model.onnx` 缺失时 app 会**回退到旧 `torpedo_model.onnx`**（two-head，无 effectiveness）；
+  新旧都缺才显示“模型未安装”/N/A（不会回退到 E26 主决策模型）。
+- **诊断-only 声明**：本模型**不参与**主决策评分/推荐总分，不改变 E26/E26b–E26h 任何验收线；
+  torp4 的诊断结论以 E26e-g OOF（headB 0.042126 / top-lift 2.905；headC outcome lift 2.1997）为准，
+  final-fit 本身不提供泛化估计。
+- **局限**：命中仍是**代理标签**（ShotKillEvent 终点 120 units + HP-drop 覆盖，非 server 真值）；
+  SS 仅 101 行；torp3 属性表来自 GameParams（版本敏感，季/版本漂移需重生成）；torp4 click
+  口径为 30 s 计数/最近点击龄（粗糙，无目标/管位/距离）；final-fit 无 CV；fixture 为合成 decisionRow
+  （覆盖边界但非真实对局）；未做 int8/端上延迟评估。
+- **下一步**：B 侧接诊断卡 + fixture parity；端上概率分级可复用本包的温度（T_B/T_C）与 ONNX；
+  若 Torp4 进正式分数，需另立预注册的留出集校准与 A/B 评估。
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |

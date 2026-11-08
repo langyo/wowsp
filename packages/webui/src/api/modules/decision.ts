@@ -72,6 +72,13 @@ export interface TorpedoScores {
   canLaunchWindows: number;
   /** Launch actions actually taken inside those windows. */
   launches: number;
+  /** Conditional expected effectiveness: mean headC P(hit | launched) over
+   *  the LAUNCHED windows, [0, 1]. `null` when the installed model has no
+   *  third head (legacy torp2 two-head export), the ship never launched, or
+   *  the context predates T4 — the card HIDES the row then, it never renders
+   *  a fabricated 0 %. DIAGNOSTIC ONLY: the hit labels are a proxied
+   *  fish-level signal, not a hit rate. */
+  effectiveness: number | null;
 }
 
 /** Whole-game headline numbers (E21/E22 semantics). */
@@ -162,8 +169,11 @@ export interface StaticReport {
   gameMode: string | null;
   durationS: number;
   losLoaded: boolean;
-  /** Model provenance. `torpedoModel` is the E26 torpedo model path, null
-   *  when the model is not installed (the report then shows N/A). */
+  /** Model provenance. `torpedoModel` is the E26/T4 torpedo model path,
+   *  null when no model is installed (the report then shows N/A). Since T4
+   *  the string carries a CONTRACT SUFFIX, e.g.
+   *  `"<origin>:<path> [torp4/g49/3head]"` (legacy two-head exports read
+   *  `[torp2/g38/2head]`) — display it verbatim, never compare it by value. */
   modelSources: {
     fire: string;
     moveModel: string;
@@ -209,10 +219,16 @@ export interface DecisionsPackStatus {
    *  optional — the board falls back to the scoring fire model). */
   adviceModelPresent: boolean;
   adviceModelBytes: number;
-  /** Whether `torpedo_model.onnx` is installed (E26/P2 torpedo model;
-   *  optional — the report shows N/A without it). */
+  /** Whether the legacy two-head `torpedo_model.onnx` is installed (E26/P2
+   *  torpedo model; optional — the report shows N/A without any torpedo
+   *  model). Kept as the FALLBACK slot for older packs. */
   torpedoModelPresent: boolean;
   torpedoModelBytes: number;
+  /** Whether the T4 three-head `torpedo4_model.onnx` is installed (49-dim
+   *  contract; preferred over the legacy two-head slot). Old packs omit the
+   *  field (`#[serde(default)]`). */
+  torpedo4ModelPresent: boolean;
+  torpedo4ModelBytes: number;
   /** Map short names that carry a `terrain_los.npz` raster. */
   losMaps: string[];
 }
@@ -323,8 +339,11 @@ export interface ShipScoreReport {
   /** Ordered by entity id. */
   perShip: ShipScoreEntry[];
   modelSources: { fire: string; moveModel: string };
-  /** Torpedo model provenance (P2 contract) — null when the model is not
-   *  installed; the torpedo block is then null for every ship. */
+  /** Torpedo model provenance (P2/T4 contract) — null when no model is
+   *  installed; the torpedo block is then null for every ship. Since T4 the
+   *  string carries a contract suffix (`... [torp4/g49/3head]` or the
+   *  legacy `[torp2/g38/2head]`): display verbatim, never compare by
+   *  value. */
   torpedoSource: string | null;
   stats: {
     shipsScored: number;

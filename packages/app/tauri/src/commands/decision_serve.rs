@@ -43,8 +43,8 @@ use wowsp_tauri_shared::{
 use super::decision_ai::{DecisionModel, DecisionModelKind, advice_model, shared_model};
 use super::decision_score::{
     ENTITY_DIM_V2, GLOBAL_DIM_V2, ScoreModel, ScoreModelKind, ScoreModelSources, ShipScoreReport,
-    TORP_GLOBAL_DIM_V2, ablate_e11_tensors, attach_torpedo_scores, build_ship_scores,
-    feature_tensors_torp2, feature_tensors_v2, softmax,
+    TORP_GLOBAL_DIM_V2, TORP_GLOBAL_DIM_V4, TorpedoContract, ablate_e11_tensors,
+    attach_torpedo_scores, build_ship_scores, feature_tensors_v2, softmax, torpedo_feature_tensors,
 };
 use super::decision_tick::{DEFAULT_EYE_HEIGHT, KT_MS, METERS_PER_UNIT};
 use super::fire_dataset::{
@@ -1088,14 +1088,16 @@ fn experiments_out() -> PathBuf {
 /// 17-class head; see `decision_score`'s module docs).
 pub const DEBUG_FIRE_MODEL_REL: &str = "fire_model/v2plain_std/fp32.onnx";
 pub const DEBUG_MOVE_MODEL_REL: &str = "move_model/node3/main/fp32.onnx";
-/// Dev-checkout default export of the OPTIONAL E26 torpedo model (the
-/// installed pack slot is `torpedo_model.onnx`).
+/// Dev-checkout default exports of the OPTIONAL E26 torpedo models. The T4
+/// three-head file is preferred; the T2 two-head file stays as a fallback so
+/// an older install keeps working.
 pub const DEBUG_TORPEDO_MODEL_REL: &str = "torpedo_model/final/fp32.onnx";
-/// Global-block width of the E26 torpedo model (the featurizer's own
-/// constant — one source of truth). This is the ONLY width allowed in the
-/// torpedo slot: a plain (or wider) fire model must not masquerade as the
-/// torpedo model (delivery plan risk 4).
+pub const DEBUG_TORPEDO4_MODEL_REL: &str = "torpedo4_model/final/fp32.onnx";
+pub const DEBUG_TORPEDO4_MODEL_REL_ALT: &str = "torpedo_model/final/torpedo4_fp32.onnx";
+/// Legacy two-head global width (T2 contract).
 pub(crate) const TORP_GLOBAL_DIM: usize = TORP_GLOBAL_DIM_V2;
+/// T4 three-head global width (torp4: +6 attribute +5 click-context dims).
+pub(crate) const TORP_GLOBAL_DIM_T4: usize = TORP_GLOBAL_DIM_V4;
 
 /// One ladder step: where a candidate file lives + how to label its origin.
 struct DebugModelCandidate {
@@ -1236,36 +1238,66 @@ pub(crate) fn debug_move_model() -> anyhow::Result<&'static Mutex<ScoreModel>> {
         .map_err(|e| anyhow!("{e}"))
 }
 
-/// Sticky load result of the optional torpedo model: `Ok(None)` = not
-/// installed anywhere, `Err` = a candidate exists but cannot serve the
-/// torpedo contract.
-type TorpedoModelSlot = OnceLock<anyhow::Result<Option<(Mutex<ScoreModel>, &'static str)>>>;
-
-static DEBUG_TORPEDO_MODEL: TorpedoModelSlot = OnceLock::new();
-
-/// Try the OPTIONAL E26 torpedo model: env `WOWSP_TORPEDO_MODEL` → the
-/// installed pack slot `torpedo_model.onnx` → the dev checkout's
-/// `out/torpedo_model/final/fp32.onnx`.
-///
-/// Missing everywhere is `Ok(None)` — the post-battle report shows N/A; it
-/// must NEVER fall back to the E1 fixture (different schema and semantics)
-/// and never fabricate a 0 score. A candidate that EXISTS but is not a
-/// (24, 15, 38) two-head model is a hard error: a wrong pack slot must be
-/// visible instead of silently reading as "no model" (delivery plan risk 4).
-fn load_torpedo_model() -> anyhow::Result<Option<(ScoreModel, &'static str)>> {
-    load_torpedo_model_at(&debug_model_candidates(
-        "WOWSP_TORPEDO_MODEL",
-        "torpedo_model.onnx",
-        DEBUG_TORPEDO_MODEL_REL,
-    ))
+/// One successfully loaded optional torpedo model: the session, the ladder
+/// origin, and the contract it speaks (2-head 38-wide T2 vs 3-head 49-wide T4).
+struct LoadedTorpedo {
+    model: Mutex<ScoreModel>,
+    origin: &'static str,
+    contract: TorpedoContract,
 }
 
-/// The pure ladder walk behind [`load_torpedo_model`] (candidate list passed
-/// in so unit tests can exercise the missing / unreadable / unparseable
-/// paths without touching the real pack or env).
-fn load_torpedo_model_at(
-    candidates: &[DebugModelCandidate],
-) -> anyhow::Result<Option<(ScoreModel, &'static str)>> {
+/// Sticky state of the optional torpedo slot: either a loaded contract or a
+/// diagnostic detail string. Unknown/broken candidates degrade to N/A with a
+/// reason instead of failing the run (delivery plan risk 1).
+struct TorpedoModelSlotState {
+    loaded: Option<LoadedTorpedo>,
+    detail: String,
+}
+
+static DEBUG_TORPEDO_MODEL: OnceLock<TorpedoModelSlotState> = OnceLock::new();
+
+/// The candidate ladder: T4 files first, the T2 two-head slot as fallback.
+/// env (T4 then legacy) -> installed pack slots -> the dev checkout exports.
+fn torpedo_model_candidates() -> Vec<DebugModelCandidate> {
+    let mut out = Vec::new();
+    for key in ["WOWSP_TORPEDO4_MODEL", "WOWSP_TORPEDO_MODEL"] {
+        if let Ok(p) = std::env::var(key) {
+            if !p.trim().is_empty() {
+                out.push(DebugModelCandidate {
+                    path: PathBuf::from(p),
+                    origin: "env",
+                });
+            }
+        }
+    }
+    if let Ok(cache) = crate::paths::cache_dir() {
+        let decisions = cache.join("decisions");
+        out.push(DebugModelCandidate {
+            path: decisions.join("torpedo4_model.onnx"),
+            origin: "pack",
+        });
+        out.push(DebugModelCandidate {
+            path: decisions.join("torpedo_model.onnx"),
+            origin: "pack",
+        });
+    }
+    for rel in [
+        DEBUG_TORPEDO4_MODEL_REL,
+        DEBUG_TORPEDO4_MODEL_REL_ALT,
+        DEBUG_TORPEDO_MODEL_REL,
+    ] {
+        out.push(DebugModelCandidate {
+            path: experiments_out().join(rel),
+            origin: "experiments",
+        });
+    }
+    out
+}
+
+/// The pure ladder walk behind [`torpedo_slot`] (candidate list passed in so
+/// unit tests can exercise the missing / unreadable / unknown-contract paths
+/// without touching the real pack or env).
+fn load_torpedo_model_at(candidates: &[DebugModelCandidate]) -> TorpedoModelSlotState {
     let mut errors = Vec::new();
     let mut found_any = false;
     for c in candidates {
@@ -1280,67 +1312,66 @@ fn load_torpedo_model_at(
         };
         found_any = true;
         match ScoreModel::from_bytes(c.path.to_string_lossy().into_owned(), &bytes) {
-            Ok(model) => {
-                if model.kind() == &ScoreModelKind::FireTwoHead
-                    && model.widths() == (24, ENTITY_DIM_V2, TORP_GLOBAL_DIM)
-                {
-                    return Ok(Some((model, c.origin)));
-                }
-                errors.push(format!(
-                    "{} is not a usable torpedo model ({:?}, widths {:?}, expected (24, {}, {}))",
+            Ok(model) => match TorpedoContract::from_model(&model) {
+                Some(contract) => {
+                    let detail = format!("{}:{} [{}]", c.origin, model.detail(), contract.label());
+                    return TorpedoModelSlotState {
+                        loaded: Some(LoadedTorpedo {
+                            model: Mutex::new(model),
+                            origin: c.origin,
+                            contract,
+                        }),
+                        detail,
+                    };
+                },
+                None => errors.push(format!(
+                    "{} is not a known torpedo contract ({:?}, widths {:?}) — expected \
+                     (24, {}, {}) + 2 heads or (24, {}, {}) + 3 heads",
                     c.path.display(),
                     model.kind(),
                     model.widths(),
                     ENTITY_DIM_V2,
-                    TORP_GLOBAL_DIM
-                ));
+                    TORP_GLOBAL_DIM,
+                    ENTITY_DIM_V2,
+                    TORP_GLOBAL_DIM_T4
+                )),
             },
             Err(e) => errors.push(format!("{}: {e}", c.path.display())),
         }
     }
-    if found_any {
-        anyhow::bail!(
-            "no usable torpedo model (tried {}; failures: {}) — remove the file or install a \
-             (24, {}, {}) model",
-            candidates
-                .iter()
-                .map(|c| c.path.display().to_string())
-                .collect::<Vec<_>>()
-                .join(" | "),
-            errors.join("; "),
-            ENTITY_DIM_V2,
-            TORP_GLOBAL_DIM
-        );
+    let detail = if found_any {
+        format!("unavailable: {}", errors.join("; "))
+    } else {
+        "none".to_string()
+    };
+    TorpedoModelSlotState {
+        loaded: None,
+        detail,
     }
-    Ok(None)
+}
+
+fn torpedo_slot() -> &'static TorpedoModelSlotState {
+    DEBUG_TORPEDO_MODEL.get_or_init(|| load_torpedo_model_at(&torpedo_model_candidates()))
 }
 
 /// The process-global OPTIONAL torpedo model (sticky result, same
-/// restart-needed semantics as the debug fire/move models). `Ok(None)` means
-/// no model is installed anywhere — the diagnostics card is N/A.
-/// A stable cache-key string for the optional torpedo model ("none" when
-/// absent, "unavailable: <err>" when a candidate is broken). Never fails: a
-/// bad optional model must not take the whole report down.
-pub(crate) fn torpedo_model_detail() -> String {
-    match torpedo_model() {
-        Ok(Some((model, origin))) => model
-            .lock()
-            .map(|guard| format!("{origin}:{}", guard.detail()))
-            .unwrap_or_else(|_| "poisoned".to_string()),
-        Ok(None) => "none".to_string(),
-        Err(e) => format!("unavailable: {e}"),
-    }
+/// restart-needed semantics as the debug fire/move models). None means no
+/// usable model — the diagnostics card is N/A; a broken/unknown slot is
+/// surfaced through [`torpedo_model_detail`] instead of interrupting scoring.
+pub(crate) fn torpedo_model() -> Option<(&'static Mutex<ScoreModel>, &'static str, TorpedoContract)>
+{
+    torpedo_slot()
+        .loaded
+        .as_ref()
+        .map(|l| (&l.model, l.origin, l.contract))
 }
 
-pub(crate) fn torpedo_model() -> anyhow::Result<Option<(&'static Mutex<ScoreModel>, &'static str)>>
-{
-    let loaded = DEBUG_TORPEDO_MODEL.get_or_init(|| {
-        load_torpedo_model().map(|opt| opt.map(|(model, origin)| (Mutex::new(model), origin)))
-    });
-    match loaded {
-        Ok(loaded) => Ok(loaded.as_ref().map(|(model, origin)| (model, *origin))),
-        Err(e) => Err(anyhow!("{e}")),
-    }
+/// Stable cache-key string for the optional torpedo model: "none" when
+/// absent, "origin:path [contract]" when loaded, "unavailable: <reasons>"
+/// when a candidate exists but cannot serve a known contract. Never fails: a
+/// bad optional model must not take the whole report down.
+pub(crate) fn torpedo_model_detail() -> String {
+    torpedo_slot().detail.clone()
 }
 
 // ── the in-process artifact cache (single slot) ──────────────────────────────
@@ -1496,7 +1527,7 @@ fn build_debug_cache_entry(
     // failed to load records its error in the cache key and degrades to N/A
     // here: the main-battery report must still open; the explicit scoring
     // path (compute_ship_scores) surfaces the load error instead.
-    if let Ok(Some((torpedo, _origin))) = torpedo_model() {
+    if let Some((torpedo, _origin, contract)) = torpedo_model() {
         let (torpedo_rows, _stats) = export_torpedo_replay_file(
             path,
             los_dir,
@@ -1507,7 +1538,9 @@ fn build_debug_cache_entry(
         let mut torpedo = torpedo
             .lock()
             .map_err(|_| anyhow!("torpedo scoring model mutex poisoned"))?;
-        let torpedo_source = torpedo.detail().to_string();
+        // The report publishes where the model came from AND which contract it
+        // speaks (torp2/38/2head vs torp4/49/3head) — the UI needs both.
+        let torpedo_source = format!("{} [{}]", torpedo.detail(), contract.label());
         attach_torpedo_scores(
             &mut scores,
             &torpedo_rows,
@@ -1515,9 +1548,10 @@ fn build_debug_cache_entry(
             None,
             &torpedo_source,
             |row| {
-                let (entity, global, mask) = feature_tensors_torp2(row);
-                let (_logit_a, logit_b) = torpedo.infer_fire(&entity, &global, &mask, None)?;
-                Ok(sigmoid(logit_b))
+                let (entity, global, mask) = torpedo_feature_tensors(row, contract);
+                let (_logit_a, logit_b, logit_c) =
+                    torpedo.infer_torpedo(&entity, &global, &mask, None)?;
+                Ok((sigmoid(logit_b), logit_c.map(sigmoid)))
             },
         )?;
     }
@@ -2708,41 +2742,85 @@ mod tests {
 
     // ── T2: optional torpedo model ladder ───────────────────────────────
 
-    /// The optional torpedo ladder returns `Ok(None)` when nothing is
-    /// installed anywhere (never the E1 fixture, never an error), and a hard
-    /// error when a candidate EXISTS but cannot serve the (24, 15, 38)
-    /// two-head contract — a wrong pack slot must not read as "absent".
+    /// The optional torpedo ladder: absent everywhere -> None; a candidate
+    /// that EXISTS but cannot serve a known contract degrades to None WITH a
+    /// reason (never interrupts the score run); both shipped contracts (T2
+    /// 38-wide two-head, T4 49-wide three-head) load and expose their label.
     #[test]
-    fn torpedo_model_absent_is_none_and_bad_bytes_are_errors() {
-        // No candidates at all -> Ok(None), not an error.
-        assert!(load_torpedo_model_at(&[]).expect("empty ladder").is_none());
+    fn torpedo_model_absent_degrades_and_contracts_load() {
+        // No candidates at all -> not loaded, detail "none".
+        let empty = load_torpedo_model_at(&[]);
+        assert!(empty.loaded.is_none());
+        assert_eq!(empty.detail, "none");
+
         let dir = std::env::temp_dir().join(format!("wowsp-torp-model-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        // A candidate path that does not exist is skipped -> Ok(None).
+        // A candidate path that does not exist is skipped -> still "none".
         let missing = DebugModelCandidate {
             path: dir.join("absent.onnx"),
             origin: "env",
         };
-        assert!(
-            load_torpedo_model_at(std::slice::from_ref(&missing))
-                .expect("absent file")
-                .is_none()
-        );
-        // A file that exists but is not an ONNX model is a loud error.
+        let state = load_torpedo_model_at(std::slice::from_ref(&missing));
+        assert!(state.loaded.is_none());
+        assert_eq!(state.detail, "none");
+        // A file that exists but is not an ONNX model degrades (not an error).
         let garbage = DebugModelCandidate {
             path: dir.join("garbage.onnx"),
             origin: "pack",
         };
         std::fs::write(&garbage.path, [0x13u8, 0x37, 0x00, 0xFF]).unwrap();
-        // ScoreModel is not Debug, so match instead of expect_err.
-        let err = match load_torpedo_model_at(std::slice::from_ref(&garbage)) {
-            Ok(_) => panic!("garbage must not read as absent"),
-            Err(e) => e,
+        let state = load_torpedo_model_at(std::slice::from_ref(&garbage));
+        assert!(state.loaded.is_none());
+        assert!(
+            state.detail.starts_with("unavailable:"),
+            "detail must explain the broken slot: {}",
+            state.detail
+        );
+        assert!(state.detail.contains("garbage.onnx"), "{}", state.detail);
+
+        // Both shipped contracts load from the tracked tiny fixtures.
+        let fixtures = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/commands/fixtures");
+        let two = DebugModelCandidate {
+            path: fixtures.join("torpedo2_tiny_2head.onnx"),
+            origin: "fixtures",
         };
-        assert!(err.to_string().contains("no usable torpedo model"), "{err}");
-        // The slot width is pinned to the E26 contract.
+        let state = load_torpedo_model_at(std::slice::from_ref(&two));
+        let loaded = state.loaded.expect("two-head fixture loads");
+        assert_eq!(
+            loaded.contract,
+            TorpedoContract {
+                global_dim: TORP_GLOBAL_DIM,
+                heads: 2
+            }
+        );
+        assert!(state.detail.contains("torp2/g38/2head"), "{}", state.detail);
+        let three = DebugModelCandidate {
+            path: fixtures.join("torpedo4_tiny_3head.onnx"),
+            origin: "fixtures",
+        };
+        let state = load_torpedo_model_at(std::slice::from_ref(&three));
+        let loaded = state.loaded.expect("three-head fixture loads");
+        assert_eq!(
+            loaded.contract,
+            TorpedoContract {
+                global_dim: TORP_GLOBAL_DIM_T4,
+                heads: 3
+            }
+        );
+        assert!(state.detail.contains("torp4/g49/3head"), "{}", state.detail);
+
+        // A foreign ONNX input schema is UNKNOWN: degrade with a reason.
+        let foreign = DebugModelCandidate {
+            path: fixtures.join("decision_ai_tiny.onnx"),
+            origin: "fixtures",
+        };
+        let state = load_torpedo_model_at(std::slice::from_ref(&foreign));
+        assert!(state.loaded.is_none());
+        assert!(state.detail.starts_with("unavailable:"), "{}", state.detail);
+        // Widths pinned to the two accepted contracts.
         assert_eq!(TORP_GLOBAL_DIM, 38);
+        assert_eq!(TORP_GLOBAL_DIM_T4, 49);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

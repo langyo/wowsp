@@ -745,7 +745,9 @@
     "classNotCovered": "この艦種には砲撃判断モデルがありません（機動の一致度のみ表示）。",
     "torpedoAgreement": "魚雷一致度",
     "torpedoDetail": "一致度 {a}% · 平均 {p}% · 発射可能 {n} · 発射 {l}（診断のみ・総合スコアには含まない）",
-    "torpedoNotCovered": "この艦の魚雷モデルなし／対象外"
+    "torpedoNotCovered": "この艦の魚雷モデルなし／対象外",
+    "torpedoEffectiveness": "期待効果 {e}%（発射 {l} 回を条件とする診断値、命中率ではありません）",
+    "torpedoEffectivenessThin": "サンプル不足（{l} 発射）— 参考程度"
   },
   "detail": {
     "title": "戦闘詳細"

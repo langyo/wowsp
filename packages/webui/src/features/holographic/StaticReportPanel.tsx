@@ -239,6 +239,26 @@ function TorpedoCard(props: {
               l: scores.launches,
             })}
           </span>
+          {/* T4 conditional effectiveness: headC P(hit | launched). The row
+              renders only when the model has a third head AND a launched
+              window was scored — DTO null (two-head model / no launch) must
+              hide it, never show a 0 %. Under five launches the read is a
+              thin sample, so the caution rides the same line. */}
+          {scores.effectiveness != null ? (
+            <span class="srp-head__score-sub srp-head__score-eff">
+              {t("replay.report.torpedoEffectiveness", {
+                e: pct(scores.effectiveness),
+                l: scores.launches,
+              })}
+              {scores.launches < 5 ? (
+                <i class="srp-head__score-thin">
+                  {t("replay.report.torpedoEffectivenessThin", {
+                    l: scores.launches,
+                  })}
+                </i>
+              ) : null}
+            </span>
+          ) : null}
         </>
       ) : (
         <span class="srp-head__score-na">
