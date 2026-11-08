@@ -42,6 +42,7 @@
 | E26e-c | outcome-aware 第三头（headC）+ 类别温度校准 | 直接监督 P(命中\|已发射) 能否把 launched 行 top-decile 命中率 lift 推过 1.35×（高于 E26e-b 1.223×）并 ρ≥+0.30 | ✅ | 3,111,384 行 + 4 sidecar join 100%；headC OOF（17,055 launched）：AUPRC 0.254/AUC 0.715；**outcome-lift top-decile 命中率 18.07% vs base 8.165% = 2.213×（CI 2.03–2.41）、十分位 ρ 0.988（CI 0.964–1.0）→ 预注册 PASS**；类别温度：headB global T 0.7581、logloss 0.09062→0.07998；headC T 1.0538、ECE 0.0084→0.0070 |
 | E26e-d | 解耦 outcome headC + 联合排序 | 独立 headC（launched-only 训练）+ joint=probB*probC 能否 ≥2.2× 且 headB 不退化 | ⚠️ | headB（E26e-a 原模型，未重训）outcome lift **1.2234× 原样**、ρ 0.952；standaloneC **1.301×**/ρ 0.915；**joint 1.381×（<2.2 预注册线）**/ρ 0.952/CI 排除 0 → **MIXED：解耦无收益，共享 headC（2.213×）更优** |
 | E26e-e | 多任务 headC 损失权重扫描 | λ_C ∈ {0.1,0.3,0.5} 能否同时恢复 headB（AUPRC≥0.0365 且 top-lift≥2.55）并保持 headC（outcome lift≥2.0、ρ≥0.30） | ⚠️ | λ=0.3（预注册主配置）：headB **0.034862 = 2.151×base**、top-lift **2.5195**、AUC 0.6963；headC outcome lift **2.1815**/ρ 0.988/CI [2.006,2.375] → (a) 未过、(b) 过 = **MIXED**；扫描显示 λ↓ 恢复 headB（λ0.1：**2.222×**/2.610/AUC 0.7043，headC **2.252**）→ 方向对但 0.3 不够；下一步 λ≈0.05–0.1 / frozen-trunk |
+| E26e-f | torp3 属性特征 + λ_C=0.1 | torp3（torp2 + 6 维 hull 鱼雷属性：speed/damage/detect/count/deep/ETA）在 λ_C=0.1 下能否恢复 headB（AUPRC≥0.0365 且 top-lift≥2.55）并保持 headC（outcome lift≥2.30） | ⚠️ | headB **0.039022 = 2.408×base**、top-lift **2.789**、AUC 0.7141（全面超过 E26e-b 的 0.037051/2.662/0.7084 ✓）；headC outcome lift **2.2329**（<2.30 ✗）/ρ 1.0/CI [2.040,2.413] → (a) ✓、(b) ✗ = **MIXED**：torp3 显著恢复 headB、headC 基本持平 |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
 ### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
@@ -851,6 +852,63 @@
   e26e_e_lambda{...}_metrics.json, e26e_e_lambda{...}.log, outcome_lift_lambda{...}_C.json}`；
   node3 `/mnt/work/wowsp-kots/e26e-e/{code,run}`；预注册 `e26e-e-preregistration.md`
   （脚本 sha `939f9b89…`，与 node3 实跑一致）。
+
+### E26e-f · torp3 属性特征 + λ_C=0.1（**MIXED**：headB 恢复并超过 E26e-b，headC 差 2.30 线 0.067）
+
+- **问题（预注册 `out/torpedo_model/e26e-f-preregistration.md`，先落盘后跑）**：E26e-e λ_C=0.1
+  已把 headB 恢复到 0.036015（2.222×base）/top-lift 2.610/AUC 0.7043、headC 2.2518×，但 headB
+  AUPRC 仍差 0.0365 线 1.3%。本任务在 torp2 的 11 维派生特征后**追加 6 维 hull 鱼雷属性**
+  （torp3）：`torpSpeed/70`、`torpDamage/50000`、`torpDetect/3`、`torpCount/10`、`torpDeep`（0/1）、
+  **最近射程内敌舰 ETA = distM/(torpSpeed·0.5144)/60 frac，clamp [0,1]**（无则 0）；global 38→**44**；
+  λ_C=0.1 预先固定。主验收：(a) headB AUPRC ≥0.0365 且 top-lift ≥2.55；(b) headC outcome
+  lift ≥2.30 且 ρ≥0.30/CI 排除 0。
+- **实现**：`--feature-set torp3`（torp2 + 6 属性维，列序契约在 `TORP3_NAMES`）；`--ship-attrs`
+  默认 `scripts/experiments/ship_attributes.json`（1,162 艘 hull，658 艘 torpSpeed>0；缺文件/缺键/
+  缺 shipId → 0，不报错）；loader 记录 `attribute_coverage` 到 metrics；`--head-c-weight 0.1`
+  沿用 E26e-e 权重参数（默认 1.0 路径与 E26e-c 逐位兼容）；`--selftest` 覆盖 44 维/列序/
+  缺表兜底/ETA 公式/hull 缺失零值；6k CPU smoke 通过。
+- **实际覆盖**：语料 3,111,384 行 / 2,215 局中 **294 个 unique hull 全部命中属性表（100%）**；
+  `torpSpeed>0` 的行 3,009,235（**96.72%**）。属性表来自 GameParams 15.10.0，语料以
+  15.9 为主并含 14.5/15.8，旧局按 15.10 表近似（与既有 torpRange/torpReload 同口径）；
+  294/294 hull 有记录但 288/294 有鱼雷属性，6 艘旧 E24 表即缺鱼雷段的 hull（Shimakaze
+  98,336 行等，共 102,149 行/3.28%）走零兜底，非本 PR 引入。
+- **主配置结果（λ_C=0.1，torp3，5 折 GroupKFold seed 0，训练 232.8 s）**：
+
+  | 指标 | torp3（本任务） | E26e-e λ0.1（torp2） | E26e-b（headB-only） | 预注册线 |
+  |---|---|---|---|---|
+  | headB AUPRC | **0.039022 = 2.408×base** | 0.036015 = 2.222× | 0.037051 = 2.286× | ≥0.0365 ✓ |
+  | headB top-decile lift | **2.789** | 2.610 | 2.662 | ≥2.55 ✓ |
+  | headB AUC | **0.7141** | 0.7043 | 0.7084 | — |
+  | headC outcome lift（fish-level） | **2.2329** | 2.2518 | 1.2234 | ≥2.30 ✗ |
+  | headC ρ / CI | 1.000 / [2.040,2.413] | 1.000 / [2.074,2.453] | 0.952 / [1.079,1.392] | ρ≥0.30 ✓ |
+
+  → **(a) PASS**（AUPRC 0.039022 ≥0.0365、top-lift 2.789 ≥2.55，且已超过 E26e-b 的
+  0.037051/2.662/0.7084）；**(b) FAIL**（outcome lift 2.2329 < 2.30，差 0.067；ρ=1.0、CI
+  [2.040,2.413] 排除 0）→ **MIXED**。torp3 把 headB 恢复到**超过 E26e-b**，但 headC 的
+  outcome 排序几乎没有增益（2.233 vs 2.252，反而略降）。
+- **headC OOF（launched 行）**：AUPRC **0.263584**（E26e-e λ0.1 0.25760）、AUC **0.718775**、
+  logloss 0.346566、Brier 0.104216、ECE **0.011704**；行级 top-decile lift 2.3579。
+- **outcome 十分位命中率**：18.23/12.54/10.50/9.76/8.30/6.83/6.12/3.85/1.70/0.56%（top-bottom
+  17.67pp）。**按类** lift/ρ：BB 996 行 **3.369**/0.914；CL 5,009 行 **2.204**/0.927；DD 10,949 行
+  **2.133**/1.000；SS 101 行 0.670/0.085（样本不足仅描述）。**按 region**：apac **2.384**/0.988、
+  eu **2.062**/0.964、na **2.233**/0.952、own **1.918**/0.927。
+- **headB 按类 AUPRC**：DD 0.0444（1.83M 行）、CL/CA 0.0280、BB 0.0234、SS 0.0525（3,003 can 行上；launched 101）——
+  全部高于 E26e-e λ0.1 的对应值（DD 0.0395/CL 0.0246/BB 0.0210/SS 0.0443）。
+- **类别温度校准（secondary）**：headB global **T=0.7575**（≈E26e-b 的 0.7581）：logloss
+  0.08977→**0.07913**、Brier 0.016383→0.015811、ECE 0.02463→**0.00057**；headC global
+  **T=1.0703**：logloss 0.346566→0.345809、ECE 0.011704→**0.005303**。
+- **判定（预注册）**：**(a) PASS、(b) FAIL → MIXED**。结论：torp3 属性特征对 **headB 强烈
+  有效**（AUPRC +8.3%、top-lift +6.8%、AUC +0.010 vs torp2 λ0.1；并超过 headB-only 的 E26e-b），
+  但对 **headC outcome 排序无增益**——命中概率更多由目标几何/交战状态决定，而非 hull 的
+  鱼雷属性；下一步应转向 click-level 序列/管位/DoT 几何与端上概率分级。
+- **局限**：属性表来自 GameParams 15.10.0（版本敏感；294/294 hull 有记录、288/294 有
+  torpSpeed，6 艘旧 E24 表缺口 hull 走零兜底）；
+  6 维属性中的 ETA 用“当前射程内最近敌舰”近似（未含提前量/机动）；headC outcome 仍为代理
+  命中（120 units + HP drop）；SS 101 行、na/own 样本薄；λ_C=0.1 固定未再扫；未做端上部署。
+- **产物**：`out/torpedo_model/e26e-f/{e26e_f_oof.npz（38.9MB）, e26e_f_metrics.json,
+  e26e_f_train.log, outcome_lift_C.json}`；node3 `/mnt/work/wowsp-kots/e26e-f/{code,run}`（含
+  ship_attributes.json）；预注册 `e26e-f-preregistration.md`（脚本 sha `226008dc…`、属性表 sha
+  `2bbd3831…`，与 node3 实跑一致）。
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |
