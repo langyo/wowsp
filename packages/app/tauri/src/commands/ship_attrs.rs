@@ -98,6 +98,20 @@ pub struct ShipAttrs {
     /// Hull class from the table's optional `cls` column; `Other` when the
     /// column is absent or the species is unknown.
     pub ship_class: ShipClass,
+    // ── E26e-f torpedo performance columns (optional; 0.0 = unknown /
+    //    no torpedo armament). Raw table units: knots / HP / km / mounts /
+    //    0-or-1 deep-water flag. Consumed by the torp3/torp4 diagnostic
+    //    feature blocks in decision_score.rs. ──
+    /// Fastest torpedo speed the hull can mount, knots.
+    pub torp_speed_kt: f32,
+    /// Hardest-hitting torpedo alpha damage, HP.
+    pub torp_damage: f32,
+    /// Hardest-to-spot torpedo detectability, km (smallest positive value).
+    pub torp_detect_km: f32,
+    /// Torpedo launcher mounts in the top configuration (Daring = 2).
+    pub torp_count: f32,
+    /// Deep-water torpedo mechanic flag (0.0 / 1.0).
+    pub torp_deep: f32,
 }
 
 impl ShipAttrs {
@@ -111,6 +125,11 @@ impl ShipAttrs {
         has_radar: false,
         has_hydro: false,
         ship_class: ShipClass::Other,
+        torp_speed_kt: 0.0,
+        torp_damage: 0.0,
+        torp_detect_km: 0.0,
+        torp_count: 0.0,
+        torp_deep: 0.0,
     };
 
     /// The normalized 6-wide own-ship block.
@@ -182,6 +201,25 @@ impl ShipAttrTable {
                 .filter(|v| v.is_finite() && *v > 0.0)
                 .map(|v| v as f32)
                 .unwrap_or(0.0);
+            // Optional additive columns (E26e-f): the torpedo performance
+            // block. Absent / non-numeric / non-finite values read as 0.0
+            // ("unknown"), never an error — tables generated before the
+            // columns existed still load, and the feature block treats 0 as
+            // the neutral fallback.
+            let opt_torp = |name: &str| -> f32 {
+                o.get(name)
+                    .and_then(|x| x.as_f64())
+                    .filter(|v| v.is_finite())
+                    .map(|v| v as f32)
+                    .unwrap_or(0.0)
+            };
+            let (torp_speed_kt, torp_damage, torp_detect_km, torp_count, torp_deep) = (
+                opt_torp("torpSpeed"),
+                opt_torp("torpDamage"),
+                opt_torp("torpDetect"),
+                opt_torp("torpCount"),
+                opt_torp("torpDeep"),
+            );
             ships.insert(
                 ship_id,
                 ShipAttrs {
@@ -193,6 +231,11 @@ impl ShipAttrTable {
                     has_radar: flag("hasRadar")?,
                     has_hydro: flag("hasHydro")?,
                     ship_class,
+                    torp_speed_kt,
+                    torp_damage,
+                    torp_detect_km,
+                    torp_count,
+                    torp_deep,
                 },
             );
         }
@@ -469,6 +512,72 @@ mod tests {
         let reload = ShipAttrTable::from_json(&base_attrs(r#", "torpReload": 87.5"#))
             .expect("numeric reload parses");
         assert!((reload.of(Some(9)).torp_reload_s - 87.5).abs() < 1e-6);
+    }
+
+    /// The E26e-f torpedo performance columns: Daring's packed values, the
+    /// optional-column fallback (old tables parse with 0.0), non-numeric
+    /// tolerance and liveness across the shipped roster.
+    #[test]
+    fn torpedo_performance_columns_parse() {
+        let t = table();
+        let daring = t.of(Some(4_179_507_152));
+        assert!(
+            (daring.torp_speed_kt - 62.0).abs() <= 1e-3,
+            "Daring speed {}",
+            daring.torp_speed_kt
+        );
+        assert!(
+            (daring.torp_damage - 47_000.0).abs() <= 1e-3,
+            "Daring damage {}",
+            daring.torp_damage
+        );
+        assert!(
+            (daring.torp_detect_km - 1.3).abs() <= 1e-3,
+            "Daring detect {}",
+            daring.torp_detect_km
+        );
+        assert!((daring.torp_count - 2.0).abs() <= 1e-3);
+        assert_eq!(daring.torp_deep, 0.0);
+        assert!(
+            t.ships.values().filter(|a| a.torp_speed_kt > 0.0).count() > 300,
+            "torpedo-speed column looks dead"
+        );
+        assert!(
+            t.ships.values().filter(|a| a.torp_count > 0.0).count() > 300,
+            "torpedo-launcher column looks dead"
+        );
+        let base_attrs = |extra: &str| {
+            format!(
+                r#"{{"9": {{"vis": 1, "visSmoke": 0, "mbRange": 2, "torpRange": 0, "hasRadar": 0, "hasHydro": 0{extra}}}}}"#
+            )
+        };
+        // Old table (no torpedo-performance columns) -> all 0.0, no error.
+        let no_col = ShipAttrTable::from_json(&base_attrs("")).expect("old table parses");
+        let a = no_col.of(Some(9));
+        assert_eq!(
+            (
+                a.torp_speed_kt,
+                a.torp_damage,
+                a.torp_detect_km,
+                a.torp_count,
+                a.torp_deep
+            ),
+            (0.0, 0.0, 0.0, 0.0, 0.0)
+        );
+        // Non-numeric values are tolerated as unknown, numeric ones parse.
+        let bad = ShipAttrTable::from_json(&base_attrs(r#", "torpSpeed": "fast""#))
+            .expect("non-numeric speed is not an error");
+        assert_eq!(bad.of(Some(9)).torp_speed_kt, 0.0);
+        let values = ShipAttrTable::from_json(&base_attrs(
+            r#", "torpSpeed": 62.5, "torpDamage": 47000, "torpDetect": 1.3, "torpCount": 2, "torpDeep": 1"#,
+        ))
+        .expect("numeric torpedo columns parse");
+        let v = values.of(Some(9));
+        assert!((v.torp_speed_kt - 62.5).abs() < 1e-6);
+        assert!(v.torp_damage > 0.0);
+        assert!((v.torp_detect_km - 1.3).abs() < 1e-6);
+        assert_eq!(v.torp_count, 2.0);
+        assert_eq!(v.torp_deep, 1.0);
     }
 
     #[test]

@@ -880,6 +880,182 @@ pub fn torpedo_applicable_for(ship_id: Option<i64>, has_rows: bool) -> bool {
     class_ok && (table.of(ship_id).torp_range_m > 0.0 || has_rows)
 }
 
+// ── E26e-f/g torp3 + torp4 diagnostic feature blocks (T3/T4 contract) ─────
+
+/// Width of the E26e-f hull-attribute block appended after the torp2 dims.
+pub const TORP3_DIM: usize = 6;
+/// Width of the E26e-g click-context block appended after torp3.
+pub const TORP4_DIM: usize = 5;
+/// torp3 global width: v2 (27) + torp2 (11) + torp3 (6) = 44.
+pub const TORP_GLOBAL_DIM_V3: usize = GLOBAL_DIM_V2 + TORP2_DIM + TORP3_DIM;
+/// torp4 global width: torp3 (44) + torch4 (5) = 49 — the diagnostic delivery
+/// contract (three-head model, fp32, temperatures baked at export).
+pub const TORP_GLOBAL_DIM_V4: usize = TORP_GLOBAL_DIM_V3 + TORP4_DIM;
+
+/// Who speaks which diagnostic contract. Only the two shipped shapes are
+/// accepted by the loader: (24, 15, 38) two-head (T2) and (24, 15, 49)
+/// three-head (T4). Anything else is an unknown contract and degrades to N/A
+/// with a reason instead of interrupting the whole score run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TorpedoContract {
+    /// Global input width: 38 = torp2, 49 = torp4.
+    pub global_dim: usize,
+    /// Number of heads: 2 = A/B only, 3 = A/B/C (headC = P(hit | launched)).
+    pub heads: u8,
+}
+
+impl TorpedoContract {
+    /// Derive the contract from a loaded session; None = unknown shape.
+    pub fn from_model(model: &ScoreModel) -> Option<Self> {
+        match (model.kind(), model.widths()) {
+            (ScoreModelKind::FireTwoHead, (24, ENTITY_DIM_V2, TORP_GLOBAL_DIM_V2)) => Some(Self {
+                global_dim: TORP_GLOBAL_DIM_V2,
+                heads: 2,
+            }),
+            (ScoreModelKind::FireThreeHead, (24, ENTITY_DIM_V2, TORP_GLOBAL_DIM_V4)) => {
+                Some(Self {
+                    global_dim: TORP_GLOBAL_DIM_V4,
+                    heads: 3,
+                })
+            },
+            _ => None,
+        }
+    }
+
+    /// Stable short label for the report/cache key (e.g. torp4/g49/3head).
+    pub fn label(&self) -> String {
+        let family = if self.global_dim == TORP_GLOBAL_DIM_V4 {
+            "torp4"
+        } else if self.global_dim == TORP_GLOBAL_DIM_V3 {
+            "torp3"
+        } else {
+            "torp2"
+        };
+        format!("{family}/g{}/{}head", self.global_dim, self.heads)
+    }
+}
+
+/// The 6 torp3 dims from explicit hull attributes (f64 math, then f32) — the
+/// Python contract: speed/70, damage/50000, detect/3, count/10, deep, ETA.
+/// ETA is the CLOSEST observed in-range enemy transit time in MINUTES via
+/// this hull's torpedo speed: dist_m / (speed_kt * 0.5144 * 60), clamped to
+/// [0, 1]. Unknown speed / no observed in-range enemy => ETA 0.
+fn torp3_extras_with(
+    attrs: &super::ship_attrs::ShipAttrs,
+    own_range_m: f32,
+    enemies: &[FireDatasetSlot],
+) -> [f32; TORP3_DIM] {
+    let speed = f64::from(attrs.torp_speed_kt);
+    let damage = f64::from(attrs.torp_damage);
+    let detect = f64::from(attrs.torp_detect_km);
+    let count = f64::from(attrs.torp_count);
+    let deep = if f64::from(attrs.torp_deep) > 0.0 {
+        1.0f64
+    } else {
+        0.0f64
+    };
+    let mut eta = 0.0f64;
+    let own_range = f64::from(own_range_m);
+    if speed > 0.0 && own_range > 0.0 {
+        let speed_mps = speed * 0.5144;
+        let mut best: Option<f64> = None;
+        for enemy in enemies.iter().filter(|e| e.observed_now) {
+            let dist = f64::from(enemy.dist_m);
+            if dist > own_range {
+                continue;
+            }
+            best = Some(best.map_or(dist, |b| b.min(dist)));
+        }
+        if let Some(best) = best {
+            eta = (best / (speed_mps * 60.0)).clamp(0.0, 1.0);
+        }
+    }
+    [
+        (speed / 70.0) as f32,
+        (damage / 50_000.0) as f32,
+        (detect / 3.0) as f32,
+        (count / 10.0) as f32,
+        deep as f32,
+        eta as f32,
+    ]
+}
+
+/// torp3 extras for one row's own hull (embedded attribute table).
+pub fn torp3_extras(
+    own_ship_id: Option<i64>,
+    own_range_m: f32,
+    enemies: &[FireDatasetSlot],
+) -> [f32; TORP3_DIM] {
+    let attrs = super::ship_attrs::embedded_table()
+        .ok()
+        .map(|table| table.of(own_ship_id))
+        .unwrap_or(super::ship_attrs::ShipAttrs::NEUTRAL);
+    torp3_extras_with(&attrs, own_range_m, enemies)
+}
+
+/// The 5 torp4 click-context dims (E26e-g contract): age/60 (no click => 1.0),
+/// clicks30s/8, fish30s/16, lastClickFish/10, totalClicks/50; each clamped to
+/// [0, 1]. Inputs are the row's own past-only click fields.
+pub fn torp4_extras(row: &TorpedoDatasetRow) -> [f32; TORP4_DIM] {
+    let age = row.torp_last_click_age_s;
+    let age_norm = if age < 0.0 {
+        1.0
+    } else {
+        (age / 60.0).clamp(0.0, 1.0)
+    };
+    [
+        age_norm,
+        (row.torp_clicks_30s as f32 / 8.0).clamp(0.0, 1.0),
+        (row.torp_fish_30s as f32 / 16.0).clamp(0.0, 1.0),
+        (row.torp_last_click_fish as f32 / 10.0).clamp(0.0, 1.0),
+        (row.torp_total_clicks as f32 / 50.0).clamp(0.0, 1.0),
+    ]
+}
+
+/// The 44-wide torp3 global vector (v2 + torp2 + torp3).
+pub fn torpedo_global_v3(core: &DecisionRowCore) -> [f32; TORP_GLOBAL_DIM_V3] {
+    let mut out = [0.0f32; TORP_GLOBAL_DIM_V3];
+    out[..TORP_GLOBAL_DIM_V2].copy_from_slice(&torpedo_global_v2(core));
+    out[TORP_GLOBAL_DIM_V2..].copy_from_slice(&torp3_extras(
+        core.ship_id,
+        core.own_range_m,
+        &core.enemies,
+    ));
+    out
+}
+
+/// The 49-wide torp4 global vector (torp3 + click context).
+pub fn torpedo_global_v4(row: &TorpedoDatasetRow) -> [f32; TORP_GLOBAL_DIM_V4] {
+    let mut out = [0.0f32; TORP_GLOBAL_DIM_V4];
+    out[..TORP_GLOBAL_DIM_V3].copy_from_slice(&torpedo_global_v3(&row.core));
+    out[TORP_GLOBAL_DIM_V3..].copy_from_slice(&torp4_extras(row));
+    out
+}
+
+/// Flat torp3 tensors of one E26 row (entity/mask shared with torp2).
+pub fn feature_tensors_torpedo3(row: &TorpedoDatasetRow) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let (entity, _global, mask) = feature_tensors_torp2(row);
+    (entity, torpedo_global_v3(&row.core).to_vec(), mask)
+}
+
+/// Flat torp4 tensors of one E26 row (global 49).
+pub fn feature_tensors_torpedo4(row: &TorpedoDatasetRow) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    let (entity, _global, mask) = feature_tensors_torp2(row);
+    (entity, torpedo_global_v4(row).to_vec(), mask)
+}
+
+/// Build the tensors the loaded contract declares (38/44/49).
+pub fn torpedo_feature_tensors(
+    row: &TorpedoDatasetRow,
+    contract: TorpedoContract,
+) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
+    match contract.global_dim {
+        TORP_GLOBAL_DIM_V2 => feature_tensors_torp2(row),
+        TORP_GLOBAL_DIM_V3 => feature_tensors_torpedo3(row),
+        _ => feature_tensors_torpedo4(row),
+    }
+}
+
 /// Attach the T2 torpedo diagnostics to an already-built report (model
 /// present only). torpedo_rows are the E26 rows of the same replay;
 /// infer returns head-B p(launch) for one row.
@@ -897,40 +1073,59 @@ pub fn attach_torpedo_scores<F>(
     mut infer: F,
 ) -> anyhow::Result<()>
 where
-    F: FnMut(&TorpedoDatasetRow) -> anyhow::Result<f32>,
+    F: FnMut(&TorpedoDatasetRow) -> anyhow::Result<(f32, Option<f32>)>,
 {
     let in_window = |t: f32| t_from.is_none_or(|from| t >= from) && t_to.is_none_or(|to| t <= to);
-    let mut acc: BTreeMap<i32, (u32, u32, f32, f32)> = BTreeMap::new();
+    // windows, launches, prob_sum, agreement_sum, pc_sum, launched_with_pc
+    let mut acc: BTreeMap<i32, (u32, u32, f32, f32, f32, u32)> = BTreeMap::new();
     let mut owners_with_rows: BTreeSet<i32> = BTreeSet::new();
     for row in torpedo_rows.iter().filter(|r| in_window(r.core.t)) {
         owners_with_rows.insert(row.core.owner_entity_id);
         if !row.label_a_can_launch {
             continue; // no launch decision at this tick
         }
-        let prob = infer(row)?;
+        let (prob, prob_c) = infer(row)?;
         let launched = row.label_b_launched == Some(true);
         let agreement = if launched { prob } else { 1.0 - prob };
         let entry = acc
             .entry(row.core.owner_entity_id)
-            .or_insert((0, 0, 0.0, 0.0));
+            .or_insert((0, 0, 0.0, 0.0, 0.0, 0));
         entry.0 += 1;
         entry.1 += u32::from(launched);
         entry.2 += prob;
         entry.3 += agreement;
+        // Effectiveness is a CONDITIONAL quantity: headC = P(hit | launched),
+        // so only launched windows contribute; can-launch holds do not.
+        if launched {
+            if let Some(pc) = prob_c {
+                entry.4 += pc;
+                entry.5 += 1;
+            }
+        }
     }
     for entry in &mut report.per_ship {
         entry.torpedo_applicable =
             torpedo_applicable_for(entry.ship_id, owners_with_rows.contains(&entry.entity_id));
         entry.torpedo = None; // re-attach recomputes; stale values never survive
-        let Some((windows, launches, prob_sum, agreement_sum)) = acc.get(&entry.entity_id) else {
+        let Some((windows, launches, prob_sum, agreement_sum, pc_sum, pc_n)) =
+            acc.get(&entry.entity_id)
+        else {
             continue;
         };
         if *windows > 0 && entry.torpedo_applicable {
+            // None (not 0) when there is no three-head model, no launch, or the
+            // headC output was absent — the UI must show N/A, never a fake 0.
+            let effectiveness = if *launches > 0 && *pc_n > 0 {
+                Some(pc_sum / *pc_n as f32)
+            } else {
+                None
+            };
             entry.torpedo = Some(TorpedoScores {
                 agreement: agreement_sum / *windows as f32,
                 mean_prob: prob_sum / *windows as f32,
                 can_launch_windows: *windows,
                 launches: *launches,
+                effectiveness,
             });
         }
     }
@@ -944,9 +1139,12 @@ where
 /// metadata (inputs decide the widths).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ScoreModelKind {
-    /// `entity` + `global_feat` + `mask` → `logitA` / `logitB` (E9 fire).
+    /// entity + global_feat + mask -> logitA / logitB (E9 fire, T2 torpedo).
     FireTwoHead,
-    /// Same inputs → one `[1, sectors]` logits output (E16 movement).
+    /// entity + global_feat + mask -> logitA / logitB / logitC (T4 torpedo:
+    /// headC = P(hit | launched), temperatures baked into the exported logits).
+    FireThreeHead,
+    /// Same inputs -> one [1, sectors] logits output (E16 movement).
     MoveSectors { sectors: usize },
 }
 
@@ -1016,7 +1214,14 @@ impl ScoreModel {
         };
         let outputs = session.outputs();
         let out_names: Vec<&str> = outputs.iter().map(|o| o.name()).collect();
-        let (kind, out_name) = if out_names.contains(&"logitA") && out_names.contains(&"logitB") {
+        let (kind, out_name) = if out_names.contains(&"logitA")
+            && out_names.contains(&"logitB")
+            && out_names.contains(&"logitC")
+        {
+            // T4 three-head: headC must be declared explicitly, otherwise a
+            // silently dropped logitC would look like a two-head model.
+            (ScoreModelKind::FireThreeHead, "logitB".to_string())
+        } else if out_names.contains(&"logitA") && out_names.contains(&"logitB") {
             (ScoreModelKind::FireTwoHead, "logitB".to_string())
         } else if out_names.len() == 1 {
             let name = out_names[0];
@@ -1165,6 +1370,22 @@ impl ScoreModel {
                 }
                 Ok(vec![a[0], b[0]])
             },
+            ScoreModelKind::FireThreeHead => {
+                // All three heads are mandatory for this kind (a missing or
+                // NaN logitC is a hard error, never a silent downgrade).
+                let a = extract("logitA")?;
+                let b = extract("logitB")?;
+                let c = extract("logitC")?;
+                if a.len() != 1 || b.len() != 1 || c.len() != 1 {
+                    bail!(
+                        "three-head fire outputs squeeze to [1], got {} / {} / {} values",
+                        a.len(),
+                        b.len(),
+                        c.len()
+                    );
+                }
+                Ok(vec![a[0], b[0], c[0]])
+            },
             ScoreModelKind::MoveSectors { sectors } => {
                 let logits = extract(&self.out_name)?;
                 if logits.len() != sectors {
@@ -1192,6 +1413,29 @@ impl ScoreModel {
         }
         let out = self.run(entity, global, mask, attrs)?;
         Ok((out[0], out[1]))
+    }
+
+    /// Torpedo inference -> (logitA, logitB, optional logitC). Works for both
+    /// the T2 two-head and the T4 three-head contract; a movement session is
+    /// rejected exactly like infer_fire.
+    pub fn infer_torpedo(
+        &mut self,
+        entity: &[f32],
+        global: &[f32],
+        mask: &[f32],
+        attrs: Option<&[f32]>,
+    ) -> anyhow::Result<(f32, f32, Option<f32>)> {
+        match self.kind {
+            ScoreModelKind::FireTwoHead => {
+                let out = self.run(entity, global, mask, attrs)?;
+                Ok((out[0], out[1], None))
+            },
+            ScoreModelKind::FireThreeHead => {
+                let out = self.run(entity, global, mask, attrs)?;
+                Ok((out[0], out[1], Some(out[2])))
+            },
+            _ => bail!("infer_torpedo on a non-fire session ({:?})", self.kind),
+        }
     }
 
     /// Movement inference → `sectors` logits.
@@ -1516,7 +1760,7 @@ pub fn compute_ship_scores(
     // Optional T2 torpedo diagnostics: the extra E26 export (its own decode)
     // is paid only when a torpedo model is installed, so the no-model path —
     // including the E17 20-battle regression — stays byte-identical.
-    if let Some((torpedo, _origin)) = super::decision_serve::torpedo_model()? {
+    if let Some((torpedo, _origin, contract)) = super::decision_serve::torpedo_model() {
         let (torpedo_rows, _stats) = export_torpedo_replay_file(
             path,
             los_dir,
@@ -1527,7 +1771,7 @@ pub fn compute_ship_scores(
         let mut torpedo = torpedo
             .lock()
             .map_err(|_| anyhow!("torpedo scoring model mutex poisoned"))?;
-        let torpedo_source = torpedo.detail().to_string();
+        let torpedo_source = format!("{} [{}]", torpedo.detail(), contract.label());
         attach_torpedo_scores(
             &mut report,
             &torpedo_rows,
@@ -1535,9 +1779,10 @@ pub fn compute_ship_scores(
             t_to,
             &torpedo_source,
             |row| {
-                let (entity, global, mask) = feature_tensors_torp2(row);
-                let (_logit_a, logit_b) = torpedo.infer_fire(&entity, &global, &mask, None)?;
-                Ok(sigmoid(logit_b))
+                let (entity, global, mask) = torpedo_feature_tensors(row, contract);
+                let (_logit_a, logit_b, logit_c) =
+                    torpedo.infer_torpedo(&entity, &global, &mask, None)?;
+                Ok((sigmoid(logit_b), logit_c.map(sigmoid)))
             },
         )?;
     }
@@ -2662,6 +2907,245 @@ mod tests {
         assert!((closest[7] - 0.6).abs() < 1e-6, "closest {}", closest[7]);
     }
 
+    /// torp3 boundary table: attribute normalization, ETA clamp and the
+    /// unknown/absent fallbacks (mirrors derive_torp3_extras in Python).
+    #[test]
+    fn torpedo3_extras_boundaries() {
+        let daring = Some(4_179_507_152);
+        let empty = torp3_extras(daring, 14_000.0, &[]);
+        assert!(
+            (f64::from(empty[0]) - 62.0 / 70.0).abs() < 1e-6,
+            "speed {}",
+            empty[0]
+        );
+        assert!(
+            (f64::from(empty[1]) - 47_000.0 / 50_000.0).abs() < 1e-6,
+            "damage {}",
+            empty[1]
+        );
+        assert!(
+            (f64::from(empty[2]) - 1.3 / 3.0).abs() < 1e-6,
+            "detect {}",
+            empty[2]
+        );
+        assert!(
+            (f64::from(empty[3]) - 0.2).abs() < 1e-6,
+            "count {}",
+            empty[3]
+        );
+        assert_eq!(empty[4], 0.0);
+        assert_eq!(empty[5], 0.0, "no target => ETA 0");
+        // Closest observed in-range enemy: dist / (speed_kt * 0.5144 * 60).
+        let eta = torp3_extras(
+            daring,
+            14_000.0,
+            &[
+                torp_enemy(20_000.0, true, 0.0), // out of range
+                torp_enemy(1_000.0, true, 0.0),
+                torp_enemy(2_000.0, true, 0.0),
+            ],
+        );
+        let want = 1_000.0f64 / (62.0f64 * 0.5144 * 60.0);
+        assert!(
+            (f64::from(eta[5]) - want).abs() < 1e-6,
+            "eta {} want {want}",
+            eta[5]
+        );
+        // Stale (not observed) enemies are not launchable targets.
+        let stale = torp3_extras(daring, 14_000.0, &[torp_enemy(500.0, false, 0.0)]);
+        assert_eq!(stale[5], 0.0);
+        // Clamp ends: a 13 km transit exceeds one minute at 62 kn -> 1.0.
+        let far = torp3_extras(daring, 14_000.0, &[torp_enemy(13_000.0, true, 0.0)]);
+        assert_eq!(far[5], 1.0);
+        // Unknown hull / zero range: neutral attribute block, ETA 0.
+        let unknown = torp3_extras(None, 14_000.0, &[torp_enemy(1_000.0, true, 0.0)]);
+        assert_eq!(unknown, [0.0; TORP3_DIM]);
+        let no_range = torp3_extras(daring, 0.0, &[torp_enemy(1_000.0, true, 0.0)]);
+        assert_eq!(no_range[5], 0.0);
+    }
+
+    /// torp4 boundary table: no-click age = 1.0, every count scale, clamps.
+    #[test]
+    fn torpedo4_extras_boundaries() {
+        let core = synth_core(9, 1, 100.0, Vec::new());
+        let mut row = torpedo_row(core, true, Some(true));
+        assert_eq!(torp4_extras(&row), [1.0, 0.0, 0.0, 0.0, 0.0]);
+        row.torp_last_click_age_s = 30.0;
+        row.torp_clicks_30s = 4;
+        row.torp_fish_30s = 9;
+        row.torp_last_click_fish = 5;
+        row.torp_total_clicks = 100;
+        let got = torp4_extras(&row);
+        assert!((got[0] - 0.5).abs() < 1e-6, "age {}", got[0]);
+        assert!((got[1] - 0.5).abs() < 1e-6);
+        assert!((f64::from(got[2]) - 9.0 / 16.0).abs() < 1e-6);
+        assert!((got[3] - 0.5).abs() < 1e-6);
+        assert_eq!(got[4], 1.0, "100 clicks clamp to 1.0");
+        row.torp_last_click_age_s = 120.0;
+        assert_eq!(torp4_extras(&row)[0], 1.0);
+        row.torp_last_click_age_s = -1.0;
+        assert_eq!(torp4_extras(&row)[0], 1.0, "negative age = no click");
+    }
+
+    /// The 49-wide global is v2 + torp2 + torp3 + torp4, in that order, and
+    /// the tensors follow the loaded contract's width.
+    #[test]
+    fn torpedo_global_v4_prefix_and_click_tail() {
+        let mut core = synth_core(9, 1, 100.0, vec![synth_slot(5, 5_000.0, true)]);
+        core.ship_id = Some(4_179_507_152);
+        let mut row = torpedo_row(core.clone(), true, Some(true));
+        row.torp_last_click_age_s = 12.0;
+        row.torp_clicks_30s = 2;
+        row.torp_fish_30s = 3;
+        row.torp_last_click_fish = 2;
+        row.torp_total_clicks = 7;
+        let g4 = torpedo_global_v4(&row);
+        assert_eq!(g4.len(), TORP_GLOBAL_DIM_V4);
+        assert_eq!(g4.len(), 49);
+        assert_eq!(&g4[..TORP_GLOBAL_DIM_V2], &torpedo_global_v2(&core)[..]);
+        assert_eq!(
+            &g4[TORP_GLOBAL_DIM_V2..TORP_GLOBAL_DIM_V3],
+            &torp3_extras(core.ship_id, core.own_range_m, &core.enemies)[..]
+        );
+        assert_eq!(&g4[TORP_GLOBAL_DIM_V3..], &torp4_extras(&row)[..]);
+        // The contract dispatch selects the matching featurizer width.
+        let (entity, global, mask) = torpedo_feature_tensors(
+            &row,
+            TorpedoContract {
+                global_dim: TORP_GLOBAL_DIM_V4,
+                heads: 3,
+            },
+        );
+        assert_eq!(entity.len(), 24 * ENTITY_DIM_V2);
+        assert_eq!(global.len(), 49);
+        assert_eq!(mask.len(), 24);
+        let (_e2, g2, _m2) = torpedo_feature_tensors(
+            &row,
+            TorpedoContract {
+                global_dim: TORP_GLOBAL_DIM_V2,
+                heads: 2,
+            },
+        );
+        assert_eq!(g2.len(), 38);
+    }
+
+    /// Three-head closed form: the tiny fixture sums the global block, so the
+    /// dispatch/extraction path is provable without a tuned model.
+    #[test]
+    fn three_head_model_contract_and_closed_form() {
+        let bytes = include_bytes!("fixtures/torpedo4_tiny_3head.onnx");
+        let mut model = ScoreModel::from_bytes("fixture-3head", bytes).expect("3-head fixture");
+        assert_eq!(model.kind(), &ScoreModelKind::FireThreeHead);
+        assert_eq!(model.widths(), (24, ENTITY_DIM_V2, TORP_GLOBAL_DIM_V4));
+        let contract = TorpedoContract::from_model(&model).expect("known contract");
+        assert_eq!(
+            contract,
+            TorpedoContract {
+                global_dim: 49,
+                heads: 3
+            }
+        );
+        assert_eq!(contract.label(), "torp4/g49/3head");
+        let entity = vec![0.0f32; 24 * ENTITY_DIM_V2];
+        let mut global = vec![0.0f32; TORP_GLOBAL_DIM_V4];
+        global[0] = 1.0;
+        global[1] = 2.0; // closed form: sum = 3
+        let mask = vec![1.0f32; 24];
+        let (a, b, c) = model
+            .infer_torpedo(&entity, &global, &mask, None)
+            .expect("three-head infer");
+        assert!((a - 3.0).abs() < 1e-5, "logitA {a}");
+        assert!((b - 6.5).abs() < 1e-5, "logitB {b}");
+        assert!(c.is_some_and(|c| (c - 8.0).abs() < 1e-5), "logitC {c:?}");
+        // infer_fire must refuse a three-head session (never a wrong forward).
+        assert!(model.infer_fire(&entity, &global, &mask, None).is_err());
+
+        // The T2 fixture keeps the two-head contract and reports no logitC.
+        let bytes2 = include_bytes!("fixtures/torpedo2_tiny_2head.onnx");
+        let mut two = ScoreModel::from_bytes("fixture-2head", bytes2).expect("2-head fixture");
+        assert_eq!(two.kind(), &ScoreModelKind::FireTwoHead);
+        let contract = TorpedoContract::from_model(&two).expect("known contract");
+        assert_eq!(
+            contract,
+            TorpedoContract {
+                global_dim: 38,
+                heads: 2
+            }
+        );
+        assert_eq!(contract.label(), "torp2/g38/2head");
+        let global2 = vec![0.0f32; TORP_GLOBAL_DIM_V2];
+        let (a2, b2, c2) = two
+            .infer_torpedo(&entity, &global2, &mask, None)
+            .expect("two-head infer");
+        assert!(a2.abs() < 1e-5 && c2.is_none(), "two-head runs {a2} {b2}");
+        let (_a, b_fire) = two
+            .infer_fire(&entity, &global2, &mask, None)
+            .expect("two-head fire infer");
+        assert!((b_fire - 0.5).abs() < 1e-5, "logitB {b_fire}");
+    }
+
+    /// Effectiveness is conditional: headC averages ONLY launched windows; a
+    /// two-head model (no logitC) keeps it None, never 0.
+    #[test]
+    fn torpedo_effectiveness_aggregates_launched_only() {
+        let stream = minimal_stream(None);
+        let mut core = synth_core(9, 1, 100.0, vec![synth_slot(5, 5_000.0, true)]);
+        core.ship_id = Some(4_179_507_152);
+        let report_row = move_row(core.clone(), 1);
+        let sources = ScoreModelSources {
+            fire: "fire".into(),
+            move_model: "move".into(),
+        };
+        let mut report =
+            build_ship_scores(&stream, &[report_row], "r", None, None, sources, |_| {
+                Ok((0.5, vec![1.0 / 17.0; 17]))
+            })
+            .expect("report");
+        let rows = vec![
+            torpedo_row(core.clone(), true, Some(true)),
+            torpedo_row(core.clone(), true, Some(true)),
+            torpedo_row(core.clone(), true, Some(false)),
+            torpedo_row(core.clone(), false, None),
+        ];
+        let mut seen = 0usize;
+        attach_torpedo_scores(
+            &mut report,
+            &rows,
+            None,
+            None,
+            "torp4.onnx [torp4/g49/3head]",
+            |row| {
+                seen += 1;
+                let pc = if row.label_b_launched == Some(true) {
+                    Some(if seen == 1 { 0.9 } else { 0.5 })
+                } else {
+                    Some(0.1) // a hold row's headC must NOT enter the aggregate
+                };
+                Ok((0.5, pc))
+            },
+        )
+        .expect("attach");
+        assert_eq!(seen, 3, "censored rows never hit the model");
+        let torp = report.per_ship[0].torpedo.expect("diagnostics");
+        assert_eq!(torp.launches, 2);
+        assert_eq!(torp.can_launch_windows, 3);
+        assert_eq!(
+            torp.effectiveness,
+            Some(0.7),
+            "only launched windows (0.9, 0.5) contribute"
+        );
+        // A two-head model returns no headC -> effectiveness None (N/A).
+        let mut two_head = report.clone();
+        attach_torpedo_scores(&mut two_head, &rows, None, None, "torp2.onnx", |_| {
+            Ok((0.5, None))
+        })
+        .expect("attach two-head");
+        assert_eq!(
+            two_head.per_ship[0].torpedo.expect("diag").effectiveness,
+            None
+        );
+    }
+
     /// Applicability gate: DD/CL/BB/SS with a torpedo armament; carriers are
     /// N/A, battleships without tubes are N/A, subs are covered.
     #[test]
@@ -2714,8 +3198,10 @@ mod tests {
 
         // Empty torpedo rows: covered by class + armament, but no diagnostic.
         let mut empty = report.clone();
-        attach_torpedo_scores(&mut empty, &[], None, None, "torp.onnx", |_| Ok(0.5))
-            .expect("attach empty");
+        attach_torpedo_scores(&mut empty, &[], None, None, "torp.onnx", |_| {
+            Ok((0.5, None))
+        })
+        .expect("attach empty");
         assert_eq!(empty.torpedo_source.as_deref(), Some("torp.onnx"));
         assert!(empty.per_ship[0].torpedo_applicable);
         assert!(empty.per_ship[0].torpedo.is_none(), "N/A, never a 0 score");
@@ -2730,11 +3216,12 @@ mod tests {
         let mut seen = 0usize;
         attach_torpedo_scores(&mut report, &rows, None, None, "torp.onnx", |row| {
             seen += 1;
-            // 0.8 on the launched window, 0.2 on the hold window.
+            // 0.8 on the launched window, 0.2 on the hold window; headC is
+            // only defined on the launched row (0.6 here).
             Ok(if row.label_b_launched == Some(true) {
-                0.8
+                (0.8, Some(0.6))
             } else {
-                0.2
+                (0.2, None)
             })
         })
         .expect("attach");
@@ -2744,10 +3231,15 @@ mod tests {
         assert_eq!(torp.launches, 1);
         assert!((torp.mean_prob - 0.5).abs() < 1e-6, "{}", torp.mean_prob);
         assert!((torp.agreement - 0.8).abs() < 1e-6, "{}", torp.agreement);
+        assert_eq!(
+            torp.effectiveness,
+            Some(0.6),
+            "headC aggregates over launched windows only"
+        );
         // Window filters keep rows outside [t_from, t_to] out of the aggregate.
         let mut windows = report.clone();
         attach_torpedo_scores(&mut windows, &rows, Some(200.0), None, "torp.onnx", |_| {
-            Ok(0.5)
+            Ok((0.5, None))
         })
         .expect("attach windowed");
         assert!(windows.per_ship[0].torpedo.is_none());
@@ -2769,8 +3261,10 @@ mod tests {
             |_| Ok((0.5, vec![1.0 / 17.0; 17])),
         )
         .expect("cv report");
-        attach_torpedo_scores(&mut cv_report, &[], None, None, "torp.onnx", |_| Ok(0.5))
-            .expect("attach cv");
+        attach_torpedo_scores(&mut cv_report, &[], None, None, "torp.onnx", |_| {
+            Ok((0.5, None))
+        })
+        .expect("attach cv");
         assert!(!cv_report.per_ship[0].torpedo_applicable);
     }
 
@@ -2797,10 +3291,14 @@ mod tests {
         let mut launches_total = 0u32;
         for path in files.iter().take(3) {
             let report = compute_ship_scores(path, None, None, None).expect("score replay");
-            assert_eq!(
-                report.torpedo_source.as_deref(),
-                Some(model.as_str()),
-                "source must be the env model path"
+            let source = report.torpedo_source.as_deref().expect("torpedo source");
+            assert!(
+                source.starts_with(model.as_str()),
+                "source must start with the env model path ({source})"
+            );
+            assert!(
+                source.contains("head"),
+                "source must carry the contract label ({source})"
             );
             let applicable = report
                 .per_ship
@@ -2870,5 +3368,389 @@ mod tests {
             checked += 1;
         }
         assert_eq!(checked, 32);
+    }
+
+    /// T4 parity fixture (A artifact: fixtures/torpedo4_parity.json). Verifies
+    /// decisionRow -> torp2/torp3/torp4 extras and the 49-wide global block
+    /// against the Python export at 1e-6 tolerance. Optional until A lands the
+    /// artifact — a missing file prints a skip note instead of a silent pass.
+    #[test]
+    fn torpedo4_parity_fixture_matches_when_present() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/commands/fixtures/torpedo4_parity.json");
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            eprintln!(
+                "[torp4] {} absent - parity fixture not delivered yet (A artifact)",
+                path.display()
+            );
+            return;
+        };
+        let mut checked = 0usize;
+        let mut full_torp4 = 0usize;
+        let mut explicit_attrs = 0usize;
+        let mut skipped_click = 0usize;
+        let mut skipped_attrs = 0usize;
+        for line in text.lines().filter(|l| !l.trim().is_empty()) {
+            let value: serde_json::Value = serde_json::from_str(line).expect("fixture line");
+            let core: DecisionRowCore =
+                serde_json::from_value(value["decisionRow"].clone()).expect("decision row");
+            let scenario = value["scenario"].as_str().unwrap_or("").to_string();
+            let mut row = torpedo_row(core.clone(), true, None);
+            // Click context must be carried explicitly (a no-click decisionRow
+            // and a hidden click context are indistinguishable otherwise).
+            let click = value.get("clickContext").cloned();
+            let has_click = click.is_some();
+            if let Some(click) = &click {
+                let click_f32 = |keys: &[&str], default: f32| -> f32 {
+                    keys.iter()
+                        .find_map(|k| click.get(*k).and_then(|v| v.as_f64()))
+                        .map(|v| v as f32)
+                        .unwrap_or(default)
+                };
+                row.torp_last_click_age_s =
+                    click_f32(&["torpLastClickAgeS", "lastClickAgeS"], -1.0);
+                row.torp_clicks_30s =
+                    click_f32(&["torpClicks30s", "clicks30s"], 0.0).max(0.0) as u32;
+                row.torp_fish_30s = click_f32(&["torpFish30s", "fish30s"], 0.0).max(0.0) as u32;
+                row.torp_last_click_fish =
+                    click_f32(&["torpLastClickFish", "lastClickFish"], 0.0).max(0.0) as u32;
+                row.torp_total_clicks =
+                    click_f32(&["torpTotalClicks", "totalClicks"], 0.0).max(0.0) as u32;
+            }
+            let check_list = |key: &str, want_len: usize, got: &[f32]| {
+                let want: Vec<f64> = value[key]
+                    .as_array()
+                    .expect("fixture list")
+                    .iter()
+                    .map(|v| v.as_f64().expect("fixture number"))
+                    .collect();
+                assert_eq!(want.len(), want_len, "fixture {key} width");
+                for (i, want) in want.iter().enumerate() {
+                    assert!(
+                        (f64::from(got[i]) - want).abs() <= 1e-6,
+                        "fixture row {checked} ({scenario}) {key}[{i}]: {} vs {want}",
+                        got[i]
+                    );
+                }
+            };
+            check_list(
+                "torp2Extras",
+                TORP2_DIM,
+                &torp2_extras(
+                    core.ship_id,
+                    core.own_range_m,
+                    core.own_reload_frac,
+                    &core.enemies,
+                ),
+            );
+            let variant =
+                scenario.contains("hull_not_in_attrs") || scenario.contains("attrs_fields_missing");
+            // torp3 must be recomputed with the fixture's own attrs variant
+            // when it carries one (the embedded table is the normal-row truth).
+            let attrs_from_fixture = value.get("attrs").map(|attrs_json| {
+                let attr_f = |key: &str| -> f32 {
+                    attrs_json.get(key).and_then(|v| v.as_f64()).unwrap_or(0.0) as f32
+                };
+                let mut attrs = super::super::ship_attrs::ShipAttrs::NEUTRAL;
+                attrs.torp_speed_kt = attr_f("torpSpeed");
+                attrs.torp_damage = attr_f("torpDamage");
+                attrs.torp_detect_km = attr_f("torpDetect");
+                attrs.torp_count = attr_f("torpCount");
+                attrs.torp_deep = attr_f("torpDeep");
+                attrs
+            });
+            let torp3_got = match &attrs_from_fixture {
+                Some(attrs) => {
+                    explicit_attrs += 1;
+                    torp3_extras_with(attrs, core.own_range_m, &core.enemies)
+                },
+                None => {
+                    if variant {
+                        skipped_attrs += 1;
+                    }
+                    torpedo_global_v3(&core)[TORP_GLOBAL_DIM_V2..]
+                        .try_into()
+                        .unwrap()
+                },
+            };
+            if attrs_from_fixture.is_some() || !variant {
+                check_list("torp3Extras", TORP3_DIM, &torp3_got);
+            }
+            // Rebuild the 49-wide vector with the fixture's torp3 variant so
+            // the vaulted attr rows compare exactly too.
+            let mut v3 = [0.0f32; TORP_GLOBAL_DIM_V3];
+            v3[..TORP_GLOBAL_DIM_V2].copy_from_slice(&torpedo_global_v2(&core));
+            v3[TORP_GLOBAL_DIM_V2..].copy_from_slice(&torp3_got);
+            let mut got49 = [0.0f32; TORP_GLOBAL_DIM_V4];
+            got49[..TORP_GLOBAL_DIM_V3].copy_from_slice(&v3);
+            got49[TORP_GLOBAL_DIM_V3..].copy_from_slice(&torp4_extras(&row));
+            if has_click {
+                check_list("torp4Extras", TORP4_DIM, &torp4_extras(&row));
+                check_list("global49", TORP_GLOBAL_DIM_V4, &got49);
+                full_torp4 += 1;
+            } else {
+                // Without an explicit clickContext the row defaults to
+                // no-click; only rows whose expected extras ARE the no-click
+                // pattern are verifiable end to end.
+                let no_click = [1.0, 0.0, 0.0, 0.0, 0.0];
+                let got = torp4_extras(&row);
+                if got
+                    .iter()
+                    .zip(no_click.iter())
+                    .all(|(a, b)| (a - b).abs() <= 1e-6)
+                {
+                    check_list("torp4Extras", TORP4_DIM, &got);
+                    check_list("global49", TORP_GLOBAL_DIM_V4, &got49);
+                } else {
+                    skipped_click += 1;
+                    check_list("global49_prefix", TORP_GLOBAL_DIM_V3, &v3);
+                }
+            }
+            checked += 1;
+        }
+        assert!(checked > 0, "fixture must carry rows");
+        eprintln!(
+            "[torp4] parity fixture: {checked} rows, torp4 full {full_torp4}, explicit attrs {explicit_attrs}, skipped click {skipped_click}, skipped attrs {skipped_attrs}"
+        );
+        assert!(
+            skipped_click == 0 && skipped_attrs == 0,
+            "fixture lacks clickContext/attrs for some rows — ask A to regenerate with those fields"
+        );
+    }
+
+    /// No-model regression: with no torpedo model installed, scoring the audit
+    /// batch20 folder must reproduce lead/scores-batch20.jsonl value for value
+    /// (all torpedo diagnostics null). Env-gated: the baseline file and replay
+    /// folder live outside the checkout, and the same fire/move model files
+    /// must be selected (WOWSP_FIRE_MODEL / WOWSP_MOVE_MODEL).
+    #[test]
+    fn no_model_scores_match_lead_batch20_regression() {
+        let (Ok(root), Ok(baseline)) = (
+            std::env::var("WOWSP_SCORES_BATCH20_DIR"),
+            std::env::var("WOWSP_SCORES_BATCH20_JSONL"),
+        ) else {
+            eprintln!(
+                "[regression] WOWSP_SCORES_BATCH20_DIR/_JSONL not set - skipping batch20 no-model regression"
+            );
+            return;
+        };
+        if super::super::decision_serve::torpedo_model().is_some() {
+            eprintln!(
+                "[regression] a torpedo model is installed - this test wants the no-model path"
+            );
+            return;
+        }
+        let mut want_by_id: BTreeMap<String, serde_json::Value> = BTreeMap::new();
+        for line in std::fs::read_to_string(&baseline)
+            .expect("read baseline")
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+        {
+            let v: serde_json::Value = serde_json::from_str(line).expect("baseline line");
+            want_by_id.insert(v["replayId"].as_str().expect("replayId").to_string(), v);
+        }
+        let mut files = Vec::new();
+        collect_replay_files(&PathBuf::from(&root), &mut files);
+        files.sort();
+        assert_eq!(files.len(), want_by_id.len(), "replay count vs baseline");
+        let approx = |a: f64, b: f64| (a - b).abs() <= 1e-5 * b.abs().max(1.0);
+        let f32_pair = |got: f32, want: &serde_json::Value| -> bool {
+            let want = want.as_f64().expect("baseline number");
+            approx(f64::from(got), want)
+        };
+        let mut ships = 0usize;
+        let mut samples = 0usize;
+        let mut skipped_hull = 0usize;
+        for path in &files {
+            let report = compute_ship_scores(path, None, None, None).expect("score replay");
+            let want = want_by_id
+                .get(&report.replay_id)
+                .unwrap_or_else(|| panic!("replay {} missing from baseline", report.replay_id));
+            assert!(
+                report.torpedo_source.is_none(),
+                "no-model path must stay null"
+            );
+            assert!(report.per_ship.iter().all(|s| s.torpedo.is_none()));
+            assert_eq!(
+                report.per_ship.len(),
+                want["perShip"].as_array().expect("perShip").len(),
+                "perShip count {}",
+                report.replay_id
+            );
+            let want_ships: BTreeMap<i64, &serde_json::Value> = want["perShip"]
+                .as_array()
+                .expect("perShip")
+                .iter()
+                .map(|s| (s["entityId"].as_i64().expect("entityId"), s))
+                .collect();
+            for ship in &report.per_ship {
+                let w = want_ships
+                    .get(&i64::from(ship.entity_id))
+                    .unwrap_or_else(|| panic!("entity {} missing in baseline", ship.entity_id));
+                // The audit baseline predates the fire-applicability gate:
+                // carriers/submarines still carry a fabricated fire term there
+                // (wholeFire ~0.99 on an AirCarrier). Current scoring keeps
+                // wholeFire null for them by design, so they are not
+                // comparable — skip and count, never silently pass.
+                if matches!(ship.ship_class.as_deref(), Some("AirCarrier" | "Submarine"))
+                    || !ship.fire_applicable
+                {
+                    skipped_hull += 1;
+                    continue;
+                }
+                assert!(
+                    f32_pair(ship.whole_game, &w["wholeGame"]),
+                    "wholeGame for {} entity {}: got {} want {}",
+                    report.replay_id,
+                    ship.entity_id,
+                    ship.whole_game,
+                    w["wholeGame"].as_f64().unwrap()
+                );
+                if let Some(v) = ship.whole_fire {
+                    assert!(f32_pair(v, &w["wholeFire"]), "wholeFire");
+                } else {
+                    assert!(w["wholeFire"].is_null(), "wholeFire must stay null");
+                }
+                assert!(f32_pair(ship.whole_move, &w["wholeMove"]), "wholeMove");
+                match (ship.contribution, w["contribution"].as_f64()) {
+                    (Some(got), Some(want)) => assert!(approx(got, want), "contribution"),
+                    (None, None) => {},
+                    other => panic!("contribution shape changed: {other:?}"),
+                }
+                assert_eq!(
+                    ship.contribution_shots,
+                    w["contributionShots"].as_u64().map(|v| v as u32),
+                    "contributionShots"
+                );
+                let want_samples = w["samples"].as_array().expect("samples");
+                assert_eq!(ship.samples.len(), want_samples.len(), "sample count");
+                for (got, want) in ship.samples.iter().zip(want_samples.iter()) {
+                    assert!(f32_pair(got.t, &want["t"]), "sample t");
+                    assert!(f32_pair(got.inst, &want["inst"]), "sample inst");
+                    assert!(f32_pair(got.mv, &want["move"]), "sample move");
+                    assert!(f32_pair(got.confidence, &want["confidence"]), "confidence");
+                    for (got_opt, key) in [
+                        (got.fire, "fire"),
+                        (got.fire_prob, "fireProb"),
+                        (got.hp_lost, "hpLost"),
+                    ] {
+                        match (got_opt, want[key].as_f64()) {
+                            (Some(g), Some(w)) => assert!(approx(f64::from(g), w), "sample {key}"),
+                            (None, None) => {},
+                            _ => panic!("sample {key} presence changed"),
+                        }
+                    }
+                    match (got.fired, want["fired"].as_bool()) {
+                        (Some(g), Some(w)) => assert_eq!(g, w, "sample fired"),
+                        (None, None) => {},
+                        _ => panic!("sample fired presence changed"),
+                    }
+                    samples += 1;
+                }
+                ships += 1;
+            }
+            let stats = want["stats"].as_object().expect("stats");
+            assert_eq!(
+                report.stats.ships_scored,
+                stats["shipsScored"].as_u64().unwrap() as usize
+            );
+            assert_eq!(
+                report.stats.rows_scored,
+                stats["rowsScored"].as_u64().unwrap() as usize
+            );
+            // rowsCanFire / rowsFired intentionally differ: the audit
+            // baseline counts CV/SS fire rows that the fire-applicability
+            // gate now excludes from the fire semantics. Report, don't judge.
+            let want_can_fire = stats["rowsCanFire"].as_u64().unwrap() as usize;
+            let want_fired = stats["rowsFired"].as_u64().unwrap() as usize;
+            if report.stats.rows_can_fire != want_can_fire || report.stats.rows_fired != want_fired
+            {
+                eprintln!(
+                    "[regression] {} rowsCanFire {}/{} rowsFired {}/{} (baseline predates fire-applicability)",
+                    report.replay_id,
+                    report.stats.rows_can_fire,
+                    want_can_fire,
+                    report.stats.rows_fired,
+                    want_fired
+                );
+            }
+            assert_eq!(
+                report.stats.rows_no_move,
+                stats["rowsNoMove"].as_u64().unwrap() as usize
+            );
+        }
+        eprintln!(
+            "[regression] {} replays / {ships} ships / {samples} samples match scores-batch20.jsonl (torpedo null); {skipped_hull} CV/SS hull(s) skipped (baseline predates fire-applicability)",
+            files.len()
+        );
+    }
+
+    /// Real T4 model parity (ignored by default): load the delivered fp32
+    /// three-head ONNX and compare its calibrated logits against the fixture
+    /// on the non-variant-attribute rows (1e-5; A's ORT parity measured
+    /// max 1.43e-6). Variant-attr rows need an attrs dict the Rust featurizer
+    /// cannot inject (it reads the embedded table), so they are covered by
+    /// the explicit-attrs feature parity above.
+    #[test]
+    #[ignore = "needs WOWSP_TORPEDO4_MODEL pointing at the T4 fp32.onnx"]
+    fn torpedo4_model_matches_fixture_logits() {
+        let path = std::env::var("WOWSP_TORPEDO4_MODEL").expect("WOWSP_TORPEDO4_MODEL");
+        let bytes = std::fs::read(&path).expect("read T4 model");
+        let mut model = ScoreModel::from_bytes(path, &bytes).expect("load T4 model");
+        let contract = TorpedoContract::from_model(&model).expect("known T4 contract");
+        assert_eq!(
+            (contract.global_dim, contract.heads),
+            (TORP_GLOBAL_DIM_V4, 3)
+        );
+        let fixture = include_str!("fixtures/torpedo4_parity.json");
+        let mut checked = 0usize;
+        for line in fixture.lines().filter(|l| !l.trim().is_empty()) {
+            let value: serde_json::Value = serde_json::from_str(line).expect("fixture line");
+            let scenario = value["scenario"].as_str().unwrap_or("");
+            if scenario.contains("hull_not_in_attrs") || scenario.contains("attrs_fields_missing") {
+                continue;
+            }
+            let core: DecisionRowCore =
+                serde_json::from_value(value["decisionRow"].clone()).expect("decision row");
+            let mut row = torpedo_row(core, true, None);
+            if let Some(click) = value.get("clickContext") {
+                let g = |k: &str, d: f32| -> f32 {
+                    click
+                        .get(k)
+                        .and_then(|v| v.as_f64())
+                        .map(|v| v as f32)
+                        .unwrap_or(d)
+                };
+                row.torp_last_click_age_s = g("torpLastClickAgeS", -1.0);
+                row.torp_clicks_30s = g("torpClicks30s", 0.0).max(0.0) as u32;
+                row.torp_fish_30s = g("torpFish30s", 0.0).max(0.0) as u32;
+                row.torp_last_click_fish = g("torpLastClickFish", 0.0).max(0.0) as u32;
+                row.torp_total_clicks = g("torpTotalClicks", 0.0).max(0.0) as u32;
+            }
+            let (entity, global, mask) = feature_tensors_torpedo4(&row);
+            let (a, b, c) = model
+                .infer_torpedo(&entity, &global, &mask, None)
+                .expect("T4 infer");
+            let want = |k: &str| value[k].as_f64().expect("fixture logit") as f32;
+            assert!(
+                (a - want("logitA")).abs() < 1e-5,
+                "row {checked} ({scenario}) logitA {a} vs {}",
+                want("logitA")
+            );
+            assert!(
+                (b - want("logitB")).abs() < 1e-5,
+                "row {checked} ({scenario}) logitB {b} vs {}",
+                want("logitB")
+            );
+            let c = c.expect("three-head logitC");
+            assert!(
+                (c - want("logitC")).abs() < 1e-5,
+                "row {checked} ({scenario}) logitC {c} vs {}",
+                want("logitC")
+            );
+            checked += 1;
+        }
+        eprintln!("[torp4] real fp32 model logits match fixture on {checked} non-variant rows");
+        assert!(checked >= 30, "too few non-variant fixture rows: {checked}");
     }
 }

@@ -103,6 +103,9 @@ function sampleReport(): StaticReport {
             meanProb: 0.016,
             canLaunchWindows: 14,
             launches: 3,
+            // T4 headC: conditional P(hit | launched); 3 launches keeps the
+            // thin-sample caution on the card by default.
+            effectiveness: 0.31,
           },
         },
         outcome: null,
@@ -782,6 +785,79 @@ describe("StaticReportPanel torpedo diagnostics", () => {
     expect(scores[1].text()).toContain(
       i18nT("replay.report.fireMove", { f: "83", m: "42" }),
     );
+  });
+
+  it("renders the conditional effectiveness row and its thin-sample caution", () => {
+    const wrapper = mount(StaticReportPanel, {
+      props: { report: sampleReport(), onPick: () => {} },
+    });
+    const card = torpedoCard(wrapper);
+    const eff = card.find(".srp-head__score-eff");
+    expect(eff.exists()).toBe(true);
+    // 0.31 -> 31 % expected effectiveness at 3 launches.
+    expect(eff.text()).toContain(
+      i18nT("replay.report.torpedoEffectiveness", { e: "31", l: 3 }),
+    );
+    // Three launches is below the honest-read bar: the caution rides along.
+    expect(eff.text()).toContain(
+      i18nT("replay.report.torpedoEffectivenessThin", { l: 3 }),
+    );
+  });
+
+  it("hides the effectiveness row for a two-head model (DTO null)", () => {
+    const report = sampleReport();
+    report.roster[0] = {
+      ...report.roster[0],
+      whole: {
+        ...report.roster[0].whole!,
+        torpedo: {
+          ...report.roster[0].whole!.torpedo!,
+          effectiveness: null,
+        },
+      },
+    };
+    const wrapper = mount(StaticReportPanel, {
+      props: { report, onPick: () => {} },
+    });
+    const card = torpedoCard(wrapper);
+    // The DTO says "no third head": hide the row, never render a 0 %.
+    expect(card.find(".srp-head__score-eff").exists()).toBe(false);
+    expect(card.text()).not.toContain(
+      i18nT("replay.report.torpedoEffectivenessThin", { l: 3 }),
+    );
+    // The two-head diagnostics still render.
+    expect(card.find("b").text()).toBe("62%");
+    expect(card.text()).toContain(
+      i18nT("replay.report.torpedoDetail", { a: "62", p: "1.6", n: 14, l: 3 }),
+    );
+  });
+
+  it("drops the thin-sample caution once the launch count reaches five", () => {
+    const report = sampleReport();
+    report.roster[0] = {
+      ...report.roster[0],
+      whole: {
+        ...report.roster[0].whole!,
+        torpedo: {
+          agreement: 0.6,
+          meanProb: 0.02,
+          canLaunchWindows: 20,
+          launches: 8,
+          effectiveness: 0.44,
+        },
+      },
+    };
+    const wrapper = mount(StaticReportPanel, {
+      props: { report, onPick: () => {} },
+    });
+    const eff = torpedoCard(wrapper).find(".srp-head__score-eff");
+    expect(eff.text()).toContain(
+      i18nT("replay.report.torpedoEffectiveness", { e: "44", l: 8 }),
+    );
+    expect(eff.text()).not.toContain(
+      i18nT("replay.report.torpedoEffectivenessThin", { l: 8 }),
+    );
+    expect(eff.find(".srp-head__score-thin").exists()).toBe(false);
   });
 
   it("renders N/A when the torpedo model is not installed", () => {

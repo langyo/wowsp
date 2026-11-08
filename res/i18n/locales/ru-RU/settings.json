@@ -327,6 +327,7 @@
   "resourcesDecisionsModelMissing": "Модель отсутствует",
   "resourcesDecisionsAdviceInstalled": "Модель советов установлена ({size})",
   "resourcesDecisionsTorpedoInstalled": "Торпедная модель установлена ({size})",
+  "resourcesDecisionsTorpedo4Installed": "Торпедная модель Torp4 установлена ({size})",
   "resourcesDecisionsAbsent": "Не установлен.",
   "resourcesDecisionsUnknown": "Не удалось прочитать состояние пакета.",
   "resourcesDecisionsDemoInUse": "Используется встроенная демомодель.",

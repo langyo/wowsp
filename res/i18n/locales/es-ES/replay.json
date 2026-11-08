@@ -745,7 +745,9 @@
     "classNotCovered": "Ningún modelo de decisión de tiro cubre esta clase de barco (solo acuerdo de movimiento).",
     "torpedoAgreement": "Acuerdo de torpedos",
     "torpedoDetail": "acuerdo {a}% · media {p}% · lanzables {n} · lanzados {l} (solo diagnóstico, fuera de la puntuación total)",
-    "torpedoNotCovered": "Sin modelo de torpedos para este barco"
+    "torpedoNotCovered": "Sin modelo de torpedos para este barco",
+    "torpedoEffectiveness": "Eficacia esperada {e}% ({l} lanzamientos; condicional, solo diagnóstico, no una tasa de impacto)",
+    "torpedoEffectivenessThin": "Muestra escasa ({l} lanzamientos) — solo orientativo"
   },
   "detail": {
     "title": "Detalle de la batalla"

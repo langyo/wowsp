@@ -489,9 +489,17 @@ export default defineComponent({
                       })}
                     </span>
                   ) : null}
-                  {/* E26/P2 torpedo slot: the report side shows N/A without
-                      it, so the pack card reports presence + on-disk size. */}
-                  {d?.present && d.torpedoModelPresent ? (
+                  {/* Torpedo slots: the T4 three-head model is preferred,
+                      the legacy two-head slot is the fallback for older
+                      packs. The report side shows N/A without either, so the
+                      card reports ONE installed model's size. */}
+                  {d?.present && d.torpedo4ModelPresent ? (
+                    <span class="settings-modal__pack-desc">
+                      {t("settings.resourcesDecisionsTorpedo4Installed", {
+                        size: formatBytes(d.torpedo4ModelBytes),
+                      })}
+                    </span>
+                  ) : d?.present && d.torpedoModelPresent ? (
                     <span class="settings-modal__pack-desc">
                       {t("settings.resourcesDecisionsTorpedoInstalled", {
                         size: formatBytes(d.torpedoModelBytes),

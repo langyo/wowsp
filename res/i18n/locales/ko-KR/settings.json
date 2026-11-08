@@ -327,6 +327,7 @@
   "resourcesDecisionsModelMissing": "모델 없음",
   "resourcesDecisionsAdviceInstalled": "어드바이스 모델 설치됨({size})",
   "resourcesDecisionsTorpedoInstalled": "어뢰 모델 설치됨({size})",
+  "resourcesDecisionsTorpedo4Installed": "Torp4 어뢰 모델 설치됨({size})",
   "resourcesDecisionsAbsent": "설치되지 않음.",
   "resourcesDecisionsUnknown": "모델 팩 상태를 읽을 수 없습니다.",
   "resourcesDecisionsDemoInUse": "내장 데모 모델을 사용 중입니다.",

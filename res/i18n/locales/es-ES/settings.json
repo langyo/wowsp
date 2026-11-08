@@ -327,6 +327,7 @@
   "resourcesDecisionsModelMissing": "Modelo ausente",
   "resourcesDecisionsAdviceInstalled": "Modelo de consejos instalado ({size})",
   "resourcesDecisionsTorpedoInstalled": "Modelo de torpedos instalado ({size})",
+  "resourcesDecisionsTorpedo4Installed": "Modelo de torpedos Torp4 instalado ({size})",
   "resourcesDecisionsAbsent": "No instalado.",
   "resourcesDecisionsUnknown": "No se pudo leer el estado del paquete.",
   "resourcesDecisionsDemoInUse": "Se usa el modelo de demostración integrado.",

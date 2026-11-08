@@ -327,6 +327,7 @@
   "resourcesDecisionsModelMissing": "Model missing",
   "resourcesDecisionsAdviceInstalled": "Advice model installed ({size})",
   "resourcesDecisionsTorpedoInstalled": "Torpedo model installed ({size})",
+  "resourcesDecisionsTorpedo4Installed": "Torp4 model installed ({size})",
   "resourcesDecisionsAbsent": "Not installed.",
   "resourcesDecisionsUnknown": "Could not read the pack status.",
   "resourcesDecisionsDemoInUse": "The built-in demo model is in use.",

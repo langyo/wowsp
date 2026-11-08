@@ -161,6 +161,20 @@
     max-width: 300px;
   }
 
+  /** T4 conditional-effectiveness sub-row: the one number on the card that
+   *  is conditioned on the ship actually launching, so it keeps a slightly
+   *  stronger ink than the aggregate detail line. */
+  &__score-eff {
+    color: var(--srp-ink);
+  }
+
+  /** Thin-sample caution (<5 launches): warning ink, never a fake precision. */
+  &__score-thin {
+    margin-left: 6px;
+    font-style: normal;
+    color: var(--srp-warn);
+  }
+
   /** N/A face (model missing / hull not applicable): intentionally not the
    *  19px number type — a missing model is not a score. */
   &__score-na {

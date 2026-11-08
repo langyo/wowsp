@@ -745,7 +745,9 @@
     "classNotCovered": "此艦種尚無開火判定模型（僅顯示走位認同度）",
     "torpedoAgreement": "魚雷認同度",
     "torpedoDetail": "認同 {a}% · 均值 {p}% · 可發射 {n} · 實發 {l}（僅診斷，不計入總分）",
-    "torpedoNotCovered": "此艦無魚雷模型或不適用"
+    "torpedoNotCovered": "此艦無魚雷模型或不適用",
+    "torpedoEffectiveness": "預期效果 {e}%（條件於已發射 {l} 次，僅診斷，非命中率）",
+    "torpedoEffectivenessThin": "樣本少（{l} 次發射），僅供參考"
   },
   "detail": {
     "title": "對局詳情"

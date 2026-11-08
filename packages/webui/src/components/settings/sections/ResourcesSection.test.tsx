@@ -45,6 +45,8 @@ function packStatus(over: Partial<DecisionsPackStatus> = {}): DecisionsPackStatu
     adviceModelBytes: 0,
     torpedoModelPresent: false,
     torpedoModelBytes: 0,
+    torpedo4ModelPresent: false,
+    torpedo4ModelBytes: 0,
     losMaps: [],
     ...over,
   };
@@ -102,7 +104,7 @@ function mountSection(pack: DecisionsPackStatus) {
 }
 
 describe("Settings → Resources decisions pack torpedo slot", () => {
-  it("reports the torpedo model's presence and size", () => {
+  it("falls back to the legacy torpedo slot when no torp4 model is installed", () => {
     const wrapper = mountSection(
       packStatus({
         adviceModelPresent: true,
@@ -122,6 +124,40 @@ describe("Settings → Resources decisions pack torpedo slot", () => {
     expect(text).toContain(
       t("settings.resourcesDecisionsTorpedoInstalled", {
         size: formatBytes(4096),
+      }),
+    );
+  });
+
+  it("prefers the torp4 slot when both torpedo models are installed", () => {
+    const wrapper = mountSection(
+      packStatus({
+        torpedoModelPresent: true,
+        torpedoModelBytes: 4096,
+        torpedo4ModelPresent: true,
+        torpedo4ModelBytes: 8192,
+      }),
+    );
+    const text = wrapper.text();
+    // T4 wins the ONE line: the three-head model is the preferred slot.
+    expect(text).toContain(
+      t("settings.resourcesDecisionsTorpedo4Installed", {
+        size: formatBytes(8192),
+      }),
+    );
+    expect(text).not.toContain(
+      t("settings.resourcesDecisionsTorpedoInstalled", {
+        size: formatBytes(4096),
+      }),
+    );
+  });
+
+  it("reports the torp4 slot when the legacy slot is absent", () => {
+    const wrapper = mountSection(
+      packStatus({ torpedo4ModelPresent: true, torpedo4ModelBytes: 8192 }),
+    );
+    expect(wrapper.text()).toContain(
+      t("settings.resourcesDecisionsTorpedo4Installed", {
+        size: formatBytes(8192),
       }),
     );
   });
