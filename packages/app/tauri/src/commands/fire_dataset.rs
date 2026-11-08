@@ -3308,6 +3308,30 @@ pub struct TorpedoDatasetRow {
     /// HP evidence — the geometry-only control field.
     #[serde(default)]
     pub torp_terminal_near: u32,
+    // ── E26e-g click-context fields (past-only click history at t):
+    //    serde defaults keep the JSON shape additive. ──
+    /// t - most recent click time (seconds); -1.0 when no click happened yet.
+    /// A player click is a cluster of TorpedoLaunch records (gap <= 2 s).
+    #[serde(default = "default_torp_no_click_age")]
+    pub torp_last_click_age_s: f32,
+    /// Player clicks in (t - 30 s, t].
+    #[serde(default)]
+    pub torp_clicks_30s: u32,
+    /// Fish (TorpedoLaunch records) inside those same last-30 s clicks.
+    #[serde(default)]
+    pub torp_fish_30s: u32,
+    /// Fish of the most recent click at or before t (0 when none yet).
+    #[serde(default)]
+    pub torp_last_click_fish: u32,
+    /// Total player clicks at or before t.
+    #[serde(default)]
+    pub torp_total_clicks: u32,
+}
+
+/// serde default for torp_last_click_age_s: -1.0 ("no click yet") rather than
+/// 0.0, which would read as "a click happened at exactly t".
+fn default_torp_no_click_age() -> f32 {
+    -1.0
 }
 
 impl BatchRow for TorpedoDatasetRow {
@@ -3337,10 +3361,19 @@ impl BatchStats for TorpedoDatasetExportStats {
     }
 }
 
+/// One player click: the first launch time of the cluster plus its fish
+/// count (E26e-g). One click arrives as several TorpedoLaunch records, so
+/// fish is the salvo size the player actually committed to.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TorpClick {
+    time: f32,
+    fish: u32,
+}
+
 /// Click-level torpedo state of one owner (E26).
 struct OwnerTorpContext {
-    /// Player clicks (first launch time of each cluster), time-sorted.
-    clicks: Vec<f32>,
+    /// Player clicks (first launch time of each cluster + fish), time-sorted.
+    clicks: Vec<TorpClick>,
     /// Reload used by labelA (seconds; 0.0 = tubes ready / unknown).
     reload_s: f32,
     /// Torpedo range used by labelA (metres).
@@ -3351,30 +3384,50 @@ struct OwnerTorpContext {
 
 /// Cluster per-owner launch times into player clicks: a consecutive gap of at
 /// most TORP_CLICK_MERGE_S joins the previous cluster (salvo_id is NOT the
-/// click key — one click arrives as several salvo ids 0.3-1.0 s apart).
-fn merge_torp_clicks(times: &[f32]) -> Vec<f32> {
-    let mut clicks: Vec<f32> = Vec::new();
+/// click key — one click arrives as several salvo ids 0.3-1.0 s apart). Each
+/// fish is one TorpedoLaunch record, so a cluster's fish count is its record
+/// count (E26e-g keeps it alongside the click time).
+fn merge_torp_clicks(times: &[f32]) -> Vec<TorpClick> {
+    let mut clicks: Vec<TorpClick> = Vec::new();
     let mut last: Option<f32> = None;
     for &t in times {
         if last.is_none_or(|prev| t - prev > TORP_CLICK_MERGE_S) {
-            clicks.push(t);
+            clicks.push(TorpClick { time: t, fish: 1 });
+        } else if let Some(click) = clicks.last_mut() {
+            click.fish += 1;
         }
         last = Some(t);
     }
     clicks
 }
 
+/// E26e-g click-context block for one decision row at t:
+/// (last click age seconds or -1.0, clicks in (t-30, t], fish in the same
+/// window, fish of the last click, total clicks at or before t). All values
+/// are past-only (no future click leaks into the row).
+fn torp_click_context_fields(clicks: &[TorpClick], t: f32) -> (f32, u32, u32, u32, u32) {
+    let upto = clicks.partition_point(|c| c.time <= t);
+    let last = upto.checked_sub(1).map(|i| clicks[i]);
+    let last_age = last.map_or(-1.0, |c| (t - c.time).max(0.0));
+    let last_fish = last.map_or(0, |c| c.fish);
+    let window_start = t - 30.0;
+    let start = clicks.partition_point(|c| c.time <= window_start);
+    let clicks30 = (upto - start) as u32;
+    let fish30: u32 = clicks[start..upto].iter().map(|c| c.fish).sum();
+    (last_age, clicks30, fish30, last_fish, upto as u32)
+}
+
 /// Reload for labelA: the GameParams shotDelay when known (authoritative),
 /// else a p10 of the observed click intervals clamped to the plausible band;
 /// fewer than two observed clicks => 0.0 (tubes start loaded).
-fn estimate_torp_reload(clicks: &[f32], attr_reload_s: f32) -> f32 {
+fn estimate_torp_reload(clicks: &[TorpClick], attr_reload_s: f32) -> f32 {
     if attr_reload_s > 0.0 {
         return attr_reload_s;
     }
     if clicks.len() < 2 {
         return 0.0;
     }
-    let intervals: Vec<f32> = clicks.windows(2).map(|w| w[1] - w[0]).collect();
+    let intervals: Vec<f32> = clicks.windows(2).map(|w| w[1].time - w[0].time).collect();
     percentile(intervals, 0.10)
         .unwrap_or(0.0)
         .clamp(TORP_RELOAD_MIN_S, TORP_RELOAD_MAX_S)
@@ -3682,9 +3735,9 @@ pub fn export_torpedo_dataset(
                 t += DECISION_INTERVAL_S;
                 continue;
             }
-            let last_click = ctx.clicks.iter().rev().find(|&&c| c <= t).copied();
+            let last_click = ctx.clicks.iter().rev().find(|c| c.time <= t).copied();
             let torp_reload_frac = match last_click {
-                Some(c) if ctx.reload_s > 0.0 => ((t - c) / ctx.reload_s).clamp(0.0, 1.0),
+                Some(c) if ctx.reload_s > 0.0 => ((t - c.time) / ctx.reload_s).clamp(0.0, 1.0),
                 _ => 1.0,
             };
             // Reload completes within the label window (the E7 margin: one
@@ -3693,12 +3746,23 @@ pub fn export_torpedo_dataset(
             let reloaded = !ctx
                 .clicks
                 .iter()
-                .any(|&c| c <= t && t - c < effective_reload);
+                .any(|c| c.time <= t && t - c.time < effective_reload);
             // labelA: tubes ready AND an observed-now enemy inside torpedo range.
             let label_a = reloaded && nearest_enemy(ship, ships, own, t, ctx.range_m).is_some();
             // labelB: a click starts in (t, t + label window].
-            let label_b =
-                label_a.then(|| ctx.clicks.iter().any(|&c| c > t && c <= t + LABEL_WINDOW_S));
+            let label_b = label_a.then(|| {
+                ctx.clicks
+                    .iter()
+                    .any(|c| c.time > t && c.time <= t + LABEL_WINDOW_S)
+            });
+            // E26e-g click context: past-only history of the player's clicks.
+            let (
+                torp_last_click_age_s,
+                torp_clicks_30s,
+                torp_fish_30s,
+                torp_last_click_fish,
+                torp_total_clicks,
+            ) = torp_click_context_fields(&ctx.clicks, t);
             let core = build_decision_row_core(
                 stream,
                 ships,
@@ -3739,6 +3803,11 @@ pub fn export_torpedo_dataset(
                 torp_hits,
                 torp_hp_lost_nearby,
                 torp_terminal_near,
+                torp_last_click_age_s,
+                torp_clicks_30s,
+                torp_fish_30s,
+                torp_last_click_fish,
+                torp_total_clicks,
             });
             t += DECISION_INTERVAL_S;
         }
@@ -6247,7 +6316,19 @@ mod tests {
         let ships = ship_infos(&stream, &vehicles);
         let contexts = torp_contexts(&stream, &ships);
         let dd_ctx = contexts.get(&9).expect("dd context");
-        assert_eq!(dd_ctx.clicks, vec![100.0, 112.0]);
+        assert_eq!(
+            dd_ctx.clicks,
+            vec![
+                TorpClick {
+                    time: 100.0,
+                    fish: 3
+                },
+                TorpClick {
+                    time: 112.0,
+                    fish: 1
+                },
+            ]
+        );
         assert!(
             (dd_ctx.reload_s - 125.0).abs() < 1e-3,
             "attrs reload {}",
@@ -6257,7 +6338,94 @@ mod tests {
         assert!(dd_ctx.capable);
         let cv_ctx = contexts.get(&10).expect("cv context");
         assert!(!cv_ctx.capable, "carrier air drops must not be deciders");
-        assert_eq!(cv_ctx.clicks, vec![120.0]);
+        assert_eq!(
+            cv_ctx.clicks,
+            vec![TorpClick {
+                time: 120.0,
+                fish: 1
+            }]
+        );
+    }
+
+    /// E26e-g click context: fish per click, the (t-30, t] window boundary,
+    /// the last-click age/fish and the cumulative click count.
+    #[test]
+    fn torp_click_context_window_boundaries() {
+        let params = FireSampleParams::default();
+        let dd = trajectory(
+            9,
+            Some(4_179_507_152), // Daring
+            (0..500)
+                .map(|i| sample(i as f32 * 0.5, 9, 10.0, 0.0))
+                .collect(),
+        );
+        let bb = trajectory(
+            8,
+            Some(3_247_387_984),
+            (0..500)
+                .map(|i| sample(i as f32 * 0.5, 8, 50.0, 0.0))
+                .collect(),
+        );
+        let stream = ReplayStream {
+            trajectories: vec![dd, bb],
+            torpedoes: vec![
+                torp(100.0, 9, 1),
+                torp(100.3, 9, 2),
+                torp(101.0, 9, 1), // click A: 3 fish
+                torp(112.0, 9, 3), // click B: 1 fish
+                torp(140.0, 9, 4),
+                torp(140.2, 9, 5), // click C: 2 fish
+            ],
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 2, 4_179_507_152),
+            roster_entry(2, 0, 3_247_387_984),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let (rows, _stats) = export_torpedo_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            Some("replayG"),
+            Some("pvp"),
+            &FeatureEvents::empty(),
+        );
+        let at = |t: f32| {
+            let row = rows
+                .iter()
+                .find(|r| r.core.owner_entity_id == 9 && (r.core.t - t).abs() < 1e-3)
+                .unwrap_or_else(|| panic!("no row at t={t}"));
+            (
+                row.torp_last_click_age_s,
+                row.torp_clicks_30s,
+                row.torp_fish_30s,
+                row.torp_last_click_fish,
+                row.torp_total_clicks,
+            )
+        };
+        assert_eq!(at(99.0), (-1.0, 0, 0, 0, 0), "no click before t=99");
+        assert_eq!(at(105.0), (5.0, 1, 3, 3, 1), "click A only");
+        // Window is (t-30, t]: at t=127 both A and B are inside.
+        assert_eq!(at(127.0), (15.0, 2, 4, 1, 2));
+        // t=131: A sits at 100 <= t-30, so only B remains.
+        assert_eq!(at(131.0), (19.0, 1, 1, 1, 2));
+        assert_eq!(at(135.0), (23.0, 1, 1, 1, 2));
+        // t=141: C at 140 is the last click; B stays inside the window.
+        assert_eq!(at(141.0), (1.0, 2, 3, 2, 3));
+        // Wire shape: additive camelCase keys on the row JSON.
+        let row = rows
+            .iter()
+            .find(|r| r.core.owner_entity_id == 9 && (r.core.t - 127.0).abs() < 1e-3)
+            .expect("t=127 row");
+        let js = serde_json::to_value(row).expect("serialize row");
+        assert_eq!(js["torpLastClickAgeS"], 15.0);
+        assert_eq!(js["torpClicks30s"], 2);
+        assert_eq!(js["torpFish30s"], 4);
+        assert_eq!(js["torpLastClickFish"], 1);
+        assert_eq!(js["torpTotalClicks"], 2);
     }
 
     /// E26 labels on a synthetic stream: a Daring firing two clicks at an
@@ -6805,6 +6973,207 @@ mod tests {
             },
             Err(_) => {
                 eprintln!("[e26e-b] WOWSP_TORPEDO_OUTCOME_OUT not set - sidecar not written")
+            },
+        }
+    }
+
+    // ── E26e-g: click-context fields + compact sidecar ──────────────────
+
+    /// One compact E26e-g sidecar line: the click-context fields the trainer
+    /// joins to the dataset/OOF by row order.
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TorpedoClickSidecar {
+        replay_id: Option<String>,
+        t: f32,
+        ship_id: Option<i64>,
+        torp_last_click_age_s: f32,
+        torp_clicks_30s: u32,
+        torp_fish_30s: u32,
+        torp_last_click_fish: u32,
+        torp_total_clicks: u32,
+    }
+
+    /// E26e-g against real replay bytes: env WOWSP_TEST_REPLAY_DIR (or
+    /// WOWSP_TEST_REPLAY, copied to a temp dir with corrupt siblings) selects
+    /// the input; WOWSP_TORPEDO_CLICK_OUT writes the compact JSONL. The
+    /// sidecar is derived from the SAME row vector (and order) as the full
+    /// E26 export, so Python can zip it to the OOF npz rowIndex.
+    #[test]
+    fn e26g_torpedo_click_context_export_on_real_replays() {
+        let replay_dir = match std::env::var("WOWSP_TEST_REPLAY_DIR") {
+            Ok(dir) => std::path::PathBuf::from(dir),
+            Err(_) => match std::env::var("WOWSP_TEST_REPLAY") {
+                Ok(file) => {
+                    let root = std::env::temp_dir().join(format!(
+                        "wowsp_torp_click_real_{}_{}",
+                        std::process::id(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0)
+                    ));
+                    std::fs::create_dir_all(&root).expect("mkdir");
+                    let name = std::path::Path::new(&file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "real.wowsreplay".into());
+                    std::fs::copy(&file, root.join(&name)).expect("copy real replay");
+                    std::fs::write(
+                        root.join("zz_corrupt.wowsreplay"),
+                        [0x5Au8, 0x01, 0xFF, 0x00, 0x33, 0x77, 0x11, 0x42, 0x00, 0x99],
+                    )
+                    .expect("write corrupt");
+                    std::fs::write(root.join("zz_empty.wowsreplay"), b"").expect("write empty");
+                    root
+                },
+                Err(_) => {
+                    eprintln!(
+                        "[e26g] WOWSP_TEST_REPLAY_DIR / WOWSP_TEST_REPLAY not set - skipping"
+                    );
+                    return;
+                },
+            },
+        };
+        let params = FireSampleParams::default();
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let (rows, summary) = export_torpedo_dataset_dir(
+            &replay_dir,
+            los_dir.as_deref(),
+            DEFAULT_EYE_HEIGHT,
+            &params,
+        )
+        .expect("batch runs");
+        let with_click = rows
+            .iter()
+            .filter(|r| r.torp_last_click_age_s >= 0.0)
+            .count();
+        let without_click = rows.len() - with_click;
+        let clicks30: u64 = rows.iter().map(|r| u64::from(r.torp_clicks_30s)).sum();
+        let fish30: u64 = rows.iter().map(|r| u64::from(r.torp_fish_30s)).sum();
+        let launched = rows
+            .iter()
+            .filter(|r| r.label_b_launched == Some(true))
+            .count();
+        let fired_fish: u64 = rows.iter().map(|r| u64::from(r.torp_fired_fish)).sum();
+        let hits: u64 = rows.iter().map(|r| u64::from(r.torp_hits)).sum();
+        let max_total = rows.iter().map(|r| r.torp_total_clicks).max().unwrap_or(0);
+        eprintln!(
+            "[e26g] batch {}: {} seen / {} exported / {} failed -> {} rows; clicks {} (no-click {}); clicks30 {} fish30 {} maxTotal {}; launched {}; firedFish {}; hits {}",
+            summary.root_dir,
+            summary.files_seen,
+            summary.files_exported,
+            summary.files_failed,
+            summary.rows,
+            with_click,
+            without_click,
+            clicks30,
+            fish30,
+            max_total,
+            launched,
+            fired_fish,
+            hits
+        );
+        assert!(summary.files_exported >= 1, "nothing exported");
+        assert!(summary.rows > 0);
+        assert_eq!(summary.rows, rows.len());
+        for r in &rows {
+            // -1 is the only negative age and means "no click yet"; the rest
+            // of the block must be zero in that case.
+            assert!(r.torp_last_click_age_s >= -1.0);
+            if r.torp_last_click_age_s < 0.0 {
+                assert_eq!(r.torp_total_clicks, 0, "age<0 must have zero clicks");
+                assert_eq!(r.torp_clicks_30s, 0);
+                assert_eq!(r.torp_fish_30s, 0);
+                assert_eq!(r.torp_last_click_fish, 0);
+            } else {
+                assert!(r.torp_total_clicks > 0);
+                assert!(r.torp_last_click_fish > 0, "every click has >=1 fish");
+            }
+            assert!(r.torp_clicks_30s <= r.torp_total_clicks);
+            assert!(r.torp_fish_30s >= r.torp_clicks_30s, "each click >=1 fish");
+        }
+        for f in &summary.per_file {
+            if let DatasetBatchOutcome::Failed { reason } = &f.outcome {
+                assert!(!reason.is_empty());
+            }
+        }
+        let sidecar: Vec<TorpedoClickSidecar> = rows
+            .iter()
+            .map(|r| TorpedoClickSidecar {
+                replay_id: r.core.replay_id.clone(),
+                t: r.core.t,
+                ship_id: r.core.ship_id,
+                torp_last_click_age_s: r.torp_last_click_age_s,
+                torp_clicks_30s: r.torp_clicks_30s,
+                torp_fish_30s: r.torp_fish_30s,
+                torp_last_click_fish: r.torp_last_click_fish,
+                torp_total_clicks: r.torp_total_clicks,
+            })
+            .collect();
+        match std::env::var("WOWSP_TORPEDO_CLICK_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create sidecar parent dir");
+                }
+                use std::io::Write;
+                let mut file = std::fs::File::create(&out_path).expect("create sidecar file");
+                for line in &sidecar {
+                    writeln!(
+                        file,
+                        "{}",
+                        serde_json::to_string(line).expect("serialize sidecar")
+                    )
+                    .expect("write sidecar line");
+                }
+                drop(file);
+                let text = std::fs::read_to_string(&out_path).expect("read back sidecar");
+                let lines: Vec<&str> = text.lines().collect();
+                assert_eq!(
+                    lines.len(),
+                    rows.len(),
+                    "sidecar line count must equal rows"
+                );
+                for (i, line) in lines.iter().enumerate() {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).expect("sidecar line parses");
+                    for key in [
+                        "replayId",
+                        "t",
+                        "shipId",
+                        "torpLastClickAgeS",
+                        "torpClicks30s",
+                        "torpFish30s",
+                        "torpLastClickFish",
+                        "torpTotalClicks",
+                    ] {
+                        assert!(value.get(key).is_some(), "missing sidecar key {key}");
+                    }
+                    // Same order as the full export: replay, ship and t agree.
+                    assert_eq!(
+                        value["replayId"].as_str(),
+                        rows[i].core.replay_id.as_deref()
+                    );
+                    assert_eq!(value["t"].as_f64().unwrap() as f32, rows[i].core.t);
+                    assert_eq!(value["shipId"].as_i64(), rows[i].core.ship_id);
+                    let age = value["torpLastClickAgeS"].as_f64().unwrap() as f32;
+                    assert!(
+                        (age - rows[i].torp_last_click_age_s).abs() < 1e-3,
+                        "sidecar age disagrees with row"
+                    );
+                }
+                eprintln!("[e26g] wrote {} sidecar rows to {}", lines.len(), out);
+            },
+            Err(_) => {
+                eprintln!("[e26g] WOWSP_TORPEDO_CLICK_OUT not set - sidecar not written")
             },
         }
     }

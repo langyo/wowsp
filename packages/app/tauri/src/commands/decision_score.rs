@@ -2456,6 +2456,12 @@ mod tests {
             torp_hits: 0,
             torp_hp_lost_nearby: 0.0,
             torp_terminal_near: 0,
+            // E26e-g click-context fields are exporter-only as well.
+            torp_last_click_age_s: -1.0,
+            torp_clicks_30s: 0,
+            torp_fish_30s: 0,
+            torp_last_click_fish: 0,
+            torp_total_clicks: 0,
         }
     }
 
