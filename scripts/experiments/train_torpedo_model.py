@@ -162,6 +162,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help="E26e: calibration_metrics.json path (default: next to the OOF npz)",
     )
+    p.add_argument(
+        "--outcome",
+        nargs="+",
+        default=[],
+        help="E26e-c: 4 outcome sidecar JSONL in --data order (torpFiredFish/torpHits/torpHpLostNearby/torpTerminalNear)",
+    )
+    p.add_argument(
+        "--head-c",
+        action="store_true",
+        help="E26e-c: add a third head (P(torpHits>0 | launched)) trained ONLY on labelB==1 rows; requires --outcome",
+    )
     p.add_argument("--metrics-out", default=None, help="write the full metrics JSON here")
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
@@ -551,8 +562,14 @@ def train_fold(
     b_mask_all,
     log_fn,
     device,
+    y_c=None,
+    c_mask_all=None,
+    use_head_c: bool = False,
 ):
-    """Train one fold, return (p_a_val, p_b_val, epoch_losses, seconds).
+    """Train one fold, return (p_a_val, p_b_val, p_c_val, epoch_losses, seconds).
+
+    E26e-c: with use_head_c the local three-head model additionally trains head C
+    (P(torpHits>0 | launched)) on labelB==1 rows only; head A/B losses unchanged.
 
     Inputs may live in float16 (E26c full-corpus mode) and/or on the GPU;
     each batch is cast to float32 on the model device. Validation runs in
@@ -561,10 +578,14 @@ def train_fold(
     nn = torch.nn
     torch.manual_seed(args.seed + fold)
     np.random.seed(args.seed + fold)
-    model = tfm.build_model(hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
+    if use_head_c:
+        model = build_three_head_model(torch, hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
+    else:
+        model = tfm.build_model(hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
     model.to(device)
     opt = torch.optim.Adam(model.parameters(), lr=args.lr)
     bce_a = nn.BCEWithLogitsLoss(reduction="none")
+    bce_c = nn.BCEWithLogitsLoss(reduction="none")
     pos_weight = getattr(args, "pos_weight", 0.0) or 0.0
     focal_gamma = getattr(args, "focal_gamma", 0.0) or 0.0
     bce_b = nn.BCEWithLogitsLoss(
@@ -596,13 +617,21 @@ def train_fold(
             xb = entity[idx].to(device, non_blocking=True).float()
             gb = glob[idx].to(device, non_blocking=True).float()
             mb = mask[idx].to(device, non_blocking=True).float()
-            la, lb = model(xb, gb, mb)
+            if use_head_c:
+                la, lb, lc = model(xb, gb, mb)
+            else:
+                la, lb = model(xb, gb, mb)
             ya_b = y_a[idx].to(device)
             yb_b = y_b[idx].to(device)
             bm = b_mask_all[idx].to(device)
             loss_a = bce_smoothed_loss(bce_a, la, ya_b, eps).mean()
             loss_b = (head_b_loss(lb, yb_b) * bm).sum() / bm.sum().clamp(min=1.0)
             loss = loss_a + loss_b
+            if use_head_c:
+                yc_b = y_c[idx].to(device)
+                cm = c_mask_all[idx].to(device)
+                loss_c = (bce_c(lc, yc_b) * cm).sum() / cm.sum().clamp(min=1.0)
+                loss = loss + loss_c
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -615,6 +644,7 @@ def train_fold(
     eval_batch = getattr(args, "eval_batch_size", 0) or max(args.batch_size, 8192)
     p_a = np.empty(len(val_idx), dtype=np.float32)
     p_b = np.empty(len(val_idx), dtype=np.float32)
+    p_c = np.empty(len(val_idx), dtype=np.float32) if use_head_c else None
     with torch.no_grad():
         for st in range(0, len(val_idx), eval_batch):
             vidx_np = val_idx[st : st + eval_batch]
@@ -622,10 +652,15 @@ def train_fold(
             xb = entity[vidx].to(device, non_blocking=True).float()
             gb = glob[vidx].to(device, non_blocking=True).float()
             mb = mask[vidx].to(device, non_blocking=True).float()
-            la, lb = model(xb, gb, mb)
+            if use_head_c:
+                la, lb, lc = model(xb, gb, mb)
+            else:
+                la, lb = model(xb, gb, mb)
             p_a[st : st + len(vidx_np)] = torch.sigmoid(la).float().cpu().numpy()
             p_b[st : st + len(vidx_np)] = torch.sigmoid(lb).float().cpu().numpy()
-    return p_a, p_b, losses, time.time() - t0
+            if use_head_c:
+                p_c[st : st + len(vidx_np)] = torch.sigmoid(lc).float().cpu().numpy()
+    return p_a, p_b, p_c, losses, time.time() - t0
 
 
 # ── metrics ─────────────────────────────────────────────────────────────────
@@ -839,6 +874,21 @@ def run_training(args: argparse.Namespace) -> dict:
     log(f"[e26] class counts: {json.dumps(data['class_counts'], ensure_ascii=False)}")
     log(f"[e26] region counts: {json.dumps(data['region_counts'], ensure_ascii=False)}")
 
+    outcome = None
+    if args.outcome:
+        outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
+    if args.head_c and outcome is None:
+        raise SystemExit("[e26] --head-c requires --outcome (4 sidecar JSONL in --data order)")
+    label_c_np = None
+    c_mask_np = None
+    if args.head_c:
+        label_c_np = (outcome["hits"] > 0).astype(np.float32)
+        c_mask_np = (data["label_b"] == 1.0) & (outcome["fired"] >= 1)
+        log("[e26] headC: launched rows " + format(int(c_mask_np.sum()), ",") +
+            " / positives " + format(int(label_c_np[c_mask_np].sum()), ",") +
+            " (hit rate " + format(float(label_c_np[c_mask_np].mean()), ".4f") + ")" +
+            "; labelB==1 but fired==0: " + str(outcome["quality"]["launchedWithZeroFiredFish"]))
+
     entity = torch.from_numpy(data["entity"])
     glob = torch.from_numpy(data["global"])
     mask = torch.from_numpy(data["mask"])
@@ -846,6 +896,13 @@ def run_training(args: argparse.Namespace) -> dict:
     y_b = torch.from_numpy(np.nan_to_num(data["label_b"], nan=0.0))
     b_mask_np = (data["label_a"] == 1.0) & np.isfinite(data["label_b"])
     b_mask = torch.from_numpy(b_mask_np.astype(np.float32))
+    # headC tensors only exist on the --head-c path; train_fold receives None
+    # otherwise (the no-flag path must stay bit-compatible with E26e-a).
+    y_c = None
+    c_mask = None
+    if args.head_c:
+        y_c = torch.from_numpy(label_c_np)
+        c_mask = torch.from_numpy(c_mask_np.astype(np.float32))
     if device.type == "cuda":
         # Move the whole corpus once (float16 entity keeps this ~2 GB) and free the
         # host copies; batches are cast to float32 on the GPU per step.
@@ -855,6 +912,9 @@ def run_training(args: argparse.Namespace) -> dict:
         y_a = y_a.to(device)
         y_b = y_b.to(device)
         b_mask = b_mask.to(device)
+        if args.head_c:
+            y_c = y_c.to(device)
+            c_mask = c_mask.to(device)
         # Free the host copies of the big arrays only — labels/classes/regions stay
         # on the host because the OOF metrics and per-class slices read them.
         data["entity"] = None
@@ -880,6 +940,7 @@ def run_training(args: argparse.Namespace) -> dict:
     n = data["rows"]
     p_a = np.full(n, np.nan, dtype=np.float64)
     p_b = np.full(n, np.nan, dtype=np.float64)
+    p_c = np.full(n, np.nan, dtype=np.float64) if args.head_c else None
     fold_reports: list[dict] = []
     epoch_losses_all: list[list[float]] = []
     for f in range(split["folds"]):
@@ -888,7 +949,7 @@ def run_training(args: argparse.Namespace) -> dict:
         if len(val_idx) == 0 or len(train_idx) == 0:
             continue  # fold 1 of the single-replay path with tiny data
         log(f"[e26] fold {f}: train {len(train_idx):,} / val {len(val_idx):,}")
-        fa, fb, losses, secs = train_fold(
+        fa, fb, fc, losses, secs = train_fold(
             torch=torch,
             entity=entity,
             glob=glob,
@@ -904,9 +965,14 @@ def run_training(args: argparse.Namespace) -> dict:
             b_mask_all=b_mask,
             log_fn=log,
             device=args._device_torch,
+            y_c=y_c,
+            c_mask_all=c_mask,
+            use_head_c=args.head_c,
         )
         p_a[val_idx] = fa
         p_b[val_idx] = fb
+        if args.head_c:
+            p_c[val_idx] = fc
         epoch_losses_all.append(losses)
         va = val_idx
         mb = b_mask_np[va]
@@ -920,6 +986,11 @@ def run_training(args: argparse.Namespace) -> dict:
                 "loss_last": round(losses[-1], 4),
                 "headA": head_a_metrics(data["label_a"][va], p_a[va]),
                 "headB": head_b_metrics(data["label_b"][va][mb], p_b[va][mb]),
+                **(
+                    {"headC": head_b_metrics(label_c_np[va][c_mask_np[va]], p_c[va][c_mask_np[va]])}
+                    if args.head_c
+                    else {}
+                ),
             }
         )
         log(
@@ -936,9 +1007,30 @@ def run_training(args: argparse.Namespace) -> dict:
         "headA": head_a_metrics(data["label_a"][scored], p_a[scored]),
         "headB": head_b_metrics(data["label_b"][scored][b_mask_np[scored]], p_b[scored][b_mask_np[scored]]),
     }
+    if args.head_c:
+        oof["headC"] = head_b_metrics(
+            label_c_np[scored][c_mask_np[scored]], p_c[scored][c_mask_np[scored]]
+        )
     baselines = no_skill_baselines(data["label_b"][b_mask_np])
     per_class = per_class_metrics(data, p_a, p_b, b_mask_np)
     per_region = per_region_metrics(data, p_a, p_b, b_mask_np)
+    per_class_c: dict = {}
+    per_region_c: dict = {}
+    if args.head_c:
+        for cls in sorted(set(data["class"][c_mask_np].tolist())):
+            m = c_mask_np & (data["class"] == cls)
+            per_class_c[cls] = (
+                head_b_metrics(label_c_np[m], p_c[m])
+                if int(m.sum()) >= MIN_CLASS_N
+                else {"rows": int(m.sum()), "insufficient": True}
+            )
+        for reg in sorted(set(data["region"][c_mask_np].tolist())):
+            m = c_mask_np & (data["region"] == reg)
+            per_region_c[reg] = (
+                head_b_metrics(label_c_np[m], p_c[m])
+                if int(m.sum()) >= MIN_CLASS_N
+                else {"rows": int(m.sum()), "insufficient": True}
+            )
 
     hb = oof["headB"]
     base = hb.get("baseRate") or 0.0
@@ -975,6 +1067,9 @@ def run_training(args: argparse.Namespace) -> dict:
             "reweight_head": "B",
             "pos_weight": args.pos_weight,
             "focal_gamma": args.focal_gamma,
+            "head_c": bool(args.head_c),
+            "outcome_sidecars": [str(p) for p in args.outcome],
+            "loss_weights": {"A": 1.0, "B": 1.0, "C": 1.0 if args.head_c else 0.0},
             "pass1_seconds": data["pass1_seconds"],
             "array_bytes": data["array_bytes"],
             "theoretical_bytes": data["theoretical_bytes"],
@@ -1018,6 +1113,7 @@ def run_training(args: argparse.Namespace) -> dict:
             },
             "load_seconds": round(load_s, 1),
         },
+        "outcome": outcome["quality"] if outcome is not None else None,
         "split": {
             "mode": split["mode"],
             "folds": split["folds"],
@@ -1028,6 +1124,8 @@ def run_training(args: argparse.Namespace) -> dict:
         "baselines_headB": baselines,
         "per_class": per_class,
         "per_region": per_region,
+        "per_class_headC": per_class_c,
+        "per_region_headC": per_region_c,
         "per_fold": {
             "folds": fold_reports,
             "summary_mean_std": summarize_per_fold(fold_reports),
@@ -1040,10 +1138,23 @@ def run_training(args: argparse.Namespace) -> dict:
         },
         "acceptance": acceptance,
     }
+    if args.head_c:
+        metrics["calibration_class"] = {
+            "note": "E26e-c secondary: global + per-class temperature scaling (descriptive)",
+            "e26e_a_headB_global_T_reference": 0.7586,
+            "headB": class_temperature_report(
+                p_b[b_mask_np], data["label_b"][b_mask_np], data["class"][b_mask_np]
+            ),
+            "headC": class_temperature_report(
+                p_c[c_mask_np], label_c_np[c_mask_np], data["class"][c_mask_np]
+            ),
+        }
     if args.save_oof:
         metrics["protocol"]["save_oof"] = str(args.save_oof)
         metrics["protocol"]["save_oof_summary"] = save_oof_npz(
-            Path(args.save_oof), data, p_a, p_b, fold, split, args
+            Path(args.save_oof), data, p_a, p_b, fold, split, args,
+            p_c=p_c if args.head_c else None,
+            label_c=label_c_np if args.head_c else None,
         )
     return metrics
 
@@ -1061,6 +1172,15 @@ def print_report(metrics: dict) -> None:
     print(f"headA OOF: AUPRC {a['auprc']} AUC {a['roc_auc']} ECE {a['ece_15bin']} (base {a['baseRate']})")
     print(f"headB OOF: AUPRC {b['auprc']} AUC {b['roc_auc']} logloss {b['logloss']} ECE {b['ece_15bin']} "
           f"(base {b['baseRate']}, top-decile lift {b['topDecile']['lift']})")
+    if "headC" in oof:
+        c = oof["headC"]
+        print(f"headC OOF (launched rows): AUPRC {c['auprc']} AUC {c['roc_auc']} logloss {c['logloss']} "
+              f"ECE {c['ece_15bin']} (base {c['baseRate']}, top-decile lift {c['topDecile']['lift']})")
+        cc = metrics.get("calibration_class", {}).get("headC", {}).get("global")
+        if cc:
+            print(f"headC class-global T {cc['temperature']}: logloss "
+                  f"{cc['before']['logloss']} -> {cc['after']['logloss']}, ECE "
+                  f"{cc['before']['ece_15bin']} -> {cc['after']['ece_15bin']}")
     bl = metrics["baselines_headB"]
     if bl:
         print(f"baseline no-skill AUPRC {bl['noSkill']['auprc']} logloss {bl['noSkill']['logloss']}; "
@@ -1087,7 +1207,8 @@ def print_report(metrics: dict) -> None:
 OOF_NPZ_VERSION = 1
 
 
-def oof_arrays(data: dict, p_a: np.ndarray, p_b: np.ndarray, fold: np.ndarray) -> dict:
+def oof_arrays(data: dict, p_a: np.ndarray, p_b: np.ndarray, fold: np.ndarray,
+               p_c: np.ndarray = None, label_c: np.ndarray = None) -> dict:
     """Compact per-row OOF payload (E26e). Probabilities stay float32; class and
     region are int8 codes with the name tables alongside, so one npz carries
     everything the calibration pass needs (no retraining, no row parsing)."""
@@ -1111,12 +1232,17 @@ def oof_arrays(data: dict, p_a: np.ndarray, p_b: np.ndarray, fold: np.ndarray) -
         "groupCode": np.asarray(data["group"], dtype=np.int32),
         "groupNames": np.array(data["group_names"], dtype="U128"),
     }
+    if p_c is not None:
+        payload["probC"] = np.asarray(p_c, dtype=np.float32)
+    if label_c is not None:
+        payload["labelC"] = np.asarray(label_c, dtype=np.float32)
     return payload
 
 
-def save_oof_npz(path: Path, data: dict, p_a: np.ndarray, p_b: np.ndarray, fold: np.ndarray, split: dict, args) -> dict:
+def save_oof_npz(path: Path, data: dict, p_a: np.ndarray, p_b: np.ndarray, fold: np.ndarray, split: dict, args,
+                 p_c: np.ndarray = None, label_c: np.ndarray = None) -> dict:
     """Write the OOF payload (compressed). Returns a small summary dict."""
-    payload = oof_arrays(data, p_a, p_b, fold)
+    payload = oof_arrays(data, p_a, p_b, fold, p_c=p_c, label_c=label_c)
     payload["meta"] = np.array(json.dumps({
         "version": OOF_NPZ_VERSION,
         "rows": data["rows"],
@@ -1135,6 +1261,7 @@ def save_oof_npz(path: Path, data: dict, p_a: np.ndarray, p_b: np.ndarray, fold:
         "replays": split["n_groups"],
         "class_counts": data["class_counts"],
         "region_counts": data["region_counts"],
+        "head_c": bool(p_c is not None),
     }), dtype="U2048")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1188,6 +1315,43 @@ def fit_temperature(p: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
 def apply_temperature(p: np.ndarray, T: float) -> np.ndarray:
     z = _probs_to_logits(p)
     return 1.0 / (1.0 + np.exp(-z / T))
+
+
+def class_temperature_report(p: np.ndarray, y: np.ndarray, classes: np.ndarray,
+                             min_n: int = 30) -> dict:
+    """E26e-c secondary: fit one global T and one T per ship class (DD/CL/CA/BB/SS)
+    on the given rows; report logloss/Brier/ECE before/after. Descriptive only."""
+    p = np.asarray(p, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    out = {"rows": int(len(y)), "positives": int(y.sum())}
+    if len(y) >= min_n:
+        T, nll0, nll1 = fit_temperature(p, y)
+        p_cal = apply_temperature(p, T)
+        out["global"] = {
+            "temperature": _num(T),
+            "before": _calibration_metrics(y, p),
+            "after": _calibration_metrics(y, p_cal),
+        }
+    else:
+        out["global"] = None
+    per_class = {}
+    for cls in sorted(set(np.asarray(classes, dtype=object).tolist())):
+        m = np.asarray([c == cls for c in classes], dtype=bool)
+        n = int(m.sum())
+        if n < min_n:
+            per_class[str(cls)] = {"rows": n, "insufficient": True}
+            continue
+        T, nll0, nll1 = fit_temperature(p[m], y[m])
+        p_cal = apply_temperature(p[m], T)
+        per_class[str(cls)] = {
+            "rows": n,
+            "positives": int(y[m].sum()),
+            "temperature": _num(T),
+            "before": _calibration_metrics(y[m], p[m]),
+            "after": _calibration_metrics(y[m], p_cal),
+        }
+    out["per_class"] = per_class
+    return out
 
 
 def _calibration_metrics(y: np.ndarray, p: np.ndarray) -> dict:
@@ -1342,6 +1506,143 @@ def run_calibration(args: argparse.Namespace) -> int:
         f"(logloss {metrics['headB']['after']['logloss']} vs prereg {prereg['logloss']}; "
         f"brier {metrics['headB']['after']['brier']} vs prereg {prereg['brier']})")
     return 0
+
+
+
+# ── E26e-c: outcome sidecar loading (row-aligned) ───────────────────────────
+
+OUTCOME_FIELD_ALIASES = {
+    "replayId": ("replayId", "replay_id"),
+    "t": ("t", "time"),
+    "shipId": ("shipId", "ship_id"),
+    "fired": ("torpFiredFish", "torp_fired_fish", "firedFish"),
+    "hits": ("torpHits", "torp_hits", "hits"),
+    "hp": ("torpHpLostNearby", "torp_hp_lost_nearby", "hpLostNearby"),
+    "terminalNear": ("torpTerminalNear", "torp_terminal_near", "terminalNear"),
+}
+
+
+def _pick_outcome_field(row: dict, key: str):
+    for name in OUTCOME_FIELD_ALIASES[key]:
+        if name in row:
+            return row[name]
+    return None
+
+
+def load_outcome_sidecars(paths: list, sidecar_paths: list, data: dict, log_fn) -> dict:
+    """Stream 4 outcome sidecars in --data order and validate row alignment.
+
+    Row i of the concatenated sidecars must match data row i by
+    replayId/t(+/-1e-3)/shipId; counts must be equal. Returns per-row outcome
+    arrays + quality counters. Without --outcome the training path is untouched."""
+    if not sidecar_paths:
+        raise SystemExit("[e26] --outcome needs at least one sidecar (4 for the full corpus, in --data order)")
+    if len(sidecar_paths) > 1 and len(sidecar_paths) != 4:
+        raise SystemExit("[e26] --outcome accepts 1 (single-shard/P0) or 4 (apac,eu,na,own in --data order) sidecars")
+    n = data["rows"]
+    fired = np.zeros(n, dtype=np.int32)
+    hits = np.zeros(n, dtype=np.int32)
+    hp = np.zeros(n, dtype=np.float32)
+    terminal = np.zeros(n, dtype=np.int32)
+    bad_replay = bad_t = bad_ship = missing = 0
+    pos = 0
+    per_shard = []
+    for path in sidecar_paths:
+        rows_here = 0
+        with Path(path).open("r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                if pos >= n:
+                    raise SystemExit("[e26] outcome sidecar has more rows than the dataset (" + str(n) + "); check --outcome order")
+                row = json.loads(line)
+                rows_here += 1
+                rid = _pick_outcome_field(row, "replayId")
+                tv = _pick_outcome_field(row, "t")
+                sid = _pick_outcome_field(row, "shipId")
+                expect_replay = data["group_names"][int(data["group"][pos])]
+                ok = True
+                if rid is None or str(rid) != expect_replay:
+                    bad_replay += 1
+                    ok = False
+                if tv is None or not np.isfinite(float(tv)) or abs(float(tv) - float(data["t"][pos])) > 1e-3:
+                    bad_t += 1
+                    ok = False
+                if sid is None or int(sid) != int(data["ship_id"][pos]):
+                    bad_ship += 1
+                    ok = False
+                fv = _pick_outcome_field(row, "fired")
+                hv = _pick_outcome_field(row, "hits")
+                if fv is None or hv is None:
+                    missing += 1
+                    ok = False
+                if ok:
+                    fired[pos] = int(fv)
+                    hits[pos] = int(hv)
+                    pv = _pick_outcome_field(row, "hp")
+                    hp[pos] = float(pv) if pv is not None else 0.0
+                    tn = _pick_outcome_field(row, "terminalNear")
+                    terminal[pos] = int(tn) if tn is not None else 0
+                pos += 1
+        per_shard.append({"path": str(path), "rows": rows_here})
+    if pos != n:
+        raise SystemExit("[e26] outcome sidecar rows " + str(pos) + " != dataset rows " + str(n) + "; check --outcome order")
+    launched = data["label_b"] == 1.0
+    quality = {
+        "rows": int(n),
+        "launchedRows": int(launched.sum()),
+        "launchedWithZeroFiredFish": int(np.sum(launched & (fired == 0))),
+        "hitsAmongLaunched": int(np.sum(hits[launched])),
+        "firedFishAmongLaunched": int(np.sum(fired[launched])),
+        "terminalNearPositiveRows": int(np.sum(terminal > 0)),
+        "mismatchReplay": int(bad_replay),
+        "mismatchT": int(bad_t),
+        "mismatchShip": int(bad_ship),
+        "missingOutcomeFields": int(missing),
+        "perShard": per_shard,
+    }
+    log_fn("[e26] outcome sidecars joined: " + json.dumps(quality, ensure_ascii=False))
+    if bad_replay or bad_t or bad_ship or missing:
+        log_fn("[e26] WARNING: outcome misalignment counters non-zero — inspect before trusting headC")
+    return {"fired": fired, "hits": hits, "hp": hp, "terminalNear": terminal, "quality": quality}
+
+
+def build_three_head_model(torch, hidden: int, entity_dim: int, global_dim: int):
+    """E26e-c three-head variant of the E26 TwoHeadDeepSets (copied locally so
+    train_fire_model.py stays untouched). Only head C output is new."""
+    import torch.nn as nn
+
+    class ThreeHeadDeepSets(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.phi = nn.Sequential(
+                nn.Linear(entity_dim, hidden),
+                nn.ReLU(),
+                nn.Linear(hidden, hidden),
+                nn.ReLU(),
+            )
+            self.ctx1 = nn.Linear(hidden + global_dim, hidden)
+            self.ctx2 = nn.Linear(hidden, hidden)
+            self.head_a = nn.Linear(hidden, 1)
+            self.head_b = nn.Linear(hidden, 1)
+            self.head_c = nn.Linear(hidden, 1)  # E26e-c: P(hit | launched)
+
+        def forward(self, entity, global_feat, mask):
+            h = self.phi(entity)
+            g = global_feat.unsqueeze(1).expand(-1, h.size(1), -1)
+            h = torch.relu(self.ctx1(torch.cat([h, g], dim=-1)))
+            h = torch.relu(self.ctx2(h))
+            m = mask.unsqueeze(-1)
+            agg = (h * m).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+            return (
+                self.head_a(agg).squeeze(-1),
+                self.head_b(agg).squeeze(-1),
+                self.head_c(agg).squeeze(-1),
+            )
+
+    return ThreeHeadDeepSets()
+
 
 # ── T2 delivery: final fit (all rows) + ONNX export ─────────────────────────
 
@@ -2101,6 +2402,71 @@ def run_selftest() -> int:
     assert tfm.log_loss(yb, pcal) < tfm.log_loss(yb, pb_syn)
     c = _calibration_metrics(yb, pcal)
     assert c["rows"] == 4000 and c["logloss"] is not None
+
+    # 11. E26e-c: outcome sidecar loader / headC contract.
+    ca = parse_args(["--head-c", "--outcome", "a.jsonl", "b.jsonl", "c.jsonl", "d.jsonl"])
+    assert ca.head_c is True and len(ca.outcome) == 4
+    assert parse_args([]).head_c is False
+    odata = {
+        "rows": 4,
+        "group": np.arange(4, dtype=np.int32),
+        "group_names": ["r0", "r1", "r2", "r3"],
+        "t": np.array([0.0, 1.0, 2.0, 3.0], dtype=np.float32),
+        "ship_id": np.array([100, 101, 102, 103], dtype=np.int64),
+        "label_b": np.array([1.0, 0.0, 1.0, 0.0], dtype=np.float32),
+        "class": np.array(["Destroyer", "Destroyer", "Cruiser", "Cruiser"], dtype=object),
+        "region": np.array(["own", "own", "apac", "apac"], dtype=object),
+        "label_a": np.array([1.0, 1.0, 1.0, 0.0], dtype=np.float32),
+    }
+    ocases = [
+        {"replayId": "r0", "t": 0.0, "shipId": 100, "torpFiredFish": 3, "torpHits": 2, "torpHpLostNearby": 500.0, "torpTerminalNear": 2},
+        {"replayId": "r1", "t": 1.0, "shipId": 101, "torpFiredFish": 0, "torpHits": 0, "torpHpLostNearby": 0.0, "torpTerminalNear": 0},
+        {"replayId": "r2", "t": 2.0, "shipId": 102, "torpFiredFish": 1, "torpHits": 1, "torpHpLostNearby": 120.0, "torpTerminalNear": 1},
+        {"replayId": "r3", "t": 3.0, "shipId": 103, "torpFiredFish": 2, "torpHits": 0, "torpHpLostNearby": 0.0, "torpTerminalNear": 1},
+    ]
+    side_paths = []
+    for f, case in zip(("a", "b", "c", "d"), ocases):
+        sp = root / ("outcome_" + f + ".jsonl")
+        sp.write_text(json.dumps(case) + "\n", encoding="utf-8")
+        side_paths.append(sp)
+    joined = load_outcome_sidecars([], side_paths, odata, lambda s: None)
+    q = joined["quality"]
+    assert q["launchedRows"] == 2 and q["launchedWithZeroFiredFish"] == 0
+    assert q["hitsAmongLaunched"] == 3 and q["firedFishAmongLaunched"] == 4
+    assert q["terminalNearPositiveRows"] == 3
+    assert q["mismatchReplay"] == 0 and q["mismatchT"] == 0 and q["mismatchShip"] == 0
+    label_c = (joined["hits"] > 0).astype(np.float32)
+    c_mask = (odata["label_b"] == 1.0) & (joined["fired"] >= 1)
+    assert c_mask.tolist() == [True, False, True, False]
+    assert label_c[c_mask].tolist() == [1.0, 1.0]
+    # a mismatch is counted but rows still join on matching keys
+    bad = dict(ocases[0]); bad["replayId"] = "WRONG"
+    sp = root / "outcome_bad.jsonl"
+    sp.write_text(json.dumps(bad) + "\n", encoding="utf-8")
+    bad_join = load_outcome_sidecars([], [sp] + side_paths[1:], odata, lambda s: None)
+    assert bad_join["quality"]["mismatchReplay"] == 1
+    # wrong row count must be loud
+    try:
+        load_outcome_sidecars([], [side_paths[0]], odata, lambda s: None)
+        raise AssertionError("expected SystemExit on sidecar count mismatch")
+    except SystemExit:
+        pass
+    # headC model has three heads (torch-gated: --selftest stays torch-free when
+    # torch is absent, e.g. in CI's python-only job)
+    try:
+        import torch as _torch
+    except ImportError:
+        _torch = None
+    if _torch is not None:
+        m3 = build_three_head_model(_torch, hidden=16, entity_dim=15, global_dim=38)
+        names = [n for n, _ in m3.named_parameters()]
+        assert any(n.startswith("head_a") for n in names)
+        assert any(n.startswith("head_b") for n in names)
+        assert any(n.startswith("head_c") for n in names)
+        out = m3(
+            _torch.zeros(2, 24, 15), _torch.zeros(2, 38), _torch.ones(2, 24)
+        )
+        assert len(out) == 3 and out[0].shape == (2,) and out[2].shape == (2,)
 
     print("PASS")
     return 0
