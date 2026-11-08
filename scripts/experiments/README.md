@@ -43,6 +43,7 @@
 | E26e-d | 解耦 outcome headC + 联合排序 | 独立 headC（launched-only 训练）+ joint=probB*probC 能否 ≥2.2× 且 headB 不退化 | ⚠️ | headB（E26e-a 原模型，未重训）outcome lift **1.2234× 原样**、ρ 0.952；standaloneC **1.301×**/ρ 0.915；**joint 1.381×（<2.2 预注册线）**/ρ 0.952/CI 排除 0 → **MIXED：解耦无收益，共享 headC（2.213×）更优** |
 | E26e-e | 多任务 headC 损失权重扫描 | λ_C ∈ {0.1,0.3,0.5} 能否同时恢复 headB（AUPRC≥0.0365 且 top-lift≥2.55）并保持 headC（outcome lift≥2.0、ρ≥0.30） | ⚠️ | λ=0.3（预注册主配置）：headB **0.034862 = 2.151×base**、top-lift **2.5195**、AUC 0.6963；headC outcome lift **2.1815**/ρ 0.988/CI [2.006,2.375] → (a) 未过、(b) 过 = **MIXED**；扫描显示 λ↓ 恢复 headB（λ0.1：**2.222×**/2.610/AUC 0.7043，headC **2.252**）→ 方向对但 0.3 不够；下一步 λ≈0.05–0.1 / frozen-trunk |
 | E26e-f | torp3 属性特征 + λ_C=0.1 | torp3（torp2 + 6 维 hull 鱼雷属性：speed/damage/detect/count/deep/ETA）在 λ_C=0.1 下能否恢复 headB（AUPRC≥0.0365 且 top-lift≥2.55）并保持 headC（outcome lift≥2.30） | ⚠️ | headB **0.039022 = 2.408×base**、top-lift **2.789**、AUC 0.7141（全面超过 E26e-b 的 0.037051/2.662/0.7084 ✓）；headC outcome lift **2.2329**（<2.30 ✗）/ρ 1.0/CI [2.040,2.413] → (a) ✓、(b) ✗ = **MIXED**：torp3 显著恢复 headB、headC 基本持平 |
+| E26e-g | torp4 click-context 特征 | torp4（torp3 + 5 维 click-context：lastClickAge/clicks30s/fish30s/lastClickFish/totalClicks）在 λ_C=0.1 下能否把 headC outcome lift 推过 2.30 且 headB 非退化（AUPRC≥0.039022、top-lift≥2.789） | ⚠️ | headB **0.042126 = 2.599×base**、top-lift **2.905**、AUC **0.7273**（非退化 ✓，且较 torp3 再提升）；headC outcome lift **2.1997**（<2.30 ✗，且略低于 torp3 2.2329）/ρ 0.988/CI [1.998,2.378] → (a) ✗、(b) ✓ = **MIXED**：click 特征强力提升 headB，但 headC outcome 无增益（代理标签上限仍属假设，CI 重叠） |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
 ### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
@@ -909,6 +910,61 @@
   e26e_f_train.log, outcome_lift_C.json}`；node3 `/mnt/work/wowsp-kots/e26e-f/{code,run}`（含
   ship_attributes.json）；预注册 `e26e-f-preregistration.md`（脚本 sha `226008dc…`、属性表 sha
   `2bbd3831…`，与 node3 实跑一致）。
+### E26e-g · torp4 click-context 特征（**MIXED**：headB 再提升到 2.599×base，headC outcome 2.200 仍差 2.30 线 0.10）
+
+- **问题（预注册 `out/torpedo_model/e26e-g-preregistration.md`，先落盘后跑）**：E26e-f torp3 把
+  headB 推到 0.039022（2.408×base）/top-lift 2.789/AUC 0.7141，但 headC outcome lift 2.2329
+  距 2.30 线 0.067。本任务加 **5 维 click-context**（torp4）：`lastClickAgeS/60`（无 click→1；
+  sidecar 的 -1 哨兵按无 click 处理，clamp [0,1]）、`clicks30s/8`、`fish30s/16`、
+  `lastClickFish/10`、`totalClicks/50`；global 44→**49**。λ_C=0.1 预先固定。
+- **主验收**：(a) headC outcome lift **≥2.30** 且 ρ≥0.30/CI 排除 0；(b) headB 非退化
+  **AUPRC ≥0.039022 且 top-lift ≥2.789**（1% 容忍线 0.038632/2.761 仅报告）。
+- **实现**：`--click-context` 4 sidecar（与 --data 同序 apac,eu,na,own）+ `--feature-set torp4`；
+  `ClickContextReader` 与数据分片**逐行 lockstep**消费，校验 replayId / t(±1e-3) / shipId，
+  行数必须相等；错位/多余行/EOF 提前均在**加载结束时立即 abort（训练前）**；字段名容忍 `torpLastClickAgeS` 与 `lastClickAgeS`
+  等别名；metrics 记录 `click_coverage`（noClickRows/missingFields/mismatch）；`--selftest` 覆盖
+  49 维/列序/torp3 列不变/缺 sidecar 兜底/别名/-1 哨兵/misaligned sidecar abort；本地真实 sidecar
+  smoke（own）通过。
+- **sidecar（task-39 导出，Lead 验收）**：4 分片行数 1,021,498 / 1,432,164 / 486,859 / 170,863 =
+  3,111,384，与 dataset 完全一致；本任务 join：**mismatch replay/t/ship = 0/0/0、missingFields 0**；
+  **no-click 行 1,138,443（36.6%）**、有 click 行 1,972,941。
+- **主配置结果（λ_C=0.1，torp4，5 折 seed 0，训练 232.4s）**：
+
+  | 指标 | torp4（本任务） | torp3（E26e-f） | 预注册线 |
+  |---|---|---|---|
+  | headB AUPRC | **0.042126 = 2.599×base** | 0.039022 = 2.408× | ≥0.039022 ✓（非退化） |
+  | headB top-decile lift | **2.905** | 2.789 | ≥2.789 ✓ |
+  | headB AUC | **0.7273** | 0.7141 | — |
+  | headC outcome lift（fish-level） | **2.1997** | 2.2329 | ≥2.30 ✗ |
+  | headC ρ / 95% CI | 0.988 / [1.998,2.378] | 1.000 / [2.040,2.413] | ρ≥0.30 ✓ |
+
+  → **(a) FAIL**（2.1997 < 2.30，且低于 torp3 的 2.2329）、**(b) PASS**（headB 全面再提升）→
+  **MIXED**。click-context 与 hull 属性一样**强力提升 headB**（AUPRC +0.0031/+7.9%、top-lift
+  +0.116、AUC +0.013 vs torp3），但对 **headC outcome 排序无增益甚至略降**。
+- **headC OOF（launched 行）**：AUPRC **0.265641**、AUC **0.720822**、logloss 0.346055、
+  Brier 0.104064、ECE **0.012667**、行级 top-lift 2.3716。**十分位命中率**：17.96/13.29/10.52/
+  8.83/8.87/6.67/5.87/4.13/1.38/0.62%（top-bottom 17.34pp）。
+- **按类** outcome lift/ρ：BB 996 行 **3.241**/0.960；CL 5,009 行 **2.221**/0.976；DD 10,949 行
+  **2.084**/0.952；SS 101 行 1.340/0.309（仅描述）。**按 region**：apac **2.452**/0.964、
+  eu **1.961**/0.988、na **2.066**/0.952、own **2.181**/0.903。
+- **headB 按类 AUPRC**：DD 0.0477、CL/CA 0.0306、BB 0.0268、SS 0.0593（均高于 torp3 的
+  0.0444/0.0280/0.0234/0.0525）。
+- **类别温度校准（secondary）**：headB global **T=0.7564**：logloss 0.08934→**0.07866**、
+  Brier 0.016352→0.015791、ECE 0.02457→**0.00064**；headC global **T=1.0723**：logloss
+  0.346055→0.345252、ECE 0.012667→**0.004089**。
+- **判定（预注册）**：**(a) FAIL、(b) PASS → MIXED**。结论：click-context（发射时机/频率）
+  是**发射行为**的好信号（headB 2.599×base 已远超 E26e-b 的 2.286×），但对**命中结果**没有
+  额外信息——headC 连续两轮（torp3/torp4）停在 2.20–2.23×，且 CI 互相重叠；这**提示**代理
+  命中标签接近上限，但该上限仍是假设、本轮不能写成定论；下一步应转向端上概率分级、管位/
+  DoT 几何或结果标签（shotKills join），而不是继续堆静态特征。
+- **局限**：click 特征粗糙（仅点击时刻/30s 计数/鱼数，未含目标/距离/管位）；`lastClickAge`
+  归一化后无 click（-1）与 ≥60s 都落到 1.0，只能靠 clicks/total 计数区分；sidecar 每行按导出
+  顺序 lockstep，依赖导出与 dataset 同序（行数已精确一致）；代理命中（120 units + HP drop，
+  非 server 真值）；SS 101 行、na/own 样本薄；λ_C=0.1 固定未再扫；未做端上部署。
+- **产物**：`out/torpedo_model/e26e-g/{e26e_g_oof.npz（38.8MB）, e26e_g_metrics.json,
+  e26e_g_train.log, outcome_lift_C.json}`；node3 `/mnt/work/wowsp-kots/e26e-g/{code,run,click}`；
+  预注册 `e26e-g-preregistration.md`（脚本 sha `280815fa…`，为工作树 CRLF 字节；提交后 LF
+  归一化会变 raw sha，复核时按该行尾约定）。
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |
