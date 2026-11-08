@@ -401,17 +401,19 @@ computed in the webui from data the client already holds: ledger records whose
 written-file list lands under the unit's paths, the consumer set of a shared
 component the unit carries (pack records whose `shared_roots` edge names it),
 and the foreign/Aslain or catalog pairing of the unit's own identity. Opening a
-row shows the detail pane's bottom **related mods** drawer (collapsed by
-default): each associated mod lists its role (own / shared component /
-dependent), the files it claims in this unit and in total, with a jump to its
-catalog entry when one exists. Managed rows offer a full uninstall — the same
-ledger rewind as the catalog uninstall, so every file the mod owns anywhere in
-`res_mods` (including its residual files in other trees and their `.bak`
-twins) is removed, overwritten originals are restored, and shared components
-whose last consumer leaves go with it. Aslain/manifest rows route through the
-unit uninstall (which also cuts `installed_mods.xml`), and a shared-component
-OWNER row is not removable on its own: the component's lifetime belongs to its
-consumers.
+row shows the detail pane's **related mods** section at the end of its
+body (collapsed by default; a unit with nothing else to show starts it
+directly under the pane head instead of leaving the flex-grown empty body
+above a bottom-pinned drawer): each associated mod lists its role (own /
+shared component / dependent), the files it claims in this unit and in
+total, with a jump to its catalog entry when one exists. Managed rows offer a
+full uninstall — the same ledger rewind as the catalog uninstall, so every
+file the mod owns anywhere in `res_mods` (including its residual files in
+other trees and their `.bak` twins) is removed, overwritten originals are
+restored, and shared components whose last consumer leaves go with it.
+Aslain/manifest rows route through the unit uninstall (which also cuts
+`installed_mods.xml`), and a shared-component OWNER row is not removable on
+its own: the component's lifetime belongs to its consumers.
 
 **Junk pruning (previews and screenshots).** Aslain-ingested packs and several
 authors' payloads ship promo material — screenshots, preview folders,

@@ -30,7 +30,7 @@ import type { ModKind } from "@/api";
 export const KIND_ORDER: ModKind[] = ["voice", "skin", "script", "gui", "patch", "textures"];
 
 /** lucide glyph + accent-hue class per installed kind (drives the row tile
- *  and the drawer header). */
+ *  and the pane head tile). */
 export const KIND_META: Record<ModKind, { icon: typeof Puzzle; class: string }> = {
   voice: { icon: AudioLines, class: "voice" },
   skin: { icon: Palette, class: "skin" },

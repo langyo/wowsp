@@ -144,7 +144,7 @@ export function renderInstalledRow(ctx: ResourcesCtx, m: InstalledMod, selKey: s
         : "green";
   // Known-mod association count: how many ledger records / shared-runtime
   // consumers / foreign rows claim files inside this unit's tree (the
-  // detail drawer below lists them).
+  // detail pane's association section lists them).
   const relatedCount = ctx.unitRelationCountOf(m);
   return (
     <button

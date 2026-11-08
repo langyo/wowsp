@@ -5,7 +5,7 @@
  *  ModsInstaller, the ttaro GUI trees, the gettext DLL…) are written by
  *  every dependent pack — the ledger keeps their files in one `shared.*`
  *  record and each pack declares a `sharedRoots` edge. The installed
- *  list's count tag and the detail pane's related-mod drawer read this
+ *  list's count tag and the detail pane's related-mod section read this
  *  pure derivation, so the two surfaces can never disagree.
  *
  *  Vocabulary of one relation row (see UnitRelation):
@@ -448,7 +448,7 @@ export function relationsByUnit(
 }
 
 /** Association count of one unit (0 when it has no known-mod relations) —
- *  the sidebar row's tail tag and the drawer's header both read this. */
+ *  the sidebar row's tail tag and the section's header both read this. */
 export function unitRelationCount(
   units: readonly InstalledMod[],
   records: readonly ModInstallRecord[],

@@ -823,7 +823,7 @@ export default defineComponent({
           {renderMigrateWizard(ctx)}
           {renderFileListWindow(ctx)}
 
-          {/* Related-mod removal (the installed pane's bottom drawer): a
+          {/* Related-mod removal (the installed pane's association section): a
               ledger row leaves through the catalog uninstall, which deletes
               its files in EVERY directory and restores the originals the
               install overwrote — the confirm copy says exactly that. */}

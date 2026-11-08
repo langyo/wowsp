@@ -258,7 +258,8 @@ export function useModHub() {
   // Mods are not isolated directories: catch-all trees collect several
   // packs' files and the shared runtime components are written by every
   // dependent pack. One derivation serves both the list row's count tag
-  // and the detail pane's drawer, so the two surfaces can never disagree.
+  // and the detail pane's association section, so the two surfaces can
+  // never disagree.
   const unitRelations = computed<Map<string, UnitRelation[]>>(() =>
     relationsByUnit(
       installed.value,
@@ -268,7 +269,7 @@ export function useModHub() {
       gameRoot.value,
     ),
   );
-  // The related-mod drawer's open state — collapsed by default, reset on
+  // The related-mod section's open state — collapsed by default, reset on
   // every pane change so a new selection never opens pre-expanded.
   const relatedOpen = ref(false);
   // The record relation awaiting its remove confirmation. Foreign /
@@ -1491,7 +1492,7 @@ export function useModHub() {
   }
 
   // ── Known-mod relations of one installed unit (关联 mod 管理) ───────
-  // The list row's count tag and the detail pane's drawer read the same
+  // The list row's count tag and the detail pane's section read the same
   // computed map. Removal routes split by row kind: a ledger row leaves
   // through the catalog uninstall (every recorded file in every directory,
   // snapshots restored), while a foreign / unpaired-catalog row rides the
