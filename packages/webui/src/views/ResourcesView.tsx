@@ -237,9 +237,16 @@ export default defineComponent({
           case "foreign":
             return `foreign:${sel.unit.installer}:${sel.unit.key}`;
           case "component":
-            return `component:${sel.comp.label}`;
+            return `component:${sel.comp.key}`;
           case "local":
             return "local";
+          default: {
+            // A new Selection mode must extend this key: its rows would
+            // otherwise keep the previous selection's pane body (and scroll
+            // offset). The assignment makes a missed mode a type error.
+            const unreachable: never = sel;
+            return String(unreachable);
+          }
         }
       })();
       return (

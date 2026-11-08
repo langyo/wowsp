@@ -1246,8 +1246,13 @@ describe("installed-unit known-mod relations", () => {
     await rowOf("Mod B").trigger("click");
     await flushPromises();
     expect(view.find(".mod-detail__related-head").attributes("aria-expanded")).toBe("true");
-    expect(view.findAll(".mod-detail__related-row")).toHaveLength(1);
+    const rows = view.findAll(".mod-detail__related-row");
+    expect(rows).toHaveLength(1);
+    // Mod B's own relation — not a stale row left over from the old pane.
+    expect(rows[0].find(".mod-detail__related-name").text()).toContain("Mod B");
     expect(view.find(".mod-detail__scroll").element).not.toBe(firstBody);
+    // The old body is really detached, not merely unshadowed.
+    expect(firstBody.isConnected).toBe(false);
   });
 
   it("removes a managed relation through the catalog uninstall and rescans", async () => {
