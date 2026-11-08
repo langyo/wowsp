@@ -164,13 +164,13 @@ _lint-notes:
 lint target='full' *FLAGS='':
     @just _lint-{{target}} {{FLAGS}}
 
-# Live gate over the PUBLISHED GitHub Releases bodies (needs gh auth; the
-# same lint ci.yml runs — AGENTS.md §10). Run after every
-# release_notes_i18n.py set/wrap:
-#   just notes-lint                → hard-validate every v* release body
-#   just notes-lint --tag v0.6.7   → scope to one release
+# Live gate over the PUBLISHED GitHub Releases (needs gh auth): the
+# English release bodies plus every release-notes-i18n-<tag>.json
+# translation asset (AGENTS.md section 10). Run after every pack/set:
+#   just notes-lint                -> validate every v* release
+#   just notes-lint --tag v0.6.7   -> scope to one release
 notes-lint *FLAGS='':
-    @python scripts/release_notes_i18n.py lint {{FLAGS}}
+    @python scripts/release_notes_i18n.py lint --assets {{FLAGS}}
 
 # Standalone i18n parity check (same script as `just lint i18n`).
 #   just i18n-check          → i18n parity check

@@ -88,14 +88,15 @@ jobs:
           python scripts/check_licenses.py
           python scripts/check_licenses.py --self-test
       - name: Release-notes i18n self-test
-        # The grammar fixtures for the release-body scaffold (AGENTS.md
-        # §10) — hermetic, no network, keeps the python authority and the
-        # webui parser in agreement.
+        # The format fixtures for the English body + release-notes-i18n-<tag>
+        # JSON asset model (AGENTS.md §10) — hermetic, no network, keeps the
+        # python authority and the webui parser in agreement.
         run: python scripts/release_notes_i18n.py self-test
       - name: Release-notes i18n lint
-        # Lints the PUBLISHED release bodies on GitHub: scaffold grammar +
-        # per-locale translation constraints. Untranslated sections are
-        # canonical placeholders — allowed; structural violations fail.
+        # Lints the PUBLISHED release bodies on GitHub: the canonical English
+        # body (the retired v1 scaffold is a soft legacy warning). Asset-side
+        # checks run with --assets in the release workflow; this body gate
+        # never fails on translation progress.
         env:
           GH_TOKEN: ${{ github.token }}
         run: python scripts/release_notes_i18n.py lint

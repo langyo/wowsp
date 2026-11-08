@@ -46,6 +46,27 @@ export default defineComponent({
     const sentinel = ref<HTMLElement | null>(null);
     let observer: IntersectionObserver | null = null;
 
+    /** Lazy translation-asset fetch (AGENTS.md §10): whenever the feed or
+     *  the UI locale changes, request the release-notes-i18n asset for every
+     *  visible release the user's locale needs. ensureTranslations is
+     *  idempotent per release, so streaming more batches and locale switches
+     *  stay cheap; keeping this out of the render path avoids a fetch side
+     *  effect during render. */
+    watch(
+      [
+        () => changelog.releases.map((release) => release.version).join(","),
+        () => lang.uiLocale.value,
+        () => changelog.i18nEpoch,
+      ],
+      () => {
+        if (lang.uiLocale.value === "en-US") return;
+        for (const release of changelog.releases) {
+          void changelog.ensureTranslations(release.version);
+        }
+      },
+      { immediate: true },
+    );
+
     /** One load triggered by the sentinel; after it lands, re-check the
      *  sentinel once — IntersectionObserver only fires on intersection
      *  CHANGES, so a batch too short to push the tail out of view would
@@ -144,11 +165,18 @@ export default defineComponent({
               <ErrorCard error={changelog.error} description={t("settings.changelogFailed")} />
             ) : null}
             {changelog.releases.map((release) => {
-              // The i18n scaffold (AGENTS.md §10): render ONLY the running
-              // locale's section, falling back to the en-US original with a
-              // hint when the locale's section is missing or still the
-              // pending placeholder. Legacy bodies render whole.
-              const selected = selectReleaseBody(release.body, lang.uiLocale.value);
+              // The i18n model (AGENTS.md §10): the release BODY is English and
+              // the seven translations ride the release-notes-i18n-<tag>.json
+              // asset, fetched lazily per release (Rust changelog_i18n through
+              // the mirror ladder). Legacy v1 scaffold bodies still render their
+              // own section. The English body is the fallback with a hint while
+              // the locale is pending or the asset is unavailable.
+              const translations = changelog.translations[release.version];
+              const selected = selectReleaseBody(
+                release.body,
+                lang.uiLocale.value,
+                translations,
+              );
               return (
                 <article key={release.version} class="changelog__release">
                   <header class="changelog__release-head">

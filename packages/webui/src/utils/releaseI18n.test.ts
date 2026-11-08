@@ -132,4 +132,61 @@ describe("selectReleaseBody", () => {
     const broken = scaffold(PENDING_ZH).split("\n").slice(0, -1).join("\n");
     expect(selectReleaseBody(broken, "zh-CN")).toEqual({ source: broken, fallback: false });
   });
+
+  const EN_ONLY = "## What's Changed\n\n- [#1](https://example.com/pull/1) plain English body.";
+
+  it("serves the JSON-asset translation for the user's locale", () => {
+    expect(selectReleaseBody(EN_ONLY, "zh-CN", { "zh-CN": ZH_CONTENT })).toEqual({
+      source: ZH_CONTENT,
+      fallback: false,
+    });
+  });
+
+  it("falls back to the English body while the asset locale is the placeholder", () => {
+    expect(selectReleaseBody(EN_ONLY, "zh-CN", { "zh-CN": PENDING_ZH })).toEqual({
+      source: EN_ONLY,
+      fallback: true,
+    });
+  });
+
+  it("falls back to the English body when the asset lacks the locale", () => {
+    expect(selectReleaseBody(EN_ONLY, "ja-JP", { "zh-CN": ZH_CONTENT })).toEqual({
+      source: EN_ONLY,
+      fallback: true,
+    });
+  });
+
+  it("renders the English body without a hint before the asset loads", () => {
+    expect(selectReleaseBody(EN_ONLY, "zh-CN")).toEqual({ source: EN_ONLY, fallback: false });
+  });
+
+  it("treats an empty asset section as missing", () => {
+    expect(selectReleaseBody(EN_ONLY, "zh-CN", { "zh-CN": "   " })).toEqual({
+      source: EN_ONLY,
+      fallback: true,
+    });
+  });
+
+  it("treats any marker-leading asset section as pending (format parity)", () => {
+    const mixed = PENDING_ZH + "\n\n## 更新内容\n\n- [#1](https://example.com/pull/1) 已翻译。";
+    expect(selectReleaseBody(EN_ONLY, "zh-CN", { "zh-CN": mixed })).toEqual({
+      source: EN_ONLY,
+      fallback: true,
+    });
+  });
+
+  it("prefers the JSON asset over a legacy scaffold section", () => {
+    const assetZh = "## 资产译文";
+    expect(selectReleaseBody(scaffold(ZH_CONTENT), "zh-CN", { "zh-CN": assetZh })).toEqual({
+      source: assetZh,
+      fallback: false,
+    });
+  });
+
+  it("falls back to the scaffold en-US original when the asset is empty", () => {
+    expect(selectReleaseBody(scaffold(ZH_CONTENT), "zh-CN", {})).toEqual({
+      source: EN_CONTENT,
+      fallback: true,
+    });
+  });
 });

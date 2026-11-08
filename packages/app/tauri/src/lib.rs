@@ -937,6 +937,10 @@ pub fn run() {
             // Releases via the mirror ladder; platform-neutral (the phone
             // app serves the same feed).
             commands::changelog::changelog_list,
+            // Per-release translation asset (release-notes-i18n-<tag>.json):
+            // the changelog fetches ONE release on demand when the user's locale
+            // needs a translated section (AGENTS.md section 10).
+            commands::changelog::changelog_i18n,
             // Diagnostics-log surface for the settings' 问题反馈 section:
             // folder overview, explorer reveal of the newest log, tail
             // read, and the feedback zip bundle. Platform-neutral commands

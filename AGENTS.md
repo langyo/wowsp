@@ -84,9 +84,10 @@ of improvising a launch.
   (gitmoji + one-line summary) plus the PR description form the complete
   change history; filter `git log` at any granularity.
 - Release notes are written on **git tags + the GitHub Releases page** (one
-  entry per release), never in tracked files. This includes their i18n
-  scaffold and translations (§10): those live as sections of the release
-  body itself, never as tracked files.
+  entry per release), never in tracked files. This includes their
+  translations (§10): the release body is English, and the per-release
+  `release-notes-i18n-<tag>.json` release asset carries the locales — never
+  tracked repository files.
 - No CHANGELOG file exists in the repo; do not create one. If a changelog
   reference reappears in the PR template / workflows, remove it in the PR
   that touches it.
@@ -379,48 +380,55 @@ Before submitting, the relevant subset of `just lint` (or scoped
 
 ## 10. Release Notes i18n (mandatory)
 
-Every `v*` app release body carries the i18n scaffold: a `<!-- wowsp:i18n
-v1 -->` header, the en-US section expanded (`<details open>`), and one
-collapsed `<details>` per remaining supported UI locale. GitHub web shows
-English first with the other languages collapsed; the app's changelog
-parses the same grammar and renders exactly the user's locale, falling
-back to the en-US original with a hint while a section is still the 🚧
-placeholder. The FORMAT AUTHORITY is `scripts/release_notes_i18n.py` (its
-module docstring defines the grammar; `self-test` carries the fixtures) —
-the webui parser (`packages/webui/src/utils/releaseI18n.ts`) mirrors it,
-and both fixture suites must stay in agreement. The scaffold is written
-by the Release workflow's `notes-i18n` job right after publish; that job
-edits ONLY the release body.
+Every `v*` app release carries TWO artifacts. The release BODY is plain
+English markdown (the categorized notes GitHub generates, shown verbatim on
+GitHub web). The seven translations live in a per-release ASSET,
+`release-notes-i18n-<tag>.json` (schema 1: `tag`, `generated_at`, and a
+`sections` map keyed by locale). The app changelog fetches the asset for the
+user's locale through the Rust command `commands/changelog.rs::changelog_i18n`
+(GitHub mirror ladder, session-cached) and renders that section; while a
+section is still the canonical 🚧 placeholder, or the asset is unavailable, it
+falls back to the English body with a hint. GitHub web never shows
+translations — the asset is the translation channel. The FORMAT AUTHORITY is
+`scripts/release_notes_i18n.py` (its module docstring defines the asset and
+legacy-scaffold formats; `self-test` carries the fixtures) — the webui parser
+(`packages/webui/src/utils/releaseI18n.ts`) mirrors both formats, and both
+fixture suites must stay in agreement. The Release workflow's `notes-i18n` job
+publishes the asset right after publish and refreshes the tracking issue; it
+never edits the body. The old v1 body scaffold (en-US expanded plus one
+collapsed `<details>` per locale) was retired on 2026-11-08 when the
+125,000-character body limit made seven inline translations unscalable;
+legacy scaffold bodies still parse for old releases/clients. The 28-release
+live retrofit is complete (English bodies + per-release JSON assets), so no
+app release body currently carries the scaffold.
 
 - **Notes still live only on the GitHub Releases page (§2)**: translations
-  travel as files OUTSIDE the git tree and land in the release body
-  through the script — never as tracked repository files.
+  travel as files OUTSIDE the git tree and land in the release ASSET through
+  the script — never as tracked repository files.
 - **Post-release duty (every agent, after every `v*` release)**: run
   `python scripts/release_notes_i18n.py show`; fill every pending locale —
   user-supplied translations land verbatim first, the rest are translated
-  from the en-US section (translate headings and prose; PR titles, PR
-  links, URLs and the `**Full Changelog**` URL stay verbatim; use
-  `glossary` for consistent category headings). Apply each with
+  from the English body (translate headings and prose; PR titles, PR links,
+  URLs and the `**Full Changelog**` URL stay verbatim; use `glossary` for
+  consistent category headings). Apply each with
   `python scripts/release_notes_i18n.py set --tag <tag> --lang <locale>
-  --file <file> --apply`; `just notes-lint` must pass afterwards, and
-  `python scripts/release_notes_i18n.py issue-sync` refreshes (or closes)
-  the rolling tracking issue.
-- **Format constraints are CI-enforced (hard)**: ci.yml runs the grammar
-  self-test and the live `lint` over the published bodies. Structural
-  violations — broken delimiters/markers, raw HTML in the seven
-  translations (legacy en-US markup is a warning only), markdown
-  outside the renderer's subset, dropped en-US URLs — FAIL CI and must be
-  fixed before merge. Untranslated sections are NOT failures (canonical
-  placeholders are allowed and tracked); legacy unscaffolded releases
-  warn until backfilled.
-- **Backfill**: legacy releases without the scaffold are backfilled with
-  the same tooling (`wrap --apply`, then `set` per locale) until `lint`
-  reports no legacy body.
-- **Authorization boundary**: agents may edit ONLY the release `body`,
-  and only through this script. Title, tag, assets, draft/published state
-  and deletion stay reserved to the maintainer; tag pushes remain
-  user-only (§4). Patch serially — one writer at a time (the script
-  verifies every write by re-read).
+  --file <file> --apply` (writes the JSON asset); `just notes-lint` must
+  pass afterwards, and `python scripts/release_notes_i18n.py issue-sync`
+  refreshes (or closes) the rolling tracking issue.
+- **Format constraints are enforced**: ci.yml runs the format self-test and
+  the live `lint` over the published bodies (English body + legacy scaffold
+  checks). `lint --assets` additionally validates the per-release JSON
+  assets — the Release workflow and the post-release duty run it. Structural
+  violations fail; untranslated sections are NOT failures (canonical
+  placeholders are allowed and tracked).
+- **Legacy bodies**: the retired v1 scaffold still parses for old
+  releases/clients; `lint` reports it as a soft "legacy" warning and `pack`
+  extracts its en-US section. New releases never wrap the body.
+- **Authorization boundary**: agents may edit ONLY the release's translation
+  asset, and only through this script; the English body is left untouched.
+  Title, tag, other assets, draft/published state and deletion stay reserved
+  to the maintainer; tag pushes remain user-only (§4). Patch serially — one
+  writer at a time (the script verifies every write by re-read).
 
 ## 11. Upstream Drift Review — game-assets fork (mandatory)
 
