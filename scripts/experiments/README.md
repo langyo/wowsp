@@ -41,6 +41,7 @@
 | E26e-b | 鱼雷 outcome-lift 评估（OOF probB vs 实际命中） | 排序专家点击是否也排序实际命中：launched 行 top-decile hit-rate lift ≥1.25× 且十分位 ρ≥+0.30（CI 排除 0） | ⚠️ | 3,111,384 行 join 100%；17,055 launched / 71,693 fish / 5,854 hits（base 8.17%）；top-decile lift **1.223×**（差 0.03 未过）、十分位 ρ **0.952**（CI 0.672–0.976）、HP/fish top-bottom 5.6× → **MIXED**：排序强 outcome 信号但 top-decile 未过线 |
 | E26e-c | outcome-aware 第三头（headC）+ 类别温度校准 | 直接监督 P(命中\|已发射) 能否把 launched 行 top-decile 命中率 lift 推过 1.35×（高于 E26e-b 1.223×）并 ρ≥+0.30 | ✅ | 3,111,384 行 + 4 sidecar join 100%；headC OOF（17,055 launched）：AUPRC 0.254/AUC 0.715；**outcome-lift top-decile 命中率 18.07% vs base 8.165% = 2.213×（CI 2.03–2.41）、十分位 ρ 0.988（CI 0.964–1.0）→ 预注册 PASS**；类别温度：headB global T 0.7581、logloss 0.09062→0.07998；headC T 1.0538、ECE 0.0084→0.0070 |
 | E26e-d | 解耦 outcome headC + 联合排序 | 独立 headC（launched-only 训练）+ joint=probB*probC 能否 ≥2.2× 且 headB 不退化 | ⚠️ | headB（E26e-a 原模型，未重训）outcome lift **1.2234× 原样**、ρ 0.952；standaloneC **1.301×**/ρ 0.915；**joint 1.381×（<2.2 预注册线）**/ρ 0.952/CI 排除 0 → **MIXED：解耦无收益，共享 headC（2.213×）更优** |
+| E26e-e | 多任务 headC 损失权重扫描 | λ_C ∈ {0.1,0.3,0.5} 能否同时恢复 headB（AUPRC≥0.0365 且 top-lift≥2.55）并保持 headC（outcome lift≥2.0、ρ≥0.30） | ⚠️ | λ=0.3（预注册主配置）：headB **0.034862 = 2.151×base**、top-lift **2.5195**、AUC 0.6963；headC outcome lift **2.1815**/ρ 0.988/CI [2.006,2.375] → (a) 未过、(b) 过 = **MIXED**；扫描显示 λ↓ 恢复 headB（λ0.1：**2.222×**/2.610/AUC 0.7043，headC **2.252**）→ 方向对但 0.3 不够；下一步 λ≈0.05–0.1 / frozen-trunk |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
 ### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
@@ -795,6 +796,61 @@
   outcome_lift_standaloneC.json, outcome_lift_B_e26ea.json, outcome_lift_sharedC_e26ec.json}`；
   node3 `/mnt/work/wowsp-kots/e26e-d/{code,run}`；预注册 `e26e-d-preregistration.md`（含脚本
   sha 冻结值）。
+### E26e-e · 多任务 headC 损失权重扫描（**MIXED**：λ=0.3 未过 headB 恢复线；但扫描显示 λ↓ 可恢复 headB 且 headC 保持）
+
+- **问题（预注册 `out/torpedo_model/e26e-e-preregistration.md`，先落盘后跑）**：E26e-c 的
+  共享 trunk 三头（λ=1.0）把 headC 推到 outcome lift 2.213×，但 headB 被拖到
+  **2.0197×base / top-lift 2.349 / AUC 0.6828**（E26e-b 为 2.286× / 2.662 / 0.7084）。
+  本任务给总损失加权重 `wA·L_A + wB·L_B + wC·L_C`（wA=wB=1，主配置 **λ_C=0.3**），验证
+  能否同时满足：(a) headB OOF **AUPRC≥0.0365（≈2.25×base）且 top-decile launch lift≥2.55**；
+  (b) headC outcome lift **≥2.0×** 且 ρ≥+0.30 且 bootstrap 95% CI 排除 0。两条都过 PASS，
+  一条 MIXED，都不过 FAIL；不做事后调线。
+- **实现**：`--head-c-weight`/`--head-b-weight`（默认 1.0；默认路径走原 `loss_a+loss_b` /
+  `+loss_c` 表达式 → 与 E26e-c **逐位兼容**）；headC 权重 0 可选（无 C 梯度对照）。
+  `--selftest` 覆盖 default/自定义权重解析；6k CPU smoke λ=0.3 通过。协议/模型/loader/
+  sidecar 路径不变；OOF 保存 probA/B/C。
+- **运行**：node3 顺序跑 λ ∈ {0.1, 0.3, 0.5}（各 5 折 / 12 epochs / hidden 192 / batch
+  4096 / lr 1e-3 / smoothing 0.05 / float16 / cuda；训练 ~240 s/次）；每个 OOF 用
+  `torpedo_outcome_lift.py --prob-key C --min-lift 2.0` 评估 headC。
+- **主配置 λ=0.3 结果**：headB **AUPRC 0.034862 = 2.151×base**、top-lift **2.5195**、
+  AUC 0.6963、logloss 0.09073；headC **outcome lift 2.1815×**、ρ **0.9879**、bootstrap 95% CI
+  **[2.006, 2.375]**（排除 0）。→ **(a) FAIL**（0.034862 < 0.0365、2.5195 < 2.55）、
+  **(b) PASS** → **MIXED**（按预注册，主配置固定 λ=0.3，不从 sweep 反选）。
+- **λ 扫描（secondary，不参与判定）**：
+
+  | λ_C | headB AUPRC | ×base | top-lift | AUC | headC OOF AUPRC | headC outcome lift | ρ | 95% CI |
+  |---|---|---|---|---|---|---|---|---|
+  | 1.0（E26e-c 参照） | 0.032733 | 2.020 | 2.349 | 0.6828 | 0.25398 | 2.2126 | 0.988 | [2.030,2.412] |
+  | 0.5 | 0.034455 | 2.126 | 2.456 | 0.6947 | 0.25530 | 2.2187 | 1.000 | [2.044,2.405] |
+  | **0.3（主配置）** | 0.034862 | 2.151 | 2.519 | 0.6963 | 0.25404 | **2.1815** | 0.988 | [2.006,2.375] |
+  | 0.1 | **0.036015** | **2.222** | **2.610** | **0.7043** | 0.25760 | **2.2518** | 1.000 | [2.074,2.453] |
+  | —（headB-only 参照，E26e-b） | 0.037051 | 2.286 | 2.662 | 0.7084 | — | 1.2234 | 0.952 | [1.079,1.392] |
+
+  → **趋势清晰**：λ_C 越低 headB 恢复越多（AUC 0.6828→0.7043、top-lift 2.349→2.610、
+  AUPRC 2.020→2.222×），而 headC outcome lift 稳定在 **2.18–2.25×**（λ=0.1 甚至 2.252 >
+  λ=1.0 的 2.213）——降权**几乎不损失 headC**，只是 λ=0.3 的降幅还不够。λ=0.1 是扫描中
+  最佳权衡（headB top-lift 2.610 已过 2.55 线、headC 2.252 远超 2.0；AUPRC 0.036015 仍差
+  0.0365 线 1.3%），但预注册主配置是 0.3 → 判定仍 **MIXED**，不事后改线/换配置。
+- **λ=0.3 按类/region（headC）**：AUPRC DD 0.2715 / CL 0.2116 / BB 0.2547 / SS 0.2926
+  （101 行仅描述）；outcome lift DD **2.176**/ρ 0.964、CL **2.106**/0.976、BB **2.869**/0.948、
+  SS 1.300/0.297；region apac **2.262**/0.988、eu **2.049**/0.964、na **2.064**/0.976、
+  own **1.854**/0.891。headB 按类 AUPRC：DD 0.0395 / CL 0.0246 / BB 0.0210 / SS 0.0443。
+- **判定（预注册）**：**(a) FAIL、(b) PASS → MIXED**。结论：**降低 headC 权重方向正确**
+  （λ↓ 单调恢复 headB，headC 基本不掉）；λ=0.3 不够——要恢复 headB 到 E26e-b 附近需
+  λ≈0.05–0.1 或更精细的干扰控制（frozen-trunk / 梯度手术）。
+- **局限**：λ 只扫 3 点（0.1/0.3/0.5，未扫更小）；headB 仍未完全回 E26e-b（λ0.1
+  AUPRC 2.222× vs 2.286×）；per-fold headB AUPRC 全 sweep 0.032963–0.037623（λ0.3 为
+  0.033914–0.037116）有波动；代理 outcome
+  （120 units + HP drop，非 server 真值）；SS 101 行、na/own 样本薄；未冻结 trunk、未调
+  per-head LR；未做端上部署。metrics JSON 里的 `acceptance` 仍是 E26d 的旧验收线
+  （AUPRC≥2×base 且 top-lift≥1.5×），E26e-e 的判定以本预注册 (a)/(b) 为准。
+- **下一步（E26e-f 候选）**：① λ_C≈0.05–0.1 复验（另立预注册，目标 AUPRC≥0.0365 且
+  headC≥2.0）；② frozen-trunk headC：先按 E26e-b 训 headA/B 并冻结，再加 headC 短训；
+  ③ 梯度手术/PCGrad；④ 特征扩展（管位/DoT/click-level 序列）；⑤ 端上概率分级（温度 T 后处理）。
+- **产物**：`out/torpedo_model/e26e-e/{e26e_e_lambda{0.1,0.3,0.5}_oof.npz（各 ~38MB）,
+  e26e_e_lambda{...}_metrics.json, e26e_e_lambda{...}.log, outcome_lift_lambda{...}_C.json}`；
+  node3 `/mnt/work/wowsp-kots/e26e-e/{code,run}`；预注册 `e26e-e-preregistration.md`
+  （脚本 sha `939f9b89…`，与 node3 实跑一致）。
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |
