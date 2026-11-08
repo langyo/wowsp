@@ -174,6 +174,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="E26e-c: add a third head (P(torpHits>0 | launched)) trained ONLY on labelB==1 rows; requires --outcome",
     )
     p.add_argument(
+        "--head-c-weight",
+        type=float,
+        default=1.0,
+        help="E26e-e: loss weight for headC (default 1.0 = E26e-c bit-compatible; 0 = no C gradient)",
+    )
+    p.add_argument(
+        "--head-b-weight",
+        type=float,
+        default=1.0,
+        help="E26e-e: loss weight for headB (default 1.0 = E26e-c bit-compatible)",
+    )
+    p.add_argument(
         "--head-c-only",
         action="store_true",
         help="E26e-d: standalone single-head model trained ONLY on launched rows (no shared trunk with headA/B)",
@@ -606,6 +618,8 @@ def train_fold(
         pos_weight=None if pos_weight <= 0.0 else torch.tensor([pos_weight], device=device),
     )
     eps = args.label_smoothing
+    w_b = float(getattr(args, "head_b_weight", 1.0))
+    w_c = float(getattr(args, "head_c_weight", 1.0))
 
     def head_b_loss(logits, target):
         """Head-B elementwise loss: BCE (+ optional pos_weight) with optional
@@ -639,12 +653,12 @@ def train_fold(
             bm = b_mask_all[idx].to(device)
             loss_a = bce_smoothed_loss(bce_a, la, ya_b, eps).mean()
             loss_b = (head_b_loss(lb, yb_b) * bm).sum() / bm.sum().clamp(min=1.0)
-            loss = loss_a + loss_b
+            loss = (loss_a + loss_b) if w_b == 1.0 else (loss_a + w_b * loss_b)
             if use_head_c:
                 yc_b = y_c[idx].to(device)
                 cm = c_mask_all[idx].to(device)
                 loss_c = (bce_c(lc, yc_b) * cm).sum() / cm.sum().clamp(min=1.0)
-                loss = loss + loss_c
+                loss = (loss + loss_c) if w_c == 1.0 else (loss + w_c * loss_c)
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -1081,8 +1095,14 @@ def run_training(args: argparse.Namespace) -> dict:
             "pos_weight": args.pos_weight,
             "focal_gamma": args.focal_gamma,
             "head_c": bool(args.head_c),
+            "head_c_weight": float(getattr(args, "head_c_weight", 1.0)),
+            "head_b_weight": float(getattr(args, "head_b_weight", 1.0)),
             "outcome_sidecars": [str(p) for p in args.outcome],
-            "loss_weights": {"A": 1.0, "B": 1.0, "C": 1.0 if args.head_c else 0.0},
+            "loss_weights": {
+                "A": 1.0,
+                "B": float(getattr(args, "head_b_weight", 1.0)),
+                "C": float(getattr(args, "head_c_weight", 1.0)) if args.head_c else 0.0,
+            },
             "pass1_seconds": data["pass1_seconds"],
             "array_bytes": data["array_bytes"],
             "theoretical_bytes": data["theoretical_bytes"],
@@ -1275,6 +1295,8 @@ def save_oof_npz(path: Path, data: dict, p_a: np.ndarray, p_b: np.ndarray, fold:
         "class_counts": data["class_counts"],
         "region_counts": data["region_counts"],
         "head_c": bool(p_c is not None),
+        "head_c_weight": float(getattr(args, "head_c_weight", 1.0)),
+        "head_b_weight": float(getattr(args, "head_b_weight", 1.0)),
     }), dtype="U2048")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2780,6 +2802,13 @@ def run_selftest() -> int:
     co = parse_args(["--combine-oof", "--combine-base", "b.npz", "--combine-headc", "c.npz", "--combine-out", "o.npz"])
     assert co.combine_oof is True and co.combine_out == "o.npz"
     assert parse_args([]).head_c_only is False and parse_args([]).combine_oof is False
+    # 13. E26e-e: loss-weight flags (defaults must stay bit-compatible with E26e-c).
+    wd = parse_args([])
+    assert wd.head_c_weight == 1.0 and wd.head_b_weight == 1.0
+    ww = parse_args(["--head-c-weight", "0.3", "--head-b-weight", "1.0"])
+    assert abs(ww.head_c_weight - 0.3) < 1e-12 and ww.head_b_weight == 1.0
+    ww0 = parse_args(["--head-c-weight", "0"])
+    assert ww0.head_c_weight == 0.0
     if _torch is not None:
         m1 = build_headc_only_model(_torch, hidden=16, entity_dim=15, global_dim=38)
         names1 = [n for n, _ in m1.named_parameters()]
