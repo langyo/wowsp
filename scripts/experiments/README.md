@@ -38,6 +38,7 @@
 | E26c | 全量语料鱼雷 scale 测试（node3 GPU） | headB 弱是「数据少」还是「特征不行」：全量 2,215 局同协议复跑（scale-only，不改特征） | ⚠️ | 3,111,384 行/2,215 局（canLaunch 1,052,311、launched 17,055 = 1.62%）；**headA 0.998；headB AUPRC 1.91×base（差 2× 线 0.09）、top-decile lift 2.33×（过线）→ MIXED**；AUC 0.675 vs own-only 0.587——scale 显著有效但未完全过线，下一步转 E26d 特征/标签 |
 | E26d | 鱼雷几何/类别特征迭代（torp2，node3 全量） | 从现有行派生 11 维几何+类别特征，能否把 headB 推过 2×base 且 top-decile lift≥1.5× | ✅ | 3,111,384 行/2,215 局，global 27→38；**headB AUPRC 0.03705 = 2.29×base、top-decile lift 2.66×、AUC 0.7084 → 预注册 PASS**；headA 0.99989；E26c core 复跑逐位一致（0.0309248/2.3307） |
 | E26e-a | OOF 落盘 + 温度校准（鱼雷 headB） | OOF 概率经单温度缩放能否达到常数基线的 logloss/Brier 水平 | ✅ | 3,111,384 行 OOF（npz 27.2 MB）；T=0.7586；logloss 0.09004→0.07947（<0.08289）、Brier 0.01640→0.01583（<0.01594）、ECE 0.0246→0.00053，AUPRC/AUC 不变 → **PASS** |
+| E26e-b | 鱼雷 outcome-lift 评估（OOF probB vs 实际命中） | 排序专家点击是否也排序实际命中：launched 行 top-decile hit-rate lift ≥1.25× 且十分位 ρ≥+0.30（CI 排除 0） | ⚠️ | 3,111,384 行 join 100%；17,055 launched / 71,693 fish / 5,854 hits（base 8.17%）；top-decile lift **1.223×**（差 0.03 未过）、十分位 ρ **0.952**（CI 0.672–0.976）、HP/fish top-bottom 5.6× → **MIXED**：排序强 outcome 信号但 top-decile 未过线 |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
 ### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
@@ -589,6 +590,69 @@
   calibration_metrics.json, e26e_train.log}`；node3 `/mnt/work/wowsp-kots/e26e/run`
   同源；预注册 `e26e-a-preregistration.md`（含一次 python3.11 f-string 兼容修正的
   sha 披露，协议未改）。
+
+### E26e-b · 鱼雷 outcome-lift 评估（**MIXED**：十分位 ρ 0.952 强正，但 top-decile lift 1.223× 差 1.25× 线 0.027）
+
+- **问题（预注册 `out/torpedo_model/e26e-b-preregistration.md`，先落盘后跑）**：E26d/E26e-a
+  的 headB 只证明能**排序专家点击**（agreement：AUPRC 0.037051、AUC 0.7084、top-lift
+  2.662）。本任务只做**评估**：在专家发射行（labelB=1）上，按 OOF probB 十分位看
+  **实际鱼雷命中率**，验证“排序点击”是否也“排序结果”；outcome 不灌训练标签
+  （E15 先例），不改 E26d 验收线。
+- **数据/join**：E26e-a OOF（3,111,384 行 / 2,215 局）+ Rust compact sidecar 4 shard
+  （apac,eu,na,own 顺序）；行数 1,021,498 / 1,432,164 / 486,859 / 170,863 =
+  **3,111,384 完全一致**；逐行 replayId/t(±1e-3)/shipId 校验 → **join 100.000%**
+  （mismatch 0/0/0、缺字段 0、未 join 0）。sidecar 字段：replayId/t/shipId/
+  torpFiredFish/torpHits/torpHpLostNearby/torpTerminalNear（脚本兼容 snake/camel）。
+- **outcome 口径（冻结）**：120 s 结果窗；鱼雷按 (owner, shotId) 最近前置 join 终点
+  （飞行 ≤300 s）；命中 = 终点在任一敌舰 **≤120 units** 且覆盖敌方 HP drop
+  （±0.4/0.6 s、≥50）；HP-loss 为 E13 full-credit **序数代理**（交叉火力高估，不当作伤害）。
+- **质量**：launched 行 **17,055**；firedFish **71,693**（平均 4.2 雷/次）；hits **5,854**；
+  base hitRate **8.165%**（行级 any-hit 12.85%；HP-loss 494/鱼）；**labelB=1 但 firedFish=0：0 行**
+  （label 与 salvo 一致性完美）；terminalNear 正值行 10,196（max 15）。
+- **P0 own（50 局，仅质量校准，不参与验收）**：54,389 行，join 100%，launched 334、
+  fired 1,280、hits 152（hitRate 11.88%），top-decile lift 0.588、ρ −0.345——样本太小
+  （每十分位 ~128 鱼）且方向不稳；如实记录，**不作为结论**。
+- **全量主结果（pooled OOF，17,055 行 / 71,693 fish / 5,854 hits）**：
+
+  | 指标 | 值 | 预注册线 | 判定 |
+  |---|---|---|---|
+  | top-decile fish 命中率 | 9.99%（base 8.165%） | lift ≥1.25× | **1.2234× ✗** |
+  | 十分位 Spearman(meanP, hitRate) | **0.9515**（CI 0.672–0.976） | ≥+0.30 且 CI 排除 0 | **✓** |
+  | top-bottom 命中率差 | 5.02 pp（9.99% vs 4.97%） | — | 描述 |
+  | HP-loss/鱼 top vs bottom 十分位 | **1043 vs 187（5.6×）** | — | 描述（序数代理） |
+  | 行级 ρ(probB, any-hit) | 0.110 | — | 描述 |
+  | bootstrap 1000（replay cluster） | lift 95% CI [1.079, 1.392]；ρ CI 排除 0 | — | — |
+
+  十分位命中率总体下行（10 档：9.99/9.32/9.37/8.70/8.45/9.21/7.65/6.81/5.76/4.97%，2→3、5→6 两处小回调），
+  行级 any-hit 17.9%→6.8%，HP-loss/鱼 1043→187。**判定：MIXED**（join 过、ρ 与 CI 过、
+  top-decile lift 1.2234 < 1.25，差 0.0266；不做任何事后放宽/调参）。
+- **几何-only 对照（secondary，描述）**：terminalNear 仅“终点靠近敌舰”的几何命中代理
+  基线 56.8%，top 十分位 59.6%（lift 1.049）——远弱于真实命中 lift 1.223；说明 headB
+  排序的主要是“终点是否覆盖 HP drop（有效命中）”，而不只是“落点靠近船”。
+- **agreement vs outcome（分开报告）**：probB vs labelB 的 AUPRC 0.037051 / AUC 0.7084 /
+  logloss 0.09004（与 E26d 完全一致）——**排序专家点击 ≠ 结果更好**；本结果表明二者
+  在本数据上方向一致（十分位总体下行、ρ 0.95），但 effect size 未到预注册 outcome 线。
+- **按类别（launched 行；lift / ρ）**：DD 10,949 行 / 49,482 fish / 4,159 hits（base 8.41%，
+  lift **1.186**，ρ 0.721）；CL/CA 5,009 / 18,391 / 1,367（7.43%，**1.426**，ρ 0.952）；
+  BB 996 / 3,568 / 281（7.88%，**1.453**，ρ 0.006——行少、每档 ~356 鱼，ρ 不稳）；
+  SS 101 / 252 / 47（18.65%，0.812，ρ 0.085，**样本不足仅描述**）。
+- **按 region（lift / ρ）**：apac 5,489 行 / 23,257 fish / 1,915 hits（8.23%，**1.438**，ρ 0.939）；
+  eu 7,937 / 33,853 / 2,637（7.79%，**1.228**，ρ 0.939）；na 2,672 / 11,197 / 826
+  （7.38%，0.875，ρ 0.358）；own 957 / 3,386 / 476（14.06%，1.105，ρ 0.285）。
+  → apac/eu 方向强，na/own 弱（样本与域差异）；四区均无系统性反向。
+- **局限**：命中是**代理**（HP 采样稀疏会漏判、终点靠近误判、交叉火力高估伤害；
+  server damageStat 仅录像者/15.8+，未逐条对齐）；120 units/300 s/120 s 为冻结近似；
+  SS 仅 101 行、na/own 样本薄；outcome 只用于评估（不进训练标签）；top-decile 是单点
+  估计，lift CI [1.08,1.39] 跨过 1.25（但点估计未过，按预注册不加解释性放宽）；
+  2,217 seen → 2,215 有行局（2 个 own CO_ocean 录像 0 行，自然剔除）；14.5 录像无
+  recorder damageStat 真值，命中代理只在 15.8+ 有部分交叉校准。
+- **下一步**：E26e-c 方向——outcome-aware 特征/标签（命中结果/DoT/管位几何）与
+  click-level 序列；把 HP-loss 序数信号作为 secondary target 研究；per-class lift 的
+  样本补强（SS/BB）；若要做概率分级，配合 E26e-a 温度校准（概率已可校准，排序结论不变）。
+- **产物**：`out/torpedo_model/e26e-b/{outcome_lift_metrics.json, p0_own_metrics.json,
+  outcome_{apac,eu,na,own}.jsonl, export_*.log}`；脚本 `scripts/experiments/
+  torpedo_outcome_lift.py`（numpy-only，含 --selftest）；预注册 `e26e-b-preregistration.md`
+  （含 join 稳健性/terminalNear secondary 的运行前与运行后透明披露）。
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |

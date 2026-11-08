@@ -52,8 +52,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 use wowsp_tauri_shared::{
     ConsumableUseEvent, EngineStateSample, EntityTrajectory, PlayerBuild, PositionSample,
-    ReplayStream, ShellLaunchEvent, ShotKillEvent, SmokeScreenEvent, VehicleEntry, VisionEvent,
-    WeatherNotification, WeatherTransition,
+    ReplayStream, ShellLaunchEvent, ShotKillEvent, SmokeScreenEvent, TorpedoLaunch, VehicleEntry,
+    VisionEvent, WeatherNotification, WeatherTransition,
 };
 
 use super::decision_tick::{METERS_PER_GP_UNIT, METERS_PER_UNIT};
@@ -2184,6 +2184,27 @@ struct HpDrop {
     delta: f32,
 }
 
+/// HP-drop timelines per entity (E13 semantics: consecutive samples, deltas
+/// at or above the noise floor; heals never produce drops). Shared by the
+/// fire (E13) and torpedo (E26e-b) outcome contexts.
+fn hp_drops_by_entity(stream: &ReplayStream) -> BTreeMap<i32, Vec<HpDrop>> {
+    let mut drops_by_entity: BTreeMap<i32, Vec<HpDrop>> = BTreeMap::new();
+    for traj in &stream.trajectories {
+        let mut drops = Vec::new();
+        for w in traj.hp_samples.windows(2) {
+            let delta = w[0].value.saturating_sub(w[1].value);
+            if delta >= OUTCOME_HP_MIN_DELTA {
+                drops.push(HpDrop {
+                    time: w[1].time,
+                    delta: delta as f32,
+                });
+            }
+        }
+        drops_by_entity.insert(traj.entity_id, drops);
+    }
+    drops_by_entity
+}
+
 /// Precomputed per-replay outcome substrate (E13): time-sorted hit-impact and
 /// main-shell timelines per owner plus HP-drop timelines per hull, so each
 /// decision row's window query is two binary searches and a short scan.
@@ -2220,20 +2241,7 @@ fn build_outcome_context(stream: &ReplayStream) -> OutcomeContext<'_> {
     for v in main_shells_by_owner.values_mut() {
         v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     }
-    let mut drops_by_entity: BTreeMap<i32, Vec<HpDrop>> = BTreeMap::new();
-    for traj in &stream.trajectories {
-        let mut drops = Vec::new();
-        for w in traj.hp_samples.windows(2) {
-            let delta = w[0].value.saturating_sub(w[1].value);
-            if delta >= OUTCOME_HP_MIN_DELTA {
-                drops.push(HpDrop {
-                    time: w[1].time,
-                    delta: delta as f32,
-                });
-            }
-        }
-        drops_by_entity.insert(traj.entity_id, drops);
-    }
+    let drops_by_entity = hp_drops_by_entity(stream);
     OutcomeContext {
         impacts_by_owner,
         main_shells_by_owner,
@@ -3245,6 +3253,18 @@ pub const TORP_CLICK_MERGE_S: f32 = 2.0;
 /// table has no torpReload column value for the hull.
 pub const TORP_RELOAD_MIN_S: f32 = 10.0;
 pub const TORP_RELOAD_MAX_S: f32 = 300.0;
+/// E26e-b outcome horizon (seconds) after the decision window: a fish launched
+/// in (t, t + LABEL_WINDOW_S] must detonate inside this horizon to be counted.
+/// Observed terminal latencies on real replays: p50 43.6 s / max 66.6 s, so
+/// 120 s is a safe bound (E13's 45 s fire window would cut ~45% of them).
+pub const TORP_OUTCOME_WINDOW_S: f32 = 120.0;
+/// Longest credible launch-to-terminal flight (seconds): a recycled
+/// (owner, shotId) pair may otherwise match a terminal from another salvo.
+pub const TORP_MAX_FLIGHT_S: f32 = 300.0;
+/// Terminal-to-hull attribution radius in scene units (E13 compares raw x/z
+/// units, not metres; 120 units is ~700 m at ~5.86 m per unit). Calibrated on
+/// two 15.8 recorder battles against receiveDamageStat weapon-7 hit counts.
+pub const TORP_HIT_RADIUS_UNITS: f32 = 120.0;
 
 /// One exported torpedo-decision point (E26, one JSONL line): the shared v2
 /// feature core plus the click-level launch labels. Rows sit on the 2 s
@@ -3267,6 +3287,27 @@ pub struct TorpedoDatasetRow {
     pub own_torp_reload_frac: f32,
     /// Engagement range used by labelA (metres).
     pub own_torp_range_m: f32,
+    // ── E26e-b outcome fields (post-decision, over (t, t + LABEL_WINDOW_S]):
+    //    serde defaults keep the JSON shape additive (older datasets simply
+    //    lack the keys). All four are zero on rows without a fish launch. ──
+    /// Fish launched in the decision window (the labelB click's salvo size;
+    /// labelB = true implies at least one).
+    #[serde(default)]
+    pub torp_fired_fish: u32,
+    /// Fired fish whose terminal detonated within TORP_HIT_RADIUS_UNITS of an
+    /// enemy hull AND covered an enemy HP drop in the E13 ±0.4/0.6 s envelope
+    /// — the hit proxy (ShotKillEvent joined by (ownerId, shotId) to the
+    /// nearest preceding launch; see build_torpedo_outcome_context).
+    #[serde(default)]
+    pub torp_hits: u32,
+    /// Enemy HP drops covered by those terminals — FULL-credit ordinal proxy,
+    /// NOT a damage ledger (crossfire inflates it exactly like E13).
+    #[serde(default)]
+    pub torp_hp_lost_nearby: f32,
+    /// Fired fish whose terminal detonated near an enemy hull regardless of
+    /// HP evidence — the geometry-only control field.
+    #[serde(default)]
+    pub torp_terminal_near: u32,
 }
 
 impl BatchRow for TorpedoDatasetRow {
@@ -3381,6 +3422,214 @@ fn torp_contexts(stream: &ReplayStream, ships: &[ShipInfo<'_>]) -> BTreeMap<i32,
     out
 }
 
+// ── E26e-b: torpedo outcome fields (post-decision hits / HP loss) ───────────
+//
+// The decoded stream has no torpedo-hit event: receiveShotKills is the
+// projectile TERMINAL feed (one event per shell/torpedo, hits and misses
+// alike), so a hit is inferred in two steps, mirroring the webview's
+// shotWeaponJoiner (damageComp.ts): (1) classify a terminal by joining
+// (ownerId, shotId) to the NEAREST preceding launch — it belongs to the
+// torpedo family only when the fish is nearer in time than any same-key gun
+// launch; (2) call it a hit when the terminal point sits within
+// TORP_HIT_RADIUS_UNITS of an enemy hull AND that hull lost HP inside the E13
+// ±0.4/0.6 s envelope. The HP sum is a full-credit ordinal proxy (crossfiring
+// attackers each see the whole drop — the same simplification E13 documents),
+// never a damage ledger.
+
+/// One torpedo terminal: the shotKills event plus the launch time of the fish
+/// that owns it (the nearest preceding TorpedoLaunch for the same key).
+struct TorpedoTerminal<'a> {
+    launch_time: f32,
+    event: &'a ShotKillEvent,
+}
+
+/// Per-replay E26e-b outcome substrate: fish launches per owner, torpedo
+/// terminals per (owner, shotId), and hull HP-drop timelines.
+struct TorpedoOutcomeCtx<'a> {
+    launches_by_owner: BTreeMap<i32, Vec<&'a TorpedoLaunch>>,
+    terminals_by_shot: BTreeMap<(i32, u16), Vec<TorpedoTerminal<'a>>>,
+    drops_by_entity: BTreeMap<i32, Vec<HpDrop>>,
+}
+
+/// Latest launch time at or before the given instant (nearest-preceding join).
+fn latest_launch_at_or_before(times: &[f32], t: f32) -> Option<f32> {
+    let i = times.partition_point(|&x| x <= t).checked_sub(1)?;
+    Some(times[i])
+}
+
+fn build_torpedo_outcome_context(stream: &ReplayStream) -> TorpedoOutcomeCtx<'_> {
+    let mut gun_times: BTreeMap<(i32, u16), Vec<f32>> = BTreeMap::new();
+    for s in &stream.shell_launches {
+        gun_times
+            .entry((s.owner_id, s.shot_id))
+            .or_default()
+            .push(s.time);
+    }
+    let mut torp_times: BTreeMap<(i32, u16), Vec<f32>> = BTreeMap::new();
+    for s in &stream.torpedoes {
+        torp_times
+            .entry((s.owner_id, s.shot_id))
+            .or_default()
+            .push(s.time);
+    }
+    for map in [&mut gun_times, &mut torp_times] {
+        for times in map.values_mut() {
+            times.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        }
+    }
+    let mut terminals_by_shot: BTreeMap<(i32, u16), Vec<TorpedoTerminal<'_>>> = BTreeMap::new();
+    for kill in &stream.shot_kills {
+        let key = (kill.owner_id, kill.shot_id);
+        let Some(torp_launch) = latest_launch_at_or_before(
+            torp_times.get(&key).map_or(&[][..], Vec::as_slice),
+            kill.time,
+        ) else {
+            continue;
+        };
+        // The nearest launch owns the terminal: a gun launch closer in time
+        // means this is a shell/splash terminal, not a fish detonation.
+        if latest_launch_at_or_before(
+            gun_times.get(&key).map_or(&[][..], Vec::as_slice),
+            kill.time,
+        )
+        .is_some_and(|gun| gun > torp_launch)
+        {
+            continue;
+        }
+        terminals_by_shot
+            .entry(key)
+            .or_default()
+            .push(TorpedoTerminal {
+                launch_time: torp_launch,
+                event: kill,
+            });
+    }
+    let mut launches_by_owner: BTreeMap<i32, Vec<&TorpedoLaunch>> = BTreeMap::new();
+    for s in &stream.torpedoes {
+        launches_by_owner.entry(s.owner_id).or_default().push(s);
+    }
+    for launches in launches_by_owner.values_mut() {
+        launches.sort_by(|a, b| {
+            a.time
+                .partial_cmp(&b.time)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+    TorpedoOutcomeCtx {
+        launches_by_owner,
+        terminals_by_shot,
+        drops_by_entity: hp_drops_by_entity(stream),
+    }
+}
+
+/// Arena-authoritative ship-team map plus the recorder's side (None when the
+/// arena state did not decode). The arena broadcast is the server's own
+/// ship-to-team join; the roster fallback is ambiguous on mirror picks (one
+/// shipId on both sides), so outcome attribution prefers the arena map.
+fn arena_team_map(stream: &ReplayStream) -> (BTreeMap<i32, i8>, Option<i8>) {
+    (
+        stream
+            .arena_players
+            .iter()
+            .map(|p| (p.entity_id, p.team_id))
+            .collect(),
+        stream.self_team,
+    )
+}
+
+/// E26e-b outcome statistics of one decision row, over the fish launched in
+/// (t, t + LABEL_WINDOW_S]: (fired fish, hits, covered enemy HP loss, fish
+/// with a terminal near an enemy hull — the geometry-only control). A fish
+/// counts at most once per counter; the HP sum adds every covering terminal
+/// of a hit fish. A terminal must detonate within TORP_OUTCOME_WINDOW_S of the
+/// decision window and within TORP_MAX_FLIGHT_S of its launch.
+#[allow(clippy::too_many_arguments)]
+fn torpedo_outcome_fields(
+    ctx: &TorpedoOutcomeCtx<'_>,
+    ships: &[ShipInfo<'_>],
+    arena_team: &BTreeMap<i32, i8>,
+    self_team: Option<i8>,
+    owner_id: i32,
+    owner_team: i8,
+    t: f32,
+) -> (u32, u32, f32, u32) {
+    let Some(launches) = ctx.launches_by_owner.get(&owner_id) else {
+        return (0, 0, 0.0, 0);
+    };
+    let window_end = t + LABEL_WINDOW_S;
+    let deadline = window_end + TORP_OUTCOME_WINDOW_S;
+    let window = &launches[launches.partition_point(|l| l.time <= t)
+        ..launches.partition_point(|l| l.time <= window_end)];
+    let mut fired = 0u32;
+    let mut hits = 0u32;
+    let mut hp_lost = 0.0f32;
+    let mut terminal_near = 0u32;
+    for launch in window {
+        fired += 1;
+        let Some(terminals) = ctx.terminals_by_shot.get(&(owner_id, launch.shot_id)) else {
+            continue;
+        };
+        let mut fish_hit = false;
+        let mut fish_near = false;
+        for terminal in terminals {
+            // Recycled shot ids: only the fish that owns this terminal counts.
+            if (terminal.launch_time - launch.time).abs() > 1e-3 {
+                continue;
+            }
+            let event = terminal.event;
+            let flight = event.time - launch.time;
+            if !(flight > 0.0 && flight <= TORP_MAX_FLIGHT_S) || event.time > deadline {
+                continue;
+            }
+            let mut covered = 0.0f32;
+            for other in ships {
+                if other.traj.entity_id == owner_id {
+                    continue;
+                }
+                // Prefer the arena's authoritative team; the roster fallback
+                // (mirror picks) is used only when the arena lacks the hull.
+                let enemy = match (self_team, arena_team.get(&other.traj.entity_id)) {
+                    (Some(self_team), Some(team)) => *team != self_team,
+                    _ => {
+                        !other.team_ambiguous
+                            && other.team_id.is_some_and(|team| team != owner_team)
+                    },
+                };
+                if !enemy {
+                    continue;
+                }
+                let Some((vx, vz)) = position_at(other.traj, event.time) else {
+                    continue;
+                };
+                if (vx - event.x).hypot(vz - event.z) > TORP_HIT_RADIUS_UNITS {
+                    continue;
+                }
+                fish_near = true;
+                if let Some(drops) = ctx.drops_by_entity.get(&other.traj.entity_id) {
+                    for drop in drops {
+                        if drop.time > event.time - OUTCOME_HP_BEFORE_S
+                            && drop.time <= event.time + OUTCOME_HP_AFTER_S
+                        {
+                            covered += drop.delta;
+                        }
+                    }
+                }
+            }
+            if covered > 0.0 {
+                fish_hit = true;
+                hp_lost += covered;
+            }
+        }
+        if fish_near {
+            terminal_near += 1;
+        }
+        if fish_hit {
+            hits += 1;
+        }
+    }
+    (fired, hits, hp_lost, terminal_near)
+}
+
 /// Build every exportable torpedo-decision row of the replay (E26).
 /// Deciders: team-known ships with a torpedo armament (carriers excluded).
 /// Cadence: DECISION_INTERVAL_S (2 s), aligned with the 2 s labelB window.
@@ -3398,6 +3647,8 @@ pub fn export_torpedo_dataset(
     events: &FeatureEvents<'_>,
 ) -> (Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats) {
     let contexts = torp_contexts(stream, ships);
+    let outcome_ctx = build_torpedo_outcome_context(stream);
+    let (arena_team, self_team) = arena_team_map(stream);
     let idx = build_feature_index(
         events,
         &stream.ally_builds,
@@ -3465,12 +3716,29 @@ pub fn export_torpedo_dataset(
                 events,
                 &idx,
             );
+            // The loop above already dropped rows with no team id, so 0 is a
+            // formality that keeps this signature panic-free.
+            let owner_team = ship.team_id.unwrap_or(0);
+            let (torp_fired_fish, torp_hits, torp_hp_lost_nearby, torp_terminal_near) =
+                torpedo_outcome_fields(
+                    &outcome_ctx,
+                    ships,
+                    &arena_team,
+                    self_team,
+                    id,
+                    owner_team,
+                    t,
+                );
             rows.push(TorpedoDatasetRow {
                 core,
                 label_a_can_launch: label_a,
                 label_b_launched: label_b,
                 own_torp_reload_frac: torp_reload_frac,
                 own_torp_range_m: ctx.range_m,
+                torp_fired_fish,
+                torp_hits,
+                torp_hp_lost_nearby,
+                torp_terminal_near,
             });
             t += DECISION_INTERVAL_S;
         }
@@ -6210,6 +6478,333 @@ mod tests {
             },
             Err(_) => {
                 eprintln!("[e26] WOWSP_TORPEDO_DATASET_OUT not set - dataset not written")
+            },
+        }
+    }
+
+    // ── E26e-b: torpedo outcome fields + compact sidecar ────────────────
+
+    fn torp_shot(time: f32, owner: i32, salvo: i32, shot_id: u16) -> TorpedoLaunch {
+        TorpedoLaunch {
+            time,
+            owner_id: owner,
+            params_id: 0,
+            salvo_id: salvo,
+            shot_id,
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+            dir_x: 1.0,
+            dir_y: 0.0,
+            dir_z: 0.0,
+            armed: true,
+        }
+    }
+
+    fn kill(time: f32, owner: i32, shot_id: u16, x: f32, z: f32) -> ShotKillEvent {
+        ShotKillEvent {
+            time,
+            owner_id: owner,
+            hit_type: 0,
+            shot_id,
+            x,
+            y: 0.0,
+            z,
+        }
+    }
+
+    fn hp(time: f32, value: u32) -> wowsp_tauri_shared::HpSample {
+        wowsp_tauri_shared::HpSample { time, value }
+    }
+
+    /// One compact E26e-b sidecar line: exactly the keys the Python evaluation
+    /// joins to the E26e-a OOF npz by row index.
+    #[derive(Debug, Clone, serde::Serialize)]
+    #[serde(rename_all = "camelCase")]
+    struct TorpedoOutcomeSidecar {
+        replay_id: Option<String>,
+        t: f32,
+        ship_id: Option<i64>,
+        torp_fired_fish: u32,
+        torp_hits: u32,
+        torp_hp_lost_nearby: f32,
+        torp_terminal_near: u32,
+    }
+
+    /// E26e-b outcome fields on a synthetic stream: hit / far miss /
+    /// near-without-drop / terminal owned by a closer gun launch / terminal
+    /// past the outcome horizon, plus owner isolation.
+    #[test]
+    fn synthetic_torpedo_outcome_fields() {
+        let params = FireSampleParams::default();
+        let dd = trajectory(
+            9,
+            Some(4_179_507_152),
+            (0..220)
+                .map(|i| sample(i as f32 * 0.5, 9, 0.0, 0.0))
+                .collect(),
+        );
+        let mate = trajectory(
+            1,
+            Some(4_179_507_024),
+            (0..220)
+                .map(|i| sample(i as f32 * 0.5, 1, 0.0, 0.0))
+                .collect(),
+        );
+        let mut bb = trajectory(
+            8,
+            Some(3_247_387_984),
+            (0..220)
+                .map(|i| sample(i as f32 * 0.5, 8, 60.0, 0.0))
+                .collect(),
+        );
+        bb.hp_samples = vec![
+            hp(0.0, 100_000),
+            hp(11.2, 90_000),
+            hp(20.0, 90_000),
+            hp(27.5, 80_000),
+        ];
+        let mut gun = shell(26.0, 9, 9, 1, (0.0, 0.0), (60.0, 0.0));
+        gun.shot_id = 4;
+        let stream = ReplayStream {
+            trajectories: vec![dd, mate, bb],
+            torpedoes: vec![
+                torp_shot(5.2, 9, 1, 0),  // hit: terminal 11.2 near BB + HP drop
+                torp_shot(5.4, 9, 1, 1),  // miss: terminal far away
+                torp_shot(5.6, 9, 1, 2),  // near the hull but no covered HP drop
+                torp_shot(6.8, 9, 1, 3),  // terminal past the outcome horizon
+                torp_shot(25.2, 9, 2, 4), // terminal owned by the closer gun launch
+                torp_shot(5.2, 1, 1, 0),  // teammate's own fish (owner isolation)
+            ],
+            shell_launches: vec![gun],
+            shot_kills: vec![
+                kill(11.2, 9, 0, 60.0, 0.0),
+                kill(20.0, 9, 1, 900.0, 900.0),
+                kill(30.0, 9, 2, 60.0, 0.0),
+                kill(128.0, 9, 3, 60.0, 0.0),
+                kill(27.5, 9, 4, 60.0, 0.0),
+                kill(11.2, 1, 0, 60.0, 0.0),
+            ],
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 0, 3_247_387_984),
+            roster_entry(2, 2, 4_179_507_152),
+            roster_entry(3, 2, 4_179_507_024),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let (rows, stats) = export_torpedo_dataset(
+            &stream,
+            &ships,
+            None,
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            Some("replayE26eB"),
+            Some("pvp"),
+            &FeatureEvents::empty(),
+        );
+        assert!(stats.owners >= 2, "two torpedo deciders");
+        assert!(
+            rows.iter()
+                .all(|r| r.torp_hits <= r.torp_fired_fish
+                    && r.torp_terminal_near <= r.torp_fired_fish)
+        );
+        assert!(
+            rows.iter()
+                .all(|r| r.label_b_launched != Some(true) || r.torp_fired_fish >= 1)
+        );
+        let row_at = |owner: i32, t: f32| {
+            rows.iter()
+                .find(|r| r.core.owner_entity_id == owner && (r.core.t - t).abs() < 0.2)
+                .unwrap_or_else(|| panic!("row {owner} at t={t}"))
+        };
+        let dd_row = row_at(9, 5.0);
+        assert_eq!(dd_row.torp_fired_fish, 4, "fish launched in (5, 7]");
+        assert_eq!(dd_row.torp_hits, 1, "only the covered-drop terminal");
+        assert!(
+            (dd_row.torp_hp_lost_nearby - 10_000.0).abs() < 1e-3,
+            "hp {}",
+            dd_row.torp_hp_lost_nearby
+        );
+        assert_eq!(dd_row.torp_terminal_near, 2, "hit + near-without-drop");
+        let mate_row = row_at(1, 5.0);
+        assert_eq!(
+            (mate_row.torp_fired_fish, mate_row.torp_hits),
+            (1, 1),
+            "teammate fish counted on its own row only"
+        );
+        assert!((mate_row.torp_hp_lost_nearby - 10_000.0).abs() < 1e-3);
+        // The gun-owned terminal is excluded: fired counts, hit does not.
+        let gun_row = row_at(9, 25.0);
+        assert_eq!(gun_row.torp_fired_fish, 1);
+        assert_eq!(gun_row.torp_hits, 0);
+        assert_eq!(gun_row.torp_terminal_near, 0);
+        // Wire shape: the outcome keys serialize next to the flattened core.
+        let js = serde_json::to_value(dd_row).expect("serialize row");
+        assert_eq!(js["torpFiredFish"], 4);
+        assert_eq!(js["torpHits"], 1);
+        assert_eq!(js["torpTerminalNear"], 2);
+        assert!((js["torpHpLostNearby"].as_f64().unwrap() - 10_000.0).abs() < 1e-3);
+        assert!(js.get("t").is_some(), "flattened core key");
+    }
+
+    /// E26e-b against real replay bytes: env WOWSP_TEST_REPLAY_DIR (or
+    /// WOWSP_TEST_REPLAY, copied to a temp dir with corrupt siblings) selects
+    /// the input; WOWSP_TORPEDO_OUTCOME_OUT writes the compact JSONL. The
+    /// sidecar is derived from the SAME row vector (and order) as the full E26
+    /// export, so Python can zip it to the E26e-a OOF npz rowIndex.
+    #[test]
+    fn e26e_torpedo_outcome_export_on_real_replays() {
+        let replay_dir = match std::env::var("WOWSP_TEST_REPLAY_DIR") {
+            Ok(dir) => std::path::PathBuf::from(dir),
+            Err(_) => match std::env::var("WOWSP_TEST_REPLAY") {
+                Ok(file) => {
+                    let root = std::env::temp_dir().join(format!(
+                        "wowsp_torp_outcome_real_{}_{}",
+                        std::process::id(),
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_nanos())
+                            .unwrap_or(0)
+                    ));
+                    std::fs::create_dir_all(&root).expect("mkdir");
+                    let name = std::path::Path::new(&file)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "real.wowsreplay".into());
+                    std::fs::copy(&file, root.join(&name)).expect("copy real replay");
+                    std::fs::write(
+                        root.join("zz_corrupt.wowsreplay"),
+                        [0x5Au8, 0x01, 0xFF, 0x00, 0x33, 0x77, 0x11, 0x42, 0x00, 0x99],
+                    )
+                    .expect("write corrupt");
+                    std::fs::write(root.join("zz_empty.wowsreplay"), b"").expect("write empty");
+                    root
+                },
+                Err(_) => {
+                    eprintln!(
+                        "[e26e-b] WOWSP_TEST_REPLAY_DIR / WOWSP_TEST_REPLAY not set - skipping"
+                    );
+                    return;
+                },
+            },
+        };
+        let params = FireSampleParams::default();
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let (rows, summary) = export_torpedo_dataset_dir(
+            &replay_dir,
+            los_dir.as_deref(),
+            DEFAULT_EYE_HEIGHT,
+            &params,
+        )
+        .expect("batch runs");
+        let fired_fish: u64 = rows.iter().map(|r| u64::from(r.torp_fired_fish)).sum();
+        let hits: u64 = rows.iter().map(|r| u64::from(r.torp_hits)).sum();
+        let terminal_near: u64 = rows.iter().map(|r| u64::from(r.torp_terminal_near)).sum();
+        let hp_lost: f64 = rows.iter().map(|r| f64::from(r.torp_hp_lost_nearby)).sum();
+        eprintln!(
+            "[e26e-b] batch {}: {} seen / {} exported / {} failed -> {} rows; firedFish {} hits {} (rate {:.3}) terminalNear {} hpLost {:.0}",
+            summary.root_dir,
+            summary.files_seen,
+            summary.files_exported,
+            summary.files_failed,
+            summary.rows,
+            fired_fish,
+            hits,
+            if fired_fish == 0 {
+                0.0
+            } else {
+                hits as f64 / fired_fish as f64
+            },
+            terminal_near,
+            hp_lost
+        );
+        assert!(summary.files_exported >= 1, "nothing exported");
+        assert!(summary.rows > 0);
+        assert_eq!(summary.rows, rows.len());
+        assert!(
+            rows.iter()
+                .all(|r| r.torp_hits <= r.torp_fired_fish
+                    && r.torp_terminal_near <= r.torp_fired_fish)
+        );
+        assert!(
+            rows.iter()
+                .all(|r| r.label_b_launched != Some(true) || r.torp_fired_fish >= 1)
+        );
+        for f in &summary.per_file {
+            if let DatasetBatchOutcome::Failed { reason } = &f.outcome {
+                assert!(!reason.is_empty());
+            }
+        }
+        let sidecar: Vec<TorpedoOutcomeSidecar> = rows
+            .iter()
+            .map(|r| TorpedoOutcomeSidecar {
+                replay_id: r.core.replay_id.clone(),
+                t: r.core.t,
+                ship_id: r.core.ship_id,
+                torp_fired_fish: r.torp_fired_fish,
+                torp_hits: r.torp_hits,
+                torp_hp_lost_nearby: r.torp_hp_lost_nearby,
+                torp_terminal_near: r.torp_terminal_near,
+            })
+            .collect();
+        match std::env::var("WOWSP_TORPEDO_OUTCOME_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create sidecar parent dir");
+                }
+                use std::io::Write;
+                let mut file = std::fs::File::create(&out_path).expect("create sidecar file");
+                for line in &sidecar {
+                    writeln!(
+                        file,
+                        "{}",
+                        serde_json::to_string(line).expect("serialize sidecar")
+                    )
+                    .expect("write sidecar line");
+                }
+                drop(file);
+                let text = std::fs::read_to_string(&out_path).expect("read back sidecar");
+                let lines: Vec<&str> = text.lines().collect();
+                assert_eq!(
+                    lines.len(),
+                    rows.len(),
+                    "sidecar line count must equal rows"
+                );
+                for (i, line) in lines.iter().enumerate() {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).expect("sidecar line parses");
+                    for key in [
+                        "replayId",
+                        "t",
+                        "shipId",
+                        "torpFiredFish",
+                        "torpHits",
+                        "torpHpLostNearby",
+                        "torpTerminalNear",
+                    ] {
+                        assert!(value.get(key).is_some(), "missing sidecar key {key}");
+                    }
+                    // Same order as the full export: replay, ship and t agree.
+                    assert_eq!(
+                        value["replayId"].as_str(),
+                        rows[i].core.replay_id.as_deref()
+                    );
+                    assert_eq!(value["t"].as_f64().unwrap() as f32, rows[i].core.t);
+                    assert_eq!(value["shipId"].as_i64(), rows[i].core.ship_id);
+                }
+                eprintln!("[e26e-b] wrote {} sidecar rows to {}", lines.len(), out);
+            },
+            Err(_) => {
+                eprintln!("[e26e-b] WOWSP_TORPEDO_OUTCOME_OUT not set - sidecar not written")
             },
         }
     }

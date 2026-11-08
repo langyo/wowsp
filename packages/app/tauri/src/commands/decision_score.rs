@@ -2450,6 +2450,12 @@ mod tests {
             label_b_launched: launched,
             own_torp_reload_frac: 1.0,
             own_torp_range_m: 14_000.0,
+            // E26e-b outcome fields are exporter-only; the scoring fixture
+            // constructs rows without outcome evidence.
+            torp_fired_fish: 0,
+            torp_hits: 0,
+            torp_hp_lost_nearby: 0.0,
+            torp_terminal_near: 0,
         }
     }
 
