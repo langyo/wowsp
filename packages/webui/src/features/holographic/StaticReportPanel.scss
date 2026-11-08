@@ -106,6 +106,19 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+
+    /* The recorder tag is the head row's one AppTag face: it rides the same
+       unified pill voice as the provenance run (2026-11-08 sweep) so the
+       head card carries ONE label geometry — the picker trigger is not an
+       .hk-tag and stays untouched. */
+    > .hk-tag {
+      min-height: 20px;
+      font-size: var(--text-2xs);
+      line-height: 1.4;
+      font-weight: 600;
+      padding-block: 1px;
+      padding-inline: 8px;
+    }
   }
 
   /** Battle provenance (map · mode · start · replay fingerprint ·
@@ -171,11 +184,13 @@
     b {
       font-size: 19px;
       line-height: 1.1;
+      font-variant-numeric: tabular-nums;
     }
 
     &-sub {
       font-size: 11px;
       color: var(--srp-dim);
+      font-variant-numeric: tabular-nums;
     }
   }
 
@@ -190,11 +205,13 @@
     &-label {
       font-size: 11px;
       color: var(--srp-dim);
+      font-variant-numeric: tabular-nums;
     }
 
     &-note {
       margin-left: 8px;
       color: var(--srp-warn);
+      font-variant-numeric: tabular-nums;
     }
   }
 
@@ -534,7 +551,10 @@
   }
 
   &__count {
-    font-size: 11px;
+    /* One dim voice in this header row: the hint, the legend items and the
+       interactive hint all sit at 10.5px — the count was the lone 11px
+       outlier (2026-11-08 sweep). */
+    font-size: 10.5px;
     color: var(--srp-dim);
   }
 
@@ -824,6 +844,18 @@
     align-items: center;
     gap: 7px;
     margin-bottom: 6px;
+
+    /* The category tag carries the head's unified label voice (600 at
+       --text-2xs, one 20px pill with the shared inline padding) — the
+       cards and the provenance row read as one chip run in the exported
+       long image (2026-11-08 sweep). */
+    .hk-tag {
+      min-height: 20px;
+      font-size: var(--text-2xs);
+      line-height: 1.4;
+      font-weight: 600;
+      padding-inline: 8px;
+    }
   }
 
   &__moment-idx {
@@ -870,6 +902,9 @@
     flex-wrap: wrap;
     font-weight: 600;
     color: var(--srp-ink);
+    /* Every digit in the sheet renders tabular — the ruler, the y-axis
+       marks and the moment clock already do (2026-11-08 sweep). */
+    font-variant-numeric: tabular-nums;
 
     &--outcome {
       color: var(--srp-good);
@@ -880,6 +915,7 @@
     font-size: 10px;
     font-weight: 400;
     color: var(--srp-dim);
+    font-variant-numeric: tabular-nums;
   }
 
   &__range {
