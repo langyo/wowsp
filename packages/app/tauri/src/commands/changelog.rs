@@ -15,7 +15,9 @@
 //! section open and refills as the user scrolls (see stores/changelog.ts).
 
 use anyhow::Error;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::sync::{LazyLock, Mutex};
 use std::time::Duration;
 
 use wowsp_tauri_shared::CommandResult;
@@ -48,6 +50,15 @@ const RAW_PAGE_BUDGET: u32 = 3;
 /// Per-mirror cap: a dead mirror must time out, not stall the section.
 const FETCH_TIMEOUT: Duration = Duration::from_secs(20);
 
+/// The per-release translation asset attached to every app release:
+/// release-notes-i18n-<tag>.json (schema 1: tag + generated_at + sections).
+/// The release BODY stays English; this asset carries the seven locales
+/// (AGENTS.md section 10).
+const I18N_ASSET_PREFIX: &str = "release-notes-i18n-";
+const I18N_ASSET_SUFFIX: &str = ".json";
+const I18N_SCHEMA: u64 = 1;
+const I18N_FETCH_TIMEOUT: Duration = Duration::from_secs(25);
+
 /// One rendered release. `version` is the tag with its `v` stripped so
 /// the webui can badge the running build straight against `getVersion()`.
 #[derive(Debug, PartialEq, Serialize)]
@@ -67,6 +78,143 @@ pub struct ChangelogPage {
     pub releases: Vec<ChangelogRelease>,
     pub has_more: bool,
     pub next_page: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawI18nDoc {
+    schema: u64,
+    tag: String,
+    sections: BTreeMap<String, String>,
+}
+
+/// One release's translation sections as served to the webui. `tag` is
+/// the v-prefixed release tag; `sections` maps a locale to its markdown.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ChangelogI18n {
+    pub tag: String,
+    pub sections: BTreeMap<String, String>,
+}
+
+/// Session cache: release-notes assets are immutable per tag, so one
+/// successful fetch is enough for the whole app run.
+static I18N_CACHE: LazyLock<Mutex<BTreeMap<String, ChangelogI18n>>> =
+    LazyLock::new(|| Mutex::new(BTreeMap::new()));
+
+fn i18n_asset_name(tag: &str) -> String {
+    format!("{I18N_ASSET_PREFIX}{tag}{I18N_ASSET_SUFFIX}")
+}
+
+/// Normalize the webui's tag argument: it must be a v-prefixed,
+/// digit-leading app release tag made of URL-safe characters. The changelog
+/// list keeps prerelease tags too, so this accepts the same shapes while
+/// rejecting anything that could alter the API path it is interpolated into.
+fn app_tag(raw: &str) -> Option<String> {
+    let tag = raw.trim();
+    let bare = tag.strip_prefix(['v', 'V'])?;
+    if !bare.starts_with(|c: char| c.is_ascii_digit()) {
+        return None;
+    }
+    let safe = bare
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'));
+    safe.then(|| tag.to_string())
+}
+
+/// Pull the release-notes asset download URL out of one release-detail
+/// payload. Releases without the asset (older releases) answer None.
+fn i18n_asset_url_from_release(payload: &serde_json::Value, tag: &str) -> Option<String> {
+    // Shape-check the detail payload first: a mirror can answer 200 with a
+    // JSON error object, which must not read as "this release has no asset".
+    if payload.get("tag_name").and_then(|name| name.as_str()) != Some(tag) {
+        return None;
+    }
+    let want = i18n_asset_name(tag);
+    let url = payload
+        .get("assets")?
+        .as_array()?
+        .iter()
+        .find(|asset| asset.get("name").and_then(|name| name.as_str()) == Some(want.as_str()))
+        .and_then(|asset| asset.get("browser_download_url"))
+        .and_then(|url| url.as_str())?;
+    // Release asset URLs live on github.com; a payload pointing anywhere
+    // else is not a payload this command should feed into the ladder.
+    url.starts_with("https://github.com/")
+        .then(|| url.to_string())
+}
+
+fn parse_i18n_doc(bytes: &[u8], tag: &str) -> Option<ChangelogI18n> {
+    let doc: RawI18nDoc = serde_json::from_slice(bytes).ok()?;
+    if doc.schema != I18N_SCHEMA || doc.tag != tag || doc.sections.is_empty() {
+        return None;
+    }
+    Some(ChangelogI18n {
+        tag: doc.tag,
+        sections: doc.sections,
+    })
+}
+
+/// Whether the doc carries at least one non-placeholder section. An
+/// all-placeholder doc is not cached: set --apply rewrites assets in place,
+/// and a cached placeholder would otherwise survive until an app restart.
+fn has_translation(doc: &ChangelogI18n) -> bool {
+    doc.sections.values().any(|content| {
+        let first = content
+            .split('\n')
+            .find(|line| !line.trim().is_empty())
+            .unwrap_or("")
+            .trim_start();
+        !first.starts_with('🚧')
+    })
+}
+
+/// Resolve the release-notes asset URL by walking the mirror ladder to the
+/// release-detail endpoint and shape-checking each candidate's payload, so a
+/// proxy's 200-with-a-JSON-error body moves the ladder on instead of
+/// reading as "this release has no asset".
+async fn fetch_release_asset_url(clients: &HttpPair, tag: &str) -> anyhow::Result<Option<String>> {
+    let detail_url = format!("{RELEASES_URL}/tags/{tag}");
+    let mut last_err = String::from("no mirror attempted");
+    for candidate in github_mirror::candidates(&detail_url) {
+        let host = upstream_health::host_of_url(&candidate).to_string();
+        let resp =
+            match upstream_health::send_with_fallback(clients, &host, "changelog-i18n", |client| {
+                client
+                    .get(&candidate)
+                    .header("User-Agent", "WoWSP-changelog/1.0")
+                    .header("Accept", "application/vnd.github+json")
+                    .timeout(I18N_FETCH_TIMEOUT)
+            })
+            .await
+            {
+                Ok(r) => r,
+                Err(e) => {
+                    last_err = format!("{candidate}: {e}");
+                    continue;
+                },
+            };
+        if !resp.status().is_success() {
+            last_err = format!("{candidate}: HTTP {}", resp.status());
+            continue;
+        }
+        match resp.json::<serde_json::Value>().await {
+            Ok(payload) => {
+                let shaped = payload.get("tag_name").and_then(|name| name.as_str()) == Some(tag)
+                    && payload
+                        .get("assets")
+                        .is_some_and(|assets| assets.is_array());
+                if !shaped {
+                    last_err = format!("{candidate}: unexpected release detail payload");
+                    continue;
+                }
+                return Ok(i18n_asset_url_from_release(&payload, tag));
+            },
+            Err(e) => {
+                last_err = format!("{candidate}: invalid JSON: {e}");
+                continue;
+            },
+        }
+    }
+    Err(Error::msg(last_err))
 }
 
 /// Normalize a release tag into the plain semver the app reports
@@ -108,20 +256,78 @@ fn parse_page(payload: &serde_json::Value, per_page: usize) -> (Vec<ChangelogRel
     (releases, has_more)
 }
 
-/// Fetch one raw page through the mirror ladder. Errors reach the webui
-/// store verbatim — the section renders its retry state on them.
+/// Walk the mirror ladder for one GitHub URL and decode its JSON body.
+/// Every candidate failure is accumulated; the last one is the error the
+/// caller sees (the ladder never stops on a single dead mirror).
+async fn fetch_ladder_json(
+    clients: &HttpPair,
+    url: &str,
+    label: &str,
+    accept: &str,
+) -> anyhow::Result<serde_json::Value> {
+    let mut last_err = String::from("no mirror attempted");
+    for candidate in github_mirror::candidates(url) {
+        let host = upstream_health::host_of_url(&candidate).to_string();
+        let resp = match upstream_health::send_with_fallback(clients, &host, label, |client| {
+            client
+                .get(&candidate)
+                .header("User-Agent", "WoWSP-changelog/1.0")
+                .header("Accept", accept)
+                .timeout(FETCH_TIMEOUT)
+        })
+        .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                last_err = format!("{candidate}: {e}");
+                continue;
+            },
+        };
+        if !resp.status().is_success() {
+            last_err = format!("{candidate}: HTTP {}", resp.status());
+            continue;
+        }
+        match resp.json::<serde_json::Value>().await {
+            Ok(payload) => return Ok(payload),
+            Err(e) => {
+                last_err = format!("{candidate}: invalid JSON: {e}");
+                continue;
+            },
+        }
+    }
+    Err(Error::msg(last_err))
+}
+
+/// Fetch one raw page through the mirror ladder. Only a JSON array is a
+/// usable release list (a proxy can answer 200 with a JSON error object);
+/// anything else moves the ladder on instead of rendering an empty feed.
 async fn fetch_raw_page(clients: &HttpPair, page: u32) -> anyhow::Result<serde_json::Value> {
     let url = format!("{RELEASES_URL}?per_page={RAW_PER_PAGE}&page={page}");
-    let mut last_err = String::from("no mirror attempted for the changelog");
-    for candidate in github_mirror::candidates(&url) {
+    let payload =
+        fetch_ladder_json(clients, &url, "changelog", "application/vnd.github+json").await?;
+    if payload.is_array() {
+        Ok(payload)
+    } else {
+        Err(Error::msg(
+            "unexpected changelog payload: not a release list",
+        ))
+    }
+}
+
+/// Walk the mirror ladder until one candidate serves a VALID i18n doc for
+/// `tag`. A proxy can answer 200 with an HTML/error body, so the doc is
+/// parsed per candidate and the ladder moves on instead of accepting the
+/// first 200 it sees.
+async fn fetch_i18n_doc(clients: &HttpPair, url: &str, tag: &str) -> anyhow::Result<ChangelogI18n> {
+    let mut last_err = String::from("no mirror attempted");
+    for candidate in github_mirror::candidates(url) {
         let host = upstream_health::host_of_url(&candidate).to_string();
         let resp =
-            match upstream_health::send_with_fallback(clients, &host, "changelog", |client| {
+            match upstream_health::send_with_fallback(clients, &host, "changelog-i18n", |client| {
                 client
                     .get(&candidate)
                     .header("User-Agent", "WoWSP-changelog/1.0")
-                    .header("Accept", "application/vnd.github+json")
-                    .timeout(FETCH_TIMEOUT)
+                    .timeout(I18N_FETCH_TIMEOUT)
             })
             .await
             {
@@ -135,17 +341,16 @@ async fn fetch_raw_page(clients: &HttpPair, page: u32) -> anyhow::Result<serde_j
             last_err = format!("{candidate}: HTTP {}", resp.status());
             continue;
         }
-        // A proxy can answer 200 with a JSON error object — only an
-        // array is a usable release list, anything else moves the ladder
-        // on instead of rendering a silently empty section.
-        match resp.json::<serde_json::Value>().await {
-            Ok(v) if v.is_array() => return Ok(v),
-            Ok(_) => {
-                last_err = format!("{candidate}: unexpected changelog payload");
-                continue;
+        match resp.bytes().await {
+            Ok(bytes) => match parse_i18n_doc(&bytes, tag) {
+                Some(doc) => return Ok(doc),
+                None => {
+                    last_err = format!("{candidate}: unusable i18n doc (schema/tag mismatch)");
+                    continue;
+                },
             },
             Err(e) => {
-                last_err = format!("parse releases from {candidate}: {e}");
+                last_err = format!("{candidate}: body read failed: {e}");
                 continue;
             },
         }
@@ -186,6 +391,34 @@ pub async fn changelog_list(page: u32) -> CommandResult<ChangelogPage> {
         next_page: if has_more { next_raw } else { 0 },
         releases,
     })
+}
+
+/// One release's translation asset: None when the release has no i18n
+/// asset (older releases). Transport failures and unusable payloads/doc
+/// surface as errors; the webui changelog store swallows both and keeps
+/// rendering the English body.
+#[tauri::command]
+pub async fn changelog_i18n(tag: String) -> CommandResult<Option<ChangelogI18n>> {
+    let tag = app_tag(&tag).ok_or_else(|| Error::msg(format!("not an app release tag: {tag}")))?;
+    if let Ok(cache) = I18N_CACHE.lock() {
+        if let Some(hit) = cache.get(&tag) {
+            return Ok(Some(hit.clone()));
+        }
+    }
+    let clients = HttpPair::build(|b| b)?;
+    let Some(asset_url) = fetch_release_asset_url(&clients, &tag).await? else {
+        return Ok(None);
+    };
+    let doc = fetch_i18n_doc(&clients, &asset_url, &tag).await?;
+    // Only cache docs with real content: an all-placeholder doc is expected
+    // to change once translations are filled (set --apply rewrites the
+    // asset), and the webui refresh must see the update without a restart.
+    if has_translation(&doc) {
+        if let Ok(mut cache) = I18N_CACHE.lock() {
+            cache.insert(tag, doc.clone());
+        }
+    }
+    Ok(Some(doc))
 }
 
 #[cfg(test)]
@@ -287,5 +520,101 @@ mod tests {
         assert_eq!(parse_page(&serde_json::Value::Null, 10), (vec![], false));
         // An exhausted tail page: empty and terminal.
         assert_eq!(parse_page(&serde_json::json!([]), 10), (vec![], false));
+    }
+
+    #[test]
+    fn app_tag_accepts_safe_v_prefixed_app_tags() {
+        assert_eq!(app_tag("v0.6.9").as_deref(), Some("v0.6.9"));
+        assert_eq!(app_tag("  v0.6.9 ").as_deref(), Some("v0.6.9"));
+        // The changelog list keeps prerelease tags too; they must resolve here.
+        assert_eq!(app_tag("v0.6.9-rc1").as_deref(), Some("v0.6.9-rc1"));
+        assert_eq!(app_tag("v0.6").as_deref(), Some("v0.6"));
+        // Bare/infra tags and path-mutating shapes are refused.
+        assert_eq!(app_tag("0.6.9"), None);
+        assert_eq!(app_tag("res-latest"), None);
+        assert_eq!(app_tag("v0.6.9?x"), None);
+        assert_eq!(app_tag("v0.6.9/../x"), None);
+        assert_eq!(app_tag("v"), None);
+    }
+
+    fn i18n_payload(tag: &str) -> serde_json::Value {
+        serde_json::json!({
+            "tag_name": tag,
+            "assets": [
+                {"name": "latest", "browser_download_url": "https://github.com/x/latest"},
+                {"name": format!("release-notes-i18n-{tag}.json"),
+                 "browser_download_url": "https://github.com/x/notes.json"},
+            ],
+        })
+    }
+
+    #[test]
+    fn i18n_asset_url_selection() {
+        assert_eq!(
+            i18n_asset_url_from_release(&i18n_payload("v0.6.9"), "v0.6.9").as_deref(),
+            Some("https://github.com/x/notes.json")
+        );
+        assert_eq!(
+            i18n_asset_url_from_release(&i18n_payload("v0.6.9"), "v0.6.8"),
+            None
+        );
+        assert_eq!(
+            i18n_asset_url_from_release(&serde_json::json!({"assets": []}), "v0.6.9"),
+            None
+        );
+        assert_eq!(
+            i18n_asset_url_from_release(&serde_json::json!({"message": "nope"}), "v0.6.9"),
+            None
+        );
+        let wrong_tag = serde_json::json!({
+            "tag_name": "v0.6.8",
+            "assets": [{"name": "release-notes-i18n-v0.6.9.json",
+                        "browser_download_url": "https://github.com/x/notes.json"}],
+        });
+        assert_eq!(i18n_asset_url_from_release(&wrong_tag, "v0.6.9"), None);
+        let foreign_host = serde_json::json!({
+            "tag_name": "v0.6.9",
+            "assets": [{"name": "release-notes-i18n-v0.6.9.json",
+                        "browser_download_url": "https://evil.example/notes.json"}],
+        });
+        assert_eq!(i18n_asset_url_from_release(&foreign_host, "v0.6.9"), None);
+    }
+
+    #[test]
+    fn placeholder_only_docs_are_not_cacheable() {
+        let placeholders = ChangelogI18n {
+            tag: "v0.6.9".into(),
+            sections: BTreeMap::from([
+                ("zh-CN".to_string(), "🚧 未翻译".to_string()),
+                ("ja-JP".to_string(), "🚧 未翻訳".to_string()),
+            ]),
+        };
+        assert!(!has_translation(&placeholders));
+        let translated = ChangelogI18n {
+            tag: "v0.6.9".into(),
+            sections: BTreeMap::from([
+                ("zh-CN".to_string(), "## 更新内容".to_string()),
+                ("ja-JP".to_string(), "🚧 未翻訳".to_string()),
+            ]),
+        };
+        assert!(has_translation(&translated));
+    }
+
+    #[test]
+    fn i18n_doc_requires_matching_schema_and_tag() {
+        let good = "{\"schema\":1,\"tag\":\"v0.6.9\",\"sections\":{\"zh-CN\":\"## 更新内容\"}}";
+        let parsed = parse_i18n_doc(good.as_bytes(), "v0.6.9").expect("valid doc");
+        assert_eq!(parsed.tag, "v0.6.9");
+        assert_eq!(
+            parsed.sections.get("zh-CN").map(String::as_str),
+            Some("## 更新内容")
+        );
+        assert!(parse_i18n_doc(good.as_bytes(), "v0.6.8").is_none());
+        let future = "{\"schema\":2,\"tag\":\"v0.6.9\",\"sections\":{\"zh-CN\":\"x\"}}";
+        assert!(parse_i18n_doc(future.as_bytes(), "v0.6.9").is_none());
+        let empty = "{\"schema\":1,\"tag\":\"v0.6.9\",\"sections\":{}}";
+        assert!(parse_i18n_doc(empty.as_bytes(), "v0.6.9").is_none());
+        assert!(parse_i18n_doc(b"not json", "v0.6.9").is_none());
+        assert_eq!(i18n_asset_name("v0.6.9"), "release-notes-i18n-v0.6.9.json");
     }
 }

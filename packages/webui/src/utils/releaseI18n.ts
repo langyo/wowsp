@@ -1,21 +1,27 @@
 /**
- * releaseI18n — the i18n scaffold inside GitHub release bodies.
+ * releaseI18n — release-note bodies and their per-release translation asset.
  *
- * Every v* release body carries a language-section scaffold written by
- * scripts/release_notes_i18n.py (the FORMAT AUTHORITY — its module
- * docstring defines the grammar; this parser mirrors it structurally, and
- * the fixtures in releaseI18n.test.ts stay in agreement with the python
- * self-test). GitHub web renders en-US expanded and every other locale
- * collapsed inside <details>; the changelog renders EXACTLY ONE section —
- * the user's locale, falling back to the en-US original when the locale's
- * section is missing or still the 🚧 placeholder.
+ * Two formats are supported, both authored by scripts/release_notes_i18n.py
+ * (the FORMAT AUTHORITY — its module docstring defines them and this parser
+ * mirrors it; the fixtures in releaseI18n.test.ts stay in agreement with the
+ * python self-test):
  *
- * A structurally malformed body parses as null and the caller falls back
- * to rendering the whole raw body — visible degradation beats hidden
- * content. The live lint (ci.yml) exists precisely so this never happens.
- * Two deliberate tolerances: a body with a duplicate locale section keeps
- * the LAST copy (the CI lint flags duplicates), and only format v1 bodies
- * are parsed — a future format bump degrades old apps to the raw render.
+ * 1. Canonical (since the 2026-11 migration): the release BODY is plain
+ *    English markdown and the seven translations live in the release asset
+ *    release-notes-i18n-<tag>.json (fetched Rust-side by
+ *    commands/changelog.rs::changelog_i18n and handed here as the
+ *    translations map). The changelog renders the user's locale from the
+ *    asset, falling back to the English body with a hint while the locale
+ *    is still the 🚧 placeholder or the asset is unavailable.
+ * 2. Legacy v1 scaffold bodies (older releases/clients): language sections
+ *    wrapped in <details> elements; rendered exactly as before, with the
+ *    en-US fallback while a section is still the placeholder.
+ *
+ * A structurally malformed scaffold parses as null and the caller falls
+ * back to rendering the whole raw body — visible degradation beats hidden
+ * content. Two deliberate tolerances: a duplicate locale section keeps the
+ * LAST copy (the live lint flags duplicates), and only format v1 bodies are
+ * parsed — a future format bump degrades old apps to the raw render.
  */
 
 import type { Locale } from "@/i18n";
@@ -91,19 +97,43 @@ export interface SelectedReleaseBody {
   fallback: boolean;
 }
 
-/** Pick the body to render for the given locale: the locale's own section
- *  when it exists and is translated, else the en-US original (with the
- *  fallback flag), else the raw body verbatim — legacy, unscaffolded or
- *  malformed bodies always render whole; nothing is ever hidden. */
-export function selectReleaseBody(body: string, locale: Locale): SelectedReleaseBody {
+/** The locale sections of one release's release-notes-i18n-<tag>.json
+ *  asset (the Rust changelog_i18n payload's map). */
+export type ReleaseTranslations = Partial<Record<Locale, string>>;
+
+/** Pick the body to render for the given locale.
+ *
+ *  Order: a legacy scaffold's own section (old clients/releases), else the
+ *  JSON-asset translation for the locale, else the en-US original (with the
+ *  fallback flag) / raw body. "translations" being undefined means the
+ *  asset has not loaded yet: the English body renders without a hint and
+ *  the next render picks the translation up once it lands; a loaded asset
+ *  that lacks the locale (or carries the 🚧 placeholder) surfaces the hint. */
+export function selectReleaseBody(
+  body: string,
+  locale: Locale,
+  translations?: ReleaseTranslations | null,
+): SelectedReleaseBody {
   const parsed = parseI18nRelease(body);
-  if (!parsed) return { source: body, fallback: false };
-  const chosen = parsed.sections[locale];
-  if (locale !== "en-US" && (!chosen || isPending(chosen))) {
-    const en = parsed.sections["en-US"];
-    if (en) return { source: en, fallback: true };
-    return { source: body, fallback: false }; // scaffold without en-US: raw is safest
+  const english = parsed?.sections["en-US"] ?? body;
+  if (locale === "en-US") return { source: english, fallback: false };
+  // The JSON asset is the translation channel and wins over a legacy body
+  // scaffold (an old body may still carry a stale inline section).
+  const translated = translations?.[locale];
+  if (translated && translated.trim() && !isPending(translated)) {
+    return { source: translated, fallback: false };
   }
-  if (chosen) return { source: chosen, fallback: false };
+  if (translations) {
+    // Asset loaded but this locale is missing or still the placeholder:
+    // render the English original with the fallback hint.
+    return { source: english, fallback: true };
+  }
+  // Asset not loaded yet: consume the legacy v1 scaffold section when the
+  // body still carries one (old clients/releases), else render English.
+  if (parsed) {
+    const chosen = parsed.sections[locale];
+    if (chosen && !isPending(chosen)) return { source: chosen, fallback: false };
+    return { source: english, fallback: true };
+  }
   return { source: body, fallback: false };
 }
