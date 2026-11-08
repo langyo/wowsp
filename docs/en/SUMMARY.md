@@ -20,6 +20,7 @@
 - [Gateway Push](./designs/gateway-push.md)
 - [In-Game Stats Plugin](./designs/ingame-stats-plugin.md)
 - [Threat Model](./designs/threat-model.md)
+- [AI Model Distribution](./designs/ai-models.md)
 
 # License
 

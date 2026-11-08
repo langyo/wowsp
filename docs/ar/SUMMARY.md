@@ -16,6 +16,7 @@
 
 - [تصميم البنية](./designs/architecture.md)
 - [إضافة إحصائيات داخل اللعبة](./designs/ingame-stats-plugin.md)
+- [توزيع نماذج الذكاء الاصطناعي](./designs/ai-models.md)
 
 # License
 

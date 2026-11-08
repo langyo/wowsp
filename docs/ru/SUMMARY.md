@@ -16,6 +16,7 @@
 
 - [Проектирование архитектуры](./designs/architecture.md)
 - [Плагин внутриигровой статистики](./designs/ingame-stats-plugin.md)
+- [Распространение ИИ-моделей](./designs/ai-models.md)
 
 # License
 
