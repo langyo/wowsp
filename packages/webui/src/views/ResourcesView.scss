@@ -2069,8 +2069,8 @@
 
 /* Association section of the installed pane: it rides the pane body's own
    scroll flow after the unit's content (so a sparse unit's list starts under
-   the pane head instead of at the bottom of a flex-grown empty body), kept
-   collapsed by default so the body stays short until the list is asked for. */
+   the pane head instead of at the bottom of a flex-grown empty body), expanded
+   by default so it simply continues that flow; the header collapses it. */
 .mod-detail__related {
   flex: none;
   min-width: 0;

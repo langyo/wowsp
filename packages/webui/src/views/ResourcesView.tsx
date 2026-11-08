@@ -219,6 +219,29 @@ export default defineComponent({
         { key: "voice", label: t("resources.big.voice"), icon: <AudioLines size={14} /> },
       ];
       const selKey = hub.selectedRowKey.value;
+      // The pane is re-keyed per selection so a freshly picked row always
+      // opens at the top of its own body: the body's HkScrollContainer
+      // instance otherwise survives the patch-in-place selection change, and
+      // now that the association list starts expanded almost every pane body
+      // is taller than its viewport — a carried-over scroll offset would drop
+      // the next unit into the middle of its previews or its related list.
+      // (Same intent as the PostBattlePanel drill-down reset.)
+      const paneKey = (() => {
+        const sel = hub.selection.value;
+        if (!sel) return "none";
+        switch (sel.mode) {
+          case "catalog":
+            return `catalog:${sel.entry.id}`;
+          case "installed":
+            return `installed:${sel.mod.relPath}`;
+          case "foreign":
+            return `foreign:${sel.unit.installer}:${sel.unit.key}`;
+          case "component":
+            return `component:${sel.comp.label}`;
+          case "local":
+            return "local";
+        }
+      })();
       return (
         <div class="resources-view">
           {/* ── Master/detail in the replay page's secondary-sidebar shape:
@@ -702,7 +725,7 @@ export default defineComponent({
 
           {/* ── The detail half: what the selected row is, and every
               action for it, with the actions pinned bottom-right ── */}
-          <section class="resources-view__main">{renderPane(ctx)}</section>
+          <section class="resources-view__main" key={paneKey}>{renderPane(ctx)}</section>
 
           <HkConfirmDialog
             open={!!hub.confirmTarget.value}

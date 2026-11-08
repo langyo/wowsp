@@ -1192,12 +1192,11 @@ describe("installed-unit known-mod relations", () => {
     expect(view.find(".mod-detail__foot .mod-detail__related").exists()).toBe(false);
   });
 
-  it("expands the pane's association list and lists each known mod", async () => {
+  it("opens with the association list expanded and lists each known mod", async () => {
     const view = await mountRelated();
     expect(view.find(".mod-detail__related").exists()).toBe(true);
-    // Collapsed by default: the head stays, the row list does not.
-    expect(view.findAll(".mod-detail__related-row")).toHaveLength(0);
-    await view.find(".mod-detail__related-head").trigger("click");
+    // Expanded by default: the rows ride the pane body's own scroll flow.
+    expect(view.find(".mod-detail__related-head").attributes("aria-expanded")).toBe("true");
     const rows = view.findAll(".mod-detail__related-row");
     expect(rows).toHaveLength(2);
     expect(rows[0].find(".mod-detail__related-name").text()).toContain("Mod A");
@@ -1207,6 +1206,48 @@ describe("installed-unit known-mod relations", () => {
     expect(rows[1].find(".mod-detail__related-name").text()).toContain("Extra Pack");
     // Managed ledger rows are removable from here; both carry the action.
     expect(view.findAll(".mod-detail__related-remove")).toHaveLength(2);
+
+    // The header still collapses the list on request.
+    await view.find(".mod-detail__related-head").trigger("click");
+    expect(view.findAll(".mod-detail__related-row")).toHaveLength(0);
+    expect(view.find(".mod-detail__related-head").attributes("aria-expanded")).toBe("false");
+  });
+
+  it("re-expands the list on the next selection and drops the old body", async () => {
+    mocks.scan.mockResolvedValue([
+      {
+        ...mod("Mod A"),
+        relPath: "PnFMods/a",
+        paths: ["PnFMods/a"],
+        identity: "mod-a",
+      } as InstalledMod,
+      {
+        ...mod("Mod B"),
+        relPath: "PnFMods/b",
+        paths: ["PnFMods/b"],
+        identity: "mod-b",
+      } as InstalledMod,
+    ]);
+    mocks.records.mockResolvedValue([
+      relatedRecord({ id: "mod-a", name: "Mod A", files: ["PnFMods/a/main.py"] }),
+      relatedRecord({ id: "mod-b", name: "Mod B", files: ["PnFMods/b/main.py"] }),
+    ]);
+    const view = await mountInstalled();
+    const rowOf = (name: string) =>
+      view.findAll(".mod-row").find((row) => row.text().includes(name))!;
+    await rowOf("Mod A").trigger("click");
+    await flushPromises();
+    const firstBody = view.find(".mod-detail__scroll").element;
+    await view.find(".mod-detail__related-head").trigger("click");
+    expect(view.findAll(".mod-detail__related-row")).toHaveLength(0);
+    // A new selection starts expanded again (collapse is per-pane), and the
+    // re-keyed pane is a fresh body — so the previous unit's scroll offset
+    // cannot carry over.
+    await rowOf("Mod B").trigger("click");
+    await flushPromises();
+    expect(view.find(".mod-detail__related-head").attributes("aria-expanded")).toBe("true");
+    expect(view.findAll(".mod-detail__related-row")).toHaveLength(1);
+    expect(view.find(".mod-detail__scroll").element).not.toBe(firstBody);
   });
 
   it("removes a managed relation through the catalog uninstall and rescans", async () => {
@@ -1218,7 +1259,7 @@ describe("installed-unit known-mod relations", () => {
       restoredFiles: 1,
     });
     const view = await mountRelated();
-    await view.find(".mod-detail__related-head").trigger("click");
+    // The list is expanded by default, so the remove action is already there.
     await view.findAll(".mod-detail__related-remove")[0].trigger("click");
     await flushPromises();
     const dialog = view
@@ -1257,7 +1298,6 @@ describe("installed-unit known-mod relations", () => {
     const view = await mountInstalled();
     await view.find(".mod-row").trigger("click");
     await flushPromises();
-    await view.find(".mod-detail__related-head").trigger("click");
     expect(view.findAll(".mod-detail__related-row")).toHaveLength(1);
     // The component record is not removable on its own; the hint explains
     // that it leaves with its last consumer.
@@ -1287,7 +1327,6 @@ describe("installed-unit known-mod relations", () => {
     const view = await mountInstalled();
     await view.find(".mod-row").trigger("click");
     await flushPromises();
-    await view.find(".mod-detail__related-head").trigger("click");
     const remove = view.findAll(".mod-detail__related-remove");
     expect(remove).toHaveLength(1);
     await remove[0].trigger("click");

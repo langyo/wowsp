@@ -402,7 +402,7 @@ written-file list lands under the unit's paths, the consumer set of a shared
 component the unit carries (pack records whose `shared_roots` edge names it),
 and the foreign/Aslain or catalog pairing of the unit's own identity. Opening a
 row shows the detail pane's **related mods** section at the end of its
-body (collapsed by default; a unit with nothing else to show starts it
+body (expanded by default; a unit with nothing else to show starts it
 directly under the pane head instead of leaving the flex-grown empty body
 above a bottom-pinned drawer): each associated mod lists its role (own /
 shared component / dependent), the files it claims in this unit and in

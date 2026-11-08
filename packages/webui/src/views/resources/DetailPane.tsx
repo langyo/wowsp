@@ -554,9 +554,8 @@ function renderRelatedRow(ctx: ResourcesCtx, rel: UnitRelation) {
  *  files in this unit. It rides the pane body's own scroll flow, directly
  *  after the unit's content, so a sparse unit's list starts under the pane
  *  head instead of being pushed to the bottom by a flex-grown empty body.
- *  Collapsed by default (`relatedOpen`) so the body stays short until the
- *  list is asked for; expanded, its rows scroll with the rest of the
- *  body. */
+ *  Expanded by default (`relatedOpen`): its rows are part of the pane body's
+ *  single scroll flow, and the header collapses them back on request. */
 function renderRelatedSection(ctx: ResourcesCtx, mod: InstalledMod) {
   const relations = ctx.relationsOf(mod);
   const open = ctx.relatedOpen.value;

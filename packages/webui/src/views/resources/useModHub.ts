@@ -269,9 +269,10 @@ export function useModHub() {
       gameRoot.value,
     ),
   );
-  // The related-mod section's open state — collapsed by default, reset on
-  // every pane change so a new selection never opens pre-expanded.
-  const relatedOpen = ref(false);
+  // The related-mod section's open state — expanded by default so the list
+  // joins the pane body's scroll flow with the unit's own content, reset on
+  // every pane change so a new selection always starts expanded.
+  const relatedOpen = ref(true);
   // The record relation awaiting its remove confirmation. Foreign /
   // catalog rows do not land here: they reroute into the owning unit's
   // uninstall flow (see requestRelatedRemove).
@@ -280,7 +281,7 @@ export function useModHub() {
   // relPath of the unit whose junk-clean pass is in flight.
   const junkCleaning = ref<string | null>(null);
   watch(selection, () => {
-    relatedOpen.value = false;
+    relatedOpen.value = true;
   });
 
   let scanGeneration = 0;
@@ -1877,7 +1878,7 @@ export function useModHub() {
     unitTarget.value = null;
     foreignTarget.value = null;
     safeModeAsk.value = null;
-    relatedOpen.value = false;
+    relatedOpen.value = true;
     relationTarget.value = null;
     junkCleaning.value = null;
   }
