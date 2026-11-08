@@ -11,13 +11,20 @@
  * thing under test.
  *
  * Three later review pins ride here as well: the retired mode/map head row
- * (a passed `head` identity must not bring it back), the complete
- * identity-line seals (every seal the row owns presses inline, whole — the
- * old one-tag cap clipped or hid the rest) and the three-line row hover
- * hint (clan-tagged nick / every tag / ship tier + name) the mask eye must
- * not steal. The seal pin needs the opposite fixture setup (a realmful
- * roster + zh UI, the composition sweep's gates), so it mounts its own
- * payload while the window tests keep the realmless one.
+ * (a passed `head` identity must not bring it back), the identity-line
+ * seal rule (single-character wordings stay inline; every wider wording —
+ * the four-character composition tags included — collapses behind ONE "!"
+ * superscript badge in both densities, and the rich three-line hover card
+ * paints the whole cluster as real StampTag chips — plus the division tag
+ * face and the marker's wording the old plain hint carried — in the
+ * hovered density's own classes while the mask eye keeps its own hint). The
+ * seal pins need the opposite fixture setup (a realmful roster + zh UI, the
+ * composition sweep's gates), so they mount their own payload while the
+ * window tests keep the realmless one. happy-dom measures zero rects, so the
+ * hover-card pins stub getBoundingClientRect (the MapNameTag / LiveShipMeta
+ * harness trick) and restore it per test; the touch pin flips only the
+ * "(hover: none)" media query and delegates every other query to the real
+ * matcher.
  *
  * The sticky head block (toolbar + hoisted team column-header grid pinned at
  * the scroll window's top edge) gets its structural pins here: happy-dom has
@@ -33,6 +40,8 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 import { createPinia, setActivePinia } from "pinia";
 import { initLocaleMessages, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { statsPrefsState } from "@/stores/statsPrefs";
+import { useMarkersStore } from "@/stores/markers";
 import PostBattlePanel, { type PostBattleHead } from "./PostBattlePanel";
 import type { SelfStatsStream } from "./liveSelfStats";
 import { NICK_MASK } from "./postBattleShare";
@@ -84,8 +93,9 @@ vi.mock("@/api", () => ({
   },
 }));
 
-/** One CLIENT_PUBLIC_RESULTS row, the 15.2+ layout: >=500 entries so the
- *  late fields (exp 404 / killer 408 / damage 426) read unshifted. */
+/** One CLIENT_PUBLIC_RESULTS row, the 15.2–15.9 layout: 538 entries (the
+ *  500..549 band) so the late fields (exp 404 / killer 408 / damage 426)
+ *  read unshifted. */
 function ppiRow(opts: {
   name: string;
   team: 0 | 1;
@@ -153,6 +163,25 @@ const RAW_WITH_REALM = JSON.stringify({
   privateDataList: [[], [], [], [], [], [], [], [450000, 0, 0, 1200]],
 });
 
+/** The realmful seal fixture with divisions on both sides: the arena join
+ *  letters "AdmiralA" and "EnemyB" as 组队A (each side letters independently
+ *  over its own rows), so the hover-card pin can assert the yellow tag face
+ *  rides the card too. */
+const DIVISION_STREAM: SelfStatsStream = {
+  trajectories: [],
+  recorderVehicleId: null,
+  shotKills: [],
+  damageStats: [],
+  achievements: [],
+  arenaPlayers: [
+    { entityId: 1001, teamId: 0, name: "AdmiralA", prebattle: 7 },
+    { entityId: 2001, teamId: 1, name: "EnemyB", prebattle: 7 },
+  ],
+  battleResults: null,
+  shellLaunches: [],
+  torpedoes: [],
+};
+
 /** A decoded-but-empty stream: enough for the 全员/我的 switcher to render
  *  (the self view's source), while buildSelfStats bails to its empty report. */
 const EMPTY_STREAM: SelfStatsStream = {
@@ -178,6 +207,40 @@ function mountPanel(
   return mount(PostBattlePanel, {
     props: { raw: RAW, head: null, operation: false, ...props },
   });
+}
+
+/** happy-dom measures every box 0×0, and the identity card skips a zero-rect
+ *  anchor (a vanished row must not clamp the float into a corner) — stub a
+ *  real anchor box for the hover-card pins and restore it afterwards. */
+function stubAnchorRect() {
+  return vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    width: 120,
+    height: 20,
+    top: 10,
+    left: 10,
+    right: 130,
+    bottom: 30,
+    x: 10,
+    y: 10,
+    toJSON: () => ({}),
+  } as DOMRect);
+}
+
+/** Hover a compact row and wait out the identity card's show delay. */
+async function openRowCard(wrapper: ReturnType<typeof mountPanel>) {
+  await wrapper.find(".replay-view__postbattle-cell-btn").trigger("mouseenter");
+  await vi.waitFor(() => {
+    expect(document.body.querySelector(".postbattle-idcard")).toBeTruthy();
+  });
+  return document.body.querySelector(".postbattle-idcard") as HTMLElement;
+}
+
+/** The toolbar's full-density toggle (a persisted stats pref — every pin
+ *  that flips it restores it, or a later mount inherits full mode). */
+function fullModeToggle(wrapper: ReturnType<typeof mountPanel>) {
+  return wrapper
+    .findAll(".replay-view__postbattle-toolbar button")
+    .find((button) => button.text().includes(t("replay.roster.fullMode")));
 }
 
 /** Open the player-detail window by clicking the first roster row. */
@@ -420,7 +483,7 @@ describe("PostBattlePanel sticky head block", () => {
   });
 });
 
-describe("PostBattlePanel head row, inline seals and row hint", () => {
+describe("PostBattlePanel head row, inline seals and identity hover card", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
@@ -438,66 +501,260 @@ describe("PostBattlePanel head row, inline seals and row hint", () => {
     expect(wrapper.find(".replay-view__postbattle-toolbar").exists()).toBe(true);
   });
 
-  it("presses every seal inline and puts the complete identity on the row hint", async () => {
+  it("collapses multi-character seals behind one badge and floats the whole cluster in the rich hover card", async () => {
     const { uiLocale } = useLanguage();
     const prevLocale = uiLocale.value;
     // The composition sweep (and the seal gates it feeds) only runs under a
     // zh UI — the module-singleton ref the panel reads, set before mount so
     // the first render already asks for the roster's verdicts.
     uiLocale.value = "zh-CN";
+    const rect = stubAnchorRect();
     try {
       const wrapper = mountPanel({ raw: RAW_WITH_REALM });
       await vi.waitFor(() => {
-        expect(wrapper.find(".replay-view__postbattle-cell-seals").text()).toContain(
-          "空中小人",
-        );
+        expect(wrapper.find(".replay-view__postbattle-seals-badge").exists()).toBe(true);
       });
-      // BOTH composition classes press on the identity line, whole — the
-      // retired one-tag cap / alert marker must not swallow either.
-      const seals = wrapper.find(".replay-view__postbattle-cell-seals");
-      expect(seals.text()).toContain("空中小人");
-      expect(seals.text()).toContain("水下小人");
+      // The four-character composition tags no longer press inline: the
+      // fixture owns no single-character seal, so the inline cluster is gone
+      // entirely and ONE badge per row stands in for the pair.
+      const firstCell = wrapper.find(".replay-view__postbattle-cell");
+      expect(firstCell.find(".replay-view__postbattle-cell-seals").exists()).toBe(false);
+      expect(firstCell.findAll(".replay-view__postbattle-seals-badge")).toHaveLength(1);
+      const badge = firstCell.find(".replay-view__postbattle-seals-badge");
+      // A plain span (the row IS a button — no nested interactive control)
+      // whose accessible label names the hidden wordings.
+      expect(badge.element.tagName).toBe("SPAN");
+      expect(badge.attributes("aria-label")).toContain("空中小人");
+      expect(badge.attributes("aria-label")).toContain("水下小人");
       expect(wrapper.find(".replay-view__postbattle-seal-alert").exists()).toBe(false);
       expect(wrapper.find(".replay-view__postbattle-seal-dot").exists()).toBe(false);
-      // The row's hover hint is the complete identity: line 1 the nickname
-      // (clan-tagged when the profile has one), line 2 every tag one by one,
-      // line 3 the ship. The seals are listed there too, so a long row that
-      // ellipsizes its nick still reads whole on hover.
-      const hint =
-        wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint") ?? "";
-      const lines = hint.split("\n");
-      expect(lines[0]).toBe("AdmiralA");
-      expect(lines[1]).toContain("空中小人");
-      expect(lines[1]).toContain("水下小人");
+      // The old plain-text row hint is gone — the rich card replaces it.
+      expect(
+        wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint"),
+      ).toBeUndefined();
       // The eye keeps its own mask hint: a direct hover on the eye never
       // shows the row card (its own hover is the only one that lights it).
-      const eye = wrapper.find(".replay-view__postbattle-cell-eye");
-      expect(eye.attributes("data-hint")).toBe(t("replay.postbattle.hideName"));
+      expect(wrapper.find(".replay-view__postbattle-cell-eye").attributes("data-hint")).toBe(
+        t("replay.postbattle.hideName"),
+      );
+
+      const card = await openRowCard(wrapper);
+      // Line 1: the row's masked, tinted nickname.
+      expect(card.querySelector(".postbattle-idcard__name")?.textContent).toContain(
+        "AdmiralA",
+      );
+      // Line 2: EVERY seal the row owns, as the real StampTag chips (the
+      // collapsed ones included — the same faces the list presses).
+      const chips = [...card.querySelectorAll(".stamp-tag")].map((el) => el.textContent);
+      expect(chips).toContain("空中小人");
+      expect(chips).toContain("水下小人");
+      // Line 3: the row's own tier + ship sub-line styling.
+      expect(card.querySelector(".replay-view__postbattle-cell-tier")).toBeTruthy();
+      expect(card.querySelector(".replay-view__postbattle-cell-ship")).toBeTruthy();
+      // Exactly the three identity lines: name / seals / ship.
+      expect(card.children).toHaveLength(3);
     } finally {
+      rect.mockRestore();
       uiLocale.value = prevLocale;
     }
   });
 
-  it("masks the nickname inside the row hint (the hint is a new surface)", async () => {
-    const wrapper = mountPanel();
-    // The toolbar's hide-all-nicknames toggle masks every row; the hint is a
-    // separate render channel and must ride the same mask.
-    const toggle = wrapper
-      .findAll(".replay-view__postbattle-toolbar button")
-      .find((button) => button.text().includes(t("replay.postbattle.hideAll")));
-    expect(toggle).toBeTruthy();
-    await toggle!.trigger("click");
-    await vi.waitFor(() => {
-      expect(wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint")).toContain(
-        NICK_MASK,
-      );
-    });
-    const hint = wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint") ?? "";
-    expect(hint.split("\n")[0]).toBe(NICK_MASK);
-    expect(hint).not.toContain("AdmiralA");
+  it("carries the division tag, the marker wording and every seal into the hover card", async () => {
+    const { uiLocale } = useLanguage();
+    const prevLocale = uiLocale.value;
+    uiLocale.value = "zh-CN";
+    const rect = stubAnchorRect();
+    try {
+      const wrapper = mountPanel({ raw: RAW_WITH_REALM, stream: DIVISION_STREAM });
+      await vi.waitFor(() => {
+        expect(wrapper.find(".replay-view__postbattle-cell-seals, .replay-view__postbattle-seals-badge").exists()).toBe(true);
+      });
+      // The row keeps the yellow division tag inline, unchanged by the seal
+      // collapse.
+      const divisionLabel = t("replay.postbattle.divisionTag", { letter: "A" });
+      expect(
+        wrapper.find(".replay-view__postbattle-cell-name .division-tag").text(),
+      ).toContain(divisionLabel);
+      // A local marker tints the row's nick and contributes its WORDING to
+      // the card (the tint alone cannot say which mark the row carries).
+      useMarkersStore().entries = [{ nickname: "AdmiralA", color: "purple" }];
+      await nextTick();
+      const card = await openRowCard(wrapper);
+      // Line 2: the real division tag face + the marker's localized name +
+      // the seal chips (collapsed included) — the old hint's whole tag line.
+      expect(card.querySelector(".division-tag")?.textContent).toContain(divisionLabel);
+      expect(card.textContent).toContain(t("settings.markersColorPurple"));
+      const chips = [...card.querySelectorAll(".stamp-tag")].map((el) => el.textContent);
+      expect(chips).toContain("空中小人");
+      expect(chips).toContain("水下小人");
+      // Line 1 keeps the marker-tinted masked nick.
+      expect(card.querySelector(".postbattle-idcard__name .marker-tint")).toBeTruthy();
+    } finally {
+      rect.mockRestore();
+      uiLocale.value = prevLocale;
+    }
+  });
+
+  it("dresses the hover card like the density it hovers in (compact and full card)", async () => {
+    const rect = stubAnchorRect();
+    const prevFull = statsPrefsState.value.postbattleRosterFull;
+    try {
+      // Compact host: the float wears the compact row's own classes.
+      const compact = mountPanel();
+      const compactCard = await openRowCard(compact);
+      expect(compactCard.classList.contains("postbattle-idcard--compact")).toBe(true);
+      expect(compactCard.querySelector(".replay-view__postbattle-cell-nick")).toBeTruthy();
+      expect(compactCard.querySelector(".replay-view__postbattle-cell-tier")).toBeTruthy();
+      expect(compactCard.querySelector(".replay-view__postbattle-cell-ship")).toBeTruthy();
+      expect(compactCard.querySelector(".replay-view__postbattle-fcell-nick")).toBeNull();
+      compact.unmount();
+
+      // Full host: the identity stack floats the full card's own classes.
+      const full = mountPanel();
+      await fullModeToggle(full)!.trigger("click");
+      await vi.waitFor(() => {
+        expect(full.find(".replay-view__postbattle-fcell").exists()).toBe(true);
+      });
+      await full.find(".replay-view__postbattle-fcell-main").trigger("mouseenter");
+      await vi.waitFor(() => {
+        expect(document.body.querySelector(".postbattle-idcard")).toBeTruthy();
+      });
+      const fullCard = document.body.querySelector(".postbattle-idcard") as HTMLElement;
+      expect(fullCard.classList.contains("postbattle-idcard--full")).toBe(true);
+      expect(fullCard.querySelector(".replay-view__postbattle-fcell-nick")).toBeTruthy();
+      expect(fullCard.querySelector(".replay-view__postbattle-fcell-tier")).toBeTruthy();
+      expect(fullCard.querySelector(".replay-view__postbattle-fcell-shipname")).toBeTruthy();
+      expect(fullCard.querySelector(".replay-view__postbattle-cell-nick")).toBeNull();
+      // Click-through survives the card host (no nested button / role
+      // conflict): the identity stack is an ordinary span inside the card's
+      // own drill-down button, so clicking it opens the detail window.
+      await full.find(".replay-view__postbattle-fcell-main").trigger("click");
+      await vi.waitFor(() => {
+        expect(document.body.querySelector('[role="dialog"]')).toBeTruthy();
+      });
+    } finally {
+      rect.mockRestore();
+      statsPrefsState.value.postbattleRosterFull = prevFull;
+    }
+  });
+
+  it("keeps the plain-text hint for hover-less surfaces (touch / AT), never stacking both channels", async () => {
+    const original = window.matchMedia.bind(window);
+    const spy = vi.spyOn(window, "matchMedia").mockImplementation(((
+      query: string,
+    ) =>
+      query === "(hover: none)"
+        ? ({
+            matches: true,
+            media: query,
+            onchange: null,
+            addListener: () => undefined,
+            removeListener: () => undefined,
+            addEventListener: () => undefined,
+            removeEventListener: () => undefined,
+            dispatchEvent: () => false,
+          } as unknown as MediaQueryList)
+        : original(query)) as typeof window.matchMedia);
+    try {
+      const wrapper = mountPanel();
+      // The old three-line string is the hint channel touch / AT get — the
+      // rich card needs a pointer and never mounts on this surface.
+      const hint =
+        wrapper.find(".replay-view__postbattle-cell-btn").attributes("data-hint") ?? "";
+      expect(hint.split("\n")[0]).toBe("AdmiralA");
+      await wrapper.find(".replay-view__postbattle-cell-btn").trigger("mouseenter");
+      await new Promise((resolve) => setTimeout(resolve, 260));
+      expect(document.body.querySelector(".postbattle-idcard")).toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("keeps single-character seals inline (both densities) and renders no badge", async () => {
+    const { uiLocale } = useLanguage();
+    const prevLocale = uiLocale.value;
+    const prevLabels = statsPrefsState.value.sealLabels;
+    const prevFull = statsPrefsState.value.postbattleRosterFull;
+    uiLocale.value = "zh-CN";
+    // The rule is wording-based: a composition label shortened to one
+    // character keeps its old inline seat (defaults 空中小人 / 水下小人 are
+    // four characters and collapse).
+    statsPrefsState.value.sealLabels = { air: "空", sub: "水" };
+    try {
+      const wrapper = mountPanel({ raw: RAW_WITH_REALM });
+      await vi.waitFor(() => {
+        expect(wrapper.find(".replay-view__postbattle-cell-seals").exists()).toBe(true);
+      });
+      const seals = wrapper.find(".replay-view__postbattle-cell-seals");
+      expect(seals.text()).toContain("空");
+      expect(seals.text()).toContain("水");
+      expect(wrapper.find(".replay-view__postbattle-seals-badge").exists()).toBe(false);
+      // The full card keeps the same single-character cluster on its own
+      // line, still with no badge.
+      await fullModeToggle(wrapper)!.trigger("click");
+      await vi.waitFor(() => {
+        expect(wrapper.find(".replay-view__postbattle-fcell").exists()).toBe(true);
+      });
+      expect(wrapper.find(".replay-view__postbattle-fcell-seals").text()).toContain("空");
+      expect(wrapper.find(".replay-view__postbattle-seals-badge").exists()).toBe(false);
+    } finally {
+      statsPrefsState.value.postbattleRosterFull = prevFull;
+      statsPrefsState.value.sealLabels = prevLabels;
+      uiLocale.value = prevLocale;
+    }
+  });
+
+  it("collapses the wide seals in the full card too and anchors the card on the identity stack", async () => {
+    const { uiLocale } = useLanguage();
+    const prevLocale = uiLocale.value;
+    const prevFull = statsPrefsState.value.postbattleRosterFull;
+    uiLocale.value = "zh-CN";
+    try {
+      const wrapper = mountPanel({ raw: RAW_WITH_REALM });
+      await vi.waitFor(() => {
+        expect(wrapper.find(".replay-view__postbattle-seals-badge").exists()).toBe(true);
+      });
+      await fullModeToggle(wrapper)!.trigger("click");
+      await vi.waitFor(() => {
+        expect(wrapper.find(".replay-view__postbattle-fcell").exists()).toBe(true);
+      });
+      const card = wrapper.find(".replay-view__postbattle-fcell");
+      // Both densities collapse: the ONE badge rides the name line and the
+      // inline cluster line disappears (this fixture has no single-char seal).
+      expect(card.find(".replay-view__postbattle-seals-badge").exists()).toBe(true);
+      expect(card.find(".replay-view__postbattle-fcell-seals").exists()).toBe(false);
+      // The rich card anchors on the identity stack, not the whole button:
+      // the ship strip's own hover card owns the right block.
+      expect(
+        card.find(".replay-view__postbattle-fcell-main").attributes("data-hint"),
+      ).toBeUndefined();
+    } finally {
+      statsPrefsState.value.postbattleRosterFull = prevFull;
+      uiLocale.value = prevLocale;
+    }
+  });
+
+  it("masks the nickname inside the identity hover card", async () => {
+    const rect = stubAnchorRect();
+    try {
+      const wrapper = mountPanel();
+      // The toolbar's hide-all-nicknames toggle masks every row; the card is a
+      // separate render channel and must ride the same mask.
+      const toggle = wrapper
+        .findAll(".replay-view__postbattle-toolbar button")
+        .find((button) => button.text().includes(t("replay.postbattle.hideAll")));
+      expect(toggle).toBeTruthy();
+      await toggle!.trigger("click");
+      const card = await openRowCard(wrapper);
+      expect(card.textContent).toContain(NICK_MASK);
+      expect(card.textContent).not.toContain("AdmiralA");
+    } finally {
+      rect.mockRestore();
+    }
   });
 
   it("gives the full card the compact header's aligned columns and its identity lines", async () => {
+    const prevFull = statsPrefsState.value.postbattleRosterFull;
     const wrapper = mountPanel();
     // Both densities share the two-line aggregate header — the full card no
     // longer squeezes its aggregates into one inline run (2026-11-07 review).
@@ -517,8 +774,8 @@ describe("PostBattlePanel head row, inline seals and row hint", () => {
     // The header keeps the same two-line grid in full mode.
     const fullHeader = wrapper.find(".replay-view__postbattle-col-title--agg");
     expect(fullHeader.exists()).toBe(true);
-    // The card's left stack carries the row hint's three lines; its right
-    // block stacks the compact row's aligned data line over the ship strip.
+    // The card's left stack carries the identity lines; its right block
+    // stacks the compact row's aligned data line over the ship strip.
     const card = wrapper.find(".replay-view__postbattle-fcell");
     expect(card.find(".replay-view__postbattle-fcell-main").exists()).toBe(true);
     expect(card.find(".replay-view__postbattle-fcell-ship").exists()).toBe(true);
@@ -526,15 +783,17 @@ describe("PostBattlePanel head row, inline seals and row hint", () => {
     expect(data.exists()).toBe(true);
     expect(data.find(".replay-view__postbattle-cell-xp").exists()).toBe(true);
     expect(card.find(".replay-view__postbattle-fcell-meta").exists()).toBe(true);
-    // The hint anchors on the identity stack, NOT the whole card: the ship
-    // strip's own hover card owns the right block and two popups must never
-    // stack, so the button itself carries no hint.
+    // The rich identity card anchors on the identity stack, NOT the whole
+    // card: the ship strip's own hover card owns the right block and two
+    // popups must never stack, so neither the button nor the stack carries
+    // the retired plain-text hint.
     expect(card.attributes("data-hint")).toBeUndefined();
     expect(
       card.find(".replay-view__postbattle-fcell-btn").attributes("data-hint"),
     ).toBeUndefined();
     expect(
       card.find(".replay-view__postbattle-fcell-main").attributes("data-hint"),
-    ).toContain("AdmiralA");
+    ).toBeUndefined();
+    statsPrefsState.value.postbattleRosterFull = prevFull;
   });
 });

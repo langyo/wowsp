@@ -33,14 +33,15 @@ export interface LocalBattle {
   /** Win verdict: the winning side (commonList[3]) equals the recorder's
    *  team when both are 0/1, else null (draw / undecodable layout). */
   won?: boolean | null;
-  /** Damage caused (index 426; legacy layouts < 500 entries use 411). */
+  /** Damage caused (index 426 on the 15.2–15.9 layout; 438 on 15.10+;
+   *  411 on legacy layouts < 500 entries). */
   damage: number;
   /** Frags (index 32). */
   frags: number;
   /** Whether the recorder survived (index 21). */
   survived: boolean;
-  /** Base XP earned (index 404; legacy layouts use 389). Null when the
-   *  layout did not carry it. */
+  /** Base XP earned (index 404 on the 15.2–15.9 layout; 416 on 15.10+,
+   *  389 on legacy layouts). Null when the layout did not carry it. */
   exp?: number | null;
 }
 

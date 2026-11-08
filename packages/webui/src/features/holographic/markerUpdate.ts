@@ -301,14 +301,16 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         marker.userData._countedDead = true;
         const role = marker.userData.role as TeamRole;
         // Kill ctx.feed + score tick. The killer's identity lives in the
-        // post-battle payload (killerId, index 408) — resolve it to a
-        // nickname, ship name and ship type at sink time.
+        // post-battle payload (killerId — parsePostBattle resolves the client
+        // layout) — resolve it to a nickname, ship name and ship type at sink
+        // time.
         if (!ctx.reportedSinks.has(entityId)) {
           ctx.reportedSinks.add(entityId);
           const who = label?.name ?? `#${entityId}`;
           // Killer resolution: the killer's account id lives in the
-          // post-battle payload (index 408); map it back to a nickname
-          // via the same playersPublicInfo table.
+          // post-battle payload (parsePostBattle; 408 on the 15.2–15.9
+          // layout, 420 on 15.10+); map it back to a nickname via the same
+          // playersPublicInfo table.
           let killerName: string | null = null;
           let killerShipId: number | null = null;
           let killerShipName = "";

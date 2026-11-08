@@ -133,8 +133,8 @@ const pbOf = (players: PostBattlePlayer[]): PostBattleData => ({
   raw: "",
 });
 
-/** Zeroed CLIENT_PUBLIC_RESULTS array with sparse overrides — modern
- *  538-slot layout unless `len` asks for a legacy one (the builder the
+/** Zeroed CLIENT_PUBLIC_RESULTS array with sparse overrides — 15.2–15.9
+ *  (538-slot) layout unless `len` asks for a legacy one (the builder the
  *  postBattle tests use). */
 const pbArr = (overrides: Record<number, unknown>, len = 538): unknown[] => {
   const a: unknown[] = new Array(len).fill(0);

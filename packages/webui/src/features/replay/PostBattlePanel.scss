@@ -338,11 +338,13 @@
   min-width: 0;
   overflow: visible;
 }
-/* Identity-line seal tags (career verdict + 成分章, StampTag) lead the name
-   line as ONE cluster. The cluster NEVER shrinks or clips (2026-11-07
-   review: a stamp must always render whole — the old shrink rule sheared
-   tags mid-glyph): the nickname below is the item that gives way, and the
-   full card stacks this cluster on its own line. */
+/* The INLINE identity-line seal cluster: only the single-character wordings
+   (猴 / 蛆) still press as StampTag faces before the nickname — every wider
+   wording collapsed behind the "!" badge below (2026-11-08 review). The
+   cluster NEVER shrinks or clips (2026-11-07 review: a stamp must always
+   render whole — the old shrink rule sheared tags mid-glyph): the nickname
+   below is the item that gives way, and the full card stacks this cluster on
+   its own line. */
 .replay-view__postbattle-cell-seals,
 .replay-view__postbattle-fcell-seals {
   display: inline-flex;
@@ -372,7 +374,7 @@
    voice as the live panel's clan tags. */
 .replay-view__postbattle-cell-clan {
   /* Metadata, not identity: it gives way (ellipsis) before a seal ever has
-     to — the row hint still carries the untruncated clan. */
+     to — the rich identity hover card still carries the untruncated clan. */
   flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -431,6 +433,32 @@
 .replay-view__postbattle-cell-name .division-tag,
 .replay-view__postbattle-fcell-name .division-tag {
   font-size: 0.78em;
+}
+/* Collapsed-seal badge — the ONE "!" mark standing in for every seal whose
+   effective wording is wider than a single character (2026-11-08 review:
+   the four-character composition tags overflowed/overlapped the nickname on
+   a narrow results column). It sits at the nickname's top-right in the SAME
+   register as the karma superscript beside it: a tiny raised glyph, cinnabar
+   ink (the seals' own tone) inside a hairline cinnabar ring so it reads as a
+   collapsed-seal badge, not punctuation. A plain span — the row is a
+   button, so nothing interactive may nest inside it — and its only hint is
+   the accessible label naming the hidden wordings. */
+.replay-view__postbattle-seals-badge {
+  flex: none;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-top: -0.5em;
+  border: 1px solid rgb(202 44 38 / 55%);
+  border-radius: 50%;
+  color: rgb(202 44 38);
+  font-size: 0.62em;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
 }
 /* Karma (业力) superscript — raised to the nickname's top-right corner in
    both row densities (compact cell + full card). KarmaSup's own sheet
@@ -599,7 +627,9 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-/* Line 2: the whole seal cluster on its own line. */
+/* Line 2: the inline seal cluster on its own line (the width-collapsed
+   seals ride the "!" badge on the name line above; the hover card carries
+   every chip). */
 .replay-view__postbattle-fcell-seals {
   display: flex;
   flex-wrap: wrap;

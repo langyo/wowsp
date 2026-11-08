@@ -1,8 +1,8 @@
 import { effectScope, ref } from "vue";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api, type ReplayMeta, type ReplayStream } from "@/api";
 import { fakeAs } from "@/test-utils/fakes";
-import { useReplayPositions } from "./useReplayPositions";
+import { REPLAY_STREAM_READ_TIMEOUT_MS, useReplayPositions } from "./useReplayPositions";
 
 vi.mock("@/api", () => ({ api: { readReplayPositions: vi.fn() } }));
 
@@ -25,6 +25,13 @@ function setup(initial: ReplayMeta | null = null) {
 }
 
 beforeEach(() => vi.resetAllMocks());
+afterEach(() => vi.useRealTimers());
+
+/** Let every queued microtask run (the composable's await continuation is
+ *  one hop behind the test's own await). */
+async function flushMicrotasks() {
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+}
 
 describe("replay packet requests", () => {
   it("decodes the retained selection when the replay view mounts again", async () => {
@@ -127,5 +134,57 @@ describe("replay packet requests", () => {
     expect(s.error.value).toBe("invalid compressed packet");
     expect(s.loading.value).toBe(false);
     s.scope.stop();
+  });
+
+  it("clears the loading state and reports when the packed read never settles", async () => {
+    vi.useFakeTimers();
+    const pending = deferred<ReplayStream>();
+    vi.mocked(api.readReplayPositions).mockReturnValue(pending.promise);
+    const s = setup(meta("wedged"));
+    expect(api.readReplayPositions).toHaveBeenCalledExactlyOnceWith("wedged");
+    expect(s.loading.value).toBe(true);
+    // A slow-but-alive channel keeps the spinner (a large replay is fine).
+    await vi.advanceTimersByTimeAsync(REPLAY_STREAM_READ_TIMEOUT_MS - 1);
+    expect(s.loading.value).toBe(true);
+    expect(s.error.value).toBeNull();
+    // The watchdog settles the view instead of spinning forever (the
+    // stalled ipc.localhost class utils/ipcGuard.ts probes for).
+    await vi.advanceTimersByTimeAsync(1);
+    expect(s.loading.value).toBe(false);
+    expect(s.error.value).toContain("timed out");
+    // A late IPC answer after the timeout must not publish or resurrect the
+    // loading state (the pill's only other exit is the post-battle window).
+    pending.resolve(stream);
+    await flushMicrotasks();
+    expect(s.handlers.apply).not.toHaveBeenCalled();
+    expect(s.loading.value).toBe(false);
+    expect(s.error.value).toContain("timed out");
+    s.scope.stop();
+  });
+
+  it("cancels the watchdog once the packed read settles", async () => {
+    vi.useFakeTimers();
+    const pending = deferred<ReplayStream>();
+    vi.mocked(api.readReplayPositions).mockReturnValue(pending.promise);
+    const s = setup(meta("fast"));
+    pending.resolve(stream);
+    await flushMicrotasks();
+    expect(s.loading.value).toBe(false);
+    expect(s.error.value).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+    s.scope.stop();
+  });
+
+  it("cancels the watchdog when the view unmounts mid-read", async () => {
+    vi.useFakeTimers();
+    const pending = deferred<ReplayStream>();
+    vi.mocked(api.readReplayPositions).mockReturnValue(pending.promise);
+    const s = setup(meta("unmounted"));
+    expect(vi.getTimerCount()).toBe(1);
+    s.scope.stop();
+    expect(vi.getTimerCount()).toBe(0);
+    pending.resolve(stream);
+    await flushMicrotasks();
+    expect(s.handlers.apply).not.toHaveBeenCalled();
   });
 });

@@ -50,7 +50,12 @@ use wowsp_tauri_shared::{CommandResult, LocalBattle, LocalBattleLog};
 const CACHE_FILE: &str = "local-battle-log.json";
 /// Bump when a cached row's SEMANTICS change (the extraction indices, the win
 /// rule, the value sources) — a stale cache re-decodes once.
-const CACHE_VERSION: u32 = 1;
+///
+/// v2 restores the 15.10 BattleResults layout (exp 416 / damage 438): v1
+/// caches decoded every 15.10 replay with the late indices read as the
+/// inserted zero block, so their exp/damage rows are zeros and must not be
+/// served (a replay's payload is the truth, the cache is derived).
+const CACHE_VERSION: u32 = 2;
 /// Fresh full decodes allowed per call. A window with more candidates than
 /// this answers what it has (`pending` = the rest) so one call never blocks
 /// the UI thread pool for minutes; the webui's follow-up rounds finish the
@@ -67,12 +72,24 @@ const WATER_TABLE_MODES: [&str; 2] = ["pvp", "ranked"];
 
 // ── BattleResults (0x22) player-array layout ───────────────────────────────
 // Mirror of packages/webui/src/features/replay/postBattle.ts (the in-repo
-// authority, re-verified against 126 replays / 417 players on client 15.8).
-// A 14.x-era array is < 500 entries and its late fields sit 15 slots earlier —
-// the 15.2 client inserted a 15-field block before `exp`.
+// authority, re-verified against 126 replays / 417 players on client 15.8 and
+// against real 15.10 replays: 550-entry arrays, exp 416 == the recorder's
+// privateDataList[7][3], damage 438 plausible 50k–200k).
+// Each client generation inserted a field block before `exp`, shifting the
+// late fields; the early fields never move:
+//   - 14.x arrays are < 500 entries and their late fields sit 15 slots
+//     earlier (the 15.2 client inserted its block before `exp`);
+//   - 15.10+ arrays are >= 550 entries and their late fields sit 12 slots
+//     later (the 15.10 client inserted another block before `exp`).
 const LEGACY_LAYOUT_MAX_LEN: usize = 500;
+/// First NEW-table index a client LATE-field insertion affects (exp at 404).
 const LATE_SHIFT_MIN_INDEX: usize = 404;
+/// Width of the block the 15.2 client inserted before `exp`.
 const LATE_INDEX_SHIFT: usize = 15;
+/// Arrays of this length or longer use the 15.10+ layout (550 entries).
+const LATE_LAYOUT_1510_MIN_LEN: usize = 550;
+/// Width of the block the 15.10 client inserted before `exp`.
+const LATE_INDEX_SHIFT_1510: usize = 12;
 
 /// Team slot (0/1 = the two battle sides).
 const INDEX_TEAM: usize = 6;
@@ -82,9 +99,11 @@ const INDEX_SHIP: usize = 7;
 const INDEX_SURVIVED: usize = 21;
 /// Ships sunk.
 const INDEX_FRAGS: usize = 32;
-/// Settlement base XP (late field — legacy layout shifts it back 15).
+/// Settlement base XP (late field — shifted by the layout; see the LATE_*
+/// constants above).
 const INDEX_EXP: usize = 404;
-/// Battle damage dealt (late field — legacy layout shifts it back 15).
+/// Battle damage dealt (late field — shifted by the layout; see the LATE_*
+/// constants above).
 const INDEX_DAMAGE: usize = 426;
 /// The winning team id inside `commonList` (empirically verified against
 /// real 15.x captures: equals the recorder's team exactly on wins).
@@ -321,11 +340,17 @@ fn extract_battle(raw: &str, candidate: &Candidate) -> Option<CachedBattle> {
     let recorder = object.get("accountDBID").and_then(number_i64)?;
     let players = object.get("playersPublicInfo")?.as_object()?;
     let row = self_result_row(players, recorder)?;
-    // Legacy (< 15.2) layout: arrays shorter than the cap sit their late
-    // fields LATE_INDEX_SHIFT slots earlier (see the constants above).
-    let legacy = row.len() < LEGACY_LAYOUT_MAX_LEN;
+    // Shift the late reads back onto the 15.2–15.9 baseline: arrays shorter
+    // than the legacy cap sit their late fields LATE_INDEX_SHIFT slots
+    // earlier, 15.10+ arrays sit them LATE_INDEX_SHIFT_1510 slots later (see
+    // the constants above). Everything below the block keeps its index.
     let late = |index: usize| {
-        if legacy && index >= LATE_SHIFT_MIN_INDEX {
+        if index < LATE_SHIFT_MIN_INDEX {
+            return index;
+        }
+        if row.len() >= LATE_LAYOUT_1510_MIN_LEN {
+            index + LATE_INDEX_SHIFT_1510
+        } else if row.len() < LEGACY_LAYOUT_MAX_LEN {
             index - LATE_INDEX_SHIFT
         } else {
             index
@@ -701,6 +726,48 @@ mod tests {
         assert_eq!(row.frags, 3);
         assert!(row.survived);
         assert_eq!(row.exp, Some(1_500));
+    }
+
+    #[test]
+    fn extraction_keeps_the_baseline_layout_below_the_1510_length() {
+        let candidate = candidate_fixture();
+        // 500..549 entries stay on the 15.2–15.9 baseline: the 15.10 slots
+        // (416 / 438) must not be read there.
+        let raw = battle_results_json(2_035_526_744, 549, 0, |row| {
+            row[6] = 0.into();
+            row[404] = 910.into();
+            row[426] = 96_429.into();
+            row[416] = 7.into();
+            row[438] = 9.into();
+        });
+        let battle = extract_battle(&raw, &candidate).expect("authoritative battle row");
+        assert_eq!(battle.row.exp, Some(910));
+        assert_eq!(battle.row.damage, 96_429);
+    }
+
+    #[test]
+    fn extraction_shifts_late_fields_on_the_1510_layout() {
+        let candidate = candidate_fixture();
+        let recorder = 2_035_526_744_i64;
+        // Client 15.10 (550 entries): another inserted block before `exp`
+        // moved the late fields up 12 slots (exp 416, damage 438) while the
+        // baseline slots 404 / 426 hold the inserted zero block.
+        let raw = battle_results_json(recorder, 550, 1, |row| {
+            row[6] = 1.into();
+            row[7] = 4_182_828_960_i64.into();
+            row[21] = true.into();
+            row[32] = 2.into();
+            row[416] = 1_224.into();
+            row[438] = 53_941.into();
+            // The pre-15.10 slots must be ignored on a 550-entry array.
+            row[404] = 7.into();
+            row[426] = 9.into();
+        });
+        let battle = extract_battle(&raw, &candidate).expect("authoritative battle row");
+        assert_eq!(battle.row.damage, 53_941);
+        assert_eq!(battle.row.exp, Some(1_224));
+        assert_eq!(battle.row.frags, 2);
+        assert!(battle.row.survived);
     }
 
     #[test]

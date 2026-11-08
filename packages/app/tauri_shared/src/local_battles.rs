@@ -35,14 +35,16 @@ pub struct LocalBattle {
     /// `None` when either side is missing/out of the 0/1 range (a draw or a
     /// payload whose commonList carries no winner).
     pub won: Option<bool>,
-    /// Battle damage dealt (index 426; legacy layout 411).
+    /// Battle damage dealt (index 426 on the 15.2–15.9 layout; 438 on 15.10+,
+    /// 411 on the 14.x legacy layout).
     pub damage: i64,
     /// Ships sunk (index 32).
     pub frags: i64,
     /// The recorder's ship was not destroyed (index 21).
     pub survived: bool,
-    /// Settlement base XP (index 404; legacy layout 389) — absent when the
-    /// payload's player array is too short for the field.
+    /// Settlement base XP (index 404 on the 15.2–15.9 layout; 416 on 15.10+,
+    /// 389 on the 14.x legacy layout) — absent when the payload's player array
+    /// is too short for the field.
     pub exp: Option<i64>,
 }
 
