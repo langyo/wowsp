@@ -179,6 +179,7 @@ export type {
   MinimapSquadronMove,
   MinimapSquadronRemove,
   SquadronConsumableKind,
+  SquadronConsumableType,
   SquadronHealthEvent,
   SquadronPlanesHealthEvent,
   SquadronDamageEvent,

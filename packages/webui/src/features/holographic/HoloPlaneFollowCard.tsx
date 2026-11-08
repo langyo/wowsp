@@ -23,7 +23,8 @@
 import { defineComponent, type PropType } from "vue";
 import { Plane } from "@lucide/vue";
 import { t as i18nT } from "@/i18n";
-import { consumableLabelKey } from "./planeFollow";
+import type { SquadronConsumableType } from "@/api";
+import { consumableLabelKey, unknownConsumableId } from "./planeFollow";
 import "./HoloPlaneFollowCard.scss";
 
 /** One snapshot of the chased carrier's air state. */
@@ -48,9 +49,11 @@ export interface HoloPlaneFollowState {
   /** True while the last E27 throttle mode at the playhead is engine
    *  boost (mode 1). */
   boost?: boolean;
-  /** Consumable type ids whose E27 effect window is open at the playhead;
-   *  the card renders the first three as chips. */
-  consumables?: number[];
+  /** Consumables whose E27 effect window is open at the playhead, in the
+   *  decoder-normalized semantic vocabulary (E27d — branch-forked raw ids
+   *  never reach the card); the card renders the first three as chips, and
+   *  an unknown payload shows its raw wire id as the chip-text suffix. */
+  consumables?: SquadronConsumableType[];
 }
 
 /** Clamp the wire's 0..1 HP fraction defensively for bar geometry (a
@@ -115,11 +118,20 @@ export default defineComponent({
                   </span>
                 ) : null}
               </span>
-              {(s.consumables ?? []).slice(0, 3).map((consumableType) => (
-                <span key={consumableType} class="holo-planecard__chip">
-                  {i18nT(consumableLabelKey(consumableType))}
-                </span>
-              ))}
+              {(s.consumables ?? []).slice(0, 3).map((semantic) => {
+                // Unknown semantics keep the chip honest: generic label +
+                // the raw wire id ("消耗品 57"), never a blank or a guess.
+                const rawId = unknownConsumableId(semantic);
+                const label = i18nT(consumableLabelKey(semantic));
+                return (
+                  <span
+                    key={typeof semantic === "string" ? semantic : "unknown-" + semantic.unknown}
+                    class="holo-planecard__chip"
+                  >
+                    {rawId == null ? label : label + " " + rawId}
+                  </span>
+                );
+              })}
             </>
           ) : (
             <span class="holo-planecard__hull">{i18nT("replay.planeCard.followingHull")}</span>

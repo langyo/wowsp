@@ -95,6 +95,16 @@
   陷阱。产物：node3 `/mnt/work/wowsp-kots/e19/{fire_moe,move_moe}/`。
 
 
+### E27d · 分支枚举归一化层（消耗品 wire 字节 → 语义词汇表）✅
+
+- **动机**：E27c 证实 WG（`.wowsreplay`）与莱服（`.korablireplay`）的中队消耗品 wire 字节已经**分叉**（WG 实证 20=加力 / 21=战术战斗机 / 22=灭火 / 42=拉烟；莱服 battle.xml 枚举 21=HEAL_FORSAGE / 22=CALL_FIGHTERS / 23=REGENERATE_HEALTH / 42=PLANE_SMOKE_GENERATOR——仅 42 重合）。若让分支各自的裸 id 流到下游，前端每加一处消费点都要重写一遍分支判断；归一化必须在**解码边界**一次完成。
+- **归一化层**（`tauri_shared::stream`）：语义枚举 `SquadronConsumableType`（HealForsage / PlaneTacticalFighters / FireExtinguishing / PlaneSmokeGenerator / RegenerateHealth / `Unknown(u8)`）+ 两张纯查表 `squadron_consumable_type_wg`（E27b 五盘 14.5 CV 录像 workTime 指纹）与 `squadron_consumable_type_lesta`（E27c 本地 Korabli battle.xml 权威、replay-unvalidated）。**莱服 22→PlaneTacticalFighters 为 PROVISIONAL**（莱服名为 CALL_FIGHTERS，按枚举名与槽位推定与 WG 21 同为槽 1 战术战斗机族，无录像证据，首盘莱服 CV 录像到手需复核）。`Unknown(u8)` 原样携带裸字节——永不丢信息，未来 id 以「诚实的未知」呈现而非猜测。
+- **落地**：`SquadronConsumableEvent` 同时携带两份——`consumableType` 保持裸 wire 字节（前端兼容、无损），新增 `semantic`（serde camelCase，永远序列化；旧载荷反序列化回退 `Unknown(0)`）。`decode_squadron_consumable` 接分支旗标（`frames.rs` 从 `LayoutProfile::lesta` 穿入，与 wardType/ballistics 等既有版本门控解码参数同款）选表；分派逻辑本身不变。分支画像本就拥有 method-id 选表（`decode_replay` 按容器族选 WG/莱服 method 表）——本层是同一职责向**枚举语义**的延伸。
+- **前端**：`replay.ts` 镜像联合类型（命名变体为字符串、未知为 `{ unknown: <raw> }`）；`planeFollow.ts` 的 `activeConsumablesAt` 直接返回语义类型数组（窗口仍按裸字节键控、按裸字节排序），`CONSUMABLE_LABEL` 改按语义键控；`HoloPlaneFollowCard` chips 按语义渲染，未知以 consOther + 裸 id 后缀（如「消耗品 57」）诚实展示。locale 键 `replay.planeCard.consForsage / consFighters / consExtinguisher / consSmoke / consRegen / consOther`。
+- **测试**：两表逐 id 单测（含 Unknown 直通）；WG 侧 fixture 断言 semantic；**莱服表 fixture 用 WG 禁用字节证明分叉被抹平**——字节 23 莱服译 RegenerateHealth、WG 侧诚实地 `Unknown(23)`（解码级 + 走 walk 级穿 `profile.lesta` 双重覆盖）；`tauri_shared` 侧钉 IPC 形状（键集 + `{"unknown": 57}`）。
+- **车辆消耗品流（E11）暂不迁移**：`onConsumableUsed`（`ConsumableUseEvent`）的 consumable_id 是 GameParams 消耗品枚举，id→名称本属 GameParams 联表侧，且尚未有莱服分叉证据——**保持裸字节**，待其前端上线时并入同一归一化层。
+- **后续分叉在此汇合**：E27c 侦察的多重巡航高度（SQUADRON_ALTITUDE_STATE 类枚举）等未来分支差异，落点即此层——解码边界新增一对查表，下游继续单词汇表。
+
 ### E18 · AI 分析调试工具端上 UI（G6 第三步）✅
 
 - **RPC `decision_debug_report(replay_path, time_sec, los_grid_dir?)`**：一次

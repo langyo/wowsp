@@ -1581,40 +1581,123 @@ fn decodes_squadron_throttle_stream() {
 /// squadronConsumableUsed / squadronConsumableStopWorking: `PLANE_ID u64,
 /// consumableType u8` — 9 bytes each; the kind tag distinguishes the
 /// lifecycle halves (the def's CONSUMABLE_USAGE_PARAMS diverges from the
-/// one-byte wire).
+/// one-byte wire). E27d: the branch flag picks the normalization table —
+/// the SAME wire byte must decode to the SAME semantic on both branches
+/// (the fork's whole point), and a byte legal on only one branch stays
+/// honest as Unknown on the other.
 #[test]
 fn decodes_squadron_consumable_streams() {
     let plane_id: u64 = 631874 | (4 << 32);
     let mut args = Vec::new();
     args.extend_from_slice(&plane_id.to_le_bytes());
     args.push(21u8);
-    let used =
-        decode_squadron_consumable(70.0, &args, wowsp_tauri_shared::SquadronConsumableKind::Used)
-            .expect("must parse");
+    let used = decode_squadron_consumable(
+        70.0,
+        &args,
+        wowsp_tauri_shared::SquadronConsumableKind::Used,
+        false,
+    )
+    .expect("must parse");
     assert_eq!(used.plane_id, plane_id);
     assert_eq!(used.consumable_type, 21);
+    // WG wire id 21 = tactical fighters (E27b fingerprint).
+    assert_eq!(
+        used.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::PlaneTacticalFighters
+    );
     assert_eq!(used.kind, wowsp_tauri_shared::SquadronConsumableKind::Used);
+    // The SAME byte on the Lesta branch is healForsage — the id spaces
+    // forked, the semantic vocabulary must not.
+    let lesta = decode_squadron_consumable(
+        70.0,
+        &args,
+        wowsp_tauri_shared::SquadronConsumableKind::Used,
+        true,
+    )
+    .expect("must parse");
+    assert_eq!(lesta.consumable_type, 21);
+    assert_eq!(
+        lesta.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::HealForsage
+    );
     let stop = decode_squadron_consumable(
         88.5,
         &args,
         wowsp_tauri_shared::SquadronConsumableKind::StopWorking,
+        false,
     )
     .expect("must parse");
     assert_eq!(stop.consumable_type, 21);
+    assert_eq!(
+        stop.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::PlaneTacticalFighters
+    );
     assert_eq!(stop.kind, wowsp_tauri_shared::SquadronConsumableKind::StopWorking);
     assert!((stop.time - 88.5).abs() < 1e-6);
+    // Unmapped byte on both branches: raw preserved, semantic Unknown(raw).
+    args[8] = 57;
+    let unknown = decode_squadron_consumable(
+        90.0,
+        &args,
+        wowsp_tauri_shared::SquadronConsumableKind::Used,
+        false,
+    )
+    .expect("must parse");
+    assert_eq!(unknown.consumable_type, 57);
+    assert_eq!(
+        unknown.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::Unknown(57)
+    );
     assert!(decode_squadron_consumable(
         0.0,
         &args[..8],
-        wowsp_tauri_shared::SquadronConsumableKind::Used
+        wowsp_tauri_shared::SquadronConsumableKind::Used,
+        false
     )
     .is_none());
     assert!(decode_squadron_consumable(
         0.0,
         &[0u8; 10],
-        wowsp_tauri_shared::SquadronConsumableKind::StopWorking
+        wowsp_tauri_shared::SquadronConsumableKind::StopWorking,
+        true
     )
     .is_none());
+}
+
+/// E27d fork-smoothing fixture: byte 23 is REGENERATE_HEALTH in the Lesta
+/// battle.xml enum and NEVER observed on the WG wire — decoding it under
+/// both branch tables proves the fork is smoothed at the boundary
+/// (RegenerateHealth on Lesta, Unknown(23) — honest, not guessed — on WG).
+#[test]
+fn squadron_consumable_byte_23_normalizes_per_branch() {
+    let plane_id: u64 = 631874 | (7 << 32);
+    let mut args = Vec::new();
+    args.extend_from_slice(&plane_id.to_le_bytes());
+    args.push(23u8);
+    let lesta = decode_squadron_consumable(
+        12.0,
+        &args,
+        wowsp_tauri_shared::SquadronConsumableKind::Used,
+        true,
+    )
+    .expect("must parse");
+    assert_eq!(lesta.consumable_type, 23);
+    assert_eq!(
+        lesta.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::RegenerateHealth
+    );
+    let wg = decode_squadron_consumable(
+        12.0,
+        &args,
+        wowsp_tauri_shared::SquadronConsumableKind::Used,
+        false,
+    )
+    .expect("must parse");
+    assert_eq!(wg.consumable_type, 23);
+    assert_eq!(
+        wg.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::Unknown(23)
+    );
 }
 
 /// receive_planeDeath: `PLANE_ID u64, ARRAY<u8> (u8 count prefix!), u8
@@ -1859,6 +1942,19 @@ fn walk_frames_collects_squadron_state_streams() {
         decoded.squadron_consumables[1].kind,
         wowsp_tauri_shared::SquadronConsumableKind::StopWorking
     );
+    // E27d: the WG walk normalizes the raw byte 20 (this fixture's payload)
+    // through the WG table — healForsage on both lifecycle halves, with the
+    // raw byte preserved next to it.
+    assert_eq!(decoded.squadron_consumables[0].consumable_type, 20);
+    assert_eq!(
+        decoded.squadron_consumables[0].semantic,
+        wowsp_tauri_shared::SquadronConsumableType::HealForsage
+    );
+    assert_eq!(decoded.squadron_consumables[1].consumable_type, 20);
+    assert_eq!(
+        decoded.squadron_consumables[1].semantic,
+        wowsp_tauri_shared::SquadronConsumableType::HealForsage
+    );
     assert_eq!(decoded.plane_deaths.len(), 1);
     assert_eq!(decoded.plane_deaths[0].dead_indexes, vec![1, 3]);
     assert_eq!(decoded.plane_deaths[0].attacker_id, 631880);
@@ -1885,6 +1981,98 @@ fn walk_frames_collects_squadron_state_streams() {
     assert!(off.squadron_notifies.is_empty());
     assert!(off.squadron_deactivations.is_empty());
     assert_eq!(off.method_histogram.len(), decoded.method_histogram.len());
+}
+
+/// E27d walk-level fork fixture: the SAME nine-byte payload dispatched
+/// through the LESTA method table (consumableUsed=69 / stopWorking=71, E27c)
+/// under a Lesta profile normalizes via the LESTA enum table — byte 23
+/// (REGENERATE_HEALTH, a WG-forbidden id) becomes RegenerateHealth while the
+/// raw byte survives next to it, proving `LayoutProfile::lesta` threads
+/// from the walk into the decoder and the branch tables diverge as intended.
+#[test]
+fn lesta_walk_normalizes_squadron_consumable_enum() {
+    fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(12 + payload.len());
+        f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        f.extend_from_slice(&ptype.to_le_bytes());
+        f.extend_from_slice(&time.to_le_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+    fn entity_create(eid: i32, etype: i16) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&etype.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&[0u8; 24]);
+        p
+    }
+    fn method_call(eid: i32, mid: i32, args: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&mid.to_le_bytes());
+        p.extend_from_slice(&(args.len() as u32).to_le_bytes());
+        p.extend_from_slice(args);
+        p
+    }
+    const AVATAR: i32 = 710;
+    let plane_id: u64 = 631874 | (11 << 32);
+    let mut con23 = plane_id.to_le_bytes().to_vec();
+    con23.push(23u8); // Lesta CONSUMABLE_REGENERATE_HEALTH; WG never observed
+    let mut con21 = plane_id.to_le_bytes().to_vec();
+    con21.push(21u8); // Lesta CONSUMABLE_HEAL_FORSAGE
+    let mut stream = Vec::new();
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(AVATAR, ENTITY_TYPE_AVATAR),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        20.0,
+        &method_call(AVATAR, 69, &con23), // Lesta consumableUsed
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        25.0,
+        &method_call(AVATAR, 71, &con21), // Lesta stopWorking
+    ));
+    let profile = LayoutProfile {
+        methods: Some(&crate::method_tables_lesta::LESTA_METHOD_IDS),
+        ..profile_for(true)
+    };
+    let decoded = walk_frames(&stream, &std::collections::HashSet::new(), false, &profile, None);
+    assert_eq!(decoded.squadron_consumables.len(), 2);
+    let (used, stop) = (&decoded.squadron_consumables[0], &decoded.squadron_consumables[1]);
+    assert_eq!(used.consumable_type, 23);
+    assert_eq!(
+        used.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::RegenerateHealth
+    );
+    assert_eq!(used.kind, wowsp_tauri_shared::SquadronConsumableKind::Used);
+    assert_eq!(stop.consumable_type, 21);
+    assert_eq!(
+        stop.semantic,
+        wowsp_tauri_shared::SquadronConsumableType::HealForsage
+    );
+    assert_eq!(
+        stop.kind,
+        wowsp_tauri_shared::SquadronConsumableKind::StopWorking
+    );
+    // The same frames under a WG profile decode NOTHING — the Lesta ids 69/71
+    // match no WG method pin, so no wrong-table normalization can happen.
+    let wg = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &LayoutProfile {
+            methods: Some(method_ids_for_version(Some("15,8,0,13187581"))),
+            ..profile_for(false)
+        },
+        None,
+    );
+    assert!(wg.squadron_consumables.is_empty());
 }
 
 /// receive_wardAdded: both arg layouts (37 bytes pre-13.2.0, +wardType

@@ -710,16 +710,40 @@ export interface SquadronThrottleEvent {
   mode: number;
 }
 
+/** Branch-NORMALIZED semantic identity of the squadron-consumable wire
+ *  byte (E27d normalization layer): WG (.wowsreplay) and Lesta
+ *  (.korablireplay) forked the raw id space (WG 20/21/22/42 vs Lesta
+ *  21/22/23/42 — only 42 coincides), so the decoder resolves the branch at
+ *  the decode boundary and everything downstream speaks this one
+ *  vocabulary. Named variants ride the wire as camelCase strings; an
+ *  unmapped byte rides as `{ unknown: <raw> }` so nothing is ever lost.
+ *  Mirrors `wowsp_tauri_shared::SquadronConsumableType` (provenance: E27b
+ *  workTime fingerprints for WG, the Lesta battle.xml CONSUMABLE_TYPES enum
+ *  for Lesta — 22 → fighters is PROVISIONAL there, see E27c/E27d). */
+export type SquadronConsumableType =
+  | "healForsage"
+  | "planeTacticalFighters"
+  | "fireExtinguishing"
+  | "planeSmokeGenerator"
+  | "regenerateHealth"
+  | { unknown: number };
+
 /** One squadron-consumable lifecycle event (squadronConsumableUsed /
  *  squadronConsumableStopWorking on the avatar, E27): the wire carries one
- *  byte — the consumable type id (20/21/22 observed) — and `kind` says
- *  which half of the lifecycle fired. Mirrors
- *  `wowsp_tauri_shared::SquadronConsumableEvent` (14.5-validated). */
+ *  byte — the consumable type id — and `kind` says which half of the
+ *  lifecycle fired. `consumableType` keeps the RAW branch-specific byte
+ *  (WG: 20/21/22/42 observed; Lesta: 21/22/23/42) for compatibility and
+ *  losslessness, while `semantic` is the branch-normalized identity to
+ *  key off. Mirrors `wowsp_tauri_shared::SquadronConsumableEvent`
+ *  (14.5-validated). */
 export interface SquadronConsumableEvent {
   time: number;
   planeId: number;
-  /** Consumable type id (20/21/22 observed). */
+  /** RAW wire byte, branch-specific — prefer `semantic`. */
   consumableType: number;
+  /** Branch-normalized identity of `consumableType` (E27d); always
+   *  serialized by the backend. */
+  semantic: SquadronConsumableType;
   /** Which lifecycle half this event is. */
   kind: SquadronConsumableKind;
 }

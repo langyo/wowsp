@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type {
   SquadronConsumableEvent,
   SquadronConsumableKind,
+  SquadronConsumableType,
   SquadronHealthEvent,
   SquadronStateEvents,
   SquadronThrottleEvent,
@@ -18,6 +19,7 @@ import {
   squadronStrength,
   SQUADRON_ATTACK_PITCH_DEG,
   throttleAt,
+  unknownConsumableId,
   unpackSquadronBands,
 } from "./planeFollow";
 
@@ -170,12 +172,17 @@ const thEv = (time: number, planeId: number, mode: number): SquadronThrottleEven
   planeId,
   mode,
 });
+/** One consumable lifecycle event; `consumableType` stays the RAW wire byte
+ *  and `semantic` is what the decoder normalized it to (E27d — the tests
+ *  below pair raw ids with their branch-table semantics the way the WG and
+ *  Lesta decoders do). */
 const consEv = (
   time: number,
   planeId: number,
   consumableType: number,
+  semantic: SquadronConsumableType,
   kind: SquadronConsumableKind,
-): SquadronConsumableEvent => ({ time, planeId, consumableType, kind });
+): SquadronConsumableEvent => ({ time, planeId, consumableType, semantic, kind });
 
 describe("squadronHpAt", () => {
   it("is null on an absent stream and before the first sample", () => {
@@ -230,67 +237,111 @@ describe("activeConsumablesAt", () => {
   it("is empty on an absent stream or before any use", () => {
     expect(activeConsumablesAt(undefined, 1, 100)).toEqual([]);
     expect(activeConsumablesAt([], 1, 100)).toEqual([]);
-    const events = [consEv(10, 1, 20, "used")];
+    const events = [consEv(10, 1, 20, "healForsage", "used")];
     expect(activeConsumablesAt(events, 1, 9.9)).toEqual([]);
   });
 
   it("opens at used and stays open until stopWorking (inclusive ends)", () => {
-    const events = [consEv(10, 1, 20, "used"), consEv(30, 1, 20, "stopWorking")];
-    expect(activeConsumablesAt(events, 1, 10)).toEqual([20]);
-    expect(activeConsumablesAt(events, 1, 29.9)).toEqual([20]);
+    const events = [
+      consEv(10, 1, 20, "healForsage", "used"),
+      consEv(30, 1, 20, "healForsage", "stopWorking"),
+    ];
+    expect(activeConsumablesAt(events, 1, 10)).toEqual(["healForsage"]);
+    expect(activeConsumablesAt(events, 1, 29.9)).toEqual(["healForsage"]);
     expect(activeConsumablesAt(events, 1, 30)).toEqual([]);
     expect(activeConsumablesAt(events, 1, 100)).toEqual([]);
   });
 
   it("keeps a used-with-no-stop open to stream end", () => {
-    const events = [consEv(10, 1, 21, "used")];
-    expect(activeConsumablesAt(events, 1, 10_000)).toEqual([21]);
+    const events = [consEv(10, 1, 21, "planeTacticalFighters", "used")];
+    expect(activeConsumablesAt(events, 1, 10_000)).toEqual(["planeTacticalFighters"]);
   });
 
   it("reopens on a later used", () => {
     const events = [
-      consEv(10, 1, 20, "used"),
-      consEv(20, 1, 20, "stopWorking"),
-      consEv(35, 1, 20, "used"),
+      consEv(10, 1, 20, "healForsage", "used"),
+      consEv(20, 1, 20, "healForsage", "stopWorking"),
+      consEv(35, 1, 20, "healForsage", "used"),
     ];
     expect(activeConsumablesAt(events, 1, 25)).toEqual([]);
-    expect(activeConsumablesAt(events, 1, 35)).toEqual([20]);
+    expect(activeConsumablesAt(events, 1, 35)).toEqual(["healForsage"]);
   });
 
-  it("tracks several types independently, sorted ascending", () => {
+  it("tracks several types independently, ordered by raw id", () => {
     const events = [
-      consEv(10, 1, 22, "used"),
-      consEv(12, 1, 20, "used"),
-      consEv(15, 1, 21, "used"),
-      consEv(18, 1, 22, "stopWorking"),
+      consEv(10, 1, 22, "fireExtinguishing", "used"),
+      consEv(12, 1, 20, "healForsage", "used"),
+      consEv(15, 1, 21, "planeTacticalFighters", "used"),
+      consEv(18, 1, 22, "fireExtinguishing", "stopWorking"),
     ];
-    expect(activeConsumablesAt(events, 1, 17)).toEqual([20, 21, 22]);
-    expect(activeConsumablesAt(events, 1, 18)).toEqual([20, 21]);
+    expect(activeConsumablesAt(events, 1, 17)).toEqual([
+      "healForsage",
+      "planeTacticalFighters",
+      "fireExtinguishing",
+    ]);
+    expect(activeConsumablesAt(events, 1, 18)).toEqual([
+      "healForsage",
+      "planeTacticalFighters",
+    ]);
+  });
+
+  it("passes unknown semantics through with their raw ids, one window per raw byte", () => {
+    // Two unmapped wire bytes on the same branch are two distinct windows —
+    // the semantic payload keeps each raw id (E27d: nothing is ever lost).
+    const events = [
+      consEv(10, 1, 57, { unknown: 57 }, "used"),
+      consEv(11, 1, 99, { unknown: 99 }, "used"),
+      consEv(12, 1, 57, { unknown: 57 }, "stopWorking"),
+    ];
+    expect(activeConsumablesAt(events, 1, 11)).toEqual([{ unknown: 57 }, { unknown: 99 }]);
+    expect(activeConsumablesAt(events, 1, 12)).toEqual([{ unknown: 99 }]);
+  });
+
+  it("answers in the decoder's semantic vocabulary across branches", () => {
+    // The same semantic on both branch tables (WG 20 vs Lesta 21 both
+    // normalize to healForsage): the card sees ONE vocabulary either way.
+    const wg = [consEv(10, 1, 20, "healForsage", "used")];
+    const lesta = [consEv(10, 1, 21, "healForsage", "used")];
+    expect(activeConsumablesAt(wg, 1, 15)).toEqual(["healForsage"]);
+    expect(activeConsumablesAt(lesta, 1, 15)).toEqual(["healForsage"]);
+    // Byte 23 is RegenerateHealth on Lesta and unknown on WG (E27c fork).
+    const lesta23 = [consEv(10, 1, 23, "regenerateHealth", "used")];
+    const wg23 = [consEv(10, 1, 23, { unknown: 23 }, "used")];
+    expect(activeConsumablesAt(lesta23, 1, 15)).toEqual(["regenerateHealth"]);
+    expect(activeConsumablesAt(wg23, 1, 15)).toEqual([{ unknown: 23 }]);
   });
 
   it("only reads the asked plane's events", () => {
-    const events = [consEv(10, 2, 20, "used")];
+    const events = [consEv(10, 2, 20, "healForsage", "used")];
     expect(activeConsumablesAt(events, 1, 15)).toEqual([]);
-    expect(activeConsumablesAt(events, 2, 15)).toEqual([20]);
+    expect(activeConsumablesAt(events, 2, 15)).toEqual(["healForsage"]);
   });
 });
 
 describe("consumableLabelKey", () => {
-  it("routes the observed ids to their named keys", () => {
-    expect(CONSUMABLE_LABEL[20]).toBe("replay.planeCard.cons20");
-    expect(CONSUMABLE_LABEL[21]).toBe("replay.planeCard.cons21");
-    expect(CONSUMABLE_LABEL[22]).toBe("replay.planeCard.cons22");
-    // E27b: the support-carrier smoke generator rides its own wire id.
-    expect(CONSUMABLE_LABEL[42]).toBe("replay.planeCard.cons42");
-    expect(consumableLabelKey(20)).toBe("replay.planeCard.cons20");
-    expect(consumableLabelKey(21)).toBe("replay.planeCard.cons21");
-    expect(consumableLabelKey(22)).toBe("replay.planeCard.cons22");
-    expect(consumableLabelKey(42)).toBe("replay.planeCard.cons42");
+  it("routes the semantic types to their named keys", () => {
+    expect(CONSUMABLE_LABEL.healForsage).toBe("replay.planeCard.consForsage");
+    expect(CONSUMABLE_LABEL.planeTacticalFighters).toBe("replay.planeCard.consFighters");
+    expect(CONSUMABLE_LABEL.fireExtinguishing).toBe("replay.planeCard.consExtinguisher");
+    expect(CONSUMABLE_LABEL.planeSmokeGenerator).toBe("replay.planeCard.consSmoke");
+    expect(CONSUMABLE_LABEL.regenerateHealth).toBe("replay.planeCard.consRegen");
+    expect(consumableLabelKey("healForsage")).toBe("replay.planeCard.consForsage");
+    expect(consumableLabelKey("planeTacticalFighters")).toBe("replay.planeCard.consFighters");
+    expect(consumableLabelKey("fireExtinguishing")).toBe("replay.planeCard.consExtinguisher");
+    expect(consumableLabelKey("planeSmokeGenerator")).toBe("replay.planeCard.consSmoke");
+    expect(consumableLabelKey("regenerateHealth")).toBe("replay.planeCard.consRegen");
   });
 
-  it("falls back to the generic key for unknown ids", () => {
-    expect(consumableLabelKey(99)).toBe("replay.planeCard.consOther");
-    expect(consumableLabelKey(0)).toBe("replay.planeCard.consOther");
+  it("falls back to the generic key for unknown payloads", () => {
+    expect(consumableLabelKey({ unknown: 57 })).toBe("replay.planeCard.consOther");
+    expect(consumableLabelKey({ unknown: 0 })).toBe("replay.planeCard.consOther");
+  });
+
+  it("exposes the raw id an unknown semantic carries (chip suffix)", () => {
+    expect(unknownConsumableId("healForsage")).toBeNull();
+    expect(unknownConsumableId("planeSmokeGenerator")).toBeNull();
+    expect(unknownConsumableId({ unknown: 57 })).toBe(57);
+    expect(unknownConsumableId({ unknown: 0 })).toBe(0);
   });
 });
 
@@ -312,12 +363,15 @@ describe("planeCardExtras", () => {
     const events: SquadronStateEvents = {
       health: [hpEv(10, 1, 0.75), hpEv(20, 1, 0.4)],
       throttle: [thEv(12, 1, 1), thEv(50, 1, 0)],
-      consumables: [consEv(14, 1, 20, "used"), consEv(14, 1, 22, "used")],
+      consumables: [
+        consEv(14, 1, 20, "healForsage", "used"),
+        consEv(14, 1, 22, "fireExtinguishing", "used"),
+      ],
     };
     expect(planeCardExtras(events, 1, 15)).toEqual({
       hp: 0.75,
       boost: true,
-      consumables: [20, 22],
+      consumables: ["healForsage", "fireExtinguishing"],
     });
     // Before the boost toggle: cruise, no chips yet (use lands at 14).
     expect(planeCardExtras(events, 1, 11)).toEqual({
@@ -333,7 +387,7 @@ describe("planeCardExtras", () => {
     expect(planeCardExtras(events, 1, 60)).toEqual({
       hp: 0.4,
       boost: false,
-      consumables: [20, 22],
+      consumables: ["healForsage", "fireExtinguishing"],
     });
   });
 
@@ -341,7 +395,7 @@ describe("planeCardExtras", () => {
     const events: SquadronStateEvents = {
       health: [hpEv(10, 2, 0.5)],
       throttle: [thEv(10, 2, 1)],
-      consumables: [consEv(10, 2, 20, "used")],
+      consumables: [consEv(10, 2, 20, "healForsage", "used")],
     };
     expect(planeCardExtras(events, 1, 15)).toEqual({
       hp: null,

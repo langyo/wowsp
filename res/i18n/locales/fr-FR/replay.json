@@ -437,11 +437,12 @@
     "attacking": "Attaque en cours",
     "followingHull": "Aucun appareil en vol — coque suivie",
     "boost": "Boost",
-    "cons20": "Postcombustion",
-    "cons21": "Chasseurs",
-    "cons22": "Extinction",
     "consOther": "Consommable",
-    "cons42": "Écran de fumée"
+    "consForsage": "Postcombustion",
+    "consFighters": "Chasseurs",
+    "consExtinguisher": "Extinction",
+    "consSmoke": "Écran de fumée",
+    "consRegen": "Régénération"
   },
   "classes": {
     "battleship": "Cuirassé",

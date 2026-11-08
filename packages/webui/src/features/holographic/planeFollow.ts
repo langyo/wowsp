@@ -19,6 +19,7 @@
  */
 import type {
   SquadronConsumableEvent,
+  SquadronConsumableType,
   SquadronHealthEvent,
   SquadronStateEvents,
   SquadronThrottleEvent,
@@ -165,16 +166,19 @@ export function throttleAt(
   return event === null ? null : event.mode;
 }
 
-/** Consumable type ids whose effect window is open at t: a "used" event
- *  opens a type's window, the matching "stopWorking" closes it — so a type
- *  is active exactly when its LATEST event at or before t is "used" (a
- *  Used with no StopWorking stays open: still active at stream end, or the
- *  squadron died with it on). Ascending order for a stable chip row. */
+/** Semantic squadron-consumable types whose effect window is open at t: a
+ *  "used" event opens a type's window, the matching "stopWorking" closes it —
+ *  so a type is active exactly when its LATEST event at or before t is "used"
+ *  (a Used with no StopWorking stays open: still active at stream end, or the
+ *  squadron died with it on). Windows are keyed by the RAW wire byte (the
+ *  branch-forked id — see SquadronConsumableType) and answered in the
+ *  decoder-normalized semantic vocabulary (E27d), ordered by raw id ascending
+ *  for a stable chip row. */
 export function activeConsumablesAt(
   consumables: readonly SquadronConsumableEvent[] | undefined,
   planeId: number,
   t: number,
-): number[] {
+): SquadronConsumableType[] {
   const latest = new Map<number, SquadronConsumableEvent>();
   for (const event of consumables ?? []) {
     if (event.planeId !== planeId || event.time > t) continue;
@@ -183,53 +187,59 @@ export function activeConsumablesAt(
       latest.set(event.consumableType, event);
     }
   }
-  const active: number[] = [];
-  for (const [consumableType, event] of latest) {
-    if (event.kind === "used") active.push(consumableType);
-  }
-  active.sort((a, b) => a - b);
-  return active;
+  return [...latest.entries()]
+    .filter(([, event]) => event.kind === "used")
+    .sort(([a], [b]) => a - b)
+    .map(([, event]) => event.semantic);
 }
 
-/** Observed squadron-consumable type ids → the pill chip's i18n key.
- *  E27b fingerprinted the ids on five 14.5 CV captures (window lengths vs
- *  the GameParams workTime of every squadron-group PCY — the pairing
- *  probe is dump_squadron_consumable_windows):
- *  - 20 = healForsage 引擎加力: 5.0 s windows on every squadron that used
- *    it (17/17, two carriers) — the universal AbilitySlot0 booster.
- *  - 21 = planeTacticalFighters 战术战斗机: clean 60.0 s windows, plus
- *    early INTERRUPTED stops (the summoned patrol dying) and never-closed
- *    ends (squadron recalled while fighters out) — universal slot1.
- *  - 42 = planeSmokeGenerator 拉烟: 10.01 s exact against the US_SCV
- *    smoke workTime (plus 12.6 s windows on the same DB squadrons — the
- *    generator's longer variant/period); only ever fired by squadrons
- *    whose slot2 IS the smoke generator (Yorktown's support-DB).
- *  - 22 = the 5 s defensive consumable: exact 5.0 s windows on BOTH
- *    carriers; on the Shokaku side that is support fire-extinguishing
- *    (JAP_CV workTime 5 s, slotted on the fighter squadron). The
- *    Yorktown TB showed the same 5 s window while the CURRENT 15.9
- *    GameParams lists active-maneuvering (12 s) in that slot — a
- *    14.5-vs-15.9 loadout drift the capture cannot resolve, so the label
- *    stays "extinguisher-class" honest (see E27b in the experiments
- *    README). */
-export const CONSUMABLE_LABEL: Readonly<Record<number, string>> = {
-  20: "replay.planeCard.cons20",
-  21: "replay.planeCard.cons21",
-  22: "replay.planeCard.cons22",
-  42: "replay.planeCard.cons42",
+/** Named (non-unknown) members of the semantic union — the map key space of
+ *  CONSUMABLE_LABEL below. */
+type NamedSquadronConsumableType = Exclude<SquadronConsumableType, { unknown: number }>;
+
+/** Semantic squadron-consumable types → the pill chip's i18n key. The
+ *  decoder (E27d) normalizes the BRANCH-FORKED wire byte into this one
+ *  vocabulary at the decode boundary — WG (.wowsreplay) ids were
+ *  fingerprinted on five 14.5 CV captures (E27b: 20 = healForsage engine
+ *  boost, 5.0 s windows universal slot 0; 21 = planeTacticalFighters, 60 s
+ *  windows + interruptions, universal slot 1; 22 = tactical
+ *  fire-extinguishing, 5 s windows, the PCY085 air-dropped family;
+ *  42 = planeSmokeGenerator, 10.01 s exact, PCY049), while the Lesta
+ *  (.korablireplay) table comes from the local Korabli battle.xml
+ *  CONSUMABLE_TYPES enum (E27c: 21 = HEAL_FORSAGE, 22 = CALL_FIGHTERS —
+ *  the PROVISIONAL slot-1 fighters pairing, 23 = REGENERATE_HEALTH,
+ *  42 = PLANE_SMOKE_GENERATOR). Only 42 coincides across the branches —
+ *  raw ids must never reach a label. */
+export const CONSUMABLE_LABEL: Readonly<Record<NamedSquadronConsumableType, string>> = {
+  healForsage: "replay.planeCard.consForsage",
+  planeTacticalFighters: "replay.planeCard.consFighters",
+  fireExtinguishing: "replay.planeCard.consExtinguisher",
+  planeSmokeGenerator: "replay.planeCard.consSmoke",
+  regenerateHealth: "replay.planeCard.consRegen",
 };
 
-/** The i18n key for one consumable type id: mapped ids get their named
- *  key, anything else the generic fallback — an unknown id must still
- *  render a chip, not a blank. */
-export function consumableLabelKey(consumableType: number): string {
-  return CONSUMABLE_LABEL[consumableType] ?? "replay.planeCard.consOther";
+/** The i18n key for one semantic consumable type: named types get their
+ *  named key, an unknown payload (`{ unknown }`) the generic fallback — an
+ *  unmapped wire byte must still render a chip, not a blank (pair it with
+ *  unknownConsumableId to show the raw id). */
+export function consumableLabelKey(semantic: SquadronConsumableType): string {
+  return typeof semantic === "string"
+    ? (CONSUMABLE_LABEL[semantic] ?? "replay.planeCard.consOther")
+    : "replay.planeCard.consOther";
+}
+
+/** The raw wire id an unknown semantic carries — the honest chip-text suffix
+ *  ("消耗品 57") for bytes neither branch table names — or null for named
+ *  types. */
+export function unknownConsumableId(semantic: SquadronConsumableType): number | null {
+  return typeof semantic === "string" ? null : semantic.unknown;
 }
 
 /** Everything the pill card adds on top of the trail-derived strength, in
  *  one call: the squadron's HP fraction (null before the first health
  *  sample), whether engine boost is on (last throttle mode == 1 — null and
- *  cruise both read as not boosting), and the open consumable windows.
+ *  cruise both read as not boosting), and the open consumable windows in
+ *  the decoder-normalized semantic vocabulary (E27d).
  *  HolographicMap calls this once per planeCardState refresh (10 Hz); a
  *  null / stream-less aggregate (pre-E27 replay, failed load) degrades to
  *  the pre-E27 card. */
@@ -237,7 +247,7 @@ export function planeCardExtras(
   events: Readonly<SquadronStateEvents> | null | undefined,
   planeId: number,
   t: number,
-): { hp: number | null; boost: boolean; consumables: number[] } {
+): { hp: number | null; boost: boolean; consumables: SquadronConsumableType[] } {
   return {
     hp: squadronHpAt(events?.health, planeId, t),
     boost: throttleAt(events?.throttle, planeId, t) === 1,

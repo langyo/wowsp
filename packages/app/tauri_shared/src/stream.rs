@@ -1138,6 +1138,107 @@ pub struct SquadronThrottleEvent {
     pub mode: i8,
 }
 
+/// Branch-NORMALIZED semantic identity of the squadron-consumable wire
+/// byte (E27d normalization layer). The raw byte is BRANCH-SPECIFIC — WG
+/// (`.wowsreplay`) and Lesta (`.korablireplay`) recordings forked the id
+/// space, which is exactly why the fork is resolved at the decode boundary
+/// (see the two lookup tables below) instead of at any consumer: everything
+/// downstream — the IPC wire, the plane-follow card, feature exports —
+/// speaks this one vocabulary regardless of which client recorded the file.
+///
+/// Provenance of the named variants:
+/// - WG wire ids were fingerprinted empirically on five 14.5 CV captures
+///   (window lengths vs the GameParams workTime of every squadron-group PCY,
+///   probe `dump_squadron_consumable_windows` — experiment E27b):
+///   20 = healForsage, 21 = planeTacticalFighters, 22 = tactical
+///   fire-extinguishing, 42 = planeSmokeGenerator.
+/// - Lesta ids come from the `CONSUMABLE_TYPES` enum in the local Korabli
+///   install's `battle.xml` (experiment E27c; authoritative for the Lesta
+///   branch but replay-unvalidated — no carrier `.korablireplay` has landed
+///   locally yet): 21 = HEAL_FORSAGE, 22 = CALL_FIGHTERS,
+///   23 = REGENERATE_HEALTH, 42 = PLANE_SMOKE_GENERATOR.
+/// - Only 42 coincides across the branches; every other byte means
+///   DIFFERENT things per branch (e.g. 23 is RegenerateHealth on Lesta but
+///   nothing observed on WG), so consumers must never key off the raw byte.
+///
+/// `Unknown(u8)` keeps the raw wire byte so nothing is ever lost: a future
+/// id (or a validation surprise) surfaces as an honest unknown with its
+/// payload rather than a plausible-but-wrong label. Serde camelCase: named
+/// variants ride as strings (`"healForsage"` …), `Unknown(57)` as
+/// `{"unknown": 57}`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SquadronConsumableType {
+    /// healForsage — engine boost + plane heal (WG 20 / Lesta 21).
+    HealForsage,
+    /// planeTacticalFighters — the summoned patrol-fighter consumable
+    /// (WG 21; Lesta names it CALL_FIGHTERS on wire id 22 — PROVISIONAL
+    /// pairing, see [`squadron_consumable_type_lesta`]).
+    PlaneTacticalFighters,
+    /// Tactical fire-extinguishing — the air-dropped extinguisher family
+    /// (PCY085; WG 22). No Lesta counterpart observed in battle.xml yet.
+    FireExtinguishing,
+    /// planeSmokeGenerator (PCY049; WG 42 = Lesta 42, the one coinciding id).
+    PlaneSmokeGenerator,
+    /// CONSUMABLE_REGENERATE_HEALTH — the 飞行重整 (air regeneration)
+    /// consumable (Lesta 23 only; the WG wire has not been observed
+    /// carrying it).
+    RegenerateHealth,
+    /// Anything else, carrying the raw wire byte verbatim.
+    Unknown(u8),
+}
+
+impl Default for SquadronConsumableType {
+    /// `Unknown(0)` — "not normalized", the honest default for pre-E27d
+    /// payloads that deserialize without a `semantic` field (serde default).
+    fn default() -> Self {
+        SquadronConsumableType::Unknown(0)
+    }
+}
+
+/// WG (`.wowsreplay`) squadron-consumable wire byte → semantic type.
+///
+/// Provenance: E27b workTime fingerprints on five 14.5 CV captures (17/17
+/// exact 5.0 s windows for 20 = healForsage; clean 60.0 s windows plus
+/// interruptions for 21 = planeTacticalFighters; exact 5.0 s windows on both
+/// carriers for 22 = tactical fire-extinguishing; 10.01 s exact for
+/// 42 = planeSmokeGenerator) — see scripts/experiments/README.md E27b and
+/// the `dump_squadron_consumable_windows` probe that reproduces the pairing.
+/// Every other byte passes through as `Unknown(raw)` — never guessed.
+pub fn squadron_consumable_type_wg(raw: u8) -> SquadronConsumableType {
+    match raw {
+        20 => SquadronConsumableType::HealForsage,
+        21 => SquadronConsumableType::PlaneTacticalFighters,
+        22 => SquadronConsumableType::FireExtinguishing,
+        42 => SquadronConsumableType::PlaneSmokeGenerator,
+        other => SquadronConsumableType::Unknown(other),
+    }
+}
+
+/// Lesta (`.korablireplay`) squadron-consumable wire byte → semantic type.
+///
+/// Provenance: the `CONSUMABLE_TYPES` enum in the local Korabli install's
+/// `battle.xml` (E27c) — authoritative for the Lesta branch, but
+/// replay-unvalidated until a carrier `.korablireplay` lands locally.
+/// FORK WARNING: the Lesta numbering diverges from the WG wire ids (only 42
+/// coincides), so this table — not the WG one — is what a Lesta recording
+/// must be normalized through. 22 →
+/// [`SquadronConsumableType::PlaneTacticalFighters`] is PROVISIONAL: Lesta
+/// names it CONSUMABLE_CALL_FIGHTERS, presumed the same slot-1 60 s
+/// tactical-fighters family as WG's 21 from the enum name and slot pairing,
+/// with no capture evidence yet; a validation capture may need to re-pin it.
+/// 23 = CONSUMABLE_REGENERATE_HEALTH (WG never observed carrying that
+/// byte). Every other byte passes through as `Unknown(raw)`.
+pub fn squadron_consumable_type_lesta(raw: u8) -> SquadronConsumableType {
+    match raw {
+        21 => SquadronConsumableType::HealForsage,
+        22 => SquadronConsumableType::PlaneTacticalFighters, // PROVISIONAL (CALL_FIGHTERS)
+        23 => SquadronConsumableType::RegenerateHealth,
+        42 => SquadronConsumableType::PlaneSmokeGenerator,
+        other => SquadronConsumableType::Unknown(other),
+    }
+}
+
 /// One squadron-consumable lifecycle event (`squadronConsumableUsed` /
 /// `squadronConsumableStopWorking` on the avatar, E27): def signature names
 /// CONSUMABLE_USAGE_PARAMS, but the 14.5 wire carries ONE byte — the
@@ -1145,13 +1246,27 @@ pub struct SquadronThrottleEvent {
 /// [`SquadronConsumableKind`] says which half of the lifecycle fired.
 /// Empirically validated on the 14.5.0.0 Shokaku reference capture
 /// (2025-07-08).
+///
+/// The byte is branch-forked (WG vs Lesta id spaces diverge — see
+/// [`SquadronConsumableType`]), so the event carries BOTH: `consumable_type`
+/// keeps the RAW wire byte (frontend compatibility; lossless) and `semantic`
+/// is the branch-normalized identity the decoder picked via
+/// [`squadron_consumable_type_wg`] / [`squadron_consumable_type_lesta`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SquadronConsumableEvent {
     pub time: f32,
     pub plane_id: u64,
-    /// Consumable type id (20/21/22 observed).
+    /// RAW wire byte, branch-specific (WG: 20/21/22/42; Lesta: 21/22/23/42 —
+    /// see [`SquadronConsumableType`] for the fork). Kept unchanged for
+    /// frontend compatibility and losslessness; consumers should key off
+    /// `semantic` instead.
     pub consumable_type: u8,
+    /// Branch-normalized identity of `consumable_type` (E27d). Always
+    /// serialized; deserializes to `Unknown(0)` on pre-E27d payloads that
+    /// predate the field.
+    #[serde(default)]
+    pub semantic: SquadronConsumableType,
     /// Which lifecycle half this event is.
     pub kind: SquadronConsumableKind,
 }

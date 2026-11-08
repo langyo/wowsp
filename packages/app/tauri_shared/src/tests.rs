@@ -1457,6 +1457,146 @@ fn plane_health_band_renames_variants() {
     );
 }
 
+/// E27d branch tables — WG side: every empirically fingerprinted id (E27b,
+/// five 14.5 CV captures) maps, everything else passes through raw.
+#[test]
+fn squadron_consumable_type_wg_maps_fingerprinted_ids() {
+    assert_eq!(
+        squadron_consumable_type_wg(20),
+        SquadronConsumableType::HealForsage
+    );
+    assert_eq!(
+        squadron_consumable_type_wg(21),
+        SquadronConsumableType::PlaneTacticalFighters
+    );
+    assert_eq!(
+        squadron_consumable_type_wg(22),
+        SquadronConsumableType::FireExtinguishing
+    );
+    assert_eq!(
+        squadron_consumable_type_wg(42),
+        SquadronConsumableType::PlaneSmokeGenerator
+    );
+    // Unknown passthrough keeps the raw byte verbatim (lossless honesty):
+    // 23 is a Lesta-only id, 20's neighbours were never observed on WG.
+    assert_eq!(
+        squadron_consumable_type_wg(23),
+        SquadronConsumableType::Unknown(23)
+    );
+    assert_eq!(
+        squadron_consumable_type_wg(0),
+        SquadronConsumableType::Unknown(0)
+    );
+    assert_eq!(
+        squadron_consumable_type_wg(57),
+        SquadronConsumableType::Unknown(57)
+    );
+    assert_eq!(
+        squadron_consumable_type_wg(255),
+        SquadronConsumableType::Unknown(255)
+    );
+}
+
+/// E27d branch tables — Lesta side: the battle.xml CONSUMABLE_TYPES enum
+/// (E27c; authoritative for the branch, replay-unvalidated). 22 → fighters
+/// is the PROVISIONAL CALL_FIGHTERS pairing; 23 is the WG-forbidden byte
+/// that proves the fork (RegenerateHealth here, Unknown above).
+#[test]
+fn squadron_consumable_type_lesta_maps_battle_xml_enum() {
+    assert_eq!(
+        squadron_consumable_type_lesta(21),
+        SquadronConsumableType::HealForsage
+    );
+    assert_eq!(
+        squadron_consumable_type_lesta(22),
+        SquadronConsumableType::PlaneTacticalFighters
+    );
+    assert_eq!(
+        squadron_consumable_type_lesta(23),
+        SquadronConsumableType::RegenerateHealth
+    );
+    assert_eq!(
+        squadron_consumable_type_lesta(42),
+        SquadronConsumableType::PlaneSmokeGenerator
+    );
+    // Unknown passthrough: 20 is the WG-only forsage id, absent from the
+    // Lesta enum; anything unlisted stays raw.
+    assert_eq!(
+        squadron_consumable_type_lesta(20),
+        SquadronConsumableType::Unknown(20)
+    );
+    assert_eq!(
+        squadron_consumable_type_lesta(1),
+        SquadronConsumableType::Unknown(1)
+    );
+    assert_eq!(
+        squadron_consumable_type_lesta(99),
+        SquadronConsumableType::Unknown(99)
+    );
+}
+
+/// The semantic enum rides the IPC wire camelCase: named variants as
+/// strings, the unknown variant as a {`"unknown"`: raw} object — the shape
+/// the webui union type (replay.ts SquadronConsumableType) mirrors.
+#[test]
+fn squadron_consumable_type_renames_variants() {
+    assert_eq!(
+        round_trips(SquadronConsumableType::HealForsage),
+        serde_json::json!("healForsage")
+    );
+    assert_eq!(
+        round_trips(SquadronConsumableType::PlaneTacticalFighters),
+        serde_json::json!("planeTacticalFighters")
+    );
+    assert_eq!(
+        round_trips(SquadronConsumableType::FireExtinguishing),
+        serde_json::json!("fireExtinguishing")
+    );
+    assert_eq!(
+        round_trips(SquadronConsumableType::PlaneSmokeGenerator),
+        serde_json::json!("planeSmokeGenerator")
+    );
+    assert_eq!(
+        round_trips(SquadronConsumableType::RegenerateHealth),
+        serde_json::json!("regenerateHealth")
+    );
+    assert_eq!(
+        round_trips(SquadronConsumableType::Unknown(57)),
+        serde_json::json!({"unknown": 57})
+    );
+}
+
+/// The consumable event keeps the raw byte AND gains the normalized
+/// semantic field (E27d): exact key set pinned so the TS mirror cannot
+/// drift, and a pre-E27d payload (no `semantic`) deserializes to
+/// `Unknown(0)` instead of failing.
+#[test]
+fn squadron_consumable_event_carries_raw_and_semantic() {
+    let v = round_trips(SquadronConsumableEvent {
+        time: 70.0,
+        plane_id: 631874 | (4 << 32),
+        consumable_type: 21,
+        semantic: squadron_consumable_type_wg(21),
+        kind: SquadronConsumableKind::Used,
+    });
+    assert_exact_keys(
+        &v,
+        &["time", "planeId", "consumableType", "semantic", "kind"],
+    );
+    assert_eq!(v["consumableType"], 21);
+    assert_eq!(v["semantic"], "planeTacticalFighters");
+
+    // Pre-E27d payload: `semantic` defaults to Unknown(0), never errors.
+    let legacy: SquadronConsumableEvent = serde_json::from_value(serde_json::json!({
+        "time": 88.5,
+        "planeId": 99,
+        "consumableType": 42,
+        "kind": "stopWorking"
+    }))
+    .expect("legacy payload parses");
+    assert_eq!(legacy.semantic, SquadronConsumableType::Unknown(0));
+}
+
 /// Battle chat + achievements (client.ts: ChatEvent / AchievementEvent).
 #[test]
 fn chat_and_achievement_events_rename_player_and_achievement_ids() {

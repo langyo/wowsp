@@ -437,11 +437,12 @@
     "attacking": "Atacando",
     "followingHull": "Sin aeronaves en vuelo — siguiendo el casco",
     "boost": "Turbo",
-    "cons20": "Postcombustión",
-    "cons21": "Cazas",
-    "cons22": "Extinción",
     "consOther": "Consumible",
-    "cons42": "Cortina de humo"
+    "consForsage": "Postcombustión",
+    "consFighters": "Cazas",
+    "consExtinguisher": "Extinción",
+    "consSmoke": "Cortina de humo",
+    "consRegen": "Regeneración"
   },
   "classes": {
     "battleship": "Acorazado",

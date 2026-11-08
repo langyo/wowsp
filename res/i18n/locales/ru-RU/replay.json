@@ -437,11 +437,12 @@
     "attacking": "Атака",
     "followingHull": "Авиации нет — следуем за корпусом",
     "boost": "Ускорение",
-    "cons20": "Форсаж",
-    "cons21": "Истребители",
-    "cons22": "Тушение",
     "consOther": "Расходник",
-    "cons42": "Дымовая завеса"
+    "consForsage": "Форсаж",
+    "consFighters": "Истребители",
+    "consExtinguisher": "Тушение",
+    "consSmoke": "Дымовая завеса",
+    "consRegen": "Регенерация"
   },
   "classes": {
     "battleship": "Линкор",

@@ -437,11 +437,12 @@
     "attacking": "攻击中",
     "followingHull": "无升空中队 — 跟随舰体",
     "boost": "加速",
-    "cons20": "引擎加力",
-    "cons21": "战术战斗机",
-    "cons22": "灭火",
     "consOther": "消耗品",
-    "cons42": "拉烟"
+    "consForsage": "引擎加力",
+    "consFighters": "战术战斗机",
+    "consExtinguisher": "灭火",
+    "consSmoke": "拉烟",
+    "consRegen": "飞行重整"
   },
   "classes": {
     "battleship": "战列舰",
