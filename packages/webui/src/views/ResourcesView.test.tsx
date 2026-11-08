@@ -1180,7 +1180,19 @@ describe("installed-unit known-mod relations", () => {
     expect(t).toHaveBeenCalledWith("resources.relatedCount", { count: 2 });
   });
 
-  it("expands the pane's bottom drawer and lists each known mod", async () => {
+  it("keeps the association section in the pane body flow, under the head", async () => {
+    const view = await mountRelated();
+    // The section is part of the body scroller's own flow: a sparse unit's
+    // list starts right under the pane head instead of after an empty
+    // flex-grown body, and it is not a separate row pinned above the actions.
+    expect(view.find(".mod-detail__scroll .mod-detail__related").exists()).toBe(true);
+    // It is a direct child of the body column (not a sibling of the
+    // scroller), so nothing flex-grown can open a gap above it.
+    expect(view.find(".mod-detail__inner > .mod-detail__related").exists()).toBe(true);
+    expect(view.find(".mod-detail__foot .mod-detail__related").exists()).toBe(false);
+  });
+
+  it("expands the pane's association list and lists each known mod", async () => {
     const view = await mountRelated();
     expect(view.find(".mod-detail__related").exists()).toBe(true);
     // Collapsed by default: the head stays, the row list does not.

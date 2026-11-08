@@ -480,7 +480,7 @@ function relationSourceTone(source: string): "default" | "primary" | "info" {
   return "default";
 }
 
-/** One related-mod row of the installed pane's bottom drawer. */
+/** One related-mod row of the installed pane's association section. */
 function renderRelatedRow(ctx: ResourcesCtx, rel: UnitRelation) {
   const entry = rel.catalogId ? relationEntryOf(ctx, rel.catalogId) : null;
   return (
@@ -550,12 +550,14 @@ function renderRelatedRow(ctx: ResourcesCtx, rel: UnitRelation) {
   );
 }
 
-/** The installed pane's bottom drawer: every known mod claiming files in
- *  this unit, expandable directly above the action row. Collapsed by
- *  default (`relatedOpen`) so a long association list never pushes the
- *  pane's actions off screen; the expanded body scrolls inside its own
- *  max-height. */
-function renderRelatedDrawer(ctx: ResourcesCtx, mod: InstalledMod) {
+/** The installed pane's association section: every known mod claiming
+ *  files in this unit. It rides the pane body's own scroll flow, directly
+ *  after the unit's content, so a sparse unit's list starts under the pane
+ *  head instead of being pushed to the bottom by a flex-grown empty body.
+ *  Collapsed by default (`relatedOpen`) so the body stays short until the
+ *  list is asked for; expanded, its rows scroll with the rest of the
+ *  body. */
+function renderRelatedSection(ctx: ResourcesCtx, mod: InstalledMod) {
   const relations = ctx.relationsOf(mod);
   const open = ctx.relatedOpen.value;
   return (
@@ -580,22 +582,20 @@ function renderRelatedDrawer(ctx: ResourcesCtx, mod: InstalledMod) {
         />
       </button>
       {open && (
-        <HkScrollContainer class="mod-detail__related-scroll">
-          <div class="mod-detail__related-body">
-            {relations.length === 0 ? (
-              <p class="mod-detail__related-empty">
-                {t("resources.relatedEmpty")}
+        <div class="mod-detail__related-body">
+          {relations.length === 0 ? (
+            <p class="mod-detail__related-empty">
+              {t("resources.relatedEmpty")}
+            </p>
+          ) : (
+            <>
+              <p class="mod-detail__related-total">
+                {t("resources.relatedTotal", { count: relations.length })}
               </p>
-            ) : (
-              <>
-                <p class="mod-detail__related-total">
-                  {t("resources.relatedTotal", { count: relations.length })}
-                </p>
-                {relations.map((rel) => renderRelatedRow(ctx, rel))}
-              </>
-            )}
-          </div>
-        </HkScrollContainer>
+              {relations.map((rel) => renderRelatedRow(ctx, rel))}
+            </>
+          )}
+        </div>
       )}
     </div>
   );
@@ -742,9 +742,9 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
             file-list window now; the hint stays because it explains why
             the enable switch below is missing. */}
         {mod.paths.length === 0 && <p class="mod-detail__hint">{t("resources.manifestOnly")}</p>}
+        {renderRelatedSection(ctx, mod)}
         </div>
       </HkScrollContainer>
-      {renderRelatedDrawer(ctx, mod)}
       <div class="mod-detail__foot">
         <div class="mod-detail__foot-row">
           {mod.paths.length > 0 ? (
