@@ -173,6 +173,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="E26e-c: add a third head (P(torpHits>0 | launched)) trained ONLY on labelB==1 rows; requires --outcome",
     )
+    p.add_argument(
+        "--head-c-only",
+        action="store_true",
+        help="E26e-d: standalone single-head model trained ONLY on launched rows (no shared trunk with headA/B)",
+    )
+    p.add_argument(
+        "--combine-oof",
+        action="store_true",
+        help="E26e-d: merge a base OOF npz (E26e-a probB) with a standalone headC npz into one combined npz",
+    )
+    p.add_argument("--combine-base", default="", help="combine-oof: base npz (must carry probB/labelB/rowIndex)")
+    p.add_argument("--combine-headc", default="", help="combine-oof: standalone headC npz (--head-c-only --save-oof)")
+    p.add_argument("--combine-out", default="", help="combine-oof: output combined npz path")
     p.add_argument("--metrics-out", default=None, help="write the full metrics JSON here")
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
@@ -1644,6 +1657,299 @@ def build_three_head_model(torch, hidden: int, entity_dim: int, global_dim: int)
     return ThreeHeadDeepSets()
 
 
+
+
+# ── E26e-d: standalone outcome head (no shared trunk) + OOF merge ───────────
+
+
+def build_headc_only_model(torch, hidden: int, entity_dim: int, global_dim: int):
+    """Standalone DeepSets + single head C (same trunk shape as E26 TwoHead,
+    but no headA/headB and no shared training signal)."""
+    import torch.nn as nn
+
+    class HeadCDeepSets(nn.Module):
+        def __init__(self) -> None:
+            super().__init__()
+            self.phi = nn.Sequential(
+                nn.Linear(entity_dim, hidden),
+                nn.ReLU(),
+                nn.Linear(hidden, hidden),
+                nn.ReLU(),
+            )
+            self.ctx1 = nn.Linear(hidden + global_dim, hidden)
+            self.ctx2 = nn.Linear(hidden, hidden)
+            self.head_c = nn.Linear(hidden, 1)
+
+        def forward(self, entity, global_feat, mask):
+            h = self.phi(entity)
+            g = global_feat.unsqueeze(1).expand(-1, h.size(1), -1)
+            h = torch.relu(self.ctx1(torch.cat([h, g], dim=-1)))
+            h = torch.relu(self.ctx2(h))
+            m = mask.unsqueeze(-1)
+            agg = (h * m).sum(dim=1) / mask.sum(dim=1, keepdim=True).clamp(min=1.0)
+            return self.head_c(agg).squeeze(-1)
+
+    return HeadCDeepSets()
+
+
+def _standalone_oof_npz(path: Path, data: dict, p_c: np.ndarray, label_c: np.ndarray,
+                        fold: np.ndarray, split: dict, args, metrics: dict) -> dict:
+    """Write the standalone headC OOF npz (probC valid on launched rows only)."""
+    class_names = sorted(set(data["class"].tolist()))
+    class_code = {name: i for i, name in enumerate(class_names)}
+    region_names = sorted(set(data["region"].tolist()))
+    region_code = {name: i for i, name in enumerate(region_names)}
+    payload = {
+        "probC": np.asarray(p_c, dtype=np.float32),
+        "labelC": np.asarray(label_c, dtype=np.float32),
+        "labelA": np.asarray(data["label_a"], dtype=np.float32),
+        "labelB": np.asarray(data["label_b"], dtype=np.float32),
+        "fold": np.asarray(fold, dtype=np.int8),
+        "rowIndex": np.arange(data["rows"], dtype=np.int32),
+        "shipId": np.asarray(data["ship_id"], dtype=np.int64),
+        "t": np.asarray(data["t"], dtype=np.float32),
+        "classCode": np.array([class_code[str(c)] for c in data["class"]], dtype=np.int8),
+        "classNames": np.array(class_names, dtype="U16"),
+        "regionCode": np.array([region_code[str(r)] for r in data["region"]], dtype=np.int8),
+        "regionNames": np.array(region_names, dtype="U16"),
+        "groupCode": np.asarray(data["group"], dtype=np.int32),
+        "groupNames": np.array(data["group_names"], dtype="U128"),
+    }
+    payload["meta"] = np.array(json.dumps({
+        "version": OOF_NPZ_VERSION,
+        "model": "headc-standalone",
+        "rows": data["rows"],
+        "launchedRows": int(np.sum(np.isfinite(p_c))),
+        "feature_version": FEATURE_VERSION,
+        "feature_set": data["feature_set"],
+        "extra_dim": data["extra_dim"],
+        "folds": split["folds"],
+        "split_mode": split["mode"],
+        "seed": args.seed,
+        "hidden": args.hidden,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "lr": args.lr,
+        "label_smoothing": args.label_smoothing,
+        "replays": split["n_groups"],
+        "class_counts": data["class_counts"],
+        "region_counts": data["region_counts"],
+        "oof": metrics,
+    }), dtype="U8192")
+    np.savez_compressed(path, **payload)
+    return {"path": str(path), "bytes": path.stat().st_size, "rows": data["rows"],
+            "launchedRows": int(np.sum(np.isfinite(p_c)))}
+
+
+def run_headc_only(args: argparse.Namespace) -> dict:
+    """E26e-d: train a standalone headC on launched rows only (no headA/B), 5-fold
+    OOF, then save probC + metadata for joint evaluation with E26e-a probB."""
+    import torch
+
+    if args.device == "cuda":
+        if not torch.cuda.is_available():
+            raise SystemExit("[e26] --device cuda requested but torch reports no CUDA")
+        device = torch.device("cuda")
+    elif args.device == "cpu" or not torch.cuda.is_available():
+        device = torch.device("cpu")
+    else:
+        device = torch.device("cuda")
+    torch.set_num_threads(max(1, torch.get_num_threads()))
+    log = lambda s: print(s, flush=True)  # noqa: E731
+    log(f"[e26] HEAD-C ONLY on {device} (torch {torch.__version__})")
+    if not args.outcome:
+        raise SystemExit("[e26] --head-c-only requires --outcome (4 sidecar JSONL in --data order)")
+    classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
+    paths = resolve_data_paths(args)
+    t0 = time.time()
+    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype, args.feature_set)
+    log(f"[e26] loaded {data['rows']:,} rows in {time.time() - t0:.1f}s (arrays {data['array_bytes'] / 1e9:.2f} GB)")
+    outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
+    label_c_np = (outcome["hits"] > 0).astype(np.float32)
+    c_mask_np = (data["label_b"] == 1.0) & (outcome["fired"] >= 1)
+    n_launched = int(c_mask_np.sum())
+    n_pos = int(label_c_np[c_mask_np].sum())
+    log(f"[e26] launched rows {n_launched:,} / positives {n_pos:,} "
+        f"(row hit rate {float(label_c_np[c_mask_np].mean()):.4f}); "
+        f"labelB=1 but fired=0: {outcome['quality']['launchedWithZeroFiredFish']}")
+    if n_launched == 0:
+        raise SystemExit("[e26] no launched rows for --head-c-only")
+
+    entity = torch.from_numpy(data["entity"])
+    glob = torch.from_numpy(data["global"])
+    mask = torch.from_numpy(data["mask"])
+    y_c = torch.from_numpy(label_c_np)
+    c_mask_t = torch.from_numpy(c_mask_np.astype(np.float32))
+    entity_dim = tfm.ENTITY_DIM_V2
+    global_dim = int(glob.shape[1])
+    if device.type == "cuda":
+        entity = entity.to(device)
+        glob = glob.to(device)
+        mask = mask.to(device)
+        y_c = y_c.to(device)
+        c_mask_t = c_mask_t.to(device)
+        data["entity"] = None
+        data["global"] = None
+        data["mask"] = None
+        gc.collect()
+    log(f"[e26] tensors: entity {entity.numel() * entity.element_size() / 1e9:.2f} GB {entity.dtype}")
+
+    split = make_split(data["group"], args.folds, args.seed)
+    fold = split["fold"]
+    log(f"[e26] split: {split['mode']} ({split['n_groups']} replays)")
+    nn = torch.nn
+    bce_none = nn.BCEWithLogitsLoss(reduction="none")
+    eps = args.label_smoothing
+    eval_batch = getattr(args, "eval_batch_size", 0) or max(args.batch_size, 8192)
+    p_c = np.full(data["rows"], np.nan, dtype=np.float64)
+    fold_reports = []
+    losses_all = []
+    for f in range(split["folds"]):
+        val_mask = c_mask_np & (fold == f)
+        train_mask = c_mask_np & (fold != f)
+        if int(val_mask.sum()) == 0 or int(train_mask.sum()) == 0:
+            continue
+        torch.manual_seed(args.seed + f)
+        np.random.seed(args.seed + f)
+        model = build_headc_only_model(torch, hidden=args.hidden, entity_dim=entity_dim, global_dim=global_dim)
+        model.to(device)
+        opt = torch.optim.Adam(model.parameters(), lr=args.lr)
+        train_idx = torch.from_numpy(np.flatnonzero(train_mask)).to(device)
+        losses = []
+        t_fold = time.time()
+        for epoch in range(args.epochs):
+            model.train()
+            perm = train_idx[torch.randperm(len(train_idx), device=device)]
+            tot, cnt = 0.0, 0
+            for st in range(0, len(perm), args.batch_size):
+                idx = perm[st : st + args.batch_size]
+                lc = model(entity[idx].float(), glob[idx].float(), mask[idx].float())
+                yc_b = y_c[idx].to(device)
+                loss = bce_smoothed_loss(bce_none, lc, yc_b, eps).mean()
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+                tot += float(loss.item()) * len(idx)
+                cnt += len(idx)
+            losses.append(tot / max(cnt, 1))
+            log(f"  fold {f} epoch {epoch + 1}/{args.epochs} loss {losses[-1]:.4f} ({time.time() - t_fold:.1f}s)")
+        losses_all.append(losses)
+        model.eval()
+        val_idx = np.flatnonzero(val_mask)
+        preds = np.empty(len(val_idx), dtype=np.float32)
+        with torch.no_grad():
+            for st in range(0, len(val_idx), eval_batch):
+                chunk = val_idx[st : st + eval_batch]
+                idx = torch.from_numpy(chunk).to(device)
+                lc = model(entity[idx].float(), glob[idx].float(), mask[idx].float())
+                preds[st : st + len(chunk)] = torch.sigmoid(lc).float().cpu().numpy()
+        p_c[val_idx] = preds
+        fold_reports.append({
+            "fold": f, "train_rows": int(train_mask.sum()), "val_rows": int(val_mask.sum()),
+            "seconds": round(time.time() - t_fold, 1),
+            "loss_first": round(losses[0], 4), "loss_last": round(losses[-1], 4),
+            "headC": head_b_metrics(label_c_np[val_mask], preds),
+        })
+        fr = fold_reports[-1]["headC"]
+        log(f"[e26] fold {f} val headC: AUPRC {fr['auprc']} AUC {fr['roc_auc']} "
+            f"logloss {fr['logloss']} base {fr['baseRate']} topLift {fr['topDecile']['lift']}")
+
+    scored = np.isfinite(p_c)
+    oof_c = head_b_metrics(label_c_np[scored], p_c[scored])
+    log(f"[e26] OOF headC: rows {int(scored.sum()):,} AUPRC {oof_c['auprc']} AUC {oof_c['roc_auc']} "
+        f"logloss {oof_c['logloss']} Brier {oof_c['brier']} ECE {oof_c['ece_15bin']} "
+        f"base {oof_c['baseRate']} topLift {oof_c['topDecile']['lift']}")
+    per_class = {}
+    for cls in sorted(set(data["class"][scored].tolist())):
+        m = scored & (data["class"] == cls)
+        per_class[cls] = (head_b_metrics(label_c_np[m], p_c[m])
+                          if int(m.sum()) >= MIN_CLASS_N else {"rows": int(m.sum()), "insufficient": True})
+    per_region = {}
+    for reg in sorted(set(data["region"][scored].tolist())):
+        m = scored & (data["region"] == reg)
+        per_region[reg] = (head_b_metrics(label_c_np[m], p_c[m])
+                           if int(m.sum()) >= MIN_CLASS_N else {"rows": int(m.sum()), "insufficient": True})
+    calib = class_temperature_report(p_c[scored], label_c_np[scored], data["class"][scored])
+    metrics = {
+        "_lineage": "E26e-d standalone outcome headC (launched rows only, no shared trunk)",
+        "protocol": {
+            "model": "headc-standalone", "feature_version": FEATURE_VERSION,
+            "entity_dim": entity_dim, "global_dim": global_dim,
+            "feature_set": data["feature_set"], "feature_dtype": data["feature_dtype"],
+            "data_paths": [str(p) for p in paths],
+            "outcome_sidecars": [str(p) for p in args.outcome],
+            "epochs": args.epochs, "hidden": args.hidden, "batch_size": args.batch_size,
+            "lr": args.lr, "label_smoothing": args.label_smoothing, "seed": args.seed,
+            "device": str(device), "torch": torch.__version__,
+            "ship_classes": str(args.ship_classes), "ship_class_pack": class_pack_version,
+            "trained_on": "labelB==1 & torpFiredFish>=1 rows only",
+        },
+        "data": {
+            "rows": data["rows"], "launchedRows": n_launched,
+            "positives": n_pos, "rowHitRate": _num(label_c_np[c_mask_np].mean()),
+            "class_counts": data["class_counts"], "region_counts": data["region_counts"],
+            "outcome": outcome["quality"],
+        },
+        "split": {"mode": split["mode"], "folds": split["folds"], "replays": split["n_groups"],
+                  "fold_sizes": [int((fold == f).sum()) for f in range(split["folds"])]},
+        "metrics_oof_pooled": {"headC": oof_c},
+        "per_class": per_class,
+        "per_region": per_region,
+        "per_fold": {"folds": fold_reports, "summary_mean_std": summarize_per_fold(fold_reports)},
+        "calibration_class": calib,
+        "training": {"fold_seconds": [r["seconds"] for r in fold_reports],
+                     "total_seconds": round(sum(r["seconds"] for r in fold_reports), 1),
+                     "epoch_loss_first": [_num(l[0]) for l in losses_all],
+                     "epoch_loss_last": [_num(l[-1]) for l in losses_all]},
+        "acceptance": {
+            "rule": "E26e-d secondary only: standalone headC outcome-lift is descriptive; joint acceptance uses probB*probC",
+            "note": "see e26e-d-preregistration.md",
+        },
+    }
+    if args.save_oof:
+        metrics["save_oof"] = _standalone_oof_npz(Path(args.save_oof), data, p_c, label_c_np, fold, split, args, oof_c)
+    return metrics
+
+
+def run_combine_oof(args: argparse.Namespace) -> int:
+    """E26e-d: merge E26e-a base npz (probA/probB) with the standalone headC npz."""
+    if not args.combine_base or not args.combine_headc or not args.combine_out:
+        raise SystemExit("[e26] --combine-oof needs --combine-base, --combine-headc and --combine-out")
+    out_path = Path(args.combine_out).resolve()
+    if out_path == Path(args.combine_base).resolve() or out_path == Path(args.combine_headc).resolve():
+        raise SystemExit("[e26] --combine-out must not overwrite --combine-base/--combine-headc")
+    base = np.load(args.combine_base, allow_pickle=False)
+    hc = np.load(args.combine_headc, allow_pickle=False)
+    for key in ("probB", "labelB", "rowIndex", "shipId", "t", "groupCode"):
+        if key not in base.files:
+            raise SystemExit("[e26] base npz missing key: " + key)
+    for key in ("probC", "labelC", "rowIndex"):
+        if key not in hc.files:
+            raise SystemExit("[e26] headC npz missing key: " + key)
+    if len(base["probB"]) != len(hc["probC"]):
+        raise SystemExit("[e26] row count mismatch base " + str(len(base["probB"])) + " vs headC " + str(len(hc["probC"])))
+    if not np.array_equal(base["rowIndex"], hc["rowIndex"]):
+        raise SystemExit("[e26] rowIndex mismatch between base and headC npz")
+    for key in ("shipId", "t", "groupCode"):
+        if key in hc.files and not np.array_equal(base[key], hc[key]):
+            raise SystemExit("[e26] " + key + " mismatch between base and headC npz")
+    payload = {}
+    for key in base.files:
+        payload[key] = base[key]
+    payload["probC"] = hc["probC"]
+    payload["labelC"] = hc["labelC"]
+    meta = json.loads(str(base["meta"].tolist())) if "meta" in base.files else {}
+    meta["combined"] = "E26e-a probB + E26e-d standalone probC (same rowIndex)"
+    payload["meta"] = np.array(json.dumps(meta), dtype="U8192")
+    out = Path(args.combine_out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(out, **payload)
+    launched = np.isfinite(hc["probC"]) & np.isfinite(base["labelB"])
+    print(f"[e26] combined npz -> {out} ({out.stat().st_size:,} bytes; "
+          f"scored probC rows {int(np.isfinite(hc['probC']).sum()):,}; launched {int(launched.sum()):,})", flush=True)
+    return 0
+
+
 # ── T2 delivery: final fit (all rows) + ONNX export ─────────────────────────
 
 
@@ -2468,6 +2774,65 @@ def run_selftest() -> int:
         )
         assert len(out) == 3 and out[0].shape == (2,) and out[2].shape == (2,)
 
+    # 12. E26e-d: standalone headC CLI / model / OOF combine (numpy-only; torch gated).
+    do = parse_args(["--head-c-only", "--outcome", "a.jsonl", "b.jsonl", "c.jsonl", "d.jsonl"])
+    assert do.head_c_only is True and len(do.outcome) == 4
+    co = parse_args(["--combine-oof", "--combine-base", "b.npz", "--combine-headc", "c.npz", "--combine-out", "o.npz"])
+    assert co.combine_oof is True and co.combine_out == "o.npz"
+    assert parse_args([]).head_c_only is False and parse_args([]).combine_oof is False
+    if _torch is not None:
+        m1 = build_headc_only_model(_torch, hidden=16, entity_dim=15, global_dim=38)
+        names1 = [n for n, _ in m1.named_parameters()]
+        assert any(n.startswith("head_c") for n in names1)
+        assert not any(n.startswith("head_a") or n.startswith("head_b") for n in names1)
+        o1 = m1(_torch.zeros(2, 24, 15), _torch.zeros(2, 38), _torch.ones(2, 24))
+        assert o1.shape == (2,)
+    nrow = 5
+    bnpz = root / "base_oof.npz"
+    cnpz = root / "headc_oof.npz"
+    np.savez_compressed(
+        bnpz,
+        probA=np.full(nrow, 0.5, np.float32),
+        probB=np.array([0.1, 0.2, 0.3, 0.4, 0.5], np.float32),
+        labelA=np.array([1, 1, 1, 1, 0], np.float32),
+        labelB=np.array([1, 1, 1, 0, np.nan], np.float32),
+        fold=np.zeros(nrow, np.int8),
+        rowIndex=np.arange(nrow, dtype=np.int32),
+        shipId=np.arange(100, 100 + nrow, dtype=np.int64),
+        t=np.arange(nrow, dtype=np.float32),
+        groupCode=np.arange(nrow, dtype=np.int32),
+        meta=np.array("{}", dtype="U32"),
+    )
+    np.savez_compressed(
+        cnpz,
+        probC=np.array([0.9, 0.8, np.nan, np.nan, np.nan], np.float32),
+        labelC=np.array([1, 1, 0, 0, 0], np.float32),
+        rowIndex=np.arange(nrow, dtype=np.int32),
+        shipId=np.arange(100, 100 + nrow, dtype=np.int64),
+        t=np.arange(nrow, dtype=np.float32),
+        groupCode=np.arange(nrow, dtype=np.int32),
+    )
+    comb = root / "combined_oof.npz"
+    cargs = parse_args(["--combine-oof", "--combine-base", str(bnpz), "--combine-headc", str(cnpz), "--combine-out", str(comb)])
+    assert run_combine_oof(cargs) == 0
+    backc = np.load(comb, allow_pickle=False)
+    for key in ("probA", "probB", "probC", "labelA", "labelB", "labelC", "rowIndex", "groupCode", "meta"):
+        assert key in backc.files, key
+    assert np.array_equal(backc["probC"], np.array([0.9, 0.8, np.nan, np.nan, np.nan], np.float32), equal_nan=True)
+    assert np.array_equal(backc["probB"], np.array([0.1, 0.2, 0.3, 0.4, 0.5], np.float32))
+    # rowIndex mismatch must be loud
+    bad = root / "headc_bad.npz"
+    np.savez_compressed(bad, probC=np.zeros(nrow, np.float32), labelC=np.zeros(nrow, np.float32),
+                        rowIndex=np.arange(1, nrow + 1, dtype=np.int32), shipId=np.arange(100, 100 + nrow, dtype=np.int64),
+                        t=np.arange(nrow, dtype=np.float32), groupCode=np.arange(nrow, dtype=np.int32))
+    bargs = parse_args(["--combine-oof", "--combine-base", str(bnpz), "--combine-headc", str(bad), "--combine-out", str(root / "x.npz")])
+    failed = False
+    try:
+        run_combine_oof(bargs)
+    except SystemExit:
+        failed = True
+    assert failed is True
+
     print("PASS")
     return 0
 
@@ -2481,6 +2846,16 @@ def main(argv: list[str] | None = None) -> int:
         return run_selftest()
     if args.calibrate is not None:
         return run_calibration(args)
+    if args.combine_oof:
+        return run_combine_oof(args)
+    if args.head_c_only:
+        metrics = run_headc_only(args)
+        if args.metrics_out:
+            out = Path(args.metrics_out)
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+            print(f"[e26] metrics -> {out}")
+        return 0
     if args.final_fit:
         return run_final_fit(args)
     metrics = run_training(args)

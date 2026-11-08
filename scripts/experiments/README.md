@@ -40,6 +40,7 @@
 | E26e-a | OOF 落盘 + 温度校准（鱼雷 headB） | OOF 概率经单温度缩放能否达到常数基线的 logloss/Brier 水平 | ✅ | 3,111,384 行 OOF（npz 27.2 MB）；T=0.7586；logloss 0.09004→0.07947（<0.08289）、Brier 0.01640→0.01583（<0.01594）、ECE 0.0246→0.00053，AUPRC/AUC 不变 → **PASS** |
 | E26e-b | 鱼雷 outcome-lift 评估（OOF probB vs 实际命中） | 排序专家点击是否也排序实际命中：launched 行 top-decile hit-rate lift ≥1.25× 且十分位 ρ≥+0.30（CI 排除 0） | ⚠️ | 3,111,384 行 join 100%；17,055 launched / 71,693 fish / 5,854 hits（base 8.17%）；top-decile lift **1.223×**（差 0.03 未过）、十分位 ρ **0.952**（CI 0.672–0.976）、HP/fish top-bottom 5.6× → **MIXED**：排序强 outcome 信号但 top-decile 未过线 |
 | E26e-c | outcome-aware 第三头（headC）+ 类别温度校准 | 直接监督 P(命中\|已发射) 能否把 launched 行 top-decile 命中率 lift 推过 1.35×（高于 E26e-b 1.223×）并 ρ≥+0.30 | ✅ | 3,111,384 行 + 4 sidecar join 100%；headC OOF（17,055 launched）：AUPRC 0.254/AUC 0.715；**outcome-lift top-decile 命中率 18.07% vs base 8.165% = 2.213×（CI 2.03–2.41）、十分位 ρ 0.988（CI 0.964–1.0）→ 预注册 PASS**；类别温度：headB global T 0.7581、logloss 0.09062→0.07998；headC T 1.0538、ECE 0.0084→0.0070 |
+| E26e-d | 解耦 outcome headC + 联合排序 | 独立 headC（launched-only 训练）+ joint=probB*probC 能否 ≥2.2× 且 headB 不退化 | ⚠️ | headB（E26e-a 原模型，未重训）outcome lift **1.2234× 原样**、ρ 0.952；standaloneC **1.301×**/ρ 0.915；**joint 1.381×（<2.2 预注册线）**/ρ 0.952/CI 排除 0 → **MIXED：解耦无收益，共享 headC（2.213×）更优** |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
 ### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
@@ -734,6 +735,66 @@
   e26e_c_train.log, outcome_lift_B.json, outcome_lift_C.json, outcome_lift_combined.json}`；
   node3 `/mnt/work/wowsp-kots/e26e-c/{code,run,outcome}`；预注册
   `out/torpedo_model/e26e-c-preregistration.md`（含脚本 sha 冻结值）。
+### E26e-d · 解耦 outcome headC + 联合排序（**MIXED**：joint lift 1.381× 远低于预注册 2.2×；解耦无收益）
+
+- **问题（预注册 `out/torpedo_model/e26e-d-preregistration.md`，先落盘后跑）**：E26e-c
+  的共享 trunk 让 headC 很强（outcome lift 2.213×）但把 headB 拖弱（2.020×base、
+  top-lift 2.349，弱于 E26e-b 的 2.286×/2.662）。本任务把 outcome head **解耦**：
+  standalone headC 只用自己的 trunk、只在 launched 行训练；**headA/B 保持 E26e-a 原模型
+  不重训**。主验收：joint = `probB(E26e-a) × probC(standalone)` 在 launched 行
+  top-decile fish 命中率 lift **≥2.2×**（不弱于 shared headC 2.213）且 ρ≥+0.30/CI 排除 0；
+  同时 headB 保持原状（1.2234× / AUPRC 2.286×base / top-lift 2.662 不变）。
+- **实现**：`--head-c-only` = 同形 DeepSets trunk（entity 24×15 / global 38 / mask 24）+ 单
+  `head_c`，训练行 = `labelB==1 & torpFiredFish>=1`（17,055 行 / 2,192 正例），hidden 192 /
+  12 epochs / batch 4096 / lr 1e-3 / smoothing 0.05 / float16 / cuda / 5 折 GroupKFold
+  seed 0；OOF npz 只含 launched 行有效的 probC + 元数据。`--combine-oof` 把 E26e-a probB
+  与本任务 probC 合并（校验 rowIndex/shipId/t/group 完全一致），不覆盖原 npz；
+  `torpedo_outcome_lift.py` 新增 `--prob-key standaloneC|joint`（joint=probB*probC）。
+  训练 3.9 s（5 折 2.7/0.3/0.3/0.3/0.3 s）+ 合并/评估秒级；`train_fire_model.py` 未改。
+- **headB 不变性（解耦目标）**：E26e-a npz 原样评估 → outcome lift **1.2234×**、ρ 0.9515、
+  CI [1.079,1.392]，与 E26e-b **完全一致**；headB 未重训 → 解耦**没有误伤**。
+- **四种分数对照（launched 行，fish-level，同 sidecar/评估代码）**：
+
+  | 分数 | top-decile 命中率 lift | 十分位 ρ | bootstrap lift 95% CI | 判定 |
+  |---|---|---|---|---|
+  | headB（E26e-a 原模型） | 1.2234× | 0.9515 | [1.079, 1.392] | MIXED |
+  | shared headC（E26e-c） | **2.2126×** | **0.9879** | [2.030, 2.412] | PASS |
+  | standaloneC（本任务） | 1.3011× | 0.9152 | [1.120, 1.466] | MIXED |
+  | **joint（primary）** | **1.3813×** | 0.9515 | [1.215, 1.575] | **MIXED**（<2.2 ✗） |
+
+  joint 十分位命中率 11.28/9.77/9.64/9.48/9.51/9.52/8.09/6.06/2.82/2.48%
+  （top-bottom 8.80pp）；standaloneC 10.62/10.01/9.93/9.58/10.07/8.39/8.87/7.42/2.28/1.55%。
+- **standaloneC OOF（launched 行）**：AUPRC **0.17393** / AUC **0.61851** / logloss 0.372610 /
+  Brier 0.109728 / ECE 0.014955（base 0.128525；5 折 AUPRC 0.150–0.210、AUC 0.595–0.640）。
+  与 shared headC（0.25398 / 0.71534 / 0.347997 / 0.104740 / 0.008401）相比**全部更弱**——
+  只在 17k launched 行训练、且失去共享表示，是解耦代价。
+- **joint 按类 lift / ρ**：BB 996 行 2.091/0.758；CL 5,009 行 1.775/0.952；DD 10,949 行
+  1.444/0.515；SS 101 行 0.794/−0.115（样本不足仅描述）。**按 region**：apac 5,489 行
+  1.507/0.915；eu 7,937 行 1.302/0.891；na 2,672 行 0.950/0.406；own 957 行 1.989/0.333。
+  standaloneC 按类：BB 2.503、CL 1.464、DD 1.206、SS 0.715；按 region：own 2.067、apac
+  1.423、eu 1.175、na 0.840。
+- **standalone headC 类别温度校准（secondary）**：global T=**0.9551**，logloss 0.372610→
+  **0.372191**、Brier 0.109728→0.109741（基本不变）、ECE 0.014955→**0.014398**；per-class
+  T：BB 0.953 / CL 0.893 / DD 0.980 / SS 1.572（SS ECE 0.0967→0.0080，但 n=101 仅描述）。
+- **判定（预注册）**：join 100% ✓、ρ 0.9515 ≥0.30 ✓、CI [0.721,0.988] 排除 0 ✓，但
+  **joint lift 1.3813 < 2.2** ✗ → **MIXED**。**结论（按预注册 fallback 表述）**：
+  **解耦无收益**——standalone headC 自身就弱（AUPRC 0.174 vs 0.254；outcome lift 1.30 vs
+  2.21），joint 也只有 1.38；共享 trunk 的多任务表示对 headC 是必要的。解耦只是让
+  headB 回到原模型（1.2234× 原样），但 headC 变弱，净收益为负。
+- **局限**：launched-only 训练样本少（17,055 行 / 2,192 正例），standalone 易欠拟合/方差大
+  （fold AUPRC 0.150–0.210 波动）；joint 用乘积融合，headB 概率尺度与 headC 不同；
+  命中仍是代理（120 units + HP drop）；SS 101 行、na/own 样本薄；outcome 只用于 headC。
+  **口径提示**：本任务 standalone headC 使用 label smoothing 0.05 的平滑 BCE，E26e-c 的
+  共享 headC 用未平滑 BCE（两者超参按各自预注册），因此跨任务的 headC 概率/校准指标
+  只作方向对照，不是严格同口径 A/B。
+- **下一步（E26e-e）**：保留 E26e-c 共享 headC 作为主方案；研究**多任务权重/梯度
+  平衡**（降低 headC 对 headB 的干扰，如 loss weighting / gradient surgery）；特征扩展
+  （管位/DoT/click-level 序列）；端上概率分级（温度 T 后处理，另立预注册）。
+- **产物**：`out/torpedo_model/e26e-d/{e26e_d_c_oof.npz（5.95MB）, e26e_d_combined_oof.npz
+  （27.34MB）, e26e_d_c_metrics.json, e26e_d_train.log, outcome_lift_joint.json,
+  outcome_lift_standaloneC.json, outcome_lift_B_e26ea.json, outcome_lift_sharedC_e26ec.json}`；
+  node3 `/mnt/work/wowsp-kots/e26e-d/{code,run}`；预注册 `e26e-d-preregistration.md`（含脚本
+  sha 冻结值）。
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |
