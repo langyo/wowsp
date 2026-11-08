@@ -39,6 +39,7 @@
 | E26d | 鱼雷几何/类别特征迭代（torp2，node3 全量） | 从现有行派生 11 维几何+类别特征，能否把 headB 推过 2×base 且 top-decile lift≥1.5× | ✅ | 3,111,384 行/2,215 局，global 27→38；**headB AUPRC 0.03705 = 2.29×base、top-decile lift 2.66×、AUC 0.7084 → 预注册 PASS**；headA 0.99989；E26c core 复跑逐位一致（0.0309248/2.3307） |
 | E26e-a | OOF 落盘 + 温度校准（鱼雷 headB） | OOF 概率经单温度缩放能否达到常数基线的 logloss/Brier 水平 | ✅ | 3,111,384 行 OOF（npz 27.2 MB）；T=0.7586；logloss 0.09004→0.07947（<0.08289）、Brier 0.01640→0.01583（<0.01594）、ECE 0.0246→0.00053，AUPRC/AUC 不变 → **PASS** |
 | E26e-b | 鱼雷 outcome-lift 评估（OOF probB vs 实际命中） | 排序专家点击是否也排序实际命中：launched 行 top-decile hit-rate lift ≥1.25× 且十分位 ρ≥+0.30（CI 排除 0） | ⚠️ | 3,111,384 行 join 100%；17,055 launched / 71,693 fish / 5,854 hits（base 8.17%）；top-decile lift **1.223×**（差 0.03 未过）、十分位 ρ **0.952**（CI 0.672–0.976）、HP/fish top-bottom 5.6× → **MIXED**：排序强 outcome 信号但 top-decile 未过线 |
+| E26e-c | outcome-aware 第三头（headC）+ 类别温度校准 | 直接监督 P(命中\|已发射) 能否把 launched 行 top-decile 命中率 lift 推过 1.35×（高于 E26e-b 1.223×）并 ρ≥+0.30 | ✅ | 3,111,384 行 + 4 sidecar join 100%；headC OOF（17,055 launched）：AUPRC 0.254/AUC 0.715；**outcome-lift top-decile 命中率 18.07% vs base 8.165% = 2.213×（CI 2.03–2.41）、十分位 ρ 0.988（CI 0.964–1.0）→ 预注册 PASS**；类别温度：headB global T 0.7581、logloss 0.09062→0.07998；headC T 1.0538、ECE 0.0084→0.0070 |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
 ### E27 · 中队状态九流（血量 / 逐机油门 / 消耗品 / 坠机）✅
@@ -663,6 +664,76 @@
   outcome_{apac,eu,na,own}.jsonl, export_*.log}`；脚本 `scripts/experiments/
   torpedo_outcome_lift.py`（numpy-only，含 --selftest）；预注册 `e26e-b-preregistration.md`
   （含 join 稳健性/terminalNear secondary 的运行前与运行后透明披露）。
+### E26e-c · outcome-aware 第三头（headC）+ 类别温度校准（**PASS**：headC launched top-decile 命中率 lift 2.213×、ρ 0.988）
+
+- **问题（预注册 `out/torpedo_model/e26e-c-preregistration.md`，先落盘后跑）**：E26e-b 结论
+  MIXED——headB 排序专家点击很强（十分位 ρ 0.952）但 launched 行 top-decile 命中率 lift
+  1.2234× 未过 1.25× 线。本任务给模型一个**直接 outcome 监督**的第三头
+  **headC = P(torpHits>0 | launched)**（只在 labelB==1 行上用 BCE 训练），验证它能否把
+  outcome 排序推过预注册的 **1.35×** 线；outcome **只进 headC**，不进 headB 标签/损失，
+  不改 E26d/E26e-b 验收线。
+- **实现（脚本内本地 ThreeHeadDeepSets，`train_fire_model.py` 未改）**：三头 DeepSets
+  = E26 TwoHead 结构 + `head_c`；headA/B 损失不变，headC 只加在 launched 行；总损失
+  = lossA + lossB + lossC（等权，先验登记）。`--outcome` 4 sidecar 逐行对齐（行数必须
+  相等；replayId/t(±1e-3)/shipId 三重校验，mismatch 立即报告）；`--save-oof` 增
+  `probC/labelC`。不带 flag 时训练路径与 E26e-a 逐位兼容。
+- **数据/质量**：3,111,384 行 / 2,215 局；sidecar join **100.000%**（apac/eu/na/own
+  1,021,498/1,432,164/486,859/170,863，mismatch 0、缺字段 0）；launched 17,055 行，
+  **labelB=1 但 firedFish=0：0 行**；headC 正例（行级 any-hit）**2,192**（12.85%）；
+  terminalNear 正值行 10,196。5 折 GroupKFold seed 0，hidden 192 / batch 4096 /
+  12 epochs / lr 1e-3 / smoothing 0.05，node3 CUDA；训练 237.5 s（5 折 46.9–48.8 s）。
+- **headC OOF（launched 行）**：AUPRC **0.253975** / AUC **0.715340** / logloss 0.347997 /
+  Brier 0.104740 / ECE 0.008401（base 0.128525；5 折外 AUPRC 0.224–0.295、AUC 0.696–0.730）。
+  headC 概率**本身已接近校准**（ECE 0.008 vs headB 0.025）。
+- **outcome-lift（launched 行，fish-level，`--prob-key C`）**：
+
+  | 指标 | 值 | 预注册线 | 判定 |
+  |---|---|---|---|
+  | top-decile fish 命中率 | **18.07%**（base 8.165%） = **2.213×** | ≥1.35× | **✓** |
+  | 十分位 Spearman(meanP, hitRate) | **0.9879**（CI 0.964–1.0） | ≥+0.30 且 CI 排除 0 | **✓** |
+  | bootstrap lift 95% CI | [2.030, 2.412] | — | — |
+  | top-bottom 命中率差 | 17.56 pp（18.07% → 0.50%） | — | 描述 |
+  | HP-loss/鱼 top vs bottom 十分位 | **1716 vs 10（166×）** | — | 描述（序数代理） |
+
+  十分位命中率总体下行（3→4 档 10.08<10.26 一处小回调）：18.07/12.54/10.08/10.26/8.38/7.16/6.26/3.66/1.75/0.50%。
+  **判定：PASS**（join 100% ✓、lift 2.213 ≥1.35 ✓、ρ 0.988 ≥0.30 ✓、CI [0.964,1.0] 排除 0 ✓）。
+- **与 E26e-b headB 对照（同一 npz、同 sidecar、同评估代码）**：headB outcome lift
+  **1.2311×**（ρ 0.952，仍 mixed，<1.25）；combined = `sqrt(probB*probC)` **1.9821×**
+  （ρ 1.0，CI [1.804,2.151]，预注册 secondary，也过 1.35 线但**不参与判定**）。
+  → outcome 监督直接优化结果排序，明显强于“排序专家点击”的 headB。
+- **headB 影响（共享 trunk，如实记录）**：加入 headC 后 headB OOF AUPRC **0.032733**
+  = **2.0197×base**、top-decile launch lift **2.349** → 仍过 E26d 验收线（PASS），但比
+  E26e-b 的 headB（0.037051 = 2.286×base、top-lift 2.662、AUC 0.7084）略弱（AUC
+  0.6828、logloss 0.09062）；headA OOF AUPRC 0.999934（较 E26e-b 0.999887 提升）。
+- **按类 headC outcome lift / ρ（launched 行）**：DD 10,949 行 / 49,482 fish / 4,159 hits
+  （base 8.41%，**2.180×**，ρ 0.988）；CL/CA 5,009 / 18,391 / 1,367（7.43%，**2.273×**，
+  ρ 0.988）；BB 996 / 3,568 / 281（7.88%，**2.676×**，ρ 0.912）；SS 101 / 252 / 47
+  （18.65%，1.100×，ρ 0.467，**样本不足仅描述**）。
+- **按 region**：apac 5,489 / 23,257 / 1,915（8.23%，**2.271×**，ρ 0.988）；eu 7,937 /
+  33,853 / 2,637（7.79%，**2.176×**，ρ 0.988）；na 2,672 / 11,197 / 826（7.38%，
+  **2.036×**，ρ 0.964）；own 957 / 3,386 / 476（14.06%，**1.894×**，ρ 0.867）——四区一致强正。
+- **类别温度校准（secondary，描述）**：
+  - headB：global **T=0.7581**（≈E26e-a 的 0.7586，复现性一致），logloss 0.09062→**0.07998**、
+    Brier 0.016456→**0.015845**、ECE 0.02493→**0.00037**；per-class T：BB 0.703 / CL 0.730 /
+    DD 0.788 / SS 0.826，各类 logloss 均降（如 DD 0.11840→0.10926，SS 0.15171→0.14509）、
+    ECE 降到 ~0.0002–0.0006。
+  - headC：global **T=1.0538**，logloss 0.34800→**0.34756**、Brier 0.10474→0.10472、
+    ECE 0.00840→**0.00697**；per-class T：DD 1.033 / CL 1.091 / BB 1.087 / SS 0.989，
+    改善幅度小（headC 本身已校准），SS（101 行）仅描述。
+  - 结论：类别温度对 headB 的系统性校准收益最大（ECE 降 98%）；headC 的收益小，说明
+    outcome 监督的 head 同时学到了较准的概率。
+- **局限**：命中仍是**代理**（ShotKillEvent 终点 + 120 units + HP drop 覆盖；HP 采样稀疏、
+  交叉火力高估伤害、服务器 damageStat 仅录像者/15.8+ 未逐条对齐）；120 s/300 s/120 units
+  为冻结近似；headC 与 headB 共享 trunk，headC 训练让 headB 排序略降（仍过线）；SS 仅
+  101 行、na/own 样本薄；outcome 只用于 headC（不进 headB），未做端上部署/概率分级。
+- **下一步（E26e-d）**：click-level 序列标签与真实管位/DoT/命中几何特征；outcome-weighted
+  ranking / 双头联合排序（headC 排序 + headB 触发）；per-class headC 校准与端上温度后处理
+  （T 可在 Rust 侧 sigmoid(logit/T) 实现，另立预注册）；更大 SS/BB 样本；命中结果标签
+  （shotKills join）与 server damageStat 的小子集校准。
+- **产物**：`out/torpedo_model/e26e-c/{e26e_c_oof.npz（38.7MB）, e26e_c_metrics.json,
+  e26e_c_train.log, outcome_lift_B.json, outcome_lift_C.json, outcome_lift_combined.json}`；
+  node3 `/mnt/work/wowsp-kots/e26e-c/{code,run,outcome}`；预注册
+  `out/torpedo_model/e26e-c-preregistration.md`（含脚本 sha 冻结值）。
 ## 目标路线图（G1–G5）
 
 | Goal | 内容 | 完成标准 | 状态 |

@@ -169,6 +169,7 @@ def load_oof(path: Path) -> dict:
         raise SystemExit("[e26b] OOF npz missing keys: " + repr(missing))
     return {
         "probB": z["probB"].astype(np.float64),
+        "probC": z["probC"].astype(np.float64) if "probC" in z.files else None,
         "labelB": z["labelB"].astype(np.float64),
         "labelA": z["labelA"].astype(np.float64),
         "classCode": z["classCode"],
@@ -488,6 +489,22 @@ def run(args) -> int:
     labelA = oof["labelA"][target_idx]
     labelB = oof["labelB"][target_idx]
     probB = oof["probB"][target_idx]
+    probC = oof.get("probC")
+    probC = probC[target_idx] if probC is not None else None
+    prob_key = getattr(args, "prob_key", "B")
+    if prob_key == "B":
+        score = probB
+        score_def = "probB (headB launch probability)"
+    elif prob_key == "C":
+        if probC is None:
+            raise SystemExit("[e26b] --prob-key C needs probC in the OOF npz (E26e-c --head-c run)")
+        score = probC
+        score_def = "probC (headC P(torpHits>0 | launched))"
+    else:
+        if probC is None:
+            raise SystemExit("[e26b] --prob-key combined needs probB+probC in the OOF npz")
+        score = np.sqrt(probB * probC)
+        score_def = "combined = sqrt(probB * probC)"
     class_code = oof["classCode"][target_idx]
     region_code = oof["regionCode"][target_idx]
     group_code = oof["groupCode"][target_idx]
@@ -512,7 +529,7 @@ def run(args) -> int:
           "; firedFish sum " + format(int(fired_launched.sum()), ","), flush=True)
     if launched.sum() == 0:
         raise SystemExit("[e26b] no joined launched rows — check sidecar/order")
-    prob = probB[launched]
+    prob = score[launched]
     fired = j["fired"][launched]
     hits = j["hits"][launched]
     hp = j["hp"][launched]
@@ -520,8 +537,10 @@ def run(args) -> int:
     terminal_launched = j["terminalNear"][launched]
     analysis = analyze_launched(prob, fired, hits, hp, terminal_near=terminal_launched)
     boot = bootstrap_cluster(prob, fired, hits, hp, groups, args.bootstrap, args.seed)
-    pass_lift = bool(analysis["topDecileLift"] is not None and analysis["topDecileLift"] >= PREREG_TOPDECILE_LIFT)
-    pass_rho = bool(analysis["spearmanDecile"] is not None and analysis["spearmanDecile"] >= PREREG_SPEARMAN)
+    min_lift = float(getattr(args, "min_lift", PREREG_TOPDECILE_LIFT))
+    min_spearman = float(getattr(args, "min_spearman", PREREG_SPEARMAN))
+    pass_lift = bool(analysis["topDecileLift"] is not None and analysis["topDecileLift"] >= min_lift)
+    pass_rho = bool(analysis["spearmanDecile"] is not None and analysis["spearmanDecile"] >= min_spearman)
     pass_ci = bool(boot["spearmanExcludesZero"])
     if not join_info["passed"]:
         verdict = "fail"
@@ -534,16 +553,17 @@ def run(args) -> int:
     per_class = {}
     for code, name in enumerate(oof["classNames"]):
         m = launched & (class_code == code)
-        rep = stratum_report(m, probB, j["fired"], j["hits"], j["hp"], terminal_near=j["terminalNear"])
+        rep = stratum_report(m, score, j["fired"], j["hits"], j["hp"], terminal_near=j["terminalNear"])
         per_class[name] = rep if rep is not None else {"rows": int(m.sum()), "insufficient": True}
     per_region = {}
     for code, name in enumerate(oof["regionNames"]):
         m = launched & (region_code == code)
-        rep = stratum_report(m, probB, j["fired"], j["hits"], j["hp"], terminal_near=j["terminalNear"])
+        rep = stratum_report(m, score, j["fired"], j["hits"], j["hp"], terminal_near=j["terminalNear"])
         per_region[name] = rep if rep is not None else {"rows": int(m.sum()), "insufficient": True}
     can = joined & (labelA == 1.0) & np.isfinite(labelB)
     agreement = {
         "rows": int(can.sum()),
+        "note_key": "always headB (probB) vs labelB, independent of --prob-key",
         "auprc": float(average_precision(labelB[can], probB[can])) if can.sum() else None,
         "roc_auc": float(roc_auc(labelB[can], probB[can])) if can.sum() else None,
         "logloss": float(log_loss(labelB[can], probB[can])) if can.sum() else None,
@@ -553,6 +573,10 @@ def run(args) -> int:
         "_lineage": "E26e-b torpedo outcome-lift evaluation (E26e-a OOF + Rust outcome sidecar)",
         "inputs": {
             "oof": str(oof_path),
+            "prob_key": prob_key,
+            "score_definition": score_def,
+            "min_lift": float(getattr(args, "min_lift", PREREG_TOPDECILE_LIFT)),
+            "min_spearman": float(getattr(args, "min_spearman", PREREG_SPEARMAN)),
             "sidecars": [str(p) for p in sidecars],
             "selection": sel_info,
             "bootstrap": int(args.bootstrap),
@@ -605,10 +629,11 @@ def run(args) -> int:
     lift = analysis["topDecileLift"]
     rho = analysis["spearmanDecile"]
     rho_row = analysis["spearmanRow"]
+    print("[e26b] score " + str(prob_key) + " (" + score_def + ")")
     print("[e26b] base hitRate " + str(base_rate) + " (fired " +
           format(analysis["firedFish"], ",") + " / hits " + format(analysis["hits"], ",") + ")", flush=True)
-    print("[e26b] top-decile lift " + str(lift) + " (need >= " + str(PREREG_TOPDECILE_LIFT) + ")", flush=True)
-    print("[e26b] spearman decile " + str(rho) + " (need >= " + str(PREREG_SPEARMAN) +
+    print("[e26b] top-decile lift " + str(lift) + " (need >= " + str(min_lift) + ")", flush=True)
+    print("[e26b] spearman decile " + str(rho) + " (need >= " + str(min_spearman) +
           "); row " + str(rho_row) + "; 95% CI lift " + str(boot["lift95"]) +
           " rho " + str(boot["spearman95"]), flush=True)
     print("[e26b] VERDICT " + verdict.upper() + " (join gate " + str(join_info["passed"]) + ")", flush=True)
@@ -773,6 +798,12 @@ def main(argv=None) -> int:
     p.add_argument("--max-replays", type=int, default=0, help="P0: keep first N replay groups")
     p.add_argument("--lenient-join", action="store_true",
                    help="tolerate sidecar rows without replayId/t/shipId (counted, not fatal)")
+    p.add_argument("--prob-key", choices=["B", "C", "combined"], default="B",
+                   help="score to evaluate: headB, headC (E26e-c), or combined=sqrt(probB*probC)")
+    p.add_argument("--min-lift", type=float, default=PREREG_TOPDECILE_LIFT,
+                   help="pre-registered top-decile lift threshold (E26e-c headC uses 1.35)")
+    p.add_argument("--min-spearman", type=float, default=PREREG_SPEARMAN,
+                   help="pre-registered decile Spearman threshold")
     p.add_argument("--selftest", action="store_true")
     args = p.parse_args(argv)
     if args.selftest:
