@@ -437,11 +437,12 @@
     "attacking": "攻撃中",
     "followingHull": "航空機なし — 艦体を追従中",
     "boost": "ブースト",
-    "cons20": "エンジンブースト",
-    "cons21": "戦術戦闘機",
-    "cons22": "消火",
     "consOther": "消耗品",
-    "cons42": "発煙"
+    "consForsage": "エンジンブースト",
+    "consFighters": "戦術戦闘機",
+    "consExtinguisher": "消火",
+    "consSmoke": "発煙",
+    "consRegen": "飛行再編"
   },
   "classes": {
     "battleship": "戦艦",

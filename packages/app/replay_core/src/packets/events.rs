@@ -1182,19 +1182,33 @@ pub(super) fn decode_squadron_throttle(
 /// `u64 planeId, u8 consumableType` — 9 bytes. The def names
 /// CONSUMABLE_USAGE_PARAMS but the 14.5 wire carries ONE byte (divergence
 /// documented at the type); `kind` distinguishes the lifecycle half the
-/// dispatching arm saw.
+/// dispatching arm saw. `lesta` is the replay's container family
+/// (LayoutProfile::lesta, threaded like every other branch-gated decoder
+/// flag) and selects the E27d normalization table: the WG and Lesta wire id
+/// spaces forked (only 42 coincides — WG 20/21/22 vs Lesta 21/22/23), so the
+/// byte is normalized HERE, at the decode boundary, into
+/// `SquadronConsumableEvent::semantic` while `consumable_type` keeps the
+/// raw byte verbatim.
 pub(super) fn decode_squadron_consumable(
     time: f32,
     args: &[u8],
     kind: wowsp_tauri_shared::SquadronConsumableKind,
+    lesta: bool,
 ) -> Option<wowsp_tauri_shared::SquadronConsumableEvent> {
     if args.len() != 9 {
         return None;
     }
+    let consumable_type = args[8];
+    let semantic = if lesta {
+        wowsp_tauri_shared::squadron_consumable_type_lesta(consumable_type)
+    } else {
+        wowsp_tauri_shared::squadron_consumable_type_wg(consumable_type)
+    };
     Some(wowsp_tauri_shared::SquadronConsumableEvent {
         time,
         plane_id: u64::from_le_bytes(read_bytes(args, 0)?),
-        consumable_type: args[8],
+        consumable_type,
+        semantic,
         kind,
     })
 }

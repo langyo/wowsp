@@ -651,10 +651,13 @@ pub(super) fn walk_frames(
                 squadron_throttle.push(e);
             }
         } else if m.avatar_squadron_consumable_used == Some(call.method_id) {
+            // E27d: profile.lesta picks the enum-normalization table (the
+            // WG/Lesta wire id spaces forked — see decode_squadron_consumable).
             if let Some(e) = decode_squadron_consumable(
                 call.time,
                 &call.args,
                 wowsp_tauri_shared::SquadronConsumableKind::Used,
+                profile.lesta,
             ) {
                 squadron_consumables.push(e);
             }
@@ -663,6 +666,7 @@ pub(super) fn walk_frames(
                 call.time,
                 &call.args,
                 wowsp_tauri_shared::SquadronConsumableKind::StopWorking,
+                profile.lesta,
             ) {
                 squadron_consumables.push(e);
             }
