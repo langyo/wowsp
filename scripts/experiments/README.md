@@ -56,6 +56,13 @@
 - **证伪记录**：槽位+20 假设（id=slot+20）被约克城盘击毁——同一 slot2 在翔鹤战斗机（灭火）出 22、在约克城 DB（拉烟）出 42；全局枚举假设同样不成立（42 覆盖 10.0s 与 12.6s 两种窗长）。id 的本体论最终按「消耗品实体分组」落名，其中 42 与 22 的区分度由中队配置联表保证。
 - **诚实边界**：约克城 TB（PAAB218）在 14.5 录像里 22 号窗同为 5.0s，但 15.9 GameParams 该槽已是 activeManeuvering(12s)——14.5 对局装配与现行 GameParams 的版本漂移，无法用本地数据裁决，故 22 的文案定为「灭火/防御类」而非断言具体实体。
 - **落地**：`CONSUMABLE_LABEL`（planeFollow.ts）补 42 + 8 语言真名（引擎加力/战术战斗机/灭火/拉烟）；探针与配对测试随库保留。
+
+### E27c · 莱服九方法钉死 + 消耗品枚举分叉 + 多重巡航高度侦察 ✅
+
+- **莱服九方法 id**：对本地 Korabli 安装（25.8 期 build 8871067）的 entity defs 跑 `exposed_index.py` —— 六个锚点（updateSquadron 144 / addSquadron 116 / artillery 124 / shotKills 126 / damageStat 166 / achievements 160）与已出货莱服表逐一吻合，故九个中队状态 id 为 def 权威：health=85 / planesHealth=95 / damage=87 / throttle=66 / consumableUsed=69 / stopWorking=71 / planeDeath=146 / notify=65 / deactivate=63。已钉入 `method_tables_lesta.rs`（replay-unvalidated：本地无 CV 的 .korablireplay，第一盘到手后跑 `dump_squadron_state_methods` 复核即可）。
+- **消耗品枚举分叉（重要）**：莱服 `battle.xml` 独有 `CONSUMABLE_TYPES` 枚举（56 项，WG 客户端没有）——21=HEAL_FORSAGE、22=CALL_FIGHTERS、23=REGENERATE_HEALTH（飞行重整）、42=PLANE_SMOKE_GENERATOR、50=SHIELD（百慕大盾）、33=GO_DEEP、41=SUBMARINE_LOCATOR。其中 **42 与 WG 实证重合**（拉烟），但 20/21/22 与 WG 线上 id **错位**（WG 实证：20=加力 5s、21=战术战斗机 60s、22=灭火 5s）→ 两分支 id 空间已分叉；**莱服录像的消耗品 chips 必须查莱服表**，前端在拿到莱服 CV 录像验证 wire 字节用哪个空间前保持 WG 映射不动。
+- **空投补给确认（官方口径）**：用户提供的官方信息确认 PCY084/085/086（tacticalBuffHealConsumableReload / tacticalFireExtinguishing / tacticalBuffHeal）是**直接空投给指定友舰的补给**（灭火/维修小组）——E27b 中「版本漂移」的措辞据此修正：约克城 TB 的 5s 窗就是空投灭火的作业时长，「灭火类」标签成立。
+- **多重巡航高度侦察**：莱服 25.8 封测的「支援中队」（巡逻侦察机/烟雾布设机/截击机——战术模式召唤、不直接操控，[官方日志译文](https://ski.ink/blog/18-wow-carrier-support-25-8/)）在本地 Korabli defs 中**无高度机制脚手架**（Avatar.def/全 defs 无 altitude/flightLevel 关键词；25.8 期 build 早于该机制）。多重巡航高度（高空=防空免疫+无视野 / 低空=攻击姿态+可被攻击+视野+时限）尚在封闭测试、未进任何本地客户端。**监控计划**：与潜艇深度同构的假设（新 `SQUADRON_ALTITUDE_STATE` 枚举 + receive_* 方法或属性流；参照 DEPTH_STATE 的 -1/0/1/2/3 模式）——任一分支的公开/超测录像到手后：① 重新提取 defs 跑 def-diff 找新方法/属性；② `dump_squadron_state_methods` 探针换 id 扫描。基础设施已就绪。
 - **语料**：King of the Sea XIX 全量公开录像爬取入册（用户授权；四赛区
   618 场 / 1047 局 / 2054 个 `.wowsreplay`，HEAD 实测 3.4GB、magic 全验，
   归档 `replay-archive/kots-xix/<region>/`）——语料 163 → **2217 局**；

@@ -44,10 +44,17 @@
 //!   ever fires inside a recording.
 //!
 //! The E27 squadron-state fields (health / planesHealth / damage / throttle
-//! / consumables / planeDeath / notify / deactivate) are `None` here: no
-//! Lesta exposed-index computation has been run for them yet, so those
-//! streams decode empty on `.korablireplay` containers until the ids are
-//! pinned from a capture.
+//! / consumables / planeDeath / notify / deactivate) are pinned from the
+//! local Korabli defs (E27c): def-authoritative, replay-unvalidated until a
+//! carrier `.korablireplay` lands locally. NOTE for the frontend mapping:
+//! Lesta's `battle.xml` ships a `CONSUMABLE_TYPES` enum the WG client
+//! lacks (21=HEAL_FORSAGE, 22=CALL_FIGHTERS, 23=REGENERATE_HEALTH,
+//! 42=PLANE_SMOKE_GENERATOR, 50=SHIELD, ...) whose numbering DIVERGES from
+//! the WG wire ids fingerprinted in E27b (WG: 20=forsage, 21=tactical
+//! fighters, 22=extinguisher, 42=smoke — only 42 coincides). Lesta-replay
+//! consumable chips must therefore join against the LESTA table, not the WG
+//! one, once a capture validates which space the wire byte uses (see E27c
+//! in scripts/experiments/README.md).
 
 use super::method_tables::MethodIds;
 
@@ -70,17 +77,25 @@ pub static LESTA_METHOD_IDS: MethodIds = MethodIds {
     avatar_on_chat_message: -1,
     avatar_on_achievement_earned: 160,
     avatar_on_arena_state_received: 156,
-    // E27 squadron-state ids: unpinned on Lesta (see the module docs) — the
-    // Option gate leaves every one of those streams empty.
-    avatar_receive_squadron_health: None,
-    avatar_receive_squadron_planes_health: None,
-    avatar_receive_squadron_damage: None,
-    avatar_receive_change_throttle_mode: None,
-    avatar_squadron_consumable_used: None,
-    avatar_squadron_consumable_stop_working: None,
-    avatar_receive_plane_death: None,
-    avatar_receive_squadron_notify: None,
-    avatar_receive_deactivate_squadron: None,
+    // E27 squadron-state ids (E27c, 2026-11-08): computed by running the
+    // exposed-index rule (scripts/experiments/exposed_index.py) over the
+    // LOCAL Korabli install's entity defs (25.8-era build 8871067) — the
+    // same computation reproduces every pinned anchor above exactly
+    // (updateSquadron 144, addSquadron 116, artillery 124, shotKills 126,
+    // damageStat 166, achievements 160), so these nine are def-authoritative
+    // for the Lesta branch. Still replay-unvalidated: no local
+    // .korablireplay carries carrier play, so the first such capture should
+    // re-run dump_squadron_state_methods (with these ids) to confirm before
+    // trusting the streams downstream.
+    avatar_receive_squadron_health: Some(85),
+    avatar_receive_squadron_planes_health: Some(95),
+    avatar_receive_squadron_damage: Some(87),
+    avatar_receive_change_throttle_mode: Some(66),
+    avatar_squadron_consumable_used: Some(69),
+    avatar_squadron_consumable_stop_working: Some(71),
+    avatar_receive_plane_death: Some(146),
+    avatar_receive_squadron_notify: Some(65),
+    avatar_receive_deactivate_squadron: Some(63),
 };
 
 #[cfg(test)]
@@ -110,16 +125,19 @@ mod tests {
         assert_eq!(t.avatar_on_arena_state_received, 156);
         // Chat is disabled on Lesta (-1 matches no wire id).
         assert_eq!(t.avatar_on_chat_message, -1);
-        // Every E27 squadron-state id stays unpinned on Lesta for now — a
-        // pinned id here without a capture behind it would decode garbage.
-        assert_eq!(t.avatar_receive_squadron_health, None);
-        assert_eq!(t.avatar_receive_squadron_planes_health, None);
-        assert_eq!(t.avatar_receive_squadron_damage, None);
-        assert_eq!(t.avatar_receive_change_throttle_mode, None);
-        assert_eq!(t.avatar_squadron_consumable_used, None);
-        assert_eq!(t.avatar_squadron_consumable_stop_working, None);
-        assert_eq!(t.avatar_receive_plane_death, None);
-        assert_eq!(t.avatar_receive_squadron_notify, None);
-        assert_eq!(t.avatar_receive_deactivate_squadron, None);
+        // E27c: the nine squadron-state ids, def-derived from the local
+        // Korabli install (exposed_index.py reproduces every anchor above
+        // exactly). Replay-unvalidated until a carrier .korablireplay lands
+        // — these asserts pin the def computation so any regeneration drift
+        // is caught, NOT a wire validation.
+        assert_eq!(t.avatar_receive_squadron_health, Some(85));
+        assert_eq!(t.avatar_receive_squadron_planes_health, Some(95));
+        assert_eq!(t.avatar_receive_squadron_damage, Some(87));
+        assert_eq!(t.avatar_receive_change_throttle_mode, Some(66));
+        assert_eq!(t.avatar_squadron_consumable_used, Some(69));
+        assert_eq!(t.avatar_squadron_consumable_stop_working, Some(71));
+        assert_eq!(t.avatar_receive_plane_death, Some(146));
+        assert_eq!(t.avatar_receive_squadron_notify, Some(65));
+        assert_eq!(t.avatar_receive_deactivate_squadron, Some(63));
     }
 }
