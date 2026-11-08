@@ -887,7 +887,13 @@ export default defineComponent({
                 </section>
 
                 {/* ── Battle heatmap (battles per local day, scope-aware;
-                    hidden entirely when no replay was ever scanned) ──────── */}
+                    hidden entirely when no replay was ever scanned).
+                    hikari OWNS the strip: its auto-hiding overlay scrollbar
+                    is the only bar, the newest day is focused first (the
+                    component's anchor default "end") and the shared edge
+                    glow marks the side that still hides days. The host only
+                    supplies the series and the year switcher — do not
+                    re-own the heatmap's overflow here. ──────────────────── */}
                 {store.battles && totalBattles.value > 0 ? (
                   <section class="play-section">
                     <div class="play-section__head">
