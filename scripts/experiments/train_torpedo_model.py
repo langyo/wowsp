@@ -199,6 +199,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="E26e-e: loss weight for headB (default 1.0 = E26e-c bit-compatible)",
     )
     p.add_argument(
+        "--head-c-target",
+        choices=["any", "fish_rate", "fish_weighted"],
+        default="any",
+        help="E26e-h: headC target (any = row-level any-hit, E26e-g bit-compatible; "
+        "fish_rate = torpHits/torpFiredFish soft target; fish_weighted = any-hit BCE weighted by clamp(fired,1,20))",
+    )
+    p.add_argument(
         "--head-c-only",
         action="store_true",
         help="E26e-d: standalone single-head model trained ONLY on launched rows (no shared trunk with headA/B)",
@@ -860,6 +867,45 @@ def bce_smoothed_loss(bce, logits, target, smooth_eps: float):
     return bce(logits, target * (1.0 - smooth_eps) + 0.5 * smooth_eps)
 
 
+HEAD_C_TARGETS = ("any", "fish_rate", "fish_weighted")
+HEAD_C_FISH_WEIGHT_CLAMP = (1.0, 20.0)
+
+
+def head_c_targets(hits, fired, target: str):
+    """Map (torp_hits, torp_fired_fish) to the headC training target + row weight.
+
+    E26e-h: headC is trained with row-level any-hit BCE while outcome-lift is
+    fish-level (weighted by fired fish), so a salvo and a single-fish row carry
+    the same loss. Alternatives:
+      * fish_rate   -> soft target torpHits/torpFiredFish (BCE with soft labels);
+      * fish_weighted -> any-hit target with per-row BCE weight clamp(fired,1,20).
+    Default "any" is bit-compatible with E26e-g. Returns (target, weights|None, info).
+    """
+    hits = np.asarray(hits, dtype=np.float64)
+    fired = np.asarray(fired, dtype=np.float64)
+    fired_safe = np.where(np.isfinite(fired), fired, 0.0)
+    fired_safe = np.where(fired_safe > 0.0, fired_safe, 1.0)
+    info = {"target": target}
+    if target == "fish_rate":
+        y = np.clip(hits / fired_safe, 0.0, 1.0).astype(np.float32)
+        info["meanSoftTarget"] = float(y.mean()) if len(y) else None
+        info["softTargetMin"] = float(y.min()) if len(y) else None
+        info["softTargetMax"] = float(y.max()) if len(y) else None
+        return y, None, info
+    if target == "fish_weighted":
+        lo, hi = HEAD_C_FISH_WEIGHT_CLAMP
+        w = np.clip(fired_safe, lo, hi).astype(np.float32)
+        y = (hits > 0).astype(np.float32)
+        info["weightClamp"] = [lo, hi]
+        info["weightMean"] = float(w.mean()) if len(w) else None
+        info["weightMax"] = float(w.max()) if len(w) else None
+        info["rowsClampedHigh"] = int((fired_safe > hi).sum())
+        return y, w, info
+    if target != "any":
+        raise SystemExit("[e26] unknown --head-c-target " + repr(target) + "; choices " + str(list(HEAD_C_TARGETS)))
+    return (hits > 0).astype(np.float32), None, info
+
+
 def train_fold(
     *,
     torch,
@@ -880,6 +926,7 @@ def train_fold(
     y_c=None,
     c_mask_all=None,
     use_head_c: bool = False,
+    c_weight_all=None,
 ):
     """Train one fold, return (p_a_val, p_b_val, p_c_val, epoch_losses, seconds).
 
@@ -947,7 +994,11 @@ def train_fold(
             if use_head_c:
                 yc_b = y_c[idx].to(device)
                 cm = c_mask_all[idx].to(device)
-                loss_c = (bce_c(lc, yc_b) * cm).sum() / cm.sum().clamp(min=1.0)
+                if c_weight_all is None:
+                    loss_c = (bce_c(lc, yc_b) * cm).sum() / cm.sum().clamp(min=1.0)
+                else:
+                    wc = c_weight_all[idx].to(device)
+                    loss_c = (bce_c(lc, yc_b) * cm * wc).sum() / (cm * wc).sum().clamp(min=1.0)
                 loss = (loss + loss_c) if w_c == 1.0 else (loss + w_c * loss_c)
             opt.zero_grad()
             loss.backward()
@@ -1246,15 +1297,32 @@ def run_training(args: argparse.Namespace) -> dict:
         outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
     if args.head_c and outcome is None:
         raise SystemExit("[e26] --head-c requires --outcome (4 sidecar JSONL in --data order)")
+    if getattr(args, "head_c_target", "any") != "any" and not args.head_c:
+        raise SystemExit(
+            "[e26] --head-c-target " + str(args.head_c_target) + " requires --head-c (or --head-c-only)"
+        )
     label_c_np = None
     c_mask_np = None
+    y_c_train_np = None
+    c_weight_np = None
+    hc_target_info = None
     if args.head_c:
         label_c_np = (outcome["hits"] > 0).astype(np.float32)
         c_mask_np = (data["label_b"] == 1.0) & (outcome["fired"] >= 1)
+        y_c_train_np, c_weight_np, hc_target_info = head_c_targets(
+            outcome["hits"], outcome["fired"], getattr(args, "head_c_target", "any")
+        )
+        if c_mask_np is not None and int(c_mask_np.sum()) > 0:
+            if c_weight_np is not None:
+                hc_target_info["launchedWeightMean"] = _num(float(c_weight_np[c_mask_np].mean()))
+                hc_target_info["launchedWeightMax"] = _num(float(c_weight_np[c_mask_np].max()))
+            elif hc_target_info["target"] == "fish_rate":
+                hc_target_info["launchedSoftTargetMean"] = _num(float(y_c_train_np[c_mask_np].mean()))
         log("[e26] headC: launched rows " + format(int(c_mask_np.sum()), ",") +
             " / positives " + format(int(label_c_np[c_mask_np].sum()), ",") +
             " (hit rate " + format(float(label_c_np[c_mask_np].mean()), ".4f") + ")" +
-            "; labelB==1 but fired==0: " + str(outcome["quality"]["launchedWithZeroFiredFish"]))
+            "; labelB==1 but fired==0: " + str(outcome["quality"]["launchedWithZeroFiredFish"]) +
+            "; target " + str(hc_target_info["target"]) + " " + json.dumps(hc_target_info, ensure_ascii=False))
 
     entity = torch.from_numpy(data["entity"])
     glob = torch.from_numpy(data["global"])
@@ -1267,9 +1335,12 @@ def run_training(args: argparse.Namespace) -> dict:
     # otherwise (the no-flag path must stay bit-compatible with E26e-a).
     y_c = None
     c_mask = None
+    c_weight = None
     if args.head_c:
-        y_c = torch.from_numpy(label_c_np)
+        y_c = torch.from_numpy(y_c_train_np)
         c_mask = torch.from_numpy(c_mask_np.astype(np.float32))
+        if c_weight_np is not None:
+            c_weight = torch.from_numpy(c_weight_np)
     if device.type == "cuda":
         # Move the whole corpus once (float16 entity keeps this ~2 GB) and free the
         # host copies; batches are cast to float32 on the GPU per step.
@@ -1282,6 +1353,8 @@ def run_training(args: argparse.Namespace) -> dict:
         if args.head_c:
             y_c = y_c.to(device)
             c_mask = c_mask.to(device)
+            if c_weight is not None:
+                c_weight = c_weight.to(device)
         # Free the host copies of the big arrays only — labels/classes/regions stay
         # on the host because the OOF metrics and per-class slices read them.
         data["entity"] = None
@@ -1335,6 +1408,7 @@ def run_training(args: argparse.Namespace) -> dict:
             y_c=y_c,
             c_mask_all=c_mask,
             use_head_c=args.head_c,
+            c_weight_all=c_weight,
         )
         p_a[val_idx] = fa
         p_b[val_idx] = fb
@@ -1437,6 +1511,8 @@ def run_training(args: argparse.Namespace) -> dict:
             "head_c": bool(args.head_c),
             "head_c_weight": float(getattr(args, "head_c_weight", 1.0)),
             "head_b_weight": float(getattr(args, "head_b_weight", 1.0)),
+            "head_c_target": str(getattr(args, "head_c_target", "any")),
+            "head_c_target_info": hc_target_info,
             "outcome_sidecars": [str(p) for p in args.outcome],
             "loss_weights": {
                 "A": 1.0,
@@ -1487,6 +1563,7 @@ def run_training(args: argparse.Namespace) -> dict:
             "load_seconds": round(load_s, 1),
             "attribute_coverage": attr_coverage,
             "click_coverage": click_coverage,
+            "head_c_target": hc_target_info,
         },
         "outcome": outcome["quality"] if outcome is not None else None,
         "split": {
@@ -1639,6 +1716,8 @@ def save_oof_npz(path: Path, data: dict, p_a: np.ndarray, p_b: np.ndarray, fold:
         "head_c": bool(p_c is not None),
         "head_c_weight": float(getattr(args, "head_c_weight", 1.0)),
         "head_b_weight": float(getattr(args, "head_b_weight", 1.0)),
+        "head_c_target": str(getattr(args, "head_c_target", "any")),
+        "head_c_fish_weight_clamp": list(HEAD_C_FISH_WEIGHT_CLAMP),
     }), dtype="U2048")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -2098,6 +2177,7 @@ def _standalone_oof_npz(path: Path, data: dict, p_c: np.ndarray, label_c: np.nda
         "replays": split["n_groups"],
         "class_counts": data["class_counts"],
         "region_counts": data["region_counts"],
+        "head_c_target": str(getattr(args, "head_c_target", "any")),
         "oof": metrics,
     }), dtype="U8192")
     np.savez_compressed(path, **payload)
@@ -2144,19 +2224,30 @@ def run_headc_only(args: argparse.Namespace) -> dict:
     outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
     label_c_np = (outcome["hits"] > 0).astype(np.float32)
     c_mask_np = (data["label_b"] == 1.0) & (outcome["fired"] >= 1)
+    y_c_train_np, c_weight_np, hc_target_info = head_c_targets(
+        outcome["hits"], outcome["fired"], getattr(args, "head_c_target", "any")
+    )
+    if int(c_mask_np.sum()) > 0:
+        if c_weight_np is not None:
+            hc_target_info["launchedWeightMean"] = _num(float(c_weight_np[c_mask_np].mean()))
+            hc_target_info["launchedWeightMax"] = _num(float(c_weight_np[c_mask_np].max()))
+        elif hc_target_info["target"] == "fish_rate":
+            hc_target_info["launchedSoftTargetMean"] = _num(float(y_c_train_np[c_mask_np].mean()))
     n_launched = int(c_mask_np.sum())
     n_pos = int(label_c_np[c_mask_np].sum())
     log(f"[e26] launched rows {n_launched:,} / positives {n_pos:,} "
         f"(row hit rate {float(label_c_np[c_mask_np].mean()):.4f}); "
-        f"labelB=1 but fired=0: {outcome['quality']['launchedWithZeroFiredFish']}")
+        f"labelB=1 but fired=0: {outcome['quality']['launchedWithZeroFiredFish']}; "
+        f"target {hc_target_info['target']} {json.dumps(hc_target_info, ensure_ascii=False)}")
     if n_launched == 0:
         raise SystemExit("[e26] no launched rows for --head-c-only")
 
     entity = torch.from_numpy(data["entity"])
     glob = torch.from_numpy(data["global"])
     mask = torch.from_numpy(data["mask"])
-    y_c = torch.from_numpy(label_c_np)
+    y_c = torch.from_numpy(y_c_train_np)
     c_mask_t = torch.from_numpy(c_mask_np.astype(np.float32))
+    c_weight = torch.from_numpy(c_weight_np) if c_weight_np is not None else None
     entity_dim = tfm.ENTITY_DIM_V2
     global_dim = int(glob.shape[1])
     if device.type == "cuda":
@@ -2165,6 +2256,8 @@ def run_headc_only(args: argparse.Namespace) -> dict:
         mask = mask.to(device)
         y_c = y_c.to(device)
         c_mask_t = c_mask_t.to(device)
+        if c_weight is not None:
+            c_weight = c_weight.to(device)
         data["entity"] = None
         data["global"] = None
         data["mask"] = None
@@ -2202,7 +2295,12 @@ def run_headc_only(args: argparse.Namespace) -> dict:
                 idx = perm[st : st + args.batch_size]
                 lc = model(entity[idx].float(), glob[idx].float(), mask[idx].float())
                 yc_b = y_c[idx].to(device)
-                loss = bce_smoothed_loss(bce_none, lc, yc_b, eps).mean()
+                el = bce_smoothed_loss(bce_none, lc, yc_b, eps)
+                if c_weight is None:
+                    loss = el.mean()
+                else:
+                    wc = c_weight[idx].to(device)
+                    loss = (el * wc).sum() / wc.sum().clamp(min=1.0)
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
@@ -2260,12 +2358,15 @@ def run_headc_only(args: argparse.Namespace) -> dict:
             "device": str(device), "torch": torch.__version__,
             "ship_classes": str(args.ship_classes), "ship_class_pack": class_pack_version,
             "trained_on": "labelB==1 & torpFiredFish>=1 rows only",
+            "head_c_target": str(getattr(args, "head_c_target", "any")),
+            "head_c_target_info": hc_target_info,
         },
         "data": {
             "rows": data["rows"], "launchedRows": n_launched,
             "positives": n_pos, "rowHitRate": _num(label_c_np[c_mask_np].mean()),
             "class_counts": data["class_counts"], "region_counts": data["region_counts"],
             "outcome": outcome["quality"],
+            "head_c_target": hc_target_info,
         },
         "split": {"mode": split["mode"], "folds": split["folds"], "replays": split["n_groups"],
                   "fold_sizes": [int((fold == f).sum()) for f in range(split["folds"])]},
@@ -3240,6 +3341,27 @@ def run_selftest() -> int:
     assert abs(ww.head_c_weight - 0.3) < 1e-12 and ww.head_b_weight == 1.0
     ww0 = parse_args(["--head-c-weight", "0"])
     assert ww0.head_c_weight == 0.0
+    # E26e-h: headC target contract (default any must stay bit-compatible).
+    ht0 = parse_args([])
+    assert ht0.head_c_target == "any"
+    assert parse_args(["--head-c-target", "fish_rate"]).head_c_target == "fish_rate"
+    assert parse_args(["--head-c-target", "fish_weighted"]).head_c_target == "fish_weighted"
+    hh = np.array([0.0, 1.0, 2.0, 3.0])
+    ff = np.array([0.0, 1.0, 4.0, 0.0])
+    ya_t, wa_t, ia_t = head_c_targets(hh, ff, "any")
+    assert np.array_equal(ya_t, np.array([0.0, 1.0, 1.0, 1.0], np.float32)) and wa_t is None
+    yr_t, wr_t, ir_t = head_c_targets(hh, ff, "fish_rate")
+    assert np.allclose(yr_t, np.array([0.0, 1.0, 0.5, 1.0], np.float32)), yr_t
+    assert wr_t is None and ir_t["target"] == "fish_rate"
+    assert 0.0 <= float(yr_t.min()) and float(yr_t.max()) <= 1.0
+    yw_t, ww_t, iw_t = head_c_targets(hh, ff, "fish_weighted")
+    assert np.array_equal(yw_t, np.array([0.0, 1.0, 1.0, 1.0], np.float32))
+    assert np.allclose(ww_t, np.array([1.0, 1.0, 4.0, 1.0], np.float32)), ww_t
+    assert iw_t["weightClamp"] == [1.0, 20.0]
+    _, w_big, _ = head_c_targets(np.array([1.0]), np.array([999.0]), "fish_weighted")
+    assert float(w_big[0]) == 20.0
+    _, w_nan, _ = head_c_targets(np.array([1.0]), np.array([np.nan]), "fish_weighted")
+    assert float(w_nan[0]) == 1.0
     # E26e-e: loss-weight flags (defaults stay bit-compatible with E26e-c).
     wd = parse_args([])
     assert wd.head_c_weight == 1.0 and wd.head_b_weight == 1.0
