@@ -144,6 +144,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--parity-rows", type=int, default=1000, help="final-fit: torch-vs-ORT fp32 parity rows")
     p.add_argument("--parity-vector-rows", type=int, default=200, help="final-fit: rows stored in parity_vectors.json")
     p.add_argument("--int8-eval-rows", type=int, default=100000, help="final-fit: rows for the int8-vs-fp32 metric sample")
+    p.add_argument(
+        "--save-oof",
+        default="",
+        help="E26e: save per-row OOF predictions + metadata to this .npz (float32 probs; training unchanged)",
+    )
+    p.add_argument(
+        "--calibrate",
+        nargs="?",
+        const="",
+        default=None,
+        metavar="NPZ",
+        help="E26e: temperature-calibrate an OOF npz (bare flag uses --save-oof; or pass the npz path)",
+    )
+    p.add_argument(
+        "--calibrate-out",
+        default="",
+        help="E26e: calibration_metrics.json path (default: next to the OOF npz)",
+    )
     p.add_argument("--metrics-out", default=None, help="write the full metrics JSON here")
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
@@ -1022,6 +1040,11 @@ def run_training(args: argparse.Namespace) -> dict:
         },
         "acceptance": acceptance,
     }
+    if args.save_oof:
+        metrics["protocol"]["save_oof"] = str(args.save_oof)
+        metrics["protocol"]["save_oof_summary"] = save_oof_npz(
+            Path(args.save_oof), data, p_a, p_b, fold, split, args
+        )
     return metrics
 
 
@@ -1058,6 +1081,267 @@ def print_report(metrics: dict) -> None:
           f"top-decile lift {acc['topDecileLift']} -> {acc['pass_lift']}; VERDICT {acc['verdict'].upper()}")
     print(f"total train seconds {metrics['training']['total_seconds']}")
 
+
+# ── E26e-a: OOF dump + temperature calibration ──────────────────────────────
+
+OOF_NPZ_VERSION = 1
+
+
+def oof_arrays(data: dict, p_a: np.ndarray, p_b: np.ndarray, fold: np.ndarray) -> dict:
+    """Compact per-row OOF payload (E26e). Probabilities stay float32; class and
+    region are int8 codes with the name tables alongside, so one npz carries
+    everything the calibration pass needs (no retraining, no row parsing)."""
+    class_names = sorted(set(data["class"].tolist()))
+    class_code = {name: i for i, name in enumerate(class_names)}
+    region_names = sorted(set(data["region"].tolist()))
+    region_code = {name: i for i, name in enumerate(region_names)}
+    payload = {
+        "probA": np.asarray(p_a, dtype=np.float32),
+        "probB": np.asarray(p_b, dtype=np.float32),
+        "labelA": np.asarray(data["label_a"], dtype=np.float32),
+        "labelB": np.asarray(data["label_b"], dtype=np.float32),
+        "fold": np.asarray(fold, dtype=np.int8),
+        "rowIndex": np.arange(data["rows"], dtype=np.int32),
+        "shipId": np.asarray(data["ship_id"], dtype=np.int64),
+        "t": np.asarray(data["t"], dtype=np.float32),
+        "classCode": np.array([class_code[str(c)] for c in data["class"]], dtype=np.int8),
+        "classNames": np.array(class_names, dtype="U16"),
+        "regionCode": np.array([region_code[str(r)] for r in data["region"]], dtype=np.int8),
+        "regionNames": np.array(region_names, dtype="U16"),
+        "groupCode": np.asarray(data["group"], dtype=np.int32),
+        "groupNames": np.array(data["group_names"], dtype="U128"),
+    }
+    return payload
+
+
+def save_oof_npz(path: Path, data: dict, p_a: np.ndarray, p_b: np.ndarray, fold: np.ndarray, split: dict, args) -> dict:
+    """Write the OOF payload (compressed). Returns a small summary dict."""
+    payload = oof_arrays(data, p_a, p_b, fold)
+    payload["meta"] = np.array(json.dumps({
+        "version": OOF_NPZ_VERSION,
+        "rows": data["rows"],
+        "scored": int(np.isfinite(p_a).sum()),
+        "feature_version": FEATURE_VERSION,
+        "feature_set": data["feature_set"],
+        "extra_dim": data["extra_dim"],
+        "folds": split["folds"],
+        "split_mode": split["mode"],
+        "seed": args.seed,
+        "hidden": args.hidden,
+        "epochs": args.epochs,
+        "batch_size": args.batch_size,
+        "lr": args.lr,
+        "label_smoothing": args.label_smoothing,
+        "replays": split["n_groups"],
+        "class_counts": data["class_counts"],
+        "region_counts": data["region_counts"],
+    }), dtype="U2048")
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(path, **payload)
+    summary = {"path": str(path), "bytes": path.stat().st_size, "rows": data["rows"], "arrays": sorted(payload)}
+    print(f"[e26] OOF npz -> {path} ({path.stat().st_size:,} bytes, {data['rows']:,} rows)", flush=True)
+    return summary
+
+
+CALIB_EPS = 1e-7
+
+
+def _probs_to_logits(p: np.ndarray) -> np.ndarray:
+    p = np.clip(np.asarray(p, dtype=np.float64), CALIB_EPS, 1.0 - CALIB_EPS)
+    return np.log(p) - np.log1p(-p)
+
+
+def temperature_nll(z: np.ndarray, y: np.ndarray, T: float) -> float:
+    """Mean BCE of sigmoid(z / T) against y (stable form)."""
+    zz = z / T
+    return float(np.mean(np.logaddexp(0.0, zz) - y * zz))
+
+
+def fit_temperature(p: np.ndarray, y: np.ndarray) -> tuple[float, float, float]:
+    """Fit a single temperature T minimizing BCE on probs p (monotone).
+    Grid over log T then ternary refinement (no scipy dependency).
+    Returns (T, nll_before, nll_after)."""
+    z = _probs_to_logits(p)
+    y = np.asarray(y, dtype=np.float64)
+    best_T, best = 1.0, temperature_nll(z, y, 1.0)
+    grid = np.exp(np.linspace(np.log(0.02), np.log(50.0), 481))
+    losses = np.array([temperature_nll(z, y, t) for t in grid])
+    i = int(np.argmin(losses))
+    if losses[i] < best:
+        best_T, best = float(grid[i]), float(losses[i])
+    lo = float(grid[max(i - 1, 0)])
+    hi = float(grid[min(i + 1, len(grid) - 1)])
+    for _ in range(80):
+        m1 = lo + (hi - lo) / 3.0
+        m2 = hi - (hi - lo) / 3.0
+        if temperature_nll(z, y, m1) < temperature_nll(z, y, m2):
+            hi = m2
+        else:
+            lo = m1
+    T = 0.5 * (lo + hi)
+    if temperature_nll(z, y, T) < best:
+        best_T, best = float(T), float(temperature_nll(z, y, T))
+    return best_T, temperature_nll(z, y, 1.0), best
+
+
+def apply_temperature(p: np.ndarray, T: float) -> np.ndarray:
+    z = _probs_to_logits(p)
+    return 1.0 / (1.0 + np.exp(-z / T))
+
+
+def _calibration_metrics(y: np.ndarray, p: np.ndarray) -> dict:
+    return {
+        "rows": int(len(y)),
+        "positives": int(np.sum(y)),
+        "positiveRate": _num(float(np.mean(y))) if len(y) else None,
+        "auprc": _num(tfm.average_precision(y, p)) if len(y) else None,
+        "roc_auc": _num(tfm.roc_auc(y, p)),
+        "logloss": _num(tfm.log_loss(y, p)),
+        "brier": _num(tfm.brier_score(y, p)),
+        "ece_15bin": _num(tfm.ece_and_reliability(y, p)[0]),
+    }
+
+
+def _calibration_slice(y: np.ndarray, p: np.ndarray, mask: np.ndarray) -> dict:
+    if int(mask.sum()) == 0:
+        return None
+    return _calibration_metrics(y[mask], p[mask])
+
+
+def run_calibration(args: argparse.Namespace) -> int:
+    """Load an OOF npz, fit temperature scaling (head B on canLaunch rows; head A
+    on all rows as reference), and write before/after calibration metrics."""
+    npz_arg = args.calibrate if isinstance(args.calibrate, str) and args.calibrate else args.save_oof
+    if not npz_arg:
+        raise SystemExit("[e26] --calibrate needs an npz: pass the path or --save-oof")
+    npz_path = Path(npz_arg)
+    if not npz_path.exists():
+        raise SystemExit(f"[e26] OOF npz not found: {npz_path}")
+    log = lambda s: print(s, flush=True)  # noqa: E731
+    log(f"[e26] calibration input: {npz_path}")
+    z = np.load(npz_path, allow_pickle=False)
+    probA = z["probA"].astype(np.float64)
+    probB = z["probB"].astype(np.float64)
+    labelA = z["labelA"].astype(np.float64)
+    labelB = z["labelB"].astype(np.float64)
+    fold = z["fold"]
+    classCode = z["classCode"]
+    classNames = [str(x) for x in z["classNames"].tolist()]
+    regionCode = z["regionCode"]
+    regionNames = [str(x) for x in z["regionNames"].tolist()]
+    meta = json.loads(str(z["meta"].tolist()))
+    scored = np.isfinite(probA)
+    can = scored & (labelA == 1.0) & np.isfinite(labelB)
+    log(f"[e26] OOF rows {len(probA):,} scored {int(scored.sum()):,} can {int(can.sum()):,} "
+        f"launched {int(np.nansum(labelB[can])):,}")
+
+    # ── head B: canLaunch rows only (the hypothesis under test) ─────────────
+    yb = labelB[can]
+    pb = probB[can]
+    T_b, nll_before, nll_after = fit_temperature(pb, yb)
+    pb_cal = apply_temperature(pb, T_b)
+    b_before = _calibration_metrics(yb, pb)
+    b_after = _calibration_metrics(yb, pb_cal)
+    base_rate = float(np.mean(yb))
+    const_p = np.full(len(yb), base_rate)
+    constant = {
+        "positiveRate": _num(base_rate),
+        "logloss": _num(tfm.log_loss(yb, const_p)),
+        "brier": _num(tfm.brier_score(yb, const_p)),
+    }
+    prereg = {"logloss": 0.08289, "brier": 0.01594}  # E26e-a pre-registration (E26c/E26d OOF constants)
+    log(f"[e26] headB temperature T = {T_b:.4f} (BCE {nll_before:.6f} -> {nll_after:.6f})")
+    log(f"[e26] headB logloss {b_before['logloss']} -> {b_after['logloss']}; "
+        f"brier {b_before['brier']} -> {b_after['brier']}; "
+        f"ECE {b_before['ece_15bin']} -> {b_after['ece_15bin']}; "
+        f"AUPRC {b_before['auprc']} -> {b_after['auprc']} (must be equal)")
+
+    # ── head A reference temperature (all rows) ─────────────────────────────
+    ya = labelA[scored]
+    pa = probA[scored]
+    T_a, nll_a_before, nll_a_after = fit_temperature(pa, ya)
+    pa_cal = apply_temperature(pa, T_a)
+    a_before = _calibration_metrics(ya, pa)
+    a_after = _calibration_metrics(ya, pa_cal)
+    log(f"[e26] headA reference T = {T_a:.4f} (BCE {nll_a_before:.6f} -> {nll_a_after:.6f})")
+
+    # ── per-class / per-region (head B on can rows) ─────────────────────────
+    per_class = {}
+    for code, name in enumerate(classNames):
+        m = can & (classCode == code)
+        row = {
+            "rows": int(m.sum()),
+            "canLaunch": int((m & (labelA == 1.0)).sum()),
+            "launched": int(np.nansum(labelB[m])),
+            "before": _calibration_slice(yb, pb, m[can]),
+            "after": _calibration_slice(yb, pb_cal, m[can]),
+        }
+        per_class[name] = row
+    per_region = {}
+    for code, name in enumerate(regionNames):
+        m = can & (regionCode == code)
+        per_region[name] = {
+            "rows": int(m.sum()),
+            "launched": int(np.nansum(labelB[m])),
+            "before": _calibration_slice(yb, pb, m[can]),
+            "after": _calibration_slice(yb, pb_cal, m[can]),
+        }
+
+    rank_ok = {
+        "auprc_delta": _num(abs(b_before["auprc"] - b_after["auprc"])),
+        "auc_delta": _num(abs(b_before["roc_auc"] - b_after["roc_auc"])),
+        "monotone_by_construction": True,
+    }
+    pass_logloss = bool(b_after["logloss"] is not None and b_after["logloss"] < prereg["logloss"])
+    pass_brier = bool(b_after["brier"] is not None and b_after["brier"] < prereg["brier"])
+    metrics = {
+        "_lineage": "E26e-a torpedo OOF temperature calibration (no retraining)",
+        "protocol": {
+            "oof_npz": str(npz_path),
+            "rows": int(len(probA)),
+            "scored": int(scored.sum()),
+            "canLaunch": int(can.sum()),
+            "launched": int(np.nansum(labelB[can])),
+            "temperature_fit": "single T per head, grid (log T in [0.02, 50]) + ternary refinement, minimizing BCE",
+            "eps": CALIB_EPS,
+            "meta": meta,
+        },
+        "temperature": {"headB": _num(T_b), "headA_reference": _num(T_a)},
+        "headB": {
+            "before": b_before,
+            "after": b_after,
+            "delta": {
+                "logloss": _num(b_after["logloss"] - b_before["logloss"]),
+                "brier": _num(b_after["brier"] - b_before["brier"]),
+                "ece_15bin": _num(b_after["ece_15bin"] - b_before["ece_15bin"]),
+                "auprc": _num(b_after["auprc"] - b_before["auprc"]),
+                "roc_auc": _num(b_after["roc_auc"] - b_before["roc_auc"]),
+            },
+        },
+        "baselines_headB": {
+            "constant_rate": constant,
+            "pre_registered": prereg,
+        },
+        "acceptance": {
+            "rule": "headB calibrated OOF logloss < 0.08289 AND Brier < 0.01594 (E26e-a pre-registration)",
+            "logloss_below": pass_logloss,
+            "brier_below": pass_brier,
+            "verdict": "pass" if (pass_logloss and pass_brier) else "fail",
+        },
+        "rank_invariance": rank_ok,
+        "per_class": per_class,
+        "per_region": per_region,
+        "headA_reference": {"before": a_before, "after": a_after, "temperature": _num(T_a)},
+    }
+    out = Path(args.calibrate_out) if args.calibrate_out else npz_path.parent / "calibration_metrics.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(metrics, indent=1, ensure_ascii=False), encoding="utf-8")
+    log(f"[e26] calibration metrics -> {out}")
+    log(f"[e26] verdict: {metrics['acceptance']['verdict'].upper()} "
+        f"(logloss {metrics['headB']['after']['logloss']} vs prereg {prereg['logloss']}; "
+        f"brier {metrics['headB']['after']['brier']} vs prereg {prereg['brier']})")
+    return 0
 
 # ── T2 delivery: final fit (all rows) + ONNX export ─────────────────────────
 
@@ -1768,6 +2052,56 @@ def run_selftest() -> int:
     sub3 = select_eval_subset(fake, 4, seed=7)
     assert sub3["rows"] == 4 and len(set(sub3["idx"].tolist())) == 4
 
+    # 10. E26e-a: OOF npz roundtrip + temperature fit (numpy only, torch-free).
+    oa = parse_args(["--save-oof", str(root / "oof.npz")])
+    assert oa.save_oof.endswith("oof.npz")
+    assert parse_args(["--calibrate", str(root / "oof.npz")]).calibrate.endswith("oof.npz")
+    assert parse_args(["--calibrate"]).calibrate == ""
+    assert parse_args([]).calibrate is None
+    fake["rows"] = 10
+    fake["entity"] = np.zeros((10, tfm.SLOTS, tfm.ENTITY_DIM_V2), dtype=np.float16)
+    fake["global"] = np.zeros((10, 38), dtype=np.float32)
+    fake["mask"] = np.zeros((10, tfm.SLOTS), dtype=np.float16)
+    fake["label_a"] = np.array([1, 1, 1, 1, 1, 0, 0, 0, 0, 0], dtype=np.float32)
+    fake["label_b"] = np.array([1, 0, np.nan, 1, 0, np.nan, np.nan, np.nan, np.nan, np.nan], dtype=np.float32)
+    fake["class"] = np.array(["Destroyer"] * 6 + ["Cruiser"] * 4, dtype=object)
+    fake["region"] = np.array(["own"] * 5 + ["apac"] * 5, dtype=object)
+    fake["ship_id"] = np.arange(10, dtype=np.int64)
+    fake["group"] = np.arange(10, dtype=np.int32)
+    fake["t"] = np.arange(10, dtype=np.float32)
+    fake["group_names"] = [f"r{i}" for i in range(10)]
+    p_a = np.array([0.9, 0.8, 0.7, 0.6, 0.4, 0.3, 0.2, 0.1, 0.05, 0.01])
+    p_b = np.array([0.8, 0.2, np.nan, 0.9, 0.1, np.nan, np.nan, np.nan, np.nan, np.nan])
+    fold = np.array([0, 0, 0, 0, 0, 1, 1, 1, 1, 1], dtype=np.int8)
+    arr = oof_arrays(fake, p_a, p_b, fold)
+    assert arr["probB"].dtype == np.float32 and np.isnan(arr["probB"][2])
+    assert arr["classNames"].tolist() == ["Cruiser", "Destroyer"]
+    assert arr["classCode"].tolist()[0] == 1 and arr["classCode"].tolist()[6] == 0
+    assert arr["regionNames"].tolist() == ["apac", "own"]
+    tmpnpz = root / "oof_roundtrip.npz"
+    np.savez_compressed(tmpnpz, **arr)
+    back = np.load(tmpnpz, allow_pickle=False)
+    for key in ("probA", "probB", "labelA", "labelB", "fold", "rowIndex", "shipId", "t",
+                "classCode", "classNames", "regionCode", "regionNames", "groupCode", "groupNames"):
+        assert key in back, key
+    assert back["probA"].shape == (10,) and "torp2Extras" not in back.files
+    # synthetic: labels drawn from sigmoid(z/2), model probs sigmoid(z) => true T=2
+    rng = np.random.default_rng(7)
+    z_true = rng.normal(0.0, 1.5, 4000)
+    p_true = 1.0 / (1.0 + np.exp(-z_true / 2.0))
+    yb = (rng.random(4000) < p_true).astype(np.float64)
+    pb_syn = 1.0 / (1.0 + np.exp(-z_true))
+    T, nll0, nll1 = fit_temperature(pb_syn, yb)
+    assert 1.5 < T < 2.8, T
+    assert nll1 < nll0, (nll0, nll1)
+    pcal = apply_temperature(pb_syn, T)
+    assert max(pcal) <= 1.0 and min(pcal) >= 0.0
+    assert abs(tfm.average_precision(yb, pb_syn) - tfm.average_precision(yb, pcal)) < 1e-12
+    assert abs(tfm.roc_auc(yb, pb_syn) - tfm.roc_auc(yb, pcal)) < 1e-12
+    assert tfm.log_loss(yb, pcal) < tfm.log_loss(yb, pb_syn)
+    c = _calibration_metrics(yb, pcal)
+    assert c["rows"] == 4000 and c["logloss"] is not None
+
     print("PASS")
     return 0
 
@@ -1779,6 +2113,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.selftest:
         return run_selftest()
+    if args.calibrate is not None:
+        return run_calibration(args)
     if args.final_fit:
         return run_final_fit(args)
     metrics = run_training(args)
