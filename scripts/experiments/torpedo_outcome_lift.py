@@ -495,11 +495,17 @@ def run(args) -> int:
     if prob_key == "B":
         score = probB
         score_def = "probB (headB launch probability)"
-    elif prob_key == "C":
+    elif prob_key in ("C", "standaloneC"):
         if probC is None:
-            raise SystemExit("[e26b] --prob-key C needs probC in the OOF npz (E26e-c --head-c run)")
+            raise SystemExit("[e26b] --prob-key C/standaloneC needs probC in the OOF npz")
         score = probC
-        score_def = "probC (headC P(torpHits>0 | launched))"
+        score_def = ("probC (standalone headC P(torpHits>0 | launched))"
+                     if prob_key == "standaloneC" else "probC (headC P(torpHits>0 | launched))")
+    elif prob_key == "joint":
+        if probC is None:
+            raise SystemExit("[e26b] --prob-key joint needs probB+probC in the OOF npz")
+        score = probB * probC
+        score_def = "joint = probB * probC (E26e-d pre-registered primary)"
     else:
         if probC is None:
             raise SystemExit("[e26b] --prob-key combined needs probB+probC in the OOF npz")
@@ -798,10 +804,10 @@ def main(argv=None) -> int:
     p.add_argument("--max-replays", type=int, default=0, help="P0: keep first N replay groups")
     p.add_argument("--lenient-join", action="store_true",
                    help="tolerate sidecar rows without replayId/t/shipId (counted, not fatal)")
-    p.add_argument("--prob-key", choices=["B", "C", "combined"], default="B",
-                   help="score to evaluate: headB, headC (E26e-c), or combined=sqrt(probB*probC)")
+    p.add_argument("--prob-key", choices=["B", "C", "standaloneC", "combined", "joint"], default="B",
+                   help="score to evaluate: headB; headC (shared/standalone); combined=sqrt(pB*pC); joint=pB*pC")
     p.add_argument("--min-lift", type=float, default=PREREG_TOPDECILE_LIFT,
-                   help="pre-registered top-decile lift threshold (E26e-c headC uses 1.35)")
+                   help="pre-registered top-decile lift threshold (E26e-c headC 1.35; E26e-d joint 2.2)")
     p.add_argument("--min-spearman", type=float, default=PREREG_SPEARMAN,
                    help="pre-registered decile Spearman threshold")
     p.add_argument("--selftest", action="store_true")
