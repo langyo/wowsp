@@ -191,14 +191,32 @@ export function activeConsumablesAt(
   return active;
 }
 
-/** Observed squadron-consumable type ids → the pill chip's i18n key. The
- *  ids are the E27 wire's raw consumable byte (20/21/22 on the reference
- *  capture); their NAMES live in the locale files, which the lead owns —
- *  this map only routes ids to keys and invents nothing. */
+/** Observed squadron-consumable type ids → the pill chip's i18n key.
+ *  E27b fingerprinted the ids on five 14.5 CV captures (window lengths vs
+ *  the GameParams workTime of every squadron-group PCY — the pairing
+ *  probe is dump_squadron_consumable_windows):
+ *  - 20 = healForsage 引擎加力: 5.0 s windows on every squadron that used
+ *    it (17/17, two carriers) — the universal AbilitySlot0 booster.
+ *  - 21 = planeTacticalFighters 战术战斗机: clean 60.0 s windows, plus
+ *    early INTERRUPTED stops (the summoned patrol dying) and never-closed
+ *    ends (squadron recalled while fighters out) — universal slot1.
+ *  - 42 = planeSmokeGenerator 拉烟: 10.01 s exact against the US_SCV
+ *    smoke workTime (plus 12.6 s windows on the same DB squadrons — the
+ *    generator's longer variant/period); only ever fired by squadrons
+ *    whose slot2 IS the smoke generator (Yorktown's support-DB).
+ *  - 22 = the 5 s defensive consumable: exact 5.0 s windows on BOTH
+ *    carriers; on the Shokaku side that is support fire-extinguishing
+ *    (JAP_CV workTime 5 s, slotted on the fighter squadron). The
+ *    Yorktown TB showed the same 5 s window while the CURRENT 15.9
+ *    GameParams lists active-maneuvering (12 s) in that slot — a
+ *    14.5-vs-15.9 loadout drift the capture cannot resolve, so the label
+ *    stays "extinguisher-class" honest (see E27b in the experiments
+ *    README). */
 export const CONSUMABLE_LABEL: Readonly<Record<number, string>> = {
   20: "replay.planeCard.cons20",
   21: "replay.planeCard.cons21",
   22: "replay.planeCard.cons22",
+  42: "replay.planeCard.cons42",
 };
 
 /** The i18n key for one consumable type id: mapped ids get their named

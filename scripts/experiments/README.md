@@ -48,6 +48,14 @@
 - **逐机油量位域破解**（`sq_planes_health.md`）：u64 = **每机 3 bit 的八进制位域**（1=HP>3/4、2=(1/4,3/4]、4=≤1/4；位数=在飞数，坠机=顶位截断，180/180；0x249 重复纹样=八进制全 1，误导了 nibble/BCD 假设）；伴随 float 分母=**addSquadron 第 18 字节的出击机数**（23/224 局从打空的机库部分出击）——两字节现入 SquadronCreate。815 个同步样本 0 违例，B12 边界被 0.755/0.746 对钉死。
 - **落地**：九解码器 + `read_replay_squadron_states` IPC + 解包助手（`PlaneHealthBand` 族）+ 卡片三态（HP 条/加速徽标/消耗品 chips，`planeCardExtras` 10Hz 派生）。消耗品 id→名称映射待 GameParams 侧研究，chips 暂以「消耗品 N」诚实展示。
 - **语料门控测试的已知边界**：vehicle-build 与 cruise-state 两个**预先存在**的 corpus 测试各自期望特定的参考录像（15.9 配装捕获 / 有持续停车窗口的盘），喂其它录像会各自失败——master 同样失败，非本支回归（CI 无 WOWSP_TEST_REPLAY 时全跳过）。
+
+### E27b · 中队消耗品 id→名称钉死（20/21/22/42）✅
+
+- **方法**：`dump_squadron_consumable_windows` corpus 探针（time-aware 联表：每次 Used 联到其前最近的 addSquadron paramsId——first-add 联表在 planeId 复用下会错位，曾产出伪矛盾）在**五盘 14.5 CV 录像**（翔鹤×4 + 约克城×1，Steam 安装）上配对每个 Used→StopWorking/Interrupted 窗口，与 GameParams（CN360 15.9 dump）里全部 10 个 squadron 组 PCY 的 `consumableType`/`workTime` 指纹比对。
+- **结论**：20=healForsage 引擎加力（5.0s 窗 17/17，双方通用槽0）；21=planeTacticalFighters 战术战斗机（60.0s 全窗 + 召唤物被击落的 INTERRUPTED + 中队回收时的 NEVER CLOSED，通用槽1）；42=planeSmokeGenerator 拉烟（10.01s 精确命中 US_SCV 10.0s，仅约克城支援 DB 装备该槽，同中队另有 12.6s 变体窗）；22=5s 防御消耗品（翔鹤侧=PCY085 支援灭火 JAP_CV 5s 精确命中）。
+- **证伪记录**：槽位+20 假设（id=slot+20）被约克城盘击毁——同一 slot2 在翔鹤战斗机（灭火）出 22、在约克城 DB（拉烟）出 42；全局枚举假设同样不成立（42 覆盖 10.0s 与 12.6s 两种窗长）。id 的本体论最终按「消耗品实体分组」落名，其中 42 与 22 的区分度由中队配置联表保证。
+- **诚实边界**：约克城 TB（PAAB218）在 14.5 录像里 22 号窗同为 5.0s，但 15.9 GameParams 该槽已是 activeManeuvering(12s)——14.5 对局装配与现行 GameParams 的版本漂移，无法用本地数据裁决，故 22 的文案定为「灭火/防御类」而非断言具体实体。
+- **落地**：`CONSUMABLE_LABEL`（planeFollow.ts）补 42 + 8 语言真名（引擎加力/战术战斗机/灭火/拉烟）；探针与配对测试随库保留。
 - **语料**：King of the Sea XIX 全量公开录像爬取入册（用户授权；四赛区
   618 场 / 1047 局 / 2054 个 `.wowsreplay`，HEAD 实测 3.4GB、magic 全验，
   归档 `replay-archive/kots-xix/<region>/`）——语料 163 → **2217 局**；

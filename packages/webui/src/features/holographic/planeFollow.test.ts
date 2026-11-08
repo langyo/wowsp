@@ -280,9 +280,12 @@ describe("consumableLabelKey", () => {
     expect(CONSUMABLE_LABEL[20]).toBe("replay.planeCard.cons20");
     expect(CONSUMABLE_LABEL[21]).toBe("replay.planeCard.cons21");
     expect(CONSUMABLE_LABEL[22]).toBe("replay.planeCard.cons22");
+    // E27b: the support-carrier smoke generator rides its own wire id.
+    expect(CONSUMABLE_LABEL[42]).toBe("replay.planeCard.cons42");
     expect(consumableLabelKey(20)).toBe("replay.planeCard.cons20");
     expect(consumableLabelKey(21)).toBe("replay.planeCard.cons21");
     expect(consumableLabelKey(22)).toBe("replay.planeCard.cons22");
+    expect(consumableLabelKey(42)).toBe("replay.planeCard.cons42");
   });
 
   it("falls back to the generic key for unknown ids", () => {

@@ -757,6 +757,97 @@ fn large_battle_results_frame_is_walked_intact() {
         "both position frames decode across the large BattleResults frame"
     );
 }
+/// E27b probe: pair every squadron consumable Used with its closing
+/// StopWorking/Interrupted and print the active window per (wire type id,
+/// squadron), joined to the squadron's addSquadron paramsId via the REAL
+/// decoder (decoded_real_replay) — the evidence that maps wire
+/// CONSUMABLE_IDs to GameParams consumables by workTime fingerprinting.
+/// Run with WOWSP_TEST_REPLAY=... -- --nocapture.
+#[test]
+fn dump_squadron_consumable_windows() {
+    let Some(decoded) = decoded_real_replay() else {
+        corpus_skip("dump_squadron_consumable_windows");
+        return;
+    };
+    if decoded.squadron_consumables.is_empty() {
+        eprintln!("[e27b] no squadron consumables decoded - skipping");
+        return;
+    }
+    // Known squadron-variant GameParams ids (name lookup for the evidence
+    // table; grown as new carriers get probed).
+    let names: &[(u32, &str)] = &[
+        (4181688016, "PJAB108_Shokaku_stock_TB"),
+        (4181556944, "PJAF108_Shokaku_stock_ATK"),
+        (4181622480, "PJAD108_Shokaku_stock_DB"),
+        (4066344944, "PAAB218_Yorktown_top_TB"),
+        (4066279408, "PAAD218_Yorktown_top_DB"),
+        (3961356272, "PAAF218_Yorktown_top_ATK"),
+    ];
+    let name_of = |params: u32| -> String {
+        names
+            .iter()
+            .find(|(id, _)| *id == params)
+            .map(|(_, n)| n.to_string())
+            .unwrap_or_else(|| format!("paramsId {params}"))
+    };
+    // planeId -> (time, paramsId) off the decoded adds — TIME-AWARE: a
+    // planeId can be re-used by a later squadron, so every Used joins to
+    // the latest add AT OR BEFORE it (the E27b first-add join misattributed
+    // re-used ids and produced phantom contradictions).
+    let mut adds: std::collections::BTreeMap<u64, Vec<(f32, u32)>> =
+        std::collections::BTreeMap::new();
+    for a in &decoded.squadron_creates {
+        adds.entry(a.plane_id).or_default().push((a.time, a.params_id));
+    }
+    for v in adds.values_mut() {
+        v.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap());
+    }
+    let param_at = |plane: u64, t: f32| -> u32 {
+        match adds.get(&plane) {
+            Some(v) => v
+                .iter()
+                .rev()
+                .find(|(at, _)| *at <= t + 0.5)
+                .map(|(_, p)| *p)
+                .or_else(|| v.first().map(|(_, p)| *p))
+                .unwrap_or(0),
+            None => 0,
+        }
+    };
+    eprintln!("[e27b] {} adds, {} consumable events", adds.len(), decoded.squadron_consumables.len());
+    eprintln!("--- consumable windows (used -> next stop/interrupted, same id+plane)");
+    let mut by_type: std::collections::BTreeMap<u8, usize> = std::collections::BTreeMap::new();
+    let evs = &decoded.squadron_consumables;
+    for (i, e0) in evs.iter().enumerate() {
+        if !matches!(e0.kind, wowsp_tauri_shared::SquadronConsumableKind::Used) {
+            continue;
+        }
+        *by_type.entry(e0.consumable_type).or_default() += 1;
+        let closer = evs[i + 1..].iter().find(|e| {
+            !matches!(e.kind, wowsp_tauri_shared::SquadronConsumableKind::Used)
+                && e.plane_id == e0.plane_id
+                && e.consumable_type == e0.consumable_type
+        });
+        let params = param_at(e0.plane_id, e0.time);
+        let sq = name_of(params);
+        match closer {
+            Some(e1) => {
+                let how = if matches!(e1.kind, wowsp_tauri_shared::SquadronConsumableKind::StopWorking) { "stop" } else { "INTERRUPTED" };
+                eprintln!(
+                    "  type {:2}  {}  t={:8.2} -> {:8.2}  window {:6.2}s  by {how}",
+                    e0.consumable_type, sq, e0.time, e1.time, e1.time - e0.time
+                );
+            }
+            None => eprintln!(
+                "  type {:2}  {}  t={:8.2} -> NEVER CLOSED",
+                e0.consumable_type, sq, e0.time
+            ),
+        }
+    }
+    let counts: Vec<String> = by_type.iter().map(|(t, n)| format!("{t}x{n}")).collect();
+    eprintln!("used counts by wire id: {}", counts.join(" "));
+}
+
 /// Diagnostic: walk all frames and report per-type counts, max payload
 /// size, and whether the walk terminated early (absurd size guard).
 /// Run with `WOWSP_TEST_REPLAY=path/to/replay.wowsreplay`.
