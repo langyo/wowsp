@@ -93,6 +93,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="pilot budget: keep the FIRST N rows in file order (0 = all rows)",
     )
     p.add_argument("--ship-classes", default=str(DEFAULT_SHIP_CLASSES), help="ships_basics.json for shipId->type")
+    p.add_argument(
+        "--ship-attrs",
+        default=str(DEFAULT_SHIP_ATTRS),
+        help="E26e-f: ship_attributes.json (torpSpeed/torpDamage/torpDetect/torpCount/torpDeep per hullId); "
+        "missing file/keys fall back to 0",
+    )
     p.add_argument("--epochs", type=int, default=12)
     p.add_argument("--hidden", type=int, default=192)
     p.add_argument("--batch-size", type=int, default=4096)
@@ -116,8 +122,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--feature-set",
         default="core",
-        choices=["core", "torp2"],
-        help="core = E26c features exactly (global 27); torp2 = +11 derived torpedo-geometry/class dims (global 38)",
+        choices=["core", "torp2", "torp3"],
+        help="core = E26c features exactly (global 27); torp2 = +11 derived torpedo-geometry/class dims (global 38); "
+        "torp3 = torp2 + 6 hull torpedo-attribute dims (global 44)",
     )
     p.add_argument(
         "--pos-weight",
@@ -305,6 +312,19 @@ TORP2_NAMES = [
     "reload_ready",
 ]
 TORP2_DIM = len(TORP2_NAMES)
+# torp3 attribute block (E26e-f): 6 dims from hull torpedo attributes. All are
+# scaled to ~[0,1]; missing attribute table / hull keys fall back to 0.
+TORP3_NAMES = [
+    "torp_speed_frac",
+    "torp_damage_frac",
+    "torp_detect_frac",
+    "torp_count_frac",
+    "torp_deep",
+    "torp_eta_closest_min",
+]
+TORP3_DIM = len(TORP3_NAMES)
+DEFAULT_SHIP_ATTRS = Path(__file__).resolve().parent / "ship_attributes.json"
+TORP_ATTR_KEYS = ("torpSpeed", "torpDamage", "torpDetect", "torpCount", "torpDeep")
 # Class one-hot order: DD, (CL+CA), BB, SS, unknown. CV rows never reach the
 # loader (the exporter drops them; the loader skips defensively).
 CLASS_ONEHOT = {"Destroyer": 0, "Cruiser": 1, "Battleship": 2, "Submarine": 3}
@@ -350,12 +370,94 @@ def derive_torp2_extras(row: dict, cls: str) -> list[float]:
     ready = 1.0 if (reload is not None and float(reload) >= 0.999) else 0.0
     return oh + [n_obs / 12.0, n_in / 8.0, closest, frac45, frac20, ready]
 
+def load_ship_attributes(path: Path) -> dict:
+    """hullId -> torpedo attribute dict (E26e-f).
+
+    The JSON is a baseline attribute table generated from GameParams by
+    build_ship_attributes.py: {"<hullId>": {"torpSpeed":.., "torpDamage":..,
+    "torpDetect":.., "torpCount":.., "torpDeep":.., ...}, ...}. Missing values
+    (or a missing file) fall back to 0.0 so old corpora stay loadable.
+    """
+    path = Path(path)
+    if not path.is_file():
+        print(f"[e26] ship attributes not found at {path}; torp3 attribute dims default to 0", flush=True)
+        return {}
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(raw, dict):
+        raise SystemExit(f"[e26] {path}: ship attributes JSON must be an object of hullId -> attributes")
+    attrs: dict[str, dict[str, float]] = {}
+    for hull_id, rec in raw.items():
+        if not isinstance(rec, dict):
+            continue
+        out: dict[str, float] = {}
+        for key in TORP_ATTR_KEYS:
+            try:
+                v = rec.get(key)
+                out[key] = float(v) if v is not None else 0.0
+            except (TypeError, ValueError):
+                out[key] = 0.0
+        attrs[str(hull_id)] = out
+    return attrs
+
+
+def derive_torp3_extras(row: dict, cls: str, attrs: dict | None, ship_id) -> list[float]:
+    """6 attribute dims for --feature-set torp3 (E26e-f).
+
+    torpSpeed/70, torpDamage/50000, torpDetect/3, torpCount/10, torpDeep (0/1)
+    from the hull's attribute row; the last dim is the closest observed
+    in-range enemy ETA in minutes via this hull's torpedo speed, clamped [0,1]
+    (0 when unknown / no target). torpedo speed is in knots; 1 kn = 0.5144 m/s.
+    """
+    rec = attrs.get(str(ship_id), {}) if attrs else {}
+    speed = float(rec.get("torpSpeed", 0.0) or 0.0)
+    damage = float(rec.get("torpDamage", 0.0) or 0.0)
+    detect = float(rec.get("torpDetect", 0.0) or 0.0)
+    count = float(rec.get("torpCount", 0.0) or 0.0)
+    deep = 1.0 if float(rec.get("torpDeep", 0.0) or 0.0) > 0.0 else 0.0
+    eta = 0.0
+    if speed > 0.0 and rec:
+        own_range = row.get("ownRangeM")
+        try:
+            own_range = float(own_range) if own_range is not None else 0.0
+        except (TypeError, ValueError):
+            own_range = 0.0
+        speed_mps = speed * 0.5144
+        best = None
+        if own_range > 0.0 and speed_mps > 0.0:
+            for e in (row.get("enemies") or []):
+                if not e.get("observedNow"):
+                    continue
+                d = e.get("distM")
+                if d is None:
+                    continue
+                try:
+                    dm = float(d)
+                except (TypeError, ValueError):
+                    continue
+                if dm > own_range:
+                    continue
+                if best is None or dm < best:
+                    best = dm
+        if best is not None:
+            eta = min(max(best / (speed_mps * 60.0), 0.0), 1.0)
+    return [speed / 70.0, damage / 50000.0, detect / 3.0, count / 10.0, deep, eta]
+
+
+def resolve_ship_attrs(args) -> dict | None:
+    """Load the attribute table only when --feature-set torp3 needs it."""
+    if getattr(args, "feature_set", "core") != "torp3":
+        return None
+    raw = getattr(args, "ship_attrs", "") or str(DEFAULT_SHIP_ATTRS)
+    return load_ship_attributes(Path(raw))
+
+
 def load_torpedo_rows(
     paths: list[Path],
     max_rows: int,
     classes: dict[int, str],
     feature_dtype: str = "float16",
     feature_set: str = "core",
+    ship_attrs: dict | None = None,
 ) -> dict:
     """Stream the JSONL corpus into featurized arrays.
 
@@ -371,17 +473,22 @@ def load_torpedo_rows(
     Entity and mask blocks use --feature-dtype (default float16: ~2x smaller, cast
     back to float32 per training batch); the global block stays float32.
     --feature-set torp2 appends TORP2_DIM derived dims to the global block, in place
-    (global width becomes 27 + 11 = 38, one preallocated array — no concat copy).
+    (global width becomes 27 + 11 = 38, one preallocated array — no concat copy);
+    torp3 appends TORP2_DIM + TORP3_DIM dims (global 44) using --ship-attrs.
     """
     dtypes = {"float16": np.float16, "float32": np.float32}
     if feature_dtype not in dtypes:
         raise SystemExit(f"[e26] unknown --feature-dtype {feature_dtype!r}")
-    if feature_set not in ("core", "torp2"):
+    if feature_set not in ("core", "torp2", "torp3"):
         raise SystemExit(f"[e26] unknown --feature-set {feature_set!r}")
-    extra_dim = TORP2_DIM if feature_set == "torp2" else 0
-    feature_names = [f"global_{i}" for i in range(tfm.GLOBAL_DIM_V2)] + (
-        list(TORP2_NAMES) if extra_dim else []
-    )
+    if feature_set == "torp2":
+        extra_names = list(TORP2_NAMES)
+    elif feature_set == "torp3":
+        extra_names = list(TORP2_NAMES) + list(TORP3_NAMES)
+    else:
+        extra_names = []
+    extra_dim = len(extra_names)
+    feature_names = [f"global_{i}" for i in range(tfm.GLOBAL_DIM_V2)] + extra_names
     edt = dtypes[feature_dtype]
     mdt = np.float16 if feature_dtype == "float16" else np.float32
     budget = max_rows if max_rows and max_rows > 0 else None
@@ -461,7 +568,12 @@ def load_torpedo_rows(
                 Xe[rows] = e
                 Xg[rows, : tfm.GLOBAL_DIM_V2] = g
                 if extra_dim:
-                    Xg[rows, tfm.GLOBAL_DIM_V2 :] = derive_torp2_extras(row, cls)
+                    if feature_set == "torp3":
+                        Xg[rows, tfm.GLOBAL_DIM_V2 :] = (
+                            derive_torp2_extras(row, cls) + derive_torp3_extras(row, cls, ship_attrs, ship_id)
+                        )
+                    else:
+                        Xg[rows, tfm.GLOBAL_DIM_V2 :] = derive_torp2_extras(row, cls)
                 Xm[rows] = m
                 ya[rows] = a
                 yb[rows] = b
@@ -883,7 +995,10 @@ def run_training(args: argparse.Namespace) -> dict:
     classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
     paths = resolve_data_paths(args)
     t0 = time.time()
-    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype, args.feature_set)
+    ship_attrs = resolve_ship_attrs(args)
+    data = load_torpedo_rows(
+        paths, args.max_rows, classes, args.feature_dtype, args.feature_set, ship_attrs=ship_attrs
+    )
     load_s = time.time() - t0
     log(
         f"[e26] loaded {data['rows']:,} rows from {len(data['files'])} file(s) "
@@ -900,6 +1015,27 @@ def run_training(args: argparse.Namespace) -> dict:
     )
     log(f"[e26] class counts: {json.dumps(data['class_counts'], ensure_ascii=False)}")
     log(f"[e26] region counts: {json.dumps(data['region_counts'], ensure_ascii=False)}")
+    attr_coverage = None
+    if ship_attrs is not None:
+        valid_hulls = data["ship_id"][data["ship_id"] >= 0]
+        uniq_hulls = np.unique(valid_hulls)
+        with_attrs = int(sum(1 for sid in uniq_hulls.tolist() if str(int(sid)) in ship_attrs))
+        speed_col = tfm.GLOBAL_DIM_V2 + TORP2_DIM
+        rows_with_speed = int((data["global"][:, speed_col] > 0).sum()) if data["global"].shape[1] > speed_col else 0
+        attr_coverage = {
+            "attrsTableHulls": int(len(ship_attrs)),
+            "uniqueHulls": int(len(uniq_hulls)),
+            "uniqueHullsWithAttrs": with_attrs,
+            "uniqueHullCoverage": _num(with_attrs / len(uniq_hulls)) if len(uniq_hulls) else None,
+            "rowsWithPositiveTorpedoSpeed": rows_with_speed,
+            "rows": int(data["rows"]),
+            "rowsWithPositiveTorpedoSpeedFrac": _num(rows_with_speed / data["rows"]) if data["rows"] else None,
+        }
+        log(
+            f"[e26] torp3 attribute coverage: {with_attrs}/{len(uniq_hulls)} hulls "
+            f"({100.0 * with_attrs / max(len(uniq_hulls), 1):.1f}%), rows with torpedo speed "
+            f"{rows_with_speed:,}/{data['rows']:,}"
+        )
 
     outcome = None
     if args.outcome:
@@ -1145,6 +1281,7 @@ def run_training(args: argparse.Namespace) -> dict:
                 "positiveRate_among_can": _num(np.nansum(data["label_b"]) / max(int(data["label_a"].sum()), 1)),
             },
             "load_seconds": round(load_s, 1),
+            "attribute_coverage": attr_coverage,
         },
         "outcome": outcome["quality"] if outcome is not None else None,
         "split": {
@@ -1784,7 +1921,9 @@ def run_headc_only(args: argparse.Namespace) -> dict:
     classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
     paths = resolve_data_paths(args)
     t0 = time.time()
-    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype, args.feature_set)
+    data = load_torpedo_rows(
+        paths, args.max_rows, classes, args.feature_dtype, args.feature_set, ship_attrs=resolve_ship_attrs(args)
+    )
     log(f"[e26] loaded {data['rows']:,} rows in {time.time() - t0:.1f}s (arrays {data['array_bytes'] / 1e9:.2f} GB)")
     outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
     label_c_np = (outcome["hits"] > 0).astype(np.float32)
@@ -2359,7 +2498,9 @@ def run_final_fit(args: argparse.Namespace) -> int:
     classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
     paths = resolve_data_paths(args)
     t0 = time.time()
-    data = load_torpedo_rows(paths, args.max_rows, classes, args.feature_dtype, args.feature_set)
+    data = load_torpedo_rows(
+        paths, args.max_rows, classes, args.feature_dtype, args.feature_set, ship_attrs=resolve_ship_attrs(args)
+    )
     log(f"[e26] loaded {data['rows']:,} rows / {len(data['group_names'])} replays in {time.time() - t0:.1f}s "
         f"(arrays {data['array_bytes'] / 1e9:.2f} GB)")
     log(f"[e26] class counts: {json.dumps(data['class_counts'], ensure_ascii=False)}")
@@ -2651,6 +2792,33 @@ def run_selftest() -> int:
     assert np.array_equal(d_core["global"], d_torp2["global"][:, :27]), "core columns drifted"
     assert d_torp2["global"][0, 27] == 1.0, "row 0 is a Destroyer -> cls_dd"
     assert d_core["feature_set"] == "core" and d_torp2["feature_set"] == "torp2"
+    # E26e-f: torp3 = torp2 + 6 attribute dims appended after column 38.
+    assert TORP3_DIM == 6 and len(TORP3_NAMES) == 6
+    d_torp3 = load_torpedo_rows([tmp], max_rows=0, classes=classes, feature_set="torp3", ship_attrs={})
+    assert d_torp3["global"].shape[1] == 44 and d_torp3["extra_dim"] == 17, d_torp3["global"].shape
+    assert len(d_torp3["feature_names"]) == 44 and d_torp3["feature_names"][38] == "torp_speed_frac"
+    assert float(np.abs(d_torp3["global"][:, 38:]).max()) == 0.0, "missing attrs must be zero"
+    assert np.array_equal(d_torp2["global"], d_torp3["global"][:, :38]), "torp2 columns drifted"
+    attrs_max = {
+        "1": {"torpSpeed": 70.0, "torpDamage": 50000.0, "torpDetect": 3.0, "torpCount": 10.0, "torpDeep": 1.0},
+        "999": {"torpSpeed": 0.0, "torpDamage": 0.0, "torpDetect": 0.0, "torpCount": 0.0, "torpDeep": 0.0},
+    }
+    d_torp3b = load_torpedo_rows([tmp], max_rows=0, classes=classes, feature_set="torp3", ship_attrs=attrs_max)
+    ex3 = d_torp3b["global"][:, 38:]
+    assert np.allclose(ex3[:, :5], 1.0), ex3[:, :5]
+    assert np.all((ex3[:, 5] >= 0.0) & (ex3[:, 5] <= 1.0)), ex3[:, 5]
+    # Missing hull -> all zeros (fallback contract).
+    assert derive_torp3_extras(base, "Destroyer", attrs_max, 12345) == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    # Direct derivation contract on the synthetic row (5 km observed enemy, 70 kn).
+    ex_direct = derive_torp3_extras(base, "Destroyer", attrs_max, 1)
+    assert abs(ex_direct[0] - 70.0 / 70.0) < 1e-12 and abs(ex_direct[1] - 1.0) < 1e-12
+    assert abs(ex_direct[2] - 1.0) < 1e-12 and abs(ex_direct[3] - 1.0) < 1e-12 and ex_direct[4] == 1.0
+    assert abs(ex_direct[5] - min(5000.0 / (70.0 * 0.5144 * 60.0), 1.0)) < 1e-12
+    # No table / zero speed -> all zeros, no crash.
+    assert derive_torp3_extras(base, "Destroyer", None, 1) == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    assert derive_torp3_extras(base, "Destroyer", {"1": {"torpSpeed": 0.0}}, 1) == [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    # Missing attributes file: load_ship_attributes returns {} instead of raising.
+    assert load_ship_attributes(root / "nope_attrs.json") == {}
 
     # 9. T2 delivery mode: CLI flags + eval-subset selector + default export dir.
     fa = parse_args(["--final-fit", "--export-dir", str(root / "final")])
@@ -2809,6 +2977,15 @@ def run_selftest() -> int:
     assert abs(ww.head_c_weight - 0.3) < 1e-12 and ww.head_b_weight == 1.0
     ww0 = parse_args(["--head-c-weight", "0"])
     assert ww0.head_c_weight == 0.0
+    # E26e-e: loss-weight flags (defaults stay bit-compatible with E26e-c).
+    wd = parse_args([])
+    assert wd.head_c_weight == 1.0 and wd.head_b_weight == 1.0
+    ww = parse_args(["--head-c-weight", "0.1"])
+    assert abs(ww.head_c_weight - 0.1) < 1e-12
+    # E26e-f: torp3 feature set + attribute table CLI.
+    t3 = parse_args(["--feature-set", "torp3", "--ship-attrs", "attrs.json"])
+    assert t3.feature_set == "torp3" and t3.ship_attrs == "attrs.json"
+    assert parse_args([]).ship_attrs.endswith("ship_attributes.json")
     if _torch is not None:
         m1 = build_headc_only_model(_torch, hidden=16, entity_dim=15, global_dim=38)
         names1 = [n for n, _ in m1.named_parameters()]

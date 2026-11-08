@@ -25,6 +25,19 @@ table train_fire_model.py --attr-table consumes:
             reload the E26 labelA uses instead of the observed click gap.
             Written ONLY when a torpedo section exists (the Rust reader
             treats a missing key as 0.0 = unknown).
+  torpSpeed max(ammo.speed) across __torpedoAmmo, knots (1 decimal) — the
+            fastest loadout the hull can carry (E26e-f feature).
+  torpDamage max(ammo.alphaDamage) across __torpedoAmmo, HP (integer) — the
+            hardest-hitting loadout (E26e-f feature).
+  torpDetect min positive ammo.visibilityFactor across __torpedoAmmo, km
+            (2 decimals) — the hardest-to-spot torpedo (E26e-f feature).
+  torpCount max number of HP_* launchers in any *_Torpedoes section — the
+            launcher mounts per side/top config (E26e-f feature; Daring 2).
+  torpDeep  1 if any __torpedoAmmo entry isDeepWater, else 0 — deep-water
+            torpedo mechanic flag, written whenever the hull has ammo.
+            The five torpedo-performance keys above are written ONLY when a
+            torpedo section exists (same policy as cls/torpReload); a missing
+            ammo field is skipped per key, never written as 0.
 
 Unit note — torpedo maxDist is NOT meters: GameParams scales torpedo
 distances by 70/3 (cross-checked: the Gambra's PUPT014 lists maxDist
@@ -96,6 +109,73 @@ def torp_reload_s(d: dict) -> float | None:
     return None if best is None else round(float(best), 1)
 
 
+def torp_perf_attrs(d: dict) -> dict:
+    """E26e-f torpedo performance columns from the hull's __torpedoAmmo table.
+
+    The pack lists every torpedo the hull can mount (one entry per ammo
+    choice, several hulls carry 2-6). The feature wave wants the hull's
+    best loadout: fastest speed, hardest alphaDamage, hardest-to-spot
+    visibilityFactor (smallest positive), plus the deep-water mechanic flag.
+    Missing/non-numeric fields are skipped per key (never written as 0) —
+    a partial extraction must not fabricate "no torpedoes".
+    """
+    ammos = [a for a in (d.get("__torpedoAmmo") or {}).values() if isinstance(a, dict)]
+    out: dict[str, float | int] = {}
+    speeds = [
+        float(a["speed"])
+        for a in ammos
+        if isinstance(a.get("speed"), (int, float))
+    ]
+    if speeds:
+        out["torpSpeed"] = round(max(speeds), 1)
+    damages = [
+        float(a["alphaDamage"])
+        for a in ammos
+        if isinstance(a.get("alphaDamage"), (int, float))
+    ]
+    if damages:
+        out["torpDamage"] = round(max(damages), 0)
+    detects = [
+        float(a["visibilityFactor"])
+        for a in ammos
+        if isinstance(a.get("visibilityFactor"), (int, float))
+        and float(a["visibilityFactor"]) > 0.0
+    ]
+    if detects:
+        out["torpDetect"] = round(min(detects), 2)
+    if ammos:
+        out["torpDeep"] = 1 if any(a.get("isDeepWater") for a in ammos) else 0
+    return out
+
+
+def torp_launcher_count(d: dict) -> int | None:
+    """E26e-f launcher count: max HP_* mounts across the hull's torpedo sections.
+
+    Daring's A1_Torpedoes carries HP_BGT_1/HP_BGT_2 (two five-tube mounts),
+    so the count is 2; a section without HP_* entries contributes 0. None
+    when the hull carries no torpedo section at all.
+    """
+    counts = [
+        sum(
+            1
+            for key, hp in section.items()
+            if key.startswith("HP_") and isinstance(hp, dict)
+        )
+        for section in _sections(d, "Torpedoes")
+    ]
+    if not counts:
+        return None
+    best = max(counts)
+    # A handful of collab/event hulls (PXSD102_Akizuki_H2020,
+    # PXSD027_Akatsuki_Romulans, PXSC027_Fiji_Klingons, PXSB027_Gneisenau_Vulkans)
+    # mount their torpedo launchers under a Gun_* slot instead of HP_*: for
+    # those the HP_* scan is legitimately 0 while __torpedoAmmo still lists
+    # torpedoes. Skip the key rather than writing a misleading 0 (the same
+    # conservative stance as a missing ammo field); torpReload already skips
+    # them for the same reason.
+    return best if best > 0 else None
+
+
 def ship_attrs(d: dict) -> dict:
     hulls = _sections(d, "Hull")
     arts = _sections(d, "Artillery")
@@ -132,6 +212,13 @@ def ship_attrs(d: dict) -> dict:
     torp_reload = torp_reload_s(d)
     if torp_reload is not None:
         out["torpReload"] = torp_reload
+    # E26e-f: torpedo performance columns — same "torpedo section exists"
+    # gate as torpReload (a hull without torpedo mounts gets no keys).
+    if _sections(d, "Torpedoes"):
+        out.update(torp_perf_attrs(d))
+        torp_count = torp_launcher_count(d)
+        if torp_count is not None:
+            out["torpCount"] = torp_count
     return out
 
 
@@ -205,6 +292,19 @@ def main(argv: list[str] | None = None) -> int:
             f"[e24] baseline {args.baseline}: retained {len(table)} / "
             f"dropped {dropped} pack slice(s) added after the baseline"
         )
+        # Additive-only contract: an E26e-f style regen may ADD columns but
+        # must not mutate one the shipped table already carries (training and
+        # the Rust reader depend on the old values, e.g. the torpRange scale).
+        mutated = sorted(
+            k
+            for k in table
+            if any(table[k].get(col) != base_table[k].get(col) for col in base_table[k])
+        )
+        if mutated:
+            raise SystemExit(
+                f"[e24] baseline columns changed for {len(mutated)} shipId(s) "
+                f"(first: {mutated[:5]}) — a focused regen must be additive only"
+            )
 
     # liveness gate: the two columns the first E24 table shipped dead must
     # now be alive — a silent regression here quietly amputates the router
@@ -224,10 +324,27 @@ def main(argv: list[str] | None = None) -> int:
     live_torp_reload = sum(
         1 for v in table.values() if v.get("torpReload", 0.0) > 0
     )
+    # E26e-f torpedo-performance liveness: every hull with torpedo mounts in
+    # the shipped pack must carry the four performance columns, or the feature
+    # wave silently trains on a constant column. torpDeep is a mechanic subset
+    # (deep-water torpedoes): printed and asserted non-empty, not >300.
+    live_torp_speed = sum(
+        1 for v in table.values() if v.get("torpSpeed", 0.0) > 0
+    )
+    live_torp_damage = sum(
+        1 for v in table.values() if v.get("torpDamage", 0.0) > 0
+    )
+    live_torp_detect = sum(
+        1 for v in table.values() if v.get("torpDetect", 0.0) > 0
+    )
+    live_torp_count = sum(1 for v in table.values() if v.get("torpCount", 0) > 0)
+    live_torp_deep = sum(1 for v in table.values() if v.get("torpDeep"))
     print(
         f"[e24] {len(table)} ships | torp {live_torp} | smoke-firing {live_smoke} "
         f"| radar {live_radar} | hydro {live_hydro} | CV {live_cv} | SS {live_ss} "
-        f"| torpReload {live_torp_reload}"
+        f"| torpReload {live_torp_reload} | torpSpeed {live_torp_speed} "
+        f"| torpDamage {live_torp_damage} | torpDetect {live_torp_detect} "
+        f"| torpCount {live_torp_count} | torpDeep {live_torp_deep}"
     )
     if live_torp == 0 or live_smoke == 0 or live_radar == 0 or live_hydro == 0:
         raise SystemExit("[e24] a routing column came out dead — extraction regression")
@@ -240,6 +357,22 @@ def main(argv: list[str] | None = None) -> int:
         raise SystemExit(
             f"[e24] torpedo-reload column came out dead ({live_torp_reload} "
             "hulls > 0, expected > 300) — extraction regression"
+        )
+    for name, live in (
+        ("torpSpeed", live_torp_speed),
+        ("torpDamage", live_torp_damage),
+        ("torpDetect", live_torp_detect),
+        ("torpCount", live_torp_count),
+    ):
+        if live <= 300:
+            raise SystemExit(
+                f"[e24] torpedo-performance column '{name}' came out dead "
+                f"({live} hulls > 0, expected > 300) — extraction regression"
+            )
+    if live_torp_deep == 0:
+        raise SystemExit(
+            "[e24] torpDeep column came out dead (no deep-water torpedo hull) "
+            "— extraction regression"
         )
 
     out = Path(args.out)
