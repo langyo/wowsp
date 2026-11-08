@@ -93,8 +93,9 @@ vi.mock("@/api", () => ({
   },
 }));
 
-/** One CLIENT_PUBLIC_RESULTS row, the 15.2+ layout: >=500 entries so the
- *  late fields (exp 404 / killer 408 / damage 426) read unshifted. */
+/** One CLIENT_PUBLIC_RESULTS row, the 15.2–15.9 layout: 538 entries (the
+ *  500..549 band) so the late fields (exp 404 / killer 408 / damage 426)
+ *  read unshifted. */
 function ppiRow(opts: {
   name: string;
   team: 0 | 1;

@@ -70,7 +70,8 @@ export function resolveMaxHp(
  *  sink was OBSERVED — a ship killed while un-spotted keeps its last (often
  *  full) HP reading and stays "alive" through the whole playback. The
  *  post-battle payload is authoritative for WHO sank: `killerId` (index
- *  408) is null for survivors — parsePostBattle normalizes the wire's 0
+ *  408 on the 15.2–15.9 layout, 420 on 15.10+) is null for survivors —
+ *  parsePostBattle normalizes the wire's 0
  *  "no killer" sentinel, which every survivor carries, so 0 never reaches
  *  this function — and `alive` (index 21) is authoritative where the
  *  layout carries that field. The sink MOMENT is not recoverable from the

@@ -3,9 +3,11 @@
  * The index semantics come from the game-assets constants layout (client
  * 15.2; the vendored constants.json copy is gone — these tests are the
  * in-repo authority) and were verified against 126 replays / 417 players
- * on client 15.8 — see postBattle.ts. These tests pin
- * the mapping so layout regressions (first-spotting read as plane kills,
- * bomb drops as plane losses, distance as HP ratio) can't silently return.
+ * on client 15.8, plus real client 15.10 replays (550-entry arrays, exp
+ * 416 / killer 420 / damage 438 — see postBattle.ts). These tests pin the
+ * mapping so layout regressions (first-spotting read as plane kills, bomb
+ * drops as plane losses, distance as HP ratio, or the 15.10 shift read as
+ * zeros) can't silently return.
  */
 import { describe, expect, it } from "vitest";
 
@@ -58,6 +60,63 @@ describe("parsePostBattle field mapping", () => {
     expect(p.damageTaken).toBe(67410);
     expect(p.hpRatio).toBeCloseTo(10, 5);
     expect(p.exp).toBe(910);
+  });
+
+  it("maps the 15.10 layout (550 entries) onto the 12-shifted late indices", () => {
+    // Client 15.10 ground truth (replay 20261108_224310_PASB820-BA-Montana_58
+    // _RidgeNew, 24 players): the client inserted a 12-field block before
+    // `exp`, moving exp 404→416, killer 408→420 and damage 426→438; the
+    // inserted slots 403..414 read 0 there, which is exactly why the 经验
+    // column went all-zero and the kill feed lost its killer ids. The old
+    // positions stay 0 in this fixture: a parser that does not shift must
+    // read 0 / null and fail the assertions below.
+    const data = parsePostBattle(
+      payload(
+        arr(
+          {
+            1: "Ridge",
+            21: false,
+            32: 2, // frags — below the inserted block, unshifted
+            404: 0, // old exp slot: the inserted zero block
+            408: 0, // old killer slot
+            426: 0, // old damage slot
+            416: 1224, // exp — equals privateDataList[7][3]
+            420: 2040518414, // killer account id (sunk row)
+            438: 53941, // battle damage
+          },
+          550,
+        ),
+      ),
+    );
+    const p = data!.players[0];
+    expect(p.exp).toBe(1224);
+    expect(p.killerId).toBe(2040518414);
+    expect(p.damage).toBe(53941);
+    expect(p.frags).toBe(2);
+    expect(p.alive).toBe(false);
+  });
+
+  it("keeps the 15.2–15.9 baseline below the 15.10 length (549 entries)", () => {
+    // The 15.10 block exists only from 550 entries on; the 500..549 gap
+    // stays on the unshifted 15.2–15.9 layout.
+    const data = parsePostBattle(
+      payload(
+        arr(
+          {
+            404: 910, // exp — unshifted below 550
+            408: 12345, // killer — unshifted
+            426: 96429, // damage — unshifted
+            416: 7, // 15.10 slot on a pre-15.10 array - must be ignored
+            438: 9,
+          },
+          549,
+        ),
+      ),
+    );
+    const p = data!.players[0];
+    expect(p.exp).toBe(910);
+    expect(p.killerId).toBe(12345);
+    expect(p.damage).toBe(96429);
   });
 
   it("treats a sunk ship as full damage taken and 0% HP", () => {

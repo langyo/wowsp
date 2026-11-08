@@ -540,10 +540,11 @@ fn fired_in_label_window(ctx: Option<&FireActionCtx>, t: f32, window_s: f32) -> 
 // ── BattleResults join (postBattle.ts semantics, Rust side) ─────────────────
 
 /// One `playersPublicInfo` entry, reduced to the fields the validation
-/// needs. Index layout (verified in postBattle.ts against 126 replays):
-/// [6] teamId, [7] shipId, [21] survived, [32] frags, [404] base exp,
-/// [426] damage — with 14.x legacy arrays (len < 500) carrying the late
-/// fields 15 positions earlier (389 / 411).
+/// needs. Index layout (verified in postBattle.ts against 126 replays and
+/// real 15.10 captures): [6] teamId, [7] shipId, [21] survived, [32] frags,
+/// [404] base exp, [426] damage — with 14.x legacy arrays (len < 500)
+/// carrying the late fields 15 positions earlier (389 / 411) and 15.10+
+/// arrays (len >= 550) carrying them 12 positions later (416 / 438).
 struct BrPlayer {
     ship_id: i64,
     damage: f64,
@@ -564,7 +565,9 @@ impl BattleResultsIndex {
         let v: serde_json::Value = serde_json::from_str(raw).ok()?;
         let players = v.get("playersPublicInfo")?.as_object()?;
         const LEGACY_LAYOUT_MAX_LEN: usize = 500;
+        const LATE_LAYOUT_1510_MIN_LEN: usize = 550;
         const LATE_SHIFT: usize = 15;
+        const LATE_SHIFT_1510: usize = 12;
         const LATE_SHIFT_MIN_INDEX: usize = 404;
         let mut by_ship: BTreeMap<i64, Vec<BrPlayer>> = BTreeMap::new();
         for entry in players.values() {
@@ -576,8 +579,16 @@ impl BattleResultsIndex {
                     .and_then(|x| x.as_f64())
                     .filter(|x| x.is_finite())
             };
+            // Shift the late reads onto the 15.2–15.9 baseline (same rules
+            // as postBattle.ts): 14.x (< 500) sits them 15 earlier, 15.10+
+            // (>= 550) 12 later. Indices below the block never move.
             let late = |idx: usize| -> usize {
-                if arr.len() < LEGACY_LAYOUT_MAX_LEN && idx >= LATE_SHIFT_MIN_INDEX {
+                if idx < LATE_SHIFT_MIN_INDEX {
+                    return idx;
+                }
+                if arr.len() >= LATE_LAYOUT_1510_MIN_LEN {
+                    idx + LATE_SHIFT_1510
+                } else if arr.len() < LEGACY_LAYOUT_MAX_LEN {
                     idx - LATE_SHIFT
                 } else {
                     idx
@@ -1831,9 +1842,18 @@ mod tests {
         }
     }
 
-    /// A battle-results entry array: `legacy = false` = the 15.2+ layout
-    /// (len 538), `true` = the 14.x one (len 485) with the late fields 15
-    /// positions earlier — postBattle.ts's rules, mirrored for join tests.
+    /// Which CLIENT_PUBLIC_RESULTS layout a fixture entry uses: the 14.x one
+    /// (485 entries), the 15.2–15.9 baseline (538) or 15.10+ (550, the late
+    /// fields 12 positions later) — postBattle.ts's rules, mirrored for the
+    /// join tests.
+    #[derive(Clone, Copy)]
+    enum BrLayout {
+        Legacy14,
+        Modern15,
+        Modern1510,
+    }
+
+    /// A battle-results entry array in the requested layout.
     fn br_entry(
         team: i64,
         ship: i64,
@@ -1841,10 +1861,18 @@ mod tests {
         exp: f64,
         frags: f64,
         survived: bool,
-        legacy: bool,
+        layout: BrLayout,
     ) -> serde_json::Value {
-        let len = if legacy { 485 } else { 538 };
-        let (exp_idx, dmg_idx) = if legacy { (389, 411) } else { (404, 426) };
+        let len = match layout {
+            BrLayout::Legacy14 => 485,
+            BrLayout::Modern15 => 538,
+            BrLayout::Modern1510 => 550,
+        };
+        let (exp_idx, dmg_idx) = match layout {
+            BrLayout::Legacy14 => (389, 411),
+            BrLayout::Modern15 => (404, 426),
+            BrLayout::Modern1510 => (416, 438),
+        };
         let mut arr = vec![serde_json::Value::from(0.0); len];
         arr[1] = serde_json::Value::from("tester");
         arr[6] = serde_json::Value::from(team);
@@ -1957,37 +1985,42 @@ mod tests {
 
     // ── 3. BattleResults join ───────────────────────────────────────────
 
-    /// The join's four verdicts + the 14.x legacy layout shift.
+    /// The join's four verdicts + the 14.x / 15.10 late-field layout shifts.
     #[test]
     fn battle_results_join_verdicts_and_legacy_layout() {
         let mut players = serde_json::Map::new();
         players.insert(
             "1".into(),
-            br_entry(0, 111, 50_000.0, 1_500.0, 2.0, false, false),
+            br_entry(0, 111, 50_000.0, 1_500.0, 2.0, false, BrLayout::Modern15),
         );
         // Mirror lineup: shipId 222 on BOTH teams -> ambiguous (#1202).
         players.insert(
             "2".into(),
-            br_entry(0, 222, 1_000.0, 10.0, 0.0, true, false),
+            br_entry(0, 222, 1_000.0, 10.0, 0.0, true, BrLayout::Modern15),
         );
         players.insert(
             "3".into(),
-            br_entry(1, 222, 2_000.0, 20.0, 1.0, true, false),
+            br_entry(1, 222, 2_000.0, 20.0, 1.0, true, BrLayout::Modern15),
         );
         // Same-team duplicate hulls: shipId 555 twice on one team — equally
         // unjoinable at entity level.
         players.insert(
             "4".into(),
-            br_entry(0, 555, 3_000.0, 30.0, 0.0, true, false),
+            br_entry(0, 555, 3_000.0, 30.0, 0.0, true, BrLayout::Modern15),
         );
         players.insert(
             "5".into(),
-            br_entry(0, 555, 4_000.0, 40.0, 0.0, true, false),
+            br_entry(0, 555, 4_000.0, 40.0, 0.0, true, BrLayout::Modern15),
         );
         // Legacy 14.x array: exp/damage 15 positions earlier.
         players.insert(
             "6".into(),
-            br_entry(1, 333, 7_777.0, 888.0, 1.0, true, true),
+            br_entry(1, 333, 7_777.0, 888.0, 1.0, true, BrLayout::Legacy14),
+        );
+        // Client 15.10 array (550 entries): exp/damage 12 positions later.
+        players.insert(
+            "7".into(),
+            br_entry(0, 666, 12_345.0, 1_111.0, 0.0, true, BrLayout::Modern1510),
         );
         let idx = BattleResultsIndex::parse(Some(&br_json(players))).expect("parse");
         assert!(matches!(
@@ -2005,9 +2038,19 @@ mod tests {
             ShipOutcome::Ok { damage, base_exp: Some(888.0), frags: 1.0, survived: true }
                 if (damage - 7_777.0).abs() < 1e-9
         ));
+        // 15.10 indices read through the +12 shift (416 / 438); the baseline
+        // slots (404 / 426) are zeros in a 550-entry array.
+        assert!(matches!(
+            idx.join(Some(666)),
+            ShipOutcome::Ok { damage, base_exp: Some(1_111.0), frags: 0.0, survived: true }
+                if (damage - 12_345.0).abs() < 1e-9
+        ));
         // A different shipId in a one-entry payload: still Missing.
         let mut solo = serde_json::Map::new();
-        solo.insert("1".into(), br_entry(0, 1, 1.0, 1.0, 0.0, true, false));
+        solo.insert(
+            "1".into(),
+            br_entry(0, 1, 1.0, 1.0, 0.0, true, BrLayout::Modern15),
+        );
         assert!(matches!(
             BattleResultsIndex::parse(Some(&br_json(solo)))
                 .unwrap()
@@ -2030,10 +2073,16 @@ mod tests {
             let mut players = serde_json::Map::new();
             players.insert(
                 "1".into(),
-                br_entry(0, 1007, 60_000.0, 2_100.0, 3.0, true, false),
+                br_entry(0, 1007, 60_000.0, 2_100.0, 3.0, true, BrLayout::Modern15),
             );
-            players.insert("2".into(), br_entry(0, 1009, 1.0, 1.0, 0.0, true, false));
-            players.insert("3".into(), br_entry(1, 1009, 2.0, 2.0, 0.0, true, false));
+            players.insert(
+                "2".into(),
+                br_entry(0, 1009, 1.0, 1.0, 0.0, true, BrLayout::Modern15),
+            );
+            players.insert(
+                "3".into(),
+                br_entry(1, 1009, 2.0, 2.0, 0.0, true, BrLayout::Modern15),
+            );
             players
         });
         let mut stream = minimal_stream(Some(&raw));
