@@ -21,6 +21,15 @@
 //!   removes/reseeds it), so a retry continues where the last attempt
 //!   died. The caller names the part file and owns its lifecycle; the
 //!   hub only demands it be stable while retries can happen.
+//! - **Stall bound**: every wait on the wire is capped — response
+//!   headers at double the stall timeout, each body read at the stall
+//!   timeout ([`DownloadRequest::stall_timeout`], 30 s by default) — so
+//!   a mirror that answers and then goes silent fails its attempt in
+//!   seconds and the ladder walks on from the committed offset, instead
+//!   of pinning the single-writer queue until the (potentially
+//!   hours-long) whole-request timeout. Heartbeat progress events keep
+//!   the channel alive while stalled, so the UI tracks reality instead
+//!   of freezing on the last chunk.
 //! - **One progress channel**: `wowsp://download-progress` carries
 //!   [`DownloadProgress`] for every context; UIs subscribe once and
 //!   filter by kind/id.
@@ -67,6 +76,16 @@ async fn cancelled(cancel: &AtomicBool) {
 /// per-tick bytes/sec samples).
 const SPEED_EWMA_ALPHA: f64 = 0.3;
 
+/// Default per-read stall bound ([`DownloadRequest::stall_timeout`]): a
+/// healthy stream — however slow — delivers *some* bytes well inside the
+/// window, so only a dead peer trips it; the failed attempt then hands
+/// the ladder to the next source from the committed offset instead of
+/// pinning the single-writer queue until the (potentially hours-long)
+/// whole-request timeout. Response headers get double the cap: a slow
+/// origin fetch behind a proxy front legitimately delays TTFB longer
+/// than inter-chunk gaps.
+const DEFAULT_STALL_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// How much of the body each race probe reads before judging the mirror
 /// (1 MiB is enough to rank throughput without buffering the artifact).
 const RACE_PROBE_BYTES: u64 = 1024 * 1024;
@@ -112,6 +131,15 @@ pub struct DownloadRequest {
     /// including the body stream). `None` = only the client's connect
     /// timeout applies.
     pub timeout: Option<Duration>,
+    /// The longest wait with no new bytes from the mirror: response
+    /// headers get double the value, each body read the value itself. A
+    /// stalled peer errors its attempt early so the ladder walks on from
+    /// the committed offset, instead of pinning the queue until the
+    /// (potentially hours-long) whole-request timeout. `None` restores
+    /// the unbounded historical wire behavior (nothing in production
+    /// opts out); the heartbeat progress ticks run regardless, so the UI
+    /// tracks a stalled transfer either way.
+    pub stall_timeout: Option<Duration>,
     /// `Some(window)` → probe every source in parallel first and reorder
     /// the ladder by throughput (the update installer's race). `None` →
     /// straight ladder order.
@@ -148,6 +176,7 @@ impl DownloadRequest {
             max_bytes: None,
             expected_sha256: None,
             timeout: None,
+            stall_timeout: Some(DEFAULT_STALL_TIMEOUT),
             race_window: None,
             resume: false,
             cancel_msg: "download cancelled".to_string(),
@@ -424,6 +453,18 @@ fn ewma(prev: f64, sample: f64, alpha: f64) -> f64 {
     prev + alpha * (sample - prev)
 }
 
+/// The displayed `received` for a progress tick: while a sha256 still has
+/// to confirm the body, a tick must never claim received == total — a
+/// mismatch restart would briefly repaint the "finished, then restarted"
+/// picture this hub exists to kill. Only the terminal event (post-verify,
+/// in [`run_transfer`]) shows the full count.
+fn tick_received(expected: &Option<String>, total: Option<u64>, committed: u64) -> u64 {
+    match (expected, total) {
+        (Some(_), Some(t)) if committed >= t => t.saturating_sub(1),
+        _ => committed,
+    }
+}
+
 /// Probe score for the race window: bytes/second; failures rank last
 /// forever (they stay ladder-ordered last-resort failovers).
 fn probe_score(result: Option<(u64, Duration)>) -> f64 {
@@ -490,6 +531,14 @@ impl SpeedTracker {
             self.last_bytes = committed;
             self.last_tick = now;
         }
+        self.speed
+    }
+
+    /// The current estimate WITHOUT folding a sample: the heartbeat tick
+    /// emits this so the display stays live while stalled, without
+    /// letting zero-delta ticks drag a chunky-but-healthy stream's
+    /// average toward zero (real samples fold only when bytes arrived).
+    fn current(&self) -> f64 {
         self.speed
     }
 }
@@ -656,6 +705,10 @@ async fn run_transfer(
                 };
                 committed = rollback_to;
                 tracker.reset();
+                // The support-log fork: every failed attempt (a stalled
+                // mirror in particular) leaves one line, so "the update
+                // sat at 0 KB/s" has an answer in a player's bundle.
+                tracing::warn!(url = %url, error = %e, "download attempt failed");
                 last_err = e;
             },
         }
@@ -685,20 +738,38 @@ async fn attempt(
     // whole per-attempt timeout, and cancel still aborts whichever arm
     // is in flight. The streamed body afterwards is read once, off the
     // response the chain landed on.
+    //
+    // The header wait itself is stall-capped at double the body-read
+    // bound: `connect_timeout` covers only TCP/TLS/tunnel setup, so a
+    // proxy or mirror that accepts the connection and then never
+    // returns headers would otherwise pin the attempt until the
+    // whole-request timeout.
     let host = upstream_health::host_of_url(url).to_string();
+    let header_cap = req.stall_timeout.map(|t| t.saturating_mul(2));
     let mut response = tokio::select! {
         biased;
         () = cancelled(cancel) => return Err(anyhow::Error::msg(req.cancel_msg.clone())),
-        response = upstream_health::send_with_fallback(clients, &host, "download", |client| {
-            let mut request = client.get(url);
-            if *committed > 0 {
-                request = request.header(reqwest::header::RANGE, format!("bytes={}-", *committed));
+        response = async {
+            let wait =
+                upstream_health::send_with_fallback(clients, &host, "download", |client| {
+                    let mut request = client.get(url);
+                    if *committed > 0 {
+                        request = request
+                            .header(reqwest::header::RANGE, format!("bytes={}-", *committed));
+                    }
+                    if let Some(timeout) = req.timeout {
+                        request = request.timeout(timeout);
+                    }
+                    request
+                });
+            match header_cap {
+                Some(cap) => tokio::time::timeout(cap, wait)
+                    .await
+                    .map_err(|_| anyhow!("{url}: no response headers within {cap:?}"))?
+                    .map_err(|e| anyhow!("{url}: {e}")),
+                None => wait.await.map_err(|e| anyhow!("{url}: {e}")),
             }
-            if let Some(timeout) = req.timeout {
-                request = request.timeout(timeout);
-            }
-            request
-        }) => response.map_err(|e| anyhow!("{url}: {e}"))?,
+        } => response?,
     };
     let status = response.status();
 
@@ -728,10 +799,11 @@ async fn attempt(
         // install) failed. Nothing more to stream — accept the part as
         // complete. Guards: the min-bytes floor keeps error pages out,
         // and the 416's `Content-Range: bytes */<total>` (RFC SHOULD, not
-        // MUST) must confirm the size — mandatory when no sha256 can
-        // catch a truncated body afterwards (the app updater has none:
-        // accepting a header-less 416 there could spawn a cut-off
-        // installer).
+        // MUST) must confirm the size — mandatory for callers that set
+        // no `expected_sha256` to catch a truncated body afterwards
+        // (every current app-channel transfer carries the official
+        // digest, but a header-less 416 here could still spawn a
+        // cut-off artifact for a future caller without one).
         let declared = response
             .headers()
             .get(reqwest::header::CONTENT_RANGE)
@@ -782,6 +854,7 @@ async fn attempt(
         .map_err(|e| anyhow!("open {}: {e}", req.part.display()))?;
 
     let mut last_emit = Instant::now();
+    let stall = req.stall_timeout;
     loop {
         if cancel.load(Ordering::SeqCst) {
             let _ = file.flush().await;
@@ -794,7 +867,48 @@ async fn attempt(
                 let _ = file.flush().await;
                 return Err(anyhow::Error::msg(req.cancel_msg.clone()));
             },
-            chunk = response.chunk() => chunk,
+            // Heartbeat: even while no bytes flow, keep the progress
+            // channel ticking so the UI tracks a stalled transfer instead
+            // of freezing on the last chunk it saw. Same cadence and the
+            // same tick clamp as the chunk path below — at most one
+            // event per tick either way. The rate shown is the last
+            // sampled estimate: zero-delta stall ticks must not drag a
+            // chunky stream's EWMA toward zero, and the stall bound below
+            // bounds how long a dead mirror can hold the attempt anyway.
+            () = tokio::time::sleep(PROGRESS_TICK) => {
+                last_emit = Instant::now();
+                emit(
+                    app,
+                    req,
+                    phase::DOWNLOAD,
+                    tick_received(&req.expected_sha256, total, *committed),
+                    total.unwrap_or(0),
+                    tracker.current(),
+                    None,
+                );
+                continue;
+            },
+            // The stall bound: a mirror that delivers headers but then no
+            // bytes fails its attempt early — the ladder walks on from
+            // the committed offset — instead of pinning the queue until
+            // the whole-request timeout (potentially hours).
+            chunk = async {
+                let wait = response.chunk();
+                match stall {
+                    Some(bound) => match tokio::time::timeout(bound, wait).await {
+                        Ok(chunk) => Ok(chunk),
+                        Err(_) => Err(bound),
+                    },
+                    None => Ok(wait.await),
+                }
+            } => match chunk {
+                Ok(next) => next,
+                Err(bound) => {
+                    let _ = file.flush().await;
+                    drop(file);
+                    return Err(anyhow!("{url}: mirror stalled — no bytes for {bound:?}"));
+                },
+            },
         };
         match next_chunk {
             Ok(Some(chunk)) => {
@@ -817,21 +931,11 @@ async fn attempt(
                 }
                 if last_emit.elapsed() >= PROGRESS_TICK {
                     last_emit = Instant::now();
-                    // While a sha256 still has to confirm the body, the
-                    // tick must never claim received == total — a
-                    // mismatch restart would briefly repaint the
-                    // "finished, then restarted" picture this hub exists
-                    // to kill. Only the terminal event (post-verify)
-                    // shows the full count.
-                    let shown = match (&req.expected_sha256, total) {
-                        (Some(_), Some(t)) if *committed >= t => t.saturating_sub(1),
-                        _ => *committed,
-                    };
                     emit(
                         app,
                         req,
                         phase::DOWNLOAD,
-                        shown,
+                        tick_received(&req.expected_sha256, total, *committed),
                         total.unwrap_or(0),
                         tracker.sample(*committed),
                         None,
@@ -1333,5 +1437,154 @@ mod tests {
         assert_eq!(req.min_bytes, 0);
         assert_eq!(req.cancel_msg, "download cancelled");
         assert!(req.race_window.is_none());
+        assert_eq!(
+            req.stall_timeout,
+            Some(DEFAULT_STALL_TIMEOUT),
+            "the stall bound is on by default — a silent mirror must fail over, not pin the queue"
+        );
+    }
+
+    #[test]
+    fn tick_received_never_claims_total_before_verification() {
+        let expected = Some("deadbeef".to_string());
+        // At/past total with a pending digest: clamp to one byte below.
+        assert_eq!(tick_received(&expected, Some(10), 10), 9);
+        assert_eq!(tick_received(&expected, Some(10), 12), 9);
+        // No digest: ticks show the committed count as-is.
+        assert_eq!(tick_received(&None, Some(10), 10), 10);
+        assert_eq!(tick_received(&expected, None, 7), 7);
+    }
+
+    /// A mirror that serves headers and a first chunk then goes silent
+    /// must fail its attempt on the stall bound — not hang until the
+    /// whole-request timeout — and the ladder must move on to the next
+    /// source, which completes the artifact.
+    #[tokio::test]
+    async fn stalled_mirror_fails_over_to_the_next_source() {
+        let dir = test_directory();
+        let part = dir.join("installer.part");
+        const GOOD: &[u8] = b"stall-free artifact bytes";
+        let first = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let second = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let first_url = format!("http://{}/slow", first.local_addr().unwrap());
+        let second_url = format!("http://{}/fast", second.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            // Mirror 1: headers + one chunk, then silence — the stall
+            // shape that used to pin the queue until the request timeout.
+            let (mut socket, _) = first.accept().await.unwrap();
+            read_request(&mut socket).await;
+            socket
+                .write_all(
+                    format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n", GOOD.len()).as_bytes(),
+                )
+                .await
+                .unwrap();
+            socket.write_all(&GOOD[..5]).await.unwrap();
+            // Hold the socket open-but-silent so the STALL bound (not an
+            // EOF or a transport error) is what ends the attempt.
+            let hold = tokio::spawn(async move {
+                let _ = socket;
+                std::future::pending::<()>().await;
+            });
+            // Mirror 2 completes the artifact. The failed attempt rolled
+            // its bytes back to the attempt start, so no Range header
+            // rides the retry.
+            let (mut socket, _) = second.accept().await.unwrap();
+            let mut request = Vec::new();
+            while !request.ends_with(b"\r\n\r\n") {
+                request.push(socket.read_u8().await.unwrap());
+            }
+            assert!(
+                !request
+                    .to_ascii_lowercase()
+                    .windows(6)
+                    .any(|window| window == b"range:"),
+                "a rolled-back attempt must not send a resume range"
+            );
+            socket
+                .write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        GOOD.len()
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .unwrap();
+            socket.write_all(GOOD).await.unwrap();
+            socket.shutdown().await.unwrap();
+            hold.abort();
+        });
+        let mut req = DownloadRequest::new(
+            "stall-failover",
+            wowsp_tauri_shared::download::kind::UPDATE,
+            vec![first_url, second_url],
+            part.clone(),
+        );
+        req.stall_timeout = Some(Duration::from_millis(400));
+        req.timeout = Some(Duration::from_secs(30));
+        req.min_bytes = GOOD.len() as u64;
+        let started = Instant::now();
+        let done = run_transfer(None, req, Arc::new(AtomicBool::new(false)))
+            .await
+            .unwrap();
+        assert_eq!(done.bytes, GOOD.len() as u64);
+        assert_eq!(tokio::fs::read(&part).await.unwrap(), GOOD);
+        // The stall bound, not the (30 s) whole-request timeout, ended
+        // the first attempt.
+        assert!(
+            started.elapsed() < Duration::from_secs(10),
+            "the stall bound must fail the dead mirror in seconds, took {:?}",
+            started.elapsed()
+        );
+        server.await.unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// A mirror that accepts the connection but never returns response
+    /// headers is stalled too: the doubled header cap ends the attempt
+    /// instead of the whole-request timeout.
+    #[tokio::test]
+    async fn missing_response_headers_stall_out() {
+        let dir = test_directory();
+        let part = dir.join("installer.part");
+        let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+            .await
+            .unwrap();
+        let url = format!("http://{}/silent", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            read_request(&mut socket).await;
+            // Read the request, then hold the socket silent forever.
+            let _ = &socket;
+            std::future::pending::<()>().await;
+        });
+        let mut req = DownloadRequest::new(
+            "header-stall",
+            wowsp_tauri_shared::download::kind::UPDATE,
+            vec![url],
+            part.clone(),
+        );
+        req.stall_timeout = Some(Duration::from_millis(200));
+        req.timeout = Some(Duration::from_secs(30));
+        let started = Instant::now();
+        let err = run_transfer(None, req, Arc::new(AtomicBool::new(false)))
+            .await
+            .unwrap_err();
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "the header cap, not the 30 s whole-request timeout, must end the attempt, took {:?}",
+            started.elapsed()
+        );
+        assert!(
+            err.to_string().contains("no response headers"),
+            "unexpected error: {err}"
+        );
+        server.abort();
+        std::fs::remove_dir_all(dir).unwrap();
     }
 }
