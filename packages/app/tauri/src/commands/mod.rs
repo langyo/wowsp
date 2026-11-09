@@ -82,6 +82,10 @@ pub mod logs;
 pub mod lookup_error;
 pub mod markers;
 pub mod media;
+// Provider-aware mirror context (commands/mirror/): the GitHub ladder the
+// existing resource channels walk, generalized for the Hugging Face model
+// channel. The settings IPC stays in commands/github_mirror.rs.
+pub mod mirror;
 pub mod mod_catalog;
 pub mod mod_hub;
 pub mod mod_install;
