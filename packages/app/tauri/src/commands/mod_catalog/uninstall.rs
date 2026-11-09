@@ -186,8 +186,14 @@ pub async fn mod_catalog_uninstall(
     mod_hub::ensure_game_closed(&game_root)?;
     mod_hub::ensure_res_mods_active(&game_root)?;
     let mut ledger = load_ledger();
+    let records_before = ledger.installs.clone();
     let report = uninstall_from_ledger(&mut ledger.installs, &mod_id, &game_root)?;
     save_ledger(&ledger)?;
+    // Beautify layer stack: drop the uninstalled pack's layer. The stack then
+    // reports a pending render so a layer below can take its paths over.
+    if let Some(record) = records_before.iter().find(|record| record.id == report.id) {
+        super::mod_hub::layer::on_uninstall(&game_root, record);
+    }
     tracing::info!(id = %report.id, removed = report.removed_files, restored = report.restored_files, "mod_catalog_uninstall done");
     Ok(report)
 }

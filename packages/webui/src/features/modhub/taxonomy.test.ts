@@ -40,14 +40,28 @@ describe("mod-hub taxonomy", () => {
     }
   });
 
-  it("buckets visual kinds with the material category", () => {
+  it("maps every vocabulary entry into one of the declared big categories", () => {
+    // Total coverage in both directions: a new kind or catalog category must
+    // land inside BIG_CATS rather than falling through to an unreachable tab.
+    for (const kind of KIND_ORDER) {
+      expect(BIG_CATS, kind).toContain(KIND_BIG[kind]);
+    }
+    for (const cat of CATALOG_CATS) {
+      expect(BIG_CATS, cat).toContain(catBig(cat));
+    }
+  });
+
+  it("buckets visual and audio kinds with the beautify category", () => {
     // gui = icon sets / unbound views / space overlays — visual payloads,
-    // not behavior: they sort with the material category, leaving
+    // not behavior: they sort with the beautify category, leaving
     // "function" to scripts and patches that change how the game plays.
-    expect(KIND_BIG.gui).toBe("texture");
+    // The old texture / voice split is gone — both merged into "beautify".
+    expect(KIND_BIG.gui).toBe("beautify");
     expect(KIND_BIG.script).toBe("function");
     expect(KIND_BIG.patch).toBe("function");
-    expect(KIND_BIG.voice).toBe("voice");
+    expect(KIND_BIG.voice).toBe("beautify");
+    expect(KIND_BIG.skin).toBe("beautify");
+    expect(KIND_BIG.textures).toBe("beautify");
   });
 
   it("gives every big category a row source", () => {
@@ -68,12 +82,17 @@ describe("mod-hub taxonomy", () => {
 
   it("separates the catalog vocabulary from the on-disk kind names", () => {
     for (const cat of CATALOG_CATS) expect(isCatalogCat(cat), cat).toBe(true);
-    // "skin" and "voice" are now DELIBERATE dual citizens: on-disk kinds
-    // AND catalog categories (the material/voice packs joined the catalog,
+    // "skin" and "voice" are DELIBERATE dual citizens: on-disk kinds AND
+    // catalog categories (the material/voice packs joined the catalog,
     // sharing the strip with the kind vocabulary). The collision guard
     // below covers the kinds that still have no catalog bucket.
-    expect(catBig("skin")).toBe("texture" satisfies BigCat);
-    expect(catBig("voice")).toBe("voice" satisfies BigCat);
+    expect(catBig("skin")).toBe("beautify" satisfies BigCat);
+    expect(catBig("voice")).toBe("beautify" satisfies BigCat);
+    // The material/audio family's newer catalog categories bucket the same
+    // way — dropping any of them here would make its rows vanish.
+    expect(catBig("video")).toBe("beautify" satisfies BigCat);
+    expect(catBig("audio")).toBe("beautify" satisfies BigCat);
+    expect(catBig("model")).toBe("beautify" satisfies BigCat);
     expect(isCatalogCat("textures")).toBe(false);
     expect(isCatalogCat("gui")).toBe(false);
     expect(isCatalogCat("script")).toBe(false);
@@ -86,6 +105,10 @@ describe("mod-hub taxonomy", () => {
     expect(catIcon("port")).toBe(Anchor);
     expect(catIcon("text")).toBe(MessagesSquare);
     expect(catIcon("brand-new-category")).toBe(Puzzle);
+    // The new catalog categories carry their own glyphs.
+    expect(catIcon("video")).not.toBe(Puzzle);
+    expect(catIcon("audio")).not.toBe(Puzzle);
+    expect(catIcon("model")).not.toBe(Puzzle);
   });
 
   it("labels every strip entry in every locale", () => {

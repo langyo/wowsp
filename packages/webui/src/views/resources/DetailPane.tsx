@@ -57,6 +57,7 @@ import {
   texLabel,
 } from "./display";
 import { commonRootDir, splitGameRootFiles } from "./fileTree";
+import { renderLayerDetail } from "./LayerStack";
 import type { ResourcesCtx } from "./context";
 import type { TextureComponent } from "./types";
 
@@ -722,7 +723,7 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
         {/* The material section: one preview area per unit — texture
             thumbnails above, custom-model meshes (incl. the 3D stage)
             below, from a single asset listing. */}
-        {bigOfKind(mod.kind) === "texture" && (
+        {bigOfKind(mod.kind) === "beautify" && (
           <AssetPreview gameRoot={ctx.gameRoot.value} relPath={mod.relPath} mode="texture" />
         )}
         {mod.kind === "voice" && (
@@ -1103,6 +1104,8 @@ export function renderPane(ctx: ResourcesCtx) {
       return renderForeignDetail(ctx, sel.unit);
     case "component":
       return renderComponentDetail(ctx, sel.comp);
+    case "layer":
+      return renderLayerDetail(ctx, sel.packId);
     case "local":
       return renderLocalDetail(ctx);
   }

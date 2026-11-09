@@ -19,6 +19,7 @@ import {
   type LoaderHealthReport,
   type ModInstallRecord,
   type ModKind,
+  type ModLayer,
   type PackagePlan,
   type PnfLoaderStatus,
   type StaleBinInfo,
@@ -57,6 +58,7 @@ import {
   installerLabel,
   localized,
 } from "./display";
+import { useLayerStack } from "./useLayerStack";
 import type { Selection, TextureComponent } from "./types";
 
 /** One OTHER client's share of a "Sync all clients" reconcile plan:
@@ -156,6 +158,10 @@ export function useModHub() {
   // ModStation uninstall target — its trees live outside res_mods, so
   // they uninstall through their own command instead of unit_ops.
   const foreignTarget = ref<ForeignModUnit | null>(null);
+  // Layered pack uninstall target — resolves through the ledger record (a
+  // catalog install) or the matching installed unit (a local one).
+  const layerUninstallTarget = ref<ModLayer | null>(null);
+  const layerUninstallBusy = ref(false);
 
   // Stale-bin migration: older `bin/<version>/res_mods` leftovers the
   // game stopped loading after an update — surfaced so they can be moved
@@ -252,6 +258,22 @@ export function useModHub() {
   // detail uses) so the page keeps working when no selection is present.
   const gameRoot = computed(
     () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
+  );
+
+  // ── Layered resource packs (美化定制分层) ────────────────────────────
+  // The swimlane's stack state lives in its own composable; this module
+  // keeps the catalog/installed pairing and the pane selection. The stack
+  // loads lazily when the layered view is actually on screen (installed +
+  // beautify) and reloads after catalog installs/uninstalls.
+  const layerStack = useLayerStack(gameRoot);
+  watch(
+    [source, bigCat],
+    () => {
+      if (source.value === "installed" && bigCat.value === "beautify") {
+        void layerStack.refresh();
+      }
+    },
+    { immediate: true },
   );
 
   // ── Known-mod relations of every installed unit (关联 mod) ─────────
@@ -794,7 +816,12 @@ export function useModHub() {
         }
         toastReportNotes([...(r.conflicts ?? []), ...(r.warnings ?? [])]);
       }
-      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+      await Promise.all([
+        scan(),
+        loadRecords(),
+        pluginUpdates.syncFreshness(),
+        layerStack.refresh(),
+      ]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -833,7 +860,12 @@ export function useModHub() {
           }),
         );
       }
-      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+      await Promise.all([
+        scan(),
+        loadRecords(),
+        pluginUpdates.syncFreshness(),
+        layerStack.refresh(),
+      ]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -866,7 +898,7 @@ export function useModHub() {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       unitBusy.value.delete(unitKey(mod));
-      await scan();
+      await Promise.all([scan(), layerStack.refresh()]);
     }
   }
 
@@ -889,8 +921,14 @@ export function useModHub() {
           restored: r.restoredFiles > 0 ? t("resources.restoredPart", { count: r.restoredFiles }) : "",
         }),
       );
-      // The unit's ledger rows leave with its files — freshness sync.
-      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+      // The unit's ledger rows leave with its files — freshness sync +
+      // the layer stack (its layer must disappear from the swimlane).
+      await Promise.all([
+        scan(),
+        loadRecords(),
+        pluginUpdates.syncFreshness(),
+        layerStack.refresh(),
+      ]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1272,7 +1310,12 @@ export function useModHub() {
           t("resources.sync.skippedRunning", { names: skippedRunning.join(", ") }),
         );
       }
-      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+      await Promise.all([
+        scan(),
+        loadRecords(),
+        pluginUpdates.syncFreshness(),
+        layerStack.refresh(),
+      ]);
     }
   }
 
@@ -1370,8 +1413,14 @@ export function useModHub() {
         toast.info(t("resources.prunedPreviewFiles", { count: report.value.pruned }));
       }
       plan.value = null;
-      // A local-package install writes ledger rows too — freshness sync.
-      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+      // A local-package install writes ledger rows too — freshness sync +
+      // the layer stack (a beautify pack joins the swimlane).
+      await Promise.all([
+        scan(),
+        loadRecords(),
+        pluginUpdates.syncFreshness(),
+        layerStack.refresh(),
+      ]);
     } catch (e) {
       planError.value = e instanceof Error ? e.message : String(e);
     } finally {
@@ -1410,6 +1459,7 @@ export function useModHub() {
   watch(bigCat, () => {
     catalogCats.value = new Set();
     kindFilters.value = new Set();
+    if (selection.value?.mode === "layer") selection.value = null;
   });
 
   /** The non-WoWSP copy of a catalog entry, when a foreign unit paired
@@ -1553,7 +1603,12 @@ export function useModHub() {
               : "",
         }),
       );
-      await Promise.all([scan(), loadRecords(), pluginUpdates.syncFreshness()]);
+      await Promise.all([
+        scan(),
+        loadRecords(),
+        pluginUpdates.syncFreshness(),
+        layerStack.refresh(),
+      ]);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1735,6 +1790,111 @@ export function useModHub() {
     selection.value = { mode: "component", comp };
   }
 
+  /** The swimlane's row click — the pane resolves the layer by packId so a
+   *  stack reload (order/render) never strands a stale snapshot. */
+  function selectLayer(layer: ModLayer) {
+    delistedHit.value = null;
+    selectedPreset.value = "";
+    source.value = "installed";
+    selection.value = { mode: "layer", packId: layer.packId };
+  }
+
+  /** The catalog entry a layer pairs with (folded families via supersedes)
+   *  — the update button only exists when this resolves. */
+  function pairedCatalogOfLayer(layer: ModLayer): CatalogEntry | null {
+    return (
+      catalog.value.find(
+        (entry) =>
+          entry.id === layer.packId ||
+          entry.supersedes?.[layer.packId] !== undefined,
+      ) ?? null
+    );
+  }
+
+  /** The installed unit a layer maps onto (legacy/local installs without a
+   *  ledger record still uninstall through the unit path when the names
+   *  match). */
+  function unitOfLayer(layer: ModLayer): InstalledMod | null {
+    return (
+      installed.value.find(
+        (mod) => mod.name === layer.name || mod.relPath === layer.packId,
+      ) ?? null
+    );
+  }
+
+  /** The ledger record backing a layer: an exact packId, or — through the
+   *  paired catalog entry — a folded style family's superseded record. */
+  function recordOfLayer(layer: ModLayer): ModInstallRecord | undefined {
+    const entry = pairedCatalogOfLayer(layer);
+    return (entry ? recordOfEntry(entry) : undefined) ?? recordOf(layer.packId);
+  }
+
+  /** Whether the layer's uninstall can reach a real target. */
+  function canUninstallLayer(layer: ModLayer): boolean {
+    return recordOfLayer(layer) !== undefined || unitOfLayer(layer) !== null;
+  }
+
+  /** The layer pane's 卸载: confirm first, then resolve the ledger record /
+   *  installed unit on confirm. */
+  function requestLayerUninstall(layer: ModLayer) {
+    if (!canUninstallLayer(layer)) {
+      toast.error(t("resources.layers.uninstallUnpaired"));
+      return;
+    }
+    layerUninstallTarget.value = layer;
+  }
+
+  async function doLayerUninstall() {
+    const layer = layerUninstallTarget.value;
+    layerUninstallTarget.value = null;
+    if (!layer || !gameRoot.value) return;
+    if (gameRunning() || safeModeBlocked()) return;
+    if (!(await requestModOpDisclaimer())) return;
+    const record = recordOfLayer(layer);
+    const unit = record ? null : unitOfLayer(layer);
+    layerUninstallBusy.value = true;
+    try {
+      const r = record
+        ? await pluginUpdates.runModUninstall(record.id, gameRoot.value)
+        : unit
+          ? await api.modHubUninstallUnit(unit.relPath, gameRoot.value)
+          : null;
+      if (!r) {
+        toast.error(t("resources.layers.uninstallUnpaired"));
+        return;
+      }
+      toast.success(
+        t("resources.uninstalledDone", {
+          name: r.name,
+          removed: r.removedFiles,
+          restored:
+            r.restoredFiles > 0
+              ? t("resources.restoredPart", { count: r.restoredFiles })
+              : "",
+        }),
+      );
+      await Promise.all([
+        scan(),
+        loadRecords(),
+        pluginUpdates.syncFreshness(),
+        layerStack.refresh(),
+      ]);
+      // The removed layer can no longer own the pane.
+      if (!layerStack.layerById(layer.packId)) selection.value = null;
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      layerUninstallBusy.value = false;
+    }
+  }
+
+  /** The layer pane's 更新 — only offered when a catalog entry pairs; it
+   *  runs the ordinary catalog install so the ledger/fan-out rules apply. */
+  function layerUpdate(layer: ModLayer) {
+    const entry = pairedCatalogOfLayer(layer);
+    if (entry) void installMod(entry);
+  }
+
   function openLocal() {
     delistedHit.value = null;
     selectedPreset.value = "";
@@ -1755,7 +1915,8 @@ export function useModHub() {
       mode === "catalog" ||
       mode === "installed" ||
       mode === "foreign" ||
-      mode === "component"
+      mode === "component" ||
+      mode === "layer"
     ) {
       selection.value = null;
     }
@@ -1819,6 +1980,7 @@ export function useModHub() {
     const sel = selection.value;
     if (sel?.mode === "catalog") return sel.entry.id;
     if (sel?.mode === "installed") return sel.mod.relPath;
+    if (sel?.mode === "layer") return sel.packId;
     return "";
   });
 
@@ -1847,8 +2009,14 @@ export function useModHub() {
   // ── Row 3 refresh: source decides what "refresh" means ──
 
   function refresh() {
-    if (source.value === "online") void loadCatalog(true);
-    else void scan();
+    if (source.value === "online") {
+      void loadCatalog(true);
+      return;
+    }
+    void scan();
+    // The layered view's stack is a second dataset: rescanning installed
+    // mods must also refresh its order/winning counts.
+    if (bigCat.value === "beautify") void layerStack.refresh();
   }
 
   const refreshSpinning = computed(() =>
@@ -1881,6 +2049,11 @@ export function useModHub() {
     relatedOpen.value = true;
     relationTarget.value = null;
     junkCleaning.value = null;
+    layerUninstallTarget.value = null;
+    layerStack.reset();
+    if (source.value === "installed" && bigCat.value === "beautify") {
+      void layerStack.refresh();
+    }
   }
 
   onMounted(() => {
@@ -1961,6 +2134,16 @@ export function useModHub() {
     busy,
     gameRoot,
     pluginUpdates,
+    // ── layered resource packs (美化定制分层) ──
+    layerStack,
+    selectLayer,
+    pairedCatalogOfLayer,
+    canUninstallLayer,
+    requestLayerUninstall,
+    doLayerUninstall,
+    layerUpdate,
+    layerUninstallTarget,
+    layerUninstallBusy,
     // catalog / installed projections
     catalogInCat,
     applicableCatalog,

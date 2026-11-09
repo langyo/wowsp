@@ -9,6 +9,7 @@ export type Selection =
   | { mode: "installed"; mod: InstalledMod }
   | { mode: "foreign"; unit: ForeignModUnit }
   | { mode: "component"; comp: TextureComponent }
+  | { mode: "layer"; packId: string }
   | { mode: "local" };
 
 /** One covered game part under the material category — the unit the list

@@ -803,6 +803,7 @@ pub(crate) mod foreign;
 mod install;
 mod installed_units;
 mod junk;
+pub(crate) mod layer;
 mod loader_health;
 pub(crate) mod manifest;
 mod model_preview;

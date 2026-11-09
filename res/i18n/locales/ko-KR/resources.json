@@ -156,12 +156,14 @@
     "text": "텍스트 및 채팅",
     "skin": "함선 스킨",
     "ui": "UI 스킨",
-    "voice": "보이스 팩"
+    "voice": "보이스 팩",
+    "video": "영상",
+    "audio": "오디오",
+    "model": "모델"
   },
   "big": {
     "function": "기능",
-    "texture": "텍스처",
-    "voice": "음성"
+    "beautify": "꾸미기"
   },
   "source": {
     "online": "온라인",
@@ -418,5 +420,64 @@
     "nothingToDo": "다른 클라이언트가 모두 이 클라이언트의 MOD 구성과 일치합니다.",
     "noCatalog": "온라인 카탈로그가 아직 로드되지 않았습니다 — 동기화 전에 카탈로그를 새로고침하세요.",
     "noLedger": "설치 기록을 읽지 못했습니다 — 잠시 후 다시 시도하세요."
+  },
+  "layers": {
+    "title": "리소스 팩 레이어",
+    "priorityHint": "위 레이어가 아래 레이어를 덮습니다",
+    "renderReport": "렌더 보고서",
+    "apply": "순서 적용",
+    "applyNow": "지금 적용",
+    "applied": "적용됨",
+    "applyFailed": "순서를 적용하지 못했습니다: {reason}",
+    "pending": "순서가 저장되었지만 아직 게임에 적용되지 않았습니다",
+    "pendingDot": "적용 대기",
+    "loading": "레이어 불러오는 중…",
+    "loadFailed": "레이어를 불러오지 못했습니다: {reason}",
+    "retry": "재시도",
+    "empty": "설치된 꾸미기 팩이 없습니다",
+    "emptyHint": "텍스처·보이스·UI 팩을 설치하면 여기에 레이어로 쌓입니다.",
+    "fileCount": "{count}개 파일",
+    "shadowed": "위 레이어에 가려짐 {count}",
+    "shadowedCount": "위 레이어에 가려진 파일 {count}개",
+    "winningCount": "적용 중인 파일 {count}개",
+    "slotConflict": "슬롯 충돌",
+    "slotConflictHint": "여러 팩이 같은 슬롯을 사용합니다: {slots}",
+    "unmanaged": "레이어 미포함",
+    "unmanagedHint": "레이어에 포함하려면 다시 설치해야 합니다",
+    "managed": "레이어 포함됨",
+    "coveredBy": "「{name}」에 완전히 덮였습니다",
+    "layerN": "{n}번째 레이어",
+    "slotsLabel": "리소스 슬롯",
+    "slotsEmpty": "선언된 리소스 슬롯이 없습니다",
+    "moveTop": "맨 위로",
+    "moveUp": "위로",
+    "moveDown": "아래로",
+    "moveBottom": "맨 아래로",
+    "disable": "비활성화",
+    "enable": "활성화",
+    "update": "업데이트",
+    "uninstall": "제거",
+    "uninstallUnpaired": "이 레이어와 연결된 설치 단위 또는 설치 기록이 없습니다",
+    "uninstallConfirmTitle": "레이어 팩 제거",
+    "uninstallConfirmBody": "게임에서 「{name}」 및 모든 파일을 제거합니다. 이 작업은 되돌릴 수 없습니다.",
+    "componentsToggle": "리소스 면별로 보기",
+    "class": {
+      "override": "덮어쓰기",
+      "additive": "추가",
+      "registered": "등록"
+    },
+    "reportTitle": "렌더 보고서",
+    "report": {
+      "written": "작성",
+      "removed": "제거",
+      "unchanged": "변경 없음",
+      "blockedForeign": "외부 파일 차단",
+      "warnings": "경고",
+      "conflicts": "충돌 경로",
+      "noConflicts": "충돌하는 경로가 없습니다.",
+      "empty": "아직 렌더링이 실행되지 않았습니다.",
+      "foreign": "외부",
+      "capped": "처음 {shown}개 표시(전체 {total}개)"
+    }
   }
 }

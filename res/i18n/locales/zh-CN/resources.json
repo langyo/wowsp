@@ -156,12 +156,14 @@
     "text": "文本与聊天",
     "skin": "舰船皮肤",
     "ui": "界面皮肤",
-    "voice": "语音包"
+    "voice": "语音包",
+    "video": "视频",
+    "audio": "音频",
+    "model": "模型"
   },
   "big": {
     "function": "功能",
-    "texture": "材质",
-    "voice": "语音"
+    "beautify": "美化定制"
   },
   "source": {
     "online": "在线搜索",
@@ -418,5 +420,64 @@
     "nothingToDo": "其他客户端均已与本客户端的模组清单一致。",
     "noCatalog": "在线目录尚未加载——请先刷新目录再同步客户端。",
     "noLedger": "安装记录读取失败——请稍后重试。"
+  },
+  "layers": {
+    "title": "资源包分层",
+    "priorityHint": "上层覆盖下层",
+    "renderReport": "渲染报告",
+    "apply": "应用排序",
+    "applyNow": "立即应用",
+    "applied": "已应用",
+    "applyFailed": "应用排序失败：{reason}",
+    "pending": "排序已保存，尚未应用到游戏",
+    "pendingDot": "待应用",
+    "loading": "正在读取分层…",
+    "loadFailed": "读取分层失败：{reason}",
+    "retry": "重试",
+    "empty": "暂无已安装的美化资源包",
+    "emptyHint": "安装材质、语音或界面资源包后，会在这里按层级排列。",
+    "fileCount": "{count} 个文件",
+    "shadowed": "被上层遮挡 {count}",
+    "shadowedCount": "被上层遮挡 {count} 个文件",
+    "winningCount": "生效 {count} 个文件",
+    "slotConflict": "槽位冲突",
+    "slotConflictHint": "多个资源包占用同一资源面：{slots}",
+    "unmanaged": "未纳入分层",
+    "unmanagedHint": "需重装以纳入分层",
+    "managed": "已纳入分层",
+    "coveredBy": "已被「{name}」完全覆盖",
+    "layerN": "第 {n} 层",
+    "slotsLabel": "资源面",
+    "slotsEmpty": "未声明资源面",
+    "moveTop": "置顶",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "moveBottom": "置底",
+    "disable": "停用",
+    "enable": "启用",
+    "update": "更新",
+    "uninstall": "卸载",
+    "uninstallUnpaired": "找不到与该层配对的安装单元或安装记录",
+    "uninstallConfirmTitle": "卸载分层资源包",
+    "uninstallConfirmBody": "将从游戏中移除「{name}」及其全部文件，此操作不可撤销。",
+    "componentsToggle": "按资源面查看",
+    "class": {
+      "override": "覆盖",
+      "additive": "叠加",
+      "registered": "注册"
+    },
+    "reportTitle": "渲染报告",
+    "report": {
+      "written": "写入",
+      "removed": "移除",
+      "unchanged": "未变",
+      "blockedForeign": "外部文件阻塞",
+      "warnings": "警告",
+      "conflicts": "冲突路径",
+      "noConflicts": "没有冲突路径。",
+      "empty": "尚未执行渲染。",
+      "foreign": "外部",
+      "capped": "仅显示前 {shown} 条，共 {total} 条"
+    }
   }
 }

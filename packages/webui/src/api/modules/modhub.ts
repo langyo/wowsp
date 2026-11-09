@@ -258,7 +258,8 @@ export interface CatalogAuthor {
 
 export interface CatalogEntry {
   id: string;
-  /** `battle | minimap | port | texts | skin | voice | ui`. */
+  /** `battle | minimap | port | text | skin | ui | voice | video | audio | model`
+   *  (see features/modhub/taxonomy.ts — the curated index vocabulary). */
   category: string;
   /** Discussions thread carrying the full post (source, hashes, feedback). */
   discussion?: number | null;
@@ -589,6 +590,70 @@ export interface CatalogProgress {
   total: number;
 }
 
+// ── Layered resource packs (美化定制分层; mirrors the backend's camelCase wire) ──
+
+/** How a layer participates in the render: an override replaces the same
+ *  paths below it, an additive pack contributes new paths, and a
+ *  registered pack only registers slots (no gameplay files of its own). */
+export type LayerClass = "override" | "additive" | "registered";
+
+/** One installed pack in the Minecraft-style layer stack. `priority` is
+ *  0-based with 0 = top = highest; legacy layers (managed=false) are pinned
+ *  at the bottom and never reorder. */
+export interface ModLayer {
+  packId: string;
+  name: string;
+  version: string;
+  category: string;
+  layerClass: LayerClass;
+  enabled: boolean;
+  priority: number;
+  /** Declared render slots, e.g. `ship:JSB039` / `voice:MyBank`. */
+  slots: string[];
+  fileCount: number;
+  winningCount: number;
+  shadowedCount: number;
+  /** packId of the single layer shadowing this one; null at the top. */
+  coveredBy: string | null;
+  /** False = legacy install: pinned bottom, not reorderable, needs a
+   *  reinstall to join the layered stack. */
+  managed: boolean;
+}
+
+/** One render slot claimed by several packs at once. */
+export interface LayerSlotConflict {
+  slot: string;
+  packIds: string[];
+}
+
+/** The whole layered stack as the backend persists it. */
+export interface LayerStack {
+  layers: ModLayer[];
+  /** False = the saved order has not been rendered into the game yet. */
+  rendered: boolean;
+  generation: number;
+  slotConflicts: LayerSlotConflict[];
+  gameVersion: string | null;
+}
+
+/** One render pass's totals (the report modal's numbers). */
+export interface LayerRenderReport {
+  written: number;
+  removed: number;
+  unchanged: number;
+  blockedForeign: number;
+  warnings: string[];
+  generation: number;
+}
+
+/** One rendered path's winner and the layers it shadows. */
+export interface LayerPathWinner {
+  path: string;
+  packId: string | null;
+  shadowed: string[];
+  foreign: boolean;
+}
+
 export const modHubApi = {
   modHubClientUsage: (gameRoot: string) =>
     transport.invoke<ClientUsage>(RPC.mod_hub_client_usage, { gameRoot }),
@@ -770,4 +835,29 @@ export const modHubApi = {
   modCatalogUninstall: (modId: string, gameRoot: string) =>
     transport.invoke<UninstallReport>(RPC.mod_catalog_uninstall, { modId, gameRoot }),
   modHubRecords: () => transport.invoke<ModInstallRecord[]>(RPC.mod_hub_records),
+  // ── Layered resource packs (美化定制分层) ──
+  /** The saved (and rendered) layer stack: priorities, winners/shadowed
+   *  counts, slot conflicts and the dirty flag. */
+  modHubLayerStack: (gameRoot: string) =>
+    transport.invoke<LayerStack>(RPC.mod_hub_layer_stack, { gameRoot }),
+  /** Persist a new top-to-bottom order (packIds, index 0 = top). The
+   *  backend marks the stack dirty; the caller renders afterwards. */
+  modHubLayerSetOrder: (gameRoot: string, packIds: string[]) =>
+    transport.invoke<LayerStack>(RPC.mod_hub_layer_set_order, { gameRoot, packIds }),
+  /** Enable/disable one layer; the returned stack carries the new state
+   *  (and may already be marked dirty). */
+  modHubLayerSetEnabled: (gameRoot: string, packId: string, enabled: boolean) =>
+    transport.invoke<LayerStack>(RPC.mod_hub_layer_set_enabled, {
+      gameRoot,
+      packId,
+      enabled,
+    }),
+  /** Render the saved order into the game tree. Refused while the client
+   *  runs, so the caller keeps the dirty state and surfaces the reason. */
+  modHubLayerRender: (gameRoot: string) =>
+    transport.invoke<LayerRenderReport>(RPC.mod_hub_layer_render, { gameRoot }),
+  /** Per-path winner/shadow/foreign map — the render report modal's
+   *  conflict-path list. */
+  modHubLayerPaths: (gameRoot: string) =>
+    transport.invoke<LayerPathWinner[]>(RPC.mod_hub_layer_paths, { gameRoot }),
 };

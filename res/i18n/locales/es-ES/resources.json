@@ -156,12 +156,14 @@
     "text": "Textos y chat",
     "skin": "Skins de barcos",
     "ui": "Pieles de interfaz",
-    "voice": "Packs de voz"
+    "voice": "Packs de voz",
+    "video": "Vídeo",
+    "audio": "Audio",
+    "model": "Modelos"
   },
   "big": {
     "function": "Funciones",
-    "texture": "Texturas",
-    "voice": "Voces"
+    "beautify": "Personalización"
   },
   "source": {
     "online": "En línea",
@@ -418,5 +420,64 @@
     "nothingToDo": "Los demás clientes ya coinciden con el conjunto de mods de este cliente.",
     "noCatalog": "El catálogo en línea no está cargado; actualízalo antes de sincronizar los clientes.",
     "noLedger": "No se pudo leer el registro de instalaciones; inténtalo de nuevo en un momento."
+  },
+  "layers": {
+    "title": "Capas de paquetes de recursos",
+    "priorityHint": "Las capas superiores cubren a las inferiores",
+    "renderReport": "Informe de renderizado",
+    "apply": "Aplicar orden",
+    "applyNow": "Aplicar ahora",
+    "applied": "Aplicado",
+    "applyFailed": "No se pudo aplicar el orden: {reason}",
+    "pending": "Orden guardado, aún no aplicado al juego",
+    "pendingDot": "Sin aplicar",
+    "loading": "Cargando capas…",
+    "loadFailed": "No se pudieron cargar las capas: {reason}",
+    "retry": "Reintentar",
+    "empty": "Aún no hay paquetes de embellecimiento instalados",
+    "emptyHint": "Instala paquetes de texturas, voces o interfaz y se apilarán aquí.",
+    "fileCount": "{count} archivos",
+    "shadowed": "Cubierto por capas superiores: {count}",
+    "shadowedCount": "Archivos cubiertos por capas superiores: {count}",
+    "winningCount": "Archivos en efecto: {count}",
+    "slotConflict": "Conflicto de ranura",
+    "slotConflictHint": "Varios paquetes usan la misma ranura: {slots}",
+    "unmanaged": "Fuera de las capas",
+    "unmanagedHint": "Reinstálalo para incluirlo en las capas",
+    "managed": "En las capas",
+    "coveredBy": "Cubierto por completo por «{name}»",
+    "layerN": "Capa {n}",
+    "slotsLabel": "Ranuras de recursos",
+    "slotsEmpty": "No se declararon ranuras de recursos",
+    "moveTop": "Al principio",
+    "moveUp": "Subir",
+    "moveDown": "Bajar",
+    "moveBottom": "Al final",
+    "disable": "Desactivar",
+    "enable": "Activar",
+    "update": "Actualizar",
+    "uninstall": "Desinstalar",
+    "uninstallUnpaired": "Ninguna unidad instalada ni registro se corresponde con esta capa",
+    "uninstallConfirmTitle": "Desinstalar paquete por capas",
+    "uninstallConfirmBody": "Se eliminará «{name}» y todos sus archivos del juego. Esta acción no se puede deshacer.",
+    "componentsToggle": "Ver por superficie de recurso",
+    "class": {
+      "override": "Reemplazo",
+      "additive": "Aditivo",
+      "registered": "Registrado"
+    },
+    "reportTitle": "Informe de renderizado",
+    "report": {
+      "written": "Escritos",
+      "removed": "Eliminados",
+      "unchanged": "Sin cambios",
+      "blockedForeign": "Bloqueados (externos)",
+      "warnings": "Advertencias",
+      "conflicts": "Rutas en conflicto",
+      "noConflicts": "No hay rutas en conflicto.",
+      "empty": "Aún no se ha ejecutado ningún renderizado.",
+      "foreign": "Externo",
+      "capped": "Mostrando las primeras {shown} de {total}"
+    }
   }
 }
