@@ -279,6 +279,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--combine-headc", default="", help="combine-oof: standalone headC npz (--head-c-only --save-oof)")
     p.add_argument("--combine-out", default="", help="combine-oof: output combined npz path")
     p.add_argument("--metrics-out", default=None, help="write the full metrics JSON here")
+    p.add_argument(
+        "--eval-only",
+        action="store_true",
+        help="E26e-z: evaluate --eval-checkpoint on the loaded external data (no training/CV, no OOF/checkpoint/ONNX writes)",
+    )
+    p.add_argument(
+        "--eval-checkpoint",
+        default="",
+        help="E26e-z: delivered torp4 checkpoint.pt to evaluate in --eval-only mode (T4 r120)",
+    )
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
 
@@ -1560,6 +1570,14 @@ def holdout_outcome_metrics(prob, fired, hits, groups, reps: int = 1000, seed: i
             rho_ci = boot.get("spearman95")
             boot_clusters = int(boot.get("clusters", len(uniq)))
             boot_impl = "torpedo_outcome_lift.bootstrap_cluster"
+            # Tiny corpora can make a replicate's base rate zero, which yields
+            # NaN/inf boot quantiles; reject those and use the guarded local path.
+            if lift_ci is not None and not all(np.isfinite(np.asarray(lift_ci, dtype=np.float64))):
+                lift_ci = None
+            if rho_ci is not None and not all(np.isfinite(np.asarray(rho_ci, dtype=np.float64))):
+                rho_ci = None
+            if lift_ci is None or rho_ci is None:
+                std = None
         except Exception:
             std = None
     if std is None:
@@ -1576,12 +1594,16 @@ def holdout_outcome_metrics(prob, fired, hits, groups, reps: int = 1000, seed: i
             if f <= 0:
                 continue
             b = h / f
+            if not np.isfinite(b) or b <= 0.0:
+                continue  # a replicate whose base rate is zero cannot define a lift
             d_r = _fish_decile_ids(prob[idx], k)  # re-rank inside the replicate
             m1 = d_r == 1
             f1 = fired[idx][m1].sum()
             if f1 <= 0:
                 continue
-            lifts.append(float((hits[idx][m1].sum() / f1) / b))
+            lift_v = float((hits[idx][m1].sum() / f1) / b)
+            if np.isfinite(lift_v):
+                lifts.append(lift_v)
             valid_b = []
             for d in range(1, k + 1):
                 md = d_r == d
@@ -1590,8 +1612,8 @@ def holdout_outcome_metrics(prob, fired, hits, groups, reps: int = 1000, seed: i
                     valid_b.append((float(prob[idx][md].mean()), float(hits[idx][md].sum() / fd)))
             if len(valid_b) >= 3:
                 r = _spearman([x[0] for x in valid_b], [x[1] for x in valid_b])
-                if r is not None:
-                    rhos.append(r)
+                if r is not None and np.isfinite(r):
+                    rhos.append(float(r))
         lift_ci = ci(lifts)
         rho_ci = ci(rhos)
 
@@ -3897,6 +3919,242 @@ def run_final_fit_torp4(args: argparse.Namespace) -> int:
 # ── self-test (torch-free) ──────────────────────────────────────────────────
 
 
+
+# ── E26e-z: external-holdout eval-only mode (no training) ───────────────────
+
+
+def validate_eval_checkpoint_meta(
+    meta: dict,
+    data_feature_set: str,
+    data_global_dim: int,
+    data_extra_dim: int,
+) -> None:
+    """Torch-free validation of a --eval-only checkpoint against the loaded data.
+
+    Contract (E26e-z): the T4 checkpoint must be torp4 (extra_dim 22, global_dim 49),
+    and the external corpus must have been featurized with the same feature set so
+    the global/entity dims line up before load_state_dict.
+    """
+    required = ["model", "hidden", "feature_set", "extra_dim", "entity_dim", "global_dim"]
+    missing = [k for k in required if k not in meta]
+    if missing:
+        raise SystemExit("[e26] --eval-checkpoint is missing keys: " + ", ".join(missing))
+    feature_set = str(meta.get("feature_set", ""))
+    if feature_set != "torp4":
+        raise SystemExit(
+            "[e26] --eval-only expects the T4 torp4 checkpoint (feature_set=torp4); got " + repr(feature_set)
+        )
+    if str(data_feature_set) != feature_set:
+        raise SystemExit(
+            "[e26] checkpoint feature_set " + repr(feature_set) + " != loaded data feature_set " + repr(data_feature_set)
+        )
+    try:
+        extra_dim = int(meta["extra_dim"])
+        global_dim = int(meta["global_dim"])
+        hidden = int(meta["hidden"])
+        entity_dim = int(meta["entity_dim"])
+    except (TypeError, ValueError) as exc:
+        raise SystemExit("[e26] --eval-checkpoint dimensions are not integers: " + str(exc))
+    if extra_dim != int(data_extra_dim):
+        raise SystemExit(
+            "[e26] checkpoint extra_dim " + str(extra_dim) + " != loaded data extra_dim " + str(int(data_extra_dim))
+        )
+    if global_dim != int(data_global_dim):
+        raise SystemExit(
+            "[e26] checkpoint global_dim " + str(global_dim) + " != loaded data global_dim " + str(int(data_global_dim))
+        )
+    if hidden <= 0 or entity_dim <= 0:
+        raise SystemExit("[e26] --eval-checkpoint has non-positive hidden/entity_dim")
+
+
+def run_eval_only(args: argparse.Namespace) -> int:
+    """E26e-z: evaluate the delivered T4 torp4 checkpoint on an external holdout.
+
+    Skips training/CV entirely: restores model/hidden/feature_set/extra_dim from
+    --eval-checkpoint, loads an external dataset/click/outcome (same loader as
+    training), and writes headA/B/C + headC outcome metrics to --metrics-out.
+    Writes no OOF, checkpoint or ONNX artifacts.
+    """
+    import torch
+
+    log = lambda s: print(s, flush=True)  # noqa: E731
+    ckpt_path = Path(str(getattr(args, "eval_checkpoint", "") or ""))
+    if not ckpt_path.is_file():
+        raise SystemExit(
+            "[e26] --eval-only requires --eval-checkpoint <path> (got " + str(ckpt_path) + ")"
+        )
+    ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+    if not isinstance(ckpt, dict):
+        raise SystemExit("[e26] --eval-checkpoint must be a checkpoint dict")
+    ckpt_sha = hashlib.sha256(ckpt_path.read_bytes()).hexdigest()
+    feature_set = str(ckpt.get("feature_set", ""))
+    if feature_set != "torp4":
+        raise SystemExit(
+            "[e26] --eval-only with --eval-checkpoint expects feature_set=torp4 (T4); got " + repr(feature_set)
+        )
+    if not getattr(args, "click_context", []):
+        raise SystemExit("[e26] --eval-only with the T4 torp4 checkpoint requires --click-context (one sidecar per data file)")
+    if not getattr(args, "outcome", []):
+        raise SystemExit("[e26] --eval-only requires --outcome (one r120 sidecar per data file) for headC")
+
+    classes, class_pack_version = load_ship_classes(Path(args.ship_classes))
+    paths = resolve_data_paths(args)
+    if len(args.click_context) != len(paths):
+        raise SystemExit(
+            "[e26] --eval-only needs one --click-context sidecar per --data file ("
+            + str(len(paths)) + " data files, " + str(len(args.click_context)) + " sidecars)"
+        )
+    if len(args.outcome) != len(paths):
+        raise SystemExit(
+            "[e26] --eval-only needs one --outcome sidecar per --data file ("
+            + str(len(paths)) + " data files, " + str(len(args.outcome)) + " sidecars)"
+        )
+    ship_attrs = load_ship_attributes(Path(getattr(args, "ship_attrs", "") or str(DEFAULT_SHIP_ATTRS)))
+    log("[e26] eval-only: loading external corpus with checkpoint feature_set=" + feature_set)
+    data = load_torpedo_rows(
+        paths,
+        0,  # eval-only always loads every external row (never the pilot budget)
+        classes,
+        args.feature_dtype,
+        feature_set,
+        ship_attrs=ship_attrs,
+        click_sidecars=[Path(p) for p in args.click_context],
+    )
+    validate_eval_checkpoint_meta(
+        ckpt,
+        data["feature_set"],
+        int(data["global"].shape[1]),
+        int(data["extra_dim"]),
+    )
+    log(
+        "[e26] eval-only corpus: " + format(int(data["rows"]), ",") + " rows from " + str(len(data["files"]))
+        + " file(s), " + format(len(data["group_names"]), ",") + " replay(s), global_dim "
+        + str(int(data["global"].shape[1])) + ", extra_dim " + str(int(data["extra_dim"]))
+    )
+    outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
+
+    device = torch.device("cpu")
+    if args.device == "cuda":
+        if not torch.cuda.is_available():
+            raise SystemExit("[e26] --device cuda requested but torch reports no CUDA")
+        device = torch.device("cuda")
+    elif args.device == "auto" and torch.cuda.is_available():
+        device = torch.device("cuda")
+    model = build_three_head_model(
+        torch,
+        hidden=int(ckpt["hidden"]),
+        entity_dim=int(ckpt["entity_dim"]),
+        global_dim=int(ckpt["global_dim"]),
+    )
+    model.load_state_dict(ckpt["model"], strict=True)
+    model.to(device).eval()
+    log("[e26] eval-only: restored checkpoint hidden=" + str(int(ckpt["hidden"]))
+        + " entity_dim=" + str(int(ckpt["entity_dim"])) + " global_dim=" + str(int(ckpt["global_dim"]))
+        + " on " + str(device))
+
+    n = int(data["rows"])
+    p_a = np.full(n, np.nan, dtype=np.float64)
+    p_b = np.full(n, np.nan, dtype=np.float64)
+    p_c = np.full(n, np.nan, dtype=np.float64)
+    batch_size = int(args.eval_batch_size) if int(args.eval_batch_size) > 0 else max(int(args.batch_size), 8192)
+    entity = torch.from_numpy(data["entity"])
+    glob = torch.from_numpy(data["global"])
+    mask = torch.from_numpy(data["mask"])
+    with torch.no_grad():
+        for start in range(0, n, batch_size):
+            end = min(start + batch_size, n)
+            la, lb, lc = model(
+                entity[start:end].float().to(device),
+                glob[start:end].float().to(device),
+                mask[start:end].float().to(device),
+            )
+            p_a[start:end] = torch.sigmoid(la).float().cpu().numpy()
+            p_b[start:end] = torch.sigmoid(lb).float().cpu().numpy()
+            p_c[start:end] = torch.sigmoid(lc).float().cpu().numpy()
+    log("[e26] eval-only: forward done for " + format(n, ",") + " rows")
+
+    label_a = data["label_a"]
+    label_b = data["label_b"]
+    b_mask_np = (label_a == 1.0) & np.isfinite(label_b)
+    c_mask_np = (label_b == 1.0) & (outcome["fired"] >= 1)
+    label_c_np = (outcome["hits"] > 0).astype(np.float32)
+    head_b = head_b_metrics(label_b[b_mask_np], p_b[b_mask_np])
+    head_c = head_b_metrics(label_c_np[c_mask_np], p_c[c_mask_np])
+    head_c_outcome = holdout_outcome_metrics(
+        p_c[c_mask_np],
+        outcome["fired"][c_mask_np],
+        outcome["hits"][c_mask_np],
+        data["group"][c_mask_np],
+        reps=int(getattr(args, "holdout_bootstrap", 1000)),
+        seed=int(args.seed),
+    )
+    replay_ids = sorted(str(x) for x in data["group_names"])
+    dates = sorted({r[:8] for r in replay_ids if len(r) >= 8 and r[:8].isdigit()})
+    base = head_b.get("baseRate")
+    auprc_mult = (head_b["auprc"] / base) if (head_b.get("auprc") is not None and base) else None
+    top_lift = head_b.get("topDecile", {}).get("lift")
+    head_b_pass = bool(auprc_mult is not None and auprc_mult >= 2.0 and top_lift is not None and top_lift >= 1.5)
+    metrics = {
+        "mode": "eval-only",
+        "protocol": {
+            "mode": "external holdout eval-only (no training/CV, no OOF/checkpoint/ONNX writes)",
+            "checkpoint": str(ckpt_path),
+            "checkpointSha256": ckpt_sha,
+            "checkpointFeatureSet": feature_set,
+            "checkpointHidden": int(ckpt["hidden"]),
+            "checkpointExtraDim": int(ckpt["extra_dim"]),
+            "checkpointEntityDim": int(ckpt["entity_dim"]),
+            "checkpointGlobalDim": int(ckpt["global_dim"]),
+            "checkpointEpochs": ckpt.get("epochs"),
+            "temperatureNote": "research metrics use raw sigmoid probabilities; the checkpoint T_B/T_C are NOT applied",
+            "bootstrap": {"reps": int(getattr(args, "holdout_bootstrap", 1000)), "seed": int(args.seed),
+                          "cluster": "replayId (data group codes)"},
+            "loadedFeatureDtype": data["feature_dtype"],
+            "loaderMode": data["loader_mode"],
+        },
+        "dataset": {
+            "rows": n,
+            "files": [str(p) for p in data["files"]],
+            "replays": len(replay_ids),
+            "replayIds": replay_ids,
+            "dateMin": dates[0] if dates else None,
+            "dateMax": dates[-1] if dates else None,
+            "regions": data["region_counts"],
+            "classCounts": data["class_counts"],
+            "featureSet": data["feature_set"],
+            "extraDim": int(data["extra_dim"]),
+            "globalDim": int(data["global"].shape[1]),
+        },
+        "outcomeQuality": outcome["quality"],
+        "headA": head_a_metrics(label_a, p_a),
+        "headB": head_b,
+        "headC": head_c,
+        "headCOutcome": head_c_outcome,
+        "acceptance": {
+            "rule": "headB AUPRC >= 2.0x base AND top-decile launch lift >= 1.5 (E26e-z preregistered diagnostic gate); headC is descriptive (small sample, CI wide; no hard 2.30 line)",
+            "headB_diagnostic_pass": head_b_pass,
+            "headB_auprc_multiple": auprc_mult,
+            "headB_topDecileLift": top_lift,
+            "headC_outcome_lift": head_c_outcome.get("topDecileLift"),
+            "headC_outcome_lift95": head_c_outcome.get("bootstrap", {}).get("lift95"),
+            "headC_note": "descriptive only: external holdout is a single post-training batch; a retrain would need >=2 independent batches/seasons",
+        },
+    }
+    log("[e26] eval-only headB: AUPRC " + str(head_b.get("auprc")) + " (base " + str(base) + ", x"
+        + (str(round(auprc_mult, 4)) if auprc_mult is not None else "?") + ") topLift " + str(top_lift))
+    log("[e26] eval-only headC outcome: lift " + str(head_c_outcome.get("topDecileLift"))
+        + " rho " + str(head_c_outcome.get("spearmanDecile"))
+        + " CI " + str(head_c_outcome.get("bootstrap", {}).get("lift95")))
+    if args.metrics_out:
+        out = Path(args.metrics_out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(metrics, indent=2, ensure_ascii=False), encoding="utf-8")
+        log("[e26] eval-only metrics -> " + str(out))
+    else:
+        print(json.dumps(metrics, indent=2, ensure_ascii=False))
+    return 0
+
+
 def run_selftest() -> int:
     import tempfile
 
@@ -4565,6 +4823,40 @@ def run_selftest() -> int:
         ref = std(hp, hf, hh, np.full(100, np.nan), hg, 200, 0)
         assert hm["bootstrap"]["lift95"] == ref["lift95"], (hm["bootstrap"]["lift95"], ref["lift95"])
         assert hm["bootstrap"]["spearman95"] == ref["spearman95"]
+    # Tiny/degenerate corpora must not emit NaN bootstrap quantiles (E26e-z external
+    # holdout has only 37 launched rows; the guarded local fallback handles zero-base replicates).
+    zci0 = holdout_outcome_metrics(np.array([1.0, 0.9, 0.8, 0.7]), np.ones(4), np.zeros(4),
+                                   np.arange(4), reps=50, seed=0)
+    assert zci0["bootstrap"]["lift95"] is None or all(np.isfinite(zci0["bootstrap"]["lift95"]))
+    zci = holdout_outcome_metrics(np.array([1.0, 0.9, 0.8, 0.7]), np.ones(4), np.array([0, 0, 1, 0]),
+                                  np.arange(4), reps=50, seed=0, standard=False)
+    for key in ("lift95", "spearman95"):
+        v = zci["bootstrap"][key]
+        assert v is None or all(np.isfinite(v)), (key, v)
+
+    # E26e-z: eval-only args + torch-free checkpoint-meta validation.
+    eo = parse_args([
+        "--eval-only", "--eval-checkpoint", "ckpt.pt", "--data", "a.jsonl",
+        "--click-context", "c.jsonl", "--outcome", "o.jsonl", "--metrics-out", "m.json",
+    ])
+    assert eo.eval_only is True and eo.eval_checkpoint == "ckpt.pt"
+    assert parse_args([]).eval_only is False and parse_args([]).eval_checkpoint == ""
+    ok_meta = {"model": object(), "hidden": 192, "feature_set": "torp4", "extra_dim": 22,
+               "entity_dim": 15, "global_dim": 49}
+    validate_eval_checkpoint_meta(ok_meta, "torp4", 49, 22)
+    for bad_meta, tag in (
+        ({"model": object(), "feature_set": "torp4"}, "missing keys"),
+        (dict(ok_meta, feature_set="torp3"), "non-torp4 feature set"),
+        (dict(ok_meta, extra_dim=21), "extra_dim mismatch"),
+        (dict(ok_meta, global_dim=48), "global_dim mismatch"),
+    ):
+        failed = False
+        try:
+            validate_eval_checkpoint_meta(bad_meta, "torp4", 49, 22)
+        except SystemExit:
+            failed = True
+        assert failed, tag
+
     print("PASS")
     return 0
 
@@ -4576,6 +4868,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.selftest:
         return run_selftest()
+    if getattr(args, "eval_only", False):
+        return run_eval_only(args)
     if args.calibrate is not None:
         return run_calibration(args)
     if args.combine_oof:
