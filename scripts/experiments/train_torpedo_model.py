@@ -184,6 +184,46 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="E26e-c: 4 outcome sidecar JSONL in --data order (torpFiredFish/torpHits/torpHpLostNearby/torpTerminalNear)",
     )
     p.add_argument(
+        "--holdout-data",
+        nargs="+",
+        default=[],
+        help="E26e-o: holdout shard dataset JSONL(s) never used for training; pair with --holdout-click-context/--holdout-outcome",
+    )
+    p.add_argument(
+        "--holdout-click-context",
+        nargs="+",
+        default=[],
+        help="E26e-o: click-context sidecars for the holdout shards (one per --holdout-data file; torp4/5)",
+    )
+    p.add_argument(
+        "--holdout-target-geometry",
+        nargs="+",
+        default=[],
+        help="E26e-o: target-geometry sidecars for the holdout shards (one per --holdout-data file; torp5)",
+    )
+    p.add_argument(
+        "--holdout-outcome",
+        nargs="+",
+        default=[],
+        help="E26e-o: r120 outcome sidecars for the holdout shards (one per --holdout-data file; required with --head-c)",
+    )
+    p.add_argument(
+        "--holdout-metrics-out",
+        default="",
+        help="E26e-o: holdout metrics JSON (default: next to --save-oof, or ./holdout_metrics.json)",
+    )
+    p.add_argument(
+        "--holdout-oof-out",
+        default="",
+        help="E26e-o: fold-ensemble holdout predictions npz (default: next to --save-oof, or ./holdout_ensemble.npz)",
+    )
+    p.add_argument(
+        "--holdout-bootstrap",
+        type=int,
+        default=1000,
+        help="E26e-o: replay-cluster bootstrap reps for the holdout headC lift CI",
+    )
+    p.add_argument(
         "--click-context",
         nargs="+",
         default=[],
@@ -1229,7 +1269,7 @@ def train_fold(
             p_b[st : st + len(vidx_np)] = torch.sigmoid(lb).float().cpu().numpy()
             if use_head_c:
                 p_c[st : st + len(vidx_np)] = torch.sigmoid(lc).float().cpu().numpy()
-    return p_a, p_b, p_c, losses, time.time() - t0
+    return p_a, p_b, p_c, losses, time.time() - t0, model
 
 
 # ── metrics ─────────────────────────────────────────────────────────────────
@@ -1404,6 +1444,158 @@ def summarize_per_fold(fold_reports: list[dict]) -> dict:
 
 
 # ── main training run ───────────────────────────────────────────────────────
+
+
+def _avg_rank(a: np.ndarray) -> np.ndarray:
+    a = np.asarray(a, dtype=np.float64)
+    order = np.argsort(a, kind="mergesort")
+    ranks = np.empty(len(a), dtype=np.float64)
+    ranks[order] = np.arange(1, len(a) + 1, dtype=np.float64)
+    ux, inv = np.unique(a, return_inverse=True)
+    for g in np.unique(inv):
+        m = inv == g
+        ranks[m] = ranks[m].mean()
+    return ranks
+
+
+def _spearman(x, y):
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    ok = np.isfinite(x) & np.isfinite(y)
+    if int(ok.sum()) < 3:
+        return None
+    rx = _avg_rank(x[ok])
+    ry = _avg_rank(y[ok])
+    rx = rx - rx.mean()
+    ry = ry - ry.mean()
+    den = float(np.sqrt((rx * rx).sum() * (ry * ry).sum()))
+    return float((rx * ry).sum() / den) if den > 0.0 else None
+
+
+def _fish_decile_ids(prob, k: int = 10) -> np.ndarray:
+    """Rank-based fish-level deciles: 1 = highest probability (same contract as outcome_lift)."""
+    prob = np.asarray(prob, dtype=np.float64)
+    n = len(prob)
+    order = np.argsort(-prob, kind="mergesort")
+    dec = np.empty(n, dtype=np.int32)
+    for i, idx in enumerate(order):
+        dec[idx] = min(int(i * k / max(n, 1)), k - 1) + 1
+    return dec
+
+
+_STD_BOOTSTRAP = None
+
+
+def _standard_bootstrap():
+    """torpedo_outcome_lift.bootstrap_cluster when importable (same 1000/seed0 protocol)."""
+    global _STD_BOOTSTRAP
+    if _STD_BOOTSTRAP is None:
+        try:
+            import sys as _sys
+            here = str(Path(__file__).resolve().parent)
+            if here not in _sys.path:
+                _sys.path.insert(0, here)
+            import torpedo_outcome_lift as _tol
+            _STD_BOOTSTRAP = _tol.bootstrap_cluster
+        except Exception:
+            _STD_BOOTSTRAP = False
+    return _STD_BOOTSTRAP or None
+
+
+def holdout_outcome_metrics(prob, fired, hits, groups, reps: int = 1000, seed: int = 0, k: int = 10,
+                            standard: bool = True) -> dict:
+    """Fish-level top-decile outcome lift + replay-cluster bootstrap CI (E26e-o).
+
+    Bootstrap protocol: the standard torpedo_outcome_lift.bootstrap_cluster is
+    reused when importable (deciles are re-ranked inside every replicate). If the
+    module is unavailable (standalone run), the local fallback below does the same
+    per-replicate decile recomputation; a fixed-decile shortcut is NOT used.
+    """
+    prob = np.asarray(prob, dtype=np.float64)
+    fired = np.asarray(fired, dtype=np.float64)
+    hits = np.asarray(hits, dtype=np.float64)
+    groups = np.asarray(groups)
+    n = len(prob)
+    base_f = float(fired.sum())
+    base = (float(hits.sum()) / base_f) if base_f > 0 else None
+    dec = _fish_decile_ids(prob, k)
+    table = []
+    for d in range(1, k + 1):
+        m = dec == d
+        f = float(fired[m].sum())
+        h = float(hits[m].sum())
+        mp = float(prob[m].mean()) if int(m.sum()) else None
+        table.append({"decile": d, "rows": int(m.sum()), "firedFish": int(f), "hits": int(h),
+                      "hitRate": (h / f) if f > 0 else None, "meanProb": mp})
+    top_rate = table[0]["hitRate"]
+    lift = (top_rate / base) if (top_rate is not None and base not in (None, 0.0)) else None
+    valid = [t for t in table if t["hitRate"] is not None and t["meanProb"] is not None]
+    rho = _spearman([t["meanProb"] for t in valid], [t["hitRate"] for t in valid]) if len(valid) >= 3 else None
+    row_any = (hits > 0).astype(np.float64)
+    rho_row = _spearman(prob, row_any)
+    uniq = sorted({str(g) for g in groups})
+    idx_by_group = {g: np.flatnonzero(np.array([str(x) == g for x in groups])) for g in uniq}
+
+    def ci(vals):
+        if not vals:
+            return None
+        a = np.asarray(vals, dtype=np.float64)
+        return [float(np.quantile(a, 0.025)), float(np.quantile(a, 0.975))]
+
+    lift_ci = None
+    rho_ci = None
+    boot_impl = "local per-replicate decile recomputation"
+    boot_clusters = int(len(uniq))
+    std = _standard_bootstrap() if standard else None
+    if std is not None:
+        try:
+            boot = std(prob, fired, hits, np.full(n, np.nan), groups, int(reps), int(seed))
+            lift_ci = boot.get("lift95")
+            rho_ci = boot.get("spearman95")
+            boot_clusters = int(boot.get("clusters", len(uniq)))
+            boot_impl = "torpedo_outcome_lift.bootstrap_cluster"
+        except Exception:
+            std = None
+    if std is None:
+        rng = np.random.default_rng(seed)
+        lifts = []
+        rhos = []
+        for _ in range(int(reps)):
+            pick = rng.integers(0, len(uniq), size=len(uniq)) if len(uniq) else np.array([], dtype=np.int64)
+            idx = np.concatenate([idx_by_group[uniq[i]] for i in pick]) if len(uniq) else np.array([], dtype=np.int64)
+            if not len(idx):
+                continue
+            f = fired[idx].sum()
+            h = hits[idx].sum()
+            if f <= 0:
+                continue
+            b = h / f
+            d_r = _fish_decile_ids(prob[idx], k)  # re-rank inside the replicate
+            m1 = d_r == 1
+            f1 = fired[idx][m1].sum()
+            if f1 <= 0:
+                continue
+            lifts.append(float((hits[idx][m1].sum() / f1) / b))
+            valid_b = []
+            for d in range(1, k + 1):
+                md = d_r == d
+                fd = fired[idx][md].sum()
+                if fd > 0:
+                    valid_b.append((float(prob[idx][md].mean()), float(hits[idx][md].sum() / fd)))
+            if len(valid_b) >= 3:
+                r = _spearman([x[0] for x in valid_b], [x[1] for x in valid_b])
+                if r is not None:
+                    rhos.append(r)
+        lift_ci = ci(lifts)
+        rho_ci = ci(rhos)
+
+    return {
+        "rows": int(n), "firedFish": int(base_f), "hits": int(hits.sum()), "baseRate": base,
+        "topDecileLift": lift, "spearmanDecile": rho, "spearmanRow": rho_row,
+        "deciles": table,
+        "bootstrap": {"reps": int(reps), "seed": int(seed), "clusters": boot_clusters,
+                      "lift95": lift_ci, "spearman95": rho_ci, "implementation": boot_impl},
+    }
 
 
 def run_training(args: argparse.Namespace) -> dict:
@@ -1606,6 +1798,7 @@ def run_training(args: argparse.Namespace) -> dict:
     p_b = np.full(n, np.nan, dtype=np.float64)
     p_c = np.full(n, np.nan, dtype=np.float64) if args.head_c else None
     fold_reports: list[dict] = []
+    fold_models: list = []
     epoch_losses_all: list[list[float]] = []
     for f in range(split["folds"]):
         val_idx = np.flatnonzero(fold == f)
@@ -1613,7 +1806,7 @@ def run_training(args: argparse.Namespace) -> dict:
         if len(val_idx) == 0 or len(train_idx) == 0:
             continue  # fold 1 of the single-replay path with tiny data
         log(f"[e26] fold {f}: train {len(train_idx):,} / val {len(val_idx):,}")
-        fa, fb, fc, losses, secs = train_fold(
+        fa, fb, fc, losses, secs, fold_model = train_fold(
             torch=torch,
             entity=entity,
             glob=glob,
@@ -1638,6 +1831,7 @@ def run_training(args: argparse.Namespace) -> dict:
         p_b[val_idx] = fb
         if args.head_c:
             p_c[val_idx] = fc
+        fold_models.append(fold_model)
         epoch_losses_all.append(losses)
         va = val_idx
         mb = b_mask_np[va]
@@ -1666,6 +1860,135 @@ def run_training(args: argparse.Namespace) -> dict:
 
     scored = np.isfinite(p_a)
     log(f"[e26] out-of-fold predictions for {int(scored.sum()):,}/{n:,} rows")
+
+    # E26e-o: leave-one-region-out evaluation. The holdout shard is never trained
+    # on; every fold model predicts it and the fold probabilities are averaged.
+    holdout_metrics = None
+    if getattr(args, "holdout_data", []):
+        hold_paths = [Path(p) for p in args.holdout_data]
+        hold_click = None
+        if args.feature_set in ("torp4", "torp5"):
+            hold_click = [Path(p) for p in getattr(args, "holdout_click_context", [])]
+            if len(hold_click) != len(hold_paths):
+                raise SystemExit("[e26] --holdout-click-context needs one sidecar per --holdout-data file")
+        hold_geom = None
+        if args.feature_set == "torp5":
+            hold_geom = [Path(p) for p in getattr(args, "holdout_target_geometry", [])]
+            if len(hold_geom) != len(hold_paths):
+                raise SystemExit("[e26] --holdout-target-geometry needs one sidecar per --holdout-data file")
+        hold_data = load_torpedo_rows(
+            hold_paths, 0, classes, args.feature_dtype, args.feature_set,
+            ship_attrs=ship_attrs, click_sidecars=hold_click, geom_sidecars=hold_geom,
+        )
+        log("[e26] holdout loaded " + format(hold_data["rows"], ",") + " rows from "
+            + str(len(hold_paths)) + " shard(s) (never trained on)")
+        hold_outcome = None
+        if args.head_c:
+            hold_outcome_paths = [Path(p) for p in getattr(args, "holdout_outcome", [])]
+            if not hold_outcome_paths:
+                raise SystemExit("[e26] --head-c with --holdout-data requires --holdout-outcome")
+            if len(hold_outcome_paths) != len(hold_paths):
+                raise SystemExit("[e26] --holdout-outcome needs one sidecar per --holdout-data file")
+            hold_outcome = load_outcome_sidecars(hold_paths, hold_outcome_paths, hold_data, log)
+        hrows = hold_data["rows"]
+        h_entity = torch.from_numpy(hold_data["entity"]).to(device)
+        h_glob = torch.from_numpy(hold_data["global"]).to(device)
+        h_mask = torch.from_numpy(hold_data["mask"]).to(device)
+        h_eval_batch = getattr(args, "eval_batch_size", 0) or max(args.batch_size, 8192)
+        acc_a = np.zeros(hrows, dtype=np.float64)
+        acc_b = np.zeros(hrows, dtype=np.float64)
+        acc_c = np.zeros(hrows, dtype=np.float64) if args.head_c else None
+        n_models = 0
+        for model in fold_models:
+            model.eval()
+            n_models += 1
+            with torch.no_grad():
+                for st in range(0, hrows, h_eval_batch):
+                    en = min(st + h_eval_batch, hrows)
+                    idx = torch.arange(st, en, dtype=torch.int64, device=device)
+                    xb = h_entity[idx].to(device).float()
+                    gb = h_glob[idx].to(device).float()
+                    mb = h_mask[idx].to(device).float()
+                    if args.head_c:
+                        la, lb, lc = model(xb, gb, mb)
+                        acc_c[st:en] += torch.sigmoid(lc).float().cpu().numpy()
+                    else:
+                        la, lb = model(xb, gb, mb)
+                    acc_a[st:en] += torch.sigmoid(la).float().cpu().numpy()
+                    acc_b[st:en] += torch.sigmoid(lb).float().cpu().numpy()
+        denom = float(max(n_models, 1))
+        p_hold_a = acc_a / denom
+        p_hold_b = acc_b / denom
+        p_hold_c = (acc_c / denom) if args.head_c else None
+        hb_labels = hold_data["label_b"]
+        hb_mask = np.isfinite(hb_labels)
+        holdout_metrics = {
+            "protocol": {
+                "mode": "leave-one-region-out fold ensemble",
+                "holdoutData": [str(p) for p in hold_paths],
+                "foldModelsAveraged": int(n_models),
+                "feature_set": hold_data["feature_set"],
+                "rows": int(hrows),
+            },
+            "headA": head_a_metrics(hold_data["label_a"], p_hold_a),
+            "headB": head_b_metrics(hb_labels[hb_mask], p_hold_b[hb_mask]),
+        }
+        if args.head_c:
+            c_mask_h = (hb_labels == 1.0) & (hold_outcome["fired"] >= 1)
+            label_c_h = (hold_outcome["hits"] > 0).astype(np.float32)
+            holdout_metrics["launchedRows"] = int(c_mask_h.sum())
+            holdout_metrics["headC"] = head_b_metrics(label_c_h[c_mask_h], p_hold_c[c_mask_h])
+            oc = holdout_outcome_metrics(
+                p_hold_c[c_mask_h], hold_outcome["fired"][c_mask_h], hold_outcome["hits"][c_mask_h],
+                hold_data["group"][c_mask_h], reps=int(getattr(args, "holdout_bootstrap", 1000)), seed=args.seed,
+            )
+            holdout_metrics["headCOutcome"] = oc
+            hb_auprc = holdout_metrics["headB"].get("auprc")
+            hb_base = holdout_metrics["headB"].get("baseRate")
+            hb_top = holdout_metrics["headB"].get("topDecile", {}).get("lift")
+            hc_lift = oc.get("topDecileLift")
+            hc_rho = oc.get("spearmanDecile")
+            hc_ci = oc.get("bootstrap", {}).get("lift95")
+            primary = bool(
+                hc_lift is not None and hc_lift >= 2.0 and hc_rho is not None and hc_rho >= 0.30
+                and hc_ci is not None and hc_ci[0] > 0.0
+            )
+            holdout_metrics["acceptance"] = {
+                "rule": "holdout headC r120 outcome lift >= 2.00 AND rho >= 0.30 AND CI excludes 0; headB AUPRC >= 2.0x base AND top-decile lift >= 1.5x",
+                "headC_primary_pass": primary,
+                "headC_lift": hc_lift,
+                "headC_spearman": hc_rho,
+                "headC_lift95": hc_ci,
+                "headB_auprc": hb_auprc,
+                "headB_baseRate": hb_base,
+                "headB_auprc_multiple": (hb_auprc / hb_base) if (hb_auprc is not None and hb_base) else None,
+                "headB_topDecileLift": hb_top,
+                "headB_pass": bool(hb_auprc is not None and hb_base and hb_auprc >= 2.0 * hb_base and hb_top is not None and hb_top >= 1.5),
+            }
+            log("[e26] holdout headC outcome: lift " + str(hc_lift) + " rho " + str(hc_rho)
+                + " CI " + str(hc_ci) + " -> " + ("PASS" if primary else "MIXED"))
+        out_parent = Path(args.save_oof).parent if args.save_oof else Path(".")
+        hmetrics_path = Path(args.holdout_metrics_out) if args.holdout_metrics_out else (out_parent / "holdout_metrics.json")
+        hmetrics_path.parent.mkdir(parents=True, exist_ok=True)
+        hmetrics_path.write_text(json.dumps(holdout_metrics, indent=1, ensure_ascii=False), encoding="utf-8")
+        log("[e26] holdout metrics -> " + str(hmetrics_path))
+        hoof_path = Path(args.holdout_oof_out) if args.holdout_oof_out else (out_parent / "holdout_ensemble.npz")
+        payload = oof_arrays(
+            hold_data, p_hold_a, p_hold_b, np.zeros(hrows, dtype=np.int8),
+            p_c=p_hold_c if args.head_c else None,
+            label_c=((hold_outcome["hits"] > 0).astype(np.float32) if (args.head_c and hold_outcome is not None) else None),
+        )
+        if hold_outcome is not None:
+            payload["fired"] = np.asarray(hold_outcome["fired"], dtype=np.int32)
+            payload["hits"] = np.asarray(hold_outcome["hits"], dtype=np.int32)
+            payload["hp"] = np.asarray(hold_outcome["hp"], dtype=np.float32)
+        payload["meta"] = np.array(json.dumps({
+            "lineage": "E26e-o leave-one-region-out holdout fold-ensemble",
+            "holdoutData": [str(p) for p in hold_paths],
+            "foldModelsAveraged": int(n_models),
+        }, ensure_ascii=False), dtype="U200000")
+        np.savez_compressed(hoof_path, **payload)
+        log("[e26] holdout predictions -> " + str(hoof_path))
 
     # Pooled OOF metrics are the PRE-REGISTERED primary analysis.
     oof = {
@@ -1826,6 +2149,8 @@ def run_training(args: argparse.Namespace) -> dict:
                 p_c[c_mask_np], label_c_np[c_mask_np], data["class"][c_mask_np]
             ),
         }
+    if holdout_metrics is not None:
+        metrics["holdout"] = holdout_metrics
     if args.save_oof:
         metrics["protocol"]["save_oof"] = str(args.save_oof)
         metrics["protocol"]["save_oof_summary"] = save_oof_npz(
@@ -1872,6 +2197,18 @@ def print_report(metrics: dict) -> None:
         print(f"  {reg:7s} rows {e['rows']:8,} canLaunch {e['canLaunch']:8,} "
               f"launched {e['launched']:6,} posRate {e['positiveRate']} "
               f"AUPRC-A {e['auprc_headA']} AUPRC-B {e['auprc_headB']}")
+    ho = metrics.get("holdout")
+    if ho:
+        print(f"\nholdout: rows {ho['protocol']['rows']:,} | fold models averaged {ho['protocol']['foldModelsAveraged']}")
+        hb = ho["headB"]
+        print(f"  headB AUPRC {hb['auprc']} (base {hb['baseRate']}) top-decile lift {hb['topDecile']['lift']} AUC {hb['roc_auc']}")
+        if "headCOutcome" in ho:
+            oc = ho["headCOutcome"]
+            print(f"  headC outcome lift {oc['topDecileLift']} rho {oc['spearmanDecile']} CI {oc['bootstrap']['lift95']}")
+            if "acceptance" in ho:
+                print(f"  holdout acceptance: {ho['acceptance']['rule']} -> headC "
+                      f"{'PASS' if ho['acceptance']['headC_primary_pass'] else 'MIXED'}; "
+                      f"headB {'PASS' if ho['acceptance']['headB_pass'] else 'MIXED'}")
     acc = metrics["acceptance"]
     print(f"\nacceptance: {acc['rule']}")
     print(f"  AUPRC {acc['headB_auprc']} = {acc['headB_auprc_multiple']}x base -> {acc['pass_auprc']}; "
@@ -2218,8 +2555,10 @@ def load_outcome_sidecars(paths: list, sidecar_paths: list, data: dict, log_fn) 
     arrays + quality counters. Without --outcome the training path is untouched."""
     if not sidecar_paths:
         raise SystemExit("[e26] --outcome needs at least one sidecar (4 for the full corpus, in --data order)")
-    if len(sidecar_paths) > 1 and len(sidecar_paths) != 4:
-        raise SystemExit("[e26] --outcome accepts 1 (single-shard/P0) or 4 (apac,eu,na,own in --data order) sidecars")
+    if len(sidecar_paths) != len(paths):
+        raise SystemExit("[e26] --outcome needs one sidecar per --data file (P0 single-shard: 1; "
+                         "full corpus: 4; E26e-o train subset: 3); got " + str(len(sidecar_paths))
+                         + " sidecars vs " + str(len(paths)) + " data files")
     n = data["rows"]
     fired = np.zeros(n, dtype=np.int32)
     hits = np.zeros(n, dtype=np.int32)
@@ -4034,7 +4373,8 @@ def run_selftest() -> int:
         sp = root / ("outcome_" + f + ".jsonl")
         sp.write_text(json.dumps(case) + "\n", encoding="utf-8")
         side_paths.append(sp)
-    joined = load_outcome_sidecars([], side_paths, odata, lambda s: None)
+    dummy_paths = [Path("d" + str(i)) for i in range(4)]
+    joined = load_outcome_sidecars(dummy_paths, side_paths, odata, lambda s: None)
     q = joined["quality"]
     assert q["launchedRows"] == 2 and q["launchedWithZeroFiredFish"] == 0
     assert q["hitsAmongLaunched"] == 3 and q["firedFishAmongLaunched"] == 4
@@ -4048,11 +4388,11 @@ def run_selftest() -> int:
     bad = dict(ocases[0]); bad["replayId"] = "WRONG"
     sp = root / "outcome_bad.jsonl"
     sp.write_text(json.dumps(bad) + "\n", encoding="utf-8")
-    bad_join = load_outcome_sidecars([], [sp] + side_paths[1:], odata, lambda s: None)
+    bad_join = load_outcome_sidecars(dummy_paths, [sp] + side_paths[1:], odata, lambda s: None)
     assert bad_join["quality"]["mismatchReplay"] == 1
     # wrong row count must be loud
     try:
-        load_outcome_sidecars([], [side_paths[0]], odata, lambda s: None)
+        load_outcome_sidecars(dummy_paths, [side_paths[0]], odata, lambda s: None)
         raise AssertionError("expected SystemExit on sidecar count mismatch")
     except SystemExit:
         pass
@@ -4183,6 +4523,40 @@ def run_selftest() -> int:
         failed = True
     assert failed is True
 
+    # E26e-o: holdout (leave-one-region-out) mode.
+    ho = parse_args(["--holdout-data", "own.jsonl", "--holdout-click-context", "click_own.jsonl",
+                     "--holdout-outcome", "outcome_own.jsonl", "--holdout-bootstrap", "50"])
+    assert ho.holdout_data == ["own.jsonl"] and ho.holdout_click_context == ["click_own.jsonl"]
+    assert ho.holdout_outcome == ["outcome_own.jsonl"] and ho.holdout_bootstrap == 50
+    assert parse_args([]).holdout_data == [] and parse_args([]).holdout_outcome == []
+    # deterministic synthetic lift: top decile all hits, base 0.1 -> lift 10, rho 1
+    hp = np.linspace(1.0, 0.0, 100)
+    hf = np.ones(100, dtype=np.float64)
+    hh = np.zeros(100, dtype=np.float64)
+    for d in range(10):
+        hh[d * 10 : d * 10 + (9 - d)] = 1.0  # decile hit rates 0.9, 0.8, ..., 0.0
+    hg = np.arange(100)
+    hm = holdout_outcome_metrics(hp, hf, hh, hg, reps=200, seed=0)
+    assert abs(hm["baseRate"] - 0.45) < 1e-12, hm["baseRate"]
+    assert abs(hm["topDecileLift"] - 2.0) < 1e-9, hm["topDecileLift"]
+    assert abs(hm["spearmanDecile"] - 1.0) < 1e-9, hm["spearmanDecile"]
+    assert hm["bootstrap"]["lift95"] is not None and hm["bootstrap"]["lift95"][0] > 0.0
+    assert hm["bootstrap"]["implementation"] in (
+        "torpedo_outcome_lift.bootstrap_cluster", "local per-replicate decile recomputation")
+    # the local fallback must also re-rank deciles inside each replicate and be deterministic
+    hm_local = holdout_outcome_metrics(hp, hf, hh, hg, reps=200, seed=0, standard=False)
+    assert hm_local["bootstrap"]["implementation"] == "local per-replicate decile recomputation"
+    assert hm_local["bootstrap"]["lift95"] is not None
+    hm_local2 = holdout_outcome_metrics(hp, hf, hh, hg, reps=200, seed=0, standard=False)
+    assert hm_local2["bootstrap"]["lift95"] == hm_local["bootstrap"]["lift95"], "local bootstrap must be deterministic"
+    hm2 = holdout_outcome_metrics(hp, hf, hh, hg, reps=200, seed=0)
+    assert hm2["topDecileLift"] == hm["topDecileLift"], "holdout metrics must be deterministic"
+    # when the standard module is importable the CI must match bootstrap_cluster exactly
+    std = _standard_bootstrap()
+    if std is not None:
+        ref = std(hp, hf, hh, np.full(100, np.nan), hg, 200, 0)
+        assert hm["bootstrap"]["lift95"] == ref["lift95"], (hm["bootstrap"]["lift95"], ref["lift95"])
+        assert hm["bootstrap"]["spearman95"] == ref["spearman95"]
     print("PASS")
     return 0
 
