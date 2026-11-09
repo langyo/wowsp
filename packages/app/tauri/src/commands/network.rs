@@ -92,6 +92,13 @@ pub struct NetworkConfig {
     /// ladder as fallback only. See commands/github_mirror.rs.
     #[serde(default)]
     pub github_mirrors: Vec<String>,
+    /// User-configured Hugging Face endpoint bases (a mirror or a private
+    /// gateway) for the `ai` model channel, tried in saved order before
+    /// the official route; empty → the official endpoint (+ built-ins once
+    /// the `ai` wave lands). Base URLs only, https enforced. See
+    /// docs/en/designs/ai-models.md section 7.
+    #[serde(default)]
+    pub huggingface_mirrors: Vec<String>,
 }
 
 impl Default for NetworkConfig {
@@ -102,6 +109,7 @@ impl Default for NetworkConfig {
             resource_cdn: None,
             github_mirror: None,
             github_mirrors: Vec::new(),
+            huggingface_mirrors: Vec::new(),
         }
     }
 }
@@ -149,6 +157,32 @@ fn looks_like_url(value: &str) -> bool {
 /// blocked update with confusing errors).
 fn looks_like_https_mirror(value: &str) -> bool {
     value.starts_with("https://") && !value.chars().any(char::is_whitespace)
+}
+
+/// Max endpoint bases retained per provider — a longer ladder is noise, and
+/// the saved file is the user's; extras are dropped with a warning.
+const MAX_MIRRORS_PER_PROVIDER: usize = 8;
+
+/// Sanitize one Hugging Face endpoint base: trimmed, https only, no
+/// whitespace/query/fragment, all trailing '/' stripped. `None` when the
+/// value could never address a hub; the caller logs and drops it.
+fn sanitize_endpoint_base(raw: &str) -> Option<String> {
+    let trimmed = raw.trim().trim_end_matches('/');
+    if trimmed.is_empty() {
+        tracing::warn!("network config: ignoring empty huggingfaceMirrors entry");
+        return None;
+    }
+    if !trimmed.starts_with("https://") || trimmed.chars().any(char::is_whitespace) {
+        tracing::warn!("network config: ignoring non-https huggingfaceMirrors entry {trimmed:?}");
+        return None;
+    }
+    if trimmed.contains('?') || trimmed.contains('#') {
+        tracing::warn!(
+            "network config: ignoring huggingfaceMirrors entry {trimmed:?} (query/fragment)"
+        );
+        return None;
+    }
+    Some(trimmed.to_string())
 }
 
 /// The fallback layer proper: resolve every invalid field onto the
@@ -203,6 +237,28 @@ pub fn sanitize(mut config: NetworkConfig) -> NetworkConfig {
         }
     }
     config.github_mirrors = mirrors;
+    // Hugging Face endpoint bases: https only, no query/fragment, trailing
+    // '/' stripped, capped and deduped in saved order. Unlike the GitHub
+    // list this is purely additive configuration — nothing consumes it
+    // until the `ai` channel wave lands, but sanitizing it here keeps a
+    // hand-edited file from poisoning the later ladder.
+    let mut hf_mirrors: Vec<String> = Vec::with_capacity(config.huggingface_mirrors.len());
+    for raw in config.huggingface_mirrors.drain(..) {
+        let Some(endpoint) = sanitize_endpoint_base(&raw) else {
+            continue;
+        };
+        if hf_mirrors.len() >= MAX_MIRRORS_PER_PROVIDER {
+            tracing::warn!(
+                "network config: dropping huggingfaceMirrors entry {endpoint:?} \
+                 (more than {MAX_MIRRORS_PER_PROVIDER} endpoints)"
+            );
+            continue;
+        }
+        if !hf_mirrors.iter().any(|m| m == &endpoint) {
+            hf_mirrors.push(endpoint);
+        }
+    }
+    config.huggingface_mirrors = hf_mirrors;
     // "manual" without a usable URL would silently mean "no proxy at all"
     // — the safest reading of a half-broken manual config is the default.
     if config.mode == ProxyMode::Manual && config.proxy.is_none() {
@@ -225,6 +281,8 @@ struct NetworkConfigTomlFile {
     resource_cdn: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     github_mirrors: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    huggingface_mirrors: Vec<String>,
 }
 
 /// Serialize the canonical file text (header + flat TOML keys).
@@ -234,6 +292,7 @@ fn canonical_toml(config: &NetworkConfig) -> anyhow::Result<String> {
         proxy: config.proxy.clone(),
         resource_cdn: config.resource_cdn.clone(),
         github_mirrors: config.github_mirrors.clone(),
+        huggingface_mirrors: config.huggingface_mirrors.clone(),
     };
     let body = toml::to_string(&file).map_err(|e| anyhow!("serialize network config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
@@ -288,6 +347,8 @@ pub struct NetworkConfigResponse {
     pub resource_cdn: Option<String>,
     /// The user mirror list (sanitized, saved order).
     pub github_mirrors: Vec<String>,
+    /// The Hugging Face endpoint bases (sanitized, saved order).
+    pub huggingface_mirrors: Vec<String>,
     /// LEGACY display compat: the list head, `None` when the list is
     /// empty — older webui builds render this single field.
     pub github_mirror: Option<String>,
@@ -311,6 +372,7 @@ impl From<NetworkConfig> for NetworkConfigResponse {
             resource_cdn: cfg.resource_cdn,
             github_mirror: github_mirrors.first().cloned(),
             github_mirrors,
+            huggingface_mirrors: cfg.huggingface_mirrors,
             effective_proxy,
             proxy_source,
         }
@@ -1137,6 +1199,50 @@ mod tests {
         });
         assert_eq!(cfg.mode, ProxyMode::Manual);
         assert_eq!(cfg.proxy.as_deref(), Some("socks5://127.0.0.1:1080"));
+    }
+
+    /// Hugging Face endpoint bases keep only https roots, strip trailing
+    /// slashes, dedupe and leave the GitHub list untouched.
+    #[test]
+    fn sanitize_normalizes_huggingface_mirrors() {
+        let cfg = sanitize(NetworkConfig {
+            huggingface_mirrors: vec![
+                " https://hf-mirror.com/ ".into(),
+                "http://insecure.example".into(),
+                "https://hf-mirror.com".into(),
+                "https://ok.example/path?x=1".into(),
+                "https://eight.example".into(),
+            ],
+            github_mirrors: vec!["https://ghfast.top".into()],
+            ..NetworkConfig::default()
+        });
+        assert_eq!(
+            cfg.huggingface_mirrors,
+            vec!["https://hf-mirror.com", "https://eight.example"]
+        );
+        assert_eq!(cfg.github_mirrors, vec!["https://ghfast.top"]);
+    }
+
+    /// The Hugging Face endpoint list round-trips through the canonical TOML
+    /// file and is omitted when empty (existing files stay byte-identical).
+    #[test]
+    fn huggingface_mirrors_round_trip_through_toml() {
+        let dir = temp_dir("hf-mirrors");
+        let cfg = NetworkConfig {
+            mode: ProxyMode::None,
+            huggingface_mirrors: vec!["https://hf-mirror.com".into()],
+            ..NetworkConfig::default()
+        };
+        std::fs::write(dir.join(NETWORK_CONFIG_FILE), canonical_toml(&cfg).unwrap()).unwrap();
+        let loaded = load_config_from(&dir);
+        assert_eq!(loaded.huggingface_mirrors, cfg.huggingface_mirrors);
+        assert!(
+            !canonical_toml(&NetworkConfig::default())
+                .unwrap()
+                .contains("huggingfaceMirrors"),
+            "an empty list never writes the key"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// The mode enum round-trips through serde in every direction the app
