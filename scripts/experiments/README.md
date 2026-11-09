@@ -52,6 +52,7 @@
 | E26e-m | server damageStat 真值 vs 120u+HP 代理审计 | 用录像者 server damageStat（weapon=7/category=0）审计代理命中标签：代理 vs 真值 precision/recall；server 真值标签下 headC outcome lift 是否仍 ≥2.30（样本 ≥200 才判定） | ✅ | recorder launched 710 行（4.2%）：TP/FP/FN/TN **138/35/147/390**、precision **0.7977**/recall **0.4842**（漏 52% server 命中）；server-label headC lift **2.3477×**/ρ 0.891/CI [1.807,3.018]（fired 3,212/hits 471）→ **真值下仍 PASS**；局限 recorder-only/窗口重叠 |
 | E26e-n | server 真值绝对概率校准 | 不重训，用 5 折 replay 分组 held-out **Platt（主）/isotonic（次）** 把 headC 绝对概率校准到 server damageStat 真值；预注册原判据含 pooled lift 保持 | ⚠️ | 710 truth 行（285 正/311 replay/3,212 fired）；raw→Platt **Brier 0.2805→0.2241（−20.1%）**、**logloss 0.8067→0.6387（−0.168）**、**ECE 0.2367→0.0636（−73%）**、meanProb 0.168→**0.401≈hitRate 0.401**；但 pooled lift **2.266 < raw 2.348**（原判据 FAIL）；首跑后把 lift 判据改为 held-out 折内（max|Δ|=0）才 PASS → **MIXED / post-hoc**：校准数值保留为探索性，不称严格 PASS |
 | E26e-o | leave-one-region-out 泛化验证 | 训练 apac+eu+na（2,940,521 行），holdout own（170,863 行）从不参与训练/验证；5 折模型平均预测 holdout；主验收 holdout headC r120 outcome lift ≥**2.00**（泛化线）且 ρ≥0.30/CI 排除 0；headB 非退化 ≥2.0×base/top≥1.5 | ⚠️ | holdout headB **AUPRC 0.032647 = 3.214×base、top-lift 3.114、AUC 0.7035（PASS）**；holdout headC **lift 1.3849×**（<2.00 ✗）/ρ 0.758/CI [0.855, 2.190]；in-dist own 子集对照 **2.1809×**（ρ 0.903/CI [1.473, 2.823]）→ **MIXED：region 泛化缺口 −0.796×（−36.5%）**，headB 泛化良好、headC 排序泛化不足 |
+| E26e-p | few-shot region adaptation | own 10% replay（17/161，seed0）入训、90%（144）holdout；主验收 holdout own headC r120 lift ≥**1.80**（收窄 E26e-o 缺口≥一半）且 ρ≥0.30/CI 排除 0；headB 非退化 | ⚠️ | holdout headB **AUPRC 0.036724 = 3.531×base / top 3.261 / AUC 0.7707（PASS）**；holdout headC **lift 1.7514×**（<1.80 ✗，差 0.049）/ρ 0.806/CI [1.260, 2.505]；vs E26e-o 1.3849 **+0.3665（+26.5%，补回 46.0% 缺口）**、in-dist own 2.1809 → **MIXED：few-shot 有效但未达一半缺口线**，headB 泛化明显改善 |
 | T4 | torp4 诊断包交付（A） | final-fit 3 头 torp4（49 维）+ 温度烤图 fp32 ONNX + tracked parity fixture | ✅ | fp32 **502,518 B** sha `0b1f4efd…`；T_B **0.7564** / T_C **1.0723**（E26e-g OOF）；torch-vs-ORT 1,000 行 maxΔ 7.2e-6/2.9e-6/3.8e-6；fixture **48 行** 109,365 B（boundary 覆盖 + clickContext/attrs 复算块），fixture-vs-ONNX 1.43e-6；**诊断-only，不进总分** |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
@@ -1375,7 +1376,66 @@
   e26e_o_train.log, outcome_lift_holdout.json, outcome_lift_indist_own.json}`；node3
   `/mnt/work/wowsp-kots/e26e-o/{data,click,outcome,code,run}`；预注册 `e26e-o-preregistration.md`
   （脚本 sha `529e6d31…`，与 node3 实跑一致）。
-### E26e 系列结论与评分集成决策（截至 E26e-o，2026-11-09）
+### E26e-p · few-shot region adaptation（**MIXED**：holdout headC 1.7514 < 1.80；vs E26e-o +0.3665，补回 46.0% 缺口；headB 3.53×base）
+
+- **问题（预注册 `out/torpedo_model/e26e-p-preregistration.md`，先落盘后训练）**：E26e-o（0 own 训练样本）
+  holdout own headC outcome lift **1.3849**（in-dist own 2.1809，缺口 −36.5%）。本任务检验 **few-shot
+  region adaptation**：把 own 的 **10% replay（17/161，按 replayId 分组 seed0）** 加入训练，在剩余
+  **90%（144 replay）** 上评估，主验收 holdout headC r120 lift **≥1.80**（= 把 E26e-o 缺口收窄至少一半）
+  且 ρ≥0.30/CI 排除 0；headB 非退化（AUPRC ≥2.0×base、top≥1.5×）。trainer 用
+  `--holdout-min-lift 1.8`（默认 2.0），holdout_metrics 的 acceptance.rule 与实际预注册线一致。
+- **拆分（node3 `/mnt/work/wowsp-kots/e26e-p`，数据来自 E26e-o own 分片）**：161 replay；seed0 选 17 个为
+  **adapt**、144 为 **holdout**，**replay 交集 0**；三个流（dataset/click/outcome）同集合流式过滤、保持原行序：
+
+  | split | replays | rows | launched | fired fish | hits |
+  |---|---|---|---|---|---|
+  | adapt（入训） | **17** | 16,791 | 83 | 258 | 25 |
+  | holdout（评估） | **144** | 154,072 | 874 | 3,128 | 451 |
+  | 合计 | 161 | 170,863 | 957 | 3,386 | 476 |
+
+  （合计与 E26e-o own 分片一致；split_summary.json 记录 replay 列表与计数。）
+- **训练/评估**：训练数据 = apac+eu+na + own_adapt（**2,957,312 行 / 2,071 replay**，4 shards）；holdout =
+  own_holdout（154,072 行，单 shard，从不参与训练/验证）。torp4 3 头 λ_C=0.1，5 折 GroupKFold（seed0），
+  hidden192/12epochs/batch4096/lr1e-3/smoothing0.05/float16/cuda，**230.9 s**；5 折模型对 holdout 平均预测。
+  训练侧 OOF：headB AUPRC 0.041809（2.502×base）/top 2.853/AUC 0.720；headC row AUPRC 0.24753/AUC 0.70833。
+- **holdout own 结果（154,072 行，5 折 ensemble）**：
+
+  | 头 | 指标 | 值 | 验收 |
+  |---|---|---|---|
+  | headA | AUPRC / AUC / base | 0.999255 / 0.999770 / 0.545381 | 描述 |
+  | headB | 84,028 can-launch 行 / 874 正 | AUPRC **0.036724**、base 0.010401 → **3.5307×base**；top-decile lift **3.2608**；AUC **0.7707**；logloss 0.06673；ECE 0.02338 | **PASS** |
+  | headC（行级） | 874 launched 行 / 181 正 | AUPRC 0.3161、AUC 0.6223、top-decile lift 1.701、ECE 0.17824 | 描述 |
+  | **headC outcome（r120）** | 874 行 / 3,128 fired / 451 hits / base 14.42% | **lift 1.7514×**、ρ **0.8061**、CI **[1.2600, 2.5048]**（135 replay clusters） | **MIXED**（<1.80 ✗） |
+
+- **对照（同 outcome_lift 标准协议，`--regions own`）**：
+
+  | 模型 | holdout own headC lift | ρ | CI | headB AUPRC/top |
+  |---|---|---|---|---|
+  | E26e-o（0 own，旧 holdout 170,863 行） | 1.3849 | 0.758 | [0.8554, 2.1899] | 0.032647（3.214×）/3.114 |
+  | **E26e-p（10% own few-shot，holdout 154,072 行）** | **1.7514** | **0.806** | **[1.2600, 2.5048]** | **0.036724（3.531×）/3.261** |
+  | in-dist own（E26e-g OOF own 子集，957 行） | 2.1809 | 0.903 | [1.4729, 2.8225] | — |
+
+  → few-shot 使 holdout own lift **1.3849→1.7514（+0.3665，+26.5%）**，补回 E26e-o 缺口的 **46.0%**
+  （(1.7514−1.3849)/(2.1809−1.3849)）；距 1.80 线差 **0.049**，未达到“收窄至少一半”。**headB 泛化同步改善**
+  （0.032647→0.036724 = 3.531×base；top 3.114→3.261；AUC 0.704→0.771）。
+- **bootstrap 协议**：holdout CI 使用标准 `torpedo_outcome_lift.bootstrap_cluster`（每个 replicate 内重排
+  decile，1000 reps / seed0 / replay cluster），lift/ρ/base 不变，CI = **[1.2600, 2.5048]**，
+  与 `outcome_lift_holdout.json`（CLI `--regions own`）完全一致。
+- **判定**：**MIXED**。headB 非退化通过；headC 主验收 **FAIL**（1.7514 < 1.80，差 0.049；ρ 0.806 ≥0.30
+  与 CI 排除 0 满足）→ 记录 **few-shot 不足**：own 10% replay 只补回约 46% 的 region 缺口，region 泛化
+  缺口不是少量样本即可完全补上（E26e-o 的 −36.5% 收窄到约 **−19.7%** 相对 in-dist）。
+- **局限**：① adapt 仅 17 replay/83 launched、holdout 144 replay/874 launched，样本小、CI 宽；② 同语料
+  （非跨赛季）且 own 与 apac/eu/na 的差异同时含赛事/玩家/打法，不能单独归因 region；③ few-shot 只加
+  10% replay，未调采样权重/课程/领域自适应；④ headC 行级校准（AUC 0.622/ECE 0.178）仍差，outcome lift
+  主要靠排序；⑤ 未重训 E26e-o 对照（其 1.3849 为既有结果）。
+- **下一步**：① 提高 own 比例（20–30%）或按 replay 长度/赛事分层采样，看缺口是否继续收窄并找收益拐点；
+  ② 领域自适应（re-weight/微调 headC 最后一层）替代少量样本混训；③ 用 E26e-m server 真值检查 holdout
+  own 的标签噪声；④ 跨区部署仍应按 region 分层评估，leave-one-region-out + few-shot 作为发布门禁。
+- **产物**：`out/torpedo_model/e26e-p/{split_summary.json, holdout_metrics.json, holdout_ensemble.npz,
+  e26e_p_metrics.json, e26e_p_train.log, outcome_lift_holdout.json, outcome_lift_indist_own.json}`；node3
+  `/mnt/work/wowsp-kots/e26e-p/{data,click,outcome,code,run}`；预注册 `e26e-p-preregistration.md`
+  （脚本 sha `809240e1…`，与 node3 实跑一致）。
+### E26e 系列结论与评分集成决策（截至 E26e-p，2026-11-09）
 
 **最终研究模型（torp4 + λ_C=0.1，全语料 3,111,384 行 / 2,215 局，5 折 seed 0）**
 
@@ -1404,12 +1464,13 @@
 | E26e-m（server 真值审计） | 未重训（E26e-g OOF） | server-label **2.3477**（ρ 0.891，CI [1.807,3.018]）；代理 precision 0.798/recall 0.484 | **PASS（真值下仍 ≥2.30）**：代理低召回/绝对命中率低估，但 headC 排序在 server 真值下成立；recorder-only/710 行 |
 | E26e-n（server 真值校准） | 未重训 | raw→Platt Brier **0.2805→0.2241（−20.1%）**、logloss 0.8067→0.6387、ECE 0.2367→0.0636；pooled lift 2.266<2.348 | **MIXED / post-hoc**：原预注册 pooled lift 判据 FAIL；首跑后改为折内 lift 才 PASS，校准数值保留探索性；排序/阈值不变 |
 | E26e-o（region holdout） | holdout headB **0.032647 = 3.214×base / top 3.114 / AUC 0.7035（PASS）** | holdout own headC **1.3849**（<2.00 ✗）/ρ 0.758/CI [0.855,2.190]；in-dist own 2.1809 → **MIXED：region 泛化缺口 −36.5%** |
+| E26e-p（few-shot adaptation） | 4-shard（含 own_adapt 17 replay）+ holdout own_holdout 144 replay | holdout own headC **1.7514**（ρ 0.806，CI [1.260,2.505]）/headB **0.036724 = 3.531×base / top 3.261 / AUC 0.771** | **MIXED**：vs E26e-o 1.3849 补回 46% 缺口（1.80 线差 0.049）；headB 泛化改善 |
 
 **结论与观察（第 3 条为观察/假设）**
 
 1. **鱼雷决策信号真实存在**：headB 的 top-decile 发射 lift 从 E26e-b 的 2.662 提升到 torp4 的 2.905（AUPRC 2.286→2.599×base）；headC 的命中排序 lift 在 E26e-c/E26e-f/E26e-g 及 E26e-e λ0.1 上为 2.20–2.25×、ρ 0.988–1.0；E26e-h 的 fish_rate 软目标到 **2.3069×**（仅边际 +0.0069、CI 下界 2.099<2.30）但 headC 原始 ECE 升到 0.0572（T=1.387 后 0.0079）、AUPRC/AUC 下降，不能算稳健提升；any 目标的 headC 校准后 ECE 仍为 0.0041。
 2. **“发射行为”与“命中结果”是两种信号**：torp3 属性与 torp4 click-context 都显著提升 headB（分别 +8.3% / +7.9% AUPRC），但对 headC 无增益；E26e-h 把训练目标对齐 fish-level 后，fish_weighted 无增益、fish_rate 仅边际（且 strict headB 微降/校准变差）；共享 trunk 的多任务表示对 headC 必要（E26e-d 解耦后 headC 全面变弱）。
-3. **headC 的 2.30 线是标签定义相关的**：E26e-c（torp2）2.2126× 过其 1.35 线；E26e-f（torp3）2.2329×、E26e-g（torp4）2.1997× 未过 2.30；E26e-h fish_rate 2.3069× 仅边际、fish_weighted 2.1981× 无增益；E26e-i 融合 2.2475× 也只落在中间。**E26e-j 固定同一 E26e-g 模型、只换命中标签定义**：r60（严格半径 + HP 确认）下 any headC outcome lift **2.6811×**（CI [2.438,2.930]）、fish_rate 2.8390×；r120 2.1997×；r200 1.8485×；noHP（56.8% 算命中）1.1878× → **标签半径/HP 确认是 headC 平台的重要因素**，之前把 2.20–2.31× 当作模型上限并不完整。E26e-k 用 r60 标签重训后 **2.6329×**（CI [2.374,2.883]；低于 2.68 线、也低于固定模型 2.6811）、在 r120 标签上 cross-eval **2.0844×**（低于 E26e-g 2.1997）→ **r60 的优势是跨标签评估口径，未转化为重训收益**；E26e-l 加入目标几何（aspect/cross/lead/intercept）后 r120 仅到 **2.2639×**、r60 到 **2.7631×**（首超固定模型 2.6811）→ 目标几何有边际真实贡献，但仍不足以跨 r120 2.30；E26e-m 用 server damageStat 审计：代理 precision **0.798**、recall **0.484**（漏 52% server 命中、行级 hit rate 24.4% vs 40.1%），但 E26e-g headC 在 server 真值标签上仍 **2.3477×**（ρ 0.891，CI [1.807,3.018]）→ **代理主要低估绝对命中率，未丢失排序信息**；E26e-n 进一步用 server 真值做 5 折 Platt 校准：Brier **0.2805→0.2241（−20.1%）**、logloss 0.8067→0.6387、ECE 0.2367→0.0636，meanProb 0.168→**0.401≈hitRate**；但 pooled lift **2.266 < raw 2.348**，原预注册判据 FAIL，首跑后改为 held-out 折内 lift 才 PASS → **post-hoc 判据变更，只能算 MIXED/探索性**；E26e-o 做 leave-one-region-out（train apac+eu+na / holdout own）：headB **3.214×base / top 3.114** 泛化通过，但 headC **1.3849×**（<2.00）vs in-dist own **2.1809×**，**region 泛化缺口 −36.5%** → 排序并非跨区稳定，headC 2.2–2.7 的平台不能当作可迁移上限；headC 差异主要来自评估标签、目标几何与区域分布，而不是单一特征堆叠。
+3. **headC 的 2.30 线是标签定义相关的**：E26e-c（torp2）2.2126× 过其 1.35 线；E26e-f（torp3）2.2329×、E26e-g（torp4）2.1997× 未过 2.30；E26e-h fish_rate 2.3069× 仅边际、fish_weighted 2.1981× 无增益；E26e-i 融合 2.2475× 也只落在中间。**E26e-j 固定同一 E26e-g 模型、只换命中标签定义**：r60（严格半径 + HP 确认）下 any headC outcome lift **2.6811×**（CI [2.438,2.930]）、fish_rate 2.8390×；r120 2.1997×；r200 1.8485×；noHP（56.8% 算命中）1.1878× → **标签半径/HP 确认是 headC 平台的重要因素**，之前把 2.20–2.31× 当作模型上限并不完整。E26e-k 用 r60 标签重训后 **2.6329×**（CI [2.374,2.883]；低于 2.68 线、也低于固定模型 2.6811）、在 r120 标签上 cross-eval **2.0844×**（低于 E26e-g 2.1997）→ **r60 的优势是跨标签评估口径，未转化为重训收益**；E26e-l 加入目标几何（aspect/cross/lead/intercept）后 r120 仅到 **2.2639×**、r60 到 **2.7631×**（首超固定模型 2.6811）→ 目标几何有边际真实贡献，但仍不足以跨 r120 2.30；E26e-m 用 server damageStat 审计：代理 precision **0.798**、recall **0.484**（漏 52% server 命中、行级 hit rate 24.4% vs 40.1%），但 E26e-g headC 在 server 真值标签上仍 **2.3477×**（ρ 0.891，CI [1.807,3.018]）→ **代理主要低估绝对命中率，未丢失排序信息**；E26e-n 进一步用 server 真值做 5 折 Platt 校准：Brier **0.2805→0.2241（−20.1%）**、logloss 0.8067→0.6387、ECE 0.2367→0.0636，meanProb 0.168→**0.401≈hitRate**；但 pooled lift **2.266 < raw 2.348**，原预注册判据 FAIL，首跑后改为 held-out 折内 lift 才 PASS → **post-hoc 判据变更，只能算 MIXED/探索性**；E26e-o 做 leave-one-region-out（train apac+eu+na / holdout own）：headB **3.214×base / top 3.114** 泛化通过，但 headC **1.3849×**（<2.00）vs in-dist own **2.1809×**，**region 泛化缺口 −36.5%** → 排序并非跨区稳定，headC 2.2–2.7 的平台不能当作可迁移上限；E26e-p 用 own 10% replay few-shot（17/161）后 holdout **1.7514×**（<1.80，差 0.049），补回缺口 **46.0%**、headB 升到 **3.531×base / top 3.261 / AUC 0.771** → **少量区域样本有效但不足以收窄一半缺口**；headC 差异主要来自评估标签、目标几何与区域分布，而不是单一特征堆叠。
 4. **校准可用**：单一温度即可把 headB ECE 从 0.0246 降到 0.0006、headC 从 0.0127 降到 0.0041，且不改变排序；server 真值下 headC 绝对概率仍低估（meanProb 0.168 vs 真值 0.401），5 折 Platt 校准把 Brier 降 20.1%、ECE 降 73%、meanProb 对齐 0.401，且 held-out 折内排序不变——**温度校准排序、Platt 校准绝对概率，两者都不重训模型**；但 E26e-n 的判据变更属 post-hoc、未独立验证，绝对概率校准只作探索性诊断，不改变排序/阈值。
 
 **评分集成决策：鱼雷保持“诊断-only”，暂不并入总分**
@@ -1417,13 +1478,13 @@
 - 总分继续只聚合开火/移动决策；鱼雷卡片保留为可选诊断（发射概率 + 预期效果，不适用舰种显示 N/A），总分不变。
 - 不并入的理由：
   1. headB 是**专家点击一致性**模型，不是结果真值；E26e-b 已证明它的 outcome lift 只有 1.223×，不能直接当作“决策质量”。
-  2. headC 是目前最强的结果信号，但 E26e-f/g 低于 2.30 预注册线；E26e-h 的 fish_rate 仅边际过线（CI 下界 2.099、ECE 0.0572 需额外温度、strict headB 微降 0.00004）且排序质量下降，严格读法为 MIXED；E26e-i 的两模型融合只到 2.2475、无法把边际尖峰变成稳健过线；E26e-j 显示 r60 固定模型到 2.6811×，但 E26e-k 的 r60 重训只有 2.6329×（<2.68）、r120 cross 2.0844×——标签定义主要是评估口径；E26e-l 目标几何把 r120 提到 2.2639、仍未过 2.30；E26e-m 的 server 真值子集（710 行、recorder-only）下 headC 2.3477 成立，但绝对命中率被代理低估；E26e-n 的 Platt 可把绝对概率校准到真值（Brier −20%），但原预注册 pooled lift 判据 FAIL、后改为折内判据才 PASS（post-hoc），且样本小/同语料；E26e-o 的 region holdout 显示 headC 从 in-dist 2.18 掉到 1.38（−36.5%），跨区排序不稳定——仍不足以支撑一个总分权重。
+  2. headC 是目前最强的结果信号，但 E26e-f/g 低于 2.30 预注册线；E26e-h 的 fish_rate 仅边际过线（CI 下界 2.099、ECE 0.0572 需额外温度、strict headB 微降 0.00004）且排序质量下降，严格读法为 MIXED；E26e-i 的两模型融合只到 2.2475、无法把边际尖峰变成稳健过线；E26e-j 显示 r60 固定模型到 2.6811×，但 E26e-k 的 r60 重训只有 2.6329×（<2.68）、r120 cross 2.0844×——标签定义主要是评估口径；E26e-l 目标几何把 r120 提到 2.2639、仍未过 2.30；E26e-m 的 server 真值子集（710 行、recorder-only）下 headC 2.3477 成立，但绝对命中率被代理低估；E26e-n 的 Platt 可把绝对概率校准到真值（Brier −20%），但原预注册 pooled lift 判据 FAIL、后改为折内判据才 PASS（post-hoc），且样本小/同语料；E26e-o 的 region holdout 显示 headC 从 in-dist 2.18 掉到 1.38（−36.5%），E26e-p 的 10% own few-shot 只补回 46%（1.75<1.80），跨区排序仍不稳定——仍不足以支撑一个总分权重。
   3. 尚未做**端到端总分验证**（鱼雷分量与 fire/move 聚合后的战斗结果相关性、校准、权重选择均无预注册实验）；直接加分会是未经验证的分数改动。
 - 重新评估的条件（满足后再开预注册）：① 逐鱼命中/伤害标签（ShotKillEvent 或 server damageStat）对齐，headC 在≥2 个 seed/语料上稳定 ≥2.30× 且 CI 不重叠；② 端上温度后处理 + 部署校准验证；③ 预注册“加入鱼雷分量是否提升总分与战斗结果相关性”的 A/B；④ SS/BB 样本补强、N/A 语义完整。
 
 **交付建议（已落地 T4）**：torp4（49 维/3 头/温度烤图）已作为**独立可选诊断包**交付（见下节 T4，PR #1868）：app 侧新契约 + `torpedo4_model.onnx` 槽 + effectiveness 行，不改变总分；模型文件仍由维护者手动放入 decisions pack（ONNX 不入库）。**当前交付模型仍是 r120 标签训练/校准**；r60 标签是研究结果，若重训验证通过，需另立交付波次更新 ONNX/温度/effectiveness 语义。
 
-**剩余局限**：命中为代理标签，E26e-m 的 server 真值只覆盖 recorder 710 行（4.2%）/3,212 fish（4.5%），窗口重叠非逐鱼归因、CI 宽；E26e-n 的 Platt 校准同语料/710 行、未独立赛季复核，且原 pooled lift 判据未过、首跑后改判据（post-hoc），isotonic 小样本不稳；E26e-o 的 region holdout 仅 957 launched/149 replay、own 与训练区还含赛事/玩家分布差异，headC 跨区仅 1.38×；E26e-j/k 的 r60 结果同数据、不同变体 base hitRate 不同不能直接横比，r60 重训也未超过固定模型（2.6329 < 2.6811）；E26e-l 目标几何来自轨迹近似（非精确弹道），27.6% 行无目标回退 0，r120 2.2639 仍低于 2.30；click 特征粗糙（无管位/DoT 几何）；SS 101 launched、na/own 样本薄；未做端上概率分级；λ_C 固定 0.1 未再扫；fish_rate/E26e-i/k/l/m/n/o 均不能作为稳健泛化结论。
+**剩余局限**：命中为代理标签，E26e-m 的 server 真值只覆盖 recorder 710 行（4.2%）/3,212 fish（4.5%），窗口重叠非逐鱼归因、CI 宽；E26e-n 的 Platt 校准同语料/710 行、未独立赛季复核，且原 pooled lift 判据未过、首跑后改判据（post-hoc），isotonic 小样本不稳；E26e-o/p 的 region holdout 仅 957/874 launched、149/144 replay、adapt 仅 17 replay/83 launched，CI 宽且 E26e-p 差 0.049 未过 1.80，headC 跨区仍只补回 46%；E26e-j/k 的 r60 结果同数据、不同变体 base hitRate 不同不能直接横比，r60 重训也未超过固定模型（2.6329 < 2.6811）；E26e-l 目标几何来自轨迹近似（非精确弹道），27.6% 行无目标回退 0，r120 2.2639 仍低于 2.30；click 特征粗糙（无管位/DoT 几何）；SS 101 launched、na/own 样本薄；未做端上概率分级；λ_C 固定 0.1 未再扫；fish_rate/E26e-i/k/l/m/n/o/p 均不能作为稳健泛化结论。
 ### T4 · torp4 诊断包交付（**诊断-only，不进总分**）
 
 - **裁决/定位**：一次升到 **torp4（49 维，= 27 core + 11 torp2 + 6 torp3 + 5 torp4）**、3 头

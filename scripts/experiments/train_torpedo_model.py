@@ -224,6 +224,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="E26e-o: replay-cluster bootstrap reps for the holdout headC lift CI",
     )
     p.add_argument(
+        "--holdout-min-lift",
+        type=float,
+        default=2.0,
+        help="E26e-o/p: preregistered holdout headC outcome lift line (default 2.00; E26e-p used 1.80)",
+    )
+    p.add_argument(
         "--click-context",
         nargs="+",
         default=[],
@@ -1949,12 +1955,14 @@ def run_training(args: argparse.Namespace) -> dict:
             hc_lift = oc.get("topDecileLift")
             hc_rho = oc.get("spearmanDecile")
             hc_ci = oc.get("bootstrap", {}).get("lift95")
+            min_lift = float(getattr(args, "holdout_min_lift", 2.0))
             primary = bool(
-                hc_lift is not None and hc_lift >= 2.0 and hc_rho is not None and hc_rho >= 0.30
+                hc_lift is not None and hc_lift >= min_lift and hc_rho is not None and hc_rho >= 0.30
                 and hc_ci is not None and hc_ci[0] > 0.0
             )
             holdout_metrics["acceptance"] = {
-                "rule": "holdout headC r120 outcome lift >= 2.00 AND rho >= 0.30 AND CI excludes 0; headB AUPRC >= 2.0x base AND top-decile lift >= 1.5x",
+                "rule": f"holdout headC r120 outcome lift >= {min_lift:.2f} AND rho >= 0.30 AND CI excludes 0; headB AUPRC >= 2.0x base AND top-decile lift >= 1.5x",
+                "minLift": min_lift,
                 "headC_primary_pass": primary,
                 "headC_lift": hc_lift,
                 "headC_spearman": hc_rho,
