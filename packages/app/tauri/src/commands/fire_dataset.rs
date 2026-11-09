@@ -3872,6 +3872,68 @@ fn torpedo_geometry_fields(
     (aspect, cross_kt, lead_rad, intercept, yaw_rel_rad, targets)
 }
 
+// ── E26e-m: server damageStat truth sidecar ────────────────────────────────
+
+/// One row of the E26e-m rows.jsonl: the full-export row identity plus the
+/// hard labels the audit needs. Python filters to ownerEntityId == recorder
+/// and joins the 120-units/HP hit proxy against the server truth.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoServerTruthRow {
+    pub replay_id: String,
+    pub t: f32,
+    pub ship_id: Option<i64>,
+    pub owner_entity_id: i32,
+    /// labelB (expert launched in the decision window); None = censored.
+    pub label_b: Option<bool>,
+    pub torp_fired_fish: u32,
+    pub torp_hits: u32,
+}
+
+/// One row of the E26e-m damage.jsonl: the recorder's cumulative server
+/// torpedo stat ticks (weapon 7 = ship torpedo, category 0 = damage dealt).
+/// Values are CUMULATIVE and replace the previous sample of the same pair.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoServerTruthDamage {
+    pub replay_id: String,
+    pub recorder_entity_id: Option<i32>,
+    pub time: f32,
+    pub weapon: i64,
+    pub category: i64,
+    pub count: i64,
+    pub total: f64,
+}
+
+/// Extract the recorder's torpedo-damage truth samples: weapon 7 / category 0
+/// only (other weapons and categories are dropped), time ascending. A replay
+/// without damage_stats yields an empty vector (no JSONL lines).
+fn torpedo_server_truth_damage(
+    stream: &ReplayStream,
+    replay_id: &str,
+) -> Vec<TorpedoServerTruthDamage> {
+    let mut out: Vec<TorpedoServerTruthDamage> = stream
+        .damage_stats
+        .iter()
+        .filter(|s| s.weapon == 7 && s.category == 0)
+        .map(|s| TorpedoServerTruthDamage {
+            replay_id: replay_id.to_string(),
+            recorder_entity_id: stream.recorder_vehicle_id,
+            time: s.time,
+            weapon: s.weapon,
+            category: s.category,
+            count: s.count,
+            total: s.total,
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.time
+            .partial_cmp(&b.time)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    out
+}
+
 /// Build every exportable torpedo-decision row of the replay (E26).
 /// Deciders: team-known ships with a torpedo armament (carriers excluded).
 /// Cadence: DECISION_INTERVAL_S (2 s), aligned with the 2 s labelB window.
@@ -8150,6 +8212,268 @@ mod tests {
             },
             Err(_) => {
                 eprintln!("[e26l] WOWSP_TORPEDO_GEOMETRY_OUT not set - sidecar not written")
+            },
+        }
+    }
+
+    /// E26e-m unit: the damage sidecar keeps only weapon 7 / category 0,
+    /// preserves the cumulative count/total values, drops every other pair
+    /// and sorts by time.
+    #[test]
+    fn torpedo_server_truth_damage_filters_cumulative_samples() {
+        let sample = |time: f32, weapon: i64, category: i64, count: i64, total: f64| {
+            wowsp_tauri_shared::DamageStatSample {
+                time,
+                weapon,
+                category,
+                count,
+                total,
+            }
+        };
+        let stream = ReplayStream {
+            recorder_vehicle_id: Some(728_553),
+            damage_stats: vec![
+                sample(30.0, 7, 0, 3, 30_000.0),
+                sample(10.0, 7, 0, 1, 10_000.0),
+                sample(20.0, 2, 0, 9, 9_000.0),  // main gun, dropped
+                sample(25.0, 7, 1, 4, 4_000.0),  // ally damage, dropped
+                sample(40.0, 20, 0, 2, 2_000.0), // flood, dropped
+                sample(15.0, 7, 0, 2, 20_000.0),
+            ],
+            ..minimal_stream()
+        };
+        let out = torpedo_server_truth_damage(&stream, "r1.wowsreplay");
+        assert_eq!(out.len(), 3, "only weapon 7 / category 0 survives");
+        assert_eq!(
+            out.iter().map(|d| d.time).collect::<Vec<_>>(),
+            vec![10.0, 15.0, 30.0],
+            "time ascending"
+        );
+        assert!(out.iter().all(|d| d.weapon == 7 && d.category == 0));
+        assert!(out.iter().all(|d| d.replay_id == "r1.wowsreplay"));
+        assert!(out.iter().all(|d| d.recorder_entity_id == Some(728_553)));
+        // Cumulative values are preserved verbatim (latest sample decides).
+        assert_eq!((out[0].count, out[0].total), (1, 10_000.0));
+        assert_eq!((out[1].count, out[1].total), (2, 20_000.0));
+        assert_eq!((out[2].count, out[2].total), (3, 30_000.0));
+        // A replay without damage_stats contributes no lines.
+        let empty =
+            torpedo_server_truth_damage(&ReplayStream { ..minimal_stream() }, "r2.wowsreplay");
+        assert!(empty.is_empty());
+    }
+
+    /// E26e-m server-truth audit sidecar on real replay bytes: env
+    /// WOWSP_TEST_REPLAY_DIR, WOWSP_TORPEDO_SERVER_TRUTH_DIR and
+    /// WOWSP_TEST_LOS_DIR. Emits rows.jsonl (full-export row identity + the
+    /// 120u/HP labels, same row order) and damage.jsonl (the recorder's
+    /// weapon-7/category-0 cumulative server ticks, time ascending; replays
+    /// without damage_stats write nothing). Bad replays are skipped.
+    #[test]
+    fn e26m_torpedo_server_truth_export_on_real_replays() {
+        let Ok(dir) = std::env::var("WOWSP_TEST_REPLAY_DIR") else {
+            eprintln!("[e26m] WOWSP_TEST_REPLAY_DIR not set - skipping");
+            return;
+        };
+        let replay_dir = std::path::PathBuf::from(dir);
+        let params = FireSampleParams::default();
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let mut files = Vec::new();
+        collect_replay_files(&replay_dir, &mut files);
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "no replays under {}",
+            replay_dir.display()
+        );
+        let mut rows: Vec<TorpedoServerTruthRow> = Vec::new();
+        let mut damage: Vec<TorpedoServerTruthDamage> = Vec::new();
+        let mut failed = 0usize;
+        let mut recorder_rows = 0usize;
+        for path in &files {
+            let relative = path
+                .strip_prefix(&replay_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let path_str = path.to_string_lossy().into_owned();
+            let decoded = super::super::replay::decode_replay_stream_with_events(&path_str);
+            let (stream, ev) = match decoded {
+                Ok(v) => v,
+                Err(e) => {
+                    failed += 1;
+                    eprintln!("[e26m] {relative} -> FAILED: {e}");
+                    assert!(!e.to_string().is_empty());
+                    continue;
+                },
+            };
+            let vehicles = match super::super::replay_probe::read_roster(&path_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    failed += 1;
+                    eprintln!("[e26m] {relative} -> roster FAILED: {e}");
+                    assert!(!e.to_string().is_empty());
+                    continue;
+                },
+            };
+            let ships = ship_infos(&stream, &vehicles);
+            let los = los_for_replay(stream.map_name.as_deref(), los_dir.as_deref());
+            let game_mode = read_game_mode(path);
+            let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
+            let (file_rows, stats) = export_torpedo_dataset(
+                &stream,
+                &ships,
+                los.as_ref(),
+                DEFAULT_EYE_HEIGHT,
+                &params,
+                None,
+                game_mode.as_deref(),
+                &events,
+            );
+            assert_eq!(stats.rows, file_rows.len());
+            let recorder = stream.recorder_vehicle_id;
+            let mut file_recorder_rows = 0usize;
+            for row in &file_rows {
+                if Some(row.core.owner_entity_id) == recorder {
+                    file_recorder_rows += 1;
+                }
+                rows.push(TorpedoServerTruthRow {
+                    replay_id: relative.clone(),
+                    t: row.core.t,
+                    ship_id: row.core.ship_id,
+                    owner_entity_id: row.core.owner_entity_id,
+                    label_b: row.label_b_launched,
+                    torp_fired_fish: row.torp_fired_fish,
+                    torp_hits: row.torp_hits,
+                });
+            }
+            recorder_rows += file_recorder_rows;
+            let file_damage = torpedo_server_truth_damage(&stream, &relative);
+            let latest = file_damage.last();
+            eprintln!(
+                "[e26m] {relative} -> {} rows ({} recorder) / recorder {:?} / damage samples {}{}",
+                file_rows.len(),
+                file_recorder_rows,
+                recorder,
+                file_damage.len(),
+                latest.map_or(String::new(), |d| format!(
+                    " (latest count {} total {:.0})",
+                    d.count, d.total
+                ))
+            );
+            damage.extend(file_damage);
+        }
+        eprintln!(
+            "[e26m] rows {} (recorder {} / {:.1}%) / damage samples {} / failed {}",
+            rows.len(),
+            recorder_rows,
+            if rows.is_empty() {
+                0.0
+            } else {
+                100.0 * recorder_rows as f64 / rows.len() as f64
+            },
+            damage.len(),
+            failed
+        );
+        assert!(!rows.is_empty(), "no dataset rows exported");
+        // Replay-major order, exactly the full export order.
+        assert!(rows.windows(2).all(|w| w[0].replay_id <= w[1].replay_id));
+        for window in damage.chunk_by(|a, b| a.replay_id == b.replay_id) {
+            assert!(
+                window.windows(2).all(|w| w[0].time <= w[1].time),
+                "damage samples must be time ascending within a replay"
+            );
+        }
+        let write = |name: &str, lines: Vec<String>| {
+            let out_dir = std::path::PathBuf::from(
+                std::env::var("WOWSP_TORPEDO_SERVER_TRUTH_DIR").expect("output dir"),
+            );
+            std::fs::create_dir_all(&out_dir).expect("create server-truth out dir");
+            let path = out_dir.join(name);
+            use std::io::Write;
+            let mut file = std::fs::File::create(&path).expect("create sidecar");
+            for line in &lines {
+                writeln!(file, "{line}").expect("write sidecar line");
+            }
+            drop(file);
+            let text = std::fs::read_to_string(&path).expect("read back sidecar");
+            assert_eq!(text.lines().count(), lines.len(), "{name} line count");
+            eprintln!("[e26m] wrote {} lines to {}", lines.len(), path.display());
+            path
+        };
+        match std::env::var("WOWSP_TORPEDO_SERVER_TRUTH_DIR") {
+            Ok(_) => {
+                let row_lines: Vec<String> = rows
+                    .iter()
+                    .map(|r| serde_json::to_string(r).expect("serialize server row"))
+                    .collect();
+                let damage_lines: Vec<String> = damage
+                    .iter()
+                    .map(|d| serde_json::to_string(d).expect("serialize damage row"))
+                    .collect();
+                let rows_path = write("rows.jsonl", row_lines);
+                let damage_path = write("damage.jsonl", damage_lines);
+                for (i, line) in std::fs::read_to_string(&rows_path)
+                    .expect("read rows sidecar")
+                    .lines()
+                    .enumerate()
+                {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).expect("rows line parses");
+                    for key in [
+                        "replayId",
+                        "t",
+                        "shipId",
+                        "ownerEntityId",
+                        "labelB",
+                        "torpFiredFish",
+                        "torpHits",
+                    ] {
+                        assert!(value.get(key).is_some(), "missing rows key {key}");
+                    }
+                    assert_eq!(value["replayId"].as_str(), Some(rows[i].replay_id.as_str()));
+                    assert_eq!(value["t"].as_f64().unwrap() as f32, rows[i].t);
+                    assert_eq!(
+                        value["ownerEntityId"].as_i64().unwrap() as i32,
+                        rows[i].owner_entity_id
+                    );
+                    assert_eq!(
+                        value["torpHits"].as_u64().unwrap() as u32,
+                        rows[i].torp_hits
+                    );
+                }
+                for (i, line) in std::fs::read_to_string(&damage_path)
+                    .expect("read damage sidecar")
+                    .lines()
+                    .enumerate()
+                {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).expect("damage line parses");
+                    for key in [
+                        "replayId",
+                        "recorderEntityId",
+                        "time",
+                        "weapon",
+                        "category",
+                        "count",
+                        "total",
+                    ] {
+                        assert!(value.get(key).is_some(), "missing damage key {key}");
+                    }
+                    assert_eq!(value["weapon"].as_i64(), Some(7));
+                    assert_eq!(value["category"].as_i64(), Some(0));
+                    assert_eq!(value["time"].as_f64().unwrap() as f32, damage[i].time);
+                    assert_eq!(value["count"].as_i64(), Some(damage[i].count));
+                }
+            },
+            Err(_) => {
+                eprintln!("[e26m] WOWSP_TORPEDO_SERVER_TRUTH_DIR not set - sidecars not written")
             },
         }
     }
