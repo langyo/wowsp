@@ -122,9 +122,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument(
         "--feature-set",
         default="core",
-        choices=["core", "torp2", "torp3", "torp4"],
+        choices=["core", "torp2", "torp3", "torp4", "torp5"],
         help="core = E26c features exactly (global 27); torp2 = +11 derived torpedo-geometry/class dims (global 38); "
-        "torp3 = torp2 + 6 hull torpedo-attribute dims (global 44); torp4 = torp3 + 5 click-context dims (global 49)",
+        "torp3 = torp2 + 6 hull torpedo-attribute dims (global 44); torp4 = torp3 + 5 click-context dims (global 49); "
+        "torp5 = torp4 + 5 target-geometry dims (global 54)",
     )
     p.add_argument(
         "--pos-weight",
@@ -187,6 +188,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         nargs="+",
         default=[],
         help="E26e-g: 4 click-context sidecar JSONL in --data order (torpLastClickAgeS/clicks30s/fish30s/lastClickFish/totalClicks); requires --feature-set torp4",
+    )
+    p.add_argument(
+        "--target-geometry",
+        nargs="+",
+        default=[],
+        help="E26e-l: 4 target-geometry sidecar JSONL in --data order (torpGeomAspectRad/CrossKt/LeadRad/InterceptS/YawRelRad/Targets); requires --feature-set torp5",
     )
     p.add_argument(
         "--head-c",
@@ -482,10 +489,172 @@ def derive_torp3_extras(row: dict, cls: str, attrs: dict | None, ship_id) -> lis
 
 def resolve_ship_attrs(args) -> dict | None:
     """Load the attribute table only when --feature-set torp3 needs it."""
-    if getattr(args, "feature_set", "core") not in ("torp3", "torp4"):
+    if getattr(args, "feature_set", "core") not in ("torp3", "torp4", "torp5"):
         return None
     raw = getattr(args, "ship_attrs", "") or str(DEFAULT_SHIP_ATTRS)
     return load_ship_attributes(Path(raw))
+
+
+# torp5 target-geometry block (E26e-l): 5 dims from the target-geometry sidecar.
+TORP5_NAMES = [
+    "geom_aspect_frac",
+    "geom_cross_frac",
+    "geom_lead_frac",
+    "geom_intercept_frac",
+    "geom_yaw_rel_frac",
+]
+TORP5_DIM = len(TORP5_NAMES)
+GEOM_FIELD_ALIASES = {
+    "aspectRad": ("torpGeomAspectRad", "geomAspectRad", "aspectRad"),
+    "crossKt": ("torpGeomCrossKt", "geomCrossKt", "crossKt"),
+    "leadRad": ("torpGeomLeadRad", "geomLeadRad", "leadRad"),
+    "interceptS": ("torpGeomInterceptS", "geomInterceptS", "interceptS"),
+    "yawRelRad": ("torpGeomYawRelRad", "geomYawRelRad", "yawRelRad"),
+    "targets": ("torpGeomTargets", "geomTargets", "targets"),
+}
+
+
+def _pick_geom_field(rec: dict, key: str):
+    for name in GEOM_FIELD_ALIASES.get(key, (key,)):
+        if name in rec:
+            return rec[name]
+    return None
+
+
+def _geom_float(rec: dict, key: str):
+    v = _pick_geom_field(rec, key)
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def derive_torp5_extras(rec: dict | None) -> list[float]:
+    """5 target-geometry dims for --feature-set torp5 (E26e-l).
+
+    aspectRad/pi, crossKt/40, leadRad/(pi/4), interceptS/300 (all clamped
+    [0,1]); yawRelRad/pi signed and clamped [-1,1]. Missing sidecar / missing
+    field / no geometric target (torpGeomTargets <= 0 or the -1 sentinel) -> 0.
+    """
+    if not rec:
+        return [0.0, 0.0, 0.0, 0.0, 0.0]
+    targets = _geom_float(rec, "targets")
+    if targets is not None and targets <= 0.0:
+        return [0.0, 0.0, 0.0, 0.0, 0.0]
+
+    def scaled(key: str, denom: float) -> float:
+        v = _geom_float(rec, key)
+        if v is None or v < 0.0:
+            return 0.0
+        return min(max(v / denom, 0.0), 1.0)
+
+    yaw = _geom_float(rec, "yawRelRad")
+    if yaw is None or yaw < -math.pi * 1.5:
+        yaw_norm = 0.0
+    else:
+        yaw_norm = min(max(yaw / math.pi, -1.0), 1.0)
+    return [
+        scaled("aspectRad", math.pi),
+        scaled("crossKt", 40.0),
+        scaled("leadRad", math.pi / 4.0),
+        scaled("interceptS", 300.0),
+        yaw_norm,
+    ]
+
+
+class TargetGeometryReader:
+    """Stream the 4 target-geometry sidecars in lockstep with the data shards.
+
+    Same contract as ClickContextReader: one sidecar per data file (in --data
+    order); every JSON row read from the data stream consumes exactly one
+    sidecar line (including rows the loader later skips). Misalignment is loud:
+    replayId / t (+-1e-3) / shipId must match, and leftovers at EOF abort.
+    """
+
+    def __init__(self, sidecar_paths: list[Path]) -> None:
+        self.paths = [Path(p) for p in sidecar_paths]
+        self.handles = [p.open("r", encoding="utf-8") for p in self.paths]
+        self.consumed = [0] * len(self.paths)
+        self.mismatch_replay = 0
+        self.mismatch_t = 0
+        self.mismatch_ship = 0
+        self.no_target_rows = 0
+        self.missing_target_rows = 0
+
+    def _next_line(self, file_idx: int) -> dict | None:
+        fh = self.handles[file_idx]
+        for line in fh:
+            st = line.strip()
+            if not st:
+                continue
+            try:
+                return json.loads(st)
+            except json.JSONDecodeError:
+                raise SystemExit("[e26] target-geometry sidecar " + str(self.paths[file_idx]) + ": bad JSON line")
+        return None
+
+    def next_for_row(self, file_idx: int, row: dict) -> dict | None:
+        rec = self._next_line(file_idx)
+        if rec is None:
+            raise SystemExit(
+                "[e26] target-geometry sidecar " + str(self.paths[file_idx]) +
+                " ended before the data stream (row count mismatch; check --target-geometry order)"
+            )
+        self.consumed[file_idx] += 1
+        rid = rec.get("replayId")
+        if rid is not None and str(rid) != str(row.get("replayId")):
+            self.mismatch_replay += 1
+        rt, dt = rec.get("t"), row.get("t")
+        try:
+            if rt is not None and dt is not None and abs(float(rt) - float(dt)) > 1e-3:
+                self.mismatch_t += 1
+        except (TypeError, ValueError):
+            self.mismatch_t += 1
+        rs, ds = rec.get("shipId"), row.get("shipId")
+        try:
+            if rs is not None and ds is not None and int(rs) != int(ds):
+                self.mismatch_ship += 1
+        except (TypeError, ValueError):
+            self.mismatch_ship += 1
+        targets = _pick_geom_field(rec, "targets")
+        if targets is None:
+            self.missing_target_rows += 1
+        else:
+            try:
+                if float(targets) <= 0.0:
+                    self.no_target_rows += 1
+            except (TypeError, ValueError):
+                self.no_target_rows += 1
+        return rec
+
+    def finish(self) -> dict:
+        leftovers = 0
+        for fh in self.handles:
+            for line in fh:
+                if line.strip():
+                    leftovers += 1
+        for fh in self.handles:
+            fh.close()
+        if self.mismatch_replay or self.mismatch_t or self.mismatch_ship:
+            raise SystemExit(
+                "[e26] target-geometry sidecar misaligned with data: replay/t/ship mismatches = "
+                + str(self.mismatch_replay) + "/" + str(self.mismatch_t) + "/" + str(self.mismatch_ship)
+                + "; check --target-geometry order"
+            )
+        if leftovers:
+            raise SystemExit("[e26] target-geometry sidecars have " + str(leftovers) + " leftover rows (data ended early)")
+        return {
+            "sidecars": len(self.paths),
+            "perShardRows": self.consumed,
+            "rows": int(sum(self.consumed)),
+            "mismatchReplay": self.mismatch_replay,
+            "mismatchT": self.mismatch_t,
+            "mismatchShip": self.mismatch_ship,
+            "noTargetRows": self.no_target_rows,
+            "missingTargetRows": self.missing_target_rows,
+        }
 
 
 def _pick_click_field(rec: dict, key: str):
@@ -627,6 +796,7 @@ def load_torpedo_rows(
     feature_set: str = "core",
     ship_attrs: dict | None = None,
     click_sidecars: list[Path] | None = None,
+    geom_sidecars: list[Path] | None = None,
 ) -> dict:
     """Stream the JSONL corpus into featurized arrays.
 
@@ -645,12 +815,14 @@ def load_torpedo_rows(
     (global width becomes 27 + 11 = 38, one preallocated array — no concat copy);
     torp3 appends TORP2_DIM + TORP3_DIM dims (global 44) using --ship-attrs;
     torp4 appends TORP4_DIM click-context dims on top (global 49) using
-    --click-context sidecars, consumed in lockstep with the data shards.
+    --click-context sidecars, consumed in lockstep with the data shards; torp5
+    appends TORP5_DIM target-geometry dims on top (global 54) using
+    --target-geometry sidecars (also lockstep).
     """
     dtypes = {"float16": np.float16, "float32": np.float32}
     if feature_dtype not in dtypes:
         raise SystemExit(f"[e26] unknown --feature-dtype {feature_dtype!r}")
-    if feature_set not in ("core", "torp2", "torp3", "torp4"):
+    if feature_set not in ("core", "torp2", "torp3", "torp4", "torp5"):
         raise SystemExit(f"[e26] unknown --feature-set {feature_set!r}")
     if feature_set == "torp2":
         extra_names = list(TORP2_NAMES)
@@ -658,10 +830,12 @@ def load_torpedo_rows(
         extra_names = list(TORP2_NAMES) + list(TORP3_NAMES)
     elif feature_set == "torp4":
         extra_names = list(TORP2_NAMES) + list(TORP3_NAMES) + list(TORP4_NAMES)
+    elif feature_set == "torp5":
+        extra_names = list(TORP2_NAMES) + list(TORP3_NAMES) + list(TORP4_NAMES) + list(TORP5_NAMES)
     else:
         extra_names = []
     click_reader = None
-    if feature_set == "torp4":
+    if feature_set in ("torp4", "torp5"):
         if click_sidecars:
             if len(click_sidecars) != len(paths):
                 raise SystemExit(
@@ -669,6 +843,15 @@ def load_torpedo_rows(
                     + str(len(click_sidecars)) + " sidecars vs " + str(len(paths)) + " data files"
                 )
             click_reader = ClickContextReader(click_sidecars)
+    geom_reader = None
+    if feature_set == "torp5":
+        if geom_sidecars:
+            if len(geom_sidecars) != len(paths):
+                raise SystemExit(
+                    "[e26] --target-geometry needs one sidecar per --data file (torp5): "
+                    + str(len(geom_sidecars)) + " sidecars vs " + str(len(paths)) + " data files"
+                )
+            geom_reader = TargetGeometryReader(geom_sidecars)
     extra_dim = len(extra_names)
     feature_names = [f"global_{i}" for i in range(tfm.GLOBAL_DIM_V2)] + extra_names
     edt = dtypes[feature_dtype]
@@ -734,6 +917,7 @@ def load_torpedo_rows(
                         "carries the fire/move v2 schema (entity 15 / global 27)"
                     )
                 click_rec = click_reader.next_for_row(file_idx, row) if click_reader is not None else None
+                geom_rec = geom_reader.next_for_row(file_idx, row) if geom_reader is not None else None
                 ship_id = row.get("shipId")
                 ship_id = int(ship_id) if ship_id is not None else None
                 cls = class_of(ship_id, classes)
@@ -751,7 +935,14 @@ def load_torpedo_rows(
                 Xe[rows] = e
                 Xg[rows, : tfm.GLOBAL_DIM_V2] = g
                 if extra_dim:
-                    if feature_set == "torp4":
+                    if feature_set == "torp5":
+                        Xg[rows, tfm.GLOBAL_DIM_V2 :] = (
+                            derive_torp2_extras(row, cls)
+                            + derive_torp3_extras(row, cls, ship_attrs, ship_id)
+                            + derive_torp4_extras(click_rec)
+                            + derive_torp5_extras(geom_rec)
+                        )
+                    elif feature_set == "torp4":
                         Xg[rows, tfm.GLOBAL_DIM_V2 :] = (
                             derive_torp2_extras(row, cls)
                             + derive_torp3_extras(row, cls, ship_attrs, ship_id)
@@ -822,7 +1013,10 @@ def load_torpedo_rows(
         "extra_dim": extra_dim,
         "feature_names": feature_names,
         "click_quality": click_reader.finish() if click_reader is not None else (
-            {"sidecars": 0, "note": "no --click-context; torp4 fallback age=1, counts=0"} if feature_set == "torp4" else None
+            {"sidecars": 0, "note": "no --click-context; torp4 fallback age=1, counts=0"} if feature_set in ("torp4", "torp5") else None
+        ),
+        "geom_quality": geom_reader.finish() if geom_reader is not None else (
+            {"sidecars": 0, "note": "no --target-geometry; torp5 geometry dims fallback 0"} if feature_set == "torp5" else None
         ),
         "loader_mode": "two-pass-full" if two_pass else "single-pass-budget",
         "feature_dtype": feature_dtype,
@@ -1233,11 +1427,18 @@ def run_training(args: argparse.Namespace) -> dict:
     t0 = time.time()
     ship_attrs = resolve_ship_attrs(args)
     click_sidecars = None
-    if args.feature_set == "torp4":
+    if args.feature_set in ("torp4", "torp5"):
         click_sidecars = [Path(p) for p in args.click_context]
         if not click_sidecars:
             raise SystemExit(
-                "[e26] --feature-set torp4 requires --click-context (one sidecar per --data file, in --data order)"
+                "[e26] --feature-set " + str(args.feature_set) + " requires --click-context (one sidecar per --data file, in --data order)"
+            )
+    geom_sidecars = None
+    if args.feature_set == "torp5":
+        geom_sidecars = [Path(p) for p in getattr(args, "target_geometry", [])]
+        if not geom_sidecars:
+            raise SystemExit(
+                "[e26] --feature-set torp5 requires --target-geometry (one sidecar per --data file, in --data order)"
             )
     data = load_torpedo_rows(
         paths,
@@ -1247,6 +1448,7 @@ def run_training(args: argparse.Namespace) -> dict:
         args.feature_set,
         ship_attrs=ship_attrs,
         click_sidecars=click_sidecars,
+        geom_sidecars=geom_sidecars,
     )
     load_s = time.time() - t0
     log(
@@ -1286,7 +1488,7 @@ def run_training(args: argparse.Namespace) -> dict:
             f"{rows_with_speed:,}/{data['rows']:,}"
         )
     click_coverage = data.get("click_quality")
-    if args.feature_set == "torp4" and click_coverage:
+    if args.feature_set in ("torp4", "torp5") and click_coverage:
         if int(click_coverage.get("rows", -1)) != int(data["rows"]):
             raise SystemExit(
                 "[e26] click-context rows " + str(click_coverage.get("rows"))
@@ -1297,6 +1499,21 @@ def run_training(args: argparse.Namespace) -> dict:
             f"[e26] click-context coverage: {click_coverage.get('rows'):,} rows across "
             f"{click_coverage.get('sidecars')} shard(s), no-click rows {click_coverage.get('noClickRows'):,}, "
             f"missing fields {click_coverage.get('missingFields'):,}, rows with a click {clicked:,}"
+        )
+    geom_coverage = data.get("geom_quality")
+    if args.feature_set == "torp5" and geom_coverage:
+        if int(geom_coverage.get("rows", -1)) != int(data["rows"]):
+            raise SystemExit(
+                "[e26] target-geometry rows " + str(geom_coverage.get("rows"))
+                + " != dataset rows " + str(data["rows"]) + "; check --target-geometry order"
+            )
+        with_targets = int(data["rows"]) - int(geom_coverage.get("noTargetRows", 0)) - int(
+            geom_coverage.get("missingTargetRows", 0)
+        )
+        log(
+            f"[e26] target-geometry coverage: {geom_coverage.get('rows'):,} rows across "
+            f"{geom_coverage.get('sidecars')} shard(s), no-target rows {geom_coverage.get('noTargetRows'):,}, "
+            f"missing-target rows {geom_coverage.get('missingTargetRows'):,}, rows with geometry {with_targets:,}"
         )
 
     outcome = None
@@ -1570,6 +1787,7 @@ def run_training(args: argparse.Namespace) -> dict:
             "load_seconds": round(load_s, 1),
             "attribute_coverage": attr_coverage,
             "click_coverage": click_coverage,
+            "geom_coverage": geom_coverage,
             "head_c_target": hc_target_info,
         },
         "outcome": outcome["quality"] if outcome is not None else None,
@@ -2214,10 +2432,15 @@ def run_headc_only(args: argparse.Namespace) -> dict:
     paths = resolve_data_paths(args)
     t0 = time.time()
     headc_click = None
-    if args.feature_set == "torp4":
+    if args.feature_set in ("torp4", "torp5"):
         headc_click = [Path(p) for p in getattr(args, "click_context", [])]
         if not headc_click:
-            raise SystemExit("[e26] --feature-set torp4 requires --click-context (one sidecar per --data file)")
+            raise SystemExit("[e26] --feature-set " + str(args.feature_set) + " requires --click-context (one sidecar per --data file)")
+    headc_geom = None
+    if args.feature_set == "torp5":
+        headc_geom = [Path(p) for p in getattr(args, "target_geometry", [])]
+        if not headc_geom:
+            raise SystemExit("[e26] --feature-set torp5 requires --target-geometry (one sidecar per --data file)")
     data = load_torpedo_rows(
         paths,
         args.max_rows,
@@ -2226,6 +2449,7 @@ def run_headc_only(args: argparse.Namespace) -> dict:
         args.feature_set,
         ship_attrs=resolve_ship_attrs(args),
         click_sidecars=headc_click,
+        geom_sidecars=headc_geom,
     )
     log(f"[e26] loaded {data['rows']:,} rows in {time.time() - t0:.1f}s (arrays {data['array_bytes'] / 1e9:.2f} GB)")
     outcome = load_outcome_sidecars(paths, [Path(p) for p in args.outcome], data, log)
@@ -3622,6 +3846,80 @@ def run_selftest() -> int:
     except SystemExit:
         bad_failed = True
     assert bad_failed is True, "misaligned click sidecar must abort"
+    # E26e-l: torp5 = torp4 + 5 target-geometry dims (global 54) + lockstep join.
+    assert TORP5_DIM == 5 and len(TORP5_NAMES) == 5
+    g0 = parse_args(["--feature-set", "torp5", "--target-geometry", "a.jsonl", "b.jsonl", "c.jsonl", "d.jsonl"])
+    assert g0.feature_set == "torp5" and len(g0.target_geometry) == 4
+    assert parse_args([]).target_geometry == []
+    assert derive_torp5_extras(None) == [0.0, 0.0, 0.0, 0.0, 0.0]
+    g_full = {
+        "torpGeomAspectRad": math.pi / 2.0,
+        "torpGeomCrossKt": 20.0,
+        "torpGeomLeadRad": math.pi / 8.0,
+        "torpGeomInterceptS": 150.0,
+        "torpGeomYawRelRad": math.pi / 2.0,
+        "torpGeomTargets": 1,
+    }
+    assert np.allclose(derive_torp5_extras(g_full), np.array([0.5, 0.5, 0.5, 0.5, 0.5], np.float32)), derive_torp5_extras(g_full)
+    g_signed = dict(g_full)
+    g_signed["torpGeomYawRelRad"] = -math.pi / 2.0
+    g_signed["torpGeomAspectRad"] = math.pi
+    g_signed["torpGeomCrossKt"] = 40.0
+    g_signed["torpGeomLeadRad"] = math.pi / 4.0
+    g_signed["torpGeomInterceptS"] = 300.0
+    assert np.allclose(derive_torp5_extras(g_signed), np.array([1.0, 1.0, 1.0, 1.0, -0.5], np.float32)), derive_torp5_extras(g_signed)
+    assert derive_torp5_extras({"torpGeomTargets": 0, "torpGeomAspectRad": 1.5}) == [0.0, 0.0, 0.0, 0.0, 0.0]
+    g_sentinel = {
+        "torpGeomAspectRad": -1.0, "torpGeomCrossKt": -1.0, "torpGeomLeadRad": -1.0,
+        "torpGeomInterceptS": -1.0, "torpGeomYawRelRad": -5.0, "torpGeomTargets": 1,
+    }
+    assert derive_torp5_extras(g_sentinel) == [0.0, 0.0, 0.0, 0.0, 0.0], derive_torp5_extras(g_sentinel)
+    d_torp5 = load_torpedo_rows([tmp], max_rows=0, classes=classes, feature_set="torp5", ship_attrs={})
+    assert d_torp5["global"].shape[1] == 54 and d_torp5["extra_dim"] == 27, d_torp5["global"].shape
+    assert len(d_torp5["feature_names"]) == 54 and d_torp5["feature_names"][49] == "geom_aspect_frac"
+    assert np.array_equal(d_torp4["global"], d_torp5["global"][:, :49]), "torp4 columns drifted"
+    assert float(np.abs(d_torp5["global"][:, 49:]).max()) == 0.0, "no-sidecar geom fallback must be zero"
+    geom_specs = [
+        (math.pi / 2, 20.0, math.pi / 8, 150.0, math.pi / 2, 1),
+        (0.0, 0.0, 0.0, 0.0, 0.0, 0),
+        (-1.0, -1.0, -1.0, -1.0, -5.0, 1),
+        (0.3, 5.0, 0.1, 30.0, 0.2, 1),
+        (math.pi, 40.0, math.pi / 4, 300.0, -math.pi / 2, 1),
+        (0.0, 0.0, 0.0, 0.0, 0.0, 2),
+    ]
+    geom_lines = []
+    for i, (asp, cr, ld, itc, yaw, tgt) in enumerate(geom_specs):
+        rec = {"replayId": "r%d" % (i % 2), "t": 5.0, "shipId": 4183799504 if i == 3 else 1,
+               "torpGeomAspectRad": asp, "torpGeomCrossKt": cr, "torpGeomLeadRad": ld,
+               "torpGeomInterceptS": itc, "torpGeomYawRelRad": yaw, "torpGeomTargets": tgt}
+        geom_lines.append(json.dumps(rec))
+    geomside = root / "geoms.jsonl"
+    geomside.write_text(chr(10).join(geom_lines) + chr(10), encoding="utf-8")
+    d_t5 = load_torpedo_rows([tmp], max_rows=0, classes=classes, feature_set="torp5",
+                             ship_attrs={}, click_sidecars=[clickside], geom_sidecars=[geomside])
+    assert d_t5["rows"] == d_torp5["rows"] and d_t5["geom_quality"]["rows"] == 6, d_t5["geom_quality"]
+    gm = d_t5["global"][:, 49:]
+    assert np.allclose(gm[0], [0.5, 0.5, 0.5, 0.5, 0.5]), gm[0]
+    assert np.allclose(gm[1], [0.0, 0.0, 0.0, 0.0, 0.0]), gm[1]
+    assert np.allclose(gm[2], [0.0, 0.0, 0.0, 0.0, 0.0]), gm[2]
+    # rows i=0,1,2 are the first three usable rows; i=3 is the skipped CV row, so
+    # usable rows 3/4 come from specs[4]/specs[5].
+    assert np.allclose(gm[3], [1.0, 1.0, 1.0, 1.0, -0.5]), gm[3]
+    assert np.allclose(gm[4], [0.0, 0.0, 0.0, 0.0, 0.0]), gm[4]
+    bad_geom = root / "geoms_bad.jsonl"
+    bad_lines = []
+    for line in geom_lines:
+        rec = json.loads(line)
+        rec["replayId"] = "WRONG"
+        bad_lines.append(json.dumps(rec))
+    bad_geom.write_text(chr(10).join(bad_lines) + chr(10), encoding="utf-8")
+    bad_geom_failed = False
+    try:
+        load_torpedo_rows([tmp], max_rows=0, classes=classes, feature_set="torp5",
+                          ship_attrs={}, click_sidecars=[clickside], geom_sidecars=[bad_geom])
+    except SystemExit:
+        bad_geom_failed = True
+    assert bad_geom_failed is True, "misaligned target-geometry sidecar must abort"
 
     # 9. T2 delivery mode: CLI flags + eval-subset selector + default export dir.
     fa = parse_args(["--final-fit", "--export-dir", str(root / "final")])
