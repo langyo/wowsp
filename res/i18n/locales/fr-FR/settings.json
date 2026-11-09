@@ -341,6 +341,7 @@
   "resourcesAiChannelUpToDate": "À jour ({version}).",
   "resourcesAiChannelEndpoint": "Source : {endpoint} · {count} fichier(s).",
   "resourcesAiChannelFailed": "La vérification ou le téléchargement a échoué.",
+  "resourcesAiChannelLosMismatch": "Les rasters LOS ont été générés à partir d'un autre pack de ressources ; mettez à jour le pack, puis relancez la vérification.",
   "resourcesAiChannelCheck": "Vérifier les mises à jour",
   "resourcesAiChannelCancel": "Annuler le téléchargement",
   "resourcesAiChannelDownload": "Télécharger les modèles",

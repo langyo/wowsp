@@ -522,6 +522,11 @@ export default defineComponent({
                       })}
                     </span>
                   ) : null}
+                  {aiCheck?.losMismatch || ai?.losSkipped ? (
+                    <span class="settings-modal__pack-desc">
+                      {t("settings.resourcesAiChannelLosMismatch")}
+                    </span>
+                  ) : null}
                   {resources.aiError.value ? (
                     <span class="settings-modal__pack-desc">
                       {t("settings.resourcesAiChannelFailed")}

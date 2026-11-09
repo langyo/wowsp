@@ -446,6 +446,10 @@ pub struct AiPackStatus {
     pub size_bytes: u64,
     /// Number of map subdirectories carrying a terrain_los.npz.
     pub los_maps: u32,
+    /// The installed release shipped LOS rasters, but the resource pack no
+    /// longer matched the manifest's resTreeSha256, so they were skipped.
+    #[serde(default)]
+    pub los_skipped: bool,
     /// Expected runtime files with their local presence/size.
     pub models: Vec<AiPackModelState>,
 }
@@ -484,6 +488,10 @@ pub struct AiPackCheck {
     pub total_bytes: u64,
     /// Whether the manifest includes the optional LOS raster tree.
     pub los_included: bool,
+    /// The published LOS rasters were baked against a different resource
+    /// pack than the installed one; the download installs the models only.
+    #[serde(default)]
+    pub los_mismatch: bool,
     /// The manifest's runtime file table.
     pub files: Vec<AiPackFileInfo>,
     /// The endpoint that served (and whose bytes verified) the manifest.

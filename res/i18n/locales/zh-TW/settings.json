@@ -341,6 +341,7 @@
   "resourcesAiChannelUpToDate": "已是最新（{version}）。",
   "resourcesAiChannelEndpoint": "來源：{endpoint} · {count} 個檔案。",
   "resourcesAiChannelFailed": "檢查更新或下載失敗。",
+  "resourcesAiChannelLosMismatch": "LOS 柵格是基於另一份資源包烘焙的；請先更新資源包，再檢查更新。",
   "resourcesAiChannelCheck": "檢查更新",
   "resourcesAiChannelCancel": "取消下載",
   "resourcesAiChannelDownload": "下載模型",
