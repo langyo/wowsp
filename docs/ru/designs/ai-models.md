@@ -70,9 +70,11 @@ ONNX, модель советов с маршрутизацией по атри�
 | таблица маршрутизации по атрибутам корабля | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | растры LOS рельефа | выход `bake_terrain_los.py`, один `terrain_los.npz` на карту | 5,986-221,638 B на каждый (35 карт установлено) |
 
-Каждый файл намного ниже отметки 10 MB, выше которой Hugging Face рекомендует
-отслеживание git-xet, поэтому релиз остаётся обычным Git: `/resolve/` отвечает
-200 напрямую, и клиент LFS/Xet не нужен (см. 7.8).
+Каждый файл намного ниже бюджета размера обновления в 10 MB. Хаб всё равно
+хранит бинарные блобы через Xet/LFS, поэтому `/resolve/` отвечает подписанным
+перенаправлением CDN, а не 200; загрузчик следует за ним (Range/докачка на
+конечном хосте) без клиента Xet, а подписанный manifest вместе с пофайловым
+sha256 обеспечивают авторитетность байтов (см. 4.2 и 7.8).
 
 ## 2. Текущее состояние
 
@@ -96,7 +98,7 @@ ONNX, модель советов с маршрутизацией по атри�
   GitHub repo (source of truth)
       |  python scripts/publish_ai_models.py  (hash -> sign -> upload)
       v
-  Hugging Face model repo  wowsp-ai  (generated release artifact + scripts snapshot)
+  Hugging Face model repo  wowsp-d1  (generated release artifact + scripts snapshot)
       |  signed manifest.json + per-file resolve/<commit-sha>/<path>
       v
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
@@ -118,7 +120,7 @@ ONNX, модель советов с маршрутизацией по атри�
 ### 4.1 Структура
 
 ```text
-wowsp-ai/                          public model repository (owner/repo TBD, see 11)
+wowsp-d1/                          public model repository (owner/repo TBD, see 11)
   README.md                        model card: purpose, provenance, metrics, file table, licence
   LICENSE                          Synthetic Source License 1.0 (same as the app repo)
   manifest.json                    signed runtime manifest (section 5)
@@ -140,12 +142,15 @@ wowsp-ai/                          public model repository (owner/repo TBD, see 
 
 ### 4.2 Правило размера файла
 
-Каждый файл репозитория остаётся **ниже 10 MB**, чтобы попадать туда обычным
-Git-блобом (`/resolve/` возвращает 200 с байтами, без подписанного
-перенаправления CDN, без реконструкции xet). Растры LOS сегодня — один файл на
-карту (все намного ниже предела); если будущий набор превысит предел на файл,
+Каждый файл репозитория остаётся **ниже 10 MB**, чтобы обновления оставались
+небольшими и инкрементальными. Хаб всё равно хранит бинарные блобы через
+Xet/LFS даже ниже этой отметки (обычный бинарный push через Git отклоняется),
+поэтому `/resolve/` отвечает подписанным перенаправлением CDN, а не 200;
+загрузчик следует ему и сохраняет Range/докачку на конечном хосте, и никакой
+клиент Xet при этом не участвует. Растры LOS сегодня — один файл на карту
+(все намного ниже предела); если будущий набор превысит предел на файл,
 разделите LOS на пронумерованные пачки, каждая из которых останется ниже него.
-Публикатор отказывается от подготовленного файла выше 10 MB и печатает путь
+Публикатор отклоняет подготовленный файл выше 10 MB и печатает путь
 нарушителя.
 
 ### 4.3 Модель ревизий
@@ -246,9 +251,9 @@ GitHub — единственный источник истины. Hugging Face 
   "resTreeSha256": "3f2a...",
   "files": [
     { "path": "fire_model.onnx", "sha256": "8ba9...", "size": 2592543,
-      "kind": "fire-two-head", "featureSet": "fire-v2", "quant": "fp32" },
+      "kind": "fire-two-head", "featureSet": "fire-v1", "quant": "fp32" },
     { "path": "move_model.onnx", "sha256": "bc91...", "size": 2652542,
-      "kind": "move-sectors-17", "featureSet": "move-v2", "quant": "fp32" },
+      "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
     { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
@@ -395,8 +400,8 @@ GitHub — единственный источник истины. Hugging Face 
 
 | Модель | Вид | Набор признаков (v1) | Обязательна |
 | --- | --- | --- | --- |
-| fire_model.onnx | две головы стрельбы (deep sets из 24 сущностей) | `fire-v2` | да |
-| move_model.onnx | 17-классовые секторы перемещения | `move-v2` | да |
+| fire_model.onnx | две головы стрельбы (deep sets из 24 сущностей) | `fire-v1` | да |
+| move_model.onnx | 17-классовые секторы перемещения | `move-v1` | да |
 | advice_fire_model.onnx | голова советов с маршрутизацией по атрибутам | `advice-e24` | нет |
 | torpedo_model.onnx | модель торпед с тремя головами | `torpedo-e26d` | нет |
 
@@ -658,9 +663,9 @@ zh-CN, zh-TW, ja, ko, fr, es, ru, ar).
 
 ## 11. Открытые решения
 
-1. **Имя владельца/репозитория Hugging Face** (предлагается `langyo/wowsp-ai`,
-   публичный). Учётная запись и токен записи принадлежат сопровождающему;
-   публикатор может создать репозиторий.
+1. **Имя владельца/репозитория Hugging Face** — РЕШЕНО: `langyo/wowsp-d1`
+   (публичный). Учётная запись и токен записи принадлежат сопровождающему;
+   публикатор создаёт репозиторий при первом использовании.
 2. **Заявление о перераспространении** игровых растров LOS и таблицы атрибутов:
    публиковать их вместе с весами под существующей лицензией плюс примечание о
    происхождении (рекомендуется, согласуется с публичным набором ресурсов) или

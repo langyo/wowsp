@@ -61,9 +61,11 @@
 | 함선 속성 라우팅 테이블 | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | 지형-LOS 래스터 | `bake_terrain_los.py` 출력, 맵당 `terrain_los.npz` 하나 | 각 5,986-221,638 B (35개 맵 설치됨) |
 
-모든 파일은 Hugging Face가 git-xet 추적을 권장하는 기준선인 10 MB보다 훨씬
-아래이므로, 릴리스는 일반 Git으로 유지된다: `/resolve/`가 직접 200을
-응답하고 LFS/Xet 클라이언트가 필요 없다(7.8절 참고).
+모든 파일은 10 MB 업데이트 크기 예산보다 훨씬 아래다. Hub는 여전히 바이너리
+블롭을 Xet/LFS를 통해 저장하므로, `/resolve/`는 200 대신 서명된 CDN
+리다이렉트를 응답한다; 다운로더는 Xet 클라이언트 없이 이를 따라가고(최종
+호스트에서 Range/재개), 서명된 매니페스트와 파일별 sha256이 바이트를 계속
+권위 있는 것으로 유지한다(4.2절 및 7.8절 참고).
 
 ## 2. 현재 상태
 
@@ -88,7 +90,7 @@
   GitHub repo (source of truth)
       |  python scripts/publish_ai_models.py  (hash -> sign -> upload)
       v
-  Hugging Face model repo  wowsp-ai  (generated release artifact + scripts snapshot)
+  Hugging Face model repo  wowsp-d1  (generated release artifact + scripts snapshot)
       |  signed manifest.json + per-file resolve/<commit-sha>/<path>
       v
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
@@ -110,7 +112,7 @@
 ### 4.1 레이아웃
 
 ```text
-wowsp-ai/                          public model repository (owner/repo TBD, see 11)
+wowsp-d1/                          public model repository (owner/repo TBD, see 11)
   README.md                        model card: purpose, provenance, metrics, file table, licence
   LICENSE                          Synthetic Source License 1.0 (same as the app repo)
   manifest.json                    signed runtime manifest (section 5)
@@ -131,12 +133,14 @@ wowsp-ai/                          public model repository (owner/repo TBD, see 
 
 ### 4.2 파일 크기 규칙
 
-각 저장소 파일은 **10 MB 미만**으로 유지되어 일반 Git 블롭으로 저장된다
-(`/resolve/`가 바이트와 함께 200을 반환하며, 서명된 CDN 리다이렉트도, xet
-재구성도 없다). LOS 래스터는 현재 맵당 파일 하나이며(모두 한도 훨씬 아래),
-미래의 팩이 파일별 한도를 초과하게 되면 LOS를 각각 한도 아래로 유지되는
-번호 붙은 번들로 나눈다. 게시 스크립트는 10 MB를 초과하는 스테이징 파일을
-거부하고 문제가 되는 경로를 출력한다.
+각 저장소 파일은 **10 MB 미만**으로 유지되어 업데이트가 작고 증분적으로
+유지된다. Hub는 그 기준 아래에서도 바이너리 블롭을 Xet/LFS를 통해 저장하므로
+(일반 Git 바이너리 푸시는 거부된다), `/resolve/`는 200 대신 서명된 CDN
+리다이렉트를 응답한다; 다운로더는 이를 따라가며 최종 호스트에서 Range/재개를
+유지하고, Xet 클라이언트는 관여하지 않는다. LOS 래스터는 현재 맵당 파일
+하나이며(모두 한도 훨씬 아래), 미래의 팩이 파일별 한도를 초과하게 되면 LOS를
+각각 한도 아래로 유지되는 번호 붙은 번들로 나눈다. 게시 스크립트는 10 MB를
+초과하는 스테이징 파일을 거부하고 문제가 되는 경로를 출력한다.
 
 ### 4.3 리비전 모델
 
@@ -230,9 +234,9 @@ GitHub이 유일한 진실 공급원이다. Hugging Face는 생성된 릴리스 
   "resTreeSha256": "3f2a...",
   "files": [
     { "path": "fire_model.onnx", "sha256": "8ba9...", "size": 2592543,
-      "kind": "fire-two-head", "featureSet": "fire-v2", "quant": "fp32" },
+      "kind": "fire-two-head", "featureSet": "fire-v1", "quant": "fp32" },
     { "path": "move_model.onnx", "sha256": "bc91...", "size": 2652542,
-      "kind": "move-sectors-17", "featureSet": "move-v2", "quant": "fp32" },
+      "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
     { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
@@ -368,8 +372,8 @@ GitHub이 유일한 진실 공급원이다. Hugging Face는 생성된 릴리스 
 
 | 모델 | 종류 | 피처 세트(v1) | 필수 |
 | --- | --- | --- | --- |
-| fire_model.onnx | 발사 2-헤드(24-엔티티 딥 세트) | `fire-v2` | 예 |
-| move_model.onnx | 17-클래스 이동 섹터 | `move-v2` | 예 |
+| fire_model.onnx | 발사 2-헤드(24-엔티티 딥 세트) | `fire-v1` | 예 |
+| move_model.onnx | 17-클래스 이동 섹터 | `move-v1` | 예 |
 | advice_fire_model.onnx | 속성 라우팅 조언 헤드 | `advice-e24` | 아니오 |
 | torpedo_model.onnx | 3-헤드 어뢰 모델 | `torpedo-e26d` | 아니오 |
 
@@ -613,8 +617,9 @@ huggingfaceMirrors = ["https://hf-mirror.com", "https://hf-mirror.example"]
 
 ## 11. 미결 결정
 
-1. **Hugging Face 소유자/저장소 이름**(제안: `langyo/wowsp-ai`, 공개). 계정과
-   쓰기 토큰은 메인테이너 소유이며, 게시 스크립트가 저장소를 만들 수 있다.
+1. **Hugging Face 소유자/저장소 이름** — 결정됨: `langyo/wowsp-d1`
+   (공개). 계정과 쓰기 토큰은 메인테이너 소유이며, 게시 스크립트가 최초
+   사용 시 저장소를 만든다.
 2. **게임에서 파생된 LOS 래스터와 속성 테이블에 대한 재배포 성명**: 기존
    라이선스와 출처 고지 아래 가중치와 함께 게시하거나(권장, 공개 리소스
    팩과 일관됨), 공개 모델 저장소에서 제외하고 앱의 GitHub 팩을 통해서만

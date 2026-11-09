@@ -558,6 +558,19 @@ e2e-setup:
 release-models *ARGS:
     python scripts/release_models.py {{ARGS}}
 
+# ── publish-ai-models ──────────────────────────────────────────────────
+# Publish the built-in ONNX decision models to the Hugging Face model
+# repository (design: docs/en/designs/ai-models.md). Run from a checkout
+# that holds the training outputs under scripts/experiments/out; needs
+# hf auth login (or HF_TOKEN) for the upload and the digest signing key
+# (~/.wowsp-signing/digest-main.key or WOWSP_DIGEST_SIGNING_KEY) for the
+# manifest. huggingface_hub is publish-time only (pip install
+# huggingface_hub). Dry-run first; pushing the Hub repo is the maintainer's
+# step, by design.
+#   just publish-ai-models --dry-run
+publish-ai-models *ARGS:
+    python scripts/publish_ai_models.py {{ARGS}}
+
 # ── fetch-models ───────────────────────────────────────────────────────
 # Download the baked GLB model pack from GitHub Releases (res-latest) into
 # packages/webui/src/res/models (the GLBs are gitignored). For fresh clones.
