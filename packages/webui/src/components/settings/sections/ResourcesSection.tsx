@@ -80,6 +80,21 @@ export default defineComponent({
           ? Math.min(100, Math.round((prog.received / prog.total) * 100))
           : 0;
       const d = resources.decisions.value;
+      const ai = resources.aiStatus.value;
+      const aiCheck = resources.aiCheck.value;
+      const aiProg = resources.aiProgress.value;
+      const aiPct =
+        aiProg && aiProg.phase === "download" && aiProg.total > 0
+          ? Math.min(100, Math.round((aiProg.received / aiProg.total) * 100))
+          : 0;
+      let aiEndpointHost = "";
+      if (aiCheck?.endpoint) {
+        try {
+          aiEndpointHost = new URL(aiCheck.endpoint).host;
+        } catch {
+          aiEndpointHost = aiCheck.endpoint;
+        }
+      }
       const caps = resources.capabilities;
       // The capability probe is async; render "checking" instead of a
       // misleading "portable build" banner during the first frame.
@@ -439,8 +454,11 @@ export default defineComponent({
               </div>
             </div>
 
-            {/* The decisions pack is installed out of band (no downloader);
-                this row reports what is on disk and offers a clear. */}
+            {/* The AI model pack is published on Hugging Face and installed
+                through the signed ai channel (commands/ai_pack.rs): the card
+                shows the local stamp/inventory, checks the authenticated
+                manifest (once per day on mount; the button forces it) and
+                runs the install pass behind the download-progress bus. */}
             {!aiKnown ? null : (
               <div class="settings-modal__pack">
                 <div class="settings-modal__pack-info">
@@ -458,16 +476,17 @@ export default defineComponent({
                         inline
                         text={t("settings.resourcesAiChecking")}
                       />
+                    ) : ai?.installed ? (
+                      t("settings.resourcesAiChannelVersion", {
+                        version: ai.version ?? "—",
+                        seq: ai.seq ?? 0,
+                      })
                     ) : resources.decisionsError.value && d == null
                         ? t("settings.resourcesDecisionsUnknown")
                         : d?.present
-                          ? `${formatBytes(d.sizeBytes)} · ${
-                              d.modelPresent
-                                ? t("settings.resourcesDecisionsModelInstalled", {
-                                    size: formatBytes(d.modelBytes),
-                                  })
-                                : t("settings.resourcesDecisionsModelMissing")
-                            }`
+                          ? t("settings.resourcesAiChannelUnmanaged", {
+                              size: formatBytes(d.sizeBytes),
+                            })
                           : t("settings.resourcesDecisionsAbsent")}
                   </span>
                   {!caps.aiInference ? (
@@ -481,6 +500,44 @@ export default defineComponent({
                     <span class="settings-modal__pack-desc">
                       {t("settings.resourcesDecisionsDemoInUse")}
                     </span>
+                  ) : null}
+                  {aiCheck ? (
+                    <span class="settings-modal__pack-desc">
+                      {aiCheck.updateAvailable
+                        ? t("settings.resourcesAiChannelUpdateAvailable", {
+                            version: aiCheck.latestVersion,
+                            seq: aiCheck.latestSeq,
+                            size: formatBytes(aiCheck.totalBytes),
+                          })
+                        : t("settings.resourcesAiChannelUpToDate", {
+                            version: aiCheck.latestVersion,
+                          })}
+                    </span>
+                  ) : null}
+                  {aiCheck ? (
+                    <span class="settings-modal__pack-desc">
+                      {t("settings.resourcesAiChannelEndpoint", {
+                        endpoint: aiEndpointHost,
+                        count: aiCheck.files.length,
+                      })}
+                    </span>
+                  ) : null}
+                  {resources.aiError.value ? (
+                    <span class="settings-modal__pack-desc">
+                      {t("settings.resourcesAiChannelFailed")}
+                    </span>
+                  ) : null}
+                  {resources.aiDownloading.value ? (
+                    <div
+                      class="settings-modal__pack-progress"
+                      role="progressbar"
+                      aria-valuenow={aiPct}
+                    >
+                      <div
+                        class="settings-modal__pack-progress-fill"
+                        style={{ width: `${aiPct}%` }}
+                      />
+                    </div>
                   ) : null}
                   {d?.present && d.adviceModelPresent ? (
                     <span class="settings-modal__pack-desc">
@@ -526,6 +583,40 @@ export default defineComponent({
                   ) : null}
                 </div>
                 <div class="settings-modal__pack-actions">
+                  {caps.aiInference ? (
+                    <>
+                      <HkButton
+                        variant="secondary"
+                        size="sm"
+                        loading={resources.aiChecking.value}
+                        disabled={resources.aiDownloading.value}
+                        onClick={() => void resources.checkAiUpdate()}
+                      >
+                        {t("settings.resourcesAiChannelCheck")}
+                      </HkButton>
+                      {resources.aiDownloading.value ? (
+                        <HkButton
+                          variant="secondary"
+                          size="sm"
+                          loading={resources.aiCanceling.value}
+                          onClick={() => void resources.cancelAi()}
+                        >
+                          {t("settings.resourcesAiChannelCancel")}
+                        </HkButton>
+                      ) : (
+                        <HkButton
+                          variant="primary"
+                          size="sm"
+                          disabled={!aiCheck?.updateAvailable}
+                          onClick={() => void resources.downloadAi()}
+                        >
+                          {d?.present
+                            ? t("settings.resourcesAiChannelUpdate")
+                            : t("settings.resourcesAiChannelDownload")}
+                        </HkButton>
+                      )}
+                    </>
+                  ) : null}
                   {d?.present ? (
                     resources.decisionsArmed.value ? (
                       <HkButton

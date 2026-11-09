@@ -233,6 +233,51 @@ export interface DecisionsPackStatus {
   losMaps: string[];
 }
 
+/** Local install state of the AI model channel (Hugging Face manifest).
+ *  Mirrors `wowsp_tauri_shared::AiPackStatus`. */
+export interface AiPackModelState {
+  path: string;
+  present: boolean;
+  sizeBytes: number;
+}
+
+export interface AiPackStatus {
+  installed: boolean;
+  seq: number | null;
+  version: string | null;
+  treeSha256: string | null;
+  revision: string | null;
+  installedAt: string | null;
+  sizeBytes: number;
+  losMaps: number;
+  models: AiPackModelState[];
+}
+
+/** One runtime file of the authenticated remote manifest. */
+export interface AiPackFileInfo {
+  path: string;
+  size: number;
+  sha256: string;
+  kind?: string;
+  featureSet?: string;
+}
+
+/** One authenticated manifest check (`ai_pack_check`). */
+export interface AiPackCheck {
+  current: AiPackStatus;
+  latestSeq: number;
+  latestVersion: string;
+  latestTreeSha256: string;
+  latestRevision: string;
+  totalBytes: number;
+  losIncluded: boolean;
+  files: AiPackFileInfo[];
+  endpoint: string;
+  manifestSha256: string;
+  checkedAt: string;
+  updateAvailable: boolean;
+}
+
 // ── E18 · G6 step 3: the AI analysis debug report ───────────────────────────
 
 /** One ship's movement advice at one instant (the E16 17-class move model
@@ -413,4 +458,13 @@ export const decisionApi = {
   /** Remove the installed decisions pack (a loaded model stays in memory
    *  until restart). */
   clearDecisionsPack: () => transport.invoke<null>(RPC.clear_decisions_pack),
+  /** Local install state of the Hugging Face published model pack. */
+  aiPackStatus: () => transport.invoke<AiPackStatus>(RPC.ai_pack_status),
+  /** Fetch + authenticate the published manifest (no download). */
+  aiPackCheck: () => transport.invoke<AiPackCheck>(RPC.ai_pack_check),
+  /** Download + verify + install the published pack (progress on the
+   *  unified download-progress bus, kind "ai-models"). */
+  aiPackDownload: () => transport.invoke<null>(RPC.ai_pack_download),
+  /** Cancel the running install pass. */
+  aiPackCancel: () => transport.invoke<null>(RPC.ai_pack_cancel),
 };
