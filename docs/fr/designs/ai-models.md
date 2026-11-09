@@ -96,6 +96,8 @@ le sha256 par fichier garantissent que les octets font autorité (voir 4.2 et
 
 Cette vague **crée donc un canal** ; elle n'en migre aucun.
 
+> **État d'implémentation.** Le canal est en service : `langyo/wowsp-d1` a publié la seq 2 (les quatre modèles ONNX, la table d'attributs et 35 rasters LOS de terrain générés à partir de l'arbre de pack `6855322b…`), vérifiés via `hf-mirror.com` et l'endpoint officiel ; le canal `ai` de l'application, la carte de réglages et les huit locales de réglages ont été livrés avec. Le tableau ci-dessus décrit l'état antérieur au canal que ce design remplace ; la table de routage portée par le pack écrase désormais la table embarquée (section 6.6).
+
 ## 3. Vue d'ensemble de l'architecture
 
 Trois couches, chacune avec un seul rôle :

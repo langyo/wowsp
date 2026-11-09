@@ -250,6 +250,9 @@ export interface AiPackStatus {
   installedAt: string | null;
   sizeBytes: number;
   losMaps: number;
+  /** The release shipped LOS rasters but the res pack no longer matched,
+   *  so they were skipped (update the resource pack, then re-check). */
+  losSkipped: boolean;
   models: AiPackModelState[];
 }
 
@@ -271,6 +274,9 @@ export interface AiPackCheck {
   latestRevision: string;
   totalBytes: number;
   losIncluded: boolean;
+  /** The published LOS rasters were baked against a different res pack;
+   *  the download would install the models only. */
+  losMismatch: boolean;
   files: AiPackFileInfo[];
   endpoint: string;
   manifestSha256: string;

@@ -51,6 +51,11 @@ const MANIFEST_NAME: &str = "manifest.json";
 const STAGING_DIR: &str = ".ai-staging";
 const BACKUP_DIR: &str = ".decisions-backup";
 const STAMP_FILE: &str = ".ai-version.json";
+/// The resource pack's stamp: its treeSha256 is what the manifest's
+/// resTreeSha256 is compared against before installing LOS rasters.
+const RES_STAMP_FILE: &str = ".res-version.json";
+/// One map's LOS raster destination suffix.
+const LOS_SUFFIX: &str = "/terrain_los.npz";
 const PART_PREFIX: &str = ".ai-part-";
 /// One manifest fetch's ceiling; a dead endpoint fails over quickly.
 const MANIFEST_TIMEOUT: Duration = Duration::from_secs(20);
@@ -143,6 +148,14 @@ struct AiStamp {
     manifest_sha256: String,
     key_id: String,
     installed_at: String,
+    /// The published release shipped LOS rasters, but the installed resource
+    /// pack no longer matches the manifest's resTreeSha256, so they were
+    /// skipped. The stamp still records the release's treeSha256.
+    #[serde(default)]
+    los_skipped: bool,
+    /// The res pack tree the release's LOS rasters were baked against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    res_tree_sha256: Option<String>,
 }
 
 impl AiStamp {
@@ -183,6 +196,56 @@ fn file_sha256(path: &Path) -> anyhow::Result<String> {
         hasher.update(&buffer[..read]);
     }
     Ok(hex::encode(hasher.finalize()))
+}
+
+fn is_los_path(path: &str) -> bool {
+    path.ends_with(LOS_SUFFIX)
+}
+
+/// The installed resource pack stamp's tree hash (None when no pack is
+/// installed or the stamp is unreadable).
+fn installed_res_tree(cache: &Path) -> Option<String> {
+    let raw = fs::read_to_string(cache.join(RES_STAMP_FILE)).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    value
+        .get("treeSha256")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// Whether the manifest's LOS rasters were baked against a resource pack
+/// other than the installed one (the app then installs the models but skips
+/// the LOS files, see docs/en/designs/ai-models.md section 6.7).
+fn los_mismatch(manifest: &AiManifest, cache: &Path) -> bool {
+    match manifest.res_tree_sha256.as_deref() {
+        None => false,
+        Some(expected) => installed_res_tree(cache).as_deref() != Some(expected),
+    }
+}
+
+/// The files one install pass transfers: every manifest file, or — when the
+/// res pack no longer matches the baked rasters — everything but LOS.
+fn files_to_install(manifest: &AiManifest, skip_los: bool) -> Vec<&AiManifestFile> {
+    manifest
+        .files
+        .iter()
+        .filter(|file| !(skip_los && is_los_path(&file.path)))
+        .collect()
+}
+
+/// Hash over an explicit file table (sorted path + sha256 pairs), exactly
+/// the publisher's formula: sha256 over path NUL sha256 LF lines.
+fn tree_hash_over(rows: impl IntoIterator<Item = (String, String)>) -> String {
+    let mut rows: Vec<(String, String)> = rows.into_iter().collect();
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    let mut hasher = Sha256::new();
+    for (path, sha) in rows {
+        hasher.update(path.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(sha.as_bytes());
+        hasher.update(b"\n");
+    }
+    hex::encode(hasher.finalize())
 }
 
 fn ensure_plain_dest(path: &str) -> anyhow::Result<()> {
@@ -424,6 +487,7 @@ fn local_status(cache: &Path) -> AiPackStatus {
         installed_at: stamp.as_ref().map(|s| s.installed_at.clone()),
         size_bytes,
         los_maps,
+        los_skipped: stamp.as_ref().map(|s| s.los_skipped).unwrap_or(false),
         models,
     }
 }
@@ -485,8 +549,14 @@ pub async fn ai_pack_check() -> CommandResult<AiPackCheck> {
         Some(manifest.version.clone()),
         true,
     );
+    let los_tree_mismatch = los_mismatch(&manifest, &cache);
+    // A pack installed while the res pack was stale is missing its LOS tree;
+    // once the user updates the res pack the same release becomes installable
+    // again, so the card must offer the download.
+    let los_missing = current.los_skipped && !los_tree_mismatch;
     let total_bytes = manifest.files.iter().map(|f| f.size).sum();
-    let update_available = current.tree_sha256.as_deref() != Some(manifest.tree_sha256.as_str());
+    let update_available =
+        current.tree_sha256.as_deref() != Some(manifest.tree_sha256.as_str()) || los_missing;
     let files = manifest
         .files
         .iter()
@@ -506,6 +576,7 @@ pub async fn ai_pack_check() -> CommandResult<AiPackCheck> {
         latest_revision: manifest.revision,
         total_bytes,
         los_included: manifest.res_tree_sha256.is_some(),
+        los_mismatch: los_tree_mismatch,
         files,
         endpoint,
         manifest_sha256: manifest_sha,
@@ -526,6 +597,11 @@ pub fn ai_pack_cancel() -> CommandResult<()> {
 /// with the ai feature only, so the loaders below are always available.
 fn validate_staged_models(staging: &Path, manifest: &AiManifest) -> anyhow::Result<()> {
     for file in &manifest.files {
+        // LOS rasters are opaque data (and may be skipped on a res-pack
+        // mismatch); only the ONNX contract is checked here.
+        if is_los_path(&file.path) {
+            continue;
+        }
         let path = staging.join(&file.path);
         let bytes = fs::read(&path).map_err(|e| anyhow!("read staged {}: {e}", path.display()))?;
         match file.path.as_str() {
@@ -598,9 +674,9 @@ fn validate_staged_models(staging: &Path, manifest: &AiManifest) -> anyhow::Resu
 }
 
 /// Recompute the content tree hash from the staged files.
-fn staged_tree_hash(staging: &Path, manifest: &AiManifest) -> anyhow::Result<String> {
-    let mut rows: Vec<(&str, String)> = Vec::with_capacity(manifest.files.len());
-    for file in &manifest.files {
+fn staged_tree_hash(staging: &Path, files: &[&AiManifestFile]) -> anyhow::Result<String> {
+    let mut rows = Vec::with_capacity(files.len());
+    for file in files {
         let path = staging.join(&file.path);
         let sha = file_sha256(&path)?;
         if !sha.eq_ignore_ascii_case(&file.sha256) {
@@ -610,17 +686,9 @@ fn staged_tree_hash(staging: &Path, manifest: &AiManifest) -> anyhow::Result<Str
                 file.sha256
             );
         }
-        rows.push((file.path.as_str(), sha));
+        rows.push((file.path.clone(), sha));
     }
-    rows.sort_by(|a, b| a.0.cmp(b.0));
-    let mut hasher = Sha256::new();
-    for (path, sha) in rows {
-        hasher.update(path.as_bytes());
-        hasher.update([0u8]);
-        hasher.update(sha.as_bytes());
-        hasher.update(b"\n");
-    }
-    Ok(hex::encode(hasher.finalize()))
+    Ok(tree_hash_over(rows))
 }
 
 /// Download, verify and install the published model pack. User-initiated;
@@ -642,8 +710,12 @@ pub async fn ai_pack_download(app: AppHandle) -> CommandResult<()> {
         }
     }
     let revision = pinned_revision(&manifest)?.to_string();
-    let total_bytes: u64 = manifest.files.iter().map(|f| f.size).sum();
-    let file_count = manifest.files.len();
+    // LOS rasters baked against a different res pack would describe terrain
+    // the user cannot see; install the models and skip the raster tree.
+    let skip_los = los_mismatch(&manifest, &cache);
+    let install_files = files_to_install(&manifest, skip_los);
+    let total_bytes: u64 = install_files.iter().map(|f| f.size).sum();
+    let file_count = install_files.len();
 
     let staging = cache.join(STAGING_DIR);
     let backup = cache.join(BACKUP_DIR);
@@ -669,7 +741,7 @@ pub async fn ai_pack_download(app: AppHandle) -> CommandResult<()> {
 
     let context = MirrorContext::load();
     let mut received = 0u64;
-    for (index, file) in manifest.files.iter().enumerate() {
+    for (index, file) in install_files.iter().enumerate() {
         let repo_path = repo_path_for(&file.path)?;
         let resource = huggingface::HfResource::new(AI_REPO, &revision, &repo_path)?;
         let sources: Vec<String> = context
@@ -716,11 +788,23 @@ pub async fn ai_pack_download(app: AppHandle) -> CommandResult<()> {
         Some(serde_json::json!({ "step": "verify" })),
         None,
     );
-    let tree_sha256 = staged_tree_hash(&staging, &manifest)?;
-    if !tree_sha256.eq_ignore_ascii_case(&manifest.tree_sha256) {
+    // The signed manifest already fixed every file's sha256; the tree hash
+    // adds set-level integrity. On a LOS skip the installed subset can never
+    // equal the full release tree, so compare it against the subset hash
+    // derived from the same signed file table.
+    let expected_tree = if skip_los {
+        tree_hash_over(
+            install_files
+                .iter()
+                .map(|file| (file.path.clone(), file.sha256.clone())),
+        )
+    } else {
+        manifest.tree_sha256.clone()
+    };
+    let tree_sha256 = staged_tree_hash(&staging, &install_files)?;
+    if !tree_sha256.eq_ignore_ascii_case(&expected_tree) {
         return Err(anyhow!(
-            "staged tree hash {tree_sha256} does not match the manifest {}",
-            manifest.tree_sha256
+            "staged tree hash {tree_sha256} does not match the expected {expected_tree}"
         )
         .into());
     }
@@ -747,10 +831,14 @@ pub async fn ai_pack_download(app: AppHandle) -> CommandResult<()> {
         seq: manifest.seq,
         version: manifest.version.clone(),
         revision: revision.clone(),
-        tree_sha256: tree_sha256.clone(),
+        // The release identity (full tree) stays the stamp's tree hash even
+        // when the LOS subset was skipped: check/update compare releases.
+        tree_sha256: manifest.tree_sha256.clone(),
         manifest_sha256: manifest_sha.clone(),
         key_id,
         installed_at: now_rfc3339(),
+        los_skipped: skip_los,
+        res_tree_sha256: manifest.res_tree_sha256.clone(),
     };
     if let Err(e) = stamp.write(&cache) {
         let _ = fs::rename(&decisions, &staging);
@@ -762,7 +850,7 @@ pub async fn ai_pack_download(app: AppHandle) -> CommandResult<()> {
     let _ = fs::remove_dir_all(&backup);
     super::resources::record_ledger_external(
         "decisions-pack",
-        Some(tree_sha256.clone()),
+        Some(manifest.tree_sha256.clone()),
         Some(manifest.version.clone()),
         true,
     );
@@ -771,7 +859,11 @@ pub async fn ai_pack_download(app: AppHandle) -> CommandResult<()> {
         phase::DONE,
         total_bytes,
         total_bytes,
-        Some(serde_json::json!({ "seq": manifest.seq, "treeSha256": tree_sha256 })),
+        Some(serde_json::json!({
+            "seq": manifest.seq,
+            "treeSha256": manifest.tree_sha256,
+            "losSkipped": skip_los,
+        })),
         None,
     );
     Ok(())
@@ -898,9 +990,44 @@ mod tests {
         }]);
         let expected = sha256_hex(format!("fire_model.onnx\0{sha}\n").as_bytes());
         manifest.tree_sha256 = expected.clone();
-        let got = staged_tree_hash(&dir, &manifest).expect("tree hash");
+        let files: Vec<&AiManifestFile> = manifest.files.iter().collect();
+        let got = staged_tree_hash(&dir, &files).expect("tree hash");
         assert_eq!(got, expected);
-        assert!(staged_tree_hash(&dir, &manifest_with(vec![file("missing.onnx")])).is_err());
+        let missing_manifest = manifest_with(vec![file("missing.onnx")]);
+        let missing: Vec<&AiManifestFile> = missing_manifest.files.iter().collect();
+        assert!(staged_tree_hash(&dir, &missing).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn los_files_are_skipped_on_a_resource_pack_mismatch() {
+        let dir = std::env::temp_dir().join(format!("wowsp-ai-los-gate-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let manifest = manifest_with(vec![
+            model_file("fire_model.onnx", "fire-two-head", "fire-v1"),
+            model_file("move_model.onnx", "move-sectors-17", "move-v1"),
+            file("42_Neighbors/terrain_los.npz"),
+        ]);
+        // A manifest with a res-pin but no pack stamp: rasters gated, models stay.
+        let mut gated = manifest.clone();
+        gated.res_tree_sha256 = Some("e".repeat(64));
+        assert!(los_mismatch(&gated, &dir));
+        let files = files_to_install(&gated, true);
+        assert_eq!(files.len(), 2);
+        assert!(files.iter().all(|f| !is_los_path(&f.path)));
+        assert_eq!(files_to_install(&gated, false).len(), 3);
+
+        // A stamp carrying the manifest's tree clears the mismatch.
+        let tree = "d".repeat(64);
+        std::fs::write(
+            dir.join(RES_STAMP_FILE),
+            format!("{{\"treeSha256\":\"{tree}\"}}"),
+        )
+        .unwrap();
+        let mut matching = manifest.clone();
+        matching.res_tree_sha256 = Some(tree);
+        assert!(!los_mismatch(&matching, &dir));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

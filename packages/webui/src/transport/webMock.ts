@@ -486,6 +486,7 @@ const MOCK_AI_STATUS = {
   installedAt: "2026-11-09T00:00:00Z",
   sizeBytes: 8388138,
   losMaps: 12,
+  losSkipped: false,
   models: [
     { path: "fire_model.onnx", present: true, sizeBytes: 2592543 },
     { path: "move_model.onnx", present: true, sizeBytes: 2652542 },
@@ -514,6 +515,7 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
       latestRevision: "b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
       totalBytes,
       losIncluded: true,
+      losMismatch: false,
       files: MOCK_AI_FILES,
       endpoint: "https://hf-mirror.com",
       manifestSha256:

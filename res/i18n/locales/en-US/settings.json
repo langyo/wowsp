@@ -341,6 +341,7 @@
   "resourcesAiChannelUpToDate": "Up to date ({version}).",
   "resourcesAiChannelEndpoint": "Source: {endpoint} · {count} files.",
   "resourcesAiChannelFailed": "Update check or download failed.",
+  "resourcesAiChannelLosMismatch": "LOS rasters were baked against a different resource pack; update the resource pack, then re-check.",
   "resourcesAiChannelCheck": "Check for updates",
   "resourcesAiChannelCancel": "Cancel download",
   "resourcesAiChannelDownload": "Download models",

@@ -92,6 +92,8 @@ fuente autoritativa (véase 4.2 y 7.8).
 
 Esta oleada, por tanto, **crea un canal**; no migra uno.
 
+> **Estado de implementación.** El canal está activo: `langyo/wowsp-d1` publicó la seq 2 (los cuatro modelos ONNX, la tabla de atributos y 35 rásteres LOS de terreno generados contra el árbol de paquete `6855322b…`), verificados tanto por `hf-mirror.com` como por el endpoint oficial; el canal `ai` de la app, la tarjeta de ajustes y los ocho idiomas de ajustes se entregaron con él. La tabla anterior describe el estado previo al canal que este diseño sustituye; la tabla de enrutamiento del paquete ahora anula la integrada (sección 6.6).
+
 ## 3. Visión general de la arquitectura
 
 Tres capas, cada una con una tarea:

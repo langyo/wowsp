@@ -341,6 +341,7 @@
   "resourcesAiChannelUpToDate": "최신 상태입니다({version}).",
   "resourcesAiChannelEndpoint": "출처: {endpoint} · 파일 {count}개.",
   "resourcesAiChannelFailed": "업데이트 확인 또는 다운로드에 실패했습니다.",
+  "resourcesAiChannelLosMismatch": "LOS 래스터가 다른 리소스 팩을 기준으로 생성되었습니다. 리소스 팩을 업데이트한 뒤 다시 확인하세요.",
   "resourcesAiChannelCheck": "업데이트 확인",
   "resourcesAiChannelCancel": "다운로드 취소",
   "resourcesAiChannelDownload": "모델 다운로드",

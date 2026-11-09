@@ -341,6 +341,7 @@
   "resourcesAiChannelUpToDate": "Актуально ({version}).",
   "resourcesAiChannelEndpoint": "Источник: {endpoint} · файлов: {count}.",
   "resourcesAiChannelFailed": "Не удалось проверить обновления или загрузить пакет.",
+  "resourcesAiChannelLosMismatch": "Растры LOS построены по другому пакету ресурсов; обновите пакет ресурсов и повторите проверку.",
   "resourcesAiChannelCheck": "Проверить обновления",
   "resourcesAiChannelCancel": "Отменить загрузку",
   "resourcesAiChannelDownload": "Загрузить модели",

@@ -341,6 +341,7 @@
   "resourcesAiChannelUpToDate": "最新です（{version}）。",
   "resourcesAiChannelEndpoint": "取得元: {endpoint} · {count} ファイル。",
   "resourcesAiChannelFailed": "更新確認またはダウンロードに失敗しました。",
+  "resourcesAiChannelLosMismatch": "LOS ラスターは別のリソースパックを基に生成されています。リソースパックを更新してから再確認してください。",
   "resourcesAiChannelCheck": "更新を確認",
   "resourcesAiChannelCancel": "ダウンロードを中止",
   "resourcesAiChannelDownload": "モデルをダウンロード",

@@ -88,6 +88,8 @@ keep the bytes authoritative (see 4.2 and 7.8).
 
 This wave therefore **creates a channel**; it does not migrate one.
 
+> **Implementation status.** The channel is live: `langyo/wowsp-d1` published seq 2 (the four ONNX models, the ship-attribute table and 35 terrain-LOS rasters baked against resource-pack tree `6855322b…`), verified through both `hf-mirror.com` and the official endpoint; the app's `ai` channel, the settings card and the eight settings locales shipped with it. The table above records the pre-channel state this design replaced, and the pack-carried routing table now overrides the embedded one (section 6.6).
+
 ## 3. Architecture overview
 
 Three layers, each with one job:

@@ -341,6 +341,7 @@
   "resourcesAiChannelUpToDate": "Al día ({version}).",
   "resourcesAiChannelEndpoint": "Origen: {endpoint} · {count} archivo(s).",
   "resourcesAiChannelFailed": "La comprobación o la descarga fallaron.",
+  "resourcesAiChannelLosMismatch": "Los rásteres LOS se generaron con otro paquete de recursos; actualiza el paquete y vuelve a comprobar.",
   "resourcesAiChannelCheck": "Buscar actualizaciones",
   "resourcesAiChannelCancel": "Cancelar descarga",
   "resourcesAiChannelDownload": "Descargar modelos",
