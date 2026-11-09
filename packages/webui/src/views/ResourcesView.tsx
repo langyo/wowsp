@@ -1,12 +1,12 @@
 import { defineComponent, ref, watch } from "vue";
 import {
   AlertTriangle,
-  AudioLines,
   ChevronDown,
   Ellipsis,
   FolderSearch,
   FolderSync,
-  ImageIcon,
+  ListTree,
+  Palette,
   Puzzle,
   RefreshCw,
   ShieldCheck,
@@ -59,6 +59,7 @@ import { useMigrateWizard } from "./resources/useMigrateWizard";
 import { useFileListWindow } from "./resources/useFileListWindow";
 import type { ResourcesCtx } from "./resources/context";
 import { renderPane } from "./resources/DetailPane";
+import LayerStack, { renderLayerReport } from "./resources/LayerStack";
 import { renderMigrateWizard } from "./resources/MigrateWizard";
 import { renderFileListWindow } from "./resources/FileListWindow";
 import {
@@ -108,6 +109,9 @@ export default defineComponent({
   // Last-session plugin health (loader verdicts from python.log): the
   // collapsible strip's open state — collapsed by default, one line.
   const loaderHealthOpen = ref(false);
+  // The beautify view's "按资源面查看" section — the old texture-component
+  // grouping stays reachable below the swimlane (collapsed by default).
+  const componentsOpen = ref(false);
   // Boot re-installer strip (PnFMods/ModsInstaller_*): same collapsible
   // shape — collapsed by default, the DISARM action sits on the head row
   // and its confirm dialog opens separately.
@@ -215,8 +219,7 @@ export default defineComponent({
       ];
       const bigCatTabs = [
         { key: "function", label: t("resources.big.function"), icon: <Puzzle size={14} /> },
-        { key: "texture", label: t("resources.big.texture"), icon: <ImageIcon size={14} /> },
-        { key: "voice", label: t("resources.big.voice"), icon: <AudioLines size={14} /> },
+        { key: "beautify", label: t("resources.big.beautify"), icon: <Palette size={14} /> },
       ];
       const selKey = hub.selectedRowKey.value;
       // The pane is re-keyed per selection so a freshly picked row always
@@ -238,6 +241,8 @@ export default defineComponent({
             return `foreign:${sel.unit.installer}:${sel.unit.key}`;
           case "component":
             return `component:${sel.comp.key}`;
+          case "layer":
+            return `layer:${sel.packId}`;
           case "local":
             return "local";
           default: {
@@ -548,7 +553,9 @@ export default defineComponent({
                   count:
                     hub.source.value === "online"
                       ? hub.catalogInCat.value.length
-                      : hub.installedInCat.value.length,
+                      : hub.bigCat.value === "beautify"
+                        ? hub.layerStack.layers.value.length
+                        : hub.installedInCat.value.length,
                 })}
               </AppTag>
 
@@ -648,7 +655,10 @@ export default defineComponent({
 
               {/* Sub-division chips, scoped to the active big category.
                   Multi-select toggles: no chips picked = show everything,
-                  each clicked chip narrows to its bucket (union). */}
+                  each clicked chip narrows to its bucket (union). The
+                  layered beautify view owns its own row badges, so the
+                  kind chips step aside there (they cannot narrow a stack). */}
+              {(hub.source.value === "online" || hub.bigCat.value === "function") && (
               <div class="resources-chips">
                 {hub.source.value === "online"
                   ? CATALOG_CATS.filter(
@@ -683,6 +693,7 @@ export default defineComponent({
                       </AppTag>
                     ))}
               </div>
+              )}
             </div>
 
             {/* ── The compact list (the master half): the sidebar's
@@ -705,13 +716,64 @@ export default defineComponent({
                   ? hub.catalogShown.value.length === 0
                     ? catalogEmptyNote()
                     : hub.catalogShown.value.map((entry) => renderCatalogRow(ctx, entry, selKey))
-                  : hub.bigCat.value === "texture" && hub.textureComponents.value.length === 0
-                    ? installedEmptyNote()
-                    : hub.bigCat.value === "texture"
-                      ? hub.textureComponents.value.map((comp) => renderComponentRow(ctx, comp))
-                      : hub.shown.value.length === 0
-                        ? installedEmptyNote()
-                        : hub.shown.value.map((m) => renderInstalledRow(ctx, m, selKey))}
+                  : hub.bigCat.value === "beautify"
+                    ? (
+                      <>
+                        <LayerStack
+                          layers={hub.layerStack.layers.value}
+                          rendered={hub.layerStack.rendered.value}
+                          slotConflicts={hub.layerStack.conflicts.value}
+                          selectedPackId={
+                            hub.selection.value?.mode === "layer"
+                              ? hub.selection.value.packId
+                              : ""
+                          }
+                          busy={hub.layerStack.busy.value}
+                          loading={hub.layerStack.loading.value}
+                          error={hub.layerStack.error.value}
+                          reportBusy={hub.layerStack.reportBusy.value}
+                          onSelect={hub.selectLayer}
+                          onReorder={(from: number, to: number) =>
+                            void hub.layerStack.setOrder(from, to)
+                          }
+                          onApply={() => void hub.layerStack.applyNow()}
+                          onOpenReport={() => void hub.layerStack.openReport()}
+                          onRetry={() => void hub.layerStack.refresh()}
+                        />
+                        {hub.textureComponents.value.length > 0 && (
+                          <div class="layer-components">
+                            <button
+                              type="button"
+                              class="layer-components__head"
+                              aria-expanded={componentsOpen.value}
+                              onClick={() => (componentsOpen.value = !componentsOpen.value)}
+                            >
+                              <ListTree size={14} />
+                              <span class="layer-components__title">
+                                {t("resources.layers.componentsToggle")}
+                              </span>
+                              <AppTag tone="default">
+                                {hub.textureComponents.value.length}
+                              </AppTag>
+                              <ChevronDown
+                                size={14}
+                                class={{ "is-open": componentsOpen.value }}
+                              />
+                            </button>
+                            {componentsOpen.value && (
+                              <div class="layer-components__body">
+                                {hub.textureComponents.value.map((comp) =>
+                                  renderComponentRow(ctx, comp),
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )
+                    : hub.shown.value.length === 0
+                      ? installedEmptyNote()
+                      : hub.shown.value.map((m) => renderInstalledRow(ctx, m, selKey))}
               </div>
             </HkScrollContainer>
 
@@ -920,6 +982,26 @@ export default defineComponent({
             }}
             onUpdate:open={(v: boolean) => {
               if (!v) disarmAsk.value = false;
+            }}
+          />
+
+          {/* Layer render report: totals + warnings + the conflicting path
+              list from mod_hub_layer_paths (winner / shadowed / foreign). */}
+          {renderLayerReport(ctx)}
+
+          {/* Layered pack uninstall — resolves through the ledger record or
+              the matching installed unit on confirm. */}
+          <HkConfirmDialog
+            open={!!hub.layerUninstallTarget.value}
+            title={t("resources.layers.uninstallConfirmTitle")}
+            message={t("resources.layers.uninstallConfirmBody", {
+              name: hub.layerUninstallTarget.value?.name || "",
+            })}
+            confirmLabel={t("resources.layers.uninstall")}
+            loading={hub.layerUninstallBusy.value}
+            onConfirm={() => void hub.doLayerUninstall()}
+            onUpdate:open={(open: boolean) => {
+              if (!open) hub.layerUninstallTarget.value = null;
             }}
           />
 

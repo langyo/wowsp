@@ -156,12 +156,14 @@
     "text": "テキストとチャット",
     "skin": "艦スキン",
     "ui": "UI スキン",
-    "voice": "ボイスパック"
+    "voice": "ボイスパック",
+    "video": "動画",
+    "audio": "音声",
+    "model": "モデル"
   },
   "big": {
     "function": "機能",
-    "texture": "テクスチャ",
-    "voice": "音声"
+    "beautify": "美化カスタマイズ"
   },
   "source": {
     "online": "オンライン",
@@ -418,5 +420,64 @@
     "nothingToDo": "他のクライアントはすべてこのクライアントの MOD 構成と一致しています。",
     "noCatalog": "オンラインカタログが未読み込みです——先にカタログを更新してから同期してください。",
     "noLedger": "インストール記録の読み取りに失敗しました——しばらくしてから再試行してください。"
+  },
+  "layers": {
+    "title": "リソースパックのレイヤー",
+    "priorityHint": "上のレイヤーが下を上書きします",
+    "renderReport": "レンダーレポート",
+    "apply": "順序を適用",
+    "applyNow": "今すぐ適用",
+    "applied": "適用しました",
+    "applyFailed": "順序を適用できませんでした：{reason}",
+    "pending": "順序は保存済みですが、まだゲームに適用されていません",
+    "pendingDot": "未適用",
+    "loading": "レイヤーを読み込み中…",
+    "loadFailed": "レイヤーを読み込めませんでした：{reason}",
+    "retry": "再試行",
+    "empty": "インストール済みの美化パックはまだありません",
+    "emptyHint": "テクスチャ・ボイス・UI パックをインストールすると、ここにレイヤーとして並びます。",
+    "fileCount": "{count} ファイル",
+    "shadowed": "上層に隠れています {count}",
+    "shadowedCount": "上層に隠れたファイル {count} 件",
+    "winningCount": "有効なファイル {count} 件",
+    "slotConflict": "スロット競合",
+    "slotConflictHint": "複数のパックが同じスロットを使用しています：{slots}",
+    "unmanaged": "レイヤー未登録",
+    "unmanagedHint": "レイヤーに含めるには再インストールが必要です",
+    "managed": "レイヤー登録済み",
+    "coveredBy": "「{name}」に完全に上書きされています",
+    "layerN": "第 {n} 層",
+    "slotsLabel": "リソーススロット",
+    "slotsEmpty": "リソーススロットが宣言されていません",
+    "moveTop": "最上部へ",
+    "moveUp": "上へ",
+    "moveDown": "下へ",
+    "moveBottom": "最下部へ",
+    "disable": "無効化",
+    "enable": "有効化",
+    "update": "更新",
+    "uninstall": "アンインストール",
+    "uninstallUnpaired": "このレイヤーに対応するインストール済みユニットまたはインストール記録がありません",
+    "uninstallConfirmTitle": "レイヤーパックをアンインストール",
+    "uninstallConfirmBody": "「{name}」とそのすべてのファイルをゲームから削除します。この操作は元に戻せません。",
+    "componentsToggle": "リソース面ごとに表示",
+    "class": {
+      "override": "上書き",
+      "additive": "追加",
+      "registered": "登録"
+    },
+    "reportTitle": "レンダーレポート",
+    "report": {
+      "written": "書き込み",
+      "removed": "削除",
+      "unchanged": "変更なし",
+      "blockedForeign": "外部ファイルによりブロック",
+      "warnings": "警告",
+      "conflicts": "競合パス",
+      "noConflicts": "競合するパスはありません。",
+      "empty": "まだレンダリングが実行されていません。",
+      "foreign": "外部",
+      "capped": "先頭 {shown} 件を表示（全 {total} 件）"
+    }
   }
 }

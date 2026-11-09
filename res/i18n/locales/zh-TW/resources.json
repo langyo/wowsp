@@ -156,12 +156,14 @@
     "text": "文字與聊天",
     "skin": "艦船皮膚",
     "ui": "介面皮膚",
-    "voice": "語音包"
+    "voice": "語音包",
+    "video": "影片",
+    "audio": "音訊",
+    "model": "模型"
   },
   "big": {
     "function": "功能",
-    "texture": "材質",
-    "voice": "語音"
+    "beautify": "美化定製"
   },
   "source": {
     "online": "線上搜尋",
@@ -418,5 +420,64 @@
     "nothingToDo": "其他用戶端均已與本用戶端的模組清單一致。",
     "noCatalog": "線上目錄尚未載入——請先重新整理目錄再同步用戶端。",
     "noLedger": "安裝記錄讀取失敗——請稍後再試一次。"
+  },
+  "layers": {
+    "title": "資源包分層",
+    "priorityHint": "上層覆蓋下層",
+    "renderReport": "渲染報告",
+    "apply": "套用排序",
+    "applyNow": "立即套用",
+    "applied": "已套用",
+    "applyFailed": "套用排序失敗：{reason}",
+    "pending": "排序已儲存，尚未套用到遊戲",
+    "pendingDot": "待套用",
+    "loading": "正在讀取分層…",
+    "loadFailed": "讀取分層失敗：{reason}",
+    "retry": "重試",
+    "empty": "暫無已安裝的美化資源包",
+    "emptyHint": "安裝材質、語音或介面資源包後，會在這裡依層級排列。",
+    "fileCount": "{count} 個檔案",
+    "shadowed": "被上層遮擋 {count}",
+    "shadowedCount": "被上層遮擋 {count} 個檔案",
+    "winningCount": "生效 {count} 個檔案",
+    "slotConflict": "槽位衝突",
+    "slotConflictHint": "多個資源包佔用同一資源面：{slots}",
+    "unmanaged": "未納入分層",
+    "unmanagedHint": "需重新安裝以納入分層",
+    "managed": "已納入分層",
+    "coveredBy": "已被「{name}」完全覆蓋",
+    "layerN": "第 {n} 層",
+    "slotsLabel": "資源面",
+    "slotsEmpty": "未宣告資源面",
+    "moveTop": "置頂",
+    "moveUp": "上移",
+    "moveDown": "下移",
+    "moveBottom": "置底",
+    "disable": "停用",
+    "enable": "啟用",
+    "update": "更新",
+    "uninstall": "卸載",
+    "uninstallUnpaired": "找不到與該層配對的安裝單元或安裝記錄",
+    "uninstallConfirmTitle": "卸載分層資源包",
+    "uninstallConfirmBody": "將從遊戲中移除「{name}」及其全部檔案，此操作無法復原。",
+    "componentsToggle": "按資源面檢視",
+    "class": {
+      "override": "覆蓋",
+      "additive": "疊加",
+      "registered": "註冊"
+    },
+    "reportTitle": "渲染報告",
+    "report": {
+      "written": "寫入",
+      "removed": "移除",
+      "unchanged": "未變",
+      "blockedForeign": "外部檔案阻塞",
+      "warnings": "警告",
+      "conflicts": "衝突路徑",
+      "noConflicts": "沒有衝突路徑。",
+      "empty": "尚未執行渲染。",
+      "foreign": "外部",
+      "capped": "僅顯示前 {shown} 條，共 {total} 條"
+    }
   }
 }

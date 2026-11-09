@@ -796,6 +796,45 @@ per-license registry is a follow-up item.
 - Bundled official patches (IME fix etc.) are signed with the WoWSP
   installer.
 
+## Beautify layers (ordered asset packs)
+
+The client reads exactly ONE override tree, `bin/<build>/res_mods`, with
+whole-file shadowing and no priority — so layering is materialised by the
+app, not by the game. Every pure-asset install is also copied into a layer
+store (`<app-data>/mods/layers/<packId>/<version>/`, holding `files/` and
+`layer.json`), and `layer-stack.json` keeps one ordered stack per game
+install: index 0 is the top, the highest priority.
+
+- **Zero-code stack**: code-bearing packs (PnFMods, `ModSchemas` /
+  `ForgeBlueprints`, `gui/unbound2`) are not layers — a stack only replaces
+  visuals and audio, which the WG mod policy allows.
+- **Stack order**: a fresh stack is the install order reversed (newest on
+  top), so existing installs behave exactly as before — the later install
+  wins.
+- **Rendering**: per path, the highest enabled layer wins. Writes are
+  atomic (temp + rename) with a pre-overwrite snapshot and roll back on
+  failure. Paths owned by legacy, foreign or functional records are never
+  overwritten and are reported as blocked. A path that loses its winner is
+  removed only while its bytes still equal a layer's store copy, so foreign
+  files and restored snapshots survive; pre-release `bin` twins are
+  mirrored.
+- **Classes**: `override` is whole-file; `additive` covers voice banks (one
+  slot per `banks/mods` folder, selected in-game); `registered` is the
+  PnF-style exclusive slot and stays reserved. Slot conflicts surface in the
+  UI.
+- **Lifecycle**: install appends the pack on top and leaves it rendered;
+  reorder and toggle only mark the stack dirty. An explicit render applies
+  it and is refused while the client runs. Uninstall drops the layer and
+  marks the stack dirty, so the next render lets a layer below take over; a
+  game update (a new `bin/<build>`) re-renders from the store instead of
+  moving files.
+- **UI**: the texture and voice categories merge into one **Beautify**
+  category, and the installed list becomes a draggable layer swimlane
+  (hikari `HkDraggableList`, top = highest priority). The detail pane shows
+  the priority position, `covered_by` / `shadowed` counts, slots and the
+  actions (top / up / down / bottom / disable / uninstall / update), plus a
+  render report of blocked and conflicting paths.
+
 ## Open questions
 
 - Does the Lesta (RU) client need a separate layout adapter;

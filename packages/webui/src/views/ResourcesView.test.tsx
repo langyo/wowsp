@@ -17,6 +17,8 @@ const mocks = vi.hoisted(() => ({
   purgeBackups: vi.fn(),
   records: vi.fn(), catalog: vi.fn(), preview: vi.fn(),
   clientUsage: vi.fn(),
+  layerStack: vi.fn(), layerSetOrder: vi.fn(), layerSetEnabled: vi.fn(),
+  layerRender: vi.fn(), layerPaths: vi.fn(),
   catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
   syncOn: true,
 }));
@@ -35,6 +37,11 @@ vi.mock("@/api", () => ({ api: {
   modCatalogUninstall: mocks.catalogUninstall,
   modHubRecords: mocks.records, modTags: async () => ({ tags: [] }),
   modHubClientUsage: mocks.clientUsage,
+  modHubLayerStack: mocks.layerStack,
+  modHubLayerSetOrder: mocks.layerSetOrder,
+  modHubLayerSetEnabled: mocks.layerSetEnabled,
+  modHubLayerRender: mocks.layerRender,
+  modHubLayerPaths: mocks.layerPaths,
 } }));
 vi.mock("@/stores/config", () => ({ useConfigStore: () => mocks.config }));
 vi.mock("@/stores/gameStatus", () => ({
@@ -95,6 +102,23 @@ vi.mock("@celestia-island/hikari", () => {
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
     HkIconButton: component("HkIconButton"), HkModal: component("HkModal"), HkSwitch: component("HkSwitch"), HMenu: component("HMenu"),
     HkImagePreview: component("HkImagePreview"),
+    /* The layered swimlane's primitive: render its item slot for real so
+       the layer rows are inspectable under shallowMount. */
+    HkDraggableList: {
+      name: "HkDraggableList",
+      props: ["items", "lockedKeys", "label"],
+      setup(
+        props: { items?: { key: string }[] },
+        { slots }: { slots: { item?: (scope: { item: { key: string } }) => VNode } },
+      ) {
+        return () =>
+          h(
+            "div",
+            { class: "hk-draggable-list" },
+            (props.items ?? []).map((item) => slots.item?.({ item })),
+          );
+      },
+    },
     /* AppTag's hikari base — a class-merging span passthrough so the
        migrated tags render for the DOM-contract assertions. */
     HkTag: {
@@ -167,6 +191,13 @@ beforeEach(() => {
   mocks.clientUsage.mockResolvedValue({ totalBytes: 4096, files: 4, units: 2 });
   mocks.catalog.mockResolvedValue({ mods: [], sourceVersion: "test", fetchedAt: "" });
   mocks.purgeBackups.mockResolvedValue([]);
+  mocks.layerStack.mockResolvedValue({
+    layers: [], rendered: true, generation: 0, slotConflicts: [], gameVersion: null,
+  });
+  mocks.layerRender.mockResolvedValue({
+    written: 0, removed: 0, unchanged: 0, blockedForeign: 0, warnings: [], generation: 1,
+  });
+  mocks.layerPaths.mockResolvedValue([]);
 });
 
 describe("mod inventory root ownership", () => {

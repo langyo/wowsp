@@ -1,0 +1,425 @@
+// Layered resource-pack swimlane (美化定制分层) — the sidebar stack and
+// its detail/report surfaces. Row chrome rides hikari's HkDraggableList
+// item (the library keeps the drag ghost/placeholder); this file only
+// dresses the lane content and the stack-level strips.
+
+.layer-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  /* Header strip: the "top covers bottom" rule on the left, the render
+     report + (when dirty) the apply affordance on the right. */
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    padding: 0.35rem 0.25rem 0.25rem;
+    border-bottom: 1px dashed rgb(var(--color-border) / 25%);
+  }
+
+  &__hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    min-width: 0;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex: none;
+  }
+
+  &__pending,
+  &__error {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: var(--radius-xs);
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+  }
+
+  &__pending {
+    color: rgb(var(--color-warning, var(--color-accent)));
+    background: rgb(var(--color-warning, var(--color-accent)) / 12%);
+  }
+
+  &__pending-text,
+  &__error-text {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__error {
+    color: rgb(var(--color-error));
+    background: rgb(var(--color-error) / 10%);
+  }
+
+  &__note,
+  &__empty {
+    padding: 1rem 0.75rem;
+    text-align: center;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted) / 85%);
+  }
+
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  &__empty-title {
+    margin: 0;
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__empty p {
+    margin: 0;
+  }
+
+  /* The list's rows are OUR lane buttons: strip the library's doubled row
+     chrome so the lane owns the surface (the placeholder line and the drag
+     ghost stay library-owned). */
+  &__list {
+    .hk-draggable-list-item {
+      min-height: 0;
+      padding: 0;
+      background: transparent;
+      border-color: transparent;
+    }
+  }
+}
+
+// ── One lane row ─────────────────────────────────────────────────────────
+
+.layer-lane {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  font-size: inherit;
+  background: rgb(var(--color-bg-subtle, var(--color-bg)));
+  border: 1px solid rgb(var(--color-border) / 18%);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+
+  &:hover {
+    background: rgb(var(--color-bg));
+    border-color: rgb(var(--color-border) / 32%);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgb(var(--color-primary));
+    outline-offset: -2px;
+  }
+
+  &--active {
+    background: rgb(var(--color-primary) / 10%);
+    border-color: rgb(var(--color-primary) / 40%);
+    box-shadow: inset 2px 0 0 rgb(var(--color-primary));
+  }
+
+  // A disabled pack keeps its order slot but reads dimmed — the pane's
+  // 停用/启用 button is the way back.
+  &--off {
+    opacity: 0.55;
+  }
+
+  // Legacy install: pinned at the bottom, not reorderable (the library
+  // hides its grip via lockedKeys).
+  &--legacy {
+    border-style: dashed;
+  }
+
+  &__tile {
+    --accent: var(--color-primary);
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-xs);
+    color: rgb(var(--accent));
+    background: rgb(var(--accent) / 12%);
+
+    /* Same on-disk kind hues as the flat rows (mod-row__tile). */
+    &--voice    { --accent: 48, 148, 245; }
+    &--skin     { --accent: 168, 85, 247; }
+    &--script   { --accent: 20, 184, 166; }
+    &--gui      { --accent: 234, 179, 8; }
+    &--patch    { --accent: 16, 185, 129; }
+    &--textures { --accent: 148, 163, 184; }
+    &--cat      { --accent: var(--color-muted); }
+  }
+
+  &__body {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+  }
+
+  &__name {
+    display: flex;
+    align-items: baseline;
+    gap: 0.3rem;
+    min-width: 0;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__ver {
+    flex: none;
+    max-width: 45%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__meta {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__tail {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    max-width: 45%;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  // 待应用 dot — the saved order has not been rendered into the game yet.
+  &__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgb(var(--color-warning, var(--color-accent)));
+    box-shadow: 0 0 0 2px rgb(var(--color-surface, 255 255 255));
+  }
+}
+
+// ── The "按资源面查看" section below the swimlane ────────────────────────
+
+.layer-components {
+  margin-top: 0.35rem;
+  border-top: 1px dashed rgb(var(--color-border) / 25%);
+
+  &__head {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    width: 100%;
+    padding: 0.5rem 0.25rem;
+    text-align: left;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    background: transparent;
+    border: none;
+    cursor: pointer;
+
+    &:hover {
+      color: rgb(var(--color-text));
+    }
+
+    .is-open {
+      transform: rotate(180deg);
+    }
+  }
+
+  &__title {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    padding-bottom: 0.25rem;
+  }
+}
+
+// ── Layer detail pane ────────────────────────────────────────────────────
+
+.layer-detail {
+  &__stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.9rem;
+    margin-top: 0.25rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__slot-block {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    margin-top: 0.5rem;
+  }
+
+  &__label {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  &__slots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem;
+  }
+
+  &__conflicts {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding: 0.45rem 0.55rem;
+    border-radius: var(--radius-xs);
+    font-size: var(--text-2xs);
+    line-height: 1.4;
+    color: rgb(var(--color-error));
+    background: rgb(var(--color-error) / 10%);
+  }
+
+  &__moves {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem;
+  }
+}
+
+// ── Render report modal ──────────────────────────────────────────────────
+
+.layer-report {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+
+  &__totals {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.5rem;
+  }
+
+  &__total {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.5rem 0.35rem;
+    border-radius: var(--radius-sm);
+    background: rgb(var(--color-bg-subtle, var(--color-bg)));
+    border: 1px solid rgb(var(--color-border) / 18%);
+  }
+
+  &__total-value {
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__total-label {
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+    text-align: center;
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__warnings {
+    margin: 0;
+    padding-left: 1rem;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: rgb(var(--color-warning, var(--color-accent)));
+  }
+
+  &__paths {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    max-height: 18rem;
+    overflow: auto;
+  }
+
+  &__path {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.3rem 0.4rem;
+    border-radius: var(--radius-xs);
+    font-size: var(--text-2xs);
+    background: rgb(var(--color-bg-subtle, var(--color-bg)));
+
+    &:nth-child(even) {
+      background: transparent;
+    }
+  }
+
+  &__path-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono, monospace);
+  }
+
+  &__path-meta {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  &__cap,
+  &__empty {
+    margin: 0;
+    padding: 0.4rem 0.2rem;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
+  }
+}

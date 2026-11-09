@@ -156,12 +156,14 @@
     "text": "Textes et chat",
     "skin": "Skins de navires",
     "ui": "Habillages d'interface",
-    "voice": "Packs vocaux"
+    "voice": "Packs vocaux",
+    "video": "Vidéo",
+    "audio": "Audio",
+    "model": "Modèles"
   },
   "big": {
     "function": "Fonctions",
-    "texture": "Textures",
-    "voice": "Voix"
+    "beautify": "Personnalisation"
   },
   "source": {
     "online": "En ligne",
@@ -418,5 +420,64 @@
     "nothingToDo": "Les autres clients correspondent déjà à l'ensemble de mods de ce client.",
     "noCatalog": "Le catalogue en ligne n'est pas chargé — actualisez-le avant de synchroniser les clients.",
     "noLedger": "Impossible de lire le registre des installations — réessayez dans un instant."
+  },
+  "layers": {
+    "title": "Couches de packs de ressources",
+    "priorityHint": "Les couches supérieures couvrent les inférieures",
+    "renderReport": "Rapport de rendu",
+    "apply": "Appliquer l'ordre",
+    "applyNow": "Appliquer maintenant",
+    "applied": "Appliqué",
+    "applyFailed": "Impossible d'appliquer l'ordre : {reason}",
+    "pending": "Ordre enregistré, pas encore appliqué au jeu",
+    "pendingDot": "Non appliqué",
+    "loading": "Chargement des couches…",
+    "loadFailed": "Impossible de charger les couches : {reason}",
+    "retry": "Réessayer",
+    "empty": "Aucun pack d'embellissement installé",
+    "emptyHint": "Installez des packs de textures, de voix ou d'interface : ils s'empileront ici.",
+    "fileCount": "{count} fichiers",
+    "shadowed": "Couvert par les couches supérieures : {count}",
+    "shadowedCount": "Fichiers couverts par les couches supérieures : {count}",
+    "winningCount": "Fichiers actifs : {count}",
+    "slotConflict": "Conflit d'emplacement",
+    "slotConflictHint": "Plusieurs packs utilisent le même emplacement : {slots}",
+    "unmanaged": "Hors des couches",
+    "unmanagedHint": "Réinstallez pour l'inclure dans les couches",
+    "managed": "Dans les couches",
+    "coveredBy": "Entièrement couvert par « {name} »",
+    "layerN": "Couche {n}",
+    "slotsLabel": "Emplacements de ressources",
+    "slotsEmpty": "Aucun emplacement de ressource déclaré",
+    "moveTop": "Tout en haut",
+    "moveUp": "Monter",
+    "moveDown": "Descendre",
+    "moveBottom": "Tout en bas",
+    "disable": "Désactiver",
+    "enable": "Activer",
+    "update": "Mettre à jour",
+    "uninstall": "Désinstaller",
+    "uninstallUnpaired": "Aucune unité installée ni entrée de catalogue ne correspond à cette couche",
+    "uninstallConfirmTitle": "Désinstaller le pack en couches",
+    "uninstallConfirmBody": "Supprime « {name} » et tous ses fichiers du jeu. Cette action est irréversible.",
+    "componentsToggle": "Voir par surface de ressource",
+    "class": {
+      "override": "Remplacement",
+      "additive": "Ajout",
+      "registered": "Enregistrement"
+    },
+    "reportTitle": "Rapport de rendu",
+    "report": {
+      "written": "Écrits",
+      "removed": "Supprimés",
+      "unchanged": "Inchangés",
+      "blockedForeign": "Bloqués (étrangers)",
+      "warnings": "Avertissements",
+      "conflicts": "Chemins en conflit",
+      "noConflicts": "Aucun chemin en conflit.",
+      "empty": "Aucun rendu n'a encore été exécuté.",
+      "foreign": "Étranger",
+      "capped": "Affichage des {shown} premiers sur {total}"
+    }
   }
 }

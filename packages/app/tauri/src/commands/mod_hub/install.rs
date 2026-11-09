@@ -186,6 +186,7 @@ pub async fn mod_hub_install(
                         id,
                         entry: super::manifest::WowspManifest::entry_from_record(&record),
                     });
+                    super::layer::adopt_install(&game_root, &record);
                     Ok(applied)
                 },
                 Err(e) => Err(e),

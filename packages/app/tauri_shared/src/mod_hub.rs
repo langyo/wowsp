@@ -700,3 +700,114 @@ fn is_zero_u32(v: &u32) -> bool {
 fn is_zero_usize(v: &usize) -> bool {
     *v == 0
 }
+
+// ── Beautify layer stack (Minecraft-style ordered asset packs) ──────────────
+//
+// World of Warships reads exactly ONE override tree (`bin/<build>/res_mods`,
+// whole-file shadowing, no priority). The layer stack is therefore a MODEL the
+// app owns: every installed asset pack is a layer, ordered top-to-bottom, and
+// the materialiser renders the per-path winner of that order into res_mods.
+// See docs/<lang>/designs/mod-hub.md ("Beautify layers").
+
+/// How one layer participates in the stack's per-path resolution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LayerClass {
+    /// Whole-file override: competes per path, the topmost layer wins.
+    Override,
+    /// Coexists through its own paths and is enumerated by the game itself
+    /// (voice banks appear in the in-game voice selector). Ordering only
+    /// matters when two packs write the same path.
+    Additive,
+    /// Registers itself for an exclusive slot (PnF ship skins register a ship
+    /// id) — two layers claiming one slot are mutually exclusive.
+    Registered,
+}
+
+/// One layer of the beautify stack, as the UI renders it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModLayer {
+    /// Catalog id, or the local-install id (`local-<ms>-<name>`).
+    pub pack_id: String,
+    pub name: String,
+    pub version: String,
+    /// Catalog category code (`skin`, `ui`, `voice`, …) or `local`.
+    pub category: String,
+    pub layer_class: LayerClass,
+    /// Whether the layer currently contributes to the rendered tree.
+    pub enabled: bool,
+    /// Position in the stack: 0 is the TOP (highest priority).
+    pub priority: u32,
+    /// Exclusive slots this layer claims (`ship:JSB039`, `voice:MyBank`).
+    #[serde(default)]
+    pub slots: Vec<String>,
+    /// Files this layer provides (res_mods-relative).
+    pub file_count: u32,
+    /// Files this layer provides that nothing above it shadows.
+    pub winning_count: u32,
+    /// Files this layer provides that a layer ABOVE it also provides.
+    pub shadowed_count: u32,
+    /// The single above layer shadowing this one, when exactly one does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub covered_by: Option<String>,
+    /// True when the layer's payload lives in the local layer store and can be
+    /// re-rendered (reordered, re-applied after a game update). Legacy installs
+    /// recorded before the store existed are `false` and pinned to the bottom.
+    pub managed: bool,
+}
+
+/// Two layers claiming one exclusive slot (same ship skin, same voice bank).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerSlotConflict {
+    pub slot: String,
+    pub pack_ids: Vec<String>,
+}
+
+/// The whole stack of one game install, plus its render state.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerStack {
+    pub layers: Vec<ModLayer>,
+    /// False when the order/enable state changed since the last render — the
+    /// tree on disk does not match the stack and a render is pending.
+    pub rendered: bool,
+    /// Monotonic render counter (bumped by every successful render).
+    pub generation: u64,
+    #[serde(default)]
+    pub slot_conflicts: Vec<LayerSlotConflict>,
+    /// `bin/<build>` version the stack currently renders into.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_version: Option<String>,
+}
+
+/// One materialisation pass: what changed on disk.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerRenderReport {
+    pub written: u32,
+    pub removed: u32,
+    pub unchanged: u32,
+    /// Paths a non-layer owner (legacy install, foreign installer) occupies —
+    /// the renderer never overwrites them.
+    pub blocked_foreign: u32,
+    #[serde(default)]
+    pub warnings: Vec<String>,
+    pub generation: u64,
+}
+
+/// Per-path winner of the current stack — the conflict/report surface.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LayerPathWinner {
+    /// Normalized res_mods-relative path.
+    pub path: String,
+    /// Winning layer's pack id; `None` when no layer provides the path.
+    pub pack_id: Option<String>,
+    /// Other layers that also ship this path (in stack order, top first).
+    #[serde(default)]
+    pub shadowed: Vec<String>,
+    /// A file at this path exists on disk that no ledger record claims.
+    pub foreign: bool,
+}

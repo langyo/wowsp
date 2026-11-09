@@ -464,6 +464,17 @@ pub(crate) async fn mod_catalog_install_inner(
     });
     save_ledger(&ledger)?;
 
+    // Beautify layer stack: a pure-asset pack also lands in the layer store
+    // and on top of the stack (best effort — a failure leaves it unmanaged).
+    {
+        let record = pack_record.clone();
+        let root = game_root.clone();
+        let _ = tauri::async_runtime::spawn_blocking(move || {
+            super::mod_hub::layer::adopt_install(&root, &record);
+        })
+        .await;
+    }
+
     // Registration half of "register & reinstall": an install over a
     // foreign copy takes ownership. The foreign installer's Aslain
     // manifest rows pairing with this entry (the same verdict the scan

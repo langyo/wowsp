@@ -156,12 +156,14 @@
     "text": "Texts & chat",
     "skin": "Ship skins",
     "ui": "UI skins",
-    "voice": "Voice packs"
+    "voice": "Voice packs",
+    "video": "Video",
+    "audio": "Audio",
+    "model": "Models"
   },
   "big": {
     "function": "Function",
-    "texture": "Textures",
-    "voice": "Voice"
+    "beautify": "Beautify"
   },
   "source": {
     "online": "Online",
@@ -418,5 +420,64 @@
     "nothingToDo": "Every other client already matches this client's mod set.",
     "noCatalog": "The online catalog is not loaded — refresh it before syncing clients.",
     "noLedger": "Could not read the install ledger — try again in a moment."
+  },
+  "layers": {
+    "title": "Resource pack layers",
+    "priorityHint": "Upper layers cover lower ones",
+    "renderReport": "Render report",
+    "apply": "Apply order",
+    "applyNow": "Apply now",
+    "applied": "Applied",
+    "applyFailed": "Could not apply the order: {reason}",
+    "pending": "Order saved but not applied to the game yet",
+    "pendingDot": "Not applied yet",
+    "loading": "Loading layers…",
+    "loadFailed": "Could not load layers: {reason}",
+    "retry": "Retry",
+    "empty": "No beautify packs installed yet",
+    "emptyHint": "Install texture, voice or UI packs and they will stack here.",
+    "fileCount": "{count} files",
+    "shadowed": "Covered by upper layers {count}",
+    "shadowedCount": "{count} files covered by upper layers",
+    "winningCount": "{count} files in effect",
+    "slotConflict": "Slot conflict",
+    "slotConflictHint": "Several packs claim the same slot: {slots}",
+    "unmanaged": "Not in the stack",
+    "unmanagedHint": "Reinstall to include it in the layer stack",
+    "managed": "In the layer stack",
+    "coveredBy": "Fully covered by {name}",
+    "layerN": "Layer {n}",
+    "slotsLabel": "Resource slots",
+    "slotsEmpty": "No resource slots declared",
+    "moveTop": "Move to top",
+    "moveUp": "Move up",
+    "moveDown": "Move down",
+    "moveBottom": "Move to bottom",
+    "disable": "Disable",
+    "enable": "Enable",
+    "update": "Update",
+    "uninstall": "Uninstall",
+    "uninstallUnpaired": "No installed unit or install record pairs with this layer",
+    "uninstallConfirmTitle": "Uninstall layered pack",
+    "uninstallConfirmBody": "Remove \"{name}\" and all of its files from the game. This cannot be undone.",
+    "componentsToggle": "View by resource surface",
+    "class": {
+      "override": "Override",
+      "additive": "Additive",
+      "registered": "Registered"
+    },
+    "reportTitle": "Render report",
+    "report": {
+      "written": "Written",
+      "removed": "Removed",
+      "unchanged": "Unchanged",
+      "blockedForeign": "Blocked (foreign)",
+      "warnings": "Warnings",
+      "conflicts": "Conflicting paths",
+      "noConflicts": "No conflicting paths.",
+      "empty": "No render has run yet.",
+      "foreign": "Foreign",
+      "capped": "Showing first {shown} of {total}"
+    }
   }
 }

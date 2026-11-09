@@ -255,6 +255,14 @@ export const RPC = {
   mod_hub_reveal_path: "mod_hub_reveal_path",
   mod_catalog_uninstall: "mod_catalog_uninstall",
   mod_hub_records: "mod_hub_records",
+  // Layered resource packs (美化定制分层): the ordered stack, its
+  // persistence/toggle commands, the render pass and the per-path
+  // winner map the render report reads. See api/modules/modhub.ts.
+  mod_hub_layer_stack: "mod_hub_layer_stack",
+  mod_hub_layer_set_order: "mod_hub_layer_set_order",
+  mod_hub_layer_set_enabled: "mod_hub_layer_set_enabled",
+  mod_hub_layer_render: "mod_hub_layer_render",
+  mod_hub_layer_paths: "mod_hub_layer_paths",
 
   wallpaper_list: "wallpaper_list",
   wallpaper_import: "wallpaper_import",
