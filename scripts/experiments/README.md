@@ -2328,7 +2328,80 @@
   鱼雷保持诊断-only。
 - **产物**：`scripts/experiments/torpedo_event_slices.py`（--selftest）；
   `out/torpedo_model/e26e-ah/{event_slices.json, event_slices_report.md}`；预注册 `e26e-ah-preregistration.md`。
-### E26 研究总结：headC 上限与部署结论（截至 E26e-ah）
+### E26 外部验证上限与数据缺口（截至 E26e-ai）
+
+> 本小节为 **docs-only 汇总**：不新增实验、不改变验收线、不新增部署承诺；指标来自 E26e-z/aa/ac/ad/ae/af/ag/ah
+> 与 E26e-ab 审计。核心结论：**独立赛季/competitive 外部集未获得，当前只有 post-training held-out**；
+> 在可得数据上研究已收敛，但 headB 门禁仍 FAIL（1.862×base < 2.0×）。
+
+#### 1. 本地 replay 数据可得性（盘点）
+
+| 来源 | 数量 | 用途 / 说明 |
+|---|---|---|
+| kots-xix（export-shards apac+eu+na） | 2,054 | 训练语料（kots） |
+| export-shards/own | 163 文件（此前审计口径 161 replay） | 训练 own 子集 |
+| replay-archive/14.5.0.0 | 96 | 全部 own 子集（14.5 旧版本） |
+| replay-archive/restored | 6 | own 子集（restored） |
+| replay-archive root | 82 | 审计口径 59 own + 23 external；本次复核 **61 个 own hardlink + 21 个 post-training external**（18 有效 + 3 个 0 行）。差异来自 2 个 2026-09-17 Nebraska 文件实为 own hardlink（均 0 行），复核归 own；导出记录 23 输入含这 2 个 → 5 个 0 行 → 18 有效/17,054 行 |
+| external 导出记录 | 23 输入 → 5 个 0 行 → **18 有效 / 17,054 行** | e26e-z 外部批次（post-training，18 replay，2026-10-31..11-08；与训练 replay 不重叠） |
+| kots-crawl | 70 文件（metadata/log/脚本，0 replay） | **仅 metadata，不含可训练 replay**；下载需用户确认（>5GB 先确认） |
+
+- **本地没有独立赛季（season）或 competitive/pvp 外部集**；唯一外部批次是 post-training 18 replay，
+  可做 held-out，但**不能替代独立赛季**。
+- 本地无法再构造第二个独立外部批次；KOTS crawl 只有 metadata，下载/重建语料需用户确认（大体积先确认）。
+
+#### 2. 外部 T4 上限（当前可得数据）
+
+| 指标 | 数值（full external 18 replay / 17,054 行） | 说明 |
+|---|---|---|
+| headB raw | AUPRC **1.862×base**、top **2.429**、AUC **0.602**、ECE **1.678pp**、meanProb 2.90% vs base 1.22% | 门禁 AUPRC≥2.0× → **FAIL** |
+| headB baked T_B=0.7564 | ECE **0.240pp**、Brier 1.236%→1.206%、logloss 7.15%→6.55% | 校准可修；AUPRC/top/AUC/lift/CI **完全不变** |
+| event | **1.357× / top 0 / AUC 0.553 / ECE 2.733pp**；3 个可评地图全部 top 0（AUC .204–.617）；两版本均 top 0 | in-dist event map/version **零交集**；全模式漂移 |
+| pve | 3.558× / top 3.863 / AUC 0.630（18 正） | 新地图 s09_LePVE 上强，但属 PvE 场景域 |
+| cooperative | 3.439× / top 1.633 / AUC 0.740（6 正） | 样本小 |
+| pvp | 5.342× / top 3.244 / AUC 0.810（**仅 3 正**） | 数值高但**不能判** |
+| DD | 1.565× / top 1.423 / AUC 0.623（7 正） | in-dist DD 2.033×/0.670 → 非模型固有 |
+| event\|DD | AUC **0.349**（2 正） | 描述性，样本不足 |
+| headC outcome | **1.9896 / ρ 0.596 / CI [0, 5.36]**（37 launched / 115 fired / 17 hits） | event 10/29/**0** hits → event 不可评 |
+| baked headC T_C=1.0723 | ECE 6.94pp→5.81pp，但 Brier 11.84%→11.93%、logloss 38.26%→38.65% | 37 行小样本，混合 |
+
+→ **当前数据下外部 T4 的上限是 headB 1.862×base（未达 2.0×）、top 2.429、AUC 0.602；headC 仅描述性
+1.99（CI 极宽）；event 全弱**。没有“再调一个阈值/再跑一次训练”可把这个上限变成达标的外部证据。
+
+#### 3. 机制与上限解释
+
+- **外部弱 = post-training / version / map / mode / telemetry 漂移，不是模型固有**：in-dist event
+  AUC 0.741/3.071×、DD 0.670/2.033×；44 维 domain AUC 0.99–1.00；matched（known class+seen map）
+  仍 1.405×（event 1.357×）→ novelty 也不是唯一原因；外部 event 3 图全弱、in-dist event 7 图全强。
+- **校准可修、排序不可修**：T_B 使外部 headB ECE 1.678→0.240pp、Brier/logloss 改善，但所有排序指标
+  逐值不变，门禁仍 FAIL；T_C 对 headC 混合（ECE 好、Brier/logloss 微升，37 行）。
+- **per-fish server damage 不可识别**：replay schema 的 ShotKillEvent 无 victim/damage、DamageStatSample
+  仅 recorder 累计、HP 仅实体级 → 无逐鱼 ledger；magnitude 变体只是行级近似（lift 2.20→3.08 但
+  top-decile 绝对命中率 17.96%→4–6%），不能替代逐鱼真值。
+- 因此当前上限是**数据/协议上限**：在校准可修范围内已修（baked T），排序/逐鱼真值没有可得数据可再验。
+
+#### 4. 完成度评估
+
+1. **held-out external 已组装/评估**：是（18 replay/17,054 行；post-training，非独立赛季；**独立赛季不可得已记录**）。
+2. **per-fish server damage**：已审计 → 当前 schema 不可行（无 victim/damage/ledger）。
+3. **robust ≥2.30 / 非重叠 CI**：未获得；ceiling 已文档化（本小节）。
+4. **PR / verifier**：研究结果均经 PR 流程（E26e-z..E26e-ah + E26e-ab 审计）落地；本 docs-only 不新增实验/PR。
+5. **HF / static 合规**：未上传 HF；未启动游戏客户端；全部静态分析（遵守仓库 §0/§9）。
+
+→ **结论：在当前可得数据上研究收敛**——不是“模型达标”，而是“外部验证上限已测到并记录”；部署仍 T4
+torp4 r120（诊断-only），不因本小节改变。
+
+#### 5. 重开条件 / 数据需求（未来）
+
+- **≥2 个独立外部批次/赛季**（非同一 post-training 批次）；每 mode/version ≥5 replay、≥1,000 canLaunch、
+  ≥50 正样本；
+- **competitive/pvp 外部 replay**（当前仅 766 行/3 正）；
+- **逐鱼 server 事件/ledger**（per-shot victim/damage）或 server per-fish API；否则 per-fish 不可识别；
+- **统一导出/遥测版本**（消除 −1 sentinel / unknown 船级 / 新地图覆盖缺口），并用 matched-domain 评估；
+- 门禁沿用 **headB AUPRC≥2.0×base 且 top-decile≥1.5**；headC 仅描述性（不设 2.30 硬线）；walk-forward
+  ≥2/3 窗口；总分 A/B 另立预注册（不并入鱼雷诊断）；
+- 满足上述条件前，不重训、不调线、不部署；鱼雷保持诊断-only。
+### E26 研究总结：headC 上限与部署结论（截至 E26e-ai）
 
 **一句话结论**：headC 的命中排序信号真实存在（r120 2.1997×、server 真值 2.3477×、r60 固定口径 2.6811×），但
 **没有任何标签/特征/先验定义在独立时间窗上稳定 ≥2.30 且 CI 不重叠**；Q3 崩盘与后续自适应实验表明，当前证据
@@ -2369,7 +2442,7 @@ cell 粒度先验（oracle 2.010）可修复排序，但需**目标窗 cell base
 **简短局限**：样本/段位有限、单 seed、proxy 标签、server 真值仅 recorder-only、Q3 walk-forward 仅 3 窗；
 所有先验/自适应实验为描述性、无因果识别；单窗 PASS 不代表稳定。
 
-### E26e 系列结论与评分集成决策（截至 E26e-ah 研究收敛，2026-11-09）
+### E26e 系列结论与评分集成决策（截至 E26e-ai 研究收敛，2026-11-09）
 
 **最终研究模型（torp4 + λ_C=0.1，全语料 3,111,384 行 / 2,215 局，5 折 seed 0）**
 
