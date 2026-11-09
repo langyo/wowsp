@@ -289,6 +289,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help="E26e-z: delivered torp4 checkpoint.pt to evaluate in --eval-only mode (T4 r120)",
     )
+    p.add_argument(
+        "--eval-predictions-out",
+        default="",
+        help="E26e-aa: in --eval-only mode write per-row predictions npz (probA/B/C, labels, outcome, replayId/t/shipId/rowIndex); does not write OOF/checkpoint/ONNX",
+    )
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
 
@@ -3967,6 +3972,44 @@ def validate_eval_checkpoint_meta(
         raise SystemExit("[e26] --eval-checkpoint has non-positive hidden/entity_dim")
 
 
+
+def build_eval_predictions_payload(data: dict, outcome: dict, p_a, p_b, p_c) -> dict:
+    """E26e-aa: torch-free per-row payload for --eval-predictions-out.
+
+    Row order equals the eval-only loader order (the same order used for metrics
+    and for the outcome sidecar join), so downstream stratification can join
+    gameMode/mapName/shipClass/replayVersion by replayId/t/shipId/rowIndex.
+    """
+    n = int(data["rows"])
+    p_a = np.asarray(p_a, dtype=np.float32)
+    p_b = np.asarray(p_b, dtype=np.float32)
+    p_c = np.asarray(p_c, dtype=np.float32)
+    if len(p_a) != n or len(p_b) != n or len(p_c) != n:
+        raise SystemExit("[e26] eval predictions length != data rows")
+    replays = np.empty(n, dtype=object)
+    group_names = list(data["group_names"])
+    for i, g in enumerate(np.asarray(data["group"], dtype=np.int64)):
+        replays[i] = str(group_names[int(g)])
+    payload = {
+        "probA": p_a,
+        "probB": p_b,
+        "probC": p_c,
+        "labelA": np.asarray(data["label_a"], dtype=np.float32),
+        "labelB": np.asarray(data["label_b"], dtype=np.float32),
+        "fired": np.asarray(outcome["fired"], dtype=np.int32),
+        "hits": np.asarray(outcome["hits"], dtype=np.int32),
+        "hp": np.asarray(outcome["hp"], dtype=np.float32),
+        "terminalNear": np.asarray(outcome["terminalNear"], dtype=np.int32),
+        "replayId": replays,
+        "t": np.asarray(data["t"], dtype=np.float32),
+        "shipId": np.asarray(data["ship_id"], dtype=np.int64),
+        "rowIndex": np.arange(n, dtype=np.int32),
+        "groupCode": np.asarray(data["group"], dtype=np.int32),
+        "groupNames": np.asarray(group_names, dtype=object),
+    }
+    return payload
+
+
 def run_eval_only(args: argparse.Namespace) -> int:
     """E26e-z: evaluate the delivered T4 torp4 checkpoint on an external holdout.
 
@@ -4145,6 +4188,12 @@ def run_eval_only(args: argparse.Namespace) -> int:
     log("[e26] eval-only headC outcome: lift " + str(head_c_outcome.get("topDecileLift"))
         + " rho " + str(head_c_outcome.get("spearmanDecile"))
         + " CI " + str(head_c_outcome.get("bootstrap", {}).get("lift95")))
+    pred_out = str(getattr(args, "eval_predictions_out", "") or "")
+    if pred_out:
+        pred_path = Path(pred_out)
+        pred_path.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(pred_path, **build_eval_predictions_payload(data, outcome, p_a, p_b, p_c))
+        log("[e26] eval-only predictions -> " + str(pred_path))
     if args.metrics_out:
         out = Path(args.metrics_out)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -4834,6 +4883,24 @@ def run_selftest() -> int:
         v = zci["bootstrap"][key]
         assert v is None or all(np.isfinite(v)), (key, v)
 
+    # E26e-aa: eval-predictions payload schema (torch-free).
+    pr = build_eval_predictions_payload(
+        {"rows": 3, "group_names": ["20261031_a.wowsreplay", "20261101_b.wowsreplay"],
+         "group": np.array([0, 1, 0]),
+         "label_a": np.array([1.0, 0.0, 1.0]),
+         "label_b": np.array([1.0, np.nan, 0.0]),
+         "t": np.array([1.0, 2.0, 3.0]),
+         "ship_id": np.array([11, 22, 33], dtype=np.int64)},
+        {"fired": np.array([1, 0, 2]), "hits": np.array([0, 0, 1]),
+         "hp": np.array([0.0, 0.0, 1.0]), "terminalNear": np.array([0, 0, 1])},
+        np.array([0.1, 0.2, 0.3]), np.array([0.4, 0.5, 0.6]), np.array([0.7, 0.8, 0.9]))
+    for key in ("probA", "probB", "probC", "labelA", "labelB", "fired", "hits", "hp",
+                "terminalNear", "replayId", "t", "shipId", "rowIndex", "groupCode"):
+        assert key in pr and len(pr[key]) == 3, key
+    assert len(pr["groupNames"]) == 2
+    assert str(pr["replayId"][1]) == "20261101_b.wowsreplay"
+    assert np.isnan(pr["labelB"][1])
+
     # E26e-z: eval-only args + torch-free checkpoint-meta validation.
     eo = parse_args([
         "--eval-only", "--eval-checkpoint", "ckpt.pt", "--data", "a.jsonl",
@@ -4841,6 +4908,8 @@ def run_selftest() -> int:
     ])
     assert eo.eval_only is True and eo.eval_checkpoint == "ckpt.pt"
     assert parse_args([]).eval_only is False and parse_args([]).eval_checkpoint == ""
+    epo = parse_args(["--eval-only", "--eval-checkpoint", "ckpt.pt", "--eval-predictions-out", "pred.npz"])
+    assert epo.eval_predictions_out == "pred.npz" and parse_args([]).eval_predictions_out == ""
     ok_meta = {"model": object(), "hidden": 192, "feature_set": "torp4", "extra_dim": 22,
                "entity_dim": 15, "global_dim": 49}
     validate_eval_checkpoint_meta(ok_meta, "torp4", 49, 22)

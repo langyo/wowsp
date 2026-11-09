@@ -62,6 +62,7 @@
 | E26e-w | 延迟标签/在线 cell 先验（不重训） | Q2/Q3/Q4 launched 行按 t 排序，最早 20%/40% 标签估 cell base（EB α=20，cell→mode→block-global），余 80%/60% 评估；primary Q3 early-20% eval lift ≥1.80 且 AUC>0.55 | — | Q3 eval 子集：raw 0.682/0.526 → early20 **1.464/0.645**、early40 **1.087/0.549**、oracle 2.527/0.722、historical 0.630、rolling 0.776 → **primary FAIL（1.464<1.80；AUC 0.645>0.55）**、secondary FAIL；early20 仅 48 launched/178 fired/28 cells（eval 193 行，cell 覆盖 139）；Q2 early20 0.816 vs raw 3.152、Q4 0.930 vs raw 1.623；oracle 上界 2.53 → **延迟标签量/估计不足** |
 | E26e-x | 层次化 early+历史/模式 EB 先验（不重训） | Q2/Q3/Q4 early-20/40% 上对比 A（early cell EB20）/B（cell→mode EB50 层次）/C（early+历史 cell 池化）/D（early cell→历史 mode）vs raw/oracle | — | **Q3 early-20%：raw 0.682/0.526 → A 1.464/0.645、**B 1.835/0.678（≥1.80 且 AUC>0.55 → primary PASS）**、C 0.678/0.622、D 1.464/0.655、oracle 2.527/0.722；early-40%：B 1.384/0.615（<1.80）**；Q2 early20 B 0.816 vs raw 3.152、Q4 B 0.799 vs raw 1.623（Q4 C 1.315/D 2.612、Q4-40 B 0.0/小样本不稳）→ **层次 EB 在 Q3 early-20% 过线但非普适/不稳定，不能部署/总分** |
 | E26e-z | 外部独立 replay holdout（T4，不重训） | eval-only 模式加载外部 17,054 行/18 replay（2026-10-31..11-08，post-training，无训练交集）；checkpoint=T4 r120（sha 4f3935…）；primary headB ≥2.0×base 且 top≥1.5 | ⚠️ | headB AUPRC **0.022762 = 1.862×base（<2.0）**、top-decile **2.429**、AUC **0.6017**、ECE 0.0168 → **诊断门禁 FAIL**（top 过、AUPRC 未过）；headC r120 outcome **lift 1.9896**/ρ 0.596/CI **[0.0, 5.359]**（37 launched/115 fired/17 hits，8 clusters，标准 bootstrap 因 0-base replicate NaN 回退 local）；headA 0.9786/AUC 0.9979；外部批次以 pve/event/cooperative 为主（9,822/5,671/766+795）+ 20% unknown 船级 → **版本/时间/模式外推上限**，不重训不调线 |
+| E26e-aa | 外部 holdout 分层诊断（mode/map/class/version） | eval-only 新增 `--eval-predictions-out`（probA/B/C/labels/outcome/replayId/t/shipId）；18 replay/17,054 行外部预测按 gameMode/map/class/version/日期分层 | — | **headB FAIL 集中在 event 模式**：event AUPRC **1.357×**/top **0**/AUC 0.553（can 1,209/pos 10）；pve **3.558×**/3.863、cooperative **3.439×**/1.633、pvp **5.342×**/3.244（仅 3 正，描述性）；非 pvp 合并 1.857×；class DD 1.565×/2.095、Cruiser 2.032×、BB 2.164×、SS 2.274×；version 15,10 2.782× vs 15,9 1.869×（event 两版均弱）；headC 1.9896 描述性（pvp/event/coop 样本不足）→ **领域/模式漂移为主，pvp 子集不能判**，不重训不调线 |
 | T4 | torp4 诊断包交付（A） | final-fit 3 头 torp4（49 维）+ 温度烤图 fp32 ONNX + tracked parity fixture | ✅ | fp32 **502,518 B** sha `0b1f4efd…`；T_B **0.7564** / T_C **1.0723**（E26e-g OOF）；torch-vs-ORT 1,000 行 maxΔ 7.2e-6/2.9e-6/3.8e-6；fixture **48 行** 109,365 B（boundary 覆盖 + clickContext/attrs 复算块），fixture-vs-ONNX 1.43e-6；**诊断-only，不进总分** |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
@@ -1903,7 +1904,63 @@
 - **产物**：`out/torpedo_model/e26e-z/{dataset_external.jsonl, click_external.jsonl, outcome_external.jsonl,
   eval_metrics.json, eval.log}`；trainer `--eval-only`（含 `--selftest` 覆盖参数/checkpoint 校验/退化 CI）；
   预注册 `e26e-z-preregistration.md`。
-### E26 研究总结：headC 上限与部署结论（截至 E26e-z）
+### E26e-aa · 外部 holdout 分层诊断（mode/map/class/version）（**headB FAIL 集中在 event 模式**：event 1.357×/top 0/AUC 0.553；pve 3.558×、cooperative 3.439×、pvp 5.342×（仅 3 正，样本不足）；非 pvp 1.857×；headC 1.99 描述性）
+
+- **目的（预注册 `out/torpedo_model/e26e-aa-preregistration.md`，descriptive）**：E26e-z 外部整体 headB
+  1.862×base（<2.0 门禁 FAIL）；本任务判断失败是**集中在 pve/event/cooperative（领域/模式漂移）**，
+  还是 pvp/competitive 子集也退化；不重训、不调线、不部署。
+- **方法**：trainer eval-only 新增 `--eval-predictions-out`（npz：probA/B/C、labelA/B、fired/hits、replayId/
+  t/shipId/rowIndex；不写 OOF/checkpoint/ONNX；`--selftest` 覆盖 schema）；在 node3 重跑写
+  `out/torpedo_model/e26e-aa/eval_predictions_external.npz`；新脚本 `torpedo_external_stratify.py` 按
+  gameMode / mode group（pvp vs non-pvp）/ replayVersion / shipClass / mapName / 日期分层，headC outcome
+  仅在 launched≥10、fired≥20、hits≥5 时报告，否则描述性。
+- **数据分布（18 replay / 17,054 行，2026-10-31..11-08）**：模式 pve 9,822 / event 5,671 / pvp 766 /
+  cooperative 795；版本 15,9,0,0 11,586 / 15,10,0,0 5,468；船级 Destroyer 2,291 / Cruiser 6,053 /
+  Battleship 3,425 / Submarine 1,887 / unknown 3,398。**s12_WW2_OP1（5,499 行）+ e15_Bermuda_Triangle
+  （3,398 行）共 8,897 行（52%）canLaunch=0（unknown 船级/新图），不参与 headB/headC 评估**——有效评估
+  8,157 行。
+- **整体（同 E26e-z）**：canLaunch 3,026 / 正样本 37；headB AUPRC 0.022762（**1.862×base**）、top 2.429、
+  AUC 0.6017；headC r120 outcome **1.9896**/ρ 0.596/CI [0.0,5.36]（37 launched/115 fired/17 hits）。
+- **分层结果（headB；headC 仅样本足够时）**：
+
+  | stratum | rows | canLaunch (pos) | launched/fired/hits | headB AUPRC (×base) | top | AUC | headC outcome |
+  |---|---|---|---|---|---|---|---|
+  | **overall** | 17,054 | 3,026 (37) | 37/115/17 | 0.022762 (**1.862×**) | 2.429 | 0.6017 | 1.99 / ρ 0.596 / [0,5.36] |
+  | mode=pvp | 766 | 292 (3) | 3/10/5 | 0.05489 (**5.342×**) | 3.244 | **0.810** | 样本不足 |
+  | mode=pve | 9,822 | 1,182 (18) | 18/58/10 | 0.05419 (**3.558×**) | **3.863** | 0.630 | 4.97 / [0,4.97]（18 行，不稳） |
+  | mode=event | 5,671 | 1,209 (10) | 10/29/0 | 0.01122 (**1.357×**) | **0.0** | 0.553 | 样本不足（0 hits） |
+  | mode=cooperative | 795 | 343 (6) | 6/18/2 | 0.06015 (**3.439×**) | 1.633 | 0.740 | 样本不足 |
+  | group=non-pvp | 16,288 | 2,734 (34) | 34/105/12 | 0.02310 (1.857×) | 2.641 | 0.593 | 3.28 / [0,5.52] |
+  | version=15,10,0,0 | 5,468 | 1,012 (11) | 11/31/7 | 0.03024 (2.782×) | 1.804 | 0.648 | 0 / [0,0]（11 行） |
+  | version=15,9,0,0 | 11,586 | 2,014 (26) | 26/84/10 | 0.02413 (1.869×) | 1.15 | 0.584 | 3.15 / [0,7.71] |
+  | class=Destroyer | 2,291 | 1,006 (7) | 7/27/5 | 0.01089 (**1.565×**) | 1.423 | 0.623 | 样本不足 |
+  | class=Cruiser | 6,053 | 1,443 (19) | 19/54/6 | 0.02675 (2.032×) | 2.095 | 0.530 | 样本不足 |
+  | class=Battleship | 3,425 | 421 (4) | 4/8/0 | 0.02056 (2.164×) | 2.448 | 0.681 | 样本不足 |
+  | class=Submarine | 1,887 | 156 (7) | 7/26/6 | 0.10203 (2.274×) | 2.786 | 0.657 | 样本不足 |
+  | map=s09_LePVE | 4,323 | 1,182 (18) | 18/58/10 | 0.05419 (3.558×) | 3.863 | 0.630 | 4.97 / [0,4.97] |
+  | map=16_OC_bees | 760 | 292 (3) | 3/10/5 | 0.05489 (5.342×) | 3.244 | 0.810 | 样本不足 |
+  | map=44_Path_warrior | 490 | 218 (5) | 5/17/2 | 0.18136 (7.907×) | 3.964 | 0.820 | 样本不足 |
+  | map=46_Estuary | 1,059 | 556 (5) | 5/19/0 | 0.01401 (1.558×) | 0.0 | 0.617 | 样本不足（0 hits） |
+  | map=35_NE_north_winter | 515 | 377 (2) | 2/3/0 | 0.00490 (0.924×) | 0.0 | 0.204 | 样本不足 |
+  | map=17_NA_fault_line | 699 | 276 (3) | 3/7/0 | 0.01697 (1.561×) | 0.0 | 0.535 | 样本不足 |
+
+- **判定（descriptive）**：外部 headB FAIL **集中在 event 模式**（1.357×、top **0**、AUC 0.553；10 正/1,209
+  can，10 launched/29 fired/**0 hits**），event 地图（NE_north_winter 0.924×/top 0、Estuary 1.558×/top 0、
+  fault_line 1.561×/top 0）同样弱；**pve/cooperative 子集反而 >2.0×**（3.558×/3.439×），pvp 子集数值最高
+  （5.342×/AUC 0.810）但**只有 3 个正样本、3 launched，统计上不能判**（预注册已允许只作描述）。因此
+  **不能写成“所有非 pvp 都退化”，也不是 pvp 已证实稳健**——最明确的结论是 **event 模式/部分地图 + DD 船级
+  （1.565×）驱动整体 FAIL**；headC 仅 pve 18 行达到报告门槛（4.97，CI 不稳），pvp/event/cooperative 样本
+  不足。→ 记录为**领域/模式/版本条件化（mode-conditioned）依据**，不重训/不调线/不部署，鱼雷保持诊断-only。
+- **局限**：整体仅 37 正（pvp 3/event 10/pve 18/coop 6），CI 极宽、分层指标不稳；52% 行 canLaunch=0
+  （unknown 船级/新图 s12_WW2_OP1/e15）未参与评估；单批次、两版本；raw sigmoid（温度未用）；event 0 hits
+  使 headC 无法评；描述性、无因果。
+- **下一步**：① 补 pvp/competitive 外部 replay（当前 3 正不够）；② 在更多外部批次复核 event/DD 弱项；
+  ③ 若做 mode/版本条件化（另立预注册），先解决 event 模式与 unknown 船级（new hulls）的覆盖；④ 重导出
+  E26e-z 原计划的 23 replay（含 2026-09-17..10-30）；⑤ 鱼雷保持诊断-only。
+- **产物**：trainer `--eval-predictions-out`（--selftest）；`out/torpedo_model/e26e-aa/`
+  {eval_predictions_external.npz, eval_metrics.json, external_stratify.json, external_stratify_report.md}；
+  `torpedo_external_stratify.py`（--selftest）；预注册 `e26e-aa-preregistration.md`。
+### E26 研究总结：headC 上限与部署结论（截至 E26e-aa）
 
 **一句话结论**：headC 的命中排序信号真实存在（r120 2.1997×、server 真值 2.3477×、r60 固定口径 2.6811×），但
 **没有任何标签/特征/先验定义在独立时间窗上稳定 ≥2.30 且 CI 不重叠**；Q3 崩盘与后续自适应实验表明，当前证据
@@ -1930,7 +1987,7 @@ cell 粒度先验（oracle 2.010）可修复排序，但需**目标窗 cell base
 
 **部署/总分决策（不变）**：T4 **torp4 r120 诊断包（PR #1868）**继续作为独立可选诊断，不改变总分；headB
 诊断可用（top-lift 2.905、温度后 ECE 0.0006）；**headC 仍为诊断-only，不并入总分**；任何“修复”结论
-（2.49/2.01/1.84 等）均为特定窗口/特定先验下的研究结果，**不构成部署依据**。**外部 holdout（E26e-z）**：T4 checkpoint 在 18 replay/17,054 行外部批次上 headB AUPRC **1.862×base（<2.0 门禁 FAIL）**、AUC **0.602**、top 2.429，headC outcome **1.9896**/CI [0.0,5.36] → 外部外推同样不支持部署；实际导出为 18 replay（非原述 23），需重导出复核。
+（2.49/2.01/1.84 等）均为特定窗口/特定先验下的研究结果，**不构成部署依据**。**外部 holdout（E26e-z）**：T4 checkpoint 在 18 replay/17,054 行外部批次上 headB AUPRC **1.862×base（<2.0 门禁 FAIL）**、AUC **0.602**、top 2.429，headC outcome **1.9896**/CI [0.0,5.36] → 外部外推同样不支持部署；实际导出为 18 replay（非原述 23），需重导出复核。**外部分层（E26e-aa）**：FAIL 集中在 event 模式（1.357×/top 0/AUC 0.553），pve 3.558×、cooperative 3.439×，pvp 仅 3 正不能判；DD 1.565×、event 地图 top 0；52% 行 canLaunch=0 未评估 → 领域/模式条件化依据，仍不部署。
 
 **重开条件/数据缺口**（任一满足后再预注册；总分 A/B 另立）：① 独立赛季 replay（非同一语料/同一时间窗）；
 ② 逐鱼 server 真值（ShotKillEvent/damageStat，覆盖 ≥2 个赛季）；③ 目标窗/在线 cell 先验 + 足够延迟标签，
@@ -1944,7 +2001,7 @@ cell 粒度先验（oracle 2.010）可修复排序，但需**目标窗 cell base
 **简短局限**：样本/段位有限、单 seed、proxy 标签、server 真值仅 recorder-only、Q3 walk-forward 仅 3 窗；
 所有先验/自适应实验为描述性、无因果识别；单窗 PASS 不代表稳定。
 
-### E26e 系列结论与评分集成决策（截至 E26e-z 研究收敛，2026-11-09）
+### E26e 系列结论与评分集成决策（截至 E26e-aa 研究收敛，2026-11-09）
 
 **最终研究模型（torp4 + λ_C=0.1，全语料 3,111,384 行 / 2,215 局，5 折 seed 0）**
 
@@ -1983,6 +2040,7 @@ cell 粒度先验（oracle 2.010）可修复排序，但需**目标窗 cell base
 | E26e-w（在线先验） | 不重训；Q2/Q3/Q4 early-20/40 标签估 cell base，eval 余 80/60% | — | Q3 eval：raw 0.682/0.526 → **early20 1.464/0.645**、early40 1.087/0.549、oracle 2.527/0.722、hist 0.630、roll 0.776；early20 仅 48 launched/178 fired/28 cells（cell 覆盖 139/193 行）→ **primary/secondary FAIL：延迟标签量/估计不足**；Q2 early20 0.816 vs raw 3.152、Q4 0.930 vs raw 1.623 | 诊断：在线 cell 先验方向有效但 20–40% 早段标签不足以修到 1.80；oracle 2.53 参照；需早段+历史层次 EB/更大早段/真实回填延迟；不推部署/总分 |
 | E26e-x（层次 EB） | 不重训；Q2/Q3/Q4 early-20/40 上 A/B(层次 cell→mode α50)/C(池化)/D(历史 mode) | — | **Q3 early20：raw 0.682/0.526 → A 1.464/0.645、B 1.835/0.678（≥1.80 & AUC>0.55，primary PASS）、C 0.678/0.622、D 1.464/0.655、oracle 2.527**；early40 B 1.384/0.615（<1.80）；Q2 B 0.816 vs raw 3.152、Q4 B 0.799 vs raw 1.623（Q4 C/D 1.3–2.6、B-40 0.0，小样本不稳） | 诊断：层次 EB 仅在 Q3 early-20% 过线（1.835），非普适/不稳定；不能部署/总分，需更多 replay/seed 复核与 B+C 融合 |
 | E26e-z（外部 holdout） | 不重训；T4 r120 checkpoint 外部 17,054 行/18 replay（2026-10-31..11-08） | headB **1.862×base / top 2.429 / AUC 0.6017**（门禁 1.86<2.0 FAIL）；headC **1.9896 / ρ 0.596 / CI [0.0,5.36]**（37 launched/115 fired/17 hits，标准 bootstrap NaN→local 回退）；headA 0.9786/0.9979 | **外部诊断门禁 FAIL**（AUPRC 1.86×<2.0；top 过）；headC <2.30 描述性；pve/event/cooperative 为主 + 20% unknown 船级 → 版本/时间/模式外推退化，不重训不调线；实际 18 replay（非原述 23）需重导出复核 |
+| E26e-aa（外部分层） | 不重训；18 replay/17,054 行外部预测按 mode/map/class/version 分层 | headB overall **1.862×base / top 2.429 / AUC 0.6017**；**event 1.357×/top 0/AUC 0.553（主因）**，pve 3.558×、cooperative 3.439×、pvp 5.342×（仅 3 正）；class DD 1.565×；version 15,10 2.782× vs 15,9 1.869×；headC 1.99（pve 4.97 不稳，其余样本不足） | 描述性：FAIL **集中在 event 模式/部分地图 + DD**，pve/coop 反而强，pvp 3 正不能判；52% 行 canLaunch=0 未评估；不重训不调线不部署；作 mode/版本条件化依据 |
 
 **结论与观察（第 3 条为观察/假设）**
 
