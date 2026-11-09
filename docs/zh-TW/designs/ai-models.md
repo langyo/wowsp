@@ -59,9 +59,9 @@ LOS 柵格，已安裝的兩個模型比目前的 fp32 匯出更舊、體積約�
 | 艦艇屬性路由表 | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | 地形通視柵格 | `bake_terrain_los.py` 輸出，每張地圖一個 `terrain_los.npz` | 每個 5,986-221,638 B（已安裝 35 張） |
 
-每個檔案都遠低於 Hugging Face 建議改用 git-xet 追蹤的 10 MB 門檻，
-因此一次發布仍維持純 Git 內容：`/resolve/` 直接回覆 200，不需要
-LFS/Xet 用戶端（見 7.8）。
+每個檔案都遠低於 10 MB 的更新大小預算。Hub 仍透過 Xet/LFS 儲存二進位 blob，
+因此 `/resolve/` 回覆的是簽章 CDN 重新導向，而不是 200；下載器會跟隨它
+（在最終主機上使用 Range／續傳）且不涉及 Xet 用戶端，而帶簽章的 manifest 加上逐檔 sha256，讓這些位元組仍具權威性（見 4.2 與 7.8）。
 
 ## 2. 現狀
 
@@ -85,7 +85,7 @@ LFS/Xet 用戶端（見 7.8）。
   GitHub repo (source of truth)
       |  python scripts/publish_ai_models.py  (hash -> sign -> upload)
       v
-  Hugging Face model repo  wowsp-ai  (generated release artifact + scripts snapshot)
+  Hugging Face model repo  wowsp-d1  (generated release artifact + scripts snapshot)
       |  signed manifest.json + per-file resolve/<commit-sha>/<path>
       v
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
@@ -107,7 +107,7 @@ LFS/Xet 用戶端（見 7.8）。
 ### 4.1 佈局
 
 ```text
-wowsp-ai/                          public model repository (owner/repo TBD, see 11)
+wowsp-d1/                          public model repository (owner/repo TBD, see 11)
   README.md                        model card: purpose, provenance, metrics, file table, licence
   LICENSE                          Synthetic Source License 1.0 (same as the app repo)
   manifest.json                    signed runtime manifest (section 5)
@@ -127,7 +127,7 @@ wowsp-ai/                          public model repository (owner/repo TBD, see 
 
 ### 4.2 檔案大小規則
 
-每個儲存庫檔案都維持在 **10 MB 以下**，以便落成普通的 Git blob（`/resolve/` 直接以位元組回覆 200，沒有簽章 CDN 重新導向，也沒有 xet 重建）。LOS 柵格目前每張地圖一個檔案（全都遠低於上限）；若未來某個資源包會讓單檔超過上限，就把 LOS 拆成編號的 bundle，讓每個都維持在上限之下。發布程式會拒絕超過 10 MB 的暫存檔案，並印出違規的路徑。
+每個儲存庫檔案都維持在 **10 MB 以下**，讓更新保持精簡且可增量。即使低於該門檻，Hub 仍透過 Xet/LFS 儲存二進位 blob（以純 Git 推送二進位會被拒絕），因此 `/resolve/` 回覆的是簽章 CDN 重新導向，而不是 200；下載器會跟隨它，並在最終主機上保留 Range／續傳，且不涉及任何 Xet 用戶端。LOS 柵格目前每張地圖一個檔案（全都遠低於上限）；若未來某個資源包會讓單檔超過上限，就把 LOS 拆成編號的 bundle，讓每個都維持在上限之下。發布程式會拒絕超過 10 MB 的暫存檔案，並印出違規的路徑。
 
 ### 4.3 revision 模型
 
@@ -179,9 +179,9 @@ GitHub 是唯一的真源。Hugging Face 是產生的發布產物：不得手工
   "resTreeSha256": "3f2a...",
   "files": [
     { "path": "fire_model.onnx", "sha256": "8ba9...", "size": 2592543,
-      "kind": "fire-two-head", "featureSet": "fire-v2", "quant": "fp32" },
+      "kind": "fire-two-head", "featureSet": "fire-v1", "quant": "fp32" },
     { "path": "move_model.onnx", "sha256": "bc91...", "size": 2652542,
-      "kind": "move-sectors-17", "featureSet": "move-v2", "quant": "fp32" },
+      "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
     { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
@@ -280,8 +280,8 @@ GitHub 是唯一的真源。Hugging Face 是產生的發布產物：不得手工
 
 | 模型 | Kind | v1 特徵集 | 必需 |
 | --- | --- | --- | --- |
-| fire_model.onnx | 開火雙頭（24 實體 deep sets） | `fire-v2` | 是 |
-| move_model.onnx | 17 類移動扇區 | `move-v2` | 是 |
+| fire_model.onnx | 開火雙頭（24 實體 deep sets） | `fire-v1` | 是 |
+| move_model.onnx | 17 類移動扇區 | `move-v1` | 是 |
 | advice_fire_model.onnx | 屬性路由建議頭 | `advice-e24` | 否 |
 | torpedo_model.onnx | 三頭魚雷模型 | `torpedo-e26d` | 否 |
 
@@ -437,7 +437,7 @@ huggingfaceMirrors = ["https://hf-mirror.com", "https://hf-mirror.example"]
 
 ## 11. 待定決策
 
-1. **Hugging Face owner/repo 名稱**（建議 `langyo/wowsp-ai`，公開）。帳號與寫入權杖由維護者持有；發布程式可以建立儲存庫。
+1. **Hugging Face owner/repo 名稱** —— 已決定：`langyo/wowsp-d1`（公開）。帳號與寫入權杖由維護者持有；發布程式會在首次使用時建立儲存庫。
 2. 針對遊戲衍生的 LOS 柵格與屬性表的**再分發聲明**：連同權重一起依現有授權條款加上來源說明發布（建議，與公開資源包一致），或把它們排除在公開模型儲存庫之外、只透過應用程式的 GitHub 資源包提供。
 3. **訓練腳本快照範圍**：整個 `scripts/experiments/`（建議）還是精選子集；是否包含研究日誌。
 4. **更新策略**：在 24 小時 TTL 之下於開機時靜默檢查 + 手動下載（建議），對比自動下載約 12 MB 的模型包；是否提供「自動更新模型」開關。

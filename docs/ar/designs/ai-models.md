@@ -64,9 +64,11 @@
 | جدول توجيه سمات السفن | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | خرائط LOS النقطية للتضاريس | مخرجات `bake_terrain_los.py`، ملف `terrain_los.npz` واحد لكل خريطة | 5,986-221,638 B لكل خريطة (35 خريطة مثبَّتة) |
 
-كل ملف أدنى بكثير من حد 10 MB الذي فوقه توصي Hugging Face بتعقّب git-xet،
-لذا يبقى الإصدار Git عاديًا: يجيب `/resolve/` بالرمز 200 مباشرةً، ولا حاجة
-إلى عميل LFS/Xet (انظر 7.8).
+كل ملف أدنى بكثير من ميزانية حجم التحديث البالغة 10 MB. ومع ذلك
+يخزّن Hub الكتل الثنائية عبر Xet/LFS، لذا يجيب `/resolve/` بإعادة
+توجيه موقَّعة إلى CDN بدلًا من الرمز 200؛ ويتبعها المنزِّل (Range/الاستئناف
+على المضيف النهائي) دون عميل Xet، ويُبقي البيان الموقَّع
+مع تجزئة sha256 لكل ملف البايتات مرجعًا موثوقًا (انظر 4.2 و7.8).
 
 ## 2. الوضع الحالي
 
@@ -90,7 +92,7 @@
   GitHub repo (source of truth)
       |  python scripts/publish_ai_models.py  (hash -> sign -> upload)
       v
-  Hugging Face model repo  wowsp-ai  (generated release artifact + scripts snapshot)
+  Hugging Face model repo  wowsp-d1  (generated release artifact + scripts snapshot)
       |  signed manifest.json + per-file resolve/<commit-sha>/<path>
       v
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
@@ -112,7 +114,7 @@
 ### 4.1 التخطيط
 
 ```text
-wowsp-ai/                          public model repository (owner/repo TBD, see 11)
+wowsp-d1/                          public model repository (owner/repo TBD, see 11)
   README.md                        model card: purpose, provenance, metrics, file table, licence
   LICENSE                          Synthetic Source License 1.0 (same as the app repo)
   manifest.json                    signed runtime manifest (section 5)
@@ -134,12 +136,14 @@ wowsp-ai/                          public model repository (owner/repo TBD, see 
 
 ### 4.2 قاعدة حجم الملف
 
-يبقى كل ملف في المستودع **أدنى من 10 MB** ليهبط ككتلة Git عادية (يعيد
-`/resolve/` الرمز 200 مع البايتات، بلا إعادة توجيه موقَّعة إلى CDN، وبلا
-إعادة بناء xet). وخرائط LOS النقطية ملف واحد لكل خريطة اليوم (كلها أدنى
-بكثير من الحد)؛ وإذا تجاوزت حزمة مستقبلية الحد لكل ملف، فقسّم LOS إلى حزم
-مرقّمة تبقى كل منها دونه. ويرفض الناشر أي ملف مجهَّز يتجاوز 10 MB ويطبع
-المسار المخالف.
+يبقى كل ملف في المستودع **أدنى من 10 MB** كي تبقى التحديثات صغيرة
+وتزايدية. ومع ذلك يخزّن Hub الكتل الثنائية عبر Xet/LFS حتى دون ذلك الحد
+(إذ يُرفض دفع ملف ثنائي عبر Git عادي)، لذا يجيب `/resolve/` بإعادة توجيه
+موقَّعة إلى CDN بدلًا من الرمز 200؛ ويتبعها المنزِّل ويحفظ Range/الاستئناف
+على المضيف النهائي، ولا يتدخّل أي عميل Xet. وخرائط LOS النقطية ملف واحد لكل
+خريطة اليوم (وكلها أدنى بكثير من الحد)؛ وإذا تجاوزت حزمة مستقبلية الحد لكل
+ملف، فقسّم LOS إلى حزم مرقّمة تبقى كل منها دونه. ويرفض الناشر أي ملف
+مجهَّز يتجاوز 10 MB ويطبع المسار المخالف.
 
 ### 4.3 نموذج المراجعة
 
@@ -233,9 +237,9 @@ GitHub هو المصدر الوحيد للحقيقة. أما Hugging Face فأص
   "resTreeSha256": "3f2a...",
   "files": [
     { "path": "fire_model.onnx", "sha256": "8ba9...", "size": 2592543,
-      "kind": "fire-two-head", "featureSet": "fire-v2", "quant": "fp32" },
+      "kind": "fire-two-head", "featureSet": "fire-v1", "quant": "fp32" },
     { "path": "move_model.onnx", "sha256": "bc91...", "size": 2652542,
-      "kind": "move-sectors-17", "featureSet": "move-v2", "quant": "fp32" },
+      "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
     { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
@@ -370,8 +374,8 @@ Python. وقيم `featureSet` في البيان هي العقد:
 
 | النموذج | النوع | مجموعة السمات (v1) | مطلوب |
 | --- | --- | --- | --- |
-| fire_model.onnx | إطلاق ثنائي الرأس (مجموعات عميقة من 24 كيانًا) | `fire-v2` | نعم |
-| move_model.onnx | قطاعات حركة من 17 صنفًا | `move-v2` | نعم |
+| fire_model.onnx | إطلاق ثنائي الرأس (مجموعات عميقة من 24 كيانًا) | `fire-v1` | نعم |
+| move_model.onnx | قطاعات حركة من 17 صنفًا | `move-v1` | نعم |
 | advice_fire_model.onnx | رأس نصائح موجَّه بالسمات | `advice-e24` | لا |
 | torpedo_model.onnx | نموذج طوربيد ثلاثي الرؤوس | `torpedo-e26d` | لا |
 
@@ -620,8 +624,9 @@ Rust بـ `include_str!`؛ ويستهلكه Python (`fetch_models.py`) والم�
 
 ## 11. القرارات المفتوحة
 
-1. **اسم المالك/المستودع على Hugging Face** (المقترح `langyo/wowsp-ai`، عام).
-   والحساب ورمز الكتابة مملوكان للمشرف؛ ويستطيع الناشر إنشاء المستودع.
+1. **اسم المالك/المستودع على Hugging Face** — مُقرَّر: `langyo/wowsp-d1`
+   (عام). والحساب ورمز الكتابة مملوكان للمشرف؛ وينشئ الناشر المستودع عند
+   أول استخدام.
 2. **بيان إعادة التوزيع** لخرائط LOS النقطية المشتقة من اللعبة وجدول السمات:
    نشرها مع الأوزان بموجب الترخيص القائم مع إشعار منشأ (موصى به، ومتسق مع
    حزمة الموارد العامة)، أو إبقاؤها خارج مستودع النماذج العام وتقديمها فقط

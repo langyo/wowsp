@@ -65,9 +65,11 @@ fp32 エクスポートのおよそ半分で、アドバイス/魚雷のスロ�
 | 艦船属性ルーティングテーブル | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | 地形 LOS ラスター | `bake_terrain_los.py` の出力。マップごとに 1 つの `terrain_los.npz` | 各 5,986〜221,638 B（35 マップをインストール済み） |
 
-各ファイルは、Hugging Face が git-xet トラッキングを推奨する 10 MB のしきい値を
-はるかに下回るため、リリースはプレーンな Git のままである。`/resolve/` は直接 200 を
-返し、LFS/Xet クライアントは不要である（7.8 参照）。
+各ファイルは 10 MB の更新サイズ予算をはるかに下回る。Hub は引き続きバイナリ blob を
+Xet/LFS 経由で保存するため、`/resolve/` は 200 ではなく署名付き CDN リダイレクトを
+返す。ダウンローダーは Xet クライアントなしでそれに追随し（最終ホストで Range/再開）、
+署名付きマニフェストとファイル単位の sha256 により、バイト列が権威であり続ける
+（4.2 と 7.8 参照）。
 
 ## 2. 現状
 
@@ -92,7 +94,7 @@ fp32 エクスポートのおよそ半分で、アドバイス/魚雷のスロ�
   GitHub repo (source of truth)
       |  python scripts/publish_ai_models.py  (hash -> sign -> upload)
       v
-  Hugging Face model repo  wowsp-ai  (generated release artifact + scripts snapshot)
+  Hugging Face model repo  wowsp-d1  (generated release artifact + scripts snapshot)
       |  signed manifest.json + per-file resolve/<commit-sha>/<path>
       v
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
@@ -114,7 +116,7 @@ fp32 エクスポートのおよそ半分で、アドバイス/魚雷のスロ�
 ### 4.1 レイアウト
 
 ```text
-wowsp-ai/                          public model repository (owner/repo TBD, see 11)
+wowsp-d1/                          public model repository (owner/repo TBD, see 11)
   README.md                        model card: purpose, provenance, metrics, file table, licence
   LICENSE                          Synthetic Source License 1.0 (same as the app repo)
   manifest.json                    signed runtime manifest (section 5)
@@ -136,12 +138,14 @@ wowsp-ai/                          public model repository (owner/repo TBD, see 
 
 ### 4.2 ファイルサイズ規則
 
-各リポジトリファイルは**10 MB 未満**に保たれるため、プレーンな Git blob として
-格納される（`/resolve/` がバイト列を伴う 200 を返し、署名付き CDN リダイレクトも
-xet 再構築もない）。LOS ラスターは現在、マップごとに 1 ファイルである（すべて上限を
-大きく下回る）。将来のパックがファイル単位の上限を超える場合は、LOS を番号付き
-バンドルに分割し、それぞれが上限未満に収まるようにする。パブリッシャーは 10 MB を
-超えるステージングファイルを拒否し、違反パスを出力する。
+各リポジトリファイルは**10 MB 未満**に保たれるため、更新は小さく増分的なままである。
+Hub はそのしきい値を下回っていてもバイナリ blob を Xet/LFS 経由で保存する
+（プレーンな Git でのバイナリ push は拒否される）。そのため `/resolve/` は 200 ではなく
+署名付き CDN リダイレクトを返し、ダウンローダーはそれに追随して最終ホストでも
+Range/再開を維持する。Xet クライアントは関与しない。LOS ラスターは現在、マップごとに
+1 ファイルである（すべて上限を大きく下回る）。将来のパックがファイル単位の上限を
+超える場合は、LOS を番号付きバンドルに分割し、それぞれが上限未満に収まるようにする。
+パブリッシャーは 10 MB を超えるステージングファイルを拒否し、違反パスを出力する。
 
 ### 4.3 リビジョンモデル
 
@@ -240,9 +244,9 @@ GitHub が唯一のソース・オブ・トゥルースである。Hugging Face 
   "resTreeSha256": "3f2a...",
   "files": [
     { "path": "fire_model.onnx", "sha256": "8ba9...", "size": 2592543,
-      "kind": "fire-two-head", "featureSet": "fire-v2", "quant": "fp32" },
+      "kind": "fire-two-head", "featureSet": "fire-v1", "quant": "fp32" },
     { "path": "move_model.onnx", "sha256": "bc91...", "size": 2652542,
-      "kind": "move-sectors-17", "featureSet": "move-v2", "quant": "fp32" },
+      "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
     { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
@@ -385,8 +389,8 @@ GitHub が唯一のソース・オブ・トゥルースである。Hugging Face 
 
 | モデル | 種別 | 特徴量セット（v1） | 必須 |
 | --- | --- | --- | --- |
-| fire_model.onnx | fire 2 ヘッド（24 エンティティの deep sets） | `fire-v2` | はい |
-| move_model.onnx | 17 クラスの移動セクター | `move-v2` | はい |
+| fire_model.onnx | fire 2 ヘッド（24 エンティティの deep sets） | `fire-v1` | はい |
+| move_model.onnx | 17 クラスの移動セクター | `move-v1` | はい |
 | advice_fire_model.onnx | 属性ルーティングされたアドバイスヘッド | `advice-e24` | いいえ |
 | torpedo_model.onnx | 3 ヘッドの魚雷モデル | `torpedo-e26d` | いいえ |
 
@@ -638,9 +642,9 @@ ko、fr、es、ru、ar）。
 
 ## 11. 未決事項
 
-1. **Hugging Face のオーナー/リポジトリ名**（`langyo/wowsp-ai` を提案、公開）。
-   アカウントと書き込みトークンはメンテナ所有であり、パブリッシャーがリポジトリを
-   作成できる。
+1. **Hugging Face のオーナー/リポジトリ名** —— 決定: `langyo/wowsp-d1`
+   （公開）。アカウントと書き込みトークンはメンテナ所有であり、
+   パブリッシャーが初回使用時にリポジトリを作成する。
 2. ゲーム由来の LOS ラスターと属性テーブルの**再配布の表明**: 既存ライセンス +
    来歴通知の下で重みと一緒に公開する（推奨。公開リソースパックと整合）、または
    公開モデルリポジトリから除外してアプリの GitHub パック経由でのみ配信する。

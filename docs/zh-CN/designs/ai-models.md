@@ -53,9 +53,10 @@ digest 校验，并原子化地安装。决策模型通道应当达到同样的�
 | 舰船属性路由表 | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | 地形通视栅格 | `bake_terrain_los.py` 输出，每张地图一个 `terrain_los.npz` | 每个 5,986–221,638 B（已装 35 张） |
 
-每个文件都远低于 Hugging Face 建议使用 git-xet 跟踪的 10 MB 阈值，因此一次
-发布保持为普通 Git 内容：`/resolve/` 直接返回 200，不需要 LFS/Xet 客户端
-（见 7.8）。
+每个文件都远低于 10 MB 的更新体积预算。Hub 仍会通过 Xet/LFS 存储二进制块，
+因此 `/resolve/` 返回的是签名 CDN 重定向而不是 200；下载器会跟随该重定向
+（在最终主机上保持 Range/断点续传），不需要 Xet 客户端，而签名 manifest 与
+逐文件 sha256 保证字节的权威性（见 4.2 与 7.8）。
 
 ## 2. 现状
 
@@ -79,7 +80,7 @@ digest 校验，并原子化地安装。决策模型通道应当达到同样的�
   GitHub repo (source of truth)
       |  python scripts/publish_ai_models.py  (hash -> sign -> upload)
       v
-  Hugging Face model repo  wowsp-ai  (generated release artifact + scripts snapshot)
+  Hugging Face model repo  wowsp-d1  (generated release artifact + scripts snapshot)
       |  signed manifest.json + per-file resolve/<commit-sha>/<path>
       v
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
@@ -101,7 +102,7 @@ digest 校验，并原子化地安装。决策模型通道应当达到同样的�
 ### 4.1 布局
 
 ```text
-wowsp-ai/                          public model repository (owner/repo TBD, see 11)
+wowsp-d1/                          public model repository (owner/repo TBD, see 11)
   README.md                        model card: purpose, provenance, metrics, file table, licence
   LICENSE                          Synthetic Source License 1.0 (same as the app repo)
   manifest.json                    signed runtime manifest (section 5)
@@ -122,10 +123,12 @@ wowsp-ai/                          public model repository (owner/repo TBD, see 
 
 ### 4.2 文件大小规则
 
-每个仓库文件保持在 **10 MB 以下**，从而落成普通 Git blob（`/resolve/` 直接
-返回 200 字节，没有签名 CDN 跳转、没有 xet 重构）。通视栅格目前每张地图一个
-文件（都远低于阈值）；若未来某个包超过单文件限制，就把 LOS 拆成编号 bundle，
-每个仍低于该阈值。发布脚本会拒绝超过 10 MB 的暂存文件并打印其路径。
+每个仓库文件保持在 **10 MB 以下**，让更新保持小而增量。即使低于该阈值，
+Hub 仍会通过 Xet/LFS 存储二进制块（纯 Git 提交二进制会被拒绝），因此
+`/resolve/` 返回的是签名 CDN 重定向而不是 200；下载器会跟随该重定向，并在
+最终主机上保持 Range/断点续传，全程不需要 Xet 客户端。通视栅格目前每张地图
+一个文件（都远低于限制）；若未来某个包超过单文件限制，就把 LOS 拆成编号
+bundle，每个仍低于该阈值。发布脚本会拒绝超过 10 MB 的暂存文件并打印其路径。
 
 ### 4.3 版本模型
 
@@ -210,9 +213,9 @@ commit 来源解释，而不是并行维护。
   "resTreeSha256": "3f2a...",
   "files": [
     { "path": "fire_model.onnx", "sha256": "8ba9...", "size": 2592543,
-      "kind": "fire-two-head", "featureSet": "fire-v2", "quant": "fp32" },
+      "kind": "fire-two-head", "featureSet": "fire-v1", "quant": "fp32" },
     { "path": "move_model.onnx", "sha256": "bc91...", "size": 2652542,
-      "kind": "move-sectors-17", "featureSet": "move-v2", "quant": "fp32" },
+      "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
     { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
@@ -339,8 +342,8 @@ App 在解析字段前先验签，然后施加 `seq` 棘轮：已验签但 seq �
 
 | 模型 | kind | v1 特征集 | 必需 |
 | --- | --- | --- | --- |
-| fire_model.onnx | 开火双头（24 实体 deep sets） | `fire-v2` | 是 |
-| move_model.onnx | 17 类走位扇区 | `move-v2` | 是 |
+| fire_model.onnx | 开火双头（24 实体 deep sets） | `fire-v1` | 是 |
+| move_model.onnx | 17 类走位扇区 | `move-v1` | 是 |
 | advice_fire_model.onnx | 属性路由建议头 | `advice-e24` | 否 |
 | torpedo_model.onnx | 三头鱼雷模型 | `torpedo-e26d` | 否 |
 
@@ -558,8 +561,8 @@ locale 发布**（en、zh-CN、zh-TW、ja、ko、fr、es、ru、ar）。
 
 ## 11. 待定决策
 
-1. **Hugging Face owner/repo 名称**（建议 `langyo/wowsp-ai`，公开）。账号
-   与 write token 由维护者持有；发布脚本可以创建仓库。
+1. **Hugging Face owner/repo 名称** —— 已定：`langyo/wowsp-d1`（公开）。
+   账号与 write token 由维护者持有；发布脚本首次运行时创建仓库。
 2. **游戏派生数据的再分发声明**：把 LOS 栅格与属性表连同权重一起按现有许可证
    + 来源说明发布（建议，与公开资源包一致），还是把它们排除在公开模型仓库之外、
    只通过 App 的 GitHub 资源包分发。

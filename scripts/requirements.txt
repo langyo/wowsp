@@ -19,3 +19,7 @@ cryptography~=47.0
 
 # Image post-processing (visual-suite WebP conversion)
 pillow~=11.0
+
+# Model publishing (scripts/publish_ai_models.py) — publish-time only; the
+# app and the test suite never import it.
+huggingface_hub~=2.4

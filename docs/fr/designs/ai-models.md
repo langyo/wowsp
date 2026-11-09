@@ -75,10 +75,12 @@ Objectifs :
 | table de routage des attributs de navire | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | rasters LOS de terrain | sortie de `bake_terrain_los.py`, un `terrain_los.npz` par carte | 5,986-221,638 B chacun (35 cartes installées) |
 
-Chaque fichier est bien en dessous du seuil de 10 MB au-delà duquel Hugging
-Face recommande le suivi git-xet, donc une publication reste en Git simple :
-`/resolve/` répond 200 directement et aucun client LFS/Xet n'est nécessaire
-(voir 7.8).
+Chaque fichier est bien en dessous du budget de 10 MB par mise à jour. Le
+Hub stocke néanmoins les blobs binaires via Xet/LFS, donc `/resolve/` répond
+par une redirection CDN signée plutôt que 200 ; le téléchargeur la suit
+(Range/reprise sur l'hôte final) sans client Xet, et le manifeste signé plus
+le sha256 par fichier garantissent que les octets font autorité (voir 4.2 et
+7.8).
 
 ## 2. État actuel
 
@@ -102,7 +104,7 @@ Trois couches, chacune avec un seul rôle :
   GitHub repo (source of truth)
       |  python scripts/publish_ai_models.py  (hash -> sign -> upload)
       v
-  Hugging Face model repo  wowsp-ai  (generated release artifact + scripts snapshot)
+  Hugging Face model repo  wowsp-d1  (generated release artifact + scripts snapshot)
       |  signed manifest.json + per-file resolve/<commit-sha>/<path>
       v
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
@@ -124,7 +126,7 @@ Trois couches, chacune avec un seul rôle :
 ### 4.1 Disposition
 
 ```text
-wowsp-ai/                          public model repository (owner/repo TBD, see 11)
+wowsp-d1/                          public model repository (owner/repo TBD, see 11)
   README.md                        model card: purpose, provenance, metrics, file table, licence
   LICENSE                          Synthetic Source License 1.0 (same as the app repo)
   manifest.json                    signed runtime manifest (section 5)
@@ -146,13 +148,16 @@ un par les humains et via la table de fichiers de la fiche du modèle.
 
 ### 4.2 Règle de taille de fichier
 
-Chaque fichier du dépôt reste **sous 10 MB** afin d'arriver comme un blob Git
-simple (`/resolve/` renvoie 200 avec les octets, pas de redirection CDN
-signée, pas de reconstruction xet). Les rasters LOS sont aujourd'hui un
-fichier par carte (tous bien en dessous de la limite) ; si un futur pack
-devait dépasser la limite par fichier, découper les LOS en lots numérotés qui
-restent chacun en dessous. Le publicateur refuse un fichier préparé dépassant
-10 MB et affiche le chemin fautif.
+Chaque fichier du dépôt reste **sous 10 MB** afin que les mises à jour
+restent petites et incrémentales. Le Hub stocke néanmoins les blobs binaires
+via Xet/LFS même sous ce seuil (un push binaire en Git simple est refusé),
+donc `/resolve/` répond par une redirection CDN signée plutôt que 200 ; le
+téléchargeur la suit et conserve le Range/reprise sur l'hôte final, et aucun
+client Xet n'intervient. Les rasters LOS sont aujourd'hui un fichier par
+carte (tous bien en dessous de la limite) ; si un futur pack devait dépasser
+la limite par fichier, découper les LOS en lots numérotés qui restent chacun
+en dessous. Le publicateur refuse un fichier préparé dépassant 10 MB et
+affiche le chemin fautif.
 
 ### 4.3 Modèle de révision
 
@@ -262,9 +267,9 @@ commits, non par une maintenance parallèle.
   "resTreeSha256": "3f2a...",
   "files": [
     { "path": "fire_model.onnx", "sha256": "8ba9...", "size": 2592543,
-      "kind": "fire-two-head", "featureSet": "fire-v2", "quant": "fp32" },
+      "kind": "fire-two-head", "featureSet": "fire-v1", "quant": "fp32" },
     { "path": "move_model.onnx", "sha256": "bc91...", "size": 2652542,
-      "kind": "move-sectors-17", "featureSet": "move-v2", "quant": "fp32" },
+      "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
     { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
@@ -420,8 +425,8 @@ manifeste sont le contrat :
 
 | Modèle | Type | Jeu de caractéristiques (v1) | Requis |
 | --- | --- | --- | --- |
-| fire_model.onnx | tir à deux têtes (deep sets à 24 entités) | `fire-v2` | oui |
-| move_model.onnx | secteurs de déplacement à 17 classes | `move-v2` | oui |
+| fire_model.onnx | tir à deux têtes (deep sets à 24 entités) | `fire-v1` | oui |
+| move_model.onnx | secteurs de déplacement à 17 classes | `move-v1` | oui |
 | advice_fire_model.onnx | tête de conseil routée par attributs | `advice-e24` | non |
 | torpedo_model.onnx | modèle de torpille à trois têtes | `torpedo-e26d` | non |
 
@@ -698,9 +703,9 @@ document de conception est livré dans les neuf locales de documentation**
 
 ## 11. Décisions ouvertes
 
-1. **Nom owner/repo Hugging Face** (suggéré `langyo/wowsp-ai`, public). Le
-   compte et le jeton d'écriture appartiennent au mainteneur ; le publicateur
-   peut créer le dépôt.
+1. **Nom owner/repo Hugging Face** — DÉCIDÉ : `langyo/wowsp-d1` (public).
+   Le compte et le jeton d'écriture appartiennent au mainteneur ; le
+   publicateur crée le dépôt à la première utilisation.
 2. **Déclaration de redistribution** pour les rasters LOS dérivés du jeu et la
    table d'attributs : les publier avec les poids sous la licence existante
    plus une notice de provenance (recommandé, cohérent avec le pack de
