@@ -3592,11 +3592,10 @@ fn arena_team_map(stream: &ReplayStream) -> (BTreeMap<i32, i8>, Option<i8>) {
 
 /// E26e-b outcome statistics of one decision row, over the fish launched in
 /// (t, t + LABEL_WINDOW_S]: (fired fish, hits, covered enemy HP loss, fish
-/// with a terminal near an enemy hull — the geometry-only control). A fish
-/// counts at most once per counter; the HP sum adds every covering terminal
-/// of a hit fish. A terminal must detonate within TORP_OUTCOME_WINDOW_S of the
-/// decision window and within TORP_MAX_FLIGHT_S of its launch.
-#[allow(clippy::too_many_arguments)]
+/// with a terminal near an enemy hull — the geometry-only control). This is
+/// the shipped E26e-b definition: TORP_HIT_RADIUS_UNITS and the HP-drop
+/// requirement. E26e-j exposes the parameterized core below so label
+/// definitions can be compared without touching this default.
 fn torpedo_outcome_fields(
     ctx: &TorpedoOutcomeCtx<'_>,
     ships: &[ShipInfo<'_>],
@@ -3605,6 +3604,42 @@ fn torpedo_outcome_fields(
     owner_id: i32,
     owner_team: i8,
     t: f32,
+) -> (u32, u32, f32, u32) {
+    torpedo_outcome_fields_with(
+        ctx,
+        ships,
+        arena_team,
+        self_team,
+        owner_id,
+        owner_team,
+        t,
+        TORP_HIT_RADIUS_UNITS,
+        true,
+    )
+}
+
+/// Parameterized E26e-j core of [`torpedo_outcome_fields`].
+///
+/// radius_units: terminal-to-hull attribution radius (scene units; the
+/// shipped definition uses 120). require_hp: whether a terminal also needs to
+/// cover an enemy HP drop in the E13 ±0.4/0.6 s envelope to count as a HIT.
+/// With require_hp = false a hit is purely geometric (terminal within radius
+/// of an enemy hull), while torp_hp_lost_nearby still reports the covered HP
+/// drops (0 when there are none). A fish counts at most once per counter; the
+/// HP sum adds every covering terminal of a fired fish. A terminal must
+/// detonate within TORP_OUTCOME_WINDOW_S of the decision window and within
+/// TORP_MAX_FLIGHT_S of its launch.
+#[allow(clippy::too_many_arguments)]
+fn torpedo_outcome_fields_with(
+    ctx: &TorpedoOutcomeCtx<'_>,
+    ships: &[ShipInfo<'_>],
+    arena_team: &BTreeMap<i32, i8>,
+    self_team: Option<i8>,
+    owner_id: i32,
+    owner_team: i8,
+    t: f32,
+    radius_units: f32,
+    require_hp: bool,
 ) -> (u32, u32, f32, u32) {
     let Some(launches) = ctx.launches_by_owner.get(&owner_id) else {
         return (0, 0, 0.0, 0);
@@ -3622,7 +3657,7 @@ fn torpedo_outcome_fields(
         let Some(terminals) = ctx.terminals_by_shot.get(&(owner_id, launch.shot_id)) else {
             continue;
         };
-        let mut fish_hit = false;
+        let mut fish_hp_lost = 0.0f32;
         let mut fish_near = false;
         for terminal in terminals {
             // Recycled shot ids: only the fish that owns this terminal counts.
@@ -3634,7 +3669,6 @@ fn torpedo_outcome_fields(
             if !(flight > 0.0 && flight <= TORP_MAX_FLIGHT_S) || event.time > deadline {
                 continue;
             }
-            let mut covered = 0.0f32;
             for other in ships {
                 if other.traj.entity_id == owner_id {
                     continue;
@@ -3654,7 +3688,7 @@ fn torpedo_outcome_fields(
                 let Some((vx, vz)) = position_at(other.traj, event.time) else {
                     continue;
                 };
-                if (vx - event.x).hypot(vz - event.z) > TORP_HIT_RADIUS_UNITS {
+                if (vx - event.x).hypot(vz - event.z) > radius_units {
                     continue;
                 }
                 fish_near = true;
@@ -3663,20 +3697,22 @@ fn torpedo_outcome_fields(
                         if drop.time > event.time - OUTCOME_HP_BEFORE_S
                             && drop.time <= event.time + OUTCOME_HP_AFTER_S
                         {
-                            covered += drop.delta;
+                            fish_hp_lost += drop.delta;
                         }
                     }
                 }
             }
-            if covered > 0.0 {
-                fish_hit = true;
-                hp_lost += covered;
-            }
         }
+        hp_lost += fish_hp_lost;
         if fish_near {
             terminal_near += 1;
         }
-        if fish_hit {
+        let hit = if require_hp {
+            fish_hp_lost > 0.0
+        } else {
+            fish_near
+        };
+        if hit {
             hits += 1;
         }
     }
@@ -3694,10 +3730,41 @@ pub fn export_torpedo_dataset(
     ships: &[ShipInfo<'_>],
     los: Option<&LosGrid>,
     eye_height: f32,
+    params: &FireSampleParams,
+    replay_id: Option<&str>,
+    game_mode: Option<&str>,
+    events: &FeatureEvents<'_>,
+) -> (Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats) {
+    export_torpedo_dataset_with_outcome(
+        stream,
+        ships,
+        los,
+        eye_height,
+        params,
+        replay_id,
+        game_mode,
+        events,
+        TORP_HIT_RADIUS_UNITS,
+        true,
+    )
+}
+
+/// Parameterized export behind [`export_torpedo_dataset`] (E26e-j): the same
+/// rows, but the outcome block is computed with an explicit hit radius and
+/// HP-requirement flag so label-definition variants can be exported without
+/// touching the shipped 120-units/HQ-drop definition.
+#[allow(clippy::too_many_arguments)]
+fn export_torpedo_dataset_with_outcome(
+    stream: &ReplayStream,
+    ships: &[ShipInfo<'_>],
+    los: Option<&LosGrid>,
+    eye_height: f32,
     _params: &FireSampleParams,
     replay_id: Option<&str>,
     game_mode: Option<&str>,
     events: &FeatureEvents<'_>,
+    radius_units: f32,
+    require_hp: bool,
 ) -> (Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats) {
     let contexts = torp_contexts(stream, ships);
     let outcome_ctx = build_torpedo_outcome_context(stream);
@@ -3784,7 +3851,7 @@ pub fn export_torpedo_dataset(
             // formality that keeps this signature panic-free.
             let owner_team = ship.team_id.unwrap_or(0);
             let (torp_fired_fish, torp_hits, torp_hp_lost_nearby, torp_terminal_near) =
-                torpedo_outcome_fields(
+                torpedo_outcome_fields_with(
                     &outcome_ctx,
                     ships,
                     &arena_team,
@@ -3792,6 +3859,8 @@ pub fn export_torpedo_dataset(
                     id,
                     owner_team,
                     t,
+                    radius_units,
+                    require_hp,
                 );
             rows.push(TorpedoDatasetRow {
                 core,
@@ -3918,6 +3987,25 @@ pub fn export_torpedo_replay_file(
     eye_height: f32,
     params: &FireSampleParams,
 ) -> anyhow::Result<(Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats)> {
+    export_torpedo_replay_file_with_outcome(
+        path,
+        los_dir,
+        eye_height,
+        params,
+        TORP_HIT_RADIUS_UNITS,
+        true,
+    )
+}
+
+/// Parameterized replay exporter behind [`export_torpedo_replay_file`].
+pub fn export_torpedo_replay_file_with_outcome(
+    path: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+    radius_units: f32,
+    require_hp: bool,
+) -> anyhow::Result<(Vec<TorpedoDatasetRow>, TorpedoDatasetExportStats)> {
     let path_str = path.to_string_lossy().into_owned();
     let (stream, ev) = super::replay::decode_replay_stream_with_events(&path_str)?;
     let vehicles = super::replay_probe::read_roster(&path_str)?;
@@ -3925,7 +4013,7 @@ pub fn export_torpedo_replay_file(
     let los = los_for_replay(stream.map_name.as_deref(), los_dir);
     let game_mode = read_game_mode(path);
     let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
-    Ok(export_torpedo_dataset(
+    Ok(export_torpedo_dataset_with_outcome(
         &stream,
         &ships,
         los.as_ref(),
@@ -3934,6 +4022,8 @@ pub fn export_torpedo_replay_file(
         None, // stamped by ingest_torpedo_replay_files from the path
         game_mode.as_deref(),
         &events,
+        radius_units,
+        require_hp,
     ))
 }
 
@@ -3945,6 +4035,26 @@ pub fn export_torpedo_dataset_dir(
     eye_height: f32,
     params: &FireSampleParams,
 ) -> anyhow::Result<(Vec<TorpedoDatasetRow>, TorpedoDatasetBatchSummary)> {
+    export_torpedo_dataset_dir_with_outcome(
+        dir,
+        los_dir,
+        eye_height,
+        params,
+        TORP_HIT_RADIUS_UNITS,
+        true,
+    )
+}
+
+/// Parameterized folder exporter behind [`export_torpedo_dataset_dir`]
+/// (E26e-j). Same walk, tolerance and row order as the shipped exporter.
+pub fn export_torpedo_dataset_dir_with_outcome(
+    dir: &std::path::Path,
+    los_dir: Option<&std::path::Path>,
+    eye_height: f32,
+    params: &FireSampleParams,
+    radius_units: f32,
+    require_hp: bool,
+) -> anyhow::Result<(Vec<TorpedoDatasetRow>, TorpedoDatasetBatchSummary)> {
     if !dir.is_dir() {
         bail!("batch root {} is not a directory", dir.to_string_lossy());
     }
@@ -3952,7 +4062,14 @@ pub fn export_torpedo_dataset_dir(
     collect_replay_files(dir, &mut files);
     files.sort();
     let (rows, summary) = ingest_torpedo_replay_files(dir, files, |path| {
-        export_torpedo_replay_file(path, los_dir, eye_height, params)
+        export_torpedo_replay_file_with_outcome(
+            path,
+            los_dir,
+            eye_height,
+            params,
+            radius_units,
+            require_hp,
+        )
     });
     Ok((rows, summary))
 }
@@ -6814,6 +6931,248 @@ mod tests {
         assert_eq!(js["torpTerminalNear"], 2);
         assert!((js["torpHpLostNearby"].as_f64().unwrap() - 10_000.0).abs() < 1e-3);
         assert!(js.get("t").is_some(), "flattened core key");
+    }
+
+    /// E26e-j label-definition sensitivity on a synthetic stream: a terminal
+    /// 100 units from the enemy hull counts only at radius 120/200; a terminal
+    /// near a hull with no HP drop counts only when the HP requirement is off;
+    /// and an HP drop outside the ±0.4/0.6 s envelope never counts as a hit.
+    #[test]
+    fn torpedo_outcome_radius_and_hp_variants() {
+        let dd = trajectory(
+            9,
+            Some(4_179_507_152),
+            (0..220)
+                .map(|i| sample(i as f32 * 0.5, 9, 0.0, 0.0))
+                .collect(),
+        );
+        let mut bb = trajectory(
+            8,
+            Some(3_247_387_984),
+            (0..220)
+                .map(|i| sample(i as f32 * 0.5, 8, 60.0, 0.0))
+                .collect(),
+        );
+        bb.hp_samples = vec![
+            hp(0.0, 100_000),
+            hp(11.2, 90_000),
+            hp(20.0, 90_000),
+            hp(31.0, 80_000),
+        ];
+        let stream = ReplayStream {
+            trajectories: vec![dd, bb],
+            torpedoes: vec![
+                torp_shot(5.2, 9, 1, 0), // terminal at 100 u, covered HP drop at 11.2
+                torp_shot(5.4, 9, 1, 1), // terminal at 100 u, no covered drop
+                torp_shot(5.6, 9, 1, 2), // terminal on the hull, no covered drop
+                torp_shot(5.8, 9, 1, 3), // terminal on the hull, drop outside the envelope
+            ],
+            shot_kills: vec![
+                kill(11.2, 9, 0, 160.0, 0.0),
+                kill(12.0, 9, 1, 160.0, 0.0),
+                kill(20.0, 9, 2, 60.0, 0.0),
+                kill(30.0, 9, 3, 60.0, 0.0),
+            ],
+            ..minimal_stream()
+        };
+        let vehicles = vec![
+            roster_entry(1, 0, 3_247_387_984),
+            roster_entry(2, 2, 4_179_507_152),
+        ];
+        let ships = ship_infos(&stream, &vehicles);
+        let ctx = build_torpedo_outcome_context(&stream);
+        let (arena_team, self_team) = arena_team_map(&stream);
+        let call = |radius: f32, require_hp: bool| {
+            torpedo_outcome_fields_with(
+                &ctx,
+                &ships,
+                &arena_team,
+                self_team,
+                9,
+                1,
+                5.0,
+                radius,
+                require_hp,
+            )
+        };
+        // r60: only the two on-hull terminals are near, neither has an
+        // in-envelope HP drop -> no hits with the shipped HP requirement.
+        assert_eq!(call(60.0, true), (4, 0, 0.0, 2));
+        // r120/r200: the 100-unit terminal becomes a near+drop hit; the other
+        // 100-unit terminal has no drop; on-hull drops are outside the window.
+        assert_eq!(call(120.0, true), (4, 1, 10_000.0, 4));
+        assert_eq!(call(200.0, true), (4, 1, 10_000.0, 4));
+        // require_hp = false: hits are purely geometric at each radius; the
+        // covered HP sum still reports the one real drop.
+        assert_eq!(call(60.0, false), (4, 2, 0.0, 2));
+        assert_eq!(call(120.0, false), (4, 4, 10_000.0, 4));
+        assert_eq!(call(200.0, false), (4, 4, 10_000.0, 4));
+        // The shipped wrapper is exactly radius 120 + require_hp.
+        assert_eq!(
+            torpedo_outcome_fields(&ctx, &ships, &arena_team, self_team, 9, 1, 5.0),
+            call(120.0, true)
+        );
+    }
+
+    /// E26e-j against real replay bytes: env WOWSP_TEST_REPLAY_DIR selects the
+    /// input, WOWSP_TORPEDO_OUTCOME_VARIANT_OUT the JSONL; the hit-label
+    /// definition comes from WOWSP_TORPEDO_OUTCOME_RADIUS (default 120) and
+    /// WOWSP_TORPEDO_OUTCOME_REQUIRE_HP (default 1; 0 = terminal-near only).
+    /// Rows are the same full E26 export, written in the same order, so the
+    /// Python side can join variants to the OOF npz by rowIndex.
+    #[test]
+    fn e26j_torpedo_outcome_variants_export_on_real_replays() {
+        let Ok(dir) = std::env::var("WOWSP_TEST_REPLAY_DIR") else {
+            eprintln!("[e26j] WOWSP_TEST_REPLAY_DIR not set - skipping");
+            return;
+        };
+        let replay_dir = std::path::PathBuf::from(dir);
+        let radius = std::env::var("WOWSP_TORPEDO_OUTCOME_RADIUS")
+            .ok()
+            .and_then(|v| v.trim().parse::<f32>().ok())
+            .filter(|v| v.is_finite() && *v > 0.0)
+            .unwrap_or(TORP_HIT_RADIUS_UNITS);
+        let require_hp = std::env::var("WOWSP_TORPEDO_OUTCOME_REQUIRE_HP")
+            .ok()
+            .map(|v| v.trim() != "0")
+            .unwrap_or(true);
+        let params = FireSampleParams::default();
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let (rows, summary) = export_torpedo_dataset_dir_with_outcome(
+            &replay_dir,
+            los_dir.as_deref(),
+            DEFAULT_EYE_HEIGHT,
+            &params,
+            radius,
+            require_hp,
+        )
+        .expect("variant batch runs");
+        let fired_fish: u64 = rows.iter().map(|r| u64::from(r.torp_fired_fish)).sum();
+        let hits: u64 = rows.iter().map(|r| u64::from(r.torp_hits)).sum();
+        let terminal_near: u64 = rows.iter().map(|r| u64::from(r.torp_terminal_near)).sum();
+        let hp_lost: f64 = rows.iter().map(|r| f64::from(r.torp_hp_lost_nearby)).sum();
+        eprintln!(
+            "[e26j] variant radius={radius:.1} require_hp={require_hp} root={}: {} seen / {} exported / {} failed -> {} rows; firedFish {} hits {} (rate {:.3}) terminalNear {} hpLost {:.0}",
+            summary.root_dir,
+            summary.files_seen,
+            summary.files_exported,
+            summary.files_failed,
+            summary.rows,
+            fired_fish,
+            hits,
+            if fired_fish == 0 {
+                0.0
+            } else {
+                hits as f64 / fired_fish as f64
+            },
+            terminal_near,
+            hp_lost
+        );
+        assert!(summary.files_exported >= 1, "nothing exported");
+        assert!(summary.rows > 0);
+        assert_eq!(summary.rows, rows.len());
+        assert!(
+            rows.iter()
+                .all(|r| r.torp_hits <= r.torp_fired_fish
+                    && r.torp_terminal_near <= r.torp_fired_fish)
+        );
+        // A geometric-only definition must never report fewer terminal-near
+        // fish than hits, and no-hit rows have zero covered HP by definition.
+        if !require_hp {
+            assert!(hits <= terminal_near);
+            assert!(
+                rows.iter()
+                    .all(|r| r.torp_hits == 0 || r.torp_terminal_near >= r.torp_hits)
+            );
+        } else {
+            assert!(hits <= terminal_near);
+        }
+        for f in &summary.per_file {
+            if let DatasetBatchOutcome::Failed { reason } = &f.outcome {
+                assert!(!reason.is_empty());
+            }
+        }
+        let sidecar: Vec<TorpedoOutcomeSidecar> = rows
+            .iter()
+            .map(|r| TorpedoOutcomeSidecar {
+                replay_id: r.core.replay_id.clone(),
+                t: r.core.t,
+                ship_id: r.core.ship_id,
+                torp_fired_fish: r.torp_fired_fish,
+                torp_hits: r.torp_hits,
+                torp_hp_lost_nearby: r.torp_hp_lost_nearby,
+                torp_terminal_near: r.torp_terminal_near,
+            })
+            .collect();
+        match std::env::var("WOWSP_TORPEDO_OUTCOME_VARIANT_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create variant sidecar dir");
+                }
+                use std::io::Write;
+                let mut file = std::fs::File::create(&out_path).expect("create variant sidecar");
+                for line in &sidecar {
+                    writeln!(
+                        file,
+                        "{}",
+                        serde_json::to_string(line).expect("serialize sidecar")
+                    )
+                    .expect("write variant sidecar line");
+                }
+                drop(file);
+                let text = std::fs::read_to_string(&out_path).expect("read back variant sidecar");
+                let lines: Vec<&str> = text.lines().collect();
+                assert_eq!(lines.len(), rows.len(), "variant line count == rows");
+                for (i, line) in lines.iter().enumerate() {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).expect("variant sidecar line parses");
+                    for key in [
+                        "replayId",
+                        "t",
+                        "shipId",
+                        "torpFiredFish",
+                        "torpHits",
+                        "torpHpLostNearby",
+                        "torpTerminalNear",
+                    ] {
+                        assert!(value.get(key).is_some(), "missing variant key {key}");
+                    }
+                    assert_eq!(
+                        value["replayId"].as_str(),
+                        rows[i].core.replay_id.as_deref()
+                    );
+                    assert_eq!(value["t"].as_f64().unwrap() as f32, rows[i].core.t);
+                    assert_eq!(value["shipId"].as_i64(), rows[i].core.ship_id);
+                    assert_eq!(
+                        value["torpFiredFish"].as_u64().unwrap() as u32,
+                        rows[i].torp_fired_fish
+                    );
+                    assert_eq!(
+                        value["torpHits"].as_u64().unwrap() as u32,
+                        rows[i].torp_hits
+                    );
+                    assert_eq!(
+                        value["torpTerminalNear"].as_u64().unwrap() as u32,
+                        rows[i].torp_terminal_near
+                    );
+                }
+                eprintln!(
+                    "[e26j] wrote {} variant rows (radius {radius}, require_hp {require_hp}) to {out}",
+                    lines.len()
+                );
+            },
+            Err(_) => {
+                eprintln!("[e26j] WOWSP_TORPEDO_OUTCOME_VARIANT_OUT not set - sidecar not written")
+            },
+        }
     }
 
     /// E26e-b against real replay bytes: env WOWSP_TEST_REPLAY_DIR (or
