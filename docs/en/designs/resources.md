@@ -25,7 +25,7 @@ users must update the app to receive new resource content anyway.
 | `cache-gameparams` | cache | — | pairing | — | Per-ship GameParams slices (install unpacks, pairing sync, bulk fill). | `%APPDATA%/WoWSP/gameparams` |
 | `cache-encyclopedia` | cache | — | passive | — | Encyclopedia bundle cache. | `%APPDATA%/WoWSP/encyclopedia` |
 | `cache-community` | cache | — | passive | — | Community/trends data cache. | `%APPDATA%/WoWSP/community` |
-| `decisions-pack` | pack | — | manual | — | The out-of-band decisions model/LOS pack (no downloader; inventory/clear only). | `%LOCALAPPDATA%/WoWSP/decisions` |
+| `decisions-pack` | pack | `ai` | boot | `ai-models` | The Hugging Face published decision models (ONNX fire/move/advice/torpedo, the attribute table, optional LOS rasters). One signed manifest pins the Hub commit and every file sha256; per-file downloads install into the pack directory. | `%LOCALAPPDATA%/WoWSP/decisions` |
 | `bundled-lesta` | bundled | — | static | — | The Lesta-only slice snapshot compiled into the binary (`include_bytes!`). | inside the app binary |
 
 ## Shared infrastructure
@@ -33,6 +33,15 @@ users must update the app to receive new resource content anyway.
 - **Download hub** (`commands/download_hub.rs`): one FIFO queue, the
   GitHub mirror ladder, streaming sha256, byte caps, cancellation, and the
   single `wowsp://download-progress` event every UI subscribes to.
+- **Mirror context** (`commands/mirror/`): the provider registry behind
+  every download candidate — GitHub's ghproxy prefix rewrite and the
+  Hugging Face endpoint substitution (user endpoints, then the built-in
+  mainland mirrors, then the official route).
+- **Signed model manifest** (`commands/ai_pack.rs` + `release_digest`'s
+  pinned Ed25519 keys): the `ai` channel fetches `manifest.json` from the
+  Hugging Face repository `langyo/wowsp-d1`, verifies the signature and
+  the `seq` ratchet, downloads each file at the pinned Hub commit and
+  installs only after the tree hash and ONNX shapes match.
 - **Signed digests** (`commands/release_digest.rs`, served by the pairing
   relay at `/api/digests/<channel>`): the `app` / `mod-hub` / `res` /
   `data` channels pin official content hashes and refuse regressions.
@@ -54,10 +63,14 @@ version without touching the updater.
 - `just publish-shipdata` — bake the two-realm bundle + publish it.
 - `scripts/release_models.py` — the res pack (+ deltas).
 - `scripts/mod_hub_publish.py` — the mod-hub catalog.
+- `just publish-ai-models` — the decision models (signed Hugging Face
+  manifest + artifacts; `--dry-run` first, needs `hf auth login` or
+  `HF_TOKEN` and the digest signing key).
 
 ## Unified state layer (the freshness ledger)
 
-Stamped rows (res-pack, data-kit, data-ship-gameparams) also carry a ledger
+Stamped rows (res-pack, data-kit, data-ship-gameparams, decisions-pack)
+carry a ledger
 entry at `<data>/resources/<id>.json` — ONE schema
 (`{schema, id, sha256, version, installedAt, checkedAt}`) across every
 resource, whatever its owner's internal stamp looks like. The owner stamps

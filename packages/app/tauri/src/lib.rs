@@ -983,6 +983,14 @@ pub fn run() {
             commands::decision_serve::decision_debug_report,
             #[cfg(feature = "ai")]
             commands::decision_report::decision_static_report,
+            #[cfg(feature = "ai")]
+            commands::ai_pack::ai_pack_status,
+            #[cfg(feature = "ai")]
+            commands::ai_pack::ai_pack_check,
+            #[cfg(feature = "ai")]
+            commands::ai_pack::ai_pack_download,
+            #[cfg(feature = "ai")]
+            commands::ai_pack::ai_pack_cancel,
             commands::decision_pack::decisions_pack_status,
             commands::decision_pack::clear_decisions_pack,
             commands::decision_tick::decision_scale_calibration,

@@ -32,6 +32,12 @@ pub mod changelog;
 // 聊天翻译). Cross-platform: appdata + the proxy-aware HTTP client only.
 pub mod chat_translate;
 pub mod contribution;
+// The Hugging Face decision-model channel: signed manifest + per-file
+// install into <cache>/decisions. Compiled only with the ai feature — a
+// portable build has no ONNX Runtime and must never install models it
+// cannot run.
+#[cfg(feature = "ai")]
+pub mod ai_pack;
 pub mod data_pack;
 #[cfg(feature = "ai")]
 pub mod decision_ai;

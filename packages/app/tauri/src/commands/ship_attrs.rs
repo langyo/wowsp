@@ -321,16 +321,45 @@ impl ShipAttrTable {
 pub const EMBEDDED_SHIP_ATTRIBUTES: &str =
     include_str!("../../../../../scripts/experiments/ship_attributes.json");
 
-static EMBEDDED_TABLE: OnceLock<anyhow::Result<ShipAttrTable>> = OnceLock::new();
+static ACTIVE_TABLE: OnceLock<anyhow::Result<ShipAttrTable>> = OnceLock::new();
 
-/// The repo-tracked table, parsed once per process. A parse failure is
-/// sticky (and impossible short of the tracked file regressing — the unit
-/// tests parse the same bytes).
+/// The routing table the inference paths use: the decisions-pack copy when
+/// the ai model channel installed one (the table rides the signed pack
+/// manifest), else the repo-tracked table embedded at compile time. Cached
+/// once per process — installing a newer pack needs an app restart, exactly
+/// like the ONNX models themselves.
 pub fn embedded_table() -> anyhow::Result<&'static ShipAttrTable> {
-    EMBEDDED_TABLE
-        .get_or_init(|| ShipAttrTable::from_json(EMBEDDED_SHIP_ATTRIBUTES))
+    ACTIVE_TABLE
+        .get_or_init(|| {
+            if let Some(table) = pack_table() {
+                return Ok(table);
+            }
+            ShipAttrTable::from_json(EMBEDDED_SHIP_ATTRIBUTES)
+        })
         .as_ref()
         .map_err(|e| anyhow!("{e}"))
+}
+
+/// Parse the pack-carried table once. A missing file is normal (an older
+/// pack, or one without attrs); an unreadable/invalid one is logged and
+/// ignored so the embedded table keeps inference working.
+fn pack_table() -> Option<ShipAttrTable> {
+    let path = crate::paths::cache_dir()
+        .ok()?
+        .join("decisions")
+        .join("ship_attributes.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    match ShipAttrTable::from_json(&raw) {
+        Ok(table) => Some(table),
+        Err(e) => {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "decisions pack ship_attributes.json is invalid; using the embedded table"
+            );
+            None
+        },
+    }
 }
 
 /// Build the routing vector for one decision row out of the EMBEDDED

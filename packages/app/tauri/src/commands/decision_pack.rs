@@ -35,15 +35,41 @@ pub async fn decisions_pack_status() -> CommandResult<DecisionsPackStatus> {
 #[tauri::command]
 pub async fn clear_decisions_pack() -> CommandResult<()> {
     let dir = decisions_pack_dir()?;
-    if !dir.exists() {
+    let cache = crate::paths::cache_dir()?;
+    if !dir.exists()
+        && !cache.join(".ai-version.json").exists()
+        && !cache.join(".ai-staging").exists()
+        && !cache.join(".decisions-backup").exists()
+    {
         return Ok(());
     }
     tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
         match std::fs::remove_dir_all(&dir) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(anyhow!("remove {}: {e}", dir.display())),
+            Ok(()) => {},
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+            Err(e) => return Err(anyhow!("remove {}: {e}", dir.display())),
         }
+        // The ai channel's stamp + transient trees live beside the pack;
+        // clearing the pack must leave no stamp claiming an install.
+        let _ = std::fs::remove_file(cache.join(".ai-version.json"));
+        for transient in [".ai-staging", ".decisions-backup"] {
+            let path = cache.join(transient);
+            match std::fs::remove_dir_all(&path) {
+                Ok(()) => {},
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Err(e) => {
+                    return Err(anyhow!("remove {}: {e}", path.display()));
+                },
+            }
+        }
+        if let Ok(entries) = std::fs::read_dir(&cache) {
+            for entry in entries.flatten() {
+                if entry.file_name().to_string_lossy().starts_with(".ai-part-") {
+                    let _ = std::fs::remove_file(entry.path());
+                }
+            }
+        }
+        Ok(())
     })
     .await
     .map_err(|e| anyhow!("clear decisions pack task: {e}"))??;
