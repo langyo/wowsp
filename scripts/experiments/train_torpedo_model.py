@@ -294,6 +294,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="",
         help="E26e-aa: in --eval-only mode write per-row predictions npz (probA/B/C, labels, outcome, replayId/t/shipId/rowIndex); does not write OOF/checkpoint/ONNX",
     )
+    p.add_argument(
+        "--eval-temp-b",
+        type=float,
+        default=0.0,
+        help="E26e-ae: apply the T4 ONNX headB temperature (prob=sigmoid(logit/T)); 0 disables (raw sigmoid)",
+    )
+    p.add_argument(
+        "--eval-temp-c",
+        type=float,
+        default=0.0,
+        help="E26e-ae: apply the T4 ONNX headC temperature (prob=sigmoid(logit/T)); 0 disables (raw sigmoid)",
+    )
     p.add_argument("--selftest", action="store_true", help="torch-free unit test of loader/labels/split/metrics")
     return p.parse_args(argv)
 
@@ -4010,6 +4022,24 @@ def build_eval_predictions_payload(data: dict, outcome: dict, p_a, p_b, p_c) -> 
     return payload
 
 
+
+def apply_eval_temperature(prob, temperature: float):
+    """E26e-ae: torch-free ONNX-equivalent temperature on a probability.
+
+    T4 exports prob=sigmoid(logit / T); applying it here as
+    sigmoid(logit(prob) / T) is identical and keeps the raw path untouched.
+    temperature <= 0 (or non-finite) returns the raw probability; T > 0 is
+    strictly monotone, so ranking metrics are invariant.
+    """
+    p = np.asarray(prob, dtype=np.float64)
+    t = float(temperature) if temperature is not None else 0.0
+    if not np.isfinite(t) or t <= 0.0:
+        return p
+    p = np.clip(p, 1e-12, 1.0 - 1e-12)
+    z = np.log(p / (1.0 - p))
+    return 1.0 / (1.0 + np.exp(-z / t))
+
+
 def run_eval_only(args: argparse.Namespace) -> int:
     """E26e-z: evaluate the delivered T4 torp4 checkpoint on an external holdout.
 
@@ -4115,6 +4145,14 @@ def run_eval_only(args: argparse.Namespace) -> int:
             p_b[start:end] = torch.sigmoid(lb).float().cpu().numpy()
             p_c[start:end] = torch.sigmoid(lc).float().cpu().numpy()
     log("[e26] eval-only: forward done for " + format(n, ",") + " rows")
+    temp_b = float(getattr(args, "eval_temp_b", 0.0) or 0.0)
+    temp_c = float(getattr(args, "eval_temp_c", 0.0) or 0.0)
+    if temp_b > 0.0:
+        p_b = apply_eval_temperature(p_b, temp_b)
+    if temp_c > 0.0:
+        p_c = apply_eval_temperature(p_c, temp_c)
+    log("[e26] eval-only temperatures: B=" + str(temp_b) + " C=" + str(temp_c)
+        + (" (T4 ONNX parity)" if (temp_b > 0.0 or temp_c > 0.0) else " (raw sigmoid)"))
 
     label_a = data["label_a"]
     label_b = data["label_b"]
@@ -4149,7 +4187,17 @@ def run_eval_only(args: argparse.Namespace) -> int:
             "checkpointEntityDim": int(ckpt["entity_dim"]),
             "checkpointGlobalDim": int(ckpt["global_dim"]),
             "checkpointEpochs": ckpt.get("epochs"),
-            "temperatureNote": "research metrics use raw sigmoid probabilities; the checkpoint T_B/T_C are NOT applied",
+            "temperatures": {
+                "b": temp_b,
+                "c": temp_c,
+                "appliedB": bool(temp_b > 0.0),
+                "appliedC": bool(temp_c > 0.0),
+                "formula": "prob=sigmoid(logit/T) (T4 ONNX parity); 0/absent = raw sigmoid",
+            },
+            "temperatureNote": ("T4 ONNX temperatures applied: headB logit/T_B=" + str(temp_b)
+                                + ", headC logit/T_C=" + str(temp_c)
+                                if (temp_b > 0.0 or temp_c > 0.0)
+                                else "research metrics use raw sigmoid probabilities; the checkpoint T_B/T_C are NOT applied"),
             "bootstrap": {"reps": int(getattr(args, "holdout_bootstrap", 1000)), "seed": int(args.seed),
                           "cluster": "replayId (data group codes)"},
             "loadedFeatureDtype": data["feature_dtype"],
@@ -4910,6 +4958,21 @@ def run_selftest() -> int:
     assert parse_args([]).eval_only is False and parse_args([]).eval_checkpoint == ""
     epo = parse_args(["--eval-only", "--eval-checkpoint", "ckpt.pt", "--eval-predictions-out", "pred.npz"])
     assert epo.eval_predictions_out == "pred.npz" and parse_args([]).eval_predictions_out == ""
+
+    # E26e-ae: temperature helper (identity / monotone ranking / direction).
+    z = np.array([-4.0, -2.0, 0.0, 2.0], dtype=np.float64)
+    raw = 1.0 / (1.0 + np.exp(-z))
+    assert np.allclose(apply_eval_temperature(raw, 0.0), raw)
+    assert np.allclose(apply_eval_temperature(raw, 1.0), raw, atol=1e-9)
+    sharp = apply_eval_temperature(raw, 0.5)
+    soft = apply_eval_temperature(raw, 2.0)
+    assert np.array_equal(np.argsort(raw), np.argsort(sharp))
+    assert np.array_equal(np.argsort(raw), np.argsort(soft))
+    assert sharp[0] < raw[0] and soft[0] > raw[0]
+    assert np.allclose(apply_eval_temperature(raw, -1.0), raw)
+    et = parse_args(["--eval-only", "--eval-checkpoint", "ckpt.pt", "--eval-temp-b", "0.7564", "--eval-temp-c", "1.0723"])
+    assert et.eval_temp_b == 0.7564 and et.eval_temp_c == 1.0723
+    assert parse_args([]).eval_temp_b == 0.0 and parse_args([]).eval_temp_c == 0.0
     ok_meta = {"model": object(), "hidden": 192, "feature_set": "torp4", "extra_dim": 22,
                "entity_dim": 15, "global_dim": 49}
     validate_eval_checkpoint_meta(ok_meta, "torp4", 49, 22)
