@@ -430,10 +430,107 @@ const MOCK_MIRROR_PROBE: Record<string, { ok: boolean; elapsedMs: number; error:
   "https://ghproxy.net": { ok: false, elapsedMs: 8000, error: "timeout" },
 };
 
+// ── AI model channel mock (browser dev; the Rust channel fetches and
+//    authenticates the real signed Hugging Face manifest, while the mock
+//    answers a deterministic local install + a newer published seq so the
+//    settings card renders both the installed and the update-available
+//    branches).
+const MOCK_AI_FILES = [
+  {
+    path: "fire_model.onnx",
+    size: 2592543,
+    sha256:
+      "8ba95cc2e29a0f5e0a0d1f4a7b2f1c5c1f3a2d4b6c8e0f1a3b5c7d9e1f3a5b7c",
+    kind: "fire-two-head",
+    featureSet: "fire-v1",
+  },
+  {
+    path: "move_model.onnx",
+    size: 2652542,
+    sha256:
+      "bc91bdd3f1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8",
+    kind: "move-sectors-17",
+    featureSet: "move-v1",
+  },
+  {
+    path: "advice_fire_model.onnx",
+    size: 2595135,
+    sha256:
+      "b98f59ac1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a",
+    kind: "advice-fire-attrs",
+    featureSet: "advice-e24",
+  },
+  {
+    path: "torpedo_model.onnx",
+    size: 492411,
+    sha256:
+      "a7e36f38112233445566778899aabbccddeeff00112233445566778899aabbcc",
+    kind: "torpedo-three-head",
+    featureSet: "torpedo-e26d",
+  },
+  {
+    path: "ship_attributes.json",
+    size: 261507,
+    sha256:
+      "2bbd3831aabbccddeeff00112233445566778899aabbccddeeff00112233445566",
+  },
+];
+
+const MOCK_AI_STATUS = {
+  installed: true,
+  seq: 1,
+  version: "2026-11-09T00:00:00Z",
+  treeSha256:
+    "95088f9c70486bb66300e80a0165d482e7b2098984d72e45db9fa0e64561fcdd",
+  revision: "a1bae028c41641ecb1715aa3c318e8d320c322f2",
+  installedAt: "2026-11-09T00:00:00Z",
+  sizeBytes: 8388138,
+  losMaps: 12,
+  models: [
+    { path: "fire_model.onnx", present: true, sizeBytes: 2592543 },
+    { path: "move_model.onnx", present: true, sizeBytes: 2652542 },
+    { path: "advice_fire_model.onnx", present: true, sizeBytes: 2595135 },
+    { path: "torpedo_model.onnx", present: true, sizeBytes: 492411 },
+    { path: "ship_attributes.json", present: true, sizeBytes: 261507 },
+  ],
+};
+
 /** Command-name → mock handler. `list_replays_meta` is NOT here — the web
  *  transport fetches the real mock-backend response and appends
  *  `mockImportedListing()` on top (see WebTransport.invoke). */
 export const MOCK_COMMANDS: Record<string, MockHandler> = {
+  async ai_pack_status() {
+    return MOCK_AI_STATUS;
+  },
+
+  async ai_pack_check() {
+    const totalBytes = MOCK_AI_FILES.reduce((sum, f) => sum + f.size, 0);
+    return {
+      current: MOCK_AI_STATUS,
+      latestSeq: 2,
+      latestVersion: "2026-11-10T00:00:00Z",
+      latestTreeSha256:
+        "71d3a0c2f4e6b8d1a3c5e7f9b0d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d7",
+      latestRevision: "b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
+      totalBytes,
+      losIncluded: true,
+      files: MOCK_AI_FILES,
+      endpoint: "https://hf-mirror.com",
+      manifestSha256:
+        "5e7f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f",
+      checkedAt: new Date().toISOString(),
+      updateAvailable: true,
+    };
+  },
+
+  async ai_pack_download() {
+    return null;
+  },
+
+  async ai_pack_cancel() {
+    return null;
+  },
+
   async import_replay_file(args) {
     const name = String(args.name ?? "");
     // The Lesta client renames its replays to .korablireplay.
