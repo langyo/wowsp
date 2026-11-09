@@ -1864,7 +1864,48 @@
 - **产物**：`scripts/experiments/torpedo_hierarchical_prior.py`（--selftest）；
   `out/torpedo_model/e26e-x/{hierarchical_prior.json, hierarchical_prior_report.md}`；预注册
   `e26e-x-preregistration.md`。
-### E26e 系列结论与评分集成决策（截至 E26e-x，2026-11-09）
+### E26 研究总结：headC 上限与部署结论（截至 E26e-x）
+
+**一句话结论**：headC 的命中排序信号真实存在（r120 2.1997×、server 真值 2.3477×、r60 固定口径 2.6811×），但
+**没有任何标签/特征/先验定义在独立时间窗上稳定 ≥2.30 且 CI 不重叠**；Q3 崩盘与后续自适应实验表明，当前证据
+**只支持诊断、不支持并入总分**（研究收敛）。
+
+**三条线证据（定义 / 结果 / 判定）**：
+
+| 线 | 定义 | 结果 | 判定 |
+|---|---|---|---|
+| 标签 | r120（2.30 线） | 2.1997 | 低于 2.30 |
+| 标签 | r60 固定模型（any@r60，2.68 线） | **2.6811，CI [2.438,2.930]** | 过线但仅边际（+0.0011），且是**评估口径**收益 |
+| 标签 | r60 重训 | 2.6329（<2.68） | 重训未转化收益；r60 优势不可学习 |
+| 标签 | server 真值标签（E26e-g proxy 模型评估） | **2.3477，CI [1.807,3.018]** | 真值下仍 >2.30，但样本小（710 recorder 行）、proxy 低召回 |
+| 特征 | torp5 目标几何 | r120 2.2639；r60 cross 2.7631 | 边际增益，不跨 r120 2.30 |
+| 时间/区域 | region holdout / random few-shot | region 1.3849；few-shot 25% 2.4859、40% 2.4413（饱和） | 同期随机拆分可到 2.49，但**非独立验证** |
+| 时间/区域 | temporal walk-forward（Q2/Q3/Q4） | Q2 3.005 / **Q3 0.908** / Q4 1.826 | **Q3 崩盘**：时间外推不成立 |
+| 时间/区域 | cell 先验 / delayed / hierarchical | cell oracle 2.010（label-free 仅 0.665–0.680）；delayed 20–40% 1.464/1.087；hierarchical Q3-20% 1.835（单窗） | 先验可修复但需目标窗/足够延迟标签；**单窗 PASS 不稳，不能外推** |
+
+**上限解释（Q3 机制）**：Q3 崩盘 = **composition/prior shift**（brawl/event/map/ship 轮换，base 18.6% vs
+Q2 10.0%）+ **跨模式先验错序**（pvp meanProbC 5.07% > event 4.30% > brawl 1.58%，真实 base 相反）+
+**严重欠概率**（meanProbC 3.7% vs 18.6%、ECE 0.258）；模式内仍有弱排序（1.59–1.81）但被跨模式错序吞掉。
+cell 粒度先验（oracle 2.010）可修复排序，但需**目标窗 cell base/足够延迟标签**；静态历史标签不足
+（Q1+Q2 无 brawl cell、label-free 0.68/0.67；20–40% 延迟标签仅 1.46/1.09）。
+
+**部署/总分决策（不变）**：T4 **torp4 r120 诊断包（PR #1868）**继续作为独立可选诊断，不改变总分；headB
+诊断可用（top-lift 2.905、温度后 ECE 0.0006）；**headC 仍为诊断-only，不并入总分**；任何“修复”结论
+（2.49/2.01/1.84 等）均为特定窗口/特定先验下的研究结果，**不构成部署依据**。
+
+**重开条件/数据缺口**（任一满足后再预注册；总分 A/B 另立）：① 独立赛季 replay（非同一语料/同一时间窗）；
+② 逐鱼 server 真值（ShotKillEvent/damageStat，覆盖 ≥2 个赛季）；③ 目标窗/在线 cell 先验 + 足够延迟标签，
+并在独立窗复现；④ walk-forward 门禁：≥2/3 窗过线、**每窗 AUC 与 CI 下界**、按窗校准；⑤ 端到端总分 A/B
+（鱼雷分量 vs 战斗结果相关性、权重、校准）。
+
+**产物/PR 状态**：E26e-a…x 均已合并；研究脚本在 `scripts/experiments/`（torpedo_*.py、train_torpedo_model.py），
+产物在 `out/torpedo_model/e26e-*/`（out ignored，不入 git），预注册 `out/torpedo_model/e26e-*-preregistration.md`；
+交付见下节 T4（PR #1868），模型文件由维护者手动放入 decisions pack。
+
+**简短局限**：样本/段位有限、单 seed、proxy 标签、server 真值仅 recorder-only、Q3 walk-forward 仅 3 窗；
+所有先验/自适应实验为描述性、无因果识别；单窗 PASS 不代表稳定。
+
+### E26e 系列结论与评分集成决策（截至 E26e-x 研究收敛，2026-11-09）
 
 **最终研究模型（torp4 + λ_C=0.1，全语料 3,111,384 行 / 2,215 局，5 折 seed 0）**
 
