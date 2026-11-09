@@ -3719,6 +3719,159 @@ fn torpedo_outcome_fields_with(
     (fired, hits, hp_lost, terminal_near)
 }
 
+// ── E26e-l: target-geometry / lead sidecar ──────────────────────────────────
+
+/// One E26e-l sidecar line: the independent target-geometry feature source.
+/// DIAGNOSTIC/RESEARCH ONLY — written by the env-gated test below, never
+/// embedded in TorpedoDatasetRow (the trainer joins it by row order).
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TorpedoGeometryRow {
+    pub replay_id: Option<String>,
+    pub t: f32,
+    pub ship_id: Option<i64>,
+    /// Absolute horizontal aspect of the target: angle between its heading
+    /// and the target-to-own line, in [0, pi] (0 = bow-on, pi = stern).
+    pub torp_geom_aspect_rad: f32,
+    /// Target cross-speed seen from the decider: speed_kt * sin(aspect).
+    pub torp_geom_cross_kt: f32,
+    /// Absolute lead angle: asin(clamp(cross_mps / torpedo_mps, -1, 1)).
+    pub torp_geom_lead_rad: f32,
+    /// Constant-course intercept time for a torpedo at the hull's torpedo
+    /// speed; -1 when no intercept exists, clamped to [0, 300] s.
+    pub torp_geom_intercept_s: f32,
+    /// Target heading relative to the decider's heading, wrapped to
+    /// [-pi, pi].
+    pub torp_geom_yaw_rel_rad: f32,
+    /// Number of eligible targets (observed-now enemies inside torpedo
+    /// range at t); 0 means the five geometry fields are -1.
+    pub torp_geom_targets: u32,
+}
+
+/// The last sample yaw at or before t (first sample when t precedes the
+/// track). Yaw is not interpolated (a heading flip is not a rotation).
+fn yaw_at_or_before(traj: &EntityTrajectory, t: f32) -> Option<f32> {
+    let samples = &traj.samples;
+    if samples.is_empty() {
+        return None;
+    }
+    let idx = samples.partition_point(|s| s.time <= t);
+    Some(if idx > 0 {
+        samples[idx - 1].yaw
+    } else {
+        samples[0].yaw
+    })
+}
+
+/// E26e-l target-geometry block for one decision row.
+///
+/// Target selection: the nearest observed-now enemy slot inside the row's
+/// torpedo range (same eligibility the model sees). Positions come from the
+/// trajectory tracks at t (converted to metres), the target heading from its
+/// last sample at or before t, and the target speed from the slot
+/// (trailing-streak estimate). Everything is past/now-only.
+///
+/// Returns (aspect_rad, cross_kt, |lead_rad|, intercept_s, yaw_rel_rad,
+/// targets); targets = 0 and all five fields = -1 without a target.
+fn torpedo_geometry_fields(
+    ships: &[ShipInfo<'_>],
+    row: &TorpedoDatasetRow,
+    torp_speed_kt: f32,
+) -> (f32, f32, f32, f32, f32, u32) {
+    const NONE: (f32, f32, f32, f32, f32, u32) = (-1.0, -1.0, -1.0, -1.0, -1.0, 0);
+    let Some(own) = ships
+        .iter()
+        .find(|s| s.traj.entity_id == row.core.owner_entity_id)
+    else {
+        return NONE;
+    };
+    let Some((ox, oz)) = position_at(own.traj, row.core.t) else {
+        return NONE;
+    };
+    let Some(own_yaw) = yaw_at_or_before(own.traj, row.core.t) else {
+        return NONE;
+    };
+    let mut candidates: Vec<&FireDatasetSlot> = row
+        .core
+        .enemies
+        .iter()
+        .filter(|e| {
+            e.observed_now
+                && e.dist_m > 0.0
+                && e.dist_m <= row.core.own_range_m
+                && row.core.own_range_m > 0.0
+        })
+        .collect();
+    if candidates.is_empty() {
+        return NONE;
+    }
+    candidates.sort_by(|a, b| {
+        a.dist_m
+            .partial_cmp(&b.dist_m)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let targets = candidates.len() as u32;
+    let slot = candidates[0];
+    let Some(target) = ships.iter().find(|s| s.traj.entity_id == slot.entity_id) else {
+        return (-1.0, -1.0, -1.0, -1.0, -1.0, targets);
+    };
+    let Some((tx, tz)) = position_at(target.traj, row.core.t) else {
+        return (-1.0, -1.0, -1.0, -1.0, -1.0, targets);
+    };
+    let Some(target_yaw) = yaw_at_or_before(target.traj, row.core.t) else {
+        return (-1.0, -1.0, -1.0, -1.0, -1.0, targets);
+    };
+    // Metres for the physics (scene units are ~5.86 m each).
+    let own_m = (ox * METERS_PER_UNIT, oz * METERS_PER_UNIT);
+    let target_m = (tx * METERS_PER_UNIT, tz * METERS_PER_UNIT);
+    let los = (own_m.0 - target_m.0, own_m.1 - target_m.1);
+    let los_len = los.0.hypot(los.1);
+    if los_len < 1e-3 {
+        return (-1.0, -1.0, -1.0, -1.0, -1.0, targets);
+    }
+    let los_hat = (los.0 / los_len, los.1 / los_len);
+    let forward = (target_yaw.cos(), target_yaw.sin());
+    let aspect = (forward.0 * los_hat.0 + forward.1 * los_hat.1)
+        .clamp(-1.0, 1.0)
+        .acos();
+    let speed_kt = slot.speed_kt.unwrap_or(0.0).max(0.0);
+    let cross_kt = speed_kt * aspect.sin();
+    let v_torp = torp_speed_kt.max(1.0) * 0.5144;
+    let lead_rad = (cross_kt * 0.5144 / v_torp).clamp(-1.0, 1.0).asin().abs();
+    let yaw_rel_rad = wrap_angle(target_yaw - own_yaw);
+    // Constant-course intercept: |D + V t| = v_torp t with D = target - own,
+    // V = target velocity vector. Solve the quadratic, take the smallest
+    // positive root, clamp to [0, 300]; no positive root = -1.
+    let dv = (target_m.0 - own_m.0, target_m.1 - own_m.1);
+    let v_target = (speed_kt * 0.5144 * forward.0, speed_kt * 0.5144 * forward.1);
+    let a = v_target.0 * v_target.0 + v_target.1 * v_target.1 - v_torp * v_torp;
+    let b = 2.0 * (dv.0 * v_target.0 + dv.1 * v_target.1);
+    let c = dv.0 * dv.0 + dv.1 * dv.1;
+    let mut intercept = -1.0f32;
+    if a.abs() < 1e-9 {
+        if b.abs() > 1e-9 {
+            let t = -c / b;
+            if t > 0.0 {
+                intercept = t.min(300.0);
+            }
+        }
+    } else {
+        let disc = b * b - 4.0 * a * c;
+        if disc >= 0.0 {
+            let sq = disc.sqrt();
+            for t in [(-b - sq) / (2.0 * a), (-b + sq) / (2.0 * a)] {
+                if t > 0.0 && (intercept < 0.0 || t < intercept) {
+                    intercept = t;
+                }
+            }
+            if intercept > 0.0 {
+                intercept = intercept.min(300.0);
+            }
+        }
+    }
+    (aspect, cross_kt, lead_rad, intercept, yaw_rel_rad, targets)
+}
+
 /// Build every exportable torpedo-decision row of the replay (E26).
 /// Deciders: team-known ships with a torpedo armament (carriers excluded).
 /// Cadence: DECISION_INTERVAL_S (2 s), aligned with the 2 s labelB window.
@@ -7533,6 +7686,470 @@ mod tests {
             },
             Err(_) => {
                 eprintln!("[e26g] WOWSP_TORPEDO_CLICK_OUT not set - sidecar not written")
+            },
+        }
+    }
+
+    // ── E26e-l: target geometry / lead sidecar ─────────────────────────
+
+    fn geom_sample(t: f32, eid: i32, x: f32, z: f32, yaw: f32) -> PositionSample {
+        PositionSample {
+            time: t,
+            entity_id: eid,
+            vehicle_id: 1,
+            x,
+            y: 0.0,
+            z,
+            yaw,
+        }
+    }
+
+    fn geom_trajectory(eid: i32, ship_id: i64, x: f32, z: f32, yaw: f32) -> EntityTrajectory {
+        trajectory(
+            eid,
+            Some(ship_id),
+            (0..400)
+                .map(|i| geom_sample(i as f32 * 0.5, eid, x, z, yaw))
+                .collect(),
+        )
+    }
+
+    fn geom_slot(
+        eid: i32,
+        ship_id: i64,
+        dist_m: f32,
+        speed_kt: f32,
+        observed: bool,
+    ) -> FireDatasetSlot {
+        FireDatasetSlot {
+            entity_id: eid,
+            entity_type: 2,
+            ship_id: Some(ship_id),
+            dist_m,
+            bearing_rel_rad: 0.0,
+            speed_kt: Some(speed_kt),
+            hp_frac: Some(1.0),
+            obs_age_s: 0.0,
+            observed_now: observed,
+            terrain_blocked: None,
+            spotted_now: None,
+            inside_smoke: false,
+            radar_lit: false,
+            is_enemy: true,
+            engine_power_frac: None,
+        }
+    }
+
+    fn geom_row(t: f32, enemies: Vec<FireDatasetSlot>, own_range_m: f32) -> TorpedoDatasetRow {
+        TorpedoDatasetRow {
+            core: DecisionRowCore {
+                replay_id: Some("geom-test".into()),
+                replay_version: None,
+                map_name: None,
+                owner_entity_id: 9,
+                ship_id: Some(4_179_507_152),
+                team_id: 1,
+                t,
+                own_speed_kt: None,
+                own_hp_frac: None,
+                own_reload_frac: 1.0,
+                own_range_m,
+                zones_owned_0: 0,
+                zones_owned_1: 0,
+                zones_owned_2: 0,
+                zones_owned_other: 0,
+                zones_active_progress: 0,
+                events_shells_30s: 0,
+                events_torps_30s: 0,
+                events_explosions_30s: 0,
+                events_explosions_near_30s: 0,
+                enemies,
+                friends: Vec::new(),
+                game_mode: None,
+                feature_version: FEATURE_VERSION,
+                own_damcon_frac: -1.0,
+                own_repair_frac: -1.0,
+                own_other_consumable_frac: -1.0,
+                own_engine_power: -1.0,
+                own_engine_dir: 0.0,
+                own_in_smoke: false,
+                active_smoke_count_frac: 0.0,
+                active_smoke_area_feat: 0.0,
+                vision_cap_frac: 1.0,
+                weather_incoming_frac: 0.0,
+                ally_radar_count_frac: -1.0,
+                ally_hydro_count_frac: -1.0,
+                e11_events_known: false,
+            },
+            label_a_can_launch: true,
+            label_b_launched: Some(false),
+            own_torp_reload_frac: 1.0,
+            own_torp_range_m: own_range_m,
+            torp_fired_fish: 0,
+            torp_hits: 0,
+            torp_hp_lost_nearby: 0.0,
+            torp_terminal_near: 0,
+            torp_last_click_age_s: -1.0,
+            torp_clicks_30s: 0,
+            torp_fish_30s: 0,
+            torp_last_click_fish: 0,
+            torp_total_clicks: 0,
+        }
+    }
+
+    /// E26e-l geometry math on a synthetic stream: bow-on / stern / crossing
+    /// target headings, aspect/cross/lead/intercept/yawRel values, and the
+    /// -1 fallbacks for no / out-of-range / unobserved targets.
+    #[test]
+    fn torpedo_target_geometry_bow_stern_crossing() {
+        let metres = crate::commands::decision_tick::METERS_PER_UNIT;
+        let dist_m = 100.0 * metres; // scene units -> metres
+        let u = 60.0f32 * 0.5144; // 60 kt torpedo
+        let v = 20.0f32 * 0.5144; // 20 kt target
+        let own = geom_trajectory(9, 4_179_507_152, 0.0, 0.0, 0.0);
+        let test = |target_yaw: f32| {
+            let target = geom_trajectory(8, 3_247_387_984, 100.0, 0.0, target_yaw);
+            let stream = ReplayStream {
+                trajectories: vec![own.clone(), target],
+                ..minimal_stream()
+            };
+            let vehicles = vec![
+                roster_entry(1, 2, 4_179_507_152),
+                roster_entry(2, 0, 3_247_387_984),
+            ];
+            let ships = ship_infos(&stream, &vehicles);
+            let row = geom_row(
+                10.0,
+                vec![geom_slot(8, 3_247_387_984, dist_m, 20.0, true)],
+                5_000.0,
+            );
+            torpedo_geometry_fields(&ships, &row, 60.0)
+        };
+        // bow-on: target faces the decider -> aspect 0, no cross speed/lead,
+        // closing intercept = D / (u + v).
+        let (aspect, cross, lead, intercept, yaw_rel, targets) = test(std::f32::consts::PI);
+        assert!((aspect - 0.0).abs() < 1e-3, "bow aspect {aspect}");
+        assert!(cross.abs() < 1e-3, "bow cross {cross}");
+        assert!(lead.abs() < 1e-3, "bow lead {lead}");
+        assert!(
+            (intercept - dist_m / (u + v)).abs() < 1e-2,
+            "bow intercept {intercept}"
+        );
+        assert!(
+            (yaw_rel.abs() - std::f32::consts::PI).abs() < 1e-3,
+            "bow yawRel {yaw_rel}"
+        );
+        assert_eq!(targets, 1);
+        // stern: target faces away -> aspect pi, still no cross speed,
+        // opening intercept = D / (u - v).
+        let (aspect, cross, _lead, intercept, yaw_rel, _) = test(0.0);
+        assert!(
+            (aspect - std::f32::consts::PI).abs() < 1e-3,
+            "stern aspect {aspect}"
+        );
+        assert!(cross.abs() < 1e-3, "stern cross {cross}");
+        assert!(
+            (intercept - dist_m / (u - v)).abs() < 1e-2,
+            "stern intercept {intercept}"
+        );
+        assert!(yaw_rel.abs() < 1e-3, "stern yawRel {yaw_rel}");
+        // crossing: aspect pi/2, cross = target speed, lead = asin(v/u), and
+        // the intercept is the perpendicular quadratic root.
+        let (aspect, cross, lead, intercept, yaw_rel, _) = test(std::f32::consts::FRAC_PI_2);
+        assert!(
+            (aspect - std::f32::consts::FRAC_PI_2).abs() < 1e-3,
+            "crossing aspect {aspect}"
+        );
+        assert!((cross - 20.0).abs() < 1e-3, "crossing cross {cross}");
+        assert!((lead - (v / u).asin()).abs() < 1e-3, "crossing lead {lead}");
+        let want = (dist_m * dist_m / (u * u - v * v)).sqrt();
+        assert!(
+            (intercept - want).abs() < 1e-2,
+            "crossing intercept {intercept} want {want}"
+        );
+        assert!((yaw_rel - std::f32::consts::FRAC_PI_2).abs() < 1e-3);
+        // Fallbacks: no enemy, out of range, or not observed-now.
+        let empty = {
+            let target = geom_trajectory(8, 3_247_387_984, 100.0, 0.0, 0.0);
+            let stream = ReplayStream {
+                trajectories: vec![own.clone(), target],
+                ..minimal_stream()
+            };
+            let ships = ship_infos(
+                &stream,
+                &[
+                    roster_entry(1, 2, 4_179_507_152),
+                    roster_entry(2, 0, 3_247_387_984),
+                ],
+            );
+            torpedo_geometry_fields(&ships, &geom_row(10.0, Vec::new(), 5_000.0), 60.0)
+        };
+        assert_eq!(empty, (-1.0, -1.0, -1.0, -1.0, -1.0, 0));
+        for slot in [
+            geom_slot(8, 3_247_387_984, 6_000.0, 20.0, true), // out of range
+            geom_slot(8, 3_247_387_984, dist_m, 20.0, false), // stale intel
+        ] {
+            let target = geom_trajectory(8, 3_247_387_984, 100.0, 0.0, 0.0);
+            let stream = ReplayStream {
+                trajectories: vec![own.clone(), target],
+                ..minimal_stream()
+            };
+            let ships = ship_infos(
+                &stream,
+                &[
+                    roster_entry(1, 2, 4_179_507_152),
+                    roster_entry(2, 0, 3_247_387_984),
+                ],
+            );
+            let got = torpedo_geometry_fields(&ships, &geom_row(10.0, vec![slot], 5_000.0), 60.0);
+            assert_eq!(got, (-1.0, -1.0, -1.0, -1.0, -1.0, 0));
+        }
+    }
+
+    /// E26e-l geometry sidecar on real replay bytes: env WOWSP_TEST_REPLAY_DIR,
+    /// WOWSP_TORPEDO_GEOMETRY_OUT, WOWSP_SHIP_ATTRS (default tracked
+    /// scripts/experiments/ship_attributes.json; missing -> torpSpeed 60 kt and
+    /// counted) and WOWSP_TEST_LOS_DIR. Files are walked sorted and rows follow
+    /// the full E26 export order, so Python joins by rowIndex.
+    #[test]
+    fn e26l_torpedo_target_geometry_export_on_real_replays() {
+        let Ok(dir) = std::env::var("WOWSP_TEST_REPLAY_DIR") else {
+            eprintln!("[e26l] WOWSP_TEST_REPLAY_DIR not set - skipping");
+            return;
+        };
+        let replay_dir = std::path::PathBuf::from(dir);
+        let attrs_path = std::env::var("WOWSP_SHIP_ATTRS")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| {
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/ship_attributes.json")
+            });
+        let table = std::fs::read_to_string(&attrs_path)
+            .ok()
+            .and_then(|text| super::super::ship_attrs::ShipAttrTable::from_json(&text).ok());
+        eprintln!(
+            "[e26l] ship attrs {} ({})",
+            attrs_path.display(),
+            if table.is_some() {
+                "loaded"
+            } else {
+                "missing -> 60 kt fallback"
+            }
+        );
+        let params = FireSampleParams::default();
+        let los_dir = match std::env::var("WOWSP_TEST_LOS_DIR") {
+            Ok(p) => Some(std::path::PathBuf::from(p)),
+            Err(_) => {
+                let default = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../../scripts/experiments/out");
+                default.exists().then_some(default)
+            },
+        };
+        let mut files = Vec::new();
+        collect_replay_files(&replay_dir, &mut files);
+        files.sort();
+        assert!(
+            !files.is_empty(),
+            "no replays under {}",
+            replay_dir.display()
+        );
+        let mut geometry: Vec<TorpedoGeometryRow> = Vec::new();
+        let mut failed = 0usize;
+        let mut fallback_rows = 0u64;
+        let mut export_rows = 0usize;
+        for path in &files {
+            let relative = path
+                .strip_prefix(&replay_dir)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let path_str = path.to_string_lossy().into_owned();
+            let decoded = super::super::replay::decode_replay_stream_with_events(&path_str);
+            let (stream, ev) = match decoded {
+                Ok(v) => v,
+                Err(e) => {
+                    failed += 1;
+                    eprintln!("[e26l] {relative} -> FAILED: {e}");
+                    assert!(!e.to_string().is_empty());
+                    continue;
+                },
+            };
+            let vehicles = match super::super::replay_probe::read_roster(&path_str) {
+                Ok(v) => v,
+                Err(e) => {
+                    failed += 1;
+                    eprintln!("[e26l] {relative} -> roster FAILED: {e}");
+                    assert!(!e.to_string().is_empty());
+                    continue;
+                },
+            };
+            let ships = ship_infos(&stream, &vehicles);
+            let los = los_for_replay(stream.map_name.as_deref(), los_dir.as_deref());
+            let game_mode = read_game_mode(path);
+            let events = FeatureEvents::for_version(stream.version.as_deref(), &ev);
+            let (rows, stats) = export_torpedo_dataset(
+                &stream,
+                &ships,
+                los.as_ref(),
+                DEFAULT_EYE_HEIGHT,
+                &params,
+                None,
+                game_mode.as_deref(),
+                &events,
+            );
+            assert_eq!(stats.rows, rows.len());
+            export_rows += rows.len();
+            let mut with_target = 0usize;
+            for row in &rows {
+                let speed = table
+                    .as_ref()
+                    .map(|t| t.of(row.core.ship_id).torp_speed_kt)
+                    .filter(|v| v.is_finite() && *v > 0.0);
+                let speed = match speed {
+                    Some(v) => v,
+                    None => {
+                        fallback_rows += 1;
+                        60.0
+                    },
+                };
+                let (aspect, cross, lead, intercept, yaw_rel, targets) =
+                    torpedo_geometry_fields(&ships, row, speed);
+                if targets > 0 {
+                    with_target += 1;
+                }
+                geometry.push(TorpedoGeometryRow {
+                    replay_id: Some(relative.clone()),
+                    t: row.core.t,
+                    ship_id: row.core.ship_id,
+                    torp_geom_aspect_rad: aspect,
+                    torp_geom_cross_kt: cross,
+                    torp_geom_lead_rad: lead,
+                    torp_geom_intercept_s: intercept,
+                    torp_geom_yaw_rel_rad: yaw_rel,
+                    torp_geom_targets: targets,
+                });
+            }
+            eprintln!(
+                "[e26l] {relative} -> {} export rows, {} with target",
+                rows.len(),
+                with_target
+            );
+        }
+        let with_target = geometry.iter().filter(|g| g.torp_geom_targets > 0).count();
+        let ranges = |f: fn(&TorpedoGeometryRow) -> f32| -> (f32, f32, f32) {
+            let vals: Vec<f32> = geometry
+                .iter()
+                .filter(|g| g.torp_geom_targets > 0)
+                .map(f)
+                .filter(|v| v.is_finite())
+                .collect();
+            if vals.is_empty() {
+                return (f32::NAN, f32::NAN, f32::NAN);
+            }
+            let min = vals.iter().cloned().fold(f32::INFINITY, f32::min);
+            let max = vals.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+            let mean = vals.iter().sum::<f32>() / vals.len() as f32;
+            (min, max, mean)
+        };
+        let aspect = ranges(|g| g.torp_geom_aspect_rad);
+        let cross = ranges(|g| g.torp_geom_cross_kt);
+        let lead = ranges(|g| g.torp_geom_lead_rad);
+        let intercept = ranges(|g| g.torp_geom_intercept_s);
+        let yaw_rel = ranges(|g| g.torp_geom_yaw_rel_rad);
+        eprintln!(
+            "[e26l] rows {} (export {export_rows}) / failed {failed} / withTarget {with_target} / fallbackSpeedRows {fallback_rows}",
+            geometry.len()
+        );
+        eprintln!(
+            "[e26l] ranges aspect [{:.3},{:.3}] mean {:.3} | crossKt [{:.2},{:.2}] mean {:.2} | lead [{:.4},{:.4}] mean {:.4} | intercept [{:.1},{:.1}] mean {:.1} | yawRel [{:.3},{:.3}] mean {:.3}",
+            aspect.0,
+            aspect.1,
+            aspect.2,
+            cross.0,
+            cross.1,
+            cross.2,
+            lead.0,
+            lead.1,
+            lead.2,
+            intercept.0,
+            intercept.1,
+            intercept.2,
+            yaw_rel.0,
+            yaw_rel.1,
+            yaw_rel.2
+        );
+        assert!(!geometry.is_empty(), "no geometry rows");
+        assert!(
+            geometry.len() == export_rows,
+            "geometry rows == export rows"
+        );
+        assert!(with_target > 0, "no row had an eligible target");
+        // Same eligibility invariants as the unit test, on real data.
+        for g in &geometry {
+            if g.torp_geom_targets == 0 {
+                assert_eq!(g.torp_geom_aspect_rad, -1.0);
+                assert_eq!(g.torp_geom_cross_kt, -1.0);
+                assert_eq!(g.torp_geom_lead_rad, -1.0);
+                assert_eq!(g.torp_geom_intercept_s, -1.0);
+                assert_eq!(g.torp_geom_yaw_rel_rad, -1.0);
+            } else {
+                assert!((0.0..=std::f32::consts::PI + 1e-4).contains(&g.torp_geom_aspect_rad));
+                assert!(g.torp_geom_cross_kt >= -1e-4);
+                assert!((0.0..=std::f32::consts::FRAC_PI_2 + 1e-4).contains(&g.torp_geom_lead_rad));
+                assert!(
+                    g.torp_geom_intercept_s == -1.0
+                        || (0.0..=300.0 + 1e-4).contains(&g.torp_geom_intercept_s)
+                );
+                assert!(
+                    (-std::f32::consts::PI - 1e-4..=std::f32::consts::PI + 1e-4)
+                        .contains(&g.torp_geom_yaw_rel_rad)
+                );
+            }
+        }
+        match std::env::var("WOWSP_TORPEDO_GEOMETRY_OUT") {
+            Ok(out) => {
+                let out_path = std::path::PathBuf::from(&out);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent).expect("create geometry sidecar dir");
+                }
+                use std::io::Write;
+                let mut file = std::fs::File::create(&out_path).expect("create geometry sidecar");
+                for line in &geometry {
+                    writeln!(
+                        file,
+                        "{}",
+                        serde_json::to_string(line).expect("serialize geometry")
+                    )
+                    .expect("write geometry line");
+                }
+                drop(file);
+                let text = std::fs::read_to_string(&out_path).expect("read back geometry");
+                let lines: Vec<&str> = text.lines().collect();
+                assert_eq!(lines.len(), geometry.len(), "geometry line count == rows");
+                for (i, line) in lines.iter().enumerate() {
+                    let value: serde_json::Value =
+                        serde_json::from_str(line).expect("geometry line parses");
+                    for key in [
+                        "replayId",
+                        "t",
+                        "shipId",
+                        "torpGeomAspectRad",
+                        "torpGeomCrossKt",
+                        "torpGeomLeadRad",
+                        "torpGeomInterceptS",
+                        "torpGeomYawRelRad",
+                        "torpGeomTargets",
+                    ] {
+                        assert!(value.get(key).is_some(), "missing geometry key {key}");
+                    }
+                    assert_eq!(value["replayId"].as_str(), geometry[i].replay_id.as_deref());
+                    assert_eq!(value["t"].as_f64().unwrap() as f32, geometry[i].t);
+                    assert_eq!(value["shipId"].as_i64(), geometry[i].ship_id);
+                }
+                eprintln!("[e26l] wrote {} geometry rows to {out}", lines.len());
+            },
+            Err(_) => {
+                eprintln!("[e26l] WOWSP_TORPEDO_GEOMETRY_OUT not set - sidecar not written")
             },
         }
     }
