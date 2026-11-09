@@ -45,6 +45,7 @@
 | E26e-f | torp3 属性特征 + λ_C=0.1 | torp3（torp2 + 6 维 hull 鱼雷属性：speed/damage/detect/count/deep/ETA）在 λ_C=0.1 下能否恢复 headB（AUPRC≥0.0365 且 top-lift≥2.55）并保持 headC（outcome lift≥2.30） | ⚠️ | headB **0.039022 = 2.408×base**、top-lift **2.789**、AUC 0.7141（全面超过 E26e-b 的 0.037051/2.662/0.7084 ✓）；headC outcome lift **2.2329**（<2.30 ✗）/ρ 1.0/CI [2.040,2.413] → (a) ✓、(b) ✗ = **MIXED**：torp3 显著恢复 headB、headC 基本持平 |
 | E26e-g | torp4 click-context 特征 | torp4（torp3 + 5 维 click-context：lastClickAge/clicks30s/fish30s/lastClickFish/totalClicks）在 λ_C=0.1 下能否把 headC outcome lift 推过 2.30 且 headB 非退化（AUPRC≥0.039022、top-lift≥2.789） | ⚠️ | headB **0.042126 = 2.599×base**、top-lift **2.905**、AUC **0.7273**（非退化 ✓，且较 torp3 再提升）；headC outcome lift **2.1997**（<2.30 ✗，且略低于 torp3 2.2329）/ρ 0.988/CI [1.998,2.378] → (a) ✗、(b) ✓ = **MIXED**：click 特征强力提升 headB，但 headC outcome 无增益（代理标签上限仍属假设，CI 重叠） |
 | E26e-h | headC 训练目标对齐 fish-level | `--head-c-target any\|fish_rate\|fish_weighted` 能否把 headC outcome lift 推过 2.30（torp4，λ_C=0.1） | ⚠️ | fish_weighted（primary）：headC **2.1981**（<2.30 ✗）、headB 0.041189（−2.2%，超 1% 容忍 ✗）→ FAIL；fish_rate（secondary）：headC **2.3069**（≥2.30，仅 +0.0069；CI 下界 2.099<2.30）、headB 0.042086/2.912（AUC 0.72633；strict AUPRC 比 0.042126 低 **0.00004**，仅在 1% 容忍内）→ **严格预注册（1% 容忍线“仅报告”）= MIXED**；若把 1% 容忍当非退化则可记 PASS，但主结论按严格读法为 MIXED；soft per-fish 目标仅边际、原始 ECE 0.057 需 T=1.387 校准 |
+| E26e-i | headC 两模型 OOF 融合 | mean calibrated probability 融合 E26e-g any-target（2.1997）+ E26e-h fish_rate（2.3069）能否稳健过 2.30 | ⚠️ | ensemble **2.2475×**（<2.30）/ρ 0.988/CI [2.045,2.438]；rank-average 2.2540/ρ 1.0 仅报告；两源对照 2.1997 / 2.3069 → **MIXED**：两 headC 高度相关（calibrated 后 ρ 0.916），融合只到两者之间，不能稳健过线 |
 | T4 | torp4 诊断包交付（A） | final-fit 3 头 torp4（49 维）+ 温度烤图 fp32 ONNX + tracked parity fixture | ✅ | fp32 **502,518 B** sha `0b1f4efd…`；T_B **0.7564** / T_C **1.0723**（E26e-g OOF）；torch-vs-ORT 1,000 行 maxΔ 7.2e-6/2.9e-6/3.8e-6；fixture **48 行** 109,365 B（boundary 覆盖 + clickContext/attrs 复算块），fixture-vs-ONNX 1.43e-6；**诊断-only，不进总分** |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
@@ -1028,7 +1029,49 @@
   outcome_lift_fish_weighted.json, outcome_lift_fish_rate.json}`；node3
   `/mnt/work/wowsp-kots/e26e-h/{code,run}`；预注册 `e26e-h-preregistration.md`（脚本 sha
   `79d7435c…`，与 node3 实跑一致）。
-### E26e 系列结论与评分集成决策（截至 E26e-h，2026-11-08）
+### E26e-i · headC 两模型 OOF 融合（**MIXED**：ensemble 2.2475× 未过 2.30；rank-average 2.2540）
+
+- **动机（预注册 `out/torpedo_model/e26e-i-preregistration.md`，先落盘后评估）**：headC 已有两个
+  单模型 OOF：E26e-g any-target（torp4，λ_C=0.1）outcome lift **2.1997**、T=1.0723；E26e-h
+  fish_rate（软 per-fish 目标）**2.3069**、T=1.3873。两者同 3,111,384 行/同 5 折/同 sidecars，
+  headB 不变。问题：**融合两模型能否稳健过 2.30**。
+- **方法（主分数，预注册）**：mean calibrated probability（仅 launched 行）：
+  `p_any_cal = sigmoid(logit(clip(p_any,1e-6,1-1e-6))/1.0723)`、
+  `p_rate_cal = sigmoid(logit(clip(p_rate,1e-6,1-1e-6))/1.3873)`、
+  `probC_ens = (p_any_cal + p_rate_cal)/2`；非 launched 行 NaN。
+- **实现**：新增 `scripts/experiments/torpedo_headc_ensemble.py`（numpy-only）：加载两 npz、
+  逐项校验 rowIndex/fold/groupCode/shipId（精确）与 labelB/labelC/t（NaN-aware 1e-9）、
+  groupNames/classNames/regionNames，任一不匹配 abort；写 ensemble npz（probC=ensemble，
+  其余数组/元数据沿用 A，meta 记录 T/来源/sha256/spearman）与 rank-average npz（secondary）；
+  `--selftest` 覆盖对齐/错位 abort、概率 clip/温度边界、rank 分位契约、确定性、npz round-trip。
+- **对齐**：3,111,384 行 / 17,055 launched；两源 calibrated 概率 Spearman = **0.9157**；
+  mean p_cal：A 0.131010、B 0.124764、ensemble 0.127887；ensemble 范围 [0.000517, 0.702406]。
+- **结果（launched 行，fish-level，同 sidecar/outcome_lift 代码）**：
+
+  | 分数 | top-decile 命中率 lift | 十分位 ρ | bootstrap 95% CI | 判定 |
+  |---|---|---|---|---|
+  | A：E26e-g any-target | 2.1997× | 0.988 | [1.998, 2.378] | MIXED |
+  | B：E26e-h fish_rate | **2.3069×** | 0.988 | [2.099, 2.496] | PASS |
+  | **ensemble（primary）** | **2.2475×** | 0.988 | **[2.045, 2.438]** | **MIXED**（<2.30 ✗） |
+  | rank-average（secondary） | 2.2540× | 1.000 | [2.049, 2.441] | MIXED |
+
+  **判定：primary MIXED**（2.2475 < 2.30；ρ 0.988 ≥0.30、CI 排除 0 均满足）。rank-average 也
+  未过线（2.2540），仅作 secondary 报告。
+- **ensemble 明细**：十分位命中率 18.35/13.07/10.81/8.54/8.87/6.51/6.27/4.22/1.47/0.43%；
+  **按类** lift/ρ：BB 996 行 **2.863**/0.960；CL 5,009 行 **2.266**/0.988；DD 10,949 行
+  **2.166**/1.000；SS 101 行 0.975/0.006（仅描述）。**按 region**：apac **2.473**/0.988、
+  eu **1.936**/0.988、na **2.261**/0.939、own **2.162**/0.976。
+- **结论**：两 headC 虽由不同训练目标得到，但**排序高度相关**（calibrated Spearman 0.916），
+  融合只能落在两者之间（2.2475），无法把 fish_rate 的 2.3069 尖峰变成稳健的 ≥2.30；rank-average
+  同理（2.2540）。mean-probability 融合还会被 any-target 的分数尺度稀释。**融合不是提升 headC
+  的路径**；若要稳健过 2.30，需要**独立信息源**（不同特征/不同 seed 且相关性更低、结果标签
+  shotKills、端上校准/分级），而不是同数据同标签家族的两个头。
+- **局限**：同数据 OOF 融合（非独立留出/跨季，不能当泛化证明）；温度直接取两源 OOF（未重拟合）；
+  headC 是“已发射条件命中概率”，融合只影响排序；未做权重扫描（预注册禁止事后调权）；
+  SS 101 行、na/own 样本薄；未做端上部署。
+- **产物**：`out/torpedo_model/e26e-i/{e26e_i_ensemble_oof.npz（27.5MB）, e26e_i_rank_oof.npz\r?\n  （27.5MB）, e26e_i_ensemble_metrics.json, outcome_lift_{ensemble,rank,sourceA,sourceB}.json}`；
+  预注册 `e26e-i-preregistration.md`（脚本 sha `e871051f…`）。
+### E26e 系列结论与评分集成决策（截至 E26e-i，2026-11-08）
 
 **最终研究模型（torp4 + λ_C=0.1，全语料 3,111,384 行 / 2,215 局，5 折 seed 0）**
 
@@ -1050,12 +1093,13 @@
 | E26e-f（torp3 属性） | **0.039022 / 2.789 / 0.7141** | 2.2329 | MIXED（<2.30） |
 | E26e-g（torp4 click） | **0.042126 / 2.905 / 0.7273** | 2.1997 | MIXED（<2.30） |
 | E26e-h（fish 口径） | 0.042086 / 2.912 / 0.72633（fish_rate；strict AUPRC 低 0.00004） | **2.3069（fish_rate，边际）** / 2.1981（fish_weighted） | MIXED（严格：fish_rate 仅 +0.0069、CI 下界 2.099、strict (b) 差 0.00004；fish_weighted FAIL） |
+| E26e-i（headC 融合） | 未重训 | ensemble **2.2475** / rank 2.2540（两源 2.1997 / 2.3069） | MIXED（<2.30；两源 calibrated ρ 0.916，融合只落在中间） |
 
 **结论与观察（第 3 条为观察/假设）**
 
 1. **鱼雷决策信号真实存在**：headB 的 top-decile 发射 lift 从 E26e-b 的 2.662 提升到 torp4 的 2.905（AUPRC 2.286→2.599×base）；headC 的命中排序 lift 在 E26e-c/E26e-f/E26e-g 及 E26e-e λ0.1 上为 2.20–2.25×、ρ 0.988–1.0；E26e-h 的 fish_rate 软目标到 **2.3069×**（仅边际 +0.0069、CI 下界 2.099<2.30）但 headC 原始 ECE 升到 0.0572（T=1.387 后 0.0079）、AUPRC/AUC 下降，不能算稳健提升；any 目标的 headC 校准后 ECE 仍为 0.0041。
 2. **“发射行为”与“命中结果”是两种信号**：torp3 属性与 torp4 click-context 都显著提升 headB（分别 +8.3% / +7.9% AUPRC），但对 headC 无增益；E26e-h 把训练目标对齐 fish-level 后，fish_weighted 无增益、fish_rate 仅边际（且 strict headB 微降/校准变差）；共享 trunk 的多任务表示对 headC 必要（E26e-d 解耦后 headC 全面变弱）。
-3. **headC 在当前特征集与代理标签上进入平台**：E26e-c（torp2）2.2126× 过其自身 1.35 线；E26e-f（torp3）2.2329×、E26e-g（torp4）2.1997× 未过后来的 2.30 线；E26e-h 的 fish_rate 以 2.3069× 边际过线（CI 下界 2.099，概率需 T=1.387 才校准），fish_weighted 2.1981× 无增益。整体平台约 2.20–2.31×、CI 重叠，代理命中标签（120 units + HP drop，非 server damageStat 真值）很可能构成上限，但这是**假设**、不是已证明的定论。
+3. **headC 在当前特征集与代理标签上进入平台**：E26e-c（torp2）2.2126× 过其自身 1.35 线；E26e-f（torp3）2.2329×、E26e-g（torp4）2.1997× 未过后来的 2.30 线；E26e-h 的 fish_rate 以 2.3069× 边际过线（CI 下界 2.099，概率需 T=1.387 才校准），fish_weighted 2.1981× 无增益；E26e-i 的 any+fish_rate 融合只有 2.2475×（rank 2.2540），两源 calibrated ρ 0.916，融合只落在中间。整体平台约 2.20–2.31×、CI 重叠，代理命中标签（120 units + HP drop，非 server damageStat 真值）很可能构成上限，但这是**假设**、不是已证明的定论。
 4. **校准可用**：单一温度即可把 headB ECE 从 0.0246 降到 0.0006、headC 从 0.0127 降到 0.0041，且不改变排序；端上实现为 `sigmoid(logit/T)` 即可。
 
 **评分集成决策：鱼雷保持“诊断-only”，暂不并入总分**
@@ -1063,13 +1107,13 @@
 - 总分继续只聚合开火/移动决策；鱼雷卡片保留为可选诊断（发射概率 + 预期效果，不适用舰种显示 N/A），总分不变。
 - 不并入的理由：
   1. headB 是**专家点击一致性**模型，不是结果真值；E26e-b 已证明它的 outcome lift 只有 1.223×，不能直接当作“决策质量”。
-  2. headC 是目前最强的结果信号，但 E26e-f/g 低于 2.30 预注册线；E26e-h 的 fish_rate 仅边际过线（CI 下界 2.099、ECE 0.0572 需额外温度、strict headB 微降 0.00004）且排序质量下降，严格读法为 MIXED；整体 2.20–2.31× 平台 CI 重叠，且依赖代理命中标签；不足以支撑一个总分权重。
+  2. headC 是目前最强的结果信号，但 E26e-f/g 低于 2.30 预注册线；E26e-h 的 fish_rate 仅边际过线（CI 下界 2.099、ECE 0.0572 需额外温度、strict headB 微降 0.00004）且排序质量下降，严格读法为 MIXED；E26e-i 的两模型融合只到 2.2475、无法把边际尖峰变成稳健过线；整体 2.20–2.31× 平台 CI 重叠，且依赖代理命中标签；不足以支撑一个总分权重。
   3. 尚未做**端到端总分验证**（鱼雷分量与 fire/move 聚合后的战斗结果相关性、校准、权重选择均无预注册实验）；直接加分会是未经验证的分数改动。
 - 重新评估的条件（满足后再开预注册）：① 逐鱼命中/伤害标签（ShotKillEvent 或 server damageStat）对齐，headC 在≥2 个 seed/语料上稳定 ≥2.30× 且 CI 不重叠；② 端上温度后处理 + 部署校准验证；③ 预注册“加入鱼雷分量是否提升总分与战斗结果相关性”的 A/B；④ SS/BB 样本补强、N/A 语义完整。
 
-**交付建议（若产品要上线研究模型）**：以 **torp4 + 温度后处理**作为独立的可选诊断包（新 ONNX 契约/决策包版本），不改变总分；若当前 model pack 仍使用 E26d 候选的两头模型（E26d 小节明确其为交付候选、非最终发布），升级需单独的交付 PR（Rust/WebUI/版本管理）与验证。
+**交付建议（已落地 T4）**：torp4（49 维/3 头/温度烤图）已作为**独立可选诊断包**交付（见下节 T4，PR #1868）：app 侧新契约 + `torpedo4_model.onnx` 槽 + effectiveness 行，不改变总分；模型文件仍由维护者手动放入 decisions pack（ONNX 不入库）。
 
-**剩余局限**：命中为代理标签；click 特征粗糙（无目标/管位/DoT 几何）；SS 101 launched、na/own 样本薄；未做 server damageStat 逐条对齐；未做端上部署/概率分级；λ_C 固定 0.1 未再扫；fish_rate 仅单 seed/单次训练且边际过线，不能作为稳健结论。
+**剩余局限**：命中为代理标签；click 特征粗糙（无目标/管位/DoT 几何）；SS 101 launched、na/own 样本薄；未做 server damageStat 逐条对齐；未做端上概率分级；λ_C 固定 0.1 未再扫；fish_rate 仅单 seed/单次训练且边际过线，E26e-i 融合也未过线，均不能作为稳健结论。
 ### T4 · torp4 诊断包交付（**诊断-only，不进总分**）
 
 - **裁决/定位**：一次升到 **torp4（49 维，= 27 core + 11 torp2 + 6 torp3 + 5 torp4）**、3 头
