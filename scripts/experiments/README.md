@@ -56,6 +56,7 @@
 | E26e-q | few-shot dose response | 同一 **common holdout（97/161 own replay）** 上对比 own 0%/10%/25% 入训（nested adapt，adapt10⊂adapt25）；主验收 **25%** holdout headC r120 lift ≥**1.90** 且 ρ≥0.30/CI 排除 0；headB 非退化；secondary=10% 与 dose Δ | ⚠️ | 0% **1.5963**/ρ 0.636/CI [0.843, 2.695]（E26e-o 子集）；**10% 2.1645**/ρ 0.855/CI [1.461, 3.063]；**25% 2.4859**/ρ 0.782/CI [1.724, 3.275] → **PASS（仅同期随机拆分；E26e-r temporal FAIL 不可外推）**；**dose Δ(25−10)=+0.3214**，25% 已超 in-dist own 2.1809；headB 0%→10%→25%：3.607×→3.490×→**4.049×base**/top 3.073→3.277→3.480/AUC 0.712→0.771→0.783（全 PASS） |
 | E26e-r | 40% 剂量 + 时间外推 | 同一 common_holdout 补 **40%（adapt pool 64 replay）**；另做 **temporal 25%**（最早 40 replay 入训、最晚 97 replay holdout）；primary temporal headC ≥1.80 且 ρ≥0.30/CI 排除 0；secondary random40 ≥1.90 | ⚠️ | random40 headC **2.4413**/ρ 0.697/CI [1.631,3.379]（≥1.90 但**低于 25% 2.4859，剂量饱和**）；**temporal 25% lift 1.6244（<1.80 FAIL）、ρ −0.20、CI [0.752,2.374]**；temporal 0% 1.5063；headB 两 run PASS（random40 4.048×/temporal 3.333×base）→ **MIXED：random-split 2.4859 是同期随机拆分，时间外推不成立（time drift）** |
 | E26e-s | 滚动起点 walk-forward | own 161 replay 按日期等分 Q1–Q4（40/40/40/41）；3 窗 adapt=Q_{i−1}→test=Q_i；primary=3 窗中 ≥2 窗 headC lift ≥1.80 且 ρ≥0.30/CI 排除 0；headB 非退化 | ⚠️ | **2/3 形式 PASS**：Q2 **3.0052**/ρ 0.903/CI [0.864,5.114]、Q4 **1.8256**/ρ 0.632/CI [0.360,3.422]；**Q3 0.9083（FAIL）/ρ −0.006/CI [0.258,1.565]**；0% baseline 每窗 0.9200/2.1373/1.6481；headB 全部非退化（4.40×/2.82×/5.31×base）→ **PASS(2/3) but Q3 FAIL / temporal instability 仍在**，不能宣称时间稳健，部署须 walk-forward 门禁 |
+| E26e-t | Q3 崩盘时间漂移诊断（不重训） | 按 Q1–Q4 聚合 full own 数据/click/r120 outcome + e26e-s 三窗预测与 0% baseline；诊断 base-rate/特征分布/标签噪声 | — | Q3 base **18.59%**/rowAny **29.46%**（Q2 9.98/13.98、Q4 16.43/22.30）；25% runQ3 **meanProbC 0.037、ECE 0.258、AUC 0.500、lift 0.908**，0% baseline lift **2.137**；组成 Q3 brawl 12,806+event 12,192（Q2 pvp 62,556/event 2,555）；漂移 top shipId PSI 8.54/mapName 7.57/gameMode 5.66/enemyDistMean SMD 0.907 → **composition/prior shift + 跨模式排序坍塌**（非单一标签噪声）；建议 walk-forward 门禁加 AUC/CI 下界、分 mode/map/ship 或 reweight、按窗 prior/温度重校准，不推部署/总分 |
 | T4 | torp4 诊断包交付（A） | final-fit 3 头 torp4（49 维）+ 温度烤图 fp32 ONNX + tracked parity fixture | ✅ | fp32 **502,518 B** sha `0b1f4efd…`；T_B **0.7564** / T_C **1.0723**（E26e-g OOF）；torch-vs-ORT 1,000 行 maxΔ 7.2e-6/2.9e-6/3.8e-6；fixture **48 行** 109,365 B（boundary 覆盖 + clickContext/attrs 复算块），fixture-vs-ONNX 1.43e-6；**诊断-only，不进总分** |
 | E27 | 中队状态九流逆向（血量/逐机血量/伤害/油门/消耗品/坠机） | Avatar 的 squadron 状态方法群能否 def 推导 + 实证解码，喂给飞机跟随卡片（实时血量、加速、消耗品） | ✅ | 九流全解：见下 |
 
@@ -1598,7 +1599,80 @@
 - **产物**：`out/torpedo_model/e26e-s/{runQ2,runQ3,runQ4}/{holdout_metrics.json, holdout_ensemble.npz,
   metrics.json, train.log}`；`outcome_lift_runQ2/Q3/Q4.json`、`outcome_lift_baseline0_Q2/Q3/Q4.json`、
   `baseline0_Q2/Q3/Q4_oof.npz`、`split_summary.json`；预注册 `e26e-s-preregistration.md`。
-### E26e 系列结论与评分集成决策（截至 E26e-s，2026-11-09）
+### E26e-t · Q3 崩盘的时间漂移诊断（**composition/prior shift + 跨模式排序坍塌**；Q3 base 18.6% vs Q2 10.0%，25% meanProbC 3.7%、ECE 0.258、AUC 0.500/lift 0.908，0% baseline 仍 2.137；不重训）
+
+- **问题（预注册 `out/torpedo_model/e26e-t-preregistration.md`，descriptive）**：E26e-s walk-forward 的 runQ3
+  （adapt=Q2、test=Q3）headC lift 0.9083、ρ −0.006，远差于 Q2（3.0052）/Q4（1.8256），且低于其 0% baseline
+  （2.1373）。本任务**只做描述性诊断**（不重训、不改模型/阈值）：拆分原因到底是 base rate/prior 漂移、
+  特征/类别分布漂移，还是标签噪声。
+- **方法**：`scripts/experiments/torpedo_temporal_drift.py` 按 Q1–Q4 replayId 过滤 full own 数据集与
+  click/r120 outcome sidecar，聚合规模/命中率/模式/地图/舰种/敌人 slot/torp 属性/click 特征；对齐 e26e-s
+  三窗 holdout 预测与 0% baseline（probC、meanProbC、ECE、AUC、top-decile lift，均按标准 outcome_lift
+  的 decile 口径），量化 adapt→test 的 SMD/KS/PSI；脚本含 `--selftest`（合成行/分块/统计断言）。
+- **Q1–Q4 组成（full own，170,863 行 / 957 launched / 3,386 fired / 476 hits）**：
+
+  | block | rows | launched | fired | hits | baseHitRate | rowAny | 模式 top | 地图 top |
+  |---|---|---|---|---|---|---|---|---|
+  | Q1 | 40,646 | 248 | 918 | 128 | 13.94% | 18.55% | pvp 29,924 / ranked 10,466 | 08_NE_passage / 46_Estuary |
+  | Q2 | 65,111 | 329 | 1,162 | 116 | 9.98% | 13.98% | pvp 62,556 / event 2,555 | 44_Path_warrior / 20_NE_two_brothers |
+  | Q3 | 37,281 | 241 | 807 | 150 | **18.59%** | **29.46%** | brawl 12,806 / pvp 12,283 / event 12,192 | 53_Shoreside / 15_NE_north |
+  | Q4 | 27,825 | 139 | 499 | 82 | 16.43% | 22.30% | brawl 14,028 / pvp 9,467 / pve 4,330 | 14_Atlantic / e09_Halloween_2019 |
+
+- **Q3 异常表（test block 对照 Q2/Q4）**：
+
+  | metric | Q2 test | Q3 test | Q4 test |
+  |---|---|---|---|
+  | baseHitRate | 9.98% | **18.59%** | 16.43% |
+  | rowAnyHitRate | 13.98% | **29.46%** | 22.30% |
+  | 25% meanProbC | 0.0610 | **0.0370** | 0.2352 |
+  | 25% ECE(10bin) | 0.0973 | **0.2576** | 0.1072 |
+  | 25% AUC | 0.6364 | **0.5000** | 0.6649 |
+  | 25% top-decile lift | 3.0052 | **0.9083** | 1.8256 |
+  | 0% meanProbC | 0.0075 | 0.0127 | 0.1407 |
+  | 0% AUC / lift | 0.5444 / 0.9200 | 0.5755 / **2.1373** | 0.5800 / 1.6481 |
+
+- **漂移 top（adapt→test；PSI 为类别，SMD/KS 为连续）**：
+
+  | 窗口 | 类别 top | 连续 top |
+  |---|---|---|
+  | Q2→Q3 | shipId 8.54 / mapName 7.57 / gameMode 5.66 | enemyDistMean SMD 0.907(KS 0.392)、enemyCount 0.777(0.412)、enemySpeed −0.438 |
+  | Q3→Q4 | shipId 9.57 / mapName 7.45 / gameMode 6.08 | enemyRadarLit −0.511、enemyDistMean 0.323、enemyCount 0.203 |
+  | Q1→Q2 | mapName 10.44 / shipId 6.71 / gameMode 3.33 | enemyCount −0.505、enemyDistMean −0.403、ownTorpRange −0.202 |
+
+  → 类别漂移在**每个窗都很大**（模式/地图/舰种轮换是常态），Q2→Q3 额外叠加**最大的连续特征漂移**
+  （Q3 敌人更近 3,133m vs 4,054m、数量更少 4.29 vs 6.87、速度 +2.6kt、observedNow 0.643 vs 0.559）与
+  base rate 近 2 倍跳升。
+- **按模式拆解（关键证据）**：Q2 几乎全 pvp（62,556/2,555 event、0 brawl）；Q3 变为 brawl 12,806 +
+  event 12,192 + pvp 12,283（brawl 34%）；Q4 继续 brawl 14,028。各模式 base hit rate：
+
+  | block | pvp | brawl | event | pve |
+  |---|---|---|---|---|
+  | Q2 | 310/1,116/104 = 9.32% | — | 19/46/12 = 26.09% | — |
+  | Q3 | 72/257/25 = **9.73%** | 74/248/78 = **31.45%** | 95/302/47 = 15.56% | — |
+  | Q4 | 39/114/23 = 20.18% | 89/339/52 = 15.34% | — | 11/46/7 = 15.22% |
+
+  → **Q3 的 base rate 跳升主要是模式组成**（brawl/event 占比高且 base 高），pvp 自身只从 9.3% 到 9.7%；
+  标签本身不是 Q3 特有（同 r120 口径），代理标签噪声无法解释 Q3 的组成变化。
+- **为什么 25% 模型在 Q3 整體崩**：按模式看 25% runQ3 仍有**弱排序**（brawl lift 1.59、event 1.65、
+  pvp 1.81），但 **meanProbC 跨模式错序**：pvp 5.07% > event 4.30% > brawl 1.58%，而真实 base 为
+  brawl 31.45% > event 15.56% > pvp 9.73% → 全局 top decile 偏向 pvp → 整体 lift 0.908、AUC 0.500；
+  0% baseline 反而把 event/brawl 排在 pvp 之上（meanProbC 1.58%/1.34%/0.78%）→ 整体 lift 2.137。
+  Q4 的 adapt（Q3）已含 brawl/event，模型学到跨模式排序（brawl meanProbC 26.8% vs base 15.3%，整体 lift
+  1.826）→ **提示 Q3 崩盘与“前一块（Q2）没有 brawl/event、模型对未见模式产生跨模式 prior 错序”一致**（描述性关联，非因果证明）。
+- **判定（descriptive，不做因果断言）**：**Q3 崩盘 = composition/prior shift（模式/地图/舰种轮换；Q3 base
+  18.6% vs Q2 10.0%）+ 模型严重欠概率（meanProbC 3.7% vs 18.6%、ECE 0.258）+ 跨模式排序坍塌
+  （AUC 0.500、lift 0.908）**；**不是单一标签噪声**（同标签口径、pvp 内 base 稳定、模式内仍有弱排序）；
+  连续特征漂移（更近/更少/更高速度敌人）与模式组成混杂，**无法单独归因**；标签噪声无法定量排除
+  （代理标签，server 真值仅 710 recorder 行、无法按 block 分辨）。
+- **建议（不实施）**：① walk-forward 门禁必须同时要求**每窗 AUC 与 CI 下界**（不只 lift）；② 按
+  gameMode/map/shipClass 分层或 reweight 评估/训练；③ 按窗做 prior/温度重校准（先验校准需另立预注册）；
+  ④ **不因 2/3 形式 PASS 推部署/总分**；鱼雷保持诊断-only。
+- **局限**：Q3 仅 241 launched/807 fired/150 hits，CI 极宽；描述性、无因果识别；连续漂移与模式/地图漂移
+  混杂；byMode 中 fired<50 的格子（event/pve 部分）lift 记为 `-`；E26e-s 每窗 5 折同 seed，非多 seed；
+  server 真值无法按 block 分辨，标签噪声只能排除“单一标签噪声”假设，不能排除其与组成漂移的交互。
+- **产物**：`scripts/experiments/torpedo_temporal_drift.py`（含 `--selftest`）；
+  `out/torpedo_model/e26e-t/{drift_summary.json, drift_report.md}`；预注册 `e26e-t-preregistration.md`。
+### E26e 系列结论与评分集成决策（截至 E26e-t，2026-11-09）
 
 **最终研究模型（torp4 + λ_C=0.1，全语料 3,111,384 行 / 2,215 局，5 折 seed 0）**
 
@@ -1631,12 +1705,13 @@
 | E26e-q（dose response） | 同一 common holdout 97 replay；own 0/10/25% nested | 0% 1.5963 → 10% **2.1645** → 25% **2.4859**（ρ 0.855/0.782，CI [1.461,3.063]/[1.724,3.275]）；dose Δ +0.3214；headB 3.607×→3.490×→4.049×base | **PASS（仅同期随机拆分）**：25% ≥1.90 且超 in-dist 2.1809；dose 单调、未见 ceiling（0/10/25 三点）；**E26e-r temporal FAIL → 不可外推** |
 | E26e-r（dose + temporal） | random40 64 replay；temporal25 最早 40 / holdout 最晚 97 | random40 **2.4413**（ρ 0.697，CI [1.631,3.379]，剂量饱和）；temporal25 **1.6244**（ρ −0.20，CI [0.752,2.374]）vs temporal0% 1.5063 / in-dist 2.1809 | **MIXED**：random40 过 1.90 但饱和；temporal primary <1.80 且 ρ 负 → **E26e-q random-split 2.4859 时间外推不成立（time drift）**，部署须 walk-forward |
 | E26e-s（walk-forward） | 3 窗 adapt=Q_{i−1}→test=Q_i（own 日期四分） | Q2 **3.0052**/ρ 0.903/CI [0.864,5.114]；Q3 **0.9083**/ρ −0.006/CI [0.258,1.565]；Q4 **1.8256**/ρ 0.632/CI [0.360,3.422]；0% 每窗 0.9200/2.1373/1.6481 | **PASS(2/3) but Q3 FAIL**：形式 2/3 过线，但 Q3 崩盘 + Q2/Q4 CI 下界 <1 → **temporal instability 仍在**；headB 三窗非退化；walk-forward 门禁、不总分 |
+| E26e-t（Q3 drift 诊断） | 不重训；Q1–Q4 全量组成 + 三窗预测/0% baseline + 漂移统计 | — | Q3 base **18.59%**/rowAny 29.46%（Q2 9.98/13.98、Q4 16.43/22.30）；25% **meanProbC 0.037/ECE 0.258/AUC 0.500/lift 0.908**，0% lift 2.137；组成 Q3 brawl 12,806+event 12,192（Q2 pvp 62,556/event 2,555）；top drift shipId PSI 8.54/map 7.57/gameMode 5.66/dist SMD 0.907 | 诊断：**composition/prior shift + 跨模式排序坍塌**（非单一标签噪声，连续漂移与组成混杂不可分；标签噪声不可定量排除）→ walk-forward 门禁须加 AUC/CI 下界、分层/reweight、按窗 prior/温度重校准；不推部署/总分 |
 
 **结论与观察（第 3 条为观察/假设）**
 
 1. **鱼雷决策信号真实存在**：headB 的 top-decile 发射 lift 从 E26e-b 的 2.662 提升到 torp4 的 2.905（AUPRC 2.286→2.599×base）；headC 的命中排序 lift 在 E26e-c/E26e-f/E26e-g 及 E26e-e λ0.1 上为 2.20–2.25×、ρ 0.988–1.0；E26e-h 的 fish_rate 软目标到 **2.3069×**（仅边际 +0.0069、CI 下界 2.099<2.30）但 headC 原始 ECE 升到 0.0572（T=1.387 后 0.0079）、AUPRC/AUC 下降，不能算稳健提升；any 目标的 headC 校准后 ECE 仍为 0.0041。
 2. **“发射行为”与“命中结果”是两种信号**：torp3 属性与 torp4 click-context 都显著提升 headB（分别 +8.3% / +7.9% AUPRC），但对 headC 无增益；E26e-h 把训练目标对齐 fish-level 后，fish_weighted 无增益、fish_rate 仅边际（且 strict headB 微降/校准变差）；共享 trunk 的多任务表示对 headC 必要（E26e-d 解耦后 headC 全面变弱）。
-3. **headC 的 2.30 线是标签定义相关的**：E26e-c（torp2）2.2126× 过其 1.35 线；E26e-f（torp3）2.2329×、E26e-g（torp4）2.1997× 未过 2.30；E26e-h fish_rate 2.3069× 仅边际、fish_weighted 2.1981× 无增益；E26e-i 融合 2.2475× 也只落在中间。**E26e-j 固定同一 E26e-g 模型、只换命中标签定义**：r60（严格半径 + HP 确认）下 any headC outcome lift **2.6811×**（CI [2.438,2.930]）、fish_rate 2.8390×；r120 2.1997×；r200 1.8485×；noHP（56.8% 算命中）1.1878× → **标签半径/HP 确认是 headC 平台的重要因素**，之前把 2.20–2.31× 当作模型上限并不完整。E26e-k 用 r60 标签重训后 **2.6329×**（CI [2.374,2.883]；低于 2.68 线、也低于固定模型 2.6811）、在 r120 标签上 cross-eval **2.0844×**（低于 E26e-g 2.1997）→ **r60 的优势是跨标签评估口径，未转化为重训收益**；E26e-l 加入目标几何（aspect/cross/lead/intercept）后 r120 仅到 **2.2639×**、r60 到 **2.7631×**（首超固定模型 2.6811）→ 目标几何有边际真实贡献，但仍不足以跨 r120 2.30；E26e-m 用 server damageStat 审计：代理 precision **0.798**、recall **0.484**（漏 52% server 命中、行级 hit rate 24.4% vs 40.1%），但 E26e-g headC 在 server 真值标签上仍 **2.3477×**（ρ 0.891，CI [1.807,3.018]）→ **代理主要低估绝对命中率，未丢失排序信息**；E26e-n 进一步用 server 真值做 5 折 Platt 校准：Brier **0.2805→0.2241（−20.1%）**、logloss 0.8067→0.6387、ECE 0.2367→0.0636，meanProb 0.168→**0.401≈hitRate**；但 pooled lift **2.266 < raw 2.348**，原预注册判据 FAIL，首跑后改为 held-out 折内 lift 才 PASS → **post-hoc 判据变更，只能算 MIXED/探索性**；E26e-o 做 leave-one-region-out（train apac+eu+na / holdout own）：headB **3.214×base / top 3.114** 泛化通过，但 headC **1.3849×**（<2.00）vs in-dist own **2.1809×**，**region 泛化缺口 −36.5%** → 排序并非跨区稳定，headC 2.2–2.7 的平台不能当作可迁移上限；E26e-p 用 own 10% replay few-shot（17/161）后 holdout **1.7514×**（<1.80，差 0.049），补回缺口 **46.0%**、headB 升到 **3.531×base / top 3.261 / AUC 0.771** → **少量区域样本有效但不足以收窄一半缺口**；E26e-q 在**同一 common holdout**（97/161 own replay）上做 dose response：own **0% 1.5963 → 10% 2.1645 → 25% 2.4859**（dose Δ +0.3214），25% **PASS（≥1.90）且已超 in-dist 2.1809**，headB 3.607×→3.490×→**4.049×base** → **在同期随机拆分内，剂量足够时 headC 可恢复到 in-dist 水平**，但 common holdout 仅 97 replay/589 launched，且后续 temporal 验证否定了外推；headC 差异主要来自评估标签、目标几何与区域分布，而不是单一特征堆叠。**E26e-r 进一步补 40% 剂量与时间外推**：random 40%（adapt pool 64 replay）到 **2.4413×**（random40 过 1.90，但比 25% 的 2.4859 低 0.0446 → 剂量在 25% 饱和）；**temporal 25%（最早 40 replay 入训、最晚 97 replay holdout）只有 1.6244×（<1.80）、ρ −0.20**（CI [0.752,2.374]），仅比 temporal 0% 的 1.5063 高 +0.1181 → **E26e-q 的同期随机拆分 2.4859 不能时间外推（time drift）**；headC 的跨区/跨期稳定性同时受标签定义、区域分布与时间漂移影响。**E26e-s 的 rolling-origin walk-forward（3 窗）**给出形式 2/3 PASS（Q2 3.0052/ρ 0.903、Q4 1.8256/ρ 0.632），但 **Q3 崩盘（0.9083/ρ −0.006，且低于其 0% baseline 2.1373）**、Q2/Q4 CI 下界分别仅 0.864/0.360，0% baseline 在 0.92–2.14 间波动 → **时间稳定性并未成立（temporal instability 仍在）**，E26e-r 的单切点失败不是偶然。
+3. **headC 的 2.30 线是标签定义相关的**：E26e-c（torp2）2.2126× 过其 1.35 线；E26e-f（torp3）2.2329×、E26e-g（torp4）2.1997× 未过 2.30；E26e-h fish_rate 2.3069× 仅边际、fish_weighted 2.1981× 无增益；E26e-i 融合 2.2475× 也只落在中间。**E26e-j 固定同一 E26e-g 模型、只换命中标签定义**：r60（严格半径 + HP 确认）下 any headC outcome lift **2.6811×**（CI [2.438,2.930]）、fish_rate 2.8390×；r120 2.1997×；r200 1.8485×；noHP（56.8% 算命中）1.1878× → **标签半径/HP 确认是 headC 平台的重要因素**，之前把 2.20–2.31× 当作模型上限并不完整。E26e-k 用 r60 标签重训后 **2.6329×**（CI [2.374,2.883]；低于 2.68 线、也低于固定模型 2.6811）、在 r120 标签上 cross-eval **2.0844×**（低于 E26e-g 2.1997）→ **r60 的优势是跨标签评估口径，未转化为重训收益**；E26e-l 加入目标几何（aspect/cross/lead/intercept）后 r120 仅到 **2.2639×**、r60 到 **2.7631×**（首超固定模型 2.6811）→ 目标几何有边际真实贡献，但仍不足以跨 r120 2.30；E26e-m 用 server damageStat 审计：代理 precision **0.798**、recall **0.484**（漏 52% server 命中、行级 hit rate 24.4% vs 40.1%），但 E26e-g headC 在 server 真值标签上仍 **2.3477×**（ρ 0.891，CI [1.807,3.018]）→ **代理主要低估绝对命中率，未丢失排序信息**；E26e-n 进一步用 server 真值做 5 折 Platt 校准：Brier **0.2805→0.2241（−20.1%）**、logloss 0.8067→0.6387、ECE 0.2367→0.0636，meanProb 0.168→**0.401≈hitRate**；但 pooled lift **2.266 < raw 2.348**，原预注册判据 FAIL，首跑后改为 held-out 折内 lift 才 PASS → **post-hoc 判据变更，只能算 MIXED/探索性**；E26e-o 做 leave-one-region-out（train apac+eu+na / holdout own）：headB **3.214×base / top 3.114** 泛化通过，但 headC **1.3849×**（<2.00）vs in-dist own **2.1809×**，**region 泛化缺口 −36.5%** → 排序并非跨区稳定，headC 2.2–2.7 的平台不能当作可迁移上限；E26e-p 用 own 10% replay few-shot（17/161）后 holdout **1.7514×**（<1.80，差 0.049），补回缺口 **46.0%**、headB 升到 **3.531×base / top 3.261 / AUC 0.771** → **少量区域样本有效但不足以收窄一半缺口**；E26e-q 在**同一 common holdout**（97/161 own replay）上做 dose response：own **0% 1.5963 → 10% 2.1645 → 25% 2.4859**（dose Δ +0.3214），25% **PASS（≥1.90）且已超 in-dist 2.1809**，headB 3.607×→3.490×→**4.049×base** → **在同期随机拆分内，剂量足够时 headC 可恢复到 in-dist 水平**，但 common holdout 仅 97 replay/589 launched，且后续 temporal 验证否定了外推；headC 差异主要来自评估标签、目标几何与区域分布，而不是单一特征堆叠。**E26e-r 进一步补 40% 剂量与时间外推**：random 40%（adapt pool 64 replay）到 **2.4413×**（random40 过 1.90，但比 25% 的 2.4859 低 0.0446 → 剂量在 25% 饱和）；**temporal 25%（最早 40 replay 入训、最晚 97 replay holdout）只有 1.6244×（<1.80）、ρ −0.20**（CI [0.752,2.374]），仅比 temporal 0% 的 1.5063 高 +0.1181 → **E26e-q 的同期随机拆分 2.4859 不能时间外推（time drift）**；headC 的跨区/跨期稳定性同时受标签定义、区域分布与时间漂移影响。**E26e-s 的 rolling-origin walk-forward（3 窗）**给出形式 2/3 PASS（Q2 3.0052/ρ 0.903、Q4 1.8256/ρ 0.632），但 **Q3 崩盘（0.9083/ρ −0.006，且低于其 0% baseline 2.1373）**、Q2/Q4 CI 下界分别仅 0.864/0.360，0% baseline 在 0.92–2.14 间波动 → **时间稳定性并未成立（temporal instability 仍在）**，E26e-r 的单切点失败不是偶然。**E26e-t 进一步诊断 Q3 崩盘**：Q3 base hit rate **18.59%**（Q2 9.98%、Q4 16.43%）、rowAny 29.46%；25% runQ3 meanProbC 3.7% vs 实际 18.6%、ECE 0.258、**AUC 0.500**、lift 0.908，而 0% baseline 同块 lift 2.137；组成上 Q3 含 brawl 12,806 + event 12,192（Q2 几乎全 pvp、0 brawl），漂移 top shipId PSI 8.54 / mapName 7.57 / gameMode 5.66 / enemyDistMean SMD 0.907 → **Q3 崩盘是 composition/prior shift + 跨模式排序坍塌（pvp meanProbC 5.07% > event 4.30% > brawl 1.58%，真实 base brawl 31.45% > event 15.56% > pvp 9.73%），不是单一标签噪声**；前一块训练在 Q3 反而伤害排序，部署门禁需同时约束 AUC/CI 下界。
 4. **校准可用**：单一温度即可把 headB ECE 从 0.0246 降到 0.0006、headC 从 0.0127 降到 0.0041，且不改变排序；server 真值下 headC 绝对概率仍低估（meanProb 0.168 vs 真值 0.401），5 折 Platt 校准把 Brier 降 20.1%、ECE 降 73%、meanProb 对齐 0.401，且 held-out 折内排序不变——**温度校准排序、Platt 校准绝对概率，两者都不重训模型**；但 E26e-n 的判据变更属 post-hoc、未独立验证，绝对概率校准只作探索性诊断，不改变排序/阈值。
 
 **评分集成决策：鱼雷保持“诊断-only”，暂不并入总分**
@@ -1644,13 +1719,13 @@
 - 总分继续只聚合开火/移动决策；鱼雷卡片保留为可选诊断（发射概率 + 预期效果，不适用舰种显示 N/A），总分不变。
 - 不并入的理由：
   1. headB 是**专家点击一致性**模型，不是结果真值；E26e-b 已证明它的 outcome lift 只有 1.223×，不能直接当作“决策质量”。
-  2. headC 是目前最强的结果信号，但 E26e-f/g 低于 2.30 预注册线；E26e-h 的 fish_rate 仅边际过线（CI 下界 2.099、ECE 0.0572 需额外温度、strict headB 微降 0.00004）且排序质量下降，严格读法为 MIXED；E26e-i 的两模型融合只到 2.2475、无法把边际尖峰变成稳健过线；E26e-j 显示 r60 固定模型到 2.6811×，但 E26e-k 的 r60 重训只有 2.6329×（<2.68）、r120 cross 2.0844×——标签定义主要是评估口径；E26e-l 目标几何把 r120 提到 2.2639、仍未过 2.30；E26e-m 的 server 真值子集（710 行、recorder-only）下 headC 2.3477 成立，但绝对命中率被代理低估；E26e-n 的 Platt 可把绝对概率校准到真值（Brier −20%），但原预注册 pooled lift 判据 FAIL、后改为折内判据才 PASS（post-hoc），且样本小/同语料；E26e-o 的 region holdout 显示 headC 从 in-dist 2.18 掉到 1.38（−36.5%），E26e-p 的 10% own few-shot 只补回 46%（1.75<1.80）；E26e-q 的 25% own dose 在 common holdout 到 2.49（PASS），但仅 97 replay、同语料、CI [1.724,3.275] 仍宽，且是 region-specific adaptation 而非独立验证——仍不足以支撑一个总分权重。**E26e-r 的时间外推进一步否定了 few-shot 随机拆分收益的可迁移性**：temporal 25% 1.6244（<1.80）且 ρ −0.20，说明 E26e-q 的 2.4859 只在同期随机拆分内成立，不能作为部署/权重依据。E26e-s 的 3 窗 walk-forward 同样只有 2/3 形式过线（Q3 0.9083/ρ −0.006 崩盘，Q2/Q4 CI 下界 <1），**时间稳定性不成立**，鱼雷仍保持诊断-only。
+  2. headC 是目前最强的结果信号，但 E26e-f/g 低于 2.30 预注册线；E26e-h 的 fish_rate 仅边际过线（CI 下界 2.099、ECE 0.0572 需额外温度、strict headB 微降 0.00004）且排序质量下降，严格读法为 MIXED；E26e-i 的两模型融合只到 2.2475、无法把边际尖峰变成稳健过线；E26e-j 显示 r60 固定模型到 2.6811×，但 E26e-k 的 r60 重训只有 2.6329×（<2.68）、r120 cross 2.0844×——标签定义主要是评估口径；E26e-l 目标几何把 r120 提到 2.2639、仍未过 2.30；E26e-m 的 server 真值子集（710 行、recorder-only）下 headC 2.3477 成立，但绝对命中率被代理低估；E26e-n 的 Platt 可把绝对概率校准到真值（Brier −20%），但原预注册 pooled lift 判据 FAIL、后改为折内判据才 PASS（post-hoc），且样本小/同语料；E26e-o 的 region holdout 显示 headC 从 in-dist 2.18 掉到 1.38（−36.5%），E26e-p 的 10% own few-shot 只补回 46%（1.75<1.80）；E26e-q 的 25% own dose 在 common holdout 到 2.49（PASS），但仅 97 replay、同语料、CI [1.724,3.275] 仍宽，且是 region-specific adaptation 而非独立验证——仍不足以支撑一个总分权重。**E26e-r 的时间外推进一步否定了 few-shot 随机拆分收益的可迁移性**：temporal 25% 1.6244（<1.80）且 ρ −0.20，说明 E26e-q 的 2.4859 只在同期随机拆分内成立，不能作为部署/权重依据。E26e-s 的 3 窗 walk-forward 同样只有 2/3 形式过线（Q3 0.9083/ρ −0.006 崩盘，Q2/Q4 CI 下界 <1），**时间稳定性不成立**，鱼雷仍保持诊断-only。E26e-t 对上条给出机制性解释：Q3 的 brawl/event 模式占比（63%+）远高 Q2（pvp 主导、0 brawl），使 base rate 从 10% 升到 18.6%，而 Q2 训练模型给未见模式最低概率（跨模式 meanProbC 错序），整体 AUC 掉到 0.500；因此时间外推门禁不能只看 lift，必须同时要求每窗 AUC 与 CI 下界，并按 mode/map 分层。
   3. 尚未做**端到端总分验证**（鱼雷分量与 fire/move 聚合后的战斗结果相关性、校准、权重选择均无预注册实验）；直接加分会是未经验证的分数改动。
 - 重新评估的条件（满足后再开预注册）：① 逐鱼命中/伤害标签（ShotKillEvent 或 server damageStat）对齐，headC 在≥2 个 seed/语料上稳定 ≥2.30× 且 CI 不重叠；② 端上温度后处理 + 部署校准验证；③ 预注册“加入鱼雷分量是否提升总分与战斗结果相关性”的 A/B；④ SS/BB 样本补强、N/A 语义完整；⑤ 任何 region/few-shot 增益须通过**时间外推/walk-forward**（而非随机拆分）复现后才进入评估。
 
 **交付建议（已落地 T4）**：torp4（49 维/3 头/温度烤图）已作为**独立可选诊断包**交付（见下节 T4，PR #1868）：app 侧新契约 + `torpedo4_model.onnx` 槽 + effectiveness 行，不改变总分；模型文件仍由维护者手动放入 decisions pack（ONNX 不入库）。**当前交付模型仍是 r120 标签训练/校准**；r60 标签是研究结果，若重训验证通过，需另立交付波次更新 ONNX/温度/effectiveness 语义。
 
-**剩余局限**：命中为代理标签，E26e-m 的 server 真值只覆盖 recorder 710 行（4.2%）/3,212 fish（4.5%），窗口重叠非逐鱼归因、CI 宽；E26e-n 的 Platt 校准同语料/710 行、未独立赛季复核，且原 pooled lift 判据未过、首跑后改判据（post-hoc），isotonic 小样本不稳；E26e-o/p/q 的 region holdout 仅 957/874/589 launched、149/144/97 replay，adapt 仅 17–40 replay，CI 宽；E26e-q 的 25% 2.4859 是 common holdout 内结果、非独立赛事/赛季，dose 仅 0/10/25% 三点且未测 40–60%；E26e-j/k 的 r60 结果同数据、不同变体 base hitRate 不同不能直接横比，r60 重训也未超过固定模型（2.6329 < 2.6811）；E26e-l 目标几何来自轨迹近似（非精确弹道），27.6% 行无目标回退 0，r120 2.2639 仍低于 2.30；click 特征粗糙（无管位/DoT 几何）；SS 101 launched、na/own 样本薄；未做端上概率分级；λ_C 固定 0.1 未再扫；fish_rate/E26e-i/k/l/m/n/o/p/q 均不能作为稳健泛化结论。**E26e-r 补充**：random 40% 2.4413 在 25% 附近饱和（Δ25→40 −0.0446）；temporal split 只有 97 replay/515 launched、一个时间切点，且时间漂移与赛事/版本/玩家分布混淆，无法单独归因；temporal 25% 1.6244（<1.80）/ρ −0.20 表明 E26e-q 的 2.4859 是同期随机拆分结果，**时间外推不成立**，few-shot 部署前必须走 walk-forward。**E26e-s 补充**：3 窗测试每窗仅 139–329 launched，Q3 lift 0.9083/ρ −0.006（低于其 0% 2.1373）、Q2 3.0052 但 0% 仅 0.9200 且 CI [0.864,5.114]、Q4 1.8256 压线且 CI [0.360,3.422]；0% baseline 0.92–2.14 大幅波动；形式 2/3 PASS 不能当作时间稳健，时间漂移与赛事/版本/玩家分布混杂，需更大窗口/多 origin 验证。
+**剩余局限**：命中为代理标签，E26e-m 的 server 真值只覆盖 recorder 710 行（4.2%）/3,212 fish（4.5%），窗口重叠非逐鱼归因、CI 宽；E26e-n 的 Platt 校准同语料/710 行、未独立赛季复核，且原 pooled lift 判据未过、首跑后改判据（post-hoc），isotonic 小样本不稳；E26e-o/p/q 的 region holdout 仅 957/874/589 launched、149/144/97 replay，adapt 仅 17–40 replay，CI 宽；E26e-q 的 25% 2.4859 是 common holdout 内结果、非独立赛事/赛季，dose 仅 0/10/25% 三点且未测 40–60%；E26e-j/k 的 r60 结果同数据、不同变体 base hitRate 不同不能直接横比，r60 重训也未超过固定模型（2.6329 < 2.6811）；E26e-l 目标几何来自轨迹近似（非精确弹道），27.6% 行无目标回退 0，r120 2.2639 仍低于 2.30；click 特征粗糙（无管位/DoT 几何）；SS 101 launched、na/own 样本薄；未做端上概率分级；λ_C 固定 0.1 未再扫；fish_rate/E26e-i/k/l/m/n/o/p/q 均不能作为稳健泛化结论。**E26e-r 补充**：random 40% 2.4413 在 25% 附近饱和（Δ25→40 −0.0446）；temporal split 只有 97 replay/515 launched、一个时间切点，且时间漂移与赛事/版本/玩家分布混淆，无法单独归因；temporal 25% 1.6244（<1.80）/ρ −0.20 表明 E26e-q 的 2.4859 是同期随机拆分结果，**时间外推不成立**，few-shot 部署前必须走 walk-forward。**E26e-s 补充**：3 窗测试每窗仅 139–329 launched，Q3 lift 0.9083/ρ −0.006（低于其 0% 2.1373）、Q2 3.0052 但 0% 仅 0.9200 且 CI [0.864,5.114]、Q4 1.8256 压线且 CI [0.360,3.422]；0% baseline 0.92–2.14 大幅波动；形式 2/3 PASS 不能当作时间稳健，时间漂移与赛事/版本/玩家分布混杂，需更大窗口/多 origin 验证。**E26e-t 补充**：Q3 崩盘机制为组成（brawl 34% + event 32%，Q2 无 brawl）+ base rate 18.6% vs 10.0% + 模型跨模式 prior 错序（AUC 0.500、lift 0.908 vs 0% 2.137）；25% 模型模式内仍有弱排序（1.59–1.81）但整体被模式错序吞掉；E26e-m 的 server 真值仅 710 recorder 行，无法按 block 量化标签噪声；描述性诊断、无因果识别。
 ### T4 · torp4 诊断包交付（**诊断-only，不进总分**）
 
 - **裁决/定位**：一次升到 **torp4（49 维，= 27 core + 11 torp2 + 6 torp3 + 5 torp4）**、3 头
