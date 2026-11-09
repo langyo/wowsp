@@ -9,17 +9,18 @@
 //! consistent ladder even if the settings file changes mid-download.
 //!
 //! The extraction is behaviour-neutral for GitHub (identical candidates,
-//! identical order). The Hugging Face provider's URL rewriting, probe and
-//! hedging land with the `ai` channel wave and consume the types below;
-//! the empty Hugging Face built-in endpoint list is deliberate until those
-//! endpoints are verified end-to-end.
+//! identical order). The Hugging Face provider owns the endpoint-substitution
+//! rewrite the `ai` model channel consumes: each candidate is the official
+//! `/{repo}/resolve/{revision}/{path}` path under a different endpoint, and
+//! the channel's signed manifest plus per-file sha256 decide what is accepted.
 
 // The provider registry and role-tagged candidates are consumed by the
-// `ai` channel wave (PR2); the behaviour-neutral extraction lands first so
-// the existing GitHub call sites never change in this step.
+// `ai` model channel; the behaviour-neutral extraction landed first so the
+// existing GitHub call sites never changed there.
 #![allow(dead_code)]
 
 pub mod github;
+pub mod huggingface;
 
 use crate::commands::network::NetworkConfig;
 
@@ -105,7 +106,7 @@ pub const PROVIDERS: [ProviderSpec; 2] = [
     ProviderSpec {
         id: ProviderId::HuggingFace,
         official: HUGGING_FACE_OFFICIAL,
-        built_in: &[],
+        built_in: &huggingface::BUILT_IN_ENDPOINTS,
         rewrite: Rewrite::Endpoint,
     },
 ];
@@ -164,25 +165,47 @@ impl MirrorContext {
         github::update_source_list_with(&self.config.github_mirrors, watch_sources)
     }
 
-    /// The Hugging Face endpoint ladder: user endpoints first, then the
-    /// official route. Consumed by the `ai` channel wave.
+    /// Candidate URLs for one Hugging Face object: user endpoints first,
+    /// then the built-in mainland endpoints, then the official route.
+    #[must_use]
+    pub fn huggingface_candidates(
+        &self,
+        resource: &huggingface::HfResource<'_>,
+    ) -> Vec<MirrorSource> {
+        huggingface::candidates(&self.config.huggingface_mirrors, resource)
+    }
+
+    /// The Hugging Face endpoint ladder as the settings panel displays it:
+    /// user endpoints first, then the built-in endpoints, then the official
+    /// route (this is also the download candidate order).
     #[must_use]
     pub fn huggingface_ladder(&self) -> Vec<MirrorSource> {
-        let mut out = Vec::with_capacity(self.config.huggingface_mirrors.len() + 1);
-        for endpoint in &self.config.huggingface_mirrors {
+        let mut out = Vec::with_capacity(
+            self.config.huggingface_mirrors.len() + huggingface::BUILT_IN_ENDPOINTS.len() + 1,
+        );
+        let mut push = |endpoint: &str, role: SourceRole| {
+            let endpoint = endpoint.trim().trim_end_matches('/');
+            if endpoint.is_empty()
+                || out
+                    .iter()
+                    .any(|source: &MirrorSource| source.url == endpoint)
+            {
+                return;
+            }
             out.push(MirrorSource {
                 provider: ProviderId::HuggingFace,
-                role: SourceRole::User,
-                label: endpoint.clone(),
-                url: endpoint.clone(),
+                role,
+                label: endpoint.to_string(),
+                url: endpoint.to_string(),
             });
+        };
+        for endpoint in &self.config.huggingface_mirrors {
+            push(endpoint, SourceRole::User);
         }
-        out.push(MirrorSource {
-            provider: ProviderId::HuggingFace,
-            role: SourceRole::Official,
-            label: HUGGING_FACE_OFFICIAL.to_string(),
-            url: HUGGING_FACE_OFFICIAL.to_string(),
-        });
+        for endpoint in huggingface::BUILT_IN_ENDPOINTS {
+            push(endpoint, SourceRole::BuiltIn);
+        }
+        push(HUGGING_FACE_OFFICIAL, SourceRole::Official);
         out
     }
 }
@@ -205,9 +228,10 @@ mod tests {
             .expect("hf");
         assert_eq!(hf.official, "https://huggingface.co");
         assert_eq!(hf.rewrite, Rewrite::Endpoint);
-        assert!(
-            hf.built_in.is_empty(),
-            "HF built-ins land with the ai channel"
+        assert_eq!(
+            hf.built_in,
+            huggingface::BUILT_IN_ENDPOINTS,
+            "the verified mainland mirror is a built-in endpoint"
         );
     }
 
@@ -228,6 +252,18 @@ mod tests {
         assert_eq!(sources[0].role, SourceRole::User);
         assert_eq!(sources[0].url, format!("https://mirror.example/{page}"));
         assert_eq!(ctx.huggingface_ladder()[0].url, "https://hf-mirror.example");
+        let resource = huggingface::HfResource::new("langyo/wowsp-d1", "main", "manifest.json")
+            .expect("resource");
+        let candidates = ctx.huggingface_candidates(&resource);
+        assert_eq!(
+            candidates[0].url,
+            "https://hf-mirror.example/langyo/wowsp-d1/resolve/main/manifest.json"
+        );
+        assert!(candidates.iter().any(|c| c.role == SourceRole::BuiltIn));
+        assert_eq!(
+            candidates.last().map(|c| c.role),
+            Some(SourceRole::Official)
+        );
         assert_eq!(
             ctx.huggingface_ladder().last().map(|s| s.role),
             Some(SourceRole::Official)

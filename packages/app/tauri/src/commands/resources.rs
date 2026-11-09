@@ -146,12 +146,15 @@ pub(crate) const REGISTRY: &[ResourceSpec] = &[
         trigger: "passive",
         progress: "",
     },
+    // The Hugging Face published decision models. The row is the settings
+    // inventory's view of the ai channel; downloads stay behind the card
+    // (and behind the ai feature, which the portable build lacks).
     ResourceSpec {
         id: "decisions-pack",
         kind: "pack",
-        channel: "",
-        trigger: "manual",
-        progress: "",
+        channel: "ai",
+        trigger: "boot",
+        progress: "ai-models",
     },
     ResourceSpec {
         id: "bundled-lesta",
@@ -187,7 +190,12 @@ struct ResourceStateFile {
 
 /// The rows that HAVE an owner stamp worth projecting: the walk backfills
 /// their state file on first sight; the refresh command re-records them.
-const STAMPED_ROWS: &[&str] = &["res-pack", "data-kit", "data-ship-gameparams"];
+const STAMPED_ROWS: &[&str] = &[
+    "res-pack",
+    "data-kit",
+    "data-ship-gameparams",
+    "decisions-pack",
+];
 
 fn state_path(data: &Path, id: &str) -> std::path::PathBuf {
     data.join("resources").join(format!("{id}.json"))
@@ -204,6 +212,20 @@ fn now_rfc3339() -> String {
     // still compare distinct (the ledger's content-moved re-stamp relies
     // on it).
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+}
+
+/// Record one row's ledger entry from a command that owns the content
+/// truth (the ai channel's install pass). Best-effort, like the walk.
+pub(crate) fn record_ledger_external(
+    id: &str,
+    sha256: Option<String>,
+    version: Option<String>,
+    mark_checked: bool,
+) {
+    let Ok(data) = super::appdata::appdata_dir_path() else {
+        return;
+    };
+    record_state_in(&data, id, sha256, version, mark_checked);
 }
 
 /// Record/merge one row's ledger entry. Best-effort: a failed write only
@@ -384,13 +406,21 @@ fn probe(id: &str, data: &Path, cache: &Path) -> Probe {
         "cache-encyclopedia" => cache_probe(&data.join("encyclopedia")).root("data"),
         "cache-community" => cache_probe(&data.join("community")).root("data"),
         "decisions-pack" => {
+            // The ai channel's stamp ({seq, version, revision, treeSha256});
+            // content truth stays the on-disk tree, the ledger records when.
             let dir = cache.join("decisions");
+            let stamp = read_json(&cache.join(".ai-version.json"));
             let size = dir_size(&dir);
             Probe {
                 present: size > 0,
+                version: stamp
+                    .as_ref()
+                    .and_then(|v| v["version"].as_str().map(String::from)),
+                sha256: stamp
+                    .as_ref()
+                    .and_then(|v| v["treeSha256"].as_str().map(String::from)),
                 size_bytes: size,
                 root: "cache".into(),
-                ..Probe::default()
             }
         },
         "bundled-lesta" => Probe {
@@ -475,6 +505,9 @@ struct RefreshPlan {
     /// The res-pack manifest check (no download; the panel's own card owns
     /// the actual download decision).
     res_check: bool,
+    /// The AI model channel's signed-manifest check (fetch-only; the model
+    /// card owns the download decision).
+    ai_check: bool,
 }
 
 fn refresh_plan(ids: Option<&[String]>) -> RefreshPlan {
@@ -482,6 +515,10 @@ fn refresh_plan(ids: Option<&[String]>) -> RefreshPlan {
         return RefreshPlan {
             data_lane: true,
             res_check: true,
+            // The ai channel's boot/window check is TTL-gated by the model
+            // card (its own card issues the explicit check); the generic
+            // refresh only touches it when asked by id.
+            ai_check: false,
         };
     };
     RefreshPlan {
@@ -489,6 +526,7 @@ fn refresh_plan(ids: Option<&[String]>) -> RefreshPlan {
             .iter()
             .any(|id| id == "data-kit" || id == "data-ship-gameparams"),
         res_check: ids.iter().any(|id| id == "res-pack"),
+        ai_check: ids.iter().any(|id| id == "decisions-pack"),
     }
 }
 
@@ -517,6 +555,15 @@ pub async fn refresh_resources(ids: Option<Vec<String>>) -> CommandResult<Vec<St
             Err(e) => tracing::warn!(error = %e, "resource refresh: res check failed"),
         }
     }
+    #[cfg(feature = "ai")]
+    let mut ai_touched = false;
+    #[cfg(feature = "ai")]
+    if plan.ai_check {
+        match super::ai_pack::ai_pack_check().await {
+            Ok(_) => ai_touched = true,
+            Err(e) => tracing::warn!(error = %e, "resource refresh: ai check failed"),
+        }
+    }
 
     if data_touched {
         done.push("data-kit".into());
@@ -524,6 +571,10 @@ pub async fn refresh_resources(ids: Option<Vec<String>>) -> CommandResult<Vec<St
     }
     if res_touched {
         done.push("res-pack".into());
+    }
+    #[cfg(feature = "ai")]
+    if ai_touched {
+        done.push("decisions-pack".into());
     }
 
     // Re-record the touched rows' ledger entries (fresh stamps + checkedAt).

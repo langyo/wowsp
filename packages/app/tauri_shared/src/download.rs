@@ -34,6 +34,8 @@ pub mod kind {
     pub const DATA_PACK: &str = "data-pack";
     /// One mod-hub catalog package (`mod_catalog.rs`).
     pub const MOD_PACKAGE: &str = "mod-package";
+    /// The AI decision-model pack (`ai_pack.rs`).
+    pub const AI_MODELS: &str = "ai-models";
 }
 
 /// Phase vocabulary. Hub-owned phases first, then the context-owned

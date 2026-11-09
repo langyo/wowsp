@@ -58,7 +58,8 @@ pub struct DecisionAiStatus {
 
 /// Installed `decisions` model-pack inventory (`<cache>/decisions`): the
 /// ONNX fire model plus one terrain-LOS raster per map subdirectory. The
-/// pack is installed out of band; the settings' resources page reads this
+/// pack is installed by the `ai` channel (commands/ai_pack.rs) from the
+/// signed Hugging Face manifest; the settings' resources page reads this
 /// to show what is on disk and to offer a clear.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -404,4 +405,94 @@ pub struct DecisionTickState {
     pub entities: Vec<DecisionTickEntity>,
     pub zones: Vec<DecisionTickZone>,
     pub recent_events: DecisionTickEvents,
+}
+
+// ── AI model channel (Hugging Face published decision models) ─────────────
+//
+// The channel's wire types (docs/en/designs/ai-models.md section 6): the
+// local installation inventory, one remote-manifest check, and the file
+// table the settings card renders. Produced by commands/ai_pack.rs.
+
+/// One expected runtime file's local state inside <cache>/decisions.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPackModelState {
+    /// Destination path inside <cache>/decisions (flat model name, attrs
+    /// file, or <mapId>/terrain_los.npz).
+    pub path: String,
+    /// Whether a non-empty file exists at that path.
+    pub present: bool,
+    pub size_bytes: u64,
+}
+
+/// Local installation state of the AI model pack, read from the stamp and
+/// the on-disk tree. None of the remote fields here touch the network.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPackStatus {
+    /// A stamp exists AND the pack directory is populated.
+    pub installed: bool,
+    /// The installed manifest's monotonic publish counter.
+    pub seq: Option<u64>,
+    /// The installed manifest's publish timestamp.
+    pub version: Option<String>,
+    /// The installed content tree hash.
+    pub tree_sha256: Option<String>,
+    /// The Hugging Face commit the installed files were downloaded from.
+    pub revision: Option<String>,
+    /// When this pack landed here (stamp time).
+    pub installed_at: Option<String>,
+    /// Recursive size of <cache>/decisions.
+    pub size_bytes: u64,
+    /// Number of map subdirectories carrying a terrain_los.npz.
+    pub los_maps: u32,
+    /// Expected runtime files with their local presence/size.
+    pub models: Vec<AiPackModelState>,
+}
+
+/// One file of the remote manifest's file table (display + contract info).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPackFileInfo {
+    /// Destination path inside <cache>/decisions.
+    pub path: String,
+    pub size: u64,
+    pub sha256: String,
+    /// Model kind declared by the manifest (None for data files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Featurizer contract declared by the manifest (None for data files).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub feature_set: Option<String>,
+}
+
+/// One remote-manifest check: the authenticated manifest summary plus the
+/// local state it was compared against. Check-only; downloads stay a
+/// separate, user-initiated command.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiPackCheck {
+    /// The installed pack at check time (local, no network).
+    pub current: AiPackStatus,
+    /// The authenticated manifest's publish counter.
+    pub latest_seq: u64,
+    pub latest_version: String,
+    pub latest_tree_sha256: String,
+    /// The Hub commit the manifest pins for file downloads.
+    pub latest_revision: String,
+    /// Sum of the manifest's runtime file sizes.
+    pub total_bytes: u64,
+    /// Whether the manifest includes the optional LOS raster tree.
+    pub los_included: bool,
+    /// The manifest's runtime file table.
+    pub files: Vec<AiPackFileInfo>,
+    /// The endpoint that served (and whose bytes verified) the manifest.
+    pub endpoint: String,
+    /// The sha256 of the signed manifest bytes (diagnostics).
+    pub manifest_sha256: String,
+    /// When this check ran (RFC 3339).
+    pub checked_at: String,
+    /// A different content tree than the installed one (or nothing
+    /// installed): the card offers the download.
+    pub update_available: bool,
 }

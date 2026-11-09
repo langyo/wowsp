@@ -325,6 +325,12 @@ export const RPC = {
   // Decisions model-pack inventory + clear (settings → resources page).
   decisions_pack_status: "decisions_pack_status",
   clear_decisions_pack: "clear_decisions_pack",
+  // AI model channel (commands/ai_pack.rs): signed Hugging Face manifest
+  // check + per-file install into the decisions pack.
+  ai_pack_status: "ai_pack_status",
+  ai_pack_check: "ai_pack_check",
+  ai_pack_download: "ai_pack_download",
+  ai_pack_cancel: "ai_pack_cancel",
   decision_scale_calibration: "decision_scale_calibration",
   decision_tick_state: "decision_tick_state",
   replay_visibility_probe: "replay_visibility_probe",
