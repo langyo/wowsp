@@ -992,26 +992,51 @@ mod tree_version_tests {
         fs::remove_dir_all(&dir).ok();
     }
 
-    /// One-sided evidence is not evidence: a stamp with no client pin or a
-    /// pin with no stamp both stay not-stale, exactly the comparison the
-    /// command applies.
+    /// One-sided evidence is not evidence: a stamp with no client pin, or a
+    /// pin with no stamp, must both come back not-stale — and a genuine
+    /// disagreement must come back stale. Driven through the COMMAND, so a
+    /// change to its comparison actually fails this test.
     #[test]
     fn one_sided_versions_are_never_stale() {
-        let cases: [(Option<&str>, Option<&str>); 3] = [
-            (None, Some("15.10.0")),
-            (Some("15.9.0"), None),
-            (None, None),
-        ];
-        for (tree, game) in cases {
-            let stale = matches!((tree, game), (Some(t), Some(g)) if t != g);
-            assert!(!stale, "tree={tree:?} game={game:?} must not be stale");
-        }
-        // A matching pair is not stale either; a genuine disagreement IS.
-        let same = matches!((Some("15.10.0"), Some("15.10.0")),
-            (Some(t), Some(g)) if t != g);
-        assert!(!same);
-        let differs = matches!((Some("15.9.0"), Some("15.10.0")),
-            (Some(t), Some(g)) if t != g);
-        assert!(differs);
+        let root = tmp("one_sided");
+        let res_mods = root.join("bin/13357822/res_mods");
+        fs::create_dir_all(&res_mods).unwrap();
+
+        // Pin but no stamp.
+        fs::write(
+            root.join("preferences.xml"),
+            "<preferences><last_server_version>15,10,0,13357822</last_server_version></preferences>",
+        )
+        .unwrap();
+        let out = mod_hub_tree_version(root.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(out.tree_game_version, None);
+        assert_eq!(out.game_version.as_deref(), Some("15.10.0"));
+        assert!(!out.stale, "a missing stamp is not a drift");
+        assert!(out.risky_paths.is_empty());
+
+        // Stamp but no pin (a never-launched client: no preferences.xml).
+        fs::remove_file(root.join("preferences.xml")).unwrap();
+        super::manifest::stamp_tree(&res_mods, "15.10.0");
+        let out = mod_hub_tree_version(root.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(out.tree_game_version.as_deref(), Some("15.10.0"));
+        assert_eq!(out.game_version, None);
+        assert!(!out.stale, "an unknown client version is not a drift");
+
+        // Both known and equal: fresh.
+        fs::write(
+            root.join("preferences.xml"),
+            "<preferences><last_server_version>15,10,0,13357822</last_server_version></preferences>",
+        )
+        .unwrap();
+        let out = mod_hub_tree_version(root.to_string_lossy().into_owned()).unwrap();
+        assert!(!out.stale, "matching versions are not a drift");
+
+        // Both known and different: stale, through the same entry point.
+        super::manifest::stamp_tree(&res_mods, "15.9.0");
+        let out = mod_hub_tree_version(root.to_string_lossy().into_owned()).unwrap();
+        assert!(out.stale, "a real disagreement must be reported");
+        assert_eq!(out.tree_game_version.as_deref(), Some("15.9.0"));
+        assert_eq!(out.game_version.as_deref(), Some("15.10.0"));
+        fs::remove_dir_all(&root).ok();
     }
 }

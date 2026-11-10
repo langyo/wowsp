@@ -386,23 +386,33 @@ export default defineComponent({
                 </div>
               )}
 
-
+              {/* A tree stamped by an older client. Advisory: the banner
+                  names the drift and the override count, and the hint is
+                  reachable by keyboard (the sibling banners carry an
+                  action button; this one's fix lives in the installed
+                  list, so the hint has to be focusable to be read at
+                  all). Suppressed under safe mode, where nothing is
+                  loaded anyway. */}
               {hub.treeVersion.value?.stale &&
                 hub.gameRoot.value &&
                 !hub.safeMode.value && (
-                  <div class="resources-banner resources-banner--warn">
+                  <div class="resources-banner resources-banner--warn" role="alert">
                     <AlertTriangle size={16} />
                     <span
                       class="resources-banner__text"
-                      data-hint={t("resources.treeStaleHint", {
-                        count: hub.treeVersion.value.riskyPaths.length,
-                      })}
+                      tabindex="0"
+                      data-hint={t("resources.treeStaleHint")}
                     >
-                      {t("resources.treeStale", {
-                        tree: hub.treeVersion.value.treeGameVersion ?? "?",
-                        current: hub.treeVersion.value.gameVersion ?? "?",
-                        count: hub.treeVersion.value.riskyPaths.length,
-                      })}
+                      {hub.treeVersion.value.riskyPaths.length > 0
+                        ? t("resources.treeStale", {
+                            tree: hub.treeVersion.value.treeGameVersion ?? "?",
+                            current: hub.treeVersion.value.gameVersion ?? "?",
+                            count: hub.treeVersion.value.riskyPaths.length,
+                          })
+                        : t("resources.treeStaleNoOverrides", {
+                            tree: hub.treeVersion.value.treeGameVersion ?? "?",
+                            current: hub.treeVersion.value.gameVersion ?? "?",
+                          })}
                     </span>
                   </div>
                 )}
