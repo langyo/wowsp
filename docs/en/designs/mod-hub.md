@@ -164,6 +164,8 @@ user-attachment / raw URL. The indexer keeps the line only for https URLs
 on those GitHub hosts, emits it as `preview_video` in the version payload,
 and the app streams it through hikari's media player behind a play button.
 
+The pipeline is automated: `python scripts/mod_hub_preview_video.py encode --source <video> --slug <slug>` skips the leading black segment, encodes the clip and enforces the 3 MB / 20 s budget; `publish --file <clip> --slug <slug> --discussion <number>` uploads it as `preview-<slug>.mp4` and patches the thread's front matter plus its preview bullet (idempotent, `--dry-run` prints the patched body). The tool finds ffmpeg through `--ffmpeg`, the `FFMPEG` environment variable or `PATH`, and otherwise installs the pip-packaged `imageio-ffmpeg` wheel. Any tag on the release download tree works — the existing assets ride the `mod-hub` tag. The APP bundles no ffmpeg: previews play through the Tauri webview, and an external binary is only needed to produce clips or to import non-WebM video.
+
 #### Slug taxonomy (`category.genus.species`)
 
 Every mod id is a permanent, three-field taxonomical name — big to small, like
