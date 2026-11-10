@@ -755,6 +755,12 @@ pub struct ModLayer {
     /// re-rendered (reordered, re-applied after a game update). Legacy installs
     /// recorded before the store existed are `false` and pinned to the bottom.
     pub managed: bool,
+    /// res_mods-relative directory holding this layer's video files, when it
+    /// ships any (`gui/video/login` for a login/opening clip). The detail pane
+    /// lists it through `mod_hub_list_assets` and plays it through the asset
+    /// protocol; `None` for a pack with no video payload.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_dir: Option<String>,
 }
 
 /// Two layers claiming one exclusive slot (same ship skin, same voice bank).

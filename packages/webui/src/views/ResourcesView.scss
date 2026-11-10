@@ -703,6 +703,68 @@
   color: rgb(var(--color-muted));
 }
 
+// ── Inline video players (video packs: the login/opening clip) ────────────
+
+// A video pack usually ships both tiers (main + main_low); the cards stack
+// in one column so each player keeps a readable 16:9 surface.
+.asset-preview__videos {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.asset-preview__video {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.asset-preview__video-el {
+  display: block;
+  width: 100%;
+  max-height: 18rem;
+  border-radius: var(--radius-xs);
+  background: #000;
+}
+
+// Placeholder while the path lookup runs / after it failed — the same
+// muted surface as the other preview fallbacks.
+.asset-preview__video-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-xs);
+  background: rgb(var(--color-border) / 10%);
+  color: rgb(var(--color-muted));
+  font-size: var(--text-2xs);
+}
+
+.asset-preview__video-cap {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+}
+
+.asset-preview__video-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+  color: rgb(var(--color-text));
+}
+
+.asset-preview__video-size {
+  flex: none;
+}
+
 // ── Model rows + 3D stage ──────────────────────────────────────────────────
 
 .asset-preview__model {

@@ -889,6 +889,7 @@ pub fn run() {
             commands::mod_hub::mod_hub_foreign_units,
             commands::mod_tags::mod_tags,
             commands::mod_hub::mod_hub_list_assets,
+            commands::mod_hub::mod_hub_asset_file_path,
             commands::mod_hub::mod_hub_read_asset,
             commands::mod_hub::mod_hub_read_model,
                 commands::mod_hub::mod_hub_client_usage,

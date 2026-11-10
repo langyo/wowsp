@@ -664,6 +664,16 @@ fn build_view(data: &Path, ledger: &Ledger, game_root: &str, stack: &StackState)
                     .push(layer.pack_id.clone());
             }
         }
+        // The pane's inline player: the directory of the first video this
+        // layer ships (login/opening clips are `gui/video/login/{main,
+        // main_low}.webm`). The UI falls back to the known target dir for a
+        // video-category layer that only exists as a legacy record.
+        let video_dir = layer
+            .files
+            .iter()
+            .find(|rel| super::assets::is_video_path(rel))
+            .and_then(|rel| rel.rsplit_once('/').map(|(dir, _)| dir.to_string()))
+            .filter(|dir| !dir.is_empty());
         rendered_layers.push(ModLayer {
             pack_id: layer.pack_id.clone(),
             name: layer.name.clone(),
@@ -678,6 +688,7 @@ fn build_view(data: &Path, ledger: &Ledger, game_root: &str, stack: &StackState)
             shadowed_count: shadowed,
             covered_by,
             managed: layer.managed,
+            video_dir,
         });
     }
 
@@ -1555,6 +1566,52 @@ mod tests {
             data.join(STATE_FILE).is_file(),
             "migration persists the state"
         );
+    }
+
+    /// A video pack advertises the directory its clip lives in (so the
+    /// detail pane can list/play it without guessing the layout); a pack
+    /// with no video payload stays `None`.
+    #[test]
+    fn video_layers_advertise_their_clip_directory() {
+        let tmp = fixture("video");
+        let game = tmp.join("game");
+        make_game(&game);
+        let data = tmp.join("data");
+        fs::create_dir_all(&data).unwrap();
+        let root = game.to_string_lossy().into_owned();
+        let ledger = Ledger {
+            installs: vec![
+                record(
+                    "pack.video",
+                    "Video",
+                    "1.0.0",
+                    &root,
+                    &["gui/video/login/main.webm", "gui/video/login/main_low.webm"],
+                ),
+                record(
+                    "pack.skin",
+                    "Skin",
+                    "1.0.0",
+                    &root,
+                    &["spaces/PJSC001/tex.png"],
+                ),
+            ],
+        };
+
+        let stack = view_stack(&data, &ledger, &root).expect("view");
+        let video = stack
+            .layers
+            .iter()
+            .find(|layer| layer.pack_id == "pack.video")
+            .expect("video layer");
+        assert_eq!(video.video_dir.as_deref(), Some("gui/video/login"));
+        let skin = stack
+            .layers
+            .iter()
+            .find(|layer| layer.pack_id == "pack.skin")
+            .expect("skin layer");
+        assert!(skin.video_dir.is_none());
+        fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]

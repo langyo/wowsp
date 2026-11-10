@@ -6,6 +6,11 @@
 //! and pass through as-is, Wwise Vorbis files are fully decoded to PCM
 //! in-process (codebook set chosen by decode quality) and re-emitted as
 //! WAV — the browser never has to decode rebuilt Vorbis.
+//!
+//! Video (`.webm`/`.mp4`) takes a third route: the list marks it `video`
+//! and [`mod_hub_asset_file_path`] resolves the file to an absolute path
+//! for Tauri's asset protocol — the player streams the file directly, so
+//! its bytes never cross IPC ([`mod_hub_read_asset`] refuses them).
 
 use anyhow::anyhow;
 use wowsp_tauri_shared::CommandResult;
@@ -21,11 +26,13 @@ pub struct AssetFileInfo {
     /// res_mods-relative path (forward slashes).
     pub rel: String,
     pub size: u64,
-    /// `image | audio | model` — what the detail pane should do with it.
+    /// `image | audio | video | model` — what the detail pane should do
+    /// with it.
     pub kind: String,
     /// File extension, lowercased, no dot.
     pub ext: String,
-    /// False for `.wem` — listed, but the browser cannot play it.
+    /// True when the detail pane can play it (video plays through the asset
+    /// protocol; `.wem` through the on-read transcode).
     pub playable: bool,
     /// Wwise event this voice line answers to (from the pack's
     /// `mod.xml`), e.g. `Play_VO_Autopilot` — the UI's localized
@@ -52,6 +59,10 @@ pub struct AssetPayload {
 const IMAGE_EXTS: [&str; 6] = ["png", "jpg", "jpeg", "bmp", "tga", "dds"];
 const AUDIO_NATIVE: [&str; 3] = ["ogg", "mp3", "wav"];
 const AUDIO_WEM: &str = "wem";
+/// Browser-playable video containers. The client's login/opening clip is
+/// VP9+Vorbis WEBM (`gui/video/login/{main,main_low}.webm`); MP4 covers the
+/// alternate container a future pack may ship.
+const VIDEO_EXTS: [&str; 2] = ["webm", "mp4"];
 /// Preview thumbnails cap at this edge (the game's textures are 2K/4K;
 /// a 320px tile keeps the payload small enough to lazy-load dozens).
 const THUMB_EDGE: u32 = 320;
@@ -71,6 +82,20 @@ pub(crate) fn safe_rel(rel: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Is this bare extension (no dot, any case) a browser-playable video?
+pub(crate) fn is_video_ext(ext: &str) -> bool {
+    VIDEO_EXTS.contains(&ext.to_ascii_lowercase().as_str())
+}
+
+/// Does this res_mods-relative path carry a video the webview can play?
+/// The layer stack uses it to advertise an inline player for video packs.
+pub(crate) fn is_video_path(rel: &str) -> bool {
+    Path::new(rel)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(is_video_ext)
+}
+
 fn classify_ext(ext: &str) -> Option<(&'static str, bool)> {
     let ext = ext.to_ascii_lowercase();
     if IMAGE_EXTS.contains(&ext.as_str()) {
@@ -80,6 +105,9 @@ fn classify_ext(ext: &str) -> Option<(&'static str, bool)> {
     } else if ext == AUDIO_WEM {
         // Transcoded on read — playable, just slower than a native file.
         Some(("audio", true))
+    } else if is_video_ext(&ext) {
+        // Streamed through the asset protocol, never a data URL.
+        Some(("video", true))
     } else if ext == "geometry" {
         // BigWorld mesh — the 3D stage's input (see model_preview.rs).
         Some(("model", true))
@@ -168,6 +196,78 @@ pub fn mod_hub_list_assets(
     Ok(out)
 }
 
+/// Normalize + validate a res_mods-relative path coming from the webview.
+/// Separators are unified first (`gui\video\login\main.webm` is accepted),
+/// then the component rules match [`safe_rel`]: relative only, no `..`, no
+/// drive/stream syntax. The `@game/` prefix is refused too — those payloads
+/// live at the game root, never under `res_mods`.
+pub(crate) fn normalize_asset_rel(rel_path: &str) -> anyhow::Result<PathBuf> {
+    let normalized = rel_path.trim().replace('\\', "/");
+    if normalized.is_empty()
+        || normalized.starts_with('/')
+        || normalized.contains(':')
+        || normalized == "@game"
+        || normalized.starts_with("@game/")
+    {
+        return Err(anyhow!("invalid asset path: {rel_path:?}"));
+    }
+    let mut rel = PathBuf::new();
+    for segment in normalized.split('/') {
+        if segment.is_empty() || segment == "." || segment == ".." {
+            return Err(anyhow!("invalid asset path: {rel_path:?}"));
+        }
+        rel.push(segment);
+    }
+    Ok(rel)
+}
+
+/// Resolve one asset under the live build's `res_mods` (the command body,
+/// split out so tests drive it without a Tauri app handle). The file must
+/// exist, and canonicalized containment keeps a link inside `res_mods` from
+/// serving a file elsewhere on disk.
+pub(crate) fn resolve_asset_file_path(game_root: &str, rel_path: &str) -> anyhow::Result<PathBuf> {
+    let res_mods = super::super::game_context::res_mods_dir(Path::new(game_root))?;
+    let rel = normalize_asset_rel(rel_path)?;
+    let path = res_mods.join(&rel);
+    let meta = fs::metadata(&path).map_err(|e| anyhow!("{rel_path}: {e}"))?;
+    if !meta.is_file() {
+        return Err(anyhow!("{rel_path}: not a file"));
+    }
+    // Canonical containment: a junction or symlink under res_mods must not
+    // hand the webview a file from outside the game tree.
+    let root = fs::canonicalize(&res_mods).map_err(|e| anyhow!("res_mods: {e}"))?;
+    let target = fs::canonicalize(&path).map_err(|e| anyhow!("{rel_path}: {e}"))?;
+    if !target.starts_with(&root) {
+        return Err(anyhow!("{rel_path}: escapes res_mods"));
+    }
+    Ok(path)
+}
+
+/// One installed asset's absolute path — what the webview hands to Tauri's
+/// asset protocol (`convertFileSrc`). Video previews use this instead of a
+/// data URL: a login clip is tens of MB and must never cross IPC. The file
+/// is also granted to the protocol scope here, because a game install lives
+/// outside the static scope in `tauri.conf.json`.
+///
+/// `rel_path` is normalized (`\` → `/`) and must stay inside the live
+/// build's `res_mods`: relative only, no `..`, no `@game/` (game-root
+/// payloads never live in `res_mods`), no drive/stream syntax.
+#[tauri::command]
+pub fn mod_hub_asset_file_path(
+    app: tauri::AppHandle,
+    game_root: String,
+    rel_path: String,
+) -> CommandResult<String> {
+    let path = resolve_asset_file_path(&game_root, &rel_path)?;
+    // Grant just this file: widening the scope to the whole install would
+    // expose every game asset to the webview.
+    use tauri::Manager;
+    if let Err(e) = app.asset_protocol_scope().allow_file(&path) {
+        return Err(anyhow!("grant asset protocol access to {rel_path}: {e}").into());
+    }
+    Ok(path.to_string_lossy().into_owned())
+}
+
 /// Serve one asset: images decode + thumbnail to a PNG data URL; native
 /// audio streams as a data URL in its own mime. `.wem` and decode failures
 /// are errors the UI renders in place.
@@ -183,6 +283,11 @@ pub fn mod_hub_read_asset(game_root: String, rel_path: String) -> CommandResult<
 
     if classify_ext(&ext).is_none() {
         return Err(anyhow!("{rel_path}: not a previewable asset").into());
+    }
+    if is_video_ext(&ext) {
+        // A video is streamed through the asset protocol — base64'ing tens
+        // of MB through IPC would stall the pane.
+        return Err(anyhow!("{rel_path}: video previews use mod_hub_asset_file_path").into());
     }
     if ext == "geometry" {
         // Listed for the 3D stage, but its payload is GLB parts from a
@@ -708,6 +813,81 @@ mod tests {
         let err =
             mod_hub_read_asset(root.clone(), "PnFMods/Pack/ship/Hull.geometry".into()).unwrap_err();
         assert!(err.to_string().contains("mod_hub_read_model"), "{err}");
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// The asset-path command: resolves a real file inside the live build's
+    /// res_mods, accepts either separator, and refuses traversal (in both
+    /// spellings), absolute/drive paths and `@game/` payloads before any I/O.
+    #[test]
+    fn asset_file_path_resolves_and_rejects_escapes() {
+        let tmp = std::env::temp_dir().join("wowsp_assets_file_path");
+        let _ = fs::remove_dir_all(&tmp);
+        let res_mods = tmp.join("bin/1/res_mods");
+        fs::create_dir_all(res_mods.join("gui/video/login")).unwrap();
+        fs::write(res_mods.join("gui/video/login/main.webm"), b"webm").unwrap();
+        let root = tmp.to_string_lossy().into_owned();
+
+        // Valid path: forward slashes, and a backslash spelling of the same
+        // path normalises to the identical file.
+        let fwd = resolve_asset_file_path(&root, "gui/video/login/main.webm").unwrap();
+        assert_eq!(fwd, res_mods.join("gui/video/login/main.webm"));
+        let back = resolve_asset_file_path(&root, "gui\\video\\login\\main.webm").unwrap();
+        assert_eq!(back, fwd);
+
+        for rel in [
+            "../escape.webm",
+            "gui/../../escape.webm",
+            "gui\\..\\..\\escape.webm",
+            "/gui/video/login/main.webm",
+            "C:/gui/video/login/main.webm",
+            "C:\\gui\\video\\login\\main.webm",
+            "@game/gui/video/login/main.webm",
+            "",
+        ] {
+            assert!(
+                normalize_asset_rel(rel).is_err(),
+                "{rel:?} must be rejected"
+            );
+            assert!(
+                resolve_asset_file_path(&root, rel).is_err(),
+                "{rel:?} must be rejected"
+            );
+        }
+
+        // Missing file, and a directory where a file is required.
+        assert!(resolve_asset_file_path(&root, "gui/video/login/main_low.webm").is_err());
+        assert!(resolve_asset_file_path(&root, "gui/video/login").is_err());
+        fs::remove_dir_all(&tmp).ok();
+    }
+
+    /// Video files list with their own kind (the UI's inline-player gate)
+    /// instead of being filtered out, while read_asset refuses to ship their
+    /// bytes through IPC.
+    #[test]
+    fn lists_videos_and_refuses_ipc_payload() {
+        let tmp = std::env::temp_dir().join("wowsp_assets_video_list");
+        let _ = fs::remove_dir_all(&tmp);
+        let res_mods = tmp.join("bin/1/res_mods");
+        fs::create_dir_all(res_mods.join("gui/video/login")).unwrap();
+        fs::write(res_mods.join("gui/video/login/main.webm"), b"webm").unwrap();
+        fs::write(res_mods.join("gui/video/login/main_low.webm"), b"webm").unwrap();
+        fs::write(res_mods.join("gui/video/login/main.mp4"), b"mp4").unwrap();
+        fs::write(res_mods.join("gui/video/login/readme.txt"), b"noise").unwrap();
+        let root = tmp.to_string_lossy().into_owned();
+
+        let list = mod_hub_list_assets(root.clone(), "gui/video/login".into()).unwrap();
+        assert_eq!(list.len(), 3, "txt noise excluded: {list:?}");
+        for file in &list {
+            assert_eq!(file.kind, "video");
+            assert!(file.playable);
+            assert!(matches!(file.ext.as_str(), "webm" | "mp4"));
+        }
+        assert!(is_video_path("gui/video/login/main.webm"));
+        assert!(!is_video_path("gui/video/login/readme.txt"));
+
+        let err = mod_hub_read_asset(root, "gui/video/login/main.webm".into()).unwrap_err();
+        assert!(err.to_string().contains("mod_hub_asset_file_path"), "{err}");
         fs::remove_dir_all(&tmp).ok();
     }
 }
