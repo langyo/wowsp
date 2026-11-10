@@ -301,6 +301,11 @@ export interface CatalogEntry {
   /** First preview screenshot (GitHub user-attachment URL); absent when
    *  the discussion carries no image. */
   preview?: string | null;
+  /** Standard preview clip (thread front-matter `preview_video:`): a short
+   *  AV1-in-MP4 (H.264 fallback) 720p clip hosted on the mod-hub release or
+   *  a GitHub media URL. Rendered behind a play button; absent entries keep
+   *  the screenshot preview. */
+  previewVideo?: string | null;
   /** Folded style family: legacy one-entry-per-variant catalog ids →
    *  preset ids (e.g. `battle.panel.ttaro` → `ttaro`). Ledger pairing
    *  treats a record under a superseded id as this entry installed with

@@ -13,15 +13,17 @@
  * (play/pause, seek, stop) controls playback even after the pane is left.
  * The game's Wwise `.wem` files play through the on-read decode (the
  * first click converts to WAV in Rust, then plays). Mode "video" renders a
- * video pack's login/opening clips (.webm/.mp4) as inline players: only
- * their absolute paths cross IPC, and the <video> element streams them
- * through Tauri's asset protocol (a clip is tens of MB — never a data URL).
+ * video pack's login/opening clip: exactly ONE primary tier (see
+ * videoPrimary.ts) plays through hikari's HkMediaPlayer, with the pack's
+ * sibling tiers listed as compact text rows. Only the primary file's
+ * absolute path crosses IPC, and the player streams it through Tauri's
+ * asset protocol (a clip is tens of MB — never a data URL).
  * Modes "image" and "model" are the single-kind fallbacks for panes that
  * only ever show one of the two material kinds.
  */
 import { defineComponent, ref, watch } from "vue";
 import { Box, Clapperboard, ImageIcon, Music, PlayCircle } from "@lucide/vue";
-import { useToast, HkScrollContainer } from "@celestia-island/hikari";
+import { useToast, HkMediaPlayer, HkScrollContainer } from "@celestia-island/hikari";
 
 import { api, type AssetFileInfo, type ModelPreviewPart } from "@/api";
 import { t } from "@/i18n";
@@ -30,6 +32,7 @@ import { useAudioPlayerStore } from "@/stores/audioPlayer";
 import { useUpdaterStore } from "@/stores/updater";
 import LoadingNote from "@/components/base/LoadingNote";
 import ModelStage from "./ModelStage";
+import { pickPrimaryVideo } from "./videoPrimary";
 import { compareByScene, humanizeEvent, humanizeState, sceneLabel } from "./voiceScenes";
 
 export default defineComponent({
@@ -108,16 +111,12 @@ export default defineComponent({
       }
     });
 
-    // Video sources are resolved eagerly too (a unit ships a couple of
-    // clips at most): each call is one path lookup, no file bytes.
-    const VIDEO_CAP = 4;
+    // Only the ONE primary tier gets its path resolved: the sibling tiers
+    // render as text rows (name + size), never as players — the duplicate
+    // two-player preview was the bug this section exists to avoid.
     watch(files, (list) => {
-      let queued = 0;
-      for (const f of list) {
-        if (f.kind !== "video" || queued >= VIDEO_CAP) continue;
-        queued += 1;
-        void ensureVideoUrl(f.rel);
-      }
+      const { primary } = pickPrimaryVideo(list.filter((f) => f.kind === "video"));
+      if (primary) void ensureVideoUrl(primary.rel);
     });
 
     async function ensureVideoUrl(rel: string) {
@@ -257,40 +256,50 @@ export default defineComponent({
       );
     }
 
-    // Inline video players, one card per clip. preload="metadata" keeps the
-    // pane cheap: the browser reads the header via a range request and only
-    // streams the rest when the user presses play.
+    // ONE primary clip per video pack: hikari's HkMediaPlayer owns the
+    // styled control bar, the remaining tiers stay compact text rows. The
+    // player itself only mounts once the asset path resolves, so nothing
+    // streams before the pane asks for it.
     function renderVideos(list: AssetFileInfo[]) {
-      const rows = [...list].sort((a, b) => a.rel.localeCompare(b.rel));
+      const { primary, siblings } = pickPrimaryVideo(list);
+      if (!primary) return null;
       return (
         <div class="asset-preview__videos">
-          {rows.map((f) => (
-            <figure class="asset-preview__video" key={f.rel}>
-              {videoUrls.value[f.rel] ? (
-                <video
-                  class="asset-preview__video-el"
-                  controls
-                  preload="metadata"
-                  src={videoUrls.value[f.rel]}
-                />
-              ) : (
-                <div class="asset-preview__video-placeholder">
-                  <Clapperboard size={18} />
-                  <span>
-                    {videoFailed.value[f.rel]
-                      ? t("resources.videoLoadFailed")
-                      : t("resources.videoLoading")}
-                  </span>
-                </div>
-              )}
-              <figcaption class="asset-preview__video-cap">
-                <span class="asset-preview__video-name">
-                  {f.rel.split("/").pop()}
+          <figure class="asset-preview__video" key={primary.rel}>
+            {videoUrls.value[primary.rel] ? (
+              <HkMediaPlayer src={videoUrls.value[primary.rel]} type="video" />
+            ) : (
+              <div class="asset-preview__video-placeholder">
+                <Clapperboard size={18} />
+                <span>
+                  {videoFailed.value[primary.rel]
+                    ? t("resources.videoLoadFailed")
+                    : t("resources.videoLoading")}
                 </span>
-                <span class="asset-preview__video-size">{kbFormat(f.size)}</span>
-              </figcaption>
-            </figure>
-          ))}
+              </div>
+            )}
+            <figcaption class="asset-preview__video-cap">
+              <span class="asset-preview__video-name">
+                {primary.rel.split("/").pop()}
+              </span>
+              <span class="asset-preview__video-size">{kbFormat(primary.size)}</span>
+            </figcaption>
+          </figure>
+          {siblings.length > 0 && (
+            <ul
+              class="asset-preview__video-tiers"
+              aria-label={t("resources.previewVideo.tiers")}
+            >
+              {siblings.map((f) => (
+                <li class="asset-preview__video-tier" key={f.rel} data-hint={f.rel}>
+                  <span class="asset-preview__video-tier-name">
+                    {f.rel.split("/").pop()}
+                  </span>
+                  <span class="asset-preview__video-tier-size">{kbFormat(f.size)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       );
     }

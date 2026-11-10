@@ -38,6 +38,7 @@ import { listedEntries } from "@/features/modhub/catalogListed";
 import { applicableRealms, serverScopeOf } from "@/features/modhub/servers";
 import type { UnitRelation } from "@/features/modhub/unitRelations";
 import AssetPreview from "@/features/modhub/AssetPreview";
+import CatalogPreviewMedia from "@/features/modhub/CatalogPreview";
 import { openExternal } from "@/utils/openExternal";
 import { mediaImageUrl } from "@/utils/media";
 import { t } from "@/i18n";
@@ -354,19 +355,29 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
         {(text.desc || entry.description) && (
           <p class="mod-detail__desc">{text.desc || entry.description}</p>
         )}
-        {/* Preview images route through the media proxy (proxy-aware
-         *  client + mirror ladder + disk cache) — the raw GitHub URL is
-         *  both outside the CSP's img-src and unreachable for many CN
-         *  users when fetched by the webview directly. Keyed by the
-         *  scheme so switching buttons remounts (not smears) the image. */}
-        {previewSrc && (
+        {/* Preview media routes through the media proxy for IMAGES
+         *  (proxy-aware client + mirror ladder + disk cache) — the raw
+         *  GitHub URL is both outside the CSP's img-src and unreachable for
+         *  many CN users when fetched by the webview directly. An entry
+         *  declaring a standard `preview_video` gets a play-gated clip
+         *  instead (poster = the entry's preview image); entries without
+         *  one keep the screenshot preview. Keyed by the scheme so switching
+         *  buttons remounts (not smears) the media. */}
+        {entry.previewVideo ? (
+          <CatalogPreviewMedia
+            key={activeScheme?.id ?? "default"}
+            videoSrc={entry.previewVideo}
+            posterSrc={previewSrc ? mediaImageUrl(previewSrc) : ""}
+            alt={text.name || entry.title}
+          />
+        ) : previewSrc ? (
           <HkImagePreview
             key={activeScheme?.id ?? "default"}
             src={mediaImageUrl(previewSrc)}
             alt={text.name || entry.title}
             objectFit="contain"
           />
-        )}
+        ) : null}
         <div class="mod-detail__meta">
           <span>{t("resources.gameRange", { game: entry.game })}</span>
           {kb > 0 && (

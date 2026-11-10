@@ -1,6 +1,7 @@
 /** The Resources view's sidebar list rows — plain render functions taking
  *  the view context (they render INSIDE ResourcesView's own tree, so the
  *  row vnodes stay children of the view component). */
+import { withDirectives } from "vue";
 import { ImageIcon, Puzzle } from "@lucide/vue";
 import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
@@ -40,7 +41,10 @@ export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey:
   const busyOp = ctx.busy.value.get(entry.id);
   const busyInstall = busyOp === "install" || busyOp === "update";
   const RowIcon = catIcon(entry.category);
-  return (
+  // The row's vnode rides the prefetch directive: its preview image is
+  // warmed once the row scrolls within ~300 px of the viewport (the pane's
+  // <img loading="lazy"> then paints from cache instead of starting cold).
+  return withDirectives(
     <button
       key={entry.id}
       class={["mod-row", selKey === entry.id && "mod-row--active"]}
@@ -89,7 +93,8 @@ export function renderCatalogRow(ctx: ResourcesCtx, entry: CatalogEntry, selKey:
           <AppTag>{t("resources.presetCount", { count: entry.presets.length })}</AppTag>
         ) : null}
       </span>
-    </button>
+    </button>,
+    [[ctx.previewPrefetch.rowDirective, entry.preview ? mediaImageUrl(entry.preview) : null]],
   );
 }
 

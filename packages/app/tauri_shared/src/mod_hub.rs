@@ -366,6 +366,13 @@ pub struct CatalogEntry {
     /// carries no image.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub preview: Option<String>,
+    /// Standard preview clip declared by the thread's `preview_video:`
+    /// front-matter: AV1-in-MP4 (H.264 accepted as fallback), 720p, 8–20 s,
+    /// ≤ 3 MB, faststart, optional AAC, hosted on the mod-hub release tree
+    /// or a GitHub media URL. `None` when the thread declares none — the
+    /// detail pane then keeps the screenshot preview.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub preview_video: Option<String>,
     /// Legacy one-entry-per-variant catalog ids this folded style
     /// family replaces, as old id → preset id. Ledger pairing treats a
     /// record under a superseded id as this entry installed with that

@@ -22,6 +22,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
 
 # Sibling module (same directory — sys.path[0] when run as
 # `python scripts/mod_index.py`).
@@ -163,6 +164,52 @@ def parse_preview(body: str) -> str:
     """First screenshot URL of a thread body ('' when it carries none)."""
     m = PREVIEW_RE.search(body or "")
     return m.group(1) if m else ""
+
+
+# Standard preview clip locations (front-matter `preview_video:`): the
+# mod-hub release download tree, GitHub user attachments, and raw GitHub
+# files. The app streams the URL directly (unlike screenshots, which ride
+# the image proxy), so the indexer keeps ONLY https URLs on those GitHub
+# hosts — anything else is unreachable for the webview and untrusted to boot.
+PREVIEW_VIDEO_GITHUB_PREFIXES = (
+    "/langyo/wowsp/releases/download/",
+    "/user-attachments/",
+)
+
+
+def preview_video_url(url: str) -> bool:
+    """Whether `url` is an acceptable `preview_video:` target: https,
+    credential-free, and on GitHub (github.com's release/attachment/raw
+    routes, or any *.githubusercontent.com host)."""
+    if not url or not url.lower().startswith("https://"):
+        return False
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme.lower() != "https" or parsed.username or parsed.password:
+        return False
+    host = (parsed.hostname or "").lower()
+    if host == "github.com":
+        path = parsed.path
+        return path.startswith(PREVIEW_VIDEO_GITHUB_PREFIXES) or "/raw/" in path
+    return host == "githubusercontent.com" or host.endswith(".githubusercontent.com")
+
+
+def parse_preview_video(meta: dict, where: str = "preview_video") -> str:
+    """The standard preview clip declared in front-matter ('' when absent or
+    rejected). A rejected URL warns on stderr, like a refused package."""
+    url = (meta.get("preview_video") or "").strip()
+    if not url:
+        return ""
+    if preview_video_url(url):
+        return url
+    print(
+        f"warning: {where}: dropping preview_video {url} "
+        "(not an https GitHub release/attachment/raw URL)",
+        file=sys.stderr,
+    )
+    return ""
 
 
 def parse_presets(body: str, where: str = "presets") -> list[dict]:
@@ -342,6 +389,9 @@ def index_discussions(nodes: list[dict]) -> dict:
         preview = parse_preview(d.get("body") or "")
         if preview:
             entry["versions"][version]["preview"] = preview
+        preview_video = parse_preview_video(meta, f"{mod_id} {version}")
+        if preview_video:
+            entry["versions"][version]["preview_video"] = preview_video
         for ver, reporters in signals.items():
             entry["signals"].setdefault(ver, []).extend(reporters)
     # Only the newest version is catalog-facing; keep compatibility verdicts.
@@ -450,6 +500,40 @@ def main(argv: list[str] | None = None) -> int:
         assert i18n["en-US"] == {"name": "Shot Timer", "desc": "Counts down 20s"}, i18n
         assert i18n["zh-CN"]["name"] == "开火后倒计时20s", i18n
         assert parse_i18n("no block here") == {}
+        # Standard preview video: https + GitHub-hosted only; the parsed
+        # front-matter line rides the version payload, rejected URLs drop.
+        assert preview_video_url(
+            "https://github.com/langyo/wowsp/releases/download/preview-media/a.mp4"
+        )
+        assert preview_video_url("https://github.com/user-attachments/assets/abc")
+        assert preview_video_url("https://raw.githubusercontent.com/langyo/wowsp/master/a.mp4")
+        assert preview_video_url("https://github.com/langyo/wowsp/raw/master/a.mp4")
+        for bad in (
+            "http://github.com/langyo/wowsp/releases/download/preview-media/a.mp4",
+            "https://example.com/a.mp4",
+            "https://github.com/other/repo",
+            "ftp://github.com/a.mp4",
+            "",
+        ):
+            assert not preview_video_url(bad), bad
+        video = index_discussions([
+            {"number": 5, "title": "t", "author": {"login": "a"}, "closed": False,
+             "body": "---\nwowsp-mod: clip\nversion: 1\ncategory: video\n"
+                     "preview_video: https://github.com/langyo/wowsp/releases/download/preview-media/clip.mp4\n"
+                     "---\nx",
+             "comments": {"nodes": []}},
+        ])
+        assert (
+            video["mods"]["clip"]["versions"]["1"]["preview_video"]
+            == "https://github.com/langyo/wowsp/releases/download/preview-media/clip.mp4"
+        )
+        rejected = index_discussions([
+            {"number": 6, "title": "t", "author": {"login": "a"}, "closed": False,
+             "body": "---\nwowsp-mod: clip2\nversion: 1\ncategory: video\n"
+                     "preview_video: https://example.com/clip.mp4\n---\nx",
+             "comments": {"nodes": []}},
+        ])
+        assert "preview_video" not in rejected["mods"]["clip2"]["versions"]["1"]
         # Delisting: a closed thread on the newest release flags the entry;
         # the same verdict on an OLD release (newer one live) does not.
         def node(num, ver, closed):

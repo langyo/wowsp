@@ -2604,6 +2604,7 @@ fn realistic_aslain_layout_recognizes_and_pairs_end_to_end() {
         aliases: Vec::new(),
         servers: Vec::new(),
         preview: None,
+        preview_video: None,
         supersedes: None,
         packages: vec![CatalogPackage {
             url: "https://x/a.zip".into(),
@@ -3198,6 +3199,7 @@ fn register_over_foreign_cuts_only_paired_manifest_rows() {
         aliases: Vec::new(),
         servers: Vec::new(),
         preview: None,
+        preview_video: None,
         supersedes: None,
         packages: vec![CatalogPackage {
             url: "https://x/a.zip".into(),
@@ -3621,6 +3623,7 @@ fn scan_pairs_units_with_catalog_identities() {
         aliases: aliases.into_iter().map(Into::into).collect(),
         servers: Vec::new(),
         preview: None,
+        preview_video: None,
         supersedes: None,
         i18n: std::collections::HashMap::new(),
         packages: vec![CatalogPackage {
@@ -4453,6 +4456,7 @@ fn tiny_catalog(id: &str, name: &str) -> wowsp_tauri_shared::CatalogIndex {
             aliases: Vec::new(),
             servers: Vec::new(),
             preview: None,
+            preview_video: None,
             supersedes: None,
             packages: vec![wowsp_tauri_shared::CatalogPackage {
                 url: "https://x/a.zip".into(),

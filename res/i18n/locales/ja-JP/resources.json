@@ -83,6 +83,11 @@
   "audioLoadFailed": "音声プレビューに失敗しました",
   "videoLoading": "動画を読み込み中…",
   "videoLoadFailed": "動画プレビューを読み込めませんでした",
+  "previewVideo": {
+    "play": "プレビューを再生",
+    "standard": "標準プレビュー · AV1 MP4",
+    "tiers": "同梱のほかの画質"
+  },
   "modelPlay": "3D モデルを表示",
   "modelLoadFailed": "モデルのプレビューに失敗しました",
   "modelNote": "ホログラム状の形状プレビューです。塗装テクスチャは画像サムネイルでご確認ください。",

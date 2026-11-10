@@ -83,6 +83,11 @@
   "audioLoadFailed": "오디오 미리보기 실패",
   "videoLoading": "동영상 불러오는 중…",
   "videoLoadFailed": "동영상 미리보기를 불러오지 못했습니다",
+  "previewVideo": {
+    "play": "미리보기 재생",
+    "standard": "표준 미리보기 · AV1 MP4",
+    "tiers": "같은 팩의 다른 화질"
+  },
   "modelPlay": "3D 모델 미리보기",
   "modelLoadFailed": "모델 미리보기 실패",
   "modelNote": "홀로그램 형태 미리보기이며 도장 텍스처는 포함되지 않습니다. 이미지 썸네일에서 확인하세요.",

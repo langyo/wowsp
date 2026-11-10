@@ -83,6 +83,11 @@
   "audioLoadFailed": "音訊預覽失敗",
   "videoLoading": "正在載入影片…",
   "videoLoadFailed": "影片預覽載入失敗",
+  "previewVideo": {
+    "play": "播放預覽",
+    "standard": "標準預覽 · AV1 MP4",
+    "tiers": "同包其餘畫質"
+  },
   "modelPlay": "預覽 3D 模型",
   "modelLoadFailed": "模型預覽失敗",
   "modelNote": "全息形態預覽，不含塗裝貼圖；塗裝請查看圖片縮圖。",

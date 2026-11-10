@@ -101,7 +101,7 @@ vi.mock("@celestia-island/hikari", () => {
     HkTabs: component("HkTabs"), HkSpinner: component("HkSpinner"), HkButton: component("HkButton"),
     HkCheckbox: component("HkCheckbox"), HkConfirmDialog: component("HkConfirmDialog"),
     HkIconButton: component("HkIconButton"), HkModal: component("HkModal"), HkSwitch: component("HkSwitch"), HMenu: component("HMenu"),
-    HkImagePreview: component("HkImagePreview"),
+    HkImagePreview: component("HkImagePreview"), HkMediaPlayer: component("HkMediaPlayer"),
     /* The layered swimlane's primitive: render its item slot for real so
        the layer rows are inspectable under shallowMount. */
     HkDraggableList: {

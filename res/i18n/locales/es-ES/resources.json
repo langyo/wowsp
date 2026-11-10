@@ -83,6 +83,11 @@
   "audioLoadFailed": "Error al previsualizar el audio",
   "videoLoading": "Cargando vídeo…",
   "videoLoadFailed": "No se pudo cargar la vista previa del vídeo",
+  "previewVideo": {
+    "play": "Reproducir vista previa",
+    "standard": "Vista previa estándar · AV1 MP4",
+    "tiers": "Otras calidades de este paquete"
+  },
   "modelPlay": "Vista 3D",
   "modelLoadFailed": "Error al previsualizar el modelo",
   "modelNote": "Vista holográfica de la forma; los camuflajes se muestran en miniaturas.",
