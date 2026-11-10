@@ -229,6 +229,12 @@ export const RPC = {
   mod_hub_classify_path: "mod_hub_classify_path",
   mod_hub_pick_source: "mod_hub_pick_source",
   mod_hub_install: "mod_hub_install",
+  // Custom import (自定义导入安装): the single-file picker, the step-2 probe
+  // and the staging/install action behind the wizard — see
+  // views/resources/ImportWizard.tsx + useImportWizard.ts.
+  mod_hub_pick_custom_file: "mod_hub_pick_custom_file",
+  mod_hub_probe_custom_import: "mod_hub_probe_custom_import",
+  mod_hub_import_custom: "mod_hub_import_custom",
   mod_hub_set_unit_enabled: "mod_hub_set_unit_enabled",
   mod_hub_uninstall_unit: "mod_hub_uninstall_unit",
   mod_hub_clean_unit_junk: "mod_hub_clean_unit_junk",

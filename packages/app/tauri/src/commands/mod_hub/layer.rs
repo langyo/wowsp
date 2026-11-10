@@ -1449,6 +1449,24 @@ pub(crate) fn adopt_install(game_root: &str, record: &ModInstallRecord) {
     }
 }
 
+/// The layer id an install was just adopted as, when the store carries it.
+///
+/// [`adopt_install`] is deliberately best-effort (a code-bearing payload
+/// stays a legacy install), so callers that must REPORT the adoption — the
+/// custom-import wizard names the layer it registered — read the saved state
+/// instead of assuming: `Some(id)` only when the stack now holds the pack,
+/// `None` when the payload landed as a plain install.
+pub(crate) fn adopted_layer_id(game_root: &str, record: &ModInstallRecord) -> Option<String> {
+    let data = crate::paths::ensure_data_dir().ok()?;
+    let state = load_state(&data);
+    let stack = state.stacks.get(&root_key(game_root))?;
+    stack
+        .layers
+        .iter()
+        .any(|entry| entry.pack_id == record.id && entry.version == record.version)
+        .then(|| record.id.clone())
+}
+
 /// Hook: an uninstall removed its record. Drop the store copy and the layer,
 /// leaving the stack pending a render so a lower layer can take over.
 pub(crate) fn on_uninstall(game_root: &str, record: &ModInstallRecord) {

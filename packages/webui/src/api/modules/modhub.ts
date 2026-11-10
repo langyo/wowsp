@@ -212,6 +212,51 @@ export interface InstallReport {
   prunedFiles?: number;
 }
 
+// ── Custom import (自定义导入安装) ──────────────────────────────────────────
+
+/** What a custom import turns a raw local asset into. Each kind carries its
+ *  own compliance rule (see the Rust custom_import module): a video becomes
+ *  the login clip's WebM tiers, a voice pack becomes a `banks/mods/<bank>`
+ *  tree, and texture/misc payloads must already carry a res_mods-shaped
+ *  override root. */
+export type CustomImportKind = "video" | "voice" | "texture" | "misc";
+
+/** One blocking reason the wizard's "next" stays disabled. `code` is
+ *  language-neutral (the UI localizes it); `detail` is the value the
+ *  sentence interpolates (an extension, …). */
+export interface CustomImportProblem {
+  code: string;
+  detail?: string;
+}
+
+/** Step-2 verdict of the custom-import wizard. */
+export interface CustomImportProbe {
+  path: string;
+  /** Leaf name of the picked entry (file or folder). */
+  fileName: string;
+  /** True for the video kind's single-file source. */
+  isFile: boolean;
+  /** File length, or a bounded sum of the folder's files. */
+  sizeBytes: number;
+  /** The res_mods-relative shape the import would produce (tiers, banks,
+   *  payload roots) — language-neutral paths shown verbatim. */
+  structure: string[];
+  /** Empty means the import may proceed. */
+  problems: CustomImportProblem[];
+}
+
+/** A landed custom import: the standard install report plus the layer id the
+ *  payload was adopted as (absent when it stayed a plain install). */
+export interface CustomImportReport extends InstallReport {
+  layerId?: string;
+}
+
+/** One progress tick of `wowsp://custom-import-progress`. */
+export interface CustomImportProgress {
+  stage: string;
+  percent: number;
+}
+
 // ── Mod Hub online catalog (mirrors wowsp_tauri_shared, commands/mod_catalog.rs) ──
 
 /** One downloadable package of a catalog entry (mod-hub release asset). */
@@ -690,6 +735,47 @@ export const modHubApi = {
   modHubPickSource: () => transport.invoke<string | null>(RPC.mod_hub_pick_source),
   modHubInstall: (sourceRoot: string, gameRoot: string) =>
     transport.invoke<InstallReport>(RPC.mod_hub_install, { sourceRoot, gameRoot }),
+  /** Native single-file picker for the custom import's video kind — the
+   *  picked path is registered as a session grant, exactly like the folder
+   *  picker's. */
+  modHubPickCustomFile: () =>
+    transport.invoke<string | null>(RPC.mod_hub_pick_custom_file),
+  /** Step-2 verdict: what the picked path is, its size, the res_mods shape
+   *  the import would produce and every reason it cannot run. Read-only. */
+  modHubProbeCustomImport: (
+    kind: CustomImportKind,
+    sourcePath: string,
+    displayName?: string | null,
+  ) =>
+    transport.invoke<CustomImportProbe>(RPC.mod_hub_probe_custom_import, {
+      kind,
+      sourcePath,
+      displayName: displayName || null,
+    }),
+  /** Step-3 action: stage, classify, install through the local pipeline and
+   *  adopt the payload into the beautify layer stack. */
+  modHubImportCustom: (
+    gameRoot: string,
+    kind: CustomImportKind,
+    sourcePath: string,
+    displayName?: string | null,
+  ) =>
+    transport.invoke<CustomImportReport>(RPC.mod_hub_import_custom, {
+      gameRoot,
+      kind,
+      sourcePath,
+      displayName: displayName || null,
+    }),
+  /** Transcode/install progress of ONE custom import
+   *  (`wowsp://custom-import-progress`). Browser-dev transports have no
+   *  push channel, so the call may resolve to undefined. */
+  listenCustomImportProgress: (
+    handler: (p: CustomImportProgress) => void,
+  ) =>
+    transport.listen?.<CustomImportProgress>(
+      "wowsp://custom-import-progress",
+      handler,
+    ),
   /** Toggle one installed plugin's temporary disable state: disabling
    *  renames every file with a `.bak` suffix, enabling strips it again. */
   modHubSetUnitEnabled: (relPath: string, gameRoot: string, enabled: boolean) =>

@@ -488,5 +488,78 @@
       "foreign": "外部",
       "capped": "僅顯示前 {shown} 條，共 {total} 條"
     }
+  },
+  "importWizard": {
+    "title": "自訂匯入安裝",
+    "stepKind": "裝什麼",
+    "stepSource": "選資源",
+    "stepRun": "合規化並註冊",
+    "kindLead": "選擇要匯入的素材類型，每種類型都會被整理成客戶端實際載入的結構。",
+    "kindNote": "只會寫入合規產物，原始檔案不會被更動。",
+    "completePackage": "改為安裝完整外掛包目錄",
+    "kind": {
+      "video": {
+        "title": "開場影片",
+        "desc": "要求：用於替換登入 / 開場動畫的影片。.webm 直接複製；.mp4 / .mov / .mkv 由 ffmpeg 轉碼（VP9、25 fps、1080p + 720p）。"
+      },
+      "voice": {
+        "title": "語音包",
+        "desc": "要求：目錄中含 banks/mods/<bank>/mod.xml（附 .wem）；或根目錄直接放 mod.xml 與 .wem，會自動包裝進 banks/mods/<名稱>/。"
+      },
+      "texture": {
+        "title": "材質貼圖",
+        "desc": "要求：res_mods 形狀的目錄樹，頂層至少含 content/、gui/、spaces/、particles/、texts/、camouflage/、system/ 之一。"
+      },
+      "misc": {
+        "title": "其他資源",
+        "desc": "要求：與材質相同的 res_mods 頂層結構。設定補丁、混合目錄等其他內容請改用「安裝完整外掛包目錄」。"
+      }
+    },
+    "pickFile": "影片檔案",
+    "pickFolder": "資源目錄",
+    "sourceHintVideo": "選擇一個影片：.webm 直接複製，.mp4 / .mov / .mkv 由 ffmpeg 轉碼。",
+    "sourceHintFolder": "選擇存放素材的目錄。",
+    "probing": "正在檢查資源…",
+    "probeFailed": "無法檢查該資源。",
+    "noSource": "選擇資源後會顯示將要寫入的結構。",
+    "fileName": "名稱",
+    "size": "大小",
+    "structure": "將寫入",
+    "displayName": "顯示名稱",
+    "displayNameHint": "選填：用於命名新層；裸語音包也會用作 banks/mods 下的目錄名。",
+    "transcodeNote": "此影片將由 ffmpeg 轉成 WebM（VP9 + Vorbis，25 fps），同時輸出 1080p 與 720p。",
+    "runningNote": "正在寫入合規檔案並註冊層，請勿關閉應用程式。",
+    "failedTitle": "匯入失敗",
+    "registered": "已註冊為層：{name}",
+    "installed": "已安裝：{name}",
+    "registeredHint": "新層位於美化定製層疊堆疊頂端，可隨時調整順序或停用。",
+    "reportMeta": "已寫入 {files} 個檔案到 bin/{version}。",
+    "runIntro": "正在開始匯入…",
+    "doneToast": "已匯入 {name}",
+    "next": "下一步",
+    "back": "上一步",
+    "cancel": "取消",
+    "finish": "完成",
+    "problem": {
+      "missing": "所選路徑不存在。",
+      "notFile": "此類型需要單一影片檔案。",
+      "notDirectory": "此類型需要目錄。",
+      "unsupportedVideo": "不支援的影片容器「{detail}」，請使用 .webm、.mp4、.mov 或 .mkv。",
+      "videoTooLarge": "影片過大，無法直接複製（上限 200 MB），請先壓縮到上限以內。",
+      "missingFfmpeg": "轉換 .{detail} 需要 ffmpeg：請安裝到應用程式同目錄、%LOCALAPPDATA%\\WoWSP\\tools\\ffmpeg.exe 或 PATH 後重試，或先自行轉成 .webm。",
+      "voiceLayout": "未找到語音包結構：需要 banks/mods/<bank>/mod.xml（附 .wem），或根目錄的 mod.xml 與 .wem。",
+      "textureRoots": "未找到可安裝的頂層目錄：需要 content/、gui/、spaces/、particles/、texts/、camouflage/、system/ 之一。",
+      "missingPath": "請先選擇資源。",
+      "unknown": "該資源無法匯入。"
+    },
+    "stage": {
+      "preparing": "準備中…",
+      "transcodeMain": "正在轉碼 1080p WebM…",
+      "transcodeLow": "正在轉碼 720p WebM…",
+      "copying": "正在複製素材…",
+      "installing": "正在安裝並註冊層…",
+      "done": "完成",
+      "working": "處理中…"
+    }
   }
 }

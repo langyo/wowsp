@@ -799,6 +799,7 @@ fn is_junk_dest(journal: &InstallJournal, dest: &Path) -> bool {
 pub(crate) mod assets;
 mod boot_installer;
 mod classify;
+mod custom_import;
 pub(crate) mod foreign;
 mod install;
 mod installed_units;
@@ -848,6 +849,13 @@ pub use boot_installer::{
 };
 pub use classify::{
     __cmd__mod_hub_classify_path, __tauri_command_name_mod_hub_classify_path, mod_hub_classify_path,
+};
+pub use custom_import::{
+    __cmd__mod_hub_import_custom, __cmd__mod_hub_pick_custom_file,
+    __cmd__mod_hub_probe_custom_import, __tauri_command_name_mod_hub_import_custom,
+    __tauri_command_name_mod_hub_pick_custom_file,
+    __tauri_command_name_mod_hub_probe_custom_import, mod_hub_import_custom,
+    mod_hub_pick_custom_file, mod_hub_probe_custom_import,
 };
 pub use install::{__cmd__mod_hub_install, __tauri_command_name_mod_hub_install, mod_hub_install};
 pub use loader_health::{
@@ -919,7 +927,9 @@ pub use unit_ops::{
 // pub(crate) surface consumed through direct `mod_hub::...` paths by
 // `mod_catalog` (call sites unchanged).
 pub(crate) use classify::{classify_package, collect_plan_files};
-pub(crate) use install::{install_plan_with_loose, restore_root, validate_plan};
+pub(crate) use install::{
+    install_local_package, install_plan_with_loose, restore_root, validate_plan,
+};
 pub(crate) use stale_migration::conflict_warnings;
 pub(crate) use unit_ops::remove_manifest_entries_for_entry;
 

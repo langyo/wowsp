@@ -476,6 +476,67 @@ job 模式。
 优先 `main.webm`，其次第一个不含 `_low` 的文件，再次按名称第一个；
 其余画质只以「文件名 + 大小」紧凑文字行列出，不再渲染第二个播放器。
 
+## 自定义导入安装（Custom import）
+
+模组管理 · 美化定制的本地入口为 **自定义导入安装**：面向用户在目录之外自制或
+下载的素材（开场视频、语音包、材质贴图等）的三步向导。向导不要求用户先备好合
+规的插件包目录，而是**自己组装**出合规的 `res_mods` 形状，再走既有的本地安装
+管线（安装日志、覆盖前快照、安装记录、`wowsp.toml` 行、层接管），因此自定义
+导入不可能种下平台会拒绝的目录树。
+
+- **第一步 · 装什么**：开场视频 / 语音包 / 材质贴图 / 其他资源，每行写明该类
+  型的「要求」（见下表）。完整的插件包（PnFMods、脚本等）仍走普通目录安装，
+  该步骤底部留有入口。
+- **第二步 · 选资源**：视频类型打开系统单文件选择器（`.webm` / `.mp4` /
+  `.mov` / `.mkv`），其余类型复用目录选择器。选中的路径同时登记为本次会话
+  的授权源；后端只读**探测**返回文件名、大小、将要写入的 res_mods 结构，以及
+  全部阻断原因（后端只给语言中立的 code，前端本地化）。仍有问题时「下一步」保
+  持禁用。可选的显示名称用于命名安装记录与接管的层——裸语音包也用它作为 bank
+  目录名。
+- **第三步 · 合规化并注册**：素材先在 `<app-data>/mods/import-staging/<uuid>/`
+  组装（无论成功失败都会清理），再由与目录导入相同的分类器分类，走本地安装管
+  线写入，最后被美化层栈接管。该步骤显示由 `wowsp://custom-import-progress`
+  （`{stage, percent}`）驱动的进度条；成功后展示「已注册为层：<名称>」，并把
+  新层在泳道中选中。
+
+各类型的合规规则（`mod_hub_import_custom`）：
+
+| 类型 | 接受的源 | 写入结果 |
+| --- | --- | --- |
+| 开场视频 | 单个 `.webm`（直接复制，上限 200 MB；文件名以 `_low` 结尾即 720p 档）或 `.mp4` / `.mov` / `.mkv`（转码） | `gui/video/login/main.webm`（1080p）与 `main_low.webm`（720p） |
+| 语音包 | 含 `banks/mods/<bank>/mod.xml`（附 `.wem`）的目录，或根目录散放的 `mod.xml` + `.wem` | 原样成树，或把散包包装进 `banks/mods/<显示名>/` |
+| 材质贴图 | 至少含一个覆盖根：`content/`、`gui/`、`spaces/`、`particles/`、`texts/`、`camouflage/`、`system/` | 原样成树 |
+| 其他资源 | 与材质相同的根规则 | 原样成树（`category: local`） |
+
+其余情况一律按「期望的结构」报错拒绝，而不是装一半。指向链接的源条目（符号链
+接、目录联接）会被与目录安装相同的禁跟随遍历拒绝；应用自身的数据目录永远不是
+合法源。素材外若只套了一层目录（解压包常见），该层会被剥掉，因此选外层目录或
+素材目录都能通过。
+
+### ffmpeg 依赖（仅视频）
+
+客户端只加载 VP9 + Vorbis 的 WebM，因此非 WebM 视频需要**外部** ffmpeg——应用
+既不内置也不下载它。探测顺序：
+
+1. 应用可执行文件同目录的 `ffmpeg.exe`（便携版通常放这里）；
+2. `%LOCALAPPDATA%\WoWSP\tools\ffmpeg.exe`；
+3. `PATH`。
+
+找到 ffmpeg 后按两条既定命令转码（25 fps、lanczos 缩放、libvpx-vp9、libvorbis
+48 kHz 立体声；进度由 ffmpeg 的 `-progress` 输出解析并通过上述事件上报）：
+
+    ffmpeg -y -i <src> -vf "fps=25,scale=1920:1080:flags=lanczos" -c:v libvpx-vp9 -row-mt 1 -cpu-used 4 -crf 31 -b:v 0 -c:a libvorbis -ar 48000 -ac 2 main.webm
+    ffmpeg -y -i <src> -vf "fps=25,scale=1280:720:flags=lanczos" -c:v libvpx-vp9 -row-mt 1 -cpu-used 4 -crf 38 -b:v 0 -c:a libvorbis -ar 48000 -ac 2 main_low.webm
+
+缺少 ffmpeg 时，非 WebM 源在探测阶段即被阻断（无法点「下一步」）；直接调用命令
+也会返回同样的说明并附上可复制的完整命令；转码失败则回传 ffmpeg 自身的 stderr
+尾部与实际执行的命令。
+
+命令：`mod_hub_pick_custom_file`（单文件选择器 + 授权）、
+`mod_hub_probe_custom_import`（只读的第二步结论）、
+`mod_hub_import_custom`（组装 + 分类 + 安装 + 接管，返回标准
+`InstallReport` 与接管到的层 id）。
+
 ## 开放问题
 
 - Lesta 服（俄服）客户端目录结构差异是否需要单独的布局适配；
