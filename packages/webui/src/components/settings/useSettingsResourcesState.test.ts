@@ -31,7 +31,12 @@ const packStatus = {
   installedAt: "2026-11-10T00:00:00Z",
   sizeBytes: 4096,
   losMaps: 3,
-  models: [],
+  // The inventory reports both torpedo slots: the current T4 three-head
+  // model (absent in this older pack) and the legacy two-head fallback.
+  models: [
+    { path: "torpedo4_model.onnx", present: false, sizeBytes: 0 },
+    { path: "torpedo_model.onnx", present: true, sizeBytes: 492411 },
+  ],
 };
 
 const checkResult = {
@@ -76,6 +81,10 @@ describe("settings resources ai channel", () => {
     const state = hook();
     await state.refreshDecisions();
     expect(state.aiStatus.value?.seq).toBe(2);
+    // Both torpedo slots ride the status inventory (T4 current + legacy).
+    const slots = state.aiStatus.value?.models ?? [];
+    expect(slots.some((m) => m.path === "torpedo4_model.onnx")).toBe(true);
+    expect(slots.some((m) => m.path === "torpedo_model.onnx")).toBe(true);
     await state.checkAiUpdate();
     expect(state.aiCheck.value?.latestSeq).toBe(3);
     expect(state.aiCheck.value?.updateAvailable).toBe(true);
