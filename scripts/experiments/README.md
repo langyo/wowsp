@@ -3168,3 +3168,46 @@ tick 快照可算「敌舰已知位置是否在某活跃烟云内」；视野特
 - 导出验证清单：onnx.checker、随机 ≥1000 样本 PyTorch vs ort 一致性
   （max|Δp|<1e-5）、置换不变性（DeepSets）、量化前后 PR-AUPRC/ECE 变化
   <0.005、mask 全 -inf/空槽位 NaN 注入、P95 延迟 <5ms。
+
+## 模型声明与 legacy 归档
+
+GitHub 侧 `scripts/experiments/model_registry.json` 是模型声明的 **source of truth**；Hugging Face 仓库
+`langyo/wowsp-d1` 只是由 `scripts/publish_ai_models.py` 生成的发布产物，不手工编辑。
+
+### 当前架构与 legacy
+
+| slot | kind | featureSet | heads | required | status | legacyTag |
+|---|---|---|---|---|---|---|
+| `fire_model.onnx` | `fire-two-head` | `fire-v1` | 2 | yes | current | - |
+| `move_model.onnx` | `move-sectors-17` | `move-v1` | 1 | yes | current | - |
+| `advice_fire_model.onnx` | `advice-fire-attrs` | `advice-e24` | 2 | no | current | - |
+| `torpedo4_model.onnx` | `torpedo-t4-three-head` | `torp4-v1` | 3 | no | **current** | - |
+| `torpedo_model.onnx` | `torpedo-three-head` | `torpedo-e26d` | 2（归档文件；历史 slot 接受 3 头） | no | **legacy**（retired 2026-11-10） | `legacy-torpedo-e26d-20261110` |
+
+- **T4**：`torpedo4_model.onnx`，49 维 global（core 27 + torp2 11 + torp3 6 + torp4 5）、extra 22、3 头、
+  slot optional；输入签名 entity `[1,24,15]` / global_feat `[1,49]` / mask `[1,24]`。
+- **T2**：`torpedo_model.onnx`（torpedo-e26d / torpedo-three-head）从当前 seq3 artifacts 与 manifest 移除，
+  **只留档**，不再 current；旧权重可在 HF 历史/legacy tag 中取回。
+- app 侧（Rust/webui）对旧槽的回退/接线由 app 任务单独处理；本节只定义 registry 与 HF 发布/归档口径。
+
+### HF 更新与归档规则
+
+- post-training 权重更新 → manifest `seq` +1；旧权重 legacy 归档，不覆盖 current；
+- 无新架构时**不改 slot / kind / featureSet**；featurizer 变更需新 featureSet + app release；
+- legacy tag 只归档，**不进 manifest**；tag 打在**上一 artifact commit**（上一 manifest 的 `revision`），
+  不覆盖 current；
+- tag 格式必须末尾带日期：`legacy-<previousSeq>-YYYYMMDD` 与 `legacy-<architectureId>-YYYYMMDD`；
+  本次为 `legacy-2-20261110`、`legacy-torpedo-e26d-20261110`；
+- publisher 在 upload 前创建 legacy tags（已存在则跳过；创建失败则 **abort 上传**）；dry-run 只打印计划，
+  不创建 tag、不上传。
+
+### 发布与校验
+
+- dry-run（无网络/无 token 也可跑 tag 计划；本地只 stage/sign）：
+  `python scripts/publish_ai_models.py --dry-run --out-dir scripts/experiments/out --skip-training`；
+- 实际发布（需 HF token + signing key）：去掉 `--dry-run`；publisher 会校验 registry 的 slot/kind/featureSet，
+  生成含 **Architecture & weights declaration** 的 model card，并在 upload 前创建 legacy tags；
+- 离线自检：`python scripts/publish_ai_models.py --selftest`（registry 校验、legacy tag 名/日期后缀、
+  T4 spec、model card 声明）；
+- 本仓库不实际执行 HF 发布；发布动作由维护者按上述命令手动执行。
+

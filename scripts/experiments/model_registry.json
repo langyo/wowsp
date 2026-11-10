@@ -1,0 +1,98 @@
+{
+  "schema": "wowsp-model-registry-v1",
+  "hfRepo": "langyo/wowsp-d1",
+  "updated": "2026-11-10",
+  "sourceOfTruth": "https://github.com/langyo/wowsp/blob/master/scripts/experiments/model_registry.json",
+  "updatePolicy": {
+    "seq": "Every post-training weight update bumps manifest seq by 1; never reuse a seq.",
+    "legacy": "Retired weights are archived as Git tags on the previous artifact commit; tags are archive-only and never appear in manifest.json.",
+    "noNewArchitecture": "Without a new architecture do not change slot/kind/featureSet; a featurizer change needs an app release and a new featureSet name."
+  },
+  "legacyArchive": {
+    "date": "20261110",
+    "previousSeq": 2,
+    "tagTemplates": {
+      "seq": "legacy-<previousSeq>-YYYYMMDD",
+      "architecture": "legacy-<architectureId>-YYYYMMDD"
+    }
+  },
+  "architectures": [
+    {
+      "slot": "fire_model.onnx",
+      "kind": "fire-two-head",
+      "featureSet": "fire-v1",
+      "architectureId": "fire-v1",
+      "heads": 2,
+      "required": true,
+      "status": "current",
+      "quant": "fp32",
+      "source": "fire_model/v2plain_std/fp32.onnx",
+      "note": "Two-head fire model (can-fire / decide)."
+    },
+    {
+      "slot": "move_model.onnx",
+      "kind": "move-sectors-17",
+      "featureSet": "move-v1",
+      "architectureId": "move-v1",
+      "heads": 1,
+      "required": true,
+      "status": "current",
+      "quant": "fp32",
+      "source": "move_model/node3/main/fp32.onnx",
+      "note": "Sector policy head (17 sectors)."
+    },
+    {
+      "slot": "advice_fire_model.onnx",
+      "kind": "advice-fire-attrs",
+      "featureSet": "advice-e24",
+      "architectureId": "advice-e24",
+      "heads": 2,
+      "required": false,
+      "status": "current",
+      "quant": "fp32",
+      "source": "fire_model/e24_attrs/fp32.onnx",
+      "note": "Attribute-routed advice head."
+    },
+    {
+      "slot": "torpedo_model.onnx",
+      "kind": "torpedo-three-head",
+      "featureSet": "torpedo-e26d",
+      "architectureId": "torpedo-e26d",
+      "heads": 2,
+      "required": false,
+      "status": "legacy",
+      "retired": "2026-11-10",
+      "legacyTag": "legacy-torpedo-e26d-20261110",
+      "note": "T2 legacy: the archived artifact is the 2-head / global-38 file; the historical slot also accepts 3-head, but it is removed from current seq3 artifacts and manifest; archive only."
+    },
+    {
+      "slot": "torpedo4_model.onnx",
+      "kind": "torpedo-t4-three-head",
+      "featureSet": "torp4-v1",
+      "architectureId": "torpedo4-t4",
+      "heads": 3,
+      "required": false,
+      "status": "current",
+      "quant": "fp32",
+      "source": "torpedo_model/final_torp4/fp32.onnx",
+      "input": {
+        "entity": [
+          1,
+          24,
+          15
+        ],
+        "global_feat": [
+          1,
+          49
+        ],
+        "mask": [
+          1,
+          24
+        ]
+      },
+      "globalDim": 49,
+      "extraDim": 22,
+      "note": "T4 three-head torpedo model (torp4 features: core 27 + torp2 11 + torp3 6 + torp4 5 = 49; extra 22). Optional slot."
+    }
+  ]
+}
