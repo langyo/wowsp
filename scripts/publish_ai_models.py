@@ -33,9 +33,11 @@ from __future__ import annotations
 
 import argparse
 import base64
+import copy
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -50,6 +52,7 @@ import catalog_signing
 REPO_ROOT = Path(__file__).resolve().parent.parent
 REPO = "langyo/wowsp"
 DEFAULT_HF_REPO = "langyo/wowsp-d1"
+REGISTRY_PATH = REPO_ROOT / "scripts" / "experiments" / "model_registry.json"
 MANIFEST_NAME = "manifest.json"
 KEY_ID = "main"
 MAX_FILE_BYTES = 10 * 1024 * 1024
@@ -83,10 +86,10 @@ MODELS = (
         "required": False,
     },
     {
-        "dest": "torpedo_model.onnx",
-        "src": "torpedo_model/final/fp32.onnx",
-        "kind": "torpedo-three-head",
-        "feature_set": "torpedo-e26d",
+        "dest": "torpedo4_model.onnx",
+        "src": "torpedo_model/final_torp4/fp32.onnx",
+        "kind": "torpedo-t4-three-head",
+        "feature_set": "torp4-v1",
         "quant": "fp32",
         "required": False,
     },
@@ -100,6 +103,101 @@ ATTRS_REPO_PATH = "attrs/ship_attributes.json"
 def die(message: str) -> "SystemExit":
     return SystemExit(f"error: {message}")
 
+
+
+def load_registry(path: Path = REGISTRY_PATH) -> dict:
+    if not Path(path).is_file():
+        raise die(f"model registry not found: {path}")
+    try:
+        doc = json.loads(Path(path).read_text(encoding="utf-8"))
+    except ValueError as exc:
+        raise die(f"model registry is not valid JSON: {exc}") from exc
+    if not isinstance(doc, dict) or not str(doc.get("schema", "")).startswith("wowsp-model-registry"):
+        raise die(f"{path}: unexpected registry schema")
+    arch = doc.get("architectures")
+    if not isinstance(arch, list) or not arch:
+        raise die(f"{path}: architectures must be a non-empty list")
+    return doc
+
+
+def validate_models_against_registry(models, registry: dict) -> dict:
+    current = {a["slot"]: a for a in registry["architectures"] if a.get("status") == "current"}
+    legacy = {a["slot"]: a for a in registry["architectures"] if a.get("status") == "legacy"}
+    if not current:
+        raise die("registry has no current architectures")
+    slots = {spec["dest"] for spec in models}
+    missing = sorted(set(current) - slots)
+    if missing:
+        raise die("MODELS is missing current registry slots: " + ", ".join(missing))
+    extra_legacy = sorted(set(legacy) & slots)
+    if extra_legacy:
+        raise die("legacy architecture must not be a current artifact: " + ", ".join(extra_legacy))
+    for spec in models:
+        arch = current.get(spec["dest"])
+        if arch is None:
+            raise die("MODELS slot not current in registry: " + spec["dest"])
+        for key, reg_key in (("kind", "kind"), ("feature_set", "featureSet"), ("required", "required")):
+            if key in spec and reg_key in arch and spec[key] != arch[reg_key]:
+                raise die(f"{spec['dest']}: {key} {spec[key]!r} != registry {arch[reg_key]!r}")
+        if arch.get("source") and spec.get("src") != arch["source"]:
+            raise die(f"{spec['dest']}: src {spec.get('src')!r} != registry source {arch['source']!r}")
+    for slot, arch in legacy.items():
+        if slot in slots:
+            raise die("legacy architecture still published: " + slot)
+        tag = arch.get("legacyTag")
+        if tag is not None and not re.fullmatch(r"legacy-.+-\d{8}", str(tag)):
+            raise die(f"{slot}: legacyTag must end with an 8-digit date: {tag!r}")
+    return current
+
+
+def _check_date(value: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"\d{8}", value):
+        raise die("legacy tag date must be YYYYMMDD: " + repr(value))
+    return value
+
+
+def legacy_tag_plan(prev_seq: int, date: str, registry: dict, prev_revision: str | None = None) -> list[dict]:
+    """Tags to create on the PREVIOUS artifact commit (never the new one)."""
+    _check_date(date)
+    if not isinstance(prev_seq, int) or prev_seq <= 0:
+        return []
+    plan = [{"tag": f"legacy-{prev_seq}-{date}", "revision": prev_revision,
+             "reason": f"archive previous artifact seq {prev_seq}"}]
+    for arch in registry["architectures"]:
+        if arch.get("status") != "legacy":
+            continue
+        arch_id = arch.get("architectureId") or arch.get("featureSet") or arch.get("kind")
+        tag = f"legacy-{arch_id}-{date}"
+        if arch.get("legacyTag") and str(arch["legacyTag"]).endswith(date):
+            tag = str(arch["legacyTag"])
+        plan.append({"tag": tag, "revision": prev_revision,
+                     "reason": "retired architecture " + str(arch.get("kind"))})
+    seen = set()
+    unique = []
+    for item in plan:
+        if item["tag"] in seen:
+            continue
+        seen.add(item["tag"])
+        unique.append(item)
+    return unique
+
+
+def create_legacy_tags(repo_id: str, plan: list[dict]) -> None:
+    try:
+        from huggingface_hub import HfApi
+    except ImportError as exc:  # pragma: no cover - environment guard
+        raise die("huggingface_hub is required for publishing: pip install huggingface_hub") from exc
+    api = HfApi()
+    for item in plan:
+        revision = item.get("revision")
+        if not revision:
+            raise die("legacy tag " + item["tag"] + " has no previous artifact revision; aborting upload")
+        try:
+            api.create_tag(repo_id=repo_id, tag=item["tag"], revision=revision,
+                           repo_type="model", exist_ok=True)
+        except Exception as exc:  # noqa: BLE001 - any tag failure must abort the upload
+            raise die(f"cannot create legacy tag {item['tag']} on {revision}: {exc}") from exc
+        print(f"  legacy tag    {item['tag']} -> {revision} (archive; not in manifest)")
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
@@ -246,8 +344,8 @@ def load_signing_seed(args: argparse.Namespace) -> bytes:
     return catalog_signing.load_private_seed(key_path)
 
 
-def fetch_previous_seq(repo_id: str) -> int:
-    """The currently published manifest's seq (0 when the repo is fresh)."""
+def fetch_previous_manifest(repo_id: str) -> dict | None:
+    """The currently published manifest (None when the repo is fresh)."""
     try:
         from huggingface_hub import hf_hub_download
     except ImportError as exc:  # pragma: no cover - environment guard
@@ -260,12 +358,17 @@ def fetch_previous_seq(repo_id: str) -> int:
             token=os.environ.get("HF_TOKEN") or None,
         )
     except Exception:  # noqa: BLE001 - a missing manifest on a fresh repo
-        return 0
+        return None
     try:
         doc = json.loads(Path(path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return 0
-    seq = doc.get("seq")
+        return None
+    return doc if isinstance(doc, dict) else None
+
+
+def fetch_previous_seq(repo_id: str) -> int:
+    doc = fetch_previous_manifest(repo_id)
+    seq = (doc or {}).get("seq")
     return seq if isinstance(seq, int) and seq > 0 else 0
 
 
@@ -294,7 +397,7 @@ def build_manifest(
 
 
 def render_readme(
-    manifest: dict, repo_id: str, *, dry_run: bool
+    manifest: dict, repo_id: str, *, dry_run: bool, registry: dict, legacy_plan: list[dict]
 ) -> str:
     rows = []
     for entry in manifest["files"]:
@@ -304,7 +407,17 @@ def render_readme(
             f"| {entry['path']} | {kind} | {feature} | {entry['size']:,} | "
             f"{entry['sha256'][:16]}... |"
         )
+    arch_rows = []
+    for arch in registry["architectures"]:
+        retired = arch.get("legacyTag") or (arch.get("retired") and "retired " + str(arch["retired"])) or "-"
+        arch_rows.append(
+            "| " + arch["slot"] + " | " + arch["kind"] + " | " + arch["featureSet"] + " | "
+            + str(arch.get("heads", "-")) + " | " + ("yes" if arch.get("required") else "no")
+            + " | " + arch["status"] + " | " + str(retired) + " |"
+        )
     table = "\n".join(rows)
+    arch_table = "\n".join(arch_rows)
+    legacy_tags = ", ".join(item["tag"] for item in legacy_plan) or "none"
     los = "yes" if "resTreeSha256" in manifest else "no (weights release)"
     status = "DRY RUN" if dry_run else "PUBLISHED"
     return f"""---
@@ -336,6 +449,30 @@ Runtime manifest: [manifest.json](./manifest.json). LOS rasters included:
 | --- | --- | --- | --- | --- |
 {table}
 
+## Architecture & weights declaration
+
+The GitHub registry scripts/experiments/model_registry.json is the source of
+truth; this repository is its generated artifact.
+
+| slot | kind | feature set | heads | required | status | retired / legacy tag |
+| --- | --- | --- | --- | --- | --- | --- |
+{arch_table}
+
+Current artifacts: fire_model.onnx, move_model.onnx, advice_fire_model.onnx
+and torpedo4_model.onnx (T4: 49-dim global input, three heads, optional).
+The T2 torpedo_model.onnx (torpedo-e26d / torpedo-three-head) is legacy:
+retired 2026-11-10, removed from the current artifacts and the manifest,
+archived only as Git tags.
+
+Update rules: a post-training weight update bumps seq; retired weights are
+archived as tags on the previous artifact commit; without a new architecture
+never change slot / kind / featureSet. Legacy tags are archive-only and never
+enter manifest.json.
+
+Legacy tags planned for this publish: {legacy_tags}. They target the previous
+artifact commit (resolved from the previous manifest revision), never the new
+commit.
+
 ## Runtime contract
 
 - manifest.json is the only entry point. It is Ed25519-signed with the
@@ -344,7 +481,7 @@ Runtime manifest: [manifest.json](./manifest.json). LOS rasters included:
 - Clients download each file from
   /resolve/<commit-sha>/<path> (an immutable pin), verify the sha256,
   then validate the ONNX kind and input widths before installing.
-- featureSet values (fire-v1, move-v1, advice-e24, torpedo-e26d) are the
+- featureSet values (fire-v1, move-v1, advice-e24, torp4-v1; the T2 torpedo-e26d is legacy) are the
   app-featurizer contract. A featurizer change bumps the set name in an
   app release; never reuse a set name for different input semantics.
 - Every file stays below 10 MB so an update stays small; the Hub may
@@ -403,11 +540,15 @@ def write_docs_stage(
     *,
     repo_id: str,
     dry_run: bool,
+    registry: dict,
+    legacy_plan: list[dict],
 ) -> None:
     (stage / MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
-    (stage / "README.md").write_text(render_readme(manifest, repo_id, dry_run=dry_run), encoding="utf-8")
+    (stage / "README.md").write_text(
+        render_readme(manifest, repo_id, dry_run=dry_run, registry=registry, legacy_plan=legacy_plan),
+        encoding="utf-8")
     shutil.copy2(REPO_ROOT / "LICENSE", stage / "LICENSE")
     (stage / "NOTICE.md").write_text(render_notice(), encoding="utf-8")
     (stage / "SOURCE.json").write_text(
@@ -466,6 +607,63 @@ def upload(repo_id: str, artifacts_dir: Path, seq: int) -> dict:
     return {"revision": oid, "api": api}
 
 
+def run_selftest() -> int:
+    """Offline checks for registry, legacy tag plan and the model card."""
+    registry = load_registry()
+    current = validate_models_against_registry(MODELS, registry)
+    slots = [spec["dest"] for spec in MODELS]
+    assert "torpedo4_model.onnx" in slots, slots
+    assert "torpedo_model.onnx" not in slots, "T2 must not be a current artifact"
+    t4 = current["torpedo4_model.onnx"]
+    assert t4["kind"] == "torpedo-t4-three-head"
+    assert t4["featureSet"] == "torp4-v1"
+    assert t4["heads"] == 3 and t4["required"] is False
+    assert t4["globalDim"] == 49 and t4["extraDim"] == 22
+    assert t4["input"] == {"entity": [1, 24, 15], "global_feat": [1, 49], "mask": [1, 24]}
+    legacy = [a for a in registry["architectures"] if a.get("status") == "legacy"]
+    assert any(a["slot"] == "torpedo_model.onnx" and a.get("retired") == "2026-11-10" for a in legacy)
+    t2 = next(a for a in legacy if a["slot"] == "torpedo_model.onnx")
+    assert t2["legacyTag"] == "legacy-torpedo-e26d-20261110", t2.get("legacyTag")
+    plan = legacy_tag_plan(2, "20261110", registry, None)
+    tags = [item["tag"] for item in plan]
+    assert tags == ["legacy-2-20261110", "legacy-torpedo-e26d-20261110"], tags
+    assert all(tag.endswith("20261110") for tag in tags)
+    assert legacy_tag_plan(0, "20261110", registry, None) == []
+    for bad in ("2026-11-10", "2026111", "", "20261110x"):
+        try:
+            _check_date(bad)
+        except SystemExit:
+            continue
+        raise SystemExit("[selftest] invalid legacy date accepted: " + repr(bad))
+    bad_registry = copy.deepcopy(registry)
+    for arch in bad_registry["architectures"]:
+        if arch["slot"] == "torpedo4_model.onnx":
+            arch["featureSet"] = "wrong-v1"
+    try:
+        validate_models_against_registry(MODELS, bad_registry)
+    except SystemExit:
+        pass
+    else:
+        raise SystemExit("[selftest] registry mismatch not rejected")
+    fake_manifest = {
+        "seq": 3,
+        "version": "2026-11-10T00:00:00Z",
+        "source": {"repo": REPO, "commit": "deadbeef"},
+        "revision": "abc123",
+        "treeSha256": "0" * 64,
+        "files": [{"path": "onnx/torpedo4_model.onnx", "kind": "torpedo-t4-three-head",
+                   "featureSet": "torp4-v1", "size": 1, "sha256": "0" * 64}],
+    }
+    card = render_readme(fake_manifest, "langyo/wowsp-d1", dry_run=True,
+                         registry=registry, legacy_plan=plan)
+    for needle in ("Architecture & weights declaration", "torpedo4_model.onnx",
+                   "torpedo_model.onnx", "legacy-torpedo-e26d-20261110",
+                   "legacy-2-20261110", "retired 2026-11-10"):
+        assert needle in card, "model card missing " + needle
+    print("PASS")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", default=DEFAULT_HF_REPO, help=f"Hugging Face repo id (default: {DEFAULT_HF_REPO})")
@@ -482,7 +680,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seq", type=int, default=None, help="override the next seq")
     parser.add_argument("--skip-training", action="store_true", help="skip the training-script snapshot")
     parser.add_argument("--dry-run", action="store_true", help="stage and sign locally, upload nothing")
+    parser.add_argument("--legacy-date", default=None,
+                        help="YYYYMMDD legacy-tag date (default: registry legacyArchive.date)")
+    parser.add_argument("--prev-seq", type=int, default=None,
+                        help="dry-run: previous artifact seq (default: registry legacyArchive.previousSeq)")
+    parser.add_argument("--prev-revision", default=None,
+                        help="dry-run: previous artifact revision label; real runs resolve it from HF")
+    parser.add_argument("--selftest", action="store_true", help="offline registry/tag/card checks")
     args = parser.parse_args(argv)
+
+    if args.selftest:
+        return run_selftest()
+    registry = load_registry()
+    validate_models_against_registry(MODELS, registry)
 
     out_dir = Path(args.out_dir).expanduser()
     if not out_dir.is_dir():
@@ -517,9 +727,24 @@ def main(argv: list[str] | None = None) -> int:
 
         version = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         source_commit = git_head()
-        seq = args.seq if args.seq is not None else (1 if args.dry_run else fetch_previous_seq(args.repo) + 1)
+        legacy_date = str(args.legacy_date or registry.get("legacyArchive", {}).get("date") or "")
+        _check_date(legacy_date)
+        if args.dry_run:
+            prev_seq = (args.prev_seq if args.prev_seq is not None
+                        else int(registry.get("legacyArchive", {}).get("previousSeq", 0) or 0))
+            prev_revision = args.prev_revision or "previous artifact commit (resolved from HF manifest.revision at publish)"
+            seq = args.seq if args.seq is not None else 1
+        else:
+            previous = fetch_previous_manifest(args.repo)
+            prev_seq = (args.prev_seq if args.prev_seq is not None
+                        else int((previous or {}).get("seq", 0) or 0))
+            prev_revision = (previous or {}).get("revision")
+            seq = args.seq if args.seq is not None else prev_seq + 1
         if seq < 1:
             raise die(f"--seq must be positive, got {seq}")
+        legacy_plan = legacy_tag_plan(prev_seq, legacy_date, registry, prev_revision)
+        if legacy_plan and not args.dry_run and not prev_revision:
+            raise die("previous artifact revision is unavailable; refusing to publish without archiving legacy tags")
 
         seed = load_signing_seed(args)
         revision = "dry-run" if args.dry_run else None
@@ -532,16 +757,26 @@ def main(argv: list[str] | None = None) -> int:
             res_tree_sha256=res_tree,
         )
         if args.dry_run:
-            write_docs_stage(docs, catalog_signing.sign_doc(manifest, seed, args.key_id), repo_id=args.repo, dry_run=True)
+            signed = catalog_signing.sign_doc(manifest, seed, args.key_id)
+            write_docs_stage(docs, signed, repo_id=args.repo, dry_run=True,
+                             registry=registry, legacy_plan=legacy_plan)
             summarise(json.loads((docs / MANIFEST_NAME).read_text(encoding="utf-8")), args.repo, dry_run=True)
+            print("  legacy archive plan (dry run; tags target the previous artifact revision):")
+            if not legacy_plan:
+                print("  legacy tags   none (no previous artifact seq)")
+            for item in legacy_plan:
+                print(f"  legacy tag    {item['tag']}  <-  {prev_revision}")
             print(f"  staged        {staging}")
             print("  dry run: no upload, no repository change")
             return 0
 
+        if legacy_plan:
+            create_legacy_tags(args.repo, legacy_plan)
         uploaded = upload(args.repo, artifacts, seq)
         manifest["revision"] = uploaded["revision"]
         manifest = catalog_signing.sign_doc(manifest, seed, args.key_id)
-        write_docs_stage(docs, manifest, repo_id=args.repo, dry_run=False)
+        write_docs_stage(docs, manifest, repo_id=args.repo, dry_run=False,
+                         registry=registry, legacy_plan=legacy_plan)
         uploaded["api"].upload_folder(
             repo_id=args.repo,
             repo_type="model",

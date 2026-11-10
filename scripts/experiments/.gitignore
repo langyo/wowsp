@@ -10,3 +10,5 @@ out/
 !ship_attributes.json
 # E26 training-data snapshot manifest (small, tracked; raw JSONL stays ignored).
 !training_data_manifest.json
+# Model registry declaration (small, tracked).
+!model_registry.json
