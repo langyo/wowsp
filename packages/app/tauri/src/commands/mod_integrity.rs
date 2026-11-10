@@ -96,8 +96,16 @@ const MAX_REF_LEN: usize = 200;
 /// Small text glue worth scanning for asset references. Binary and big
 /// files are skipped; the loader directives that hang the UI live in
 /// XML/Python/JSON configs.
+///
+/// `.unbound` is in the list because it is the ONE glue format that is
+/// itself a load target: a mod's `gui/unbound2/**/*.unbound` fragment is
+/// referenced from its own XML/config glue, and a client update that
+/// retires an element makes the fragment's own references stale in exactly
+/// the way this scan exists to prove (the crash analyzer's reference walk
+/// already reads `.unbound`, see `game_crash.rs` — this list was the
+/// asymmetric half).
 fn is_glue_text_file(name: &str) -> bool {
-    [".xml", ".py", ".json", ".txt", ".yaml", ".cfg"]
+    [".xml", ".py", ".json", ".txt", ".yaml", ".cfg", ".unbound"]
         .iter()
         .any(|ext| name.to_ascii_lowercase().ends_with(ext))
 }
@@ -220,6 +228,97 @@ fn push_swf_token(refs: &mut Vec<String>, token: &str) {
     // (ModForge's __forge_stub.swf) — never a real load target.
     if !base.is_empty() && !base.contains('%') && !base.starts_with("__") {
         refs.push(base.to_string());
+    }
+}
+
+/// The asset extensions a LOAD DIRECTIVE can name. `.swf` is the Scaleform
+/// class the original pass was built for; the rest are the sibling classes
+/// the same glue files spell in the same directives, and they matter for
+/// exactly one real-world shape:
+///
+/// the whole-file glue overrides (`gui/uss_settings.xml`,
+/// `gui/fontconfig_scaleform.xml`, `gui/battle_elements.xml`) are copied
+/// into `res_mods` by a modpack and SHADOW the client's own copy wholesale —
+/// the engine never merges XML. After a client update retires or renames a
+/// referenced asset, the stale override keeps loading a target that no
+/// longer exists and parts of a UI scene (the port event pages among them)
+/// silently stop rendering. `.swf`-only tokenization could not see that
+/// class at all: `gui/uss_settings.xml`'s vanished loads are `<xmlfile>`
+/// entries, and a font-family mismatch after an update is a `.ttf` path in
+/// `gui/fontconfig_scaleform.xml`.
+const REF_ASSET_EXTS: &[&str] = &["swf", "xml", "ttf", "unbound"];
+
+/// The load directives an asset reference can appear in: the glue files
+/// spell the same load as a `<swffile>`/`<xmlfile>` element body, as a
+/// `<path>` inside a `<fontconfig>` document, as an `<element url="…">`
+/// attribute or as a `<url source="…">` attribute. Deliberately NOT
+/// every `.xml`/`.ttf` token in the file: a prose mention or an unrelated
+/// data value must never become a finding, so only directive positions
+/// are read — and `<path>` only inside a font config, because the tag name
+/// is generic enough that other mod configs use it for their own values.
+fn directive_refs(text: &str) -> Vec<String> {
+    let mut refs: Vec<String> = Vec::new();
+    for tag in ["swffile", "xmlfile"] {
+        for value in element_text_values(text, tag) {
+            push_directive_ref(&mut refs, &value);
+        }
+    }
+    // `<path>` is a load directive ONLY in a font config; the element name
+    // is generic enough that an unrelated mod config's own `<path>` value
+    // must not be read as a load. The font list is the ONE place the
+    // client's `gui/fontconfig_scaleform.xml` (and the mod overrides that
+    // shadow it) spells its font files, and a client update that retires a
+    // font family is exactly the mismatch this pass reports.
+    if text.to_ascii_lowercase().contains("<fontconfig") {
+        for value in element_text_values(text, "path") {
+            push_directive_ref(&mut refs, &value);
+        }
+    }
+    for value in quoted_attr_values(text, "element", "url") {
+        push_directive_ref(&mut refs, &value);
+    }
+    for value in quoted_attr_values(text, "url", "source") {
+        push_directive_ref(&mut refs, &value);
+    }
+    refs
+}
+
+/// One directive value as a reference: comma-separated multi-loads
+/// (`<swffile>a.swf,b.swf</swffile>` — the stock `battle_elements.xml`
+/// ships several) split into separate basenames, template/format strings
+/// and absolute paths rejected, and only [`REF_ASSET_EXTS`] kept. The
+/// basename is the conservative presence test the idx index supports (the
+/// index stores names, never paths).
+fn push_directive_ref(refs: &mut Vec<String>, value: &str) {
+    for piece in value.split(',') {
+        let piece = piece.trim();
+        if piece.is_empty() || piece.contains('%') || piece.starts_with('$') {
+            continue;
+        }
+        // An absolute or drive-qualified path is a client-internal
+        // reference (or a URL), not a res_mods-relative load target.
+        if piece.contains(':') || piece.starts_with('/') || piece.starts_with('\\') {
+            continue;
+        }
+        let normalized = piece.replace('\\', "/");
+        let base = normalized
+            .trim_end_matches('/')
+            .rsplit('/')
+            .next()
+            .unwrap_or("");
+        let lower = base.to_ascii_lowercase();
+        if lower.len() <= 4 || lower.starts_with("__") {
+            continue;
+        }
+        let Some((_, ext)) = lower.rsplit_once('.') else {
+            continue;
+        };
+        if !REF_ASSET_EXTS.contains(&ext) {
+            continue;
+        }
+        if !refs.iter().any(|r| r == &lower) {
+            refs.push(lower);
+        }
     }
 }
 
@@ -596,11 +695,22 @@ pub(crate) fn active_res_mods(game_root: &str) -> Option<PathBuf> {
 
 /// Scan the given mod trees once (bounded) and report, conservatively:
 ///
-/// - `dangling_ref`: a `.swf` reference from small text glue (xml/py/json/
-///   txt/yaml/cfg, ≤512 KiB) whose lowercase basename exists in NEITHER any
-///   scanned tree NOR the client index. Skipped entirely when the client
-///   index is unavailable or the walk was budget-truncated — absence of
-///   evidence must not become an accusation (this report REFUSES installs).
+/// - `dangling_ref`: an asset reference from small text glue (xml/py/json/
+///   txt/yaml/cfg/unbound, ≤512 KiB) whose lowercase basename exists in
+///   NEITHER any scanned tree NOR the client index. Two reference classes
+///   feed it: the historical bare `.swf` token sweep ([`swf_refs_in_text`])
+///   and the load-directive sweep ([`directive_refs`] — `<swffile>` /
+///   `<xmlfile>` bodies, `<path>` inside a `<fontconfig>`, and the
+///   `element url=` / `url source=` attributes, over [`REF_ASSET_EXTS`]).
+///   The directive half is what makes
+///   a STALE WHOLE-FILE glue override visible: `gui/uss_settings.xml`,
+///   `gui/fontconfig_scaleform.xml` and `gui/battle_elements.xml` shadow
+///   the client's own copies wholesale, so after a client update their
+///   retired loads are exactly the "part of the page will not render"
+///   class this scan exists to catch before it reaches the game. Skipped
+///   entirely when the client index is unavailable or the walk was
+///   budget-truncated — absence of evidence must not become an accusation
+///   (this report REFUSES installs).
 /// - `invalid_swf`: a `.swf` file whose content fails [`swf_magic_ok`].
 /// - `overlap`: the same load claim (element url= / swffile / url source=)
 ///   extracted from 2+ DIFFERENT files — never from two claims inside one
@@ -656,7 +766,15 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
         // neither a dangling load nor a competing claim.
         let text = strip_xml_comments(&text);
         if client.is_some() {
-            for asset in swf_refs_in_text(&text) {
+            // Two reference classes, one verdict: the bare-token pass (the
+            // crash analyzer's historical contract — `.swf` anywhere in the
+            // text) and the directive pass (a load directive naming ANY of
+            // REF_ASSET_EXTS, read only from directive positions so prose
+            // never accuses). Both reduce to a lowercase basename and both
+            // stay silent unless the tree AND the client index lack it.
+            let token_refs = swf_refs_in_text(&text);
+            let directive = directive_refs(&text);
+            for asset in token_refs.into_iter().chain(directive) {
                 if walk.names.contains(&asset)
                     || client.as_ref().is_some_and(|c| c.contains(&asset))
                     || asset.len() > MAX_REF_LEN
@@ -1330,5 +1448,153 @@ mod tests {
             .find(|p| p.asset.as_deref() == Some("old_ghost.swf"))
             .expect("existing dangle");
         assert!(!existing_finding.staged, "{:?}", existing_finding);
+    }
+
+    /// The stale whole-file glue override (field report: the port's
+    /// Arsenal/Black-Friday event page renders only partially). A modpack
+    /// copies `gui/uss_settings.xml` + `gui/fontconfig_scaleform.xml` into
+    /// res_mods, where they shadow the client's own copies WHOLESALE — the
+    /// engine never merges XML. Once a client update retires the assets
+    /// those overrides load, the stale copy keeps asking for them. This is
+    /// the exact real-world fixture from the maintainer's CN install
+    /// (bin/13357822): the four missing `<xmlfile>`/`<swffile>` loads and
+    /// the font paths. `.swf`-only tokenization missed every `.xml` load,
+    /// which is why the directive pass exists — pin all of them.
+    #[test]
+    fn stale_glue_overrides_report_their_retired_loads() {
+        let _seam = seam_guard();
+        let dir = TempDir::new("stale-glue");
+        dir.touch(
+            "gui/uss_settings.xml",
+            br#"<?xml version="1.0" ?>
+<uss_settings.xml>
+    <default>
+        <xmlfile>../unbound/styles.xml</xmlfile>
+    </default>
+    <mods>
+        <swffile>../unbound/mods/PortInterface/Expressions.swf</swffile>
+        <xmlfile>../unbound/mods/PortInterface/GoodNews.xml</xmlfile>
+        <swffile>../unbound/mods/InfoPanelSelf.swf</swffile>
+        <xmlfile>../unbound/mods/InfoPanelSelf.xml</xmlfile>
+        <swffile>../unbound/mods/SmokeIndicator.swf</swffile>
+        <xmlfile>../unbound/mods/SmokeIndicator.xml</xmlfile>
+    </mods>
+</uss_settings.xml>"#,
+        );
+        dir.touch(
+            "gui/fontconfig_scaleform.xml",
+            br#"<fontconfig>
+<family>
+<embedded> $WWSDefaultFont </embedded>
+<path> gui/fonts/WoWsSymbol.ttf </path>
+<path> gui/fonts/Exo2-Bold.ttf </path>
+</family>
+</fontconfig>"#,
+        );
+        // The client index knows styles.xml + expressions.swf + a stock
+        // font — everything the CURRENT client still ships. The
+        // retired targets stay unknown, which is what makes them findings.
+        let mut index: HashSet<String> = HashSet::new();
+        for name in [
+            "styles.xml",
+            "expressions.swf",
+            "source_han_sans_cn_medium_wh.ttf",
+        ] {
+            index.insert(name.to_string());
+        }
+        *TEST_CLIENT_INDEX.lock().unwrap() = Some(Arc::new(index));
+        let report = scan_trees(Some("D:/game"), &[dir.path().to_path_buf()]);
+        *TEST_CLIENT_INDEX.lock().unwrap() = None;
+        let dangling: Vec<&str> = report
+            .problems
+            .iter()
+            .filter(|p| p.kind == KIND_DANGLING_REF)
+            .filter_map(|p| p.asset.as_deref())
+            .collect();
+        // The four retired unbound loads and the two retired fonts. The
+        // surviving `styles.xml` / `expressions.swf` must stay silent — a
+        // current client asset is never an accusation.
+        for expected in [
+            "goodnews.xml",
+            "infopanelself.swf",
+            "infopanelself.xml",
+            "smokeindicator.swf",
+            "smokeindicator.xml",
+            "wowssymbol.ttf",
+            "exo2-bold.ttf",
+        ] {
+            assert!(
+                dangling.contains(&expected),
+                "{expected} must be reported: {dangling:?}"
+            );
+        }
+        for quiet in ["styles.xml", "expressions.swf"] {
+            assert!(
+                !dangling.contains(&quiet),
+                "a client-shipped asset must never be accused: {dangling:?}"
+            );
+        }
+    }
+
+    /// Prose and non-directive values must stay silent: the directive pass
+    /// reads only load positions, so a README or an unrelated data value
+    /// naming a missing `.xml`/`.ttf` never accuses anyone.
+    #[test]
+    fn directive_refs_ignore_prose_and_non_load_values() {
+        let text = r#"<root>
+            <format>%s.xml</format>
+            <comment>see missing_font.ttf in the readme</comment>
+            <value>/abs/path/other.xml</value>
+            <swffile>../unbound/mods/real_load.swf</swffile>"#;
+        let refs = directive_refs(text);
+        assert_eq!(refs, vec!["real_load.swf"], "{refs:?}");
+    }
+
+    /// `<path>` is a load directive ONLY inside a `<fontconfig>` document:
+    /// the tag name is generic, and an unrelated config spelling its own
+    /// `<path>` value must never be read as a load (that would accuse a
+    /// clean mod of a dangling reference the engine never looks for).
+    #[test]
+    fn path_directives_only_count_inside_a_font_config() {
+        let fontconfig = r#"<fontconfig><family>
+            <path> gui/fonts/Missing.ttf </path>
+        </family></fontconfig>"#;
+        assert!(directive_refs(fontconfig).contains(&"missing.ttf".to_string()));
+        let other = r#"<config><path> ../data/some.xml </path></config>"#;
+        assert!(
+            directive_refs(other).is_empty(),
+            "a non-fontconfig <path> is not a load: {:?}",
+            directive_refs(other)
+        );
+    }
+
+    /// Comma-separated multi-loads (the stock `battle_elements.xml` shape:
+    /// `url="gui_slots.swf,scenario_markers.swf"`) split into separate
+    /// references, and template/absolute spellings are rejected.
+    #[test]
+    fn directive_refs_split_multi_loads_and_reject_templates() {
+        let text = r#"<element url="gui_slots.swf,scenario_markers.swf"/>
+<url source="https://cdn.example/thing.swf"/>
+<element url="ok.xml"/>"#;
+        let refs = directive_refs(text);
+        assert!(refs.contains(&"gui_slots.swf".to_string()), "{refs:?}");
+        assert!(
+            refs.contains(&"scenario_markers.swf".to_string()),
+            "{refs:?}"
+        );
+        assert!(refs.contains(&"ok.xml".to_string()), "{refs:?}");
+        assert!(
+            !refs.iter().any(|r| r.contains(":")),
+            "URL/absolute values are not load targets: {refs:?}"
+        );
+    }
+
+    /// `.unbound` fragments are glue AND load targets: a stale fragment's
+    /// own retired references must be readable (the crash analyzer already
+    /// walks the format; the integrity list was the asymmetric half).
+    #[test]
+    fn unbound_fragments_are_scanned_as_glue() {
+        assert!(is_glue_text_file("gui/unbound2/mods/Probe.unbound"));
+        assert!(is_glue_text_file("gui/unbound2/mod/Battle.UNBOUND"));
     }
 }

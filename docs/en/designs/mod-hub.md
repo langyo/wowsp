@@ -557,6 +557,28 @@ transplanting ghost rows; the old directory is emptied afterwards and
 ledger records re-pointed at the current version; guarded by the mod-hub
 gate and the game-running check).
 
+**Landed (stale glue-override visibility)**: the client reads its `gui/`
+glue files (`uss_settings.xml`, `fontconfig_scaleform.xml`,
+`battle_elements.xml`) as **whole-file shadows** — a mod that copies one
+into `res_mods` replaces the client's own copy wholesale, because the
+engine never merges XML. After a client update retires or renames an
+asset those overrides load, the stale copy keeps asking for it and parts
+of a UI scene stop rendering silently (field report: the port's Arsenal
+event page rendering only partially, on a client with the probe plus two
+Aslain mods — the probe is not involved; a stale override is).
+`commands/mod_integrity.rs` now reads the load directives themselves
+(`<swffile>` / `<xmlfile>` / `<path>` bodies plus the `element url=` and
+`url source=` attributes) over `.swf`/`.xml`/`.ttf`/`.unbound`, so a
+directive naming an asset that exists in neither the tree NOR the client
+index becomes a `dangling_ref` finding — the same pre-launch card that
+already covers the corrupt-SWF class, with the fix still being "disable
+or update the offending unit". `.unbound` fragments are glue too now
+(they were already scanned by the crash analyzer's reference walk).
+Deliberately conservative: only directive POSITIONS count (a prose
+mention, a `<format>` template or an absolute path never accuses), and
+nothing is blocked or deleted automatically — a legitimate skin may
+replace a client asset on purpose.
+
 **Planned (compatibility-graded migration wizard)**: after a game update
 (a new `bin/<version>/` directory appears), the migration wizard runs
 automatically:
