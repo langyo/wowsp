@@ -218,6 +218,28 @@ describe("AboutContent trivia ship links", () => {
   });
 });
 
+describe("AboutContent external links", () => {
+  it("links the Hugging Face model repository beside the GitHub source repo", async () => {
+    mocks.openExternal.mockClear();
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const wrapper = mount(AboutContent, { global: { plugins: [pinia] } });
+    await flushPromisesTick();
+
+    const links = wrapper.findAll(".about-modal__link");
+    const labels = links.map((link) => link.text());
+    expect(labels).toContain("GitHub");
+    expect(labels).toContain("Hugging Face");
+
+    const huggingFace = links.find((link) => link.text() === "Hugging Face");
+    expect(huggingFace, "the About card must carry a Hugging Face link").toBeTruthy();
+    await huggingFace!.trigger("click");
+    expect(mocks.openExternal).toHaveBeenCalledWith(
+      "https://huggingface.co/langyo/wowsp-d1",
+    );
+  });
+});
+
 /** Microtask flush helper (no timer semantics needed here). */
 function flushPromisesTick() {
   return new Promise<void>((resolve) => setTimeout(resolve, 0));

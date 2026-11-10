@@ -88,6 +88,7 @@
   "qqGroupHint": "Click to join the group chat",
   "links": {
     "repo": "https://github.com/langyo/wowsp",
+    "huggingface": "https://huggingface.co/langyo/wowsp-d1",
     "issues": "https://github.com/langyo/wowsp/issues",
     "license": "https://github.com/celestia-island/sysl",
     "author": "https://github.com/langyo",
