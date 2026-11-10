@@ -1614,6 +1614,157 @@ fn operation_classifier_mirrors_the_frontend() {
     ));
 }
 
+/// is_pve_battle — the PvE class the aim card's whole-battle suppression
+/// keys on: operations, the co-op / PvE descriptor families (pve* / coop
+/// match groups, coop scenarios, the `intro` tutorial and the PCVE event
+/// scripts) and the event-family single-team roster shape, with a mixed
+/// human enemy roster vetoing the class. The 2026-11-10 Bermuda event shape
+/// (`matchGroup: "event"`, `eventType: "PCVE054"`, human-only roster) is the
+/// regression case no other classifier saw.
+#[test]
+fn pve_battle_classifier_mirrors_the_frontend_coop_family() {
+    let roster = |json: &str| {
+        let raw: serde_json::Value = serde_json::from_str(json).unwrap();
+        meta_from_raw("x.wowsreplay".into(), raw).vehicles
+    };
+    // The Bermuda event: matchGroup "event" (never "pve"), a PCVE054 battle
+    // script, a human-only roster and no operation fingerprint anywhere.
+    let bermuda = roster(
+        r#"{"matchGroup":"event","scenario":"BER_1_CP_attack_SP_3","eventType":"PCVE054","gameType":"EventBattle","vehicles":[
+            {"id":671158593,"name":"langyo","relation":0,"shipId":3247355152},
+            {"id":536948429,"name":"ACAgone","relation":1,"shipId":3247355152},
+            {"id":537005712,"name":"Navigator_TB","relation":1,"shipId":3247355152}
+        ]}"#,
+    );
+    assert!(
+        !is_operation_battle(
+            Some("event"),
+            Some("BER_1_CP_attack_SP_3"),
+            Some("PCVE054"),
+            &bermuda
+        ),
+        "the Bermuda event is not an operation"
+    );
+    assert!(is_pve_battle(
+        Some("event"),
+        Some("BER_1_CP_attack_SP_3"),
+        Some("PCVE054"),
+        &bermuda
+    ));
+    // The PCVE script alone carries the class (a partial descriptor — note
+    // the probe synthesis path bridges neither scenario nor battle script,
+    // so it can only ride the roster rules below).
+    assert!(is_pve_battle(None, None, Some("PCVE054"), &bermuda));
+    // The asymmetric event script (PCVE027 = EV27AsymCoop) is PvE-class even
+    // when the matchGroup says pvp-family: its enemy side is all AI.
+    assert!(is_pve_battle(
+        Some("pvp"),
+        Some("asymm_3point_coop"),
+        Some("PCVE027"),
+        &bermuda
+    ));
+
+    // Co-op families: the WG "pve" / event pve_* groups, Lesta's
+    // "cooperative", a coop scenario id and the intro tutorial.
+    let plain_coop = roster(
+        r#"{"matchGroup":"pve","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":":Yumashev:","relation":2,"shipId":3}
+        ]}"#,
+    );
+    assert!(is_pve_battle(Some("pve"), None, None, &plain_coop));
+    assert!(is_pve_battle(Some("pve_event"), None, None, &plain_coop));
+    assert!(is_pve_battle(Some("cooperative"), None, None, &plain_coop));
+    assert!(is_pve_battle(Some("intro"), None, None, &plain_coop));
+    assert!(is_pve_battle(
+        Some("pvp"),
+        Some("domination_3point_coop"),
+        None,
+        &plain_coop
+    ));
+
+    // The event-family single-team shape — a later-phase Bermuda replay with
+    // an EMPTY eventType (20261105_184622 …BER_1_CP_attack_SP_2) still reads
+    // PvE off the roster alone: no enemy-side entry means no human enemy.
+    let bermuda_roster = roster(
+        r#"{"matchGroup":"event","scenario":"BER_1_CP_attack_SP_2","eventType":"","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"ACAgone","relation":1,"shipId":1}
+        ]}"#,
+    );
+    assert!(is_pve_battle(
+        Some("event"),
+        Some("BER_1_CP_attack_SP_2"),
+        Some(""),
+        &bermuda_roster
+    ));
+    assert!(is_pve_battle(Some("event"), None, None, &bermuda_roster));
+    // An event roster WITH an all-AI enemy side is not the descriptor class's
+    // shape (the enemy-all-AI roster flag owns that one) — and it must not
+    // become PvE-class here either.
+    let bermuda_with_ai = roster(
+        r#"{"matchGroup":"event","scenario":"BER_1_CP_attack_SP_2","eventType":"","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":-2,"name":":Bot01:","relation":2,"shipId":1}
+        ]}"#,
+    );
+    assert!(!is_pve_battle(
+        Some("event"),
+        Some("BER_1_CP_attack_SP_2"),
+        Some(""),
+        &bermuda_with_ai
+    ));
+
+    // A human enemy vetoes the class even under a pve-family descriptor or a
+    // PCVE script: the documented mixed event PvEvP shape keeps the card's
+    // window up and the page-side per-aim bot gate filters the bots.
+    let mixed = roster(
+        r#"{"matchGroup":"pve_event","scenario":"neowaffentrager","eventType":"","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"mate","relation":1,"shipId":1},
+            {"id":-3,"name":"EventBot_normal_name","relation":2,"shipId":1},
+            {"id":4,"name":"humanFoe","relation":2,"shipId":1}
+        ]}"#,
+    );
+    assert!(!is_pve_battle(
+        Some("pve_event"),
+        Some("neowaffentrager"),
+        Some(""),
+        &mixed
+    ));
+    assert!(!is_pve_battle(
+        Some("event"),
+        Some("BER_1_CP_attack_SP_3"),
+        Some("PCVE054"),
+        &mixed
+    ));
+
+    // Operations are PvE by construction (the WW2 story shape).
+    let ww2 = roster(
+        r#"{"matchGroup":"pve","scenario":"WW2_OPERATION_1_1011LVL","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"Alpha","relation":1,"shipId":2}
+        ]}"#,
+    );
+    assert!(is_pve_battle(
+        Some("pve"),
+        Some("WW2_OPERATION_1_1011LVL"),
+        None,
+        &ww2
+    ));
+
+    // PvP stays PvP.
+    let pvp = roster(
+        r#"{"matchGroup":"pvp","scenario":"domination_3point","vehicles":[
+            {"id":1,"name":"langyo","relation":0,"shipId":1},
+            {"id":2,"name":"Foe","relation":2,"shipId":2}
+        ]}"#,
+    );
+    assert!(!is_pve_battle(Some("pvp"), None, None, &pvp));
+    assert!(!is_pve_battle(Some("ranked"), None, None, &pvp));
+    assert!(!is_pve_battle(Some("clan"), None, None, &pvp));
+}
+
 /// If a real replay is available on this machine, parse it end-to-end.
 #[test]
 fn parses_real_replay_if_present() {

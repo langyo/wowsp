@@ -830,6 +830,19 @@ fn chat_panel_parks_at_the_game_bottom_left() {
     assert_eq!((r4.x, r4.y), (small.x, small.y));
     assert_eq!((r4.width, r4.height), (520, 240));
 }
+/// The aim card's battle-class gate (the fold into `aim_card_on`): a PvE
+/// battle OR an all-AI enemy side keeps the native window down; the mixed
+/// event PvEvP case never reaches this layer as PvE — the arena flag vetoes
+/// itself on a human enemy row — so the scheduler's own fold stays a plain
+/// both-flags-clear check.
+#[test]
+fn aim_card_battle_class_gate_needs_both_flags_clear() {
+    assert!(watch::aim_card_battle_class_allows(false, false));
+    assert!(!watch::aim_card_battle_class_allows(true, false));
+    assert!(!watch::aim_card_battle_class_allows(false, true));
+    assert!(!watch::aim_card_battle_class_allows(true, true));
+}
+
 /// All flags permissive - the baseline every scheduler test perturbs.
 fn overlay_ctx() -> watch::OverlayContext {
     watch::OverlayContext {

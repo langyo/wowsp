@@ -269,11 +269,12 @@ pub(crate) fn note_telemetry(
 /// — co-op and the scripted operation waves are the modes that field a
 /// whole AI enemy team against the human side — and any human enemy keeps
 /// `None` (random / ranked / clan / brawl / mixed rooms). This is what
-/// lets the file-less client class reach the PVE surfaces:
-/// `note_arena_seen` flags `LAST_BATTLE_PVE` off it (the aim-card
-/// suppression and the calibration's `BattleClass` slot ride that flag),
-/// and the frontend's `modeKey` buckets it into the co-op family instead
-/// of falling through to the raw `mg` string. The enemy-side shape decides
+/// lets the file-less client class reach the PVE surfaces: the derived
+/// `pve` string feeds `note_arena_seen`'s PvE class (`LAST_BATTLE_PVE` for
+/// the calibration's `BattleClass` slot, and the same matchGroup for the
+/// aim card's `LAST_BATTLE_PVE_DESCRIPTOR`), and the frontend's `modeKey`
+/// buckets it into the co-op family instead of falling through to the raw
+/// `mg` string. The enemy-side shape decides
 /// rather than the roster's overall AI count — the ALL-scripted operation
 /// rosters and the plain co-op shape must both read pve, while a roster
 /// that is mostly bots but sails against humans (a bot-heavy room) must
@@ -829,10 +830,11 @@ mod tests {
 
     /// `synthesize_arena_info` derives `match_group` off the synthesized
     /// roster's enemy side — the file-less client class's only mode
-    /// signal, feeding `note_arena_seen`'s `LAST_BATTLE_PVE` (the
-    /// aim-card suppression) and the frontend's co-op buckets. Verified
-    /// against `parse_roster_raw`'s real projection (relation derived
-    /// around the self row by teamId).
+    /// signal, feeding `note_arena_seen`'s PvE class (the calibration's
+    /// `LAST_BATTLE_PVE`; the aim card reads the descriptor flag, which the
+    /// derived `pve` matchGroup feeds) and the frontend's co-op buckets.
+    /// Verified against `parse_roster_raw`'s real projection (relation
+    /// derived around the self row by teamId).
     #[test]
     fn match_group_follows_the_enemy_side() {
         // Co-op shape: the colon-wrapped bot team against the self side —

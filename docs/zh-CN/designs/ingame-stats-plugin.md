@@ -148,6 +148,24 @@ arena 文件机器人行负 id 的约定识别——以及故意摆人机的自�
 `LAST_BATTLE_PVE` 刻意分离——后者还键着锚点校准的战斗类，而非对称的 TAB
 表是两队布局、锚点属于 PvP 档。
 
+**PvE 活动局判定（2026-11-10）**——百慕大三角活动局（arena 文件
+`matchGroup: "event"`、`gameType: "EventBattle"`、`eventType: "PCVE054"`、
+`scenario: "BER_1_CP_attack_SP_3"`）实测是 PvE：名单只列 7 名真人
+（relation 0/1 行，没有任何 relation ≥ 2 的敌方行——敌方 AI 在名单之外
+生成）。上面两道整局压制都看不见它：`LAST_BATTLE_PVE` 只认 operation
+指纹与精确的 `matchGroup: "pve"`，`last_enemy_all_ai` 又要求存在敌方行
+可扫；结果准星卡整局不收起，AI 敌人（部分顶着普通昵称）照样弹卡。Rust
+侧新增 `replay::is_pve_battle`（operation ∪ pve/coop 族 matchGroup ∪
+coop scenario ∪ Lesta `intro` ∪ `PCVE*` 战斗脚本——与前端 `modeKey` /
+`isCoopBattle` 的 coop 家族同口径，`intro` 在 `modeKey` 一侧）并带两条
+名单规则：**敌方存在非 AI 行（普通昵称且 id ≥ 0）即否决该判定**（活动
+PvEvP 混编局因此保持窗口打开、只按逐目标 bot 门过滤），以及**事件族
+名单没有敌方行即判 PvE**（百慕大家庭的后期录像 `eventType` 为空，如
+`20261105_184622 …BER_1_CP_attack_SP_2`，靠这条兜底）。新旗标
+`arena_info::LAST_BATTLE_PVE_DESCRIPTOR` 只服务准星卡；锚点校准仍读旧的
+`LAST_BATTLE_PVE`——非对称局按上述判定是 PvE（准星卡没有真人可显示）
+但 TAB 表仍是两队、锚点属于 PvP 档，两旗刻意分离。
+
 **编组桥 + 帧名册兜底（2026-10-22）**——记录失效构建类（getPlayersInfo
 整场为空——2026-10-18/19 实测报告；2026-10-22 支持包里的 WGC 客户端同样
 是 13357625 构建，四天的战斗遥测里只出现过战斗结束的清空帧）自 roster
