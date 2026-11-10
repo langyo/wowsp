@@ -8,7 +8,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vite
 
 import { useToast } from "@celestia-island/hikari";
 
-import type { CrashAnalysis, GameCrashRecord } from "@/api";
+import type { CrashAnalysis, GameCrashRecord, QuarantineEntry } from "@/api";
 import { initLocaleMessages, t } from "@/i18n";
 
 vi.mock("@/api", () => ({
@@ -23,6 +23,7 @@ vi.mock("@/api", () => ({
     listQuarantinedMods: vi.fn(),
     quarantineMod: vi.fn(),
     restoreMod: vi.fn(),
+    deleteEntry: vi.fn(),
     restartGame: vi.fn(),
     modHubSetSafeMode: vi.fn(),
     modHubSafeMode: vi.fn(),
@@ -51,6 +52,7 @@ const mocked = {
   quarantined: vi.mocked(api.listQuarantinedMods),
   quarantine: vi.mocked(api.quarantineMod),
   restore: vi.mocked(api.restoreMod),
+  entryDelete: vi.mocked(api.deleteEntry),
   restart: vi.mocked(api.restartGame),
   safeMode: vi.mocked(api.modHubSetSafeMode),
   safeModeStatus: vi.mocked(api.modHubSafeMode),
@@ -106,6 +108,7 @@ beforeEach(() => {
   mocked.quarantined.mockResolvedValue([] as never);
   mocked.quarantine.mockResolvedValue([] as never);
   mocked.restore.mockResolvedValue([] as never);
+  mocked.entryDelete.mockResolvedValue([] as never);
   mocked.restart.mockResolvedValue(restartInfo as never);
   mocked.safeMode.mockResolvedValue(true as never);
   mocked.safeModeStatus.mockResolvedValue(false as never);
@@ -532,6 +535,23 @@ describe("useCrashStore.quarantine", () => {
     config.activeInstall = { kind: "manual", path: OTHER };
     await crash.restore("kept_mod");
     expect(mocked.restore).toHaveBeenCalledWith(OTHER, "kept_mod");
+  });
+
+  it("pins the refreshed manifest a permanent delete resolves", async () => {
+    const kept: QuarantineEntry[] = [
+      { name: "kept_mod", crashId: "crash-1", quarantinedAt: "2026-10-28T10:00:00Z" },
+    ];
+    mocked.entryDelete.mockResolvedValue(kept as never);
+    const crash = useCrashStore();
+
+    const out = await crash.deleteEntry("gone_mod", GAME);
+
+    expect(mocked.entryDelete).toHaveBeenCalledWith(GAME, "gone_mod");
+    expect(out).toEqual(kept);
+    // The command answers the manifest, so the row disappears without a
+    // second list round-trip.
+    expect(crash.quarantined).toEqual(kept);
+    expect(mocked.quarantined).not.toHaveBeenCalled();
   });
 
   it("loadQuarantined pins the manifest for an explicit root", async () => {

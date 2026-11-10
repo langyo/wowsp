@@ -60,6 +60,7 @@ const mocked = {
   ignore: vi.mocked(api.ignoreSuspect),
   restore: vi.mocked(api.restoreSuspect),
   quarantineMod: vi.mocked(api.quarantineMod),
+  restoreMod: vi.mocked(api.restoreMod),
   listQuarantined: vi.mocked(api.listQuarantinedMods),
   safeMode: vi.mocked(api.modHubSetSafeMode),
   restart: vi.mocked(api.restartGame),
@@ -132,6 +133,13 @@ describe("CrashSection", () => {
     setActivePinia(createPinia());
     vi.clearAllMocks();
     mocked.list.mockResolvedValue([]);
+    // The store pins the manifest every entry mutation resolves: a bare
+    // vi.fn() answering undefined would break the section's list
+    // computeds, and a manifest left over from a previous test would
+    // pre-quarantine rows it never set up.
+    mocked.listQuarantined.mockResolvedValue([]);
+    mocked.restoreMod.mockResolvedValue([]);
+    mocked.deleteEntry.mockResolvedValue([]);
   });
 
   it("renders the empty state when no crashes were retained", async () => {
@@ -203,7 +211,7 @@ describe("CrashSection", () => {
   it("asks before deleting and calls the delete command", async () => {
     mocked.list.mockResolvedValue([record()]);
     mocked.analyze.mockResolvedValue(analysis);
-    mocked.deleteEntry.mockResolvedValue(null as never);
+    mocked.deleteEntry.mockResolvedValue([] as never);
     const wrapper = mount(CrashSection);
     const actions = await openSuspects(wrapper);
     const del = [...actions.querySelectorAll("button")].find((b) =>
@@ -216,6 +224,67 @@ describe("CrashSection", () => {
       expect(
         [...buttons].some((b) => b.textContent?.includes(t("crash.suspects.delete"))),
       ).toBe(true);
+    });
+  });
+
+  /** The confirm dialog's action buttons (the dialog teleports to body). */
+  function confirmDialogButton(label: string): HTMLButtonElement | undefined {
+    const actions = document.body.querySelector(".hk-confirm-dialog-actions");
+    return [...(actions?.querySelectorAll<HTMLButtonElement>("button") ?? [])].find((b) =>
+      (b.textContent ?? "").includes(label),
+    );
+  }
+
+  it("restores a quarantined suspect through the quarantine command, not the ignored list", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mocked.listQuarantined.mockResolvedValue([
+      { name: "suspect_mod", quarantinedAt: "2026-10-28T10:02:00Z" },
+    ]);
+    mocked.restoreMod.mockResolvedValue([]);
+    const wrapper = mount(CrashSection);
+    const actions = await openSuspects(wrapper);
+    const restoreBtn = [...actions.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").includes(t("crash.suspects.restore")),
+    );
+    expect(restoreBtn).toBeTruthy();
+    restoreBtn!.click();
+    // The quarantine undo moves the entry back into res_mods — it must not
+    // touch the ignored-warning list (restoreSuspect only flips a
+    // dismissal, leaving the entry quarantined).
+    await vi.waitFor(() => {
+      expect(mocked.restoreMod).toHaveBeenCalledWith(
+        "D:/Games/World of Warships",
+        "suspect_mod",
+      );
+    });
+    expect(mocked.restore).not.toHaveBeenCalled();
+  });
+
+  it("permanently deletes a quarantined suspect after the confirmation", async () => {
+    mocked.list.mockResolvedValue([record()]);
+    mocked.analyze.mockResolvedValue(analysis);
+    mocked.listQuarantined.mockResolvedValue([
+      { name: "suspect_mod", quarantinedAt: "2026-10-28T10:02:00Z" },
+    ]);
+    mocked.deleteEntry.mockResolvedValue([]);
+    const wrapper = mount(CrashSection);
+    const actions = await openSuspects(wrapper);
+    const del = [...actions.querySelectorAll("button")].find((b) =>
+      (b.textContent ?? "").includes(t("crash.suspects.delete")),
+    );
+    del!.click();
+    // Nothing is deleted before the confirmation.
+    expect(mocked.deleteEntry).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(confirmDialogButton(t("crash.suspects.delete"))).toBeTruthy();
+    });
+    confirmDialogButton(t("crash.suspects.delete"))!.click();
+    await vi.waitFor(() => {
+      expect(mocked.deleteEntry).toHaveBeenCalledWith(
+        "D:/Games/World of Warships",
+        "suspect_mod",
+      );
     });
   });
 

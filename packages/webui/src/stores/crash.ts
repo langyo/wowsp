@@ -511,10 +511,19 @@ export const useCrashStore = defineStore("crash", () => {
     await loadIgnored();
   }
 
-  /** Permanently delete one pinned mod entry. */
-  async function deleteEntry(name: string, gameRoot: string | null | undefined) {
+  /** Permanently delete one mod entry wherever it lives — the active
+   *  res_mods copy, the safe-mode twin and the quarantine copy (the
+   *  backend resolves all three and drops the manifest rows). Pins the
+   *  refreshed quarantine manifest and answers it, so a row deleted out of
+   *  quarantine updates every surface in the same pass. Throws on refusal —
+   *  the calling surface owns the error toast. */
+  async function deleteEntry(
+    name: string,
+    gameRoot: string | null | undefined,
+  ): Promise<QuarantineEntry[]> {
     if (!gameRoot) throw new Error("crash: no game root for deletion");
-    await api.deleteEntry(gameRoot, name);
+    quarantined.value = await api.deleteEntry(gameRoot, name);
+    return quarantined.value;
   }
 
   /** Drop the cached analysis and re-run it (after an ignore / delete the

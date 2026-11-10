@@ -190,7 +190,12 @@ export const gameCrashApi = {
   /** Bring one dismissed warning back. */
   restoreSuspect: (name: string) =>
     transport.invoke<null>(RPC.game_crash_restore_suspect, { name }),
-  /** Permanently delete one pinned mod entry (file or directory). */
+  /** Permanently delete one mod entry (file or directory) WHEREVER it
+   *  lives — the active res_mods copy, the safe-mode twin and the
+   *  quarantine copy — dropping the quarantine manifest rows that named
+   *  it (game-closed gated backend-side, like quarantine/restore).
+   *  Resolves the updated quarantine manifest, so a row deleted straight
+   *  out of quarantine needs no extra list call. */
   deleteEntry: (gameRoot: string, entryName: string) =>
-    transport.invoke<null>(RPC.game_crash_delete_entry, { gameRoot, entryName }),
+    transport.invoke<QuarantineEntry[]>(RPC.game_crash_delete_entry, { gameRoot, entryName }),
 };

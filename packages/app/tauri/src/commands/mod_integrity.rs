@@ -120,11 +120,75 @@ pub(crate) fn swf_magic_ok(bytes: &[u8]) -> bool {
     bytes.starts_with(b"FWS") || bytes.starts_with(b"CWS") || bytes.starts_with(b"ZWS")
 }
 
+/// Remove every COMPLETE XML comment span (`<!-- … -->`) from `text`;
+/// an unterminated opener is kept verbatim together with everything after
+/// it.
+///
+/// Glue files are XML in practice, and stock client templates use comments
+/// to DOCUMENT example load directives: the live `gui/uss_settings.xml`
+/// carries a commented-out
+/// `<swffile>../unbound/flash/carousel_extended.swf</swffile>` example that
+/// nothing loads. Tokenizing the raw text reported that example as a
+/// dangling reference (the "发现 1 处潜在模组问题：carousel_extended.swf" card on
+/// every boot), and a commented-out `element url=` could likewise read as a
+/// competing load claim. Both scanners therefore consume the stripped text:
+/// a commented-out directive is neither a load nor a claim.
+///
+/// Conservative by construction — this is a scanner, not an XML parser, and
+/// absence of evidence must never become silence:
+/// - only spans with BOTH `<!--` and the matching `-->` are removed (a bare
+///   `-->` is plain text, and an opener inside a span is still span text,
+///   exactly like XML itself);
+/// - an UNTERMINATED `<!--` stays in the output with the remaining text, so
+///   a malformed file can never silently lose real references behind it;
+/// - the scan reads glue by extension list (xml/py/json/txt/yaml/cfg), so a
+///   non-XML file that happens to carry a `<!-- … -->` pair loses whatever
+///   sits between the markers. That is the direction this scanner is allowed
+///   to err in — a missing finding never accuses anyone — and generated-XML
+///   templates embedded in `.py` glue are exactly the case the strip serves;
+/// - a single linear pass; the input is copied unchanged when it has no
+///   opener (bounded: at most 400 glue files ≤ 512 KiB each per scan).
+///
+/// Delimiters are ASCII and the offsets land on str boundaries, so the result
+/// never splits a multi-byte character.
+pub(crate) fn strip_xml_comments(text: &str) -> String {
+    const OPEN: &str = "<!--";
+    const CLOSE: &str = "-->";
+    if !text.contains(OPEN) {
+        return text.to_string();
+    }
+    let mut stripped = String::with_capacity(text.len());
+    let mut cursor = 0usize;
+    while let Some(at) = text[cursor..].find(OPEN) {
+        let open = cursor + at;
+        stripped.push_str(&text[cursor..open]);
+        let body = open + OPEN.len();
+        match text[body..].find(CLOSE) {
+            Some(close) => {
+                // Resume AFTER the closing delimiter; the span's text is
+                // gone, whatever it held.
+                cursor = body + close + CLOSE.len();
+            },
+            None => {
+                // Unterminated: keep the opener and the rest of the file —
+                // a scanner must not swallow references it failed to parse.
+                stripped.push_str(&text[open..]);
+                return stripped;
+            },
+        }
+    }
+    stripped.push_str(&text[cursor..]);
+    stripped
+}
+
 /// Extract every `.swf` reference token from a text blob: XML/Python mod
 /// glue spells URLs and script paths bare, so the token charset is path-
 /// safe. Placeholder-bearing tokens are ignored — they are format strings,
 /// not real references. The ONE implementation: `commands/game_crash.rs`'s
-/// proactive dangling-reference pass consumes this same fn.
+/// proactive dangling-reference pass consumes this same fn. XML comments are
+/// NOT stripped here — every caller passes text through
+/// [`strip_xml_comments`] first, so a documented example never reads as a
+/// load.
 pub(crate) fn swf_refs_in_text(text: &str) -> Vec<String> {
     fn is_token_char(c: char) -> bool {
         c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/' | '\\' | '~')
@@ -541,6 +605,12 @@ pub(crate) fn active_res_mods(game_root: &str) -> Option<PathBuf> {
 /// - `overlap`: the same load claim (element url= / swffile / url source=)
 ///   extracted from 2+ DIFFERENT files — never from two claims inside one
 ///   file. Advisory; the installer must not block on it.
+///
+/// Both text passes read the glue through [`strip_xml_comments`]: the stock
+/// client templates document example load directives inside XML comments, and
+/// nothing the loader ignores may become a finding. The budgets and
+/// conservatism above are unchanged — stripping only narrows what counts as
+/// evidence.
 pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModIntegrityReport {
     let walk = walk_trees(bases);
     let mut problems: Vec<ModIntegrityProblem> = Vec::new();
@@ -582,6 +652,9 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
         let Ok(text) = fs::read_to_string(path) else {
             continue;
         };
+        // One strip feeds BOTH passes below: a commented-out directive is
+        // neither a dangling load nor a competing claim.
+        let text = strip_xml_comments(&text);
         if client.is_some() {
             for asset in swf_refs_in_text(&text) {
                 if walk.names.contains(&asset)
@@ -971,6 +1044,139 @@ mod tests {
         *TEST_CLIENT_INDEX.lock().unwrap() = None;
         assert!(
             !report.problems.iter().any(|p| p.kind == KIND_DANGLING_REF),
+            "{:?}",
+            report.problems
+        );
+    }
+
+    /// The comment strip is conservative: complete spans go, and an
+    /// unterminated opener keeps itself and everything after it (a malformed
+    /// file must never silently lose real references).
+    #[test]
+    fn strip_xml_comments_removes_complete_spans_only() {
+        assert_eq!(strip_xml_comments("plain text"), "plain text");
+        assert_eq!(
+            strip_xml_comments("before<!-- <swffile>gone.swf</swffile> -->after"),
+            "beforeafter"
+        );
+        assert_eq!(strip_xml_comments("a<!-- one -->b<!-- two -->c"), "abc");
+        // A bare closer without an opener is plain text, not a span end.
+        assert_eq!(strip_xml_comments("a --> b <!-- c --> d"), "a --> b  d");
+        // An opener inside a span is span text, exactly like XML itself.
+        assert_eq!(
+            strip_xml_comments("a<!-- x <!-- y --> b <swffile>keep.swf</swffile>"),
+            "a b <swffile>keep.swf</swffile>"
+        );
+        // Unterminated: the opener and the rest of the file survive verbatim.
+        let malformed = "a<!-- b <swffile>keep.swf</swffile>";
+        assert_eq!(strip_xml_comments(malformed), malformed);
+        // Multi-byte characters on either side of a span stay intact.
+        assert_eq!(strip_xml_comments("发现<!-- 隐藏 -->问题"), "发现问题");
+    }
+
+    /// A commented-out load directive is neither a load nor a claim, while a
+    /// real directive outside the comment still produces both findings (live
+    /// false positive: the stock uss_settings.xml template documents a
+    /// carousel_extended.swf example in an XML comment).
+    #[test]
+    fn scan_trees_ignores_commented_out_references_and_claims() {
+        let _seam = seam_guard();
+        let dir = TempDir::new("commented");
+        dir.touch(
+            "gui/commented.xml",
+            br#"<!-- documented example, not a load:
+                <swffile>../unbound/flash/carousel_extended.swf</swffile>
+                <element url="present_only.swf"/>
+                <url source="present_only.swf"/>
+            -->
+            <element url="real_ghost.swf"/>"#,
+        );
+        // The REAL claim is made twice, by two different files — overlap fires.
+        // present_only.swf is claimed for real here AND inside the comment
+        // above: an unstripped claim pass would read a second claimant and
+        // this test's overlap list would grow beyond real_ghost.swf.
+        dir.touch(
+            "gui/other.xml",
+            b"<element url=\"real_ghost.swf\"/><element url=\"present_only.swf\"/>",
+        );
+        // A real file of that name keeps its claim from reading as dangling.
+        dir.touch("gui/present_only.swf", &swf_bytes());
+        *TEST_CLIENT_INDEX.lock().unwrap() = Some(Arc::new(HashSet::new()));
+        let report = scan_trees(Some("D:/game"), &[dir.path().to_path_buf()]);
+        *TEST_CLIENT_INDEX.lock().unwrap() = None;
+
+        let dangling: Vec<&str> = report
+            .problems
+            .iter()
+            .filter(|p| p.kind == KIND_DANGLING_REF)
+            .filter_map(|p| p.asset.as_deref())
+            .collect();
+        assert_eq!(dangling, vec!["real_ghost.swf"], "{:?}", report.problems);
+        let overlap: Vec<&str> = report
+            .problems
+            .iter()
+            .filter(|p| p.kind == KIND_OVERLAP)
+            .filter_map(|p| p.asset.as_deref())
+            .collect();
+        assert_eq!(overlap, vec!["real_ghost.swf"], "{:?}", report.problems);
+    }
+
+    /// The real-world fixture: the stock client gui/uss_settings.xml template
+    /// documents its example load with a commented-out carousel_extended.swf
+    /// entry. Exactly the one genuinely missing reference may be reported —
+    /// the example that produced the false pre-launch card every boot stays
+    /// silent.
+    #[test]
+    fn stock_uss_settings_example_comment_yields_only_the_genuine_finding() {
+        let _seam = seam_guard();
+        let dir = TempDir::new("uss-settings");
+        dir.touch(
+            "gui/uss_settings.xml",
+            br#"<?xml version="1.0" encoding="utf-8"?>
+<gui_settings>
+    <!-- Template example:
+        <element class="lesta.libs.unbound.UnboundElement" url="../unbound/flash/carousel_extended.swf">
+            <swffile>../unbound/flash/carousel_extended.swf</swffile>
+        </element>
+    -->
+    <group name="USS_Settings">
+        <element url="gui/unbound/flash/really_missing.swf"/>
+    </group>
+</gui_settings>"#,
+        );
+        *TEST_CLIENT_INDEX.lock().unwrap() = Some(Arc::new(HashSet::new()));
+        let report = scan_trees(Some("D:/game"), &[dir.path().to_path_buf()]);
+        *TEST_CLIENT_INDEX.lock().unwrap() = None;
+        assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
+        assert_eq!(report.problems[0].kind, KIND_DANGLING_REF);
+        assert_eq!(
+            report.problems[0].asset.as_deref(),
+            Some("really_missing.swf")
+        );
+    }
+
+    /// A malformed file whose comment opener never closes keeps its
+    /// references visible: swallowing them would hide a real dangling load.
+    #[test]
+    fn scan_trees_keeps_references_after_an_unterminated_comment() {
+        let _seam = seam_guard();
+        let dir = TempDir::new("unterminated");
+        dir.touch(
+            "gui/malformed.xml",
+            b"<element url=\"before.swf\"/><!-- malformed, no close\n<element url=\"kept_ghost.swf\"/>",
+        );
+        *TEST_CLIENT_INDEX.lock().unwrap() = Some(Arc::new(HashSet::new()));
+        let report = scan_trees(Some("D:/game"), &[dir.path().to_path_buf()]);
+        *TEST_CLIENT_INDEX.lock().unwrap() = None;
+        let dangling: Vec<&str> = report
+            .problems
+            .iter()
+            .filter(|p| p.kind == KIND_DANGLING_REF)
+            .filter_map(|p| p.asset.as_deref())
+            .collect();
+        assert_eq!(
+            dangling,
+            vec!["before.swf", "kept_ghost.swf"],
             "{:?}",
             report.problems
         );
