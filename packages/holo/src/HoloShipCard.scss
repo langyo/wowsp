@@ -18,7 +18,10 @@
      narrow window widths (user screenshot). The plaque keeps its natural
      height and the row's other members give way instead. */
   flex: 0 0 auto;
-  min-height: 3.4rem;
+  /* Head row (~1rem line) + gap + the 40px silhouette board + the plaque's
+     own 0.4rem vertical padding + 2px border: 3.4rem clipped the hull, so
+     the height floor must cover all of it. */
+  min-height: calc(40px + 1rem + 3px + 0.8rem + 2px);
   padding: 0.4rem 0.6rem;
   border-radius: 8px;
   background: rgb(96 108 126 / 42%);
@@ -75,6 +78,14 @@
     display: block;
     width: 100%;
     height: 40px;
+    /* The plaque is a column flex box, so a short parent (the map's
+       bottom-left row squeezes every member when the window is narrow)
+       SHRINKS this fixed-height child: the bitmap keeps its 40px but the
+       box around it collapses, and the silhouette reads as a flat sliver
+       (user report: "the HP bar is squashed"). flex: none keeps the
+       established 40px board and lets the plaque's min-height carry the
+       row instead. */
+    flex: none;
   }
 
   /* Game bitmap silhouette: the exact in-game HP plaque art. Each layer is
@@ -85,6 +96,8 @@
     display: block;
     width: 100%;
     height: 40px;
+    /* Same squeeze path as __hull above (bitmap layer). */
+    flex: none;
   }
 
   &__sil {
