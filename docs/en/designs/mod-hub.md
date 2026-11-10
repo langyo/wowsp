@@ -580,6 +580,22 @@ mention, a `<format>` template or an absolute path never accuses), and
 nothing is blocked or deleted automatically — a legitimate skin may
 replace a client asset on purpose.
 
+**Landed (tree version stamp + staleness signal)**: `wowsp.toml` carries a
+`[tree] game_version` stamp — the client version the tree was last written
+for — set at every catalog install from the client's own `preferences.xml`
+pin (`mod_hub::manifest::stamp_tree_for_game`). It is the one fact the
+ledger cannot supply after the fact: a record knows WHEN a mod landed, not
+which client it landed FOR. `mod_hub_tree_version` compares it against the
+current pin and reports `{treeGameVersion, gameVersion, stale, riskyPaths}`;
+when stale, `riskyPaths` names the files whose staleness is load-bearing —
+the loose `gui/<file>` glue overrides plus `gui/fonts/**` — and the
+resources page raises a warning banner naming both versions and the count.
+Two deliberate limits: an UNSTAMPED tree is never called stale (a tree
+written before this field existed is not "out of date" on the strength of
+a missing field), and nothing is deleted, disabled or blocked — a
+legitimate skin may replace a client asset on purpose, so the banner only
+says which files to disable from the installed list.
+
 **Planned (compatibility-graded migration wizard)**: after a game update
 (a new `bin/<version>/` directory appears), the migration wizard runs
 automatically:

@@ -60,6 +60,108 @@ pub fn mod_hub_stale_versions(game_root: String) -> CommandResult<Vec<StaleBinIn
     Ok(out)
 }
 
+/// The staleness signal for the LIVE tree (`TreeVersionInfo`): what client
+/// version stamped this `res_mods`, what the client runs now, and — when
+/// those differ — the files whose staleness is load-bearing.
+///
+/// Read-only and cheap: the stamp is one manifest read, the current version
+/// is the cached `preferences.xml` pin, and the risk list is the tree scan's
+/// own walk of `gui/`. It reports ONLY that the tree predates the client:
+/// deciding that a specific override is bad would require comparing its
+/// bytes against the client's own copy, which lives inside the pkg VFS, and
+/// a legitimate skin may replace a client asset on purpose. Nothing here
+/// deletes, disables or blocks.
+#[tauri::command]
+pub fn mod_hub_tree_version(game_root: String) -> CommandResult<TreeVersionInfo> {
+    let root = Path::new(&game_root);
+    let game_version = super::super::game_context::preferences_active_game_version(root);
+    let Some((_bin_version, ver_dir)) = latest_bin_version(&game_root) else {
+        return Ok(TreeVersionInfo {
+            tree_game_version: None,
+            game_version,
+            stale: false,
+            risky_paths: Vec::new(),
+        });
+    };
+    let res_mods = ver_dir.join("res_mods");
+    let tree_game_version = super::manifest::read_snapshot(&res_mods).tree.game_version;
+    let tree_game_version = (!tree_game_version.is_empty()).then_some(tree_game_version);
+    let stale = matches!((&tree_game_version, &game_version),
+        (Some(tree), Some(current)) if tree != current);
+    let risky_paths = if stale {
+        risky_override_paths(&res_mods)
+    } else {
+        Vec::new()
+    };
+    Ok(TreeVersionInfo {
+        tree_game_version,
+        game_version,
+        stale,
+        risky_paths,
+    })
+}
+
+/// `res_mods`-relative files whose staleness silently breaks a rendered
+/// scene: the loose `gui/<file>` glue overrides (whole-file shadows of the
+/// client's own `uss_settings.xml` / `fontconfig_scaleform.xml` /
+/// `battle_elements.xml`) plus `gui/fonts/**`. Sorted, capped, and
+/// deliberately narrow — a mod's own `gui/unbound2/**` fragments are code
+/// the client either loads or does not, not whole-file shadows.
+fn risky_override_paths(res_mods: &Path) -> Vec<String> {
+    const MAX_RISKY_PATHS: usize = 64;
+    let mut out = Vec::new();
+    let gui = res_mods.join("gui");
+    let Ok(entries) = fs::read_dir(&gui) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let path = entry.path();
+        let lower = name.to_ascii_lowercase();
+        if path.is_file() {
+            // Loose file at the gui root: a whole-file shadow.
+            if is_override_file(&lower) {
+                out.push(format!("gui/{name}"));
+            }
+            continue;
+        }
+        if lower == "fonts" {
+            for font in walk_fonts(&path) {
+                out.push(format!("gui/{name}/{font}"));
+            }
+        }
+    }
+    out.sort();
+    out.truncate(MAX_RISKY_PATHS);
+    out
+}
+
+/// A loose `gui/` file the client also ships under the same name (the
+/// shadowing class): XML/JSON config glue, scripts and fonts. Art assets
+/// (`.png`, `.dds`, …) are excluded — a replaced texture is a skin, which
+/// is the intended use of this tree.
+fn is_override_file(lower_name: &str) -> bool {
+    [".xml", ".json", ".txt", ".cfg", ".ttf", ".otf"]
+        .iter()
+        .any(|ext| lower_name.ends_with(ext))
+}
+
+/// Font files under `gui/fonts/` (one level; the client ships them flat).
+fn walk_fonts(dir: &Path) -> Vec<String> {
+    let mut out = Vec::new();
+    let Ok(entries) = fs::read_dir(dir) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if path.is_file() {
+            out.push(name);
+        }
+    }
+    out
+}
+
 fn count_tree_files(root: &Path) -> u64 {
     let mut count = 0u64;
     let mut stack = vec![root.to_path_buf()];
@@ -736,4 +838,121 @@ pub(crate) fn conflict_warnings(
         }
     }
     out
+}
+#[cfg(test)]
+mod tree_version_tests {
+    use super::*;
+
+    fn tmp(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("wowsp_tree_version_{tag}"));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The risk list is the whole-file shadow class: loose `gui/<file>`
+    /// config glue and `gui/fonts/**`. A mod's own fragment tree and art
+    /// assets are NOT listed — replacing a texture is the intended use of
+    /// this tree, while replacing the client's `uss_settings.xml` outright
+    /// is what silently removes UI.
+    #[test]
+    fn risky_paths_are_the_whole_file_overrides() {
+        let dir = tmp("risky");
+        let gui = dir.join("gui");
+        fs::create_dir_all(gui.join("fonts")).unwrap();
+        fs::create_dir_all(gui.join("unbound2/mods")).unwrap();
+        fs::write(gui.join("uss_settings.xml"), b"<x/>").unwrap();
+        fs::write(gui.join("fontconfig_scaleform.xml"), b"<x/>").unwrap();
+        fs::write(gui.join("battle_elements.xml.bak"), b"<x/>").unwrap();
+        fs::write(gui.join("ribbons.png"), b"png").unwrap();
+        fs::write(gui.join("fonts/Exo2-Bold.ttf"), b"ttf").unwrap();
+        fs::write(gui.join("unbound2/mods/Probe.unbound"), b"(def)").unwrap();
+        let got = risky_override_paths(&dir);
+        assert!(got.contains(&"gui/uss_settings.xml".to_string()), "{got:?}");
+        assert!(
+            got.contains(&"gui/fontconfig_scaleform.xml".to_string()),
+            "{got:?}"
+        );
+        assert!(
+            got.contains(&"gui/fonts/Exo2-Bold.ttf".to_string()),
+            "{got:?}"
+        );
+        // Art and a mod's own fragment tree are not shadows of client glue.
+        assert!(!got.contains(&"gui/ribbons.png".to_string()), "{got:?}");
+        assert!(!got.iter().any(|p| p.contains("unbound2")), "{got:?}");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A tree with no `gui/` at all yields no risk paths (an empty answer
+    /// must never be an error: the signal is purely additive).
+    #[test]
+    fn missing_gui_tree_is_not_an_error() {
+        let dir = tmp("nogui");
+        assert!(risky_override_paths(&dir).is_empty());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// End-to-end: a tree stamped for an older client, next to a client pin
+    /// that moved on, reports `stale` with the whole-file overrides named —
+    /// the field report's exact shape (Arsenal page partially blank after a
+    /// game update with mods installed). Nothing is deleted or disabled.
+    #[test]
+    fn a_tree_stamped_for_an_older_client_reports_stale() {
+        let root = tmp("stale_signal");
+        let bin = root.join("bin/13357822");
+        let res_mods = bin.join("res_mods");
+        fs::create_dir_all(res_mods.join("gui/fonts")).unwrap();
+        fs::write(res_mods.join("gui/uss_settings.xml"), b"<x/>").unwrap();
+        fs::write(res_mods.join("gui/fonts/Exo2-Bold.ttf"), b"ttf").unwrap();
+        // The client records the CURRENT build it runs from.
+        fs::write(
+            root.join("preferences.xml"),
+            "<preferences><last_server_version>15,10,0,13357822</last_server_version></preferences>",
+        )
+        .unwrap();
+        // The tree was written for the PREVIOUS game version.
+        super::manifest::stamp_tree(&res_mods, "15.9.0");
+        let out = mod_hub_tree_version(root.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(out.tree_game_version.as_deref(), Some("15.9.0"));
+        assert_eq!(out.game_version.as_deref(), Some("15.10.0"));
+        assert!(out.stale, "the stamp and the client must disagree");
+        assert!(
+            out.risky_paths
+                .contains(&"gui/uss_settings.xml".to_string()),
+            "{:?}",
+            out.risky_paths
+        );
+        // Advisory only: the files it names are still on disk.
+        assert!(res_mods.join("gui/uss_settings.xml").is_file());
+        fs::remove_dir_all(&root).ok();
+    }
+
+    /// A tree stamped for the version the client actually runs is NOT
+    /// stale, and an UNSTAMPED tree is not accused either — absent evidence
+    /// must never become a warning (a pre-field tree is not "out of date"
+    /// on the strength of a missing field).
+    #[test]
+    fn matching_or_unstamped_trees_are_not_stale() {
+        let root = tmp("fresh_signal");
+        let bin = root.join("bin/13357822");
+        let res_mods = bin.join("res_mods");
+        fs::create_dir_all(&res_mods).unwrap();
+        fs::write(
+            root.join("preferences.xml"),
+            "<preferences><last_server_version>15,10,0,13357822</last_server_version></preferences>",
+        )
+        .unwrap();
+        // Unstamped: no claim either way.
+        let out = mod_hub_tree_version(root.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(out.tree_game_version, None);
+        assert!(!out.stale);
+        assert!(out.risky_paths.is_empty());
+        // Stamped for the running client: fresh, and no risk list.
+        super::manifest::stamp_tree(&res_mods, "15.10.0");
+        let out = mod_hub_tree_version(root.to_string_lossy().into_owned()).unwrap();
+        assert_eq!(out.tree_game_version.as_deref(), Some("15.10.0"));
+        assert!(!out.stale);
+        assert!(out.risky_paths.is_empty());
+        fs::remove_dir_all(&root).ok();
+    }
 }

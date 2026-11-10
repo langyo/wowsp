@@ -90,6 +90,19 @@ fn default_enabled() -> bool {
     true
 }
 
+/// The `[tree]` table — what produced the CURRENT state of this
+/// `res_mods` tree. Today it carries the client game version the tree was
+/// last stamped for, which is the one input the staleness signal cannot
+/// derive after the fact: the ledger knows when a mod was installed but
+/// not which client it was installed FOR.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub(crate) struct TreeEntry {
+    /// Client game version (`15.9.0`) as the client's own pin recorded it
+    /// at the moment this tree was last written.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub(crate) game_version: String,
+}
+
 /// The parsed manifest. `version` is forced to [`MANIFEST_VERSION`] on
 /// write; a parsed file claiming a newer schema is refused (see module
 /// docs).
@@ -104,6 +117,15 @@ pub(crate) struct WowspManifest {
     /// Units foreign installers put on disk, grouped by installer id.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub(crate) foreign: BTreeMap<String, BTreeMap<String, ForeignEntry>>,
+    /// What stamped this tree (see [`TreeEntry`]). Absent on manifests
+    /// written before the field existed — that absence is what the
+    /// staleness signal reports as "no stamp", never as "current".
+    #[serde(default, skip_serializing_if = "tree_is_empty")]
+    pub(crate) tree: TreeEntry,
+}
+
+fn tree_is_empty(tree: &TreeEntry) -> bool {
+    tree.game_version.is_empty()
 }
 
 impl WowspManifest {
@@ -252,7 +274,11 @@ fn parse(raw: &str, quarantine: Option<&Path>) -> Loaded {
 /// littering res_mods with an empty stub.
 fn store(res_mods: &Path, manifest: &WowspManifest) -> anyhow::Result<()> {
     let path = manifest_path(res_mods);
-    if manifest.managed.is_empty() && manifest.tools.is_empty() && manifest.foreign.is_empty() {
+    if manifest.managed.is_empty()
+        && manifest.tools.is_empty()
+        && manifest.foreign.is_empty()
+        && manifest.tree.game_version.is_empty()
+    {
         return match fs::remove_file(&path) {
             Ok(()) => Ok(()),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
@@ -274,6 +300,47 @@ pub(crate) fn res_mods_of(game_root: &str, bin_version: &str) -> PathBuf {
         .join("bin")
         .join(bin_version)
         .join("res_mods")
+}
+
+/// Stamp `res_mods` with the client's CURRENT game version, off its own
+/// `preferences.xml` pin. Best-effort: an install must never fail because
+/// the stamp could not be written, and a client that never launched has no
+/// version to record (the tree then simply stays unstamped).
+pub(crate) fn stamp_tree_for_game(game_root: &str, res_mods: &Path) {
+    let Some(version) =
+        crate::commands::game_context::preferences_active_game_version(Path::new(game_root))
+    else {
+        return;
+    };
+    // Ride the manifest's ONE writer thread: a direct `store()` here would
+    // race the install's own UpsertManaged and could persist a stale
+    // snapshot over it.
+    hub_apply(ManifestOp::StampTree {
+        res_mods: res_mods.to_path_buf(),
+        game_version: version,
+    });
+}
+
+/// Record the client game version this tree was last written for — the
+/// `[tree]` stamp the staleness signal compares against the client's
+/// current pin. Best-effort by contract: an empty version is ignored, and a
+/// stamp that already matches writes nothing (so ordinary installs on a
+/// current client never dirty the file).
+pub(crate) fn stamp_tree(res_mods: &Path, game_version: &str) {
+    let game_version = game_version.trim();
+    if game_version.is_empty() {
+        return;
+    }
+    let mut loaded = load(res_mods);
+    if loaded.read_only || loaded.manifest.tree.game_version == game_version {
+        return;
+    }
+    loaded.manifest.tree = TreeEntry {
+        game_version: game_version.to_string(),
+    };
+    if let Err(error) = store(res_mods, &loaded.manifest) {
+        tracing::warn!(%error, "wowsp.toml tree stamp failed — the staleness signal stays unstamped");
+    }
 }
 
 /// Add or refresh one managed entry under an explicit id (the install id
@@ -994,6 +1061,14 @@ pub(crate) enum ManifestOp {
         installer: String,
         units: BTreeMap<String, ForeignEntry>,
     },
+    /// Record which client game version this tree was last written for.
+    /// Idempotent: a stamp equal to the stored one writes nothing, so the
+    /// common path (every install on a current client) leaves the file
+    /// byte-identical.
+    StampTree {
+        res_mods: PathBuf,
+        game_version: String,
+    },
     MergeAfterMigration {
         stale_raw: Option<String>,
         to_res_mods: PathBuf,
@@ -1035,7 +1110,8 @@ impl ManifestHub {
             | ManifestOp::SetEnabled { res_mods, .. }
             | ManifestOp::SeedTool { res_mods, .. }
             | ManifestOp::SetToolValues { res_mods, .. }
-            | ManifestOp::ReplaceForeign { res_mods, .. } => res_mods.clone(),
+            | ManifestOp::ReplaceForeign { res_mods, .. }
+            | ManifestOp::StampTree { res_mods, .. } => res_mods.clone(),
             ManifestOp::MergeAfterMigration { to_res_mods, .. } => to_res_mods.clone(),
         };
         // A missing file after quarantining corruption is not an intentional
@@ -1092,6 +1168,13 @@ impl ManifestHub {
                 values,
             } => {
                 set_tool_values(&res_mods, &tool, &values);
+                Ok(())
+            },
+            ManifestOp::StampTree {
+                res_mods,
+                game_version,
+            } => {
+                stamp_tree(&res_mods, &game_version);
                 Ok(())
             },
             ManifestOp::ReplaceForeign {
@@ -1263,6 +1346,55 @@ mod hub_tests {
             units: BTreeMap::new(),
         });
         assert!(!dir.join(MANIFEST_FILE).exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The `[tree]` stamp: recorded once, kept byte-identical on a repeat
+    /// (ordinary installs on a current client must not dirty the file),
+    /// and preserved when every managed/foreign row is gone — an empty
+    /// tree that still knows which client it was written for is exactly
+    /// the state the staleness signal reads.
+    #[test]
+    fn tree_stamp_is_recorded_idempotent_and_survives_emptying() {
+        let dir = std::env::temp_dir().join("wowsp_hub_tree_stamp");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        stamp_tree(&dir, "15.9.0");
+        assert_eq!(read_snapshot(&dir).tree.game_version, "15.9.0");
+        let raw = fs::read_to_string(dir.join(MANIFEST_FILE)).unwrap();
+        assert!(raw.contains("[tree]"), "{raw}");
+        assert!(raw.contains("15.9.0"), "{raw}");
+        // Idempotent: a repeat stamp leaves the bytes untouched.
+        stamp_tree(&dir, "15.9.0");
+        assert_eq!(fs::read_to_string(dir.join(MANIFEST_FILE)).unwrap(), raw);
+        // A DIFFERENT version rewrites it (the tree moved to a new client).
+        stamp_tree(&dir, "15.10.0");
+        assert_eq!(read_snapshot(&dir).tree.game_version, "15.10.0");
+        // A tree-only manifest is NOT deleted by the empty-manifest rule.
+        assert!(dir.join(MANIFEST_FILE).is_file());
+        // An empty version is ignored rather than clearing the stamp.
+        stamp_tree(&dir, "  ");
+        assert_eq!(read_snapshot(&dir).tree.game_version, "15.10.0");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// A manifest written BEFORE the `[tree]` field existed reads as "no
+    /// stamp" — never as "current" — which is what keeps an upgraded app
+    /// from claiming an old tree is fine.
+    #[test]
+    fn a_manifest_without_the_tree_table_reads_as_unstamped() {
+        let dir = std::env::temp_dir().join("wowsp_hub_tree_absent");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(
+            dir.join(MANIFEST_FILE),
+            "version = 1\n\n[managed.\"x\"]\nname = \"X\"\ncategory = \"battle\"\n\
+             source = \"mod-hub\"\nenabled = true\ninstalled_at = \"2026-10-05T00:00:00Z\"\n",
+        )
+        .unwrap();
+        assert!(read_snapshot(&dir).tree.game_version.is_empty());
+        // And it still parses as the same schema (no migration needed).
+        assert!(read_snapshot(&dir).managed.contains_key("x"));
         fs::remove_dir_all(&dir).ok();
     }
 }

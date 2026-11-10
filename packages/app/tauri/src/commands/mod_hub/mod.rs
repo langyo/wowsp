@@ -44,7 +44,7 @@ use sha2::{Digest, Sha256};
 use wowsp_tauri_shared::{
     ClientUsage, InstallReport, InstalledMod, JunkCleanReport, MigrateReport, MigrationPlan,
     ModInstallRecord, ModKind, PackagePlan, PackagePlanEntry, PlanFile, PnfLoaderStatus,
-    StaleBinInfo, TextureAnalysis, UnitToggleReport,
+    StaleBinInfo, TextureAnalysis, TreeVersionInfo, UnitToggleReport,
 };
 
 /// What [`install_plan`] did, beyond the user-facing report: the exact files
@@ -906,6 +906,9 @@ pub use stale_migration::{
 pub use stale_migration::{
     __cmd__mod_hub_stale_versions, __tauri_command_name_mod_hub_stale_versions,
     mod_hub_stale_versions,
+};
+pub use stale_migration::{
+    __cmd__mod_hub_tree_version, __tauri_command_name_mod_hub_tree_version, mod_hub_tree_version,
 };
 pub use unit_ops::{
     __cmd__mod_hub_clean_unit_junk, __tauri_command_name_mod_hub_clean_unit_junk,

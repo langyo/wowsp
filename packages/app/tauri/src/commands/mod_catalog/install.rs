@@ -463,6 +463,11 @@ pub(crate) async fn mod_catalog_install_inner(
         entry: WowspManifest::entry_from_record(&pack_record),
     });
     save_ledger(&ledger)?;
+    // Stamp the tree with the client version it was just written for —
+    // the one fact the staleness signal (`mod_hub_tree_version`) cannot
+    // derive later, because the ledger records WHEN a mod landed but not
+    // which client it landed FOR (see TreeVersionInfo).
+    mod_hub::manifest::stamp_tree_for_game(&game_root, &record_res_mods);
 
     // Beautify layer stack: a pure-asset pack also lands in the layer store
     // and on top of the stack (best effort — a failure leaves it unmanaged).

@@ -208,6 +208,8 @@
   "prunedPreviewFiles": "Se omitieron {count} archivo(s) basura de vistas previas/capturas durante la instalación.",
   "gameRunningBlock": "World of Warships está en ejecución: cierra el juego antes de instalar, desinstalar o activar/desactivar mods.",
   "staleBinBanner": "Juego actualizado: bin/{version} todavía contiene {count} archivo(s) de mods que el cliente actual ya no carga.",
+  "treeStale": "Estos mods se instalaron para la versión {tree} del juego, pero el cliente ahora ejecuta {current}. {count} archivo(s) de sustitución en gui/ reemplazan por completo los archivos originales del cliente y pueden hacer que parte de una pantalla deje de mostrarse: desactívalos en la lista de instalados y reinstala los mods cuando se actualicen.",
+  "treeStaleHint": "El juego se actualizó después de instalar estos mods. Vigila las sustituciones en gui/.",
   "staleMigrate": "Migrar a la versión actual",
   "pnfLoaderMissing": "Hay mods PnF instalados, pero falta el marcador PnFModsLoader.py: no se cargarán en el juego.",
   "pnfLoaderRestore": "Restaurar el marcador del cargador",
