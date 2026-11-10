@@ -6,15 +6,23 @@
  *  surface: a suspect that matches a scanned unit wears the amber crash
  *  badge, one that matches nothing reads as an UNKNOWN mod on a yellow
  *  warning row (the product spec), and quarantined entries stay listed
- *  with a restore action until the user brings them back. Everything
- *  rides the crash store; failures stay quiet (no watchdog backend, no
- *  pins). */
+ *  with RESTORE and permanent-DELETE actions until the user brings them
+ *  back or drops them for good (the delete dialog confirms first; the
+ *  backend resolves the active copy, its safe-mode twin and the
+ *  quarantine copy in one pass). Everything rides the crash store;
+ *  failures stay quiet (no watchdog backend, no pins). */
 import { ref, watch, type Ref } from "vue";
 
-import { HkButton, HkModal, HkScrollContainer, useToast } from "@celestia-island/hikari";
+import {
+  HkButton,
+  HkConfirmDialog,
+  HkModal,
+  HkScrollContainer,
+  useToast,
+} from "@celestia-island/hikari";
 
 import AppTag from "@/components/base/AppTag";
-import { ChevronRight, RotateCcw, ShieldAlert, TriangleAlert } from "@lucide/vue";
+import { ChevronRight, RotateCcw, ShieldAlert, Trash2, TriangleAlert } from "@lucide/vue";
 
 import { useCrashStore } from "@/stores/crash";
 import { t } from "@/i18n";
@@ -47,6 +55,8 @@ export function useCrashPins(gameRoot: Ref<string | null>) {
   const suspects = ref<SuspectMod[]>([]);
   /** The record the pins attribute quarantine actions to. */
   const recordId = ref<string | undefined>(undefined);
+  /** The quarantined entry awaiting its permanent-delete confirmation. */
+  const deleteTarget = ref<string | null>(null);
 
   /** The newest record of THIS install drives the pins. */
   async function refreshSuspects() {
@@ -111,7 +121,49 @@ export function useCrashPins(gameRoot: Ref<string | null>) {
     }
   }
 
-  return { crash, suspects, recordId, quarantine, restore };
+  /** Arm the permanent-delete confirmation for one quarantined entry. */
+  function askDelete(name: string) {
+    deleteTarget.value = name;
+  }
+
+  /** Permanently delete one quarantined entry (the confirm dialog's
+   *  action): the backend resolves every copy — the active res_mods tree,
+   *  its safe-mode twin and the quarantine copy — and answers the updated
+   *  manifest, which the store pins. The cached analysis still describes
+   *  the pre-delete world, so it is dropped and re-derived too — without
+   *  that, a deleted quarantined SUSPECT would stay listed as a plain
+   *  suspect offering the quarantine action (the same refresh the crash
+   *  section's refreshAll runs). Throws never: the toast is here. */
+  async function deleteQuarantined(name: string) {
+    try {
+      await crash.deleteEntry(name, gameRoot.value);
+      toast.success(name + " — " + t("crash.suspects.deleteDone"));
+      // The delete already succeeded — a failed re-analysis must not turn
+      // it into an error toast; the stale row clears on the next pass.
+      if (recordId.value) {
+        try {
+          await crash.refreshAnalysis(recordId.value);
+        } catch {
+          // Best-effort: the entry is gone either way.
+        }
+      }
+      await loadQuarantined();
+      await refreshSuspects();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  return {
+    crash,
+    suspects,
+    recordId,
+    deleteTarget,
+    quarantine,
+    restore,
+    askDelete,
+    deleteQuarantined,
+  };
 }
 
 /** The collapsed launcher row ABOVE the installed list — one line, not N:
@@ -164,9 +216,9 @@ export function renderCrashPins(
 }
 
 /** The secondary window the launcher row opens — the suspect rows and the
- *  quarantined-only rows with their quarantine / restore actions, exactly
- *  the management surface the pinned block used to inline above the
- *  installed list. */
+ *  quarantined-only rows with their quarantine / restore / delete actions,
+ *  exactly the management surface the pinned block used to inline above
+ *  the installed list, plus the permanent-delete confirmation dialog. */
 export function renderCrashPinsWindow(
   pins: ReturnType<typeof useCrashPins>,
   installedList: InstalledMod[],
@@ -174,24 +226,44 @@ export function renderCrashPinsWindow(
   onUpdateOpen: (open: boolean) => void,
 ) {
   return (
-    <HkModal
-      modelValue={open}
-      onUpdate:modelValue={onUpdateOpen}
-      title={t("crash.modlist.title")}
-      width="40rem"
-    >
-      <HkScrollContainer class="crash-pins__scroll">
-        <div class="crash-pins crash-pins--window">
-          {renderCrashPinRows(pins, installedList)}
-        </div>
-      </HkScrollContainer>
-    </HkModal>
+    <>
+      <HkModal
+        modelValue={open}
+        onUpdate:modelValue={onUpdateOpen}
+        title={t("crash.modlist.title")}
+        width="40rem"
+      >
+        <HkScrollContainer class="crash-pins__scroll">
+          <div class="crash-pins crash-pins--window">
+            {renderCrashPinRows(pins, installedList)}
+          </div>
+        </HkScrollContainer>
+      </HkModal>
+      {/* Permanent delete is irreversible and reaches outside res_mods (the
+          quarantine copy and the safe-mode twin) — always confirm first. */}
+      <HkConfirmDialog
+        open={pins.deleteTarget.value !== null}
+        title={t("crash.suspects.confirmDeleteTitle")}
+        message={t("crash.suspects.confirmDeleteMessage", {
+          name: pins.deleteTarget.value ?? "",
+        })}
+        confirmLabel={t("crash.suspects.delete")}
+        onConfirm={() => {
+          const name = pins.deleteTarget.value;
+          pins.deleteTarget.value = null;
+          if (name) void pins.deleteQuarantined(name);
+        }}
+        onUpdate:open={(v: boolean) => {
+          if (!v) pins.deleteTarget.value = null;
+        }}
+      />
+    </>
   );
 }
 
 /** The management rows themselves — suspects first (a quarantined suspect
- *  rides its own row with a restore action), then quarantined entries no
- *  suspect row already covers. */
+ *  rides its own row with restore + permanent-delete actions), then
+ *  quarantined entries no suspect row already covers (the same pair). */
 function renderCrashPinRows(
   pins: ReturnType<typeof useCrashPins>,
   installedList: InstalledMod[],
@@ -239,15 +311,26 @@ function renderCrashPinRows(
               </span>
             </span>
             {isQuarantined ? (
-              <HkButton
-                size="xs"
-                variant="secondary"
-                disabled={busy}
-                onClick={() => void pins.restore(s.name)}
-              >
-                <RotateCcw size={12} />
-                {t("crash.suspects.restore")}
-              </HkButton>
+              <>
+                <HkButton
+                  size="xs"
+                  variant="secondary"
+                  disabled={busy}
+                  onClick={() => void pins.restore(s.name)}
+                >
+                  <RotateCcw size={12} />
+                  {t("crash.suspects.restore")}
+                </HkButton>
+                <HkButton
+                  size="xs"
+                  variant="danger"
+                  disabled={busy}
+                  onClick={() => pins.askDelete(s.name)}
+                >
+                  <Trash2 size={12} />
+                  {t("crash.suspects.delete")}
+                </HkButton>
+              </>
             ) : (
               <HkButton
                 size="xs"
@@ -287,6 +370,15 @@ function renderCrashPinRows(
               >
                 <RotateCcw size={12} />
                 {t("crash.suspects.restore")}
+              </HkButton>
+              <HkButton
+                size="xs"
+                variant="danger"
+                disabled={busy}
+                onClick={() => pins.askDelete(q.name)}
+              >
+                <Trash2 size={12} />
+                {t("crash.suspects.delete")}
               </HkButton>
             </div>
           );

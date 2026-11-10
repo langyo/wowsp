@@ -370,6 +370,19 @@ export default defineComponent({
       }
     }
 
+    /** Bring one quarantined entry back into res_mods — the quarantine
+     *  undo, NOT the ignored-warning undo (restoreSuspect only flips a
+     *  dismissed warning and would leave the entry quarantined). */
+    async function restoreQuarantined(name: string) {
+      try {
+        await crash.restore(name, selectedRecord.value?.gameRoot);
+        toast.success(name + " — " + t("crash.suspects.restore"));
+        await refreshAll();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : String(e));
+      }
+    }
+
     async function toggleSafeguard(enabled: boolean) {
       try {
         await crash.setSafeguard(enabled);
@@ -686,7 +699,7 @@ export default defineComponent({
                               size="sm"
                               variant="secondary"
                               disabled={busy}
-                              onClick={() => void restoreIgnored(s.name)}
+                              onClick={() => void restoreQuarantined(s.name)}
                             >
                               {t("crash.suspects.restore")}
                             </HkButton>

@@ -2844,7 +2844,10 @@ const REF_SCAN_EXTENSIONS: [&str; 7] = ["xml", "py", "json", "unbound", "txt", "
 /// pins the crash to its mod. Every text file under the mods tree is
 /// scanned (bounded); a hit becomes a suspect named by its res_mods-
 /// relative path, so the existing quarantine action can move exactly
-/// that file out of the load path.
+/// that file out of the load path. Text is matched through the shared XML
+/// comment strip ([`super::mod_integrity::strip_xml_comments`]): a
+/// commented-out example URL documents a load that never happens and must
+/// never pin an innocent file.
 fn dangling_ref_suspects(base: &Path, urls: &[String]) -> Vec<SuspectMod> {
     if urls.is_empty() {
         return Vec::new();
@@ -2880,7 +2883,11 @@ fn dangling_ref_suspects(base: &Path, urls: &[String]) -> Vec<SuspectMod> {
                 continue;
             }
             let Ok(bytes) = fs::read(&path) else { continue };
+            // XML comments document examples the loader never reads; strip
+            // them before matching, or a stock template's commented-out URL
+            // pins an innocent file as the crash suspect.
             let text = String::from_utf8_lossy(&bytes);
+            let text = super::mod_integrity::strip_xml_comments(&text);
             // A mod file may spell the bare file name while the loader
             // logged a full path (or vice versa) — match either spelling.
             let matched: Vec<&String> = urls
@@ -3250,7 +3257,9 @@ fn is_mod_text_file(name: &str) -> bool {
 
 /// Walk the mods trees, extract every `.swf` reference and answer the ones
 /// that exist in NEITHER tree NOR the client index. Purely static: the
-/// battle_stats.swf class of breakage is found before the first crash.
+/// battle_stats.swf class of breakage is found before the first crash. Glue
+/// text goes through the shared XML comment strip before the tokenizer, so a
+/// template's documented example never becomes a missingAsset suspect.
 #[cfg(windows)]
 fn dangling_mod_references(bases: &[PathBuf], client: &HashSet<String>) -> Vec<ModReference> {
     // Every file basename present in the mods trees (conservative: a
@@ -3302,6 +3311,9 @@ fn dangling_mod_references(bases: &[PathBuf], client: &HashSet<String>) -> Vec<M
         let Ok(text) = fs::read_to_string(&path) else {
             continue;
         };
+        // The shared scanner's contract: XML comments are stripped first, so
+        // a commented-out example is never a missing asset.
+        let text = super::mod_integrity::strip_xml_comments(&text);
         for asset in super::mod_integrity::swf_refs_in_text(&text) {
             if present.contains(&asset) || client.contains(&asset) || asset.len() > 200 {
                 continue;
@@ -3388,61 +3400,139 @@ pub fn game_crash_restore_suspect(window: tauri::Window, name: String) -> Comman
     Ok(())
 }
 
-/// The tree a quarantined/deletable subject lives in: the active res_mods
-/// first, then the safe-mode twin (same rule as the quarantine source).
-fn subject_tree(root: &str, name: &str) -> anyhow::Result<PathBuf> {
+/// Every on-disk copy of one sanitized entry name, across the trees a pinned
+/// subject can occupy: the active res_mods (the game's load path), the
+/// safe-mode twin ([`super::mod_hub::disabled_res_mods`]) and the
+/// per-version quarantine dir. A permanent delete must clear ALL of them — a
+/// quarantined copy plus a re-created live copy are the same row twice, and
+/// leaving either behind resurrects the warning (live report: the crash
+/// section's 删除 failed outright on quarantine-only rows because the old
+/// single-path resolver knew only res_mods and the twin).
+///
+/// Resolution order is active → twin → quarantine. A candidate counts when it
+/// exists (a dangling symlink included: the delete refuses it rather than
+/// walking through it). No candidate at all is an error, never a silent
+/// success.
+fn subject_candidates(root: &str, name: &str) -> anyhow::Result<Vec<PathBuf>> {
     let (_, res_mods) = super::game_context::latest_bin_dir(Path::new(root))
         .map(|(_, ver_dir)| (ver_dir.clone(), ver_dir.join("res_mods")))
         .ok_or_else(|| anyhow!("no numeric bin/<version> under {root}"))?;
-    if res_mods.join(name).exists() {
-        return Ok(res_mods.join(name));
-    }
     let (_, quarantine_dir) = quarantine_dir_of(root)?;
     let twin =
         super::mod_hub::disabled_res_mods(quarantine_dir.parent().unwrap_or(Path::new(root)));
-    let candidate = twin.join(name);
-    if candidate.exists() {
-        return Ok(candidate);
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for base in [res_mods, twin, quarantine_dir] {
+        let candidate = base.join(name);
+        // symlink_metadata, not exists(): a dangling link is still something
+        // on disk the delete path must see and refuse.
+        if fs::symlink_metadata(&candidate).is_ok() && !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
     }
-    Err(anyhow!(
-        "{name}: not found in res_mods or the safe-mode twin"
-    ))
+    if candidates.is_empty() {
+        return Err(anyhow!(
+            "{name}: not found in res_mods, the safe-mode twin or the quarantine dir"
+        ));
+    }
+    Ok(candidates)
 }
 
-/// Permanently delete one pinned entry (file or directory) from the mods
-/// tree — the destructive sibling of quarantine. Gates like every
-/// mutation (main window, known install, game closed) plus: the path is
+/// Remove the directories a nested quarantine removal emptied: walk up from
+/// the removed path's parent and drop every level that is now empty, stopping
+/// at (never including) the quarantine root. The root and its manifest are
+/// always kept, and `remove_dir` itself refuses a level that still holds
+/// something — the walk is one failed removal away from stopping.
+fn prune_empty_quarantine_parents(quarantine_dir: &Path, removed: &Path) {
+    let mut current = removed.parent();
+    while let Some(dir) = current {
+        if dir == quarantine_dir || !dir.starts_with(quarantine_dir) {
+            break;
+        }
+        if fs::remove_dir(dir).is_err() {
+            break;
+        }
+        current = dir.parent();
+    }
+}
+
+/// Permanently delete one pinned entry (file or directory) from EVERY tree
+/// that still carries it — the destructive sibling of quarantine, and the
+/// answer to a quarantined row the user wants gone for good.
+///
+/// Gates: the same as every mod mutation (known install, game closed) plus
+/// name sanitization. The whole candidate set is preflighted before the first
+/// removal — a symlink/junction anywhere refuses the operation instead of
+/// following it or leaving half the set deleted — and the manifest is loaded
+/// up front so a damaged file aborts before any mutation. Returns the updated
+/// quarantine manifest (empty when the install never quarantined anything);
+/// the settings section pins its rows against this reply.
+fn delete_subject(root: &str, entry_name: &str) -> anyhow::Result<Vec<QuarantineEntry>> {
+    super::mod_hub::ensure_known_game_root(root)?;
+    super::mod_hub::ensure_game_closed(root)?;
+    let name = sanitize_entry_name(entry_name)?;
+    let (_, quarantine_dir) = quarantine_dir_of(root)?;
+    let mut entries = load_quarantine_manifest(&quarantine_dir)?;
+
+    let mut targets: Vec<(PathBuf, bool)> = Vec::new();
+    for candidate in subject_candidates(root, &name)? {
+        let meta = fs::symlink_metadata(&candidate)?;
+        if meta.file_type().is_symlink() {
+            return Err(anyhow!(
+                "refusing to delete a symlink: {}",
+                candidate.display()
+            ));
+        }
+        targets.push((candidate, meta.is_dir()));
+    }
+
+    for (candidate, is_dir) in &targets {
+        if *is_dir {
+            fs::remove_dir_all(candidate)
+                .map_err(|e| anyhow!("delete {}: {e}", candidate.display()))?;
+        } else {
+            fs::remove_file(candidate)
+                .map_err(|e| anyhow!("delete {}: {e}", candidate.display()))?;
+        }
+        tracing::warn!(entry = %name, path = %candidate.display(), "suspect entry deleted");
+        if candidate.starts_with(&quarantine_dir) {
+            prune_empty_quarantine_parents(&quarantine_dir, candidate);
+        }
+    }
+
+    // The manifest row goes with the entry even when no quarantine copy was
+    // among the deleted targets: a restore that crashed between its rename
+    // and the manifest save (or a hand-removed quarantine file) leaves a
+    // phantom row that could neither be restored NOR deleted again. The
+    // manifest file itself stays — restore history lives there — and the
+    // save only runs when a row actually matched, so an install that never
+    // quarantined anything stays untouched.
+    let before = entries.len();
+    entries.retain(|entry| !entry.name.eq_ignore_ascii_case(&name));
+    if entries.len() != before {
+        save_quarantine_manifest(&quarantine_dir, &entries)?;
+    }
+    Ok(entries)
+}
+
+/// Permanently delete one pinned entry (file or directory) from EVERY tree
+/// that still carries it — the destructive sibling of quarantine. Gates like
+/// every mutation (main window, known install, game closed) plus: the path is
 /// sanitized, and symlinks/junctions are refused rather than followed.
+/// Returns the updated quarantine manifest so the settings section can drop
+/// the deleted row (empty when the install never quarantined anything).
 #[tauri::command]
 pub async fn game_crash_delete_entry(
     window: tauri::Window,
     game_root: String,
     entry_name: String,
-) -> CommandResult<()> {
+) -> CommandResult<Vec<QuarantineEntry>> {
     crate::commands::ensure_main_window_label(window.label())?;
     let _gate = super::mod_catalog::mod_hub_gate().await;
-    Ok(tauri::async_runtime::spawn_blocking(move || {
-        super::mod_hub::ensure_known_game_root(&game_root)?;
-        super::mod_hub::ensure_game_closed(&game_root)?;
-        let name = sanitize_entry_name(&entry_name)?;
-        let target = subject_tree(&game_root, &name)?;
-        let meta = fs::symlink_metadata(&target)?;
-        if meta.file_type().is_symlink() {
-            return Err(anyhow!(
-                "refusing to delete a symlink: {}",
-                target.display()
-            ));
-        }
-        if meta.is_dir() {
-            fs::remove_dir_all(&target).map_err(|e| anyhow!("delete {}: {e}", target.display()))?;
-        } else {
-            fs::remove_file(&target).map_err(|e| anyhow!("delete {}: {e}", target.display()))?;
-        }
-        tracing::warn!(entry = %name, "suspect entry deleted");
-        Ok(())
-    })
-    .await
-    .map_err(|e| anyhow!("delete task failed: {e}"))??)
+    Ok(
+        tauri::async_runtime::spawn_blocking(move || delete_subject(&game_root, &entry_name))
+            .await
+            .map_err(|e| anyhow!("delete task failed: {e}"))??,
+    )
 }
 
 // ── export ───────────────────────────────────────────────────────────────────

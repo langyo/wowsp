@@ -16,7 +16,16 @@ package from shipping:
   SWF references (<swffile>PATH</swffile> entries, url="...swf" and
   source="...swf" attribute values, both quote styles), and every referenced
   basename must be provided by some member of the same zip (member-basename
-  match, case-insensitive).
+  match, case-insensitive);
+- XML comments are stripped from a text member BEFORE its SWF references are
+  extracted -- the same conservative rule the app-side scanner
+  (mod_integrity::strip_xml_comments) applies. Stock game templates document
+  example load directives inside XML comments (gui/uss_settings.xml carries a
+  commented-out <swffile>../unbound/flash/carousel_extended.swf</swffile>
+  example nothing loads), and a documented example is not a reference: it
+  must not warn. Only COMPLETE <!-- ... --> spans are removed; an
+  unterminated opener is kept verbatim together with the rest of the text, so
+  a malformed member never silently loses real references.
 
 Deliberate trade-off: a missing reference is a WARN, never a refusal, here.
 A glue file may legitimately point at a stock game asset -- those live in
@@ -104,6 +113,40 @@ def normalize_swf_ref(raw: str) -> str:
     return ref if ref.endswith(".swf") else ""
 
 
+def strip_xml_comments(text: str) -> str:
+    """Remove every COMPLETE XML comment span (``<!-- ... -->``) from text.
+
+    Publisher-side parity with the app scanner's
+    ``mod_integrity::strip_xml_comments``: stock game templates document
+    example load directives inside XML comments, and a documented example is
+    not a load. Conservative by construction:
+
+    - only spans with BOTH the opener and the matching closer are removed;
+    - the first closer ends a span (XML has no nested comments, so an opener
+      inside a span is plain span text);
+    - an UNTERMINATED opener is kept verbatim with the rest of the text -- a
+      malformed member must never silently lose real references;
+    - deterministic single pass, no third-party dependency.
+    """
+    if "<!--" not in text:
+        return text
+    out: list[str] = []
+    cursor = 0
+    while True:
+        open_at = text.find("<!--", cursor)
+        if open_at < 0:
+            out.append(text[cursor:])
+            return "".join(out)
+        out.append(text[cursor:open_at])
+        body = open_at + 4
+        close_at = text.find("-->", body)
+        if close_at < 0:
+            # Unterminated: keep the opener and the rest of the text.
+            out.append(text[open_at:])
+            return "".join(out)
+        cursor = close_at + 3
+
+
 def extract_swf_refs(text: str) -> list[str]:
     """Lowercase basenames of every SWF file one text member references.
 
@@ -159,6 +202,8 @@ def scan_zip(zf: zipfile.ZipFile, package: str = "") -> PackageCheckReport:
                     text = fh.read().decode("utf-8", errors="replace")
             except Exception:  # noqa: BLE001 - reference scan is warn-level
                 continue
+            # Commented-out example directives are documented, not loaded.
+            text = strip_xml_comments(text)
             for ref in extract_swf_refs(text):
                 refs.setdefault(ref, []).append(name)
     for ref in sorted(refs):
@@ -211,6 +256,40 @@ def selftest() -> None:
         "<a url='gui\\Unbound\\B.swf' source=\"c.swf\">"
         "<swffile>gui/fonts/fontconfig.xml</swffile>")
     assert refs == ["a.swf", "b.swf", "c.swf"], refs
+    # XML comments are documented examples, not loads: complete spans go, an
+    # unterminated opener keeps itself and the rest (no silent loss).
+    assert strip_xml_comments("plain") == "plain"
+    assert strip_xml_comments("a<!-- <swffile>x.swf</swffile> -->b") == "ab"
+    assert strip_xml_comments("a<!-- one -->b<!-- two -->c") == "abc"
+    assert strip_xml_comments("a --> b <!-- c --> d") == "a --> b  d"
+    assert strip_xml_comments("a<!-- b <swffile>keep.swf</swffile>") == (
+        "a<!-- b <swffile>keep.swf</swffile>"
+    )
+    assert extract_swf_refs(
+        strip_xml_comments(
+            '<!-- <swffile>example.swf</swffile> --><element url="real.swf">'
+        )
+    ) == ["real.swf"]
+
+    # Publisher-side parity with the app scanner: the stock uss_settings.xml
+    # example comment must not warn, while a genuinely missing reference still
+    # does.
+    stock = """<gui_settings>
+    <!-- Template example:
+        <swffile>../unbound/flash/carousel_extended.swf</swffile>
+    -->
+    <element url="gui/unbound/flash/really_missing.swf"/>
+</gui_settings>
+"""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w") as zf:
+        zf.writestr("gui/uss_settings.xml", stock)
+        zf.writestr("gui/provided.swf", b"CWS\x00")
+    report = scan_bytes(buf.getvalue(), "stock.zip")
+    assert [f.ref_basename for f in report.findings] == ["really_missing.swf"], (
+        report.findings
+    )
+    assert report.swf_members_ok == 1, report
     print("selftest ok")
 
 

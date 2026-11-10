@@ -1215,6 +1215,12 @@ fn dangling_ref_suspects_pin_the_referencing_files() {
     );
     // An unrelated text file never matches.
     dir.touch("bin/7/res_mods/gui/other.xml", "<nothing relevant>");
+    // A commented-out example is not a reference: the stock-template shape
+    // that pinned an innocent file before the comment strip.
+    dir.touch(
+        "bin/7/res_mods/gui/template.xml",
+        "<!-- <element url=\"battle_stats.swf\"> -->",
+    );
     // A second reference in another tree (the installer cache).
     dir.touch(
         "bin/7/res_mods/PnFMods/ModsInstaller_4_3_1/mods/SecondaryArmament.xml",
@@ -1646,23 +1652,241 @@ fn ignored_suspects_roundtrip_and_heal() {
 }
 
 #[test]
-fn subject_tree_resolves_active_then_twin() {
-    let dir = TempDir::new("subject-tree");
+fn subject_candidates_cover_active_twin_and_quarantine() {
+    let dir = TempDir::new("subject-candidates");
     let root = dir.path().to_str().unwrap().to_string();
-    // Active tree wins.
+    // Active tree first.
     dir.touch("bin/8/res_mods/gui/a.xml", "x");
     assert_eq!(
-        subject_tree(&root, "gui/a.xml").expect("active"),
-        dir.path().join("bin/8/res_mods/gui/a.xml")
+        subject_candidates(&root, "gui/a.xml").expect("active"),
+        vec![dir.path().join("bin/8/res_mods/gui/a.xml")]
     );
     // A subject that only exists in the safe-mode twin resolves there.
     dir.touch("bin/8/res_mods.wowsp-disabled/gui/b.xml", "x");
     assert_eq!(
-        subject_tree(&root, "gui/b.xml").expect("twin"),
-        dir.path().join("bin/8/res_mods.wowsp-disabled/gui/b.xml")
+        subject_candidates(&root, "gui/b.xml").expect("twin"),
+        vec![dir.path().join("bin/8/res_mods.wowsp-disabled/gui/b.xml")]
+    );
+    // A quarantine-only subject resolves to the quarantine dir (the shape a
+    // quarantined crash-suspect row is in).
+    dir.touch("bin/8/res_mods.wowsp-quarantine/gui/c.xml", "x");
+    assert_eq!(
+        subject_candidates(&root, "gui/c.xml").expect("quarantine"),
+        vec![dir.path().join("bin/8/res_mods.wowsp-quarantine/gui/c.xml")]
+    );
+    // The SAME subject in all three trees answers all three (active, twin,
+    // quarantine) — the delete must clear every copy, not one of them.
+    dir.touch("bin/8/res_mods/gui/d.xml", "x");
+    dir.touch("bin/8/res_mods.wowsp-disabled/gui/d.xml", "x");
+    dir.touch("bin/8/res_mods.wowsp-quarantine/gui/d.xml", "x");
+    assert_eq!(
+        subject_candidates(&root, "gui/d.xml").expect("all trees"),
+        vec![
+            dir.path().join("bin/8/res_mods/gui/d.xml"),
+            dir.path().join("bin/8/res_mods.wowsp-disabled/gui/d.xml"),
+            dir.path().join("bin/8/res_mods.wowsp-quarantine/gui/d.xml"),
+        ]
     );
     // Nowhere = a clear error.
-    assert!(subject_tree(&root, "gui/nope.xml").is_err());
+    let err = subject_candidates(&root, "gui/nope.xml").expect_err("missing subject");
+    assert!(err.to_string().contains("not found"), "{err}");
+}
+
+/// The bug the user hit: a quarantined crash-suspect row offered a working
+/// restore but a failing 删除 (the old resolver never looked in the quarantine
+/// dir). A permanent delete of a quarantine-only entry must remove the file,
+/// drop its manifest row and prune the empty parent chain — while keeping the
+/// quarantine root and the manifest file itself.
+#[test]
+fn delete_removes_a_quarantine_only_entry_and_drops_its_row() {
+    let dir = TempDir::new("delete-quarantine");
+    let root = dir.path().to_str().unwrap().to_string();
+    super::super::mod_hub::test_allow_game_root(&root);
+    dir.touch("bin/8/res_mods/.keep", "");
+    dir.touch("bin/8/res_mods/gui/battle_elements.xml", "<element/>");
+    mutate_quarantine(&root, "gui/battle_elements.xml", Some("gc-del"), true).expect("quarantine");
+    let quarantine_root = dir.path().join("bin/8/res_mods.wowsp-quarantine");
+    assert!(
+        quarantine_root.join("gui/battle_elements.xml").exists(),
+        "fixture: the entry sits in quarantine"
+    );
+
+    let entries = delete_subject(&root, "gui/battle_elements.xml").expect("delete");
+    assert!(
+        entries.is_empty(),
+        "the deleted row leaves the manifest: {entries:?}"
+    );
+    assert!(!quarantine_root.join("gui/battle_elements.xml").exists());
+    // The emptied parent chain inside the quarantine root is pruned …
+    assert!(!quarantine_root.join("gui").exists(), "empty parent pruned");
+    // … while the root and its manifest stay (restore history lives there).
+    assert!(quarantine_root.is_dir(), "quarantine root kept");
+    assert!(
+        quarantine_root.join(QUARANTINE_MANIFEST).is_file(),
+        "manifest kept"
+    );
+    assert!(
+        load_quarantine_manifest(&quarantine_root)
+            .expect("manifest")
+            .is_empty(),
+        "manifest row dropped"
+    );
+}
+
+/// The re-created-live-copy case: quarantine moved the entry out, the mod
+/// installer re-created it in res_mods, so the subject exists in TWO trees.
+/// Both copies must be deleted and the manifest row dropped — deleting only
+/// one keeps resurrecting the same warning.
+#[test]
+fn delete_clears_a_recreated_live_copy_and_the_quarantined_one() {
+    let dir = TempDir::new("delete-both");
+    let root = dir.path().to_str().unwrap().to_string();
+    super::super::mod_hub::test_allow_game_root(&root);
+    dir.touch("bin/8/res_mods/.keep", "");
+    dir.touch("bin/8/res_mods/bad_mod/x.xml", "x");
+    mutate_quarantine(&root, "bad_mod", Some("gc-both"), true).expect("quarantine");
+    // The installer re-created the live copy after the quarantine.
+    dir.touch("bin/8/res_mods/bad_mod/x.xml", "x");
+
+    let entries = delete_subject(&root, "bad_mod").expect("delete both copies");
+    assert!(entries.is_empty(), "{entries:?}");
+    assert!(
+        !dir.path().join("bin/8/res_mods/bad_mod").exists(),
+        "the live copy is gone"
+    );
+    assert!(
+        !dir.path()
+            .join("bin/8/res_mods.wowsp-quarantine/bad_mod")
+            .exists(),
+        "the quarantined copy is gone"
+    );
+}
+
+/// A missing subject errors and mutates NOTHING: the manifest row of an
+/// unrelated quarantined entry survives, and so does its file.
+#[test]
+fn delete_of_a_missing_entry_errors_and_leaves_the_manifest_alone() {
+    let dir = TempDir::new("delete-missing");
+    let root = dir.path().to_str().unwrap().to_string();
+    super::super::mod_hub::test_allow_game_root(&root);
+    dir.touch("bin/8/res_mods/.keep", "");
+    dir.touch("bin/8/res_mods/kept_mod/x.xml", "x");
+    mutate_quarantine(&root, "kept_mod", Some("gc-kept"), true).expect("quarantine");
+    let quarantine_root = dir.path().join("bin/8/res_mods.wowsp-quarantine");
+
+    let err = delete_subject(&root, "nope_mod").expect_err("missing entry must error");
+    assert!(err.to_string().contains("not found"), "{err}");
+    let entries = load_quarantine_manifest(&quarantine_root).expect("manifest");
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].name, "kept_mod");
+    assert!(
+        quarantine_root.join("kept_mod/x.xml").exists(),
+        "the unrelated quarantined entry is untouched"
+    );
+}
+
+/// Traversal/dot/colon spellings are refused before any resolution, and the
+/// real trees stay intact.
+#[test]
+fn delete_rejects_traversal_names_and_keeps_every_tree_intact() {
+    let dir = TempDir::new("delete-traversal");
+    let root = dir.path().to_str().unwrap().to_string();
+    super::super::mod_hub::test_allow_game_root(&root);
+    dir.touch("bin/8/res_mods/gui/a.xml", "x");
+    for name in [
+        "../escape.xml",
+        "gui/../../escape.xml",
+        "C:/evil.xml",
+        "/abs.xml",
+        ".hidden",
+        "",
+    ] {
+        assert!(
+            delete_subject(&root, name).is_err(),
+            "{name:?} must be refused"
+        );
+    }
+    assert!(dir.path().join("bin/8/res_mods/gui/a.xml").exists());
+}
+
+/// A manifest that cannot be read aborts the delete BEFORE any removal — the
+/// damaged-file contract the rest of the module follows (heal nothing, mutate
+/// nothing), so a corrupt file can never leave a half-deleted entry.
+#[test]
+fn delete_aborts_before_mutation_on_a_damaged_manifest() {
+    let dir = TempDir::new("delete-damaged-manifest");
+    let root = dir.path().to_str().unwrap().to_string();
+    super::super::mod_hub::test_allow_game_root(&root);
+    dir.touch("bin/8/res_mods/bad_mod/x.xml", "x");
+    let quarantine_root = dir.path().join("bin/8/res_mods.wowsp-quarantine");
+    fs::create_dir_all(&quarantine_root).expect("mkdir");
+    super::super::appdata::write_json_in(&quarantine_root, QUARANTINE_MANIFEST, "not json")
+        .expect("write damaged manifest");
+
+    delete_subject(&root, "bad_mod").expect_err("a damaged manifest must abort");
+    assert!(
+        dir.path().join("bin/8/res_mods/bad_mod/x.xml").exists(),
+        "nothing is removed before the manifest parses"
+    );
+}
+
+/// A successful delete keeps every OTHER manifest row (and its quarantined
+/// file) intact — the reply the settings section pins must never drop
+/// unrelated entries.
+#[test]
+fn delete_keeps_the_other_manifest_rows() {
+    let dir = TempDir::new("delete-keeps-rows");
+    let root = dir.path().to_str().unwrap().to_string();
+    super::super::mod_hub::test_allow_game_root(&root);
+    dir.touch("bin/8/res_mods/.keep", "");
+    dir.touch("bin/8/res_mods/gone_mod/x.xml", "x");
+    dir.touch("bin/8/res_mods/kept_mod/x.xml", "x");
+    mutate_quarantine(&root, "gone_mod", Some("gc-a"), true).expect("quarantine gone");
+    mutate_quarantine(&root, "kept_mod", Some("gc-b"), true).expect("quarantine kept");
+
+    let entries = delete_subject(&root, "gone_mod").expect("delete");
+    assert_eq!(entries.len(), 1, "{entries:?}");
+    assert_eq!(entries[0].name, "kept_mod");
+    let quarantine_root = dir.path().join("bin/8/res_mods.wowsp-quarantine");
+    assert!(
+        quarantine_root.join("kept_mod/x.xml").exists(),
+        "the unrelated quarantined file survives"
+    );
+    assert!(!quarantine_root.join("gone_mod").exists());
+}
+
+/// The three-tree case: one subject sits in the active tree, the safe-mode
+/// twin AND the quarantine dir. One delete clears all three copies and the
+/// manifest row in the same pass.
+#[test]
+fn delete_clears_all_three_trees_in_one_pass() {
+    let dir = TempDir::new("delete-three-trees");
+    let root = dir.path().to_str().unwrap().to_string();
+    super::super::mod_hub::test_allow_game_root(&root);
+    dir.touch("bin/8/res_mods/.keep", "");
+    dir.touch("bin/8/res_mods/triple/x.xml", "x");
+    dir.touch("bin/8/res_mods.wowsp-disabled/triple/x.xml", "x");
+    let quarantine_root = dir.path().join("bin/8/res_mods.wowsp-quarantine");
+    dir.touch("bin/8/res_mods.wowsp-quarantine/triple/x.xml", "x");
+    save_quarantine_manifest(
+        &quarantine_root,
+        &[QuarantineEntry {
+            name: "triple".to_string(),
+            crash_id: Some("gc-triple".to_string()),
+            quarantined_at: "2026-11-10T00:00:00Z".to_string(),
+        }],
+    )
+    .expect("seed manifest");
+
+    let entries = delete_subject(&root, "triple").expect("delete all three");
+    assert!(entries.is_empty(), "{entries:?}");
+    assert!(!dir.path().join("bin/8/res_mods/triple").exists());
+    assert!(
+        !dir.path()
+            .join("bin/8/res_mods.wowsp-disabled/triple")
+            .exists()
+    );
+    assert!(!quarantine_root.join("triple").exists());
 }
 
 // ── proactive dangling-reference scan ───────────────────────────────────────
@@ -1696,12 +1920,22 @@ fn dangling_mod_references_flags_missing_and_ignores_present() {
     let dir = TempDir::new("proactive-scan");
     dir.touch("gui/battle_elements.xml", "<element url=battle_stats.swf>");
     dir.touch("gui/other.xml", "<element url=main_hud.swf>");
+    // A commented-out reference documents a load that never happens — it must
+    // not become a missingAsset suspect.
+    dir.touch(
+        "gui/commented.xml",
+        "<!-- <element url=commented_only.swf> -->",
+    );
     let mut client = HashSet::new();
     client.insert("main_hud.swf".to_string());
     let refs = dangling_mod_references(&[dir.path().to_path_buf()], &client);
     assert_eq!(refs.len(), 1, "{refs:?}");
     assert_eq!(refs[0].asset, "battle_stats.swf");
     assert!(refs[0].files[0].contains("battle_elements.xml"));
+    assert!(
+        !refs.iter().any(|r| r.asset == "commented_only.swf"),
+        "the commented-out example is not a missing asset: {refs:?}"
+    );
 }
 
 #[cfg(windows)]
