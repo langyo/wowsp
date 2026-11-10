@@ -628,6 +628,15 @@ export const AboutContent = defineComponent({
             >
               GitHub
             </button>
+            {/* The decision models are published as an open Hugging Face
+                repository; the About card links it beside the source repo. */}
+            <button
+              type="button"
+              class="about-modal__link"
+              onClick={() => void openExternal(t("about.links.huggingface"))}
+            >
+              Hugging Face
+            </button>
             <button
               type="button"
               class="about-modal__link"
