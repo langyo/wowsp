@@ -11,6 +11,9 @@
  * renders SIX fixed cells (name | size | version | updated | channel | kind)
  * so the stylesheet's shared subgrid keeps the columns aligned across rows,
  * and the always-present kind chip closes every row in the far-right column.
+ * The channel column shows the registry code's localized label (the raw code
+ * stays the tooltip), and a fact with no content renders the grey N/A
+ * placeholder instead of a blank cell.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, mount } from "@vue/test-utils";
@@ -190,7 +193,7 @@ function inventoryRows(): ResourceStatusRow[] {
     {
       id: "res-pack",
       kind: "pack",
-      channel: "stable",
+      channel: "res",
       trigger: "",
       progress: "",
       present: true,
@@ -319,23 +322,97 @@ describe("Settings → Resources inventory columns", () => {
     expect(installedCell.attributes("data-hint")).toBe(iso);
   });
 
-  it("warns in the size column for an absent resource and leaves other cells empty", () => {
+  it("warns in the size column for an absent resource and marks absent facts N/A", () => {
     const wrapper = mountSection(packStatus(), inventoryRows());
     const absentRow = wrapper.findAll(".settings-modal__res-inv-row")[2];
-    expect(absentRow.find(".settings-modal__res-inv-cell--size .hk-tag-warning").text()).toBe(
-      t("settings.cacheStatusMissing"),
-    );
-    // Absent facts render NO chip rather than a placeholder in every row.
-    expect(absentRow.find(".settings-modal__res-inv-cell--version").text()).toBe("");
-    expect(absentRow.find(".settings-modal__res-inv-cell--installed").text()).toBe("");
-    expect(absentRow.find(".settings-modal__res-inv-cell--channel").text()).toBe("");
+    const sizeCell = absentRow.find(".settings-modal__res-inv-cell--size");
+    // Nothing on disk is the row's headline fact: the size cell warns, it is
+    // NOT an N/A placeholder.
+    expect(sizeCell.find(".hk-tag-warning").text()).toBe(t("settings.cacheStatusMissing"));
+    expect(sizeCell.classes()).not.toContain("settings-modal__res-inv-cell--na");
+    // Every other fact is genuinely absent: the grey N/A chip, the --na cell
+    // modifier (the phone layout hides those cells) and the localized hint.
+    for (const col of ["version", "installed", "channel"]) {
+      const cell = absentRow.find(`.settings-modal__res-inv-cell--${col}`);
+      expect(cell.text()).toBe(t("settings.resInvNa"));
+      expect(cell.find(".settings-modal__res-inv-tag-na").exists()).toBe(true);
+      expect(cell.classes()).toContain("settings-modal__res-inv-cell--na");
+      expect(cell.attributes("data-hint")).toBe(t("settings.resInvNaHint"));
+    }
   });
 
-  it("reports a present row's size and channel", () => {
+  it("reports a present row's size and localized channel", () => {
     const wrapper = mountSection(packStatus(), inventoryRows());
     const rows = wrapper.findAll(".settings-modal__res-inv-row");
     expect(rows[1].find(".settings-modal__res-inv-cell--size").text()).toBe(formatBytes(2048));
-    expect(rows[0].find(".settings-modal__res-inv-cell--channel").text()).toBe("stable");
+    const channelCell = rows[0].find(".settings-modal__res-inv-cell--channel");
+    expect(channelCell.text()).toBe(t("settings.resChanRes"));
+    // The protocol code the registry stores stays the tooltip payload.
+    expect(channelCell.attributes("data-hint")).toBe("res");
+  });
+
+  it("localizes every registry channel code and keeps the raw code in the hint", () => {
+    const channels = [
+      ["app", "settings.resChanApp"],
+      ["res", "settings.resChanRes"],
+      ["data", "settings.resChanData"],
+      ["mod-hub", "settings.resChanModHub"],
+      ["ai", "settings.resChanAi"],
+    ] as const;
+    // One cache row per code: only the channel column differs, so the five
+    // chips read side by side without another fact getting in the way.
+    const rows: ResourceStatusRow[] = channels.map(([channel], i) => ({
+      ...inventoryRows()[1],
+      id: `cache-channel-${i}`,
+      channel,
+    }));
+    const wrapper = mountSection(packStatus(), rows);
+    const cells = wrapper
+      .findAll(".settings-modal__res-inv-row")
+      .map((row) => row.find(".settings-modal__res-inv-cell--channel"));
+    expect(cells.map((cell) => cell.text())).toEqual(channels.map(([, key]) => t(key)));
+    // The protocol code stays the tooltip payload, never part of the chip.
+    expect(cells.map((cell) => cell.attributes("data-hint"))).toEqual(
+      channels.map(([channel]) => channel),
+    );
+    // A real channel keeps the blue primary chip and is never marked N/A.
+    expect(cells.every((cell) => cell.find(".hk-tag-primary").exists())).toBe(true);
+    expect(
+      cells.some((cell) => cell.classes().includes("settings-modal__res-inv-cell--na")),
+    ).toBe(false);
+  });
+
+  it("falls back to the raw code for a channel the registry does not define", () => {
+    // Defensive fallback: an unknown code must still render something, not a
+    // blank cell and not the N/A placeholder.
+    const rows: ResourceStatusRow[] = [{ ...inventoryRows()[1], channel: "stable" }];
+    const wrapper = mountSection(packStatus(), rows);
+    const cell = wrapper
+      .find(".settings-modal__res-inv-row")
+      .find(".settings-modal__res-inv-cell--channel");
+    expect(cell.text()).toBe("stable");
+    expect(cell.attributes("data-hint")).toBe("stable");
+    expect(cell.classes()).not.toContain("settings-modal__res-inv-cell--na");
+  });
+
+  it("renders N/A in the size column for a present row with no bytes", () => {
+    // The app-update row is present but carries no payload of its own: its
+    // size is genuinely not applicable, unlike an absent row's warning.
+    const rows: ResourceStatusRow[] = [
+      { ...inventoryRows()[1], id: "app-update", kind: "update", channel: "app", sizeBytes: 0 },
+    ];
+    const wrapper = mountSection(packStatus(), rows);
+    const row = wrapper.find(".settings-modal__res-inv-row");
+    const sizeCell = row.find(".settings-modal__res-inv-cell--size");
+    expect(sizeCell.text()).toBe(t("settings.resInvNa"));
+    expect(sizeCell.find(".settings-modal__res-inv-tag-na").exists()).toBe(true);
+    expect(sizeCell.classes()).toContain("settings-modal__res-inv-cell--na");
+    expect(sizeCell.attributes("data-hint")).toBe(t("settings.resInvNaHint"));
+    // The kind chip still closes the row in the far-right column.
+    expect(row.element.lastElementChild?.className).toBe(
+      "settings-modal__res-inv-cell settings-modal__res-inv-cell--kind",
+    );
+    expect(row.find(".settings-modal__res-inv-cell--kind").text()).toBe(t("settings.resKindUpdate"));
   });
 
   it("renders the six column labels above the rows", () => {
