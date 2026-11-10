@@ -654,41 +654,93 @@
   }
 
   /* ── resource inventory (the registry walk, Settings → resources) ──
-     Meta facts are hikari tag chips (ResourcesSection.tsx): the row keeps
-     the name vs. chips apart, the chip row wraps on narrow panes. */
+     ONE grid for the whole list: every fact owns a column, so all rows
+     align name | size | version | updated | channel | kind instead of
+     rendering a ragged chip cluster. Header + rows inherit those tracks
+     via subgrid (Chromium 117+ / WebView2 evergreen); the kind chip is on
+     EVERY row, so the far-right column is always occupied. The ≤767px
+     block below swaps this for the stacked chip layout. */
   &__res-inv {
+    display: grid;
+    /* Name flexes (and elides); each fact sizes to the widest cell across
+       ALL rows — the alignment a per-row layout cannot give. */
+    grid-template-columns:
+      minmax(0, 1fr)
+      max-content
+      max-content
+      max-content
+      max-content
+      max-content;
+    column-gap: 0.85rem;
+    row-gap: 0.3rem;
+    font-size: var(--text-xs);
     margin: 0;
     padding: 0;
     list-style: none;
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
   }
 
+  /* Header + rows share the list's six tracks. The first declaration is the
+     pre-subgrid fallback — a private copy of the same template (keep it in
+     sync with the list above); the second wins on Chromium 117+. Same
+     two-declaration idiom as ReplayView's chat list. */
+  &__res-inv-head,
   &__res-inv-row {
-    display: flex;
+    display: grid;
+    grid-template-columns:
+      minmax(0, 1fr)
+      max-content
+      max-content
+      max-content
+      max-content
+      max-content;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    font-size: var(--text-xs);
   }
 
-  &__res-inv-name {
+  /* The visual column labels: quiet small print above the first row. */
+  &__res-inv-head {
+    padding-bottom: 0.15rem;
+    border-bottom: 1px solid rgb(var(--color-border) / 15%);
+  }
+
+  /* Scoped through the head so its specificity beats the cell rules below
+     (a bare cell selector would let the name cell's row chrome repaint its
+     own column label). */
+  &__res-inv-head &__res-inv-cell {
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    color: rgb(var(--color-muted));
+  }
+
+  &__res-inv-cell {
+    justify-self: end;
+  }
+
+  /* Stamps read as columns: tabular figures keep the digits from wobbling
+     row to row (the version cell is a stamp too when the registry reports
+     RFC3339 rather than a build id — formatResourceVersion decides). */
+  &__res-inv-cell--version,
+  &__res-inv-cell--installed {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The name is the row's anchor: left-aligned and elided inside the ONE
+     flexible track. */
+  &__res-inv-cell--name {
+    justify-self: start;
+    min-width: 0;
     color: rgb(var(--color-text));
     font-weight: 600;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
-  &__res-inv-meta {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: 0.25rem;
-    min-width: 0;
-  }
-
-  /* Version / build-id chips render their hash suffix in the mono face. */
+  /* Verbatim version / build-id chips (semver, build number, hash6) render
+     in the mono face. LOCALIZED timestamp labels deliberately skip it — the
+     section adds this class only when the label equals the raw version — so
+     the version and updated columns share one stamp face. */
   &__res-inv-tag-mono {
     font-family: var(--font-mono);
   }
@@ -1069,26 +1121,40 @@
 }
 
 /* ── Phone layout (≤767px) for the section bodies the settings sheet
-   hosts. The resource-inventory rows stack (name above its chip cluster
-   — a right-aligned chip column beside a long localized name starves
-   both at 393px), the pack rows let their action cluster wrap under the
-   info block instead of squeezing it beside two buttons, and the
-   mirror-row remove controls grow from their 24px icon box to a 36px
+   hosts. The resource-inventory rows drop the column axis (six aligned
+   tracks starve every cell at 393px): the name takes a full line and the
+   chips wrap beneath it, with absent facts' cells collapsed so the chips
+   sit shoulder to shoulder. The pack rows let their action cluster wrap
+   under the info block instead of squeezing it beside two buttons, and
+   the mirror-row remove controls grow from their 24px icon box to a 36px
    touch target. Desktop (≥768px) is untouched. ── */
 @media (max-width: 767px) {
-  .settings-modal__res-inv-row {
+  .settings-modal__res-inv {
+    display: flex;
     flex-direction: column;
-    align-items: flex-start;
     gap: 0.3rem;
   }
 
-  .settings-modal__res-inv-name {
-    white-space: normal;
-    overflow-wrap: anywhere;
+  .settings-modal__res-inv-head {
+    display: none;
   }
 
-  .settings-modal__res-inv-meta {
-    justify-content: flex-start;
+  .settings-modal__res-inv-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25rem 0.4rem;
+  }
+
+  .settings-modal__res-inv-cell--name {
+    flex: 1 1 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    overflow: visible;
+  }
+
+  .settings-modal__res-inv-cell:empty {
+    display: none;
   }
 
   .settings-modal__pack {
