@@ -39,11 +39,22 @@ const INV_COLUMNS = [
 ] as const;
 
 /** One inventory cell: the shared class + its column modifier. Rows render
- *  exactly one per INV_COLUMNS entry — all six always, empty when the fact
- *  is absent, because the subgrid's shared axes shift as soon as a row
- *  drops a cell. */
-const invCellClass = (col: string): string =>
-  `settings-modal__res-inv-cell settings-modal__res-inv-cell--${col}`;
+ *  exactly one per INV_COLUMNS entry — all six always, an absent fact
+ *  showing the N/A chip rather than nothing, because the subgrid's shared
+ *  axes shift as soon as a row drops a cell. `na` marks those placeholder
+ *  cells so the phone layout can drop them (a desktop-table affordance). */
+const invCellClass = (col: string, na = false): string =>
+  `settings-modal__res-inv-cell settings-modal__res-inv-cell--${col}${
+    na ? " settings-modal__res-inv-cell--na" : ""
+  }`;
+
+/** The N/A placeholder for an absent fact: a deliberately quiet grey chip.
+ *  The cell carries the localized reason on the data-hint channel. */
+const naTag = () => (
+  <HkTag size="sm" class="settings-modal__res-inv-tag-na">
+    {t("settings.resInvNa")}
+  </HkTag>
+);
 
 export default defineComponent({
   name: "SettingsResourcesSection",
@@ -84,6 +95,19 @@ export default defineComponent({
         bundled: t("settings.resKindBundled"),
       };
       return map[kind] ?? kind;
+    };
+    /** Flat channel labels (same contract as kindLabel): the registry
+     *  stores the relay's protocol codes, the inventory shows what they
+     *  mean — an unknown code falls back to itself. */
+    const channelLabel = (channel: string): string => {
+      const map: Record<string, string> = {
+        app: t("settings.resChanApp"),
+        res: t("settings.resChanRes"),
+        data: t("settings.resChanData"),
+        "mod-hub": t("settings.resChanModHub"),
+        ai: t("settings.resChanAi"),
+      };
+      return map[channel] ?? channel;
     };
     return () => {
       const st = cacheStore.status;
@@ -128,11 +152,14 @@ export default defineComponent({
               subgrid keeps every row on the same shared axes). Stamps are
               normalized so a timestamp-shaped version renders as the same
               local wall clock the installed column uses, while semver /
-              build ids / hash6 stay verbatim. The kind chip is the one
-              fact EVERY row carries, so it always closes the row in the
-              far-right column. Management actions stay in the groups
-              below; the refresh button re-checks the refreshable lanes
-              (data pack + res manifest — never auto-downloads). */}
+              build ids / hash6 stay verbatim. The channel column localizes
+              the registry's relay codes, and a fact with no content reads
+              as the grey N/A placeholder (its tooltip says why) instead of
+              a blank cell. The kind chip is the one fact EVERY row
+              carries, so it always closes the row in the far-right column.
+              Management actions stay in the groups below; the refresh
+              button re-checks the refreshable lanes (data pack + res
+              manifest — never auto-downloads). */}
           <HkSettingsGroup title={t("settings.resInvTitle")}>
             <HkSettingsHint>{t("settings.resInvHint")}</HkSettingsHint>
             {invRows ? (
@@ -151,6 +178,9 @@ export default defineComponent({
                     ? row.version ?? (row.sha256 ? hash6(row.sha256) : null)
                     : null;
                   const versionLabel = formatResourceVersion(version);
+                  /* Resolved once per row: the absent facts share one
+                     localized "why" on their data-hint channel. */
+                  const naHint = t("settings.resInvNaHint");
                   return (
                     <li
                       class="settings-modal__res-inv-row"
@@ -161,12 +191,17 @@ export default defineComponent({
                           : undefined
                       }
                     >
-                      {/* All six cells always render (empty when the fact is
-                          absent) — the shared subgrid columns would shift row
-                          by row as soon as one dropped a cell. Tooltips carry
-                          the raw values the chips abbreviate. */}
+                      {/* All six cells always render — an absent fact shows
+                          the N/A chip instead of a blank cell (the shared
+                          subgrid columns would shift row by row as soon as
+                          one dropped a cell). Tooltips carry the raw values
+                          the chips abbreviate; N/A cells hint the localized
+                          reason. */}
                       <span class={invCellClass("name")}>{rowName(row.id)}</span>
-                      <span class={invCellClass("size")}>
+                      <span
+                        class={invCellClass("size", row.present && row.sizeBytes <= 0)}
+                        data-hint={row.present && row.sizeBytes <= 0 ? naHint : undefined}
+                      >
                         {!row.present ? (
                           /* Nothing on disk is the row's headline fact: the
                              size column warns instead of showing 0 MB. */
@@ -175,11 +210,13 @@ export default defineComponent({
                           </HkTag>
                         ) : row.sizeBytes > 0 ? (
                           <HkTag size="sm">{formatBytes(row.sizeBytes)}</HkTag>
-                        ) : null}
+                        ) : (
+                          naTag()
+                        )}
                       </span>
                       <span
-                        class={invCellClass("version")}
-                        data-hint={row.version ?? row.sha256 ?? undefined}
+                        class={invCellClass("version", !versionLabel)}
+                        data-hint={versionLabel ? row.version ?? row.sha256 ?? undefined : naHint}
                       >
                         {versionLabel ? (
                           /* The abbreviated / localized label still hints its
@@ -198,22 +235,33 @@ export default defineComponent({
                           >
                             {versionLabel}
                           </HkTag>
-                        ) : null}
+                        ) : (
+                          naTag()
+                        )}
                       </span>
                       <span
-                        class={invCellClass("installed")}
-                        data-hint={row.present && row.installedAt ? row.installedAt : undefined}
+                        class={invCellClass("installed", !(row.present && row.installedAt))}
+                        data-hint={row.present && row.installedAt ? row.installedAt : naHint}
                       >
                         {row.present && row.installedAt ? (
                           /* The column header already says "updated"; the chip
                              is only the stamp, the hint the raw UTC ISO. */
                           <HkTag size="sm">{formatLocalStamp(row.installedAt)}</HkTag>
-                        ) : null}
+                        ) : (
+                          naTag()
+                        )}
                       </span>
-                      <span class={invCellClass("channel")}>
+                      <span
+                        class={invCellClass("channel", !row.channel)}
+                        data-hint={row.channel ? row.channel : naHint}
+                      >
                         {row.channel ? (
-                          <HkTag variant="primary" size="sm">{row.channel}</HkTag>
-                        ) : null}
+                          /* The registry code is the tooltip; the chip is
+                             the localized meaning. */
+                          <HkTag variant="primary" size="sm">{channelLabel(row.channel)}</HkTag>
+                        ) : (
+                          naTag()
+                        )}
                       </span>
                       <span class={invCellClass("kind")}>
                         <HkTag variant="info" size="sm">{kindLabel(row.kind)}</HkTag>

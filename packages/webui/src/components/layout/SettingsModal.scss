@@ -745,6 +745,19 @@
     font-family: var(--font-mono);
   }
 
+  /* The N/A placeholder: a deliberately quiet grey chip (muted ink, faint
+     border) so an absent fact reads as a gap, never as content. The cell's
+     data-hint carries the localized "not applicable" sentence. Compound with
+     hikari's .hk-tag base: same-declaration specificity would otherwise tie
+     .hk-tag-default and ride on stylesheet order alone (the production build
+     splits CSS differently). The default tag surface is left alone — the
+     theme restates it at higher specificity anyway, and matching the other
+     chips' fill is what quiet wants; ink + border carry the N/A read. */
+  &__res-inv-tag-na.hk-tag {
+    color: rgb(var(--color-muted));
+    border-color: rgb(var(--color-border) / 30%);
+  }
+
   /* ── phone pairing (desktop server side) ── */
   &__pairing-busy {
     display: flex;
@@ -1123,11 +1136,11 @@
 /* ── Phone layout (≤767px) for the section bodies the settings sheet
    hosts. The resource-inventory rows drop the column axis (six aligned
    tracks starve every cell at 393px): the name takes a full line and the
-   chips wrap beneath it, with absent facts' cells collapsed so the chips
-   sit shoulder to shoulder. The pack rows let their action cluster wrap
-   under the info block instead of squeezing it beside two buttons, and
-   the mirror-row remove controls grow from their 24px icon box to a 36px
-   touch target. Desktop (≥768px) is untouched. ── */
+   chips wrap beneath it, with the N/A placeholder cells collapsed so the
+   real chips sit shoulder to shoulder. The pack rows let their action
+   cluster wrap under the info block instead of squeezing it beside two
+   buttons, and the mirror-row remove controls grow from their 24px icon
+   box to a 36px touch target. Desktop (≥768px) is untouched. ── */
 @media (max-width: 767px) {
   .settings-modal__res-inv {
     display: flex;
@@ -1153,7 +1166,9 @@
     overflow: visible;
   }
 
-  .settings-modal__res-inv-cell:empty {
+  /* The N/A chip is a desktop-table affordance: the stacked row shows only
+     real facts, so the placeholder cells drop out entirely. */
+  .settings-modal__res-inv-cell--na {
     display: none;
   }
 
