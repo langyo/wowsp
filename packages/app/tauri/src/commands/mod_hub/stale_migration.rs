@@ -71,6 +71,17 @@ pub fn mod_hub_stale_versions(game_root: String) -> CommandResult<Vec<StaleBinIn
 /// bytes against the client's own copy, which lives inside the pkg VFS, and
 /// a legitimate skin may replace a client asset on purpose. Nothing here
 /// deletes, disables or blocks.
+///
+/// Two edge cases are deliberately inert rather than guessed at: a stamp
+/// with no client pin (a never-launched client), or a pin with no stamp,
+/// both report `stale: false` — one side of a comparison is not evidence.
+/// The two version strings always come from the SAME parser
+/// (`game_context::parse_last_server_game_version`, which normalizes a
+/// `15,9,0,13357822` pin down to three joined fields), so a string compare
+/// cannot produce a `15.10` vs `15.10.0` style false positive.
+/// A `.bak`-disabled override never lands in `riskyPaths`: the suffix
+/// makes it fail the extension test, which is exactly right — a disabled
+/// file is not shadowing anything.
 #[tauri::command]
 pub fn mod_hub_tree_version(game_root: String) -> CommandResult<TreeVersionInfo> {
     let root = Path::new(&game_root);
@@ -954,5 +965,53 @@ mod tree_version_tests {
         assert!(!out.stale);
         assert!(out.risky_paths.is_empty());
         fs::remove_dir_all(&root).ok();
+    }
+
+    /// A `.bak`-disabled override is NOT risky: `.xml.bak` does not end in
+    /// `.xml`, so the extension test drops it — the correct answer, since a
+    /// disabled file shadows nothing. Pinned so a future loosening of the
+    /// extension match cannot silently start reporting dead files.
+    #[test]
+    fn disabled_bak_overrides_are_not_listed() {
+        let dir = tmp("bak_risky");
+        let gui = dir.join("gui");
+        fs::create_dir_all(&gui).unwrap();
+        fs::write(gui.join("uss_settings.xml.bak"), b"<x/>").unwrap();
+        fs::write(gui.join("fontconfig_scaleform.xml"), b"<x/>").unwrap();
+        let got = risky_override_paths(&dir);
+        assert!(
+            !got.iter().any(|p| p.ends_with(".bak")),
+            "a disabled twin shadows nothing: {got:?}"
+        );
+        // The live sibling is still reported, so the exclusion above is not
+        // the whole list going empty by accident.
+        assert!(
+            got.contains(&"gui/fontconfig_scaleform.xml".to_string()),
+            "{got:?}"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// One-sided evidence is not evidence: a stamp with no client pin or a
+    /// pin with no stamp both stay not-stale, exactly the comparison the
+    /// command applies.
+    #[test]
+    fn one_sided_versions_are_never_stale() {
+        let cases: [(Option<&str>, Option<&str>); 3] = [
+            (None, Some("15.10.0")),
+            (Some("15.9.0"), None),
+            (None, None),
+        ];
+        for (tree, game) in cases {
+            let stale = matches!((tree, game), (Some(t), Some(g)) if t != g);
+            assert!(!stale, "tree={tree:?} game={game:?} must not be stale");
+        }
+        // A matching pair is not stale either; a genuine disagreement IS.
+        let same = matches!((Some("15.10.0"), Some("15.10.0")),
+            (Some(t), Some(g)) if t != g);
+        assert!(!same);
+        let differs = matches!((Some("15.9.0"), Some("15.10.0")),
+            (Some(t), Some(g)) if t != g);
+        assert!(differs);
     }
 }
