@@ -330,6 +330,53 @@ describe("mod inventory root ownership", () => {
       banners.map((b) => b.text()).join(" | "),
     ).toBe(false);
   });
+
+  it("names the count and stays keyboard-reachable when overrides remain", async () => {
+    // The count must actually reach t(), not just the key: the dead-param
+    // bug this test replaces passed a {count} the locale never used.
+    mocks.treeVersion.mockResolvedValue({
+      treeGameVersion: "15.9.0",
+      gameVersion: "15.10.0",
+      stale: true,
+      riskyPaths: ["gui/uss_settings.xml", "gui/fontconfig_scaleform.xml"],
+    });
+    const view = await mountInstalled();
+    await flushPromises();
+    const banner = view
+      .findAll(".resources-banner--warn")
+      .find((b) => b.attributes("role") === "alert");
+    expect(banner, "the stale banner is an alert region").toBeTruthy();
+    // The params ride the mocked t() as its second argument object.
+    const calls = (t as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    const call = calls.find((c) => c[0] === "resources.treeStale");
+    expect(call, "treeStale must be rendered with params").toBeTruthy();
+    expect(call![1]).toMatchObject({ count: 2, tree: "15.9.0", current: "15.10.0" });
+    // The hint has to be focusable: its whole explanation lives in data-hint.
+    const hintHolder = banner!.find("[data-hint]");
+    expect(hintHolder.attributes("tabindex")).toBe("0");
+  });
+
+  it("says there is nothing to disable when no overrides remain", async () => {
+    // A tree whose only override is .bak-disabled is still stale, but with
+    // an empty risk list — the banner must not claim "0 files to disable".
+    mocks.treeVersion.mockResolvedValue({
+      treeGameVersion: "15.9.0",
+      gameVersion: "15.10.0",
+      stale: true,
+      riskyPaths: [],
+    });
+    await mountInstalled();
+    await flushPromises();
+    const calls = (t as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(
+      calls.some((c) => c[0] === "resources.treeStaleNoOverrides"),
+      calls.map((c) => String(c[0])).join(", "),
+    ).toBe(true);
+    expect(
+      calls.some((c) => c[0] === "resources.treeStale"),
+      "the count-bearing variant must not render with an empty list",
+    ).toBe(false);
+  });
   it("cannot reuse a delayed migration plan in another root's wizard", async () => {
     mocks.stale.mockResolvedValue([{ binVersion: "1", mods: ["Test mod"], fileCount: 1 }]);
     const pending = deferred<MigrationPlan>();

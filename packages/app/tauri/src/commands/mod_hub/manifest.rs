@@ -572,6 +572,16 @@ pub(crate) fn merge_after_migration(
             }
         }
     }
+    // The tree stamp travels WITH the files it describes: the migrated
+    // files were written by whichever client stamped them, so the
+    // destination keeps saying so until the next install re-stamps it.
+    // Without this a migration would silently reset the staleness signal
+    // to "no stamp" and hide exactly the drift it exists to surface.
+    if manifest.tree.game_version.is_empty()
+        && let Some(stale) = stale.as_ref()
+    {
+        manifest.tree = stale.manifest.tree.clone();
+    }
     // Managed rows refresh from the ledger (id, name, version, …) while the
     // toggle state survives where it was last recorded: the stale file for
     // migrated units, else the current bin's own row (a mod toggled off
@@ -1012,6 +1022,35 @@ mod tests {
         fs::remove_dir_all(&from).ok();
         fs::remove_dir_all(&to).ok();
         fs::remove_dir_all(&to2).ok();
+    }
+
+    /// A stale-bin migration carries the `[tree]` stamp exactly as it
+    /// carries the files: the migrated payload was written by whichever
+    /// client stamped it, so dropping the stamp would silently reset the
+    /// staleness signal to "no stamp" and hide the very drift it exists to
+    /// surface. A destination that ALREADY has a stamp keeps its own (it
+    /// describes files written here, by this client).
+    #[test]
+    fn migration_carries_the_tree_stamp_but_never_overwrites_one() {
+        let to = tmp_res_mods("mig_stamp_to");
+        let stale = "version = 1\n\n[tree]\ngame_version = \"15.9.0\"\n";
+        merge_after_migration(Some(stale), &to, &[], "g", "2");
+        assert_eq!(load(&to).manifest.tree.game_version, "15.9.0");
+
+        // A destination with its own stamp keeps it.
+        let to2 = tmp_res_mods("mig_stamp_to2");
+        stamp_tree(&to2, "15.10.0");
+        merge_after_migration(Some(stale), &to2, &[], "g", "2");
+        assert_eq!(load(&to2).manifest.tree.game_version, "15.10.0");
+
+        // No stale manifest at all: nothing to carry, nothing invented.
+        let to3 = tmp_res_mods("mig_stamp_to3");
+        merge_after_migration(None, &to3, &[], "g", "2");
+        assert!(load(&to3).manifest.tree.game_version.is_empty());
+
+        fs::remove_dir_all(&to).ok();
+        fs::remove_dir_all(&to2).ok();
+        fs::remove_dir_all(&to3).ok();
     }
 }
 
