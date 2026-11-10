@@ -134,6 +134,8 @@ Aslain 整合包的清单行 ID 与落盘目录名。索引器将其采集进
 raw 链接。索引器只保留 https 且托管于上述 GitHub 主机的链接，并以
 `preview_video` 写入版本载荷；应用用 hikari 播放器在点击播放按钮后加载。
 
+整条流水线已脚本化：`python scripts/mod_hub_preview_video.py encode --source <视频> --slug <slug>` 会跳过片头黑屏、完成编码并校验 3 MB / 20 秒预算；`publish --file <片段> --slug <slug> --discussion <编号>` 上传为 `preview-<slug>.mp4`，并幂等地改写线程 front-matter 与预览条目（`--dry-run` 只打印改写结果）。脚本按 `--ffmpeg` → `FFMPEG` 环境变量 → `PATH` 的顺序查找 ffmpeg，找不到时会自动安装 pip 包 `imageio-ffmpeg`（其 wheel 自带 ffmpeg）。release 下载树上任意 tag 均可——现有资产沿用 `mod-hub` tag。应用自身不捆绑 ffmpeg：预览由 Tauri webview 直接播放，只有生成片段或导入非 WebM 视频时才需要外部二进制。
+
 用 Discussions 而不是 Releases 的原因：评论区就是用户反馈与兼容性回报（"14.6 实测可用"会被索引器吸收为兼容性信号），Watch/通知即订阅，零后端成本。
 
 #### 安装时方案（`wowsp:presets`）
