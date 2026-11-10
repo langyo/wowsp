@@ -20,10 +20,30 @@ import {
   auxDesc,
   auxTitle,
   formatBytes,
+  formatResourceVersion,
   formatStamp,
   hash6,
 } from "@/components/settings/useSettingsUpdatesState";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
+
+/** The inventory's six aligned columns — the header labels and the per-cell
+ *  class modifier share this table, so a column cannot drift from its own
+ *  label. The order is also DOM order: the kind chip closes every row. */
+const INV_COLUMNS = [
+  ["name", "settings.resInvColName"],
+  ["size", "settings.resInvColSize"],
+  ["version", "settings.resInvColVersion"],
+  ["installed", "settings.resInvColInstalled"],
+  ["channel", "settings.resInvColChannel"],
+  ["kind", "settings.resInvColType"],
+] as const;
+
+/** One inventory cell: the shared class + its column modifier. Rows render
+ *  exactly one per INV_COLUMNS entry — all six always, empty when the fact
+ *  is absent, because the subgrid's shared axes shift as soon as a row
+ *  drops a cell. */
+const invCellClass = (col: string): string =>
+  `settings-modal__res-inv-cell settings-modal__res-inv-cell--${col}`;
 
 export default defineComponent({
   name: "SettingsResourcesSection",
@@ -103,19 +123,34 @@ export default defineComponent({
       return (
           <>
           {/* ── Resource inventory (the registry walk) ─────────────────
-              One line per runtime-managed resource: kind, channel, size,
-              version and install stamp each render as a hikari tag chip.
-              Management actions stay in the groups below; the refresh
-              button re-checks the refreshable lanes (data pack + res
-              manifest — never auto-downloads). */}
+              One line per runtime-managed resource, one GRID COLUMN per
+              fact (name | size | version | updated | channel | kind — the
+              subgrid keeps every row on the same shared axes). Stamps are
+              normalized so a timestamp-shaped version renders as the same
+              local wall clock the installed column uses, while semver /
+              build ids / hash6 stay verbatim. The kind chip is the one
+              fact EVERY row carries, so it always closes the row in the
+              far-right column. Management actions stay in the groups
+              below; the refresh button re-checks the refreshable lanes
+              (data pack + res manifest — never auto-downloads). */}
           <HkSettingsGroup title={t("settings.resInvTitle")}>
             <HkSettingsHint>{t("settings.resInvHint")}</HkSettingsHint>
             {invRows ? (
               <ul class="settings-modal__res-inv">
+                {/* Visual column labels — aria-hidden because the row text
+                    itself reads in order (name first, kind last). */}
+                <li class="settings-modal__res-inv-head" aria-hidden="true">
+                  {INV_COLUMNS.map(([col, key]) => (
+                    <span class={invCellClass(col)} key={col}>
+                      {t(key)}
+                    </span>
+                  ))}
+                </li>
                 {invRows.map((row) => {
                   const version = row.present
                     ? row.version ?? (row.sha256 ? hash6(row.sha256) : null)
                     : null;
+                  const versionLabel = formatResourceVersion(version);
                   return (
                     <li
                       class="settings-modal__res-inv-row"
@@ -126,42 +161,62 @@ export default defineComponent({
                           : undefined
                       }
                     >
-                      <span class="settings-modal__res-inv-name">{rowName(row.id)}</span>
-                      {/* One chip per fact: kind + channel classify the
-                          lane, the rest report its on-disk state. Facts a
-                          row lacks (channel, version) simply render no
-                          chip; an absent resource warns instead. Tooltips
-                          carry the raw values the chips abbreviate. */}
-                      <span class="settings-modal__res-inv-meta">
-                        <HkTag variant="info" size="sm">{kindLabel(row.kind)}</HkTag>
-                        {row.channel ? (
-                          <HkTag variant="primary" size="sm">{row.channel}</HkTag>
-                        ) : null}
-                        {row.sizeBytes > 0 ? (
-                          <HkTag size="sm">{formatBytes(row.sizeBytes)}</HkTag>
-                        ) : null}
-                        {version ? (
-                          /* The abbreviated build id hints its full source
-                             (raw version, else the whole sha256). */
-                          <span data-hint={row.version ?? row.sha256 ?? undefined}>
-                            <HkTag size="sm" class="settings-modal__res-inv-tag-mono">
-                              {version}
-                            </HkTag>
-                          </span>
-                        ) : null}
+                      {/* All six cells always render (empty when the fact is
+                          absent) — the shared subgrid columns would shift row
+                          by row as soon as one dropped a cell. Tooltips carry
+                          the raw values the chips abbreviate. */}
+                      <span class={invCellClass("name")}>{rowName(row.id)}</span>
+                      <span class={invCellClass("size")}>
                         {!row.present ? (
+                          /* Nothing on disk is the row's headline fact: the
+                             size column warns instead of showing 0 MB. */
                           <HkTag variant="warning" size="sm">
                             {t("settings.cacheStatusMissing")}
                           </HkTag>
+                        ) : row.sizeBytes > 0 ? (
+                          <HkTag size="sm">{formatBytes(row.sizeBytes)}</HkTag>
                         ) : null}
-                        {row.installedAt ? (
-                          /* The local stamp hints the raw UTC ISO source. */
-                          <span data-hint={row.installedAt}>
-                            <HkTag size="sm">
-                              {t("settings.resInvInstalled", { time: formatLocalStamp(row.installedAt) })}
-                            </HkTag>
-                          </span>
+                      </span>
+                      <span
+                        class={invCellClass("version")}
+                        data-hint={row.version ?? row.sha256 ?? undefined}
+                      >
+                        {versionLabel ? (
+                          /* The abbreviated / localized label still hints its
+                             full source (raw version, else the whole sha256).
+                             Mono is the VERBATIM-ID face only (semver / build
+                             id / hash6): a localized timestamp must share the
+                             updated column's normal face, or the two stamp
+                             columns read as different kinds of value again. */
+                          <HkTag
+                            size="sm"
+                            class={
+                              versionLabel === version
+                                ? "settings-modal__res-inv-tag-mono"
+                                : undefined
+                            }
+                          >
+                            {versionLabel}
+                          </HkTag>
                         ) : null}
+                      </span>
+                      <span
+                        class={invCellClass("installed")}
+                        data-hint={row.present && row.installedAt ? row.installedAt : undefined}
+                      >
+                        {row.present && row.installedAt ? (
+                          /* The column header already says "updated"; the chip
+                             is only the stamp, the hint the raw UTC ISO. */
+                          <HkTag size="sm">{formatLocalStamp(row.installedAt)}</HkTag>
+                        ) : null}
+                      </span>
+                      <span class={invCellClass("channel")}>
+                        {row.channel ? (
+                          <HkTag variant="primary" size="sm">{row.channel}</HkTag>
+                        ) : null}
+                      </span>
+                      <span class={invCellClass("kind")}>
+                        <HkTag variant="info" size="sm">{kindLabel(row.kind)}</HkTag>
                       </span>
                     </li>
                   );

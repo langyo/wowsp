@@ -10,6 +10,7 @@ import { t } from "@/i18n";
 import { useCacheStore } from "@/stores/cache";
 import { notifySettingsSaved } from "@/stores/settingsSavedFlash";
 import { useUpdaterStore } from "@/stores/updater";
+import { formatLocalStamp } from "@/utils/format";
 
 /** Human-readable bytes (1 decimal under GB, integer above). */
 export function formatBytes(n: number): string {
@@ -31,6 +32,22 @@ export function formatStamp(stamp?: string | null): string {
 export function hash6(hash?: string | null): string {
   if (!hash) return t("settings.resVersionUnknown");
   return hash.slice(-6).toUpperCase();
+}
+
+/** The display label of one inventory version fact. The registry reports
+ *  two shapes here: semver / build-id / hash6 values are IDs and stay
+ *  verbatim, while RFC3339 stamps (the res-pack and data-pack versions)
+ *  are times and render as the same local wall clock the installed column
+ *  uses — a raw `2026-11-06T14:34:10Z` chip beside a `2026-11-06 14:34`
+ *  one read as two different kinds of value. Empty versions render no chip
+ *  (the row's version column simply stays empty). */
+export function formatResourceVersion(version?: string | null): string | null {
+  if (!version) return null;
+  // Only timestamp-SHAPED versions are times; a bare date or a hash never
+  // matches, so IDs cannot be mistaken for stamps.
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(version)
+    ? formatLocalStamp(version)
+    : version;
 }
 
 /** The ladder served when `github_mirror_ladder` is missing (browser dev
