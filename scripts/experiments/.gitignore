@@ -8,3 +8,5 @@ out/
 # build_ship_attributes.py, tracked so training nodes without the pack
 # can consume it (same pattern as packages/webui ships_basics.json).
 !ship_attributes.json
+# E26 training-data snapshot manifest (small, tracked; raw JSONL stays ignored).
+!training_data_manifest.json

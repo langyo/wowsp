@@ -2401,6 +2401,57 @@ torp4 r120（诊断-only），不因本小节改变。
 - 门禁沿用 **headB AUPRC≥2.0×base 且 top-decile≥1.5**；headC 仅描述性（不设 2.30 硬线）；walk-forward
   ≥2/3 窗口；总分 A/B 另立预注册（不并入鱼雷诊断）；
 - 满足上述条件前，不重训、不调线、不部署；鱼雷保持诊断-only。
+### 训练数据快照 v1（E26）
+
+> 训练语料冻结快照，供可复现审计/复核使用。**不重训、不改模型、不传 HF**；原始 JSONL 仅在本地 `out/`
+> （gitignored），仓库只跟踪脚本与 manifest。
+
+- **规范布局**（`scripts/experiments/out/torpedo_model/dataset_v1/`，全部为指向源文件的**硬链接**，不复制）：
+
+  | 目录 | 文件 | 源位置 |
+  |---|---|---|
+  | `dataset/` | `dataset_{apac,eu,na,own}_2s.jsonl` | `out/torpedo_model/full/` |
+  | `click/` | `click_{apac,eu,na,own}.jsonl` | `out/torpedo_model/e26e-g/` |
+  | `outcome_r120/` | `outcome_{apac,eu,na,own}.jsonl` | `out/torpedo_model/e26e-j/r120/` |
+  | `manifest.json` | 快照清单（本地副本） | 生成的 manifest |
+  | `scripts/experiments/training_data_manifest.json` | **冻结清单（git 跟踪；仅聚合）** | **~4.6 KB** |
+
+- **语料规模**：**3,111,384 行 / 2,215 replay / 4 shard**；region：apac 1,021,498 行/683 replay；
+  eu 1,432,164/1,030；na 486,859/341；own 170,863/161。原始 JSONL 合计约 **11.5 GB**（硬链接保证不额外占空间；
+  跨卷硬链接失败时脚本直接报错，**拒绝复制**）。
+- **feature contract**：`feature_version=2`、`feature_set=torp4`、entity `[24,15]`、global **49**
+  （core 27 + torp2 11 + torp3 6 + torp4 5）、extra_dim 22；labels：labelB 2 s、outcome r120；
+  classes Destroyer/Cruiser/Battleship/Submarine/unknown。
+- **split**：GroupKFold **5 折 / seed 0**（由 `e26e-g_oof.npz` 的 fold/groupCode/groupNames 还原；
+  每 replay 只属一折）；fold 行数：0=622,267、1=622,278、2=622,280、3=622,275、4=622,284
+  （443 replay/折）。tracked manifest 只保留 **`split.foldSummaries`**（fold/rows/replays 数）；完整
+  **fold→replay+行数**列表（`split.foldList`）只在本地 `out/torpedo_model/dataset_v1/manifest.json`（gitignored）。
+- **tracked vs 本地 full manifest**：`scripts/experiments/training_data_manifest.json`（**~4.6 KB**）只含
+  聚合/校验信息：schema、feature contract、corpus、files（POSIX 相对路径 + sha256/bytes/lines/rows/replays）、
+  `split.foldSummaries`、external counts（path/rows/replays/overlap）、provenance；**不含任何 replay ID / foldList**。
+  完整 `split.foldList` 与 external `replaysList` 只写本地 `out/torpedo_model/dataset_v1/manifest.json`（约 331 KB）。
+- **校验（本次冻结通过）**：4 shard 行数/click/outcome 逐 region 对齐（各 3,111,384）；replay 集合与 OOF
+  2215 replay 完全一致且无跨 shard 重复；每 replay 行数与 OOF 一致；每个文件 sha256/bytes/lines 写入 manifest；
+  12 个 JSONL 全部硬链接（`samefile` 校验）。
+- **排除项（无泄漏）**：`e26e-z/dataset_external.jsonl` 的 **18 个有效 replay / 17,054 行** 不在训练 corpus 中
+  （overlap **0**）；external 仅用于排除校验，不进入快照。tracked manifest 只保留 counts（path/rows/replays/
+  overlap），18 个 replay 名称只在本地 full manifest。
+- **校验命令**（在主 checkout 运行，`out/` 存在；期望输出 `VERIFY PASS`）：
+
+  ```bash
+  python scripts/experiments/consolidate_training_data.py \
+    --source-root scripts/experiments/out/torpedo_model \
+    --target-root scripts/experiments/out/torpedo_model/dataset_v1 \
+    --manifest-out scripts/experiments/training_data_manifest.json --verify
+  ```
+
+  重建快照用同一脚本去掉 `--verify`（默认写本地 full manifest + tracked 聚合 manifest；`--selftest` 用合成
+  文件覆盖硬链接/行数/replay/外部泄漏/篡改检测，并断言 tracked manifest 无 replay ID、无 `foldList`/
+  `replaysList`、路径为 POSIX、体积 <15 KB）。
+- **不发布说明**：原始 replay/JSONL/硬链接**只在本机 out（gitignored）**；仓库只跟踪脚本与**聚合**
+  `training_data_manifest.json`（无 replay ID）；不上传 HF/对象存储，不分发 replay（用户数据/ToS）；
+  不做模型权重、不重训。
+  该快照用于可复现审计与校验，不是可公开发布的数据集。
 ### E26 研究总结：headC 上限与部署结论（截至 E26e-ai）
 
 **一句话结论**：headC 的命中排序信号真实存在（r120 2.1997×、server 真值 2.3477×、r60 固定口径 2.6811×），但
