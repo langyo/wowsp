@@ -488,5 +488,78 @@
       "foreign": "Étranger",
       "capped": "Affichage des {shown} premiers sur {total}"
     }
+  },
+  "importWizard": {
+    "title": "Import personnalisé",
+    "stepKind": "Quoi installer",
+    "stepSource": "Choisir la source",
+    "stepRun": "Conformité et enregistrement",
+    "kindLead": "Choisissez ce que vous importez. Chaque type est converti dans la forme que le client charge réellement.",
+    "kindNote": "Seul le résultat conforme est écrit — vos fichiers d'origine ne sont jamais modifiés.",
+    "completePackage": "Installer plutôt un dossier de paquet complet",
+    "kind": {
+      "video": {
+        "title": "Vidéo de connexion",
+        "desc": "Exigence : un clip remplaçant la vidéo de connexion / d'ouverture. Un .webm est copié tel quel ; un .mp4 / .mov / .mkv est converti par ffmpeg (VP9, 25 i/s, 1080p + 720p)."
+      },
+      "voice": {
+        "title": "Pack de voix",
+        "desc": "Exigence : un dossier avec banks/mods/<bank>/mod.xml (+ fichiers .wem), ou un mod.xml et des .wem à la racine, encapsulés dans banks/mods/<nom>/."
+      },
+      "texture": {
+        "title": "Pack de textures",
+        "desc": "Exigence : une arborescence au format res_mods avec content/, gui/, spaces/, particles/, texts/, camouflage/ ou system/ à la racine."
+      },
+      "misc": {
+        "title": "Autres ressources",
+        "desc": "Exigence : les mêmes racines res_mods que les textures. Les correctifs de configuration ou dossiers mixtes s'installent comme paquet complet."
+      }
+    },
+    "pickFile": "Fichier vidéo",
+    "pickFolder": "Dossier source",
+    "sourceHintVideo": "Choisissez un clip : un .webm est copié, un .mp4 / .mov / .mkv est converti avec ffmpeg.",
+    "sourceHintFolder": "Choisissez le dossier contenant les ressources.",
+    "probing": "Vérification de la source…",
+    "probeFailed": "La source n'a pas pu être vérifiée.",
+    "noSource": "Choisissez une source pour voir ce qui sera écrit.",
+    "fileName": "Nom",
+    "size": "Taille",
+    "structure": "Sera écrit comme",
+    "displayName": "Nom affiché",
+    "displayNameHint": "Facultatif — nomme le nouveau calque et, pour un pack de voix isolé, son dossier de banque.",
+    "transcodeNote": "Ce clip sera converti en WebM (VP9 + Vorbis, 25 i/s) en 1080p et 720p avec ffmpeg.",
+    "runningNote": "Écriture des fichiers conformes et enregistrement du calque. Ne fermez pas l'application.",
+    "failedTitle": "Échec de l'import",
+    "registered": "Enregistré comme calque : {name}",
+    "installed": "Installé : {name}",
+    "registeredHint": "Le nouveau calque est au sommet de la pile d'embellissement — réordonnez-le ou désactivez-le là-bas.",
+    "reportMeta": "{files} fichier(s) écrit(s) dans bin/{version}.",
+    "runIntro": "Démarrage de l'import…",
+    "doneToast": "{name} importé",
+    "next": "Suivant",
+    "back": "Retour",
+    "cancel": "Annuler",
+    "finish": "Terminé",
+    "problem": {
+      "missing": "Le chemin choisi n'existe pas.",
+      "notFile": "Cet import nécessite un seul fichier vidéo.",
+      "notDirectory": "Cet import nécessite un dossier.",
+      "unsupportedVideo": "Conteneur vidéo non pris en charge « {detail} » — utilisez .webm, .mp4, .mov ou .mkv.",
+      "videoTooLarge": "Le clip est trop volumineux pour être copié tel quel (limite 200 Mo). Réencodez-le sous la limite.",
+      "missingFfmpeg": "La conversion de .{detail} nécessite ffmpeg : installez-le à côté de l'application, dans %LOCALAPPDATA%\\WoWSP\\tools\\ffmpeg.exe ou dans le PATH, puis réessayez — ou convertissez le clip en .webm vous-même.",
+      "voiceLayout": "Aucune structure de banque vocale trouvée. Attendu : banks/mods/<bank>/mod.xml (+ .wem), ou un mod.xml et des .wem à la racine.",
+      "textureRoots": "Aucune racine installable trouvée. Attendu : content/, gui/, spaces/, particles/, texts/, camouflage/ ou system/ à la racine.",
+      "missingPath": "Choisissez d'abord une source.",
+      "unknown": "Cette source ne peut pas être importée."
+    },
+    "stage": {
+      "preparing": "Préparation…",
+      "transcodeMain": "Conversion en WebM 1080p…",
+      "transcodeLow": "Conversion en WebM 720p…",
+      "copying": "Copie du contenu…",
+      "installing": "Installation et enregistrement du calque…",
+      "done": "Terminé",
+      "working": "Traitement…"
+    }
   }
 }

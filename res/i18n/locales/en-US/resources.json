@@ -488,5 +488,78 @@
       "foreign": "Foreign",
       "capped": "Showing first {shown} of {total}"
     }
+  },
+  "importWizard": {
+    "title": "Custom import",
+    "stepKind": "What to install",
+    "stepSource": "Choose the source",
+    "stepRun": "Compliance & register",
+    "kindLead": "Pick what you are importing. Each type is turned into the shape the client actually loads.",
+    "kindNote": "Only the compliant result is written — your original files are never modified.",
+    "completePackage": "Install a complete package folder instead",
+    "kind": {
+      "video": {
+        "title": "Login video",
+        "desc": "Requirement: a clip replacing the login / opening movie. .webm is copied as-is; .mp4 / .mov / .mkv is converted with ffmpeg (VP9, 25 fps, 1080p + 720p)."
+      },
+      "voice": {
+        "title": "Voice pack",
+        "desc": "Requirement: a folder with banks/mods/<bank>/mod.xml (+ .wem files), or a loose mod.xml with .wem files that gets wrapped into banks/mods/<name>/."
+      },
+      "texture": {
+        "title": "Texture pack",
+        "desc": "Requirement: a res_mods-shaped tree with one of content/, gui/, spaces/, particles/, texts/, camouflage/ or system/ at the top."
+      },
+      "misc": {
+        "title": "Other assets",
+        "desc": "Requirement: the same res_mods-shaped roots as textures. Anything else (config patches, mixed folders) installs as a complete package folder instead."
+      }
+    },
+    "pickFile": "Video file",
+    "pickFolder": "Source folder",
+    "sourceHintVideo": "Pick one clip: .webm is copied, .mp4 / .mov / .mkv is converted with ffmpeg.",
+    "sourceHintFolder": "Pick the folder that holds the asset payload.",
+    "probing": "Checking the source…",
+    "probeFailed": "The source could not be checked.",
+    "noSource": "Pick a source to see what the import would write.",
+    "fileName": "Name",
+    "size": "Size",
+    "structure": "Will be written as",
+    "displayName": "Display name",
+    "displayNameHint": "Optional — names the new layer, and a loose voice pack's bank folder.",
+    "transcodeNote": "This clip will be converted to WebM (VP9 + Vorbis, 25 fps) at 1080p and 720p with ffmpeg.",
+    "runningNote": "Writing the compliant files and registering the layer. Do not close the app.",
+    "failedTitle": "Import failed",
+    "registered": "Registered as layer: {name}",
+    "installed": "Installed: {name}",
+    "registeredHint": "The new layer sits on top of the beautify stack — reorder or disable it there.",
+    "reportMeta": "{files} file(s) written into bin/{version}.",
+    "runIntro": "Starting the import…",
+    "doneToast": "Imported {name}",
+    "next": "Next",
+    "back": "Back",
+    "cancel": "Cancel",
+    "finish": "Done",
+    "problem": {
+      "missing": "The picked path does not exist.",
+      "notFile": "This import needs a single video file.",
+      "notDirectory": "This import needs a folder.",
+      "unsupportedVideo": "Unsupported video container «{detail}» — use .webm, .mp4, .mov or .mkv.",
+      "videoTooLarge": "The clip is too large to copy as-is (the cap is 200 MB). Re-encode it below the cap first.",
+      "missingFfmpeg": "Converting .{detail} needs ffmpeg: install it beside the app, in %LOCALAPPDATA%\\WoWSP\\tools\\ffmpeg.exe or on PATH, then retry — or convert the clip to .webm yourself.",
+      "voiceLayout": "No voice-bank layout found. Expected banks/mods/<bank>/mod.xml (+ .wem files), or a loose mod.xml with .wem files.",
+      "textureRoots": "No installable root found. Expected one of content/, gui/, spaces/, particles/, texts/, camouflage/ or system/ at the top.",
+      "missingPath": "Pick a source first.",
+      "unknown": "This source cannot be imported."
+    },
+    "stage": {
+      "preparing": "Preparing…",
+      "transcodeMain": "Converting to 1080p WebM…",
+      "transcodeLow": "Converting to 720p WebM…",
+      "copying": "Copying the payload…",
+      "installing": "Installing and registering the layer…",
+      "done": "Finished",
+      "working": "Working…"
+    }
   }
 }

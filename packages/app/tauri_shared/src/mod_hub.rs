@@ -824,3 +824,80 @@ pub struct LayerPathWinner {
     /// A file at this path exists on disk that no ledger record claims.
     pub foreign: bool,
 }
+
+// ── Custom import (自定义导入安装) ──────────────────────────────────────────
+
+/// What a custom import turns a raw local asset INTO. The four kinds carry
+/// their own compliance rules (see the app-side custom_import module): a
+/// video becomes the login clip's webm tiers, a voice pack becomes a
+/// `banks/mods/<bank>` tree, and texture/misc payloads must already carry a
+/// res_mods-shaped override root.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CustomImportKind {
+    /// Login / opening clip (`gui/video/login/main.webm` + `main_low.webm`).
+    Video,
+    /// WWise voice bank (`banks/mods/<bank>/mod.xml` + `.wem`).
+    Voice,
+    /// Texture overrides under one of the override roots (`content/`, …).
+    Texture,
+    /// Any other asset payload with the same res_mods-shaped root rule.
+    Misc,
+}
+
+/// One blocking reason the wizard's "next" stays disabled. The code is
+/// language-neutral so every locale renders its own sentence; `detail` is
+/// the value that sentence interpolates (an extension, a cap, …).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomImportProblem {
+    /// `missing` / `notFile` / `notDirectory` / `unsupportedVideo` /
+    /// `videoTooLarge` / `missingFfmpeg` / `voiceLayout` / `textureRoots`.
+    pub code: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+}
+
+/// Step-2 verdict of the custom-import wizard: what the picked path IS
+/// (file/dir, size), the res_mods shape it would produce, and every reason
+/// it cannot be imported.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomImportProbe {
+    pub path: String,
+    /// Leaf name of the picked entry (file or folder).
+    pub file_name: String,
+    /// True when the source is a single file (video), false for a folder.
+    pub is_file: bool,
+    /// File length, or a bounded sum of the folder's files.
+    pub size_bytes: u64,
+    /// The res_mods-relative shape the import would produce — the video
+    /// tier(s) it writes, the bank(s) it stages, or the payload roots it
+    /// found. Language-neutral paths, shown verbatim.
+    #[serde(default)]
+    pub structure: Vec<String>,
+    /// Exit code 1 verdicts; empty means the import may proceed.
+    #[serde(default)]
+    pub problems: Vec<CustomImportProblem>,
+}
+
+/// Outcome of a landed custom import: the standard install report plus the
+/// layer id the payload was adopted as (absent when the payload could not
+/// join the beautify stack — a code-bearing tree, for instance).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomImportReport {
+    #[serde(flatten)]
+    pub report: InstallReport,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub layer_id: Option<String>,
+}
+
+/// One progress tick of `wowsp://custom-import-progress`: the current stage
+/// code (the UI localizes it) and its percentage.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustomImportProgress {
+    pub stage: String,
+    pub percent: f64,
+}

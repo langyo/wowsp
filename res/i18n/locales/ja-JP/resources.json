@@ -488,5 +488,78 @@
       "foreign": "外部",
       "capped": "先頭 {shown} 件を表示（全 {total} 件）"
     }
+  },
+  "importWizard": {
+    "title": "カスタムインポート",
+    "stepKind": "何を入れるか",
+    "stepSource": "素材を選ぶ",
+    "stepRun": "適格化と登録",
+    "kindLead": "インポートする素材の種類を選んでください。種類ごとに、クライアントが実際に読み込む形へ整えます。",
+    "kindNote": "書き込まれるのは適格な成果物だけです。元のファイルは変更されません。",
+    "completePackage": "代わりに完全なパッケージフォルダをインストール",
+    "kind": {
+      "video": {
+        "title": "ログイン動画",
+        "desc": "要件：ログイン／オープニング映像を置き換える動画。.webm はそのままコピー、.mp4 / .mov / .mkv は ffmpeg で変換（VP9、25 fps、1080p + 720p）。"
+      },
+      "voice": {
+        "title": "ボイスパック",
+        "desc": "要件：banks/mods/<bank>/mod.xml（+ .wem）を含むフォルダ、またはルートに mod.xml と .wem を置いたもの（banks/mods/<名前>/ に包みます）。"
+      },
+      "texture": {
+        "title": "テクスチャ",
+        "desc": "要件：res_mods 形式のツリー。最上位に content/、gui/、spaces/、particles/、texts/、camouflage/、system/ のいずれかが必要です。"
+      },
+      "misc": {
+        "title": "その他の素材",
+        "desc": "要件：テクスチャと同じ res_mods 形式の最上位。設定パッチや混在フォルダなどは「完全なパッケージフォルダ」からインストールしてください。"
+      }
+    },
+    "pickFile": "動画ファイル",
+    "pickFolder": "素材フォルダ",
+    "sourceHintVideo": "動画を 1 つ選択：.webm はコピー、.mp4 / .mov / .mkv は ffmpeg で変換します。",
+    "sourceHintFolder": "素材が入っているフォルダを選択してください。",
+    "probing": "素材を確認しています…",
+    "probeFailed": "素材を確認できませんでした。",
+    "noSource": "素材を選ぶと、書き込まれる構造が表示されます。",
+    "fileName": "名前",
+    "size": "サイズ",
+    "structure": "書き込み先",
+    "displayName": "表示名",
+    "displayNameHint": "任意：新しいレイヤー名、および単体ボイスパックの bank フォルダ名になります。",
+    "transcodeNote": "この動画は ffmpeg で WebM（VP9 + Vorbis、25 fps）に変換され、1080p と 720p が出力されます。",
+    "runningNote": "適格なファイルを書き込み、レイヤーを登録しています。アプリを閉じないでください。",
+    "failedTitle": "インポートに失敗しました",
+    "registered": "レイヤーとして登録しました：{name}",
+    "installed": "インストールしました：{name}",
+    "registeredHint": "新しいレイヤーは美化スタックの最上位に入ります。順序変更や無効化はそこで行えます。",
+    "reportMeta": "{files} 個のファイルを bin/{version} に書き込みました。",
+    "runIntro": "インポートを開始しています…",
+    "doneToast": "{name} をインポートしました",
+    "next": "次へ",
+    "back": "戻る",
+    "cancel": "キャンセル",
+    "finish": "完了",
+    "problem": {
+      "missing": "選択したパスが存在しません。",
+      "notFile": "この種類は動画ファイル 1 つが必要です。",
+      "notDirectory": "この種類はフォルダが必要です。",
+      "unsupportedVideo": "未対応の動画コンテナ「{detail}」です。.webm、.mp4、.mov、.mkv のいずれかを使用してください。",
+      "videoTooLarge": "動画が大きすぎてそのままコピーできません（上限 200 MB）。上限以下に再エンコードしてください。",
+      "missingFfmpeg": ".{detail} の変換には ffmpeg が必要です：アプリと同じフォルダ、%LOCALAPPDATA%\\WoWSP\\tools\\ffmpeg.exe、または PATH に入れて再試行するか、ご自身で .webm に変換してください。",
+      "voiceLayout": "ボイスバンクの構成が見つかりません。banks/mods/<bank>/mod.xml（+ .wem）、またはルートの mod.xml と .wem が必要です。",
+      "textureRoots": "インストール可能な最上位が見つかりません。content/、gui/、spaces/、particles/、texts/、camouflage/、system/ のいずれかが必要です。",
+      "missingPath": "先に素材を選択してください。",
+      "unknown": "この素材はインポートできません。"
+    },
+    "stage": {
+      "preparing": "準備中…",
+      "transcodeMain": "1080p WebM に変換中…",
+      "transcodeLow": "720p WebM に変換中…",
+      "copying": "素材をコピー中…",
+      "installing": "インストールしてレイヤーを登録中…",
+      "done": "完了",
+      "working": "処理中…"
+    }
   }
 }

@@ -3,7 +3,7 @@ import {
   AlertTriangle,
   ChevronDown,
   Ellipsis,
-  FolderSearch,
+  FolderOpen,
   FolderSync,
   ListTree,
   Palette,
@@ -57,11 +57,13 @@ import {
   usePurgeBackups,
 } from "./resources/PurgeBackups";
 import { useMigrateWizard } from "./resources/useMigrateWizard";
+import { useImportWizard } from "./resources/useImportWizard";
 import { useFileListWindow } from "./resources/useFileListWindow";
 import type { ResourcesCtx } from "./resources/context";
 import { renderPane } from "./resources/DetailPane";
 import LayerStack, { renderLayerReport } from "./resources/LayerStack";
 import { renderMigrateWizard } from "./resources/MigrateWizard";
+import { renderImportWizard } from "./resources/ImportWizard";
 import { renderFileListWindow } from "./resources/FileListWindow";
 import {
   renderCatalogRow,
@@ -120,6 +122,9 @@ export default defineComponent({
   const disarmAsk = ref(false);
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
+    // Custom import wizard (自定义导入安装): its own state machine; the entry
+    // button below opens it.
+    const importWizard = useImportWizard(hub);
     const fileWindow = useFileListWindow(hub);
     // Dynamic catalog previews: rows warm their screenshot as they approach
     // the viewport, and the selected entry warms its preview-video metadata
@@ -130,7 +135,13 @@ export default defineComponent({
         return sel?.mode === "catalog" ? sel.entry : null;
       },
     });
-    const ctx: ResourcesCtx = { ...hub, ...wizard, fileWindow, previewPrefetch };
+    const ctx: ResourcesCtx = {
+      ...hub,
+      ...wizard,
+      ...importWizard,
+      fileWindow,
+      previewPrefetch,
+    };
 
     // All installed rows, confirmations and migration plans belong to the
     // selected install. Invalidate synchronously so an old row can never
@@ -139,6 +150,7 @@ export default defineComponent({
     watch(gameRoot, (root) => {
       hub.invalidateRoot();
       wizard.beginRootChange();
+      importWizard.beginImportRootChange();
       if (root) void hub.scan();
     }, { flush: "sync" });
 
@@ -645,14 +657,17 @@ export default defineComponent({
                     <RefreshCw size={15} />
                   )}
                 </HkIconButton>
+                {/* 自定义导入安装: the custom-import wizard (three steps). The
+                    plain whole-package folder install stays reachable from
+                    the wizard's first step. */}
                 <HkIconButton
                   size={24}
                   variant="ghost"
-                  data-hint={t("resources.installSection")}
-                  aria-label={t("resources.installSection")}
-                  onClick={hub.openLocal}
+                  data-hint={t("resources.importWizard.title")}
+                  aria-label={t("resources.importWizard.title")}
+                  onClick={importWizard.openImportWizard}
                 >
-                  <FolderSearch size={15} />
+                  <FolderOpen size={15} />
                 </HkIconButton>
               </div>
 
@@ -923,6 +938,8 @@ export default defineComponent({
 
           {/* Stale-bin migration wizard: plan → review → executing → done. */}
           {renderMigrateWizard(ctx)}
+          {/* Custom import wizard: kind → source → compliance & register. */}
+          {renderImportWizard(ctx)}
           {renderFileListWindow(ctx)}
 
           {/* Related-mod removal (the installed pane's association section): a

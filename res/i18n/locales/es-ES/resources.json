@@ -488,5 +488,78 @@
       "foreign": "Externo",
       "capped": "Mostrando las primeras {shown} de {total}"
     }
+  },
+  "importWizard": {
+    "title": "Importación personalizada",
+    "stepKind": "Qué instalar",
+    "stepSource": "Elegir el origen",
+    "stepRun": "Conformidad y registro",
+    "kindLead": "Elige qué vas a importar. Cada tipo se convierte en la forma que el cliente carga realmente.",
+    "kindNote": "Solo se escribe el resultado conforme: tus archivos originales nunca se modifican.",
+    "completePackage": "Instalar en su lugar una carpeta de paquete completa",
+    "kind": {
+      "video": {
+        "title": "Vídeo de inicio",
+        "desc": "Requisito: un clip que sustituye al vídeo de inicio / apertura. Un .webm se copia tal cual; un .mp4 / .mov / .mkv se convierte con ffmpeg (VP9, 25 fps, 1080p + 720p)."
+      },
+      "voice": {
+        "title": "Paquete de voces",
+        "desc": "Requisito: una carpeta con banks/mods/<bank>/mod.xml (+ archivos .wem), o un mod.xml con .wem en la raíz, que se envuelve en banks/mods/<nombre>/."
+      },
+      "texture": {
+        "title": "Paquete de texturas",
+        "desc": "Requisito: un árbol con forma de res_mods con content/, gui/, spaces/, particles/, texts/, camouflage/ o system/ en la raíz."
+      },
+      "misc": {
+        "title": "Otros recursos",
+        "desc": "Requisito: las mismas raíces res_mods que las texturas. Los parches de configuración o carpetas mixtas se instalan como paquete completo."
+      }
+    },
+    "pickFile": "Archivo de vídeo",
+    "pickFolder": "Carpeta de origen",
+    "sourceHintVideo": "Elige un clip: un .webm se copia, un .mp4 / .mov / .mkv se convierte con ffmpeg.",
+    "sourceHintFolder": "Elige la carpeta que contiene los recursos.",
+    "probing": "Comprobando el origen…",
+    "probeFailed": "No se pudo comprobar el origen.",
+    "noSource": "Elige un origen para ver qué se escribirá.",
+    "fileName": "Nombre",
+    "size": "Tamaño",
+    "structure": "Se escribirá como",
+    "displayName": "Nombre visible",
+    "displayNameHint": "Opcional: nombra la nueva capa y, en un paquete de voces suelto, su carpeta de banco.",
+    "transcodeNote": "Este clip se convertirá a WebM (VP9 + Vorbis, 25 fps) en 1080p y 720p con ffmpeg.",
+    "runningNote": "Escribiendo los archivos conformes y registrando la capa. No cierres la aplicación.",
+    "failedTitle": "La importación falló",
+    "registered": "Registrado como capa: {name}",
+    "installed": "Instalado: {name}",
+    "registeredHint": "La nueva capa está en la cima de la pila de embellecimiento: reordénala o desactívala allí.",
+    "reportMeta": "{files} archivo(s) escritos en bin/{version}.",
+    "runIntro": "Iniciando la importación…",
+    "doneToast": "{name} importado",
+    "next": "Siguiente",
+    "back": "Atrás",
+    "cancel": "Cancelar",
+    "finish": "Listo",
+    "problem": {
+      "missing": "La ruta elegida no existe.",
+      "notFile": "Esta importación necesita un único archivo de vídeo.",
+      "notDirectory": "Esta importación necesita una carpeta.",
+      "unsupportedVideo": "Contenedor de vídeo no compatible «{detail}»: usa .webm, .mp4, .mov o .mkv.",
+      "videoTooLarge": "El clip es demasiado grande para copiarlo tal cual (límite 200 MB). Recodifícalo por debajo del límite.",
+      "missingFfmpeg": "Convertir .{detail} requiere ffmpeg: instálalo junto a la aplicación, en %LOCALAPPDATA%\\WoWSP\\tools\\ffmpeg.exe o en el PATH y reinténtalo, o convierte el clip a .webm tú mismo.",
+      "voiceLayout": "No se encontró una estructura de banco de voces. Se espera banks/mods/<bank>/mod.xml (+ .wem) o un mod.xml con .wem en la raíz.",
+      "textureRoots": "No se encontró una raíz instalable. Se espera content/, gui/, spaces/, particles/, texts/, camouflage/ o system/ en la raíz.",
+      "missingPath": "Elige un origen primero.",
+      "unknown": "Este origen no se puede importar."
+    },
+    "stage": {
+      "preparing": "Preparando…",
+      "transcodeMain": "Convirtiendo a WebM 1080p…",
+      "transcodeLow": "Convirtiendo a WebM 720p…",
+      "copying": "Copiando los recursos…",
+      "installing": "Instalando y registrando la capa…",
+      "done": "Terminado",
+      "working": "Procesando…"
+    }
   }
 }

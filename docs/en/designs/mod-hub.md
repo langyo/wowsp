@@ -864,6 +864,77 @@ bytes stream to the player and never cross IPC. Exactly ONE tier plays
 clip, then the first by name; the remaining tiers list as compact
 name + size rows instead of a second player.
 
+## Custom import (自定义导入安装)
+
+The Mod Hub's local entry is **自定义导入安装** (custom import): a three-step
+wizard for material the user made or downloaded outside the catalog — a login
+clip, a voice bank, a texture drop. Instead of demanding a ready-made package
+tree, the wizard BUILDS the compliant `res_mods` shape and then runs the
+ordinary local-install pipeline (install journal, pre-overwrite snapshots,
+ledger record, `wowsp.toml` row, layer adoption), so a custom import can
+never plant a tree the platform would refuse.
+
+- **Step 1 — what to install**: login video / voice pack / texture pack /
+  other assets, each row stating its requirement (the rules below). A whole
+  plugin package (PnFMods, scripts) still installs through the plain folder
+  flow, linked from this step.
+- **Step 2 — source**: the video kind opens the native single-file picker
+  (`.webm` / `.mp4` / `.mov` / `.mkv`); the other kinds reuse the folder
+  picker. The picked path becomes a session grant, and a read-only backend
+  PROBE reports the file name, the size, the res_mods-relative shape the
+  import would write, and every blocking problem (localized from
+  language-neutral codes). "Next" stays disabled while a problem remains.
+  The optional display name names the ledger record and the adopted layer —
+  and, for a loose voice pack, its bank folder.
+- **Step 3 — compliance & register**: the payload is assembled under
+  `<app-data>/mods/import-staging/<uuid>/` (removed afterwards, success or
+  failure), classified by the same classifier the catalog pipeline uses,
+  installed through the local pipeline and adopted into the beautify stack.
+  The step shows a progress bar fed by `wowsp://custom-import-progress`
+  (`{stage, percent}`) and, on success, "registered as layer: <name>" with
+  the new layer selected in the swimlane.
+
+Per-kind compliance rules (`mod_hub_import_custom`):
+
+| Kind | Accepted source | Written |
+| --- | --- | --- |
+| video | one `.webm` (copied as-is, 200 MB cap; a `*_low.webm` source is the 720p tier) or `.mp4` / `.mov` / `.mkv` (transcoded) | `gui/video/login/main.webm` (1080p) plus `main_low.webm` (720p) |
+| voice | a folder with `banks/mods/<bank>/mod.xml` (+ `.wem` files), or a loose `mod.xml` with `.wem` files | the tree as-is, or the loose pack wrapped into `banks/mods/<display name>/` |
+| texture | a folder with at least one override root: `content/`, `gui/`, `spaces/`, `particles/`, `texts/`, `camouflage/`, `system/` | the tree as-is |
+| misc | the same root rule as texture | the tree as-is (`category: local`) |
+
+Anything else is refused with the expected layout instead of being installed
+half-way. Link-shaped source entries (symlinks, directory junctions) are
+refused by the same no-follow walk the folder install uses, and the app's own
+data tree is never a valid source. A single wrapper folder around the payload
+is peeled (the extracted-archive layer), so both the outer folder and the
+payload folder can be picked.
+
+### ffmpeg dependency (video only)
+
+The client only loads VP9 + Vorbis WebM, so a non-WebM clip needs an EXTERNAL
+ffmpeg — the app never bundles or downloads one. The lookup order is:
+
+1. `ffmpeg.exe` beside the app executable (portable installs keep it there);
+2. `%LOCALAPPDATA%\WoWSP\tools\ffmpeg.exe`;
+3. `PATH`.
+
+With ffmpeg present the importer runs the two documented encodes (25 fps,
+lanczos scaling, libvpx-vp9, libvorbis 48 kHz stereo, progress parsed from
+ffmpeg's `-progress` stream and reported through the event above):
+
+    ffmpeg -y -i <src> -vf "fps=25,scale=1920:1080:flags=lanczos" -c:v libvpx-vp9 -row-mt 1 -cpu-used 4 -crf 31 -b:v 0 -c:a libvorbis -ar 48000 -ac 2 main.webm
+    ffmpeg -y -i <src> -vf "fps=25,scale=1280:720:flags=lanczos" -c:v libvpx-vp9 -row-mt 1 -cpu-used 4 -crf 38 -b:v 0 -c:a libvorbis -ar 48000 -ac 2 main_low.webm
+
+A missing ffmpeg blocks the non-WebM source at the probe (no "next"), and a
+direct command call fails with the same explanation plus the exact commands;
+a failed encode reports ffmpeg's stderr tail and the command that ran.
+
+Commands: `mod_hub_pick_custom_file` (single-file picker + grant),
+`mod_hub_probe_custom_import` (read-only step-2 verdict) and
+`mod_hub_import_custom` (stage + classify + install + adopt, returning the
+standard `InstallReport` plus the adopted layer id).
+
 ## Open questions
 
 - Does the Lesta (RU) client need a separate layout adapter;

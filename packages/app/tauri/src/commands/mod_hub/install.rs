@@ -15,8 +15,7 @@ pub async fn mod_hub_install(
 ) -> CommandResult<InstallReport> {
     crate::commands::ensure_main_window_label(window.label())?;
     // Same gate as the catalog install: the plan's file copies must not
-    // interleave with another install's res_mods writes or a `.bak`
-    // rename sweep.
+    // interleave with another install's res_mods writes or a `.bak` rename sweep.
     let _gate = super::mod_catalog::mod_hub_gate().await;
     ensure_game_closed(&game_root)?;
     ensure_res_mods_active(&game_root)?;
@@ -33,7 +32,7 @@ pub async fn mod_hub_install(
     // display-only echo — trusting it let a compromised webview install
     // files the user never previewed. The classifier is the same one the
     // preview and the catalog pipeline run, so what the user saw is what
-    // this walk finds. The copy below re-checks every entry without
+    // this walk finds. The install copy re-checks every entry without
     // following links (`ensure_plain_source_entry`): a symlink or junction
     // anywhere in the picked tree aborts the install instead of pulling in
     // files from outside it.
@@ -41,8 +40,47 @@ pub async fn mod_hub_install(
     // Validate BEFORE any rewind happens: an invalid plan must not uninstall
     // the previous version only to fail afterwards.
     validate_plan(&plan)?;
+    let done = tauri::async_runtime::spawn_blocking(move || {
+        install_local_package(&src, &game_root, &plan, "local")
+    })
+    .await
+    .map_err(|e| anyhow!("install task: {e}"))??;
+    tracing::info!(
+        name = %done.applied.report.name,
+        files = done.applied.written.len(),
+        restore = ?done.applied.restore_dir,
+        "mod_hub_install recorded in ledger"
+    );
+    Ok(done.applied.report)
+}
+
+/// What a landed local install produced: the applied plan plus the ledger
+/// record it committed. The record's id is also the beautify layer id the
+/// adopt hook used, which is what the custom import reports back.
+pub(crate) struct LocalInstall {
+    pub applied: PlanApply,
+    pub record: ModInstallRecord,
+}
+
+/// The local-install pipeline: rewind a same-named record, apply the plan
+/// through the journaled installer, keep newer owners' snapshots in step,
+/// commit the ledger record (with its shared-component split) and the
+/// wowsp.toml row, adopt the payload into the layer stack, then persist the
+/// ledger.
+///
+/// Shared by the folder install (`mod_hub_install`) and the custom import
+/// (`super::custom_import`), which differ only in how their source tree was
+/// assembled and in the ledger `category` they record.
+pub(crate) fn install_local_package(
+    src: &Path,
+    game_root: &str,
+    plan: &PackagePlan,
+    category: &str,
+) -> anyhow::Result<LocalInstall> {
     let mut ledger = super::mod_catalog::load_ledger();
-    let (outcome, ledger) = tauri::async_runtime::spawn_blocking(move || {
+    // Set inside the install arm: the record the closure committed.
+    let mut installed_record: Option<ModInstallRecord> = None;
+    let outcome = (|| -> anyhow::Result<PlanApply> {
         // Reinstalling a same-named mod must first rewind its previous
         // record: files the old version shipped would linger under the new
         // one, and chained snapshots used to make a later uninstall restore
@@ -79,18 +117,18 @@ pub async fn mod_hub_install(
         // rewind drops these records.
         let rewound_ids: Vec<&str> = old.iter().map(|id| id.as_str()).collect();
         let newer_owners =
-            super::mod_catalog::newer_owner_records(&ledger.installs, &rewound_ids, &game_root);
+            super::mod_catalog::newer_owner_records(&ledger.installs, &rewound_ids, game_root);
         for id in old {
             if let Err(e) =
-                super::mod_catalog::rewind_for_reinstall(&mut ledger.installs, &id, &game_root)
+                super::mod_catalog::rewind_for_reinstall(&mut ledger.installs, &id, game_root)
             {
                 failure = Some(e);
                 break;
             }
         }
-        let outcome = match failure {
+        match failure {
             Some(e) => Err(e),
-            None => match install_plan(&src, &game_root, &plan) {
+            None => match install_plan(src, game_root, plan) {
                 // Local installs are ledger-recorded too, so their uninstall
                 // restores whatever vanilla files they overwrote — unrecorded
                 // local installs used to leave overwritten originals
@@ -100,7 +138,7 @@ pub async fn mod_hub_install(
                     // catalog one does: keep the newer owners' snapshots in
                     // sync (best effort, never fails the install).
                     let refreshed = super::mod_catalog::refresh_newer_snapshots(
-                        &game_root,
+                        game_root,
                         &applied.report.bin_version,
                         &applied.written,
                         &newer_owners,
@@ -115,7 +153,7 @@ pub async fn mod_hub_install(
                             written_hashes,
                         );
                     }
-                    let record = local_record(&applied, &plan, &game_root);
+                    let record = local_record(&applied, plan, game_root, category);
                     let id = record.id.clone();
                     // Say whose files this install clobbered (the journal
                     // already snapshotted them), and the same shared-file
@@ -132,7 +170,7 @@ pub async fn mod_hub_install(
                         &ledger.installs,
                         &id,
                         &applied.report.bin_version,
-                        &game_root,
+                        game_root,
                     );
                     applied.report.conflicts = conflicts.clone();
                     applied.report.warnings.extend(conflicts);
@@ -141,7 +179,7 @@ pub async fn mod_hub_install(
                             super::mod_catalog::shared_divergence_warnings(
                                 &ledger.installs,
                                 &id,
-                                &game_root,
+                                game_root,
                                 &applied.report.bin_version,
                                 written_hashes,
                             ),
@@ -153,51 +191,49 @@ pub async fn mod_hub_install(
                     // records take the component files and their layers. A
                     // failure here hands the (partially rewound) ledger to
                     // the outer error path, which persists it.
-                    let record = match super::mod_catalog::commit_pack_record(
+                    let record = super::mod_catalog::commit_pack_record(
                         &mut ledger.installs,
                         record,
-                        &game_root,
-                    ) {
-                        Ok(record) => record,
-                        Err(e) => return (Err(e), ledger),
-                    };
+                        game_root,
+                    )?;
                     // An update that DROPPED a component must not strand it
                     // (same last-consumer cleanup as the catalog flow):
                     // roots the rewound records consumed that this install
                     // no longer declares lose their component record once
                     // no consumer remains.
-                    if let Err(e) = super::mod_catalog::drop_removed_shared_roots(
+                    super::mod_catalog::drop_removed_shared_roots(
                         &mut ledger.installs,
                         &previous,
                         &record.shared_roots,
-                        &game_root,
-                    ) {
-                        return (Err(e), ledger);
-                    }
+                        game_root,
+                    )?;
                     // Local installs speak the same wowsp.toml contract as
                     // catalog ones — the manifest row is the shared half of
                     // this record (per-component `shared.*` records carry
                     // no row: they never pair with a catalog entry).
                     super::manifest::hub_apply(super::manifest::ManifestOp::UpsertManaged {
                         res_mods: super::manifest::res_mods_of(
-                            &game_root,
+                            game_root,
                             &applied.report.bin_version,
                         ),
                         id,
                         entry: super::manifest::WowspManifest::entry_from_record(&record),
                     });
-                    super::layer::adopt_install(&game_root, &record);
+                    super::layer::adopt_install(game_root, &record);
+                    installed_record = Some(record.clone());
                     Ok(applied)
                 },
                 Err(e) => Err(e),
             },
-        };
-        (outcome, ledger)
-    })
-    .await
-    .map_err(|e| anyhow!("install task: {e}"))?;
-    let applied = match outcome {
-        Ok(applied) => applied,
+        }
+    })();
+    match outcome {
+        Ok(applied) => {
+            super::mod_catalog::save_ledger(&ledger)?;
+            let record = installed_record
+                .ok_or_else(|| anyhow!("the install pipeline committed no ledger record"))?;
+            Ok(LocalInstall { applied, record })
+        },
         Err(e) => {
             // The rewind already changed the ledger even though the install
             // failed — persist it so the on-disk ledger does not describe
@@ -205,24 +241,19 @@ pub async fn mod_hub_install(
             if let Err(se) = super::mod_catalog::save_ledger(&ledger) {
                 tracing::warn!(error = %se, "ledger save failed after failed install");
             }
-            return Err(e.into());
+            Err(e)
         },
-    };
-    super::mod_catalog::save_ledger(&ledger)?;
-    tracing::info!(
-        name = %applied.report.name,
-        files = applied.written.len(),
-        restore = ?applied.restore_dir,
-        "mod_hub_install recorded in ledger"
-    );
-    Ok(applied.report)
+    }
 }
 
-/// Ledger record for a local-folder install.
+/// Ledger record for a local install (folder or custom import). `category`
+/// is the caller's kind: `local` for a plain folder, or the custom import's
+/// `video` / `voice` / `texture` (its misc kind stays `local`).
 pub(crate) fn local_record(
     applied: &PlanApply,
     plan: &PackagePlan,
     game_root: &str,
+    category: &str,
 ) -> ModInstallRecord {
     ModInstallRecord {
         id: format!(
@@ -235,7 +266,7 @@ pub(crate) fn local_record(
         ),
         name: plan.name.clone(),
         version: String::new(),
-        category: "local".into(),
+        category: category.to_string(),
         source: "local".into(),
         preset: None,
         discussion: None,

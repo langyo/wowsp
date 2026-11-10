@@ -2305,7 +2305,7 @@ fn local_record_describes_local_install() {
         warnings: Vec::new(),
         texture_analysis: None,
     };
-    let record = local_record(&applied, &plan, "D:/Games/WoWs");
+    let record = local_record(&applied, &plan, "D:/Games/WoWs", "local");
     assert!(record.id.starts_with("local-"), "{}", record.id);
     assert_eq!(record.source, "local");
     assert_eq!(record.category, "local");
@@ -4901,4 +4901,381 @@ fn contested_verifies_recorded_hashes_and_skips_shared_registries() {
     assert!(unit.contested, "a real overwrite must still contest");
     // The wire carries the concrete file list for the pane.
     assert_eq!(unit.contested_files.len(), 1);
+}
+
+// ── Custom import (自定义导入安装) ─────────────────────────────────────────
+
+/// One throwaway source tree + staging dir for the custom-import tests.
+fn custom_import_fixture(name: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let tmp = std::env::temp_dir().join(format!("wowsp_custom_import_{name}"));
+    let _ = fs::remove_dir_all(&tmp);
+    fs::create_dir_all(&tmp).unwrap();
+    (tmp.join("source"), tmp.join("staging"), tmp)
+}
+
+#[test]
+fn custom_import_webm_is_staged_as_the_1080p_tier() {
+    use wowsp_tauri_shared::CustomImportKind;
+
+    let (source, staging, tmp) = custom_import_fixture("webm");
+    fs::create_dir_all(&source).unwrap();
+    let clip = source.join("My Login.webm");
+    fs::write(&clip, b"webm-bytes").unwrap();
+    let progress = super::custom_import::Progress::new(None);
+
+    let staged = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Video,
+        &clip,
+        None,
+        None,
+        &staging,
+    )
+    .unwrap();
+
+    // The clip lands at the client's login-video path, bytes untouched.
+    let written = staging.join("gui/video/login/main.webm");
+    assert_eq!(fs::read(&written).unwrap(), b"webm-bytes");
+    assert!(!staging.join("gui/video/login/main_low.webm").exists());
+    // The plan the installer receives is the res_mods shape, named after the
+    // user-facing clip (the staging folder is a uuid).
+    assert_eq!(staged.plan.name, "My Login");
+    assert!(
+        staged
+            .plan
+            .entries
+            .iter()
+            .any(|entry| entry.to_rel == "gui")
+    );
+    // The 720p tier is a hint, never an error.
+    assert!(
+        staged
+            .plan
+            .warnings
+            .iter()
+            .any(|w| w.contains("main_low.webm")),
+        "{:?}",
+        staged.plan.warnings
+    );
+
+    // A `*_low` clip is the 720p tier instead, and the name drops the suffix.
+    let low = source.join("ending_low.webm");
+    fs::write(&low, b"low-bytes").unwrap();
+    let low_staging = tmp.join("staging-low");
+    let staged = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Video,
+        &low,
+        None,
+        None,
+        &low_staging,
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(low_staging.join("gui/video/login/main_low.webm")).unwrap(),
+        b"low-bytes"
+    );
+    assert_eq!(staged.plan.name, "ending");
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn custom_import_probe_reports_the_shape_and_the_size() {
+    use wowsp_tauri_shared::CustomImportKind;
+
+    let (source, _staging, tmp) = custom_import_fixture("probe");
+    fs::create_dir_all(&source).unwrap();
+    let clip = source.join("intro.webm");
+    fs::write(&clip, vec![0u8; 2048]).unwrap();
+
+    let probe = super::custom_import::probe_custom(CustomImportKind::Video, &clip, None).unwrap();
+    assert_eq!(probe.file_name, "intro");
+    assert!(probe.is_file);
+    assert_eq!(probe.size_bytes, 2048);
+    assert_eq!(probe.structure, vec!["gui/video/login/main.webm"]);
+    assert!(probe.problems.is_empty(), "{:?}", probe.problems);
+
+    // A missing path is a PROBLEM (a quiet disabled "next"), never an error.
+    let gone = super::custom_import::probe_custom(
+        CustomImportKind::Video,
+        &source.join("nope.webm"),
+        None,
+    )
+    .unwrap();
+    assert!(gone.problems.iter().any(|p| p.code == "missing"));
+    assert!(gone.size_bytes == 0);
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn custom_import_without_ffmpeg_names_the_exact_command() {
+    use wowsp_tauri_shared::CustomImportKind;
+
+    let (source, staging, tmp) = custom_import_fixture("ffmpeg");
+    fs::create_dir_all(&source).unwrap();
+    let clip = source.join("intro.mp4");
+    fs::write(&clip, b"mp4-bytes").unwrap();
+
+    // The probe is deterministic here: the lookup is injected as None.
+    let inspected =
+        super::custom_import::inspect_custom(CustomImportKind::Video, &clip, None, None).unwrap();
+    let problem = inspected
+        .problems
+        .iter()
+        .find(|p| p.code == "missingFfmpeg")
+        .expect("a non-webm source without ffmpeg is blocked");
+    assert_eq!(problem.detail.as_deref(), Some("mp4"));
+    // Both tiers are announced up front.
+    assert_eq!(
+        inspected.structure,
+        vec!["gui/video/login/main.webm", "gui/video/login/main_low.webm"]
+    );
+
+    // The staging step refuses with the actionable message: the player cannot
+    // load the container, and the exact commands are in the error.
+    let progress = super::custom_import::Progress::new(None);
+    let err = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Video,
+        &clip,
+        None,
+        None,
+        &staging,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("ffmpeg"), "{err}");
+    assert!(err.contains("libvpx-vp9"), "{err}");
+    assert!(err.contains("scale=1920:1080:flags=lanczos"), "{err}");
+    assert!(err.contains("scale=1280:720:flags=lanczos"), "{err}");
+    assert!(err.contains("main_low.webm"), "{err}");
+    assert!(err.contains("%LOCALAPPDATA%"), "{err}");
+
+    // The ffmpeg presence flips the verdict: a found binary clears it.
+    let inspected = super::custom_import::inspect_custom(
+        CustomImportKind::Video,
+        &clip,
+        None,
+        Some(Path::new("C:/tools/ffmpeg.exe")),
+    )
+    .unwrap();
+    assert!(inspected.problems.is_empty(), "{:?}", inspected.problems);
+
+    // An unsupported container is refused by name.
+    let avi = source.join("intro.avi");
+    fs::write(&avi, b"x").unwrap();
+    let inspected =
+        super::custom_import::inspect_custom(CustomImportKind::Video, &avi, None, None).unwrap();
+    assert!(
+        inspected
+            .problems
+            .iter()
+            .any(|p| p.code == "unsupportedVideo" && p.detail.as_deref() == Some("avi")),
+        "{:?}",
+        inspected.problems
+    );
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn custom_import_wraps_a_bare_voice_pack_under_banks_mods() {
+    use wowsp_tauri_shared::CustomImportKind;
+
+    let (source, staging, tmp) = custom_import_fixture("voice");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(
+        source.join("mod.xml"),
+        "<AudioModification><Name>Hoshino</Name></AudioModification>",
+    )
+    .unwrap();
+    fs::write(source.join("a.wem"), b"wem-a").unwrap();
+    let progress = super::custom_import::Progress::new(None);
+
+    // The <Name> label becomes the bank folder when no display name is typed.
+    let staged = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Voice,
+        &source,
+        None,
+        None,
+        &staging,
+    )
+    .unwrap();
+    assert!(staging.join("banks/mods/Hoshino/mod.xml").is_file());
+    assert_eq!(
+        fs::read(staging.join("banks/mods/Hoshino/a.wem")).unwrap(),
+        b"wem-a"
+    );
+    assert_eq!(staged.plan.name, "Hoshino");
+    assert_eq!(staged.plan.kind, ModKind::Voice);
+
+    // A typed display name owns the bank folder (the spec's rule).
+    let named = tmp.join("staging-named");
+    let staged = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Voice,
+        &source,
+        Some("My Bank"),
+        None,
+        &named,
+    )
+    .unwrap();
+    assert!(named.join("banks/mods/My Bank/mod.xml").is_file());
+    assert_eq!(staged.plan.name, "My Bank");
+
+    // A proper banks/mods tree is already compliant: copied as-is.
+    let banks = tmp.join("source-banks");
+    fs::create_dir_all(banks.join("banks/mods/Hoshino")).unwrap();
+    fs::write(banks.join("banks/mods/Hoshino/mod.xml"), "<x/>").unwrap();
+    fs::write(banks.join("banks/mods/Hoshino/b.wem"), b"wem-b").unwrap();
+    let direct = tmp.join("staging-direct");
+    let staged = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Voice,
+        &banks,
+        None,
+        None,
+        &direct,
+    )
+    .unwrap();
+    assert!(direct.join("banks/mods/Hoshino/b.wem").is_file());
+    assert!(
+        staged
+            .plan
+            .entries
+            .iter()
+            .any(|entry| entry.to_rel == "banks")
+    );
+
+    // Neither layout is refused with the expected structure.
+    let junk = tmp.join("source-junk");
+    fs::create_dir_all(&junk).unwrap();
+    fs::write(junk.join("readme.md"), "hi").unwrap();
+    let err = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Voice,
+        &junk,
+        None,
+        None,
+        &tmp.join("staging-junk"),
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("banks/mods"), "{err}");
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn custom_import_texture_needs_a_res_mods_shaped_root() {
+    use wowsp_tauri_shared::CustomImportKind;
+
+    let (source, staging, tmp) = custom_import_fixture("texture");
+    fs::create_dir_all(&source).unwrap();
+    fs::write(source.join("hull.dds"), b"dds").unwrap();
+    let progress = super::custom_import::Progress::new(None);
+
+    // A bare pile of .dds files carries no installable root.
+    let probe =
+        super::custom_import::probe_custom(CustomImportKind::Texture, &source, None).unwrap();
+    assert!(
+        probe.problems.iter().any(|p| p.code == "textureRoots"),
+        "{:?}",
+        probe.problems
+    );
+    assert_eq!(probe.structure, vec!["hull.dds".to_string()]);
+    let err = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Texture,
+        &source,
+        None,
+        None,
+        &staging,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("content/"), "{err}");
+    assert!(err.contains("gui/"), "{err}");
+
+    // One supported override root makes it installable.
+    let shaped = tmp.join("shaped");
+    fs::create_dir_all(shaped.join("content/gameplay/japan")).unwrap();
+    fs::write(shaped.join("content/gameplay/japan/hull.dds"), b"dds-2").unwrap();
+    let shaped_staging = tmp.join("staging-shaped");
+    let staged = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Texture,
+        &shaped,
+        Some("My Textures"),
+        None,
+        &shaped_staging,
+    )
+    .unwrap();
+    assert_eq!(
+        fs::read(shaped_staging.join("content/gameplay/japan/hull.dds")).unwrap(),
+        b"dds-2"
+    );
+    assert_eq!(staged.plan.kind, ModKind::Textures);
+    assert_eq!(staged.plan.name, "My Textures");
+    assert!(
+        staged
+            .plan
+            .entries
+            .iter()
+            .any(|entry| entry.to_rel == "content")
+    );
+
+    // misc shares the root rule.
+    let misc_probe =
+        super::custom_import::probe_custom(CustomImportKind::Misc, &source, None).unwrap();
+    assert!(misc_probe.problems.iter().any(|p| p.code == "textureRoots"));
+
+    // A single wrapper folder is peeled (an extracted archive's naming layer).
+    let wrapped = tmp.join("wrapped");
+    fs::create_dir_all(wrapped.join("pack/content/particles")).unwrap();
+    fs::write(wrapped.join("pack/content/particles/smoke.dds"), b"d").unwrap();
+    let wrapped_staging = tmp.join("staging-wrapped");
+    let staged = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Texture,
+        &wrapped,
+        None,
+        None,
+        &wrapped_staging,
+    )
+    .unwrap();
+    assert!(
+        wrapped_staging
+            .join("content/particles/smoke.dds")
+            .is_file()
+    );
+    assert_eq!(staged.plan.name, "pack");
+
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn custom_import_refuses_a_folder_for_the_video_kind() {
+    use wowsp_tauri_shared::CustomImportKind;
+
+    let (source, staging, tmp) = custom_import_fixture("video-dir");
+    fs::create_dir_all(&source).unwrap();
+    let probe = super::custom_import::probe_custom(CustomImportKind::Video, &source, None).unwrap();
+    assert!(probe.problems.iter().any(|p| p.code == "notFile"));
+    let progress = super::custom_import::Progress::new(None);
+    let err = super::custom_import::stage_custom_import(
+        &progress,
+        CustomImportKind::Video,
+        &source,
+        None,
+        None,
+        &staging,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("single video file"), "{err}");
+    fs::remove_dir_all(&tmp).ok();
 }
