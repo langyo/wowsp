@@ -33,7 +33,9 @@ import {
 import type { LayerSlotConflict, ModKind, ModLayer } from "@/api";
 import AppTag from "@/components/base/AppTag";
 import LoadingNote from "@/components/base/LoadingNote";
+import AssetPreview from "@/features/modhub/AssetPreview";
 import { KIND_META, KIND_ORDER, catIcon } from "@/features/modhub/taxonomy";
+import { videoPreviewDir } from "@/features/modhub/videoPreview";
 import { t } from "@/i18n";
 import type { ResourcesCtx } from "./context";
 import {
@@ -43,6 +45,11 @@ import {
   layerCategoryKey,
   type LayerBadge,
 } from "./layerStackHelpers";
+// The lane/pane chrome lives in a sibling sheet. It had no importer (the
+// merged layer feature shipped it orphaned), so the whole swimlane — and the
+// video section below — rendered unstyled; import it here, where its file
+// header says it belongs.
+import "./LayerStack.scss";
 
 /** The primitive's row identity: the packId plus the layer itself, so the
  *  item slot reads the row without a second lookup. */
@@ -314,6 +321,9 @@ export function renderLayerDetail(ctx: ResourcesCtx, packId: string) {
   const conflicts = conflictsOfLayer(layer, ls.conflicts.value);
   const paired = ctx.pairedCatalogOfLayer(layer);
   const canUninstall = ctx.canUninstallLayer(layer);
+  // Video packs shadow the client's login/opening clip; the section lists
+  // the installed tree's video files and plays them inline.
+  const videoDir = videoPreviewDir(layer);
   const busy = ls.busy.value;
   const glyph = glyphOf(layer.category);
   const Icon = glyph.icon;
@@ -386,6 +396,21 @@ export function renderLayerDetail(ctx: ResourcesCtx, packId: string) {
             <span>{t("resources.layers.shadowedCount", { count: layer.shadowedCount })}</span>
             <span>{t("resources.layers.fileCount", { count: layer.fileCount })}</span>
           </div>
+
+          {videoDir && ctx.gameRoot.value && (
+            <div class="layer-detail__video">
+              <span class="layer-detail__label">
+                {t("resources.layers.videoTitle")}
+              </span>
+              <p class="mod-detail__hint">{t("resources.layers.videoHint")}</p>
+              <AssetPreview
+                gameRoot={ctx.gameRoot.value}
+                relPath={videoDir}
+                mode="video"
+                silentEmpty
+              />
+            </div>
+          )}
 
           <div class="layer-detail__slot-block">
             <span class="layer-detail__label">{t("resources.layers.slotsLabel")}</span>

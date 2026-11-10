@@ -835,6 +835,18 @@ install: index 0 is the top, the highest priority.
   actions (top / up / down / bottom / disable / uninstall / update), plus a
   render report of blocked and conflicting paths.
 
+### Video packs
+
+A video pack replaces the client's login/opening clip: main.webm (1080p)
+and main_low.webm (720p) under `gui/video/login/`, VP9 + Vorbis at 25 fps;
+a pack may ship either tier or both. The stock files stay inside the
+game's pkg VFS and `res_mods` shadows them by path — no `idx`/VFS write
+is involved, and removing the pack's files restores the stock clip. The
+layer pane lists installed videos through `mod_hub_list_assets`
+(`kind: "video"`) and plays them inline: `mod_hub_asset_file_path`
+resolves the file to an absolute path for Tauri's asset protocol, so the
+bytes stream to the player and never cross IPC.
+
 ## Open questions
 
 - Does the Lesta (RU) client need a separate layout adapter;

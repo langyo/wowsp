@@ -223,6 +223,7 @@ export const RPC = {
   mod_hub_disarm_boot_installer: "mod_hub_disarm_boot_installer",
   mod_hub_foreign_units: "mod_hub_foreign_units",
   mod_hub_list_assets: "mod_hub_list_assets",
+  mod_hub_asset_file_path: "mod_hub_asset_file_path",
   mod_hub_read_asset: "mod_hub_read_asset",
   mod_hub_read_model: "mod_hub_read_model",
   mod_hub_classify_path: "mod_hub_classify_path",

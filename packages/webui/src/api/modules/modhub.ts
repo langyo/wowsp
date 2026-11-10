@@ -437,10 +437,11 @@ export interface BootInstallerDisarmReport {
 export interface AssetFileInfo {
   rel: string;
   size: number;
-  /** `image | audio | model`. */
+  /** `image | audio | video | model`. */
   kind: string;
   ext: string;
-  /** False for `.wem` — listed, but the browser cannot play it. */
+  /** True when the pane can play it (video through the asset protocol,
+   *  `.wem` through the on-read transcode). */
   playable: boolean;
   /** Wwise event this voice line answers to (from the pack's mod.xml) —
    *  the localized scenario-title key for audio rows. */
@@ -618,6 +619,9 @@ export interface ModLayer {
   /** False = legacy install: pinned bottom, not reorderable, needs a
    *  reinstall to join the layered stack. */
   managed: boolean;
+  /** res_mods-relative directory holding this layer's video files, when it
+   *  ships any — the detail pane's inline player lists it. */
+  videoDir?: string;
 }
 
 /** One render slot claimed by several packs at once. */
@@ -665,6 +669,11 @@ export const modHubApi = {
     transport.invoke<AssetFileInfo[]>(RPC.mod_hub_list_assets, { gameRoot, relPath }),
   modHubReadAsset: (gameRoot: string, relPath: string) =>
     transport.invoke<AssetPayload>(RPC.mod_hub_read_asset, { gameRoot, relPath }),
+  /** Absolute path of one installed asset, for Tauri's asset protocol. Video
+   *  previews use it instead of a data URL: the player streams the file, so
+   *  its bytes never cross IPC. */
+  modHubAssetFilePath: (gameRoot: string, relPath: string) =>
+    transport.invoke<string>(RPC.mod_hub_asset_file_path, { gameRoot, relPath }),
   /** Custom-model 3D preview: expand a `.geometry` click into its family's
    *  cached GLB parts (hull base + sections, or a standalone mesh). */
   modHubReadModel: (gameRoot: string, relPath: string) =>

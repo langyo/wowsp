@@ -299,6 +299,17 @@
     gap: 0.25rem;
   }
 
+  // Video packs: the inline player section under the stats. The label +
+  // one-line replacement hint sit above AssetPreview's own cards.
+  &__video {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin-top: 0.6rem;
+    padding-top: 0.5rem;
+    border-top: 1px dashed rgb(var(--color-border) / 25%);
+  }
+
   &__conflicts {
     display: flex;
     align-items: flex-start;

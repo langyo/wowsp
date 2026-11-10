@@ -12,12 +12,15 @@
  * the track to the global audioPlayer store, whose AudioPlayerToast card
  * (play/pause, seek, stop) controls playback even after the pane is left.
  * The game's Wwise `.wem` files play through the on-read decode (the
- * first click converts to WAV in Rust, then plays). Modes "image" and
- * "model" are the single-kind fallbacks for panes that only ever show
- * one of the two material kinds.
+ * first click converts to WAV in Rust, then plays). Mode "video" renders a
+ * video pack's login/opening clips (.webm/.mp4) as inline players: only
+ * their absolute paths cross IPC, and the <video> element streams them
+ * through Tauri's asset protocol (a clip is tens of MB — never a data URL).
+ * Modes "image" and "model" are the single-kind fallbacks for panes that
+ * only ever show one of the two material kinds.
  */
 import { defineComponent, ref, watch } from "vue";
-import { Box, ImageIcon, Music, PlayCircle } from "@lucide/vue";
+import { Box, Clapperboard, ImageIcon, Music, PlayCircle } from "@lucide/vue";
 import { useToast, HkScrollContainer } from "@celestia-island/hikari";
 
 import { api, type AssetFileInfo, type ModelPreviewPart } from "@/api";
@@ -36,9 +39,9 @@ export default defineComponent({
     /** Installed unit primary path (res_mods-relative). */
     relPath: { type: String, required: true },
     /** `texture` grid + model stage (one listing), `image` grid, `audio`
-     *  list, or `model` rows + 3D stage. */
+     *  list, `model` rows + 3D stage, or `video` inline players. */
     mode: {
-      type: String as () => "texture" | "image" | "audio" | "model",
+      type: String as () => "texture" | "image" | "audio" | "model" | "video",
       required: true,
     },
     /** Render nothing when the unit has no files of this mode — sections
@@ -65,6 +68,10 @@ export default defineComponent({
     const modelRel = ref("");
     const modelLoading = ref(false);
     let modelSession = 0;
+    // Video mode: only the absolute PATH crosses IPC — convertFileSrc turns
+    // it into an asset-protocol URL the <video> element streams itself.
+    const videoUrls = ref<Record<string, string>>({});
+    const videoFailed = ref<Record<string, boolean>>({});
 
     async function load() {
       loading.value = true;
@@ -75,6 +82,8 @@ export default defineComponent({
       modelLoading.value = false;
       modelParts.value = null;
       modelRel.value = "";
+      videoUrls.value = {};
+      videoFailed.value = {};
       try {
         files.value = await api.modHubListAssets(props.gameRoot, props.relPath);
       } catch {
@@ -98,6 +107,32 @@ export default defineComponent({
         void ensureThumb(f.rel);
       }
     });
+
+    // Video sources are resolved eagerly too (a unit ships a couple of
+    // clips at most): each call is one path lookup, no file bytes.
+    const VIDEO_CAP = 4;
+    watch(files, (list) => {
+      let queued = 0;
+      for (const f of list) {
+        if (f.kind !== "video" || queued >= VIDEO_CAP) continue;
+        queued += 1;
+        void ensureVideoUrl(f.rel);
+      }
+    });
+
+    async function ensureVideoUrl(rel: string) {
+      if (videoUrls.value[rel] || videoFailed.value[rel]) return;
+      try {
+        const abs = await api.modHubAssetFilePath(props.gameRoot, rel);
+        // convertFileSrc is the established res_mods-to-webview route (see
+        // holographic/ribbonIcons.ts); the import stays lazy so plain-browser
+        // dev never touches the Tauri shell at module load.
+        const { convertFileSrc } = await import("@tauri-apps/api/core");
+        videoUrls.value[rel] = convertFileSrc(abs);
+      } catch {
+        videoFailed.value[rel] = true;
+      }
+    }
 
     async function ensureThumb(rel: string) {
       if (thumbs.value[rel] || failed.value[rel]) return;
@@ -222,6 +257,44 @@ export default defineComponent({
       );
     }
 
+    // Inline video players, one card per clip. preload="metadata" keeps the
+    // pane cheap: the browser reads the header via a range request and only
+    // streams the rest when the user presses play.
+    function renderVideos(list: AssetFileInfo[]) {
+      const rows = [...list].sort((a, b) => a.rel.localeCompare(b.rel));
+      return (
+        <div class="asset-preview__videos">
+          {rows.map((f) => (
+            <figure class="asset-preview__video" key={f.rel}>
+              {videoUrls.value[f.rel] ? (
+                <video
+                  class="asset-preview__video-el"
+                  controls
+                  preload="metadata"
+                  src={videoUrls.value[f.rel]}
+                />
+              ) : (
+                <div class="asset-preview__video-placeholder">
+                  <Clapperboard size={18} />
+                  <span>
+                    {videoFailed.value[f.rel]
+                      ? t("resources.videoLoadFailed")
+                      : t("resources.videoLoading")}
+                  </span>
+                </div>
+              )}
+              <figcaption class="asset-preview__video-cap">
+                <span class="asset-preview__video-name">
+                  {f.rel.split("/").pop()}
+                </span>
+                <span class="asset-preview__video-size">{kbFormat(f.size)}</span>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
+      );
+    }
+
     return () => {
       if (loading.value) {
         if (props.silentEmpty) return null;
@@ -251,6 +324,7 @@ export default defineComponent({
       }
       if (props.mode === "image") return renderGrid(usable);
       if (props.mode === "model") return renderModelBlock(usable);
+      if (props.mode === "video") return renderVideos(usable);
       // Scene-titled rows: mod.xml-mapped lines carry a localized
       // scenario title above the raw file name (the hash name alone
       // tells nobody what the line is FOR); unmapped files keep the old

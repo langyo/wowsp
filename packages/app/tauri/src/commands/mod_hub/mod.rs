@@ -835,9 +835,10 @@ pub(crate) use super::mod_catalog;
 // `__tauri_command_name_*`) through `commands::mod_hub::*`, exactly like
 // `commands/overlay/mod.rs` — so those paths are re-exported verbatim.
 pub use assets::{
-    __cmd__mod_hub_list_assets, __cmd__mod_hub_read_asset,
-    __tauri_command_name_mod_hub_list_assets, __tauri_command_name_mod_hub_read_asset,
-    mod_hub_list_assets, mod_hub_read_asset,
+    __cmd__mod_hub_asset_file_path, __cmd__mod_hub_list_assets, __cmd__mod_hub_read_asset,
+    __tauri_command_name_mod_hub_asset_file_path, __tauri_command_name_mod_hub_list_assets,
+    __tauri_command_name_mod_hub_read_asset, mod_hub_asset_file_path, mod_hub_list_assets,
+    mod_hub_read_asset,
 };
 pub use boot_installer::{
     __cmd__mod_hub_boot_installer, __cmd__mod_hub_disarm_boot_installer,
