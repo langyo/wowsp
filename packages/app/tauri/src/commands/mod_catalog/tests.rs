@@ -954,6 +954,7 @@ mod tests {
                         "15.7.0.10": {
                             "game": ">=15.7 <15.8",
                             "preview": "https://user-images.githubusercontent.com/x/shot-timer.jpg",
+                            "preview_video": "https://github.com/langyo/wowsp/releases/download/preview-media/shot-timer.mp4",
                             "title": "Shot Timer",
                             "name_en": "Shot Timer",
                             "name_zh": "开火后倒计时20s",
@@ -986,6 +987,11 @@ mod tests {
         assert_eq!(
             m.preview.as_deref(),
             Some("https://user-images.githubusercontent.com/x/shot-timer.jpg")
+        );
+        // The snake_case index key threads into the camelCase DTO.
+        assert_eq!(
+            m.preview_video.as_deref(),
+            Some("https://github.com/langyo/wowsp/releases/download/preview-media/shot-timer.mp4")
         );
     }
 
@@ -1078,6 +1084,7 @@ mod tests {
         let m = &parse_index(&raw).unwrap().mods[0];
         assert!(m.supersedes.is_none());
         assert!(m.presets.is_empty());
+        assert!(m.preview_video.is_none());
     }
 
     #[test]

@@ -83,6 +83,11 @@
   "audioLoadFailed": "Audio preview failed",
   "videoLoading": "Loading video…",
   "videoLoadFailed": "Could not load the video preview",
+  "previewVideo": {
+    "play": "Play preview",
+    "standard": "Standard preview · AV1 MP4",
+    "tiers": "Other tiers in this pack"
+  },
   "modelPlay": "Preview 3D model",
   "modelLoadFailed": "Model preview failed",
   "modelNote": "Holographic shape preview — paints and textures are shown as image thumbnails.",

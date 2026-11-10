@@ -42,6 +42,7 @@ import {
 } from "@/features/modhub/taxonomy";
 import { listedEntries } from "@/features/modhub/catalogListed";
 import ModOpDisclaimer from "@/features/modhub/ModOpDisclaimer";
+import { usePreviewPrefetch } from "@/features/modhub/previewPrefetch";
 import { t } from "@/i18n";
 import { formatLocalStamp } from "@/utils/format";
 import { installLabelOf } from "@/utils/installLabel";
@@ -120,7 +121,16 @@ export default defineComponent({
     const wizard = useMigrateWizard(hub);
     hub.bindMigrateWizard(wizard.openMigrateWizard);
     const fileWindow = useFileListWindow(hub);
-    const ctx: ResourcesCtx = { ...hub, ...wizard, fileWindow };
+    // Dynamic catalog previews: rows warm their screenshot as they approach
+    // the viewport, and the selected entry warms its preview-video metadata
+    // + poster — never the full clip (the pane only streams after play).
+    const previewPrefetch = usePreviewPrefetch({
+      selectedEntry: () => {
+        const sel = hub.selection.value;
+        return sel?.mode === "catalog" ? sel.entry : null;
+      },
+    });
+    const ctx: ResourcesCtx = { ...hub, ...wizard, fileWindow, previewPrefetch };
 
     // All installed rows, confirmations and migration plans belong to the
     // selected install. Invalidate synchronously so an old row can never

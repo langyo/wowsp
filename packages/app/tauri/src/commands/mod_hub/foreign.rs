@@ -420,6 +420,7 @@ mod tests {
             aliases,
             servers: Vec::new(),
             preview: None,
+            preview_video: None,
             supersedes: None,
             packages: vec![CatalogPackage {
                 url: "https://x/a.zip".into(),

@@ -118,6 +118,7 @@ Discussions resource post template (excerpt):
     author: Someone
     author_url: https://github.com/someone
     aliases: SMO_HazeSkins, SeaHazeSkinsPy
+    preview_video: https://github.com/langyo/wowsp/releases/download/preview-media/sea-haze.mp4
     license: CC0-1.0
     ---
     Body (Markdown, with preview images)…
@@ -149,6 +150,19 @@ AutoSpy"): the indexer copies the pair into `mod-index.json` and the
 catalog renders them as the author tag, clickable when the URL is
 verified. The registry backing these lines lives in
 `scripts/mod_hub_authors.json`.
+
+#### Standard preview video (`preview_video`)
+
+A thread may point at ONE short preview clip with an optional
+`preview_video:` front-matter line. The clip is the catalog's play-gated
+preview (the detail pane keeps the screenshot when the line is absent), so
+it must be small and web-friendly: **AV1 in MP4** (H.264 is the accepted
+fallback), 720p, 8–20 s, at most 3 MB, `faststart` (moov atom first),
+optional AAC audio. Host it on this repo's release download tree
+(`…/releases/download/preview-media/<slug>.mp4`) or use a GitHub
+user-attachment / raw URL. The indexer keeps the line only for https URLs
+on those GitHub hosts, emits it as `preview_video` in the version payload,
+and the app streams it through hikari's media player behind a play button.
 
 #### Slug taxonomy (`category.genus.species`)
 
@@ -845,7 +859,10 @@ is involved, and removing the pack's files restores the stock clip. The
 layer pane lists installed videos through `mod_hub_list_assets`
 (`kind: "video"`) and plays them inline: `mod_hub_asset_file_path`
 resolves the file to an absolute path for Tauri's asset protocol, so the
-bytes stream to the player and never cross IPC.
+bytes stream to the player and never cross IPC. Exactly ONE tier plays
+(hikari's media player): `main.webm` first, then the first non-`_low`
+clip, then the first by name; the remaining tiers list as compact
+name + size rows instead of a second player.
 
 ## Open questions
 

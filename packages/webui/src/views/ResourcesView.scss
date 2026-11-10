@@ -705,8 +705,8 @@
 
 // ── Inline video players (video packs: the login/opening clip) ────────────
 
-// A video pack usually ships both tiers (main + main_low); the cards stack
-// in one column so each player keeps a readable 16:9 surface.
+// A video pack usually ships both tiers (main + main_low), but only ONE
+// player renders; the sibling tiers stay compact text rows below it.
 .asset-preview__videos {
   display: flex;
   flex-direction: column;
@@ -721,12 +721,10 @@
   min-width: 0;
 }
 
-.asset-preview__video-el {
-  display: block;
-  width: 100%;
+// hikari's player sizes its own 16:9 surface; cap it to the preview rail's
+// height instead of the fullscreen-friendly 60vh default.
+.asset-preview__video .hk-media-player-video {
   max-height: 18rem;
-  border-radius: var(--radius-xs);
-  background: #000;
 }
 
 // Placeholder while the path lookup runs / after it failed — the same
@@ -763,6 +761,89 @@
 
 .asset-preview__video-size {
   flex: none;
+}
+
+// Sibling tiers (main_low, alternate names): compact metadata rows, no
+// player — the pack's other encodings are not a second preview.
+.asset-preview__video-tiers {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.asset-preview__video-tier {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+}
+
+.asset-preview__video-tier-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+.asset-preview__video-tier-size {
+  flex: none;
+}
+
+// ── Catalog standard preview video (play-gated clip) ──────────────────────
+
+// The gate is the poster plus an explicit play button: nothing streams until
+// the user asks for it, then hikari's player replaces the still.
+.catalog-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.catalog-preview__gate {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: #000;
+}
+
+.catalog-preview__poster {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.catalog-preview__poster--empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-2xs);
+}
+
+.catalog-preview__play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.catalog-preview .hk-media-player-video {
+  max-height: 18rem;
+}
+
+.catalog-preview__standard {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
 }
 
 // ── Model rows + 3D stage ──────────────────────────────────────────────────

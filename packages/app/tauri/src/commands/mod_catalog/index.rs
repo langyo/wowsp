@@ -333,6 +333,11 @@ struct RawVersion {
     /// CSP `img-src` nor reliably reachable directly.
     #[serde(default)]
     preview: Option<String>,
+    /// Standard preview clip (`preview_video:` front-matter), already
+    /// vetted by the indexer (https + GitHub-hosted). The detail pane plays
+    /// it through hikari's media player behind an explicit play button.
+    #[serde(default)]
+    preview_video: Option<String>,
     #[serde(default)]
     authors: Option<Vec<RawCatalogAuthor>>,
     /// Legacy singular author fields from pre-array indexes; synthesized
@@ -490,6 +495,7 @@ pub(crate) fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogInde
             aliases: m.aliases.clone(),
             servers: m.servers.clone(),
             preview: ver.preview.clone(),
+            preview_video: ver.preview_video.clone(),
             supersedes: m.supersedes.clone(),
             i18n: ver
                 .i18n

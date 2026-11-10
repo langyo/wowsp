@@ -99,6 +99,7 @@ Discussions 资源帖模板（节选）：
     author: Someone
     author_url: https://github.com/someone
     aliases: SMO_HazeSkins, SeaHazeSkinsPy
+    preview_video: https://github.com/langyo/wowsp/releases/download/preview-media/sea-haze.mp4
     license: CC0-1.0
     ---
     正文（Markdown，含预览图）……
@@ -122,6 +123,16 @@ Aslain 整合包的清单行 ID 与落盘目录名。索引器将其采集进
 "Team Panels"，不是 "Team Panels by AutoSpy"）：索引器把这对字段
 复制进 `mod-index.json`，目录页将其渲染为作者标签，链接经核实后可
 点击跳转。两行的数据源是 `scripts/mod_hub_authors.json` 登记表。
+
+#### 标准预览视频（`preview_video`）
+
+线程可用可选的 `preview_video:` front-matter 行指向一个短视频预览。该视频是
+目录详情页的点击播放预览（缺省时详情页沿用截图），因此必须小而适合网页播放：
+**MP4 容器中的 AV1**（可退回 H.264），720p，8–20 秒，不超过 3 MB，
+`faststart`（moov 前置），可选 AAC 音轨。视频放在本仓库的 release 下载树
+（`…/releases/download/preview-media/<slug>.mp4`），或使用 GitHub 用户附件 /
+raw 链接。索引器只保留 https 且托管于上述 GitHub 主机的链接，并以
+`preview_video` 写入版本载荷；应用用 hikari 播放器在点击播放按钮后加载。
 
 用 Discussions 而不是 Releases 的原因：评论区就是用户反馈与兼容性回报（"14.6 实测可用"会被索引器吸收为兼容性信号），Watch/通知即订阅，零后端成本。
 
@@ -461,7 +472,9 @@ job 模式。
 遮蔽——无需写入 `idx`/VFS；删除资源包的文件即可恢复原版视频。层详情页
 通过 `mod_hub_list_assets`（`kind: "video"`）列出已安装的视频并内嵌播放：
 `mod_hub_asset_file_path` 把文件解析为绝对路径交给 Tauri 的资源协议，
-视频字节直接流向播放器，不经过 IPC。
+视频字节直接流向播放器，不经过 IPC。同一时间只播放一个主档（hikari 播放器）：
+优先 `main.webm`，其次第一个不含 `_low` 的文件，再次按名称第一个；
+其余画质只以「文件名 + 大小」紧凑文字行列出，不再渲染第二个播放器。
 
 ## 开放问题
 

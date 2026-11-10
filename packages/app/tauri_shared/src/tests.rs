@@ -2653,6 +2653,7 @@ fn catalog_entry_renames_localized_names_and_pins_the_key_set() {
         aliases: vec!["TeamHP".into()],
         servers: vec!["cn".into()],
         preview: Some("https://user-images.githubusercontent.com/x/1.jpg".into()),
+        preview_video: None,
         supersedes: None,
     };
     let v = round_trips(entry);
@@ -2718,6 +2719,9 @@ fn catalog_entry_serializes_folded_family_media_and_supersedes() {
         aliases: Vec::new(),
         servers: Vec::new(),
         preview: None,
+        preview_video: Some(
+            "https://github.com/langyo/wowsp/releases/download/preview/p.mp4".into(),
+        ),
         supersedes: Some(
             [("battle.panel.ttaro".to_string(), "ttaro".to_string())]
                 .into_iter()
@@ -2732,6 +2736,12 @@ fn catalog_entry_serializes_folded_family_media_and_supersedes() {
     assert_eq!(preset["descZh"], "与剪影图标不兼容。");
     assert_eq!(preset["descEn"], "Incompatible with silhouettes.");
     assert_eq!(v["supersedes"]["battle.panel.ttaro"], "ttaro");
+    // The standard preview clip rides the entry as camelCase `previewVideo`;
+    // absent on plain entries it drops out entirely (see the key pin above).
+    assert_eq!(
+        v["previewVideo"],
+        "https://github.com/langyo/wowsp/releases/download/preview/p.mp4"
+    );
 }
 
 #[test]

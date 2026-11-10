@@ -83,6 +83,11 @@
   "audioLoadFailed": "Échec de l'aperçu audio",
   "videoLoading": "Chargement de la vidéo…",
   "videoLoadFailed": "Impossible de charger l'aperçu vidéo",
+  "previewVideo": {
+    "play": "Lire l’aperçu",
+    "standard": "Aperçu standard · AV1 MP4",
+    "tiers": "Autres qualités du pack"
+  },
   "modelPlay": "Aperçu 3D",
   "modelLoadFailed": "Échec de l'aperçu du modèle",
   "modelNote": "Aperçu holographique de la forme ; les livrées s'affichent en miniatures.",
