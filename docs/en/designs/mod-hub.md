@@ -567,8 +567,9 @@ of a UI scene stop rendering silently (field report: the port's Arsenal
 event page rendering only partially, on a client with the probe plus two
 Aslain mods — the probe is not involved; a stale override is).
 `commands/mod_integrity.rs` now reads the load directives themselves
-(`<swffile>` / `<xmlfile>` / `<path>` bodies plus the `element url=` and
-`url source=` attributes) over `.swf`/`.xml`/`.ttf`/`.unbound`, so a
+(`<swffile>` / `<xmlfile>` bodies, `<path>` inside a `<fontconfig>`, plus
+the `element url=` and `url source=` attributes) over
+`.swf`/`.xml`/`.ttf`/`.unbound`, so a
 directive naming an asset that exists in neither the tree NOR the client
 index becomes a `dangling_ref` finding — the same pre-launch card that
 already covers the corrupt-SWF class, with the fix still being "disable

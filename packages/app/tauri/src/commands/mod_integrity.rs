@@ -117,6 +117,23 @@ fn is_toolchain_subtree(rel: &str) -> bool {
     rel.to_ascii_lowercase().starts_with("pnfmods/modforge/")
 }
 
+/// Glue that must never be starved by the deep-read budget: the LOOSE
+/// `gui/` files that shadow a client file WHOLESALE (`gui/uss_settings.xml`,
+/// `gui/fontconfig_scaleform.xml`, `gui/battle_elements.xml`, …). They are
+/// the one glue class whose staleness silently breaks a rendered scene,
+/// and a mod tree with hundreds of `gui/unbound2/**/*.unbound` fragments
+/// (TTaro-style) can otherwise fill every deep-read slot first and hide
+/// them — the budget would then under-report exactly the class this pass
+/// exists for. A top-level `gui/<file>` is that shape; anything deeper is
+/// a mod's own tree.
+fn is_budget_priority_glue(rel: &str) -> bool {
+    let lower = rel.to_ascii_lowercase();
+    let Some(rest) = lower.strip_prefix("gui/") else {
+        return false;
+    };
+    !rest.contains('/')
+}
+
 // ── primitives ──────────────────────────────────────────────────────────────
 
 /// True iff `bytes` opens with a legal SWF signature: `FWS` (uncompressed),
@@ -149,7 +166,8 @@ pub(crate) fn swf_magic_ok(bytes: &[u8]) -> bool {
 ///   exactly like XML itself);
 /// - an UNTERMINATED `<!--` stays in the output with the remaining text, so
 ///   a malformed file can never silently lose real references behind it;
-/// - the scan reads glue by extension list (xml/py/json/txt/yaml/cfg), so a
+/// - the scan reads glue by extension list (xml/py/json/txt/yaml/cfg/
+///   unbound), so a
 ///   non-XML file that happens to carry a `<!-- … -->` pair loses whatever
 ///   sits between the markers. That is the direction this scanner is allowed
 ///   to err in — a missing finding never accuses anyone — and generated-XML
@@ -293,6 +311,13 @@ fn push_directive_ref(refs: &mut Vec<String>, value: &str) {
     for piece in value.split(',') {
         let piece = piece.trim();
         if piece.is_empty() || piece.contains('%') || piece.starts_with('$') {
+            continue;
+        }
+        // Malformed nesting (`<swffile><swffile>x.swf</swffile></swffile>`)
+        // leaves the inner OPENER inside the value. A real load target is
+        // never markup, so a value carrying a tag character is dropped
+        // rather than reported as a garbage asset name.
+        if piece.contains('<') || piece.contains('>') {
             continue;
         }
         // An absolute or drive-qualified path is a client-internal
@@ -475,10 +500,7 @@ fn walk_trees(bases: &[PathBuf]) -> TreeWalk {
                 walk.scanned_files += 1;
                 let lower = name.to_ascii_lowercase();
                 walk.names.insert(lower.clone());
-                if is_glue_text_file(&name)
-                    && meta.len() <= GLUE_MAX_BYTES
-                    && walk.glue.len() < GLUE_MAX_FILES
-                {
+                if is_glue_text_file(&name) && meta.len() <= GLUE_MAX_BYTES {
                     walk.glue.push((path, rel, base_idx));
                 } else if lower.ends_with(".swf") {
                     walk.swfs.push((path, rel, base_idx));
@@ -611,8 +633,42 @@ fn attribute_value_at(lower: &str, from: usize, end: usize, attr: &str) -> Optio
     Some(lower[value_start..value_end].to_string())
 }
 
+/// Index of the `>` that closes the open tag starting at `from` (just past
+/// the element name), skipping quoted attribute values so a `>` inside one
+/// cannot close the tag early. `None` when the tag never closes (a
+/// malformed or truncated file: the caller skips that occurrence).
+fn tag_body_open(lower: &str, from: usize) -> Option<usize> {
+    let bytes = lower.as_bytes();
+    let mut i = from;
+    let mut quote: Option<u8> = None;
+    while i < bytes.len() {
+        let b = bytes[i];
+        match quote {
+            Some(q) => {
+                if b == q {
+                    quote = None;
+                }
+            },
+            None => {
+                if b == b'"' || b == b'\'' {
+                    quote = Some(b);
+                } else if b == b'>' {
+                    return Some(i);
+                } else if b == b'<' {
+                    // A new tag opener before this one closed: malformed.
+                    return None;
+                }
+            },
+        }
+        i += 1;
+    }
+    None
+}
+
 /// Inner text of `<tag>…</tag>` elements (whitespace-trimmed). The open
-/// tag may carry attributes (`<tag attr="…">`), matching the real glue.
+/// tag may carry attributes (`<tag attr="…">`), matching the real glue —
+/// a directed load spelled `<xmlfile lang="en">…</xmlfile>` must not be
+/// invisible to the reference pass.
 fn element_text_values(text: &str, tag: &str) -> Vec<String> {
     let lower = ascii_lower(text);
     let close = format!("</{tag}>");
@@ -628,20 +684,20 @@ fn element_text_values(text: &str, tag: &str) -> Vec<String> {
             continue;
         }
         let name_end = name_start + tag.len();
-        let after_name = &lower[name_end..];
-        let body_open = match after_name.find('>') {
-            Some(p)
-                if after_name[..p]
-                    .trim()
-                    .chars()
-                    .all(|c| c.is_ascii_whitespace()) =>
-            {
-                name_end + p
-            },
-            _ => {
-                cursor = open + 1;
-                continue;
-            },
+        // The element name must END here: a tag whose name merely starts
+        // with ours (`<swffiles>`, `<paths>`) is a different element.
+        let after = lower.as_bytes().get(name_end).copied();
+        if !after.is_some_and(|b| b == b'>' || b == b'/' || b.is_ascii_whitespace()) {
+            cursor = open + 1;
+            continue;
+        }
+        // The open tag may carry attributes (`<xmlfile lang="en">`), which
+        // real glue spellings do. The body-open search therefore walks the
+        // tag skipping QUOTED spans, so a `>` inside an attribute value
+        // cannot end the tag early.
+        let Some(body_open) = tag_body_open(&lower, name_end) else {
+            cursor = open + 1;
+            continue;
         };
         let Some(inner_end) = lower[body_open + 1..].find(&close) else {
             break;
@@ -758,7 +814,21 @@ pub(crate) fn scan_trees(game_root: Option<&str>, bases: &[PathBuf]) -> ModInteg
     };
     let mut dangling: BTreeMap<String, Vec<(String, usize)>> = BTreeMap::new();
     let mut claims: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for (path, rel, base_idx) in &walk.glue {
+    // The deep-read budget is spent on the whole-file `gui/` overrides
+    // FIRST, then in walk order — see is_budget_priority_glue. The walk
+    // admits every glue candidate so this ordering decides coverage
+    // instead of the directory scan's arrival order.
+    let mut budgeted: Vec<&(PathBuf, String, usize)> = walk
+        .glue
+        .iter()
+        .filter(|(_, rel, _)| is_budget_priority_glue(rel))
+        .collect();
+    budgeted.extend(
+        walk.glue
+            .iter()
+            .filter(|(_, rel, _)| !is_budget_priority_glue(rel)),
+    );
+    for (path, rel, base_idx) in budgeted.into_iter().take(GLUE_MAX_FILES) {
         let Ok(text) = fs::read_to_string(path) else {
             continue;
         };
@@ -1548,6 +1618,56 @@ mod tests {
             <swffile>../unbound/mods/real_load.swf</swffile>"#;
         let refs = directive_refs(text);
         assert_eq!(refs, vec!["real_load.swf"], "{refs:?}");
+    }
+
+    /// An ATTRIBUTED open tag is a real glue spelling: the helper's own doc
+    /// promised it, the guard used to reject it, and the reference pass now
+    /// depends on it — a `<xmlfile lang="en">` load must stay visible.
+    #[test]
+    fn attributed_open_tags_still_yield_their_directive() {
+        let text = r#"<swffile id="x">a.swf</swffile>
+            <xmlfile lang="en">b.xml</xmlfile>
+            <path kind="font">gui/fonts/C.ttf</path>"#;
+        let refs = directive_refs(text);
+        assert!(refs.contains(&"a.swf".to_string()), "{refs:?}");
+        assert!(refs.contains(&"b.xml".to_string()), "{refs:?}");
+        let fontconfig = r#"<fontconfig><family>
+            <path kind="font"> gui/fonts/C.ttf </path>
+        </family></fontconfig>"#;
+        assert!(directive_refs(fontconfig).contains(&"c.ttf".to_string()));
+    }
+
+    /// A `>` INSIDE an attribute value must not end the open tag early (the
+    /// real glue carries unescaped markup in attributes), and a tag whose
+    /// name merely STARTS with ours is a different element.
+    #[test]
+    fn tag_bodies_and_names_are_scanned_correctly() {
+        let refs = directive_refs(r#"<swffile note="a > b">real.swf</swffile>"#);
+        assert_eq!(refs, vec!["real.swf"], "{refs:?}");
+        assert!(directive_refs(r#"<swffiles>a.swf</swffiles>"#).is_empty());
+        assert!(directive_refs(r#"<paths>x.xml</paths>"#).is_empty());
+    }
+
+    /// Malformed nesting leaves an inner OPENER inside the value; markup is
+    /// never a load target, so it must be dropped instead of reported as a
+    /// garbage asset name (the one spot where malformed input could accuse).
+    #[test]
+    fn malformed_nesting_never_becomes_a_finding() {
+        let refs = directive_refs(r#"<swffile><swffile>inner.swf</swffile></swffile>"#);
+        assert!(refs.is_empty(), "{refs:?}");
+    }
+
+    /// The deep-read budget must never starve the loose whole-file `gui/`
+    /// overrides — the one glue class whose staleness silently breaks a
+    /// rendered scene — behind a mod tree's own fragments.
+    #[test]
+    fn budget_priority_is_the_loose_gui_override() {
+        assert!(is_budget_priority_glue("gui/uss_settings.xml"));
+        assert!(is_budget_priority_glue("gui/fontconfig_scaleform.xml"));
+        assert!(is_budget_priority_glue("GUI/Battle_Elements.XML"));
+        assert!(!is_budget_priority_glue("gui/unbound2/mods/x.unbound"));
+        assert!(!is_budget_priority_glue("gui/ttaro/mod_utils/x.xml"));
+        assert!(!is_budget_priority_glue("PnFMods/Skin/Main.py"));
     }
 
     /// `<path>` is a load directive ONLY inside a `<fontconfig>` document:

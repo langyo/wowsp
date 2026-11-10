@@ -261,8 +261,8 @@ raw 链接。索引器只保留 https 且托管于上述 GitHub 主机的链接�
 陈旧副本仍会去要那个已不存在的目标，于是某个 UI 场景悄悄缺一块（现场反馈：
 港口兵工厂活动页只有部分内容显示；该客户端的组合是探针 + 两个 Aslain 插件，
 **探针本身无关**，陈旧覆盖才是）。`commands/mod_integrity.rs` 现在直接读加载
-指令（`<swffile>` / `<xmlfile>` / `<path>` 元素体，以及 `element url=` 与
-`url source=` 属性）并覆盖 `.swf`/`.xml`/`.ttf`/`.unbound`：某个指令指向的资源
+指令（`<swffile>` / `<xmlfile>` 元素体、`<fontconfig>` 内的 `<path>`，以及
+`element url=` 与 `url source=` 属性）并覆盖 `.swf`/`.xml`/`.ttf`/`.unbound`：某个指令指向的资源
 在插件树和客户端索引里都不存在时，就成为 `dangling_ref` 发现项——复用已有的
 启动前提示卡（原先只覆盖损坏 SWF 这类），处理方式仍是「停用或更新对应单元」。
 `.unbound` 片段现在也算粘合文件（崩溃分析器的引用扫描早已读它）。刻意保守：
