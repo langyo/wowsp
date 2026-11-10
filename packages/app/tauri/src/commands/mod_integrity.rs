@@ -249,15 +249,28 @@ fn push_swf_token(refs: &mut Vec<String>, token: &str) {
 const REF_ASSET_EXTS: &[&str] = &["swf", "xml", "ttf", "unbound"];
 
 /// The load directives an asset reference can appear in: the glue files
-/// spell the same load three ways — a `<swffile>`/`<xmlfile>`/`<path>`
-/// element body, an `<element url="…">` attribute and a `<url source="…">`
-/// attribute. Deliberately NOT every `.xml`/`.ttf` token in the file: a
-/// prose mention or an unrelated data value must never become a finding,
-/// so only directive positions are read.
+/// spell the same load as a `<swffile>`/`<xmlfile>` element body, as a
+/// `<path>` inside a `<fontconfig>` document, as an `<element url="…">`
+/// attribute or as a `<url source="…">` attribute. Deliberately NOT
+/// every `.xml`/`.ttf` token in the file: a prose mention or an unrelated
+/// data value must never become a finding, so only directive positions
+/// are read — and `<path>` only inside a font config, because the tag name
+/// is generic enough that other mod configs use it for their own values.
 fn directive_refs(text: &str) -> Vec<String> {
     let mut refs: Vec<String> = Vec::new();
-    for tag in ["swffile", "xmlfile", "path"] {
+    for tag in ["swffile", "xmlfile"] {
         for value in element_text_values(text, tag) {
+            push_directive_ref(&mut refs, &value);
+        }
+    }
+    // `<path>` is a load directive ONLY in a font config; the element name
+    // is generic enough that an unrelated mod config's own `<path>` value
+    // must not be read as a load. The font list is the ONE place the
+    // client's `gui/fontconfig_scaleform.xml` (and the mod overrides that
+    // shadow it) spells its font files, and a client update that retires a
+    // font family is exactly the mismatch this pass reports.
+    if text.to_ascii_lowercase().contains("<fontconfig") {
+        for value in element_text_values(text, "path") {
             push_directive_ref(&mut refs, &value);
         }
     }
@@ -687,8 +700,9 @@ pub(crate) fn active_res_mods(game_root: &str) -> Option<PathBuf> {
 ///   NEITHER any scanned tree NOR the client index. Two reference classes
 ///   feed it: the historical bare `.swf` token sweep ([`swf_refs_in_text`])
 ///   and the load-directive sweep ([`directive_refs`] — `<swffile>` /
-///   `<xmlfile>` / `<path>` bodies and the `element url=` / `url source=`
-///   attributes, over [`REF_ASSET_EXTS`]). The directive half is what makes
+///   `<xmlfile>` bodies, `<path>` inside a `<fontconfig>`, and the
+///   `element url=` / `url source=` attributes, over [`REF_ASSET_EXTS`]).
+///   The directive half is what makes
 ///   a STALE WHOLE-FILE glue override visible: `gui/uss_settings.xml`,
 ///   `gui/fontconfig_scaleform.xml` and `gui/battle_elements.xml` shadow
 ///   the client's own copies wholesale, so after a client update their
@@ -1534,6 +1548,24 @@ mod tests {
             <swffile>../unbound/mods/real_load.swf</swffile>"#;
         let refs = directive_refs(text);
         assert_eq!(refs, vec!["real_load.swf"], "{refs:?}");
+    }
+
+    /// `<path>` is a load directive ONLY inside a `<fontconfig>` document:
+    /// the tag name is generic, and an unrelated config spelling its own
+    /// `<path>` value must never be read as a load (that would accuse a
+    /// clean mod of a dangling reference the engine never looks for).
+    #[test]
+    fn path_directives_only_count_inside_a_font_config() {
+        let fontconfig = r#"<fontconfig><family>
+            <path> gui/fonts/Missing.ttf </path>
+        </family></fontconfig>"#;
+        assert!(directive_refs(fontconfig).contains(&"missing.ttf".to_string()));
+        let other = r#"<config><path> ../data/some.xml </path></config>"#;
+        assert!(
+            directive_refs(other).is_empty(),
+            "a non-fontconfig <path> is not a load: {:?}",
+            directive_refs(other)
+        );
     }
 
     /// Comma-separated multi-loads (the stock `battle_elements.xml` shape:
