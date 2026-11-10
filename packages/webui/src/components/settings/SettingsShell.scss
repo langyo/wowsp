@@ -128,6 +128,17 @@
        scrolls the entries at whatever height the flex stretch hands it. */
     contain: size;
   }
+
+  /* Accepting ANY shell height means a short section can hand the rail
+     barely more than one row: with flex-shrink the entries then crush into
+     each other (user screenshot: the rail's rows looked vertically
+     squashed with the section accent bleeding at the top). Entries keep
+     their own height and the rail scrolls instead. */
+  .hk-settings-host .hk-settings__rail .hk-nav-item,
+  .hk-settings-host .hk-settings__rail .hk-settings__rail-item {
+    flex: none;
+    min-height: 2.25rem;
+  }
 }
 
 .hk-settings__rail-heading {

@@ -258,6 +258,9 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
         for (let i = 0; i < formationForPool.count; i++) {
           const inst = proto.clone(true);
           inst.userData.sharedGeometry = true;
+          // Orientation is applied by markerUpdate's placement (the baked
+          // plane GLBs have their nose at -Z, unlike the ships' +Z; see the
+          // comment there) — a rotation here would be overwritten each frame.
           inst.visible = false;
           scene.add(inst);
           pool.push(inst);

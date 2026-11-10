@@ -1444,9 +1444,13 @@ export default defineComponent({
       async (path) => {
         if (!path) {
           squadronStates.value = null;
+          ctx.squadronStates = null;
           return;
         }
         squadronStates.value = await loadSquadronStates(path);
+        // The aircraft surface (markerUpdate's live flying count / HP label)
+        // reads the streams off the shared context — same load, one owner.
+        ctx.squadronStates = squadronStates.value;
       },
       { immediate: true },
     );
@@ -2923,6 +2927,7 @@ export default defineComponent({
                   hp: lbl.hp,
                   maxHp: lbl.maxHp,
                   depthMeters: lbl.depthMeters,
+                  planeAlive: lbl.planeAlive ?? null,
                   dead: lbl.dead,
                   ghostText: lbl.ghostText,
                   visible: true,

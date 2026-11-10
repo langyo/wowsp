@@ -18,6 +18,7 @@ import { clampXZ } from "./sceneUtils";
 import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
+import { lastSquadronEventAt, squadronFlyingAt } from "./planeFollow";
 import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./modelLoader";
 import { isAiName, isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
@@ -669,12 +670,28 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     for (const [planeId, anchor] of formationAnchor) {
       const pool = ctx.planeMeshes.get(planeId);
       const formation = ctx.planeFormations.get(planeId);
-      const total = formation?.count ?? 3;
+      // The RENDERED count is the squadron's live flying strength (the
+      // planesHealth digit count at t — a death drops one digit), NOT the
+      // static launch/pool size: the user reported squadrons showing their
+      // full wedge long after losses. Pre-E27 replays carry no such stream
+      // and fall back to the static count, unchanged.
+      const liveCount = squadronFlyingAt(
+        ctx.squadronStates?.planesHealth,
+        planeId,
+        t,
+      );
+      const total = liveCount ?? formation?.count ?? 3;
       const gCount = formation?.groupCount ?? total;
       const gSize = formation?.groupSize ?? 1;
       // Filled-wedge layout over flight groups (leader front, groups
       // stepping back 1-2-3-…, leftover groups centered in the last row).
-      const offsets = formationOffsets(gCount, gSize);
+      // Slot layout must cover the live count even when losses make it
+      // exceed the inferred launch grouping (the offsets describe the full
+      // wedge; we simply render the first n of it).
+      const offsets = formationOffsets(
+        Math.max(gCount, Math.ceil(total / Math.max(1, gSize))),
+        gSize,
+      );
       const n = Math.min(total, offsets.length);
       // Slow circle so airborne squadrons visibly hold a patrol orbit.
       const ang = t * 0.22 + (planeId % 7) * 0.9;
@@ -705,7 +722,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           const oz = (o.ox - cxm) * right.z + (o.oz - czm) * fwd.z;
           const yOff = (i % 3) * 2 - 2; // -2 / 0 / +2 alternating
           mesh.position.set(cx + ox, yBase + yOff, -cz + oz);
-          mesh.rotation.y = Math.PI - yaw;
+          // The placement convention assumes the model's nose/bow along
+          // local +Z (ships are baked that way). The plane GLBs carry the
+          // GAME's airframe frame instead — nose at -Z, vertical fin at +Z
+          // (verified by the z-slice vertex profile of PAAB001/2/3 against
+          // ships/Acasta.glb) — so the pi offset turns them nose-first.
+          mesh.rotation.y = Math.PI - yaw + Math.PI;
         }
       } else {
         // No model pool (yet): fall back to a point at the centroid.
@@ -932,12 +954,50 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         label.name = carrierLabel.name;
         label.shipName = carrierLabel.shipName;
         label.tier = carrierLabel.tier;
-        label.hp = carrierLabel.hp;
-        label.maxHp = carrierLabel.maxHp;
         // Aircraft have no "sunk" state — planes are simply gone when
         // shot down, so the card never shows the ship's dead tag.
         label.dead = false;
       }
+      // HP is the SQUADRON's, not the carrier's: this card floats over the
+      // aircraft, so it must answer "how hurt are the planes and how many
+      // are still flying" (user request). The airborne squadron tracked by
+      // this carrier label decides it: its live flying count (planesHealth
+      // digits) and its total-HP fraction (squadronHealth), rendered as a
+      // 0..1 bar — the same numbers the follow pill shows. A carrier whose
+      // squadron stream is missing (pre-E27 replay) keeps the ship values
+      // as the honest fallback.
+      const squadronId = (() => {
+        for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
+          if (labelOf !== labelId) continue;
+          const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
+          if (!trail || trail.samples.length === 0) continue;
+          const expiry = planeTrailExpiry(
+            trail.samples[trail.samples.length - 1].time,
+            ctx.minimapTrailEnd.get(planeId),
+          );
+          if (t >= trail.samples[0].time && t <= expiry) return planeId;
+        }
+        return null;
+      })();
+      const squadronFrac =
+        squadronId == null
+          ? null
+          : lastSquadronEventAt(ctx.squadronStates?.health, squadronId, t)?.hp ?? null;
+      const flying =
+        squadronId == null ? null : squadronFlyingAt(ctx.squadronStates?.planesHealth, squadronId, t);
+      if (carrierLabel && squadronFrac == null) {
+        label.hp = carrierLabel.hp;
+        label.maxHp = carrierLabel.maxHp;
+      } else {
+        // hp/maxHp are the generic 0..1 bar the label renderer already
+        // understands (0.62 = 62%); the planes row rides the status slot.
+        label.hp = squadronFrac;
+        label.maxHp = squadronFrac == null ? null : 1;
+      }
+      // The flying count has no slot in ShipStatusSnapshot (that shape is
+      // the below-hull combat chip row) — it rides the label's planeCard
+      // helper field, which the label renderer prints next to the type.
+      label.planeAlive = flying;
       // Any of this carrier's squadrons airborne?
       let visible = false;
       for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
