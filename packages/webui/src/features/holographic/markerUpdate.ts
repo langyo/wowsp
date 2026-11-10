@@ -729,6 +729,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           // ships/Acasta.glb) — so the pi offset turns them nose-first.
           mesh.rotation.y = Math.PI - yaw + Math.PI;
         }
+        // Park the SURPLUS slots of this still-anchored formation. The pool
+        // is sized to the LAUNCH strength (slots never shrink mid-replay),
+        // so a squadron that lost planes keeps slots n..count-1 in the pose
+        // their last full-strength tick gave them — visible, and standing
+        // exactly where a wingman used to be. Rendering "the first n" is
+        // only half the count contract; the rest must go dark, or a
+        // 3-plane squadron still draws all six models (user report: the
+        // wedge never thinned out as planes were shot down).
+        for (let i = n; i < pool.length; i++) pool[i].visible = false;
       } else {
         // No model pool (yet): fall back to a point at the centroid.
         const cloudSlot = ctx.planeCloudSlots.get(planeId);
