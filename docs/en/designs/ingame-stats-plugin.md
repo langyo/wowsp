@@ -193,6 +193,31 @@ from `LAST_BATTLE_PVE`: the PvE flag also keys the anchor calibration's
 battle class, and an asymmetric battle fields a two-team Tab table
 whose anchor belongs in the PvP slot.
 
+**PvE event battles (2026-11-10)** — the Bermuda Triangle event battle
+(arena file `matchGroup: "event"`, `gameType: "EventBattle"`,
+`eventType: "PCVE054"`, `scenario: "BER_1_CP_attack_SP_3"`) is a PvE
+battle: its roster lists the seven humans only (relation 0/1 rows, not a
+single relation >= 2 enemy row — the AI opposition spawns outside the
+roster). Both whole-battle suppressions missed it: `LAST_BATTLE_PVE` knows
+only the operation fingerprints plus an exact `matchGroup: "pve"`, and
+`last_enemy_all_ai` needs an enemy row to scan. The crosshair card therefore
+stayed up for the whole battle and hung the AI enemies (some under normal
+nicknames) under the crosshair. Rust gained `replay::is_pve_battle`
+(operation ∪ the pve/coop matchGroup family ∪ coop scenarios ∪ Lesta's
+`intro` ∪ the `PCVE*` battle scripts — the same coop family the frontend's
+`modeKey` / `isCoopBattle` use; `intro` sits on the `modeKey` side) with two
+roster rules: **any non-AI enemy row (normal nickname, id >= 0) vetoes the
+class** — a mixed event PvEvP battle therefore keeps its window up and lets
+the per-aim bot gate filter the bots — and **an event-family roster with no
+enemy-side entry reads PvE** (the Bermuda family's later replays carry an
+empty `eventType`, e.g. `20261105_184622 …BER_1_CP_attack_SP_2`; this rule
+is their fallback). The new flag
+`arena_info::LAST_BATTLE_PVE_DESCRIPTOR` serves the aim card only; the
+anchor calibration keeps the narrower `LAST_BATTLE_PVE` — an asymmetric
+battle is PvE-class by the new rule (no human for the card to show) yet
+renders a two-team Tab table whose anchor belongs in the PvP slot, so the
+two flags stay split.
+
 **Division bridge (2026-11-02)** — the roster tags' division (组队)
 grouping now comes from the game's own records: telemetry gains
 `divisions` (name → the record's `prebattleID`, non-zero entries only —

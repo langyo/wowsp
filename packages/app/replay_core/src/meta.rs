@@ -472,6 +472,80 @@ pub fn is_operation_battle(
     coop_family && !vehicles.is_empty() && !vehicles.iter().any(|v| v.relation >= 2)
 }
 
+/// Whether this battle reads PvE-class: [`is_operation_battle`] (an
+/// operation is one by construction), a roster with no human enemy, and a
+/// descriptor from the co-op / PvE families the frontend's `modeKey` /
+/// `isCoopBattle` (utils/modeColors.ts) know — `pve*` / coop match groups,
+/// coop scenarios, the `PCVE*` battle scripts and the Lesta `intro`
+/// tutorial (`modeKey`'s coop family carries `intro`; `isCoopBattle`
+/// itself does not).
+///
+/// Two roster rules make the class safe for the aim card:
+///
+/// * A mixed event PvEvP roster (an enemy row that is NOT clearly AI —
+///   normal nickname and a non-negative id) vetoes the class, whatever the
+///   descriptor says: those human enemies keep the card's window up, and
+///   the page-side per-aim bot gate filters the bots by name.
+/// * The event PvE modes do not always carry their battle script: the
+///   Bermuda family already produced replays with an EMPTY `eventType`
+///   (`20261105_184622 …e15_Bermuda_Triangle`, scenario `BER_1_CP_attack_SP_2`),
+///   and their rosters list the human team only (the AI opposition spawns
+///   outside the roster). A non-empty roster with NO enemy-side entry under
+///   an event-family match group is therefore the same PvE shape.
+///
+/// The `PCVE*` / Bermuda half is the 2026-11-10 report: the live Bermuda
+/// event arrives with `matchGroup: "event"`, `gameType: "EventBattle"`,
+/// `eventType: "PCVE054"` and `scenario: "BER_1_CP_attack_SP_3"`, and its
+/// arena roster lists the seven humans only (no relation >= 2 row at all —
+/// verified against the live arena log and both `20261110_14*` replays). Its
+/// AI opposition spawns outside the roster, so neither the exact-match rule
+/// (`match_group == "pve"`) nor the enemy-roster scan (which needs an enemy
+/// row) could see it: the crosshair stats card stayed up for the battle's
+/// whole duration and hung raw AI monster names under the crosshair.
+///
+/// Consumers: the aim card's whole-battle suppression (see `arena_info`'s
+/// `LAST_BATTLE_PVE_DESCRIPTOR` and `overlay::watch`). Deliberately NOT the
+/// anchor calibration's `LAST_BATTLE_PVE`: that flag keys the single-team Tab
+/// layout slot, while an asymmetric battle is PvE-class by this rule yet
+/// renders a two-team Tab table.
+pub fn is_pve_battle(
+    match_group: Option<&str>,
+    scenario: Option<&str>,
+    event_type: Option<&str>,
+    vehicles: &[wowsp_tauri_shared::VehicleEntry],
+) -> bool {
+    if is_operation_battle(match_group, scenario, event_type, vehicles) {
+        return true;
+    }
+    // The mixed-roster veto (see the doc): a human enemy keeps this a
+    // two-sided battle regardless of what the descriptor family says.
+    let human_enemy = vehicles
+        .iter()
+        .filter(|v| v.relation >= 2)
+        .any(|v| !is_bot_nickname(&v.name) && v.id >= 0);
+    if human_enemy {
+        return false;
+    }
+    let mg = match_group.unwrap_or("").to_lowercase();
+    let sc = scenario.unwrap_or("").to_lowercase();
+    let et = event_type.unwrap_or("").to_lowercase();
+    // The frontend coop-family spellings: `pve` (co-op on WG clients),
+    // `pve_*` (event PvE groups), `coop*` / `cooperative` (Lesta), the
+    // `intro` tutorial, a coop scenario id, and the PCVE event scripts.
+    if mg.starts_with("pve")
+        || mg.contains("coop")
+        || mg == "intro"
+        || sc.contains("coop")
+        || et.starts_with("pcve")
+    {
+        return true;
+    }
+    // The event-family single-team shape (the empty-`eventType` Bermuda
+    // replays): no enemy-side roster entry at all means no human enemy to
+    // show, whatever the matchGroup spelling.
+    mg.contains("event") && !vehicles.is_empty() && !vehicles.iter().any(|v| v.relation >= 2)
+}
+
 /// Filenames look like `20250622_152405_PJSB719-Hotaka_15_NE_north.wowsreplay`;
 /// the leading `YYYYMMDD_HHMMSS` is the only timestamp source. Both segments
 /// are 8/6 pure digits; we return them joined by `_` when both are present,

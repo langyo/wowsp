@@ -591,6 +591,17 @@ pub(super) fn schedule_windows(ctx: OverlayContext) -> WindowWants {
     }
 }
 
+/// Whether the aim card's battle-class gates permit its window: neither a
+/// PvE-class battle (every lockable target there is AI — see
+/// `arena_info::last_battle_pve_descriptor`, which vetoes itself on a mixed
+/// human-enemy roster) nor an all-AI enemy side may show the card. Pure so
+/// the wiring itself is unit-tested; the two inputs are the process-global
+/// arena flags.
+#[cfg(any(target_os = "windows", test))]
+pub(super) fn aim_card_battle_class_allows(battle_pve: bool, enemy_all_ai: bool) -> bool {
+    !battle_pve && !enemy_all_ai
+}
+
 /// Whether the game's battle-chat input currently owns the keyboard.
 ///
 /// PLACEHOLDER: this build has no chat-input source (the probe/chat bridge
@@ -921,10 +932,10 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // transparent windows (pure; see `schedule_windows`). The historical
     // table + aim-card wants and the chat panel's new one are derived here
     // in one place so a later window cannot drift into its own ad-hoc
-    // formula. The aim card's battle-class gates (PvE / all-AI enemy — see
-    // the pass comment below) fold into `aim_card_on` here, so the
-    // scheduler keeps one switch per window while the branch behaviour stays
-    // exactly the historical one. `chat_input_focused` is the reserved
+    // formula. The aim card's battle-class gates (PvE-descriptor / all-AI
+    // enemy — see the pass comment below) fold into `aim_card_on` here, so
+    // the scheduler keeps one switch per window while the branch behaviour
+    // stays exactly the historical one. `chat_input_focused` is the reserved
     // in-game-chat-input placeholder (this build has no source for it).
     let wants = schedule_windows(OverlayContext {
         focused_on_game,
@@ -932,9 +943,18 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
         battle_known,
         picker_open,
         table_off,
+        // The battle-class gates: the PvE class (`last_battle_pve_descriptor`
+        // — operations, the co-op / pve family, the PCVE event scripts and
+        // the event-family single-team roster; a mixed human-enemy roster
+        // vetoes it upstream) and the roster's all-AI enemy side. The
+        // calibration's narrower `last_battle_pve` is deliberately not
+        // consulted here — the PvE class is its strict superset, and the two
+        // split exactly where a PvE-class battle renders a two-team Tab table.
         aim_card_on: aim_card_on
-            && !super::arena_info::last_battle_pve()
-            && !super::arena_info::last_enemy_all_ai(),
+            && aim_card_battle_class_allows(
+                super::arena_info::last_battle_pve_descriptor(),
+                super::arena_info::last_enemy_all_ai(),
+            ),
         chat_panel_on,
         chat_input_focused: chat_input_focused(),
         hint_active,
@@ -945,17 +965,21 @@ fn watch_tab_tick(app: &AppHandle, fsm: &mut WatchFsm) {
     // OWN switch (`aim_card`, read above) is on — independent of the table
     // switch, so a table-off player may still run the card. Hidden while
     // Tab is held (the table overlay owns the screen then), the picker is
-    // open, or the battle is gone. PvE battles keep it down for their WHOLE
-    // duration (`arena_info::last_battle_pve`, the anchor calibration's own
-    // class flag), and so does any battle whose ENEMY side reads entirely
-    // AI (`arena_info::last_enemy_all_ai` — asymmetric fills and rooms
-    // deliberately set vs bots ride this one, whatever their matchGroup
-    // string says): the crosshair can only lock AI ships there — co-op
-    // bots or scripted operation units — so the card would hang a raw bot
-    // name over dash placeholders with nothing real to look up. A MIXED
-    // enemy side (event PvEvP: bots AND humans) keeps the window up; the
-    // page-side per-aim gate (telemetry `bots` + the AI-name styles)
-    // filters those AI targets by name. Placement hangs
+    // open, or the battle is gone. PvE-class battles keep it down for their
+    // WHOLE duration (`arena_info::last_battle_pve_descriptor` —
+    // operations, the co-op / pve family, the PCVE event scripts and the
+    // event-family single-team roster; the 2026-11-10 Bermuda event rides
+    // that roster half, so neither the anchor calibration's flag nor the
+    // enemy-row scan sees it), and so does any battle whose ENEMY side reads
+    // entirely AI (`arena_info::last_enemy_all_ai` — asymmetric fills and
+    // rooms deliberately set vs bots ride this one, whatever their matchGroup
+    // string says): the crosshair can only lock AI ships there — co-op bots
+    // or scripted operation units or event AI — so the card would hang a raw
+    // bot name over dash placeholders with nothing real to look up. A MIXED
+    // enemy side (event PvEvP: bots AND humans) keeps the window up — the
+    // PvE class vetoes itself on a human enemy row, and the page-side
+    // per-aim gate (telemetry `bots` + the AI-name styles) filters those AI
+    // targets by name. Placement hangs
     // the card below the game
     // window's center (the crosshair) by the configured hang
     // (`aim_card_hang_px`, read above with the switches) and follows every

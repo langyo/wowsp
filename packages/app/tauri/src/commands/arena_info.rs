@@ -80,6 +80,25 @@ static LAST_BATTLE_PVE: std::sync::atomic::AtomicBool = std::sync::atomic::Atomi
 /// per-aim bot gate (telemetry `bots`) filters their AI targets by name.
 static LAST_ENEMY_ALL_AI: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+/// Whether the most recently seen battle reads PvE-class — operations, the
+/// co-op / `pve*` / coop family, the `PCVE*` event scripts (and the
+/// event-family single-team roster shape), with a mixed human enemy roster
+/// vetoing the class (see [`replay::is_pve_battle`]). Read by the overlay
+/// watcher to keep the aim card's window down for the battle's WHOLE
+/// duration: every lockable target there is AI, so the card has nobody
+/// resolvable to show.
+///
+/// Kept SEPARATE from [`LAST_BATTLE_PVE`] the same way [`LAST_ENEMY_ALL_AI`]
+/// is: that flag also keys the anchor calibration's battle class (the
+/// single-team Tab layout slot), while an asymmetric battle is PvE-class yet
+/// renders a two-team Tab table. The 2026-11-10 Bermuda event is the case
+/// neither older flag caught — `matchGroup: "event"`, `gameType:
+/// "EventBattle"`, `eventType: "PCVE054"` with a human-only roster: no
+/// operation fingerprint, no exact `pve` matchGroup, and no enemy-side row
+/// for the all-AI scan.
+static LAST_BATTLE_PVE_DESCRIPTOR: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Delivery state (see [`deliver_arena`]): the battle stamp the WEBVIEWS
 /// were last delivered and whether that delivery carried an EMPTY roster.
 ///
@@ -239,6 +258,21 @@ fn note_arena_seen(info: &wowsp_tauri_shared::ArenaInfo, file_mtime: SystemTime)
     );
     LAST_BATTLE_PVE.store(
         operation || info.match_group.as_deref() == Some("pve"),
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    // The aim-card battle-class gate (see LAST_BATTLE_PVE_DESCRIPTOR):
+    // is_pve_battle folds the descriptor families together with the two
+    // roster rules — a human enemy vetoes the class (mixed event PvEvP
+    // keeps the window up), and an event-family roster with no enemy-side
+    // entry reads PvE (the Bermuda shape; the AI opposition spawns outside
+    // the roster, so the enemy-row scan below cannot see it).
+    LAST_BATTLE_PVE_DESCRIPTOR.store(
+        replay::is_pve_battle(
+            info.match_group.as_deref(),
+            info.scenario.as_deref(),
+            info.event_type.as_deref(),
+            &info.vehicles,
+        ),
         std::sync::atomic::Ordering::Relaxed,
     );
     // The aim card's whole-battle gate (see LAST_ENEMY_ALL_AI): decided
@@ -454,6 +488,14 @@ pub(crate) fn last_arena_stamp() -> i64 {
 /// anchor calibration's battle-class slot.
 pub(crate) fn last_battle_pve() -> bool {
     LAST_BATTLE_PVE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether the most recently recorded battle's descriptor reads PvE-class
+/// (see [`LAST_BATTLE_PVE_DESCRIPTOR`]). Read by the overlay watcher each
+/// tick to keep the aim card's window down for the battle's whole
+/// duration.
+pub(crate) fn last_battle_pve_descriptor() -> bool {
+    LAST_BATTLE_PVE_DESCRIPTOR.load(std::sync::atomic::Ordering::Relaxed)
 }
 
 /// Whether the most recently recorded battle's enemy side reads entirely
@@ -1363,6 +1405,10 @@ mod tests {
             !last_enemy_all_ai(),
             "a human enemy keeps the aim card's window up"
         );
+        assert!(
+            !last_battle_pve_descriptor(),
+            "a human enemy vetoes the PvE class even under a pve-family matchGroup"
+        );
 
         // The all-bot event shape: the enemy side is bots under NORMAL
         // nicknames — only their negative ids mark them, and the whole
@@ -1410,6 +1456,156 @@ mod tests {
         LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
         LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
         LAST_BATTLE_PVE.store(false, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE_DESCRIPTOR.store(false, std::sync::atomic::Ordering::Relaxed);
+        LAST_ENEMY_ALL_AI.store(false, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// The aim card's battle-class gate follows the co-op / PvE roster shapes,
+    /// not only the exact `pve` matchGroup / operation fingerprints: the
+    /// 2026-11-10 Bermuda event (`matchGroup: "event"`, `gameType:
+    /// "EventBattle"`, `eventType: "PCVE054"`) is a PvE battle whose roster
+    /// lists the human team only — its AI opposition spawns outside the
+    /// roster. Both older gates miss it (no `pve` matchGroup, no operation
+    /// fingerprint, no enemy row to scan), which left the crosshair card up
+    /// for the whole battle. Also pins the two roster rules and the deliberate
+    /// split: a BER replay with an EMPTY `eventType` still reads PvE from the
+    /// single-team event roster, a human enemy vetoes the class (mixed event
+    /// PvEvP keeps its window up), and the anchor calibration's
+    /// `LAST_BATTLE_PVE` stays PvP-class for the asymmetric two-team shape.
+    #[test]
+    fn pve_descriptor_flag_catches_event_pve_battles() {
+        let _globals = GLOBALS_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE.store(false, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE_DESCRIPTOR.store(false, std::sync::atomic::Ordering::Relaxed);
+        LAST_ENEMY_ALL_AI.store(false, std::sync::atomic::Ordering::Relaxed);
+        let vehicle = |id: i64, name: &str, relation: i64| wowsp_tauri_shared::VehicleEntry {
+            id,
+            name: name.to_string(),
+            relation,
+            ship_id: 4_180_000_000 + id.abs(),
+            ship_name: None,
+        };
+        let info_of = |match_group: &str,
+                       scenario: &str,
+                       event_type: &str,
+                       vehicles: Vec<wowsp_tauri_shared::VehicleEntry>| {
+            wowsp_tauri_shared::ArenaInfo {
+                match_group: Some(match_group.into()),
+                date_time: None,
+                map_name: None,
+                scenario: Some(scenario.into()),
+                event_type: Some(event_type.into()),
+                bot_count: 0,
+                scripted_unit_count: 0,
+                vehicles,
+                raw: serde_json::Value::Null,
+            }
+        };
+
+        // The live Bermuda shape: seven humans, no relation >= 2 row.
+        let bermuda = info_of(
+            "event",
+            "BER_1_CP_attack_SP_3",
+            "PCVE054",
+            vec![
+                vehicle(671158593, "langyo", 0),
+                vehicle(536948429, "ACAgone", 1),
+                vehicle(537005712, "Navigator_TB", 1),
+            ],
+        );
+        note_arena_seen(&bermuda, SystemTime::UNIX_EPOCH);
+        assert!(
+            last_battle_pve_descriptor(),
+            "a PCVE event battle is PvE-class for the aim card"
+        );
+        assert!(
+            !last_battle_pve(),
+            "the calibration class deliberately stays PvP for event battles"
+        );
+        assert!(
+            !last_enemy_all_ai(),
+            "there is no enemy-side roster row for the all-AI scan"
+        );
+
+        // Random battles stay PvP-class on both flags.
+        let pvp = info_of(
+            "pvp",
+            "domination_3point",
+            "",
+            vec![vehicle(1, "langyo", 0), vehicle(2, "foe", 2)],
+        );
+        note_arena_seen(&pvp, SystemTime::UNIX_EPOCH);
+        assert!(!last_battle_pve_descriptor());
+
+        // The asymmetric two-team PvE shape: an all-AI enemy side, so the
+        // card has no human to show and the descriptor flag rides it — while
+        // the calibration flag stays PvP (its Tab table is two-team).
+        let asymmetric = info_of(
+            "pvp",
+            "asymm_3point_coop",
+            "PCVE027",
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "mate", 1),
+                vehicle(3, ":Bot01:", 2),
+            ],
+        );
+        note_arena_seen(&asymmetric, SystemTime::UNIX_EPOCH);
+        assert!(last_battle_pve_descriptor());
+        assert!(!last_battle_pve());
+
+        // A later-phase Bermuda replay carries an EMPTY eventType
+        // (20261105_184622 …BER_1_CP_attack_SP_2): the single-team event
+        // roster alone must keep the class, or the reported card leak comes
+        // straight back on such a battle.
+        let bermuda_no_script = info_of(
+            "event",
+            "BER_1_CP_attack_SP_2",
+            "",
+            vec![
+                vehicle(671158593, "langyo", 0),
+                vehicle(536948429, "ACAgone", 1),
+            ],
+        );
+        note_arena_seen(&bermuda_no_script, SystemTime::UNIX_EPOCH);
+        assert!(
+            last_battle_pve_descriptor(),
+            "the single-team event roster is PvE-class without the battle script"
+        );
+
+        // Mixed event PvEvP: a pve-family descriptor with a human enemy row
+        // must NOT hide the card — the documented mixed shape keeps the
+        // window up and lets the page-side per-aim bot gate filter the bots.
+        let mixed = info_of(
+            "pve_event",
+            "neowaffentrager",
+            "",
+            vec![
+                vehicle(1, "langyo", 0),
+                vehicle(2, "mate", 1),
+                vehicle(-3, "EventBot_normal_name", 2),
+                vehicle(4, "humanFoe", 2),
+            ],
+        );
+        note_arena_seen(&mixed, SystemTime::UNIX_EPOCH);
+        assert!(
+            !last_battle_pve_descriptor(),
+            "a human enemy vetoes the PvE class under a pve-family matchGroup"
+        );
+        assert!(
+            !last_enemy_all_ai(),
+            "the mixed enemy side keeps the roster scan's window up too"
+        );
+
+        // Restore the process-globals (the sibling tests' convention).
+        LAST_TEAM_SIZES.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_ARENA_MTIME.store(0, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE.store(false, std::sync::atomic::Ordering::Relaxed);
+        LAST_BATTLE_PVE_DESCRIPTOR.store(false, std::sync::atomic::Ordering::Relaxed);
         LAST_ENEMY_ALL_AI.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 

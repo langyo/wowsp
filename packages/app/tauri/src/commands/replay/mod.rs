@@ -127,6 +127,6 @@ pub(crate) use streams::{
     read_smoke_screens_sync,
 };
 pub(crate) use wowsp_replay_core::meta::{
-    is_bot_nickname, is_operation_battle, is_scripted_unit_nickname, lite_and_client_version,
-    lite_from_path, parse_datetime_from_filename,
+    is_bot_nickname, is_operation_battle, is_pve_battle, is_scripted_unit_nickname,
+    lite_and_client_version, lite_from_path, parse_datetime_from_filename,
 };
