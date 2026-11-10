@@ -89,16 +89,11 @@ keep the bytes authoritative (see 4.2 and 7.8).
 
 This wave therefore **creates a channel**; it does not migrate one.
 
-> **Implementation status.** The channel is live: `langyo/wowsp-d1` published seq 2 (the four ONNX models, the ship-attribute table and 35 terrain-LOS rasters baked against resource-pack tree `6855322b…`), verified through both `hf-mirror.com` and the official endpoint; the app's `ai` channel, the settings card and the eight settings locales shipped with it. The table above records the pre-channel state this design replaced, and the pack-carried routing table now overrides the embedded one (section 6.6).
+> **Implementation status.** The channel is live. Seq 2 was the original four-model release (with 35 terrain-LOS rasters baked against resource-pack tree `6855322b…`). **Seq 3 is now published** (2026-11-10, revision `366b2b58…`, tree `0882c879…`): fire/move/advice/**T4 torpedo4_model.onnx** + ship_attributes, no LOS. The retired T2 `torpedo_model.onnx` is archive-only on the previous artifact commit under `legacy-2-20261110` and `legacy-torpedo-e26d-20261110`. The publish was written through `hf-mirror.com` because the host's official endpoint was TLS-unreachable.
 >
-> **T4 diagnostic slot (next publish, seq 3).** The torpedo diagnostic moved
-> to the three-head T4 contract: the manifest gains `torpedo4_model.onnx`
-> (`torpedo-t4-three-head` / `torp4-v1`, 49-wide global block) and drops the
-> legacy two-head file. The client accepts both slots (the legacy one stays
-> for old packs), the runtime prefers T4 and falls back to legacy, and an
-> older client refuses the seq 3 manifest at the contract check — keeping its
-> installed pack — so the model release rides with a client release
-> (section 6.6).
+> **Migration.** A T4-aware client accepts the new slot and prefers it at runtime; older clients refuse the seq 3 manifest at the contract check and keep their installed seq 2 pack (the `seq` ratchet never downgrades). **The client release carrying the T4 slot must ship before ordinary users can update through seq 3**; until then the published model release is ahead of the stable client.
+>
+> **Architecture/weight rule.** Post-training updates bump the manifest seq and archive the previous artifact commit under date-suffixed `legacy-*` tags; without a new architecture, slots/kinds/featureSets do not change. The GitHub registry `scripts/experiments/model_registry.json` is the source of truth.
 
 ## 3. Architecture overview
 
