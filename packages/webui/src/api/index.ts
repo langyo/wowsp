@@ -119,6 +119,7 @@ export type {
   LoaderHealthVerdict,
   LoaderHealthReport,
   StaleBinInfo,
+  TreeVersionInfo,
   MigrateReport,
   PlanFile,
   MigrationPlan,

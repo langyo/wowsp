@@ -23,6 +23,7 @@ import {
   type PackagePlan,
   type PnfLoaderStatus,
   type StaleBinInfo,
+  type TreeVersionInfo,
 } from "@/api";
 import {
   KIND_BIG,
@@ -167,6 +168,11 @@ export function useModHub() {
   // game stopped loading after an update — surfaced so they can be moved
   // into the current version instead of lingering as dead weight.
   const staleBins = ref<StaleBinInfo[]>([]);
+  /** Whether the LIVE tree predates the client it feeds (a game update
+   *  landed over an installed tree). Advisory: it names the override
+   *  files whose staleness breaks rendering and offers a one-click
+   *  disable; it never blocks or deletes on its own. */
+  const treeVersion = ref<TreeVersionInfo | null>(null);
   // ModAPI marker health — PnF content with a missing marker is the
   // "everything silently dead" shape (banner + one-click heal).
   const loaderStatus = ref<PnfLoaderStatus | null>(null);
@@ -1001,6 +1007,11 @@ export function useModHub() {
       installed.value = mods;
       foreignUnits.value = foreign;
       staleBins.value = stale;
+      treeVersion.value = await api.modHubTreeVersion(root).catch((e) => {
+        console.warn("tree-version detection failed", e);
+        return null;
+      });
+      if (!isCurrent()) return;
       loaderStatus.value = loader;
       loaderHealth.value = health;
       bootInstaller.value = boot;
@@ -2036,6 +2047,7 @@ export function useModHub() {
     installed.value = [];
     foreignUnits.value = [];
     staleBins.value = [];
+    treeVersion.value = null;
     loaderStatus.value = null;
     loaderHealth.value = null;
     bootInstaller.value = null;
@@ -2100,6 +2112,7 @@ export function useModHub() {
     unitTarget,
     foreignTarget,
     staleBins,
+    treeVersion,
     loaderStatus,
     restoringLoader,
     loaderHealth,

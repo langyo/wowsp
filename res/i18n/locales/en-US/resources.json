@@ -208,6 +208,8 @@
   "prunedPreviewFiles": "Skipped {count} preview/screenshot file(s) while installing.",
   "gameRunningBlock": "World of Warships is running — close the game before installing, uninstalling or toggling mods.",
   "staleBinBanner": "Game updated — bin/{version} still holds {count} stranded mod file(s) the current client no longer loads.",
+  "treeStale": "These mods were installed for game {tree} but the client now runs {current}. {count} override file(s) in gui/ replace the client's own copies wholesale and can make parts of a screen stop rendering — disable them in the installed list, then reinstall the mods once they are updated.",
+  "treeStaleHint": "The game updated after these mods were installed. Check the overrides under gui/.",
   "staleMigrate": "Migrate to current version",
   "pnfLoaderMissing": "PnF mods are installed but the PnFModsLoader.py marker is missing — they will not load in game.",
   "pnfLoaderRestore": "Restore the loader marker",

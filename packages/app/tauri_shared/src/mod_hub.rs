@@ -511,6 +511,46 @@ pub struct PnfLoaderStatus {
     pub marker_present: bool,
 }
 
+/// Whether the LIVE mod tree predates the client it now feeds, and which
+/// files carry that risk.
+///
+/// The client reads its `gui/` glue (`uss_settings.xml`,
+/// `fontconfig_scaleform.xml`, `battle_elements.xml`) and most of
+/// `gui/fonts/**` as WHOLE-FILE shadows: a mod that wrote one of those
+/// into `res_mods` replaces the client's own copy outright, because the
+/// engine never merges XML. After a game update retires or renames an
+/// asset those overrides load, the stale copy keeps asking for it and part
+/// of a UI scene silently stops rendering (the Arsenal event page field
+/// report).
+///
+/// This type is the honest, cheap signal for that class: it reports only
+/// that the tree was STAMPED by an older client (`treeGameVersion` vs
+/// `gameVersion`) and lists the paths whose staleness is load-bearing. It
+/// deliberately does NOT claim any single file is stale — a skin may
+/// replace a client asset on purpose — and nothing is deleted or disabled
+/// automatically.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TreeVersionInfo {
+    /// Client game version recorded when the tree was last written
+    /// (`15.9.0`). `None` when the tree carries no stamp — written by an
+    /// app build that predates this field, or by a foreign installer only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_game_version: Option<String>,
+    /// The client's CURRENT game version, off its own `preferences.xml`
+    /// pin. `None` when the client never recorded one (never launched).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub game_version: Option<String>,
+    /// True when both versions are known and the tree's differs — the
+    /// tree was written for an older (or otherwise different) client.
+    pub stale: bool,
+    /// `res_mods`-relative files whose staleness is load-bearing: loose
+    /// `gui/<file>` glue overrides plus `gui/fonts/**`. Listed as evidence
+    /// when `stale`; empty otherwise.
+    #[serde(default)]
+    pub risky_paths: Vec<String>,
+}
+
 /// A `bin/<version>/` older than the client's current one whose `res_mods`
 /// still carries files — stranded by a game update: invisible to the hub's
 /// installed list and not loaded by the client, but still on disk.

@@ -386,6 +386,27 @@ export default defineComponent({
                 </div>
               )}
 
+
+              {hub.treeVersion.value?.stale &&
+                hub.gameRoot.value &&
+                !hub.safeMode.value && (
+                  <div class="resources-banner resources-banner--warn">
+                    <AlertTriangle size={16} />
+                    <span
+                      class="resources-banner__text"
+                      data-hint={t("resources.treeStaleHint", {
+                        count: hub.treeVersion.value.riskyPaths.length,
+                      })}
+                    >
+                      {t("resources.treeStale", {
+                        tree: hub.treeVersion.value.treeGameVersion ?? "?",
+                        current: hub.treeVersion.value.gameVersion ?? "?",
+                        count: hub.treeVersion.value.riskyPaths.length,
+                      })}
+                    </span>
+                  </div>
+                )}
+
               {hub.loaderStatus.value?.pnfModsPresent &&
                 !hub.loaderStatus.value.markerPresent &&
                 hub.gameRoot.value &&

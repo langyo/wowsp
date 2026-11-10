@@ -9,7 +9,7 @@ const mocks = vi.hoisted(() => ({
     activeInstall: { path: string; kind?: string; realm?: string | null } | null;
     installs?: { path: string; kind?: string; realm?: string | null }[];
   },
-  scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), loader: vi.fn(), loaderHealth: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
+  scan: vi.fn(), foreign: vi.fn(), stale: vi.fn(), treeVersion: vi.fn(), loader: vi.fn(), loaderHealth: vi.fn(), safe: vi.fn(), reconcile: vi.fn(),
   bootInstaller: vi.fn(), disarm: vi.fn(),
   adopt: vi.fn(), uninstall: vi.fn(), cleanJunk: vi.fn(), error: vi.fn(),
   success: vi.fn(), warning: vi.fn(), info: vi.fn(),
@@ -25,6 +25,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }));
 vi.mock("@/api", () => ({ api: {
   modHubScanInstalled: mocks.scan, modHubForeignUnits: mocks.foreign, modHubStaleVersions: mocks.stale,
+  modHubTreeVersion: mocks.treeVersion,
   modHubPnfLoaderStatus: mocks.loader, modHubLoaderHealth: mocks.loaderHealth, modHubSafeMode: mocks.safe, modHubReconcile: mocks.reconcile,
   modHubBootInstaller: mocks.bootInstaller, modHubDisarmBootInstaller: mocks.disarm,
   modHubUninstallUnit: mocks.uninstall,
@@ -180,6 +181,12 @@ beforeEach(() => {
   mocks.scan.mockResolvedValue([mod("Mod A")]);
   mocks.foreign.mockResolvedValue([]);
   mocks.stale.mockResolvedValue([]);
+  mocks.treeVersion.mockResolvedValue({
+    treeGameVersion: "15.10.0",
+    gameVersion: "15.10.0",
+    stale: false,
+    riskyPaths: [],
+  });
   mocks.loader.mockResolvedValue(null);
   mocks.loaderHealth.mockResolvedValue(null);
   mocks.bootInstaller.mockResolvedValue(null);
@@ -293,6 +300,36 @@ describe("mod inventory root ownership", () => {
     expect(mocks.adopt).not.toHaveBeenCalled();
   });
 
+
+  it("warns when the mod tree was stamped by an older client", async () => {
+    // The field report's shape: mods installed for 15.9, the client now on
+    // 15.10, loose gui/ overrides on disk. The banner names both versions
+    // and the override count — and it is ADVISORY (nothing is disabled).
+    mocks.treeVersion.mockResolvedValue({
+      treeGameVersion: "15.9.0",
+      gameVersion: "15.10.0",
+      stale: true,
+      riskyPaths: ["gui/uss_settings.xml", "gui/fontconfig_scaleform.xml"],
+    });
+    const view = await mountInstalled();
+    await flushPromises();
+    const banners = view.findAll(".resources-banner--warn");
+    expect(
+      banners.some((b) => b.text().includes("resources.treeStale")),
+      banners.map((b) => b.text()).join(" | "),
+    ).toBe(true);
+    expect(mocks.treeVersion).toHaveBeenCalled();
+  });
+
+  it("stays quiet when the tree matches the running client", async () => {
+    const view = await mountInstalled();
+    await flushPromises();
+    const banners = view.findAll(".resources-banner--warn");
+    expect(
+      banners.some((b) => b.text().includes("resources.treeStale")),
+      banners.map((b) => b.text()).join(" | "),
+    ).toBe(false);
+  });
   it("cannot reuse a delayed migration plan in another root's wizard", async () => {
     mocks.stale.mockResolvedValue([{ binVersion: "1", mods: ["Test mod"], fileCount: 1 }]);
     const pending = deferred<MigrationPlan>();

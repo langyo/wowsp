@@ -907,6 +907,7 @@ pub fn run() {
             commands::mod_hub::mod_hub_uninstall_unit,
             commands::mod_hub::mod_hub_uninstall_modstation_unit,
             commands::mod_hub::mod_hub_stale_versions,
+            commands::mod_hub::mod_hub_tree_version,
             commands::mod_hub::mod_hub_migrate_stale_bin,
             commands::mod_hub::mod_hub_pnf_loader_status,
             commands::mod_hub::mod_hub_loader_health,

@@ -561,6 +561,22 @@ export interface LoaderHealthReport {
 
 /** An older `bin/<version>/` whose `res_mods` still carries files —
  *  stranded by a game update, invisible to the hub's installed list. */
+/** Whether the live `res_mods` predates the client it feeds (a game
+ *  update landed while mods were installed), with the override files
+ *  whose staleness is load-bearing. Advisory only: a skin may replace a
+ *  client asset on purpose, so nothing is disabled automatically. */
+export interface TreeVersionInfo {
+  /** Client version recorded when the tree was last written (absent when
+   *  the tree carries no stamp). */
+  treeGameVersion?: string;
+  /** The client's current game version, off its own preferences pin. */
+  gameVersion?: string;
+  /** Both known and different — the tree was written for another client. */
+  stale: boolean;
+  /** res_mods-relative override files whose staleness matters. */
+  riskyPaths: string[];
+}
+
 export interface StaleBinInfo {
   binVersion: string;
   /** Unit names the scanner recognizes in the stranded tree. */
@@ -801,6 +817,11 @@ export const modHubApi = {
   /** Older `bin/<version>` dirs whose res_mods still carries stranded mods. */
   modHubStaleVersions: (gameRoot: string) =>
     transport.invoke<StaleBinInfo[]>(RPC.mod_hub_stale_versions, { gameRoot }),
+  /** Whether the LIVE mod tree predates the client it now feeds, plus the
+   *  files whose staleness silently breaks a rendered scene (loose gui/
+   *  glue overrides and gui/fonts). Read-only; never blocks or deletes. */
+  modHubTreeVersion: (gameRoot: string) =>
+    transport.invoke<TreeVersionInfo>(RPC.mod_hub_tree_version, { gameRoot }),
   /** ModAPI loader-marker health: PnF content with a missing
    *  PnFModsLoader.py marker loads nothing in game. */
   modHubPnfLoaderStatus: (gameRoot: string) =>
