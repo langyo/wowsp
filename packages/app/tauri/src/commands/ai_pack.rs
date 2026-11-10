@@ -63,17 +63,25 @@ const MANIFEST_TIMEOUT: Duration = Duration::from_secs(20);
 /// failure work.
 const FILE_TIMEOUT: Duration = Duration::from_secs(900);
 
-/// The four deployed models and their featurizer contract. A release that
-/// declares anything else is refused before a byte is downloaded.
-const MODEL_CONTRACT: [(&str, &str, &str); 4] = [
+/// The five deployed model slots and their featurizer contract. A release
+/// that declares anything else is refused before a byte is downloaded.
+///
+/// The torpedo diagnostic has two slots by design: `torpedo4_model.onnx` is
+/// the CURRENT T4 contract (49-wide global block, three heads A/B/C),
+/// `torpedo_model.onnx` is the LEGACY two-head slot kept so an older (seq 2)
+/// release keeps installing. The runtime ladder prefers T4 and falls back to
+/// the legacy slot, so both stay part of the accepted manifest shape.
+const MODEL_CONTRACT: [(&str, &str, &str); 5] = [
     ("fire_model.onnx", "fire-two-head", "fire-v1"),
     ("move_model.onnx", "move-sectors-17", "move-v1"),
     ("advice_fire_model.onnx", "advice-fire-attrs", "advice-e24"),
     ("torpedo_model.onnx", "torpedo-three-head", "torpedo-e26d"),
+    ("torpedo4_model.onnx", "torpedo-t4-three-head", "torp4-v1"),
 ];
 
-/// The two models every release must carry (the optional advice/torpedo
-/// models may be absent, but never mis-declared).
+/// The two models every release must carry (the optional advice model and
+/// BOTH torpedo slots — legacy two-head and T4 three-head — may be absent,
+/// but never mis-declared).
 const REQUIRED_MODELS: [&str; 2] = ["fire_model.onnx", "move_model.onnx"];
 
 /// The data file the advice router needs.
@@ -452,6 +460,9 @@ fn local_status(cache: &Path) -> AiPackStatus {
         "fire_model.onnx",
         "move_model.onnx",
         "advice_fire_model.onnx",
+        // Current torpedo slot first, then the legacy two-head fallback an
+        // older (seq 2) pack may carry instead.
+        "torpedo4_model.onnx",
         "torpedo_model.onnx",
         ATTRS_FILE,
     ] {
@@ -647,6 +658,29 @@ fn validate_staged_models(staging: &Path, manifest: &AiManifest) -> anyhow::Resu
                     other => bail!(
                         "advice_fire_model.onnx is not an attribute-routed fire model ({other:?})"
                     ),
+                }
+            },
+            "torpedo4_model.onnx" => {
+                // The current T4 diagnostic: 49-wide global block, three
+                // heads A/B/C (headC = P(hit | launched)). The runtime slot
+                // loader accepts exactly this shape; validating the staged
+                // bytes here keeps a wrong-generation file out of the pack.
+                let model = super::decision_score::ScoreModel::from_bytes(
+                    "ai pack torpedo4 model",
+                    &bytes,
+                )?;
+                let widths = model.widths();
+                if widths.0 != 24
+                    || widths.1 != super::decision_score::ENTITY_DIM_V2
+                    || widths.2 != super::decision_score::TORP_GLOBAL_DIM_V4
+                {
+                    bail!("torpedo4_model.onnx widths {widths:?} do not match this build");
+                }
+                if !matches!(
+                    model.kind(),
+                    super::decision_score::ScoreModelKind::FireThreeHead
+                ) {
+                    bail!("torpedo4_model.onnx is not the three-head torpedo model");
                 }
             },
             "torpedo_model.onnx" => {
@@ -911,15 +945,67 @@ mod tests {
 
     #[test]
     fn contract_accepts_the_published_shape() {
+        // Every declared slot at once (a transitional release that ships a
+        // new client's T4 slot next to the legacy two-head file).
         let manifest = manifest_with(vec![
             model_file("fire_model.onnx", "fire-two-head", "fire-v1"),
             model_file("move_model.onnx", "move-sectors-17", "move-v1"),
             model_file("advice_fire_model.onnx", "advice-fire-attrs", "advice-e24"),
             model_file("torpedo_model.onnx", "torpedo-three-head", "torpedo-e26d"),
+            model_file("torpedo4_model.onnx", "torpedo-t4-three-head", "torp4-v1"),
             file("ship_attributes.json"),
             file("50_Gold_harbor/terrain_los.npz"),
         ]);
         check_contract(&manifest).expect("published shape");
+    }
+
+    /// A seq 3 release drops the legacy two-head slot and ships only the T4
+    /// three-head slot: still a complete release (neither torpedo slot is
+    /// required).
+    #[test]
+    fn contract_accepts_a_release_without_the_legacy_torpedo_slot() {
+        let manifest = manifest_with(vec![
+            model_file("fire_model.onnx", "fire-two-head", "fire-v1"),
+            model_file("move_model.onnx", "move-sectors-17", "move-v1"),
+            model_file("advice_fire_model.onnx", "advice-fire-attrs", "advice-e24"),
+            model_file("torpedo4_model.onnx", "torpedo-t4-three-head", "torp4-v1"),
+            file("ship_attributes.json"),
+        ]);
+        check_contract(&manifest).expect("T4-only release");
+    }
+
+    /// An older (seq 2) release keeps installing: the legacy two-head slot is
+    /// still in the contract even though new releases no longer carry it.
+    #[test]
+    fn contract_accepts_a_legacy_release_without_the_t4_slot() {
+        let manifest = manifest_with(vec![
+            model_file("fire_model.onnx", "fire-two-head", "fire-v1"),
+            model_file("move_model.onnx", "move-sectors-17", "move-v1"),
+            model_file("torpedo_model.onnx", "torpedo-three-head", "torpedo-e26d"),
+            file("ship_attributes.json"),
+        ]);
+        check_contract(&manifest).expect("legacy release");
+    }
+
+    /// The T4 slot's declared metadata is validated like every other model:
+    /// a wrong kind or feature set is refused before a byte is downloaded.
+    #[test]
+    fn contract_rejects_a_mis_declared_t4_slot() {
+        for (kind, feature_set) in [
+            ("torpedo-three-head", "torp4-v1"),
+            ("torpedo-t4-three-head", "torp3-v1"),
+            ("torpedo-t4-three-head", "torpedo-e26d"),
+        ] {
+            let manifest = manifest_with(vec![
+                model_file("fire_model.onnx", "fire-two-head", "fire-v1"),
+                model_file("move_model.onnx", "move-sectors-17", "move-v1"),
+                model_file("torpedo4_model.onnx", kind, feature_set),
+            ]);
+            assert!(
+                check_contract(&manifest).is_err(),
+                "T4 slot declaring {kind}/{feature_set} must be refused"
+            );
+        }
     }
 
     #[test]
@@ -953,6 +1039,17 @@ mod tests {
         assert_eq!(
             repo_path_for("fire_model.onnx").unwrap(),
             "onnx/fire_model.onnx"
+        );
+        // Both torpedo slots map into the same onnx/ prefix: the current T4
+        // three-head model and the legacy two-head file an older release
+        // still publishes.
+        assert_eq!(
+            repo_path_for("torpedo4_model.onnx").unwrap(),
+            "onnx/torpedo4_model.onnx"
+        );
+        assert_eq!(
+            repo_path_for("torpedo_model.onnx").unwrap(),
+            "onnx/torpedo_model.onnx"
         );
         assert_eq!(
             repo_path_for("ship_attributes.json").unwrap(),
@@ -1029,5 +1126,120 @@ mod tests {
         matching.res_tree_sha256 = Some(tree);
         assert!(!los_mismatch(&matching, &dir));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── T4 torpedo slot: the staged ONNX validation and the local inventory ──
+
+    /// The app's tracked ONNX fixtures, i.e. the REAL delivered shapes: the
+    /// legacy two-head export (24 x 15, global 38) and the current T4
+    /// three-head export (24 x 15, global 49, outputs A/B/C).
+    const T2_FIXTURE: &[u8] = include_bytes!("fixtures/torpedo2_tiny_2head.onnx");
+    const T4_FIXTURE: &[u8] = include_bytes!("fixtures/torpedo4_tiny_3head.onnx");
+    /// A graph that is not a scoring model at all (single `x` input).
+    const FOREIGN_FIXTURE: &[u8] = include_bytes!("fixtures/decision_ai_tiny.onnx");
+
+    fn staging_root(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("wowsp-ai-pack-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn stage(root: &Path, name: &str, bytes: &[u8]) {
+        let path = root.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    fn t4_manifest() -> AiManifest {
+        manifest_with(vec![model_file(
+            "torpedo4_model.onnx",
+            "torpedo-t4-three-head",
+            "torp4-v1",
+        )])
+    }
+
+    /// The delivered T4 export passes the staged validation; a foreign graph
+    /// is refused before the swap.
+    #[test]
+    fn staged_t4_slot_accepts_the_three_head_export() {
+        let dir = staging_root("t4-ok");
+        stage(&dir, "torpedo4_model.onnx", T4_FIXTURE);
+        validate_staged_models(&dir, &t4_manifest()).expect("the real T4 export validates");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The legacy two-head export (global 38, two heads) and a non-model
+    /// graph are both refused in the T4 slot — width, head count and schema
+    /// are all part of the contract.
+    #[test]
+    fn staged_t4_slot_rejects_wrong_widths_kind_and_schema() {
+        let two_head = staging_root("t4-two-head");
+        stage(&two_head, "torpedo4_model.onnx", T2_FIXTURE);
+        assert!(
+            validate_staged_models(&two_head, &t4_manifest()).is_err(),
+            "the legacy 38-wide two-head export must not fill the T4 slot"
+        );
+        let _ = std::fs::remove_dir_all(&two_head);
+
+        let foreign = staging_root("t4-foreign");
+        stage(&foreign, "torpedo4_model.onnx", FOREIGN_FIXTURE);
+        assert!(
+            validate_staged_models(&foreign, &t4_manifest()).is_err(),
+            "a non-scoring graph must be refused"
+        );
+        let _ = std::fs::remove_dir_all(&foreign);
+    }
+
+    /// The legacy slot keeps validating the two-head export, so an old pack
+    /// is still installable after the T4 slot was added.
+    #[test]
+    fn staged_legacy_slot_still_accepts_the_two_head_export() {
+        let dir = staging_root("t2-ok");
+        stage(&dir, "torpedo_model.onnx", T2_FIXTURE);
+        let manifest = manifest_with(vec![model_file(
+            "torpedo_model.onnx",
+            "torpedo-three-head",
+            "torpedo-e26d",
+        )]);
+        validate_staged_models(&dir, &manifest).expect("legacy slot validates");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The local inventory reports BOTH torpedo slots so the card can show
+    /// which one is installed (the runtime prefers T4, falls back to legacy).
+    #[test]
+    fn local_status_lists_both_torpedo_slots() {
+        let root = staging_root("status");
+        let decisions = root.join("decisions");
+        std::fs::create_dir_all(&decisions).unwrap();
+        let files: [(&str, &[u8]); 6] = [
+            ("fire_model.onnx", b"fire"),
+            ("move_model.onnx", b"move"),
+            ("advice_fire_model.onnx", b"adv"),
+            ("torpedo4_model.onnx", b"t4!"),
+            ("torpedo_model.onnx", b"t2"),
+            ("ship_attributes.json", b"{}"),
+        ];
+        for (name, bytes) in files {
+            std::fs::write(decisions.join(name), bytes).unwrap();
+        }
+        let status = local_status(&root);
+        let entry = |name: &str| {
+            status
+                .models
+                .iter()
+                .find(|m| m.path == name)
+                .unwrap_or_else(|| panic!("{name} missing from the inventory"))
+        };
+        assert!(entry("torpedo4_model.onnx").present);
+        assert_eq!(entry("torpedo4_model.onnx").size_bytes, 3);
+        assert!(entry("torpedo_model.onnx").present);
+        assert_eq!(entry("torpedo_model.onnx").size_bytes, 2);
+        // Every declared slot is reported, installed or not.
+        assert_eq!(status.models.len(), 6);
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

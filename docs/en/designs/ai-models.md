@@ -64,7 +64,8 @@ Goals:
 | fire model (fp32, v2 ablate NONE) | `scripts/experiments/out/fire_model/v2plain_std/fp32.onnx` | 2,592,543 B |
 | movement model (fp32, 17-class, ablate E11) | `scripts/experiments/out/move_model/node3/main/fp32.onnx` | 2,652,542 B |
 | advice fire model (fp32, E24 attribute-routed) | `scripts/experiments/out/fire_model/e24_attrs/fp32.onnx` | 2,595,135 B |
-| torpedo model (fp32; int8 optional) | `scripts/experiments/out/torpedo_model/final/fp32.onnx` | 492,411 B (int8 136,214 B) |
+| torpedo T4 model (fp32, 49-wide global block, three heads A/B/C, calibrated temperatures baked at export) | `scripts/experiments/out/torpedo_model/final_torp4/fp32.onnx` | 502,518 B |
+| legacy torpedo model (fp32, 38-wide global block, two heads; older releases only) | `scripts/experiments/out/torpedo_model/final/fp32.onnx` | 492,411 B (int8 136,214 B) |
 | ship-attribute routing table | `scripts/experiments/ship_attributes.json` | 261,507 B |
 | terrain-LOS rasters | `bake_terrain_los.py` output, one `terrain_los.npz` per map | 5,986-221,638 B each (35 maps installed) |
 
@@ -89,6 +90,15 @@ keep the bytes authoritative (see 4.2 and 7.8).
 This wave therefore **creates a channel**; it does not migrate one.
 
 > **Implementation status.** The channel is live: `langyo/wowsp-d1` published seq 2 (the four ONNX models, the ship-attribute table and 35 terrain-LOS rasters baked against resource-pack tree `6855322b…`), verified through both `hf-mirror.com` and the official endpoint; the app's `ai` channel, the settings card and the eight settings locales shipped with it. The table above records the pre-channel state this design replaced, and the pack-carried routing table now overrides the embedded one (section 6.6).
+>
+> **T4 diagnostic slot (next publish, seq 3).** The torpedo diagnostic moved
+> to the three-head T4 contract: the manifest gains `torpedo4_model.onnx`
+> (`torpedo-t4-three-head` / `torp4-v1`, 49-wide global block) and drops the
+> legacy two-head file. The client accepts both slots (the legacy one stays
+> for old packs), the runtime prefers T4 and falls back to legacy, and an
+> older client refuses the seq 3 manifest at the contract check — keeping its
+> installed pack — so the model release rides with a client release
+> (section 6.6).
 
 ## 3. Architecture overview
 
@@ -104,7 +114,7 @@ Three layers, each with one job:
   client  commands/ai_pack.rs  --->  commands/mirror/ (MirrorContext)
       |      per-file download via download_hub        GitHub | Hugging Face | ModelScope
       v
-  <cache>/decisions  (fire/move/advice/torpedo + attrs + <map>/terrain_los.npz)
+  <cache>/decisions  (fire/move/advice/torpedo4 (+ legacy torpedo) + attrs + <map>/terrain_los.npz)
 ```
 
 | Decision | Choice | Why |
@@ -128,7 +138,8 @@ wowsp-d1/                          public model repository (owner/repo TBD, see 
   onnx/fire_model.onnx
   onnx/move_model.onnx
   onnx/advice_fire_model.onnx
-  onnx/torpedo_model.onnx
+  onnx/torpedo4_model.onnx          current T4 three-head torpedo diagnostic
+  onnx/torpedo_model.onnx           legacy two-head slot (older releases only)
   onnx-int8/                       optional quantized variants, never installed by default
   attrs/ship_attributes.json
   los/<mapId>/terrain_los.npz
@@ -258,8 +269,8 @@ provenance, not by parallel maintenance.
       "kind": "move-sectors-17", "featureSet": "move-v1", "quant": "fp32" },
     { "path": "advice_fire_model.onnx", "sha256": "b98f...", "size": 2595135,
       "kind": "advice-fire-attrs", "featureSet": "advice-e24", "quant": "fp32" },
-    { "path": "torpedo_model.onnx", "sha256": "a7e3...", "size": 492411,
-      "kind": "torpedo-three-head", "featureSet": "torpedo-e26d", "quant": "fp32" },
+    { "path": "torpedo4_model.onnx", "sha256": "0b1f...", "size": 502518,
+      "kind": "torpedo-t4-three-head", "featureSet": "torp4-v1", "quant": "fp32" },
     { "path": "ship_attributes.json", "sha256": "2bbd...", "size": 261507 },
     { "path": "50_Gold_harbor/terrain_los.npz", "sha256": "9c1d...", "size": 172432 }
   ],
@@ -368,7 +379,8 @@ Before the swap, in a blocking task:
    wrappers and classify it: kind, input widths and output heads must
    match the declared `kind`/`featureSet` (fire: 24 x `ENTITY_DIM_V2` x
    `GLOBAL_DIM_V2`; movement: 17 classes; advice: attribute-routed head;
-   torpedo: `TORP_GLOBAL_DIM_V2` global block);
+   torpedo: `TORP_GLOBAL_DIM_V2` global block with two heads in the legacy
+   slot, `TORP_GLOBAL_DIM_V4` with three heads in the T4 slot);
 3. reject the pass if a required model fails; optional models (advice,
    torpedo) may be dropped with a warning only when the manifest marks
    them optional. A loaded model already cached in the process keeps
@@ -396,18 +408,30 @@ behaviour).
 Model files are coupled to the Rust featurizers that mirror the Python
 training scripts. The manifest's `featureSet` values are the contract:
 
-| Model | Kind | Feature set (v1) | Required |
+| Model | Kind | Feature set | Required |
 | --- | --- | --- | --- |
 | fire_model.onnx | fire two-head (24-entity deep sets) | `fire-v1` | yes |
 | move_model.onnx | 17-class movement sectors | `move-v1` | yes |
 | advice_fire_model.onnx | attribute-routed advice head | `advice-e24` | no |
-| torpedo_model.onnx | three-head torpedo model | `torpedo-e26d` | no |
+| torpedo4_model.onnx | T4 three-head torpedo diagnostic (49-wide global, heads A/B/C) | `torp4-v1` | no |
+| torpedo_model.onnx | LEGACY two-head torpedo model (38-wide global) | `torpedo-e26d` | no (older packs only) |
 
 The app accepts a release only when every required model's feature set is
 in its supported set and every optional model's set is either supported or
 absent. A featurizer change bumps the set name in the same PR that changes
 the Rust featurizer, so a stale app can never feed new weights the wrong
 tensors.
+
+**Torpedo generation migration.** The runtime ladder prefers the T4 slot
+(`torpedo4_model.onnx`) and falls back to the legacy two-head file, so both
+slots stay in the accepted contract and neither is required. A release that
+carries only T4 is therefore installable by a client that knows the slot;
+an older client (one that predates `torp4-v1`) refuses that manifest at the
+contract check — it lists an unknown model file — and keeps its installed
+seq 2 pack running, since the whole release is rejected before a byte is
+downloaded and the `seq` ratchet never downgrades. Shipping the T4 model to
+existing users therefore needs a client release first; the model release
+alone only reaches clients that already understand the slot.
 
 ### 6.7 LOS rasters and the resource pack
 

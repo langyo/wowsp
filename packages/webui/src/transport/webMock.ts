@@ -434,7 +434,9 @@ const MOCK_MIRROR_PROBE: Record<string, { ok: boolean; elapsedMs: number; error:
 //    authenticates the real signed Hugging Face manifest, while the mock
 //    answers a deterministic local install + a newer published seq so the
 //    settings card renders both the installed and the update-available
-//    branches).
+//    branches). The published set carries the current T4 three-head torpedo
+//    slot; the installed (older) pack still carries only the legacy two-head
+//    file, which is exactly the migration the card has to show.
 const MOCK_AI_FILES = [
   {
     path: "fire_model.onnx",
@@ -461,12 +463,15 @@ const MOCK_AI_FILES = [
     featureSet: "advice-e24",
   },
   {
-    path: "torpedo_model.onnx",
-    size: 492411,
+    // The current T4 three-head diagnostic slot (49-wide global block).
+    // New releases no longer carry the legacy two-head file; old packs keep
+    // it and the app falls back to it when this slot is absent.
+    path: "torpedo4_model.onnx",
+    size: 502518,
     sha256:
-      "a7e36f38112233445566778899aabbccddeeff00112233445566778899aabbcc",
-    kind: "torpedo-three-head",
-    featureSet: "torpedo-e26d",
+      "0b1f4efd7995991f3717d433179fe7eb12dba7b9de86f4bb0c2377e15a8ad908",
+    kind: "torpedo-t4-three-head",
+    featureSet: "torp4-v1",
   },
   {
     path: "ship_attributes.json",
@@ -491,6 +496,9 @@ const MOCK_AI_STATUS = {
     { path: "fire_model.onnx", present: true, sizeBytes: 2592543 },
     { path: "move_model.onnx", present: true, sizeBytes: 2652542 },
     { path: "advice_fire_model.onnx", present: true, sizeBytes: 2595135 },
+    // The installed mock pack predates the T4 slot: the current slot is
+    // listed but absent, the legacy two-head file is what it carries.
+    { path: "torpedo4_model.onnx", present: false, sizeBytes: 0 },
     { path: "torpedo_model.onnx", present: true, sizeBytes: 492411 },
     { path: "ship_attributes.json", present: true, sizeBytes: 261507 },
   ],
@@ -508,8 +516,9 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
     const totalBytes = MOCK_AI_FILES.reduce((sum, f) => sum + f.size, 0);
     return {
       current: MOCK_AI_STATUS,
-      latestSeq: 2,
-      latestVersion: "2026-11-10T00:00:00Z",
+      // The newer published release carries the T4 slot (seq 3).
+      latestSeq: 3,
+      latestVersion: "2026-11-11T00:00:00Z",
       latestTreeSha256:
         "71d3a0c2f4e6b8d1a3c5e7f9b0d2f4a6c8e0b1d3f5a7c9e2b4d6f8a0c1e3b5d7",
       latestRevision: "b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2",
