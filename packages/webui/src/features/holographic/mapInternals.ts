@@ -14,6 +14,7 @@
  * the context is deliberately NOT reactive itself.
  */
 import * as THREE from "three";
+import type { SquadronStateEvents } from "@/api";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { ComputedRef, Ref } from "vue";
 import type {
@@ -405,6 +406,11 @@ export interface MapInternals extends MapInternalsDeps {
   planeSmoothState: Map<number, PlaneAnimState>;
   /** Real aircraft models: planeId → 3D model pool (one per slot). */
   planeMeshes: Map<number, THREE.Object3D[]>;
+  /** The replay's E27 squadron-state streams (health/planesHealth/…), set by
+   *  HolographicMap once the IPC load lands — the aircraft surface reads the
+   *  live flying count and HP fraction from here (null until loaded, and on
+   *  pre-E27 replays which carry no such stream). */
+  squadronStates: SquadronStateEvents | null;
   /** planeId → formation render state. */
   planeFormations: Map<number, PlaneFormationState>;
   /** Capture-zone ring meshes (repainted per frame by cap state). */
@@ -549,6 +555,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeTrails: [],
     planeSmoothState: new Map(),
     planeMeshes: new Map(),
+    squadronStates: null,
     planeFormations: new Map(),
     capRings: [],
     capLetterSprites: [],

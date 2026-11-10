@@ -130,7 +130,7 @@ export function squadronSamplesAt(
  *  health stream is ~5k events, so a scan costs a few thousand
  *  comparisons a few times per second. Null when the stream holds no
  *  sample of this plane at or before t. */
-function lastSquadronEventAt<E extends { time: number; planeId: number }>(
+export function lastSquadronEventAt<E extends { time: number; planeId: number }>(
   events: readonly E[] | undefined,
   planeId: number,
   t: number,

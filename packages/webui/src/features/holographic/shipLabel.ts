@@ -34,6 +34,10 @@ export interface ShipLabel {
   kind?: "ship" | "plane";
   /** Aircraft type name (fighter/dive/...) for plane labels. */
   planeType?: string | null;
+  /** Planes still flying in the label's squadron at the playhead (E27
+   *  planesHealth digit count). null/undefined on pre-E27 replays — the
+   *  aircraft label then omits the count instead of inventing one. */
+  planeAlive?: number | null;
   /** Ghost (unseen/sunk) state: label gets a dashed border and the HP bar
    *  is replaced by a "gone for N s" countdown text. */
   ghostText?: string | null;

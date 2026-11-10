@@ -12,6 +12,13 @@
   flex-direction: column;
   gap: 3px;
   width: 16rem;
+  /* Never let the enclosing shipcard row compress the plaque: the row is
+     content-sized and sits inside a width-constrained container, so a
+     squeeze used to squash the hull silhouette into a flat sliver at
+     narrow window widths (user screenshot). The plaque keeps its natural
+     height and the row's other members give way instead. */
+  flex: 0 0 auto;
+  min-height: 3.4rem;
   padding: 0.4rem 0.6rem;
   border-radius: 8px;
   background: rgb(96 108 126 / 42%);

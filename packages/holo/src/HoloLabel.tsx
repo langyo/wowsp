@@ -19,6 +19,10 @@ export interface HoloLabelData {
   shipName?: string;
   tier?: number | null;
   iconUrl?: string | null;
+  /** Planes still flying in this aircraft label's squadron (E27 planesHealth
+   *  digit count). Rendered after the aircraft type next to the label's HP
+   *  bar; null/undefined on pre-E27 replays (the count is simply omitted). */
+  planeAlive?: number | null;
   hp?: number | null;
   maxHp?: number | null;
   /** Submerged-submarine depth readout: POSITIVE meters below the surface.
@@ -160,8 +164,11 @@ export default defineComponent({
                     style={{ width: `${pct}%`, background: ROLE_BAR[l.role] }}
                   />
                   <span class="holo-label__hp-text">
-                    {Math.round(shownHp).toLocaleString()}
-                    {l.maxHp != null ? ` / ${Math.round(l.maxHp).toLocaleString()}` : ""}
+                    {l.planeAlive != null
+                      ? `${Math.round(pct)}% · ✈${l.planeAlive}`
+                      : `${Math.round(shownHp).toLocaleString()}${
+                          l.maxHp != null ? ` / ${Math.round(l.maxHp).toLocaleString()}` : ""
+                        }`}
                   </span>
                 </span>
               ) : null}
