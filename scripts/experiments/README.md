@@ -3190,6 +3190,14 @@ GitHub 侧 `scripts/experiments/model_registry.json` 是模型声明的 **source
   **只留档**，不再 current；旧权重可在 HF 历史/legacy tag 中取回。
 - app 侧（Rust/webui）对旧槽的回退/接线由 app 任务单独处理；本节只定义 registry 与 HF 发布/归档口径。
 
+### 当前发布状态（2026-11-10）
+
+- **HF seq 3** 已发布：revision `366b2b58…`，treeSha256 `0882c879…`，
+  manifest sha256 `e27861bf…`；文件为 fire/move/advice/**torpedo4_model.onnx** + ship_attributes（无 T2、无 LOS）。
+- legacy tags 已创建在上一 artifact commit `4e026420…`：`legacy-2-20261110`、`legacy-torpedo-e26d-20261110`。
+- 本次通过 `hf-mirror.com` 写入（本机官方 endpoint TLS 不可达）；seq 3 需要 T4-aware 客户端，
+  旧客户端读取 seq 3 会在 contract check 拒绝并保留已装 seq 2 pack；**app 发行需随后跟上**。
+
 ### HF 更新与归档规则
 
 - post-training 权重更新 → manifest `seq` +1；旧权重 legacy 归档，不覆盖 current；
@@ -3209,5 +3217,5 @@ GitHub 侧 `scripts/experiments/model_registry.json` 是模型声明的 **source
   生成含 **Architecture & weights declaration** 的 model card，并在 upload 前创建 legacy tags；
 - 离线自检：`python scripts/publish_ai_models.py --selftest`（registry 校验、legacy tag 名/日期后缀、
   T4 spec、model card 声明）；
-- 本仓库不实际执行 HF 发布；发布动作由维护者按上述命令手动执行。
+- 本次 seq 3 已按上述流程发布（见“当前发布状态”）；后续权重更新沿用同一命令，legacy tag 日期使用发布日期。
 

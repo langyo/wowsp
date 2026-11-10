@@ -8,6 +8,19 @@
     "legacy": "Retired weights are archived as Git tags on the previous artifact commit; tags are archive-only and never appear in manifest.json.",
     "noNewArchitecture": "Without a new architecture do not change slot/kind/featureSet; a featurizer change needs an app release and a new featureSet name."
   },
+  "published": {
+    "seq": 3,
+    "version": "2026-11-10T04:54:25Z",
+    "revision": "366b2b582f1ec33aa87cb6390f06db6d57823887",
+    "treeSha256": "0882c879c4fa2ef4b2d2c4d7df3aa1f6264dd96704ae3b8807efc24a35fca52b",
+    "manifestSha256": "e27861bf066c906505e56d4d27a4ac1966ee8fc5bcd5e3aaf16535a6091515fe",
+    "sourceCommit": "23e41b1a77035e194e4ec09476766fbd54eb5d11",
+    "legacyTags": [
+      "legacy-2-20261110",
+      "legacy-torpedo-e26d-20261110"
+    ],
+    "note": "Published through hf-mirror (official endpoint TLS-blocked on this host). The seq 3 release requires the T4-aware client; older clients keep their installed seq 2 pack because the contract check rejects the release before download."
+  },
   "legacyArchive": {
     "date": "20261110",
     "previousSeq": 2,
