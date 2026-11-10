@@ -745,17 +745,17 @@
     font-family: var(--font-mono);
   }
 
-  /* The N/A placeholder: a deliberately quiet grey chip (muted ink, faint
-     border) so an absent fact reads as a gap, never as content. The cell's
-     data-hint carries the localized "not applicable" sentence. Compound with
-     hikari's .hk-tag base: same-declaration specificity would otherwise tie
-     .hk-tag-default and ride on stylesheet order alone (the production build
-     splits CSS differently). The default tag surface is left alone — the
-     theme restates it at higher specificity anyway, and matching the other
-     chips' fill is what quiet wants; ink + border carry the N/A read. */
-  &__res-inv-tag-na.hk-tag {
+  /* The N/A placeholder: a genuinely grey chip — muted fill, muted ink, faint
+     border — so an absent fact reads as a gap, never as content. The cell's
+     data-hint carries the localized "not applicable" sentence. The cell
+     ancestor is load-bearing, not cosmetic: the theme restates the default
+     chip surface at `:root .hk-tag-default` (0,2,0) AFTER this chunk, so only
+     a (0,3,0) selector keeps the placeholder fill grey under the theme's
+     surface pass (and under a lowered UI-opacity dial). */
+  &__res-inv-cell--na &__res-inv-tag-na.hk-tag {
+    background: rgb(var(--color-muted) / 15%);
     color: rgb(var(--color-muted));
-    border-color: rgb(var(--color-border) / 30%);
+    border-color: rgb(var(--color-muted) / 25%);
   }
 
   /* ── phone pairing (desktop server side) ── */
