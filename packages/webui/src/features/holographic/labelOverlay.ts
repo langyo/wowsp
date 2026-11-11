@@ -192,16 +192,20 @@ export function updateLabelPositions(ctx: MapInternals) {
     const lift = ctx.planeRecordedView ? wy + 15 : Math.max(60, wy) + 30;
     ctx._projVec.set(wx, lift, -wz);
     ctx._projVec.project(cam);
-    if (ctx._projVec.z >= 1) {
+    if (ctx._projVec.z >= 1 && Number.isFinite(ctx._projVec.z)) {
       // Behind the camera (a sharp recorded maneuver, or the hold-RMB free
       // look swinging away): the card used to VANISH for the whole stretch,
-      // which read as labels "occasionally disappearing". Flip the mirrored
-      // NDC direction and pin the card to a screen-edge ring instead — it
-      // stays visible and roughly points at the formation.
-      const edge = behindCameraEdgeNdc(ctx._projVec.x, ctx._projVec.y);
-      ctx._projVec.x = edge.x;
-      ctx._projVec.y = edge.y;
-      ctx._projVec.z = 0.5;
+      // which read as labels "occasionally disappearing". The NDC of a
+      // behind-camera point IS the negated bearing, so pinning it to a
+      // screen-edge ring keeps the card visible and roughly pointing at the
+      // formation (the non-finite guard covers the exact camera plane,
+      // where the perspective divide yields ±Infinity/NaN).
+      if (Number.isFinite(ctx._projVec.x) && Number.isFinite(ctx._projVec.y)) {
+        const edge = behindCameraEdgeNdc(ctx._projVec.x, ctx._projVec.y);
+        ctx._projVec.x = edge.x;
+        ctx._projVec.y = edge.y;
+        ctx._projVec.z = 0.5;
+      }
     }
     label.x = (ctx._projVec.x * hw) + hw;
     label.y = (-ctx._projVec.y * hh) + hh;
@@ -219,12 +223,16 @@ export function updateLabelPositions(ctx: MapInternals) {
   }
 }
 
-/** Mirror-and-pin an NDC point that projected BEHIND the camera onto the
- *  screen-edge ring (±0.92): behind-camera projections are geometrically
- *  meaningless, but their negated direction still points roughly at the
- *  anchor, so off-screen cards stay readable instead of vanishing. */
+/** Pin an NDC point that projected BEHIND the camera onto the screen-edge
+ *  ring (±0.8, inset so the centred card is not half-clipped): such
+ *  projections are geometrically meaningless, but their direction still
+ *  points roughly at the anchor, so off-screen cards stay readable instead
+ *  of vanishing. Non-finite inputs (the exact camera plane divides to
+ *  ±Infinity/NaN) collapse to the screen centre rather than poisoning the
+ *  translate3d with NaN. */
 export function behindCameraEdgeNdc(x: number, y: number): { x: number; y: number } {
-  const scale = 0.92 / Math.max(Math.abs(x), Math.abs(y), 1e-6);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return { x: 0, y: 0 };
+  const scale = 0.8 / Math.max(Math.abs(x), Math.abs(y), 1e-6);
   return { x: x * scale, y: y * scale };
 }
 
