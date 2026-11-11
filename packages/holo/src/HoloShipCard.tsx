@@ -143,10 +143,12 @@ export default defineComponent({
               />
             </div>
           ) : (
+            // No preserveAspectRatio="none": the stylesheet sizes this box
+            // to the viewBox's 100:36 ratio, so the default (meet) is an
+            // exact, undistorted fit — the hull art must stay 1:1.
             <svg
               class="holo-ship-card__hull"
               viewBox="0 0 100 36"
-              preserveAspectRatio="none"
               aria-hidden="true"
             >
               <defs>

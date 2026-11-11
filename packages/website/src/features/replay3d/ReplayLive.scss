@@ -109,11 +109,15 @@
     z-index: 4;
   }
 
-  /* kill feed — factual sink notices, above the bottom-left cluster */
+  /* kill feed — factual sink notices, above the bottom-left cluster.
+     The cluster is the plaque (≈116px now that the hull keeps its native
+     100:36 vector ratio) + 8px gap + the 42px controls row, so the feed
+     clears it with one 16px token plus 174px; the old 92px assumed the
+     former 40px-tall hull board. */
   &__killfeed {
     position: absolute;
     left: var(--space-16);
-    bottom: calc(var(--space-16) + 92px);
+    bottom: calc(var(--space-16) + 174px);
     z-index: 3;
     display: flex;
     flex-direction: column;

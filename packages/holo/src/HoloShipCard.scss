@@ -6,7 +6,9 @@
    a content-sized width made the footprint drift with every replay's ship
    names — one replays' plaque sat visibly wider than another's. A fixed
    width pins the row layout; the name ellipsizes inside it, the 17ch HP
-   readout stays right-aligned, and the hull silhouette spans the full box. */
+   readout stays right-aligned, and the hull silhouette spans the full box
+   at its NATIVE aspect ratio (see the hull rules below: the art is never
+   stretched or squashed — the plaque grows taller instead). */
 .holo-ship-card {
   display: inline-flex;
   flex-direction: column;
@@ -18,10 +20,6 @@
      narrow window widths (user screenshot). The plaque keeps its natural
      height and the row's other members give way instead. */
   flex: 0 0 auto;
-  /* Head row (~1rem line) + gap + the 40px silhouette board + the plaque's
-     own 0.4rem vertical padding + 2px border: 3.4rem clipped the hull, so
-     the height floor must cover all of it. */
-  min-height: calc(40px + 1rem + 3px + 0.8rem + 2px);
   padding: 0.4rem 0.6rem;
   border-radius: 8px;
   background: rgb(96 108 126 / 42%);
@@ -77,14 +75,19 @@
   &__hull {
     display: block;
     width: 100%;
-    height: 40px;
+    /* Vector fallback paths are authored in a 100×36 box. The box must
+       carry that ratio or the SVG is stretched: the old fixed 40px height
+       (5.9:1) elongated the drawing ~2.1× — the exact distortion the user
+       reported ("the hull must stay 1:1"). Height follows the plaque's
+       inner width through aspect-ratio; no fixed pixel height anywhere. */
+    aspect-ratio: 100 / 36;
+    height: auto;
     /* The plaque is a column flex box, so a short parent (the map's
        bottom-left row squeezes every member when the window is narrow)
-       SHRINKS this fixed-height child: the bitmap keeps its 40px but the
-       box around it collapses, and the silhouette reads as a flat sliver
-       (user report: "the HP bar is squashed"). flex: none keeps the
-       established 40px board and lets the plaque's min-height carry the
-       row instead. */
+       could SHRINK this child and collapse the board around the art —
+       the squashed-sliver report. flex: none keeps the board at its
+       aspect-derived height and lets the row wrap/shrink other members
+       instead; nothing may scale the hull non-uniformly. */
     flex: none;
   }
 
@@ -95,7 +98,12 @@
     position: relative;
     display: block;
     width: 100%;
-    height: 40px;
+    /* Native art ratio: EVERY ship silhouette bitmap in the model pack is
+       404×155 (verified across all 1,308 files). The box must carry the
+       same ratio or the alpha mask warps the drawing — the old 40px board
+       (5.9:1) stretched the ship to ~2.26× its natural length. */
+    aspect-ratio: 404 / 155;
+    height: auto;
     /* Same squeeze path as __hull above (bitmap layer). */
     flex: none;
   }
@@ -105,6 +113,9 @@
     inset: 0;
     -webkit-mask-image: var(--holo-sil);
     mask-image: var(--holo-sil);
+    /* The box carries the BITMAP's own ratio (see __hull-png), so filling
+       it is a UNIFORM scale — 100%×100% here can never stretch the art.
+       Keeping the two ratios in sync is the whole contract. */
     -webkit-mask-size: 100% 100%;
     mask-size: 100% 100%;
     -webkit-mask-repeat: no-repeat;

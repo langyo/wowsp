@@ -659,8 +659,14 @@
 .holo-map__killfeed {
   position: absolute;
   left: 12px;
-  /* Above the self ship card (controls at bottom:12px + card ≈72px tall). */
-  bottom: 148px;
+  /* Above the self ship card: controls sit at bottom:12px, the shipcard
+     row above them is ≈122px tall now that the hull silhouette keeps its
+     NATIVE aspect (404:155 — it used to be a 40px board, hence the old
+     148px), and 14px of clearance rides on top: 12 + 1(border) + 40(bar)
+     + 8(row gap) + 122(row) + 14 ≈ 197px. Kept as a pixel constant
+     because the plaque's width (and therefore the board's height) is
+     pinned to 16rem. */
+  bottom: 197px;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
