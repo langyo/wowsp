@@ -158,6 +158,9 @@ function makeCtx(): MapInternals {
     squadronStates: null,
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
+    planeWedge: new Map(),
+    planeLensActive: false,
+    planeLensHeading: null,
     planeRecordedView: false,
     capRings: [],
     capLetterSprites: [],
@@ -327,10 +330,13 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     expect(visible).toHaveLength(5);
     for (const m of visible) {
       // Ahead of the lens (scene −Z side) and clear of the near plane.
-      expect(m.position.z).toBeLessThan(cam.z);
+      // Ahead along the view axis (now locked to the squadron's heading π/2 →
+      // scene +X), so the clearance is measured by distance.
       expect(cam.distanceTo(m.position)).toBeGreaterThan(80 - 1e-6);
-      // The wedge stays centred on the view axis.
-      expect(Math.abs(m.position.x - cam.x)).toBeLessThan(40);
+      // The wedge stays centred on the view axis, which is now the AIRCRAFT's
+      // heading (anchor yaw π/2 → scene +X): slots spread across z.
+      expect(m.position.x).toBeGreaterThan(cam.x + 60);
+      expect(Math.abs(m.position.z - cam.z)).toBeLessThan(40);
       expect(Math.abs(m.position.y - cam.y)).toBeLessThan(40);
     }
     // Heading = the squadron's RECORDED direction (anchor yaw π/2), NOT the
@@ -340,6 +346,16 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     // = π − π/2 = π/2 (the old extra π flew the planes tail-first).
     expect(normalizeAngle(visible[0].rotation.y)).toBeCloseTo(Math.PI / 2);
     expect(visible[1].rotation.y).toBe(visible[0].rotation.y);
+    // The rendered-wedge centroid is published for the floating labels, and
+    // the camera side reads the formation's recorded heading (the applied
+    // view is locked to the aircraft's own forward, not the recorder's).
+    const wedge = ctx.planeWedge.get(PLANE_ID);
+    expect(wedge).toBeDefined();
+    // World coords (scene mirrors z): the wedge sits ahead along the heading.
+    expect(wedge!.x).toBeGreaterThan(cam.x + 60);
+    expect(Math.abs(wedge!.z + cam.z)).toBeLessThan(120);
+    expect(ctx.planeLensActive).toBe(true);
+    expect(ctx.planeLensHeading).toBeCloseTo(Math.PI / 2);
   });
 
   it("keeps other squadrons on their recorded anchors (no pile at the lens)", () => {
@@ -380,7 +396,8 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     const cam = new THREE.Vector3(193.04, 16.2, 287.27);
     // The own formation rides the lens (ahead, near the view axis).
     for (const m of ownPool) {
-      expect(m.position.z).toBeLessThan(cam.z);
+      // Ahead along the view axis (now locked to the squadron's heading π/2 →
+      // scene +X), so the clearance is measured by distance.
       expect(cam.distanceTo(m.position)).toBeGreaterThan(80 - 1e-6);
     }
     // The enemy formation stays on its recorded anchor: world (480, −50) →
@@ -442,7 +459,8 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     updateMarkersAt(ctx, 15);
     const cam = new THREE.Vector3(193.04, 16.2, 287.27);
     for (const m of pool) {
-      expect(m.position.z).toBeLessThan(cam.z);
+      // Ahead along the view axis (now locked to the squadron's heading π/2 →
+      // scene +X), so the clearance is measured by distance.
       expect(cam.distanceTo(m.position)).toBeGreaterThan(80 - 1e-6);
     }
     // A far formation of the same replay stays on its anchor.

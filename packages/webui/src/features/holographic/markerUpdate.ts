@@ -29,7 +29,11 @@ import { syncMoveAdvisories } from "./moveAdvisories";
 import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
 import type { OsdTone } from "./osdContrast";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
-import { recordedCameraAt, recordedCameraForward } from "./recordedCamera";
+import {
+  alignPoseHeading,
+  recordedCameraAt,
+  recordedCameraForward,
+} from "./recordedCamera";
 import { shipStatusAt } from "./shipStatusModel";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { ShipInfo, SquadronPlane, VehicleEntry, WeaponLockEvent } from "@/api";
@@ -665,6 +669,11 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // after the last one (PLANE_TRAIL_GRACE_S, also used by the follow
     // target). Reused scratch map — the old code allocated a fresh Map
     // per tick.
+    // Rendered-wedge centroids for this tick (world coords): the aircraft
+    // labels project onto THESE, not onto the trail samples (the recorded lens
+    // ride renders the models 80 units ahead of the camera and the synthetic
+    // orbit swings them around the anchor — the sample is not where they are).
+    ctx.planeWedge.clear();
     const formationAnchor = ctx.planeAnchorScratch;
     formationAnchor.clear();
     for (const trail of ctx.planeTrails) {
@@ -695,6 +704,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // instead of the old near-plane shards.
     let lensFormationId: number | null = null;
     let lensPose: ReturnType<typeof recordedCameraAt> = null;
+    let lensHeading: number | null = null;
     // planeLensRide: true = inside a recorded plane-camera segment, false =
     // a ship/shell-camera segment, null = the replay has no 0x27 mode stream
     // (fall back to proximity).
@@ -729,9 +739,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // camera sits within a few units of the squadron it follows.
         if (chosen && (lensMode === true || chosen.d <= RECORDED_LENS_PROXIMITY)) {
           lensFormationId = chosen.id;
+          lensHeading = formationAnchor.get(chosen.id)?.s.yaw ?? null;
         }
       }
     }
+    // The applied camera reads these every frame: inside the lens the view is
+    // locked to the aircraft's own heading instead of the recorder's possibly
+    // sideways one (see HolographicMap.applyOriginalCamera).
+    ctx.planeLensActive = lensFormationId != null;
+    ctx.planeLensHeading = lensFormationId == null ? null : lensHeading;
     for (const [planeId, anchor] of formationAnchor) {
       const pool = ctx.planeMeshes.get(planeId);
       const formation = ctx.planeFormations.get(planeId);
@@ -785,7 +801,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // a view that never framed them. Everything else stays on its real
       // recorded anchor.
       const ownSquadron = lensFormationId != null && planeId === lensFormationId;
-      const pose = ownSquadron ? lensPose : null;
+      // The view axis is the AIRCRAFT's heading, matching the camera the app
+      // applies (alignPoseHeading) — so the wedge always hangs straight ahead
+      // of the view and the planes are seen from behind, not side-on.
+      const pose =
+        ownSquadron && lensPose
+          ? lensHeading != null
+            ? alignPoseHeading(lensPose, lensHeading)
+            : lensPose
+          : null;
       const camFwd = pose ? recordedCameraForward(pose) : null;
       // Slow circle so airborne squadrons visibly hold a patrol orbit.
       const ang = t * 0.22 + (planeId % 7) * 0.9;
@@ -844,6 +868,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // floor.
         yBase = recorded ? Math.max(0, anchor.s.y) : Math.max(60, anchor.s.y);
       }
+      // Centroid the models actually occupy this tick (world coords) — the
+      // floating aircraft label projects onto it (labelOverlay).
+      ctx.planeWedge.set(planeId, { x: cx, y: yBase, z: cz });
       if (pool && pool.length >= n) {
         for (let i = 0; i < n; i++) {
           const mesh = pool[i];

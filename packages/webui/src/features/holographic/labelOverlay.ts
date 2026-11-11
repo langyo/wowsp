@@ -132,10 +132,17 @@ export function updateLabelPositions(ctx: MapInternals) {
       continue;
     }
     let anchor: SquadronPlane | null = null;
+    let anchorPlaneId: number | null = null;
+    // The label projects the RENDERED wedge centroid the marker pass
+    // publishes (planeWedge): the recorded lens ride draws the models ~80
+    // units ahead of the camera, so projecting the trail sample parked the
+    // aircraft card at the lens (off-screen) while the planes were elsewhere
+    // (user report: no labels next to the aircraft).
     for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
       if (labelOf !== labelId) continue;
       const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
       if (!trail || trail.samples.length === 0) continue;
+
       // Playhead-accurate: the carrier's aircraft label must ride the sortie
       // the map is SHOWING, not the trail's end pose — the minimap merge
       // pads sparse-3D squadrons out to their sortie end, which otherwise
@@ -143,7 +150,10 @@ export function updateLabelPositions(ctx: MapInternals) {
       const at = samplesUpTo(trail.samples, ctx.current.value) - 1;
       if (at < 0) continue;
       const sp = trail.samples[at];
-      if (!anchor || sp.time > anchor.time) anchor = sp;
+      if (!anchor || sp.time > anchor.time) {
+        anchor = sp;
+        anchorPlaneId = planeId;
+      }
     }
     if (!anchor) {
       label.visible = false;
@@ -151,11 +161,19 @@ export function updateLabelPositions(ctx: MapInternals) {
       applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
       continue;
     }
+    // Project the RENDERED wedge when the marker pass published one (see
+    // planeWedge); the trail sample is only the fallback for formations
+    // without models.
+    const wedge =
+      anchorPlaneId != null ? ctx.planeWedge.get(anchorPlaneId) : undefined;
+    const wx = wedge ? wedge.x : anchor.x;
+    const wy = wedge ? wedge.y : anchor.y;
+    const wz = wedge ? wedge.z : anchor.z;
     // Recorded/original camera: aircraft fly at the camera's altitude (no
     // 60 m patrol floor), so the label rides just above them; every other
     // view keeps the patrol-floor lift.
-    const lift = ctx.planeRecordedView ? anchor.y + 15 : Math.max(60, anchor.y) + 30;
-    ctx._projVec.set(anchor.x, lift, -anchor.z);
+    const lift = ctx.planeRecordedView ? wy + 15 : Math.max(60, wy) + 30;
+    ctx._projVec.set(wx, lift, -wz);
     ctx._projVec.project(cam);
     label.x = (ctx._projVec.x * hw) + hw;
     label.y = (-ctx._projVec.y * hh) + hh;

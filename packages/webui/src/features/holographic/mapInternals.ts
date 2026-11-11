@@ -421,6 +421,21 @@ export interface MapInternals extends MapInternalsDeps {
    *  wedge layout (measured on the reference capture: 14 of 64 multi-member
    *  squadrons changed group size). */
   planeLaunchPoses: Map<number, { x: number; z: number }>;
+  /** planeId → the WEDGE CENTROID the marker pass actually rendered this
+   *  tick (world coords). Floating labels and other overlays project the
+   *  aircraft card here: the trail sample is NOT where the models are — the
+   *  recorded lens ride hangs them 80 units ahead of the camera, and the
+   *  synthetic orbit swings them around the anchor (user report: the
+   *  aircraft showed no labels next to them). */
+  planeWedge: Map<number, { x: number; y: number; z: number }>;
+  /** True while the recorded PLANE-camera segment has picked the formation
+   *  that rides the lens (markerUpdate). The applied camera uses the
+   *  formation heading below to face the aircraft's own forward instead of
+   *  the recorder's possibly-sideways view. */
+  planeLensActive: boolean;
+  /** World heading (radians, the map's yaw convention) of the lens-riding
+   *  formation; null when there is none. */
+  planeLensHeading: number | null;
   /** Set while the recorded/original camera is the APPLIED view
    *  (HolographicMap's originalView). The aircraft wedge then hangs on each
    *  formation's RECORDED anchor with its recorded heading (and the
@@ -582,6 +597,9 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     squadronStates: null,
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
+    planeWedge: new Map(),
+    planeLensActive: false,
+    planeLensHeading: null,
     planeRecordedView: false,
     planeLensRide: null,
     capRings: [],
