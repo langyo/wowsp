@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { PLANE_TYPES } from "./tactical/shellTypes";
 import { buildPropMarker } from "./propMarker";
-import { resolvePlaneModelUrl } from "./modelLoader";
+import { planeForwardSign, resolvePlaneModelUrl } from "./modelLoader";
 import { sampleAt } from "./trajectoryMath";
 import { inferGrouping } from "./planeFormation";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
@@ -327,6 +327,15 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       build.then((proto) => {
         if (epoch !== ctx.markerEpoch || !ctx.api.value?.scene || !proto) return;
         if (ctx.planeMeshes.has(planeId)) return;
+        // The pack's aircraft art is authored both ways (see
+        // planeForwardSign): rotate the −Z half so every model's nose is at
+        // local +Z, the frame markerUpdate's π − yaw placement and the
+        // follow camera's yaw derivation assume. The inner group carries the
+        // orientation; the outer one stays free for the per-frame yaw.
+        if (planeForwardSign(first.idx) < 0) {
+          const inner = proto.children[0];
+          if (inner) inner.rotation.y += Math.PI;
+        }
         // Tint at LOAD time, not at build time: the GLB resolves long
         // after resolvePlaneCarriers ran its re-tint pass, so the role
         // captured when this build STARTED (the empty-map default, i.e.

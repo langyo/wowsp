@@ -289,6 +289,7 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     // Two frames: the LAST one at/before the playhead wins (16.2, not 30).
     ctx.props.cameraFrames = [cameraFrame(5, 30), cameraFrame(12, 16.2)];
     ctx.planeRecordedView = true;
+    ctx.planeLensRide = true;
     updateMarkersAt(ctx, 15);
     expect(pool.filter((m) => m.visible)).toHaveLength(3);
     // yBase = max(2, 16.2 + 0·dist) → the recorded wedge's −2 / 0 / +2.
@@ -318,6 +319,8 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     // scene pose (193.04, 16.2, 287.27), view axis down scene −Z.
     ctx.props.cameraFrames = [cameraFrame(5, 16.2)];
     ctx.planeRecordedView = true;
+    // The lens ride needs a recorded PLANE-camera segment too.
+    ctx.planeLensRide = true;
     updateMarkersAt(ctx, 15);
     const cam = new THREE.Vector3(193.04, 16.2, 287.27);
     const visible = pool.filter((m) => m.visible);
@@ -342,9 +345,56 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
   it("keeps other squadrons on their recorded anchors (no pile at the lens)", () => {
     // Every formation used to be hung ahead of the lens, so own white, ally
     // green and enemy red squadrons all stacked into the same spot (user
-    // report: mixed-colour aircraft glued in front of the camera). Only the
-    // recorder's own squadron rides the lens; the rest keep their real
-    // recorded positions.
+    // report: mixed-colour aircraft glued in front of the camera). Only ONE
+    // formation — the recorder's own sortie nearest the lens — rides it;
+    // the rest keep their real recorded positions.
+    const OWN = PLANE_ID;
+    const OTHER = 8;
+    const ownPool = poolOf(2);
+    const otherPool = poolOf(2);
+    const ctx = makeCtx();
+    ctx.planeTrails = [
+      anchorTrail(Math.PI / 2, 20),
+      {
+        id: OTHER * 16,
+        samples: [
+          { time: 10, planeId: OTHER, index: 0, x: 480, y: 20, z: -50, yaw: 0 },
+          { time: 20, planeId: OTHER, index: 0, x: 480, y: 20, z: -50, yaw: 0 },
+        ],
+      },
+    ];
+    ctx.planeMeshes = new Map([
+      [OWN, ownPool],
+      [OTHER, otherPool],
+    ]);
+    ctx.planeFormations = new Map([
+      [OWN, { count: 2, groupSize: 1, groupCount: 2, meshes: [] }],
+      [OTHER, { count: 2, groupSize: 1, groupCount: 2, meshes: [] }],
+    ]);
+    ctx.planeRoleById.set(OWN, "self");
+    ctx.planeRoleById.set(OTHER, "enemy");
+    ctx.props.cameraFrames = [cameraFrame(5, 16.2)];
+    ctx.planeRecordedView = true;
+    ctx.planeLensRide = true;
+    updateMarkersAt(ctx, 15);
+    const cam = new THREE.Vector3(193.04, 16.2, 287.27);
+    // The own formation rides the lens (ahead, near the view axis).
+    for (const m of ownPool) {
+      expect(m.position.z).toBeLessThan(cam.z);
+      expect(cam.distanceTo(m.position)).toBeGreaterThan(80 - 1e-6);
+    }
+    // The enemy formation stays on its recorded anchor: world (480, −50) →
+    // scene (480, ·, 50) plus its own wedge offsets, far from the lens.
+    for (const m of otherPool) {
+      expect(Math.abs(m.position.z - 50)).toBeLessThan(40);
+      expect(Math.abs(m.position.x - 480)).toBeLessThan(40);
+      expect(m.position.distanceTo(cam)).toBeGreaterThan(300);
+    }
+  });
+
+  it("does not ride the lens outside a recorded plane-camera segment", () => {
+    // A ship-camera segment (or the ordinary original view) must not paste
+    // the player's aircraft onto a view that never framed them.
     const pool = poolOf(2);
     const ctx = makeCtx();
     ctx.planeTrails = [anchorTrail(Math.PI / 2, 20)];
@@ -352,19 +402,15 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     ctx.planeFormations = new Map([
       [PLANE_ID, { count: 2, groupSize: 1, groupCount: 2, meshes: [] }],
     ]);
-    ctx.planeRoleById.set(PLANE_ID, "enemy");
+    ctx.planeRoleById.set(PLANE_ID, "self");
     ctx.props.cameraFrames = [cameraFrame(5, 16.2)];
     ctx.planeRecordedView = true;
+    ctx.planeLensRide = false;
     updateMarkersAt(ctx, 15);
-    const cam = new THREE.Vector3(193.04, 16.2, 287.27);
-    // Anchor world (100, −50) → scene (100, ·, 50): far from the lens axis.
+    // Back on the recorded anchor (world (100, −50) → scene z 50).
     for (const m of pool) {
       expect(m.position.z).toBeCloseTo(50, 5);
-      expect(Math.abs(m.position.x - 100)).toBeLessThan(40);
-      expect(m.position.distanceTo(cam)).toBeGreaterThan(150);
     }
-    // Its heading is still the recorded direction.
-    expect(normalizeAngle(pool[0].rotation.y)).toBeCloseTo(Math.PI / 2);
   });
 
   it("keeps the recorded heading when the recorder looked sideways", () => {
@@ -393,6 +439,7 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
       },
     ];
     ctx.planeRecordedView = true;
+    ctx.planeLensRide = true;
     updateMarkersAt(ctx, 15);
     const cam = new THREE.Vector3(193.04, 16.2, 287.27);
     for (const m of pool) {

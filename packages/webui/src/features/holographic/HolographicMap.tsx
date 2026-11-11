@@ -1891,11 +1891,19 @@ export default defineComponent({
     // setup-time toggle must not run a marker pass before the actors exist
     // — markerUpdate recomputes the alive counters from shipMarkers.
     ctx.planeRecordedView = originalView.value;
+    ctx.planeLensRide = inPlaneCameraMode.value;
     watch(originalView, (on) => {
       ctx.planeRecordedView = on;
       // Entering/leaving the recorded view starts from the stream's own
       // framing again (the wheel dolly is a per-view adjustment).
       recordedDolly = 0;
+      if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
+      api.value?.requestRender();
+    });
+    // The lens ride is only valid inside a recorded PLANE-camera segment
+    // (0x27) — recompute it per playhead tick like the view flag.
+    watch(inPlaneCameraMode, (on) => {
+      ctx.planeLensRide = on;
       if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
       api.value?.requestRender();
     });

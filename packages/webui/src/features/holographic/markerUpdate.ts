@@ -680,6 +680,30 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         formationAnchor.set(planeId, { s, born, expiry });
       }
     }
+    // Recorded PLANE-camera segment: exactly ONE formation rides the lens —
+    // the recorder's own sortie nearest the recorded camera (a carrier can
+    // have several flights airborne; hanging them all at the same 80-unit
+    // point stacked them). Falls back to the nearest formation of any side
+    // when the own carrier's role never resolved (missing minimap owner →
+    // planes default to enemy), so the lens segment still shows aircraft
+    // instead of the old near-plane shards.
+    let lensFormationId: number | null = null;
+    let lensPose: ReturnType<typeof recordedCameraAt> = null;
+    if (ctx.planeRecordedView === true && ctx.planeLensRide === true) {
+      lensPose = recordedCameraAt(ctx, t);
+      if (lensPose) {
+        let bestSelf: { id: number; d: number } | null = null;
+        let bestAny: { id: number; d: number } | null = null;
+        for (const [pid, a] of formationAnchor) {
+          // Anchor samples are world coords; the pose is scene (z mirrored).
+          const d = Math.hypot(a.s.x - lensPose.x, a.s.z + lensPose.z);
+          if (!bestAny || d < bestAny.d) bestAny = { id: pid, d };
+          if (ctx.planeRoleById.get(pid) !== "self") continue;
+          if (!bestSelf || d < bestSelf.d) bestSelf = { id: pid, d };
+        }
+        lensFormationId = (bestSelf ?? bestAny)?.id ?? null;
+      }
+    }
     for (const [planeId, anchor] of formationAnchor) {
       const pool = ctx.planeMeshes.get(planeId);
       const formation = ctx.planeFormations.get(planeId);
@@ -725,17 +749,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // interpolates the ~10 Hz camera stream, which is what removed the
       // follow-camera stutter.
       const recorded = ctx.planeRecordedView === true;
-      // ONLY the recorder's own squadron rides the recorded lens: the
-      // recorder flew a PLANE camera, so its stream's centre track sits ~at
-      // the camera. Hanging EVERY formation ahead of the lens piled all
-      // squadrons — own white, ally green, enemy red — into the same screen
-      // spot (user report: mixed-colour aircraft glued in front of the
-      // camera). Other squadrons stay on their own recorded anchors, i.e.
-      // their real map positions, and are only seen when the camera looks
-      // their way.
-      const ownSquadron =
-        recorded && ctx.planeRoleById.get(planeId) === "self";
-      const pose = ownSquadron ? recordedCameraAt(ctx, t) : null;
+      // ONLY the one formation the recorded plane camera rides hangs ahead
+      // of the lens (see the pre-pass above): hanging EVERY formation there
+      // piled own/ally/enemy squadrons into the same screen spot (user
+      // report: mixed-colour aircraft glued in front of the camera), and
+      // doing it in a SHIP-camera segment pasted the player's aircraft onto
+      // a view that never framed them. Everything else stays on its real
+      // recorded anchor.
+      const ownSquadron = lensFormationId != null && planeId === lensFormationId;
+      const pose = ownSquadron ? lensPose : null;
       const camFwd = pose ? recordedCameraForward(pose) : null;
       // Slow circle so airborne squadrons visibly hold a patrol orbit.
       const ang = t * 0.22 + (planeId % 7) * 0.9;
