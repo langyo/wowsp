@@ -84,6 +84,7 @@ import {
   alignPoseHeading,
   applyRecordedCamera,
   cameraPoseAt,
+  PLANE_VIEW_PITCH,
   withLookOffset,
 } from "./recordedCamera";
 import { activeWards, planeSmoothPosAt, torpedoPosAt } from "./minimapFx";
@@ -528,7 +529,7 @@ export default defineComponent({
     /** Minimum height of the recorded plane-camera view above the squadron it
  *  frames: the recorder's camera occasionally dips into the terrain, and the
  *  aircraft view should sit above the aircraft. */
-const PLANE_VIEW_ABOVE = 45;
+const PLANE_VIEW_ABOVE = 32;
 
 const RECORDED_DOLLY_MIN = -40;
     const RECORDED_DOLLY_MAX = 600;
@@ -2572,6 +2573,13 @@ const RECORDED_DOLLY_MIN = -40;
         if (ctx.planeLensActive && ctx.planeLensHeading != null) {
           pose = alignPoseHeading(pose, ctx.planeLensHeading);
         }
+        // Plane view looks DOWN at the squadron (the raised seat alone left
+        // the formation hugging the bottom edge). The lens placement stays
+        // LEVEL, so the wedge keeps its recorded altitude and lands a few
+        // degrees below the tilted view axis instead of at the top edge.
+        if (ctx.planeLensActive) {
+          pose = withLookOffset(pose, 0, PLANE_VIEW_PITCH);
+        }
         // Held-RMB free look on top; releasing snaps back to the recorded pose.
         if (recordedLookYaw || recordedLookPitch) {
           pose = withLookOffset(pose, recordedLookYaw, recordedLookPitch);
@@ -3081,6 +3089,29 @@ const RECORDED_DOLLY_MIN = -40;
                         : null,
                   hp: lbl.hp,
                   maxHp: lbl.maxHp,
+                  // Aircraft: the two boost readouts live as thin bars under
+                  // the HP bar — blue = engine boost (throttle mode), white =
+                  // the one-shot temporary boost window (healForsage). They
+                  // can be on together, hence two bars.
+                  extraBars:
+                    lbl.kind === "plane"
+                      ? [
+                          {
+                            key: "boost",
+                            color: "#4aa3ff",
+                            frac: lbl.planeBoost ? 1 : 0,
+                          },
+                          ...(lbl.planeForsageFrac != null
+                            ? [
+                                {
+                                  key: "forsage",
+                                  color: "#f4f8ff",
+                                  frac: lbl.planeForsageFrac,
+                                },
+                              ]
+                            : []),
+                        ]
+                      : undefined,
                   depthMeters: lbl.depthMeters,
                   planeAlive: lbl.planeAlive ?? null,
                   dead: lbl.dead,

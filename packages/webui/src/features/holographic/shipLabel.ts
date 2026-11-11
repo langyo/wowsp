@@ -41,6 +41,10 @@ export interface ShipLabel {
   planeConsumables?: SquadronConsumableType[];
   /** Engine boost (heal-forsage window) currently on — the row's first chip. */
   planeBoost?: boolean;
+  /** Remaining fraction (0..1) of the one-shot temporary-boost window
+   *  (healForsage); null when nothing is running. Rendered as the white bar
+   *  under the HP bar, next to the blue engine-boost bar. */
+  planeForsageFrac?: number | null;
   /** Cached semantic signature of `planeConsumables` (change gate: the arrays
    *  are rebuilt on every label pass and must not churn the Vue render). */
   planeConsumKey?: string;
