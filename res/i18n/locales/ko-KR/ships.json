@@ -425,9 +425,6 @@
     "airDetect": "항공 발견 거리",
     "airDetectHint": "적 항공기가 당신을 발견하는 거리입니다.",
     "subDetect": "잠수함 발견 거리",
-    "torpBomberDamage": "뇌격기 어뢰 피해",
-    "torpBomberRange": "뇌격기 어뢰 사거리",
-    "torpBomberSpeed": "뇌격기 어뢰 속도",
     "depthChargeDamage": "폭뢰 피해",
     "depthChargePacks": "폭뢰 세트 수",
     "depthChargeBombs": "세트당 폭뢰 수",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "갑판 탑재 수",
     "aircraftRegen": "재보급 시간",
     "aircraftCruiseSpeed": "순항 속도",
+    "aircraftMaxSpeed": "최대 속도",
     "aircraftDetect": "피탐지 거리",
     "aircraftPayload": "기체당 탑재량",
     "aircraftDamage": "피해량",
@@ -669,6 +667,15 @@
       "asw": "대잠",
       "aircraft": "항공기"
     },
+    "filter": {
+      "all": "모두 표시",
+      "stock": "기본 무장만",
+      "top": "최종 무장만"
+    },
+    "variant": {
+      "base": "기본",
+      "top": "최종"
+    },
     "addShips": "함선 추가",
     "removeAll": "전체 삭제",
     "remove": "삭제",
@@ -681,8 +688,10 @@
     "showing": "처음 {shown}척 표시 / 총 {total}척",
     "count": "{n}",
     "fit": {
-      "stock": "기본 장비"
-    }
+      "stock": "기본 장비",
+      "aswAirstrike": "대잠 공습"
+    },
+    "planesSummary": "함재기 {n}종"
   },
   "consumable": {
     "regenCrew": "수리반",

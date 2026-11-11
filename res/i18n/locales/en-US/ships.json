@@ -425,9 +425,6 @@
     "airDetect": "Air Detectability",
     "airDetectHint": "Distance at which enemy aircraft spot you.",
     "subDetect": "Submarine Detectability",
-    "torpBomberDamage": "TB torpedo damage",
-    "torpBomberRange": "TB torpedo range",
-    "torpBomberSpeed": "TB torpedo speed",
     "depthChargeDamage": "Depth charge damage",
     "depthChargePacks": "Depth charge packs",
     "depthChargeBombs": "Bombs per pack",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "Aircraft on Deck",
     "aircraftRegen": "Plane Restoration",
     "aircraftCruiseSpeed": "Cruise Speed",
+    "aircraftMaxSpeed": "Max Speed",
     "aircraftDetect": "Detectability",
     "aircraftPayload": "Payload per Aircraft",
     "aircraftDamage": "Damage",
@@ -669,6 +667,15 @@
       "asw": "ASW",
       "aircraft": "Aircraft"
     },
+    "filter": {
+      "all": "Show all",
+      "stock": "Stock armament only",
+      "top": "Upgraded armament only"
+    },
+    "variant": {
+      "base": "Stock",
+      "top": "Upgraded"
+    },
     "addShips": "Add Ships",
     "removeAll": "Remove All",
     "remove": "Remove",
@@ -681,8 +688,10 @@
     "showing": "Showing first {shown} of {total} ships",
     "count": "{n}",
     "fit": {
-      "stock": "Stock fit"
-    }
+      "stock": "Stock fit",
+      "aswAirstrike": "ASW airstrike"
+    },
+    "planesSummary": "{n} aircraft types"
   },
   "consumable": {
     "regenCrew": "Repair Party",

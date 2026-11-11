@@ -4,21 +4,32 @@
  * A hull's WG `default_profile` (the compare table's baseline row) always
  * describes the FULLY-upgraded ship with its standard ammo — but several
  * hulls carry more than one way to fight, and the report is incomplete
- * without them:
+ * without them. Every fit renders as an INDENTED sub-row under its ship
+ * (the identity cell steps right, marking it as one of that hull's
+ * options); rows only appear for the stat groups the fit actually re-specs:
  *
  *   - the alternate firing mode (替代射击): Vyazma / Laffei / Hawaii style
- *     switchable main batteries, where range, reload, dispersion, shells,
- *     fire chance and both DPMs follow the SwitchableModeArtilleryModule;
- *   - the STOCK hull's artillery and torpedo fits (白板配置): the upgrade
- *     chain's head modules, which frequently carry smaller guns or fewer
- *     tubes than the researched end state;
+ *     switchable main batteries (a TOP-configuration capability);
+ *   - the STOCK hull's artillery, torpedo AND hull fits (白板配置): the
+ *     upgrade chain's head modules, which frequently carry smaller guns,
+ *     fewer tubes, less HP or a slower hull than the researched end state;
  *   - the researchable torpedo alternates the slice embeds alongside the
- *     mounted type (Shimakaze A1/A2/A3 — every one of them sees play, the
- *     stock option included).
+ *     mounted type (Shimakaze A1/A2/A3 — every one of them sees play), each
+ *     tagged base/top by whether the STOCK launchers mount it;
+ *   - the ASW airstrike (深弹空袭): the A_AirSupport charges the WG profile
+ *     has no block for — the ONLY anti-submarine weapon most BB/CV hulls
+ *     carry;
+ *   - one row per embarked AIRFRAME (carriers & hybrids): torpedo / dive /
+ *     skip bombers, rockets, fighters, ASW planes — grouped by role and
+ *     tagged base/variant exactly like the detail modal's airframe picker
+ *     (shared pipeline: slice planes first, the baked squadron seed as the
+ *     offline fallback), stats from the baked plane_specs table.
  *
- * Every fit renders as an INDENTED sub-row under its ship (the identity
- * cell steps right, marking it as one of that hull's options); rows only
- * appear for the stat groups the fit actually re-specs.
+ * Every fit carries a VARIANT ("base" = the stock configuration's
+ * modules/airframes, "top" = the fully-upgraded ship's own extras) that the
+ * compare toolbar's armament filter (全部 / 基础 / 升级) filters on; under
+ * the base filter the identity row itself steps down to the stock fit's
+ * values, so both configurations always get compared.
  *
  * Values come from the per-ship GameParams slice (shape v3): role blocks
  * via `resolveShipParts`, shell/torpedo entities via the `__shellAmmo` /
@@ -28,9 +39,24 @@
  * No i18n here: label KEYS only (the component resolves them), same
  * discipline as shipCompare.ts.
  */
+import {
+  buildPlaneOptionsFromSeed,
+  buildPlaneOptionsFromSlice,
+  squadronSeed,
+  type PlaneModelOption,
+} from "@/components/ships/shipSquadrons";
+import { planeSpecEntry } from "@/components/ships/shipPlaneSpecs";
 import { resolveShipParts } from "@/components/ships/shipParts";
 import { buildShipSpecs, switchableMainBattery } from "@/components/ships/shipSpecs";
 import type { CompareProfile } from "@/utils/shipCompare";
+
+/** Which configuration a fit row speaks for: "base" = the stock hull's
+ *  modules / base airframes, "top" = the fully-upgraded ship's own extras
+ *  (alternate firing mode, researchable torpedo alternates, upgraded
+ *  airframes), "both" = a weapon BOTH configurations carry identically
+ *  (the ASW airstrike — hiding it under the stock view would misrepresent
+ *  most BB/CV hulls as ASW-less, their only anti-submarine armament). */
+export type CompareFitVariant = "base" | "top" | "both";
 
 /** One weapon fit of one hull: a sub-row for the compare table. */
 export interface CompareShipFit {
@@ -38,11 +64,23 @@ export interface CompareShipFit {
   key: string;
   /** FULL i18n key path — the component renders t(labelKey). */
   labelKey: string;
-  /** Extra disambiguation rendered beside the label (" · 20 km / 67 kn"). */
+  /** Extra disambiguation rendered beside the label (" · 20 km / 67 kn",
+   *  or an airframe's model designation). */
   suffix?: string;
-  /** Stat groups this fit re-specs; the sub-row appears under these.
-   *  (Currently only the artillery / torpedoes groups grow fit rows —
-   *  hull, mobility and concealment stats do not change per fit.) */
+  /** Configuration this row speaks for — the toolbar armament filter's
+   *  axis. The identity row itself is always the top configuration. */
+  variant: CompareFitVariant;
+  /** Render the 白板/升级 chip beside the label (aircraft + torpedo
+   *  alternate rows; the other fits' labels already say which fit they
+   *  are). */
+  chip?: boolean;
+  /** Row family: "aircraft" rows are per-airframe and survive the base
+   *  filter as rows (the identity row cannot carry them — it collapses
+   *  into a summary cell); "asw-airstrike" rows are the airstrike weapon,
+   *  matched by kind (not by row key) when the view derives ASW
+   *  applicability. */
+  kind?: "aircraft" | "asw-airstrike";
+  /** Stat groups this fit re-specs; the sub-row appears under these. */
   groupKeys: string[];
   /** Compare column key → pre-formatted display value (null → "—"). */
   values: Record<string, string | null>;
@@ -134,6 +172,20 @@ function mountsOf(block: Gp): Record<string, unknown>[] {
   return out;
 }
 
+/** Ammo names mounted by one configuration's torpedo launchers — the base/
+ *  top classifier for the embedded torpedo alternates. */
+function mountedTorpedoNames(gp: Gp, config: "stock" | "top"): Set<string> {
+  const out = new Set<string>();
+  for (const block of resolveShipParts(gp, config).torpedoes) {
+    for (const mount of mountsOf(block)) {
+      for (const name of Array.isArray(mount.ammoList) ? mount.ammoList : []) {
+        if (typeof name === "string") out.add(name);
+      }
+    }
+  }
+  return out;
+}
+
 /** Artillery column values of one artillery block (gameparams shape). */
 function artilleryFitValues(
   block: Gp,
@@ -217,9 +269,12 @@ function torpedoFitValues(entity: TorpedoEntity): Record<string, string | null> 
   return values;
 }
 
-/** Structural equality of two role-block sets (ammo sets + key numbers): a
- *  stock configuration resolving to the same modules as the top one must
- *  not emit a duplicate row. */
+/** Structural equality of two role-block sets (ammo sets + per-mount
+ *  numbers): a stock configuration resolving to the same modules as the
+ *  top one must not emit a duplicate row. Per-mount numBarrels counts in
+ *  the signature — a stock→top re-arm that keeps the same torpedo type
+ *  but changes the tube count (Furutaka-style) still reads as a
+ *  difference. */
 function blocksDiffer(a: Gp[], b: Gp[]): boolean {
   const sig = (blocks: Gp[]): unknown[] =>
     blocks.map((block) => {
@@ -230,15 +285,29 @@ function blocksDiffer(a: Gp[], b: Gp[]): boolean {
           .flatMap((m) => (Array.isArray(m.ammoList) ? m.ammoList : []))
           .sort(),
         maxDist: d.maxDist ?? null,
-        shotDelay: mountsOf(d).map((m) => m.shotDelay ?? null),
+        mounts: mountsOf(d).map((m) => ({
+          numBarrels: m.numBarrels ?? null,
+          shotDelay: m.shotDelay ?? null,
+        })),
       };
     });
   return JSON.stringify(sig(a)) !== JSON.stringify(sig(b));
 }
 
+/** Whether two hull blocks differ in any player-facing number (health /
+ *  speed / turning circle) — the hull stock fit's dedupe gate. */
+function hullBlocksDiffer(a: Gp, b: Gp): boolean {
+  const sig = (hull: Gp): unknown[] => {
+    const d = dict(hull);
+    if (!d) return [];
+    return [d.health ?? null, d.maxSpeed ?? null, d.turningRadius ?? null];
+  };
+  return JSON.stringify(sig(a)) !== JSON.stringify(sig(b));
+}
+
 /** Alternate-firing fit from buildShipSpecs' alt-mode output: the artillery
  *  rows and the HE/AP shell sections already carry the mode's values (and
- *  the burst cycle's DPM). */
+ *  the burst cycle's DPM). A TOP-configuration capability. */
 function altFireFit(profile: CompareProfile | null | undefined, nation: string | undefined, gp: Gp): CompareShipFit | null {
   // A hull without a switchable module has no alternate mode — the alt-mode
   // build would answer with the NORMAL values and the fit row would just
@@ -276,63 +345,145 @@ function altFireFit(profile: CompareProfile | null | undefined, nation: string |
     const v = specValue.get(specKey);
     values[column] = v ?? null;
   }
-  return { key: "altFire", labelKey: "ships.spec.altFire", groupKeys: ["artillery"], values };
+  return {
+    key: "altFire",
+    labelKey: "ships.spec.altFire",
+    variant: "top",
+    groupKeys: ["artillery"],
+    values,
+  };
 }
 
-/** Stock-hull fit from the upgrade chain's head modules. Emitted only when
- *  the stock artillery or torpedo modules actually differ from the top
+/** Stock-hull ARTILLERY fit from the upgrade chain's head modules. Emitted
+ *  only when the stock artillery modules actually differ from the top
  *  configuration (a single-hull premium resolves to the same blocks and
  *  would duplicate the baseline row). */
-function stockFit(profile: CompareProfile | null | undefined, nation: string | undefined, gp: Gp): CompareShipFit | null {
+function stockArtilleryFit(gp: Gp, nation: string | undefined): CompareShipFit | null {
   if (!gp) return null;
   const stock = resolveShipParts(gp, "stock");
   const top = resolveShipParts(gp, "top");
-  const artDiffers = blocksDiffer(stock.artillery, top.artillery);
-  const torpDiffers = blocksDiffer(stock.torpedoes, top.torpedoes);
-  if (!artDiffers && !torpDiffers) return null;
+  if (!blocksDiffer(stock.artillery, top.artillery)) return null;
   const ammo = shellAmmo(gp);
   const values: Record<string, string | null> = {};
-  if (artDiffers) {
-    for (const block of stock.artillery) Object.assign(values, artilleryFitValues(block, ammo, nation));
-  } else {
-    // Torpedoes-only difference: the artillery columns read as not carried
-    // by this row, keeping the baseline row the artillery reference.
-    for (const column of [
-      "mainGunRange", "mainGunReload", "mainGunBarrels", "mainGunCaliber",
-      "turretTraverse", "maxDispersion", "heShell", "fireChance",
-      "hePenetration", "shellSpeed", "heDpm", "apShell", "apDpm",
-    ]) {
-      values[column] = null;
-    }
-  }
-  if (torpDiffers) {
-    for (const block of stock.torpedoes) {
-      for (const mount of mountsOf(block)) {
-        for (const name of Array.isArray(mount.ammoList) ? mount.ammoList : []) {
-          if (typeof name !== "string") continue;
-          const entity = torpedoAmmo(gp)[name];
-          if (entity) Object.assign(values, torpedoFitValues(entity));
-        }
+  for (const block of stock.artillery) Object.assign(values, artilleryFitValues(block, ammo, nation));
+  return {
+    key: "stock-artillery",
+    labelKey: "ships.compare.fit.stock",
+    variant: "base",
+    groupKeys: ["artillery"],
+    values,
+  };
+}
+
+/** Stock-hull TORPEDO fit: the upgrade chain's head torpedo modules and
+ *  their mounted type. Only when they differ from the top configuration. */
+function stockTorpedoFit(gp: Gp): CompareShipFit | null {
+  if (!gp) return null;
+  const stock = resolveShipParts(gp, "stock");
+  const top = resolveShipParts(gp, "top");
+  if (!blocksDiffer(stock.torpedoes, top.torpedoes)) return null;
+  const ammo = torpedoAmmo(gp);
+  let values: Record<string, string | null> | null = null;
+  for (const block of stock.torpedoes) {
+    for (const mount of mountsOf(block)) {
+      for (const name of Array.isArray(mount.ammoList) ? mount.ammoList : []) {
+        if (typeof name !== "string") continue;
+        const entity = ammo[name];
+        if (entity) values = torpedoFitValues(entity);
       }
     }
-  } else if (!artDiffers) {
-    return null;
   }
-  const groupKeys: ("artillery" | "torpedoes")[] = [];
-  if (artDiffers) groupKeys.push("artillery");
-  if (torpDiffers) groupKeys.push("torpedoes");
-  return { key: "stock", labelKey: "ships.compare.fit.stock", groupKeys, values };
+  if (!values) return null;
+  return {
+    key: "stock-torpedoes",
+    labelKey: "ships.compare.fit.stock",
+    variant: "base",
+    groupKeys: ["torpedoes"],
+    values,
+  };
+}
+
+/** Stock-HULL fit: the upgrade chain's head hull block. The stock hull
+ *  changes HP, top speed and the turning circle; rudder shift / detection
+ *  have no GameParams-only formula and stay outside the fit. Top speed
+ *  scales the WG baseline (identical engine module on both hulls) by the
+ *  hull blocks' raw maxSpeed ratio — mixing WG-displayed and GameParams
+ *  raw speeds would misreport by the engine multiplier. */
+function stockHullFit(profile: CompareProfile | null | undefined, gp: Gp): CompareShipFit | null {
+  if (!gp) return null;
+  const stockHull = dict(resolveShipParts(gp, "stock").hull);
+  const topHull = dict(resolveShipParts(gp, "top").hull);
+  if (!stockHull || !topHull || !hullBlocksDiffer(stockHull, topHull)) return null;
+  const values: Record<string, string | null> = {};
+  const hp = num(stockHull.health);
+  values.hp = hp != null ? Math.round(hp).toLocaleString(undefined, { maximumFractionDigits: 0 }) : null;
+  const stockSpeed = num(stockHull.maxSpeed);
+  const topSpeed = num(topHull.maxSpeed);
+  const baselineSpeed = num(profile?.mobility?.max_speed);
+  if (stockSpeed != null && topSpeed != null && topSpeed > 0 && baselineSpeed != null) {
+    values.maxSpeed = (baselineSpeed * (stockSpeed / topSpeed)).toFixed(1) + " kn";
+  } else {
+    values.maxSpeed = null;
+  }
+  const radius = num(stockHull.turningRadius);
+  values.turningRadius = radius != null ? String(Math.round(radius)) + " m" : null;
+  return {
+    key: "stock-hull",
+    labelKey: "ships.compare.fit.stock",
+    variant: "base",
+    groupKeys: ["hull"],
+    values,
+  };
+}
+
+/** ASW-airstrike fit from the top configuration's A_AirSupport block:
+ *  chargesNum charges out to maxDist (raw metres → km) on a reloadTime
+ *  cycle — the WG profile carries none of it, and for Yamato/Des
+ *  Moines-class hulls this is the ONLY anti-submarine weapon. The damage
+ *  column stays blank: the slice embeds no bomb entity for the strike.
+ *  Classified "both" (stock and top carry the identical strike block, the
+ *  upgrade chain never touches it), so the stock view still reports it. */
+export function aswAirstrikeFit(gp: Gp): CompareShipFit | null {
+  if (!gp) return null;
+  const strike = dict(resolveShipParts(gp, "top").airSupport[0]);
+  if (!strike) return null;
+  const charges = num(strike.chargesNum);
+  const maxDist = num(strike.maxDist);
+  if (charges == null || charges <= 0 || maxDist == null || maxDist <= 0) return null;
+  const values: Record<string, string | null> = {
+    aswRange: (maxDist / 1000).toFixed(1) + " km",
+    depthChargePacks: String(charges),
+    depthChargeReload: null,
+  };
+  const reload = num(strike.reloadTime);
+  if (reload != null && reload > 0) values.depthChargeReload = reload.toFixed(1) + " s";
+  return {
+    key: "asw-airstrike",
+    labelKey: "ships.compare.fit.aswAirstrike",
+    variant: "both",
+    kind: "asw-airstrike",
+    groupKeys: ["asw"],
+    values,
+  };
+}
+
+/** Whether the hull fields an ASW airstrike at all — groupApplies' extra
+ *  fact for the ASW group. */
+export function hasAswAirstrike(gp: Gp): boolean {
+  return aswAirstrikeFit(gp) != null;
 }
 
 /** Torpedo-alternate fits: one sub-row per embedded torpedo type, mounted
  *  and researchable alike (Shimakaze's A1/A2/A3 all see play). Skipped when
  *  the slice embeds at most one type — the baseline row already speaks for
  *  it. Labels reuse the spec panel's per-kind section keys; the "range ·
- *  speed" suffix disambiguates same-kind types. */
+ *  speed" suffix disambiguates same-kind types. Variants mounted by the
+ *  STOCK launchers classify base, everything else top. */
 function torpedoVariantFits(gp: Gp): CompareShipFit[] {
   const ammo = torpedoAmmo(gp);
   const names = Object.keys(ammo);
   if (names.length <= 1) return [];
+  const stockMounted = mountedTorpedoNames(gp, "stock");
   const out: CompareShipFit[] = [];
   const seen = new Set<string>();
   for (const name of names) {
@@ -347,28 +498,110 @@ function torpedoVariantFits(gp: Gp): CompareShipFit[] {
     const dedupe = labelKey + suffix;
     if (seen.has(dedupe)) continue;
     seen.add(dedupe);
-    out.push({ key: "torp:" + name, labelKey, suffix, groupKeys: ["torpedoes"], values });
+    out.push({
+      key: "torp:" + name,
+      labelKey,
+      suffix,
+      variant: stockMounted.has(name) ? "base" : "top",
+      chip: true,
+      groupKeys: ["torpedoes"],
+      values,
+    });
+  }
+  return out;
+}
+
+/** Whether the hull embarks aircraft at all (slice squadrons or the baked
+ *  squadron seed) — groupApplies' extra fact for the aircraft group. */
+export function hasComparePlanes(shipId: number | string, gp: Gp): boolean {
+  if (buildPlaneOptionsFromSlice(gp ?? null).length > 0) return true;
+  const seed = squadronSeed(shipId);
+  return seed != null && Array.isArray(seed.planes) && seed.planes.length > 0;
+}
+
+/** Per-airframe fits for carriers & hybrids: one row per embarked squadron
+ *  airframe, stats from the baked plane_specs table, role labels from the
+ *  shared shipSquadrons pipeline (slice planes first, the seed as the
+ *  offline fallback — the seed answers without any GameParams unpack, so a
+ *  carrier compares its air wing even on the web build). Airframes whose
+ *  specs are missing (a newer airframe the bake predates) are skipped — an
+ *  all-dashes row would be noise. The picker's base/variant rank drives the
+ *  row's variant; unknown ranks (event squads) read as top so the "all" and
+ *  "top" filters keep them visible. */
+export function aircraftFits(shipId: number | string, gp: Gp): CompareShipFit[] {
+  let options: PlaneModelOption[] = buildPlaneOptionsFromSlice(gp ?? null);
+  if (options.length === 0) {
+    const seed = squadronSeed(shipId);
+    if (seed) options = buildPlaneOptionsFromSeed(seed);
+  }
+  const out: CompareShipFit[] = [];
+  for (const option of options) {
+    const entry = planeSpecEntry(option.index);
+    if (!entry) continue;
+    const values: Record<string, string | null> = {
+      planeHp: fmtNum(entry.hp),
+      planeSquadron: fmtNum(entry.squadron),
+      planeSpeed: entry.maxSpeed != null ? Math.round(entry.maxSpeed) + " kn" : null,
+      planeDamage: null,
+      planePen: entry.pen != null ? Math.round(entry.pen) + " mm" : null,
+      planeFire: entry.fire != null ? Math.round(entry.fire) + "%" : null,
+      planeFlood: entry.flood != null ? Math.round(entry.flood) + "%" : null,
+      planeTorpSpeed: entry.torpSpeed != null ? Math.round(entry.torpSpeed) + " kn" : null,
+      planeTorpRange: entry.torpRange != null ? entry.torpRange.toFixed(1) + " km" : null,
+    };
+    // HE/AP bomb and rocket damage reads with its ammo kind ("HE 3150");
+    // torpedo and depth-charge rows stay plain — their role label already
+    // names the weapon family.
+    const dmg = fmtNum(entry.damage);
+    if (dmg != null) {
+      const kindPrefix =
+        entry.ammo === "torpedo" || entry.ammo === "depthcharge" || !entry.ammoType
+          ? ""
+          : entry.ammoType + " ";
+      values.planeDamage = kindPrefix + dmg;
+    }
+    out.push({
+      key: "plane:" + option.index,
+      labelKey: "ships.plane." + (option.role || "auxiliary"),
+      suffix: option.label,
+      variant: option.config === "base" ? "base" : "top",
+      chip: true,
+      kind: "aircraft",
+      groupKeys: ["aircraft"],
+      values,
+    });
   }
   return out;
 }
 
 /**
- * Enumerate the weapon fits of one hull. Returns [] when the slice is
- * absent (gameparams still loading / unavailable) — the table then renders
- * the baseline row alone, exactly as before.
+ * Enumerate the weapon fits of one hull. Returns [] when neither the slice
+ * nor the baked data answers — the table then renders the baseline row
+ * alone, exactly as before. Aircraft rows survive a missing slice (the
+ * squadron seed is committed data); every other fit needs the GameParams
+ * slice and silently drops out while it loads.
  */
 export function shipCompareFits(
   profile: CompareProfile | null | undefined,
   nation: string | undefined,
   gameparams: unknown,
+  shipId: number | string,
 ): CompareShipFit[] {
   const gp = dict(gameparams);
-  if (!gp) return [];
   const out: CompareShipFit[] = [];
-  const alt = altFireFit(profile, nation, gp);
-  if (alt) out.push(alt);
-  const stock = stockFit(profile, nation, gp);
-  if (stock) out.push(stock);
-  out.push(...torpedoVariantFits(gp));
+  if (gp) {
+    const alt = altFireFit(profile, nation, gp);
+    if (alt) out.push(alt);
+    const stockArt = stockArtilleryFit(gp, nation);
+    if (stockArt) out.push(stockArt);
+    const stockTorp = stockTorpedoFit(gp);
+    if (stockTorp) out.push(stockTorp);
+    const stockHull = stockHullFit(profile, gp);
+    if (stockHull) out.push(stockHull);
+    const airstrike = aswAirstrikeFit(gp);
+    if (airstrike) out.push(airstrike);
+    out.push(...torpedoVariantFits(gp));
+  }
+  out.push(...aircraftFits(shipId, gp));
   return out;
 }

@@ -69,11 +69,6 @@ export interface CompareProfile {
     num_bombs_in_pack?: unknown;
     reload_time?: unknown;
   } | null;
-  torpedo_bomber?: {
-    torpedo_damage?: unknown;
-    torpedo_distance?: unknown;
-    torpedo_max_speed?: unknown;
-  } | null;
 }
 
 export interface CompareColumn {
@@ -376,6 +371,9 @@ const TORPEDO_COLUMNS: CompareColumn[] = [
 ];
 
 // ── ASW (depth charges) ──────────────────────────────────────────────────
+// The WG profile carries the HULL depth-charge racks only; hulls whose ASW
+// is an airstrike (or that carry both) speak through the airstrike fit row
+// (shipCompareFits.aswAirstrikeFit) — the aswRange column exists for it.
 const ASW_COLUMNS: CompareColumn[] = [
   {
     key: "depthChargeDamage",
@@ -406,31 +404,32 @@ const ASW_COLUMNS: CompareColumn[] = [
       return v != null ? `${v.toFixed(1)} s` : null;
     },
   },
+  {
+    key: "aswRange",
+    labelKey: "ships.spec.aswRange",
+    // The WG profile carries no airstrike distance — the column fills from
+    // the airstrike fit row; the baseline cell stays an em dash.
+    get: () => null,
+  },
 ];
 
-// ── aircraft (torpedo bombers) ───────────────────────────────────────────
+// ── aircraft (per-airframe rows) ─────────────────────────────────────────
+// A carrier's air wing is more than torpedo bombers: every embarked airframe
+// (torpedo / dive / skip bombers, rockets, fighters, ASW planes…) renders as
+// its own fit row (shipCompareFits.aircraftFits) under these columns, keyed
+// by the baked plane_specs table. The identity row carries no per-column
+// values here — it collapses into a "n aircraft types" summary cell, so the
+// columns' profile getters stay null by construction.
 const AIRCRAFT_COLUMNS: CompareColumn[] = [
-  {
-    key: "torpBomberDamage",
-    labelKey: "ships.spec.torpBomberDamage",
-    get: (p) => fmtNum(p?.torpedo_bomber?.torpedo_damage),
-  },
-  {
-    key: "torpBomberRange",
-    labelKey: "ships.spec.torpBomberRange",
-    get: (p) => {
-      const v = fmtNum(p?.torpedo_bomber?.torpedo_distance, 1);
-      return v ? `${v} km` : null;
-    },
-  },
-  {
-    key: "torpBomberSpeed",
-    labelKey: "ships.spec.torpBomberSpeed",
-    get: (p) => {
-      const v = num(p?.torpedo_bomber?.torpedo_max_speed);
-      return v != null ? `${v} kn` : null;
-    },
-  },
+  { key: "planeHp", labelKey: "ships.spec.aircraftHp", get: () => null },
+  { key: "planeSquadron", labelKey: "ships.spec.aircraftSquadron", get: () => null },
+  { key: "planeSpeed", labelKey: "ships.spec.aircraftMaxSpeed", get: () => null },
+  { key: "planeDamage", labelKey: "ships.spec.aircraftDamage", get: () => null },
+  { key: "planePen", labelKey: "ships.spec.aircraftPenetration", get: () => null },
+  { key: "planeFire", labelKey: "ships.spec.aircraftFireChance", get: () => null },
+  { key: "planeFlood", labelKey: "ships.spec.aircraftFloodChance", get: () => null },
+  { key: "planeTorpSpeed", labelKey: "ships.spec.torpSpeed", get: () => null },
+  { key: "planeTorpRange", labelKey: "ships.spec.torpRange", get: () => null },
 ];
 
 export const COMPARE_GROUPS: CompareGroup[] = [
@@ -441,9 +440,22 @@ export const COMPARE_GROUPS: CompareGroup[] = [
   { key: "aircraft", labelKey: "ships.compare.group.aircraft", columns: AIRCRAFT_COLUMNS },
 ];
 
+/** Side-channel facts the profile alone cannot answer, consulted by
+ *  groupApplies: the embarked-aircraft list (slice planes / squadron seed)
+ *  and the ASW airstrike (A_AirSupport — the WG profile has no block for
+ *  it, yet Yamato/Des Moines-class hulls field nothing else). */
+export interface GroupApplicability {
+  hasPlanes?: boolean;
+  hasAirstrike?: boolean;
+}
+
 /** Whether the ship carries this weapon system at all — drives the merged
  *  gray "not applicable" cell for groups the hull can never have. */
-export function groupApplies(group: CompareGroup, p: CompareProfile | null | undefined): boolean {
+export function groupApplies(
+  group: CompareGroup,
+  p: CompareProfile | null | undefined,
+  extra?: GroupApplicability,
+): boolean {
   const has = (v: unknown) => v != null && typeof v === "object";
   switch (group.key) {
     case "torpedoes":
@@ -457,9 +469,14 @@ export function groupApplies(group: CompareGroup, p: CompareProfile | null | und
         (num(p.artillery.distance) != null || num(p.artillery.shot_delay) != null)
       );
     case "asw":
-      return has(p?.depth_charge);
+      // Ship racks OR the airstrike: an airstrike-only hull (most BB/CV
+      // hulls) used to render a false "not applicable" cell.
+      return has(p?.depth_charge) || extra?.hasAirstrike === true;
     case "aircraft":
-      return num(p?.torpedo_bomber?.torpedo_damage) != null;
+      // The per-airframe rows are the group's data source now; the WG
+      // profile's legacy torpedo_bomber block (RTS-era carriers) is subsumed
+      // by the squadron seed those hulls all carry.
+      return extra?.hasPlanes === true;
     default:
       return true; // hull — every ship has one
   }

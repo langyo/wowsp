@@ -425,9 +425,6 @@
     "airDetect": "空中被发现距离",
     "airDetectHint": "敌机发现你的距离。",
     "subDetect": "被潜艇发现距离",
-    "torpBomberDamage": "鱼雷机伤害",
-    "torpBomberRange": "鱼雷机雷程",
-    "torpBomberSpeed": "鱼雷机航速",
     "depthChargeDamage": "深弹伤害",
     "depthChargePacks": "深弹组数",
     "depthChargeBombs": "每组深弹数",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "甲板载机量",
     "aircraftRegen": "整备时间",
     "aircraftCruiseSpeed": "巡航航速",
+    "aircraftMaxSpeed": "最高航速",
     "aircraftDetect": "被发现距离",
     "aircraftPayload": "单机载弹量",
     "aircraftDamage": "单发伤害",
@@ -669,6 +667,15 @@
       "asw": "反潜",
       "aircraft": "飞机"
     },
+    "filter": {
+      "all": "显示全部",
+      "stock": "只看基础武备",
+      "top": "只看升级武备"
+    },
+    "variant": {
+      "base": "白板",
+      "top": "升级"
+    },
     "addShips": "添加舰艇",
     "removeAll": "移除全部",
     "remove": "移除",
@@ -681,8 +688,10 @@
     "showing": "显示前 {shown} 艘 / 共 {total} 艘",
     "count": "{n}",
     "fit": {
-      "stock": "白板配置"
-    }
+      "stock": "白板配置",
+      "aswAirstrike": "深弹空袭"
+    },
+    "planesSummary": "舰载机 {n} 型"
   },
   "consumable": {
     "regenCrew": "维修小组",

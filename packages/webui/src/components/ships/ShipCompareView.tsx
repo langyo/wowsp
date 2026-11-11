@@ -10,7 +10,13 @@ import { shipCompareFits, type CompareShipFit } from "@/utils/shipCompareFits";
 
 import NationFlag from "@/components/base/NationFlag";
 import ShipPickerModal from "@/components/ships/ShipPickerModal";
-import { COMPARE_GROUPS, groupApplies, tierLabel, type CompareProfile } from "@/utils/shipCompare";
+import {
+  COMPARE_GROUPS,
+  groupApplies,
+  tierLabel,
+  type CompareColumn,
+  type CompareProfile,
+} from "@/utils/shipCompare";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -18,6 +24,10 @@ import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { type ShipInfo } from "@/api";
 import { t } from "@/i18n";
 import "./ShipCompareView.scss";
+
+/** The toolbar armament filter's axis: everything / the stock
+ *  (白板) configuration / the fully-upgraded configuration. */
+type ArmamentFilter = "all" | "stock" | "top";
 
 /**
  * Batch ship comparison (浩舰-style). A per-realm list of shipIds (persisted
@@ -31,6 +41,15 @@ import "./ShipCompareView.scss";
  * table until they resolve again. Stat groups a hull can never carry
  * (no tubes, no ASW, no aircraft) collapse into one gray
  * "not applicable" cell instead of bare "—" gaps.
+ *
+ * Armament beyond the baseline: every weapon fit enumerates as an indented
+ * sub-row (stock hull modules, alternate firing mode, torpedo alternates,
+ * the ASW airstrike) and every embarked airframe as its own row grouped by
+ * role — the aircraft group's identity row collapses into a "n aircraft
+ * types" summary cell. Each row tags its configuration (白板/升级 chip);
+ * the toolbar's armament filter (显示全部 / 只看基础武备 / 只看升级武备)
+ * narrows the table to one configuration, with the identity row itself
+ * stepping down to the stock fit's values under the base filter.
  */
 export default defineComponent({
   name: "ShipCompareView",
@@ -43,6 +62,7 @@ export default defineComponent({
     const shipIds = ref<number[]>([]);
     const pickerOpen = ref(false);
     const groupKey = ref(COMPARE_GROUPS[0].key);
+    const armamentFilter = ref<ArmamentFilter>("all");
     const activeGroup = computed(
       () => COMPARE_GROUPS.find((g) => g.key === groupKey.value) ?? COMPARE_GROUPS[0],
     );
@@ -114,10 +134,12 @@ export default defineComponent({
     // ── per-ship GameParams (weapon-fit variants) ───────────────────────
     // The baseline row reads the WG default_profile (fully-upgraded ship,
     // standard ammo). Weapon-fit sub-rows (alternate firing mode, stock
-    // hull fits, researchable torpedo alternates) need the per-ship
-    // GameParams slice — fetched lazily per compared hull, the same
-    // resolve-set discipline the lineup editor uses. Failures (no install,
-    // web build, slice-less hulls) simply leave a ship at its baseline row.
+    // hull fits, researchable torpedo alternates) and the ASW airstrike
+    // need the per-ship GameParams slice — fetched lazily per compared
+    // hull, the same resolve-set discipline the lineup editor uses.
+    // Failures (no install, web build, slice-less hulls) simply leave a
+    // ship at its baseline row; the AIRCRAFT rows survive it (the baked
+    // squadron seed answers offline).
     const gameRoot = computed(
       () => config.activeInstall?.path ?? gameStatus.process.matchedInstall?.path ?? "",
     );
@@ -148,10 +170,9 @@ export default defineComponent({
       const out = new Map<number, CompareShipFit[]>();
       for (const s of ships.value) {
         const gp = gameparamsByShip.value.get(s.shipId);
-        if (gp == null) continue;
         out.set(
           s.shipId,
-          shipCompareFits(s.defaultProfile as CompareProfile | null, s.nation, gp),
+          shipCompareFits(s.defaultProfile as CompareProfile | null, s.nation, gp, s.shipId),
         );
       }
       return out;
@@ -168,6 +189,11 @@ export default defineComponent({
 
     return () => {
       const group = activeGroup.value;
+      const filterTabs: { key: ArmamentFilter; label: string }[] = [
+        { key: "all", label: t("ships.compare.filter.all") },
+        { key: "stock", label: t("ships.compare.filter.stock") },
+        { key: "top", label: t("ships.compare.filter.top") },
+      ];
       return (
         <div class="ship-compare">
           {ships.value.length === 0 ? (
@@ -189,6 +215,18 @@ export default defineComponent({
                 <HkTag variant="default" size="sm">
                   {t("ships.compare.count", { n: shipIds.value.length })}
                 </HkTag>
+                {/* Armament-configuration filter: the baseline row always
+                    speaks for the fully-upgraded ship, so the stock view
+                    steps the identity cells down to the stock fit's values
+                    (see stockOverride below) instead of keeping two rows
+                    that would read as duplicates. */}
+                <HkTabs
+                  class="ship-compare__filter"
+                  variant="segmented"
+                  modelValue={armamentFilter.value}
+                  onUpdate:modelValue={(v: string) => (armamentFilter.value = v as ArmamentFilter)}
+                  tabs={filterTabs}
+                />
                 <HkTabs
                   class="ship-compare__groups"
                   variant="segmented"
@@ -216,6 +254,84 @@ export default defineComponent({
                   <tbody>
                     {ships.value.flatMap((s) => {
                       const profile = s.defaultProfile as CompareProfile | null;
+                      const allFits = fitsByShip.value.get(s.shipId) ?? [];
+                      const planeCount = allFits.filter((f) => f.kind === "aircraft").length;
+                      // Applicability reads the enumerated fits, not the raw
+                      // sources: an airframe without baked specs yields no
+                      // row, so the summary cell can never announce a count
+                      // the table does not show.
+                      const extra = {
+                        hasPlanes: planeCount > 0,
+                        hasAirstrike: allFits.some((f) => f.kind === "asw-airstrike"),
+                      };
+                      const applies = groupApplies(group, profile, extra);
+                      // Weapon-fit sub-rows visible under the current
+                      // armament filter, computed before the identity row
+                      // (the aircraft summary cell announces this same
+                      // list, so the count never drifts from the rows):
+                      //  - "all": every fit of the group;
+                      //  - "stock": base airframes as rows; the stock
+                      //    hull/artillery/torpedo fits speak through the
+                      //    identity row's stepped-down cells instead, and a
+                      //    "both" weapon (the ASW airstrike) rows only when
+                      //    the identity cells do not already speak for it;
+                      //  - "top": everything the fully-upgraded ship owns —
+                      //    its own extras plus the "both" weapons (the
+                      //    stock-view identity no longer carries them
+                      //    there).
+                      // The baseline's own answer for this group — a
+                      // "both" weapon only steps over it when the WG
+                      // profile carries nothing (airstrike-only hulls).
+                      const baselineHasValues = applies && group.key !== "aircraft"
+                        ? group.columns.some((c) => c.get(profile, s.nation) != null)
+                        : false;
+                      // Stock view: the group's identity cells step down to
+                      // the stock configuration's values — the base fits
+                      // first, then the configuration-invariant "both"
+                      // weapons (the stock hull carries the identical ASW
+                      // airstrike), and only when the WG baseline has
+                      // nothing to say (fit-first; columns the fit cannot
+                      // answer read as em dashes). Groups without any of
+                      // those keep the baseline — identical on both.
+                      const stockOverride =
+                        armamentFilter.value === "stock"
+                          ? (allFits.find(
+                              (f) =>
+                                f.variant === "base" &&
+                                f.kind !== "aircraft" &&
+                                f.groupKeys.includes(group.key),
+                            ) ??
+                            (baselineHasValues
+                              ? null
+                              : allFits.find(
+                                  (f) =>
+                                    f.variant === "both" &&
+                                    f.kind !== "aircraft" &&
+                                    f.groupKeys.includes(group.key),
+                                ) ?? null))
+                          : null;
+                      const visibleFits = applies
+                        ? allFits.filter((fit) => {
+                            if (!fit.groupKeys.includes(group.key)) return false;
+                            if (armamentFilter.value === "stock") {
+                              // Base airframes as rows; a "both" weapon rows
+                              // too UNLESS the identity cells speak for it
+                              // (airstrike-only hulls — no duplicate row).
+                              return (
+                                (fit.kind === "aircraft" && fit.variant === "base") ||
+                                (fit.variant === "both" && fit !== stockOverride)
+                              );
+                            }
+                            if (armamentFilter.value === "top") return fit.variant !== "base";
+                            return true;
+                          })
+                        : [];
+                      const cellValue = (c: CompareColumn): string | null =>
+                        stockOverride
+                          ? c.key in stockOverride.values
+                            ? stockOverride.values[c.key]
+                            : null
+                          : c.get(profile, s.nation);
                       const mainRow = (
                         <tr key={s.shipId}>
                           <td class="ship-compare__sticky ship-compare__sticky--remove">
@@ -241,49 +357,65 @@ export default defineComponent({
                               <span class="ship-compare__ship-name">{encyclopedia.shipDisplayName(s)}</span>
                             </div>
                           </td>
-                          {groupApplies(group, profile)
-                            ? group.columns.map((c) => {
-                                const value = c.get(profile, s.nation);
-                                return <td key={c.key}>{value ?? "—"}</td>;
-                              })
-                            : (
-                              <td key="na" class="ship-compare__na" colspan={group.columns.length}>
-                                <HkTag variant="default" size="sm">{t("ships.compare.notApplicable")}</HkTag>
-                              </td>
-                            )}
+                          {!applies ? (
+                            <td key="na" class="ship-compare__na" colspan={group.columns.length}>
+                              <HkTag variant="default" size="sm">{t("ships.compare.notApplicable")}</HkTag>
+                            </td>
+                          ) : group.key === "aircraft" ? (
+                            // A carrier's air wing is a SET of squadrons, not
+                            // one stat — the identity row summarizes and the
+                            // per-airframe sub-rows carry the numbers. The
+                            // count mirrors the visible sub-rows below (the
+                            // filter-aware list), never the unfiltered wing.
+                            <td key="aircraft" class="ship-compare__summary" colspan={group.columns.length}>
+                              <HkTag variant="primary" size="sm">
+                                {t("ships.compare.planesSummary", {
+                                  n: visibleFits.filter((f) => f.kind === "aircraft").length,
+                                })}
+                              </HkTag>
+                            </td>
+                          ) : (
+                            group.columns.map((c) => (
+                              <td key={c.key}>{cellValue(c) ?? "—"}</td>
+                            ))
+                          )}
                         </tr>
                       );
-                      // Weapon-fit sub-rows (alternate firing mode / stock
-                      // hull / torpedo alternates): indented under their
-                      // ship, only for the group the fit re-specs. A hull
-                      // whose slice has no variants renders none.
-                      const fits = (fitsByShip.value.get(s.shipId) ?? []).filter((fit) =>
-                        fit.groupKeys.includes(group.key),
-                      );
-                      const fitRows = groupApplies(group, profile)
-                        ? fits.map((fit) => (
-                            <tr key={s.shipId + ":" + fit.key} class="ship-compare__fit-row">
-                              <td class="ship-compare__sticky ship-compare__sticky--remove" />
-                              <td class="ship-compare__sticky ship-compare__sticky--tier" />
-                              <td class="ship-compare__sticky ship-compare__sticky--name">
-                                <div class="ship-compare__fit-inner">
-                                  <span class="ship-compare__fit-label">{t(fit.labelKey)}</span>
-                                  {fit.suffix ? (
-                                    <span class="ship-compare__fit-suffix">{fit.suffix}</span>
-                                  ) : null}
-                                </div>
+                      const fitRows = visibleFits.map((fit) => (
+                        <tr key={s.shipId + ":" + fit.key} class="ship-compare__fit-row">
+                          <td class="ship-compare__sticky ship-compare__sticky--remove" />
+                          <td class="ship-compare__sticky ship-compare__sticky--tier" />
+                          <td class="ship-compare__sticky ship-compare__sticky--name">
+                            <div class="ship-compare__fit-inner">
+                              <span class="ship-compare__fit-label">{t(fit.labelKey)}</span>
+                              {fit.chip ? (
+                                <HkTag
+                                  variant={fit.variant === "base" ? "default" : "primary"}
+                                  size="sm"
+                                  class="ship-compare__fit-chip"
+                                >
+                                  {t(fit.variant === "base" ? "ships.compare.variant.base" : "ships.compare.variant.top")}
+                                </HkTag>
+                              ) : null}
+                              {fit.suffix ? (
+                                // data-hint carries the full text (the cell
+                                // ellipsizes long airframe designations).
+                                <span class="ship-compare__fit-suffix" data-hint={fit.suffix}>
+                                  {fit.suffix}
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          {group.columns.map((c) => {
+                            const value = fit.values[c.key] ?? null;
+                            return (
+                              <td key={c.key} class={value == null ? "ship-compare__fit-blank" : undefined}>
+                                {value ?? "—"}
                               </td>
-                              {group.columns.map((c) => {
-                                const value = fit.values[c.key] ?? null;
-                                return (
-                                  <td key={c.key} class={value == null ? "ship-compare__fit-blank" : undefined}>
-                                    {value ?? "—"}
-                                  </td>
-                                );
-                              })}
-                            </tr>
-                          ))
-                        : [];
+                            );
+                          })}
+                        </tr>
+                      ));
                       return [mainRow, ...fitRows];
                     })}
                   </tbody>

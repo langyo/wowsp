@@ -425,9 +425,6 @@
     "airDetect": "空中被発見距離",
     "airDetectHint": "敵の航空機に発見される距離。",
     "subDetect": "潜水艦被発見距離",
-    "torpBomberDamage": "雷撃機魚雷ダメージ",
-    "torpBomberRange": "雷撃機魚雷射程",
-    "torpBomberSpeed": "雷撃機魚雷速度",
     "depthChargeDamage": "爆雷ダメージ",
     "depthChargePacks": "爆雷セット数",
     "depthChargeBombs": "セットあたりの爆雷数",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "甲板搭載数",
     "aircraftRegen": "補充時間",
     "aircraftCruiseSpeed": "巡航速度",
+    "aircraftMaxSpeed": "最大速度",
     "aircraftDetect": "被発見距離",
     "aircraftPayload": "1機あたり搭載量",
     "aircraftDamage": "威力",
@@ -669,6 +667,15 @@
       "asw": "対潜",
       "aircraft": "航空機"
     },
+    "filter": {
+      "all": "すべて表示",
+      "stock": "初期装備のみ",
+      "top": "最終装備のみ"
+    },
+    "variant": {
+      "base": "初期",
+      "top": "最終"
+    },
     "addShips": "艦艇を追加",
     "removeAll": "すべて削除",
     "remove": "削除",
@@ -681,8 +688,10 @@
     "showing": "先頭 {shown} 艘を表示 / 全 {total} 艘",
     "count": "{n}",
     "fit": {
-      "stock": "初期装備"
-    }
+      "stock": "初期装備",
+      "aswAirstrike": "対潜空爆"
+    },
+    "planesSummary": "艦載機 {n} 種"
   },
   "consumable": {
     "regenCrew": "修理班",

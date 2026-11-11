@@ -425,9 +425,6 @@
     "airDetect": "Detección por aire",
     "airDetectHint": "Distancia a la que las aeronaves enemigas te detectan.",
     "subDetect": "Detección por submarino",
-    "torpBomberDamage": "Daño de torpedos de torpederos",
-    "torpBomberRange": "Alcance de torpedos (torpederos)",
-    "torpBomberSpeed": "Velocidad de torpedos (torpederos)",
     "depthChargeDamage": "Daño de cargas de profundidad",
     "depthChargePacks": "Lotes de cargas",
     "depthChargeBombs": "Bombas por lote",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "Aviones en cubierta",
     "aircraftRegen": "Reabastecimiento",
     "aircraftCruiseSpeed": "Velocidad de crucero",
+    "aircraftMaxSpeed": "Velocidad máx.",
     "aircraftDetect": "Detectabilidad",
     "aircraftPayload": "Carga por avión",
     "aircraftDamage": "Daño",
@@ -669,6 +667,15 @@
       "asw": "ASW",
       "aircraft": "Aeronaves"
     },
+    "filter": {
+      "all": "Mostrar todo",
+      "stock": "Solo armamento de serie",
+      "top": "Solo armamento mejorado"
+    },
+    "variant": {
+      "base": "De serie",
+      "top": "Mejorado"
+    },
     "addShips": "Añadir buques",
     "removeAll": "Quitar todos",
     "remove": "Quitar",
@@ -681,8 +688,10 @@
     "showing": "Mostrando los primeros {shown} de {total}",
     "count": "{n}",
     "fit": {
-      "stock": "Configuración de serie"
-    }
+      "stock": "Configuración de serie",
+      "aswAirstrike": "Ataque aéreo ASW"
+    },
+    "planesSummary": "{n} tipos de aeronaves"
   },
   "consumable": {
     "regenCrew": "Equipo de reparación",
