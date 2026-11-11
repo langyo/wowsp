@@ -433,8 +433,10 @@ export interface MapInternals extends MapInternalsDeps {
    *  recorder was framing aircraft): only then does the recorder's own
    *  squadron ride the lens (see markerUpdate). A ship-camera segment with
    *  the same recorded view must not paste the player's aircraft in front
-   *  of the ship's view. */
-  planeLensRide: boolean;
+   *  of the ship's view. `null` = the replay carries no 0x27 camera-mode
+   *  stream, so the segment cannot be named — markerUpdate then infers the
+   *  ride from the lens↔squadron proximity. */
+  planeLensRide: boolean | null;
   /** Capture-zone ring meshes (repainted per frame by cap state). */
   capRings: THREE.Mesh[];
   /** Cap-letter sprites (redrawn with the point ETA while Alt is held). */
@@ -581,7 +583,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
     planeRecordedView: false,
-    planeLensRide: false,
+    planeLensRide: null,
     capRings: [],
     capLetterSprites: [],
     rangeRingSlots: [],

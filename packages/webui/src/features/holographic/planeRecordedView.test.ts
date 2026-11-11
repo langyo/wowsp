@@ -413,6 +413,88 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     }
   });
 
+  it("infers the lens ride from proximity when the replay has no 0x27 stream", () => {
+    // Older/partial replays carry no camera-mode stream, so the recorded
+    // plane-camera segment cannot be named. The plane camera flies within a
+    // few units of its squadron, so a formation that close to the lens is
+    // the ride — without this the planes fell back onto the lens itself
+    // (the near-plane shard look).
+    const near = (id: number, x: number, z: number) => ({
+      id: id * 16,
+      samples: [
+        { time: 10, planeId: id, index: 0, x, y: 20, z, yaw: Math.PI / 2 },
+        { time: 20, planeId: id, index: 0, x, y: 20, z, yaw: Math.PI / 2 },
+      ],
+    });
+    const crowd = (ctx: MapInternals, id: number, pool: THREE.Group[]) => {
+      ctx.planeMeshes.set(id, pool);
+      ctx.planeFormations.set(id, { count: 2, groupSize: 1, groupCount: 2, meshes: [] });
+    };
+    // Own squadron parked ~at the recorded camera (world 193, −287.27).
+    const ctx = makeCtx();
+    ctx.planeTrails = [near(PLANE_ID, 193.04, -287.27)];
+    const pool = poolOf(2);
+    crowd(ctx, PLANE_ID, pool);
+    ctx.planeRoleById.set(PLANE_ID, "self");
+    ctx.props.cameraFrames = [cameraFrame(5, 16.2)];
+    ctx.planeRecordedView = true;
+    ctx.planeLensRide = null;
+    updateMarkersAt(ctx, 15);
+    const cam = new THREE.Vector3(193.04, 16.2, 287.27);
+    for (const m of pool) {
+      expect(m.position.z).toBeLessThan(cam.z);
+      expect(cam.distanceTo(m.position)).toBeGreaterThan(80 - 1e-6);
+    }
+    // A far formation of the same replay stays on its anchor.
+    const ctx2 = makeCtx();
+    ctx2.planeTrails = [anchorTrail(Math.PI / 2, 20)];
+    const farPool = poolOf(2);
+    crowd(ctx2, PLANE_ID, farPool);
+    ctx2.planeRoleById.set(PLANE_ID, "self");
+    ctx2.props.cameraFrames = [cameraFrame(5, 16.2)];
+    ctx2.planeRecordedView = true;
+    ctx2.planeLensRide = null;
+    updateMarkersAt(ctx2, 15);
+    for (const m of farPool) expect(m.position.z).toBeCloseTo(50, 0);
+  });
+
+  it("rides the ally squadron a spectated plane camera followed, not a far own one", () => {
+    // Preferring self unconditionally dragged a distant own formation onto
+    // a clip that was actually spectating an ally's aircraft.
+    const OWN = PLANE_ID;
+    const ALLY = 9;
+    const ctx = makeCtx();
+    ctx.planeTrails = [
+      anchorTrail(Math.PI / 2, 20),
+      {
+        id: ALLY * 16,
+        samples: [
+          { time: 10, planeId: ALLY, index: 0, x: 193.04, y: 20, z: -287.27, yaw: 0 },
+          { time: 20, planeId: ALLY, index: 0, x: 193.04, y: 20, z: -287.27, yaw: 0 },
+        ],
+      },
+    ];
+    const ownPool = poolOf(2);
+    const allyPool = poolOf(2);
+    ctx.planeMeshes.set(OWN, ownPool);
+    ctx.planeMeshes.set(ALLY, allyPool);
+    ctx.planeFormations.set(OWN, { count: 2, groupSize: 1, groupCount: 2, meshes: [] });
+    ctx.planeFormations.set(ALLY, { count: 2, groupSize: 1, groupCount: 2, meshes: [] });
+    ctx.planeRoleById.set(OWN, "self");
+    ctx.planeRoleById.set(ALLY, "ally");
+    ctx.props.cameraFrames = [cameraFrame(5, 16.2)];
+    ctx.planeRecordedView = true;
+    ctx.planeLensRide = true;
+    updateMarkersAt(ctx, 15);
+    const cam = new THREE.Vector3(193.04, 16.2, 287.27);
+    // The ally rides (it is the one the camera followed).
+    for (const m of allyPool) {
+      expect(cam.distanceTo(m.position)).toBeGreaterThan(80 - 1e-6);
+    }
+    // Our own formation keeps its recorded anchor.
+    for (const m of ownPool) expect(m.position.z).toBeCloseTo(50, 0);
+  });
+
   it("keeps the recorded heading when the recorder looked sideways", () => {
     // The formation's nose comes from its own recorded track; the camera
     // rotation only decides WHERE the wedge hangs (ahead of the lens).

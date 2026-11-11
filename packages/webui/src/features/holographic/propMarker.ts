@@ -59,6 +59,11 @@ export interface BuildPropOpts {
   /** Scene-unit size of the model along its forward axis. */
   targetLen: number;
   opacity?: number;
+  /** Extra yaw (radians) applied to the model INSIDE the wrapper, before the
+   *  caller's per-instance rotation. Aircraft use π to normalise art that was
+   *  baked nose-first along −Z (see planeForwardSign); the outer group stays
+   *  free for the per-frame heading. */
+  yawOffset?: number;
 }
 
 export async function buildPropMarker(opts: BuildPropOpts): Promise<THREE.Group> {
@@ -96,6 +101,7 @@ export async function buildPropMarker(opts: BuildPropOpts): Promise<THREE.Group>
   inner.add(model);
   const scale = opts.targetLen / Math.max(size.z, 1e-6);
   inner.scale.setScalar(scale);
+  if (opts.yawOffset) inner.rotation.y += opts.yawOffset;
   if (opts.axis === "y") {
     // Rotating -90° about X maps local +Z onto +Y (forward now along +Y).
     inner.rotation.x = -Math.PI / 2;

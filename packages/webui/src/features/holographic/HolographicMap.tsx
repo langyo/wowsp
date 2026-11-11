@@ -1891,7 +1891,10 @@ export default defineComponent({
     // setup-time toggle must not run a marker pass before the actors exist
     // — markerUpdate recomputes the alive counters from shipMarkers.
     ctx.planeRecordedView = originalView.value;
-    ctx.planeLensRide = inPlaneCameraMode.value;
+    // No 0x27 camera-mode stream → the segment cannot be named; the marker
+    // pass infers the lens ride from proximity instead (null).
+    ctx.planeLensRide =
+      props.cameraModes.length > 0 ? inPlaneCameraMode.value : null;
     watch(originalView, (on) => {
       ctx.planeRecordedView = on;
       // Entering/leaving the recorded view starts from the stream's own
@@ -1903,10 +1906,22 @@ export default defineComponent({
     // The lens ride is only valid inside a recorded PLANE-camera segment
     // (0x27) — recompute it per playhead tick like the view flag.
     watch(inPlaneCameraMode, (on) => {
-      ctx.planeLensRide = on;
+      ctx.planeLensRide = props.cameraModes.length > 0 ? on : null;
       if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
       api.value?.requestRender();
     });
+    // The component is reused across replays: switching from a replay
+    // WITHOUT a 0x27 stream (tri-state null) to one that has it must not
+    // leave the stale null behind until the first plane-camera segment.
+    watch(
+      () => props.cameraModes,
+      () => {
+        ctx.planeLensRide =
+          props.cameraModes.length > 0 ? inPlaneCameraMode.value : null;
+        if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
+        api.value?.requestRender();
+      },
+    );
 
     // ── Enlarged 2D map hover tooltips ──────────────────────────────────
     // The "2D view" overlay gets a hover card for every entity on the map.
