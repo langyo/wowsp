@@ -13,6 +13,9 @@
  * Face roles (the generator's INK RULE):
  * - `ally` / `enemy`: team plate, BLACK ink — the team colour lives in the
  *   plate only (the old dark-green/dark-red inks were WebP chroma bleed).
+ *   DIRECTION (the game's own contract): the two fleets face each other
+ *   across the score strip — `ally`/`sunk` art faces RIGHT (bow at +x) and
+ *   `enemy`/`sunk-enemy` is its horizontal MIRROR (bow LEFT).
  * - `white`: light plate, black ink — the neutral face the tooltip and the
  *   class hint cards draw.
  * - `sunk` / `sunk-enemy`: the INVERTED state marker (black plate, white

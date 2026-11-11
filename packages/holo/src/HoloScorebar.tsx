@@ -101,10 +101,13 @@ function CapChip({ cap }: { cap: HoloCapZone }) {
 
 /** URL selection for one ship slot (variant + sunk-auxiliary fallback chain). */
 function shipIconUrlFor(ship: HoloShip): string | null {
-  // Direction contract of the game's own HUD art: ally icons face LEFT,
-  // enemy icons face RIGHT, and the sunk bitmap faces LEFT — so each side
-  // has its OWN sunk variant ("sunk" for the ally row, the mirrored
-  // "sunk-enemy" for the enemy row). Casualties never flip direction.
+  // Direction contract of the game's own HUD art: the two fleets face
+  // each other across the strip — ally icons face RIGHT (bow toward the
+  // enemy row) and the enemy art is the MIRRORED face (bow toward the
+  // ally row; scripts/model_convert/ship_class_glyphs.py mirrors it). Each
+  // side carries its OWN sunk variant ("sunk" for the ally row, the
+  // mirrored "sunk-enemy" for the enemy row); casualties never flip
+  // direction.
   const variant = ship.dead
     ? ship.role === "enemy"
       ? "sunk-enemy"
