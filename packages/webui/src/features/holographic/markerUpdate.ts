@@ -732,9 +732,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // instead of sliding sideways pointing at a fixed heading. The
       // recorded view uses the camera's own view axis: the recorder chased
       // the squadron, so that axis IS the flight direction — and unlike the
-      // minimap-derived anchor yaw it is smooth.
+      // minimap-derived anchor yaw it is smooth. The placement's fwd is a
+      // SCENE direction ((sin yaw, −cos yaw) feeds the mesh positions), and
+      // camFwd is scene too, so the yaw conversion must NOT apply the world
+      // frame's z mirror again: yaw = atan2(h.x, −h.z).
       const yaw = pose && camFwd
-        ? Math.atan2(camFwd.x, camFwd.z)
+        ? Math.atan2(camFwd.x, -camFwd.z)
         : recorded
           ? anchor.s.yaw
           : Math.atan2(-Math.sin(ang), Math.cos(ang));
@@ -766,7 +769,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // The slot loop writes scene z as -cz + oz (the scene mirrors the
         // recorded z), so the centroid's scene z carries that mirror here.
         cz = -(pose.z + camFwd.z * dist);
-        yBase = pose.y + camFwd.y * dist;
+        // A steeply pitched recorder camera would otherwise drag the wedge
+        // through the sea plane (the 15.8 fixture's camera is essentially
+        // level, but the plane-camera segments of other builds are not).
+        yBase = Math.max(2, pose.y + camFwd.y * dist);
       } else {
         const ccx = anchor.s.x + cxm * right.x + czm * fwd.x;
         const ccz = anchor.s.z + cxm * right.z + czm * fwd.z;

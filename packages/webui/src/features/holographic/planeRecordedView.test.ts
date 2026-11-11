@@ -59,6 +59,10 @@ function packed(k: number): number {
   return acc;
 }
 
+/** Wrap an airframe rotation into [0, 2π) — the placement writes raw
+ *  π − yaw + π values, so π and 3π are the same heading. */
+const normalizeAngle = (a: number) => ((a % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+
 const poolOf = (n: number) =>
   Array.from({ length: n }, () => {
     const g = new THREE.Group();
@@ -322,11 +326,47 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
       expect(Math.abs(m.position.x - cam.x)).toBeLessThan(40);
       expect(Math.abs(m.position.y - cam.y)).toBeLessThan(40);
     }
-    // Heading = the camera's view axis: identity rotation looks down scene
-    // −Z, i.e. world +Z → yaw π (world fwd = (sin yaw, −cos yaw) = (0, 1)),
-    // so the airframe convention writes π − yaw + π = π.
-    expect(visible[0].rotation.y).toBeCloseTo(Math.PI);
+    // Heading = the camera's view axis. Identity rotation looks down scene
+    // −Z and the placement's fwd is a SCENE direction ((sin yaw, −cos yaw)),
+    // so yaw = atan2(0, 1) = 0 → the airframe convention writes 2π: the
+    // wedge flies AWAY from the lens.
+    expect(normalizeAngle(visible[0].rotation.y)).toBeCloseTo(0);
     expect(visible[1].rotation.y).toBe(visible[0].rotation.y);
+  });
+
+  it("turns the wedge to face away from a camera looking along scene +Z", () => {
+    // The z-mirror trap: a yaw taken from the WORLD-frame conversion would
+    // point the formation back at the lens here (0° instead of 180°).
+    const pool = poolOf(2);
+    const ctx = makeCtx();
+    ctx.planeTrails = [anchorTrail(Math.PI / 2, 20)];
+    ctx.planeMeshes = new Map([[PLANE_ID, pool]]);
+    ctx.planeFormations = new Map([
+      [PLANE_ID, { count: 2, groupSize: 1, groupCount: 2, meshes: [] }],
+    ]);
+    // 180° about +Y: the camera looks along scene +Z.
+    const q = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      Math.PI,
+    );
+    ctx.props.cameraFrames = [
+      {
+        ...cameraFrame(5, 16.2),
+        rotX: q.x,
+        rotY: q.y,
+        rotZ: q.z,
+        rotW: q.w,
+      },
+    ];
+    ctx.planeRecordedView = true;
+    updateMarkersAt(ctx, 15);
+    const cam = new THREE.Vector3(193.04, 16.2, 287.27);
+    for (const m of pool) {
+      // Ahead = scene +Z now.
+      expect(m.position.z).toBeGreaterThan(cam.z + 30);
+    }
+    // yaw = atan2(0, −1) = π → the airframe convention writes π.
+    expect(normalizeAngle(pool[0].rotation.y)).toBeCloseTo(Math.PI);
   });
 
   it("follows the camera's view axis when the recorder looked sideways", () => {
