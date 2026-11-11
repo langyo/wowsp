@@ -29,6 +29,13 @@ export interface HoloShipCardData {
   /** Real hull silhouette path (from silhouettes.json), bow pointing right.
    *  Vector fallback used when the bitmap URL is unavailable. */
   silhouette?: string | null;
+  /** Vertical band [top, bottom] of the bitmap's alpha content inside the
+   *  404×155 art canvas (see shipSilhouetteBox in the app). The bitmap
+   *  branch crops the board to this band at the art's native ratio: the game
+   *  art carries big transparent bands above/below the hull, and drawing the
+   *  whole canvas made the plaque ~2× taller than the ship. Absent → the
+   *  full canvas is drawn (the old behaviour). */
+  silhouetteBox?: { top: number; bottom: number } | null;
   /** Display name (localised ship name + nickname). */
   name?: string;
   hp: number | null;
@@ -38,6 +45,11 @@ export interface HoloShipCardData {
   /** True once the ship is sunk. */
   dead?: boolean;
 }
+
+/** Game silhouette bitmap canvas (every file in the pack is 404×155). The
+ *  crop math below is expressed in this canvas's units. */
+const CANVAS_W = 404;
+const CANVAS_H = 155;
 
 /** Fallback sunk label when the host passes no localized one. */
 const DEFAULT_DEAD_TEXT = "SUNK";
@@ -103,6 +115,23 @@ export default defineComponent({
       const repPct = Math.max(0, Math.min(100 - hpPct, (rep / total) * 100));
       const path = d.silhouette ?? silhouetteOf(d.shipType);
       const pngUrl = d.silhouetteUrl ?? null;
+      // Bitmap branch: crop the board to the art's own alpha band. The crop
+      // keeps the 1:1 scale (the board carries the band's ratio and the mask
+      // is scaled by width), so nothing here can stretch the hull.
+      const silStyle: Record<string, string> = {};
+      if (pngUrl) silStyle["--holo-sil"] = `url("${pngUrl}")`;
+      const box = pngUrl ? d.silhouetteBox : null;
+      if (box) {
+        const top = Math.max(0, Math.min(CANVAS_H - 1, box.top));
+        const bottom = Math.max(top + 1, Math.min(CANVAS_H, box.bottom));
+        const cropH = bottom - top;
+        // mask-position percentage: the free space is (cropH − canvasH), so
+        // P = top / (canvasH − cropH) lines the band's top with the board's.
+        const posPct = cropH < CANVAS_H ? (top / (CANVAS_H - cropH)) * 100 : 0;
+        silStyle["--holo-sil-ar"] = `${CANVAS_W} / ${cropH}`;
+        silStyle["--holo-sil-size"] = "100% auto";
+        silStyle["--holo-sil-pos"] = `0% ${posPct}%`;
+      }
       // Sunk ships keep the readout slot (the localized label replaces the
       // numbers) even when the HP stream never read the hull — the slot's
       // fixed inline size is what holds the plaque's width steady.
@@ -124,7 +153,7 @@ export default defineComponent({
           {pngUrl ? (
             <div
               class="holo-ship-card__hull-png"
-              style={{ "--holo-sil": `url("${pngUrl}")` } as Record<string, string>}
+              style={silStyle}
               aria-hidden="true"
             >
               <div class="holo-ship-card__sil holo-ship-card__sil-base" />

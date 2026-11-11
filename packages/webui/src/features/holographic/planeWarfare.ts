@@ -324,10 +324,43 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       build.then((proto) => {
         if (epoch !== ctx.markerEpoch || !ctx.api.value?.scene || !proto) return;
         if (ctx.planeMeshes.has(planeId)) return;
+        // Tint at LOAD time, not at build time: the GLB resolves long
+        // after resolvePlaneCarriers ran its re-tint pass, so the role
+        // captured when this build STARTED (the empty-map default, i.e.
+        // enemy red) painted the finished pool — the recorder's OWN
+        // aircraft rendered red (user report; team rule: self white, ally
+        // green, enemy red). Read the final role here instead, and give the
+        // pool its OWN material copies: propMarker's cache shares one proto
+        // per URL, so tinting its materials would recolor the squadrons on
+        // the other side too.
+        const role = (ctx.planeRoleById.get(planeId) ?? first.role) as TeamRole;
+        const tint = new THREE.Color(TEAM_COLOR[role] ?? 0x78d2ff);
+        const mats = new Map<THREE.Material, THREE.Material>();
         const pool: THREE.Object3D[] = [];
         for (let i = 0; i < formationForPool.count; i++) {
           const inst = proto.clone(true);
           inst.userData.sharedGeometry = true;
+          inst.traverse((child) => {
+            const mesh = child as THREE.Mesh;
+            const raw = mesh.material as
+              | THREE.Material
+              | THREE.Material[]
+              | undefined;
+            if (!raw) return;
+            const retint = (m: THREE.Material) => {
+              let copy = mats.get(m);
+              if (!copy) {
+                copy = m.clone();
+                const colored = copy as THREE.MeshBasicMaterial;
+                if (colored.color) colored.color.copy(tint);
+                mats.set(m, copy);
+              }
+              return copy;
+            };
+            mesh.material = Array.isArray(raw)
+              ? raw.map(retint)
+              : retint(raw);
+          });
           // Orientation is applied by markerUpdate's placement (the baked
           // plane GLBs have their nose at -Z, unlike the ships' +Z; see the
           // comment there) — a rotation here would be overwritten each frame.

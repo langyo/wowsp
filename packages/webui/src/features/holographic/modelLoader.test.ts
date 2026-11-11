@@ -25,11 +25,30 @@ import {
   shipNameFromOfflineDb,
   shipOfflineEntry,
   shipModelStemCandidates,
+  shipSilhouetteBox,
 } from "./modelLoader";
 
 // A shipId + model stem pair straight from ship_models.json (tracked data).
 const SHIP_ID = 3246831056; // index "PRSS999"
 const STEM = "PRSS999";
+
+describe("shipSilhouetteBox", () => {
+  // The plaque crops the 404×155 silhouette canvas to the art's alpha band
+  // (silhouette_boxes.json) so the ship keeps its 1:1 ratio without the
+  // card growing to the whole padded canvas.
+  it("answers the alpha band inside the 404×155 canvas for a known ship", () => {
+    const box = shipSilhouetteBox(SHIP_ID);
+    expect(box).not.toBeNull();
+    expect(box!.top).toBeGreaterThanOrEqual(0);
+    expect(box!.bottom).toBeLessThanOrEqual(155);
+    expect(box!.bottom - box!.top).toBeGreaterThan(10);
+  });
+
+  it("is null without a ship id or for a ship the pack does not know", () => {
+    expect(shipSilhouetteBox(undefined)).toBeNull();
+    expect(shipSilhouetteBox(1)).toBeNull();
+  });
+});
 
 beforeAll(async () => {
   // Fake the Tauri asset protocol so URL construction has a converter to use.

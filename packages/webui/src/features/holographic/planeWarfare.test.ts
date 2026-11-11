@@ -25,7 +25,18 @@ vi.mock("./modelLoader", () => ({
     idx ? `/models/planes/${idx}.glb` : null),
 }));
 vi.mock("./propMarker", () => ({
-  buildPropMarker: vi.fn(async () => new THREE.Object3D()),
+  // A proto shaped like a loaded GLB: one mesh carrying a material, so the
+  // per-pool tint pass has something to recolor.
+  buildPropMarker: vi.fn(async () => {
+    const mesh = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({ color: 0x123456 }),
+    );
+    mesh.name = "boundingbox";
+    const group = new THREE.Group();
+    group.add(mesh);
+    return group;
+  }),
 }));
 
 import type {
@@ -372,5 +383,35 @@ describe("buildPlaneFormations", () => {
     ctx.markerEpoch = 2; // a rebuild started while the clone was in flight
     await new Promise((r) => setTimeout(r, 0));
     expect(ctx.planeMeshes.size).toBe(0);
+  });
+
+  it("tints the pool at LOAD time from the FINAL role", async () => {
+    // User report: the recorder's own aircraft rendered RED. The pool is
+    // tinted when the GLB resolves, which is long after resolvePlaneCarriers
+    // filled planeRoleById — reading the role captured when the build
+    // STARTED (the empty-map default "enemy") painted every finished pool
+    // wrong. Team rule: self white, ally green, enemy red.
+    const ctx = makeCtx({
+      squadronCreates: [create(1, WARD_PARAMS_ID, 2), create(2, WARD_PARAMS_ID, 2)],
+    });
+    ctx.planeTrails = [trail(1), trail(2)];
+    for (const tr of ctx.planeTrails) {
+      ctx.planeIndexById.set(tr.id, "PJAF408");
+    }
+    ctx.planeRoleById.set(1, "self");
+    ctx.planeRoleById.set(2, "ally");
+    const scene = new THREE.Scene();
+    ctx.api = ref({ scene }) as unknown as MapInternals["api"];
+    buildPlaneFormations(ctx, scene, ctx.markerEpoch);
+    await vi.waitFor(() => expect(ctx.planeMeshes.size).toBe(2));
+    const meshOf = (planeId: number) =>
+      ctx.planeMeshes.get(planeId)![0].children[0] as THREE.Mesh;
+    const colorOf = (planeId: number) =>
+      (meshOf(planeId).material as THREE.MeshBasicMaterial).color.getHex();
+    expect(colorOf(1)).toBe(0xffffff);
+    expect(colorOf(2)).toBe(0x4ade80);
+    // The pools own their materials (propMarker's cache shares one proto
+    // per URL): tinting one squadron must not recolor the other side.
+    expect(meshOf(1).material).not.toBe(meshOf(2).material);
   });
 });
