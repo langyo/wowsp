@@ -699,7 +699,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // a ship/shell-camera segment, null = the replay has no 0x27 mode stream
     // (fall back to proximity).
     const lensMode = ctx.planeRecordedView === true ? ctx.planeLensRide : false;
-    if (lensMode !== false) {
+    // Strict checks: only a KNOWN plane-camera segment rides unconditionally,
+    // only a KNOWN ship/shell segment never rides; anything else is inferred
+    // from proximity below (a no-0x27 replay can still false-ride when a
+    // squadron happens to fly within the radius of a ship camera — the
+    // alternative is the near-plane-shard fallback, so the trade-off sticks).
+    if (lensMode === true || lensMode === null) {
       lensPose = recordedCameraAt(ctx, t);
       if (lensPose) {
         let bestSelf: { id: number; d: number } | null = null;
@@ -722,7 +727,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // Replays WITHOUT the 0x27 camera-mode stream cannot name the
         // segment; infer the plane-camera ride from proximity — the plane
         // camera sits within a few units of the squadron it follows.
-        if (chosen && (lensMode !== null || chosen.d <= RECORDED_LENS_PROXIMITY)) {
+        if (chosen && (lensMode === true || chosen.d <= RECORDED_LENS_PROXIMITY)) {
           lensFormationId = chosen.id;
         }
       }

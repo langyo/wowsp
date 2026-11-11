@@ -1910,6 +1910,18 @@ export default defineComponent({
       if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
       api.value?.requestRender();
     });
+    // The component is reused across replays: switching from a replay
+    // WITHOUT a 0x27 stream (tri-state null) to one that has it must not
+    // leave the stale null behind until the first plane-camera segment.
+    watch(
+      () => props.cameraModes,
+      () => {
+        ctx.planeLensRide =
+          props.cameraModes.length > 0 ? inPlaneCameraMode.value : null;
+        if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
+        api.value?.requestRender();
+      },
+    );
 
     // ── Enlarged 2D map hover tooltips ──────────────────────────────────
     // The "2D view" overlay gets a hover card for every entity on the map.
