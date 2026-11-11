@@ -27,8 +27,8 @@ type UrlMap = Partial<Record<HoloShipClass, string>>;
 const urlRegistry: Record<HoloShipIconVariant, UrlMap> = {
   ally: {},
   enemy: {},
-  sunk: {},         // faces LEFT - ally-row casualties
-  "sunk-enemy": {}, // mirrored, faces RIGHT - enemy-row casualties
+  sunk: {},         // faces RIGHT (same as the ally row)
+  "sunk-enemy": {}, // the ally sunk face MIRRORED - faces LEFT, like the enemy row
 };
 
 /** Register the app's bundled icon URLs (call once per app bootstrap). */

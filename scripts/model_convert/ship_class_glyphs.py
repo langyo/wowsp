@@ -11,7 +11,11 @@ Art box: 20 x 11 (x right = bow, y down). The ink OUTLINE is the silhouette;
 the plate is the same silhouette inset, so the rim shows; the speed slashes
 (and the carrier's deck divider) are straight ink lines drawn over the
 plate, which keeps the gaps part of the ink body instead of see-through
-holes (the 'drafty' carrier of 2026-11-07).
+holes (the 'drafty' carrier of 2026-11-07). The ENEMY faces are authored
+as the horizontal MIRROR of the ally faces (see mirrored()): the game's
+two fleets face each other across the top strip, so the enemy bow points
+LEFT — the traced WebP era carried the flip and the geometry rewrite
+dropped it (2026-11-11 review).
 
 INK RULE (2026-11-07 review: the ink line has to be black on every face).
 The ink is BLACK on every plate face. The game's own markers ink black too:
@@ -32,10 +36,12 @@ Variants (6 classes x 7 faces = 42 files, the names shipIcons.ts imports):
 
   icon_<class>.svg          plain  — silhouette + punched engraving (CSS mask)
   icon_ally_<class>.svg     ally   — mint plate, black ink
-  icon_enemy_<class>.svg    enemy  — salmon plate, black ink
+  icon_enemy_<class>.svg    enemy  — salmon plate, black ink; the ally face
+                            MIRRORED (bow LEFT — the fleets face each other)
   icon_white_<class>.svg    white  — light plate, black ink
   icon_sunk_<class>.svg     sunk   — inverted state marker: black plate, white ink
-  icon_sunk_enemy_<class>.svg       the same inverted state face
+  icon_sunk_enemy_<class>.svg       the enemy row's inverted state face
+                                    (mirrored like the enemy face)
   icon_outline_<class>.svg  outline— white line-art alpha mask, no plate
 
 Every class carries every face. The auxiliary hull used to stop at the two
@@ -49,6 +55,7 @@ Usage:
 from __future__ import annotations
 
 import math
+import re
 import sys
 from pathlib import Path
 
@@ -332,6 +339,57 @@ def write_sunk(shape):
     return write_two_ink(shape, SUNK_PLATE, SUNK_INK)
 
 
+def _trim(v):
+    # Trim float noise: the generated art is read (and diffed) as text.
+    return f'{v:.3f}'.rstrip('0').rstrip('.')
+
+
+def mirror_path(d):
+    """Flip authored path data horizontally about the art box (x -> W - x).
+
+    Accepts whole d strings (multi-subpath paths — the hull+bow outer is
+    two subpaths — mirror per subpath). The geometry only ever emits
+    absolute M/L/H/V/Z commands, so the mirror
+    is a coordinate pass: M/L/H carry x (flipped), V carries y (kept), Z
+    takes none. M/L coordinates alternate x,y starting at x; H/V stay on
+    their single axis. Tokens are rejoined with single spaces — bare
+    concatenation would fuse adjacent numbers (0.5 followed by 5.5 emits
+    '0.55.5', which reparses as 0.55 / 0.5)."""
+    out = []
+    cmd = 'M'
+    axis = 'x'  # axis of the next number
+    for tok in re.finditer(r'[A-Z]|-?(?:\d+\.\d+|\d+|\.\d+)', d):
+        s = tok.group(0)
+        if s.isalpha():
+            out.append(s)
+            cmd = s
+            axis = {'M': 'x', 'L': 'x', 'H': 'x', 'V': 'y'}.get(cmd, axis)
+        elif axis == 'x':
+            out.append(_trim(W - float(s)))
+            axis = 'y' if cmd in ('M', 'L') else 'x'
+        else:
+            out.append(s)
+            axis = 'x' if cmd in ('M', 'L') else 'y'
+    return ' '.join(out)
+
+
+def mirrored(shape):
+    """The enemy-row faces: the ally face MIRRORED horizontally (bow LEFT).
+
+    The game's top strip points the two fleets at each other — ally art
+    faces RIGHT and the enemy art is its horizontal mirror. The traced
+    WebP era carried the flip; the geometry rewrite dropped it and both
+    rows pointed the same way (2026-11-11 review). Every subpath mirrors:
+    silhouette, plate, the ink slashes, and the plain face's punched
+    seams."""
+    return dict(
+        outer=mirror_path(shape['outer']),
+        plate=mirror_path(shape['plate']),
+        lines=[mirror_path(d) for d in shape['lines']],
+        seams=[mirror_path(s) for s in shape['seams']],
+    )
+
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     written = 0
@@ -340,10 +398,10 @@ def main():
         files = {
             f'icon_{cls}.svg': write_plain(shape),
             f'icon_ally_{cls}.svg': write_two_ink(shape, *ALLY),
-            f'icon_enemy_{cls}.svg': write_two_ink(shape, *ENEMY),
+            f'icon_enemy_{cls}.svg': write_two_ink(mirrored(shape), *ENEMY),
             f'icon_white_{cls}.svg': write_two_ink(shape, *WHITE),
             f'icon_sunk_{cls}.svg': write_sunk(shape),
-            f'icon_sunk_enemy_{cls}.svg': write_sunk(shape),
+            f'icon_sunk_enemy_{cls}.svg': write_sunk(mirrored(shape)),
             f'icon_outline_{cls}.svg': write_outline(shape),
         }
         for name, body in files.items():
