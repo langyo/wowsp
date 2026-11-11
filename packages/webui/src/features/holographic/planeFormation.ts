@@ -91,28 +91,49 @@ export function inferGrouping(
     if (s) pts.push(s);
   }
   if (pts.length < 2) return { groupSize: 1, groupCount: Math.max(1, pts.length) };
-  const clusters: { members: { x: number; z: number }[]; cx: number; cz: number }[] = [];
-  for (const p of pts) {
-    let best: (typeof clusters)[number] | null = null;
-    let bestD = 45;
-    for (const c of clusters) {
-      const d = Math.hypot(c.cx - p.x, c.cz - p.z);
-      if (d < bestD) {
-        bestD = d;
-        best = c;
+  // The launch spread varies with the squadron size and the carrier's deck
+  // layout — a fixed 45-unit threshold mis-clustered wide 10-plane launches
+  // into N groups of 1 (user report: a ring of singles). Grow the threshold
+  // until the clusters collapse into a plausible flight structure (the game
+  // flies at most ~4 attack groups per squadron), preferring BALANCED
+  // groups (all the same size) — an unbalanced split means the threshold is
+  // still fragmenting real groups.
+  let best: { groupSize: number; groupCount: number } | null = null;
+  for (const threshold of [45, 90, 180, 360, 720]) {
+    const clusters: { members: { x: number; z: number }[]; cx: number; cz: number }[] = [];
+    for (const p of pts) {
+      let hit: (typeof clusters)[number] | null = null;
+      let bestD = threshold;
+      for (const c of clusters) {
+        const d = Math.hypot(c.cx - p.x, c.cz - p.z);
+        if (d < bestD) {
+          bestD = d;
+          hit = c;
+        }
+      }
+      if (hit) {
+        hit.members.push(p);
+        hit.cx = hit.members.reduce((a, q) => a + q.x, 0) / hit.members.length;
+        hit.cz = hit.members.reduce((a, q) => a + q.z, 0) / hit.members.length;
+      } else {
+        clusters.push({ members: [p], cx: p.x, cz: p.z });
       }
     }
-    if (best) {
-      best.members.push(p);
-      best.cx = best.members.reduce((a, q) => a + q.x, 0) / best.members.length;
-      best.cz = best.members.reduce((a, q) => a + q.z, 0) / best.members.length;
-    } else {
-      clusters.push({ members: [p], cx: p.x, cz: p.z });
+    const sizes = clusters.map((c) => c.members.length).sort((a, b) => a - b);
+    const candidate = {
+      groupSize: sizes[Math.floor(sizes.length / 2)] || 1,
+      groupCount: clusters.length,
+    };
+    // Balanced (all clusters exactly equal) at a plausible group count wins
+    // immediately; a 3/3/4 launch is rejected here and a later threshold
+    // may win with a different split — visual only, still a valid read.
+    if (candidate.groupCount <= 4 && new Set(sizes).size === 1) {
+      return candidate;
     }
+    if (best === null || candidate.groupCount < best.groupCount) best = candidate;
   }
-  const sizes = clusters.map((c) => c.members.length).sort((a, b) => a - b);
-  return {
-    groupSize: sizes[Math.floor(sizes.length / 2)] || 1,
-    groupCount: clusters.length,
-  };
+  // Clamp the least-fragmented fallback: the game flies at most ~4 attack
+  // groups, and an unbounded count re-creates the ring-of-singles look.
+  const fallbackSize = Math.max(1, Math.ceil(pts.length / 4));
+  return best ?? { groupSize: fallbackSize, groupCount: Math.ceil(pts.length / fallbackSize) };
 }

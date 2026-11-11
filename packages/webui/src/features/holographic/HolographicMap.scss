@@ -120,17 +120,17 @@
     bottom: 12px;
   }
 
-  /* Follow-mode free look banner (hold RMB): centered near the top so it
-     never covers the followed ship itself. */
+  /* Follow-mode free look banner (hold RMB): below the top score bar so it
+     sits beside the 跟随飞机 pill instead of crowding the scorebar. */
   &__freelook {
     position: absolute;
-    top: 9%;
+    top: 15%;
     left: 50%;
     translate: -50% 0;
     padding: 5px 14px;
     font-size: var(--text-sm);
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.02em;
     color: rgb(var(--color-primary));
     background: var(--holo-hud-bg);
     border: 1px solid var(--holo-hud-border);
@@ -147,13 +147,13 @@
      an interaction target. */
   &__cam-badge {
     position: absolute;
-    top: 9%;
+    top: 15%;
     left: 50%;
     translate: -50% 0;
     padding: 5px 14px;
     font-size: var(--text-sm);
     font-weight: 600;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.02em;
     color: rgb(var(--color-primary));
     background: var(--holo-hud-bg);
     border: 1px solid var(--holo-hud-border);
@@ -543,19 +543,28 @@
   top: 0;
   translate: -50% 0;
   display: inline-flex;
-  gap: 3px;
+  align-items: center;
+  gap: 4px;
+  /* Same chrome as the ship's below-hull rows (HoloShipStatus __row):
+     hud-glass backing, hud border/radius/shadow — the user asked for the
+     aircraft row to read like those, not as loose text chips. */
   padding: 2px 4px;
+  background: var(--holo-hud-bg);
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--holo-hud-shadow);
   pointer-events: none;
   white-space: nowrap;
 
   &__chip {
-    font-size: 0.58rem;
+    font-size: var(--text-2xs);
+    font-weight: 600;
     line-height: 1.2;
-    padding: 1px 5px;
+    padding: 1px 6px;
     border-radius: 3px;
-    color: rgba(214, 244, 255, 0.92);
-    background: rgba(8, 30, 46, 0.72);
-    border: 1px solid rgba(120, 210, 255, 0.35);
+    color: var(--holo-hud-text);
+    background: rgb(0 0 0 / 35%);
+    border: 1px solid var(--holo-hud-border);
   }
 
   &__chip--boost {

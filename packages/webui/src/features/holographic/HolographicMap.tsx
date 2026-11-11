@@ -728,6 +728,10 @@ const RECORDED_DOLLY_MIN = -40;
     // offset on top of it that resets the moment the button releases (the
     // recorded view is never permanently hijacked).
     let recordedLookYaw = 0;
+    /** Eased lens heading consumed by applyOriginalCamera — see the block
+     *  there; null = no active lens (re-seeded from the next published
+     *  heading). */
+    let lensHeadingSmooth: number | null = null;
     let recordedLookPitch = 0;
     let recordedLookPrev: { x: number; y: number } | null = null;
     function endRecordedLook(): void {
@@ -1952,6 +1956,7 @@ const RECORDED_DOLLY_MIN = -40;
       // framing again (the wheel dolly is a per-view adjustment).
       recordedDolly = 0;
       endRecordedLook();
+      lensHeadingSmooth = null;
       if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
       api.value?.requestRender();
     });
@@ -2571,7 +2576,23 @@ const RECORDED_DOLLY_MIN = -40;
         // camera could be looking sideways, so it did not reliably face where
         // the squadron was flying (user report). Pitch/roll stay recorded.
         if (ctx.planeLensActive && ctx.planeLensHeading != null) {
-          pose = alignPoseHeading(pose, ctx.planeLensHeading);
+          // The published heading steps at the marker cadence (and jumps
+          // wholesale when the picked formation changes) — easing it here
+          // per frame keeps the camera from twitching on every step
+          // (user report: 偶发抽搐). Shortest-arc approach each frame.
+          if (lensHeadingSmooth == null) lensHeadingSmooth = ctx.planeLensHeading;
+          else {
+            let d = ctx.planeLensHeading - lensHeadingSmooth;
+            d = Math.atan2(Math.sin(d), Math.cos(d));
+            // A wholesale jump (picked-formation handover, up to 180°) must
+            // snap, not swing: the wedge is already placed on the raw heading,
+            // so easing a large delta would leave the formation off-axis for
+            // ~0.3 s. Marker-cadence twitch deltas are a few degrees.
+            lensHeadingSmooth += Math.abs(d) > 0.6 ? d : d * 0.18;
+          }
+          pose = alignPoseHeading(pose, lensHeadingSmooth);
+        } else {
+          lensHeadingSmooth = null;
         }
         // Plane view looks DOWN at the squadron (the raised seat alone left
         // the formation hugging the bottom edge). The lens placement stays
@@ -2592,7 +2613,16 @@ const RECORDED_DOLLY_MIN = -40;
         // aircraft's heading, only from a higher seat.
         if (ctx.planeLensActive && ctx.planeLensY != null) {
           const minY = ctx.planeLensY + PLANE_VIEW_ABOVE;
-          if (cam.position.y < minY) cam.position.y = minY;
+          // Ease toward the floor instead of snapping: a hard clamp twitched
+          // every time the recorded altitude crossed the threshold. The
+          // sea-level part stays HARD — the original complaint was the camera
+          // under the terrain, and a dive must never sit underwater while the
+          // ease converges.
+          const floor = Math.max(minY, 8);
+          const eased = cam.position.y + (minY - cam.position.y) * 0.25;
+          cam.position.y = Math.max(eased, Math.min(cam.position.y, floor), 8);
+        } else {
+          lensHeadingSmooth = null;
         }
       }
     }

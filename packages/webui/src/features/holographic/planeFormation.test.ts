@@ -112,4 +112,15 @@ describe("inferGrouping", () => {
     ];
     expect(inferGrouping(entries, sampleFirst)).toEqual({ groupSize: 2, groupCount: 1 });
   });
+
+  it("chunks a wide 10-plane launch into at most four groups", () => {
+    // 10 planes spread 0..360 units — the old fixed 45-unit threshold
+    // fragmented this into ten groups of 1 (the ring-of-singles report).
+    const entries = Array.from({ length: 10 }, (_, i) => ({
+      trail: { id: 16 + i, samples: [sp(i * 40, 0, 0)] },
+    }));
+    const out = inferGrouping(entries, sampleFirst);
+    expect(out.groupCount).toBeLessThanOrEqual(4);
+    expect(out.groupSize * out.groupCount).toBeGreaterThanOrEqual(10);
+  });
 });
