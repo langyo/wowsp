@@ -574,6 +574,7 @@ export default defineComponent({
       originalView.value = m === "original";
       if (m !== "follow") {
         endFreeLook();
+      endRecordedLook();
         // Free/original modes keep the stock right-drag pan; only following
         // an actual ship repurposes RMB as the free-look orbit (selectShip
         // flips the mapping once a target exists). The chase zoom clamp
@@ -767,6 +768,7 @@ export default defineComponent({
     const onFreeLookUp = (e: Event): void => {
       if (e.type === "pointerup" && (e as PointerEvent).button !== 2) return;
       endFreeLook();
+      endRecordedLook();
     };
     // 2D minimap enlarged overlay state.
     const minimapZoom = ref(props.initialMinimapZoom);
@@ -2934,6 +2936,7 @@ export default defineComponent({
     onBeforeUnmount(() => {
       mapTornDown = true;
       endFreeLook();
+      endRecordedLook();
       stopWaterThemeWatch();
       if (tipHideTimer != null) {
         window.clearTimeout(tipHideTimer);

@@ -746,7 +746,11 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // The applied camera reads these every frame: inside the lens the view is
     // locked to the aircraft's own heading instead of the recorder's possibly
     // sideways one (see HolographicMap.applyOriginalCamera).
-    ctx.planeLensActive = lensFormationId != null;
+    // Only a MODE-CONFIRMED lens locks the camera direction: a proximity-
+    // inferred ride (replays without the 0x27 stream) must stay a cosmetic
+    // placement, never a camera rotation — a false positive would then also
+    // spin the view (review note).
+    ctx.planeLensActive = lensFormationId != null && lensMode === true;
     ctx.planeLensHeading = lensFormationId == null ? null : lensHeading;
     for (const [planeId, anchor] of formationAnchor) {
       const pool = ctx.planeMeshes.get(planeId);
@@ -880,14 +884,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           const oz = (o.ox - cxm) * right.z + (o.oz - czm) * fwd.z;
           const yOff = (i % 3) * 2 - 2; // -2 / 0 / +2 alternating
           mesh.position.set(cx + ox, yBase + yOff, -cz + oz);
-          // The placement convention assumes the model's nose/bow along
-          // local +Z, and the plane GLBs are baked that way too: the
-          // z-slice profile of PAAB001 has the thin vertical fin at local
-          // −Z and the propeller disc (dense, symmetric around the hub) at
-          // +Z, with the wing centre ~70 % of the way aft. The old extra
-          // π here flew every aircraft TAIL-FIRST (and made the follow
-          // camera's yaw derivation — followTargets assumes rotation.y =
-          // π − yaw — point the wrong way by 180°).
+          // Placement convention: nose at local +Z, so rotation.y = π − yaw
+          // (matching followTargets' yaw derivation). The pack's art is
+          // authored BOTH ways, so planeWarfare passes buildPropMarker a
+          // yawOffset of π for the nose-−Z half (plane_forward.json); the
+          // counter-rotation lives inside the wrapper and the outer group
+          // carries exactly this heading.
           mesh.rotation.y = Math.PI - yaw;
         }
         // Park the SURPLUS slots of this still-anchored formation. The pool
