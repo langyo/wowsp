@@ -3089,18 +3089,19 @@ const RECORDED_DOLLY_MIN = -40;
                         : null,
                   hp: lbl.hp,
                   maxHp: lbl.maxHp,
-                  // Aircraft: the two boost readouts live as thin bars under
-                  // the HP bar — blue = engine boost (throttle mode), white =
-                  // the one-shot temporary boost window (healForsage). They
-                  // can be on together, hence two bars.
+                  // Aircraft: boost readouts as thin bars under the HP bar —
+                  // blue = engine boost (throttle mode 1), white = the one-shot
+                  // temporary boost window (healForsage). They can be on
+                  // together, hence two bars; when NEITHER runs the row is
+                  // omitted entirely instead of leaving an empty dark track
+                  // (user report).
                   extraBars:
-                    lbl.kind === "plane"
+                    lbl.kind === "plane" &&
+                    (lbl.planeBoost || lbl.planeForsageFrac != null)
                       ? [
-                          {
-                            key: "boost",
-                            color: "#4aa3ff",
-                            frac: lbl.planeBoost ? 1 : 0,
-                          },
+                          ...(lbl.planeBoost
+                            ? [{ key: "boost", color: "#4aa3ff", frac: 1 }]
+                            : []),
                           ...(lbl.planeForsageFrac != null
                             ? [
                                 {
