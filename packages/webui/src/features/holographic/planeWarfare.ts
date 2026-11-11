@@ -373,9 +373,10 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
               ? raw.map(retint)
               : retint(raw);
           });
-          // Orientation is applied by markerUpdate's placement (the baked
-          // plane GLBs have their nose at -Z, unlike the ships' +Z; see the
-          // comment there) — a rotation here would be overwritten each frame.
+          // The per-frame heading is markerUpdate's (rotation.y = π − yaw,
+          // nose at local +Z); the inner group's orientation was normalised
+          // above. Don't touch the outer group's rotation here — the
+          // placement overwrites it every tick.
           inst.visible = false;
           scene.add(inst);
           pool.push(inst);

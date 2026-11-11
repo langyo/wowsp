@@ -14,8 +14,12 @@
  * independent votes are combined; ambiguous models are left out of the table
  * (the runtime then leaves them untouched).
  *
- * Usage (needs the baked GLBs; three decodes EXT_meshopt_compression):
- *   node scripts/model_convert/extract_plane_forward.mjs <planes-dir> <out.json>
+ * Usage (needs the baked GLBs in the worktree; run from the REPO ROOT —
+ * three is resolved through process.cwd()/packages/webui/node_modules):
+ *   node scripts/model_convert/extract_plane_forward.js <planes-dir> <out.json>
+ *
+ * Ambiguous models (64 of 936: floats/struts fool the votes) are omitted,
+ * which the runtime treats as nose +Z (unrotated) — the safe default.
  *
  * Output: { "<INDEX>": 1 | -1 } — 1 = nose at local +Z, −1 = nose at −Z.
  */
