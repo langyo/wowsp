@@ -99,6 +99,29 @@ describe("HoloShipCard sunk label", () => {
     const w = mount(HoloShipCard, { props: { data: SUNK } });
     expect(w.find(".holo-ship-card__text").text()).toBe("SUNK");
   });
+
+  it("never stretches the hull art (the SVG carries no preserveAspectRatio=none)", () => {
+    // The vector fallback's box is sized to the viewBox's 100:36 ratio by
+    // the stylesheet, so the default preserveAspectRatio (meet) is an
+    // exact, undistorted fit. `none` would stretch the drawing to any box —
+    // the exact 1:1 violation reported by the user.
+    const w = mount(HoloShipCard, {
+      props: { data: { ...ALIVE, silhouette: "M0 1 L100 2 L100 35 L0 34 Z" } },
+    });
+    const svg = w.find(".holo-ship-card__hull");
+    expect(svg.exists()).toBe(true);
+    const html = svg.html().toLowerCase();
+    expect(html).toContain('viewbox="0 0 100 36"');
+    expect(html).not.toContain("preserveaspectratio");
+    // The bitmap branch is the same story: the board owns the pack ratio
+    // (pinned by the sibling styles contract) and carries the mask var.
+    const png = mount(HoloShipCard, {
+      props: { data: { ...ALIVE, silhouetteUrl: "sil.png" } },
+    });
+    const board = png.find(".holo-ship-card__hull-png");
+    expect(board.exists()).toBe(true);
+    expect(board.attributes("style")).toContain("--holo-sil");
+  });
 });
 
 describe("HoloSelfCard sunk plaque", () => {
