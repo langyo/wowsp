@@ -122,6 +122,35 @@ describe("HoloShipCard sunk label", () => {
     expect(board.exists()).toBe(true);
     expect(board.attributes("style")).toContain("--holo-sil");
   });
+
+  it("crops the bitmap board to the art's alpha band (1:1, just shorter)", () => {
+    // The pack's art carries big transparent bands above/below the hull; the
+    // card crops to the band instead of stretching, so the plaque height
+    // follows the hull's own height (user report: lower the card).
+    const w = mount(HoloShipCard, {
+      props: {
+        data: {
+          ...ALIVE,
+          silhouetteUrl: "sil.png",
+          silhouetteBox: { top: 40, bottom: 110 },
+        },
+      },
+    });
+    const style = w.find(".holo-ship-card__hull-png").attributes("style") ?? "";
+    // Board ratio = the 404-wide canvas over the 70-tall band.
+    expect(style).toContain("--holo-sil-ar: 404 / 70");
+    // Uniform scale: the mask keeps the full canvas width and is shifted up
+    // by top / (155 − 70) of the overflow.
+    expect(style).toContain("--holo-sil-size: 100% auto");
+    expect(style).toContain("--holo-sil-pos: 0% 47.0588");
+    // Without a box the board keeps the full canvas (old behaviour).
+    const plain = mount(HoloShipCard, {
+      props: { data: { ...ALIVE, silhouetteUrl: "sil.png" } },
+    });
+    expect(plain.find(".holo-ship-card__hull-png").attributes("style")).not.toContain(
+      "--holo-sil-ar",
+    );
+  });
 });
 
 describe("HoloSelfCard sunk plaque", () => {

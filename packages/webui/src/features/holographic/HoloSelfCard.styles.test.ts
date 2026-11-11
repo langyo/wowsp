@@ -67,12 +67,14 @@ describe("HoloShipCard hull silhouette keeps its native 1:1 aspect", () => {
   // The board must therefore derive its height from its width through the
   // art's OWN ratio; a fixed pixel height is the defect.
 
-  it("sizes the bitmap board to the pack's 404:155 ratio", () => {
+  it("sizes the bitmap board to the pack's 404:155 ratio (or the crop band)", () => {
     // Every ship silhouette bitmap in the model pack is 404x155 (verified
     // across all 1,308 files), so the CSS box can carry that ratio and the
-    // 100%x100% alpha mask becomes a UNIFORM scale.
+    // 100%x100% alpha mask becomes a UNIFORM scale. --holo-sil-ar narrows
+    // the box to the art's alpha band (the per-ship crop) at the SAME
+    // scale — a crop, never a stretch.
     expect(scss).toMatch(
-      /&__hull-png\s*\{[^}]*aspect-ratio:\s*404 \/ 155;[^}]*height:\s*auto;/s,
+      /&__hull-png\s*\{[^}]*aspect-ratio:\s*var\(--holo-sil-ar,\s*404 \/ 155\);[^}]*height:\s*auto;/s,
     );
   });
 
@@ -83,7 +85,15 @@ describe("HoloShipCard hull silhouette keeps its native 1:1 aspect", () => {
   });
 
   it("keeps the mask fit uniform (box ratio == bitmap ratio)", () => {
-    expect(scss).toMatch(/&__sil\s*\{[^}]*mask-size:\s*100% 100%;/s);
+    // Default: the mask fills the box (equal ratios → uniform). A crop box
+    // switches to a width-scaled mask shifted by --holo-sil-pos — still a
+    // UNIFORM scale, it just shows the hull's band instead of the canvas.
+    expect(scss).toMatch(
+      /&__sil\s*\{[^}]*mask-size:\s*var\(--holo-sil-size,\s*100% 100%\);/s,
+    );
+    expect(scss).toMatch(
+      /&__sil\s*\{[^}]*mask-position:\s*var\(--holo-sil-pos,\s*50% 50%\);/s,
+    );
   });
 
   it("has no fixed pixel hull height left", () => {

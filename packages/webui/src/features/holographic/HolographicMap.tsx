@@ -11,6 +11,7 @@ import { watchStageThemeMode } from "@wowsp/holo";
 import { useCapabilitiesStore } from "@/stores/capabilities";
 import {
   shipModelStem,
+  shipSilhouetteBox,
   shipSilhouetteUrl,
   shipOfflineEntry,
   loadSilhouettes,
@@ -78,6 +79,7 @@ import { loadSquadronStates } from "./squadronStatesLoader";
 import type { SquadronStateEvents } from "@/api";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
+import { applyRecordedCamera, cameraPoseAt } from "./recordedCamera";
 import { activeWards, planeSmoothPosAt, torpedoPosAt } from "./minimapFx";
 import {
   pickMinimapTarget,
@@ -1261,6 +1263,9 @@ export default defineComponent({
         shipType: l.type ?? undefined,
         silhouetteUrl: shipSilhouetteUrl(l.shipId),
         silhouette: (stem && silhouettes.value[stem]?.path) ?? null,
+        // Vertical crop of the bitmap art (alpha band inside the 404×155
+        // canvas): keeps the plaque compact without squashing the hull.
+        silhouetteBox: shipSilhouetteBox(l.shipId),
         name: l.shipName,
         hp: l.hp,
         maxHp: l.maxHp,
@@ -2443,33 +2448,21 @@ export default defineComponent({
       const cam = api.value?.camera;
       const ctrl = api.value?.controls;
       if (!cam || !ctrl) return;
-      const frames = props.cameraFrames;
-      if (frames.length === 0) {
+      if (props.cameraFrames.length === 0) {
         originalView.value = false;
         ctrl.enabled = true;
         return;
       }
       ctrl.enabled = false;
-      // Binary search (a 20-min match carries ~11.5k camera frames; the
-      // linear scan walked all of them every rendered frame late-game).
-      // Picks the last frame at or before t. NOTE: before the FIRST frame's
-      // time this now clamps to frames[0] — the old scan's frames[last]
-      // initializer made a pre-start playhead jump to the end-of-match
-      // pose, which was never intended (that initializer was only reachable
-      // pre-start; t past the end still clamps to the final frame).
-      let lo = 0;
-      let hi = frames.length - 1;
-      while (lo < hi) {
-        const mid = (lo + hi + 1) >> 1;
-        if (frames[mid].time <= t) lo = mid;
-        else hi = mid - 1;
-      }
-      const frame = frames[lo];
-      // Scene z is mirrored (z' = -z), so the camera z mirrors too.
-      cam.position.set(frame.x, frame.y, -frame.z);
-      cam.quaternion.set(frame.rotX, frame.rotY, frame.rotZ, frame.rotW);
-      cam.fov = (frame.fov * 180) / Math.PI;
-      cam.updateProjectionMatrix();
+      // Interpolated pose (recordedCameraAt): the decoded 0x25 stream is
+      // ~10 samples/s while the map renders at display rate, so applying
+      // the raw last sample stuttered the whole view — and read as
+      // twitching whenever the followed aircraft rolled. Position/fov
+      // lerp, rotation slerps; before the FIRST frame this clamps to
+      // frame 0 (a pre-start playhead used to jump to the end-of-match
+      // pose), and past the end it clamps to the final frame.
+      const pose = cameraPoseAt(props.cameraFrames, t);
+      if (pose) applyRecordedCamera(cam, pose);
     }
 
     /** Shared follow-target switch used by marker clicks, the camera menu

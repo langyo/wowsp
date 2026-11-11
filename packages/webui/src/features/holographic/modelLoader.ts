@@ -32,6 +32,7 @@
 import shipModelNames from "../../data/ship_models.json";
 import shipNamesDbRaw from "../../data/ship_names.json";
 import shipDescriptionsDbRaw from "../../data/ship_descriptions.json";
+import silhouetteBoxesRaw from "../../res/models/silhouette_boxes.json";
 import nationNamesDbRaw from "../../data/nation_names.json";
 import { ref } from "vue";
 import { runtimeShipEntry } from "@/utils/runtimeShipDb";
@@ -322,6 +323,32 @@ export function shipSilhouetteUrl(shipId: number | string | undefined): string |
   const index = entry?.index;
   if (!index) return null;
   return "/models/silhouettes/" + index + (silhouetteExtByIndex.get(index) ?? ".webp");
+}
+
+// Per-ship VERTICAL crop of the silhouette art: the alpha bounding band
+// [top, bottom] inside the 404×155 bitmap canvas. The pack's art carries
+// large transparent bands above/below the hull (median content height 86 of
+// 155 px, some carriers only 60), and drawing the whole canvas made the
+// plaque roughly twice as tall as the ship it shows. The card crops to this
+// band at the art's native ratio instead of squashing it (user report: keep
+// 1:1, but lower the card). Generated from the pack by
+// scripts/model_convert/extract_silhouette_boxes.py — regenerate it whenever
+// the silhouette art changes.
+const silhouetteBoxByIndex = silhouetteBoxesRaw as unknown as Record<
+  string,
+  [number, number]
+>;
+
+/** Alpha bounding band [top, bottom] of a ship's silhouette bitmap within
+ *  the 404×155 canvas, or null for an unknown ship / unpacked art. */
+export function shipSilhouetteBox(
+  shipId: number | string | undefined,
+): { top: number; bottom: number } | null {
+  if (shipId == null) return null;
+  const index = shipModelMap[String(shipId)]?.index;
+  const box = index ? silhouetteBoxByIndex[index] : undefined;
+  if (!box) return null;
+  return { top: box[0], bottom: box[1] };
 }
 
 // ── Offline ship-name DB (GameParams + game gettext catalogs) ───────────

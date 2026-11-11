@@ -101,8 +101,11 @@
     /* Native art ratio: EVERY ship silhouette bitmap in the model pack is
        404×155 (verified across all 1,308 files). The box must carry the
        same ratio or the alpha mask warps the drawing — the old 40px board
-       (5.9:1) stretched the ship to ~2.26× its natural length. */
-    aspect-ratio: 404 / 155;
+       (5.9:1) stretched the ship to ~2.26× its natural length.
+       --holo-sil-ar narrows the box to the art's alpha BAND (the pack's
+       top/bottom crop box): still the art's own ratio, so the crop can
+       never distort it — used to keep the plaque compact. */
+    aspect-ratio: var(--holo-sil-ar, 404 / 155);
     height: auto;
     /* Same squeeze path as __hull above (bitmap layer). */
     flex: none;
@@ -114,10 +117,15 @@
     -webkit-mask-image: var(--holo-sil);
     mask-image: var(--holo-sil);
     /* The box carries the BITMAP's own ratio (see __hull-png), so filling
-       it is a UNIFORM scale — 100%×100% here can never stretch the art.
-       Keeping the two ratios in sync is the whole contract. */
-    -webkit-mask-size: 100% 100%;
-    mask-size: 100% 100%;
+       it is a UNIFORM scale — here can never stretch the art. With a crop
+       box the mask keeps the FULL canvas width and is shifted vertically
+       (--holo-sil-size/--holo-sil-pos): scaling by width is still uniform,
+       it just shows the hull's own band instead of the padded canvas.
+       Keeping the mask scale and the box ratio in sync is the contract. */
+    -webkit-mask-size: var(--holo-sil-size, 100% 100%);
+    mask-size: var(--holo-sil-size, 100% 100%);
+    -webkit-mask-position: var(--holo-sil-pos, 50% 50%);
+    mask-position: var(--holo-sil-pos, 50% 50%);
     -webkit-mask-repeat: no-repeat;
     mask-repeat: no-repeat;
   }

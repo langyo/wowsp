@@ -14,15 +14,23 @@
  *      rendered in ANY camera mode (buildPlaneTrails now pads the index-0
  *      trail with the minimap track — covered by planeWarfare.test.ts).
  *
- * The fix: while `ctx.planeRecordedView` is on, the WEDGE hangs on the
- * recorded anchor — same offsets/cxm/czm layout math as the orbit, but with
- * the anchor's recorded heading, the anchor as the centre, and the recorder
- * CAMERA's altitude. The plane-camera ride sits at its squadron, so the
- * camera's own y is the only altitude inside the recorded frame: the
- * minimap-derived anchor's synthetic y = 20 measured 47.9° off the view axis
- * on a 28.6° half-fov frame, while y ≈ 16 sits 27.8° off (see cameraYAt in
- * markerUpdate). Free/follow camera modes keep the synthetic orbit (its
- * regression test lives at the bottom of this file).
+ * The fix, in three steps (each regression-tested below):
+ *   1. while `ctx.planeRecordedView` is on, the WEDGE hangs AHEAD of the
+ *      recorded lens on its interpolated view axis — the recorder flew a
+ *      PLANE camera, so its stream's centre track sits ~at the camera;
+ *      placing the wedge there engulfed the lens and the models rendered as
+ *      near-plane shards (the user's "broken triangles") and twitched with
+ *      the minimap-rate anchor. The same offsets/cxm/czm layout math runs
+ *      as the orbit, with the view axis as heading and the nearest slot
+ *      RECORDED_PLANE_PAD units out;
+ *   2. the applied camera itself interpolates the ~10 Hz 0x25 stream
+ *      (recordedCameraAt) instead of snapping to the last sample;
+ *   3. aircraft pools are tinted when their GLB resolves, from the FINAL
+ *      role map (self white / ally green / enemy red) — the recorder's own
+ *      planes used to render red because the async load outlived the
+ *      re-tint pass (covered by planeWarfare.test.ts).
+ * Free/follow camera modes keep the synthetic orbit (its regression test
+ * lives at the bottom of this file).
  */
 import { describe, expect, it } from "vitest";
 import * as THREE from "three";
@@ -280,6 +288,78 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     expect(pool[0].position.y).toBeCloseTo(14.2);
     expect(pool[1].position.y).toBeCloseTo(16.2);
     expect(pool[2].position.y).toBeCloseTo(18.2);
+  });
+
+  it("hangs the wedge AHEAD of the recorded lens with the pad clearance", () => {
+    // User report: the plane camera showed the aircraft as shattered red
+    // triangles and twitched. The recorder flew a PLANE camera, so its
+    // centre track sits ~at the lens; placing the wedge AT the anchor put
+    // the camera inside the models. The wedge now hangs on the interpolated
+    // view axis, nearest slot RECORDED_PLANE_PAD units out.
+    const pool = poolOf(5);
+    const ctx = makeCtx();
+    ctx.planeTrails = [anchorTrail(Math.PI / 2, 20)];
+    ctx.planeMeshes = new Map([[PLANE_ID, pool]]);
+    ctx.planeFormations = new Map([
+      [PLANE_ID, { count: 5, groupSize: 1, groupCount: 5, meshes: [] }],
+    ]);
+    ctx.squadronStates = {
+      planesHealth: [{ time: 12, planeId: PLANE_ID, packed: packed(5) }],
+    } as MapInternals["squadronStates"];
+    // Identity rotation, recorder frame at world (193.04, 16.2, −287.27):
+    // scene pose (193.04, 16.2, 287.27), view axis down scene −Z.
+    ctx.props.cameraFrames = [cameraFrame(5, 16.2)];
+    ctx.planeRecordedView = true;
+    updateMarkersAt(ctx, 15);
+    const cam = new THREE.Vector3(193.04, 16.2, 287.27);
+    const visible = pool.filter((m) => m.visible);
+    expect(visible).toHaveLength(5);
+    for (const m of visible) {
+      // Ahead of the lens (scene −Z side) and clear of the near plane.
+      expect(m.position.z).toBeLessThan(cam.z);
+      expect(cam.distanceTo(m.position)).toBeGreaterThan(34 - 1e-6);
+      // The wedge stays centred on the view axis.
+      expect(Math.abs(m.position.x - cam.x)).toBeLessThan(40);
+      expect(Math.abs(m.position.y - cam.y)).toBeLessThan(40);
+    }
+    // Heading = the camera's view axis: identity rotation looks down scene
+    // −Z, i.e. world +Z → yaw π (world fwd = (sin yaw, −cos yaw) = (0, 1)),
+    // so the airframe convention writes π − yaw + π = π.
+    expect(visible[0].rotation.y).toBeCloseTo(Math.PI);
+    expect(visible[1].rotation.y).toBe(visible[0].rotation.y);
+  });
+
+  it("follows the camera's view axis when the recorder looked sideways", () => {
+    const pool = poolOf(2);
+    const ctx = makeCtx();
+    ctx.planeTrails = [anchorTrail(Math.PI / 2, 20)];
+    ctx.planeMeshes = new Map([[PLANE_ID, pool]]);
+    ctx.planeFormations = new Map([
+      [PLANE_ID, { count: 2, groupSize: 1, groupCount: 2, meshes: [] }],
+    ]);
+    // Rotation about +Y by −90° → the camera looks along scene +X.
+    const q = new THREE.Quaternion().setFromAxisAngle(
+      new THREE.Vector3(0, 1, 0),
+      -Math.PI / 2,
+    );
+    ctx.props.cameraFrames = [
+      {
+        ...cameraFrame(5, 16.2),
+        rotX: q.x,
+        rotY: q.y,
+        rotZ: q.z,
+        rotW: q.w,
+      },
+    ];
+    ctx.planeRecordedView = true;
+    updateMarkersAt(ctx, 15);
+    const cam = new THREE.Vector3(193.04, 16.2, 287.27);
+    for (const m of pool) {
+      // The view axis is scene +X now: ahead means larger scene x, and the
+      // wedge must not slide off along z.
+      expect(m.position.x).toBeGreaterThan(cam.x + 30);
+      expect(Math.abs(m.position.z - cam.z)).toBeLessThan(40);
+    }
   });
 
   it("falls back to the anchor altitude when there are no camera frames", () => {
