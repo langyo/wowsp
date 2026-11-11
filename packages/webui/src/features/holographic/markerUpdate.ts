@@ -18,7 +18,11 @@ import { clampXZ } from "./sceneUtils";
 import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
-import { lastSquadronEventAt, squadronFlyingAt } from "./planeFollow";
+import {
+  lastSquadronEventAt,
+  planeCardExtras,
+  squadronFlyingAt,
+} from "./planeFollow";
 import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./modelLoader";
 import { isAiName, isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
@@ -751,6 +755,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // placement, never a camera rotation — a false positive would then also
     // spin the view (review note).
     ctx.planeLensActive = lensFormationId != null && lensMode === true;
+    ctx.planeLensY =
+      lensFormationId == null
+        ? null
+        : (formationAnchor.get(lensFormationId)?.s.y ?? null);
     ctx.planeLensHeading = lensFormationId == null ? null : lensHeading;
     for (const [planeId, anchor] of formationAnchor) {
       const pool = ctx.planeMeshes.get(planeId);
@@ -1171,6 +1179,28 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // the below-hull combat chip row) — it rides the label's planeCard
       // helper field, which the label renderer prints next to the type.
       label.planeAlive = flying;
+      // Squadron consumables / engine boost, rendered as the chip row UNDER
+      // the aircraft (user request: the plane's status — HP, alive count and
+      // what it is burning right now — should stay readable from the
+      // plane-camera view). Fresh arrays per pass so the label's Vue render
+      // sees the change; pre-E27 replays yield no events and the row hides.
+      const extras =
+        squadronId == null
+          ? null
+          : planeCardExtras(ctx.squadronStates, squadronId, t);
+      // Assign only on an actual change: a fresh array per pass re-renders
+      // the whole label list every playhead tick (the 10 Hz content gate
+      // exists to avoid exactly that).
+      const cons = extras?.consumables ?? [];
+      const key = cons
+        .map((c) => (typeof c === "string" ? c : "u" + c.unknown))
+        .join(",");
+      if (label.planeConsumKey !== key) {
+        label.planeConsumKey = key;
+        label.planeConsumables = cons;
+      }
+      const boost = extras?.boost ?? false;
+      if (label.planeBoost !== boost) label.planeBoost = boost;
       // Any of this carrier's squadrons airborne?
       let visible = false;
       for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {

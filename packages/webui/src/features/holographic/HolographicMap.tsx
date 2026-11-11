@@ -68,6 +68,7 @@ import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
 import { planeTrailExpiry } from "./planeFormation";
 import {
   chaseStrength,
+  consumableLabelKey,
   planeCardExtras,
   squadronAttacking,
   squadronFlyingAt,
@@ -524,7 +525,12 @@ export default defineComponent({
     // squadron reads farther away), negative = move in. The AIRCRAFT
     // placement hangs off the pose, not the camera, so zooming never drags
     // the formation along (see markerUpdate's RECORDED_PLANE_PAD).
-    const RECORDED_DOLLY_MIN = -40;
+    /** Minimum height of the recorded plane-camera view above the squadron it
+ *  frames: the recorder's camera occasionally dips into the terrain, and the
+ *  aircraft view should sit above the aircraft. */
+const PLANE_VIEW_ABOVE = 45;
+
+const RECORDED_DOLLY_MIN = -40;
     const RECORDED_DOLLY_MAX = 600;
     let recordedDolly = 0;
     // The orbit radius bounds in force when follow began (fitCamera's
@@ -2571,6 +2577,15 @@ export default defineComponent({
           pose = withLookOffset(pose, recordedLookYaw, recordedLookPitch);
         }
         applyRecordedCamera(cam, pose, recordedDolly);
+        // The recorded plane camera sometimes flies INTO the terrain, and the
+        // user wants the aircraft view to look DOWN at the squadron. Keep at
+        // least PLANE_VIEW_ABOVE above the formation (and clear of the sea) —
+        // the pose's orientation is unchanged, so the view still faces the
+        // aircraft's heading, only from a higher seat.
+        if (ctx.planeLensActive && ctx.planeLensY != null) {
+          const minY = ctx.planeLensY + PLANE_VIEW_ABOVE;
+          if (cam.position.y < minY) cam.position.y = minY;
+        }
       }
     }
 
@@ -3080,9 +3095,33 @@ export default defineComponent({
             );
           })}
           {/* Below-hull combat status rows (close-range only — the gate
-              lives in labelOverlay's projection pass). */}
+              lives in labelOverlay's projection pass). Aircraft get their
+              own below-formation row: alive/HP ride the card above, the
+              consumables + engine boost run underneath the squadron. */}
           {shipLabels.value.map((lbl) =>
-            lbl.kind === "plane" ? null : (
+            lbl.kind === "plane" ? (
+              <div
+                key={lbl.entityId}
+                class="holo-map__label-slot"
+                ref={(el) => { ctx.labelSlotEls.set("s" + lbl.entityId, el as HTMLDivElement | null); }}
+              >
+                <div class="holo-plane-status" aria-hidden="true">
+                  {lbl.planeBoost ? (
+                    <span class="holo-plane-status__chip holo-plane-status__chip--boost">
+                      {i18nT("replay.planeCard.consForsage")}
+                    </span>
+                  ) : null}
+                  {(lbl.planeConsumables ?? []).map((sem, i) => (
+                    <span key={i} class="holo-plane-status__chip">
+                      {i18nT(consumableLabelKey(sem))}
+                      {typeof sem === "object" && "unknown" in sem
+                        ? ` #${sem.unknown}`
+                        : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
               <div
                 key={lbl.entityId}
                 class="holo-map__label-slot"

@@ -519,6 +519,36 @@
   }
 }
 
+/* Aircraft squadron chip row (below the formation): the consumables and
+   engine boost it is burning right now, mirroring the ship's below-hull
+   combat chips. Pinned to its 0×0 slot origin like every other row. */
+.holo-plane-status {
+  position: absolute;
+  left: 0;
+  top: 0;
+  translate: -50% 0;
+  display: inline-flex;
+  gap: 3px;
+  padding: 2px 4px;
+  pointer-events: none;
+  white-space: nowrap;
+
+  &__chip {
+    font-size: 0.58rem;
+    line-height: 1.2;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: rgba(214, 244, 255, 0.92);
+    background: rgba(8, 30, 46, 0.72);
+    border: 1px solid rgba(120, 210, 255, 0.35);
+  }
+
+  &__chip--boost {
+    color: rgba(255, 236, 190, 0.95);
+    border-color: rgba(255, 205, 110, 0.5);
+  }
+}
+
 /* Score bar — the shared @wowsp/holo HoloScorebar, positioned top-center. */
 .holo-map__scorebar-wrap {
   position: absolute;
