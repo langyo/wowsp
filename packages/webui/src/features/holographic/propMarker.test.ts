@@ -64,6 +64,27 @@ describe("buildPropMarker material", () => {
     clearPropMarkerCache();
   });
 
+  it("applies the π yaw offset inside the wrapper (mixed-orientation art)", async () => {
+    // Aircraft art is authored both ways; the caller passes π for the −Z
+    // half so the wrapper's outer group stays free for the per-frame yaw.
+    const marker = await buildPropMarker({
+      url: "/models/planes/PAAB001.glb",
+      color: 0xffffff,
+      axis: "z",
+      targetLen: 7,
+      opacity: 1,
+      yawOffset: Math.PI,
+    });
+    const inner = marker.children[0];
+    expect(inner).toBeDefined();
+    // 180° about Y → |w| ≈ 0, |y| ≈ 1 (a full turn would be identity).
+    expect(Math.abs(inner.quaternion.w)).toBeLessThan(1e-6);
+    expect(Math.abs(inner.quaternion.y)).toBeCloseTo(1);
+    // The outer group is untouched: the placement writes its yaw.
+    expect(marker.quaternion.w).toBeCloseTo(1);
+    clearPropMarkerCache();
+  });
+
   it("scales the model so its forward axis measures targetLen", async () => {
     const marker = await buildPropMarker({
       url: "/models/planes/PAAB002.glb",

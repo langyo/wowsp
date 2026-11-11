@@ -313,11 +313,18 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       // (idx, role) pair without a pool, i.e. as dots. propMarker's glbCache
       // already collapses the fetch + parse per URL; only the cheap clone
       // is per squadron.
+      // The pack's aircraft art is authored both ways (see
+      // planeForwardSign): a nose-−Z model gets a π yaw offset INSIDE the
+      // marker wrapper, so every pool's nose is at local +Z — the frame
+      // markerUpdate's π − yaw placement and the follow camera's yaw
+      // derivation assume. The outer group stays free for that per-tick yaw.
+      const forward = planeForwardSign(first.idx);
       const build = buildPropMarker({
         url,
         color: TEAM_COLOR[first.role as TeamRole] ?? 0x78d2ff,
         axis: "z",
         targetLen: 7,
+        yawOffset: forward < 0 ? Math.PI : 0,
         // Opaque: the plane GLB is a closed solid; a translucent,
         // depth-write-off material painted its own faces through each other
         // (the "shattered triangles" the user reported on the aircraft).
@@ -327,15 +334,6 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       build.then((proto) => {
         if (epoch !== ctx.markerEpoch || !ctx.api.value?.scene || !proto) return;
         if (ctx.planeMeshes.has(planeId)) return;
-        // The pack's aircraft art is authored both ways (see
-        // planeForwardSign): rotate the −Z half so every model's nose is at
-        // local +Z, the frame markerUpdate's π − yaw placement and the
-        // follow camera's yaw derivation assume. The inner group carries the
-        // orientation; the outer one stays free for the per-frame yaw.
-        if (planeForwardSign(first.idx) < 0) {
-          const inner = proto.children[0];
-          if (inner) inner.rotation.y += Math.PI;
-        }
         // Tint at LOAD time, not at build time: the GLB resolves long
         // after resolvePlaneCarriers ran its re-tint pass, so the role
         // captured when this build STARTED (the empty-map default, i.e.

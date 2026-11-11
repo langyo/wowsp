@@ -433,15 +433,12 @@ describe("buildPlaneFormations", () => {
     ctx.api = ref({ scene }) as unknown as MapInternals["api"];
     buildPlaneFormations(ctx, scene, ctx.markerEpoch);
     await vi.waitFor(() => expect(ctx.planeMeshes.get(1)).toBeDefined());
-    const pool = ctx.planeMeshes.get(1)!;
-    // The counter-rotation lands on the inner mesh; check the QUATERNION
-    // (a 180° Y Euler reads back as (π, 0, π), so rotation.y alone is
-    // misleading): |w| ≈ 0 = half turn, ≈ 1 = untouched.
-    const inner = pool[0].children[0] as THREE.Mesh;
-    const q = inner.quaternion;
-    expect(Math.abs(q.w)).toBeLessThan(1e-6);
-    expect(Math.abs(q.y)).toBeCloseTo(1);
-    // A +Z model keeps the proto untouched.
+    const { buildPropMarker } = await import("./propMarker");
+    expect(vi.mocked(buildPropMarker)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ yawOffset: Math.PI }),
+    );
+    expect(ctx.planeMeshes.get(1)).toBeDefined();
+    // A +Z model passes no offset.
     planeForwardState.sign = 1;
     const ctx2 = makeCtx({ squadronCreates: [create(2, WARD_PARAMS_ID, 1)] });
     ctx2.planeTrails = [trail(2)];
@@ -449,8 +446,8 @@ describe("buildPlaneFormations", () => {
     ctx2.api = ref({ scene }) as unknown as MapInternals["api"];
     buildPlaneFormations(ctx2, scene, ctx2.markerEpoch);
     await vi.waitFor(() => expect(ctx2.planeMeshes.get(2)).toBeDefined());
-    expect(
-      Math.abs((ctx2.planeMeshes.get(2)![0].children[0] as THREE.Mesh).quaternion.w),
-    ).toBeCloseTo(1);
+    expect(vi.mocked(buildPropMarker)).toHaveBeenLastCalledWith(
+      expect.objectContaining({ yawOffset: 0 }),
+    );
   });
 });

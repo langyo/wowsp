@@ -51,6 +51,12 @@ import type {
  *  HolographicMap's recorded-camera zoom). */
 const RECORDED_PLANE_PAD = 80;
 
+/** Replays without the 0x27 camera-mode stream cannot announce a recorded
+ *  plane-camera segment; the ride is then inferred when a formation's
+ *  anchor sits this close to the recorded lens (the plane camera flies a
+ *  few units off its squadron). */
+const RECORDED_LENS_PROXIMITY = 50;
+
 /** Widest of the per-kind caps — chat can burst, so keep a little headroom
  *  over the old kill-only limit of 4. */
 const FEED_CAP = 6;
@@ -689,7 +695,11 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // instead of the old near-plane shards.
     let lensFormationId: number | null = null;
     let lensPose: ReturnType<typeof recordedCameraAt> = null;
-    if (ctx.planeRecordedView === true && ctx.planeLensRide === true) {
+    // planeLensRide: true = inside a recorded plane-camera segment, false =
+    // a ship/shell-camera segment, null = the replay has no 0x27 mode stream
+    // (fall back to proximity).
+    const lensMode = ctx.planeRecordedView === true ? ctx.planeLensRide : false;
+    if (lensMode !== false) {
       lensPose = recordedCameraAt(ctx, t);
       if (lensPose) {
         let bestSelf: { id: number; d: number } | null = null;
@@ -701,7 +711,20 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           if (ctx.planeRoleById.get(pid) !== "self") continue;
           if (!bestSelf || d < bestSelf.d) bestSelf = { id: pid, d };
         }
-        lensFormationId = (bestSelf ?? bestAny)?.id ?? null;
+        // Prefer our own sortie, but don't drag a far own formation onto
+        // the lens when a much closer ally squadron is what the recorded
+        // plane camera was actually following (a spectated clip): only
+        // prefer self while it is in the same neighbourhood.
+        const preferSelf =
+          bestSelf != null &&
+          (bestAny == null || bestSelf.d <= bestAny.d * 1.5 + 20);
+        const chosen = preferSelf ? bestSelf : (bestAny ?? bestSelf);
+        // Replays WITHOUT the 0x27 camera-mode stream cannot name the
+        // segment; infer the plane-camera ride from proximity — the plane
+        // camera sits within a few units of the squadron it follows.
+        if (chosen && (lensMode !== null || chosen.d <= RECORDED_LENS_PROXIMITY)) {
+          lensFormationId = chosen.id;
+        }
       }
     }
     for (const [planeId, anchor] of formationAnchor) {

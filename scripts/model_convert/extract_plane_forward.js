@@ -1,6 +1,10 @@
 /**
  * Bake the aircraft GLB FORWARD-orientation table (res/models/plane_forward.json).
  *
+ * A handful of airframes defeat the votes (floatplane floats/struts, strut
+ * braced biplanes, prop sheets); they were adjudicated from rendered views
+ * and are pinned in MANUAL below so a regeneration cannot flip them.
+ *
  * The pack's aircraft art is authored both ways: the baked profile of the
  * shipped models shows ~480 of 872 classifiable airframes with their nose at
  * local −Z and ~390 at +Z (the GLB nodes carry only a uniform scale and
@@ -87,6 +91,75 @@ function classify(idx, tris) {
   return { sign, votes, areaMin: +areaMin.toFixed(4), areaMax: +areaMax.toFixed(4), yMin: +yMin.toFixed(3), yMax: +yMax.toFixed(3), wingFrac: +wingFrac.toFixed(2) };
 }
 
+// Manually adjudicated models (rendered side/top views): 1 = nose at local
+// +Z, −1 = nose at local −Z. Keep sorted; the generator prefers this map.
+const MANUAL = {
+  PAAD104: 1,
+  PAAD548: 1,
+  PBAF002: -1,
+  PBAF006: -1,
+  PBAF008: -1,
+  PBAF104: 1,
+  PBAF404: 1,
+  PFAF503: -1,
+  PGAB111: 1,
+  PGAB508: 1,
+  PGAB902: 1,
+  PGAB918: 1,
+  PGAB951: 1,
+  PGAB990: 1,
+  PGAD111: 1,
+  PGAD508: 1,
+  PGAD902: 1,
+  PGAD918: 1,
+  PGAD951: 1,
+  PGAD953: 1,
+  PGAD990: 1,
+  PGAL111: 1,
+  PGAL950: 1,
+  PGAL951: 1,
+  PGAL952: 1,
+  PGAL953: 1,
+  PHAF004: -1,
+  PHAF005: -1,
+  PJAB001: 1,
+  PJAB008: 1,
+  PJAB010: 1,
+  PJAB012: 1,
+  PJAB110: 1,
+  PJAB206: 1,
+  PJAB616: 1,
+  PJAB626: 1,
+  PJAB920: 1,
+  PJAF003: -1,
+  PJAF108: 1,
+  PJAF206: 1,
+  PJAF406: 1,
+  PJAF508: 1,
+  PJAF600: 1,
+  PJAF601: 1,
+  PJAF602: 1,
+  PJAF606: 1,
+  PJAF616: 1,
+  PJAF718: 1,
+  PJAF808: 1,
+  PRAD010: 1,
+  PRAD909: 1,
+  PRAD910: 1,
+  PRAD912: 1,
+  PRAD913: 1,
+  PRAF901: 1,
+  PUAF002: 1,
+  PXAB902: 1,
+  PXAB903: 1,
+  PXAD902: 1,
+  PXAF902: 1,
+  PZAD301: -1,
+  PZAD302: -1,
+  PZAD303: -1,
+  PZAD304: -1,
+};
+
 const table = {};
 const stats = { plusZ: 0, minusZ: 0, ambiguous: 0 };
 const ambiguous = [];
@@ -95,9 +168,10 @@ for (const f of files) {
   let tris;
   try { tris = await load(idx); } catch (e) { stats.ambiguous++; ambiguous.push(idx + ':load'); continue; }
   const c = classify(idx, tris);
-  if (c.sign === 0) { stats.ambiguous++; ambiguous.push(idx); continue; }
-  table[idx] = c.sign;
-  if (c.sign === 1) stats.plusZ++; else stats.minusZ++;
+  const sign = MANUAL[idx] ?? c.sign;
+  if (sign === 0) { stats.ambiguous++; ambiguous.push(idx); continue; }
+  table[idx] = sign;
+  if (sign === 1) stats.plusZ++; else stats.minusZ++;
 }
 const sorted = {};
 for (const k of Object.keys(table).sort()) sorted[k] = table[k];
