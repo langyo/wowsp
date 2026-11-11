@@ -5,7 +5,7 @@
  * (nearest the camera, deterministic tie-break).
  */
 import { describe, expect, it } from "vitest";
-import { pickLabelWedgePlane } from "./labelOverlay";
+import { pickLabelWedgePlane, planeRowVisible } from "./labelOverlay";
 import type { MapInternals } from "./mapInternals";
 
 const LABEL = 100;
@@ -17,6 +17,22 @@ function makeCtx(entries: Array<[number, number | undefined]>): MapInternals {
   } as unknown as MapInternals;
   return ctx;
 }
+
+describe("planeRowVisible", () => {
+  it("shows for boost, slow and consumables alike", () => {
+    expect(planeRowVisible({ planeBoost: true })).toBe(true);
+    // The slow-only state must show the row (the PR that added planeSlow
+    // originally forgot the gate here — throttleAt yields ONE mode, so
+    // slow-only is the normal case while decelerating).
+    expect(planeRowVisible({ planeSlow: true })).toBe(true);
+    expect(planeRowVisible({ planeConsumables: ["healForsage"] })).toBe(true);
+  });
+
+  it("hides when nothing runs", () => {
+    expect(planeRowVisible({})).toBe(false);
+    expect(planeRowVisible({ planeConsumables: [] })).toBe(false);
+  });
+});
 
 describe("pickLabelWedgePlane", () => {
   it("picks the rendered formation nearest the camera", () => {

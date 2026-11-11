@@ -49,6 +49,9 @@ export interface HoloPlaneFollowState {
   /** True while the last E27 throttle mode at the playhead is engine
    *  boost (mode 1). */
   boost?: boolean;
+  /** True while the last E27 throttle mode at the playhead is the
+   *  slow-down key (mode −1, empirically a third engine mode). */
+  slow?: boolean;
   /** Consumables whose E27 effect window is open at the playhead, in the
    *  decoder-normalized semantic vocabulary (E27d — branch-forked raw ids
    *  never reach the card); the card renders the first three as chips, and
@@ -115,6 +118,11 @@ export default defineComponent({
                 {s.boost ? (
                   <span class="holo-planecard__badge holo-planecard__badge--boost">
                     {i18nT("replay.planeCard.boost")}
+                  </span>
+                ) : null}
+                {s.slow ? (
+                  <span class="holo-planecard__badge holo-planecard__badge--slow">
+                    {i18nT("replay.planeCard.slow")}
                   </span>
                 ) : null}
               </span>

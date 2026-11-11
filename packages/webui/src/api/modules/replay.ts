@@ -706,7 +706,9 @@ export interface SquadronDamageEvent {
 export interface SquadronThrottleEvent {
   time: number;
   planeId: number;
-  /** 0 = cruise, 1 = engine boost; raw otherwise. */
+  /** Engine mode: 0 = cruise, 1 = boost, −1 = slow-down (a third mode
+   *  empirically observed 146× across 12 CV replays with variable 0.1–12.4 s
+   *  windows); raw otherwise. */
   mode: number;
 }
 

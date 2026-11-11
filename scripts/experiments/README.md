@@ -138,6 +138,19 @@
 - **车辆消耗品流（E11）暂不迁移**：`onConsumableUsed`（`ConsumableUseEvent`）的 consumable_id 是 GameParams 消耗品枚举，id→名称本属 GameParams 联表侧，且尚未有莱服分叉证据——**保持裸字节**，待其前端上线时并入同一归一化层。
 - **后续分叉在此汇合**：E27c 侦察的多重巡航高度（SQUADRON_ALTITUDE_STATE 类枚举）等未来分支差异，落点即此层——解码边界新增一对查表，下游继续单词汇表。
 
+### E27e · throttle 第三档（−1 = 减速）实证 + notify/dropJato 布局 ✅
+
+- **动机**：飞机视角想把「加速/减速」状态做进标签；E27 当时只记录了 mode 0/1，用户反馈「减速状态看不到」。
+- **语料**：Steam 安装 `replays/14.5.0.0/` 下全部 12 盘 CV 录像（翔鹤 Shokaku ×4 / 凤 Hotaka ×7 / 约克城 Yorktown ×1），探针 `boost_probe.py` / `boost_probe2.py`（本目录，pycryptodome，帧解析同 `replay_method_probe.py`）。
+- **实证结论**：
+  - `changeThrottleMode` wire = 9 B（u64 planeId + i8 mode），mode ∈ **{−1, 0, 1}**：2387 次调用 = 0×1215 / 1×1011 / **−1×161**。**−1 = 减速档**（此前文档只写 0/1，漏了第三档）。
+  - 加力（mode 1）窗口：990 个闭合窗，时长 **0.1–50.3 s（中位 2.6 / 均值 5.3）**，仅 78/990 落在 5±0.6 s——不是 healForsage 的 5 s 括号；与 healForsage 窗口（±0.5 s）重合仅 **9/990** → **油门键与加力消耗品是两个独立机制**（前者=可蓄力加速键，后者=一次性消耗品爆发）。
+  - 减速（mode −1）窗口：146 个，0.1–12.4 s（中位 2.0）——同为可变时长按键行为。
+  - `squadronNotify`：9 B = u64 planeId + **u8 枚举 ∈ {1,2,4,5}**（371 次）；单中队内序列 1→2→(4)→5，疑为攻击跑状态机（语义暂不定名，留待攻击流联表）。
+  - `dropJato`：8 B = 单 u64（28 次，语义未命名）。
+- **落地**：`planeCardExtras` 增加 `slow`（throttle −1）；跟随卡片与飞机下方芯片行双徽标（加力=琥珀 `replay.planeCard.boost`、减速=钢蓝 `replay.planeCard.slow`，8 语言文案）；`replay.ts` 与 Rust 侧（events.rs / stream.rs / method_tables.rs）的 mode 文档按实证修正。蓝条/UI 的加力条保持 on/off——wire 无充能值（9 B 已是全量）。
+- **诚实边界**：−1 的「游戏内成因」（减速键 vs 攻击巡航）未与 updateSquadron 俯仰或 notify 相位联表验证——UI 只如实报告油门档位，不解读成因；后续可用攻击相位联表收口。
+
 ### E18 · AI 分析调试工具端上 UI（G6 第三步）✅
 
 - **RPC `decision_debug_report(replay_path, time_sec, los_grid_dir?)`**：一次

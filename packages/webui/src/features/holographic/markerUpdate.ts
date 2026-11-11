@@ -1207,6 +1207,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       }
       const boost = extras?.boost ?? false;
       if (label.planeBoost !== boost) label.planeBoost = boost;
+      const slow = extras?.slow ?? false;
+      if (label.planeSlow !== slow) label.planeSlow = slow;
       // Under-HP bars: the engine boost (throttle mode 1, blue) and the
       // one-shot temporary boost window (healForsage, white). A plane can
       // run both at once, which is why they are separate bars.

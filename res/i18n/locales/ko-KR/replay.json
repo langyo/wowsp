@@ -438,6 +438,7 @@
     "attacking": "공격 중",
     "followingHull": "항공기 없음 — 함체 추적 중",
     "boost": "부스트",
+    "slow": "감속",
     "consOther": "소모품",
     "consForsage": "엔진 부스트",
     "consFighters": "전투기 소환",

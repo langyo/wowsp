@@ -336,10 +336,16 @@ export function planeCardExtras(
   events: Readonly<SquadronStateEvents> | null | undefined,
   planeId: number,
   t: number,
-): { hp: number | null; boost: boolean; consumables: SquadronConsumableType[] } {
+): { hp: number | null; boost: boolean; slow: boolean; consumables: SquadronConsumableType[] } {
+  const mode = throttleAt(events?.throttle, planeId, t);
   return {
     hp: squadronHpAt(events?.health, planeId, t),
-    boost: throttleAt(events?.throttle, planeId, t) === 1,
+    boost: mode === 1,
+    // Empirical (12 CV replays, 146 windows): the wire carries a THIRD
+    // engine mode, −1, with variable-length windows (0.1–12.4 s, median
+    // 2 s) — the slow-down key, distinct from the boost key and from the
+    // healForsage consumable burst.
+    slow: mode === -1,
     consumables: activeConsumablesAt(events?.consumables, planeId, t),
   };
 }

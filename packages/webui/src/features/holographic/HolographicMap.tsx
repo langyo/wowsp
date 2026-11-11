@@ -3140,7 +3140,12 @@ const RECORDED_DOLLY_MIN = -40;
                 <div class="holo-plane-status" aria-hidden="true">
                   {lbl.planeBoost ? (
                     <span class="holo-plane-status__chip holo-plane-status__chip--boost">
-                      {i18nT("replay.planeCard.consForsage")}
+                      {i18nT("replay.planeCard.boost")}
+                    </span>
+                  ) : null}
+                  {lbl.planeSlow ? (
+                    <span class="holo-plane-status__chip holo-plane-status__chip--slow">
+                      {i18nT("replay.planeCard.slow")}
                     </span>
                   ) : null}
                   {(lbl.planeConsumables ?? []).map((sem, i) => (

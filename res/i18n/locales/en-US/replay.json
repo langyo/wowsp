@@ -438,6 +438,7 @@
     "attacking": "Attacking",
     "followingHull": "No aircraft airborne — following hull",
     "boost": "Boost",
+    "slow": "Slow",
     "consOther": "Consumable",
     "consForsage": "Engine boost",
     "consFighters": "Patrol fighters",
