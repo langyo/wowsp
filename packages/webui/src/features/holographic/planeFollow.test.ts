@@ -387,11 +387,13 @@ describe("planeCardExtras", () => {
     expect(planeCardExtras(undefined, 1, 100)).toEqual({
       hp: null,
       boost: false,
+      slow: false,
       consumables: [],
     });
     expect(planeCardExtras({}, 1, 100)).toEqual({
       hp: null,
       boost: false,
+      slow: false,
       consumables: [],
     });
   });
@@ -408,24 +410,39 @@ describe("planeCardExtras", () => {
     expect(planeCardExtras(events, 1, 15)).toEqual({
       hp: 0.75,
       boost: true,
+      slow: false,
       consumables: ["healForsage", "fireExtinguishing"],
     });
     // Before the boost toggle: cruise, no chips yet (use lands at 14).
     expect(planeCardExtras(events, 1, 11)).toEqual({
       hp: 0.75,
       boost: false,
+      slow: false,
       consumables: [],
     });
     expect(planeCardExtras(events, 1, 13)).toEqual({
       hp: 0.75,
       boost: true,
+      slow: false,
       consumables: [],
     });
     expect(planeCardExtras(events, 1, 60)).toEqual({
       hp: 0.4,
       boost: false,
+      slow: false,
       consumables: ["healForsage", "fireExtinguishing"],
     });
+  });
+
+  it("reads the third engine mode −1 as slow, not boost", () => {
+    // Empirical: 146 slow windows across 12 CV replays (0.1–12.4 s,
+    // variable) — a distinct throttle mode, not a missing 0/1.
+    const events: SquadronStateEvents = {
+      throttle: [thEv(12, 1, 1), thEv(20, 1, -1), thEv(30, 1, 0)],
+    };
+    expect(planeCardExtras(events, 1, 15)).toMatchObject({ boost: true, slow: false });
+    expect(planeCardExtras(events, 1, 25)).toMatchObject({ boost: false, slow: true });
+    expect(planeCardExtras(events, 1, 31)).toMatchObject({ boost: false, slow: false });
   });
 
   it("ignores other planes' streams", () => {
@@ -437,6 +454,7 @@ describe("planeCardExtras", () => {
     expect(planeCardExtras(events, 1, 15)).toEqual({
       hp: null,
       boost: false,
+      slow: false,
       consumables: [],
     });
   });

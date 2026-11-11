@@ -552,6 +552,16 @@
     border-color: rgba(255, 214, 130, 0.9);
     box-shadow: 0 0 6px rgba(255, 190, 80, 0.55);
   }
+
+  &__chip--slow {
+    /* Engine slow-down (throttle −1): cool steel-blue backing so it reads
+       as the deliberate counterpart of the amber boost chip. */
+    color: #eaf4ff;
+    font-weight: 700;
+    background: linear-gradient(180deg, #5b8fc7, #38618f);
+    border-color: rgba(140, 190, 240, 0.9);
+    box-shadow: 0 0 6px rgba(90, 150, 210, 0.5);
+  }
 }
 
 /* Score bar — the shared @wowsp/holo HoloScorebar, positioned top-center. */

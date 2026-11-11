@@ -41,6 +41,9 @@ export interface ShipLabel {
   planeConsumables?: SquadronConsumableType[];
   /** Engine boost (heal-forsage window) currently on — the row's first chip. */
   planeBoost?: boolean;
+  /** True while the squadron's engine mode is the slow-down key (throttle
+   *  −1) — rendered as the cool chip next to the boost chip. */
+  planeSlow?: boolean;
   /** Remaining fraction (0..1) of the one-shot temporary-boost window
    *  (healForsage); null when nothing is running. Rendered as the white bar
    *  under the HP bar, next to the blue engine-boost bar. */
