@@ -437,6 +437,7 @@
   "planeCard": {
     "attacking": "攻击中",
     "followingHull": "无升空中队 — 跟随舰体",
+    "holdingLast": "无在飞中队 — 保持当前位置",
     "boost": "加速",
     "slow": "减速",
     "consOther": "消耗品",

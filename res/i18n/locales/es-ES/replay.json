@@ -437,6 +437,7 @@
   "planeCard": {
     "attacking": "Atacando",
     "followingHull": "Sin aeronaves en vuelo — siguiendo el casco",
+    "holdingLast": "Sin escuadrón en vuelo — manteniendo posición",
     "boost": "Turbo",
     "slow": "Frenar",
     "consOther": "Consumible",

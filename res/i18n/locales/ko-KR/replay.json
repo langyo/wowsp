@@ -437,6 +437,7 @@
   "planeCard": {
     "attacking": "공격 중",
     "followingHull": "항공기 없음 — 함체 추적 중",
+    "holdingLast": "비행 중 편대 없음 — 위치 유지",
     "boost": "부스트",
     "slow": "감속",
     "consOther": "소모품",

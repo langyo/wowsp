@@ -1513,8 +1513,9 @@ const RECORDED_DOLLY_MIN = -40;
     });
     /** Menu highlight id: the aircraft row only while that carrier actually
      *  has a squadron up; the hull row otherwise (the camera itself falls
-     *  back to the hull when the formation disappears, so the highlight must
-     *  follow it instead of pointing at a row that is gone). */
+     *  back to the hull when the formation disappears — the camera either
+     *  falls back to the hull or holds the last aircraft pose, so the
+     *  highlight must follow the hull either way). */
     const selectedMenuId = computed<number | null>(() => {
       const id = selectedEntityId.value;
       if (id == null) return null;
@@ -1582,8 +1583,9 @@ const RECORDED_DOLLY_MIN = -40;
           t,
         );
         if (planeId == null) {
-          // No formation up at t: the camera rides the hull fallback and
-          // the card says so instead of a dead strength readout.
+          // No formation up at t: the card says so. While following aircraft
+          // the CAMERA holds the last aircraft pose (lastAircraftHold) —
+          // only the card shows the muted no-airborne line here.
           planeCardState.value = {
             carrierName: label.name,
             shipName: label.shipName,
@@ -1591,6 +1593,10 @@ const RECORDED_DOLLY_MIN = -40;
             total: 0,
             attacking: false,
             airborne: false,
+            // Follow-aircraft hold: the camera parks on the last aircraft
+            // pose instead of the hull, and the card must SAY that instead of
+            // the hull line.
+            holding: followAircraft.value && lastAircraftHold != null,
           };
           return;
         }
@@ -2679,6 +2685,10 @@ const RECORDED_DOLLY_MIN = -40;
       // across the map from the old one.
       if (entityId !== prevId || followAircraft.value !== prevAircraft) {
         chaseSmooth = null;
+        // A stale hold from the PREVIOUS target must never satisfy this
+        // target's hold branch (carrier A's last pose parking carrier B's
+        // camera) — the hold is per-carrier by construction.
+        lastAircraftHold = null;
       }
       // Following a real target hands RMB to the free-look orbit (the
       // per-frame assignment in followSelected re-asserts it; this covers the
