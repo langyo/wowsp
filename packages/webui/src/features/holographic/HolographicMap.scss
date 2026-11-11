@@ -8,6 +8,31 @@
   @include hud.holo-hud-light;
 }
 
+/* Playback speed menu: HkPopover TELEPORTS the panel into the hikari
+   overlay root (document.body), so the nested .holo-map palette never
+   reached it — the panel painted fully transparent (user report). The
+   camera menu already re-applies the palette for exactly this reason;
+   the speed menu gets the same treatment. Palette + rows ONLY — the
+   position/surface/size are HkPopover's (anchored above the 2× button;
+   carrying the old dropdown positioning collapsed the panel to a sliver
+   and detached the mobile sheet). */
+.holo-map__speed-menu {
+  @include hud.holo-hud-dark;
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--holo-hud-border);
+  border-radius: var(--radius-sm);
+  background: var(--holo-hud-menu);
+  box-shadow: var(--holo-hud-shadow);
+}
+
+:root[data-mode="light"] .holo-map__speed-menu {
+  @include hud.holo-hud-light;
+}
+
 .holo-map {
   @include hud.holo-hud-dark;
 
@@ -433,20 +458,10 @@
     font-size: var(--text-2xs);
     &:hover { opacity: 0.85; }
   }
-  &__speed-menu {
-    position: absolute;
-    bottom: calc(100% + 6px);
-    right: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    padding: 4px;
-    border: 1px solid var(--holo-hud-border);
-    border-radius: var(--radius-sm);
-    background: var(--holo-hud-menu);
-    box-shadow: var(--holo-hud-shadow);
-    z-index: 6;
-  }
+  /* The speed menu panel itself is TELEPORTED by HkPopover into the
+     hikari overlay root (outside .holo-map) — its styles live at the
+     file's top level, re-applying the hud palette the way the camera
+     menu does. */
   &__speed-opt {
     min-width: 48px;
     padding: 4px 8px;

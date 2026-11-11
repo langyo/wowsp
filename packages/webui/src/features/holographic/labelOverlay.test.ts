@@ -5,7 +5,11 @@
  * (nearest the camera, deterministic tie-break).
  */
 import { describe, expect, it } from "vitest";
-import { pickLabelWedgePlane, planeRowVisible } from "./labelOverlay";
+import {
+  behindCameraEdgeNdc,
+  pickLabelWedgePlane,
+  planeRowVisible,
+} from "./labelOverlay";
 import type { MapInternals } from "./mapInternals";
 
 const LABEL = 100;
@@ -17,6 +21,23 @@ function makeCtx(entries: Array<[number, number | undefined]>): MapInternals {
   } as unknown as MapInternals;
   return ctx;
 }
+
+describe("behindCameraEdgeNdc", () => {
+  it("pins a behind-camera point to the ±0.8 edge ring", () => {
+    const p = behindCameraEdgeNdc(2, 1);
+    expect(p.x).toBeCloseTo(0.8);
+    expect(p.y).toBeCloseTo(0.4);
+  });
+
+  it("keeps a centered direction centered", () => {
+    expect(behindCameraEdgeNdc(0, 0)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("collapses non-finite camera-plane projections to the centre", () => {
+    expect(behindCameraEdgeNdc(Infinity, 1)).toEqual({ x: 0, y: 0 });
+    expect(behindCameraEdgeNdc(NaN, 0)).toEqual({ x: 0, y: 0 });
+  });
+});
 
 describe("planeRowVisible", () => {
   it("shows for boost, slow and consumables alike", () => {
