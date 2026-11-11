@@ -42,6 +42,11 @@ export interface HoloLabelData {
   /** OSD auto-contrast ink tone (the host samples the rendered backdrop
    *  under the label and flips this). Undefined → theme-driven ink. */
   tone?: "light" | "dark" | null;
+  /** Extra thin bars UNDER the HP bar (aircraft: engine boost + the one-shot
+   *  temporary boost window). A plane can run both at once, so this is a
+   *  list instead of one value; `frac` 0..1, clamped on render. Hosts that
+   *  never set it (marketing sandbox, ship labels) render exactly as before. */
+  extraBars?: { key: string; color: string; frac: number }[];
 }
 
 const ROLE_BAR: Record<HoloLabelData["role"], string> = {
@@ -185,6 +190,21 @@ export default defineComponent({
             </span>
           ) : l.ghostText ? (
             <span class="holo-label__ghost-time">{l.ghostText}</span>
+          ) : null}
+          {l.extraBars?.length ? (
+            <span class="holo-label__bars">
+              {l.extraBars.map((b) => (
+                <span class="holo-label__bar" key={b.key}>
+                  <span
+                    class="holo-label__bar-fill"
+                    style={{
+                      width: `${Math.max(0, Math.min(1, b.frac)) * 100}%`,
+                      background: b.color,
+                    }}
+                  />
+                </span>
+              ))}
+            </span>
           ) : null}
           {/* Dead tag only when no HP chip is on screen to carry the "0 / max"
               readout (hosts without HP data keep the textual SUNK marker). */}

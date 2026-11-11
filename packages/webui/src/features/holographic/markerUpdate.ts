@@ -19,6 +19,7 @@ import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
 import {
+  consumableWindowFrac,
   lastSquadronEventAt,
   planeCardExtras,
   squadronFlyingAt,
@@ -816,6 +817,11 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // The view axis is the AIRCRAFT's heading, matching the camera the app
       // applies (alignPoseHeading) — so the wedge always hangs straight ahead
       // of the view and the planes are seen from behind, not side-on.
+      // Placement stays LEVEL on the aircraft heading: the wedge keeps the
+      // recorded altitude, while the applied camera is raised + pitched
+      // down (PLANE_VIEW_ABOVE / PLANE_VIEW_PITCH) so it looks down at the
+      // formation. Pitching the placement too would sink the wedge below
+      // the sea on low-altitude recordings.
       const pose =
         ownSquadron && lensPose
           ? lensHeading != null
@@ -1201,6 +1207,23 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       }
       const boost = extras?.boost ?? false;
       if (label.planeBoost !== boost) label.planeBoost = boost;
+      // Under-HP bars: the engine boost (throttle mode 1, blue) and the
+      // one-shot temporary boost window (healForsage, white). A plane can
+      // run both at once, which is why they are separate bars.
+      const forsage =
+        squadronId == null
+          ? null
+          : consumableWindowFrac(
+              ctx.squadronStates?.consumables,
+              squadronId,
+              "healForsage",
+              t,
+            );
+      const forsageRounded =
+        forsage == null ? null : Math.round(forsage * 20) / 20;
+      if (label.planeForsageFrac !== forsageRounded) {
+        label.planeForsageFrac = forsageRounded;
+      }
       // Any of this carrier's squadrons airborne?
       let visible = false;
       for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {

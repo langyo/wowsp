@@ -13,6 +13,7 @@ import {
   chaseStrength,
   CONSUMABLE_LABEL,
   consumableLabelKey,
+  consumableWindowFrac,
   planeCardExtras,
   squadronAttacking,
   squadronFlyingAt,
@@ -208,6 +209,39 @@ describe("squadronHpAt", () => {
     expect(squadronHpAt(health, 1, 15)).toBe(0.9);
     expect(squadronHpAt(health, 2, 15)).toBe(0.1);
     expect(squadronHpAt(health, 3, 15)).toBeNull();
+  });
+});
+
+describe("consumableWindowFrac", () => {
+  const ev = (time: number, kind: "used" | "stopWorking") => ({
+    time,
+    planeId: 1,
+    consumableType: 20,
+    semantic: "healForsage" as const,
+    kind,
+  });
+
+  it("reads the used→stopWorking bracket as a countdown", () => {
+    const events = [ev(100, "used"), ev(105, "stopWorking")];
+    expect(consumableWindowFrac(events, 1, "healForsage", 100)).toBeCloseTo(1);
+    expect(consumableWindowFrac(events, 1, "healForsage", 102.5)).toBeCloseTo(0.5);
+    // After the window closes nothing is running.
+    expect(consumableWindowFrac(events, 1, "healForsage", 106)).toBeNull();
+  });
+
+  it("keeps a still-open window on its documented fallback duration", () => {
+    const events = [ev(100, "used")];
+    expect(consumableWindowFrac(events, 1, "healForsage", 102)).toBeCloseTo(0.6);
+    expect(consumableWindowFrac(events, 1, "healForsage", 200)).toBe(0);
+  });
+
+  it("ignores other planes and other consumable types", () => {
+    const events = [
+      { ...ev(100, "used"), planeId: 2 },
+      { ...ev(100, "used"), semantic: "planeSmokeGenerator" as const },
+    ];
+    expect(consumableWindowFrac(events, 1, "healForsage", 101)).toBeNull();
+    expect(consumableWindowFrac(undefined, 1, "healForsage", 101)).toBeNull();
   });
 });
 

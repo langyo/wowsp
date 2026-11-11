@@ -238,6 +238,46 @@ export function activeConsumablesAt(
     .map(([, event]) => event.semantic);
 }
 
+/** The one-shot temporary-boost window's remaining fraction at t, for a
+ *  semantic consumable type (aircraft: healForsage — the take-off/临时加速
+ *  burst). The active window is the Used→StopWorking bracket; while a Used
+ *  has no StopWorking yet the effect is still running (end of stream, or a
+ *  squadron that died with it on) and reads as a full bar. Returns null
+ *  when nothing is running, so the caller can omit the bar entirely.
+ *  `fallbackSecs` covers the still-open bracket: the wire carries no
+ *  duration, so the type's documented workTime stands in (5 s for
+ *  healForsage; see the E27b provenance note above). */
+export function consumableWindowFrac(
+  consumables: readonly SquadronConsumableEvent[] | undefined,
+  planeId: number,
+  semantic: SquadronConsumableType,
+  t: number,
+  fallbackSecs = 5,
+): number | null {
+  let start: number | null = null;
+  let end: number | null = null;
+  for (const event of consumables ?? []) {
+    if (event.planeId !== planeId) continue;
+    if (event.semantic !== semantic) continue;
+    if (event.time > t) {
+      // First StopWorking after the running Used closes the bracket.
+      if (end === null && event.kind === "stopWorking") end = event.time;
+      continue;
+    }
+    if (event.kind === "used") {
+      start = event.time;
+      end = null;
+    } else if (event.kind === "stopWorking") {
+      start = null;
+      end = null;
+    }
+  }
+  if (start === null) return null;
+  const window = end === null ? fallbackSecs : end - start;
+  if (window <= 0) return 0;
+  return Math.max(0, Math.min(1, 1 - (t - start) / window));
+}
+
 /** Named (non-unknown) members of the semantic union — the map key space of
  *  CONSUMABLE_LABEL below. */
 type NamedSquadronConsumableType = Exclude<SquadronConsumableType, { unknown: number }>;

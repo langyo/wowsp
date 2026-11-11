@@ -99,6 +99,13 @@ export function recordedCameraForward(pose: RecordedCameraPose): {
   return { x: _fwd.x, y: _fwd.y, z: _fwd.z };
 }
 
+/** Extra downward pitch (radians) of the recorded PLANE view: the camera
+ *  sits `PLANE_VIEW_ABOVE` over the squadron and this tilts it down so the
+ *  formation reads in the middle of the frame instead of hugging the bottom
+ *  edge (user report). Shared by the camera and the lens placement so the
+ *  wedge hangs exactly along the view axis. */
+export const PLANE_VIEW_PITCH = 0.32;
+
 const _qy = new THREE.Quaternion();
 const _qx = new THREE.Quaternion();
 

@@ -130,6 +130,30 @@
     transition: width 0.2s linear;
   }
 
+  /* Extra thin bars under the HP bar (aircraft boost readouts): a stacked
+     column so a plane can show engine boost AND the one-shot window at
+     the same time, each its own color. */
+  &__bars {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+
+  &__bar {
+    height: 0.22rem;
+    background: var(--label-ink-hp-bar-bg);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  &__bar-fill {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.2s linear;
+  }
+
   /* HP number sits inside the bar, like the in-game team list. */
   &__hp-text {
     position: absolute;

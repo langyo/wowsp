@@ -544,8 +544,13 @@
   }
 
   &__chip--boost {
-    color: rgba(255, 236, 190, 0.95);
-    border-color: rgba(255, 205, 110, 0.5);
+    /* The boost tag was too easy to miss (user report): brighter ink, a
+       filled amber backing and a heavier weight so it reads at a glance. */
+    color: #1a1206;
+    font-weight: 700;
+    background: linear-gradient(180deg, #ffd98a, #ffb648);
+    border-color: rgba(255, 214, 130, 0.9);
+    box-shadow: 0 0 6px rgba(255, 190, 80, 0.55);
   }
 }
 
