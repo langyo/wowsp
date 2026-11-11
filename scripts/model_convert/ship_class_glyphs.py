@@ -345,9 +345,11 @@ def _trim(v):
 
 
 def mirror_path(d):
-    """Flip one authored subpath horizontally about the art box (x -> W - x).
+    """Flip authored path data horizontally about the art box (x -> W - x).
 
-    The geometry only ever emits absolute M/L/H/V/Z commands, so the mirror
+    Accepts whole d strings (multi-subpath paths — the hull+bow outer is
+    two subpaths — mirror per subpath). The geometry only ever emits
+    absolute M/L/H/V/Z commands, so the mirror
     is a coordinate pass: M/L/H carry x (flipped), V carries y (kept), Z
     takes none. M/L coordinates alternate x,y starting at x; H/V stay on
     their single axis. Tokens are rejoined with single spaces — bare
