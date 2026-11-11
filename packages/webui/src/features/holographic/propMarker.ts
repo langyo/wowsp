@@ -88,6 +88,18 @@ export async function buildPropMarker(opts: BuildPropOpts): Promise<THREE.Group>
     transparent: !opaque,
     opacity,
     depthWrite: opaque,
+    // DOUBLE-SIDED, deliberately: the baked plane geometry's winding is
+    // inconsistent (E27 corpus study: ~37% of directed edges have no
+    // opposite — faces flip at random), and single-sided rendering culls
+    // those, tearing visible chunks out of every airframe (user report:
+    // "三角破碎面太多"). Rendering both sides is winding-agnostic, and at
+    // these model sizes the extra raster cost is noise. A bake-side
+    // winding repair would be the alternative; this fixes every baked
+    // model without re-running the 936-model pipeline.
+    // Transparent props (shells at the default 0.95) keep front-side
+    // rendering: double-blending both faces reads brighter, and their few
+    // flipped triangles are invisible at 2-3 units.
+    side: opaque ? THREE.DoubleSide : THREE.FrontSide,
   });
   const meshes: THREE.Mesh[] = [];
   model.traverse((child) => {

@@ -777,8 +777,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const total = liveCount ?? formation?.count ?? 3;
       const gCount = formation?.groupCount ?? total;
       const gSize = formation?.groupSize ?? 1;
-      // Filled-wedge layout over flight groups (leader front, groups
-      // stepping back 1-2-3-…, leftover groups centered in the last row).
+      // Formation layout: flight groups evenly on a ring around the centre
+      // (group 0 ahead), each group a tight V — see formationOffsets.
       // Slot layout must cover the live count even when losses make it
       // exceed the inferred launch grouping (the offsets describe the full
       // wedge; we simply render the first n of it).
@@ -1153,7 +1153,23 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // 0..1 bar — the same numbers the follow pill shows. A carrier whose
       // squadron stream is missing (pre-E27 replay) keeps the ship values
       // as the honest fallback.
+      // The CONTENT formation must be the one the viewer SEES: labelOverlay
+      // publishes its nearest-rendered-wedge pick each frame; only when that
+      // is absent (first frame / no models) does the first-airborne scan
+      // answer (user report: the card said ✈2 while the rendered wedge was a
+      // different sortie at launch strength).
+      const picked = ctx.planeLabelPicks.get(labelId);
       const squadronId = (() => {
+        if (picked != null) {
+          const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === picked);
+          if (trail && trail.samples.length > 0) {
+            const expiry = planeTrailExpiry(
+              trail.samples[trail.samples.length - 1].time,
+              ctx.minimapTrailEnd.get(picked),
+            );
+            if (t >= trail.samples[0].time && t <= expiry) return picked;
+          }
+        }
         for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
           if (labelOf !== labelId) continue;
           const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);

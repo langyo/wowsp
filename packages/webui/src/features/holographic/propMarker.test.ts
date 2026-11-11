@@ -64,6 +64,22 @@ describe("buildPropMarker material", () => {
     clearPropMarkerCache();
   });
 
+  it("renders aircraft double-sided (baked winding is inconsistent)", async () => {
+    // Geometry probe: ~37% of directed edges in the baked plane GLBs have
+    // no opposite — faces flip at random, so single-sided rendering culls
+    // visible chunks (the torn look). Opaque aircraft draw both sides;
+    // translucent shells keep front-side rendering.
+    const marker = await buildPropMarker({
+      url: "/models/planes/PAAB001.glb",
+      color: 0xffffff,
+      axis: "z",
+      targetLen: 7,
+      opacity: 1,
+    });
+    expect(materialOf(marker).side).toBe(THREE.DoubleSide);
+    clearPropMarkerCache();
+  });
+
   it("applies the π yaw offset inside the wrapper (mixed-orientation art)", async () => {
     // Aircraft art is authored both ways; the caller passes π for the −Z
     // half so the wrapper's outer group stays free for the per-frame yaw.
