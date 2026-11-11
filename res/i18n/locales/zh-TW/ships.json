@@ -425,9 +425,6 @@
     "airDetect": "空中被偵測距離",
     "airDetectHint": "敵機偵測到你的距離。",
     "subDetect": "被潛艦偵測距離",
-    "torpBomberDamage": "魚雷機傷害",
-    "torpBomberRange": "魚雷機雷程",
-    "torpBomberSpeed": "魚雷機航速",
     "depthChargeDamage": "深彈傷害",
     "depthChargePacks": "深彈組數",
     "depthChargeBombs": "每組深彈數",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "甲板載機量",
     "aircraftRegen": "整備時間",
     "aircraftCruiseSpeed": "巡航航速",
+    "aircraftMaxSpeed": "最高航速",
     "aircraftDetect": "被發現距離",
     "aircraftPayload": "單機載彈量",
     "aircraftDamage": "單發傷害",
@@ -669,6 +667,15 @@
       "asw": "反潛",
       "aircraft": "飛機"
     },
+    "filter": {
+      "all": "顯示全部",
+      "stock": "只看基礎武備",
+      "top": "只看升級武備"
+    },
+    "variant": {
+      "base": "白板",
+      "top": "升級"
+    },
     "addShips": "添加艦艇",
     "removeAll": "移除全部",
     "remove": "移除",
@@ -681,8 +688,10 @@
     "showing": "顯示前 {shown} 艘 / 共 {total} 艘",
     "count": "{n}",
     "fit": {
-      "stock": "白板配置"
-    }
+      "stock": "白板配置",
+      "aswAirstrike": "深彈空襲"
+    },
+    "planesSummary": "艦載機 {n} 型"
   },
   "consumable": {
     "regenCrew": "維修小組",

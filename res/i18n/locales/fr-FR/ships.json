@@ -425,9 +425,6 @@
     "airDetect": "Détectabilité aérienne",
     "airDetectHint": "Distance à laquelle les avions ennemis vous repèrent.",
     "subDetect": "Détectabilité par les sous-marins",
-    "torpBomberDamage": "Dégâts torpilles de bombardiers-torpilleurs",
-    "torpBomberRange": "Portée des torpilles (TB)",
-    "torpBomberSpeed": "Vitesse des torpilles (TB)",
     "depthChargeDamage": "Dégâts des charges de profondeur",
     "depthChargePacks": "Lots de charges",
     "depthChargeBombs": "Bombes par lot",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "Appareils sur le pont",
     "aircraftRegen": "Réapprovisionnement",
     "aircraftCruiseSpeed": "Vitesse de croisière",
+    "aircraftMaxSpeed": "Vitesse max",
     "aircraftDetect": "Détectabilité",
     "aircraftPayload": "Charge par appareil",
     "aircraftDamage": "Dégâts",
@@ -669,6 +667,15 @@
       "asw": "Lutte ASM",
       "aircraft": "Aéronefs"
     },
+    "filter": {
+      "all": "Tout afficher",
+      "stock": "Armement de série uniquement",
+      "top": "Armement amélioré uniquement"
+    },
+    "variant": {
+      "base": "Série",
+      "top": "Amélioré"
+    },
     "addShips": "Ajouter des navires",
     "removeAll": "Tout retirer",
     "remove": "Retirer",
@@ -681,8 +688,10 @@
     "showing": "{shown} premiers affichés sur {total}",
     "count": "{n}",
     "fit": {
-      "stock": "Configuration de série"
-    }
+      "stock": "Configuration de série",
+      "aswAirstrike": "Frappe ASM"
+    },
+    "planesSummary": "{n} types d'appareils"
   },
   "consumable": {
     "regenCrew": "Équipe de réparation",

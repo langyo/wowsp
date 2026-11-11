@@ -425,9 +425,6 @@
     "airDetect": "Обнаружение с воздуха",
     "airDetectHint": "Дистанция, с которой вас замечает авиация противника.",
     "subDetect": "Обнаружение с подводных лодок",
-    "torpBomberDamage": "Урон торпед торпедоносцев",
-    "torpBomberRange": "Дальность торпед торпедоносцев",
-    "torpBomberSpeed": "Скорость торпед торпедоносцев",
     "depthChargeDamage": "Урон глубинных бомб",
     "depthChargePacks": "Наборов ГБ",
     "depthChargeBombs": "Бомб в наборе",
@@ -441,6 +438,7 @@
     "aircraftOnDeck": "Самолётов на палубе",
     "aircraftRegen": "Восстановление самолёта",
     "aircraftCruiseSpeed": "Крейсерская скорость",
+    "aircraftMaxSpeed": "Макс. скорость",
     "aircraftDetect": "Обнаружимость",
     "aircraftPayload": "Боезапас на самолёт",
     "aircraftDamage": "Урон",
@@ -669,6 +667,15 @@
       "asw": "ПЛО",
       "aircraft": "Авиация"
     },
+    "filter": {
+      "all": "Показать все",
+      "stock": "Только стоковое вооружение",
+      "top": "Только топовое вооружение"
+    },
+    "variant": {
+      "base": "Сток",
+      "top": "Топ"
+    },
     "addShips": "Добавить корабли",
     "removeAll": "Удалить все",
     "remove": "Удалить",
@@ -681,8 +688,10 @@
     "showing": "Показаны первые {shown} из {total}",
     "count": "{n}",
     "fit": {
-      "stock": "Стоковая комплектация"
-    }
+      "stock": "Стоковая комплектация",
+      "aswAirstrike": "Авиаудар ПЛО"
+    },
+    "planesSummary": "Авиагруппа: {n} типов"
   },
   "consumable": {
     "regenCrew": "Ремонтная команда",

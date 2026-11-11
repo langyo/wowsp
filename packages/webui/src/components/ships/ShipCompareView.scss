@@ -21,6 +21,14 @@
     flex-shrink: 0;
   }
 
+  // The armament-configuration filter sits with the identity buttons; a
+  // thin divider separates it from the stat-group switcher on the right.
+  &__filter {
+    margin-left: 0.25rem;
+    padding-right: 0.5rem;
+    border-right: 1px solid rgb(var(--color-border) / 30%);
+  }
+
   // Push the stat-group switcher to the toolbar's right edge.
   &__groups {
     margin-left: auto;
@@ -80,6 +88,13 @@
       text-align: center;
       color: rgb(var(--color-muted));
       background: rgb(var(--color-muted) / 6%);
+    }
+
+    // Aircraft-group summary cell: same merged shape as __na, but it
+    // announces the row's fit sub-rows ("n aircraft types") instead of
+    // absencing the group.
+    td.ship-compare__summary {
+      text-align: center;
     }
   }
 
@@ -185,14 +200,16 @@
 
 /* ── Weapon-fit sub-rows ───────────────────────────────────────────────────
    A hull with more than one way to fight (alternate firing mode, stock
-   hull modules, researchable torpedo alternates) grows indented sub-rows
-   under its main row: the identity cell steps right with the fit label
-   (which 方案 this row speaks), values follow the same stat columns. Rows
-   are secondary ink by design — the baseline row stays the reference. */
+   hull modules, researchable torpedo alternates, the ASW airstrike) and
+   every embarked airframe grow indented sub-rows under their main row:
+   the identity cell steps right with the fit label (which 方案 / which
+   airframe this row speaks), the 白板/升级 chip names its configuration,
+   values follow the same stat columns. Rows are secondary ink by design —
+   the baseline row stays the reference. */
 .ship-compare__fit-row {
   .ship-compare__fit-inner {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 0.35rem;
     min-width: 0;
     padding-left: 1.4rem;
@@ -205,7 +222,15 @@
     white-space: nowrap;
   }
 
+  .ship-compare__fit-chip {
+    flex-shrink: 0;
+  }
+
   .ship-compare__fit-suffix {
+    min-width: 0;
+    flex: 1 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
     color: rgb(var(--color-muted) / 70%);
     font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
