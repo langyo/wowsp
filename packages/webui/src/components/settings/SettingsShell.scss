@@ -3,14 +3,14 @@
 // HkSettingsDialog stylesheet (imported by SettingsShell.tsx, so it lands
 // in the bundle BEFORE this file and these rules win on equal
 // specificity). Local extensions: the cluster heading styles, the
-// scroll-ownership re-anchoring, and (since 2026-11-08) the desktop
-// modal's content-fit frame — the last one OVERRIDES two shipped host
-// rules: the stable .hk-settings-host .hk-settings height
-// (var(--hk-settings-height, calc(70vh - 6.5rem))) and the
-// .hk-settings-host .hk-modal-body-inner height pin (100%). Both are
-// hikari contract values to re-check on every hikari bump: if the default
-// band formula or the body-inner pin changes, the override below must
-// follow (see its docblock).
+// scroll-ownership re-anchoring, and (since 2026-11-08, floored since
+// 2026-11-11) the desktop modal's content-fit frame — the last one
+// OVERRIDES two shipped host rules: the stable .hk-settings-host
+// .hk-settings height (var(--hk-settings-height, calc(70vh - 6.5rem)))
+// and the .hk-settings-host .hk-modal-body-inner height pin (100%).
+// Both are hikari contract values to re-check on every hikari bump: if
+// the default band formula or the body-inner pin changes, the override
+// below must follow (see its docblock).
 //
 // The title speaks the pane's own sub-block vocabulary
 // (.hk-settings-sub-title: small caps, muted) so it reads as structure,
@@ -69,21 +69,34 @@
   }
 }
 
-/* ── Content-fit desktop frame (2026-11-08) ─────────────────────────────
+/* ── Content-fit desktop frame (2026-11-08, floored 2026-11-11) ─────────
    The DESKTOP MODAL's shell no longer stands at hikari's constant frame
    height. User report: the 玩家标记 (markers) section's single card sat at
    the top of a half-empty window with an empty band under it, and the same
    dead band showed in every short section ("类似的地方也要修"). The shell
    now hugs the ACTIVE section's cards — short sections shrink the whole
-   window to their content, long ones cap exactly where they used to.
+   window toward their content, long ones cap exactly where they used to.
+
+   Follow-up (2026-11-11, same user): the full hug let the shortest
+   sections (语言's single card) collapse the window into a sliver
+   ("这也太矮了"). The hug therefore carries a floor — min-height
+   min(24rem, the band) — so the window never drops below a presentable
+   frame. A very short section may again show a BOUNDED dead band under
+   its last card; that is the accepted trade for a window that never
+   looks broken. The floor is clamped to the band because min-height
+   wins over max-height in CSS: an unclamped floor would push the shell
+   past the cap (and overflow the modal scroller) on short viewports.
 
    Three load-bearing pieces; removing any one of them brings the dead band
    (or the frozen frame) back:
 
-   1. The shell is content-sized (`height: auto`), overriding hikari's
-      shipped `.hk-settings-host .hk-settings` height:
+   1. The shell is content-sized between the floor and the cap
+      (`height: auto`, `min-height: min(24rem, band)`,
+      `max-height: band`), overriding hikari's shipped
+      `.hk-settings-host .hk-settings` height:
       var(--hk-settings-height, calc(70vh - 6.5rem)). That formula is kept
-      ONLY as the max-height cap. The cap still bounds long sections, so
+      ONLY as the band the floor and the max-height cap both reference.
+      The cap still bounds long sections, so
       the pane remains the sole scrollbar owner (the frame still fits
       under HkModal's body gutter, keeping the floating body bar idle,
       exactly as before).
@@ -119,6 +132,11 @@
 
   .hk-settings-host .hk-settings {
     height: auto;
+    /* Floor: a short section never collapses the window into a sliver
+       (2026-11-11 user report: 语言's single card). Clamped to the band —
+       min-height wins over max-height in CSS, so an unclamped floor would
+       overflow the modal scroller on short viewports. */
+    min-height: min(24rem, var(--hk-settings-height, calc(70vh - 6.5rem)));
     max-height: var(--hk-settings-height, calc(70vh - 6.5rem));
   }
 

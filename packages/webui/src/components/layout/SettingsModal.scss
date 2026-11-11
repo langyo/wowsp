@@ -10,8 +10,8 @@
 //
 // Scroll ownership: the flush pane scrollbar ships with hikari's own
 // HkSettingsDialog.scss under `.hk-settings-host`; the desktop modal's
-// content-fit frame (hug the active section's cards, cap at the old
-// 70vh - 6.5rem band) is wowsp's host override in
+// content-fit frame (hug the active section's cards, floored and capped
+// around the old 70vh - 6.5rem band) is wowsp's host override in
 // components/settings/SettingsShell.scss. On the page the app shell
 // scrolls and SettingsView.scss neutralizes the host assumptions.
 
@@ -30,13 +30,15 @@
      namespace for wowsp's flat content classes only. */
   /* Content-fit shell height applies to the MODAL surface only (the page
      variant sizes by the app shell instead): the shell hugs the active
-     section's cards, capped at the old 70vh - 6.5rem band. Short
-     sections therefore leave no dead band under their last card, while
-     the cap keeps long sections sized under the body scroller's inner
-     padding (1.5rem top + bottom), so HkModal's floating overlay
-     scrollbar stays idle and the pane's own edge bar is the only
-     scrollbar. The override lives in components/settings/
-     SettingsShell.scss under `.hk-settings-host` (desktop media only). */
+     section's cards, floored and capped around the old 70vh - 6.5rem
+     band. Short sections keep a 24rem floor (2026-11-11: the language
+     card alone had collapsed the window into a sliver), so a very short
+     section may show a bounded dead band under its last card; the cap
+     keeps long sections sized under the body scroller's inner padding
+     (1.5rem top + bottom), so HkModal's floating overlay scrollbar stays
+     idle and the pane's own edge bar is the only scrollbar. The override
+     lives in components/settings/SettingsShell.scss under
+     `.hk-settings-host` (desktop media only). */
   /* ── content pane: one section card at a time ──
      The pane is the scroll container, so its scrollbar renders at the
      pane's border edge. Cancelling the modal body's right padding
