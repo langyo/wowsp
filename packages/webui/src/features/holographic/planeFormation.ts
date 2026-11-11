@@ -124,10 +124,16 @@ export function inferGrouping(
       groupSize: sizes[Math.floor(sizes.length / 2)] || 1,
       groupCount: clusters.length,
     };
+    // Balanced (all clusters exactly equal) at a plausible group count wins
+    // immediately; a 3/3/4 launch is rejected here and a later threshold
+    // may win with a different split — visual only, still a valid read.
     if (candidate.groupCount <= 4 && new Set(sizes).size === 1) {
       return candidate;
     }
     if (best === null || candidate.groupCount < best.groupCount) best = candidate;
   }
-  return best ?? { groupSize: 1, groupCount: pts.length };
+  // Clamp the least-fragmented fallback: the game flies at most ~4 attack
+  // groups, and an unbounded count re-creates the ring-of-singles look.
+  const fallbackSize = Math.max(1, Math.ceil(pts.length / 4));
+  return best ?? { groupSize: fallbackSize, groupCount: Math.ceil(pts.length / fallbackSize) };
 }

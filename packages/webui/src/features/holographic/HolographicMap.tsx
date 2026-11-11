@@ -1956,6 +1956,7 @@ const RECORDED_DOLLY_MIN = -40;
       // framing again (the wheel dolly is a per-view adjustment).
       recordedDolly = 0;
       endRecordedLook();
+      lensHeadingSmooth = null;
       if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
       api.value?.requestRender();
     });
@@ -2583,7 +2584,11 @@ const RECORDED_DOLLY_MIN = -40;
           else {
             let d = ctx.planeLensHeading - lensHeadingSmooth;
             d = Math.atan2(Math.sin(d), Math.cos(d));
-            lensHeadingSmooth += d * 0.18;
+            // A wholesale jump (picked-formation handover, up to 180°) must
+            // snap, not swing: the wedge is already placed on the raw heading,
+            // so easing a large delta would leave the formation off-axis for
+            // ~0.3 s. Marker-cadence twitch deltas are a few degrees.
+            lensHeadingSmooth += Math.abs(d) > 0.6 ? d : d * 0.18;
           }
           pose = alignPoseHeading(pose, lensHeadingSmooth);
         } else {
@@ -2609,10 +2614,13 @@ const RECORDED_DOLLY_MIN = -40;
         if (ctx.planeLensActive && ctx.planeLensY != null) {
           const minY = ctx.planeLensY + PLANE_VIEW_ABOVE;
           // Ease toward the floor instead of snapping: a hard clamp twitched
-          // every time the recorded altitude crossed the threshold.
-          if (cam.position.y < minY) {
-            cam.position.y += (minY - cam.position.y) * 0.25;
-          }
+          // every time the recorded altitude crossed the threshold. The
+          // sea-level part stays HARD — the original complaint was the camera
+          // under the terrain, and a dive must never sit underwater while the
+          // ease converges.
+          const floor = Math.max(minY, 8);
+          const eased = cam.position.y + (minY - cam.position.y) * 0.25;
+          cam.position.y = Math.max(eased, Math.min(cam.position.y, floor), 8);
         } else {
           lensHeadingSmooth = null;
         }
