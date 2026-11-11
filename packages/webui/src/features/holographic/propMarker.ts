@@ -96,7 +96,10 @@ export async function buildPropMarker(opts: BuildPropOpts): Promise<THREE.Group>
     // these model sizes the extra raster cost is noise. A bake-side
     // winding repair would be the alternative; this fixes every baked
     // model without re-running the 936-model pipeline.
-    side: THREE.DoubleSide,
+    // Transparent props (shells at the default 0.95) keep front-side
+    // rendering: double-blending both faces reads brighter, and their few
+    // flipped triangles are invisible at 2-3 units.
+    side: opaque ? THREE.DoubleSide : THREE.FrontSide,
   });
   const meshes: THREE.Mesh[] = [];
   model.traverse((child) => {

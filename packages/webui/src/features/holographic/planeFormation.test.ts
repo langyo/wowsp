@@ -38,25 +38,25 @@ describe("groupInnerOffsets", () => {
   it("lays three planes in a 梯形 V (lead front, wingmen behind)", () => {
     expect(groupInnerOffsets(3)).toEqual([
       { ox: 0, oz: 0 },
-      { ox: -4.5, oz: 5.5 },
-      { ox: 4.5, oz: 5.5 },
+      { ox: -4.5, oz: -5.5 },
+      { ox: 4.5, oz: -5.5 },
     ]);
   });
 
   it("steps wingmen back in alternating pairs for 5 planes", () => {
     const out = groupInnerOffsets(5);
     expect(out).toHaveLength(5);
-    expect(out[1]).toEqual({ ox: -4.5, oz: 5.5 });
-    expect(out[2]).toEqual({ ox: 4.5, oz: 5.5 });
-    expect(out[3]).toEqual({ ox: -9, oz: 11 });
-    expect(out[4]).toEqual({ ox: 9, oz: 11 });
+    expect(out[1]).toEqual({ ox: -4.5, oz: -5.5 });
+    expect(out[2]).toEqual({ ox: 4.5, oz: -5.5 });
+    expect(out[3]).toEqual({ ox: -9, oz: -11 });
+    expect(out[4]).toEqual({ ox: 9, oz: -11 });
   });
 });
 
 describe("formationOffsets", () => {
   it("lays a single group on the ring's front point", () => {
     const out = formationOffsets(1, 3);
-    expect(out[0]).toEqual({ ox: 0, oz: -16 });
+    expect(out[0]).toEqual({ ox: 0, oz: 16 });
     expect(out).toHaveLength(3);
   });
 
@@ -64,11 +64,11 @@ describe("formationOffsets", () => {
     const out = formationOffsets(4, 1);
     expect(out).toHaveLength(4);
     expect(out[0].ox).toBeCloseTo(0);
-    expect(out[0].oz).toBeCloseTo(-16);
+    expect(out[0].oz).toBeCloseTo(16);
     expect(out[1].ox).toBeCloseTo(16);
     expect(out[1].oz).toBeCloseTo(0);
     expect(out[2].ox).toBeCloseTo(0);
-    expect(out[2].oz).toBeCloseTo(16);
+    expect(out[2].oz).toBeCloseTo(-16);
     expect(out[3].ox).toBeCloseTo(-16);
     expect(out[3].oz).toBeCloseTo(0);
   });
@@ -83,7 +83,7 @@ describe("formationOffsets", () => {
     // Group 0's three planes sit nearest the front-ring point.
     const g0 = out.slice(0, 3);
     for (const o of g0) {
-      expect(Math.hypot(o.ox, o.oz + 16)).toBeLessThan(12);
+      expect(Math.hypot(o.ox, o.oz - 16)).toBeLessThan(12);
     }
   });
 });

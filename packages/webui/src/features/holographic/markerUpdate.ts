@@ -777,8 +777,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const total = liveCount ?? formation?.count ?? 3;
       const gCount = formation?.groupCount ?? total;
       const gSize = formation?.groupSize ?? 1;
-      // Filled-wedge layout over flight groups (leader front, groups
-      // stepping back 1-2-3-…, leftover groups centered in the last row).
+      // Formation layout: flight groups evenly on a ring around the centre
+      // (group 0 ahead), each group a tight V — see formationOffsets.
       // Slot layout must cover the live count even when losses make it
       // exceed the inferred launch grouping (the offsets describe the full
       // wedge; we simply render the first n of it).

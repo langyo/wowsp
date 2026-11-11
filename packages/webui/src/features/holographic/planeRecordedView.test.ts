@@ -159,6 +159,7 @@ function makeCtx(): MapInternals {
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
     planeWedge: new Map(),
+    planeLabelPicks: new Map(),
     planeLensActive: false,
     planeLensHeading: null,
     planeLensY: null,
@@ -251,16 +252,16 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     // so the placement swaps (offset.x, offset.z) into (world x, world z).
     // Recorded view: centre = anchor (100, −50), yBase = max(0, 16) = 16.
     expect(pool.filter((m) => m.visible)).toHaveLength(3);
-    // Slot 0: group 0 (front of the ring) → centre + (−16, 0).
-    expect(pool[0].position.x).toBeCloseTo(84);
+    // Slot 0: group 0 (front of the ring) → centre + (+16, 0).
+    expect(pool[0].position.x).toBeCloseTo(116);
     expect(pool[0].position.y).toBeCloseTo(14);
     expect(pool[0].position.z).toBeCloseTo(50);
-    // Slot 1: group 1 (72°) → centre + (−4.944, 15.217).
-    expect(pool[1].position.x).toBeCloseTo(95.056);
+    // Slot 1: group 1 (72°) → centre + (4.944, 15.217).
+    expect(pool[1].position.x).toBeCloseTo(104.944);
     expect(pool[1].position.y).toBeCloseTo(16);
     expect(pool[1].position.z).toBeCloseTo(65.217);
-    // Slot 2: group 2 (144°) → centre + (12.944, 9.404).
-    expect(pool[2].position.x).toBeCloseTo(112.944);
+    // Slot 2: group 2 (144°) → centre + (−12.944, 9.404).
+    expect(pool[2].position.x).toBeCloseTo(87.056);
     expect(pool[2].position.y).toBeCloseTo(18);
     expect(pool[2].position.z).toBeCloseTo(59.404);
     // Recorded altitude is NOT lifted to the 60 m patrol floor.

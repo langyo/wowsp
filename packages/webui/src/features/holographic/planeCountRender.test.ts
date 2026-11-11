@@ -128,6 +128,7 @@ function makeCtx(pool: THREE.Object3D[]): MapInternals {
     ]),
     planeLaunchPoses: new Map(),
     planeWedge: new Map(),
+    planeLabelPicks: new Map(),
     planeLensActive: false,
     planeLensHeading: null,
     planeLensY: null,

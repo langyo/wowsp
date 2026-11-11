@@ -41,17 +41,20 @@ export function groupInnerOffsets(n: number): { ox: number; oz: number }[] {
   const w = 4.5;
   const d = 5.5;
   const out: { ox: number; oz: number }[] = [{ ox: 0, oz: 0 }];
+  // +oz is the NOSE direction in the placement basis (slot = ox·right +
+  // oz·fwd, fwd = (sin yaw, −cos yaw)), so wingmen step back with NEGATIVE oz.
   for (let i = 1; i < n; i++) {
     const rank = Math.ceil(i / 2);
     const side = i % 2 === 1 ? -1 : 1;
-    out.push({ ox: side * (w * rank), oz: d * rank });
+    out.push({ ox: side * (w * rank), oz: -d * rank });
   }
   return out;
 }
 
 /** Layout over flight GROUPS: every group sits ON A RING around the
- *  formation centre (group 0 at the front, then counter-clockwise — for 4
- *  groups that reads as front/right/back/left), each flying its own tight V
+ *  formation centre (group 0 at the FRONT of the ring, then — for 4 groups
+ *  — right/back/left; +oz is the nose direction in the placement basis, so
+ *  group 0 sits ahead), each flying its own tight V
  *  (user spec: "前后左右各一组、每组一个梯形三机编队"). The old filled
  *  wedge (rows 1,2,3…) scattered the groups into an indistinct blob at
  *  orbit angles. */
@@ -62,7 +65,7 @@ export function formationOffsets(groupCount: number, groupSize: number): { ox: n
   for (let g = 0; g < groups; g++) {
     const th = (2 * Math.PI * g) / groups;
     const gx = Math.sin(th) * ring;
-    const gz = -Math.cos(th) * ring;
+    const gz = Math.cos(th) * ring;
     for (const it of groupInnerOffsets(groupSize)) {
       out.push({ ox: gx + it.ox, oz: gz + it.oz });
     }
