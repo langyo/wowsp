@@ -41,6 +41,9 @@ export interface ShipLabel {
   planeConsumables?: SquadronConsumableType[];
   /** Engine boost (heal-forsage window) currently on — the row's first chip. */
   planeBoost?: boolean;
+  /** Cached semantic signature of `planeConsumables` (change gate: the arrays
+   *  are rebuilt on every label pass and must not churn the Vue render). */
+  planeConsumKey?: string;
   /** Planes still flying in the label's squadron at the playhead (E27
    *  planesHealth digit count). null/undefined on pre-E27 replays — the
    *  aircraft label then omits the count instead of inventing one. */

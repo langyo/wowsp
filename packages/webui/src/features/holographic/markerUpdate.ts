@@ -1188,8 +1188,19 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         squadronId == null
           ? null
           : planeCardExtras(ctx.squadronStates, squadronId, t);
-      label.planeConsumables = extras?.consumables ?? [];
-      label.planeBoost = extras?.boost ?? false;
+      // Assign only on an actual change: a fresh array per pass re-renders
+      // the whole label list every playhead tick (the 10 Hz content gate
+      // exists to avoid exactly that).
+      const cons = extras?.consumables ?? [];
+      const key = cons
+        .map((c) => (typeof c === "string" ? c : "u" + c.unknown))
+        .join(",");
+      if (label.planeConsumKey !== key) {
+        label.planeConsumKey = key;
+        label.planeConsumables = cons;
+      }
+      const boost = extras?.boost ?? false;
+      if (label.planeBoost !== boost) label.planeBoost = boost;
       // Any of this carrier's squadrons airborne?
       let visible = false;
       for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {

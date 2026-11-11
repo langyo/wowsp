@@ -130,8 +130,13 @@ export function updateLabelPositions(ctx: MapInternals) {
   for (const [labelId] of ctx.planeLabelCarriers) {
     const label = labels.find((l) => l.entityId === labelId);
     if (!label || !label.visible) {
-      // Carrier label not currently airborne-visible: hide its slot too.
-      if (label) applySlot(ctx.labelSlotEls.get("l" + label.entityId), false, 0, 0);
+      // Carrier label not currently airborne-visible: hide its slots too —
+      // INCLUDING the below-aircraft chip row, otherwise the last shown
+      // consumables stick to the screen after the last sortie lands.
+      if (label) {
+        applySlot(ctx.labelSlotEls.get("l" + label.entityId), false, 0, 0);
+        applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
+      }
       continue;
     }
     let anchor: SquadronPlane | null = null;
@@ -146,18 +151,7 @@ export function updateLabelPositions(ctx: MapInternals) {
     // card hop between two formations (the flicker the user reported).
     // Prefer the formation the map is RENDERING nearest the camera — that is
     // the one in view, and it is deterministic for a given frame.
-    let bestDist = Infinity;
-    let bestWedgePlane = -1;
-    for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
-      if (labelOf !== labelId) continue;
-      const w = ctx.planeWedge.get(planeId);
-      if (!w) continue;
-      const d = Math.hypot(w.x - cam.position.x, w.y - cam.position.y, w.z + cam.position.z);
-      if (d < bestDist - 1e-6 || (Math.abs(d - bestDist) <= 1e-6 && planeId < bestWedgePlane)) {
-        bestDist = d;
-        bestWedgePlane = planeId;
-      }
-    }
+    const bestWedgePlane = pickLabelWedgePlane(ctx, labelId, cam.position);
     for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
       if (labelOf !== labelId) continue;
       // With a rendered wedge for this carrier, only that formation's card
@@ -214,6 +208,32 @@ export function updateLabelPositions(ctx: MapInternals) {
       label.y + PLANE_ROW_DY,
     );
   }
+}
+
+/** Which formation's rendered wedge should carry a carrier's aircraft
+ *  label: the one NEAREST the camera among the formations this label owns
+ *  (deterministic `planeId` tie-break so a multi-sortie carrier cannot make
+ *  the card hop between anchors tick to tick). −1 = none rendered, and the
+ *  caller then falls back to the newest-sample scan. */
+export function pickLabelWedgePlane(
+  ctx: MapInternals,
+  labelId: number,
+  camPos: { x: number; y: number; z: number },
+): number {
+  let bestDist = Infinity;
+  let best = -1;
+  for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
+    if (labelOf !== labelId) continue;
+    const w = ctx.planeWedge.get(planeId);
+    if (!w) continue;
+    // Wedges are world coords, the camera is scene (z mirrored).
+    const d = Math.hypot(w.x - camPos.x, w.y - camPos.y, w.z + camPos.z);
+    if (d < bestDist - 1e-6 || (Math.abs(d - bestDist) <= 1e-6 && planeId < best)) {
+      bestDist = d;
+      best = planeId;
+    }
+  }
+  return best;
 }
 
 /** Keep the screen-space overlays (cap/smoke/ward ring outlines, cap
