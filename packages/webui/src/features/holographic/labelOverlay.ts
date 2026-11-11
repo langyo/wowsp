@@ -127,6 +127,7 @@ export function updateLabelPositions(ctx: MapInternals) {
   }
   // Aircraft labels project above the carrier's currently airborne
   // squadrons (the newest sample of the newest sortie).
+  ctx.planeLabelPicks.clear();
   for (const [labelId] of ctx.planeLabelCarriers) {
     const label = labels.find((l) => l.entityId === labelId);
     if (!label || !label.visible) {
@@ -178,6 +179,11 @@ export function updateLabelPositions(ctx: MapInternals) {
       applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
       continue;
     }
+    // Publish which formation carries this card so the CONTENT pass
+    // (markerUpdate) reads ✈N / HP / chips from the SAME squadron the
+    // viewer sees on screen (a carrier with several sorties used to have
+    // the content come from a different one than the position).
+    if (anchorPlaneId != null) ctx.planeLabelPicks.set(labelId, anchorPlaneId);
     // Project the RENDERED wedge when the marker pass published one (see
     // planeWedge); the trail sample is only the fallback for formations
     // without models.

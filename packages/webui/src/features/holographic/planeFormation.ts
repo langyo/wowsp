@@ -33,48 +33,40 @@ export function planeTrailExpiry(
   return Math.min(lastSampleTime + PLANE_TRAIL_GRACE_S, removeAt ?? Infinity);
 }
 
-/** Per-plane local offsets inside ONE flight group (the group's own wedge):
- *  1 → single, 2 → side by side, 3 → arrow (1 lead + 2 wing), 4+ → 2 up front
- *  and the rest trailing. Positive oz is BACKWARD along the heading (the
- *  leader flies at the front of the formation). */
+/** Per-plane local offsets inside ONE flight group: a 梯形 V — the leader at
+ *  the point, wingmen stepping BACK in alternating pairs (user spec: every
+ *  group reads as a tight three-plane V, not a scattered row). Positive oz
+ *  is BACKWARD along the heading. */
 export function groupInnerOffsets(n: number): { ox: number; oz: number }[] {
-  const p = 9;
-  if (n <= 1) return [{ ox: 0, oz: 0 }];
-  if (n === 2) return [{ ox: -p, oz: 0 }, { ox: p, oz: 0 }];
-  if (n === 3) return [{ ox: 0, oz: -p }, { ox: -p, oz: p }, { ox: p, oz: p }];
-  const out: { ox: number; oz: number }[] = [
-    { ox: -p, oz: -p },
-    { ox: p, oz: -p },
-  ];
-  for (let i = 2; i < n; i++) {
-    out.push({ ox: (i % 2 === 0 ? -1 : 1) * p, oz: p });
+  const w = 4.5;
+  const d = 5.5;
+  const out: { ox: number; oz: number }[] = [{ ox: 0, oz: 0 }];
+  for (let i = 1; i < n; i++) {
+    const rank = Math.ceil(i / 2);
+    const side = i % 2 === 1 ? -1 : 1;
+    out.push({ ox: side * (w * rank), oz: d * rank });
   }
   return out;
 }
 
-/** Filled-wedge layout over flight GROUPS: row r holds r+1 groups (1, 2, 3,
- *  …); a leftover group that cannot fill the next row sits centered in it.
- *  Examples: 6 groups → rows 1,2,3; 4 groups → 1,2,1; 7 → 1,2,3,1. */
+/** Layout over flight GROUPS: every group sits ON A RING around the
+ *  formation centre (group 0 at the front, then counter-clockwise — for 4
+ *  groups that reads as front/right/back/left), each flying its own tight V
+ *  (user spec: "前后左右各一组、每组一个梯形三机编队"). The old filled
+ *  wedge (rows 1,2,3…) scattered the groups into an indistinct blob at
+ *  orbit angles. */
 export function formationOffsets(groupCount: number, groupSize: number): { ox: number; oz: number }[] {
   const out: { ox: number; oz: number }[] = [];
-  let rem = groupCount;
-  const rows: number[] = [];
-  for (let r = 0; rem > 0; r++) {
-    const n = Math.min(r + 1, rem);
-    rows.push(n);
-    rem -= n;
-  }
-  const gSpacing = 20;
-  const gDepth = 15;
-  rows.forEach((n, r) => {
-    for (let k = 0; k < n; k++) {
-      const gx = (k - (n - 1) / 2) * gSpacing;
-      const gz = -r * gDepth;
-      for (const it of groupInnerOffsets(groupSize)) {
-        out.push({ ox: gx + it.ox, oz: gz + it.oz });
-      }
+  const groups = Math.max(1, groupCount);
+  const ring = 16;
+  for (let g = 0; g < groups; g++) {
+    const th = (2 * Math.PI * g) / groups;
+    const gx = Math.sin(th) * ring;
+    const gz = -Math.cos(th) * ring;
+    for (const it of groupInnerOffsets(groupSize)) {
+      out.push({ ox: gx + it.ox, oz: gz + it.oz });
     }
-  });
+  }
   return out;
 }
 

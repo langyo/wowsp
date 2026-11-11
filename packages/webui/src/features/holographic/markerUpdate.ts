@@ -1153,7 +1153,23 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // 0..1 bar — the same numbers the follow pill shows. A carrier whose
       // squadron stream is missing (pre-E27 replay) keeps the ship values
       // as the honest fallback.
+      // The CONTENT formation must be the one the viewer SEES: labelOverlay
+      // publishes its nearest-rendered-wedge pick each frame; only when that
+      // is absent (first frame / no models) does the first-airborne scan
+      // answer (user report: the card said ✈2 while the rendered wedge was a
+      // different sortie at launch strength).
+      const picked = ctx.planeLabelPicks.get(labelId);
       const squadronId = (() => {
+        if (picked != null) {
+          const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === picked);
+          if (trail && trail.samples.length > 0) {
+            const expiry = planeTrailExpiry(
+              trail.samples[trail.samples.length - 1].time,
+              ctx.minimapTrailEnd.get(picked),
+            );
+            if (t >= trail.samples[0].time && t <= expiry) return picked;
+          }
+        }
         for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
           if (labelOf !== labelId) continue;
           const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);

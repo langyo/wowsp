@@ -421,6 +421,12 @@ export interface MapInternals extends MapInternalsDeps {
    *  wedge layout (measured on the reference capture: 14 of 64 multi-member
    *  squadrons changed group size). */
   planeLaunchPoses: Map<number, { x: number; z: number }>;
+  /** labelId → the planeId whose rendered wedge carries that aircraft card
+   *  (labelOverlay's nearest-wedge pick, refreshed per frame). The CONTENT
+   *  pass reads the same formation so ✈N / HP always describe the squadron
+   *  actually on screen (user report: the card said ✈2 while the rendered
+   *  wedge showed the launch strength of a different sortie). */
+  planeLabelPicks: Map<number, number>;
   /** planeId → the WEDGE CENTROID the marker pass actually rendered this
    *  tick (world coords). Floating labels and other overlays project the
    *  aircraft card here: the trail sample is NOT where the models are — the
@@ -603,6 +609,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
     planeWedge: new Map(),
+    planeLabelPicks: new Map(),
     planeLensActive: false,
     planeLensHeading: null,
     planeLensY: null,
