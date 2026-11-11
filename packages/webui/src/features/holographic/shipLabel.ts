@@ -6,6 +6,7 @@
 import type { OsdTone } from "./osdContrast";
 import type { TeamRole } from "./teamColors";
 import type { ShipStatusSnapshot } from "./shipStatusModel";
+import type { SquadronConsumableType } from "@/api";
 
 /** Per-marker display info for the floating HTML labels. Rebuilt alongside
  *  the markers; positions are updated each frame by projecting the marker's
@@ -34,6 +35,12 @@ export interface ShipLabel {
   kind?: "ship" | "plane";
   /** Aircraft type name (fighter/dive/...) for plane labels. */
   planeType?: string | null;
+  /** Active squadron consumables at the playhead (E27d semantic types, in
+   *  wire-id order). Empty on pre-E27 replays / when nothing is running —
+   *  the below-aircraft chip row then hides instead of showing placeholders. */
+  planeConsumables?: SquadronConsumableType[];
+  /** Engine boost (heal-forsage window) currently on — the row's first chip. */
+  planeBoost?: boolean;
   /** Planes still flying in the label's squadron at the playhead (E27
    *  planesHealth digit count). null/undefined on pre-E27 replays — the
    *  aircraft label then omits the count instead of inventing one. */

@@ -161,6 +161,7 @@ function makeCtx(): MapInternals {
     planeWedge: new Map(),
     planeLensActive: false,
     planeLensHeading: null,
+    planeLensY: null,
     planeRecordedView: false,
     capRings: [],
     capLetterSprites: [],
@@ -356,6 +357,9 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     expect(Math.abs(wedge!.z + cam.z)).toBeLessThan(120);
     expect(ctx.planeLensActive).toBe(true);
     expect(ctx.planeLensHeading).toBeCloseTo(Math.PI / 2);
+    // Formation altitude is published for the camera floor (never view from
+    // under the terrain / below the squadron).
+    expect(ctx.planeLensY).toBeCloseTo(20);
   });
 
   it("keeps other squadrons on their recorded anchors (no pile at the lens)", () => {

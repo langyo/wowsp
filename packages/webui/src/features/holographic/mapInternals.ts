@@ -436,6 +436,11 @@ export interface MapInternals extends MapInternalsDeps {
   /** World heading (radians, the map's yaw convention) of the lens-riding
    *  formation; null when there is none. */
   planeLensHeading: number | null;
+  /** Altitude (world y) of the lens-riding formation this tick. The applied
+   *  camera never dips below it by more than the plane-view clearance — the
+   *  recorded plane camera sometimes flies INTO the terrain, and the user
+   *  wants the aircraft view to sit above the aircraft. */
+  planeLensY: number | null;
   /** Set while the recorded/original camera is the APPLIED view
    *  (HolographicMap's originalView). The aircraft wedge then hangs on each
    *  formation's RECORDED anchor with its recorded heading (and the
@@ -600,6 +605,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeWedge: new Map(),
     planeLensActive: false,
     planeLensHeading: null,
+    planeLensY: null,
     planeRecordedView: false,
     planeLensRide: null,
     capRings: [],
