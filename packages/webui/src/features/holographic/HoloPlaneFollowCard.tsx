@@ -38,9 +38,13 @@ export interface HoloPlaneFollowState {
   total: number;
   /** True while any sampled plane is in an attack-run dive. */
   attacking: boolean;
-  /** False → no squadron is airborne at the playhead; the camera is on the
-   *  hull fallback and the card shows the muted hull line instead. */
+  /** False → no squadron is airborne at the playhead; the card shows the
+   *  muted hull line instead. */
   airborne: boolean;
+  /** True while the camera HOLDS the last aircraft pose (sortie dead/
+   *  recalled, follow-aircraft still on): the muted line names the hold,
+   *  not a hull fallback that no longer happens. */
+  holding?: boolean;
   /** Squadron TOTAL-HP fraction (0..1, the E27 health stream) at the
    *  playhead; null / undefined hides the bar (no sample yet, pre-E27
    *  replay, or the hull fallback — optional so unwired parents keep
@@ -142,7 +146,7 @@ export default defineComponent({
               })}
             </>
           ) : (
-            <span class="holo-planecard__hull">{i18nT("replay.planeCard.followingHull")}</span>
+            <span class="holo-planecard__hull">{s.holding ? i18nT("replay.planeCard.holdingLast") : i18nT("replay.planeCard.followingHull")}</span>
           )}
         </div>
       );

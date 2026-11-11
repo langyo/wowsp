@@ -437,6 +437,7 @@
   "planeCard": {
     "attacking": "Attacking",
     "followingHull": "No aircraft airborne — following hull",
+    "holdingLast": "No aircraft airborne — holding position",
     "boost": "Boost",
     "slow": "Slow",
     "consOther": "Consumable",

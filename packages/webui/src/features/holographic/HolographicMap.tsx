@@ -597,6 +597,7 @@ const RECORDED_DOLLY_MIN = -40;
         }
         selectedEntityId.value = null;
         followAircraft.value = false;
+        lastAircraftHold = null;
         followFraming = followFramingCleared(followFraming);
       } else {
         // Entering the chase: forget wheel events that belonged to the free
@@ -715,6 +716,7 @@ const RECORDED_DOLLY_MIN = -40;
     watch(selectedEntityId, (id) => {
       if (id != null) return;
       followAircraft.value = false;
+      lastAircraftHold = null;
       followFraming = followFramingCleared(followFraming);
       if (cameraMode.value === "follow") cameraMode.value = "free";
     });
@@ -732,6 +734,11 @@ const RECORDED_DOLLY_MIN = -40;
      *  there; null = no active lens (re-seeded from the next published
      *  heading). */
     let lensHeadingSmooth: number | null = null;
+    /** Last known follow-aircraft pose: while following planes, a dead or
+     *  recalled sortie HOLDS the camera here instead of snapping back to the
+     *  carrier hull, until the next sortie launches. Cleared on follow
+     *  exits / target switches. */
+    let lastAircraftHold: { x: number; y: number; z: number; yaw: number } | null = null;
     let recordedLookPitch = 0;
     let recordedLookPrev: { x: number; y: number } | null = null;
     function endRecordedLook(): void {
@@ -1506,8 +1513,9 @@ const RECORDED_DOLLY_MIN = -40;
     });
     /** Menu highlight id: the aircraft row only while that carrier actually
      *  has a squadron up; the hull row otherwise (the camera itself falls
-     *  back to the hull when the formation disappears, so the highlight must
-     *  follow it instead of pointing at a row that is gone). */
+     *  back to the hull when the formation disappears — the camera either
+     *  falls back to the hull or holds the last aircraft pose, so the
+     *  highlight must follow the hull either way). */
     const selectedMenuId = computed<number | null>(() => {
       const id = selectedEntityId.value;
       if (id == null) return null;
@@ -1575,8 +1583,9 @@ const RECORDED_DOLLY_MIN = -40;
           t,
         );
         if (planeId == null) {
-          // No formation up at t: the camera rides the hull fallback and
-          // the card says so instead of a dead strength readout.
+          // No formation up at t: the card says so. While following aircraft
+          // the CAMERA holds the last aircraft pose (lastAircraftHold) —
+          // only the card shows the muted no-airborne line here.
           planeCardState.value = {
             carrierName: label.name,
             shipName: label.shipName,
@@ -1584,6 +1593,10 @@ const RECORDED_DOLLY_MIN = -40;
             total: 0,
             attacking: false,
             airborne: false,
+            // Follow-aircraft hold: the camera parks on the last aircraft
+            // pose instead of the hull, and the card must SAY that instead of
+            // the hull line.
+            holding: followAircraft.value && lastAircraftHold != null,
           };
           return;
         }
@@ -2458,9 +2471,20 @@ const RECORDED_DOLLY_MIN = -40;
       let pos: THREE.Vector3;
       let yaw: number;
       if (aircraft) {
+        // Remember the pose so a dead/recalled sortie can HOLD the view
+        // (see the hold branch below).
+        lastAircraftHold = aircraft;
         _followPos.set(aircraft.x, aircraft.y, aircraft.z);
         pos = _followPos;
         yaw = aircraft.yaw;
+      } else if (followAircraft.value && lastAircraftHold) {
+        // Squadron returned home / wiped out: HOLD the camera on the last
+        // known aircraft pose instead of snapping back to the carrier hull —
+        // the view returns to a launch only when the carrier puts the next
+        // sortie in the air (activeSquadronOf resumes above; user request).
+        _followPos.set(lastAircraftHold.x, lastAircraftHold.y, lastAircraftHold.z);
+        pos = _followPos;
+        yaw = lastAircraftHold.yaw;
       } else {
         const marker = ctx.shipMarkers.find((m) => m.userData.entityId === id);
         if (marker && marker.visible) {
@@ -2661,6 +2685,10 @@ const RECORDED_DOLLY_MIN = -40;
       // across the map from the old one.
       if (entityId !== prevId || followAircraft.value !== prevAircraft) {
         chaseSmooth = null;
+        // A stale hold from the PREVIOUS target must never satisfy this
+        // target's hold branch (carrier A's last pose parking carrier B's
+        // camera) — the hold is per-carrier by construction.
+        lastAircraftHold = null;
       }
       // Following a real target hands RMB to the free-look orbit (the
       // per-frame assignment in followSelected re-asserts it; this covers the
@@ -2832,6 +2860,7 @@ const RECORDED_DOLLY_MIN = -40;
         // instead of carrying a stale target into the next battle.
         selectedEntityId.value = null;
         followAircraft.value = false;
+        lastAircraftHold = null;
         followFraming = followFramingCleared(followFraming);
         // A new replay is a new world — the damped pivot must not glide
         // from the previous battle's last pose onto this one's.
