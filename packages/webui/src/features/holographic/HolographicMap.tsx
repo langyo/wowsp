@@ -66,6 +66,7 @@ import {
 import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
 import { planeTrailExpiry } from "./planeFormation";
 import {
+  chaseStrength,
   planeCardExtras,
   squadronAttacking,
   squadronFlyingAt,
@@ -468,7 +469,10 @@ export default defineComponent({
         if (ctrl) ctrl.enabled = true;
       }
       // The paused scene swaps camera modes on this toggle — repaint now
-      // instead of waiting for the idle heartbeat.
+      // instead of waiting for the idle heartbeat. The aircraft placement
+      // switch rides a SECOND watcher registered after createMapInternals
+      // (it needs ctx, and markerUpdate must not run before the actors
+      // exist — it recomputes the alive counters from shipMarkers).
       api.value?.requestRender();
     });
 
@@ -1466,7 +1470,7 @@ export default defineComponent({
     // rationale). shipLabels rides along so a name resolving late after a
     // seek still lands on the card.
     watch(
-      [hudCurrent, selectedEntityId, followAircraft, shipLabels],
+      [hudCurrent, selectedEntityId, followAircraft, shipLabels, squadronStates],
       ([t, carrierId, aircraft]) => {
         if (carrierId == null || !aircraft) {
           planeCardState.value = null;
@@ -1498,8 +1502,20 @@ export default defineComponent({
           };
           return;
         }
+        // Card strength is the authoritative E27 digit count when the
+        // replay streams one — the minimap merge keeps the ANCHOR alive
+        // through sparse-3D stretches while wingman trails expire on
+        // their own samples, and the per-trail count would then read
+        // "1/N" exactly while the squadron flies (see chaseStrength).
         const strength =
-          squadronStrength(ctx.planeTrails, planeId, ctx.minimapTrailEnd, t) ?? {
+          chaseStrength(
+            ctx.planeTrails,
+            ctx.planeFormations,
+            squadronStates.value?.planesHealth,
+            ctx.minimapTrailEnd,
+            planeId,
+            t,
+          ) ?? {
             alive: 0,
             total: 0,
           };
@@ -1838,6 +1854,17 @@ export default defineComponent({
       scoringZones,
       selfTeam,
       shipLabels,
+    });
+    // Aircraft start on the synthetic patrol orbit; the recorded/original
+    // camera view flips this with originalView. Registered HERE (not beside
+    // the originalView ref) because the callback needs ctx, and because a
+    // setup-time toggle must not run a marker pass before the actors exist
+    // — markerUpdate recomputes the alive counters from shipMarkers.
+    ctx.planeRecordedView = originalView.value;
+    watch(originalView, (on) => {
+      ctx.planeRecordedView = on;
+      if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
+      api.value?.requestRender();
     });
 
     // ── Enlarged 2D map hover tooltips ──────────────────────────────────

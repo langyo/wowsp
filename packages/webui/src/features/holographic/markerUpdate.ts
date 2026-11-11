@@ -116,6 +116,30 @@ function easedAnchorAt(
   return { time: t, planeId, index: 0, x, y, z, yaw };
 }
 
+/** Altitude of the recorder's camera at playhead t, or null when the replay
+ *  carries no 0x25 frames. The recorded/original camera view renders the
+ *  aircraft at the recorded anchor's ground position, and the plane-camera
+ *  ride sits AT its squadron — so the camera's own y IS the formation's
+ *  altitude there. This matters: the minimap-derived anchor samples carry a
+ *  synthetic y = 20, which on the 14.5.0.0 Shokaku capture measured 47.9°
+ *  off the recorded view axis (camera y 16.20, squadron 2 units away) —
+ *  outside the 28.6° half-fov frame, i.e. still "no planes" — while y ≈ 16
+ *  sits 27.8° off-axis, inside it. Same last-frame-at-or-before-t search as
+ *  applyOriginalCamera (the decoded timeline is time-ordered); callers fall
+ *  back to the anchor sample's y when this is null. */
+function cameraYAt(ctx: MapInternals, t: number): number | null {
+  const frames = ctx.props.cameraFrames;
+  if (frames.length === 0) return null;
+  let lo = 0;
+  let hi = frames.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (frames[mid].time <= t) lo = mid;
+    else hi = mid - 1;
+  }
+  return frames[lo].y;
+}
+
 /** Roster entry by player id — chat/achievement events carry roster ids
  *  (descriptor `vehicles[].id`), not vehicle entity ids. */
 function rosterById(ctx: MapInternals, pid: number): VehicleEntry | undefined {
@@ -693,13 +717,26 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         gSize,
       );
       const n = Math.min(total, offsets.length);
+      // RECORDED VIEW: while the replay's OWN camera is the applied view, the
+      // wedge hangs at the RECORDED anchor pose with the recorded heading
+      // instead of orbiting a synthetic circle — the recorded camera framed
+      // the real formation, so the orbit planted every model outside its view
+      // (user report: original camera mode showed no aircraft). The anchor is
+      // also the only FRESH data late in a sortie: the 3D stream often stops
+      // at launch while the minimap centre track keeps running (buildPlaneTrails
+      // pads the anchor trail with it), whereas per-plane 3D poses would still
+      // be stale launch samples hundreds of units apart.
+      const recorded = ctx.planeRecordedView === true;
       // Slow circle so airborne squadrons visibly hold a patrol orbit.
       const ang = t * 0.22 + (planeId % 7) * 0.9;
       const R = 50;
       // Heading follows the patrol-circle TANGENT (the direction the
       // formation is actually moving) so the wedge turns as it orbits
-      // instead of sliding sideways pointing at a fixed heading.
-      const yaw = Math.atan2(-Math.sin(ang), Math.cos(ang));
+      // instead of sliding sideways pointing at a fixed heading. The recorded
+      // view uses the anchor's recorded heading instead.
+      const yaw = recorded
+        ? anchor.s.yaw
+        : Math.atan2(-Math.sin(ang), Math.cos(ang));
       const fwd = { x: Math.sin(yaw), z: -Math.cos(yaw) };
       const right = { x: Math.cos(yaw), z: Math.sin(yaw) };
       // Orbit CENTRE = the formation's geometric centroid (not the lead
@@ -710,9 +747,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const czm = offsets.reduce((a, o) => a + o.oz, 0) / Math.max(1, offsets.length);
       const ccx = anchor.s.x + cxm * right.x + czm * fwd.x;
       const ccz = anchor.s.z + cxm * right.z + czm * fwd.z;
-      const cx = ccx + Math.cos(ang) * R;
-      const cz = ccz + Math.sin(ang) * R;
-      const yBase = Math.max(60, anchor.s.y);
+      const cx = recorded ? anchor.s.x : ccx + Math.cos(ang) * R;
+      const cz = recorded ? anchor.s.z : ccz + Math.sin(ang) * R;
+      // Recorded altitude comes from the RECORDER CAMERA (it rides at the
+      // squadron — see cameraYAt); the anchor sample is only the fallback for
+      // replays without 0x25 frames, with a below-sea guard. The free/follow
+      // orbit keeps the 60 m patrol floor instead.
+      const yBase = recorded
+        ? (cameraYAt(ctx, t) ?? Math.max(0, anchor.s.y))
+        : Math.max(60, anchor.s.y);
       if (pool && pool.length >= n) {
         for (let i = 0; i < n; i++) {
           const mesh = pool[i];
@@ -739,7 +782,8 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // wedge never thinned out as planes were shot down).
         for (let i = n; i < pool.length; i++) pool[i].visible = false;
       } else {
-        // No model pool (yet): fall back to a point at the centroid.
+        // No model pool (yet): fall back to a point at the centroid (in the
+        // recorded view that centroid IS the recorded anchor pose).
         const cloudSlot = ctx.planeCloudSlots.get(planeId);
         if (arr && cloudSlot != null) {
           arr[cloudSlot * 3] = cx;

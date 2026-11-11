@@ -80,6 +80,35 @@ export function squadronStrength(
   return { alive, total };
 }
 
+/** Strength readout for the follow pill (HoloPlaneFollowCard's
+ *  alive/total): the E27 per-plane digit count is AUTHORITATIVE whenever
+ *  the replay streams it, because the minimap merge pads only the anchor
+ *  trail — wingman trails still expire on their own 3D samples, so the
+ *  per-trail squadronStrength would report a one-plane "1/N" formation
+ *  during exactly the sparse-3D stretches the merge exists for (measured
+ *  on the reference capture: 17 of 108 squadrons run a merged anchor past
+ *  their wingman trails for a median 33 s). The launch strength comes from
+ *  the decoded formation table (numPlanes), and the trail-derived
+ *  squadronStrength keeps pre-E27 replays unchanged. Null when nothing is
+ *  live by either source (the card then shows its hull fallback). */
+export function chaseStrength(
+  planeTrails: readonly PlaneTrailLike[],
+  planeFormations: ReadonlyMap<number, { count: number }>,
+  planesHealth: readonly SquadronPlanesHealthEvent[] | undefined,
+  removeAt: ReadonlyMap<number, number>,
+  planeId: number,
+  t: number,
+): SquadronStrength | null {
+  const trails = squadronStrength(planeTrails, planeId, removeAt, t);
+  const live = squadronFlyingAt(planesHealth, planeId, t);
+  if (trails == null && live == null) return null;
+  const launch = planeFormations.get(planeId)?.count ?? 0;
+  return {
+    alive: live ?? trails?.alive ?? 0,
+    total: Math.max(trails?.total ?? 0, launch, live ?? 0),
+  };
+}
+
 /** Pitch (degrees) at which a plane sample reads as an attack-run dive.
  *  WoWS attack runs pitch the models sharply down; −25° separates the dive
  *  from ordinary patrol climb/descend noise. The decoder (SquadronPlane.

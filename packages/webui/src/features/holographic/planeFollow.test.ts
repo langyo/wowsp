@@ -10,6 +10,7 @@ import type {
 } from "@/api";
 import {
   activeConsumablesAt,
+  chaseStrength,
   CONSUMABLE_LABEL,
   consumableLabelKey,
   planeCardExtras,
@@ -468,5 +469,50 @@ describe("squadronFlyingAt", () => {
     expect(squadronFlyingAt(stream, 1, 15)).toBe(2);
     expect(squadronFlyingAt(stream, 2, 15)).toBe(1);
     expect(squadronFlyingAt(stream, 3, 15)).toBeNull();
+  });
+});
+
+describe("chaseStrength (the follow pill's alive / total)", () => {
+  /** Packed bands for `n` flying planes at full HP (one digit 1 each). */
+  const packedFull = (n: number) => {
+    let acc = 0;
+    for (let i = 0; i < n; i++) acc += 8 ** i;
+    return acc;
+  };
+
+  it("prefers the E27 digit count over expiring sparse-3D wingman trails", () => {
+    // The minimap-merge case: the ANCHOR trail is padded out to the sortie
+    // end while the wingman's 3D trail stops at launch — the per-trail
+    // count reads 1/2 mid-sortie even though the squadron still flies.
+    const trails = [trail(1, [10, 200]), trail(1, [10, 20], 1)];
+    const formations = new Map([[1, { count: 4 }]]);
+    const health = [{ time: 10, planeId: 1, packed: packedFull(4) }];
+    expect(squadronStrength(trails, 1, noRemoves, 100)).toEqual({
+      alive: 1,
+      total: 2,
+    });
+    expect(chaseStrength(trails, formations, health, noRemoves, 1, 100)).toEqual({
+      alive: 4,
+      total: 4,
+    });
+  });
+
+  it("keeps the trail-derived answer on pre-E27 replays", () => {
+    const trails = [trail(1, [10, 200]), trail(1, [10, 200], 1)];
+    const formations = new Map([[1, { count: 2 }]]);
+    expect(chaseStrength(trails, formations, undefined, noRemoves, 1, 100)).toEqual({
+      alive: 2,
+      total: 2,
+    });
+    // Launch strength comes from the formation table when the trails only
+    // ever saw the anchor (minimap-only squadrons).
+    expect(chaseStrength([trail(1, [10, 200])], formations, undefined, noRemoves, 1, 100)).toEqual({
+      alive: 1,
+      total: 2,
+    });
+  });
+
+  it("answers null when nothing is live by either source", () => {
+    expect(chaseStrength([], new Map(), undefined, noRemoves, 1, 100)).toBeNull();
   });
 });

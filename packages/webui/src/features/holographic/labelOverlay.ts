@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import { CAP_SPRITE_PX, SMOKE_SPRITE_PX } from "./screenOverlays";
 import type { SquadronPlane } from "@/api";
+import { samplesUpTo } from "./trajectoryMath";
 import type { MapInternals } from "./mapInternals";
 
 /** Camera distance under which the below-hull combat status rows render —
@@ -135,7 +136,13 @@ export function updateLabelPositions(ctx: MapInternals) {
       if (labelOf !== labelId) continue;
       const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
       if (!trail || trail.samples.length === 0) continue;
-      const sp = trail.samples[trail.samples.length - 1];
+      // Playhead-accurate: the carrier's aircraft label must ride the sortie
+      // the map is SHOWING, not the trail's end pose — the minimap merge
+      // pads sparse-3D squadrons out to their sortie end, which otherwise
+      // parks the label hundreds of units ahead of the rendered wedge.
+      const at = samplesUpTo(trail.samples, ctx.current.value) - 1;
+      if (at < 0) continue;
+      const sp = trail.samples[at];
       if (!anchor || sp.time > anchor.time) anchor = sp;
     }
     if (!anchor) {
@@ -144,7 +151,11 @@ export function updateLabelPositions(ctx: MapInternals) {
       applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
       continue;
     }
-    ctx._projVec.set(anchor.x, Math.max(60, anchor.y) + 30, -anchor.z);
+    // Recorded/original camera: aircraft fly at the camera's altitude (no
+    // 60 m patrol floor), so the label rides just above them; every other
+    // view keeps the patrol-floor lift.
+    const lift = ctx.planeRecordedView ? anchor.y + 15 : Math.max(60, anchor.y) + 30;
+    ctx._projVec.set(anchor.x, lift, -anchor.z);
     ctx._projVec.project(cam);
     label.x = (ctx._projVec.x * hw) + hw;
     label.y = (-ctx._projVec.y * hh) + hh;

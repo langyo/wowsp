@@ -8,6 +8,11 @@
  * left all-but-the-first as Points), and the pool is sized by the DECODED
  * launch size (SquadronCreate.numPlanes) — the GameParams group count is
  * the attack-group size (often 1) and never the flying strength.
+ * The merge tests pin the sparse-3D-stream fix: a squadron whose
+ * receive_updateSquadron stream stops at launch must keep its anchor trail
+ * alive on the minimap centre track (padded at both ends), or the aircraft
+ * vanished from every view 5 s after launch.
+ *
  * propMarker + modelLoader are mocked: pool geometry is irrelevant here,
  * and the repo tree ships no plane GLBs for the real resolvers to find.
  */
@@ -23,8 +28,15 @@ vi.mock("./propMarker", () => ({
   buildPropMarker: vi.fn(async () => new THREE.Object3D()),
 }));
 
-import type { MinimapSquadronAdd, SquadronCreate, SquadronPlane } from "@/api";
+import type {
+  MinimapSquadronAdd,
+  MinimapSquadronMove,
+  MinimapSquadronRemove,
+  SquadronCreate,
+  SquadronPlane,
+} from "@/api";
 import type { MapInternals } from "./mapInternals";
+import { planeTrailExpiry } from "./planeFormation";
 import { buildPlaneFormations, buildPlaneTrails } from "./planeWarfare";
 
 /** Real plane_types.json entries (baked GameParams): PJAF408 is the
@@ -69,6 +81,41 @@ const sp = (planeId: number, index: number, time: number): SquadronPlane => ({
   yaw: 0,
 });
 
+/** A 3D airborne sample at an explicit pose. */
+const spAt = (
+  planeId: number,
+  index: number,
+  time: number,
+  x: number,
+  y: number,
+  z: number,
+  yaw = 0,
+): SquadronPlane => ({ time, planeId, index, x, y, z, yaw });
+
+/** A minimap centre sample (add) at an explicit time/position. */
+const addAt = (
+  planeId: number,
+  time: number,
+  x: number,
+  z: number,
+): MinimapSquadronAdd => ({
+  time,
+  planeId,
+  ownerId: 7,
+  teamId: 1,
+  paramsId: TOP_FIGHTER_PARAMS_ID,
+  x,
+  z,
+});
+
+/** A minimap centre-track move at an explicit time/position. */
+const move = (
+  planeId: number,
+  time: number,
+  x: number,
+  z: number,
+): MinimapSquadronMove => ({ time, planeId, x, z });
+
 /** A trail pair long enough for the grouping sampler. */
 const trail = (planeId: number, index = 0) => ({
   id: planeId * 16 + index,
@@ -78,21 +125,25 @@ const trail = (planeId: number, index = 0) => ({
 /** Minimal internals: only the fields the two passes touch. */
 const makeCtx = (props: {
   squadronCreates?: SquadronCreate[];
+  squadronPlanes?: SquadronPlane[];
   minimapSquadronAdds?: MinimapSquadronAdd[];
+  minimapSquadronMoves?: MinimapSquadronMove[];
+  minimapSquadronRemoves?: MinimapSquadronRemove[];
 }) =>
   ({
     props: {
       squadronCreates: props.squadronCreates ?? [],
-      squadronPlanes: [],
+      squadronPlanes: props.squadronPlanes ?? [],
       minimapSquadronAdds: props.minimapSquadronAdds ?? [],
-      minimapSquadronMoves: [],
-      minimapSquadronRemoves: [],
+      minimapSquadronMoves: props.minimapSquadronMoves ?? [],
+      minimapSquadronRemoves: props.minimapSquadronRemoves ?? [],
     },
     api: { value: null },
     markerEpoch: 1,
     planeTrails: [],
     planeMeshes: new Map(),
     planeFormations: new Map(),
+    planeLaunchPoses: new Map(),
     minimapTrailEnd: new Map(),
     planeTypesById: new Map(),
     planeIndexById: new Map(),
@@ -145,6 +196,119 @@ describe("buildPlaneTrails", () => {
     buildPlaneTrails(ctx);
     expect(ctx.planeIndexById.has(400 * 16)).toBe(false);
     expect(ctx.planeTypesById.has(400 * 16)).toBe(false);
+  });
+});
+
+describe("buildPlaneTrails minimap-stream merge", () => {
+  it("pads an existing anchor trail at both ends, leaving the 3D middle intact", () => {
+    // The 14.5.0.0 Shokaku reference: receive_updateSquadron stops at launch
+    // while the sortie track only lives in the minimap centre stream. The
+    // index-0 trail must span the REAL sortie, or planeTrailExpiry kills the
+    // formation 5 s after the last 3D sample and no camera mode shows it.
+    const three3d = [
+      spAt(500, 0, 10, -100, 1, -400),
+      spAt(500, 0, 20, -98, 1.5, -395),
+    ];
+    const ctx = makeCtx({
+      squadronPlanes: [
+        ...three3d,
+        spAt(500, 1, 10, -90, 1, -410),
+        spAt(500, 1, 20, -88, 1.5, -405),
+      ],
+      minimapSquadronAdds: [addAt(500, 8, 0, 0)],
+      minimapSquadronMoves: [
+        move(500, 12, 10, 0), // inside the 3D span → dropped (no interleave)
+        move(500, 30, 20, 10), // after the 3D span → padded
+        move(500, 40, 20, 30), // after the 3D span → padded
+      ],
+    });
+    buildPlaneTrails(ctx);
+    const anchor = ctx.planeTrails.find((tr) => tr.id === 500 * 16)!;
+    // Ascending merged timeline: minimap-before, the untouched 3D middle,
+    // minimap-after.
+    expect(anchor.samples.map((s) => s.time)).toEqual([8, 10, 20, 30, 40]);
+    // The 3D launch samples are the very same objects, in their own slots.
+    expect(anchor.samples[1]).toBe(three3d[0]);
+    expect(anchor.samples[2]).toBe(three3d[1]);
+    // Padded minimap samples: synthetic altitude 20 + explicit pose.
+    expect(anchor.samples[0]).toMatchObject({ x: 0, y: 20, z: 0 });
+    expect(anchor.samples[3]).toMatchObject({ x: 20, y: 20, z: 10 });
+    expect(anchor.samples[4]).toMatchObject({ x: 20, y: 20, z: 30 });
+    // The move INSIDE the 3D span was not interleaved.
+    expect(anchor.samples.some((s) => s.time === 12)).toBe(false);
+    // ...and the wingman's 3D trail was left alone entirely.
+    const wing = ctx.planeTrails.find((tr) => tr.id === 500 * 16 + 1)!;
+    expect(wing.samples.map((s) => s.time)).toEqual([10, 20]);
+    // The trail now lives to 40 s (+5 s grace) instead of the old 3D-only
+    // expiry at 20 s (+5 s) — the formation survives the whole sortie.
+    expect(planeTrailExpiry(anchor.samples[4].time, ctx.minimapTrailEnd.get(500))).toBe(45);
+    // Heading derived from the MINIMAP path's neighbours: atan2(dx, dz).
+    expect(anchor.samples[0].yaw).toBeCloseTo(Math.PI / 2); // (10−0, 0−0)
+    expect(anchor.samples[3].yaw).toBeCloseTo(Math.atan2(10, 30)); // (20−10, 30−0)
+    expect(anchor.samples[4].yaw).toBeCloseTo(0); // (0, 20)
+  });
+
+  it("derives the heading for a minimap-only centre trail", () => {
+    // Minimap packets carry no heading. Without the derivation the recorded
+    // view and the follow camera's anchor fallback would fly every
+    // minimap-only squadron at yaw 0.
+    const ctx = makeCtx({
+      minimapSquadronAdds: [addAt(600, 10, 0, 0)],
+      minimapSquadronMoves: [move(600, 20, 20, 0), move(600, 30, 20, 20)],
+    });
+    buildPlaneTrails(ctx);
+    const trail = ctx.planeTrails.find((tr) => tr.id === 600 * 16)!;
+    expect(trail.samples.map((s) => s.time)).toEqual([10, 20, 30]);
+    // Calibrated convention: atan2(dx, dz) over the centre path's neighbours.
+    expect(trail.samples[0].yaw).toBeCloseTo(Math.PI / 2); // (20, 0)
+    expect(trail.samples[1].yaw).toBeCloseTo(Math.atan2(20, 20)); // (20, 20)
+    expect(trail.samples[2].yaw).toBeCloseTo(0); // (0, 20)
+    // The existing minimap-only contract (single list, y = 20) is unchanged.
+    for (const s of trail.samples) expect(s.y).toBe(20);
+  });
+
+  it("records the PRE-merge launch pose for the grouping inference", () => {
+    // buildPlaneFormations clusters the launch poses; sampling the merged
+    // trail instead would mix the padded centre-track pose with the
+    // wingmen's launch poses and flip the wedge layout (14 of 64
+    // multi-member squadrons on the reference capture).
+    const ctx = makeCtx({
+      squadronPlanes: [
+        spAt(700, 0, 10, -100, 1, -400),
+        spAt(700, 0, 20, -98, 1.5, -395),
+      ],
+      minimapSquadronAdds: [addAt(700, 6, 50, 60)],
+      minimapSquadronMoves: [move(700, 8, 52, 62)],
+    });
+    buildPlaneTrails(ctx);
+    const anchor = ctx.planeTrails.find((tr) => tr.id === 700 * 16)!;
+    // The trail itself IS padded at the front with the centre track...
+    expect(anchor.samples[0].time).toBe(6);
+    expect(anchor.samples[0]).toMatchObject({ x: 50, z: 60 });
+    // ...while the grouping pose stays the 3D launch pose.
+    expect(ctx.planeLaunchPoses.get(700 * 16)).toEqual({ x: -100, z: -400 });
+  });
+
+  it("derives yaw 0 and a launch pose for a single-sample minimap trail", () => {
+    const ctx = makeCtx({ minimapSquadronAdds: [add(800, TOP_FIGHTER_PARAMS_ID)] });
+    buildPlaneTrails(ctx);
+    const centre = ctx.planeTrails.find((tr) => tr.id === 800 * 16)!;
+    expect(centre.samples).toHaveLength(1);
+    expect(centre.samples[0].yaw).toBe(0);
+    expect(ctx.planeLaunchPoses.get(800 * 16)).toEqual({ x: 0, z: 0 });
+  });
+
+  it("does not pad minimap samples that coincide with the 3D span boundaries", () => {
+    const ctx = makeCtx({
+      squadronPlanes: [spAt(900, 0, 10, 0, 1, 0), spAt(900, 0, 20, 0, 1, 0)],
+      minimapSquadronAdds: [addAt(900, 10, 0, 0)],
+      minimapSquadronMoves: [move(900, 20, 0, 0), move(900, 30, 0, 0)],
+    });
+    buildPlaneTrails(ctx);
+    const anchor = ctx.planeTrails.find((tr) => tr.id === 900 * 16)!;
+    // Strictly-before/after only: an equal boundary time is already covered
+    // by a 3D sample, so the merge must not double-insert it.
+    expect(anchor.samples.map((s) => s.time)).toEqual([10, 20, 30]);
   });
 });
 

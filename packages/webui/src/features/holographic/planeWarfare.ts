@@ -22,9 +22,29 @@ import type { MinimapSquadronAdd, SquadronPlane } from "@/api";
  *  far below it, so the namespace can never collide. */
 export const PLANE_CARD_LABEL_ID_BASE = 2_000_000_000;
 
+/** Aircraft heading convention, calibrated against every consecutive 3D
+ *  aircraft sample pair of the 14.5.0.0 reference capture (5,274 straight-
+ *  flight segments): yaw = atan2(dx, dz) over the WORLD-frame travel delta —
+ *  the same atan2(vx, vz) the synthetic patrol tangent uses in markerUpdate.
+ *  Minimap squadron packets carry no heading, so the centre path's neighbours
+ *  are the only source. Without it every minimap-derived pose ships yaw 0,
+ *  which the recorded/original camera view (wedge on the recorded heading)
+ *  and the follow camera's anchor fallback both read. */
+function deriveMinimapYaws(list: SquadronPlane[]): void {
+  const n = list.length;
+  for (let i = 0; i < n; i++) {
+    const prev = list[i > 0 ? i - 1 : 0];
+    const next = list[i + 1 < n ? i + 1 : n - 1];
+    list[i].yaw = Math.atan2(next.x - prev.x, next.z - prev.z);
+  }
+}
+
 /** Assemble ctx.planeTrails from the 3D + minimap squadron streams and
  *  populate the type/index tables. Returns the first create per squadron
- *  — the carrier resolver needs it later in the same build. */
+ *  — the carrier resolver needs it later in the same build. The two streams
+ *  are merged so a squadron's anchor trail spans its REAL sortie: the 3D
+ *  airborne stream can stop at launch while the minimap centre track keeps
+ *  running (see the end-padding block below). */
 export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadronAdd> {
   // Aircraft squadrons: one model per plane, positions come from the
   // avatar's receive_updateSquadron stream. Each update packet carries
@@ -45,6 +65,17 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
     id,
     samples: samples.sort((a, b) => a.time - b.time),
   }));
+  // Launch poses for the GROUPING inference: captured BEFORE the minimap
+  // merge below pads the anchor trail, so the clustering always sees the
+  // real launch formation (see MapInternals.planeLaunchPoses).
+  ctx.planeLaunchPoses.clear();
+  for (const trail of ctx.planeTrails) {
+    if (trail.samples.length === 0) continue;
+    ctx.planeLaunchPoses.set(trail.id, {
+      x: trail.samples[0].x,
+      z: trail.samples[0].z,
+    });
+  }
   // Minimap squadron stream (receive_add/update/removeMinimapSquadron):
   // the 2D trail the in-game minimap itself renders. Squadrons without
   // 3D aerial-path samples get their CENTER trail from here; the remove
@@ -68,15 +99,49 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
         list = [];
         extra.set(planeId, list);
       }
-      // Altitude ~20: the patrol orbit lifts anchors below this anyway.
+      // Altitude ~20: the minimap stream carries no altitude; the free/follow
+      // patrol orbit lifts anchors below 60 anyway, and the recorded camera
+      // view renders this nominal height as-is (below the old 60 m floor).
+      // yaw starts at 0 and is derived from the path below.
       list.push({ time, planeId, index: 0, x, y: 20, z, yaw: 0 });
     };
     for (const a of ctx.props.minimapSquadronAdds) push(a.planeId, a.time, a.x, a.z);
     for (const m of ctx.props.minimapSquadronMoves) push(m.planeId, m.time, m.x, m.z);
     for (const [pid, list] of extra) {
       list.sort((a, b) => a.time - b.time);
-      if (!ctx.planeTrails.some((tr) => Math.floor(tr.id / 16) === pid)) {
-        ctx.planeTrails.push({ id: pid * 16, samples: list });
+      deriveMinimapYaws(list);
+      const anchorId = pid * 16;
+      const anchor = ctx.planeTrails.find((tr) => tr.id === anchorId);
+      if (!anchor) {
+        // Minimap-only squadron: the centre trail IS the whole track.
+        ctx.planeTrails.push({ id: anchorId, samples: list });
+        if (list.length > 0) {
+          ctx.planeLaunchPoses.set(anchorId, { x: list[0].x, z: list[0].z });
+        }
+        continue;
+      }
+      // The 3D receive_updateSquadron stream can stop long before the sortie
+      // does (the 14.5.0.0 Shokaku reference carries exactly two launch
+      // samples for a ~140 s sortie; the real track only lives in the minimap
+      // stream). Left unmerged, planeTrailExpiry killed the formation 5 s
+      // after that last 3D sample and the aircraft vanished from EVERY view —
+      // the reported "original camera shows no planes" defect. PAD the
+      // index-0 trail at BOTH ends with the minimap samples outside the 3D
+      // stream's own time span. The middle stays 3D-untouched (no
+      // interleaving): the streams carry different reference points (lead
+      // plane vs squadron centre), so mixing them would make the anchor jump
+      // sideways between packets.
+      const samples = anchor.samples;
+      if (samples.length === 0) {
+        anchor.samples = list;
+        continue;
+      }
+      const before = list.filter((s) => s.time < samples[0].time);
+      const after = list.filter((s) => s.time > samples[samples.length - 1].time);
+      if (before.length > 0 || after.length > 0) {
+        // Both slices are time-ordered, so the merged list stays ascending —
+        // every samplesUpTo/sampleAt binary search relies on that.
+        anchor.samples = [...before, ...samples, ...after];
       }
     }
   }
@@ -229,8 +294,13 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
     }
     for (const [planeId, entries] of byPlane) {
       // Infer the group layout from the launch positions (clusters of
-      // planes spawned together = one flight group).
-      const grp = inferGrouping(entries, sampleAt);
+      // planes spawned together = one flight group). The launch poses are
+      // captured BEFORE the minimap merge pads the anchor trail — sampling
+      // the merged trail at a padded centre-squadron sample would flip the
+      // grouping on real replays (see MapInternals.planeLaunchPoses).
+      const grp = inferGrouping(entries, (trail) =>
+        ctx.planeLaunchPoses.get(trail.id),
+      );
       const formation = ctx.planeFormations.get(planeId)!;
       formation.groupSize = Math.max(1, Math.min(grp.groupSize, formation.count));
       formation.groupCount = Math.max(1, grp.groupCount);

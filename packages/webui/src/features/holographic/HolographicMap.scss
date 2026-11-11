@@ -11,11 +11,33 @@
 .holo-map {
   @include hud.holo-hud-dark;
 
+  /* ── Bottom-left player HUD block ──────────────────────────────────
+     ONE width for the hull plaque row and the playback bar underneath
+     it, so the two read as a single block and both pairs of edges line
+     up (user report: the bar stopped short of the stats card's right
+     edge, and the hull plaque looked unrelated to it). Content
+     contract: plaque 16rem + stats strip 16rem = 32rem of cards plus
+     the 10px row gap = calc(32rem + 10px) (522px at the 16px root),
+     which is also the bar's border box. Written as a calc so the gap
+     stays a PIXEL token (a root-font change scales the cards, never
+     the gap). The bar draws no border, so its padding box IS the
+     row's width: the plaque's left edge lands on the bar's left edge
+     and the strip's right edge (pinned by `margin-left: auto`) lands on
+     the bar's right edge. The bar's own 10px horizontal padding sits
+     INSIDE that box (--holo-hud-pad-x), so its transport controls stay
+     clear of the rounded corners without moving the block's outer
+     edges.
+     KEEP IN SYNC: the stats strip's 16rem width, the shipcard row's
+     10px gap and this block width are one contract. */
+  --holo-hud-block-w: calc(32rem + 10px);
+  --holo-hud-pad-x: 10px;
+
   position: relative;
-  /* Inline-size container: the shipcard row (absolutely positioned against
-     the content-sized playback bar, where %-widths are meaningless) caps
-     itself to the map's real width via 100cqw below. Inline-size
-     containment is free here — the map is width:100%, never content-sized. */
+  /* Inline-size container: the bottom-left HUD's block width and its
+     minimap-clearance clamps read the MAP's real width via 100cqw (the
+     playback bar is width-locked, so %-widths inside it are the block's,
+     not the map's). Inline-size containment is free here — the map is
+     width:100%, never content-sized. */
   container-type: inline-size;
   width: 100%;
   height: 100%;
@@ -150,7 +172,20 @@
     display: flex;
     align-items: center;
     gap: 0.6rem;
-    padding: 6px 10px;
+    /* The block width's inner inset lives in one token so the phone
+       regime can swap it for 8px (see the block-width contract at the
+       root); the row does not depend on this value — it spans the
+       padding box — so a local literal would only shrink the transport
+       area, never the row. */
+    padding: 6px var(--holo-hud-pad-x);
+    /* The block width contract: the shipcard row above spans this bar's
+       padding box (width: 100%, no border here), so the row's right
+       edge IS the bar's right edge and the stats strip's right edge
+       lands on it via its auto left margin. The clamp is the same
+       minimap-clearance cap the row uses (160px thumb + 8px inset +
+       24px clearance = 192px), so both clamp together instead of
+       diverging on narrow maps. */
+    width: min(var(--holo-hud-block-w), calc(100cqw - 192px));
     pointer-events: auto;
   }
 
@@ -173,21 +208,25 @@
     position: absolute;
     left: 0;
     bottom: calc(100% + 8px);
-    /* Cap the row short of the MINIMAP column, not the map edge: the
-       160px thumb sits 8px off the map's right edge (a 168px band the
-       plaque + stats must never enter), the row's left anchor is the
-       bar's 12px inset, and 8px of clearance plus 4px of slack round the
-       reserve to 192px. The capped row's right edge therefore lands at
-       100cqw - 180px — a constant 12px clear of the thumb's left edge
-       (100cqw - 168px) at every map width. Shrink-to-fit against the
-       content-sized bar normally bounds the row well before this clamp;
-       the clamp is the authority for narrow maps where the bar itself
-       reaches the corner. Under the cap the stat segments (flex-shrink
-       below) give up width; the @container rule beneath covers the
-       narrow regime where even min-content can't fit one line. Don't
-       use `width: max-content` here — intrinsic keywords size flex
-       items at their natural width and the max-width box clamp alone
-       would leave them overflowing the clamped box. */
+    /* Width comes from the playback bar, not from the row's content:
+       `100%` is the bar's padding box (the bar draws no border, so it
+       equals the bar's outer box), which puts the row's left edge on
+       the bar's left edge and — with `margin-left: auto` on the stats
+       strip — its right edge on the bar's right edge. The plaque
+       (16rem) + 10px gap + stats strip (16rem) fill that box exactly
+       (--holo-hud-block-w); the strip's auto margin keeps its right
+       edge pinned when a narrow map shrinks the row or wraps the strip
+       under the plaque, and a submarine depth pill simply borrows the
+       plaque's shrink. The max-width is the MINIMAP clearance, not the
+       map edge: the bar starts 12px inside the map and must stop 12px
+       short of the 160px thumb (which itself sits 8px off the map's
+       right edge, i.e. a 168px band), so the reserve is 12 + 168 + 12
+       = 192px — the same clamp the controls bar uses, so the block's
+       right edge stays straight at every width. Under the cap the stat
+       segments (flex-shrink below) give
+       up width; the @container rule beneath covers the narrow regime
+       where even min-content can't fit one line. */
+    width: 100%;
     max-width: calc(100cqw - 192px);
     display: flex;
     flex-direction: row;
@@ -214,6 +253,22 @@
        moves a layout boundary, it can no longer produce an overflow. */
     @container (max-width: 680px) {
       flex-wrap: wrap;
+    }
+  }
+
+  /* Narrow map panes (a dragged replay splitter, or a window narrow enough
+     for the map to fall under ~600px): the width lock still holds — the
+     bar keeps ending on the row's right edge and 12px short of the
+     minimap thumb — but the block clamp there is narrower than the
+     one-line transport's min-content, so let the flex line WRAP instead
+     of painting the clock/speed chip outside the glass. Wrapping when the
+     content fits is a no-op, so this is inert until it is actually
+     needed. (A width release was rejected: it let the row overlap the
+     thumb, which the next rule's 192px clamp exists to prevent.) */
+  @container (max-width: 600px) {
+    &__controls {
+      flex-wrap: wrap;
+      row-gap: 6px;
     }
   }
 
@@ -284,6 +339,14 @@
      left end and the played portion reads as the filled segment. */
   &__scrub {
     appearance: none;
+    /* Absorbs the slack the fixed block width leaves between the
+       transport buttons and the clock — without it the bar's extra
+       width would pool as a dead gap at its right end (the row above
+       is width-locked, see the --holo-hud-block-w contract). The floor
+       keeps the two-line phone geometry intact; phone overrides the
+       basis/min-width in its own media block. */
+    flex: 1 1 200px;
+    min-width: 96px;
     width: 200px;
     height: 14px;
     background: transparent;
@@ -468,11 +531,22 @@
 
 /* Live self-stats — icon + short label + number per stat in a translucent
    strip to the right of the hull plaque. The strip itself bottom-aligns
-   with the plaque; each stat inside is a centred mini column. */
+   with the plaque; each stat inside is a centred mini column. It is the
+   second half of the fixed player-HUD block: exactly the hull plaque's
+   16rem (see the --holo-hud-block-w contract at the map root). */
 .holo-map__selfstats {
   display: inline-flex;
   align-items: stretch;
   gap: 0;
+  /* One half of the block, and its right edge IS the block's right edge
+     (which is also the playback bar's): `margin-left: auto` pins the
+     strip to the row's right edge even when a narrow map shrinks the
+     plaque or wraps the strip onto its own line. max-width keeps the
+     wrapped phone line from spilling out of the row. */
+  flex: 0 1 16rem;
+  width: 16rem;
+  max-width: 100%;
+  margin-left: auto;
   /* Release the strip's automatic minimum inside the shipcard row: it
      would otherwise read as the sum of the segments' 4.5rem contributions
      and keep the row rigid even under the row's width cap. */
@@ -510,11 +584,12 @@
      rides on the 4.5rem base (not this floor), so without it the strip's
      automatic minimum stays ≈ its natural width and the row stays rigid.
      Under pressure segments stop at their nowrap content, numbers never
-     clip; unconstrained rows still lay out at exactly 4.5rem. Do NOT
-     grow these: a growable segment inflates the strip's intrinsic
-     contribution, widening the whole row and splatting the surplus onto
-     the widest-numbered cell (measured 78/78/78/235) — distribution is
-     the @container grid rule's job instead.
+     clip; inside the block's fixed 16rem strip the four bases compress
+     evenly to a quarter of the strip (~61px, still clearing a 7-digit
+     readout). Do NOT grow these: a growable segment inflates the
+     strip's intrinsic contribution, widening the whole row and splatting
+     the surplus onto the widest-numbered cell (measured 78/78/78/235) —
+     distribution is the @container grid rule's job instead.
      width stays alongside the basis: dropping it would collapse the
      unconstrained row down to bare text widths. */
   flex: 0 1 4.5rem;
@@ -539,6 +614,11 @@
   .holo-map__selfstats {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
+    /* The strip owns the row's second line alone here — let it fill
+       that line (right edge included) instead of right-hugging at its
+       16rem rest width; the auto margin would otherwise swallow the
+       free space flex-grow needs. */
+    margin-left: 0;
     /* A wrapped grid sizes shrink-to-fit at its min-content (cells hug
        "32,825" at ~49px, glued together); as the only item on the row's
        second line it can grow to the full cap width instead, so each
@@ -1690,9 +1770,15 @@
       centered — it claims the whole top at this width): weather badge,
       then the AI heat strip / score panel (their own files). */
 @media (max-width: 767px) {
-  /* 1 — playback row: span the pane, wrap, reorder. */
+  /* 1 — playback row: span the pane, wrap, reorder. The fixed block
+     width (--holo-hud-block-w) is a desktop contract: here the bar's
+     width comes back from the left/right insets so the two-line form
+     keeps the phone regime's full-bleed geometry (the row spans this
+     box via width: 100% either way), and the one-line 8px padding
+     below replaces the desktop `6px var(--holo-hud-pad-x)`. */
   .holo-map__controls {
     right: 12px;
+    width: auto;
     flex-wrap: wrap;
     gap: 8px;
     row-gap: 6px;
