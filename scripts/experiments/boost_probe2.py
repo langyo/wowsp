@@ -1,6 +1,6 @@
 
 #!/usr/bin/env python
-"""Round 2: full 9-byte notify dump + mode -1 (slow?) window durations,
+"""E27e round 2: full 9-byte notify dump + mode −1 (slow) window durations,
 plus throttle-vs-attack correlation is skipped here (pitch lives on
 updateSquadron). Same framing as boost_probe.py."""
 import struct, zlib, glob, os, statistics

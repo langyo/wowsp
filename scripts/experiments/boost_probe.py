@@ -1,6 +1,6 @@
 
 #!/usr/bin/env python
-"""E27d boost-signal probe: aggregate changeThrottleMode / squadronNotify /
+"""E27e boost-signal probe: aggregate changeThrottleMode / squadronNotify /
 squadronOutOfFuel / dropJato across every CV replay in the Steam replays
 folder, and cross-reference throttle windows against the healForsage
 consumable brackets. Standalone (pycryptodome), mirrors packets.rs framing."""
@@ -10,7 +10,8 @@ from Cryptodome.Cipher import Blowfish
 
 KEY = bytes([0x29,0xB7,0xC9,0x09,0x38,0x3F,0x84,0x88,0xFA,0x98,0xEC,0x4E,0x13,0x19,0x79,0xFB])
 IDS = {57:"throttle",56:"notify",49:"outOfFuel",50:"dropJato",60:"consUsed",64:"consStop",63:"consInterrupt",61:"consPaused",74:"consSelected",75:"consEnabled"}
-REPLAY_DIR = r"D:\SteamLibrary\steamapps\common\World of Warships\replays\14.5.0.0"
+# Corpus dir is machine-local; pass an alternative as argv[1].
+REPLAY_DIR = sys.argv[1] if len(sys.argv) > 1 else r"D:\SteamLibrary\steamapps\common\World of Warships\replays\14.5.0.0"
 CV_PAT = ("PJSA","PJSB","PASA")  # Shokaku/Hotaka/Yorktown hull prefixes
 
 def decrypt_stream(dirty):
@@ -132,7 +133,7 @@ if durs:
     import statistics
     print(f"duration s: min {durs[0]:.1f} p25 {durs[len(durs)//4]:.1f} med {durs[len(durs)//2]:.1f} p75 {durs[3*len(durs)//4]:.1f} max {durs[-1]:.1f} mean {statistics.mean(durs):.1f}")
     print(f"durations within 5±0.6s: {sum(1 for d in durs if abs(d-5)<=0.6)}/{len(durs)}")
-print(f"mode1 windows overlapping a healForsage window (±0.5s): {overlaps}/{total_on}")
+print(f"mode1 windows overlapping a healForsage window (±0.5s): {overlaps}/{len(durs)} closed ({total_on} open events)")
 print(f"healForsage windows: {len(forsage)} (unclosed {sum(1 for _,_,_,s in forsage if s is None)})")
 print("\n== per-replay modes ==")
 for rep in per_replay:

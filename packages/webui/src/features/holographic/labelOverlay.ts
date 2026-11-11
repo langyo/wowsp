@@ -199,8 +199,7 @@ export function updateLabelPositions(ctx: MapInternals) {
     // Below-aircraft chip row: HP/alive count ride the card, the consumables
     // and boost run UNDER the formation (user request). Visible whenever the
     // card is, as long as the replay streamed anything to show.
-    const row =
-      (label.planeBoost ? 1 : 0) + (label.planeConsumables?.length ?? 0) > 0;
+    const row = planeRowVisible(label);
     applySlot(
       ctx.labelSlotEls.get("s" + label.entityId),
       row && label.visible,
@@ -208,6 +207,22 @@ export function updateLabelPositions(ctx: MapInternals) {
       label.y + PLANE_ROW_DY,
     );
   }
+}
+
+/** Whether the below-aircraft chip row has anything to show: engine boost,
+ *  the slow-down key, or any open consumable window. Pure so the row's
+ *  visibility contract is unit-testable (a slow-only state must show the
+ *  row — the PR that added planeSlow originally forgot this gate). */
+export function planeRowVisible(label: {
+  planeBoost?: boolean;
+  planeSlow?: boolean;
+  planeConsumables?: unknown[];
+}): boolean {
+  return (
+    (label.planeBoost ? 1 : 0) +
+    (label.planeSlow ? 1 : 0) +
+    (label.planeConsumables?.length ?? 0)
+  ) > 0;
 }
 
 /** Which formation's rendered wedge should carry a carrier's aircraft

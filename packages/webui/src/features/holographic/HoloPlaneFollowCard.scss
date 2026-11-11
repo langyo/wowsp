@@ -132,6 +132,13 @@
     background: rgb(217 119 6 / 16%);
     color: #d97706;
   }
+
+  /* Engine slow-down twin (throttle −1): cool steel-blue ink, the
+     deliberate counterpart of the amber boost badge. */
+  &--slow {
+    background: rgb(56 130 190 / 18%);
+    color: #6aa9dd;
+  }
 }
 
 /* Total-HP bar (the E27 health fraction): a FIXED-width track so the pill

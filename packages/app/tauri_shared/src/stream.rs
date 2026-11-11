@@ -1124,11 +1124,10 @@ pub struct SquadronDamageEvent {
 }
 
 /// One engine-mode toggle (`receive_changeThrottleMode` on the avatar, E27):
-/// def signature `receive_changeThrottleMode(PLANE_ID, INT8)`. Mode 0 =
-/// cruise, 1 = engine boost — the BOOST signal of the plane-follow card.
-/// Observed domain on the 14.5.0.0 Shokaku reference capture (2025-07-08):
-/// 699 calls alternating strictly between 0 and 1; values beyond {0,1} are
-/// unobserved, so the raw i8 is kept.
+/// def signature `receive_changeThrottleMode(PLANE_ID, INT8)`. Modes: 0 =
+/// cruise, 1 = engine boost, −1 = slow-down (E27f corpus study: 2387 calls
+/// across 12 CV replays = 0×1215 / 1×1011 / −1×161) — the boost signal of
+/// the plane-follow card. The raw i8 is kept for future modes.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SquadronThrottleEvent {

@@ -43,8 +43,8 @@ pub struct MethodIds {
     /// f32 damage, u8 hitType`.
     pub avatar_receive_squadron_damage: Option<i32>,
     /// Engine-mode toggle (receive_changeThrottleMode): `u64 PLANE_ID,
-    /// i8 mode` — 0 cruise, 1 engine boost (the plane-follow card's
-    /// BOOST signal; only {0,1} observed on the wire).
+    /// i8 mode` — 0 cruise, 1 engine boost, −1 slow-down (E27f corpus
+    /// study; the plane-follow card's BOOST signal).
     pub avatar_receive_change_throttle_mode: Option<i32>,
     /// Squadron consumable activation (squadronConsumableUsed): `u64
     /// PLANE_ID, u8 consumableType` (observed 20/21/22; the def says

@@ -1161,9 +1161,10 @@ pub(super) fn decode_squadron_damage(
 }
 
 /// Decode `receive_changeThrottleMode` args: `u64 planeId, i8 mode` — 9
-/// bytes. Mode 0 = cruise, 1 = engine boost (561 avatar-gated alternating
-/// calls on the reference capture); values beyond {0,1} are unobserved, so
-/// the raw i8 is kept. This is the BOOST signal for the plane-follow card.
+/// bytes. Engine modes: 0 = cruise, 1 = engine boost, −1 = slow-down
+/// (E27f corpus study: 2387 calls across 12 CV replays = 0×1215 / 1×1011 /
+/// −1×161; the −1 windows are variable 0.1–12.4 s). The raw i8 is kept.
+/// This is the BOOST signal for the plane-follow card.
 pub(super) fn decode_squadron_throttle(
     time: f32,
     args: &[u8],
