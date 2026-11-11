@@ -429,6 +429,12 @@ export interface MapInternals extends MapInternalsDeps {
    *  model outside its view — original camera mode showed empty sky (user
    *  report). Free/follow camera modes keep the orbit placement untouched. */
   planeRecordedView: boolean;
+  /** Set while the recorded camera sits inside a PLANE-camera segment (the
+   *  recorder was framing aircraft): only then does the recorder's own
+   *  squadron ride the lens (see markerUpdate). A ship-camera segment with
+   *  the same recorded view must not paste the player's aircraft in front
+   *  of the ship's view. */
+  planeLensRide: boolean;
   /** Capture-zone ring meshes (repainted per frame by cap state). */
   capRings: THREE.Mesh[];
   /** Cap-letter sprites (redrawn with the point ETA while Alt is held). */
@@ -575,6 +581,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
     planeRecordedView: false,
+    planeLensRide: false,
     capRings: [],
     capLetterSprites: [],
     rangeRingSlots: [],

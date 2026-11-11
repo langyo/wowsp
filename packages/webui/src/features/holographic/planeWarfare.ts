@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { PLANE_TYPES } from "./tactical/shellTypes";
 import { buildPropMarker } from "./propMarker";
-import { resolvePlaneModelUrl } from "./modelLoader";
+import { planeForwardSign, resolvePlaneModelUrl } from "./modelLoader";
 import { sampleAt } from "./trajectoryMath";
 import { inferGrouping } from "./planeFormation";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
@@ -318,12 +318,24 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
         color: TEAM_COLOR[first.role as TeamRole] ?? 0x78d2ff,
         axis: "z",
         targetLen: 7,
-        opacity: 0.95,
+        // Opaque: the plane GLB is a closed solid; a translucent,
+        // depth-write-off material painted its own faces through each other
+        // (the "shattered triangles" the user reported on the aircraft).
+        opacity: 1,
       }).catch(() => null);
       const formationForPool = ctx.planeFormations.get(planeId)!;
       build.then((proto) => {
         if (epoch !== ctx.markerEpoch || !ctx.api.value?.scene || !proto) return;
         if (ctx.planeMeshes.has(planeId)) return;
+        // The pack's aircraft art is authored both ways (see
+        // planeForwardSign): rotate the −Z half so every model's nose is at
+        // local +Z, the frame markerUpdate's π − yaw placement and the
+        // follow camera's yaw derivation assume. The inner group carries the
+        // orientation; the outer one stays free for the per-frame yaw.
+        if (planeForwardSign(first.idx) < 0) {
+          const inner = proto.children[0];
+          if (inner) inner.rotation.y += Math.PI;
+        }
         // Tint at LOAD time, not at build time: the GLB resolves long
         // after resolvePlaneCarriers ran its re-tint pass, so the role
         // captured when this build STARTED (the empty-map default, i.e.
@@ -361,9 +373,10 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
               ? raw.map(retint)
               : retint(raw);
           });
-          // Orientation is applied by markerUpdate's placement (the baked
-          // plane GLBs have their nose at -Z, unlike the ships' +Z; see the
-          // comment there) — a rotation here would be overwritten each frame.
+          // The per-frame heading is markerUpdate's (rotation.y = π − yaw,
+          // nose at local +Z); the inner group's orientation was normalised
+          // above. Don't touch the outer group's rotation here — the
+          // placement overwrites it every tick.
           inst.visible = false;
           scene.add(inst);
           pool.push(inst);

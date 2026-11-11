@@ -114,4 +114,22 @@ describe("recordedCameraForward / applyRecordedCamera", () => {
     expect(cam.position.toArray()).toEqual([1, 2, -3]);
     expect(cam.fov).toBeCloseTo(90);
   });
+
+  it("dollies back along the view axis without moving the recorded pose", () => {
+    // The original-camera wheel zoom: the pose stays the stream's own (the
+    // aircraft placement hangs off it), only the camera pulls back.
+    const pose = cameraPoseAt([frame(10, 1, 2, 3)], 10)!;
+    const cam = {
+      position: new THREE.Vector3(),
+      quaternion: new THREE.Quaternion(),
+      fov: 0,
+      updateProjectionMatrix() {},
+    };
+    applyRecordedCamera(cam as unknown as THREE.PerspectiveCamera, pose, 100);
+    // Identity rotation looks down scene −Z, so pulling back is +Z here.
+    expect(cam.position.toArray()).toEqual([1, 2, -3 + 100]);
+    // Zero dolly keeps the exact recorded pose.
+    applyRecordedCamera(cam as unknown as THREE.PerspectiveCamera, pose, 0);
+    expect(cam.position.toArray()).toEqual([1, 2, -3]);
+  });
 });

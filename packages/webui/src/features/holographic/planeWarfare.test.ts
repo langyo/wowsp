@@ -20,9 +20,13 @@ import { describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
 import { ref } from "vue";
 
+// Orientation table stub: the tests drive the sign per case (see the
+// "counter-rotates" test); everything else behaves as nose +Z.
+const planeForwardState = vi.hoisted(() => ({ sign: 1 as 1 | -1 | 0 }));
 vi.mock("./modelLoader", () => ({
   resolvePlaneModelUrl: vi.fn((idx: string | undefined) =>
     idx ? `/models/planes/${idx}.glb` : null),
+  planeForwardSign: vi.fn(() => planeForwardState.sign),
 }));
 vi.mock("./propMarker", () => ({
   // A proto shaped like a loaded GLB: one mesh carrying a material, so the
@@ -413,5 +417,40 @@ describe("buildPlaneFormations", () => {
     // The pools own their materials (propMarker's cache shares one proto
     // per URL): tinting one squadron must not recolor the other side.
     expect(meshOf(1).material).not.toBe(meshOf(2).material);
+  });
+
+  it("counter-rotates a nose-−Z model so every aircraft flies nose-first", async () => {
+    // The pack is authored BOTH ways (plane_forward.json: 482 of 872 face
+    // −Z). The pool turns the −Z half 180° inside the proto so the shared
+    // placement convention (rotation.y = π − yaw, nose at local +Z) holds.
+    planeForwardState.sign = -1;
+    const ml = await import("./modelLoader");
+    expect(ml.planeForwardSign("PJAF408")).toBe(-1);
+    const ctx = makeCtx({ squadronCreates: [create(1, WARD_PARAMS_ID, 1)] });
+    ctx.planeTrails = [trail(1)];
+    ctx.planeIndexById.set(1 * 16, "PJAF408");
+    const scene = new THREE.Scene();
+    ctx.api = ref({ scene }) as unknown as MapInternals["api"];
+    buildPlaneFormations(ctx, scene, ctx.markerEpoch);
+    await vi.waitFor(() => expect(ctx.planeMeshes.get(1)).toBeDefined());
+    const pool = ctx.planeMeshes.get(1)!;
+    // The counter-rotation lands on the inner mesh; check the QUATERNION
+    // (a 180° Y Euler reads back as (π, 0, π), so rotation.y alone is
+    // misleading): |w| ≈ 0 = half turn, ≈ 1 = untouched.
+    const inner = pool[0].children[0] as THREE.Mesh;
+    const q = inner.quaternion;
+    expect(Math.abs(q.w)).toBeLessThan(1e-6);
+    expect(Math.abs(q.y)).toBeCloseTo(1);
+    // A +Z model keeps the proto untouched.
+    planeForwardState.sign = 1;
+    const ctx2 = makeCtx({ squadronCreates: [create(2, WARD_PARAMS_ID, 1)] });
+    ctx2.planeTrails = [trail(2)];
+    ctx2.planeIndexById.set(2 * 16, "PJAF408");
+    ctx2.api = ref({ scene }) as unknown as MapInternals["api"];
+    buildPlaneFormations(ctx2, scene, ctx2.markerEpoch);
+    await vi.waitFor(() => expect(ctx2.planeMeshes.get(2)).toBeDefined());
+    expect(
+      Math.abs((ctx2.planeMeshes.get(2)![0].children[0] as THREE.Mesh).quaternion.w),
+    ).toBeCloseTo(1);
   });
 });

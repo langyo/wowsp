@@ -41,12 +41,15 @@ import type {
 } from "./mapInternals";
 
 /** Recorded/original camera view: minimum distance (scene units) the
- *  CLOSEST squadron slot keeps from the recorded lens. The plane-camera
+ *  CLOSEST own-squadron slot keeps from the recorded lens. The plane-camera
  *  ride puts the recorder's own camera INSIDE the formation (the minimap
  *  centre track it follows sits ~at the lens), which rendered the models as
  *  near-plane shards; hanging the wedge this far along the interpolated
- *  view axis puts the squadron ahead of the lens instead. */
-const RECORDED_PLANE_PAD = 34;
+ *  view axis puts the squadron ahead of the lens instead. 80 units keeps a
+ *  full squadron readable instead of filling the frame (the HUD's wheel
+ *  dolly pulls the recorded camera back on top of this — see
+ *  HolographicMap's recorded-camera zoom). */
+const RECORDED_PLANE_PAD = 80;
 
 /** Widest of the per-kind caps — chat can burst, so keep a little headroom
  *  over the old kill-only limit of 4. */
@@ -677,6 +680,30 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         formationAnchor.set(planeId, { s, born, expiry });
       }
     }
+    // Recorded PLANE-camera segment: exactly ONE formation rides the lens —
+    // the recorder's own sortie nearest the recorded camera (a carrier can
+    // have several flights airborne; hanging them all at the same 80-unit
+    // point stacked them). Falls back to the nearest formation of any side
+    // when the own carrier's role never resolved (missing minimap owner →
+    // planes default to enemy), so the lens segment still shows aircraft
+    // instead of the old near-plane shards.
+    let lensFormationId: number | null = null;
+    let lensPose: ReturnType<typeof recordedCameraAt> = null;
+    if (ctx.planeRecordedView === true && ctx.planeLensRide === true) {
+      lensPose = recordedCameraAt(ctx, t);
+      if (lensPose) {
+        let bestSelf: { id: number; d: number } | null = null;
+        let bestAny: { id: number; d: number } | null = null;
+        for (const [pid, a] of formationAnchor) {
+          // Anchor samples are world coords; the pose is scene (z mirrored).
+          const d = Math.hypot(a.s.x - lensPose.x, a.s.z + lensPose.z);
+          if (!bestAny || d < bestAny.d) bestAny = { id: pid, d };
+          if (ctx.planeRoleById.get(pid) !== "self") continue;
+          if (!bestSelf || d < bestSelf.d) bestSelf = { id: pid, d };
+        }
+        lensFormationId = (bestSelf ?? bestAny)?.id ?? null;
+      }
+    }
     for (const [planeId, anchor] of formationAnchor) {
       const pool = ctx.planeMeshes.get(planeId);
       const formation = ctx.planeFormations.get(planeId);
@@ -722,7 +749,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // interpolates the ~10 Hz camera stream, which is what removed the
       // follow-camera stutter.
       const recorded = ctx.planeRecordedView === true;
-      const pose = recorded ? recordedCameraAt(ctx, t) : null;
+      // ONLY the one formation the recorded plane camera rides hangs ahead
+      // of the lens (see the pre-pass above): hanging EVERY formation there
+      // piled own/ally/enemy squadrons into the same screen spot (user
+      // report: mixed-colour aircraft glued in front of the camera), and
+      // doing it in a SHIP-camera segment pasted the player's aircraft onto
+      // a view that never framed them. Everything else stays on its real
+      // recorded anchor.
+      const ownSquadron = lensFormationId != null && planeId === lensFormationId;
+      const pose = ownSquadron ? lensPose : null;
       const camFwd = pose ? recordedCameraForward(pose) : null;
       // Slow circle so airborne squadrons visibly hold a patrol orbit.
       const ang = t * 0.22 + (planeId % 7) * 0.9;
@@ -730,17 +765,15 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // Heading follows the patrol-circle TANGENT (the direction the
       // formation is actually moving) so the wedge turns as it orbits
       // instead of sliding sideways pointing at a fixed heading. The
-      // recorded view uses the camera's own view axis: the recorder chased
-      // the squadron, so that axis IS the flight direction — and unlike the
-      // minimap-derived anchor yaw it is smooth. The placement's fwd is a
-      // SCENE direction ((sin yaw, −cos yaw) feeds the mesh positions), and
-      // camFwd is scene too, so the yaw conversion must NOT apply the world
-      // frame's z mirror again: yaw = atan2(h.x, −h.z).
-      const yaw = pose && camFwd
-        ? Math.atan2(camFwd.x, -camFwd.z)
-        : recorded
-          ? anchor.s.yaw
-          : Math.atan2(-Math.sin(ang), Math.cos(ang));
+      // recorded view uses the squadron's RECORDED heading (the eased
+      // minimap-track direction, same convention as the 3D airframe yaw):
+      // the recorder's camera turns and banks independently of the
+      // formation, so hanging the wedge on the camera axis instead made it
+      // look pasted to the lens (user report: "it just faces the camera and
+      // never moves when it circles").
+      const yaw = recorded
+        ? anchor.s.yaw
+        : Math.atan2(-Math.sin(ang), Math.cos(ang));
       const fwd = { x: Math.sin(yaw), z: -Math.cos(yaw) };
       const right = { x: Math.cos(yaw), z: Math.sin(yaw) };
       // Orbit CENTRE = the formation's geometric centroid (not the lead
@@ -793,11 +826,14 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           const yOff = (i % 3) * 2 - 2; // -2 / 0 / +2 alternating
           mesh.position.set(cx + ox, yBase + yOff, -cz + oz);
           // The placement convention assumes the model's nose/bow along
-          // local +Z (ships are baked that way). The plane GLBs carry the
-          // GAME's airframe frame instead — nose at -Z, vertical fin at +Z
-          // (verified by the z-slice vertex profile of PAAB001/2/3 against
-          // ships/Acasta.glb) — so the pi offset turns them nose-first.
-          mesh.rotation.y = Math.PI - yaw + Math.PI;
+          // local +Z, and the plane GLBs are baked that way too: the
+          // z-slice profile of PAAB001 has the thin vertical fin at local
+          // −Z and the propeller disc (dense, symmetric around the hub) at
+          // +Z, with the wing centre ~70 % of the way aft. The old extra
+          // π here flew every aircraft TAIL-FIRST (and made the follow
+          // camera's yaw derivation — followTargets assumes rotation.y =
+          // π − yaw — point the wrong way by 180°).
+          mesh.rotation.y = Math.PI - yaw;
         }
         // Park the SURPLUS slots of this still-anchored formation. The pool
         // is sized to the LAUNCH strength (slots never shrink mid-replay),
