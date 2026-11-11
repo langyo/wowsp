@@ -2,12 +2,12 @@
 // The page owns its chrome (sticky top bar with the back affordance) and
 // re-hosts the modal's `.settings-modal` shell: the page-side pane does
 // not scroll itself — the app shell's scroll container owns the page
-// scroll — whereas the desktop modal's content-fit frame caps the shell
-// at the old 70vh-6.5rem band and scrolls the pane inside it (see
-// components/settings/SettingsShell.scss). On phone widths the rail flips
-// to a horizontally pannable big-button strip pinned at the top (icon
-// over label, edge-faded pan edges); wider sizes show the labeled side
-// rail like the desktop modal.
+// scroll — whereas the desktop modal's content-fit frame floors and caps
+// the shell around the old 70vh-6.5rem band and scrolls the pane inside
+// it (see components/settings/SettingsShell.scss). On phone widths the
+// rail flips to a horizontally pannable big-button strip pinned at the
+// top (icon over label, edge-faded pan edges); wider sizes show the
+// labeled side rail like the desktop modal.
 
 .settings-page {
   display: flex;

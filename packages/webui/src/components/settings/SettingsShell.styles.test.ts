@@ -16,10 +16,11 @@
  *    probe, so a released frame measures its own previous height and the
  *    window can never shrink (the 2026-11-04 phone-sheet freeze class).
  * 2. The shell sizes from the active section's cards (`height: auto`)
- *    while keeping hikari's old frame formula ONLY as the cap
- *    (max-height: var(--hk-settings-height, calc(70vh - 6.5rem))) — short
- *    sections lose the dead band, long sections keep the capped frame and
- *    the pane stays the sole scroller.
+ *    between a presentable floor and hikari's old frame formula as the cap
+ *    (min-height: min(24rem, band) / max-height: band) — short sections
+ *    never collapse the window into a sliver (2026-11-11 user report),
+ *    long sections keep the capped frame and the pane stays the sole
+ *    scroller.
  * 3. The rail — a HkScrollContainer whose intrinsic height is its (long)
  *    nav list — stops driving the shell height via `contain: size`; the
  *    flex stretch then sizes it from the pane.
@@ -110,6 +111,22 @@ describe("settings content-fit stylesheet contract", () => {
     // remain: the cap lives on max-height, never on height. Anchored to a
     // declaration's line start so "max-height:" cannot satisfy it.
     expect(shell).not.toMatch(/(?:^|\n)\s*height:\s*var\(--hk-settings-height/);
+  });
+
+  it("keeps a presentable floor under short sections, clamped to the cap", () => {
+    const shell = ruleBody(desktop, ".hk-settings-host .hk-settings {");
+    expect(shell, "the shell override exists").not.toBeNull();
+    // The full hug let the shortest sections (语言's single card) collapse
+    // the window into a sliver (2026-11-11 user report): the floor keeps a
+    // presentable frame.
+    expect(shell).toMatch(
+      /min-height:\s*min\(24rem,\s*var\(--hk-settings-height,\s*calc\(70vh - 6\.5rem\)\)\);/,
+    );
+    // min-height wins over max-height in CSS, so an unclamped floor would
+    // push the shell past the cap (overflowing the modal scroller) on
+    // short viewports: the floor must ride the band clamp, never stand
+    // alone.
+    expect(shell).not.toMatch(/min-height:\s*24rem;/);
   });
 
   it("takes the rail out of the shell's intrinsic height", () => {

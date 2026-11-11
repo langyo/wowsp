@@ -33,7 +33,8 @@ export default defineComponent({
         // HkSettingsDialog.scss ships the flush pane scrollbar and its
         // body-inner height pin; wowsp's SettingsShell.scss overrides that
         // pin and the constant shell height into a content-fit frame
-        // (hug the active section's cards, capped at the old band).
+        // (hug the active section's cards, floored and capped around the
+        // old band).
         contentClass="hk-settings-host"
       >
         <SettingsBody active={ui.visible} />
