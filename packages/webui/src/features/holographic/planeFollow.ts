@@ -274,8 +274,12 @@ export function consumableWindowFrac(
   }
   if (start === null) return null;
   const window = end === null ? fallbackSecs : end - start;
-  if (window <= 0) return 0;
-  return Math.max(0, Math.min(1, 1 - (t - start) / window));
+  if (window <= 0) return null;
+  const frac = Math.max(0, Math.min(1, 1 - (t - start) / window));
+  // An open bracket (no StopWorking: squadron died / stream end) that has run
+  // past its fallback duration is over — report null so the bar and the chip
+  // row agree instead of leaving an empty track that still reads as active.
+  return frac <= 0 ? null : frac;
 }
 
 /** Named (non-unknown) members of the semantic union — the map key space of

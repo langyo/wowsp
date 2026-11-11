@@ -102,8 +102,9 @@ export function recordedCameraForward(pose: RecordedCameraPose): {
 /** Extra downward pitch (radians) of the recorded PLANE view: the camera
  *  sits `PLANE_VIEW_ABOVE` over the squadron and this tilts it down so the
  *  formation reads in the middle of the frame instead of hugging the bottom
- *  edge (user report). Shared by the camera and the lens placement so the
- *  wedge hangs exactly along the view axis. */
+ *  edge (user report). CAMERA ONLY: the lens placement stays level on the
+ *  aircraft heading so the wedge keeps its recorded altitude (pitching the
+ *  placement too sank it below the sea on low-altitude recordings). */
 export const PLANE_VIEW_PITCH = 0.32;
 
 const _qy = new THREE.Quaternion();

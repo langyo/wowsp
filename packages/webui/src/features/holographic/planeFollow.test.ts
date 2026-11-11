@@ -232,7 +232,8 @@ describe("consumableWindowFrac", () => {
   it("keeps a still-open window on its documented fallback duration", () => {
     const events = [ev(100, "used")];
     expect(consumableWindowFrac(events, 1, "healForsage", 102)).toBeCloseTo(0.6);
-    expect(consumableWindowFrac(events, 1, "healForsage", 200)).toBe(0);
+    // Past the fallback duration the window is over: null, not an empty bar.
+    expect(consumableWindowFrac(events, 1, "healForsage", 200)).toBeNull();
   });
 
   it("ignores other planes and other consumable types", () => {

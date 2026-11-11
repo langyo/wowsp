@@ -2574,8 +2574,9 @@ const RECORDED_DOLLY_MIN = -40;
           pose = alignPoseHeading(pose, ctx.planeLensHeading);
         }
         // Plane view looks DOWN at the squadron (the raised seat alone left
-        // the formation hugging the bottom edge): same pitch the lens
-        // placement uses, so the wedge hangs along the actual view axis.
+        // the formation hugging the bottom edge). The lens placement stays
+        // LEVEL, so the wedge keeps its recorded altitude and lands a few
+        // degrees below the tilted view axis instead of at the top edge.
         if (ctx.planeLensActive) {
           pose = withLookOffset(pose, 0, PLANE_VIEW_PITCH);
         }
