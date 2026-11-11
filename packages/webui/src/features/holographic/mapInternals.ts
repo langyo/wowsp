@@ -413,6 +413,22 @@ export interface MapInternals extends MapInternalsDeps {
   squadronStates: SquadronStateEvents | null;
   /** planeId → formation render state. */
   planeFormations: Map<number, PlaneFormationState>;
+  /** Trail id (planeId*16+index) → the plane's LAUNCH pose (its first 3D
+   *  sample, i.e. the pose before the minimap merge pads the anchor trail at
+   *  the front). buildPlaneFormations clusters these to infer the flight
+   *  groups: sampling the merged trail at a padded minimap sample would mix
+   *  the squadron-centre pose with the wingmen's launch poses and flip the
+   *  wedge layout (measured on the reference capture: 14 of 64 multi-member
+   *  squadrons changed group size). */
+  planeLaunchPoses: Map<number, { x: number; z: number }>;
+  /** Set while the recorded/original camera is the APPLIED view
+   *  (HolographicMap's originalView). The aircraft wedge then hangs on each
+   *  formation's RECORDED anchor with its recorded heading (and the
+   *  recorder camera's altitude) instead of the synthetic patrol orbit: the
+   *  recorded camera framed the REAL formation, so the orbit left every
+   *  model outside its view — original camera mode showed empty sky (user
+   *  report). Free/follow camera modes keep the orbit placement untouched. */
+  planeRecordedView: boolean;
   /** Capture-zone ring meshes (repainted per frame by cap state). */
   capRings: THREE.Mesh[];
   /** Cap-letter sprites (redrawn with the point ETA while Alt is held). */
@@ -557,6 +573,8 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeMeshes: new Map(),
     squadronStates: null,
     planeFormations: new Map(),
+    planeLaunchPoses: new Map(),
+    planeRecordedView: false,
     capRings: [],
     capLetterSprites: [],
     rangeRingSlots: [],

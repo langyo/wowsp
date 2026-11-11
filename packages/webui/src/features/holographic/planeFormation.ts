@@ -85,7 +85,7 @@ export function formationOffsets(groupCount: number, groupSize: number): { ox: n
 export function inferGrouping(
   entries: { trail: { id: number; samples: SquadronPlane[] } }[],
   sampleAtFn: (
-    tr: { samples: SquadronPlane[] },
+    tr: { id: number; samples: SquadronPlane[] },
     t: number,
   ) => { x: number; z: number } | null | undefined,
 ): { groupSize: number; groupCount: number } {

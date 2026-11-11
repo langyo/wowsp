@@ -62,6 +62,7 @@ function makeCtx(pool: THREE.Object3D[]): MapInternals {
       minimapSquadronAdds: [],
       minimapSquadronMoves: [],
       minimapSquadronRemoves: [],
+      cameraFrames: [],
       operation: false,
       chatMessages: [],
       achievements: [],
@@ -125,6 +126,8 @@ function makeCtx(pool: THREE.Object3D[]): MapInternals {
     planeFormations: new Map([
       [PLANE_ID, { count: 6, groupSize: 1, groupCount: 6, meshes: [] }],
     ]),
+    planeLaunchPoses: new Map(),
+    planeRecordedView: false,
     capRings: [],
     capLetterSprites: [],
     rangeRingSlots: [],
