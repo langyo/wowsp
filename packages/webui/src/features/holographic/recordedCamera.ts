@@ -99,6 +99,53 @@ export function recordedCameraForward(pose: RecordedCameraPose): {
   return { x: _fwd.x, y: _fwd.y, z: _fwd.z };
 }
 
+const _qy = new THREE.Quaternion();
+const _qx = new THREE.Quaternion();
+
+/** Rotate a recorded pose about the SCENE Y axis so the camera's horizontal
+ *  forward is `headingYaw` (the map's yaw convention: scene fwd =
+ *  (sin yaw, ·, −cos yaw)). The recorded pitch/roll survive — the plane
+ *  camera keeps its banking, only the view DIRECTION is locked to the
+ *  aircraft's own heading (user report: the camera did not always face where
+ *  the squadron was actually flying). */
+export function alignPoseHeading(
+  pose: RecordedCameraPose,
+  headingYaw: number,
+): RecordedCameraPose {
+  const f = recordedCameraForward(pose);
+  const camYaw = Math.atan2(f.x, -f.z);
+  let delta = headingYaw - camYaw;
+  // Shortest way round.
+  delta = Math.atan2(Math.sin(delta), Math.cos(delta));
+  if (Math.abs(delta) < 1e-5) return pose;
+  // A positive scene-Y rotation turns the heading yaw DOWN (scene fwd =
+  // (sin yaw, ·, −cos yaw)), so the correction is −delta.
+  _qy.setFromAxisAngle(_Y_AXIS, -delta);
+  _qx.set(pose.qx, pose.qy, pose.qz, pose.qw);
+  const q = _qy.multiply(_qx).normalize();
+  return { ...pose, qx: q.x, qy: q.y, qz: q.z, qw: q.w };
+}
+
+/** Temporary free-look offset (hold-RMB): yaw about the camera's local Y,
+ *  then pitch about its local X. Applied on top of the stamped pose, so
+ *  releasing the button snaps straight back to the recorded view. */
+export function withLookOffset(
+  pose: RecordedCameraPose,
+  yaw: number,
+  pitch: number,
+): RecordedCameraPose {
+  if (!yaw && !pitch) return pose;
+  _qy.setFromAxisAngle(_Y_AXIS, -yaw);
+  _qx.setFromAxisAngle(_X_AXIS, -pitch);
+  _qy.multiply(_qx);
+  const base = new THREE.Quaternion(pose.qx, pose.qy, pose.qz, pose.qw);
+  const q = base.multiply(_qy).normalize();
+  return { ...pose, qx: q.x, qy: q.y, qz: q.z, qw: q.w };
+}
+
+const _Y_AXIS = new THREE.Vector3(0, 1, 0);
+const _X_AXIS = new THREE.Vector3(1, 0, 0);
+
 /** Apply a recorder pose to a three camera (scene mirrors recorded z).
  *  `dolly` pulls the camera BACK along its own view axis without moving the
  *  recorded pose itself — the aircraft placement hangs off the pose, so the

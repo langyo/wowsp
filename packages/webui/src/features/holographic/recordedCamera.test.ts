@@ -9,9 +9,11 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import type { CameraSample } from "@/api";
 import {
+  alignPoseHeading,
   applyRecordedCamera,
   cameraPoseAt,
   recordedCameraForward,
+  withLookOffset,
 } from "./recordedCamera";
 
 const frame = (
@@ -113,6 +115,29 @@ describe("recordedCameraForward / applyRecordedCamera", () => {
     applyRecordedCamera(cam as unknown as THREE.PerspectiveCamera, pose);
     expect(cam.position.toArray()).toEqual([1, 2, -3]);
     expect(cam.fov).toBeCloseTo(90);
+  });
+
+  it("locks the pose's horizontal forward to the aircraft heading", () => {
+    // Identity rotation → the camera looks down scene −Z, i.e. heading yaw 0
+    // (scene fwd = (sin yaw, ·, −cos yaw)). Aligning to a +90° heading must
+    // rotate the view a quarter turn about the scene Y axis, keeping pitch.
+    const pose = cameraPoseAt([frame(10, 3, 4, 5)], 10)!;
+    const f0 = recordedCameraForward(pose);
+    expect(Math.atan2(f0.x, -f0.z)).toBeCloseTo(0);
+    const aligned = alignPoseHeading(pose, Math.PI / 2);
+    const f1 = recordedCameraForward(aligned);
+    expect(Math.atan2(f1.x, -f1.z)).toBeCloseTo(Math.PI / 2);
+    // A pose already facing the heading is returned untouched.
+    expect(alignPoseHeading(aligned, Math.PI / 2)).toBe(aligned);
+  });
+
+  it("applies a temporary look offset on top of the pose", () => {
+    const pose = cameraPoseAt([frame(10, 0, 0, 0)], 10)!;
+    const looked = withLookOffset(pose, Math.PI / 4, 0);
+    const f = recordedCameraForward(looked);
+    expect(Math.atan2(f.x, -f.z)).toBeCloseTo(Math.PI / 4);
+    // Zero offset is a no-op, so releasing the button restores the pose.
+    expect(withLookOffset(pose, 0, 0)).toBe(pose);
   });
 
   it("dollies back along the view axis without moving the recorded pose", () => {

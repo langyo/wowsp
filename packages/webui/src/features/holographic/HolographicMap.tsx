@@ -79,7 +79,12 @@ import { loadSquadronStates } from "./squadronStatesLoader";
 import type { SquadronStateEvents } from "@/api";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
-import { applyRecordedCamera, cameraPoseAt } from "./recordedCamera";
+import {
+  alignPoseHeading,
+  applyRecordedCamera,
+  cameraPoseAt,
+  withLookOffset,
+} from "./recordedCamera";
 import { activeWards, planeSmoothPosAt, torpedoPosAt } from "./minimapFx";
 import {
   pickMinimapTarget,
@@ -569,6 +574,7 @@ export default defineComponent({
       originalView.value = m === "original";
       if (m !== "follow") {
         endFreeLook();
+      endRecordedLook();
         // Free/original modes keep the stock right-drag pan; only following
         // an actual ship repurposes RMB as the free-look orbit (selectShip
         // flips the mapping once a target exists). The chase zoom clamp
@@ -710,6 +716,43 @@ export default defineComponent({
     // stays anchored to it) and stops hard-setting the camera pose; on
     // release the chase view snaps back immediately.
     const freeLook = ref(false);
+    // Hold-RMB free look INSIDE the recorded/original camera: the pose is
+    // stamped from the 0x25 stream every frame, so the look is a yaw/pitch
+    // offset on top of it that resets the moment the button releases (the
+    // recorded view is never permanently hijacked).
+    let recordedLookYaw = 0;
+    let recordedLookPitch = 0;
+    let recordedLookPrev: { x: number; y: number } | null = null;
+    function endRecordedLook(): void {
+      if (!recordedLookPrev) return;
+      recordedLookPrev = null;
+      recordedLookYaw = 0;
+      recordedLookPitch = 0;
+      window.removeEventListener("pointermove", onRecordedLookMove);
+      window.removeEventListener("pointerup", onRecordedLookUp);
+      window.removeEventListener("pointercancel", onRecordedLookUp);
+      window.removeEventListener("blur", onRecordedLookUp);
+      api.value?.requestRender();
+    }
+    const onRecordedLookUp = (e: Event): void => {
+      if (e.type === "pointerup" && (e as PointerEvent).button !== 2) return;
+      endRecordedLook();
+    };
+    const onRecordedLookMove = (e: PointerEvent): void => {
+      if (!recordedLookPrev) {
+        recordedLookPrev = { x: e.clientX, y: e.clientY };
+        return;
+      }
+      const dx = e.clientX - recordedLookPrev.x;
+      const dy = e.clientY - recordedLookPrev.y;
+      recordedLookPrev = { x: e.clientX, y: e.clientY };
+      recordedLookYaw -= dx * 0.004;
+      recordedLookPitch = Math.max(
+        -1.2,
+        Math.min(1.2, recordedLookPitch - dy * 0.004),
+      );
+      api.value?.requestRender();
+    };
     function endFreeLook(): void {
       if (!freeLook.value) return;
       freeLook.value = false;
@@ -725,6 +768,7 @@ export default defineComponent({
     const onFreeLookUp = (e: Event): void => {
       if (e.type === "pointerup" && (e as PointerEvent).button !== 2) return;
       endFreeLook();
+      endRecordedLook();
     };
     // 2D minimap enlarged overlay state.
     const minimapZoom = ref(props.initialMinimapZoom);
@@ -1900,6 +1944,7 @@ export default defineComponent({
       // Entering/leaving the recorded view starts from the stream's own
       // framing again (the wheel dolly is a per-view adjustment).
       recordedDolly = 0;
+      endRecordedLook();
       if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
       api.value?.requestRender();
     });
@@ -2512,8 +2557,21 @@ export default defineComponent({
       // lerp, rotation slerps; before the FIRST frame this clamps to
       // frame 0 (a pre-start playhead used to jump to the end-of-match
       // pose), and past the end it clamps to the final frame.
-      const pose = cameraPoseAt(props.cameraFrames, t);
-      if (pose) applyRecordedCamera(cam, pose, recordedDolly);
+      let pose = cameraPoseAt(props.cameraFrames, t);
+      if (pose) {
+        // Inside a recorded PLANE-camera segment the view is locked to the
+        // aircraft's own heading (markerUpdate publishes it): the recorder's
+        // camera could be looking sideways, so it did not reliably face where
+        // the squadron was flying (user report). Pitch/roll stay recorded.
+        if (ctx.planeLensActive && ctx.planeLensHeading != null) {
+          pose = alignPoseHeading(pose, ctx.planeLensHeading);
+        }
+        // Held-RMB free look on top; releasing snaps back to the recorded pose.
+        if (recordedLookYaw || recordedLookPitch) {
+          pose = withLookOffset(pose, recordedLookYaw, recordedLookPitch);
+        }
+        applyRecordedCamera(cam, pose, recordedDolly);
+      }
     }
 
     /** Shared follow-target switch used by marker clicks, the camera menu
@@ -2878,6 +2936,7 @@ export default defineComponent({
     onBeforeUnmount(() => {
       mapTornDown = true;
       endFreeLook();
+      endRecordedLook();
       stopWaterThemeWatch();
       if (tipHideTimer != null) {
         window.clearTimeout(tipHideTimer);
@@ -2945,6 +3004,16 @@ export default defineComponent({
               window.addEventListener("pointerup", onFreeLookUp);
               window.addEventListener("pointercancel", onFreeLookUp);
               window.addEventListener("blur", onFreeLookUp);
+              return;
+            }
+            if (e.button === 2 && cameraMode.value === "original") {
+              // Hold-RMB free look INSIDE the recorded camera (the pose is
+              // re-stamped from the 0x25 stream when the button releases).
+              recordedLookPrev = { x: e.clientX, y: e.clientY };
+              window.addEventListener("pointermove", onRecordedLookMove);
+              window.addEventListener("pointerup", onRecordedLookUp);
+              window.addEventListener("pointercancel", onRecordedLookUp);
+              window.addEventListener("blur", onRecordedLookUp);
               return;
             }
             if (e.button === 0) _downPt = { x: e.clientX, y: e.clientY };
