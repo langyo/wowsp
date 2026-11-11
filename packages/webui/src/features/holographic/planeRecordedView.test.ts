@@ -262,7 +262,7 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     for (const m of pool.slice(0, 3)) expect(m.position.y).toBeLessThan(60);
     // Heading = the anchor's recorded yaw, through the plane airframe
     // convention (π − yaw + π), shared by the whole wedge.
-    expect(pool[0].rotation.y).toBeCloseTo(2 * Math.PI - Math.PI / 2);
+    expect(pool[0].rotation.y).toBeCloseTo(Math.PI - Math.PI / 2);
     expect(pool[1].rotation.y).toBe(pool[0].rotation.y);
     expect(pool[2].rotation.y).toBe(pool[0].rotation.y);
     // Surplus slots past the live count stay dark.
@@ -283,23 +283,26 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     ctx.planeFormations = new Map([
       [PLANE_ID, { count: 3, groupSize: 1, groupCount: 3, meshes: [] }],
     ]);
+    // Only the recorder's own squadron rides the recorded camera (see the
+    // placement tests) — this is the altitude it takes from the stream.
+    ctx.planeRoleById.set(PLANE_ID, "self");
     // Two frames: the LAST one at/before the playhead wins (16.2, not 30).
     ctx.props.cameraFrames = [cameraFrame(5, 30), cameraFrame(12, 16.2)];
     ctx.planeRecordedView = true;
     updateMarkersAt(ctx, 15);
     expect(pool.filter((m) => m.visible)).toHaveLength(3);
-    // yBase = 16.2 → the recorded wedge's −2 / 0 / +2 alternation.
+    // yBase = max(2, 16.2 + 0·dist) → the recorded wedge's −2 / 0 / +2.
     expect(pool[0].position.y).toBeCloseTo(14.2);
     expect(pool[1].position.y).toBeCloseTo(16.2);
     expect(pool[2].position.y).toBeCloseTo(18.2);
   });
 
-  it("hangs the wedge AHEAD of the recorded lens with the pad clearance", () => {
-    // User report: the plane camera showed the aircraft as shattered red
+  it("hangs ONLY the recorder's own wedge ahead of the recorded lens", () => {
+    // User report: the plane camera showed the aircraft as shattered
     // triangles and twitched. The recorder flew a PLANE camera, so its
     // centre track sits ~at the lens; placing the wedge AT the anchor put
-    // the camera inside the models. The wedge now hangs on the interpolated
-    // view axis, nearest slot RECORDED_PLANE_PAD units out.
+    // the camera inside the models. The recorder's OWN squadron now hangs on
+    // the interpolated view axis, nearest slot RECORDED_PLANE_PAD units out.
     const pool = poolOf(5);
     const ctx = makeCtx();
     ctx.planeTrails = [anchorTrail(Math.PI / 2, 20)];
@@ -307,6 +310,7 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     ctx.planeFormations = new Map([
       [PLANE_ID, { count: 5, groupSize: 1, groupCount: 5, meshes: [] }],
     ]);
+    ctx.planeRoleById.set(PLANE_ID, "self");
     ctx.squadronStates = {
       planesHealth: [{ time: 12, planeId: PLANE_ID, packed: packed(5) }],
     } as MapInternals["squadronStates"];
@@ -321,22 +325,26 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     for (const m of visible) {
       // Ahead of the lens (scene −Z side) and clear of the near plane.
       expect(m.position.z).toBeLessThan(cam.z);
-      expect(cam.distanceTo(m.position)).toBeGreaterThan(34 - 1e-6);
+      expect(cam.distanceTo(m.position)).toBeGreaterThan(80 - 1e-6);
       // The wedge stays centred on the view axis.
       expect(Math.abs(m.position.x - cam.x)).toBeLessThan(40);
       expect(Math.abs(m.position.y - cam.y)).toBeLessThan(40);
     }
-    // Heading = the camera's view axis. Identity rotation looks down scene
-    // −Z and the placement's fwd is a SCENE direction ((sin yaw, −cos yaw)),
-    // so yaw = atan2(0, 1) = 0 → the airframe convention writes 2π: the
-    // wedge flies AWAY from the lens.
-    expect(normalizeAngle(visible[0].rotation.y)).toBeCloseTo(0);
+    // Heading = the squadron's RECORDED direction (anchor yaw π/2), NOT the
+    // camera axis: a chase camera turns and banks independently, so a
+    // camera-locked heading made the formation look pasted to the lens.
+    // Airframe convention: the nose sits at local +Z, so rotation.y = π − yaw
+    // = π − π/2 = π/2 (the old extra π flew the planes tail-first).
+    expect(normalizeAngle(visible[0].rotation.y)).toBeCloseTo(Math.PI / 2);
     expect(visible[1].rotation.y).toBe(visible[0].rotation.y);
   });
 
-  it("turns the wedge to face away from a camera looking along scene +Z", () => {
-    // The z-mirror trap: a yaw taken from the WORLD-frame conversion would
-    // point the formation back at the lens here (0° instead of 180°).
+  it("keeps other squadrons on their recorded anchors (no pile at the lens)", () => {
+    // Every formation used to be hung ahead of the lens, so own white, ally
+    // green and enemy red squadrons all stacked into the same spot (user
+    // report: mixed-colour aircraft glued in front of the camera). Only the
+    // recorder's own squadron rides the lens; the rest keep their real
+    // recorded positions.
     const pool = poolOf(2);
     const ctx = makeCtx();
     ctx.planeTrails = [anchorTrail(Math.PI / 2, 20)];
@@ -344,32 +352,24 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     ctx.planeFormations = new Map([
       [PLANE_ID, { count: 2, groupSize: 1, groupCount: 2, meshes: [] }],
     ]);
-    // 180° about +Y: the camera looks along scene +Z.
-    const q = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      Math.PI,
-    );
-    ctx.props.cameraFrames = [
-      {
-        ...cameraFrame(5, 16.2),
-        rotX: q.x,
-        rotY: q.y,
-        rotZ: q.z,
-        rotW: q.w,
-      },
-    ];
+    ctx.planeRoleById.set(PLANE_ID, "enemy");
+    ctx.props.cameraFrames = [cameraFrame(5, 16.2)];
     ctx.planeRecordedView = true;
     updateMarkersAt(ctx, 15);
     const cam = new THREE.Vector3(193.04, 16.2, 287.27);
+    // Anchor world (100, −50) → scene (100, ·, 50): far from the lens axis.
     for (const m of pool) {
-      // Ahead = scene +Z now.
-      expect(m.position.z).toBeGreaterThan(cam.z + 30);
+      expect(m.position.z).toBeCloseTo(50, 5);
+      expect(Math.abs(m.position.x - 100)).toBeLessThan(40);
+      expect(m.position.distanceTo(cam)).toBeGreaterThan(150);
     }
-    // yaw = atan2(0, −1) = π → the airframe convention writes π.
-    expect(normalizeAngle(pool[0].rotation.y)).toBeCloseTo(Math.PI);
+    // Its heading is still the recorded direction.
+    expect(normalizeAngle(pool[0].rotation.y)).toBeCloseTo(Math.PI / 2);
   });
 
-  it("follows the camera's view axis when the recorder looked sideways", () => {
+  it("keeps the recorded heading when the recorder looked sideways", () => {
+    // The formation's nose comes from its own recorded track; the camera
+    // rotation only decides WHERE the wedge hangs (ahead of the lens).
     const pool = poolOf(2);
     const ctx = makeCtx();
     ctx.planeTrails = [anchorTrail(Math.PI / 2, 20)];
@@ -377,6 +377,7 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     ctx.planeFormations = new Map([
       [PLANE_ID, { count: 2, groupSize: 1, groupCount: 2, meshes: [] }],
     ]);
+    ctx.planeRoleById.set(PLANE_ID, "self");
     // Rotation about +Y by −90° → the camera looks along scene +X.
     const q = new THREE.Quaternion().setFromAxisAngle(
       new THREE.Vector3(0, 1, 0),
@@ -395,10 +396,12 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     updateMarkersAt(ctx, 15);
     const cam = new THREE.Vector3(193.04, 16.2, 287.27);
     for (const m of pool) {
-      // The view axis is scene +X now: ahead means larger scene x, and the
-      // wedge must not slide off along z.
-      expect(m.position.x).toBeGreaterThan(cam.x + 30);
+      // The view axis is scene +X now: the wedge hangs ahead along +X and
+      // must not slide off along z.
+      expect(m.position.x).toBeGreaterThan(cam.x + 60);
       expect(Math.abs(m.position.z - cam.z)).toBeLessThan(40);
+      // Heading unchanged: still the recorded π/2.
+      expect(normalizeAngle(m.rotation.y)).toBeCloseTo(Math.PI / 2);
     }
   });
 
@@ -470,7 +473,7 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     const yaw170 = Math.atan2(200 - 193.55, 300 - 289.4);
     const yawAt147 = yaw146 + (yaw170 - yaw146) * f;
     for (const m of pool) {
-      expect(m.rotation.y).toBeCloseTo(2 * Math.PI - yawAt147);
+      expect(m.rotation.y).toBeCloseTo(Math.PI - yawAt147);
     }
     // One shared heading for the whole wedge (no per-slot poses anymore).
     expect(pool[1].rotation.y).toBe(pool[0].rotation.y);
@@ -553,7 +556,7 @@ describe("free/follow camera keeps the synthetic patrol orbit", () => {
     // branch leaked into the orbit path).
     expect(pool[1].rotation.y).toBe(pool[0].rotation.y);
     expect(pool[2].rotation.y).toBe(pool[0].rotation.y);
-    expect(pool[0].rotation.y).not.toBeCloseTo(2 * Math.PI - Math.PI / 2);
+    expect(pool[0].rotation.y).not.toBeCloseTo(Math.PI - Math.PI / 2);
     // The R=50 orbit keeps the wedge away from the recorded anchor pose.
     const anchorDist = Math.hypot(pool[0].position.x - 100, pool[0].position.z - 50);
     expect(anchorDist).toBeGreaterThan(20);

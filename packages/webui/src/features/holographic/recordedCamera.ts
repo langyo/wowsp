@@ -99,7 +99,11 @@ export function recordedCameraForward(pose: RecordedCameraPose): {
   return { x: _fwd.x, y: _fwd.y, z: _fwd.z };
 }
 
-/** Apply a recorder pose to a three camera (scene mirrors recorded z). */
+/** Apply a recorder pose to a three camera (scene mirrors recorded z).
+ *  `dolly` pulls the camera BACK along its own view axis without moving the
+ *  recorded pose itself — the aircraft placement hangs off the pose, so the
+ *  wheel zoom changes how far the squadron reads rather than dragging it
+ *  along (the in-game plane camera zooms the same way). */
 export function applyRecordedCamera(
   cam: {
     position: { set(x: number, y: number, z: number): void };
@@ -108,8 +112,18 @@ export function applyRecordedCamera(
     updateProjectionMatrix(): void;
   },
   pose: RecordedCameraPose,
+  dolly = 0,
 ): void {
-  cam.position.set(pose.x, pose.y, pose.z);
+  if (dolly) {
+    const f = recordedCameraForward(pose);
+    cam.position.set(
+      pose.x - f.x * dolly,
+      pose.y - f.y * dolly,
+      pose.z - f.z * dolly,
+    );
+  } else {
+    cam.position.set(pose.x, pose.y, pose.z);
+  }
   cam.quaternion.set(pose.qx, pose.qy, pose.qz, pose.qw);
   cam.fov = (pose.fovRad * 180) / Math.PI;
   cam.updateProjectionMatrix();

@@ -512,6 +512,16 @@ export default defineComponent({
     let chaseSmooth: ChaseSmoothState | null = null;
     /** A wheel/pinch landed since the last adoption. */
     let dollySeen = false;
+    // ── Recorded-camera zoom (the plane camera's wheel dolly) ──────────
+    // The original/original-camera view stamps the decoded 0x25 pose every
+    // frame, so OrbitControls cannot dolly it. This shifts the camera back
+    // along the recorded view axis instead: positive = pull back (the
+    // squadron reads farther away), negative = move in. The AIRCRAFT
+    // placement hangs off the pose, not the camera, so zooming never drags
+    // the formation along (see markerUpdate's RECORDED_PLANE_PAD).
+    const RECORDED_DOLLY_MIN = -40;
+    const RECORDED_DOLLY_MAX = 600;
+    let recordedDolly = 0;
     // The orbit radius bounds in force when follow began (fitCamera's
     // map-sized clamp); restored when follow ends so the free camera keeps
     // its zoom range. followSelected captures it lazily — the mode can flip
@@ -527,7 +537,22 @@ export default defineComponent({
     watch(api, (a, _prev, onCleanup) => {
       if (!a) return;
       const canvas = a.renderer.domElement;
-      const markDolly = (): void => { dollySeen = true; };
+      const markDolly = (e: WheelEvent): void => {
+        dollySeen = true;
+        // Recorded/original camera: zoom by dollying along the recorded
+        // view axis (OrbitControls is disabled in that mode, so the wheel
+        // is free). The step grows with the distance so a notch feels the
+        // same near and far.
+        if (!originalView.value) return;
+        recordedDolly = Math.max(
+          RECORDED_DOLLY_MIN,
+          Math.min(
+            RECORDED_DOLLY_MAX,
+            recordedDolly + Math.sign(e.deltaY) * (24 + Math.abs(recordedDolly) * 0.2),
+          ),
+        );
+        api.value?.requestRender();
+      };
       const markPinch = (e: TouchEvent): void => {
         if (e.touches.length >= 2) dollySeen = true;
       };
@@ -1868,6 +1893,9 @@ export default defineComponent({
     ctx.planeRecordedView = originalView.value;
     watch(originalView, (on) => {
       ctx.planeRecordedView = on;
+      // Entering/leaving the recorded view starts from the stream's own
+      // framing again (the wheel dolly is a per-view adjustment).
+      recordedDolly = 0;
       if (ctx.shipMarkers.length > 0) updateMarkersAt(ctx, current.value);
       api.value?.requestRender();
     });
@@ -2462,7 +2490,7 @@ export default defineComponent({
       // frame 0 (a pre-start playhead used to jump to the end-of-match
       // pose), and past the end it clamps to the final frame.
       const pose = cameraPoseAt(props.cameraFrames, t);
-      if (pose) applyRecordedCamera(cam, pose);
+      if (pose) applyRecordedCamera(cam, pose, recordedDolly);
     }
 
     /** Shared follow-target switch used by marker clicks, the camera menu

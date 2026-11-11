@@ -70,12 +70,19 @@ export async function buildPropMarker(opts: BuildPropOpts): Promise<THREE.Group>
   const center = box.getCenter(new THREE.Vector3());
 
   // Tint every mesh with a flat emissive-less material (matches the existing
-  // battle-effect style: bright, depth-write off).
+  // battle-effect style: bright). Shells/torpedoes stay translucent with
+  // depth-write OFF; a CLOSED SOLID model (aircraft) must be opaque — with
+  // transparent+depthWrite:false every triangle is blended in buffer order,
+  // so the hull's own overlapping faces show through as patchy holes and
+  // stray shards (user report: "broken triangles", the plane art looked
+  // shattered). Callers ask for that by passing opacity >= 1.
+  const opacity = opts.opacity ?? 0.95;
+  const opaque = opacity >= 1;
   const mat = new THREE.MeshBasicMaterial({
     color: opts.color,
-    transparent: true,
-    opacity: opts.opacity ?? 0.95,
-    depthWrite: false,
+    transparent: !opaque,
+    opacity,
+    depthWrite: opaque,
   });
   const meshes: THREE.Mesh[] = [];
   model.traverse((child) => {
