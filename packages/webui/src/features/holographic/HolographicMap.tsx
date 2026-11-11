@@ -597,6 +597,7 @@ const RECORDED_DOLLY_MIN = -40;
         }
         selectedEntityId.value = null;
         followAircraft.value = false;
+        lastAircraftHold = null;
         followFraming = followFramingCleared(followFraming);
       } else {
         // Entering the chase: forget wheel events that belonged to the free
@@ -715,6 +716,7 @@ const RECORDED_DOLLY_MIN = -40;
     watch(selectedEntityId, (id) => {
       if (id != null) return;
       followAircraft.value = false;
+      lastAircraftHold = null;
       followFraming = followFramingCleared(followFraming);
       if (cameraMode.value === "follow") cameraMode.value = "free";
     });
@@ -732,6 +734,11 @@ const RECORDED_DOLLY_MIN = -40;
      *  there; null = no active lens (re-seeded from the next published
      *  heading). */
     let lensHeadingSmooth: number | null = null;
+    /** Last known follow-aircraft pose: while following planes, a dead or
+     *  recalled sortie HOLDS the camera here instead of snapping back to the
+     *  carrier hull, until the next sortie launches. Cleared on follow
+     *  exits / target switches. */
+    let lastAircraftHold: { x: number; y: number; z: number; yaw: number } | null = null;
     let recordedLookPitch = 0;
     let recordedLookPrev: { x: number; y: number } | null = null;
     function endRecordedLook(): void {
@@ -2458,9 +2465,20 @@ const RECORDED_DOLLY_MIN = -40;
       let pos: THREE.Vector3;
       let yaw: number;
       if (aircraft) {
+        // Remember the pose so a dead/recalled sortie can HOLD the view
+        // (see the hold branch below).
+        lastAircraftHold = aircraft;
         _followPos.set(aircraft.x, aircraft.y, aircraft.z);
         pos = _followPos;
         yaw = aircraft.yaw;
+      } else if (followAircraft.value && lastAircraftHold) {
+        // Squadron returned home / wiped out: HOLD the camera on the last
+        // known aircraft pose instead of snapping back to the carrier hull —
+        // the view returns to a launch only when the carrier puts the next
+        // sortie in the air (activeSquadronOf resumes above; user request).
+        _followPos.set(lastAircraftHold.x, lastAircraftHold.y, lastAircraftHold.z);
+        pos = _followPos;
+        yaw = lastAircraftHold.yaw;
       } else {
         const marker = ctx.shipMarkers.find((m) => m.userData.entityId === id);
         if (marker && marker.visible) {
@@ -2832,6 +2850,7 @@ const RECORDED_DOLLY_MIN = -40;
         // instead of carrying a stale target into the next battle.
         selectedEntityId.value = null;
         followAircraft.value = false;
+        lastAircraftHold = null;
         followFraming = followFramingCleared(followFraming);
         // A new replay is a new world — the damped pivot must not glide
         // from the previous battle's last pose onto this one's.
