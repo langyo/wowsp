@@ -245,7 +245,12 @@ export interface TorpedoMeshState {
 /** planeId → formation render state: the GameParams squadron size, the
  *  inferred group layout and the per-plane model instances. */
 export interface PlaneFormationState {
+  /** Planes actually LAUNCHED (SquadronCreate.numPlanes). */
   count: number;
+  /** The wing's FULL strength — the hangar total (SquadronCreate.
+   *  totalNumPlanes), which is also the HUD's denominator and the panel's
+   *  slot count: a partial launch reads "10 / 12" with two dead cells. */
+  full?: number;
   groupSize: number;
   groupCount: number;
   meshes: THREE.Object3D[];
@@ -434,6 +439,10 @@ export interface MapInternals extends MapInternalsDeps {
    *  synthetic orbit swings them around the anchor (user report: the
    *  aircraft showed no labels next to them). */
   planeWedge: Map<number, { x: number; y: number; z: number }>;
+  /** planeId → smoothed roll (radians) the models bank into a turn with.
+   *  Kept on the ctx so the easing carries across ticks instead of
+   *  recomputing a hard snap from one sample pair (markerUpdate). */
+  planeBank: Map<number, number>;
   /** True while the recorded PLANE-camera segment has picked the formation
    *  that rides the lens (markerUpdate). The applied camera uses the
    *  formation heading below to face the aircraft's own forward instead of
@@ -614,6 +623,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
     planeWedge: new Map(),
+    planeBank: new Map(),
     planeLabelPicks: new Map(),
     followAircraftId: null,
     planeLensActive: false,

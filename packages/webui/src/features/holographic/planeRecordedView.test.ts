@@ -159,6 +159,7 @@ function makeCtx(): MapInternals {
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
     planeWedge: new Map(),
+    planeBank: new Map(),
     planeLabelPicks: new Map(),
     planeLensActive: false,
     planeLensHeading: null,
@@ -246,24 +247,24 @@ describe("recorded/original camera view hangs the wedge on the recorded anchor",
     } as MapInternals["squadronStates"];
     ctx.planeRecordedView = true;
     updateMarkersAt(ctx, 15);
-    // Layout math is the ring: 5 single-plane groups evenly on a 16-radius
-    // circle — (0,−16) (15.217,−4.944) (9.404,12.944) (−9.404,12.944)
-    // (−15.217,−4.944) — centroid (0,0); heading π/2 → fwd (+X), right (+Z),
-    // so the placement swaps (offset.x, offset.z) into (world x, world z).
+    // Layout math is the TRIANGULAR ARRAY: 5 single-plane groups as
+    // rank 0 = (0,0), rank 1 = (∓13,−22), rank 2 = (∓13,−44) — centroid
+    // (0,−26.4); heading π/2 → fwd (+X), right (+Z), so the placement maps
+    // (offset.x, offset.z) into (world z, world x).
     // Recorded view: centre = anchor (100, −50), yBase = max(0, 16) = 16.
     expect(pool.filter((m) => m.visible)).toHaveLength(3);
-    // Slot 0: group 0 (front of the ring) → centre + (+16, 0).
-    expect(pool[0].position.x).toBeCloseTo(116);
+    // Slot 0: the lead group → centre + (26.4 along fwd, 0 lateral).
+    expect(pool[0].position.x).toBeCloseTo(126.4);
     expect(pool[0].position.y).toBeCloseTo(14);
     expect(pool[0].position.z).toBeCloseTo(50);
-    // Slot 1: group 1 (72°) → centre + (4.944, 15.217).
-    expect(pool[1].position.x).toBeCloseTo(104.944);
+    // Slot 1: rank 1 left → centre + (4.4 along fwd, −13 lateral).
+    expect(pool[1].position.x).toBeCloseTo(104.4);
     expect(pool[1].position.y).toBeCloseTo(16);
-    expect(pool[1].position.z).toBeCloseTo(65.217);
-    // Slot 2: group 2 (144°) → centre + (−12.944, 9.404).
-    expect(pool[2].position.x).toBeCloseTo(87.056);
+    expect(pool[1].position.z).toBeCloseTo(37);
+    // Slot 2: rank 1 right → centre + (4.4 along fwd, +13 lateral).
+    expect(pool[2].position.x).toBeCloseTo(104.4);
     expect(pool[2].position.y).toBeCloseTo(18);
-    expect(pool[2].position.z).toBeCloseTo(59.404);
+    expect(pool[2].position.z).toBeCloseTo(63);
     // Recorded altitude is NOT lifted to the 60 m patrol floor.
     for (const m of pool.slice(0, 3)) expect(m.position.y).toBeLessThan(60);
     // Heading = the anchor's recorded yaw, through the plane airframe

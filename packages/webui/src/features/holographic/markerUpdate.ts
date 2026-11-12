@@ -12,7 +12,7 @@ import { useEncyclopediaStore } from "@/stores/encyclopedia";
 import { useLanguage } from "@/i18n/useLanguage";
 import { t as i18nT } from "@/i18n";
 import achievementNamesRaw from "@/data/achievement_names.json";
-import { sampleAt, hpAtTime, angleDiff, UNSEEN_GAP_S } from "./trajectoryMath";
+import { sampleAt, hpAtTime, angleDiff, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { SCENE_THEMES, scenePalette } from "./useThreeScene";
 import { clampXZ } from "./sceneUtils";
 import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
@@ -27,7 +27,12 @@ import { shipOfflineEntry, shipNameFromOfflineDb, shipNameFromModelDb } from "./
 import { isAiName, isAiSinkVictim, isScriptedUnitName } from "@/utils/aiNames";
 import { sceneMapRect } from "./mapInternals";
 import { updateCapsAndScore } from "./capSimulator";
-import { formationOffsets, planeTrailExpiry } from "./planeFormation";
+import {
+  bankForTurnRate,
+  formationOffsets,
+  headingRate,
+  planeTrailExpiry,
+} from "./planeFormation";
 import { updateStormZone } from "./weatherScene";
 import { syncMoveAdvisories } from "./moveAdvisories";
 import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
@@ -678,6 +683,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     // ride renders the models 80 units ahead of the camera and the synthetic
     // orbit swings them around the anchor — the sample is not where they are).
     ctx.planeWedge.clear();
+    // The bank map only carries the SMOOTHING across ticks; formations that
+    // left the scene must not keep a stale roll, so drop ids not rendered
+    // this pass (rebuilt below).
+    const bankSeen = new Set<number>();
     const formationAnchor = ctx.planeAnchorScratch;
     formationAnchor.clear();
     for (const trail of ctx.planeTrails) {
@@ -843,6 +852,29 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const yaw = recorded
         ? anchor.s.yaw
         : Math.atan2(-Math.sin(ang), Math.cos(ang));
+      // Bank INTO the turn: derive the heading rate from the anchor trail
+      // (the recorded samples are the only place the wing's actual turn
+      // shows), then roll the models. The chase camera leans with the turn,
+      // so a flat aircraft beside it read as a bug (2026-11-12 review).
+      // Smoothed per formation so a noisy sample pair cannot snap the roll.
+      const trailSamples = ctx.planeTrails.find(
+        (tr) => tr.id === planeId * 16,
+      )?.samples;
+      let bank = 0;
+      if (trailSamples && trailSamples.length >= 2) {
+        const idx = samplesUpTo(trailSamples, t);
+        const cur = idx > 0 ? trailSamples[idx - 1] : null;
+        const prev = idx > 1 ? trailSamples[idx - 2] : null;
+        const rate =
+          cur && prev ? headingRate(prev.yaw, prev.time, cur.yaw, cur.time) : null;
+        if (rate != null) {
+          const target = bankForTurnRate(rate);
+          const prevBank = ctx.planeBank.get(planeId) ?? 0;
+          bank = prevBank + (target - prevBank) * 0.35;
+          ctx.planeBank.set(planeId, bank);
+          bankSeen.add(planeId);
+        }
+      }
       const fwd = { x: Math.sin(yaw), z: -Math.cos(yaw) };
       const right = { x: Math.cos(yaw), z: Math.sin(yaw) };
       // Orbit CENTRE = the formation's geometric centroid (not the lead
@@ -904,6 +936,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           // counter-rotation lives inside the wrapper and the outer group
           // carries exactly this heading.
           mesh.rotation.y = Math.PI - yaw;
+          // Roll into the turn (see the bank derivation above). Euler order
+          // matters: the yaw must be applied FIRST, so the roll is expressed
+          // around the model's own (already heading-aligned) forward axis —
+          // 'YXZ' does exactly that.
+          mesh.rotation.order = "YXZ";
+          mesh.rotation.z = bank;
         }
         // Park the SURPLUS slots of this still-anchored formation. The pool
         // is sized to the LAUNCH strength (slots never shrink mid-replay),

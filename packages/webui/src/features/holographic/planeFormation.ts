@@ -60,26 +60,92 @@ export function groupInnerOffsets(n: number): { ox: number; oz: number }[] {
   return out;
 }
 
-/** Layout over flight GROUPS: every group sits ON A RING around the
- *  formation centre (group 0 at the FRONT of the ring, then — for 4 groups
- *  — right/back/left; +oz is the nose direction in the placement basis, so
- *  group 0 sits ahead), each flying its own tight V
- *  (user spec: "前后左右各一组、每组一个梯形三机编队"). The old filled
- *  wedge (rows 1,2,3…) scattered the groups into an indistinct blob at
- *  orbit angles. */
+/** Lateral spacing between neighbouring flight groups (scene units). Must
+ *  clear a whole group: the V inside one group spans 2 × w = 9 laterally
+ *  (groupInnerOffsets), and the aircraft model is 4.6 long, so 26 leaves a
+ *  readable channel between groups instead of one braided mass. */
+export const GROUP_COL_LATERAL = 26;
+/** Backward step per rank (scene units). The V's own deepest rank sits
+ *  5.5 × 2 = 11 back (four-plane groups), so 22 keeps consecutive ranks
+ *  visually separate. */
+export const GROUP_RANK_DEPTH = 22;
+
+/** Layout over flight GROUPS: a TRIANGULAR ARRAY (雁阵 / triangle), not a
+ *  ring. Rank 0 holds the lead group on the centreline, rank 1 holds two
+ *  groups left/right of it, rank 2 three, and so on — each rank is centred
+ *  on the formation axis and steps back one GROUP_RANK_DEPTH
+ *  (+oz is the nose direction in the placement basis, so negative oz steps
+ *  back). Every group keeps its own tight V from groupInnerOffsets.
+ *
+ *  The layout used to place the groups ON A RING (sin/cos at radius 16), which
+ *  from any chase angle read as one braided mass — "你这飞机缠绕的跟麻花一样"
+ *  and "编组仍然不明显" (2026-11-12 review). A triangle keeps the groups
+ *  separated along a consistent axis, so the wing reads as a formation from
+ *  the front, the side and above alike. */
 export function formationOffsets(groupCount: number, groupSize: number): { ox: number; oz: number }[] {
   const out: { ox: number; oz: number }[] = [];
   const groups = Math.max(1, groupCount);
-  const ring = 16;
-  for (let g = 0; g < groups; g++) {
-    const th = (2 * Math.PI * g) / groups;
-    const gx = Math.sin(th) * ring;
-    const gz = Math.cos(th) * ring;
-    for (const it of groupInnerOffsets(groupSize)) {
-      out.push({ ox: gx + it.ox, oz: gz + it.oz });
+  let placed = 0;
+  let rank = 0;
+  while (placed < groups) {
+    // Rank r holds up to r + 1 groups, centred on the axis.
+    const inRank = Math.min(rank + 1, groups - placed);
+    const depth = -GROUP_RANK_DEPTH * rank;
+    for (let i = 0; i < inRank; i++) {
+      const lateral = (i - (inRank - 1) / 2) * GROUP_COL_LATERAL;
+      for (const it of groupInnerOffsets(groupSize)) {
+        out.push({ ox: lateral + it.ox, oz: depth + it.oz });
+      }
+      placed++;
     }
+    rank++;
   }
   return out;
+}
+
+/** Shortest signed difference between two headings (radians), in (−π, π].
+ *  Yaw samples wrap at ±π, so a plain subtraction reads a 350°→10° turn as
+ *  −340° and would bank the model the wrong way. */
+export function headingDelta(from: number, to: number): number {
+  let d = (to - from) % (2 * Math.PI);
+  if (d > Math.PI) d -= 2 * Math.PI;
+  if (d <= -Math.PI) d += 2 * Math.PI;
+  return d;
+}
+
+/** Maximum bank (radians) the aircraft rolls into a turn. Real wings bank
+ *  hard, but at marker scale an extreme roll reads as a glitch — 40° keeps
+ *  the turn legible without looking broken. */
+export const PLANE_MAX_BANK = (40 * Math.PI) / 180;
+
+/** Heading rate (rad/s) that saturates the bank: a wing at or above this
+ *  turn rate flies at PLANE_MAX_BANK. */
+export const PLANE_BANK_SATURATION = 0.9;
+
+/** Roll (radians, +left / −right as yaw increases) for a wing turning at
+ *  `rate` rad/s: proportional until PLANE_BANK_SATURATION, then clamped.
+ *  A left turn (positive rate, since yaw grows counter-clockwise seen from
+ *  above) rolls the model LEFT — the wing banks INTO the turn, which is what
+ *  the camera-side lean makes the eye expect (2026-11-12 review: the turn
+ *  leaned the view while the aircraft stayed flat). */
+export function bankForTurnRate(rate: number): number {
+  if (!Number.isFinite(rate)) return 0;
+  const norm = Math.max(-1, Math.min(1, rate / PLANE_BANK_SATURATION));
+  return norm * PLANE_MAX_BANK;
+}
+
+/** Heading rate (rad/s) between two samples, or null when the pair carries
+ *  no usable dt. Used per formation slot to derive the bank. */
+export function headingRate(
+  prevYaw: number | null | undefined,
+  prevT: number | null | undefined,
+  yaw: number | null | undefined,
+  t: number | null | undefined,
+): number | null {
+  if (prevYaw == null || prevT == null || yaw == null || t == null) return null;
+  const dt = t - prevT;
+  if (!(dt > 1e-3)) return null;
+  return headingDelta(prevYaw, yaw) / dt;
 }
 
 /** Planes per flight GROUP, straight off the airframe's GameParams

@@ -623,6 +623,29 @@ describe("chaseStrength (the follow pill's alive / total)", () => {
     });
   });
 
+  it("uses the wing's FULL strength as the denominator (partial launch)", () => {
+    // 10 of 12 launched: the HUD must read 10 / 12 (and the panel twelve
+    // cells with two dead) instead of collapsing to 10 / 10 — 2026-11-12
+    // review: 就算缺编组也得补上，例如满编 12 飞机就得补 2 个灰色的.
+    const trails = [trail(1, [10, 200])];
+    const formations = new Map([[1, { count: 10, full: 12 }]]);
+    const health = [{ time: 10, planeId: 1, packed: packedFull(10) }];
+    expect(chaseStrength(trails, formations, health, noRemoves, 1, 100)).toEqual({
+      alive: 10,
+      total: 12,
+    });
+  });
+
+  it("never reports a total below the launched count", () => {
+    // A decode without the hangar field keeps the launch size as the floor.
+    const trails = [trail(1, [10, 200])];
+    const formations = new Map([[1, { count: 6 }]]);
+    expect(chaseStrength(trails, formations, undefined, noRemoves, 1, 100)).toEqual({
+      alive: 1,
+      total: 6,
+    });
+  });
+
   it("keeps the trail-derived answer on pre-E27 replays", () => {
     const trails = [trail(1, [10, 200]), trail(1, [10, 200], 1)];
     const formations = new Map([[1, { count: 2 }]]);

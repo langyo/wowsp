@@ -267,11 +267,18 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
     // may differ); the GameParams entry stays the last-resort fallback for
     // squadrons the decoded stream never saw.
     const launchOf = new Map<number, number>();
+    // Full wing strength per planeId (the hangar total): the HUD's
+    // denominator and the panel's slot count, so a partial launch keeps its
+    // missing planes as dead cells instead of shrinking the grid
+    // (2026-11-12 review).
+    const fullOf = new Map<number, number>();
     const paramsOf = new Map<number, number>();
     for (const c of ctx.props.squadronCreates) {
       const n = c.numPlanes ?? c.totalNumPlanes ?? 0;
       const prev = launchOf.get(c.planeId) ?? 0;
       if (n > prev) launchOf.set(c.planeId, n);
+      const full = c.totalNumPlanes ?? c.numPlanes ?? 0;
+      if (full > (fullOf.get(c.planeId) ?? 0)) fullOf.set(c.planeId, full);
       if (!paramsOf.has(c.planeId)) paramsOf.set(c.planeId, c.paramsId);
     }
     // Group trails by planeId first.
@@ -289,7 +296,13 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       const typeKey = PLANE_TYPES[String(paramsOf.get(planeId))];
       const count = Math.max(1, launchOf.get(planeId) ?? typeKey?.count ?? 3);
       if (list.length === 0) {
-        ctx.planeFormations.set(planeId, { count, groupSize: 1, groupCount: count, meshes: [] });
+        ctx.planeFormations.set(planeId, {
+          count,
+          full: Math.max(count, fullOf.get(planeId) ?? 0),
+          groupSize: 1,
+          groupCount: count,
+          meshes: [],
+        });
       }
       list.push({ idx, role, count, trail });
     }

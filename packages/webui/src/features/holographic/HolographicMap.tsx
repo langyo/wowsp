@@ -3592,17 +3592,28 @@ const RECORDED_DOLLY_MIN = -40;
               onClick={(e: MouseEvent) => e.stopPropagation()}
             />
           ) : null}
-          {/* In the 2D enlarged view the plaque + stats duplicate what the 3D
-              view shows — hide them so the 2D map owns the screen. */}
-          {!minimapZoom.value && selfCard.value ? (
-            <HoloSelfCard card={selfCard.value} stats={selfStats.value} depth={selfDepth.value} />
-          ) : null}
-          {/* Squadron panel: the chased wing's per-group / per-plane HP
-              bands + engine row, docked directly ABOVE the hull plaque and
-              sharing its width contract (user request: aircraft state
-              belongs in the bottom-left HUD, not floating over the map). */}
-          {!minimapZoom.value && squadronPanelState.value ? (
-            <HoloSquadronPanel state={squadronPanelState.value} />
+          {/* Bottom-left HUD COLUMN: the chased wing's panel sits directly
+              above the hull card, laid out by FLOW so the two can never
+              overlap whatever the plaque row measures (see the stacking
+              contract on __hudcolumn). In the 2D enlarged view the plaque +
+              stats duplicate what the 3D view shows, so the whole block
+              hides and the map owns the screen. */}
+          {!minimapZoom.value && (selfCard.value || squadronPanelState.value) ? (
+            <div class="holo-map__hudcolumn">
+              {/* Squadron panel: the chased wing's per-group / per-plane HP
+                  bands + engine row (user request: aircraft state belongs in
+                  the bottom-left HUD, not floating over the map). */}
+              {squadronPanelState.value ? (
+                <HoloSquadronPanel state={squadronPanelState.value} />
+              ) : null}
+              {selfCard.value ? (
+                <HoloSelfCard
+                  card={selfCard.value}
+                  stats={selfStats.value}
+                  depth={selfDepth.value}
+                />
+              ) : null}
+            </div>
           ) : null}
           {/* Plane-follow pill: rides beside the hull plaque (same band,
               right-aligned to the row's cap — see HoloPlaneFollowCard.scss)
