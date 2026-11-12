@@ -5,7 +5,7 @@
 # the protocol/policy; crates/relay-worker is the wasm entry). Building
 # requires the one-time tool install (see README.md ▶ Deploy):
 #
-#   cargo install worker-build
+#   cargo install worker-build@0.8.7 --locked  # 0.9+ needs worker >= 0.9; relay pins ^0.8
 #
 # then `npx wrangler deploy` / `pnpm --filter @wowsp/pairing-relay deploy`
 # (the Deploy Site workflow does exactly this on every master push
