@@ -401,21 +401,32 @@ export interface PlaneSlotHealth {
 }
 
 /** Group the wing's per-plane bands into its FLIGHT GROUPS for the panel:
- *  `groupSize` planes per group, with the launch strength (`total`)
- *  deciding how many slots each group shows so the silhouette stays put as
- *  planes die. Bands arrive LSB-first for the still-flying planes only, so
- *  the tail slots of the formation read as dead (null). Empty groups (all
- *  slots dead) are dropped — the panel grows narrower as groups are wiped,
- *  matching the in-game widget. */
+ *  `groupSize` planes per group, always ONE SLOT PER LAUNCHED PLANE
+ *  (`total`) so the silhouette stays put as planes die — a 9-plane wing
+ *  reads nine cells at 4/9, not four, and the lost five keep their place as
+ *  DEAD (null) cells instead of the survivors redistributing over a shorter
+ *  row (2026-11-12 report: "不是均分的，而是缺了飞机之后留着被打掉的灰血量条、
+ *  保持满编组模式").
+ *
+ *  Bands arrive LSB-first for the still-flying planes only and a death drops
+ *  the TOP digit, so the live bands fill the FIRST slots and the tail reads
+ *  dead. `total` is the launch strength and stays the slot count even when
+ *  the wire momentarily reports fewer digits; a `bands` array LONGER than
+ *  `total` (a launch count the decode missed) still renders in full.
+ *
+ *  Every group keeps its cells: a wiped group stays on the panel as a row of
+ *  dead slots (the in-game widget keeps the formation's shape too — dropping
+ *  empty groups made the panel shrink and the remaining groups appear to
+ *  re-divide). */
 export function squadronSlotGroups(
   bands: readonly number[],
   groupSize: number,
   total: number,
 ): PlaneSlotHealth[][] {
   const per = Math.max(1, Math.floor(groupSize));
-  // Slot count follows the wing's real size, NOT a rounded-up multiple of the
-  // group size: a 4-plane launch in three-plane groups is one full group plus
-  // a partial one, not two full groups with two phantom dead slots.
+  // Full-strength slot count: the launch size, never a rounded-up multiple of
+  // the group size (a 4-plane launch in three-plane groups is one full group
+  // plus a partial one, not two full groups with two phantom slots).
   const slots = Math.max(bands.length, Math.max(0, Math.floor(total)));
   const flat: PlaneSlotHealth[] = [];
   for (let i = 0; i < slots; i++) {
@@ -424,8 +435,7 @@ export function squadronSlotGroups(
   }
   const groups: PlaneSlotHealth[][] = [];
   for (let i = 0; i < flat.length; i += per) {
-    const group = flat.slice(i, i + per);
-    if (group.some((p) => p.band != null)) groups.push(group);
+    groups.push(flat.slice(i, i + per));
   }
   return groups;
 }

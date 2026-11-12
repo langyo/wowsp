@@ -508,10 +508,20 @@ describe("squadronSlotGroups", () => {
     ]);
   });
 
-  it("drops wiped groups so the panel narrows", () => {
-    // Three groups launched, the middle one gone: only two remain.
-    const groups = squadronSlotGroups([1, 1, 1, 1, 1, 1], 3, 9);
-    expect(groups).toHaveLength(2);
+  it("keeps the full launch grid when whole groups are wiped", () => {
+    // Three groups launched, only two planes' bands left. The panel must
+    // still read NINE cells in three rows (2026-11-12 report: the lost
+    // planes keep their grey cells and the wing stays at full-strength
+    // grouping — "保持满编组模式"), never two rows with the survivors
+    // redistributed over them.
+    const groups = squadronSlotGroups([1, 1], 3, 9);
+    expect(groups).toHaveLength(3);
+    expect(groups.map((g) => g.length)).toEqual([3, 3, 3]);
+    expect(groups.map((g) => g.map((p) => p.band))).toEqual([
+      [1, 1, null],
+      [null, null, null],
+      [null, null, null],
+    ]);
   });
 
   it("keeps a partial group partial instead of padding it to a full one", () => {

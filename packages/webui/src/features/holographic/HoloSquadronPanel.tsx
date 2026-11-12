@@ -36,7 +36,10 @@ export interface HoloSquadronPanelState {
   shipName: string;
   /** One entry per FLIGHT GROUP, in slot order; each holds that group's
    *  planes as HP bands (1 = >3/4, 2 = (1/4, 3/4], 4 = <=1/4, 0/undefined =
-   *  the slot no longer flies). Empty groups are dropped. */
+   *  the slot no longer flies). The panel ALWAYS shows one cell per launched
+   *  plane at the wing's full strength — a 9-plane wing at 4/9 still reads
+   *  nine cells (four filled, five dead) — and every group keeps its row, so
+   *  a wiped group stays visible as dead cells instead of disappearing. */
   groups: PlaneSlotHealth[][];
   /** Planes still flying / launch strength (the caption's numbers). */
   alive: number;
