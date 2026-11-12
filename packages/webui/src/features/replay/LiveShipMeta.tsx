@@ -10,12 +10,18 @@
  * ALLY ROWS ONLY — the ship's notable consumable slots, upgrade count and
  * signal-flag capacity as compact badges.
  *
- * Hovering the strip floats a condensed ship card (teleported to <body>,
- * fixed position): the player's decoded loadout (the PlayerBuildGrid section,
- * ally rows only — the IPC surface never carries enemy builds) followed by
- * the ship's spec groups. A row whose build has not been decoded yet (or a
- * client version the build decoder does not cover) keeps the spec-only card,
- * exactly as before.
+ * Hovering the strip floats a condensed ship card on hikari's HkPopover
+ * (issue #1736's hover-card family — the recipe the holo scorebar's
+ * HoloShipTooltip shares): the popover owns the teleport, the measure-
+ * then-place pass (below-preferred, flip above, clamped — the retired
+ * placeLiveCard's contract), the root DPI zoom's local space, the z slot
+ * and the pop motion. The host keeps only the hover choreography: the arm
+ * delay, the strip↔card travel grace, and the scroll/Escape closes. The
+ * card body carries the player's decoded loadout (the PlayerBuildGrid
+ * section, ally rows only — the IPC surface never carries enemy builds)
+ * followed by the ship's spec groups. A row whose build has not been
+ * decoded yet (or a client version the build decoder does not cover) keeps
+ * the spec-only card, exactly as before.
  *
  * Renders nothing when no database knows the ship: the baked offline DBs
  * first, then the runtime GameParams registrations — a runtime entry
@@ -23,9 +29,9 @@
  * no bake-grade live stats, so the parameter chips stay empty for it
  * (event ships outside both sources still render nothing at all).
  */
-import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, type CSSProperties } from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref } from "vue";
 import { Flag, Wrench } from "@lucide/vue";
-import { HkScrollContainer } from "@celestia-island/hikari";
+import { HkPopover, HkScrollContainer } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
@@ -36,7 +42,6 @@ import {
   nationNameFromDb,
   shipOfflineEntry,
 } from "@/features/holographic/modelLoader";
-import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { runtimeShipEpoch } from "./runtimeShipIdentity";
 import {
   formatShipParams,
@@ -48,24 +53,24 @@ import {
   shipTypeShort,
   tierRoman,
 } from "./shipLiveStats";
-import {
-  LIVE_CARD_BUILD_WIDTH_PX,
-  LIVE_CARD_WIDTH_PX,
-  placeLiveCard,
-} from "./liveCardPlacement";
 import PlayerBuildGrid from "./PlayerBuildGrid";
 import { playerBuildHasContent, type PlayerBuildView } from "./playerBuild";
 import "./LiveShipMeta.scss";
 
+/** Card body width (the retired LIVE_CARD_WIDTH_PX): the spec table wraps
+ *  at this column. */
+const CARD_WIDTH_PX = 360;
+/** Wider body when the card carries the player-build section (four grids
+ *  need the extra room; the retired LIVE_CARD_BUILD_WIDTH_PX). */
+const CARD_BUILD_WIDTH_PX = 460;
+/** Hover-in delay before the card opens (the strip's arm rhythm). */
+const OPEN_DELAY_MS = 220;
+/** Leave grace so the pointer can travel between strip and card. */
+const CLOSE_GRACE_MS = 180;
+
 /** Consumable families worth a row badge, in slot order. */
 function badgeFamilies(load: string[] | undefined): string[] {
   return (load ?? []).filter((f) => isBadgeConsumable(f));
-}
-
-/** Consumed slice of HkScrollContainer's exposed component ref (the ref
- *  yields the exposed handle, not an element — see the flyout card below). */
-interface ScrollHandle {
-  getScrollElement(): HTMLElement | undefined;
 }
 
 /** Parameter chips kept on the inline row: the leading few of the canonical
@@ -125,81 +130,29 @@ export default defineComponent({
     // partial build keeps the card exactly as it was (spec-only).
     const showBuild = computed(() => playerBuildHasContent(props.build));
     /** Card body width — the four build grids need more room than the spec
-     *  card (the measure-then-place pass re-wraps either way). */
+     *  card (HkPopover's panel wraps the content box either way). */
     const cardWidth = computed(() =>
-      showBuild.value ? LIVE_CARD_BUILD_WIDTH_PX : LIVE_CARD_WIDTH_PX,
+      showBuild.value ? CARD_BUILD_WIDTH_PX : CARD_WIDTH_PX,
     );
 
-    // ── Flyout card ────────────────────────────────────────────────────────
+    // ── Flyout card (HkPopover owns the anchored placement) ───────────────
     const flyoutOpen = ref(false);
-    const flyoutPos = ref<CSSProperties>({});
-    // The card teleports to <body> — inside the root DPI zoom's subtree —
-    // so its written left/top paint in the zoomed local space while the
-    // anchor's gBCR and window.innerWidth/innerHeight answer in
-    // root-visual px: placeLiveCard runs entirely in local space, fed the
-    // measured values divided by the applied scale (the hint family's
-    // zoom notes; offsetWidth/offsetHeight are already local).
-    const dpiScale = useAppliedDpiScale();
-    // The card is an HkScrollContainer: a COMPONENT ref — it exposes the
-    // scrolling viewport (the measure-then-place pass below reads its box;
-    // the card's 1px border sits just outside it), not an element.
-    const card = ref<ScrollHandle | null>(null);
+    // The strip element itself is the popover's anchor.
+    const stripEl = ref<HTMLElement | null>(null);
     let showTimer: ReturnType<typeof setTimeout> | null = null;
     let inZone = false;
     let inCard = false;
 
-    function armFlyout(el: HTMLElement) {
+    function armFlyout() {
       inZone = true;
       if (showTimer) clearTimeout(showTimer);
       showTimer = setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        // The row can unmount during the arm delay (roster reshuffle) — a
-        // zero rect would clamp the card into a corner; skip and let the
-        // next hover re-arm instead.
-        if (!r.width && !r.height) return;
-        // Render first (hidden), MEASURE the real box, then place: the
-        // card's height is content-driven (a capped max-height spec table),
-        // and an estimate flips sparse cards into thin air far above the
-        // anchor. The width rides along so height wraps at its final layout.
-        // An already-open card (pointer travelled card → strip) keeps its
-        // layout: measure in place instead of blinking through the hidden
-        // pass again.
-        if (!flyoutOpen.value) {
-          flyoutPos.value = {
-            left: "0px",
-            top: "0px",
-            width: cardWidth.value + "px",
-            visibility: "hidden",
-          };
-          flyoutOpen.value = true;
-        }
-        void nextTick(() => {
-          const viewport = card.value?.getScrollElement();
-          if (!viewport) return;
-          // The strip rect is visual px; placeLiveCard's contract is the
-          // card's zoomed local space — divide the visual inputs (the
-          // offsetWidth/offsetHeight box is already local).
-          const z = dpiScale.value;
-          const { left, top } = placeLiveCard(
-            {
-              left: r.left / z,
-              top: r.top / z,
-              right: r.right / z,
-              bottom: r.bottom / z,
-            },
-            viewport.offsetWidth,
-            viewport.offsetHeight,
-            window.innerWidth / z,
-            window.innerHeight / z,
-          );
-          flyoutPos.value = {
-            left: `${Math.round(left)}px`,
-            top: `${Math.round(top)}px`,
-            width: cardWidth.value + "px",
-            visibility: "visible",
-          };
-        });
-      }, 220);
+        // A row unmounting during the arm delay (roster reshuffle) takes
+        // this component — and its popover — down with it: the unmount
+        // cleanup clears the pending timer, so no detached-anchor guard
+        // is needed here.
+        flyoutOpen.value = true;
+      }, OPEN_DELAY_MS);
     }
     function disarmZone() {
       inZone = false;
@@ -213,7 +166,7 @@ export default defineComponent({
       // Leave a beat so the pointer can travel between strip and card.
       setTimeout(() => {
         if (!inZone && !inCard) flyoutOpen.value = false;
-      }, 180);
+      }, CLOSE_GRACE_MS);
     }
     function onCardEnter() {
       inCard = true;
@@ -223,7 +176,7 @@ export default defineComponent({
       scheduleHide();
     }
     // Scrolling anywhere OUTSIDE the card (the panel body scrolls under a
-    // stationary pointer) detaches a fixed-position card — close instead of
+    // stationary pointer) detaches the anchored card — close instead of
     // drifting. Scrolls inside the card are content browsing and must keep
     // it open, so capture-phase events originating in .live-ship-card (its
     // scroll viewport included, via closest) are ignored.
@@ -306,68 +259,11 @@ export default defineComponent({
         ) : null,
       ];
 
-      const flyout = flyoutOpen.value ? (
-        <Teleport to="body">
-          {/* Combat-card scroller: the card element itself is the hikari
-              container — its own fixed positioning (plus the inline
-              left/top below) wins over the container root's relative, and
-              the overlay track rides the card's right edge. */}
-          <HkScrollContainer
-            ref={card}
-            class="live-ship-card"
-            style={flyoutPos.value}
-            // The hover keep-alive spreads in (the component's props declare
-            // no DOM events; Vue's attr fallthrough still lands both on the
-            // root, covering the overlay track as well).
-            {...{ onMouseenter: onCardEnter, onMouseleave: onCardLeave }}
-          >
-            <div class="live-ship-card__inner">
-              <div class="live-ship-card__head">
-                {tier.value ? <AppTag tone="primary" pill={false}>{tier.value}</AppTag> : null}
-                <BattleIcon type={entry.value?.type ?? ""} variant="plain" size={16} />
-                {typeLabel.value ? (
-                  <span class="live-ship-card__type">{typeLabel.value}</span>
-                ) : null}
-                {nation.value ? (
-                  <NationFlag
-                    nation={nation.value}
-                    label={nationLabel.value}
-                    variant="flag"
-                    size="sm"
-                  />
-                ) : null}
-              </div>
-
-              {showBuild.value && props.build ? <PlayerBuildGrid view={props.build} /> : null}
-
-              {specGroups.value.length ? (
-                <div class="live-ship-card__groups">
-                  {specGroups.value.map(([group, rows]) => (
-                    <div class="live-ship-card__group" key={group}>
-                      <div class="live-ship-card__group-title">{group}</div>
-                      <div class="live-ship-card__rows">
-                        {rows.map(([label, value]) => (
-                          <div class="live-ship-card__row" key={label}>
-                            <span class="live-ship-card__row-label">{label}</span>
-                            <span class="live-ship-card__row-value">{value}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p class="live-ship-card__empty">{t("replay.live.card.noData")}</p>
-              )}
-            </div>
-          </HkScrollContainer>
-        </Teleport>
-      ) : null;
-
       return (
         <span
           class="live-ship-meta"
-          onMouseenter={(e: MouseEvent) => armFlyout(e.currentTarget as HTMLElement)}
+          ref={stripEl}
+          onMouseenter={armFlyout}
           onMouseleave={disarmZone}
         >
           {/* One clipping line: identity + the leading parameter chips. The
@@ -386,7 +282,68 @@ export default defineComponent({
           {badgeEls.length ? (
             <span class="live-ship-meta__badges">{badgeEls}</span>
           ) : null}
-          {flyout}
+          {/* Combat-card scroller: the popover panel carries the card skin;
+              the hikari scroll container fills it (the overlay track rides
+              the card's right edge) and the inner wrapper pins the card's
+              width so the spec table wraps at its column. */}
+          <HkPopover
+            class="live-ship-card"
+            modelValue={flyoutOpen.value}
+            onUpdate:modelValue={(v: boolean) => {
+              if (!v) flyoutOpen.value = false;
+            }}
+            anchorRef={stripEl.value}
+            placement="bottom-start"
+            offset={8}
+            backdrop={false}
+            closeOnBackdrop={false}
+            closeOnEscape={false}
+            glass={false}
+            onMouseenter={onCardEnter}
+            onMouseleave={onCardLeave}
+          >
+            <HkScrollContainer class="live-ship-card__scroll">
+              <div class="live-ship-card__inner" style={{ width: `${cardWidth.value}px` }}>
+                <div class="live-ship-card__head">
+                  {tier.value ? <AppTag tone="primary" pill={false}>{tier.value}</AppTag> : null}
+                  <BattleIcon type={entry.value?.type ?? ""} variant="plain" size={16} />
+                  {typeLabel.value ? (
+                    <span class="live-ship-card__type">{typeLabel.value}</span>
+                  ) : null}
+                  {nation.value ? (
+                    <NationFlag
+                      nation={nation.value}
+                      label={nationLabel.value}
+                      variant="flag"
+                      size="sm"
+                    />
+                  ) : null}
+                </div>
+
+                {showBuild.value && props.build ? <PlayerBuildGrid view={props.build} /> : null}
+
+                {specGroups.value.length ? (
+                  <div class="live-ship-card__groups">
+                    {specGroups.value.map(([group, rows]) => (
+                      <div class="live-ship-card__group" key={group}>
+                        <div class="live-ship-card__group-title">{group}</div>
+                        <div class="live-ship-card__rows">
+                          {rows.map(([label, value]) => (
+                            <div class="live-ship-card__row" key={label}>
+                              <span class="live-ship-card__row-label">{label}</span>
+                              <span class="live-ship-card__row-value">{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p class="live-ship-card__empty">{t("replay.live.card.noData")}</p>
+                )}
+              </div>
+            </HkScrollContainer>
+          </HkPopover>
         </span>
       );
     };

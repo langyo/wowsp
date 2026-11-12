@@ -1,17 +1,22 @@
 /**
- * Tests for the sidebar's plugin-update hint card: the PINNED state
- * (running client + stale probe opens the card on its own and keeps it
- * up, with the stale-stats warning line), the hover rhythm when not
- * pinned, the anchor geometry (right of the game-status card, vertically
- * centered on it), the clickable rows deep-linking each stale plugin's
- * mod-hub page, the busy action's spinner + updating label, and the
- * one-click action driving the all-installs pass, and the minimize
- * button parking the card (the settled-hover reopen debounce, and the
- * park winning over the pin's auto-open until the hover unparks it).
+ * Tests for the sidebar's plugin-update hint card, now hosted by the
+ * shared PinnedAnchorCard (hikari HkPopover underneath, issue #1736's
+ * pinned-card family): the PINNED state (running client + stale probe
+ * opens the card on its own and keeps it up, with the stale-stats
+ * warning line), the hover rhythm when not pinned, the clickable rows
+ * deep-linking each stale plugin's mod-hub page, the busy action's
+ * spinner + updating label, the one-click action driving the
+ * all-installs pass, and the minimize button parking the card (the
+ * settled-hover reopen debounce, and the park winning over the pin's
+ * auto-open until the hover unparks it).
+ *
+ * Anchor geometry (right of the game-status card, vertically centered,
+ * viewport clamps, the root DPI zoom's local space) is HkPopover's own
+ * business now — covered by hikari's anchored/rootzoom suites; the
+ * former geometry tests here retired with the hand-rolled placement.
  *
  * The api module is mocked; the pinia stores are real (their refs are
- * set directly). happy-dom measures every box as 0×0, so the anchor
- * element's getBoundingClientRect is stubbed per mount.
+ * set directly).
  */
 import { createPinia, setActivePinia } from "pinia";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
@@ -115,8 +120,15 @@ async function mountHint(seed: HintSeed, card: HTMLElement | null = null) {
   return { wrapper, updates, gameStatus };
 }
 
+/** Advance fake time past the popover's leave settle: the surface
+ *  machine's phase clocks are setTimeout/rAF driven, so a closed card's
+ *  panel leaves the DOM only after its leave budget runs out. */
+async function settleClosed(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(500);
+}
+
 function pop(): HTMLElement | null {
-  return document.body.querySelector<HTMLElement>(".plugin-update-hint__pop");
+  return document.body.querySelector<HTMLElement>(".plugin-update-hint__card");
 }
 
 beforeEach(() => {
@@ -162,11 +174,10 @@ describe("PluginUpdateHint", () => {
 
     const el = pop();
     expect(el).not.toBeNull();
-    // Anchored right of the card, vertically centered on it.
-    expect(el?.style.left).toBe("250px");
-    expect(el?.style.top).toBe("720px");
-    expect(el?.style.transform).toBe("translateY(-50%)");
-    // The pinned card is a standing status with the stale-stats warning.
+    // The pinned card is a standing status with the stale-stats warning;
+    // it rides the shared PinnedAnchorCard (HkPopover's panel owns the
+    // anchored placement).
+    expect(el?.closest(".hk-popover-panel")).not.toBeNull();
     expect(el?.getAttribute("role")).toBe("status");
     expect(el?.querySelector(".plugin-update-hint__warn")).not.toBeNull();
   });
@@ -199,6 +210,7 @@ describe("PluginUpdateHint", () => {
     await wrapper.find(".plugin-update-hint").trigger("mouseleave");
     vi.advanceTimersByTime(180);
     await flushPromises(); // the grace timer's close still needs a render
+    await settleClosed();
     expect(pop()).toBeNull();
   });
 
@@ -229,6 +241,7 @@ describe("PluginUpdateHint", () => {
     await wrapper.find(".plugin-update-hint").trigger("mouseleave");
     vi.advanceTimersByTime(180);
     await flushPromises();
+    await settleClosed();
     expect(pop()).toBeNull();
   });
 
@@ -261,6 +274,7 @@ describe("PluginUpdateHint", () => {
     await wrapper.find(".plugin-update-hint").trigger("mouseleave");
     vi.advanceTimersByTime(180);
     await flushPromises();
+    await settleClosed();
     expect(pop()).toBeNull();
 
     await wrapper.find(".plugin-update-hint").trigger("mouseenter");
@@ -297,6 +311,7 @@ describe("PluginUpdateHint", () => {
 
     vi.advanceTimersByTime(500);
     await flushPromises();
+    await settleClosed();
     expect(pop()).toBeNull();
   });
 
@@ -395,80 +410,9 @@ describe("PluginUpdateHint", () => {
     // Unattended close returns the row to the plain tooltip.
     vi.advanceTimersByTime(SETTLED_LINGER_MS);
     await flushPromises();
+    await settleClosed();
     expect(pop()).toBeNull();
     expect(spanUp()).toBe(false);
-  });
-
-  it("clamps the centered top against the viewport bottom once measured", async () => {
-    await mountHint({ probeOutdated: true, running: true }, anchorCard(240, 700, 40));
-    const el = pop();
-    expect(el).not.toBeNull();
-    expect(el?.style.top).toBe("720px"); // centered on the card pre-measure
-
-    // The rendered card measures 400px tall (half 200): a center at 720
-    // would push the bottom edge past the viewport → the re-anchor
-    // (resize) clamps the top up instead.
-    Object.defineProperty(el, "offsetHeight", { value: 400, configurable: true });
-    window.dispatchEvent(new Event("resize"));
-    await flushPromises();
-
-    expect(el?.style.top).toBe(`${window.innerHeight - 8 - 200}px`);
-  });
-
-  describe("root-zoom anchoring (the DPI pref's zoomed local space)", () => {
-    /** Apply a manual interface scale the way dpiPrefs does, and make
-     *  the singleton re-read it (the component captures the ref at
-     *  setup). */
-    const setScale = (pct: string): void => {
-      document.documentElement.dataset.dpiScale = pct;
-      resetAppliedDpiScaleForTest();
-    };
-
-    it("divides the anchor geometry by the applied scale", async () => {
-      // 125% was the report's shape (user report 2026-10-31): unconverted,
-      // the card drifted right/down by the factor and dropped its
-      // 一键更新 action past the window's bottom edge.
-      setScale("125");
-      await mountHint({ probeOutdated: true, running: true }, anchorCard(240, 700, 40));
-
-      const el = pop();
-      expect(el).not.toBeNull();
-      // 240 visual / 1.25 + 10 → 202 local; the card's center
-      // (720 visual) → 576 local.
-      expect(el?.style.left).toBe("202px");
-      expect(el?.style.top).toBe("576px");
-    });
-
-    it("clamps the bottom against the zoomed viewport", async () => {
-      setScale("125");
-      await mountHint({ probeOutdated: true, running: true }, anchorCard(240, 700, 40));
-      const el = pop();
-      expect(el).not.toBeNull();
-
-      // The card measures 400px tall (half 200): the center at 576 local
-      // would push the bottom edge past the zoomed viewport (768/1.25
-      // local px tall) → the re-anchor clamps the top up instead.
-      Object.defineProperty(el, "offsetHeight", { value: 400, configurable: true });
-      window.dispatchEvent(new Event("resize"));
-      await flushPromises();
-
-      expect(el?.style.top).toBe(`${window.innerHeight / 1.25 - 8 - 200}px`);
-    });
-
-    it("re-anchors when the scale changes while the card is up", async () => {
-      await mountHint({ probeOutdated: true, running: true }, anchorCard(240, 700, 40));
-      expect(pop()?.style.left).toBe("250px");
-
-      // The settings' live DPI preview over a pinned card: the scale
-      // never fires a resize event, so the watch owns the re-anchor.
-      // No singleton reset here — the component holds the live ref, the
-      // attribute mutation must reach it through the observer.
-      document.documentElement.dataset.dpiScale = "125";
-      await flushPromises();
-
-      expect(pop()?.style.left).toBe("202px");
-      expect(pop()?.style.top).toBe("576px");
-    });
   });
 
   it("one-click update drives the all-installs pass", async () => {
@@ -607,6 +551,7 @@ describe("PluginUpdateHint", () => {
       query: { mod: "battle.ingame.stats" },
     });
     // Acting on a row ends the reminder — the card closes.
+    await settleClosed();
     expect(pop()).toBeNull();
   });
 
@@ -628,6 +573,7 @@ describe("PluginUpdateHint", () => {
       path: "/resources",
       query: { mod: "mod-x" },
     });
+    await settleClosed();
     expect(pop()).toBeNull();
   });
 
@@ -701,6 +647,8 @@ describe("PluginUpdateHint", () => {
       await flushPromises();
       pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__min")?.click();
       await flushPromises();
+      await settleClosed();
+      await settleClosed();
       expect(pop()).toBeNull();
 
       await wrapper.find(".plugin-update-hint").trigger("mouseenter");
@@ -724,6 +672,8 @@ describe("PluginUpdateHint", () => {
       );
       pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__min")?.click();
       await flushPromises();
+      await settleClosed();
+      await settleClosed();
       expect(pop()).toBeNull();
 
       // Pin lifts (game closes) and re-arms (client running, probe
@@ -751,6 +701,7 @@ describe("PluginUpdateHint", () => {
       await flushPromises();
       pop()?.querySelector<HTMLButtonElement>(".plugin-update-hint__min")?.click();
       await flushPromises();
+      await settleClosed();
 
       // Everything updates elsewhere → the badge empties; a NEW stale
       // episode then begins. The park must not pre-dismiss it.

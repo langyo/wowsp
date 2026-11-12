@@ -1,6 +1,7 @@
 import { computed, defineComponent, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowLeft } from "@lucide/vue";
+import { HkIconButton } from "@celestia-island/hikari";
 
 import SettingsBody from "@/components/settings/SettingsBody";
 import {
@@ -27,9 +28,11 @@ function parseSection(raw: unknown): SettingsSection | null {
  * entry. The active section rides the URL (?section=account) — shareable,
  * and rail taps replace (not push) history so the back stack stays clean.
  *
- * The top bar carries the back affordance; the rail collapses to an icon
- * strip on phone widths (SettingsView.scss) and shows labels at wider
- * sizes, same as the desktop modal's rail.
+ * The top bar carries the back affordance — hikari's HkIconButton ghost
+ * (issue #1736's views batch), icon-only with the localized aria-label and
+ * the data-hint tooltip channel, in the bar's padded tap lane; the rail
+ * collapses to an icon strip on phone widths (SettingsView.scss) and shows
+ * labels at wider sizes, same as the desktop modal's rail.
  */
 export default defineComponent({
   name: "SettingsView",
@@ -80,15 +83,17 @@ export default defineComponent({
     return () => (
       <main class="settings-page">
         <header class="settings-page__bar">
-          <button
-            type="button"
-            class="settings-page__back"
-            onClick={goBack}
-            aria-label={t("nav.back")}
-          >
-            <ArrowLeft size={17} />
-            <span class="settings-page__back-label">{t("nav.back")}</span>
-          </button>
+          <span class="settings-page__back">
+            <HkIconButton
+              variant="ghost"
+              size={36}
+              aria-label={t("nav.back")}
+              data-hint={t("nav.back")}
+              onClick={goBack}
+            >
+              <ArrowLeft size={17} />
+            </HkIconButton>
+          </span>
           <h1 class="settings-page__title">{title.value}</h1>
         </header>
         <div class="settings-page__body">

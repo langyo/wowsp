@@ -21,16 +21,27 @@ const EDGE_PX = 8;
  * tells the player to switch the in-game display mode to fullscreen
  * windowed (or windowed) and restart the game.
  *
- * Same visual grammar as PluginUpdateHint's pinned card, but purely
- * passive: it appears by itself while the running client reports the
- * exclusive mode (the backend reads the game's user_preferences.xml on
- * every process poll, so a mode change lifts the card), and it passes
- * pointer events through — there is nothing to click. Anchored ABOVE the
+ * Same visual grammar as the pinned-hint family, but purely passive:
+ * it appears by itself while the running client reports the exclusive
+ * mode (the backend reads the game's user_preferences.xml on every
+ * process poll, so a mode change lifts the card), and it passes pointer
+ * events through — there is nothing to click. Anchored ABOVE the
  * sidebar's game-status card so it never covers the footer rows; when
  * PluginUpdateHint's popup is up at the same time (stale probe AND
  * exclusive fullscreen) the two can overlap at this card's corner (same
  * z-band, paint order follows mount order) — the card stays readable to
  * its left and never blocks the popup's clicks.
+ *
+ * Deliberately NOT on the family's shared PinnedAnchorCard (hikari
+ * HkPopover) — issue #1736's pinned-card family item records the
+ * exception: hikari's anchored surfaces set an inline
+ * pointer-events: auto on their positioning host with no opt-out (the
+ * host div is un-classed, so even an author-!important override would be
+ * piercing internal DOM), and the pointer-transparent HkFloatingLayer is
+ * corner-pinned rather than element-anchored. A hikari-hosted passive
+ * card would block every click on the sidebar rows it floats over, which
+ * this standing card must never do; revisit when hikari grows a
+ * pointer-transparent anchored surface.
  */
 export default defineComponent({
   name: "FullscreenModeHint",

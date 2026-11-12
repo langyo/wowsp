@@ -31,31 +31,28 @@
  * string) as data-hint and this card never renders on that surface — the two
  * channels are deliberately mutually exclusive, never stacked.
  *
- * The card follows the proven Vue-native teleport pattern of LiveShipMeta /
- * MapNameTag: Teleport to <body> + fixed positioning so the scrolling result
- * columns (whose ancestors clip) cannot amputate it, a measured box placed
- * below the anchor and flipped above when the viewport bottom is too close
- * (liveCardPlacement), the root DPI zoom divided out of every measured value,
- * and a plain-tooltip z band. Unlike the plain-DOM global-tooltip channel
- * this can mount real components (StampTag / DivisionTag), which is why the
- * rows use it.
+ * The card rides hikari's HkPopover (issue #1736's hover-card family — the
+ * same recipe as LiveShipMeta / HoloShipTooltip): anchored below the host,
+ * flipped above when the viewport bottom is too close, teleported into the
+ * overlay root so the scrolling result columns (whose ancestors clip) cannot
+ * amputate it, the root DPI zoom's local space and the popup-registry z slot
+ * included. The host keeps only the hover choreography (arm delay, travel
+ * grace, scroll/resize/blur/Escape closes). Unlike the plain-DOM
+ * global-tooltip channel this can mount real components (StampTag /
+ * DivisionTag), which is why the rows use it.
  */
 import {
   defineComponent,
   h,
-  nextTick,
   onBeforeUnmount,
   ref,
-  Teleport,
-  type CSSProperties,
   type PropType,
 } from "vue";
+import { HkPopover } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import DivisionTag from "@/components/base/DivisionTag";
 import StampTag from "@/components/base/StampTag";
-import { useAppliedDpiScale } from "@/theme/dpiPrefs";
-import { placeLiveCard } from "./liveCardPlacement";
 import type { PostBattleIdentityModel } from "./postBattleIdentity";
 import "./PostBattleIdentityCard.scss";
 
@@ -66,9 +63,6 @@ const SHOW_DELAY_MS = 220;
 /** Leave grace: the pointer can travel from the row onto the card (which
  *  floats a gap below/above it) without the card blinking shut. */
 const HIDE_GRACE_MS = 180;
-/** Card width — content-driven height, fixed width so a long nickname
- *  ellipsizes instead of stretching the float across the viewport. */
-export const POSTBATTLE_ID_CARD_WIDTH_PX = 300;
 
 /** Hover-capability probe, read once per mount (input hardware rarely changes
  *  mid-session): hover-less surfaces keep the plain-text fallback hint, and
@@ -82,9 +76,10 @@ function hoverUnavailable(): boolean {
 
 export default defineComponent({
   name: "PostBattleIdentityCard",
-  /** The card teleports beside the host — a multi-root render, so Vue would
-   *  skip attr fallthrough (with a dev warning per re-render); the caller's
-   *  class / data attrs / click handler are merged by hand below. */
+  /** The card anchors beside the host through HkPopover's own teleport, so
+   *  the render is a multi-root (host + popover) and Vue would skip attr
+   *  fallthrough (with a dev warning per re-render); the caller's class /
+   *  data attrs / click handler are merged by hand below. */
   inheritAttrs: false,
   props: {
     /** The host element: the compact row's whole button, or the full card's
@@ -122,16 +117,9 @@ export default defineComponent({
     },
   },
   setup(props, { attrs, slots }) {
-    const cardEl = ref<HTMLElement | null>(null);
+    // The host element is the popover's anchor (hover arms against it).
+    const hostEl = ref<HTMLElement | null>(null);
     const open = ref(false);
-    const cardPos = ref<CSSProperties>({});
-    // The card teleports to <body> — inside the root DPI zoom's subtree — so
-    // its written left/top paint in the zoomed local space while the anchor's
-    // gBCR and window.innerWidth/innerHeight answer in root-visual px:
-    // placeLiveCard runs entirely in local space, fed the measured values
-    // divided by the applied scale (LiveShipMeta's same zoom note;
-    // offsetWidth/offsetHeight are already local).
-    const dpiScale = useAppliedDpiScale();
     // The hover-less surface keeps the plain-text hint channel instead (see
     // the module banner): both are mutually exclusive, never stacked.
     const noHover = hoverUnavailable();
@@ -155,46 +143,13 @@ export default defineComponent({
       }
     }
 
-    /** Render first (hidden), MEASURE the real box, then place: the card is
-     *  content-driven (a variable number of chips), so an estimated height
-     *  would float a sparse card in thin air above its row. */
-    function show(host: HTMLElement): void {
+    function show(): void {
       if (open.value) return;
-      const r = host.getBoundingClientRect();
-      // The row can unmount during the arm delay (roster reshuffle, a
-      // density flip): a zero rect would clamp the card into a corner — skip
-      // and let the next hover re-arm instead.
-      if (!r.width && !r.height) return;
-      cardPos.value = {
-        left: "0px",
-        top: "0px",
-        width: `${POSTBATTLE_ID_CARD_WIDTH_PX}px`,
-        visibility: "hidden",
-      };
+      // A row unmounting during the arm delay (roster reshuffle, a density
+      // flip) takes this component — and its popover — down with it: the
+      // unmount cleanup clears the pending timer, so no detached-anchor
+      // guard is needed here.
       open.value = true;
-      void nextTick(() => {
-        const card = cardEl.value;
-        if (!card) return;
-        const z = dpiScale.value;
-        const { left, top } = placeLiveCard(
-          {
-            left: r.left / z,
-            top: r.top / z,
-            right: r.right / z,
-            bottom: r.bottom / z,
-          },
-          POSTBATTLE_ID_CARD_WIDTH_PX,
-          card.offsetHeight,
-          window.innerWidth / z,
-          window.innerHeight / z,
-        );
-        cardPos.value = {
-          left: `${Math.round(left)}px`,
-          top: `${Math.round(top)}px`,
-          width: `${POSTBATTLE_ID_CARD_WIDTH_PX}px`,
-          visibility: "visible",
-        };
-      });
     }
 
     function scheduleHide(): void {
@@ -213,14 +168,14 @@ export default defineComponent({
       open.value = false;
     }
 
-    function armZone(host: HTMLElement): void {
+    function armZone(): void {
       if (noHover) return;
       inZone = true;
       clearHideTimer();
       clearShowTimer();
       showTimer = window.setTimeout(() => {
         showTimer = null;
-        show(host);
+        show();
       }, SHOW_DELAY_MS);
     }
 
@@ -240,9 +195,9 @@ export default defineComponent({
       scheduleHide();
     }
 
-    /** A fixed-position card detaches from its anchor on any scroll — close
-     *  instead of drifting (LiveShipMeta's same call; the results columns
-     *  scroll under a stationary pointer). */
+    /** An anchored card detaches from its host on any scroll — close instead
+     *  of drifting (LiveShipMeta's same call; the results columns scroll
+     *  under a stationary pointer). */
     function onScrollCapture(): void {
       hideNow();
     }
@@ -290,8 +245,9 @@ export default defineComponent({
 
       const hostAttrs: Record<string, unknown> = {
         ...attrs,
+        ref: hostEl,
         class: ["postbattle-idcard-host", attrs.class],
-        onMouseenter: (e: MouseEvent) => armZone(e.currentTarget as HTMLElement),
+        onMouseenter: armZone,
         onMouseleave: disarmZone,
       };
       if (props.as === "button") hostAttrs.type = "button";
@@ -309,19 +265,31 @@ export default defineComponent({
       );
 
       const identity = props.identity;
-      const card = open.value ? (
-        <Teleport to="body">
-          <div
-            ref={cardEl}
-            class={[
-              "postbattle-idcard",
-              full ? "postbattle-idcard--full" : "postbattle-idcard--compact",
-            ]}
-            role="tooltip"
-            style={cardPos.value}
-            onMouseenter={onCardEnter}
-            onMouseleave={onCardLeave}
-          >
+      const card = (
+        // No backdrop, no outside-click/Esc dismissal through the popover
+        // itself: the host's own scroll/resize/blur/Escape closes are the
+        // card's lifetime rules, and hover intent keeps it open across the
+        // row↔card gap.
+        <HkPopover
+          class={[
+            "postbattle-idcard",
+            full ? "postbattle-idcard--full" : "postbattle-idcard--compact",
+          ]}
+          modelValue={open.value}
+          onUpdate:modelValue={(v: boolean) => {
+            if (!v) hideNow();
+          }}
+          anchorRef={hostEl.value}
+          placement="bottom-start"
+          offset={8}
+          backdrop={false}
+          closeOnBackdrop={false}
+          closeOnEscape={false}
+          glass={false}
+          onMouseenter={onCardEnter}
+          onMouseleave={onCardLeave}
+        >
+          <div class="postbattle-idcard__body" role="tooltip">
             {/* Line 1: the row's identity presentation — same tint, clan ink
                 and bot marker as the row. */}
             <div class="postbattle-idcard__name">
@@ -361,8 +329,8 @@ export default defineComponent({
               <span class={shipClass}>{identity.shipName}</span>
             </div>
           </div>
-        </Teleport>
-      ) : null;
+        </HkPopover>
+      );
 
       return [host, card];
     };

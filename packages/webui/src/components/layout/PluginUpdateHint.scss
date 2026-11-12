@@ -1,10 +1,10 @@
 // PluginUpdateHint — the client-version selector's hover card (pinned
-// open while the running client's probe plugin is stale). Fixed,
-// teleported to body, anchored to the RIGHT of the game-status card and
-// vertically centered on it, in hikari's popup z-band (the tooltip
-// band), with an app-surface look (dark surface tokens like the settings
-// cards). The stale list is hikari's menu-row grammar inside a capped
-// scroll container — rows deep-link their plugin's mod-hub page.
+// open while the running client's probe plugin is stale). The anchored
+// card is the shared PinnedAnchorCard (hikari HkPopover underneath,
+// issue #1736's pinned-card family): placement, the z slot, the card
+// skin and the enter/leave pop motion live there. The stale list is
+// hikari's menu-row grammar inside a capped scroll container — rows
+// deep-link their plugin's mod-hub page.
 
 .plugin-update-hint {
   position: relative;
@@ -28,22 +28,16 @@
     pointer-events: none;
   }
 
-  &__pop {
-    position: fixed;
-    z-index: var(--hk-z-tooltip, 4100);
-    width: 20rem;
-    max-width: calc(100vw - 2rem);
-    // The menu panel's own inset would double-pad inside the card —
-    // rows align with the title instead (the rows keep their padding).
-    --hk-menu-panel-inset: 0px;
-    padding: var(--space-12) var(--space-16);
-    border: 1px solid rgb(var(--color-border) / 25%);
-    border-radius: var(--radius-sm, 6px);
-    background: rgb(var(--color-surface));
-    box-shadow: 0 8px 24px rgb(0 0 0 / 35%);
+  /* The card's content column inside the PinnedAnchorCard panel (the
+     relative seat for the corner minimize button). */
+  &__card {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: var(--space-8);
+    // The menu panel's own inset would double-pad inside the card —
+    // rows align with the title instead (the rows keep their padding).
+    --hk-menu-panel-inset: 0px;
   }
 
   &__title {

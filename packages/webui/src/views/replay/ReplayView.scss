@@ -700,18 +700,6 @@
     }
   }
 
-  &__loading-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: var(--z-tooltip);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgb(var(--color-surface));
-    background: rgb(var(--color-surface) / min(100%, calc(70% + 30% * var(--ui-opacity, 1))));
-    backdrop-filter: blur(3px);
-    border-radius: var(--radius-md);
-  }
 }
 
 /* Mode colour dot in the filter popup's option rows (echoes the card

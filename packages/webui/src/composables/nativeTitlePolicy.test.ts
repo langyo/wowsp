@@ -72,6 +72,9 @@ const HEADING_PROPS = new Set([
   "HkTitleBar",
   "HMenu", // hikari exports the menu both as HkMenu and the HMenu alias
   "ImageSquareCropModal",
+  // PinnedAnchorCard: the shared pinned-card wrapper's `title` rides
+  // HkPopover's panel a11y name (surface title), never a native tooltip.
+  "PinnedAnchorCard",
   "PlaytimeBreakdownPie",
 ]);
 

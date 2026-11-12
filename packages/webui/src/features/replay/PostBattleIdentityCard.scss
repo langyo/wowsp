@@ -1,17 +1,15 @@
 /* Post-battle identity hover card (PostBattleIdentityCard.tsx) — the rich
    three-line identity the results rows can only ellipsize. The host lives in
-   the row (features/replay/PostBattlePanel.tsx); the card teleports to <body>
-   and fixed-positions itself, so the scrolling result columns and their
-   clipping ancestors cannot amputate it. */
+   the row (features/replay/PostBattlePanel.tsx); the card rides hikari's
+   HkPopover (issue #1736's hover-card family), so it teleports into the
+   overlay root and the scrolling result columns and their clipping
+   ancestors cannot amputate it. */
 
-.postbattle-idcard {
-  /* Fixed + teleported to <body> (LiveShipMeta's hover card pattern): the
-     inline left/top are the placement pass's, see the component.
-     z band: above the app shell, the floating band and the replay view's
-     modal stack (the 结果 window at 100 / the drill-down at 200), below
-     hikari modals (1000+), same as the live ship combat card. */
-  position: fixed;
-  z-index: 300;
+/* Panel seat: the card root IS the popover panel (the class rides HkPopover's
+   attrs fallthrough). The compound selector out-ranks the bare
+   `.hk-popover-panel` box rules (max-content width) wherever the sheets land
+   in the bundle; the popup-registry z slot replaces the retired hand-set z. */
+.hk-popover-panel.postbattle-idcard {
   width: 300px;
   box-sizing: border-box;
   padding: 0.55rem 0.7rem;
@@ -24,7 +22,9 @@
   color: rgb(var(--color-text));
   font-size: var(--text-xs);
   text-align: left;
-  pointer-events: auto;
+}
+
+.postbattle-idcard {
 
   /* Line 1: marker-tinted nick + row clan ink + bot marker. The name line
      takes the hovered row's own size so the float reads in the same

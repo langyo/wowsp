@@ -591,8 +591,10 @@ describe("PostBattlePanel head row, inline seals and identity hover card", () =>
       // Line 3: the row's own tier + ship sub-line styling.
       expect(card.querySelector(".replay-view__postbattle-cell-tier")).toBeTruthy();
       expect(card.querySelector(".replay-view__postbattle-cell-ship")).toBeTruthy();
-      // Exactly the three identity lines: name / seals / ship.
-      expect(card.children).toHaveLength(3);
+      // Exactly the three identity lines: name / seals / ship (inside the
+      // popover panel's content body — the card root is HkPopover's panel).
+      const body = card.querySelector(".postbattle-idcard__body")!;
+      expect(body.children).toHaveLength(3);
     } finally {
       rect.mockRestore();
       uiLocale.value = prevLocale;
