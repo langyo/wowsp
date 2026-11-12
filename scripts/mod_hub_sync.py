@@ -1241,6 +1241,19 @@ mutation($input: UpdateIssueInput!) {
 """
 
 
+def _verify_issue_body(number: int, body: str) -> None:
+    """A 200/GraphQL-ok from either write lane is not proof the body
+    landed: the 2026-11-12 empty-stdin PATCH no-op reported "report issue
+    updated" on every run while the tracker body stayed stale for six
+    days. Re-read and compare before declaring the tracker refreshed."""
+    got = json.loads(pub.gh(f"repos/{REPO}/issues/{number}")).get("body")
+    if got != body:
+        raise SystemExit(
+            f"issue #{number} body write did not stick "
+            f"(stored {len(got or '')} chars, wanted {len(body)}); "
+            "both write lanes claimed success")
+
+
 def ensure_issue(title: str, body: str) -> int:
     """Create or overwrite the open issue carrying exactly this title. REST
     first, GraphQL on the installation-token 422 (see below)."""
@@ -1268,6 +1281,7 @@ def ensure_issue(title: str, body: str) -> int:
             if check != existing["number"]:
                 raise SystemExit(f"updated issue #{check} instead of "
                                  f"#{existing['number']}")
+        _verify_issue_body(existing["number"], body)
         print(f"report issue updated: #{existing['number']}", flush=True)
         return existing["number"]
     payload = json.dumps({"title": title, "body": body})
@@ -1279,6 +1293,7 @@ def ensure_issue(title: str, body: str) -> int:
                                 input={"repositoryId": repo_node(), "title": title,
                                        "body": body})
         number = result["createIssue"]["issue"]["number"]
+    _verify_issue_body(number, body)
     print(f"report issue created: #{number}", flush=True)
     return number
 

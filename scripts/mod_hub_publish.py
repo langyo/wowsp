@@ -334,7 +334,13 @@ def gh(*args: str, input_text: str | None = None) -> str:
     cmd = ["gh", "api", *args]
     if input_text is not None:
         cmd += ["--input", "-"]
-    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    # input_text MUST reach the subprocess: --input - makes gh read the
+    # request body from stdin, and dropping it sent an EMPTY body that the
+    # REST API answers 200-with-no-changes -- the mod-hub tracker reported
+    # "report issue updated" on every run while its body stayed stale for
+    # six days (2026-11-12).
+    out = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                         errors="replace", input=input_text)
     if out.returncode != 0:
         raise RuntimeError(f"gh api failed: {out.stderr.strip()[:500]}")
     return out.stdout
