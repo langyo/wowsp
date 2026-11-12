@@ -8,28 +8,33 @@
   @include hud.holo-hud-light;
 }
 
-/* Playback speed menu: HkPopover TELEPORTS the panel into the hikari
-   overlay root (document.body), so the nested .holo-map palette never
-   reached it — the panel painted fully transparent (user report). The
-   camera menu already re-applies the palette for exactly this reason;
-   the speed menu gets the same treatment. Palette + rows ONLY — the
-   position/surface/size are HkPopover's (anchored above the 2× button;
-   carrying the old dropdown positioning collapsed the panel to a sliver
-   and detached the mobile sheet). */
-.holo-map__speed-menu {
+/* Playback speed menu — palette hand-off ONLY.
+ *
+ * The menu is ONE hikari surface: HkPopover paints the card (glass,
+ * border, radius, shadow, pop motion; the phone sheet with its grabber
+ * and title) and HkMenuPanel + HkMenuActionItem supply the row grammar.
+ * HkPopover TELEPORTS that panel into the hikari overlay root, so this
+ * class hook — which HkPopover folds onto the panel element — is the only
+ * place the nested .holo-map palette can reach it. Background and blur
+ * come from hikari's own --hk-popover-* tokens, re-pointed at the HUD
+ * menu ramp; the row tokens (--hk-menu-item-*) are hikari's and stay
+ * untouched. Nothing here may draw a frame/inset of its own: a host card
+ * INSIDE the popover panel is the double-panel bug this replaced
+ * (2026-11-12 user report). */
+.holo-map__speed-pop {
   @include hud.holo-hud-dark;
 
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 4px;
-  border: 1px solid var(--holo-hud-border);
-  border-radius: var(--radius-sm);
-  background: var(--holo-hud-menu);
-  box-shadow: var(--holo-hud-shadow);
+  --hk-popover-bg: var(--holo-hud-menu);
+
+  /* Width only — HkPopover sizes its panel to max-content with no floor
+     (unlike HkSelectPanel's 180px), and a six-row list of "0.5×"…"10×"
+     would otherwise collapse to a sliver. This is geometry, not chrome:
+     a frame/inset of the host's own is exactly the double panel the
+     2026-11-12 report showed. */
+  min-width: 7.5rem;
 }
 
-:root[data-mode="light"] .holo-map__speed-menu {
+:root[data-mode="light"] .holo-map__speed-pop {
   @include hud.holo-hud-light;
 }
 
@@ -463,6 +468,12 @@
   &__speed {
     position: relative;
   }
+  /* HkPopover measures this wrapper as its anchor; inline-flex keeps the
+     rect on the button itself instead of a text-line box (the camera
+     menu's trigger wrapper states the same rule). */
+  &__speed-wrap {
+    display: inline-flex;
+  }
   &__speed-btn {
     display: inline-flex;
     align-items: center;
@@ -480,24 +491,11 @@
     font-size: var(--text-2xs);
     &:hover { opacity: 0.85; }
   }
-  /* The speed menu panel itself is TELEPORTED by HkPopover into the
-     hikari overlay root (outside .holo-map) — its styles live at the
-     file's top level, re-applying the hud palette the way the camera
-     menu does. */
-  &__speed-opt {
-    min-width: 48px;
-    padding: 4px 8px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--holo-hud-text);
-    cursor: pointer;
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    text-align: left;
-    &:hover { background: var(--holo-hud-hover); }
-    &--on { color: rgb(var(--color-primary)); font-weight: 700; }
-  }
+  /* The speed menu's panel and rows are hikari's (HkPopover surface +
+     HkMenuPanel/HkMenuActionItem grammar) — see the .holo-map__speed-pop
+     block, which only re-applies the hud palette to the TELEPORTED panel.
+     Nothing here styles the menu: a host-drawn card inside the popover
+     panel is exactly the double frame the 2026-11-12 report showed. */
 
   &__legend {
     position: absolute;
@@ -1915,16 +1913,6 @@
      DOM order on the second line — one order rule covers them. */
   .holo-map__lbltoggle,
   .holo-map__camera { order: 5; }
-
-  /* Sheet-docked speed menu (docked above): full-width rows read — and
-     tap — far better than the desktop 48px chips floating in the
-     full-bleed sheet. */
-  .holo-map__speed-opt {
-    min-width: 0;
-    padding: 0.7rem 1.25rem;
-    font-size: var(--text-sm);
-    text-align: center;
-  }
 
   /* 3 — kill feed: top-left, clear of the two-line bar, the self card,
      the lifted minimap thumb and the top-right weather/heat column. */
