@@ -232,9 +232,22 @@ pub(crate) struct ReplayEvents {
 /// dropped event families ([`ReplayEvents`]). One decode pass — the four
 /// vectors are MOVED out of the [`wowsp_replay_core::DecodedReplay`]
 /// before grouping consumes it, so this never re-reads the file.
+#[cfg(test)]
+/// Full `decode_replay_stream_with_events` passes this process has run.
+/// Test observability for the in-process artifact cache: the static report's
+/// warm/cold test asserts a warm (cache-hit) call adds ZERO of these —
+/// re-decoding the whole replay inside the cache mutex on every call was
+/// the 2026-11-12 regression this pins. Read it only from the env-gated
+/// real-replay tests, run with a test filter (other decoding tests in the
+/// same process would share the counter).
+pub(crate) static STREAM_DECODE_CALLS: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
+
 pub(crate) fn decode_replay_stream_with_events(
     path: &str,
 ) -> anyhow::Result<(wowsp_tauri_shared::ReplayStream, ReplayEvents)> {
+    #[cfg(test)]
+    STREAM_DECODE_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let (mut decoded, roster) = decode_replay_file_decoded(std::path::Path::new(path))?;
     let events = ReplayEvents {
         vision: std::mem::take(&mut decoded.vision_events),
