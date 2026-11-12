@@ -41,7 +41,6 @@ use wowsp_tauri_shared::{CommandResult, TorpedoScores};
 use super::decision_score::{ShipScoreReport, ShipScoreSample, softmax};
 use super::decision_serve::{debug_move_model, with_debug_cache_entry};
 use super::fire_dataset::MoveDatasetRow;
-use super::replay::decode_replay_stream_with_events;
 
 /// Nominal sample grid (the E16 movement export window step), seconds.
 const SAMPLE_GRID_S: f32 = 4.0;
@@ -359,13 +358,22 @@ pub(crate) fn torpedo_roster_applicable(model_installed: bool, ship_id: Option<i
     model_installed && super::decision_score::torpedo_applicable_for(ship_id, false)
 }
 
-/// Build the full report for one entity off a warm cache entry.
+/// Build the full report for one entity off a warm cache entry. The decoded
+/// ship trajectories ride the entry (they feed the roster builder), so the
+/// warm path never re-decodes the replay — the only per-call reads are the
+/// cheap descriptor roster (outside the lock) and the moment forwards.
 pub(crate) fn build_static_report(
     path: &Path,
     los_dir: Option<&Path>,
     entity_id: Option<i32>,
 ) -> anyhow::Result<StaticReport> {
     use serde_json::json;
+
+    // The descriptor roster (the display/player name joins below) is cheap —
+    // one descriptor parse — but a parse failure must keep failing ONLY the
+    // static report (the shared debug build never needs it), so it is read
+    // here rather than inside the cache build, and outside the cache mutex.
+    let roster = super::replay_probe::read_roster(&path.to_string_lossy())?;
 
     with_debug_cache_entry(path, los_dir, |entry| {
         // None = the recorder (the default perspective: always fully
@@ -380,11 +388,12 @@ pub(crate) fn build_static_report(
             .filter_map(|e| e.samples.last().map(|s| s.t))
             .fold(0.0f32, f32::max);
 
-        // Roster from the stream's ship trajectories (a superset of the
-        // scored rows — ships the exporter dropped appear with zero
-        // samples rather than vanishing).
-        let (stream, _events) = decode_replay_stream_with_events(&path.to_string_lossy())
-            .map_err(|e| anyhow!("decode {}: {e}", path.display()))?;
+        // Roster from the CACHED stream's ship trajectories (a superset of
+        // the scored rows — ships the exporter dropped appear with zero
+        // samples rather than vanishing). The stream rides the cache entry,
+        // so a warm call never re-decodes the replay inside the cache mutex
+        // (2026-11-12 report: the decode — seconds-scale — ran under the
+        // lock on every 战后统计 open, cache hit included).
         // Name joins: the holographic board matches roster `id` against
         // entity ids; the stream doc names `kind.ship_id` the reliable
         // entity→player key. Try the id match first (validating its
@@ -395,7 +404,6 @@ pub(crate) fn build_static_report(
         // roster vehicle's own `name`, the post-battle panel's join key
         // against BattleResults rows) — so the map pair is built once per
         // flavor by a shared helper instead of twice by hand.
-        let roster = super::replay_probe::read_roster(&path.to_string_lossy())?;
         fn name_maps(
             roster: &[wowsp_tauri_shared::VehicleEntry],
             pick: fn(&wowsp_tauri_shared::VehicleEntry) -> String,
@@ -437,11 +445,17 @@ pub(crate) fn build_static_report(
         // ladder ran inside the cache build) — no extra model probe/decode.
         let torpedo_installed = scores.torpedo_source.is_some();
         let mut roster: Vec<StaticRosterEntry> = Vec::new();
-        for t in &stream.trajectories {
-            if !t.kind.as_ref().is_some_and(|k| k.entity_type == 2) {
+        for (eid, kind) in &entry.trajectories {
+            // The projection keeps exactly the two fields this walk reads;
+            // kind-less entities and non-ships sit out, matching the old
+            // whole-trajectory loop's filter.
+            let Some(kind) = kind else {
+                continue;
+            };
+            if kind.entity_type != 2 {
                 continue;
             }
-            let eid = t.entity_id;
+            let eid = *eid;
             let per_ship = scores.per_ship.iter().find(|e| e.entity_id == eid);
             let samples: &[ShipScoreSample] = per_ship.map_or(&[], |e| &e.samples);
             let died_at = entry.death.get(&eid).copied().flatten();
@@ -458,7 +472,7 @@ pub(crate) fn build_static_report(
                 contribution_shots: e.contribution_shots,
                 torpedo: e.torpedo,
             });
-            let kind_ship_id = t.kind.as_ref().and_then(|k| k.ship_id);
+            let kind_ship_id = kind.ship_id;
             // Prefer the scored entry's values: per_ship is built from the
             // rows' shipId (the same join the scoring gate used), while the
             // trajectory's EntityCreate occasionally lacks shipId. The
@@ -489,7 +503,8 @@ pub(crate) fn build_static_report(
                 name: resolve_from(&display_name_maps, eid, kind_ship_id),
                 player_name: resolve_from(&player_name_maps, eid, kind_ship_id),
                 team_id: per_ship.map_or(1, |e| e.team_id),
-                is_recorder: stream.recorder_vehicle_id == Some(eid),
+                // entry.recorder IS the cached stream's recorder_vehicle_id.
+                is_recorder: entry.recorder == Some(eid),
                 died_at,
                 coverage,
                 whole,
@@ -647,6 +662,7 @@ pub async fn decision_static_report(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::Ordering;
 
     fn sample(
         t: f32,
@@ -833,5 +849,51 @@ mod tests {
             out.display(),
             report.moments.len()
         );
+    }
+
+    /// Real-replay warm/cold equivalence — env-gated like
+    /// `static_real_report_invariants`. The SECOND call in this process is
+    /// served by the in-process cache, and the decode counter pins the
+    /// 2026-11-12 regression itself: a warm call must add ZERO full decodes
+    /// (the old path re-decoded the whole replay inside the cache mutex on
+    /// every call). Run with a test filter naming this test — sibling
+    /// env-gated decoders in one process share the counter.
+    #[test]
+    #[ignore = "needs the debug models and a local replay"]
+    fn static_real_warm_call_matches_cold() {
+        let replay = std::env::var("WOWSP_STATIC_REPORT_REPLAY")
+            .expect("set WOWSP_STATIC_REPORT_REPLAY to a local .wowsreplay");
+        let path = Path::new(&replay);
+        let cold = build_static_report(path, None, None).expect("cold report");
+        let before_warm = super::super::replay::STREAM_DECODE_CALLS.load(Ordering::Relaxed);
+        let warm = build_static_report(path, None, None).expect("warm report");
+        assert_eq!(
+            super::super::replay::STREAM_DECODE_CALLS.load(Ordering::Relaxed),
+            before_warm,
+            "the warm (cache-hit) call re-decoded the replay — the cache \
+             dedupe broke"
+        );
+        // The roster is rebuilt from the CACHED trajectories: identical rows.
+        let roster_key =
+            |r: &StaticReport| -> Vec<(i32, Option<i64>, Option<String>, Option<String>)> {
+                r.roster
+                    .iter()
+                    .map(|e| {
+                        (
+                            e.entity_id,
+                            e.ship_id,
+                            e.name.clone(),
+                            e.player_name.clone(),
+                        )
+                    })
+                    .collect()
+            };
+        assert_eq!(roster_key(&cold), roster_key(&warm), "roster drift");
+        assert_eq!(cold.entity_id, warm.entity_id);
+        assert_eq!(cold.timeline.len(), warm.timeline.len());
+        for (c, w) in cold.timeline.iter().zip(warm.timeline.iter()) {
+            assert_eq!(c.t, w.t);
+            assert_eq!(c.inst, w.inst);
+        }
     }
 }

@@ -1403,6 +1403,14 @@ pub(crate) struct DebugCacheEntry {
     pub(crate) death: BTreeMap<i32, Option<f32>>,
     pub(crate) los_loaded: bool,
     pub(crate) map_name: Option<String>,
+    /// The roster projection of the decoded ship trajectories — the two
+    /// fields the static report's roster walk reads (entity id + the
+    /// EntityCreate kind it filters and joins on). They ride the entry so a
+    /// warm `decision_static_report` never re-decodes the replay under the
+    /// cache lock (2026-11-12 report: every 战后统计 open re-paid a full
+    /// decode inside the mutex). A lean copy keeps the single-slot entry at
+    /// KBs instead of retaining the stream's position-sample bulk.
+    pub(crate) trajectories: Vec<(i32, Option<wowsp_tauri_shared::EntityKind>)>,
 }
 
 static DEBUG_REPORT_CACHE: OnceLock<Mutex<Option<(DebugCacheKey, DebugCacheEntry)>>> =
@@ -1579,6 +1587,11 @@ fn build_debug_cache_entry(
         death,
         los_loaded,
         map_name: stream.map_name.clone(),
+        trajectories: stream
+            .trajectories
+            .iter()
+            .map(|t| (t.entity_id, t.kind.clone()))
+            .collect(),
     })
 }
 
