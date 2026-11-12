@@ -10,6 +10,7 @@ import type {
 } from "@/api";
 import {
   activeConsumablesAt,
+  chaseCardVisible,
   chaseStrength,
   CONSUMABLE_LABEL,
   consumableLabelKey,
@@ -122,6 +123,32 @@ describe("squadronStrength", () => {
       total: 1,
     });
     expect(squadronStrength([], 1, noRemoves, 15)).toBeNull();
+  });
+});
+
+describe("chaseCardVisible (followed wings always keep their readout)", () => {
+  it("shows the card for EVERY family while the camera rides the aircraft", () => {
+    // 2026-11-12 report: a followed fighter wing showed no plane HP anywhere
+    // (the family-only gate hid the pill and the panel). A chase is the user
+    // asking for that wing's readout, so the family must not hide it.
+    for (const family of ["fighter", "scout", "attack", "dive", "torpedo", "bomber"]) {
+      expect(chaseCardVisible(family, true)).toBe(true);
+    }
+    expect(chaseCardVisible(undefined, true)).toBe(true);
+    expect(chaseCardVisible(null, true)).toBe(true);
+  });
+
+  it("still hides support wings that are only loitering across the map", () => {
+    expect(chaseCardVisible("fighter", false)).toBe(false);
+    expect(chaseCardVisible("scout", false)).toBe(false);
+  });
+
+  it("keeps attack wings visible away from the chase", () => {
+    for (const family of ["attack", "dive", "torpedo", "bomber"]) {
+      expect(chaseCardVisible(family, false)).toBe(true);
+    }
+    // Unknown airframes fall back to the attack treatment.
+    expect(chaseCardVisible(undefined, false)).toBe(true);
   });
 });
 
