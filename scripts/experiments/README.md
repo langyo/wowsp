@@ -144,6 +144,19 @@
 - **实证**（`airdrop_probe.py`，96 盘 14.5 全语料；审查者用修正后的探针独立复跑一致）：`receive_torpedoes` 的 14.5 method id 是 **115**（108 是更老版本的行）——11,402 次 avatar 调用、**1,435 条鱼雷**，全部 12 盘 CV 录像都有（13–290 次/盘）；发射高度 **全部 y ≤ −0.14（贴水面，0 条 >5）**，owner 1,372/1,435 是 kind-2（舰船）实体 → **空投鱼雷不走这条流**（空投弹药是 EntityCreate 的瞬态实体）。
 - **结论**：船发鱼雷照常走 method 115（corpus 测试不受影响）；空投弹道的数据源是**瞬态实体的 EntityTrajectory**——`assemble.rs` 已经为**所有实体种类**构建轨迹并随 IPC 下发，所以投弹动画的剩余工作是**前端**：识别哪些瞬态实体是空投弹药（按 params/owner）并在地图上渲染，不是新解码器项目。
 
+### E29 · 空投弹药族 wire 布局钉死（投弹/火箭/跳弹/深弹/水雷）✅ 布局完成，实现排队
+
+- **动机**：投弹动画（鱼雷机丢雷、轰炸机抛弹、火箭机平射、跳弹机弹跳、水雷机铺雷）需要每次投放的**落点、下落时间、弹跳路径**。15.8/15.9 的 Avatar exposed 表有三个专门方法（15.8 表：132 `receivePlaneProjectilePack` / 133 `receivePlaneSkipBombPacks` / 134 `receivePlaneRocketPacks`，另有 135 `receiveDepthChargesPacks` 与水雷族 `addMinefield`/`receiveMines`/`receiveMineKills`/`killMinefield`）。
+- **布局已从 defs159 的 alias.xml 钉死**（静态权威，defs 就是 wire 的类型定义）：
+  - 三种包同构：`{ bombParamsId: GAMEPARAMS_ID, squadronId: PLANE_ID, squadronToTarget: VECTOR3, …, projectiles: ARRAY<PLANE_*> }`。
+  - **HE/AP 炸弹包（132）**：另有 `fallTime`/`timeLeft`；每弹 `PLANE_PROJECTILE = { shotID, impactPoint: VECTOR3, planeIndex }` → 弹道动画直接有落点+下落时长。
+  - **跳弹包（133）**：每弹 `PLANE_SKIP_BOMB = { shotID, impactPoint, skipPoints: VECTOR3[], planeIndex }` → **弹跳路径逐点在线**，照着画即可。
+  - **火箭包（134）**：另有 `attackPoint: VECTOR3` + `dropDelay`/`fallTime`/`timeLeft`；每弹 `PLANE_ROCKET = { shotID, impactPoint, planeIndex }` → 火箭平射（低角度）与轰炸机高投（fallTime 长）由各自包字段自然区分，无需特判。
+  - **深弹包（135）**：`{ ownerID, salvoID, paramsID, depthCharges: DEPTH_CHARGE[] }`（同鱼雷族）。
+  - **水雷**：`addMinefield(minefieldInfo)` + `receiveMines(FIELD_PACK[])`，`FIELD_PACK = { fieldId, layers: [{ layerId, objects: VECTOR2[] }] }`（VECTOR2 = 雷的水面位置）；`receiveMineKills`/`killMinefield` 管消失。`MINEFIELD_INFO` 是 USER_TYPE（python converter），wire 侧待一份样例录像定布局。
+- **实现计划**（解码端照 `decode_torpedo_salvos` 模式，前端照鱼雷迹模式）：① Rust 四个 decoder + frames.rs 分发 + tauri_shared/TS 类型镜像；② 前端按包驱动动画：炸弹=从编队到 impactPoint 的抛物线（fallTime/timeLeft 定时），跳弹=skipPoints 折线，火箭=attackPoint→impactPoint 平射直线（dropDelay 分批），水雷=objects 铺场 + mineKills 移除；③ 校验用 CN360 语料的 CV 盘（15.9 表与 15.8 同 id）。
+- **诚实边界**：本节只钉了**类型布局**（defs 静态权威）；真实载荷的端到端验证需要一盘 15.8+ CV 录像（本地语料目前只有 14.5 CV 与 15.9 低级船盘，均无此流的大样本）。
+
 ### E27g · 烘焙飞机绕序诊断（「破碎三角形」根因）✅
 
 - **动机**：飞机在 3D 里呈「破碎缺块」轮廓；填充式栅格（含所有三角）看着完整，但渲染器单面剔除（FrontSide）后缺块——怀疑三角绕序不一致。
