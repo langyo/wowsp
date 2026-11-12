@@ -1,8 +1,10 @@
 /**
- * GatewayCaptchaHint — the desktop sidebar's gateway-push challenge card,
- * cloned from PluginUpdateHint's anchored-card mechanics (fixed, teleported
- * to body, anchored to the RIGHT of the sidebar footer's game-status card
- * via the shared statusCardEl ref, z-tooltip band, minimize parks it).
+ * GatewayCaptchaHint — the desktop sidebar's gateway-push challenge card.
+ * The anchored card rides the shared PinnedAnchorCard (hikari HkPopover
+ * underneath, issue #1736's pinned-card family): placement, the root DPI
+ * zoom's local space, the popup-registry z slot and the enter/leave pop
+ * motion are the primitive's business, so the former hand-rolled
+ * snapshot-then-applyStyle card is gone.
  *
  * While the mobile service is ON and the node demands an unsolved Turnstile
  * (the pub socket's `captcha` phase on wowsp://gateway-state) the card is
@@ -20,17 +22,7 @@
  * pinned, a deliberate dismissal wins — until a settled hover on the
  * trigger (the sidebar's phone icon) brings it back.
  */
-import {
-  computed,
-  defineComponent,
-  nextTick,
-  onBeforeUnmount,
-  ref,
-  Teleport,
-  watch,
-  type PropType,
-  type Ref,
-} from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref, watch, type PropType, type Ref } from "vue";
 import {
   HkCaptchaWidget,
   HkSpinner,
@@ -44,7 +36,7 @@ import { t, tError } from "@/i18n";
 import { useGatewayStore } from "@/stores/gateway";
 import { useShownPlayer } from "@/composables/useShownPlayer";
 import { gatewayRoute } from "@/features/replay/gateway/gatewayBattle";
-import { useAppliedDpiScale } from "@/theme/dpiPrefs";
+import PinnedAnchorCard from "@/components/layout/PinnedAnchorCard";
 import "./GatewayCaptchaHint.scss";
 
 /** Hover-in delay before the hint opens (the global tooltip's rhythm). */
@@ -54,16 +46,12 @@ const CLOSE_GRACE_MS = 180;
 /** A parked (minimized) card returns only on a SETTLED hover on the
  *  trigger. Exported for the tests. */
 export const REOPEN_DELAY_MS = 600;
-/** Gap between the anchor card's right edge and the popup. */
-const ANCHOR_GAP_PX = 10;
-/** Viewport breathing room kept above/below the popup. */
-const EDGE_PX = 8;
 
 export default defineComponent({
   name: "GatewayCaptchaHint",
   props: {
-    /** The element the popup anchors to — the sidebar's game-status
-     *  card, so the popup floats beside it, vertically centered on it. */
+    /** The element the card anchors to — the sidebar's game-status
+     *  card, so the card floats beside it, vertically centered on it. */
     anchor: {
       type: Object as PropType<Ref<HTMLElement | null | undefined>>,
       default: undefined,
@@ -73,14 +61,9 @@ export default defineComponent({
     const gateway = useGatewayStore();
     const toast = useToast();
     const { shownPlayer } = useShownPlayer();
-    // The root DPI zoom the popup's coordinate math runs against — see
-    // applyStyle/place (PluginUpdateHint's conversion, verbatim).
-    const dpiScale = useAppliedDpiScale();
 
     const open = ref(false);
-    const popStyle = ref<{ left: string; top: string; transform: string } | null>(null);
     const wrapEl = ref<HTMLElement | null>(null);
-    const popEl = ref<HTMLElement | null>(null);
     const hoverSpan = ref(false);
     const hoverPop = ref(false);
     let openTimer: CronHandle | undefined;
@@ -90,8 +73,10 @@ export default defineComponent({
      *  auto-open included — until a settled hover on the trigger unparks
      *  it. Per-mount state, deliberately not persisted. */
     const minimized = ref(false);
-    let anchorLeft = 0;
-    let anchorCenterY = 0;
+
+    // The anchor the card resolves against: the host-passed status-card
+    // ref, else this wrapper itself (the pre-mount pin flip).
+    const anchorEl = computed(() => props.anchor?.value ?? wrapEl.value);
 
     // ── the challenge state ────────────────────────────────────────────
     /** Pinned while the mobile service is on and the node demands an
@@ -157,7 +142,7 @@ export default defineComponent({
       void exchange(token);
     }
 
-    // ── anchored-card mechanics (PluginUpdateHint's, verbatim) ─────────
+    // ── open/close choreography (the card itself is PinnedAnchorCard) ──
     function clearTimers(): void {
       openTimer?.disconnect();
       closeTimer?.disconnect();
@@ -165,52 +150,16 @@ export default defineComponent({
       openTimer = closeTimer = reopenTimer = undefined;
     }
 
-    // The popup teleports to <body> — inside the root DPI zoom's subtree
-    // — so its left/top live in the zoomed local space and paint scale×
-    // larger: every visual-space measurement (gBCR, window.innerWidth /
-    // innerHeight) is divided by the applied scale first, or the card
-    // drifts scale× off its anchor (PluginUpdateHint's zoom notes).
-    function applyStyle(): void {
-      const half = (popEl.value?.offsetHeight ?? 0) / 2;
-      const innerH = window.innerHeight / dpiScale.value;
-      const top = Math.max(
-        EDGE_PX + half,
-        Math.min(anchorCenterY, innerH - EDGE_PX - half),
-      );
-      popStyle.value = {
-        left: anchorLeft + "px",
-        top: top + "px",
-        transform: "translateY(-50%)",
-      };
-    }
-
-    function place(): boolean {
-      const rect = (props.anchor?.value ?? wrapEl.value)?.getBoundingClientRect();
-      if (!rect) return false;
-      const z = dpiScale.value;
-      anchorLeft = Math.min(rect.right / z + ANCHOR_GAP_PX, window.innerWidth / z - 340);
-      anchorCenterY = (rect.top + rect.height / 2) / z;
-      applyStyle();
-      return true;
-    }
-
-    async function show(): Promise<void> {
+    function show(): void {
       // Parked: every auto-open yields to the dismissal — only the
       // trigger's settled hover (onEnter's reopen branch) unparks.
       if (minimized.value) return;
-      if (!place()) {
-        await nextTick();
-        if (!place()) return;
-      }
       open.value = true;
       void resolveSiteKey();
-      await nextTick();
-      if (open.value) applyStyle();
     }
 
     function close(): void {
       open.value = false;
-      popStyle.value = null;
     }
 
     function minimize(): void {
@@ -238,11 +187,11 @@ export default defineComponent({
       if (minimized.value) {
         reopenTimer = scheduleCronAfter(() => {
           minimized.value = false;
-          if (pinned.value) void show();
+          if (pinned.value) show();
         }, REOPEN_DELAY_MS);
         return;
       }
-      if (pinned.value) openTimer = scheduleCronAfter(() => void show(), OPEN_DELAY_MS);
+      if (pinned.value) openTimer = scheduleCronAfter(() => show(), OPEN_DELAY_MS);
     }
 
     function onLeave(): void {
@@ -264,25 +213,13 @@ export default defineComponent({
     watch(
       pinned,
       (p) => {
-        if (p) void show();
+        if (p) show();
         else if (!hoverSpan.value && !hoverPop.value) close();
       },
       { immediate: true, flush: "post" },
     );
 
-    function onResize(): void {
-      if (open.value) place();
-    }
-    window.addEventListener("resize", onResize);
-    // A scale change never fires a resize event: while the card is up,
-    // re-anchor it in the new space (PluginUpdateHint's zoom watch).
-    watch(dpiScale, () => {
-      if (open.value) place();
-    });
-    onBeforeUnmount(() => {
-      clearTimers();
-      window.removeEventListener("resize", onResize);
-    });
+    onBeforeUnmount(clearTimers);
 
     return () => (
       <span
@@ -293,68 +230,73 @@ export default defineComponent({
         onMouseleave={onLeave}
       >
         {slots.default?.()}
-        {open.value ? (
-          <Teleport to="body">
-            <div
-              class="gateway-captcha-hint__pop"
-              ref={popEl}
-              style={popStyle.value ?? undefined}
-              role={pinned.value ? "status" : "tooltip"}
-              onMouseenter={() => {
-                hoverPop.value = true;
-                clearTimers();
-              }}
-              onMouseleave={() => {
-                hoverPop.value = false;
-                onLeave();
-              }}
+        <PinnedAnchorCard
+          modelValue={open.value}
+          onUpdate:modelValue={(v: boolean) => {
+            if (!v) close();
+          }}
+          anchor={anchorEl}
+          placement="right"
+          offset={10}
+          title={t("gateway.captchaTitle")}
+          onMouseenter={() => {
+            hoverPop.value = true;
+            clearTimers();
+          }}
+          onMouseleave={() => {
+            hoverPop.value = false;
+            onLeave();
+          }}
+        >
+          <div
+            class="gateway-captcha-hint__card"
+            role={pinned.value ? "status" : "tooltip"}
+          >
+            <button
+              type="button"
+              class="gateway-captcha-hint__min"
+              aria-label={t("gateway.captchaMinimize")}
+              data-hint={t("gateway.captchaMinimize")}
+              onClick={minimize}
             >
-              <button
-                type="button"
-                class="gateway-captcha-hint__min"
-                aria-label={t("gateway.captchaMinimize")}
-                data-hint={t("gateway.captchaMinimize")}
-                onClick={minimize}
-              >
-                <Minus size={12} />
-              </button>
-              <p class="gateway-captcha-hint__title">
-                <ShieldCheck size={13} class="gateway-captcha-hint__title-icon" />
-                {t("gateway.captchaTitle")}
+              <Minus size={12} />
+            </button>
+            <p class="gateway-captcha-hint__title">
+              <ShieldCheck size={13} class="gateway-captcha-hint__title-icon" />
+              {t("gateway.captchaTitle")}
+            </p>
+            <p class="gateway-captcha-hint__hint">{t("gateway.captchaHint")}</p>
+            {healthError.value ? (
+              <p class="gateway-captcha-hint__warn">
+                <AlertTriangle size={13} class="gateway-captcha-hint__warn-icon" />
+                {tError(healthError.value)}
               </p>
-              <p class="gateway-captcha-hint__hint">{t("gateway.captchaHint")}</p>
-              {healthError.value ? (
-                <p class="gateway-captcha-hint__warn">
-                  <AlertTriangle size={13} class="gateway-captcha-hint__warn-icon" />
-                  {tError(healthError.value)}
-                </p>
-              ) : siteKey.value === null ? (
-                <p class="gateway-captcha-hint__loading">
-                  <HkSpinner size="xs" tone="current" />
-                  {t("gateway.captchaLoading")}
-                </p>
-              ) : (
-                <HkCaptchaWidget
-                  siteKey={siteKey.value}
-                  attempt={attempt.value}
-                  onVerify={onVerify}
-                />
-              )}
-              {exchanging.value ? (
-                <p class="gateway-captcha-hint__loading">
-                  <HkSpinner size="xs" tone="current" />
-                  {t("gateway.captchaExchanging")}
-                </p>
-              ) : null}
-              {exchangeError.value ? (
-                <p class="gateway-captcha-hint__warn">
-                  <AlertTriangle size={13} class="gateway-captcha-hint__warn-icon" />
-                  {tError(exchangeError.value)}
-                </p>
-              ) : null}
-            </div>
-          </Teleport>
-        ) : null}
+            ) : siteKey.value === null ? (
+              <p class="gateway-captcha-hint__loading">
+                <HkSpinner size="xs" tone="current" />
+                {t("gateway.captchaLoading")}
+              </p>
+            ) : (
+              <HkCaptchaWidget
+                siteKey={siteKey.value}
+                attempt={attempt.value}
+                onVerify={onVerify}
+              />
+            )}
+            {exchanging.value ? (
+              <p class="gateway-captcha-hint__loading">
+                <HkSpinner size="xs" tone="current" />
+                {t("gateway.captchaExchanging")}
+              </p>
+            ) : null}
+            {exchangeError.value ? (
+              <p class="gateway-captcha-hint__warn">
+                <AlertTriangle size={13} class="gateway-captcha-hint__warn-icon" />
+                {tError(exchangeError.value)}
+              </p>
+            ) : null}
+          </div>
+        </PinnedAnchorCard>
       </span>
     );
   },

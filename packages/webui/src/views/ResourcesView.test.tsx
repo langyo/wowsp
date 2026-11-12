@@ -141,6 +141,33 @@ vi.mock("@celestia-island/hikari", () => {
         return () => h("div", slots.default?.() ?? []);
       },
     },
+    /* The boot strip's collapsible: a header button that toggles through
+     * update:modelValue and gates its body (the row list) on modelValue —
+     * the shape the boot-installer assertions drive. */
+    HkExpansionPanel: {
+      name: "HkExpansionPanel",
+      props: ["modelValue", "disabled"],
+      emits: ["update:modelValue"],
+      setup(
+        props: { modelValue?: boolean },
+        { slots, emit }: { slots: Record<string, (() => VNode[]) | undefined>; emit: (event: string, ...args: unknown[]) => void },
+      ) {
+        return () =>
+          h("div", { class: "hk-expansion-panel" }, [
+            h(
+              "button",
+              {
+                type: "button",
+                class: "hk-expansion-panel-header",
+                "aria-expanded": props.modelValue ? "true" : "false",
+                onClick: () => emit("update:modelValue", !props.modelValue),
+              },
+              [slots.title?.(), h("span", { class: "hk-expansion-panel-chevron" }), slots.action?.()],
+            ),
+            props.modelValue ? h("div", { class: "hk-expansion-panel-body" }, slots.default?.()) : null,
+          ]);
+      },
+    },
     useToast: () => ({ error: mocks.error, success: mocks.success, warning: mocks.warning, info: mocks.info }),
   };
 });
@@ -167,7 +194,7 @@ async function mountInstalled() {
   const view = shallowMount(ResourcesView, {
     // LoadingNote renders too: the mid-scan empty note keeps its copy (the
     // ring is the stubbed HkSpinner), and the notes below assert on it.
-    global: { stubs: { HkScrollContainer: false, LoadingNote: false, AppTag: false, HkTag: false } },
+    global: { stubs: { HkScrollContainer: false, HkExpansionPanel: false, LoadingNote: false, AppTag: false, HkTag: false } },
   });
   view.findAllComponents({ name: "HkTabs" }).find((tabs) => tabs.props("modelValue") === "online")!
     .vm.$emit("update:modelValue", "installed");
@@ -1114,12 +1141,12 @@ describe("boot re-installer strip", () => {
     const view = await mountInstalled();
     expect(view.find(".boot-installer").exists()).toBe(true);
     // Collapsed by default: the head names the strip, no rows yet.
-    expect(view.find(".boot-installer__head").text()).toContain(
+    expect(view.find(".boot-installer .hk-expansion-panel-header").text()).toContain(
       "resources.bootInstaller.title",
     );
     expect(view.find(".boot-installer__rowname").exists()).toBe(false);
     // Expanding lists the descriptor rows under the unit path.
-    await view.find(".boot-installer__head").trigger("click");
+    await view.find(".boot-installer .hk-expansion-panel-header").trigger("click");
     const rows = view.findAll(".boot-installer__rowname");
     expect(rows).toHaveLength(2);
     expect(rows[0].text()).toBe("Shot Timer");

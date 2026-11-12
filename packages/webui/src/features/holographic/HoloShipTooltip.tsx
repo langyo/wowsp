@@ -12,32 +12,33 @@
  *             section says so instead of inventing a loadout);
  *   船只属性   the baked spec groups (range / AA / concealment / …).
  *
- * Teleported to <body> and placed under the hovered slot with the same
- * measure-then-place policy as the live panel's ship card; the parent
- * keeps it mounted while the pointer rests on either the slot or the card
- * (onCardHover reports the card side of that bridge).
+ * Anchored under the hovered slot on hikari's HkPopover (issue #1736's
+ * hover-card family — the same recipe as ReplaySourcesTip): the popover
+ * owns the teleport into the overlay root, the measure-then-place pass
+ * (viewport flip, clamping, the root DPI zoom's local space), the
+ * popup-registry z slot, content-size re-placement (the HP/dead flips
+ * re-place through its ResizeObserver instead of the per-frame layout
+ * reads this card used to run) and the enter/leave pop motion. The
+ * parent keeps the card mounted while the pointer rests on either the
+ * slot or the card (onCardHover reports the card side of that bridge,
+ * fed by the popover's whole-panel hover events).
  */
 import {
   computed,
   defineComponent,
   nextTick,
-  onMounted,
-  onUpdated,
   ref,
-  Teleport,
   watch,
-  type CSSProperties,
   type PropType,
 } from "vue";
 import { Flag, Wrench } from "@lucide/vue";
-import { HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
+import { HkPopover, HkScrollContainer, HkSpinner } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import BattleIcon from "@/components/base/BattleIcon";
 import NationFlag from "@/components/base/NationFlag";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
-import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { isAiName, type RosterStat } from "@/composables/useRosterStats";
 import { scopedViewOf } from "@/utils/shipStatsScope";
 import type { ResolvedStatsMode, RosterModeNumbers } from "@/utils/statView";
@@ -50,7 +51,6 @@ import {
   shipTypeShort,
   tierRoman,
 } from "@/features/replay/shipLiveStats";
-import { LIVE_CARD_WIDTH_PX, placeLiveCard } from "@/features/replay/liveCardPlacement";
 import {
   nationNameFromDb,
   shipOfflineEntry,
@@ -127,10 +127,6 @@ export default defineComponent({
   setup(props) {
     const { dataLanguage } = useLanguage();
     const encStore = useEncyclopediaStore();
-    // The root DPI zoom the placement math runs against — see place (the
-    // scale the document root is drawn at, `1` while the interface-scale
-    // preference is Auto).
-    const dpiScale = useAppliedDpiScale();
 
     const enemy = computed(() => props.vehicle.relation >= 2);
     const self = computed(() => props.vehicle.relation === 0);
@@ -220,78 +216,24 @@ export default defineComponent({
       liveStats.value ? formatShipSpecGroups(liveStats.value) : [],
     );
 
-    // ── Placement (measure-then-place, refreshed on every content change
-    //    so HP/dead flips keep the card hugging its anchor) ────────────────
-    const cardEl = ref<HTMLElement | null>(null);
     // The card-level scroll region (the HkScrollContainer filling the card
     // below): a COMPONENT ref — it exposes the scrolling viewport, not an
     // element of its own.
     const scroll = ref<ScrollHandle | null>(null);
-    const pos = ref<CSSProperties>({
-      left: "0px",
-      top: "0px",
-      width: `${LIVE_CARD_WIDTH_PX}px`,
-      visibility: "hidden",
-    });
-    function place(force = false): void {
-      const card = cardEl.value;
-      if (!card) return;
-      // Re-measure/replace only when the content box actually changed size
-      // (dead-flip, spec groups loading) — the card re-renders every frame
-      // during playback, and a per-frame layout read would thrash. A forced
-      // pass (hover slid to another slot) bypasses the size cache.
-      const w = card.offsetWidth;
-      const h = card.offsetHeight;
-      if (!force && w === lastW && h === lastH) return;
-      const r = props.anchorEl.getBoundingClientRect();
-      if (!r.width && !r.height) return; // detached anchor — don't cache
-      lastW = w;
-      lastH = h;
-      // The card teleports to <body> — inside the root DPI zoom's subtree —
-      // so its written left/top paint in the zoomed local space while the
-      // anchor's gBCR and window.innerWidth/innerHeight answer in
-      // root-visual px: placeLiveCard runs entirely in local space, fed
-      // the measured values divided by the applied scale (the hint
-      // family's zoom notes; offsetWidth/offsetHeight are already local).
-      const z = dpiScale.value;
-      const { left, top } = placeLiveCard(
-        {
-          left: r.left / z,
-          top: r.top / z,
-          right: r.right / z,
-          bottom: r.bottom / z,
-        },
-        w,
-        h,
-        window.innerWidth / z,
-        window.innerHeight / z,
-      );
-      pos.value = {
-        left: `${Math.round(left)}px`,
-        top: `${Math.round(top)}px`,
-        width: `${LIVE_CARD_WIDTH_PX}px`,
-        visibility: "visible",
-      };
-    }
-    let lastW = -1;
-    let lastH = -1;
     // Hover can slide straight from one slot to the next while the card
-    // stays mounted — re-anchor whenever the anchor (or described player)
-    // changes, even at an identical content size. A NEW player also snaps
-    // the card's scroll back to the top (playhead ticks keep the position).
+    // stays mounted — a NEW player snaps the card's scroll back to the top
+    // (playhead ticks keep the position; HkPopover re-places on the anchor
+    // swap itself).
     watch(
-      [() => props.anchorEl, () => props.vehicle.id],
-      ([, newId], [, oldId]) =>
+      () => props.vehicle.id,
+      (newId, oldId) => {
+        if (newId === oldId) return;
         void nextTick(() => {
-          place(true);
-          if (newId !== oldId) {
-            const vp = scroll.value?.getScrollElement();
-            if (vp) vp.scrollTop = 0;
-          }
-        }),
+          const vp = scroll.value?.getScrollElement();
+          if (vp) vp.scrollTop = 0;
+        });
+      },
     );
-    onMounted(() => void nextTick(() => place(true)));
-    onUpdated(() => place());
 
     const fmtInt = (v: number | null | undefined): string =>
       v == null ? "—" : Math.round(v).toLocaleString();
@@ -303,25 +245,33 @@ export default defineComponent({
           ? Math.max(0, Math.min(1, shownHp.value / maxHp.value))
           : null;
       return (
-        <Teleport to="body">
-          <div
-            ref={cardEl}
-            class={[
-              "holo-ship-tip",
-              enemy.value ? "holo-ship-tip--enemy" : "",
-              dead.value ? "holo-ship-tip--dead" : "",
-            ].join(" ")}
-            style={pos.value}
-            onMouseenter={() => props.onCardHover(true)}
-            onMouseleave={() => props.onCardHover(false)}
-          >
-            {/* Card scroll region: the measure-then-place card root must
-                stay a plain fixed element (offsetWidth/offsetHeight feed
-                the flip math), so the hikari scroll container lives INSIDE
-                it and fills it — the overlay track hugs the card's right
-                edge and the whole card scrolls as one document. */}
-            <HkScrollContainer class="holo-ship-tip__scroll" ref={scroll}>
-              <div class="holo-ship-tip__inner">
+        // The parent mounts this card only while some slot is hovered, so
+        // the popover rides an always-true modelValue and mount/unmount IS
+        // the open/close. No backdrop, no outside-click/Esc dismissal — the
+        // hover bridge owns the card's lifetime.
+        <HkPopover
+          class={[
+            "holo-ship-tip",
+            enemy.value ? "holo-ship-tip--enemy" : "",
+            dead.value ? "holo-ship-tip--dead" : "",
+          ]}
+          modelValue={true}
+          anchorRef={props.anchorEl}
+          placement="bottom-start"
+          offset={8}
+          backdrop={false}
+          closeOnBackdrop={false}
+          closeOnEscape={false}
+          glass={false}
+          onMouseenter={() => props.onCardHover(true)}
+          onMouseleave={() => props.onCardHover(false)}
+        >
+          {/* Card scroll region: the popover panel is the card root (the
+              flex column below the height cap); the hikari scroll
+              container fills it — the overlay track hugs the card's right
+              edge and the whole card scrolls as one document. */}
+          <HkScrollContainer class="holo-ship-tip__scroll" ref={scroll}>
+            <div class="holo-ship-tip__inner">
             <div class="holo-ship-tip__head">
               <div class="holo-ship-tip__name-row">
                 <span class="holo-ship-tip__name">
@@ -523,10 +473,9 @@ export default defineComponent({
             ) : null}
 
             <div class="holo-ship-tip__foot">{t("replay.tip.holdTab")}</div>
-              </div>
-            </HkScrollContainer>
           </div>
-        </Teleport>
+          </HkScrollContainer>
+        </HkPopover>
       );
     };
   },

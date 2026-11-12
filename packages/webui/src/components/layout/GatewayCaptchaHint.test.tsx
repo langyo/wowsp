@@ -1,10 +1,13 @@
-/** Tests for the sidebar's gateway captcha hint: the PINNED state (mobile
- *  service on + pub socket in the captcha phase opens the card on its own,
- *  anchored right of the game-status card), the verify → publish exchange
+/** Tests for the sidebar's gateway captcha hint, now hosted by the shared
+ *  PinnedAnchorCard (hikari HkPopover underneath, issue #1736's pinned-card
+ *  family): the PINNED state (mobile service on + pub socket in the
+ *  captcha phase opens the card on its own), the verify → publish exchange
  *  (token handed to gateway_publish_start; a captcha-failed rejection
  *  remints the widget via the attempt bump; success unpins), and the
  *  minimize park (a deliberate dismissal wins over the pin until a
- *  settled hover reopens it).
+ *  settled hover reopens it). Anchor geometry (right of the game-status
+ *  card, centered, clamps, the root zoom's local space) is HkPopover's
+ *  own business now — covered by hikari's anchored/rootzoom suites.
  *
  *  The api module is mocked; HkCaptchaWidget is stubbed with a button
  *  emitting verify (the real widget loads a third-party script). */
@@ -100,8 +103,14 @@ async function mountHint(card: HTMLElement | null = anchorCard()) {
   return { wrapper, gateway };
 }
 
+/** Advance fake time past the popover's leave settle (the surface
+ *  machine's phase clocks are setTimeout/rAF driven). */
+async function settleClosed(): Promise<void> {
+  await vi.advanceTimersByTimeAsync(500);
+}
+
 function pop(): HTMLElement | null {
-  return document.body.querySelector<HTMLElement>(".gateway-captcha-hint__pop");
+  return document.body.querySelector<HTMLElement>(".gateway-captcha-hint__card");
 }
 
 /** Click a control inside the TELEPORTED popup (document.body, outside the
@@ -149,26 +158,11 @@ describe("GatewayCaptchaHint", () => {
 
     const el = pop();
     expect(el).not.toBeNull();
-    // Anchored right of the card, vertically centered on it.
-    expect(el?.style.left).toBe("250px");
-    expect(el?.style.top).toBe("720px");
-    expect(el?.style.transform).toBe("translateY(-50%)");
+    // The card rides the shared PinnedAnchorCard (HkPopover's panel owns
+    // the anchored placement); the pinned challenge is a standing status.
+    expect(el?.closest(".hk-popover-panel")).not.toBeNull();
     expect(el?.getAttribute("role")).toBe("status");
     expect(el?.textContent).toContain(t("gateway.captchaTitle"));
-  });
-
-  it("divides the anchor geometry by the applied root zoom", async () => {
-    // PluginUpdateHint's zoom regression, mirrored for the cloned
-    // mechanics: at 125% the unconverted card drifted scale× off the
-    // anchor (240 visual / 1.25 + 10 → 202 local; center 720 → 576).
-    document.documentElement.dataset.dpiScale = "125";
-    resetAppliedDpiScaleForTest();
-    await mountHint();
-
-    const el = pop();
-    expect(el).not.toBeNull();
-    expect(el?.style.left).toBe("202px");
-    expect(el?.style.top).toBe("576px");
   });
 
   it("mounts the widget only after the health document lands", async () => {
@@ -204,6 +198,7 @@ describe("GatewayCaptchaHint", () => {
     // The pass landed: phase moves off captcha, the pin lifts, card closes.
     gateway.pubPhase = "online";
     await flushPromises();
+    await settleClosed();
     expect(pop()).toBeNull();
   });
 
@@ -232,6 +227,7 @@ describe("GatewayCaptchaHint", () => {
     expect(pop()).not.toBeNull();
 
     await clickIn(".gateway-captcha-hint__min");
+    await settleClosed();
     expect(pop()).toBeNull();
 
     // The park survives while the SAME episode stays pending — the pin
@@ -255,6 +251,7 @@ describe("GatewayCaptchaHint", () => {
   it("a FRESH captcha episode clears an old park and re-pins", async () => {
     await mountHint();
     await clickIn(".gateway-captcha-hint__min");
+    await settleClosed();
     expect(pop()).toBeNull();
 
     // Phase cycling out and back into captcha = a new challenge demand

@@ -1,7 +1,21 @@
 /* HoloShipTooltip — the rich hover card for one scorebar ship slot.
-   Teleported to <body>, OUTSIDE .holo-map, so the HUD custom properties do
-   not resolve here: the card carries its own self-contained tokens (below)
-   and the team accents are the scorebar's green/red family. */
+   Anchored on hikari's HkPopover (issue #1736's hover-card family), so the
+   panel teleports into the overlay root OUTSIDE .holo-map and the HUD
+   custom properties do not resolve here: the card carries its own
+   self-contained tokens (below) and the team accents are the scorebar's
+   green/red family. */
+
+/* Panel seat: the card root IS the popover panel (the class rides HkPopover's
+   attrs fallthrough). The compound selector out-ranks the bare
+   `.hk-popover-panel` box rules (max-content width, the 70vh family height
+   cap) wherever the sheets land in the bundle; the fixed width is the
+   retired LIVE_CARD_WIDTH_PX — the spec table wraps at this column — and
+   the tighter cap keeps big CV spec sheets off the scorebar strip. */
+.hk-popover-panel.holo-ship-tip {
+  width: 360px;
+  max-height: min(58vh, 540px);
+}
+
 .holo-ship-tip {
   /* The card used to paint the scorebar's 42% grey glass + blur(14px) —
      but the blur never samples the WebGL canvas behind it in WebView2
@@ -20,17 +34,14 @@
   --tip-tag-ink: rgb(255 255 255 / 85%);
   --tip-rail: rgb(9 13 22 / 65%);
 
-  position: fixed;
-  z-index: 1000;
   box-sizing: border-box;
-  /* Capped card: big CV spec sheets no longer tower over the map (they
-     used to flip ABOVE the anchor and cover the scorebar strip). The
-     card is a flex column so the scroll region below can shrink inside
-     the cap; the clipped rest scrolls inside it via hikari's overlay
-     bar riding the card's right edge. */
+  /* Capped card (the height cap rides the panel-seat rule above — a
+     same-specificity tie with the popover base's own cap would be
+     bundle-order dependent): the card is a flex column so the scroll
+     region below can shrink inside the cap; the clipped rest scrolls
+     inside it via hikari's overlay bar riding the card's right edge. */
   display: flex;
   flex-direction: column;
-  max-height: min(58vh, 540px);
   border-radius: 12px;
   /* Near-opaque themed panel — see the token block above. The blur stays
      as progressive enhancement for engines where backdrop sampling works. */

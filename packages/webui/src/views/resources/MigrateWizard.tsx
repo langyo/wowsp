@@ -1,10 +1,11 @@
 /** Stale-bin migration wizard modal — plain render functions taking the
  *  view context (they render INSIDE ResourcesView's own tree, so the
  *  modal vnodes stay children of the view component). */
-import { Ban, ChevronDown, Undo2 } from "@lucide/vue";
+import { Ban, Undo2 } from "@lucide/vue";
 import {
   HkButton,
   HkCheckbox,
+  HkExpansionPanel,
   HkIconButton,
   HkModal,
   HkScrollContainer,
@@ -24,36 +25,44 @@ import { migKb } from "./display";
 import type { ResourcesCtx } from "./context";
 
 /** One auto-cleaned group (duplicates / superseded): collapsed to a
- *  count + one-line explanation, expandable to the raw file list. */
+ *  count + one-line explanation, expandable to the raw file list — hikari's
+ *  HkExpansionPanel owns the toggle (aria-expanded, chevron, expand motion;
+ *  issue #1736's views batch). */
 function renderMigGroup(ctx: ResourcesCtx, kind: "duplicate" | "superseded", files: PlanFile[]) {
-  const open = ctx.migGroupOpen.value === kind;
   return (
-    <div class="mig-wizard__group" key={kind}>
-      <button
-        type="button"
-        class="mig-wizard__group-head"
-        disabled={files.length === 0}
-        onClick={() => (ctx.migGroupOpen.value = open ? null : kind)}
-      >
-        <ChevronDown size={14} class={["mig-wizard__chevron", { open }]} />
-        <strong>{t(`resources.migrateGroup.${kind}`)}</strong>
-        <AppTag class="mig-wizard__count" tone="default">{files.length}</AppTag>
-      </button>
-      <p class="mig-wizard__hint">{t(`resources.migrateGroup.${kind}Hint`)}</p>
-      {/* The raw file list's capped scroll region: hikari's overlay
-          scrollbar owns the overflow; the lines scroll in the viewport. */}
-      {open && files.length > 0 && (
-        <HkScrollContainer class="mig-wizard__files">
-          <ul class="mig-wizard__files-inner">
-            {files.map((f) => (
-              <li key={f.path} data-hint={f.path}>
-                {f.path}
-              </li>
-            ))}
-          </ul>
-        </HkScrollContainer>
-      )}
-    </div>
+    <HkExpansionPanel
+      class="mig-wizard__group"
+      key={kind}
+      modelValue={ctx.migGroupOpen.value === kind}
+      disabled={files.length === 0}
+      onUpdate:modelValue={(v: boolean) => (ctx.migGroupOpen.value = v ? kind : null)}
+    >
+      {{
+        title: () => (
+          <>
+            <strong>{t(`resources.migrateGroup.${kind}`)}</strong>
+            <AppTag class="mig-wizard__count" tone="default">{files.length}</AppTag>
+          </>
+        ),
+        subtitle: () => (
+          <span class="mig-wizard__hint">{t(`resources.migrateGroup.${kind}Hint`)}</span>
+        ),
+        default: () =>
+          files.length > 0 ? (
+            /* The raw file list's capped scroll region: hikari's overlay
+               scrollbar owns the overflow; the lines scroll in the viewport. */
+            <HkScrollContainer class="mig-wizard__files">
+              <ul class="mig-wizard__files-inner">
+                {files.map((f) => (
+                  <li key={f.path} data-hint={f.path}>
+                    {f.path}
+                  </li>
+                ))}
+              </ul>
+            </HkScrollContainer>
+          ) : null,
+      }}
+    </HkExpansionPanel>
   );
 }
 
@@ -306,45 +315,45 @@ export function renderMigrateWizard(ctx: ResourcesCtx) {
                   })()}
                 </div>
                 {ctx.migDecide.value.ignore.size > 0 && (
-                  <div class="mig-wizard__group">
-                    <button
-                      type="button"
-                      class="mig-wizard__group-head"
-                      onClick={() =>
-                        (ctx.migGroupOpen.value =
-                          ctx.migGroupOpen.value === "ignored" ? null : "ignored")
-                      }
-                    >
-                      <ChevronDown
-                        size={14}
-                        class={[
-                          "mig-wizard__chevron",
-                          { open: ctx.migGroupOpen.value === "ignored" },
-                        ]}
-                      />
-                      <strong>{t("resources.migrateGroup.ignored")}</strong>
-                      <AppTag class="mig-wizard__count" tone="default">{ctx.migDecide.value.ignore.size}</AppTag>
-                    </button>
-                    <p class="mig-wizard__hint">
-                      {t("resources.migrateGroup.ignoredHint")}
-                    </p>
-                    <div class="mig-wizard__group-foot">
-                      <HkButton variant="ghost" size="sm" onClick={ctx.restoreMigAll}>
-                        {t("resources.migrateUnignoreAll")}
-                      </HkButton>
-                    </div>
-                    {ctx.migGroupOpen.value === "ignored" && (
-                      // Same capped stack for the ignored rows (overlay
-                      // scrollbar owned by hikari's scroll container).
-                      <HkScrollContainer class="mig-wizard__rows">
-                        <div class="mig-wizard__rows-inner">
-                          {plan.decide
-                            .filter((f) => ctx.migDecide.value.ignore.has(f.path))
-                            .map((f) => renderMigIgnoredRow(ctx, f))}
-                        </div>
-                      </HkScrollContainer>
-                    )}
-                  </div>
+                  <HkExpansionPanel
+                    class="mig-wizard__group"
+                    modelValue={ctx.migGroupOpen.value === "ignored"}
+                    onUpdate:modelValue={(v: boolean) =>
+                      (ctx.migGroupOpen.value = v ? "ignored" : null)
+                    }
+                  >
+                    {{
+                      title: () => (
+                        <>
+                          <strong>{t("resources.migrateGroup.ignored")}</strong>
+                          <AppTag class="mig-wizard__count" tone="default">{ctx.migDecide.value.ignore.size}</AppTag>
+                        </>
+                      ),
+                      subtitle: () => (
+                        <span class="mig-wizard__hint">
+                          {t("resources.migrateGroup.ignoredHint")}
+                        </span>
+                      ),
+                      default: () => (
+                        <>
+                          <div class="mig-wizard__group-foot">
+                            <HkButton variant="ghost" size="sm" onClick={ctx.restoreMigAll}>
+                              {t("resources.migrateUnignoreAll")}
+                            </HkButton>
+                          </div>
+                          {/* Same capped stack for the ignored rows (overlay
+                              scrollbar owned by hikari's scroll container). */}
+                          <HkScrollContainer class="mig-wizard__rows">
+                            <div class="mig-wizard__rows-inner">
+                              {plan.decide
+                                .filter((f) => ctx.migDecide.value.ignore.has(f.path))
+                                .map((f) => renderMigIgnoredRow(ctx, f))}
+                            </div>
+                          </HkScrollContainer>
+                        </>
+                      ),
+                    }}
+                  </HkExpansionPanel>
                 )}
                 <p class="mig-wizard__hint mig-wizard__hint--foot">
                   {t("resources.migrateCleanupNote")}

@@ -1,4 +1,4 @@
-import { computed, defineComponent, nextTick, onBeforeUnmount, ref, Teleport, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, ref, watch } from "vue";
 import type { PropType, Ref } from "vue";
 import { useRouter } from "vue-router";
 import { AlertTriangle, ArrowUpCircle, ChevronRight, Crosshair, Minus, Puzzle } from "@lucide/vue";
@@ -17,9 +17,9 @@ import { INGAME_PLUGIN_MOD_ID } from "@/components/settings/useSettingsGamePaths
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { usePluginUpdatesStore, PROBE_ITEM } from "@/stores/pluginUpdates";
 import type { PendingInstall } from "@/stores/pluginUpdates";
-import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import { sameGamePath } from "@/utils/gamePath";
 import { installFolderName, installLabel } from "@/utils/installLabel";
+import PinnedAnchorCard from "@/components/layout/PinnedAnchorCard";
 import "./PluginUpdateHint.scss";
 
 /** Hover-in delay before the hint opens (the global tooltip's rhythm). */
@@ -31,16 +31,12 @@ const CLOSE_GRACE_MS = 180;
  *  drive-by pass across the selector does not yank the card the user
  *  just put away straight back up. Exported for the tests. */
 export const REOPEN_DELAY_MS = 600;
-/** Gap between the anchor card's right edge and the popup. */
-const ANCHOR_GAP_PX = 10;
 /** How long an UNATTENDED settled card lingers before closing itself —
  *  enough to read the done line, short enough that a card nobody holds
  *  open does not stand beside the sidebar forever. An attended one (the
  *  pointer on it) never arms this timer and closes through the ordinary
  *  leave grace instead. Exported for the tests. */
 export const SETTLED_LINGER_MS = 4000;
-/** Viewport breathing room kept above/below the popup. */
-const EDGE_PX = 8;
 
 /** One clickable row of the hint list: a stale catalog mod or the
  *  built-in probe plugin, deep-linking its mod-hub page. */
@@ -58,17 +54,18 @@ interface HintEntry {
 /**
  * PluginUpdateHint — the hover surface on the sidebar's client-version
  * selector. While ANY install has plugins awaiting updates the wrapped
- * button gains a count badge, and hovering it opens this card to the
- * RIGHT of the game-status card, vertically centered on it (the anchor
- * element arrives as the `anchor` ref prop). The stale items render as
- * hikari's menu rows inside a capped HkScrollContainer — every row
- * clickable, deep-linking the mod hub's page for that plugin — with one
- * 一键更新 action that starts the batch pass across every pending
- * install (progress lands on the shared DownloadToast card; while it runs the
- * action becomes a spinner + the updating label). hikari's HkTooltip is
- * text-only, so this is a purpose-built two-target hover popup: entering
- * either the trigger or the card keeps it open, leaving both starts a
- * short close grace.
+ * button gains a count badge, and hovering it opens this card (the
+ * shared PinnedAnchorCard — hikari HkPopover underneath, issue #1736's
+ * pinned-card family — anchored to the RIGHT of the game-status card,
+ * vertically centered on it; the anchor element arrives as the `anchor`
+ * ref prop). The stale items render as hikari's menu rows inside a
+ * capped HkScrollContainer — every row clickable, deep-linking the mod
+ * hub's page for that plugin — with one 一键更新 action that starts the
+ * batch pass across every pending install (progress lands on the shared
+ * DownloadToast card; while it runs the action becomes a spinner + the
+ * updating label). hikari's HkTooltip is text-only, so this is a
+ * purpose-built two-target hover popup: entering either the trigger or
+ * the card keeps it open, leaving both starts a short close grace.
  *
  * While the RUNNING client's probe plugin is stale the card is PINNED:
  * it opens on its own and stays put (no hover needed, no close grace) —
@@ -105,8 +102,8 @@ interface HintEntry {
 export default defineComponent({
   name: "PluginUpdateHint",
   props: {
-    /** The element the popup anchors to — the sidebar's game-status
-     *  card, so the popup floats beside it, vertically centered on it
+    /** The element the card anchors to — the sidebar's game-status
+     *  card, so the card floats beside it, vertically centered on it
      *  instead of hanging off the selector row's top-right corner. */
     anchor: {
       type: Object as PropType<Ref<HTMLElement | null | undefined>>,
@@ -126,15 +123,9 @@ export default defineComponent({
     const updates = usePluginUpdatesStore();
     const gameStatus = useGameStatusStore();
     const router = useRouter();
-    // The root DPI zoom the popup's coordinate math runs against — see
-    // applyStyle/place (the scale the document root is drawn at, `1`
-    // while the interface-scale preference is Auto).
-    const dpiScale = useAppliedDpiScale();
 
     const open = ref(false);
-    const popStyle = ref<{ left: string; top: string; transform: string } | null>(null);
     const wrapEl = ref<HTMLElement | null>(null);
-    const popEl = ref<HTMLElement | null>(null);
     /** Where the pointer currently rests — the pin lifting must not yank
      *  the card away from under a reading pointer (the warning's own
      *  follow-up is "close the game, then update"). */
@@ -162,10 +153,10 @@ export default defineComponent({
      *  lift's ordinary close, and by a fresh episode refilling the list
      *  (the rise branch below) — it never outlives its episode. */
     const settled = ref(false);
-    /** Anchor snapshot behind the current popStyle: the popup's left
-     *  edge and the vertical center its translateY(-50%) hangs on. */
-    let anchorLeft = 0;
-    let anchorCenterY = 0;
+
+    // The anchor the card resolves against: the host-passed status-card
+    // ref, else this wrapper itself (the pre-mount pin flip).
+    const anchorEl = computed(() => props.anchor?.value ?? wrapEl.value);
 
     /** Pinned while the RUNNING client's probe plugin is stale — the
      *  card stays up as a standing reminder. Only the probe counts: it
@@ -202,67 +193,16 @@ export default defineComponent({
       openTimer = closeTimer = reopenTimer = undefined;
     }
 
-    /** Rewrite the popup style off the anchor snapshot, clamping the
-     *  centered top into the viewport once the popup's own rendered
-     *  height is known (jsdom and the pre-mount pass both measure 0).
-     *  The popup teleports to <body> — inside the root DPI zoom's
-     *  subtree — so its left/top live in the zoomed local space and
-     *  paint scale× larger: every visual-space measurement (gBCR,
-     *  window.innerHeight) is divided by the applied scale first, or
-     *  the card drifts scale× off its anchor and the bottom clamp
-     *  leaks past the window edge (user report 2026-10-31: at 125% the
-     *  一键更新 action landed off-screen). */
-    function applyStyle(): void {
-      const half = (popEl.value?.offsetHeight ?? 0) / 2;
-      const innerH = window.innerHeight / dpiScale.value;
-      const top = Math.max(
-        EDGE_PX + half,
-        Math.min(anchorCenterY, innerH - EDGE_PX - half),
-      );
-      popStyle.value = {
-        left: `${anchorLeft}px`,
-        top: `${top}px`,
-        transform: "translateY(-50%)",
-      };
-    }
-
-    /** Snapshot the anchor card's rect. Returns false when neither the
-     *  anchor nor the wrapper is mounted yet (pre-mount pin flip). The
-     *  rect answers in root-visual px (standardized zoom reports
-     *  ancestor zoom applied) — divided into the popup's zoomed local
-     *  space, the conversion applyStyle's viewport clamp runs too. */
-    function place(): boolean {
-      const rect = (props.anchor?.value ?? wrapEl.value)?.getBoundingClientRect();
-      if (!rect) return false;
-      const z = dpiScale.value;
-      anchorLeft = Math.min(rect.right / z + ANCHOR_GAP_PX, window.innerWidth / z - 340);
-      anchorCenterY = (rect.top + rect.height / 2) / z;
-      applyStyle();
-      return true;
-    }
-
-    async function show(): Promise<void> {
+    function show(): void {
       // Parked: every auto-open yields to the dismissal — only the
       // trigger's settled hover (onEnter's reopen branch) unparks.
       if (minimized.value) return;
-      if (!place()) {
-        // An immediate pin at setup can fire before the anchor sibling's
-        // ref is wired (or before this component's own wrapper mounts)
-        // — retry once after the current patch settles.
-        await nextTick();
-        if (!place()) return;
-      }
       open.value = true;
-      // The popup's height settles after it renders — one post-mount
-      // pass re-clamps the centered top against the viewport bottom.
-      await nextTick();
-      if (open.value) applyStyle();
     }
 
     function close(): void {
       open.value = false;
       settled.value = false;
-      popStyle.value = null;
     }
 
     /** The corner button: park the card for now. Clears any pending
@@ -319,11 +259,11 @@ export default defineComponent({
           minimized.value = false;
           // The episode can fully empty during the debounce — reopening
           // would only strand the hidden popup on open=true.
-          if (updates.totalCount > 0) void show();
+          if (updates.totalCount > 0) show();
         }, REOPEN_DELAY_MS);
         return;
       }
-      openTimer = scheduleCronAfter(() => void show(), OPEN_DELAY_MS);
+      openTimer = scheduleCronAfter(() => show(), OPEN_DELAY_MS);
     }
 
     function onLeave(): void {
@@ -341,29 +281,16 @@ export default defineComponent({
 
     // The pin flip opens the card by itself; the pin lifting closes it
     // unless the pointer is holding it open (the hover handlers take
-    // over from there). show() carries its own mount-timing retry.
+    // over from there). PinnedAnchorCard places the card whenever the
+    // anchor resolves — including the anchor arriving a mount late.
     watch(pinned, (p) => {
-      if (p) void show();
+      if (p) show();
       // A settled card outlives its own pin too: the pin lifting BECAUSE
       // the probe updated is the done moment, not a dismissal.
       else if (!hoverSpan.value && !hoverPop.value && !settled.value) close();
     }, { immediate: true, flush: "post" });
 
-    // A pinned card can outlive a viewport resize — re-anchor while up.
-    function onResize(): void {
-      if (open.value) place();
-    }
-    window.addEventListener("resize", onResize);
-    // A scale change never fires a resize event: while the card is up
-    // (the settings' live DPI preview over a pinned card), re-anchor it
-    // in the new space — the same drift class the resize listener covers.
-    watch(dpiScale, () => {
-      if (open.value) place();
-    });
-    onBeforeUnmount(() => {
-      clearTimers();
-      window.removeEventListener("resize", onResize);
-    });
+    onBeforeUnmount(clearTimers);
 
     /** The card's rows for one pending install: the probe first (it is
      *  what the batch pass runs first too), then the stale mods. */
@@ -451,90 +378,95 @@ export default defineComponent({
         >
           {slots.default?.()}
           {count > 0 ? <span class="plugin-update-hint__badge">{count}</span> : null}
-          {open.value && (count > 0 || settled.value) ? (
-            <Teleport to="body">
-              <div
-                class="plugin-update-hint__pop"
-                ref={popEl}
-                style={popStyle.value ?? undefined}
-                role={pinned.value || settled.value ? "status" : "tooltip"}
-                onMouseenter={() => {
-                  hoverPop.value = true;
-                  clearTimers();
-                }}
-                onMouseleave={() => {
-                  hoverPop.value = false;
-                  onLeave();
-                }}
+          <PinnedAnchorCard
+            modelValue={open.value && (count > 0 || settled.value)}
+            onUpdate:modelValue={(v: boolean) => {
+              if (!v) close();
+            }}
+            anchor={anchorEl}
+            placement="right"
+            offset={10}
+            title={t("resources.pluginUpdateBadge")}
+            onMouseenter={() => {
+              hoverPop.value = true;
+              clearTimers();
+            }}
+            onMouseleave={() => {
+              hoverPop.value = false;
+              onLeave();
+            }}
+          >
+            <div
+              class="plugin-update-hint__card"
+              role={pinned.value || settled.value ? "status" : "tooltip"}
+            >
+              {/* Park-for-now: drops the card; a settled hover on the
+                  selector brings it back (the badge stays as the cue). */}
+              <button
+                type="button"
+                class="plugin-update-hint__min"
+                aria-label={t("resources.pluginUpdateMinimize")}
+                data-hint={t("resources.pluginUpdateMinimize")}
+                onClick={minimize}
               >
-                {/* Park-for-now: drops the card; a settled hover on the
-                    selector brings it back (the badge stays as the cue). */}
-                <button
-                  type="button"
-                  class="plugin-update-hint__min"
-                  aria-label={t("resources.pluginUpdateMinimize")}
-                  data-hint={t("resources.pluginUpdateMinimize")}
-                  onClick={minimize}
-                >
-                  <Minus size={12} />
-                </button>
-                <p class="plugin-update-hint__title">
-                  {count > 0 ? (
-                    multi
-                      ? t("resources.pluginUpdateCountMulti", { count, clients: groups.length })
-                      : t("resources.pluginUpdateCount", { count })
-                  ) : (
-                    /* The settled close: the watched pass emptied the card,
-                     * and the done line says so before the card goes away. */
-                    t("resources.pluginUpdateDone")
-                  )}
-                </p>
-                {pinned.value && count > 0 ? (
-                  <p class="plugin-update-hint__warn">
-                    <AlertTriangle size={13} class="plugin-update-hint__warn-icon" />
-                    {t("resources.pluginUpdateStaleWarning")}
-                  </p>
-                ) : null}
+                <Minus size={12} />
+              </button>
+              <p class="plugin-update-hint__title">
                 {count > 0 ? (
-                  <>
-                    {/* The stale list scrolls when tall (hikari's scroll
-                        container owns the overlay scrollbar — this card
-                        keeps its rail standing so the cap never reads as a
-                        clip) and renders rows with the menu grammar: every
-                        row a button deep-linking its mod-hub page. */}
-                    <HkScrollContainer class="plugin-update-hint__list">
-                      <HkMenuPanel
-                        class="plugin-update-hint__menu"
-                        label={t("resources.pluginUpdateBadge")}
-                      >
-                        {groups.map(renderGroup)}
-                      </HkMenuPanel>
-                    </HkScrollContainer>
-                    <button
-                      type="button"
-                      class="plugin-update-hint__go"
-                      disabled={updates.running || allRunning.value}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void updates.updateAll();
-                      }}
+                  multi
+                    ? t("resources.pluginUpdateCountMulti", { count, clients: groups.length })
+                    : t("resources.pluginUpdateCount", { count })
+                ) : (
+                  /* The settled close: the watched pass emptied the card,
+                   * and the done line says so before the card goes away. */
+                  t("resources.pluginUpdateDone")
+                )}
+              </p>
+              {pinned.value && count > 0 ? (
+                <p class="plugin-update-hint__warn">
+                  <AlertTriangle size={13} class="plugin-update-hint__warn-icon" />
+                  {t("resources.pluginUpdateStaleWarning")}
+                </p>
+              ) : null}
+              {count > 0 ? (
+                <>
+                  {/* The stale list scrolls when tall (hikari's scroll
+                      container owns the overlay scrollbar — this card
+                      keeps its rail standing so the cap never reads as a
+                      clip) and renders rows with the menu grammar: every
+                      row a button deep-linking its mod-hub page. */}
+                  <HkScrollContainer class="plugin-update-hint__list">
+                    <HkMenuPanel
+                      class="plugin-update-hint__menu"
+                      label={t("resources.pluginUpdateBadge")}
                     >
-                      {updates.running ? (
-                        <HkSpinner size="xs" tone="current" />
-                      ) : (
-                        <ArrowUpCircle size={13} />
-                      )}
-                      {updates.running
-                        ? t("resources.pluginUpdateRunning")
-                        : allRunning.value
-                          ? t("resources.pluginUpdateBlockedRunning")
-                          : t("resources.pluginUpdateOne")}
-                    </button>
-                  </>
-                ) : null}
-              </div>
-            </Teleport>
-          ) : null}
+                      {groups.map(renderGroup)}
+                    </HkMenuPanel>
+                  </HkScrollContainer>
+                  <button
+                    type="button"
+                    class="plugin-update-hint__go"
+                    disabled={updates.running || allRunning.value}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void updates.updateAll();
+                    }}
+                  >
+                    {updates.running ? (
+                      <HkSpinner size="xs" tone="current" />
+                    ) : (
+                      <ArrowUpCircle size={13} />
+                    )}
+                    {updates.running
+                      ? t("resources.pluginUpdateRunning")
+                      : allRunning.value
+                        ? t("resources.pluginUpdateBlockedRunning")
+                        : t("resources.pluginUpdateOne")}
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </PinnedAnchorCard>
         </span>
       );
     };

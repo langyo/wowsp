@@ -36,35 +36,13 @@
   padding-right: 0.25rem;
 }
 
+/* The back affordance is hikari's HkIconButton ghost (issue #1736's views
+   batch): the library owns box, glyph ink, hover, press and focus — the
+   seat only wraps the bar's tap lane (padding around the 36px box keeps
+   the touch target generous; the aria-label + data-hint carry the name). */
 .settings-page__back {
   display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  min-height: 44px;
-  padding: 0 0.6rem 0 0.35rem;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: rgb(var(--color-muted));
-  font-size: var(--text-sm);
-  cursor: pointer;
-  transition: color var(--duration-short) var(--ease-standard),
-    background var(--duration-short) var(--ease-standard);
-
-  &:hover {
-    color: rgb(var(--color-text));
-    background: rgb(var(--color-primary) / 8%);
-  }
-
-  &:focus-visible {
-    outline: 2px solid rgb(var(--color-primary));
-    outline-offset: 1px;
-  }
-}
-
-.settings-page__back-label {
-  /* Hidden on phone widths where the bare arrow + 44px target is enough;
-     the aria-label keeps it usable for screen readers either way. */
+  padding: 0.25rem 0.1rem 0.25rem 0;
 }
 
 .settings-page__title {
@@ -151,11 +129,7 @@
      FeedbackSection.scss itself now (any host folds identically — the
      phone settings SHEET has no page context for a scoped rule). */
 
-  .settings-page__back-label {
-    display: none;
-  }
-
   .settings-page__back {
-    padding: 0 0.5rem;
+    padding-right: 0.25rem;
   }
 }

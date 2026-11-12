@@ -17,6 +17,7 @@ import {
 import {
   HkButton,
   HkConfirmDialog,
+  HkExpansionPanel,
   HkIconButton,
   HkModal,
   HkScrollContainer,
@@ -504,63 +505,70 @@ export default defineComponent({
                   </div>
                 )}
 
-              {hub.source.value === "installed" &&
-                hub.bootInstaller.value &&
-                hub.gameRoot.value &&
-                !hub.safeMode.value && (
-                  <div class="boot-installer">
-                    <div class="boot-installer__row">
-                      <button
-                        type="button"
-                        class="boot-installer__head"
-                        aria-expanded={bootInstallerOpen.value}
-                        data-hint={t("resources.bootInstaller.hint")}
-                        onClick={() => (bootInstallerOpen.value = !bootInstallerOpen.value)}
-                      >
-                        <AlertTriangle size={14} />
-                        <span class="boot-installer__title">
-                          {t("resources.bootInstaller.title", {
-                            count: hub.bootInstaller.value.descriptors.length,
-                          })}
-                        </span>
-                        <ChevronDown
-                          size={14}
-                          class={{ "is-open": bootInstallerOpen.value }}
-                        />
-                      </button>
-                      <HkButton
-                        size="sm"
-                        variant="primary"
-                        disabled={hub.disarmBusy.value}
-                        loading={hub.disarmBusy.value}
-                        onClick={() => (disarmAsk.value = true)}
-                      >
-                        {t("resources.bootInstaller.disarm")}
-                      </HkButton>
-                    </div>
-                    {bootInstallerOpen.value && (
-                      <div class="boot-installer__body">
-                        <div class="boot-installer__unit">
-                          {hub.bootInstaller.value.unitRelPath}
-                          {hub.bootInstaller.value.version &&
-                            ` · v${hub.bootInstaller.value.version}`}
-                        </div>
-                        {hub.bootInstaller.value.descriptors.slice(0, 8).map((row) => (
-                          <div class="boot-installer__rowname" key={row}>
-                            {row}
+              {(() => {
+                const boot = hub.bootInstaller.value;
+                return hub.source.value === "installed" &&
+                  boot &&
+                  hub.gameRoot.value &&
+                  !hub.safeMode.value ? (
+                  /* The warning strip's chrome (HkAlert's warning token
+                      recipe) rides the wrapper; the collapsible is hikari's
+                      HkExpansionPanel — the DISARM action sits in its action
+                      slot, always reachable without expanding the row list
+                      (issue #1736's views batch). */
+                  <div class="boot-installer" data-hint={t("resources.bootInstaller.hint")}>
+                    <HkExpansionPanel
+                      modelValue={bootInstallerOpen.value}
+                      onUpdate:modelValue={(v: boolean) => (bootInstallerOpen.value = v)}
+                    >
+                      {{
+                        title: () => (
+                          <>
+                            <AlertTriangle size={14} class="boot-installer__icon" />
+                            <span class="boot-installer__title">
+                              {t("resources.bootInstaller.title", {
+                                count: boot.descriptors.length,
+                              })}
+                            </span>
+                          </>
+                        ),
+                        action: () => (
+                          <HkButton
+                            size="sm"
+                            variant="primary"
+                            disabled={hub.disarmBusy.value}
+                            loading={hub.disarmBusy.value}
+                            onClick={() => (disarmAsk.value = true)}
+                          >
+                            {t("resources.bootInstaller.disarm")}
+                          </HkButton>
+                        ),
+                        default: () => (
+                          <div class="boot-installer__body">
+                            <div class="boot-installer__unit">
+                              {boot.unitRelPath}
+                              {boot.version &&
+                                ` · v${boot.version}`}
+                            </div>
+                            {boot.descriptors.slice(0, 8).map((row) => (
+                              <div class="boot-installer__rowname" key={row}>
+                                {row}
+                              </div>
+                            ))}
+                            {boot.descriptors.length > 8 && (
+                              <div class="boot-installer__more">
+                                {t("resources.bootInstaller.more", {
+                                  count: boot.descriptors.length - 8,
+                                })}
+                              </div>
+                            )}
                           </div>
-                        ))}
-                        {hub.bootInstaller.value.descriptors.length > 8 && (
-                          <div class="boot-installer__more">
-                            {t("resources.bootInstaller.more", {
-                              count: hub.bootInstaller.value.descriptors.length - 8,
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                        ),
+                      }}
+                    </HkExpansionPanel>
                   </div>
-                )}
+                ) : null;
+              })()}
 
               {hub.staleBins.value.length > 0 && hub.gameRoot.value && !hub.safeMode.value && (
                 <div class="resources-banner resources-banner--warn">

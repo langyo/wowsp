@@ -95,20 +95,17 @@
      2026-11-03 tag unification) */
 }
 
-/* ── Hover combat card (teleported to <body>, fixed position) ───────────── */
+/* ── Hover combat card (hikari HkPopover panel — issue #1736's hover-card
+      family) ───────────────────────────────────────────────────────────── */
 
-.live-ship-card {
-  /* The card element itself is the hikari scroll container: its own fixed
-     positioning wins over the container root's relative (the flyout is
-     placed inline, see placeLiveCard), and the auto-hiding overlay track
-     rides the card's right edge; the padding lives on the inner wrapper
-     so it scrolls with the spec table. */
-  position: fixed;
-  /* Above the app shell, the floating band (--z-floating: 50) AND the
-     replay view's modal stack (the 结果 modal at 100 / the drill-down at
-     200 — full-card mode renders this strip inside them), but below
-     hikari modals (1000+) so a modal opening over the panel wins. */
-  z-index: 300;
+/* Panel seat: the card root IS the popover panel (the class rides HkPopover's
+   attrs fallthrough). The compound selector out-ranks the bare
+   `.hk-popover-panel` box rules wherever the sheets land in the bundle; the
+   popup-registry z slot replaces the retired hand-set z (a modal opening over
+   the panel still wins — the overlay root's bands order it). */
+.hk-popover-panel.live-ship-card {
+  display: flex;
+  flex-direction: column;
   max-height: min(70vh, 560px);
   border-radius: 10px;
   border: 1px solid rgb(var(--color-text) / 14%);
@@ -118,6 +115,15 @@
   box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
   color: rgb(var(--color-text));
   font-size: var(--text-xs);
+}
+
+.live-ship-card {
+  /* The auto-hiding overlay scrollbar's viewport fills the panel; the
+     padding lives on the inner wrapper so it scrolls with the spec table. */
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+  }
 
   /* Former card padding, moved inside the viewport so it scrolls with
      the content. */

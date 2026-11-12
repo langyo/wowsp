@@ -53,8 +53,8 @@
  * "VIII" / "★" or absent.
  *
  * Row hover card: hovering a row's identity floats its complete presentation
- * as a rich three-line card (PostBattleIdentityCard — Teleport to <body>,
- * fixed position, the LiveShipMeta pattern; the global plain-text tooltip
+ * as a rich three-line card (PostBattleIdentityCard — hikari HkPopover,
+ * the shared hover-card recipe; the global plain-text tooltip
  * cannot mount StampTag): line 1 the marker-tinted masked nickname with its
  * clan tag / bot marker, line 2 every identity tag as the real faces — the
  * yellow division tag, the local marker's wording and EVERY seal chip (the
