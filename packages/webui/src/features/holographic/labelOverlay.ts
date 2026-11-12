@@ -128,17 +128,19 @@ export function updateLabelPositions(ctx: MapInternals) {
   // Aircraft labels project above the carrier's currently airborne
   // squadrons (the newest sample of the newest sortie).
   ctx.planeLabelPicks.clear();
-  for (const [labelId, carrierOfLabel] of ctx.planeLabelCarriers) {
-    // While the chase camera follows a carrier's AIRCRAFT, every other
-    // wing's floating card is noise over the formation (user request: if
-    // there is no other aircraft in view, drop the other cards). The
-    // followed carrier keeps its card + below-row.
-    if (
-      ctx.followAircraftId != null &&
-      carrierOfLabel !== ctx.followAircraftId
-    ) {
-      const other = labels.find((l) => l.entityId === labelId);
-      if (other) {
+  for (const labelId of ctx.planeLabelCarriers.keys()) {
+    // While the chase camera follows a carrier's AIRCRAFT, the floating
+    // aircraft cards are noise over the formation and they DRIFT: the card
+    // rides the rendered wedge centroid, so every bank/turn slides it across
+    // the screen (2026-11-12 review: "跟随飞机时有些标签就别瞎飘了"). The
+    // chip only reinforces the wing's carrier name + hull HP, which the hull
+    // plaque already shows — and the wing's own readout now lives in the
+    // bottom-left HUD (pill card + squadron panel), including support wings.
+    // So the chase drops EVERY aircraft card, the followed wing's included;
+    // the carrier's hull label is a ship label and stays untouched.
+    if (!planeCardAllowed(ctx.followAircraftId)) {
+      const card = labels.find((l) => l.entityId === labelId);
+      if (card) {
         applySlot(ctx.labelSlotEls.get("l" + labelId), false, 0, 0);
         applySlot(ctx.labelSlotEls.get("s" + labelId), false, 0, 0);
       }
@@ -255,6 +257,20 @@ export function behindCameraEdgeNdc(x: number, y: number): { x: number; y: numbe
   if (!Number.isFinite(x) || !Number.isFinite(y)) return { x: 0, y: 0 };
   const scale = 0.8 / Math.max(Math.abs(x), Math.abs(y), 1e-6);
   return { x: x * scale, y: y * scale };
+}
+
+/** Whether a CARRIER's floating aircraft card may render at all. While the
+ *  chase camera rides a carrier's aircraft the cards are dropped wholesale:
+ *  they ride the rendered wedge centroid, so every bank slides them across
+ *  the screen ("跟随飞机时有些标签就别瞎飘了", 2026-11-12 review), and their
+ *  content (carrier name + hull HP + boost chips) only repeats what the hull
+ *  plaque and the bottom-left HUD already say — the wing's own readout lives
+ *  there now (pill card + squadron panel, support wings included). The
+ *  carrier's HULL label is a ship label and never passes through here. */
+export function planeCardAllowed(
+  followAircraftId: number | null | undefined,
+): boolean {
+  return followAircraftId == null;
 }
 
 /** Whether the below-aircraft chip row has anything to show: engine boost,
