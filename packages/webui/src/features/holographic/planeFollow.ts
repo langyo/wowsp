@@ -93,7 +93,7 @@ export function squadronStrength(
  *  live by either source (the card then shows its hull fallback). */
 export function chaseStrength(
   planeTrails: readonly PlaneTrailLike[],
-  planeFormations: ReadonlyMap<number, { count: number }>,
+  planeFormations: ReadonlyMap<number, { count: number; full?: number }>,
   planesHealth: readonly SquadronPlanesHealthEvent[] | undefined,
   removeAt: ReadonlyMap<number, number>,
   planeId: number,
@@ -102,10 +102,18 @@ export function chaseStrength(
   const trails = squadronStrength(planeTrails, planeId, removeAt, t);
   const live = squadronFlyingAt(planesHealth, planeId, t);
   if (trails == null && live == null) return null;
-  const launch = planeFormations.get(planeId)?.count ?? 0;
+  const formation = planeFormations.get(planeId);
+  const launch = formation?.count ?? 0;
+  // The DENOMINATOR is the wing's FULL strength (the hangar total,
+  // SquadronCreate.totalNumPlanes), so a partial launch reads "10 / 12"
+  // and the panel keeps twelve cells with two dead ones (2026-11-12
+  // review: 就算缺编组也得补上). count is the planes actually launched and
+  // stays the FLOOR: a decode without the hangar field must never inflate
+  // past it.
+  const full = Math.max(formation?.full ?? 0, launch);
   return {
     alive: live ?? trails?.alive ?? 0,
-    total: Math.max(trails?.total ?? 0, launch, live ?? 0),
+    total: Math.max(trails?.total ?? 0, full, live ?? 0),
   };
 }
 

@@ -1,7 +1,14 @@
 /** Unit tests for the squadron formation layout math (pure functions). */
 import { describe, expect, it } from "vitest";
 import {
+  bankForTurnRate,
   formationOffsets,
+  GROUP_COL_LATERAL,
+  GROUP_RANK_DEPTH,
+  headingDelta,
+  headingRate,
+  PLANE_BANK_SATURATION,
+  PLANE_MAX_BANK,
   groupInnerOffsets,
   groupSizeOfParams,
   inferGrouping,
@@ -105,24 +112,41 @@ describe("groupInnerOffsets", () => {
   });
 });
 
-describe("formationOffsets", () => {
-  it("lays a single group on the ring's front point", () => {
+describe("formationOffsets (triangular array)", () => {
+  it("puts the lead group on the centreline at the origin", () => {
     const out = formationOffsets(1, 3);
-    expect(out[0]).toEqual({ ox: 0, oz: 16 });
     expect(out).toHaveLength(3);
+    // The V's leader is the first slot of the first group.
+    expect(out[0]).toEqual({ ox: 0, oz: 0 });
   });
 
-  it("distributes four groups on a ring (front/right/back/left)", () => {
+  it("spreads four groups as a triangle: one lead, two wing, one trail", () => {
+    // Rank 0 = lead, rank 1 = left + right, rank 2 = centre trail. NOT a
+    // ring: the groups must stay on one axis-aligned pyramid so the wing
+    // reads as a formation from every chase angle (2026-11-12 review).
     const out = formationOffsets(4, 1);
     expect(out).toHaveLength(4);
-    expect(out[0].ox).toBeCloseTo(0);
-    expect(out[0].oz).toBeCloseTo(16);
-    expect(out[1].ox).toBeCloseTo(16);
-    expect(out[1].oz).toBeCloseTo(0);
-    expect(out[2].ox).toBeCloseTo(0);
-    expect(out[2].oz).toBeCloseTo(-16);
-    expect(out[3].ox).toBeCloseTo(-16);
-    expect(out[3].oz).toBeCloseTo(0);
+    const [a, b, c, d] = out;
+    expect(a).toEqual({ ox: 0, oz: 0 });
+    expect(b.ox).toBeCloseTo(-GROUP_COL_LATERAL / 2);
+    expect(b.oz).toBeCloseTo(-GROUP_RANK_DEPTH);
+    expect(c.ox).toBeCloseTo(GROUP_COL_LATERAL / 2);
+    expect(c.oz).toBeCloseTo(-GROUP_RANK_DEPTH);
+    expect(d.ox).toBeCloseTo(0);
+    expect(d.oz).toBeCloseTo(-GROUP_RANK_DEPTH * 2);
+  });
+
+  it("keeps rank r at r + 1 groups, centred, widening backwards", () => {
+    const out = formationOffsets(6, 1);
+    expect(out).toHaveLength(6);
+    // rank 0: 1 group, rank 1: 2, rank 2: 3
+    const depths = out.map((o) => o.oz);
+    expect(depths.filter((d) => d === 0)).toHaveLength(1);
+    expect(depths.filter((d) => d === -GROUP_RANK_DEPTH)).toHaveLength(2);
+    expect(depths.filter((d) => d === -GROUP_RANK_DEPTH * 2)).toHaveLength(3);
+    // Symmetric about the axis: the lateral offsets of each rank sum to 0.
+    expect(out[1].ox + out[2].ox).toBeCloseTo(0);
+    expect(out[3].ox + out[4].ox + out[5].ox).toBeCloseTo(0);
   });
 
   it("scales slot count with groups x planes", () => {
@@ -132,11 +156,55 @@ describe("formationOffsets", () => {
 
   it("keeps every group's V intact (offsets cluster per group)", () => {
     const out = formationOffsets(4, 3);
-    // Group 0's three planes sit nearest the front-ring point.
     const g0 = out.slice(0, 3);
     for (const o of g0) {
-      expect(Math.hypot(o.ox, o.oz - 16)).toBeLessThan(12);
+      // Group 0 is the V at the origin: every slot sits within one V reach
+      // of it (w × 1 and d × 1), far tighter than the group spacing.
+      expect(Math.hypot(o.ox, o.oz)).toBeLessThan(Math.hypot(4.5, 5.5) + 0.01);
     }
+  });
+
+  it("leaves a readable channel between groups at every rank", () => {
+    const out = formationOffsets(6, 3);
+    // Distinct group origins (rank 1 pair) stay a full lateral step apart,
+    // far wider than one group's own lateral spread (2 × w = 9).
+    expect(GROUP_COL_LATERAL).toBeGreaterThan(9);
+    expect(GROUP_RANK_DEPTH).toBeGreaterThan(11);
+    expect(out).toHaveLength(18);
+  });
+});
+
+describe("banking (roll into the turn)", () => {
+  it("normalises the heading delta across the ±π wrap", () => {
+    // 350° → 10° is a +20° turn, not −340°.
+    const from = (350 * Math.PI) / 180;
+    const to = (10 * Math.PI) / 180;
+    expect((headingDelta(from, to) * 180) / Math.PI).toBeCloseTo(20);
+    expect((headingDelta(to, from) * 180) / Math.PI).toBeCloseTo(-20);
+  });
+
+  it("banks proportionally and saturates at the clamp", () => {
+    expect(bankForTurnRate(0)).toBeCloseTo(0);
+    const half = bankForTurnRate(PLANE_BANK_SATURATION / 2);
+    expect(half).toBeCloseTo(PLANE_MAX_BANK / 2);
+    // Anything at or beyond the saturation rate keeps the clamp (never flips).
+    expect(bankForTurnRate(PLANE_BANK_SATURATION)).toBeCloseTo(PLANE_MAX_BANK);
+    expect(bankForTurnRate(PLANE_BANK_SATURATION * 10)).toBeCloseTo(PLANE_MAX_BANK);
+    expect(bankForTurnRate(-PLANE_BANK_SATURATION * 10)).toBeCloseTo(-PLANE_MAX_BANK);
+  });
+
+  it("derives the turn rate from a sample pair, rejecting unusable dt", () => {
+    // 90° over one second = π/2 rad/s.
+    expect(headingRate(0, 10, Math.PI / 2, 11)).toBeCloseTo(Math.PI / 2);
+    // Missing/zero/negative dt carries no rate.
+    expect(headingRate(0, 10, 1, 10)).toBeNull();
+    expect(headingRate(null, 10, 1, 11)).toBeNull();
+    expect(headingRate(0, 10, undefined, 11)).toBeNull();
+  });
+
+  it("banks left on a left turn and right on a right turn", () => {
+    expect(bankForTurnRate(0.5)).toBeGreaterThan(0);
+    expect(bankForTurnRate(-0.5)).toBeLessThan(0);
   });
 });
 

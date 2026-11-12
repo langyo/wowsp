@@ -234,37 +234,45 @@
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   }
 
-  /* Squadron panel: stacked directly ABOVE the hull PLAQUE (not above the
-     whole plaque+stats row). Its width matches the plaque itself (16rem,
-     the same block the ship name/HP silhouette card occupies) instead of
-     spanning the full HUD block: the panel is the chased wing's readout and
-     only needs the plaque's footprint — stretching it to the playback bar's
-     width read as a second progress bar (2026-11-12 review). The offset
-     still clears the plaque row's height (~3.4rem) plus the 8px row gap, so
-     the two cards read as one bottom-left HUD block. */
-  .holo-squad {
+  /* Squadron panel: sits directly ABOVE the hull card, sharing the plaque's
+     16rem footprint (the wing's readout only needs that block; stretching
+     it to the playback bar's width read as a second progress bar, and
+     narrow enough that it never collides with the stats strip).
+
+     STACKING CONTRACT: the bottom-left HUD is a COLUMN — this panel, then
+     the shipcard row, then the playback bar — laid out by flow instead of
+     by hand-computed offsets. The old rule stacked the panel with
+     `bottom: calc(100% + 8px + var(--holo-shipcard-h, 3.6rem))`, but that
+     token was never defined anywhere, and the plaque row's height changes
+     with its content (the stats strip wraps under it below ~680px), so the
+     panel routinely overlapped the ship card (2026-11-12 review:
+     "起码别重叠"). Flow layout cannot drift: the panel always clears
+     whatever the row actually measures. */
+  &__hudcolumn {
     position: absolute;
-    left: 0;
-    bottom: calc(100% + 8px + var(--holo-shipcard-h, 3.6rem));
-    width: min(16rem, calc(100cqw - 192px));
+    left: 12px;
+    bottom: 12px;
+    z-index: 4;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    width: min(var(--holo-hud-block-w), calc(100cqw - 192px));
+    pointer-events: none;
   }
 
-  /* The plaque row wraps its stats strip below the plaque under ~680px
-     (see the @container in __shipcard), which makes the row TALLER — the
-     panel above it must lift by the same amount or it overlaps the
-     wrapped strip. Measured against the two-row shape: plaque (~3.4rem)
-     + 10px row gap + one stat-strip row (~2.4rem). */
-  @container (max-width: 680px) {
-    .holo-squad {
-      bottom: calc(100% + 8px + 6.4rem);
-    }
+  .holo-squad {
+    position: static;
+    width: min(16rem, calc(100cqw - 192px));
+    pointer-events: auto;
   }
 
   &__shipcard {
-    position: absolute;
-    left: 0;
-    bottom: calc(100% + 8px);
-    /* Width comes from the playback bar, not from the row's content:
+    /* Inside the HUD column: flow-laid, full column width. (It used to be
+       absolutely positioned above the playback bar; the column owns the
+       stacking now, so the row simply sits under the squadron panel.) */
+    position: static;
+    /* Width comes from the column, not from the row's content:
        `100%` is the bar's padding box (the bar draws no border, so it
        equals the bar's outer box), which puts the row's left edge on
        the bar's left edge and — with `margin-left: auto` on the stats

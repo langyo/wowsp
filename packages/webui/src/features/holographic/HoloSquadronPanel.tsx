@@ -27,6 +27,7 @@
  */
 import { defineComponent, type PropType } from "vue";
 import { t as i18nT } from "@/i18n";
+import AppTag from "@/components/base/AppTag";
 import type { PlaneSlotHealth } from "./planeFollow";
 import "./HoloSquadronPanel.scss";
 
@@ -91,19 +92,23 @@ export default defineComponent({
                 </span>
               ))}
             </div>
+          {/* Engine + consumable state rides the app's ONE tag primitive
+              (AppTag on hikari's HkTag): the engine row used to press its
+              own chip pills, which drifted from the rest of the HUD's tag
+              voice (2026-11-12 review: 加减速状态应该以 hikari 标签渲染). */}
           <div class="holo-squad__engine">
             {s.boost ? (
-              <span class="holo-squad__chip holo-squad__chip--boost">
+              <AppTag tone="success" size="sm">
                 {i18nT("replay.planeCard.boost")}
-              </span>
+              </AppTag>
             ) : null}
             {s.slow ? (
-              <span class="holo-squad__chip holo-squad__chip--slow">
+              <AppTag tone="warning" size="sm">
                 {i18nT("replay.planeCard.slow")}
-              </span>
+              </AppTag>
             ) : null}
             {s.consumables.slice(0, 3).map((label, i) => (
-              <span class="holo-squad__chip" key={i}>{label}</span>
+              <AppTag tone="info" size="sm" key={i}>{label}</AppTag>
             ))}
             {s.forsage != null ? (
               <span class="holo-squad__gauge" aria-hidden="true">
