@@ -41,6 +41,9 @@ import { createPinia, setActivePinia } from "pinia";
 import { initLocaleMessages, t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import { statsPrefsState } from "@/stores/statsPrefs";
+import { useCapabilitiesStore } from "@/stores/capabilities";
+import { STATIC_REPORT_READ_TIMEOUT_MS } from "@/api/modules/decision";
+import { api, type StaticReport } from "@/api";
 import { useMarkersStore } from "@/stores/markers";
 import PostBattlePanel, { type PostBattleHead } from "./PostBattlePanel";
 import type { SelfStatsStream } from "./liveSelfStats";
@@ -90,6 +93,9 @@ vi.mock("@/api", () => ({
       names.map(() => ({ air: true, sub: true, airVeteran: false, subVeteran: false })),
     ),
     lookupPlayersStatsBatch: vi.fn(async () => []),
+    // The AI score column's on-wire path (only reachable when the mounted
+    // capabilities store reports aiInference — the other suites keep it off).
+    decisionStaticReport: vi.fn(),
   },
 }));
 
@@ -797,3 +803,143 @@ describe("PostBattlePanel head row, inline seals and identity hover card", () =>
     statsPrefsState.value.postbattleRosterFull = prevFull;
   });
 });
+
+
+/** A never/settle-later promise factory for the watchdog pins. */
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+/** Minimal StaticReport: one scoreable roster entry joined by the PLAYER
+ *  nickname onto the RAW fixture's recorder row (wholeGame 0.62 → "62%"). */
+function aiReport(): StaticReport {
+  return {
+    replayPath: "match.wowsreplay",
+    replayId: "match",
+    entityId: 1,
+    roster: [
+      {
+        entityId: 1,
+        shipId: 101,
+        shipClass: "Destroyer",
+        fireApplicable: true,
+        torpedoApplicable: true,
+        name: "ShipA",
+        playerName: "AdmiralA",
+        teamId: 0,
+        isRecorder: true,
+        diedAt: null,
+        coverage: {
+          aliveFrom: 0,
+          aliveTo: 600,
+          samples: 100,
+          gapSeconds: 0,
+          completeness: 1,
+          gapSegments: [],
+        },
+        whole: {
+          wholeGame: 0.62,
+          wholeFire: 0.7,
+          wholeMove: 0.55,
+          contribution: 0,
+          contributionShots: 0,
+          torpedo: null,
+        },
+        outcome: null,
+      },
+    ],
+    timeline: [],
+    moments: [],
+  } as unknown as StaticReport;
+}
+
+describe("PostBattlePanel AI score column", () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    vi.clearAllMocks();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    statsPrefsState.value.postbattleAiScore = true;
+  });
+
+  /** Mount with the column armed: the capability probe answered ON, the
+   *  score switch is on (the default), and a replayPath feeds the fetch.
+   *  The immediate watch starts the fetch during setup, so by the first
+   *  nextTick the invoke is already in flight. */
+  async function mountAiPanel() {
+    const capabilities = useCapabilitiesStore();
+    capabilities.aiInference = true;
+    const wrapper = mount(PostBattlePanel, {
+      props: {
+        raw: RAW,
+        head: null,
+        operation: false,
+        stream: null,
+        replayPath: "match.wowsreplay",
+      },
+    });
+    await nextTick();
+    return wrapper;
+  }
+
+  it("lands the report and renders the whole-game percentage", async () => {
+    vi.mocked(api.decisionStaticReport).mockResolvedValue(aiReport());
+    const wrapper = await mountAiPanel();
+    expect(api.decisionStaticReport).toHaveBeenCalledExactlyOnceWith("match.wowsreplay", null);
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain("62%");
+    });
+  });
+
+  it("stands the column down when the report never answers, then takes a late cached answer", async () => {
+    vi.useFakeTimers();
+    const pending = deferred<StaticReport>();
+    vi.mocked(api.decisionStaticReport).mockReturnValue(pending.promise);
+    const wrapper = await mountAiPanel();
+    // In flight: the column renders (its header, spinners in the cells).
+    expect(wrapper.text()).toContain(t("replay.postbattle.aiScore"));
+    vi.advanceTimersByTime(STATIC_REPORT_READ_TIMEOUT_MS);
+    await nextTick();
+    // The watchdog bounds the wait: the column stands down instead of
+    // spinning forever (the same rule the results pill's stream read got).
+    expect(wrapper.text()).not.toContain(t("replay.postbattle.aiScore"));
+    // The seq was NOT orphaned by the expiry: the backend caches the scoring
+    // pass, so the late answer still lands and upgrades the panel in place.
+    pending.resolve(aiReport());
+    await nextTick();
+    await nextTick();
+    expect(wrapper.text()).toContain("62%");
+  });
+
+  it("restarts the fetch after the score switch is flipped off mid-flight", async () => {
+    vi.useFakeTimers();
+    const orphaned = deferred<StaticReport>();
+    vi.mocked(api.decisionStaticReport).mockReturnValueOnce(orphaned.promise);
+    const wrapper = await mountAiPanel();
+    expect(api.decisionStaticReport).toHaveBeenCalledTimes(1);
+    // Off mid-flight: the run is orphaned and the state drops to 'idle' —
+    // the old aiState gate would have pinned 'loading' here forever.
+    statsPrefsState.value.postbattleAiScore = false;
+    await nextTick();
+    const fresh = deferred<StaticReport>();
+    vi.mocked(api.decisionStaticReport).mockReturnValueOnce(fresh.promise);
+    statsPrefsState.value.postbattleAiScore = true;
+    await nextTick();
+    await nextTick();
+    // Re-enabling started a FRESH fetch instead of inheriting the wedge.
+    expect(api.decisionStaticReport).toHaveBeenCalledTimes(2);
+    fresh.resolve(aiReport());
+    await nextTick();
+    await nextTick();
+    expect(wrapper.text()).toContain("62%");
+    // The orphaned first answer never patches the panel.
+    orphaned.resolve(aiReport());
+    await nextTick();
+    expect(api.decisionStaticReport).toHaveBeenCalledTimes(2);
+  });
+});
+
