@@ -49,7 +49,13 @@ export function groupInnerOffsets(n: number): { ox: number; oz: number }[] {
   for (let i = 1; i < n; i++) {
     const rank = Math.ceil(i / 2);
     const side = i % 2 === 1 ? -1 : 1;
-    out.push({ ox: side * (w * rank), oz: -d * rank });
+    // Even squadrons close the V with a CENTRED tail plane instead of a
+    // one-sided rank: the alternating spiral hung the last plane off the
+    // right wing (rank 2, side +1 on a four-plane group) with nothing
+    // balancing it on the left — the lopsided arc the user flagged as
+    // "still looks weird". Two-plane groups keep their side-by-side pair.
+    const tail = n >= 4 && n % 2 === 0 && i === n - 1;
+    out.push(tail ? { ox: 0, oz: -rank * d } : { ox: side * (w * rank), oz: -d * rank });
   }
   return out;
 }
