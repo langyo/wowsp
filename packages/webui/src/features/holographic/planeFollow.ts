@@ -391,7 +391,10 @@ export function squadronSlotGroups(
   total: number,
 ): PlaneSlotHealth[][] {
   const per = Math.max(1, Math.floor(groupSize));
-  const slots = Math.max(bands.length, Math.ceil(Math.max(0, total) / per) * per);
+  // Slot count follows the wing's real size, NOT a rounded-up multiple of the
+  // group size: a 4-plane launch in three-plane groups is one full group plus
+  // a partial one, not two full groups with two phantom dead slots.
+  const slots = Math.max(bands.length, Math.max(0, Math.floor(total)));
   const flat: PlaneSlotHealth[] = [];
   for (let i = 0; i < slots; i++) {
     const band = i < bands.length ? bands[i] : null;

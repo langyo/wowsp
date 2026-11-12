@@ -486,6 +486,14 @@ describe("squadronSlotGroups", () => {
     const groups = squadronSlotGroups([1, 1, 1, 1, 1, 1], 3, 9);
     expect(groups).toHaveLength(2);
   });
+
+  it("keeps a partial group partial instead of padding it to a full one", () => {
+    // 4 planes in three-plane groups: one full group + one of a single
+    // plane — NOT two full groups with two phantom dead slots.
+    const groups = squadronSlotGroups([1, 1, 1, 2], 3, 4);
+    expect(groups.map((g) => g.length)).toEqual([3, 1]);
+    expect(groups[1][0].band).toBe(2);
+  });
 });
 
 describe("unpackSquadronBands", () => {

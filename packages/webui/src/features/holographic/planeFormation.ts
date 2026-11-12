@@ -12,6 +12,9 @@
  * follow/painter paths.
  */
 import type { SquadronPlane } from "@/api";
+import planeGroupsRaw from "@/data/plane_groups.json";
+
+const PLANE_GROUPS = planeGroupsRaw as Record<string, number>;
 
 /** Extra seconds a squadron keeps rendering (and stays followable) after its
  *  last observed position sample — the last packet trails the visible patrol
@@ -73,10 +76,27 @@ export function formationOffsets(groupCount: number, groupSize: number): { ox: n
   return out;
 }
 
+/** Planes per flight GROUP, straight off the airframe's GameParams
+ *  `formations.aerialAttack` slot table (extract_plane_groups.py). This is
+ *  the AUTHORITATIVE grouping — the same table the game's HUD reads to
+ *  draw one segmented bar per group — not a heuristic: 892 of 894
+ *  airframes lay their slots out in strict three-plane groups, so a
+ *  T10 squadron is three groups of three, not nine singles.
+ *
+ *  Returns null for a paramsId the table does not know (a modded or
+ *  brand-new airframe), which lets callers fall back to the positional
+ *  inference below. */
+export function groupSizeOfParams(paramsId: number | undefined): number | null {
+  if (paramsId == null) return null;
+  const v = PLANE_GROUPS[String(paramsId)];
+  return typeof v === "number" && v >= 1 ? v : null;
+}
+
 /** Infer the squadron's group layout by greedy-clustering the aircraft
- *  positions right after launch: planes spawn in groups (2/group, 3/group,
- *  …), so the median cluster size is the per-group count and the cluster
- *  count is the number of flight groups. */
+ *  positions right after launch — the FALLBACK for airframes the grouping
+ *  table does not cover. Prefer `groupSizeOfParams` when a paramsId is
+ *  available: clustering only ever guesses at what GameParams records
+ *  exactly, and it mis-reads wide launches as many single-plane groups. */
 export function inferGrouping(
   entries: { trail: { id: number; samples: SquadronPlane[] } }[],
   sampleAtFn: (

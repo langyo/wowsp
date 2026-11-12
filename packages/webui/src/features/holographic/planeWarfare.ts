@@ -7,6 +7,7 @@
  */
 import * as THREE from "three";
 import { PLANE_TYPES } from "./tactical/shellTypes";
+import { groupSizeOfParams } from "./planeFormation";
 import { buildPropMarker } from "./propMarker";
 import { planeForwardSign, resolvePlaneModelUrl } from "./modelLoader";
 import { sampleAt } from "./trajectoryMath";
@@ -293,17 +294,30 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       list.push({ idx, role, count, trail });
     }
     for (const [planeId, entries] of byPlane) {
-      // Infer the group layout from the launch positions (clusters of
-      // planes spawned together = one flight group). The launch poses are
-      // captured BEFORE the minimap merge pads the anchor trail — sampling
-      // the merged trail at a padded centre-squadron sample would flip the
-      // grouping on real replays (see MapInternals.planeLaunchPoses).
-      const grp = inferGrouping(entries, (trail) =>
-        ctx.planeLaunchPoses.get(trail.id),
-      );
       const formation = ctx.planeFormations.get(planeId)!;
-      formation.groupSize = Math.max(1, Math.min(grp.groupSize, formation.count));
-      formation.groupCount = Math.max(1, grp.groupCount);
+      // AUTHORITATIVE grouping first: the airframe's GameParams
+      // formations.aerialAttack slot table says how many planes fly per
+      // group (3 for 892 of 894 airframes). The positional clustering
+      // below only runs for a paramsId the table does not cover — it can
+      // only guess at what the game records exactly, and it mis-reads wide
+      // launches as a ring of single-plane groups.
+      const paramsId = paramsOf.get(planeId);
+      const recorded = groupSizeOfParams(paramsId);
+      if (recorded != null) {
+        formation.groupSize = Math.max(1, Math.min(recorded, formation.count));
+        formation.groupCount = Math.max(1, Math.ceil(formation.count / formation.groupSize));
+      } else {
+        // Fallback: infer the layout from the launch positions (clusters of
+        // planes spawned together = one flight group). The launch poses are
+        // captured BEFORE the minimap merge pads the anchor trail — sampling
+        // the merged trail at a padded centre-squadron sample would flip the
+        // grouping on real replays (see MapInternals.planeLaunchPoses).
+        const grp = inferGrouping(entries, (trail) =>
+          ctx.planeLaunchPoses.get(trail.id),
+        );
+        formation.groupSize = Math.max(1, Math.min(grp.groupSize, formation.count));
+        formation.groupCount = Math.max(1, grp.groupCount);
+      }
       const first = entries[0];
       const url = resolvePlaneModelUrl(first.idx);
       if (!url) continue;
