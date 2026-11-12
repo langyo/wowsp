@@ -1,8 +1,10 @@
+import { existsSync, readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { fakeAs } from "@/test-utils/fakes";
 
-import { statCellOrigins } from "./shotKit";
+import { FONT_STACK, MONO_STACK, statCellOrigins } from "./shotKit";
 
 /** A canvas stand-in whose measureText is deterministic: every glyph is
  *  6px wide. Only measureText is on statCellOrigins' critical path. */
@@ -51,5 +53,39 @@ describe("statCellOrigins", () => {
   it("keeps ragged rows (short rows miss trailing cells) and empty input", () => {
     expect(statCellOrigins(fakeCtx, [["3", "100.0%"], ["12"]], GAP)).toEqual([12, 58]);
     expect(statCellOrigins(fakeCtx, [], GAP)).toEqual([]);
+  });
+});
+
+/** The canvas typography is the APP typography: FONT_STACK / MONO_STACK
+ *  mirror theme.scss's --font-sans / --font-mono verbatim, because the
+ *  DOM-captured AI report long image inherits those very tokens. When the
+ *  two drift, the stats cards and the AI report render different faces
+ *  (the 2026-11-08 review's "the two share shots use different fonts").
+ *  The guard diffs the token lines out of the real theme sheet, so a
+ *  future token edit that forgets the mirror fails here, not in a chat
+ *  screenshot comparison. */
+function themeFontVar(name: string): string {
+  // happy-dom hands import.meta.url an http scheme, so the sheet resolves
+  // from the process cwd instead — the package root (pnpm -C packages/webui)
+  // or the workspace root, whichever the runner started in.
+  const candidates = [
+    resolve(process.cwd(), "src/theme/theme.scss"),
+    resolve(process.cwd(), "packages/webui/src/theme/theme.scss"),
+  ];
+  const sheetPath = candidates.find((p) => existsSync(p));
+  if (!sheetPath) throw new Error("theme.scss not found from cwd " + process.cwd());
+  const sheet = readFileSync(sheetPath, "utf8");
+  const line = sheet.split("\n").find((l) => l.trim().startsWith(name + ":"));
+  if (!line) throw new Error("theme.scss lost the " + name + " token");
+  return line.slice(line.indexOf(":") + 1).replace(/;.*$/s, "").trim();
+}
+
+describe("shot font stacks mirror the theme tokens", () => {
+  it("FONT_STACK equals theme.scss --font-sans", () => {
+    expect(FONT_STACK).toBe(themeFontVar("--font-sans"));
+  });
+
+  it("MONO_STACK equals theme.scss --font-mono", () => {
+    expect(MONO_STACK).toBe(themeFontVar("--font-mono"));
   });
 });
