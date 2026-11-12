@@ -338,13 +338,16 @@
   min-width: 0;
   overflow: visible;
 }
-/* The INLINE identity-line seal cluster: only the single-character wordings
-   (猴 / 蛆) still press as StampTag faces before the nickname — every wider
-   wording collapsed behind the "!" badge below (2026-11-08 review). The
-   cluster NEVER shrinks or clips (2026-11-07 review: a stamp must always
-   render whole — the old shrink rule sheared tags mid-glyph): the nickname
-   below is the item that gives way, and the full card stacks this cluster on
-   its own line. */
+/* The INLINE identity-line seal cluster: the single-character wordings
+   (猴 / 蛆) still press as StampTag faces before the nickname — the compact
+   row collapses every wider wording behind the "!" badge (2026-11-08
+   review), while the full card stacks EVERY wording whole on this line
+   (2026-11-12 review: no badge there). The cluster NEVER shrinks or clips
+   (2026-11-07 review: a stamp must always render whole — the old shrink
+   rule sheared tags mid-glyph): the nickname below is the item that gives
+   way. NO min-width floor (2026-11-12 review): the old 6em floor reserved
+   phantom space between a lone chip and the nickname — wrap alone handles
+   the too-narrow row. */
 .replay-view__postbattle-cell-seals,
 .replay-view__postbattle-fcell-seals {
   display: inline-flex;
@@ -353,10 +356,8 @@
   gap: 2px 4px;
   /* Tags never clip and never shrink away: on a row too narrow for the
      whole cluster, the stamps WRAP inside it (the row grows a line) while
-     the nickname keeps its readable floor and the clan tag ellipsizes.
-     min-width keeps at least a couple of stamps per line. */
+     the nickname keeps its readable floor and the clan tag ellipsizes. */
   flex: 0 1 auto;
-  min-width: 6em;
   /* Vertically the plate must stay visible: StampTag's optical-centering
      translate pokes its bottom border a hair past its line box. */
   overflow-y: visible;
@@ -437,21 +438,22 @@
 /* Collapsed-seal badge — the ONE "!" mark standing in for every seal whose
    effective wording is wider than a single character (2026-11-08 review:
    the four-character composition tags overflowed/overlapped the nickname on
-   a narrow results column). It sits at the nickname's top-right in the SAME
-   register as the karma superscript beside it: a tiny raised glyph, cinnabar
-   ink (the seals' own tone) inside a hairline cinnabar ring so it reads as a
+   a narrow results column). It sits BEFORE the nickname, vertically
+   centered on the name line like the inline seal chips (2026-11-12 review:
+   the old seat after the nick was a raised superscript and drifted too far
+   off the name line, so align-self and the negative top margin went — the
+   name line's own align-items: center centers the badge). Cinnabar ink
+   (the seals' own tone) inside a hairline cinnabar ring so it reads as a
    collapsed-seal badge, not punctuation. A plain span — the row is a
    button, so nothing interactive may nest inside it — and its only hint is
    the accessible label naming the hidden wordings. */
 .replay-view__postbattle-seals-badge {
   flex: none;
-  align-self: flex-start;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 1.1em;
   height: 1.1em;
-  margin-top: -0.5em;
   border: 1px solid rgb(202 44 38 / 55%);
   border-radius: 50%;
   color: rgb(202 44 38);
@@ -627,9 +629,10 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
 }
-/* Line 2: the inline seal cluster on its own line (the width-collapsed
-   seals ride the "!" badge on the name line above; the hover card carries
-   every chip). */
+/* Line 2: the seal line — EVERY wording the row owns presses here as a
+   whole StampTag chip (2026-11-12 review: the full card's second line has
+   the room, so no "!" badge stands in; the hover card carries every chip
+   again). */
 .replay-view__postbattle-fcell-seals {
   display: flex;
   flex-wrap: wrap;
@@ -832,11 +835,6 @@
   .replay-view__postbattle-cell-name {
     flex-wrap: wrap;
     row-gap: 2px;
-  }
-  /* Let the stamps pack one-per-line instead of holding a 6em floor the
-     shrunken name track cannot honour. */
-  .replay-view__postbattle-cell-seals {
-    min-width: 0;
   }
 }
 

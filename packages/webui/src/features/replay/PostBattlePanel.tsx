@@ -21,8 +21,8 @@
  * means, right-aligned on the row columns — 2026-11-07 review: the full
  * header used to squeeze its aggregates into one inline run). The full
  * card reads as the compact row's identity laid out for real: its left
- * stack carries the identity lines (clan-tagged nick / the inline
- * single-character seals / ship tier + name) and its right block stacks the
+ * stack carries the identity lines (clan-tagged nick / every identity-line
+ * seal whole / ship tier + name) and its right block stacks the
  * compact row's aligned data line (configured columns, XP, then the AI
  * score) over the LiveShipMeta ship strip's two lines, so the strip gets the
  * whole column
@@ -37,14 +37,17 @@
  * composition after (user feedback: the roster should carry the small-tag
  * version of the 猴 seal, on the identity line where it reads as part of who
  * the player is). The line keeps only the SINGLE-CHARACTER wordings (猴 /
- * 蛆) inline, exactly as before; every wider wording — 神了 / 过街老鼠 and
- * the four-character composition / merged tags — collapses behind ONE small
- * "!" superscript badge at the nickname's top-right in BOTH densities
+ * 蛆) inline, exactly as before; the wider wordings — 神了 / 过街老鼠 and
+ * the four-character composition / merged tags — split by density
+ * (2026-11-12 review): the compact row collapses them behind ONE small "!"
+ * badge pressed BEFORE the nickname, vertically centered on the name line
  * (2026-11-08 review: the wide stamps overflowed or overlapped the nickname
- * on a narrow results column). The yellow division tag still leads the line
- * unchanged. The old right-edge career-seal column and its reserved track
- * are retired: at the row end the square face read as one more score column
- * and stole width from the stat cells. The second identity line leads with
+ * on a narrow results column), while the full card's seals line has the
+ * room and stacks EVERY wording whole — the full card carries no badge at
+ * all. The yellow division tag still leads the line unchanged. The old
+ * right-edge career-seal column and its reserved track are retired: at the
+ * row end the square face read as one more score column and stole width
+ * from the stat cells. The second identity line leads with
  * the ship tier's Roman numeral on a fixed-width track (see the SCSS), so
  * every row's ship name starts at the same x whether the tier is "I" /
  * "VIII" / "★" or absent.
@@ -1031,8 +1034,13 @@ export default defineComponent({
               bot: isAiName(p.name),
               dim: !p.alive,
               shipType: p.shipId != null ? shipOfflineEntry(p.shipId)?.type ?? null : null,
+              // The sheet must agree with the panel rows: a dead enemy keeps
+              // the fleet-facing contract too — the mirrored sunk-enemy face
+              // (shipIcons.ts INK RULE), not the ally-facing "sunk" one.
               iconVariant: !p.alive
-                ? "sunk"
+                ? enemy
+                  ? "sunk-enemy"
+                  : "sunk"
                 : enemy
                   ? "enemy"
                   : p.accountId === pb?.selfId
@@ -1256,9 +1264,11 @@ export default defineComponent({
        *  composition, and the per-kind kill switch.
        *
        *  The full list feeds the wording split (single-character seals stay
-       *  inline, the rest collapse behind the "!" badge), while the row's
-       *  rich hover card paints every kind as a real chip again. Air precedes
-       *  sub, matching the order the composition tags always read in. */
+       *  inline; the rest collapse behind the compact row's "!" badge — the
+       *  full card stacks them whole instead, 2026-11-12 review), while the
+       *  row's rich hover card paints every kind as a real chip again. Air
+       *  precedes sub, matching the order the composition tags always read
+       *  in. */
       const sealTagKindsOf = (p: (typeof rows.value)[number]): StampKind[] => {
         if (!uiLocale.value.startsWith("zh")) return [];
         const kinds: StampKind[] = [];
@@ -1291,8 +1301,10 @@ export default defineComponent({
         return { kinds, inline, collapsed };
       };
       /** The inline seal cluster — only the single-character wordings (猴 /
-       *  蛆) still press as small-tag faces BEFORE the nickname, exactly as
-       *  today; the full card stacks the same cluster on its own line. */
+       *  蛆) press as small-tag faces BEFORE the nickname, exactly as today;
+       *  the full card passes the row's WHOLE kind list here, so every
+       *  wording stacks on its own line (2026-11-12 review: the full card's
+       *  second line has the room — no "!" stand-in). */
       const inlineSealsOf = (
         kinds: readonly StampKind[],
         full: boolean,
@@ -1312,11 +1324,14 @@ export default defineComponent({
           </span>
         );
       };
-      /** The collapsed seals' ONE "!" superscript badge, pressed at the
-       *  nickname's top-right in the KarmaSup register (both densities). A
-       *  plain span on purpose — the row is a button, so nothing interactive
-       *  may nest inside it — whose only hint is the accessible label naming
-       *  the collapsed wordings; the rich hover card paints them as chips. */
+      /** The collapsed seals' ONE "!" badge — the COMPACT row's seat only,
+       *  pressed BEFORE the nickname and vertically centered on the name
+       *  line (2026-11-12 review: the old raised superscript after the nick
+       *  drifted off the name line; the full card stacks every wording whole
+       *  and renders no badge at all). A plain span on purpose — the row is
+       *  a button, so nothing interactive may nest inside it — whose only
+       *  hint is the accessible label naming the collapsed wordings; the
+       *  rich hover card paints them as chips. */
       const sealBadgeOf = (kinds: readonly StampKind[]): VNode | null => {
         if (kinds.length === 0) return null;
         const label = sealBadgeWording(kinds, prefs.value.sealLabels);
@@ -1437,6 +1452,11 @@ export default defineComponent({
               onClick={() => openDetail(p)}
             >
               <span class="replay-view__postbattle-cell-ico">
+                {/* The dead marker keeps the fleet-facing contract
+                    (shipIcons.ts INK RULE: ally/sunk art faces right,
+                    enemy/sunk-enemy is its horizontal mirror) — a dead
+                    enemy row renders the mirrored sunk-enemy face, not the
+                    ally-facing "sunk" one. */}
                 {p.shipId != null ? (
                   <BattleIcon
                     type={shipOfflineEntry(p.shipId)?.type ?? ""}
@@ -1447,7 +1467,9 @@ export default defineComponent({
                           : p.accountId === pb.selfId
                             ? "white"
                             : "ally"
-                        : "sunk"
+                        : enemy
+                          ? "sunk-enemy"
+                          : "sunk"
                     }
                     size={20}
                   />
@@ -1458,11 +1480,20 @@ export default defineComponent({
                   {/* The division tag (组队标签) leads the line — battle fact
                       first — then only the single-character seals (猴 / 蛆)
                       as inline small-tag faces; every wider wording collapsed
-                      behind the "!" badge after the nick (2026-11-08 review:
-                      the four-character stamps overlapped the nick on a
-                      narrow column). The hover card lists the whole cluster. */}
+                      behind the "!" badge between them and the nick
+                      (2026-11-08 review: the four-character stamps
+                      overlapped the nick on a narrow column). The hover card
+                      lists the whole cluster. */}
                   {divisionTagOf(p)}
                   {inlineSealsOf(seals.inline, false)}
+                  {/* Collapsed seals: ONE small "!" badge pressed BEFORE the
+                      nickname, BETWEEN the inline seal chips and the nick,
+                      vertically centered on the name line (2026-11-12
+                      review: the old seat — a raised superscript after the
+                      nick — drifted too far off the name line). A plain span
+                      (the row is a button) whose accessible label names the
+                      hidden wordings. */}
+                  {sealBadgeOf(seals.collapsed)}
                   {/* Local player marker (玩家标记): the name itself carries
                       the animated tint — nickname-first, account id sharpens.
                       The marker's tint repeats on the hover card's nickname. */}
@@ -1471,11 +1502,6 @@ export default defineComponent({
                   >
                     {masking.maskOf(p.name)}
                   </span>
-                  {/* Collapsed seals: ONE small "!" superscript badge at the
-                      nickname's top-right, in the karma superscript's
-                      register — a plain span (the row is a button) whose
-                      accessible label names the hidden wordings. */}
-                  {sealBadgeOf(seals.collapsed)}
                   {/* Karma (业力) superscript at the nickname's top-right —
                       same register as the live panel's rows (the stats
                       prefs' own switch; missing figures render nothing). */}
@@ -1515,15 +1541,16 @@ export default defineComponent({
         );
       };
       /** Full-card row — the richer density reads as the compact row's
-       *  identity laid out for real on the left (clan-tagged nick / the
-       *  inline single-character seals / ship tier + name) plus the "!"
-       *  badge for the collapsed ones, and a right block that stacks the
-       *  compact row's aligned data line (the configured columns, XP, then
-       *  the AI score) over the LiveShipMeta strip's two ship lines. The
-       *  header above is the compact two-line grid in both densities, so this
-       *  data line lands on the aggregate columns' tracks. Like the compact
-       *  row, the whole card minus the eye is one button; the rich identity
-       *  card anchors on the left stack only, so the ship strip's own combat
+       *  identity laid out for real on the left (clan-tagged nick / every
+       *  identity-line seal stacked whole on the seals line — the full card
+       *  carries no "!" badge at all, 2026-11-12 review — then the ship
+       *  tier + name) and a right block that stacks the compact row's
+       *  aligned data line (the configured columns, XP, then the AI score)
+       *  over the LiveShipMeta strip's two ship lines. The header above is
+       *  the compact two-line grid in both densities, so this data line
+       *  lands on the aggregate columns' tracks. Like the compact row, the
+       *  whole card minus the eye is one button; the rich identity card
+       *  anchors on the left stack only, so the ship strip's own combat
        *  card keeps the right block to itself. */
       const fullCell = (p: (typeof allies.value)[number]) => {
         const enemy = !props.operation && isEnemy(p);
@@ -1567,10 +1594,6 @@ export default defineComponent({
                   >
                     {masking.maskOf(p.name)}
                   </span>
-                  {/* Collapsed seals (both densities): ONE "!" superscript
-                      badge at the nickname's top-right, the rich card lists
-                      the whole cluster again. */}
-                  {sealBadgeOf(seals.collapsed)}
                   {prefs.value.rosterKarmaEnabled ? (
                     <KarmaSup value={stat?.karma ?? null} class="replay-view__postbattle-fcell-karma" />
                   ) : null}
@@ -1579,10 +1602,11 @@ export default defineComponent({
                   ) : null}
                   {ai ? <em class="replay-view__postbattle-bot">{t("replay.bot")}</em> : null}
                 </span>
-                {/* Line 2: only the single-character seals stay inline
-                    (the wider wordings collapsed behind the badge; the hover
-                    card paints the whole cluster as real chips). */}
-                {inlineSealsOf(seals.inline, true)}
+                {/* Line 2: EVERY seal the row owns presses as a real StampTag
+                    chip here, wordings whole (2026-11-12 user feedback: the
+                    full card's second line has the room — no "!" stand-in;
+                    the rich hover card paints the whole cluster again). */}
+                {inlineSealsOf(seals.kinds, true)}
                 <span class="replay-view__postbattle-fcell-ship">
                   <span class="replay-view__postbattle-fcell-tier">{tierLabelOf(p)}</span>
                   <span class="replay-view__postbattle-fcell-shipname">{p.shipName}</span>
@@ -1829,10 +1853,14 @@ export default defineComponent({
                           !sel.alive && "replay-view__postbattle-detail-ico--dead",
                         ]}
                       >
+                        {/* The dead marker keeps the fleet-facing contract
+                            (shipIcons.ts INK RULE): a dead enemy is the
+                            mirrored sunk-enemy face, not the ally-facing
+                            "sunk" one. */}
                         {sel.shipId != null ? (
                           <BattleIcon
                             type={shipOfflineEntry(sel.shipId)?.type ?? ""}
-                            variant={sel.alive ? (isEnemy(sel) ? "enemy" : "ally") : "sunk"}
+                            variant={sel.alive ? (isEnemy(sel) ? "enemy" : "ally") : isEnemy(sel) ? "sunk-enemy" : "sunk"}
                             size={24}
                           />
                         ) : null}
