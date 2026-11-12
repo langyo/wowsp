@@ -109,6 +109,28 @@ export function chaseStrength(
   };
 }
 
+/** Airframe families whose squadrons carry NO plaque/panel away from the
+ *  chase: scout and consumable-fighter wings are support aircraft, and their
+ *  EFFECT (spotting / air cover) belongs to the hull label's status row, the
+ *  same place a repair-party window shows — not to a bottom-left readout of
+ *  a wing that is merely loitering across the map. */
+export const SUPPORT_PLANE_FAMILIES = ["scout", "fighter"] as const;
+
+/** Whether a chased squadron's card (the bottom-left pill + the squadron
+ *  panel) may render: ALWAYS while the camera rides the aircraft, whatever
+ *  the airframe family — a followed wing that showed no plane HP anywhere
+ *  was the 2026-11-12 report, and scout/fighter airframes are 45% of the
+ *  table, so the old family-only gate hid the readout on almost half of all
+ *  follows. Away from the chase the support families keep hiding. */
+export function chaseCardVisible(
+  family: string | null | undefined,
+  followingAircraft: boolean,
+): boolean {
+  if (followingAircraft) return true;
+  const fam = family ?? "attack";
+  return !SUPPORT_PLANE_FAMILIES.some((f) => f === fam);
+}
+
 /** Pitch (degrees) at which a plane sample reads as an attack-run dive.
  *  WoWS attack runs pitch the models sharply down; −25° separates the dive
  *  from ordinary patrol climb/descend noise. The decoder (SquadronPlane.

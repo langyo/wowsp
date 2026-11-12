@@ -69,6 +69,7 @@ import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
 import { planeTrailExpiry } from "./planeFormation";
 import {
   chaseStrength,
+  chaseCardVisible,
   consumableLabelKey,
   consumableWindowFrac,
   lastSquadronEventAt,
@@ -1979,12 +1980,16 @@ const RECORDED_DOLLY_MIN = -40;
             alive: 0,
             total: 0,
           };
-        // SCOUT / CONSUMABLE-FIGHTER squadrons are not attack wings: they
-        // carry no plaque and no squadron panel (user request). Their EFFECT
-        // (spotting / air cover) belongs to the hull label's status row, the
-        // same place a repair-party window shows.
+        // SCOUT / CONSUMABLE-FIGHTER squadrons are not attack wings: away from
+        // the chase they carry no plaque (their EFFECT — spotting / air cover
+        // — belongs to the hull label's status row, the same place a
+        // repair-party window shows). While the camera IS riding the aircraft
+        // the user explicitly asked for that wing's readout, so the chase
+        // keeps its card whatever the airframe family (2026-11-12 review: a
+        // followed fighter wing showed NO plane HP anywhere, and the 45% of
+        // airframes in these two families hit the same hole).
         const family = ctx.planeTypesById.get(planeId * 16) ?? "attack";
-        if (family === "scout" || family === "fighter") {
+        if (!chaseCardVisible(family, followAircraft.value)) {
           planeCardState.value = null;
           return;
         }
@@ -2053,8 +2058,11 @@ const RECORDED_DOLLY_MIN = -40;
           squadronPanelState.value = null;
           return;
         }
+        // Same rule as the pill card (chaseCardVisible): the panel is the
+        // chased wing's own readout, so a scout/fighter squadron keeps it
+        // while it is actually being followed.
         const family = ctx.planeTypesById.get(planeId * 16) ?? "attack";
-        if (family === "scout" || family === "fighter") {
+        if (!chaseCardVisible(family, followAircraft.value)) {
           squadronPanelState.value = null;
           return;
         }
