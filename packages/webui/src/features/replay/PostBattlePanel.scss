@@ -406,7 +406,12 @@
 .replay-view__postbattle-cell-tier,
 .replay-view__postbattle-fcell-tier {
   flex: 0 0 4.2ch;
-  text-align: center;
+  /* The numeral sits FLUSH with the identity lines above (2026-11-12 user
+     feedback: a centered "IX" drifted right of the nickname and the seal
+     chips on the stacked full card, and its offset wobbled per numeral —
+     VIII landed flush while IX started a ch in). The fixed track stays:
+     it still pins every row's SHIP NAME to the same x. */
+  text-align: left;
   font-family: var(--font-mono);
   font-style: normal;
   color: rgb(var(--color-text) / 0.55);
@@ -428,11 +433,16 @@
    separates them from the nick. The division tag joins the SAME size rule
    as its seal sibling — a division tag rendered at the name line's base
    size reads one size larger than the 二级章 face it must match (user
-   feedback: the yellow tag looked a circle bigger than the seals). */
+   feedback: the yellow tag looked a circle bigger than the seals). The
+   full card's stacked seals LINE joins too (2026-11-12 user feedback):
+   there the stamps render at their base size — bigger and bolder than the
+   AppTag badges across the card's right block — and the whole-wording
+   chips shouted over the three-line identity stack. */
 .replay-view__postbattle-cell-name .stamp-tag,
 .replay-view__postbattle-fcell-name .stamp-tag,
 .replay-view__postbattle-cell-name .division-tag,
-.replay-view__postbattle-fcell-name .division-tag {
+.replay-view__postbattle-fcell-name .division-tag,
+.replay-view__postbattle-fcell-seals .stamp-tag {
   font-size: 0.78em;
 }
 /* Collapsed-seal badge — the ONE "!" mark standing in for every seal whose
@@ -518,6 +528,13 @@
   text-align: right;
   font-family: var(--font-mono);
   color: rgb(var(--color-text) / 0.85);
+  /* The in-flight spinner stands in for the percentage: HkSpinner's wrapper
+     is a block-level flex box, so the cell's text-align cannot move it and
+     the circle rode the track's left half while the settled values (and the
+     header aggregate above them) right-aligned. Park it on the same right
+     edge its number will land on — the fix the roster stat cells already
+     carry in postBattleShare.scss (2026-11-12 user feedback). */
+  .hk-spinner-wrapper { justify-content: flex-end; }
 }
 
 /* ── Full-card rows (the richer density, carried as a card) ──
