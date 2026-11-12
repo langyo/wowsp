@@ -2579,6 +2579,22 @@ export default defineComponent({
       () => chatMessages.value.filter((c) => c.playerId > 0).length,
     );
 
+    /** Does ANY viewable results data exist for the current selection? The
+     *  战后统计 pill's gate: the pill is the post-battle window's ONLY entry
+     *  point, so once this holds it must render interactive — a pending or
+     *  stalled packet-stream decode (the ipc wedge class
+     *  useReplayPositions' watchdog bounds) may only own the pill while
+     *  there is nothing to open yet, never while the panel's own pipelines
+     *  (AI score column, AI report, the roster itself) have already
+     *  settled (2026-11-12 user report: "AI 都完成了还在转圈"). */
+    const resultsPillHasData = computed(
+      // Truthiness ON PURPOSE: byte-identical with the HkModal slot gate
+      // below, so the pill can never offer a window whose content gate is
+      // closed (a malformed replay's empty-string battleResults must count
+      // as absent here exactly as it does there).
+      () => battleResults.value || trajectories.value.length > 0,
+    );
+
     const refreshing = ref(false);
     async function onRefresh() {
       refreshing.value = true;
@@ -2782,7 +2798,7 @@ export default defineComponent({
                           {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
                         </span>
                       ) : null}
-                      {resultsLoading.value ? (
+                      {resultsLoading.value && !resultsPillHasData.value ? (
                         <AppTag
                           class="replay-view__results replay-view__results--loading"
                           tone="accent"
@@ -2790,7 +2806,7 @@ export default defineComponent({
                           {t("replay.results")}
                           <HkSpinner size="xs" tone="current" />
                         </AppTag>
-                      ) : battleResults.value || trajectories.value.length > 0 ? (
+                      ) : resultsPillHasData.value ? (
                         <AppTag
                           class="replay-view__results"
                           interactive
