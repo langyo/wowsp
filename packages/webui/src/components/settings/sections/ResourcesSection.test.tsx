@@ -235,6 +235,56 @@ function inventoryRows(): ResourceStatusRow[] {
  *  shared subgrid maps onto the list's six tracks. */
 const CELL_ORDER = ["name", "size", "version", "installed", "channel", "kind"] as const;
 
+/** The group titles in DOM order — the section's card anatomy. */
+function groupTitles(wrapper: ReturnType<typeof mountSection>): string[] {
+  return wrapper.findAll(".hk-settings-group-title").map((node) => node.text());
+}
+
+/** The subtitles of ONE group (in DOM order), selected by its heading. */
+function groupSubtitles(
+  wrapper: ReturnType<typeof mountSection>,
+  title: string,
+): string[] {
+  const groups = wrapper.findAll(".hk-settings-group");
+  const group = groups.find((node) => node.find(".hk-settings-group-title").text() === title);
+  return group ? group.findAll(".settings-modal__pack-name").map((node) => node.text()) : [];
+}
+
+describe("Settings → Resources card anatomy", () => {
+  it("lists the three groups in the documented order", () => {
+    const wrapper = mountSection(packStatus());
+    // 资源 inventory → game-client data → resource pack → AI runtime. The
+    // decision-model pack is NOT its own group: the models belong to the
+    // runtime that consumes them.
+    expect(groupTitles(wrapper)).toEqual([
+      t("settings.resInvTitle"),
+      t("settings.resourcesGameTitle"),
+      t("settings.resourcesBakedTitle"),
+      t("settings.resourcesAiTitle"),
+    ]);
+  });
+
+  it("groups the decision-model pack with the AI runtime, not with the models", () => {
+    const wrapper = mountSection(packStatus());
+    // The pack is what the runtime loads — it reads as one story.
+    expect(groupSubtitles(wrapper, t("settings.resourcesAiTitle"))).toContain(
+      t("settings.resourcesDecisionsName"),
+    );
+    // ...and it is no longer a row of the baked-model-assets group, which now
+    // holds only the shared resource pack.
+    expect(groupSubtitles(wrapper, t("settings.resourcesBakedTitle"))).not.toContain(
+      t("settings.resourcesDecisionsName"),
+    );
+  });
+
+  it("renders no download progress inside the pane", () => {
+    // Progress is the shared top-right card's job (stores/downloads). Any
+    // inline progress bar here would be the exact drift this refactor removed.
+    const wrapper = mountSection(packStatus());
+    expect(wrapper.find(".settings-modal__pack-progress").exists()).toBe(false);
+  });
+});
+
 describe("Settings → Resources inventory columns", () => {
   it("renders exactly six cells per row in the documented column order", () => {
     const wrapper = mountSection(packStatus(), inventoryRows());

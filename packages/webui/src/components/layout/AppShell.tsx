@@ -42,6 +42,7 @@ import SettingsModal from "./SettingsModal";
 import SettingsSheet from "./SettingsSheet";
 import Sidebar from "./Sidebar";
 import AudioPlayerToast from "./AudioPlayerToast";
+import DownloadToast from "./DownloadToast";
 import ModUpdateToast from "./ModUpdateToast";
 import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
@@ -303,8 +304,11 @@ export default defineComponent({
             }
             // Dog-tag assets prefer the cached pack (models + dogtags ship
             // as one content-addressed pack); the bundled snapshot serves
-            // while the pack is absent.
-            void initDogtagPack(() => api.ensureResPack()).catch(() => {});
+            // while the pack is absent. The ensure pass runs through the
+            // cache store, i.e. inside the unified download context, so its
+            // bytes render on the shared top-right card (the shell's two
+            // loaders ride the SMALL same pass — one wins).
+            void initDogtagPack(() => cacheStore.ensure()).catch(() => {});
             const status = await api.getResStatus();
             // Ship GLBs are pruned from the production dist, so every
             // model URL resolves through the pack cache root — wire it
@@ -315,7 +319,7 @@ export default defineComponent({
               .then((root) => (root ? initModelPack(async () => root) : undefined))
               .catch(() => {});
             if (!status.present) {
-              await initModelPack(() => api.ensureResPack());
+              await initModelPack(() => cacheStore.ensure());
               return;
             }
             // Present (or status unavailable): refresh the remote manifest
@@ -340,7 +344,7 @@ export default defineComponent({
             // Older shell / offline — fall back to the unconditional
             // ensure so the pack still wires up (it serves whatever is on
             // disk when the network is unreachable).
-            void initModelPack(() => api.ensureResPack()).catch(() => {});
+            void initModelPack(() => cacheStore.ensure()).catch(() => {});
           }
         })();
       }
@@ -538,6 +542,13 @@ export default defineComponent({
             selector): renders nothing while the pluginUpdates store is
             idle, so it mounts unconditionally in the same column. */}
         <ModUpdateToast />
+        {/* THE resource-download pass card (resource pack, decision-model
+            pack, any future `card` context of the unified download context).
+            Every resource pass renders here — never inline in the settings
+            pane — so a download looks the same wherever it was started from
+            and stays visible while its settings card is closed. Renders
+            nothing while the context is idle, so it mounts unconditionally. */}
+        <DownloadToast />
         {/* The piggy's periodic visitation card (猪猪找你有点事儿): one
             card per period — first use + 7 days, then monthly — whose
             action lands in the settings' About section and arms the

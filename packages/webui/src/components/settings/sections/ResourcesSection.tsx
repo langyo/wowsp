@@ -1,20 +1,33 @@
 /** Resources settings section: the one place that lists every on-disk
  *  asset the app manages — game-client data (hot-updated ship data, the mod
- *  catalog and the auxiliary caches), baked model resources (the shared
- *  resource pack plus the decisions model/LOS pack), and the AI runtime the
- *  full installer carries.
+ *  catalog and the auxiliary caches), the shared resource pack, and the AI
+ *  runtime with the decision-model pack it runs.
+ *
+ *  The AI group owns BOTH halves of inference: the runtime/environment
+ *  (available or not, the DirectML import the ONNX runtime needs) and the
+ *  decision-model pack sitting under it — the model files are what the
+ *  runtime consumes, so they read as one story instead of the pack hanging
+ *  off the model-assets group.
+ *
+ *  NO download progress renders here. Every resource pass is a context of the
+ *  unified download context (stores/downloads) and renders on the shared
+ *  top-right DownloadToast card, so a download looks the same wherever it was
+ *  started and stays visible while this pane is closed. The cards below keep
+ *  the management verbs (check / install / delete) and gate themselves on
+ *  `downloads.busyFor(...)`.
  *
  *  The AI group is also the portable-build explanation: the 便捷版 compiles
  *  the `ai` feature out entirely, so inference/scoring surfaces are disabled
  *  with a pointer to the full installer instead of failing silently. */
-import { defineComponent, type PropType } from "vue";
+import { computed, defineComponent, type PropType } from "vue";
 import { HkButton, HkSettingsGroup, HkSettingsHint, HkTag } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import ErrorCard from "@/components/base/ErrorCard";
 import LoadingNote from "@/components/base/LoadingNote";
-import { formatEta, formatLocalStamp, formatSpeed } from "@/utils/format";
+import { formatLocalStamp } from "@/utils/format";
 import { isMobileApp } from "@/utils/platform";
+import { useDownloadsStore } from "@/stores/downloads";
 import { SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
 import {
   auxDesc,
@@ -64,6 +77,11 @@ export default defineComponent({
   setup(props) {
     const { updates, resources } = props.ctx;
     const cacheStore = updates.cacheStore;
+    // The unified download context: "is this pass running?" comes from the
+    // ledger (one answer for every surface), and the progress itself renders
+    // in the shared top-right card, never in this pane.
+    const downloads = useDownloadsStore();
+    const packBusy = computed(() => downloads.busyFor("res-pack"));
     /** Display name for one registry row — existing per-resource keys
      *  where the cards below already name them, inventory-only keys
      *  otherwise (caches reuse the aux-cache titles). */
@@ -112,25 +130,13 @@ export default defineComponent({
     return () => {
       const st = cacheStore.status;
       const upd = cacheStore.update;
-      const prog = cacheStore.progress;
-      const downloading =
-        (st?.downloading ?? false) ||
-        (prog != null &&
-          (prog.phase === "download" ||
-            prog.phase === "apply" ||
-            prog.phase === "queued"));
-      const pct =
-        prog && prog.phase === "download" && prog.total > 0
-          ? Math.min(100, Math.round((prog.received / prog.total) * 100))
-          : 0;
+      // The pack pass is "running" while the shared context says so; a stale
+      // shell status flag is only the fallback for a boot-time pass started
+      // before this pane opened.
+      const downloading = packBusy.value || (st?.downloading ?? false);
       const d = resources.decisions.value;
       const ai = resources.aiStatus.value;
       const aiCheck = resources.aiCheck.value;
-      const aiProg = resources.aiProgress.value;
-      const aiPct =
-        aiProg && aiProg.phase === "download" && aiProg.total > 0
-          ? Math.min(100, Math.round((aiProg.received / aiProg.total) * 100))
-          : 0;
       let aiEndpointHost = "";
       if (aiCheck?.endpoint) {
         try {
@@ -415,52 +421,12 @@ export default defineComponent({
                   {": "}
                   {hash6(upd?.latestTreeSha256)}
                 </span>
-                {downloading ? (
-                  <>
-                    <div class="settings-modal__pack-progress">
-                      <div
-                        class="settings-modal__pack-progress-fill"
-                        style={{ width: prog?.phase === "apply" ? "100%" : `${pct}%` }}
-                      />
-                    </div>
-                    {prog &&
-                    (prog.phase === "download" || prog.phase === "apply") &&
-                    (prog.received > 0 || prog.total > 0 || prog.segments > 1) ? (
-                      <span class="settings-modal__pack-desc">
-                        {[
-                          prog.total > 0
-                            ? `${formatBytes(prog.received)} / ${formatBytes(prog.total)}`
-                            : formatBytes(prog.received),
-                          (cacheStore.speedBps ?? 0) > 0
-                            ? formatSpeed(cacheStore.speedBps)
-                            : null,
-                          prog.phase === "download" &&
-                          prog.total > prog.received &&
-                          (cacheStore.speedBps ?? 0) > 0
-                            ? t("settings.resEta", {
-                                time: formatEta(
-                                  (prog.total - prog.received) / (cacheStore.speedBps ?? 1),
-                                ),
-                              })
-                            : null,
-                          prog.segments > 1
-                            ? t("settings.resSegment", {
-                                current: prog.segment,
-                                total: prog.segments,
-                              })
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    ) : null}
-                  </>
-                ) : null}
-                {prog?.phase === "error" && prog.error ? (
-                  /* Download failure — the localized sentence as the card's
-                     description, the raw backend message structured below. */
+                {downloads.errorFor("res-pack") ? (
+                  /* A failed pass is a retry affordance, not progress: the
+                     failure stays beside the button that retries it (the
+                     running percent/speed lives on the shared toast card). */
                   <ErrorCard
-                    error={prog.error}
+                    error={downloads.errorFor("res-pack") ?? ""}
                     description={t("settings.cacheDownloadFailed")}
                   />
                 ) : null}
@@ -472,17 +438,12 @@ export default defineComponent({
               </div>
               <div class="settings-modal__pack-actions">
                 {downloading ? (
-                  prog?.phase === "apply" ? (
-                    // The swap-based apply runs to completion (no cancel):
-                    // a busy ring on a disabled button says so.
-                    <HkButton size="sm" loading>
-                      {t("settings.cacheApplying")}
-                    </HkButton>
-                  ) : (
-                    <HkButton size="sm" onClick={() => void cacheStore.cancel()}>
-                      {t("settings.cacheCancel")}
-                    </HkButton>
-                  )
+                  /* The pass is running: the shared card owns the progress AND
+                     the cancel verb, so this pane only says so (a local cancel
+                     would be a second, divergent control). */
+                  <HkButton size="sm" loading>
+                    {t("settings.cacheApplying")}
+                  </HkButton>
                 ) : st?.present ? (
                   <>
                     {updates.appUpdatePending.value ? (
@@ -557,197 +518,6 @@ export default defineComponent({
               </div>
             </div>
 
-            {/* The AI model pack is published on Hugging Face and installed
-                through the signed ai channel (commands/ai_pack.rs): the card
-                shows the local stamp/inventory, checks the authenticated
-                manifest (once per day on mount; the button forces it) and
-                runs the install pass behind the download-progress bus. */}
-            {!aiKnown ? null : (
-              <div class="settings-modal__pack">
-                <div class="settings-modal__pack-info">
-                  <span class="settings-modal__pack-name">
-                    {t("settings.resourcesDecisionsName")}
-                  </span>
-                  <span class="settings-modal__pack-desc">
-                    {t("settings.resourcesDecisionsDesc")}
-                  </span>
-                  <span class="settings-modal__pack-meta">
-                    {!resources.decisionsChecked.value ? (
-                      /* Inline checking value: the ring rides beside the copy
-                         — a stacked block would break the pack row's line. */
-                      <LoadingNote
-                        inline
-                        text={t("settings.resourcesAiChecking")}
-                      />
-                    ) : ai?.installed ? (
-                      t("settings.resourcesAiChannelVersion", {
-                        version: ai.version ?? "—",
-                        seq: ai.seq ?? 0,
-                      })
-                    ) : resources.decisionsError.value && d == null
-                        ? t("settings.resourcesDecisionsUnknown")
-                        : d?.present
-                          ? t("settings.resourcesAiChannelUnmanaged", {
-                              size: formatBytes(d.sizeBytes),
-                            })
-                          : t("settings.resourcesDecisionsAbsent")}
-                  </span>
-                  {!caps.aiInference ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsUnavailable")}
-                    </span>
-                  ) : resources.decisionsChecked.value &&
-                    !resources.decisionsError.value &&
-                    !resources.decisionsCleared.value &&
-                    !d?.present ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsDemoInUse")}
-                    </span>
-                  ) : null}
-                  {aiCheck ? (
-                    <span class="settings-modal__pack-desc">
-                      {aiCheck.updateAvailable
-                        ? t("settings.resourcesAiChannelUpdateAvailable", {
-                            version: aiCheck.latestVersion,
-                            seq: aiCheck.latestSeq,
-                            size: formatBytes(aiCheck.totalBytes),
-                          })
-                        : t("settings.resourcesAiChannelUpToDate", {
-                            version: aiCheck.latestVersion,
-                          })}
-                    </span>
-                  ) : null}
-                  {aiCheck ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesAiChannelEndpoint", {
-                        endpoint: aiEndpointHost,
-                        count: aiCheck.files.length,
-                      })}
-                    </span>
-                  ) : null}
-                  {aiCheck?.losMismatch || ai?.losSkipped ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesAiChannelLosMismatch")}
-                    </span>
-                  ) : null}
-                  {resources.aiError.value ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesAiChannelFailed")}
-                    </span>
-                  ) : null}
-                  {resources.aiDownloading.value ? (
-                    <div
-                      class="settings-modal__pack-progress"
-                      role="progressbar"
-                      aria-valuenow={aiPct}
-                    >
-                      <div
-                        class="settings-modal__pack-progress-fill"
-                        style={{ width: `${aiPct}%` }}
-                      />
-                    </div>
-                  ) : null}
-                  {d?.present && d.adviceModelPresent ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsAdviceInstalled", {
-                        size: formatBytes(d.adviceModelBytes),
-                      })}
-                    </span>
-                  ) : null}
-                  {/* Torpedo slots: the T4 three-head model is preferred,
-                      the legacy two-head slot is the fallback for older
-                      packs. The report side shows N/A without either, so the
-                      card reports ONE installed model's size. */}
-                  {d?.present && d.torpedo4ModelPresent ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsTorpedo4Installed", {
-                        size: formatBytes(d.torpedo4ModelBytes),
-                      })}
-                    </span>
-                  ) : d?.present && d.torpedoModelPresent ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsTorpedoInstalled", {
-                        size: formatBytes(d.torpedoModelBytes),
-                      })}
-                    </span>
-                  ) : null}
-                  {d?.present ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsLos", {
-                        count: d.losMaps.length,
-                        maps:
-                          d.losMaps.length > 0
-                            ? `${d.losMaps.slice(0, 4).join(", ")}${
-                                d.losMaps.length > 4 ? "…" : ""
-                              }`
-                            : t("settings.resourcesDecisionsLosNone"),
-                      })}
-                    </span>
-                  ) : null}
-                  {d?.modelPresent || resources.decisionsCleared.value ? (
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsRestart")}
-                    </span>
-                  ) : null}
-                </div>
-                <div class="settings-modal__pack-actions">
-                  {caps.aiInference ? (
-                    <>
-                      <HkButton
-                        variant="secondary"
-                        size="sm"
-                        loading={resources.aiChecking.value}
-                        disabled={resources.aiDownloading.value}
-                        onClick={() => void resources.checkAiUpdate()}
-                      >
-                        {t("settings.resourcesAiChannelCheck")}
-                      </HkButton>
-                      {resources.aiDownloading.value ? (
-                        <HkButton
-                          variant="secondary"
-                          size="sm"
-                          loading={resources.aiCanceling.value}
-                          onClick={() => void resources.cancelAi()}
-                        >
-                          {t("settings.resourcesAiChannelCancel")}
-                        </HkButton>
-                      ) : (
-                        <HkButton
-                          variant="primary"
-                          size="sm"
-                          disabled={!aiCheck?.updateAvailable}
-                          onClick={() => void resources.downloadAi()}
-                        >
-                          {d?.present
-                            ? t("settings.resourcesAiChannelUpdate")
-                            : t("settings.resourcesAiChannelDownload")}
-                        </HkButton>
-                      )}
-                    </>
-                  ) : null}
-                  {d?.present ? (
-                    resources.decisionsArmed.value ? (
-                      <HkButton
-                        variant="danger"
-                        size="sm"
-                        loading={resources.decisionsClearing.value}
-                        onClick={() => void resources.clearDecisions()}
-                      >
-                        {t("settings.cacheDeleteConfirm")}
-                      </HkButton>
-                    ) : (
-                      <HkButton
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => (resources.decisionsArmed.value = true)}
-                      >
-                        {t("settings.cacheDelete")}
-                      </HkButton>
-                    )
-                  ) : null}
-                </div>
-              </div>
-            )}
           </HkSettingsGroup>
 
           {/* ── AI runtime ──────────────────────────────────────────────── */}
@@ -800,6 +570,183 @@ export default defineComponent({
                 </div>
               </div>
             ) : null}
+          {/* The decision-model pack — the models this runtime consumes. It
+              is published on Hugging Face and installed through the signed
+              ai channel (commands/ai_pack.rs): the row shows the local
+              stamp/inventory, checks the authenticated manifest (once per
+              day on mount; the button forces it) and starts the install
+              pass. The pass itself renders on the shared top-right card. */}
+          {!aiKnown ? null : (
+            <div class="settings-modal__pack">
+              <div class="settings-modal__pack-info">
+                <span class="settings-modal__pack-name">
+                  {t("settings.resourcesDecisionsName")}
+                </span>
+                <span class="settings-modal__pack-desc">
+                  {t("settings.resourcesDecisionsDesc")}
+                </span>
+                <span class="settings-modal__pack-meta">
+                  {!resources.decisionsChecked.value ? (
+                    /* Inline checking value: the ring rides beside the copy
+                       — a stacked block would break the pack row's line. */
+                    <LoadingNote
+                      inline
+                      text={t("settings.resourcesAiChecking")}
+                    />
+                  ) : ai?.installed ? (
+                    t("settings.resourcesAiChannelVersion", {
+                      version: ai.version ?? "—",
+                      seq: ai.seq ?? 0,
+                    })
+                  ) : resources.decisionsError.value && d == null
+                      ? t("settings.resourcesDecisionsUnknown")
+                      : d?.present
+                        ? t("settings.resourcesAiChannelUnmanaged", {
+                            size: formatBytes(d.sizeBytes),
+                          })
+                        : t("settings.resourcesDecisionsAbsent")}
+                </span>
+                {!caps.aiInference ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesDecisionsUnavailable")}
+                  </span>
+                ) : resources.decisionsChecked.value &&
+                  !resources.decisionsError.value &&
+                  !resources.decisionsCleared.value &&
+                  !d?.present ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesDecisionsDemoInUse")}
+                  </span>
+                ) : null}
+                {aiCheck ? (
+                  <span class="settings-modal__pack-desc">
+                    {aiCheck.updateAvailable
+                      ? t("settings.resourcesAiChannelUpdateAvailable", {
+                          version: aiCheck.latestVersion,
+                          seq: aiCheck.latestSeq,
+                          size: formatBytes(aiCheck.totalBytes),
+                        })
+                      : t("settings.resourcesAiChannelUpToDate", {
+                          version: aiCheck.latestVersion,
+                        })}
+                  </span>
+                ) : null}
+                {aiCheck ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesAiChannelEndpoint", {
+                      endpoint: aiEndpointHost,
+                      count: aiCheck.files.length,
+                    })}
+                  </span>
+                ) : null}
+                {aiCheck?.losMismatch || ai?.losSkipped ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesAiChannelLosMismatch")}
+                  </span>
+                ) : null}
+                {resources.aiError.value ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesAiChannelFailed")}
+                  </span>
+                ) : null}
+                {d?.present && d.adviceModelPresent ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesDecisionsAdviceInstalled", {
+                      size: formatBytes(d.adviceModelBytes),
+                    })}
+                  </span>
+                ) : null}
+                {/* Torpedo slots: the T4 three-head model is preferred,
+                    the legacy two-head slot is the fallback for older
+                    packs. The report side shows N/A without either, so the
+                    card reports ONE installed model's size. */}
+                {d?.present && d.torpedo4ModelPresent ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesDecisionsTorpedo4Installed", {
+                      size: formatBytes(d.torpedo4ModelBytes),
+                    })}
+                  </span>
+                ) : d?.present && d.torpedoModelPresent ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesDecisionsTorpedoInstalled", {
+                      size: formatBytes(d.torpedoModelBytes),
+                    })}
+                  </span>
+                ) : null}
+                {d?.present ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesDecisionsLos", {
+                      count: d.losMaps.length,
+                      maps:
+                        d.losMaps.length > 0
+                          ? `${d.losMaps.slice(0, 4).join(", ")}${
+                              d.losMaps.length > 4 ? "…" : ""
+                            }`
+                          : t("settings.resourcesDecisionsLosNone"),
+                    })}
+                  </span>
+                ) : null}
+                {d?.modelPresent || resources.decisionsCleared.value ? (
+                  <span class="settings-modal__pack-desc">
+                    {t("settings.resourcesDecisionsRestart")}
+                  </span>
+                ) : null}
+              </div>
+              <div class="settings-modal__pack-actions">
+                {caps.aiInference ? (
+                  <>
+                    <HkButton
+                      variant="secondary"
+                      size="sm"
+                      loading={resources.aiChecking.value}
+                      disabled={resources.aiDownloading.value}
+                      onClick={() => void resources.checkAiUpdate()}
+                    >
+                      {t("settings.resourcesAiChannelCheck")}
+                    </HkButton>
+                    {resources.aiDownloading.value ? (
+                      /* Running: the shared top-right card owns the progress
+                         AND the cancel verb — this pane just says so. */
+                      <HkButton variant="secondary" size="sm" loading>
+                        {t("settings.cacheApplying")}
+                      </HkButton>
+                    ) : (
+                      <HkButton
+                        variant="primary"
+                        size="sm"
+                        disabled={!aiCheck?.updateAvailable}
+                        onClick={() => void resources.downloadAi()}
+                      >
+                        {d?.present
+                          ? t("settings.resourcesAiChannelUpdate")
+                          : t("settings.resourcesAiChannelDownload")}
+                      </HkButton>
+                    )}
+                  </>
+                ) : null}
+                {d?.present ? (
+                  resources.decisionsArmed.value ? (
+                    <HkButton
+                      variant="danger"
+                      size="sm"
+                      loading={resources.decisionsClearing.value}
+                      onClick={() => void resources.clearDecisions()}
+                    >
+                      {t("settings.cacheDeleteConfirm")}
+                    </HkButton>
+                  ) : (
+                    <HkButton
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => (resources.decisionsArmed.value = true)}
+                    >
+                      {t("settings.cacheDelete")}
+                    </HkButton>
+                  )
+                ) : null}
+              </div>
+            </div>
+          )}
           </HkSettingsGroup>
           </>
       );

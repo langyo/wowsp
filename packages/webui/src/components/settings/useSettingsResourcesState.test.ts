@@ -1,14 +1,20 @@
 /**
  * Settings → Resources ai channel state: the manifest check and the install
  * pass are the two network-touching actions on the model card, so the hook's
- * gating (ai build only, single-flight, progress tracking, error flag) is
- * pinned here instead of through the rendered section.
+ * gating (ai build only, single-flight, error flag) is pinned here instead of
+ * through the rendered section.
+ *
+ * The PASS itself belongs to the unified download context (stores/downloads):
+ * `downloadAi` hands the command to `downloads.track`, so these tests assert
+ * on the shared ledger — the "is it running?" answer the settings card gates
+ * on — rather than on a local progress ref.
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
 
 import { api } from "@/api";
 import { useSettingsResourcesState } from "@/components/settings/useSettingsResourcesState";
+import { useDownloadsStore } from "@/stores/downloads";
 
 vi.mock("@/api", () => ({
   api: {
@@ -92,12 +98,62 @@ describe("settings resources ai channel", () => {
     expect(window.localStorage.getItem("wowsp.aiPack.lastCheck")).not.toBeNull();
   });
 
-  it("runs the install pass once and refreshes the local state", async () => {
+  it("runs the install pass once through the shared download context", async () => {
     const state = hook();
+    const downloads = useDownloadsStore();
     await state.downloadAi();
     expect(api.aiPackDownload).toHaveBeenCalledTimes(1);
     expect(api.aiPackCheck).toHaveBeenCalled(); // post-install re-check
+    // The pass was raised and settled in the shared ledger — that ledger is
+    // what the settings card's buttons gate on (never a local flag), and the
+    // shell's DownloadToast card renders it.
+    expect(downloads.passFor("ai-models")?.phase).toBe("done");
+    expect(downloads.busyFor("ai-models")).toBe(false);
     expect(state.aiDownloading.value).toBe(false);
+    expect(state.aiError.value).toBe(false);
+  });
+
+  it("marks the shared pass busy while the install runs", async () => {
+    const state = hook();
+    const downloads = useDownloadsStore();
+    let release!: () => void;
+    vi.mocked(api.aiPackDownload).mockImplementationOnce(
+      () => new Promise<null>((resolve) => { release = () => resolve(null); }) as never,
+    );
+    const pass = state.downloadAi();
+    // The card's gating reads the ONE ledger entry, so a running pass and a
+    // spinning button can never disagree.
+    expect(downloads.busyFor("ai-models")).toBe(true);
+    expect(state.aiDownloading.value).toBe(true);
+    release();
+    await pass;
+    expect(downloads.busyFor("ai-models")).toBe(false);
+  });
+
+  it("records a failed install on the shared pass and the card's error flag", async () => {
+    const state = hook();
+    const downloads = useDownloadsStore();
+    vi.mocked(api.aiPackDownload).mockRejectedValueOnce(new Error("no endpoint") as never);
+    await state.downloadAi();
+    expect(downloads.passFor("ai-models")?.phase).toBe("error");
+    expect(downloads.errorFor("ai-models")).toBe("no endpoint");
+    expect(state.aiError.value).toBe(true);
+  });
+
+  it("cancels through the registry's single verb", async () => {
+    const state = hook();
+    const downloads = useDownloadsStore();
+    let release!: () => void;
+    vi.mocked(api.aiPackDownload).mockImplementationOnce(
+      () => new Promise<null>((resolve) => { release = () => resolve(null); }) as never,
+    );
+    const pass = state.downloadAi();
+    await state.cancelAi();
+    expect(api.aiPackCancel).toHaveBeenCalledTimes(1);
+    release();
+    await pass;
+    // A requested cancel is not a failure — the pass settles without an error.
+    expect(downloads.passFor("ai-models")?.phase).toBe("done");
     expect(state.aiError.value).toBe(false);
   });
 

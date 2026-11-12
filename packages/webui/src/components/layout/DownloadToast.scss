@@ -1,0 +1,14 @@
+// DownloadToast — the shared resource-download pass card. Its whole surface
+// lives in ToastCardBase(.scss): the fixed top-right slot (hikari's toast
+// column, the --hk-z-toast band), the info tone, the enter/--leave motion,
+// the never-shrinking meta readout and the bottom progress track. This sheet
+// carries only the one thing that card adds — the phase line under the
+// headline (the resource name stays the ellipsized headline itself).
+
+.download-toast__step {
+  margin: 0.1rem 0 0;
+  font-size: var(--text-sm, 0.875rem);
+  line-height: 1.35;
+  color: rgb(255 255 255 / 88%);
+  overflow-wrap: anywhere;
+}
