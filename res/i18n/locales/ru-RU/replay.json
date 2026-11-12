@@ -1,7 +1,4 @@
 {
-  "squadron": {
-    "returning": "Возврат на авианосец"
-  },
   "list": {
     "unknownPlayer": "Неизвестный игрок",
     "title": "Реплеи",
@@ -757,5 +754,8 @@
   },
   "detail": {
     "title": "Детали боя"
+  },
+  "shipStatus": {
+    "fighterCover": "Прикрытие истребителей"
   }
 }

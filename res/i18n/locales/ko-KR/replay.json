@@ -1,7 +1,4 @@
 {
-  "squadron": {
-    "returning": "귀환 중"
-  },
   "list": {
     "unknownPlayer": "알 수 없는 플레이어",
     "title": "리플레이 목록",
@@ -757,5 +754,8 @@
   },
   "detail": {
     "title": "전투 상세"
+  },
+  "shipStatus": {
+    "fighterCover": "전투기 엄호"
   }
 }

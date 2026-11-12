@@ -236,8 +236,19 @@
   .holo-squad {
     position: absolute;
     left: 0;
-    bottom: calc(100% + 8px + 3.6rem);
+    bottom: calc(100% + 8px + var(--holo-shipcard-h, 3.6rem));
     width: min(var(--holo-hud-block-w), calc(100cqw - 192px));
+  }
+
+  /* The plaque row wraps its stats strip below the plaque under ~680px
+     (see the @container in __shipcard), which makes the row TALLER — the
+     panel above it must lift by the same amount or it overlaps the
+     wrapped strip. Measured against the two-row shape: plaque (~3.4rem)
+     + 10px row gap + one stat-strip row (~2.4rem). */
+  @container (max-width: 680px) {
+    .holo-squad {
+      bottom: calc(100% + 8px + 6.4rem);
+    }
   }
 
   &__shipcard {

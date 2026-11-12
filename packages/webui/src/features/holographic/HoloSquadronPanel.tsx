@@ -10,6 +10,20 @@
  * down, so the whole wing's attrition reads at a glance instead of one
  * aggregate bar. Row two carries the engine state: the boost / slow /
  * consumable chips plus the thin boost gauge.
+ *
+ * A RETURNING / wiped wing gets no panel at all — not a degraded one:
+ * `receive_deactivateSquadron` fires at the END of the tracked life
+ * (measured over 645 CV flights: 0/645 keep streaming after it, delta
+ * median −1.0 s, max 0.0 s), so `activeSquadronOf` already returns null
+ * on that same tick and this component unmounts. That satisfies the
+ * "no health readout on a returning wing" request without guessing a
+ * recall state the wire cannot name (its reason byte reads 0..12 and is
+ * still unnamed).
+ *
+ * Group boundaries come from the launch-clustering inference
+ * (planeFormations.groupSize), not from the wire: a wing launched as one
+ * tight blob renders as one group of N, a fragmented launch as N single
+ * pips.
  */
 import { defineComponent, type PropType } from "vue";
 import { t as i18nT } from "@/i18n";
@@ -34,10 +48,6 @@ export interface HoloSquadronPanelState {
   consumables: string[];
   /** Remaining fraction of the healForsage one-shot window (null = off). */
   forsage: number | null;
-  /** False while the formation is on its way home / already recalled: the
-   *  panel then shows the caption only (no HP segments — user request: a
-   *  returning wing no longer carries a health readout). */
-  combat: boolean;
 }
 
 /** One segment per plane: the band picks its colour, a dead/absent slot
@@ -69,8 +79,7 @@ export default defineComponent({
               <span>{s.total}</span>
             </span>
           </div>
-          {s.combat ? (
-            <div class="holo-squad__groups">
+          <div class="holo-squad__groups">
               {s.groups.map((group, gi) => (
                 <span class="holo-squad__group" key={gi}>
                   {group.map((plane, pi) => (
@@ -79,9 +88,6 @@ export default defineComponent({
                 </span>
               ))}
             </div>
-          ) : (
-            <div class="holo-squad__returning">{i18nT("replay.squadron.returning")}</div>
-          )}
           <div class="holo-squad__engine">
             {s.boost ? (
               <span class="holo-squad__chip holo-squad__chip--boost">

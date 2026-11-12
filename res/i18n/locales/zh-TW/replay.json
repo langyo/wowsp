@@ -1,7 +1,4 @@
 {
-  "squadron": {
-    "returning": "返航中"
-  },
   "list": {
     "unknownPlayer": "未知玩家",
     "title": "錄影列表",
@@ -757,5 +754,8 @@
   },
   "detail": {
     "title": "對局詳情"
+  },
+  "shipStatus": {
+    "fighterCover": "戰鬥機掩護"
   }
 }

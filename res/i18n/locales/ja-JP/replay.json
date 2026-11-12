@@ -1,7 +1,4 @@
 {
-  "squadron": {
-    "returning": "帰投中"
-  },
   "list": {
     "unknownPlayer": "不明なプレイヤー",
     "title": "リプレイ一覧",
@@ -757,5 +754,8 @@
   },
   "detail": {
     "title": "戦闘詳細"
+  },
+  "shipStatus": {
+    "fighterCover": "戦闘機援護"
   }
 }

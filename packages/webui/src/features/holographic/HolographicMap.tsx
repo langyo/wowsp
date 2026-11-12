@@ -1633,10 +1633,10 @@ const RECORDED_DOLLY_MIN = -40;
           planeCardState.value = null;
           return;
         }
-        // A wing on its way home (or already recalled) keeps no health
-        // readout: the deactivation stream marks the recall, and the
-        // remaining strength after it is a landing count, not combat state
-        // (user request).
+        // A deactivated squadron (recalled / wiped / out of fuel) keeps no
+        // health readout — the strength still on the trails after that
+        // point is a landing count, not combat state (user request). The
+        // reason byte is unnamed, so the UI states the fact, not the cause.
         const recalled = lastSquadronEventAt(
           squadronStates.value?.deactivations,
           planeId,
@@ -1746,12 +1746,6 @@ const RECORDED_DOLLY_MIN = -40;
             return rawId == null ? text : text + " " + rawId;
           }),
           forsage: forsage == null ? null : Math.round(forsage * 20) / 20,
-          combat:
-            lastSquadronEventAt(
-              squadronStates.value?.deactivations,
-              planeId,
-              t,
-            ) == null,
         };
       },
       { immediate: true },

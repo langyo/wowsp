@@ -75,6 +75,10 @@ export interface ShipStatusSnapshot {
   actions: ShipActionChip[];
   hits: ShipHitChip[];
   dots: ShipDotChip[];
+  /** Active fighter-patrol cover (a consumable fighter the ship or its
+   *  carrier put up): one chip per live ward, so the effect reads under
+   *  the hull exactly like a repair-party chip. */
+  wards?: { key: string; remaining: number }[];
 }
 
 // ── Tuning constants ────────────────────────────────────────────────────
@@ -172,6 +176,13 @@ export interface ShipStatusSource {
   shellImpacts: ShellImpact[];
   torpImpacts: TorpedoImpact[];
   smokes: SmokeCluster[];
+  /** Fighter-patrol wards (receive_wardAdded/Removed, E27). A consumable
+   *  fighter's patrol effect belongs on the OWNING SHIP's status row —
+   *  the same place a repair-party window shows — not on an aircraft
+   *  card (user request). ward.ownerId is the ship; squadronId names the
+   *  wing that laid it. */
+  wards?: { time: number; ownerId: number; squadronId: number; radius: number }[];
+  wardRemoves?: { time: number; planeId: number }[];
   /** entityId → WG class string ("Battleship"/"Cruiser"/…), driving the
    *  per-class DoT countdown bases. Missing entries read as "other". */
   shipTypes?: Map<number, string | null>;
@@ -227,6 +238,9 @@ export interface ShipStatusIndex {
   smokes: TimeWindow[];
   hits: StoredHit[];
   dots: DotWindow[];
+  /** Live fighter-patrol windows owned by this ship (absent = none, which
+   *  keeps hand-built fixtures in the existing tests valid). */
+  wards?: TimeWindow[];
 }
 
 /** Build the per-entity index consumed by `shipStatusAt`. Ships without any
@@ -247,11 +261,33 @@ export function buildShipStatusIndex(src: ShipStatusSource): Map<number, ShipSta
       smokes: [],
       hits: [],
       dots: dotWindows(tr, maxHp, src.torpImpacts, tr.entityId, type),
+      wards: wardWindows(src, tr.entityId),
     };
     out.set(tr.entityId, idx);
   }
   attributeSmokes(src, out, shipTrajs);
   attributeHits(src, out, shipTrajs);
+  return out;
+}
+
+/** Fighter-patrol windows for ONE ship: each ward from its add until the
+ *  first remove for the same squadron after it (a re-deployed ward keeps
+ *  the same squadronId, exactly like `activeWards`'s rule for the 3D
+ *  rings). Kept as [t0, t1) windows so the per-tick query is a scan over
+ *  a handful of entries. */
+function wardWindows(src: ShipStatusSource, shipId: number): TimeWindow[] {
+  const wards = src.wards;
+  if (!wards || wards.length === 0) return [];
+  const out: TimeWindow[] = [];
+  for (const w of wards) {
+    if (w.ownerId !== shipId) continue;
+    let t1 = Number.POSITIVE_INFINITY;
+    for (const rm of src.wardRemoves ?? []) {
+      if (rm.planeId !== w.squadronId || rm.time <= w.time) continue;
+      if (rm.time < t1) t1 = rm.time;
+    }
+    out.push({ t0: w.time, t1 });
+  }
   return out;
 }
 
@@ -325,8 +361,26 @@ export function shipStatusAt(idx: ShipStatusIndex | undefined, t: number): ShipS
     if (t - d.lastTick > DOT_GAP_S) continue;
     dots.push({ key: d.kind, secs: rem, frac: rem / d.base });
   }
-  if (actions.length === 0 && hits.length === 0 && dots.length === 0) return null;
-  return { actions, hits, dots };
+  const wards: { key: string; remaining: number }[] = [];
+  const wardWindows = idx.wards ?? [];
+  for (let i = 0; i < wardWindows.length; i++) {
+    const w = wardWindows[i];
+    if (t < w.t0 || t > w.t1) continue;
+    wards.push({
+      key: "ward" + i,
+      remaining: Number.isFinite(w.t1) ? Math.max(0, w.t1 - t) : -1,
+    });
+  }
+  // A ward-only ship still renders (the fighter cover is a real row item).
+  if (
+    actions.length === 0 &&
+    hits.length === 0 &&
+    dots.length === 0 &&
+    wards.length === 0
+  ) {
+    return null;
+  }
+  return { actions, hits, dots, ...(wards.length > 0 ? { wards } : {}) };
 }
 
 // ── Row one: launches, reloads, smoke, repair ───────────────────────────

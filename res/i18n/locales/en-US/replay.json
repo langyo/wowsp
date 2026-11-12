@@ -1,7 +1,4 @@
 {
-  "squadron": {
-    "returning": "Returning to the carrier"
-  },
   "list": {
     "unknownPlayer": "Unknown player",
     "title": "Replays",
@@ -757,5 +754,8 @@
   },
   "detail": {
     "title": "Battle detail"
+  },
+  "shipStatus": {
+    "fighterCover": "Fighter cover"
   }
 }

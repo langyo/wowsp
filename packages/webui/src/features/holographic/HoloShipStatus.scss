@@ -40,6 +40,20 @@
     gap: 1px;
   }
 
+  /* Fighter-patrol cover: the consumable fighter's effect, shown under the
+     OWNING hull (same row as fire/flood/hit pills). Text chip until the
+     game's fighter-consumable sprite is extracted (see statusIcons.ts). */
+  &__ward {
+    padding: 1px 5px;
+    font-size: var(--text-2xs);
+    line-height: 1.5;
+    color: #cfe6ff;
+    background: rgb(56 130 190 / 22%);
+    border: 1px solid rgb(140 190 240 / 55%);
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+
   &__icon {
     position: relative;
     display: flex;

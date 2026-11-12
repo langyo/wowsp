@@ -1,7 +1,4 @@
 {
-  "squadron": {
-    "returning": "Retour au porte-avions"
-  },
   "list": {
     "unknownPlayer": "Joueur inconnu",
     "title": "Replays",
@@ -757,5 +754,8 @@
   },
   "detail": {
     "title": "Détail de la bataille"
+  },
+  "shipStatus": {
+    "fighterCover": "Couverture de chasse"
   }
 }

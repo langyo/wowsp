@@ -75,13 +75,6 @@
     &--dead { background: rgb(255 255 255 / 8%); }
   }
 
-  /* Recalled wing: caption only, no HP segments (user request). */
-  &__returning {
-    font-size: var(--text-2xs);
-    color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
-    line-height: 0.5rem;
-  }
-
   /* Engine row: state chips + the one-shot gauge. */
   &__engine {
     display: flex;
