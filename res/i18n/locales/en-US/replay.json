@@ -1,4 +1,7 @@
 {
+  "squadron": {
+    "returning": "Returning to the carrier"
+  },
   "list": {
     "unknownPlayer": "Unknown player",
     "title": "Replays",

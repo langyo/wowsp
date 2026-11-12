@@ -128,7 +128,22 @@ export function updateLabelPositions(ctx: MapInternals) {
   // Aircraft labels project above the carrier's currently airborne
   // squadrons (the newest sample of the newest sortie).
   ctx.planeLabelPicks.clear();
-  for (const [labelId] of ctx.planeLabelCarriers) {
+  for (const [labelId, carrierOfLabel] of ctx.planeLabelCarriers) {
+    // While the chase camera follows a carrier's AIRCRAFT, every other
+    // wing's floating card is noise over the formation (user request: if
+    // there is no other aircraft in view, drop the other cards). The
+    // followed carrier keeps its card + below-row.
+    if (
+      ctx.followAircraftId != null &&
+      carrierOfLabel !== ctx.followAircraftId
+    ) {
+      const other = labels.find((l) => l.entityId === labelId);
+      if (other) {
+        applySlot(ctx.labelSlotEls.get("l" + labelId), false, 0, 0);
+        applySlot(ctx.labelSlotEls.get("s" + labelId), false, 0, 0);
+      }
+      continue;
+    }
     const label = labels.find((l) => l.entityId === labelId);
     if (!label || !label.visible) {
       // Carrier label not currently airborne-visible: hide its slots too —

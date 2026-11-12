@@ -1,0 +1,133 @@
+/* Squadron status panel — docked in the bottom-left HUD block, directly
+   above the recorder's hull plaque and sharing its width contract
+   (--holo-hud-block-w). One segment per plane, grouped per flight group;
+   the engine row underneath carries boost / slow / consumable chips plus
+   the thin one-shot boost gauge. */
+.holo-squad {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem 0.45rem;
+  background: var(--holo-hud-bg, rgb(8 12 20 / 62%));
+  border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
+  border-radius: 8px;
+  color: var(--holo-hud-text, rgb(255 255 255 / 92%));
+  pointer-events: none;
+  box-sizing: border-box;
+
+  /* Caption: carrier nickname + hull + flying/total. */
+  &__head {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
+    font-size: var(--text-2xs);
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  &__name {
+    font-weight: 700;
+    color: var(--holo-hud-strong, #fff);
+  }
+
+  &__ship {
+    color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
+  }
+
+  &__count {
+    margin-left: auto;
+    font-family: var(--font-mono, ui-monospace, monospace);
+    color: var(--holo-hud-text);
+
+    b { font-weight: 700; }
+    i { font-style: normal; opacity: 0.55; margin: 0 1px; }
+    span { opacity: 0.7; }
+  }
+
+  /* The wing: groups separated by a gap, planes inside a group touching —
+     exactly the in-game widget's silhouette. */
+  &__groups {
+    display: flex;
+    align-items: stretch;
+    gap: 0.4rem;
+    height: 0.5rem;
+  }
+
+  &__group {
+    display: flex;
+    align-items: stretch;
+    gap: 1px;
+    flex: 1 1 0;
+    min-width: 2rem;
+  }
+
+  &__plane {
+    flex: 1 1 0;
+    border-radius: 1px;
+    background: rgb(255 255 255 / 12%);
+
+    &--ok { background: #4ade80; }
+    &--hurt { background: #fbbf24; }
+    &--crit { background: #ef4444; }
+    /* A lost plane keeps its footprint but goes dark — the group's
+       silhouette stays stable as the wing attrits. */
+    &--dead { background: rgb(255 255 255 / 8%); }
+  }
+
+  /* Recalled wing: caption only, no HP segments (user request). */
+  &__returning {
+    font-size: var(--text-2xs);
+    color: var(--holo-hud-dim, rgb(255 255 255 / 55%));
+    line-height: 0.5rem;
+  }
+
+  /* Engine row: state chips + the one-shot gauge. */
+  &__engine {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-height: 0.85rem;
+  }
+
+  &__chip {
+    font-size: var(--text-2xs);
+    line-height: 1.2;
+    padding: 0 0.3rem;
+    border-radius: 3px;
+    background: rgb(0 0 0 / 35%);
+    border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
+    color: var(--holo-hud-text);
+  }
+
+  &__chip--boost {
+    color: #1a1206;
+    font-weight: 700;
+    background: linear-gradient(180deg, #ffd98a, #ffb648);
+    border-color: rgba(255, 214, 130, 0.9);
+  }
+
+  &__chip--slow {
+    color: #eaf4ff;
+    font-weight: 700;
+    background: linear-gradient(180deg, #5b8fc7, #38618f);
+    border-color: rgba(140, 190, 240, 0.9);
+  }
+
+  &__gauge {
+    flex: 1 1 auto;
+    height: 0.22rem;
+    min-width: 2rem;
+    margin-left: auto;
+    border-radius: 2px;
+    background: var(--label-ink-hp-bar-bg, rgb(5 8 15 / 55%));
+    overflow: hidden;
+  }
+
+  &__gauge-fill {
+    display: block;
+    height: 100%;
+    background: #f4f8ff;
+    transition: width 0.2s linear;
+  }
+}

@@ -1,4 +1,7 @@
 {
+  "squadron": {
+    "returning": "Retour au porte-avions"
+  },
   "list": {
     "unknownPlayer": "Joueur inconnu",
     "title": "Replays",

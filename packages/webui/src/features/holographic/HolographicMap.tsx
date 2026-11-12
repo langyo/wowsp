@@ -41,6 +41,7 @@ import {
   AI_FOCUS_PLANE_DIST,
   AI_FOCUS_SHIP_DIST,
   applyFollowPose,
+  PLANE_CHASE_RISE_RATIO,
   followFramingCleared,
   followFramingFor,
   followFramingZoomed,
@@ -69,12 +70,17 @@ import { planeTrailExpiry } from "./planeFormation";
 import {
   chaseStrength,
   consumableLabelKey,
+  consumableWindowFrac,
+  lastSquadronEventAt,
   planeCardExtras,
   squadronAttacking,
   squadronFlyingAt,
   squadronHpAt,
   squadronSamplesAt,
+  squadronSlotGroups,
   squadronStrength,
+  unpackSquadronBands,
+  unknownConsumableId,
 } from "./planeFollow";
 import { loadSquadronStates } from "./squadronStatesLoader";
 import type { SquadronStateEvents } from "@/api";
@@ -113,6 +119,7 @@ import HoloRosterOverlay from "./HoloRosterOverlay";
 import HoloHeatStrip from "./HoloHeatStrip";
 import HoloSelfCard from "./HoloSelfCard";
 import HoloPlaneFollowCard, { type HoloPlaneFollowState } from "./HoloPlaneFollowCard";
+import HoloSquadronPanel, { type HoloSquadronPanelState } from "./HoloSquadronPanel";
 import HoloShipStatus from "./HoloShipStatus";
 import HoloWeatherBadge from "./HoloWeatherBadge";
 import HoloRangeMenu from "./HoloRangeMenu";
@@ -1617,6 +1624,24 @@ const RECORDED_DOLLY_MIN = -40;
             alive: 0,
             total: 0,
           };
+        // SCOUT / CONSUMABLE-FIGHTER squadrons are not attack wings: they
+        // carry no plaque and no squadron panel (user request). Their EFFECT
+        // (spotting / air cover) belongs to the hull label's status row, the
+        // same place a repair-party window shows.
+        const family = ctx.planeTypesById.get(planeId * 16) ?? "attack";
+        if (family === "scout" || family === "fighter") {
+          planeCardState.value = null;
+          return;
+        }
+        // A wing on its way home (or already recalled) keeps no health
+        // readout: the deactivation stream marks the recall, and the
+        // remaining strength after it is a landing count, not combat state
+        // (user request).
+        const recalled = lastSquadronEventAt(
+          squadronStates.value?.deactivations,
+          planeId,
+          t,
+        );
         planeCardState.value = {
           carrierName: label.name,
           shipName: label.shipName,
@@ -1624,6 +1649,7 @@ const RECORDED_DOLLY_MIN = -40;
           total: strength.total,
           attacking: squadronAttacking(squadronSamplesAt(ctx.planeTrails, planeId, t)),
           airborne: true,
+          combat: recalled == null,
           // E27 live readouts off the decoded state streams: total-HP
           // fraction, engine-boost flag, open consumable windows. Absent
           // streams (older replay / load failure) leave them undefined and
@@ -1631,6 +1657,101 @@ const RECORDED_DOLLY_MIN = -40;
           ...(squadronStates.value
             ? planeCardExtras(squadronStates.value, planeId, t)
             : {}),
+        };
+      },
+      { immediate: true },
+    );
+    // The aircraft-follow carrier id, mirrored onto the shared context: the
+    // label pass reads it to drop every OTHER wing's floating card while the
+    // camera rides one formation (user request).
+    watch(
+      [followAircraft, selectedEntityId],
+      ([aircraft, id]) => {
+        ctx.followAircraftId = aircraft && id != null ? id : null;
+      },
+      { immediate: true },
+    );
+    /** Squadron panel state (bottom-left, above the hull plaque): the
+     *  chased formation's per-group / per-plane HP bands plus the engine
+     *  row. Derived on the same 10 Hz clock as the pill card so the two can
+     *  never disagree; null whenever no attack wing is up (or the wing is
+     *  a scout / consumable fighter, which carries no panel at all). */
+    const squadronPanelState = ref<HoloSquadronPanelState | null>(null);
+    watch(
+      [hudCurrent, selectedEntityId, followAircraft, shipLabels, squadronStates],
+      ([t, carrierId, aircraft]) => {
+        if (carrierId == null || !aircraft) {
+          squadronPanelState.value = null;
+          return;
+        }
+        const label = shipLabels.value.find((l) => l.entityId === carrierId);
+        const planeId = label
+          ? activeSquadronOf(
+              ctx.planeTrails,
+              ctx.planeCarrierOf,
+              ctx.minimapTrailEnd,
+              carrierId,
+              t,
+            )
+          : null;
+        if (planeId == null || !label) {
+          squadronPanelState.value = null;
+          return;
+        }
+        const family = ctx.planeTypesById.get(planeId * 16) ?? "attack";
+        if (family === "scout" || family === "fighter") {
+          squadronPanelState.value = null;
+          return;
+        }
+        const strength =
+          chaseStrength(
+            ctx.planeTrails,
+            ctx.planeFormations,
+            squadronStates.value?.planesHealth,
+            ctx.minimapTrailEnd,
+            planeId,
+            t,
+          ) ?? { alive: 0, total: 0 };
+        const formation = ctx.planeFormations.get(planeId);
+        const packed = lastSquadronEventAt(
+          squadronStates.value?.planesHealth,
+          planeId,
+          t,
+        )?.packed;
+        const bands = packed != null ? unpackSquadronBands(packed) : [];
+        const extras = squadronStates.value
+          ? planeCardExtras(squadronStates.value, planeId, t)
+          : null;
+        const forsage = consumableWindowFrac(
+          squadronStates.value?.consumables,
+          planeId,
+          "healForsage",
+          t,
+        );
+        squadronPanelState.value = {
+          carrierName: label.name,
+          shipName: label.shipName,
+          groups: squadronSlotGroups(
+            bands,
+            formation?.groupSize ?? 1,
+            strength.total,
+          ),
+          alive: strength.alive,
+          total: strength.total,
+          boost: extras?.boost ?? false,
+          slow: extras?.slow ?? false,
+          consumables: (extras?.consumables ?? []).map((sem) => {
+            const rawId = unknownConsumableId(sem);
+            const text = i18nT(consumableLabelKey(sem));
+            return rawId == null ? text : text + " " + rawId;
+          }),
+          forsage: forsage == null ? null : Math.round(forsage * 20) / 20,
+          combat:
+            lastSquadronEventAt(
+              squadronStates.value?.deactivations,
+              planeId,
+              t,
+            ) == null,
         };
       },
       { immediate: true },
@@ -2569,7 +2690,15 @@ const RECORDED_DOLLY_MIN = -40;
       // Chase pose at the current distance (the solver bakes the stock
       // 22-up-per-55-back pitch into the axis, so zooming never flattens
       // onto the horizon); the pivot stays glued to the target.
-      applyFollowPose(cam, _followPos, smoothed.yaw, followFraming.dist);
+      // Aircraft targets use the steeper rise so the camera always looks DOWN
+      // at the formation instead of up at the sky (对天望 fix).
+      applyFollowPose(
+        cam,
+        _followPos,
+        smoothed.yaw,
+        followFraming.dist,
+        followAircraft.value ? PLANE_CHASE_RISE_RATIO : undefined,
+      );
       ctrl.target.copy(_followPos);
     }
 
@@ -3435,6 +3564,13 @@ const RECORDED_DOLLY_MIN = -40;
               view shows — hide them so the 2D map owns the screen. */}
           {!minimapZoom.value && selfCard.value ? (
             <HoloSelfCard card={selfCard.value} stats={selfStats.value} depth={selfDepth.value} />
+          ) : null}
+          {/* Squadron panel: the chased wing's per-group / per-plane HP
+              bands + engine row, docked directly ABOVE the hull plaque and
+              sharing its width contract (user request: aircraft state
+              belongs in the bottom-left HUD, not floating over the map). */}
+          {!minimapZoom.value && squadronPanelState.value ? (
+            <HoloSquadronPanel state={squadronPanelState.value} />
           ) : null}
           {/* Plane-follow pill: rides beside the hull plaque (same band,
               right-aligned to the row's cap — see HoloPlaneFollowCard.scss)

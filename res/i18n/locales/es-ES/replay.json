@@ -1,4 +1,7 @@
 {
+  "squadron": {
+    "returning": "Regresando al portaaviones"
+  },
   "list": {
     "unknownPlayer": "Jugador desconocido",
     "title": "Repeticiones",

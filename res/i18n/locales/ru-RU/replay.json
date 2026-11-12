@@ -1,4 +1,7 @@
 {
+  "squadron": {
+    "returning": "Возврат на авианосец"
+  },
   "list": {
     "unknownPlayer": "Неизвестный игрок",
     "title": "Реплеи",

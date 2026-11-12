@@ -1,4 +1,7 @@
 {
+  "squadron": {
+    "returning": "帰投中"
+  },
   "list": {
     "unknownPlayer": "不明なプレイヤー",
     "title": "リプレイ一覧",

@@ -229,6 +229,17 @@
     border-radius: var(--radius-sm) var(--radius-sm) 0 0;
   }
 
+  /* Squadron panel: stacked directly ABOVE the hull plaque row, sharing its
+     left/right edges (the plaque row's own width contract). The offset
+     clears the plaque row's height (~3.4rem) plus the 8px row gap, so the
+     two cards read as one bottom-left HUD block. */
+  .holo-squad {
+    position: absolute;
+    left: 0;
+    bottom: calc(100% + 8px + 3.6rem);
+    width: min(var(--holo-hud-block-w), calc(100cqw - 192px));
+  }
+
   &__shipcard {
     position: absolute;
     left: 0;

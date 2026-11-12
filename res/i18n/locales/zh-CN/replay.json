@@ -1,4 +1,7 @@
 {
+  "squadron": {
+    "returning": "返航中"
+  },
   "list": {
     "unknownPlayer": "未知玩家",
     "title": "录像列表",
