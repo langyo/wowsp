@@ -1,10 +1,15 @@
 /**
  * Resource-pack + auxiliary-cache state for the Settings → resources panel.
- * Owns the single pack's status/update snapshots, the in-flight pass
- * progress (fed by the unified `wowsp://download-progress` stream,
- * kind "res-pack") and the GitHub mirror list
+ * Owns the single pack's status/update snapshots and the GitHub mirror list
  * (persisted through network-config.toml, same file the network section
  * edits).
+ *
+ * Pass progress is NOT tracked here: the pack is a `card` context of the
+ * unified download context (stores/downloads), which owns the one top-right
+ * pass card every resource download shares. This store keeps only the pack's
+ * own persistent state (presence, hash stamps, update availability) and the
+ * management verbs; `download()` hands the command to `downloads.track`, so
+ * a pack pass looks identical wherever it was started from.
  *
  * The pack is content-addressed: `checkResUpdate` compares the local tree
  * hash against the `res-latest` manifest and reports the chain-patch path
@@ -29,39 +34,16 @@ import { computed, ref } from "vue";
 
 import { showBlockingToast, useToast } from "@celestia-island/hikari";
 
-import { api, type DownloadProgress, type NetworkConfig, type ResStatus, type ResUpdate } from "@/api";
+import { api, type NetworkConfig, type ResStatus, type ResUpdate } from "@/api";
 import { t } from "@/i18n";
-import { useSettingsUiStore, SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
+import { useDownloadsStore } from "@/stores/downloads";
 import { isMobileApp } from "@/utils/platform";
 
-/** The pack-pass progress projection the resources panel renders — the
- *  store-side view of a `DownloadProgress` tick with kind "res-pack"
- *  (chain-patch segment counters come from the event's `detail`). */
-interface ResProgress {
-  /** queued | download | apply | done | error. */
-  phase: string;
-  received: number;
-  /** Total bytes when known, else 0. */
-  total: number;
-  /** 1-based index of the segment streaming (full download = 1). */
-  segment: number;
-  /** How many segments the pass consists of. */
-  segments: number;
-  error?: string | null;
-}
-
 export const useCacheStore = defineStore("resourceCache", () => {
+  const downloads = useDownloadsStore();
   const status = ref<ResStatus | null>(null);
   const update = ref<ResUpdate | null>(null);
   const auxCaches = ref<{ scope: string; sizeBytes: number }[]>([]);
-  /** Live pass progress from the event stream; a terminal phase
-   *  ("done"/"error") stays until the next refresh so the panel can show
-   *  the outcome briefly. */
-  const progress = ref<ResProgress | null>(null);
-  /** Smoothed transfer rate of the running download pass (bytes/sec),
-   *  derived client-side from the progress stream; null while idle,
-   *  applying, or before a first sample window closes. */
-  const speedBps = ref<number | null>(null);
   const updatesLoading = ref(false);
   const updatesCheckedAt = ref(0);
   /** Whether the on-demand integrity check is running (the panel's
@@ -71,7 +53,6 @@ export const useCacheStore = defineStore("resourceCache", () => {
    *  saved through setNetworkConfig so the rest of the network config
    *  round-trips untouched. */
   const githubMirrors = ref<string[]>([]);
-  let progressWired = false;
   /** Whether the APK-bundled baseline was already handed to the shell
    *  (mobile; idempotence guard for the fetch + report pass). */
   let baselineReported = false;
@@ -90,41 +71,6 @@ export const useCacheStore = defineStore("resourceCache", () => {
     const steps = update.value?.deltaSteps;
     return steps ? steps.length : null;
   });
-
-  /** Drop the displayed transfer rate (the next download tick reopens it). */
-  function resetSpeedSampler() {
-    speedBps.value = null;
-  }
-
-  /** Fold one unified download-progress tick into the store state. The
-   *  transfer rate is the backend's EWMA (`speedBps` on download-phase
-   *  ticks); every phase boundary drops it back to null so a rate never
-   *  outlives its byte stream. A mirror failover can no longer rewind
-   *  `received` (the hub resumes from the committed offset), so no
-   *  regression handling is needed. */
-  function noteProgress(p: DownloadProgress) {
-    if (p.kind !== "res-pack") return;
-    const detail = p.detail ?? {};
-    progress.value = {
-      phase: p.phase,
-      received: p.received,
-      total: p.total,
-      segment: detail.segment ?? 1,
-      segments: detail.segments ?? 1,
-      error: p.error ?? null,
-    };
-    speedBps.value = p.phase === "download" && p.speedBps > 0 ? p.speedBps : null;
-  }
-
-  function wireProgressStream() {
-    if (progressWired) return;
-    progressWired = true;
-    // The shared download bus (one transport listener fanned out to every
-    // subscriber); outside the Tauri shell (browser dev) there is no event
-    // source and ticks simply never arrive. The store lives for the app's
-    // lifetime, so the returned detach is intentionally dropped.
-    api.listenDownloadProgress?.(noteProgress);
-  }
 
   /** Mobile: fetch the APK-bundled manifest (same-origin static file the
    *  mobile build ships at `/wowsp-res.json`) and hand its tree hash +
@@ -265,8 +211,10 @@ export const useCacheStore = defineStore("resourceCache", () => {
   }
 
   /** Explicit pack pass (initial / migration / update — the Rust side
-   *  picks chain patches when possible). Progress arrives through the
-   *  event stream; the panel derives its buttons from `progress`. The
+   *  picks chain patches when possible). The command runs inside the
+   *  unified download context, so its progress renders on the shared
+   *  top-right pass card instead of inside the settings pane; the panel
+   *  only gates its buttons on `downloads.busyFor("res-pack")`. The
    *  integrity repair passes `force`: a corrupt tree carries a correct
    *  stamp, so the shell's already-current fast path must not swallow
    *  the reinstall. */
@@ -276,34 +224,39 @@ export const useCacheStore = defineStore("resourceCache", () => {
     // repair caller releases the flag before handing off, so `force`
     // never needs to bypass this.)
     if (integrityChecking.value) return;
-    wireProgressStream();
-    resetSpeedSampler();
-    progress.value = { phase: "download", received: 0, total: 0, segment: 1, segments: 1 };
-    try {
-      await api.resDownload(force);
-    } catch (e) {
-      // Early rejections (busy guard, network-stack failure) never reach
-      // the install pass, so no error EVENT arrives — surface the
-      // rejection here or the panel would sit on a dead progress bar.
-      progress.value = {
-        phase: "error",
-        received: 0,
-        total: 0,
-        segment: 0,
-        segments: 0,
-        error: e instanceof Error ? e.message : String(e),
-      };
-    }
+    // An early rejection (busy guard, network-stack failure) never reaches
+    // the install pass, so no progress tick would follow; `track` records
+    // the failure on the pass and raises the error toast itself.
+    await downloads.track("res-pack", () => api.resDownload(force));
     await refreshStatus();
     await refreshUpdates();
   }
 
-  async function cancel() {
-    try {
-      await api.resCancel();
-    } catch {
-      /* best-effort */
-    }
+  /** In-flight ensure pass — the shell's two loaders (dogtags + models) both
+   *  ask for the pack at boot, and the ledger holds ONE pass per kind. Sharing
+   *  the promise keeps them on the same pass instead of clobbering it. */
+  let ensurePass: Promise<string> | null = null;
+
+  /** Boot-time ensure pass: hand the shared context a pass so the top-right
+   *  card can show it (the shell calls this while wiring the model pack). The
+   *  value (the cache root) is handed back and a rejection rethrown: the
+   *  caller's own fallback chain decides what to do, exactly as before this
+   *  store grew a progress surface — the difference is only that the bytes
+   *  now render on the shared card instead of nowhere. */
+  function ensure(): Promise<string> {
+    if (ensurePass) return ensurePass;
+    ensurePass = (async () => {
+      try {
+        const outcome = await downloads.track("res-pack", () => api.ensureResPack(), {
+          quiet: true,
+        });
+        if (!outcome.ok) throw new Error(outcome.error ?? "resource pack ensure failed");
+        return outcome.value as string;
+      } finally {
+        ensurePass = null;
+      }
+    })();
+    return ensurePass;
   }
 
   /** Session-scoped guard: one pack-update prompt on screen at a time. */
@@ -323,15 +276,9 @@ export const useCacheStore = defineStore("resourceCache", () => {
   async function offerUpdatePrompt() {
     const upd = update.value;
     if (!upd?.updateAvailable || promptPending) return;
-    const prog = progress.value;
-    if (
-      prog &&
-      (prog.phase === "download" ||
-        prog.phase === "apply" ||
-        prog.phase === "queued")
-    ) {
-      return;
-    }
+    // A pass already under way needs no second consent — the shared card is
+    // on screen with the live progress (and its cancel verb).
+    if (downloads.busyFor("res-pack")) return;
     promptPending = true;
     const answered = await showBlockingToast(
       t("settings.resUpdatePrompt", {
@@ -346,10 +293,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
       },
     );
     promptPending = false;
-    if (answered) {
-      useSettingsUiStore().show("resources", SETTINGS_ANCHOR_BAKED_MODELS);
-      void download();
-    }
+    if (answered) void download();
   }
 
   async function clearRes() {
@@ -376,7 +320,10 @@ export const useCacheStore = defineStore("resourceCache", () => {
   }
 
   function init() {
-    wireProgressStream();
+    // Bring the unified download bus up once for the whole app (idempotent):
+    // every context's ticks land in the shared ledger, and the top-right pass
+    // card is already mounted by the shell.
+    downloads.ensureWired();
     void refreshStatus();
     void loadMirror();
   }
@@ -385,8 +332,6 @@ export const useCacheStore = defineStore("resourceCache", () => {
     status,
     update,
     auxCaches,
-    progress,
-    speedBps,
     updatesLoading,
     updatesCheckedAt,
     integrityChecking,
@@ -402,7 +347,7 @@ export const useCacheStore = defineStore("resourceCache", () => {
     loadMirror,
     saveMirrors,
     download,
-    cancel,
+    ensure,
     offerUpdatePrompt,
     clearRes,
     clearAuxCache,

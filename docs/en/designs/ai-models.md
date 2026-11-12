@@ -443,8 +443,15 @@ after the pack publish and records the same tree hash.
 
 - The Settings -> resources card gains: current version (published-at and
   tree hash suffix), per-model rows with presence/size/sha prefix, LOS
-  coverage (`x/known maps`), total size, check/download/cancel buttons,
-  restart hint, and the mirror ladder group (section 7.6).
+  coverage (`x/known maps`), total size, check/download buttons, restart
+  hint, and the mirror ladder group (section 7.6).
+- The card lives in the AI RUNTIME group (the models are what that runtime
+  loads), and the install PASS does not render inside it: `ai-models` is a
+  `card` context of the unified download context, so its progress and its
+  cancel affordance are the shared top-right `DownloadToast` card — see
+  docs/en/designs/resources.md `## Presentation`. The settings card only
+  gates its buttons on `downloads.busyFor("ai-models")` and shows the
+  failure line beside the retry button.
 - i18n: the existing 13 `settings.resourcesDecisions*` keys are extended
   with check/download/progress/version/LOS-coverage strings across the
   eight settings locales (en-US, zh-CN, zh-TW, ja-JP, ko-KR, fr-FR, es-ES,

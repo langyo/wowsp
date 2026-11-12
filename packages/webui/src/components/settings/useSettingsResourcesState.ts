@@ -1,22 +1,29 @@
 /** Settings → Resources state: the installed `decisions` model-pack
- *  inventory, the AI model channel (Hugging Face signed manifest) check /
- *  download pass, and the two-step delete. The compile-time AI capability
- *  and the DirectML runtime probe live in the shared capabilities store;
- *  the pack inventory commands themselves are filesystem-only and exist in
- *  every build, so an orphaned pack can still be inspected and cleared from
- *  the portable build. The ai channel commands exist only in the ai build.
+ *  inventory, the AI model channel (Hugging Face signed manifest) check and
+ *  the two-step delete. The compile-time AI capability and the DirectML
+ *  runtime probe live in the shared capabilities store; the pack inventory
+ *  commands themselves are filesystem-only and exist in every build, so an
+ *  orphaned pack can still be inspected and cleared from the portable build.
+ *  The ai channel commands exist only in the ai build.
+ *
+ * The install PASS itself is not tracked here: `ai-models` is a `card`
+ * context of the unified download context (stores/downloads), so its progress
+ * renders on the shared top-right DownloadToast card wherever the user is
+ * instead of inside this settings card. This hook keeps only the inventory
+ * (what is installed) and the verbs; `downloadAi` hands the command to
+ * `downloads.track` and re-reads the inventory when the pass settles.
  */
-import { getCurrentScope, onScopeDispose, ref } from "vue";
+import { computed, ref } from "vue";
 
 import {
   api,
   type AiPackCheck,
   type AiPackStatus,
   type DecisionsPackStatus,
-  type DownloadProgress,
 } from "@/api";
 
 import { useCapabilitiesStore } from "@/stores/capabilities";
+import { useDownloadsStore } from "@/stores/downloads";
 
 /** The explicit/boot check is rate-limited to one authenticated manifest
  *  fetch per day per installation; the card's button bypasses the TTL. */
@@ -43,6 +50,7 @@ function noteLastCheck(): void {
 
 export function useSettingsResourcesState() {
   const capabilities = useCapabilitiesStore();
+  const downloads = useDownloadsStore();
   const decisions = ref<DecisionsPackStatus | null>(null);
   const decisionsBusy = ref(false);
   const decisionsClearing = ref(false);
@@ -59,35 +67,13 @@ export function useSettingsResourcesState() {
   /** The last authenticated remote check (null until one succeeds). */
   const aiCheck = ref<AiPackCheck | null>(null);
   const aiChecking = ref(false);
-  const aiDownloading = ref(false);
   const aiCanceling = ref(false);
   const aiError = ref(false);
-  /** The running install pass's progress tick (kind "ai-models"). */
-  const aiProgress = ref<DownloadProgress | null>(null);
-  let detachProgress: (() => void) | null = null;
 
-  function ensureProgressWired(): void {
-    if (detachProgress) return;
-    detachProgress =
-      api.listenDownloadProgress?.((p: DownloadProgress) => {
-        if (p.kind !== "ai-models") return;
-        if (p.phase === "done" || p.phase === "error") {
-          aiProgress.value = null;
-          return;
-        }
-        aiProgress.value = p;
-      }) ?? null;
-  }
-
-  // Detach the progress listener with the owning component scope; the
-  // state hook is also constructed by tests outside a component scope, where
-  // Vue has nothing to register against.
-  if (getCurrentScope()) {
-    onScopeDispose(() => {
-      detachProgress?.();
-      detachProgress = null;
-    });
-  }
+  /** True while the shared download context runs the ai pass — the card's
+   *  button gating (one source of truth; the progress itself is the shared
+   *  top-right card's job). */
+  const aiDownloading = computed(() => downloads.busyFor("ai-models"));
 
   /** Reload the pack inventory. A failed refresh keeps the last known
    *  status; only a first-ever failure renders the unknown state. */
@@ -141,32 +127,31 @@ export function useSettingsResourcesState() {
     }
   }
 
-  /** Download, verify and install the published pack. */
+  /** Download, verify and install the published pack. The command runs inside
+   *  the unified download context, so its progress renders on the shared
+   *  top-right pass card (with the registry's cancel verb) instead of a
+   *  progress bar inside this card; the card simply re-reads the inventory
+   *  once the pass settles. */
   async function downloadAi(): Promise<void> {
     if (!capabilities.aiInference || aiDownloading.value) return;
-    aiDownloading.value = true;
     aiError.value = false;
-    ensureProgressWired();
-    try {
-      await api.aiPackDownload();
-      aiCheck.value = null;
-      await refreshAiStatus();
-      await checkAiUpdate();
-    } catch {
+    const outcome = await downloads.track("ai-models", () => api.aiPackDownload());
+    if (!outcome.ok) {
       aiError.value = true;
-    } finally {
-      aiDownloading.value = false;
-      aiProgress.value = null;
+      return;
     }
+    aiCheck.value = null;
+    await refreshAiStatus();
+    await checkAiUpdate();
   }
 
+  /** The card's own cancel affordance mirrors the shared card's: both go
+   *  through the one registry verb, so the two surfaces cannot disagree. */
   async function cancelAi(): Promise<void> {
     if (!aiDownloading.value || aiCanceling.value) return;
     aiCanceling.value = true;
     try {
-      await api.aiPackCancel();
-    } catch {
-      aiError.value = true;
+      await downloads.cancel("ai-models");
     } finally {
       aiCanceling.value = false;
     }
@@ -206,7 +191,6 @@ export function useSettingsResourcesState() {
     aiDownloading,
     aiCanceling,
     aiError,
-    aiProgress,
     refreshAiStatus,
     checkAiUpdate,
     downloadAi,

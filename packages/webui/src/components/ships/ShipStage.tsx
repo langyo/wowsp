@@ -26,6 +26,7 @@ import { applyStageLook, colorForCategory, categoryBase, WEAPON_NAMES, HOLO_BASE
 import { useAppliedDpiScale } from "@/theme/dpiPrefs";
 import ErrorCard from "@/components/base/ErrorCard";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useCacheStore } from "@/stores/cache";
 import { useUpdaterStore } from "@/stores/updater";
 import { isMobileApp } from "@/utils/platform";
 import { useRouter } from "vue-router";
@@ -272,6 +273,7 @@ export default defineComponent({
   setup(props, { emit }) {
     const inst = getCurrentInstance();
     const toast = useToast();
+    const cacheStore = useCacheStore();
     const updater = useUpdaterStore();
     const containerRef = ref<HTMLElement | null>(null);
     // The portable (便捷版) build has no 3D: default to the 2D portrait so
@@ -2006,9 +2008,11 @@ export default defineComponent({
         if (!isModelPackReady() && !isMobileApp()) {
           if (modelPackDownloading.value) return;
           modelPackDownloading.value = true;
-          toast.show(t("ships.model3d.downloadStart"));
           try {
-            await initModelPack(() => api.ensureResPack());
+            // The ensure pass runs INSIDE the unified download context: its
+            // progress renders on the shared top-right card (the one surface
+            // every resource pass uses) instead of a bare start toast.
+            await initModelPack(() => cacheStore.ensure());
             toast.success(t("ships.model3d.ready"));
           } catch {
             toast.error(t("ships.model3d.failed"));

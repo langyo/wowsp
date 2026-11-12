@@ -33,6 +33,14 @@ users must update the app to receive new resource content anyway.
 - **Download hub** (`commands/download_hub.rs`): one FIFO queue, the
   GitHub mirror ladder, streaming sha256, byte caps, cancellation, and the
   single `wowsp://download-progress` event every UI subscribes to.
+- **Download context** (`packages/webui/src/stores/downloads.ts`): the webui
+  layer ABOVE that event, and the one place a pass is presented. It owns the
+  CONTEXT REGISTRY (one row per bus kind: presentation, label, cancel verb),
+  the PASS LEDGER (one `ResourcePass` per kind, fed by the ticks and gated by
+  the owning command's lifetime, so "is this running?" has exactly one
+  answer), the PASS LIFECYCLE (`track` raises / folds / settles a pass and
+  keeps a user cancel neutral) and the PRESENTATION DECISION. See
+  "Presentation" below.
 - **Mirror context** (`commands/mirror/`): the provider registry behind
   every download candidate — GitHub's ghproxy prefix rewrite and the
   Hugging Face endpoint substitution (user endpoints, then the built-in
@@ -47,6 +55,49 @@ users must update the app to receive new resource content anyway.
   `data` channels pin official content hashes and refuse regressions.
 - **Machine scopes** (`tauri_shared::resource`): the clearable cache
   roots behind the Settings panel's aux-cache rows.
+
+## Presentation
+
+A resource download is a GLOBAL event, not a property of the panel it was
+started from, so its progress renders in the top-right toast stack — never
+inline in the Settings pane:
+
+| kind | presentation | surface |
+| --- | --- | --- |
+| `update` | bespoke | `UpdateToast` — the updater's own pass card (verify / race / download / install copy, the installer hand-off) |
+| `res-pack` | card | the shared `DownloadToast` card |
+| `ai-models` | card | the shared `DownloadToast` card |
+| `data-pack` | silent | none (a boot-time lane behind the settings card's stamp) |
+| `mod-package` | bespoke | `ModUpdateToast` — the batch pass's step/percent copy |
+
+The two bespoke cards stay because their copy is pass-specific (a mirror race
+and an installer hand-off are not "downloading"); they are registered here so
+the registry remains the complete answer to "what can this app download, and
+where does it show up?". A new resource adds a registry row — with
+`presentation: "card"` it inherits the shared card, the cancel verb, the
+outcome toasts and the mount grace for free. A new settings card must NOT grow
+its own progress bar: the settings cards keep the management verbs and gate
+their buttons on `downloads.busyFor(kind)`.
+
+The shared card's contract:
+
+- **Raise on the ledger, not on a tick.** The owning command's lifetime is the
+  truth (`track`), so a queued or stalled pass (no spaces in the byte stream
+  yet) still shows. Ticks for a context nobody raised are ignored, so a stray
+  producer cannot paint a ghost card.
+- **Mount grace** (`DOWNLOAD_CARD_GRACE_MS`, 400 ms): a pass that lands inside
+  it never mounts the card — its outcome is the toast instead (a
+  flash-in/flash-out reads as a glitch, and "already current" is the most
+  common shape).
+- **Fold-out, not snap-away**: the terminal pass keeps the card mounted for the
+  leave transition, serving a frozen snapshot (real text, real progress).
+- **One cancel**: the card's 取消 and the owning settings card's own affordance
+  both call `downloads.cancel(kind)`, which runs the registry's verb. A
+  cancel is not a failure — the pass settles neutrally and no error toast
+  fires.
+- **One error line**: the failure text stays in the owning settings card (beside
+  the button that retries it) via `downloads.errorFor(kind)`; the card folds
+  out and a toast carries the reason, because a folded card cannot be read.
 
 ## Status walk
 
