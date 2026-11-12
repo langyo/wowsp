@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import {
   behindCameraEdgeNdc,
   pickLabelWedgePlane,
+  planeCardAllowed,
   planeRowVisible,
 } from "./labelOverlay";
 import type { MapInternals } from "./mapInternals";
@@ -36,6 +37,20 @@ describe("behindCameraEdgeNdc", () => {
   it("collapses non-finite camera-plane projections to the centre", () => {
     expect(behindCameraEdgeNdc(Infinity, 1)).toEqual({ x: 0, y: 0 });
     expect(behindCameraEdgeNdc(NaN, 0)).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("planeCardAllowed (aircraft cards stay out of the aircraft chase)", () => {
+  it("drops every carrier's aircraft card while the chase rides a wing", () => {
+    // The cards ride the rendered wedge centroid, so they drift across the
+    // screen on every bank, and their content repeats the hull plaque plus
+    // the bottom-left HUD. Followed wing included — its readout moved there.
+    expect(planeCardAllowed(1234)).toBe(false);
+  });
+
+  it("keeps the cards when the camera is not chasing aircraft", () => {
+    expect(planeCardAllowed(null)).toBe(true);
+    expect(planeCardAllowed(undefined)).toBe(true);
   });
 });
 
