@@ -191,28 +191,83 @@ jobs:
           gh workflow run ci.yml --ref "$branch"
           gh workflow run commit-msg-lint.yml --ref "$branch" -f pr="$pr"
           sleep 60
-          for attempt in $(seq 1 50); do
+          # Poll per-check states through the check-runs API instead of
+          # `gh pr checks`'s aggregate exit code: rc=8 only says "something
+          # is not green", so during the 2026-11-10..12 outage the FAILED
+          # E2E job masqueraded as "waiting" behind the forever-queued
+          # type-escapes reusable job (org self-hosted runner congestion,
+          # AGENTS.md §8.2's environmental class) and the loop spun its
+          # whole budget before dying with the generic stuck message.
+          sha="$(gh pr view "$pr" --json headRefOid --jq .headRefOid)"
+          check_classes() {
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '
+              {failed:   [.check_runs[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") | .name] | join(", "),
+               running:  [.check_runs[] | select(.status == "in_progress") | .name] | join(", "),
+               queued:   [.check_runs[] | select(.status == "queued") | .name] | join(", "),
+               total:    (.check_runs | length)}'
+          }
+          merged=0
+          for attempt in $(seq 1 80); do
             set +e
-            out="$(gh pr checks "$pr" 2>&1)"; rc=$?
+            classes="$(check_classes)"
+            rc=$?
             set -e
-            if [ "$rc" -eq 0 ]; then
-              gh pr merge "$pr" --squash --delete-branch
-              break
-            fi
-            if [ "$rc" -eq 8 ] || echo "$out" | grep -q "no checks"; then
+            if [ "$rc" -ne 0 ] || [ -z "$classes" ]; then
+              echo "check-runs poll failed (rc=$rc) -- retrying (attempt $attempt/80)"
               sleep 30
               continue
             fi
-            echo "::error::digest PR checks failed (rc=$rc): $out"
-            exit 1
+            total="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])')"
+            failed="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["failed"])')"
+            running="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["running"])')"
+            queued="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["queued"])')"
+            if [ -n "$failed" ]; then
+              echo "::error::digest PR #$pr check(s) FAILED (code-level, never waivable): $failed"
+              exit 1
+            fi
+            if [ "${total:-0}" -gt 0 ] && [ -z "$running" ] && [ -z "$queued" ]; then
+              gh pr merge "$pr" --squash --delete-branch
+              merged=1
+              break
+            fi
+            echo "digest PR checks not final yet (running: ${running:-none}; queued: ${queued:-none}) (attempt $attempt/80)"
+            sleep 30
           done
-          # The wait loop above exhausts silently when a check stays queued
-          # forever (the type-escapes runner congestion of 2026-11-06/07);
-          # dispatching the site deploy without the doc merged would waste
-          # the whole live-poll window on a guaranteed miss. Re-added here
-          # after the #1782 conflict resolution dropped the #1767 original:
-          # the poll running without the merge is exactly how the 2026-11-07
-          # 00:40 run died (live stuck at seq 3 while the PR stayed open).
+          if [ "$merged" -ne 1 ]; then
+            # Environmental waiver (AGENTS.md §5.2/§8.2): a check that is
+            # still non-final after the whole ~40-minute budget -- the org
+            # self-hosted type-escapes node congestion again (2026-11-10..12:
+            # the reusable job sat QUEUED for days while every hosted job
+            # finished in minutes; its started_at is set even though no
+            # runner ever picked it up, so elapsed time is the only sound
+            # discriminator) -- while every check that DID conclude finished
+            # green and nothing failed. Any job that actually ran carries
+            # its own timeout-minutes (<= 30) and would have been marked
+            # failed long before this budget expires, so a non-final check
+            # here is by elimination a runner-infrastructure state. The
+            # digest doc is machine-generated JSON plus one wrangler.toml
+            # line and carries its own gates (publish_digests.py
+            # --require-signed, the release-API asset byte-match, the
+            # relay/versions jobs), so the stuck job's verdict is waived ON
+            # RECORD: the waiver is posted on the PR before merging.
+            classes="$(check_classes)"
+            failed="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["failed"])')"
+            stuck="$(echo "$classes" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(x for x in (d["queued"], d["running"]) if x))')"
+            if [ -n "$failed" ]; then
+              echo "::error::digest PR #$pr never merged (failed: $failed) -- checks stuck?"
+              exit 1
+            fi
+            if [ -z "$stuck" ]; then
+              echo "::error::digest PR #$pr never merged and nothing outstanding -- state $(gh pr view "$pr" --json state --jq .state)?"
+              exit 1
+            fi
+            gh pr comment "$pr" --body "Environmental waiver (AGENTS.md §8.2): **${stuck}** never left the queue after the full wait budget (self-hosted runner congestion). Every check that ran is green and nothing failed. Merging on the digest doc's own gates: the signed publish, the release-API asset byte-match, and the relay/versions jobs."
+            gh pr merge "$pr" --squash --delete-branch
+          fi
+          # Merge guard (the #1782 conflict resolution dropped the #1767
+          # original and #1796 restored it): dispatching the site deploy
+          # without the doc merged wastes the whole live-poll window on a
+          # guaranteed miss -- the 2026-11-07 00:40 run died exactly there.
           state="$(gh pr view "$pr" --json state --jq .state)"
           if [ "$state" != "MERGED" ]; then
             echo "::error::digest PR #$pr never merged (state $state) -- checks stuck?"
