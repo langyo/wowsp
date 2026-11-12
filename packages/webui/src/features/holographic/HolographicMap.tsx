@@ -654,10 +654,42 @@ const RECORDED_DOLLY_MIN = -40;
         current.value,
       );
       if (!target) return;
+      const at = target.seekTo ?? current.value;
       if (target.seekTo != null) seekBattleTime(target.seekTo);
       cameraMode.value = "original";
       cameraMenuOpen.value = false;
+      // The recorded camera already rides the planes, but the HUD needs a
+      // real FOLLOW TARGET: without one the bottom-left aircraft readout (the
+      // plane-follow pill and the squadron panel) stayed empty on this route,
+      // so "jump to the nearest aircraft camera" showed the wing's view with
+      // no plane HP anywhere (2026-11-12 report). Adopt the carrier whose
+      // squadron is airborne at the jump target — the same (carrier,
+      // aircraft) pair the menu rows and the map clicks set.
+      const carrierId = carrierOfNearestAirborneSquadron(at);
+      if (carrierId != null) applyFollowTarget(carrierId, { aircraft: true });
       api.value?.requestRender();
+    }
+    /** The carrier that owns an airborne squadron at `t`, or null when
+     *  nothing is flying at that playhead. The FORMATION one is adopted: the
+     *  recorded camera was riding whichever wing is airborne, so any of them
+     *  is the right chase target for the HUD (the camera itself stays on the
+     *  recorded mode). */
+    function carrierOfNearestAirborneSquadron(t: number): number | null {
+      for (const carrierId of new Set(ctx.planeCarrierOf.values())) {
+        if (carrierId == null) continue;
+        if (
+          activeSquadronOf(
+            ctx.planeTrails,
+            ctx.planeCarrierOf,
+            ctx.minimapTrailEnd,
+            carrierId,
+            t,
+          ) != null
+        ) {
+          return carrierId;
+        }
+      }
+      return null;
     }
     /** Player stats shown in the follow menu (entityId → "WR% · battles").
      *  Resolved lazily when the menu opens; missing/failed lookups render "—". */
