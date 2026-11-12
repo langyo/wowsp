@@ -249,9 +249,16 @@
      "起码别重叠"). Flow layout cannot drift: the panel always clears
      whatever the row actually measures. */
   &__hudcolumn {
+    /* Hangs directly ABOVE the playback bar: the bar is this block's own
+       containing box (the column is a child of __controls), so "bottom: 100%"
+       clears whatever height the bar actually has — no magic number, and the
+       bar can never be covered. The old rule anchored the column at
+       "bottom: 12px" INSIDE the bar, which put the hull card straight on top
+       of the progress bar (2026-11-12 review: 你给船的血量啥的直接盖在进度条
+       上面干什么). */
     position: absolute;
-    left: 12px;
-    bottom: 12px;
+    left: 0;
+    bottom: calc(100% + 8px);
     z-index: 4;
     display: flex;
     flex-direction: column;
