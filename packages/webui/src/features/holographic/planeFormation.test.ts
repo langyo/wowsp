@@ -74,6 +74,35 @@ describe("groupInnerOffsets", () => {
     expect(out[3]).toEqual({ ox: -9, oz: -11 });
     expect(out[4]).toEqual({ ox: 9, oz: -11 });
   });
+
+  it("closes a four-plane V with a centred tail (diamond, not a stray wing)", () => {
+    const out = groupInnerOffsets(4);
+    expect(out).toEqual([
+      { ox: 0, oz: 0 },
+      { ox: -4.5, oz: -5.5 },
+      { ox: 4.5, oz: -5.5 },
+      { ox: 0, oz: -11 },
+    ]);
+  });
+
+  it("keeps two-plane groups side by side (no tail column)", () => {
+    expect(groupInnerOffsets(2)).toEqual([
+      { ox: 0, oz: 0 },
+      { ox: -4.5, oz: -5.5 },
+    ]);
+  });
+
+  it("closes a six-plane V with a centred third-rank tail", () => {
+    const out = groupInnerOffsets(6);
+    expect(out).toEqual([
+      { ox: 0, oz: 0 },
+      { ox: -4.5, oz: -5.5 },
+      { ox: 4.5, oz: -5.5 },
+      { ox: -9, oz: -11 },
+      { ox: 9, oz: -11 },
+      { ox: 0, oz: -16.5 },
+    ]);
+  });
 });
 
 describe("formationOffsets", () => {

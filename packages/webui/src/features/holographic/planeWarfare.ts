@@ -337,7 +337,7 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
         url,
         color: TEAM_COLOR[first.role as TeamRole] ?? 0x78d2ff,
         axis: "z",
-        targetLen: 7,
+        targetLen: 4.6,
         yawOffset: forward < 0 ? Math.PI : 0,
         // Opaque: the plane GLB is a closed solid; a translucent,
         // depth-write-off material painted its own faces through each other
