@@ -25,6 +25,15 @@ describe("groupSizeOfParams (GameParams aerialAttack slots)", () => {
     expect(groupSizeOfParams(1)).toBeNull();
     expect(groupSizeOfParams(undefined)).toBeNull();
   });
+
+  it("has no one-plane rows left (ragged tables fall back to inference)", () => {
+    // PAAB952_TBM3 / PAAD910_BTD_1 carry a flight-shaped aerialAttack table
+    // whose third component is a per-plane offset, not a group id; the
+    // extractor must skip them instead of answering 1 (one-plane groups
+    // were the reported bug). Every committed row is a real group size.
+    expect(groupSizeOfParams(3296690160)).toBeNull();
+    expect(groupSizeOfParams(3340664816)).toBeNull();
+  });
 });
 
 describe("planeTrailExpiry", () => {
