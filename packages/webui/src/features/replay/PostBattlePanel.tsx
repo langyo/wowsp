@@ -112,6 +112,7 @@ import {
   type PlayerStats,
   type VehicleEntry,
 } from "@/api";
+import { STATIC_REPORT_READ_TIMEOUT_MS } from "@/api/modules/decision";
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -383,12 +384,36 @@ export default defineComponent({
     const aiRecorder = ref<AiScoreEntry | null>(null);
     const aiState = ref<"idle" | "loading" | "ready" | "failed">("idle");
     let aiSeq = 0;
+    /** True only while the LATEST run's invoke is still pending. aiState
+     *  cannot serve as this gate: once the watchdog has fired the state reads
+     *  "failed" while the orphaned invoke may still be out, and pinning on a
+     *  stale "loading" used to wedge the column — a pref flip could never
+     *  restart a fetch no answer would ever clear (2026-11-12 report: the
+     *  post-battle AI column spun forever). */
+    let aiInFlight = false;
+    /** The live run's watchdog — cleared when the run is orphaned or the
+     *  panel unmounts, so a dead run's callback never writes detached refs
+     *  (the same hygiene useStaticReport applies to the modal side). */
+    let aiTimer: ReturnType<typeof setTimeout> | undefined;
     async function loadAiScores() {
       const path = props.replayPath;
       if (!path || !capabilities.aiInference) return;
-      if (aiState.value === "loading" || aiState.value === "ready") return;
+      if (aiInFlight) return;
       const seq = ++aiSeq;
+      aiInFlight = true;
       aiState.value = "loading";
+      // The invoke cannot be aborted (Tauri has no per-invoke cancel), so —
+      // the same rule the results pill's stream read got (#1863) — the
+      // watchdog settles the VISIBLE state instead of the await: on expiry
+      // the column stands down ("failed" hides it) rather than spinning
+      // forever, while the seq stays current so a late cached answer can
+      // still land and upgrade the panel in place.
+      const timer = setTimeout(() => {
+        if (seq !== aiSeq) return; // superseded: a newer run owns the state
+        aiInFlight = false;
+        aiState.value = "failed";
+      }, STATIC_REPORT_READ_TIMEOUT_MS);
+      aiTimer = timer;
       try {
         const report = await api.decisionStaticReport(path, null);
         // A stale reply (a replay switch re-keyed the fetch, or the modal
@@ -409,13 +434,18 @@ export default defineComponent({
       } catch {
         if (seq !== aiSeq) return;
         aiState.value = "failed";
+      } finally {
+        clearTimeout(timer);
+        if (seq === aiSeq) aiInFlight = false;
       }
     }
     // The switch defaults ON, so the report usually loads with the panel;
     // a late capability probe or a switch flipped on afterwards still
     // triggers the one fetch. A replay swap resets the state (the parent
     // remounts the panel per open, but the prop watch keeps an in-place
-    // swap honest too).
+    // swap honest too), and so does a switch/capability that withdraws:
+    // leaving "loading" pinned here would let a re-enable inherit spinners
+    // no fetch will ever clear.
     let aiLoadedPath: string | null = props.replayPath;
     watch(
       () => [
@@ -423,18 +453,26 @@ export default defineComponent({
         capabilities.aiInference,
         statsPrefsState.value.postbattleAiScore,
       ] as const,
-      () => {
-        if (props.replayPath !== aiLoadedPath) {
-          aiLoadedPath = props.replayPath;
+      ([path, aiInference, prefsOn]) => {
+        if (path !== aiLoadedPath || !prefsOn || !aiInference) {
+          aiLoadedPath = path;
           aiSeq += 1;
+          aiInFlight = false;
+          if (aiTimer !== undefined) {
+            clearTimeout(aiTimer);
+            aiTimer = undefined;
+          }
           aiState.value = "idle";
           aiScores.value = new Map();
           aiRecorder.value = null;
         }
-        if (statsPrefsState.value.postbattleAiScore) void loadAiScores();
+        if (prefsOn) void loadAiScores();
       },
       { immediate: true },
     );
+    onBeforeUnmount(() => {
+      if (aiTimer !== undefined) clearTimeout(aiTimer);
+    });
     /** The AI score column renders with the switch on from the moment the
      *  report starts loading (spinners while in flight) — one switch owns
      *  the column AND the order it implies, so they can never disagree. */

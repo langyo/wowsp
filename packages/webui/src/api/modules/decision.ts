@@ -426,6 +426,17 @@ export interface DecisionDebugReport {
   scores: ShipScoreReport;
 }
 
+/** Upper bound on ONE `decision_static_report` round trip. The command runs
+ *  a full replay decode + the scoring pass on the backend blocking pool
+ *  (multi-second on a cold replay, cached afterwards), but the invoke has no
+ *  timeout of its own: a stalled `ipc.localhost` round trip — the wedge
+ *  class `utils/ipcGuard.ts` probes for at startup — would otherwise pin a
+ *  host's spinner forever. Same rule as the results pill's stream read
+ *  (`features/replay/useReplayPositions.ts`): the watchdog settles the
+ *  VISIBLE state on expiry instead of the await; the seq stays current, so a
+ *  late cached answer can still land and upgrade the panel in place. */
+export const STATIC_REPORT_READ_TIMEOUT_MS = 30_000;
+
 export const decisionApi = {
   /** Fire-decision suggestions for one replay instant. `losGridDir` is
    *  optional (defaults to the installed `decisions` pack's raster layout);

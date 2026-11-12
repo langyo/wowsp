@@ -3,6 +3,7 @@ import { Copy, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw,
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useReplayPositions } from "@/features/replay/useReplayPositions";
+import { useStaticReport } from "@/features/replay/useStaticReport";
 import { analyzeSpawnSymmetry, type EntitySide } from "@/features/replay/spawnSymmetry";
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
@@ -2101,45 +2102,24 @@ export default defineComponent({
     const allyBuilds = ref<PlayerBuild[]>([]);
     const showResults = ref(false);
     const showChat = ref(false);
-    /** E25 static report: open flag + the focused perspective's report.
-     * `null` entity = the recorder (Rust-side default; the always-fully-
-     * observable perspective). The Rust side caches the scoring pass, so
-     * switching perspectives is one IPC round-trip. */
-    const showReport = ref(false);
-    const staticReport = ref<StaticReport | null>(null);
-    const staticReportLoading = ref(false);
-    const staticReportError = ref<string | null>(null);
-    /** Stale-response guard: a perspective switch can overlap the previous
-     *  fetch, and closing the modal must orphan an in-flight one — only the
-     *  newest request may land in the state above. */
-    let staticReportSeq = 0;
-    const openStaticReport = async (entityId?: number | null) => {
-      const cur = parser.current.value;
-      if (!cur) return;
-      const path = cur.path;
-      if (!path) return;
-      const seq = ++staticReportSeq;
-      showReport.value = true;
-      staticReportLoading.value = true;
-      staticReportError.value = null;
-      try {
-        const report = await api.decisionStaticReport(path, entityId ?? null);
-        if (seq !== staticReportSeq) return;
-        staticReport.value = report;
-      } catch (err) {
-        if (seq !== staticReportSeq) return;
-        staticReportError.value = String(err);
-      } finally {
-        if (seq === staticReportSeq) staticReportLoading.value = false;
-      }
-    };
-    /** Close the report modal and orphan any in-flight fetch (its reply
-     *  must not patch a panel the user already dismissed). */
-    const closeStaticReport = () => {
-      showReport.value = false;
-      staticReportSeq += 1;
-      staticReportLoading.value = false;
-    };
+    /** E25 static report host: open flag + the focused perspective's report
+     *  (`null` entity = the recorder, the Rust-side default and the always-
+     *  fully-observable perspective). One bounded fetch per open/pick — the
+     *  stale-seq guard and the read watchdog live in the composable so they
+     *  stay unit-testable. The Rust side caches the scoring pass, so
+     *  switching perspectives is one IPC round-trip. */
+    const {
+      showReport,
+      report: staticReport,
+      loading: staticReportLoading,
+      error: staticReportError,
+      open: openReportFor,
+      close: closeStaticReport,
+    } = useStaticReport();
+    /** Path binding: the composable is store-free (unit-tested standalone);
+     *  the opened replay supplies the fetch key. */
+    const openStaticReport = (entityId?: number | null) =>
+      openReportFor(parser.current.value?.path, entityId);
 
     // ── report sheet faces: identity, provenance, roster icons ──
     /** The opened battle's per-player stats (clan tags for the picker rows). */
