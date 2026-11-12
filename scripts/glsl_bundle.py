@@ -35,7 +35,7 @@ def _load_toml(path: Path) -> dict:
         return tomllib.loads(raw.decode())
     fallback = path.with_suffix(".json")
     if fallback.is_file():
-        return json.loads(fallback.read_text())
+        return json.loads(fallback.read_text(encoding="utf-8"))
     print(f"ERROR: no tomllib/tomli and no JSON fallback for {path}", file=sys.stderr)
     sys.exit(1)
 
@@ -49,7 +49,7 @@ def _read_shader(theme_dir: Path, filename: str) -> str | None:
     if not p.is_file():
         print(f"WARN: shader not found: {p}", file=sys.stderr)
         return None
-    return p.read_text()
+    return p.read_text(encoding="utf-8")
 
 
 def find_themes(shaders_dir: Path) -> list[tuple[Path, dict]]:
@@ -97,7 +97,7 @@ def generate(output_dir: Path, themes: list[tuple[Path, dict]], verbose: bool) -
                         rel = (theme_dir / fname).relative_to(SHADERS_DIR)
                         out = output_dir / rel
                         out.parent.mkdir(parents=True, exist_ok=True)
-                        out.write_text(code)
+                        out.write_text(code, encoding="utf-8")
                         if verbose:
                             print(f"  {rel} -> {out.relative_to(REPO_ROOT)}")
             preset: dict = {"id": theme_id, "dualMode": True}
@@ -115,7 +115,7 @@ def generate(output_dir: Path, themes: list[tuple[Path, dict]], verbose: bool) -
             rel = (theme_dir / shader_file).relative_to(SHADERS_DIR)
             out = output_dir / rel
             out.parent.mkdir(parents=True, exist_ok=True)
-            out.write_text(code)
+            out.write_text(code, encoding="utf-8")
             if verbose:
                 print(f"  {rel} -> {out.relative_to(REPO_ROOT)}")
             preset = {"id": theme_id, "dualMode": False, "shader": shader_file}
@@ -131,9 +131,12 @@ def generate(output_dir: Path, themes: list[tuple[Path, dict]], verbose: bool) -
         "// Source: res/shaders/**/*.glsl + *.theme.toml\n"
         "// To add a theme: add .glsl + .theme.toml in res/shaders/, rebuild.\n\n"
     )
-    (output_dir / "shaders.ts").write_text(header + "".join(shader_exports))
+    (output_dir / "shaders.ts").write_text(
+        header + "".join(shader_exports), encoding="utf-8"
+    )
     (output_dir / "themes.json").write_text(
-        json.dumps(preset_configs, indent=2, ensure_ascii=False) + "\n"
+        json.dumps(preset_configs, indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
     )
     if verbose:
         print(f"  themes.json: {[p['id'] for p in preset_configs]}")
