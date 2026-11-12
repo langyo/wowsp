@@ -32,6 +32,20 @@ seam (the ink band between the deck and bow plates) are cut out of the
 silhouette. The submarine needs no punch: its bar and bow are authored as
 two DETACHED silhouette islands, so the gap is open on every face.
 
+SLASH RULE (2026-11-12 review: the slash straddles the drawn mass). The
+speed slashes sit symmetric about the SILHOUETTE's area centroid — hull
+rectangle and bow wedge weighted by area (silhouette_centroid_x()) — which
+is where the game's own markers centre the engraving. The old SLASH_SHIFT
+constant offset the axis from the hull centreline and still landed ~0.8 art
+units stern of that centroid, which read as the marker leaning.
+
+RIM NOTE (same review, kept as authored): the bow ink thins toward the tip
+(0.9 at the hull to ~0.52 on the battleship wedge, ~0.23 on the destroyer)
+because the plates follow the game's own SCREEN-SPACE outline — its 27 px
+markers draw a ~1 px ring that narrows the same way over their shallow
+wedges. Do not re-level this to a perpendicular inset: it would make the
+nose ink several times heavier than the original markers.
+
 Variants (6 classes x 7 faces = 42 files, the names shipIcons.ts imports):
 
   icon_<class>.svg          plain  — silhouette + punched engraving (CSS mask)
@@ -66,7 +80,6 @@ W, H = 20.0, 11.0  # the marker art box
 RIM = 0.9          # ink rim width (silhouette minus plate)
 SLASH_W = 1.1      # speed-slash / divider line width
 EDGE = 0.5         # silhouette inset from the art box
-SLASH_SHIFT = 1.1  # how far the hull slashes sit toward the bow side
 
 # ── palettes ──
 # One black ink for every plate face (see the INK RULE above); the plate is
@@ -107,6 +120,19 @@ def bow_plate(x, plate_right):
     return tri(x, EDGE + RIM, plate_right, H / 2, x, H - EDGE - RIM)
 
 
+def silhouette_centroid_x(hull_right):
+    """The silhouette's AREA centroid x — hull rectangle and bow wedge
+    weighted by area. The speed slashes straddle THIS line: the game's own
+    markers centre the slash on the drawn mass, while a fixed offset from
+    the hull centreline (the old SLASH_SHIFT) sat ~0.8 art units stern of
+    it and read as the marker leaning."""
+    hull_area = (hull_right - EDGE) * (H - 2 * EDGE)
+    hull_x = (EDGE + hull_right) / 2
+    bow_area = 0.5 * (H - 2 * EDGE) * (W - EDGE - hull_right)
+    bow_x = (2 * hull_right + W - EDGE) / 3
+    return (hull_area * hull_x + bow_area * bow_x) / (hull_area + bow_area)
+
+
 # ── per-class geometry ──
 # Every shape is flat: hull rectangles, bow triangles, straight lines.
 
@@ -139,11 +165,13 @@ def hull_bow(hull_right, plate_right, lines_, *, deck_plate_right=None, bow_plat
 
 
 def cruiser():
-    # One slash: clearly diagonal, and biased toward the hull's bow side —
-    # the hull-centre placement still read as skewed LEFT against the marker's
-    # hull-plus-bow mass (2026-11-07 review), so it sits SLASH_SHIFT right.
+    # One slash: clearly diagonal, and centred on the marker's drawn mass —
+    # the silhouette's area centroid (hull rectangle + bow wedge), which is
+    # where the game's own markers centre the engraving. A fixed offset from
+    # the hull centreline left the axis stern of that centroid and read as
+    # the marker leaning (2026-11-12 review).
     hull_right = 12.4
-    mid = (EDGE + hull_right) / 2 + SLASH_SHIFT
+    mid = silhouette_centroid_x(hull_right)
     dx = 3.0
     return hull_bow(
         hull_right,
@@ -153,10 +181,10 @@ def cruiser():
 
 
 def battleship():
-    # Two parallel slashes, symmetric about the shifted cut line (same
-    # bow-side bias as the cruiser) and clearly diagonal.
+    # Two parallel slashes, symmetric about the silhouette's area centroid
+    # (same spine as the cruiser) and clearly diagonal.
     hull_right = 12.4
-    mid = (EDGE + hull_right) / 2 + SLASH_SHIFT
+    mid = silhouette_centroid_x(hull_right)
     dx = 2.6
     gap = 1.6
     return hull_bow(
