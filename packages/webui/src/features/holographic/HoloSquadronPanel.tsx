@@ -35,6 +35,11 @@ export interface HoloSquadronPanelState {
   /** Carrier nickname (the hull plaque's owner) — the panel's caption. */
   carrierName: string;
   shipName: string;
+  /** Fine-grained ammo/role family of the chased wing (the GameParams role:
+   *  torpedo / rocket / heBomber / apBomber / asw / mine / scout / dive /
+   *  ...). Renders as the panel's leading type label; absent on payloads
+   *  that predate the field. */
+  planeRole?: string;
   /** One entry per FLIGHT GROUP, in slot order; each holds that group's
    *  planes as HP bands (1 = >3/4, 2 = (1/4, 3/4], 4 = <=1/4, 0/undefined =
    *  the slot no longer flies). The panel ALWAYS shows one cell per launched
@@ -52,6 +57,19 @@ export interface HoloSquadronPanelState {
   consumables: string[];
   /** Remaining fraction of the healForsage one-shot window (null = off). */
   forsage: number | null;
+}
+
+/** Wing type label from the GameParams role family. The role is the
+ *  ammunition/behaviour family the airframe actually flies (a fighter hull
+ *  can carry rockets, a dive-bomber hull can carry AP bombs), so it names
+ *  what the wing DOES rather than its hull class. Unknown/absent roles fall
+ *  back to no label instead of printing a raw key. */
+function planeRoleLabel(role: string | undefined): string | null {
+  if (!role) return null;
+  const key = `replay.planeRole.${role}`;
+  const text = i18nT(key);
+  // i18nT echoes the key when no translation exists — treat that as absent.
+  return text === key ? null : text;
 }
 
 /** One segment per plane: the band picks its colour, a dead/absent slot
@@ -72,9 +90,15 @@ export default defineComponent({
   setup(props) {
     return () => {
       const s = props.state;
+      const roleLabel = planeRoleLabel(s.planeRole);
       return (
         <div class="holo-squad">
           <div class="holo-squad__head">
+            {roleLabel ? (
+              <AppTag class="holo-squad__role" tone="primary" size="sm">
+                {roleLabel}
+              </AppTag>
+            ) : null}
             <span class="holo-squad__name">{s.carrierName}</span>
             <span class="holo-squad__ship">{s.shipName}</span>
             <span class="holo-squad__count">

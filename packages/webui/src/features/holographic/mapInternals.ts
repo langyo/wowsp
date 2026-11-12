@@ -247,10 +247,14 @@ export interface TorpedoMeshState {
 export interface PlaneFormationState {
   /** Planes actually LAUNCHED (SquadronCreate.numPlanes). */
   count: number;
-  /** The wing's FULL strength — the hangar total (SquadronCreate.
-   *  totalNumPlanes), which is also the HUD's denominator and the panel's
-   *  slot count: a partial launch reads "10 / 12" with two dead cells. */
+  /** The wing's FULL strength: the AIRFRAME's squadron size (the GameParams
+   *  count / plane_specs squadron field, see planeFullStrength), floored by
+   *  the decoded hangar total. It is the HUD's denominator and the panel's
+   *  slot count, so a 4-of-12 launch still reads twelve cells with eight grey. */
   full?: number;
+  /** GameParams ammo/role family (torpedo / rocket / heBomber / apBomber /
+   *  asw / mine / scout / dive / ...) — the panel's leading type label. */
+  role?: string;
   groupSize: number;
   groupCount: number;
   meshes: THREE.Object3D[];

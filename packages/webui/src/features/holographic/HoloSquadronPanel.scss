@@ -75,36 +75,22 @@
     &--dead { background: rgb(255 255 255 / 8%); }
   }
 
-  /* Engine row: state chips + the one-shot gauge. */
+  /* Engine row: hikari tags + the one-shot gauge. It sits a clear gap under
+     the HP grid — the tags used to touch the segments, which read as one
+     crowded block (2026-11-12 review: 下面的加速什么的标签应该和上面的血条
+     有点距离). */
   &__engine {
     display: flex;
     align-items: center;
-    gap: 0.25rem;
-    min-height: 0.85rem;
+    gap: 0.3rem;
+    min-height: 1rem;
+    margin-top: 0.2rem;
   }
 
-  &__chip {
-    font-size: var(--text-2xs);
-    line-height: 1.2;
-    padding: 0 0.3rem;
-    border-radius: 3px;
-    background: rgb(0 0 0 / 35%);
-    border: 1px solid var(--holo-hud-border, rgb(255 255 255 / 22%));
-    color: var(--holo-hud-text);
-  }
-
-  &__chip--boost {
-    color: #1a1206;
-    font-weight: 700;
-    background: linear-gradient(180deg, #ffd98a, #ffb648);
-    border-color: rgba(255, 214, 130, 0.9);
-  }
-
-  &__chip--slow {
-    color: #eaf4ff;
-    font-weight: 700;
-    background: linear-gradient(180deg, #5b8fc7, #38618f);
-    border-color: rgba(140, 190, 240, 0.9);
+  /* Leading wing-type tag (鱼雷机 / 火箭机 / ...). */
+  &__role {
+    flex: 0 0 auto;
+    align-self: center;
   }
 
   &__gauge {

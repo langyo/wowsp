@@ -445,7 +445,18 @@
     "consFighters": "전투기 소환",
     "consExtinguisher": "소화",
     "consSmoke": "연막",
-    "consRegen": "비행 재편"
+    "consRegen": "비행 재편",
+    "planeRole": {
+      "torpedo": "어뢰기",
+      "rocket": "로켓 전투기",
+      "heBomber": "HE 폭격기",
+      "apBomber": "AP 폭격기",
+      "asw": "대잠기",
+      "mine": "기뢰 부설기",
+      "scout": "정찰기",
+      "dive": "급강하 폭격기",
+      "torpedoDeepwater": "심수 어뢰기"
+    }
   },
   "classes": {
     "battleship": "전함",

@@ -2126,6 +2126,8 @@ const RECORDED_DOLLY_MIN = -40;
         squadronPanelState.value = {
           carrierName: label.name,
           shipName: label.shipName,
+          // Fine-grained ammo/role family for the panel's type label.
+          planeRole: formation?.role,
           groups: squadronSlotGroups(
             bands,
             formation?.groupSize ?? 1,

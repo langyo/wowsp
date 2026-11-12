@@ -18,8 +18,30 @@ export const SHELL_TYPES = shellTypesRaw as Record<
  *  attack) driving the in-game icon and the timeline's marker language. */
 export const PLANE_TYPES = planeTypesRaw as Record<
   string,
-  { index: string; name: string; type: string; count?: number }
+  {
+    index: string;
+    name: string;
+    type: string;
+    count?: number;
+    /** GameParams ammo/role family — the fine-grained label the squadron
+     *  panel shows (torpedo / rocket / heBomber / apBomber / asw / mine /
+     *  scout / dive / ...). `type` stays the coarse icon family. */
+    role?: string;
+  }
 >;
+
+/** The airframe's FULL squadron strength: the GameParams `count` on the
+ *  plane_types row — the same number plane_specs calls `squadron`, i.e. the
+ *  wing size the airframe launches at a full deck. This is the HUD's
+ *  denominator and the panel's slot count, NOT the launched count, which is
+ *  lower when the hangar is depleted (2026-11-12 review: 全部按满编组来，
+ *  而且是按该机种的角度). Returns null for an unknown paramsId so callers
+ *  fall back to the decoded launch size. */
+export function planeFullStrength(paramsId: number | undefined): number | null {
+  if (paramsId == null) return null;
+  const n = PLANE_TYPES[String(paramsId)]?.count;
+  return typeof n === "number" && n > 0 ? n : null;
+}
 
 /** Shell-flight colors per ammo family: HE yellow, AP silver, SAP grey. */
 export const SHELL_COLORS: Record<string, number> = {

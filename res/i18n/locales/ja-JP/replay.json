@@ -445,7 +445,18 @@
     "consFighters": "戦術戦闘機",
     "consExtinguisher": "消火",
     "consSmoke": "発煙",
-    "consRegen": "飛行再編"
+    "consRegen": "飛行再編",
+    "planeRole": {
+      "torpedo": "雷撃機",
+      "rocket": "ロケット戦闘機",
+      "heBomber": "HE爆撃機",
+      "apBomber": "AP爆撃機",
+      "asw": "対潜攻撃機",
+      "mine": "機雷敷設機",
+      "scout": "偵察機",
+      "dive": "急降下爆撃機",
+      "torpedoDeepwater": "深深度魚雷機"
+    }
   },
   "classes": {
     "battleship": "戦艦",
