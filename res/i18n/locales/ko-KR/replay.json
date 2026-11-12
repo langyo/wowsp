@@ -754,5 +754,8 @@
   },
   "detail": {
     "title": "전투 상세"
+  },
+  "shipStatus": {
+    "fighterCover": "전투기 엄호"
   }
 }

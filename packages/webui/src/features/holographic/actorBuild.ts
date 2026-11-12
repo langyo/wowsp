@@ -262,6 +262,11 @@ export function rebuildActors(ctx: MapInternals) {
       }
       return m;
     })(),
+    // Fighter-patrol wards ride the hull status row (the same slot a
+    // repair-party window uses): a consumable fighter's cover effect
+    // belongs to the OWNING SHIP, not to an aircraft card (user request).
+    wards: ctx.props.wards,
+    wardRemoves: ctx.props.wardRemoves,
     shellImpacts: ctx.shellStates
       .filter((st) => st.joined)
       .map((st) => ({

@@ -754,5 +754,8 @@
   },
   "detail": {
     "title": "Battle detail"
+  },
+  "shipStatus": {
+    "fighterCover": "Fighter cover"
   }
 }

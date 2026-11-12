@@ -442,6 +442,11 @@ export interface MapInternals extends MapInternalsDeps {
   /** World heading (radians, the map's yaw convention) of the lens-riding
    *  formation; null when there is none. */
   planeLensHeading: number | null;
+  /** Carrier entity id the chase camera is following as AIRCRAFT, or null.
+   *  While set, the map shows only that carrier's aircraft labels/cards —
+   *  every other wing's floating card is noise in the plane view (user
+   *  request: 视野里没有别的飞机就别显示别的卡片). */
+  followAircraftId: number | null;
   /** Altitude (world y) of the lens-riding formation this tick. The applied
    *  camera never dips below it by more than the plane-view clearance — the
    *  recorded plane camera sometimes flies INTO the terrain, and the user
@@ -610,6 +615,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeLaunchPoses: new Map(),
     planeWedge: new Map(),
     planeLabelPicks: new Map(),
+    followAircraftId: null,
     planeLensActive: false,
     planeLensHeading: null,
     planeLensY: null,

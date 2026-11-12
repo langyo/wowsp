@@ -371,3 +371,36 @@ export function unpackSquadronBands(packed: number): number[] {
   }
   return bands;
 }
+
+/** One plane's slot in the squadron panel: its HP band (1/2/4 as the wire
+ *  packs them) or null when the slot no longer flies (shot down). */
+export interface PlaneSlotHealth {
+  band: number | null;
+}
+
+/** Group the wing's per-plane bands into its FLIGHT GROUPS for the panel:
+ *  `groupSize` planes per group, with the launch strength (`total`)
+ *  deciding how many slots each group shows so the silhouette stays put as
+ *  planes die. Bands arrive LSB-first for the still-flying planes only, so
+ *  the tail slots of the formation read as dead (null). Empty groups (all
+ *  slots dead) are dropped — the panel grows narrower as groups are wiped,
+ *  matching the in-game widget. */
+export function squadronSlotGroups(
+  bands: readonly number[],
+  groupSize: number,
+  total: number,
+): PlaneSlotHealth[][] {
+  const per = Math.max(1, Math.floor(groupSize));
+  const slots = Math.max(bands.length, Math.ceil(Math.max(0, total) / per) * per);
+  const flat: PlaneSlotHealth[] = [];
+  for (let i = 0; i < slots; i++) {
+    const band = i < bands.length ? bands[i] : null;
+    flat.push({ band: band ?? null });
+  }
+  const groups: PlaneSlotHealth[][] = [];
+  for (let i = 0; i < flat.length; i += per) {
+    const group = flat.slice(i, i + per);
+    if (group.some((p) => p.band != null)) groups.push(group);
+  }
+  return groups;
+}

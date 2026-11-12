@@ -96,6 +96,34 @@ const impact = (over: Partial<ShellImpact>): ShellImpact => ({
   ...over,
 });
 
+describe("fighter-patrol cover under the hull", () => {
+  it("shows a ward chip while the fighter's patrol window is open", () => {
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [ship(7)],
+        wards: [{ time: 10, ownerId: 7, squadronId: 42, radius: 500 }],
+        wardRemoves: [{ time: 40, planeId: 42 }],
+      }),
+    );
+    const during = shipStatusAt(idx.get(7), 20);
+    expect(during?.wards).toHaveLength(1);
+    // Window is closed before the add and after the remove.
+    expect(shipStatusAt(idx.get(7), 5)?.wards).toBeUndefined();
+    expect(shipStatusAt(idx.get(7), 45)?.wards).toBeUndefined();
+  });
+
+  it("attributes the ward to the owning ship only", () => {
+    const idx = buildShipStatusIndex(
+      src({
+        trajectories: [ship(7), ship(8)],
+        wards: [{ time: 10, ownerId: 7, squadronId: 42, radius: 500 }],
+      }),
+    );
+    expect(shipStatusAt(idx.get(7), 20)?.wards).toHaveLength(1);
+    expect(shipStatusAt(idx.get(8), 20)?.wards).toBeUndefined();
+  });
+});
+
 describe("gun / torpedo salvo cooldowns", () => {
   it("shows a brief flash after a lone salvo (no reload info)", () => {
     const idx = buildShipStatusIndex(

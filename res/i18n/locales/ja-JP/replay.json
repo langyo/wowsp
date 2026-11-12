@@ -754,5 +754,8 @@
   },
   "detail": {
     "title": "戦闘詳細"
+  },
+  "shipStatus": {
+    "fighterCover": "戦闘機援護"
   }
 }

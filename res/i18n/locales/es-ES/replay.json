@@ -754,5 +754,8 @@
   },
   "detail": {
     "title": "Detalle de la batalla"
+  },
+  "shipStatus": {
+    "fighterCover": "Cobertura de cazas"
   }
 }

@@ -19,6 +19,7 @@ import {
   squadronFlyingAt,
   squadronHpAt,
   squadronSamplesAt,
+  squadronSlotGroups,
   squadronStrength,
   SQUADRON_ATTACK_PITCH_DEG,
   throttleAt,
@@ -457,6 +458,33 @@ describe("planeCardExtras", () => {
       slow: false,
       consumables: [],
     });
+  });
+});
+
+describe("squadronSlotGroups", () => {
+  it("splits the wing into its flight groups, one segment per plane", () => {
+    // 9 planes in 3 groups: three groups of three, each segment its band.
+    const groups = squadronSlotGroups([1, 1, 1, 2, 2, 2, 4, 4, 4], 3, 9);
+    expect(groups).toHaveLength(3);
+    expect(groups[0].map((p) => p.band)).toEqual([1, 1, 1]);
+    expect(groups[1].map((p) => p.band)).toEqual([2, 2, 2]);
+    expect(groups[2].map((p) => p.band)).toEqual([4, 4, 4]);
+  });
+
+  it("keeps a lost plane's slot dark instead of reflowing the group", () => {
+    // 6 launched, 4 still flying: the last two slots are dead, so the
+    // groups keep their launch silhouette.
+    const groups = squadronSlotGroups([1, 1, 2, 2], 3, 6);
+    expect(groups.map((g) => g.map((p) => p.band))).toEqual([
+      [1, 1, 2],
+      [2, null, null],
+    ]);
+  });
+
+  it("drops wiped groups so the panel narrows", () => {
+    // Three groups launched, the middle one gone: only two remain.
+    const groups = squadronSlotGroups([1, 1, 1, 1, 1, 1], 3, 9);
+    expect(groups).toHaveLength(2);
   });
 });
 

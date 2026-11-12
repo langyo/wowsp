@@ -16,6 +16,7 @@
  * component is pure rendering + styling.
  */
 import { defineComponent, type PropType } from "vue";
+import { t as i18nT } from "@/i18n";
 import type { ShipActionChip, ShipHitChip, ShipDotChip } from "./shipStatusModel";
 import {
   actionIconUrl,
@@ -62,8 +63,19 @@ export default defineComponent({
               ))}
             </div>
           ) : null}
-          {st.hits.length > 0 || st.dots.length > 0 ? (
+          {st.hits.length > 0 || st.dots.length > 0 || (st.wards ?? []).length > 0 ? (
             <div class="holo-ship-status__row">
+              {/* Fighter-patrol cover: the consumable fighter's effect,
+                  under the hull exactly like a damage-over-time chip
+                  (user request: 侦察机/战斗机的效果放在船本体标签下). */}
+              {(st.wards ?? []).map((w) => (
+                // Text chip: the game-art set has no fighter-patrol sprite
+                // yet (extraction pending), so this deliberately does not
+                // fake one with an unrelated icon.
+                <span class="holo-ship-status__chip holo-ship-status__ward" key={w.key}>
+                  {i18nT("replay.shipStatus.fighterCover")}
+                </span>
+              ))}
               {st.dots.map((d) => (
                 <DotChip key={d.key} chip={d} />
               ))}

@@ -41,6 +41,10 @@ export interface HoloPlaneFollowState {
   /** False → no squadron is airborne at the playhead; the card shows the
    *  muted hull line instead. */
   airborne: boolean;
+  /** False while the wing is on its way home / already recalled: a
+   *  returning formation carries no combat readout (no HP bar, no
+   *  strength numbers) — the card keeps its caption only. */
+  combat?: boolean;
   /** True while the camera HOLDS the last aircraft pose (sortie dead/
    *  recalled, follow-aircraft still on): the muted line names the hold,
    *  not a hull fallback that no longer happens. */
@@ -98,7 +102,7 @@ export default defineComponent({
           </span>
           {s.airborne ? (
             <>
-              {s.hp != null ? (
+              {s.combat !== false && s.hp != null ? (
                 <span
                   class="holo-planecard__hp"
                   data-hint={`${Math.round(hpClamped(s.hp) * 100)}%`}
@@ -112,6 +116,7 @@ export default defineComponent({
                   />
                 </span>
               ) : null}
+              {s.combat !== false ? (
               <span class="holo-planecard__strength">
                 <b class="holo-planecard__num">{s.alive}</b>
                 <span class="holo-planecard__slash">/</span>
@@ -130,7 +135,8 @@ export default defineComponent({
                   </span>
                 ) : null}
               </span>
-              {(s.consumables ?? []).slice(0, 3).map((semantic) => {
+              ) : null}
+              {(s.combat === false ? [] : s.consumables ?? []).slice(0, 3).map((semantic) => {
                 // Unknown semantics keep the chip honest: generic label +
                 // the raw wire id ("消耗品 57"), never a blank or a guess.
                 const rawId = unknownConsumableId(semantic);

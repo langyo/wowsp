@@ -121,14 +121,28 @@ const _dir = new THREE.Vector3();
  *  the axis, so dollying is a pure pull along it instead of flattening onto
  *  the horizon. Writes camera.position only — the orbit target is the
  *  caller's job (it glues the pivot to the same point). */
+/** Chase-pose rise ratio: how much of the chase run the camera climbs.
+ *  The stock ship framing (CHASE_RISE/CHASE_RUN) looks DOWN at a hull.
+ *  Aircraft fly at altitude and are usually the HIGHEST thing on screen, so
+ *  the same ratio puts the camera far BELOW them — the chase then stares up
+ *  at the sky (user report: 对天望). The aircraft ratio is steeper so the
+ *  camera always sits above the formation and looks down at it. */
+export const PLANE_CHASE_RISE_RATIO = 0.85;
+
 export function applyFollowPose(
   camera: THREE.Camera,
   target: THREE.Vector3,
   yaw: number,
   dist: number,
+  riseRatio: number = CHASE_RISE / CHASE_RUN,
 ): void {
-  _dir.set(-Math.sin(yaw), CHASE_RISE / CHASE_RUN, Math.cos(yaw)).normalize();
+  _dir.set(-Math.sin(yaw), riseRatio, Math.cos(yaw)).normalize();
   camera.position.copy(target).addScaledVector(_dir, dist);
+  // Never let the chase seat sink below the target's own altitude: an
+  // aircraft target high above the sea would otherwise put the camera at
+  // wave level looking up (the 对天望 shot). The rise term already lifts
+  // it; this is the hard guarantee for extreme zoom-outs.
+  if (camera.position.y < target.y) camera.position.y = target.y;
 }
 
 // ── Damped chase pivot ────────────────────────────────────────────────────

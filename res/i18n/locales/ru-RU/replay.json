@@ -754,5 +754,8 @@
   },
   "detail": {
     "title": "Детали боя"
+  },
+  "shipStatus": {
+    "fighterCover": "Прикрытие истребителей"
   }
 }

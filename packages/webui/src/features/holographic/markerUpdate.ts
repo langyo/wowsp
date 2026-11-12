@@ -19,7 +19,6 @@ import { SHELL_TRACE_SAMPLES, shellTrailAlpha } from "./shellWarfare";
 import type { TeamRole } from "./teamColors";
 import { paintCapSprite, paintSmokeCountdown } from "./screenOverlays";
 import {
-  consumableWindowFrac,
   lastSquadronEventAt,
   planeCardExtras,
   squadronFlyingAt,
@@ -1188,15 +1187,20 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
           : lastSquadronEventAt(ctx.squadronStates?.health, squadronId, t)?.hp ?? null;
       const flying =
         squadronId == null ? null : squadronFlyingAt(ctx.squadronStates?.planesHealth, squadronId, t);
-      if (carrierLabel && squadronFrac == null) {
+      // The floating aircraft label carries IDENTITY only (name, hull,
+      // type, flying count) — the wing's LIVE status moved to the HUD
+      // squadron panel above the hull plaque (user request: aircraft state
+      // belongs in the bottom-left block, not floating over the map;
+      // keeping both duplicated the same readout on three surfaces). So
+      // the carrier label keeps the HULL's HP bar, never the squadron's.
+      if (carrierLabel) {
         label.hp = carrierLabel.hp;
         label.maxHp = carrierLabel.maxHp;
       } else {
-        // hp/maxHp are the generic 0..1 bar the label renderer already
-        // understands (0.62 = 62%); the planes row rides the status slot.
-        label.hp = squadronFrac;
-        label.maxHp = squadronFrac == null ? null : 1;
+        label.hp = null;
+        label.maxHp = null;
       }
+      void squadronFrac;
       // The flying count has no slot in ShipStatusSnapshot (that shape is
       // the below-hull combat chip row) — it rides the label's planeCard
       // helper field, which the label renderer prints next to the type.
@@ -1213,35 +1217,21 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // Assign only on an actual change: a fresh array per pass re-renders
       // the whole label list every playhead tick (the 10 Hz content gate
       // exists to avoid exactly that).
-      const cons = extras?.consumables ?? [];
-      const key = cons
-        .map((c) => (typeof c === "string" ? c : "u" + c.unknown))
-        .join(",");
-      if (label.planeConsumKey !== key) {
-        label.planeConsumKey = key;
-        label.planeConsumables = cons;
+      // Status chips and engine flags now live ONLY in the HUD squadron
+      // panel: clearing them here (once) stops the floating label from
+      // rendering a second copy of the same state.
+      if (label.planeConsumKey !== "") {
+        label.planeConsumKey = "";
+        label.planeConsumables = [];
       }
-      const boost = extras?.boost ?? false;
-      if (label.planeBoost !== boost) label.planeBoost = boost;
-      const slow = extras?.slow ?? false;
-      if (label.planeSlow !== slow) label.planeSlow = slow;
+      if (label.planeBoost !== false) label.planeBoost = false;
+      if (label.planeSlow !== false) label.planeSlow = false;
+      void extras;
       // Under-HP bars: the engine boost (throttle mode 1, blue) and the
       // one-shot temporary boost window (healForsage, white). A plane can
       // run both at once, which is why they are separate bars.
-      const forsage =
-        squadronId == null
-          ? null
-          : consumableWindowFrac(
-              ctx.squadronStates?.consumables,
-              squadronId,
-              "healForsage",
-              t,
-            );
-      const forsageRounded =
-        forsage == null ? null : Math.round(forsage * 20) / 20;
-      if (label.planeForsageFrac !== forsageRounded) {
-        label.planeForsageFrac = forsageRounded;
-      }
+      // The one-shot boost bar moved to the panel's engine row too.
+      if (label.planeForsageFrac != null) label.planeForsageFrac = null;
       // Any of this carrier's squadrons airborne?
       let visible = false;
       for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {

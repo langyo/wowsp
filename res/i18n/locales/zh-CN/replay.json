@@ -754,5 +754,8 @@
   },
   "detail": {
     "title": "对局详情"
+  },
+  "shipStatus": {
+    "fighterCover": "战斗机掩护"
   }
 }
