@@ -15,11 +15,13 @@ probe and froze the window).
 Asserted here:
   * every non-scrolling section (the short half of the rail — language,
     account, crash, markers, closeBehavior, gamePath, network, pairing,
-    chatTranslate, installCleanup, sharing) leaves at most a couple of
-    pixels between the pane's bottom edge and the last laid-out card, keeps
-    the shell under the cap, fits its content in the pane, and still
-    scrolls the rail (every entry stays reachable at the smaller shell
-    height);
+    chatTranslate, installCleanup, sharing) sits at exactly
+    max(floor, content height) — flush with the last laid-out card when the
+    section's content is taller than the floor, at the floor with the
+    difference as a bounded dead band when it is shorter (the 2026-11-11
+    sliver report's floor) — while keeping the shell under the cap, fitting
+    its content in the pane, and still scrolling the rail (every entry stays
+    reachable at the smaller shell height);
   * a long section (appearance) keeps the capped shell, scrolls the pane,
     and never scrolls the modal body itself.
 
@@ -38,8 +40,17 @@ VIEWPORT = {"width": 1440, "height": 900}
 #: The shell cap the desktop host keeps — the old 70vh - 6.5rem frame band,
 #: derived from the viewport so a viewport change cannot silently stale it.
 SHELL_CAP_PX = VIEWPORT["height"] * 0.70 - 6.5 * 16.0
-#: The shell now hugs the cards, so the only slack between the pane's bottom
-#: edge and the last card is border/subpixel noise.
+#: The floor the hug keeps under it since 2026-11-11: a short section never
+#: collapses the window into a sliver ("这也太矮了"). Authored in the sheet
+#: as min(24rem, the band) — min-height wins over max-height in CSS, so the
+#: floor rides the band clamp — and derived from the viewport the same way
+#: the cap is (rem at the test root's 16px).
+SHELL_FLOOR_PX = min(24.0 * 16.0, SHELL_CAP_PX)
+#: The shell hugs its cards down to that floor, so the slack between the
+#: pane's bottom edge and the last card is border/subpixel noise for a
+#: section taller than the floor and exactly floor-minus-content for a
+#: shorter one — the per-section expected height (see _expected_shell_height)
+#: covers both sides, and this constant is only the measurement noise.
 MAX_DEAD_BAND_PX = 2.0
 #: Every section whose content fits the pane at the test viewport (the long,
 #: pane-scrolling ones are covered by the capped-frame / shrink cases).
@@ -105,6 +116,7 @@ MEASURE_JS = r"""
     frameHeight: frameRect ? frameRect.height : null,
     shellHeight: shellRect ? shellRect.height : null,
     shellCap: shell ? parseFloat(getComputedStyle(shell).maxHeight) : null,
+    shellFloor: shell ? parseFloat(getComputedStyle(shell).minHeight) : null,
     paneBottom: paneRect ? paneRect.bottom : null,
     lastCardBottom: lastBottom,
     deadBand:
@@ -169,6 +181,21 @@ def _settle(page: Page) -> dict:
     raise AssertionError(f"settings frame never settled: {latest}")
 
 
+def _expected_shell_height(metrics: dict) -> float:
+    """The per-section shell contract: max(floor, content height).
+
+    The content height is the hugged height — the measured shell minus
+    whatever slack currently sits under the last card — so a section taller
+    than the floor must end flush (its expected band collapses into
+    MAX_DEAD_BAND_PX noise) while a shorter one must sit AT the floor (its
+    expected band is the floor's bounded one). The 2026-11-08 dead band
+    (a pinned frame over short content), the 2026-11-11 sliver (a hug with
+    no floor beneath it), and any future drift between the sheet's floor
+    and this constant all miss this from their own side.
+    """
+    return max(SHELL_FLOOR_PX, metrics["shellHeight"] - metrics["deadBand"])
+
+
 def _show_section(page: Page, key: str) -> dict:
     """Switch the shell to one section and wait for its frame to settle."""
     item = page.locator(f'.hk-settings__rail-item[data-section="{key}"]')
@@ -182,21 +209,35 @@ def _show_section(page: Page, key: str) -> dict:
 
 @pytest.mark.ui
 def test_short_sections_hug_their_cards(page: Page, vite_base_url: str) -> None:
-    """A short section's shell ends at its last card: no dead band below it,
-    the shell stays under the old cap, the content fits the pane, and the rail
-    keeps scrolling its entries (its height now follows the shell)."""
+    """A short section's shell sits at max(floor, content height): flush with
+    its last card when the content clears the floor, at the floor with a
+    bounded band when it does not; under the old cap either way, the content
+    fits the pane, and the rail keeps scrolling its entries (its height now
+    follows the shell)."""
     _open_settings(page, vite_base_url)
     for key in SHORT_SECTIONS:
         metrics = _show_section(page, key)
 
         # Sanity: the cap is still the old frame band, only moved to
-        # max-height.
+        # max-height, and the floor rides the band clamp exactly as the
+        # sheet authors it (min-height wins over max-height in CSS).
         assert metrics["shellCap"] is not None, (key, metrics)
         assert abs(metrics["shellCap"] - SHELL_CAP_PX) <= 1.0, (key, metrics)
+        assert metrics["shellFloor"] is not None, (key, metrics)
+        assert abs(metrics["shellFloor"] - SHELL_FLOOR_PX) <= 1.0, (key, metrics)
 
-        # The bug: the pane's bottom edge stood far below the last card.
+        # The contract, per section: the shell sits exactly at
+        # max(floor, content height). A section taller than the floor still
+        # hugs its cards (its band collapses into subpixel noise); a shorter
+        # one sits AT the floor with floor-minus-content as its bounded
+        # band. The 2026-11-08 dead band (the pane's bottom edge standing
+        # far below the last card) and the 2026-11-11 sliver collapse both
+        # miss the expected height.
         assert metrics["deadBand"] is not None, (key, metrics)
-        assert metrics["deadBand"] <= MAX_DEAD_BAND_PX, (key, metrics)
+        assert (
+            abs(metrics["shellHeight"] - _expected_shell_height(metrics))
+            <= MAX_DEAD_BAND_PX
+        ), (key, metrics)
         # ...and the content must actually FIT (a "last card below the pane
         # edge" would make the band negative instead of small).
         assert metrics["paneScrollHeight"] <= metrics["paneClientHeight"] + 1, (
@@ -242,9 +283,12 @@ def test_capped_to_content_switch_shrinks_the_frame(
     100% pin, the size morph's content probe keeps reading the OLD body height,
     so the frame stays capped after a short section lands and the dead band
     comes back. A freshly opened short section never exercises that remeasure
-    path, so the switch is asserted explicitly: the capped frame/shell must
-    drop by a large margin, the swapped-in section must still end flush with
-    its last card, and the pane must stop overflowing.
+    path, so the switch is asserted explicitly: the shell must drop to the
+    swapped-in section's expected height — max(floor, content), the same
+    per-section contract as the hug test; the #1940 floor bounds how far a
+    short section can pull the window in, so an absolute drop threshold
+    would go stale the moment the floor or the cap moves — and the frame
+    must follow it down one-for-one, and the pane must stop overflowing.
     """
     _open_settings(page, vite_base_url)
     capped = _show_section(page, LONG_SECTION)
@@ -253,13 +297,21 @@ def test_capped_to_content_switch_shrinks_the_frame(
     short = _show_section(page, "language")
 
     # The shrink itself — the whole window (frame pin AND content-fit shell)
-    # must follow the content down, not only the inner scroll region.
-    assert capped["shellHeight"] - short["shellHeight"] > 200.0, (capped, short)
-    assert capped["frameHeight"] - short["frameHeight"] > 200.0, (capped, short)
+    # must follow the content down to its FLOORED height, not only the inner
+    # scroll region. The frame's drop must equal the shell's drop (the modal
+    # chrome around the shell is height-constant): a stuck size-morph probe
+    # drops the shell's number without dropping the window's.
+    assert short["shellHeight"] < capped["shellHeight"], (capped, short)
+    assert short["deadBand"] is not None, (capped, short)
+    assert (
+        abs(short["shellHeight"] - _expected_shell_height(short)) <= MAX_DEAD_BAND_PX
+    ), (capped, short)
+    shell_drop = capped["shellHeight"] - short["shellHeight"]
+    frame_drop = capped["frameHeight"] - short["frameHeight"]
+    assert abs(frame_drop - shell_drop) <= MAX_DEAD_BAND_PX, (capped, short)
 
-    # The swapped-in section ends flush with its last card...
-    assert short["deadBand"] is not None, short
-    assert short["deadBand"] <= MAX_DEAD_BAND_PX, short
-    # ...and its content fits the pane again (the long section's overflow is
-    # gone).
+    # The swapped-in section's band is the floor's bounded one (asserted
+    # through the expected height above) and its content fits the pane again
+    # (the long section's overflow is gone).
+    assert short["deadBand"] >= -1.0, short
     assert short["paneScrollHeight"] <= short["paneClientHeight"] + 1, short
