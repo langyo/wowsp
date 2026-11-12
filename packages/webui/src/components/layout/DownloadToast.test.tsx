@@ -151,12 +151,49 @@ describe("live pass rendering", () => {
     downloads.settle("res-pack", null);
     await nextTick();
     // The card stays mounted for the leave transition, serving the frozen
-    // pass (still saying what finished), then unmounts.
+    // pass (still naming the resource that finished), then unmounts.
     expect(card()).not.toBeNull();
-    expect(card()?.textContent).toContain(t("settings.downloadFinished"));
+    expect(card()?.textContent).toContain(t("settings.resPackTitle"));
     await vi.advanceTimersByTimeAsync(1_000);
     await nextTick();
     expect(card()).toBeNull();
+  });
+});
+
+describe("owner-driven batch (plugin updates)", () => {
+  it("renders the batch item as the step line and the owner percent", async () => {
+    const downloads = useDownloadsStore();
+    mount(DownloadToast);
+    downloads.begin("mod-package");
+    downloads.report("mod-package", {
+      phase: "download",
+      step: "mod-a (2/3)",
+      percent: 75,
+      speedBps: 1_048_576,
+    });
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_CARD_GRACE_MS + 1);
+    await nextTick();
+
+    const text = card()?.textContent ?? "";
+    // One card, both shapes: the batch names its item as the step and shows
+    // the owner's overall fraction — the exact job the retired ModUpdateToast
+    // did, with no second component.
+    expect(text).toContain(t("resources.pluginUpdateCardLabel"));
+    expect(text).toContain("mod-a (2/3)");
+    expect(text).toContain("75%");
+    expect(text).toContain("1.0 MB/s");
+    const fill = card()?.querySelector<HTMLElement>(".toast-card__fill");
+    expect(fill?.style.width).toBe("75%");
+  });
+
+  it("offers no cancel action for the batch (catalog installs cannot abort)", async () => {
+    const downloads = useDownloadsStore();
+    mount(DownloadToast);
+    downloads.begin("mod-package");
+    downloads.report("mod-package", { phase: "download", percent: 10 });
+    await vi.advanceTimersByTimeAsync(DOWNLOAD_CARD_GRACE_MS + 1);
+    await nextTick();
+    expect(card()?.querySelector(".toast-card__actions")).toBeNull();
   });
 });
 

@@ -54,8 +54,8 @@ function readLeaveMs(): number {
 
 /**
  * ToastCardBase — the single wowsp-local toast card primitive behind the
- * shell's bespoke top-right cards (UpdateToast / UpdateAppliedToast /
- * UpdateStrandedToast / ModUpdateToast / AudioPlayerToast /
+ * shell's bespoke top-right cards (UpdateAppliedToast /
+ * UpdateStrandedToast / DownloadToast / AudioPlayerToast /
  * PiggyReminderToast). Owns, once for the whole family: the Teleported
  * fixed slot (hikari's toast column geometry — top 4rem / right 1rem /
  * the `--hk-z-toast` band / 22rem / blur), the ONE enter keyframe and the

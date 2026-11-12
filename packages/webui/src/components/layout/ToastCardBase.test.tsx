@@ -6,7 +6,7 @@
  * auto-dismiss shape, the quiet × affordance, the action pills (kinds,
  * legacy hook class, disabled) and the meta / trailing / progress slot
  * regions. Per-card store wiring stays in the cards' own suites
- * (UpdateAppliedToast / ModUpdateToast pin theirs, unchanged).
+ * (UpdateAppliedToast / DownloadToast pin theirs, unchanged).
  */
 import { defineComponent, nextTick, onBeforeUnmount, ref, type PropType } from "vue";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";

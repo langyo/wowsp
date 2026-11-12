@@ -211,7 +211,7 @@
   }
 
   /* Live pass status while the updater downloads / installs — mirrors the
-     top-right UpdateToast card instead of offering an action. */
+     top-right DownloadToast card instead of offering an action. */
   &__updating {
     display: inline-flex;
     align-items: center;

@@ -10,8 +10,14 @@
  * the app exits itself right after the handoff, and the hardened
  * installer delivers over the directory and relaunches the new build.
  *
- * Progress arrives on the unified `wowsp://download-progress` channel
- * (kind "update", the single bus every download context shares):
+ * Progress is NOT tracked here: `update` is a `card` context of the unified
+ * download context (stores/downloads), which folds its ticks and renders the
+ * shared top-right pass card. This store keeps the update's own facts (the
+ * available version, the idle prompt, the stranded-recovery handoff) and the
+ * verbs; `downloadAndInstall` hands the command to `downloads.track`.
+ *
+ * The ticks themselves arrive on the unified `wowsp://download-progress`
+ * channel (kind "update", the single bus every download context shares):
  * `verify` renders the indeterminate strip while the official
  * version/digest lookup settles (before any mirror is touched);
  * `race`/`queued` render the indeterminate strip, `download` carries
@@ -23,14 +29,12 @@
  * The flow is prompted, never automatic. Discovering a newer version only
  * raises the idle prompt — a hikari blocking toast (立即更新 / 稍后) in the
  * top-right stack; answering 立即更新 (or the AboutModal pill) starts the
- * pass, which renders as the dedicated UpdateToast card: a spinner while
- * mirrors are raced, a bottom progress bar with percent + speed while the
- * artifact streams, and a single 取消 button (none once the installer has
- * spawned). 取消 tears the pass down via `update_cancel` — the part file
- * is kept as the resume base — and reads as "not now": the prompt stays
- * dismissed for the session. Failures are recorded in `error` and fall
- * back to the idle prompt (unless dismissed); a retry continues from the
- * retained part file.
+ * pass on the SHARED download card (DownloadToast): the spinner covers the
+ * mirror race, the bar follows the artifact with percent + speed + ETA, and
+ * its 取消 action is the registry's `update_cancel` verb — the part file
+ * stays as the resume base and the cancel reads as "not now" (the prompt
+ * stays dismissed for the session). Failures fall back to the idle prompt
+ * unless dismissed; a retry continues from the retained part file.
  *
  * In browser-only dev mode the commands throw (no Tauri runtime); calls are
  * caught and surfaced via `error` so the UI degrades gracefully.
@@ -45,10 +49,9 @@ import { invoke } from "@tauri-apps/api/core";
 
 import { showBlockingToast, useToast } from "@celestia-island/hikari";
 
-import { api, type DownloadProgress } from "@/api";
 import { RPC } from "@/rpc";
 import { t } from "@/i18n";
-import { formatSpeed } from "@/utils/format";
+import { useDownloadsStore } from "@/stores/downloads";
 
 /** Answer shape of the Rust `update_check` command. */
 interface UpdateInfo {
@@ -75,16 +78,8 @@ export const useUpdaterStore = defineStore("updater", () => {
   const available = ref(false);
   const version = ref<string | null>(null);
   const current = ref("");
+  const downloads = useDownloadsStore();
   const checking = ref(false);
-  const downloading = ref(false);
-  const progress = ref<number | null>(null);
-  const installing = ref(false);
-  // "verify" while the official version/digest lookup settles (before
-  // any mirror is touched), "race" while mirrors are probed / raced (or
-  // the pass waits in the download hub's FIFO queue), "download" while
-  // the winner streams, "install" once the installer is spawned.
-  const phase = ref<"verify" | "race" | "download" | "install" | null>(null);
-  const speedBps = ref<number | null>(null);
   const checked = ref(false);
   const error = ref<string | null>(null);
   const portable = ref(false);
@@ -98,11 +93,6 @@ export const useUpdaterStore = defineStore("updater", () => {
   // (AboutModal keeps offering the update). Never reset: a fresh launch
   // starts a fresh store.
   const dismissed = ref(false);
-  // The pending bus registration — memoized so AppShell's concurrent
-  // `init()` calls can never register two handlers racing each other for
-  // the `unlistenProgress` slot (the old check ran before the await and
-  // let a double init bind twice).
-  let progressBinding: Promise<void> | null = null;
   // Guards a duplicate idle prompt while one is already on screen.
   let promptPending = false;
   // The stranded handoff recorded by the Rust startup reconciliation
@@ -113,56 +103,22 @@ export const useUpdaterStore = defineStore("updater", () => {
   // folds; the wizard takes it from there.
   const recovering = ref(false);
 
-  // True while the pass card should be on screen (download or spawned
-  // installer); drives the AboutModal live pill too.
-  const running = computed(() => downloading.value || installing.value);
+  // ── pass-derived state (the shared download context owns the pass) ──────
+  // True while the pass should be on screen: the installer hand-off keeps it
+  // up after the byte stream ends (the new build is about to replace this
+  // app), and the AboutModal pill reads the same flag.
+  const running = computed(() => downloads.busyFor("update"));
 
-  /** The pass card's live line for the current phase. */
+  /** The live line for surfaces that show one (AboutModal's pill, the
+   *  updates card). The top-right card renders the pass itself. */
   const statusText = computed(() => {
-    if (installing.value) return t("about.updateInstalling");
-    if (phase.value === "verify") return t("about.updateVerifying");
-    if (phase.value === "race") return t("about.updateRacing");
-    if (phase.value === "download") {
-      const pct = progress.value ?? 0;
-      return `${t("about.updateDownloading")} ${pct}% · ${formatSpeed(speedBps.value)}`;
-    }
+    const pass = downloads.passFor("update");
+    if (!pass || !pass.busy) return "";
+    if (pass.phase === "install") return t("about.updateInstalling");
+    if (pass.phase === "verify") return t("about.updateVerifying");
+    if (pass.phase === "race") return t("about.updateRacing");
     return t("about.updateDownloading");
   });
-
-  /** Fold one unified-bus tick for THIS context into the store state. */
-  function noteProgress(p: DownloadProgress): void {
-    if (p.kind !== "update") return;
-    // Stray events after a cancel / reset find the store idle — ignore
-    // them so the card never paints a ghost pass.
-    if (!running.value) return;
-    if (p.phase === "verify") {
-      // The official version/digest lookup is settling — mirrors have
-      // not been touched yet.
-      phase.value = "verify";
-    } else if (p.phase === "race" || p.phase === "queued") {
-      // Mirrors are being probed / raced (or the pass waits behind
-      // another download) — indeterminate card state.
-      phase.value = "race";
-    } else if (p.phase === "download") {
-      phase.value = "download";
-      if (p.total > 0) {
-        // The backend only lets received reach total on a complete,
-        // verified file — no clamp needed, and no 100%-then-restart.
-        progress.value = Math.round(
-          Math.min(Math.max((p.received / p.total) * 100, 0), 100),
-        );
-      }
-      speedBps.value = p.speedBps > 0 ? p.speedBps : null;
-    } else if (p.phase === "install") {
-      // The installer was spawned — reflect it even when the command's
-      // promise never settles (the new build kills this app right after
-      // the spawn). The streaming half of the pass is over, so the
-      // cancel control goes away with it.
-      phase.value = "install";
-      installing.value = true;
-      downloading.value = false;
-    }
-  }
 
   /** Probe the portable (便捷版) build flag — the single is_portable read
    *  shared by every surface. AppShell's boot calls this directly on ALL
@@ -185,19 +141,9 @@ export const useUpdaterStore = defineStore("updater", () => {
     // The desktop init path needs the portable flag before its delayed
     // passes read it; every surface's boot also probes directly (AppShell).
     await probePortable();
-    // Bind the unified download-progress bus lazily; absent in browser
-    // dev mode. The memoized promise makes concurrent init() calls
-    // register exactly one handler.
-    if (!progressBinding) {
-      progressBinding = (async () => {
-        try {
-          api.listenDownloadProgress(noteProgress);
-        } catch {
-          // Not in Tauri — progress events simply never arrive.
-        }
-      })();
-    }
-    await progressBinding;
+    // The unified download context owns the bus registration (one listener for
+    // every kind); this store no longer binds one of its own.
+    downloads.ensureWired();
     // Read the startup reconciliation's verdict (desktop only — the
     // commands are windows-gated; absent in browser dev mode).
     try {
@@ -283,54 +229,42 @@ export const useUpdaterStore = defineStore("updater", () => {
   async function downloadAndInstall() {
     if (portable.value || !available.value) return;
     if (running.value) return;
-    downloading.value = true;
-    phase.value = "verify";
-    // Seeded to 0; a resumed pass (the hub retained its part file)
-    // overwrites this on the first download event with the committed
-    // offset — the bar jumps straight to where the last attempt died.
-    progress.value = 0;
-    speedBps.value = null;
     error.value = null;
-    try {
-      // Resolves once the installer process has been spawned; on the success
-      // path the hardened installer kills this app first, so this promise
-      // often never settles — both outcomes are success by design.
-      await invoke(RPC.update_download, {});
-      installing.value = true;
-      downloading.value = false;
-    } catch (e) {
-      // A user cancel (取消) is not a failure: the Rust side kept the part
-      // file as the resume base of the next attempt. An explicit cancel
-      // reads as "not now" — dismiss the prompt for the session like 稍后
-      // would; failures fall back to the idle prompt unless dismissed.
-      const msg = e instanceof Error ? e.message : String(e);
-      if (msg.includes("update cancelled")) {
-        dismissed.value = true;
-      } else {
-        error.value = msg;
-        // The reset alone read as "nothing happened" (the 2026-10-25
-        // v0.6.7 stale-relay incident: the pass refused before any byte
-        // streamed and the banner simply re-offered) — say WHY it died
-        // before the idle prompt comes back. Copyable: the raw refusal
-        // (digest-channel disagreement et al.) is exactly what a support
-        // request needs.
-        toast.error(t("about.updateFailed", { message: msg }));
-      }
-      downloading.value = false;
-      installing.value = false;
-      phase.value = null;
-      progress.value = null;
-      speedBps.value = null;
-      if (!dismissed.value) void offerPrompt();
+    // The pass lives in the unified download context: the shared top-right
+    // card renders the mirror race, the stream and the installer hand-off,
+    // and its cancel action is the registry's update_cancel verb.
+    //
+    // The command resolves once the installer process has been spawned; on
+    // the success path the hardened installer kills this app first, so this
+    // promise often never settles — both outcomes are success by design. The
+    // context's pass therefore stays BUSY through the hand-off (it is settled
+    // by the process exiting), which is exactly what keeps the card and the
+    // AboutModal pill up while the spawn happens.
+    const outcome = await downloads.track("update", () => invoke(RPC.update_download, {}));
+    if (outcome.ok) return;
+    const msg = outcome.error ?? "";
+    if (msg.includes("update cancelled")) {
+      // A user cancel is not a failure: the Rust side kept the part file as
+      // the resume base. Read it as "not now" — dismiss the prompt for the
+      // session like 稍后 would.
+      dismissed.value = true;
+    } else {
+      error.value = msg;
+      // The reset alone read as "nothing happened" (the 2026-10-25 v0.6.7
+      // stale-relay incident: the pass refused before any byte streamed and
+      // the banner simply re-offered) — say WHY it died before the idle
+      // prompt comes back. Copyable: the raw refusal (digest-channel
+      // disagreement et al.) is exactly what a support request needs.
+      toast.error(t("about.updateFailed", { message: msg }));
     }
+    if (!dismissed.value) void offerPrompt();
   }
 
-  /** The pass card's 取消: aborts the streaming download. The pending
-   *  `update_download` promise rejects with "update cancelled", which
-   *  `downloadAndInstall` folds back into the idle state. */
+  /** Surfaces that used to own a cancel button now defer to the registry verb
+   *  on the shared card; this alias keeps the AboutModal/updates-card callers
+   *  working through ONE implementation. */
   function cancelDownload() {
-    if (!downloading.value) return;
-    void invoke(RPC.update_cancel).catch(() => {});
+    void downloads.cancel("update");
   }
 
   /** One-shot delayed check the app shell calls on mount (startup
@@ -362,11 +296,6 @@ export const useUpdaterStore = defineStore("updater", () => {
     version,
     current,
     checking,
-    downloading,
-    progress,
-    installing,
-    phase,
-    speedBps,
     checked,
     error,
     portable,

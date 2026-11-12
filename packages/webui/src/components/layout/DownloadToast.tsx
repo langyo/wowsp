@@ -3,13 +3,13 @@ import { defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { Download } from "@lucide/vue";
 
 import ToastCardBase, { type ToastCardBaseInstance } from "./ToastCardBase";
-import { t } from "@/i18n";
 import {
   DOWNLOAD_CARD_GRACE_MS,
   passPercent,
+  phaseLabel,
   useDownloadsStore,
-  type ResourcePass,
 } from "@/stores/downloads";
+import { t } from "@/i18n";
 import { formatEta, formatSpeed } from "@/utils/format";
 import "./DownloadToast.scss";
 
@@ -24,30 +24,34 @@ interface HeldPass {
 }
 
 /**
- * DownloadToast — the ONE top-right pass card every resource download shares.
+ * DownloadToast — the ONE top-right pass card for EVERY resource download.
  *
- * The resource pack and the decision-model pack (and any future `card`
- * context in the download registry) render here instead of inside the
- * Settings pane: a download started from a card, a boot-time prompt or a deep
- * link looks identical, follows the user to any page, and cannot be missed
- * because the settings modal happened to be closed.
+ * The app installer, the resource pack, the decision-model pack, the plugin
+ * batch and any future context of the unified download registry render here,
+ * and nowhere else: no settings pane draws a progress bar, and no download
+ * kind keeps a bespoke card. A download therefore looks identical wherever it
+ * was started from, follows the user to any page and survives closing the
+ * settings modal.
  *
- * Thin store wiring over ToastCardBase (which owns the teleported slot, the
- * enter/--leave motion and the delayed-unmount machine). The row is split the
- * same way the mod pass card splits it: the headline (resource name + phase
- * verb) takes the ellipsis, while the never-shrinking meta carries the live
- * "42% · 1.5 MB/s · 00:12 left" readout, so a long localized resource name can
- * never eat the numbers. The bar runs the shared indeterminate slide whenever
- * the phase has no fraction (queued, racing mirrors, applying).
+ * The card is data-driven off the pass ledger, so it needs no per-context
+ * branches: the HEADLINE is the resource (or the batch item a pass is on), the
+ * step line is the phase verb (or the owner's step text), and one fraction
+ * drives the bar. That is everything the retired UpdateToast and
+ * ModUpdateToast cards showed.
  *
- * The mount grace (DOWNLOAD_CARD_GRACE_MS, owned by the store) keeps a pass
- * that lands instantly (already current, refused before any byte) from
- * flashing a card; the store turns those into a toast instead. The leave
- * transition serves a frozen snapshot, so the folding card keeps real text
- * and progress rather than blanking.
+ * Layout follows the mod pass card's split: the headline takes the ellipsis
+ * while the never-shrinking meta carries the live "42% · 1.5 MB/s · 00:12
+ * left", so a long localized resource name can never eat the numbers. The bar
+ * runs the shared indeterminate slide whenever the phase has no fraction
+ * (queued, racing mirrors, applying, an owner batch between items).
  *
- * Renders nothing while every card context is idle, so it is safe to mount
- * unconditionally at the shell level — exactly like UpdateToast.
+ * The mount grace keeps a pass that lands instantly (already current, refused
+ * before any byte) from flashing a card — the store turns those into a toast
+ * instead. The leave transition serves a frozen snapshot, so the folding card
+ * keeps real text and progress rather than blanking.
+ *
+ * Renders nothing while every card context is idle, so it mounts
+ * unconditionally at the shell level.
  */
 export default defineComponent({
   name: "DownloadToast",
@@ -64,37 +68,22 @@ export default defineComponent({
     });
     let mountTimer: number | undefined;
 
-    /** The phase verb for the current pass (the card's step line). */
-    function stepText(pass: ResourcePass): string {
-      switch (pass.phase) {
-        case "queued":
-          return t("settings.downloadQueued");
-        case "race":
-          return t("settings.downloadRacing");
-        case "verify":
-          return t("settings.downloadVerifying");
-        case "download":
-          return t("settings.downloadStreaming");
-        case "apply":
-        case "installing":
-          return t("settings.downloadApplying");
-        case "install":
-          return t("settings.downloadInstalling");
-        case "done":
-          return t("settings.downloadFinished");
-        case "error":
-          return t("settings.downloadFailed");
-        default:
-          return t("settings.downloadStreaming");
-      }
+    /** The card's second line: the owner's step text when it supplied one
+     *  (a batch naming its item), else the phase verb, else nothing for a
+     *  terminal pass (the headline + the finished verb already say it). */
+    function stepText(pass: { phase: string; step: string }): string {
+      if (pass.step) return pass.step;
+      if (pass.phase === "done" || pass.phase === "error") return "";
+      return phaseLabel(pass.phase);
     }
 
     /** The never-shrinking readout: percent, transfer rate and ETA, each only
      *  once it is real (no em-dash placeholders — a missing sample simply
      *  drops its part). */
-    function metaText(pass: ResourcePass): string {
-      const parts: string[] = [];
+    function metaText(pass: Parameters<typeof passPercent>[0]): string {
+      if (!pass) return "";
       const percent = passPercent(pass);
+      const parts: string[] = [];
       if (percent != null) parts.push(`${percent}%`);
       if (pass.speedBps > 0) parts.push(formatSpeed(pass.speedBps));
       if (percent != null && pass.total > pass.received && pass.speedBps > 0) {
@@ -108,7 +97,7 @@ export default defineComponent({
     }
 
     /** One raise/fold evaluation — the sync watcher, the mount replay and the
-     *  tick watcher share it, so the grace clock is armed exactly once. */
+     *  unmount path share it, so the grace clock is armed exactly once. */
     function applyRunning(run: boolean) {
       if (run) {
         if (mountTimer === undefined && !card.value?.shown) {
@@ -134,7 +123,7 @@ export default defineComponent({
       const pass = downloads.cardPass;
       if (card.value?.shown && !card.value.leaving && pass) {
         held.value = {
-          label: downloads.labelFor(pass.kind),
+          label: pass.label,
           step: stepText(pass),
           meta: metaText(pass),
           determinate: passPercent(pass) != null,
@@ -164,19 +153,20 @@ export default defineComponent({
     return () => {
       const live = downloads.running;
       const pass = downloads.cardPass;
-      const label = live && pass ? downloads.labelFor(pass.kind) : held.value.label;
+      const label = live && pass ? pass.label : held.value.label;
       const step = live && pass ? stepText(pass) : held.value.step;
       const meta = live && pass ? metaText(pass) : held.value.meta;
       const determinate = live && pass ? passPercent(pass) != null : held.value.determinate;
       const progress = live && pass ? (passPercent(pass) ?? 0) : held.value.progress;
-      const cancellable = live && pass ? pass.busy && !pass.cancelling : held.value.cancellable;
+      const cancellable =
+        live && pass ? pass.busy && pass.cancellable && !pass.cancelling : held.value.cancellable;
       return (
         <ToastCardBase
           ref={card}
           tone="info"
           rootClass="download-toast"
           message={label}
-          hint={label}
+          hint={live && step ? step : label}
           meta={meta}
           actions={
             cancellable && pass

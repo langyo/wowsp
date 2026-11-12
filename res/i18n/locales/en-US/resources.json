@@ -102,6 +102,7 @@
   "pluginUpdateOne": "Update all",
   "pluginUpdateRunning": "Updating…",
   "pluginUpdateBlockedRunning": "Game running — close it to update",
+  "pluginUpdateCardLabel": "Plugin updates",
   "pluginUpdateBusyElsewhere": "These plugins are already being updated elsewhere.",
   "pluginUpdateStaleWarning": "The running client's plugin is out of date — stats shown while holding Tab may be inaccurate.",
   "pluginUpdateSkipped": "\"{names}\" is running — skipped {count} update(s). Close the game, then run Update all again.",

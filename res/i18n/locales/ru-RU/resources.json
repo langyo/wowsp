@@ -102,6 +102,7 @@
   "pluginUpdateOne": "Обновить всё",
   "pluginUpdateRunning": "Обновление…",
   "pluginUpdateBlockedRunning": "Игра запущена — закройте для обновления",
+  "pluginUpdateCardLabel": "Обновления плагинов",
   "pluginUpdateBusyElsewhere": "Эти плагины уже обновляются в другом окне.",
   "pluginUpdateStaleWarning": "Плагин запущенного клиента устарел — показываемая при удержании Tab статистика может быть неточной.",
   "pluginUpdateSkipped": "«{names}» запущен — пропущено обновлений: {count}. Закройте игру и запустите «Обновить всё» снова.",

@@ -43,8 +43,6 @@ import SettingsSheet from "./SettingsSheet";
 import Sidebar from "./Sidebar";
 import AudioPlayerToast from "./AudioPlayerToast";
 import DownloadToast from "./DownloadToast";
-import ModUpdateToast from "./ModUpdateToast";
-import UpdateToast from "./UpdateToast";
 import UpdateAppliedToast from "./UpdateAppliedToast";
 import UpdateStrandedToast from "./UpdateStrandedToast";
 import PiggyReminderToast from "./PiggyReminderToast";
@@ -240,7 +238,7 @@ export default defineComponent({
       // hint and the titlebar both read the flag, and the phone / browser
       // boots never reach init() below (mobile early-return, DEV / isNative
       // gates). The updater PASSES themselves stay desktop-only as documented
-      // in UpdateToast.tsx; this probe merely resolves the build flavor.
+      // in DownloadToast.tsx; this probe merely resolves the build flavor.
       void updater.probePortable();
       // The WebView's own context menu is suppressed app-wide by
       // utils/nativeMenu (installed in bootstrap, every build — the old
@@ -473,7 +471,7 @@ export default defineComponent({
         <WallpaperRenderer />
         {/* Update prompting lives entirely in top-right toast surfaces —
             the updater store raises a blocking toast prompt (立即更新 /
-            稍后), then the dedicated UpdateToast pass card (spinner,
+            稍后), then the shared DownloadToast pass card (spinner,
             progress bar, 取消); nothing renders inline here. */}
         {isMobile.value ? (
           // Phone-layout nav: the sidebar lives in a left drawer behind
@@ -516,10 +514,6 @@ export default defineComponent({
             the update prompt card paints above it (hikari's shell
             convention — the two share one top-right column). */}
         <HkBlockingToast />
-        {/* Updater pass card (download / install progress): renders nothing
-            while the store is idle, so it mounts unconditionally next to
-            the blocking host in the same top-right column. */}
-        <UpdateToast />
         {/* After-update success card (已更新到 v…): raises once on the
             first boot following an installer pass — the version moved
             since the last recorded run — and its 查看 action lands in
@@ -538,16 +532,14 @@ export default defineComponent({
             nothing while the audioPlayer store is idle, so it mounts
             unconditionally in the same top-right toast column. */}
         <AudioPlayerToast />
-        {/* Plugin batch-update pass card (一键更新 from the client-version
-            selector): renders nothing while the pluginUpdates store is
-            idle, so it mounts unconditionally in the same column. */}
-        <ModUpdateToast />
-        {/* THE resource-download pass card (resource pack, decision-model
-            pack, any future `card` context of the unified download context).
-            Every resource pass renders here — never inline in the settings
-            pane — so a download looks the same wherever it was started from
-            and stays visible while its settings card is closed. Renders
-            nothing while the context is idle, so it mounts unconditionally. */}
+        {/* THE download pass card — the ONE surface every download renders
+            on: app installer, resource pack, decision-model pack, the plugin
+            update batch, and any future context of the unified download
+            context. Nothing renders inline in a settings pane and no kind
+            carries a bespoke card any more, so a download looks identical
+            wherever it was started from and stays visible with its pane
+            closed. Renders nothing while every context is idle, so it mounts
+            unconditionally next to the blocking host in the same column. */}
         <DownloadToast />
         {/* The piggy's periodic visitation card (猪猪找你有点事儿): one
             card per period — first use + 7 days, then monthly — whose

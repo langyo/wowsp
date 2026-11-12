@@ -1,8 +1,0 @@
-// UpdateToast — the updater's live pass card. Its whole surface lives in
-// ToastCardBase(.scss) now: the fixed top-right slot (hikari's toast
-// column, the `--hk-z-toast` band), the info-blue tone, the blur card,
-// the enter/--leave motion (one keyframe for the whole family, the
-// delayed unmount reading --duration-normal), the ellipsized headline,
-// the spinner icon slot and the bottom progress track. The 取消 control
-// is the base action grammar's `quiet` kind. This sheet stays as the
-// card's import anchor and mapping note.

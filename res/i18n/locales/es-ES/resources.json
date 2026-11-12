@@ -102,6 +102,7 @@
   "pluginUpdateOne": "Actualizar todo",
   "pluginUpdateRunning": "Actualizando…",
   "pluginUpdateBlockedRunning": "Juego en ejecución — ciérralo para actualizar",
+  "pluginUpdateCardLabel": "Actualizaciones de plugins",
   "pluginUpdateBusyElsewhere": "Estos plugins ya se están actualizando en otra ventana.",
   "pluginUpdateStaleWarning": "El complemento del cliente en ejecución no está actualizado: las estadísticas mostradas al mantener Tab pueden ser imprecisas.",
   "pluginUpdateSkipped": "«{names}» está en ejecución: se omitieron {count} actualización(es). Cierra el juego y vuelve a ejecutar Actualizar todo.",
