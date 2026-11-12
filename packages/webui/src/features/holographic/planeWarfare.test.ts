@@ -346,6 +346,25 @@ describe("buildPlaneFormations", () => {
     await vi.waitFor(() => expect(ctx.planeMeshes.size).toBe(3));
   });
 
+  it("reports the AIRFRAME full strength even when fewer planes launched", async () => {
+    // A depleted hangar launches 4 of the airframe's 9: the HUD denominator
+    // and the panel grid must stay at the AIRFRAME size (nine cells, five
+    // grey), not collapse to the launched count (2026-11-12 review: 全部都按
+    // 满编组来，而且是按该机种的角度).
+    const ctx = makeCtx({
+      squadronCreates: [create(1, TOP_FIGHTER_PARAMS_ID, 4, 4)],
+    });
+    ctx.planeTrails = [trail(1)];
+    ctx.planeIndexById.set(1 * 16, "PJAF208");
+    const scene = new THREE.Scene();
+    ctx.api = ref({ scene }) as unknown as MapInternals["api"];
+    buildPlaneFormations(ctx, scene, ctx.markerEpoch);
+    await vi.waitFor(() => expect(ctx.planeMeshes.get(1)).toBeDefined());
+    expect(ctx.planeFormations.get(1)?.count).toBe(4);
+    // PJAF208 is a nine-plane airframe in plane_types.json.
+    expect(ctx.planeFormations.get(1)?.full).toBe(9);
+  });
+
   it("sizes the pool by the decoded launch size, not the GameParams group count", async () => {
     // PJAF408's GameParams count is 1 — the attack-group size that used to
     // render ONE model per squadron. Six planes actually launched.

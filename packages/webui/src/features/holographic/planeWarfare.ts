@@ -6,7 +6,7 @@
  * re-tints everything once controlling ships are known.
  */
 import * as THREE from "three";
-import { PLANE_TYPES } from "./tactical/shellTypes";
+import { PLANE_TYPES, planeFullStrength } from "./tactical/shellTypes";
 import { groupSizeOfParams } from "./planeFormation";
 import { buildPropMarker } from "./propMarker";
 import { planeForwardSign, resolvePlaneModelUrl } from "./modelLoader";
@@ -277,7 +277,18 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
       const n = c.numPlanes ?? c.totalNumPlanes ?? 0;
       const prev = launchOf.get(c.planeId) ?? 0;
       if (n > prev) launchOf.set(c.planeId, n);
-      const full = c.totalNumPlanes ?? c.numPlanes ?? 0;
+      // The wing's FULL strength is a property of the AIRFRAME (the GameParams
+      // count, i.e. plane_specs' squadron field), not of this launch: a
+      // depleted hangar may launch 4 of 12, but the panel must still read 12
+      // slots with eight grey (2026-11-12 review: 全部都按满编组来，而且是按
+      // 该机种的角度). The decoded totalNumPlanes stays the floor for airframes
+      // the table does not know.
+      const airframe = planeFullStrength(c.paramsId);
+      const full = Math.max(
+        airframe ?? 0,
+        c.totalNumPlanes ?? 0,
+        c.numPlanes ?? 0,
+      );
       if (full > (fullOf.get(c.planeId) ?? 0)) fullOf.set(c.planeId, full);
       if (!paramsOf.has(c.planeId)) paramsOf.set(c.planeId, c.paramsId);
     }
@@ -299,6 +310,9 @@ export function buildPlaneFormations(ctx: MapInternals, scene: THREE.Scene, epoc
         ctx.planeFormations.set(planeId, {
           count,
           full: Math.max(count, fullOf.get(planeId) ?? 0),
+          // The fine-grained ammo/role family drives the panel's leading type
+          // label (鱼雷机 / 火箭机 / 轰炸机 ...), see HoloSquadronPanel.
+          role: typeKey?.role,
           groupSize: 1,
           groupCount: count,
           meshes: [],

@@ -445,7 +445,18 @@
     "consFighters": "Patrol fighters",
     "consExtinguisher": "Fire extinguishing",
     "consSmoke": "Smoke screen",
-    "consRegen": "Air regeneration"
+    "consRegen": "Air regeneration",
+    "planeRole": {
+      "torpedo": "Torpedo bomber",
+      "rocket": "Rocket fighter",
+      "heBomber": "HE bomber",
+      "apBomber": "AP bomber",
+      "asw": "ASW aircraft",
+      "mine": "Mine layer",
+      "scout": "Spotter",
+      "dive": "Dive bomber",
+      "torpedoDeepwater": "Deepwater torpedo"
+    }
   },
   "classes": {
     "battleship": "Battleship",

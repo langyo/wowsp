@@ -445,7 +445,18 @@
     "consFighters": "Cazas",
     "consExtinguisher": "Extinción",
     "consSmoke": "Cortina de humo",
-    "consRegen": "Regeneración"
+    "consRegen": "Regeneración",
+    "planeRole": {
+      "torpedo": "Torpedero",
+      "rocket": "Caza con cohetes",
+      "heBomber": "Bombardero HE",
+      "apBomber": "Bombardero AP",
+      "asw": "Aeronave ASW",
+      "mine": "Minador",
+      "scout": "Explorador",
+      "dive": "Bombardero en picado",
+      "torpedoDeepwater": "Torpedo de profundidad"
+    }
   },
   "classes": {
     "battleship": "Acorazado",
