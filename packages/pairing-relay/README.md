@@ -575,8 +575,11 @@ compiles the token sheet relay-core embeds), and a one-time install of
 the build tool:
 
 ```sh
-cargo install worker-build
+cargo install worker-build@0.8.7 --locked
 ```
+
+(Pinned: worker-build 0.9+ requires the `worker` crate >= 0.9.0 while
+relay-worker stays on `worker = "^0.8"`; bump both together.)
 
 Then:
 

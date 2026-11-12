@@ -43,7 +43,7 @@
 ```bash
 git clone https://github.com/langyo/wowsp && cd wowsp/packages/pairing-relay
 rustup target add wasm32-unknown-unknown
-cargo install worker-build
+cargo install worker-build@0.8.7 --locked  # 0.9+ 需要 worker crate >= 0.9
 npx wrangler login
 npx wrangler kv namespace create GATEWAY_KV     # 记下打印的 id
 cp wrangler.selfhost.toml.example wrangler.selfhost.local.toml
