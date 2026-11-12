@@ -430,20 +430,33 @@
    the row-end square column; the small-tag face is the one the user asked
    for). One step smaller so the tags sing in the clan tag's register
    instead of shouting over the nick; the name line's own flex gap
-   separates them from the nick. The division tag joins the SAME size rule
-   as its seal sibling — a division tag rendered at the name line's base
+   separates them from the nick. The division tag joins the SAME register
+   as its seal sibling wherever the two share a base (the compact name
+   line, the hover card's tag line) — a division tag at the line's base
    size reads one size larger than the 二级章 face it must match (user
-   feedback: the yellow tag looked a circle bigger than the seals). The
-   full card's stacked seals LINE joins too (2026-11-12 user feedback):
+   feedback: the yellow tag looked a circle bigger than the seals); the
+   full card's split-base case gets its own rule below. The full card's
+   stacked seals LINE joined too (2026-11-12 user feedback):
    there the stamps render at their base size — bigger and bolder than the
    AppTag badges across the card's right block — and the whole-wording
    chips shouted over the three-line identity stack. */
 .replay-view__postbattle-cell-name .stamp-tag,
 .replay-view__postbattle-fcell-name .stamp-tag,
 .replay-view__postbattle-cell-name .division-tag,
-.replay-view__postbattle-fcell-name .division-tag,
 .replay-view__postbattle-fcell-seals .stamp-tag {
   font-size: 0.78em;
+}
+/* The full card's division tag LEADS THE NAME LINE (--text-sm base) while
+   the stacked seals line under it inherits the card grid's --text-xs — the
+   SAME 0.78 register expressed against two different bases read one step
+   apart (the yellow tag measured bigger than the seal chips below it,
+   2026-11-12 user feedback). Re-express the register on the name line's
+   base: 0.78em over --text-xs is exactly 0.72em over --text-sm, so both
+   adjacent lines' tags measure identical. The compact row keeps 0.78em —
+   its division tag shares the name line (and its base) with the inline
+   seals there. */
+.replay-view__postbattle-fcell-name .division-tag {
+  font-size: 0.72em;
 }
 /* Collapsed-seal badge — the ONE "!" mark standing in for every seal whose
    effective wording is wider than a single character (2026-11-08 review:
