@@ -1,7 +1,7 @@
 /**
  * Plugin freshness + the ONE update orchestration every surface shares —
  * the client-version selector's "插件可更新" marker and hover hint, the
- * ModUpdateToast progress card, the live page's plugin card (install /
+ * shared download card, the live page's plugin card (install /
  * update / uninstall) and the mod hub's per-mod rows all read THIS store.
  *
  * Freshness per game install is the union of two existing signals:
@@ -15,7 +15,10 @@
  * place); this store aggregates the signals and orchestrates every
  * mutation — single-item or the sequential all-installs batch — folding
  * each install's unified wowsp://download-progress ticks (kind
- * "mod-package") into one overall percent for the toast card.
+ * "mod-package") into ONE overall percent — and pushes that percent onto the
+ * shared download context (stores/downloads, `mod-package` as an
+ * owner-sourced pass), so the batch renders on the same top-right card every
+ * other download uses instead of a bespoke one.
  *
  * The shared part that makes the surfaces agree: one per-item busy table
  * (probe + mod ids) so an op started anywhere disables its item
@@ -39,6 +42,7 @@ import {
 } from "@/api";
 import { t, tError } from "@/i18n";
 import { useConfigStore } from "@/stores/config";
+import { DOWNLOAD_CARD_GRACE_MS, useDownloadsStore } from "@/stores/downloads";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
 import { sameGamePath } from "@/utils/gamePath";
@@ -73,13 +77,11 @@ export interface PendingInstall {
  *  so a remote catalog mod id can never collide into the probe's slot. */
 export const PROBE_ITEM = "probe:builtin";
 
-/** Mount grace of the pass's progress card (ModUpdateToast): a pass that
- *  ends inside this window never mounts it — an instant guard refusal's
- *  flash-in/flash-out read as "the click did nothing". The STORE owns the
- *  number (not the component) because the fast-pass outcome branches on
- *  it too: a full success inside the grace gets the light success toast
- *  instead of the card's leave snapshot as its only visible trace. */
-export const MOD_PASS_CARD_GRACE_MS = 400;
+/** Mount grace of the SHARED pass card (DownloadToast, DOWNLOAD_CARD_GRACE_MS
+ *  in stores/downloads). Re-exported because the batch's fast-pass outcome
+ *  branches on it: a full success inside the grace gets the light success
+ *  toast instead of the card's leave snapshot as its only visible trace. */
+export const MOD_PASS_CARD_GRACE_MS = DOWNLOAD_CARD_GRACE_MS;
 
 /** How many failed items a multi-client summary spells out before folding
  *  the rest into a "+N" tail. The toast body clamps to three lines, so the
@@ -142,7 +144,8 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     }
   }
 
-  /** ── batch update run state (drives ModUpdateToast) ---------------- */
+  /** ── batch update run state (drives the shared download card) ───────── */
+  const downloads = useDownloadsStore();
   const running = ref(false);
   const total = ref(0);
   const done = ref(0);
@@ -152,15 +155,15 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   /** Current item's percent 0-100, null while unknown (indeterminate). */
   const percent = ref<number | null>(null);
   /** Current item's smoothed transfer rate (bytes/sec), null while there is
-   *  no live sample — the card's always-visible meta renders it through
-   *  formatSpeed exactly like the app-updater card. mod_catalog sends
+   *  no live sample — the shared card's always-visible meta renders it
+   *  through formatSpeed exactly like every other context. mod_catalog sends
    *  speedBps 0 on its own phase transitions, so 0 must read as "no
    *  sample" or the text would stick to the last rate. */
   const speedBps = ref<number | null>(null);
   /** Failed items of the last run ("{name}: {error}"). */
   const failures = ref<string[]>([]);
 
-  /** Overall run percent for the toast card: (done + current item's
+  /** Overall run percent for the shared card: (done + current item's
    *  fraction) / total; null whenever the current item's own percent is
    *  unknown — the card shows the indeterminate slide then. */
   const overallPercent = computed<number | null>(() => {
@@ -168,6 +171,24 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     if (percent.value == null) return null;
     return Math.min(100, ((done.value + percent.value / 100) / total.value) * 100);
   });
+
+  /** Push the batch's current numbers onto the shared pass. The context's
+   *  `mod-package` row is owner-sourced: it never folds raw per-file ticks
+   *  (several artifacts sit behind this one percent), so this is the only
+   *  writer of its numbers. */
+  function publishPass(): void {
+    if (!running.value) return;
+    downloads.report("mod-package", {
+      phase: phase.value ?? "download",
+      step: t("resources.pluginUpdateStep", {
+        name: currentName.value,
+        done: done.value + 1,
+        total: total.value,
+      }),
+      percent: overallPercent.value,
+      speedBps: speedBps.value ?? 0,
+    });
+  }
 
   function infoFor(gameRoot: string | null | undefined): PluginUpdateInfo | null {
     if (!gameRoot) return null;
@@ -547,6 +568,10 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     total.value = tasks.length;
     done.value = 0;
     failures.value = [];
+    // Raise the SHARED pass (the same top-right card every other download
+    // uses) and push the batch's numbers onto it as they move.
+    downloads.begin("mod-package");
+    publishPass();
     let currentId: string | null = null;
     // The per-item unified download-progress ticks (kind "mod-package")
     // fold into the overall percent. Registered INSIDE the try (the
@@ -555,8 +580,10 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     let unlisten: (() => void) | undefined;
     try {
       try {
-        unlisten = api.listenDownloadProgress?.((p) => {
-          if (!running.value || p.kind !== "mod-package" || p.id !== currentId) return;
+        // Raw per-item ticks come through the download CONTEXT's single
+        // transport listener (this store never binds one of its own).
+        unlisten = downloads.onTick("mod-package", (p) => {
+          if (!running.value || p.id !== currentId) return;
           if (p.phase === "download") {
             phase.value = "download";
             percent.value =
@@ -571,9 +598,10 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
             // The streaming half is over — the meta shows the install verb.
             speedBps.value = null;
           }
+          publishPass();
         });
       } catch {
-        // A failed listen only degrades the card to indeterminate — the
+        // A failed subscribe only degrades the card to indeterminate — the
         // pass itself must still run.
       }
       for (const task of tasks) {
@@ -582,6 +610,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         phase.value = null; // probe phase / pre-first-event — indeterminate
         percent.value = null;
         speedBps.value = null; // never carry the previous item's rate
+        publishPass();
         try {
           await task.run();
           // The write landed (or a concurrent op owns the item and will
@@ -600,11 +629,18 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           failedPaths.add(task.path);
         }
         done.value += 1;
+        publishPass();
       }
     } finally {
       unlisten?.();
       currentId = null;
       running.value = false;
+      // Settle the shared pass BEFORE the outcome toasts below so the card
+      // folds out with the pass's real numbers while they arrive.
+      // The pass settles NEUTRAL: the batch's verdict (sticky refusal, partial
+      // warning, success toast) is this store's to speak, and a card stuck on
+      // "failed" would compete with the copyable error it just raised.
+      downloads.settle("mod-package", null);
       phase.value = null;
       percent.value = null;
       speedBps.value = null;

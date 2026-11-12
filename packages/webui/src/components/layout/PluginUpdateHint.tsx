@@ -64,7 +64,7 @@ interface HintEntry {
  * hikari's menu rows inside a capped HkScrollContainer — every row
  * clickable, deep-linking the mod hub's page for that plugin — with one
  * 一键更新 action that starts the batch pass across every pending
- * install (progress lands in the ModUpdateToast card; while it runs the
+ * install (progress lands on the shared DownloadToast card; while it runs the
  * action becomes a spinner + the updating label). hikari's HkTooltip is
  * text-only, so this is a purpose-built two-target hover popup: entering
  * either the trigger or the card keeps it open, leaving both starts a

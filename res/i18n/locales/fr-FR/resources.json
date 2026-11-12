@@ -102,6 +102,7 @@
   "pluginUpdateOne": "Tout mettre à jour",
   "pluginUpdateRunning": "Mise à jour…",
   "pluginUpdateBlockedRunning": "Jeu en cours — fermez-le pour mettre à jour",
+  "pluginUpdateCardLabel": "Mises à jour des plugins",
   "pluginUpdateBusyElsewhere": "Ces plugins sont déjà en cours de mise à jour ailleurs.",
   "pluginUpdateStaleWarning": "Le plugin du client en cours d'exécution n'est pas à jour — les statistiques affichées en maintenant Tab peuvent être inexactes.",
   "pluginUpdateSkipped": "« {names} » est en cours d'exécution — {count} mise(s) à jour ignorée(s). Fermez le jeu, puis relancez la mise à jour.",

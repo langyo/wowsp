@@ -102,6 +102,7 @@
   "pluginUpdateOne": "一括更新",
   "pluginUpdateRunning": "更新中…",
   "pluginUpdateBlockedRunning": "ゲーム実行中 — 終了後に更新可能",
+  "pluginUpdateCardLabel": "プラグイン更新",
   "pluginUpdateBusyElsewhere": "これらのプラグインは別の画面で更新中です。",
   "pluginUpdateStaleWarning": "実行中のクライアントのプラグインが最新ではないため、Tab キーを押している間に表示される戦績が正確でない場合があります。",
   "pluginUpdateSkipped": "「{names}」が実行中のため、{count} 件の更新をスキップしました。ゲームを終了してから、もう一度一括更新してください。",

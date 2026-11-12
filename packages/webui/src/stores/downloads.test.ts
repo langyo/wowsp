@@ -82,17 +82,31 @@ describe("the download context registry", () => {
     expect(new Set(kinds).size).toBe(kinds.length);
   });
 
-  it("gives every card context a label and a cancel verb", () => {
+  it("gives every card context a localized label", () => {
     for (const spec of DOWNLOAD_CONTEXTS.filter((s) => s.presentation === "card")) {
-      // A card context with no label would render a raw bus kind, and one with
-      // no cancel verb would strand a 1.2 GB pass with no way out.
+      // A card context with no label would render a raw bus kind.
       expect(spec.labelKey, spec.kind).toBeTruthy();
+    }
+  });
+
+  it("declares a cancel verb for every abortable context", () => {
+    // The batch (mod catalog installs write their tree atomically) and the
+    // boot-time data lane cannot be aborted; everything else must be, or a
+    // 1.2 GB pass would have no way out.
+    const abortable = DOWNLOAD_CONTEXTS.filter((s) => s.kind !== "mod-package" && s.kind !== "data-pack");
+    for (const spec of abortable) {
       expect(spec.cancel, spec.kind).toBeTypeOf("function");
     }
   });
 
   it("keeps the boot-time data lane silent", () => {
     expect(DOWNLOAD_CONTEXTS.find((s) => s.kind === "data-pack")?.presentation).toBe("silent");
+  });
+
+  it("routes the batch through the owner source", () => {
+    // A batch puts several artifacts behind ONE percent, so a raw per-file
+    // tick can never be the card's number.
+    expect(DOWNLOAD_CONTEXTS.find((s) => s.kind === "mod-package")?.source).toBe("owner");
   });
 });
 
@@ -237,14 +251,38 @@ describe("shared card presentation", () => {
     expect(downloads.running).toBe(true);
   });
 
-  it("never presents a silent or bespoke context on the shared card", () => {
+  it("never presents a silent context on the shared card", () => {
     const downloads = useDownloadsStore();
     downloads.begin("data-pack");
-    downloads.begin("mod-package");
-    // Those contexts own their surfaces (or none); the shared card must stay
-    // empty so a boot-time lane cannot flash a card users never asked for.
+    // The boot-time lane has no card of its own — and must not borrow the
+    // shared one either (a card would flash on every launch).
     expect(downloads.cardPass).toBeNull();
     expect(downloads.running).toBe(false);
+  });
+
+  it("presents an owner-driven batch on the same card", () => {
+    const downloads = useDownloadsStore();
+    downloads.begin("mod-package", "download", { step: "mod-a (1/3)" });
+    downloads.report("mod-package", { percent: 50 });
+    expect(downloads.cardPass?.kind).toBe("mod-package");
+    expect(downloads.cardPass?.step).toBe("mod-a (1/3)");
+    expect(passPercent(downloads.cardPass)).toBe(50);
+  });
+
+  it("forwards raw ticks to an owner without touching its pass", () => {
+    const downloads = useDownloadsStore();
+    const seen: string[] = [];
+    const off = downloads.onTick("mod-package", (tick) => seen.push(tick.phase));
+    downloads.begin("mod-package");
+    downloads.report("mod-package", { percent: 42 });
+    const handler = mocks.listenDownloadProgress.mock.calls[0][0];
+    handler(tick("mod-package", "download", { received: 1, total: 2 }));
+    expect(seen).toEqual(["download"]);
+    // The owner's number survives: a batch percent is not a per-file percent.
+    expect(passPercent(downloads.passFor("mod-package"))).toBe(42);
+    off();
+    handler(tick("mod-package", "installing"));
+    expect(seen).toEqual(["download"]);
   });
 
   it("keeps the mount grace a real delay", () => {

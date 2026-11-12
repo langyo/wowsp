@@ -58,43 +58,54 @@ users must update the app to receive new resource content anyway.
 
 ## Presentation
 
-A resource download is a GLOBAL event, not a property of the panel it was
-started from, so its progress renders in the top-right toast stack — never
-inline in the Settings pane:
+A download is a GLOBAL event, not a property of the panel it was started from,
+so progress renders in ONE place: the top-right `DownloadToast` card. Never
+inline in a Settings pane, and never a second bespoke card — an earlier revision
+had three cards (`UpdateToast`, `ModUpdateToast`, the shared one) and the split
+itself was the bug: three mount machines, three ways for "is it running?" to go
+stale, and a decision-model bar stranded in the middle of the resources pane.
 
-| kind | presentation | surface |
-| --- | --- | --- |
-| `update` | bespoke | `UpdateToast` — the updater's own pass card (verify / race / download / install copy, the installer hand-off) |
-| `res-pack` | card | the shared `DownloadToast` card |
-| `ai-models` | card | the shared `DownloadToast` card |
-| `data-pack` | silent | none (a boot-time lane behind the settings card's stamp) |
-| `mod-package` | bespoke | `ModUpdateToast` — the batch pass's step/percent copy |
+| kind | presentation | source | surface |
+| --- | --- | --- | --- |
+| `update` | card | bus | the shared `DownloadToast` (mirror race → stream → installer hand-off) |
+| `res-pack` | card | bus | the shared `DownloadToast` |
+| `ai-models` | card | bus | the shared `DownloadToast` |
+| `mod-package` | card | owner | the shared `DownloadToast` (the owner pushes the batch's overall percent) |
+| `data-pack` | silent | none | nothing — a boot-time lane behind the settings card's stamp |
 
-The two bespoke cards stay because their copy is pass-specific (a mirror race
-and an installer hand-off are not "downloading"); they are registered here so
-the registry remains the complete answer to "what can this app download, and
-where does it show up?". A new resource adds a registry row — with
-`presentation: "card"` it inherits the shared card, the cancel verb, the
-outcome toasts and the mount grace for free. A new settings card must NOT grow
-its own progress bar: the settings cards keep the management verbs and gate
-their buttons on `downloads.busyFor(kind)`.
+**Two sources of numbers.** `bus` contexts fold the unified progress ticks (one
+artifact, one stream). `owner` contexts PUSH their pass with `report()`, which
+is the batch shape: several artifacts behind one overall percent, so a raw
+per-file tick cannot be the card's number. Either way the ledger is the only
+thing the card reads, and `busyFor(kind)` is the single answer to "is this
+running?" — no surface derives it from a phase.
+
+A new downloadable resource adds a registry row and nothing else: it inherits
+the card, the mount grace, the outcome toasts and (when it declares a cancel
+verb) the cancel action. A new settings card must NOT grow its own progress
+bar: settings cards keep the management verbs and gate their buttons on
+`downloads.busyFor(kind)`.
 
 The shared card's contract:
 
 - **Raise on the ledger, not on a tick.** The owning command's lifetime is the
-  truth (`track`), so a queued or stalled pass (no spaces in the byte stream
-  yet) still shows. Ticks for a context nobody raised are ignored, so a stray
-  producer cannot paint a ghost card.
+  truth (`track`, or `begin`/`settle` for an owner), so a queued or stalled
+  pass — no bytes yet — still shows. A tick for a context nobody raised is
+  ignored, so a stray producer cannot paint a ghost card.
+- **One row shape for both kinds of pass**: HEADLINE (the resource, or the batch
+  item a pass is on), STEP line (the phase verb, or the owner's step text), the
+  never-shrinking meta (`% · rate · ETA`) and one fraction. That is everything
+  the retired cards showed.
 - **Mount grace** (`DOWNLOAD_CARD_GRACE_MS`, 400 ms): a pass that lands inside
   it never mounts the card — its outcome is the toast instead (a
   flash-in/flash-out reads as a glitch, and "already current" is the most
   common shape).
 - **Fold-out, not snap-away**: the terminal pass keeps the card mounted for the
   leave transition, serving a frozen snapshot (real text, real progress).
-- **One cancel**: the card's 取消 and the owning settings card's own affordance
-  both call `downloads.cancel(kind)`, which runs the registry's verb. A
-  cancel is not a failure — the pass settles neutrally and no error toast
-  fires.
+- **One cancel**: only a context that declares a registry cancel verb offers
+  one, and it runs through `downloads.cancel(kind)`. A cancel is not a failure
+  — the pass settles neutrally and no error toast fires. The batch declares no
+  verb (catalog writes are atomic), so it simply runs to completion.
 - **One error line**: the failure text stays in the owning settings card (beside
   the button that retries it) via `downloads.errorFor(kind)`; the card folds
   out and a toast carries the reason, because a folded card cannot be read.

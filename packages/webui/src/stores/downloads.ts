@@ -1,37 +1,36 @@
 /**
- * The unified resource-download context.
+ * The unified download context.
  *
- * Every runtime resource the app can pull — the app installer, the resource
+ * EVERY runtime download the app can start — the app installer, the resource
  * pack, the baked data pack, mod-hub packages and the signed decision-model
- * pack — streams its progress on ONE transport bus
- * (`wowsp://download-progress`, fanned out by `api.listenDownloadProgress`).
- * What used to be missing was the layer ABOVE that bus: each owning store kept
- * its own progress slice and rendered it INSIDE the settings pane, so the same
- * pass looked different depending on which card happened to be open, and a
- * resource started from anywhere else had no progress surface at all.
+ * pack — is a CONTEXT of this store. It owns, once for all of them:
  *
- * This store is that layer. It owns, once for every context:
+ * - the CONTEXT REGISTRY: one declarative row per bus kind — localized label,
+ *   presentation, where the numbers come from, cancel verb. Adding a
+ *   downloadable resource is a row here, never a second progress surface.
+ * - the PASS LEDGER: one `ResourcePass` per kind, gated by the owning
+ *   command's lifetime, so "is this running?" has exactly ONE answer
+ *   (`busyFor`) instead of a per-store phase heuristic.
+ * - the PASS LIFECYCLE: `track()` raises / folds / settles a pass, keeps a
+ *   user cancel neutral, and turns the outcomes a folded card cannot show into
+ *   toasts. Batch owners use `begin` + `report` + `settle` instead.
+ * - the PRESENTATION: the single top-right DownloadToast card. Every
+ *   download renders there — never inline in a settings pane, never a second
+ *   bespoke card. A pass carries a headline, a step line and one fraction, so
+ *   one card can serve a single file stream and a multi-item batch alike.
  *
- * - the CONTEXT REGISTRY — one declarative row per download kind: what the
- *   resource is called, which presentation owns it (the shared top-right card,
- *   a bespoke pass card, or nothing at all) and which cancel verb aborts it.
- *   Adding a resource means adding a row here, never another listener.
- * - the PASS LEDGER — one `ResourcePass` per kind, fed by the bus ticks and
- *   gated by the owning command's lifetime (`track`), so "is this context
- *   running?" has exactly ONE answer (`busyFor`, never a phase heuristic).
- * - the PASS LIFECYCLE — `track()` raises the pass, folds a rejection into
- *   `error` (a requested cancel stays neutral), settles it and announces the
- *   outcome the shared card cannot show (a pass that ended inside the card's
- *   mount grace earns a toast instead of a flash).
- * - the ONE presentation decision: resource passes (`res-pack`, `ai-models`)
- *   are shown by the shared DownloadToast card in the top-right toast stack —
- *   never inline in a settings card. The app updater and the mod batch keep
- *   their own bespoke cards (they carry richer, pass-specific copy), and
- *   boot-time lanes (`data-pack`) stay silent by registry declaration.
+ * Two ways a pass gets its numbers:
  *
- * Stores that own a command become CONTEXT OWNERS: they call `track(kind, job)`
- * instead of registering a listener and hand-rolling a progress ref, so the
- * presentation cannot drift away from the transport again.
+ * - `source: "bus"` — the unified `wowsp://download-progress` stream folds
+ *   its ticks into the pass. One artifact, one stream (installer, resource
+ *   pack, AI pack).
+ * - `source: "owner"` — the owning store PUSHES the pass with `report()`.
+ *   That is the batch shape: several artifacts behind one overall percent, so
+ *   a raw per-file tick cannot be the card's number (the plugin update pass).
+ *
+ * The store deliberately knows nothing about what a resource IS: labels come
+ * from the registry (or the owner), versions and inventory stay with the
+ * owning store.
  */
 import { defineStore } from "pinia";
 import { computed, ref } from "vue";
@@ -40,37 +39,53 @@ import { useToast } from "@celestia-island/hikari";
 
 import { api, type DownloadProgress } from "@/api";
 import { t } from "@/i18n";
+import { RPC } from "@/rpc";
+import { invoke } from "@tauri-apps/api/core";
 
 /** Who renders a running pass of this kind.
- *  - "card"     the shared DownloadToast top-right card (this store drives it);
- *  - "bespoke"  a pass-specific card the owning store drives itself
- *               (UpdateToast / ModUpdateToast) — registered here so the
- *               registry stays complete and one place owns the vocabulary;
- *  - "silent"   never presented (boot-time data lanes). */
-export type DownloadPresentation = "card" | "bespoke" | "silent";
+ *  - "card"    the shared DownloadToast top-right card (this store drives it);
+ *  - "silent"  never presented (boot-time data lanes).
+ *
+ *  A previous revision had a "bespoke" value: the app updater and the plugin
+ *  batch kept private cards because their copy is pass-specific. That split —
+ *  not the copy — was the problem: two more cards, two more mount machines,
+ *  two more ways for "is it running?" to go stale. The shared card absorbed
+ *  them: a pass carries a STEP line and an owner-computed fraction, which is
+ *  everything those cards ever showed. */
+export type DownloadPresentation = "card" | "silent";
+
+/** Where a pass's numbers come from.
+ *  - "bus"    the unified progress bus folds its ticks (one stream);
+ *  - "owner"  the owning store pushes the pass (a batch behind one percent);
+ *  - "none"   nothing to show. */
+export type DownloadProgressSource = "bus" | "owner" | "none";
 
 /** One row of the download-context registry. */
 export interface DownloadContextSpec {
   /** The bus kind (`wowsp_tauri_shared::download::kind`). */
   kind: string;
   presentation: DownloadPresentation;
-  /** i18n key naming the resource — the shared card's headline label. Only
-   *  card contexts need one (bespoke cards bring their own copy). */
+  /** i18n key naming the resource — the card's headline. Owner-driven
+   *  contexts resolve their own headline instead (a batch names its item). */
   labelKey?: string;
-  /** The context's cancel verb. Absent = the pass cannot be aborted (mod
-   *  catalog installs, the boot-time data lanes). */
+  /** Where the numbers come from (default "bus"). */
+  source?: DownloadProgressSource;
+  /** The context's cancel verb. Absent = the pass cannot be aborted. */
   cancel?: () => Promise<unknown>;
 }
 
 /**
  * The registry, in display priority order. Keep the kinds in lock-step with
- * `wowsp_tauri_shared::download::kind` and docs/en/designs/resources.md —
- * the Rust side is the producer contract, this is the presentation contract.
+ * `wowsp_tauri_shared::download::kind` and docs/en/designs/resources.md — the
+ * Rust side is the producer contract, this is the presentation contract.
  */
 export const DOWNLOAD_CONTEXTS: readonly DownloadContextSpec[] = [
   {
     kind: "update",
-    presentation: "bespoke",
+    presentation: "card",
+    labelKey: "settings.updatesAppName",
+    // The updater's own cancel: the part file survives as the resume base.
+    cancel: () => invoke(RPC.update_cancel),
   },
   {
     kind: "res-pack",
@@ -87,16 +102,21 @@ export const DOWNLOAD_CONTEXTS: readonly DownloadContextSpec[] = [
   {
     kind: "data-pack",
     presentation: "silent",
+    source: "none",
   },
   {
     kind: "mod-package",
-    presentation: "bespoke",
+    presentation: "card",
+    labelKey: "resources.pluginUpdateCardLabel",
+    source: "owner",
+    // Catalog installs cannot be aborted mid-flight (the Rust side writes the
+    // tree atomically); the pass runs to completion and folds failures.
   },
 ];
 
 /** Mount grace before the shared card appears: a pass that lands inside this
- *  window (a cached/no-op run, an instant refusal) must not flash a card —
- *  its outcome is a toast. Mirrors the mod pass card's grace contract. */
+ *  window must not flash a card — its outcome is a toast. One number for every
+ *  context (the store's own announcement branches on it too). */
 export const DOWNLOAD_CARD_GRACE_MS = 400;
 
 /** Phases that mean "the pass is over". */
@@ -105,9 +125,15 @@ const TERMINAL_PHASES = new Set(["done", "error"]);
 /** One context's live pass. Absent = the context never ran this session. */
 export interface ResourcePass {
   kind: string;
-  /** Bus phase: queued | race | verify | download | apply | installing |
-   *  install | done | error. */
+  /** Bus phase (queued | race | verify | download | apply | installing |
+   *  install | done | error) or an owner-pushed verb of the same vocabulary. */
   phase: string;
+  /** The card's headline — a registry label, or the owner's own text (the
+   *  item a batch is on). */
+  label: string;
+  /** The card's second line — a phase verb, or the owner's step text
+   *  ("mod-a (2/3)"). Empty = the card renders only the headline. */
+  step: string;
   received: number;
   total: number;
   /** Smoothed transfer rate (bytes/sec), 0 while not streaming. */
@@ -115,24 +141,32 @@ export interface ResourcePass {
   /** Chain-patch segment counters (1/1 for a single-artifact pass). */
   segment: number;
   segments: number;
+  /** OWNER-computed overall fraction (a batch behind one percent). Null for
+   *  bus passes, whose fraction is derived from received/total. */
+  percent: number | null;
   error: string | null;
   /** True while the owning command is in flight — the authoritative
-   *  "this context is running" answer (ticks alone cannot say it: a queued
-   *  or stalled pass emits none). */
+   *  "this context is running" answer (ticks alone cannot say it: a queued or
+   *  stalled pass emits none). */
   busy: boolean;
-  /** True once the user asked to cancel; the command's rejection is then
-   *  expected and must not read as a failure. */
+  /** Whether this context can be aborted at all — the registry says so, and
+   *  the card renders its cancel action only when both this and `busy` hold
+   *  (a batch write cannot be interrupted mid-flight). */
+  cancellable: boolean;
+  /** True once the user asked to cancel; the rejection is then expected and
+   *  must not read as a failure. */
   cancelling: boolean;
   /** When the pass started (ms) — the card's mount-grace reference. */
   startedAt: number;
-  /** Wall clock of the newest tick (ms) — orders concurrent passes. */
+  /** Wall clock of the newest update (ms) — orders concurrent passes. */
   updatedAt: number;
 }
 
-/** The pass percentage a card renders, or null while the phase carries no
- *  fraction (queued, racing, applying, unknown total). */
+/** The pass percentage a card renders, or null while it carries no fraction. */
 export function passPercent(pass: ResourcePass | null): number | null {
-  if (!pass || pass.phase !== "download" || pass.total <= 0) return null;
+  if (!pass) return null;
+  if (pass.percent != null) return Math.min(100, Math.max(0, Math.round(pass.percent)));
+  if (pass.phase !== "download" || pass.total <= 0) return null;
   return Math.min(100, Math.round((pass.received / pass.total) * 100));
 }
 
@@ -150,16 +184,76 @@ const CARD_KINDS = DOWNLOAD_CONTEXTS.filter((spec) => spec.presentation === "car
   (spec) => spec.kind,
 );
 
+/** The phase verb a card shows when the owner supplies no step text. */
+export function phaseLabel(phase: string): string {
+  switch (phase) {
+    case "queued":
+      return t("settings.downloadQueued");
+    case "race":
+      return t("settings.downloadRacing");
+    case "verify":
+      return t("settings.downloadVerifying");
+    case "download":
+      return t("settings.downloadStreaming");
+    case "apply":
+    case "installing":
+      return t("settings.downloadApplying");
+    case "install":
+      return t("settings.downloadInstalling");
+    case "done":
+      return t("settings.downloadFinished");
+    case "error":
+      return t("settings.downloadFailed");
+    default:
+      return t("settings.downloadStreaming");
+  }
+}
+
+/** An owner's `report()` patch — every field optional so a store can push just
+ *  what changed. */
+export interface PassReport {
+  phase?: string;
+  label?: string;
+  step?: string;
+  received?: number;
+  total?: number;
+  speedBps?: number;
+  segment?: number;
+  segments?: number;
+  percent?: number | null;
+  error?: string | null;
+}
+
 export const useDownloadsStore = defineStore("downloads", () => {
   const toast = useToast();
-  /** Pass ledger, keyed by kind. A plain object (Vue instruments mutations)
-   *  so the card and the inline read-outs re-render on every tick. */
+  /** Pass ledger, keyed by kind. A plain object (Vue instruments mutations) so
+   *  the card re-renders on every update. */
   const passes = ref<Record<string, ResourcePass>>({});
+  /** Per-kind tick handlers, registered by owner-sourced contexts that need
+   *  the RAW item ticks (a batch folds several artifacts behind one percent).
+   *  The context stays the only transport subscriber; owners subscribe here,
+   *  so there is still exactly ONE listener process-wide. */
+  const tickHandlers = new Map<string, Set<(tick: DownloadProgress) => void>>();
   let wired = false;
 
+  /** Subscribe an owner to its kind's raw ticks (owner-sourced contexts).
+   *  Returns the detach. The handler runs AFTER the ledger fold, so an owner
+   *  reporting its own numbers never fights the bus shape. */
+  function onTick(kind: string, handler: (tick: DownloadProgress) => void): () => void {
+    ensureWired();
+    let set = tickHandlers.get(kind);
+    if (!set) {
+      set = new Set();
+      tickHandlers.set(kind, set);
+    }
+    set.add(handler);
+    return () => {
+      set?.delete(handler);
+    };
+  }
+
   /** Wire the ONE bus registration this layer owns. Idempotent (the api
-   *  module fans the transport listener out to every subscriber), so the
-   *  first owner to raise a pass brings the bus up for the whole app. */
+   *  module fans the transport listener out to every subscriber). */
   function ensureWired(): void {
     if (wired) return;
     wired = true;
@@ -171,10 +265,24 @@ export const useDownloadsStore = defineStore("downloads", () => {
     }
   }
 
-  /** Fold one bus tick into its context's pass. A tick for a context that is
-   *  not in the ledger is ignored: the ledger is raised by `track`, never by
-   *  stray events (a ghost card must be impossible). */
+  /** Fold one bus tick into its context's pass. Only `bus`-sourced contexts
+   *  listen: an owner-driven batch computes its own overall number, and a tick
+   *  for a context nobody raised is ignored (no ghost cards). */
   function noteTick(tick: DownloadProgress): void {
+    const source = specFor(tick.kind)?.source ?? "bus";
+    if (source === "owner") {
+      // A batch owns its numbers; still forward the raw per-item tick so the
+      // owner can fold it, but never touch the pass here.
+      for (const handler of tickHandlers.get(tick.kind) ?? []) {
+        try {
+          handler(tick);
+        } catch {
+          // A throwing owner handler must not take the bus (and every other
+          // context's progress) down with it.
+        }
+      }
+      return;
+    }
     const current = passes.value[tick.kind];
     if (!current) return;
     const detail = tick.detail ?? {};
@@ -194,21 +302,38 @@ export const useDownloadsStore = defineStore("downloads", () => {
     };
   }
 
-  /** Raise (or reset) one context's pass. */
-  function begin(kind: string, phase = "queued"): void {
+  /** Apply an owner-pushed patch to one pass. Owners are the only writers of
+   *  their own numbers; the ledger stays the single source the card reads. */
+  function report(kind: string, patch: PassReport): void {
+    const current = passes.value[kind];
+    if (!current) return;
+    passes.value = {
+      ...passes.value,
+      [kind]: { ...current, ...patch, updatedAt: Date.now() },
+    };
+  }
+
+  /** Raise (or reset) one context's pass. Headline/step default from the
+   *  registry; an owner may override them through `report`. */
+  function begin(kind: string, phase = "queued", patch: PassReport = {}): void {
     ensureWired();
     const now = Date.now();
+    const label = patch.label ?? (specFor(kind)?.labelKey ? t(specFor(kind)!.labelKey!) : kind);
     passes.value = {
       ...passes.value,
       [kind]: {
         kind,
-        phase,
-        received: 0,
-        total: 0,
-        speedBps: 0,
-        segment: 1,
-        segments: 1,
-        error: null,
+        phase: patch.phase ?? phase,
+        label,
+        step: patch.step ?? "",
+        received: patch.received ?? 0,
+        total: patch.total ?? 0,
+        speedBps: patch.speedBps ?? 0,
+        segment: patch.segment ?? 1,
+        segments: patch.segments ?? 1,
+        percent: patch.percent ?? null,
+        error: patch.error ?? null,
+        cancellable: specFor(kind)?.cancel != null,
         busy: true,
         cancelling: false,
         startedAt: now,
@@ -243,8 +368,7 @@ export const useDownloadsStore = defineStore("downloads", () => {
    *
    * The rejection is NOT rethrown: callers still refresh their own status
    * afterwards, and the outcome travels in the result (with the command's
-   * value) so they can gate on it without a try/catch of their own — a boot
-   * path that hands the value on can rethrow deliberately.
+   * value) so they can gate on it without a try/catch of their own.
    *
    * `quiet` suppresses the OUTCOME announcements only (the pass and its card
    * still run): boot-time lanes keep their historical silence about failures,
@@ -276,7 +400,7 @@ export const useDownloadsStore = defineStore("downloads", () => {
         toast.error(t("settings.downloadFailedDetail", { message: error }));
       } else if (spec?.presentation === "card" && Date.now() - startedAt < DOWNLOAD_CARD_GRACE_MS) {
         // The card never mounts inside the grace window — say it worked.
-        const label = spec.labelKey ? t(spec.labelKey) : kind;
+        const label = passes.value[kind]?.label ?? kind;
         toast.success(t("settings.downloadDone", { label }));
       }
     }
@@ -286,7 +410,7 @@ export const useDownloadsStore = defineStore("downloads", () => {
   /** Abort one running pass through its registry cancel verb. */
   async function cancel(kind: string): Promise<void> {
     const current = passes.value[kind];
-    if (!current || !current.busy || current.cancelling) return;
+    if (!current || !current.busy || current.cancelling || !current.cancellable) return;
     passes.value = { ...passes.value, [kind]: { ...current, cancelling: true } };
     try {
       await specFor(kind)?.cancel?.();
@@ -321,26 +445,24 @@ export const useDownloadsStore = defineStore("downloads", () => {
     return passes.value[kind] ?? null;
   }
 
-  /** True while the given context is in flight — the settings cards' button
+  /** True while the given context is in flight — every surface's button
    *  gating (one source of truth, never a phase heuristic). */
   function busyFor(kind: string): boolean {
     return passes.value[kind]?.busy ?? false;
   }
 
-  /** The localized resource name of one kind (the registry's labelKey). An
-   *  unknown kind or a context without a label falls back to the raw id, so a
-   *  card always renders something. */
-  function labelFor(kind: string): string {
-    const key = specFor(kind)?.labelKey;
-    return key ? t(key) : kind;
-  }
-
   /** The last failure of one context, kept for the owning card's inline
-   *  retry hint (progress is a toast concern; a failure the user must act on
-   *  stays beside the button that retries it). */
+   *  retry hint (progress is the toast concern; a failure the user must act
+   *  on stays beside the button that retries it). */
   function errorFor(kind: string): string | null {
     const pass = passes.value[kind];
     return pass && !pass.busy && pass.phase === "error" ? pass.error : null;
+  }
+
+  /** The localized resource name of one kind (the registry's labelKey). */
+  function labelFor(kind: string): string {
+    const key = specFor(kind)?.labelKey;
+    return key ? t(key) : kind;
   }
 
   /** Drop one context's settled pass (the owner cleared its error / retried). */
@@ -357,7 +479,9 @@ export const useDownloadsStore = defineStore("downloads", () => {
     cardPass,
     running,
     ensureWired,
+    onTick,
     begin,
+    report,
     settle,
     track,
     cancel,

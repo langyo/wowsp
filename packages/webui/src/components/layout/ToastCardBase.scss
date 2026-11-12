@@ -1,6 +1,6 @@
 // ToastCardBase — the single card primitive behind the shell's bespoke
-// top-right toasts (UpdateToast / UpdateAppliedToast / UpdateStrandedToast
-// / ModUpdateToast / AudioPlayerToast / PiggyReminderToast). Sits in
+// top-right toasts (DownloadToast / UpdateAppliedToast / UpdateStrandedToast
+// / AudioPlayerToast / PiggyReminderToast). Sits in
 // hikari's toast column (same fixed top-right slot and z-band as HkToast /
 // HkBlockingToast) so every surface reads as one stack; the tone variants
 // carry the legacy per-card surfaces. The family shares ONE enter keyframe

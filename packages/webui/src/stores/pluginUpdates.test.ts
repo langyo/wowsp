@@ -31,6 +31,7 @@ vi.mock("@/api", () => {
 });
 
 import { api } from "@/api";
+import { useDownloadsStore } from "./downloads";
 import { useGameStatusStore } from "./gameStatus";
 import { useIngamePluginStore } from "./ingamePlugin";
 import { failureDetail, usePluginUpdatesStore } from "./pluginUpdates";
@@ -305,9 +306,12 @@ describe("usePluginUpdatesStore.updateAll", () => {
   });
 
   it("folds per-item progress events into overallPercent", async () => {
+    // The download CONTEXT owns the single transport listener; a batch folds
+    // the raw per-item ticks it forwards to its owners.
     let emit: ((p: { id: string; kind: string; phase: string; received: number; total: number }) => void) | undefined;
-    mocked.listen.mockImplementationOnce((handler: unknown) => {
-      emit = handler as typeof emit;
+    const downloads = useDownloadsStore();
+    vi.spyOn(downloads, "onTick").mockImplementationOnce((_kind, handler) => {
+      emit = handler as never;
       return () => undefined;
     });
     // One mod after the probe: total 2 items. Hold the install open at
@@ -345,8 +349,8 @@ describe("usePluginUpdatesStore.updateAll", () => {
           speedBps: number;
         }) => void)
       | undefined;
-    mocked.listen.mockImplementationOnce((handler: unknown) => {
-      emit = handler as typeof emit;
+    vi.spyOn(useDownloadsStore(), "onTick").mockImplementationOnce((_kind, handler) => {
+      emit = handler as never;
       return () => undefined;
     });
     let release!: () => void;
@@ -403,8 +407,8 @@ describe("usePluginUpdatesStore.updateAll", () => {
           speedBps: number;
         }) => void)
       | undefined;
-    mocked.listen.mockImplementationOnce((handler: unknown) => {
-      emit = handler as typeof emit;
+    vi.spyOn(useDownloadsStore(), "onTick").mockImplementationOnce((_kind, handler) => {
+      emit = handler as never;
       return () => undefined;
     });
     let releaseA!: () => void;
@@ -449,10 +453,10 @@ describe("usePluginUpdatesStore.updateAll", () => {
     expect(updates.speedBps).toBeNull();
   });
 
-  it("a throwing progress listener never strands the pass", async () => {
-    // The shared bus registers handlers synchronously; a throwing
-    // registration must not strand the pass either.
-    mocked.listen.mockImplementationOnce(() => {
+  it("a throwing tick subscription never strands the pass", async () => {
+    // The context's owner-subscription is synchronous; a throwing subscribe
+    // must not strand the pass either.
+    vi.spyOn(useDownloadsStore(), "onTick").mockImplementationOnce(() => {
       throw new Error("listen boom");
     });
     const updates = usePluginUpdatesStore();

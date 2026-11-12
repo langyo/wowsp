@@ -28,7 +28,7 @@ const AUTO_DISMISS_MS = 8000;
  * `update-applied__view` hook rides on the action). Renders nothing
  * outside the desktop Tauri shell (browser dev has no version to
  * compare; the phone app updates through its store pipeline), so it
- * mounts unconditionally next to UpdateToast.
+ * mounts unconditionally next to DownloadToast.
  */
 export default defineComponent({
   name: "UpdateAppliedToast",
