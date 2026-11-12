@@ -10,9 +10,12 @@
  * whose EFFECTIVE wording (the user's sealLabels override or the default
  * STAMP_WORDING) is a single character still presses inline exactly as
  * before (猴 / 蛆), while every wider wording collapses behind ONE small "!"
- * superscript badge at the nickname's top-right — BOTH densities. The row's
- * hover card is where the complete list survives (the real StampTag chips,
- * collapsed ones included).
+ * badge pressed BEFORE the nickname — the COMPACT row's seat, vertically
+ * centered on the name line (2026-11-12 review: the old raised superscript
+ * after the nick drifted off the name line). The full card carries no badge
+ * at all: its seals line has the room and stacks every wording whole. The
+ * row's hover card is where the complete list survives (the real StampTag
+ * chips, collapsed ones included).
  */
 import { stampWording, type SealLabelMap, type StampKind } from "@/utils/winrate";
 
@@ -21,14 +24,16 @@ import { stampWording, type SealLabelMap, type StampKind } from "@/utils/winrate
 export interface IdentitySealSplit {
   /** Single-character wordings — pressed inline as StampTag chips. */
   inline: StampKind[];
-  /** Every wider wording — hidden behind the row's "!" badge and listed in
+  /** Every wider wording — hidden behind the COMPACT row's "!" badge (the
+   *  full card stacks them whole instead, 2026-11-12 review) and listed in
    *  the hover card. */
   collapsed: StampKind[];
 }
 
 /** One row's full seal state: every kind it owns plus the split above —
- *  the panel's single lookup feeds the inline cluster, the "!" badge and the
- *  hover card from the same ordered list. */
+ *  the panel's single lookup feeds the inline cluster, the compact "!"
+ *  badge, the full card's whole-wording line and the hover card from the
+ *  same ordered list. */
 export interface IdentitySealLine extends IdentitySealSplit {
   /** EVERY seal kind the row owns, in display order. */
   kinds: StampKind[];

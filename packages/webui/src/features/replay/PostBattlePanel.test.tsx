@@ -14,10 +14,13 @@
  * (a passed `head` identity must not bring it back), the identity-line
  * seal rule (single-character wordings stay inline; every wider wording —
  * the four-character composition tags included — collapses behind ONE "!"
- * superscript badge in both densities, and the rich three-line hover card
- * paints the whole cluster as real StampTag chips — plus the division tag
- * face and the marker's wording the old plain hint carried — in the
- * hovered density's own classes while the mask eye keeps its own hint). The
+ * badge pressed BEFORE the nickname in the compact row, vertically centered
+ * on the name line (2026-11-12: moved left of the nick), while the full
+ * card stacks every wording whole on its seals line and carries no badge;
+ * and the rich three-line hover card paints the whole cluster as real
+ * StampTag chips — plus the division tag face and the marker's wording the
+ * old plain hint carried — in the hovered density's own classes while the
+ * mask eye keeps its own hint). The
  * seal pins need the opposite fixture setup (a realmful roster + zh UI, the
  * composition sweep's gates), so they mount their own payload while the
  * window tests keep the realmless one. happy-dom measures zero rects, so the
@@ -112,6 +115,9 @@ function ppiRow(opts: {
    *  fixtures so every on-mount stats path bails before the wire; the seal
    *  fixture passes one — the composition sweep keys `${realm}:${name}`. */
   realm?: string;
+  /** CLIENT_PUBLIC_RESULTS [21]; defaults to true so the plain fixtures
+   *  keep every row alive — the sunk-row fixture passes false. */
+  survived?: boolean;
 }): unknown[] {
   const arr: unknown[] = new Array(538).fill(null);
   arr[1] = opts.name;
@@ -120,7 +126,7 @@ function ppiRow(opts: {
   if (opts.realm) arr[9] = opts.realm;
   arr[15] = 20000; // max hull HP
   arr[20] = 9000; // remained hull HP
-  arr[21] = true; // survived
+  arr[21] = opts.survived ?? true; // survived
   arr[32] = 0; // frags
   arr[404] = opts.exp ?? 0; // base exp
   arr[408] = 0; // killer (0 = none)
@@ -164,6 +170,28 @@ const RAW_WITH_REALM = JSON.stringify({
       exp: 300,
       damage: 12000,
       realm: "asia",
+    }),
+  },
+  privateDataList: [[], [], [], [], [], [], [], [450000, 0, 0, 1200]],
+});
+
+/** The sunk-row fixture: real baked-DB shipIds (src/data/ship_names.json)
+ *  so the row icons resolve their class — the ally self rides a Battleship
+ *  (3247387984, PVSB999 Cordillera) and the dead enemy a Destroyer
+ *  (3256759600, PWSD990 Södermanland, survived: false). Same battle shape
+ *  as RAW. */
+const RAW_SUNK = JSON.stringify({
+  accountDBID: 1001,
+  commonList: [],
+  playersPublicInfo: {
+    "1001": ppiRow({ name: "AdmiralA", team: 0, shipId: 3247387984, exp: 1200, damage: 56000 }),
+    "2001": ppiRow({
+      name: "EnemyB",
+      team: 1,
+      shipId: 3256759600,
+      exp: 300,
+      damage: 12000,
+      survived: false,
     }),
   },
   privateDataList: [[], [], [], [], [], [], [], [450000, 0, 0, 1200]],
@@ -532,6 +560,12 @@ describe("PostBattlePanel head row, inline seals and identity hover card", () =>
       expect(badge.element.tagName).toBe("SPAN");
       expect(badge.attributes("aria-label")).toContain("空中小人");
       expect(badge.attributes("aria-label")).toContain("水下小人");
+      // (2026-11-12: the badge moved before the nick; the old top-right
+      // superscript seat is gone.) Seat pin: the badge LEADS the name line —
+      // its first element child, ahead of the nickname span, the same seat
+      // the inline seal chips read from.
+      const nameLine = firstCell.find(".replay-view__postbattle-cell-name");
+      expect(nameLine.element.firstElementChild).toBe(badge.element);
       expect(wrapper.find(".replay-view__postbattle-seal-alert").exists()).toBe(false);
       expect(wrapper.find(".replay-view__postbattle-seal-dot").exists()).toBe(false);
       // The old plain-text row hint is gone — the rich card replaces it.
@@ -710,7 +744,7 @@ describe("PostBattlePanel head row, inline seals and identity hover card", () =>
     }
   });
 
-  it("collapses the wide seals in the full card too and anchors the card on the identity stack", async () => {
+  it("drops the badge in the full card and stacks every seal wording whole on its seals line", async () => {
     const { uiLocale } = useLanguage();
     const prevLocale = uiLocale.value;
     const prevFull = statsPrefsState.value.postbattleRosterFull;
@@ -725,10 +759,15 @@ describe("PostBattlePanel head row, inline seals and identity hover card", () =>
         expect(wrapper.find(".replay-view__postbattle-fcell").exists()).toBe(true);
       });
       const card = wrapper.find(".replay-view__postbattle-fcell");
-      // Both densities collapse: the ONE badge rides the name line and the
-      // inline cluster line disappears (this fixture has no single-char seal).
-      expect(card.find(".replay-view__postbattle-seals-badge").exists()).toBe(true);
-      expect(card.find(".replay-view__postbattle-fcell-seals").exists()).toBe(false);
+      // (2026-11-12 user feedback: the full card's second line has the room
+      // — no "!" stand-in.) The full card carries NO badge at all and its
+      // seals line presses EVERY wording whole: this fixture's four-char
+      // wordings (空中小人 / 水下小人) used to collapse behind the badge.
+      expect(card.find(".replay-view__postbattle-seals-badge").exists()).toBe(false);
+      const seals = card.find(".replay-view__postbattle-fcell-seals");
+      expect(seals.exists()).toBe(true);
+      expect(seals.text()).toContain("空中小人");
+      expect(seals.text()).toContain("水下小人");
       // The rich card anchors on the identity stack, not the whole button:
       // the ship strip's own hover card owns the right block.
       expect(
@@ -801,6 +840,30 @@ describe("PostBattlePanel head row, inline seals and identity hover card", () =>
       card.find(".replay-view__postbattle-fcell-main").attributes("data-hint"),
     ).toBeUndefined();
     statsPrefsState.value.postbattleRosterFull = prevFull;
+  });
+
+  it("faces the dead enemy marker LEFT (sunk-enemy) and keeps the alive self face white", async () => {
+    // Fleet-facing contract (shipIcons.ts INK RULE): ally/sunk art faces
+    // right, enemy/sunk-enemy is its horizontal mirror — a dead enemy row
+    // must render the mirrored sunk-enemy face, not the ally-facing "sunk"
+    // one (the panel used to pass "sunk" for EVERY dead row).
+    const wrapper = mountPanel({ raw: RAW_SUNK });
+    // The dead enemy row carries the dead dressing and the mirrored face;
+    // the dead class rides the row wrapper around the named button.
+    const enemyBtn = wrapper.find('[data-player-name="EnemyB"]');
+    expect(enemyBtn.exists()).toBe(true);
+    const enemyRow = enemyBtn.element.closest(".replay-view__postbattle-cell");
+    expect(enemyRow?.classList.contains("replay-view__postbattle-cell--dead")).toBe(true);
+    expect(
+      enemyBtn.find(".replay-view__postbattle-cell-ico img").attributes("src"),
+    ).toContain("icon_sunk_enemy_destroyer");
+    // Control: the alive self row keeps the white self face — alive rows and
+    // the self face are unchanged by the fix.
+    const selfBtn = wrapper.find('[data-player-name="AdmiralA"]');
+    expect(selfBtn.exists()).toBe(true);
+    expect(
+      selfBtn.find(".replay-view__postbattle-cell-ico img").attributes("src"),
+    ).toContain("icon_white_battleship");
   });
 });
 
