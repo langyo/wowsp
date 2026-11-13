@@ -299,8 +299,8 @@ there); Rust never renders a challenge, it only exchanges the token at
 - `gateway: "v1"` in /health; clients refuse `> v1` with the existing
   unsupported-protocol error markers. `minClientVersion` reuses the
   relay's version gate semantics.
-- The legacy code-based relay (`/api/relay/*`) stays untouched for the
-  phone's existing replay-pull wizard until a later wave retires it.
-  The desktop stops DISPLAYING a pairing code; the code allocation path
-  itself stays functional so older phone builds keep pairing while the
-  new gateway rolls out.
+- The legacy code-based relay (`/api/relay/*`) was RETIRED on
+  2026-11-13: the PIN pairing mode was removed end to end (the phone's
+  replay acquisition is local file import; live-stats pairing is this
+  gateway's account-routed handshake). Older phone builds that still
+  speak the code flow find the routes gone.

@@ -263,7 +263,7 @@ pub(crate) async fn stop_publish() {
     mark_publish_offline();
     if let Some(session) = joined {
         let _ = session.shutdown.send(true);
-        super::super::pairing::await_shutdown(session.task, Duration::from_secs(3)).await;
+        super::await_shutdown(session.task, Duration::from_secs(3)).await;
     }
 }
 
@@ -359,7 +359,7 @@ async fn publish_loop(
                 return;
             },
         };
-        let mut ws = match pairing_relay::relay_ws_connect(&url).await {
+        let mut ws = match super::ws::ws_connect(&url).await {
             Ok(ws) => ws,
             Err(e) => {
                 // The ticket is burnt either way; without a Turnstile
@@ -457,7 +457,7 @@ async fn publish_loop(
                     }
                 },
                 _ = tokio::time::sleep(KEEPALIVE_INTERVAL) => {
-                    let _ = ws.send(Message::Text(pairing_relay::relay_keepalive_text())).await;
+                    let _ = ws.send(Message::Text(super::ws::keepalive_text())).await;
                 },
                 _ = tokio::time::sleep(PROCESS_POLL_INTERVAL) => {
                     let running = super::super::session::process_running();

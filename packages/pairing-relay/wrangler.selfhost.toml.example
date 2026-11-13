@@ -44,11 +44,14 @@ command = "worker-build --release crates/relay-worker"
 binding = "GATEWAY_KV"
 id = "GATEWAY_KV_ID_EXAMPLE_INVALID"
 
-# The two battle-push Durable Objects. The migration chain is the SAME
-# v1→v4 the official deployment runs (a fresh install applies the tags
-# in order); v1–v3 declare classes this deployment never routes to,
-# which is harmless — deleting rows from the chain would instead
-# mismatch any later re-deploy against upstream history.
+# The two battle-push Durable Objects. The migration chain declares ONLY
+# the classes this deployment routes to: the pairing Room + Directory
+# classes the pre-retirement template carried (v1–v3 of the old chain)
+# are gone from the wasm with the PIN pairing mode (2026-11-13), so a
+# fresh chain starts at the gateway pair. A self-host worker deployed
+# from the OLD template carries the retired classes in its applied
+# history — delete that worker once and re-run the wizard to move onto
+# this chain.
 [[durable_objects.bindings]]
 name = "GATEWAY_AUTH"
 class_name = "GatewayAuth"
@@ -59,18 +62,6 @@ class_name = "GatewayChannel"
 
 [[migrations]]
 tag = "v1"
-new_sqlite_classes = ["Room"]
-
-[[migrations]]
-tag = "v2"
-new_sqlite_classes = ["Directory"]
-
-[[migrations]]
-tag = "v3"
-new_sqlite_classes = ["ReplayIndex"]
-
-[[migrations]]
-tag = "v4"
 new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
 
 # ── optional gating — both off by default (the health document then

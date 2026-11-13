@@ -54,25 +54,16 @@
   format's legitimate core, so content vetting is the user's and the
   catalog's job, not a local-install gate.
 
-### LAN pairing (phone ↔ desktop)
+### ~~LAN pairing (phone ↔ desktop)~~ (retired 2026-11-13)
 
-- **Untrusted**: everything arriving on the pairing TCP port. The LAN is
-  plaintext HTTP by design — assume a passive observer can read, and an
-  active one can attempt, everything.
-- **Guards**: OS CSPRNG 256-bit bearer tokens (constant-time compare,
-  `Authorization: Bearer` only — the query channel is dead), 24h sliding
-  TTL **capped at mint + 7 days absolute life** (a stolen actively-used
-  token still dies within the week), per-IP PIN throttles before
-  comparison, Origin refused + Host allowlist + Content-Type checks,
-  64-connection / 32 KB-header / 8 KB-body / 60 s-deadline budgets, and a
-  gamedata/replay serving path that walks links-free and serves only
-  plain files.
-- **Residual (accepted)**: the plaintext LAN channel itself — a passive
-  sniffer sees responses and a token thief can use it until mint + 7
-  days; pairing codes rotate and PIN throttles are per-IP. A future
-  phase may add an encrypted transport.
+The PIN-pairing LAN server (6-digit code handshake + bearer-token data
+routes) was removed end to end with the pairing mode: nothing could
+start the server anymore once the account-routed gateway push replaced
+the desktop's code display. The phone pairs live stats through the
+gateway's challenge handshake (see below); replay acquisition is local
+file import.
 
-### Cloudflare relay (worker, public internet)
+### Cloudflare worker (public internet site)
 
 - **Untrusted**: every request. The worker serves the public internet
   with no authentication on its public reads.

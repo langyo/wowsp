@@ -193,10 +193,7 @@ fn game_id_plausible(id: &str) -> bool {
 /// fallback.
 async fn fetch_sponsor_list() -> Result<SponsorListDoc> {
     let clients = super::network::HttpPair::build(|b| b).context("build http client")?;
-    let url = format!(
-        "{}{SPONSORS_PATH}",
-        super::pairing_relay::builtin_relay_root()
-    );
+    let url = format!("{}{SPONSORS_PATH}", super::gateway::builtin_worker_root());
     let host = super::upstream_health::host_of_url(&url).to_string();
     let resp =
         super::upstream_health::send_with_fallback(&clients, &host, "supporters", |client| {

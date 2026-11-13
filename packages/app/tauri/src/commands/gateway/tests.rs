@@ -1,7 +1,7 @@
 use super::*;
 
-// ── offline unit tests — no network, no sockets (the pairing_relay suite's
-// style: pure cores + explicit-dir persistence roundtrips).
+// ── offline unit tests — no network, no sockets (pure cores +
+// explicit-dir persistence roundtrips).
 
 use wowsp_tauri_shared::{ArenaInfo, PlayingAccount, VehicleEntry};
 
@@ -31,6 +31,24 @@ fn health_doc(
         },
         notice: None,
     }
+}
+
+// ── version gate (moved from the retired pairing relay) ─────────────────────
+
+#[test]
+fn client_meets_minimum_compares_dotted_versions() {
+    use super::health::client_meets_minimum as meets;
+    assert!(meets("0.6.9", "0.5.0"));
+    assert!(meets("0.6.9", "0.6.9"));
+    assert!(!meets("0.6.8", "0.6.9"));
+    // Missing parts count as zero.
+    assert!(meets("0.7", "0.6.9"));
+    assert!(!meets("0.6", "0.6.9"));
+    // Trailing non-numeric suffixes are ignored per part.
+    assert!(meets("1.0.0-rc.1", "1.0.0"));
+    assert!(!meets("1.0.0-rc.1", "1.0.1"));
+    // Junk parts parse as zero, never panic.
+    assert!(meets("0.6.9", "junk"));
 }
 
 // ── config persistence ────────────────────────────────────────────────────────

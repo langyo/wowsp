@@ -1,142 +1,73 @@
 # wowsp-pairing-relay
 
-A Cloudflare Worker that is the WoWSP **internet pairing gateway** (a
-phone app pairs with a WoWSP desktop from outside the desktop's local
-network — cellular / another Wi-Fi), plus the site's two dynamic pages
-(`/feedback`, `/erp`). It serves the pairing API under `/api/*` and
-those two pages; the static website + docs are served by this SAME
-worker through **Workers static assets** (`[assets]` in
+A Cloudflare Worker that is the **dynamic half of the WoWSP site**
+`wowsp.langyo.xyz`: the account-routed battle-push gateway under
+`/gateway/*` (the phone's live-stats channel — see
+`docs/en/designs/gateway-push.md`), the release-digest, replay-share,
+feedback and erp APIs under `/api/*`, and the site's two console pages
+(`/feedback`, `/erp`). The static website + docs are served by this
+SAME worker through **Workers static assets** (`[assets]` in
 `wrangler.toml`), with the GitHub Pages mirror as backup and as the
 first-choice origin for the heavy entry assets (see "Site hosting
-model" below). The gateway is a rendezvous + raw byte
-tunnel: both ends dial OUTBOUND, the worker never dials anything, and
-the tunneled traffic is the desktop pairing server's ordinary HTTP
-protocol, byte-for-byte.
+model" below).
+
+> **The PIN pairing rooms are gone (2026-11-13).** This package used to
+> host the internet pairing gateway — the `/api/relay/*` rendezvous +
+> raw byte tunnel a phone used to pair with a desktop over a six-digit
+> code and pull its replays. The pairing mode was retired end to end:
+> the Room + Directory Durable Objects are deleted (migration `v5`),
+> the routes answer 404, and the wire protocol frames live only in git
+> history. Live-stats pairing is the account-routed gateway push
+> (`gateway.rs` in both crates); the phone acquires replays by
+> importing local files.
 
 The worker is **Rust compiled to WebAssembly** (the
 [`workers-rs`](https://github.com/cloudflare/workers-rs) `worker` crate,
 target `wasm32-unknown-unknown`). Two crates:
 
-- `crates/relay-core` — the pure protocol/policy core (message types,
-  code directory state machine, room connection accounting, manifest,
-  route classification). No Cloudflare types, no wasm-bindgen; every
-  TTL / rate-limit / one-code-per-host / cap rule is a plain state
+- `crates/relay-core` — the pure protocol/policy core (gateway push
+  auth/channel state machines, feedback + replay-share policy, digest
+  channel gates, manifest, route classification). No Cloudflare types,
+  no wasm-bindgen; every TTL / rate-limit / cap rule is a plain state
   machine over an injected clock and RNG, unit-tested on the host.
-- `crates/relay-worker` — the thin wasm shell: routing, the two
-  Durable Objects, WebSocket glue. Every decision delegates to
-  relay-core.
+- `crates/relay-worker` — the thin wasm shell: routing, the Durable
+  Objects, WebSocket glue. Every decision delegates to relay-core.
 
-> This is a **hidden built-in service**, not something users configure. The
-> production deployment is reachable at **`wowsp.langyo.xyz`** and both
-> apps hardcode the host (desktop:
-> `BUILTIN_RELAY_ROOT_URL` in `packages/app/tauri/src/commands/pairing_relay/`,
-> an `https://` root the v2 manifest and WebSocket base derive from; webui:
-> the `wss://` spelling in `stores/pairing.ts` `PAIRING_GATEWAY_WS`).
-> The only supported development override is the undocumented
-> `WOWSP_RELAY_URL` environment variable on the DESKTOP (e.g.
-> `WOWSP_RELAY_URL=ws://127.0.0.1:8787` against `wrangler dev`); there is no
-> UI field anywhere.
+> This is a **hidden built-in service**, not something users configure
+> (the gateway-push ROUTE ENTRY is the one user-visible knob — the
+> official default or a self-host). The production deployment is
+> reachable at **`wowsp.langyo.xyz`** and the apps hardcode the host
+> (`BUILTIN_WORKER_ROOT_URL` in `packages/app/tauri/src/commands/gateway/urls.rs`,
+> consumed by the gateway-push clients and the digest/sponsor/share
+> HTTP faces). The only supported development override is the
+> undocumented `WOWSP_RELAY_URL` environment variable (e.g.
+> `WOWSP_RELAY_URL=ws://127.0.0.1:8787` against `wrangler dev`); there
+> is no UI field for it anywhere.
 
-## How it works (v2 — code-coordinated, manifest-discovered)
-
-```
-phone ──wss control/data ──▶ WORKER (this package) ◀──wss── desktop bridge
-  │                                                            │
-  └─ raw HTTP request bytes ──▶ [byte pipe] ──▶ 127.0.0.1:58041┘
-```
-
-1. **Discovery** — `GET /api/health` is the merged liveness + discovery
-   document (like the celestia services): provider id, the gateway's
-   `version`, the `minClientVersion` it demands, protocol versions, the
-   relay base path (`/api/relay`), the feature list, an optional operator
-   `notice`, and `upstream` (see
-   [Forwarding station](#forwarding-station-mode-gateway_upstream) below).
-2. **Host** — the desktop mints a random 64-hex **room key** and connects
-   `WS /api/relay/control?room=<key>&role=host`. It may open with a
-   `{"type":"hello","protocol":"v1","hostId":"<hex>"}` handshake (answered
-   with `{"type":"welcome",…,"capabilities":["pin-allocation","byte-tunnel"]}`;
-   clients that skip hello keep working — v1 compatibility). It then sends
-   `{"type":"allocate"}`; the Room DO asks the singleton **Directory** to
-   mint a CSPRNG 6-digit code bound to `{room, hostId}` and the reply
-   `{"type":"code","code":"XXXXXX","room":"<key>"}` is what the desktop
-   displays. The bridge keepalives every **30 s** (any inbound text also
-   refreshes the room's 15-minute idle TTL).
-3. **Client** — the phone resolves its code via
-   `WS /api/relay/resolve?code=NNNNNN` → `{"type":"room","room":"<key>"}`, joins
-   the room's control channel as `role=client` (greeted
-   `{"type":"ready"}` / `{"type":"waiting"}`), then per request:
-   `{"type":"open","connId":"…"}` → the host is signaled
-   `{"type":"conn","connId":"…"}` → both sides dial
-   `WS /api/relay/data/<room>/<connId>` (`?role=host` on the desktop leg) —
-   from there bytes are piped opaquely and the flow is IDENTICAL to the
-   LAN protocol: `POST /pair`, `GET /api/replays`,
-   `GET /api/replay/<name>`, `GET /api/gamedata`.
-
-### Server-side pairing policy (all in `relay-core`, all unit-tested)
-
-- **One active code per host and per room** — allocation keys by the
-  `hello` hostId (v1 fallback: the room key). Regenerating, or a desktop
-  restart with the same hostId, kills the previous code instantly; so
-  does any new allocation for the same room. A host control socket may
-  say `hello` only once — a second one closes the socket (1008) — so one
-  socket can never hold more than one live code.
-- **Live-code caps** — a source may hold at most 32 live codes per
-  IPv4 address (generous for carrier NAT) and 8 / 16 / 32 per IPv6 /64 /
-  /56 / /48. A replacement retires a code as it mints one, so
-  regenerating never counts; the caps are rebuilt from the stored code
-  rows after an eviction. A capped `allocate` is answered
-  `{"type":"allocFailed"}` only after a 45 s hold, which paces the
-  desktop's reconnect-and-retry loop without a client change.
-- **10-minute code TTL**, alarm-swept in the Directory DO; bindings and
-  the resolved-IP claim are persisted in DO storage so they survive
-  eviction.
-- **Resolve-once claiming** — the first successful resolve stamps the
-  client IP (from `CF-Connecting-IP`); the SAME IP may re-resolve to
-  reconnect within the TTL, any other IP is refused (and is
-  indistinguishable from an unknown code, so it leaks nothing).
-- **Tiered brute-force guard** — failed resolves are counted per tier in
-  a sliding minute: an IPv4 address or an IPv6 /64 may miss 10 times, an
-  IPv6 /56 20 times and a /48 30 times; the next miss blocks that tier
-  for 60 s with `{"type":"error","code":"rate_limited"}` (even for
-  valid codes). IPv4 has no /24 tier: carrier NAT neighbours are
-  unrelated users. There is no global gate — a gateway-wide count of
-  120 misses per minute only logs a warning for the operator.
-- **Deployment note** — the per-prefix tiers read `CF-Connecting-IP`.
-  Keep the zone's *Network → Pseudo IPv4* setting **Off** or **Add
-  Header**: *Overwrite Headers* replaces IPv6 client addresses with
-  per-address Class E IPv4s, which silently turns every IPv6 /128 into
-  its own tier.
-- **Room limits** — max **4 concurrent data connections** per room
-  (5th `open` gets `{"type":"error","code":"conn_limit"}`); binary
-  frames are capped at **256 KiB** (`{"type":"error","code":"frame_too_large","size":N}`
-  + close 1009); rooms idle >15 min are torn down by alarm; a second
-  host on a room is refused (409).
-- **Pre-pairing buffering** — data frames that arrive before the peer's
-  socket finishes its handshake are buffered (≤256 KiB per direction)
-  instead of dropped, closing the race where the phone's request beats
-  the desktop's data dial.
-
-### Route surface
+## Route surface
 
 | Route | Meaning |
 | --- | --- |
 | everything outside the rows below | the WEBSITE + docs — served by this worker's `[assets]` layer (static files; the shell loads heavy entry JS/CSS from the GitHub Pages mirror first) |
-| `GET /feedback` | the embedded feedback form (see the feedback section above) |
+| `GET /feedback` | the embedded feedback form (see the feedback section below) |
 | `GET /erp` | the embedded admin review console page |
-| `GET /api/health` | merged liveness + discovery document (see below), `cache-control: no-store` |
+| `GET /api/health` | liveness + identity document (see below), `cache-control: no-store` |
 | `GET /api/digests/<channel>` | the channel's latest release-digest doc (see the release-digests section), `cache-control: public, max-age=300` |
 | `GET /api/digests/<channel>/<tag>` | the digest doc pinned to one tag |
-| `WS /api/relay/control?room=<64hex>&role=host\|client` | presence + open-request signaling + code allocation |
-| `WS /api/relay/resolve?code=NNNNNN` | phone: code → room handshake (`{"type":"room",…}` / rate-limited error / 404) |
-| `WS /api/relay/data/<room>/<connId>[?role=host\|client]` | the raw byte pipe |
 | `GET /gateway/health` | battle-push namespace config doc (Turnstile/password demands, `minClientVersion`), CORS-open, `cache-control: public, max-age=60` |
 | `POST /gateway/session` | auth exchange (Turnstile token and/or password) → single-use `{ticket, route, ttl}`; password failures rate-limit 5/min → 5 min IP lock (429 + `retryAfter`) |
 | `WS /gateway/pub?route=&ticket=[&hostId=]` | desktop publisher for `r:<realm>:<accountId>` — one per channel, a different persistent hostId replaces the first |
 | `WS /gateway/sub?route=&ticket=` | phone subscriber — hello → host presence → current battle snapshot; live battle frames fan out verbatim (≤ 64 KiB, over → close 1009) |
 
 The pre-unification spellings (`/v1/*`, `/health`, bare `/control` …) are
-**retired** — the only consumers were the unreleased 0.5.0 apps, updated in
-the same change.
+**retired** — as are the `/api/relay/*` pairing sockets (control / resolve /
+data): the PIN pairing mode they served was removed on 2026-11-13 and the
+routes answer 404. Old phone builds that still speak the code flow find
+the rooms gone.
+
+The battle-push namespace's own policy (tickets, lockouts, channel caps,
+snapshot retention) is documented in `docs/en/designs/gateway-push.md` and
+unit-tested in `crates/relay-core/src/gateway.rs`.
 
 `/api/health` (default deployment):
 
@@ -144,20 +75,15 @@ the same change.
 {
   "ok": true,
   "provider": "wowsp-gateway",
-  "name": "WoWSP Pairing Gateway",
+  "name": "WoWSP Gateway",
   "version": "0.5.0",
-  "minClientVersion": "0.5.0",
-  "protocol": ["v1"],
-  "endpoints": { "relay": "/api/relay" },
-  "upstream": null,
-  "features": ["pin-allocation", "byte-tunnel"],
   "notice": null
 }
 ```
 
-Clients below `minClientVersion` get a distinct update-the-app error
-(`relay-core::MIN_CLIENT_VERSION` is the knob to turn when a wire change
-old clients cannot talk to lands).
+The pairing-era fields (`minClientVersion`, `protocol`, `endpoints`,
+`upstream`, `features`) were dropped with the relay clients — the
+gateway-push namespace carries its own version gate in `/gateway/health`.
 
 ## Feedback pipeline (`/feedback`, `/erp`)
 
@@ -663,13 +589,12 @@ Smoke checks: `curl https://wowsp.langyo.xyz/api/health` (the JSON
 above) and `curl -I https://wowsp.langyo.xyz/` (the site's shell
 `index.html`, HTTP 200).
 
-**Migrations note** — `Room` (v1) and `Directory` (v2) are unchanged
-from the TypeScript deployment, so the Rust rewrite itself needed no new
-tag; v3 added `ReplayIndex` (replay-share wave) and v4 adds
-`GatewayAuth` + `GatewayChannel` (battle-push wave) — deploying applies
-the new tags incrementally over the live worker. Storage rows in the old
-v1 key format are garbage-collected lazily on the Directory's first load
-(`crates/relay-worker/src/directory.rs`, `ensure_loaded`).
+**Migrations note** — v1 (`Room`) and v2 (`Directory`) declared the
+TypeScript era's pairing classes; v3 added `ReplayIndex` (replay-share
+wave), v4 `GatewayAuth` + `GatewayChannel` (battle-push wave), and **v5
+deletes `Room` + `Directory`** (PIN-pairing retirement, 2026-11-13) —
+deploying applies the tags incrementally over the live worker and drops
+the retired classes together with their (tiny, transient) storage.
 
 ## Local development
 
@@ -677,9 +602,9 @@ v1 key format are garbage-collected lazily on the Directory's first load
 pnpm --filter @wowsp/pairing-relay dev        # wrangler dev on :8787
 ```
 
-Point the desktop at it with the undocumented override
+Point the app at it with the undocumented override
 (`WOWSP_RELAY_URL=ws://127.0.0.1:8787`, see
-`packages/app/tauri/src/commands/pairing_relay/`).
+`packages/app/tauri/src/commands/gateway/urls.rs`).
 
 Rust-side checks (no Cloudflare account needed):
 
@@ -742,26 +667,6 @@ this section is the package-side map.
   (and/or desktop). The official deployment's widget already carries
   the app-webview hostnames; your own widget needs them added by you.
 
-## Forwarding-station mode (`GATEWAY_UPSTREAM`)
-
-The gateway is a stable, hardcoded address; the exchange behind it does
-not have to be. Setting the `GATEWAY_UPSTREAM` variable (dashboard →
-Settings → Variables, or `[vars]` in wrangler.toml) to an absolute
-`https://`/`wss://` URL switches `/api/health` to
-
-```json
-"upstream": "https://exchange.example.org/…"
-```
-
-Clients that honor the manifest then follow the upstream and stop
-pairing through this gateway — a hand-off with **no app redeploy**: the
-address clients dial stays `wowsp.langyo.xyz`, and if WoWSP ever
-runs an official exchange (or a 360/Lesta-run one) it can take over by
-flipping this one variable. Clearing the variable flips it back. Values
-that are not absolute https/wss URLs are ignored (a typo must not strand
-clients). `GATEWAY_NOTICE` optionally surfaces an operator message
-(e.g. maintenance windows) in the same document.
-
 ## Cloudflare facts this design is built on
 
 - **WebSockets on every plan** — outbound and inbound WebSocket support
@@ -769,68 +674,32 @@ clients). `GATEWAY_NOTICE` optionally surfaces an operator message
   Source: developers.cloudflare.com/workers/runtime-apis/websockets/ and
   the Workers pricing page.
 - **~100 s proxy idle cutoff** — proxied connections without traffic are
-  dropped after roughly 100 s, so the desktop bridge sends keepalive
-  text frames every **30 s**. Source:
-  developers.cloudflare.com/workers/platform/limits/ (WebSockets).
-- **32 MiB max WebSocket message** — a single message may be up to
-  32 MiB on Cloudflare's edge. Our protocol keeps its own **256 KiB**
-  binary-frame cap anyway (enforced server-side with an error-close
-  notice): the cap is a design choice bounding per-frame buffering in
-  the Room DO and keeping every tunneled write cheap, not a workaround
-  for a 1 MiB platform ceiling (an earlier draft of this document
-  claimed one — the real limit is 32 MiB). Source: same limits page.
+  dropped after roughly 100 s, so the gateway-push sockets send keepalive
+  text frames every 30 s (see `crates/relay-core/src/gateway.rs`).
+  Source: developers.cloudflare.com/workers/platform/limits/ (WebSockets).
 - **Durable Objects on Free** — the free plan provisions SQLite-backed
   DO classes ONLY (no KV-backed classes), with 100 000 DO requests/day,
   ~13 000 GB-s duration/day, 5 M row reads + 100 k row writes/day, and
-  5 GB storage per account. The $5/month minimum spend applies to the
-  Workers Paid plan only — Free has no minimum. Sources:
+  5 GB storage per account. Sources:
   developers.cloudflare.com/durable-objects/platform/pricing/ and the
   Workers pricing page.
-- **No hard duration cap while active** — DO duration is not capped by
-  a per-invocation wall clock while the object stays active with I/O in
-  flight (an open WebSocket counts); the constraint that matters is the
-  GB-s/day allowance above, and SQLite-backed duration billing only
-  accrues while the object is actually running. The alarm-swept
-  15-minute idle TTL below is OUR bound, not a platform one.
+- **No hard duration cap while active** — DO duration is not capped by a
+  per-invocation wall clock while the object stays active with I/O in
+  flight (an open WebSocket counts); SQLite-backed duration billing only
+  accrues while the object is actually running.
 - **~6 simultaneous outbound connections per invocation** — a Worker is
-  limited to about 6 connections awaiting response headers at once.
-  This gateway dials at most one subrequest at a time (the Room DO →
-  Directory bind), so the cap is never in play. Source: the same
-  limits page (simultaneous open connections).
-
-### Free-tier budget math
-
-A pairing session costs, roughly:
-
-- resolve + 3–5 WS handshakes + ~6 DO requests per tunneled request → a
-  full pairing (pair + list + pull one replay) is on the order of **a
-  few dozen DO requests**;
-- duration: the Directory DO lives in millisecond bursts (alarm sweeps
-  + lookups); a Room DO holds sockets while a room is paired but is
-  **wall-clock idle between frames** — SQLite-backed DO duration
-  billing only accrues while the object is actively running, and the
-  15-minute idle TTL bounds how long an abandoned room lingers.
-
-So 100 k DO requests/day comfortably covers hundreds of pairing sessions
-per day; the thing to respect is **bandwidth, not DO budget**: a replay
-is a few MB (fine), the full game-data zip can be hundreds of MB (do
-that sync on the LAN, not through the relay). The Workers Free request
-limit (100 k HTTP requests/day, no WebSocket-message counting on the
-free tier's WS support) similarly covers the phone's low request counts.
+  limited to about 6 connections awaiting response headers at once; the
+  siteverify round trip dials at most one at a time.
 
 ## Caveats
 
-- **Trust**: the worker's operator sees every code→room binding and could
-  join any room as a fake host and MITM the pairing exchange. This is why
-  the endpoint is a first-party deployment — don't point the apps at a
-  third-party worker. (Forwarding-station mode is the escape hatch.)
-- **Volume**: the tunnel streams through Workers' request/DO pipelines;
-  see the budget math above.
-- **Eviction**: a DO eviction mid-transfer fails that transfer (the app
-  surfaces it as a normal pull error — retry). Plain (non-hibernating)
-  DO WebSockets keep the Room DO pinned while any socket is open, which
-  the free tier's duration accounting tolerates at these session
-  lengths; the hibernation API remains an option if usage ever grows.
+- **Trust (gateway push)**: the worker's operator sees every route's
+  pub/sub traffic. This is why the official endpoint is a first-party
+  deployment — self-hosted nodes are the supported escape hatch
+  (see the self-hosting section above and docs/en/guides/
+  self-host-gateway.md).
+- **Eviction**: a DO eviction mid-battle fails that socket (the app
+  surfaces it and resubscribes — retry).
 
 ## Repository integration
 
@@ -839,8 +708,8 @@ free tier's WS support) similarly covers the phone's low request counts.
   the wasm/worker dependency tree never touches the app crates' builds.
 - `just check-relay` (repo root) runs both the host tests and the
   wasm32 check.
-- The Rust clients (desktop bridge + phone transport) live in
-  `packages/app/tauri/src/commands/pairing_relay/`; their test suite
-  runs an in-process mock of this protocol.
+- The Rust clients of the live namespace (desktop publisher + phone
+  subscriber, plus the URL/WS helpers) live in
+  `packages/app/tauri/src/commands/gateway/`.
 - No TypeScript sources remain in this package (the `typecheck` script is
   gone with them; `pnpm -r typecheck` skips this package naturally).

@@ -3,7 +3,7 @@
 //! docs/en/designs/gateway-push.md).
 //!
 //! Everything here is plain Rust over an injected clock and RNG — the
-//! same discipline as [`crate::directory`]: no Cloudflare types, no
+//! same discipline as the retired pairing modules: no Cloudflare types, no
 //! I/O, fully unit-tested on the host. `relay-worker` (src/gateway.rs)
 //! owns the HTTP/WS plumbing plus the two Durable Objects that hydrate
 //! these state machines from storage and write every mutation back:
@@ -570,8 +570,7 @@ pub enum SubError {
 }
 
 /// One channel's policy state. The DO keeps the actual `WebSocket`
-/// handles in its own struct and consults this for every decision,
-/// mirroring how the Room DO uses [`crate::room::RoomConns`].
+/// handles in its own struct and consults this for every decision.
 #[derive(Debug, Default)]
 pub struct ChannelState {
     host_id: Option<String>,
@@ -670,15 +669,25 @@ impl ChannelState {
 }
 
 /// Verdict on one inbound battle frame by size (64 KiB cap, close 1009
-/// on breach — reuses the data sockets' verdict shape).
-pub fn battle_frame_verdict(size: usize) -> crate::room::FrameVerdict {
+/// on breach). The shape predates the gateway: the retired pairing
+/// rooms' data sockets judged their byte frames the same way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameVerdict {
+    /// Forward it verbatim.
+    Ok,
+    /// Oversized — error-close THAT connection after a text notice.
+    TooLarge { size: usize, cap: usize },
+}
+
+/// Judge one inbound battle frame.
+pub fn battle_frame_verdict(size: usize) -> FrameVerdict {
     if size > MAX_BATTLE_FRAME_BYTES {
-        crate::room::FrameVerdict::TooLarge {
+        FrameVerdict::TooLarge {
             size,
             cap: MAX_BATTLE_FRAME_BYTES,
         }
     } else {
-        crate::room::FrameVerdict::Ok
+        FrameVerdict::Ok
     }
 }
 
@@ -1197,18 +1206,18 @@ mod tests {
 #[test]
 fn battle_frame_cap_is_64_kib_exclusive() {
         assert_eq!(MAX_BATTLE_FRAME_BYTES, 65_536);
-        assert_eq!(battle_frame_verdict(0), crate::room::FrameVerdict::Ok);
-        assert_eq!(battle_frame_verdict(65_536), crate::room::FrameVerdict::Ok);
+        assert_eq!(battle_frame_verdict(0), FrameVerdict::Ok);
+        assert_eq!(battle_frame_verdict(65_536), FrameVerdict::Ok);
         assert_eq!(
             battle_frame_verdict(65_537),
-            crate::room::FrameVerdict::TooLarge {
+            FrameVerdict::TooLarge {
                 size: 65_537,
                 cap: 65_536
             }
         );
         assert!(matches!(
             battle_frame_verdict(1024 * 1024),
-            crate::room::FrameVerdict::TooLarge { .. }
+            FrameVerdict::TooLarge { .. }
         ));
     }
 

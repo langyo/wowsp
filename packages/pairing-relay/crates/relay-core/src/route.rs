@@ -10,11 +10,8 @@
 //! `/feedback` and `/erp` (packages/console build) — is served by the
 //! worker's static-assets layer.
 //!
-//!   GET  /api/health                     — merged health + discovery doc
+//!   GET  /api/health                     — liveness + identity doc
 //!   GET  /api/digests/<channel>[/tag]    — release digests (updater trust)
-//!   WS   /api/relay/control?room=<64hex>&role=host|client
-//!   WS   /api/relay/resolve?code=NNNNNN
-//!   WS   /api/relay/data/<room>/<connId>[?role=host|client]
 //!   GET  /gateway/health                — push namespace config doc
 //!   POST /gateway/session               — auth exchange → single-use
 //!                                        ticket (Turnstile/password)
@@ -38,22 +35,11 @@
 //!   POST /api/replays/admin/drain        — mark drained + free space
 //!   GET  /api/sponsors                   — afdian sponsor list (KV cache)
 
-use crate::room::Side;
-
 /// What a request path (+query) asks for. Values borrow from the input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Route<'a> {
-    /// GET /api/health — the merged health/discovery document.
+    /// GET /api/health — the liveness/identity document.
     Health,
-    /// Control socket. `room`/`role` are the raw query values —
-    /// validation happens in the handler (this layer only routes).
-    Control {
-        room: Option<&'a str>,
-        role: Option<&'a str>,
-    },
-    /// Resolve socket; `code` is the raw query value (may be absent or
-    /// malformed — the handler decides).
-    Resolve { code: Option<&'a str> },
     /// GET /gateway/health — the push namespace's deployment config
     /// document (no auth, CORS-open, edge-cached 60 s).
     GatewayHealth,
@@ -74,12 +60,6 @@ pub enum Route<'a> {
     GatewaySub {
         route: Option<&'a str>,
         ticket: Option<&'a str>,
-    },
-    /// Data socket for `<room>/<connId>` on `side`.
-    Data {
-        room: &'a str,
-        conn_id: &'a str,
-        side: Side,
     },
     /// GET /api/erp/login — 302 into the Feishu OAuth authorize page.
     ErpLogin,
@@ -223,17 +203,6 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/api/replays/admin/drain" => return Route::ReplaysAdminDrain,
         "/api/replays/admin/rename" => return Route::ReplaysAdminRename,
         "/api/replays/admin/backfill" => return Route::ReplaysAdminBackfill,
-        "/api/relay/control" => {
-            return Route::Control {
-                room: query_get(query, "room"),
-                role: query_get(query, "role"),
-            };
-        },
-        "/api/relay/resolve" => {
-            return Route::Resolve {
-                code: query_get(query, "code"),
-            };
-        },
         "/gateway/health" => return Route::GatewayHealth,
         "/gateway/session" => return Route::GatewaySession,
         "/gateway/pub" => {
@@ -263,31 +232,7 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
             tag: tag_in_path.filter(|t| !t.is_empty()),
         };
     }
-    if let Some(rest) = path.strip_prefix("/api/relay/data/") {
-        let mut segs = rest.split('/');
-        let room = segs.next().unwrap_or("");
-        let conn_in_path = segs.next();
-        if segs.next().is_some() || room.is_empty() {
-            return Route::NotFound;
-        }
-        let Some(conn_id) = conn_in_path.filter(|c| !c.is_empty()) else {
-            return Route::NotFound;
-        };
-        return Route::Data {
-            room,
-            conn_id,
-            side: data_side(query),
-        };
-    }
     Route::NotFound
-}
-
-/// The data socket's side: `role` in the query (the legacy `side=`
-/// spelling is tolerated); absent means client (the phone dials first,
-/// the host answers).
-fn data_side(query: &str) -> Side {
-    Side::parse(query_get(query, "role").or_else(|| query_get(query, "side")))
-        .unwrap_or(Side::Client)
 }
 
 /// Tiny query-string getter for the handful of well-known keys. Values
@@ -381,49 +326,12 @@ mod tests {
             "/relay/resolve",
             "/relay/data/a/b",
             "/data/a",
+            "/api/relay/control",
+            "/api/relay/resolve",
+            "/api/relay/data/aaaa/bbbb1111",
         ] {
             assert_eq!(classify(path, ""), Route::NotFound, "path {path}");
         }
-    }
-
-    #[test]
-    fn control_classifies() {
-        assert_eq!(
-            classify("/api/relay/control", "room=abc&role=host"),
-            Route::Control {
-                room: Some("abc"),
-                role: Some("host")
-            }
-        );
-        assert_eq!(
-            classify("/api/relay/control", "role=client&room=xyz"),
-            Route::Control {
-                room: Some("xyz"),
-                role: Some("client")
-            }
-        );
-        assert_eq!(
-            classify("/api/relay/control", ""),
-            Route::Control {
-                room: None,
-                role: None
-            },
-            "missing params route fine; the handler rejects them"
-        );
-    }
-
-    #[test]
-    fn resolve_classifies() {
-        assert_eq!(
-            classify("/api/relay/resolve", "code=123456"),
-            Route::Resolve {
-                code: Some("123456")
-            }
-        );
-        assert_eq!(
-            classify("/api/relay/resolve", ""),
-            Route::Resolve { code: None }
-        );
     }
 
     #[test]
@@ -475,63 +383,13 @@ mod tests {
     }
 
     #[test]
-    fn data_puts_room_and_conn_in_the_path() {
-        assert_eq!(
-            classify("/api/relay/data/aaaa/bbbb1111", "role=host"),
-            Route::Data {
-                room: "aaaa",
-                conn_id: "bbbb1111",
-                side: Side::Host
-            }
-        );
-        // Client leg has no query at all.
-        assert_eq!(
-            classify("/api/relay/data/aaaa/bbbb1111", ""),
-            Route::Data {
-                room: "aaaa",
-                conn_id: "bbbb1111",
-                side: Side::Client
-            }
-        );
-        // The legacy `side=` spelling still works.
-        assert_eq!(
-            classify("/api/relay/data/aaaa/bbbb1111", "side=host"),
-            Route::Data {
-                room: "aaaa",
-                conn_id: "bbbb1111",
-                side: Side::Host
-            }
-        );
-        // Junk roles fall back to client.
-        assert_eq!(
-            classify("/api/relay/data/aaaa/bbbb1111", "role=ninja"),
-            Route::Data {
-                room: "aaaa",
-                conn_id: "bbbb1111",
-                side: Side::Client
-            }
-        );
-    }
-
-    #[test]
-    fn data_path_malformations_are_not_found() {
-        assert_eq!(classify("/api/relay/data/a/b/c", ""), Route::NotFound);
-        assert_eq!(classify("/api/relay/data/a//b", ""), Route::NotFound);
-        assert_eq!(classify("/api/relay/data//b", ""), Route::NotFound);
-        assert_eq!(classify("/api/relay/data/a/", "role=host"), Route::NotFound);
-        assert_eq!(classify("/api/relay/data/a", ""), Route::NotFound);
-        assert_eq!(classify("/api/relay/data/", "conn=x"), Route::NotFound);
-        assert_eq!(classify("/api/relay/data", "conn=x"), Route::NotFound);
-    }
-
-    #[test]
     fn query_get_handles_the_edge_keys() {
-        assert_eq!(query_get("code=123456", "code"), Some("123456"));
-        assert_eq!(query_get("a=1&code=42", "code"), Some("42"));
-        assert_eq!(query_get("code=", "code"), Some(""));
-        assert_eq!(query_get("code=1", "cod"), None);
-        assert_eq!(query_get("", "code"), None);
-        assert_eq!(query_get("codec=1", "code"), None);
+        assert_eq!(query_get("route=r:asia:123", "route"), Some("r:asia:123"));
+        assert_eq!(query_get("a=1&route=42", "route"), Some("42"));
+        assert_eq!(query_get("route=", "route"), Some(""));
+        assert_eq!(query_get("route=1", "rout"), None);
+        assert_eq!(query_get("", "route"), None);
+        assert_eq!(query_get("router=1", "route"), None);
     }
 
     #[test]

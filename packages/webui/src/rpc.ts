@@ -282,25 +282,10 @@ export const RPC = {
   stamp_import_bytes: "stamp_import_bytes",
   stamp_reset: "stamp_reset",
   installer_language: "installer_language",
-  // ── Mobile replay acquisition + desktop pairing (Rust handlers in
-  //    commands/pairing.rs; the web transport mocks them for browser dev) ──
+  // ── Mobile replay import (Rust handler in commands/pairing/store.rs;
+  //    the web transport mocks it for browser dev). The PIN-pairing
+  //    command family was retired on 2026-11-13. ──
   import_replay_file: "import_replay_file",
-  pairing_start: "pairing_start",
-  pairing_stop: "pairing_stop",
-  pairing_forget_devices: "pairing_forget_devices",
-  pairing_get_status: "pairing_get_status",
-  pairing_pair: "pairing_pair",
-  pairing_list_remote: "pairing_list_remote",
-  pairing_pull_replay: "pairing_pull_replay",
-  pairing_pull_gamedata: "pairing_pull_gamedata",
-  // LAN auto-discovery (phone listener; see commands/pairing_discovery.rs).
-  pairing_discovery_start: "pairing_discovery_start",
-  pairing_discovery_stop: "pairing_discovery_stop",
-  // Internet relay configuration (hidden setting — see
-  // commands/pairing_relay/) + pairing-code regeneration.
-  pairing_get_relay_config: "pairing_get_relay_config",
-  pairing_set_relay: "pairing_set_relay",
-  pairing_reallocate_code: "pairing_reallocate_code",
   // ── Gateway push (account-routed live battles — see
   //    docs/en/designs/gateway-push.md §9, Rust handlers in
   //    commands/gateway_push/): route-entry config, health/session

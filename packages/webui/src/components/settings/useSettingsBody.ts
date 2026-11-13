@@ -43,7 +43,6 @@ import { useSettingsAppearance } from "@/components/settings/useSettingsAppearan
 import { useSettingsNetworkState } from "@/components/settings/useSettingsNetworkState";
 import { useSettingsUpdatesState } from "@/components/settings/useSettingsUpdatesState";
 import { useSettingsResourcesState } from "@/components/settings/useSettingsResourcesState";
-import { useSettingsPairingState } from "@/components/settings/useSettingsPairingState";
 import { useSettingsGatewayState } from "@/components/settings/useSettingsGatewayState";
 import { useSettingsDpiState } from "@/components/settings/useSettingsDpiState";
 import { isMobileApp } from "@/utils/platform";
@@ -62,7 +61,6 @@ export function useSettingsBody(props: { active: boolean }) {
   const network = useSettingsNetworkState();
   const updates = useSettingsUpdatesState();
   const resources = useSettingsResourcesState();
-  const pairing = useSettingsPairingState();
   const gateway = useSettingsGatewayState();
   const dpi = useSettingsDpiState(
     () => props.active,
@@ -88,12 +86,6 @@ export function useSettingsBody(props: { active: boolean }) {
       // Re-sync the wallpaper list with the AppData folder (also heals a
       // failed boot-time listing instead of staying empty all session).
       if (id === "appearance") void appearance.wallpaper.refreshCustom();
-      if (id === "pairing") {
-        void pairing.pairingStore.refreshServerStatus();
-        pairing.startPairingPoll();
-      } else {
-        pairing.stopPairingPoll();
-      }
       // The changelog feed streams from GitHub Releases on demand —
       // never at startup — so opening the section is what loads it.
       if (id === "changelog") void changelog.ensureLoaded();
@@ -132,23 +124,10 @@ export function useSettingsBody(props: { active: boolean }) {
         void updates.cacheStore.refreshUpdates();
         void resources.refreshDecisions();
       }
-      if (open && ui.section === "pairing") {
-        void pairing.pairingStore.refreshServerStatus();
-        pairing.startPairingPoll();
-      }
       if (open && ui.section === "changelog") void changelog.ensureLoaded();
-      if (!open) pairing.stopPairingPoll();
     },
   );
 
-  // Direct deep-link landing (?section=pairing — e.g. the phone app's
-  // settings route): the section watcher above only fires on CHANGE, which
-  // a landing mount already missed — refresh once here so the section never
-  // shows stale pairing state.
-  if (ui.section === "pairing") {
-    void pairing.pairingStore.refreshServerStatus();
-    pairing.startPairingPoll();
-  }
   if (ui.section === "changelog") void changelog.ensureLoaded();
   // Same gap for the resources section's data-source rows: a landing mount
   // never triggers the watcher's loads (the pack cards mask it via their
@@ -203,7 +182,7 @@ export function useSettingsBody(props: { active: boolean }) {
     account: t("settings.account"),
     network: t("settings.network"),
     markers: t("settings.markersTitle"),
-    pairing: mobileApp ? t("settings.pairingMobile") : t("gateway.sectionTitle"),
+    pairing: mobileApp ? t("gateway.phoneSectionTitle") : t("gateway.sectionTitle"),
     updates: t("settings.updates"),
     resources: t("settings.resourcesPage"),
     installCleanup: t("settings.installCleanup"),
@@ -249,7 +228,6 @@ export function useSettingsBody(props: { active: boolean }) {
     network,
     updates,
     resources,
-    pairing,
     gateway,
     dpi,
     railGroups,

@@ -447,7 +447,7 @@ pub fn parse_relay_digest_with(
 /// override (trim, scheme mapping, fallback) behaves exactly as it does
 /// for pairing.
 pub fn relay_digest_url(channel: &str, tag: Option<&str>) -> String {
-    let root = super::pairing_relay::builtin_relay_root();
+    let root = super::gateway::builtin_worker_root();
     match tag {
         Some(tag) => format!("{root}/api/digests/{channel}/{tag}"),
         None => format!("{root}/api/digests/{channel}"),

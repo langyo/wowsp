@@ -760,118 +760,20 @@
     border-color: rgb(var(--color-muted) / 25%);
   }
 
-  /* ── phone pairing (desktop server side) ── */
+  /* ── gateway-push section (the service toggle's busy state) ── */
   &__pairing-busy {
     display: flex;
     justify-content: center;
     margin: 0.4rem 0 0;
   }
 
-  &__pairing-live {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    margin-top: 0.7rem;
-    padding: 0.7rem 0.8rem;
-    border: 1px solid rgb(var(--color-primary) / 35%);
-    border-radius: var(--radius-sm, 6px);
-    background: rgb(var(--color-primary) / 6%);
-  }
-
-  &__pairing-row {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  &__pairing-label {
-    font-size: var(--text-xs);
-    color: rgb(var(--color-muted));
-  }
-
-  &__pairing-value {
-    font-family: var(--font-mono);
-    font-size: var(--text-md);
-    font-weight: 600;
-    color: rgb(var(--color-text));
-    /* Selectable via theme.scss's copyable-content whitelist — the user
-       copies these by hand into the phone. */
-    white-space: nowrap;
-  }
-
-  /* The PIN display is a readonly hikari OTP grid (the same component the
-     phone types into) plus its action row (copy + regenerate) — the address
-     below is auxiliary small print now that discovery does the addressing. */
-  &__pairing-pin {
-    display: flex;
-    align-items: center;
-    gap: 0.7rem;
-    flex-wrap: wrap;
-    margin: 0.3rem 0 0.4rem;
-  }
-
-  &__pairing-pin-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    flex-wrap: wrap;
-  }
-
-  /* Gateway status line under the code (relay mode tag). */
-  &__pairing-mode {
-    display: flex;
-    align-items: center;
-    margin: 0.35rem 0 0;
-  }
-
-  /* ── phone-build CLIENT pairing section: primary open action + the
-        paired-computer list (label + last-synced + forget) ── */
+  /* ── phone-build pairing section: the gateway route-entry open action.
+        (The retired PIN display + paired-computer list styles went away
+        with the PIN pairing mode.) ── */
   &__pairing-open {
     display: flex;
     align-items: center;
     margin-top: 0.4rem;
-  }
-
-  &__paired-hosts {
-    list-style: none;
-    margin: 0.45rem 0 0;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  &__paired-host {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.6rem;
-    padding: 0.55rem 0.7rem;
-    border: 1px solid rgb(var(--color-border) / 40%);
-    border-radius: 10px;
-    background: rgb(var(--color-surface) / 30%);
-  }
-
-  &__paired-host-body {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
-    min-width: 0;
-  }
-
-  &__paired-host-label {
-    font-size: var(--text-sm, 0.875rem);
-    font-weight: 600;
-    color: rgb(var(--color-text));
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &__paired-host-meta {
-    font-size: var(--text-xs, 0.75rem);
-    color: rgb(var(--color-text-secondary));
   }
 
   /* Thin progress track (same visual language as the mod-catalog rows). */
