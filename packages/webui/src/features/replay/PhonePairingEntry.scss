@@ -1,0 +1,91 @@
+/* Styles for the live view's phone-pairing entry (PhonePairingEntry).
+   Two faces share one sheet: the entry pill itself rides the live
+   panel's existing action-pill voice (AppTag's outline face carries the
+   anatomy — nothing to restate here), and the desktop compact pairing
+   modal's body is this sheet's own `phone-pairing` block. HkModal
+   renders its panel at body level, so the flat class names reach it
+   without any host wrapping. */
+
+.phone-pairing {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* The one-paragraph "how pairing works" — the settings section's own
+   lead hint, so the two surfaces never tell different stories. */
+.phone-pairing__intro {
+  margin: 0;
+  color: rgb(var(--color-muted));
+  font-size: var(--text-xs);
+  line-height: 1.6;
+}
+
+/* The channel identity row: realm + nickname + publish phase (and the
+   linked-phone count once online) — the account the phone must hold to
+   land on this desktop's route. */
+.phone-pairing__channel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.phone-pairing__detail {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-danger, 248 113 113) / 80%);
+}
+
+.phone-pairing__subs {
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+}
+
+/* The service toggle's sub-title — the settings section's own register. */
+.phone-pairing__sub {
+  margin: 0.2rem 0 0;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: rgb(var(--color-text) / 85%);
+}
+
+.phone-pairing__busy {
+  display: flex;
+  justify-content: center;
+  margin: 0.2rem 0 0;
+}
+
+.phone-pairing__captcha {
+  margin: 0;
+  font-size: var(--text-2xs);
+  line-height: 1.5;
+  color: rgb(var(--color-muted));
+}
+
+/* The route entry the phone must reach (official default / custom
+   self-host root). */
+.phone-pairing__root {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.phone-pairing__root-label {
+  flex: none;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-muted));
+}
+
+.phone-pairing__root-value {
+  overflow-wrap: anywhere;
+  font-size: var(--text-2xs);
+  color: rgb(var(--color-text) / 80%);
+}
+
+.phone-pairing__foot {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 0.35rem;
+  border-top: 1px solid rgb(var(--color-text) / 12%);
+}

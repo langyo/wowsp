@@ -99,6 +99,7 @@ import LiveShipMeta from "./LiveShipMeta";
 import { playerBuildView, type PlayerBuildView } from "./playerBuild";
 import LiveStatsModeChip from "./LiveStatsModeChip";
 import MapNameTag from "./MapNameTag";
+import PhonePairingEntry from "./PhonePairingEntry";
 import PluginStatusCard from "./PluginStatusCard";
 import { telemetryGradeFor } from "./telemetryGrade";
 import { WaitingRadarArt } from "./liveGuideArt";
@@ -1330,6 +1331,11 @@ export default defineComponent({
               <WaitingRadarArt class="live-battle__empty-art" />
               <p class="live-battle__empty-title">{t("replay.live.waitingTitle")}</p>
               <p class="live-battle__empty-hint">{t("replay.live.waitingHint")}</p>
+              {/* Phone-pairing entry (user-requested): the labeled pill
+                  under the waiting hint opens the pairing flow — the
+                  phone build's acquisition wizard, or the desktop's
+                  compact handshake surface for the gateway push. */}
+              <PhonePairingEntry labeled />
               {/* Status-only plugin card: res_mods mutations are refused
                   while the game runs, so no lifecycle buttons here — but the
                   state (incl. the outdated warning) stays visible. */}
@@ -1733,6 +1739,11 @@ export default defineComponent({
               {shot.busy.value ? <HkSpinner size="xs" tone="current" /> : <Camera size={13} />}
               {t("share.copyShot")}
             </AppTag>
+            {/* Phone-pairing entry (user-requested): the icon pill beside
+                the share action opens the pairing flow — the phone
+                build's acquisition wizard, or the desktop's compact
+                handshake surface for the gateway push. */}
+            <PhonePairingEntry />
             {/* Manual full stats refresh: wipes the backend session cache
                 and re-requests the WHOLE roster. Already-loaded rows keep
                 their values (a failed re-request must not blank the

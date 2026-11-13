@@ -33,8 +33,10 @@ import { isMobileApp } from "@/utils/platform";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 import "./gatewaySettings.scss";
 
-/** The publish status pill's voice (phase → tone + label). */
-function phaseVoice(phase: string): { tone: string; label: string } {
+/** The publish status pill's voice (phase → tone + label). Exported for
+ *  the live view's compact pairing surface (PhonePairingEntry), so the
+ *  phase naming lives in exactly one place across both surfaces. */
+export function phaseVoice(phase: string): { tone: string; label: string } {
   switch (phase) {
     case "resolving":
       return { tone: "pending", label: t("gateway.phaseResolving") };
