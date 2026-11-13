@@ -1,15 +1,15 @@
 {
   "assets": {
-    "WoWSP_0.6.9_x64-installer-lite.exe": "ac10924a5ae7a35083e556db5215d4ce36728c16f9ce281e17c71e4f866e68db",
-    "WoWSP_0.6.9_x64-installer-webview2.exe": "56791e72c1765fc58c989c2eef640e9da4240f8359ea702cb0d3bb76efcd566f",
-    "WoWSP_0.6.9_x64-installer.exe": "ac10924a5ae7a35083e556db5215d4ce36728c16f9ce281e17c71e4f866e68db",
-    "WoWSP_0.6.9_x64-portable.exe": "d9068f84401646463a42c234eb967438c6102ffae1d725668d4ee1019e2f9109",
-    "latest": "ee1c413148b2131fb45fdfefb11cd80ce78c021bcb7ed33bf4922cb9e8d62b0e"
+    "WoWSP_0.6.10_x64-installer-lite.exe": "6c326bb1f4c09663f259a74952f4746322ac0303172d86e517fa1d36d9498f70",
+    "WoWSP_0.6.10_x64-installer-webview2.exe": "8c706b2ea53aad0020ee178b90540261aaa7de29f65a1522a761bb72eb5efc6d",
+    "WoWSP_0.6.10_x64-installer.exe": "6c326bb1f4c09663f259a74952f4746322ac0303172d86e517fa1d36d9498f70",
+    "WoWSP_0.6.10_x64-portable.exe": "d0fb2fab199c133336f542efa10d6cd6abd828184f28b58305239223b64bc056",
+    "latest": "4eed3696bc4acbb547f6db1d993e8b30668c3a03f9936a7c0b996df3fd9f7b88"
   },
   "channel": "app",
-  "generated_at": "2026-11-07T19:08:39Z",
+  "generated_at": "2026-11-13T13:22:28Z",
   "key_id": "main",
-  "seq": 104,
-  "sig": "LlHU3SywYDyjwjz4cA+CKiN626YPeOQ12B3U1Erlu+Rur117AblcYBdqteWFysXVfRj1RTXNN5eCU4snyYtQDA==",
-  "tag": "v0.6.9"
+  "seq": 105,
+  "sig": "Ps45pQ7VDVAO2fo/BXyKAeF1G3SIWF2LD5iEC8jw3+UgyYxGWmT8Q1e6yyaRq6l94j6YApqk2JWjTLu3OiV4DQ==",
+  "tag": "v0.6.10"
 }
