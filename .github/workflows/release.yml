@@ -550,7 +550,7 @@ jobs:
     needs: [preflight, publish]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     permissions:
       contents: write
       pull-requests: write
@@ -716,30 +716,81 @@ jobs:
         run: |
           set -euo pipefail
           pr="${{ steps.doc.outputs.pr }}"
+          # Poll per-check states through the check-runs API instead of
+          # `gh pr checks`'s aggregate exit code: rc=8 only says "something
+          # is not green", so a FAILED check masquerades as "waiting"
+          # behind the forever-queued type-escapes reusable job (org
+          # self-hosted runner congestion -- the v0.6.10 release died
+          # exactly here on 2026-11-13 after the CI materialization step).
+          # The same classifier + recorded-waiver pattern the Mod Hub
+          # digest lane uses.
+          sha="$(gh pr view "$pr" --json headRefOid --jq .headRefOid)"
+          check_classes() {
+            gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '
+              {failed:   [.check_runs[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") | .name] | join(", "),
+               running:  [.check_runs[] | select(.status == "in_progress") | .name] | join(", "),
+               queued:   [.check_runs[] | select(.status == "queued") | .name] | join(", "),
+               total:    (.check_runs | length)}'
+          }
           # The dispatched runs take a moment to register on the SHA.
           sleep 60
-          for attempt in $(seq 1 50); do
+          merged=0
+          for attempt in $(seq 1 80); do
             set +e
-            out="$(gh pr checks "$pr" 2>&1)"; rc=$?
+            classes="$(check_classes)"
+            rc=$?
             set -e
-            if [ "$rc" -eq 0 ]; then
-              echo "note: all checks green (attempt $attempt)"
-              gh pr merge "$pr" --squash --delete-branch
-              exit 0
-            fi
-            # 8 = pending; a "no checks reported yet" answer is the
-            # dispatch still landing. Anything else is a real failure.
-            if [ "$rc" -eq 8 ] || echo "$out" | grep -q "no checks"; then
+            if [ "$rc" -ne 0 ] || [ -z "$classes" ]; then
+              echo "check-runs poll failed (rc=$rc) -- retrying (attempt $attempt/80)"
               sleep 30
               continue
             fi
-            echo "::error::checks failed (rc=$rc):"
-            echo "$out"
-            exit 1
+            total="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["total"])')"
+            failed="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["failed"])')"
+            running="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["running"])')"
+            queued="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["queued"])')"
+            if [ -n "$failed" ]; then
+              echo "::error::digest PR #$pr check(s) FAILED (code-level, never waivable): $failed"
+              exit 1
+            fi
+            if [ "${total:-0}" -gt 0 ] && [ -z "$running" ] && [ -z "$queued" ]; then
+              echo "note: all checks green (attempt $attempt)"
+              gh pr merge "$pr" --squash --delete-branch
+              merged=1
+              break
+            fi
+            echo "digest PR checks not final yet (running: ${running:-none}; queued: ${queued:-none}) (attempt $attempt/80)"
+            sleep 30
           done
-          echo "::error::checks never went green — the digest PR #$pr stays open for manual repair"
-          gh pr checks "$pr" || true
-          exit 1
+          if [ "$merged" -ne 1 ]; then
+            # Environmental waiver (AGENTS.md §5.2/§8.2), mirroring the Mod
+            # Hub Sync digest lane (#1968): a check still non-final after the
+            # whole ~40-minute budget -- the org self-hosted type-escapes
+            # node congestion again -- while every check that DID conclude
+            # finished green and nothing failed. Any job that actually ran
+            # carries its own timeout-minutes and would have been marked
+            # failed long before this budget expires; the doc itself is
+            # signature-verified by the step above, and the release is
+            # already published. The waiver is posted on the PR.
+            classes="$(check_classes)"
+            failed="$(echo "$classes" | python3 -c 'import json,sys; print(json.load(sys.stdin)["failed"])')"
+            stuck="$(echo "$classes" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(", ".join(x for x in (d["queued"], d["running"]) if x))')"
+            if [ -n "$failed" ]; then
+              echo "::error::digest PR #$pr never merged (failed: $failed) -- checks stuck?"
+              exit 1
+            fi
+            if [ -z "$stuck" ]; then
+              echo "::error::digest PR #$pr never merged and nothing outstanding -- state $(gh pr view "$pr" --json state --jq .state)?"
+              exit 1
+            fi
+            gh pr comment "$pr" --body "Environmental waiver (AGENTS.md §8.2): **${stuck}** never finished after the full wait budget (self-hosted runner congestion; the same congestion the release preflight waived). Every check that ran is green and nothing failed. The digest doc is signature-verified; merging on that record."
+            gh pr merge "$pr" --squash --delete-branch
+          fi
+          state="$(gh pr view "$pr" --json state --jq .state)"
+          if [ "$state" != "MERGED" ]; then
+            echo "::error::digest PR #$pr never merged (state $state) -- checks stuck?"
+            exit 1
+          fi
 
       # Unconditional: a crash between the merge and this step (or a
       # re-run after a completed publish, which skips the doc path)
