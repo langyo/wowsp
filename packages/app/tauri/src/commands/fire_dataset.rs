@@ -174,6 +174,17 @@ pub struct ShipInfo<'a> {
 }
 
 /// Collect type-2 ship trajectories with team attribution (E3 semantics).
+/// The RECORDER is exempt from shipId AMBIGUITY (the advice path's
+/// `team_override` precedent): it is the origin of the recorder-relative
+/// namespace, so a mirror lineup (its hull fielded on both sides) must not
+/// mark it ambiguous. Un-exempted, the export dropped the recorder's rows
+/// wholesale on such replays — breaking the "recorder always gets a dummy
+/// row" E7 promise and, downstream, the 战报's default perspective
+/// (2026-11-13 report: `entity … has no scoreable rows`). A resolution the
+/// roster states EXPLICITLY (Some(0)/Some(1)) keeps the roster's word; the
+/// mirror TWIN (the enemy flying the same hull) stays ambiguous: without a
+/// per-entity roster join its side genuinely cannot be told apart by
+/// shipId alone.
 fn ship_infos<'a>(stream: &'a ReplayStream, vehicles: &[VehicleEntry]) -> Vec<ShipInfo<'a>> {
     let sides = roster_sides(vehicles);
     let conflicts = battle_results_conflicts(stream.battle_results.as_deref());
@@ -182,16 +193,21 @@ fn ship_infos<'a>(stream: &'a ReplayStream, vehicles: &[VehicleEntry]) -> Vec<Sh
         .iter()
         .filter(|t| t.kind.as_ref().is_some_and(|k| k.entity_type == 2))
         .map(|traj| {
-            let (team_id, team_ambiguous) = resolve_team(
+            let is_recorder = stream.recorder_vehicle_id == Some(traj.entity_id);
+            let (mut team_id, mut team_ambiguous) = resolve_team(
                 traj.kind.as_ref().and_then(|k| k.ship_id),
                 &sides,
                 &conflicts,
             );
+            if is_recorder && team_id.is_none() {
+                team_id = Some(0);
+                team_ambiguous = false;
+            }
             ShipInfo {
                 traj,
                 team_id,
                 team_ambiguous,
-                is_recorder: stream.recorder_vehicle_id == Some(traj.entity_id),
+                is_recorder,
             }
         })
         .collect()
@@ -6225,6 +6241,18 @@ mod tests {
         let amb = trajectory(5, Some(555), vec![ms(0.0, 5, 0.0, 0.0, 0.0)]);
         let mut stream = stream;
         stream.trajectories.push(amb);
+        // Mirror lineup on the RECORDER's own hull (111): an enemy twin
+        // (entity 10) flies the same shipId, so 111 becomes ambiguous by
+        // sides. The recorder (8) must keep its rows regardless — it IS
+        // team 0 by definition — while the twin itself stays excluded.
+        let twin = trajectory(
+            10,
+            Some(111),
+            (0..400)
+                .map(|i| ms(i as f32 * 0.5, 10, -100.0 - i as f32, 0.0, 0.0))
+                .collect(),
+        );
+        stream.trajectories.push(twin);
         let vehicles = vec![
             roster_entry(1, 0, 111),
             roster_entry(2, 2, 222),
@@ -6233,8 +6261,20 @@ mod tests {
             roster_entry(5, 2, 108),
             roster_entry(6, 0, 555),
             roster_entry(7, 2, 555),
+            roster_entry(11, 2, 111),
         ];
         let ships = ship_infos(&stream, &vehicles);
+        let recorder_info = ships
+            .iter()
+            .find(|s| s.traj.entity_id == 8)
+            .expect("recorder ship info");
+        assert_eq!(recorder_info.team_id, Some(0));
+        assert!(!recorder_info.team_ambiguous, "recorder is never ambiguous");
+        let twin_info = ships
+            .iter()
+            .find(|s| s.traj.entity_id == 10)
+            .expect("twin ship info");
+        assert!(twin_info.team_ambiguous, "mirror twin stays ambiguous");
 
         let (rows, stats) = export_move_dataset(
             &stream,
@@ -6264,6 +6304,10 @@ mod tests {
         assert!(
             !present.contains(&5),
             "ambiguous-team ship must have no rows"
+        );
+        assert!(
+            !present.contains(&10),
+            "the recorder's mirror twin stays excluded"
         );
         for id in [9, 8, 7, 6, 4] {
             assert!(present.contains(&id), "ship {id} missing from move rows");

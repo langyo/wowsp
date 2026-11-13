@@ -670,6 +670,8 @@
     "coverage": "Data coverage",
     "noData": "No resolvable data for this ship",
     "gapNote": " — unresolvable for {s}s (not observed)",
+    "fallback": "fallback perspective",
+    			"fallbackHint": "The recorder had no scoreable rows in this replay — showing the best-covered player instead.",
     "recorder": "recorder",
     "diedAt": "Lost at {t}",
     "duration": "Duration {t}",

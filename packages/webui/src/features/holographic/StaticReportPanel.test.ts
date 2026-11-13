@@ -391,6 +391,27 @@ describe("StaticReportPanel wiring", () => {
     expect(wrapper.find(".shot-footer").exists()).toBe(false);
   });
 
+  it("shows the fallback note when the default perspective was skipped", () => {
+    const report = sampleReport();
+    report.fallbackFrom = 292510;
+    const wrapper = mount(StaticReportPanel, {
+      props: { report, onPick: () => {} },
+    });
+    // The default open fell back off the recorder — the head must SAY so,
+    // never silently switch the analyzed player (the share image carries
+    // the same note through ReportSheetBody).
+    const note = wrapper.find(".srp-head__fallback");
+    expect(note.exists()).toBe(true);
+    expect(note.text()).toContain("replay.report.fallback");
+  });
+
+  it("hides the fallback note when no fallback happened", () => {
+    const wrapper = mount(StaticReportPanel, {
+      props: { report: sampleReport(), onPick: () => {} },
+    });
+    expect(wrapper.find(".srp-head__fallback").exists()).toBe(false);
+  });
+
   it("maps coverage gaps over the player's observed interval", () => {
     const report = sampleReport();
     report.roster[0].coverage = {

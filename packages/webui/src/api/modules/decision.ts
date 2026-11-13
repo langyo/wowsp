@@ -180,6 +180,11 @@ export interface StaticReport {
     torpedoModel: string | null;
   };
   entityId: number;
+  /** Set only when the DEFAULT perspective (the recorder) had no scoreable
+   *  rows and the report fell back to the best-covered hull: the skipped
+   * default's entity id. Absent when no fallback happened or the entity
+   * was requested explicitly (Rust emits it only when Some). */
+  fallbackFrom?: number | null;
   roster: StaticRosterEntry[];
   /** The chosen player's 4 s score grid (mirrors Rust `ShipScoreSample`):
    *  the fire model only scored can-fire rows, the move model every row. */

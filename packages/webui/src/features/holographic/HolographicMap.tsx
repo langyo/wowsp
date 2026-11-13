@@ -167,6 +167,7 @@ import type {
 // handle) from useThreeScene, so the RPC client must arrive under a
 // different local name.
 import { api as rpcApi, foldDamageStats } from "@/api";
+import { STATIC_REPORT_READ_TIMEOUT_MS as DEBUG_READ_TIMEOUT_MS } from "@/api/modules/decision";
 import { parsePostBattle } from "@/features/replay/postBattle";
 import LoadingNote from "@/components/base/LoadingNote";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
@@ -911,7 +912,14 @@ const RECORDED_DOLLY_MIN = -40;
     /** Fetch the debug report for the current playhead, throttled. One
      *  call at a time — a cold build takes seconds and queueing a second
      *  one behind it only stalls the (cached) refresh further. Failures
-     *  stay silent like the fire layer's. */
+     *  stay silent like the fire layer's. The invoke cannot be aborted
+     *  (Tauri has no per-invoke cancel), so a watchdog bounds the VISIBLE
+     *  state on the same rule as the 战报 modal / the post-battle AI
+     *  column: a stalled ipc round trip must not pin `debugInFlight`
+     *  forever (2026-11-13 report: the map's AI badge spun endlessly —
+     *  with the latch stuck, every later playhead move was skipped too).
+     *  On expiry the run's seq is invalidated, so a late answer lands as
+     *  a stale no-op; the next cadence tick retries with fresh state. */
     function maybeFetchDebugReport(): void {
       if (!capabilities.aiInference || !aiAnalysisOn.value || !props.replayPath) return;
       if (debugInFlight) return;
@@ -921,6 +929,12 @@ const RECORDED_DOLLY_MIN = -40;
       const seq = ++debugSeq;
       debugInFlight = true;
       debugLoading.value = true;
+      const timer = setTimeout(() => {
+        if (seq !== debugSeq) return; // superseded: a newer run owns the state
+        debugSeq += 1; // invalidate this run: its late reply is a stale no-op
+        debugInFlight = false;
+        debugLoading.value = false;
+      }, DEBUG_READ_TIMEOUT_MS);
       rpcApi
         .decisionDebugReport(props.replayPath, t)
         .then((report) => {
@@ -933,8 +947,11 @@ const RECORDED_DOLLY_MIN = -40;
           if (seq === debugSeq) debugReport.value = null;
         })
         .finally(() => {
-          debugInFlight = false;
-          debugLoading.value = false;
+          clearTimeout(timer);
+          if (seq === debugSeq) {
+            debugInFlight = false;
+            debugLoading.value = false;
+          }
         });
     }
 

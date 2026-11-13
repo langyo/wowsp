@@ -38,7 +38,7 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use wowsp_tauri_shared::{CommandResult, TorpedoScores};
 
-use super::decision_score::{ShipScoreReport, ShipScoreSample, softmax};
+use super::decision_score::{ShipScoreEntry, ShipScoreReport, ShipScoreSample, softmax};
 use super::decision_serve::{debug_move_model, with_debug_cache_entry};
 use super::fire_dataset::MoveDatasetRow;
 
@@ -219,6 +219,13 @@ pub struct StaticReport {
     pub model_sources: serde_json::Value,
     /// The chosen player.
     pub entity_id: i32,
+    /// Set only when the DEFAULT perspective (the recorder) had no
+    /// scoreable rows — the exporter dropped its hull for a reason other
+    /// than mirror ambiguity — and the report fell back to the best
+    /// scoreable entry: the skipped default's entity id. Absent when no
+    /// fallback happened or the entity was requested explicitly.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fallback_from: Option<i32>,
     /// Full roster with per-ship coverage (the picker switches between
     /// these without re-fetching — one scoring pass serves all).
     pub roster: Vec<StaticRosterEntry>,
@@ -349,6 +356,60 @@ fn coverage_of(samples: &[ShipScoreSample], alive_from: f32, alive_to: f32) -> S
 
 // ── report assembly ─────────────────────────────────────────────────────────
 
+/// The best scoreable roster entry for a DEFAULT-perspective fallback:
+/// most samples, then the recorder's side (team 0), then the lowest
+/// entity id. Entity ids are unique, so the order is total and the pick
+/// deterministic. Entries always carry non-empty samples (they are built
+/// from scored rows); the filter documents that invariant.
+pub(crate) fn best_scoreable_entry(per_ship: &[ShipScoreEntry]) -> Option<&ShipScoreEntry> {
+    per_ship
+        .iter()
+        .filter(|e| !e.samples.is_empty())
+        .max_by(|a, b| {
+            a.samples
+                .len()
+                .cmp(&b.samples.len())
+                .then(b.team_id.cmp(&a.team_id))
+                .then(b.entity_id.cmp(&a.entity_id))
+        })
+}
+
+/// Resolve the report's perspective. An EXPLICIT request passes through
+/// untouched (the webui picker only emits scoreable ids, so an unscoreable
+/// explicit id is stale data the caller must hear about — the per-entity
+/// error further down stays). The default (None) is the recorder; when the
+/// recorder has no scoreable rows (the exporter dropped its hull — the
+/// mirror-ambiguity exemption covers the common case, but other drop
+/// reasons remain), fall back to [`best_scoreable_entry`] instead of
+/// failing the whole report, recording the skipped default so the webui
+/// can say so. Returns `(entity_id, fallback_from)`.
+fn resolve_default_perspective(
+    requested: Option<i32>,
+    recorder: Option<i32>,
+    per_ship: &[ShipScoreEntry],
+) -> anyhow::Result<(i32, Option<i32>)> {
+    if let Some(id) = requested {
+        return Ok((id, None));
+    }
+    let scoreable = |id: i32| {
+        per_ship
+            .iter()
+            .any(|e| e.entity_id == id && !e.samples.is_empty())
+    };
+    match recorder {
+        Some(id) if scoreable(id) => Ok((id, None)),
+        skipped => {
+            let best = best_scoreable_entry(per_ship).ok_or_else(|| {
+                anyhow!(
+                    "no scoreable ships in this replay (the movement export produced no \
+                     team-known rows) — nothing to report"
+                )
+            })?;
+            Ok((best.entity_id, skipped))
+        },
+    }
+}
+
 /// Roster fallback for hulls the scoring pass did not cover: claim torpedo
 /// coverage only when the model is installed AND the class/armament verdict
 /// applies. Without the model EVERY hull reports false — exactly the scored
@@ -376,12 +437,15 @@ pub(crate) fn build_static_report(
     let roster = super::replay_probe::read_roster(&path.to_string_lossy())?;
 
     with_debug_cache_entry(path, los_dir, |entry| {
-        // None = the recorder (the default perspective: always fully
-        // observable — every other ship is bounded by spotting).
-        let entity_id = entity_id
-            .or(entry.recorder)
-            .ok_or_else(|| anyhow!("replay carries no recorder id — pass an explicit entity"))?;
         let scores: &ShipScoreReport = &entry.scores;
+        // None = the recorder (the default perspective: always fully
+        // observable — every other ship is bounded by spotting). A recorder
+        // without scoreable rows falls back to the best scoreable entry
+        // (with `fallback_from` noting the skip) instead of failing the
+        // whole report — 2026-11-13 report: the default open errored with
+        // "entity … has no scoreable rows" on such replays.
+        let (entity_id, fallback_from) =
+            resolve_default_perspective(entity_id, entry.recorder, &scores.per_ship)?;
         let scored_horizon = scores
             .per_ship
             .iter()
@@ -629,6 +693,7 @@ pub(crate) fn build_static_report(
                 "torpedoModel": scores.torpedo_source,
             }),
             entity_id,
+            fallback_from,
             roster,
             timeline: per_ship.samples.clone(),
             moments,
@@ -765,6 +830,87 @@ mod tests {
                 .iter()
                 .all(|&i| moment_candidate(&samples[i]).is_some())
         );
+    }
+
+    /// Minimal scored entry: `n` samples, everything else defaulted —
+    /// only the fallback-selection fields matter to these tests.
+    fn entry(entity_id: i32, team_id: i8, n: usize) -> ShipScoreEntry {
+        ShipScoreEntry {
+            entity_id,
+            ship_id: Some(4000000000 + entity_id as i64),
+            ship_class: None,
+            fire_applicable: true,
+            torpedo_applicable: false,
+            torpedo: None,
+            team_id,
+            is_recorder: false,
+            whole_game: 0.5,
+            whole_fire: Some(0.5),
+            whole_move: 0.5,
+            contribution: None,
+            contribution_shots: None,
+            samples: (0..n)
+                .map(|i| sample(i as f32 * SAMPLE_GRID_S, 0.5, None, None, None))
+                .collect(),
+            outcome: super::super::decision_score::ShipOutcome::Missing,
+        }
+    }
+
+    /// Most samples wins; equal samples prefer the recorder's side (team
+    /// 0); full ties pick the lower entity id — a total, deterministic
+    /// order. Empty per_ship and empty-sample entries yield None.
+    #[test]
+    fn best_scoreable_entry_orders_by_samples_then_team_then_id() {
+        let ships = vec![
+            entry(30, 0, 10),
+            entry(20, 1, 12), // most samples — wins over fewer samples
+            entry(10, 0, 12), // tie: team 0 wins over team 1
+            entry(5, 0, 12),  // tie within team 0: lower id wins
+        ];
+        assert_eq!(best_scoreable_entry(&ships).unwrap().entity_id, 5);
+        assert!(best_scoreable_entry(&[]).is_none());
+        let empty_samples = vec![entry(1, 0, 0)];
+        assert!(best_scoreable_entry(&empty_samples).is_none());
+    }
+
+    /// A default (None) request whose recorder has no scoreable rows falls
+    /// back to the best scoreable entry and records the skipped recorder
+    /// (the 2026-11-13 report's replay: recorder 292510 dropped).
+    #[test]
+    fn default_falls_back_to_best_scoreable_entry() {
+        let per_ship = vec![entry(11, 0, 8), entry(12, 1, 3)];
+        let (id, fallback) = resolve_default_perspective(None, Some(292_510), &per_ship).unwrap();
+        assert_eq!(id, 11);
+        assert_eq!(fallback, Some(292_510));
+    }
+
+    /// A scoreable recorder opens as itself — no fallback note.
+    #[test]
+    fn scoreable_recorder_needs_no_fallback() {
+        let per_ship = vec![entry(11, 0, 8), entry(12, 1, 30)];
+        let (id, fallback) = resolve_default_perspective(None, Some(11), &per_ship).unwrap();
+        assert_eq!((id, fallback), (11, None));
+    }
+
+    /// An EXPLICIT request passes through untouched — unscoreable explicit
+    /// ids keep the per-entity error further down the pipeline (the picker
+    /// only emits scoreable ids, so an explicit miss is stale data).
+    #[test]
+    fn explicit_entity_id_passes_through() {
+        let per_ship = vec![entry(11, 0, 8)];
+        let (id, fallback) = resolve_default_perspective(Some(999), Some(11), &per_ship).unwrap();
+        assert_eq!((id, fallback), (999, None));
+    }
+
+    /// Nothing scoreable at all (degenerate export) — a dedicated error,
+    /// not the per-entity one; a recorder-less replay with rows still opens.
+    #[test]
+    fn default_without_any_scoreable_rows_errors() {
+        let err =
+            resolve_default_perspective(None, Some(7), &[]).expect_err("empty per_ship must error");
+        assert!(err.to_string().contains("no scoreable ships"));
+        let (id, fallback) = resolve_default_perspective(None, None, &[entry(11, 1, 4)]).unwrap();
+        assert_eq!((id, fallback), (11, None));
     }
 
     /// One meaning for `torpedoApplicable` across scored and unscored rows:

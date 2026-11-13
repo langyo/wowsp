@@ -777,25 +777,42 @@ export default defineComponent({
         prefs.value.weightedTeamWr,
       );
 
-    /** Load the selected player's global stats on-demand (title bar chip
-     *  while loading; the lookup API resolves by nickname + realm). Failures
-     *  are silent — AI names and rate-limited lookups are common, and an
-     *  error toast for every bot would be noise. */
+    /** On-demand global stats live under the same watchdog discipline as
+     *  the panel's AI reads: the lookup rides the shared lane-capped queue
+     * (rate-limited WG API behind a proxy), and a stalled lane must not pin
+     * the drill-down spinner and the title-bar chip forever (2026-11-13
+     * report class). On expiry the error face stands in; a late answer
+     * still upgrades it in place — the template prefers stats over the
+     * error card. A seq guard keeps a superseded run's late reply off a
+     * drill-down that has since moved to another player. */
+    const GLOBAL_LOOKUP_TIMEOUT_MS = 30_000;
+    let globalSeq = 0;
     async function loadGlobal(p: (typeof rows.value)[number]) {
+      const seq = ++globalSeq;
       globalStats.value = null;
       globalLoading.value = false;
       globalError.value = false;
       if (!p.realm || AI_NAME.test(p.name)) return;
       globalLoading.value = true;
       const tid = loadingTasks.begin(t("replay.postbattle.loadingGlobal", { name: p.name }));
-      try {
-        globalStats.value = await stats.lookup(p.name, p.realm);
+      const timer = setTimeout(() => {
+        // Idempotent end FIRST: a superseded run's invoke may never settle,
+        // and its finally would otherwise leak this title-bar chip entry.
         loadingTasks.end(tid);
-      } catch {
-        loadingTasks.end(tid);
-        globalError.value = true;
-      } finally {
+        if (seq !== globalSeq) return; // superseded: a newer run owns the state
         globalLoading.value = false;
+        globalError.value = true;
+      }, GLOBAL_LOOKUP_TIMEOUT_MS);
+      try {
+        const next = await stats.lookup(p.name, p.realm);
+        if (seq !== globalSeq) return;
+        globalStats.value = next;
+      } catch {
+        if (seq === globalSeq) globalError.value = true;
+      } finally {
+        clearTimeout(timer);
+        loadingTasks.end(tid);
+        if (seq === globalSeq) globalLoading.value = false;
       }
     }
 

@@ -353,6 +353,20 @@ const ReportSheetBody = defineComponent({
             {me.value?.isRecorder ? (
               <AppTag tone="info">{t("replay.report.recorder")}</AppTag>
             ) : null}
+            {/* The default perspective (the recorder) had no scoreable rows
+                and the report fell back to the best-covered hull — say so:
+                a silent perspective switch would read as the wrong player's
+                analysis. Rides ReportSheetBody, so the share image carries
+                the note honestly. */}
+            {props.report.fallbackFrom != null ? (
+              <AppTag
+                tone="warning"
+                class="srp-head__fallback"
+                data-hint={t("replay.report.fallbackHint")}
+              >
+                {t("replay.report.fallback")}
+              </AppTag>
+            ) : null}
             <div class="srp-head__meta">
               <MapNameTag
                 class="srp-head__meta-map"
