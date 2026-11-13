@@ -2668,7 +2668,9 @@ cell 粒度先验（oracle 2.010）可修复排序，但需**目标窗 cell base
 
 ### E1 · ONNX 推理运行时可静态编入桌面应用 ✅
 
-- `ort =2.0.0-rc.13`（精确 pin：rc 线 API 不稳）默认 `download-binaries` 静态链接：
+- `ort =2.0.0-rc.15`（精确 pin：rc 线 API 不稳；rc.14 起适配 cargo 1.100 的
+  v2 build-dir 布局——rc.13 的 copy-dylibs 按 OUT_DIR 祖先硬编码反推 exe 目录，
+  1.100 下错位一层、Windows 构建必崩）默认 `download-binaries` 静态链接：
   测试 exe 的 PE 导入表**无 `onnxruntime.dll`**，核心运行时已编入，但 pyke 预编译件
   在 Windows 上始终链接 DirectML，exe 因而**静态导入 `DirectML.dll`**（尽管推理只用
   CPU）。DirectML 从 Win10 1903 才随系统提供，且 1903 自带版本缺 `DMLCreateDevice1`，
@@ -2677,11 +2679,13 @@ cell 粒度先验（oracle 2.010）可修复排序，但需**目标窗 cell base
   预编译件来自 pyke CDN（构建期下载，~341 MB 解压后留在本地缓存
   `%LOCALAPPDATA%/ort.pyke.io`）。
 - 369 字节 fixture（单 MatMul，`[1,8]→[1,8]`）经 `include_bytes!` 内嵌，
-  `OnceLock<Mutex<Session>>` 惰性加载（ORT Session 非 `Sync`），两个 Tauri
+  `OnceLock<Mutex<Session>>` 惰性加载（ORT Session 非 `Sync`；rc.14 起 Session
+  builder 还需显式传入进程唯一的 `Environment`，见 `decision_ai::ort_environment`），
+  两个 Tauri
   command（`decision_ai_status` / `decision_ai_suggest`）+ 4 个单测全过。
 - 门禁全绿：fmt / clippy `-D warnings` / `cargo test -p wowsp_tauri` /
-  `cargo check --workspace`。注意 ort rc.13 实际 MSRV 1.88（workspace 标 1.85，
-  CI stable 工具链无影响）。
+  `cargo check --workspace`。注意 ort rc 线实际 MSRV 高于 workspace 标的 1.85
+  （rc.13 实测 1.88，CI stable 工具链无影响）。
 
 ### E2 · CruiseState `0x32` = 录制者的输入流，布局已逆向 ✅
 
