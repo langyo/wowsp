@@ -1178,7 +1178,8 @@ impl ScoreModel {
     /// metadata. Unknown schemas are a hard error — never a wrong-shaped
     /// forward.
     pub fn from_bytes(detail: impl Into<String>, bytes: &[u8]) -> anyhow::Result<Self> {
-        let mut builder = Session::builder().map_err(|e| anyhow!("create session builder: {e}"))?;
+        let mut builder = Session::builder(super::decision_ai::ort_environment()?)
+            .map_err(|e| anyhow!("create session builder: {e}"))?;
         let session = builder
             .commit_from_memory(bytes)
             .map_err(|e| anyhow!("load ONNX model: {e}"))?;

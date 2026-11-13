@@ -249,8 +249,11 @@ arboard = { version = "^3", default-features = false, features = ["image-data"] 
 # Pinned exactly: the 2.0.0-rc line shifts API between RCs, so a caret would
 # silently pull a different surface. Defaults enable `download-binaries` —
 # ort-sys's build script fetches prebuilt static ORT libs from the pyke CDN
-# (first build needs network, then cached in target/).
-ort = "=2.0.0-rc.13"
+# (first build needs network, then cached in target/). rc.15 is the FIRST
+# rc that builds under cargo 1.100's v2 build-dir layout: rc.13's
+# copy-dylibs hardcoded the old OUT_DIR ancestry and panicked with
+# ERROR_PATH_NOT_FOUND on every Windows build (2026-11-12 outage).
+ort = "=2.0.0-rc.15"
 
 # Encoding helpers
 base64 = "^0.23"
