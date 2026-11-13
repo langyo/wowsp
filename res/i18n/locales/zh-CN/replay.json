@@ -670,6 +670,8 @@
     "coverage": "数据覆盖",
     "noData": "该舰无可用数据",
     "gapNote": "——其中 {s} 秒未被侦测、无法解析",
+    "fallback": "替代视角",
+    			"fallbackHint": "录制者的舰船在本场录像中没有可评分数据，已改为展示观测覆盖最高的玩家。",
     "recorder": "录制者",
     "diedAt": "阵亡 {t}",
     "duration": "时长 {t}",

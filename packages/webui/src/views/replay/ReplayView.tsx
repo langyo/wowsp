@@ -2806,6 +2806,21 @@ export default defineComponent({
                         >
                           {t("replay.results")}
                         </AppTag>
+                      ) : trajectoryError.value ? (
+                        /* A failed/stalled packet read must not make the
+                         * post-battle entry point SILENTLY VANISH (the
+                         * 2026-11-13 report read the vanished pill as
+                         * "still spinning"): keep the pill mounted as a
+                         * non-interactive danger tag whose hint carries
+                         * the watchdog/decode error — the map-area
+                         * ErrorCard alone is easy to miss. */
+                        <AppTag
+                          class="replay-view__results replay-view__results--failed"
+                          tone="danger"
+                          data-hint={trajectoryError.value}
+                        >
+                          {t("replay.results")}
+                        </AppTag>
                       ) : null}
                       {chatCount.value > 0 ? (
                         <AppTag

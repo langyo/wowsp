@@ -493,7 +493,16 @@ fn load_advice_model() -> anyhow::Result<Option<DecisionModel>> {
 /// The process-global advice model (None when every rung is absent).
 pub fn advice_model() -> anyhow::Result<Option<&'static Mutex<DecisionModel>>> {
     ADVICE_MODEL
-        .get_or_init(|| load_advice_model().map(|m| m.map(Mutex::new)))
+        .get_or_init(|| {
+            let loaded = load_advice_model();
+            // Sticky Err + silent modules = an undiagnosable dead advice
+            // layer: log the one failure line while it happens (the Ok(None)
+            // no-pack case is normal and stays quiet).
+            if let Err(e) = &loaded {
+                tracing::warn!("advice model load failed — fire suggestions fall back to the shared model or go dark until restart: {e}");
+            }
+            loaded.map(|m| m.map(Mutex::new))
+        })
         .as_ref()
         .map_err(|e| anyhow!("{e}"))
         .map(|opt| opt.as_ref())

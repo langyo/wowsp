@@ -670,6 +670,8 @@
     "coverage": "Couverture des données",
     "noData": "Aucune donnée pour ce navire",
     "gapNote": " — {s} s non observées (irrésolubles)",
+    "fallback": "perspective de repli",
+    			"fallbackHint": "L’enregistreur n’avait aucune ligne scorée dans cette replay — le joueur le mieux couvert est affiché à la place.",
     "recorder": "enregistreur",
     "diedAt": "Coulé à {t}",
     "duration": "Durée {t}",

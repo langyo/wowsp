@@ -1182,7 +1182,7 @@ fn load_debug_model(
             Err(e) => errors.push(format!("{}: {e}", c.path.display())),
         }
     }
-    anyhow::bail!(
+    let msg = format!(
         "no usable debug model for {env_key} (tried {}; failures: {}) — set {env_key} to an \
          existing ONNX or train the experiment defaults",
         candidates
@@ -1191,11 +1191,20 @@ fn load_debug_model(
             .collect::<Vec<_>>()
             .join(" | "),
         if errors.is_empty() {
-            "all absent".into()
+            "all absent".to_string()
         } else {
             errors.join("; ")
         }
-    )
+    );
+    // The load result is sticky for the process (OnceLock), so this is the
+    // ONE chance the failure gets a log line — the decision modules are
+    // otherwise silent and a broken pack read as "AI dead" with nothing
+    // in wowsp.log to point at (2026-11-13 report).
+    tracing::warn!(
+        "{msg} — every AI decision surface will error until the pack is fixed \
+         and the app restarts"
+    );
+    anyhow::bail!("{msg}")
 }
 
 static DEBUG_FIRE_MODEL: OnceLock<anyhow::Result<Mutex<ScoreModel>>> = OnceLock::new();
@@ -1397,8 +1406,9 @@ pub(crate) struct DebugCacheEntry {
     /// perspective — the only always-fully-observable ship).
     pub(crate) recorder: Option<i32>,
     /// entity id → rows sorted by `t` (team-known ships only — the E16
-    /// export drops mirror-ambiguous hulls, the recorder included when its
-    /// shipId collides; those ships get neither advice nor scores).
+    /// export drops mirror-ambiguous hulls; the RECORDER is exempt from
+    /// that ambiguity since 2026-11-13, so it always carries rows, while
+    /// its mirror twin still gets neither advice nor scores).
     pub(crate) rows: BTreeMap<i32, Vec<MoveDatasetRow>>,
     pub(crate) death: BTreeMap<i32, Option<f32>>,
     pub(crate) los_loaded: bool,
