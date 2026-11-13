@@ -42,7 +42,7 @@ WoWSP is a desktop panel for **World of Warships** on Windows, with an Android c
 - **Ship encyclopedia & build planner** — the full tech tree with a Wargaming/Lesta branch switch, specs and armor views, per-ship server trends, 3D model stages for ships and planes, and a build planner that projects captain skills, commanders, signals, and upgrades into final specs with credit/XP cost math.
 - **Mod hub** — a curated marketplace of community mods across function, texture, and voice (ship skins, Wwise voice packs with previews), with install presets, one-click safe mode, conflict warnings, stale-mod migration, texture-override analysis, and batch updates.
 - **Tactics board** *(in development)* — a tactical plan editor over the bundled battle-map catalog: a 20-minute planning clock, unit tracks, action timelines, and shareable plan sets.
-- **Android companion** — pair your phone over Wi-Fi (auto-discovery) or from anywhere via a six-digit pairing code through the built-in relay, pull replays straight from your desktop, and review them on the go.
+- **Android companion** — the phone links to your desktop through the account-routed gateway (challenge-based, no pairing code) for live battle stats, imports replay files straight from storage, and reviews them on the go.
 
 Under the hood it stays a native citizen: mirror-racing auto-updates (portable installs supported), a tray panel, an onboarding wizard, in-app announcements, and a feedback form with log export; themes, wallpapers, UI opacity, font-size, and DPI controls; nine UI languages; minimal anonymous telemetry you can switch off; and a bundled WebView2 that degrades gracefully when missing.
 

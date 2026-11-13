@@ -1,8 +1,9 @@
 /** Pairing settings section — the gateway-push surface (route entry +
  *  mobile service + self-host wizard). The LEGACY LAN pairing is gone
- *  from the UI entirely. Phone build renders the PHONE (client) side:
- *  the route entry field (custom domain for self-host) plus the existing
- *  paired-computers management; the wizard stays desktop-only
+ *  from the UI entirely, and the PIN pairing mode is retired end to end
+ *  (2026-11-13): no wizard, no paired-computers list, no code display.
+ *  Phone build renders the PHONE (client) side: the route entry field
+ *  (custom domain for self-host) only; the wizard stays desktop-only
  *  (publishing is a desktop concern).
  *
  *  Desktop primary UI (gateway-push §5): the ROUTE ENTRY (readonly
@@ -13,7 +14,7 @@
  *  from wowsp://gateway-state via the gateway store), and the self-host
  *  wizard entry. The relay pairing-code display is GONE from the UI. */
 import { computed, defineComponent, type PropType } from "vue";
-import { Rocket, Smartphone } from "@lucide/vue";
+import { Rocket } from "@lucide/vue";
 import {
   HkAlert,
   HkButton,
@@ -28,7 +29,6 @@ import {
 
 import { t, tError } from "@/i18n";
 import SelfhostWizard from "@/components/settings/SelfhostWizard";
-import { entryKey } from "@/stores/pairing";
 import { isMobileApp } from "@/utils/platform";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 import "./gatewaySettings.scss";
@@ -59,8 +59,7 @@ export default defineComponent({
     ctx: { type: Object as PropType<SettingsBodyCtx>, required: true },
   },
   setup(props) {
-    const { pairing, gateway: gw } = props.ctx;
-    const pairingStore = pairing.pairingStore;
+    const { gateway: gw } = props.ctx;
     const gateway = gw.gateway;
     const shownPlayer = gw.shownPlayer;
 
@@ -132,48 +131,11 @@ export default defineComponent({
       isMobileApp() ? (
         <>
           {/* phone pairing — the PHONE (client) side. The gateway route
-              entry (custom domain for self-host) rides on top; the
-              paired-computers management below is unchanged. */}
+              entry (custom domain for self-host) is all that remains:
+              the paired-computers list went away with the PIN pairing
+              mode (the phone imports replay files directly). */}
           <HkSettingsGroup title={t("gateway.phoneSectionTitle")}>
             {renderRoot()}
-          </HkSettingsGroup>
-          <HkSettingsGroup title={t("settings.pairingMobile")}>
-            <HkSettingsHint>{t("settings.pairingMobileHint")}</HkSettingsHint>
-            <div class="settings-modal__pairing-open">
-              <HkButton variant="primary" onClick={pairing.openPairingWizard}>
-                <Smartphone size={15} />
-                {t("settings.pairingOpenWizard")}
-              </HkButton>
-            </div>
-            {pairingStore.hosts.length > 0 ? (
-              <>
-                <HkSettingsSub title={t("settings.pairingPairedHosts")} />
-                <ul class="settings-modal__paired-hosts">
-                  {pairingStore.hosts.map((h) => (
-                    <li key={entryKey(h)} class="settings-modal__paired-host">
-                      <span class="settings-modal__paired-host-body">
-                        <span class="settings-modal__paired-host-label">{h.label}</span>
-                        <span class="settings-modal__paired-host-meta">
-                          {h.lastSeen > 0
-                            ? t("settings.pairingLastSynced", {
-                                time: new Date(h.lastSeen).toLocaleString(),
-                              })
-                            : t("settings.pairingNeverSynced")}
-                        </span>
-                      </span>
-                      <HkButton
-                        size="sm"
-                        variant="secondary"
-                        ariaLabel={t("settings.pairingForget")}
-                        onClick={() => pairingStore.removeEntry(h)}
-                      >
-                        {t("settings.pairingForget")}
-                      </HkButton>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            ) : null}
           </HkSettingsGroup>
         </>
       ) : (

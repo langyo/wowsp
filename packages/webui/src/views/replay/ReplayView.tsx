@@ -1,5 +1,5 @@
 import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type VNode } from "vue";
-import { Copy, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, Laptop, RefreshCw, X } from "@lucide/vue";
+import { Copy, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
 import { useReplayPositions } from "@/features/replay/useReplayPositions";
@@ -10,9 +10,7 @@ import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
 import StaticReportModal from "@/features/replay/StaticReportModal";
 import type { StaticReport } from "@/api";
-import PairingWizard from "@/features/replay/PairingWizard";
 import { useGameStatusStore } from "@/stores/gameStatus";
-import { usePairingStore } from "@/stores/pairing";
 import { useUpdaterStore } from "@/stores/updater";
 import { api, foldDamageStats, type DamageStatSample } from "@/api";
 import { isNative } from "@/transport";
@@ -2001,11 +1999,10 @@ export default defineComponent({
 
     // ── mobile replay acquisition (phone app build) ─────────────────────
     // pick_replay_files (the native dialog behind onOpenExternal) errors on
-    // mobile, so the phone surfaces its own pair of acquisition actions:
-    // an HTML file picker writing through importReplayFile, and the
-    // pairing wizard pulling from the user's desktop WoWSP.
-    const pairing = usePairingStore();
-    const wizardOpen = ref(false);
+    // mobile, so the phone surfaces its own acquisition action: an HTML
+    // file picker writing through importReplayFile. (The PIN-pairing
+    // wizard that pulled from the desktop was retired on 2026-11-13 —
+    // the phone's live-stats link is the account-routed gateway.)
     // Phone LAYOUT (viewport): the replay page shows ONLY the level-2 list;
     // opening a replay raises the level-3 detail as a tall bottom-sheet
     // WINDOW (hikari docks HkModal at <=767px, backGuard closes it on the
@@ -2013,9 +2010,6 @@ export default defineComponent({
     // the-bottom convention. Desktop keeps the inline detail pane.
     const { isMobile: phoneLayout } = useBreakpoint();
     const detailSheetOpen = ref(false);
-    // Deep link: /replay?pairing=1 auto-opens the wizard — the phone
-    // settings' pairing section routes here (its primary button).
-    if (route.query.pairing === "1") wizardOpen.value = true;
     const fileInput = ref<HTMLInputElement | null>(null);
     const importing = ref(false);
 
@@ -2036,15 +2030,17 @@ export default defineComponent({
       if (files.length === 0) return;
       importing.value = true;
       try {
-        const entries = await Promise.all(
-          files.map(async (f) => ({
-            name: f.name,
-            bytes: new Uint8Array(await f.arrayBuffer()),
-          })),
-        );
-        const { imported, failed } = await pairing.importFiles(entries);
-        for (const f of failed) {
-          toast.error(`${f.name}\n${f.error}`);
+        const imported: string[] = [];
+        for (const f of files) {
+          try {
+            const { path } = await api.importReplayFile(
+              f.name,
+              new Uint8Array(await f.arrayBuffer()),
+            );
+            imported.push(path);
+          } catch (e) {
+            toast.error(`${f.name}\n${e instanceof Error ? e.message : String(e)}`);
+          }
         }
         if (imported.length > 0) {
           toast.success(t("replay.acquire.importedToast", { n: imported.length }));
@@ -2053,11 +2049,6 @@ export default defineComponent({
       } finally {
         importing.value = false;
       }
-    }
-
-    /** A remote pull finished — refresh so the landed files show locally. */
-    function onPairingImported() {
-      void reload();
     }
 
     // Decoded trajectories for the currently-open replay (M3). Loaded lazily on
@@ -3099,7 +3090,7 @@ export default defineComponent({
                   <>
                     {/* Phone build: the native pick dialog is unavailable
                         (pick_replay_files errors on mobile) — the HTML file
-                        input + pairing wizard take over. */}
+                        input takes over. */}
                     <HkButton
                       size="sm"
                       variant="ghost"
@@ -3108,14 +3099,6 @@ export default defineComponent({
                       ariaLabel={t("replay.acquire.pickFiles")}
                     >
                       <FileUp size={14} />
-                    </HkButton>
-                    <HkButton
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => (wizardOpen.value = true)}
-                      ariaLabel={t("replay.acquire.fromDesktop")}
-                    >
-                      <Laptop size={14} />
                     </HkButton>
                   </>
                 ) : (
@@ -3187,7 +3170,7 @@ export default defineComponent({
               {parser.external.value.length === 0 && scannedReplays.value.length === 0 ? (
                 isMobileApp() ? (
                   /* Phone build's prominent acquisition empty state: pick
-                      local .wowsreplay files, or pair with the desktop. */
+                      local .wowsreplay files. */
                   <div class="replay-view__acquire">
                     <p class="replay-view__acquire-title">{t("replay.acquire.emptyTitle")}</p>
                     <p class="replay-view__acquire-hint">{t("replay.acquire.emptyHint")}</p>
@@ -3199,13 +3182,6 @@ export default defineComponent({
                       >
                         <FileUp size={15} />
                         {t("replay.acquire.pickFiles")}
-                      </HkButton>
-                      <HkButton
-                        variant="secondary"
-                        onClick={() => (wizardOpen.value = true)}
-                      >
-                        <Laptop size={15} />
-                        {t("replay.acquire.fromDesktop")}
                       </HkButton>
                     </div>
                   </div>
@@ -3259,14 +3235,6 @@ export default defineComponent({
             onChange={(e: Event) => void onFilesChosen(e)}
           />
         ) : null}
-
-        {/* Phone-build pairing wizard (sheet-driven; docks as a bottom sheet
-            on phone layout through hikari's HkModal). */}
-        <PairingWizard
-          open={wizardOpen.value}
-          onClose={() => (wizardOpen.value = false)}
-          onImported={onPairingImported}
-        />
       </main>
     );
     };

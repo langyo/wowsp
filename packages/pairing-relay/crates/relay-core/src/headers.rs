@@ -34,8 +34,6 @@
 ///   packages/website/index.html.
 /// - `https://*.google-analytics.com` / `https://*.analytics.google.com`
 ///   — gtag's measurement beacons (`connect-src`).
-/// - `wss://wowsp.langyo.xyz` — the pairing sockets a browser visitor
-///   may open from the site.
 /// - `https://challenges.cloudflare.com` — the Turnstile widget on
 ///   /feedback: its `api.js` (script), the challenge iframe (frame-src,
 ///   which would otherwise fall back to `default-src 'self'` and break
@@ -54,7 +52,7 @@ pub const CSP_HTML: &str = "default-src 'self'; \
 script-src 'self' 'wasm-unsafe-eval' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'; \
 style-src 'self' https://langyo.github.io 'unsafe-inline'; \
 img-src 'self' data: https://langyo.github.io; \
-connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net; \
+connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net; \
 frame-src https://challenges.cloudflare.com; \
 object-src 'none'; \
 base-uri 'self'; \
@@ -164,7 +162,7 @@ mod tests {
             "script-src 'self' 'wasm-unsafe-eval' https://langyo.github.io https://www.googletagmanager.com https://challenges.cloudflare.com 'unsafe-inline'",
             "style-src 'self' https://langyo.github.io 'unsafe-inline'",
             "img-src 'self' data: https://langyo.github.io",
-            "connect-src 'self' wss://wowsp.langyo.xyz https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net",
+            "connect-src 'self' https://*.google-analytics.com https://*.analytics.google.com https://challenges.cloudflare.com https://api.github.com https://ghp.ci https://gh-proxy.com https://ghfast.top https://ghproxy.net",
             "frame-src https://challenges.cloudflare.com",
             "object-src 'none'",
             "base-uri 'self'",

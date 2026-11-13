@@ -6,9 +6,6 @@ use anyhow::{Result, anyhow};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
-use std::sync::Mutex;
-use std::sync::OnceLock;
-use std::time::{Duration, Instant};
 
 use wowsp_tauri_shared::{CommandResult, GameInstall, ReplayMetaLite};
 
@@ -248,89 +245,6 @@ pub(crate) fn resolve_replay_dir(dir: Option<String>) -> Result<PathBuf> {
     default_replay_dir()
 }
 
-/// Pairing-path listing cache (audit L-11): a token-holding LAN client can
-/// re-request the listing arbitrarily often, and every uncached call
-/// re-walks the whole replay tree plus one bounded header read per file —
-/// disk I/O an attacker can hold at 100% with nothing but polling. A short
-/// TTL keeps repeated polls on the in-memory copy. The direct
-/// `list_replays_meta` command stays uncached on purpose: the webui rail
-/// refreshes on scan/import events and expects fresh data.
-const PAIRING_LIST_CACHE_TTL: Duration = Duration::from_secs(10);
-
-/// One cached pairing listing: (recorded-at, resolved dir key, full list).
-type CachedPairingList = (Instant, String, Vec<ReplayMetaLite>);
-
-/// The cached pairing listing slot.
-static PAIRING_LIST_CACHE: OnceLock<Mutex<Option<CachedPairingList>>> = OnceLock::new();
-
-#[cfg(test)]
-static TEST_PAIRING_CACHE_TTL: OnceLock<Mutex<Option<Duration>>> = OnceLock::new();
-
-#[cfg(test)]
-fn set_pairing_cache_ttl(ttl: Option<Duration>) {
-    *TEST_PAIRING_CACHE_TTL
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap_or_else(|p| p.into_inner()) = ttl;
-}
-
-#[cfg(test)]
-/// Drop the cache (between test cases that flip the TTL).
-pub(crate) fn clear_pairing_list_cache() {
-    *PAIRING_LIST_CACHE
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap_or_else(|p| p.into_inner()) = None;
-}
-
-fn pairing_cache_ttl() -> Duration {
-    #[cfg(test)]
-    if let Some(ttl) = TEST_PAIRING_CACHE_TTL
-        .get_or_init(|| Mutex::new(None))
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .clone()
-    {
-        return ttl;
-    }
-    PAIRING_LIST_CACHE_TTL
-}
-
-/// The cached pairing-listing scan: the FULL unlimited list for the
-/// resolved dir (the caller's `limit` truncates a clone, so different
-/// limits share one cache entry).
-pub(crate) fn scan_replays_meta_cached(
-    dir: Option<String>,
-    limit: Option<usize>,
-) -> Result<Vec<ReplayMetaLite>> {
-    let resolved = resolve_replay_dir(dir)?;
-    let key = resolved.to_string_lossy().into_owned();
-    let now = Instant::now();
-    {
-        let cache = PAIRING_LIST_CACHE.get_or_init(|| Mutex::new(None));
-        let guard = cache.lock().unwrap_or_else(|p| p.into_inner());
-        if let Some((at, cached_key, entries)) = guard.as_ref() {
-            if now.duration_since(*at) < pairing_cache_ttl() && *cached_key == key {
-                let mut out = entries.clone();
-                if let Some(limit) = limit {
-                    out.truncate(limit);
-                }
-                return Ok(out);
-            }
-        }
-    }
-    let (_, entries) = scan_replays_meta(Some(key.clone()), None)?;
-    {
-        let cache = PAIRING_LIST_CACHE.get_or_init(|| Mutex::new(None));
-        *cache.lock().unwrap_or_else(|p| p.into_inner()) = Some((now, key, entries.clone()));
-    }
-    let mut out = entries;
-    if let Some(limit) = limit {
-        out.truncate(limit);
-    }
-    Ok(out)
-}
-
 /// One replay file surfaced by [`walk_replays`]: its path, modification
 /// time (the listings' newest-first sort key) and length in bytes (the
 /// playtime battle ledger's cache-identity half, alongside the mtime).
@@ -448,40 +362,6 @@ mod tests {
         assert_eq!(out.len(), 1, "junction contents must not be listed");
         assert!(out[0].path.ends_with("a.wowsreplay"));
 
-        std::fs::remove_dir_all(&tmp).ok();
-    }
-
-    /// Audit L-11: the pairing listing cache answers repeated polls from
-    /// the in-memory copy within the TTL and goes back to the disk once
-    /// the TTL (here forced to zero through the test seam) expires.
-    #[test]
-    fn pairing_cache_hides_and_releases_changes_within_the_ttl() {
-        let tmp = std::env::temp_dir().join("wowsp_listing_cache_test");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).unwrap();
-        std::fs::write(tmp.join("a.wowsreplay"), b"PK").unwrap();
-        clear_pairing_list_cache();
-        set_pairing_cache_ttl(Some(Duration::from_secs(10)));
-
-        let first =
-            scan_replays_meta_cached(Some(tmp.to_string_lossy().into_owned()), None).unwrap();
-        assert_eq!(first.len(), 1);
-
-        // A file added after the cached scan stays invisible within TTL.
-        std::fs::write(tmp.join("b.wowsreplay"), b"PK").unwrap();
-        let cached =
-            scan_replays_meta_cached(Some(tmp.to_string_lossy().into_owned()), None).unwrap();
-        assert_eq!(cached.len(), 1, "within the TTL the cache answers");
-
-        // TTL zero forces every call back to the disk.
-        set_pairing_cache_ttl(Some(Duration::ZERO));
-        clear_pairing_list_cache();
-        let fresh =
-            scan_replays_meta_cached(Some(tmp.to_string_lossy().into_owned()), None).unwrap();
-        assert_eq!(fresh.len(), 2, "after expiry the new file appears");
-
-        set_pairing_cache_ttl(None);
-        clear_pairing_list_cache();
         std::fs::remove_dir_all(&tmp).ok();
     }
 }

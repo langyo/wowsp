@@ -290,12 +290,12 @@ fn record_uploader(store: &mut ContributionStore, identity: &ContributionIdentit
     }
 }
 
-// ── relay HTTP face ─────────────────────────────────────────────────────────
+// ── worker-site HTTP face ───────────────────────────────────────────────────
 
 fn relay_url(path: &str) -> String {
     format!(
         "{}/api/replays{path}",
-        super::pairing_relay::builtin_relay_root()
+        super::gateway::builtin_worker_root()
     )
 }
 

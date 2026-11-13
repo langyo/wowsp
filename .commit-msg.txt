@@ -1,0 +1,41 @@
+🔥 Retire the PIN pairing mode end to end.
+
+The PIN pairing mode is one system, not two: the phone's LAN flow was
+UDP discovery -> pick a desktop -> type that desktop's 6-digit PIN ->
+bearer token -> pull. The token's ONLY source was POST /pair with the
+PIN, and no UI could start the desktop pairing server after #1544
+retired the code display (pairing_start's sole caller is the debug-only
+WOWSP_AUTOSTART_PAIRING e2e hook). Discovery, the PIN exchange, the
+relay rooms and the wizard were therefore unreachable dead code, and
+the user has decided to retire the mode completely.
+
+Layers removed:
+
+- APP (Rust): the pairing client/server command families, the LAN
+  discovery broadcaster, the whole pairing_relay tree (tunnel, bridge,
+  code state, ws, urls) — the surviving gateway plumbing moved to
+  commands/gateway/{urls.rs,ws.rs}; the replay listing's pairing-path
+  cache went with its only consumer; rpc gates updated (270 commands).
+- WEBUI: PairingWizard + its SCSS, stores/pairing + its tests, the
+  settings pairing state composable, the /replay?pairing=1 deep link
+  and the from-desktop acquisition pills. The phone's replay
+  acquisition path is the HTML file picker -> importReplayFile (live
+  and untouched); the live-stats phone link is the account-routed
+  gateway (untouched). PhonePairingEntry's phone face renders null
+  (its target wizard is gone); the desktop handshake modal is
+  unchanged.
+- RELAY WORKER: the Room + Directory Durable Object classes and the
+  /pair + room websocket routes; migration v5 deletes the classes from
+  the live deployment while v1-v4 keep the applied history intact (a
+  fresh self-host template starts a clean chain — the example notes
+  the old worker must be recreated). ReplayIndex and the gateway
+  namespace stay.
+- DOCS + i18n: the PIN/pairing prose and the retired keys dropped
+  (3589 keys across 8 locales).
+
+Verified: cargo check/clippy/fmt on both app crates, cargo test
+--workspace (all green), relay-core 154 tests, relay-worker wasm
+compile, wrangler deploy --dry-run (2369 KiB bundle, bindings:
+ReplayIndex + GatewayAuth + GatewayChannel DOs, no Room/Directory),
+RPC parity 270/270, i18n parity, anyhow policy, webui vitest
+332 files / 3478 tests, typecheck, lint, production build.

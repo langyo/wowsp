@@ -121,7 +121,7 @@ pub use wowsp_replay_core::meta::meta_from_raw as meta_from_raw_pub;
 
 // pub(crate) surface consumed through direct `replay::...` paths by sibling
 // command modules (arena_info / playtime / pairing; call sites unchanged).
-pub(crate) use listing::{resolve_replay_dir, scan_replays_meta_cached, walk_replays};
+pub(crate) use listing::{resolve_replay_dir, walk_replays};
 #[cfg(test)]
 pub(crate) use streams::STREAM_DECODE_CALLS;
 pub(crate) use streams::{

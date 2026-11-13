@@ -2248,47 +2248,35 @@ mod tests {
         assert!(!bundle_shadows_cache(None, None));
     }
 
-    /// The sync flow really stamps `source-build.txt` where the mobile gate
-    /// reads it: the desktop's gamedata zip packs its whole `gameparams/**`
-    /// source dir (stamp included, forward-slash names — exactly what
-    /// `write_gamedata_zip` emits), extraction lands the stamp next to the
-    /// synced slices, and the extracted value is what drives
-    /// `bundle_shadows_cache` against the bundled `build.txt`.
+    /// A previously-synced data dir really stamps `source-build.txt` where
+    /// the mobile gate reads it: the (retired) desktop gamedata sync used
+    /// to extract the stamp next to the synced slices, and phones that
+    /// synced back then keep those files — the extracted value is what
+    /// drives `bundle_shadows_cache` against the bundled `build.txt`.
     #[test]
     fn gamedata_sync_stamp_drives_the_bundle_precedence() {
-        use std::io::Write as _;
+        let tmp = std::env::temp_dir().join(format!(
+            "wowsp-gameparams-stamp-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        // A previously-synced data dir: one per-ship slice + the
+        // source-build stamp, laid out the way the sync wrote them.
+        let synced_dir = tmp.join("data").join("gameparams");
+        std::fs::create_dir_all(&synced_dir).unwrap();
+        std::fs::write(synced_dir.join("4282948544.json"), b"{\"id\":4282948544}").unwrap();
+        std::fs::write(synced_dir.join("source-build.txt"), b"1200").unwrap();
 
-        let tmp = crate::commands::pairing::tests::tempfile_dir();
-        // A desktop-shaped zip: one per-ship slice + the source-build stamp.
-        let zip_path = tmp.join("gd.zip");
-        let file = std::fs::File::create(&zip_path).unwrap();
-        let mut w = zip::ZipWriter::new(file);
-        let opts = zip::write::SimpleFileOptions::default();
-        for (name, bytes) in [
-            (
-                "gameparams/4282948544.json",
-                b"{\"id\":4282948544}" as &[u8],
-            ),
-            ("gameparams/source-build.txt", b"1200"),
-        ] {
-            w.start_file(name, opts).unwrap();
-            w.write_all(bytes).unwrap();
-        }
-        w.finish().unwrap();
-
-        // Phone side: extract into the data dir and read the stamp back.
-        let dest = tmp.join("data");
-        assert_eq!(
-            crate::commands::pairing::extract_gamedata_zip(&zip_path, &dest).unwrap(),
-            2
-        );
-        let stamp = fs::read_to_string(dest.join("gameparams").join("source-build.txt")).unwrap();
+        let stamp = fs::read_to_string(synced_dir.join("source-build.txt")).unwrap();
         let synced: u32 = stamp.trim().parse().unwrap();
         assert_eq!(synced, 1200);
 
-        // The extracted stamp drives the precedence: an APK bundle from a
-        // strictly newer build replaces the stale sync; equal or older
-        // bundles (and unknown stamps) keep it.
+        // The stamp drives the precedence: an APK bundle from a strictly
+        // newer build replaces the stale sync; equal or older bundles (and
+        // unknown stamps) keep it.
         assert!(bundle_shadows_cache(Some(1_400), Some(synced)));
         assert!(!bundle_shadows_cache(Some(1_200), Some(synced)));
         assert!(!bundle_shadows_cache(Some(1_100), Some(synced)));

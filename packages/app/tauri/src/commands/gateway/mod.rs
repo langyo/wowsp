@@ -31,10 +31,11 @@
 //!
 //! # URL policy
 //!
-//! The route entry reuses the pairing relay's URL policy VERBATIM
-//! (`pairing_relay::urls`): https/wss enforced, plain http/ws only on
-//! explicit loopback hosts (dev against `wrangler dev`), any path prefix
-//! allowed (the official entry lives under `/gateway/`).
+//! The route entry normalization lives in `urls` (inherited VERBATIM
+//! from the retired pairing relay when its PIN mode went away):
+//! https/wss enforced, plain http/ws only on explicit loopback hosts
+//! (dev against `wrangler dev`), any path prefix allowed (the official
+//! entry lives under `/gateway/`).
 //!
 //! # Roles
 //!
@@ -72,8 +73,6 @@ use anyhow::{Result, anyhow};
 use std::sync::Mutex;
 
 use wowsp_tauri_shared::GatewayStateEvent;
-
-use super::pairing_relay;
 
 // ── stable error markers (gateway-push §9 — the exact rejection strings) ────
 
@@ -185,21 +184,35 @@ pub(crate) fn parse_subs_frame(text: &str) -> Option<u32> {
     (frame.kind == "subs").then_some(frame.online)
 }
 
-// ── URL derivation (the relay URL policy, one spelling for the gateway) ─────
+// ── URL derivation (the worker-site URL policy, one spelling) ───────────────
 
-/// Normalize a route entry with the pairing relay's policy (https
-/// enforced, loopback http tolerated, trailing slash trimmed, wss spellings
-/// folded onto https). Every gateway command normalizes its root through
-/// here before building a URL.
+/// Normalize a route entry with the site's URL policy (https enforced,
+/// loopback http tolerated, trailing slash trimmed, wss spellings folded
+/// onto https). Every gateway command normalizes its root through here
+/// before building a URL.
 pub(crate) fn normalize_root(raw: &str) -> Result<String> {
-    pairing_relay::normalize_relay_root(raw).map_err(|e| anyhow!("gateway route entry: {e}"))
+    urls::normalize_https_root(raw).map_err(|e| anyhow!("gateway route entry: {e}"))
 }
 
 /// The WebSocket base of an (already normalized) route entry: scheme
 /// mapped https→wss / http→ws, path prefix kept. Plain ws survives only
-/// on loopback roots (the relay's `enforce_wss_base` gate).
+/// on loopback roots (the `enforce_wss_base` gate).
 pub(crate) fn gateway_ws_base(root: &str) -> Result<String> {
-    pairing_relay::normalize_relay_ws_url(root).map_err(|e| anyhow!("gateway route entry: {e}"))
+    urls::normalize_ws_base(root).map_err(|e| anyhow!("gateway route entry: {e}"))
+}
+
+/// A stop budget must not detach the task: it could still publish old-session
+/// state or hold sockets after a replacement session starts. (Moved from
+/// the retired pairing module — the pub/sub sessions join their tasks
+/// through it.)
+pub(crate) async fn await_shutdown(
+    mut task: tokio::task::JoinHandle<()>,
+    budget: std::time::Duration,
+) {
+    if tokio::time::timeout(budget, &mut task).await.is_err() {
+        task.abort();
+        let _ = task.await;
+    }
 }
 
 /// Desktop publisher socket URL: `{ws-base}/pub?route=&ticket=[&hostId=]`.
@@ -230,13 +243,21 @@ pub(crate) mod publish;
 mod selfhost;
 mod session;
 mod subscribe;
+pub(crate) mod urls;
+pub(crate) mod ws;
+
+/// The root of the official wowsp.langyo.xyz worker site — shared by the
+/// sibling HTTP clients (release digests, sponsors, the replay-share
+/// contribution program) that predate the gateway and outlived the
+/// retired pairing relay. See `urls::builtin_worker_root`.
+pub use urls::builtin_worker_root;
 
 #[cfg(test)]
 mod tests;
 
 // The command fns stay reachable at `commands::gateway::*` for lib.rs's
 // `generate_handler!` (the submodules are private; the re-exports carry
-// the `#[tauri::command]` macro twins along, the pairing_relay pattern).
+// the `#[tauri::command]` macro twins along — the established pattern).
 pub use config::{
     __cmd__gateway_get_config, __cmd__gateway_set_config, __tauri_command_name_gateway_get_config,
     __tauri_command_name_gateway_set_config, gateway_get_config, gateway_set_config,

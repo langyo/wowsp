@@ -5,10 +5,11 @@
  * and the head row's action cluster (while a battle runs) — that opens
  * the pairing flow for the build it runs on:
  *
- * - PHONE build: deep-links to /replay?pairing=1, the same route the
- *   phone settings' pairing section uses — ReplayView auto-opens the
- *   PairingWizard (LAN discovery + the internet PIN flow for pulling
- *   replays from the desktop).
+ * - PHONE build: renders NOTHING — the acquisition PairingWizard it
+ *   used to deep-link into was retired with the PIN pairing mode
+ *   (2026-11-13). The phone's own live handshake stays on its Live
+ *   page (the account-routed gateway's challenge on the connect
+ *   button), and replay acquisition is the replay page's file picker.
  * - DESKTOP: opens a compact HkModal (docked as a bottom sheet under
  *   768px, though desktop never gets that narrow) that surfaces the
  *   HANDSHAKE ESSENTIALS of today's account-routed gateway push —
@@ -23,10 +24,9 @@
  *   captcha-demand path still lands on the sidebar's pinned challenge
  *   card), the publish phase, the linked-phone count, the route entry
  *   and a jump into the full settings section. No PIN is displayed —
- *   the code relay survives only for old phone builds (replay pulls).
+ *   the PIN pairing mode is retired end to end.
  */
 import { computed, defineComponent, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import { SlidersHorizontal, Smartphone } from "@lucide/vue";
 import {
   HkAlert,
@@ -183,26 +183,19 @@ export default defineComponent({
     labeled: { type: Boolean, default: false },
   },
   setup(props, { attrs }) {
-    const router = useRouter();
     // Decided once, on setup — the repo's build-gate convention.
     const phone = isMobileApp();
     const open = ref(false);
 
     function onClick() {
-      if (phone) {
-        // The wizard lives in the replay view — deep-link the same way
-        // the phone settings' pairing section does (?pairing=1 makes
-        // ReplayView auto-open the PairingWizard).
-        void router.push({ path: "/replay", query: { pairing: "1" } });
-        return;
-      }
       open.value = true;
     }
 
     return () => {
-      const hint = phone
-        ? t("replay.live.pairingEntryHintPhone")
-        : t("replay.live.pairingEntryHintDesktop");
+      // Phone build: nothing to open anymore — the acquisition wizard
+      // went away with the PIN pairing mode (see the file header).
+      if (phone) return null;
+      const hint = t("replay.live.pairingEntryHintDesktop");
       return (
         <>
           <AppTag
@@ -217,12 +210,10 @@ export default defineComponent({
             <Smartphone size={13} />
             {props.labeled ? t("replay.live.pairingEntry") : null}
           </AppTag>
-          {phone ? null : (
-            <PhonePairingModal
-              modelValue={open.value}
-              onUpdate:modelValue={(v: boolean) => (open.value = v)}
-            />
-          )}
+          <PhonePairingModal
+            modelValue={open.value}
+            onUpdate:modelValue={(v: boolean) => (open.value = v)}
+          />
         </>
       );
     };

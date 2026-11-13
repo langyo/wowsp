@@ -5,9 +5,9 @@
  *  - both faces render — the head row's icon-only pill (aria-label +
  *    data-hint tooltip, no label text) and the waiting placeholder's
  *    labeled pill;
- *  - the PHONE branch deep-links to /replay?pairing=1 (ReplayView
- *    auto-opens the PairingWizard there — the same route the phone
- *    settings' pairing section uses) and never mounts the desktop modal;
+ *  - the PHONE branch renders NOTHING (the acquisition wizard it used
+ *    to deep-link into was retired with the PIN pairing mode) and never
+ *    mounts the desktop modal;
  *  - the DESKTOP branch opens the compact handshake modal: the channel
  *    identity (realm + nickname + publish phase), the gateway root, and
  *    the service toggle driving the SAME composable the settings
@@ -229,19 +229,16 @@ describe("PhonePairingEntry", () => {
     expect(entryButton(wrapper).text()).toContain(t("replay.live.pairingEntry"));
   });
 
-  it("deep-links the phone build to the replay pairing wizard", async () => {
+  it("renders nothing on the phone build", async () => {
     mocks.mobileApp = true;
     const wrapper = mountEntry();
     await flushPromises();
 
-    const btn = entryButton(wrapper);
-    expect(btn.attributes("aria-label")).toBe(t("replay.live.pairingEntryHintPhone"));
-    await btn.trigger("click");
-    await flushPromises();
-
-    expect(mocks.routerPush).toHaveBeenCalledWith({ path: "/replay", query: { pairing: "1" } });
-    // The desktop handshake modal never mounts on the phone build.
+    // The PIN-pairing wizard the phone face opened is retired; there is
+    // no entry pill and no modal on the phone build.
+    expect(entryButton(wrapper).exists()).toBe(false);
     expect(wrapper.find(".stub-HkModal").exists()).toBe(false);
+    expect(wrapper.html()).toBe("");
   });
 
   it("opens the desktop handshake modal with the channel essentials", async () => {

@@ -304,166 +304,18 @@ fn replay_meta_lite_pins_the_exact_wire_key_set() {
     );
 }
 
-// ── pairing (client.ts: PairingStatus / PairingToken / PairingTarget /
-//    PairingProgress / DiscoveredHost) ────────────────────────────────────
+// ── pairing (client.ts: PairingPathResult — the import command's result;
+//    the PIN-pairing DTOs were retired on 2026-11-13) ────────────────────
 
-#[test]
-fn pairing_status_renames_relay_online_and_via_upstream() {
-    let status = PairingStatus {
-        running: true,
-        host: Some("192.0.2.10".into()),
-        port: Some(51888),
-        pin: Some("123456".into()),
-        mode: Some("relay".into()),
-        relay_online: true,
-        provider: Some("wowsp".into()),
-        via_upstream: true,
-        notice: Some("maintenance".into()),
-    };
-    let v = round_trips(status);
-    for key in [
-        "running",
-        "host",
-        "port",
-        "pin",
-        "mode",
-        "relayOnline",
-        "provider",
-        "viaUpstream",
-        "notice",
-    ] {
-        assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
-    }
-    assert_eq!(v["relayOnline"], true);
-    assert_eq!(v["viaUpstream"], true);
-    // The v2 manifest fields are additive: a v1 payload without them
-    // still deserializes (defaults kick in).
-    let v1 = serde_json::json!({ "running": false });
-    assert!(serde_json::from_value::<PairingStatus>(v1).is_ok());
-}
-
-#[test]
-fn pairing_token_renames_room() {
-    let v = round_trips(PairingToken {
-        token: "bearer-1".into(),
-        room: Some("a".repeat(64)),
-    });
-    assert_eq!(v.as_object().unwrap().len(), 2);
-    assert_eq!(v["token"], "bearer-1");
-    assert_eq!(v["room"], "a".repeat(64));
-}
-
-/// `PairingTarget` is internally tagged (`kind`) — the TS side is a
-/// discriminated union, so both the tag and the payload field names are
-/// load-bearing.
-#[test]
-fn pairing_target_serializes_as_a_tagged_union() {
-    let lan = round_trips(PairingTarget::Lan {
-        host: "192.0.2.10".into(),
-        port: 51888,
-    });
-    assert_eq!(lan["kind"], "lan");
-    assert_eq!(lan["host"], "192.0.2.10");
-    assert_eq!(lan["port"], 51888);
-
-    let relay = round_trips(PairingTarget::Relay {
-        url: "https://worker.example.workers.dev".into(),
-        room: Some("b".repeat(64)),
-    });
-    assert_eq!(relay["kind"], "relay");
-    assert_eq!(relay["url"], "https://worker.example.workers.dev");
-    assert_eq!(relay["room"], "b".repeat(64));
-}
-
-#[test]
-fn pairing_progress_renames_remote_name() {
-    let v = round_trips(PairingProgress {
-        remote_name: ":gamedata:".into(),
-        phase: "download".into(),
-        received: 1024,
-        total: 4096,
-        error: None,
-    });
-    for key in ["remoteName", "phase", "received", "total", "error"] {
-        assert!(v.as_object().unwrap().contains_key(key), "missing {key}");
-    }
-    assert_eq!(v["remoteName"], ":gamedata:");
-}
-
-#[test]
-fn discovered_host_renames_last_seen_age_sec() {
-    let v = round_trips(DiscoveredHost {
-        host: "192.0.2.10".into(),
-        port: 51888,
-        name: "DESKTOP".into(),
-        last_seen_age_sec: 3,
-        relay: None,
-    });
-    assert_eq!(v["lastSeenAgeSec"], 3);
-    assert_eq!(v.as_object().unwrap().len(), 5);
-}
-
-/// Container-level `#[serde(default)]`: an EMPTY JSON object parses back
-/// to the relay bridge's default (enabled) — the persisted config is
-/// written before the file schema existed (client.ts: RelayConfig).
-#[test]
-fn relay_config_defaults_from_an_empty_payload() {
-    let v = round_trips(RelayConfig::default());
-    assert_exact_keys(&v, &["enabled"]);
-    assert_eq!(v["enabled"], true);
-    let from_empty: RelayConfig = serde_json::from_value(serde_json::json!({})).unwrap();
-    assert!(from_empty.enabled);
-}
-
-/// Trivial result DTOs whose camelCase is a no-op today — the attribute
+/// Trivial result DTO whose camelCase is a no-op today — the attribute
 /// is still load-bearing the day a multi-word field lands. The TS side
-/// inlines `{ path: string }` / `{ files: number }` (client.ts).
+/// inlines `{ path: string }` (client.ts).
 #[test]
-fn pairing_path_and_gamedata_results_round_trip() {
+fn pairing_path_result_round_trips() {
     let v = round_trips(PairingPathResult {
         path: "replays/20260926_101114.wowsreplay".into(),
     });
     assert_exact_keys(&v, &["path"]);
-    let v = round_trips(GamedataSyncResult { files: 17 });
-    assert_exact_keys(&v, &["files"]);
-}
-
-/// The discovery event's snapshot wrapper (client.ts: DiscoverySnapshot).
-#[test]
-fn discovery_snapshot_wraps_the_host_list() {
-    let v = round_trips(DiscoverySnapshot { hosts: Vec::new() });
-    assert_exact_keys(&v, &["hosts"]);
-}
-
-/// Wire-critical payload: exact key set. (v1 payloads MISSING these keys
-/// must keep parsing via the per-field defaults — see the test above.)
-#[test]
-fn pairing_status_pins_the_exact_wire_key_set() {
-    let v = round_trips(PairingStatus {
-        running: true,
-        host: Some("192.0.2.20".into()),
-        port: Some(51999),
-        pin: Some("654321".into()),
-        mode: Some("lan-local".into()),
-        relay_online: false,
-        provider: None,
-        via_upstream: false,
-        notice: None,
-    });
-    assert_exact_keys(
-        &v,
-        &[
-            "running",
-            "host",
-            "port",
-            "pin",
-            "mode",
-            "relayOnline",
-            "provider",
-            "viaUpstream",
-            "notice",
-        ],
-    );
 }
 
 // ── overlay (client.ts: OverlayState / OverlayStatus) ───────────────────

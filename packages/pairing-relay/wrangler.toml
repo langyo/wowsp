@@ -1,4 +1,4 @@
-# WoWSP pairing gateway — the dynamic half of wowsp.langyo.xyz AND the
+# WoWSP worker site — the dynamic half of wowsp.langyo.xyz AND the
 # host of its static site.
 #
 # The worker is RUST compiled to WebAssembly (crates/relay-core carries
@@ -23,7 +23,7 @@
 # are served FIRST: a request that matches a file — or the SPA fallback
 # for unknown browser navigations — never invokes worker code. The
 # dynamic paths are pulled back in front via `run_worker_first`: the
-# pairing API (/api*), minus the doc-carrying digest channels (the
+# worker API (/api*), minus the doc-carrying digest channels (the
 # per-channel `!` negations — see the [assets] section and the
 # build-generated _redirects). The hikari console pages /feedback
 # and /erp (packages/console build) serve from the assets layer like any
@@ -34,7 +34,7 @@
 # bundle stays on the Pages mirror while the worker carries the shell,
 # the public files and the docs; GitHub Pages stays a live backup host.
 # The apps hardcode https://wowsp.langyo.xyz — see
-# packages/app/tauri/src/commands/pairing_relay/ BUILTIN_RELAY_ROOT_URL.
+# packages/app/tauri/src/commands/gateway/urls.rs BUILTIN_WORKER_ROOT_URL.
 # Development can override the endpoint with the WOWSP_RELAY_URL env var.
 
 name = "wowsp-pairing"
@@ -60,7 +60,7 @@ routes = [
 # resolve through the assets layer directly. /feedback and /erp are now
 # REAL hikari console pages (packages/console → dist/console, copied to
 # the assets root by scripts/build_worker_site.py) — they serve from the
-# assets layer like any static file, so only the pairing API stays in
+# assets layer like any static file, so only the worker API stays in
 # front of it.
 [assets]
 directory = "./assets"
@@ -139,14 +139,11 @@ id = "a523e16e116b4f9fa5878c721c133028"
 binding = "REPLAY_R2"
 bucket_name = "wowsp-replay-shards"
 
-# Three SQLite-backed Durable Object classes — what the Workers FREE tier
-# provisions:
-#   Room        — one per pairing room (DO id = the room's 64-hex key):
-#                 in-memory rendezvous + byte pipes; storage is used only
-#                 for the 15-min idle alarm.
-#   Directory   — the singleton ("codes", idFromName) 6-digit pairing-code
-#                 registry: code → {room, hostId} bindings + per-IP rate
-#                 state in storage with a TTL alarm.
+# SQLite-backed Durable Object classes — what the Workers FREE tier
+# provisions. (The pairing Room + Directory classes were RETIRED with
+# the PIN pairing mode on 2026-11-13: migration v5 deletes them and
+# their bindings are gone — the account-routed gateway push below is
+# the live phone↔desktop channel.)
 #   ReplayIndex — the singleton ("index", idFromName) replay-share ledger:
 #                 per-hash rows (contributor/status/rule), per-contributor
 #                 meta + token hashes, per-rule counters and the staged-
@@ -160,20 +157,11 @@ bucket_name = "wowsp-replay-shards"
 #                 last-battle snapshot retention alarm, battle:<route>
 #                 KV mirror writes.
 #
-# Migrations v1/v2 are the SAME class declarations the TypeScript worker
-# deployed (names and SQLite backing unchanged) — the Rust rewrite needed
-# NO new migration tag: deploying over the live worker applies cleanly.
-# v3 adds the ReplayIndex class (new in the replay-share wave).
-# (Storage rows in the old v1 key format are garbage-collected lazily on
-# the Directory's first load — see crates/relay-worker/src/directory.rs.)
-[[durable_objects.bindings]]
-name = "ROOM"
-class_name = "Room"
-
-[[durable_objects.bindings]]
-name = "DIRECTORY"
-class_name = "Directory"
-
+# Migrations v1/v2 declared the TypeScript era's Room + Directory classes
+# (v3 adds ReplayIndex, v4 the gateway-push pair). v5 DELETES Room +
+# Directory: their PIN-pairing routes and code paths are gone from the
+# worker code, so the classes must go from the binding set too — the
+# deleted_classes migration drops their (tiny, transient) storage.
 [[durable_objects.bindings]]
 name = "REPLAY_INDEX"
 class_name = "ReplayIndex"
@@ -204,11 +192,15 @@ new_sqlite_classes = ["ReplayIndex"]
 tag = "v4"
 new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
 
-# Optional operator switches (dashboard ▶ Settings ▶ Variables, or here
-# under [vars]); neither is required:
-#   GATEWAY_UPSTREAM — absolute https/wss URL of the real exchange. When
-#       set, /api/health reports it as "upstream" and clients follow it
-#       (forwarding-station hand-off — no app redeploy needed).
+# v5 deletes the retired pairing classes (PIN-pairing retirement,
+# 2026-11-13). The deploy after this change drops the classes and their
+# storage from the live worker.
+[[migrations]]
+tag = "v5"
+deleted_classes = ["Room", "Directory"]
+
+# Optional operator switch (dashboard ▶ Settings ▶ Variables, or here
+# under [vars]); not required:
 #   GATEWAY_NOTICE   — free-form operator message surfaced by /api/health.
 # TURNSTILE_SITEKEY is PUBLIC by design (it rides GET /api/feedback/config
 # to the console) — the matching secret key lives in the worker secrets
@@ -283,7 +275,6 @@ DIGEST_PUBLISHED_CHANNELS = "app,data,mod-hub"
 # 每日 cron 拉取 query-sponsor + query-order，归并成公开名单写入
 # FEEDBACK_KV 的 sponsors:afdian 槽（内容不变不写）。
 AFDIAN_USER_ID = "174593ccd13211e8831352540025c377"
-# GATEWAY_UPSTREAM = ""
 # GATEWAY_NOTICE = ""
 
 # 每日 19:33 UTC（北京 03:33）拉一次爱发电赞助者/订单——刷新

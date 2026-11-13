@@ -102,7 +102,8 @@ export default defineComponent({
     // Phone app build: there is no local game install to point the armor
     // error's recovery action at (the game-path settings section and setup
     // modal are desktop-only surfaces) — the banner's second action routes
-    // to the replay view's PC-pairing wizard instead (see the banner below).
+    // to the resources view's data-pack download instead (see the banner
+    // below).
     const mobileApp = isMobileApp();
 
     const tab = ref<"specs" | "mystats" | "community" | "skill">("specs");
@@ -562,8 +563,7 @@ export default defineComponent({
                 re-runs the load) plus the SECOND recovery path the card
                 cannot seat — the game-path setup modal (desktop app: pick a
                 local install) or, on the phone app where no local install
-                exists, the replay view's PC-pairing wizard that syncs the
-                gamedata cache to the phone. */}
+                exists, the resources view's data-pack download. */}
             {gpError.value ? (
               <>
                 {/* The card carries the phone's primary recovery — jump to
@@ -652,7 +652,7 @@ export default defineComponent({
 
         {/* Nested game-path setup (opened from the armor-error banner) —
             desktop app only: the phone build has no local install to pick,
-            and its banner action routes to the replay pairing wizard. */}
+            and its banner action routes to the resource downloads. */}
         {!mobileApp ? (
           <GamePathSetupModal
             modelValue={showPathSetup.value}

@@ -1333,8 +1333,9 @@ export default defineComponent({
               <p class="live-battle__empty-hint">{t("replay.live.waitingHint")}</p>
               {/* Phone-pairing entry (user-requested): the labeled pill
                   under the waiting hint opens the pairing flow — the
-                  phone build's acquisition wizard, or the desktop's
-                  compact handshake surface for the gateway push. */}
+                  desktop's compact handshake surface for the gateway
+                  push (the phone build renders nothing; the PIN-pairing
+                  wizard is retired). */}
               <PhonePairingEntry labeled />
               {/* Status-only plugin card: res_mods mutations are refused
                   while the game runs, so no lifecycle buttons here — but the
@@ -1740,9 +1741,10 @@ export default defineComponent({
               {t("share.copyShot")}
             </AppTag>
             {/* Phone-pairing entry (user-requested): the icon pill beside
-                the share action opens the pairing flow — the phone
-                build's acquisition wizard, or the desktop's compact
-                handshake surface for the gateway push. */}
+                the share action opens the pairing flow — the desktop's
+                compact handshake surface for the gateway push (the
+                phone build renders nothing; the PIN-pairing wizard is
+                retired). */}
             <PhonePairingEntry />
             {/* Manual full stats refresh: wipes the backend session cache
                 and re-requests the WHOLE roster. Already-loaded rows keep

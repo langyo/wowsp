@@ -62,8 +62,8 @@ pub(super) async fn fetch_gateway_health(root_raw: &str) -> Result<(String, Gate
     Ok((root, doc))
 }
 
-/// Validate a parsed health document against this client, in the relay's
-/// gate ORDER: a too-old app must hear `update the app`, never a
+/// Validate a parsed health document against this client, in the gate
+/// ORDER: a too-old app must hear `update the app`, never a
 /// protocol complaint it cannot act on; a body without a `gateway`
 /// field at all is a foreign 200 (captive portal), not a gateway.
 ///
@@ -81,7 +81,7 @@ pub(super) fn validate_gateway_health(doc: &GatewayHealthDoc, client_version: &s
         .map(str::trim)
         .filter(|s| !s.is_empty())
     {
-        if !pairing_relay::client_meets_minimum(client_version, min) {
+        if !client_meets_minimum(client_version, min) {
             tracing::warn!(
                 client = client_version,
                 minimum = min,
@@ -103,6 +103,35 @@ pub(super) fn validate_gateway_health(doc: &GatewayHealthDoc, client_version: &s
         tracing::info!(notice = %notice, "gateway operator notice");
     }
     Ok(())
+}
+
+/// Numeric `x.y.z` comparison of dotted versions (any trailing
+/// non-numeric suffix on a part is ignored; missing parts count as 0).
+/// Returns true when `client` >= `minimum`. (Moved from the retired
+/// pairing relay's gateway module — the health gate order pins it.)
+pub(super) fn client_meets_minimum(client: &str, minimum: &str) -> bool {
+    let nums = |v: &str| {
+        v.split('.')
+            .map(|p| {
+                p.chars()
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect::<String>()
+                    .parse::<u64>()
+                    .unwrap_or(0)
+            })
+            .collect::<Vec<_>>()
+    };
+    let (c, m) = (nums(client), nums(minimum));
+    for i in 0..c.len().max(m.len()) {
+        let (a, b) = (
+            c.get(i).copied().unwrap_or(0),
+            m.get(i).copied().unwrap_or(0),
+        );
+        if a != b {
+            return a > b;
+        }
+    }
+    true
 }
 
 /// Fetch a deployment's health document (`{root}/health`; `root`

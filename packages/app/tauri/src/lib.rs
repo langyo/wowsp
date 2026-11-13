@@ -50,9 +50,6 @@ pub mod mobile_unsupported {
     pub const OVERLAY: &str = "overlay is not supported on mobile";
     /// Native file/folder pickers (rfd has no Android backend).
     pub const PICKER: &str = "native file picker is not supported on mobile";
-    /// Desktop pairing server (the phone is a CLIENT — it pairs to desktops,
-    /// it never serves).
-    pub const PAIRING: &str = "pairing server is not supported on mobile";
     /// Image clipboard write (arboard has no Android backend; the phone app's
     /// share flow falls back to the webview clipboard API or a save dialog).
     pub const CLIPBOARD_IMAGE: &str = "image clipboard is not supported on mobile";
@@ -561,23 +558,6 @@ pub fn run() {
                     .build(app)?;
             }
 
-            // Debug-only e2e helper: bring the pairing server up at launch so
-            // an emulator/device test can pair without driving the desktop UI
-            // (the PIN is printed to the tracing log by the server). Calls the
-            // server core directly — the command's main-window gate is a
-            // webview-caller check and the app itself is trusted.
-            #[cfg(all(debug_assertions, desktop))]
-            if std::env::var("WOWSP_AUTOSTART_PAIRING").is_ok() {
-                match tauri::async_runtime::block_on(
-                    commands::pairing::server::pairing_start(),
-                ) {
-                    Ok(status) => {
-                        tracing::info!(?status, "pairing server autostarted via WOWSP_AUTOSTART_PAIRING");
-                    }
-                    Err(e) => tracing::warn!(error = %e, "WOWSP_AUTOSTART_PAIRING failed"),
-                }
-            }
-
             // Debug-only helper: open the tray panel at launch (anchored to
             // the primary work area's bottom-right) so manual/visual checks
             // don't need a real tray click. Deferred + retried: startup focus
@@ -781,28 +761,9 @@ pub fn run() {
             commands::markers::cloud_ban_dismiss,
             commands::markers::cloud_ban_get_config,
             commands::markers::cloud_ban_set_config,
-            // Mobile replay acquisition + desktop pairing (all targets — the
-            // start/stop server commands answer with the mobile marker, the
-            // client commands run anywhere, a desktop can pull from another
-            // desktop).
+            // Mobile replay import (all targets — the phone picks files;
+            // the PIN-pairing command family was retired on 2026-11-13).
             commands::pairing::import_replay_file,
-            commands::pairing::pairing_start,
-            commands::pairing::pairing_stop,
-            commands::pairing::pairing_forget_devices,
-            commands::pairing::pairing_get_status,
-            commands::pairing::pairing_pair,
-            commands::pairing::pairing_list_remote,
-            commands::pairing::pairing_pull_replay,
-            commands::pairing::pairing_pull_gamedata,
-            // LAN auto-discovery (phone listener; the desktop broadcaster is
-            // tied to the pairing server lifecycle inside pairing_start).
-            commands::pairing_discovery::pairing_discovery_start,
-            commands::pairing_discovery::pairing_discovery_stop,
-            // Internet relay configuration (hidden setting — no UI field; the
-            // endpoint is the built-in gateway) + code regeneration.
-            commands::pairing_relay::pairing_get_relay_config,
-            commands::pairing_relay::pairing_set_relay,
-            commands::pairing_relay::pairing_reallocate_code,
             // Gateway push (docs/en/designs/gateway-push.md): route-entry
             // config + health/session handshake run everywhere (the phone
             // settings carry the route entry too); the publisher and the

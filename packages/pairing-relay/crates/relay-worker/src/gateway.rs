@@ -45,7 +45,7 @@ use relay_core::gateway::{
     keepalive_frame, password_key, password_matches, subs_frame, ticket_key, valid_route_id,
     valid_ticket,
 };
-use relay_core::room::FrameVerdict;
+use relay_core::gateway::FrameVerdict;
 use relay_core::route::{Route, classify, query_get};
 use relay_core::valid_host_id;
 use serde_json::{Value, json};

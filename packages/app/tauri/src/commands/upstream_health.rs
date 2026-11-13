@@ -199,7 +199,7 @@ pub(crate) fn direct_preferred_hosts() -> Vec<String> {
 }
 
 /// The live predicate behind [direct_preferred_hosts] — used by the
-/// WebSocket dialer (pairing_relay::ws), which shares these per-host TTL
+/// WebSocket dialer (gateway::ws), which shares these per-host TTL
 /// marks so a dead proxy costs the relay ONE failed dial per window
 /// instead of one per reconnect (the bridge redials on a <=30 s cadence).
 pub(crate) fn host_prefers_direct(host: &str) -> bool {

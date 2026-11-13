@@ -222,11 +222,6 @@ pub mod overlay_detect;
 pub mod overlay_manual;
 pub mod packets;
 pub mod pairing;
-// LAN UDP discovery for pairing (desktop broadcaster + phone listener).
-pub mod pairing_discovery;
-// Internet pairing relay: Cloudflare Worker tunnel (config + desktop host
-// bridge + phone client transport).
-pub mod pairing_relay;
 pub mod playtime;
 pub mod probe_arena;
 pub mod probe_roster;

@@ -113,7 +113,7 @@ async fn subscribe_loop(
             return;
         },
     };
-    let mut ws = match pairing_relay::relay_ws_connect(&url).await {
+    let mut ws = match super::ws::ws_connect(&url).await {
         Ok(ws) => ws,
         Err(e) => {
             emit(
@@ -187,7 +187,7 @@ async fn subscribe_loop(
                 }
             },
             _ = tokio::time::sleep(KEEPALIVE_INTERVAL) => {
-                let _ = ws.send(Message::Text(pairing_relay::relay_keepalive_text())).await;
+                let _ = ws.send(Message::Text(super::ws::keepalive_text())).await;
             },
         }
     }
@@ -243,6 +243,6 @@ pub(super) async fn stop_subscribe() {
         .take();
     if let Some(session) = joined {
         let _ = session.shutdown.send(true);
-        super::super::pairing::await_shutdown(session.task, Duration::from_secs(3)).await;
+        super::await_shutdown(session.task, Duration::from_secs(3)).await;
     }
 }

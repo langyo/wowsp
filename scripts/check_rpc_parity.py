@@ -154,8 +154,6 @@ GATED_COMMANDS: list[str] = [
     "mod_hub_purge_backup_restore",
     "mod_hub_purge_backup_resume",
     "mod_hub_reconcile",
-    "pairing_start",
-    "pairing_stop",
     "pick_export_path",
     "replays_reveal",
     "tactics_profile_open",
