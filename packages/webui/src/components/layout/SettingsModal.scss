@@ -674,9 +674,9 @@
       max-content
       max-content;
     column-gap: 0.85rem;
-    row-gap: 0.3rem;
+    row-gap: 0.45rem;
     font-size: var(--text-xs);
-    margin: 0;
+    margin: 0 0 0.5rem;
     padding: 0;
     list-style: none;
   }
@@ -846,15 +846,21 @@
     color: rgb(var(--color-muted));
   }
 
-  /* A quiet heading inside the collapsed details panel (per-cache controls,
-     the AI runtime's facts, the destructive verbs). */
+  /* A quiet heading for one details-window section (the inventory, the
+     per-cache controls, the AI runtime's facts, the danger zone). The first
+     one sits right under the window's title bar, so it keeps only a small
+     top margin. */
   &__res-subhead {
-    margin: 0.6rem 0 0.15rem;
+    margin: 0.95rem 0 0.2rem;
     font-size: var(--text-2xs);
     font-weight: 600;
     letter-spacing: 0.03em;
     text-transform: uppercase;
     color: rgb(var(--color-muted));
+
+    &:first-child {
+      margin-top: 0.15rem;
+    }
   }
 
   /* The phone-layout details entry: a quiet bordered row that opens the
