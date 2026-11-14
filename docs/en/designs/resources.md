@@ -119,17 +119,22 @@ mini-cards with seventeen visible verbs sat below it.
 
 1. **Status card** — a tone rail + one sentence (ready / not checked yet /
    updates available / something missing), the on-disk footprint and the
-   panel's check verb — plus ONE contextual download verb when the resource
-   pack itself is missing (the pack row repeats that verb in its natural
-   place; both call the same store method, so they cannot diverge).
-   "Ready" is only claimed when BOTH the walk's ledger stamps and the res
-   manifest snapshot were refreshed this session; "not checked yet" is a
-   first-class state, because the numbers arrive from five sources with five
-   freshness rules (the walk's ledger stamps, the res manifest snapshot, the
-   AI manifest's 24h TTL, the app updater, the capability probe). A pending
-   app update is explained here with no verb of its own: the app update
-   comes first, and only the RESOURCE PACK waits for it — the decision-model
-   pack rides its own signed channel.
+   panel's check verb. TWO contextual verbs grow out of the same slot: a
+   download when the resource pack itself is missing, and UPDATE ALL when a
+   check already reported pending updates — one click queues every pending
+   pass (the download hub is a strict FIFO, so the pack and the decision
+   models queue in arrival order; each pass keeps its own cancel on the
+   shared card, and the res-pack half re-checks the app-first gate). The
+   rows repeat their own verbs in their natural places; every path calls the
+   same store methods, so they cannot diverge. "Ready" is only claimed when
+   BOTH the walk's ledger stamps and the res manifest snapshot were refreshed
+   this session; "not checked yet" is a first-class state, because the
+   numbers arrive from five sources with five freshness rules (the walk's
+   ledger stamps, the res manifest snapshot, the AI manifest's 24h TTL, the
+   app updater, the capability probe). A pending app update is explained
+   here with no verb of its own: the app update comes first, and only the
+   RESOURCE PACK waits for it — the decision-model pack rides its own signed
+   channel.
 2. **Family card** — four rows (game data / resource pack / decision models /
    caches), at most ONE verb each, because same-family items are the same
    action. The ship-data datasets are the boot-time lane the shell's refresh
@@ -146,11 +151,15 @@ mini-cards with seventeen visible verbs sat below it.
    legacy flag stay VISIBLE in the details panel (the row chip also carries
    them as a tooltip — hover alone would hide them from keyboards and screen
    readers).
-3. **Details panel** — a collapsed `HkExpansionPanel` holding the audit table
-   below, the per-cache controls, the AI runtime's technical facts and the
-   destructive deletes. Its body is always mounted (the disclosure's
-   contract), so the table's six-column contract never regresses; the
-   disclosure is the only gate, and the destructive verbs live behind it.
+3. **Details surface** — the audit table, the per-cache controls, the AI
+   runtime's technical facts and the destructive deletes. ONE body
+   (`ResourcesDetails`), TWO shells: a collapsed `HkExpansionPanel` on
+   desktop (the body stays mounted, so the table's six-column contract never
+   regresses) and, under the phone-layout breakpoint, a quiet entry row that
+   opens the same body as a docked `HkModal` sheet — the phone pane has no
+   room for a six-column table, and the sheet's own body scrolls. The
+   disclosure is the only gate either way, and the destructive verbs live
+   behind it.
 
 The footprint is the walk's OWN sum (present, non-bundled rows). It must never
 add `aux_cache_overview` on top: both measure the same directories.

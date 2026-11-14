@@ -415,6 +415,7 @@
   "resStatusReady": "Ресурсы готовы",
   "resStatusUpdates": "Доступны обновления ресурсов",
   "resStatusUpdatesHint": "Обновляйте, когда вам удобно — до тех пор ничего не перестанет работать.",
+  "resStatusUpdateAll": "Обновить всё",
   "resStatusMissingPack": "Ресурсный пакет не загружен",
   "resStatusMissingPackHint": "3D-модели кораблей и медали недоступны, пока не завершится загрузка.",
   "resStatusMissingModels": "Модели решений не установлены",

@@ -289,6 +289,36 @@ export function useSettingsUpdatesState() {
     );
   }
 
+  /** Run one management verb, then re-walk the registry. The store verbs
+   *  keep their own slices fresh, but the walk is what the status card's
+   *  footprint and the rows' sizes come from — without this the card would
+   *  keep advertising the bytes a delete just freed for the rest of the
+   *  session. Shared by the family rows AND the details body so the two
+   *  surfaces cannot drift on the contract. */
+  async function runVerb(verb: () => Promise<unknown>) {
+    await verb();
+    await loadResourceRows();
+  }
+
+  /** The pack's raw current/latest hash line — the state chip's tooltip AND
+   *  the details body's visible audit row render it (both shells read one
+   *  derivation, so they can never drift). */
+  const packHashHint = computed(() => {
+    const st = cacheStore.status;
+    const upd = cacheStore.update;
+    const parts: string[] = [];
+    if (st?.present) {
+      parts.push(
+        `${t("settings.resCurrent")}: ${
+          st.legacyStamp ? t("settings.resLegacy") : hash6(st.treeSha256)
+        }`,
+      );
+      if (st.version && !st.legacyStamp) parts.push(formatStamp(st.version));
+    }
+    if (upd) parts.push(`${t("settings.resLatest")}: ${hash6(upd.latestTreeSha256)}`);
+    return parts.join(" · ");
+  });
+
   // The status card's ONE check verb: re-check every refreshable lane through
   // the shared refresh entry (data-pack lane, res manifest and the AI
   // manifest behind it) and re-walk the registry. Fetch-only — downloads stay
@@ -367,6 +397,8 @@ export function useSettingsUpdatesState() {
     walkTotalBytes,
     walkCheckedAt,
     familyBytes,
+    packHashHint,
+    runVerb,
     checkAll,
     refreshDataPackRow,
     refreshModCatalogRow,

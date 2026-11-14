@@ -415,6 +415,7 @@
   "resStatusReady": "리소스 준비 완료",
   "resStatusUpdates": "리소스 업데이트 있음",
   "resStatusUpdatesHint": "원할 때 업데이트하세요. 그동안에도 기능은 그대로 작동합니다.",
+  "resStatusUpdateAll": "모두 업데이트",
   "resStatusMissingPack": "리소스 팩 미다운로드",
   "resStatusMissingPackHint": "3D 함선 모델과 훈장 아트는 다운로드가 완료될 때까지 사용할 수 없습니다.",
   "resStatusMissingModels": "판정 모델 미설치",

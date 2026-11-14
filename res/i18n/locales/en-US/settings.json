@@ -415,6 +415,7 @@
   "resStatusReady": "Resources are ready",
   "resStatusUpdates": "Resource updates available",
   "resStatusUpdatesHint": "Update whenever it suits you — nothing stops working in the meantime.",
+  "resStatusUpdateAll": "Update all",
   "resStatusMissingPack": "Resource pack not downloaded",
   "resStatusMissingPackHint": "3D ship models and medal artwork are unavailable until it downloads.",
   "resStatusMissingModels": "Decision models not installed",

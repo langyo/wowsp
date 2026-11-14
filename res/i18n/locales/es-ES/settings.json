@@ -415,6 +415,7 @@
   "resStatusReady": "Recursos listos",
   "resStatusUpdates": "Actualizaciones de recursos disponibles",
   "resStatusUpdatesHint": "Actualiza cuando quieras — nada dejará de funcionar mientras tanto.",
+  "resStatusUpdateAll": "Actualizar todo",
   "resStatusMissingPack": "Paquete de recursos no descargado",
   "resStatusMissingPackHint": "Los modelos 3D de buques y las medallas no están disponibles hasta que termine la descarga.",
   "resStatusMissingModels": "Modelos de decisiones no instalados",

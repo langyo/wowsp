@@ -415,6 +415,7 @@
   "resStatusReady": "资源已就绪",
   "resStatusUpdates": "有可用的资源更新",
   "resStatusUpdatesHint": "随时更新即可，不影响当前使用。",
+  "resStatusUpdateAll": "一键更新",
   "resStatusMissingPack": "资源包未下载",
   "resStatusMissingPackHint": "3D 舰船模型与铭牌头像在下载完成前不可用。",
   "resStatusMissingModels": "决策模型包未安装",
