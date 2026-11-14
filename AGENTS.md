@@ -408,9 +408,11 @@ app release body currently carries the scaffold.
 - **Post-release duty (every agent, after every `v*` release)**: run
   `python scripts/release_notes_i18n.py show`; fill every pending locale —
   user-supplied translations land verbatim first, the rest are translated
-  from the English body (translate headings and prose; PR titles, PR links,
-  URLs and the `**Full Changelog**` URL stay verbatim; use `glossary` for
-  consistent category headings). Apply each with
+  from the English body (translate headings, prose AND every PR bullet
+  title — the PR link `[#NNNN](url)`, the gitmoji, URLs and the
+  `**Full Changelog**` URL stay verbatim; use `glossary` for consistent
+  category headings, and reuse older releases' assets for recurring
+  titles like the per-version digest docs). Apply each with
   `python scripts/release_notes_i18n.py set --tag <tag> --lang <locale>
   --file <file> --apply` (writes the JSON asset); `just notes-lint` must
   pass afterwards, and `python scripts/release_notes_i18n.py issue-sync`
