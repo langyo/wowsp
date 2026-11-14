@@ -84,8 +84,8 @@ PRICE_CATALOG_FILE = 'price_catalog.json'
 
 # Tool config: WoWSP maintains res_mods/wowsp.toml and seeds our table
 # ([tools."battle.ingame.stats"]) with these values; the keys below are the
-# contract, hand edits to the file survive WoWSP rewrites. JOURNAL_LIMIT
-# stays as the fallback default for a missing/unreadable manifest.
+# contract, hand edits to the file survive WoWSP rewrites. journal_flush
+# clamps a 0/negative journal_limit back to these defaults.
 # `barcode` gates the capture side channel's strips: the overlay watcher
 # upserts it to 1 when the overlay view mode starts, so exactly one
 # consumer owns the screen while a mode is running (the app's in-game
@@ -97,7 +97,6 @@ CONFIG_DEFAULTS = {
     'journal_limit': 300,
     'barcode': 0,
 }
-JOURNAL_LIMIT = CONFIG_DEFAULTS['journal_limit']
 
 # Battle ticks a session may stay unset before the probe synthesizes one
 # from the best available roster source (see synthesize_session). The
@@ -705,6 +704,8 @@ def _skills_matrix(value):
             cells = []
             for cell in row:
                 cells.append(_to_int(cell))
+                if len(cells) >= 64:
+                    break
             rows.append(cells)
             if len(rows) >= 64:
                 break
@@ -762,7 +763,6 @@ def _crew_from(obj, depth=0):
 # except and res_mods/wowsp.toml was silently ignored (caught by the
 # round-2 review; the harness now pins it with a planted wowsp.toml).
 TOOL_CONFIG = load_tool_config()
-JOURNAL_LIMIT = TOOL_CONFIG['journal_limit']
 
 
 def log(message):
@@ -773,6 +773,20 @@ def bare_name(name):
     """Avatar-entity names carry the clan tag ('[RCCK]Laneigedc') while
     roster names (the stats/telemetry keys) are bare — strip the tag."""
     return name.split(']', 1)[-1] if name.startswith('[') else name
+
+
+# Lesta's ModsAPI injects no `ui` module at all (live census 2026-10-08:
+# events/utils/battle/callbacks/dataHub/constants yes, `ui` no). Resolve it
+# ONCE here behind a guard so every panel path checks a plain value instead
+# of naming `ui` (the eager name reference in __init__'s diagnostic tuple
+# was the crash that killed the mod at load). The sandbox census below
+# reports module_missing from this resolved value too — probing the
+# builtins for it was wrong (`ui` is a module GLOBAL, never a builtin, so
+# the census reported it missing even on clients that inject it).
+try:
+    _UI = ui
+except:
+    _UI = None
 
 
 # One-shot sandbox census: Lesta's ModsAPI resolves builtins through a
@@ -800,7 +814,7 @@ try:
     # shipped revision, so they are live-proven present, but the census
     # names them so a crippled host is diagnosable at a glance).
     _miss = [n for n in ('len', 'open', 'True', 'False') if not _has_builtin(_bi, n)]
-    _miss_mod = [n for n in ('ui',) if not _has_builtin(_bi, n)]
+    _miss_mod = ['ui'] if _UI is None else []
     utils.logInfo(PREFIX + 'sandbox builtins=' + _fmt(_names)
                   + ' legacy_missing=' + _fmt(_miss)
                   + ' module_missing=' + _fmt(_miss_mod))
@@ -809,17 +823,6 @@ except:
         utils.logInfo(PREFIX + 'sandbox census failed')
     except:
         pass
-
-
-# Lesta's ModsAPI injects no `ui` module at all (live census 2026-10-08:
-# events/utils/battle/callbacks/dataHub/constants yes, `ui` no). Resolve it
-# ONCE here behind a guard so every panel path checks a plain value instead
-# of naming `ui` (the eager name reference in __init__'s diagnostic tuple
-# was the crash that killed the mod at load).
-try:
-    _UI = ui
-except:
-    _UI = None
 
 
 # ── server-synced price catalog (price_catalog.json) ────────────────────
@@ -1596,8 +1599,14 @@ class Probe:
             TOOL_CONFIG.update(load_tool_config())
         except:
             pass
-        self.explore_shell('battleStart')
-        self.api_probe('battleStart')
+        # BOTH diagnostics walk engine collections — the same native-crash
+        # window the scene-swap hold (see SCENE_FALLBACK_TICKS) closes for
+        # the tick-side walks, so they wait for the scene latch too. A
+        # lost battleStart diagnostic is cheaper than the live crash class
+        # the hold exists for.
+        if self.scene_ready:
+            self.explore_shell('battleStart')
+            self.api_probe('battleStart')
         log('battle start')
 
     # -- panel sides & order come from the per-tick entity walk (see
@@ -2575,7 +2584,12 @@ class Probe:
         (the skip latch; a plain log() here would repeat every 2 s tick).
         """
         result = []
-        for key, p in records.items():
+        # The mapping is iterated by KEY (the write_builds pattern): the
+        # records' class hides the dict protocol behind a SafeClass, and a
+        # future shape whose .items() fails would escape the per-record
+        # guards and freeze the whole tick pipeline below this call.
+        for key in records:
+            p = records[key]
             try:
                 name = p['name']
                 if not name or name.startswith(':'):
@@ -2629,8 +2643,15 @@ class Probe:
 
     def journal_flush(self):
         # The sandbox open() has no append mode (it returns None for 'a'), so
-        # the journal is rewritten whole from an in-memory ring buffer.
-        del self.journal[:-JOURNAL_LIMIT]
+        # the journal is rewritten whole from an in-memory ring buffer. The
+        # limit re-reads TOOL_CONFIG each flush (start() refreshes it in
+        # place, so a settings flip applies without a relaunch) and a
+        # 0/negative value clamps to the default: "[:-0]" deletes nothing
+        # and the ring would grow without bound.
+        limit = TOOL_CONFIG['journal_limit']
+        if limit <= 0:
+            limit = CONFIG_DEFAULTS['journal_limit']
+        del self.journal[:-limit]
         try:
             _bridge_write(ROSTER_JOURNAL_FILE, '\n'.join(self.journal))
         except:
@@ -2896,7 +2917,16 @@ class Probe:
                 self.tick()
             except:
                 self.soft('tick error=' + _exc_text(160))
-            self.schedule()
+            # The re-arm is guarded on its OWN (not inside the tick guard:
+            # the loop must re-arm even when tick failed) — callback()
+            # allocates a handle through the same SafeClass cancel just
+            # used, so the scene-teardown window that kills cancel can
+            # kill it too; an escape here would kill the loop for the
+            # rest of the battle.
+            try:
+                self.schedule()
+            except:
+                self.soft('schedule error=' + _exc_text(160))
         handle[0] = callbacks.callback(1 if self.session else 2, tick)
 
     def walk_roster(self):
