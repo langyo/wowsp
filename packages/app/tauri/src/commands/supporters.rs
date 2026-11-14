@@ -302,8 +302,10 @@ mod tests {
         };
         junk_id.sponsors[0].game_id = Some("not an id!".into());
         assert!(!sponsors_doc_sane(&junk_id));
-        let mut stale = SponsorListDoc::default();
-        stale.updated_at = -1;
+        let stale = SponsorListDoc {
+            updated_at: -1,
+            ..Default::default()
+        };
         assert!(!sponsors_doc_sane(&stale));
         // The default (empty) document is a valid cold-start answer.
         assert!(sponsors_doc_sane(&SponsorListDoc::default()));

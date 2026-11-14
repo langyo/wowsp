@@ -235,7 +235,7 @@ fn mods_inventory_reads_active_res_mods_and_falls_back_to_twin() {
     let entries = mods_inventory_entries(dir.path());
     let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
     assert_eq!(names, vec!["PnFModsLoader.py", "gui"]);
-    assert_eq!(entries[1].is_dir, true);
+    assert!(entries[1].is_dir);
 
     // Quarantine the active res_mods the way safe mode does: the twin is
     // what would load once mods come back, so the inventory must read it.
@@ -379,7 +379,7 @@ fn suspects_come_from_log_mentions_not_recency() {
     // a normal plugin wave after an update must not become a suspect pile.
     let raw = [(
         "python.log",
-        format!("12:00:00 ERROR: failed loading res_mods/123/logged_mod/gui/x.xml extra",),
+        "12:00:00 ERROR: failed loading res_mods/123/logged_mod/gui/x.xml extra".to_string(),
     )];
     let raw_refs: Vec<(&str, &str)> = raw
         .iter()
@@ -619,7 +619,7 @@ fn quarantine_moves_entries_and_the_manifest_tracks_them() {
 
 #[test]
 fn resolve_restart_root_explicit_argument_wins() {
-    let arg = format!("C:\\Games\\WoWS");
+    let arg = "C:\\Games\\WoWS".to_string();
     assert_eq!(resolve_restart_root(Some(arg.as_str())).expect("arg"), arg);
 }
 
@@ -806,7 +806,7 @@ mod evidence_parsers {
     fn events_match_the_client_by_every_recorded_shape() {
         let events = parse_event_log_xml(&format!("{EVENT_1000}{EVENT_1001}"));
         let window = window_around("2026-10-27T18:52:13Z");
-        let exe = format!("C:\\Games\\WoWS\\bin\\123\\bin64\\WorldOfWarships64.exe");
+        let exe = "C:\\Games\\WoWS\\bin\\123\\bin64\\WorldOfWarships64.exe".to_string();
         assert!(event_matches_client(
             &events[0],
             "worldofwarships64.exe",
@@ -971,7 +971,7 @@ mod evidence_parsers {
     #[test]
     fn wer_bytes_decode_from_utf16_without_bom() {
         let text =
-            format!("Signature\\Sig[3].Name=Exception code\nSignature\\Sig[3].Value=0c0000005");
+            "Signature\\Sig[3].Name=Exception code\nSignature\\Sig[3].Value=0c0000005".to_string();
         let mut bytes = Vec::new();
         for unit in text.encode_utf16() {
             bytes.extend_from_slice(&unit.to_le_bytes());

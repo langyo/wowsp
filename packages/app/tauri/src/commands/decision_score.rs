@@ -3192,10 +3192,7 @@ mod tests {
         assert!(report.torpedo_source.is_none());
         assert!(report.per_ship.iter().all(|e| e.torpedo.is_none()));
         assert_eq!(report.per_ship.len(), 1);
-        assert_eq!(
-            report.per_ship[0].torpedo_applicable, false,
-            "not attached yet"
-        );
+        assert!(!report.per_ship[0].torpedo_applicable, "not attached yet");
 
         // Empty torpedo rows: covered by class + armament, but no diagnostic.
         let mut empty = report.clone();

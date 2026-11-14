@@ -216,7 +216,7 @@ fn verify_row_grid_accepts_aligned_and_rejects_shifted_grid() {
     // The CACHED grid claims every row sits 12px lower than the text —
     // the self-hardening shape: band right, rows wrong.
     let shifted = DetectedRoster {
-        rect: roster.rect.clone(),
+        rect: roster.rect,
         row_centers: centers.iter().map(|&c| c + 12).collect(),
         team_split: 0.5,
         text_grounded: true,
@@ -236,7 +236,7 @@ fn verify_row_grid_accepts_aligned_and_rejects_shifted_grid() {
 }
 fn synth_lesta_table(w: u32, h: u32, rows: usize) -> (Vec<u8>, Rect, Vec<f32>) {
     let mut img = vec![0u8; (w * h * 4) as usize];
-    let mut noise = Noise(0x9abC_def0);
+    let mut noise = Noise(0x9abc_def0);
     for y in 0..h {
         for x in 0..w {
             let l = noise.next_f32(125.0, 175.0) as u8;
@@ -1870,7 +1870,7 @@ fn verify_header_band_passes_on_the_real_fixture() {
     let shift_top = (band.top + band.height + 2).min(h as usize - 1);
     for y in shift_top..h as usize {
         for x in 0..w as usize {
-            let i = ((y * w as usize + x) * 4) as usize;
+            let i = (y * w as usize + x) * 4;
             shifted[i] = 30;
             shifted[i + 1] = 30;
             shifted[i + 2] = 30;
@@ -2158,7 +2158,7 @@ fn synth_strip(seed: u32, w: u32, h: u32, bg: u8, glyph: u8, noise: f32) -> (Vec
     let mut img = vec![0u8; (w * h * 4) as usize];
     let mut rng = StripNoise(seed);
     // 3..7 glyph blobs, each a horizontal run of 2x2..5x5 blocks.
-    let blobs = 3 + (seed % 5) as u32;
+    let blobs = 3 + seed % 5;
     for b in 0..blobs {
         let bx = ((b * w) / blobs + (w / blobs) / 3) % w;
         let by = h / 4 + ((seed >> b) % (h / 2).max(1));
@@ -2370,7 +2370,7 @@ fn synth_next_table(
         }
     }
     let tw = (w as f32 * 0.52) as u32;
-    let tx = ((w - tw) / 2) as u32;
+    let tx = (w - tw) / 2;
     let ty = (h as f32 * 0.16) as u32;
     let seam = tx + tw / 2;
     let half = tw / 2;
@@ -2936,10 +2936,9 @@ fn replay_sink_chain(
         let mut noise = Noise(seed);
         let pinned: Vec<bool> = (0..n).map(|_| noise.next_f32(0.0, 1.0) > 0.4).collect();
         for (lo, hi) in [(0, ally_n), (ally_n, n)] {
-            let old_side: Vec<Option<StripThumb>> =
-                (lo..hi).map(|i| new_thumbs[i].clone()).collect();
+            let old_side: Vec<Option<StripThumb>> = (lo..hi).map(|i| new_thumbs[i]).collect();
             let new_side: Vec<Option<StripThumb>> =
-                (lo..hi).map(|i| new_thumbs[(i + 1) % n].clone()).collect();
+                (lo..hi).map(|i| new_thumbs[(i + 1) % n]).collect();
             let was = pinned[lo..hi].iter().filter(|&&a| a).count();
             let now = fresh[lo..hi].iter().filter(|&&a| a).count();
             let _ = sink_victims(&old_side, &new_side, was, now);

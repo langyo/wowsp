@@ -729,6 +729,11 @@ mod tests {
     use super::*;
     use std::sync::atomic::Ordering;
 
+    /// Roster identity compared between the cold and warm (cached) reports:
+    /// one (entity_id, ship_id, name, player_name) row per roster entry,
+    /// in roster order.
+    type RosterKey = Vec<(i32, Option<i64>, Option<String>, Option<String>)>;
+
     fn sample(
         t: f32,
         inst: f32,
@@ -1020,20 +1025,19 @@ mod tests {
              dedupe broke"
         );
         // The roster is rebuilt from the CACHED trajectories: identical rows.
-        let roster_key =
-            |r: &StaticReport| -> Vec<(i32, Option<i64>, Option<String>, Option<String>)> {
-                r.roster
-                    .iter()
-                    .map(|e| {
-                        (
-                            e.entity_id,
-                            e.ship_id,
-                            e.name.clone(),
-                            e.player_name.clone(),
-                        )
-                    })
-                    .collect()
-            };
+        let roster_key = |r: &StaticReport| -> RosterKey {
+            r.roster
+                .iter()
+                .map(|e| {
+                    (
+                        e.entity_id,
+                        e.ship_id,
+                        e.name.clone(),
+                        e.player_name.clone(),
+                    )
+                })
+                .collect()
+        };
         assert_eq!(roster_key(&cold), roster_key(&warm), "roster drift");
         assert_eq!(cold.entity_id, warm.entity_id);
         assert_eq!(cold.timeline.len(), warm.timeline.len());

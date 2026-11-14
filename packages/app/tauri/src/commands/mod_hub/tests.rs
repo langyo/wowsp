@@ -1708,7 +1708,7 @@ fn migrate_moves_stranded_files_and_repoints_ledger() {
 fn migrate_ledgerred(
     game: &Path,
     from: &str,
-    installs: &mut Vec<ModInstallRecord>,
+    installs: &mut [ModInstallRecord],
 ) -> Result<MigrateReport> {
     let report = migrate_stale_bin_core(&game.to_string_lossy(), from)?;
     for record in installs.iter_mut() {
@@ -2258,7 +2258,7 @@ fn conflict_warnings_flag_overlapping_records() {
         snapshot_hashes: None,
         shared_roots: Vec::new(),
     };
-    let installs = vec![
+    let installs = [
         mk("a", "ModA", &["gui/a.png", "gui/b.png"]),
         mk("b", "ModB", &["content/x.dds"]),
         mk("stale", "Stale", &["gui/a.png"]),

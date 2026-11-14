@@ -1834,12 +1834,14 @@ mod tests {
             realm: "asia".into(),
             name: "Player".into(),
         };
-        let mut store = ContributionStore::default();
-        store.identity = Some(identity.clone());
-        store.uploaders = vec![identity.clone()];
-        store.consent_version = Some(1);
-        store.anon_id = Some(uuid::Uuid::new_v4().to_string());
-        store.upload_token = Some("t".repeat(32));
+        let mut store = ContributionStore {
+            identity: Some(identity.clone()),
+            uploaders: vec![identity.clone()],
+            consent_version: Some(1),
+            anon_id: Some(uuid::Uuid::new_v4().to_string()),
+            upload_token: Some("t".repeat(32)),
+            ..Default::default()
+        };
         remember_hashes(&mut store, 100, (0..10).map(|i| (sha(i), 1024)));
         persist_store_in(&fixture.0, &store).unwrap();
 
@@ -2074,7 +2076,7 @@ mod tests {
         bytes.extend_from_slice(&1u32.to_le_bytes());
         bytes.extend_from_slice(&(descriptor.len() as u32).to_le_bytes());
         bytes.extend_from_slice(descriptor.as_bytes());
-        bytes.extend(std::iter::repeat(0x5a).take(filler));
+        bytes.extend(std::iter::repeat_n(0x5a, filler));
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }

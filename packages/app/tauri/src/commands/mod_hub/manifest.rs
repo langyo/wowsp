@@ -991,9 +991,9 @@ mod tests {
             shared_roots: Vec::new(),
         };
         // Stale bin: the row (toggled off) + a tool config.
-        let stale = format!(
+        let stale =
             "version = 1\n\n[managed.m]\nname = \"M old\"\nversion = \"1\"\ncategory = \"battle\"\nsource = \"mod-hub\"\nenabled = false\ninstalled_at = \"2026-09-01T00:00:00Z\"\n\n[tools.\"battle.ingame.stats\"]\npanel_fade_ticks = 7\n"
-        );
+                .to_string();
         merge_after_migration(Some(&stale), &to, std::slice::from_ref(&record), "g", "2");
         let m = load(&to).manifest;
         assert_eq!(

@@ -490,8 +490,10 @@ mod tests {
             dir.join("wowsp.2026-10-10.log"),
             1024u64,
         )];
-        let mut report = HardwareReport::default();
-        report.elevation = ElevationStatus::Elevated;
+        let mut report = HardwareReport {
+            elevation: ElevationStatus::Elevated,
+            ..Default::default()
+        };
         report.push_lines(
             "os",
             "t",

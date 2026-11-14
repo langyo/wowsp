@@ -792,7 +792,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let sha = sha256_hex(body);
-        assert_eq!(install_kit_in(&dir, body, &entry(&sha)).unwrap(), true);
+        assert!(install_kit_in(&dir, body, &entry(&sha)).unwrap());
         let cached = std::fs::read_to_string(dir.join(KIT_FILE)).expect("body cached");
         assert_eq!(cached.as_bytes(), body);
         let meta: KitMeta = serde_json::from_str(

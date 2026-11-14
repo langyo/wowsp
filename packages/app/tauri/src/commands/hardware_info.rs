@@ -2078,9 +2078,11 @@ mod tests {
     }
 
     fn report_fixture() -> HardwareReport {
-        let mut report = HardwareReport::default();
-        report.generated_at = "2026-10-10T12:00:00+08:00".into();
-        report.elevation = ElevationStatus::Elevated;
+        let mut report = HardwareReport {
+            generated_at: "2026-10-10T12:00:00+08:00".into(),
+            elevation: ElevationStatus::Elevated,
+            ..Default::default()
+        };
         report.push_lines(
             "os",
             "Operating system 操作系统",
