@@ -81,14 +81,20 @@ function mediaBlock(sheet: string, query: string): string | null {
 const desktop = mediaBlock(css, "(min-width: 768px)");
 
 describe("hikari's whole-window open/close choreography", () => {
-  it("keeps the centred frame's permanent transform prefix", () => {
+  it("keeps the centred frame's permanent translate longhand", () => {
     const frame = ruleBody(css, ".hk-modal-content");
     expect(frame, "the frame rule exists").not.toBeNull();
-    // The centring translate is the frame's transform in EVERY state (the
-    // dragged-window shift included); the zoom appends to it rather than
-    // replacing it, so the zoom can never re-seat a window.
+    // The centring lives on the INDIVIDUAL `translate` property — never
+    // inside the animated `transform` (hikari #1325): a -50% in the
+    // transitioned property froze its matrices against the mount-time box,
+    // so a window whose content grew during its enter seated itself on the
+    // unparsed -50% until the ride ended. The longhand re-resolves against
+    // the live box every frame; the dragged-window shift rides it too.
     expect(frame).toContain(
-      "transform: translate(calc(-50% + var(--hk-modal-shift-x, 0px)), calc(-50% + var(--hk-modal-shift-y, 0px)))",
+      "translate: calc(-50% + var(--hk-modal-shift-x, 0px)) calc(-50% + var(--hk-modal-shift-y, 0px))",
+    );
+    expect(frame!.replace(/\s+/g, " "), "the base rule must not carry a centring transform").not.toMatch(
+      /transform:[^;]*-50%/,
     );
   });
 
@@ -126,10 +132,12 @@ describe("hikari's whole-window open/close choreography", () => {
       )?.[1] ?? "";
     expect(to).toContain("opacity: 1;");
     expect(to).toContain("translateY(0) scale(1)");
-    // Both ends keep the centring prefix (dragged windows included).
+    // Both ride ends are px-only: the centring rides the frame's
+    // `translate` longhand (pinned above), so a shift token here would mean
+    // the frozen-matrix carrier came back.
     for (const body of [from, to]) {
-      expect(body).toContain("var(--hk-modal-shift-x, 0px)");
-      expect(body).toContain("var(--hk-modal-shift-y, 0px)");
+      expect(body).not.toContain("var(--hk-modal-shift-x, 0px)");
+      expect(body).not.toContain("var(--hk-modal-shift-y, 0px)");
     }
   });
 

@@ -51,55 +51,6 @@ const slimPin = process.env.WOWSP_MOBILE_BUNDLE === '0';
 const androidBundle =
   !slimPin && (mobileBundle || process.env.TAURI_ENV_PLATFORM === 'android');
 
-// hikari imports highlight.js through its CJS `lib/` deep paths. With hikari
-// excluded from optimizeDeps those files are served raw in dev, and a raw CJS
-// module has no default export. Alias the whole `lib/` tree onto the package's
-// identical ESM build under `es/` — resolved through hikari's own dependency
-// set, since highlight.js is not a direct dependency here. hikari's bare "."
-// export is import-condition-only, so locate the package through its
-// condition-free `./components/*` export instead.
-const hikariDir = dirname(
-  dirname(require.resolve('@celestia-island/hikari/components/HkButton.tsx')),
-);
-const hljsEsDir = resolve(
-  dirname(require.resolve('highlight.js/package.json', { paths: [hikariDir] })),
-  'es',
-);
-
-// Pre-bundle highlight.js (lib/core + every shipped grammar) in the FIRST
-// optimize pass. hikari's code highlighter imports them through its
-// optimizeDeps-excluded raw source (~95 literal
-// `import("highlight.js/lib/languages/*")` loaders), which the cold-start
-// scanner cannot see — without this list the optimizer discovers the whole
-// set only when a page first renders a code block, re-bundles mid-session
-// ("bundling dependencies... (x2)") and forces a full reload ("optimized
-// dependencies changed. reloading") on every cold start. Excluding
-// highlight.js instead does NOT work: its es/ wrappers re-import the CJS
-// lib/ tree, which raw serving cannot interop — `import hljs from
-// "highlight.js/lib/core"` then dies with "does not provide an export
-// named 'default'" and the app never mounts.
-// hikariDir is the package's src/ tree (see the resolve chain above), so
-// the loader map and the auto-detect list live under composables/.
-const hikariUseHighlightSrc = readFileSync(
-  resolve(hikariDir, 'composables/useHighlight.ts'),
-  'utf8',
-);
-// The AUTO_LANGS boot set — the grammars the app itself pulls on the
-// first code block (the Dashboard's changelog renders one at startup),
-// parsed from hikari's literal so the list tracks hikari upgrades.
-const autoLangs = [
-  ...hikariUseHighlightSrc
-    .match(/AUTO_LANGS[^;]+;/s)![0]
-    .matchAll(/"([a-z0-9]+)"/g),
-].map((m) => 'highlight.js/lib/languages/' + m[1]);
-// Pre-bundle ONLY core + the boot set: the first optimize pass must stay
-// lean enough that a cold-start page load never outlives vite's dep
-// request hold (a fat pass makes those requests 504 and the page dies
-// with no discovery-reload left to rescue it — the cold E2E caught
-// exactly that). Everything else keeps master's on-demand discovery: a
-// grammar outside the boot set re-bundles once, on first request.
-const hljsInclude = ['highlight.js/lib/core', ...new Set(autoLangs)];
-
 // outDir lives outside the package (../../dist/webui) and is consumed by the
 // Tauri shell (frontendDist). Because it can be Docker bind-mounted we wipe
 // the CONTENTS rather than deleting the directory inode, matching shittim's
@@ -366,7 +317,6 @@ export default defineConfig({
   ],
   resolve: {
     alias: {
-      'highlight.js/lib': hljsEsDir,
       '@': resolve(pkgDir, 'src'),
       '@wowsp/shared_ui': resolve(pkgDir, 'src'),
       '@shaders': resolve(pkgDir, '.generated/shaders'),
@@ -377,10 +327,6 @@ export default defineConfig({
   // through the plugin pipeline where vue-jsx transforms it.
   optimizeDeps: {
     exclude: ['@celestia-island/hikari'],
-    // See hljsInclude above — the full highlight.js set rides the FIRST
-    // pass so nothing is left for runtime discovery (no mid-session
-    // re-bundle, no "optimized dependencies changed" reload).
-    include: hljsInclude,
   },
   define: {
     __APP_VERSION__: JSON.stringify(readPkgVersion(pkgDir)),
