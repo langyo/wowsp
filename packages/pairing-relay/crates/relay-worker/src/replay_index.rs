@@ -175,7 +175,16 @@ impl ReplayIndex {
                 }
             }
         }
-        *self.ledger.borrow_mut() = Some(Ledger::restore(hashes, tokens, meta, rules, wm));
+        // Double-check after the await (GatewayAuth/GatewayChannel's
+        // guard): a concurrent fetch on a cold DO can have hydrated while
+        // this list() snapshot was in flight — restoring over it would
+        // roll the ledger back behind that commit's rule/watermark deltas
+        // and re-accept one of its hashes.
+        let mut slot = self.ledger.borrow_mut();
+        if slot.is_some() {
+            return Ok(());
+        }
+        *slot = Some(Ledger::restore(hashes, tokens, meta, rules, wm));
         Ok(())
     }
 

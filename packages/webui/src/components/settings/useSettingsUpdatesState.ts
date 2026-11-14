@@ -23,8 +23,11 @@ export function formatBytes(n: number): string {
 /** The release `updated_at` stamp shown as a local date-time. */
 export function formatStamp(stamp?: string | null): string {
   if (!stamp) return t("settings.cacheVersionUnknown");
-  const d = new Date(stamp);
-  return Number.isNaN(d.getTime()) ? stamp : d.toLocaleString();
+  // The SAME stable local wall-clock shape the details body's installed /
+  // checked columns render (formatLocalStamp) — a raw toLocaleString()
+  // chip beside a "2026-11-06 14:34" one read as two different kinds of
+  // value, and it moved with the OS locale besides.
+  return formatLocalStamp(stamp) || stamp;
 }
 
 /** The display form of a tree hash — its LAST 6 hex chars, upper-case
@@ -247,9 +250,18 @@ export function useSettingsUpdatesState() {
   // action.
   const resourceRows = ref<Awaited<ReturnType<typeof api.resourcesStatus>> | null>(null);
 
+  /** Walk generation — a stale walk's answer must never overwrite a
+   *  fresher one: "Update all" starts two verbs whose registry walks
+   *  resolve in whatever order the backend's blocking pool finishes them,
+   *  and last-resolved-wins would otherwise park a mid-batch snapshot in
+   *  the status card and the details inventory. */
+  let walkSeq = 0;
+
   async function loadResourceRows() {
+    const seq = ++walkSeq;
     try {
-      resourceRows.value = await api.resourcesStatus();
+      const rows = await api.resourcesStatus();
+      if (seq === walkSeq) resourceRows.value = rows;
     } catch {
       // keep the previous walk (or none) — the walk is read-only
     }

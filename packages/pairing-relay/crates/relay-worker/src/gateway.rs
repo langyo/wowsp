@@ -482,7 +482,16 @@ impl GatewayAuth {
                 }
             }
         }
-        *self.auth.borrow_mut() = Some(AuthState::restore(tickets, passwords));
+        // Double-check after the await (the twin GatewayChannel loader's
+        // guard): on a cold DO a concurrent fetch can have hydrated while
+        // this list() snapshot was in flight — restoring over it would
+        // wipe the tickets minted in between (the phone's /consume would
+        // then 401 a ticket the session call had just returned).
+        let mut slot = self.auth.borrow_mut();
+        if slot.is_some() {
+            return Ok(());
+        }
+        *slot = Some(AuthState::restore(tickets, passwords));
         Ok(())
     }
 
@@ -854,9 +863,23 @@ impl GatewayChannel {
             return Response::error("subscriber limit reached", 409);
         }
 
-        let pair = WebSocketPair::new()?;
-        let server = pair.server.clone();
-        server.accept()?;
+        // The seat must not leak when the fallible setup fails: it would
+        // permanently consume one of the channel's subscriber slots (they
+        // 409 until the DO restarts) — the reader's sub_leave cleanup
+        // never runs for a socket that never registered.
+        let setup: Result<(WebSocketPair, WebSocket)> = (|| {
+            let pair = WebSocketPair::new()?;
+            let server = pair.server.clone();
+            server.accept()?;
+            Ok((pair, server))
+        })();
+        let (pair, server) = match setup {
+            Ok(ok) => ok,
+            Err(e) => {
+                self.inner.borrow_mut().chan.sub_leave();
+                return Err(e);
+            },
+        };
         self.inner.borrow_mut().subs.push(server.clone());
 
         // hello → host presence → the current battle snapshot (live from

@@ -245,8 +245,14 @@ pub async fn handle_submit(mut req: Request, env: Env) -> Result<Response> {
         let mut tokens: Vec<String> = Vec::new();
         for (name, bytes) in &sub.files {
             let name = name.clone().unwrap_or_else(|| "logs.zip".into());
+            // The boundary seed must be unpredictable: a clock tick is
+            // guessable within one RTT of the submit, and an attachment
+            // embedding candidate delimiters could splice extra parts into
+            // the upload request. Same CSPRNG the lookup token mints with.
+            let mut seed_bytes = [0u8; 8];
+            getrandom::fill(&mut seed_bytes).map_err(|_| "rng unavailable")?;
             let (mp_boundary, mp_body) = multipart::build_seeded(
-                now_ms() as u64 + tokens.len() as u64,
+                u64::from_le_bytes(seed_bytes),
                 &[
                     ("file_name".into(), None, name.clone().into_bytes()),
                     ("parent_type".into(), None, b"bitable_file".to_vec()),

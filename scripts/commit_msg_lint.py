@@ -136,9 +136,11 @@ _CONVENTIONAL_PREFIX_RE = re.compile(
 # leading phrase is capitalized, e.g. "Fix compliance: ..." or
 # "Audit round 23: ...". The character immediately before the colon must be a
 # letter/digit so code tokens like "Support :is()" or timestamps such as
-# "09:34Z" are not false positives.
+# "09:34Z" are not false positives — the character CLASS is the real guard,
+# so the lead-in length cap stays generous (a 60-char cap let long lead-ins
+# smuggle a colon prefix past the rule).
 _COLON_PREFIX_RE = re.compile(
-    r"^[A-Za-z][A-Za-z0-9 ._/-]{0,60}[A-Za-z0-9._/-]:\s",
+    r"^[A-Za-z][A-Za-z0-9 ._/-]{0,200}[A-Za-z0-9._/-]:\s",
 )
 
 # Leading bare version number or filler phrases (after gitmoji and space).
@@ -147,9 +149,12 @@ _VERSION_OR_FILLER_START_RE = re.compile(
     re.IGNORECASE,
 )
 
-# CJK and full-width characters (Chinese, Japanese, Korean, etc.).
-_CJK_RE = re.compile(r"[\u2e80-\u2eff\u3000-\u303f\u31c0-\u31ef\u3200-\u32ff"
-                     r"\u3300-\u33ff\u3400-\u4dbf\u4e00-\u9fff"
+# CJK and full-width characters (Chinese, Japanese, Korean, etc.), plus
+# the kana, Hangul (jamo + compat jamo + syllables) and Cyrillic ranges a
+# mixed-script summary could otherwise smuggle past the English-only rule.
+_CJK_RE = re.compile(r"[\u0400-\u04ff\u1100-\u11ff\u2e80-\u2eff\u3000-\u303f"
+                     r"\u3040-\u30ff\u3130-\u318f\u31c0-\u31ef\u3200-\u32ff"
+                     r"\u3300-\u33ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af"
                      r"\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef]")
 
 # First English letter position (used for capital-letter check).

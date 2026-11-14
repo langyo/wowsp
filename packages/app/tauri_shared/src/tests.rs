@@ -1274,11 +1274,11 @@ fn pack_round_trip() {
         0x9249,
         0x249_249,
         0x0924_9249,
-        0x449_2492_49,
-        0x449_2492_89,
+        0x0004_4924_9249,
+        0x0004_4924_9289,
         0x94,
         0x2_228a,
-        0x2492_4924_9, // 12 full planes
+        0x0002_4924_9249, // 12 full planes
     ];
     for &f in &fixtures {
         let bands: Vec<PlaneHealthBand> = unpack_squadron_planes_health(f)

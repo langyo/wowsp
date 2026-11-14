@@ -71,8 +71,16 @@ pub async fn gateway_set_config(
     let dir = crate::paths::ensure_data_dir()?;
     save_config_in(&dir, &config)?;
     if !config.enabled {
+        // The stop halves are UN-GATED (a gated stop deadlocked the gated
+        // replace path), so the disable serializes itself against the
+        // start/stop commands through the same two gates — publish first;
+        // no path holds subscribe and then publish, so the order is safe.
         #[cfg(desktop)]
-        super::publish::stop_publish().await;
+        {
+            let _gate = super::publish::publish_gate().lock().await;
+            super::publish::stop_publish().await;
+        }
+        let _gate = super::subscribe::subscribe_gate().lock().await;
         super::subscribe::stop_subscribe().await;
     }
     Ok(config)

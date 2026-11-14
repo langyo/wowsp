@@ -215,20 +215,22 @@ export function updateLabelPositions(ctx: MapInternals) {
     const lift = ctx.planeRecordedView ? wy + 15 : Math.max(60, wy) + 30;
     ctx._projVec.set(wx, lift, -wz);
     ctx._projVec.project(cam);
-    if (ctx._projVec.z >= 1 && Number.isFinite(ctx._projVec.z)) {
+    if (ctx._projVec.z >= 1 || !Number.isFinite(ctx._projVec.z)) {
       // Behind the camera (a sharp recorded maneuver, or the hold-RMB free
       // look swinging away): the card used to VANISH for the whole stretch,
       // which read as labels "occasionally disappearing". The NDC of a
       // behind-camera point IS the negated bearing, so pinning it to a
-      // screen-edge ring keeps the card visible and roughly pointing at the
-      // formation (the non-finite guard covers the exact camera plane,
-      // where the perspective divide yields ±Infinity/NaN).
-      if (Number.isFinite(ctx._projVec.x) && Number.isFinite(ctx._projVec.y)) {
-        const edge = behindCameraEdgeNdc(ctx._projVec.x, ctx._projVec.y);
-        ctx._projVec.x = edge.x;
-        ctx._projVec.y = edge.y;
-        ctx._projVec.z = 0.5;
-      }
+      // screen-edge ring keeps the card visible and roughly pointing at
+      // the formation. The non-finite case — the exact camera plane, where
+      // the perspective divide yields ±Infinity/NaN — carries no bearing at
+      // all and MUST take the helper's centre fallback too: raw values
+      // through here poisoned the translate3d with NaN, which the browser
+      // silently drops, freezing the card at its last position while
+      // still force-visible.
+      const edge = behindCameraEdgeNdc(ctx._projVec.x, ctx._projVec.y);
+      ctx._projVec.x = edge.x;
+      ctx._projVec.y = edge.y;
+      ctx._projVec.z = 0.5;
     }
     label.x = (ctx._projVec.x * hw) + hw;
     label.y = (-ctx._projVec.y * hh) + hh;
