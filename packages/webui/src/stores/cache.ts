@@ -267,11 +267,11 @@ export const useCacheStore = defineStore("resourceCache", () => {
    * catch-up the startup policy defers to (AppShell calls this on the
    * first boot of a NEW build when the manifest reports an outdated
    * pack). Same grammar as the updater's idle prompt: a hikari
-   * blocking toast with 立即更新 / 稍后. 立即更新 opens Settings →
-   * resources, gliding the pane onto the baked-models card (where the
-   * live progress bar lives), and starts the pass; 稍后 just dismisses
-   * — the panel banner remains, and the next post-update restart asks
-   * again.
+   * blocking toast with 立即更新 / 稍后. 立即更新 starts the pass right
+   * here — the progress renders on the shared top-right card, so the
+   * prompt never has to navigate; 稍后 just dismisses — the status card
+   * in Settings → resources keeps saying "updates available", and the
+   * next post-update restart asks again.
    */
   async function offerUpdatePrompt() {
     const upd = update.value;
@@ -319,6 +319,36 @@ export const useCacheStore = defineStore("resourceCache", () => {
     }
   }
 
+  /** The status card's ONE cleanup verb: clear every auxiliary cache by
+   *  running the same per-scope command in sequence, so the family row and
+   *  the details panel's per-cache rows can never diverge on the wire (a new
+   *  backend command would have to be mirrored into both). Sequential on
+   *  purpose — each scope is a blocking-pool removal that finishes in
+   *  milliseconds at these sizes, and a parallel burst buys nothing while
+   *  making partial failures harder to attribute. */
+  const auxClearing = ref(false);
+  async function clearAllAuxCaches() {
+    if (auxClearing.value) return;
+    auxClearing.value = true;
+    try {
+      for (const cache of auxCaches.value) {
+        if (cache.sizeBytes <= 0) continue;
+        try {
+          await api.clearAuxCache(cache.scope);
+        } catch {
+          /* best-effort: one wedged scope must not strand the rest */
+        }
+      }
+    } finally {
+      try {
+        auxCaches.value = await api.auxCacheOverview();
+      } catch {
+        /* keep previous */
+      }
+      auxClearing.value = false;
+    }
+  }
+
   function init() {
     // Bring the unified download bus up once for the whole app (idempotent):
     // every context's ticks land in the shared ledger, and the top-right pass
@@ -351,6 +381,8 @@ export const useCacheStore = defineStore("resourceCache", () => {
     offerUpdatePrompt,
     clearRes,
     clearAuxCache,
+    auxClearing,
+    clearAllAuxCaches,
     init,
   };
 });

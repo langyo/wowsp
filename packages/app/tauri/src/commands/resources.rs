@@ -383,8 +383,10 @@ fn probe(id: &str, data: &Path, cache: &Path) -> Probe {
         "data-kit" => dataset_probe(data, "ship-consumable-kit.json"),
         "data-ship-gameparams" => dataset_probe(data, "ship-gameparams.zip"),
         "mod-catalog" => Probe {
-            // The catalog is a TTL-cached index refreshed on view load; the
-            // panel's own card shows its fetch stamp. Registry row only.
+            // The catalog is a TTL-cached index refreshed on view load and
+            // forced by the settings pane's own check (the shell's refresh
+            // plan does not carry this lane); the game-data row shows its
+            // fetch stamp. Registry row only.
             present: true,
             ..Probe::default()
         },

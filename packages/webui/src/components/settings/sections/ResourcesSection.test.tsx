@@ -1,27 +1,38 @@
 /**
- * Resources settings section — the decisions-pack card's torpedo slot and
- * the resource-inventory column layout.
+ * Resources settings section — the status card, the four family rows, the
+ * collapsed details panel, and the details panel's payload (the registry
+ * inventory's column layout plus the decisions pack's technical facts).
  *
- * The E26/P2 torpedo model lives inside the out-of-band decisions pack, and
- * the report side renders N/A when it is absent. The settings card therefore
- * has to report the slot's presence and on-disk size exactly like the fire /
- * move / advice models, and stay silent on older packs that predate it.
+ * The 2026-11-14 hierarchy rework moved the pane from "audit shelf" to
+ * "status first": ONE status card answers whether anything needs doing, ONE
+ * family card carries at most one verb per family, and everything else lives
+ * behind the details disclosure. These tests therefore pin four contracts:
  *
- * The inventory is the section's one cross-resource surface: every row
- * renders SIX fixed cells (name | size | version | updated | channel | kind)
- * so the stylesheet's shared subgrid keeps the columns aligned across rows,
- * and the always-present kind chip closes every row in the far-right column.
- * The channel column shows the registry code's localized label (the raw code
- * stays the tooltip), and a fact with no content renders the grey N/A
- * placeholder instead of a blank cell.
+ * 1. The status card never claims "ready" for a set that was not checked, and
+ *    it never duplicates an apply verb (the apply buttons belong to the rows).
+ * 2. Every family row carries at most ONE verb, and same-family items share
+ *    it (the four caches clear behind one two-step confirm).
+ * 3. The disclosure is the gate: the panel starts collapsed (aria-expanded),
+ *    while its body stays mounted — that is what keeps the inventory's six
+ *    fixed columns (name | size | version | updated | channel | kind) testable
+ *    and the destructive verbs out of a new player's way.
+ * 4. The details payload keeps its facts: the E26/P2 torpedo slot, the
+ *    channel/kind localizations and the N/A placeholders all still render.
  */
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 
 import { initLocaleMessages, t } from "@/i18n";
-import type { DecisionsPackStatus } from "@/api";
+import type {
+  AiPackCheck,
+  AiPackStatus,
+  AuxCacheStatus,
+  DecisionsPackStatus,
+  ResStatus,
+  ResUpdate,
+} from "@/api";
 import type { ResourceStatusRow } from "@/api/modules/respack";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
 import { useSettingsResourcesState } from "@/components/settings/useSettingsResourcesState";
@@ -63,56 +74,158 @@ function packStatus(over: Partial<DecisionsPackStatus> = {}): DecisionsPackStatu
   };
 }
 
-/** The updates half of SettingsBodyCtx: this render only reads the pack card
- *  and the inventory walk (pass `rows` to render it), so plain refs stand in
- *  for the shared update store — the section under test never triggers a
- *  refresh. */
-function updatesState(rows: ResourceStatusRow[] | null = null) {
+/** The resource pack's local state (only the facts the rows read are
+ *  driven here). */
+function resStatus(over: Partial<ResStatus> = {}): ResStatus {
   return {
-    cacheStore: {
-      status: null,
-      update: null,
-      progress: null,
-      speedBps: 0,
-      auxCaches: [],
-      anyUpdateAvailable: false,
-      updatesLoading: false,
-      integrityChecking: false,
-      checkUpdates: vi.fn(),
-      download: vi.fn(),
-      cancel: vi.fn(),
-      clearRes: vi.fn(),
-      verifyIntegrity: vi.fn(),
-      clearAuxCache: vi.fn(),
-      refreshStatus: vi.fn(),
-      refreshUpdates: vi.fn(),
-    },
-    resourceRows: ref<ResourceStatusRow[] | null>(rows),
-    inventoryBusy: ref(false),
-    refreshInventoryRow: vi.fn(),
-    dataPackVersion: ref(null),
-    dataPackBusy: ref(false),
-    refreshDataPackRow: vi.fn(),
-    modCatalogStamp: ref(null),
-    modCatalogBusy: ref(false),
-    refreshModCatalogRow: vi.fn(),
-    appUpdatePending: ref(false),
-    clearArmed: ref(null),
-    auxArmed: ref(null),
+    present: true,
+    treeSha256: null,
+    version: null,
+    legacyStamp: false,
+    sizeBytes: 1024,
+    downloading: false,
+    bundled: false,
+    ...over,
   };
 }
 
-function mountSection(pack: DecisionsPackStatus, rows: ResourceStatusRow[] | null = null) {
+/** The AI channel's local install state (only the facts the pane reads). */
+function aiPackStatus(over: Partial<AiPackStatus> = {}): AiPackStatus {
+  return {
+    installed: true,
+    seq: 7,
+    version: "2026-11-01T00:00:00Z",
+    treeSha256: "abcdef",
+    revision: "rev",
+    installedAt: "2026-11-01T00:00:00Z",
+    sizeBytes: 8192,
+    losMaps: 0,
+    losSkipped: false,
+    models: [],
+    ...over,
+  };
+}
+
+/** One authenticated manifest answer (only the fields the pane reads). */
+function aiCheck(over: Partial<AiPackCheck> = {}): AiPackCheck {
+  return {
+    current: aiPackStatus(),
+    latestSeq: 8,
+    latestVersion: "2026-11-02T00:00:00Z",
+    latestTreeSha256: "fedcba",
+    latestRevision: "rev2",
+    totalBytes: 1024 * 1024,
+    losIncluded: false,
+    losMismatch: false,
+    files: [],
+    endpoint: "https://huggingface.co",
+    manifestSha256: "sha",
+    checkedAt: "2026-11-02T00:00:00Z",
+    updateAvailable: false,
+    ...over,
+  };
+}
+
+/** The cache store's shape as this render reads it. Every verb is a stub:
+ *  the section under test never starts a pass by itself. */
+function cacheStoreStub() {
+  return {
+    status: null as ResStatus | null,
+    update: null as ResUpdate | null,
+    auxCaches: [] as AuxCacheStatus[],
+    anyUpdateAvailable: false,
+    updatesCheckedAt: 0,
+    updatesLoading: false,
+    integrityChecking: false,
+    auxClearing: false,
+    checkUpdates: vi.fn(),
+    download: vi.fn(),
+    clearRes: vi.fn(),
+    verifyIntegrity: vi.fn(),
+    clearAuxCache: vi.fn(),
+    clearAllAuxCaches: vi.fn(),
+    refreshStatus: vi.fn(),
+    refreshUpdates: vi.fn(),
+  };
+}
+
+/** The updates half of SettingsBodyCtx: the status card, the family rows and
+ *  the details panel read the walk + the cache store, so plain refs stand in
+ *  for the shared update store. The walk aggregates are derived here with the
+ *  same rules the real hook applies (present rows only, bundled snapshot
+ *  excluded) — a divergence would show up as a footprint assertion failure. */
+function updatesState(
+  rows: ResourceStatusRow[] | null = null,
+  cache: Partial<ReturnType<typeof cacheStoreStub>> = {},
+) {
+  const resourceRows = ref<ResourceStatusRow[] | null>(rows);
+  const walkTotalBytes = computed(() =>
+    (resourceRows.value ?? []).reduce(
+      (sum, row) =>
+        row.present && row.sizeBytes > 0 && row.root !== "bundled"
+          ? sum + row.sizeBytes
+          : sum,
+      0,
+    ),
+  );
+  const walkCheckedAt = computed(() => {
+    let newest: string | null = null;
+    for (const row of resourceRows.value ?? []) {
+      if (row.checkedAt && (newest == null || row.checkedAt > newest)) newest = row.checkedAt;
+    }
+    return newest;
+  });
+  return {
+    cacheStore: { ...cacheStoreStub(), ...cache },
+    resourceRows,
+    walkTotalBytes,
+    walkCheckedAt,
+    familyBytes: (ids: readonly string[]) =>
+      (resourceRows.value ?? []).reduce(
+        (sum, row) => (row.present && ids.includes(row.id) ? sum + row.sizeBytes : sum),
+        0,
+      ),
+    loadResourceRows: vi.fn(async () => {}),
+    checkAll: vi.fn(async () => true),
+    dataPackVersion: ref<string | null>(null),
+    dataPackBusy: ref(false),
+    refreshDataPackRow: vi.fn(),
+    modCatalogStamp: ref<string | null>(null),
+    modCatalogBusy: ref(false),
+    refreshModCatalogRow: vi.fn(),
+    appUpdatePending: ref(false),
+    clearArmed: ref<string | null>(null),
+    auxArmed: ref<string | null>(null),
+    cleanArmed: ref(false),
+  };
+}
+
+type UpdatesState = ReturnType<typeof updatesState>;
+
+function mountSectionWith(
+  updates: UpdatesState,
+  pack: DecisionsPackStatus,
+  out?: { resources?: ReturnType<typeof useSettingsResourcesState> },
+) {
   const resources = useSettingsResourcesState();
+  if (out) out.resources = resources;
   resources.capabilities.loaded = true;
   resources.capabilities.aiInference = true;
   resources.decisions.value = pack;
   resources.decisionsChecked.value = true;
   return mount(ResourcesSection, {
     props: {
-      ctx: { updates: updatesState(rows), resources } as unknown as SettingsBodyCtx,
+      ctx: { updates, resources } as unknown as SettingsBodyCtx,
     },
   });
+}
+
+function mountSection(
+  pack: DecisionsPackStatus,
+  rows: ResourceStatusRow[] | null = null,
+  cache: Partial<ReturnType<typeof cacheStoreStub>> = {},
+) {
+  return mountSectionWith(updatesState(rows, cache), pack);
 }
 
 describe("Settings → Resources decisions pack torpedo slot", () => {
@@ -240,41 +353,39 @@ function groupTitles(wrapper: ReturnType<typeof mountSection>): string[] {
   return wrapper.findAll(".hk-settings-group-title").map((node) => node.text());
 }
 
-/** The subtitles of ONE group (in DOM order), selected by its heading. */
-function groupSubtitles(
-  wrapper: ReturnType<typeof mountSection>,
-  title: string,
-): string[] {
-  const groups = wrapper.findAll(".hk-settings-group");
-  const group = groups.find((node) => node.find(".hk-settings-group-title").text() === title);
-  return group ? group.findAll(".settings-modal__pack-name").map((node) => node.text()) : [];
+/** The family card's rows in DOM order (the group titled resSpaceTitle). */
+function familyRows(wrapper: ReturnType<typeof mountSection>) {
+  const group = wrapper
+    .findAll(".hk-settings-group")
+    .find((node) => node.find(".hk-settings-group-title").text() === t("settings.resSpaceTitle"));
+  return group ? group.findAll(".settings-modal__pack") : [];
+}
+
+/** The row of ONE family, selected by its name. */
+function familyRow(wrapper: ReturnType<typeof mountSection>, name: string) {
+  const row = familyRows(wrapper).find(
+    (node) => node.find(".settings-modal__pack-name").text() === name,
+  );
+  if (!row) throw new Error(`family row not found: ${name}`);
+  return row;
+}
+
+/** The always-visible verb labels of the family card. */
+function familyVerbs(wrapper: ReturnType<typeof mountSection>): string[] {
+  return familyRows(wrapper).flatMap((row) =>
+    row.findAll(".settings-modal__pack-actions button").map((button) => button.text()),
+  );
 }
 
 describe("Settings → Resources card anatomy", () => {
-  it("lists the three groups in the documented order", () => {
+  it("keeps exactly two always-visible cards: the status readout and the rows", () => {
     const wrapper = mountSection(packStatus());
-    // 资源 inventory → game-client data → resource pack → AI runtime. The
-    // decision-model pack is NOT its own group: the models belong to the
-    // runtime that consumes them.
     expect(groupTitles(wrapper)).toEqual([
-      t("settings.resInvTitle"),
-      t("settings.resourcesGameTitle"),
-      t("settings.resourcesBakedTitle"),
-      t("settings.resourcesAiTitle"),
+      t("settings.resStatusTitle"),
+      t("settings.resSpaceTitle"),
     ]);
-  });
-
-  it("groups the decision-model pack with the AI runtime, not with the models", () => {
-    const wrapper = mountSection(packStatus());
-    // The pack is what the runtime loads — it reads as one story.
-    expect(groupSubtitles(wrapper, t("settings.resourcesAiTitle"))).toContain(
-      t("settings.resourcesDecisionsName"),
-    );
-    // ...and it is no longer a row of the baked-model-assets group, which now
-    // holds only the shared resource pack.
-    expect(groupSubtitles(wrapper, t("settings.resourcesBakedTitle"))).not.toContain(
-      t("settings.resourcesDecisionsName"),
-    );
+    // The registry audit is a disclosure, not a third card.
+    expect(wrapper.find(".settings-modal__res-details").exists()).toBe(true);
   });
 
   it("renders no download progress inside the pane", () => {
@@ -282,6 +393,285 @@ describe("Settings → Resources card anatomy", () => {
     // inline progress bar here would be the exact drift this refactor removed.
     const wrapper = mountSection(packStatus());
     expect(wrapper.find(".settings-modal__pack-progress").exists()).toBe(false);
+  });
+});
+
+describe("Settings → Resources status card", () => {
+  const card = (wrapper: ReturnType<typeof mountSection>) =>
+    wrapper.find(".settings-modal__res-summary");
+
+  it("claims readiness for a checked set and shows its footprint", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      updatesCheckedAt: 1,
+    });
+    const node = card(wrapper);
+    expect(node.classes()).toContain("settings-modal__res-summary--success");
+    expect(node.text()).toContain(t("settings.resStatusReady"));
+    // The footprint is the walk's own sum (present, non-bundled rows) with the
+    // NOVEL check stamp — never the cache overview added on top.
+    expect(node.text()).toContain(
+      t("settings.resStatusMeta", {
+        size: formatBytes(350 * 1024 ** 2 + 2048),
+        time: formatLocalStamp("2026-11-07T09:30:00Z"),
+      }),
+    );
+    // ONE verb, and it is the pane's check — the apply verbs live on the rows.
+    const buttons = node.findAll("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0].text()).toBe(t("settings.cacheCheckUpdates"));
+  });
+
+  it("never dresses an unchecked set up as ready", () => {
+    // No row carries a check stamp and no manifest snapshot exists yet: the
+    // honest state is "not checked", not "ready".
+    const rows = inventoryRows().map((row) => ({ ...row, checkedAt: null }));
+    const wrapper = mountSection(packStatus(), rows, {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+    });
+    const node = card(wrapper);
+    expect(node.text()).toContain(t("settings.resStatusUnchecked"));
+    expect(node.classes()).not.toContain("settings-modal__res-summary--success");
+    expect(node.findAll("button")[0].text()).toBe(t("settings.cacheCheckUpdates"));
+  });
+
+  it("offers the download verb when the resource pack is missing", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: false, sizeBytes: 0 }),
+    });
+    const node = card(wrapper);
+    expect(node.classes()).toContain("settings-modal__res-summary--warning");
+    expect(node.text()).toContain(t("settings.resStatusMissingPack"));
+    expect(node.text()).toContain(t("settings.resStatusMissingPackHint"));
+    expect(node.findAll("button")[0].text()).toBe(t("settings.cacheDownload"));
+  });
+
+  it("reports known updates without adding a second update verb", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      anyUpdateAvailable: true,
+      updatesCheckedAt: 1,
+    });
+    const node = card(wrapper);
+    expect(node.classes()).toContain("settings-modal__res-summary--info");
+    expect(node.text()).toContain(t("settings.resStatusUpdates"));
+    expect(node.findAll("button")[0].text()).toBe(t("settings.cacheCheckUpdates"));
+  });
+
+  it("explains a pending app update instead of offering a verb", () => {
+    const updates = updatesState(inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      anyUpdateAvailable: true,
+      updatesCheckedAt: 1,
+    });
+    updates.appUpdatePending.value = true;
+    const wrapper = mountSectionWith(updates, packStatus());
+    const node = card(wrapper);
+    expect(node.text()).toContain(t("settings.resStatusAppFirst"));
+    expect(node.text()).toContain(t("settings.resAfterApp"));
+    // The app update comes first: no pack verb here, and the row's verb is
+    // gated separately (the disabled prop), so the card must not add one.
+    expect(node.findAll("button")).toHaveLength(0);
+  });
+
+  it("walks every refreshable lane from the ONE check verb", async () => {
+    const updates = updatesState(inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      updatesCheckedAt: 1,
+    });
+    const state: { resources?: ReturnType<typeof useSettingsResourcesState> } = {};
+    const wrapper = mountSectionWith(updates, packStatus(), state);
+    const aiSpy = vi.spyOn(state.resources!, "checkAiUpdate");
+    await card(wrapper).findAll("button")[0].trigger("click");
+    // The shell's refresh entry (data lanes + both manifests)...
+    expect(updates.checkAll).toHaveBeenCalledTimes(1);
+    // ...the ANNOUNCING res-manifest verb (a silent refresh drops the
+    // delta-count / full-download toast a user-initiated check must give)...
+    expect(updates.cacheStore.checkUpdates).toHaveBeenCalledTimes(1);
+    expect(updates.cacheStore.refreshUpdates).not.toHaveBeenCalled();
+    // ...the on-demand mod-hub index the shell's plan does not cover...
+    expect(updates.refreshModCatalogRow).toHaveBeenCalledWith(true);
+    // ...and the AI manifest snapshot on top of the shell-side check.
+    expect(aiSpy).toHaveBeenCalled();
+  });
+
+  it("gates only the RESOURCE PACK behind an app update", async () => {
+    const updates = updatesState(inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      updatesCheckedAt: 1,
+    });
+    updates.appUpdatePending.value = true;
+    const state: { resources?: ReturnType<typeof useSettingsResourcesState> } = {};
+    const wrapper = mountSectionWith(updates, packStatus(), state);
+    // An AI-only update rides its own signed channel — it must not be dressed
+    // up as "update the application first".
+    state.resources!.aiCheck.value = aiCheck({ updateAvailable: true });
+    await nextTick();
+    expect(card(wrapper).text()).toContain(t("settings.resStatusUpdates"));
+    expect(card(wrapper).text()).not.toContain(t("settings.resStatusAppFirst"));
+  });
+
+  it("holds the resource pack back while an app update is pending", () => {
+    const updates = updatesState(inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      updatesCheckedAt: 1,
+      anyUpdateAvailable: true,
+    });
+    updates.appUpdatePending.value = true;
+    const wrapper = mountSectionWith(updates, packStatus());
+    expect(card(wrapper).text()).toContain(t("settings.resStatusAppFirst"));
+    expect(card(wrapper).text()).toContain(t("settings.resAfterApp"));
+  });
+});
+
+describe("Settings → Resources family rows", () => {
+  it("renders the four families in the documented order", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      auxCaches: [{ scope: "image-cache", sizeBytes: 2048 }],
+    });
+    expect(familyRows(wrapper).map((row) => row.find(".settings-modal__pack-name").text())).toEqual(
+      [
+        t("settings.resFamilyGameData"),
+        t("settings.resPackTitle"),
+        t("settings.resFamilyModels"),
+        t("settings.resFamilyCaches"),
+      ],
+    );
+  });
+
+  it("never stacks two verbs on one family row", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      auxCaches: [{ scope: "image-cache", sizeBytes: 2048 }],
+    });
+    for (const row of familyRows(wrapper)) {
+      expect(row.findAll(".settings-modal__pack-actions button").length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("leaves the auto-fetched game data without a verb of its own", () => {
+    // The small datasets are the boot-time lane the status card's ONE check
+    // spans — a second refresh button would be the same verb twice.
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+    });
+    expect(familyRow(wrapper, t("settings.resFamilyGameData")).findAll("button")).toHaveLength(0);
+    // ...while it still reports where its data came from.
+    expect(familyRow(wrapper, t("settings.resFamilyGameData")).text()).toContain(
+      t("settings.dataSourceBundled"),
+    );
+  });
+
+  it("clears every cache behind ONE two-step confirm", async () => {
+    const updates = updatesState(inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      auxCaches: [
+        { scope: "image-cache", sizeBytes: 2048 },
+        { scope: "gameparams", sizeBytes: 4096 },
+      ],
+    });
+    const wrapper = mountSectionWith(updates, packStatus());
+    const cleanButton = () =>
+      familyRow(wrapper, t("settings.resFamilyCaches")).find(".settings-modal__pack-actions button");
+    expect(cleanButton().text()).toBe(t("settings.resCleanAll"));
+    await cleanButton().trigger("click");
+    // The first click only arms the confirm — nothing is cleared yet.
+    expect(cleanButton().text()).toBe(t("settings.cacheDeleteConfirm"));
+    expect(updates.cacheStore.clearAllAuxCaches).not.toHaveBeenCalled();
+    await cleanButton().trigger("click");
+    expect(updates.cacheStore.clearAllAuxCaches).toHaveBeenCalledTimes(1);
+    // ...and the walk is re-read afterwards, so the status card's footprint
+    // stops advertising the bytes the cleanup just freed.
+    expect(updates.loadResourceRows).toHaveBeenCalled();
+  });
+
+  it("switches the pack slot with the state instead of stacking verbs", () => {
+    // No manifest snapshot: no dead "update" control — the summary's check is
+    // the only way to learn whether an update exists.
+    const noManifest = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+    });
+    expect(familyRow(noManifest, t("settings.resPackTitle")).findAll("button")).toHaveLength(0);
+
+    // Current pack + a fetched manifest: the slot becomes the integrity check.
+    const current = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      update: { updateAvailable: false, latestTreeSha256: "abcdef", deltaSteps: [] },
+    });
+    expect(familyRow(current, t("settings.resPackTitle")).find("button").text()).toBe(
+      t("settings.resCheckIntegrity"),
+    );
+
+    // Missing pack: the slot is the download verb.
+    const missing = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: false, sizeBytes: 0 }),
+    });
+    expect(familyRow(missing, t("settings.resPackTitle")).find("button").text()).toBe(
+      t("settings.cacheDownload"),
+    );
+  });
+
+  it("never claims the models are current without a manifest", () => {
+    // Installed models + no authenticated manifest answer: the row reports the
+    // bytes and offers the check — it does not paint a green "up to date".
+    const wrapper = mountSectionWith(
+      updatesState(inventoryRows(), { status: resStatus({ present: true, sizeBytes: 1024 }) }),
+      packStatus(),
+    );
+    const row = familyRow(wrapper, t("settings.resFamilyModels"));
+    expect(row.text()).not.toContain(t("settings.resUpToDate"));
+    expect(row.find("button").text()).toBe(t("settings.resourcesAiChannelCheck"));
+  });
+});
+
+describe("Settings → Resources details panel", () => {
+  it("keeps the audit surface behind a collapsed disclosure", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+    });
+    const header = wrapper.find(".hk-expansion-panel-header");
+    expect(header.attributes("aria-expanded")).toBe("false");
+    expect(wrapper.find(".settings-modal__res-details").text()).toContain(
+      t("settings.resDetailsTitle"),
+    );
+    // The body stays mounted while collapsed (the disclosure's contract), which
+    // is what keeps the inventory's column coverage meaningful and testable.
+    expect(wrapper.find(".settings-modal__res-inv").exists()).toBe(true);
+  });
+
+  it("keeps the destructive verbs out of the always-visible rows", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+    });
+    const packDelete = t("settings.resDeletePack", { size: formatBytes(1024) });
+    const modelsDelete = t("settings.resDeleteModels", { size: formatBytes(8192) });
+    const visible = familyVerbs(wrapper);
+    expect(visible).not.toContain(packDelete);
+    expect(visible).not.toContain(modelsDelete);
+    // ...and they sit in the details panel's danger zone, one click away.
+    const details = wrapper.find(".settings-modal__res-details");
+    expect(details.text()).toContain(t("settings.resDangerTitle"));
+    const dangerVerbs = details.findAll("button").map((button) => button.text());
+    expect(dangerVerbs).toContain(packDelete);
+    expect(dangerVerbs).toContain(modelsDelete);
+  });
+
+  it("keeps the restart note after the models are deleted", async () => {
+    // The cleared models stay loaded until the next boot — exactly the moment
+    // the note has to be visible, so it rides modelPresent OR the cleared flag.
+    const state: { resources?: ReturnType<typeof useSettingsResourcesState> } = {};
+    const wrapper = mountSectionWith(
+      updatesState(inventoryRows(), { status: resStatus({ present: true, sizeBytes: 1024 }) }),
+      packStatus(),
+      state,
+    );
+    state.resources!.decisions.value = packStatus({ present: false, modelPresent: false });
+    state.resources!.decisionsCleared.value = true;
+    await nextTick();
+    expect(wrapper.find(".settings-modal__res-details").text()).toContain(
+      t("settings.resourcesDecisionsRestart"),
+    );
   });
 });
 

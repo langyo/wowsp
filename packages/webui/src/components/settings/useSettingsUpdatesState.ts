@@ -224,6 +224,8 @@ export function useSettingsUpdatesState() {
   const clearArmed = ref<string | null>(null);
   /** Two-step aux-cache clear confirm (scope of the armed row). */
   const auxArmed = ref<string | null>(null);
+  /** Two-step confirm for the caches family row's one cleanup verb. */
+  const cleanArmed = ref(false);
 
   /** True while an app update is pending (or streaming) — the resource
    *  pack must wait for it: app first, pack after the restart. */
@@ -238,36 +240,74 @@ export function useSettingsUpdatesState() {
   const dataPackBusy = ref(false);
   const modCatalogStamp = ref<string | null>(null);
   const modCatalogBusy = ref(false);
-  // The registry walk (Settings → resources inventory): one row per
-  // runtime-managed resource, spec + on-disk state. Loaded alongside the
-  // data-pack row so the inventory appears when the panel opens and stays
-  // fresh after every explicit refresh.
+  // The registry walk (Settings → resources): one row per runtime-managed
+  // resource, spec + on-disk state. It now backs three surfaces — the status
+  // card's footprint, the family rows' sizes AND the details panel's audit
+  // table — so it loads when the section opens and after every explicit
+  // action.
   const resourceRows = ref<Awaited<ReturnType<typeof api.resourcesStatus>> | null>(null);
 
   async function loadResourceRows() {
     try {
       resourceRows.value = await api.resourcesStatus();
     } catch {
-      // keep the previous walk (or none) — the inventory is read-only
+      // keep the previous walk (or none) — the walk is read-only
     }
   }
 
-  // The inventory's own refresh button: one entry re-checks the data-pack
-  // lane + the res manifest, then reloads the walk (the ledger's checkedAt
-  // comes back with it).
-  const inventoryBusy = ref(false);
+  /** Total on-disk footprint of the walk's present rows — the status card's
+   *  one number. Computed from the walk ONLY (the aux-cache overview measures
+   *  the same directories, so it must never be added on top), and the
+   *  compile-time bundled snapshot is excluded: it lives inside the app
+   *  binary and the user cannot reclaim it. */
+  const walkTotalBytes = computed(() =>
+    (resourceRows.value ?? []).reduce(
+      (sum, row) =>
+        row.present && row.sizeBytes > 0 && row.root !== "bundled"
+          ? sum + row.sizeBytes
+          : sum,
+      0,
+    ),
+  );
 
-  async function refreshInventoryRow() {
-    if (inventoryBusy.value) return;
-    inventoryBusy.value = true;
+  /** The newest check stamp across the walk (the status card's "last
+   *  checked"); null until some row records one. */
+  const walkCheckedAt = computed(() => {
+    let newest: string | null = null;
+    for (const row of resourceRows.value ?? []) {
+      if (row.checkedAt && (newest == null || row.checkedAt > newest)) newest = row.checkedAt;
+    }
+    return newest;
+  });
+
+  /** Summed size of one family's rows: a family row shows ONE number for the
+   *  group instead of one per member. Absent rows and unknown ids add 0. */
+  function familyBytes(ids: readonly string[]): number {
+    return (resourceRows.value ?? []).reduce(
+      (sum, row) => (row.present && ids.includes(row.id) ? sum + row.sizeBytes : sum),
+      0,
+    );
+  }
+
+  // The status card's ONE check verb: re-check every refreshable lane through
+  // the shared refresh entry (data-pack lane, res manifest and the AI
+  // manifest behind it) and re-walk the registry. Fetch-only — downloads stay
+  // behind their own consented rows.
+  const checkingAll = ref(false);
+
+  async function checkAll(): Promise<boolean> {
+    if (checkingAll.value) return false;
+    checkingAll.value = true;
     try {
       await api.refreshResources();
+      return true;
     } catch {
-      // a lane failure is already logged shell-side; the walk reload below
+      // a lane failure is already logged shell-side; the reload below
       // reports whatever state actually landed
+      return false;
     } finally {
       await loadResourceRows();
-      inventoryBusy.value = false;
+      checkingAll.value = false;
     }
   }
 
@@ -316,6 +356,7 @@ export function useSettingsUpdatesState() {
     removeMirror,
     clearArmed,
     auxArmed,
+    cleanArmed,
     appUpdatePending,
     dataPackVersion,
     dataPackBusy,
@@ -323,8 +364,10 @@ export function useSettingsUpdatesState() {
     modCatalogBusy,
     resourceRows,
     loadResourceRows,
-    inventoryBusy,
-    refreshInventoryRow,
+    walkTotalBytes,
+    walkCheckedAt,
+    familyBytes,
+    checkAll,
     refreshDataPackRow,
     refreshModCatalogRow,
   };

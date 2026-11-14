@@ -81,6 +81,7 @@ export function useSettingsBody(props: { active: boolean }) {
       // Leaving the section disarms any pending two-step confirm.
       updates.clearArmed.value = null;
       updates.auxArmed.value = null;
+      updates.cleanArmed.value = false;
       resources.decisionsArmed.value = false;
       appearance.wallpaperArmed.value = null;
       // Re-sync the wallpaper list with the AppData folder (also heals a
