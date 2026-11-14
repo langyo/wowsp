@@ -25,7 +25,7 @@
 import { createServer } from "vite";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = resolve(pkgDir, "../../dist/website");

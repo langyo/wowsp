@@ -1,7 +1,7 @@
 import vueSfc from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
 import { readdirSync, rmSync, rmdirSync, readFileSync, statSync } from "fs";
-import { dirname, resolve } from "path";
+import { resolve } from "path";
 import { defineConfig, type Plugin } from "vite";
 
 import UnoCSS from "unocss/vite";

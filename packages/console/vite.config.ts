@@ -1,4 +1,4 @@
-import { dirname, resolve } from "path";
+import { resolve } from "path";
 import { defineConfig } from "vite";
 import vueSfc from "@vitejs/plugin-vue";
 import vueJsx from "@vitejs/plugin-vue-jsx";
@@ -8,17 +8,7 @@ const pkgDir = resolve(__dirname);
 // hikari ships uncompiled Vue JSX source; Vite 8's Rolldown dep optimizer
 // strips types but leaves JSX raw, so it must be excluded and served
 // through the plugin pipeline where vue-jsx transforms it (same rule as
-// @wowsp/website). hikari imports highlight.js through CJS `lib/` deep
-// paths — alias them onto the identical ESM build, resolved through
-// hikari's own dependency set (same rule as the website).
-const hikariDir = dirname(
-  dirname(require.resolve("@celestia-island/hikari/components/HkButton.tsx")),
-);
-const hljsEsDir = resolve(
-  dirname(require.resolve("highlight.js/package.json", { paths: [hikariDir] })),
-  "es",
-);
-
+// @wowsp/website).
 export default defineConfig({
   plugins: [vueSfc(), vueJsx()],
   optimizeDeps: {
@@ -26,7 +16,6 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      "highlight.js/lib": hljsEsDir,
       "@": resolve(pkgDir, "src"),
       "@res": resolve(pkgDir, "../../res"),
     },

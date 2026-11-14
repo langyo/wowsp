@@ -200,9 +200,6 @@ importers:
       happy-dom:
         specifier: ^21
         version: 21.0.4
-      highlight.js:
-        specifier: 11.12.0
-        version: 11.12.0
       sass:
         specifier: ^1
         version: 1.105.1
@@ -2280,10 +2277,6 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
-
-  highlight.js@11.12.0:
-    resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
-    engines: {node: '>=12.0.0'}
 
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
@@ -4986,8 +4979,6 @@ snapshots:
       - utf-8-validate
 
   has-flag@4.0.0: {}
-
-  highlight.js@11.12.0: {}
 
   hookable@5.5.3: {}
 
