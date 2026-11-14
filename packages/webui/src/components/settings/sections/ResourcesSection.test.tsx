@@ -1,21 +1,23 @@
 /**
  * Resources settings section — the status card, the four family rows, the
- * collapsed details panel, and the details panel's payload (the registry
- * inventory's column layout plus the decisions pack's technical facts).
+ * details child window, and the window's payload (the registry inventory's
+ * column layout plus the decisions pack's technical facts).
  *
  * The 2026-11-14 hierarchy rework moved the pane from "audit shelf" to
  * "status first": ONE status card answers whether anything needs doing, ONE
- * family card carries at most one verb per family, and everything else lives
- * behind the details disclosure. These tests therefore pin four contracts:
+ * family card carries at most one verb per family, and the maintainer's
+ * audit lives in a CHILD WINDOW. These tests therefore pin four contracts:
  *
  * 1. The status card never claims "ready" for a set that was not checked, and
  *    it never duplicates an apply verb (the apply buttons belong to the rows).
  * 2. Every family row carries at most ONE verb, and same-family items share
  *    it (the four caches clear behind one two-step confirm).
- * 3. The disclosure is the gate: the panel starts collapsed (aria-expanded),
- *    while its body stays mounted — that is what keeps the inventory's six
- *    fixed columns (name | size | version | updated | channel | kind) testable
- *    and the destructive verbs out of a new player's way.
+ * 3. The details window is the gate: it opens from the entry row through the
+ *    shared popup context and starts closed, which is what keeps the
+ *    inventory's six fixed columns (name | size | version | updated |
+ *    channel | kind) testable AND the destructive verbs out of a new
+ *    player's way. The window teleports to the overlay root on
+ *    document.body, so its assertions query the document, not the wrapper.
  * 4. The details payload keeps its facts: the E26/P2 torpedo slot, the
  *    channel/kind localizations and the N/A placeholders all still render.
  */
@@ -40,20 +42,15 @@ import { formatBytes } from "@/components/settings/useSettingsUpdatesState";
 import { formatLocalStamp } from "@/utils/format";
 import ResourcesSection from "./ResourcesSection";
 
-// The pane's phone-layout branch reads hikari's useBreakpoint. The holder
-// defaults to DESKTOP so every existing suite keeps its assertions; the
-// phone-sheet describe flips it per test (a getter object keeps the mocked
-// ref shape without dragging Vue's reactivity into the mock).
-const bp = vi.hoisted(() => ({ mobile: false }));
-vi.mock("@celestia-island/hikari", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("@celestia-island/hikari")>();
-  return {
-    ...orig,
-    useBreakpoint: () => ({ isMobile: { get value() { return bp.mobile; } } }),
-  };
-});
 
 enableAutoUnmount(afterEach);
+
+// The details window teleports OUTSIDE the mounted wrapper — sweep any
+// window a finished test left behind so a leaked sheet can never bleed its
+// DOM into the next test's document queries.
+afterEach(() => {
+  document.querySelectorAll('[class*="hk-modal"]').forEach((node) => node.remove());
+});
 
 // Load the real message tables: the assertions compare against the SAME
 // localized strings the card renders.
@@ -250,8 +247,8 @@ function mountSection(
 }
 
 describe("Settings → Resources decisions pack torpedo slot", () => {
-  it("falls back to the legacy torpedo slot when no torp4 model is installed", () => {
-    const wrapper = mountSection(
+  it("falls back to the legacy torpedo slot when no torp4 model is installed", async () => {
+    const { host } = await mountDetails(
       packStatus({
         adviceModelPresent: true,
         adviceModelBytes: 2048,
@@ -259,23 +256,23 @@ describe("Settings → Resources decisions pack torpedo slot", () => {
         torpedoModelBytes: 4096,
       }),
     );
-    const text = wrapper.text();
+    const body = host.textContent ?? "";
     // The existing slots stay untouched...
-    expect(text).toContain(
+    expect(body).toContain(
       t("settings.resourcesDecisionsAdviceInstalled", {
         size: formatBytes(2048),
       }),
     );
     // ...and the E26/P2 torpedo slot reports its own file + size.
-    expect(text).toContain(
+    expect(body).toContain(
       t("settings.resourcesDecisionsTorpedoInstalled", {
         size: formatBytes(4096),
       }),
     );
   });
 
-  it("prefers the torp4 slot when both torpedo models are installed", () => {
-    const wrapper = mountSection(
+  it("prefers the torp4 slot when both torpedo models are installed", async () => {
+    const { host } = await mountDetails(
       packStatus({
         torpedoModelPresent: true,
         torpedoModelBytes: 4096,
@@ -283,34 +280,33 @@ describe("Settings → Resources decisions pack torpedo slot", () => {
         torpedo4ModelBytes: 8192,
       }),
     );
-    const text = wrapper.text();
     // T4 wins the ONE line: the three-head model is the preferred slot.
-    expect(text).toContain(
+    expect(host.textContent ?? "").toContain(
       t("settings.resourcesDecisionsTorpedo4Installed", {
         size: formatBytes(8192),
       }),
     );
-    expect(text).not.toContain(
+    expect(host.textContent ?? "").not.toContain(
       t("settings.resourcesDecisionsTorpedoInstalled", {
         size: formatBytes(4096),
       }),
     );
   });
 
-  it("reports the torp4 slot when the legacy slot is absent", () => {
-    const wrapper = mountSection(
+  it("reports the torp4 slot when the legacy slot is absent", async () => {
+    const { host } = await mountDetails(
       packStatus({ torpedo4ModelPresent: true, torpedo4ModelBytes: 8192 }),
     );
-    expect(wrapper.text()).toContain(
+    expect(host.textContent ?? "").toContain(
       t("settings.resourcesDecisionsTorpedo4Installed", {
         size: formatBytes(8192),
       }),
     );
   });
 
-  it("stays silent on an older pack without the torpedo slot", () => {
-    const wrapper = mountSection(packStatus({ torpedoModelPresent: false }));
-    expect(wrapper.text()).not.toContain(
+  it("stays silent on an older pack without the torpedo slot", async () => {
+    const { host } = await mountDetails(packStatus({ torpedoModelPresent: false }));
+    expect(host.textContent ?? "").not.toContain(
       t("settings.resourcesDecisionsTorpedoInstalled", {
         size: formatBytes(4096),
       }),
@@ -398,6 +394,34 @@ function familyVerbs(wrapper: ReturnType<typeof mountSection>): string[] {
   );
 }
 
+/** The details window teleports to hikari's overlay root on document.body —
+ *  OUTSIDE the mounted wrapper — so every details assertion queries the
+ *  document, not the wrapper. */
+async function openDetails(wrapper: ReturnType<typeof mountSection>) {
+  await wrapper.find(".settings-modal__res-details-entry").trigger("click");
+  await nextTick();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const host = document.querySelector('[class*="hk-modal"]');
+  expect(host).toBeTruthy();
+  return host!;
+}
+
+/** Mount AND open the details window in one step: the body only mounts
+ *  while the window is open. */
+async function mountDetails(
+  pack: DecisionsPackStatus,
+  rows: ResourceStatusRow[] | null = inventoryRows(),
+  cache: Partial<ReturnType<typeof cacheStoreStub>> = {},
+) {
+  const wrapper = mountSection(pack, rows, cache);
+  const host = await openDetails(wrapper);
+  return { wrapper, host };
+}
+
+const cell = (row: Element, col: string): Element =>
+  row.querySelector(`.settings-modal__res-inv-cell--${col}`)!;
+const text = (el: Element | null | undefined): string => el?.textContent ?? "";
+
 describe("Settings → Resources card anatomy", () => {
   it("keeps exactly two always-visible cards: the status readout and the rows", () => {
     const wrapper = mountSection(packStatus());
@@ -405,8 +429,10 @@ describe("Settings → Resources card anatomy", () => {
       t("settings.resStatusTitle"),
       t("settings.resSpaceTitle"),
     ]);
-    // The registry audit is a disclosure, not a third card.
-    expect(wrapper.find(".settings-modal__res-details").exists()).toBe(true);
+    // The registry audit is a child window, not a third card — only its
+    // quiet entry row lives in the pane.
+    expect(wrapper.find(".settings-modal__res-details-entry").exists()).toBe(true);
+    expect(wrapper.find(".settings-modal__res-inv").exists()).toBe(false);
   });
 
   it("renders no download progress inside the pane", () => {
@@ -686,23 +712,28 @@ describe("Settings → Resources family rows", () => {
   });
 });
 
-describe("Settings → Resources details panel", () => {
-  it("keeps the audit surface behind a collapsed disclosure", () => {
+describe("Settings → Resources details window", () => {
+  it("opens the audit surface as a child window from the entry row", async () => {
     const wrapper = mountSection(packStatus(), inventoryRows(), {
       status: resStatus({ present: true, sizeBytes: 1024 }),
     });
-    const header = wrapper.find(".hk-expansion-panel-header");
-    expect(header.attributes("aria-expanded")).toBe("false");
-    expect(wrapper.find(".settings-modal__res-details").text()).toContain(
-      t("settings.resDetailsTitle"),
+    // The pane itself never inlines the audit table...
+    expect(wrapper.find(".settings-modal__res-inv").exists()).toBe(false);
+    const entry = wrapper.find(".settings-modal__res-details-entry");
+    expect(entry.attributes("aria-haspopup")).toBe("dialog");
+    expect(entry.attributes("aria-expanded")).toBe("false");
+    // ...the entry opens it as a child window stacked on the shared popup
+    // context (focus, ESC, the overlay and the phone back gesture close it).
+    const host = await openDetails(wrapper);
+    expect(wrapper.find(".settings-modal__res-details-entry").attributes("aria-expanded")).toBe(
+      "true",
     );
-    // The body stays mounted while collapsed (the disclosure's contract), which
-    // is what keeps the inventory's column coverage meaningful and testable.
-    expect(wrapper.find(".settings-modal__res-inv").exists()).toBe(true);
+    expect(host.textContent ?? "").toContain(t("settings.resDetailsTitle"));
+    expect(host.querySelectorAll(".settings-modal__res-inv-row").length).toBeGreaterThan(0);
   });
 
-  it("keeps the destructive verbs out of the always-visible rows", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows(), {
+  it("keeps the destructive verbs out of the always-visible rows", async () => {
+    const { wrapper, host } = await mountDetails(packStatus(), inventoryRows(), {
       status: resStatus({ present: true, sizeBytes: 1024 }),
     });
     const packDelete = t("settings.resDeletePack", { size: formatBytes(1024) });
@@ -710,10 +741,9 @@ describe("Settings → Resources details panel", () => {
     const visible = familyVerbs(wrapper);
     expect(visible).not.toContain(packDelete);
     expect(visible).not.toContain(modelsDelete);
-    // ...and they sit in the details panel's danger zone, one click away.
-    const details = wrapper.find(".settings-modal__res-details");
-    expect(details.text()).toContain(t("settings.resDangerTitle"));
-    const dangerVerbs = details.findAll("button").map((button) => button.text());
+    // ...and they sit behind the details window's danger zone.
+    expect(host.textContent ?? "").toContain(t("settings.resDangerTitle"));
+    const dangerVerbs = [...host.querySelectorAll("button")].map((b) => b.textContent ?? "");
     expect(dangerVerbs).toContain(packDelete);
     expect(dangerVerbs).toContain(modelsDelete);
   });
@@ -721,178 +751,136 @@ describe("Settings → Resources details panel", () => {
   it("keeps the restart note after the models are deleted", async () => {
     // The cleared models stay loaded until the next boot — exactly the moment
     // the note has to be visible, so it rides modelPresent OR the cleared flag.
-    const state: { resources?: ReturnType<typeof useSettingsResourcesState> } = {};
-    const wrapper = mountSectionWith(
-      updatesState(inventoryRows(), { status: resStatus({ present: true, sizeBytes: 1024 }) }),
-      packStatus(),
-      state,
-    );
-    state.resources!.decisions.value = packStatus({ present: false, modelPresent: false });
-    state.resources!.decisionsCleared.value = true;
-    await nextTick();
-    expect(wrapper.find(".settings-modal__res-details").text()).toContain(
-      t("settings.resourcesDecisionsRestart"),
-    );
-  });
-});
-
-describe("Settings → Resources phone details sheet", () => {
-  it("swaps the inline expansion for an entry row that opens a docked sheet", async () => {
-    bp.mobile = true;
-    try {
-      const wrapper = mountSection(packStatus(), inventoryRows(), {
-        status: resStatus({ present: true, sizeBytes: 1024 }),
-      });
-      // No inline panel on the phone pane — the audit table would not fit...
-      expect(wrapper.find(".hk-expansion-panel").exists()).toBe(false);
-      const entry = wrapper.find(".settings-modal__res-details-entry");
-      expect(entry.attributes("aria-expanded")).toBe("false");
-      expect(entry.text()).toContain(t("settings.resDetailsTitle"));
-      // ...the SAME body opens as a sheet instead (HkModal docks through
-      // its overlay root on document.body, not inside the mounted wrapper).
-      await entry.trigger("click");
-      expect(wrapper.find(".settings-modal__res-details-entry").attributes("aria-expanded")).toBe(
-        "true",
-      );
-      await nextTick();
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      const sheet = document.querySelector('[class*="hk-modal"]');
-      expect(sheet).toBeTruthy();
-      expect(sheet?.textContent ?? "").toContain(t("settings.resInvTitle"));
-      // The six-column inventory itself renders in the sheet, not just the
-      // heading fragment above it.
-      expect(sheet?.querySelectorAll(".settings-modal__res-inv-row").length).toBeGreaterThan(0);
-    } finally {
-      bp.mobile = false;
-    }
-  });
-
-  it("keeps the inline expansion panel on desktop layouts", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows(), {
+    const updates = updatesState(inventoryRows(), {
       status: resStatus({ present: true, sizeBytes: 1024 }),
     });
-    expect(wrapper.find(".settings-modal__res-details-entry").exists()).toBe(false);
-    expect(wrapper.find(".hk-expansion-panel-header").attributes("aria-expanded")).toBe("false");
+    const state: { resources?: ReturnType<typeof useSettingsResourcesState> } = {};
+    const wrapper = mountSectionWith(updates, packStatus(), state);
+    state.resources!.decisions.value = packStatus({ present: false, modelPresent: false });
+    state.resources!.decisionsCleared.value = true;
+    const host = await openDetails(wrapper);
+    expect(host.textContent ?? "").toContain(t("settings.resourcesDecisionsRestart"));
   });
 });
 
 describe("Settings → Resources inventory columns", () => {
-  it("renders exactly six cells per row in the documented column order", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const rows = wrapper.findAll(".settings-modal__res-inv-row");
+  it("renders exactly six cells per row in the documented column order", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const rows = [...host.querySelectorAll(".settings-modal__res-inv-row")];
     expect(rows).toHaveLength(3);
     for (const row of rows) {
-      const cells = row.findAll(".settings-modal__res-inv-cell");
+      const cells = [...row.querySelectorAll(".settings-modal__res-inv-cell")];
       expect(cells).toHaveLength(6);
       expect(
         cells.map(
-          (cell) =>
-            CELL_ORDER.find((col) => cell.classes(`settings-modal__res-inv-cell--${col}`)) ?? null,
+          (c) =>
+            CELL_ORDER.find((col) =>
+              c.className.includes(`settings-modal__res-inv-cell--${col}`),
+            ) ?? null,
         ),
       ).toEqual([...CELL_ORDER]);
     }
   });
 
-  it("keeps the kind chip in the far-right column of every row", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const rows = wrapper.findAll(".settings-modal__res-inv-row");
+  it("keeps the kind chip in the far-right column of every row", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const rows = [...host.querySelectorAll(".settings-modal__res-inv-row")];
     for (const row of rows) {
-      expect(row.element.lastElementChild?.className).toBe(
+      expect(row.lastElementChild?.className).toBe(
         "settings-modal__res-inv-cell settings-modal__res-inv-cell--kind",
       );
     }
     // The blue info chip is the one fact EVERY row carries.
     expect(
-      rows.map((row) => row.find(".settings-modal__res-inv-cell--kind .hk-tag-info").text()),
+      rows.map((row) =>
+        text(row.querySelector(".settings-modal__res-inv-cell--kind .hk-tag-info")),
+      ),
     ).toEqual([t("settings.resKindPack"), t("settings.resKindCache"), t("settings.resKindDataset")]);
   });
 
-  it("localizes a timestamp version but keeps the raw ISO in the cell hint", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const versionCell = wrapper
-      .findAll(".settings-modal__res-inv-row")[0]
-      .find(".settings-modal__res-inv-cell--version");
+  it("localizes a timestamp version but keeps the raw ISO in the cell hint", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const versionCell = cell(host.querySelectorAll(".settings-modal__res-inv-row")[0], "version");
     const iso = "2026-11-06T14:34:10Z";
-    expect(versionCell.text()).toBe(formatLocalStamp(iso));
-    expect(versionCell.text()).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
+    expect(text(versionCell)).toBe(formatLocalStamp(iso));
+    expect(text(versionCell)).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/);
     // The raw source stays on the tooltip channel...
-    expect(versionCell.attributes("data-hint")).toBe(iso);
+    expect(versionCell.getAttribute("data-hint")).toBe(iso);
     // ...and the localized stamp keeps the updated column's NORMAL face (the
     // mono face is reserved for verbatim IDs — see the next test).
-    expect(versionCell.find(".hk-tag").classes()).not.toContain(
+    expect(versionCell.querySelector(".hk-tag")?.className).not.toContain(
       "settings-modal__res-inv-tag-mono",
     );
   });
 
-  it("keeps the mono face for verbatim version IDs", () => {
+  it("keeps the mono face for verbatim version IDs", async () => {
     // Semver / build ids are IDs, not stamps: mono marks them as such so a
     // build number never reads as a second timestamp vocabulary.
     const rows: ResourceStatusRow[] = [{ ...inventoryRows()[1], version: "13533378" }];
-    const wrapper = mountSection(packStatus(), rows);
-    // Scope to the data row: the header carries the same cell modifier.
-    const versionCell = wrapper
-      .find(".settings-modal__res-inv-row")
-      .find(".settings-modal__res-inv-cell--version");
-    expect(versionCell.text()).toBe("13533378");
-    expect(versionCell.find(".hk-tag").classes()).toContain("settings-modal__res-inv-tag-mono");
+    const { host } = await mountDetails(packStatus(), rows);
+    const versionCell = cell(host.querySelector(".settings-modal__res-inv-row")!, "version");
+    expect(text(versionCell)).toBe("13533378");
+    expect(versionCell.querySelector(".hk-tag")?.className).toContain(
+      "settings-modal__res-inv-tag-mono",
+    );
   });
 
-  it("falls back to hash6 for a content-addressed row without a version", () => {
+  it("falls back to hash6 for a content-addressed row without a version", async () => {
     // A row with no version vocabulary still renders its abbreviated content
     // hash, and that ID keeps the mono face like every other verbatim ID.
     const sha256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
     const rows: ResourceStatusRow[] = [{ ...inventoryRows()[1], version: null, sha256 }];
-    const wrapper = mountSection(packStatus(), rows);
-    const versionCell = wrapper
-      .find(".settings-modal__res-inv-row")
-      .find(".settings-modal__res-inv-cell--version");
-    expect(versionCell.text()).toBe("F00A08");
-    expect(versionCell.find(".hk-tag").classes()).toContain("settings-modal__res-inv-tag-mono");
+    const { host } = await mountDetails(packStatus(), rows);
+    const versionCell = cell(host.querySelector(".settings-modal__res-inv-row")!, "version");
+    expect(text(versionCell)).toBe("F00A08");
+    expect(versionCell.querySelector(".hk-tag")?.className).toContain(
+      "settings-modal__res-inv-tag-mono",
+    );
     // The raw content hash stays the tooltip payload.
-    expect(versionCell.attributes("data-hint")).toBe(sha256);
+    expect(versionCell.getAttribute("data-hint")).toBe(sha256);
   });
 
-  it("renders install stamps as bare local times with the raw ISO in the hint", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const installedCell = wrapper
-      .findAll(".settings-modal__res-inv-row")[0]
-      .find(".settings-modal__res-inv-cell--installed");
+  it("renders install stamps as bare local times with the raw ISO in the hint", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const installedCell = cell(host.querySelectorAll(".settings-modal__res-inv-row")[0], "installed");
     const iso = "2026-11-05T08:00:00Z";
     // The column header says "updated" — the chip itself is only the stamp.
-    expect(installedCell.text()).toBe(formatLocalStamp(iso));
-    expect(installedCell.attributes("data-hint")).toBe(iso);
+    expect(text(installedCell)).toBe(formatLocalStamp(iso));
+    expect(installedCell.getAttribute("data-hint")).toBe(iso);
   });
 
-  it("warns in the size column for an absent resource and marks absent facts N/A", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const absentRow = wrapper.findAll(".settings-modal__res-inv-row")[2];
-    const sizeCell = absentRow.find(".settings-modal__res-inv-cell--size");
+  it("warns in the size column for an absent resource and marks absent facts N/A", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const absentRow = host.querySelectorAll(".settings-modal__res-inv-row")[2];
+    const sizeCell = cell(absentRow, "size");
     // Nothing on disk is the row's headline fact: the size cell warns, it is
     // NOT an N/A placeholder.
-    expect(sizeCell.find(".hk-tag-warning").text()).toBe(t("settings.cacheStatusMissing"));
-    expect(sizeCell.classes()).not.toContain("settings-modal__res-inv-cell--na");
+    expect(sizeCell.querySelector(".hk-tag-warning")?.textContent).toBe(
+      t("settings.cacheStatusMissing"),
+    );
+    expect(sizeCell.className).not.toContain("settings-modal__res-inv-cell--na");
     // Every other fact is genuinely absent: the grey N/A chip, the --na cell
     // modifier (the phone layout hides those cells) and the localized hint.
     for (const col of ["version", "installed", "channel"]) {
-      const cell = absentRow.find(`.settings-modal__res-inv-cell--${col}`);
-      expect(cell.text()).toBe(t("settings.resInvNa"));
-      expect(cell.find(".settings-modal__res-inv-tag-na").exists()).toBe(true);
-      expect(cell.classes()).toContain("settings-modal__res-inv-cell--na");
-      expect(cell.attributes("data-hint")).toBe(t("settings.resInvNaHint"));
+      const c = cell(absentRow, col);
+      expect(text(c)).toBe(t("settings.resInvNa"));
+      expect(c.querySelector(".settings-modal__res-inv-tag-na")).toBeTruthy();
+      expect(c.className).toContain("settings-modal__res-inv-cell--na");
+      expect(c.getAttribute("data-hint")).toBe(t("settings.resInvNaHint"));
     }
   });
 
-  it("reports a present row's size and localized channel", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const rows = wrapper.findAll(".settings-modal__res-inv-row");
-    expect(rows[1].find(".settings-modal__res-inv-cell--size").text()).toBe(formatBytes(2048));
-    const channelCell = rows[0].find(".settings-modal__res-inv-cell--channel");
-    expect(channelCell.text()).toBe(t("settings.resChanRes"));
+  it("reports a present row's size and localized channel", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const rows = [...host.querySelectorAll(".settings-modal__res-inv-row")];
+    expect(text(cell(rows[1], "size"))).toBe(formatBytes(2048));
+    const channelCell = cell(rows[0], "channel");
+    expect(text(channelCell)).toBe(t("settings.resChanRes"));
     // The protocol code the registry stores stays the tooltip payload.
-    expect(channelCell.attributes("data-hint")).toBe("res");
+    expect(channelCell.getAttribute("data-hint")).toBe("res");
   });
 
-  it("localizes every registry channel code and keeps the raw code in the hint", () => {
+  it("localizes every registry channel code and keeps the raw code in the hint", async () => {
     const channels = [
       ["app", "settings.resChanApp"],
       ["res", "settings.resChanRes"],
@@ -907,60 +895,59 @@ describe("Settings → Resources inventory columns", () => {
       id: `cache-channel-${i}`,
       channel,
     }));
-    const wrapper = mountSection(packStatus(), rows);
-    const cells = wrapper
-      .findAll(".settings-modal__res-inv-row")
-      .map((row) => row.find(".settings-modal__res-inv-cell--channel"));
-    expect(cells.map((cell) => cell.text())).toEqual(channels.map(([, key]) => t(key)));
+    const { host } = await mountDetails(packStatus(), rows);
+    const cells = [...host.querySelectorAll(".settings-modal__res-inv-row")].map((row) =>
+      cell(row, "channel"),
+    );
+    expect(cells.map((c) => text(c))).toEqual(channels.map(([, key]) => t(key)));
     // The protocol code stays the tooltip payload, never part of the chip.
-    expect(cells.map((cell) => cell.attributes("data-hint"))).toEqual(
+    expect(cells.map((c) => c.getAttribute("data-hint"))).toEqual(
       channels.map(([channel]) => channel),
     );
     // A real channel keeps the blue primary chip and is never marked N/A.
-    expect(cells.every((cell) => cell.find(".hk-tag-primary").exists())).toBe(true);
-    expect(
-      cells.some((cell) => cell.classes().includes("settings-modal__res-inv-cell--na")),
-    ).toBe(false);
+    expect(cells.every((c) => c.querySelector(".hk-tag-primary") !== null)).toBe(true);
+    expect(cells.some((c) => c.className.includes("settings-modal__res-inv-cell--na"))).toBe(
+      false,
+    );
   });
 
-  it("falls back to the raw code for a channel the registry does not define", () => {
+  it("falls back to the raw code for a channel the registry does not define", async () => {
     // Defensive fallback: an unknown code must still render something, not a
     // blank cell and not the N/A placeholder.
     const rows: ResourceStatusRow[] = [{ ...inventoryRows()[1], channel: "stable" }];
-    const wrapper = mountSection(packStatus(), rows);
-    const cell = wrapper
-      .find(".settings-modal__res-inv-row")
-      .find(".settings-modal__res-inv-cell--channel");
-    expect(cell.text()).toBe("stable");
-    expect(cell.attributes("data-hint")).toBe("stable");
-    expect(cell.classes()).not.toContain("settings-modal__res-inv-cell--na");
+    const { host } = await mountDetails(packStatus(), rows);
+    const channelCell = cell(host.querySelector(".settings-modal__res-inv-row")!, "channel");
+    expect(text(channelCell)).toBe("stable");
+    expect(channelCell.getAttribute("data-hint")).toBe("stable");
+    expect(channelCell.className).not.toContain("settings-modal__res-inv-cell--na");
   });
 
-  it("renders N/A in the size column for a present row with no bytes", () => {
+  it("renders N/A in the size column for a present row with no bytes", async () => {
     // The app-update row is present but carries no payload of its own: its
     // size is genuinely not applicable, unlike an absent row's warning.
     const rows: ResourceStatusRow[] = [
       { ...inventoryRows()[1], id: "app-update", kind: "update", channel: "app", sizeBytes: 0 },
     ];
-    const wrapper = mountSection(packStatus(), rows);
-    const row = wrapper.find(".settings-modal__res-inv-row");
-    const sizeCell = row.find(".settings-modal__res-inv-cell--size");
-    expect(sizeCell.text()).toBe(t("settings.resInvNa"));
-    expect(sizeCell.find(".settings-modal__res-inv-tag-na").exists()).toBe(true);
-    expect(sizeCell.classes()).toContain("settings-modal__res-inv-cell--na");
-    expect(sizeCell.attributes("data-hint")).toBe(t("settings.resInvNaHint"));
+    const { host } = await mountDetails(packStatus(), rows);
+    const row = host.querySelector(".settings-modal__res-inv-row")!;
+    const sizeCell = cell(row, "size");
+    expect(text(sizeCell)).toBe(t("settings.resInvNa"));
+    expect(sizeCell.querySelector(".settings-modal__res-inv-tag-na")).toBeTruthy();
+    expect(sizeCell.className).toContain("settings-modal__res-inv-cell--na");
+    expect(sizeCell.getAttribute("data-hint")).toBe(t("settings.resInvNaHint"));
     // The kind chip still closes the row in the far-right column.
-    expect(row.element.lastElementChild?.className).toBe(
+    expect(row.lastElementChild?.className).toBe(
       "settings-modal__res-inv-cell settings-modal__res-inv-cell--kind",
     );
-    expect(row.find(".settings-modal__res-inv-cell--kind").text()).toBe(t("settings.resKindUpdate"));
+    expect(text(cell(row, "kind"))).toBe(t("settings.resKindUpdate"));
   });
 
-  it("renders the six column labels above the rows", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const head = wrapper.find(".settings-modal__res-inv-head");
-    expect(head.attributes("aria-hidden")).toBe("true");
-    expect(head.findAll(".settings-modal__res-inv-cell").map((cell) => cell.text())).toEqual([
+  it("renders the six column labels above the rows", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const head = host.querySelector(".settings-modal__res-inv-head")!;
+    expect(head.getAttribute("aria-hidden")).toBe("true");
+    const labels = [...head.querySelectorAll(".settings-modal__res-inv-cell")].map((c) => text(c));
+    expect(labels).toEqual([
       t("settings.resInvColName"),
       t("settings.resInvColSize"),
       t("settings.resInvColVersion"),
@@ -970,13 +957,13 @@ describe("Settings → Resources inventory columns", () => {
     ]);
   });
 
-  it("hints the localized last-check stamp on the row", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows());
-    const rows = wrapper.findAll(".settings-modal__res-inv-row");
-    expect(rows[0].attributes("data-hint")).toBe(
+  it("hints the localized last-check stamp on the row", async () => {
+    const { host } = await mountDetails(packStatus(), inventoryRows());
+    const rows = [...host.querySelectorAll(".settings-modal__res-inv-row")];
+    expect(rows[0].getAttribute("data-hint")).toBe(
       t("settings.resInvChecked", { time: formatLocalStamp("2026-11-07T09:30:00Z") }),
     );
     // A row the walk never checked carries no hint attribute at all.
-    expect(rows[1].attributes("data-hint")).toBeUndefined();
+    expect(rows[1].getAttribute("data-hint")).toBeNull();
   });
 });

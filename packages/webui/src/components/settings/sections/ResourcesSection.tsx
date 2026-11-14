@@ -16,13 +16,12 @@
  *       caches. Same-family items share one action (the visible verbs drop
  *       from seventeen to five), and every row names what the resource IS
  *       before showing its state.
- *    3. ONE details surface — the registry walk's six columns, per-cache
+ *    3. ONE details WINDOW — the registry walk's six columns, per-cache
  *       controls, the AI runtime's technical facts and the destructive
- *       deletes. Desktop renders it as a collapsed expansion panel (the body
- *       stays mounted, so the inventory markup and its column contract are
- *       unchanged); under the phone-layout breakpoint the same body opens as
- *       a docked sheet. Everything a maintainer needs stays one click away
- *       and nothing is lost.
+ *       deletes open as a child window stacked through the shared popup
+ *       context (a centered frame on desktop, a docked sheet on phones)
+ *       instead of competing with the player surface for space. Everything a
+ *       maintainer needs stays one click away and nothing is lost.
  *
  *  Two derivations are deliberately conservative. The status card never
  *  dresses an unchecked set up as "ready" — "not checked yet" is its own
@@ -42,7 +41,7 @@
  *  compiles the `ai` feature out entirely, so inference/scoring surfaces are
  *  disabled with a pointer to the full installer instead of failing silently.
  */
-import { computed, defineComponent, ref, watch, type PropType } from "vue";
+import { computed, defineComponent, ref, type PropType } from "vue";
 import {
   CheckCircle2,
   ChevronRight,
@@ -50,14 +49,7 @@ import {
   HardDrive,
   TriangleAlert,
 } from "@lucide/vue";
-import {
-  HkButton,
-  HkExpansionPanel,
-  HkModal,
-  HkSettingsGroup,
-  HkTag,
-  useBreakpoint,
-} from "@celestia-island/hikari";
+import { HkButton, HkModal, HkSettingsGroup, HkTag } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -280,19 +272,8 @@ export default defineComponent({
       }
     }
 
-    // Responsive LAYOUT axis (not the mobile-app build gate — see
-    // utils/platform): under 768px the details body opens as a docked sheet
-    // instead of an inline expansion, because the phone pane has no room
-    // for the six-column audit table.
-    const { isMobile: phoneLayout } = useBreakpoint();
-    /** Phone layout only: the details sheet's open state. */
+    /** The details child window's open state. */
     const detailsOpen = ref(false);
-    // Leaving the phone layout unmounts a mid-open sheet mid-transition
-    // (focus restore does not fire on unmount); closing the state here keeps
-    // flipping back from re-opening the sheet unasked.
-    watch(phoneLayout, () => {
-      detailsOpen.value = false;
-    });
 
     return () => {
       const st = cacheStore.status;
@@ -608,51 +589,40 @@ export default defineComponent({
           </HkSettingsGroup>
 
           {/* ── details: the maintainer's view ─────────────────────────────
-              ONE body, TWO shells. Desktop keeps the collapsed expansion
-              panel (the body stays mounted, so the inventory's column
-              contract keeps its test coverage). Under the phone-layout
-              breakpoint the pane has no room for a six-column audit table —
-              a quiet entry row opens the SAME body as a docked sheet
-              (HkModal's ≤767px form factor; the body scrolls inside it). */}
-          {phoneLayout.value ? (
-            <>
-              <button
-                type="button"
-                class="settings-modal__res-details-entry"
-                aria-haspopup="dialog"
-                aria-expanded={detailsOpen.value ? "true" : "false"}
-                onClick={() => (detailsOpen.value = true)}
-              >
-                <span class="settings-modal__res-details-entry-text">
-                  <span class="settings-modal__res-details-entry-title">
-                    {t("settings.resDetailsTitle")}
-                  </span>
-                  <span class="settings-modal__res-details-entry-hint">
-                    {t("settings.resDetailsHint")}
-                  </span>
-                </span>
-                <span class="settings-modal__res-details-entry-chevron" aria-hidden="true">
-                  <ChevronRight size={16} />
-                </span>
-              </button>
-              <HkModal
-                modelValue={detailsOpen.value}
-                onUpdate:modelValue={(v: boolean) => (detailsOpen.value = v)}
-                title={t("settings.resDetailsTitle")}
-                width="md"
-              >
-                <ResourcesDetails ctx={props.ctx} />
-              </HkModal>
-            </>
-          ) : (
-            <HkExpansionPanel
-              class="settings-modal__res-details"
-              title={t("settings.resDetailsTitle")}
-              subtitle={t("settings.resDetailsHint")}
-            >
-              <ResourcesDetails ctx={props.ctx} />
-            </HkExpansionPanel>
-          )}
+              A quiet entry row opens the audit body as a CHILD WINDOW stacked
+              through the shared popup context — the same overlay stack the
+              settings window itself lives on, so focus, ESC, the overlay and
+              the phone back gesture all close it before the settings window
+              reacts. Centered frame on desktop, docked sheet on phones; the
+              pane itself never inlines the six-column table, and the
+              destructive verbs stay behind this window. */}
+          <button
+            type="button"
+            class="settings-modal__res-details-entry"
+            aria-haspopup="dialog"
+            aria-expanded={detailsOpen.value ? "true" : "false"}
+            onClick={() => (detailsOpen.value = true)}
+          >
+            <span class="settings-modal__res-details-entry-text">
+              <span class="settings-modal__res-details-entry-title">
+                {t("settings.resDetailsTitle")}
+              </span>
+              <span class="settings-modal__res-details-entry-hint">
+                {t("settings.resDetailsHint")}
+              </span>
+            </span>
+            <span class="settings-modal__res-details-entry-chevron" aria-hidden="true">
+              <ChevronRight size={16} />
+            </span>
+          </button>
+          <HkModal
+            modelValue={detailsOpen.value}
+            onUpdate:modelValue={(v: boolean) => (detailsOpen.value = v)}
+            title={t("settings.resDetailsTitle")}
+            width="lg"
+          >
+            <ResourcesDetails ctx={props.ctx} />
+          </HkModal>
         </>
       );
     };

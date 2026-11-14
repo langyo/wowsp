@@ -148,18 +148,18 @@ mini-cards with seventeen visible verbs sat below it.
    with its state (download → integrity check → update) and keeps the
    app-first gate; it only grows an update verb once a manifest actually
    reported one. Raw current/latest hashes, the pack version stamp and the
-   legacy flag stay VISIBLE in the details panel (the row chip also carries
+   legacy flag stay VISIBLE in the details window (the row chip also carries
    them as a tooltip — hover alone would hide them from keyboards and screen
    readers).
-3. **Details surface** — the audit table, the per-cache controls, the AI
-   runtime's technical facts and the destructive deletes. ONE body
-   (`ResourcesDetails`), TWO shells: a collapsed `HkExpansionPanel` on
-   desktop (the body stays mounted, so the table's six-column contract never
-   regresses) and, under the phone-layout breakpoint, a quiet entry row that
-   opens the same body as a docked `HkModal` sheet — the phone pane has no
-   room for a six-column table, and the sheet's own body scrolls. The
-   disclosure is the only gate either way, and the destructive verbs live
-   behind it.
+3. **Details window** — the audit table, the per-cache controls, the AI
+   runtime's technical facts and the destructive deletes open as a CHILD
+   WINDOW from a quiet entry row, stacked through the shared popup context
+   (the same overlay stack the settings window lives on — focus, ESC, the
+   overlay and the phone back gesture close it before the settings window
+   reacts). ONE body (`ResourcesDetails`), two form factors from that one
+   shell: a centered frame on desktop and a docked `HkModal` sheet on
+   phones. The pane itself never inlines a six-column table, the window is
+   the only gate, and the destructive verbs live behind it.
 
 The footprint is the walk's OWN sum (present, non-bundled rows). It must never
 add `aux_cache_overview` on top: both measure the same directories.
