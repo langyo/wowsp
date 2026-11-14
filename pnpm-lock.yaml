@@ -45,7 +45,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55.327
-        version: 0.55.327(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.369(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -98,7 +98,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55.327
-        version: 0.55.327(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.369(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -141,7 +141,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55.327
-        version: 0.55.327(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.369(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -355,12 +355,16 @@ packages:
     resolution: {integrity: sha512-c+xgSWboV2pdwXP67BUWDVRHi2BO5Q3KwxyFVs7taVTY+fsK47/L51ZXQoV9rozHJDNHvJ4v4WEsI/IlxV2l2A==}
     engines: {node: ^22.18.0 || >=24.11.0}
 
-  '@celestia-island/hikari@0.55.327':
-    resolution: {integrity: sha512-ASaSY8ngfbzlPjqly29t+pzvegcpk9rC2gQK/ScPs4JDR/jhW/tpWZyGOg1tVIQV5WZhS/ACCVaZgzgnKQzhLw==}
+  '@celestia-island/hikari@0.55.369':
+    resolution: {integrity: sha512-2UCnx8NjOi9xE61KTci438aug5eLrTFxAnMuirLDXay8fZYxw/2GQAczuCI5ErXyhzJmFM9tJwkct1ACftF12Q==}
     peerDependencies:
-      '@types/three': ^*
+      '@types/three': ^0.185
+      pinia: ^3
       three: ^0.185
-      vue: ^*
+      vue: ^3
+    peerDependenciesMeta:
+      pinia:
+        optional: true
 
   '@celestia-island/tairitsu-transport@0.2.0':
     resolution: {integrity: sha512-4pdlaTuVN4J7RnZHQ7LsXFQb9ZXcY5yCPQ2u24TCq2ax1PNB3fX/a4lZycKBb4fPYjX4qWuzvFSkmWyn72tIFA==}
@@ -3335,21 +3339,7 @@ snapshots:
       '@babel/helper-string-parser': 8.0.6
       '@babel/helper-validator-identifier': 8.0.6
 
-  '@celestia-island/hikari@0.55.327(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
-    dependencies:
-      '@celestia-island/tairitsu-transport': 0.2.0
-      '@types/three': 0.186.0
-      '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)
-      '@xterm/xterm': 6.1.0-beta.336
-      dompurify: 3.4.17
-      highlight.js: 11.12.0
-      lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
-      marked: 18.1.2
-      three: 0.185.1
-      vue: 3.5.43(typescript@7.0.2)
-
-  '@celestia-island/hikari@0.55.327(@types/three@0.186.0)(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.369(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@celestia-island/tairitsu-transport': 0.2.0
       '@types/three': 0.186.0
@@ -3361,6 +3351,22 @@ snapshots:
       lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
       marked: 18.1.2
       three: 0.186.1
+      vue: 3.5.43(typescript@7.0.2)
+    optionalDependencies:
+      pinia: 4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2))
+
+  '@celestia-island/hikari@0.55.369(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+    dependencies:
+      '@celestia-island/tairitsu-transport': 0.2.0
+      '@types/three': 0.186.0
+      '@xterm/addon-fit': 0.11.0
+      '@xterm/addon-image': 0.10.0-beta.331(@xterm/xterm@6.1.0-beta.336)
+      '@xterm/xterm': 6.1.0-beta.336
+      dompurify: 3.4.17
+      highlight.js: 11.12.0
+      lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
+      marked: 18.1.2
+      three: 0.185.1
       vue: 3.5.43(typescript@7.0.2)
 
   '@celestia-island/tairitsu-transport@0.2.0': {}
