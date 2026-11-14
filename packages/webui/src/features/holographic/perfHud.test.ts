@@ -2,11 +2,15 @@
  * perfHud — the replay map's performance diagnostics overlay. Pins the
  * things that bit the real-build measurement sessions: the stable DOM
  * hook (.holo-perf-hud class) and the report text that scripts and
- * screenshots rely on. (Activation moved to stores/perfHud — the
- * session-only toggle; the URL parameters and the stored flag are gone.)
+ * screenshots rely on. The presentation is hikari's HkDebugFloat window
+ * (teleported to <body>): the hover pins target the float's own
+ * data-hovered state machine and its inline custom properties.
+ * (Activation moved to stores/perfHud — the session-only toggle; the URL
+ * parameters and the stored flag are gone.)
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
+import { nextTick } from "vue";
 
 import { fakeAs } from "@/test-utils/fakes";
 
@@ -31,7 +35,10 @@ function fakeRenderer(): THREE.WebGLRenderer {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  document.querySelectorAll(".holo-perf-hud").forEach((el) => el.remove());
+  // The float persists open/drag state under its persistKey — clear this
+  // suite's record so tests stay hermetic.
+  localStorage.removeItem("hk-debug-float:holo-perf");
+  document.querySelectorAll(".holo-perf-hud, .hk-debug-float").forEach((el) => el.remove());
 });
 
 describe("createPerfHud", () => {
@@ -58,13 +65,18 @@ describe("createPerfHud", () => {
   });
 
   it("counts idle ticks within one report window", () => {
+    // The spy sits after createPerfHud on purpose: mounting the float's
+    // Vue app runs Vue's dev-mode component perf instrumentation
+    // (startMeasure → devtoolsPerfStart feeding perf.now()) on every
+    // mounted component, and those calls would drain the Once queue.
+    // Only the tickIdle calls below see the mock.
+    const hud = createPerfHud(true);
     // Report windows: t=600 (fires), t=700 (suppressed), t=1200 (fires
     // with the two ticks accumulated since the last report).
     vi.spyOn(performance, "now")
       .mockReturnValueOnce(600)
       .mockReturnValueOnce(700)
       .mockReturnValueOnce(1200);
-    const hud = createPerfHud(true);
     hud!.tickIdle();
     hud!.tickIdle();
     hud!.tickIdle();
@@ -82,65 +94,76 @@ describe("createPerfHud", () => {
   });
 });
 
-describe("hover dim", () => {
-  /** Pin the overlay box — happy-dom performs no layout, so the real
-   *  getBoundingClientRect would report a zero-area rect at the origin. */
-  function mockRect(
-    el: HTMLElement,
-    left: number,
-    top: number,
-    width: number,
-    height: number,
-  ): void {
-    vi.spyOn(el, "getBoundingClientRect").mockReturnValue({
-      left,
-      top,
-      right: left + width,
-      bottom: top + height,
-      width,
-      height,
-      x: left,
-      y: top,
-      toJSON: () => ({}),
-    } as DOMRect);
+describe("hover yield (HkDebugFloat)", () => {
+  /** The teleported window root — HkDebugFloat renders INTO document.body,
+   *  never into any panel or mount-container DOM. */
+  function floatRoot(): HTMLElement {
+    return document.querySelector<HTMLElement>(".hk-debug-float")!;
   }
 
-  function move(x: number, y: number): void {
-    window.dispatchEvent(new MouseEvent("mousemove", { clientX: x, clientY: y }));
-  }
-
-  it("dims while the pointer rests on it and restores when it leaves", () => {
+  it("mounts the float with the PERF seat: top-left corner, offset 48, PERF title", () => {
     const hud = createPerfHud(true);
-    const el = document.querySelector(".holo-perf-hud") as HTMLElement;
-    mockRect(el, 12, 48, 220, 64);
-    move(100, 70); // inside
-    expect(el.style.opacity).toBe(String(PERF_HUD_HOVER_OPACITY));
-    move(400, 400); // outside
-    expect(el.style.opacity).toBe("");
+    const win = floatRoot();
+    expect(win.getAttribute("data-corner")).toBe("top-left");
+    expect(win.style.getPropertyValue("--hk-debug-float-offset")).toBe("48px");
+    expect(win.querySelector("[data-el='title']")!.textContent).toBe("PERF");
+    // The stats hook lives inside the float's body and keeps the 3-line
+    // mono format via white-space: pre.
+    const stats = win.querySelector(".holo-perf-hud") as HTMLElement;
+    expect(stats.parentElement!.getAttribute("data-el")).toBe("body");
+    expect(stats.style.whiteSpace).toBe("pre");
     hud!.dispose();
   });
 
-  it("a zero-area box never dims (no layout yet)", () => {
+  it("flows the hover dim through as the inline custom property", () => {
     const hud = createPerfHud(true);
-    const el = document.querySelector(".holo-perf-hud") as HTMLElement;
-    mockRect(el, 12, 48, 0, 0);
-    // Exactly the collapsed origin — the exclusive right/bottom edges must
-    // keep this from counting as a hover hit.
-    move(12, 48);
-    expect(el.style.opacity).toBe("");
+    expect(
+      floatRoot().style.getPropertyValue("--hk-debug-float-hover-opacity"),
+    ).toBe(String(PERF_HUD_HOVER_OPACITY));
     hud!.dispose();
   });
 
-  it("stops reacting after dispose", () => {
+  it("flips the hovered state on pointerenter and restores on pointerleave", async () => {
     const hud = createPerfHud(true);
-    const el = document.querySelector(".holo-perf-hud") as HTMLElement;
-    mockRect(el, 0, 0, 220, 64);
-    move(50, 20); // inside — dimmed
-    expect(el.style.opacity).toBe(String(PERF_HUD_HOVER_OPACITY));
+    const win = floatRoot();
+    expect(win.hasAttribute("data-hovered")).toBe(false);
+    // HkDebugFloat watches the window's own pointerenter/pointerleave and
+    // mirrors the hover on data-hovered (the :hover stand-in for runtime
+    // tests and pen/touch engines); the sheet fades it to the custom
+    // property above.
+    win.dispatchEvent(new Event("pointerenter"));
+    await nextTick();
+    expect(win.hasAttribute("data-hovered")).toBe(true);
+    win.dispatchEvent(new Event("pointerleave"));
+    await nextTick();
+    expect(win.hasAttribute("data-hovered")).toBe(false);
     hud!.dispose();
-    expect(() => move(400, 400)).not.toThrow(); // outside — listener must be gone
-    // Frozen at the dim: the leave-move above must not have restored it.
-    expect(el.style.opacity).toBe(String(PERF_HUD_HOVER_OPACITY));
-    expect(document.querySelector(".holo-perf-hud")).toBeNull();
+  });
+
+  it("dispose removes the teleported window from the document", () => {
+    const hud = createPerfHud(true);
+    expect(floatRoot()).not.toBeNull();
+    hud!.dispose();
+    expect(document.querySelector(".hk-debug-float")).toBeNull();
+  });
+});
+
+describe("session lifecycle (HkDebugFloat)", () => {
+  it("a closed float stays hidden for the session but a fresh mount always reopens", async () => {
+    const hud = createPerfHud(true);
+    const close = document.querySelector<HTMLElement>(
+      ".hk-debug-float .hk-debug-float-close",
+    )!;
+    close.click();
+    await nextTick();
+    expect(document.querySelector(".hk-debug-float")).toBeNull();
+    hud!.dispose();
+    // The persisted record must never pin the HUD shut: open state is
+    // session-only (controlled open binding), so the next mount opens
+    // even though the close wrote { open: false } under the persistKey
+    // (the v0.6.9 wowsp.perf stuck-flag lesson).
+    const reopened = createPerfHud(true);
+    expect(document.querySelector(".hk-debug-float")).not.toBeNull();
+    reopened!.dispose();
   });
 });

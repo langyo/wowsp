@@ -11,40 +11,46 @@
  * how many fps / how many draws" gets answered from a screenshot. It owns
  * no timer — the scene's own tick feeds it.
  *
- * The overlay never intercepts the pointer (clicks pass straight through);
- * when the cursor rests on it, it dims itself far down so it never hides
- * the UI underneath.
+ * Presentation is hikari's generic HkDebugFloat window (hikari #1288): a
+ * standalone Vue app mounts the float, which teleports itself to <body>,
+ * and the report text lands in the `.holo-perf-hud` slot wrapper with
+ * `white-space: pre` so the 3-line mono format is preserved. The float is
+ * interactive where the old hand-rolled overlay was not: the header drags
+ * (viewport-clamped; the dropped spot persists under localStorage
+ * `hk-debug-float:holo-perf` via persistKey — position only, see below),
+ * a close button hides it for the current app run, and hovering fades it
+ * to PERF_HUD_HOVER_OPACITY. The float's open state is deliberately
+ * session-only: the mount binds a fresh controlled `open = true` and the
+ * persisted record's open half is never honored, so the HUD can never
+ * come back stuck-hidden (the same lesson as the `wowsp.perf` flag
+ * recounted below). Behavioral notes: the old overlay was fully
+ * click-through (`pointer-events: none`); the float intercepts pointers
+ * on its own box only — everything outside it still reaches the page.
+ * And the old inline `z-index: 2147483000` is gone: the float paints in
+ * hikari's `--hk-z-debug-float` band (80000), strictly below the overlay
+ * root (90000), so modals/toasts/tooltips paint above the HUD.
  *
  * Activation (see stores/perfHud — the session-only toggle): dev builds
  * default ON, packaged release builds default OFF, and the settings'
- * feedback pane flips it either way for the current app run only —
- * nothing is persisted. The earlier `?perf=1` / `?perf=0` URL parameters
- * and the stored `wowsp.perf` localStorage flag are gone on purpose: a
- * flag that support tooling could set but no packaged user could ever
- * clear kept the overlay stuck on across releases (it leaked into
- * v0.6.9's release build on a machine still carrying the flag).
+ * feedback pane flips it either way for the current app run only — the
+ * toggle itself persists nothing (the dragged position is the one
+ * exception, see the presentation paragraph above). The earlier
+ * `?perf=1` / `?perf=0` URL parameters and the stored `wowsp.perf`
+ * localStorage flag are gone on purpose: a flag that support tooling
+ * could set but no packaged user could ever clear kept the overlay
+ * stuck on across releases (it leaked into v0.6.9's release build on a
+ * machine still carrying the flag).
  */
 import * as THREE from "three";
+import { createApp, defineComponent, h, ref, watchSyncEffect } from "vue";
+import { HkDebugFloat } from "@celestia-island/hikari";
 
 /** Frame window for the percentile stats. */
 const WINDOW_MS = 2000;
 /** Overlay refresh cadence (text only — never the scene). */
 const REPORT_MS = 500;
-/** Opacity while the pointer rests on the overlay — a big dim, not a hide. */
+/** Opacity while the pointer rests on the float — a big dim, not a hide. */
 export const PERF_HUD_HOVER_OPACITY = 0.15;
-/** Hover fade duration, ms. */
-const HOVER_FADE_MS = 150;
-
-/** Whether a client-space point sits inside a box. The right/bottom edges
- *  compare exclusively, so a zero-area box (no layout yet — fresh test DOM,
- *  hidden element) never reports a hit at its own collapsed origin. */
-function pointerInRect(
-  rect: { left: number; right: number; top: number; bottom: number },
-  x: number,
-  y: number,
-): boolean {
-  return x >= rect.left && x < rect.right && y >= rect.top && y < rect.bottom;
-}
 
 export interface PerfHud {
   /** Called right after renderer.render(): records one rendered frame. */
@@ -56,30 +62,62 @@ export interface PerfHud {
 
 export function createPerfHud(enabled: boolean): PerfHud | null {
   if (!enabled) return null;
-  const el = document.createElement("div");
-  // Stable hook for diagnostics scripts, screenshots and tests (styles stay
-  // inline so the overlay is self-contained and never enters app CSS).
-  el.className = "holo-perf-hud";
-  el.setAttribute("aria-hidden", "true");
-  el.style.cssText = [
-    "position:fixed",
-    "top:48px",
-    "left:12px",
-    "z-index:2147483000",
-    "padding:6px 10px",
-    "border-radius:6px",
-    "background:rgba(4,8,15,0.82)",
-    "color:#8fe3ff",
-    "font:11px/1.6 ui-monospace,Consolas,monospace",
-    "white-space:pre",
-    // Fully click-through: everything under the overlay stays interactive.
-    "pointer-events:none",
-    // The hover dim is coordinate-driven (see the pointer tracker below)
-    // because :hover can never fire on a pointer-events:none element.
-    "opacity:1",
-    "transition:opacity " + HOVER_FADE_MS + "ms ease",
-  ].join(";");
-  document.body.appendChild(el);
+
+  // The report text lives in a Vue ref; the slot wrapper re-renders
+  // whenever report() flips it (the old implementation wrote
+  // el.textContent directly into a hand-styled div). The write lands
+  // through a sync-flush effect, not the reactive binding: the scene's
+  // own tick feeds report(), so the text must hit the DOM synchronously
+  // (a scheduled re-render would land one microtask late).
+  const statsText = ref("");
+  const statsEl = ref<HTMLElement>();
+  const PerfHudFloat = defineComponent({
+    name: "PerfHudFloat",
+    setup() {
+      // Session-only open state, bound CONTROLLED: the persisted record
+      // (written by the float on close/drag-drop for the dragged
+      // position) is never honored for open — a fresh mount always
+      // opens, so the HUD can never return stuck-hidden (the
+      // v0.6.9 `wowsp.perf` lesson below).
+      const open = ref(true);
+      watchSyncEffect(() => {
+        if (statsEl.value) statsEl.value.textContent = statsText.value;
+      });
+      return () =>
+        h(
+          HkDebugFloat,
+          {
+            open: open.value,
+            "onUpdate:open": (v: boolean) => {
+              open.value = v;
+            },
+            position: "top-left",
+            // Approximates the old overlay's top:48px seat; draggable
+            // anyway, and a dropped position persists (position only —
+            // the open half of the persisted record is ignored, see the
+            // controlled open binding above).
+            offset: 48,
+            hoverOpacity: PERF_HUD_HOVER_OPACITY,
+            title: "PERF",
+            persistKey: "holo-perf",
+          },
+          {
+            // Stable hook for diagnostics scripts, screenshots and tests;
+            // the text node itself is owned by the sync effect above.
+            default: () =>
+              h("div", {
+                class: "holo-perf-hud",
+                style: { whiteSpace: "pre" },
+                ref: statsEl,
+              }),
+          },
+        );
+    },
+  });
+  const host = document.createElement("div");
+  document.body.appendChild(host);
+  const app = createApp(PerfHudFloat);
+  app.mount(host); // HkDebugFloat teleports the window to <body> itself
 
   const frames: { t: number; dt: number }[] = [];
   let lastNow = 0;
@@ -89,24 +127,6 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
   let gpu = "";
   let lastReport = 0;
   let disposed = false;
-
-  // Dim while the pointer rests on the overlay. pointer-events:none already
-  // lets every click reach the UI underneath; since :hover can never fire on
-  // such an element, the dim watches window-level mouse coordinates and
-  // compares them against the overlay's box instead.
-  const setHover = (on: boolean): void => {
-    el.style.opacity = on ? String(PERF_HUD_HOVER_OPACITY) : "";
-  };
-  const onPointerMove = (ev: MouseEvent): void => {
-    if (disposed) return;
-    setHover(pointerInRect(el.getBoundingClientRect(), ev.clientX, ev.clientY));
-  };
-  const onPointerGone = (): void => {
-    if (!disposed) setHover(false);
-  };
-  window.addEventListener("mousemove", onPointerMove, { passive: true });
-  window.addEventListener("blur", onPointerGone);
-  document.documentElement.addEventListener("mouseleave", onPointerGone);
 
   const percentile = (sorted: number[], p: number): number =>
     sorted.length === 0
@@ -146,7 +166,7 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
     const buf =
       r != null ? r.domElement.width + "x" + r.domElement.height : "?";
     const ratio = r != null ? r.getPixelRatio().toFixed(2) : "?";
-    el.textContent =
+    statsText.value =
       "render " +
       fps +
       " fps  p50 " +
@@ -184,11 +204,12 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
       report(performance.now());
     },
     dispose() {
+      if (disposed) return;
       disposed = true;
-      window.removeEventListener("mousemove", onPointerMove);
-      window.removeEventListener("blur", onPointerGone);
-      document.documentElement.removeEventListener("mouseleave", onPointerGone);
-      el.remove();
+      // Unmounting the app removes the teleported window from <body>;
+      // the host div is ours to take back.
+      app.unmount();
+      host.remove();
     },
   };
 }
