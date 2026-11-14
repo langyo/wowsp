@@ -415,6 +415,7 @@
   "resStatusReady": "リソースは準備完了",
   "resStatusUpdates": "リソースの更新があります",
   "resStatusUpdatesHint": "都合のよいときに更新してください。それまでの間も動作に支障はありません。",
+  "resStatusUpdateAll": "すべて更新",
   "resStatusMissingPack": "リソースパック未ダウンロード",
   "resStatusMissingPackHint": "3D 艦船モデルとドッグタグアートは、ダウンロードが完了するまで利用できません。",
   "resStatusMissingModels": "判断モデル未導入",

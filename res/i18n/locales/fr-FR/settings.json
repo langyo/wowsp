@@ -415,6 +415,7 @@
   "resStatusReady": "Ressources prêtes",
   "resStatusUpdates": "Mises à jour de ressources disponibles",
   "resStatusUpdatesHint": "Mettez à jour quand vous le souhaitez — rien ne cesse de fonctionner entre-temps.",
+  "resStatusUpdateAll": "Tout mettre à jour",
   "resStatusMissingPack": "Pack de ressources non téléchargé",
   "resStatusMissingPackHint": "Les modèles 3D de navires et les médailles sont indisponibles jusqu’à la fin du téléchargement.",
   "resStatusMissingModels": "Modèles de décisions non installés",

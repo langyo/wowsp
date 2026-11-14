@@ -16,11 +16,13 @@
  *       caches. Same-family items share one action (the visible verbs drop
  *       from seventeen to five), and every row names what the resource IS
  *       before showing its state.
- *    3. ONE collapsed details panel — the registry walk's six columns,
- *       per-cache controls, the AI runtime's technical facts and the
- *       destructive deletes. Everything a maintainer needs stays one click
- *       away and nothing is lost; the panel body is always mounted, so the
- *       inventory markup (and its column contract) is unchanged.
+ *    3. ONE details surface — the registry walk's six columns, per-cache
+ *       controls, the AI runtime's technical facts and the destructive
+ *       deletes. Desktop renders it as a collapsed expansion panel (the body
+ *       stays mounted, so the inventory markup and its column contract are
+ *       unchanged); under the phone-layout breakpoint the same body opens as
+ *       a docked sheet. Everything a maintainer needs stays one click away
+ *       and nothing is lost.
  *
  *  Two derivations are deliberately conservative. The status card never
  *  dresses an unchecked set up as "ready" — "not checked yet" is its own
@@ -40,62 +42,32 @@
  *  compiles the `ai` feature out entirely, so inference/scoring surfaces are
  *  disabled with a pointer to the full installer instead of failing silently.
  */
-import { computed, defineComponent, ref, type PropType } from "vue";
-import { CheckCircle2, Download, HardDrive, TriangleAlert } from "@lucide/vue";
+import { computed, defineComponent, ref, watch, type PropType } from "vue";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Download,
+  HardDrive,
+  TriangleAlert,
+} from "@lucide/vue";
 import {
   HkButton,
   HkExpansionPanel,
+  HkModal,
   HkSettingsGroup,
-  HkSettingsHint,
   HkTag,
+  useBreakpoint,
 } from "@celestia-island/hikari";
 
 import { t } from "@/i18n";
 import ErrorCard from "@/components/base/ErrorCard";
 import LoadingNote from "@/components/base/LoadingNote";
 import { formatLocalStamp } from "@/utils/format";
-import { isMobileApp } from "@/utils/platform";
 import { useDownloadsStore } from "@/stores/downloads";
 import { SETTINGS_ANCHOR_BAKED_MODELS } from "@/stores/settingsUi";
-import {
-  auxDesc,
-  auxTitle,
-  formatBytes,
-  formatResourceVersion,
-  formatStamp,
-  hash6,
-} from "@/components/settings/useSettingsUpdatesState";
+import { formatBytes } from "@/components/settings/useSettingsUpdatesState";
 import type { SettingsBodyCtx } from "@/components/settings/useSettingsBody";
-
-/** The inventory's six aligned columns — the header labels and the per-cell
- *  class modifier share this table, so a column cannot drift from its own
- *  label. The order is also DOM order: the kind chip closes every row. */
-const INV_COLUMNS = [
-  ["name", "settings.resInvColName"],
-  ["size", "settings.resInvColSize"],
-  ["version", "settings.resInvColVersion"],
-  ["installed", "settings.resInvColInstalled"],
-  ["channel", "settings.resInvColChannel"],
-  ["kind", "settings.resInvColType"],
-] as const;
-
-/** One inventory cell: the shared class + its column modifier. Rows render
- *  exactly one per INV_COLUMNS entry — all six always, an absent fact
- *  showing the N/A chip rather than nothing, because the subgrid's shared
- *  axes shift as soon as a row drops a cell. `na` marks those placeholder
- *  cells so the phone layout can drop them (a desktop-table affordance). */
-const invCellClass = (col: string, na = false): string =>
-  `settings-modal__res-inv-cell settings-modal__res-inv-cell--${col}${
-    na ? " settings-modal__res-inv-cell--na" : ""
-  }`;
-
-/** The N/A placeholder for an absent fact: a deliberately quiet grey chip.
- *  The cell carries the localized reason on the data-hint channel. */
-const naTag = () => (
-  <HkTag size="sm" class="settings-modal__res-inv-tag-na">
-    {t("settings.resInvNa")}
-  </HkTag>
-);
+import ResourcesDetails from "./ResourcesDetails";
 
 /** The game-data family's registry members: the consumable kit, the
  *  two-realm ship-data bundle and the mod-hub index. Their sizes come from
@@ -126,52 +98,6 @@ export default defineComponent({
     const downloads = useDownloadsStore();
     const packBusy = computed(() => downloads.busyFor("res-pack"));
 
-    /** Display name for one registry row — existing per-resource keys
-     *  where the cards name them, inventory-only keys otherwise (caches
-     *  reuse the aux-cache titles). */
-    const rowName = (id: string): string => {
-      switch (id) {
-        case "res-pack": return t("settings.resPackName");
-        case "data-kit": return t("settings.dataSourceShipData");
-        case "data-ship-gameparams": return t("settings.dataSourceShipBundle");
-        case "mod-catalog": return t("settings.dataSourceModCatalog");
-        case "cache-image-cache":
-        case "cache-gameparams":
-        case "cache-encyclopedia":
-        case "cache-community": return auxTitle(id.replace(/^cache-/, ""));
-        case "decisions-pack": return t("settings.resRowDecisions");
-        case "app-update": return t("settings.resRowAppUpdate");
-        case "bundled-lesta": return t("settings.resRowBundledLesta");
-        default: return id;
-      }
-    };
-    /** Flat kind labels (locale JSONs are flat per namespace — no dotted
-     *  keys) — inventory detail only. */
-    const kindLabel = (kind: string): string => {
-      const map: Record<string, string> = {
-        update: t("settings.resKindUpdate"),
-        pack: t("settings.resKindPack"),
-        dataset: t("settings.resKindDataset"),
-        index: t("settings.resKindIndex"),
-        cache: t("settings.resKindCache"),
-        bundled: t("settings.resKindBundled"),
-      };
-      return map[kind] ?? kind;
-    };
-    /** Flat channel labels (same contract as kindLabel): the registry
-     *  stores the relay's protocol codes, the inventory shows what they
-     *  mean — an unknown code falls back to itself. */
-    const channelLabel = (channel: string): string => {
-      const map: Record<string, string> = {
-        app: t("settings.resChanApp"),
-        res: t("settings.resChanRes"),
-        data: t("settings.resChanData"),
-        "mod-hub": t("settings.resChanModHub"),
-        ai: t("settings.resChanAi"),
-      };
-      return map[channel] ?? channel;
-    };
-
     /** The status card's readout. Priority: a pending app update gates the
      *  pack work → a missing pack (the biggest visible loss) → missing
      *  decision models → known updates → checked-and-clean → never checked
@@ -180,7 +106,7 @@ export default defineComponent({
       tone: SummaryTone;
       title: string;
       hint: string;
-      action: "none" | "check" | "download";
+      action: "none" | "check" | "download" | "updateAll";
     }>(() => {
       const status = cacheStore.status;
       const rows = updates.resourceRows.value;
@@ -234,7 +160,9 @@ export default defineComponent({
           tone: "info",
           title: t("settings.resStatusUpdates"),
           hint: t("settings.resStatusUpdatesHint"),
-          action: "check",
+          // Known updates grow the pane's ONE apply verb: one click queues
+          // every pending pass instead of walking the rows one by one.
+          action: "updateAll",
         };
       }
       // "Ready" is only claimed for a set that was actually checked: the walk
@@ -280,24 +208,9 @@ export default defineComponent({
         : t("settings.resStatusMetaNoTime", { size: formatBytes(total) });
     });
 
-    /** The pack row's hover hint: the raw current/latest hashes the state
-     *  chip abbreviates. The audit facts do not disappear with the row's
-     *  compactness — they move onto the app's one tooltip channel. */
-    const packHashHint = computed(() => {
-      const st = cacheStore.status;
-      const upd = cacheStore.update;
-      const parts: string[] = [];
-      if (st?.present) {
-        parts.push(
-          `${t("settings.resCurrent")}: ${
-            st.legacyStamp ? t("settings.resLegacy") : hash6(st.treeSha256)
-          }`,
-        );
-        if (st.version && !st.legacyStamp) parts.push(formatStamp(st.version));
-      }
-      if (upd) parts.push(`${t("settings.resLatest")}: ${hash6(upd.latestTreeSha256)}`);
-      return parts.join(" · ");
-    });
+    /** The pack's raw hash line, shared with the details body — the hook
+     *  owns the derivation so both shells read one answer. */
+    const packHashHint = updates.packHashHint;
 
     /** The pack row's single state chip (one slot, exactly like the verb). */
     const packState = computed<{
@@ -318,16 +231,6 @@ export default defineComponent({
       if (cacheStore.update == null) return { label: null, variant: "default" };
       return { label: t("settings.resUpToDate"), variant: "success" };
     });
-
-    /** Run one management verb, then re-walk the registry. The store verbs
-     *  keep their own slices fresh, but the walk is what the status card's
-     *  footprint and the rows' sizes come from — without this the card would
-     *  keep advertising the bytes a delete just freed for the rest of the
-     *  session. */
-    async function runVerb(verb: () => Promise<unknown>) {
-      await verb();
-      await updates.loadResourceRows();
-    }
 
     /** True for the WHOLE check pass (the shared refresh entry plus the two
      *  client-side manifest snapshots the rows gate their verbs on) — the
@@ -354,26 +257,53 @@ export default defineComponent({
       }
     }
 
+    /** True while ANY resource pass is running (either pack). The update-all
+     *  button spins on this; the passes themselves render on the shared
+     *  top-right card, each with its own cancel. */
+    const anyPassBusy = computed(
+      () => packBusy.value || resources.aiDownloading.value,
+    );
+
+    /** One click, every pending pass. Both halves route through the download
+     *  hub's single FIFO (strict one-at-a-time; queue order is hub arrival,
+     *  after each command's manifest resolve — not click order). The res-pack
+     *  half re-checks the app-first gate here: the summary cannot reach this
+     *  state while an app update gates the pack, but the guard keeps the
+     *  verb honest if that races. */
+    function runUpdateAll() {
+      if (anyPassBusy.value) return;
+      if (cacheStore.anyUpdateAvailable && !updates.appUpdatePending.value) {
+        void updates.runVerb(() => cacheStore.download());
+      }
+      if (resources.aiCheck.value?.updateAvailable) {
+        void updates.runVerb(() => resources.downloadAi());
+      }
+    }
+
+    // Responsive LAYOUT axis (not the mobile-app build gate — see
+    // utils/platform): under 768px the details body opens as a docked sheet
+    // instead of an inline expansion, because the phone pane has no room
+    // for the six-column audit table.
+    const { isMobile: phoneLayout } = useBreakpoint();
+    /** Phone layout only: the details sheet's open state. */
+    const detailsOpen = ref(false);
+    // Leaving the phone layout unmounts a mid-open sheet mid-transition
+    // (focus restore does not fire on unmount); closing the state here keeps
+    // flipping back from re-opening the sheet unasked.
+    watch(phoneLayout, () => {
+      detailsOpen.value = false;
+    });
+
     return () => {
       const st = cacheStore.status;
       const upd = cacheStore.update;
       const downloading = packBusy.value || (st?.downloading ?? false);
       const d = resources.decisions.value;
-      const ai = resources.aiStatus.value;
       const aiCheck = resources.aiCheck.value;
-      let aiEndpointHost = "";
-      if (aiCheck?.endpoint) {
-        try {
-          aiEndpointHost = new URL(aiCheck.endpoint).host;
-        } catch {
-          aiEndpointHost = aiCheck.endpoint;
-        }
-      }
       const caps = resources.capabilities;
       // The capability probe is async; render "checking" instead of a
       // misleading "portable build" banner during the first frame.
       const aiKnown = caps.loaded;
-      const invRows = updates.resourceRows.value;
       const sum = summary.value;
       const SummaryIcon = SUMMARY_ICONS[sum.tone];
       const modelsBytes = d?.present ? d.sizeBytes : 0;
@@ -408,9 +338,18 @@ export default defineComponent({
                     variant="primary"
                     size="sm"
                     disabled={updates.appUpdatePending.value}
-                    onClick={() => void runVerb(() => cacheStore.download())}
+                    onClick={() => void updates.runVerb(() => cacheStore.download())}
                   >
                     {t("settings.cacheDownload")}
+                  </HkButton>
+                ) : sum.action === "updateAll" ? (
+                  <HkButton
+                    variant="primary"
+                    size="sm"
+                    loading={anyPassBusy.value}
+                    onClick={runUpdateAll}
+                  >
+                    {t("settings.resStatusUpdateAll")}
                   </HkButton>
                 ) : sum.action === "check" ? (
                   <HkButton
@@ -525,7 +464,7 @@ export default defineComponent({
                     variant="primary"
                     size="sm"
                     disabled={updates.appUpdatePending.value}
-                    onClick={() => void runVerb(() => cacheStore.download())}
+                    onClick={() => void updates.runVerb(() => cacheStore.download())}
                   >
                     {t("settings.cacheDownload")}
                   </HkButton>
@@ -538,7 +477,7 @@ export default defineComponent({
                     variant="secondary"
                     size="sm"
                     loading={cacheStore.integrityChecking}
-                    onClick={() => void runVerb(() => cacheStore.verifyIntegrity())}
+                    onClick={() => void updates.runVerb(() => cacheStore.verifyIntegrity())}
                   >
                     {t("settings.resCheckIntegrity")}
                   </HkButton>
@@ -549,7 +488,7 @@ export default defineComponent({
                     variant="primary"
                     size="sm"
                     disabled={updates.appUpdatePending.value}
-                    onClick={() => void runVerb(() => cacheStore.download())}
+                    onClick={() => void updates.runVerb(() => cacheStore.download())}
                   >
                     {t("settings.cacheUpdate")}
                   </HkButton>
@@ -605,7 +544,7 @@ export default defineComponent({
                   <HkButton
                     variant="primary"
                     size="sm"
-                    onClick={() => void runVerb(() => resources.downloadAi())}
+                    onClick={() => void updates.runVerb(() => resources.downloadAi())}
                   >
                     {d?.present
                       ? t("settings.resourcesAiChannelUpdate")
@@ -647,7 +586,7 @@ export default defineComponent({
                     disabled={cacheStore.auxClearing}
                     onClick={() => {
                       updates.cleanArmed.value = false;
-                      void runVerb(() => cacheStore.clearAllAuxCaches());
+                      void updates.runVerb(() => cacheStore.clearAllAuxCaches());
                     }}
                   >
                     {cacheStore.auxClearing
@@ -668,404 +607,52 @@ export default defineComponent({
             </div>
           </HkSettingsGroup>
 
-          {/* ── details: the maintainer's view, collapsed ──────────────── */}
-          <HkExpansionPanel
-            class="settings-modal__res-details"
-            title={t("settings.resDetailsTitle")}
-            subtitle={t("settings.resDetailsHint")}
-          >
-            <div class="settings-modal__res-subhead">{t("settings.resInvTitle")}</div>
-            <HkSettingsHint>{t("settings.resInvHint")}</HkSettingsHint>
-            {invRows ? (
-              <ul class="settings-modal__res-inv">
-                {/* Visual column labels — aria-hidden because the row text
-                    itself reads in order (name first, kind last). */}
-                <li class="settings-modal__res-inv-head" aria-hidden="true">
-                  {INV_COLUMNS.map(([col, key]) => (
-                    <span class={invCellClass(col)} key={col}>
-                      {t(key)}
-                    </span>
-                  ))}
-                </li>
-                {invRows.map((row) => {
-                  const version = row.present
-                    ? row.version ?? (row.sha256 ? hash6(row.sha256) : null)
-                    : null;
-                  const versionLabel = formatResourceVersion(version);
-                  /* Resolved once per row: the absent facts share one
-                     localized "why" on their data-hint channel. */
-                  const naHint = t("settings.resInvNaHint");
-                  return (
-                    <li
-                      class="settings-modal__res-inv-row"
-                      key={row.id}
-                      data-hint={
-                        row.checkedAt
-                          ? t("settings.resInvChecked", { time: formatLocalStamp(row.checkedAt) })
-                          : undefined
-                      }
-                    >
-                      {/* All six cells always render — an absent fact shows
-                          the N/A chip instead of a blank cell (the shared
-                          subgrid columns would shift row by row as soon as
-                          one dropped a cell). Tooltips carry the raw values
-                          the chips abbreviate; N/A cells hint the localized
-                          reason. */}
-                      <span class={invCellClass("name")}>{rowName(row.id)}</span>
-                      <span
-                        class={invCellClass("size", row.present && row.sizeBytes <= 0)}
-                        data-hint={row.present && row.sizeBytes <= 0 ? naHint : undefined}
-                      >
-                        {!row.present ? (
-                          /* Nothing on disk is the row's headline fact: the
-                             size column warns instead of showing 0 MB. */
-                          <HkTag variant="warning" size="sm">
-                            {t("settings.cacheStatusMissing")}
-                          </HkTag>
-                        ) : row.sizeBytes > 0 ? (
-                          <HkTag size="sm">{formatBytes(row.sizeBytes)}</HkTag>
-                        ) : (
-                          naTag()
-                        )}
-                      </span>
-                      <span
-                        class={invCellClass("version", !versionLabel)}
-                        data-hint={versionLabel ? row.version ?? row.sha256 ?? undefined : naHint}
-                      >
-                        {versionLabel ? (
-                          /* The abbreviated / localized label still hints its
-                             full source (raw version, else the whole sha256).
-                             Mono is the VERBATIM-ID face only (semver / build
-                             id / hash6): a localized timestamp must share the
-                             updated column's normal face, or the two stamp
-                             columns read as different kinds of value again. */
-                          <HkTag
-                            size="sm"
-                            class={
-                              versionLabel === version
-                                ? "settings-modal__res-inv-tag-mono"
-                                : undefined
-                            }
-                          >
-                            {versionLabel}
-                          </HkTag>
-                        ) : (
-                          naTag()
-                        )}
-                      </span>
-                      <span
-                        class={invCellClass("installed", !(row.present && row.installedAt))}
-                        data-hint={row.present && row.installedAt ? row.installedAt : naHint}
-                      >
-                        {row.present && row.installedAt ? (
-                          /* The column header already says "updated"; the chip
-                             is only the stamp, the hint the raw UTC ISO. */
-                          <HkTag size="sm">{formatLocalStamp(row.installedAt)}</HkTag>
-                        ) : (
-                          naTag()
-                        )}
-                      </span>
-                      <span
-                        class={invCellClass("channel", !row.channel)}
-                        data-hint={row.channel ? row.channel : naHint}
-                      >
-                        {row.channel ? (
-                          /* The registry code is the tooltip; the chip is
-                             the localized meaning. */
-                          <HkTag variant="primary" size="sm">{channelLabel(row.channel)}</HkTag>
-                        ) : (
-                          naTag()
-                        )}
-                      </span>
-                      <span class={invCellClass("kind")}>
-                        <HkTag variant="info" size="sm">{kindLabel(row.kind)}</HkTag>
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-            <HkSettingsHint>
-              {isMobileApp() ? t("settings.resPackMobileHint") : t("settings.resPackHint")}
-            </HkSettingsHint>
-            {packHashHint.value ? (
-              /* The raw current/latest hashes stay VISIBLE in the audit view —
-                 the row chip's tooltip alone would hide them from keyboards
-                 and screen readers. */
-              <span class="settings-modal__pack-meta">{packHashHint.value}</span>
-            ) : null}
-
-            {/* ── per-cache controls ─────────────────────────────────────── */}
-            <div class="settings-modal__res-subhead">{t("settings.resDetailsCachesTitle")}</div>
-            {cacheStore.auxCaches.map((c) => (
-              <div class="settings-modal__pack" key={c.scope}>
-                <div class="settings-modal__pack-info">
-                  <span class="settings-modal__pack-name">{auxTitle(c.scope)}</span>
-                  <span class="settings-modal__pack-desc">{auxDesc(c.scope)}</span>
-                  <span class="settings-modal__pack-meta">{formatBytes(c.sizeBytes)}</span>
-                </div>
-                <div class="settings-modal__pack-actions">
-                  {updates.auxArmed.value === c.scope ? (
-                    <HkButton
-                      variant="danger"
-                      size="sm"
-                      onClick={() => {
-                        updates.auxArmed.value = null;
-                        void runVerb(() => cacheStore.clearAuxCache(c.scope));
-                      }}
-                    >
-                      {t("settings.cacheDeleteConfirm")}
-                    </HkButton>
-                  ) : (
-                    <HkButton
-                      variant="secondary"
-                      size="sm"
-                      disabled={c.sizeBytes === 0}
-                      onClick={() => (updates.auxArmed.value = c.scope)}
-                    >
-                      {t("settings.cacheAuxClear")}
-                    </HkButton>
-                  )}
-                </div>
-              </div>
-            ))}
-
-            {/* ── AI runtime's technical facts ─────────────────────────────
-                Rendered for EVERY build: the portable build compiles the AI
-                feature out, yet an orphaned pack left by a full install can
-                still be inspected and deleted from here. */}
-            {aiKnown ? (
-              <>
-                <div class="settings-modal__res-subhead">{t("settings.resDetailsEnvTitle")}</div>
-                <div class="settings-modal__pack">
-                  <div class="settings-modal__pack-info">
-                    <span class="settings-modal__pack-name">
-                      {t("settings.resourcesAiInference")}
-                    </span>
-                    <span class="settings-modal__pack-desc">
-                      {caps.aiInference
-                        ? t("settings.resourcesAiAvailable")
-                        : t("settings.resourcesAiUnavailableHint")}
-                    </span>
-                    {caps.directmlRequired ? (
-                      <span class="settings-modal__pack-desc">
-                        {caps.directmlPresent
-                          ? t("settings.resourcesDirectMLPresent", {
-                              size:
-                                caps.directmlBytes != null
-                                  ? formatBytes(caps.directmlBytes)
-                                  : "—",
-                            })
-                          : t("settings.resourcesDirectMLMissing")}
-                      </span>
-                    ) : null}
-                    {!caps.aiInference ? (
-                      <p class="settings-modal__packs-banner">
-                        {t("settings.resourcesAiUnavailable")}
-                      </p>
-                    ) : null}
-                  </div>
-                </div>
-                <div class="settings-modal__pack">
-                  <div class="settings-modal__pack-info">
-                    <span class="settings-modal__pack-name">
-                      {t("settings.resourcesDecisionsName")}
-                    </span>
-                    <span class="settings-modal__pack-desc">
-                      {t("settings.resourcesDecisionsDesc")}
-                    </span>
-                    <span class="settings-modal__pack-meta">
-                      {!resources.decisionsChecked.value ? (
-                        <LoadingNote inline text={t("settings.resourcesAiChecking")} />
-                      ) : ai?.installed ? (
-                        t("settings.resourcesAiChannelVersion", {
-                          version: ai.version ?? "—",
-                          seq: ai.seq ?? 0,
-                        })
-                      ) : resources.decisionsError.value && d == null ? (
-                        t("settings.resourcesDecisionsUnknown")
-                      ) : d?.present ? (
-                        t("settings.resourcesAiChannelUnmanaged", {
-                          size: formatBytes(d.sizeBytes),
-                        })
-                      ) : (
-                        t("settings.resourcesDecisionsAbsent")
-                      )}
-                    </span>
-                    {aiCheck ? (
-                      <span class="settings-modal__pack-desc">
-                        {aiCheck.updateAvailable
-                          ? t("settings.resourcesAiChannelUpdateAvailable", {
-                              version: aiCheck.latestVersion,
-                              seq: aiCheck.latestSeq,
-                              size: formatBytes(aiCheck.totalBytes),
-                            })
-                          : t("settings.resourcesAiChannelUpToDate", {
-                              version: aiCheck.latestVersion,
-                            })}
-                      </span>
-                    ) : null}
-                    {aiCheck ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesAiChannelEndpoint", {
-                          endpoint: aiEndpointHost,
-                          count: aiCheck.files.length,
-                        })}
-                      </span>
-                    ) : null}
-                    {aiCheck?.losMismatch || ai?.losSkipped ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesAiChannelLosMismatch")}
-                      </span>
-                    ) : null}
-                    {resources.aiError.value ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesAiChannelFailed")}
-                      </span>
-                    ) : null}
-                    {!caps.aiInference ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsUnavailable")}
-                      </span>
-                    ) : resources.decisionsChecked.value &&
-                      !resources.decisionsError.value &&
-                      !resources.decisionsCleared.value &&
-                      !d?.present ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsDemoInUse")}
-                      </span>
-                    ) : null}
-                    {d?.present && d.adviceModelPresent ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsAdviceInstalled", {
-                          size: formatBytes(d.adviceModelBytes),
-                        })}
-                      </span>
-                    ) : null}
-                    {/* Torpedo slots: the T4 three-head model is preferred,
-                        the legacy two-head slot is the fallback for older
-                        packs. The report side shows N/A without either, so the
-                        card reports ONE installed model's size. */}
-                    {d?.present && d.torpedo4ModelPresent ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsTorpedo4Installed", {
-                          size: formatBytes(d.torpedo4ModelBytes),
-                        })}
-                      </span>
-                    ) : d?.present && d.torpedoModelPresent ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsTorpedoInstalled", {
-                          size: formatBytes(d.torpedoModelBytes),
-                        })}
-                      </span>
-                    ) : null}
-                    {d?.present ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsLos", {
-                          count: d.losMaps.length,
-                          maps:
-                            d.losMaps.length > 0
-                              ? `${d.losMaps.slice(0, 4).join(", ")}${
-                                  d.losMaps.length > 4 ? "…" : ""
-                                }`
-                              : t("settings.resourcesDecisionsLosNone"),
-                        })}
-                      </span>
-                    ) : null}
-                    {/* The restart note matters MOST right after a delete
-                        (the cleared models stay loaded until the next boot),
-                        so it rides modelPresent OR the cleared flag. */}
-                    {d?.modelPresent || resources.decisionsCleared.value ? (
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsRestart")}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </>
-            ) : null}
-
-            {/* ── destructive verbs ──────────────────────────────────────── */}
-            {st?.present || d?.present ? (
-              <>
-                <div class="settings-modal__res-subhead">{t("settings.resDangerTitle")}</div>
-                <HkSettingsHint>{t("settings.resDangerHint")}</HkSettingsHint>
-                {st?.present ? (
-                  <div class="settings-modal__pack">
-                    <div class="settings-modal__pack-info">
-                      <span class="settings-modal__pack-name">{t("settings.resPackName")}</span>
-                      <span class="settings-modal__pack-meta">{formatBytes(st.sizeBytes)}</span>
-                      {st.bundled ? (
-                        <span class="settings-modal__pack-desc">
-                          {t("settings.resBundledClearNote")}
-                        </span>
-                      ) : null}
-                    </div>
-                    <div class="settings-modal__pack-actions">
-                      {updates.clearArmed.value === "res" ? (
-                        <HkButton
-                          variant="danger"
-                          size="sm"
-                          disabled={cacheStore.integrityChecking}
-                          onClick={() => {
-                            updates.clearArmed.value = null;
-                            void runVerb(() => cacheStore.clearRes());
-                          }}
-                        >
-                          {t("settings.cacheDeleteConfirm")}
-                        </HkButton>
-                      ) : (
-                        <HkButton
-                          variant="secondary"
-                          size="sm"
-                          disabled={cacheStore.integrityChecking}
-                          onClick={() => (updates.clearArmed.value = "res")}
-                        >
-                          {t("settings.resDeletePack", { size: formatBytes(st.sizeBytes) })}
-                        </HkButton>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-                {d?.present ? (
-                  <div class="settings-modal__pack">
-                    <div class="settings-modal__pack-info">
-                      <span class="settings-modal__pack-name">
-                        {t("settings.resourcesDecisionsName")}
-                      </span>
-                      <span class="settings-modal__pack-meta">
-                        {formatBytes(d.sizeBytes)}
-                      </span>
-                      {/* Loaded models stay resident until the restart. */}
-                      <span class="settings-modal__pack-desc">
-                        {t("settings.resourcesDecisionsRestart")}
-                      </span>
-                    </div>
-                    <div class="settings-modal__pack-actions">
-                      {resources.decisionsArmed.value ? (
-                        <HkButton
-                          variant="danger"
-                          size="sm"
-                          loading={resources.decisionsClearing.value}
-                          onClick={() => void runVerb(() => resources.clearDecisions())}
-                        >
-                          {t("settings.cacheDeleteConfirm")}
-                        </HkButton>
-                      ) : (
-                        <HkButton
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => (resources.decisionsArmed.value = true)}
-                        >
-                          {t("settings.resDeleteModels", { size: formatBytes(modelsBytes) })}
-                        </HkButton>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
-          </HkExpansionPanel>
+          {/* ── details: the maintainer's view ─────────────────────────────
+              ONE body, TWO shells. Desktop keeps the collapsed expansion
+              panel (the body stays mounted, so the inventory's column
+              contract keeps its test coverage). Under the phone-layout
+              breakpoint the pane has no room for a six-column audit table —
+              a quiet entry row opens the SAME body as a docked sheet
+              (HkModal's ≤767px form factor; the body scrolls inside it). */}
+          {phoneLayout.value ? (
+            <>
+              <button
+                type="button"
+                class="settings-modal__res-details-entry"
+                aria-haspopup="dialog"
+                aria-expanded={detailsOpen.value ? "true" : "false"}
+                onClick={() => (detailsOpen.value = true)}
+              >
+                <span class="settings-modal__res-details-entry-text">
+                  <span class="settings-modal__res-details-entry-title">
+                    {t("settings.resDetailsTitle")}
+                  </span>
+                  <span class="settings-modal__res-details-entry-hint">
+                    {t("settings.resDetailsHint")}
+                  </span>
+                </span>
+                <span class="settings-modal__res-details-entry-chevron" aria-hidden="true">
+                  <ChevronRight size={16} />
+                </span>
+              </button>
+              <HkModal
+                modelValue={detailsOpen.value}
+                onUpdate:modelValue={(v: boolean) => (detailsOpen.value = v)}
+                title={t("settings.resDetailsTitle")}
+                width="md"
+              >
+                <ResourcesDetails ctx={props.ctx} />
+              </HkModal>
+            </>
+          ) : (
+            <HkExpansionPanel
+              class="settings-modal__res-details"
+              title={t("settings.resDetailsTitle")}
+              subtitle={t("settings.resDetailsHint")}
+            >
+              <ResourcesDetails ctx={props.ctx} />
+            </HkExpansionPanel>
+          )}
         </>
       );
     };

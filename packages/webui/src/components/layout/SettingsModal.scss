@@ -857,6 +857,53 @@
     color: rgb(var(--color-muted));
   }
 
+  /* The phone-layout details entry: a quiet bordered row that opens the
+     docked sheet. It restates the desktop expansion panel's header role as a
+     tappable row — the phone pane itself has no room for the audit table. */
+  &__res-details-entry {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--color-surface) / 45%);
+    color: rgb(var(--color-text));
+    font: inherit;
+    text-align: start;
+    cursor: pointer;
+
+    &:hover,
+    &:focus-visible {
+      border-color: rgb(var(--color-primary) / 45%);
+    }
+
+    &-text {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+      flex: 1;
+      min-width: 0;
+    }
+
+    &-title {
+      font-size: var(--text-sm);
+      font-weight: 600;
+    }
+
+    &-hint {
+      font-size: var(--text-xs);
+      color: rgb(var(--color-muted));
+    }
+
+    &-chevron {
+      display: inline-flex;
+      flex-shrink: 0;
+      color: rgb(var(--color-muted));
+    }
+  }
+
   /* ── gateway-push section (the service toggle's busy state) ── */
   &__pairing-busy {
     display: flex;

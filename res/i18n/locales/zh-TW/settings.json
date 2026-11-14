@@ -415,6 +415,7 @@
   "resStatusReady": "資源已就緒",
   "resStatusUpdates": "有可用的資源更新",
   "resStatusUpdatesHint": "隨時更新即可，不影響目前使用。",
+  "resStatusUpdateAll": "一鍵更新",
   "resStatusMissingPack": "資源包未下載",
   "resStatusMissingPackHint": "3D 艦船模型與銘牌貼圖在下載完成前無法使用。",
   "resStatusMissingModels": "決策模型未安裝",

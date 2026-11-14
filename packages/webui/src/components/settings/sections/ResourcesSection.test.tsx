@@ -40,6 +40,19 @@ import { formatBytes } from "@/components/settings/useSettingsUpdatesState";
 import { formatLocalStamp } from "@/utils/format";
 import ResourcesSection from "./ResourcesSection";
 
+// The pane's phone-layout branch reads hikari's useBreakpoint. The holder
+// defaults to DESKTOP so every existing suite keeps its assertions; the
+// phone-sheet describe flips it per test (a getter object keeps the mocked
+// ref shape without dragging Vue's reactivity into the mock).
+const bp = vi.hoisted(() => ({ mobile: false }));
+vi.mock("@celestia-island/hikari", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("@celestia-island/hikari")>();
+  return {
+    ...orig,
+    useBreakpoint: () => ({ isMobile: { get value() { return bp.mobile; } } }),
+  };
+});
+
 enableAutoUnmount(afterEach);
 
 // Load the real message tables: the assertions compare against the SAME
@@ -159,6 +172,7 @@ function updatesState(
   cache: Partial<ReturnType<typeof cacheStoreStub>> = {},
 ) {
   const resourceRows = ref<ResourceStatusRow[] | null>(rows);
+  const loadResourceRows = vi.fn(async () => {});
   const walkTotalBytes = computed(() =>
     (resourceRows.value ?? []).reduce(
       (sum, row) =>
@@ -185,7 +199,14 @@ function updatesState(
         (sum, row) => (row.present && ids.includes(row.id) ? sum + row.sizeBytes : sum),
         0,
       ),
-    loadResourceRows: vi.fn(async () => {}),
+    loadResourceRows,
+    // Mirrors the hook's contract (verb, then re-walk) so the suite keeps
+    // pinning the re-walk, not just the verb.
+    runVerb: vi.fn(async (verb: () => Promise<unknown>) => {
+      await verb();
+      await loadResourceRows();
+    }),
+    packHashHint: ref(""),
     checkAll: vi.fn(async () => true),
     dataPackVersion: ref<string | null>(null),
     dataPackBusy: ref(false),
@@ -446,17 +467,57 @@ describe("Settings → Resources status card", () => {
     expect(node.findAll("button")[0].text()).toBe(t("settings.cacheDownload"));
   });
 
-  it("reports known updates without adding a second update verb", () => {
-    const wrapper = mountSection(packStatus(), inventoryRows(), {
+  it("grows the ONE apply verb into update-all when updates are known", async () => {
+    const updates = updatesState(inventoryRows(), {
       status: resStatus({ present: true, sizeBytes: 1024 }),
       anyUpdateAvailable: true,
       updatesCheckedAt: 1,
     });
+    const state: { resources?: ReturnType<typeof useSettingsResourcesState> } = {};
+    const wrapper = mountSectionWith(updates, packStatus(), state);
+    // BOTH halves pending: the pack's manifest answer plus the AI channel's.
+    state.resources!.aiCheck.value = aiCheck({ updateAvailable: true });
+    await nextTick();
+    const aiSpy = vi.spyOn(state.resources!, "downloadAi");
     const node = card(wrapper);
     expect(node.classes()).toContain("settings-modal__res-summary--info");
     expect(node.text()).toContain(t("settings.resStatusUpdates"));
-    expect(node.findAll("button")[0].text()).toBe(t("settings.cacheCheckUpdates"));
+    const button = node.findAll("button")[0];
+    expect(button.text()).toBe(t("settings.resStatusUpdateAll"));
+    await button.trigger("click");
+    // Both pending passes queue through the hub's one FIFO; neither is
+    // awaited on the button (the shared top-right card owns the progress).
+    expect(updates.cacheStore.download).toHaveBeenCalledTimes(1);
+    expect(aiSpy).toHaveBeenCalledTimes(1);
+    // ...and each settled pass re-walks the registry.
+    expect(updates.loadResourceRows).toHaveBeenCalled();
   });
+
+  it("keeps the pack half of update-all behind the app-first gate", async () => {
+    // The race the guard exists for: the card already rendered update-all
+    // when the app update lands. Flipping the ref WITHOUT awaiting a tick
+    // keeps the stale button on screen, so the click exercises the handler's
+    // own gate — not the re-render that would remove the button.
+    const updates = updatesState(inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+      anyUpdateAvailable: true,
+      updatesCheckedAt: 1,
+    });
+    const state: { resources?: ReturnType<typeof useSettingsResourcesState> } = {};
+    const wrapper = mountSectionWith(updates, packStatus(), state);
+    state.resources!.aiCheck.value = aiCheck({ updateAvailable: true });
+    await nextTick();
+    const aiSpy = vi.spyOn(state.resources!, "downloadAi");
+    const button = card(wrapper).findAll("button")[0];
+    expect(button.text()).toBe(t("settings.resStatusUpdateAll"));
+    updates.appUpdatePending.value = true;
+    await button.trigger("click");
+    // The AI channel is not held back by the app update; the pack is.
+    expect(aiSpy).toHaveBeenCalledTimes(1);
+    expect(updates.cacheStore.download).not.toHaveBeenCalled();
+  });
+
+
 
   it("explains a pending app update instead of offering a verb", () => {
     const updates = updatesState(inventoryRows(), {
@@ -672,6 +733,46 @@ describe("Settings → Resources details panel", () => {
     expect(wrapper.find(".settings-modal__res-details").text()).toContain(
       t("settings.resourcesDecisionsRestart"),
     );
+  });
+});
+
+describe("Settings → Resources phone details sheet", () => {
+  it("swaps the inline expansion for an entry row that opens a docked sheet", async () => {
+    bp.mobile = true;
+    try {
+      const wrapper = mountSection(packStatus(), inventoryRows(), {
+        status: resStatus({ present: true, sizeBytes: 1024 }),
+      });
+      // No inline panel on the phone pane — the audit table would not fit...
+      expect(wrapper.find(".hk-expansion-panel").exists()).toBe(false);
+      const entry = wrapper.find(".settings-modal__res-details-entry");
+      expect(entry.attributes("aria-expanded")).toBe("false");
+      expect(entry.text()).toContain(t("settings.resDetailsTitle"));
+      // ...the SAME body opens as a sheet instead (HkModal docks through
+      // its overlay root on document.body, not inside the mounted wrapper).
+      await entry.trigger("click");
+      expect(wrapper.find(".settings-modal__res-details-entry").attributes("aria-expanded")).toBe(
+        "true",
+      );
+      await nextTick();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const sheet = document.querySelector('[class*="hk-modal"]');
+      expect(sheet).toBeTruthy();
+      expect(sheet?.textContent ?? "").toContain(t("settings.resInvTitle"));
+      // The six-column inventory itself renders in the sheet, not just the
+      // heading fragment above it.
+      expect(sheet?.querySelectorAll(".settings-modal__res-inv-row").length).toBeGreaterThan(0);
+    } finally {
+      bp.mobile = false;
+    }
+  });
+
+  it("keeps the inline expansion panel on desktop layouts", () => {
+    const wrapper = mountSection(packStatus(), inventoryRows(), {
+      status: resStatus({ present: true, sizeBytes: 1024 }),
+    });
+    expect(wrapper.find(".settings-modal__res-details-entry").exists()).toBe(false);
+    expect(wrapper.find(".hk-expansion-panel-header").attributes("aria-expanded")).toBe("false");
   });
 });
 
