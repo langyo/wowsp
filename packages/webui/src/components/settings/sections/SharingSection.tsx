@@ -40,6 +40,7 @@ import {
 
 import { t } from "@/i18n";
 import { useLanguage } from "@/i18n/useLanguage";
+import { formatLocalStamp } from "@/utils/format";
 import ErrorCard from "@/components/base/ErrorCard";
 import { api, type ContributionState, type PlanCandidate, type PlanItem, type QueueSnapshot } from "@/api";
 import { useReplayStore } from "@/stores/replay";
@@ -1031,7 +1032,8 @@ export default defineComponent({
             <span class="sharing-sec__sync-label">
               {state.value?.lastSyncAt
                 ? t("sharing.status.lastSync", {
-                    time: new Date(state.value.lastSyncAt).toLocaleString(),
+                    // The settings surface's one stable stamp shape.
+                    time: formatLocalStamp(state.value.lastSyncAt),
                   })
                 : t("sharing.status.neverSynced")}
             </span>
