@@ -284,6 +284,9 @@ def self_test() -> int:
         ("Correct inspector icon and selected control styling", "info", False),
         ("Configure GPUI beta releases for 1.1.0-beta1", "info", False),
         ("Fix CI lint and test failures", "info", False),
+        # an EMPTY upstream message must classify cleanly — the title
+        # extraction falls back instead of raising IndexError
+        ("", "info", False),
     ]
     for message, want_klass, want_reasons in fixtures:
         klass, reasons = classify(title_of(message))
@@ -354,7 +357,10 @@ def main() -> int:
                         {
                             "sha": commit["sha"],
                             "date": commit["commit"]["committer"]["date"][:10],
-                            "title": commit["commit"]["message"].splitlines()[0],
+                            "title": (
+                                (commit["commit"]["message"] or "").splitlines()
+                                or ["(no commit message)"]
+                            )[0],
                             **dict(zip(("class", "reasons"), classify(commit))),
                             "crates": commit["crates"],
                         }

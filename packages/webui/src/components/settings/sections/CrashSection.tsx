@@ -24,6 +24,7 @@ import { BellOff, CheckCheck, FileDown, RefreshCw, ShieldAlert, Trash2 } from "@
 
 import { api, type CrashFinding, type GameCrashRecord, type SuspectMod } from "@/api";
 import { t } from "@/i18n";
+import { formatLocalStamp } from "@/utils/format";
 import { useConfigStore } from "@/stores/config";
 import { useCrashStore } from "@/stores/crash";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -404,8 +405,9 @@ export default defineComponent({
     }
 
     function formatTime(iso: string): string {
-      const d = new Date(iso);
-      return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
+      // The stable local wall-clock shape every settings stamp renders —
+      // a raw toLocaleString() moved with the OS locale instead.
+      return formatLocalStamp(iso) || iso;
     }
 
     const severityVariant = (s: string) => (s === "critical" ? "danger" : "default");
