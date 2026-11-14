@@ -3,7 +3,7 @@
 > Single source of truth for everything the app downloads or manages at
 > runtime. The machine-readable twin lives in
 > `packages/app/tauri/src/commands/resources.rs` (`REGISTRY`), and the
-> Settings → resources panel renders its walk (`resources_status`).
+> Settings → resources details panel renders its walk (`resources_status`).
 
 ## Compatibility rule
 
@@ -110,14 +110,59 @@ The shared card's contract:
   the button that retries it) via `downloads.errorFor(kind)`; the card folds
   out and a toast carries the reason, because a folded card cannot be read.
 
+## Settings pane hierarchy
+
+The panel is player-first (2026-11-14 rework): it answers "do I need to do
+anything?" before it shows any per-resource detail. It used to be the
+opposite — the audit table sat on top and eleven individually managed
+mini-cards with seventeen visible verbs sat below it.
+
+1. **Status card** — a tone rail + one sentence (ready / not checked yet /
+   updates available / something missing), the on-disk footprint and the
+   panel's check verb — plus ONE contextual download verb when the resource
+   pack itself is missing (the pack row repeats that verb in its natural
+   place; both call the same store method, so they cannot diverge).
+   "Ready" is only claimed when BOTH the walk's ledger stamps and the res
+   manifest snapshot were refreshed this session; "not checked yet" is a
+   first-class state, because the numbers arrive from five sources with five
+   freshness rules (the walk's ledger stamps, the res manifest snapshot, the
+   AI manifest's 24h TTL, the app updater, the capability probe). A pending
+   app update is explained here with no verb of its own: the app update
+   comes first, and only the RESOURCE PACK waits for it — the decision-model
+   pack rides its own signed channel.
+2. **Family card** — four rows (game data / resource pack / decision models /
+   caches), at most ONE verb each, because same-family items are the same
+   action. The ship-data datasets are the boot-time lane the shell's refresh
+   entry covers; the mod-hub index is ON DEMAND and not part of that plan, so
+   the status card's check forces it client-side before re-reading it. The
+   game-data row therefore carries no verb of its own — it shows the freshest
+   of the two stamps. The four clearable caches clear behind one two-step
+   confirm (`clear_aux_cache` run per scope in a front-end loop — no new
+   command, so the per-scope rows in the details panel cannot diverge from
+   the family row on the wire). The resource pack's single slot switches role
+   with its state (download → integrity check → update) and keeps the
+   app-first gate; it only grows an update verb once a manifest actually
+   reported one. Raw current/latest hashes, the pack version stamp and the
+   legacy flag stay VISIBLE in the details panel (the row chip also carries
+   them as a tooltip — hover alone would hide them from keyboards and screen
+   readers).
+3. **Details panel** — a collapsed `HkExpansionPanel` holding the audit table
+   below, the per-cache controls, the AI runtime's technical facts and the
+   destructive deletes. Its body is always mounted (the disclosure's
+   contract), so the table's six-column contract never regresses; the
+   disclosure is the only gate, and the destructive verbs live behind it.
+
+The footprint is the walk's OWN sum (present, non-bundled rows). It must never
+add `aux_cache_overview` on top: both measure the same directories.
+
 ## Status walk
 
 `resources_status()` joins the registry with on-disk state — presence,
 the resource's own stamp (pack timestamps, dataset publish stamps, cache
 build numbers), content hash where addressable, and recursive size — in a
-single IPC call. The walk is read-only: management actions stay in each
-resource's own settings card, and the app-update row reports the running
-version without touching the updater.
+single IPC call. The walk is read-only and feeds three surfaces: the status
+card's footprint, the family rows' sizes and the details panel's audit table.
+The app-update row reports the running version without touching the updater.
 
 ## Publishing (maintainer, gh-authenticated)
 

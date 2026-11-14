@@ -760,6 +760,103 @@
     border-color: rgb(var(--color-muted) / 25%);
   }
 
+  /* ── resource status card (the pane's one readout) ──────────────────────
+     The card answers "do I need to do anything?" before any management row:
+     a tone rail carries the verdict, the body states it in one sentence plus
+     the footprint, and the pane's ONE check verb sits in the trailing lane.
+     The rail reuses the pack rows' border/surface so the readout does not
+     read as a foreign component. */
+  &__res-summary {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.55rem;
+    padding: 0.6rem 0.7rem 0.6rem 0.95rem;
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: var(--radius-sm, 6px);
+    background: rgb(var(--color-surface) / 45%);
+
+    &::before {
+      content: "";
+      position: absolute;
+      inset-block: 0.55rem;
+      left: 0;
+      width: 3px;
+      border-radius: 999px;
+      background: rgb(var(--color-muted) / 45%);
+    }
+
+    &--success::before {
+      background: rgb(var(--color-success));
+    }
+
+    &--info::before {
+      background: rgb(var(--color-primary));
+    }
+
+    &--warning::before {
+      background: rgb(var(--color-warning));
+    }
+  }
+
+  &__res-summary-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 1.6rem;
+    height: 1.6rem;
+    margin-top: 0.1rem;
+    border-radius: var(--radius-xs, 4px);
+    background: rgb(var(--color-muted) / 12%);
+    color: rgb(var(--color-muted));
+
+    .settings-modal__res-summary--success & {
+      background: rgb(var(--color-success) / 12%);
+      color: rgb(var(--color-success));
+    }
+
+    .settings-modal__res-summary--info & {
+      background: rgb(var(--color-primary) / 12%);
+      color: rgb(var(--color-primary));
+    }
+
+    .settings-modal__res-summary--warning & {
+      background: rgb(var(--color-warning) / 14%);
+      color: rgb(var(--color-warning));
+    }
+  }
+
+  &__res-summary-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__res-summary-title {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: rgb(var(--color-text));
+  }
+
+  &__res-summary-meta {
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  /* A quiet heading inside the collapsed details panel (per-cache controls,
+     the AI runtime's facts, the destructive verbs). */
+  &__res-subhead {
+    margin: 0.6rem 0 0.15rem;
+    font-size: var(--text-2xs);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: rgb(var(--color-muted));
+  }
+
   /* ── gateway-push section (the service toggle's busy state) ── */
   &__pairing-busy {
     display: flex;
@@ -1081,6 +1178,16 @@
   }
 
   .settings-modal__pack-actions {
+    margin-left: auto;
+  }
+
+  /* The status card: the verb drops under the readout instead of squeezing
+     the verdict into a narrow column at 393px. */
+  .settings-modal__res-summary {
+    flex-wrap: wrap;
+  }
+
+  .settings-modal__res-summary .settings-modal__pack-actions {
     margin-left: auto;
   }
 
