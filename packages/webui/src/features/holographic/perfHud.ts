@@ -63,8 +63,8 @@ export interface PerfHud {
 export function createPerfHud(enabled: boolean): PerfHud | null {
   if (!enabled) return null;
 
-  // The report text lives in a Vue ref; the slot wrapper re-renders
-  // whenever report() flips it (the old implementation wrote
+  // The report text lives in a Vue ref; a naive slot binding would only
+  // re-render whenever Vue next flushes (the old implementation wrote
   // el.textContent directly into a hand-styled div). The write lands
   // through a sync-flush effect, not the reactive binding: the scene's
   // own tick feeds report(), so the text must hit the DOM synchronously
