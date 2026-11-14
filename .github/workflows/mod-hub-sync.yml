@@ -35,7 +35,9 @@ concurrency:
 permissions:
   contents: write      # release asset uploads and the digest branch
   discussions: write   # the thread create/update mutations
-  issues: write        # the tracking report and the failure alarm
+  issues: write        # the failure alarm (reports are job summaries; repo
+                       # changes land as squash-merged PRs -- the digest PR
+                       # below -- never as issues)
   actions: write       # dispatching ci.yml / commit-msg-lint.yml / site.yml for the digest PR
   pull-requests: write # the digest bot PR's list/create/merge calls; the PR ops themselves
                        # run on RELEASE_OPS_TOKEN (this repo forbids GITHUB_TOKEN from
@@ -87,15 +89,14 @@ jobs:
             python3 scripts/mod_hub_sync.py detect --json sync-report.json
           fi
 
-      - name: Job summary and tracking issue
+      # The report lives in the job summary (plus sync-report.json). No
+      # tracking issue: the former fixed-title sync-report issue channel
+      # was removed (2026-11; the removal story lives in the mod-hub
+      # design doc) -- repo work is announced through squash-merged PRs
+      # with gitmoji titles, and repo-visible sync output (the digest PR
+      # below) already lands that way.
+      - name: Job summary
         if: always()
-        env:
-          # Issue mutations need issues:write. The Discussion-capable PATs the
-          # job-level GH_TOKEN ladder prefers are NOT guaranteed to carry it
-          # (2026-11-06 run: "Resource not accessible by personal access
-          # token" killed the tracker after a successful sync), while the
-          # workflow's GITHUB_TOKEN grant covers issue writes.
-          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           if [ ! -f sync-report.json ]; then
@@ -105,7 +106,6 @@ jobs:
           fi
           python3 scripts/mod_hub_sync.py render-summary --json sync-report.json \
             | tee -a "$GITHUB_STEP_SUMMARY"
-          python3 scripts/mod_hub_sync.py upsert-issue --json sync-report.json
 
       # Second official digest channel (the mirror-crosscheck trust anchor):
       # after the index bytes change, re-point the relay's signed mod-hub
@@ -289,12 +289,15 @@ jobs:
           echo "::error::live /api/digests/mod-hub never re-pointed"
           exit 1
 
+      # The failure alert is the one issue this workflow still posts: an
+      # actionable incident signal on an unattended schedule (the `issue`
+      # subcommand dedupes onto the single open alert issue), not a report.
       - name: Alarm on failure
         if: failure()
         env:
-          # Same rule as the tracker above: GITHUB_TOKEN's issues:write grant
-          # is what the alarm needs; RELEASE_OPS_TOKEN may be a fine-grained
-          # PAT without Issues permission and used to fail this step.
+          # GITHUB_TOKEN's issues:write grant is what the alarm needs;
+          # RELEASE_OPS_TOKEN may be a fine-grained PAT without Issues
+          # permission and used to fail this step (2026-11-06 run).
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

@@ -15,7 +15,6 @@ module is the one entry point the scheduled workflow
     python scripts/mod_hub_sync.py apply --reaudit         # one-shot content re-audit of the whole live scope
     python scripts/mod_hub_sync.py index-only              # re-crawl + republish index
     python scripts/mod_hub_sync.py render-summary --json r.json
-    python scripts/mod_hub_sync.py upsert-issue --json r.json
     python scripts/mod_hub_sync.py selftest                # offline checks
 
 Design invariants (docs/en/designs/mod-hub.md, "Upstream sync automation"):
@@ -38,8 +37,8 @@ Design invariants (docs/en/designs/mod-hub.md, "Upstream sync automation"):
 - Two-phase removals. An entry that vanished upstream, was disabled there, or
   moved out of the ingested scope gets its thread marked "sync source closed"
   (hidden wowsp:sync-stale block + a visible notice) and STAYS installable;
-  delisting (closing the thread) remains a human decision, reported by the
-  sync issue for review.
+  delisting (closing the thread) remains a human decision, flagged in the
+  run report (the workflow job summary) for review.
 - Proposal-gated additions. New upstream entries only appear in the report
   until their slug tables are curated; "--include-new" publishes exactly the
   slugs resolved through scripts/mod_hub_slugs.py.
@@ -1298,12 +1297,6 @@ def ensure_issue(title: str, body: str) -> int:
     return number
 
 
-def upsert_issue(report: dict, title: str) -> int:
-    body = render_summary(report) + "\n<!-- wowsp-sync-report:v1\n" + \
-        json.dumps(report, ensure_ascii=False, indent=1) + "\n-->\n"
-    return ensure_issue(title, body)
-
-
 # --------------------------------------------------------------------------- runs
 
 
@@ -1371,8 +1364,6 @@ def run_detect(args) -> int:
     if args.json:
         Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=1),
                                    encoding="utf-8")
-    if args.issue:
-        upsert_issue(report, args.title)
     return 0
 
 
@@ -1586,8 +1577,6 @@ def run_apply(args) -> int:
     if args.json:
         Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=1),
                                    encoding="utf-8")
-    if args.issue and not args.dry_run:
-        upsert_issue(report, args.title)
     if report["warnings"]:
         print("warnings:", file=sys.stderr, flush=True)
         for w in report["warnings"]:
@@ -1617,8 +1606,6 @@ def run_index_only(args) -> int:
     if args.json:
         Path(args.json).write_text(json.dumps(report, ensure_ascii=False, indent=1),
                                    encoding="utf-8")
-    if args.issue:
-        upsert_issue(report, args.title)
     return 0
 
 
@@ -1954,9 +1941,6 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--cache-dir",
                        default=str(Path(tempfile.gettempdir()) / "wowsp-modhub-sync"))
         p.add_argument("--json", help="write the machine-readable report here")
-        p.add_argument("--issue", action="store_true",
-                       help="upsert the tracking issue with this report")
-        p.add_argument("--title", default="[mod-hub-sync] Upstream sync report")
 
     common(sub.add_parser("detect", help="read-only: fetch upstream, diff against live threads"))
     aply = sub.add_parser("apply", help="the real sync (assets, threads, index, GC)")
@@ -1972,7 +1956,6 @@ def main(argv: list[str] | None = None) -> int:
     idx = sub.add_parser("index-only", help="re-crawl threads and republish mod-index.json")
     common(idx)
     common(sub.add_parser("render-summary", help="print the markdown summary of a report json"))
-    common(sub.add_parser("upsert-issue", help="upsert the tracking issue from a report json"))
     issue = sub.add_parser("issue", help="create/overwrite one open issue from --body-file")
     issue.add_argument("--title", required=True)
     issue.add_argument("--body-file", required=True)
@@ -1981,13 +1964,10 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     if args.stage == "selftest":
         return selftest() or 0
-    if args.stage in ("render-summary", "upsert-issue"):
+    if args.stage == "render-summary":
         report = json.loads(Path(args.json).read_text(encoding="utf-8")) if args.json else \
             json.loads(sys.stdin.read())
-        if args.stage == "render-summary":
-            print(render_summary(report))
-        else:
-            upsert_issue(report, args.title)
+        print(render_summary(report))
         return 0
     if args.stage == "issue":
         body = Path(args.body_file).read_text(encoding="utf-8")
