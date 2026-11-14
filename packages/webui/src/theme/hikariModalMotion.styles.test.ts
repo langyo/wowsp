@@ -10,9 +10,10 @@
  * sheet, so a version bump can silently change how every window arrives and
  * leaves without touching a single WoWSP file. The first half compiles the
  * INSTALLED package sheet and pins the mechanism: the frame keeps its
- * centring transform prefix (the shift tokens included), the desktop
- * enter/leave legs only move opacity + transform, and the layout-animating
- * ride left nothing behind. The second half keeps WoWSP's own sheets OFF
+ * centring on the individual `translate` property (the shift tokens ride
+ * there — NEVER inside the animated transform; hikari #1325's carrier
+ * split), the desktop enter/leave legs only move opacity + transform, and
+ * the layout-animating ride left nothing behind. The second half keeps WoWSP's own sheets OFF
  * the frame's motion axes: token and sizing overrides are fine (the report
  * window's content-sized frame, the wizard tint, the confirm-dialog width
  * hatch), but a host transform / transition / will-change on
