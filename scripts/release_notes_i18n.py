@@ -60,6 +60,11 @@ ASSET RULES (lint-enforced; A* hard unless marked):
   A8  soft: a section whose content equals the canonical per-locale
       placeholder is PENDING - allowed, tracked by the rolling
       translation issue (issue-sync). Untranslated == untranslated.
+  A9  soft: a section that leaves at least half of the English PR bullet
+      lines byte-identical is flagged as partially untranslated. The
+      policy (since the 2026-11-14 v0.6.9/v0.6.10 retrofit) is that PR
+      bullet TITLES are translated too; the [#NNNN](url) link, the emoji,
+      every URL and the Full Changelog line stay verbatim.
 
 BODY RULES:
   B1  hard: the body is English markdown; it never carries the legacy i18n
@@ -86,11 +91,13 @@ COMMANDS
                                 upload it with gh
   set     [--tag T] --lang L --file F [--apply]
                                 replace locale L's section in the JSON
-                                asset (validates A2-A7); creates the asset
-                                from the English body when none exists yet
+                                asset (validates A2-A7, warns on A9); creates
+                                the asset from the English body when none
+                                exists yet
   show    [--tag T]              per-release, per-locale asset status table
   lint    [--tag T] [--assets]  B1/B2 over the bodies (the CI gate), plus
-                                A1-A7 over the assets with --assets
+                                A1-A9 over the assets with --assets (A8/A9
+                                are soft; they never fail the lint)
   issue-sync                    upsert/close the rolling "pending
                                 translations" tracking issue from the assets
   glossary                      canonical heading translations for translators
@@ -503,6 +510,33 @@ def check_urls(en_content: str, content: str, locale: str) -> List[str]:
         detail = ", ".join(sorted(missing.elements())[:4])
         more = "" if total <= 4 else " (+%d more)" % (total - 4)
         return ["%s: dropped URL(s) present in en-US (S6): %s%s" % (locale, detail, more)]
+    return []
+
+
+PR_LINK_BULLET_RE = re.compile(r"^[-*+]\s+\[#\d+\]\(")
+
+
+def verbatim_bullet_warning(en_content: str, content: str, locale: str) -> List[str]:
+    """A9 - soft: partially-untranslated sections. A translation that leaves
+    at least half of the English PR bullet lines byte-identical is flagged:
+    headings-only translations (the v0.6.9/v0.6.10 regression closed on
+    2026-11-14) trip it, fully translated sections never do. Warnings never
+    fail the lint."""
+    en_lines: List[str] = []
+    for line in en_content.split("\n"):
+        stripped = line.strip()
+        if stripped and PR_LINK_BULLET_RE.match(stripped):
+            en_lines.append(stripped)
+    if len(en_lines) < 2:
+        return []
+    translated_lines = {line.strip() for line in content.split("\n")}
+    verbatim = sum(1 for line in en_lines if line in translated_lines)
+    if verbatim * 2 >= len(en_lines):
+        return [
+            "%s: %d/%d PR bullet lines are byte-identical to en-US (A9 soft - "
+            "translate the bullet titles; the PR link and emoji stay verbatim)"
+            % (locale, verbatim, len(en_lines))
+        ]
     return []
 
 
@@ -992,6 +1026,8 @@ def cmd_set(args: argparse.Namespace) -> None:
         for violation in violations:
             print("  %s" % violation, file=sys.stderr)
         raise SystemExit(1)
+    for warning in verbatim_bullet_warning(en_content, new_content, args.lang):
+        print("⚠ %s  %s" % (tag, warning))
     if args.apply:
         upload_asset_doc(tag, doc)
         status = "pending placeholder kept" if is_pending(new_content, args.lang) else "translated"
@@ -1078,6 +1114,12 @@ def cmd_lint(args: argparse.Namespace) -> None:
             print("    … %s  asset pending: %s" % (tag, ", ".join(pending)))
         else:
             assets_ok += 1
+        if en_for_asset.strip():
+            for loc in translated_locales(locales):
+                if is_pending(sections[loc], loc):
+                    continue
+                for warning in verbatim_bullet_warning(en_for_asset, sections[loc], loc):
+                    print("    ⚠ %s  %s" % (tag, warning))
     print("")
     if args.assets:
         print("%d release(s): %d violation(s), %d legacy body, %d asset(s) ok, %d asset(s) pending, %d asset(s) missing"
@@ -1211,6 +1253,17 @@ def cmd_self_test(_args: argparse.Namespace) -> None:
     assert not is_pending(filled["sections"]["zh-CN"], "zh-CN")
     assert validate_asset_doc(filled, "v0.6.7", locales, SAMPLE_EN) == []
     assert build_asset_doc("v0.6.7", SAMPLE_EN, None, filled)["sections"]["zh-CN"] == translated["zh-CN"]
+
+    # A9 soft: headings-only / partially translated sections warn, fully
+    # translated ones (and single-bullet bodies) never do.
+    assert verbatim_bullet_warning(SAMPLE_EN, SAMPLE_EN, "zh-CN")
+    assert verbatim_bullet_warning(SAMPLE_EN, _mini("zh-CN"), "zh-CN") == []
+    half = _mini("zh-CN").replace(
+        "测试译文：修复舞台高度。", "Fit calibration editor stage inside the modal body cap.")
+    assert verbatim_bullet_warning(SAMPLE_EN, half, "zh-CN")
+    assert verbatim_bullet_warning(
+        "- [#1](https://github.com/langyo/wowsp/pull/1) ✨ Solo bullet.",
+        "- [#1](https://github.com/langyo/wowsp/pull/1) ✨ Solo bullet.", "zh-CN") == []
 
     def expect_asset_violation(name: str, mutate) -> None:
         bad = json.loads(json.dumps(filled))
