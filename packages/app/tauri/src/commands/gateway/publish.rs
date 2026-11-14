@@ -24,6 +24,13 @@ const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 const PROCESS_POLL_INTERVAL: Duration = Duration::from_secs(5);
 /// Reconnect backoff ceiling (the host bridge's 30 s).
 const MAX_BACKOFF: Duration = Duration::from_secs(30);
+/// How long the socket may see NO inbound traffic (frames or the worker's
+/// pings) before it reads as silently dead. The 30 s client keepalive and
+/// the worker's own ping cadence keep a live link well inside it; without
+/// this bound a black-holed path (sleep/resume, NAT expiry) parks the
+/// session on the OS's 13-30 min TCP give-up while the tray still counts
+/// its phones.
+const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 /// Bound for the server's hello frame.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
 /// One battle event ≤ 64 KiB (the server rejects larger frames with close
@@ -47,8 +54,10 @@ fn publish_slot() -> &'static Mutex<Option<PublishSession>> {
     SLOT.get_or_init(|| Mutex::new(None))
 }
 
-/// Serializes start/stop so two racing calls never leak a task.
-fn publish_gate() -> &'static tokio::sync::Mutex<()> {
+/// Serializes start/stop so two racing calls never leak a task. Shared
+/// with `gateway_set_config`'s disable path (config.rs), which serializes
+/// its stops through the same gate.
+pub(super) fn publish_gate() -> &'static tokio::sync::Mutex<()> {
     static GATE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
     GATE.get_or_init(|| tokio::sync::Mutex::const_new(()))
 }
@@ -254,8 +263,12 @@ async fn start_publish(
 }
 
 /// Stop the publisher session (publish_stop, service disable, replace).
+/// UN-GATED: every caller holds `publish_gate` first (the start command's
+/// replace path, the stop command, the config disable) — locking the gate
+/// in here too deadlocked the replace path, which already holds it (a
+/// re-entrant `tokio::sync::Mutex` lock pins the task and the gate
+/// forever).
 pub(crate) async fn stop_publish() {
-    let _gate = publish_gate().lock().await;
     let joined = publish_slot()
         .lock()
         .unwrap_or_else(|p| p.into_inner())
@@ -415,7 +428,15 @@ async fn publish_loop(
         // publisher started from port must not tear down on the first
         // poll of an already-exited game.
         let mut exit_armed = super::super::session::process_running();
+        // Inbound-traffic watermark for the stall watchdog: ANY resolved
+        // frame (text, ping, pong) refreshes it; the sends below do not —
+        // a black-holed path must still trip the deadline. (tokio's
+        // Instant: sleep_until takes one.)
+        let mut last_inbound = tokio::time::Instant::now();
         loop {
+            // Absolute deadline (not a fresh relative sleep): battle-frame
+            // sends iterate this loop and must not postpone the stall.
+            let stall_deadline = last_inbound + STALL_TIMEOUT;
             tokio::select! {
                 biased;
                 _ = shutdown.changed() => {
@@ -432,6 +453,7 @@ async fn publish_loop(
                     }
                 },
                 msg = ws.next() => {
+                    last_inbound = tokio::time::Instant::now();
                     match msg {
                         // The pub socket's inbound traffic (hello echo,
                         // keepalives) only keeps the socket warm — EXCEPT
@@ -456,8 +478,16 @@ async fn publish_loop(
                         Some(Err(_)) => break,
                     }
                 },
+                _ = tokio::time::sleep_until(stall_deadline) => {
+                    // No inbound traffic inside the budget: the path is
+                    // silently dead — break to the reconnect ladder
+                    // instead of waiting out the OS's TCP give-up.
+                    break;
+                },
                 _ = tokio::time::sleep(KEEPALIVE_INTERVAL) => {
-                    let _ = ws.send(Message::Text(super::ws::keepalive_text())).await;
+                    if ws.send(Message::Text(super::ws::keepalive_text())).await.is_err() {
+                        break;
+                    }
                 },
                 _ = tokio::time::sleep(PROCESS_POLL_INTERVAL) => {
                     let running = super::super::session::process_running();
@@ -571,6 +601,7 @@ pub async fn gateway_publish_start(
 /// snapshot retires instead of waiting out the idle TTL).
 #[tauri::command]
 pub async fn gateway_publish_stop() -> CommandResult<()> {
+    let _gate = publish_gate().lock().await;
     stop_publish().await;
     Ok(())
 }
@@ -604,4 +635,42 @@ pub async fn gateway_publish_status() -> CommandResult<GatewayPublishStatus> {
         phase,
         subscribers,
     })
+}
+
+/// The start command's replace path holds `publish_gate` while it stops
+/// the outgoing session: `stop_publish` must stay callable UNDER the held
+/// gate (a re-entrant lock here deadlocked every start/stop until the app
+/// restarted — the PIN-mode retirement regression).
+#[cfg(test)]
+mod stop_publish_gate_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn gated_stop_publish_completes_while_the_gate_is_held() {
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+        let (battle_tx, _battles) = tokio::sync::mpsc::unbounded_channel::<String>();
+        *publish_slot().lock().unwrap() = Some(PublishSession {
+            shutdown: shutdown_tx,
+            task: tokio::spawn({
+                let mut shutdown = shutdown_rx;
+                async move {
+                    loop {
+                        if *shutdown.borrow_and_update() {
+                            return;
+                        }
+                        if shutdown.changed().await.is_err() {
+                            return;
+                        }
+                    }
+                }
+            }),
+            battles: battle_tx,
+            route: "r:test:1".to_string(),
+        });
+        let _gate = publish_gate().lock().await;
+        tokio::time::timeout(Duration::from_secs(8), stop_publish())
+            .await
+            .expect("stop_publish under a held gate must not deadlock");
+        assert!(publish_slot().lock().unwrap().is_none());
+    }
 }

@@ -107,8 +107,9 @@ pub fn parse(boundary: &str, body: &[u8]) -> Vec<Part> {
 /// Build a multipart body from `(name, Option<filename>, bytes)` parts.
 /// Returns the body bytes; the boundary is the returned token — set the
 /// request Content-Type as `multipart/form-data; boundary=<token>`.
-/// `seed` (a clock tick from the caller) keeps the boundary from being a
-/// compile-time constant an uploaded file could embed on purpose.
+/// `seed` (unpredictable CSPRNG output from the caller) keeps the boundary
+/// from being — or being guessable as — a constant an uploaded file could
+/// embed on purpose.
 pub fn build_seeded(seed: u64, parts: &[(String, Option<String>, Vec<u8>)]) -> (String, Vec<u8>) {
     let boundary = format!(
         "wowspfb{:016x}",
@@ -137,7 +138,7 @@ pub fn build_seeded(seed: u64, parts: &[(String, Option<String>, Vec<u8>)]) -> (
 }
 
 /// [`build_seeded`] with a fixed seed — host tests only; the worker
-/// always passes a clock tick.
+/// passes an unpredictable CSPRNG seed.
 pub fn build(parts: &[(String, Option<String>, Vec<u8>)]) -> (String, Vec<u8>) {
     build_seeded(0, parts)
 }

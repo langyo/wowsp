@@ -17,6 +17,11 @@ use super::*;
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(30);
 /// Bound for the server's hello frame.
 const HELLO_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long the socket may see NO inbound traffic (frames or the worker's
+/// pings) before it reads as silently dead — the phone's live view must
+/// hear an `error` phase instead of rendering a stale snapshot as live
+/// until the OS's 13-30 min TCP give-up.
+const STALL_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Handle to the running subscriber session (one per device — the phone
 /// subscribes to its OWN active account's channel).
@@ -30,8 +35,10 @@ fn subscribe_slot() -> &'static Mutex<Option<SubscribeSession>> {
     SLOT.get_or_init(|| Mutex::new(None))
 }
 
-/// Serializes start/stop so two racing calls never leak a task.
-fn subscribe_gate() -> &'static tokio::sync::Mutex<()> {
+/// Serializes start/stop so two racing calls never leak a task. Shared
+/// with `gateway_set_config`'s disable path (config.rs), which serializes
+/// its stops through the same gate.
+pub(super) fn subscribe_gate() -> &'static tokio::sync::Mutex<()> {
     static GATE: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
     GATE.get_or_init(|| tokio::sync::Mutex::const_new(()))
 }
@@ -141,7 +148,14 @@ async fn subscribe_loop(
         },
     }
     emit(PHASE_ONLINE, None);
+    // Inbound-traffic watermark for the stall watchdog: ANY resolved
+    // frame (text, ping, pong) refreshes it; the keepalive sends do not —
+    // a black-holed path must still trip the deadline. (tokio's Instant:
+    // sleep_until takes one.)
+    let mut last_inbound = tokio::time::Instant::now();
     loop {
+        // Absolute deadline (not a fresh relative sleep).
+        let stall_deadline = last_inbound + STALL_TIMEOUT;
         tokio::select! {
             biased;
             _ = shutdown.changed() => {
@@ -150,6 +164,7 @@ async fn subscribe_loop(
                 return;
             },
             msg = ws.next() => {
+                last_inbound = tokio::time::Instant::now();
                 match msg {
                     Some(Ok(Message::Text(text))) => {
                         // Forward VERBATIM as a JSON object: the live view
@@ -186,8 +201,17 @@ async fn subscribe_loop(
                     },
                 }
             },
+            _ = tokio::time::sleep_until(stall_deadline) => {
+                // No inbound traffic inside the budget: the path is
+                // silently dead — say so instead of freezing the live view.
+                emit(PHASE_ERROR, Some("gateway subscription stalled".into()));
+                return;
+            },
             _ = tokio::time::sleep(KEEPALIVE_INTERVAL) => {
-                let _ = ws.send(Message::Text(super::ws::keepalive_text())).await;
+                if ws.send(Message::Text(super::ws::keepalive_text())).await.is_err() {
+                    emit(PHASE_ERROR, Some("gateway subscribe send failed".into()));
+                    return;
+                }
             },
         }
     }
@@ -235,7 +259,9 @@ pub async fn gateway_subscribe_stop() -> CommandResult<()> {
     Ok(())
 }
 
-/// Stop half shared with `gateway_set_config` (already gated).
+/// Stop half, UN-GATED: every caller holds `subscribe_gate` first (the
+/// start command's replace path, the stop command, the config disable) —
+/// the same contract `stop_publish` follows.
 pub(super) async fn stop_subscribe() {
     let joined = subscribe_slot()
         .lock()

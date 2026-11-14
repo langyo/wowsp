@@ -1,10 +1,16 @@
 name: CI
 
 on:
+  # Post-merge only (the 2026-11-06 trigger policy: CI runs after a squash
+  # merge lands, never on the pull request itself — ci-cache.yml shares the
+  # shape). The master push run is also what the release pipeline's
+  # preflight waits for when a v* tag lands on the same commit; with no
+  # trigger at all every release stalls out its preflight deadline.
+  push:
+    branches: [master]
   workflow_dispatch:
 
-# Full per-push triggering is kept deliberately (public repo, hosted runners);
-# concurrency + cancel-in-progress drops superseded runs for the same PR/ref
+# concurrency + cancel-in-progress drops superseded runs for the same ref
 # (AGENTS.md §8.3).
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}

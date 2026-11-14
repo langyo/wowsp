@@ -134,10 +134,22 @@ def download(url: str, dest: str, label: str) -> None:
 def extract(archive: str, dest: str, skip: set[str] | None = None) -> None:
     skip = skip or set()
     os.makedirs(dest, exist_ok=True)
+    dest_real = os.path.realpath(dest)
     with tarfile.open(archive, "r:gz") as tf:
         for member in tf.getmembers():
             if member.name.startswith("../") or os.path.isabs(member.name):
                 raise RuntimeError(f"unsafe archive member: {member.name}")
+            # The prefix check above misses mid-path traversal
+            # ("models/a/../../evil") and link members: every member must
+            # still resolve INSIDE the destination, and links never extract
+            # (the assets come through third-party mirrors, and the manual
+            # checks are also what the no-filter TypeError fallback relies
+            # on, since filter="data" is unavailable there).
+            resolved = os.path.realpath(os.path.join(dest, member.name))
+            if os.path.commonpath([resolved, dest_real]) != dest_real:
+                raise RuntimeError(f"unsafe archive member: {member.name}")
+            if member.issym() or member.islnk():
+                raise RuntimeError(f"link archive member: {member.name}")
             if member.name in skip:
                 continue
             try:

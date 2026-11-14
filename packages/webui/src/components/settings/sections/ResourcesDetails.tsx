@@ -2,10 +2,11 @@
  *  the per-cache controls, the AI runtime's technical facts and the
  *  destructive deletes.
  *
- *  ONE tree, TWO shells — the section renders this body inside a collapsed
- *  HkExpansionPanel on desktop and inside a docked HkModal sheet under the
- *  phone-layout breakpoint, so both surfaces show the same facts and can
- *  never drift apart. The body reads the shared SettingsBodyCtx directly
+ *  ONE tree, ONE window — the section opens this body as a CHILD WINDOW
+ *  stacked through the shared popup context (a centered frame on desktop,
+ *  the docked HkModal sheet under the phone-layout breakpoint), so both
+ *  surfaces show the same facts and can never drift apart. The body reads
+ *  the shared SettingsBodyCtx directly
  *  (the same stores the family rows read), and every management verb
  *  re-walks the registry through the same runVerb contract as the rows, so
  *  the status card's footprint stays honest for verbs started here too.

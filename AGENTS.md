@@ -347,8 +347,9 @@ Before submitting, the relevant subset of `just lint` (or scoped
 3. **Cancel stale runs**: when repeated pushes retrigger a PR, old runs may
    be cancelled (`gh run cancel <id>`) to free quota; every workflow already
    carries `concurrency` + `cancel-in-progress` dedup (wowsp is a public
-   repo on hosted runners, so PRs keep full triggering with concurrency
-   dedup).
+   repo on hosted runners; since the 2026-11-06 trigger policy CI runs only
+   after a squash merge — never on the pull request itself — with
+   concurrency dedup).
 4. CI structure (`.github/workflows/`):
    - `ci.yml` — web (ubuntu: typecheck / unit tests / lint / website,
      console and webui builds / rpc parity / i18n / release-notes i18n
@@ -359,8 +360,10 @@ Before submitting, the relevant subset of `just lint` (or scoped
      relay-core tests), versions (seven-version consistency via
      `scripts/sync_versions.py --check`). Every action is pinned to a full
      commit SHA.
-   - `commit-msg-lint.yml` — PR title + every commit subject in the PR
-     (via `scripts/commit_msg_lint.py`, bot authors exempt).
+   - `commit-msg-lint.yml` — the PR title and every commit subject
+     (via `scripts/commit_msg_lint.py`, bot authors exempt). Dispatch-only
+     since the 2026-11-06 trigger policy — it no longer runs on the pull
+     request itself; format is held by review plus the squash subject.
    - `release.yml` — tag-driven build & release. Its `preflight` job first
      requires the tagged commit's `ci.yml` run to be green (repository
      variable `RELEASE_SKIP_PREFLIGHT=true` waives it for an emergency

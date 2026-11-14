@@ -122,9 +122,10 @@ def fetch_commits(since: str, max_pages: int) -> tuple[list[dict], bool]:
 
     Returns (commits, truncated). Each commit dict carries `crates`: the
     forked crates it touched. The commits API has day-precision `since`
-    filtering (inclusive), so the state stores the day AFTER the last
-    reviewed commit as the baseline and the filter starts at 00:00:00Z of
-    that date.
+    filtering (inclusive), so the state stores the newest reviewed commit's
+    OWN day as the baseline and the filter starts at 00:00:00Z of that
+    date — re-listing that day is lossless (mark_reviewed keeps the newest
+    commit, not the day after).
     """
     per_page = 100
     by_sha: dict[str, dict] = {}
@@ -157,7 +158,10 @@ def fetch_commits(since: str, max_pages: int) -> tuple[list[dict], bool]:
 
 
 def classify(commit: dict) -> tuple[str, list[str]]:
-    title = (commit.get("commit", {}).get("message") or "").splitlines()[0]
+    title = (
+        (commit.get("commit", {}).get("message") or "").splitlines()
+        or ["(no commit message)"]
+    )[0]
     reasons = [label for pattern, label in ADAPT_TITLE_PATTERNS if pattern.search(title)]
     return ("adapt" if reasons else "info"), reasons
 
@@ -216,7 +220,10 @@ def print_report(
             adapt_count += 1
         sha = commit["sha"][:12]
         commit_date = commit["commit"]["committer"]["date"][:10]
-        title = commit["commit"]["message"].splitlines()[0][:100]
+        title = (
+            (commit["commit"]["message"] or "").splitlines()
+            or ["(no commit message)"]
+        )[0][:100]
         crates_tag = "+".join(commit["crates"])
         flag = "adapt" if klass == "adapt" else "info "
         print(f"  [{flag}] {commit_date} {sha} [{crates_tag}] {title}")
