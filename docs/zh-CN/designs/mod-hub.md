@@ -319,8 +319,8 @@ md5 的前 8 位十六进制，等于自带内容指纹（204 个绝对 URL 的 
 
 `.github/workflows/mod-hub-sync.yml`（每 6 小时 `schedule` + `workflow_dispatch`
 手动触发，`concurrency` 串行）调用 `scripts/mod_hub_sync.py`（流水线子命令
-`detect` / `apply` / `index-only` 与离线 `selftest`；`render-summary` /
-`upsert-issue` 负责把已保存的报告重新渲染/落帖）：
+`detect` / `apply` / `index-only` 与离线 `selftest`；`render-summary`
+负责把已保存的报告重新渲染）：
 
 | 子命令 | 行为 |
 | --- | --- |
@@ -367,7 +367,7 @@ md5 的前 8 位十六进制，等于自带内容指纹（204 个绝对 URL 的 
    `content_version`）与可见的双语警示（"同步来源已关闭，待人工复核后下架"）；条目仍可安装；
 2. **下架（人工）**：关闭该 Discussion 即彻底下架——爬虫据 `closed` 判定 delisted。
    24 小时宽限后，未被任何帖子引用的 release 资产被 GC（单次上限 150 个；引用集过小则
-   跳过本次）。同步报告 issue 会列出全部待复核条目。
+   跳过本次）。运行报告（步骤摘要）会列出全部待复核条目。
 
 上游恢复后，下次同步自动摘除 stale 标记。
 
@@ -426,9 +426,12 @@ job 模式。
 
 #### 报告
 
-每次运行产出 `sync-report.json`（随运行落盘）并渲染进步骤摘要与固定标题 issue
-「[mod-hub-sync] Upstream sync report」（正文每次覆盖，内嵌隐藏 JSON 块，agent 与人
-读同一份来源）。`apply` 失败时另开告警 issue。
+每次运行产出 `sync-report.json`（随运行落盘）并渲染进步骤摘要——这是唯一的报告渠道。
+旧有固定标题的跟踪 issue「[mod-hub-sync] Upstream sync report」已于 2026-11 移除：
+本仓库的工作以 gitmoji 标题的 squash PR 宣告（AGENTS.md §1），同步唯一的仓库内产出
+（relay digest 文档）本来就走这条路；不改动仓库的报告只是运行元数据，不该变成公告。
+`apply` 失败时仍会另开告警 issue——无人值守排程下可行动的事故信号（`issue` 子命令
+去重到唯一的开放告警 issue），也是本自动化会发的唯一 issue。
 
 #### 运行手册
 

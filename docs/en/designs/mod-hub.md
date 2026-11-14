@@ -653,8 +653,8 @@ absolute-URL `.7z` entries are the exception — no fingerprint).
 `.github/workflows/mod-hub-sync.yml` (a `schedule` every 6 hours plus
 manual `workflow_dispatch`, runs serialized by `concurrency`) calls
 `scripts/mod_hub_sync.py` (pipeline subcommands `detect` / `apply` /
-`index-only` plus the offline `selftest`; `render-summary` /
-`upsert-issue` re-render a saved report):
+`index-only` plus the offline `selftest`; `render-summary` re-renders
+a saved report):
 
 | Command | Behavior |
 | --- | --- |
@@ -722,8 +722,8 @@ scope:
    crawler reads `closed` as delisted. Release assets no longer
    referenced by any thread are garbage-collected after a 24 h grace
    window (150 assets per run cap; the GC pass is skipped when the
-   reference set looks too small). The sync-report issue lists every
-   entry pending review.
+   reference set looks too small). The run report (the job summary)
+   lists every entry pending review.
 
 If upstream restores the entry, the next sync removes the stale mark
 on its own.
@@ -804,10 +804,15 @@ nothing changes without a deliberate registry edit.
 #### Reporting
 
 Every run writes `sync-report.json` next to the run and renders it into
-the step summary plus a fixed-title issue **"[mod-hub-sync] Upstream sync
-report"** (its body is overwritten on every run and embeds a hidden
-JSON block, so agents and humans read the same source). A failed
-`apply` opens a separate alert issue.
+the job summary — the only report channel. The old fixed-title tracking
+issue **"[mod-hub-sync] Upstream sync report"** is gone (2026-11): this
+repo announces work through squash-merged PRs with gitmoji titles
+(AGENTS.md §1), and the sync's one repo-visible output (the relay
+digest doc) already lands that way; a report that changes nothing in
+the repository is run metadata, not an announcement. A failed `apply`
+still opens a separate alert issue — an actionable incident signal on
+an unattended schedule (the `issue` subcommand dedupes onto the single
+open alert issue), and the only issue this automation ever posts.
 
 #### Runbook
 
