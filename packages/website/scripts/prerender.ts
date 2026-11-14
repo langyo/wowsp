@@ -25,7 +25,7 @@
 import { createServer } from "vite";
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
 
 const pkgDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = resolve(pkgDir, "../../dist/website");
@@ -42,10 +42,6 @@ const LOCALES = ["zh-Hans", "en"];
 // In-project TS stubs swapped in for browser-only CJS deps during
 // prerendering (loaded through the Vite pipeline, hence .ts sources).
 const xtermStub = fileURLToPath(new URL("../src/prerender/stubs/xterm.ts", import.meta.url));
-const hljsStubUrl = pathToFileURL(
-  fileURLToPath(new URL("../src/prerender/stubs/hljs.ts", import.meta.url)),
-).href;
-
 // Locale picker — MUST mirror main.ts loadLocale + locales.ts
 // detectLocale (localStorage key, valid set, navigator fallback) and
 // main.ts's document.documentElement.lang update. Runs inline right
@@ -149,13 +145,6 @@ const server = await createServer({
         const ssr = options?.ssr ?? this.environment?.name === "ssr";
         if (!ssr) return null;
         if (id === "\0prerender-style-stub") return "export default {}";
-        // highlight.js's es/core.js shim re-exports ../lib/core.js,
-        // whose raw CJS cannot be evaluated as ESM by the runner
-        // (dev/build wrap it; the runner does not) — hand the import
-        // the TS stub instead, through the normal pipeline.
-        if (id.replace(/\\/g, "/").endsWith("highlight.js/lib/core.js")) {
-          return `export { default } from ${JSON.stringify(hljsStubUrl)}`;
-        }
         return null;
       },
     },

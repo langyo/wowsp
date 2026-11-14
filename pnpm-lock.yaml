@@ -45,7 +45,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55.327
-        version: 0.55.373(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.393(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -98,7 +98,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55.327
-        version: 0.55.373(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.393(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -141,7 +141,7 @@ importers:
     dependencies:
       '@celestia-island/hikari':
         specifier: ^0.55.327
-        version: 0.55.373(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        version: 0.55.393(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -200,9 +200,6 @@ importers:
       happy-dom:
         specifier: ^21
         version: 21.0.4
-      highlight.js:
-        specifier: 11.12.0
-        version: 11.12.0
       sass:
         specifier: ^1
         version: 1.105.1
@@ -414,8 +411,8 @@ packages:
   '@bytecodealliance/preview2-shim@0.31.1':
     resolution: {integrity: sha512-uDVB/IhExDW70TquqVx2l2Q5uwwpH7r5M2ltYccux+0YxXBm4TvqyNHTyYxcoLBsoAar28o7uZSj7GOKVx9uvA==}
 
-  '@celestia-island/hikari@0.55.373':
-    resolution: {integrity: sha512-nt2TChncah9cEyz57RykGtsneqqBLmAozGO5CDTwhkjoW1ytir3p5m2dfx6hM2wZy42oBht7FAZVvmnTtMg9nw==}
+  '@celestia-island/hikari@0.55.393':
+    resolution: {integrity: sha512-LViXp0087sH46Yx4DIVhurZctqB5PVlnXO3cxsMjR1gQD1owf9fEIT4RPWl8OsbimiXpvTf3QOdjX/K8+du9fQ==}
     peerDependencies:
       '@types/three': ^0.185
       pinia: ^3
@@ -2281,10 +2278,6 @@ packages:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
 
-  highlight.js@11.12.0:
-    resolution: {integrity: sha512-nbfWpyRMcMrPMmDwJB+dhX/eiaPKtc2RB+0QZskqJ3WjRA/FDS0e9hZrx8EC/lbEv8gXy98FcDbNa/dspAaJMg==}
-    engines: {node: '>=12.0.0'}
-
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
 
@@ -3437,7 +3430,7 @@ snapshots:
     dependencies:
       '@bytecodealliance/jco-node-fs': 0.3.2
 
-  '@celestia-island/hikari@0.55.373(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.393(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.31.1
       '@celestia-island/tairitsu-transport': 0.2.0
@@ -3446,7 +3439,6 @@ snapshots:
       '@xterm/addon-image': 0.10.0-beta.332(@xterm/xterm@6.1.0-beta.337)
       '@xterm/xterm': 6.1.0-beta.337
       dompurify: 3.4.17
-      highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
       marked: 18.2.0
       three: 0.186.1
@@ -3454,7 +3446,7 @@ snapshots:
     optionalDependencies:
       pinia: 4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2))
 
-  '@celestia-island/hikari@0.55.373(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
+  '@celestia-island/hikari@0.55.393(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.31.1
       '@celestia-island/tairitsu-transport': 0.2.0
@@ -3463,7 +3455,6 @@ snapshots:
       '@xterm/addon-image': 0.10.0-beta.332(@xterm/xterm@6.1.0-beta.337)
       '@xterm/xterm': 6.1.0-beta.337
       dompurify: 3.4.17
-      highlight.js: 11.12.0
       lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
       marked: 18.2.0
       three: 0.185.1
@@ -4988,8 +4979,6 @@ snapshots:
       - utf-8-validate
 
   has-flag@4.0.0: {}
-
-  highlight.js@11.12.0: {}
 
   hookable@5.5.3: {}
 
