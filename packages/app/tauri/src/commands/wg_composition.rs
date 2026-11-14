@@ -688,7 +688,7 @@ mod tests {
             air_veteran: true,
             sub_veteran: false,
         };
-        let json = serde_json::to_value(&v).unwrap();
+        let json = serde_json::to_value(v).unwrap();
         assert_eq!(
             json,
             serde_json::json!({

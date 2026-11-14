@@ -981,7 +981,7 @@ mod tests {
 
         let from = local_ts(2026, 10, 26, 0, 0);
         let to = local_ts(2026, 10, 27, 0, 0);
-        let (scanned, candidates) = walk_candidates(&[root.0.clone()], from, to);
+        let (scanned, candidates) = walk_candidates(std::slice::from_ref(&root.0), from, to);
         assert_eq!(scanned, 6, "the walk sees every replay file");
         assert_eq!(candidates.len(), 2, "only pvp/ranked inside the window");
         assert_eq!(candidates[0].date_time, "20261026_120000");
@@ -1012,7 +1012,7 @@ mod tests {
         let appdata = TempDir::new("modes-appdata");
         let log = scan_cached(
             &appdata.0,
-            &[root.0.clone()],
+            std::slice::from_ref(&root.0),
             42,
             local_ts(2026, 10, 26, 0, 0),
             local_ts(2026, 10, 27, 0, 0),
@@ -1044,11 +1044,13 @@ mod tests {
         let appdata = TempDir::new("fail-appdata");
         let from = local_ts(2026, 10, 26, 0, 0);
         let to = local_ts(2026, 10, 27, 0, 0);
-        let first = scan_cached(&appdata.0, &[root.0.clone()], 42, from, to, 8).expect("scan");
+        let first =
+            scan_cached(&appdata.0, std::slice::from_ref(&root.0), 42, from, to, 8).expect("scan");
         assert_eq!((first.decoded, first.cache_hits, first.pending), (0, 0, 0));
         // No negative cache: the next call spends the budget on the same file
         // again (the retry-later contract) instead of answering it.
-        let second = scan_cached(&appdata.0, &[root.0.clone()], 42, from, to, 8).expect("scan");
+        let second =
+            scan_cached(&appdata.0, std::slice::from_ref(&root.0), 42, from, to, 8).expect("scan");
         assert_eq!(second.decoded, 0);
         assert_eq!(second.cache_hits, 0);
         assert!(!appdata.0.join(CACHE_FILE).exists());
@@ -1110,7 +1112,8 @@ mod tests {
 
         // Budget 1: the five cached candidates are free; the sixth is skipped
         // (and reported) once the single fresh decode is spent on it.
-        let log = scan_cached(&appdata.0, &[root.0.clone()], 42, from, to, 1).expect("scan");
+        let log =
+            scan_cached(&appdata.0, std::slice::from_ref(&root.0), 42, from, to, 1).expect("scan");
         assert_eq!(log.scanned, 6);
         assert_eq!(
             log.decoded, 0,
@@ -1132,7 +1135,7 @@ mod tests {
         // Budget 0: only the cache is consulted, the one undecoded candidate is
         // pending — the shape the webui's follow-up rounds consume.
         let cached_only =
-            scan_cached(&appdata.0, &[root.0.clone()], 42, from, to, 0).expect("scan");
+            scan_cached(&appdata.0, std::slice::from_ref(&root.0), 42, from, to, 0).expect("scan");
         assert_eq!(cached_only.cache_hits, 5);
         assert_eq!(cached_only.pending, 1);
         assert_eq!(cached_only.decoded, 0);

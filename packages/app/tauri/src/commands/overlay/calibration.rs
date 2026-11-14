@@ -1247,8 +1247,7 @@ mod tests {
                 height: 14,
                 green: (300, 500),
                 red: Some((502, 700)),
-            }
-            .into(),
+            },
             roster: StoredRoster {
                 rect: wowsp_tauri_shared::Rect {
                     x: 300,
@@ -1258,8 +1257,7 @@ mod tests {
                 },
                 row_centers: vec![100, 150, 200],
                 team_split: 0.5,
-            }
-            .into(),
+            },
             team_sizes: (7, 7),
             profile: StoredProfile::Kind,
             stable_presses,
@@ -1269,9 +1267,11 @@ mod tests {
     }
 
     fn ctx_with_entry(key: &LiveKey, stable_presses: u32) -> CalibrationCtx {
-        let mut ctx = CalibrationCtx::default();
-        ctx.client_key = Some(key.client_key.clone());
-        ctx.path = Some(PathBuf::from("N:/nonexistent/ignored.toml"));
+        let mut ctx = CalibrationCtx {
+            client_key: Some(key.client_key.clone()),
+            path: Some(PathBuf::from("N:/nonexistent/ignored.toml")),
+            ..Default::default()
+        };
         *ctx.store.entry_mut(key.class) = Some(entry(key, stable_presses));
         ctx
     }

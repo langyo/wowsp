@@ -26,11 +26,7 @@ pub(crate) static TEST_EXTRACT_CAPS: std::sync::Mutex<Option<(usize, u64, u64)>>
 /// The active extraction budgets (entries, per-file bytes, total bytes).
 fn extract_caps() -> (usize, u64, u64) {
     #[cfg(test)]
-    if let Some(caps) = TEST_EXTRACT_CAPS
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
-        .clone()
-    {
+    if let Some(caps) = *TEST_EXTRACT_CAPS.lock().unwrap_or_else(|p| p.into_inner()) {
         return caps;
     }
     (

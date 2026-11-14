@@ -336,7 +336,7 @@ mod tests {
         let b = dir.join("20261014_091500_b.korablireplay");
         let payload_a = vec![0x12u8, 0x32, 0x34, 0x11]
             .into_iter()
-            .chain(std::iter::repeat(0x5a).take(8192))
+            .chain(std::iter::repeat_n(0x5a, 8192))
             .collect::<Vec<_>>();
         let payload_b = b"korabli payload".repeat(100);
         let facts = ReplayFactsCore::default();
@@ -437,7 +437,7 @@ mod tests {
                 .unwrap();
             header.set_cksum();
             builder
-                .append(&mut header, std::io::Cursor::new(&payload_b))
+                .append(&header, std::io::Cursor::new(&payload_b))
                 .unwrap();
             builder.into_inner().unwrap().finish().unwrap();
         }

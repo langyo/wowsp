@@ -4459,19 +4459,17 @@ mod tests {
                 .collect(),
         );
         let mut shells = Vec::new();
-        let mut salvo_id = 0;
-        for k in 0..5u32 {
+        for (salvo_id, k) in (0..5u32).enumerate() {
             for b in 0..5u16 {
                 shells.push(shell(
                     100.0 + k as f32 * 12.0,
                     9,
-                    salvo_id,
+                    salvo_id as i32,
                     b,
                     (10.0 + k as f32 * 0.1, 0.5),
                     (50.0, 0.0),
                 ));
             }
-            salvo_id += 1;
         }
         let stream = ReplayStream {
             ally_builds: Vec::new(),
@@ -4542,7 +4540,7 @@ mod tests {
     fn synthetic_salvo_grouping_splits_on_class_and_gap() {
         // Interleaved main (barrel 0/1) and secondary (barrel 40/41) shells
         // within one click merge into one event per class.
-        let shells = vec![
+        let shells = [
             shell(10.0, 9, 1, 0, (0.0, 0.0), (50.0, 0.0)),
             shell(10.1, 9, 5, 40, (0.0, 0.0), (20.0, 0.0)),
             shell(10.2, 9, 2, 1, (0.0, 0.0), (50.0, 0.0)),
@@ -4560,7 +4558,7 @@ mod tests {
         assert!(grouped[2].main_battery);
         // A > 2 s gap within one class splits even when the salvo id is
         // identical.
-        let shells2 = vec![
+        let shells2 = [
             shell(10.0, 9, 1, 0, (0.0, 0.0), (50.0, 0.0)),
             shell(15.0, 9, 1, 1, (0.0, 0.0), (50.0, 0.0)),
         ];
@@ -5293,9 +5291,11 @@ mod tests {
             }
         }
         // Ally 7 mounts radar (PCY019_RLSSearch) — the only radar build.
-        let mut radar_build = PlayerBuild::default();
-        radar_build.entity_id = 7;
-        radar_build.abilities = vec![4_274_167_728];
+        let radar_build = PlayerBuild {
+            entity_id: 7,
+            abilities: vec![4_274_167_728],
+            ..Default::default()
+        };
         let stream = ReplayStream {
             trajectories: vec![mk(9, 10.0, 222), traj8, mk(7, 30.0, 110)],
             recorder_vehicle_id: Some(8),
@@ -5475,7 +5475,7 @@ mod tests {
         assert_eq!(r101.friends.len(), 1);
         let f7 = &r101.friends[0];
         assert_eq!(f7.entity_id, 7);
-        assert!(f7.is_enemy == false);
+        assert!(!f7.is_enemy);
         assert!(!f7.radar_lit);
         assert_eq!(f7.spotted_now, Some(true));
         // Serialization: v2 keys, camelCase.
@@ -5629,9 +5629,8 @@ mod tests {
         // and when they do, the explicit spotted verdicts must cover a real
         // share of slots (the reference 15.8 capture fires ~1.8k events).
         let expect_e11 = e11_events_expected(stream.version.as_deref());
-        assert_eq!(
+        assert!(
             rows.iter().all(|r| r.e11_events_known == expect_e11),
-            true,
             "e11EventsKnown must match the version gate uniformly"
         );
         if expect_e11 {
@@ -5784,7 +5783,7 @@ mod tests {
                 *per_owner.entry(k.owner_id).or_default() += 1;
             }
             let mut top: Vec<(i32, usize)> = per_owner.into_iter().collect();
-            top.sort_by(|a, b| b.1.cmp(&a.1));
+            top.sort_by_key(|item| std::cmp::Reverse(item.1));
             let top5: Vec<String> = top
                 .iter()
                 .take(5)
@@ -6896,7 +6895,7 @@ mod tests {
                 .count()
         );
         // Wire shape: camelCase flattened row + the own-torpedo columns.
-        let js = serde_json::to_value(&launched).expect("serialize row");
+        let js = serde_json::to_value(launched).expect("serialize row");
         assert_eq!(js["labelACanLaunch"], true);
         assert_eq!(js["labelBLaunched"], true);
         assert!(js.get("ownTorpReloadFrac").is_some());
