@@ -1,16 +1,17 @@
 import { defineStore } from "pinia";
 import { ref } from "vue";
 
-/** Registry of long-running loads ("加载战绩中…"-style persistent progress).
+/** Registry of long-running loads ("加载战绩中"-style persistent progress).
  *
  *  Persistent loading feedback used to ride the global toast slot — a
  *  top-right stack that squatted the corner for the whole load. This store
  *  moves that feedback into the title bar: callers begin(label) when a
  *  load starts and end(id) when it settles, and the TitlebarLoading chip
- *  (left of the settings gear) shows the newest label, collapsing
- *  concurrent loads into "+N". Transient result toasts (success / error /
- *  warning / info) are NOT affected — they keep their auto-dismissing
- *  toast slots. */
+ *  (left of the settings gear) shows the newest label — identical
+ *  concurrent loads (the same label more than once) merge onto ONE chip
+ *  with a count suffix, each further distinct label folds into the
+ *  group's "+N". Transient result toasts (success / error / warning /
+ *  info) are NOT affected — they keep their auto-dismissing toast slots. */
 export const useLoadingTasksStore = defineStore("loadingTasks", () => {
   /** Active tasks in start order (the chip renders the newest). */
   const tasks = ref<{ id: number; label: string }[]>([]);
