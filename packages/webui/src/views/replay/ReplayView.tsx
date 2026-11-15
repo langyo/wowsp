@@ -1,4 +1,15 @@
-import { computed, defineComponent, markRaw, onMounted, onUnmounted, ref, watch, type VNode } from "vue";
+import {
+  computed,
+  defineComponent,
+  markRaw,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  watch,
+  type PropType,
+  type VNode,
+} from "vue";
 import { Copy, Eye, EyeOff, FileUp, FolderOpen, FolderSearch, RefreshCw, X } from "@lucide/vue";
 
 import { useReplayParser } from "@/features/replay/useReplayParser";
@@ -1801,6 +1812,212 @@ const ChatTimeline = defineComponent({
   },
 });
 
+/** The server tag of an entry — realm first ("ASIA"/"CN"/"RU"), else the
+ *  client kind's label, else empty for a file under no detected install.
+ *  One vocabulary for the cards, the count row and the client filter. */
+function serverTagOfMeta(r: ReplayMetaLite): string {
+  return serverTagOf(r.installKind, r.installRealm);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Rail cards — incremental rendering
+// ─────────────────────────────────────────────────────────────────────────
+
+/** How many rail cards one page holds. A long-lived player's replay folder
+ *  runs to hundreds of files and a heavy player's to thousands; a card is
+ *  not free to build (offline-DB ship resolution, the layered mode-label
+ *  pipeline, date/map formatting), so rendering the whole list up front put
+ *  every file on the first paint. 200 cards already overfill any rail
+ *  viewport several times over, which makes the page boundary invisible
+ *  while bounding the initial work; the rest appends one page per
+ *  scroll-to-the-end (see the rail's tail sentinel in the render below). */
+export const REPLAY_CARD_PAGE = 200;
+
+/** One more page, clamped to the total. Pure and exported so the paging
+ *  boundary is unit-testable without mounting this view. */
+export function nextCardPageCount(
+  current: number,
+  total: number,
+  page = REPLAY_CARD_PAGE,
+): number {
+  return Math.min(total, current + page);
+}
+
+/** The rail's visible head for a page count — order preserved, only a TAIL
+ *  is ever withheld (so the sort the filter produced still reads top-down). */
+export function cardPageSlice<T>(cards: readonly T[], count: number): T[] {
+  return cards.slice(0, Math.max(0, count));
+}
+
+/**
+ * One replay info card. `external` cards are session-temporary picks from
+ * outside the game folder — they carry an "external" pill and a corner X
+ * icon (a sibling of the card button, so no nested buttons). Their key is
+ * namespaced by the caller so a pick that also exists in the scanned folder
+ * can't collide with the regular card's key.
+ *
+ * A COMPONENT (not a render helper returning bare nodes) on PURPOSE: Vue
+ * re-renders a child only when its props change, so opening a replay — where
+ * `active` flips for exactly two cards — no longer re-runs the offline-DB
+ * ship lookup and the mode-label pipeline for the WHOLE rail, which is what
+ * a plain `renderReplayCard(r)` call inside the view's render function did
+ * on every interaction. This is the memo boundary; keep it intact:
+ *
+ * - `active` is a PROP, never a `parser.selectedPath` read inside the card —
+ *   reading the selection here would subscribe every card to it and re-render
+ *   them all on each click (the cost this split exists to remove).
+ * - The open/close handlers arrive as emit listeners; the host passes its
+ *   stable setup-scope functions, never a per-card closure (a fresh closure
+ *   per card would re-render that card on every parent render).
+ */
+export const ReplayCard = defineComponent({
+  name: "ReplayCard",
+  props: {
+    /** The scanned entry (or session-temporary pick) this card shows. */
+    replay: { type: Object as PropType<ReplayMetaLite>, required: true },
+    /** Session-temporary pick from outside the game folder: renders the
+     *  "external" pill and the corner close action. */
+    external: { type: Boolean, default: false },
+    /** Is this the OPEN replay? Drives the active outline only — see the
+     *  prop-not-read note above. */
+    active: { type: Boolean, default: false },
+  },
+  emits: {
+    /** Activate this card: the host parses the replay (and raises the phone
+     *  detail sheet). */
+    open: (_path: string) => true,
+    /** Drop a session-temporary external entry. */
+    close: (_path: string) => true,
+  },
+  setup(props, { emit }) {
+    const { dataLanguage } = useLanguage();
+    const mapLang = computed(() => dataLanguage.value);
+    // Player markers (玩家标记) tint the recording player's name; the store is
+    // shared with the roster below, so the read is cheap and re-renders only
+    // when a marker actually changes.
+    const markers = useMarkersStore();
+    return () => {
+      const r = props.replay;
+      const external = props.external;
+      // The lite scanner only carries the own ship's id — resolve the
+      // localized name + class off the offline DB (same pattern as the
+      // roster panels); cards without a resolvable ship keep the old foot.
+      const ownEntry = r.ownShipId != null ? shipOfflineEntry(r.ownShipId) : null;
+      const shipName =
+        r.ownShipId != null ? shipNameFromOfflineDb(r.ownShipId, dataLanguage.value) : null;
+      const ownShipType = ownEntry?.type ?? null;
+      // The card's title is the RECORDING PLAYER, not the hull: a client
+      // shared by several accounts (the same install played by different
+      // nicknames in turn) is told apart by exactly this line, and the
+      // player filter above the rail groups by it. The hull rides the foot.
+      const serverTag = serverTagOfMeta(r);
+      return (
+        <li class="replay-view__item">
+          <button
+            type="button"
+            class={[
+              "replay-card",
+              external ? "replay-card--external" : "",
+              props.active ? "replay-card--active" : "",
+            ]}
+            onClick={() => emit("open", r.path)}
+          >
+            <div class="replay-card__top">
+              {/* The recording player's nickname is a player surface too —
+                  right-click opens the shared marker/context menu (the
+                  app-global binding resolves the attrs; unknown stays inert). */}
+              {(() => {
+                const color = r.playerName ? markers.colorOf(r.playerName) : null;
+                return (
+                  <span
+                    class={["replay-card__ship", markerTintClass(color)]}
+                    data-player-name={r.playerName ?? undefined}
+                    data-player-realm={r.installRealm ?? undefined}
+                    data-hint={color ? markerColorLabel(color) : undefined}
+                  >
+                    {r.playerName ?? t("replay.list.unknownPlayer")}
+                  </span>
+                );
+              })()}
+              <span class="replay-card__pills">
+                {external ? (
+                  <AppTag tone="primary">{t("replay.external.tag")}</AppTag>
+                ) : null}
+                {/* The replay's server — which client's folder it came from.
+                    The rail mixes every detected client now, so each card
+                    says where it belongs; entries under no known install
+                    (a picked file, the phone's managed dir) carry none. */}
+                {serverTag ? <AppTag tone="default">{serverTag}</AppTag> : null}
+                {r.matchGroup ? (
+                  <AppTag
+                    color={
+                      modeColor(
+                        r.matchGroup,
+                        r.scenario,
+                        r.eventType,
+                        r.botCount ?? 0,
+                        r.scriptedUnitCount ?? 0,
+                        // The lite row carries only the scan's summary
+                        // counts: a pve-family operation with players but no
+                        // enemy side is a story operation (行动) even when
+                        // its descriptor has no scenario/script fingerprint.
+                        singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
+                      ).color
+                    }
+                  >
+                    {modeLabel(
+                      r.matchGroup,
+                      r.scenario,
+                      r.eventType,
+                      r.botCount ?? 0,
+                      r.scriptedUnitCount ?? 0,
+                      singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
+                    )}
+                  </AppTag>
+                ) : null}
+              </span>
+            </div>
+            <div class="replay-card__row">
+              <span class="replay-card__label">{t("replay.matchTime")}</span>
+              <span class="replay-card__val">{formatDateTime(r.dateTime)}</span>
+            </div>
+            <div class="replay-card__row">
+              <span class="replay-card__label">{t("replay.mapLabel")}</span>
+              <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
+            </div>
+            <div class="replay-card__foot">
+              {shipName && ownEntry ? (
+                <span
+                  class="replay-card__vessel"
+                  data-hint-card={ownShipHintCard(ownEntry, shipName, dataLanguage.value)}
+                >
+                  {ownShipType ? (
+                    <BattleIcon type={ownShipType} variant="plain" size={17} />
+                  ) : null}
+                  <span class="replay-card__vessel-name">{shipName}</span>
+                </span>
+              ) : null}
+              <span class="replay-card__players">
+                {t("replay.players", { n: r.playerCount })}
+              </span>
+            </div>
+          </button>
+          {external ? (
+            <button
+              type="button"
+              class="replay-card__close"
+              onClick={() => emit("close", r.path)}
+              aria-label={t("replay.external.close")}
+            >
+              <X size={12} />
+            </button>
+          ) : null}
+        </li>
+      );
+    };
+  },
+});
+
 /**
  * Standalone review view (Mode 1). The left rail lists replays as info cards
  * indexed by match time / mode / own ship / map; picking one opens the detail
@@ -1835,6 +2052,76 @@ export default defineComponent({
       parser.list.value.filter((r) => !gd.config.isIgnoredPath(r.installPath)),
     );
     const listFilter = useReplayListFilter(scannedReplays, parser.external);
+
+    // ── rail paging ─────────────────────────────────────────────────────
+    // Only the first REPLAY_CARD_PAGE cards are built; scrolling to the
+    // rail's end appends one more page (see the tail sentinel in the render).
+    // The first page is what the player sees on entry and 200 cards overfill
+    // any rail, so the boundary is invisible while the initial render stays
+    // bounded however many files the folder holds.
+    const cardPage = ref(REPLAY_CARD_PAGE);
+    /** The rail's cards as ONE ordered sequence: session-temporary externals
+     *  first (they stay pinned above the scanned list), then the filtered
+     *  scan. Paging across the join keeps the two blocks contiguous — a page
+     *  boundary may fall inside either block but never reorders them. */
+    const railCards = computed(() => {
+      const externals = listFilter.visibleExternal.value.map((r) => ({ r, external: true }));
+      const scan = listFilter.visibleList.value.map((r) => ({ r, external: false }));
+      return [...externals, ...scan];
+    });
+    /** Paging is driven by an IntersectionObserver on the rail's tail. A
+     *  runtime WITHOUT one (nothing WoWSP ships on) must never be left
+     *  truncated at one page, so it falls back to the old render-everything
+     *  behaviour — the sentinel then never exists either. */
+    const canPage = typeof IntersectionObserver !== "undefined";
+    const shownCards = computed(() =>
+      canPage ? cardPageSlice(railCards.value, cardPage.value) : railCards.value,
+    );
+    const hasMoreCards = computed(() => shownCards.value.length < railCards.value.length);
+    // Every filter/sort/reload hands back a fresh array — rewind to one page.
+    watch(railCards, () => resetCardPage());
+    /** The tail sentinel element. It exists only while a page is withheld. */
+    const railEnd = ref<HTMLElement | null>(null);
+    let railEndObserver: IntersectionObserver | null = null;
+    function appendCardPage() {
+      if (!hasMoreCards.value) return;
+      cardPage.value = nextCardPageCount(cardPage.value, railCards.value.length);
+    }
+    /** Append while the sentinel is still inside the viewport. Intersection
+     *  events fire on STATE CHANGES only, so a page appended on a tall
+     *  viewport can leave the sentinel visible where no second event would
+     *  ever arrive — this re-checks after the DOM flush and keeps going
+     *  until the sentinel is pushed below the fold or the cards run out
+     *  (bounded by the list length, one page per step). */
+    function fillCardsBelow(viewportBottom: number) {
+      if (!hasMoreCards.value) return;
+      const el = railEnd.value;
+      if (!el || el.getBoundingClientRect().top > viewportBottom) return;
+      appendCardPage();
+      void nextTick(() => fillCardsBelow(viewportBottom));
+    }
+    // Arm/disarm the observer with the sentinel: `v-if` mounts it only while
+    // more cards exist, so the callback can never append past the end.
+    watch(
+      railEnd,
+      (el) => {
+        railEndObserver?.disconnect();
+        railEndObserver = null;
+        if (!el || typeof IntersectionObserver === "undefined") return;
+        railEndObserver = new IntersectionObserver((entries) => {
+          if (entries.some((e) => e.isIntersecting)) {
+            fillCardsBelow(window.innerHeight || 0);
+          }
+        });
+        railEndObserver.observe(el);
+      },
+      { flush: "post" },
+    );
+    onUnmounted(() => {
+      railEndObserver?.disconnect();
+      railEndObserver = null;
+    });
+
     // The live battle has its own page (/live) now; this view only refreshes
     // the replay list when the game EXITS so the finished match appears
     // without a manual refresh (the game writes the .wowsreplay at battle
@@ -1866,13 +2153,6 @@ export default defineComponent({
     });
 
     const hasClient = computed(() => gd.config.installs.length > 0);
-
-    /** The server tag of an entry — realm first ("ASIA"/"CN"/"RU"), else the
-     *  client kind's label, else empty for a file under no detected install.
-     *  One vocabulary for the cards, the count row and the client filter. */
-    function serverTagOfMeta(r: ReplayMetaLite): string {
-      return serverTagOf(r.installKind, r.installRealm);
-    }
 
     /** The realm the OPEN replay's own client carries, when the scan tagged
      *  it. The rail now mixes clients, so roster lookups must follow the
@@ -2596,132 +2876,22 @@ export default defineComponent({
       }
     }
 
-    /** One replay info card. `external` cards are session-temporary picks
-     *  from outside the game folder — they carry an "external" pill and a
-     *  corner X icon (a sibling of the card button, so no nested buttons). Their
-     *  key is namespaced so a pick that also exists in the scanned folder
-     *  can't collide with the regular card's key. */
-    function renderReplayCard(r: ReplayMetaLite, external: boolean) {
-      // The lite scanner only carries the own ship's id — resolve the
-      // localized name + class off the offline DB (same pattern as the
-      // roster panels); cards without a resolvable ship keep the old foot.
-      const ownEntry = r.ownShipId != null ? shipOfflineEntry(r.ownShipId) : null;
-      const shipName =
-        r.ownShipId != null ? shipNameFromOfflineDb(r.ownShipId, dataLanguage.value) : null;
-      const ownShipType = ownEntry?.type ?? null;
-      // The card's title is the RECORDING PLAYER, not the hull: a client
-      // shared by several accounts (the same install played by different
-      // nicknames in turn) is told apart by exactly this line, and the
-      // player filter above the rail groups by it. The hull rides the foot.
-      const serverTag = serverTagOfMeta(r);
-      return (
-        <li key={external ? `ext_${r.path}` : r.path} class="replay-view__item">
-          <button
-            type="button"
-            class={[
-              "replay-card",
-              external ? "replay-card--external" : "",
-              parser.selectedPath.value === r.path
-                ? "replay-card--active"
-                : "",
-            ]}
-            onClick={() => {
-              void parser.open(r.path);
-              if (phoneLayout.value) detailSheetOpen.value = true;
-            }}
-          >
-            <div class="replay-card__top">
-              {/* The recording player's nickname is a player surface too —
-                  right-click opens the shared marker/context menu (the
-                  app-global binding resolves the attrs; unknown stays inert). */}
-              {(() => {
-                const color = r.playerName ? markers.colorOf(r.playerName) : null;
-                return (
-                  <span
-                    class={["replay-card__ship", markerTintClass(color)]}
-                    data-player-name={r.playerName ?? undefined}
-                    data-player-realm={r.installRealm ?? undefined}
-                    data-hint={color ? markerColorLabel(color) : undefined}
-                  >
-                    {r.playerName ?? t("replay.list.unknownPlayer")}
-                  </span>
-                );
-              })()}
-              <span class="replay-card__pills">
-                {external ? (
-                  <AppTag tone="primary">{t("replay.external.tag")}</AppTag>
-                ) : null}
-                {/* The replay's server — which client's folder it came from.
-                    The rail mixes every detected client now, so each card
-                    says where it belongs; entries under no known install
-                    (a picked file, the phone's managed dir) carry none. */}
-                {serverTag ? <AppTag tone="default">{serverTag}</AppTag> : null}
-                {r.matchGroup ? (
-                  <AppTag
-                    color={
-                      modeColor(
-                        r.matchGroup,
-                        r.scenario,
-                        r.eventType,
-                        r.botCount ?? 0,
-                        r.scriptedUnitCount ?? 0,
-                        // The lite row carries only the scan's summary
-                        // counts: a pve-family operation with players but no
-                        // enemy side is a story operation (行动) even when
-                        // its descriptor has no scenario/script fingerprint.
-                        singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
-                      ).color
-                    }
-                  >
-                    {modeLabel(
-                      r.matchGroup,
-                      r.scenario,
-                      r.eventType,
-                      r.botCount ?? 0,
-                      r.scriptedUnitCount ?? 0,
-                      singleTeamRosterFromCounts(r.playerCount, r.enemyCount),
-                    )}
-                  </AppTag>
-                ) : null}
-              </span>
-            </div>
-            <div class="replay-card__row">
-              <span class="replay-card__label">{t("replay.matchTime")}</span>
-              <span class="replay-card__val">{formatDateTime(r.dateTime)}</span>
-            </div>
-            <div class="replay-card__row">
-              <span class="replay-card__label">{t("replay.mapLabel")}</span>
-              <span class="replay-card__val">{displayMapName(r.mapName, mapLang.value)}</span>
-            </div>
-            <div class="replay-card__foot">
-              {shipName && ownEntry ? (
-                <span
-                  class="replay-card__vessel"
-                  data-hint-card={ownShipHintCard(ownEntry, shipName, dataLanguage.value)}
-                >
-                  {ownShipType ? (
-                    <BattleIcon type={ownShipType} variant="plain" size={17} />
-                  ) : null}
-                  <span class="replay-card__vessel-name">{shipName}</span>
-                </span>
-              ) : null}
-              <span class="replay-card__players">
-                {t("replay.players", { n: r.playerCount })}
-              </span>
-            </div>
-          </button>
-          {external ? (
-            <button
-              type="button"
-              class="replay-card__close"
-              onClick={() => onCloseExternal(r.path)}
-              aria-label={t("replay.external.close")}
-            >
-              <X size={12} />
-            </button>
-          ) : null}
-        </li>
-      );
+    /** Restart the rail's card paging. The page count only ever grows by
+     *  scrolling, so a filter/sort/reload (which swaps the whole visible
+     *  array) rewinds it — a narrowing filter must not leave the rail
+     *  holding the cards an earlier, wider page had already materialized. */
+    function resetCardPage() {
+      cardPage.value = REPLAY_CARD_PAGE;
+    }
+
+    /** Open a card's replay — the phone layout also raises the detail sheet
+     *  (desktop keeps the inline pane). ONE handler shared by every card:
+     *  a per-card closure would break the card component's prop comparison
+     *  and re-render the card on every parent render, which is exactly the
+     *  cost the component split removed. */
+    function openCard(path: string) {
+      void parser.open(path);
+      if (phoneLayout.value) detailSheetOpen.value = true;
     }
 
     return () => {
@@ -3211,13 +3381,38 @@ export default defineComponent({
                    so the state is self-explanatory (and clearable). */
                 <p class="replay-view__empty">{t("replay.filter.noMatch")}</p>
               ) : (
-                <ul class="replay-view__items">
-                  {/* Manually picked files (session-temporary) stay pinned
-                      above the scanned list; the filter and the sort apply to
-                      both blocks independently. */}
-                  {listFilter.visibleExternal.value.map((r) => renderReplayCard(r, true))}
-                  {listFilter.visibleList.value.map((r) => renderReplayCard(r, false))}
-                </ul>
+                <>
+                  <ul class="replay-view__items">
+                    {/* Manually picked files (session-temporary) stay pinned
+                        above the scanned list; the filter and the sort apply to
+                        both blocks independently. Only the cards the current
+                        page covers are built (see railCards), and each card is
+                        its OWN component — the `active` flag changes for two
+                        cards on a click, so only those two re-render. */}
+                    {shownCards.value.map(({ r, external }) => (
+                      <ReplayCard
+                        key={external ? `ext_${r.path}` : r.path}
+                        replay={r}
+                        external={external}
+                        active={parser.selectedPath.value === r.path}
+                        onOpen={openCard}
+                        onClose={onCloseExternal}
+                      />
+                    ))}
+                  </ul>
+                  {/* Rail tail sentinel: the next page appends when this
+                      reaches the viewport (one 1px, non-scrolling line — the
+                      observer needs a laid-out box, and the height keeps it
+                      measurable on every engine). */}
+                  {hasMoreCards.value ? (
+                    <div
+                      ref={railEnd}
+                      class="replay-view__list-end"
+                      style={{ height: "1px" }}
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                </>
               )}
             </div>
           </HkScrollContainer>
