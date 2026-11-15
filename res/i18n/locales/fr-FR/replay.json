@@ -38,7 +38,7 @@
   },
   "client": "Client",
   "refresh": "Actualiser",
-  "loading": "Analyse du replay…",
+  "loading": "Analyse du replay",
   "select": "Sélectionnez un replay dans la liste pour le charger.",
   "players": "{n} joueurs",
   "mode": {

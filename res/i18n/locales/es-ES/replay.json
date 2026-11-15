@@ -38,7 +38,7 @@
   },
   "client": "Cliente",
   "refresh": "Actualizar",
-  "loading": "Analizando repetición…",
+  "loading": "Analizando repetición",
   "select": "Selecciona una repetición de la lista para cargarla.",
   "players": "{n} jugadores",
   "mode": {

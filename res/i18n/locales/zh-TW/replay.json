@@ -38,7 +38,7 @@
   },
   "client": "遊戲用戶端",
   "refresh": "重新整理",
-  "loading": "正在解析錄影…",
+  "loading": "正在解析錄影",
   "select": "從列表中選擇一個錄影以載入。",
   "players": "{n} 人",
   "mode": {
