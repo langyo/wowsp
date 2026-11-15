@@ -38,7 +38,7 @@
   },
   "client": "游戏客户端",
   "refresh": "刷新",
-  "loading": "正在解析录像…",
+  "loading": "正在解析录像",
   "select": "从列表中选择一个录像以加载。",
   "players": "{n} 人",
   "mode": {
