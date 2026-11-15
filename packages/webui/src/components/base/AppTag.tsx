@@ -57,9 +57,11 @@ import "./AppTag.scss";
  * data colors (SelfReportBody's damage-comp chips, TypeSummaryChips), the
  * facet/filter chip CONTROLS (ship-filter-bar__chip, ships-view__chip,
  * the mod hub segmented strips) and the seal/stamp faces (StampTag /
- * DivisionTag / RatingStamp / MapNameTag's jump chip with its own
- * preview-card ref wiring). Everything else that looks like a label MUST
- * render through here.
+ * DivisionTag / RatingStamp). Everything else that looks like a label MUST
+ * render through here — the replay map name's jump chip (MapNameTag) left
+ * this list in the 2026-11-16 pill-standard pass: its preview card now
+ * measures the interactive button AppTag renders instead of a hand-rolled
+ * pill, so the chip wears the standard HkTag-sm face too.
  *
  * `color` paints the tag from a RAW CSS color (any string, theme vars
  * included) instead of a tone: the battle-mode pills key off

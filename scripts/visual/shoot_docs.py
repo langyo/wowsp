@@ -146,8 +146,10 @@ VIEWS: list[dict] = [
         "route": "/replay",
         "ready": "document.querySelector('.replay-card') !== null",
         "extra": "open_first_replay",
+        # The results pill no longer owns a loading face (the WINDOW does), so
+        # the stream-settled signal is the meta header's decode attribute.
         "post_ready": "document.querySelector('.replay-view__detail') !== null"
-                      " && document.querySelector('.replay-view__results--loading') === null",
+                      " && document.querySelector('.replay-view__meta[data-replay-decode=\"settled\"]') !== null",
         "settle": 6.0,
         "timeout": 120.0,
     },

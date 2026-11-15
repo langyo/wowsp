@@ -1,38 +1,15 @@
 /* Map-name tag — the shared "which map am I on" chip (live battle head,
-   replay-review header). Interactive voice: the accent tint marks the tag
-   as a jump, distinct from the quiet neutral action pills beside it, and
-   its box IS the compact pill voice (--text-2xs / 600 / 1.5 / 0.1rem
-   0.55rem / full radius) — no host override needed anywhere. The --plain
-   variant (a space /tactics cannot board) keeps the shape but drops the
-   affordance colors. The preview card lives at <body> level, teleported
-   and fixed-positioned — placement rules in MapNameTag.tsx. */
-.map-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.1rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid rgb(var(--color-accent) / 40%);
-  background: rgb(var(--color-accent) / 12%);
-  color: rgb(var(--color-accent));
-  font-size: var(--text-2xs);
-  font-weight: 600;
-  line-height: 1.5;
-  white-space: nowrap;
-  cursor: pointer;
-}
-
-.map-tag:hover {
-  border-color: rgb(var(--color-accent) / 70%);
-}
-
-/* A space the tactics board cannot host: same tag shape, no affordance. */
-.map-tag--plain {
-  border-color: rgb(var(--color-text) / 15%);
-  background: rgb(var(--color-text) / 6%);
-  color: rgb(var(--color-muted));
-  cursor: default;
-}
+   replay-review header, the holographic report head). The chip FACE is
+   AppTag's: the soft accent voice marks the jump, the quiet outline voice
+   marks a space /tactics cannot board. No pill anatomy lives here — the
+   hand-rolled box this sheet used to restate pressed HkTag-sm 2.2 CSS px
+   taller than every AppTag in the same head row (2026-11-16 review), and
+   AppTag's own interactive hover already carries the affordance. The
+   `.map-tag` / `.map-tag--plain` classes stay as the component's identity
+   hooks (tests match them; hosts position the tag with their own class), and
+   `.map-tag` is the element the preview card measures. The preview card
+   lives at <body> level, teleported and fixed-positioned — placement rules
+   in MapNameTag.tsx. */
 
 .map-tag__card {
   position: fixed;

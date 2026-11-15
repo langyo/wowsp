@@ -1,5 +1,5 @@
 /**
- * LiveStatsModeChip — the stats-source tag: a pill that opens the
+ * LiveStatsModeChip — the stats-source tag: an AppTag pill that opens the
  * filter-style popup hosting THE VERY COLUMN EDITOR the settings page
  * renders (OverlayColumnsEditor — the draggable scope × metric cards +
  * the plus-connector's add menu), so the roster's per-column content is
@@ -13,6 +13,12 @@
  * bar (PostBattleShareBar — riding the replay results modal and its
  * incomplete-results fallback), so both windows offer the identical
  * editor and every edit re-resolves the roster through the shared store.
+ *
+ * The face rides AppTag's outline voice at the standard HkTag-sm rung —
+ * the very 18px every chip in both host rows presses. The hand-rolled
+ * `.live-battle__mode-btn` pill this replaced restated the same anatomy
+ * just over two CSS px taller (20.2px), so the chip read as a misfit
+ * beside the AppTags it sits with (2026-11-16 review).
  *
  * `aiSort` (the results modal's share bar alone) appends a SECOND block
  * under the editor: the AI confidence switch — one knob owning the AI
@@ -29,12 +35,18 @@
  * above: presses inside the editor's NESTED add-connector HkPopover
  * (teleported to body level, outside this anchor's subtree) count as
  * inside. Escape still closes; phones dock the popup as a bottom sheet.
+ *
+ * `anchorRef` rides the wrapper DIV, never the chip face: HkPopover takes
+ * an ELEMENT (not a component), and the anchor must keep covering the
+ * chip subtree across every face re-render, which is exactly the subtree
+ * the shield exempts.
  */
 import { computed, defineComponent, ref } from "vue";
 
 import { HkPopover, HkSwitch } from "@celestia-island/hikari";
 import { ShipWheel } from "@lucide/vue";
 
+import AppTag from "@/components/base/AppTag";
 import { t } from "@/i18n";
 import { overlayColumnsAreDefault, useStatsPrefsStore } from "@/stores/statsPrefs";
 import OverlayColumnsEditor from "@/components/settings/OverlayColumnsEditor";
@@ -54,7 +66,10 @@ export default defineComponent({
   setup(props) {
     const prefs = useStatsPrefsStore();
     const open = ref(false);
-    const chipBtn = ref<HTMLButtonElement | null>(null);
+    // The popover anchor is the wrapper (an ELEMENT HkPopover can measure),
+    // not the chip face: the shield's outside-click exemption only covers
+    // the anchor's subtree, and the wrapper owns the whole chip.
+    const anchor = ref<HTMLElement | null>(null);
 
     /** The columns off the shipped defaults — the chip then wears its
      *  active face, exactly like the head's other toggles. */
@@ -71,24 +86,21 @@ export default defineComponent({
     );
 
     return () => (
-      <div class="live-battle__mode-anchor">
-        <button
-          ref={chipBtn}
-          type="button"
-          class={[
-            "live-battle__mode-btn",
-            { "live-battle__mode-btn--on": customized.value },
-          ]}
+      <div ref={anchor} class="live-battle__mode-anchor">
+        <AppTag
+          interactive
+          face="outline"
+          tone={customized.value ? "success" : "default"}
           aria-label={t("replay.live.statsSourceTitle")}
           onClick={() => (open.value = !open.value)}
         >
           <ShipWheel size={13} />
           {label.value}
-        </button>
+        </AppTag>
         <HkPopover
           modelValue={open.value}
           onUpdate:modelValue={(v: boolean) => (open.value = v)}
-          anchorRef={chipBtn.value}
+          anchorRef={anchor.value}
           placement="bottom-start"
           sheetOnMobile
           padding="lg"
