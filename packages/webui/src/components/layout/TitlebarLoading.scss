@@ -1,10 +1,12 @@
 /* TitlebarLoading — the title-bar loading chip slot. Lives inside hikari's
    .hk-titlebar-actions (so it inherits the no-drag region), immediately
    left of the settings gear. The chip itself is hikari's
-   HkPersistentToast loading tone (HkPersistentToastGroup folds concurrent
-   loads into "+N"); only the slot contract stays here. Chrome, not a
-   control: pointer-events pass off the slot entirely (wrapper included,
-   so even the idle slot can never intercept a click). */
+   HkPersistentToast loading tone — the identical-label merge and its
+   "×N" count suffix are the component's own layout (the label carries
+   it), and HkPersistentToastGroup folds the remaining distinct labels
+   into "+N". Only the slot contract stays here. Chrome, not a control:
+   pointer-events pass off the slot entirely (wrapper included, so even
+   the idle slot can never intercept a click). */
 
 .titlebar-loading-slot {
   display: inline-flex;
@@ -14,7 +16,9 @@
   margin-right: 4px;
 }
 
-/* Phone bar: no room for a label next to the caption buttons — spinner-only. */
+/* Phone bar: no room for a label next to the caption buttons — spinner-only.
+   The "×N" count rides inside the label, so a merged load is one spinner
+   here too (the merge still does its job: one chip, not N). */
 @media (max-width: 767px) {
   .titlebar-loading-slot .hk-persistent-toast__label,
   .titlebar-loading-slot .hk-persistent-toast-group__extra {
