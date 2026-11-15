@@ -100,9 +100,9 @@
     "restoreDone": "Предупреждение восстановлено"
   },
   "actions": {
-    "restarting": "Перезапуск клиента…",
-    "quarantining": "Карантин…",
-    "exporting": "Экспорт отчёта…",
+    "restarting": "Перезапуск клиента",
+    "quarantining": "Карантин",
+    "exporting": "Экспорт отчёта",
     "safeModeOn": "Включение безопасного режима…"
   },
   "severity": {

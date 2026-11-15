@@ -45,7 +45,7 @@
     "next": "下一步",
     "learnedSection": "从本机录像实测",
     "measured": "实测",
-    "learning": "正在从录像学习点位……",
+    "learning": "正在从录像学习点位",
     "noLearned": "本机还没有这张图的录像——打过一局后，这里会给出该图各模式的实测点位。",
     "learnedFrom": "来自录像 {date}",
     "sampleCount": "{n} 场",

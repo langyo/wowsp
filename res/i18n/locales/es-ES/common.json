@@ -22,7 +22,7 @@
   "karma": "Karma",
   "detect": {
     "title": "Instalación del juego",
-    "scanning": "Escaneando el registro y las bibliotecas de Steam…",
+    "scanning": "Escaneando el registro y las bibliotecas de Steam",
     "found": "Encontrado",
     "none": "No se detectó ninguna instalación de World of Warships — define una ruta manualmente.",
     "rescan": "Volver a escanear"

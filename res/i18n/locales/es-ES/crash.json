@@ -100,9 +100,9 @@
     "restoreDone": "Aviso restaurado"
   },
   "actions": {
-    "restarting": "Reiniciando el cliente…",
-    "quarantining": "Poniendo en cuarentena…",
-    "exporting": "Exportando el informe…",
+    "restarting": "Reiniciando el cliente",
+    "quarantining": "Poniendo en cuarentena",
+    "exporting": "Exportando el informe",
     "safeModeOn": "Activando el modo seguro…"
   },
   "severity": {

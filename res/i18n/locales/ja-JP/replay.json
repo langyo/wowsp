@@ -87,7 +87,7 @@
     "gone": "残り {n} 秒"
   },
   "tip": {
-    "loading": "読み込み中…",
+    "loading": "読み込み中",
     "failed": "失敗",
     "hidden": "戦績非公開",
     "winrate": "勝率",
@@ -97,7 +97,7 @@
     "hitRate": "命中率",
     "career": "通算戦績",
     "state": "現在の状態",
-    "careerLoading": "戦績を照会中…",
+    "careerLoading": "戦績を照会中",
     "player": "プレイヤー",
     "status": "状態",
     "position": "位置",
@@ -317,7 +317,7 @@
     "selfCompTitle": "ダメージ内訳"
   },
   "postbattle": {
-    "loadingGlobal": "{name} の全体戦績を読み込み中…",
+    "loadingGlobal": "{name} の全体戦績を読み込み中",
     "destroyedByPre": "",
     "destroyedByPost": " により撃沈",
     "damageUnknownNote": "リプレイには完全な戦闘情報が含まれていないため、一部のダメージソースは特定できません",
@@ -635,7 +635,7 @@
   "moveAdvice": {
     "toggle": "AI 移動提案",
     "portableUnavailable": "このビルドには AI 推論が含まれていません。完全版をインストールすると移動提案を利用できます。",
-    "loading": "計算中…",
+    "loading": "計算中",
     "holdMark": "停泊：移動すべきでないとモデルが判断",
     "second": "薄い短い矢印：第二候補の進路",
     "debugModel": "実験モデル"
@@ -663,8 +663,8 @@
   "report": {
     "title": "AI 戦績レポート",
     "copy": "画像をコピー",
-    "copying": "レンダリング中…",
-    "loading": "採点中…",
+    "copying": "レンダリング中",
+    "loading": "採点中",
     "allies": "味方",
     "enemies": "敵",
     "coverage": "データ被覆率",

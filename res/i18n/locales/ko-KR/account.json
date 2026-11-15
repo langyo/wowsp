@@ -9,7 +9,7 @@
   "nickname": "닉네임",
   "realm": "서버",
   "search": "검색",
-  "searching": "검색 중...",
+  "searching": "검색 중",
   "notFound": "계정을 찾을 수 없습니다",
   "bound": "연동됨",
   "selectRealm": "서버 선택",

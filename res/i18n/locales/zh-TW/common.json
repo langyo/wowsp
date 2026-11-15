@@ -22,7 +22,7 @@
   "karma": "業力",
   "detect": {
     "title": "遊戲安裝",
-    "scanning": "正在掃描登錄檔與 Steam 遊戲庫…",
+    "scanning": "正在掃描登錄檔與 Steam 遊戲庫",
     "found": "已偵測到",
     "none": "未偵測到戰艦世界安裝，請手動指定路徑。",
     "rescan": "重新掃描"

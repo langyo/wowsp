@@ -87,7 +87,7 @@
     "gone": "사라진 지 {n}초"
   },
   "tip": {
-    "loading": "조회 중…",
+    "loading": "조회 중",
     "failed": "조회 실패",
     "hidden": "전적 숨김",
     "winrate": "승률",
@@ -97,7 +97,7 @@
     "hitRate": "명중",
     "career": "통산 전적",
     "state": "현재 상태",
-    "careerLoading": "전적 조회 중…",
+    "careerLoading": "전적 조회 중",
     "player": "플레이어",
     "status": "상태",
     "position": "위치",
@@ -317,7 +317,7 @@
     "selfCompTitle": "피해 구성"
   },
   "postbattle": {
-    "loadingGlobal": "{name}의 전체 전적을 불러오는 중…",
+    "loadingGlobal": "{name}의 전체 전적을 불러오는 중",
     "destroyedByPre": "",
     "destroyedByPost": "에게 격침됨",
     "damageUnknownNote": "리플레이에는 전투 전체 정보가 포함되지 않아 일부 데미지 출처를 확인할 수 없습니다",
@@ -635,7 +635,7 @@
   "moveAdvice": {
     "toggle": "AI 기동 조언",
     "portableUnavailable": "이 빌드에는 AI 추론이 포함되어 있지 않습니다. 전체 버전을 설치하면 기동 조언을 사용할 수 있습니다.",
-    "loading": "계산 중…",
+    "loading": "계산 중",
     "holdMark": "정지: 이동하지 않는 것이 낫다고 판단",
     "second": "연한 짧은 화살표: 차선 항로",
     "debugModel": "실험 모델"
@@ -663,8 +663,8 @@
   "report": {
     "title": "AI 전투 보고서",
     "copy": "이미지 복사",
-    "copying": "렌더링 중…",
-    "loading": "채점 중…",
+    "copying": "렌더링 중",
+    "loading": "채점 중",
     "allies": "아군",
     "enemies": "적군",
     "coverage": "데이터 커버리지",

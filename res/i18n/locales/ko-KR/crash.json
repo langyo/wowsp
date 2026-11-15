@@ -100,9 +100,9 @@
     "restoreDone": "경고 복원됨"
   },
   "actions": {
-    "restarting": "클라이언트를 다시 시작하는 중…",
-    "quarantining": "격리하는 중…",
-    "exporting": "보고서를 내보내는 중…",
+    "restarting": "클라이언트를 다시 시작하는 중",
+    "quarantining": "격리하는 중",
+    "exporting": "보고서를 내보내는 중",
     "safeModeOn": "안전 모드를 켜는 중…"
   },
   "severity": {

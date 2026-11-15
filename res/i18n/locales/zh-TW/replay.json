@@ -87,7 +87,7 @@
     "gone": "已消失 {n} 秒"
   },
   "tip": {
-    "loading": "查詢中…",
+    "loading": "查詢中",
     "failed": "查詢失敗",
     "hidden": "隱藏戰績",
     "winrate": "勝率",
@@ -97,7 +97,7 @@
     "hitRate": "命中",
     "career": "歷史戰績",
     "state": "當前狀態",
-    "careerLoading": "戰績查詢中…",
+    "careerLoading": "戰績查詢中",
     "player": "玩家",
     "status": "狀態",
     "position": "位置",
@@ -317,7 +317,7 @@
     "selfCompTitle": "傷害組成"
   },
   "postbattle": {
-    "loadingGlobal": "載入 {name} 的全域戰績…",
+    "loadingGlobal": "載入 {name} 的全域戰績",
     "destroyedByPre": "被 ",
     "destroyedByPost": " 摧毀",
     "damageUnknownNote": "錄影不包含完整的對局資訊，部分傷害來源不可見",
@@ -635,7 +635,7 @@
   "moveAdvice": {
     "toggle": "AI 走位建議",
     "portableUnavailable": "此版本不包含 AI 推理。安裝完整版後即可使用走位建議。",
-    "loading": "計算中…",
+    "loading": "計算中",
     "holdMark": "停駐：模型認為不該移動",
     "second": "淺色短箭頭：次選走向",
     "debugModel": "實驗模型"
@@ -663,8 +663,8 @@
   "report": {
     "title": "AI 戰報",
     "copy": "複製長圖",
-    "copying": "渲染中…",
-    "loading": "評分中…",
+    "copying": "渲染中",
+    "loading": "評分中",
     "allies": "友方",
     "enemies": "敵方",
     "coverage": "資料覆蓋",

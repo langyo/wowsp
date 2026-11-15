@@ -45,7 +45,7 @@
     "next": "Next",
     "learnedSection": "Measured from your replays",
     "measured": "Measured",
-    "learning": "Learning cap layouts from replays…",
+    "learning": "Learning cap layouts from replays",
     "noLearned": "No replays of this map on this machine yet — play one and the measured layouts appear here.",
     "learnedFrom": "From replay {date}",
     "sampleCount": "{n} battles",

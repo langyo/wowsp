@@ -48,7 +48,7 @@
     "checkCard": "Select the replay of {name}",
     "rescan": "Rescan",
     "smart": "Smart select",
-    "planning": "Analyzing local replays (hashing and matching against the collection scope)…",
+    "planning": "Analyzing local replays (hashing and matching against the collection scope)",
     "empty": "No local replays found. Install the game or play a battle first, then come back.",
     "filterEmpty": "No replays match the current filters.",
     "summary": "{n} selected",

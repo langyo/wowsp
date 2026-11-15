@@ -13,6 +13,6 @@
   "phoneLinked": "휴대폰 연결됨({n})",
   "phoneCaptcha": "인증 대기 중",
   "phoneError": "휴대폰 연결 오류",
-  "phoneConnecting": "연결 중…",
+  "phoneConnecting": "연결 중",
   "phoneStopped": "휴대폰 연결 안 됨"
 }

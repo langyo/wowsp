@@ -87,7 +87,7 @@
     "gone": "Gone {n} s"
   },
   "tip": {
-    "loading": "Loading…",
+    "loading": "Loading",
     "failed": "Failed",
     "hidden": "Hidden stats",
     "winrate": "Win rate",
@@ -97,7 +97,7 @@
     "hitRate": "Hit rate",
     "career": "Career stats",
     "state": "Current state",
-    "careerLoading": "Looking up stats…",
+    "careerLoading": "Looking up stats",
     "player": "Player",
     "status": "Status",
     "position": "Position",
@@ -317,7 +317,7 @@
     "selfCompTitle": "Damage composition"
   },
   "postbattle": {
-    "loadingGlobal": "Loading {name}'s global stats…",
+    "loadingGlobal": "Loading {name}'s global stats",
     "destroyedByPre": "Destroyed by ",
     "destroyedByPost": "",
     "damageUnknownNote": "Replays don't include the full battle info — some damage sources can't be attributed",
@@ -635,7 +635,7 @@
   "moveAdvice": {
     "toggle": "AI movement advice",
     "portableUnavailable": "AI inference is unavailable in this build. Install the full version to use movement advice.",
-    "loading": "Computing…",
+    "loading": "Computing",
     "holdMark": "Hold: the model sees no better heading",
     "second": "Pale short arrow: second-best heading",
     "debugModel": "Experiment model"
@@ -663,8 +663,8 @@
   "report": {
     "title": "AI battle report",
     "copy": "Copy image",
-    "copying": "Rendering…",
-    "loading": "Scoring the replay…",
+    "copying": "Rendering",
+    "loading": "Scoring the replay",
     "allies": "Allies",
     "enemies": "Enemies",
     "coverage": "Data coverage",

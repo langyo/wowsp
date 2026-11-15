@@ -22,7 +22,7 @@
   "karma": "カルマ",
   "detect": {
     "title": "ゲームのインストール",
-    "scanning": "レジストリと Steam ライブラリをスキャン中…",
+    "scanning": "レジストリと Steam ライブラリをスキャン中",
     "found": "検出済み",
     "none": "World of Warships のインストールが検出されませんでした。手動でパスを設定してください。",
     "rescan": "再スキャン"

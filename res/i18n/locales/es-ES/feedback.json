@@ -37,7 +37,7 @@
   "privacy": "Privacidad: todos los adjuntos (capturas, grabaciones, logs) los eliges o activas tú manualmente; nosotros no recopilamos nada por nuestra cuenta. Las capturas pueden contener información personal: decide tú cuánto mostrar (al capturar puedes elegir una sola ventana en lugar de toda la pantalla). Lo privado que expongas sin querer se usa únicamente para diagnosticar tu reporte, nunca para otra cosa, y se elimina junto con el registro cuando el problema queda resuelto.",
   "submit": "Enviar",
   "maintenance": "El canal de retroalimentación está en mantenimiento; inténtalo más tarde o usa el grupo de QQ.",
-  "sending": "Enviando…",
+  "sending": "Enviando",
   "ok": "¡Enviado, gracias!",
   "viewRecord": "Ver registro",
   "tokenTitle": "Guarda tu token de consulta",

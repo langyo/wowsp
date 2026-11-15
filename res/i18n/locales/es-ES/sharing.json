@@ -48,7 +48,7 @@
     "checkCard": "Seleccionar la repetición de {name}",
     "rescan": "Reescanear",
     "smart": "Selección inteligente",
-    "planning": "Analizando repeticiones locales (hash y cotejo con el ámbito de recopilación)…",
+    "planning": "Analizando repeticiones locales (hash y cotejo con el ámbito de recopilación)",
     "empty": "No se encontraron repeticiones locales. Instala el juego o juega una batalla y vuelve.",
     "filterEmpty": "Ninguna repetición coincide con los filtros actuales.",
     "summary": "{n} seleccionadas",

@@ -48,7 +48,7 @@
     "checkCard": "Sélectionner le replay de {name}",
     "rescan": "Relancer le scan",
     "smart": "Sélection intelligente",
-    "planning": "Analyse des replays locaux (hachage et confrontation au périmètre de collecte)…",
+    "planning": "Analyse des replays locaux (hachage et confrontation au périmètre de collecte)",
     "empty": "Aucun replay local trouvé. Installez le jeu ou jouez une bataille, puis revenez.",
     "filterEmpty": "Aucun replay ne correspond aux filtres actuels.",
     "summary": "{n} sélectionnés",

@@ -27,7 +27,7 @@
   "colHeaderJoin": "",
   "chat": {
     "title": "聊天翻译",
-    "loading": "正在翻译…",
+    "loading": "正在翻译",
     "ready": "翻译就绪",
     "pasteHint": "按 Enter 打开聊天，Ctrl+V 粘贴发送",
     "unavailable": "翻译不可用",

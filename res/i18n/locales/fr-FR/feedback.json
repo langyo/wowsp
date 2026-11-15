@@ -37,7 +37,7 @@
   "privacy": "Confidentialité : chaque pièce jointe (capture, enregistrement, logs) est choisie ou déclenchée par vous manuellement — nous ne collectons rien de nous-mêmes. Les captures peuvent contenir des informations personnelles ; limitez leur portée si besoin (privilégiez une seule fenêtre plutôt que tout l'écran). Tout contenu privé exposé involontairement sert uniquement à diagnostiquer votre signalement, jamais à autre chose, et est supprimé avec la fiche une fois le problème traité.",
   "submit": "Envoyer",
   "maintenance": "Le canal de retour est en maintenance — réessayez plus tard ou passez par le groupe QQ.",
-  "sending": "Envoi…",
+  "sending": "Envoi",
   "ok": "Envoyé — merci !",
   "viewRecord": "Voir la fiche",
   "tokenTitle": "Conservez votre jeton de suivi",

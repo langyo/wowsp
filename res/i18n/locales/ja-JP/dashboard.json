@@ -2,7 +2,7 @@
   "title": "マイ戦績",
   "noAccount": "まだアカウントが連携されていません",
   "noAccountHint": "World of Warships アカウントを連携すると、ここに戦績が表示されます。",
-  "loading": "戦績を読み込み中...",
+  "loading": "戦績を読み込み中",
   "refresh": "更新",
   "refreshDone": "更新完了 · 新しい対戦 {n} 件",
   "refreshUpToDate": "最新の状態です",

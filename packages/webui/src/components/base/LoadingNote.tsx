@@ -20,6 +20,12 @@ import "./LoadingNote.scss";
  * The root is a span so it nests legally inside hint/paragraph seats; call
  * sites keep their own seat (padding / background / position) and hand the
  * localized status line in via the 'text' prop.
+ *
+ * The rule is not local to this component: src/i18n/busyLabels.test.ts pins
+ * it for every spinner-adjacent busy label (title-bar loading chips, busy
+ * buttons) across the eight locales, so a regenerated translation cannot
+ * reintroduce the dots the spinner already replaces (2026-11-16 sweep; the
+ * report started as "正在解析录像后面有点点点，点点点不该有").
  */
 export default defineComponent({
   name: "LoadingNote",

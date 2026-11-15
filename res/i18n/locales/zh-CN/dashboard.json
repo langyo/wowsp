@@ -2,7 +2,7 @@
   "title": "我的战绩",
   "noAccount": "尚未绑定账号",
   "noAccountHint": "绑定你的战舰世界账号以查看战绩数据。",
-  "loading": "加载战绩中...",
+  "loading": "加载战绩中",
   "refresh": "刷新",
   "refreshDone": "刷新完成 · 新增 {n} 场对局",
   "refreshUpToDate": "已是最新",
