@@ -293,6 +293,7 @@ export default defineComponent({
             <div class="settings-modal__netmanual">
               <HkButton
                 size="sm"
+                loading={network.probing.value}
                 disabled={network.probing.value}
                 onClick={() => {
                   void network.runProbe();

@@ -12,6 +12,7 @@ import {
   HkSettingsSub,
   HkSlider,
   HkSolarLocationSetting,
+  HkSpinner,
   HkTabs,
   useTheme,
 } from "@celestia-island/hikari";
@@ -355,7 +356,11 @@ export default defineComponent({
                     onClick={() => void appearance.importWallpaper()}
                   >
                     <span class="settings-modal__wallpaper-add-frame">
-                      <ImagePlus size={16} />
+                      {appearance.importingWallpaper.value ? (
+                        <HkSpinner size="xs" tone="current" />
+                      ) : (
+                        <ImagePlus size={16} />
+                      )}
                     </span>
                     <span class="settings-modal__wallpaper-add-label">{t("settings.wallpaperImport")}</span>
                   </button>
