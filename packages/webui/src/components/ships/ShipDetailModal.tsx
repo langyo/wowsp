@@ -2,7 +2,7 @@ import { computed, defineComponent, ref, Transition, watch } from "vue";
 import { useRouter } from "vue-router";
 import { Sparkles, Shield, Crosshair, Target, Plane, Gauge, Eye, LifeBuoy, HelpCircle, Radar, BatteryCharging } from "@lucide/vue";
 
-import { HAlert, HkButton, HkMasonry, HkModal, HkTabs, useToast } from "@celestia-island/hikari";
+import { HAlert, HkButton, HkMasonry, HkModal, HkPopupSelect, HkTabs, useToast } from "@celestia-island/hikari";
 
 import NationFlag from "@/components/base/NationFlag";
 import ErrorCard from "@/components/base/ErrorCard";
@@ -22,6 +22,13 @@ import { t } from "@/i18n";
 import { isMobileApp } from "@/utils/platform";
 import { winrateColor } from "@/utils/winrate";
 import { buildShipSpecs, hasSwitchableMainBattery, type SpecGroup, type SpecRow } from "./shipSpecs";
+import {
+  buildShipVariantOptions,
+  defaultVariantOf,
+  selectedVariantOf,
+  type ShipVariantOption,
+  type VariantGroup,
+} from "./shipVariantSpecs";
 import { aircraftNoticeSwitchKey, buildPlaneSpecs } from "./shipPlaneSpecs";
 import { buildConsumableSlots, consumableHintCard, type ConsumableSlotGroup } from "./consumables";
 import BuildPlanner from "./BuildPlanner";
@@ -697,11 +704,39 @@ const SpecsPanel = defineComponent({
         if (!gp || !hasSwitchableMainBattery(gp)) altFire.value = false;
       },
     );
+    // ── Per-group module variants (规格参数 dropdowns) ────────────────────
+    // Each spec group that maps to a ShipUpgradeInfo chain (survivability /
+    // artillery / torpedoes / antiAir / concealment) offers a compact
+    // HkPopupSelect listing that chain's stock → top options; picking one
+    // re-derives the GROUP's rows from the variant's own slice components
+    // (see shipSpecs' variants option). The chain END (top module) is the
+    // default and renders the WG-profile numbers exactly as before, so the
+    // panel only changes when the user explicitly picks a non-default
+    // variant. Selections reset with the slice (ship switch / unpack).
+    const variantOptions = computed(() => buildShipVariantOptions(props.gameparams));
+    const variantSel = ref<Partial<Record<VariantGroup, string>>>({});
+    watch(
+      () => props.gameparams,
+      () => {
+        variantSel.value = {};
+      },
+    );
+    /** Non-default selections only (group → chain option); the default
+     *  keeps the profile rendering, so nothing else changes here. */
+    const selectedVariants = computed(() => {
+      const out: Partial<Record<VariantGroup, ShipVariantOption>> = {};
+      for (const [group, list] of Object.entries(variantOptions.value)) {
+        const opt = selectedVariantOf(list, variantSel.value[group as VariantGroup]);
+        if (opt) out[group as VariantGroup] = opt;
+      }
+      return out;
+    });
     const groups = computed(() =>
       props.plane
         ? buildPlaneSpecs(props.plane.index)
         : buildShipSpecs(props.profile, props.nation, props.gameparams, {
             altFire: altFire.value,
+            variants: Object.keys(selectedVariants.value).length ? selectedVariants.value : undefined,
           }),
     );
     // Consumable slot groups join the unpacked GameParams (slot layout) with
@@ -788,11 +823,42 @@ const SpecsPanel = defineComponent({
       const renderGroup = (g: SpecGroup) => {
         const Icon = iconFor(g.icon);
         const sections = g.sections ?? [];
+        // The group's module-variant dropdown (hikari's compact select):
+        // chain options stock → top, the chain end being the default —
+        // picking a non-default re-derives this group's rows (see
+        // selectedVariants). Groups whose chain has one entry render no
+        // dropdown, and groups without a variant mapping (consumables;
+        // mobility, whose engine data has no honest per-variant spec
+        // rows) keep the plain header.
+        const groupOptions = variantOptions.value[g.group as VariantGroup];
+        const variantSelect =
+          groupOptions && groupOptions.length >= 2 ? (
+            <HkPopupSelect
+              class="specs-group__variant"
+              size="sm"
+              hideLabel
+              label={t("ships.spec.variantOptionAria")}
+              modelValue={
+                variantSel.value[g.group as VariantGroup] ??
+                defaultVariantOf(groupOptions)?.name ??
+                ""
+              }
+              onUpdate:modelValue={(v: string) => {
+                variantSel.value = { ...variantSel.value, [g.group as VariantGroup]: v };
+              }}
+              options={groupOptions.map((o: ShipVariantOption) => ({
+                value: o.name,
+                label: t("ships.parts.role." + o.role) + " " + o.variant,
+                description: o.name,
+              }))}
+            />
+          ) : null;
         return (
           <section class="specs-group">
             <header class="specs-group__head">
               <Icon size={14} />
               <h5 class="specs-group__title">{t(`ships.spec.group.${g.group}`)}</h5>
+              {variantSelect}
             </header>
             <dl class="specs-group__rows">
               {g.rows.map((row) => renderRow(row))}

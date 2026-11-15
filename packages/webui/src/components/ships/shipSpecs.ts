@@ -40,6 +40,11 @@
  */
 import { buildAntiAirRows } from "./antiAir";
 import { mainCaliberMm, resolveShipParts, roleHpSlots } from "./shipParts";
+import {
+  variantComponentBlocks,
+  variantMountStats,
+  type ShipVariantOption,
+} from "./shipVariantSpecs";
 /** A signed change against the normal firing mode, shown beside the value. */
 export interface SpecDelta {
   /** Pre-formatted signed change, e.g. "+12.0 s" or "-8.9 km". */
@@ -97,6 +102,14 @@ export interface BuildShipSpecsOptions {
   /** Alternate firing mode on: artillery rows/sections switch to the burst
    *  mode's values, annotated with deltas against the normal mode. */
   altFire?: boolean;
+  /** Non-default module variants (spec group → the picked chain option, per
+   *  shipVariantSpecs' enumeration): when set for a group, THAT group's rows
+   *  re-derive from the variant's own components in the slice — hull HP and
+   *  concealment factors, mount ranges/reloads/barrels/calibers, per-hull AA
+   *  auras. Rows the variant data cannot answer keep the WG profile value.
+   *  The default (top) selection arrives as undefined → profile rendering,
+   *  exactly as before variants existed. */
+  variants?: Partial<Record<string, ShipVariantOption>>;
 }
 
 export interface SpecGroup {
@@ -895,12 +908,23 @@ export function buildShipSpecs(
   if (!profile || typeof profile !== "object") return [];
   const p = profile as Record<string, unknown>;
   const groups: SpecGroup[] = [];
+  // The raw GameParams entry (slice) — variant recomputes and the AA rows
+  // both read it; declared once, before the group builders.
+  const gpEntry = gameparams as Record<string, unknown> | null | undefined;
 
   // ── Survivability ─────────────────────────────────────────────────────
   const survRows: SpecRow[] = [];
   const hull = p.hull as HullBlock | undefined;
   const armour = p.armour as ArmourBlock | undefined;
-  const hp = fmtNum(hull?.health);
+  // Hull-variant override: a selected non-top hull answers its OWN health
+  // (the armour-layer rows stay on the WG profile — the slice's zone dicts
+  // do not decode to the profile's per-layer mm figures).
+  const vSurvOption = options?.variants?.survivability;
+  const vSurvHull = vSurvOption
+    ? variantComponentBlocks(gpEntry, vSurvOption, ["hull"])[0]
+    : undefined;
+  const vSurvHp = vSurvHull ? num((vSurvHull as Record<string, unknown>).health) : null;
+  const hp = fmtNum(vSurvHp ?? hull?.health);
   if (hp) survRows.push({ key: "hp", value: hp, hint: "hpHint" });
   const flood = num(armour?.flood_damage);
   if (flood != null)
@@ -917,13 +941,26 @@ export function buildShipSpecs(
 
   // ── Main Battery (Firepower) ──────────────────────────────────────────
   const art = p.artillery as ArtilleryBlock | undefined;
-  const gpEntry = gameparams as Record<string, unknown> | null | undefined;
   const mode = switchableMainBattery(gpEntry);
   const altFire = options?.altFire === true && mode != null;
   const ammo = shellAmmo(gpEntry);
   const blocks = artilleryBlocks(gpEntry);
   const artRows: SpecRow[] = [];
-  const baseDistance = num(art?.distance);
+  // Artillery-variant override: the picked mount answers its own firing
+  // range (maxDist meters), reload (first hardpoint shotDelay), barrel
+  // count and widest caliber; dispersion/sigma stay on the WG profile (the
+  // mount's dispersion model is not per-variant in the slice data).
+  const vArtOption = options?.variants?.artillery;
+  const vArt = vArtOption ? variantMountStats(gpEntry, vArtOption, "artillery") : null;
+  const vArtRange = (() => {
+    if (!vArtOption) return null;
+    for (const block of variantComponentBlocks(gpEntry, vArtOption, ["artillery"])) {
+      const d = (block as Record<string, unknown>).maxDist;
+      if (typeof d === "number" && Number.isFinite(d) && d > 0) return d / 1000;
+    }
+    return null;
+  })();
+  const baseDistance = vArtRange ?? num(art?.distance);
   const altDistance = altFire ? altFireRange(baseDistance, mode!) : null;
   const distRow = measuredRow(
     "mainGunRange",
@@ -936,7 +973,7 @@ export function buildShipSpecs(
     altFire,
   );
   if (distRow) artRows.push(distRow);
-  const reload = num(art?.shot_delay);
+  const reload = vArt?.reloadS ?? num(art?.shot_delay);
   const altReload = altFire ? num(mode!.fullReloadTime) : null;
   const reloadRow = measuredRow(
     "mainGunReload",
@@ -965,14 +1002,14 @@ export function buildShipSpecs(
         artRows.push({ key: "burstInterval", value: `${interval.toFixed(1)} s`, hint: "burstIntervalHint" });
     }
   }
-  const barrels = num(hull?.artillery_barrels);
+  const barrels = vArt?.barrels ?? num(hull?.artillery_barrels);
   if (barrels != null) artRows.push({ key: "mainGunBarrels", value: String(barrels) });
   // WG's default_profile carries NO caliber field at all (verified across the
   // whole fleet: artillery keys are artillery_id/distance/gun_rate/
   // max_dispersion/rotation_time/shells/shot_delay/slots) — fall back to the
   // raw GameParams entry's widest turret barrelDiameter when it is loaded.
   const caliber =
-    mainGunCaliber(art) ?? mainCaliberMm(gpEntry);
+    vArt?.caliberMm ?? mainGunCaliber(art) ?? mainCaliberMm(gpEntry);
   if (caliber != null)
     artRows.push({ key: "mainGunCaliber", value: `${caliber} mm`, hint: "mainGunCaliberHint" });
   // Sigma: WG puts it at artillery.sigma (top-level of the artillery block).
@@ -1017,10 +1054,16 @@ export function buildShipSpecs(
   const torp = p.torpedoes as TorpedoesBlock | undefined;
   const torpSections = torpedoSections(gameparams);
   const torpRows: SpecRow[] = [];
+  // Torpedo-tube variant override: the picked tube config answers its own
+  // reload (hardpoint shotDelay) and tube count; range/speed/damage come
+  // from the shared embedded torpedo ammo (identical across the ship's
+  // tube variants — the tubes swap layouts, not the fish).
+  const vTorpOption = options?.variants?.torpedoes;
+  const vTorp = vTorpOption ? variantMountStats(gpEntry, vTorpOption, "torpedoes") : null;
   if (torp && typeof torp === "object") {
-    const tReload = num(torp.reload_time);
+    const tReload = vTorp?.reloadS ?? num(torp.reload_time);
     if (tReload != null) torpRows.push({ key: "torpReload", value: `${tReload.toFixed(1)} s` });
-    const tBarrels = num(hull?.torpedoes_barrels);
+    const tBarrels = vTorp?.barrels ?? num(hull?.torpedoes_barrels);
     if (tBarrels != null && tBarrels > 0)
       torpRows.push({ key: "torpLaunchers", value: String(tBarrels) });
     // The WG block describes ONE torpedo type; when the embedded ammo
@@ -1058,7 +1101,17 @@ export function buildShipSpecs(
   // WG's default_profile only carries the opaque `defense` rating (its slot
   // DPS/range fields are always null/-1); the real per-aura numbers come
   // from the raw GameParams entry the modal already unpacks.
-  const aaRows = buildAntiAirRows(gameparams);
+  // AA auras ride the HULL, so the antiAir variant follows the hull chain
+  // (shipVariantSpecs enumerates it as the hull variants when the slice has
+  // no dedicated _AirDefense chain) — the override re-reads the chosen
+  // hull's AirDefense/ATBA/Artillery blocks instead of the stock hull.
+  const vAaOption = options?.variants?.antiAir;
+  const aaRows = vAaOption
+    ? buildAntiAirRows(
+        gameparams,
+        variantComponentBlocks(gpEntry, vAaOption, ["airDefense", "atba", "artillery"]),
+      )
+    : buildAntiAirRows(gameparams);
   if (aaRows.length) groups.push({ group: "antiAir", icon: "Plane", rows: aaRows });
 
   // ── Mobility ──────────────────────────────────────────────────────────
@@ -1093,11 +1146,21 @@ export function buildShipSpecs(
   // ── Concealment ───────────────────────────────────────────────────────
   const con = p.concealment as ConcealmentBlock | undefined;
   const conRows: SpecRow[] = [];
+  // Concealment follows the selected hull: a hull's visibilityFactor /
+  // visibilityFactorByPlane ARE the sea/air detection distances in km
+  // (verified: Shimakaze's B_Hull reads 6.9 / 3.38 against the profile's
+  // 6.9 / 3.4 km). The in-smoke and per-submarine rows stay on the profile.
+  const vConOption = options?.variants?.concealment;
+  const vConHull = vConOption
+    ? variantComponentBlocks(gpEntry, vConOption, ["hull"])[0]
+    : undefined;
+  const vConSea = vConHull ? num((vConHull as Record<string, unknown>).visibilityFactor) : null;
+  const vConAir = vConHull ? num((vConHull as Record<string, unknown>).visibilityFactorByPlane) : null;
   if (con && typeof con === "object") {
-    const byShip = num(con.detect_distance_by_ship);
+    const byShip = vConSea ?? num(con.detect_distance_by_ship);
     if (byShip != null)
       conRows.push({ key: "surfaceDetect", value: `${byShip.toFixed(1)} km`, hint: "surfaceDetectHint" });
-    const byPlane = num(con.detect_distance_by_plane);
+    const byPlane = vConAir ?? num(con.detect_distance_by_plane);
     if (byPlane != null)
       conRows.push({ key: "airDetect", value: `${byPlane.toFixed(1)} km`, hint: "airDetectHint" });
     const bySub = num(con.detect_distance_by_submarine);

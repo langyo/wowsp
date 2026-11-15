@@ -99,9 +99,9 @@ function aurasOf(gp: Gp): Array<{ band: AaBandKey; aura: Record<string, unknown>
  * medium → far. Bands with no DPS and no flak (submarines, ~98 ships have no
  * auras at all) yield an empty list.
  */
-export function collectAaBands(gp: unknown): AaBand[] {
+export function collectAaBands(gp: unknown, blocksOverride?: Gp[]): AaBand[] {
   const acc = new Map<AaBandKey, AaBand>();
-  for (const { band, aura } of aurasOf(gp as Gp)) {
+  for (const { band, aura } of blocksOverride ? aurasOfBlocks(blocksOverride) : aurasOf(gp as Gp)) {
     let b = acc.get(band);
     if (!b) {
       b = { key: band, dps: 0, rangeM: 0, hitChance: null, flakDamage: null, flakCount: null };
@@ -173,8 +173,8 @@ function fmtNum(v: number, digits = 0): string {
  * Rows whose data is missing are skipped, and a band with no rows at all is
  * skipped entirely.
  */
-export function buildAntiAirRows(gp: unknown): SpecRow[] {
-  const bands = collectAaBands(gp);
+export function buildAntiAirRows(gp: unknown, blocksOverride?: Gp[]): SpecRow[] {
+  const bands = collectAaBands(gp, blocksOverride);
   const rows: SpecRow[] = [];
   for (const band of bands) {
     const rowsForBand: SpecRow[] = [];

@@ -50,6 +50,14 @@ Usage:
 
     # offline proof of the join/fill logic (no capture needed)
     python scripts/extract/apply_price_catalog.py --self-test
+
+The canonical capture location is the shared cache
+(%LOCALAPPDATA%/WoWSP-extract/price_catalog.json): copy the probe's
+res_mods/PnFMods/WoWSPProbe/price_catalog.json there once and every run.py
+WG chain rebuild re-applies it — a bundle regenerated from a newer
+GameParams dump no longer drops the economy fill (that regression is how
+the 15.10 refresh wiped it). --apply without --catalog uses that cache copy
+when it exists.
 """
 from __future__ import annotations
 
@@ -386,11 +394,19 @@ def main():
     if args.self_test:
         return self_test()
 
-    if not args.catalog:
-        ap.error("--catalog is required (or pass --self-test)")
-    catalog_path = Path(args.catalog)
+    catalog_path = Path(args.catalog) if args.catalog else None
+    if catalog_path is None:
+        # Cache-default convention (see the docstring): run.py copies the
+        # probe capture into the shared cache; a bare --apply refills from it.
+        import os
+        env = os.environ.get("WOWSP_PRICE_CATALOG")
+        cache = (Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local/share"))
+                 / "WoWSP-extract" / "price_catalog.json")
+        catalog_path = Path(env) if env else cache
     if not catalog_path.is_file():
-        ap.error("price catalog not found: %s" % catalog_path)
+        ap.error("price catalog not found: %s (pass --catalog, set "
+                 "WOWSP_PRICE_CATALOG, or copy the probe capture to the "
+                 "WoWSP-extract cache)" % catalog_path)
     capture = json.loads(catalog_path.read_text(encoding="utf-8"))
 
     chain_path = Path(args.chain) if args.chain else CHAIN_PATHS[args.realm]

@@ -55,6 +55,9 @@ export interface ModernizationEntry {
   shiptype: string[];
   nation: string[];
   shiplevel: number[];
+  /** Raw GameParams modifier dict (battleSignals-family keys); the hover
+   *  card renders one signed row per key (see upgradeEffects.ts). */
+  modifiers: Record<string, unknown>;
   /** Optional ship-gating: full GameParams names ("PJSB018_Yamato_1944");
    *  a mod is mountable only when one name's leading token (before the
    *  first "_") matches the ship's tech-tree index. */

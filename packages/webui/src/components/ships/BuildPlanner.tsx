@@ -59,6 +59,12 @@ import {
   type SignalEntry,
 } from "./buildDefaults";
 import { cxpForPoints, priceOf, retrainCredits } from "./costs";
+import {
+  isResearchBureauUpgrade,
+  RB_UNIQUE_UPGRADE_RP,
+  upgradeEffectRows,
+} from "./upgradeEffects";
+import { moduleStatsOf } from "@/utils/shipModuleStats";
 import { api, type UpgradePrice } from "@/api";
 import { isMobileApp } from "@/utils/platform";
 import { gameNationOf } from "@/utils/nationCodes";
@@ -571,39 +577,45 @@ export default defineComponent({
     // off its tile (with the pointer parked on the panel, the grace would
     // never fire). The capture-phase scroll hide from the hand-rolled card
     // therefore stays: any scroll retracts the card immediately.
-    const FLAG_TIP_GRACE_MS = 180;
-    const flagTip = ref<{ sig: SignalEntry; el: HTMLElement } | null>(null);
-    let flagTipHideTimer: number | undefined;
+    const CARD_TIP_GRACE_MS = 180;
+    /** Rich hover-card state — signal flags AND modernizations share the
+     *  HkPopover plumbing (anchor, grace timer, overlay-root teleport);
+     *  `kind` only picks the card body. */
+    type CardTip =
+      | { kind: "flag"; sig: SignalEntry; el: HTMLElement }
+      | { kind: "mod"; mod: ModernizationEntry; el: HTMLElement };
+    const cardTip = ref<CardTip | null>(null);
+    let cardTipHideTimer: number | undefined;
 
-    function cancelFlagTipClose(): void {
-      if (flagTipHideTimer !== undefined) {
-        window.clearTimeout(flagTipHideTimer);
-        flagTipHideTimer = undefined;
+    function cancelCardTipClose(): void {
+      if (cardTipHideTimer !== undefined) {
+        window.clearTimeout(cardTipHideTimer);
+        cardTipHideTimer = undefined;
       }
     }
-    function showFlagTip(sig: SignalEntry, el: HTMLElement): void {
-      cancelFlagTipClose();
-      flagTip.value = { sig, el };
+    function showCardTip(tip: CardTip): void {
+      cancelCardTipClose();
+      cardTip.value = tip;
       // Capture: the modal body scrolls, not the window (see the caveat).
-      window.addEventListener("scroll", hideFlagTip, true);
+      window.addEventListener("scroll", hideCardTip, true);
     }
-    function hideFlagTipSoon(): void {
-      cancelFlagTipClose();
-      flagTipHideTimer = window.setTimeout(() => {
-        flagTipHideTimer = undefined;
-        flagTip.value = null;
-      }, FLAG_TIP_GRACE_MS);
+    function hideCardTipSoon(): void {
+      cancelCardTipClose();
+      cardTipHideTimer = window.setTimeout(() => {
+        cardTipHideTimer = undefined;
+        cardTip.value = null;
+      }, CARD_TIP_GRACE_MS);
     }
-    function hideFlagTip(): void {
-      window.removeEventListener("scroll", hideFlagTip, true);
-      cancelFlagTipClose();
-      flagTip.value = null;
+    function hideCardTip(): void {
+      window.removeEventListener("scroll", hideCardTip, true);
+      cancelCardTipClose();
+      cardTip.value = null;
     }
-    watch(section, hideFlagTip);
+    watch(section, hideCardTip);
     onScopeDispose(() => {
-      window.removeEventListener("scroll", hideFlagTip, true);
-      cancelFlagTipClose();
-      flagTip.value = null;
+      window.removeEventListener("scroll", hideCardTip, true);
+      cancelCardTipClose();
+      cardTip.value = null;
     });
 
     /** Signed percent text, game-style: "+5%" / "−5%" / "+0.5%". */
@@ -816,11 +828,21 @@ export default defineComponent({
           ),
         });
       }
-      rows.push(
-        { label: t("ships.parts.statsHp"), value: PARTS_DASH },
-        { label: t("ships.parts.statsRange"), value: PARTS_DASH },
-        { label: t("ships.parts.statsReload"), value: PARTS_DASH },
-      );
+      // Real per-module stats from the embedded pack (build_module_stats.py):
+      // hull HP, artillery firing range + reload, torpedo-tube reload. A
+      // row renders only when the pack KNOWS the value — the pack lists
+      // fire-control/engine/CV rows as known-empty and genuinely unextracted
+      // modules as absent, and both stay silent here rather than faking "—".
+      const stats = moduleStatsOf(realm.value, cell.step.name);
+      if (stats?.health != null) {
+        rows.push({ label: t("ships.parts.statsHp"), value: stats.health.toLocaleString() });
+      }
+      if (stats?.rangeM != null) {
+        rows.push({ label: t("ships.parts.statsRange"), value: (stats.rangeM / 1000).toFixed(1) + " km" });
+      }
+      if (stats?.reloadS != null) {
+        rows.push({ label: t("ships.parts.statsReload"), value: stats.reloadS.toFixed(1) + " s" });
+      }
       return JSON.stringify({
         title: hullStock
           ? t("ships.parts.stockHull")
@@ -828,9 +850,11 @@ export default defineComponent({
         badge: cell.variant,
         subtitle: cell.step.name,
         rows,
-        note: props.gameparams
-          ? t("ships.parts.statsTodo")
-          : t("ships.parts.gameparamsMissing"),
+        note: !props.gameparams
+          ? t("ships.parts.gameparamsMissing")
+          : stats
+            ? undefined
+            : t("ships.parts.statsMissing"),
       });
     }
     /** Hover card of a next/previous-tier ship mini card. */
@@ -1114,7 +1138,6 @@ export default defineComponent({
     }
 
     function renderFlags() {
-      const tip = flagTip.value;
       const signals = realmSignals.value;
       // Lesta catalogs carry a family grouping (6 stems × 4 tiers): one
       // stack per family, tiers ascending, each tile tier-badged. WG
@@ -1143,10 +1166,10 @@ export default defineComponent({
             class={["planner-v__flag", active ? "planner-v__flag--active" : ""]}
             key={sig.index}
             onClick={() => toggleSignal(sig.index)}
-            onMouseenter={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
-            onMouseleave={hideFlagTipSoon}
-            onFocus={(e) => showFlagTip(sig, e.currentTarget as HTMLElement)}
-            onBlur={hideFlagTipSoon}
+            onMouseenter={(e) => showCardTip({ kind: "flag", sig, el: e.currentTarget as HTMLElement })}
+            onMouseleave={hideCardTipSoon}
+            onFocus={(e) => showCardTip({ kind: "flag", sig, el: e.currentTarget as HTMLElement })}
+            onBlur={hideCardTipSoon}
           >
             {sig.tier != null ? (
               <span class="planner-v__flag-tier">{t(`ships.flags.tier${sig.tier}`)}</span>
@@ -1172,28 +1195,39 @@ export default defineComponent({
                 </div>
               ))
             : signals.map(tile)}
-          {/* The rich hover card rides hikari's HkPopover (hover
-              composition): the panel teleports to the overlay root — the
-              ship-detail modal content carries a transform that would
-              re-anchor a plain fixed card and its overflow:hidden would clip
-              it away entirely — and HkPopover owns placement, flip, the
-              zoom-space math and reduced motion. The card is enterable now:
-              the grace timer keeps it up while the pointer travels in. */}
-          <HkPopover
-            title={tip ? signalName(tip.sig) : ""}
-            modelValue={tip != null}
-            onUpdate:modelValue={(v: boolean) => {
-              if (!v) hideFlagTip();
-            }}
-            anchorRef={tip?.el ?? null}
-            placement="bottom"
-            offset={6}
-            backdrop={false}
-            closeOnBackdrop={false}
-            onMouseenter={cancelFlagTipClose}
-            onMouseleave={hideFlagTipSoon}
-          >
-            {tip ? (
+        </div>
+      );
+    }
+
+    /** The shared rich hover card — one HkPopover serving BOTH the flags'
+     *  and the modernizations' hover tiles (the tip state is discriminated
+     *  by kind). The panel teleports to the overlay root — the ship-detail
+     *  modal content carries a transform that would re-anchor a plain fixed
+     *  card and its overflow:hidden would clip it away entirely — and
+     *  HkPopover owns placement, flip, the zoom-space math and reduced
+     *  motion. The card is enterable: the grace timer keeps it up while the
+     *  pointer travels in. Modernization cards add the Research-Bureau
+     *  purchase row behind a divider (the RB price is a game constant —
+     *  see upgradeEffects.ts). */
+    function renderTipCard() {
+      const tip = cardTip.value;
+      return (
+        <HkPopover
+          title={tip ? (tip.kind === "flag" ? signalName(tip.sig) : dataText(tip.mod.names, tip.mod.name)) : ""}
+          modelValue={tip != null}
+          onUpdate:modelValue={(v: boolean) => {
+            if (!v) hideCardTip();
+          }}
+          anchorRef={tip?.el ?? null}
+          placement="bottom"
+          offset={6}
+          backdrop={false}
+          closeOnBackdrop={false}
+          onMouseenter={cancelCardTipClose}
+          onMouseleave={hideCardTipSoon}
+        >
+          {tip ? (
+            tip.kind === "flag" ? (
               <div class="flag-card">
                 <div class="flag-card__name">{signalName(tip.sig)}</div>
                 <div class="flag-card__flavor">{dataText(tip.sig.desc, "")}</div>
@@ -1213,9 +1247,43 @@ export default defineComponent({
                   ))}
                 </div>
               </div>
-            ) : null}
-          </HkPopover>
-        </div>
+            ) : (
+              <div class="flag-card">
+                <div class="flag-card__name">{dataText(tip.mod.names, tip.mod.name)}</div>
+                {(() => {
+                  const flavor = dataText(tip.mod.desc, "").trim();
+                  return flavor ? <div class="flag-card__flavor">{flavor}</div> : null;
+                })()}
+                <div class="flag-card__effects">
+                  {upgradeEffectRows(tip.mod.modifiers, props.ship.type, hasMsg).map((e) => (
+                    <div class="flag-card__effect" key={e.key}>
+                      <span class="flag-card__effect-label">{e.labelKey ? t(e.labelKey) : e.key}</span>
+                      <span
+                        class={[
+                          "flag-card__effect-value",
+                          e.good ? "flag-card__effect-value--good" : "flag-card__effect-value--bad",
+                        ]}
+                      >
+                        {e.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                {isResearchBureauUpgrade(tip.mod) ? (
+                  <>
+                    <div class="flag-card__divider" />
+                    <div class="flag-card__rb">
+                      <span class="flag-card__rb-label">{t("ships.upgrades.rbSource")}</span>
+                      <span class="flag-card__rb-value">
+                        {RB_UNIQUE_UPGRADE_RP.toLocaleString()} {t("ships.upgrades.rbPoints")}
+                      </span>
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            )
+          ) : null}
+        </HkPopover>
       );
     }
 
@@ -1253,7 +1321,6 @@ export default defineComponent({
                       const active = props.build.upgrades[slot] === mod.name;
                       const unique = mod.tags?.includes("unique") ?? false;
                       const name = dataText(mod.names, mod.name);
-                      const desc = dataText(mod.desc, "");
                       return (
                         <button
                           type="button"
@@ -1264,7 +1331,10 @@ export default defineComponent({
                           ]}
                           key={mod.name}
                           onClick={() => toggleUpgrade(slot, mod.name)}
-                          data-hint={desc || name}
+                          onMouseenter={(e) => showCardTip({ kind: "mod", mod, el: e.currentTarget as HTMLElement })}
+                          onMouseleave={hideCardTipSoon}
+                          onFocus={(e) => showCardTip({ kind: "mod", mod, el: e.currentTarget as HTMLElement })}
+                          onBlur={hideCardTipSoon}
                         >
                           <span class="planner-v__mod-icon">
                             <AssetImage
@@ -1275,7 +1345,7 @@ export default defineComponent({
                             />
                           </span>
                           <span class="planner-v__mod-name">{name}</span>
-                          {unique ? (
+                          {isResearchBureauUpgrade(mod) ? (
                             <span class="planner-v__mod-unique">{t("ships.skills.uniqueMod")}</span>
                           ) : null}
                         </button>
@@ -1632,6 +1702,9 @@ export default defineComponent({
 
             {/* ── Center: active section ── */}
             <div class="planner-v__center">{renderSection()}</div>
+            {/* Shared flags/upgrades hover card — teleports to the overlay
+                root, so its DOM position here is irrelevant to placement. */}
+            {renderTipCard()}
 
             {/* ── Right: combined stats + HP slider ── */}
             <aside class="planner-v__stats">
