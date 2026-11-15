@@ -1346,7 +1346,7 @@ export const replayApi = {
     transport.invoke<ManualLocateContext>(RPC.manual_locate_context, {
       teamSizes: teamSizes ?? null,
     }),
-  /** The picker's image-selector row: the last ten cached captures, memory
+  /** The picker's image-selector row: the last few cached captures (four as of the 10→4 ring slim-down), memory
    *  ring merged with the disk archive (survives restarts and game exits),
    *  newest first. */
   fetchManualLocateGallery: () =>

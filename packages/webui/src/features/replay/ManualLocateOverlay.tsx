@@ -11,7 +11,7 @@
  * The background is a REFERENCE IMAGE — by default the newest capture of
  * the automatic in-game archive (frames the Rust watcher stored while the
  * player held Tab over the roster, persisted to the system temp dir, so the
- * last ten survive game exits and app restarts), downscaled for transport.
+ * last few (four) survive game exits and app restarts), downscaled for transport.
  * The footer-adjacent selector row swaps it: one entry per archived capture
  * (thumbnail + age), a pasted clipboard image, or a picked file. The
  * detector's knowledge of the displayed image is overlaid as GUIDES — the
@@ -885,7 +885,7 @@ export default defineComponent({
             </div>
           )}
           {/* Reference-image selector — the bottom strip above the footer
-              buttons. One thumbnail per archived capture (the newest ten,
+              buttons. One thumbnail per archived capture (the newest few (four),
               disk-backed so they survive restarts and game exits; hover =
               its age; the default load shows the newest without a button of
               its own), the clipboard / file entries for a user-supplied

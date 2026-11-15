@@ -18,7 +18,7 @@
 //! [`GALLERY_CAPACITY`] frames form the picker's image selector row (the
 //! calibration editor lets the user draw against any of them, or against a
 //! pasted/file screenshot resolved elsewhere) — the "最新画面" button is
-//! gone: the gallery IS the newest-ten archive, kept current automatically.
+//! gone: the gallery IS the newest-frames archive, kept current automatically.
 //!
 //! Two storage layers:
 //!
@@ -46,7 +46,7 @@
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use wowsp_tauri_shared::Rect;
@@ -55,7 +55,12 @@ use wowsp_tauri_shared::Rect;
 /// validity, plus a TINY pre-rendered thumbnail (≤160 px wide) so the
 /// gallery command never clones a raw multi-megabyte buffer per frame.
 struct LastCapture {
-    rgba: Vec<u8>,
+    /// SHARED with the disk-archive writer that encodes it right after the
+    /// store: one frame is a full-res RGBA buffer (33 MB at 4K), so the ring
+    /// entry and the background encoder hold the SAME allocation through an
+    /// `Arc` instead of paying a second full-frame copy per store. Readers
+    /// still clone out an owned `Vec` (the IPC payload needs its own buffer).
+    rgba: Arc<Vec<u8>>,
     width: u32,
     height: u32,
     thumb: Vec<u8>,
@@ -65,6 +70,15 @@ struct LastCapture {
     game_rect: Rect,
     /// Wall-clock capture time (unix ms) — the picker shows the age.
     at_ms: u64,
+}
+
+impl LastCapture {
+    /// Owned copy of the frame's pixels: every READER still pays this copy
+    /// (the IPC payload owns its buffer), but a STORE no longer does — the
+    /// ring entry and the archive encoder share the one allocation.
+    fn rgba_owned(&self) -> Vec<u8> {
+        self.rgba.as_ref().clone()
+    }
 }
 
 /// Thumbnail width cap (physical px). Integer-factor box-average keeps the
@@ -123,11 +137,22 @@ const CAPTURE_MAX_AGE: Duration = Duration::from_secs(10 * 60);
 /// allocation traffic.
 const STORE_MIN_INTERVAL: Duration = Duration::from_secs(2);
 
-/// How many recent frames the picker's image selector offers. Ten covers a
-/// whole battle's HUD phases at the store cadence. Aged frames are DROPPED
-/// on every store (not merely hidden from reads), so the ring's steady
-/// memory is bounded by the battles the player actually holds Tab through.
-const GALLERY_CAPACITY: usize = 10;
+/// How many recent frames the picker's image selector offers. FOUR covers
+/// the gallery's actual job — a "which of my last few snapshots is the
+/// roster moment" picker, not a battle-long replay: at the store cadence
+/// (one frame every [`STORE_MIN_INTERVAL`] ≈ 2 s, and only while Tab is
+/// held) four entries already span the last several seconds of captures, so
+/// the player can step back past a snapshot whose table had not drawn yet
+/// or whose HUD phase hid a column, and still land on the one they meant.
+/// The number is a MEMORY bound, not a convenience one: every entry keeps a
+/// FULL-RES RGBA buffer resident (3840×2160×4 ≈ 33 MB at 4K), so ten entries
+/// cost ≈332 MB of process memory for as long as those frames are fresh
+/// (the age prune is 10 min) — four cost ≈133 MB, which a 4K player running
+/// the overlay next to the game can afford, and which still gives the
+/// selector a real choice. Aged frames are DROPPED on every store (not
+/// merely hidden from reads), so the ring's steady memory is bounded by the
+/// battles the player actually holds Tab through.
+const GALLERY_CAPACITY: usize = 4;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -253,9 +278,11 @@ fn prune_disk() {
 /// (the ~hundreds-of-ms PNG encode must never ride the watcher's path).
 /// Failures log, never propagate — the memory ring stays the running
 /// session's source of truth; the archive is its persistence. `thumb` is
-/// the pre-rendered (buffer, width, height) triple.
+/// the pre-rendered (buffer, width, height) triple. `rgba` is the frame the
+/// memory ring is already holding — sharing the allocation (never copying
+/// it) is why this takes an `Arc` rather than an owned `Vec`.
 fn spawn_disk_write(
-    rgba: Vec<u8>,
+    rgba: Arc<Vec<u8>>,
     width: u32,
     height: u32,
     thumb: (Vec<u8>, u32, u32),
@@ -272,7 +299,7 @@ fn spawn_disk_write(
             if std::fs::create_dir_all(&dir).is_err() {
                 return;
             }
-            let png = encode_png_bytes(&rgba, width, height);
+            let png = encode_png_bytes(rgba.as_slice(), width, height);
             let thumb_png = encode_png_bytes(&thumb.0, thumb.1, thumb.2);
             if let Some(png) = png {
                 if !write_bytes_atomic(&disk_frame_path(at_ms), &png) {
@@ -409,14 +436,18 @@ pub(super) fn store_capture(rgba: &[u8], width: u32, height: u32, game_rect: Rec
             return ring.back().map(|c| c.at_ms).unwrap_or(at);
         }
     }
-    let frame = rgba.to_vec();
+    // One allocation for BOTH consumers: the ring entry owns it and the
+    // archive thread takes a cheap `Arc` clone of the same buffer — the old
+    // `frame.clone()` copied the whole 33 MB frame a second time on every
+    // store just so the encoder could have its own Vec.
+    let frame = Arc::new(rgba.to_vec());
     let (thumb, thumb_width, thumb_height) = downscale_thumb(rgba, width, height);
     if let Ok(mut ring) = CAPTURES.lock() {
         // Drop aged frames for real — the ring only ever holds what a
         // battle's Tab holds actually produced.
         ring.retain(still_fresh);
         ring.push_back(LastCapture {
-            rgba: frame.clone(),
+            rgba: Arc::clone(&frame),
             width,
             height,
             thumb: thumb.clone(),
@@ -438,7 +469,7 @@ pub(super) fn store_capture(rgba: &[u8], width: u32, height: u32, game_rect: Rec
         );
     }
     // Archive: full-res PNG + thumb + meta on a background thread, then the
-    // count/age prune — the picker's newest-ten gallery outliving sessions.
+    // count/age prune — the picker's newest-frames gallery outliving sessions.
     spawn_disk_write(
         frame,
         width,
@@ -461,7 +492,7 @@ pub(super) fn fresh_frame_for(game_rect: &Rect) -> Option<(Vec<u8>, u32, u32, u6
     if let Ok(ring) = CAPTURES.lock() {
         if let Some(c) = ring.back() {
             if frame_usable(c, game_rect) {
-                return Some((c.rgba.clone(), c.width, c.height, c.at_ms, c.game_rect));
+                return Some((c.rgba_owned(), c.width, c.height, c.at_ms, c.game_rect));
             }
         }
     }
@@ -486,7 +517,7 @@ pub(super) fn fresh_frame_for(game_rect: &Rect) -> Option<(Vec<u8>, u32, u32, u6
 pub(super) fn frame_by_stamp(at_ms: u64) -> Option<(Vec<u8>, u32, u32, u64, Rect)> {
     if let Ok(ring) = CAPTURES.lock() {
         if let Some(c) = ring.iter().rev().find(|c| c.at_ms == at_ms) {
-            return Some((c.rgba.clone(), c.width, c.height, c.at_ms, c.game_rect));
+            return Some((c.rgba_owned(), c.width, c.height, c.at_ms, c.game_rect));
         }
     }
     load_disk_frame(at_ms)
@@ -500,7 +531,7 @@ pub(super) fn frame_by_stamp(at_ms: u64) -> Option<(Vec<u8>, u32, u32, u64, Rect
 pub(super) fn newest_frame_any_age() -> Option<(Vec<u8>, u32, u32, u64, Rect)> {
     if let Ok(ring) = CAPTURES.lock() {
         if let Some(c) = ring.back() {
-            return Some((c.rgba.clone(), c.width, c.height, c.at_ms, c.game_rect));
+            return Some((c.rgba_owned(), c.width, c.height, c.at_ms, c.game_rect));
         }
     }
     // Newest first, walking to older frames until one decodes — a partial
@@ -528,7 +559,7 @@ pub(super) struct GalleryThumb {
 /// NEWEST FIRST — the memory ring's frames merged with the disk archive's
 /// (the archive is what makes the gallery survive restarts and game exits;
 /// the ring wins on stamp collisions since its pixels are already hot).
-/// No age gate: this IS the newest-ten archive, not a freshness read. The
+/// No age gate: this IS the newest-frames archive, not a freshness read. The
 /// thumbnails were rendered at store time, so this clones a few tens of KB
 /// per frame, never the raw buffers (archived frames decode their small
 /// thumbnail PNGs, never the full-res ones).
@@ -582,19 +613,21 @@ mod tests {
         // subtractions below stay in range.
         let now = 1_000_000_000_000u64;
         let age = CAPTURE_DISK_MAX_AGE.as_millis() as u64;
-        // Ten fresh stamps all survive…
-        let fresh: Vec<u64> = (0..10).map(|i| now - i).collect();
+        // Every fresh stamp survives while the count policy has room…
+        // (Derived from GALLERY_CAPACITY, never a literal: the cache size is
+        // a memory decision that moves, and the policy assertion must not
+        // silently pin it back.)
+        let capacity = GALLERY_CAPACITY as u64;
+        let fresh: Vec<u64> = (0..capacity).map(|i| now - i).collect();
         let mut expected = fresh.clone();
         expected.sort_unstable();
         assert_eq!(archive_survivors(fresh.clone(), now), expected);
-        // …an eleventh evicts the OLDEST (count policy)…
-        let mut eleven = fresh.clone();
-        eleven.push(now - 11);
-        assert_eq!(
-            archive_survivors(eleven.clone(), now).len(),
-            GALLERY_CAPACITY
-        );
-        assert!(!archive_survivors(eleven, now).contains(&(now - 11)));
+        // …one MORE evicts the OLDEST (count policy)…
+        let mut over = fresh.clone();
+        let oldest = now - capacity;
+        over.push(oldest);
+        assert_eq!(archive_survivors(over.clone(), now).len(), GALLERY_CAPACITY);
+        assert!(!archive_survivors(over, now).contains(&oldest));
         // …stamps past the age policy die even when count would keep them…
         let mut aged = vec![now - age - 1, now - 1];
         assert_eq!(archive_survivors(aged.clone(), now), vec![now - 1]);

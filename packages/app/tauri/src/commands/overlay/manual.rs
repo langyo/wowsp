@@ -286,7 +286,7 @@ pub async fn start_calibration_locate() -> CommandResult<()> {
     Ok(())
 }
 
-/// The picker's image selector row: the last ten cached captures — the
+/// The picker's image selector row: the last GALLERY_CAPACITY cached captures (currently four) — the
 /// memory ring merged with the disk archive, so the row survives app
 /// restarts and game exits — newest first, no freshness gate (see
 /// `overlay_manual::gallery_entries`). Also fires the archive's count/age
