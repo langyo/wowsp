@@ -298,26 +298,19 @@
     gap: 0.75rem;
   }
 
-  /* The map tag rides with the meta row speaking MapNameTag.scss's own
-     compact pill voice — identical to the live battle head, no override. */
+  /* The map tag rides with the meta row wearing AppTag's standard face
+     (MapNameTag.tsx: soft accent for a jump, quiet outline otherwise) —
+     identical to the live battle head, no override. */
 
   &__meta-item {
     font-size: var(--text-sm);
     color: rgb(var(--color-muted));
   }
 
-  /* (the mode/results/chat pills' faces moved to AppTag — 2026-11-03
-     tag unification; the results pill keeps only its decoding pulse.) */
-
-  /* Post-battle results pill while the packet stream is still decoding. */
-  &__results--loading {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    cursor: default;
-    opacity: 0.65;
-    animation: replay-results-pulse 1.2s ease-in-out infinite;
-  }
+  /* (The mode/results/chat pills' faces moved to AppTag — 2026-11-03 tag
+     unification. The results pill has no state rule left: it NEVER spins —
+     the post-battle WINDOW owns the pending state, see &__results-frame
+     below; 2026-11-12 report.) */
 
   &__count {
     font-size: var(--text-2xs);
@@ -366,6 +359,38 @@
        the phone sheet). */
     .hk-modal-body-scroll {
       overscroll-behavior: contain;
+    }
+
+    /* The window's OWN pending body (2026-11-12: the 战后统计 pill never
+       spins, so clicking it opens the window immediately and this body
+       carries the wait): spinner + replay.loading centered in the reading
+       frame. The inner wrapper only stretches while this block (or the
+       empty-decode note sharing its class) is mounted — the decoded panels
+       keep their own block flow. */
+    &:has(.replay-view__results-pending) .hk-modal-body-inner {
+      box-sizing: border-box;
+      height: 100%;
+    }
+
+    .replay-view__results-pending {
+      box-sizing: border-box;
+      height: 100%;
+      min-height: 12rem;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 0.75rem;
+      padding: 1rem;
+      text-align: center;
+      font-size: var(--text-sm);
+      color: rgb(var(--color-muted));
+    }
+
+    /* Decode failure: the app-standard inline error card, seated at the
+       body's own top pad (a card, not a centered wait). */
+    .replay-view__results-error {
+      padding: 0.25rem 0 0.5rem;
     }
   }
   /* Chat log modal — narrower than the results panel. Top: mini timeline
@@ -979,13 +1004,6 @@
     padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
   }
 }
-
-@keyframes replay-results-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.8; }
-}
-
-
 
 /* The level-3 replay detail sheet (phone): near the sheet cap so the map
    and roster get real estate; hk-settings-host (the second content class)

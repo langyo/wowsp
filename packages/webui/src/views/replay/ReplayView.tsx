@@ -17,6 +17,7 @@ import { useReplayPositions } from "@/features/replay/useReplayPositions";
 import { useStaticReport } from "@/features/replay/useStaticReport";
 import { analyzeSpawnSymmetry, type EntitySide } from "@/features/replay/spawnSymmetry";
 import { sanitizeReplayStream } from "@/features/replay/streamSanitize";
+import { resultsPillFace, resultsWindowBody } from "@/features/replay/resultsPill";
 import { useGameDetect } from "@/features/gamedetect/useGameDetect";
 import HolographicMap, { type HoloMapHandle } from "@/features/holographic/HolographicMap";
 import StaticReportModal from "@/features/replay/StaticReportModal";
@@ -2851,19 +2852,58 @@ export default defineComponent({
     );
 
     /** Does ANY viewable results data exist for the current selection? The
-     *  战后统计 pill's gate: the pill is the post-battle window's ONLY entry
-     *  point, so once this holds it must render interactive — a pending or
-     *  stalled packet-stream decode (the ipc wedge class
-     *  useReplayPositions' watchdog bounds) may only own the pill while
-     *  there is nothing to open yet, never while the panel's own pipelines
-     *  (AI score column, AI report, the roster itself) have already
-     *  settled (2026-11-12 user report: "AI 都完成了还在转圈"). */
+     *  pill's danger face reads it (and the window body derives its data
+     *  states from the same two sources), and the pill NEVER waits on the
+     *  decode — see features/replay/resultsPill's module docs. A pending or
+     *  stalled packet-stream read (the ipc wedge class useReplayPositions'
+     *  watchdog bounds) may only steer the pill to the danger face while
+     *  nothing landed, never to a spinner: the WINDOW owns the pending
+     *  state (2026-11-12 user report: "还在转圈"). */
     const resultsPillHasData = computed(
-      // Truthiness ON PURPOSE: byte-identical with the HkModal slot gate
-      // below, so the pill can never offer a window whose content gate is
-      // closed (a malformed replay's empty-string battleResults must count
-      // as absent here exactly as it does there).
+      // Truthiness ON PURPOSE: the battle-results payload and the trajectory
+      // stream are the window body's own content gate, so a malformed
+      // replay's empty-string battleResults must count as absent here
+      // exactly as it does there.
       () => battleResults.value || trajectories.value.length > 0,
+    );
+
+    /** The 战后统计 pill's face — 'open' from the moment a replay is open
+     *  (the pill is the window's ONLY entry point and never spins),
+     *  'failed' only while the decode failed AND nothing landed. */
+    const resultsFace = computed(() =>
+      resultsPillFace({
+        failed: trajectoryError.value !== null,
+        hasData: Boolean(resultsPillHasData.value),
+      }),
+    );
+
+    /** The results window's body: the decoded full/fallback panel, the
+     *  window's OWN pending wait, the decode failure, or the empty note —
+     *  swapped reactively as the decode lands (resultsWindowBody pins the
+     *  order: data first). */
+    const resultsBody = computed(() =>
+      resultsWindowBody({
+        hasBattleResults: Boolean(battleResults.value),
+        hasTrajectories: trajectories.value.length > 0,
+        loading: resultsLoading.value,
+        failed: trajectoryError.value !== null,
+      }),
+    );
+
+    /** The packet-stream read's coarse state, published on the meta header as
+     *  `data-replay-decode` — the e2e/visual harnesses' settle hook. The old
+     *  `.replay-view__results--loading` class used to serve that role, but
+     *  the pill never spins now (the window owns the pending state), so the
+     *  scripts wait on this attribute instead of a pill face that no longer
+     *  exists. 'failed' is exposed too: a harness asserting 'settled' after a
+     *  broken fixture should time out on the decoder's own error instead of
+     *  blaming the page. */
+    const decodeState = computed<"pending" | "failed" | "settled">(() =>
+      resultsLoading.value
+        ? "pending"
+        : trajectoryError.value !== null
+          ? "failed"
+          : "settled",
     );
 
     const refreshing = ref(false);
@@ -2913,7 +2953,10 @@ export default defineComponent({
                     {parser.error.value ? (
                       <ErrorCard error={parser.error.value} />
                     ) : null}
-                    <header class="replay-view__meta">
+                    {/* data-replay-decode is the e2e/visual harnesses' settle
+                        hook (pending/settled/failed): the results pill has no
+                        spinner face left to poll, see decodeState. */}
+                    <header class="replay-view__meta" data-replay-decode={decodeState.value}>
                       {/* The map as a jump tag (shared with the live head): hover
                           previews the map's bundled minimap, click opens the map's
                           tactical board — see MapNameTag. */}
@@ -2959,15 +3002,27 @@ export default defineComponent({
                           {t("replay.duration")}: <strong>{formatDuration(duration.value)}</strong>
                         </span>
                       ) : null}
-                      {resultsLoading.value && !resultsPillHasData.value ? (
+                      {/* 战后统计 — the post-battle window's ONLY entry
+                          point, so it is interactive from the moment a
+                          replay is open: NO loading face (its spinner used
+                          to block the very window the wait belongs to —
+                          2026-11-12 report; features/replay/resultsPill
+                          carries the contract). The window itself owns the
+                          pending body (see the HkModal below). The danger
+                          face survives a failed decode with nothing to
+                          open: stay mounted non-interactive, hint = the
+                          watchdog/decode error (the map-area ErrorCard
+                          alone is easy to miss, and a vanished pill read
+                          as "still spinning" — 2026-11-13 report). */}
+                      {resultsFace.value === "failed" ? (
                         <AppTag
-                          class="replay-view__results replay-view__results--loading"
-                          tone="accent"
+                          class="replay-view__results replay-view__results--failed"
+                          tone="danger"
+                          data-hint={trajectoryError.value || undefined}
                         >
                           {t("replay.results")}
-                          <HkSpinner size="xs" tone="current" />
                         </AppTag>
-                      ) : resultsPillHasData.value ? (
+                      ) : (
                         <AppTag
                           class="replay-view__results"
                           interactive
@@ -2976,22 +3031,7 @@ export default defineComponent({
                         >
                           {t("replay.results")}
                         </AppTag>
-                      ) : trajectoryError.value ? (
-                        /* A failed/stalled packet read must not make the
-                         * post-battle entry point SILENTLY VANISH (the
-                         * 2026-11-13 report read the vanished pill as
-                         * "still spinning"): keep the pill mounted as a
-                         * non-interactive danger tag whose hint carries
-                         * the watchdog/decode error — the map-area
-                         * ErrorCard alone is easy to miss. */
-                        <AppTag
-                          class="replay-view__results replay-view__results--failed"
-                          tone="danger"
-                          data-hint={trajectoryError.value}
-                        >
-                          {t("replay.results")}
-                        </AppTag>
-                      ) : null}
+                      )}
                       {chatCount.value > 0 ? (
                         <AppTag
                           interactive
@@ -3037,16 +3077,24 @@ export default defineComponent({
                     {/* The 战后统计 as a first-class hikari window (2026-11-03): HkModal
                         owns the chrome/motion — previously the hand-rolled
                         .replay-view__modal overlay that popped in unanimated. The
-                        content gate (results packet or trajectory stream present) stays
-                        in the slot so the empty state never mounts; the panel REMAINS
-                        mounted through HkModal's leave transition. The slot closure
-                        re-widens parser.current — re-narrow it locally. The body mounts
-                        DIRECTLY in HkModal's default slot: HkModal's own scroll body
-                        owns the scrolling, like the post-battle detail windows above
-                        (the old nested HkScrollContainer stacked a second scroller and
-                        its own inner padding on top of HkModal's 1.5rem gutter, leaving
-                        a dead band above the panel's first content — 2026-11-07
-                        report; the old mode/map head row retired 2026-11-07). */}
+                        WINDOW OWNS THE PENDING STATE (2026-11-12): the meta-row pill
+                        never spins, so it opens this window the moment a replay is
+                        open and the body carries the wait — spinner + replay.loading
+                        while the packet decode runs, swapped reactively (same render
+                        flush) to the decoded full/fallback panel the moment the
+                        stream lands. A failed/stalled decode (useReplayPositions'
+                        watchdog) explains itself in the body instead of leaving an
+                        empty window; resultsPill's resultsWindowBody pins that order
+                        (data first) and resultsPillFace pins the pill's faces. The
+                        panel REMAINS mounted through HkModal's leave transition. The
+                        slot closure re-widens parser.current — re-narrow it locally.
+                        The body mounts DIRECTLY in HkModal's default slot: HkModal's
+                        own scroll body owns the scrolling, like the post-battle detail
+                        windows above (the old nested HkScrollContainer stacked a
+                        second scroller and its own inner padding on top of HkModal's
+                        1.5rem gutter, leaving a dead band above the panel's first
+                        content — 2026-11-07 report; the old mode/map head row retired
+                        2026-11-07). */}
                     <HkModal
                       modelValue={showResults.value}
                       onUpdate:modelValue={(v: boolean) => (showResults.value = v)}
@@ -3055,65 +3103,102 @@ export default defineComponent({
                       contentClass="replay-view__results-frame"
                     >
                       {{
-                        header: !battleResults.value
-                          ? () => (
-                              <span class="replay-view__results-note">{t("replay.resultsIncomplete")}</span>
-                            )
-                          : undefined,
+                        /* Subheader caveat: only the FALLBACK panel (a replay
+                           that ended before the results were recorded) needs
+                           it — the full panel IS the final result. While the
+                           decode is still pending the body owns the whole
+                           pending surface (spinner + replay.loading), so no
+                           note mounts here: one surface per message, no
+                           duplicate "parsing" line under the title. */
+                        header:
+                          !battleResults.value && trajectories.value.length > 0
+                            ? () => (
+                                <span class="replay-view__results-note">{t("replay.resultsIncomplete")}</span>
+                              )
+                            : undefined,
                         default: () => {
+                          // Re-narrow the widened slot closure (see above).
                           const cur = parser.current.value;
                           if (!cur) return null;
-                          return battleResults.value || trajectories.value.length > 0 ? (
-                            <>
-                              {battleResults.value ? (
-                                <PostBattlePanel
-                                  raw={battleResults.value}
-                                  head={{
-                                    matchGroup: cur.matchGroup,
-                                    scenario: cur.scenario,
-                                    eventType: cur.eventType,
-                                    botCount: cur.botCount ?? null,
-                                    scriptedUnitCount: cur.scriptedUnitCount ?? null,
-                                    mapName: cur.mapName,
-                                    realm: realm.value,
-                                    gameVersion: gameVersionOf(cur.raw),
-                                    battleTime: cur.dateTime ? formatDateTime(cur.dateTime) : null,
-                                    durationSec: duration.value > 0 ? duration.value : null,
-                                  }}
-                                  operation={isOperation.value}
-                                  stream={{
-                                    trajectories: trajectories.value,
-                                    recorderVehicleId: recorderVehicleId.value,
-                                    shotKills: shotKills.value,
-                                    damageStats: damageStats.value,
-                                    achievements: achievements.value,
-                                    arenaPlayers: arenaPlayers.value,
-                                    shellLaunches: shellLaunches.value,
-                                    torpedoes: torpedoes.value,
-                                  }}
-                                  roster={cur.vehicles}
-                                  builds={allyBuilds.value}
-                                  replayPath={cur.path}
-                                  onClose={() => (showResults.value = false)}
-                                />
-                              ) : (
-                                <PostBattleFallbackPanel
-                                  vehicles={cur.vehicles}
-                                  trajectories={trajectories.value}
-                                  explosions={explosions.value}
-                                  shotKills={shotKills.value}
-                                  damageStats={damageStats.value}
-                                  realm={realm.value}
-                                  operation={isOperation.value}
-                                  shipNameOrder={shipNameOrder.value}
-                                  arenaPlayers={arenaPlayers.value}
-                                  inferredDeaths={inferredDeaths.value}
-                                  statsMode={fallbackStatsMode.value}
-                                  onClose={() => (showResults.value = false)}
-                                />
-                              )}
-                            </>
-                          ) : null;
+                          const body = resultsBody.value;
+                          const raw = battleResults.value;
+                          if (body === "panel" && raw) {
+                            return (
+                              <PostBattlePanel
+                                raw={raw}
+                                head={{
+                                  matchGroup: cur.matchGroup,
+                                  scenario: cur.scenario,
+                                  eventType: cur.eventType,
+                                  botCount: cur.botCount ?? null,
+                                  scriptedUnitCount: cur.scriptedUnitCount ?? null,
+                                  mapName: cur.mapName,
+                                  realm: realm.value,
+                                  gameVersion: gameVersionOf(cur.raw),
+                                  battleTime: cur.dateTime ? formatDateTime(cur.dateTime) : null,
+                                  durationSec: duration.value > 0 ? duration.value : null,
+                                }}
+                                operation={isOperation.value}
+                                stream={{
+                                  trajectories: trajectories.value,
+                                  recorderVehicleId: recorderVehicleId.value,
+                                  shotKills: shotKills.value,
+                                  damageStats: damageStats.value,
+                                  achievements: achievements.value,
+                                  arenaPlayers: arenaPlayers.value,
+                                  shellLaunches: shellLaunches.value,
+                                  torpedoes: torpedoes.value,
+                                }}
+                                roster={cur.vehicles}
+                                builds={allyBuilds.value}
+                                replayPath={cur.path}
+                                onClose={() => (showResults.value = false)}
+                              />
+                            );
+                          }
+                          if (body === "fallback") {
+                            return (
+                              <PostBattleFallbackPanel
+                                vehicles={cur.vehicles}
+                                trajectories={trajectories.value}
+                                explosions={explosions.value}
+                                shotKills={shotKills.value}
+                                damageStats={damageStats.value}
+                                realm={realm.value}
+                                operation={isOperation.value}
+                                shipNameOrder={shipNameOrder.value}
+                                arenaPlayers={arenaPlayers.value}
+                                inferredDeaths={inferredDeaths.value}
+                                statsMode={fallbackStatsMode.value}
+                                onClose={() => (showResults.value = false)}
+                              />
+                            );
+                          }
+                          if (body === "pending") {
+                            return (
+                              <div class="replay-view__results-pending">
+                                <HkSpinner size="md" tone="current" />
+                                <span>{t("replay.loading")}</span>
+                              </div>
+                            );
+                          }
+                          if (body === "error") {
+                            /* The standard in-page error card (raw text
+                               structured, copyable) — the same surface the
+                               replay header's parse error uses. */
+                            return (
+                              <div class="replay-view__results-error">
+                                <ErrorCard error={trajectoryError.value} />
+                              </div>
+                            );
+                          }
+                          /* Settled with nothing to show (an empty/degenerate
+                             packet stream): the incomplete-data note. */
+                          return (
+                            <div class="replay-view__results-pending">
+                              <span>{t("replay.resultsIncomplete")}</span>
+                            </div>
+                          );
                         },
                       }}
                     </HkModal>

@@ -99,9 +99,10 @@
    grades — moved to AppTag faces; 2026-11-03 tag unification. The dead
    state voices died with their classes.) */
 
-  /* The map tag rides with the head's info group (status and
-     mode pills, clock): no auto margin, it just follows the row gap. Its
-     compact pill voice is MapNameTag.scss's own base — no override needed. */
+  /* The map tag rides with the head's info group (status and mode pills,
+     clock): no auto margin, it just follows the row gap. Its chip face is
+     AppTag's soft accent voice (MapNameTag.tsx) — the standard 18px rung,
+     no override needed. */
 
   /* The head's right-corner action cluster starts at the copy-shot pill
      and runs to the locate-status pill — this auto margin pulls the whole
@@ -459,8 +460,9 @@
      widget is ever hidden for width's sake — the map tag, the clock and
      the locate pill all stay mounted at every width. The one remaining
      tier just tightens the voice below ~807px of panel content width
-     (tighter head gap, tighter pill paddings), stretching the single
-     line further out before the tail has to drop onto a second line.
+     (a tighter head gap — the retired hand-rolled pill's padding override
+     left with the chip's AppTag migration), stretching the single line
+     further out before the tail has to drop onto a second line.
      The threshold descends from #966's headless measurements of the
      built stylesheet: the widest honest state — the telemetry pill
      (插件（精确行序）) beside the locate pill's anchored text
@@ -479,14 +481,15 @@
     &__head {
       gap: 0.4rem;
 
-      /* The stats-source chip wears the same pill voice from its own
-         sheet (LiveStatsModeChip.scss) and gets the same narrow-width
-         padding — head-descendant scope on purpose: the chip also rides
-         the post-battle share bar (postBattleShare.tsx), a different
-         host with its own width budget this rule must not reach. */
-      .live-battle__mode-btn {
-        padding-inline: 0.45rem;
-      }
+      /* The stats-source chip's old narrow-width padding override died
+         with its hand-rolled pill: the chip now wears AppTag's HkTag-sm
+         face (LiveStatsModeChip.tsx) whose stock 1px / --space-6 inset is
+         already tighter than the retired 0.55rem, so this tier only has
+         the head gap left to tighten. (Keeping the rule head-descendant
+         would be right but pointless: the chip also rides the post-battle
+         share bar in postBattleShare.tsx, a different host with its own
+         width budget, and there is no chip padding left for this tier to
+         tighten on either host.) */
     }
   }
 

@@ -136,6 +136,26 @@ describe("replay packet requests", () => {
     s.scope.stop();
   });
 
+  it("settles the loading flag even when publishing the decoded stream throws", async () => {
+    // B4 regression guard: the settle bookkeeping must not depend on the
+    // publish path succeeding. A throwing apply() (a sanitizer/death-
+    // inference edge) has to surface as the run's error with the spinner
+    // SETTLED — a read that finished but never cleared the loading flag is
+    // the "still spinning while the data is visible" report class.
+    const pending = deferred<ReplayStream>();
+    vi.mocked(api.readReplayPositions).mockReturnValue(pending.promise);
+    const s = setup(meta("throws"));
+    s.handlers.apply.mockImplementation(() => {
+      throw new Error("sanitize exploded");
+    });
+    pending.resolve(stream);
+    await flushMicrotasks();
+    expect(s.handlers.apply).toHaveBeenCalledTimes(1);
+    expect(s.loading.value).toBe(false);
+    expect(s.error.value).toBe("sanitize exploded");
+    s.scope.stop();
+  });
+
   it("clears the loading state and reports when the packed read never settles", async () => {
     vi.useFakeTimers();
     const pending = deferred<ReplayStream>();

@@ -192,14 +192,13 @@ STICKY_JS = r"""
 def test_results_window_reading_frame(page, vite_base_url):
     page.set_viewport_size(VIEWPORT)
     # Deep link: the mock serves one fixture replay; auto-open it and let the
-    # positions/results stream settle before the window is opened.
+    # positions/results stream settle before the window is opened. The results
+    # pill never spins any more (the WINDOW owns the pending body now), so the
+    # meta header's data-replay-decode attribute is the settle signal.
     page.goto(f"{vite_base_url}/replay?open=0", wait_until="domcontentloaded", timeout=60_000)
     tag = page.locator(".replay-view__results")
     expect(tag.first).to_be_visible(timeout=90_000)
-    page.wait_for_function(
-        "() => document.querySelector('.replay-view__results--loading') === null",
-        timeout=90_000,
-    )
+    page.wait_for_selector(".replay-view__meta[data-replay-decode='settled']", timeout=90_000)
     tag.first.click()
     expect(page.locator(".replay-view__results-frame")).to_be_visible(timeout=30_000)
     expect(page.locator(".replay-view__postbattle")).to_be_visible(timeout=30_000)
@@ -306,10 +305,9 @@ def test_stacked_results_keep_team_titles_in_their_columns(page, vite_base_url):
     page.goto(f"{vite_base_url}/replay?open=0", wait_until="domcontentloaded", timeout=60_000)
     tag = page.locator(".replay-view__results")
     expect(tag.first).to_be_visible(timeout=90_000)
-    page.wait_for_function(
-        "() => document.querySelector('.replay-view__results--loading') === null",
-        timeout=90_000,
-    )
+    # The pill never spins (the window owns the pending body): the meta
+    # header's data-replay-decode attribute is the stream-settled signal.
+    page.wait_for_selector(".replay-view__meta[data-replay-decode='settled']", timeout=90_000)
     tag.first.click()
     expect(page.locator(".replay-view__results-frame")).to_be_visible(timeout=30_000)
     expect(page.locator(".replay-view__postbattle")).to_be_visible(timeout=30_000)

@@ -11,6 +11,19 @@
  * spaces, harbor docks) render as a plain, muted tag — named but not
  * clickable — so the interactive look only promises a jump that can land.
  *
+ * The chip FACE is AppTag's: soft accent while the jump can land, the quiet
+ * outline voice when it cannot. The hand-rolled pill this component used to
+ * press restated the HkTag-sm anatomy 2.2 CSS px taller than every AppTag in
+ * the same head row (2026-11-16 review); the `.map-tag` host class stays as
+ * this component's identity hook for tests (the HOSTS position the tag with
+ * their own class — live-battle__map / replay-view__map), plus it is the
+ * element the preview card measures.
+ *
+ * The preview card measures off the pressed tag BUTTON, so the anchor rides
+ * the pointer/focus event's `currentTarget` — the face is a component now,
+ * and a template ref must never reach into another component's internals
+ * (the same reason the interactive element's class lands on AppTag's button).
+ *
  * The preview card teleports to <body> and fixed-positions itself with a
  * viewport clamp (the global data-hint tooltip's approach): both host
  * headers sit beside scrolling columns whose ancestors clip or scroll, so
@@ -22,6 +35,7 @@ import { useRouter } from "vue-router";
 import { ArrowUpRight, Map } from "@lucide/vue";
 import { usePopupManager } from "@celestia-island/hikari";
 
+import AppTag from "@/components/base/AppTag";
 import { noteMapMinimapLoadError, resolveMapMinimapUrl } from "@/features/holographic/modelLoader";
 import { t } from "@/i18n";
 import { displayMapName } from "@/utils/mapNames";
@@ -57,7 +71,6 @@ export default defineComponent({
   },
   setup(props, { attrs }) {
     const router = useRouter();
-    const tagEl = ref<HTMLElement | null>(null);
     const cardEl = ref<HTMLElement | null>(null);
     const open = ref(false);
     const cardPos = ref<CSSProperties>({});
@@ -97,15 +110,17 @@ export default defineComponent({
       open.value = false;
     }
 
-    async function show(): Promise<void> {
+    /** `anchor` is the pressed tag BUTTON, captured from the triggering
+     *  event (see scheduleShow/onFocus): the chip face is AppTag's, so its
+     *  wrapper is the only element this component owns. */
+    async function show(anchor: HTMLElement): Promise<void> {
       clearShowTimer();
       if (!analysable.value || open.value) return;
       open.value = true;
       // Measure only once mounted: the clamp needs the card's own box.
       await nextTick();
-      const anchor = tagEl.value;
       const card = cardEl.value;
-      if (!anchor || !card) return;
+      if (!card) return;
       const r = anchor.getBoundingClientRect();
       if (r.width === 0 && r.height === 0) {
         // The anchor vanished (a view swap under a stationary pointer): a
@@ -136,9 +151,13 @@ export default defineComponent({
       };
     }
 
-    function scheduleShow(): void {
+    function scheduleShow(e: Event): void {
       clearShowTimer();
-      showTimer = window.setTimeout(() => void show(), SHOW_DELAY_MS);
+      // currentTarget is null after dispatch — capture the element inside
+      // the handler and hand it to the delayed show.
+      const anchor = e.currentTarget as HTMLElement | null;
+      if (!anchor) return;
+      showTimer = window.setTimeout(() => void show(anchor), SHOW_DELAY_MS);
     }
 
     function openTactics(): void {
@@ -146,6 +165,22 @@ export default defineComponent({
       hideNow();
       void router.push({ path: "/tactics", query: { map: cleanId.value } });
     }
+
+    // The hover/focus wiring rides ONE spread bag, not named JSX props:
+    // AppTag's type table only declares the props it owns, while these are
+    // native listeners Vue's attr fallthrough lands on the button it
+    // renders — the element the caller's layout hook and the card
+    // measuring both use.
+    const interactWiring = {
+      onPointerenter: scheduleShow,
+      onPointerdown: () => (pointerDownAt = performance.now()),
+      onPointerleave: hideNow,
+      onFocus: (e: FocusEvent) => {
+        if (performance.now() - pointerDownAt < 300) return;
+        void show(e.currentTarget as HTMLElement);
+      },
+      onBlur: hideNow,
+    };
 
     onMounted(() => {
       const handle = usePopupManager().register("tooltip", false);
@@ -169,35 +204,31 @@ export default defineComponent({
 
     // Callers pass their layout hook as class (live-battle__map and
     // replay-view__map only position the tag inside their header rows —
-    // the compact pill voice itself is MapNameTag.scss's base) — but
-    // the teleported card makes this a multi-root component, so Vue skips
-    // fallthrough entirely and the class must be merged by hand (the
-    // AssetImage pattern).
+    // the chip face itself is AppTag's) — but the teleported card makes
+    // this a multi-root component, so Vue skips fallthrough entirely and
+    // the class must be merged by hand (the AssetImage pattern). On the
+    // interactive face AppTag moves the merged class onto its BUTTON (the
+    // face span must not duplicate the host attrs), which is exactly the
+    // element the layout hook and the card measuring both want.
     return () => (
       <>
         {analysable.value ? (
-          <button
-            ref={tagEl}
-            type="button"
+          <AppTag
+            interactive
+            face="soft"
+            tone="accent"
             class={["map-tag", attrs.class]}
-            onPointerenter={scheduleShow}
-            onPointerdown={() => (pointerDownAt = performance.now())}
-            onPointerleave={hideNow}
-            onFocus={() => {
-              if (performance.now() - pointerDownAt < 300) return;
-              void show();
-            }}
-            onBlur={hideNow}
+            {...interactWiring}
             onClick={openTactics}
           >
             <Map size={13} />
             {name.value}
-          </button>
+          </AppTag>
         ) : (
-          <span class={["map-tag", "map-tag--plain", attrs.class]}>
+          <AppTag face="outline" tone="default" class={["map-tag", "map-tag--plain", attrs.class]}>
             <Map size={13} />
             {name.value}
-          </span>
+          </AppTag>
         )}
         {analysable.value && open.value ? (
           <Teleport to="body">

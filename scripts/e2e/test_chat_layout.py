@@ -59,10 +59,9 @@ def test_chat_window_reading_frame(page, vite_base_url):
     page.goto(f"{vite_base_url}/replay?open=0", wait_until="domcontentloaded", timeout=60_000)
     results_tag = page.locator(".replay-view__results")
     expect(results_tag.first).to_be_visible(timeout=90_000)
-    page.wait_for_function(
-        "() => document.querySelector('.replay-view__results--loading') === null",
-        timeout=90_000,
-    )
+    # The results pill never spins now (the window owns the pending body);
+    # the meta header's data-replay-decode attribute is the settle signal.
+    page.wait_for_selector(".replay-view__meta[data-replay-decode='settled']", timeout=90_000)
 
     page.get_by_text("Battle chat", exact=True).first.click()
     expect(page.locator(".replay-view__chat-panel")).to_be_visible(timeout=30_000)

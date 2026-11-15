@@ -31,11 +31,11 @@
 
 /* Share toolbar: stats-source chip + hide-all-nicknames toggle + per-row
    eye hint (left) and the copy-share-shot action (right); copy feedback
-   rides the global toast surface instead of an inline note. (The chip's
-   own pill styles live in LiveStatsModeChip.scss — it rides every chunk
-   this toolbar does.) Wraps like the live head on narrow widths — a
-   long-locale chip label must never push the row into horizontal
-   overflow. */
+   rides the global toast surface instead of an inline note. (Every chip's
+   FACE is AppTag's; LiveStatsModeChip.scss keeps only the stats chip's
+   popover/anchor rules — it rides every chunk this toolbar does.) Wraps
+   like the live head on narrow widths — a long-locale chip label must
+   never push the row into horizontal overflow. */
 .replay-view__postbattle-toolbar {
   display: flex;
   align-items: center;
@@ -63,7 +63,11 @@
 
 /* The 全员/我的 view switcher — a segmented pair leading the toolbar
    (the roster matrix and the self report are two views of one battle, so
-   they read as tabs, not as toggles). */
+   they read as tabs, not as toggles). Its segment face mirrors the
+   HkTag-sm rung AppTag presses everywhere else in this toolbar — 10px text
+   on a 1.4 line plus 1px vertical padding inside the track's 1px border =
+   18px total — so the switcher and every AppTag beside it land on ONE row
+   height instead of the old 20.5px segment floating 2px proud. */
 .replay-view__postbattle-viewswitch {
   display: inline-flex;
   align-items: center;
@@ -72,13 +76,13 @@
   overflow: hidden;
 }
 .replay-view__postbattle-viewswitch-btn {
-  padding: 0.1rem 0.65rem;
+  padding: 1px 0.65rem;
   border: none;
   background: transparent;
   color: rgb(var(--color-text) / 60%);
   font-size: var(--text-2xs);
   font-weight: 600;
-  line-height: 1.5;
+  line-height: 1.4;
   white-space: nowrap;
   cursor: pointer;
 
