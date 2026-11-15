@@ -442,6 +442,11 @@
 
   button {
     flex: none;
+    // Inline flex so the busy HkSpinner renders LEFT of the label instead
+    // of stacking above it (the spinner wrapper is a block-level flex div).
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 0.4375rem 1rem;
     font-size: var(--text-sm);
     color: rgb(var(--color-bg));

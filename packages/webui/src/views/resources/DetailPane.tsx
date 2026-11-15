@@ -26,6 +26,7 @@ import {
   HkImagePreview,
   HMenu,
   HkScrollContainer,
+  HkSpinner,
   HkSwitch,
   HkTabs,
 } from "@celestia-island/hikari";
@@ -422,7 +423,7 @@ function renderCatalogDetail(ctx: ResourcesCtx, entry: CatalogEntry) {
                 disabled={!!busyState}
                 onClick={() => (ctx.confirmTarget.value = entry)}
               >
-                <Trash2 size={13} />
+                {busyUninstall ? <HkSpinner size="xs" tone="current" /> : <Trash2 size={13} />}
                 {busyUninstall ? t("resources.uninstalling") : t("resources.uninstall")}
               </button>
             )}
@@ -776,7 +777,7 @@ function renderInstalledDetail(ctx: ResourcesCtx, mod: InstalledMod) {
               disabled={!!state}
               onClick={() => (ctx.unitTarget.value = mod)}
             >
-              <Trash2 size={13} />
+              {state === "uninstall" ? <HkSpinner size="xs" tone="current" /> : <Trash2 size={13} />}
               {state === "uninstall" ? t("resources.uninstalling") : t("resources.uninstall")}
             </button>
           </div>
@@ -856,7 +857,11 @@ function renderForeignDetail(ctx: ResourcesCtx, unit: ForeignModUnit) {
                 disabled={!!aslainBusy}
                 onClick={() => (ctx.unitTarget.value = aslainRow)}
               >
-                <Trash2 size={13} />
+                {aslainBusy === "uninstall" ? (
+                  <HkSpinner size="xs" tone="current" />
+                ) : (
+                  <Trash2 size={13} />
+                )}
                 {aslainBusy === "uninstall"
                   ? t("resources.uninstalling")
                   : t("resources.uninstall")}
@@ -972,6 +977,7 @@ function renderLocalDetail(ctx: ResourcesCtx) {
             disabled={ctx.analyzing.value || !ctx.gameRoot.value}
             onClick={ctx.pickAndAnalyze}
           >
+            {ctx.analyzing.value ? <HkSpinner size="xs" tone="current" /> : null}
             {ctx.analyzing.value ? t("resources.analyzing") : t("resources.pickFolder")}
           </button>
         </div>
