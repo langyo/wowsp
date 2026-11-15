@@ -2,7 +2,7 @@
   "title": "Mes statistiques",
   "noAccount": "Aucun compte lié pour l'instant",
   "noAccountHint": "Liez votre compte Wargaming pour voir vos statistiques de combat ici.",
-  "loading": "Chargement des statistiques...",
+  "loading": "Chargement des statistiques",
   "refresh": "Actualiser",
   "refreshDone": "Actualisé · {n} nouvelle(s) bataille(s)",
   "refreshUpToDate": "Déjà à jour",

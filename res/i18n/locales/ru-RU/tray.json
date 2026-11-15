@@ -13,6 +13,6 @@
   "phoneLinked": "Телефон подключён ({n})",
   "phoneCaptcha": "Ожидание капчи",
   "phoneError": "Ошибка связи с телефоном",
-  "phoneConnecting": "Подключение…",
+  "phoneConnecting": "Подключение",
   "phoneStopped": "Телефон не подключён"
 }

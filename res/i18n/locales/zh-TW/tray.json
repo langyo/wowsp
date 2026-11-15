@@ -13,6 +13,6 @@
   "phoneLinked": "手機已連線（{n}）",
   "phoneCaptcha": "等待驗證碼",
   "phoneError": "手機連線出錯",
-  "phoneConnecting": "連線中…",
+  "phoneConnecting": "連線中",
   "phoneStopped": "手機未連線"
 }

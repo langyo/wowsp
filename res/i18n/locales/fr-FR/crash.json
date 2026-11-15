@@ -100,9 +100,9 @@
     "restoreDone": "Avertissement restauré"
   },
   "actions": {
-    "restarting": "Redémarrage du client…",
-    "quarantining": "Mise en quarantaine…",
-    "exporting": "Export du rapport…",
+    "restarting": "Redémarrage du client",
+    "quarantining": "Mise en quarantaine",
+    "exporting": "Export du rapport",
     "safeModeOn": "Activation du mode sans échec…"
   },
   "severity": {

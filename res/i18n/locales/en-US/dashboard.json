@@ -2,7 +2,7 @@
   "title": "My stats",
   "noAccount": "No account bound yet",
   "noAccountHint": "Bind your Wargaming account to see your battle stats here.",
-  "loading": "Loading stats...",
+  "loading": "Loading stats",
   "refresh": "Refresh",
   "refreshDone": "Refreshed · {n} new battle(s)",
   "refreshUpToDate": "Already up to date",

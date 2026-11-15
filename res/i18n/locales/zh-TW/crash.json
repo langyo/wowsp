@@ -100,9 +100,9 @@
     "restoreDone": "警告已恢復"
   },
   "actions": {
-    "restarting": "正在重新啟動用戶端…",
-    "quarantining": "正在隔離…",
-    "exporting": "正在匯出報告…",
+    "restarting": "正在重新啟動用戶端",
+    "quarantining": "正在隔離",
+    "exporting": "正在匯出報告",
     "safeModeOn": "正在開啟安全模式…"
   },
   "severity": {

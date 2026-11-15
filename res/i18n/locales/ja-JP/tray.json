@@ -13,6 +13,6 @@
   "phoneLinked": "スマホ接続中（{n}）",
   "phoneCaptcha": "認証コード待ち",
   "phoneError": "スマホ接続エラー",
-  "phoneConnecting": "接続中…",
+  "phoneConnecting": "接続中",
   "phoneStopped": "スマホ未接続"
 }

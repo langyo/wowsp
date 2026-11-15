@@ -13,6 +13,6 @@
   "phoneLinked": "手机已连接（{n}）",
   "phoneCaptcha": "等待验证码",
   "phoneError": "手机连接出错",
-  "phoneConnecting": "连接中…",
+  "phoneConnecting": "连接中",
   "phoneStopped": "手机未连接"
 }

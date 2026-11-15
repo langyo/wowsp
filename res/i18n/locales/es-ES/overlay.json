@@ -27,7 +27,7 @@
   "colHeaderJoin": " ",
   "chat": {
     "title": "Traducción del chat",
-    "loading": "Traduciendo…",
+    "loading": "Traduciendo",
     "ready": "Traducción lista",
     "pasteHint": "Pulsa Enter para abrir el chat y Ctrl+V para pegar y enviar",
     "unavailable": "Traducción no disponible",

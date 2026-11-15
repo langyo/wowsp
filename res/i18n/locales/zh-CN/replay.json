@@ -87,7 +87,7 @@
     "gone": "已消失 {n} s"
   },
   "tip": {
-    "loading": "查询中…",
+    "loading": "查询中",
     "failed": "查询失败",
     "hidden": "隐藏战绩",
     "winrate": "胜率",
@@ -97,7 +97,7 @@
     "hitRate": "命中",
     "career": "历史战绩",
     "state": "当前状态",
-    "careerLoading": "战绩查询中…",
+    "careerLoading": "战绩查询中",
     "player": "玩家",
     "status": "状态",
     "position": "位置",
@@ -317,7 +317,7 @@
     "selfCompTitle": "伤害组成"
   },
   "postbattle": {
-    "loadingGlobal": "加载 {name} 全局战绩…",
+    "loadingGlobal": "加载 {name} 全局战绩",
     "destroyedByPre": "被 ",
     "destroyedByPost": " 摧毁",
     "damageUnknownNote": "录像不包含完整的对局信息，部分伤害来源不可见",
@@ -635,7 +635,7 @@
   "moveAdvice": {
     "toggle": "AI 走位建议",
     "portableUnavailable": "此版本不包含 AI 推理。安装完整版后即可使用走位建议。",
-    "loading": "计算中…",
+    "loading": "计算中",
     "holdMark": "停驻：模型认为不该移动",
     "second": "浅色短箭头：次选走向",
     "debugModel": "实验模型"
@@ -663,8 +663,8 @@
   "report": {
     "title": "AI 战报",
     "copy": "复制长图",
-    "copying": "渲染中…",
-    "loading": "评分中…",
+    "copying": "渲染中",
+    "loading": "评分中",
     "allies": "友方",
     "enemies": "敌方",
     "coverage": "数据覆盖",

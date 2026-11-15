@@ -87,7 +87,7 @@
     "gone": "Disparu depuis {n} s"
   },
   "tip": {
-    "loading": "Chargement…",
+    "loading": "Chargement",
     "failed": "Échec",
     "hidden": "Statistiques masquées",
     "winrate": "Taux de victoire",
@@ -97,7 +97,7 @@
     "hitRate": "Précision",
     "career": "Statistiques",
     "state": "État actuel",
-    "careerLoading": "Recherche des statistiques…",
+    "careerLoading": "Recherche des statistiques",
     "player": "Joueur",
     "status": "Statut",
     "position": "Position",
@@ -317,7 +317,7 @@
     "selfCompTitle": "Composition des dégâts"
   },
   "postbattle": {
-    "loadingGlobal": "Chargement des statistiques globales de {name}…",
+    "loadingGlobal": "Chargement des statistiques globales de {name}",
     "destroyedByPre": "Détruit par ",
     "destroyedByPost": "",
     "damageUnknownNote": "Les replays n'incluent pas les informations complètes de la bataille — certaines sources de dégâts ne peuvent être attribuées",
@@ -635,7 +635,7 @@
   "moveAdvice": {
     "toggle": "Conseils de déplacement IA",
     "portableUnavailable": "L'inférence IA n'est pas disponible dans cette version. Installez la version complète pour utiliser les conseils de déplacement.",
-    "loading": "Calcul…",
+    "loading": "Calcul",
     "holdMark": "Tenir position : le modèle ne voit pas de meilleur cap",
     "second": "Flèche courte pâle : second cap probable",
     "debugModel": "Modèle expérimental"
@@ -663,8 +663,8 @@
   "report": {
     "title": "Rapport de bataille IA",
     "copy": "Copier l'image",
-    "copying": "Rendu…",
-    "loading": "Analyse du replay…",
+    "copying": "Rendu",
+    "loading": "Analyse du replay",
     "allies": "Alliés",
     "enemies": "Ennemis",
     "coverage": "Couverture des données",

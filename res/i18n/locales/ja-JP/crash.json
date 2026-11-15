@@ -100,9 +100,9 @@
     "restoreDone": "警告を復元しました"
   },
   "actions": {
-    "restarting": "クライアントを再起動中…",
-    "quarantining": "隔離中…",
-    "exporting": "レポートをエクスポート中…",
+    "restarting": "クライアントを再起動中",
+    "quarantining": "隔離中",
+    "exporting": "レポートをエクスポート中",
     "safeModeOn": "セーフモードを有効化中…"
   },
   "severity": {

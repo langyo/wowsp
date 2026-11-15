@@ -2,7 +2,7 @@
   "title": "Mis estadísticas",
   "noAccount": "Aún no hay cuenta vinculada",
   "noAccountHint": "Vincula tu cuenta de Wargaming para ver aquí tus estadísticas de batalla.",
-  "loading": "Cargando estadísticas...",
+  "loading": "Cargando estadísticas",
   "refresh": "Actualizar",
   "refreshDone": "Actualizado · {n} batalla(s) nueva(s)",
   "refreshUpToDate": "Ya está actualizado",

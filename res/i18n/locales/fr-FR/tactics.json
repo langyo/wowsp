@@ -45,7 +45,7 @@
     "next": "Suivant",
     "learnedSection": "Mesuré d'après vos replays",
     "measured": "Mesuré",
-    "learning": "Apprentissage des points depuis les replays…",
+    "learning": "Apprentissage des points depuis les replays",
     "noLearned": "Pas encore de replay de cette carte sur cette machine — jouez-en une et les points mesurés apparaîtront ici.",
     "learnedFrom": "Du replay {date}",
     "sampleCount": "{n} batailles",

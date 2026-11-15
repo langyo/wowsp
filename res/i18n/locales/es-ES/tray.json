@@ -13,6 +13,6 @@
   "phoneLinked": "Teléfono conectado ({n})",
   "phoneCaptcha": "Esperando captcha",
   "phoneError": "Error de conexión",
-  "phoneConnecting": "Conectando…",
+  "phoneConnecting": "Conectando",
   "phoneStopped": "Teléfono sin conectar"
 }

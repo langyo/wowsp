@@ -100,9 +100,9 @@
     "restoreDone": "Warning restored"
   },
   "actions": {
-    "restarting": "Restarting the client…",
-    "quarantining": "Quarantining…",
-    "exporting": "Exporting report…",
+    "restarting": "Restarting the client",
+    "quarantining": "Quarantining",
+    "exporting": "Exporting report",
     "safeModeOn": "Turning safe mode on…"
   },
   "severity": {

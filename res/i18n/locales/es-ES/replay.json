@@ -87,7 +87,7 @@
     "gone": "Desaparecido hace {n} s"
   },
   "tip": {
-    "loading": "Cargando…",
+    "loading": "Cargando",
     "failed": "Error",
     "hidden": "Estadísticas ocultas",
     "winrate": "Tasa de victorias",
@@ -97,7 +97,7 @@
     "hitRate": "Precisión",
     "career": "Estadísticas",
     "state": "Estado actual",
-    "careerLoading": "Buscando estadísticas…",
+    "careerLoading": "Buscando estadísticas",
     "player": "Jugador",
     "status": "Estado",
     "position": "Posición",
@@ -317,7 +317,7 @@
     "selfCompTitle": "Composición del daño"
   },
   "postbattle": {
-    "loadingGlobal": "Cargando las estadísticas globales de {name}…",
+    "loadingGlobal": "Cargando las estadísticas globales de {name}",
     "destroyedByPre": "Destruído por ",
     "destroyedByPost": "",
     "damageUnknownNote": "Las repeticiones no incluyen la información completa de la batalla — algunas fuentes de daño no se pueden atribuir",
@@ -635,7 +635,7 @@
   "moveAdvice": {
     "toggle": "Consejos de movimiento IA",
     "portableUnavailable": "La inferencia IA no está disponible en esta compilación. Instala la versión completa para usar los consejos de movimiento.",
-    "loading": "Calculando…",
+    "loading": "Calculando",
     "holdMark": "Mantener posición: el modelo no ve un rumbo mejor",
     "second": "Flecha corta tenue: segundo rumbo probable",
     "debugModel": "Modelo experimental"
@@ -663,8 +663,8 @@
   "report": {
     "title": "Informe de batalla IA",
     "copy": "Copiar imagen",
-    "copying": "Renderizando…",
-    "loading": "Puntuando la repetición…",
+    "copying": "Renderizando",
+    "loading": "Puntuando la repetición",
     "allies": "Aliados",
     "enemies": "Enemigos",
     "coverage": "Cobertura de datos",
