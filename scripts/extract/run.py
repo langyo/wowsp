@@ -102,6 +102,13 @@ TECHTREE_LESTA_JSON = SRC_DATA / "tech_tree_lesta.json"
 # trees and refreshed by the techtree module alongside them.
 UPGRADE_CHAIN_JSON = SRC_DATA / "ship_upgrade_chain.json"
 UPGRADE_CHAIN_LESTA_JSON = SRC_DATA / "ship_upgrade_chain_lesta.json"
+# The in-game probe's server-synced price-catalog capture, copied into the
+# shared cache. Every WG chain rebuild re-applies it (module XP/credits are
+# server-synced and NOT in GameParams — skipping this step is exactly how the
+# 15.10 refresh wiped the #1618 economy fill once).
+PRICE_CATALOG_JSON = CACHE_DIR / "price_catalog.json"
+# Explicit --price-catalog override, resolved in main(); None → cache default.
+PRICE_CATALOG_ARG: Path | None = None
 SHIPMODELS_JSON = SRC_DATA / "ship_models.json"
 
 
@@ -130,7 +137,20 @@ def main() -> None:
         help="URL or local path to wowsinfo.json (ship_id↔index bridge)",
     )
     ap.add_argument("--refresh", action="store_true", help="re-fetch shared caches even if present")
+    ap.add_argument(
+        "--price-catalog",
+        default=None,
+        help="in-game probe price-catalog capture (price_catalog.json) to refill "
+        "the WG upgrade-chain economy after every chain rebuild (default: "
+        "WOWSP_PRICE_CATALOG, then the cache copy %LOCALAPPDATA%/WoWSP-extract/"
+        "price_catalog.json)",
+    )
     args = ap.parse_args()
+    global PRICE_CATALOG_ARG
+    if args.price_catalog:
+        PRICE_CATALOG_ARG = Path(args.price_catalog)
+        if not PRICE_CATALOG_ARG.is_file():
+            _die(f"price catalog not found: {PRICE_CATALOG_ARG}")
     # Allow `just extract rarity,techtree` (positional) as a shorthand for --module.
     if args.module_pos and args.module == "all":
         args.module = args.module_pos
@@ -374,15 +394,51 @@ def _run_upgrade_chain(realm: str, gameparams: Path, out: Path) -> None:
     ucType slot, prev-chain ordered like shipParts.ts at runtime), the ships
     each top module unlocks (GameParams entry keys resolved to numeric
     shipIds) and the unlocked ship's own costXP (the tech-tree connector
-    tooltip's minimal case). Per-module XP/credits stay null: the client data
-    carries ship-level economy only — module prices live in the client's UI
-    economy layer, not in GameParams.
+    tooltip's minimal case). GameParams carries ship-level economy only: the
+    per-module research XP / buy credits live in the client's server-synced
+    price catalog, so the WG bundle is REFILLED from the captured catalog
+    right after every rebuild (see _apply_price_catalog). Skipping that step
+    regresses the bundle to all-null economy — the 15.10 data refresh did
+    exactly that once. Lesta keeps the nullable fields: its prices are
+    server-synced too and no Lesta capture exists.
     """
     _py(
         "build_upgrade_chain.py",
         "--realm", realm,
         "--gameparams", str(gameparams),
         "--out", str(out),
+    )
+    if realm == "wg":
+        _apply_price_catalog(out)
+
+
+def _apply_price_catalog(out: Path) -> None:
+    """Re-join the captured client price catalog onto the fresh WG bundle.
+
+    The capture arrives from the in-game probe (res_mods/PnFMods/WoWSPProbe/
+    price_catalog.json — see packages/ingame-plugin); copy it into the shared
+    cache as price_catalog.json (or pass --price-catalog) so every chain
+    rebuild keeps the module economy filled. Resolution order: --price-catalog,
+    then WOWSP_PRICE_CATALOG, then the cache copy; with none present the step
+    prints a skip note instead of failing (the bundle just stays null-filled,
+    as the committed Lesta bundle intentionally is).
+    """
+    capture = PRICE_CATALOG_ARG or os.environ.get("WOWSP_PRICE_CATALOG") or PRICE_CATALOG_JSON
+    capture = Path(capture)
+    if not capture.is_file():
+        print(
+            f"[upgrade-chain] NOTE: no price-catalog capture at {capture} — the "
+            "WG bundle's per-module XP/credits stay null. Capture one with the "
+            "in-game probe and copy it there (or pass --price-catalog).",
+            flush=True,
+        )
+        return
+    print(f"[upgrade-chain] applying price catalog: {capture}", flush=True)
+    _py(
+        "apply_price_catalog.py",
+        "--realm", "wg",
+        "--catalog", str(capture),
+        "--apply",
     )
 
 

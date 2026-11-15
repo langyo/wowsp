@@ -161,6 +161,20 @@
     font-weight: 700;
   }
 
+  /* The group's module-variant dropdown (hikari's compact HkPopupSelect):
+     pinned to the header's far edge; the "sm" trigger density carries the
+     row, only the value text shrinks to the group's own label scale. */
+  &__variant {
+    margin-left: auto;
+    font-size: var(--text-2xs);
+    min-width: 0;
+    max-width: 9.5rem;
+
+    .hk-popup-select-value {
+      font-size: var(--text-2xs);
+    }
+  }
+
   &__rows {
     margin: 0;
     display: flex;

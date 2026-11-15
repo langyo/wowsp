@@ -819,6 +819,32 @@
       color: rgb(var(--color-error));
     }
   }
+
+  /* Research-Bureau purchase line (legendary upgrades only): divided from
+     the effect list like a game-tooltip footer, the points value right. */
+  &__divider {
+    border-top: 1px solid rgb(var(--color-border) / 40%);
+    margin-top: 0.35rem;
+    padding-top: 0.3rem;
+  }
+
+  &__rb {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin-top: 0.3rem;
+  }
+
+  &__rb-label {
+    color: rgb(var(--color-muted));
+  }
+
+  &__rb-value {
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
 }
 
 /* ── Center: modernization slots ───────────────────────────────────────── */

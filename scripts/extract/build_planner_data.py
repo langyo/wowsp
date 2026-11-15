@@ -274,10 +274,12 @@ def extract_modernizations(txt: str, lang: dict) -> list[dict]:
         rows.append({
             "index": e.get("index"),
             "name": name,
-            # Upstream lang.json lags the client on the upgrade titles (see
-            # loc_with_client) — descriptions keep the upstream-only behaviour.
+            # Upstream lang.json lags the client on the upgrade texts: it
+            # misses most titles AND every IDS_DESC_PCM* entry except the
+            # uniques', while the client's own gettext catalogs carry both
+            # for the whole catalog — fall back per-locale (loc_with_client).
             "names": loc_with_client(lang, "IDS_TITLE_" + name.upper()),
-            "desc": loc(lang, "IDS_DESC_" + name.upper()),
+            "desc": loc_with_client(lang, "IDS_DESC_" + name.upper()),
             "slot": slot_for(name, e.get("slot", -1)),
             "modifiers": mods,
             "shiptype": e.get("shiptype", []),
