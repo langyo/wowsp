@@ -1,11 +1,11 @@
 {
   "assets": {
-    "mod-index.json": "7901b126b443c34b2422e43c572a8a02b4a2cee9f0be7220d75c125906973a3e"
+    "mod-index.json": "97647b7cb8a003bb8ce9cf1327551df49907333fad5bc38d702ce99a268aa336"
   },
   "channel": "mod-hub",
-  "generated_at": "2026-11-13T06:33:21Z",
+  "generated_at": "2026-11-16T12:38:47Z",
   "key_id": "main",
-  "seq": 10,
-  "sig": "X/TlJ4bbBXgyFK/o7sgPe5VF7yTqQSt/F21WU0m3KSGXAdwfXp9gOBRM+c4hf7SWfdyIv+Ax7cJAcjVeheGmCQ==",
+  "seq": 11,
+  "sig": "N+b5BX0JZ/glSR2oOuC0D8E4ZnSy2hFt11Knd3P38LorZCpUlSFsNWU8cgk6Pa4OLNwAVG8ZFhv+57gTWzsEDQ==",
   "tag": "mod-hub"
 }
