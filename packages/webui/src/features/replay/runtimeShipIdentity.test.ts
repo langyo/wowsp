@@ -43,7 +43,11 @@ describe("resolveRuntimeShips", () => {
     mocks.getShipGameparams.mockResolvedValue(RAW_FULL);
     resolveRuntimeShips([UNKNOWN_ID], "C:/Game");
     await flushPromises();
-    expect(mocks.getShipGameparams).toHaveBeenCalledWith(UNKNOWN_ID, "C:/Game");
+    expect(mocks.getShipGameparams).toHaveBeenCalledWith(
+      UNKNOWN_ID,
+      "C:/Game",
+      undefined,
+    );
     expect(runtimeShipEntry(UNKNOWN_ID)).toEqual({
       index: "PJSB719",
       tier: 9,
@@ -138,7 +142,11 @@ describe("resolveRuntimeShips", () => {
     resolveRuntimeShips([UNKNOWN_ID], "C:/GameB");
     await flushPromises();
     expect(mocks.getShipGameparams).toHaveBeenCalledTimes(2);
-    expect(mocks.getShipGameparams).toHaveBeenLastCalledWith(UNKNOWN_ID, "C:/GameB");
+    expect(mocks.getShipGameparams).toHaveBeenLastCalledWith(
+      UNKNOWN_ID,
+      "C:/GameB",
+      undefined,
+    );
     expect(runtimeShipEntry(UNKNOWN_ID)?.tier).toBe(9);
   });
 
@@ -162,5 +170,30 @@ describe("resolveRuntimeShips", () => {
     resolveRuntimeShips([null, undefined, 0, ""], "C:/Game");
     await flushPromises();
     expect(mocks.getShipGameparams).not.toHaveBeenCalled();
+  });
+
+  it("forwards the battle's branch and re-probes across branches", async () => {
+    // The hot bundle serves a shared ship id per realm (the clients' data
+    // has diverged), so the probe must carry the battle's client — and the
+    // attempt key must fold it in: the same id under another branch is a
+    // different lookup, not a dedupe hit.
+    mocks.getShipGameparams.mockRejectedValueOnce(new Error("wg miss"));
+    resolveRuntimeShips([UNKNOWN_ID], "C:/Game", "wg");
+    await flushPromises();
+    expect(mocks.getShipGameparams).toHaveBeenCalledWith(
+      UNKNOWN_ID,
+      "C:/Game",
+      "wg",
+    );
+    mocks.getShipGameparams.mockResolvedValue(RAW_FULL);
+    resolveRuntimeShips([UNKNOWN_ID], "C:/Game", "lesta");
+    await flushPromises();
+    expect(mocks.getShipGameparams).toHaveBeenCalledTimes(2);
+    expect(mocks.getShipGameparams).toHaveBeenLastCalledWith(
+      UNKNOWN_ID,
+      "C:/Game",
+      "lesta",
+    );
+    expect(runtimeShipEntry(UNKNOWN_ID)?.tier).toBe(9);
   });
 });

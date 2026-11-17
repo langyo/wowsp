@@ -19,6 +19,7 @@ import {
 } from "@/utils/shipCompare";
 import { useAccountStore } from "@/stores/account";
 import { useEncyclopediaStore } from "@/stores/encyclopedia";
+import { useShipsUiStore } from "@/stores/shipsUi";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
 import { type ShipInfo } from "@/api";
@@ -59,6 +60,9 @@ export default defineComponent({
     const toast = useToast();
     const config = useConfigStore();
     const gameStatus = useGameStatusStore();
+    // The branch source this view renders under — the compare set's slice
+    // realm follows it (the two clients share ids but diverged data).
+    const shipsUi = useShipsUiStore();
     const shipIds = ref<number[]>([]);
     const pickerOpen = ref(false);
     const groupKey = ref(COMPARE_GROUPS[0].key);
@@ -153,7 +157,7 @@ export default defineComponent({
         if (gameparamsByShip.value.has(s.shipId) || gameparamsPending.has(s.shipId)) continue;
         gameparamsPending.add(s.shipId);
         api
-          .getShipGameparams(s.shipId, root)
+          .getShipGameparams(s.shipId, root, shipsUi.treeRealm)
           .then((gp) => {
             const next = new Map(gameparamsByShip.value);
             next.set(s.shipId, gp);

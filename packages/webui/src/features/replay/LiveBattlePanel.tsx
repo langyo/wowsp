@@ -94,6 +94,7 @@ import { t } from "@/i18n";
 import { shipNameFromOfflineDb, shipOfflineEntry } from "@/features/holographic/modelLoader";
 import { divisionLetters } from "@/utils/divisions";
 import { displayMapName } from "@/utils/mapNames";
+import { branchFromPlayerRealm } from "@/utils/realms";
 import { orderForTab, type TabOrderedVehicle } from "./liveTabOrder";
 import LiveShipMeta from "./LiveShipMeta";
 import { playerBuildView, type PlayerBuildView } from "./playerBuild";
@@ -322,8 +323,19 @@ export default defineComponent({
     // Backfill ships the offline bake predates: on every roster (or game
     // root) change, probe the unknown shipIds against the client's own
     // GameParams. Fire-and-forget — the resolver dedupes, attempts once per
-    // (root, shipId) and registers whatever resolves; the epoch bump below
-    // then re-sorts and re-renders the affected rows.
+    // (root, shipId, branch) and registers whatever resolves; the epoch
+    // bump below then re-sorts and re-renders the affected rows.
+    // The probe names the client the battle belongs to: the install kind
+    // is the ground truth (a Lesta client's replay is Lesta data), the
+    // player realm the fallback proxy (ru IS the Lesta cluster), wg else —
+    // the two clients share ship ids but their data has diverged.
+    const dataBranch = computed<"wg" | "lesta">(() => {
+      const kind =
+        config.activeInstall?.kind ?? gameStatus.process.matchedInstall?.kind ?? null;
+      if (kind === "lesta") return "lesta";
+      if (kind != null) return "wg";
+      return branchFromPlayerRealm(props.realm || accounts.activeRealm);
+    });
     watch(
       [() => props.arena, gameRoot],
       ([arena, root]) => {
@@ -331,6 +343,7 @@ export default defineComponent({
         resolveRuntimeShips(
           arena.vehicles.map((v) => v.shipId),
           root,
+          dataBranch.value,
         );
       },
       { immediate: true },

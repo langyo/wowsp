@@ -17,7 +17,7 @@ bakes the same slice shape for BOTH realms and writes it as a zip that
 hot-update channel, so clients can download a current slice set from our own
 server instead of relying on an install or an app release.
 
-Container: a DEFLATE zip, one compact JSON slice per ship plus a
+Container: a DEFLATE zip, one compact JSON slice per ship per REALM plus a
 `manifest.json`. Zip (not one big JSON) because a full WG dump's slices are
 ~136 MB of JSON (~13 MB compressed): inflating that into memory for a single
 ship lookup is unacceptable, while a zip's central directory lets the client
@@ -25,6 +25,22 @@ extract exactly one entry. The archive is byte-deterministic — sorted
 entries, fixed entry timestamps, no bake timestamp inside — so identical
 input content keeps the same sha256 and a republish is a client no-op
 (content-addressed manifest, see publish_data_pack.py).
+
+REALM PARTITION (format 2): the two clients share most ship ids (862 of the
+1200 WG slices collide with a Lesta slice) but their data has DIVERGED —
+Lesta rebalanced ships independently (submarines: an Engine Boost consumable
+and a renamed hydro exist only in the Lesta client; WG's U-2501 never lists
+one), and a dozen colliding ids even name different ships. The historic flat
+merge let the Lesta slice shadow the WG slice on every collision, so WG
+clients (the hot pack answers BEFORE the install) were served Lesta data —
+the reported "why does the submarine U-2501 have Engine Boost" bug. Entries
+are therefore namespaced `wg/<id>.json` and `lesta/<id>.json`, the reader
+picks the realm it is rendering, and NO flat `<id>.json` layer exists:
+realm-aware readers gate on `format: 2` (a stale flat bundle is skipped
+whole), while pre-partition readers — which never look at `format` — miss
+the namespaced entries and fall back to the install chain, whose data is
+correct-realm by construction. Serving a realm-blind flat layer again would
+have re-armed the very bug this partition fixes.
 
 Slices are the SAME payload as every other pack path (`__torpedoAmmo`
 and `__shellAmmo` embedded, SLICE_FORMAT v3):
@@ -98,15 +114,21 @@ def load_slices(path: Path) -> dict[int, dict]:
 def write_bundle(out: Path, realms: dict[str, tuple[dict[int, dict], str | None, str]]) -> dict:
     """Write the deterministic zip and return the manifest that landed in it.
 
-    `realms` maps realm name → (slices, build stamp, source path label). WG
-    ships are written first and Lesta ships second: on an id collision the
-    Lesta slice wins, matching the lookup order (the Lesta snapshot answers
-    its own ids before any install is consulted)."""
-    merged: dict[int, dict] = {}
+    `realms` maps realm name → (slices, build stamp, source path label).
+    Every realm's slices land under its own `<realm>/<id>.json` prefix —
+    NO cross-realm overwrite and NO flat `<id>.json` layer: the two
+    clients share most ids but their data has diverged, so a shared id must
+    serve each realm its own client's slice (see the module docstring).
+    `manifest.format` is 2 — realm-aware readers gate on it and skip older
+    flat bundles whole; flat-only readers never look at `format` (they
+    gate on `sliceFormat`, unchanged) and simply find no entry, falling
+    back to the install chain. `totalShips` counts the zip's slice
+    entries (per-realm copies included)."""
+    entries: list[tuple[str, dict]] = []
     realm_manifest: dict[str, dict] = {}
     for realm, (slices, build, source) in realms.items():
         for ship_id, slice_ in slices.items():
-            merged[ship_id] = slice_
+            entries.append((f"{realm}/{ship_id}.json", slice_))
         realm_manifest[realm] = {
             "gameVersion": build or realm,
             "build": build,
@@ -114,10 +136,10 @@ def write_bundle(out: Path, realms: dict[str, tuple[dict[int, dict], str | None,
             "source": source,
         }
     manifest = {
-        "format": 1,
+        "format": 2,
         "sliceFormat": SLICE_FORMAT,
         "realms": realm_manifest,
-        "totalShips": len(merged),
+        "totalShips": len(entries),
     }
     out.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
@@ -128,9 +150,9 @@ def write_bundle(out: Path, realms: dict[str, tuple[dict[int, dict], str | None,
             info,
             json.dumps(manifest, ensure_ascii=False, separators=(",", ":")) + "\n",
         )
-        for ship_id in sorted(merged):
-            body = json.dumps(merged[ship_id], ensure_ascii=False, separators=(",", ":")) + "\n"
-            info = zipfile.ZipInfo(f"{ship_id}.json", date_time=ZIP_DATE)
+        for name, slice_ in sorted(entries):
+            body = json.dumps(slice_, ensure_ascii=False, separators=(",", ":")) + "\n"
+            info = zipfile.ZipInfo(name, date_time=ZIP_DATE)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.external_attr = 0o644 << 16
             zf.writestr(info, body)
@@ -181,7 +203,7 @@ def main() -> int:
 
 
 def _selftest() -> int:
-    """Synthetic dumps: shape, merge precedence, determinism."""
+    """Synthetic dumps: shape, realm partition, determinism."""
     import tempfile
 
     wg = {
@@ -258,19 +280,35 @@ def _selftest() -> int:
         manifest = write_bundle(out_a, realms)
         write_bundle(out_b, realms)
         assert manifest["sliceFormat"] == SLICE_FORMAT, manifest
-        assert manifest["totalShips"] == 3, manifest
+        assert manifest["format"] == 2, "realm-partitioned bundle format"
+        # totalShips counts the zip's slice entries: per-realm copies
+        # included, so a shared id counts twice.
+        assert manifest["totalShips"] == 4, manifest
         assert manifest["realms"]["lesta"]["build"] == "lesta-123", manifest
         assert out_a.read_bytes() == out_b.read_bytes(), "bundle must be byte-deterministic"
         with zipfile.ZipFile(out_a) as zf:
             names = sorted(zf.namelist())
-            assert names == ["1001.json", "1002.json", "1003.json", MANIFEST_ENTRY], names
-            shared = json.loads(zf.read("1001.json"))
-            assert shared["name"] == "PASS110_Balao_LESTA", "Lesta must win the shared id"
-            balao = json.loads(zf.read("1002.json"))
-            assert balao["name"] == "PJSB018_Yamato_1944"
-            embedded = json.loads(zf.read("1001.json"))
-            assert "__torpedoAmmo" not in embedded, "Lesta slice carries no ammo block here"
-            yamato = json.loads(zf.read("1002.json"))
+            assert names == sorted(
+                [
+                    "wg/1001.json",
+                    "wg/1002.json",
+                    "lesta/1001.json",
+                    "lesta/1003.json",
+                    MANIFEST_ENTRY,
+                ],
+            ), names
+            # The shared id 1001 serves each realm its OWN slice — neither
+            # shadows the other (the flat Lesta-wins merge fed WG clients
+            # Lesta's diverged data: the "submarine with Engine Boost" bug).
+            assert json.loads(zf.read("wg/1001.json"))["name"] == "PASS110_Balao"
+            assert (
+                json.loads(zf.read("lesta/1001.json"))["name"] == "PASS110_Balao_LESTA"
+            ), "Lesta slice stays its own under lesta/"
+            # No flat layer: a pre-partition reader's flat lookup must miss
+            # (it falls back to the install chain) instead of re-serving a
+            # realm-blind slice.
+            assert "1001.json" not in names, "flat layer must stay dropped"
+            yamato = json.loads(zf.read("wg/1002.json"))
             assert yamato.get("A_Artillery"), "WG slice preserved"
             # Shape v3: the main battery's shells embed pruned (mount
             # ammoList + the switchable mode's secondaryAmmoList), while
