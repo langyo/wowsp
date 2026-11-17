@@ -34,11 +34,13 @@ import { i18n } from "./i18n";
 import { hikariLocaleOf } from "./i18n/hikariMessages";
 
 /** Which surface [`bootstrap`] is initializing. The tray panel — a small
- *  FIXED-SIZE popup created lazily, long after the main window booted —
- *  must skip the DPI interface-scale preference (its 320px window width
- *  would trip the scale's risky-rollback wipe and erase the preference the
- *  main window shares) and must not cancel a manual-locate pick the MAIN
- *  window may legitimately have in flight at that arbitrary moment. */
+ *  FIXED-WIDTH popup (its height follows the session state, see
+ *  commands/tray_panel.rs) created lazily, long after the main window
+ *  booted — must skip the DPI interface-scale preference (its 320px window
+ *  width would trip the scale's risky-rollback wipe and erase the
+ *  preference the main window shares) and must not cancel a manual-locate
+ *  pick the MAIN window may legitimately have in flight at that arbitrary
+ *  moment. */
 export type BootstrapSurface = "main" | "tray";
 
 export interface BootstrapOptions {
@@ -105,9 +107,10 @@ export function bootstrap(options: BootstrapOptions = {}): void {
   // WoWSP's interface-scale (DPI) preference writes a root CSS `zoom` over
   // the whole shell — same authoritative-key-wins contract as above. Only
   // a MAIN-window bootstrap runs it: the game overlay has its own separate
-  // non-Vue bootstrap, and the tray panel is a fixed-size popup whose
-  // 320px width would trip the scale's risky-rollback wipe (erasing the
-  // shared preference) and whose card must not zoom at all.
+  // non-Vue bootstrap, and the tray panel is a fixed-WIDTH popup (only its
+  // height follows the session state) whose 320px width would trip the
+  // scale's risky-rollback wipe (erasing the shared preference) and whose
+  // card must not zoom at all.
   if (isMain) {
     initDpiPrefs();
   }

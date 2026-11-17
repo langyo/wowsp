@@ -6,8 +6,13 @@
 //! it, and it shows the same session state the main window's bottom-left
 //! footer does (running client + who is playing — see `commands/session`)
 //! plus the old native menu's actions (show / quit). The window is
-//! declared in `tauri.conf.json` and created hidden at boot, so toggles are
-//! instant (see [`ensure_tray_panel`] for why it is NOT builder-created).
+//! declared in `tauri.conf.json` and created hidden on FIRST USE, so later
+//! toggles are instant (see [`ensure_tray_panel`] for why it is created
+//! lazily and NOT builder-created).
+//!
+//! Its frame FOLLOWS the session state: the running client adds a detail row
+//! to the status card, so that state gets the taller frame (see
+//! [`panel_logical_size`]) instead of squeezing the row into the offline one.
 //!
 //! Unlike the overlay it is a normal activatable window: it takes focus on
 //! show (so a click anywhere outside — `Focused(false)` in `lib.rs`'s window
@@ -22,12 +27,52 @@ use wowsp_tauri_shared::CommandResult;
 /// Window label (must be listed in `capabilities/default.json`).
 pub const TRAY_PANEL_LABEL: &str = "tray-panel";
 
-/// Panel size in LOGICAL px (scaled by the target monitor's factor). Fixed:
-/// the content is a compact status + menu list that must never scroll.
-/// 208 fits the tallest content state (game running + the +2 font-scale
-/// level) with a small margin; the status/player cards flex-absorb the
-/// slack of lighter states so no dead void opens between the blocks.
-const PANEL_LOGICAL: (f64, f64) = (320.0, 208.0);
+/// Panel width in LOGICAL px (scaled by the target monitor's factor). Fixed:
+/// the content is a compact status + menu list that must never scroll, and a
+/// wider popup would not buy it anything.
+const PANEL_WIDTH: f64 = 320.0;
+
+/// Panel height (LOGICAL px) with NO client running: brand row + status row +
+/// player card + the two menu rows. 208 fits that content at the tallest
+/// supported type preference: the tray page's real render measures 195px at the
+/// default type scale and 203px at +2 (~205px there with a player card bound) —
+/// a few px of margin left, which the status/player cards flex-absorb alongside
+/// the slack, so no dead void opens between the blocks.
+const PANEL_HEIGHT_OFFLINE: f64 = 208.0;
+
+/// Panel height (LOGICAL px) while a client RUNS: the status card grows the
+/// client's detail row (`Steam · ASIA · PID 5280` — an 18px icon line under the
+/// status pips), so the frame grows WITH the content instead of squeezing that
+/// row into the offline frame (which cropped the last menu row's box and the
+/// bottom padding). The delta is that detail row: 18px icon + the status card's
+/// 0.3rem inner gap (4.8px at the 16px root) ≈ 23px, rounded up to 24px. The
+/// tray page's real render measures 222px of content at the default type scale
+/// and 227px at +2, so this frame fits the running state at every type
+/// preference with a few px to spare — the cards flex-absorb that slack instead
+/// of the menu clipping.
+const PANEL_HEIGHT_RUNNING: f64 = 232.0;
+
+/// The panel's LOGICAL size for a session state — the height FOLLOWS the
+/// content ([`PANEL_HEIGHT_OFFLINE`] / [`PANEL_HEIGHT_RUNNING`]), the width
+/// never moves. `running` is the session hub's process state
+/// (`session::process_running`), the same flag the webui renders the status
+/// detail row from, so the frame and its content always agree.
+fn panel_logical_size(running: bool) -> (f64, f64) {
+    (
+        PANEL_WIDTH,
+        if running {
+            PANEL_HEIGHT_RUNNING
+        } else {
+            PANEL_HEIGHT_OFFLINE
+        },
+    )
+}
+
+/// [`panel_logical_size`] in PHYSICAL px for a monitor's scale factor.
+fn panel_physical(scale: f64, running: bool) -> (f64, f64) {
+    let (w, h) = panel_logical_size(running);
+    (w * scale, h * scale)
+}
 
 /// Edge breathing room (physical px) when clamping against the work area.
 const WORK_AREA_MARGIN: f64 = 8.0;
@@ -131,8 +176,9 @@ pub fn hide_panel(app: &AppHandle) {
 /// `lib.rs`'s setup beside the `WOWSP_AUTOSTART_PAIRING` precedent): open the
 /// panel WITHOUT a tray click, anchored to the primary work area's
 /// bottom-right corner — the same placement a bottom taskbar tray click
-/// produces. Manual/visual verification flows only; never compiled into
-/// release builds.
+/// produces. The frame follows the session state exactly like the tray path
+/// ([`panel_logical_size`]). Manual/visual verification flows only; never
+/// compiled into release builds.
 #[cfg(all(debug_assertions, desktop))]
 pub fn debug_show(app: &AppHandle) {
     let Some(win) = ensure_tray_panel(app) else {
@@ -151,7 +197,7 @@ pub fn debug_show(app: &AppHandle) {
     };
     let scale = monitor.scale_factor();
     let wa = monitor.work_area();
-    let panel = (PANEL_LOGICAL.0 * scale, PANEL_LOGICAL.1 * scale);
+    let panel = panel_physical(scale, super::session::process_running());
     let work = (
         wa.position.x as f64,
         wa.position.y as f64,
@@ -186,6 +232,10 @@ pub fn debug_show(app: &AppHandle) {
 /// verified with WindowFromPoint + GetWindowLongPtr against a release
 /// build). Creation is deferred to the first tray click / debug show, and
 /// [`ensure_styled`] still runs right after — the first reveal styles it.
+///
+/// The entry's declared 320×208 is only the CREATION seed: the window is
+/// created hidden and every show re-sizes it from [`panel_logical_size`], so a
+/// running client's taller frame never depends on the config value.
 fn ensure_tray_panel(app: &AppHandle) -> Option<WebviewWindow> {
     if let Some(win) = app.get_webview_window(TRAY_PANEL_LABEL) {
         return Some(win);
@@ -283,10 +333,24 @@ fn ensure_styled(_win: &WebviewWindow) {}
 /// (always physical px, even when the icon rect reports logical units);
 /// all placement math is then physical, scaling the panel's logical size by
 /// that monitor's factor.
+///
+/// The frame's HEIGHT follows the session state ([`panel_logical_size`]) and
+/// is re-derived on EVERY open, so a client start or exit between opens is
+/// always picked up (the panel hides on focus loss, which is exactly when the
+/// game is launched from another window). A flip while the panel IS open is the
+/// one case in which the frame can lag: a background client EXIT only leaves
+/// extra slack for that open (nothing clips), while a background client START
+/// would keep the shorter frame until the next open — unreachable in practice,
+/// since launching a client takes focus and so blur-hides the panel.
 fn place_and_show(win: &WebviewWindow, cursor: &PhysicalPosition<f64>, icon: &tauri::Rect) {
     let Some(monitor) = win.monitor_from_point(cursor.x, cursor.y).ok().flatten() else {
         // No monitor resolved (exotic multi-monitor teardown moment) — show
-        // where the window already is rather than dropping the click.
+        // where the window already is rather than dropping the click, but
+        // still re-size the frame (the window carries its own scale factor;
+        // 1.0 only if even that query fails).
+        let scale = win.scale_factor().unwrap_or(1.0);
+        let panel = panel_physical(scale, super::session::process_running());
+        let _ = win.set_size(PhysicalSize::new(panel.0, panel.1));
         let _ = win.show();
         let _ = win.set_focus();
         return;
@@ -301,7 +365,7 @@ fn place_and_show(win: &WebviewWindow, cursor: &PhysicalPosition<f64>, icon: &ta
     } else {
         (cursor.x - 20.0, cursor.y - 20.0, 40.0, 40.0)
     };
-    let panel = (PANEL_LOGICAL.0 * scale, PANEL_LOGICAL.1 * scale);
+    let panel = panel_physical(scale, super::session::process_running());
     let wa = monitor.work_area();
     let work = (
         wa.position.x as f64,
@@ -364,42 +428,101 @@ mod tests {
     use super::*;
 
     const WORK: (f64, f64, f64, f64) = (0.0, 0.0, 1920.0, 1040.0);
-    const PANEL: (f64, f64) = (320.0, 208.0);
+
+    /// The frame a session state gets, in LOGICAL px — the placement cases'
+    /// subject besides the origin math itself.
+    fn frame(running: bool) -> (f64, f64) {
+        panel_logical_size(running)
+    }
+
+    /// The width is the popup's one fixed dimension: no session state may
+    /// stretch it.
+    #[test]
+    fn frame_width_never_moves() {
+        assert_eq!(frame(false).0, 320.0);
+        assert_eq!(frame(true).0, frame(false).0);
+    }
+
+    /// The RUNNING frame is taller: its status card carries the client detail
+    /// row, and the window grows with it instead of squeezing the rows in.
+    #[test]
+    fn running_frame_grows_by_the_detail_row() {
+        let (offline_w, offline_h) = frame(false);
+        let (running_w, running_h) = frame(true);
+        assert_eq!(offline_w, running_w, "the width never moves");
+        // The delta IS the detail row (18px icon + the status card's 0.3rem
+        // inner gap = 22.8px), rounded up so the running frame keeps the
+        // offline frame's breathing room — assert the rounded contract, not a
+        // range that would let the unrounded 23px through.
+        assert_eq!(
+            running_h - offline_h,
+            24.0,
+            "the running frame grows by the rounded detail-row delta"
+        );
+    }
+
+    /// The logical frame becomes PHYSICAL px through the monitor's scale
+    /// factor — the panel's size on screen must follow the display's DPI.
+    #[test]
+    fn physical_frame_follows_the_monitor_scale() {
+        assert_eq!(panel_physical(1.0, false), (320.0, 208.0));
+        assert_eq!(panel_physical(1.5, true), (480.0, 348.0));
+        assert_eq!(
+            panel_physical(2.0, false),
+            (640.0, 416.0),
+            "a 200% display doubles both dimensions"
+        );
+    }
 
     /// Bottom-right tray (the common case): the panel opens ABOVE the icon,
     /// right-aligned with it (clamped off the screen's right edge).
     #[test]
     fn bottom_tray_opens_above_and_clamps_right() {
         let icon = (1880.0, 1000.0, 40.0, 40.0); // bottom edge, taskbar tray
-        let (x, y) = panel_origin(icon, PANEL, WORK);
+        let (x, y) = panel_origin(icon, frame(false), WORK);
         assert_eq!(y, 1000.0 - 208.0 - 8.0, "opens above the icon");
         assert_eq!(x, 1920.0 - 320.0 - 8.0, "clamped off the right edge");
     }
 
-    /// Top tray (taskbar at the top): the panel opens BELOW the icon.
+    /// The RUNNING frame still opens above a bottom tray by its OWN height —
+    /// the taller panel must not overlap the icon it is anchored to.
+    #[test]
+    fn running_frame_opens_above_a_bottom_tray() {
+        let icon = (1880.0, 1000.0, 40.0, 40.0);
+        let (x, y) = panel_origin(icon, frame(true), WORK);
+        assert_eq!(y, 1000.0 - 232.0 - 8.0, "opens above by the running height");
+        assert_eq!(x, 1920.0 - 320.0 - 8.0, "clamped off the right edge");
+    }
+
+    /// Top tray (taskbar at the top): the panel opens BELOW the icon — both
+    /// frames, since only the height differs between them.
     #[test]
     fn top_tray_opens_below() {
         let icon = (100.0, 0.0, 40.0, 40.0);
-        let (x, y) = panel_origin(icon, PANEL, WORK);
-        assert_eq!(y, 40.0 + 8.0, "opens below the icon");
-        assert!(x >= 8.0);
+        for panel in [frame(false), frame(true)] {
+            let (x, y) = panel_origin(icon, panel, WORK);
+            assert_eq!(y, 40.0 + 8.0, "opens below the icon ({panel:?})");
+            assert!(x >= 8.0);
+        }
     }
 
-    /// A left-side taskbar: the icon sits left-center, the panel opens to
-    /// the right of center — i.e. BELOW by the dominant-side rule — and the
-    /// horizontal clamp keeps it on screen.
+    /// A cramped work area: the icon sits in its bottom-right corner, so the
+    /// panel opens ABOVE and both clamps (horizontal and vertical) keep it
+    /// inside — for both frames.
     #[test]
     fn clamps_inside_small_work_area() {
         let work = (0.0, 0.0, 800.0, 600.0);
         let icon = (760.0, 560.0, 32.0, 32.0);
-        let (x, y) = panel_origin(icon, PANEL, work);
-        assert!(
-            x >= 8.0 && x + PANEL.0 <= 800.0 - 8.0 + 0.5,
-            "x inside: {x}"
-        );
-        assert!(
-            y >= 8.0 && y + PANEL.1 <= 600.0 - 8.0 + 0.5,
-            "y inside: {y}"
-        );
+        for panel in [frame(false), frame(true)] {
+            let (x, y) = panel_origin(icon, panel, work);
+            assert!(
+                x >= 8.0 && x + panel.0 <= 800.0 - 8.0 + 0.5,
+                "x inside: {x} ({panel:?})"
+            );
+            assert!(
+                y >= 8.0 && y + panel.1 <= 600.0 - 8.0 + 0.5,
+                "y inside: {y} ({panel:?})"
+            );
+        }
     }
 }

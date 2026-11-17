@@ -76,9 +76,9 @@ body {
   background: rgb(var(--color-border) / 8%);
   font-size: var(--text-2xs);
   color: rgb(var(--color-muted));
-  /* Absorbs the state-dependent height slack (offline vs running, font
-     scale) INSIDE the card, so the panel never shows a dead void between
-     blocks — see the menu's pinned-bottom note. */
+  /* Absorbs the leftover frame height (the type preference's scale, the
+     layout's fractional rounding) INSIDE the card, so the panel never shows
+     a dead void between blocks — see the menu's pinned-bottom note. */
   flex: 1 1 auto;
   min-height: fit-content;
 
@@ -177,8 +177,9 @@ body {
 .tray-panel__status-client {
   color: rgb(var(--color-text));
   /* Same truncation as the sidebar footer's client label: a long client
-     name must ellipsize, not wrap — the panel's height is sized to never
-     scroll, so a second detail line would clip the menu. */
+     name must ellipsize, not wrap — the running frame is sized for exactly
+     ONE detail line (PANEL_HEIGHT_RUNNING in commands/tray_panel.rs), so a
+     wrapped second line would clip the menu. */
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -229,9 +230,10 @@ body {
 /* Menu actions — the tray menu's Show / Quit as hikari HkMenuActionItem
    rows (the rows' own faces live in hikari's menu-item grammar; only the
    host wrapper's rhythm is ours). Pinned to the bottom by the flex-grow
-   cards above it: the window height (PANEL_LOGICAL in
-   commands/tray_panel.rs) fits the tallest state and the two cards absorb
-   every leftover pixel, so no dead void appears. */
+   cards above it: the window height FOLLOWS the session state
+   (panel_logical_size in commands/tray_panel.rs — the running frame is
+   taller for its client detail row) and the two cards absorb every leftover
+   pixel, so no dead void appears. */
 .tray-panel__menu {
   display: flex;
   flex-direction: column;
