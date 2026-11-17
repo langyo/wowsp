@@ -30,11 +30,16 @@ export default defineComponent({
         title={t("settings.title")}
         width="58rem"
         // hikari's settings-host contract class: the package's
-        // HkSettingsDialog.scss ships the flush pane scrollbar and its
-        // body-inner height pin; wowsp's SettingsShell.scss overrides that
-        // pin and the constant shell height into a content-fit frame
-        // (hug the active section's cards, floored and capped around the
-        // old band).
+        // HkSettingsDialog.scss ships the flush pane scrollbar, the
+        // body-inner height pin AND the desktop frame's constant band
+        // (--hk-settings-height, calc(70vh - 6.5rem)). WoWSP leaves the
+        // band alone — the window never resizes between sections, and a
+        // short section keeps a bounded dead band under its last card (the
+        // accepted 2026-11-17 trade that retired the 2026-11-08 content-fit
+        // hug and its 2026-11-11 floor). The one frame-adjacent override is
+        // the desktop body-inner unpin in components/settings/
+        // SettingsShell.scss, which keeps HkModal's size morph able to
+        // re-pin the frame on a WINDOW resize.
         contentClass="hk-settings-host"
       >
         <SettingsBody active={ui.visible} />

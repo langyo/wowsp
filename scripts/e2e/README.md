@@ -1,19 +1,25 @@
 # scripts/e2e — Playwright e2e suite
 
-## Status: 5 files / 14 cases, wired into CI
+## Status: 5 files / 15 cases, wired into CI
 
 The browser layer is no longer empty: deterministic layout-contract cases
 drive the real webui through the FastAPI mock backend, and the
 `E2E browser (ubuntu)` job in `ci.yml` runs the whole `-m ui` suite on
 every dispatched CI run (the repo's workflows are `workflow_dispatch`-only;
-the Mod Hub Sync digest lane is the routine trigger, so regressions like
-the 2026-11-11 settings-floor conflict surface within hours).
+the Mod Hub Sync digest lane is the routine trigger, so layout-contract
+regressions — the 2026-11-11 settings-floor conflict was one — surface
+within hours).
 
-- `test_settings_layout.py` — the desktop settings modal's content-fit
-  frame contract: per-section shell height `max(floor, content)` (the
-  24rem floor from #1940 reconciled with the 2026-11-08 content-fit fix),
-  the capped-frame scroll ownership, and the frozen size-morph probe's
-  frame-drop == shell-drop tell.
+- `test_settings_layout.py` — the desktop settings modal's CONSTANT-band
+  frame contract (2026-11-17 user direction, superseding the 2026-11-08
+  content-fit hug #1834 and its 2026-11-11 floor #1940): the exercised
+  section set sits at hikari's shipped `70vh - 6.5rem` band, switching
+  sections never resizes the window (frame height AND frame-minus-shell
+  chrome stay constant, including long → short), a WINDOW resize retunes
+  the band through WoWSP's desktop body-inner unpin (frame follows the
+  shell one-for-one), short sections keep their bounded dead band, long
+  ones scroll the pane only, and the rail entries never crush while the
+  rail scrolls.
 - `test_results_layout.py` — the post-battle window's frames.
 - `test_chat_layout.py` — the chat frame.
 - `test_live_roster.py` — the live roster surfaces (5 cases).
