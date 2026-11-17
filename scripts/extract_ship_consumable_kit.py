@@ -41,6 +41,16 @@ Usage:
     python scripts/extract_ship_consumable_kit.py
     python scripts/extract_ship_consumable_kit.py --full /path/to/GameParams.json
     python scripts/extract_ship_consumable_kit.py --no-full   # counts only
+
+Realm (--realm wg|lesta, default wg): the WG and Lesta clients share most
+ship ids but their consumable loadouts have diverged (Lesta rebalanced
+independently — their submarine rework moved Engine Boost / SonarSearch
+around, and their radar/hydro radii drifted from WG's), so the overlay
+must quote the BATTLE's own realm. ``--realm lesta`` enumerates ships and
+ability entities straight from the Lesta dump (no offline pack needed —
+it carries both the ShipAbilities layout and every variant's
+``logic.distShip``) and writes ``ship_consumable_kit_lesta.json``. The
+runtime hot channel ships both kits; consumers pick by branch.
 """
 
 from __future__ import annotations
@@ -67,6 +77,12 @@ DEFAULT_FULL = (
     / "GameParams.json"
 )
 DEFAULT_OUT = REPO_ROOT / "packages/webui/src/data/ship_consumable_kit.json"
+DEFAULT_LESTA_FULL = (
+    Path(os.environ.get("LOCALAPPDATA", Path.home() / ".local/share"))
+    / "WoWSP-extract"
+    / "GameParams_lesta.json"
+)
+DEFAULT_LESTA_OUT = REPO_ROOT / "packages/webui/src/data/ship_consumable_kit_lesta.json"
 
 FAMILY_RADAR = "RLSSearch"
 FAMILY_HYDRO = "SonarSearch"
@@ -157,7 +173,17 @@ def family_meters(
                     break
             if spec is None:
                 continue
-            dist = spec.get("logic", {}).get("distShip")
+            # `logic.distShip` is the canonical WG shape; the Lesta dump
+            # forks the variant layout and keeps distShip/distTorpedo
+            # top-level. Read the canonical one when present, else the
+            # fork — a realm's bake never loses radii to the other
+            # realm's schema.
+            logic = spec.get("logic")
+            dist = None
+            if isinstance(logic, dict):
+                dist = logic.get("distShip")
+            if dist is None:
+                dist = spec.get("distShip")
             if isinstance(dist, (int, float)) and not isinstance(dist, bool):
                 best = max(best, dist * BW_TO_METERS)
     return round(best) if best > 0 else None
@@ -173,19 +199,65 @@ def hydro_meters(gp: dict[str, Any], full: dict[str, Any] | None) -> int | None:
     return family_meters(gp, full, FAMILY_HYDRO)
 
 
+def ship_record(gp: dict[str, Any], full: dict[str, Any] | None) -> dict[str, Any] | None:
+    """The kit record for one ship slice (counts + longest radii), or None
+    when the ship cannot mount any counted family."""
+    if (gp.get("typeinfo") or {}).get("type") != "Ship":
+        return None
+    fams = slot_families(gp)
+    record: dict[str, Any] = {}
+    for fam, val in kit_values(fams).items():
+        key = {"RLSSearch": "r", "SonarSearch": "h", "SmokeGenerator": "s"}[fam]
+        record[key] = val
+    if record.get("r"):
+        m = radar_meters(gp, full)
+        if m:
+            record["radarM"] = m
+    if record.get("h"):
+        m = hydro_meters(gp, full)
+        if m:
+            record["hydroM"] = m
+    return record or None
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--realm", choices=("wg", "lesta"), default="wg",
+                    help="wg (default): the WG bake as before; lesta: ships "
+                         "and entities straight from the Lesta dump -> "
+                         "ship_consumable_kit_lesta.json")
     ap.add_argument("--pack", type=Path, default=DEFAULT_PACK,
                     help="offline gameparams slice dir (gitignored; "
                          "point at a checkout that has it)")
-    ap.add_argument("--full", type=Path, default=DEFAULT_FULL,
-                    help="full GameParams.json (radar/hydro ranges)")
+    ap.add_argument("--full", type=Path, default=None,
+                    help="full GameParams.json (radar/hydro ranges); "
+                         "default: the WG cache dump (--realm wg) or the "
+                         "Lesta cache dump (--realm lesta)")
     ap.add_argument("--no-full", action="store_true",
                     help="bake without the full GameParams (omit radarM/hydroM)")
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT)
+    ap.add_argument("--out", type=Path, default=None,
+                    help="output path (default: the realm's committed asset)")
     args = ap.parse_args(argv)
 
-    if not args.pack.is_dir():
+    if args.realm == "lesta":
+        if args.pack != DEFAULT_PACK:
+            print("error: --pack is a --realm wg option (the Lesta bake reads "
+                  "the dump directly)", file=sys.stderr)
+            return 2
+        args.full = args.full or DEFAULT_LESTA_FULL
+        args.out = args.out or DEFAULT_LESTA_OUT
+    else:
+        args.full = args.full or DEFAULT_FULL
+        args.out = args.out or DEFAULT_OUT
+
+    if args.realm == "lesta":
+        # The Lesta bake reads ships AND entities from the dump — --no-full
+        # would leave nothing to enumerate.
+        if args.no_full:
+            print("error: --no-full is a --realm wg option (the Lesta bake "
+                  "enumerates ships from the full dump)", file=sys.stderr)
+            return 2
+    elif not args.pack.is_dir():
         print(f"error: gameparams pack not found: {args.pack}", file=sys.stderr)
         return 2
     full: dict[str, Any] | None = None
@@ -202,41 +274,49 @@ def main(argv: list[str]) -> int:
     stats: Counter[str] = Counter()
     radar_seen: list[tuple[int, str]] = []
     hydro_seen: list[tuple[int, str]] = []
-    for path in sorted(args.pack.glob("*.json")):
-        ship_id = path.stem
-        if not ship_id.isdigit():
-            continue
-        try:
-            gp = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError) as err:
-            print(f"warn: skipping {path.name}: {err}", file=sys.stderr)
-            continue
-        if (gp.get("typeinfo") or {}).get("type") != "Ship":
-            stats["skipped_non_ship"] += 1
-            continue
 
-        fams = slot_families(gp)
-        record: dict[str, Any] = {}
-        for fam, val in kit_values(fams).items():
-            key = {"RLSSearch": "r", "SonarSearch": "h", "SmokeGenerator": "s"}[fam]
-            record[key] = val
-            stats[f"{key}{val}"] += 1
-        if record.get("r"):
-            m = radar_meters(gp, full)
-            if m:
-                record["radarM"] = m
+    def emit(ship_id: str, gp: dict[str, Any]) -> None:
+        record = ship_record(gp, full)
+        if record is None:
+            if (gp.get("typeinfo") or {}).get("type") != "Ship":
+                stats["skipped_non_ship"] += 1
+            return
+        for fam, val in record.items():
+            if fam in ("r", "h", "s"):
+                stats[f"{fam}{val}"] += 1
+            elif fam == "radarM":
                 stats["radarM"] += 1
-                radar_seen.append((m, str(gp.get("name") or ship_id)))
-        if record.get("h"):
-            m = hydro_meters(gp, full)
-            if m:
-                record["hydroM"] = m
+                radar_seen.append((int(val), str(gp.get("name") or ship_id)))
+            elif fam == "hydroM":
                 stats["hydroM"] += 1
-                hydro_seen.append((m, str(gp.get("name") or ship_id)))
+                hydro_seen.append((int(val), str(gp.get("name") or ship_id)))
         # Ships that cannot mount any of the three get no entry at all —
         # a lookup miss in the consumer means "all zeros".
-        if record:
-            out[ship_id] = record
+        out[ship_id] = record
+
+    if args.realm == "lesta":
+        # The dump IS the entity index (name-keyed, `game-params --full`
+        # shape): ships and their ability variants come from one file.
+        for name, entity in full.items():
+            if not isinstance(entity, dict):
+                continue
+            ship_id = entity.get("id")
+            if not isinstance(ship_id, int) or isinstance(ship_id, bool):
+                continue
+            if "ShipAbilities" not in entity:
+                continue
+            emit(str(ship_id), entity)
+    else:
+        for path in sorted(args.pack.glob("*.json")):
+            ship_id = path.stem
+            if not ship_id.isdigit():
+                continue
+            try:
+                gp = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as err:
+                print(f"warn: skipping {path.name}: {err}", file=sys.stderr)
+                continue
+            emit(ship_id, gp)
 
     ordered = {sid: out[sid] for sid in sorted(out, key=lambda s: int(s))}
     args.out.parent.mkdir(parents=True, exist_ok=True)

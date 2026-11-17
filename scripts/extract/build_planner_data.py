@@ -844,7 +844,8 @@ def png_to_webp(png: bytes, max_side: int | None = None) -> bytes:
 
 
 def emit_lesta(args) -> int:
-    """--realm lesta: the four Lesta captain datasets + the provenance note.
+    """--realm lesta: the Lesta captain datasets + consumable families + the
+    provenance note.
 
     Fully offline and deterministic: reads the WG GameParams + wowsinfo +
     WoWSFT caches (the base tree and every display name), the Lesta dump
@@ -920,6 +921,19 @@ def emit_lesta(args) -> int:
     (OUT_DATA / "commanders_lesta.json").write_text(
         json.dumps(commanders, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
     print(f"[planner] commanders_lesta.json: {len(commanders)} unique commanders")
+
+    # Per-hull consumable families from the LESTA dump (the same
+    # extraction the WG emission runs on its own dump) — the planner's
+    # consumable-skill gate reads the realm's own families: the two
+    # clients share ship ids but their loadouts have diverged (Lesta's
+    # submarine rework alone moved Engine Boost / SonarSearch around),
+    # so gating Lesta-mode skills off the WG table mis-bans skills the
+    # Lesta hull cannot satisfy (or misses ones it can).
+    consumables_lesta = extract_ship_consumables(lesta_txt)
+    (OUT_DATA / "ship_consumables_lesta.json").write_text(
+        json.dumps(consumables_lesta, ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8", newline="\n")
+    print(f"[planner] ship_consumables_lesta.json: {len(consumables_lesta)} hulls")
 
     catalog = []
     for _name, e in entries_of(lesta_txt, '"PCOL001_CommonCrewSkills"',

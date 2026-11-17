@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  activeKitSource,
   formatIntelCount,
   formatIntelKm,
   setRuntimeKit,
@@ -80,9 +79,8 @@ describe("runtime kit overlay (setRuntimeKit)", () => {
   });
 
   it("serves a valid runtime copy over the bundled asset", () => {
-    expect(setRuntimeKit(RUNTIME)).toBe(true);
-    expect(activeKitSource()).toBe("runtime");
-    const intel = teamIntelFor([990001, 990002]);
+    expect(setRuntimeKit(RUNTIME, "wg")).toBe(true);
+    const intel = teamIntelFor([990001, 990002], "wg");
     expect(intel.radar).toEqual(count(1, 2));
     expect(intel.hydro).toEqual(count(1, 1));
     expect(intel.smoke).toEqual(count(0, 1));
@@ -90,17 +88,23 @@ describe("runtime kit overlay (setRuntimeKit)", () => {
   });
 
   it("keeps the previous copy on malformed downloads", () => {
-    expect(setRuntimeKit("{not json")).toBe(false);
-    expect(setRuntimeKit("[]")).toBe(false);
-    expect(setRuntimeKit('{"not-a-numeric-id": {"r": 2}}')).toBe(false);
-    expect(activeKitSource()).toBe("runtime");
-    expect(teamIntelFor([990001]).radar).toEqual(count(1, 1));
+    expect(setRuntimeKit("{not json", "wg")).toBe(false);
+    expect(setRuntimeKit("[]", "wg")).toBe(false);
+    expect(setRuntimeKit('{"not-a-numeric-id": {"r": 2}}', "wg")).toBe(false);
+    expect(teamIntelFor([990001], "wg").radar).toEqual(count(1, 1));
+  });
+
+  it("keeps branches isolated — a wg download never answers a lesta lookup", () => {
+    // The two clients share ship ids while their loadouts have diverged:
+    // the runtime copy of one branch must not leak into the other.
+    expect(setRuntimeKit(RUNTIME, "wg")).toBe(true);
+    expect(teamIntelFor([990001], "wg").radar).toEqual(count(1, 1));
+    expect(teamIntelFor([990001], "lesta").radar).toEqual(count(0, 0));
   });
 
   it("clears back to the bundled asset on a null cache", () => {
-    expect(setRuntimeKit(null)).toBe(false);
-    expect(activeKitSource()).toBe("bundled");
+    expect(setRuntimeKit(null, "wg")).toBe(true);
     // Unknown to the baked asset again → all zeros.
-    expect(teamIntelFor([990001]).radar).toEqual(count(0, 0));
+    expect(teamIntelFor([990001], "wg").radar).toEqual(count(0, 0));
   });
 });

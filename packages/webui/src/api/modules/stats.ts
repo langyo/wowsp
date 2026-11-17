@@ -625,7 +625,16 @@ export const statsApi = {
   /** The runtime-downloaded consumable-kit JSON (the `data-latest`
    *  cache, hash-verified shell-side), or null when no download ever
    *  landed — the baked asset serves in that case. */
-  getShipKit: () => transport.invoke<string | null>(RPC.get_ship_kit),
+  /** The runtime consumable-kit copy for ONE branch (the hot
+   *  `ship-consumable-kit[-lesta]` dataset the boot refresh warms). The
+   *  two realms' kits differ — shared ship ids, diverged loadouts and
+   *  radii — so the reader names the branch; absent = the backend's WG
+   *  default. */
+  getShipKit: (branch?: "wg" | "lesta") =>
+    transport.invoke<string | null>(
+      RPC.get_ship_kit,
+      branch === undefined ? {} : { realm: branch },
+    ),
   /** One pass of the ship-data hot-update channel: fetch the manifest,
    *  re-download only what changed. True when anything was updated. */
   refreshDataPack: () => transport.invoke<boolean>(RPC.refresh_data_pack),

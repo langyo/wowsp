@@ -59,14 +59,52 @@ const REPO: &str = "langyo/wowsp";
 const DATA_CHANNEL: &str = "data";
 const DATA_TAG: &str = "data-latest";
 const DATA_MANIFEST: &str = "wowsp-data.json";
-/// The one dataset this shell knows today: the Tab overlay's consumable
-/// kit (`packages/webui/src/data/ship_consumable_kit.json`, baked by
-/// `scripts/extract_ship_consumable_kit.py`). The manifest may carry
-/// more; unknown names are skipped so an old shell keeps working against
-/// a newer manifest.
+/// The two kit lanes (dataset name + cache paths per realm). The WG and
+/// Lesta clients share most ship ids while their consumable loadouts and
+/// radar/hydro radii have diverged, so each realm carries its own baked
+/// asset, its own hot dataset and its own AppData cache lane.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct KitLane {
+    dataset: &'static str,
+    file: &'static str,
+    meta: &'static str,
+}
+
+/// The one dataset every client has always known: the Tab overlay's WG
+/// consumable kit (`packages/webui/src/data/ship_consumable_kit.json`,
+/// baked by `scripts/extract_ship_consumable_kit.py`). The manifest may
+/// carry more; unknown names are skipped so an old shell keeps working
+/// against a newer manifest.
 const KIT_DATASET: &str = "ship-consumable-kit";
 const KIT_FILE: &str = "data-pack/ship-consumable-kit.json";
 const KIT_META: &str = "data-pack/ship-consumable-kit.meta.json";
+/// The Lesta realm's kit — baked from the Lesta client's own dump
+/// (`extract_ship_consumable_kit.py --realm lesta`); the WG lane stays
+/// the legacy dataset so an older frontend keeps working unchanged.
+const KIT_LESTA_DATASET: &str = "ship-consumable-kit-lesta";
+const KIT_LESTA_FILE: &str = "data-pack/ship-consumable-kit-lesta.json";
+const KIT_LESTA_META: &str = "data-pack/ship-consumable-kit-lesta.meta.json";
+
+const KIT_WG_LANE: KitLane = KitLane {
+    dataset: KIT_DATASET,
+    file: KIT_FILE,
+    meta: KIT_META,
+};
+const KIT_LESTA_LANE: KitLane = KitLane {
+    dataset: KIT_LESTA_DATASET,
+    file: KIT_LESTA_FILE,
+    meta: KIT_LESTA_META,
+};
+
+/// The lane a lookup renders (the RPC string, "wg" | "lesta"; anything
+/// else/absent degrades to WG — the legacy caller's implicit realm).
+fn kit_lane(realm: Option<&str>) -> &'static KitLane {
+    match realm {
+        Some(v) if v.trim().eq_ignore_ascii_case("lesta") => &KIT_LESTA_LANE,
+        _ => &KIT_WG_LANE,
+    }
+}
+
 /// Sanity cap on the kit's body: it is ~15 KB, so anything megabyte scale
 /// means the manifest pointed at the wrong asset — fail the refresh and
 /// keep the cached/bundled copy instead of absorbing it.
@@ -259,12 +297,12 @@ async fn fetch_manifest(clients: &super::network::HttpPair) -> anyhow::Result<Da
 
 /// The intact cached kit's sha. A matching sidecar alone cannot make a
 /// missing/corrupt body current, or refresh would never repair that cache.
-fn local_kit_sha() -> anyhow::Result<Option<String>> {
-    local_kit_sha_in(&appdata::appdata_dir_path()?)
+fn local_kit_sha(lane: &KitLane) -> anyhow::Result<Option<String>> {
+    local_kit_sha_in(&appdata::appdata_dir_path()?, lane)
 }
 
-fn local_kit_sha_in(dir: &Path) -> anyhow::Result<Option<String>> {
-    Ok(verified_kit_meta_in(dir)?.map(|meta| meta.sha256))
+fn local_kit_sha_in(dir: &Path, lane: &KitLane) -> anyhow::Result<Option<String>> {
+    Ok(verified_kit_meta_in(dir, lane)?.map(|meta| meta.sha256))
 }
 
 /// Freshness decision, split out for tests: current means the cached sha
@@ -279,28 +317,30 @@ fn kit_is_current(local: Option<&str>, entry: &DatasetEntry) -> bool {
 /// timestamp today).
 #[tauri::command]
 pub fn data_pack_info() -> CommandResult<Option<String>> {
-    Ok(verified_kit_meta()?
+    // The resources row reports the WG lane's version — the legacy dataset
+    // every client has always shipped.
+    Ok(verified_kit_meta(&KIT_WG_LANE)?
         .filter(|m| !m.version.is_empty())
         .map(|m| m.version))
 }
 
 /// The sidecar of an INTACT cached kit (sidecar present AND its sha
 /// matching the body) — `None` for no cache or a corrupt one.
-fn verified_kit_meta() -> anyhow::Result<Option<KitMeta>> {
-    verified_kit_meta_in(&appdata::appdata_dir_path()?)
+fn verified_kit_meta(lane: &KitLane) -> anyhow::Result<Option<KitMeta>> {
+    verified_kit_meta_in(&appdata::appdata_dir_path()?, lane)
 }
 
 /// [`verified_kit_meta`] against an explicit directory (tests run the
 /// four cache states against a temp dir).
-fn verified_kit_meta_in(dir: &Path) -> anyhow::Result<Option<KitMeta>> {
-    Ok(verified_kit_in(dir)?.map(|(meta, _)| meta))
+fn verified_kit_meta_in(dir: &Path, lane: &KitLane) -> anyhow::Result<Option<KitMeta>> {
+    Ok(verified_kit_in(dir, lane)?.map(|(meta, _)| meta))
 }
 
 /// Read the body once and return those exact verified bytes. A concurrent
 /// refresh may replace the on-disk file after verification; serving a second
 /// read could otherwise return a body that was never checked against its meta.
-fn verified_kit_in(dir: &Path) -> anyhow::Result<Option<(KitMeta, String)>> {
-    let body = match fs::read_to_string(appdata::data_file_path(dir, KIT_FILE)?) {
+fn verified_kit_in(dir: &Path, lane: &KitLane) -> anyhow::Result<Option<(KitMeta, String)>> {
+    let body = match fs::read_to_string(appdata::data_file_path(dir, lane.file)?) {
         Ok(body) => body,
         Err(e)
             if matches!(
@@ -310,9 +350,9 @@ fn verified_kit_in(dir: &Path) -> anyhow::Result<Option<(KitMeta, String)>> {
         {
             return Ok(None);
         },
-        Err(e) => return Err(anyhow!("read {}: {e}", KIT_FILE)),
+        Err(e) => return Err(anyhow!("read {}: {e}", lane.file)),
     };
-    let meta = fs::read_to_string(appdata::data_file_path(dir, KIT_META)?)
+    let meta = fs::read_to_string(appdata::data_file_path(dir, lane.meta)?)
         .ok()
         .and_then(|raw| serde_json::from_str::<KitMeta>(&raw).ok());
     Ok(meta
@@ -320,16 +360,20 @@ fn verified_kit_in(dir: &Path) -> anyhow::Result<Option<(KitMeta, String)>> {
         .map(|meta| (meta, body)))
 }
 
-/// The cached, hash-verified kit JSON for the webui to overlay onto its
-/// bundled copy — `None` means "no downloadable copy on this machine"
-/// (never downloaded, or the cache failed verification), which the webui
-/// maps to the baked asset.
+/// The cached, hash-verified kit JSON for ONE realm — the webui overlays
+/// it onto that realm's bundled copy. `realm` ("wg" | "lesta"; anything
+/// else/absent degrades to WG, the legacy callers' implicit realm) picks
+/// the cache lane: the two realms' kits differ because their clients
+/// share ship ids while loadouts and radii have diverged. `None` means
+/// "no downloadable copy on this machine" (never downloaded, or the cache
+/// failed verification), which the webui maps to the baked asset.
 #[tauri::command]
-pub fn get_ship_kit() -> CommandResult<Option<String>> {
+pub fn get_ship_kit(realm: Option<String>) -> CommandResult<Option<String>> {
+    let lane = kit_lane(realm.as_deref());
     // Corrupt or tampered cache (or a missing sidecar): report absent
     // rather than serving data nobody vouched for; the next refresh
     // re-downloads over it (verification via [`verified_kit_meta`]).
-    Ok(verified_kit_in(&appdata::appdata_dir_path()?)?.map(|(_, body)| body))
+    Ok(verified_kit_in(&appdata::appdata_dir_path()?, lane)?.map(|(_, body)| body))
 }
 
 /// One refresh pass for every dataset this shell knows: fetch the
@@ -360,19 +404,20 @@ pub async fn refresh_data_pack() -> CommandResult<bool> {
 async fn refresh_datasets() -> anyhow::Result<bool> {
     let clients = super::network::HttpPair::build(|b| b)?;
     let manifest = fetch_manifest(&clients).await?;
-    let mut changed = refresh_kit_dataset(&manifest).await?;
+    let mut changed = refresh_kit_dataset(&manifest, &KIT_WG_LANE).await?;
+    changed |= refresh_kit_dataset(&manifest, &KIT_LESTA_LANE).await?;
     changed |= refresh_shipdata_dataset(&manifest).await?;
     Ok(changed)
 }
 
-async fn refresh_kit_dataset(manifest: &DataManifest) -> anyhow::Result<bool> {
-    let entry = match manifest.datasets.get(KIT_DATASET) {
+async fn refresh_kit_dataset(manifest: &DataManifest, lane: &KitLane) -> anyhow::Result<bool> {
+    let entry = match manifest.datasets.get(lane.dataset) {
         Some(entry) => entry,
         // A manifest without the kit (older manifest, newer vocabulary)
         // is not an error — the bundled asset simply stays.
         None => return Ok(false),
     };
-    if kit_is_current(local_kit_sha()?.as_deref(), entry) {
+    if kit_is_current(local_kit_sha(lane)?.as_deref(), entry) {
         return Ok(false);
     }
     // The asset name becomes a URL path segment under data-latest.
@@ -383,7 +428,7 @@ async fn refresh_kit_dataset(manifest: &DataManifest) -> anyhow::Result<bool> {
         );
     }
     let url = data_url(&entry.asset);
-    let part = appdata::appdata_dir_path()?.join(format!("{KIT_FILE}.part"));
+    let part = appdata::appdata_dir_path()?.join(format!("{}.part", lane.file));
     // The tiny transfer goes through the unified download hub so the
     // data pack queues behind (never contends with) the big artifacts:
     // mirror ladder, streaming sha256 verification, the DATASET_MAX_BYTES
@@ -407,7 +452,7 @@ async fn refresh_kit_dataset(manifest: &DataManifest) -> anyhow::Result<bool> {
     let bytes = tokio::fs::read(&done.path)
         .await
         .map_err(|e| anyhow!("read {}: {e}", done.path.display()))?;
-    let outcome = install_kit(&bytes, entry);
+    let outcome = install_kit(&bytes, entry, lane);
     let _ = tokio::fs::remove_file(&done.path).await;
     outcome
 }
@@ -565,9 +610,9 @@ fn shipdata_slice_in(
 /// the AppData cache. The sha check is the gate: a mirror that serves
 /// garbage (or an asset name collision) fails here and the cached /
 /// bundled copy keeps serving.
-fn install_kit(bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
+fn install_kit(bytes: &[u8], entry: &DatasetEntry, lane: &KitLane) -> anyhow::Result<bool> {
     let dir = appdata::appdata_dir_path()?;
-    install_kit_in(&dir, bytes, entry)
+    install_kit_in(&dir, bytes, entry, lane)
 }
 
 /// [`install_kit`] against an explicit directory (tests run against a
@@ -575,7 +620,12 @@ fn install_kit(bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
 /// the sidecar second, both atomically (appdata's tmp+rename), so a crash
 /// between the two leaves the cache reading as corrupt → absent, never
 /// as a new body with an old hash.
-fn install_kit_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> anyhow::Result<bool> {
+fn install_kit_in(
+    dir: &Path,
+    bytes: &[u8],
+    entry: &DatasetEntry,
+    lane: &KitLane,
+) -> anyhow::Result<bool> {
     let sha = sha256_hex(bytes);
     if !sha.eq_ignore_ascii_case(&entry.sha256) {
         bail!(
@@ -586,13 +636,13 @@ fn install_kit_in(dir: &Path, bytes: &[u8], entry: &DatasetEntry) -> anyhow::Res
     let body = std::str::from_utf8(bytes)
         .map_err(|e| anyhow!("dataset body is not UTF-8 JSON: {e}"))?
         .to_string();
-    appdata::write_json_in(dir, KIT_FILE, &body)?;
+    appdata::write_json_in(dir, lane.file, &body)?;
     let meta = serde_json::to_string(&KitMeta {
         sha256: sha.to_ascii_lowercase(),
         version: entry.version.clone(),
     })
     .map_err(|e| anyhow!("serialize kit meta: {e}"))?;
-    appdata::write_json_in(dir, KIT_META, &meta)?;
+    appdata::write_json_in(dir, lane.meta, &meta)?;
     Ok(true)
 }
 
@@ -650,14 +700,19 @@ mod tests {
         let body = br#"{"3763300940":{"r":2}}"#;
         let entry = entry(&sha256_hex(body));
         for corrupt in [None, Some(b"{\"corrupt\":1}".as_slice()), Some(&[0xff])] {
-            install_kit_in(&fixture.0, body, &entry).unwrap();
+            install_kit_in(&fixture.0, body, &entry, &KIT_WG_LANE).unwrap();
             if let Some(bytes) = corrupt {
                 fs::write(fixture.0.join(KIT_FILE), bytes).unwrap();
             } else {
                 fs::remove_file(fixture.0.join(KIT_FILE)).unwrap();
             }
             assert!(
-                !kit_is_current(local_kit_sha_in(&fixture.0).unwrap().as_deref(), &entry),
+                !kit_is_current(
+                    local_kit_sha_in(&fixture.0, &KIT_WG_LANE)
+                        .unwrap()
+                        .as_deref(),
+                    &entry
+                ),
                 "a matching sidecar must not stop refresh from repairing its absent/corrupt body"
             );
         }
@@ -668,12 +723,60 @@ mod tests {
         let fixture = KitFixture::new();
         let body = br#"{"3763300940":{"r":2}}"#;
         let entry = entry(&sha256_hex(body));
-        install_kit_in(&fixture.0, body, &entry).unwrap();
-        let (meta, verified) = verified_kit_in(&fixture.0).unwrap().unwrap();
+        install_kit_in(&fixture.0, body, &entry, &KIT_WG_LANE).unwrap();
+        let (meta, verified) = verified_kit_in(&fixture.0, &KIT_WG_LANE).unwrap().unwrap();
         fs::write(fixture.0.join(KIT_FILE), b"unverified replacement").unwrap();
         assert_eq!(verified.as_bytes(), body);
         assert_eq!(meta.sha256, sha256_hex(verified.as_bytes()));
-        assert!(verified_kit_in(&fixture.0).unwrap().is_none());
+        assert!(verified_kit_in(&fixture.0, &KIT_WG_LANE).unwrap().is_none());
+    }
+
+    #[test]
+    fn kit_lanes_serve_each_realm_its_own_body() {
+        let fixture = KitFixture::new();
+        // The two realms' kits differ (shared ship ids, diverged loadouts),
+        // so one lane's body must never answer the other lane's read.
+        let wg_body = br#"{"3763300940":{"r":2}}"#;
+        let lesta_body = br#"{"3763300940":{"r":2,"radarM":12000}}"#;
+        install_kit_in(
+            &fixture.0,
+            wg_body,
+            &entry(&sha256_hex(wg_body)),
+            &KIT_WG_LANE,
+        )
+        .unwrap();
+        assert!(
+            verified_kit_in(&fixture.0, &KIT_LESTA_LANE)
+                .unwrap()
+                .is_none(),
+            "an uninstalled lane reads as absent, never as the other realm"
+        );
+        install_kit_in(
+            &fixture.0,
+            lesta_body,
+            &entry(&sha256_hex(lesta_body)),
+            &KIT_LESTA_LANE,
+        )
+        .unwrap();
+        assert_eq!(
+            verified_kit_in(&fixture.0, &KIT_WG_LANE)
+                .unwrap()
+                .unwrap()
+                .1,
+            String::from_utf8_lossy(wg_body)
+        );
+        assert_eq!(
+            verified_kit_in(&fixture.0, &KIT_LESTA_LANE)
+                .unwrap()
+                .unwrap()
+                .1,
+            String::from_utf8_lossy(lesta_body)
+        );
+        // The RPC discriminator: only an explicit "lesta" leaves WG.
+        assert_eq!(*kit_lane(None), KIT_WG_LANE);
+        assert_eq!(*kit_lane(Some("wg")), KIT_WG_LANE);
+        assert_eq!(*kit_lane(Some("junk")), KIT_WG_LANE);
+        assert_eq!(*kit_lane(Some(" LESTA ")), KIT_LESTA_LANE);
     }
 
     #[cfg(windows)]
@@ -684,7 +787,7 @@ mod tests {
         let outside = fixture.0.join("outside");
         let body = br#"{"3763300940":{"r":2}}"#;
         let entry = entry(&sha256_hex(body));
-        install_kit_in(&outside, body, &entry).unwrap();
+        install_kit_in(&outside, body, &entry, &KIT_WG_LANE).unwrap();
         let junction = fixture.0.join("data-pack");
         let result = std::process::Command::new("cmd")
             .args(["/C", "mklink", "/J"])
@@ -698,7 +801,7 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&result.stderr)
         );
-        let snapshot = verified_kit_in(&fixture.0);
+        let snapshot = verified_kit_in(&fixture.0, &KIT_WG_LANE);
         fs::remove_dir(junction).unwrap();
         assert!(
             snapshot.is_err(),
@@ -969,21 +1072,35 @@ mod tests {
         let body = br#"{"3763300940":{"r":2,"radarM":10000}}"#;
 
         // absent → None
-        assert!(verified_kit_meta_in(&dir).expect("read").is_none());
+        assert!(
+            verified_kit_meta_in(&dir, &KIT_WG_LANE)
+                .expect("read")
+                .is_none()
+        );
 
         // intact → Some, and the version survives data_pack_info's filter
         let e = entry(&sha256_hex(body));
-        install_kit_in(&dir, body, &e).expect("install");
-        let meta = verified_kit_meta_in(&dir).expect("read").expect("intact");
+        install_kit_in(&dir, body, &e, &KIT_WG_LANE).expect("install");
+        let meta = verified_kit_meta_in(&dir, &KIT_WG_LANE)
+            .expect("read")
+            .expect("intact");
         assert_eq!(meta.version, "2026-09-29T00:00:00Z");
 
         // corrupt body (sidecar sha no longer matches) → None
         fs::write(dir.join(KIT_FILE), br#"{"tampered":1}"#).expect("write");
-        assert!(verified_kit_meta_in(&dir).expect("read").is_none());
+        assert!(
+            verified_kit_meta_in(&dir, &KIT_WG_LANE)
+                .expect("read")
+                .is_none()
+        );
 
         // missing sidecar over a body → None
         fs::remove_file(dir.join(KIT_META)).expect("remove");
-        assert!(verified_kit_meta_in(&dir).expect("read").is_none());
+        assert!(
+            verified_kit_meta_in(&dir, &KIT_WG_LANE)
+                .expect("read")
+                .is_none()
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
@@ -995,7 +1112,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
 
         let sha = sha256_hex(body);
-        assert!(install_kit_in(&dir, body, &entry(&sha)).unwrap());
+        assert!(install_kit_in(&dir, body, &entry(&sha), &KIT_WG_LANE).unwrap());
         let cached = std::fs::read_to_string(dir.join(KIT_FILE)).expect("body cached");
         assert_eq!(cached.as_bytes(), body);
         let meta: KitMeta = serde_json::from_str(
@@ -1005,7 +1122,7 @@ mod tests {
         assert_eq!(meta.sha256, sha);
         assert_eq!(meta.version, "2026-09-29T00:00:00Z");
 
-        assert!(install_kit_in(&dir, body, &entry(&"0".repeat(64))).is_err());
+        assert!(install_kit_in(&dir, body, &entry(&"0".repeat(64)), &KIT_WG_LANE).is_err());
 
         let _ = std::fs::remove_dir_all(&dir);
     }
