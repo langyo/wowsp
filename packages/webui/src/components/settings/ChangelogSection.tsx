@@ -44,7 +44,10 @@ function formatDate(locale: Locale, iso: string): string {
  * "loading" adds the translating row above it, "error" the failed row
  * with a retry chip, while the fallback hint is reserved for a genuinely
  * asset-less release / locale the asset does not carry. A failed fetch
- * therefore never reads as "this release has no translation".
+ * therefore never reads as "this release has no translation"; the feed's
+ * per-release notes_i18n flag decides whether there is an asset to fetch
+ * at all, so an asset-less release settles straight to the English body
+ * plus the fallback hint, with no command call and no spinner.
  */
 export default defineComponent({
   name: "ChangelogSection",
@@ -167,24 +170,37 @@ export default defineComponent({
      *  viewport, and only for a non-English UI locale (English renders
      *  the body itself). ensureTranslations is idempotent per release, so
      *  scrolls, locale switches and refresh re-requests stay cheap. The
-     *  visible set (and each card's ref callback) is retained for the
-     *  component's lifetime ON PURPOSE: a refresh re-streams the same
-     *  feed and must re-request the cards the user has already revealed.
-     *  Entries for versions the current feed no longer carries are
-     *  filtered out below instead of being pruned from the set. Keeping
-     *  this out of the render path avoids a fetch side effect during
-     *  render. */
+     *  list's per-release notes_i18n flag rides along: a release the feed
+     *  reports without the asset settles "missing" in the store with no
+     *  command call (and therefore no spinner row). The visible set (and
+     *  each card's ref callback) is retained for the component's lifetime
+     *  ON PURPOSE: a refresh re-streams the same feed and must re-request
+     *  the cards the user has already revealed. Entries for versions the
+     *  current feed no longer carries are filtered out below instead of
+     *  being pruned from the set. Keeping this out of the render path
+     *  avoids a fetch side effect during render. */
     watch(
       [
         () => [...visibleVersions.value].join(","),
+        // The feed itself — versions AND their notes_i18n flags. A refresh
+        // bumps i18nEpoch before the new list lands, so without this source
+        // the flag would be read from the STALE previous feed for one round.
+        () =>
+          changelog.releases
+            .map((release) => release.version + (release.notes_i18n ? "n" : "m"))
+            .join(","),
         () => lang.uiLocale.value,
         () => changelog.i18nEpoch,
       ],
       () => {
         if (lang.uiLocale.value === "en-US") return;
-        const feed = new Set(changelog.releases.map((release) => release.version));
+        const notesByVersion = new Map(
+          changelog.releases.map((release) => [release.version, release.notes_i18n]),
+        );
         for (const releaseVersion of visibleVersions.value) {
-          if (feed.has(releaseVersion)) void changelog.ensureTranslations(releaseVersion);
+          const hasNotes = notesByVersion.get(releaseVersion);
+          if (hasNotes === undefined) continue;
+          void changelog.ensureTranslations(releaseVersion, hasNotes);
         }
       },
       { immediate: true },
@@ -286,6 +302,9 @@ export default defineComponent({
               // lacks the locale / carries the 🚧 placeholder — which is what
               // selectReleaseBody answers: undefined = not asked yet (no hint),
               // {} = no asset (hint), a map = hint when the locale is missing.
+              // A release the list reports without an asset (notes_i18n) is
+              // already settled "missing" by the store, so it renders the
+              // English body + hint and never grows a fetch status row.
               const state = changelog.translationStates[release.version];
               const translations =
                 state?.status === "ready"
@@ -333,7 +352,9 @@ export default defineComponent({
                       </span>
                       <HkButton
                         size="sm"
-                        onClick={() => void changelog.retryTranslations(release.version)}
+                        onClick={() =>
+                          void changelog.retryTranslations(release.version, release.notes_i18n)
+                        }
                       >
                         {t("common.retry")}
                       </HkButton>
