@@ -13,6 +13,19 @@
 //! Streaming is progressive: each call returns one visible batch plus the
 //! raw-page cursor to continue from — the webui loads the first batch on
 //! section open and refills as the user scrolls (see stores/changelog.ts).
+//!
+//! The translation path is deliberately REST-free. Every app release also
+//! carries a `release-notes-i18n-<tag>.json` asset (AGENTS.md section 10),
+//! and release assets live on the release's own download mount, so its URL
+//! is deterministic from the tag alone:
+//! `https://github.com/<repo>/releases/download/<tag>/release-notes-i18n-<tag>.json`.
+//! Resolving it through `releases/tags/<tag>` would spend one
+//! unauthenticated REST call per listed release against a 60/hour/IP
+//! budget: ten releases into a section open the budget is gone, GitHub
+//! answers 403, and every translation reads as absent (the field bug this
+//! module now avoids). That budget belongs to the release LIST alone;
+//! `changelog_i18n` walks the mirror ladder to the deterministic asset URL
+//! with no API call at all.
 
 use anyhow::Error;
 use serde::{Deserialize, Serialize};
@@ -26,9 +39,17 @@ use crate::commands::github_mirror;
 use crate::commands::network::HttpPair;
 use crate::commands::upstream_health;
 
+/// This repository, in the `<owner>/<repo>` form every GitHub URL in this
+/// module is built from — the ONE place the slug is spelled out.
+const REPO_SLUG: &str = "langyo/wowsp";
+
 /// Release-list API of this repo, without query — `fetch_raw_page` appends
-/// the paging pair.
-const RELEASES_URL: &str = "https://api.github.com/repos/langyo/wowsp/releases";
+/// the paging pair. Built from [`REPO_SLUG`]; a `static` rather than a
+/// `const` because stable Rust cannot concatenate a `const` value into a
+/// `const` string (`concat!` accepts literals only) — the slug still lives
+/// in exactly one place above.
+static RELEASES_URL: LazyLock<String> =
+    LazyLock::new(|| format!("https://api.github.com/repos/{REPO_SLUG}/releases"));
 
 /// Visible batch the webui asks for per load: large enough to fill the
 /// pane, small enough that scrolling to history actually has to fetch it.
@@ -104,10 +125,35 @@ fn i18n_asset_name(tag: &str) -> String {
     format!("{I18N_ASSET_PREFIX}{tag}{I18N_ASSET_SUFFIX}")
 }
 
+/// The notes asset's download URL, derived from the tag alone. Release
+/// assets are mounted on the release's own download route, so no
+/// release-detail lookup is needed — and none is wanted: one REST call per
+/// listed release would exhaust the 60/hour unauthenticated budget that the
+/// release LIST needs.
+fn i18n_asset_url(tag: &str) -> String {
+    format!(
+        "https://github.com/{REPO_SLUG}/releases/download/{tag}/{}",
+        i18n_asset_name(tag)
+    )
+}
+
+/// Whether one ladder candidate's answer proves the release ships NO
+/// translation asset. Only the official route (the original, unmirrored
+/// github.com candidate) answering 404 is proof: a mirror 404 routinely
+/// just means that proxy does not carry release assets, so the ladder keeps
+/// walking. Every other status is an error path, never "absent".
+fn missing_asset_at(original: &str, candidate: &str, status: reqwest::StatusCode) -> bool {
+    candidate == original && status == reqwest::StatusCode::NOT_FOUND
+}
+
 /// Normalize the webui's tag argument: it must be a v-prefixed,
 /// digit-leading app release tag made of URL-safe characters. The changelog
 /// list keeps prerelease tags too, so this accepts the same shapes while
-/// rejecting anything that could alter the API path it is interpolated into.
+/// rejecting anything that could alter the download URL it is interpolated
+/// into. The prefix is canonicalized to lowercase `v`: the release download
+/// path is case-sensitive, so an uppercase `V0.6.9` would otherwise 404 and
+/// read as "this release has no translation" (and would split the session
+/// cache under a second key).
 fn app_tag(raw: &str) -> Option<String> {
     let tag = raw.trim();
     let bare = tag.strip_prefix(['v', 'V'])?;
@@ -117,29 +163,7 @@ fn app_tag(raw: &str) -> Option<String> {
     let safe = bare
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '+'));
-    safe.then(|| tag.to_string())
-}
-
-/// Pull the release-notes asset download URL out of one release-detail
-/// payload. Releases without the asset (older releases) answer None.
-fn i18n_asset_url_from_release(payload: &serde_json::Value, tag: &str) -> Option<String> {
-    // Shape-check the detail payload first: a mirror can answer 200 with a
-    // JSON error object, which must not read as "this release has no asset".
-    if payload.get("tag_name").and_then(|name| name.as_str()) != Some(tag) {
-        return None;
-    }
-    let want = i18n_asset_name(tag);
-    let url = payload
-        .get("assets")?
-        .as_array()?
-        .iter()
-        .find(|asset| asset.get("name").and_then(|name| name.as_str()) == Some(want.as_str()))
-        .and_then(|asset| asset.get("browser_download_url"))
-        .and_then(|url| url.as_str())?;
-    // Release asset URLs live on github.com; a payload pointing anywhere
-    // else is not a payload this command should feed into the ladder.
-    url.starts_with("https://github.com/")
-        .then(|| url.to_string())
+    safe.then(|| format!("v{bare}"))
 }
 
 fn parse_i18n_doc(bytes: &[u8], tag: &str) -> Option<ChangelogI18n> {
@@ -165,56 +189,6 @@ fn has_translation(doc: &ChangelogI18n) -> bool {
             .trim_start();
         !first.starts_with('🚧')
     })
-}
-
-/// Resolve the release-notes asset URL by walking the mirror ladder to the
-/// release-detail endpoint and shape-checking each candidate's payload, so a
-/// proxy's 200-with-a-JSON-error body moves the ladder on instead of
-/// reading as "this release has no asset".
-async fn fetch_release_asset_url(clients: &HttpPair, tag: &str) -> anyhow::Result<Option<String>> {
-    let detail_url = format!("{RELEASES_URL}/tags/{tag}");
-    let mut last_err = String::from("no mirror attempted");
-    for candidate in github_mirror::candidates(&detail_url) {
-        let host = upstream_health::host_of_url(&candidate).to_string();
-        let resp =
-            match upstream_health::send_with_fallback(clients, &host, "changelog-i18n", |client| {
-                client
-                    .get(&candidate)
-                    .header("User-Agent", "WoWSP-changelog/1.0")
-                    .header("Accept", "application/vnd.github+json")
-                    .timeout(I18N_FETCH_TIMEOUT)
-            })
-            .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    last_err = format!("{candidate}: {e}");
-                    continue;
-                },
-            };
-        if !resp.status().is_success() {
-            last_err = format!("{candidate}: HTTP {}", resp.status());
-            continue;
-        }
-        match resp.json::<serde_json::Value>().await {
-            Ok(payload) => {
-                let shaped = payload.get("tag_name").and_then(|name| name.as_str()) == Some(tag)
-                    && payload
-                        .get("assets")
-                        .is_some_and(|assets| assets.is_array());
-                if !shaped {
-                    last_err = format!("{candidate}: unexpected release detail payload");
-                    continue;
-                }
-                return Ok(i18n_asset_url_from_release(&payload, tag));
-            },
-            Err(e) => {
-                last_err = format!("{candidate}: invalid JSON: {e}");
-                continue;
-            },
-        }
-    }
-    Err(Error::msg(last_err))
 }
 
 /// Normalize a release tag into the plain semver the app reports
@@ -302,7 +276,10 @@ async fn fetch_ladder_json(
 /// usable release list (a proxy can answer 200 with a JSON error object);
 /// anything else moves the ladder on instead of rendering an empty feed.
 async fn fetch_raw_page(clients: &HttpPair, page: u32) -> anyhow::Result<serde_json::Value> {
-    let url = format!("{RELEASES_URL}?per_page={RAW_PER_PAGE}&page={page}");
+    let url = format!(
+        "{}?per_page={RAW_PER_PAGE}&page={page}",
+        RELEASES_URL.as_str()
+    );
     let payload =
         fetch_ladder_json(clients, &url, "changelog", "application/vnd.github+json").await?;
     if payload.is_array() {
@@ -314,11 +291,26 @@ async fn fetch_raw_page(clients: &HttpPair, page: u32) -> anyhow::Result<serde_j
     }
 }
 
-/// Walk the mirror ladder until one candidate serves a VALID i18n doc for
-/// `tag`. A proxy can answer 200 with an HTML/error body, so the doc is
-/// parsed per candidate and the ladder moves on instead of accepting the
-/// first 200 it sees.
-async fn fetch_i18n_doc(clients: &HttpPair, url: &str, tag: &str) -> anyhow::Result<ChangelogI18n> {
+/// Walk the mirror ladder for the tag's notes asset and return its parsed
+/// doc. Three outcomes — exactly the `changelog_i18n` contract:
+///
+/// - `Ok(Some(doc))`: one candidate served a usable doc (schema, tag and
+///   sections validated by `parse_i18n_doc`).
+/// - `Ok(None)`: the OFFICIAL route answered 404 — the release genuinely
+///   ships no translation asset (pre-retrofit releases).
+/// - `Err(..)`: everything else (transport failure, 403/429/5xx, an
+///   HTML/error body, schema/tag mismatch); the last candidate failure is
+///   the message.
+///
+/// A proxy can answer 200 with an HTML/error body, so the doc is parsed per
+/// candidate and the ladder moves on instead of accepting the first 200 it
+/// sees. A 404 only proves absence when it comes from the official candidate
+/// (see `missing_asset_at`); a mirror 404 keeps the ladder walking.
+async fn fetch_i18n_doc(
+    clients: &HttpPair,
+    url: &str,
+    tag: &str,
+) -> anyhow::Result<Option<ChangelogI18n>> {
     let mut last_err = String::from("no mirror attempted");
     for candidate in github_mirror::candidates(url) {
         let host = upstream_health::host_of_url(&candidate).to_string();
@@ -337,13 +329,17 @@ async fn fetch_i18n_doc(clients: &HttpPair, url: &str, tag: &str) -> anyhow::Res
                     continue;
                 },
             };
-        if !resp.status().is_success() {
-            last_err = format!("{candidate}: HTTP {}", resp.status());
+        let status = resp.status();
+        if missing_asset_at(url, &candidate, status) {
+            return Ok(None);
+        }
+        if !status.is_success() {
+            last_err = format!("{candidate}: HTTP {status}");
             continue;
         }
         match resp.bytes().await {
             Ok(bytes) => match parse_i18n_doc(&bytes, tag) {
-                Some(doc) => return Ok(doc),
+                Some(doc) => return Ok(Some(doc)),
                 None => {
                     last_err = format!("{candidate}: unusable i18n doc (schema/tag mismatch)");
                     continue;
@@ -393,10 +389,23 @@ pub async fn changelog_list(page: u32) -> CommandResult<ChangelogPage> {
     })
 }
 
-/// One release's translation asset: None when the release has no i18n
-/// asset (older releases). Transport failures and unusable payloads/doc
-/// surface as errors; the webui changelog store swallows both and keeps
-/// rendering the English body.
+/// One release's translation asset — the three-way contract the webui
+/// depends on:
+///
+/// - `Ok(Some(doc))`: a validated doc (`schema`, matching `tag`, non-empty
+///   sections) ready to render for the user's locale.
+/// - `Ok(None)`: the release genuinely ships NO translation asset — the
+///   OFFICIAL route (the original, unmirrored github.com candidate) answered
+///   HTTP 404, the pre-retrofit release shape. The webui falls back to the
+///   English body and may say the translation is absent.
+/// - `Err(..)`: the lookup itself failed (transport, 403/429/5xx, a proxy
+///   answering HTML, schema/tag mismatch, unusable sections). This is NOT
+///   proof that the asset is missing — the webui must offer a retry instead
+///   of claiming there is no translation.
+///
+/// The asset URL is deterministic from the tag (the release's download
+/// mount), so this command spends no REST API budget: the 60/hour
+/// unauthenticated quota belongs to `changelog_list` alone.
 #[tauri::command]
 pub async fn changelog_i18n(tag: String) -> CommandResult<Option<ChangelogI18n>> {
     let tag = app_tag(&tag).ok_or_else(|| Error::msg(format!("not an app release tag: {tag}")))?;
@@ -406,10 +415,9 @@ pub async fn changelog_i18n(tag: String) -> CommandResult<Option<ChangelogI18n>>
         }
     }
     let clients = HttpPair::build(|b| b)?;
-    let Some(asset_url) = fetch_release_asset_url(&clients, &tag).await? else {
+    let Some(doc) = fetch_i18n_doc(&clients, &i18n_asset_url(&tag), &tag).await? else {
         return Ok(None);
     };
-    let doc = fetch_i18n_doc(&clients, &asset_url, &tag).await?;
     // Only cache docs with real content: an all-placeholder doc is expected
     // to change once translations are filled (set --apply rewrites the
     // asset), and the webui refresh must see the update without a restart.
@@ -529,6 +537,11 @@ mod tests {
         // The changelog list keeps prerelease tags too; they must resolve here.
         assert_eq!(app_tag("v0.6.9-rc1").as_deref(), Some("v0.6.9-rc1"));
         assert_eq!(app_tag("v0.6").as_deref(), Some("v0.6"));
+        // The accepted tag is canonicalized to the lowercase-v form: the
+        // release download path is case-sensitive, so an uppercase V must
+        // never reach it (404 would read as "no translation").
+        assert_eq!(app_tag("V0.6.9").as_deref(), Some("v0.6.9"));
+        assert_eq!(app_tag("  V0.6.9 ").as_deref(), Some("v0.6.9"));
         // Bare/infra tags and path-mutating shapes are refused.
         assert_eq!(app_tag("0.6.9"), None);
         assert_eq!(app_tag("res-latest"), None);
@@ -537,47 +550,53 @@ mod tests {
         assert_eq!(app_tag("v"), None);
     }
 
-    fn i18n_payload(tag: &str) -> serde_json::Value {
-        serde_json::json!({
-            "tag_name": tag,
-            "assets": [
-                {"name": "latest", "browser_download_url": "https://github.com/x/latest"},
-                {"name": format!("release-notes-i18n-{tag}.json"),
-                 "browser_download_url": "https://github.com/x/notes.json"},
-            ],
-        })
+    #[test]
+    fn i18n_asset_url_is_deterministic_from_the_tag() {
+        assert_eq!(
+            i18n_asset_url("v0.6.9"),
+            "https://github.com/langyo/wowsp/releases/download/v0.6.9/release-notes-i18n-v0.6.9.json"
+        );
+        // Prerelease tags resolve the same way: the asset name and the tag's
+        // download directory always agree — no release-detail lookup can
+        // disagree with the tag the command was called with.
+        assert_eq!(
+            i18n_asset_url("v0.6.9-rc1"),
+            "https://github.com/langyo/wowsp/releases/download/v0.6.9-rc1/release-notes-i18n-v0.6.9-rc1.json"
+        );
     }
 
     #[test]
-    fn i18n_asset_url_selection() {
-        assert_eq!(
-            i18n_asset_url_from_release(&i18n_payload("v0.6.9"), "v0.6.9").as_deref(),
-            Some("https://github.com/x/notes.json")
-        );
-        assert_eq!(
-            i18n_asset_url_from_release(&i18n_payload("v0.6.9"), "v0.6.8"),
-            None
-        );
-        assert_eq!(
-            i18n_asset_url_from_release(&serde_json::json!({"assets": []}), "v0.6.9"),
-            None
-        );
-        assert_eq!(
-            i18n_asset_url_from_release(&serde_json::json!({"message": "nope"}), "v0.6.9"),
-            None
-        );
-        let wrong_tag = serde_json::json!({
-            "tag_name": "v0.6.8",
-            "assets": [{"name": "release-notes-i18n-v0.6.9.json",
-                        "browser_download_url": "https://github.com/x/notes.json"}],
-        });
-        assert_eq!(i18n_asset_url_from_release(&wrong_tag, "v0.6.9"), None);
-        let foreign_host = serde_json::json!({
-            "tag_name": "v0.6.9",
-            "assets": [{"name": "release-notes-i18n-v0.6.9.json",
-                        "browser_download_url": "https://evil.example/notes.json"}],
-        });
-        assert_eq!(i18n_asset_url_from_release(&foreign_host, "v0.6.9"), None);
+    fn only_the_official_route_404_proves_the_asset_missing() {
+        let official = i18n_asset_url("v0.6.9");
+        let mirror = format!("https://ghp.ci/{official}");
+        assert!(missing_asset_at(
+            &official,
+            &official,
+            reqwest::StatusCode::NOT_FOUND
+        ));
+        // A mirror 404 is the proxy, not the release: the ladder keeps
+        // walking instead of reporting the translation absent.
+        assert!(!missing_asset_at(
+            &official,
+            &mirror,
+            reqwest::StatusCode::NOT_FOUND
+        ));
+        // Any other official status is an error, never "absent".
+        assert!(!missing_asset_at(
+            &official,
+            &official,
+            reqwest::StatusCode::FORBIDDEN
+        ));
+        assert!(!missing_asset_at(
+            &official,
+            &official,
+            reqwest::StatusCode::INTERNAL_SERVER_ERROR
+        ));
+        assert!(!missing_asset_at(
+            &official,
+            &official,
+            reqwest::StatusCode::OK
+        ));
     }
 
     #[test]

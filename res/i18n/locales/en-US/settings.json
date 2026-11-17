@@ -337,6 +337,8 @@
   "changelogRefresh": "Refresh",
   "changelogCurrent": "Current",
   "changelogI18nFallback": "Release notes for your language aren't available yet — showing the English original.",
+  "changelogTranslating": "Fetching translation",
+  "changelogTranslateFailed": "Failed to fetch the translation",
   "changelogLoadingMore": "Loading older releases",
   "changelogEnd": "All releases shown.",
   "feedback": "Feedback",
