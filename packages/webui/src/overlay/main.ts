@@ -92,7 +92,7 @@ import {
   type ResolvedStatsMode,
 } from "./overlayPrefs";
 import { SunkTracker, type SunkSide } from "@/utils/sunkTracker";
-import { isKnownRealm, realmUsesShipNameOrder } from "@/utils/realms";
+import { branchFromPlayerRealm, isKnownRealm, realmUsesShipNameOrder } from "@/utils/realms";
 import {
   gameTabRowCompare,
   shipTierOf,
@@ -2372,6 +2372,27 @@ async function runCompBatch() {
   }
 }
 
+/** The runtime kit copy for THIS window's battle realm (the shell's
+ *  `data-latest` cache, read through `get_ship_kit`) overlaid onto the
+ *  baked asset. Module-level: the plugin-telemetry realm unlock (which
+ *  re-reads when the window was created without a realm) lives outside
+ *  `start()`'s scope. */
+async function loadRuntimeKit(): Promise<void> {
+  try {
+    // `tauri` is the window-injected global (no Pinia on this bare page);
+    // a web-context without it (browser dev) keeps the bundled kit.
+    const invoke = tauri?.core?.invoke;
+    if (!invoke) return;
+    const cached = (await invoke("get_ship_kit", {
+      realm: branchFromPlayerRealm(realm),
+    })) as string | null;
+    if (typeof cached === "string" && setRuntimeKit(cached, branchFromPlayerRealm(realm)))
+      render();
+  } catch {
+    // shell without the command — bundled kit stays
+  }
+}
+
 async function start() {
   if (!tauri) return;
   const { core, event } = tauri;
@@ -2545,6 +2566,9 @@ async function start() {
         // truth replaces it — batch lookups unlock on the next schedule.
         realm = selfRealmCode;
         scheduleBatch();
+        // The kit was read while the realm was still unknown (it defaulted
+        // to WG) — re-read it for the now-known battle realm.
+        void loadRuntimeKit();
       }
     }
     if (!payload?.players || !arena) return;
@@ -2648,17 +2672,15 @@ async function start() {
   void loadCustomStamps(invoke).then(() => render());
 
   // Consumable-kit hot update: the main window's boot refresh warms the
-  // shell's cache; this window (created per battle) overlays it onto the
-  // baked asset. Cache read only — no network here, and a miss (older
-  // shell, nothing downloaded yet) keeps the bundled numbers.
-  void (async () => {
-    try {
-      const cached = (await invoke("get_ship_kit", {})) as string | null;
-      if (typeof cached === "string" && setRuntimeKit(cached)) render();
-    } catch {
-      // shell without the command — bundled kit stays
-    }
-  })();
+  // shell's cache; this window (created per battle) overlays THE BATTLE'S
+  // OWN realm's copy onto the baked asset — the two clients share ship
+  // ids while their consumable loadouts and radii have diverged. Cache
+  // read only — no network here, and a miss (older shell, nothing
+  // downloaded yet) keeps the bundled numbers. A realm the window was
+  // created without (URL param empty) is unlocked later by the probe's
+  // ground truth — re-read then, so a Lesta client's overlay never keeps
+  // WG numbers.
+  void loadRuntimeKit();
 }
 
 // Re-render when the webview's own devicePixelRatio changes. The overlay

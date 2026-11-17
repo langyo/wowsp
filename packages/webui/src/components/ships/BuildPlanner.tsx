@@ -72,6 +72,7 @@ import DataObserver from "./DataObserver";
 import commandersData from "../../data/commanders.json";
 import commandersLestaData from "../../data/commanders_lesta.json";
 import shipConsumablesData from "../../data/ship_consumables.json";
+import shipConsumablesLestaData from "../../data/ship_consumables_lesta.json";
 import "./BuildPlanner.scss";
 
 /**
@@ -180,6 +181,12 @@ const COMMANDERS_BY_REALM: Record<TechTreeRealm, CommanderEntry[]> = {
  *  extracted from GameParams ShipAbilities (the WG API hides loadouts);
  *  backs the consumable-gated skill bans. */
 const SHIP_CONSUMABLES = shipConsumablesData as Record<string, string[]>;
+/** The LESTA realm's own families (baked from the Lesta dump by
+ *  `build_planner_data.py --realm lesta`). The two clients share ship ids
+ *  while their loadouts have diverged — Lesta's U-2501 mounts a
+ *  SpeedBooster the WG one never carries — so Lesta-mode gating must ask
+ *  the Lesta table, exactly like the commander datasets above. */
+const SHIP_CONSUMABLES_LESTA = shipConsumablesLestaData as Record<string, string[]>;
 
 /** skilltree.json / signals.json / modernizations.json language key for the
  *  current data-language setting (falls back to en). */
@@ -341,12 +348,14 @@ export default defineComponent({
       return n;
     });
 
-    /** Consumable ability families of THIS hull, keyed by its tech-tree
-     *  index; null when the hull is missing from ship_consumables.json —
-     *  the consumable-skill gate then never bans (conservative). */
+    /** Consumable ability families of THIS hull in the ACTIVE realm,
+     *  keyed by its tech-tree index; null when the realm's table misses
+     *  the hull — the consumable-skill gate then never bans
+     *  (conservative). */
     const consumableFamilies = computed<ReadonlySet<string> | null>(() => {
       const idx = treeIndexOf(props.ship.shipId);
-      const fams = idx ? SHIP_CONSUMABLES[idx] : undefined;
+      const table = realm.value === "lesta" ? SHIP_CONSUMABLES_LESTA : SHIP_CONSUMABLES;
+      const fams = idx ? table[idx] : undefined;
       return fams ? new Set(fams) : null;
     });
 

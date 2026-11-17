@@ -13,7 +13,8 @@
  * profile exporter (profile.rs round trip) carries it inside the TOML meta.
  */
 import { shipLiveStats } from "@/features/replay/shipLiveStats";
-import kitRaw from "@/data/ship_consumable_kit.json";
+import { kitEntryFor } from "@/utils/shipKit";
+import { useShipsUiStore } from "@/stores/shipsUi";
 import type { ShipInfo } from "@/api/client";
 import type { PlannerBuild } from "@/components/ships/modifierPipeline";
 import type { Vec2 } from "./types";
@@ -189,8 +190,10 @@ export function copySide(lineup: Lineup, from: TeamSide, to: TeamSide): Lineup {
 
 // ── Resolved unit capability ──────────────────────────────────────────────
 
-type KitEntry = { r?: number; h?: number; s?: number; radarM?: number; hydroM?: number };
-const KIT = kitRaw as Record<string, KitEntry>;
+// The kit is read PER BRANCH (utils/shipKit): the two clients share ship
+// ids while their loadouts and radii have diverged, and the board renders
+// under the ships view's WG/Lesta toggle. The store call sits inside the
+// resolve functions — module scope has no active Pinia instance.
 
 /** What the board needs to know about one hull, resolved synchronously from
  *  the baked assets + the encyclopedia record the picker already had. */
@@ -241,7 +244,7 @@ export function resolveUnit(entry: LineupEntry, byId: Map<number, ShipInfo>): Re
 
 /** Zone-relevant capability of one hull (zones.ts's stat source). */
 export function zoneSourceOf(u: ResolvedUnit): ZoneStatSource {
-  const kit = KIT[String(u.entry.shipId)];
+  const kit = kitEntryFor(u.entry.shipId, useShipsUiStore().treeRealm);
   const chosen = new Set(u.entry.consumables);
   const has = (f: (typeof UTILITY_FAMILIES)[number]): boolean => {
     // An explicitly chosen loadout restricts; the unrestricted hull shows

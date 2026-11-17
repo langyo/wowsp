@@ -39,6 +39,15 @@ webui build (WOWSP_MOBILE_BUNDLE=1 keeps it in dist; desktop builds prune
 it — the desktop reads the install instead). Rust side reads the files
 back through the Tauri asset resolver after the appdata-cache miss.
 
+REALM: this pack is the WG client's (`--input` defaults to the WG dump;
+`--lesta-input` merges ONLY the Lesta-only ids the WG dump lacks, never
+overwriting a shared id). The reader gates on the requested realm —
+`get_ship_gameparams` serves the APK pack to wg lookups only and answers
+Lesta lookups from the realm-partitioned hot bundle instead — so a shared
+ship never reaches a Lesta phone with WG numbers. The two clients' ids
+coincide widely while their data has diverged, which is why the pack must
+stay single-realm instead of merging both.
+
 Ship selection mirrors `get_ship_gameparams` semantics exactly: every
 entity with `typeinfo.type == "Ship"` carrying an `A_*` weapon block,
 keyed by its numeric `id` (`ShipId` fallback); when several entities

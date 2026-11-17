@@ -31,7 +31,7 @@ import { useDuplicateInstallStore } from "@/stores/duplicateInstall";
 import { initModelPack } from "@/features/holographic/modelLoader";
 import { initDogtagPack } from "@/utils/dogtagAssets";
 import { peekLastRunVersion } from "@/utils/lastRunVersion";
-import { setRuntimeKit } from "@/overlay/teamIntel";
+import { setRuntimeKit } from "@/utils/shipKit";
 import { api } from "@/api";
 import { isMobileApp, isNative } from "@/utils/platform";
 import OnboardingWizard from "./OnboardingWizard";
@@ -269,8 +269,13 @@ export default defineComponent({
           .refreshDataPack()
           .then(async (updated) => {
             if (!updated) return;
-            const kit = await api.getShipKit();
-            if (kit != null) setRuntimeKit(kit);
+            // Overlay windows read the warmed cache themselves at creation,
+            // naming the battle realm they serve — this window just
+            // refreshes both branches' copies.
+            for (const branch of ["wg", "lesta"] as const) {
+              const kit = await api.getShipKit(branch);
+              if (kit != null) setRuntimeKit(kit, branch);
+            }
           })
           .catch(() => {});
         void (async () => {

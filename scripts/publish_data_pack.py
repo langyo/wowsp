@@ -8,7 +8,8 @@ One command, one channel: bakes nothing itself — it takes the BAKED assets
 and publishes them to the fixed `data-latest` GitHub release the app's
 `commands/data_pack.rs` consumes:
 
-  - `wowsp-data.json` — the manifest, one entry per dataset:
+  - `wowsp-data.json` — the manifest, one entry per dataset (the two
+    realm kits, both realms' ship-data slices):
     `{format, datasets: {<name>: {version, sha256, asset, size}}}` where
     `sha256` is OF THE ASSET BODY (what clients hash locally to decide
     freshness) and `asset` is the content-addressed file name
@@ -75,6 +76,15 @@ DATASETS: dict[str, tuple[Path, str]] = {
     # The Tab overlay's consumable kit — committed, shipped in the bundle.
     "ship-consumable-kit": (
         REPO_ROOT / "packages/webui/src/data/ship_consumable_kit.json",
+        "json",
+    ),
+    # The LESTA realm's kit (same generator, --realm lesta): the two
+    # clients share ship ids while their consumable loadouts and
+    # radar/hydro radii have diverged, so the overlay quotes the battle's
+    # own realm's copy. A manifest without this dataset stays valid — an
+    # older shell simply keeps its baked Lesta asset.
+    "ship-consumable-kit-lesta": (
+        REPO_ROOT / "packages/webui/src/data/ship_consumable_kit_lesta.json",
         "json",
     ),
     # Both realms' GameParams slices (armor, ballistics, sonar, per-type

@@ -226,7 +226,8 @@ export function skillIconUrl(code: string, cls?: SkillClass): string | null {
 // consumable; picking them without it would be a wasted point. Weapon needs
 // come from the WG default_profile; consumable needs (空中之眼 needs a
 // Spotter/Fighter catapult aircraft) come from the locally extracted
-// `ship_consumables.json` — the WG API does not expose consumable loadouts.
+// `ship_consumables{,_lesta}.json` — the WG API does not expose consumable
+// loadouts, and the two clients' loadouts have diverged.
 // Hulls missing from that dataset stay ungated: banning conservatively only
 // where the data proves the consumable absent.
 export type SkillRequirement = "torpedoes" | "aa" | "aaOrAsw" | "spotterOrFighter";
@@ -243,8 +244,9 @@ const SKILL_REQUIREMENTS: Record<string, SkillRequirement> = {
 
 /** Which hull capability a skill needs, or null when it is always pickable.
  *  `consumables` = the hull's consumable families (Spotter / Fighter / …)
- *  from ship_consumables.json; null/undefined when the hull is not in the
- *  dataset (its consumable needs then never ban). */
+ *  from the ACTIVE realm's family table (ship_consumables{,_lesta}.json);
+ *  null/undefined when the hull is not in that table (its consumable
+ *  needs then never ban). */
 export function skillUnavailable(
   skillCode: string,
   profile: Record<string, unknown> | null | undefined,

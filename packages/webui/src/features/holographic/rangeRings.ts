@@ -10,6 +10,12 @@
  * from the baked assets: `ship_live_stats.json` (main/sec/torpedo/AA/
  * concealment) and `ship_consumable_kit.json` (radar `radarM`, hydro
  * `hydroM`, in metres). 1 world unit = 30 m (see weather.ts).
+ *
+ * The kit reads the WG realm's asset: a REPLAY's client branch is not
+ * plumbed into this viewer (the decode normalizes the branch forks away),
+ * so the overlay/lineup surfaces — which DO know their realm — carry the
+ * per-branch kits (utils/shipKit) while recorded replays keep WG numbers.
+ * Wiring the replay field through is the open follow-up.
  */
 import { reactive, watch, type WatchStopHandle } from "vue";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
