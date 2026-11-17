@@ -84,10 +84,17 @@ function prettifyEntityName(entityName: string): string {
  *  install's GameParams, registering whatever resolves. Safe to call on
  *  every roster refresh: known ids, tried keys and pending probes are all
  *  skipped, and an empty gameRoot still probes (the shell resolves the
- *  matched install server-side — mobile / cached paths answer too). */
+ *  matched install server-side — mobile / cached paths answer too).
+ *
+ *  `branch` names the client the battle belongs to ("wg" | "lesta"): the
+ *  hot ship-data bundle serves a shared ship id per realm (the two
+ *  clients' data has diverged), and a battle's roster must resolve
+ *  against the client that recorded it. Folded into the attempt key so
+ *  a multi-client machine cannot memo-poison across roots. */
 export function resolveRuntimeShips(
   shipIds: Array<number | string | null | undefined>,
   gameRoot: string,
+  branch?: "wg" | "lesta",
 ): void {
   for (const id of shipIds) {
     // Null/0 shipIds are the roster's "no ship" placeholders, not unknowns.
@@ -99,12 +106,12 @@ export function resolveRuntimeShips(
     // only ids NO source ever answered re-probe under the new root (their
     // attempt key carries the root).
     if (shipOfflineEntry(id)) continue;
-    const key = `${gameRoot}#${id}`;
+    const key = `${gameRoot}#${id}@${branch ?? "wg"}`;
     if (attempted.has(key) || inflight.has(key)) continue;
     attempted.add(key);
     inflight.add(key);
     void api
-      .getShipGameparams(Number(id), gameRoot)
+      .getShipGameparams(Number(id), gameRoot, branch)
       .then((raw) => {
         registerDerived(id, raw);
       })

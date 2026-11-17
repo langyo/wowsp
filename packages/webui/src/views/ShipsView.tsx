@@ -794,6 +794,7 @@ export default defineComponent({
         <ShipDetailModal
           ship={selectedShip.value}
           gameRoot={gameRoot.value}
+          branchRealm={shipsUi.treeRealm}
           onClose={() => (selectedShip.value = null)}
           onOpenShip={openShipFromModal}
         />

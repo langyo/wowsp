@@ -26,3 +26,22 @@ export const isKnownRealm = (code: string): boolean =>
  *  answers "is this the calibrated table?". */
 export const realmUsesShipNameOrder = (code: string): boolean =>
   code === "cn";
+
+/** Which client's GameParams slice a ship lookup renders ("wg" | "lesta" —
+ *  the shipsUi store's branch-realm vocabulary). The WG and Lesta clients
+ *  share most ship ids but their data has diverged (Lesta rebalanced
+ *  independently — their U-2501 lists an Engine Boost consumable WG's never
+ *  carries), so the hot ship-data bundle resolves a shared id per realm and
+ *  every lookup names the realm it renders.
+ *
+ *  A WG API player realm of "ru" IS the Lesta-operated cluster (the split
+ *  left Wargaming with eu/na/asia; Lesta runs ru) — accounts there sail
+ *  Lesta-realm data — and every other cluster is WG. Nothing derivable
+ *  (unknown/null realm) degrades to WG: the encyclopedia's primary realm,
+ *  and Lesta-only ships still answer from the backend's bundled Lesta
+ *  snapshot. One shared rule so the water tables, the dashboard, the
+ *  about-modal trivia and the live battle panel can never drift apart. */
+export type ShipDataBranch = "wg" | "lesta";
+
+export const branchFromPlayerRealm = (realm?: string | null): ShipDataBranch =>
+  realm === "ru" ? "lesta" : "wg";

@@ -576,8 +576,18 @@ export const statsApi = {
       avgDamage,
       pr,
     }),
-  getShipGameparams: (shipId: number, gameRoot: string) =>
-    transport.invoke<unknown>(RPC.get_ship_gameparams, { shipId, gameRoot }),
+  /** One ship's GameParams subtree. `branch` names the client the lookup
+   *  renders ("wg" | "lesta", utils/realms' ShipDataBranch): the hot
+   *  ship-data bundle partitions its slices per realm because the two
+   *  clients share most ship ids while their data has diverged — without
+   *  the discriminator a shared id (U-2501, …) resolved to whichever
+   *  realm's slice the pack merge happened to keep. Absent = the backend's
+   *  WG default (legacy callers). */
+  getShipGameparams: (shipId: number, gameRoot: string, branch?: "wg" | "lesta") =>
+    transport.invoke<unknown>(
+      RPC.get_ship_gameparams,
+      branch === undefined ? { shipId, gameRoot } : { shipId, gameRoot, realm: branch },
+    ),
   /** Background warm of the whole per-ship GameParams cache for an install
    *  (desktop): one decode bulk-fills every ship's slice, so opening any
    *  ship later is a cache hit. False when skipped — already filled for the

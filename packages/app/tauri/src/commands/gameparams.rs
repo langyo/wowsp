@@ -64,6 +64,7 @@ use wowsp_tauri_shared::CommandResult;
 use super::appdata::{
     appdata_dir_path, read_appdata_json, read_json_in, write_appdata_json, write_json_in,
 };
+use super::data_pack::{SHIPDATA_LAYOUT_FORMAT, ShipDataRealm};
 
 // ── bundled Lesta ship data ───────────────────────────────────────────────
 
@@ -125,17 +126,22 @@ fn bundled_lesta_slice(ship_id: i64) -> Option<serde_json::Value> {
 }
 
 /// Whether a ship-data bundle's manifest speaks the slice shape this build
-/// understands. A shape bump must degrade to the carried snapshot instead
-/// of feeding the panel a payload it cannot read.
+/// understands AND the realm-partitioned container layout. A shape or
+/// layout bump must degrade to the carried snapshot instead of feeding the
+/// panel a payload it cannot trust — format 1 bundles carry no realm
+/// truth at all (their flat entries were a Lesta-wins merge), so they are
+/// refused whole rather than partially trusted.
 fn bundle_shape_ok(manifest: &serde_json::Value) -> bool {
     manifest.get("sliceFormat").and_then(|v| v.as_u64()) == Some(u64::from(SLICE_FORMAT))
+        && manifest.get("format").and_then(|v| v.as_u64()) == Some(SHIPDATA_LAYOUT_FORMAT)
 }
 
-/// The hot-updated ship-data bundle's slice for `ship_id` (the
-/// `data-latest` channel, see `commands/data_pack.rs`), when one is
-/// cached, verified and shape-compatible. Every failure is silent: the
-/// carried snapshot and the install chain below answer instead.
-fn hot_update_slice(ship_id: i64) -> Option<serde_json::Value> {
+/// The hot-updated ship-data bundle's slice for `ship_id` rendered as
+/// `realm` (the `data-latest` channel, see `commands/data_pack.rs`),
+/// when one is cached, verified and shape-compatible. Every failure is
+/// silent: the carried snapshot and the install chain below answer
+/// instead.
+fn hot_update_slice(ship_id: i64, realm: ShipDataRealm) -> Option<serde_json::Value> {
     let manifest = match super::data_pack::shipdata_manifest() {
         Ok(Some(manifest)) => manifest,
         Ok(None) => return None,
@@ -147,7 +153,7 @@ fn hot_update_slice(ship_id: i64) -> Option<serde_json::Value> {
     if !bundle_shape_ok(&manifest) {
         return None;
     }
-    match super::data_pack::shipdata_slice(ship_id) {
+    match super::data_pack::shipdata_slice(ship_id, realm) {
         Ok(slice) => slice,
         Err(e) => {
             tracing::warn!(error = %e, "ship-data bundle slice unreadable");
@@ -811,20 +817,31 @@ fn prewarm_upgrade_prices(pickle: &pickled::Value) {
 /// containing `bin/` (i.e. the WoWS install root, as detected by
 /// `detect_game_install`); the phone app always passes the empty string and
 /// is served from the cache / bundled offline pack instead.
+///
+/// `realm` names the client the lookup renders — "wg" or "lesta"
+/// (anything else degrades to WG). The hot-updated bundle partitions its
+/// slices per realm because the two clients share most ship ids while
+/// their data has diverged (Lesta rebalanced independently: their U-2501
+/// lists an Engine Boost consumable WG's never carries); without the
+/// discriminator a shared id resolves to whichever realm's slice the pack
+/// happened to merge last. The install/cache chain below (2–5) needs no
+/// discriminator — an install IS its realm.
 #[tauri::command]
 pub async fn get_ship_gameparams(
     app: tauri::AppHandle,
     ship_id: i64,
     game_root: String,
+    realm: Option<String>,
 ) -> CommandResult<serde_json::Value> {
     let cache_file = format!("gameparams/{ship_id}.json");
+    let realm = ShipDataRealm::parse(realm.as_deref());
 
     // 0. Hot-updated ship-data bundle first: our own server's current bake
     //    for BOTH realms, refreshed independently of app releases. It
     //    supersedes the carried snapshot below and answers before any
-    //    install is consulted; absent, corrupt or shape-incompatible
-    //    bundles fall straight through.
-    if let Some(slice) = hot_update_slice(ship_id) {
+    //    install is consulted; absent, corrupt, shape-incompatible or
+    //    pre-partition (format 1) bundles fall straight through.
+    if let Some(slice) = hot_update_slice(ship_id, realm) {
         return Ok(slice);
     }
 
@@ -894,16 +911,22 @@ pub async fn get_ship_gameparams(
     {
         // The full-flavor APK's baked offline pack, when present. The
         // SLIM build ships none by design — a miss falls through to the
-        // on-demand sync below instead of erroring out.
-        if let Ok(v) = bundled_asset_json(&app, &format!("data/gameparams/{ship_id}.json")) {
-            return Ok(v);
+        // on-demand sync below instead of erroring out. The pack is baked
+        // from the WG client's dump (the extract script's --lesta-input
+        // pass only gap-fills Lesta-only ids), so it answers WG lookups
+        // only; a Lesta lookup goes straight to the synced bundle.
+        if realm == ShipDataRealm::Wg {
+            if let Ok(v) = bundled_asset_json(&app, &format!("data/gameparams/{ship_id}.json")) {
+                return Ok(v);
+            }
         }
         // One single-flight data-latest refresh pass and a re-read of the
-        // synced bundle: the phone's real source for WG-realm ships. On a
-        // warm network this is seconds; offline it fails fast and the
-        // honest message below answers (the startup sync retries anyway).
+        // synced bundle: the phone's real source for hot data of BOTH
+        // realms. On a warm network this is seconds; offline it fails fast
+        // and the honest message below answers (the startup sync retries
+        // anyway).
         let _ = super::data_pack::refresh_data_pack().await;
-        if let Some(slice) = hot_update_slice(ship_id) {
+        if let Some(slice) = hot_update_slice(ship_id, realm) {
             return Ok(slice);
         }
         return Err(anyhow!("舰船数据尚未同步到本机——请联网后重试，或稍候让启动同步完成。").into());
@@ -1726,6 +1749,7 @@ fn bundled_asset_json(app: &tauri::AppHandle, rel: &str) -> Result<serde_json::V
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::data_pack::SHIPDATA_LAYOUT_FORMAT;
 
     /// End-to-end smoke against a real install (dev machine only): mount the
     /// pkg VFS, read + decode the real GameParams (through the per-client
@@ -2039,17 +2063,37 @@ mod tests {
     /// A bundle baked for a different slice shape must never feed the
     /// panel: the gate is a plain manifest comparison, so an app that
     /// predates a shape bump silently keeps using its carried snapshot.
+    /// The container layout rides the same gate: format 1 bundles carry no
+    /// realm truth (their flat entries were a Lesta-wins merge), so a
+    /// realm-aware reader refuses them whole instead of half-trusting a
+    /// namespace it cannot resolve.
     #[test]
     fn bundle_shape_gate_matches_only_the_current_slice_format() {
         assert!(bundle_shape_ok(&serde_json::json!({
+            "format": SHIPDATA_LAYOUT_FORMAT,
             "sliceFormat": SLICE_FORMAT
         })));
+        assert!(
+            !bundle_shape_ok(&serde_json::json!({
+                "sliceFormat": SLICE_FORMAT
+            })),
+            "a pre-partition flat bundle (no format field) is refused"
+        );
+        assert!(
+            !bundle_shape_ok(&serde_json::json!({
+                "format": SHIPDATA_LAYOUT_FORMAT - 1,
+                "sliceFormat": SLICE_FORMAT
+            })),
+            "format 1 (the flat merge) is refused whole"
+        );
         assert!(!bundle_shape_ok(&serde_json::json!({
+            "format": SHIPDATA_LAYOUT_FORMAT,
             "sliceFormat": SLICE_FORMAT + 1
         })));
         assert!(!bundle_shape_ok(&serde_json::json!({})));
         // A string is not a shape: refuse rather than coerce.
         assert!(!bundle_shape_ok(&serde_json::json!({
+            "format": SHIPDATA_LAYOUT_FORMAT.to_string(),
             "sliceFormat": SLICE_FORMAT.to_string()
         })));
     }

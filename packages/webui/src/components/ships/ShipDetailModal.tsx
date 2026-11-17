@@ -15,6 +15,8 @@ import { useShipStatsStore } from "@/stores/shipStats";
 import { useRankedStore } from "@/stores/ranked";
 import { useTrendsStore } from "@/stores/trends";
 import { useUpdaterStore } from "@/stores/updater";
+import { useShipsUiStore, type ShipsTreeRealm } from "@/stores/shipsUi";
+import { branchFromPlayerRealm } from "@/utils/realms";
 import { api, type ShipInfo } from "@/api";
 import { useLanguage } from "@/i18n/useLanguage";
 import { nationNameFromDb } from "@/features/holographic/modelLoader";
@@ -79,6 +81,13 @@ export default defineComponent({
      *  the bound account when omitted (encyclopedia context). */
     accountId: { type: Number as () => number | null, default: null },
     realm: { type: String as () => string | null, default: null },
+    /** Which client's GameParams slice the specs render — the WG and
+     *  Lesta clients share most ship ids while their data has diverged,
+     *  so the hot bundle resolves a shared id per realm. Hosts with a
+     *  branch context pass it (the ships view's WG/Lesta toggle);
+     *  otherwise a Lesta-operated "ru" player realm implies Lesta and
+     *  anything else follows the branch-realm toggle's stored value. */
+    branchRealm: { type: String as () => ShipsTreeRealm | null, default: null },
   },
   emits: {
     close: () => true,
@@ -147,6 +156,18 @@ export default defineComponent({
     const gpError = ref<string | null>(null);
     const gpFetched = ref(false);
     const showPathSetup = ref(false);
+    /** Which realm's slice this lookup renders. The host's branch wins
+     *  (the ships view's WG/Lesta toggle); a Lesta-operated "ru" player
+     *  realm (water-table contexts) implies Lesta; anything else follows
+     *  the stored branch-realm toggle. See utils/realms — the two clients
+     *  share ship ids but their data has diverged. */
+    const shipsUi = useShipsUiStore();
+    const dataBranch = computed<ShipsTreeRealm>(() => {
+      if (props.branchRealm) return props.branchRealm;
+      // A known player realm decides (ru IS Lesta's cluster); the
+      // encyclopedia hosts pass no realm — they follow the toggle.
+      return props.realm ? branchFromPlayerRealm(props.realm) : shipsUi.treeRealm;
+    });
 
     async function loadGameparams() {
       if (gpFetched.value || !props.ship) return;
@@ -163,7 +184,7 @@ export default defineComponent({
       // new ship's gameparams (armor tab, WeaponBar, AA spec rows).
       const requestedId = props.ship.shipId;
       try {
-        const gp = await api.getShipGameparams(requestedId, props.gameRoot);
+        const gp = await api.getShipGameparams(requestedId, props.gameRoot, dataBranch.value);
         if (props.ship?.shipId === requestedId) gameparams.value = gp;
       } catch (e) {
         const msg = (e as Error).message || String(e);

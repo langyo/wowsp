@@ -77,15 +77,67 @@ const DATASET_MAX_BYTES: usize = 4 * 1024 * 1024;
 /// published on this same channel, so the armor/ballistics/sonar data
 /// reaches machines with no install (and both realms) without an app
 /// release. Consumed by `commands/gameparams.rs`, which tries it
-/// before the carried Lesta snapshot and any install.
+/// before the carried Lesta snapshot and any install. Bundle format 2
+/// partitions the entries per realm (`wg/<id>.json`, `lesta/<id>.json`):
+/// the two clients share most ship ids but their data has diverged, so a
+/// lookup must name the realm it renders.
 const SHIPDATA_DATASET: &str = "ship-gameparams";
 const SHIPDATA_FILE: &str = "data-pack/ship-gameparams.zip";
 const SHIPDATA_META: &str = "data-pack/ship-gameparams.meta.json";
 /// The bundle's manifest entry (slice shape + per-realm build stamps).
 const SHIPDATA_MANIFEST_ENTRY: &str = "manifest.json";
-/// ~15 MB today (1445 ships across both realms); the cap catches a manifest
-/// pointing at the wrong asset while leaving room for fleet growth.
+/// ~25 MB today (~2300 slices across both realms, format 2); the cap
+/// catches a manifest pointing at the wrong asset while leaving room for
+/// fleet growth.
 const SHIPDATA_MAX_BYTES: usize = 64 * 1024 * 1024;
+
+/// Which client's slice a lookup renders. The WG and Lesta clients share
+/// most ship ids but their GameParams data has diverged (Lesta rebalanced
+/// ships independently — submarines foremost: their U-2501 lists an Engine
+/// Boost consumable the WG one never carries), so a shared id resolves
+/// differently per realm and the bundle serves each under its own prefix.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ShipDataRealm {
+    Wg,
+    Lesta,
+}
+
+impl ShipDataRealm {
+    /// The RPC string ("wg" | "lesta", case-insensitive); anything
+    /// else/absent degrades to WG — the encyclopedia's primary realm and
+    /// every legacy caller's implicit one.
+    pub(crate) fn parse(raw: Option<&str>) -> Self {
+        match raw {
+            Some(v) if v.trim().eq_ignore_ascii_case("lesta") => Self::Lesta,
+            _ => Self::Wg,
+        }
+    }
+
+    fn entry_prefix(self) -> &'static str {
+        match self {
+            Self::Wg => "wg",
+            Self::Lesta => "lesta",
+        }
+    }
+
+    /// The OTHER realm's entry answers only when the requested realm has no
+    /// copy at all (Lesta-only ships on a wg lookup and vice versa — data
+    /// beats nothing; the encyclopedia hides the inverse realm's exclusives
+    /// but replay/name resolution still lands on them).
+    fn other(self) -> Self {
+        match self {
+            Self::Wg => Self::Lesta,
+            Self::Lesta => Self::Wg,
+        }
+    }
+}
+
+/// The realm-partitioned bundle layout (the bundle manifest's `format`):
+/// entries `<realm>/<id>.json`, no flat layer. Format 1 bundles (the
+/// historic Lesta-wins flat merge) are refused whole — serving their flat
+/// entries to a realm-aware caller would re-arm the wrong-realm bug this
+/// layout fixes (WG clients were served Lesta's submarine data).
+pub(crate) const SHIPDATA_LAYOUT_FORMAT: u64 = 2;
 
 /// The unified download hub's job id for the dataset transfer.
 const JOB_ID: &str = "data-pack";
@@ -476,9 +528,37 @@ pub(crate) fn shipdata_manifest() -> anyhow::Result<Option<serde_json::Value>> {
 }
 
 /// The cached bundle's slice for one ship id — the entry point
-/// `commands/gameparams.rs` consumes.
-pub(crate) fn shipdata_slice(ship_id: i64) -> anyhow::Result<Option<serde_json::Value>> {
-    bundle_entry(&appdata::appdata_dir_path()?, &format!("{ship_id}.json"))
+/// `commands/gameparams.rs` consumes. The requested realm's entry answers
+/// first; the other realm's only when the bundle has no copy for the
+/// requested one at all (realm-exclusive ships), and format-1 flat bundles
+/// (no partition, Lesta-shadowed collisions) are refused so a realm-aware
+/// caller can never read the other client's slice off a shared id.
+pub(crate) fn shipdata_slice(
+    ship_id: i64,
+    realm: ShipDataRealm,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    shipdata_slice_in(&appdata::appdata_dir_path()?, ship_id, realm)
+}
+
+/// [`shipdata_slice`] against an explicit directory (tests run against a
+/// temp dir instead of the real AppData root).
+fn shipdata_slice_in(
+    dir: &Path,
+    ship_id: i64,
+    realm: ShipDataRealm,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let layout = bundle_entry(dir, SHIPDATA_MANIFEST_ENTRY)?
+        .and_then(|m| m.get("format").and_then(|v| v.as_u64()));
+    if layout != Some(SHIPDATA_LAYOUT_FORMAT) {
+        return Ok(None);
+    }
+    if let Some(slice) = bundle_entry(dir, &format!("{}/{ship_id}.json", realm.entry_prefix()))? {
+        return Ok(Some(slice));
+    }
+    bundle_entry(
+        dir,
+        &format!("{}/{ship_id}.json", realm.other().entry_prefix()),
+    )
 }
 
 /// Verify a downloaded body against the manifest sha and install it into
@@ -638,8 +718,48 @@ mod tests {
 
     // ── ship-data bundle (second dataset) ─────────────────────────────
 
-    /// A bundle in the baked shape: manifest entry + one JSON per ship.
-    fn shipdata_zip(slice_ids: &[i64], slice_format: u64) -> Vec<u8> {
+    /// A bundle in the baked shape: manifest entry + one JSON per ship per
+    /// realm under `<realm>/` (format 2, no flat layer) — or the historic
+    /// flat layout when `layout_format` is 1, so the reader's format gate
+    /// can be tested against both.
+    fn shipdata_zip(realms: &[(&str, &[i64])], layout_format: u64, slice_format: u64) -> Vec<u8> {
+        use std::io::Write as _;
+
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let options = zip::write::SimpleFileOptions::default();
+            let total: usize = realms.iter().map(|(_, ids)| ids.len()).sum();
+            let manifest = serde_json::json!({
+                "format": layout_format,
+                "sliceFormat": slice_format,
+                "realms": realms.iter().map(|(realm, ids)| (realm.to_string(), serde_json::json!({
+                    "gameVersion": realm, "build": realm, "ships": ids.len(), "source": realm,
+                }))).collect::<serde_json::Map<String, serde_json::Value>>(),
+                "totalShips": total,
+            });
+            writer.start_file(SHIPDATA_MANIFEST_ENTRY, options).unwrap();
+            writer.write_all(manifest.to_string().as_bytes()).unwrap();
+            for (realm, ids) in realms {
+                for id in *ids {
+                    writer
+                        .start_file(format!("{realm}/{id}.json"), options)
+                        .unwrap();
+                    writer
+                        .write_all(
+                            format!("{{\"id\":{id},\"name\":\"{realm}ship{id}\"}}").as_bytes(),
+                        )
+                        .unwrap();
+                }
+            }
+            writer.finish().unwrap();
+        }
+        cursor.into_inner()
+    }
+
+    /// The historic format-1 flat layout (one JSON per ship, no realm
+    /// prefix) the format gate must refuse.
+    fn flat_shipdata_zip(slice_ids: &[i64], slice_format: u64) -> Vec<u8> {
         use std::io::Write as _;
 
         let mut cursor = std::io::Cursor::new(Vec::new());
@@ -677,7 +797,14 @@ mod tests {
     #[test]
     fn shipdata_bundle_round_trips_and_verifies() {
         let fixture = KitFixture::new();
-        let bytes = shipdata_zip(&[1001, 1002], 2);
+        // The shared id 1001 exists in BOTH realms with different names —
+        // exactly the divergence the partition exists to serve (the
+        // flat-merge regression fed WG clients Lesta's submarine data).
+        let bytes = shipdata_zip(
+            &[("wg", &[1001, 1002]), ("lesta", &[1001, 1003])],
+            SHIPDATA_LAYOUT_FORMAT,
+            2,
+        );
         let entry = shipdata_entry(&sha256_hex(&bytes), bytes.len());
         install_shipdata_in(&fixture.0, &bytes, &entry).unwrap();
 
@@ -686,21 +813,97 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(manifest["sliceFormat"], serde_json::json!(2));
-        let slice = bundle_entry(&fixture.0, "1002.json").unwrap().unwrap();
-        assert_eq!(slice["name"], serde_json::json!("ship1002"));
+        // A shared id resolves PER REALM — the requested realm wins even
+        // though the other realm's copy sits right there.
+        let wg_shared = shipdata_slice_in(&fixture.0, 1001, ShipDataRealm::Wg)
+            .unwrap()
+            .unwrap();
+        assert_eq!(wg_shared["name"], serde_json::json!("wgship1001"));
+        let lesta_shared = shipdata_slice_in(&fixture.0, 1001, ShipDataRealm::Lesta)
+            .unwrap()
+            .unwrap();
+        assert_eq!(lesta_shared["name"], serde_json::json!("lestaship1001"));
+        // Realm-exclusive ids answer themselves…
+        assert_eq!(
+            shipdata_slice_in(&fixture.0, 1002, ShipDataRealm::Wg)
+                .unwrap()
+                .unwrap()["name"],
+            serde_json::json!("wgship1002")
+        );
+        assert_eq!(
+            shipdata_slice_in(&fixture.0, 1003, ShipDataRealm::Lesta)
+                .unwrap()
+                .unwrap()["name"],
+            serde_json::json!("lestaship1003")
+        );
+        // …and the other realm's copy is the fallback only when the
+        // requested realm has no copy (data beats nothing).
+        assert_eq!(
+            shipdata_slice_in(&fixture.0, 1003, ShipDataRealm::Wg)
+                .unwrap()
+                .unwrap()["name"],
+            serde_json::json!("lestaship1003")
+        );
+        assert_eq!(
+            shipdata_slice_in(&fixture.0, 1002, ShipDataRealm::Lesta)
+                .unwrap()
+                .unwrap()["name"],
+            serde_json::json!("wgship1002")
+        );
         // An id outside the bundle is "absent", not an error.
-        assert!(bundle_entry(&fixture.0, "9999.json").unwrap().is_none());
+        assert!(
+            shipdata_slice_in(&fixture.0, 9999, ShipDataRealm::Wg)
+                .unwrap()
+                .is_none()
+        );
+        // No flat layer: a pre-partition reader's flat lookup must miss.
+        assert!(bundle_entry(&fixture.0, "1002.json").unwrap().is_none());
 
         // A body replaced behind its sidecar must read as "no cache".
         fs::write(fixture.0.join(SHIPDATA_FILE), b"tampered").unwrap();
         assert!(shipdata_path_in(&fixture.0).unwrap().is_none());
-        assert!(bundle_entry(&fixture.0, "1002.json").unwrap().is_none());
+        assert!(
+            shipdata_slice_in(&fixture.0, 1001, ShipDataRealm::Wg)
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn shipdata_slice_refuses_the_flat_layout_whole() {
+        let fixture = KitFixture::new();
+        // Format 1: the historic Lesta-wins flat merge. Its entries carry
+        // no realm truth, so a realm-aware caller must never read them —
+        // absence (fall through to the install chain) over wrong data.
+        let bytes = flat_shipdata_zip(&[1001], 2);
+        let entry = shipdata_entry(&sha256_hex(&bytes), bytes.len());
+        install_shipdata_in(&fixture.0, &bytes, &entry).unwrap();
+        assert!(
+            shipdata_slice_in(&fixture.0, 1001, ShipDataRealm::Wg)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            shipdata_slice_in(&fixture.0, 1001, ShipDataRealm::Lesta)
+                .unwrap()
+                .is_none()
+        );
+        // An unknown layout format field refuses too (forward compat with
+        // a layout this build cannot speak).
+        let zero = shipdata_zip(&[("wg", &[1001])], 0, 2);
+        let zero_entry = shipdata_entry(&sha256_hex(&zero), zero.len());
+        install_shipdata_in(&fixture.0, &zero, &zero_entry).unwrap();
+        assert!(
+            shipdata_slice_in(&fixture.0, 1001, ShipDataRealm::Wg)
+                .unwrap()
+                .is_none()
+        );
     }
 
     #[test]
     fn shipdata_install_rejects_a_sha_mismatch() {
         let fixture = KitFixture::new();
-        let bytes = shipdata_zip(&[1001], 2);
+        let bytes = shipdata_zip(&[("wg", &[1001])], SHIPDATA_LAYOUT_FORMAT, 2);
         let entry = shipdata_entry(&"0".repeat(64), bytes.len());
         assert!(install_shipdata_in(&fixture.0, &bytes, &entry).is_err());
         assert!(!fixture.0.join(SHIPDATA_FILE).exists());

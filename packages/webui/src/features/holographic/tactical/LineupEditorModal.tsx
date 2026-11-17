@@ -209,7 +209,7 @@ export default defineComponent({
       for (const id of ids) {
         if (gpResolved.has(id)) continue;
         api
-          .getShipGameparams(id, shipDetail.gameRoot.value)
+          .getShipGameparams(id, shipDetail.gameRoot.value, shipsUi.treeRealm)
           .then((gp) => {
             const groups = gameparamsSlotGroups(gp, dataLanguage.value);
             gpResolved.add(id);
