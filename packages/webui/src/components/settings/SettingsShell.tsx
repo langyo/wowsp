@@ -62,15 +62,19 @@ export interface SettingsRailGroup {
  * list is actually in sight, not just highlighted off-screen.
  *
  * Both scrollers are hikari HkScrollContainers (the app-wide overlay
- * scrollbar contract): the imported stylesheet owns the shell geometry
- * (rail width, pane flex, the modal host's flush-edge trick) EXCEPT the
- * three host rules SettingsShell.scss overrides for the desktop
- * content-fit frame — the shell height, its body-inner height pin and the
- * rail's size containment (see that file's content-fit docblock). The
- * viewports scroll – native bars hidden, the auto-hiding overlay chrome
- * drawn by the library. The rail+pane BEM classes stay on the hosts so
- * every shell selector (here, the modal's and the page's) keeps working
- * unchanged.
+ * scrollbar contract): the imported stylesheet owns the shell geometry —
+ * rail width, pane flex, the modal host's flush-edge trick AND the desktop
+ * frame's constant band (--hk-settings-height, calc(70vh - 6.5rem)).
+ * SettingsShell.scss declares no shell-height rule; its only host override
+ * is the desktop body-inner unpin, which keeps HkModal's size morph able to
+ * re-pin the frame on a WINDOW resize. Since 2026-11-17 the DESKTOP window
+ * keeps that one band for every section, so it never resizes between
+ * sections and a short section shows a bounded dead band under its last
+ * card (the accepted trade that retired the 2026-11-08 content-fit hug and
+ * its 2026-11-11 floor — see that sheet's docblock). The viewports scroll
+ * – native bars hidden, the auto-hiding overlay chrome drawn by the
+ * library. The rail+pane BEM classes stay on the hosts so every shell
+ * selector (here, the modal's and the page's) keeps working unchanged.
  *
  * The rail carries hikari's own selectionHint prop (adopted from the
  * app-local twin once 0.55.229 shipped it upstream): with a long grouped
