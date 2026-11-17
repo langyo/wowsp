@@ -12,6 +12,11 @@ export interface ChangelogRelease {
   version: string;
   published_at: string;
   body: string;
+  /** Whether the release carries a release-notes-i18n-<tag>.json asset,
+   *  parsed Rust-side from the release list's own assets array. False is
+   *  the list's proof that there is no translation to fetch: the store
+   *  settles the release "missing" without a command call. */
+  notes_i18n: boolean;
 }
 
 /** One streamed batch from `changelog_list`: the visible releases plus
@@ -24,8 +29,10 @@ export interface ChangelogPage {
 }
 
 /** One release's release-notes-i18n-<tag>.json asset, as served by the
- *  Rust changelog_i18n command (sections keyed by locale; null when the
- *  release has no asset). */
+ *  Rust changelog_i18n command (sections keyed by locale). Non-nullable:
+ *  whether the release ships an asset at all is the list's `notes_i18n`
+ *  flag now, so the command resolves this doc or rejects with a retryable
+ *  error — never a null "no asset" answer. */
 export interface ChangelogI18nPayload {
   tag: string;
   sections: ReleaseTranslations;
@@ -34,7 +41,8 @@ export interface ChangelogI18nPayload {
 /** One release's translation-asset fetch, as the changelog section
  *  renders it. "loading" is the in-flight state (the card keeps its
  *  English body and adds the translating row above it); "ready" carries
- *  the sections; "missing" means the release genuinely ships no asset
+ *  the sections; "missing" means the release genuinely ships no asset —
+ *  the list's `notes_i18n` flag said so, so no fetch was ever attempted
  *  (old releases — English body plus the fallback hint); "error" means
  *  the fetch FAILED (transport/HTTP) and the card offers a retry instead
  *  of claiming the translation does not exist. */
@@ -103,31 +111,51 @@ export const useChangelogStore = defineStore("changelog", () => {
     return fetchTokens.get(version) === token;
   }
 
-  /** Fetch ONE release's translation asset on demand (the section renders
-   *  the English body until it lands). Idempotent per release: an entry
-   *  in flight, ready or genuinely missing is left alone, so scroll
-   *  ticks and re-renders cannot re-probe the mirror ladder — the one
-   *  retry path is `retryTranslations` (the card's retry chip).
+  /** Settle ONE release's translation state on demand (the section renders
+   *  the English body until a translation lands). `hasNotes` is the release
+   *  list's `notes_i18n` flag: the list already parsed the release's assets
+   *  array, so false settles "missing" HERE, without a command call — no
+   *  request for an asset the list proved absent, no spinner, no
+   *  mirror-ladder probe.
    *
-   *  The Rust command answers payload → ready, null → missing (the
-   *  release ships no asset) and REJECTS on transport/HTTP failure. The
-   *  distinction matters: a rejection is never reported as "this release
-   *  has no translation", it becomes a retryable error. A non-object
-   *  payload (older shell, a proxy answering junk) reads as missing
-   *  rather than crashing the pane. */
-  async function ensureTranslations(version: string): Promise<void> {
+   *  True keeps the per-release fetch: idempotent (an entry in flight, ready
+   *  or genuinely missing is left alone, so scroll ticks, locale switches and
+   *  re-renders cannot re-probe the mirror ladder — the one retry path is
+   *  `retryTranslations`, the card's retry chip), token-guarded (a completion
+   *  that no longer owns the per-release token is dropped, so an attempt
+   *  superseded by `refresh`/`retryTranslations` cannot overwrite the fresher
+   *  state) and honest about failures: the Rust command RESOLVES a doc object
+   *  or REJECTS on transport/HTTP failure, and a rejection becomes the
+   *  retryable error state, never "this release has no translation". A
+   *  non-object payload (older shell, a proxy answering junk) still reads as
+   *  missing rather than crashing the pane — the wire is not type-enforced. */
+  async function ensureTranslations(version: string, hasNotes: boolean): Promise<void> {
+    if (!hasNotes) {
+      // The list's per-release answer is authoritative (a tag's assets do
+      // not change under a running client). Settle "missing" without
+      // touching the command, and supersede an attempt still in flight for
+      // this version so a late completion cannot land on the fresher
+      // answer. An already-missing entry is left alone: watcher re-runs
+      // (locale switches, i18n epoch bumps) must not churn the state map.
+      if (translationStates.value[version]?.status === "missing") return;
+      nextFetchToken(version);
+      setTranslationState(version, { status: "missing" });
+      return;
+    }
     const current = translationStates.value[version];
     if (current && current.status !== "error") return;
     const token = nextFetchToken(version);
     setTranslationState(version, { status: "loading" });
     try {
-      const payload = await invoke<ChangelogI18nPayload | null>(RPC.changelog_i18n, {
+      const payload = await invoke<ChangelogI18nPayload>(RPC.changelog_i18n, {
         tag: `v${version}`,
       });
       // A superseded attempt is dropped silently — never reported as the
       // release's current outcome.
       if (!ownsFetchToken(version, token)) return;
-      const sections = payload?.sections;
+      // The command's result is no longer nullable, but the wire is not
+      // type-enforced: read a non-object payload defensively as "missing".
+      const sections = (payload as Partial<ChangelogI18nPayload> | null)?.sections;
       setTranslationState(
         version,
         sections && typeof sections === "object"
@@ -145,15 +173,18 @@ export const useChangelogStore = defineStore("changelog", () => {
   }
 
   /** Forget one release's settled state and fetch it again — the retry
-   *  chip on a failed card. */
-  async function retryTranslations(version: string): Promise<void> {
+   *  chip on a failed card. The chip never renders for "missing" (an
+   *  asset-less release is known from the list, not a failed fetch), but
+   *  the list's flag still flows through: a retry on one stays a local
+   *  "missing" and never becomes a command call. */
+  async function retryTranslations(version: string, hasNotes: boolean): Promise<void> {
     const next = { ...translationStates.value };
     delete next[version];
     translationStates.value = next;
     // Supersede an attempt still in flight for this version: its
     // completion must not land on the retry's fresh state.
     nextFetchToken(version);
-    await ensureTranslations(version);
+    await ensureTranslations(version, hasNotes);
   }
 
   /** Fetch the FIRST batch (the section's refresh button). A concurrent

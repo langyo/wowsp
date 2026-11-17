@@ -387,11 +387,16 @@ Every `v*` app release carries TWO artifacts. The release BODY is plain
 English markdown (the categorized notes GitHub generates, shown verbatim on
 GitHub web). The seven translations live in a per-release ASSET,
 `release-notes-i18n-<tag>.json` (schema 1: `tag`, `generated_at`, and a
-`sections` map keyed by locale). The app changelog fetches the asset for the
-user's locale through the Rust command `commands/changelog.rs::changelog_i18n`
-(GitHub mirror ladder, session-cached) and renders that section; while a
-section is still the canonical 🚧 placeholder, or the asset is unavailable, it
-falls back to the English body with a hint. GitHub web never shows
+`sections` map keyed by locale). The app changelog reads the release list's
+per-release `assets` names to know whether an asset exists, and downloads it
+on demand through the unified download hub (`commands/download_hub.rs`, kind
+`changelog-notes`, SILENT download context: no card, no toast — the changelog
+card renders its own translating/retry state) with a seven-day on-disk cache
+under `<cache>/changelog-notes/`. A release whose list entry carries no notes
+asset renders the English body with the "not available" hint and costs no
+request. While a section is still the canonical 🚧 placeholder, or the release
+ships no asset, the English body is shown with the not-available hint; when
+the asset cannot be fetched, the card shows a retry chip instead of that hint. GitHub web never shows
 translations — the asset is the translation channel. The FORMAT AUTHORITY is
 `scripts/release_notes_i18n.py` (its module docstring defines the asset and
 legacy-scaffold formats; `self-test` carries the fixtures) — the webui parser

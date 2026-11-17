@@ -11,9 +11,10 @@
  *
  * The translation half pins the per-release fetch contract: the spinner
  * row while the asset is in flight, the retry chip on a FAILED fetch
- * (never the "no translation" hint), English + hint for a release that
- * genuinely ships no asset, and the viewport gating (only cards the
- * shared observer reports are fetched).
+ * (never the "no translation" hint), English + hint for a release the
+ * list reports without an asset (notes_i18n false — no command call at
+ * all), the viewport gating (only cards the shared observer reports are
+ * fetched) and the defensive non-object payload mapping.
  */
 import { describe, expect, it, beforeEach, afterEach, beforeAll, afterAll, vi } from "vitest";
 import { createPinia, setActivePinia } from "pinia";
@@ -40,6 +41,7 @@ const RELEASES: ChangelogRelease[] = [
   {
     version: "0.4.6",
     published_at: "2026-09-24T04:09:10Z",
+    notes_i18n: true,
     body: [
       "## What's Changed",
       "",
@@ -55,6 +57,7 @@ const RELEASES: ChangelogRelease[] = [
   {
     version: "0.4.5",
     published_at: "2026-09-22T05:43:17Z",
+    notes_i18n: true,
     body: "**Hardened** the installer flow.",
   },
 ];
@@ -63,6 +66,7 @@ const OLDER: ChangelogRelease[] = [
   {
     version: "0.4.4",
     published_at: "2026-09-20T00:00:00Z",
+    notes_i18n: true,
     body: "Older notes.",
   },
   // A release published between two loads would surface on both pages —
@@ -70,6 +74,7 @@ const OLDER: ChangelogRelease[] = [
   {
     version: "0.4.6",
     published_at: "2026-09-24T04:09:10Z",
+    notes_i18n: true,
     body: "## What's Changed",
   },
 ];
@@ -552,6 +557,46 @@ describe("ChangelogSection", () => {
       expect(newest.textContent).toContain("What's Changed");
       expect(newest.textContent).toContain("该版本还没有你所用语言的更新说明");
       expect(newest.querySelector(".changelog__i18n-status")).toBeNull();
+    });
+
+    it("takes the list's notes_i18n=false as missing without asking the command", async () => {
+      const tags: string[] = [];
+      // The release list already parsed 0.4.6's assets array: it carries no
+      // release-notes-i18n asset, so there is nothing to fetch for it.
+      const page = pageOf(RELEASES, false, 0);
+      page.releases[0] = { ...page.releases[0], notes_i18n: false };
+      mockChangelog(page, (tag) => {
+        tags.push(tag);
+        return Promise.resolve({ tag, sections: { "zh-CN": "- 其余版本照常翻译" } });
+      });
+
+      mountSection();
+      const changelog = useChangelogStore();
+      void changelog.refresh();
+      await flushPromises();
+
+      // The asset-less card crosses the viewport: the store settles "missing"
+      // with NO command call — no spinner row, no mirror-ladder probe — and
+      // the card falls back to the English body plus the hint.
+      intersect(cards()[0]);
+      await flushPromises();
+      expect(changelog.translationStates["0.4.6"]).toEqual({ status: "missing" });
+      expect(tags).toEqual([]);
+      const newest = cards()[0];
+      expect(newest.textContent).toContain("What's Changed");
+      expect(newest.textContent).toContain("该版本还没有你所用语言的更新说明");
+      expect(newest.querySelector(".changelog__i18n-status")).toBeNull();
+      // The other card is still viewport-gated: it has not asked yet.
+      expect(changelog.translationStates["0.4.5"]).toBeUndefined();
+
+      // Releases the list reports WITH an asset still fetch normally, and the
+      // asset-less tag never joins their requests.
+      intersect(cards()[1]);
+      await flushPromises();
+      expect(tags).toEqual(["v0.4.5"]);
+      expect(changelog.translationStates["0.4.5"]).toMatchObject({ status: "ready" });
+      expect(cards()[1].textContent).toContain("其余版本照常翻译");
+      expect(changelog.translationStates["0.4.6"]).toEqual({ status: "missing" });
     });
 
     it("treats a non-object payload as a missing asset instead of crashing", async () => {

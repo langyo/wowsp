@@ -2,8 +2,9 @@
  * The unified download context.
  *
  * EVERY runtime download the app can start — the app installer, the resource
- * pack, the baked data pack, mod-hub packages and the signed decision-model
- * pack — is a CONTEXT of this store. It owns, once for all of them:
+ * pack, the baked data pack, mod-hub packages, the signed decision-model pack
+ * and the settings changelog's per-release release-notes translations — is a
+ * CONTEXT of this store. It owns, once for all of them:
  *
  * - the CONTEXT REGISTRY: one declarative row per bus kind — localized label,
  *   presentation, where the numbers come from, cancel verb. Adding a
@@ -44,7 +45,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 /** Who renders a running pass of this kind.
  *  - "card"    the shared DownloadToast top-right card (this store drives it);
- *  - "silent"  never presented (boot-time data lanes).
+ *  - "silent"  never presented (boot-time data lanes, background asset fetches).
  *
  *  A previous revision had a "bespoke" value: the app updater and the plugin
  *  batch kept private cards because their copy is pass-specific. That split —
@@ -101,6 +102,17 @@ export const DOWNLOAD_CONTEXTS: readonly DownloadContextSpec[] = [
   },
   {
     kind: "data-pack",
+    presentation: "silent",
+    source: "none",
+  },
+  {
+    // The settings changelog's per-release release-notes translation asset
+    // lands through the hub on first view (the Rust command fetches it as a
+    // silent "changelog-notes" download context). Silent because the changelog
+    // card already owns its own 正在获取翻译 / 翻译获取失败+重试 state — a card
+    // or toast here would double-report a background fetch. Declares no cancel
+    // verb: the small first-view asset fetch is not a user-abortable pass.
+    kind: "changelog-notes",
     presentation: "silent",
     source: "none",
   },

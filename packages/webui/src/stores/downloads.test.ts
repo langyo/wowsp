@@ -78,7 +78,14 @@ describe("the download context registry", () => {
     // The producer contract lives in wowsp_tauri_shared::download::kind — every
     // one of its kinds must have a presentation row here, or its pass would
     // render nowhere.
-    expect(kinds).toEqual(["update", "res-pack", "ai-models", "data-pack", "mod-package"]);
+    expect(kinds).toEqual([
+      "update",
+      "res-pack",
+      "ai-models",
+      "data-pack",
+      "changelog-notes",
+      "mod-package",
+    ]);
     expect(new Set(kinds).size).toBe(kinds.length);
   });
 
@@ -90,10 +97,12 @@ describe("the download context registry", () => {
   });
 
   it("declares a cancel verb for every abortable context", () => {
-    // The batch (mod catalog installs write their tree atomically) and the
-    // boot-time data lane cannot be aborted; everything else must be, or a
-    // 1.2 GB pass would have no way out.
-    const abortable = DOWNLOAD_CONTEXTS.filter((s) => s.kind !== "mod-package" && s.kind !== "data-pack");
+    // The batch (mod catalog installs write their tree atomically), the
+    // boot-time data lane and the silent changelog-notes asset fetch cannot be
+    // aborted; everything else must be, or a 1.2 GB pass would have no way out.
+    const abortable = DOWNLOAD_CONTEXTS.filter(
+      (s) => s.kind !== "mod-package" && s.kind !== "data-pack" && s.kind !== "changelog-notes",
+    );
     for (const spec of abortable) {
       expect(spec.cancel, spec.kind).toBeTypeOf("function");
     }
@@ -101,6 +110,17 @@ describe("the download context registry", () => {
 
   it("keeps the boot-time data lane silent", () => {
     expect(DOWNLOAD_CONTEXTS.find((s) => s.kind === "data-pack")?.presentation).toBe("silent");
+  });
+
+  it("keeps the changelog translation fetch silent and uncancellable", () => {
+    const spec = DOWNLOAD_CONTEXTS.find((s) => s.kind === "changelog-notes");
+    // The changelog card already owns its 正在获取翻译 / 翻译获取失败+重试 state:
+    // a shared card or toast would double-report the background fetch. No
+    // cancel verb either — the small first-view asset fetch is not a
+    // user-abortable pass.
+    expect(spec?.presentation).toBe("silent");
+    expect(spec?.source).toBe("none");
+    expect(spec?.cancel).toBeUndefined();
   });
 
   it("routes the batch through the owner source", () => {

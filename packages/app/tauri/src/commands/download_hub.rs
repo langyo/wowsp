@@ -2,9 +2,10 @@
 //!
 //! Every artifact the app pulls from its GitHub-mirror ladder — the app
 //! update installer, the resource pack (full archive and chain-patch
-//! links), the baked data pack and mod-hub packages — downloads through
-//! this hub instead of each command rolling its own engine. The hub's
-//! contract:
+//! links), the baked data pack, the mod-hub packages, the AI decision-
+//! model pack and the settings changelog's per-release notes
+//! translations — downloads through this hub instead of each command
+//! rolling its own engine. The hub's contract:
 //!
 //! - **FIFO queue**: jobs run strictly one at a time in arrival order,
 //!   so exactly one download writes disk at any moment (a download can
@@ -38,7 +39,10 @@
 //! from a paired device over LAN/relay, not the mirror ladder, and keep
 //! their own multiplexed `wowsp://pairing-progress` channel) and the
 //! media image cache (latency-critical tiny fetches that must never
-//! queue behind a ~1.2 GB pack).
+//! queue behind a ~1.2 GB pack). The changelog's notes translation is the
+//! accepted exception to that tiny-fetch exclusion: silent, a few
+//! kilobytes, and disk-cached after its first view, so the queue cost
+//! stays on that first view (see `commands/changelog.rs`).
 
 use anyhow::{anyhow, bail};
 use std::collections::HashMap;

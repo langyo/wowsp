@@ -72,6 +72,15 @@ stale, and a decision-model bar stranded in the middle of the resources pane.
 | `ai-models` | card | bus | the shared `DownloadToast` |
 | `mod-package` | card | owner | the shared `DownloadToast` (the owner pushes the batch's overall percent) |
 | `data-pack` | silent | none | nothing — a boot-time lane behind the settings card's stamp |
+| `changelog-notes` | silent | none | nothing — the changelog pane renders its own translating/retry state |
+
+The changelog translation asset rides that FIFO on purpose even though it is a
+few kilobytes: one engine keeps one mirror ladder and one failover story, and
+its silent lane keeps the shared card out of it — while its 7-day disk cache
+(`%LOCALAPPDATA%/WoWSP/changelog-notes`, one `<tag>.json` per release —
+never pruned, so it grows only with the releases actually opened — and
+deliberately not a settings-inventory row above) keeps the queue cost to
+the first view of a release.
 
 **Two sources of numbers.** `bus` contexts fold the unified progress ticks (one
 artifact, one stream). `owner` contexts PUSH their pass with `report()`, which

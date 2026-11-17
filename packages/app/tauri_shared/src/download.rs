@@ -1,7 +1,8 @@
 //! The unified resource-download progress channel.
 //!
 //! Every resource download in the shell (app updates, the resource pack,
-//! the data pack, mod-hub packages) streams through ONE event — the
+//! the data pack, mod-hub packages, the AI model pack and the settings
+//! changelog's per-release notes translations) streams through ONE event — the
 //! download hub (`commands/download_hub.rs`) and its callers push
 //! [`DownloadProgress`] payloads on [`DOWNLOAD_PROGRESS_EVENT`], and each
 //! webui store subscribes to the single stream, filtering by `kind`/`id`.
@@ -36,6 +37,12 @@ pub mod kind {
     pub const MOD_PACKAGE: &str = "mod-package";
     /// The AI decision-model pack (`ai_pack.rs`).
     pub const AI_MODELS: &str = "ai-models";
+    /// The per-release release-notes translation asset of the settings
+    /// changelog (`changelog.rs`): `release-notes-i18n-<tag>.json` fetched
+    /// SILENTLY through the hub on the first view of a release and cached on
+    /// disk for a week, so the changelog card's own translating/retry state
+    /// is the only progress surface (no card, no toast).
+    pub const CHANGELOG_NOTES: &str = "changelog-notes";
 }
 
 /// Phase vocabulary. Hub-owned phases first, then the context-owned
