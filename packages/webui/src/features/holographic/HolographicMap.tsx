@@ -87,6 +87,7 @@ import { loadSquadronStates } from "./squadronStatesLoader";
 import type { SquadronStateEvents } from "@/api";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap } from "./minimapPainter";
+import { branchOfReplay, type ShipDataBranch } from "@/utils/realms";
 import {
   alignPoseHeading,
   applyRecordedCamera,
@@ -355,6 +356,12 @@ export default defineComponent({
     /** Resolved stats-source battle scope for the tooltip's stat numbers
      *  (the same mode the post-battle panels show). */
     statsMode: { type: String as () => ResolvedStatsMode, default: "random" },
+    /** The recorded replay's client branch ("wg" | "lesta"): the two clients
+     *  share ship ids while their consumable radii have diverged, so the
+     *  stock range rings must quote the replay's own realm. The host passes
+     *  the rail entry's install identity; empty falls back to the replay
+     *  container extension (`.korablireplay` = Lesta) and then WG. */
+    branch: { type: String, default: "" },
   },
   setup(props, { expose }) {
     const container = ref<HTMLElement | null>(null);
@@ -2540,9 +2547,15 @@ const RECORDED_DOLLY_MIN = -40;
     const rangeMenuOpen = ref(false);
     const selfRingsView = ref<RangeRingDef[]>([]);
     armRangeRingPrefsPersist();
+    /** The replay's client branch: the host's rail identity first, the
+     *  container extension as the fallback, WG when nothing identifies it. */
+    const dataBranch = computed<ShipDataBranch>(() => {
+      if (props.branch === "wg" || props.branch === "lesta") return props.branch;
+      return branchOfReplay(props.replayPath);
+    });
     watch(shipLabels, () => {
       const self = shipLabels.value.find((l) => l.role === "self");
-      ctx.selfRings = resolveSelfRings(self?.shipId);
+      ctx.selfRings = resolveSelfRings(self?.shipId, dataBranch.value);
       selfRingsView.value = ctx.selfRings;
       buildRangeRings(ctx, ctx.selfRings);
       updateRangeRings(ctx, current.value);

@@ -40,6 +40,22 @@ describe("resolveSelfRings", () => {
     expect(resolveSelfRings(null)).toEqual([]);
     expect(resolveSelfRings(999999999999)).toEqual([]);
   });
+
+  it("quotes the replay client's own radar/hydro radii per branch", () => {
+    // 4179539280 is a shared hull whose kits diverge: WG radar 9 km /
+    // hydro 3 km, Lesta radar 10 km / hydro 5 km — a replay must show its
+    // own client's numbers, not the other realm's.
+    const wg = new Map(resolveSelfRings(4179539280, "wg").map((r) => [r.kind, r.meters]));
+    const lesta = new Map(
+      resolveSelfRings(4179539280, "lesta").map((r) => [r.kind, r.meters]),
+    );
+    expect(wg.get("radar")).toBe(9000);
+    expect(wg.get("hydro")).toBe(3000);
+    expect(lesta.get("radar")).toBe(10000);
+    expect(lesta.get("hydro")).toBe(5000);
+    // The branch defaults to WG (the viewer's historical assumption).
+    expect(new Map(resolveSelfRings(4179539280).map((r) => [r.kind, r.meters])).get("radar")).toBe(9000);
+  });
 });
 
 describe("units and colours", () => {

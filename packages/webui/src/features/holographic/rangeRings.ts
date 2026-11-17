@@ -8,20 +8,23 @@
  *
  * All ranges are STOCK capability values (no per-player equipment), drawn
  * from the baked assets: `ship_live_stats.json` (main/sec/torpedo/AA/
- * concealment) and `ship_consumable_kit.json` (radar `radarM`, hydro
- * `hydroM`, in metres). 1 world unit = 30 m (see weather.ts).
+ * concealment) and the battle realm's consumable kit
+ * (`ship_consumable_kit{,_lesta}.json` — radar `radarM`, hydro `hydroM`,
+ * in metres). 1 world unit = 30 m (see weather.ts).
  *
- * The kit reads the WG realm's asset: a REPLAY's client branch is not
- * plumbed into this viewer (the decode normalizes the branch forks away),
- * so the overlay/lineup surfaces — which DO know their realm — carry the
- * per-branch kits (utils/shipKit) while recorded replays keep WG numbers.
- * Wiring the replay field through is the open follow-up.
+ * The kit reads THE RECORDED REPLAY'S branch (utils/shipKit): the WG and
+ * Lesta clients share ship ids while their radar/hydro radii have
+ * diverged, and a replay of one client must quote that client's numbers.
+ * The host passes the open replay's branch (utils/realms' branchOfReplay —
+ * install kind, then container extension); an untagged caller degrades to
+ * WG, the format this viewer has always assumed.
  */
 import { reactive, watch, type WatchStopHandle } from "vue";
 import { Line2 } from "three/examples/jsm/lines/Line2.js";
 import { LineGeometry } from "three/examples/jsm/lines/LineGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import kitRaw from "@/data/ship_consumable_kit.json";
+import { kitEntryFor } from "@/utils/shipKit";
+import type { ShipDataBranch } from "@/utils/realms";
 import { shipLiveStats } from "@/features/replay/shipLiveStats";
 import { PLANE_TYPES } from "./tactical/shellTypes";
 import { circlePositions, OVERLAY_RING_ORDER } from "./screenOverlays";
@@ -82,17 +85,19 @@ export interface RangeRingDef {
   meters: number;
 }
 
-type KitEntry = { h?: number; s?: number; r?: number; radarM?: number; hydroM?: number };
-const KIT = kitRaw as Record<string, KitEntry>;
-
 /** Resolve the recorder's stock range set from the baked assets; missing
  *  sources simply drop out (a BB yields no torpedo ring, a no-radar ship
- *  no radar ring). Order follows RING_KINDS for stable stacking. */
-export function resolveSelfRings(shipId: number | string | null | undefined): RangeRingDef[] {
+ *  no radar ring). Order follows RING_KINDS for stable stacking. `branch`
+ *  names the recorded replay's client — the radar/hydro radii differ per
+ *  realm, so a Lesta replay must quote Lesta's kit. */
+export function resolveSelfRings(
+  shipId: number | string | null | undefined,
+  branch: ShipDataBranch = "wg",
+): RangeRingDef[] {
   if (shipId == null) return [];
   const key = String(shipId);
   const stats = shipLiveStats(key);
-  const kit = KIT[key];
+  const kit = kitEntryFor(key, branch);
   const byKind = new Map<RingKind, number>();
   const km = (v: number | undefined) => (typeof v === "number" && v > 0 ? v * 1000 : null);
   const put = (kind: RingKind, meters: number | null) => {
