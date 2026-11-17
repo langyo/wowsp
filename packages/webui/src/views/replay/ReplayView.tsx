@@ -111,7 +111,7 @@ import {
   // resolver binds the SHARED helper (baked DB + runtime registrations).
   shipTypeOf as shipClassTypeOf,
 } from "@/utils/shipClass";
-import { realmUsesShipNameOrder } from "@/utils/realms";
+import { branchOfReplay, realmUsesShipNameOrder, type ShipDataBranch } from "@/utils/realms";
 import { isListedPlayer, splitRosterSides } from "@/utils/rosterSides";
 import { canonicalNation, resolveNationFlag } from "@/utils/nationFlags";
 import { shipIconUrl, shipTypeClass } from "@/features/holographic/shipIcons";
@@ -2169,6 +2169,17 @@ export default defineComponent({
       return entry?.installRealm ?? null;
     });
 
+    /** The OPEN replay's client branch, for the viewer's stock range rings:
+     *  the rail entry's install identity when the scan tagged it, the
+     *  container extension for an untagged external pick, WG otherwise. */
+    const openReplayBranch = computed<ShipDataBranch>(() => {
+      const path = parser.current.value?.path ?? null;
+      const entry = [...scannedReplays.value, ...parser.external.value].find(
+        (r) => r.path === path,
+      );
+      return branchOfReplay(path, entry?.installKind, entry?.installRealm);
+    });
+
     /** The realm to query player stats against: the open replay's client,
      *  then the active install, then the bound account, else the UI
      *  default. */
@@ -3309,6 +3320,7 @@ export default defineComponent({
                             realm={realm.value}
                             shipNameOrder={shipNameOrder.value}
                             statsMode={fallbackStatsMode.value}
+                            branch={openReplayBranch.value}
                           />
                         )}
                       </div>

@@ -45,3 +45,26 @@ export type ShipDataBranch = "wg" | "lesta";
 
 export const branchFromPlayerRealm = (realm?: string | null): ShipDataBranch =>
   realm === "ru" ? "lesta" : "wg";
+
+/** The client branch of a RECORDED replay. The owning install's identity
+ *  is the ground truth when the rail scan tagged the entry (Lesta's install
+ *  kind is literally `lesta`, its cluster `ru`); the container extension is
+ *  the fallback for an untagged external pick — the two clients write
+ *  `.wowsreplay` and `.korablireplay` (same framing, different name; see
+ *  replay_core's meta walk). Anything unrecognised degrades to WG, the
+ *  format the viewer has always assumed. */
+export const branchOfReplay = (
+  path?: string | null,
+  installKind?: string | null,
+  installRealm?: string | null,
+): ShipDataBranch => {
+  // A KNOWN install kind is ground truth and overrides the filename (a
+  // renamed or copied replay must not change its client). Any known
+  // non-Lesta kind is therefore WG before the extension is consulted.
+  const kind = (installKind ?? "").toLowerCase();
+  if (kind === "lesta") return "lesta";
+  if (kind.length > 0) return "wg";
+  if ((installRealm ?? "").toLowerCase() === "ru") return "lesta";
+  if (typeof path === "string" && path.toLowerCase().endsWith(".korablireplay")) return "lesta";
+  return "wg";
+};
