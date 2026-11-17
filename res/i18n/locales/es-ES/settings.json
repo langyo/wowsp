@@ -337,6 +337,8 @@
   "changelogRefresh": "Actualizar",
   "changelogCurrent": "Actual",
   "changelogI18nFallback": "Las notas de esta versión aún no están disponibles en tu idioma; se muestra la versión en inglés.",
+  "changelogTranslating": "Obteniendo la traducción",
+  "changelogTranslateFailed": "No se pudo obtener la traducción",
   "changelogLoadingMore": "Cargando versiones anteriores",
   "changelogEnd": "Se han mostrado todas las actualizaciones.",
   "feedback": "Comentarios",

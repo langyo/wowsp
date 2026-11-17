@@ -52,6 +52,7 @@ const BUSY_LABELS: readonly string[] = [
   "onboarding:playersScanning",
   "settings:changelogLoading",
   "settings:changelogLoadingMore",
+  "settings:changelogTranslating",
   "settings:feedbackLoading",
   "settings:markersImportScanning",
   "sharing:select.planning",

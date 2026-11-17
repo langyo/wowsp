@@ -1,4 +1,4 @@
-import { defineComponent, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { defineComponent, nextTick, onMounted, onUnmounted, ref, watch, type VNodeRef } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 
 import { HkButton, HkSettingsGroup, HkSettingsHint, HkSpinner } from "@celestia-island/hikari";
@@ -36,6 +36,15 @@ function formatDate(locale: Locale, iso: string): string {
  * (`ensureLoaded`); this component only renders store state — its own
  * button is the explicit refresh, and a scroll sentinel at the list's
  * tail keeps older releases streaming in as the user scrolls.
+ *
+ * Release translations ride the per-release release-notes-i18n asset
+ * (AGENTS.md §10). Each card fetches its asset only when it nears the
+ * viewport (one shared IntersectionObserver also drives the tail
+ * sentinel), and the English body stays rendered in EVERY fetch state:
+ * "loading" adds the translating row above it, "error" the failed row
+ * with a retry chip, while the fallback hint is reserved for a genuinely
+ * asset-less release / locale the asset does not carry. A failed fetch
+ * therefore never reads as "this release has no translation".
  */
 export default defineComponent({
   name: "ChangelogSection",
@@ -44,24 +53,138 @@ export default defineComponent({
     const lang = useLanguage();
     const version = ref("");
     const sentinel = ref<HTMLElement | null>(null);
+    /** Release versions whose card is near the viewport (recorded by the
+     *  shared observer below) — the translation prefetch only ever runs
+     *  for these. Retained once added: a refresh must re-request the cards
+     *  the user has already revealed. */
+    const visibleVersions = ref<Set<string>>(new Set());
+    /** The version standing for each observed card, and the element
+     *  currently standing for each version (both sides of the same
+     *  registration, so a re-set/unmounted ref can unobserve its
+     *  predecessor). */
+    const articleVersions = new Map<Element, string>();
+    const articleEls = new Map<string, Element>();
+    /** Stable per-version ref callbacks: an inline arrow would be a new
+     *  function on every render, making Vue unset and re-set the ref —
+     *  and churn the shared observer — on every state transition. */
+    const articleRefs = new Map<string, VNodeRef>();
     let observer: IntersectionObserver | null = null;
+    let sentinelEl: Element | null = null;
 
-    /** Lazy translation-asset fetch (AGENTS.md §10): whenever the feed or
-     *  the UI locale changes, request the release-notes-i18n asset for every
-     *  visible release the user's locale needs. ensureTranslations is
-     *  idempotent per release, so streaming more batches and locale switches
-     *  stay cheap; keeping this out of the render path avoids a fetch side
-     *  effect during render. */
+    /** The ONE viewport observer: a card entry publishes its version for
+     *  the translation prefetch; any other intersecting entry is the tail
+     *  sentinel and streams the next batch. Created lazily so both card
+     *  refs (set during the initial patch) and the sentinel watcher can
+     *  reach it. Intersection against the implicit root already accounts
+     *  for the settings pane's own scroll clipping (root null works
+     *  inside the modal). */
+    function ensureObserver(): IntersectionObserver | null {
+      if (observer) return observer;
+      if (typeof IntersectionObserver === "undefined") return null;
+      observer = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const translationVersion = articleVersions.get(entry.target);
+            if (translationVersion) {
+              markVisible(translationVersion);
+              continue;
+            }
+            void streamMore();
+          }
+        },
+        { rootMargin: "200px 0px" },
+      );
+      return observer;
+    }
+
+    /** Add a version to the near-viewport set (a fresh Set so the prefetch
+     *  watcher re-runs; a repeated report for a known version is a no-op). */
+    function markVisible(translationVersion: string): void {
+      if (visibleVersions.value.has(translationVersion)) return;
+      visibleVersions.value = new Set(visibleVersions.value).add(translationVersion);
+    }
+
+    function unobserveArticle(translationVersion: string): void {
+      const el = articleEls.get(translationVersion);
+      if (!el) return;
+      articleEls.delete(translationVersion);
+      articleVersions.delete(el);
+      try {
+        observer?.unobserve(el);
+      } catch {
+        // A stub observer may refuse unknown targets; the maps are truth.
+      }
+    }
+
+    /** Register (or, on ref unset/unmount, drop) one release card with
+     *  the viewport watcher. Without an IntersectionObserver (old webview
+     *  / a test environment providing none) every card in the batch
+     *  counts as visible and is fetched eagerly — the ungated behavior. */
+    function observeArticle(el: Element | null, translationVersion: string): void {
+      unobserveArticle(translationVersion);
+      if (!el) return;
+      const io = ensureObserver();
+      if (!io) {
+        markVisible(translationVersion);
+        return;
+      }
+      articleEls.set(translationVersion, el);
+      articleVersions.set(el, translationVersion);
+      io.observe(el);
+    }
+
+    function articleRef(translationVersion: string): VNodeRef {
+      let handler = articleRefs.get(translationVersion);
+      if (!handler) {
+        handler = (el) => observeArticle(el as Element | null, translationVersion);
+        articleRefs.set(translationVersion, handler);
+      }
+      return handler;
+    }
+
+    /** Keep the shared observer on the tail sentinel while the stream is
+     *  armed — unobserve, never disconnect, so the cards stay watched. */
+    function syncSentinel(): void {
+      const wanted = sentinel.value && changelog.hasMore ? sentinel.value : null;
+      if (sentinelEl && sentinelEl !== wanted) {
+        try {
+          observer?.unobserve(sentinelEl);
+        } catch {
+          // ignore — the previous target may be detached already
+        }
+        sentinelEl = null;
+      }
+      if (!wanted || sentinelEl === wanted) return;
+      const io = ensureObserver();
+      if (!io) return;
+      sentinelEl = wanted;
+      io.observe(wanted);
+    }
+
+    /** Lazy translation-asset fetch (AGENTS.md §10): request the
+     *  release-notes-i18n asset for the releases whose cards are near the
+     *  viewport, and only for a non-English UI locale (English renders
+     *  the body itself). ensureTranslations is idempotent per release, so
+     *  scrolls, locale switches and refresh re-requests stay cheap. The
+     *  visible set (and each card's ref callback) is retained for the
+     *  component's lifetime ON PURPOSE: a refresh re-streams the same
+     *  feed and must re-request the cards the user has already revealed.
+     *  Entries for versions the current feed no longer carries are
+     *  filtered out below instead of being pruned from the set. Keeping
+     *  this out of the render path avoids a fetch side effect during
+     *  render. */
     watch(
       [
-        () => changelog.releases.map((release) => release.version).join(","),
+        () => [...visibleVersions.value].join(","),
         () => lang.uiLocale.value,
         () => changelog.i18nEpoch,
       ],
       () => {
         if (lang.uiLocale.value === "en-US") return;
-        for (const release of changelog.releases) {
-          void changelog.ensureTranslations(release.version);
+        const feed = new Set(changelog.releases.map((release) => release.version));
+        for (const releaseVersion of visibleVersions.value) {
+          if (feed.has(releaseVersion)) void changelog.ensureTranslations(releaseVersion);
         }
       },
       { immediate: true },
@@ -85,6 +208,13 @@ export default defineComponent({
       if (el.getBoundingClientRect().top <= window.innerHeight) void streamMore();
     }
 
+    // The sentinel streams the next batch when it nears the viewport. The
+    // observer is created here rather than in onMounted (the former home)
+    // so the card refs set during the same initial patch share it; both
+    // watchers stay inert when the environment provides no observer — the
+    // tests drive the store directly.
+    watch([sentinel, () => changelog.hasMore], syncSentinel, { immediate: true });
+
     onMounted(async () => {
       // Running build, for the 当前 badge (browser dev keeps "" — no
       // badge; the version comparison simply never matches).
@@ -93,32 +223,14 @@ export default defineComponent({
       } catch {
         // Browser dev mode — no Tauri runtime.
       }
-      // The sentinel streams the next batch when it nears the viewport.
-      // Intersection against the implicit root already accounts for the
-      // settings pane's own scroll clipping (root null works inside the
-      // modal). jsdom/happy-dom test environments may not provide the
-      // observer — the tests drive the store directly instead.
-      if (typeof IntersectionObserver !== "undefined") {
-        observer = new IntersectionObserver(
-          (entries) => {
-            if (entries.some((e) => e.isIntersecting)) void streamMore();
-          },
-          { rootMargin: "160px 0px" },
-        );
-        watch(
-          [sentinel, () => changelog.hasMore],
-          ([el, more]) => {
-            observer?.disconnect();
-            if (el && more) observer?.observe(el);
-          },
-          { immediate: true },
-        );
-      }
     });
 
     onUnmounted(() => {
       observer?.disconnect();
       observer = null;
+      sentinelEl = null;
+      articleEls.clear();
+      articleVersions.clear();
     });
 
     return () => (
@@ -167,18 +279,37 @@ export default defineComponent({
             {changelog.releases.map((release) => {
               // The i18n model (AGENTS.md §10): the release BODY is English and
               // the seven translations ride the release-notes-i18n-<tag>.json
-              // asset, fetched lazily per release (Rust changelog_i18n through
-              // the mirror ladder). Legacy v1 scaffold bodies still render their
-              // own section. The English body is the fallback with a hint while
-              // the locale is pending or the asset is unavailable.
-              const translations = changelog.translations[release.version];
+              // asset, fetched lazily per visible release (Rust changelog_i18n).
+              // The body never hides: the English original stays rendered below
+              // every fetch status, and the fallback hint only claims the
+              // translation is absent when the asset really is (missing) or
+              // lacks the locale / carries the 🚧 placeholder — which is what
+              // selectReleaseBody answers: undefined = not asked yet (no hint),
+              // {} = no asset (hint), a map = hint when the locale is missing.
+              const state = changelog.translationStates[release.version];
+              const translations =
+                state?.status === "ready"
+                  ? state.sections
+                  : state?.status === "missing"
+                    ? {}
+                    : undefined;
               const selected = selectReleaseBody(
                 release.body,
                 lang.uiLocale.value,
                 translations,
               );
+              // Loading / failed fetches are NOT absences: the status row
+              // explains those, and the fallback hint must not pre-empt it.
+              const showFallbackHint =
+                state?.status !== "loading" &&
+                state?.status !== "error" &&
+                selected.fallback;
               return (
-                <article key={release.version} class="changelog__release">
+                <article
+                  key={release.version}
+                  ref={articleRef(release.version)}
+                  class="changelog__release"
+                >
                   <header class="changelog__release-head">
                     <span class="changelog__release-version">v{release.version}</span>
                     {release.version === version.value ? (
@@ -188,7 +319,27 @@ export default defineComponent({
                       {formatDate(lang.uiLocale.value, release.published_at)}
                     </span>
                   </header>
-                  {selected.fallback ? (
+                  {state?.status === "loading" ? (
+                    <div class="changelog__i18n-status">
+                      <HkSpinner size="sm" />
+                      <span class="changelog__state-text">
+                        {t("settings.changelogTranslating")}
+                      </span>
+                    </div>
+                  ) : state?.status === "error" ? (
+                    <div class="changelog__i18n-status">
+                      <span class="changelog__state-text">
+                        {t("settings.changelogTranslateFailed")}
+                      </span>
+                      <HkButton
+                        size="sm"
+                        onClick={() => void changelog.retryTranslations(release.version)}
+                      >
+                        {t("common.retry")}
+                      </HkButton>
+                    </div>
+                  ) : null}
+                  {showFallbackHint ? (
                     <p class="changelog__i18n-fallback">{t("settings.changelogI18nFallback")}</p>
                   ) : null}
                   {selected.source ? <ReleaseMarkdown source={selected.source} /> : null}

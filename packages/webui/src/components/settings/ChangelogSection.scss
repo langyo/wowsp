@@ -99,6 +99,21 @@
     white-space: nowrap;
   }
 
+  // Per-release translation fetch status: a quiet inline row above the
+  // body while the release-notes asset is in flight (spinner + label) or
+  // the fetch failed (label + retry). The English body keeps rendering
+  // below it, so the card never blanks and a failure never reads as a
+  // missing translation. The spinner carries the in-progress signal and
+  // the copy drops the trailing ellipsis (busy-label contract, see
+  // i18n/busyLabels.test.ts).
+  &__i18n-status {
+    display: flex;
+    align-items: center;
+    gap: var(--space-8);
+    margin-top: var(--space-8);
+    color: var(--hi-color-text-secondary);
+  }
+
   // The i18n fallback notice: this release's sections exist, but not in
   // the user's locale — the en-US original is shown instead.
   &__i18n-fallback {

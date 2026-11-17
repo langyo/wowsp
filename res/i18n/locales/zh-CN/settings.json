@@ -337,6 +337,8 @@
   "changelogRefresh": "刷新",
   "changelogCurrent": "当前版本",
   "changelogI18nFallback": "该版本还没有你所用语言的更新说明，已显示英文原文。",
+  "changelogTranslating": "正在获取翻译",
+  "changelogTranslateFailed": "翻译获取失败",
   "changelogLoadingMore": "正在加载更早的版本",
   "changelogEnd": "已显示全部更新。",
   "feedback": "问题反馈",
