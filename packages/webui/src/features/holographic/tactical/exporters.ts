@@ -211,11 +211,26 @@ export function frameTimes(from: number, to: number, fps: number): number[] {
 export interface OfflineRenderOptions {
   fps: number;
   times: number[];
-  /** Output edge in px (square canvas, same as the realtime recorder). */
-  size: number;
+  /** Output edge in px (square canvas, same as the realtime recorder).
+   *  Used as both width and height when `width`/`height` are omitted —
+   *  one of the two forms must be present. */
+  size?: number;
+  /** Output frame width in px (defaults to `size`). Non-square hosts
+   *  (the replay-playback export) pass their own width/height; codecs
+   *  want even numbers. */
+  width?: number;
+  /** Output frame height in px (defaults to `size`). */
+  height?: number;
   /** Paint one finished frame (base map + annotations + timestamp) for
-   *  battle time `t` onto `ctx`. Called once per entry of `times`. */
-  paintAt: (t: number, ctx: CanvasRenderingContext2D, size: number) => void;
+   *  battle time `t` onto `ctx`. Called once per entry of `times`; the
+   *  backing canvas measures the resolved width × height. */
+  paintAt: (t: number, ctx: CanvasRenderingContext2D, width: number, height: number) => void;
+  /** Presentation timestamps (seconds) per entry of `times` — defaults to
+   *  the battle-time deltas (times[i] − times[0]), the tactical board's
+   *  realtime-paced contract. Hosts that COMPRESS battle time (the
+   *  replay-playback export's speed multiplier) pass their own uniform
+   * grid (i / fps) so the clip plays fast instead of long. */
+  frameTimestamps?: number[];
   onProgress?: (done: number, total: number) => void;
   cancelToken?: { cancelled: boolean };
 }
@@ -244,13 +259,15 @@ async function pickOfflineFormat(
 export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<OfflineRenderResult | null> {
   const times = opts.times;
   if (times.length === 0) return null;
-  const size = opts.size;
-  const picked = await pickOfflineFormat(size, size);
+  const width = opts.width ?? opts.size ?? 0;
+  const height = opts.height ?? opts.size ?? 0;
+  if (width <= 0 || height <= 0) return null;
+  const picked = await pickOfflineFormat(width, height);
   if (!picked) return null;
 
   const canvas = document.createElement("canvas");
-  canvas.width = size;
-  canvas.height = size;
+  canvas.width = width;
+  canvas.height = height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
 
@@ -275,9 +292,11 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
     for (let i = 0; i < times.length; i++) {
       if (cancelled()) break;
       const t = times[i];
-      opts.paintAt(t, ctx, size);
-      // Video timestamps are relative to the first rendered frame.
-      await source.add(t - first, frameDuration);
+      opts.paintAt(t, ctx, width, height);
+      // Video timestamps are relative to the first rendered frame — the
+      // caller's explicit grid wins (speed-compressed exportspace).
+      const pts = opts.frameTimestamps ? opts.frameTimestamps[i] : t - first;
+      await source.add(pts, frameDuration);
       encodedAny = true;
       opts.onProgress?.(i + 1, times.length);
     }

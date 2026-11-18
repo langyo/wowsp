@@ -157,6 +157,9 @@ importers:
       '@wowsp/holo':
         specifier: workspace:*
         version: link:../holo
+      gifenc:
+        specifier: ^1.0.3
+        version: 1.0.3
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
@@ -2267,6 +2270,9 @@ packages:
   get-east-asian-width@1.7.0:
     resolution: {integrity: sha512-XjH1AECxf0giL2V1aU8vKyRR2ppRUb5c0EvT7zuJTokQ74bNo52zOtghqdWIqrhUD79fo3x0WfKZdOqxF6LG1Q==}
     engines: {node: '>=18'}
+
+  gifenc@1.0.3:
+    resolution: {integrity: sha512-xdr6AdrfGBcfzncONUOlXMBuc5wJDtOueE3c5rdG0oNgtINLD+f2iFZltrBRZYzACRbKr+mSVU/x98zv2u3jmw==}
 
   glob@10.5.0:
     resolution: {integrity: sha512-DfXN8DfhJ7NH3Oe7cFmu3NCu1wKbkReJ8TorzSAFbSKrlNaQSKfIzqYqVY8zlbs2NLBbWpRiU52GX2PbaBVNkg==}
@@ -4975,6 +4981,8 @@ snapshots:
   gensync@1.0.0-beta.2: {}
 
   get-east-asian-width@1.7.0: {}
+
+  gifenc@1.0.3: {}
 
   glob@10.5.0:
     dependencies:

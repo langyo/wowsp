@@ -585,6 +585,29 @@
       "hiddenUnits": "…另有 {n} 個單位（軌道已滿）"
     }
   },
+  "export": {
+    "title": "匯出重播",
+    "format": "格式",
+    "formatVideo": "影片（MP4/WebM）",
+    "formatGif": "GIF 動圖",
+    "range": "範圍",
+    "rangeNow": "從目前時刻到結束",
+    "rangeFull": "整場",
+    "fps": "幀率",
+    "speed": "倍速",
+    "resolution": "解析度",
+    "footer": "底部浮水印頁腳",
+    "estimate": "預計 {n} 影格 · 約 {s} 秒",
+    "tooLong": "匯出過長（超過 {n} 影格），請提高倍速或縮小範圍",
+    "start": "開始匯出",
+    "cancel": "取消",
+    "toggle": "匯出重播影片 / GIF",
+    "running": "正在匯出重播",
+    "cancelRun": "取消",
+    "unsupported": "目前環境不支援影片編碼",
+    "toastEmpty": "沒有可匯出的時間範圍",
+    "saved": "重播已儲存到 {path}"
+  },
   "chatLog": "聊天記錄",
   "chat": {
     "team": "隊伍",

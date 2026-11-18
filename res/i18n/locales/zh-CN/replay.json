@@ -585,6 +585,29 @@
       "hiddenUnits": "…另有 {n} 个单位（轨道已满）"
     }
   },
+  "export": {
+    "title": "导出回放",
+    "format": "格式",
+    "formatVideo": "视频（MP4/WebM）",
+    "formatGif": "GIF 动图",
+    "range": "范围",
+    "rangeNow": "从当前时刻到结束",
+    "rangeFull": "整场",
+    "fps": "帧率",
+    "speed": "倍速",
+    "resolution": "分辨率",
+    "footer": "底部水印页脚",
+    "estimate": "预计 {n} 帧 · 约 {s} 秒",
+    "tooLong": "导出过长（超过 {n} 帧），请提高倍速或缩小范围",
+    "start": "开始导出",
+    "cancel": "取消",
+    "toggle": "导出回放视频 / GIF",
+    "running": "正在导出回放",
+    "cancelRun": "取消",
+    "unsupported": "当前环境不支持视频编码",
+    "toastEmpty": "没有可导出的时间范围",
+    "saved": "回放已保存到 {path}"
+  },
   "chatLog": "聊天记录",
   "chat": {
     "team": "队伍",

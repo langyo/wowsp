@@ -585,6 +585,29 @@
       "hiddenUnits": "…and {n} more units (band full)"
     }
   },
+  "export": {
+    "title": "Export replay clip",
+    "format": "Format",
+    "formatVideo": "Video (MP4/WebM)",
+    "formatGif": "GIF animation",
+    "range": "Range",
+    "rangeNow": "From playhead to end",
+    "rangeFull": "Full match",
+    "fps": "Frame rate",
+    "speed": "Speed",
+    "resolution": "Resolution",
+    "footer": "Watermark footer",
+    "estimate": "~{n} frames · ≈{s} s",
+    "tooLong": "Take too long (over {n} frames) — raise the speed or narrow the range",
+    "start": "Start export",
+    "cancel": "Cancel",
+    "toggle": "Export replay video / GIF",
+    "running": "Exporting replay",
+    "cancelRun": "Cancel",
+    "unsupported": "Video encoding is unavailable here",
+    "toastEmpty": "Nothing to export in this range",
+    "saved": "Replay clip saved to {path}"
+  },
   "chatLog": "Battle chat",
   "chat": {
     "team": "Team",

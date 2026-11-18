@@ -585,6 +585,29 @@
       "hiddenUnits": "…y {n} unidades más (banda llena)"
     }
   },
+  "export": {
+    "title": "Exportar repetición",
+    "format": "Formato",
+    "formatVideo": "Vídeo (MP4/WebM)",
+    "formatGif": "GIF animado",
+    "range": "Intervalo",
+    "rangeNow": "Del momento actual al final",
+    "rangeFull": "Partida completa",
+    "fps": "Fotogramas por segundo",
+    "speed": "Velocidad",
+    "resolution": "Resolución",
+    "footer": "Pie de página con marca de agua",
+    "estimate": "≈{n} fotogramas · {s} s",
+    "tooLong": "Exportación demasiado larga (más de {n} fotogramas): sube la velocidad o acorta el intervalo",
+    "start": "Iniciar exportación",
+    "cancel": "Cancelar",
+    "toggle": "Exportar repetición en vídeo / GIF",
+    "running": "Exportando repetición",
+    "cancelRun": "Cancelar",
+    "unsupported": "La codificación de vídeo no está disponible aquí",
+    "toastEmpty": "No hay un intervalo que exportar",
+    "saved": "Repetición guardada en {path}"
+  },
   "chatLog": "Chat de batalla",
   "chat": {
     "team": "Equipo",
