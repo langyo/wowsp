@@ -244,7 +244,8 @@ export function footerMinWidth(
 /** Draw the camera-watermark promo footer: pig logo + brand + localized
  *  tagline left, the two fixed disclaimers centered (data is reference-only;
  *  the software is free — never pay for it), QQ group + project URL right —
- *  the fixed WoWSP signature on every share shot. */
+ *  the fixed WoWSP signature on every share shot. Positions the band at the
+ *  bottom of THIS canvas (the 2× shot contract). */
 export function drawFooter(
   ctx: CanvasRenderingContext2D,
   palette: ShotPalette,
@@ -252,7 +253,23 @@ export function drawFooter(
   footer: ShotFooterStrings,
   logo: HTMLImageElement | null,
 ): void {
-  const y = ctx.canvas.height / SCALE - FOOT_H;
+  drawFooterBand(ctx, palette, width, ctx.canvas.height / SCALE - FOOT_H, footer, logo);
+}
+
+/** The same promo footer band at an EXPLICIT top edge (logical units), for
+ *  hosts that do not own the whole canvas: the replay-playback video/GIF
+ *  export composites it under its captured scene inside a larger frame,
+ *  so the band's geometry belongs to the caller. Everything inside — logo
+ *  box, brand, disclaimers, QQ group — stays the single fixed face above. */
+export function drawFooterBand(
+  ctx: CanvasRenderingContext2D,
+  palette: ShotPalette,
+  width: number,
+  top: number,
+  footer: ShotFooterStrings,
+  logo: HTMLImageElement | null,
+): void {
+  const y = top;
   ctx.fillStyle = rgba(palette.surface, 0.75);
   ctx.fillRect(0, y, width, FOOT_H);
   ctx.fillStyle = rgba(palette.text, 0.12);

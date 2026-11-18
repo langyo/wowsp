@@ -585,6 +585,29 @@
       "hiddenUnits": "…et {n} unités de plus (bande pleine)"
     }
   },
+  "export": {
+    "title": "Exporter le replay",
+    "format": "Format",
+    "formatVideo": "Vidéo (MP4/WebM)",
+    "formatGif": "GIF animé",
+    "range": "Plage",
+    "rangeNow": "De la position actuelle à la fin",
+    "rangeFull": "Match complet",
+    "fps": "Fréquence d'images",
+    "speed": "Vitesse",
+    "resolution": "Résolution",
+    "footer": "Pied de page filigrane",
+    "estimate": "≈{n} images · {s} s",
+    "tooLong": "Export trop long (plus de {n} images) — augmentez la vitesse ou réduisez la plage",
+    "start": "Lancer l'export",
+    "cancel": "Annuler",
+    "toggle": "Exporter le replay en vidéo / GIF",
+    "running": "Export du replay",
+    "cancelRun": "Annuler",
+    "unsupported": "L'encodage vidéo n'est pas disponible ici",
+    "toastEmpty": "Aucune plage à exporter",
+    "saved": "Replay enregistré dans {path}"
+  },
   "chatLog": "Chat de bataille",
   "chat": {
     "team": "Équipe",

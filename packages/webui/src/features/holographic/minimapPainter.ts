@@ -791,6 +791,8 @@ export function drawMinimap(ctx: MapInternals) {
   }
 
   // Enlarged minimap overlay: full-map view with ship trails + glyphs.
+  // Painted through the shared paintEnlargedMap below (the exporter's
+  // offscreen frames run the very same code).
   const zc = ctx.zoomCanvas.value;
   if (zc) {
     const zctx = zc.getContext("2d");
@@ -806,351 +808,381 @@ export function drawMinimap(ctx: MapInternals) {
       const pxZ = Math.round(dispZ * dprZ);
       if (zc.width !== pxZ) { zc.width = pxZ; zc.height = pxZ; }
       zctx.setTransform(pxZ / TACTICAL_SIZE, 0, 0, pxZ / TACTICAL_SIZE, 0, 0);
-      const zw = TACTICAL_SIZE;
-      // Pan/zoom viewport: everything below projects through the view
+      // Pan/zoom viewport: everything painted projects through the view
       // window (a sub-rect of the full map with the same aspect), so
       // zooming magnifies terrain while ship glyphs/text keep their
       // logical sizes — the tactical layer projects through the SAME
-      // window (computeTacticalBounds).
-      const vfull = computeViewBounds(ctx, full);
-      // The 2D map art NEVER changes with the theme (the game's own
-      // bitmap, shown as-is in both modes); only the overlay chrome —
-      // scrim, head pill, frame — follows the app theme.
-      // World-frame rotation (the pill's rotate buttons): everything
-      // map-anchored — art, grid lines, trails, glyphs — spins together;
-      // upright chrome (cap letters, smoke timers, aircraft icons, grid
-      // labels) counter-rotates or is drawn after restore.
-      const rotRad = (ctx.mmRotationDeg.value * Math.PI) / 180;
-      zctx.save();
-      if (rotRad !== 0) {
-        zctx.translate(zw / 2, zw / 2);
-        zctx.rotate(rotRad);
-        zctx.translate(-zw / 2, -zw / 2);
+      // window (computeTacticalBounds). Rotation follows the pill.
+      paintEnlargedMap(zctx, ctx, {
+        t,
+        full,
+        view: computeViewBounds(ctx, full),
+        logical: TACTICAL_SIZE,
+        rotation: (ctx.mmRotationDeg.value * Math.PI) / 180,
+      });
+    }
+  }
+}
+
+/** One paint of the ENLARGED 2D map (trails, glyphs, caps, smoke, planes,
+ *  torpedoes, AI overlays, grid labels) onto an already-transformed ctx —
+ *  the body the live zoom canvas runs per frame, extracted so the
+ *  replay-playback video/GIF exporter can paint the SAME map offscreen at
+ *  any backing size (full-map view, no rotation) instead of rasterizing a
+ *  DOM canvas. The caller owns the transform (device px ÷ `logical`), the
+ *  backing store and the drawing surface's lifecycle. */
+export interface EnlargedMapPaintOptions {
+  /** Battle time the frame shows (drives every trail/glyph pose). */
+  t: number;
+  /** FULL map world bounds (grid + weather + range anchors). */
+  full: MapBounds;
+  /** View window to project through (pass `full` for the whole map). */
+  view: MapBounds;
+  /** Logical edge length the transform maps onto the backing store
+   *  (TACTICAL_SIZE for the live canvas). */
+  logical: number;
+  /** World-frame rotation in radians (live pill; 0 for exports). */
+  rotation: number;
+}
+
+export function paintEnlargedMap(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  o: EnlargedMapPaintOptions,
+): void {
+  const t = o.t;
+  const full = o.full;
+  const vfull = o.view;
+  const zw = o.logical;
+  const rotRad = o.rotation;
+  g.save();
+  if (rotRad !== 0) {
+    g.translate(zw / 2, zw / 2);
+    g.rotate(rotRad);
+    g.translate(-zw / 2, -zw / 2);
+  }
+  g.clearRect(0, 0, zw, zw);
+  if (ctx.minimapImage) {
+    g.imageSmoothingEnabled = true;
+    // Crop the art to the view window (source rect in image px).
+    const img = ctx.minimapImage;
+    const fx = ((vfull.minX - full.minX) / (full.maxX - full.minX || 1)) * img.width;
+    const fw = ((vfull.maxX - vfull.minX) / (full.maxX - full.minX || 1)) * img.width;
+    const fy = ((full.maxZ - vfull.maxZ) / (full.maxZ - full.minZ || 1)) * img.height;
+    const fh = ((vfull.maxZ - vfull.minZ) / (full.maxZ - full.minZ || 1)) * img.height;
+    g.drawImage(img, fx, fy, fw, fh, 0, 0, zw, zw);
+  } else {
+    g.fillStyle = "rgba(5, 8, 15, 0.9)";
+    g.fillRect(0, 0, zw, zw);
+  }
+  const zwx = (x: number) => ((x - vfull.minX) / (vfull.maxX - vfull.minX || 1)) * zw;
+  const zwz = (zScene: number) => ((vfull.maxZ + zScene) / (vfull.maxZ - vfull.minZ || 1)) * zw;
+  // Global-weather darkening (zone drifts across the FULL map; the
+  // disc scales with the zoom window) + the recorder's range circles
+  // with upright 12-o'clock tags under map rotation.
+  drawWeatherOverlay(g, ctx, full, t, zw, vfull.maxX - vfull.minX, zwx, zwz);
+  drawRangeRings(g, ctx, t, vfull.maxX - vfull.minX, zw, zwx, zwz, {
+    fontPx: 12,
+    linePx: 2,
+    dash: [9, 7],
+    minR: 12,
+    rotRad,
+  });
+  // The game's A–J / 1–10 grid, world-anchored (full map rect, so it
+  // stays put under pan/zoom).
+  if (ctx.minimapShowGrid.value) {
+    g.strokeStyle = "rgba(255, 255, 255, 0.22)";
+    g.lineWidth = 1;
+    g.beginPath();
+    for (let i = 1; i < MAP_GRID_COLUMNS; i++) {
+      const x = zwx(full.minX + ((full.maxX - full.minX) * i) / MAP_GRID_COLUMNS);
+      g.moveTo(x, 0);
+      g.lineTo(x, zw);
+    }
+    for (let j = 1; j < MAP_GRID_COLUMNS; j++) {
+      const y = zwz(-(full.minZ + ((full.maxZ - full.minZ) * j) / MAP_GRID_COLUMNS));
+      g.moveTo(0, y);
+      g.lineTo(zw, y);
+    }
+    g.stroke();
+  }
+  // Capture rings + letters (same rendering as the small thumb, at
+  // the enlarged scale — true world radius through the view window).
+  const zcapR = (radius: number) =>
+    Math.max(6, (radius / (vfull.maxX - vfull.minX || 1)) * zw);
+  ctx.capZones.value.forEach((z, i) => {
+    // Unborn op points (EntityCreate time ahead of the playhead) sit out.
+    if (ctx.capDisplay.value[i]?.live === false) return;
+    const cx = zwx(z.kind!.initialX);
+    const cz = zwz(-z.kind!.initialZ);
+    const owner = ctx.capDisplay.value[i]?.owner ?? 0;
+    const rPx = zcapR(z.kind?.radius ?? 0);
+    g.strokeStyle =
+      owner === 1 ? "rgba(74, 222, 128, 0.85)" : owner === 2 ? "rgba(204, 51, 51, 0.85)" : "rgba(255, 255, 255, 0.55)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(cx, cz, rPx, 0, Math.PI * 2);
+    g.stroke();
+    g.save();
+    g.translate(cx, cz);
+    // Ring text stays upright under map rotation.
+    if (rotRad !== 0) g.rotate(-rotRad);
+    g.fillStyle = g.strokeStyle;
+    g.font = "bold 16px sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.fillText(capLetter(z, i), 0, 0.5);
+    // Capturing countdown under the letter: "xx s" to complete.
+    const eta = ctx.capDisplay.value[i]?.etaSeconds;
+    if (eta != null && eta > 0) {
+      g.fillStyle = "rgba(251,191,36,0.95)";
+      g.font = "bold 12px sans-serif";
+      g.fillText(Math.ceil(eta) + " s", 0, rPx + 9);
+    }
+    g.restore();
+  });
+  // Fighter-patrol ward areas (under the trails + glyphs): the same
+  // world-radius disc as the 3D rings, tinted by the owner's role.
+  drawWardCircles(g, ctx, t, zwx, zwz, vfull.maxX - vfull.minX, zw, {
+    linePx: 1.6,
+    dash: [8, 6],
+    fillAlpha: 0.1,
+    rimAlpha: 0.5,
+  });
+  if (ctx.minimapShowTrails.value) {
+    for (const tr of ctx.props.trajectories) {
+      if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
+      const role = resolveRoleQuick(ctx, tr);
+      g.strokeStyle =
+        role === "enemy"
+          ? "rgba(204, 51, 51, 0.5)"
+          : role === "self"
+            ? "rgba(255, 255, 255, 0.6)"
+            : "rgba(60, 180, 120, 0.5)";
+      g.lineWidth = 1.5;
+      // The path travelled SO FAR, welded to the glyph: samples are
+      // clipped at the playhead (the full recorded path read as trails
+      // running everywhere BUT the ships), the pen lifts across
+      // un-spotted gaps (>4 s — same freeze rule the marker follows,
+      // so fog never draws a solid straight line to the re-spot), and
+      // the tail extends to the exact interpolated pose the marker
+      // sits at — line and glyph always meet. Short dark windows are
+      // bridged underneath by a translucent dashed inference line
+      // (below); long losses keep the open pen-lift.
+      const n = samplesUpTo(tr.samples, t);
+      if (n === 0) continue;
+      g.beginPath();
+      let started = false;
+      let prevT = 0;
+      for (let i = 0; i < n; i++) {
+        const s = tr.samples[i];
+        if (started && s.time - prevT > UNSEEN_GAP_S) started = false;
+        if (started) g.lineTo(zwx(s.x), zwz(-s.z));
+        else g.moveTo(zwx(s.x), zwz(-s.z));
+        started = true;
+        prevT = s.time;
       }
-      zctx.clearRect(0, 0, zw, zw);
-      if (ctx.minimapImage) {
-        zctx.imageSmoothingEnabled = true;
-        // Crop the art to the view window (source rect in image px).
-        const img = ctx.minimapImage;
-        const fx = ((vfull.minX - full.minX) / (full.maxX - full.minX || 1)) * img.width;
-        const fw = ((vfull.maxX - vfull.minX) / (full.maxX - full.minX || 1)) * img.width;
-        const fy = ((full.maxZ - vfull.maxZ) / (full.maxZ - full.minZ || 1)) * img.height;
-        const fh = ((vfull.maxZ - vfull.minZ) / (full.maxZ - full.minZ || 1)) * img.height;
-        zctx.drawImage(img, fx, fy, fw, fh, 0, 0, zw, zw);
+      // The tail extends the polyline only when it actually moves:
+      // a frozen pose (gap hold / past the stream) and a playhead
+      // parked exactly on the last sample repeat coordinates the loop
+      // already drew, and re-lining a repeated point is a zero-length
+      // segment at best — skip those by VALUE (sampleAt always hands
+      // back a fresh normalized pose object these days, so reference
+      // identity says nothing about interpolation any more).
+      const tail = sampleAt(tr, t);
+      const lastDrawn = tr.samples[n - 1];
+      if (
+        tail &&
+        lastDrawn &&
+        (tail.x !== lastDrawn.x || tail.z !== lastDrawn.z)
+      ) {
+        g.lineTo(zwx(tail.x), zwz(-tail.z));
+      }
+      g.stroke();
+      // Short un-spotted windows the playhead has fully crossed: the
+      // recorded pose froze while the ship was dark, then jumped on
+      // re-detection — bridge that stretch with a translucent dashed
+      // inference line (trailGapLinks keeps 4 s < gap <= 20 s; longer
+      // losses are genuine and stay open). Drawn AFTER the solid trail
+      // so the two read as one path and role-tinted like it.
+      const links = trailGapLinks(tr.samples, t);
+      if (links.length > 0) {
+        g.strokeStyle =
+          role === "enemy"
+            ? "rgba(204, 51, 51, 0.35)"
+            : role === "self"
+              ? "rgba(255, 255, 255, 0.4)"
+              : "rgba(60, 180, 120, 0.35)";
+        g.lineWidth = 1.2;
+        g.setLineDash([6, 6]);
+        g.lineCap = "round";
+        for (const link of links) {
+          g.beginPath();
+          g.moveTo(zwx(link.fromX), zwz(-link.fromZ));
+          g.lineTo(zwx(link.toX), zwz(-link.toZ));
+          g.stroke();
+        }
+        // Restore the shared world-frame state the glyph pass expects
+        // (dash + cap were only borrowed by the inference lines).
+        g.setLineDash([]);
+        g.lineCap = "butt";
+      }
+    }
+  }
+  for (const m of ctx.shipMarkers) {
+    const role = m.userData.role as TeamRole | undefined;
+    const firstT = m.userData.firstT as number | undefined;
+    // Unobserved ships: enemies not shown; allies get a white glyph
+    // outline at spawn — the game's "last known position" marker.
+    if (t < (firstT ?? Infinity)) {
+      if (role === "enemy") continue;
+      const gx = zwx(m.userData.spawnX as number);
+      const gz = zwz(-(m.userData.spawnZ as number));
+      g.save();
+      g.translate(gx, gz);
+      g.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+      drawShipGlyph(g, m.userData.type as string | undefined, 0, 0, 30, TEAM_COLOR.ally, {
+        outline: true,
+      });
+      g.restore();
+      continue;
+    }
+    const dead =
+      (m.userData.deathTime as number | null) != null &&
+      t >= (m.userData.deathTime as number);
+    const cx = zwx(m.position.x);
+    const cz = zwz(m.position.z);
+    // Solid traced vector glyph (original HUD shape, crisp at any
+    // zoom/rotation); sunk ships render greyed-out, live ships in
+    // their team colour.
+    const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
+    g.save();
+    g.translate(cx, cz);
+    g.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
+    drawShipGlyph(g, m.userData.type as string | undefined, 0, 0, dead ? 26 : 34, color);
+    g.restore();
+  }
+  // Smoke screens — the same filled puff band as the thumb pass, at
+  // the view window's scale (45 m radius through zwx/zwz's rect), so
+  // zooming magnifies the band with the terrain. Each puff fades with
+  // its remaining life; the countdown parks once per cluster at the
+  // band's head puff and stays upright under map rotation.
+  const zpxPerM = zw / (vfull.maxX - vfull.minX || 1);
+  const zrPx = Math.max(2, 45 * zpxPerM);
+  for (const cl of ctx.smokeClusters) {
+    if (t < cl.t0 || t > cl.endT) continue;
+    for (const puff of cl.puffs) {
+      if (t < puff.t0 || t > puff.endT) continue;
+      const span = puff.endT - puff.t0;
+      const gone = span > 0 ? (t - puff.t0) / span : 0;
+      const alpha = Math.max(0.05, 0.38 * (1 - gone));
+      g.beginPath();
+      g.arc(zwx(puff.x), zwz(-puff.z), zrPx, 0, Math.PI * 2);
+      g.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+      g.fill();
+    }
+    const head = cl.puffs.length > 0 ? cl.puffs[0] : null;
+    if (!head) continue;
+    g.font = "bold 12px sans-serif";
+    g.textAlign = "center";
+    g.textBaseline = "bottom";
+    g.fillStyle = "rgba(255,255,255,0.95)";
+    g.save();
+    g.translate(zwx(head.x), zwz(-head.z));
+    // Smoke timer text stays upright under map rotation.
+    if (rotRad !== 0) g.rotate(-rotRad);
+    g.fillText(`${Math.ceil(cl.endT - t)}s`, 0, -7);
+    g.restore();
+  }
+  // Aircraft — one icon per formation (squadron centre). The pose is
+  // the SAME eased pose the thumb pass advanced at this playhead
+  // (planeSmoothPosAt's same-t cache), so the two canvases can never
+  // disagree and no easing is applied twice per frame.
+  {
+    const drawn = new Set<number>();
+    for (const trail of ctx.planeTrails) {
+      const planeId = Math.floor(trail.id / 16);
+      if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
+      const samples = trail.samples;
+      if (samples.length === 0) continue;
+      // Same visibility window as the thumb pass (shared expiry).
+      if (t < samples[0].time || t > planeTrailExpiry(
+        samples[samples.length - 1].time,
+        ctx.minimapTrailEnd.get(planeId),
+      )) continue;
+      const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
+      if (s == null) continue;
+      drawn.add(planeId);
+      const icon = planeIcon(ctx.planeTypesById.get(trail.id) ?? "attack");
+      if (icon && icon.complete && icon.naturalWidth > 0) {
+        const sz = 22;
+        g.save();
+        g.translate(zwx(s.x), zwz(-s.z));
+        // Aircraft icons stay upright on the minimap (counter-rotate
+        // against the map frame when the rotate buttons are used).
+        if (rotRad !== 0) g.rotate(-rotRad);
+        g.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
+        g.restore();
       } else {
-        zctx.fillStyle = "rgba(5, 8, 15, 0.9)";
-        zctx.fillRect(0, 0, zw, zw);
+        g.fillStyle = "rgba(120, 210, 255, 0.95)";
+        g.beginPath();
+        g.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
+        g.fill();
       }
-      const zwx = (x: number) => ((x - vfull.minX) / (vfull.maxX - vfull.minX || 1)) * zw;
-      const zwz = (zScene: number) => ((vfull.maxZ + zScene) / (vfull.maxZ - vfull.minZ || 1)) * zw;
-      // Global-weather darkening (zone drifts across the FULL map; the
-      // disc scales with the zoom window) + the recorder's range circles
-      // with upright 12-o'clock tags under map rotation.
-      drawWeatherOverlay(zctx, ctx, full, t, zw, vfull.maxX - vfull.minX, zwx, zwz);
-      drawRangeRings(zctx, ctx, t, vfull.maxX - vfull.minX, zw, zwx, zwz, {
-        fontPx: 12,
-        linePx: 2,
-        dash: [9, 7],
-        minR: 12,
-        rotRad,
-      });
-      // The game's A–J / 1–10 grid, world-anchored (full map rect, so it
-      // stays put under pan/zoom).
-      if (ctx.minimapShowGrid.value) {
-        zctx.strokeStyle = "rgba(255, 255, 255, 0.22)";
-        zctx.lineWidth = 1;
-        zctx.beginPath();
-        for (let i = 1; i < MAP_GRID_COLUMNS; i++) {
-          const x = zwx(full.minX + ((full.maxX - full.minX) * i) / MAP_GRID_COLUMNS);
-          zctx.moveTo(x, 0);
-          zctx.lineTo(x, zw);
-        }
-        for (let j = 1; j < MAP_GRID_COLUMNS; j++) {
-          const y = zwz(-(full.minZ + ((full.maxZ - full.minZ) * j) / MAP_GRID_COLUMNS));
-          zctx.moveTo(0, y);
-          zctx.lineTo(zw, y);
-        }
-        zctx.stroke();
-      }
-      // Capture rings + letters (same rendering as the small thumb, at
-      // the enlarged scale — true world radius through the view window).
-      const zcapR = (radius: number) =>
-        Math.max(6, (radius / (vfull.maxX - vfull.minX || 1)) * zw);
-      ctx.capZones.value.forEach((z, i) => {
-        // Unborn op points (EntityCreate time ahead of the playhead) sit out.
-        if (ctx.capDisplay.value[i]?.live === false) return;
-        const cx = zwx(z.kind!.initialX);
-        const cz = zwz(-z.kind!.initialZ);
-        const owner = ctx.capDisplay.value[i]?.owner ?? 0;
-        const rPx = zcapR(z.kind?.radius ?? 0);
-        zctx.strokeStyle =
-          owner === 1 ? "rgba(74, 222, 128, 0.85)" : owner === 2 ? "rgba(204, 51, 51, 0.85)" : "rgba(255, 255, 255, 0.55)";
-        zctx.lineWidth = 2;
-        zctx.beginPath();
-        zctx.arc(cx, cz, rPx, 0, Math.PI * 2);
-        zctx.stroke();
-        zctx.save();
-        zctx.translate(cx, cz);
-        // Ring text stays upright under map rotation.
-        if (rotRad !== 0) zctx.rotate(-rotRad);
-        zctx.fillStyle = zctx.strokeStyle;
-        zctx.font = "bold 16px sans-serif";
-        zctx.textAlign = "center";
-        zctx.textBaseline = "middle";
-        zctx.fillText(capLetter(z, i), 0, 0.5);
-        // Capturing countdown under the letter: "xx s" to complete.
-        const eta = ctx.capDisplay.value[i]?.etaSeconds;
-        if (eta != null && eta > 0) {
-          zctx.fillStyle = "rgba(251,191,36,0.95)";
-          zctx.font = "bold 12px sans-serif";
-          zctx.fillText(Math.ceil(eta) + " s", 0, rPx + 9);
-        }
-        zctx.restore();
-      });
-      // Fighter-patrol ward areas (under the trails + glyphs): the same
-      // world-radius disc as the 3D rings, tinted by the owner's role.
-      drawWardCircles(zctx, ctx, t, zwx, zwz, vfull.maxX - vfull.minX, zw, {
-        linePx: 1.6,
-        dash: [8, 6],
-        fillAlpha: 0.1,
-        rimAlpha: 0.5,
-      });
-      if (ctx.minimapShowTrails.value) {
-        for (const tr of ctx.props.trajectories) {
-          if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
-          const role = resolveRoleQuick(ctx, tr);
-          zctx.strokeStyle =
-            role === "enemy"
-              ? "rgba(204, 51, 51, 0.5)"
-              : role === "self"
-                ? "rgba(255, 255, 255, 0.6)"
-                : "rgba(60, 180, 120, 0.5)";
-          zctx.lineWidth = 1.5;
-          // The path travelled SO FAR, welded to the glyph: samples are
-          // clipped at the playhead (the full recorded path read as trails
-          // running everywhere BUT the ships), the pen lifts across
-          // un-spotted gaps (>4 s — same freeze rule the marker follows,
-          // so fog never draws a solid straight line to the re-spot), and
-          // the tail extends to the exact interpolated pose the marker
-          // sits at — line and glyph always meet. Short dark windows are
-          // bridged underneath by a translucent dashed inference line
-          // (below); long losses keep the open pen-lift.
-          const n = samplesUpTo(tr.samples, t);
-          if (n === 0) continue;
-          zctx.beginPath();
-          let started = false;
-          let prevT = 0;
-          for (let i = 0; i < n; i++) {
-            const s = tr.samples[i];
-            if (started && s.time - prevT > UNSEEN_GAP_S) started = false;
-            if (started) zctx.lineTo(zwx(s.x), zwz(-s.z));
-            else zctx.moveTo(zwx(s.x), zwz(-s.z));
-            started = true;
-            prevT = s.time;
-          }
-          // The tail extends the polyline only when it actually moves:
-          // a frozen pose (gap hold / past the stream) and a playhead
-          // parked exactly on the last sample repeat coordinates the loop
-          // already drew, and re-lining a repeated point is a zero-length
-          // segment at best — skip those by VALUE (sampleAt always hands
-          // back a fresh normalized pose object these days, so reference
-          // identity says nothing about interpolation any more).
-          const tail = sampleAt(tr, t);
-          const lastDrawn = tr.samples[n - 1];
-          if (
-            tail &&
-            lastDrawn &&
-            (tail.x !== lastDrawn.x || tail.z !== lastDrawn.z)
-          ) {
-            zctx.lineTo(zwx(tail.x), zwz(-tail.z));
-          }
-          zctx.stroke();
-          // Short un-spotted windows the playhead has fully crossed: the
-          // recorded pose froze while the ship was dark, then jumped on
-          // re-detection — bridge that stretch with a translucent dashed
-          // inference line (trailGapLinks keeps 4 s < gap <= 20 s; longer
-          // losses are genuine and stay open). Drawn AFTER the solid trail
-          // so the two read as one path and role-tinted like it.
-          const links = trailGapLinks(tr.samples, t);
-          if (links.length > 0) {
-            zctx.strokeStyle =
-              role === "enemy"
-                ? "rgba(204, 51, 51, 0.35)"
-                : role === "self"
-                  ? "rgba(255, 255, 255, 0.4)"
-                  : "rgba(60, 180, 120, 0.35)";
-            zctx.lineWidth = 1.2;
-            zctx.setLineDash([6, 6]);
-            zctx.lineCap = "round";
-            for (const link of links) {
-              zctx.beginPath();
-              zctx.moveTo(zwx(link.fromX), zwz(-link.fromZ));
-              zctx.lineTo(zwx(link.toX), zwz(-link.toZ));
-              zctx.stroke();
-            }
-            // Restore the shared world-frame state the glyph pass expects
-            // (dash + cap were only borrowed by the inference lines).
-            zctx.setLineDash([]);
-            zctx.lineCap = "butt";
-          }
-        }
-      }
-      for (const m of ctx.shipMarkers) {
-        const role = m.userData.role as TeamRole | undefined;
-        const firstT = m.userData.firstT as number | undefined;
-        // Unobserved ships: enemies not shown; allies get a white glyph
-        // outline at spawn — the game's "last known position" marker.
-        if (t < (firstT ?? Infinity)) {
-          if (role === "enemy") continue;
-          const gx = zwx(m.userData.spawnX as number);
-          const gz = zwz(-(m.userData.spawnZ as number));
-          zctx.save();
-          zctx.translate(gx, gz);
-          zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-          drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, 30, TEAM_COLOR.ally, {
-            outline: true,
-          });
-          zctx.restore();
-          continue;
-        }
-        const dead =
-          (m.userData.deathTime as number | null) != null &&
-          t >= (m.userData.deathTime as number);
-        const cx = zwx(m.position.x);
-        const cz = zwz(m.position.z);
-        // Solid traced vector glyph (original HUD shape, crisp at any
-        // zoom/rotation); sunk ships render greyed-out, live ships in
-        // their team colour.
-        const color = dead ? 0x8a97a5 : role ? TEAM_COLOR[role] : 0x9aa7b5;
-        zctx.save();
-        zctx.translate(cx, cz);
-        zctx.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
-        drawShipGlyph(zctx, m.userData.type as string | undefined, 0, 0, dead ? 26 : 34, color);
-        zctx.restore();
-      }
-      // Smoke screens — the same filled puff band as the thumb pass, at
-      // the view window's scale (45 m radius through zwx/zwz's rect), so
-      // zooming magnifies the band with the terrain. Each puff fades with
-      // its remaining life; the countdown parks once per cluster at the
-      // band's head puff and stays upright under map rotation.
-      const zpxPerM = zw / (vfull.maxX - vfull.minX || 1);
-      const zrPx = Math.max(2, 45 * zpxPerM);
-      for (const cl of ctx.smokeClusters) {
-        if (t < cl.t0 || t > cl.endT) continue;
-        for (const puff of cl.puffs) {
-          if (t < puff.t0 || t > puff.endT) continue;
-          const span = puff.endT - puff.t0;
-          const gone = span > 0 ? (t - puff.t0) / span : 0;
-          const alpha = Math.max(0.05, 0.38 * (1 - gone));
-          zctx.beginPath();
-          zctx.arc(zwx(puff.x), zwz(-puff.z), zrPx, 0, Math.PI * 2);
-          zctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
-          zctx.fill();
-        }
-        const head = cl.puffs.length > 0 ? cl.puffs[0] : null;
-        if (!head) continue;
-        zctx.font = "bold 12px sans-serif";
-        zctx.textAlign = "center";
-        zctx.textBaseline = "bottom";
-        zctx.fillStyle = "rgba(255,255,255,0.95)";
-        zctx.save();
-        zctx.translate(zwx(head.x), zwz(-head.z));
-        // Smoke timer text stays upright under map rotation.
-        if (rotRad !== 0) zctx.rotate(-rotRad);
-        zctx.fillText(`${Math.ceil(cl.endT - t)}s`, 0, -7);
-        zctx.restore();
-      }
-      // Aircraft — one icon per formation (squadron centre). The pose is
-      // the SAME eased pose the thumb pass advanced at this playhead
-      // (planeSmoothPosAt's same-t cache), so the two canvases can never
-      // disagree and no easing is applied twice per frame.
-      {
-        const drawn = new Set<number>();
-        for (const trail of ctx.planeTrails) {
-          const planeId = Math.floor(trail.id / 16);
-          if (trail.id % 16 !== 0 || drawn.has(planeId)) continue;
-          const samples = trail.samples;
-          if (samples.length === 0) continue;
-          // Same visibility window as the thumb pass (shared expiry).
-          if (t < samples[0].time || t > planeTrailExpiry(
-            samples[samples.length - 1].time,
-            ctx.minimapTrailEnd.get(planeId),
-          )) continue;
-          const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
-          if (s == null) continue;
-          drawn.add(planeId);
-          const icon = planeIcon(ctx.planeTypesById.get(trail.id) ?? "attack");
-          if (icon && icon.complete && icon.naturalWidth > 0) {
-            const sz = 22;
-            zctx.save();
-            zctx.translate(zwx(s.x), zwz(-s.z));
-            // Aircraft icons stay upright on the minimap (counter-rotate
-            // against the map frame when the rotate buttons are used).
-            if (rotRad !== 0) zctx.rotate(-rotRad);
-            zctx.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
-            zctx.restore();
-          } else {
-            zctx.fillStyle = "rgba(120, 210, 255, 0.95)";
-            zctx.beginPath();
-            zctx.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
-            zctx.fill();
-          }
-        }
-      }
-      // In-flight torpedoes at the enlarged scale (inside the rotated
-      // world frame so the run direction follows the map's orientation),
-      // at the shared enlarged half-width — smaller than the old 8 px
-      // wedges, which buried the fleets under a full salvo.
-      drawTorpedoes(zctx, ctx, t, zwx, zwz, TORPEDO_TRI_PX_ENLARGED);
-      // AI fire-suggestion overlay (G4-b) — rings / dashed fire lines /
-      // target reticles over the glyphs, through the same projection.
-      drawDecisionSuggestions(zctx, ctx, t, zwx, zwz, rotRad, DECISION_TEAM_PROB_MIN);
-      // AI movement-advice overlay (E18) — confidence arrows + hold marks,
-      // same projection, inside the same rotated world frame.
-      drawMovementAdvice(zctx, ctx, t, zwx, zwz);
-      zctx.restore(); // world frame (rotation)
-      // Grid coordinate labels live in the SCREEN frame: pinned to the
-      // top / left edges, upright at any rotation — which strip a family
-      // labels swaps with the map's orientation (see gridEdgeLabels).
-      if (ctx.minimapShowGrid.value) {
-        const colCenters: number[] = [];
-        const rowCenters: number[] = [];
-        for (let i = 0; i < MAP_GRID_COLUMNS; i++) {
-          colCenters.push(
-            zwx(full.minX + ((full.maxX - full.minX) * (i + 0.5)) / MAP_GRID_COLUMNS),
-          );
-          // Row 1 is the NORTHERNMOST band (+worldZ is up), so count the
-          // row centres off maxZ — minZ-first would mirror 1–10 south.
-          rowCenters.push(
-            zwz(-(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS)),
-          );
-        }
-        const { top, left } = gridEdgeLabels(zw, colCenters, rowCenters, rotRad);
-        for (const l of [...top, ...left]) {
-          zctx.save();
-          zctx.translate(l.x, l.y);
-          // Clamped = its square is off-canvas (deep zoom); it names the
-          // nearest square THAT way, so it steps back visually.
-          zctx.globalAlpha = l.clamped ? 0.45 : 1;
-          zctx.font = "600 11px ui-sans-serif, system-ui, sans-serif";
-          zctx.textAlign = "center";
-          zctx.textBaseline = l.y === 0 ? "top" : "middle";
-          const w = zctx.measureText(l.text).width + 8;
-          zctx.fillStyle = "rgba(5, 8, 15, 0.6)";
-          zctx.beginPath();
-          zctx.roundRect(
-            l.x === 0 ? 1 : -w / 2,
-            l.y === 0 ? 1 : -7,
-            w,
-            14,
-            4,
-          );
-          zctx.fill();
-          zctx.fillStyle = "rgba(226, 232, 240, 0.92)";
-          zctx.fillText(l.text, l.x === 0 ? 1 + w / 2 : 0, l.y === 0 ? 2 : 0);
-          zctx.restore();
-        }
-      }
+    }
+  }
+  // In-flight torpedoes at the enlarged scale (inside the rotated
+  // world frame so the run direction follows the map's orientation),
+  // at the shared enlarged half-width — smaller than the old 8 px
+  // wedges, which buried the fleets under a full salvo.
+  drawTorpedoes(g, ctx, t, zwx, zwz, TORPEDO_TRI_PX_ENLARGED);
+  // AI fire-suggestion overlay (G4-b) — rings / dashed fire lines /
+  // target reticles over the glyphs, through the same projection.
+  drawDecisionSuggestions(g, ctx, t, zwx, zwz, rotRad, DECISION_TEAM_PROB_MIN);
+  // AI movement-advice overlay (E18) — confidence arrows + hold marks,
+  // same projection, inside the same rotated world frame.
+  drawMovementAdvice(g, ctx, t, zwx, zwz);
+  g.restore(); // world frame (rotation)
+  // Grid coordinate labels live in the SCREEN frame: pinned to the
+  // top / left edges, upright at any rotation — which strip a family
+  // labels swaps with the map's orientation (see gridEdgeLabels).
+  if (ctx.minimapShowGrid.value) {
+    const colCenters: number[] = [];
+    const rowCenters: number[] = [];
+    for (let i = 0; i < MAP_GRID_COLUMNS; i++) {
+      colCenters.push(
+        zwx(full.minX + ((full.maxX - full.minX) * (i + 0.5)) / MAP_GRID_COLUMNS),
+      );
+      // Row 1 is the NORTHERNMOST band (+worldZ is up), so count the
+      // row centres off maxZ — minZ-first would mirror 1–10 south.
+      rowCenters.push(
+        zwz(-(full.maxZ - ((full.maxZ - full.minZ) * (i + 0.5)) / MAP_GRID_COLUMNS)),
+      );
+    }
+    const { top, left } = gridEdgeLabels(zw, colCenters, rowCenters, rotRad);
+    for (const l of [...top, ...left]) {
+      g.save();
+      g.translate(l.x, l.y);
+      // Clamped = its square is off-canvas (deep zoom); it names the
+      // nearest square THAT way, so it steps back visually.
+      g.globalAlpha = l.clamped ? 0.45 : 1;
+      g.font = "600 11px ui-sans-serif, system-ui, sans-serif";
+      g.textAlign = "center";
+      g.textBaseline = l.y === 0 ? "top" : "middle";
+      const w = g.measureText(l.text).width + 8;
+      g.fillStyle = "rgba(5, 8, 15, 0.6)";
+      g.beginPath();
+      g.roundRect(
+        l.x === 0 ? 1 : -w / 2,
+        l.y === 0 ? 1 : -7,
+        w,
+        14,
+        4,
+      );
+      g.fill();
+      g.fillStyle = "rgba(226, 232, 240, 0.92)";
+      g.fillText(l.text, l.x === 0 ? 1 + w / 2 : 0, l.y === 0 ? 2 : 0);
+      g.restore();
     }
   }
 }

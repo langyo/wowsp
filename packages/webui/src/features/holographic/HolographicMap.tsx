@@ -1,10 +1,10 @@
-import { computed, defineComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, defineComponent, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import * as THREE from "three";
 import {
-  Brain, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline, Users,
+  Brain, Clapperboard, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline, Users,
 } from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
-import { useBreakpoint } from "@celestia-island/hikari";
+import { useBreakpoint, useToast } from "@celestia-island/hikari";
 
 import { useThreeScene } from "./useThreeScene";
 import { watchStageThemeMode } from "@wowsp/holo";
@@ -86,7 +86,22 @@ import {
 import { loadSquadronStates } from "./squadronStatesLoader";
 import type { SquadronStateEvents } from "@/api";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
-import { drawMinimap } from "./minimapPainter";
+import { drawMinimap, paintEnlargedMap } from "./minimapPainter";
+import HoloExportModal from "./HoloExportModal";
+import {
+  EXPORT_LOGICAL,
+  clampExportSettings,
+  frameTimesAtSpeed,
+  renderPlaybackExport,
+  type PlaybackExportSettings,
+} from "./playbackExport";
+import { formatBattleClock, saveExportBlob } from "./tactical/exporters";
+import {
+  LOGO_URL,
+  loadImage,
+  readPalette,
+  shareFooterStrings,
+} from "@/features/share/shotKit";
 import { branchOfReplay, type ShipDataBranch } from "@/utils/realms";
 import {
   alignPoseHeading,
@@ -3238,6 +3253,124 @@ const RECORDED_DOLLY_MIN = -40;
       clearPropMarkerCache();
     });
 
+    // ── Replay playback export (video / GIF, offline fast render) ────────
+    // The reference clip this feature mirrors: a chrome-less, fast-forward
+    // 2D map playback with a compact score header — plus the fixed WoWSP
+    // share-shot footer the share images carry. The render owns the
+    // playhead for its whole run (seek per frame, restore on finish).
+    const toast = useToast();
+    const exportOpen = ref(false);
+    const exporting = ref(false);
+    const exportProgress = ref({ done: 0, total: 0 });
+    const exportCancel = { cancelled: false };
+    /** Survives between passes (same contract as the tactical wizard's). */
+    const exportSettings = reactive<PlaybackExportSettings>({
+      format: "video",
+      from: "now",
+      fps: 30,
+      speed: 5,
+      size: 1080,
+      footer: true,
+    });
+
+    function cancelPlaybackExport(): void {
+      exportCancel.cancelled = true;
+    }
+    // Leaving the map mid-render must not strand the loop against a
+    // disposed scene: the token breaks it at the next frame boundary and
+    // the finally below still restores the (harmless by then) playhead.
+    onBeforeUnmount(() => {
+      exportCancel.cancelled = true;
+    });
+
+    async function runPlaybackExportJob(): Promise<void> {
+      const full = computeFullMapBounds(ctx);
+      if (!full || duration.value <= 0 || exporting.value) return;
+      const s = clampExportSettings(exportSettings);
+      const from = s.from === "start" ? 0 : current.value;
+      const times = frameTimesAtSpeed(from, duration.value, s.fps, s.speed);
+      if (times.length < 2) {
+        toast.info(i18nT("replay.export.toastEmpty"));
+        return;
+      }
+      const wasPlaying = playing.value;
+      const resumeAt = current.value;
+      playing.value = false;
+      exporting.value = true;
+      exportProgress.value = { done: 0, total: times.length };
+      exportCancel.cancelled = false;
+      try {
+        // Theme-following palette + the footer's bundled art resolve once,
+        // before the first frame — inside the try so even a surprise throw
+        // (all three are non-throwing today) cannot strand `exporting`.
+        const palette = readPalette(container.value);
+        const footerStrings = shareFooterStrings();
+        let logo: HTMLImageElement | null = null;
+        if (s.footer) logo = await loadImage(LOGO_URL);
+        const result = await renderPlaybackExport({
+          format: s.format,
+          fps: s.fps,
+          times,
+          targetWidth: s.size,
+          footer: s.footer,
+          palette,
+          footerStrings,
+          logo,
+          header: (t) => ({
+            clock: formatBattleClock(t).slice(2),
+            // Score digits are a domination concept — ops center the clock.
+            scoreAlly: props.operation ? null : ctx.allyScore.value,
+            scoreEnemy: props.operation ? null : ctx.enemyScore.value,
+            aliveAlly: ctx.allyAlive.value,
+            aliveEnemy: ctx.enemyAlive.value,
+            totalAlly: ctx.allyTotal.value,
+            totalEnemy: ctx.enemyTotal.value,
+          }),
+          paintMap: (t, g) => {
+            // Seek first: markers, caps, scores and the eased plane state
+            // all update synchronously for this battle time.
+            seekBattleTime(t);
+            paintEnlargedMap(g, ctx, {
+              t,
+              full,
+              view: full,
+              logical: EXPORT_LOGICAL,
+              rotation: 0,
+            });
+          },
+          onProgress: (done, total) => {
+            exportProgress.value = { done, total };
+          },
+          cancelToken: exportCancel,
+        });
+        if (!result) {
+          toast.error(i18nT("replay.export.unsupported"));
+        } else if (result.cancelled && result.blob.size === 0) {
+          // Cancelled before anything encoded — stay quiet.
+        } else if (result.blob.size > 0) {
+          const tag = (props.mapName || props.mapId || "map").replace(/[^\w-]+/g, "_");
+          const clock = formatBattleClock(from).slice(2).replace(":", "");
+          const name = `wowsp-replay-${tag}-${clock}.${result.ext}`;
+          const saved = await saveExportBlob(
+            result.blob,
+            name,
+            result.ext === "gif" ? "Image" : "Video",
+            result.ext,
+          );
+          if (saved) toast.info(i18nT("replay.export.saved", { path: saved }));
+        } else {
+          toast.info(i18nT("replay.export.toastEmpty"));
+        }
+      } catch (e) {
+        toast.error(String((e as Error)?.message ?? e));
+      } finally {
+        exporting.value = false;
+        seekBattleTime(resumeAt);
+        if (wasPlaying) playing.value = true;
+        api.value?.requestRender();
+      }
+    }
+
     // Public playback surface (see HoloMapHandle) — read by the replay view's
     // chat-log panel for its playhead + dot seeks, and by the AI report's
     // keyframe jump for the replay seek + chase-camera focus. NOTE: this must
@@ -3303,6 +3436,21 @@ const RECORDED_DOLLY_MIN = -40;
             onCanvasClick(e);
           }}
         />
+        {/* Offline export progress chip: the render owns the playhead for
+            its whole run — this is the only live surface while it works,
+            with the cancel button the only interaction that reaches it. */}
+        {exporting.value ? (
+          <div class="holo-map__export-chip">
+            <span class="holo-map__export-dot" />
+            {i18nT("replay.export.running")}
+            <b class="holo-map__export-count">
+              {exportProgress.value.done}/{exportProgress.value.total}
+            </b>
+            <button class="holo-map__export-cancel" onClick={cancelPlaybackExport}>
+              {i18nT("replay.export.cancelRun")}
+            </button>
+          </div>
+        ) : null}
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ──.
             Each label/status pair sits in a 0×0 SLOT div the render loop
             positions imperatively (labelOverlay.applySlot): per-frame
@@ -3613,6 +3761,7 @@ const RECORDED_DOLLY_MIN = -40;
           </div>
         ) : null}
         {props.replayPath ? (
+          <>
           <div class="holo-map__controls">
           {/* Tactical dock: the toolbar + timeline teleport here when the
               board is on — the playback bar's "tall form", with the map
@@ -3768,7 +3917,31 @@ const RECORDED_DOLLY_MIN = -40;
                 speedMenuOpen.value = false;
               }}
             />
+            {/* Replay-clip export: opens the settings modal (video / GIF,
+                offline fast render with the share-shot footer). */}
+            <button
+              class={[
+                "holo-map__lbltoggle",
+                "holo-map__export-btn",
+                exporting.value ? "holo-map__lbltoggle--on" : "",
+              ].filter(Boolean).join(" ")}
+              onClick={() => { exportOpen.value = true; }}
+              disabled={exporting.value}
+              data-hint={i18nT("replay.export.toggle")}
+              aria-label={i18nT("replay.export.toggle")}
+            >
+              <Clapperboard size={14} />
+            </button>
           </div>
+          <HoloExportModal
+            modelValue={exportOpen.value}
+            onUpdate:modelValue={(v: boolean) => { exportOpen.value = v; }}
+            settings={exportSettings}
+            duration={duration.value}
+            current={current.value}
+            onStart={() => { void runPlaybackExportJob(); }}
+          />
+          </>
         ) : null}
         {showRoster.value ? (
           <HoloRosterOverlay
