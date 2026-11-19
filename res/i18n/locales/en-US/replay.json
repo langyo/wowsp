@@ -606,7 +606,8 @@
     "cancelRun": "Cancel",
     "unsupported": "Video encoding is unavailable here",
     "toastEmpty": "Nothing to export in this range",
-    "saved": "Replay clip saved to {path}"
+    "saved": "Replay clip saved to {path}",
+    "savedCopied": "Saved to {path} — file copied to the clipboard, ready to paste"
   },
   "chatLog": "Battle chat",
   "chat": {

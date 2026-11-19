@@ -53,6 +53,10 @@ pub mod mobile_unsupported {
     /// Image clipboard write (arboard has no Android backend; the phone app's
     /// share flow falls back to the webview clipboard API or a save dialog).
     pub const CLIPBOARD_IMAGE: &str = "image clipboard is not supported on mobile";
+    /// File clipboard write (the saved replay clip's paste-into-chat
+    /// hand-off is a Windows shell convention; a phone never even reaches
+    /// the native save that would produce the file).
+    pub const CLIPBOARD_FILE: &str = "file clipboard is not supported on mobile";
 }
 
 /// App bootstrap shared by the desktop bin and the Android entry point.
@@ -847,6 +851,7 @@ pub fn run() {
             commands::tactics_profile::tactics_profile_open,
             commands::exports::write_export_bytes,
             commands::exports::copy_image_to_clipboard,
+            commands::exports::copy_file_to_clipboard,
             commands::mod_hub::mod_hub_foreign_units,
             commands::mod_tags::mod_tags,
             commands::mod_hub::mod_hub_list_assets,

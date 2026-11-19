@@ -606,7 +606,8 @@
     "cancelRun": "取消",
     "unsupported": "目前環境不支援影片編碼",
     "toastEmpty": "沒有可匯出的時間範圍",
-    "saved": "重播已儲存到 {path}"
+    "saved": "重播已儲存到 {path}",
+    "savedCopied": "已儲存到 {path}，檔案已複製到剪貼簿，可直接貼上傳送"
   },
   "chatLog": "聊天記錄",
   "chat": {

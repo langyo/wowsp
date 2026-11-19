@@ -363,6 +363,13 @@ export const shellApi = {
   copyImageToClipboard: (bytes: Uint8Array) =>
     transport.invokeRaw?.<null>(RPC.copy_image_to_clipboard, bytes, {}) ??
     Promise.reject(new Error("raw IPC unavailable in this host")),
+  /** Copy a saved export FILE onto the clipboard as an HDROP payload — a
+   *  recorded clip pastes straight into a chat window as a file attachment
+   *  (videos can neither ride the image clipboard nor the webview
+   *  clipboard API). Windows only; rejects on other hosts — callers keep
+   *  their saved-only toast. */
+  copyFileToClipboard: (path: string) =>
+    transport.invoke<null>(RPC.copy_file_to_clipboard, { path }),
   /** Diagnostics-log surface for the settings' 问题反馈 section. The folder
    *  overview is cheap (one read_dir); the reveal opens the system file
    *  manager with the newest log selected. */

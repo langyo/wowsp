@@ -1,6 +1,6 @@
 /** Offline-export frame schedule tests (pure — no DOM / WebCodecs here). */
 import { describe, expect, it } from "vitest";
-import { frameTimes } from "./exporters";
+import { extForCodec, frameTimes } from "./exporters";
 
 describe("frameTimes", () => {
   it("steps at 1/fps from `from` through `to` inclusive", () => {
@@ -33,5 +33,13 @@ describe("frameTimes", () => {
     expect(frameTimes(5, 4.9, 30)).toEqual([5]);
     expect(frameTimes(Number.NaN, 4, 30)).toEqual([]);
     expect(frameTimes(0, 1, 0)).toEqual([0]);
+  });
+});
+
+describe("extForCodec", () => {
+  it("sends H.264 to MP4 and the VP family to WebM", () => {
+    expect(extForCodec("avc")).toBe("mp4");
+    expect(extForCodec("vp8")).toBe("webm");
+    expect(extForCodec("vp9")).toBe("webm");
   });
 });

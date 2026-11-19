@@ -3357,7 +3357,25 @@ const RECORDED_DOLLY_MIN = -40;
             result.ext === "gif" ? "Image" : "Video",
             result.ext,
           );
-          if (saved) toast.info(i18nT("replay.export.saved", { path: saved }));
+          if (saved) {
+            // The clip's chat hand-off: a natively saved file rides the
+            // clipboard as an HDROP entry, so the next 粘贴 in QQ/微信/
+            // Discord attaches it. A fallback download (non-native) or a
+            // refused copy keeps the plain saved toast — never an error.
+            let copied = false;
+            if (saved.native) {
+              copied = await rpcApi
+                .copyFileToClipboard(saved.path)
+                .then(() => true)
+                .catch(() => false);
+            }
+            toast.info(
+              i18nT(
+                copied ? "replay.export.savedCopied" : "replay.export.saved",
+                { path: saved.path },
+              ),
+            );
+          }
         } else {
           toast.info(i18nT("replay.export.toastEmpty"));
         }
