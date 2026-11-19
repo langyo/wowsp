@@ -177,7 +177,7 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
   ファイルはメモリ内バッファから丸ごと書き直す。
 - 存在しないファイルは、例外が投げられる前にエンジン側へエラー行をログ
   する: ポーリング対象のメールボックスはすべて、ロード時に 1 回シードして
-  おく（`manual_refresh.flag` のシード処理を参照）。
+  おく（journal のロード時シード処理を参照）。
 - コールバックから漏れた例外は mod を黙って殺す: すべてをラップし、
   繰り返すエラーは重複を除いてからログする。
 - 注入モジュールに対する `dir()` は `[]` を返す（SafeClass ラッパ）:
@@ -213,33 +213,18 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
 ブリッジファイル（プロトコル v1。すべて mod ディレクトリ内）:
 
 ```jsonc
-// request.json —— 名簿が安定した時点で mod が書き出す（手動リフレッシュ
-// 時にも再書き込み）。コンパニオンが戦績行を応答する。
-{ "version": 1, "created": 1690000000.0, "session": "1690000000000",
-  "manual": false,
-  "players": [ { "name": "...", "account_id": 0, "avatar_id": 0,
-                 "ship_id": 0 } ] }
-
-// response.json —— WoWSP が書き出す。revision はセッションごとに単調
-// 増加でなければならない。空ファイル（末尾に改行なし）は「保留中」を意味する。
-{ "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
-  "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ],
-  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
-
 // heartbeat.json —— 1–2 秒ごとに書き直す。失効 = mod 死亡またはゲーム終了。
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
 // テレメトリ journal —— イベントマークのみ（マーク 1 件につき 1 行）。
-// 戦闘終了時に有界リングから 1 回だけディスクへ書き出す。名簿本体は
+// 戦闘終了時にディスクへ書き出すほか、マークが届き続ける限り最大
+// 1 分に 1 回書き出す（クラッシュウィンドウの上限）。名簿本体は
 // もはや journal に載らない（2026-11-19 の性能修正 —— 旧来の状態別
 // リングは戦闘 tick ごとに全体を書き直していた）:
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag —— WoWSP が新しいエポック ms タイムスタンプを
-// 書き込んで再クエリをトリガーする。mod は 10 秒のウィンドウ内で消費する。
 ```
 
 ## プロダクト統合
@@ -284,13 +269,13 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
 
 | 関心事 | ファイル（注記なきものは既存） | 変更内容 |
 | --- | --- | --- |
-| ブリッジファイル監視 | `commands/arena_info.rs` の姉妹ファイル: 新規 `commands/ingame_bridge.rs` | mod ディレクトリを `notify` で監視。ハートビート/リクエスト/ジャーナルを解析。Tauri イベント `wowsp://ingame-*` を公開 |
+| ブリッジファイル監視（2026-10-19 退役） | `commands/arena_info.rs` の姉妹ファイル: 新規 `commands/ingame_bridge.rs` | mod ディレクトリを `notify` で監視。ハートビート/リクエスト/ジャーナルを解析。Tauri イベント `wowsp://ingame-*` を公開 |
 | 並び順エンジン | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`、Lesta のロスター合成は `commands/probe_roster.rs` | ブリッジイベントが駆動する「アリーナ順 + 撃沈沈降」リデューサー。オーバーレイが描画する最終行順序を出力 |
 | 設定スキーマ | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` に `"plugin"` を追加（優先チェーン `plugin > inferred > ocr > off`） |
 | オーバーレイのキーゲーティング | `overlay/placement.rs`（`tab_key_down`） | ブリッジが稼働しているときは、`GetAsyncKeyState` ポーリングの代わりに `input.tabModeIn/Out` マークで表示/非表示を駆動する |
 | インストール / アンインストール | `commands/mod_install.rs` + `packages/ingame-plugin/`（新規サブパッケージ） | テンプレートをサブパッケージの `Main.py` にする。スナップショット + ロールバック。ゲームクローズガード。旧プローブのクリーンアップ |
 | ヘルスチェック | `commands/ingame_bridge.rs` | `profile/python.log` を解析して mod の `probe … loaded` / `api[load] dh=True` 自己チェック行を探す。設定 UI 向けにステータスを公開 |
-| 戦績行 | 既存の `wg_api.rs` / `wg_api_cn.rs` | 変更なし —— コンパニオンは、オーバーレイが現在使っているのと同じ一括照会から `response.json` を書き込む |
+| 戦績行（2026-10-19 退役） | 既存の `wg_api.rs` / `wg_api_cn.rs` | 変更なし —— コンパニオンは、オーバーレイが当時使っていたのと同じ一括照会から `response.json` を書き込んでいた |
 
 ## テスト計画
 

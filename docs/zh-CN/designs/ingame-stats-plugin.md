@@ -10,8 +10,10 @@
 > （安装到 `gui/unbound2/mods/WoWSPProbe.unbound`，游戏自动扫描并挂载的战斗视图目录）把战绩
 > 直接绘制在游戏画面内，仅作用于新的 `table = "ingame"` 模式；本文其余部分描述
 > 的"插件不渲染、透明窗口为唯一显示层"仍是覆盖模式（`"detect"`）的设计。桥接层
-> （`commands/ingame_bridge.rs`）只在游戏内展示模式开启时应答 `request.json`，
-> 两种显示不会同时出现。
+> （`commands/ingame_bridge.rs`）只在游戏内展示模式开启期间应答过 `request.json`，
+> 两种显示从未同时出现。**该查看模式——连同请求/响应桥接——已于 2026-10-19
+> 退役**；已退役的 request.json / response.json / manual_refresh.flag 工件
+> 不再出现在下方的当前格式清单中（它们仅存留于历史设计章节）。
 
 ## 背景与目标
 
@@ -346,7 +348,7 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 - `open()` **没有追加模式**（'a' 返回 None 而非抛异常）：用内存缓冲
   整文件重写。
 - 文件不存在时引擎会先记一条错误日志再抛异常：每个被轮询的邮箱文件
-  都要在加载时播种一次（见 `manual_refresh.flag` 的播种）。
+  都要在加载时播种一次（见 journal 的加载时播种）。
 - 回调里逃逸的异常会静默杀死 mod：全部包裹，重复错误去重后再记日志。
 - 注入模块的 `dir()` 返回 `[]`（SafeClass 包装）：API 面只有上文
   已验证名单。
@@ -379,20 +381,6 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 桥文件（协议 v1，全部位于 mod 目录）：
 
 ```jsonc
-// request.json —— 名单稳定后由 mod 写出（手动刷新时重写）。
-// 伴生侧回填战绩行。
-{ "version": 1, "created": 1690000000.0, "session": "1690000000000",
-  "manual": false,
-  "players": [ { "name": "...", "account_id": 0, "avatar_id": 0,
-                 "ship_id": 0 } ] }
-
-// response.json —— WoWSP 写出；revision 需按会话单调递增；
-// 空文件（无结尾换行）表示"处理中"。
-{ "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
-  "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ],
-  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
-
 // heartbeat.json —— 每 1–2 s 重写；过期 = mod 死亡或游戏已关。
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3, "rec": 18, "fb": "" | "records" | "walk" }
@@ -407,14 +395,13 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 // realm 路由兜底）。伴生进程每场将标记记录一次，作为“已降级但已桥接”
 // 的证据行，区别于遥测彻底缺失的硬告警。
 
-// 遥测 journal —— 仅事件标记（每条标记一行），战斗结束时从有界环形
-// 缓冲一次性落盘；名单主体不再随 journal 携带（2026-11-19 性能修复
-// ——旧按状态环形缓冲曾在每个战斗拍整体重写）：
+// 遥测 journal —— 仅事件标记（每条标记一行），战斗结束时落盘，且标记
+// 持续到来期间每分钟至多再落盘一次（崩溃窗口上界）；名单主体不再随
+// journal 携带（2026-11-19 性能修复——旧按状态环形缓冲曾在每个战斗拍
+// 整体重写）：
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag —— WoWSP 写入新鲜的时间戳触发重新查询；
-// mod 在 10 s 窗口内消费。
 ```
 
 ## 服务端同步的价格目录（price_catalog.json）
@@ -487,8 +474,11 @@ builds.json / order_probe.json 相同的平铺文件桥读取。
 shipCrossResearchInfo 与 itemPrice 两个集合都拿到数据即标记完成（一条
 WOWSP_PROBE price catalog written 日志行报告各集合计数），或在整个 hub 被
 扣留（Lesta 沙盒形态）时静默放弃（无文件、无日志行、无 soft 错误）。计数
-为 -1 表示 hub 拒绝该集合名。文件恰好写一次（就绪门控或最后一次尝试）且
-永不重写：伴生程序可能正在读取它。
+为 -1 表示 hub 拒绝该集合名。只要 shipCrossResearchInfo 本身仍为空，
+每次尝试就只行走这一个廉价集合（cross-first 门）：未就绪形态无需为
+1.2 万实体的 itemPrice 扫描支付任何代价，直到最后一次尝试强制完整行走。
+文件恰好写一次（就绪门控或最后一次尝试）且永不重写：伴生程序可能正在
+读取它。
 
 **已用一次真实港口采集验证**（WG，build 13357625，2026-10-31）：
 `itemPrice` 提供 11,617 条、`shipTechRestrictions` 被拒（-1）、
@@ -556,7 +546,8 @@ python.log（每次切换一行 `aim <name> flags=<n>`）与面板 payload
 表（用户删光卡片）同样隐藏，而从未下发过列的旧伴生保持仅名字/船名
 的降级浮窗。
 
-**列管线。** 列编辑与水表同一拖拽卡片编辑器
+**列管线。** *（随游戏内查看模式于 2026-10-19 退役——留作设计记录。）*
+列编辑与水表同一拖拽卡片编辑器
 （`OverlayColumnsEditor`，游戏内设置区的第二个实例），以 stats prefs
 的 `aimColumns` 持久化（上限 4，v1 仅 "global" scope——桥只做一次名单
 查询；单船/船类 scope 需要 webui 的整船列表管线，明确不进本期）。
@@ -581,13 +572,13 @@ Steam 客户端自带的 15.9.0 录像 + build 匹配的国服 360 志愿者录�
 
 | 关注点 | 文件（无标注即现有） | 变更 |
 | --- | --- | --- |
-| 桥文件监听 | `commands/arena_info.rs` 的姊妹篇：新增 `commands/ingame_bridge.rs` | `notify` 监听 mod 目录；解析心跳/请求/journal；发出 `wowsp://ingame-*` Tauri 事件 |
+| 桥文件监听（2026-10-19 退役） | `commands/arena_info.rs` 的姊妹篇：新增 `commands/ingame_bridge.rs` | `notify` 监听 mod 目录；解析心跳/请求/journal；发出 `wowsp://ingame-*` Tauri 事件 |
 | 排序引擎 | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`，Lesta 阵容合成在 `commands/probe_roster.rs` | 桥事件驱动的"载具序 + 阵亡下沉"归约器；输出覆盖层渲染的最终行序 |
 | 配置 schema | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` 新增 `"plugin"`（优先级 `plugin > inferred > ocr > off`） |
 | 覆盖层按键门控 | `overlay/placement.rs`（`tab_key_down`） | 桥存活时改用 `input.tabModeIn/Out` 标记驱动显示/隐藏，替代 `GetAsyncKeyState` 轮询 |
 | 安装/卸载 | `commands/mod_install.rs` + `packages/ingame-plugin/`（新子包） | 模板指向子包 `Main.py`；快照 + 回滚；游戏关闭守卫；旧探针清理 |
 | 健康检查 | `commands/ingame_bridge.rs` | 解析 `profile/python.log` 中的 `probe … loaded` / `api[load] dh=True` 自检行；供设置界面展示 |
-| 战绩行 | 现有 `wg_api.rs` / `wg_api_cn.rs` | 不变——伴生侧用覆盖层现有的批量查询写 `response.json` |
+| 战绩行（2026-10-19 退役） | 现有 `wg_api.rs` / `wg_api_cn.rs` | 不变——伴生侧曾用覆盖层现有的批量查询写 `response.json` |
 
 ## 产品整合
 
@@ -630,10 +621,13 @@ Steam 客户端自带的 15.9.0 录像 + build 匹配的国服 360 志愿者录�
   实弹对局问题（真实 Lesta 沙箱对 'ship' 集合到底给什么）已于当日
   2026-10-10 定案：完整键表，含 bot 共 11/11。2026-10-31 起另加四个价格
   pass：植入形态断言 price_catalog.json 的实体行/解码字段/计数精确一致，
-  延迟形态现落于港口点阵（phase 'port'、tries 3），战斗后期 pass 覆盖
-  战斗后期的点阵（phase 'battle'），扣留/抛异形态（UiComponents 抛异
-  + 全部集合被拒）在港口 tick 上烧尽重试上限，断言文件缺失且日志与
-  soft 错误闩锁中无吞异常文本。另加 `python -m py_compile`。
+  延迟形态现落于港口点阵（45 个港口 tick -> 尝试点 10/20/30/40，
+  cross-first 门把就绪行走推迟到 itemPrice 第 3 次调用：写一次，
+  phase 'port'、tries 5），战斗后期 pass（港口预算未用尽）覆盖战斗
+  后期的点阵（战斗 tick ~33/43/53/63，phase 'battle'、tries 5），
+  扣留/抛异形态（UiComponents 抛异 + 全部集合被拒）在港口 tick 上
+  烧尽重试上限，断言 price_catalog.json 缺失且日志与 soft 错误闩锁中
+  无吞异常文本。另加 `python -m py_compile`。
 - **仅港口冒烟测试**（不打战斗）：启动游戏、港口停 ~15 s、退出；断言
   `python.log` 出现 `injected names=[…]`、`api[load] dh=True` 与新鲜
   心跳。这套廉价协议是实验阶段的验收流程，保留为安装验收测试。

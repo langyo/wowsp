@@ -204,7 +204,7 @@ de nom de la DB de cette disposition quand un côté entier est couvert
   mémoire.
 - Les fichiers manquants consignent une ligne d'erreur côté moteur avant
   de lever une exception : amorcer une fois au chargement chaque boîte aux
-  lettres interrogée (voir l'amorçage de `manual_refresh.flag`).
+  lettres interrogée (voir l'amorçage du journal au chargement).
 - Les exceptions qui s'échappent d'un callback tuent le mod silencieusement :
   tout envelopper, dédupliquer les erreurs répétées avant journalisation.
 - `dir()` sur les modules injectés renvoie `[]` (enveloppes SafeClass) : la
@@ -246,37 +246,20 @@ de nom de la DB de cette disposition quand un côté entier est couvert
 Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
 
 ```jsonc
-// request.json — écrit par le mod sur un roster stable (et réécrit lors
-// d'un rafraîchissement manuel). Le compagnon répond avec les lignes de
-// statistiques.
-{ "version": 1, "created": 1690000000.0, "session": "1690000000000",
-  "manual": false,
-  "players": [ { "name": "...", "account_id": 0, "avatar_id": 0,
-                 "ship_id": 0 } ] }
-
-// response.json — écrit par WoWSP ; la revision doit être monotone par
-// session ; un fichier vide (sans newline final) signifie « en attente ».
-{ "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
-  "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ],
-  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
-
 // heartbeat.json — réécrit toutes les 1–2 s ; périmé = mod mort ou jeu
 // fermé.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
 // journal de télémétrie — marqueurs d'événement uniquement (une ligne par
-// marqueur), vidés sur disque une seule fois en fin de bataille depuis un
-// anneau borné ; les corps de roster ne voyagent plus dans le journal (le
+// marqueur), vidés sur disque en fin de bataille plus au plus une fois par
+// minute tant que des marqueurs continuent d'arriver (la borne de la fenêtre
+// de crash) ; les corps de roster ne voyagent plus dans le journal (le
 // correctif de performance du 2026-11-19 — l'ancien anneau par état était
 // réécrit en entier à chaque tick de combat) :
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP écrit un horodatage epoch-seconds frais pour
-// déclencher une nouvelle requête ; le mod le consomme dans une fenêtre
-// de 10 s.
 ```
 
 ## Intégration produit
@@ -329,13 +312,13 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
 
 | Préoccupation | Fichier (existant sauf mention contraire) | Modification |
 | --- | --- | --- |
-| Observateur des fichiers du pont | voisin de `commands/arena_info.rs` : nouveau `commands/ingame_bridge.rs` | surveiller le répertoire du mod avec `notify` ; analyser heartbeat/request/journal ; exposer les événements Tauri `wowsp://ingame-*` |
+| Observateur des fichiers du pont (retiré le 2026-10-19) | voisin de `commands/arena_info.rs` : nouveau `commands/ingame_bridge.rs` | surveiller le répertoire du mod avec `notify` ; analyser heartbeat/request/journal ; exposer les événements Tauri `wowsp://ingame-*` |
 | Moteur d'ordonnancement | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts` ; la synthèse du roster Lesta vit dans `commands/probe_roster.rs` | réducteur « ordre arène + coulage des morts en fin de liste » alimenté par les événements du pont ; émet l'ordre final des lignes que l'overlay rend |
 | Schéma de configuration | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` acquiert `"plugin"` (chaîne de priorité `plugin > inferred > ocr > off`) |
 | Déclenchement de l'overlay par la touche | `overlay/placement.rs` (`tab_key_down`) | quand le pont est vivant, piloter l'affichage/masquage depuis les marqueurs `input.tabModeIn/Out` au lieu de l'interrogation `GetAsyncKeyState` |
 | Installation / désinstallation | `commands/mod_install.rs` + `packages/ingame-plugin/` (nouveau sous-paquet) | le gabarit devient le `Main.py` du sous-paquet ; snapshot + rollback ; garde « jeu fermé » ; nettoyage de l'ancienne sonde |
 | Contrôle de santé | `commands/ingame_bridge.rs` | analyser `profile/python.log` pour les lignes d'auto-vérification `probe … loaded` / `api[load] dh=True` du mod ; exposer le statut pour l'interface des paramètres |
-| Lignes de statistiques | `wg_api.rs` / `wg_api_cn.rs` existants | inchangé — le compagnon écrit `response.json` depuis la même recherche par lots que l'overlay utilise aujourd'hui |
+| Lignes de statistiques (retirées le 2026-10-19) | `wg_api.rs` / `wg_api_cn.rs` existants | inchangé — le compagnon écrivait `response.json` depuis la même recherche par lots que l'overlay utilisait alors |
 
 ## Plan de tests
 

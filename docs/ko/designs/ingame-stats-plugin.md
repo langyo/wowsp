@@ -169,7 +169,7 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은(2026-1
 - `open()`에는 **추가 모드가 없다**('a'는 예외를 던지는 대신 None을
   반환한다): 파일은 메모리 버퍼에서 통째로 다시 쓴다.
 - 파일이 없으면 예외를 일으키기 전에 엔진 쪽에 오류 라인이 하나 기록된다:
-  폴링하는 모든 메일박스를 로드 시 한 번씩 시드한다(`manual_refresh.flag`
+  폴링하는 모든 메일박스를 로드 시 한 번씩 시드한다(저널의 로드 시
   시드 참조).
 - 콜백을 빠져나간 예외는 모드를 소리 없이 죽인다: 전부 감싸고, 반복 오류는
   중복 제거 후 로깅한다.
@@ -205,33 +205,18 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은(2026-1
 브리지 파일(프로토콜 v1, 모두 모드 디렉터리 안에 위치):
 
 ```jsonc
-// request.json — 명단이 안정되면 모드가 작성한다(수동 새로고침 시에도
-// 재작성). 컴패니언이 전적 행으로 응답한다.
-{ "version": 1, "created": 1690000000.0, "session": "1690000000000",
-  "manual": false,
-  "players": [ { "name": "...", "account_id": 0, "avatar_id": 0,
-                 "ship_id": 0 } ] }
-
-// response.json — WoWSP가 작성한다; revision은 세션별로 단조 증가해야
-// 한다; 빈 파일(끝에 줄바꿈 없음)은 "대기 중"을 뜻한다.
-{ "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
-  "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ],
-  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
-
 // heartbeat.json — 1–2 s마다 재작성; 오래되면 = 모드 사망 또는 게임 종료.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
-// 텔레메트리 저널 — 이벤트 표시만(표시당 한 줄), 전투 종료 시 한정된
-// 링 버퍼에서 디스크로 한 번만 기록; 명단 본문은 더 이상 저널에 실리지
+// 텔레메트리 저널 — 이벤트 표시만(표시당 한 줄), 전투 종료 시 디스크로
+// 기록되며 표시가 계속 도착하는 동안에는 분당 최대 한 번 더 기록된다
+// (크래시 윈도 상한); 명단 본문은 더 이상 저널에 실리지
 // 않는다(2026-11-19 성능 수정 — 예전 상태별 링은 전투 틱마다 통째로
 // 다시 쓰였다):
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP가 재조회를 트리거하려고 새 epoch-seconds
-// 타임스탬프를 기록한다; 모드는 10 s 창 안에서 소비한다.
 ```
 
 ## 제품 통합
@@ -273,13 +258,13 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은(2026-1
 
 | 관심사 | 파일 (별도 표시 없으면 기존) | 변경 사항 |
 | --- | --- | --- |
-| 브리지 파일 감시자 | `commands/arena_info.rs`의 형제 파일: 신규 `commands/ingame_bridge.rs` | 모드 디렉터리를 `notify`로 감시; 하트비트/요청/저널 파싱; Tauri 이벤트 `wowsp://ingame-*` 노출 |
+| 브리지 파일 감시자(2026-10-19 폐기) | `commands/arena_info.rs`의 형제 파일: 신규 `commands/ingame_bridge.rs` | 모드 디렉터리를 `notify`로 감시; 하트비트/요청/저널 파싱; Tauri 이벤트 `wowsp://ingame-*` 노출 |
 | 정렬 엔진 | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`, Lesta 로스터 합성은 `commands/probe_roster.rs` | 브리지 이벤트로 구동되는 arena 순서 + 사망 침몰 리듀서; 오버레이가 렌더링하는 최종 행 순서를 내보낸다 |
 | 설정 스키마 | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster`에 `"plugin"` 추가(우선순위 체인 `plugin > inferred > ocr > off`) |
 | 오버레이 키 게이팅 | `overlay/placement.rs`(`tab_key_down`) | 브리지가 살아 있을 때는 `GetAsyncKeyState` 폴링 대신 `input.tabModeIn/Out` 표시로 보이기/숨기기를 구동한다 |
 | 설치 / 제거 | `commands/mod_install.rs` + `packages/ingame-plugin/`(신규 서브패키지) | 템플릿이 이 서브패키지의 `Main.py`가 된다; 스냅샷 + 롤백; 게임 종료 가드; 레거시 프로브 정리 |
 | 상태 점검 | `commands/ingame_bridge.rs` | `profile/python.log`에서 모드의 `probe … loaded` / `api[load] dh=True` 자체 점검 라인을 파싱; 설정 UI에 상태 노출 |
-| 전적 행 | 기존 `wg_api.rs` / `wg_api_cn.rs` | 변경 없음 — 컴패니언이 오버레이가 현재 쓰는 것과 같은 배치 조회로 `response.json`을 작성한다 |
+| 전적 행(2026-10-19 폐기) | 기존 `wg_api.rs` / `wg_api_cn.rs` | 변경 없음 — 컴패니언이 오버레이가 당시 쓰던 것과 같은 배치 조회로 `response.json`을 작성했다 |
 
 ## 테스트 계획
 

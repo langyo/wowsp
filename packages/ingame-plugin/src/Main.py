@@ -186,6 +186,13 @@ AIM_MAIN_BITS = 0x7
 # cap the empty verdict latches for the rest of the battle.
 SORT_KEY_MAX_TRIES = 15
 
+# Crash-window bound for the journal's mark flush (see journal_mark):
+# between the battle-end flushes, at most ONE KB-scale ring write per
+# window while marks keep arriving — a client crash loses at most this
+# much of the mark timeline. The old per-mark flush cost a whole-journal
+# rewrite on every Tab press/release; this bound is one write a minute.
+JOURNAL_FLUSH_SECONDS = 60
+
 
 def load_tool_config():
     """Read integer keys from [tools."battle.ingame.stats"] in the
@@ -1213,6 +1220,9 @@ class Probe:
         self.port_ticks = 0
         self.in_battle_ticks = 0
         self.session_ticks = 0
+        # The journal mark-flush bound's clock (see journal_mark): a
+        # plain wall-clock timestamp, deliberately NOT reset per battle.
+        self.journal_flush_at = 0.0
         self.journal = []
         self.empty_ticks = 0
         self.dead_latch = {None} - {None}
@@ -1434,7 +1444,9 @@ class Probe:
         when no dataHub is injected / the write failed. Writes
         price_catalog.json exactly ONCE — only when BOTH key collections
         carry data (the ready gate) or on the final attempt (final=True);
-        a not-yet-ready capture walks and returns counts WITHOUT writing.
+        a not-yet-ready capture walks and returns counts WITHOUT writing
+        (and while the gate collection itself is empty, only that one
+        CHEAP collection is walked — see the gate loop below).
         An empty or withheld client is a SILENT no-op (the Lesta sandbox
         shape: no file, no log line, no soft error). Never raises: a
         refused collection, a bad entity or an unreadable field is
@@ -1450,9 +1462,28 @@ class Probe:
         data = {}
         counts = {}
         truncated = False
+        # Cross-first with an early exit (the residual follow-up to the
+        # 2026-11-19 fix): the field shape whose ready gate never closes
+        # (live 2026-11-18: shipCrossResearchInfo=0 while itemPrice
+        # carries 12,220 entities) used to pay the full 4-collection walk
+        # — seconds of main-thread time — on EVERY lattice attempt for a
+        # verdict the CHEAP gate collection already settles. The tuple's
+        # first name (shipCrossResearchInfo: 0 entities on that shape) is
+        # walked first; while it stays empty and this is not the final
+        # attempt, the other three are skipped outright (counts -1, no
+        # file impact — those counts never reach a write).
+        gate = PRICE_CATALOG_COLLECTIONS[0]
         for name in PRICE_CATALOG_COLLECTIONS:
             rows = []
             count = 0
+            if name is not gate and not final:
+                try:
+                    if counts.get(gate, 0) <= 0:
+                        counts[name] = -1
+                        data[name] = rows
+                        continue
+                except:
+                    pass
             try:
                 cols = self.dh.getEntityCollections(name)
             except:
@@ -2700,11 +2731,21 @@ class Probe:
             log('roster record skipped key=' + _fmt(key))
 
     def journal_mark(self, kind):
-        # Append-only (the 2026-11-19 performance fix): a mark costs one
-        # in-memory line. The whole-file flush moved to battle end (see
-        # journal_flush) — the old per-mark flush turned every Tab
-        # press/release into a whole-journal rewrite on the game thread.
+        # Append-only between flushes (the 2026-11-19 performance fix): a
+        # mark costs one in-memory line. Flushes happen at battle end
+        # (quit) and, as the crash-window bound, at most once per
+        # JOURNAL_FLUSH_SECONDS while new marks keep arriving — the old
+        # per-mark flush turned every Tab press/release into a
+        # whole-journal rewrite on the game thread; the bound is one
+        # KB-scale ring write per minute at worst.
         self.journal.append('{"t":' + _fmt(_to_int(time.time() * 1000)) + ',"ev":' + json_encode_safe(kind) + '}')
+        try:
+            now = time.time()
+            if now - self.journal_flush_at >= JOURNAL_FLUSH_SECONDS:
+                self.journal_flush_at = now
+                self.journal_flush()
+        except:
+            pass
 
     def journal_flush(self):
         # Battle-end flush of the event-mark ring (the 2026-11-19
