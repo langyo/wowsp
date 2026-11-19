@@ -3317,6 +3317,14 @@ const RECORDED_DOLLY_MIN = -40;
       exporting.value = true;
       exportProgress.value = { done: 0, total: times.length };
       exportCancel.cancelled = false;
+      // Clan tags ride the lazily-armed roster-stats fetch — arm it now
+      // and give it a short window to land before the first frame (a
+      // fresh session has no tags yet); a slow fetch just starts the
+      // take tag-less, never blocks long.
+      ensureRosterStats();
+      for (let i = 0; i < 50 && nameStatsLoading.value; i++) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
       // Chat senders tint by roster side — the side lookup is per replay,
       // built once here (vehicles never change mid-export).
       const sideOfVehicle = new Map<number, "ally" | "enemy">();
@@ -3360,7 +3368,10 @@ const RECORDED_DOLLY_MIN = -40;
           shipType: string | null,
           variant: PlaybackIconVariant,
         ): HTMLImageElement | null =>
-          shipIconMap.get(`${variant}:${shipTypeClass(shipType)}`) ?? null;
+          // Unknown WG types fall back to the battleship face — the same
+          // fallback the holo registry applies, so the clip never drops a
+          // slot the live HUD would draw.
+          shipIconMap.get(`${variant}:${shipTypeClass(shipType) || "battleship"}`) ?? null;
         const result = await renderPlaybackExport({
           format: s.format,
           fps: s.fps,
@@ -3394,7 +3405,6 @@ const RECORDED_DOLLY_MIN = -40;
                 capturing: !!c.capturing,
                 contested: !!c.contested,
                 captureSide: c.captureSide ?? undefined,
-                etaSeconds: c.etaSeconds ?? null,
               })),
               ships: sb.ships.map((sh) => ({
                 role: sh.role === "enemy" ? ("enemy" as const) : ("ally" as const),
@@ -3885,6 +3895,7 @@ const RECORDED_DOLLY_MIN = -40;
         ) : null}
         {props.replayPath ? (
           <>
+          <div class="holo-map__transport">
           <div class="holo-map__controls">
           {/* Tactical dock: the toolbar + timeline teleport here when the
               board is on — the playback bar's "tall form", with the map
@@ -4083,6 +4094,7 @@ const RECORDED_DOLLY_MIN = -40;
               </button>
             </div>
           ) : null}
+          </div>
           <HoloExportModal
             modelValue={exportOpen.value}
             onUpdate:modelValue={(v: boolean) => { exportOpen.value = v; }}

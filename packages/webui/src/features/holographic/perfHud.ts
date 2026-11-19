@@ -85,8 +85,11 @@ import { t as i18nT } from "@/i18n";
 const WINDOW_MS = 2000;
 /** Overlay refresh cadence (text only — never the scene). */
 const REPORT_MS = 500;
-/** Opacity while the pointer rests on the float — a big dim, not a hide. */
-export const PERF_HUD_HOVER_OPACITY = 0.15;
+/** Opacity while the pointer rests on the float — a big dim, not a hide.
+ *  The section toggle row lives IN the card (the multi-select button
+ *  group), so the dim has to keep buttons legible and clickable: 0.15
+ *  (the old stats-only dim) rendered them as ghosts under the pointer. */
+export const PERF_HUD_HOVER_OPACITY = 0.4;
 
 /**
  * Fixed card width, applied to the slot root. Fixed so toggling a section

@@ -235,7 +235,6 @@ export interface PlaybackCapChip {
   /** The side ACCRUING the capture — the progress ring's colour (the
    *  scorebar's --holo-captureSide rule); falls back to the owner. */
   captureSide?: "ally" | "enemy";
-  etaSeconds?: number | null;
 }
 
 /** One ship-icon slot of the header strip (the scorebar's HoloShip, cut
@@ -316,8 +315,8 @@ function slotVariant(role: "ally" | "enemy", dead: boolean): PlaybackIconVariant
 }
 
 /** Draw the header band in LOGICAL units across the WHOLE composition
- *  width: the app\u2019s HoloScorebar replicated on canvas \u2014 the grey glass
- *  pill (ally score \u00b7 cap chips \u00b7 clock \u00b7 enemy score) over the game-HUD
+ *  width: the app’s HoloScorebar replicated on canvas — the grey glass
+ *  pill (ally score · cap chips · clock · enemy score) over the game-HUD
  *  ship-icon strip (allies left, enemies right, sunk greyed, hurt hulls
  *  carry the thin team-coloured bar). `shipIconFor` resolves the
  *  preloaded class icons; a null image skips the slot (broken-image
@@ -336,7 +335,7 @@ export function drawPlaybackHeader(
   const pillH = 44;
   const pillY = 6;
   const pillCy = pillY + pillH / 2;
-  // \u2500\u2500 Pill content metrics \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // ── Pill content metrics ─────────────────────────────────────
   const chipSize = 26;
   const chipGap = 6;
   const groupGap = 24;
@@ -346,6 +345,7 @@ export function drawPlaybackHeader(
   const scoreW = (s: number): number => g.measureText(String(s)).width;
   const chips = data.caps.slice(0, 5);
   const capsW = chips.length * chipSize + Math.max(0, chips.length - 1) * chipGap;
+  // The clock measures in its own mono face (set AFTER the score widths).
   g.font = font(20, 700, true);
   const clockW = g.measureText(data.clock).width;
   const showScores = data.scoreAlly != null && data.scoreEnemy != null;
@@ -359,16 +359,16 @@ export function drawPlaybackHeader(
   const padX = 22;
   const pillW = contentW + padX * 2;
   const pillX = (w - pillW) / 2;
-  // \u2500\u2500 Pill chrome (the scorebar\u2019s grey glass) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // ── Pill chrome (the scorebar’s grey glass) ──────────────────────────
   g.beginPath();
   g.roundRect(pillX, pillY, pillW, pillH, 18);
-  g.fillStyle = "rgba(96, 108, 126, 0.42)";
+  g.fillStyle = rgba(palette.surface, 0.6);
   g.fill();
-  g.strokeStyle = "rgba(255, 255, 255, 0.22)";
+  g.strokeStyle = rgba(palette.text, 0.22);
   g.lineWidth = 1;
   g.stroke();
-  // \u2500\u2500 Pill content, flowing left\u2192right (explicit mirroring: no flipped
-  //    transform, or the glyphs themselves would mirror) \u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // ── Pill content, flowing left→right (explicit mirroring: no flipped
+  //    transform, or the glyphs themselves would mirror) ───────
   let cx = pillX + padX;
   const scoreBlock = (score: number, ink: string, side: "ally" | "enemy"): void => {
     const right = side === "enemy";
@@ -387,8 +387,8 @@ export function drawPlaybackHeader(
   if (showScores) scoreBlock(data.scoreAlly!, ALLY_INK, "ally");
   if (showScores) cx += allyScoreW + groupGap;
   // Cap chips: idle = square stroke (roomier letter), capturing/
-  // contested = the diamond with the capture-side progress ring \u2014 the
-  // scorebar\u2019s CapChip geometry, path-identical.
+  // contested = the diamond with the capture-side progress ring — the
+  // scorebar’s CapChip geometry, path-identical.
   for (const cap of chips) {
     const ink = ownerInk(cap.owner);
     const ringInk = ownerInk(cap.captureSide ?? cap.owner);
@@ -412,12 +412,13 @@ export function drawPlaybackHeader(
       g.strokeStyle = rgba(ink, 0.95);
       g.lineWidth = 2.4 * k;
       g.stroke(diamond);
-      // Progress ring: the SAME path, wider stroke, dash segment from
-      // the top corner (covers the outline exactly).
+      // Progress ring: the SAME path, dash segment from the top corner —
+      // the scorebar's single-uniform-ring rule (outline and ring share
+      // one stroke width, so the ring reads as the outline lighting up).
       const progress = Math.min(1, Math.max(0, cap.progress));
       const ring = 4 * Math.hypot(13.5 * k, 13.5 * k);
       g.strokeStyle = rgba(ringInk, 0.95);
-      g.lineWidth = 3.2 * k;
+      g.lineWidth = 2.4 * k;
       g.setLineDash([ring * progress, ring]);
       g.stroke(diamond);
       g.setLineDash([]);
@@ -444,7 +445,7 @@ export function drawPlaybackHeader(
   }
   if (chips.length) cx += groupGap - chipGap;
   // Clock: the one export-only addition to the pill (the app reads the
-  // time from the transport bar; a clip has neither) \u2014 mono, bright.
+  // time from the transport bar; a clip has neither) — mono, bright.
   g.font = font(20, 700, true);
   g.fillStyle = rgba(palette.text, 0.92);
   g.textAlign = "left";
@@ -454,7 +455,7 @@ export function drawPlaybackHeader(
     cx += groupGap;
     scoreBlock(data.scoreEnemy!, ENEMY_INK, "enemy");
   }
-  // \u2500\u2500 Ship-icon strip row (the scorebar\u2019s __ships) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+  // ── Ship-icon strip row (the scorebar’s __ships) ───────────────
   const stripTop = pillY + pillH + 8;
   g.fillStyle = rgba(palette.text, 0.12);
   g.fillRect(0, stripTop, w, 1);
@@ -483,10 +484,24 @@ export function drawPlaybackHeader(
         g.globalAlpha = 0.55;
         g.filter = "grayscale(0.85)";
       }
-      g.drawImage(img, ix, stripCy - iconSize / 2, iconSize, iconSize);
+      // Letterbox into the 15px slot (object-fit: contain, the DOM
+      // scorebar's rule) — the class art is a wide glyph, a square draw
+      // would stretch it ~1.8x vertically.
+      const natW = img.naturalWidth || iconSize;
+      const natH = img.naturalHeight || iconSize;
+      const fit = Math.min(iconSize / natW, iconSize / natH);
+      const dw = natW * fit;
+      const dh = natH * fit;
+      g.drawImage(
+        img,
+        ix + (iconSize - dw) / 2,
+        stripCy - iconSize / 2 + (iconSize - dh) / 2,
+        dw,
+        dh,
+      );
       g.restore();
       // Hurt-only mini bar under the icon (full hulls hide it, sunk slots
-      // read through the greyed icon \u2014 the game strip\u2019s rule).
+      // read through the greyed icon — the game strip’s rule).
       if (hurt) {
         g.fillStyle = rgba(palette.text, 0.18);
         g.fillRect(ix, stripCy + iconSize / 2 + 2, iconSize, 2.5);
