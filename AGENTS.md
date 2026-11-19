@@ -365,10 +365,11 @@ Before submitting, the relevant subset of `just lint` (or scoped
      since the 2026-11-06 trigger policy — it no longer runs on the pull
      request itself; format is held by review plus the squash subject.
    - `release.yml` — tag-driven build & release. Its `preflight` job first
-     requires the tagged commit's `ci.yml` run to be green (repository
-     variable `RELEASE_SKIP_PREFLIGHT=true` waives it for an emergency
-     hotfix and records the waiver in the job summary); then build /
-     installers → notes → publish → the signed app digest.
+     requires the tagged commit's `ci-cache.yml` basic check to be green
+     (`ci.yml` itself is dispatch-only under the trigger policy; repository
+     variable `RELEASE_SKIP_PREFLIGHT=true` waives the preflight for an
+     emergency hotfix and records the waiver in the job summary); then
+     build / installers → notes → publish → the signed app digest.
    - `site.yml` — docs / website / worker deployment.
 
 ## 9. Large Download Discipline (mandatory)

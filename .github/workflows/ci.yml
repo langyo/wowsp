@@ -1,13 +1,10 @@
 name: CI
 
 on:
-  # Post-merge only (the 2026-11-06 trigger policy: CI runs after a squash
-  # merge lands, never on the pull request itself — ci-cache.yml shares the
-  # shape). The master push run is also what the release pipeline's
-  # preflight waits for when a v* tag lands on the same commit; with no
-  # trigger at all every release stalls out its preflight deadline.
-  push:
-    branches: [master]
+  # Manual only (the 2026-11-06 trigger policy, R2: compile/test workflows
+  # never ride push). The release pipeline no longer polls this workflow —
+  # its preflight watches ci-cache.yml (the post-merge basic check) instead,
+  # so a tag can still release without a manually dispatched CI run.
   workflow_dispatch:
 
 # concurrency + cancel-in-progress drops superseded runs for the same ref
