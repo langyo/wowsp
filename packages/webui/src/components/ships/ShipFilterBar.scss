@@ -163,6 +163,17 @@
   flex: 0 0 auto;
 }
 
+/* The migrated pure facets' trigger is hikari's HkFilterChip, which
+   paints a ChevronDown caret beside the label unconditionally — the thin
+   prop contract exposes no way to drop it. In this strip the caret is
+   the odd one out: the bespoke chips carry no affordance arrow at all
+   (theirs mark an ENGAGED sort and render only while sorting), so the
+   facets drop it too and the row reads as one family. Scoped to the bar:
+   a future HkFilterChip consumer elsewhere keeps the library default. */
+.ship-filter-bar .hk-filter-chip-caret {
+  display: none;
+}
+
 .ship-filter-bar__summary {
   /* Right-pinning is __meta's job now — the span just opens that group. */
   color: rgb(var(--color-muted));
@@ -189,6 +200,19 @@
    rule; a future selector change here silently alters the picker. */
 .hk-popover-panel:not(.hk-is-sheet) .ship-filter-bar__pop {
   max-width: min(92vw, 640px);
+}
+
+/* The facet panels are HkFilterChip's OWN popover, which passes no
+   `padding` prop — the glass chrome keeps its 4px menu inset while every
+   bespoke panel beside it rides the lg step (`padding="lg"`, the shared
+   --hk-pad token), so the facet popups read cramped against their pills.
+   A panel carries no inline --hk-pad while the prop is unset, so a
+   stylesheet var lands cleanly; `:has()` reaches the body-teleported
+   panel without a host wrapper (HkFilterChip renders webui's only
+   .hk-filter-chip-body) and covers the phone sheet too — the sheet's
+   header/bottom geometry reads the same token. */
+.hk-popover-panel:has(.hk-filter-chip-body) {
+  --hk-pad: var(--space-16, 1rem);
 }
 
 .ship-filter-bar__pop-head {

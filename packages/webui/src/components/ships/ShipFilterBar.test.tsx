@@ -284,8 +284,13 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    // The pure facets are hikari HkFilterChip triggers: closed, carrying
-    // the caret only — no picked tint, no direction arrow anywhere.
+    // The pure facets are hikari HkFilterChip triggers: closed, no picked
+    // tint, no direction arrow anywhere. The library's caret glyph stays in
+    // the markup (happy-dom applies no external stylesheets) — the bar's
+    // stylesheet
+    // hides it, and the pair (this class pin + the SCSS rule in the facet
+    // chrome styles test) is the contract: rename either side and this
+    // suite fails.
     for (const key of ["type", "nation", "mode"]) {
       const c = hkChip(wrapper, key);
       expect(c.classes()).toContain("hk-filter-chip");
