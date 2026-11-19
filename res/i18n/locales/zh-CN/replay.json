@@ -606,7 +606,8 @@
     "cancelRun": "取消",
     "unsupported": "当前环境不支持视频编码",
     "toastEmpty": "没有可导出的时间范围",
-    "saved": "回放已保存到 {path}"
+    "saved": "回放已保存到 {path}",
+    "savedCopied": "已保存到 {path}，文件已复制到剪贴板，可直接粘贴发送"
   },
   "chatLog": "聊天记录",
   "chat": {

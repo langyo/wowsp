@@ -133,15 +133,23 @@ function browserDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+/** One completed save: where the file landed and whether it exists as a
+ *  NATIVE file (dialog path) — only a native file can ride the follow-up
+ *  clipboard hand-off (the replay clip's paste-into-chat copy); a
+ *  browser-download fallback names a file the shell has never seen. */
+export interface SavedExport {
+  path: string;
+  native: boolean;
+}
+
 /** Save through the native dialog (desktop) or a browser download fallback.
- *  Returns the saved path / fallback filename, or null when the user
- *  cancelled the dialog. */
+ *  Returns the save result, or null when the user cancelled the dialog. */
 export async function saveExportBlob(
   blob: Blob,
   defaultName: string,
   filterLabel: string,
   ext: string,
-): Promise<string | null> {
+): Promise<SavedExport | null> {
   let path: string | null = null;
   let hostFallback = false;
   try {
@@ -157,16 +165,16 @@ export async function saveExportBlob(
       defaultName = `${defaultName}.${ext}`;
     }
     browserDownload(blob, defaultName);
-    return defaultName;
+    return { path: defaultName, native: false };
   }
   const bytes = new Uint8Array(await blob.arrayBuffer());
   try {
     await api.saveExportBytes(path, bytes);
   } catch {
     browserDownload(blob, defaultName);
-    return defaultName;
+    return { path: defaultName, native: false };
   }
-  return path;
+  return { path, native: true };
 }
 
 const RECORDER_MIMES: { mime: string; ext: "mp4" | "webm" }[] = [
@@ -231,6 +239,12 @@ export interface OfflineRenderOptions {
    *  replay-playback export's speed multiplier) pass their own uniform
    * grid (i / fps) so the clip plays fast instead of long. */
   frameTimestamps?: number[];
+  /** Preferred video codecs, best first (mediabunny VideoCodec ids).
+   *  Defaults to the board's MP4-first ladder (avc → vp9); hosts with a
+   *  different compatibility contract (the replay clip ships VP8-first)
+   *  pass their own order. The first entry the host can actually encode
+   *  wins; its container follows extForCodec. */
+  codecOrder?: VideoCodec[];
   onProgress?: (done: number, total: number) => void;
   cancelToken?: { cancelled: boolean };
 }
@@ -243,16 +257,29 @@ export interface OfflineRenderResult {
   cancelled: boolean;
 }
 
-/** Preferred codec/format ladder for offline exports: H.264 MP4 first (plays
- *  everywhere), VP9 WebM as the fallback. Returns null when WebCodecs can't
- *  encode either (caller falls back to the realtime MediaRecorder path). */
+/** The mux container a codec lands in: H.264 rides MP4 (fastStart seeks);
+ *  every other codec the encoders here produce — VP8/VP9 — rides WebM. */
+export function extForCodec(codec: VideoCodec): "mp4" | "webm" {
+  return codec === "avc" ? "mp4" : "webm";
+}
+
+/** Preferred codec/format ladder for offline exports. The DEFAULT is the
+ *  board's MP4-first contract (H.264 plays everywhere, VP9 WebM as the
+ *  fallback); callers pass `codecOrder` to reorder it — the replay clip
+ *  ships VP8-first (user-requested compatibility contract). Returns null
+ *  when WebCodecs can't encode any entry (caller falls back to the
+ *  realtime MediaRecorder path). */
 async function pickOfflineFormat(
   width: number,
   height: number,
+  codecOrder: VideoCodec[] = ["avc", "vp9"],
 ): Promise<{ codec: VideoCodec; ext: "mp4" | "webm" } | null> {
   if (typeof VideoEncoder === "undefined") return null;
-  if (await canEncodeVideo("avc", { width, height })) return { codec: "avc", ext: "mp4" };
-  if (await canEncodeVideo("vp9", { width, height })) return { codec: "vp9", ext: "webm" };
+  for (const codec of codecOrder) {
+    if (await canEncodeVideo(codec, { width, height })) {
+      return { codec, ext: extForCodec(codec) };
+    }
+  }
   return null;
 }
 
@@ -262,7 +289,7 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
   const width = opts.width ?? opts.size ?? 0;
   const height = opts.height ?? opts.size ?? 0;
   if (width <= 0 || height <= 0) return null;
-  const picked = await pickOfflineFormat(width, height);
+  const picked = await pickOfflineFormat(width, height, opts.codecOrder);
   if (!picked) return null;
 
   const canvas = document.createElement("canvas");

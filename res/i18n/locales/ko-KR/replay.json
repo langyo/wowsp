@@ -606,7 +606,8 @@
     "cancelRun": "취소",
     "unsupported": "이 환경에서는 동영상 인코딩을 지원하지 않습니다",
     "toastEmpty": "내보낼 시간 범위가 없습니다",
-    "saved": "리플레이가 {path}에 저장되었습니다"
+    "saved": "리플레이가 {path}에 저장되었습니다",
+    "savedCopied": "{path}에 저장했으며 파일이 클립보드에 복사되었습니다 — 바로 붙여넣을 수 있어요"
   },
   "chatLog": "채팅 기록",
   "chat": {

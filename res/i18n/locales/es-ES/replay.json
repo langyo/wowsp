@@ -606,7 +606,8 @@
     "cancelRun": "Cancelar",
     "unsupported": "La codificación de vídeo no está disponible aquí",
     "toastEmpty": "No hay un intervalo que exportar",
-    "saved": "Repetición guardada en {path}"
+    "saved": "Repetición guardada en {path}",
+    "savedCopied": "Guardado en {path} — archivo copiado al portapapeles, listo para pegar"
   },
   "chatLog": "Chat de batalla",
   "chat": {

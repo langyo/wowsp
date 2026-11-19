@@ -1914,7 +1914,7 @@ export default defineComponent({
         );
         const blob = await canvasToBlob(canvas, s.format === "webp" ? "image/webp" : "image/png");
         const saved = await saveExportBlob(blob, defaultName(s.format), "Image", s.format);
-        if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved }));
+        if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved.path }));
         // Only a crop export consumes the crop — a full-view snapshot keeps
         // the pending region for further cropped exports.
         if (crop != null) pendingRegion.value = null;
@@ -1980,7 +1980,7 @@ export default defineComponent({
           return;
         }
         const saved = await saveExportBlob(blob, defaultName(rec.ext), "Video", rec.ext);
-        if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved }));
+        if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved.path }));
       } catch (e) {
         toast.error(String((e as Error)?.message ?? e));
       } finally {
@@ -2125,7 +2125,7 @@ export default defineComponent({
           // User cancelled before anything encoded — stay quiet.
         } else if (result.blob.size > 0) {
           const saved = await saveExportBlob(result.blob, defaultName(result.ext), "Video", result.ext);
-          if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved }));
+          if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved.path }));
         } else {
           toast.info(i18nT("replay.tactical.toast.empty"));
         }
@@ -2179,7 +2179,7 @@ export default defineComponent({
       const blob = new Blob([json], { type: "application/json" });
       void saveExportBlob(blob, `wowsp-tactical-${props.mapTag || "map"}.json`, "JSON", "json").then(
         (saved) => {
-          if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved }));
+          if (saved) toast.info(i18nT("replay.tactical.toast.saved", { path: saved.path }));
         },
       );
     }

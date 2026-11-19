@@ -349,6 +349,11 @@ export async function renderPlaybackExport(
       width: layout.width,
       height: layout.height,
       frameTimestamps: pts,
+      // VP8 first (user-requested contract): clips must decode anywhere —
+      // old chat previews, browser <video> without H.264 licensing baggage
+      // — and transcode cheap. VP9/AVC stay behind it as graceful
+      // fallbacks when a host lacks the VP8 encoder.
+      codecOrder: ["vp8", "vp9", "avc"],
       paintAt: (t, g) => {
         // The exporter's canvas is our canvas — compose straight into it.
         composeFrame(g, layout, req, t);

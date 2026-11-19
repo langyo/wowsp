@@ -80,6 +80,9 @@ export const RPC = {
   // import path).
   get_replay_cap_layout: "get_replay_cap_layout",
   copy_image_to_clipboard: "copy_image_to_clipboard",
+  // Saved replay clip → clipboard as a FILE (CF_HDROP): the recorded
+  // MP4/WebM/GIF pastes straight into a chat as an attachment.
+  copy_file_to_clipboard: "copy_file_to_clipboard",
   read_temp_arena_info: "read_temp_arena_info",
   report_overlay_paint: "report_overlay_paint",
   report_overlay_page_error: "report_overlay_page_error",
