@@ -140,8 +140,8 @@ importers:
   packages/webui:
     dependencies:
       '@celestia-island/hikari':
-        specifier: ^0.55.327
-        version: 0.55.393(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
+        specifier: ^0.55.432
+        version: 0.55.432(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))
       '@lucide/vue':
         specifier: ^1
         version: 1.61.0(vue@3.5.43(typescript@7.0.2))
@@ -414,8 +414,8 @@ packages:
   '@bytecodealliance/preview2-shim@0.31.1':
     resolution: {integrity: sha512-uDVB/IhExDW70TquqVx2l2Q5uwwpH7r5M2ltYccux+0YxXBm4TvqyNHTyYxcoLBsoAar28o7uZSj7GOKVx9uvA==}
 
-  '@celestia-island/hikari@0.55.393':
-    resolution: {integrity: sha512-LViXp0087sH46Yx4DIVhurZctqB5PVlnXO3cxsMjR1gQD1owf9fEIT4RPWl8OsbimiXpvTf3QOdjX/K8+du9fQ==}
+  '@celestia-island/hikari@0.55.399':
+    resolution: {integrity: sha512-b2L+gmqC6rMob//OMMufNCiO5ignmY2UByr7OxAGa4jh0U+Sp3RAmm2Du0ZI2Dl/PC3IrI2KjMbysMg/33N+7g==}
     peerDependencies:
       '@types/three': ^0.185
       pinia: ^3
@@ -425,8 +425,8 @@ packages:
       pinia:
         optional: true
 
-  '@celestia-island/hikari@0.55.399':
-    resolution: {integrity: sha512-b2L+gmqC6rMob//OMMufNCiO5ignmY2UByr7OxAGa4jh0U+Sp3RAmm2Du0ZI2Dl/PC3IrI2KjMbysMg/33N+7g==}
+  '@celestia-island/hikari@0.55.432':
+    resolution: {integrity: sha512-H1XBfHRmPZ2mtYeCdMfuFvlK5ukvoSe/WhMe3GEZ8p1BJK28jijrmI1ys1pfIxcs72RZOnTrg7KkHLj6XVj18g==}
     peerDependencies:
       '@types/three': ^0.185
       pinia: ^3
@@ -2144,9 +2144,6 @@ packages:
     resolution: {integrity: sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==}
     engines: {node: '>=8'}
 
-  dompurify@3.4.17:
-    resolution: {integrity: sha512-B/pSlYVHQ58kqISD/yDjuJ1yfzI34m1gF4lAod2bwSRhiN4K5Cl3H8Af7hqB2PmTL911tdEudnnXn5FnhRoz0w==}
-
   dompurify@3.4.18:
     resolution: {integrity: sha512-ofe3wI/uNm68HInABYFJYqQxRw1EaKAjNdrFVKqjUY+UZurvNd2L/HuQe097s/4RivWiZyP6tT7aoT8atjfhwg==}
 
@@ -3450,22 +3447,6 @@ snapshots:
     dependencies:
       '@bytecodealliance/jco-node-fs': 0.3.2
 
-  '@celestia-island/hikari@0.55.393(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
-    dependencies:
-      '@bytecodealliance/preview2-shim': 0.31.1
-      '@celestia-island/tairitsu-transport': 0.2.0
-      '@types/three': 0.186.0
-      '@xterm/addon-fit': 0.11.0
-      '@xterm/addon-image': 0.10.0-beta.332(@xterm/xterm@6.1.0-beta.337)
-      '@xterm/xterm': 6.1.0-beta.337
-      dompurify: 3.4.17
-      lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
-      marked: 18.2.0
-      three: 0.186.1
-      vue: 3.5.43(typescript@7.0.2)
-    optionalDependencies:
-      pinia: 4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2))
-
   '@celestia-island/hikari@0.55.399(@types/three@0.186.0)(three@0.185.1)(vue@3.5.43(typescript@7.0.2))':
     dependencies:
       '@bytecodealliance/preview2-shim': 0.31.1
@@ -3493,6 +3474,22 @@ snapshots:
       marked: 18.2.0
       three: 0.186.1
       vue: 3.5.43(typescript@7.0.2)
+
+  '@celestia-island/hikari@0.55.432(@types/three@0.186.0)(pinia@4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2)))(three@0.186.1)(vue@3.5.43(typescript@7.0.2))':
+    dependencies:
+      '@bytecodealliance/preview2-shim': 0.31.1
+      '@celestia-island/tairitsu-transport': 0.2.0
+      '@types/three': 0.186.0
+      '@xterm/addon-fit': 0.11.0
+      '@xterm/addon-image': 0.10.0-beta.332(@xterm/xterm@6.1.0-beta.337)
+      '@xterm/xterm': 6.1.0-beta.337
+      dompurify: 3.4.18
+      lucide-vue-next: 1.0.0(vue@3.5.43(typescript@7.0.2))
+      marked: 18.2.0
+      three: 0.186.1
+      vue: 3.5.43(typescript@7.0.2)
+    optionalDependencies:
+      pinia: 4.1.0(@vue/devtools-api@8.2.1)(typescript@7.0.2)(vue@3.5.43(typescript@7.0.2))
 
   '@celestia-island/tairitsu-transport@0.2.0': {}
 
@@ -4838,10 +4835,6 @@ snapshots:
   destr@2.0.5: {}
 
   detect-libc@2.1.2: {}
-
-  dompurify@3.4.17:
-    optionalDependencies:
-      '@types/trusted-types': 2.0.7
 
   dompurify@3.4.18:
     optionalDependencies:

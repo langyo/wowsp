@@ -52,12 +52,12 @@
  *    plain clicks still select), and the extracted pan helpers (wheel
  *    delta normalizer, 5px pan threshold) hold their contracts.
  *
- * The popups render through hikari HkPopover: the bespoke panels teleport
- * to document.body as .ship-filter-bar__pop, the migrated pure facets'
- * pill groups land in the same overlay root (.hk-popover-panel carrying
- * HkFilterChip's .hk-filter-chip-body > .hk-pill-group) — all body-scoped
- * queries, and each open/close is polled to let the popover machine's
- * timer-driven enter/leave settle.
+ * Every popup is HkFilterChip's own (all six categories ride it): the
+ * panels teleport to document.body as .hk-popover-panel bodies carrying
+ * .hk-filter-chip-body (option categories: the .hk-pill-group pill track,
+ * pill[0] the all-pill; tier: the corridor slider slot body) — all
+ * body-scoped queries, and each open/close is polled to let the popover
+ * machine's timer-driven enter/leave settle.
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { createPinia } from "pinia";
@@ -171,7 +171,7 @@ const lastState = (wrapper: ReturnType<typeof mountBar>): FilterState => {
 const order = (wrapper: ReturnType<typeof mountBar>) =>
   lastState(wrapper).ships.map((s) => s.shipId);
 const chip = (wrapper: ReturnType<typeof mountBar>, key: string) =>
-  wrapper.find(`[data-chip="${key}"]`);
+  wrapper.find(`[data-chip="${key}"] .hk-filter-chip`);
 
 describe("ShipFilterBar chip indent", () => {
   it("measures the bar offset in the root zoom's local space", async () => {
@@ -217,18 +217,20 @@ describe("ShipFilterBar chip indent", () => {
 /** Popup options follow the category's option order: index 0 is 全部…. The
  *  popups teleport to body (HkPopover), so they are queried there. */
 const bodyPops = () => [
-  ...document.body.querySelectorAll<HTMLElement>(".ship-filter-bar__pop"),
+  ...document.body.querySelectorAll<HTMLElement>(".hk-popover-panel .hk-filter-chip-body"),
 ];
 const popOpts = (): DOMWrapper<HTMLElement>[] =>
   [
     ...document.body.querySelectorAll<HTMLElement>(
-      ".ship-filter-bar__pop .ship-filter-bar__opt",
+      ".hk-popover-panel .hk-pill-group .hk-pill-group-pill",
     ),
   ].map((el) => new DOMWrapper(el));
 const activeOpts = (): DOMWrapper<HTMLElement>[] =>
-  [...document.body.querySelectorAll<HTMLElement>(".ship-filter-bar__opt[data-active]")].map(
-    (el) => new DOMWrapper(el),
-  );
+  [
+    ...document.body.querySelectorAll<HTMLElement>(
+      ".hk-popover-panel .hk-pill-group .hk-pill-group-pill[data-active]",
+    ),
+  ].map((el) => new DOMWrapper(el));
 
 /** The migrated pure facets render hikari HkFilterChip: the chip trigger
  *  (.hk-filter-chip — aria-expanded, the --on picked tint) sits inside the
@@ -284,26 +286,26 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    // The pure facets are hikari HkFilterChip triggers: closed, no picked
-    // tint, no direction arrow anywhere. The library's caret glyph stays in
-    // the markup (happy-dom applies no external stylesheets) — the bar's
-    // stylesheet
-    // hides it, and the pair (this class pin + the SCSS rule in the facet
-    // chrome styles test) is the contract: rename either side and this
-    // suite fails.
+    // All six chips are hikari HkFilterChip triggers: closed, no picked
+    // tint, no direction arrow anywhere — and the library's trigger
+    // renders NO caret at all (hikari 0.55.431 retired it: the facet chip
+    // reads as the same solid-surface family as every chip in the strip;
+    // disclosure rides aria-expanded).
     for (const key of ["type", "nation", "mode"]) {
       const c = hkChip(wrapper, key);
       expect(c.classes()).toContain("hk-filter-chip");
       expect(c.classes()).not.toContain("hk-filter-chip--on");
       expect(c.attributes("aria-haspopup")).toBe("dialog");
       expect(c.attributes("aria-expanded")).toBe("false");
-      expect(c.find(".hk-filter-chip-caret").exists()).toBe(true);
+      expect(c.find(".hk-filter-chip-caret").exists()).toBe(false);
       expect(c.find(".ship-filter-bar__dir").exists()).toBe(false);
       expect(c.find(".lucide-arrow-down").exists()).toBe(false);
     }
-    // The sort categories keep the bespoke chips in the gray 全部… state.
+    // The sort categories wear the same hikari chrome in the gray 全部…
+    // state (neither the picked --on tint nor the intermediate --sort).
     for (const key of ["tier", "winrate", "battles"]) {
-      expect(chip(wrapper, key).classes()).toContain("ship-filter-bar__chip--all");
+      expect(chip(wrapper, key).classes()).not.toContain("hk-filter-chip--on");
+      expect(chip(wrapper, key).classes()).not.toContain("hk-filter-chip--sort");
       expect(chip(wrapper, key).find(".ship-filter-bar__dir").exists()).toBe(false);
     }
     // Defaults keep the historical view: battles descending, stable ties.
@@ -321,7 +323,7 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
 
     // Chip turns active; filter applied; descending → higher winrate first.
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(wrapper, "winrate").classes()).toContain("hk-filter-chip--on");
     expect(order(wrapper)).toEqual([3, 1, 2]);
 
     // Re-click the 50–60% option → the SHARED flag flips to ascending.
@@ -340,7 +342,8 @@ describe("ShipFilterBar chips", () => {
     // 全部胜率 (option 0) resets the chip to the gray state.
     await popOpts()[0]!.trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--on");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--sort");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
     expect(activeOpts().length).toBe(1); // only 全部胜率 itself
   });
@@ -358,7 +361,7 @@ describe("ShipFilterBar chips", () => {
     // chip keeps filtering nothing — the intermediate --sort style.
     await popOpts()[0]!.trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--sort");
+    expect(chip(wrapper, "winrate").classes()).toContain("hk-filter-chip--sort");
     expect(chip(wrapper, "winrate").find(".lucide-arrow-down").exists()).toBe(true);
     expect(order(wrapper)).toEqual([5, 3, 1, 2, 4]);
 
@@ -372,7 +375,8 @@ describe("ShipFilterBar chips", () => {
     // gray state, drops its arrow and the historical battles-desc order.
     await popOpts()[0]!.trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--on");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--sort");
     expect(chip(wrapper, "winrate").find(".ship-filter-bar__dir").exists()).toBe(false);
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
 
@@ -386,14 +390,15 @@ describe("ShipFilterBar chips", () => {
     // and adds the filter on top.
     await popOpts()[3]!.trigger("click"); // 50–60%
     await flushPromises();
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(wrapper, "winrate").classes()).toContain("hk-filter-chip--on");
     expect(order(wrapper)).toEqual([3, 1, 2]);
 
     // 全部胜率 with a selection resets the category completely — the
     // all-state sort goes off with the filter.
     await popOpts()[0]!.trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--on");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--sort");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
   });
 
@@ -401,7 +406,7 @@ describe("ShipFilterBar chips", () => {
   const bodyEl = (sel: string) =>
     new DOMWrapper(document.body.querySelector(sel) as HTMLElement);
   const tierThumb = (which: "lo" | "hi") =>
-    bodyEl(`.ship-filter-bar__pop .range-slider__thumb[data-thumb="${which}"]`);
+    bodyEl(`.hk-filter-chip-body .range-slider__thumb[data-thumb="${which}"]`);
 
   it("renders the tier popup as the corridor slider with the ★ tick rail", async () => {
     const wrapper = mountBar();
@@ -412,17 +417,17 @@ describe("ShipFilterBar chips", () => {
 
     // The shared slider mounts inside the popup: 11 stops, the supership
     // star on the right end, roman numerals elsewhere.
-    expect(document.body.querySelector(".ship-filter-bar__pop .tier-range")).not.toBeNull();
+    expect(document.body.querySelector(".hk-filter-chip-body .tier-range")).not.toBeNull();
     expect(
-      document.body.querySelectorAll(".ship-filter-bar__pop .range-slider__label").length,
+      document.body.querySelectorAll(".hk-filter-chip-body .range-slider__label").length,
     ).toBe(11);
-    expect(bodyEl(".ship-filter-bar__pop .tier-range__star").text()).toBe("★");
-    const labels = [...document.body.querySelectorAll(".ship-filter-bar__pop .range-slider__label")];
+    expect(bodyEl(".hk-filter-chip-body .tier-range__star").text()).toBe("★");
+    const labels = [...document.body.querySelectorAll(".hk-filter-chip-body .range-slider__label")];
     expect(labels[0]!.textContent).toBe("I");
     expect(labels[9]!.textContent).toBe("X");
     // No option pills in the tier popup — only the 全部… action row.
     expect(
-      document.body.querySelectorAll(".ship-filter-bar__pop .ship-filter-bar__opt").length,
+      document.body.querySelectorAll(".hk-filter-chip-body .ship-filter-bar__opt").length,
     ).toBe(1);
     // Idle full range: no flip toggle while the category does not sort.
     expect(document.body.querySelector("[data-tier-flip]")).toBeNull();
@@ -442,7 +447,7 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
 
     // Chip wears the corridor as its label and turns active.
-    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(wrapper, "tier").classes()).toContain("hk-filter-chip--on");
     expect(chip(wrapper, "tier").text()).toContain("VI");
     expect(chip(wrapper, "tier").text()).toContain("★");
     // All five ships sit in tiers 6..10 — the corridor sorts tier desc:
@@ -461,7 +466,8 @@ describe("ShipFilterBar chips", () => {
     // 全部等级 resets the whole category — gray chip, historical order.
     await bodyEl("[data-tier-all]").trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "tier").classes()).not.toContain("hk-filter-chip--on");
+    expect(chip(wrapper, "tier").classes()).not.toContain("hk-filter-chip--sort");
     expect(chip(wrapper, "tier").text()).not.toContain("VI");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
   });
@@ -476,7 +482,7 @@ describe("ShipFilterBar chips", () => {
     // Engage in the canonical direction (tier desc) from the idle state.
     await bodyEl("[data-tier-all]").trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--sort");
+    expect(chip(wrapper, "tier").classes()).toContain("hk-filter-chip--sort");
     expect(chip(wrapper, "tier").find(".lucide-arrow-down").exists()).toBe(true);
     expect(order(wrapper)).toEqual([5, 4, 2, 1, 3]);
 
@@ -486,7 +492,8 @@ describe("ShipFilterBar chips", () => {
     expect(order(wrapper)).toEqual([3, 1, 2, 5, 4]);
     await bodyEl("[data-tier-all]").trigger("click");
     await flushPromises();
-    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "tier").classes()).not.toContain("hk-filter-chip--on");
+    expect(chip(wrapper, "tier").classes()).not.toContain("hk-filter-chip--sort");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
   });
 
@@ -506,7 +513,7 @@ describe("ShipFilterBar chips", () => {
 
     const second = mountBar();
     await flushPromises();
-    expect(chip(second, "tier").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(second, "tier").classes()).toContain("hk-filter-chip--on");
     expect(order(second)).toEqual([1, 3]);
     second.unmount();
   });
@@ -793,7 +800,7 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
 
     // Hull of {6,7} ∪ {10,11} → corridor [6, 11], chip "VI – ★".
-    expect(chip(wrapper, "tier").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(wrapper, "tier").classes()).toContain("hk-filter-chip--on");
     expect(chip(wrapper, "tier").text()).toContain("VI");
     expect(chip(wrapper, "tier").text()).toContain("★");
     // Every test ship (T6..T10) passes; the engaged tier sort reads desc.
@@ -824,7 +831,7 @@ describe("ShipFilterBar chips", () => {
     const wrapper = mountBar();
     await flushPromises();
 
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--sort");
+    expect(chip(wrapper, "winrate").classes()).toContain("hk-filter-chip--sort");
     expect(chip(wrapper, "winrate").find(".lucide-arrow-up").exists()).toBe(true);
     expect(order(wrapper)).toEqual([4, 2, 1, 3, 5]); // winrate asc
 
@@ -834,7 +841,8 @@ describe("ShipFilterBar chips", () => {
     await flushPromises();
     // The migrated flipped state reads as mid-cycle: first click switches
     // the sort off entirely…
-    expect(chip(wrapper, "winrate").classes()).toContain("ship-filter-bar__chip--all");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--on");
+    expect(chip(wrapper, "winrate").classes()).not.toContain("hk-filter-chip--sort");
     expect(order(wrapper)).toEqual([1, 2, 3, 5, 4]);
     // …and the next engagement starts from the canonical direction again.
     await popOpts()[0]!.trigger("click");
@@ -854,7 +862,7 @@ describe("ShipFilterBar chips", () => {
 
     const second = mountBar();
     await flushPromises();
-    expect(chip(second, "winrate").classes()).toContain("ship-filter-bar__chip--on");
+    expect(chip(second, "winrate").classes()).toContain("hk-filter-chip--on");
     expect(order(second)).toEqual([5]);
     second.unmount();
   });
@@ -953,12 +961,13 @@ describe("ShipFilterBar chips", () => {
     expect(document.body.querySelector(".ship-filter-bar__opts--scroll")).toBeNull();
     expect(document.body.querySelector(".ship-filter-bar__scroll-hint")).toBeNull();
 
-    // A bespoke category keeps its own panel: no pill group, no facet hint.
+    // The tier popup rides the SAME HkFilterChip panel: its body is the
+    // corridor slider slot (no pill group), and the hint line still rides
+    // the facet element.
     await chip(wrapper, "tier").trigger("click");
     await waitPops(1);
-    await waitHkPops(0);
     expect(document.body.querySelector(".hk-pill-group")).toBeNull();
-    expect(document.body.querySelector(".hk-filter-chip-hint")).toBeNull();
+    expect(document.body.querySelector(".hk-filter-chip-hint")?.textContent ?? "").not.toBe("");
 
     // Back to the nation strip: a plain click (no pan movement) still
     // selects — the pan machinery never swallows threshold-free clicks.
