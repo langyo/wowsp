@@ -917,7 +917,8 @@ def expected_build_players(builds):
     return out
 
 
-def check_price_catalog(prices, label, probe, utils, failures):
+def check_price_catalog(prices, label, probe, utils, failures,
+                        expected_phase=None):
     """Assert the price_catalog.json contract for one pass.
 
     planted  — the file must exist after the load-phase dump with the
@@ -926,9 +927,12 @@ def check_price_catalog(prices, label, probe, utils, failures):
                load phase marker, exactly ONE aggregate log line, and the
                one-shot state (done after a single attempt, never
                re-written by the later ticks).
-    deferred — same payload, but it may only land on a later scheduler
-               tick (the login-sync retry): done after exactly three
-               attempts, phase 'battle'.
+    deferred — same payload, but it may only land on a later attempt
+               (the login-sync retry): done after exactly three
+               attempts. The port-lattice pass (port-tick preamble)
+               writes on the 2nd port attempt (phase 'port'); the
+               battle-late pass writes on the late-battle lattice
+               (phase 'battle', via expected_phase).
     raising  — the Lesta sandbox shape: every collection refused while
                UiComponents also raises. The file must stay ABSENT, the
                probe must stand down after the retry cap, and NOTHING may
@@ -951,7 +955,8 @@ def check_price_catalog(prices, label, probe, utils, failures):
             failures.append("[%s] price catalog t is %s (must be int)"
                             % (label,
                                type(catalog.get("t")).__name__))
-        expected_phase = "load" if prices == "planted" else "battle"
+        if expected_phase is None:
+            expected_phase = "load" if prices == "planted" else "port"
         if catalog.get("phase") != expected_phase:
             failures.append("[%s] price catalog phase=%r (expected %r)"
                             % (label, catalog.get("phase"),
@@ -1031,7 +1036,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              drift_records, failures, raw_collection=True, aim_duck=False,
              degraded=None, builds=None, allow_soft=(), prices=None,
              extra_ticks=0, with_scene_event=True,
-             scene_event_delayed=False):
+             scene_event_delayed=False, port_ticks=0,
+             price_expected_phase=None):
     label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s builds=%s prices=%s scene=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
@@ -1187,6 +1193,18 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                             % (label, env.get("TOOL_CONFIG"), expected_cfg))
             return
 
+        # Optional port preamble (the 2026-11-19 price-catalog lattice):
+        # drive ticks BEFORE the battle starts — in_battle still False,
+        # records still empty — exactly the idle port the probe's
+        # port-tick attempts are scheduled for.
+        for _ in range(port_ticks):
+            fn = callbacks.pending
+            callbacks.pending = None
+            if fn is None:
+                failures.append("[%s] scheduler stopped re-arming (port)"
+                                % label)
+                return
+            fn()
         # Battle start: records become available, then drive the tick loop
         # (each tick re-schedules itself; call the latest pending callback).
         battle.players = build_roster(with_ship_names=with_ship_names,
@@ -1909,7 +1927,8 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
                             "session %r" % (label, cleared_builds.get("battle"),
                                             builds_session))
         # ── price_catalog.json: the server-synced economy bridge ────────
-        check_price_catalog(prices, label, probe, utils, failures)
+        check_price_catalog(prices, label, probe, utils, failures,
+                            expected_phase=price_expected_phase)
     finally:
         os.chdir(cwd)
 
@@ -2050,17 +2069,34 @@ def main(argv):
     price_passes = 0
     # planted: the load-phase dump; deferred: the login-sync retry through
     # the 15.9 encoder quirk (its dict rejection must fall back to the
-    # hand-rolled serializer and still land the same payload).
+    # hand-rolled serializer and still land the same payload) landing on
+    # the PORT lattice — 20 port ticks put attempts at 10 and 20, the
+    # second carrying data: one ready-gated write, phase 'port', tries 3.
     for price_mode, price_plain in (("planted", False), ("deferred", True)):
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
             run_once(plugin_src, workdir, True, True, False, False,
                      price_plain, "full", True, False, failures,
-                     prices=price_mode)
+                     prices=price_mode,
+                     port_ticks=20 if price_mode == "deferred" else 0)
         price_passes += 1
+    # battle-late: the budget survives the port window unspent (only 3
+    # port ticks -> no port attempt), so the login-sync retry must land
+    # on the LATE-battle lattice instead — attempts at battle ticks 30
+    # and 40 (data from the 3rd per-collection call), one ready-gated
+    # write, phase 'battle', tries 3.
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, False, False, False,
+                 "full", True, False, failures, prices="deferred",
+                 port_ticks=3, extra_ticks=41,
+                 price_expected_phase="battle")
+    price_passes += 1
+    # raising: the whole retry cap must burn on the port lattice (a
+    # raising hub must never earn a battle attempt before tick 30),
+    # leaving the file absent, zero log lines and the done latch set.
     with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
         run_once(plugin_src, workdir, True, True, False, True, False,
                  "full", True, False, failures, prices="raising",
-                 extra_ticks=PRICE_CATALOG_MAX_TRIES)
+                 port_ticks=95)
     price_passes += 1
 
     if failures:

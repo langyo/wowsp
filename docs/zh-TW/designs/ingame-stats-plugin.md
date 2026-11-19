@@ -111,7 +111,8 @@ pass）：植入的艦船實體釘住了 WG 形態（遙測裡的完整鍵表 + 
 疊代序列——py2 字典序對給定鍵集是確定的，且 2026-10-10 實拍已證明該服
 用戶端同鍵按記錄序渲染）與 `shipNames`（記錄自帶的 shipName 欄位——
 用戶端渲染的本地化船名原始字串；記錄不攜帶該欄位的 build 輸出空表，消費
-端自動退回 DB 名，行為與從前一致）。roster_raw.json 同幀攜帶 `order`
+端自動退回 DB 名，行為與從前一致）。roster_raw.json（自 2026-11-19
+起為每局一次的 schema 快照）在首幀攜帶 `order`
 陣列，Rust 合成（probe_roster）據此保序輸出 vehicles（欄位缺失或未被點名
 者回退 (name, id)），並把 shipName 榨取進每行的 ship_name。webui 兩側
 （/live 面板與覆蓋層）把 rosterOrder 預排為並列基序（缺名者穩定居後），
@@ -150,8 +151,8 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
 
 ```
 ┌─ 遊戲用戶端（Mods API 沙盒，無網路）─────────────────────┐
-│ PnFMods/WoWSPStats/Main.py                               │
-│  · 名單輪詢（1 s，穩定確認）→ request.json               │
+│ PnFMods/WoWSPProbe/Main.py                               │
+│  · 名單輪詢（1 s，穩定確認）→ roster_raw.json            │
 │  · 實體遍歷 → 遙測（hp/relation/alive）                  │
 │  · SFM 事件 → tabMode 標記、生命週期標記                 │
 │  · heartbeat.json（port/battle 相位，1–2 s）             │
@@ -189,11 +190,9 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
-// 遙測 journal —— 對逐局有界的環形緩衝做整檔重寫；
-// 每個獨立狀態加上事件標記共用同一條時間線：
-{ "t": 1690000000000, "players": { "<avatarId>": { /* 投影 */ } },
-  "states": { "<name>": { "hp": "43150.0/43150.0", "relation": "2",
-                          "alive": "True" } } }
+// 遙測 journal —— 僅事件標記（每條標記一行），戰鬥結束時從有界環形
+// 緩衝一次性落盤；名單主體不再隨 journal 攜帶（2026-11-19 效能修復
+// ——舊的按狀態環形緩衝曾在每個戰鬥拍整檔重寫）：
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
@@ -219,8 +218,8 @@ dhcomponents.ShipEconomicAttributes（shipEconomicAttributes）。伴生程式
 
 ```jsonc
 // price_catalog.json —— 每個用戶端工作階段一次性寫出（絕不按對局重寫）；
-// 僅在至少採集到一個實體時出現。
-{ "v": 1, "t": 1690000000000, "phase": "load" | "battle",
+// 恰好寫一次：兩個關鍵集合都攜帶資料（就緒門）時，或在最後一次重試時。
+{ "v": 1, "t": 1690000000000, "phase": "load" | "port" | "battle",
   "counts": { "shipCrossResearchInfo": 842, "itemPrice": 21713,
               "shipTechRestrictions": 842, "shipEconomicAttributes": 842 },
   "collections": {
@@ -264,13 +263,15 @@ dhcomponents.ShipEconomicAttributes（shipEconomicAttributes）。伴生程式
 類別名（CLASS_ID 兜底）為鍵，經 __dict__/已知槽位通用回退轉儲，若什麼都
 讀不到則記錄 _class/_class_id 供診斷。
 
-**生命週期。** resolve_api() 之後在載入階段嘗試一次，隨後在排程 tick 上做
-少量重試（上限 10 次，港口節拍下約 20 s）以覆蓋登入資料同步窗口。當
+**生命週期。** resolve_api() 之後在載入階段嘗試一次，隨後在閒置港口點陣
+（每 10 個港口 tick 一次；上限 10 次）上重試以覆蓋登入資料同步——若預算
+仍未用盡，則只在戰鬥後期拍上重試（場景建立 ≥ 30 個戰鬥拍後，此後每 10 拍
+一次）：傾印最多走訪 30 000 個實體，絕不能落在戰鬥開場的爆發上。當
 shipCrossResearchInfo 與 itemPrice 兩個集合都拿到資料即標記完成（一條
 WOWSP_PROBE price catalog written 日誌行報告各集合計數），或在整個 hub 被
 扣留（Lesta 沙盒形態）時靜默放棄（無檔案、無日誌行、無 soft 錯誤）。計數
-為 -1 表示 hub 拒絕該集合名。重試窗口結束後檔案永不重寫：伴生程式可能正在
-讀取它。
+為 -1 表示 hub 拒絕該集合名。檔案恰好寫一次（就緒門控或最後一次嘗試）且
+永不重寫：伴生程式可能正在讀取它。
 
 **已用一次真實港口採集驗證**（WG，build 13357625，2026-10-31）：
 itemPrice 提供 11,617 筆、shipTechRestrictions 被拒（-1）、
@@ -319,10 +320,14 @@ Lesta 資料在拿到 Lesta 客戶端採集前保持可空欄位（本機未安�
 - **國服用戶端**：已驗證可用；360 用戶端執行同一套 Mods API 載入器
   （其日誌原生就會掃描 `PnFModsLoader.py`）。每個大版本都要留意
   國服反作弊政策的變化。
-- **效能**：1 s 輪詢 `getPlayersInfo` + 實體遍歷遠在預算之內（TeamHP
-  類的 mod 逐幀遍歷實體）；絕不為此使用 `callbacks.perTick`。
-- **Journal 增長**：逐局有界環形；若對戰後分析有用，可將片段隨回放
-  一併交付。
+- **效能**：1 s 戰鬥拍自 2026-11-19 起為寫入合併（roster_raw 每局一次
+  schema 快照、journal 僅標記且戰鬥結束落盤、價格目錄只寫一次、按局靜態
+  的排序鍵快取）——離線實驗室在 30 名玩家下測得約 1.4 ms/拍（舊值
+  8.8 ms，舊 journal 環填滿後預計約 38 ms）。1 s 輪詢
+  `getPlayersInfo` + 實體遍歷遠在預算之內（TeamHP 類的 mod 逐幀遍歷
+  實體）；絕不為此使用 `callbacks.perTick`。
+- **Journal 增長**：已不成問題——僅事件標記，環形上限也不過 KB 量級，
+  戰鬥結束一次性落盤。
 
 ## Rust 整合點（精確到檔案）
 
@@ -345,17 +350,20 @@ Lesta 資料在拿到 Lesta 客戶端採集前保持可空欄位（本機未安�
   的 Lesta 形態、未配對側保持遍歷序的部分覆蓋形態、以及鍵表必須存活的
   15.9 編碼器怪癖）——它們回答不了的實彈對局問題（真實 Lesta 沙箱對
   'ship' 集合到底給什麼）已於當日 2026-10-10 定案：完整鍵表，含 bot 共
-  11/11。2026-10-31 起另加三個價格 pass：植入形態斷言 price_catalog.json
-  的實體列/解碼欄位/計數精確一致，延遲形態證明登入同步重試能在後續 tick
-  落盤，扣留形態（UiComponents 拋異 + 全部集合被拒）斷言檔案缺失且日誌與
-  soft 錯誤閂鎖中沒有吞例外文字。外加 `python -m py_compile`。
+  11/11。2026-10-31 起另加四個價格 pass：植入形態斷言 price_catalog.json
+  的實體列/解碼欄位/計數精確一致，延遲形態現落於港口點陣（phase 'port'、
+  tries 3），戰鬥後期 pass 覆蓋戰鬥後期的點陣（phase 'battle'），扣留/
+  拋異形態（UiComponents 拋異 + 全部集合被拒）在港口 tick 上燒盡重試
+  上限，斷言檔案缺失且日誌與 soft 錯誤閂鎖中沒有吞例外文字。外加
+  `python -m py_compile`。
 - **僅港口冒煙測試**（不打戰鬥）：啟動遊戲、在港口停留約 15 s、退出；
   斷言 `python.log` 出現 `injected names=[…]`、`api[load] dh=True`
   與新鮮的心跳。這套廉價協定讓實驗保持誠實——保留它作為安裝的
   驗收測試。
-- **戰鬥夾具**：每個伺服器一場人機局；斷言 journal 含有名單快照、
-  ≥1 次擊沉驅動的 `alive` 翻轉、tabMode 標記，且 `python.log` 中的
-  `typeDeath` 行與翻轉 1:1 對應。
+- **戰鬥夾具**：每個伺服器一場人機局；斷言 journal 攜帶事件標記
+  （tabMode、playersListUpdated）且於戰鬥結束落盤，且 `python.log` 中的
+  `typeDeath` 行與遙測的 alive 翻轉 1:1 對應（journal 不再攜帶名單快照
+  或 alive 翻轉）。
 - **回退演練**：停掉應用程式（沒有伴生側），斷言 mod 的 180 s busy
   逾時會恢復且下一局照常發出請求；破壞 mod 目錄，斷言覆蓋層靜默
   回退到推斷。

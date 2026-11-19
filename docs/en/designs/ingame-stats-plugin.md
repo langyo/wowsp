@@ -155,7 +155,8 @@ proved that realm's client renders equal keys in record order) and
 localized ship-name string the client renders; a build whose records
 lack the field outputs an empty table, and the consumer side falls back
 to the DB name automatically, behavior unchanged from before).
-roster_raw.json carries an `order` array in the same frame; the Rust
+roster_raw.json (a once-per-battle schema snapshot since 2026-11-19)
+carries an `order` array in that first frame; the Rust
 synthesis (probe_roster) emits vehicles preserving that order (a missing
 field or an entry not named in it falls back to (name, id)) and squeezes
 shipName into each row's ship_name. Both webui sides (the /live panel
@@ -308,8 +309,9 @@ Remaining exact-order routes, in preference order:
    vendor-specific ties remain outside it.
 4. **OCR/TAB capture** — the fallback, not a client truth.
 
-The probe now writes `order_probe.json` once per stabilized session
-(re-armed if the roster re-stabilizes) with the API surface, the
+The probe now writes `order_probe.json` once per stabilized session, a
+tick past the builds bridge (re-armed if the roster re-stabilizes) with
+the API surface, the
 candidate collection counts, the roster's `prebattleIndex` values, a
 bounded sample of the served container components (`children` lists,
 `battleInfo`/`battleState` fields) and any
@@ -487,8 +489,8 @@ covered (see "Ordering-raw-material bridge" above).
 
 ```
 ┌─ game client (Mods API sandbox, no network) ─────────────┐
-│ PnFMods/WoWSPStats/Main.py                               │
-│  · roster poll (1 s, stable-confirm) → request.json      │
+│ PnFMods/WoWSPProbe/Main.py                               │
+│  · roster poll (1 s, stable-confirm) → roster_raw.json   │
 │  · entity walk → telemetry (hp/relation/alive)           │
 │  · SFM events → tabMode marks, lifecycle marks           │
 │  · heartbeat.json (phase port/battle, 1–2 s)             │
@@ -540,11 +542,10 @@ Bridge files (protocol v1, all in the mod directory):
 // logs the marker once per battle as the "degraded but bridged" evidence
 // line, distinct from the hard telemetry-absent WARN.
 
-// telemetry journal — whole-file rewrite of a bounded per-battle ring;
-// every distinct state plus event marks on one timeline:
-{ "t": 1690000000000, "players": { "<avatarId>": { /* projection */ } },
-  "states": { "<name>": { "hp": "43150.0/43150.0", "relation": "2",
-                          "alive": "True" } } }
+// telemetry journal — event marks only (one line per mark), flushed to
+// disk once at battle end from a bounded ring; roster bodies no longer
+// ride the journal (the 2026-11-19 performance fix — the old per-state
+// ring was rewritten whole on every combat tick):
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
@@ -574,8 +575,9 @@ through the same flat-file bridge as builds.json / order_probe.json.
 
 ```jsonc
 // price_catalog.json — one-shot per client session (never per battle);
-// written only when at least one entity was captured.
-{ "v": 1, "t": 1690000000000, "phase": "load" | "battle",
+// written exactly once: when both key collections carry data (the ready
+// gate) or on the final retry.
+{ "v": 1, "t": 1690000000000, "phase": "load" | "port" | "battle",
   "counts": { "shipCrossResearchInfo": 842, "itemPrice": 21713,
               "shipTechRestrictions": 842, "shipEconomicAttributes": 842 },
   "collections": {
@@ -622,15 +624,18 @@ fabricated; an unrecognized component class is keyed by its class name
 (CLASS_ID fallback) and dumped through the generic __dict__/known-slot
 fallback, with _class/_class_id diagnostics when nothing else reads.
 
-**Lifecycle.** One load-phase attempt after resolve_api(), then a small
-number of scheduler-tick retries (cap 10, ~20 s at the port cadence)
-for the login datastore sync. The bridge is done once BOTH
-shipCrossResearchInfo and itemPrice
-carry data — one WOWSP_PROBE price catalog written line reports the
-per-collection counts — or it stands down silently when the whole hub is
-withheld (the Lesta sandbox shape: no file, no log line, no soft error).
-A count of -1 means the hub refused that collection name. The file is
-never re-written after the retry window: the companion may be reading it.
+**Lifecycle.** One load-phase attempt after resolve_api(), then retries
+on an idle-port lattice (every 10th port tick; cap 10) for the login
+datastore sync — and, if the budget is still unspent, late battle ticks
+only (scene up ≥ 30 battle ticks, then every 10th): the dump walks up to
+30 000 entities and must never land on the battle-start burst. The
+bridge is done once BOTH shipCrossResearchInfo and itemPrice carry data
+— one WOWSP_PROBE price catalog written line reports the per-collection
+counts — or it stands down silently when the whole hub is withheld (the
+Lesta sandbox shape: no file, no log line, no soft error). A count of -1
+means the hub refused that collection name. The file is written exactly
+once (ready-gated, or the final attempt) and never re-written: the
+companion may be reading it.
 **Verified against a real port capture** (WG, build 13357625, 2026-10-31):
 `itemPrice` served 11,617 entities, `shipTechRestrictions` was refused
 (-1), `shipEconomicAttributes` carried one record, and
@@ -762,11 +767,16 @@ plus the CN360 volunteer replays at matching builds).
 - **CN client**: verified working; the 360 client runs the same Mods API
   loader (its log scans for `PnFModsLoader.py` natively). Watch CN
   anti-cheat policy changes each major version.
-- **Perf**: 1 s polling of `getPlayersInfo` + entity walk is well within
+- **Perf**: the 1 s battle tick is write-batched (2026-11-19): roster_raw
+  is a once-per-battle schema snapshot, the journal is marks-only flushed
+  at battle end, the price catalog writes once, and the per-battle-static
+  sort keys are cached — the offline lab measures ~1.4 ms/tick at 30
+  players (was 8.8 ms, projected ~38 ms once the old journal ring
+  filled). The 1 s `getPlayersInfo` poll + entity walk stay well within
   budget (TeamHP-style mods walk entities per frame); never use
   `callbacks.perTick` for this.
-- **Journal growth**: bounded ring per battle; ship segments with the
-  replay if useful for post-battle analysis.
+- **Journal growth**: moot — marks only, kilobytes at the ring cap,
+  written once at battle end.
 
 ## Rust integration map (exact touch points)
 
@@ -811,21 +821,27 @@ plus the CN360 volunteer replays at matching builds).
   survive) — and the live-battle question they could not answer (what
   the real Lesta sandbox serves for the 'ship' collection) was settled
   the same day, 2026-10-10: the full key table, 11/11 including bots.
-  Three PRICE passes pin the server-synced economy bridge: the planted
-  collections must round-trip the exact entity rows / decoded field
-  lists / counts, the deferred shape proves the login-sync retry lands
-  the same file on a later tick, and the withheld Lesta shape
-  (UiComponents raising + every collection refused) must leave
-  price_catalog.json ABSENT with no swallowed-exception text in either
-  the probe log or the soft-error latch. Also keep
+   Four PRICE passes pin the server-synced economy bridge: the planted
+   collections must round-trip the exact entity rows / decoded field
+   lists / counts; the deferred shape proves the login-sync retry lands
+   the same file on the port lattice (20 port ticks -> attempts at 10
+   and 20, one ready-gated write, phase 'port', tries 3); the
+   battle-late shape (port budget unspent) lands it on the late-battle
+   lattice (battle ticks 30/40, phase 'battle'); and the withheld Lesta
+   shape (UiComponents raising + every collection refused) must burn
+   its whole cap on port ticks, leaving price_catalog.json ABSENT with
+   no swallowed-exception text in either the probe log or the
+   soft-error latch. Also keep
   `python -m py_compile` green.
 - **Port-only smoke test** (no battle): launch the game, sit in port
   ~15 s, exit; assert `injected names=[…]`, `api[load] dh=True`, and a
   fresh heartbeat in `python.log`. This is the cheap protocol that kept
   the experiment honest — keep it as the acceptance test for installs.
-- **Battle fixtures**: one co-op per realm; assert journal contains the
-  roster snapshot, ≥1 sink-driven `alive` flip, tabMode marks, and that
-  `typeDeath` lines in `python.log` match the flips 1:1.
+- **Battle fixtures**: one co-op per realm; assert the journal carries
+  the event marks (tabMode, playersListUpdated) and is flushed at battle
+  end, and that `typeDeath` lines in `python.log` match telemetry's
+  alive flips 1:1 (the journal no longer holds roster snapshots or
+  alive flips).
 - **Fallback drill**: stop the app (no companion), assert the mod's 180 s
   busy timeout recovers and the next battle still requests; corrupt the
   mod dir, assert the overlay silently falls back to inference.

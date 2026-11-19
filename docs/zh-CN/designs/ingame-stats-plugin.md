@@ -114,7 +114,8 @@ str(100 - level) + str(NATION.SORT_ORDER.index(nation)) + shortName`，
 给定键集是确定的，且 2026-10-10 实拍已证明该服客户端同键按记录序渲染）与
 `shipNames`（记录自带的 shipName 字段——客户端渲染的本地化船名原串；记录
 不携带该字段的构建输出空表，消费端自动退回 DB 名，行为与从前一致）。
-roster_raw.json 同帧携带 `order` 数组，Rust 合成（probe_roster）据此保序
+roster_raw.json（自 2026-11-19 起为每局一次的 schema 快照）在首帧携带
+`order` 数组，Rust 合成（probe_roster）据此保序
 输出 vehicles（字段缺失或未被点名者回退 (name, id)），并把 shipName 榨取
 进每行的 ship_name。webui 两侧（/live 面板与覆盖层）把 rosterOrder 预排为
 并列基序（缺名者稳定居后），CN 排列在整侧覆盖时以客户端船名替换 DB 名段
@@ -219,7 +220,8 @@ avatar id（798xxx）——这棵树不是队伍行序；`battleInfo`/`battleSta
    国服 HUD 与厂商特有的并列裁决不在其中。
 4. **OCR/TAB 截图**——兜底，不是客户端真值。
 
-探针在每次名单稳定后写一次 `order_probe.json`（名单再次稳定会重写）：
+探针在每次名单稳定后、于 builds 桥后一拍写一次 `order_probe.json`
+（名单再次稳定会重写）：
 API 面、候选集合计数、名单的
 `prebattleIndex` 值、被服务容器组件的有限采样（`children` 列表、
 `battleInfo`/`battleState` 字段），以及该构建能给出的
@@ -356,8 +358,8 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 
 ```
 ┌─ 游戏客户端（Mods API 沙盒，无网络）─────────────────────┐
-│ PnFMods/WoWSPStats/Main.py                               │
-│  · 名单轮询（1 s，稳定确认）→ request.json               │
+│ PnFMods/WoWSPProbe/Main.py                               │
+│  · 名单轮询（1 s，稳定确认）→ roster_raw.json            │
 │  · 实体遍历 → 遥测（hp/relation/alive）                  │
 │  · SFM 事件 → tabMode 标记、生命周期标记                  │
 │  · heartbeat.json（port/battle 相位，1–2 s）             │
@@ -405,11 +407,9 @@ heartbeat/request 一切正常（探针本身活着：按键事件、记录、�
 // realm 路由兜底）。伴生进程每场将标记记录一次，作为“已降级但已桥接”
 // 的证据行，区别于遥测彻底缺失的硬告警。
 
-// 遥测 journal —— 有界按局环形缓冲的整文件重写；
-// 每个独立状态与事件标记在同一时间线上：
-{ "t": 1690000000000, "players": { "<avatarId>": { /* 投影 */ } },
-  "states": { "<name>": { "hp": "43150.0/43150.0", "relation": "2",
-                          "alive": "True" } } }
+// 遥测 journal —— 仅事件标记（每条标记一行），战斗结束时从有界环形
+// 缓冲一次性落盘；名单主体不再随 journal 携带（2026-11-19 性能修复
+// ——旧按状态环形缓冲曾在每个战斗拍整体重写）：
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
@@ -435,8 +435,8 @@ builds.json / order_probe.json 相同的平铺文件桥读取。
 
 ```jsonc
 // price_catalog.json —— 每个客户端会话一次性写出（绝不按对局重写）；
-// 仅在至少采集到一个实体时出现。
-{ "v": 1, "t": 1690000000000, "phase": "load" | "battle",
+// 恰好写一次：两个关键集合都携带数据（就绪门）时，或在最后一次重试时。
+{ "v": 1, "t": 1690000000000, "phase": "load" | "port" | "battle",
   "counts": { "shipCrossResearchInfo": 842, "itemPrice": 21713,
               "shipTechRestrictions": 842, "shipEconomicAttributes": 842 },
   "collections": {
@@ -480,12 +480,15 @@ builds.json / order_probe.json 相同的平铺文件桥读取。
 （CLASS_ID 兜底）为键，经 __dict__/已知槽位通用回退转储，若什么都读不到
 则记录 _class/_class_id 供诊断。
 
-**生命周期。** resolve_api() 之后在加载阶段尝试一次，随后在调度 tick 上做
-少量重试（上限 10 次，港口节拍下约 20 s）以覆盖登录数据同步窗口。当 shipCrossResearchInfo 与
-itemPrice 两个集合都拿到数据即标记完成（一条 WOWSP_PROBE price catalog
-written 日志行报告各集合计数），或在整个 hub 被扣留（Lesta 沙盒形态）时
-静默放弃（无文件、无日志行、无 soft 错误）。计数为 -1 表示 hub 拒绝该集合
-名。重试窗口结束后文件永不重写：伴生程序可能正在读取它。
+**生命周期。** resolve_api() 之后在加载阶段尝试一次，随后在闲置港口点阵
+（每 10 个港口 tick 一次；上限 10 次）上重试以覆盖登录数据同步——若预算
+仍未用尽，则只在战斗后期拍上重试（场景建立 ≥ 30 个战斗拍后，此后每 10 拍
+一次）：转储最多行走 30 000 个实体，绝不能落在战斗开场的爆发上。当
+shipCrossResearchInfo 与 itemPrice 两个集合都拿到数据即标记完成（一条
+WOWSP_PROBE price catalog written 日志行报告各集合计数），或在整个 hub 被
+扣留（Lesta 沙盒形态）时静默放弃（无文件、无日志行、无 soft 错误）。计数
+为 -1 表示 hub 拒绝该集合名。文件恰好写一次（就绪门控或最后一次尝试）且
+永不重写：伴生程序可能正在读取它。
 
 **已用一次真实港口采集验证**（WG，build 13357625，2026-10-31）：
 `itemPrice` 提供 11,617 条、`shipTechRestrictions` 被拒（-1）、
@@ -608,9 +611,14 @@ Steam 客户端自带的 15.9.0 录像 + build 匹配的国服 360 志愿者录�
   v1.0 面自 13.x 至 15.8 保持稳定；探针的自检行让失效显式可诊。
 - **国服客户端**：已验证可用；360 客户端原生运行同一 Mods API 加载器
   （日志自会扫描 `PnFModsLoader.py`）。每个大版本留意国服反作弊政策。
-- **性能**：1 s 轮询 `getPlayersInfo` + 实体遍历远在预算内（TeamHP 类
-  mod 逐帧遍历）；绝不为这些数据使用 `callbacks.perTick`。
-- **Journal 增长**：按局有界环形；如对战后分析有用可随回放归档。
+- **性能**：1 s 战斗拍自 2026-11-19 起写入合并（roster_raw 每局一次
+  schema 快照、journal 仅标记且战斗结束落盘、价格目录只写一次、按局静态
+  的排序键缓存）——离线实验室在 30 名玩家下测得约 1.4 ms/拍（旧值
+  8.8 ms，旧 journal 环填满后预计约 38 ms）。1 s 轮询
+  `getPlayersInfo` + 实体遍历远在预算内（TeamHP 类 mod 逐帧遍历）；
+  绝不为这些数据使用 `callbacks.perTick`。
+- **Journal 增长**：已不成问题——仅事件标记，环形上限也不过 KB 量级，
+  战斗结束一次性落盘。
 
 ## 测试计划
 
@@ -620,17 +628,19 @@ Steam 客户端自带的 15.9.0 录像 + build 匹配的国服 360 志愿者录�
   叠的稳定键排序、UiComponents 抛异的 Lesta 形态、未配对侧保持遍历序
   的部分覆盖形态、以及键表必须存活的 15.9 编码器怪癖）——它们回答不了的
   实弹对局问题（真实 Lesta 沙箱对 'ship' 集合到底给什么）已于当日
-  2026-10-10 定案：完整键表，含 bot 共 11/11。2026-10-31 起另加三个价格
+  2026-10-10 定案：完整键表，含 bot 共 11/11。2026-10-31 起另加四个价格
   pass：植入形态断言 price_catalog.json 的实体行/解码字段/计数精确一致，
-  延迟形态证明登录同步重试能在后续 tick 落盘，扣留形态（UiComponents 抛异
-  + 全部集合被拒）断言文件缺失且日志与 soft 错误闩锁中无吞异常文本。另加
-  `python -m py_compile`。
+  延迟形态现落于港口点阵（phase 'port'、tries 3），战斗后期 pass 覆盖
+  战斗后期的点阵（phase 'battle'），扣留/抛异形态（UiComponents 抛异
+  + 全部集合被拒）在港口 tick 上烧尽重试上限，断言文件缺失且日志与
+  soft 错误闩锁中无吞异常文本。另加 `python -m py_compile`。
 - **仅港口冒烟测试**（不打战斗）：启动游戏、港口停 ~15 s、退出；断言
   `python.log` 出现 `injected names=[…]`、`api[load] dh=True` 与新鲜
   心跳。这套廉价协议是实验阶段的验收流程，保留为安装验收测试。
-- **战斗夹具**：每服一局人机；断言 journal 含名单快照、≥1 次击沉驱动的
-  `alive` 翻转、tabMode 标记，且 `python.log` 的 `typeDeath` 行与翻转
-  1:1 对应。
+- **战斗夹具**：每服一局人机；断言 journal 携带事件标记（tabMode、
+  playersListUpdated）且于战斗结束落盘，且 `python.log` 的 `typeDeath`
+  行与遥测的 alive 翻转 1:1 对应（journal 不再携带名单快照或 alive
+  翻转）。
 - **回退演练**：停掉应用（无伴生）断言 mod 180 s 超时恢复且下一局照常
   请求；破坏 mod 目录断言覆盖层静默回退到推断。
 

@@ -160,7 +160,8 @@ champ shipName que portent les enregistrements eux-mêmes — la chaîne
 brute du nom de navire localisé que le client rend ; un build dont les
 enregistrements ne portent pas le champ produit une table vide, et le
 côté consommation retombe automatiquement sur le nom de la DB, comme
-avant). roster_raw.json porte un tableau `order` dans la même trame, et
+avant). roster_raw.json est une photo de schéma une fois par bataille
+(depuis le 2026-11-19) dont la première trame porte le tableau `order`, et
 la synthèse Rust (probe_roster) émet les vehicles en préservant cet
 ordre (champ manquant ou entrée non nommée : repli vers (name, id)) tout
 en extrayant shipName vers le ship_name de chaque ligne. Les deux côtés
@@ -218,9 +219,9 @@ de nom de la DB de cette disposition quand un côté entier est couvert
 
 ```
 ┌─ client de jeu (bac à sable Mods API, sans réseau) ───────┐
-│ PnFMods/WoWSPStats/Main.py                                │
+│ PnFMods/WoWSPProbe/Main.py                                │
 │  · interrogation du roster (1 s, confirmation stable)     │
-│    → request.json                                         │
+│    → roster_raw.json                                      │
 │  · parcours des entités → télémétrie (hp/relation/alive)  │
 │  · événements SFM → marqueurs tabMode, marqueurs          │
 │    de cycle de vie                                        │
@@ -265,12 +266,11 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
-// journal de télémétrie — réécriture entière d'un anneau borné par
-// bataille ; chaque état distinct plus les marqueurs d'événement sur une
-// seule chronologie :
-{ "t": 1690000000000, "players": { "<avatarId>": { /* projection */ } },
-  "states": { "<name>": { "hp": "43150.0/43150.0", "relation": "2",
-                          "alive": "True" } } }
+// journal de télémétrie — marqueurs d'événement uniquement (une ligne par
+// marqueur), vidés sur disque une seule fois en fin de bataille depuis un
+// anneau borné ; les corps de roster ne voyagent plus dans le journal (le
+// correctif de performance du 2026-11-19 — l'ancien anneau par état était
+// réécrit en entier à chaque tick de combat) :
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
@@ -311,12 +311,19 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
   chargeur Mods API (son journal scanne nativement `PnFModsLoader.py`).
   Surveiller les changements de politique anti-cheat CN à chaque version
   majeure.
-- **Perf** : l'interrogation à 1 s de `getPlayersInfo` + le parcours des
+- **Perf** : depuis le 2026-11-19, le tick de bataille d'1 s regroupe les
+  écritures (roster_raw est une photo de schéma une fois par bataille, le
+  journal ne porte que des marqueurs vidés en fin de bataille, le catalogue
+  de prix s'écrit une seule fois, et les clés de tri statiques par bataille
+  sont en cache) — le labo hors ligne mesure ~1.4 ms/tick à 30 joueurs
+  (avant 8.8 ms, ~38 ms projetés une fois l'ancien anneau du journal
+  rempli). L'interrogation à 1 s de `getPlayersInfo` + le parcours des
   entités tiennent largement dans le budget (des mods type TeamHP
   parcourent les entités à chaque image) ; ne jamais utiliser
   `callbacks.perTick` pour cela.
-- **Croissance du journal** : anneau borné par bataille ; expédier les
-  segments avec le replay si utile pour l'analyse post-bataille.
+- **Croissance du journal** : question close — marqueurs seulement,
+  kilooctets au plafond de l'anneau, écrit une seule fois en fin de
+  bataille.
 
 ## Carte d'intégration Rust (points de contact exacts)
 
@@ -352,9 +359,11 @@ Fichiers du pont (protocole v1, tous dans le répertoire du mod) :
   protocole bon marché qui a gardé l'expérience honnête — le conserver
   comme test d'acceptation des installations.
 - **Fixtures de bataille** : une co-op par realm ; vérifier que le journal
-  contient l'instantané du roster, ≥1 basculement de `alive` provoqué par
-  un coulage, des marqueurs tabMode, et que les lignes `typeDeath` de
-  `python.log` correspondent 1:1 aux basculements.
+  porte les marqueurs d'événement (tabMode, playersListUpdated) et qu'il
+  est vidé en fin de bataille, et que les lignes `typeDeath` de
+  `python.log` correspondent 1:1 aux basculements de `alive` de la
+  télémétrie (le journal ne contient plus d'instantanés du roster ni de
+  basculements d'alive).
 - **Exercice de repli** : arrêter l'application (pas de compagnon),
   vérifier que le délai busy de 180 s du mod se rétablit et que la
   bataille suivante émet toujours une requête ; corrompre le répertoire

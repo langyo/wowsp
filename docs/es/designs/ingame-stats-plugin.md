@@ -162,8 +162,9 @@ registro) y `shipNames` (el campo shipName que llevan los propios
 registros — la cadena original del nombre de barco localizado que el
 cliente renderiza; una build cuyos registros no llevan el campo produce
 una tabla vacía, y el lado consumidor retrocede automáticamente al
-nombre de la DB, como siempre). roster_raw.json lleva un array `order`
-en la misma instantánea, y la síntesis en Rust (probe_roster) emite los
+nombre de la DB, como siempre). roster_raw.json es una instantánea de
+esquema una vez por batalla (desde 2026-11-19) cuyo primer fotograma
+lleva el array `order`, y la síntesis en Rust (probe_roster) emite los
 vehicles conservando ese orden (un campo que falte o una entrada no
 nombrada retrocede a (name, id)) mientras exprime shipName en el
 ship_name de cada fila. Ambos lados del webui (el panel /live y la
@@ -221,8 +222,8 @@ arriba).
 
 ```
 ┌─ game client (Mods API sandbox, no network) ─────────────┐
-│ PnFMods/WoWSPStats/Main.py                               │
-│  · roster poll (1 s, stable-confirm) → request.json      │
+│ PnFMods/WoWSPProbe/Main.py                               │
+│  · roster poll (1 s, stable-confirm) → roster_raw.json   │
 │  · entity walk → telemetry (hp/relation/alive)           │
 │  · SFM events → tabMode marks, lifecycle marks           │
 │  · heartbeat.json (phase port/battle, 1–2 s)             │
@@ -263,12 +264,11 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
-// diario de telemetría — reescritura completa de un anillo acotado por
-// batalla; cada estado distinto más las marcas de eventos en una sola línea
-// temporal:
-{ "t": 1690000000000, "players": { "<avatarId>": { /* projection */ } },
-  "states": { "<name>": { "hp": "43150.0/43150.0", "relation": "2",
-                          "alive": "True" } } }
+// diario de telemetría — solo marcas de eventos (una línea por marca),
+// volcado a disco una sola vez al final de la batalla desde un anillo
+// acotado; los cuerpos del roster ya no viajan en el diario (la corrección
+// de rendimiento del 2026-11-19 — el antiguo anillo por estado se
+// reescribía entero en cada tick de combate):
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
@@ -308,13 +308,18 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
   cargador de la Mods API (su registro busca `PnFModsLoader.py` de forma
   nativa). Vigile los cambios en la política anti-cheat de CN en cada
   versión mayor.
-- **Rendimiento**: el sondeo cada 1 s de `getPlayersInfo` + el recorrido de
-  entidades queda holgado dentro del presupuesto (los mods tipo TeamHP
-  recorren entidades en cada fotograma); nunca use `callbacks.perTick` para
-  esto.
-- **Crecimiento del diario**: anillo acotado por batalla; envíe segmentos
-  junto con la repetición si resultan útiles para el análisis posterior a la
-  batalla.
+- **Rendimiento**: desde el 2026-11-19 el tick de batalla de 1 s agrupa las
+  escrituras (roster_raw es una instantánea de esquema una vez por batalla,
+  el diario es solo de marcas y se vuelca al final de la batalla, el
+  catálogo de precios se escribe una sola vez, y las claves de ordenación
+  estáticas por batalla quedan en caché) — el laboratorio sin conexión
+  mide ~1.4 ms/tick con 30 jugadores (antes 8.8 ms, proyectado ~38 ms con
+  el antiguo tope del anillo del diario). El sondeo cada 1 s de
+  `getPlayersInfo` + el recorrido de entidades queda holgado dentro del
+  presupuesto (los mods tipo TeamHP recorren entidades en cada fotograma);
+  nunca use `callbacks.perTick` para esto.
+- **Crecimiento del diario**: cuestión zanjada — solo marcas, kilobytes en
+  el tope del anillo, escrito una sola vez al final de la batalla.
 
 ## Mapa de integración en Rust (puntos de contacto exactos)
 
@@ -348,10 +353,11 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
   `api[load] dh=True` y un heartbeat reciente en `python.log`. Este es el
   protocolo barato que mantuvo honesto el experimento — consérvelo como la
   prueba de aceptación de las instalaciones.
-- **Fixtures de batalla**: un coop por reino; verifique que el diario
-  contiene la instantánea del roster, ≥1 cambio de `alive` provocado por un
-  hundimiento, marcas de tabMode, y que las líneas `typeDeath` de
-  `python.log` coinciden 1:1 con los cambios.
+- **Fixtures de batalla**: un coop por reino; verifique que el diario lleva
+  las marcas de eventos (tabMode, playersListUpdated) y que se vuelca al
+  final de la batalla, y que las líneas `typeDeath` de `python.log`
+  coinciden 1:1 con los cambios de `alive` de la telemetría (el diario ya no
+  guarda instantáneas del roster ni cambios de alive).
 - **Simulacro de fallback**: detenga la aplicación (sin acompañante);
   verifique que el tiempo de espera de ocupado de 180 s del mod se recupera
   y que la batalla siguiente sigue solicitando; corrompa el directorio del

@@ -135,8 +135,9 @@ Lesta는 키만으로, 동일 키는 명단 자체의 순서를 유지한다(202
 동일 키를 기록 순서대로 렌더링함을 이미 증명했다)과 `shipNames`(레코드가
 스스로 지니는 shipName 필드 — 클라이언트가 렌더링하는 현지화 함선명 원본
 문자열; 그 필드를 싣지 않는 빌드는 빈 테이블을 내놓고, 소비 쪽은 자동으로
-DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은 같은 프레임에
-`order` 배열을 싣고, Rust 합성(probe_roster)은 이에 따라 vehicles를 순서
+DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은(2026-11-19부터
+전투당 한 번의 스키마 스냅샷) 첫 프레임에 `order` 배열을 실으며, Rust
+합성(probe_roster)은 이에 따라 vehicles를 순서
 보존하여 출력한다(필드가 없거나 지명되지 않은 항목은 (name, id)로 폴백),
 그리고 shipName을 각 행의 ship_name으로 짜 넣는다. webui 양쪽(/live 패널과
 오버레이)은 rosterOrder를 동순위 기본 순서로 미리 편성한다(빠진 이름은
@@ -182,8 +183,8 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은 같은
 
 ```
 ┌─ game client (Mods API sandbox, no network) ─────────────┐
-│ PnFMods/WoWSPStats/Main.py                               │
-│  · roster poll (1 s, stable-confirm) → request.json      │
+│ PnFMods/WoWSPProbe/Main.py                               │
+│  · roster poll (1 s, stable-confirm) → roster_raw.json   │
 │  · entity walk → telemetry (hp/relation/alive)           │
 │  · SFM events → tabMode marks, lifecycle marks           │
 │  · heartbeat.json (phase port/battle, 1–2 s)             │
@@ -222,11 +223,10 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은 같은
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
-// 텔레메트리 저널 — 전투별로 한정된 링 버퍼의 파일 전체 재작성;
-// 모든 개별 상태와 이벤트 표시를 하나의 타임라인에 기록:
-{ "t": 1690000000000, "players": { "<avatarId>": { /* projection */ } },
-  "states": { "<name>": { "hp": "43150.0/43150.0", "relation": "2",
-                          "alive": "True" } } }
+// 텔레메트리 저널 — 이벤트 표시만(표시당 한 줄), 전투 종료 시 한정된
+// 링 버퍼에서 디스크로 한 번만 기록; 명단 본문은 더 이상 저널에 실리지
+// 않는다(2026-11-19 성능 수정 — 예전 상태별 링은 전투 틱마다 통째로
+// 다시 쓰였다):
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
@@ -259,11 +259,15 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은 같은
 - **CN 클라이언트**: 동작 검증 완료; 360 클라이언트는 같은 Mods API 로더를
   구동한다(로그가 `PnFModsLoader.py`를 자체적으로 스캔한다). 메이저 버전마다
   CN 안티치트 정책 변화를 주시할 것.
-- **성능**: `getPlayersInfo` 1 s 폴링 + 엔티티 순회는 예산 안에 여유가 있다
-  (TeamHP류 모드는 프레임마다 엔티티를 순회한다); 이 용도에는 절대
-  `callbacks.perTick`을 쓰지 않는다.
-- **저널 증가**: 전투별 제한 링 버퍼; 전투 후 분석에 유용하다면 리플레이와
-  함께 세그먼트를 배포한다.
+- **성능**: 2026-11-19부터 1 s 전투 틱은 쓰기를 일괄 처리한다(roster_raw는
+  전투당 한 번의 스키마 스냅샷, 저널은 표시만 담아 전투 종료 시 기록,
+  가격 카탈로그는 한 번만 기록, 전투 내 정적인 정렬 키는 캐시) — 오프라인
+  랩에서 30명 기준 약 1.4 ms/틱을 측정했다(이전 8.8 ms, 구 저널 링이
+  차면 약 38 ms로 예상). `getPlayersInfo` 1 s 폴링 + 엔티티 순회는
+  예산 안에 여유가 있다(TeamHP류 모드는 프레임마다 엔티티를 순회한다);
+  이 용도에는 절대 `callbacks.perTick`을 쓰지 않는다.
+- **저널 증가**: 더 이상 문제되지 않는다 — 표시만 남아 링 상한에서도
+  킬로바이트 수준, 전투 종료 시 한 번만 기록한다.
 
 ## Rust 통합 맵 (정확한 접점)
 
@@ -293,9 +297,10 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은 같은
   머물렀다가 종료한다; `injected names=[…]`, `api[load] dh=True`,
   `python.log`의 새 하트비트를 확인한다. 이것이 실험을 정직하게 유지해 준
   값싼 프로토콜이다 — 설치용 인수 테스트로 유지할 것.
-- **전투 픽스처**: 서버당 협동전 1판; 저널에 명단 스냅샷, 침몰이 유발한
-  `alive` 반전 1회 이상, tabMode 표시가 담겨 있는지, 그리고 `python.log`의
-  `typeDeath` 라인이 그 반전과 1:1로 일치하는지 확인한다.
+- **전투 픽스처**: 서버당 협동전 1판; 저널이 이벤트 표시(tabMode,
+  playersListUpdated)를 담고 전투 종료 시 기록되는지, 그리고 `python.log`의
+  `typeDeath` 라인이 텔레메트리의 alive 반전과 1:1로 일치하는지 확인한다
+  (저널은 더 이상 명단 스냅샷이나 alive 반전을 담지 않는다).
 - **폴백 훈련**: 앱을 중지한다(컴패니언 없음); 모드의 180 s busy 타임아웃이
   복구되고 다음 전투에서도 여전히 요청하는지 확인한다; 모드 디렉터리를
   손상시키면 오버레이가 조용히 추론으로 폴백하는지 확인한다.
