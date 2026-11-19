@@ -61,23 +61,22 @@ concurrency:
 
 jobs:
   preflight:
-    name: Release preflight (green CI on the tagged commit)
+    name: Release preflight (green basic check on the tagged commit)
     # A tag can be pushed at any commit, so the build must not trust that
-    # the commit was merged green: require the commit's ci.yml run to have
-    # concluded success (a pending run is waited for; a completed failure
-    # is final). Only ci.yml is consulted — this workflow's own check runs
-    # (this job in progress, the build jobs queued behind it) would keep an
-    # 'all check runs green' query pending on the same commit until the
-    # deadline. Escape hatch for an emergency hotfix that cannot
-    # materialize a green run: set repository variable
-    # RELEASE_SKIP_PREFLIGHT=true — the waiver is recorded in the job
-    # summary instead of passing silently.
+    # the commit was merged green: require the commit's post-merge basic
+    # check (ci-cache.yml — the trunk-push lane allowed by the 2026-11-06
+    # trigger policy) to have concluded success; a pending run is waited
+    # for, a completed failure is final. The full ci.yml became
+    # dispatch-only under policy R2, so it can no longer be the gate.
+    # Escape hatch for an emergency hotfix that cannot materialize a green
+    # run: set repository variable RELEASE_SKIP_PREFLIGHT=true — the waiver
+    # is recorded in the job summary instead of passing silently.
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - name: Require a green ci.yml run for ${{ github.sha }}
+      - name: Require a green ci-cache.yml run for ${{ github.sha }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -99,33 +98,33 @@ jobs:
             exit 0
           fi
           deadline=$((SECONDS + 900))
-          # The push-triggered ci.yml run may not be registered yet.
+          # The push-triggered ci-cache.yml run may not be registered yet.
           sleep 15
           while :; do
             set +e
-            state="$(gh run list --commit "$SHA" --workflow ci.yml --limit 1 \
+            state="$(gh run list --commit "$SHA" --workflow ci-cache.yml --limit 1 \
               --json status,conclusion \
               --jq '.[0] | if . == null then "none" else (.status + "/" + (.conclusion // "-")) end' 2>/dev/null)"
             rc=$?
             set -e
             if [ "$rc" -ne 0 ] || [ -z "$state" ]; then
-              echo "note: ci.yml run query failed (rc=$rc) — retrying"
+              echo "note: ci-cache.yml run query failed (rc=$rc) — retrying"
             else
-              echo "note: ci.yml on $SHA — $state ($((deadline - SECONDS))s left)"
+              echo "note: ci-cache.yml on $SHA — $state ($((deadline - SECONDS))s left)"
               case "$state" in
                 completed/success)
-                  echo "ci.yml on $SHA concluded success"
+                  echo "ci-cache.yml on $SHA concluded success"
                   exit 0
                   ;;
                 completed/*)
-                  echo "::error::ci.yml on $SHA concluded '$state' — refusing to release"
+                  echo "::error::ci-cache.yml on $SHA concluded '$state' — refusing to release"
                   exit 1
                   ;;
               esac
               # queued / in_progress / none — keep waiting.
             fi
             if [ "$SECONDS" -ge "$deadline" ]; then
-              echo "::error::no green ci.yml run for $SHA within 15 minutes — refusing to release"
+              echo "::error::no green ci-cache.yml run for $SHA within 15 minutes — refusing to release"
               exit 1
             fi
             sleep 20
@@ -538,7 +537,7 @@ jobs:
   # master policy:
   #
   #   publish the doc onto chore/app-digest-<tag> -> open the PR ->
-  #   dispatch ci.yml + commit-msg-lint.yml on the branch (a PR opened
+  #   dispatch commit-msg-lint.yml on the branch (a PR opened
   #   by the default GITHUB_TOKEN fires no pull_request events, so the
   #   required check runs must be materialized by dispatch; branch
   #   protection matches check runs by name on the head SHA) -> wait
@@ -557,7 +556,7 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
-      # gh workflow run for ci.yml / commit-msg-lint.yml / site.yml.
+      # gh workflow run for commit-msg-lint.yml / site.yml.
       actions: write
       # The failure alarm below opens/comments an issue when the digest
       # never reaches the live relay.
@@ -709,9 +708,8 @@ jobs:
         if: steps.doc.outputs.skip != 'true'
         run: |
           set -euo pipefail
-          gh workflow run ci.yml --ref "${{ steps.doc.outputs.branch }}"
           gh workflow run commit-msg-lint.yml --ref "${{ steps.doc.outputs.branch }}" -f pr="${{ steps.doc.outputs.pr }}"
-          echo "note: dispatched ci.yml and commit-msg-lint.yml on ${{ steps.doc.outputs.branch }}"
+          echo "note: dispatched commit-msg-lint.yml on ${{ steps.doc.outputs.branch }}"
 
       - name: Wait for checks and squash-merge
         if: steps.doc.outputs.skip != 'true'
