@@ -41,6 +41,7 @@ import {
   RING_COLOR,
 } from "./rangeRings";
 import type { MapBounds } from "./modelLoader";
+import type { ShipLabel } from "./shipLabel";
 import {
   SECOND_SECTOR_DRAW_MIN,
   adviceCssColor,
@@ -843,6 +844,10 @@ export interface EnlargedMapPaintOptions {
   logical: number;
   /** World-frame rotation in radians (live pill; 0 for exports). */
   rotation: number;
+  /** Draw a player-name + ship-name label above every observed marker —
+   *  the replay clip's HUD ask (the live 3D view shows labels as DOM
+   *  overlays, which have no equivalent on this canvas). */
+  shipLabels?: boolean;
 }
 
 export function paintEnlargedMap(
@@ -1061,6 +1066,54 @@ export function paintEnlargedMap(
     g.rotate((m.userData.yaw as number ?? 0) - Math.PI / 2);
     drawShipGlyph(g, m.userData.type as string | undefined, 0, 0, dead ? 26 : 34, color);
     g.restore();
+  }
+  // Ship labels (the replay clip's HUD): player name over ship name in a
+  // rounded dark pill above every OBSERVED marker. Drawn in the world
+  // frame; exports run rotation 0, so the text sits upright there. Dead
+  // ships keep their label but dim, mirroring the glyph's gray.
+  if (o.shipLabels) {
+    const byEntity = new Map<number, ShipLabel>();
+    for (const l of ctx.shipLabels.value) {
+      if (l.kind !== "plane") byEntity.set(l.entityId, l);
+    }
+    for (const m of ctx.shipMarkers) {
+      const firstT = m.userData.firstT as number | undefined;
+      if (t < (firstT ?? Infinity)) continue;
+      const label = byEntity.get(m.userData.entityId as number);
+      if (!label) continue;
+      const labelDead =
+        (m.userData.deathTime as number | null) != null &&
+        t >= (m.userData.deathTime as number);
+      const lx = zwx(m.position.x);
+      const ly = zwz(m.position.z) - 20;
+      const ink = labelDead
+        ? "rgba(148, 163, 184, 0.7)"
+        : label.role === "enemy"
+          ? "rgba(255, 138, 138, 0.95)"
+          : label.role === "self"
+            ? "rgba(255, 255, 255, 0.95)"
+            : "rgba(126, 226, 168, 0.95)";
+      g.font = "700 11px ui-sans-serif, system-ui, sans-serif";
+      const w1 = g.measureText(label.name).width;
+      g.font = "500 10px ui-sans-serif, system-ui, sans-serif";
+      const w2 = g.measureText(label.shipName).width;
+      const boxW = Math.ceil(Math.max(w1, w2)) + 10;
+      const boxH = 30;
+      const bx = Math.min(Math.max(2, lx - boxW / 2), zw - boxW - 2);
+      const by = Math.min(Math.max(2, ly - boxH), zw - boxH - 2);
+      g.fillStyle = "rgba(5, 8, 15, 0.6)";
+      g.beginPath();
+      g.roundRect(bx, by, boxW, boxH, 4);
+      g.fill();
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      g.font = "700 11px ui-sans-serif, system-ui, sans-serif";
+      g.fillStyle = ink;
+      g.fillText(label.name, bx + boxW / 2, by + 8);
+      g.font = "500 10px ui-sans-serif, system-ui, sans-serif";
+      g.fillStyle = "rgba(226, 232, 240, 0.78)";
+      g.fillText(label.shipName, bx + boxW / 2, by + 21);
+    }
   }
   // Smoke screens — the same filled puff band as the thumb pass, at
   // the view window's scale (45 m radius through zwx/zwz's rect), so

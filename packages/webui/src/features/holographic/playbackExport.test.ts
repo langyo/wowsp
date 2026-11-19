@@ -8,6 +8,8 @@ import {
   EXPORT_HEADER_H,
   PLAYBACK_CODEC_LADDER,
   EXPORT_LOGICAL,
+  EXPORT_SIDE_W,
+  EXPORT_TOTAL_LOGICAL,
   PLAYBACK_EXPORT_FPS,
   PLAYBACK_EXPORT_SIZES,
   clampExportSettings,
@@ -19,14 +21,17 @@ import { FOOT_H } from "@/features/share/shotKit";
 import { TACTICAL_SIZE } from "./tactical/render";
 
 describe("playbackExportLayout", () => {
-  it("stacks header + map + footer and keeps everything even", () => {
+  it("stacks header + map + footer across the side columns", () => {
     const l = playbackExportLayout(1080, true);
     expect(l.width).toBe(1080);
     expect(l.width % 2).toBe(0);
     expect(l.height % 2).toBe(0);
-    // Band heights follow the shared logical space exactly.
-    expect(l.mapTop).toBeCloseTo(EXPORT_HEADER_H * (1080 / EXPORT_LOGICAL), 6);
-    expect(l.footerHeight).toBeCloseTo(FOOT_H * (1080 / EXPORT_LOGICAL), 6);
+    // The map square sits between two side columns; band heights follow
+    // the shared logical space exactly.
+    expect(l.mapLeft).toBeCloseTo(EXPORT_SIDE_W * (1080 / EXPORT_TOTAL_LOGICAL), 6);
+    expect(l.mapTop).toBeCloseTo(EXPORT_HEADER_H * (1080 / EXPORT_TOTAL_LOGICAL), 6);
+    expect(l.mapSize).toBeCloseTo(EXPORT_LOGICAL * (1080 / EXPORT_TOTAL_LOGICAL), 6);
+    expect(l.footerHeight).toBeCloseTo(FOOT_H * (1080 / EXPORT_TOTAL_LOGICAL), 6);
     expect(l.footerTop).toBe(l.height - l.footerHeight);
   });
 
@@ -86,12 +91,13 @@ describe("frameTimesAtSpeed", () => {
 
 describe("clampExportSettings", () => {
   it("keeps on-ladder values untouched", () => {
-    const s = clampExportSettings({ format: "video", from: "now", fps: 60, speed: 2, size: 720, footer: false });
-    expect(s).toEqual({ format: "video", from: "now", fps: 60, speed: 2, size: 720, footer: false });
+    const s = clampExportSettings({ format: "video", from: "now", fps: 60, speed: 2, size: 1080, footer: false });
+    expect(s).toEqual({ format: "video", from: "now", fps: 60, speed: 2, size: 1080, footer: false });
   });
 
   it("re-bases fps, speed and size when the format flips", () => {
     const s = clampExportSettings({ format: "gif", from: "start", fps: 60, speed: 3, size: 1080, footer: true });
+    // (1080 is off the GIF width ladder → falls to the ladder's smallest.)
     expect(s.format).toBe("gif");
     expect(PLAYBACK_EXPORT_FPS.gif).toContain(s.fps);
     expect(PLAYBACK_EXPORT_SIZES.gif).toContain(s.size);

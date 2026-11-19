@@ -602,12 +602,18 @@
     "start": "Start export",
     "cancel": "Cancel",
     "toggle": "Export replay video / GIF",
-    "running": "Exporting replay",
+    "runningProgress": "Exporting replay {done}/{total}",
     "cancelRun": "Cancel",
     "unsupported": "Video encoding is unavailable here",
     "toastEmpty": "Nothing to export in this range",
     "saved": "Replay clip saved to {path}",
-    "savedCopied": "Saved to {path} — file copied to the clipboard, ready to paste"
+    "savedCopied": "Saved to {path} — file copied to the clipboard, ready to paste",
+    "teamAlly": "Allies",
+    "teamEnemy": "Enemies",
+    "damageTitle": "Damage dealt",
+    "dmgFrags": "Frags",
+    "dmgTaken": "Taken",
+    "chatTitle": "Chat log"
   },
   "chatLog": "Battle chat",
   "chat": {
