@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   EXPORT_HEADER_H,
+  PLAYBACK_CODEC_LADDER,
   EXPORT_LOGICAL,
   PLAYBACK_EXPORT_FPS,
   PLAYBACK_EXPORT_SIZES,
@@ -95,5 +96,23 @@ describe("clampExportSettings", () => {
     expect(PLAYBACK_EXPORT_FPS.gif).toContain(s.fps);
     expect(PLAYBACK_EXPORT_SIZES.gif).toContain(s.size);
     expect([1, 2, 5, 10, 20]).toContain(s.speed);
+  });
+});
+
+describe("PLAYBACK_CODEC_LADDER", () => {
+  it("ships VP9 then AV1 inside MP4, H.264 as the last resort", () => {
+    expect(PLAYBACK_CODEC_LADDER).toEqual([
+      { codec: "vp9", ext: "mp4" },
+      { codec: "av1", ext: "mp4" },
+      { codec: "avc", ext: "mp4" },
+    ]);
+  });
+
+  it("never muxes VP8 into MP4 (no player decodes vp08)", () => {
+    for (const rung of PLAYBACK_CODEC_LADDER) {
+      expect(rung.codec).not.toBe("vp8");
+    }
+    // Every rung lands in the MP4 container the modal advertises.
+    expect(PLAYBACK_CODEC_LADDER.every((r) => r.ext === "mp4")).toBe(true);
   });
 });

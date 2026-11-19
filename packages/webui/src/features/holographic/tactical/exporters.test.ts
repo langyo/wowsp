@@ -1,6 +1,6 @@
 /** Offline-export frame schedule tests (pure — no DOM / WebCodecs here). */
 import { describe, expect, it } from "vitest";
-import { extForCodec, frameTimes } from "./exporters";
+import { DEFAULT_CODEC_LADDER, frameTimes } from "./exporters";
 
 describe("frameTimes", () => {
   it("steps at 1/fps from `from` through `to` inclusive", () => {
@@ -36,10 +36,20 @@ describe("frameTimes", () => {
   });
 });
 
-describe("extForCodec", () => {
-  it("sends H.264 to MP4 and the VP family to WebM", () => {
-    expect(extForCodec("avc")).toBe("mp4");
-    expect(extForCodec("vp8")).toBe("webm");
-    expect(extForCodec("vp9")).toBe("webm");
+describe("DEFAULT_CODEC_LADDER", () => {
+  it("keeps the board's MP4-first contract (avc to MP4, vp9 to WebM)", () => {
+    expect(DEFAULT_CODEC_LADDER).toEqual([
+      { codec: "avc", ext: "mp4" },
+      { codec: "vp9", ext: "webm" },
+    ]);
+  });
+
+  it("pairs every rung with a container that accepts the codec", () => {
+    // WebM holds vp8/vp9/av1 only; MP4 holds everything we emit. A future
+    // rung like {avc, webm} must fail here, not in the muxer at runtime.
+    const webmOk = new Set(["vp8", "vp9", "av1"]);
+    for (const rung of DEFAULT_CODEC_LADDER) {
+      if (rung.ext === "webm") expect(webmOk.has(rung.codec)).toBe(true);
+    }
   });
 });

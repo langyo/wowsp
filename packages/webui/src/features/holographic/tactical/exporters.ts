@@ -239,12 +239,12 @@ export interface OfflineRenderOptions {
    *  replay-playback export's speed multiplier) pass their own uniform
    * grid (i / fps) so the clip plays fast instead of long. */
   frameTimestamps?: number[];
-  /** Preferred video codecs, best first (mediabunny VideoCodec ids).
-   *  Defaults to the board's MP4-first ladder (avc → vp9); hosts with a
-   *  different compatibility contract (the replay clip ships VP8-first)
-   *  pass their own order. The first entry the host can actually encode
-   *  wins; its container follows extForCodec. */
-  codecOrder?: VideoCodec[];
+  /** Preferred codec/container ladder, best first. Defaults to the
+   *  board's MP4-first contract (avc into MP4, vp9 into WebM); hosts with
+   *  a different compatibility contract (the replay clip ships
+   *  VP9/AV1 into MP4) pass their own ladder. The first entry the host
+   *  can actually encode wins. */
+  codecLadder?: readonly OfflineCodecChoice[];
   onProgress?: (done: number, total: number) => void;
   cancelToken?: { cancelled: boolean };
 }
@@ -257,27 +257,34 @@ export interface OfflineRenderResult {
   cancelled: boolean;
 }
 
-/** The mux container a codec lands in: H.264 rides MP4 (fastStart seeks);
- *  every other codec the encoders here produce — VP8/VP9 — rides WebM. */
-export function extForCodec(codec: VideoCodec): "mp4" | "webm" {
-  return codec === "avc" ? "mp4" : "webm";
+/** One rung of an offline export's codec ladder: the mediabunny codec id
+ *  plus the container it muxes into. The pairing is explicit because a
+ *  container's decoder support is codec-dependent (VP8 is only playable
+ *  inside WebM, VP9/AV1 are playable inside MP4, H.264 rides MP4). */
+export interface OfflineCodecChoice {
+  codec: VideoCodec;
+  ext: "mp4" | "webm";
 }
 
-/** Preferred codec/format ladder for offline exports. The DEFAULT is the
- *  board's MP4-first contract (H.264 plays everywhere, VP9 WebM as the
- *  fallback); callers pass `codecOrder` to reorder it — the replay clip
- *  ships VP8-first (user-requested compatibility contract). Returns null
- *  when WebCodecs can't encode any entry (caller falls back to the
- *  realtime MediaRecorder path). */
+/** The tactical board's MP4-first contract (unchanged): H.264 into MP4, VP9
+ *  into WebM as the fallback when the host exposes no AVC encoder. */
+export const DEFAULT_CODEC_LADDER: readonly OfflineCodecChoice[] = [
+  { codec: "avc", ext: "mp4" },
+  { codec: "vp9", ext: "webm" },
+];
+
+/** Preferred codec/container ladder for offline exports. Returns null when
+ *  WebCodecs can't encode any entry (caller falls back to the realtime
+ *  MediaRecorder path). */
 async function pickOfflineFormat(
   width: number,
   height: number,
-  codecOrder: VideoCodec[] = ["avc", "vp9"],
-): Promise<{ codec: VideoCodec; ext: "mp4" | "webm" } | null> {
+  codecLadder: readonly OfflineCodecChoice[] = DEFAULT_CODEC_LADDER,
+): Promise<OfflineCodecChoice | null> {
   if (typeof VideoEncoder === "undefined") return null;
-  for (const codec of codecOrder) {
-    if (await canEncodeVideo(codec, { width, height })) {
-      return { codec, ext: extForCodec(codec) };
+  for (const choice of codecLadder) {
+    if (await canEncodeVideo(choice.codec, { width, height })) {
+      return choice;
     }
   }
   return null;
@@ -289,7 +296,7 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
   const width = opts.width ?? opts.size ?? 0;
   const height = opts.height ?? opts.size ?? 0;
   if (width <= 0 || height <= 0) return null;
-  const picked = await pickOfflineFormat(width, height, opts.codecOrder);
+  const picked = await pickOfflineFormat(width, height, opts.codecLadder);
   if (!picked) return null;
 
   const canvas = document.createElement("canvas");
@@ -299,12 +306,15 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
   if (!ctx) return null;
 
   const target = new BufferTarget();
-  const output = new Output({
-    format: picked.ext === "mp4"
-      ? new Mp4OutputFormat({ fastStart: "in-memory" })
-      : new WebMOutputFormat(),
-    target,
-  });
+  const format = picked.ext === "mp4"
+    ? new Mp4OutputFormat({ fastStart: "in-memory" })
+    : new WebMOutputFormat();
+  // Ladder rungs pair a codec with a container, and a mismatched pair (e.g.
+  // AVC into WebM) type-checks but makes addVideoTrack throw OUTSIDE the
+  // cancel-handling try below. Verify the container accepts the codec and
+  // degrade to null (the caller's "unsupported" path) instead.
+  if (!format.getSupportedVideoCodecs().includes(picked.codec)) return null;
+  const output = new Output({ format, target });
   const source = new CanvasSource(canvas, { codec: picked.codec, quality: QUALITY_HIGH });
   output.addVideoTrack(source, { frameRate: opts.fps });
   const cancelled = () => opts.cancelToken?.cancelled === true;
