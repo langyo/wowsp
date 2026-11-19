@@ -588,7 +588,7 @@
   "export": {
     "title": "Экспорт повтора",
     "format": "Формат",
-    "formatVideo": "Видео (MP4/WebM)",
+    "formatVideo": "Видео (MP4)",
     "formatGif": "GIF-анимация",
     "range": "Диапазон",
     "rangeNow": "От текущего момента до конца",

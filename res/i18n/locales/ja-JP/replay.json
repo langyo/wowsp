@@ -588,7 +588,7 @@
   "export": {
     "title": "リプレイを書き出す",
     "format": "形式",
-    "formatVideo": "動画（MP4/WebM）",
+    "formatVideo": "動画（MP4）",
     "formatGif": "GIF アニメ",
     "range": "範囲",
     "rangeNow": "現在位置から終了まで",

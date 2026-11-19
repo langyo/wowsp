@@ -588,7 +588,7 @@
   "export": {
     "title": "匯出重播",
     "format": "格式",
-    "formatVideo": "影片（MP4/WebM）",
+    "formatVideo": "影片（MP4）",
     "formatGif": "GIF 動圖",
     "range": "範圍",
     "rangeNow": "從目前時刻到結束",

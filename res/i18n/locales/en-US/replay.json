@@ -588,7 +588,7 @@
   "export": {
     "title": "Export replay clip",
     "format": "Format",
-    "formatVideo": "Video (MP4/WebM)",
+    "formatVideo": "Video (MP4)",
     "formatGif": "GIF animation",
     "range": "Range",
     "rangeNow": "From playhead to end",

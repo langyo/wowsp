@@ -29,7 +29,10 @@ import {
   type ShotFooterStrings,
   type ShotPalette,
 } from "@/features/share/shotKit";
-import { renderVideoOffline } from "./tactical/exporters";
+import {
+  renderVideoOffline,
+  type OfflineCodecChoice,
+} from "./tactical/exporters";
 import { TACTICAL_SIZE } from "./tactical/render";
 
 /** Logical width of the whole composition — the map square's own edge
@@ -41,6 +44,18 @@ export const EXPORT_HEADER_H = 56;
 
 /** Export formats offered by the modal. */
 export type PlaybackExportFormat = "video" | "gif";
+
+/** The replay clip's video ladder — VP9 into MP4 first (the modern MP4
+ *  combination every Chromium/ffmpeg/VLC toolchain plays: `vp09` sample
+ *  entries are standard ISO BMFF), AV1 next (better compression, slower
+ *  encode), H.264 as the last resort. Deliberately NOT VP8-in-MP4: the
+ *  `vp08` binding exists on paper but no mainstream player decodes it
+ *  (verified: Chromium `canPlayType` refuses, ffmpeg refuses to mux). */
+export const PLAYBACK_CODEC_LADDER: readonly OfflineCodecChoice[] = [
+  { codec: "vp9", ext: "mp4" },
+  { codec: "av1", ext: "mp4" },
+  { codec: "avc", ext: "mp4" },
+];
 /** Range options — same semantics as the tactical wizard's. */
 export type PlaybackExportRange = "now" | "start";
 
@@ -349,11 +364,8 @@ export async function renderPlaybackExport(
       width: layout.width,
       height: layout.height,
       frameTimestamps: pts,
-      // VP8 first (user-requested contract): clips must decode anywhere —
-      // old chat previews, browser <video> without H.264 licensing baggage
-      // — and transcode cheap. VP9/AVC stay behind it as graceful
-      // fallbacks when a host lacks the VP8 encoder.
-      codecOrder: ["vp8", "vp9", "avc"],
+      // VP9 → AV1 → AVC, all inside MP4 (see PLAYBACK_CODEC_LADDER).
+      codecLadder: PLAYBACK_CODEC_LADDER,
       paintAt: (t, g) => {
         // The exporter's canvas is our canvas — compose straight into it.
         composeFrame(g, layout, req, t);

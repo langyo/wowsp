@@ -588,7 +588,7 @@
   "export": {
     "title": "Exporter le replay",
     "format": "Format",
-    "formatVideo": "Vidéo (MP4/WebM)",
+    "formatVideo": "Vidéo (MP4)",
     "formatGif": "GIF animé",
     "range": "Plage",
     "rangeNow": "De la position actuelle à la fin",

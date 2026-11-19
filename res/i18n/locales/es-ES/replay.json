@@ -588,7 +588,7 @@
   "export": {
     "title": "Exportar repetición",
     "format": "Formato",
-    "formatVideo": "Vídeo (MP4/WebM)",
+    "formatVideo": "Vídeo (MP4)",
     "formatGif": "GIF animado",
     "range": "Intervalo",
     "rangeNow": "Del momento actual al final",
