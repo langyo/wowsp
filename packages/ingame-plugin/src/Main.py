@@ -6,8 +6,8 @@ sandbox has no networking, so this probe observes and bridges out:
 
   - everything it learns goes to python.log (prefix WOWSP_PROBE) and to
     flat JSON files next to this Main.py (heartbeat, roster_raw, the
-    roster journal, telemetry, order_probe) for the wowsp companion
-    process to read,
+    roster journal, telemetry, order_probe, builds, price_catalog) for
+    the wowsp companion process to read,
   - live alive flags are bridged out as telemetry for the transparent
     overlay window (priority: mod telemetry > screen-capture inference >
     static roster order), together with the game's own Tab sort keys
@@ -19,8 +19,9 @@ sandbox has no networking, so this probe observes and bridges out:
     targets off it) and the walk's side membership ('sides' — the
     records-dead build class's only team split, the companion's
     probe-arena synthesizer's frame fallback),
-  - each battle's full-roster BUILD bridge (builds.json): once the
-    roster stabilizes, every player's raw SHIP_CONFIG blob
+  - each battle's full-roster BUILD bridge (builds.json): a tick after
+    the roster stabilizes (off the stabilization tick's own burst),
+    every player's raw SHIP_CONFIG blob
     (shipConfigDump: units/modernizations/exteriors/ensigns/consumables)
     plus the captain-skill picks (crewModifiersCompactParams.learnedSkills,
     the WG-family crewParams shape as the fallback) go out for the app's
@@ -31,7 +32,9 @@ sandbox has no networking, so this probe observes and bridges out:
     (itemPrice / shipCrossResearchInfo / shipTechRestrictions /
     shipEconomicAttributes) — the per-item price and module research-XP
     layer the companion cannot derive statically. Capture-only, one-shot
-    (see dump_price_catalog);
+    (see dump_price_catalog): attempts ride idle port ticks (and late
+    battle ticks only past the start burst), and the file lands ONCE —
+    ready-gated, never rewritten per retry;
   - the ONE thing still rendered is the capture side channel's barcode
     strips: the unbound view (WoWSPProbe.unbound, installed to
     gui/unbound2/mods/ where the game auto-discovers + mounts battle
@@ -176,6 +179,12 @@ BARCODE_BACK = 0xFF101010
 # another). Changing either number is a spec bump against the client.
 AIM_LOCKABLE = 0x35C7
 AIM_MAIN_BITS = 0x7
+
+# Empty-result retry cap for the per-battle sort-key cache (see
+# write_telemetry): while the ship collection keeps answering with no
+# pairable keys (the login-sync window), the cache re-walks; past the
+# cap the empty verdict latches for the rest of the battle.
+SORT_KEY_MAX_TRIES = 15
 
 
 def load_tool_config():
@@ -847,12 +856,14 @@ PRICE_CATALOG_VERSION = 1
 PRICE_CATALOG_COLLECTIONS = ('shipCrossResearchInfo', 'itemPrice',
                              'shipTechRestrictions', 'shipEconomicAttributes')
 
-# Login-sync window: retry on the scheduler ticks until BOTH the research
-# and the price collection carry data, or a handful of attempts is spent
-# — then the bridge is done for the whole client session. The file is
-# never re-written afterwards (the app may be reading it). Ten attempts
-# is ~20 s at the port cadence (the load attempt counts), which covers
-# the login datastore sync without rewriting the bridge file forever.
+# Login-sync window: retry until BOTH the research and the price
+# collection carry data, or the attempt budget is spent — then the
+# bridge is done for the whole client session. The file is never
+# re-written afterwards (the app may be reading it). Attempts ride the
+# idle-port lattice in tick() (every 10th port tick, ~20 s apart at the
+# port cadence; the load attempt counts), so ten attempts span ~3.5 min
+# of port time — with late-battle lattice slots as the fallback for a
+# player who battles through the whole window.
 PRICE_CATALOG_MAX_TRIES = 10
 
 # Bounds: a pathological collection must never stall a tick or grow the
@@ -1195,6 +1206,13 @@ class Probe:
         # login-sync retry window.
         self.price_catalog_done = False
         self.price_catalog_tries = 0
+        # One-shot bridge scheduling counters (the 2026-11-19 performance
+        # fix): port_ticks lives for the whole client session (the price
+        # catalog's idle retry lattice); in_battle_ticks / session_ticks
+        # reset per battle in details_reset with the battle state.
+        self.port_ticks = 0
+        self.in_battle_ticks = 0
+        self.session_ticks = 0
         self.journal = []
         self.empty_ticks = 0
         self.dead_latch = {None} - {None}
@@ -1214,6 +1232,11 @@ class Probe:
         self.order = {'ally': [], 'enemy': []}
         self.alive_last = {'ally': {}, 'enemy': {}}
         self.sort_keys = {}
+        # The sort-key cache gates (see write_telemetry): the avatar-name
+        # signature the cached keys were computed under, and the
+        # empty-result retry counter.
+        self.sort_key_sig = None
+        self.sort_key_tries = 0
         self.states = {}
         self.last_panel = ''
         # Aim state: the current target walk verdict ({name, flags} or
@@ -1319,8 +1342,9 @@ class Probe:
         offline, so the probe invents nothing.
 
         Contract: builds.json is written ONCE per roster session
-        (builds_written), retrying at most BUILDS_MAX_TRIES ticks for the
-        old-build shape whose records exist but expose no build fields;
+        (builds_written), a tick after stabilization (tick()'s
+        session_ticks gate), retrying at most BUILDS_MAX_TRIES ticks for
+        the old-build shape whose records exist but expose no build fields;
         quit() writes the quit-clear (empty players). A missing file means
         "this probe build predates the bridge" — consumers degrade.
         """
@@ -1390,7 +1414,7 @@ class Probe:
             self.builds_written = True
             self.soft('builds failed=' + _exc_text(120))
 
-    def dump_price_catalog(self, phase):
+    def dump_price_catalog(self, phase, final=False):
         """One dump of the client's server-synced economy components.
 
         The four dataHub collections below carry what the companion cannot
@@ -1408,8 +1432,10 @@ class Probe:
         generic fallback (see _price_component_row). Returns the
         per-collection counts (-1 = the hub refused that name) or None
         when no dataHub is injected / the write failed. Writes
-        price_catalog.json only when at least one entity was captured;
-        an empty or withheld client is a SILENT no-op (the Lesta sandbox
+        price_catalog.json exactly ONCE — only when BOTH key collections
+        carry data (the ready gate) or on the final attempt (final=True);
+        a not-yet-ready capture walks and returns counts WITHOUT writing.
+        An empty or withheld client is a SILENT no-op (the Lesta sandbox
         shape: no file, no log line, no soft error). Never raises: a
         refused collection, a bad entity or an unreadable field is
         skipped, not logged — the one aggregate line is logged by
@@ -1466,6 +1492,20 @@ class Probe:
             # no file, no log — the caller retries during the login
             # window and otherwise gives up silently.
             return counts
+        # The single-write gate (the 2026-11-19 performance fix): the
+        # field shape whose ready gate never closes (live 2026-11-18:
+        # shipCrossResearchInfo=0 with itemPrice=12220) used to rewrite
+        # the whole multi-MB file on EVERY retry — 1.2-1.4 s main-thread
+        # stalls stacked on the battle-start seconds (field-measured in
+        # tmp/crash-analysis). Ready or final attempt: write once.
+        ready = False
+        try:
+            ready = (counts.get('shipCrossResearchInfo', 0) > 0 and
+                     counts.get('itemPrice', 0) > 0)
+        except:
+            ready = False
+        if not (final or ready):
+            return counts
         body = {'v': PRICE_CATALOG_VERSION,
                 't': _to_int(time.time() * 1000),
                 'phase': phase or '',
@@ -1484,7 +1524,8 @@ class Probe:
         """One bounded attempt at the one-shot price catalog bridge.
 
         Called once at load (after resolve_api) and again from the
-        scheduler ticks while the login datastore sync is still in
+        scheduler's PORT-tick lattice (and, budget permitting, late
+        battle ticks) while the login datastore sync is still in
         flight: the dump is retried until BOTH the research collection
         and itemPrice carry data, or PRICE_CATALOG_MAX_TRIES is spent.
         Then the bridge is DONE for the whole client session — later
@@ -1499,7 +1540,8 @@ class Probe:
             self.price_catalog_done = True
             return
         self.price_catalog_tries += 1
-        counts = self.dump_price_catalog(phase)
+        counts = self.dump_price_catalog(
+            phase, self.price_catalog_tries >= PRICE_CATALOG_MAX_TRIES)
         if counts is None:
             # No dataHub / failed write: silently stand down.
             self.price_catalog_done = True
@@ -1524,9 +1566,10 @@ class Probe:
             if self.price_catalog_tries >= PRICE_CATALOG_MAX_TRIES:
                 self.price_catalog_done = True
             return
-        # A partial capture keeps retrying (each attempt rewrites the
-        # same file whole) until both key collections landed or the cap
-        # is spent; the one aggregate log line is emitted exactly once.
+        # A not-yet-ready capture keeps retrying WITHOUT rewriting the
+        # file (dump_price_catalog's ready/final gate — the file lands
+        # exactly once); the one aggregate log line is emitted exactly
+        # once with it.
         if ready or self.price_catalog_tries >= PRICE_CATALOG_MAX_TRIES:
             self.price_catalog_done = True
             parts = []
@@ -2321,11 +2364,15 @@ class Probe:
                 side = 'enemy'
                 try:
                     if cc.relation in entity:
-                        if entity[cc.relation].value in ally_relations:
+                        # One subscript, not three (the 2026-11-19
+                        # performance fix): each entity[...] is a native
+                        # bridge crossing on the game's main thread.
+                        rel_value = entity[cc.relation].value
+                        if rel_value in ally_relations:
                             side = 'ally'
-                        if entity[cc.relation].value == self_relation:
+                        if rel_value == self_relation:
                             self_name = name
-                    row['relation'] = _fmt(entity[cc.relation].value)
+                        row['relation'] = _fmt(rel_value)
                 except:
                     pass
                 states[name] = row
@@ -2490,6 +2537,12 @@ class Probe:
                                                         'players': {}}))
         except:
             self.soft('builds clear failed=' + _exc_text(120))
+        # The journal's battle-end flush — the event marks' only write
+        # (see journal_flush).
+        try:
+            self.journal_flush()
+        except:
+            self.soft('journal flush failed=' + _exc_text(120))
         log('battle cleared')
 
     def details_reset(self):
@@ -2541,6 +2594,15 @@ class Probe:
         self.grace_ticks = 0
         self.last_unstable = []
         self.session_fallback = ''
+        # The per-battle scheduling counters reset with the battle state:
+        # in_battle_ticks feeds the price lattice's late-battle gate,
+        # session_ticks the builds/order-probe deferrals in tick().
+        self.in_battle_ticks = 0
+        self.session_ticks = 0
+        # The sort-key cache's signature/retry state resets with the
+        # keys themselves (see write_telemetry).
+        self.sort_key_sig = None
+        self.sort_key_tries = 0
         # Defensive: the walk-width latch is refreshed by write_telemetry
         # before any walk-sourced consumption could read it, but a future
         # tick() reordering must not inherit the previous battle's width.
@@ -2638,16 +2700,28 @@ class Probe:
             log('roster record skipped key=' + _fmt(key))
 
     def journal_mark(self, kind):
+        # Append-only (the 2026-11-19 performance fix): a mark costs one
+        # in-memory line. The whole-file flush moved to battle end (see
+        # journal_flush) — the old per-mark flush turned every Tab
+        # press/release into a whole-journal rewrite on the game thread.
         self.journal.append('{"t":' + _fmt(_to_int(time.time() * 1000)) + ',"ev":' + json_encode_safe(kind) + '}')
-        self.journal_flush()
 
     def journal_flush(self):
-        # The sandbox open() has no append mode (it returns None for 'a'), so
-        # the journal is rewritten whole from an in-memory ring buffer. The
-        # limit re-reads TOOL_CONFIG each flush (start() refreshes it in
-        # place, so a settings flip applies without a relaunch) and a
-        # 0/negative value clamps to the default: "[:-0]" deletes nothing
-        # and the ring would grow without bound.
+        # Battle-end flush of the event-mark ring (the 2026-11-19
+        # performance fix). The sandbox open() has no append mode (it
+        # returns None for 'a'), so the file is rewritten whole from the
+        # in-memory ring — once per battle now (quit), never per mark:
+        # marks are one short line each, so the ring stays kilobytes at
+        # the 300-line limit, where the old roster-body journal grew to
+        # 3-11 MB and rewrote on every combat tick and every Tab
+        # press/release. The limit re-reads TOOL_CONFIG each flush
+        # (start() refreshes it in place, so a settings flip applies
+        # without a relaunch) and a 0/negative value clamps to the
+        # default: "[:-0]" deletes nothing and the ring would grow
+        # without bound. An empty ring writes nothing (a session without
+        # marks keeps the previous battle's file).
+        if not self.journal:
+            return
         limit = TOOL_CONFIG['journal_limit']
         if limit <= 0:
             limit = CONFIG_DEFAULTS['journal_limit']
@@ -2828,9 +2902,24 @@ class Probe:
         return self.last_bots_cache or []
 
     def observe_raw(self, records):
-        """Project roster records plus entity-component state; rewrite
-        roster_raw.json on change and append every distinct state to the
-        journal so one battle shows the change sequence around TAB re-sorts."""
+        """Project roster records plus entity-component state into the
+        once-per-battle roster_raw.json schema snapshot.
+
+        Frozen at session open (the 2026-11-19 performance fix): the
+        file used to re-encode the full roster (shipConfigDump blobs
+        included) and rewrite on EVERY body change — most combat ticks,
+        since hp/score churn flips the encoded body — purely as
+        diagnostics. The companion reads roster_raw exactly once per
+        battle (probe_arena builds its roster on the first frame
+        claim), so the snapshot now writes only while the roster is
+        still churning pre-session (the last pre-stabilization write
+        is by definition the complete roster — stabilization means
+        identical consecutive reads), plus the post-battle empty
+        clear on the first tick after quit. The journal receives no
+        roster bodies at all anymore (see journal_flush): its marks
+        are the event timeline alone."""
+        if self.session:
+            return
         try:
             projection = {}
             for key, p in records.items():
@@ -2840,7 +2929,6 @@ class Probe:
                                      'states': self.entity_states(),
                                      'order': order})
             if body != self.last_raw:
-                first = self.last_raw == ''
                 self.last_raw = body
                 stamp = _fmt(_to_int(time.time() * 1000))
                 try:
@@ -2862,10 +2950,6 @@ class Probe:
                         self.discover(record)
                     except:
                         log('discovery crashed=' + _exc_text(120))
-                # body starts with '{'; splice it open so the line is one
-                # flat object: {"t":...,"players":...,"states":...}
-                self.journal.append('{"t":' + stamp + ',' + body[1:])
-                self.journal_flush()
         except:
             self.soft('roster_raw failed=' + _exc_text(120))
 
@@ -2983,19 +3067,44 @@ class Probe:
             ' players=' + _fmt(len(rows)))
 
     def tick(self):
-        # The one-shot price catalog retry (see tick_price_catalog): the
-        # login-sync bridge may only fill after load, so a bounded retry
-        # rides the normal scheduler cadence until it is done. Skipped
-        # while the scene-swap hold is armed: the four economy
-        # collections are account-scoped (the login sync usually lands
-        # in port, and the per-session try budget outlives any battle),
-        # so deferring the walk past the hold costs nothing and keeps
-        # every getEntityCollections call out of the swap window.
-        if self.scene_ready:
-            try:
-                self.tick_price_catalog('battle' if self.in_battle else 'port')
-            except:
-                self.soft('price catalog failed=' + _exc_text(120))
+        # Phase tick counters (the one-shot bridges' scheduling): the
+        # price-catalog lattice below and the deferred builds/order-probe
+        # gates at the end of this tick key off them. NOTE: `in_battle`
+        # alone is NOT the battle signal — details_reset clears it at
+        # session open (it only bridges battleStart -> the session latch,
+        # the heartbeat's independent phase source), so the real phase
+        # test is the heartbeat's own: session OR the battleStart latch.
+        if self.session or self.in_battle:
+            self.in_battle_ticks += 1
+        else:
+            self.port_ticks += 1
+        if self.session:
+            self.session_ticks += 1
+        # The one-shot price catalog lattice (see tick_price_catalog —
+        # the 2026-11-19 performance fix): the dump walks up to 30 000
+        # entities, so its attempts must never land on the battle-start
+        # burst, where the old per-tick retries produced the
+        # field-measured 1.2-1.4 s main-thread stalls. Attempts ride
+        # idle PORT ticks (every 10th — the login-sync collections are
+        # account-scoped) and, only while the budget is still unspent,
+        # late battle ticks (scene up AND 30 battle ticks in, then every
+        # 10th — the 30 counts battle ticks, so a late scene pushes the
+        # first attempt further still). The loading->battle swap window
+        # stays attempt-free either way (the SCENE_FALLBACK_TICKS crash
+        # class).
+        if not self.price_catalog_done:
+            if not (self.session or self.in_battle):
+                if self.port_ticks % 10 == 0:
+                    try:
+                        self.tick_price_catalog('port')
+                    except:
+                        self.soft('price catalog failed=' + _exc_text(120))
+            elif (self.scene_ready and self.in_battle_ticks >= 30 and
+                    self.in_battle_ticks % 10 == 0):
+                try:
+                    self.tick_price_catalog('battle')
+                except:
+                    self.soft('price catalog failed=' + _exc_text(120))
         # The scene-swap hold's fallback (see SCENE_FALLBACK_TICKS):
         # once the budget lapses in battle ticks, the hold lifts WITHOUT
         # the SFM event — a build whose event bus withholds scene-up
@@ -3100,16 +3209,21 @@ class Probe:
         if not self.session:
             return
         # The build bridge: one builds.json per battle, written on the
-        # first post-stabilization tick that yields readable build fields
-        # (a bounded retry covers the old-build shape); see write_builds.
-        if not self.builds_written:
+        # first post-open tick that yields readable build fields (off
+        # the stabilization tick's own burst — session open, UI entity
+        # churn, the discover battery; a bounded retry covers the
+        # old-build shape); see write_builds.
+        if self.session_ticks >= 1 and not self.builds_written:
             self.write_builds(self.latest_raw)
-        # One-shot client order source probe (see client_order_probe): run
-        # on the FIRST stabilized tick AFTER the scene is up — a replay
-        # can stop a second later, and the AvatarSystem collections the
-        # probe samples are scene-scoped, so the hold defers it with the
-        # rest of the walks. It never feeds the strips or telemetry.
-        if not self.order_probe_done and self.scene_ready:
+        # One-shot client order source probe (see client_order_probe):
+        # deferred to its own tick past the builds bridge so the
+        # stabilization window's one-shot costs never stack, still gated
+        # on the scene latch — a replay can stop a second later, and the
+        # AvatarSystem collections the probe samples are scene-scoped,
+        # so the hold defers it with the rest of the walks. It never
+        # feeds the strips or telemetry.
+        if (self.session_ticks >= 2 and not self.order_probe_done and
+                self.scene_ready):
             self.client_order_probe()
             self.order_probe_done = True
 
@@ -3184,7 +3298,25 @@ class Probe:
             # The game's own TAB sort keys (see sort_key_probe): read BEFORE
             # the fold so merge_order can sort the strips' alive block with
             # them too, and carried in the payload below.
-            self.sort_keys = self.sort_key_probe()
+            # Cached per battle (the 2026-11-19 performance fix): the keys
+            # are static for a whole battle (ship/nation/level/shortName),
+            # but the probe re-walked the ship AND avatar collections —
+            # probing every component of every entity, ~1 300 exception
+            # misses per tick on the live client — every second for
+            # identical output. The cache recomputes when the walk's
+            # avatar-name signature changes or while the probe keeps
+            # answering empty (the login-sync window), and latches after
+            # SORT_KEY_MAX_TRIES empty results so a keyless build stops
+            # paying the walks (a roster change still re-arms it — deaths
+            # swap the signature — bounded by the battle's own roster
+            # changes).
+            sig = {n: None for n in states}
+            if ((not self.sort_keys and
+                 self.sort_key_tries < SORT_KEY_MAX_TRIES) or
+                    sig != self.sort_key_sig):
+                self.sort_key_tries += 1
+                self.sort_key_sig = sig
+                self.sort_keys = self.sort_key_probe()
             # Shared with the strip row builder so alive flags + sides cost
             # one entity walk per tick, not two.
             self.states = states

@@ -141,7 +141,8 @@ Lesta の Co-op 戦闘が 'ship' コレクションを完全に供給し（bot �
 （レコード自身が持つ shipName フィールド —— クライアントがレンダリングする
 ローカライズ艦名の生文字列。このフィールドをレコードが持たないビルドは空の
 表を出力し、消費側は自動的に DB 名へフォールバックするため、挙動は従来
-どおり）。roster_raw.json は同じフレームに `order` 配列を載せ、Rust 側の合成
+どおり）。roster_raw.json（2026-11-19 以降、対局ごとに 1 回のスキーマ
+スナップショット）は先頭フレームに `order` 配列を載せる。Rust 側の合成
 （probe_roster）はそれに従って vehicles を順序保存で出力し（フィールド欠落や
 指名されていない項目は (name, id) へフォールバック）、shipName を各行の
 ship_name へ落とし込む。webui の両側（/live パネルとオーバーレイ）は
@@ -190,8 +191,8 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
 
 ```
 ┌─ game client (Mods API sandbox, no network) ─────────────┐
-│ PnFMods/WoWSPStats/Main.py                               │
-│  · roster poll (1 s, stable-confirm) → request.json      │
+│ PnFMods/WoWSPProbe/Main.py                               │
+│  · roster poll (1 s, stable-confirm) → roster_raw.json   │
 │  · entity walk → telemetry (hp/relation/alive)           │
 │  · SFM events → tabMode marks, lifecycle marks           │
 │  · heartbeat.json (phase port/battle, 1–2 s)             │
@@ -230,11 +231,10 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
-// テレメトリ journal —— 戦闘ごとの有界リングをファイルごと書き直す。
-// 個々の独立状態とイベントマークを 1 本のタイムラインに並べる:
-{ "t": 1690000000000, "players": { "<avatarId>": { /* projection */ } },
-  "states": { "<name>": { "hp": "43150.0/43150.0", "relation": "2",
-                          "alive": "True" } } }
+// テレメトリ journal —— イベントマークのみ（マーク 1 件につき 1 行）。
+// 戦闘終了時に有界リングから 1 回だけディスクへ書き出す。名簿本体は
+// もはや journal に載らない（2026-11-19 の性能修正 —— 旧来の状態別
+// リングは戦闘 tick ごとに全体を書き直していた）:
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
@@ -269,11 +269,16 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
 - **中国クライアント**: 動作検証済み。360 クライアントは同じ Mods API
   ローダーを動かす（ログはネイティブに `PnFModsLoader.py` を走査する）。
   メジャーバージョンごとに中国のアンチチート政策の変化に注視する。
-- **パフォーマンス**: `getPlayersInfo` の 1 秒ポーリング + エンティティ
-  走査は予算内に十分収まる（TeamHP 系 mod はフレームごとにエンティティを
-  走査する）。この用途に `callbacks.perTick` を使わないこと。
-- **ジャーナルの増大**: 戦闘ごとの有界リング。戦後分析に有用なら、リプレイと
-  一緒にセグメントを同梱する。
+- **パフォーマンス**: 2026-11-19 以降、1 秒の戦闘 tick は書き込みを
+  バッチ化している（roster_raw は対局 1 回のスキーマスナップショット、
+  journal はマークのみで戦闘終了時に書き出し、価格カタログは 1 回だけ
+  書き込み、対局内で静的なソートキーはキャッシュ）——オフライン実験室
+  では 30 プレイヤーで約 1.4 ms/tick を測定（以前は 8.8 ms、旧 journal
+  リングが埋まると約 38 ms に投影）。`getPlayersInfo` の 1 秒ポーリング +
+  エンティティ走査は予算内に十分収まる（TeamHP 系 mod はフレームごとに
+  エンティティを走査する）。この用途に `callbacks.perTick` を使わないこと。
+- **ジャーナルの増大**: もはや問題ではない —— マークのみ、リング上限でも
+  キロバイト級、戦闘終了時に 1 回だけ書き込む。
 
 ## Rust 統合マップ（正確な接点）
 
@@ -305,10 +310,11 @@ rosterOrder を同順位の基準順として事前ソートし（欠けた名�
   `api[load] dh=True`、新しいハートビートが出ることをアサートする。これは
   実験を正直に保った安価な検証手順であり、インストールの受け入れテストとして
   残す。
-- **戦闘フィクスチャ**: 各レルムで Co-op を 1 戦。ジャーナルに名簿
-  スナップショット、撃沈による `alive` 反転 ≥1 回、tabMode マークが含まれる
-  こと、そして `python.log` の `typeDeath` 行が反転と 1:1 で対応することを
-  アサートする。
+- **戦闘フィクスチャ**: 各レルムで Co-op を 1 戦。ジャーナルがイベント
+  マーク（tabMode、playersListUpdated）を運び戦闘終了時に書き出される
+  こと、そして `python.log` の `typeDeath` 行がテレメトリの alive 反転と
+  1:1 で対応することをアサートする（ジャーナルはもはや名簿スナップショット
+  も alive 反転も保持しない）。
 - **フォールバックドリル**: アプリを停止する（コンパニオンなし）。mod の
   180 秒ビジータイムアウトが復旧し、次の戦闘でもリクエストを行うことを
   アサートする。mod ディレクトリを壊し、オーバーレイが黙って推定へ

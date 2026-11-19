@@ -47,7 +47,10 @@ plugin side is REMOVED, not dormant:
 - Main.py no longer writes `request.json`, reads `response.json`, writes
   `manual_refresh.flag`, or puts the one-shot `wowspProbe.status` data
   component — the side-channel set is exactly heartbeat / roster_raw /
-  roster_journal / telemetry / order_probe.
+  roster_journal / telemetry / order_probe / builds / price_catalog
+  (write-batched since 2026-11-19: roster_raw and builds are
+  once-per-battle snapshots, the journal is event marks flushed at
+  battle end, the price catalog writes once per client session).
 - The unbound view (`src/WoWSPProbe.unbound`) renders ONLY the capture
   side channel's barcode strips (next section); the stats tables, the
   crosshair aim panel and their CSS/elements are cut from the file.
