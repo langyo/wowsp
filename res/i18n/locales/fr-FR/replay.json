@@ -615,6 +615,11 @@
     "dmgTaken": "Subis",
     "chatTitle": "Chat"
   },
+  "perf": {
+    "timing": "Fréquence d'images",
+    "draws": "Appels",
+    "gpu": "GPU"
+  },
   "chatLog": "Chat de bataille",
   "chat": {
     "team": "Équipe",
@@ -701,7 +706,7 @@
     "noData": "Aucune donnée pour ce navire",
     "gapNote": " — {s} s non observées (irrésolubles)",
     "fallback": "perspective de repli",
-    			"fallbackHint": "L’enregistreur n’avait aucune ligne scorée dans cette replay — le joueur le mieux couvert est affiché à la place.",
+    "fallbackHint": "L’enregistreur n’avait aucune ligne scorée dans cette replay — le joueur le mieux couvert est affiché à la place.",
     "recorder": "enregistreur",
     "diedAt": "Coulé à {t}",
     "duration": "Durée {t}",
@@ -766,4 +771,3 @@
     "fighterCover": "Couverture de chasse"
   }
 }
-

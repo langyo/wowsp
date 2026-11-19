@@ -4,7 +4,7 @@ import {
   Brain, Clapperboard, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline, Users,
 } from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
-import { useBreakpoint, useToast } from "@celestia-island/hikari";
+import { HkProgressBar, useBreakpoint, useToast } from "@celestia-island/hikari";
 
 import { useThreeScene } from "./useThreeScene";
 import { watchStageThemeMode } from "@wowsp/holo";
@@ -94,6 +94,7 @@ import {
   frameTimesAtSpeed,
   renderPlaybackExport,
   type PlaybackExportSettings,
+  type PlaybackIconVariant,
   type PlaybackTeamRow,
 } from "./playbackExport";
 import { formatBattleClock, saveExportBlob } from "./tactical/exporters";
@@ -188,11 +189,12 @@ import { STATIC_REPORT_READ_TIMEOUT_MS as DEBUG_READ_TIMEOUT_MS } from "@/api/mo
 import { parsePostBattle } from "@/features/replay/postBattle";
 import LoadingNote from "@/components/base/LoadingNote";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
+import { tierRoman } from "@/features/replay/shipLiveStats";
 import type { ResolvedStatsMode } from "@/utils/statView";
 import { splitRosterSides } from "@/utils/rosterSides";
 import { isScriptedUnitName } from "@/utils/aiNames";
 import planeIcon from "./planeIcons";
-import { shipIconUrl } from "./shipIcons";
+import { shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
   HoloScorebar, HoloLabel, registerHoloShipIcons,
   type HoloCapZone, type HoloHudState, type HoloShip, type HoloShipCardData,
@@ -3260,12 +3262,15 @@ const RECORDED_DOLLY_MIN = -40;
     // team HP columns, recorder damage, chat log, per-ship labels — plus
     // the fixed WoWSP share-shot footer the share images carry. The
     // render owns the playhead for its whole run (seek per frame, restore
-    // on finish); progress rides the STANDARD hikari toast surface (a
-    // keyed sticky loading toast updated in place, with the cancel
-    // button as its inline action).
+    // on finish). Progress lives in the transport row's own strip — a
+    // standard HkProgressBar with the counts and the cancel button —
+    // because hikari's toast surface has no progress slot (checked
+    // upstream at 0.55.427); while it runs the play/scrub controls are
+    // disabled, since the render owns the playhead.
     const toast = useToast();
     const exportOpen = ref(false);
     const exporting = ref(false);
+    const exportProgress = ref({ done: 0, total: 0 });
     const exportCancel = { cancelled: false };
     /** Survives between passes (same contract as the tactical wizard's). */
     const exportSettings = reactive<PlaybackExportSettings>({
@@ -3273,41 +3278,17 @@ const RECORDED_DOLLY_MIN = -40;
       from: "now",
       fps: 30,
       speed: 5,
-      size: 1080,
+      size: 1440,
       footer: true,
     });
-
-    const EXPORT_TOAST_KEY = "replay-clip-export";
-    let progressToastId: number | null = null;
-    let lastProgressPush = 0;
-    /** (Re-)push the keyed sticky progress toast. A keyed slot stacks one
-     *  entry PER distinct text (capped at five with a count badge), so each
-     *  tick first REMOVES the previous take and then shows a fresh single-
-     *  message toast — one entry, live numbers, no badge. Throttled to
-     *  ~2 Hz for the same reason. */
-    function pushExportProgress(done: number, total: number): void {
+    let lastProgressTick = 0;
+    /** Feed the transport strip — throttled to ~10 Hz; the bar itself is
+     *  continuous, the counts don't need 30 Hz Vue renders. */
+    function markExportProgress(done: number, total: number): void {
       const now = performance.now();
-      if (now - lastProgressPush < 500 && done !== total) return;
-      lastProgressPush = now;
-      if (progressToastId != null) toast.remove(progressToastId);
-      progressToastId = toast.show(
-        i18nT("replay.export.runningProgress", { done, total }),
-        {
-          type: "loading",
-          key: EXPORT_TOAST_KEY,
-          duration: 0,
-          action: {
-            label: i18nT("replay.export.cancelRun"),
-            onClick: cancelPlaybackExport,
-          },
-        },
-      );
-    }
-    function settleExportProgress(): void {
-      if (progressToastId != null) {
-        toast.remove(progressToastId);
-        progressToastId = null;
-      }
+      if (now - lastProgressTick < 100 && done !== total) return;
+      lastProgressTick = now;
+      exportProgress.value = { done, total };
     }
 
     function cancelPlaybackExport(): void {
@@ -3334,8 +3315,8 @@ const RECORDED_DOLLY_MIN = -40;
       const resumeAt = current.value;
       playing.value = false;
       exporting.value = true;
+      exportProgress.value = { done: 0, total: times.length };
       exportCancel.cancelled = false;
-      pushExportProgress(0, times.length);
       // Chat senders tint by roster side — the side lookup is per replay,
       // built once here (vehicles never change mid-export).
       const sideOfVehicle = new Map<number, "ally" | "enemy">();
@@ -3344,11 +3325,42 @@ const RECORDED_DOLLY_MIN = -40;
       try {
         // Theme-following palette + the footer's bundled art resolve once,
         // before the first frame — inside the try so even a surprise throw
-        // (all three are non-throwing today) cannot strand `exporting`.
+        // cannot strand `exporting`. The scorebar strip's HUD icons
+        // preload too: the same SVG class art the DOM scorebar renders,
+        // decoded once so drawImage never paints a half-decoded image.
         const palette = readPalette(container.value);
         const footerStrings = shareFooterStrings();
         let logo: HTMLImageElement | null = null;
         if (s.footer) logo = await loadImage(LOGO_URL);
+        const shipIconMap = new Map<string, HTMLImageElement>();
+        const iconVariants = ["ally", "enemy", "sunk", "sunk-enemy"] as const;
+        const iconClasses = [
+          "battleship",
+          "cruiser",
+          "destroyer",
+          "aircarrier",
+          "submarine",
+          "auxiliary",
+        ] as const;
+        await Promise.all(
+          iconVariants.flatMap((variant) =>
+            iconClasses.map(async (cls) => {
+              const url = shipIconUrl(cls, variant);
+              if (!url) return;
+              try {
+                const img = await loadImage(url);
+                if (img) shipIconMap.set(`${variant}:${cls}`, img);
+              } catch {
+                // A missing face just skips its slot (drawSlot's null rule).
+              }
+            }),
+          ),
+        );
+        const shipIconFor = (
+          shipType: string | null,
+          variant: PlaybackIconVariant,
+        ): HTMLImageElement | null =>
+          shipIconMap.get(`${variant}:${shipTypeClass(shipType)}`) ?? null;
         const result = await renderPlaybackExport({
           format: s.format,
           fps: s.fps,
@@ -3366,27 +3378,40 @@ const RECORDED_DOLLY_MIN = -40;
             dmgTaken: i18nT("replay.export.dmgTaken"),
             chat: i18nT("replay.export.chatTitle"),
           },
-          header: (t) => ({
-            clock: formatBattleClock(t).slice(2),
-            // Score digits are a domination concept — ops center the clock.
-            scoreAlly: props.operation ? null : ctx.allyScore.value,
-            scoreEnemy: props.operation ? null : ctx.enemyScore.value,
-            aliveAlly: ctx.allyAlive.value,
-            aliveEnemy: ctx.enemyAlive.value,
-            totalAlly: ctx.allyTotal.value,
-            totalEnemy: ctx.enemyTotal.value,
-            caps: ctx.capDisplay.value
-              .filter((c) => c.live)
-              .map((c) => ({
+          header: (t) => {
+            // The app's own scorebar state (the same computed the live HUD
+            // renders) read AFTER the seek — the clip's top strip is the
+            // scorebar replicated, so the data path is shared verbatim.
+            const sb = scorebarState.value;
+            return {
+              clock: formatBattleClock(t).slice(2),
+              scoreAlly: sb.scoreAlly ?? null,
+              scoreEnemy: sb.scoreEnemy ?? null,
+              caps: sb.caps.map((c) => ({
                 letter: c.letter,
                 owner: c.owner,
-                progress: c.progress,
-                capturing: c.capturing,
+                progress: c.progress ?? 0,
+                capturing: !!c.capturing,
+                contested: !!c.contested,
+                captureSide: c.captureSide ?? undefined,
+                etaSeconds: c.etaSeconds ?? null,
               })),
-          }),
+              ships: sb.ships.map((sh) => ({
+                role: sh.role === "enemy" ? ("enemy" as const) : ("ally" as const),
+                shipType: sh.shipType ?? null,
+                dead: sh.dead,
+                hpFrac:
+                  !sh.dead && sh.hp != null && sh.maxHp
+                    ? Math.max(0, Math.min(1, sh.hp / sh.maxHp))
+                    : null,
+              })),
+            };
+          },
+          shipIconFor,
           team: () => {
             const toRow = (r: ShipRowEntry): PlaybackTeamRow => ({
               name: r.vehicle.name,
+              clan: nameStats.value.get(r.vehicle.name)?.clanTag ?? null,
               shipName: r.vehicle.shipName ?? "",
               hpFrac:
                 r.hp != null && r.maxHp ? Math.max(0, Math.min(1, r.hp / r.maxHp)) : null,
@@ -3431,11 +3456,11 @@ const RECORDED_DOLLY_MIN = -40;
               logical: EXPORT_LOGICAL,
               rotation: 0,
               shipLabels: true,
+              clanOf: (name) => nameStats.value.get(name)?.clanTag ?? null,
+              romanTier: tierRoman,
             });
           },
-          onProgress: (done, total) => {
-            pushExportProgress(done, total);
-          },
+          onProgress: markExportProgress,
           cancelToken: exportCancel,
         });
         if (!result) {
@@ -3477,7 +3502,6 @@ const RECORDED_DOLLY_MIN = -40;
       } catch (e) {
         toast.error(String((e as Error)?.message ?? e));
       } finally {
-        settleExportProgress();
         exporting.value = false;
         seekBattleTime(resumeAt);
         if (wasPlaying) playing.value = true;
@@ -3550,9 +3574,6 @@ const RECORDED_DOLLY_MIN = -40;
             onCanvasClick(e);
           }}
         />
-        {/* Export progress rides the STANDARD hikari toast (a keyed sticky
-            loading toast updated in place with the cancel action) — no
-            bespoke chip on the map canvas anymore. */}
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ──.
             Each label/status pair sits in a 0×0 SLOT div the render loop
             positions imperatively (labelOverlay.applySlot): per-frame
@@ -3987,7 +4008,9 @@ const RECORDED_DOLLY_MIN = -40;
                 onPickShip={(id) => { pickCameraTarget(id); cameraMenuOpen.value = false; }}
               />
             ) : null}
-            <button class="holo-map__play" onClick={togglePlay}>
+            {/* The render owns the playhead while an export runs — the
+                transport is disabled for the whole take (误操作防护). */}
+            <button class="holo-map__play" onClick={togglePlay} disabled={exporting.value}>
               {playing.value ? <Pause size={14} /> : <Play size={14} />}
             </button>
             <input
@@ -3998,6 +4021,7 @@ const RECORDED_DOLLY_MIN = -40;
               max={duration.value || 0}
               step={0.1}
               value={hudCurrent.value}
+              disabled={exporting.value}
               style={{ "--scrub-pct": `${duration.value ? (hudCurrent.value / duration.value) * 100 : 0}%` }}
               onInput={(e) => {
                 playing.value = false;
@@ -4035,6 +4059,30 @@ const RECORDED_DOLLY_MIN = -40;
               <Clapperboard size={14} />
             </button>
           </div>
+          {/* Export progress strip: a standard HkProgressBar with the
+              counts and the cancel button — continuous, non-modal, in the
+              transport row the export already owns. */}
+          {exporting.value ? (
+            <div class="holo-map__export-progress">
+              <HkProgressBar
+                value={exportProgress.value.done}
+                max={Math.max(1, exportProgress.value.total)}
+                size="sm"
+              />
+              <span class="holo-map__export-progress__label">
+                {i18nT("replay.export.runningProgress", {
+                  done: exportProgress.value.done,
+                  total: exportProgress.value.total,
+                })}
+              </span>
+              <button
+                class="holo-map__export-progress__cancel"
+                onClick={cancelPlaybackExport}
+              >
+                {i18nT("replay.export.cancelRun")}
+              </button>
+            </div>
+          ) : null}
           <HoloExportModal
             modelValue={exportOpen.value}
             onUpdate:modelValue={(v: boolean) => { exportOpen.value = v; }}
