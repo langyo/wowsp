@@ -38,7 +38,18 @@ describe("frameTimes", () => {
 
 describe("DEFAULT_CODEC_LADDER", () => {
   it("keeps the board's MP4-first contract (avc to MP4, vp9 to WebM)", () => {
-    expect(DEFAULT_CODEC_LADDER[0]).toEqual({ codec: "avc", ext: "mp4" });
-    expect(DEFAULT_CODEC_LADDER[1]).toEqual({ codec: "vp9", ext: "webm" });
+    expect(DEFAULT_CODEC_LADDER).toEqual([
+      { codec: "avc", ext: "mp4" },
+      { codec: "vp9", ext: "webm" },
+    ]);
+  });
+
+  it("pairs every rung with a container that accepts the codec", () => {
+    // WebM holds vp8/vp9/av1 only; MP4 holds everything we emit. A future
+    // rung like {avc, webm} must fail here, not in the muxer at runtime.
+    const webmOk = new Set(["vp8", "vp9", "av1"]);
+    for (const rung of DEFAULT_CODEC_LADDER) {
+      if (rung.ext === "webm") expect(webmOk.has(rung.codec)).toBe(true);
+    }
   });
 });

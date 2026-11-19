@@ -306,12 +306,15 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
   if (!ctx) return null;
 
   const target = new BufferTarget();
-  const output = new Output({
-    format: picked.ext === "mp4"
-      ? new Mp4OutputFormat({ fastStart: "in-memory" })
-      : new WebMOutputFormat(),
-    target,
-  });
+  const format = picked.ext === "mp4"
+    ? new Mp4OutputFormat({ fastStart: "in-memory" })
+    : new WebMOutputFormat();
+  // Ladder rungs pair a codec with a container, and a mismatched pair (e.g.
+  // AVC into WebM) type-checks but makes addVideoTrack throw OUTSIDE the
+  // cancel-handling try below. Verify the container accepts the codec and
+  // degrade to null (the caller's "unsupported" path) instead.
+  if (!format.getSupportedVideoCodecs().includes(picked.codec)) return null;
+  const output = new Output({ format, target });
   const source = new CanvasSource(canvas, { codec: picked.codec, quality: QUALITY_HIGH });
   output.addVideoTrack(source, { frameRate: opts.fps });
   const cancelled = () => opts.cancelToken?.cancelled === true;

@@ -9,7 +9,8 @@
  * One deterministic frame pipeline feeds BOTH muxers:
  *
  *   video — WebCodecs via mediabunny through the tactical exporter's
- *           renderVideoOffline (H.264 MP4 first, VP9 WebM fallback);
+ *           renderVideoOffline (this clip's ladder: VP9 into MP4, then
+ *           AV1, then H.264 — see PLAYBACK_CODEC_LADDER);
  *   gif   — gifenc, per-frame quantized palette, centisecond delays.
  *
  * The caller (HolographicMap) owns the playhead: every frame first seeks
@@ -281,6 +282,8 @@ export interface PlaybackExportRequest {
 
 export interface PlaybackExportResult {
   blob: Blob;
+  /** Container of the produced file. `webm` is inherited from the shared
+   *  exporter's type — this clip's ladder only ever yields mp4 (or gif). */
   ext: "mp4" | "webm" | "gif";
   cancelled: boolean;
 }
