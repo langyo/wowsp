@@ -71,7 +71,7 @@ export default defineComponent({
         props.settings.fps = PLAYBACK_EXPORT_FPS[props.settings.format][0];
       }
       if (!PLAYBACK_EXPORT_SIZES[props.settings.format].includes(props.settings.size)) {
-        props.settings.size = PLAYBACK_EXPORT_SIZES[props.settings.format][PLAYBACK_EXPORT_SIZES[props.settings.format].length - 1];
+        props.settings.size = PLAYBACK_EXPORT_SIZES[props.settings.format][0];
       }
     };
 

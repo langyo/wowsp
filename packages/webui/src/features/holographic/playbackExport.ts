@@ -259,7 +259,7 @@ export interface PlaybackRecorderStats {
 
 export interface PlaybackChatLine {
   sender: string;
-  side: "ally" | "enemy" | "self";
+  side: "ally" | "enemy";
   text: string;
   /** Battle seconds, rendered as [MM:SS]. */
   time: number;
@@ -396,6 +396,7 @@ function drawTeamList(
   g.fillStyle = rgba(palette.text, 0.55);
   g.textAlign = "right";
   g.fillText(`${alive}/${rows.length}`, x + w - 10, y + 14);
+  if (rows.length === 0) return;
   const rowH = 34;
   let ry = y + 36;
   for (const row of rows) {
@@ -404,11 +405,11 @@ function drawTeamList(
     g.textAlign = "left";
     g.font = font(11, 700);
     g.fillStyle = rgba(row.dead ? NEUTRAL_INK : ink, 0.9 * dim);
-    g.fillText(ellipsize(g, row.name, w - 84), x + 10, ry + 8);
+    g.fillText(ellipsize(g, row.name, w - 104), x + 10, ry + 8);
     g.font = font(10, 400);
     g.fillStyle = rgba(palette.text, 0.5 * dim);
     g.textAlign = "right";
-    g.fillText(ellipsize(g, row.shipName, 70), x + w - 10, ry + 8);
+    g.fillText(ellipsize(g, row.shipName, 60), x + w - 10, ry + 8);
     if (row.hpFrac != null && !row.dead) {
       g.fillStyle = rgba(palette.text, 0.14);
       g.fillRect(x + 10, ry + 18, w - 20, 5);
@@ -429,7 +430,6 @@ function drawRecorderPanel(
   x: number,
   y: number,
   w: number,
-  h: number,
   stats: PlaybackRecorderStats,
   palette: ShotPalette,
   labels: { title: string; frags: string; taken: string },
@@ -476,7 +476,7 @@ function drawChatPanel(
     g.font = font(10, 400);
     g.fillStyle = rgba(palette.text, 0.45);
     g.fillText(stamp, x + 10, ly);
-    const ink = line.side === "enemy" ? ENEMY_INK : line.side === "self" ? "255 255 255" : ALLY_INK;
+    const ink = line.side === "enemy" ? ENEMY_INK : ALLY_INK;
     g.font = font(10, 700);
     g.fillStyle = rgba(ink, 0.9);
     const sender = ellipsize(g, line.sender, 64);
@@ -532,7 +532,6 @@ export interface PlaybackPanelLabels {
   teamAlly: string;
   teamEnemy: string;
   damage: string;
-  dmgDealt: string;
   dmgFrags: string;
   dmgTaken: string;
   chat: string;
@@ -578,7 +577,7 @@ function composeFrame(
   drawColumnBase(ctx, 0, EXPORT_SIDE_W, colTop, colH, req.palette, "right");
   drawTeamList(ctx, 0, colTop + 6, EXPORT_SIDE_W, team.allies, ALLY_INK, req.panelLabels.teamAlly, req.palette);
   if (recorder) {
-    drawRecorderPanel(ctx, 0, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, colH - EXPORT_TEAM_H - 16, recorder, req.palette, {
+    drawRecorderPanel(ctx, 0, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, recorder, req.palette, {
       title: req.panelLabels.damage,
       frags: req.panelLabels.dmgFrags,
       taken: req.panelLabels.dmgTaken,
@@ -592,8 +591,8 @@ function composeFrame(
   // need a wider band than the composition (footerMinWidth measures the
   // three text blocks) — the content then scales DOWN into the fixed band
   // instead of colliding, mirroring how share shots widen their canvas.
-  // The band's own background is pre-filled at the exact geometry so the
-  // scaled-down band leaves no gap at the bottom edge.
+  // The band's own background is NOT pre-filled here — a downscaled band
+  // (wordy locale) is followed by an exact shortfall strip instead.
   if (layout.footerHeight > 0) {
     const footerLogical = Math.max(
       EXPORT_TOTAL_LOGICAL,

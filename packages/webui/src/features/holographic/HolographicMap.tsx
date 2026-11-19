@@ -3280,13 +3280,16 @@ const RECORDED_DOLLY_MIN = -40;
     const EXPORT_TOAST_KEY = "replay-clip-export";
     let progressToastId: number | null = null;
     let lastProgressPush = 0;
-    /** (Re-)push the keyed sticky progress toast — the keyed slot keeps a
-     *  single entry, so this updates in place. Throttled to ~4 Hz: the
-     *  toast re-renders on every push. */
+    /** (Re-)push the keyed sticky progress toast. A keyed slot stacks one
+     *  entry PER distinct text (capped at five with a count badge), so each
+     *  tick first REMOVES the previous take and then shows a fresh single-
+     *  message toast — one entry, live numbers, no badge. Throttled to
+     *  ~2 Hz for the same reason. */
     function pushExportProgress(done: number, total: number): void {
       const now = performance.now();
-      if (now - lastProgressPush < 250 && done !== total) return;
+      if (now - lastProgressPush < 500 && done !== total) return;
       lastProgressPush = now;
+      if (progressToastId != null) toast.remove(progressToastId);
       progressToastId = toast.show(
         i18nT("replay.export.runningProgress", { done, total }),
         {
@@ -3359,7 +3362,6 @@ const RECORDED_DOLLY_MIN = -40;
             teamAlly: i18nT("replay.export.teamAlly"),
             teamEnemy: i18nT("replay.export.teamEnemy"),
             damage: i18nT("replay.export.damageTitle"),
-            dmgDealt: i18nT("replay.export.dmgDealt"),
             dmgFrags: i18nT("replay.export.dmgFrags"),
             dmgTaken: i18nT("replay.export.dmgTaken"),
             chat: i18nT("replay.export.chatTitle"),
@@ -3390,8 +3392,15 @@ const RECORDED_DOLLY_MIN = -40;
                 r.hp != null && r.maxHp ? Math.max(0, Math.min(1, r.hp / r.maxHp)) : null,
               dead: r.dead,
             });
+            // The icon strip's sort (dead-at-outer-edge) reads wrong in a
+            // vertical HUD — rows stay put, alive first, dead last.
+            const vertical = (a: ShipRowEntry, b: ShipRowEntry) =>
+              Number(a.dead) - Number(b.dead);
             const rows = shipRows.value;
-            return { allies: rows.allies.map(toRow), enemies: rows.enemies.map(toRow) };
+            return {
+              allies: [...rows.allies].sort(vertical).map(toRow),
+              enemies: [...rows.enemies].sort(vertical).map(toRow),
+            };
           },
           recorder: () => {
             const st = selfStats.value;
@@ -3399,10 +3408,14 @@ const RECORDED_DOLLY_MIN = -40;
           },
           chat: (t) =>
             props.chatMessages
-              .filter((c) => c.time <= t)
+              // System rows (playerId <= 0) are client-ignored noise —
+              // every other chat consumer drops them (ReplayView/markerUpdate).
+              .filter((c) => c.time <= t && c.playerId > 0)
               .slice(-9)
               .map((c) => ({
-                sender: props.vehicles.find((v) => v.id === c.playerId)?.name ?? "?",
+                sender:
+                  props.vehicles.find((v) => v.id === c.playerId)?.name ??
+                  `#${c.playerId}`,
                 side: sideOfVehicle.get(c.playerId) ?? "ally",
                 text: c.message,
                 time: c.time,

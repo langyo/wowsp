@@ -15,7 +15,6 @@ import {
   CanvasSource,
   Mp4OutputFormat,
   Output,
-  QUALITY_HIGH,
   WebMOutputFormat,
   canEncodeVideo,
   type VideoCodec,
@@ -315,7 +314,21 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
   // degrade to null (the caller's "unsupported" path) instead.
   if (!format.getSupportedVideoCodecs().includes(picked.codec)) return null;
   const output = new Output({ format, target });
-  const source = new CanvasSource(canvas, { codec: picked.codec, quality: QUALITY_HIGH });
+  // Encoder tuned for THROUGHPUT, not pristine quality: `quality: HIGH`
+  // drives the VP9/AV1 software encoders into their slowest paths (a
+  // 10-minute match encoded for tens of minutes). A flat-map clip needs a
+  // modest bitrate (≈0.12 bits per pixel per frame), the realtime deadline
+  // keeps libvpx in its fast paths, and prefer-hardware lets AVC land on
+  // the platform encoder when one exists.
+  const source = new CanvasSource(canvas, {
+    codec: picked.codec,
+    bitrate: Math.min(
+      20_000_000,
+      Math.max(2_500_000, Math.round(width * height * opts.fps * 0.12)),
+    ),
+    latencyMode: "realtime",
+    hardwareAcceleration: "prefer-hardware",
+  });
   output.addVideoTrack(source, { frameRate: opts.fps });
   const cancelled = () => opts.cancelToken?.cancelled === true;
 

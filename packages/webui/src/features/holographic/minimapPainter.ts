@@ -1100,7 +1100,7 @@ export function paintEnlargedMap(
       const boxW = Math.ceil(Math.max(w1, w2)) + 10;
       const boxH = 30;
       const bx = Math.min(Math.max(2, lx - boxW / 2), zw - boxW - 2);
-      const by = Math.max(2, ly - boxH);
+      const by = Math.min(Math.max(2, ly - boxH), zw - boxH - 2);
       g.fillStyle = "rgba(5, 8, 15, 0.6)";
       g.beginPath();
       g.roundRect(bx, by, boxW, boxH, 4);
