@@ -496,40 +496,6 @@
     pointer-events: none;
   }
 
-  &__export-progress {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 3px 10px;
-    border-radius: 8px;
-    background: var(--holo-hud-chip);
-    border: 1px solid var(--holo-hud-border);
-
-    .hk-progress-bar { flex: 1 1 auto; min-width: 0; }
-
-    &__label {
-      flex: 0 0 auto;
-      font-family: var(--font-mono);
-      font-size: var(--text-2xs);
-      color: var(--holo-hud-dim);
-      white-space: nowrap;
-      font-variant-numeric: tabular-nums;
-    }
-
-    &__cancel {
-      flex: 0 0 auto;
-      border: 1px solid var(--holo-hud-border);
-      border-radius: 6px;
-      background: transparent;
-      color: var(--holo-hud-strong);
-      font-size: var(--text-2xs);
-      padding: 2px 8px;
-      cursor: pointer;
-
-      &:hover { background: var(--holo-hud-hover); }
-    }
-  }
-
   &__time {
     /* Never shrink: 13ch of nowrap mono text overflows a shrunken box
        and painted under the speed chip (the squeezed-bar report). */

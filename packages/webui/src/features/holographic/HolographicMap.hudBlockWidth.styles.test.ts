@@ -88,7 +88,7 @@ function remOf(body: string | null, declaration: string): number {
  *  WRONG declarations. The compiled sheet puts every standalone rule at
  *  the start of a line. */
 const ROOT_RULE = "\n.holo-map {";
-const CONTROLS_RULE = "\n.holo-map__controls {";
+const CONTROLS_RULE = "\n.holo-map__transport {";
 const SHIPCARD_RULE = "\n.holo-map__shipcard {";
 const STATS_RULE = "\n.holo-map__selfstats {";
 
@@ -103,12 +103,17 @@ describe("bottom-left player HUD block width contract", () => {
   });
 
   it("sizes the playback bar from the block contract, not from its content", () => {
-    const controls = ruleBody(css, CONTROLS_RULE);
-    expect(controls, "the playback bar rule exists").not.toBeNull();
+    const transport = ruleBody(css, CONTROLS_RULE);
+    expect(transport, "the transport column rule exists").not.toBeNull();
     // Sass folds `calc(100cqw - 192px)` into the bare subtraction inside
-    // min(), so accept either spelling of the SAME clamp expression.
-    expect(controls).toMatch(/width:\s*min\(var\(--holo-hud-block-w\),\s*(calc\()?100cqw - 192px/);
+    // min(), so accept either spelling of the SAME clamp expression. The
+    // seat (and its width lock) is the transport column since the export
+    // progress card joined the playback row there.
+    expect(transport).toMatch(/width:\s*min\(var\(--holo-hud-block-w\),\s*(calc\()?100cqw - 192px/);
+    const controls = ruleBody(css, "\n.holo-map__controls {");
+    expect(controls, "the playback row rule exists").not.toBeNull();
     expect(controls).toMatch(/padding:\s*6px var\(--holo-hud-pad-x\)/);
+    expect(controls).toMatch(/width:\s*100%/);
   });
 
   it("spans the shipcard row across the bar's box and clamps it to the same band", () => {

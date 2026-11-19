@@ -4,7 +4,7 @@ import {
   Brain, Clapperboard, Eye, EyeOff, Grid3x3, Pause, PenLine, Play, RotateCcw, RotateCw, Spline, Users,
 } from "@lucide/vue";
 import { extractActions } from "./tactical/actions";
-import { HkProgressBar, useBreakpoint, useToast } from "@celestia-island/hikari";
+import { useBreakpoint, useToast } from "@celestia-island/hikari";
 
 import { useThreeScene } from "./useThreeScene";
 import { watchStageThemeMode } from "@wowsp/holo";
@@ -190,6 +190,7 @@ import { parsePostBattle } from "@/features/replay/postBattle";
 import LoadingNote from "@/components/base/LoadingNote";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { tierRoman } from "@/features/replay/shipLiveStats";
+import ToastCardBase, { type ToastCardBaseInstance } from "@/components/layout/ToastCardBase";
 import type { ResolvedStatsMode } from "@/utils/statView";
 import { splitRosterSides } from "@/utils/rosterSides";
 import { isScriptedUnitName } from "@/utils/aiNames";
@@ -3262,16 +3263,39 @@ const RECORDED_DOLLY_MIN = -40;
     // team HP columns, recorder damage, chat log, per-ship labels — plus
     // the fixed WoWSP share-shot footer the share images carry. The
     // render owns the playhead for its whole run (seek per frame, restore
-    // on finish). Progress lives in the transport row's own strip — a
-    // standard HkProgressBar with the counts and the cancel button —
-    // because hikari's toast surface has no progress slot (checked
-    // upstream at 0.55.427); while it runs the play/scrub controls are
-    // disabled, since the render owns the playhead.
+    // on finish). Progress rides the shell's standard toast CARD (the
+    // ToastCardBase family the download passes use): a determinate bar,
+    // the frame counts, and the cancel pill — top-right, continuous for
+    // the whole take. While it runs the play/scrub controls are disabled,
+    // since the render owns the playhead.
     const toast = useToast();
     const exportOpen = ref(false);
     const exporting = ref(false);
     const exportProgress = ref({ done: 0, total: 0 });
     const exportCancel = { cancelled: false };
+    const exportCard = ref<ToastCardBaseInstance | null>(null);
+    /** The leave-fold snapshot: when the take ends, the card folds out
+     *  showing the last live values instead of snapping to empty. */
+    const exportCardHeld = ref({ meta: "", progress: 0 });
+    function exportCardLive(): { meta: string; progress: number } {
+      const { done, total } = exportProgress.value;
+      const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+      return { meta: `${pct}% · ${done}/${total}`, progress: pct };
+    }
+    watch(
+      () => exporting.value,
+      (run) => {
+        if (run) {
+          exportCard.value?.show();
+          return;
+        }
+        exportCardHeld.value = exportCardLive();
+        exportCard.value?.dismiss();
+      },
+      // Sync: the fold snapshot must sample the still-live counts before
+      // anything resets them.
+      { flush: "sync" },
+    );
     /** Survives between passes (same contract as the tactical wizard's). */
     const exportSettings = reactive<PlaybackExportSettings>({
       format: "video",
@@ -3314,8 +3338,8 @@ const RECORDED_DOLLY_MIN = -40;
       const wasPlaying = playing.value;
       const resumeAt = current.value;
       playing.value = false;
-      exporting.value = true;
       exportProgress.value = { done: 0, total: times.length };
+      exporting.value = true;
       exportCancel.cancelled = false;
       // Clan tags ride the lazily-armed roster-stats fetch — arm it now
       // and give it a short window to land before the first frame (a
@@ -4070,31 +4094,43 @@ const RECORDED_DOLLY_MIN = -40;
               <Clapperboard size={14} />
             </button>
           </div>
-          {/* Export progress strip: a standard HkProgressBar with the
-              counts and the cancel button — continuous, non-modal, in the
-              transport row the export already owns. */}
-          {exporting.value ? (
-            <div class="holo-map__export-progress">
-              <HkProgressBar
-                value={exportProgress.value.done}
-                max={Math.max(1, exportProgress.value.total)}
-                size="sm"
-              />
-              <span class="holo-map__export-progress__label">
-                {i18nT("replay.export.runningProgress", {
-                  done: exportProgress.value.done,
-                  total: exportProgress.value.total,
-                })}
-              </span>
-              <button
-                class="holo-map__export-progress__cancel"
-                onClick={cancelPlaybackExport}
-              >
-                {i18nT("replay.export.cancelRun")}
-              </button>
-            </div>
-          ) : null}
           </div>
+          {/* Export progress: the shell's standard toast CARD (the download
+              passes' ToastCardBase family) — determinate bar, the frame
+              counts in the meta readout, and the cancel pill; teleports to
+              the top-right toast column and stays for the whole take. */}
+          <ToastCardBase
+            ref={exportCard}
+            tone="info"
+            rootClass="playback-export-toast"
+            message={i18nT("replay.export.title")}
+            meta={exporting.value ? exportCardLive().meta : exportCardHeld.value.meta}
+            actions={
+              exporting.value
+                ? [
+                    {
+                      label: i18nT("replay.export.cancelRun"),
+                      kind: "quiet",
+                      onClick: cancelPlaybackExport,
+                    },
+                  ]
+                : []
+            }
+          >
+            {{
+              icon: () => <Clapperboard size={14} />,
+              progress: () => {
+                const pct = exporting.value
+                  ? exportCardLive().progress
+                  : exportCardHeld.value.progress;
+                return (
+                  <div class="toast-card__track">
+                    <div class="toast-card__fill" style={{ width: `${pct}%` }} />
+                  </div>
+                );
+              },
+            }}
+          </ToastCardBase>
           <HoloExportModal
             modelValue={exportOpen.value}
             onUpdate:modelValue={(v: boolean) => { exportOpen.value = v; }}
