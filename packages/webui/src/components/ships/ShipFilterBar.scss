@@ -2,12 +2,14 @@
  * date-range tabs (the parent supplies the flex row): internally it lays
  * out as two fixed rows — the meta row (summary + search) pinned to the
  * tabs row's right end, the chip row claiming a full line below — so the
- * wrap point no longer drifts with the viewport. The three PURE facets
- * (type/nation/mode) render hikari HkFilterChip outright — chip chrome and
- * pill-group popup come from the library. The bespoke .ship-filter-bar__chip
- * chrome below mirrors the same facet-chip grammar for the sort-carrying
- * chips (tier/winrate/battles — the arrows and the 全部… cycle need it) and
- * for FilterCategoryChip, which imports this sheet. The date-range strip
+ * wrap point no longer drifts with the viewport. ALL six categories render
+ * hikari HkFilterChip outright (hikari 0.55.431: the caret-less trigger,
+ * the lg popup pad, the chipText corridor override, the chip/pill trailing
+ * seats and the default-slot body carry the sort-carrying chips too) —
+ * chip chrome and popups come from the library; this sheet adds only the
+ * intermediate --sort dress. The bespoke .ship-filter-bar__chip chrome
+ * below stays for FilterCategoryChip, which imports this sheet and renders
+ * that grammar (the replay rail + the ship picker). The date-range strip
  * beside it renders hikari's segmented track untouched. It is the chip's
  * track-step BOX (not its fill) that keeps both on one height, so the
  * controls row reads as one family without either side re-painting library
@@ -163,15 +165,26 @@
   flex: 0 0 auto;
 }
 
-/* The migrated pure facets' trigger is hikari's HkFilterChip, which
-   paints a ChevronDown caret beside the label unconditionally — the thin
-   prop contract exposes no way to drop it. In this strip the caret is
-   the odd one out: the bespoke chips carry no affordance arrow at all
-   (theirs mark an ENGAGED sort and render only while sorting), so the
-   facets drop it too and the row reads as one family. Scoped to the bar:
-   a future HkFilterChip consumer elsewhere keeps the library default. */
-.ship-filter-bar .hk-filter-chip-caret {
-  display: none;
+/* The migrated facets' trigger carries NO caret by library default now
+   (hikari 0.55.431 retired it — the facet chip reads as the same
+   solid-surface family as every chip in this strip) and the facet
+   popups ride the lg pad step the same way (HkFilterChip's `padding`
+   defaults to "lg"), so no bar-side override is needed for either any
+   more. What IS host-side: the intermediate 全部…-sort state the chips
+   wear through the attrs fallthrough (hikari paints --on itself from
+   the selection) — the bespoke --sort recipe, quieter than --on. */
+.ship-filter-bar .hk-filter-chip--sort {
+  color: rgb(var(--color-text));
+  background: color-mix(in srgb, rgb(var(--color-primary)) 6%, rgb(var(--color-surface)));
+  border-color: rgb(var(--color-primary) / 25%);
+
+  &:hover {
+    color: rgb(var(--color-text));
+  }
+
+  .ship-filter-bar__dir {
+    color: rgb(var(--color-primary));
+  }
 }
 
 .ship-filter-bar__summary {
@@ -200,19 +213,6 @@
    rule; a future selector change here silently alters the picker. */
 .hk-popover-panel:not(.hk-is-sheet) .ship-filter-bar__pop {
   max-width: min(92vw, 640px);
-}
-
-/* The facet panels are HkFilterChip's OWN popover, which passes no
-   `padding` prop — the glass chrome keeps its 4px menu inset while every
-   bespoke panel beside it rides the lg step (`padding="lg"`, the shared
-   --hk-pad token), so the facet popups read cramped against their pills.
-   A panel carries no inline --hk-pad while the prop is unset, so a
-   stylesheet var lands cleanly; `:has()` reaches the body-teleported
-   panel without a host wrapper (HkFilterChip renders webui's only
-   .hk-filter-chip-body) and covers the phone sheet too — the sheet's
-   header/bottom geometry reads the same token. */
-.hk-popover-panel:has(.hk-filter-chip-body) {
-  --hk-pad: var(--space-16, 1rem);
 }
 
 .ship-filter-bar__pop-head {

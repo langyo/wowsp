@@ -184,9 +184,8 @@ const rows = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   );
 const bracketBtns = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   wrapper.findAll(".ranked-ships__bracket");
-// The pure facets (type/nation/mode) render hikari HkFilterChip inside the
-// [data-chip] anchor; the sort/tier chips keep the bespoke class — the
-// anchor is the one handle common to both, so enumerate it.
+// Every category renders hikari HkFilterChip inside the [data-chip]
+// anchor — the anchor is the one handle common to all six, so enumerate it.
 const chips = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
   Array.from(wrapper.findAll("[data-chip]")).map((c) => c.attributes("data-chip"));
 const badges = (wrapper: Awaited<ReturnType<typeof mountTable>>) =>
