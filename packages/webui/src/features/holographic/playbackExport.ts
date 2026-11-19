@@ -55,8 +55,10 @@ export const EXPORT_LOGICAL = TACTICAL_SIZE;
 export const EXPORT_SIDE_W = 190;
 /** Logical width of the whole composition (map square plus both columns). */
 export const EXPORT_TOTAL_LOGICAL = EXPORT_LOGICAL + EXPORT_SIDE_W * 2;
-/** Score/caps header band height in logical units. */
-export const EXPORT_HEADER_H = 64;
+/** Score/caps header band height in logical units: the scorebar pill row
+ *  (score · cap chips · clock · score) over the ship-icon strip row — the
+ *  app's own HoloScorebar replicated on canvas. */
+export const EXPORT_HEADER_H = 96;
 /** Team-list portion of a side column; the rest is damage (left) or the
  *  chat log (right). */
 export const EXPORT_TEAM_H = 452;
@@ -110,9 +112,10 @@ export function exportFrameBudget(format: PlaybackExportFormat): number {
   return format === "gif" ? GIF_MAX_FRAMES : VIDEO_MAX_FRAMES;
 }
 /** Width ladders per format: the HUD composition needs width for its side
- *  columns, so video starts at 1080; GIF stays small for size reasons. */
+ *  columns, so video starts at 1080 (1440 default — the map text goes
+ *  blurry at 1080's 720px map square); GIF stays small for size reasons. */
 export const PLAYBACK_EXPORT_SIZES: Record<PlaybackExportFormat, number[]> = {
-  video: [1080, 1440],
+  video: [1080, 1440, 1920],
   gif: [480, 640],
 };
 /** Battle-time compression ladder (shared by both formats). */
@@ -220,14 +223,28 @@ export function playbackExportLayout(
   };
 }
 
-/** Capture-point chip for the header. */
+/** Capture-point chip for the header — the HoloScorebar's CapChip mirrored
+ *  onto canvas (square when held, diamond + progress ring while capturing). */
 export interface PlaybackCapChip {
   letter: string;
-  /** 0 neutral · 1 ally · 2 enemy. */
-  owner: number;
+  owner: "ally" | "enemy" | "neutral";
   /** 0..1 capture progress. */
   progress: number;
   capturing: boolean;
+  contested: boolean;
+  /** The side ACCRUING the capture — the progress ring's colour (the
+   *  scorebar's --holo-captureSide rule); falls back to the owner. */
+  captureSide?: "ally" | "enemy";
+}
+
+/** One ship-icon slot of the header strip (the scorebar's HoloShip, cut
+ *  down to what a canvas slot draws). */
+export interface PlaybackShipSlot {
+  role: "ally" | "enemy";
+  shipType: string | null;
+  dead: boolean;
+  /** 0..1, or null when unknown (no bar). */
+  hpFrac: number | null;
 }
 
 export interface PlaybackHeaderData {
@@ -235,16 +252,21 @@ export interface PlaybackHeaderData {
   clock: string;
   scoreAlly: number | null;
   scoreEnemy: number | null;
-  aliveAlly: number;
-  aliveEnemy: number;
-  totalAlly: number;
-  totalEnemy: number;
   caps: PlaybackCapChip[];
+  /** Strip slots, allies first then enemies (the scorebar's own order). */
+  ships: PlaybackShipSlot[];
 }
+
+/** Ship-class HUD icon variant for a strip slot (the scorebar's direction
+ *  contract: each side carries its own face, dead ships their own sunk
+ *  face — casualties never flip direction). */
+export type PlaybackIconVariant = "ally" | "enemy" | "sunk" | "sunk-enemy";
 
 /** One team-list row for a side column. */
 export interface PlaybackTeamRow {
   name: string;
+  /** Clan tag WITHOUT brackets (rendered as `[TAG] name`), or null. */
+  clan?: string | null;
   shipName: string;
   /** 0..1, or null when unknown (row dims instead of a bar). */
   hpFrac: number | null;
@@ -265,10 +287,11 @@ export interface PlaybackChatLine {
   time: number;
 }
 
-/** Team ink for the header's score blocks (the scorebar's green/red). */
+/** Team ink — the scorebar's own tokens (--holo-ally #4ade80, --holo-enemy
+ *  #f87171, neutral white) so the clip's HUD matches the app verbatim. */
 const ALLY_INK = "74 222 128";
-const ENEMY_INK = "232 92 92";
-const NEUTRAL_INK = "148 163 184";
+const ENEMY_INK = "248 113 113";
+const NEUTRAL_INK = "255 255 255";
 const HP_GOOD = "74 222 128";
 const HP_MID = "251 191 36";
 const HP_LOW = "248 92 92";
@@ -277,80 +300,223 @@ function hpInk(frac: number): string {
   return frac > 0.55 ? HP_GOOD : frac > 0.25 ? HP_MID : HP_LOW;
 }
 
-function ownerInk(owner: number): string {
-  return owner === 1 ? ALLY_INK : owner === 2 ? ENEMY_INK : NEUTRAL_INK;
+function ownerInk(owner: PlaybackCapChip["owner"]): string {
+  return owner === "ally" ? ALLY_INK : owner === "enemy" ? ENEMY_INK : NEUTRAL_INK;
 }
 
-/** Draw the score/caps header band in LOGICAL units across the WHOLE
- *  composition width: ally points + alive left, the capture-point chips
- *  and the battle clock center, enemy points + alive right — the compact
- *  cousin of the in-game top strip. */
+function slotInk(role: "ally" | "enemy"): string {
+  return role === "ally" ? ALLY_INK : ENEMY_INK;
+}
+
+/** Strip icon variant for one ship slot (the scorebar's shipIconUrlFor). */
+function slotVariant(role: "ally" | "enemy", dead: boolean): PlaybackIconVariant {
+  if (dead) return role === "enemy" ? "sunk-enemy" : "sunk";
+  return role === "enemy" ? "enemy" : "ally";
+}
+
+/** Draw the header band in LOGICAL units across the WHOLE composition
+ *  width: the app’s HoloScorebar replicated on canvas — the grey glass
+ *  pill (ally score · cap chips · clock · enemy score) over the game-HUD
+ *  ship-icon strip (allies left, enemies right, sunk greyed, hurt hulls
+ *  carry the thin team-coloured bar). `shipIconFor` resolves the
+ *  preloaded class icons; a null image skips the slot (broken-image
+ *  glyphs never render). */
 export function drawPlaybackHeader(
   g: CanvasRenderingContext2D,
   data: PlaybackHeaderData,
   palette: ShotPalette,
+  shipIconFor: (shipType: string | null, variant: PlaybackIconVariant) => HTMLImageElement | null,
 ): void {
   const w = EXPORT_TOTAL_LOGICAL;
   const h = EXPORT_HEADER_H;
   g.fillStyle = rgba(palette.surface, 0.75);
   g.fillRect(0, 0, w, h);
-  g.fillStyle = rgba(palette.text, 0.12);
-  g.fillRect(0, h - 1, w, 1);
   g.textBaseline = "middle";
-  const cy = h / 2;
+  const pillH = 44;
+  const pillY = 6;
+  const pillCy = pillY + pillH / 2;
+  // ── Pill content metrics ─────────────────────────────────────
+  const chipSize = 26;
+  const chipGap = 6;
+  const groupGap = 24;
+  const dotR = 4;
+  const scoreFont = font(20, 700);
+  g.font = scoreFont;
+  const scoreW = (s: number): number => g.measureText(String(s)).width;
+  const chips = data.caps.slice(0, 5);
+  const capsW = chips.length * chipSize + Math.max(0, chips.length - 1) * chipGap;
+  // The clock measures in its own mono face (set AFTER the score widths).
+  g.font = font(20, 700, true);
+  const clockW = g.measureText(data.clock).width;
   const showScores = data.scoreAlly != null && data.scoreEnemy != null;
-  const block = (score: number, alive: number, total: number, ink: string, right: boolean): void => {
-    const dotX = right ? w - 24 : 24;
-    const dir = right ? -1 : 1;
+  const allyScoreW = showScores ? Math.max(scoreW(data.scoreAlly!), 33) + dotR * 2 + 6 : 0;
+  const enemyScoreW = showScores ? Math.max(scoreW(data.scoreEnemy!), 33) + dotR * 2 + 6 : 0;
+  const contentW =
+    (showScores ? allyScoreW + groupGap : 0) +
+    (chips.length ? capsW + groupGap : 0) +
+    clockW +
+    (showScores ? groupGap + enemyScoreW : 0);
+  const padX = 22;
+  const pillW = contentW + padX * 2;
+  const pillX = (w - pillW) / 2;
+  // ── Pill chrome (the scorebar’s grey glass) ──────────────────────────
+  g.beginPath();
+  g.roundRect(pillX, pillY, pillW, pillH, 18);
+  g.fillStyle = rgba(palette.surface, 0.6);
+  g.fill();
+  g.strokeStyle = rgba(palette.text, 0.22);
+  g.lineWidth = 1;
+  g.stroke();
+  // ── Pill content, flowing left→right (explicit mirroring: no flipped
+  //    transform, or the glyphs themselves would mirror) ───────
+  let cx = pillX + padX;
+  const scoreBlock = (score: number, ink: string, side: "ally" | "enemy"): void => {
+    const right = side === "enemy";
+    const blockW = right ? enemyScoreW : allyScoreW;
     g.fillStyle = rgba(ink, 0.95);
     g.beginPath();
-    g.arc(dotX, cy, 5, 0, Math.PI * 2);
+    const dotX = right ? cx + blockW - dotR : cx + dotR;
+    g.arc(dotX, pillCy, dotR, 0, Math.PI * 2);
     g.fill();
+    g.font = scoreFont;
+    g.fillStyle = rgba(ink, 0.98);
     g.textAlign = right ? "right" : "left";
-    g.font = font(26, 700);
-    g.fillStyle = rgba(palette.text, 0.95);
-    g.fillText(String(score), dotX + dir * 14, cy - 2);
-    g.font = font(12, 400);
-    g.fillStyle = rgba(palette.text, 0.55);
-    g.fillText(`${alive}/${total}`, dotX + dir * 14, cy + 15);
+    const tx = right ? cx + blockW - dotR * 2 - 6 : cx + dotR * 2 + 6;
+    g.fillText(String(score), tx, pillCy);
   };
-  if (showScores) {
-    block(data.scoreAlly!, data.aliveAlly, data.totalAlly, ALLY_INK, false);
-    block(data.scoreEnemy!, data.aliveEnemy, data.totalEnemy, ENEMY_INK, true);
-  }
-  // Capture-point chips: one rounded box per live cap, letter colored by
-  // owner, a progress bar along its bottom while being captured.
-  const chips = data.caps.slice(0, 5);
-  const chipW = 30;
-  const chipGap = 10;
-  const clusterW = chips.length * chipW + Math.max(0, chips.length - 1) * chipGap;
-  let cx = w / 2 - 70 - clusterW;
+  if (showScores) scoreBlock(data.scoreAlly!, ALLY_INK, "ally");
+  if (showScores) cx += allyScoreW + groupGap;
+  // Cap chips: idle = square stroke (roomier letter), capturing/
+  // contested = the diamond with the capture-side progress ring — the
+  // scorebar’s CapChip geometry, path-identical.
   for (const cap of chips) {
     const ink = ownerInk(cap.owner);
-    g.strokeStyle = rgba(ink, 0.9);
-    g.lineWidth = 2;
-    g.beginPath();
-    g.roundRect(cx, cy - 19, chipW, 38, 8);
-    g.stroke();
-    g.textAlign = "center";
-    g.font = font(16, 700);
-    g.fillStyle = rgba(ink, 0.95);
-    g.fillText(cap.letter, cx + chipW / 2, cy - (cap.capturing ? 8 : 0));
-    if (cap.capturing || cap.progress > 0) {
-      g.fillStyle = rgba(palette.text, 0.18);
-      g.fillRect(cx + 4, cy + 12, chipW - 8, 4);
+    const ringInk = ownerInk(cap.captureSide ?? cap.owner);
+    const active = cap.capturing || cap.contested;
+    const x0 = cx;
+    const y0 = pillCy - chipSize / 2;
+    const k = chipSize / 30;
+    if (active) {
+      // Diamond outline (30-unit viewBox scaled to chipSize): starts at
+      // the TOP corner, runs clockwise; tint fill + owner outline.
+      const diamond = new Path2D(
+        "M " + 15 * k + " " + 1.5 * k +
+        " L " + 28.5 * k + " " + 15 * k +
+        " L " + 15 * k + " " + 28.5 * k +
+        " L " + 1.5 * k + " " + 15 * k + " Z",
+      );
+      g.save();
+      g.translate(x0, y0);
+      g.fillStyle = rgba(ink, 0.18);
+      g.fill(diamond);
+      g.strokeStyle = rgba(ink, 0.95);
+      g.lineWidth = 2.4 * k;
+      g.stroke(diamond);
+      // Progress ring: the SAME path, dash segment from the top corner —
+      // the scorebar's single-uniform-ring rule (outline and ring share
+      // one stroke width, so the ring reads as the outline lighting up).
+      const progress = Math.min(1, Math.max(0, cap.progress));
+      const ring = 4 * Math.hypot(13.5 * k, 13.5 * k);
+      g.strokeStyle = rgba(ringInk, 0.95);
+      g.lineWidth = 2.4 * k;
+      g.setLineDash([ring * progress, ring]);
+      g.stroke(diamond);
+      g.setLineDash([]);
+      // Letter: white on the tinted diamond, thin black keyline.
+      g.font = font(12, 800);
+      g.textAlign = "center";
+      g.lineWidth = 1.3;
+      g.strokeStyle = "rgba(0, 0, 0, 0.85)";
+      g.strokeText(cap.letter, chipSize / 2, chipSize / 2 + 1);
+      g.fillStyle = "rgba(255, 255, 255, 0.95)";
+      g.fillText(cap.letter, chipSize / 2, chipSize / 2 + 1);
+      g.restore();
+    } else {
+      // Idle square (5..25 of the 30-unit box) + owner letter.
+      g.strokeStyle = rgba(ink, 0.9);
+      g.lineWidth = 2.4 * k;
+      g.strokeRect(x0 + 5 * k, y0 + 5 * k, 20 * k, 20 * k);
+      g.font = font(12, 800);
+      g.textAlign = "center";
       g.fillStyle = rgba(ink, 0.95);
-      g.fillRect(cx + 4, cy + 12, (chipW - 8) * Math.min(1, Math.max(0, cap.progress)), 4);
+      g.fillText(cap.letter, x0 + chipSize / 2, y0 + chipSize / 2 + 1);
     }
-    cx += chipW + chipGap;
+    cx += chipSize + chipGap;
   }
-  // Clock: elapsed battle time, mono, dead center.
-  g.textAlign = "center";
-  g.font = font(22, 700, true);
-  g.fillStyle = rgba(palette.text, 0.9);
-  g.fillText(data.clock, w / 2, cy);
+  if (chips.length) cx += groupGap - chipGap;
+  // Clock: the one export-only addition to the pill (the app reads the
+  // time from the transport bar; a clip has neither) — mono, bright.
+  g.font = font(20, 700, true);
+  g.fillStyle = rgba(palette.text, 0.92);
+  g.textAlign = "left";
+  g.fillText(data.clock, cx, pillCy);
+  cx += clockW;
+  if (showScores) {
+    cx += groupGap;
+    scoreBlock(data.scoreEnemy!, ENEMY_INK, "enemy");
+  }
+  // ── Ship-icon strip row (the scorebar’s __ships) ───────────────
+  const stripTop = pillY + pillH + 8;
+  g.fillStyle = rgba(palette.text, 0.12);
+  g.fillRect(0, stripTop, w, 1);
+  const stripCy = (stripTop + h) / 2 + 1;
+  const iconSize = 15;
+  const iconGap = 2;
+  const sepGap = 8;
+  const allies = data.ships.filter((s) => s.role !== "enemy");
+  const enemies = data.ships.filter((s) => s.role === "enemy");
+  const sepW = allies.length && enemies.length ? 1 + sepGap * 2 : 0;
+  const stripW =
+    data.ships.length * iconSize + Math.max(0, data.ships.length - 1) * iconGap + sepW;
+  let ix = (w - stripW) / 2;
+  const drawSlot = (slot: PlaybackShipSlot): void => {
+    if (allies.length && enemies.length && slot.role === "enemy" && ix - (w - stripW) / 2 <= allies.length * (iconSize + iconGap)) {
+      // The team divider: a single hairline tick between the fleets.
+      g.fillStyle = rgba(palette.text, 0.3);
+      g.fillRect(ix + sepGap - 0.5, stripCy - iconSize / 2, 1, iconSize);
+      ix += sepW;
+    }
+    const img = shipIconFor(slot.shipType, slotVariant(slot.role, slot.dead));
+    if (img) {
+      const hurt = !slot.dead && slot.hpFrac != null && slot.hpFrac < 1;
+      g.save();
+      if (slot.dead) {
+        g.globalAlpha = 0.55;
+        g.filter = "grayscale(0.85)";
+      }
+      // Letterbox into the 15px slot (object-fit: contain, the DOM
+      // scorebar's rule) — the class art is a wide glyph, a square draw
+      // would stretch it ~1.8x vertically.
+      const natW = img.naturalWidth || iconSize;
+      const natH = img.naturalHeight || iconSize;
+      const fit = Math.min(iconSize / natW, iconSize / natH);
+      const dw = natW * fit;
+      const dh = natH * fit;
+      g.drawImage(
+        img,
+        ix + (iconSize - dw) / 2,
+        stripCy - iconSize / 2 + (iconSize - dh) / 2,
+        dw,
+        dh,
+      );
+      g.restore();
+      // Hurt-only mini bar under the icon (full hulls hide it, sunk slots
+      // read through the greyed icon — the game strip’s rule).
+      if (hurt) {
+        g.fillStyle = rgba(palette.text, 0.18);
+        g.fillRect(ix, stripCy + iconSize / 2 + 2, iconSize, 2.5);
+        g.fillStyle = rgba(slotInk(slot.role), 0.9);
+        g.fillRect(ix, stripCy + iconSize / 2 + 2, iconSize * Math.min(1, Math.max(0, slot.hpFrac!)), 2.5);
+      }
+    }
+    ix += iconSize + iconGap;
+  };
+  allies.forEach((s) => drawSlot(s));
+  enemies.forEach((s) => drawSlot(s));
+  // Bottom hairline closes the band.
+  g.fillStyle = rgba(palette.text, 0.12);
+  g.fillRect(0, h - 1, w, 1);
 }
-
 /** The side column's shared backing: translucent panel over the full map
  *  height plus the inner hairline that separates it from the map. */
 function drawColumnBase(
@@ -405,7 +571,8 @@ function drawTeamList(
     g.textAlign = "left";
     g.font = font(11, 700);
     g.fillStyle = rgba(row.dead ? NEUTRAL_INK : ink, 0.9 * dim);
-    g.fillText(ellipsize(g, row.name, w - 104), x + 10, ry + 8);
+    const display = row.clan ? `[${row.clan}] ${row.name}` : row.name;
+    g.fillText(ellipsize(g, display, w - 104), x + 10, ry + 8);
     g.font = font(10, 400);
     g.fillStyle = rgba(palette.text, 0.5 * dim);
     g.textAlign = "right";
@@ -510,6 +677,10 @@ export interface PlaybackExportRequest {
   recorder: (t: number) => PlaybackRecorderStats | null;
   /** Chat lines up to each battle time, oldest first. */
   chat: (t: number) => PlaybackChatLine[];
+  /** Ship-class HUD icon resolver for the header strip — the caller
+   *  preloads (decodes) every class×variant once before the render loop.
+   *  Return null to skip a slot. */
+  shipIconFor: (shipType: string | null, variant: PlaybackIconVariant) => HTMLImageElement | null;
   /** Paint the map square for battle time `t` in logical units onto `g`
    *  (already translated to the map's top-left corner and scaled). */
   paintMap: (t: number, g: CanvasRenderingContext2D) => void;
@@ -563,7 +734,7 @@ function composeFrame(
   // Header band (logical units, full composition width).
   ctx.save();
   ctx.scale(s, s);
-  drawPlaybackHeader(ctx, req.header(t), req.palette);
+  drawPlaybackHeader(ctx, req.header(t), req.palette, req.shipIconFor);
   ctx.restore();
   // Side columns (logical units).
   const colTop = layout.mapTop / s;

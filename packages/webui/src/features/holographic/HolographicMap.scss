@@ -193,12 +193,22 @@
      · 4 playback controls (+self card) · 5 kill feed · 6 pop-up menus
      · 3 zoomed minimap (deliberately BELOW the z-4 controls so the 2D view
        stays scrubable) · 10 roster overlay. */
-  &__controls {
-    right: auto;
+  /* The transport column: the playback row plus (while an export runs)
+     the progress strip, anchored as one absolute seat — the strip is a
+     sibling of the row, never an in-flow child of the canvas. */
+  &__transport {
     left: 12px;
     bottom: 12px;
     z-index: 4;
     position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    pointer-events: auto;
+    width: min(var(--holo-hud-block-w), calc(100cqw - 192px));
+  }
+
+  &__controls {
     display: flex;
     align-items: center;
     gap: 0.6rem;
@@ -215,7 +225,7 @@
        minimap-clearance cap the row uses (160px thumb + 8px inset +
        24px clearance = 192px), so both clamp together instead of
        diverging on narrow maps. */
-    width: min(var(--holo-hud-block-w), calc(100cqw - 192px));
+    width: 100%;
     pointer-events: auto;
   }
 
@@ -476,6 +486,48 @@
     font-size: var(--text-2xs);
     white-space: nowrap;
     text-shadow: var(--holo-hud-tshadow);
+  }
+
+  /* The export render owns the playhead — dim and deaden the transport
+     so a stray click can't fight the seek loop. */
+  &__play:disabled,
+  &__scrub:disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+
+  &__export-progress {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 3px 10px;
+    border-radius: 8px;
+    background: var(--holo-hud-chip);
+    border: 1px solid var(--holo-hud-border);
+
+    .hk-progress-bar { flex: 1 1 auto; min-width: 0; }
+
+    &__label {
+      flex: 0 0 auto;
+      font-family: var(--font-mono);
+      font-size: var(--text-2xs);
+      color: var(--holo-hud-dim);
+      white-space: nowrap;
+      font-variant-numeric: tabular-nums;
+    }
+
+    &__cancel {
+      flex: 0 0 auto;
+      border: 1px solid var(--holo-hud-border);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--holo-hud-strong);
+      font-size: var(--text-2xs);
+      padding: 2px 8px;
+      cursor: pointer;
+
+      &:hover { background: var(--holo-hud-hover); }
+    }
   }
 
   &__time {

@@ -615,6 +615,11 @@
     "dmgTaken": "承傷",
     "chatTitle": "聊天紀錄"
   },
+  "perf": {
+    "timing": "幀率",
+    "draws": "繪製",
+    "gpu": "圖形適配器"
+  },
   "chatLog": "聊天記錄",
   "chat": {
     "team": "隊伍",
@@ -701,7 +706,7 @@
     "noData": "該艦無可用資料",
     "gapNote": "——其中 {s} 秒未被偵測、無法解析",
     "fallback": "替代視角",
-    			"fallbackHint": "錄製者的艦船在本場錄像中沒有可評分數據，已改為顯示觀測覆蓋最高的玩家。",
+    "fallbackHint": "錄製者的艦船在本場錄像中沒有可評分數據，已改為顯示觀測覆蓋最高的玩家。",
     "recorder": "錄製者",
     "diedAt": "陣亡 {t}",
     "duration": "時長 {t}",
@@ -766,4 +771,3 @@
     "fighterCover": "戰鬥機掩護"
   }
 }
-

@@ -615,6 +615,11 @@
     "dmgTaken": "받은 피해",
     "chatTitle": "채팅 기록"
   },
+  "perf": {
+    "timing": "프레임률",
+    "draws": "드로우",
+    "gpu": "GPU"
+  },
   "chatLog": "채팅 기록",
   "chat": {
     "team": "팀",
@@ -701,7 +706,7 @@
     "noData": "이 함선의 데이터 없음",
     "gapNote": "— 그중 {s}초는 미발견으로 해석 불가",
     "fallback": "대체 시점",
-    			"fallbackHint": "녹화자 함은 채점 가능한 행이 없어 관측 비율이 가장 높은 플레이어를 대신 표시합니다.",
+    "fallbackHint": "녹화자 함은 채점 가능한 행이 없어 관측 비율이 가장 높은 플레이어를 대신 표시합니다.",
     "recorder": "녹화자",
     "diedAt": "격침 {t}",
     "duration": "지속 시간 {t}",
@@ -766,4 +771,3 @@
     "fighterCover": "전투기 엄호"
   }
 }
-

@@ -314,17 +314,19 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
   // degrade to null (the caller's "unsupported" path) instead.
   if (!format.getSupportedVideoCodecs().includes(picked.codec)) return null;
   const output = new Output({ format, target });
-  // Encoder tuned for THROUGHPUT, not pristine quality: `quality: HIGH`
-  // drives the VP9/AV1 software encoders into their slowest paths (a
-  // 10-minute match encoded for tens of minutes). A flat-map clip needs a
-  // modest bitrate (≈0.12 bits per pixel per frame), the realtime deadline
-  // keeps libvpx in its fast paths, and prefer-hardware lets AVC land on
-  // the platform encoder when one exists.
+  // Encoder tuned for THROUGHPUT WITH legible text: `quality: HIGH` drove
+  // the VP9/AV1 software encoders into their slowest paths (a 10-minute
+  // match encoded for tens of minutes), but the first throughput pass
+  // (0.12 bpp) starved the realtime deadline into smeared map text — the
+  // "太糊了" report. 0.2 bpp with a 6 Mbps floor keeps grid lines and
+  // ship-name pills crisp at the realtime deadline; the realtime latency
+  // mode itself stays (it is what keeps libvpx out of the slow paths),
+  // and prefer-hardware lets AVC land on the platform encoder.
   const source = new CanvasSource(canvas, {
     codec: picked.codec,
     bitrate: Math.min(
-      20_000_000,
-      Math.max(2_500_000, Math.round(width * height * opts.fps * 0.12)),
+      30_000_000,
+      Math.max(6_000_000, Math.round(width * height * opts.fps * 0.2)),
     ),
     latencyMode: "realtime",
     hardwareAcceleration: "prefer-hardware",

@@ -848,6 +848,10 @@ export interface EnlargedMapPaintOptions {
    *  the replay clip's HUD ask (the live 3D view shows labels as DOM
    *  overlays, which have no equivalent on this canvas). */
   shipLabels?: boolean;
+  /** Clan tag by player name (rendered as `[TAG] name`), when known. */
+  clanOf?: (name: string) => string | null;
+  /** Numeric tier → Roman numeral ("X"), for the ship-name line. */
+  romanTier?: (tier: number | null) => string | null;
 }
 
 export function paintEnlargedMap(
@@ -1093,26 +1097,49 @@ export function paintEnlargedMap(
           : label.role === "self"
             ? "rgba(255, 255, 255, 0.95)"
             : "rgba(126, 226, 168, 0.95)";
+      const clan = o.clanOf?.(label.name) ?? null;
+      const nameLine = clan ? `[${clan}] ${label.name}` : label.name;
+      const tier = o.romanTier?.(label.tier) ?? "";
+      const shipLine = [tier, label.shipName].filter(Boolean).join(" ");
+      // Card: a MINIMUM width so the HP bar reads as equal for everyone
+      // (血量条众生平等) — short names never shrink the bar.
+      const MIN_W = 92;
       g.font = "700 11px ui-sans-serif, system-ui, sans-serif";
-      const w1 = g.measureText(label.name).width;
+      const w1 = g.measureText(nameLine).width;
       g.font = "500 10px ui-sans-serif, system-ui, sans-serif";
-      const w2 = g.measureText(label.shipName).width;
-      const boxW = Math.ceil(Math.max(w1, w2)) + 10;
-      const boxH = 30;
+      const w2 = g.measureText(shipLine).width;
+      const boxW = Math.max(MIN_W, Math.ceil(Math.max(w1, w2)) + 10);
+      const boxH = 40;
       const bx = Math.min(Math.max(2, lx - boxW / 2), zw - boxW - 2);
       const by = Math.min(Math.max(2, ly - boxH), zw - boxH - 2);
-      g.fillStyle = "rgba(5, 8, 15, 0.6)";
+      g.fillStyle = "rgba(5, 8, 15, 0.62)";
       g.beginPath();
-      g.roundRect(bx, by, boxW, boxH, 4);
+      g.roundRect(bx, by, boxW, boxH, 5);
       g.fill();
       g.textAlign = "center";
       g.textBaseline = "middle";
       g.font = "700 11px ui-sans-serif, system-ui, sans-serif";
       g.fillStyle = ink;
-      g.fillText(label.name, bx + boxW / 2, by + 8);
+      g.fillText(nameLine, bx + boxW / 2, by + 9);
       g.font = "500 10px ui-sans-serif, system-ui, sans-serif";
-      g.fillStyle = "rgba(226, 232, 240, 0.78)";
-      g.fillText(label.shipName, bx + boxW / 2, by + 21);
+      g.fillStyle = "rgba(226, 232, 240, 0.8)";
+      g.fillText(shipLine, bx + boxW / 2, by + 22);
+      // The HP bar: full inner width, fraction-coloured; sunk cards keep
+      // an empty track (the greyed glyph already reads as dead).
+      const barX = bx + 6;
+      const barW = boxW - 12;
+      const barY = by + boxH - 8;
+      g.fillStyle = "rgba(148, 163, 184, 0.22)";
+      g.fillRect(barX, barY, barW, 4);
+      const hp = label.hp;
+      const maxHp = label.maxHp;
+      if (!labelDead && hp != null && maxHp != null && maxHp > 0) {
+        const frac = Math.min(1, Math.max(0, hp / maxHp));
+        const barInk =
+          frac > 0.55 ? "74, 222, 128" : frac > 0.25 ? "251, 191, 36" : "248, 92, 92";
+        g.fillStyle = `rgba(${barInk}, 0.95)`;
+        g.fillRect(barX, barY, barW * frac, 4);
+      }
     }
   }
   // Smoke screens — the same filled puff band as the thumb pass, at

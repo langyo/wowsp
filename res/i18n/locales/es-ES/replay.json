@@ -615,6 +615,11 @@
     "dmgTaken": "Recibido",
     "chatTitle": "Chat"
   },
+  "perf": {
+    "timing": "Fotogramas",
+    "draws": "Llamadas",
+    "gpu": "GPU"
+  },
   "chatLog": "Chat de batalla",
   "chat": {
     "team": "Equipo",
@@ -701,7 +706,7 @@
     "noData": "Sin datos para este barco",
     "gapNote": " — {s} s sin observar (irresoluble)",
     "fallback": "perspectiva alternativa",
-    			"fallbackHint": "El grabador no tenía filas puntuables en esta repetición: se muestra en su lugar el jugador con mejor cobertura.",
+    "fallbackHint": "El grabador no tenía filas puntuables en esta repetición: se muestra en su lugar el jugador con mejor cobertura.",
     "recorder": "grabador",
     "diedAt": "Hundido a las {t}",
     "duration": "Duración {t}",
@@ -766,4 +771,3 @@
     "fighterCover": "Cobertura de cazas"
   }
 }
-
