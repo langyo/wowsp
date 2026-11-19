@@ -1000,7 +1000,7 @@ def check_price_catalog(prices, label, probe, utils, failures,
             return
         if not probe.price_catalog_done:
             failures.append("[%s] price catalog never marked done" % label)
-        expected_tries = 1 if prices == "planted" else 3
+        expected_tries = 1 if prices == "planted" else 5
         if probe.price_catalog_tries != expected_tries:
             failures.append(
                 "[%s] price catalog tries=%r (expected %d — the bridge must "
@@ -1037,7 +1037,7 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
              degraded=None, builds=None, allow_soft=(), prices=None,
              extra_ticks=0, with_scene_event=True,
              scene_event_delayed=False, port_ticks=0,
-             price_expected_phase=None):
+             price_expected_phase=None, journal_marks=False):
     label = ("encode=%s manifest=%s ui=%s cc=%s plain=%s ships=%s shipNames=%s drift=%s raw=%s aimduck=%s degraded=%s builds=%s prices=%s scene=%s"
              % ("records" if encode_records else "projection",
                 "yes" if with_manifest else "missing",
@@ -1878,6 +1878,56 @@ def run_once(plugin_src, workdir, encode_records, with_manifest, with_ui,
         elif "roster stable players=" not in joined:
             failures.append("[%s] the roster never stabilized; probe log:\n%s"
                             % (label, joined[-2000:]))
+        # The journal-marks pass (the 2026-11-19 residual follow-up):
+        # fire two real marks, back-date the mark-flush clock so the
+        # second mark must flush the ring mid-battle, and assert the
+        # file carries the event lines (the crash-window bound's write
+        # path + the quit flush's content).
+        if journal_marks and probe is not None:
+            list_handler = events.handlers.get("onPlayersListUpdated")
+            if list_handler is None:
+                failures.append("[%s] onPlayersListUpdated never registered"
+                                % label)
+            else:
+                list_handler()
+            probe.journal_flush_at = 0.0
+            sfm("input.tabModeIn", None)
+            try:
+                with open("roster_journal.jsonl", encoding="utf-8") as fh:
+                    mark_lines = [ln for ln in fh.read().split("\n") if ln]
+            except Exception as e:
+                failures.append("[%s] journal unreadable after marks: %r"
+                                % (label, e))
+            else:
+                if len(mark_lines) < 2:
+                    failures.append("[%s] journal holds %d mark lines "
+                                    "(expected >= 2)" % (label, len(mark_lines)))
+                for ln in mark_lines:
+                    if '"ev"' not in ln:
+                        failures.append("[%s] journal line without ev: %r"
+                                        % (label, ln[:80]))
+            # Suppression: rapid marks INSIDE the window must not flush
+            # (a regression to per-mark flushing would call the ring
+            # write on every mark — count through a wrapper).
+            orig_flush = probe.journal_flush
+            flush_calls = []
+
+            def _counting_flush():
+                flush_calls.append(1)
+                orig_flush()
+
+            probe.journal_flush = _counting_flush
+            try:
+                if list_handler is not None:
+                    list_handler()
+                    list_handler()
+                sfm("input.tabModeOut", None)
+            finally:
+                probe.journal_flush = orig_flush
+            if flush_calls:
+                failures.append("[%s] journal flushed %d times inside the "
+                                "mark window (bound regression)"
+                                % (label, len(flush_calls)))
         # Battle quit: the quit-clear telemetry must blank EVERY keyed
         # field (players, sortKeys AND the ordering raw material —
         # rosterOrder/shipNames — plus the division bridge), so a leftover
@@ -2070,24 +2120,30 @@ def main(argv):
     # planted: the load-phase dump; deferred: the login-sync retry through
     # the 15.9 encoder quirk (its dict rejection must fall back to the
     # hand-rolled serializer and still land the same payload) landing on
-    # the PORT lattice — 20 port ticks put attempts at 10 and 20, the
-    # second carrying data: one ready-gated write, phase 'port', tries 3.
+    # the PORT lattice. The dump's cross-first gate (the residual
+    # follow-up) changes the arithmetic: attempts 1-2 walk ONLY the gate
+    # collection (empty), attempt 3 sees gate data and walks itemPrice
+    # (still empty), attempt 4 ditto, attempt 5 gets item data -> ready
+    # -> one write. 45 port ticks put attempts at 10/20/30/40: phase
+    # 'port', tries 5.
     for price_mode, price_plain in (("planted", False), ("deferred", True)):
         with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
             run_once(plugin_src, workdir, True, True, False, False,
                      price_plain, "full", True, False, failures,
                      prices=price_mode,
-                     port_ticks=20 if price_mode == "deferred" else 0)
+                     port_ticks=45 if price_mode == "deferred" else 0)
         price_passes += 1
     # battle-late: the budget survives the port window unspent (only 3
     # port ticks -> no port attempt), so the login-sync retry must land
-    # on the LATE-battle lattice instead — attempts at battle ticks 30
-    # and 40 (data from the 3rd per-collection call), one ready-gated
-    # write, phase 'battle', tries 3.
+    # on the LATE-battle lattice instead. Cross-first arithmetic again:
+    # gate-only walks until the gate's 3rd call carries data, then two
+    # more itemPrice walks until its 3rd call — attempts at battle ticks
+    # ~33/43/53/63 -> one ready-gated write, phase 'battle', tries 5.
+    # 60 extra ticks (65 battle ticks total) cover the 63rd.
     with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
         run_once(plugin_src, workdir, True, True, False, False, False,
                  "full", True, False, failures, prices="deferred",
-                 port_ticks=3, extra_ticks=41,
+                 port_ticks=3, extra_ticks=60,
                  price_expected_phase="battle")
     price_passes += 1
     # raising: the whole retry cap must burn on the port lattice (a
@@ -2099,13 +2155,23 @@ def main(argv):
                  port_ticks=95)
     price_passes += 1
 
+    # The journal-marks pass: two live marks with a back-dated flush
+    # clock prove the crash-window bound's mid-battle write (the ring
+    # must land with both event lines) ahead of the quit flush.
+    journal_passes = 0
+    with tempfile.TemporaryDirectory(prefix="wowsp-sandbox-") as workdir:
+        run_once(plugin_src, workdir, True, True, False, False, False,
+                 "full", True, False, failures, journal_marks=True)
+        journal_passes += 1
+
     if failures:
         print("SANDBOX CONFORMANCE: FAIL (%d)" % len(failures))
         for line in failures:
             print(" - " + line)
         return 1
     print("SANDBOX CONFORMANCE: PASS (%d passes, %s, crippled builtins: %s)"
-          % (len(passes) + 4 + build_passes + price_passes + scene_passes,
+          % (len(passes) + 4 + build_passes + price_passes +
+             scene_passes + journal_passes,
              os.path.basename(os.path.normpath(plugin)),
              ", ".join(SAFE_BUILTINS)))
     return 0

@@ -50,7 +50,8 @@ plugin side is REMOVED, not dormant:
   roster_journal / telemetry / order_probe / builds / price_catalog
   (write-batched since 2026-11-19: roster_raw and builds are
   once-per-battle snapshots, the journal is event marks flushed at
-  battle end, the price catalog writes once per client session).
+  battle end plus at most once a minute while marks arrive, the price
+  catalog writes once per client session).
 - The unbound view (`src/WoWSPProbe.unbound`) renders ONLY the capture
   side channel's barcode strips (next section); the stats tables, the
   crosshair aim panel and their CSS/elements are cut from the file.

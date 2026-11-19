@@ -15,8 +15,12 @@
 > replacing this doc's "renders nothing" stance for the new `table =
 > "ingame"` mode only. The overlay mode (`"detect"`) keeps the original
 > data-source design below; the bridge (`commands/ingame_bridge.rs`)
-> answers `request.json` only while the ingame mode is active, so the two
-> displays never run at once.
+> answered `request.json` only while the ingame mode was active, so the
+> two displays never ran at once. **That view mode — and with it the
+> request/response bridge — was RETIRED on 2026-10-19**; the retired
+> request.json / response.json / manual_refresh.flag artifacts no longer
+> appear in the current format list below (they survive only in the
+> historical design sections).
 
 ## Background & goals
 
@@ -475,7 +479,7 @@ covered (see "Ordering-raw-material bridge" above).
 - `open()` has **no append mode** ('a' returns None instead of raising):
   rewrite files whole from in-memory buffers.
 - Missing files log an engine-side error line before raising: seed every
-  polled mailbox once at load (see `manual_refresh.flag` seeding).
+  polled file once at load (see the journal's load-time seeding).
 - Exceptions escaping a callback kill the mod silently: wrap everything,
   dedupe repeated errors before logging.
 - `dir()` on the injected modules returns `[]` (SafeClass wrappers): the
@@ -511,20 +515,6 @@ covered (see "Ordering-raw-material bridge" above).
 Bridge files (protocol v1, all in the mod directory):
 
 ```jsonc
-// request.json — written by the mod on a stable roster (and re-written on
-// manual refresh). Companion answers with stats rows.
-{ "version": 1, "created": 1690000000.0, "session": "1690000000000",
-  "manual": false,
-  "players": [ { "name": "...", "account_id": 0, "avatar_id": 0,
-                 "ship_id": 0 } ] }
-
-// response.json — written by WoWSP; revision must be monotonic per session;
-// an empty file (no trailing newline) means "pending".
-{ "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
-  "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ],
-  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
-
 // heartbeat.json — rewritten every 1–2 s; stale = mod dead or game closed.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3, "rec": 18, "fb": "" | "records" | "walk" }
@@ -543,14 +533,13 @@ Bridge files (protocol v1, all in the mod directory):
 // line, distinct from the hard telemetry-absent WARN.
 
 // telemetry journal — event marks only (one line per mark), flushed to
-// disk once at battle end from a bounded ring; roster bodies no longer
-// ride the journal (the 2026-11-19 performance fix — the old per-state
-// ring was rewritten whole on every combat tick):
+// disk at battle end plus at most once a minute while marks keep
+// arriving (the crash-window bound); roster bodies no longer ride the
+// journal (the 2026-11-19 performance fix — the old per-state ring was
+// rewritten whole on every combat tick):
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP writes a fresh epoch-seconds stamp to trigger a
-// re-query; the mod consumes it within a 10 s window.
 ```
 
 ## Server-synced price catalog (price_catalog.json)
@@ -633,9 +622,12 @@ bridge is done once BOTH shipCrossResearchInfo and itemPrice carry data
 — one WOWSP_PROBE price catalog written line reports the per-collection
 counts — or it stands down silently when the whole hub is withheld (the
 Lesta sandbox shape: no file, no log line, no soft error). A count of -1
-means the hub refused that collection name. The file is written exactly
-once (ready-gated, or the final attempt) and never re-written: the
-companion may be reading it.
+means the hub refused that collection name. While shipCrossResearchInfo
+itself is still empty, only that one cheap collection is walked per
+attempt (the cross-first gate): a not-ready shape pays nothing for the
+12k-entity itemPrice sweep until the final attempt forces the full walk.
+The file is written exactly once (ready-gated, or the final attempt)
+and never re-written: the companion may be reading it.
 **Verified against a real port capture** (WG, build 13357625, 2026-10-31):
 `itemPrice` served 11,617 entities, `shipTechRestrictions` was refused
 (-1), `shipEconomicAttributes` carried one record, and
@@ -714,7 +706,9 @@ panel; an EXPLICIT empty column list (the user removed every card)
 hides it too, while a companion that never sent columns keeps a
 name/ship-only panel.
 
-**Column pipeline.** The columns are the SAME drag-card editor the
+**Column pipeline.** *(Retired with the ingame view mode on
+2026-10-19 — kept as the design record.)* The columns are the SAME
+drag-card editor the
 water table uses (`OverlayColumnsEditor`, a second instance in the
 in-game settings section), persisted as `aimColumns` in the stats prefs
 (limit 4, scope "global" in v1 — the bridge serves one roster lookup;
@@ -782,13 +776,13 @@ plus the CN360 volunteer replays at matching builds).
 
 | Concern | File (existing unless noted) | Change |
 | --- | --- | --- |
-| Bridge file watcher | `commands/arena_info.rs` sibling: new `commands/ingame_bridge.rs` | `notify`-watch the mod directory; parse heartbeat/request/journal; expose Tauri events `wowsp://ingame-*` |
+| Bridge file watcher (retired 2026-10-19) | `commands/arena_info.rs` sibling: new `commands/ingame_bridge.rs` | `notify`-watch the mod directory; parse heartbeat/request/journal; expose Tauri events `wowsp://ingame-*` |
 | Ordering engine | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`, with Lesta roster synthesis in `commands/probe_roster.rs` | arena order + dead-sinking reducer fed by bridge events; emits the final row order the overlay renders |
 | Config schema | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` gains `"plugin"` (priority chain `plugin > inferred > ocr > off`) |
 | Overlay key gating | `overlay/placement.rs` (`tab_key_down`) | when the bridge is live, drive show/hide from `input.tabModeIn/Out` marks instead of `GetAsyncKeyState` polling |
 | Install / uninstall | `commands/mod_install.rs` + `packages/ingame-plugin/` (new subpackage) | template becomes the subpackage's `Main.py`; snapshot + rollback; game-closed guard; legacy probe cleanup |
 | Health check | `commands/ingame_bridge.rs` | parse `profile/python.log` for the mod's `probe … loaded` / `api[load] dh=True` self-check lines; expose status for the settings UI |
-| Stats rows | existing `wg_api.rs` / `wg_api_cn.rs` | unchanged — the companion writes `response.json` from the same batch lookup the overlay uses today |
+| Stats rows (retired 2026-10-19) | existing `wg_api.rs` / `wg_api_cn.rs` | unchanged — the companion wrote `response.json` from the same batch lookup the overlay uses today |
 
 ## Test plan
 
@@ -824,10 +818,12 @@ plus the CN360 volunteer replays at matching builds).
    Four PRICE passes pin the server-synced economy bridge: the planted
    collections must round-trip the exact entity rows / decoded field
    lists / counts; the deferred shape proves the login-sync retry lands
-   the same file on the port lattice (20 port ticks -> attempts at 10
-   and 20, one ready-gated write, phase 'port', tries 3); the
+   the same file on the port lattice (45 port ticks -> attempts at
+   10/20/30/40, the cross-first gate deferring the ready walk until
+   itemPrice's 3rd call: one write, phase 'port', tries 5); the
    battle-late shape (port budget unspent) lands it on the late-battle
-   lattice (battle ticks 30/40, phase 'battle'); and the withheld Lesta
+   lattice (battle ticks ~33/43/53/63,
+   phase 'battle', tries 5); and the withheld Lesta
    shape (UiComponents raising + every collection refused) must burn
    its whole cap on port ticks, leaving price_catalog.json ABSENT with
    no swallowed-exception text in either the probe log or the

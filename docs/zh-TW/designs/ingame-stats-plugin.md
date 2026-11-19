@@ -138,7 +138,7 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
 - `open()` **沒有追加模式**（'a' 回傳 None 而非拋出例外）：以記憶體
   緩衝整檔重寫。
 - 檔案缺失時引擎會先記一條錯誤日誌再拋出例外：每個被輪詢的信箱
-  檔案都要在載入時播種一次（見 `manual_refresh.flag` 的播種）。
+  檔案都要在載入時播種一次（見 journal 的載入時播種）。
 - 從回呼逃逸的例外會讓 mod 靜默死亡：全部包裹，重複錯誤先去重
   再記日誌。
 - 注入模組的 `dir()` 回傳 `[]`（SafeClass 包裝）：API 面只有上文
@@ -172,32 +172,17 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
 橋接檔案（協定 v1，全部位於 mod 目錄）：
 
 ```jsonc
-// request.json —— 名單穩定後由 mod 寫出（手動刷新時重寫）。
-// 伴生側回填戰績行。
-{ "version": 1, "created": 1690000000.0, "session": "1690000000000",
-  "manual": false,
-  "players": [ { "name": "...", "account_id": 0, "avatar_id": 0,
-                 "ship_id": 0 } ] }
-
-// response.json —— 由 WoWSP 寫出；revision 須按工作階段單調遞增；
-// 空檔案（無結尾換行）表示「處理中」。
-{ "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
-  "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ],
-  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
-
 // heartbeat.json —— 每 1–2 s 重寫一次；過期 = mod 已死或遊戲已關閉。
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
-// 遙測 journal —— 僅事件標記（每條標記一行），戰鬥結束時從有界環形
-// 緩衝一次性落盤；名單主體不再隨 journal 攜帶（2026-11-19 效能修復
-// ——舊的按狀態環形緩衝曾在每個戰鬥拍整檔重寫）：
+// 遙測 journal —— 僅事件標記（每條標記一行），戰鬥結束時落盤，且標記
+// 持續到來期間每分鐘至多再落盤一次（當機視窗上界）；名單主體不再隨
+// journal 攜帶（2026-11-19 效能修復——舊的按狀態環形緩衝曾在每個戰鬥拍
+// 整檔重寫）：
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag —— WoWSP 寫入新的 epoch-seconds 時間戳以觸發重新
-// 查詢；mod 在 10 s 時間窗內消費。
 ```
 
 ## 伺服器同步的價格目錄（price_catalog.json）
@@ -270,8 +255,11 @@ dhcomponents.ShipEconomicAttributes（shipEconomicAttributes）。伴生程式
 shipCrossResearchInfo 與 itemPrice 兩個集合都拿到資料即標記完成（一條
 WOWSP_PROBE price catalog written 日誌行報告各集合計數），或在整個 hub 被
 扣留（Lesta 沙盒形態）時靜默放棄（無檔案、無日誌行、無 soft 錯誤）。計數
-為 -1 表示 hub 拒絕該集合名。檔案恰好寫一次（就緒門控或最後一次嘗試）且
-永不重寫：伴生程式可能正在讀取它。
+為 -1 表示 hub 拒絕該集合名。只要 shipCrossResearchInfo 本身仍為空，
+每次嘗試就只走訪這一個廉價集合（cross-first 閘）：未就緒形態無需為
+1.2 萬實體的 itemPrice 掃描付出任何代價，直到最後一次嘗試強制完整走訪。
+檔案恰好寫一次（就緒門控或最後一次嘗試）且永不重寫：伴生程式可能正在
+讀取它。
 
 **已用一次真實港口採集驗證**（WG，build 13357625，2026-10-31）：
 itemPrice 提供 11,617 筆、shipTechRestrictions 被拒（-1）、
@@ -333,13 +321,13 @@ Lesta 資料在拿到 Lesta 客戶端採集前保持可空欄位（本機未安�
 
 | 關注點 | 檔案（無標註即為現有） | 變更 |
 | --- | --- | --- |
-| 橋接檔案監看器 | `commands/arena_info.rs` 的姊妹檔：新增 `commands/ingame_bridge.rs` | 以 `notify` 監看 mod 目錄；解析 heartbeat/request/journal；發出 Tauri 事件 `wowsp://ingame-*` |
+| 橋接檔案監看器（2026-10-19 退役） | `commands/arena_info.rs` 的姊妹檔：新增 `commands/ingame_bridge.rs` | 以 `notify` 監看 mod 目錄；解析 heartbeat/request/journal；發出 Tauri 事件 `wowsp://ingame-*` |
 | 排序引擎 | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`，Lesta 陣容合成在 `commands/probe_roster.rs` | 由橋接事件餵入的「載具序 + 陣亡下沉」歸約器；輸出覆蓋層渲染的最終行序 |
 | 設定 schema | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` 新增 `"plugin"`（優先順序鏈 `plugin > inferred > ocr > off`） |
 | 覆蓋層按鍵門控 | `overlay/placement.rs`（`tab_key_down`） | 橋接存活時，改由 `input.tabModeIn/Out` 標記驅動顯示/隱藏，取代 `GetAsyncKeyState` 輪詢 |
 | 安裝/解除安裝 | `commands/mod_install.rs` + `packages/ingame-plugin/`（新子套件） | 模板改為該子套件的 `Main.py`；快照 + 回滾；遊戲關閉守衛；舊探針清理 |
 | 健康檢查 | `commands/ingame_bridge.rs` | 解析 `profile/python.log` 中 mod 的 `probe … loaded` / `api[load] dh=True` 自檢行；向設定 UI 公開狀態 |
-| 戰績行 | 現有 `wg_api.rs` / `wg_api_cn.rs` | 不變——伴生側以覆蓋層目前所用的同一套批次查詢寫出 `response.json` |
+| 戰績行（2026-10-19 退役） | 現有 `wg_api.rs` / `wg_api_cn.rs` | 不變——伴生側曾以覆蓋層當時所用的同一套批次查詢寫出 `response.json` |
 
 ## 測試計畫
 
@@ -351,10 +339,13 @@ Lesta 資料在拿到 Lesta 客戶端採集前保持可空欄位（本機未安�
   15.9 編碼器怪癖）——它們回答不了的實彈對局問題（真實 Lesta 沙箱對
   'ship' 集合到底給什麼）已於當日 2026-10-10 定案：完整鍵表，含 bot 共
   11/11。2026-10-31 起另加四個價格 pass：植入形態斷言 price_catalog.json
-  的實體列/解碼欄位/計數精確一致，延遲形態現落於港口點陣（phase 'port'、
-  tries 3），戰鬥後期 pass 覆蓋戰鬥後期的點陣（phase 'battle'），扣留/
+  的實體列/解碼欄位/計數精確一致，延遲形態現落於港口點陣（45 個港口
+  tick -> 嘗試點 10/20/30/40，cross-first 閘把就緒走訪推遲到 itemPrice
+  第 3 次呼叫：寫一次，phase 'port'、tries 5），戰鬥後期 pass（港口
+  預算未用盡）覆蓋戰鬥後期的點陣（戰鬥 tick ~33/43/53/63、
+  phase 'battle'、tries 5），扣留/
   拋異形態（UiComponents 拋異 + 全部集合被拒）在港口 tick 上燒盡重試
-  上限，斷言檔案缺失且日誌與 soft 錯誤閂鎖中沒有吞例外文字。外加
+  上限，斷言 price_catalog.json 缺失且日誌與 soft 錯誤閂鎖中沒有吞例外文字。外加
   `python -m py_compile`。
 - **僅港口冒煙測試**（不打戰鬥）：啟動遊戲、在港口停留約 15 s、退出；
   斷言 `python.log` 出現 `injected names=[…]`、`api[load] dh=True`

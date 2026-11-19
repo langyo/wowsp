@@ -208,7 +208,7 @@ arriba).
   una excepción): reescriba los archivos completos desde búferes en memoria.
 - Los archivos que faltan registran una línea de error del lado del motor
   antes de lanzar la excepción: inicialice cada buzón sondeado una vez al
-  cargar (véase la inicialización previa de `manual_refresh.flag`).
+  cargar (véase la siembra del diario en la carga).
 - Las excepciones que escapan de un callback matan el mod en silencio: envuelva
   todo, deduplique los errores repetidos antes de registrarlos.
 - `dir()` sobre los módulos inyectados devuelve `[]` (envoltorios SafeClass):
@@ -244,37 +244,20 @@ arriba).
 Archivos del puente (protocolo v1, todos en el directorio del mod):
 
 ```jsonc
-// request.json — lo escribe el mod cuando el roster es estable (y se
-// reescribe en cada refresco manual). El acompañante responde con filas de
-// estadísticas.
-{ "version": 1, "created": 1690000000.0, "session": "1690000000000",
-  "manual": false,
-  "players": [ { "name": "...", "account_id": 0, "avatar_id": 0,
-                 "ship_id": 0 } ] }
-
-// response.json — lo escribe WoWSP; la revision debe ser monótona por sesión;
-// un archivo vacío (sin salto de línea final) significa «pendiente».
-{ "version": 1, "session": "1690000000000", "revision": 3, "busy": false,
-  "rows": [ { "name": "...", "wr": 52.3, "pr": 1450, "state": "ok",
-              "bf": { "battles": 8213, "ishidden": false } } ],
-  "labels": { "wr": "WR", "pr": "PR", "ally": "Allies", "enemy": "Enemies" } }
-
 // heartbeat.json — se reescribe cada 1–2 s; obsoleto = mod muerto o juego
 // cerrado.
 { "v": "0.1.0", "t": 1690000000000, "phase": "port" | "battle",
   "players": 17, "revision": 3 }
 
 // diario de telemetría — solo marcas de eventos (una línea por marca),
-// volcado a disco una sola vez al final de la batalla desde un anillo
-// acotado; los cuerpos del roster ya no viajan en el diario (la corrección
+// volcadas a disco al final de la batalla más, como máximo, una vez por
+// minuto mientras sigan llegando marcas (la cota de la ventana de caída);
+// los cuerpos del roster ya no viajan en el diario (la corrección
 // de rendimiento del 2026-11-19 — el antiguo anillo por estado se
 // reescribía entero en cada tick de combate):
 { "t": 1690000001000, "ev": "input.tabModeIn" }
 { "t": 1690000004000, "ev": "playersListUpdated" }
 
-// manual_refresh.flag — WoWSP escribe una marca nueva en ms de época para
-// disparar una nueva consulta; el mod la consume dentro de una ventana de
-// 10 s.
 ```
 
 ## Integración en el producto
@@ -325,13 +308,13 @@ Archivos del puente (protocolo v1, todos en el directorio del mod):
 
 | Aspecto | Archivo (existente salvo indicación contraria) | Cambio |
 | --- | --- | --- |
-| Observador de archivos del puente | hermano de `commands/arena_info.rs`: nuevo `commands/ingame_bridge.rs` | vigilar con `notify` el directorio del mod; analizar heartbeat/request/journal; exponer eventos de Tauri `wowsp://ingame-*` |
+| Observador de archivos del puente (retirado el 2026-10-19) | hermano de `commands/arena_info.rs`: nuevo `commands/ingame_bridge.rs` | vigilar con `notify` el directorio del mod; analizar heartbeat/request/journal; exponer eventos de Tauri `wowsp://ingame-*` |
 | Motor de ordenación | `packages/webui/src/features/replay/liveTabOrder.ts` + `packages/webui/src/overlay/inferredOrder.ts`; la síntesis del roster de Lesta vive en `commands/probe_roster.rs` | reductor de orden de arena + hundimiento de muertos alimentado por eventos del puente; emite el orden final de filas que la superposición renderiza |
 | Esquema de configuración | `commands/overlay_config.rs` + `packages/webui/src/stores/overlayConfig.ts` | `roster` incorpora `"plugin"` (cadena de prioridad `plugin > inferred > ocr > off`) |
 | Control de la tecla de la superposición | `overlay/placement.rs` (`tab_key_down`) | cuando el puente está activo, dirigir mostrar/ocultar con las marcas `input.tabModeIn/Out` en lugar del sondeo de `GetAsyncKeyState` |
 | Instalación / desinstalación | `commands/mod_install.rs` + `packages/ingame-plugin/` (nuevo subpaquete) | la plantilla pasa a ser el `Main.py` del subpaquete; instantánea + reversión; guardia de juego cerrado; limpieza de la sonda heredada |
 | Comprobación de estado | `commands/ingame_bridge.rs` | analizar `profile/python.log` en busca de las líneas de autoverificación `probe … loaded` / `api[load] dh=True` del mod; exponer el estado para la interfaz de ajustes |
-| Filas de estadísticas | `wg_api.rs` / `wg_api_cn.rs` existentes | sin cambios — el acompañante escribe `response.json` desde la misma búsqueda por lotes que la superposición usa hoy |
+| Filas de estadísticas (retiradas el 2026-10-19) | `wg_api.rs` / `wg_api_cn.rs` existentes | sin cambios — el acompañante escribía `response.json` desde la misma búsqueda por lotes que la superposición usaba entonces |
 
 ## Plan de pruebas
 
