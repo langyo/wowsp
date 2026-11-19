@@ -602,12 +602,19 @@
     "start": "書き出し開始",
     "cancel": "キャンセル",
     "toggle": "リプレイ動画 / GIF を書き出す",
-    "running": "リプレイを書き出し中",
+    "runningProgress": "リプレイを書き出し中 {done}/{total}",
     "cancelRun": "中止",
     "unsupported": "この環境では動画のエンコードに対応していません",
     "toastEmpty": "書き出せる時間範囲がありません",
     "saved": "リプレイを {path} に保存しました",
-    "savedCopied": "{path} に保存し、ファイルをクリップボードにコピーしました。そのまま貼り付けられます"
+    "savedCopied": "{path} に保存し、ファイルをクリップボードにコピーしました。そのまま貼り付けられます",
+    "teamAlly": "味方",
+    "teamEnemy": "敵",
+    "damageTitle": "ダメージ",
+    "dmgDealt": "ダメージ",
+    "dmgFrags": "撃沈",
+    "dmgTaken": "被弾",
+    "chatTitle": "チャット"
   },
   "chatLog": "チャット記録",
   "chat": {

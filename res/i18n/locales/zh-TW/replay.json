@@ -602,12 +602,19 @@
     "start": "開始匯出",
     "cancel": "取消",
     "toggle": "匯出重播影片 / GIF",
-    "running": "正在匯出重播",
+    "runningProgress": "正在匯出重播 {done}/{total}",
     "cancelRun": "取消",
     "unsupported": "目前環境不支援影片編碼",
     "toastEmpty": "沒有可匯出的時間範圍",
     "saved": "重播已儲存到 {path}",
-    "savedCopied": "已儲存到 {path}，檔案已複製到剪貼簿，可直接貼上傳送"
+    "savedCopied": "已儲存到 {path}，檔案已複製到剪貼簿，可直接貼上傳送",
+    "teamAlly": "我方",
+    "teamEnemy": "敵方",
+    "damageTitle": "傷害輸出",
+    "dmgDealt": "傷害",
+    "dmgFrags": "擊沉",
+    "dmgTaken": "承傷",
+    "chatTitle": "聊天紀錄"
   },
   "chatLog": "聊天記錄",
   "chat": {

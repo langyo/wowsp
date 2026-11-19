@@ -94,6 +94,7 @@ import {
   frameTimesAtSpeed,
   renderPlaybackExport,
   type PlaybackExportSettings,
+  type PlaybackTeamRow,
 } from "./playbackExport";
 import { formatBattleClock, saveExportBlob } from "./tactical/exporters";
 import {
@@ -3255,13 +3256,16 @@ const RECORDED_DOLLY_MIN = -40;
 
     // ── Replay playback export (video / GIF, offline fast render) ────────
     // The reference clip this feature mirrors: a chrome-less, fast-forward
-    // 2D map playback with a compact score header — plus the fixed WoWSP
-    // share-shot footer the share images carry. The render owns the
-    // playhead for its whole run (seek per frame, restore on finish).
+    // 2D map playback wearing the game's own HUD — score/caps header,
+    // team HP columns, recorder damage, chat log, per-ship labels — plus
+    // the fixed WoWSP share-shot footer the share images carry. The
+    // render owns the playhead for its whole run (seek per frame, restore
+    // on finish); progress rides the STANDARD hikari toast surface (a
+    // keyed sticky loading toast updated in place, with the cancel
+    // button as its inline action).
     const toast = useToast();
     const exportOpen = ref(false);
     const exporting = ref(false);
-    const exportProgress = ref({ done: 0, total: 0 });
     const exportCancel = { cancelled: false };
     /** Survives between passes (same contract as the tactical wizard's). */
     const exportSettings = reactive<PlaybackExportSettings>({
@@ -3272,6 +3276,36 @@ const RECORDED_DOLLY_MIN = -40;
       size: 1080,
       footer: true,
     });
+
+    const EXPORT_TOAST_KEY = "replay-clip-export";
+    let progressToastId: number | null = null;
+    let lastProgressPush = 0;
+    /** (Re-)push the keyed sticky progress toast — the keyed slot keeps a
+     *  single entry, so this updates in place. Throttled to ~4 Hz: the
+     *  toast re-renders on every push. */
+    function pushExportProgress(done: number, total: number): void {
+      const now = performance.now();
+      if (now - lastProgressPush < 250 && done !== total) return;
+      lastProgressPush = now;
+      progressToastId = toast.show(
+        i18nT("replay.export.runningProgress", { done, total }),
+        {
+          type: "loading",
+          key: EXPORT_TOAST_KEY,
+          duration: 0,
+          action: {
+            label: i18nT("replay.export.cancelRun"),
+            onClick: cancelPlaybackExport,
+          },
+        },
+      );
+    }
+    function settleExportProgress(): void {
+      if (progressToastId != null) {
+        toast.remove(progressToastId);
+        progressToastId = null;
+      }
+    }
 
     function cancelPlaybackExport(): void {
       exportCancel.cancelled = true;
@@ -3297,8 +3331,13 @@ const RECORDED_DOLLY_MIN = -40;
       const resumeAt = current.value;
       playing.value = false;
       exporting.value = true;
-      exportProgress.value = { done: 0, total: times.length };
       exportCancel.cancelled = false;
+      pushExportProgress(0, times.length);
+      // Chat senders tint by roster side — the side lookup is per replay,
+      // built once here (vehicles never change mid-export).
+      const sideOfVehicle = new Map<number, "ally" | "enemy">();
+      for (const v of rosterSides.value.allies) sideOfVehicle.set(v.id, "ally");
+      for (const v of rosterSides.value.enemies) sideOfVehicle.set(v.id, "enemy");
       try {
         // Theme-following palette + the footer's bundled art resolve once,
         // before the first frame — inside the try so even a surprise throw
@@ -3316,6 +3355,15 @@ const RECORDED_DOLLY_MIN = -40;
           palette,
           footerStrings,
           logo,
+          panelLabels: {
+            teamAlly: i18nT("replay.export.teamAlly"),
+            teamEnemy: i18nT("replay.export.teamEnemy"),
+            damage: i18nT("replay.export.damageTitle"),
+            dmgDealt: i18nT("replay.export.dmgDealt"),
+            dmgFrags: i18nT("replay.export.dmgFrags"),
+            dmgTaken: i18nT("replay.export.dmgTaken"),
+            chat: i18nT("replay.export.chatTitle"),
+          },
           header: (t) => ({
             clock: formatBattleClock(t).slice(2),
             // Score digits are a domination concept — ops center the clock.
@@ -3325,7 +3373,40 @@ const RECORDED_DOLLY_MIN = -40;
             aliveEnemy: ctx.enemyAlive.value,
             totalAlly: ctx.allyTotal.value,
             totalEnemy: ctx.enemyTotal.value,
+            caps: ctx.capDisplay.value
+              .filter((c) => c.live)
+              .map((c) => ({
+                letter: c.letter,
+                owner: c.owner,
+                progress: c.progress,
+                capturing: c.capturing,
+              })),
           }),
+          team: () => {
+            const toRow = (r: ShipRowEntry): PlaybackTeamRow => ({
+              name: r.vehicle.name,
+              shipName: r.vehicle.shipName ?? "",
+              hpFrac:
+                r.hp != null && r.maxHp ? Math.max(0, Math.min(1, r.hp / r.maxHp)) : null,
+              dead: r.dead,
+            });
+            const rows = shipRows.value;
+            return { allies: rows.allies.map(toRow), enemies: rows.enemies.map(toRow) };
+          },
+          recorder: () => {
+            const st = selfStats.value;
+            return st ? { damage: st.damage, frags: st.frags, taken: st.taken } : null;
+          },
+          chat: (t) =>
+            props.chatMessages
+              .filter((c) => c.time <= t)
+              .slice(-9)
+              .map((c) => ({
+                sender: props.vehicles.find((v) => v.id === c.playerId)?.name ?? "?",
+                side: sideOfVehicle.get(c.playerId) ?? "ally",
+                text: c.message,
+                time: c.time,
+              })),
           paintMap: (t, g) => {
             // Seek first: markers, caps, scores and the eased plane state
             // all update synchronously for this battle time.
@@ -3336,10 +3417,11 @@ const RECORDED_DOLLY_MIN = -40;
               view: full,
               logical: EXPORT_LOGICAL,
               rotation: 0,
+              shipLabels: true,
             });
           },
           onProgress: (done, total) => {
-            exportProgress.value = { done, total };
+            pushExportProgress(done, total);
           },
           cancelToken: exportCancel,
         });
@@ -3382,6 +3464,7 @@ const RECORDED_DOLLY_MIN = -40;
       } catch (e) {
         toast.error(String((e as Error)?.message ?? e));
       } finally {
+        settleExportProgress();
         exporting.value = false;
         seekBattleTime(resumeAt);
         if (wasPlaying) playing.value = true;
@@ -3454,21 +3537,9 @@ const RECORDED_DOLLY_MIN = -40;
             onCanvasClick(e);
           }}
         />
-        {/* Offline export progress chip: the render owns the playhead for
-            its whole run — this is the only live surface while it works,
-            with the cancel button the only interaction that reaches it. */}
-        {exporting.value ? (
-          <div class="holo-map__export-chip">
-            <span class="holo-map__export-dot" />
-            {i18nT("replay.export.running")}
-            <b class="holo-map__export-count">
-              {exportProgress.value.done}/{exportProgress.value.total}
-            </b>
-            <button class="holo-map__export-cancel" onClick={cancelPlaybackExport}>
-              {i18nT("replay.export.cancelRun")}
-            </button>
-          </div>
-        ) : null}
+        {/* Export progress rides the STANDARD hikari toast (a keyed sticky
+            loading toast updated in place with the cancel action) — no
+            bespoke chip on the map canvas anymore. */}
         {/* ── Floating ship labels (projected 3D→2D onto the canvas) ──.
             Each label/status pair sits in a 0×0 SLOT div the render loop
             positions imperatively (labelOverlay.applySlot): per-frame

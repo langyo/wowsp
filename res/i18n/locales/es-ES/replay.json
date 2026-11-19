@@ -602,12 +602,19 @@
     "start": "Iniciar exportación",
     "cancel": "Cancelar",
     "toggle": "Exportar repetición en vídeo / GIF",
-    "running": "Exportando repetición",
+    "runningProgress": "Exportando repetición {done}/{total}",
     "cancelRun": "Cancelar",
     "unsupported": "La codificación de vídeo no está disponible aquí",
     "toastEmpty": "No hay un intervalo que exportar",
     "saved": "Repetición guardada en {path}",
-    "savedCopied": "Guardado en {path} — archivo copiado al portapapeles, listo para pegar"
+    "savedCopied": "Guardado en {path} — archivo copiado al portapapeles, listo para pegar",
+    "teamAlly": "Aliados",
+    "teamEnemy": "Enemigos",
+    "damageTitle": "Daño infligido",
+    "dmgDealt": "Daño",
+    "dmgFrags": "Hundimientos",
+    "dmgTaken": "Recibido",
+    "chatTitle": "Chat"
   },
   "chatLog": "Chat de batalla",
   "chat": {

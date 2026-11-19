@@ -416,9 +416,12 @@
        is width-locked, see the --holo-hud-block-w contract). The floor
        keeps the two-line phone geometry intact; phone overrides the
        basis/min-width in its own media block. */
-    flex: 1 1 200px;
+    /* 150px preferred (was 200): the export button joined the row's
+       right end, and the clock/speed cluster keeps its breathing room
+       by giving the track the slack instead. */
+    flex: 1 1 150px;
     min-width: 96px;
-    width: 200px;
+    width: 150px;
     height: 14px;
     background: transparent;
     cursor: pointer;
@@ -476,6 +479,9 @@
   }
 
   &__time {
+    /* Never shrink: 13ch of nowrap mono text overflows a shrunken box
+       and painted under the speed chip (the squeezed-bar report). */
+    flex: 0 0 auto;
     min-width: 8ch;
     cursor: pointer;
     user-select: none;
@@ -2012,76 +2018,5 @@
     background: var(--holo-hud-menu);
     color: var(--holo-hud-strong);
     cursor: pointer;
-  }
-}
-
-
-/* ── Replay-clip export (video / GIF) ──────────────────────────────
-   The playback bar's export button rides the lbltoggle chrome; the
-   progress chip is the render's only live surface — centered under the
-   scorebar, glass pill like the tactical board's recording chip. */
-.holo-map__export-chip {
-  position: absolute;
-  /* Clears the top-center scorebar on both desktop and the phone's
-     taller bar (its right-edge stack starts at 56px). */
-  top: 64px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 30;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  max-width: calc(100% - 24px);
-  padding: 6px 12px;
-  border: 1px solid rgb(var(--color-primary) / 45%);
-  border-radius: var(--radius-lg, 10px);
-  background: var(--holo-hud-chip);
-  backdrop-filter: blur(6px);
-  color: var(--holo-hud-strong);
-  font-size: var(--text-xs);
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-.holo-map__export-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: rgb(var(--color-primary));
-  box-shadow: 0 0 6px rgb(var(--color-primary) / 60%);
-  animation: holo-map-export-pulse 1.2s ease-in-out infinite;
-}
-
-/* Self-contained on purpose: the sibling holo-map-pulse name has no
-   @keyframes anywhere (pre-existing upstream quirk its users silently
-   absorb) — this chip defines its own rather than borrowing a no-op. */
-@keyframes holo-map-export-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
-.holo-map__export-count {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--holo-hud-strong);
-}
-
-.holo-map__export-cancel {
-  padding: 2px 8px;
-  border: 1px solid rgb(var(--color-border, 148 163 184) / 50%);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--holo-hud-strong);
-  font-size: var(--text-2xs);
-  cursor: pointer;
-
-  &:hover {
-    border-color: rgb(var(--color-primary) / 70%);
-    color: rgb(var(--color-primary));
   }
 }

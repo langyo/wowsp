@@ -3,9 +3,21 @@
  *
  * Renders the match's 2D full-map playback offline — faster than realtime,
  * exactly like the reference clip the feature asks for — into a framed
- * composition: a compact score header (ally/enemy points + alive counts +
- * the battle clock) over the map square, with the fixed WoWSP promo footer
- * (the share-shot watermark, shotKit's drawFooterBand) burned under it.
+ * composition that mirrors the in-game replay HUD:
+ *
+ *   ┌──────────────────────────────────────────────┐
+ *   │ score header: ally pts · caps · clock · enemy │
+ *   ├──────────┬──────────────────────────┬────────┤
+ *   │ ally     │                          │ enemy  │
+ *   │ team HP  │   map square (the same   │ team HP│
+ *   │ rows     │   enlarged-map painter)  │ rows   │
+ *   │ ──────── │  ship labels over every  │ ───────│
+ *   │ recorder │        glyph             │ chat   │
+ *   │ damage   │                          │ log    │
+ *   ├──────────┴──────────────────────────┴────────┤
+ *   │ the fixed WoWSP promo footer (share shots)   │
+ *   └──────────────────────────────────────────────┘
+ *
  * One deterministic frame pipeline feeds BOTH muxers:
  *
  *   video — WebCodecs via mediabunny through the tactical exporter's
@@ -15,15 +27,16 @@
  *
  * The caller (HolographicMap) owns the playhead: every frame first seeks
  * the shared map internals to the frame's battle time (markers, caps,
- * scores, planes all update synchronously) and paints the map through
- * minimapPainter's paintEnlargedMap onto this module's offscreen canvas —
- * never a rasterized DOM canvas, so exports stay crisp at any size.
+ * scores, planes, team rows all update synchronously), paints the map
+ * through minimapPainter's paintEnlargedMap, and only THEN reads the
+ * panel/header data — so every band shows this frame's state.
  */
 import { GIFEncoder, quantize, applyPalette } from "gifenc";
 
 import {
   FOOT_H,
   drawFooterBand,
+  ellipsize,
   font,
   footerMinWidth,
   rgba,
@@ -36,12 +49,17 @@ import {
 } from "./tactical/exporters";
 import { TACTICAL_SIZE } from "./tactical/render";
 
-/** Logical width of the whole composition — the map square's own edge
- *  (TACTICAL_SIZE), which paintEnlargedMap already draws in. Header and
- *  footer share the same logical space so one device scale fits all. */
+/** Logical edge of the map square — paintEnlargedMap draws in this space. */
 export const EXPORT_LOGICAL = TACTICAL_SIZE;
-/** Score-header band height in logical units (score digits + clock). */
-export const EXPORT_HEADER_H = 56;
+/** Logical width of one side column (team HP list + damage/chat panel). */
+export const EXPORT_SIDE_W = 190;
+/** Logical width of the whole composition (map square plus both columns). */
+export const EXPORT_TOTAL_LOGICAL = EXPORT_LOGICAL + EXPORT_SIDE_W * 2;
+/** Score/caps header band height in logical units. */
+export const EXPORT_HEADER_H = 64;
+/** Team-list portion of a side column; the rest is damage (left) or the
+ *  chat log (right). */
+export const EXPORT_TEAM_H = 452;
 
 /** Export formats offered by the modal. */
 export type PlaybackExportFormat = "video" | "gif";
@@ -65,8 +83,7 @@ export interface PlaybackExportSettings {
   from: PlaybackExportRange;
   fps: number;
   /** Battle-time compression: each frame advances speed/fps battle
-   *  seconds, so a whole match fits a shareable clip (the reference
-   *  video the feature mirrors runs ≈19×). */
+   *  seconds, so a whole match fits a shareable clip. */
   speed: number;
   /** Target composition width in device px (even). */
   size: number;
@@ -92,9 +109,10 @@ export const VIDEO_MAX_FRAMES = 30000;
 export function exportFrameBudget(format: PlaybackExportFormat): number {
   return format === "gif" ? GIF_MAX_FRAMES : VIDEO_MAX_FRAMES;
 }
-/** Width ladders per format: GIF stays small for the same reason. */
+/** Width ladders per format: the HUD composition needs width for its side
+ *  columns, so video starts at 1080; GIF stays small for size reasons. */
 export const PLAYBACK_EXPORT_SIZES: Record<PlaybackExportFormat, number[]> = {
-  video: [720, 1080],
+  video: [1080, 1440],
   gif: [480, 640],
 };
 /** Battle-time compression ladder (shared by both formats). */
@@ -114,7 +132,7 @@ export function clampExportSettings(s: PlaybackExportSettings): PlaybackExportSe
   return {
     ...s,
     fps: fps.includes(s.fps) ? s.fps : fps[0],
-    size: sizes.includes(s.size) ? s.size : sizes[sizes.length - 1],
+    size: sizes.includes(s.size) ? s.size : sizes[0],
     speed: (PLAYBACK_EXPORT_SPEEDS as readonly number[]).includes(s.speed)
       ? s.speed
       : PLAYBACK_EXPORT_DEFAULT_SPEED[s.format],
@@ -159,43 +177,59 @@ export interface PlaybackExportLayout {
   height: number;
   /** Device px per logical unit. */
   scale: number;
+  /** Device-px left edge of the map square (right edge of the ally
+   *  column). */
+  mapLeft: number;
   /** Device-px top edge of the map square. */
   mapTop: number;
+  /** Map square edge in device px. */
+  mapSize: number;
   /** Device-px top edge of the footer band (0-height when off). */
   footerTop: number;
   /** Footer band height in device px (0 when off). */
   footerHeight: number;
 }
 
-/** Resolve the frame geometry for one export (pure — unit-tested). */
+/** Resolve the frame geometry for one export (pure — unit-tested). The
+ *  user-facing "resolution" is the composition width; the map square and
+ *  side columns derive from it through the shared logical space. */
 export function playbackExportLayout(
   targetWidth: number,
   footer: boolean,
 ): PlaybackExportLayout {
   const width = Math.max(2, Math.round(targetWidth) - (Math.round(targetWidth) % 2));
-  const scale = width / EXPORT_LOGICAL;
+  const scale = width / EXPORT_TOTAL_LOGICAL;
   const mapTop = EXPORT_HEADER_H * scale;
   const footerHeight = footer ? FOOT_H * scale : 0;
-  const rawH = EXPORT_HEADER_H * scale + EXPORT_LOGICAL * scale + footerHeight;
+  const rawH = (EXPORT_HEADER_H + EXPORT_LOGICAL + (footer ? FOOT_H : 0)) * scale;
   // Even-Ceil: codecs want even heights, and rounding UP never clips the
   // map square — the ≤2px slack lands as background between the map and
   // the footer band (or at the frame's bottom edge with the footer off),
   // where nothing else paints.
-  const rounded = Math.round(rawH);
-  const height = rounded % 2 === 0 ? rounded : rounded + 1;
+  const ceil = Math.ceil(rawH);
+  const height = ceil % 2 === 0 ? ceil : ceil + 1;
   return {
     width,
     height,
     scale,
+    mapLeft: EXPORT_SIDE_W * scale,
     mapTop,
+    mapSize: EXPORT_LOGICAL * scale,
     footerTop: height - footerHeight,
     footerHeight,
   };
 }
 
-/** Score-header content for one frame — all fields derive synchronously
- *  from the seek the caller just performed. Null scores (operations) hide
- *  the digits and center the clock alone. */
+/** Capture-point chip for the header. */
+export interface PlaybackCapChip {
+  letter: string;
+  /** 0 neutral · 1 ally · 2 enemy. */
+  owner: number;
+  /** 0..1 capture progress. */
+  progress: number;
+  capturing: boolean;
+}
+
 export interface PlaybackHeaderData {
   /** Elapsed battle clock label ("MM:SS"). */
   clock: string;
@@ -205,22 +239,58 @@ export interface PlaybackHeaderData {
   aliveEnemy: number;
   totalAlly: number;
   totalEnemy: number;
+  caps: PlaybackCapChip[];
+}
+
+/** One team-list row for a side column. */
+export interface PlaybackTeamRow {
+  name: string;
+  shipName: string;
+  /** 0..1, or null when unknown (row dims instead of a bar). */
+  hpFrac: number | null;
+  dead: boolean;
+}
+
+export interface PlaybackRecorderStats {
+  damage: number;
+  frags: number;
+  taken: number;
+}
+
+export interface PlaybackChatLine {
+  sender: string;
+  side: "ally" | "enemy" | "self";
+  text: string;
+  /** Battle seconds, rendered as [MM:SS]. */
+  time: number;
 }
 
 /** Team ink for the header's score blocks (the scorebar's green/red). */
 const ALLY_INK = "74 222 128";
-const ENEMY_INK = "204 51 51";
+const ENEMY_INK = "232 92 92";
+const NEUTRAL_INK = "148 163 184";
+const HP_GOOD = "74 222 128";
+const HP_MID = "251 191 36";
+const HP_LOW = "248 92 92";
 
-/** Draw the score header band in LOGICAL units (the caller's transform
- *  maps them onto the device canvas): ally points + alive left, the battle
- *  clock centered, enemy points + alive right — the compact cousin of the
- *  in-game top strip the reference clip shows. */
+function hpInk(frac: number): string {
+  return frac > 0.55 ? HP_GOOD : frac > 0.25 ? HP_MID : HP_LOW;
+}
+
+function ownerInk(owner: number): string {
+  return owner === 1 ? ALLY_INK : owner === 2 ? ENEMY_INK : NEUTRAL_INK;
+}
+
+/** Draw the score/caps header band in LOGICAL units across the WHOLE
+ *  composition width: ally points + alive left, the capture-point chips
+ *  and the battle clock center, enemy points + alive right — the compact
+ *  cousin of the in-game top strip. */
 export function drawPlaybackHeader(
   g: CanvasRenderingContext2D,
   data: PlaybackHeaderData,
   palette: ShotPalette,
 ): void {
-  const w = EXPORT_LOGICAL;
+  const w = EXPORT_TOTAL_LOGICAL;
   const h = EXPORT_HEADER_H;
   g.fillStyle = rgba(palette.surface, 0.75);
   g.fillRect(0, 0, w, h);
@@ -229,9 +299,6 @@ export function drawPlaybackHeader(
   g.textBaseline = "middle";
   const cy = h / 2;
   const showScores = data.scoreAlly != null && data.scoreEnemy != null;
-  // Team blocks: a colored side-dot on the outer edge, the bold score and
-  // the alive ratio flowing inward (explicit mirroring — a flipped
-  // transform would mirror the glyphs themselves).
   const block = (score: number, alive: number, total: number, ink: string, right: boolean): void => {
     const dotX = right ? w - 24 : 24;
     const dir = right ? -1 : 1;
@@ -251,11 +318,175 @@ export function drawPlaybackHeader(
     block(data.scoreAlly!, data.aliveAlly, data.totalAlly, ALLY_INK, false);
     block(data.scoreEnemy!, data.aliveEnemy, data.totalEnemy, ENEMY_INK, true);
   }
+  // Capture-point chips: one rounded box per live cap, letter colored by
+  // owner, a progress bar along its bottom while being captured.
+  const chips = data.caps.slice(0, 5);
+  const chipW = 30;
+  const chipGap = 10;
+  const clusterW = chips.length * chipW + Math.max(0, chips.length - 1) * chipGap;
+  let cx = w / 2 - 70 - clusterW;
+  for (const cap of chips) {
+    const ink = ownerInk(cap.owner);
+    g.strokeStyle = rgba(ink, 0.9);
+    g.lineWidth = 2;
+    g.beginPath();
+    g.roundRect(cx, cy - 19, chipW, 38, 8);
+    g.stroke();
+    g.textAlign = "center";
+    g.font = font(16, 700);
+    g.fillStyle = rgba(ink, 0.95);
+    g.fillText(cap.letter, cx + chipW / 2, cy - (cap.capturing ? 8 : 0));
+    if (cap.capturing || cap.progress > 0) {
+      g.fillStyle = rgba(palette.text, 0.18);
+      g.fillRect(cx + 4, cy + 12, chipW - 8, 4);
+      g.fillStyle = rgba(ink, 0.95);
+      g.fillRect(cx + 4, cy + 12, (chipW - 8) * Math.min(1, Math.max(0, cap.progress)), 4);
+    }
+    cx += chipW + chipGap;
+  }
   // Clock: elapsed battle time, mono, dead center.
   g.textAlign = "center";
-  g.font = font(20, 700, true);
+  g.font = font(22, 700, true);
   g.fillStyle = rgba(palette.text, 0.9);
   g.fillText(data.clock, w / 2, cy);
+}
+
+/** The side column's shared backing: translucent panel over the full map
+ *  height plus the inner hairline that separates it from the map. */
+function drawColumnBase(
+  g: CanvasRenderingContext2D,
+  x: number,
+  w: number,
+  top: number,
+  h: number,
+  palette: ShotPalette,
+  hairlineAt: "left" | "right",
+): void {
+  g.fillStyle = rgba(palette.surface, 0.75);
+  g.fillRect(x, top, w, h);
+  g.fillStyle = rgba(palette.text, 0.12);
+  const hx = hairlineAt === "left" ? x : x + w - 1;
+  g.fillRect(hx, top, 1, h);
+}
+
+/** The team-list half of a side column: title row with the side ink, then
+ *  one row per ship — player name (bold, side ink, dims when dead) and
+ *  the ship name beside a fraction-colored HP bar. */
+function drawTeamList(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  rows: PlaybackTeamRow[],
+  ink: string,
+  title: string,
+  palette: ShotPalette,
+): void {
+  g.textBaseline = "middle";
+  g.fillStyle = rgba(ink, 0.95);
+  g.beginPath();
+  g.arc(x + 14, y + 14, 4.5, 0, Math.PI * 2);
+  g.fill();
+  g.textAlign = "left";
+  g.font = font(13, 700);
+  g.fillStyle = rgba(palette.text, 0.92);
+  g.fillText(title, x + 26, y + 14);
+  const alive = rows.filter((r) => !r.dead).length;
+  g.font = font(11, 400);
+  g.fillStyle = rgba(palette.text, 0.55);
+  g.textAlign = "right";
+  g.fillText(`${alive}/${rows.length}`, x + w - 10, y + 14);
+  const rowH = 34;
+  let ry = y + 36;
+  for (const row of rows) {
+    if (ry + rowH > y + EXPORT_TEAM_H) break;
+    const dim = row.dead ? 0.35 : 1;
+    g.textAlign = "left";
+    g.font = font(11, 700);
+    g.fillStyle = rgba(row.dead ? NEUTRAL_INK : ink, 0.9 * dim);
+    g.fillText(ellipsize(g, row.name, w - 84), x + 10, ry + 8);
+    g.font = font(10, 400);
+    g.fillStyle = rgba(palette.text, 0.5 * dim);
+    g.textAlign = "right";
+    g.fillText(ellipsize(g, row.shipName, 70), x + w - 10, ry + 8);
+    if (row.hpFrac != null && !row.dead) {
+      g.fillStyle = rgba(palette.text, 0.14);
+      g.fillRect(x + 10, ry + 18, w - 20, 5);
+      g.fillStyle = rgba(hpInk(row.hpFrac), 0.95);
+      g.fillRect(x + 10, ry + 18, (w - 20) * Math.min(1, Math.max(0, row.hpFrac)), 5);
+    } else {
+      g.fillStyle = rgba(palette.text, 0.1);
+      g.fillRect(x + 10, ry + 18, w - 20, 5);
+    }
+    ry += rowH;
+  }
+}
+
+/** The recorder's damage block (left column bottom): total damage big and
+ *  bold, frags + damage taken muted beneath. */
+function drawRecorderPanel(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  stats: PlaybackRecorderStats,
+  palette: ShotPalette,
+  labels: { title: string; frags: string; taken: string },
+): void {
+  g.textBaseline = "middle";
+  g.textAlign = "left";
+  g.font = font(12, 700);
+  g.fillStyle = rgba(palette.text, 0.6);
+  g.fillText(labels.title, x + 10, y + 14);
+  g.font = font(30, 700, true);
+  g.fillStyle = rgba(palette.text, 0.95);
+  g.fillText(stats.damage.toLocaleString("en-US"), x + 10, y + 52);
+  g.font = font(11, 400);
+  g.fillStyle = rgba(palette.text, 0.6);
+  g.fillText(`${labels.frags} ${stats.frags}`, x + 10, y + 88);
+  g.fillText(`${labels.taken} ${stats.taken.toLocaleString("en-US")}`, x + 10, y + 108);
+}
+
+/** The chat log (right column bottom): the most recent lines drawn from
+ *  the bottom edge upward, senders tinted by side. */
+function drawChatPanel(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  lines: PlaybackChatLine[],
+  palette: ShotPalette,
+  title: string,
+): void {
+  g.textBaseline = "middle";
+  g.textAlign = "left";
+  g.font = font(12, 700);
+  g.fillStyle = rgba(palette.text, 0.6);
+  g.fillText(title, x + 10, y + 14);
+  const lineH = 26;
+  const max = Math.floor((h - 40) / lineH);
+  const shown = lines.slice(-max);
+  let ly = y + h - 14 - (shown.length - 1) * lineH;
+  for (const line of shown) {
+    const mm = Math.floor(line.time / 60);
+    const ss = Math.floor(line.time % 60);
+    const stamp = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+    g.font = font(10, 400);
+    g.fillStyle = rgba(palette.text, 0.45);
+    g.fillText(stamp, x + 10, ly);
+    const ink = line.side === "enemy" ? ENEMY_INK : line.side === "self" ? "255 255 255" : ALLY_INK;
+    g.font = font(10, 700);
+    g.fillStyle = rgba(ink, 0.9);
+    const sender = ellipsize(g, line.sender, 64);
+    g.fillText(sender, x + 48, ly);
+    const senderW = g.measureText(sender).width;
+    g.font = font(10, 400);
+    g.fillStyle = rgba(palette.text, 0.85);
+    g.fillText(ellipsize(g, line.text, Math.max(20, w - 58 - senderW)), x + 52 + senderW, ly);
+    ly += lineH;
+  }
 }
 
 export interface PlaybackExportRequest {
@@ -271,11 +502,19 @@ export interface PlaybackExportRequest {
   palette: ShotPalette;
   footerStrings: ShotFooterStrings;
   logo: HTMLImageElement | null;
-  /** Header content at each frame's battle time. */
+  /** Header content at each frame's battle time (read AFTER the seek). */
   header: (t: number) => PlaybackHeaderData;
+  /** Team rows per side at each frame's battle time (read AFTER the seek). */
+  team: (t: number) => { allies: PlaybackTeamRow[]; enemies: PlaybackTeamRow[] };
+  /** The recorder's damage/frags/taken at each battle time. */
+  recorder: (t: number) => PlaybackRecorderStats | null;
+  /** Chat lines up to each battle time, oldest first. */
+  chat: (t: number) => PlaybackChatLine[];
   /** Paint the map square for battle time `t` in logical units onto `g`
-   *  (already translated to the map's top edge and scaled). */
+   *  (already translated to the map's top-left corner and scaled). */
   paintMap: (t: number, g: CanvasRenderingContext2D) => void;
+  /** Panel/header word bundle (caller i18n's every word). */
+  panelLabels: PlaybackPanelLabels;
   onProgress?: (done: number, total: number) => void;
   cancelToken?: { cancelled: boolean };
 }
@@ -288,7 +527,20 @@ export interface PlaybackExportResult {
   cancelled: boolean;
 }
 
-/** Compose one full frame (header + map + footer) in device px. */
+/** Panel/header word bundle (caller i18n's every word). */
+export interface PlaybackPanelLabels {
+  teamAlly: string;
+  teamEnemy: string;
+  damage: string;
+  dmgDealt: string;
+  dmgFrags: string;
+  dmgTaken: string;
+  chat: string;
+}
+
+/** Compose one full frame (header + map + side panels + footer) in device
+ *  px. The map paints FIRST — its seek brings every shared data structure
+ *  to `t`, and the header/panels read that state right after. */
 function composeFrame(
   ctx: CanvasRenderingContext2D,
   layout: PlaybackExportLayout,
@@ -299,37 +551,55 @@ function composeFrame(
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.fillStyle = "#05080f";
   ctx.fillRect(0, 0, layout.width, layout.height);
-  // Map square FIRST (logical units, translated under the header): the
-  // host's paintMap SEEKS the shared map internals to `t`, and the header
-  // below must read the post-seek scores/alive state — painting the
-  // header before the seek would show the previous frame's numbers
-  // (verifier catch). The bands never overlap the map, so the order is
-  // only about data freshness, not z-index.
+  // Map square (logical units, translated between the columns). Seeks the
+  // shared map internals first — every later band reads post-seek state.
   ctx.save();
-  ctx.translate(0, layout.mapTop);
+  ctx.translate(layout.mapLeft, layout.mapTop);
   ctx.scale(s, s);
   ctx.beginPath();
   ctx.rect(0, 0, EXPORT_LOGICAL, EXPORT_LOGICAL);
   ctx.clip();
   req.paintMap(t, ctx);
   ctx.restore();
-  // Header band (logical units).
+  // Header band (logical units, full composition width).
   ctx.save();
   ctx.scale(s, s);
   drawPlaybackHeader(ctx, req.header(t), req.palette);
   ctx.restore();
+  // Side columns (logical units).
+  const colTop = layout.mapTop / s;
+  const colH = EXPORT_LOGICAL;
+  const colRight = layout.mapLeft / s + EXPORT_LOGICAL;
+  const team = req.team(t);
+  const recorder = req.recorder(t);
+  const chat = req.chat(t);
+  ctx.save();
+  ctx.scale(s, s);
+  drawColumnBase(ctx, 0, EXPORT_SIDE_W, colTop, colH, req.palette, "right");
+  drawTeamList(ctx, 0, colTop + 6, EXPORT_SIDE_W, team.allies, ALLY_INK, req.panelLabels.teamAlly, req.palette);
+  if (recorder) {
+    drawRecorderPanel(ctx, 0, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, colH - EXPORT_TEAM_H - 16, recorder, req.palette, {
+      title: req.panelLabels.damage,
+      frags: req.panelLabels.dmgFrags,
+      taken: req.panelLabels.dmgTaken,
+    });
+  }
+  drawColumnBase(ctx, colRight, EXPORT_SIDE_W, colTop, colH, req.palette, "left");
+  drawTeamList(ctx, colRight, colTop + 6, EXPORT_SIDE_W, team.enemies, ENEMY_INK, req.panelLabels.teamEnemy, req.palette);
+  drawChatPanel(ctx, colRight, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, colH - EXPORT_TEAM_H - 16, chat, req.palette, req.panelLabels.chat);
+  ctx.restore();
   // Footer band (logical units, share-shot geometry). Wordy locales can
-  // need a wider band than the map square (footerMinWidth measures the
+  // need a wider band than the composition (footerMinWidth measures the
   // three text blocks) — the content then scales DOWN into the fixed band
   // instead of colliding, mirroring how share shots widen their canvas.
   // The band's own background is pre-filled at the exact geometry so the
   // scaled-down band leaves no gap at the bottom edge.
   if (layout.footerHeight > 0) {
     const footerLogical = Math.max(
-      EXPORT_LOGICAL,
+      EXPORT_TOTAL_LOGICAL,
       footerMinWidth(req.footerStrings, req.logo != null),
     );
-    const fit = (EXPORT_LOGICAL / footerLogical) * s;
+    const fit = (EXPORT_TOTAL_LOGICAL / footerLogical) * s;
     ctx.save();
     ctx.translate(0, layout.footerTop);
     ctx.scale(fit, fit);
@@ -403,7 +673,7 @@ export async function renderPlaybackExport(
     encoded++;
     req.onProgress?.(i + 1, req.times.length);
     // Sync quantize bursts starve the UI thread — yield every few frames
-    // so the progress chip keeps painting and cancel stays responsive.
+    // so the progress surface keeps painting and cancel stays responsive.
     if (i % 3 === 2) await new Promise((r) => setTimeout(r, 0));
   }
   if (encoded === 0) {
@@ -422,4 +692,3 @@ export async function renderPlaybackExport(
     cancelled: req.cancelToken?.cancelled === true,
   };
 }
-
