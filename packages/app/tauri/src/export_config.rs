@@ -12,7 +12,7 @@
 //! blank, relative, or no longer on disk falls back to the OS Downloads
 //! folder and that fallback is persisted, so the next read is a plain hit and
 //! the modal never has to special-case a missing folder. Validation on the
-//! write side ([`export_config_set_dir`], and the picker in
+//! write side ([`the removed setter command`], and the picker in
 //! `commands/exports.rs`) is non-empty + absolute + exists-or-creatable, with
 //! `create_dir_all` doing the creating.
 //!
@@ -217,8 +217,8 @@ fn set_dir_in(data_dir: &Path, dir: &str) -> anyhow::Result<String> {
     Ok(dir)
 }
 
-/// Resolve the appdata root and persist `dir` — the picker's and the typed
-/// setter's shared entry point.
+/// Resolve the appdata root and persist `dir` — the folder picker's shared
+/// entry point (the only writer: the IPC surface has no setter).
 pub(crate) fn persist_dir(dir: &str) -> anyhow::Result<String> {
     let data_dir = paths::ensure_data_dir()?;
     set_dir_in(&data_dir, dir)
@@ -234,9 +234,14 @@ pub(crate) fn persist_dir(dir: &str) -> anyhow::Result<String> {
 pub async fn export_config_get() -> CommandResult<ExportConfig> {
     Ok(tokio::task::spawn_blocking(|| {
         let data_dir = paths::ensure_data_dir()?;
-        Ok::<_, anyhow::Error>(ExportConfig {
-            dir: resolved_dir(&data_dir)?,
-        })
+        let dir = resolved_dir(&data_dir)?;
+        // Re-grant on every read: the grant table's sliding TTL would
+        // otherwise lapse after 6 idle hours and silently drop the first
+        // clip back to the save dialog. Safe to grant here because the
+        // IPC surface has NO setter — this can only ever return the OS
+        // Downloads default or a folder the user picked natively.
+        crate::commands::exports::grant_export_dir(&dir);
+        Ok::<_, anyhow::Error>(ExportConfig { dir })
     })
     .await
     .map_err(|e| anyhow!("export config read task failed: {e}"))??)

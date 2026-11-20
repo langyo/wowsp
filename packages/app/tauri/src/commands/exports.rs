@@ -215,7 +215,7 @@ pub async fn pick_export_path(
 /// per-file save dialog for the rest of the session. Returns the picked
 /// absolute directory, or `None` when the user cancelled.
 ///
-/// The pick is validated + persisted through the same store the typed setter
+/// The pick is validated + persisted through the same store the getter
 /// uses (`src/export_config.rs` → `export-config.toml`) and registered as a
 /// DIRECTORY grant, so [`write_export_bytes`] accepts files directly inside
 /// it (see [`GrantKind::Dir`]) — and the modal reopens on that folder next

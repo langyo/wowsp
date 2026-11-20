@@ -29,7 +29,7 @@ import {
   type PlaybackExportSettings,
 } from "./playbackExport";
 
-/** "1:02:03" / "12:34" battle clock for the range cards. */
+/** "MM:SS" battle clock for the range cards. */
 function clockLabel(seconds: number): string {
   const s = Math.max(0, Math.round(seconds));
   const mm = Math.floor(s / 60);
@@ -211,6 +211,7 @@ export default defineComponent({
           </div>
           {/* Range: hikari's selection waterfall, one row of clip cards. */}
           <HSelectionWaterfall
+            groupTitle={i18nT("replay.export.range")}
             items={rangeItems.value}
             selectedIds={[props.settings.from]}
             onSelect={(item) => {
@@ -222,7 +223,7 @@ export default defineComponent({
           {props.exportDir ? (
             <div class="holo-export__row holo-export__row--path">
               <span class="holo-export__label">{i18nT("replay.export.pathLabel")}</span>
-              <code class="holo-export__path" title={props.exportDir}>
+              <code class="holo-export__path" data-hint={props.exportDir}>
                 {props.exportDir}
               </code>
               {props.onPickDir ? (

@@ -3552,7 +3552,14 @@ const RECORDED_DOLLY_MIN = -40;
         } else if (result.blob.size > 0) {
           const tag = (props.mapName || props.mapId || "map").replace(/[^\w-]+/g, "_");
           const clock = formatBattleClock(from).slice(2).replace(":", "");
-          const name = `wowsp-replay-${tag}-${clock}.${result.ext}`;
+          // The picked folder has no overwrite prompt (the legacy dialog
+          // did) — the wall-clock stamp keeps repeated exports from
+          // silently clobbering each other.
+          const now = new Date();
+          const stamp = [now.getHours(), now.getMinutes(), now.getSeconds()]
+            .map((n) => String(n).padStart(2, "0"))
+            .join("");
+          const name = `wowsp-replay-${tag}-${clock}-${stamp}.${result.ext}`;
           // The file write is its own phase: a multi-hundred-MB clip
           // takes a while to land, and the card must say so.
           exportPhase.value = "save";

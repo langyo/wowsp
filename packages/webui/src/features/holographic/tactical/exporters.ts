@@ -176,20 +176,23 @@ export async function saveExportBlob(
   return { path, native: true };
 }
 
-/** Save into a user-chosen DIRECTORY (the export modal's path row) —
- *  no native dialog. Returns null when the host rejects the write (non-
- *  tauri host, revoked dir grant, IO error) so callers fall back to
- *  saveExportBlob's dialog/browser path. */
 /** Join a directory + file name with the directory's own separator (a
  *  Windows path keeps backslashes, a POSIX path keeps slashes); trailing
  *  separators are collapsed. Empty dir → null (nothing to write into). */
 export function joinExportPath(dir: string, name: string): string | null {
   const trimmed = dir.trim().replace(/[\\/]+$/, "");
   if (!trimmed) return null;
-  const sep = trimmed.includes("\\") ? "\\" : "/";
+  // A bare drive root ("D:\\") trims to "D:" — re-arm the separator so the
+  // join stays rooted instead of producing a drive-relative "D:clip.mp4".
+  const isDriveRoot = /^[A-Za-z]:$/.test(trimmed);
+  const sep = isDriveRoot || trimmed.includes("\\") ? "\\" : "/";
   return `${trimmed}${sep}${name}`;
 }
 
+/** Save into a user-chosen DIRECTORY (the export modal's path row) —
+ *  no native dialog. Returns null when the host rejects the write (non-
+ *  tauri host, revoked dir grant, IO error) so callers fall back to
+ *  saveExportBlob's dialog/browser path. */
 export async function saveExportBlobTo(
   blob: Blob,
   dir: string,

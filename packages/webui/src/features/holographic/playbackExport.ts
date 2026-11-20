@@ -317,7 +317,9 @@ function fillFit(
     s = Math.max(minSize, s - 0.5);
     g.font = font(s, weight, mono);
   }
-  g.fillText(text, x, y);
+  // At the floor, ellipsize as the last resort — an overflowing name
+  // would paint over the ship-name column.
+  g.fillText(ellipsize(g, text, maxW), x, y);
 }
 
 function hpInk(frac: number): string {
@@ -375,7 +377,7 @@ export function drawPlaybackHeader(
   const contentW =
     (showScores ? allyScoreW + groupGap : 0) +
     (chips.length ? capsW + groupGap : 0) +
-    (showScores ? enemyScoreW : 0);
+    (showScores ? groupGap + enemyScoreW : 0);
   const padX = 22;
   const pillW = contentW + padX * 2;
   const pillX = (w - pillW) / 2;
@@ -595,7 +597,7 @@ function drawTeamList(
     // green/red name was unreadable on the dark panel.
     g.fillStyle = rgba(palette.text, 0.92 * dim);
     const display = row.clan ? `[${row.clan}] ${row.name}` : row.name;
-    fillFit(g, display, x + 10, ry + 8, w - 78, 11, 700);
+    fillFit(g, display, x + 10, ry + 8, w - 96, 11, 700);
     g.font = font(10, 400);
     g.fillStyle = rgba(palette.text, 0.5 * dim);
     g.textAlign = "right";
@@ -783,7 +785,7 @@ export interface PlaybackExportRequest {
   /** Coarse phase for the progress card: frames vs the encoder/muxer
    *  flush (the latter reports no percentage — the card goes
    *  indeterminate instead of sitting frozen at 100%). */
-  onPhase?: (phase: "render" | "finalize" | "save") => void;
+  onPhase?: (phase: "render" | "finalize") => void;
   cancelToken?: { cancelled: boolean };
 }
 

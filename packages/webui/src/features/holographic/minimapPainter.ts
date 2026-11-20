@@ -848,8 +848,9 @@ export interface EnlargedMapPaintOptions {
    *  the replay clip's HUD ask (the live 3D view shows labels as DOM
    *  overlays, which have no equivalent on this canvas). */
   shipLabels?: boolean;
-  /** Draw the travelled-path polylines (ship trails + plane trails).
-   *  Defaults to true (the live canvas); the replay clip turns them off. */
+  /** Draw the ships' travelled-path polylines. Defaults to true (the
+   *  live canvas); the replay clip turns them off. Aircraft formation
+   *  icons are NOT trails — they always draw. */
   trails?: boolean;
   /** Clan tag by player name (rendered as `[TAG] name`), when known. */
   clanOf?: (name: string) => string | null;
@@ -1181,7 +1182,7 @@ export function paintEnlargedMap(
   // the SAME eased pose the thumb pass advanced at this playhead
   // (planeSmoothPosAt's same-t cache), so the two canvases can never
   // disagree and no easing is applied twice per frame.
-  if (o.trails !== false) {
+  {
     const drawn = new Set<number>();
     for (const trail of ctx.planeTrails) {
       const planeId = Math.floor(trail.id / 16);

@@ -32,6 +32,12 @@
     gap: 0.35rem;
   }
 
+  /* The range waterfall ships its own 1rem bottom margin — the modal's
+     flex gap already spaces the next row. */
+  :deep(.hk-selection-waterfall) {
+    margin-bottom: 0;
+  }
+
   /* fps · speed · resolution — three equal columns on ONE row. */
   &__params {
     display: grid;
