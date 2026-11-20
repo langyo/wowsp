@@ -639,6 +639,14 @@ pub struct ReplayStream {
     /// didn't match any entry (very old replays).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub self_team: Option<i8>,
+    /// Consumable activations (Vehicle `onConsumableUsed`, experiment E11) —
+    /// both teams' vehicles visible to the recording client, so an enemy's
+    /// repair party is observable. `consumable_id` is the RAW GameParams
+    /// enum (id 8 = repair party, ~28 s; the name map is a GameParams
+    /// concern and stays raw here). Empty on versions whose exposed method
+    /// id isn't pinned.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub consumable_uses: Vec<ConsumableUseEvent>,
     /// Shield-damage broadcasts (Avatar `receiveShieldDamageInfo`, 15.10+).
     /// Empty on older versions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

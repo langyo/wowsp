@@ -2009,6 +2009,7 @@ mod tests {
             weather_transitions: Vec::new(),
             weather_notifications: Vec::new(),
             self_team: None,
+            consumable_uses: Vec::new(),
             shield_damage_events: Vec::new(),
             shield_state_events: Vec::new(),
             shield_markers: Vec::new(),

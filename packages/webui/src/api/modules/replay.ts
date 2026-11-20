@@ -1094,6 +1094,13 @@ export interface ReplayStream {
   /** Ally ship builds decoded off the create states (self + team only; any
    *  empty array is omitted by the Rust side). */
   allyBuilds?: PlayerBuild[];
+  /** Consumable activations (vehicle onConsumableUsed, experiment E11) —
+   *  both teams' vehicles visible to the recording client, so an enemy's
+   *  repair party is observable. `consumableId` is the RAW GameParams enum
+   *  (id 8 = repair party, ~28 s); the Repair-Party gray-bar feature
+   *  consumes this. Absent on versions whose exposed method id isn't
+   *  pinned. */
+  consumableUses?: ConsumableUseEvent[];
   /** Shield-damage broadcasts (avatar receiveShieldDamageInfo, 15.10+):
    *  one absorbed-hit event with the attacker join. Absent on older
    *  versions. */
@@ -1107,6 +1114,30 @@ export interface ReplayStream {
   /** Gun overheat transitions (vehicle setGunOverheated, 15.10+). Absent
    *  on older versions and on battles where no gun overheated. */
   gunOverheats?: GunOverheatEvent[];
+}
+
+/** One consumable activation (vehicle onConsumableUsed, experiment E11).
+ *  Mirrors `wowsp_tauri_shared::ConsumableUseEvent`. `consumableId` is the
+ *  RAW GameParams enum — id 8 is the repair party (~28 s), the event the
+ *  Repair-Party gray-bar overlay keys off; the id→name map stays a GameParams
+ *  concern. */
+export interface ConsumableUseEvent {
+  /** Seconds since match start. */
+  time: number;
+  /** Vehicle entity that used the consumable (joins entityId). */
+  entityId: number;
+  /** ConsumableUsageType of the params blob: 0 none, 1 default, 2 position,
+   *  3 entity target. */
+  usageType: number;
+  /** Raw consumable type id (0 for the none variant; 8 = repair party). */
+  consumableId: number;
+  /** Remaining work time in seconds (the consumable's active duration). */
+  duration: number;
+  /** Map position for the position usage variant (tactical map pings). */
+  targetX?: number;
+  targetZ?: number;
+  /** Target entity id for the entity usage variant. */
+  targetId?: number;
 }
 
 /** One shield-damage broadcast (avatar receiveShieldDamageInfo, 15.10+):
