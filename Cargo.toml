@@ -38,8 +38,6 @@ license = "MIT"  # inherited ONLY by the game-assets / game-assets-core members
 # (the standalone pairing-relay workspace likewise pins `license = "SySL-1.0"`
 # in its own manifest); removing it breaks the vendored members'
 # `license.workspace = true` resolution.
-description = "World of WarShip Panel — replay review & in-game overlay"
-repository = "https://github.com/langyo/wowsp"
 
 [workspace.dependencies]
 
@@ -53,7 +51,6 @@ wowsp_replay_core = { version = "^0.6", path = "packages/app/replay_core" }
 
 # Core language and utilities
 anyhow = "^1"
-async-trait = "^0.1"
 # Not used by first-party crates, but inherited via `thiserror.workspace`
 # by the game-assets member (root-workspace inheritance), so it must stay
 # declared here.
