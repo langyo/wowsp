@@ -721,6 +721,13 @@ export function useModHub() {
             !isActive,
           );
           if (r.skipped) {
+            // Rule skip on a client the FAN-OUT chose: park it in the
+            // shared memo exactly like the one-click batch does. runMod
+            // cleared the memo row to allow this explicit attempt —
+            // without re-parking, the badge would rise again at once for
+            // a pack this client cannot run (user report 2026-11-20),
+            // and only the NEXT batch pass would park it again.
+            pluginUpdates.parkIncompatibleSkip(target.path, entry.id, entry.version, r.skipped);
             toast.info(
               t(
                 r.skippedKind === "package"

@@ -102,6 +102,9 @@ const mocked = {
 beforeEach(() => {
   setActivePinia(createPinia());
   vi.clearAllMocks();
+  // The capability-skip memo is persisted: a previous test's parked rows
+  // must never leak into the next test's badge math.
+  localStorage.clear();
   mocked.refresh.mockResolvedValue({ mods: [], fetchedAt: "", sourceVersion: "", gameVersion: "" } as never);
   mocked.records.mockResolvedValue([]);
   mocked.probe.mockResolvedValue({ installed: false, outdated: false, resMods: "", discussion: 0 } as never);
@@ -658,6 +661,158 @@ describe("usePluginUpdatesStore.updateAll", () => {
     await updates.updateAll();
     expect(mocked.install).toHaveBeenCalledTimes(1);
     expect(updates.failures).toEqual([]);
+  });
+
+  it("keeps a capability skip parked across a store restart", async () => {
+    // The production shape: the record is stale against catalog version 2,
+    // the batch's package-capability gate skips it, the memo parks it — and
+    // the post-pass assessment (real here, with live mocks) confirms the
+    // record is still pending, so the parked row survives its own prune.
+    mocked.refresh.mockResolvedValue({
+      mods: [entry("b", "2")],
+      fetchedAt: "",
+      sourceVersion: "",
+      gameVersion: "",
+    } as never);
+    mocked.records.mockResolvedValue([record("b", "1", OTHER)] as never);
+    mocked.install.mockResolvedValue({ skipped: "client lacks assets" } as never);
+    const updates = usePluginUpdatesStore();
+    await updates.refresh();
+    expect(updates.totalCount).toBe(1);
+
+    await updates.updateAll();
+    expect(mocked.install).toHaveBeenCalledTimes(1);
+    expect(updates.totalCount).toBe(0);
+    // The memo reached localStorage, version-scoped to the skipped pack.
+    const stored = JSON.parse(
+      localStorage.getItem("wowsp-plugin-updates-incompatible-skips") ?? "{}",
+    ) as Record<string, { version: string; reason: string }>;
+    expect(stored[OTHER.toLowerCase() + "\u0000b"]).toEqual({
+      version: "2",
+      reason: "client lacks assets",
+    });
+
+    // An app restart is a brand-new pinia for the store: the persisted memo
+    // loads, the assessment still finds the record stale — and the badge
+    // stays empty. The identical skip toast on every launch (user report
+    // 2026-11-20) never happens again.
+    setActivePinia(createPinia());
+    const restartConfig = useConfigStore();
+    restartConfig.activeInstall = { kind: "manual", path: GAME };
+    restartConfig.installs = [{ kind: "manual", path: GAME }, { kind: "manual", path: OTHER }];
+    const restarted = usePluginUpdatesStore();
+    await restarted.refresh();
+    expect(restarted.totalCount).toBe(0);
+    expect(restarted.infoFor(OTHER)?.mods).toEqual([]);
+    // The next batch does not re-attempt it either (no task, no RPC).
+    await restarted.updateAll();
+    expect(mocked.install).toHaveBeenCalledTimes(1);
+  });
+
+  it("matches a parked row across install-path respellings", async () => {
+    mocked.refresh.mockResolvedValue({
+      mods: [entry("b", "2")],
+      fetchedAt: "",
+      sourceVersion: "",
+      gameVersion: "",
+    } as never);
+    mocked.records.mockResolvedValue([record("b", "1", OTHER)] as never);
+    mocked.install.mockResolvedValue({ skipped: "client lacks assets" } as never);
+    const updates = usePluginUpdatesStore();
+    await updates.refresh();
+    await updates.updateAll();
+    expect(updates.totalCount).toBe(0);
+
+    // The SAME install respelled (case, separators, trailing slash) must
+    // read as the same parked row: the memo key is the FULL install-path
+    // normalization, and the persisted memo outlives the exact spelling it
+    // was parked under.
+    setActivePinia(createPinia());
+    const config = useConfigStore();
+    config.activeInstall = { kind: "manual", path: GAME };
+    config.installs = [{ kind: "manual", path: GAME }, { kind: "manual", path: "e:/otherclient/" }];
+    const restarted = usePluginUpdatesStore();
+    await restarted.refresh();
+    expect(restarted.totalCount).toBe(0);
+
+    // An explicit retry through the respelled root clears that same row.
+    mocked.install.mockResolvedValue({
+      name: "mod-b", binVersion: "1", wroteFiles: 1, warnings: [],
+    } as never);
+    await restarted.runMod("b", "e:/otherclient/", null, "update");
+    expect(mocked.install).toHaveBeenCalledTimes(2);
+    expect(
+      JSON.parse(localStorage.getItem("wowsp-plugin-updates-incompatible-skips") ?? "{}"),
+    ).toEqual({});
+  });
+
+  it("re-offers the pack after a catalog update and prunes the dead memo row", async () => {
+    mocked.refresh.mockResolvedValue({
+      mods: [entry("b", "2")],
+      fetchedAt: "",
+      sourceVersion: "",
+      gameVersion: "",
+    } as never);
+    mocked.records.mockResolvedValue([record("b", "1", OTHER)] as never);
+    mocked.install.mockResolvedValue({ skipped: "client lacks assets" } as never);
+    const updates = usePluginUpdatesStore();
+    await updates.refresh();
+    await updates.updateAll();
+    expect(updates.totalCount).toBe(0);
+
+    // The catalog moves on: pack version 3 re-offers the update ONCE (the
+    // parked row was version-scoped to 2), and the assessment prunes the
+    // dead row out of the persisted memo.
+    mocked.refresh.mockResolvedValue({
+      mods: [entry("b", "3")],
+      fetchedAt: "",
+      sourceVersion: "",
+      gameVersion: "",
+    } as never);
+    setActivePinia(createPinia());
+    const restartConfig = useConfigStore();
+    restartConfig.activeInstall = { kind: "manual", path: GAME };
+    restartConfig.installs = [{ kind: "manual", path: GAME }, { kind: "manual", path: OTHER }];
+    const restarted = usePluginUpdatesStore();
+    await restarted.refresh();
+    expect(restarted.totalCount).toBe(1);
+    expect(restarted.infoFor(OTHER)?.mods.map((m) => m.id)).toEqual(["b"]);
+    expect(JSON.parse(localStorage.getItem("wowsp-plugin-updates-incompatible-skips") ?? "{}")).toEqual({});
+  });
+
+  it("degrades a corrupt persisted memo to empty instead of a wrong park", async () => {
+    mocked.refresh.mockResolvedValue({
+      mods: [entry("b", "2")],
+      fetchedAt: "",
+      sourceVersion: "",
+      gameVersion: "",
+    } as never);
+    mocked.records.mockResolvedValue([record("b", "1", OTHER)] as never);
+    // Every surprise shape — unparseable JSON, a non-object payload, a
+    // non-object row, wrong-typed fields, a row missing its reason — must
+    // load as an empty memo, never as a park.
+    const garbage = [
+      "{not json",
+      "[]",
+      '"a string"',
+      JSON.stringify({ broken: null }),
+      JSON.stringify({ broken: { version: 2, reason: "x" } }),
+      JSON.stringify({ broken: { version: "2" } }),
+    ];
+    for (const payload of garbage) {
+      setActivePinia(createPinia());
+      // Each fresh pinia re-derives the install list from its own config
+      // store — seed it exactly like the restart tests above.
+      const config = useConfigStore();
+      config.activeInstall = { kind: "manual", path: GAME };
+      config.installs = [{ kind: "manual", path: GAME }, { kind: "manual", path: OTHER }];
+      localStorage.setItem("wowsp-plugin-updates-incompatible-skips", payload);
+      const updates = usePluginUpdatesStore();
+      await updates.refresh();
+      // Storage garbage parks nothing: the update stays offered, and the
+      // next rule skip re-fills the memo from scratch.
+      expect(updates.totalCount, payload).toBe(1);
+    }
   });
 
   it("keeps the hard refusal when no install is active", async () => {

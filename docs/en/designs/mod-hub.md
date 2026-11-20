@@ -604,10 +604,16 @@ per caller:
   the original package-defect crash class and stays a hard refusal on every
   target, so a broken package is never silently skipped. The full clauses
   still reach the WARN log (the package stays reportable), and the skip is
-  memoized for the session, scoped to the catalog pack version, so the badge
-  stops re-offering an update that can only re-skip until the pack version
+  memoized PERSISTENTLY (localStorage, surviving restarts — a session-only
+  memo re-offered the same hopeless update on every app start, user report
+  2026-11-20), scoped to the catalog pack version, so the badge stops
+  re-offering an update that can only re-skip until the pack version
   changes or an explicit install is attempted (a client update alone does
-  not clear the memo).
+  not clear the memo). Every frontend skip path parks — the one-click
+  batch, the mod-hub install fan-out, and the reconcile plan (whose skips
+  leave no ledger record, so nothing needs parking there) — and dead rows
+  are pruned on every freshness assessment once the pack moves on or the
+  record leaves the ledger.
 
 The ACTIVE install always keeps the hard refusal — the user chose that
 client, so the integrity gate's "refusing to install" answer is theirs to
