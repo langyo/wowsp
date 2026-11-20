@@ -583,7 +583,13 @@ export function drawMinimap(
   }
   const cvs = ctx.minimapCanvas.value;
   if (!cvs) return;
-  if (!ctx._mmCtx) ctx._mmCtx = cvs.getContext("2d");
+  // The 2D context is cached on the shared map context (one getContext per
+  // redraw is measurable at 16 Hz), but the CACHE belongs to a canvas:
+  // whenever the thumbnail element is re-created (the map pane remounting
+  // its template, a keep-alive restore, HMR) the cached context would keep
+  // painting the DETACHED canvas while the on-screen one stays blank.
+  // Rebind on element identity, not on "first use only".
+  if (ctx._mmCtx?.canvas !== cvs) ctx._mmCtx = cvs.getContext("2d");
   const c2d = ctx._mmCtx!;
   // HiDPI backing store EXACTLY matching the displayed element size
   // (rect × devicePixelRatio) — a 1:1 buffer↔element mapping avoids the

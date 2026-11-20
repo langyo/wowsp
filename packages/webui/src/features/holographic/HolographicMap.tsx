@@ -3713,7 +3713,15 @@ const RECORDED_DOLLY_MIN = -40;
             x/y churn stays out of Vue, and only the low-frequency content
             below (name/hp/tone/status) re-renders — see markerUpdate's
             label-content throttle. */}
-        <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
+        <div
+          class={[
+            "holo-map__labels",
+            // The enlarged 2D map IS the view: floating 3D name/status cards
+            // painted over it would read as map labels from another layer.
+            showLabels.value && !minimapZoom.value ? "" : "holo-map__labels--hidden",
+          ].filter(Boolean).join(" ")}
+          aria-hidden="true"
+        >
           {shipLabels.value.map((lbl) => {
             // Local player markers (玩家标记): nickname-first match, the
             // resolved account id sharpens it when the stats batch landed.
