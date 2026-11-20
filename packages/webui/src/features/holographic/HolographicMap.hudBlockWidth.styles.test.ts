@@ -116,6 +116,24 @@ describe("bottom-left player HUD block width contract", () => {
     expect(controls).toMatch(/width:\s*100%/);
   });
 
+  it("keeps the playback row in flow inside the transport seat", () => {
+    // 2026-11-20 user report (播放条错位遮住没法用): when #2033 moved the
+    // bottom-left seat onto __transport, the row kept a stale
+    // `position: absolute; left: 12px` from the old corner-chip group
+    // rule. An abspos box with no top/bottom sits at its static position —
+    // the TOP of the zero-height anchor — and grows DOWN, so the map's
+    // overflow:hidden clipped all but a ~13px sliver of the bar at every
+    // window size. static here is the regression lock: the seat owns ALL
+    // the positioning, the row only fills it.
+    const controls = ruleBody(css, "\n.holo-map__controls {");
+    expect(controls, "the playback row rule exists").not.toBeNull();
+    expect(controls).toMatch(/position:\s*static/);
+    // The grouped corner-chip rule must never pick the row up again: its
+    // position: absolute + pointer-events: none would re-break the bar
+    // while every pinned declaration above still passes.
+    expect(css).not.toMatch(/\.holo-map__overlay-info,\s*\.holo-map__controls/);
+  });
+
   it("spans the shipcard row across the bar's box and clamps it to the same band", () => {
     const shipcard = ruleBody(css, SHIPCARD_RULE);
     expect(shipcard, "the shipcard row rule exists").not.toBeNull();
@@ -162,14 +180,22 @@ describe("bottom-left player HUD block width contract", () => {
     expect(mediaAt, "the phone media block exists").toBeGreaterThan(-1);
     const media = blockRange(css, mediaAt);
     expect(media, "the phone media block has a body").not.toBeNull();
+    // The full-bleed geometry lives on the SEAT (the row stays in flow):
+    // left/right insets stretch the transport column across the pane.
+    const phoneTransport = ruleBody(media!.body, ".holo-map__transport {");
+    expect(phoneTransport, "the phone transport rule exists").not.toBeNull();
+    expect(phoneTransport).toMatch(/left:\s*12px/);
+    expect(phoneTransport).toMatch(/right:\s*12px/);
+    expect(phoneTransport).toMatch(/width:\s*auto/);
     const phoneControls = ruleBody(media!.body, ".holo-map__controls {");
     expect(phoneControls, "the phone playback bar rule exists").not.toBeNull();
-    expect(phoneControls).toMatch(/right:\s*12px/);
-    expect(phoneControls).toMatch(/width:\s*auto/);
     // The one-line phone padding replaces the desktop `6px var(...)`; the
     // block width token must NOT leak into the phone line.
     expect(phoneControls).toMatch(/padding:\s*8px/);
     expect(phoneControls).not.toMatch(/--holo-hud-block-w/);
+    // The row keeps its in-flow contract on phones too (no stale absolute).
+    expect(phoneControls).not.toMatch(/position:\s*absolute/);
+    expect(phoneControls).not.toMatch(/right:\s*12px/);
   });
 
   it("wraps the transport inside the locked width on narrow map panes", () => {
