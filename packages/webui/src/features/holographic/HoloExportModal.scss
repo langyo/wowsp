@@ -15,8 +15,13 @@
     align-items: center;
     gap: 0.6rem;
 
-    &--path {
-      align-items: baseline;
+    /* The path field is the row's only control: let it take the whole
+       width instead of stopping at its natural box (hikari classes are
+       global, so this is a plain selector — :deep is dropped in a global
+       sheet). */
+    &--path .hk-file-picker-field {
+      flex: 1 1 auto;
+      min-width: 0;
     }
   }
 
@@ -27,16 +32,12 @@
     color: rgb(var(--color-muted));
   }
 
-  /* The range block: label + readout over hikari's ribbon (which ships its
-     own chrome). */
+  /* The range block: readout over hikari's minimal dual-handle bar (which
+     ships its own chrome and spans the full width). */
   &__range {
     display: flex;
     flex-direction: column;
     gap: 0.3rem;
-
-    :deep(.hk-range-ribbon) {
-      margin: 0;
-    }
   }
 
   &__range-readout {

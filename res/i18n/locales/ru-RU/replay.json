@@ -613,7 +613,6 @@
     "pathLabel": "Папка экспорта",
     "phaseFinalize": "Финализация видео…",
     "phaseSave": "Сохранение файла…",
-    "rangeLane": "Таймлайн боя",
     "rangeLength": "Интервал {time}",
     "rangeClamp": "Сокращено до {time} (лимит GIF 1500 кадров)"
   },

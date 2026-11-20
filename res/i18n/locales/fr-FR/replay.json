@@ -613,7 +613,6 @@
     "pathLabel": "Dossier d'export",
     "phaseFinalize": "Finalisation de la vidéo…",
     "phaseSave": "Enregistrement du fichier…",
-    "rangeLane": "Chronologie de la bataille",
     "rangeLength": "Intervalle {time}",
     "rangeClamp": "Réduit à {time} (limite GIF 1500 images)"
   },

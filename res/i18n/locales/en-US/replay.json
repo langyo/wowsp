@@ -613,7 +613,6 @@
     "pathLabel": "Export folder",
     "phaseFinalize": "Finalizing video…",
     "phaseSave": "Saving file…",
-    "rangeLane": "Battle timeline",
     "rangeLength": "Span {time}",
     "rangeClamp": "Trimmed to {time} (GIF 1500-frame cap)"
   },

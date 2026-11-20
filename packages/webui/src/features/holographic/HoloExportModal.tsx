@@ -107,18 +107,6 @@ export default defineComponent({
 
     const ribbonDomain = computed<number[]>(() => [0, Math.max(1, props.duration)]);
     const ribbonWindow = computed<number[]>(() => [range.value.from, range.value.to]);
-    const ribbonSegments = computed(() => [
-      {
-        id: "battle",
-        lane: "battle",
-        start: 0,
-        end: Math.max(1, props.duration),
-        label: clockLabel(props.duration),
-        kind: "battle",
-      },
-    ]);
-    const ribbonLanes = [{ key: "battle", label: i18nT("replay.export.rangeLane") }];
-
     const setFormat = (v: string): void => {
       props.settings.format = v === "gif" ? "gif" : "video";
       if (!PLAYBACK_EXPORT_FPS[props.settings.format].includes(props.settings.fps)) {
@@ -229,8 +217,9 @@ export default defineComponent({
               })}
             </p>
             <HkRangeRibbon
-              lanes={ribbonLanes}
-              segments={ribbonSegments.value}
+              minimal
+              lanes={[]}
+              segments={[]}
               domain={ribbonDomain.value}
               window={ribbonWindow.value}
               minWindow={Math.max(0.01, 1 / Math.max(1, props.duration))}

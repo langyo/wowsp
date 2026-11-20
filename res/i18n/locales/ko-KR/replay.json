@@ -613,7 +613,6 @@
     "pathLabel": "내보내기 폴더",
     "phaseFinalize": "동영상 마무리 중…",
     "phaseSave": "파일 저장 중…",
-    "rangeLane": "전투 타임라인",
     "rangeLength": "구간 {time}",
     "rangeClamp": "GIF 1500프레임 상한으로 {time}까지 단축됨"
   },

@@ -613,7 +613,6 @@
     "pathLabel": "匯出目錄",
     "phaseFinalize": "正在封裝影片…",
     "phaseSave": "正在儲存檔案…",
-    "rangeLane": "對局時間軸",
     "rangeLength": "區間時長 {time}",
     "rangeClamp": "已按 GIF 1500 幀上限截斷至 {time}"
   },
