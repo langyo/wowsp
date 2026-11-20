@@ -36,6 +36,174 @@ export function planeTrailExpiry(
   return Math.min(lastSampleTime + PLANE_TRAIL_GRACE_S, removeAt ?? Infinity);
 }
 
+/* ── Homeward-bound (post-strike) squadron detection ─────────────────────
+ * The wire has NO "returning" bit. `receive_deactivateSquadron`
+ * (SquadronDeactivateEvent) marks the END of a sortie's life — recall /
+ * death / out of fuel, measured over 645 CV flights: 0/645 keep streaming
+ * after it (see HoloSquadronPanel) — and `receive_squadronNotify` is an
+ * unnamed 1/2/4/5 enum, so neither can answer "is this wing flying home
+ * RIGHT NOW". The one authoritative per-sample signal is the attitude byte:
+ * `SquadronPlane.pitch` (i8 degrees, negative = nose down; each
+ * updateSquadron entry is 20 B — replay_core's decode_squadron_update),
+ * which the game only drives to a steep dive during an ATTACK RUN. So a
+ * return leg is DERIVED, never guessed:
+ *
+ *   1. the wing has ATTACKED — a sample at or before t dived past
+ *      RETURN_DIVE_PITCH_DEG (the same −25° planeFollow reads for the follow
+ *      card's "attacking" badge), and
+ *   2. after that dive it CLOSES on its carrier for RETURN_CONFIRM_S
+ *      continuously, every sample measured against the carrier's own pose at
+ *      that time: at least RETURN_MIN_CLOSING_M closer than
+ *      RETURN_CLOSING_WINDOW_S earlier.
+ *
+ * The fold is a PURE function of the sample data at or before t. Nothing
+ * depends on playback history, so scrubbing backwards answers exactly like
+ * playing forward, and a later attack dive re-arms the proof (a second
+ * strike run means the wing is attacking again, not going home). Unknown
+ * stays today's behaviour: no pitch (pre-attitude streams), no dive, no
+ * carrier join, or a leg too short to prove all read "not returning" — a
+ * wrong or flickering suppression is worse than none.
+ */
+
+/** Pitch (degrees) at which a 3D aircraft sample reads as an attack-run dive.
+ *  Deliberately the same −25° threshold planeFollow.squadronAttacking uses
+ *  (a test pins the two together); it lives here as its own constant because
+ *  planeFollow already imports this module, and a cycle would be the price of
+ *  sharing one literal. */
+export const RETURN_DIVE_PITCH_DEG = -25;
+
+/** Trail history (seconds) one closing measurement spans: the sample's range
+ *  to the carrier is compared with the range it had this long ago. */
+export const RETURN_CLOSING_WINDOW_S = 8;
+
+/** Metres the wing must have CLOSED on its carrier across that window for a
+ *  sample to count as flying home. A cruising wing covers ~400–700 m in 8 s,
+ *  so 120 m cleanly separates a homeward leg from a crossing one. */
+export const RETURN_MIN_CLOSING_M = 120;
+
+/** Continuous seconds of closing flight that PROVE the return leg. The proof
+ *  is a latch: once established the wing stays "returning" for the rest of
+ *  the sortie unless it dives again. */
+export const RETURN_CONFIRM_S = 10;
+
+/** The carrier timeline the closing test reads — the entity trajectory of the
+ *  wing's controlling ship (planeWarfare's planeReturningAt supplies the
+ *  planeId → carrier → trajectory join from the map context). */
+export interface CarrierTrackLike {
+  samples: readonly { time: number; x: number; z: number }[];
+}
+
+/** Pose of the carrier at `time`: a step lookup (the last sample at or before
+ *  it, the first before the track starts, the last after it ends — the same
+ *  hold semantics trajectoryMath.sampleAt applies to un-spotted entities).
+ *  Allocation-free: the fold below runs it twice per aircraft sample. */
+function carrierPoseAt(
+  track: CarrierTrackLike,
+  time: number,
+): { x: number; z: number } | null {
+  const s = track.samples;
+  if (s.length === 0) return null;
+  if (time <= s[0].time) return s[0];
+  const last = s[s.length - 1];
+  if (time >= last.time) return last;
+  let lo = 0;
+  let hi = s.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (s[mid].time < time) lo = mid;
+    else hi = mid;
+  }
+  return s[lo];
+}
+
+/** One-entry-per-trail memo of the fold's answer. The state machine is a pure
+ *  function of (samples, carrier track, sample count at t), and the painter's
+ *  two passes plus the label and marker passes all ask for the SAME playhead
+ *  inside one frame — the memo turns four folds per wing per frame into one.
+ *  Trail arrays are rebuilt per replay build, so entries die with the replay
+ *  (WeakMap), and a carrier-track swap re-keys the answer. */
+const returnMemo = new WeakMap<
+  object,
+  { track: CarrierTrackLike | null; end: number; since: number | null }
+>();
+
+/** Earliest sample time at or before `t` at which this wing is PROVEN
+ *  homeward-bound after a completed attack run; null while it is not (still
+ *  strike-bound, still on the dive, no attack recorded, or no carrier read).
+ *  Pure in (samples at or before t, carrier track): any `t` can be evaluated
+ *  directly — scrubbing forwards or backwards yields the same answer — and
+ *  the caller reads "returning now" as a non-null result. */
+export function squadronReturningSince(
+  samples: readonly { time: number; x: number; z: number; pitch?: number }[],
+  carrierTrack: CarrierTrackLike | null | undefined,
+  t: number,
+): number | null {
+  if (!carrierTrack || carrierTrack.samples.length === 0 || samples.length === 0) {
+    return null;
+  }
+  // Samples at or before the playhead (the trail is time-sorted).
+  let lo = 0;
+  let hi = samples.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (samples[mid].time <= t) lo = mid + 1;
+    else hi = mid;
+  }
+  const end = lo;
+  if (end === 0) return null;
+  const memo = returnMemo.get(samples);
+  if (memo && memo.track === carrierTrack && memo.end === end) return memo.since;
+  let since: number | null = null;
+  // The LAST attack dive at or before t. Everything before it belongs to a
+  // previous strike run, and a NEW dive restarts the proof from scratch.
+  let dive = -1;
+  for (let i = end - 1; i >= 0; i--) {
+    const pitch = samples[i].pitch;
+    if (pitch != null && pitch <= RETURN_DIVE_PITCH_DEG) {
+      dive = i;
+      break;
+    }
+  }
+  if (dive >= 0) {
+    let runStart: number | null = null;
+    // Window pointer: the latest sample at or before (sample time − window).
+    // Both loops only ever move forward, so the fold stays linear.
+    let back = dive;
+    for (let i = dive; i < end; i++) {
+      const ti = samples[i].time;
+      const edge = ti - RETURN_CLOSING_WINDOW_S;
+      while (back + 1 < i && samples[back + 1].time <= edge) back++;
+      let homeward = false;
+      if (back < i && samples[back].time <= edge) {
+        const nowCarrier = carrierPoseAt(carrierTrack, ti);
+        const thenCarrier = carrierPoseAt(carrierTrack, samples[back].time);
+        if (nowCarrier && thenCarrier) {
+          const dNow = Math.hypot(
+            samples[i].x - nowCarrier.x,
+            samples[i].z - nowCarrier.z,
+          );
+          const dThen = Math.hypot(
+            samples[back].x - thenCarrier.x,
+            samples[back].z - thenCarrier.z,
+          );
+          homeward = dNow <= dThen - RETURN_MIN_CLOSING_M;
+        }
+      }
+      if (!homeward) {
+        runStart = null;
+        continue;
+      }
+      if (runStart === null) runStart = ti;
+      if (ti - runStart >= RETURN_CONFIRM_S - 1e-6) {
+        since = ti;
+        break;
+      }
+    }
+  }
+  returnMemo.set(samples, { track: carrierTrack, end, since });
+  return since;
+}
+
 /** Per-plane local offsets inside ONE flight group: a 梯形 V — the leader at
  *  the point, wingmen stepping BACK in alternating pairs (user spec: every
  *  group reads as a tight three-plane V, not a scattered row). Positive oz

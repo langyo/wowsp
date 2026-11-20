@@ -35,7 +35,7 @@ import {
 } from "./planeFormation";
 import { updateStormZone } from "./weatherScene";
 import { syncMoveAdvisories } from "./moveAdvisories";
-import { PLANE_DOT_PARKED_Y } from "./planeWarfare";
+import { PLANE_DOT_PARKED_Y, planeCardVisibleAt } from "./planeWarfare";
 import type { OsdTone } from "./osdContrast";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
 import {
@@ -1270,24 +1270,12 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // run both at once, which is why they are separate bars.
       // The one-shot boost bar moved to the panel's engine row too.
       if (label.planeForsageFrac != null) label.planeForsageFrac = null;
-      // Any of this carrier's squadrons airborne?
-      let visible = false;
-      for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
-        if (labelOf !== labelId) continue;
-        const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
-        if (!trail || trail.samples.length === 0) continue;
-        const first = trail.samples[0].time;
-        const last = trail.samples[trail.samples.length - 1].time;
-        // Squadron is gone one grace window after its last sample — no
-        // lingering labels (the SAME planeTrailExpiry every aircraft surface
-        // reads, including the minimap remove event).
-        const expiry = planeTrailExpiry(last, ctx.minimapTrailEnd.get(planeId));
-        if (t >= first && t <= expiry) {
-          visible = true;
-          break;
-        }
-      }
-      label.visible = visible;
+      // Any of this carrier's squadrons airborne AND not homeward-bound? A
+      // returning (post-strike) wing keeps its MODEL but must not carry the
+      // floating card, so an all-returning carrier hides it here while the
+      // formation pass above keeps flying the meshes (shared with
+      // labelOverlay's anchor pick through planeWarfare.planeCardVisibleAt).
+      label.visible = planeCardVisibleAt(ctx, labelId, t);
     }
   }
   // The scene RAF loop (HolographicMap's onFrame) refreshes the floating

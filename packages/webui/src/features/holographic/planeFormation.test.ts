@@ -14,7 +14,13 @@ import {
   inferGrouping,
   PLANE_TRAIL_GRACE_S,
   planeTrailExpiry,
+  RETURN_CONFIRM_S,
+  RETURN_CLOSING_WINDOW_S,
+  RETURN_DIVE_PITCH_DEG,
+  RETURN_MIN_CLOSING_M,
+  squadronReturningSince,
 } from "./planeFormation";
+import { SQUADRON_ATTACK_PITCH_DEG } from "./planeFollow";
 import type { SquadronPlane } from "@/api";
 
 const sp = (time: number, x: number, z: number): SquadronPlane => ({
@@ -242,5 +248,188 @@ describe("inferGrouping", () => {
     const out = inferGrouping(entries, sampleFirst);
     expect(out.groupCount).toBeLessThanOrEqual(4);
     expect(out.groupSize * out.groupCount).toBeGreaterThanOrEqual(10);
+  });
+});
+/* ── Homeward-bound (post-strike) squadron detection ─────────────────────
+ * The user requirement hides every returning wing's marker (2D) / floating
+ * card (3D). No wire bit names that state, so the detector derives it from
+ * the aircraft attitude byte + the wing's range to its carrier — and these
+ * tests pin BOTH halves of that contract: the geometric proof, and the fact
+ * that the answer is a pure function of the playhead (scrubbing never
+ * flickers, never depends on where playback came from). */
+
+/** Carrier timeline: the CV parks at the world origin (the real thing moves
+ *  at ~10 m/s — an order of magnitude below the wing's speed, so a static
+ *  track keeps the arithmetic readable without changing the test's meaning). */
+const parkedCarrier = (until = 200) => ({
+  samples: Array.from({ length: until + 1 }, (_, i) => ({ time: i, x: 0, z: 0 })),
+});
+
+/** One aircraft position sample; `pitch` is the attitude byte the 3D
+ *  stream carries (undefined = a minimap centre sample / pre-attitude
+ *  stream). */
+const pt = (
+  time: number,
+  x: number,
+  z = 0,
+  pitch?: number,
+): { time: number; x: number; z: number; pitch?: number } =>
+  pitch == null ? { time, x, z } : { time, x, z, pitch };
+
+const WING_SPEED = 60; // m/s — a WoWS strike wing's cruise
+const OUTBOUND_S = 20; // cruise out to the target
+const DIVE_S = 3; // attack-run dive (pitch −35°)
+const OUT_X = WING_SPEED * OUTBOUND_S;
+
+/** A full sortie trail at 1 Hz: out, optional attack dive, optional return.
+ *  `home` false keeps the wing outbound (the strike-bound control). */
+function sortie(opts: { dive: boolean; home: boolean; until?: number }) {
+  const until = opts.until ?? 48;
+  const out: ReturnType<typeof pt>[] = [];
+  for (let t = 0; t <= until; t++) {
+    if (t <= OUTBOUND_S) {
+      out.push(pt(t, WING_SPEED * t));
+    } else if (opts.dive && t < OUTBOUND_S + DIVE_S) {
+      // The dive: the wing drops its ordnance nearly on the spot.
+      out.push(pt(t, OUT_X + 5 * (t - OUTBOUND_S), 0, -35));
+    } else if (opts.home) {
+      const t0 = OUTBOUND_S + (opts.dive ? DIVE_S : 0);
+      out.push(pt(t, OUT_X - WING_SPEED * (t - t0)));
+    } else {
+      out.push(pt(t, WING_SPEED * t));
+    }
+  }
+  return out;
+}
+
+describe("squadronReturningSince (derived homeward-bound state)", () => {
+  it("keeps the −25° dive threshold in step with the follow card's badge", () => {
+    // Same literal, two modules (planeFollow imports this one, so sharing the
+    // constant itself would mean a module cycle).
+    expect(RETURN_DIVE_PITCH_DEG).toBe(SQUADRON_ATTACK_PITCH_DEG);
+  });
+
+  it("is not returning before any attack has been flown", () => {
+    const track = parkedCarrier();
+    expect(squadronReturningSince(sortie({ dive: false, home: true }), track, 15)).toBeNull();
+    // A wing that closes on the carrier WITHOUT ever diving (a ferry flight, a
+    // recce run) is not a "returning strike wing" — no attack, no proof.
+    expect(squadronReturningSince(sortie({ dive: false, home: true }), track, 40)).toBeNull();
+    expect(squadronReturningSince(sortie({ dive: false, home: false }), track, 45)).toBeNull();
+  });
+
+  it("confirms a post-strike return leg once the closing run is long enough", () => {
+    const track = parkedCarrier();
+    const trail = sortie({ dive: true, home: true });
+    // The LAST dive sample is t = 22, so the earliest sample that can measure
+    // an 8 s closing window is 30; the run must then hold RETURN_CONFIRM_S —
+    // the very first provable sample is 40.
+    const expected = OUTBOUND_S + DIVE_S - 1 + RETURN_CLOSING_WINDOW_S + RETURN_CONFIRM_S;
+    expect(expected).toBe(40);
+    expect(squadronReturningSince(trail, track, expected - 1)).toBeNull();
+    expect(squadronReturningSince(trail, track, expected)).toBe(expected);
+    // The proof is a latch: everything after it stays "returning".
+    expect(squadronReturningSince(trail, track, 45)).toBe(expected);
+    expect(squadronReturningSince(trail, track, 48)).toBe(expected);
+  });
+
+  it("proves the leg with a MOVING carrier, measured at each sample's time", () => {
+    // The carrier steams away from the wing at 10 m/s: the wing must still
+    // close on the carrier's pose AT THAT SAMPLE, not on its launch position.
+    const track = {
+      samples: Array.from({ length: 121 }, (_, i) => ({ time: i, x: 0, z: 10 * i })),
+    };
+    const trail = sortie({ dive: true, home: true });
+    const since = squadronReturningSince(trail, track, 48);
+    expect(since).not.toBeNull();
+    expect(since!).toBeGreaterThanOrEqual(23 + RETURN_CLOSING_WINDOW_S);
+  });
+
+  it("never confirms a wing that crosses the map instead of flying home", () => {
+    // Perpendicular leg: the range to the carrier grows, not shrinks.
+    const track = parkedCarrier();
+    const trail: ReturnType<typeof pt>[] = [];
+    for (let t = 0; t <= 48; t++) {
+      if (t <= OUTBOUND_S) trail.push(pt(t, WING_SPEED * t));
+      else if (t < OUTBOUND_S + DIVE_S) trail.push(pt(t, OUT_X, 0, -35));
+      else trail.push(pt(t, OUT_X, 10 * (t - OUTBOUND_S - DIVE_S)));
+    }
+    expect(squadronReturningSince(trail, track, 48)).toBeNull();
+  });
+
+  it("re-arms the proof when the wing dives into a SECOND attack run", () => {
+    // A second strike run means the wing is attacking again, not going home —
+    // the marker must come back, and a fresh closing run must re-prove.
+    const track = parkedCarrier();
+    const trail: ReturnType<typeof pt>[] = [];
+    for (let t = 0; t <= 70; t++) {
+      if (t <= OUTBOUND_S) trail.push(pt(t, WING_SPEED * t));
+      else if (t <= 23) trail.push(pt(t, OUT_X, 0, -35)); // strike run 1
+      else if (t <= 31) trail.push(pt(t, OUT_X - 25 * (t - 24))); // home leg 1
+      else if (t <= 34) trail.push(pt(t, OUT_X - 25 * 7, 0, -40)); // strike run 2
+      else trail.push(pt(t, OUT_X - 175 - 25 * (t - 35))); // home leg 2
+    }
+    // The second dive is at t = 34, so the re-proof lands 8 + 10 s later.
+    const expected = 34 + RETURN_CLOSING_WINDOW_S + RETURN_CONFIRM_S;
+    expect(squadronReturningSince(trail, track, 31)).toBeNull(); // run 1 not yet proven
+    expect(squadronReturningSince(trail, track, 45)).toBeNull(); // re-armed by the dive
+    expect(squadronReturningSince(trail, track, expected - 1)).toBeNull();
+    expect(squadronReturningSince(trail, track, expected)).toBe(expected);
+    expect(expected).toBe(52);
+  });
+
+  it("answers identically at any scrub position, in any order", () => {
+    // THE scrub-stability contract: the fold reads only samples at or before
+    // t, so evaluating t directly (backwards, shuffled, on a fresh array that
+    // cannot hit the memo) must equal a forward playback sweep.
+    const track = parkedCarrier();
+    const trail = sortie({ dive: true, home: true });
+    const probes = [0, 5, 20, 22, 23, 30, 40, 41, 44, 48];
+    const forward = new Map<number, number | null>();
+    for (const t of probes) forward.set(t, squadronReturningSince(trail, track, t));
+    // Backwards over a FRESH copy of the same trail (defeats the memo cache).
+    for (const t of [...probes].reverse()) {
+      expect(squadronReturningSince(sortie({ dive: true, home: true }), track, t)).toBe(
+        forward.get(t),
+      );
+      // ...and on the very same array, out of order.
+      expect(squadronReturningSince(trail, track, t)).toBe(forward.get(t));
+    }
+    // The transition is monotone: once proven, never unproven.
+    let seen = false;
+    for (let t = 0; t <= 48; t++) {
+      const since = squadronReturningSince(trail, track, t);
+      if (since != null) seen = true;
+      if (seen) expect(since).toBe(forward.get(41));
+    }
+    expect(forward.get(41)).not.toBeNull();
+  });
+
+  it("treats an unknown wing as 'not returning' (today's rendering)", () => {
+    const track = parkedCarrier();
+    // No carrier join.
+    expect(squadronReturningSince(sortie({ dive: true, home: true }), null, 45)).toBeNull();
+    expect(squadronReturningSince(sortie({ dive: true, home: true }), undefined, 45)).toBeNull();
+    expect(squadronReturningSince(sortie({ dive: true, home: true }), { samples: [] }, 45)).toBeNull();
+    // No trail at all / before the first sample.
+    expect(squadronReturningSince([], track, 45)).toBeNull();
+    expect(squadronReturningSince(sortie({ dive: true, home: true }), track, -1)).toBeNull();
+    // A pre-attitude stream (every pitch undefined): never an attack, never a
+    // return — the marker must render exactly as before.
+    const noPitch = sortie({ dive: true, home: true }).map((s) => pt(s.time, s.x, s.z));
+    expect(squadronReturningSince(noPitch, track, 48)).toBeNull();
+    // A dive the range test cannot follow (the window never elapses).
+    expect(
+      squadronReturningSince(sortie({ dive: true, home: true, until: 26 }), track, 26),
+    ).toBeNull();
+  });
+
+  it("only hides once the leg is PROVEN (the constants are the contract)", () => {
+    // Guard the three numbers the behaviour leans on: a shorter window, a
+    // smaller closing threshold or a shorter run would prove legs the module's
+    // header says are NOT proven.
+    expect(RETURN_CLOSING_WINDOW_S).toBe(8);
+    expect(RETURN_MIN_CLOSING_M).toBe(120);
+    expect(RETURN_CONFIRM_S).toBe(10);
   });
 });

@@ -7,7 +7,12 @@
  */
 import * as THREE from "three";
 import { PLANE_TYPES, planeFullStrength } from "./tactical/shellTypes";
-import { groupSizeOfParams } from "./planeFormation";
+import {
+  groupSizeOfParams,
+  planeTrailExpiry,
+  squadronReturningSince,
+  type CarrierTrackLike,
+} from "./planeFormation";
 import { buildPropMarker } from "./propMarker";
 import { planeForwardSign, resolvePlaneModelUrl } from "./modelLoader";
 import { sampleAt } from "./trajectoryMath";
@@ -593,4 +598,72 @@ export function resolvePlaneCarriers(
       ctx.planeLabelOfPlane.set(planeId, PLANE_CARD_LABEL_ID_BASE + Number(carrierId));
     }
   }
+}
+
+/* ── Homeward-bound (post-strike) gating for the aircraft markers ────────
+ * User requirement: a RETURNING wing shows NO class marker on either 2D map
+ * (the thumbnail, the enlarged overlay and the exported clip's tactical board
+ * — all three paint through minimapPainter) and, in 3D, keeps its MODEL but
+ * loses the floating card. The detection itself is
+ * planeFormation.squadronReturningSince, a pure fold over the wing's own
+ * trail; these two readers add the ctx joins every surface needs — the wing's
+ * carrier (planeCarrierOf) and that carrier's trajectory at the sample times
+ * — so the painter, the label projection and the marker pass cannot disagree.
+ */
+
+/** Map-context slices the return test reads (all optional so a partially
+ *  built context — or a unit-test double — simply reads "not returning"). */
+export interface PlaneReturnCtx {
+  planeCarrierOf?: ReadonlyMap<number, number | null>;
+  trajById?: ReadonlyMap<number, CarrierTrackLike>;
+}
+
+/** Whether this wing is PROVEN homeward-bound at `t` (see
+ *  squadronReturningSince for what "proven" means). `trail` is the wing's
+ *  anchor trail — every aircraft surface already holds or can find it, and the
+ *  merged anchor is where the 3D attitude (pitch) samples live. A missing
+ *  carrier join or trajectory reads false: unknown renders exactly as before. */
+export function planeReturningAt(
+  ctx: PlaneReturnCtx,
+  trail: { id: number; samples: SquadronPlane[] },
+  t: number,
+): boolean {
+  const planeId = Math.floor(trail.id / 16);
+  const carrierId = ctx.planeCarrierOf?.get(planeId);
+  if (carrierId == null) return false;
+  const track = ctx.trajById?.get(carrierId);
+  if (!track) return false;
+  return squadronReturningSince(trail.samples, track, t) !== null;
+}
+
+/** Whether a carrier's floating aircraft card may render at `t`: at least
+ *  one of its sorties is airborne (inside the shared planeTrailExpiry window)
+ *  AND not homeward-bound. All-returning hides the card while the formation
+ *  models keep flying — the 3D half of the same requirement. */
+export function planeCardVisibleAt(
+  ctx: Pick<
+    MapInternals,
+    | "planeLabelOfPlane"
+    | "planeTrails"
+    | "minimapTrailEnd"
+    | "planeCarrierOf"
+    | "trajById"
+  >,
+  labelId: number,
+  t: number,
+): boolean {
+  for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
+    if (labelOf !== labelId) continue;
+    const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
+    if (!trail || trail.samples.length === 0) continue;
+    const first = trail.samples[0].time;
+    const last = trail.samples[trail.samples.length - 1].time;
+    // Squadron is gone one grace window after its last sample — no lingering
+    // labels (the SAME planeTrailExpiry every aircraft surface reads).
+    const expiry = planeTrailExpiry(last, ctx.minimapTrailEnd.get(planeId));
+    if (t < first || t > expiry) continue;
+    if (planeReturningAt(ctx, trail, t)) continue;
+    return true;
+  }
+  return false;
 }
