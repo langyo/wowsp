@@ -77,6 +77,18 @@ const MIN_SEARCH_CHARS: usize = 3;
 /// here so only the CN transport is affected.
 const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36";
 
+/// Prefix a roster-batch rejection carries when the CN edge REFUSED the
+/// client (401/403) rather than merely failing. The frontend reads it to
+/// stop its re-probe ladder: a block is made worse by traffic, so the
+/// recovery is a pause, not a retry (issue #2016). Chosen to be
+/// impossible in a host-generated message so the check cannot false-fire.
+const REFUSAL_MARKER: &str = "[cn-api-refused] ";
+
+/// Longest slice of a refused response's body carried into the error
+/// message. Enough for a WAF block title or a JSON error envelope, small
+/// enough that a hostile HTML page cannot flood a log line.
+const REFUSAL_SNIPPET_MAX: usize = 200;
+
 /// Shared CN vortex client pair (browser UA + the global proxy policy and
 /// its direct twin). Also used by `ship_stats` for its per-ship endpoint.
 pub(crate) fn vortex_pair() -> Result<HttpPair> {
@@ -214,11 +226,43 @@ async fn get_json(clients: &HttpPair, url: &str) -> Result<serde_json::Value> {
         super::upstream_health::recorded_get(clients, host, "CN vortex", url.to_string()).await?;
     let status = resp.status();
     if !status.is_success() {
-        anyhow::bail!("CN vortex: HTTP {status}");
+        // A refusal carries the ONLY evidence of why (a WAF block page, a
+        // JSON error envelope, Retry-After / cf-* headers) — reading it
+        // here is what makes issue #2016 diagnosable from a field bundle
+        // instead of a bare "403 Forbidden". Bounded so a huge HTML page
+        // cannot flood the log; the status line stays the message prefix so
+        // every existing consumer keeps matching.
+        let snippet = if super::upstream_health::is_refusal(status) {
+            refusal_snippet(resp).await
+        } else {
+            None
+        };
+        match snippet {
+            Some(s) => anyhow::bail!("CN vortex: HTTP {status} — {s}"),
+            None => anyhow::bail!("CN vortex: HTTP {status}"),
+        }
     }
     resp.json()
         .await
         .map_err(|e| anyhow!("CN vortex parse: {e}"))
+}
+
+/// Read a short, single-line, log-safe description out of a refused
+/// response: the body text trimmed to one line and [`REFUSAL_SNIPPET_MAX`]
+/// chars, or `None` when the body is empty/unreadable. The caller still
+/// bails on the status line itself, so this only ever ADDS detail.
+async fn refusal_snippet(resp: reqwest::Response) -> Option<String> {
+    let text = resp.text().await.ok()?;
+    let line = text
+        .lines()
+        .map(str::trim)
+        .find(|l| !l.is_empty())
+        .unwrap_or_default();
+    if line.is_empty() {
+        return None;
+    }
+    let clipped: String = line.chars().take(REFUSAL_SNIPPET_MAX).collect();
+    Some(clipped)
 }
 
 fn vortex_status(v: &serde_json::Value) -> Option<&str> {
@@ -766,17 +810,52 @@ enum SlotVerdict {
     /// Transport / API-level failure: transient. Worth one quick retry,
     /// never worth caching.
     Transient,
+    /// The host answered 401/403: the client is being refused (an edge WAF
+    /// rule, a per-IP ban, a credential gate). Retrying makes the block
+    /// worse — the request volume is what tripped it — so a blocked slot is
+    /// settled WITHOUT landing a row and without the quick retry.
+    Blocked,
+}
+
+/// Whether an error message says the CN host refused us (401/403). The
+/// transport turns a non-2xx into `"{label}: HTTP {status}"`, so the status
+/// is read back out of that one string — every CN failure path already
+/// funnels through [`get_json`] / the two hand-rolled status checks, and
+/// keeping the classification in one place beats threading a typed error
+/// through `lookup_one`'s `LookupError` shape.
+///
+/// Deliberately narrow: only 401 and 403. 429 is a rate limit that CAN
+/// clear on its own (and the batch's single fast retry is the right
+/// response), while 5xx is the classic transient shape.
+///
+/// The status must be the "HTTP <code>" token that STARTS the status
+/// segment: the message either ends there or appends " — <body snippet>".
+/// A nickname or a snippet merely containing the text "HTTP 403" therefore
+/// cannot flip the classification. Pure — unit-tested.
+fn is_refusal_message(message: &str) -> bool {
+    // Everything after the LAST "HTTP " is the status segment (the label
+    // prefix is fixed, and a snippet is appended after it).
+    let Some(segment) = message.rsplit("HTTP ").next() else {
+        return false;
+    };
+    let code = segment.split_whitespace().next().unwrap_or_default();
+    // Exact numeric match, and only when the segment really began with it:
+    // `split_whitespace().next()` yields "" for an empty segment, so a
+    // snippet starting mid-word cannot match the 3-digit form.
+    code == "401" || code == "403"
 }
 
 /// Classify one per-name batch attempt. `lookup_one` answers `Ok(None)`
 /// for business not-founds and `Err(AccountNotFound)` when the account
 /// vanished between its search hit and info fetch — both are stable
-/// verdicts; everything else (the `From<String>` bridge carries the
-/// transport and parse failures) is transient.
+/// verdicts. A 401/403 is a refusal: stable in the opposite direction (no
+/// retry, no landed row). Everything else (the `From<String>` bridge
+/// carries the transport and parse failures) is transient.
 fn slot_verdict(result: &Result<Option<PlayerStats>, LookupError>) -> SlotVerdict {
     match result {
         Ok(_) => SlotVerdict::Landed,
         Err(e) if e.kind == LookupErrorKind::AccountNotFound => SlotVerdict::Miss,
+        Err(e) if is_refusal_message(&e.message) => SlotVerdict::Blocked,
         Err(_) => SlotVerdict::Transient,
     }
 }
@@ -884,10 +963,16 @@ pub(crate) async fn lookup_players_stats_batch(
             .await
     };
     // Partition: land the answers (both miss flavors cache their None —
-    // they are stable verdicts), keep transient failures uncached so the
-    // next attempt re-fetches them instead of pinning "no data".
+    // they are stable verdicts), keep transient AND refused failures
+    // uncached so neither pins "no data". A refusal differs from a
+    // transient failure in what the CALLER should do: retrying a 403 is
+    // what turned a two-battle scrape into a lasting ban (issue #2016), so
+    // an all-refused batch reports the refusal instead of inviting the
+    // frontend's re-probe ladder.
     let mut transient_failures: usize = 0;
+    let mut refused_failures: usize = 0;
     let mut first_failure: Option<String> = None;
+    let mut first_refusal: Option<String> = None;
     for ((slot, name), result) in misses.iter().zip(&results) {
         match slot_verdict(result) {
             SlotVerdict::Landed | SlotVerdict::Miss => {
@@ -913,7 +998,36 @@ pub(crate) async fn lookup_players_stats_batch(
                     first_failure = result.as_ref().err().map(|e| e.to_string());
                 }
             },
+            SlotVerdict::Blocked => {
+                refused_failures += 1;
+                if first_refusal.is_none() {
+                    first_refusal = result.as_ref().err().map(|e| e.to_string());
+                }
+            },
         }
+    }
+    // A wholesale refusal wins over the transient story: it is the signal
+    // the user needs (the region API is refusing this client, not
+    // degraded), and it must not be retried.
+    if let Some(error) = first_refusal {
+        if refused_failures == miss_count {
+            tracing::warn!(
+                error = %error,
+                realm = "cn",
+                names = miss_count,
+                "CN roster batch refused by the region API — settlement withheld"
+            );
+            // Tag the message so the frontend can stop its re-probe ladder
+            // instead of hammering a host that just blocked this client.
+            return Err(anyhow::Error::msg(format!("{REFUSAL_MARKER}{error}")));
+        }
+        tracing::warn!(
+            error = %error,
+            realm = "cn",
+            names = miss_count,
+            refused = refused_failures,
+            "CN roster batch partially refused — the refused names stay uncached"
+        );
     }
     if let Some(error) = first_failure {
         if transient_failures == miss_count {
@@ -1802,6 +1916,63 @@ mod tests {
             slot_verdict(&Err(LookupError::api("CN vortex: HTTP 503"))),
             SlotVerdict::Transient
         );
+    }
+
+    /// A refusal is NOT transient: retrying a 403 is what turned the #2016
+    /// scrape into a lasting block, so the batch must settle it without a
+    /// retry and without caching "no data".
+    #[test]
+    fn refused_slots_classify_as_blocked_not_transient() {
+        assert_eq!(
+            slot_verdict(&Err(LookupError::api("CN vortex: HTTP 403"))),
+            SlotVerdict::Blocked
+        );
+        assert_eq!(
+            slot_verdict(&Err(LookupError::api("CN vortex: HTTP 401"))),
+            SlotVerdict::Blocked
+        );
+        // The snippet-augmented shape must classify identically.
+        assert_eq!(
+            slot_verdict(&Err(LookupError::api(
+                "CN vortex: HTTP 403 Forbidden — <title>Access denied</title>"
+            ))),
+            SlotVerdict::Blocked
+        );
+        // A rate limit can clear on its own: it keeps the transient retry.
+        assert_eq!(
+            slot_verdict(&Err(LookupError::api(
+                "CN vortex: HTTP 429 Too Many Requests"
+            ))),
+            SlotVerdict::Transient
+        );
+    }
+
+    #[test]
+    fn refusal_detection_reads_the_status_only() {
+        assert!(is_refusal_message("CN vortex: HTTP 403 Forbidden"));
+        assert!(is_refusal_message("CN clans: HTTP 401 Unauthorized"));
+        assert!(is_refusal_message(
+            "CN vortex: HTTP 403 Forbidden — <title>Access denied</title>"
+        ));
+        assert!(!is_refusal_message(
+            "CN vortex: HTTP 503 Service Unavailable"
+        ));
+        assert!(!is_refusal_message("CN vortex: HTTP 429 Too Many Requests"));
+        assert!(!is_refusal_message("CN vortex parse: expected value"));
+        assert!(!is_refusal_message(""));
+        // A nickname containing 403 must not trip the classifier.
+        assert!(!is_refusal_message("no account found for 'HTTP 403' on cn"));
+    }
+
+    /// The refusal marker is a cross-language contract: `useRosterStats.ts`
+    /// carries the same literal in `REFUSAL_MARKER`. If one side is edited
+    /// the other MUST follow, so this pins the exact text.
+    #[test]
+    fn refusal_marker_is_the_cross_language_contract() {
+        assert_eq!(REFUSAL_MARKER, "[cn-api-refused] ");
+        assert!(is_refusal_message(&format!(
+            "{REFUSAL_MARKER}CN vortex: HTTP 403 Forbidden"
+        )));
     }
 
     #[test]

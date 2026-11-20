@@ -382,16 +382,30 @@ pub(crate) async fn best_effort_get(
 
 /// Transport-only variant for endpoints whose HTTP status is BUSINESS
 /// semantics, not health: the CN vortex answers 404 for unknown accounts
-/// and clanless profiles / unknown clans, so counting statuses there
-/// would flag the host every time someone queries an absent id. Any HTTP
-/// answer counts as the host being alive; only a SEND failure (timeout,
-/// connection refused — the shapes a degraded host actually produces)
-/// records a failure.
+/// and clanless profiles / unknown clans, so counting EVERY status there
+/// would flag the host every time someone queries an absent id.
+///
+/// The carve-out is 401/403: those are not business not-founds, they are
+/// the edge refusing this client (a WAF rule / per-IP ban — issue #2016),
+/// which is exactly the outage shape the health chip must show. Counting a
+/// refusal as "alive" is what kept the title-bar fault light dark while
+/// every CN lookup 403'd. A served status still proves the host is up, so
+/// only the refusal statuses and SEND failures record a failure.
 pub(crate) fn record_transport(host: &str, result: &anyhow::Result<reqwest::Response>) {
     match result {
+        Ok(resp) if is_refusal(resp.status()) => {
+            record_failure(host, &format!("HTTP {}", resp.status()))
+        },
         Ok(_) => record_success(host),
         Err(e) => record_failure(host, &format!("request: {e}")),
     }
+}
+
+/// Whether a status means the edge refused this client outright. Distinct
+/// from 429 (a rate limit that can clear) and from 5xx (a transient
+/// upstream fault) — see [`record_transport`].
+pub(crate) fn is_refusal(status: reqwest::StatusCode) -> bool {
+    status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN
 }
 
 /// The catalogue, parsed once per call site (a few-hundred-byte file —
@@ -484,6 +498,23 @@ mod tests {
         let h = health_of(host);
         assert_eq!(h.consecutive_failures, 2);
         assert_eq!(h.last_error.as_ref().unwrap().len(), ERROR_TRUNC);
+    }
+
+    /// Issue #2016: the CN edge refusing this client (401/403) must reach
+    /// the health chip. Counting refusals as "alive" kept the fault light
+    /// dark while every CN lookup 403'd, so the carve-out that keeps
+    /// business not-founds out of the registry must not swallow them.
+    #[test]
+    fn refusals_are_classified_as_failures() {
+        use reqwest::StatusCode;
+        assert!(is_refusal(StatusCode::FORBIDDEN));
+        assert!(is_refusal(StatusCode::UNAUTHORIZED));
+        // Not refusals: a rate limit can clear, and 404/200 are business
+        // semantics on the CN endpoints.
+        assert!(!is_refusal(StatusCode::TOO_MANY_REQUESTS));
+        assert!(!is_refusal(StatusCode::NOT_FOUND));
+        assert!(!is_refusal(StatusCode::OK));
+        assert!(!is_refusal(StatusCode::SERVICE_UNAVAILABLE));
     }
 
     /// recorded_get stores the chain's wall time on success — the
