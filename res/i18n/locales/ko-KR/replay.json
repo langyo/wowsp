@@ -620,7 +620,9 @@
   "perf": {
     "timing": "프레임률",
     "draws": "드로우",
-    "gpu": "GPU"
+    "gpu": "GPU",
+    "sections": "섹션",
+    "pin": "고정(클릭 통과)"
   },
   "chatLog": "채팅 기록",
   "chat": {

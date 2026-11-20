@@ -620,7 +620,9 @@
   "perf": {
     "timing": "Fréquence d'images",
     "draws": "Appels",
-    "gpu": "GPU"
+    "gpu": "GPU",
+    "sections": "Sections",
+    "pin": "Épingler (laisser passer les clics)"
   },
   "chatLog": "Chat de bataille",
   "chat": {

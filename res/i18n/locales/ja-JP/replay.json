@@ -620,7 +620,9 @@
   "perf": {
     "timing": "フレームレート",
     "draws": "ドロー",
-    "gpu": "GPU"
+    "gpu": "GPU",
+    "sections": "セクション",
+    "pin": "固定（クリック透過）"
   },
   "chatLog": "チャット記録",
   "chat": {

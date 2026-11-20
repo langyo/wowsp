@@ -620,7 +620,9 @@
   "perf": {
     "timing": "Frame rate",
     "draws": "Draws",
-    "gpu": "GPU"
+    "gpu": "GPU",
+    "sections": "Sections",
+    "pin": "Pin (click-through)"
   },
   "chatLog": "Battle chat",
   "chat": {

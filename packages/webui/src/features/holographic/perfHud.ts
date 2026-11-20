@@ -13,22 +13,26 @@
  * no timer — the scene's own tick feeds it.
  *
  * Presentation is hikari's generic HkDebugFloat window (hikari #1288):
- * a standalone Vue app mounts the float, which teleports itself to
+ * a standalone Vue app mounts the float, which teleports itself into
  * <body>. Since hikari's headerless chrome the seat is a bare HUD
  * (`chrome: "none"`): no title bar — hovering already fades the window.
  * The whole window body is the drag handle (viewport-clamped; the dropped
  * spot persists under localStorage `hk-debug-float:holo-perf` via
- * persistKey — position only for open, see below), and the close button
- * lives in the float's hover-revealed overlay, OUTSIDE the fading card so
- * it stays legible at PERF_HUD_HOVER_OPACITY. The window keeps hikari's
- * own localized debug label as its accessible name (no title override);
- * every visible label of our own goes through the app i18n.
+ * persistKey — position only for open, see below). The window keeps
+ * hikari's own localized debug label as its accessible name (no title
+ * override); every visible label of our own goes through the app i18n.
  *
- * The card's FIRST ROW is the section switch: three equal HkButtons
- * (timing / draws / gpu) that multi-select which report lines show. The
- * buttons sit INSIDE the card — the old per-section chips were parked in
- * the float's hover overlay and are gone with the `sections` prop — and
- * their labels are translated through the app i18n (`replay.perf.*`).
+ * NO in-window close (user direction 2026-11-20): `closable: false`
+ * drops hikari's hover-revealed ×, and the HUD owns its own chrome
+ * instead. The FIRST ROW is the pin control plus the section switch: a
+ * left-aligned HkIconButton pins the window — the "frozen" click-through
+ * state (`interactive: false`) where the window stops taking pointers
+ * and dims to FROZEN_OPACITY, with only the pin itself left addressable
+ * (`data-hk-debug-float-pointer`) so it can always be released; the pin
+ * keeps its own constant PIN_OPACITY in both states. The section switch
+ * is hikari's HkPillToggleGroup (the standard grouped control — the old
+ * hand-styled per-section HkButtons are gone) and its labels are
+ * translated through the app i18n (`replay.perf.*`).
  * The card is a FIXED width (PERF_HUD_WIDTH, applied to the slot root) so
  * toggling sections can never reflow/resize the window; with every
  * section off the button row stays and the metric area keeps a reserved
@@ -38,12 +42,12 @@
  * `hk-debug-float:holo-perf`, its `hidden` field) so existing users keep
  * their thinned set. Without `sections` HkDebugFloat never writes that
  * field itself — this module reads/writes it directly, and re-merges it
- * after the float's own open/position writes (close, drag-drop) would
- * otherwise drop it from the record.
+ * after the float's own open/position writes (drag-drop — the HUD renders
+ * no close of its own) would otherwise drop it from the record.
  *
  * The numeric columns are space-padded so the text itself stays
  * column-aligned while values change (the lines keep their
- * `white-space: pre` mono form and their direct-DOM write path — see the
+ * `white-space: pre-wrap` mono form and their direct-DOM write path — see the
  * statsEls note below). The float's open state is deliberately
  * session-only: the mount binds a fresh controlled `open = true` and the
  * persisted record's open half is never honored, so the HUD can never
@@ -77,7 +81,8 @@ import {
   type CSSProperties,
   type Ref,
 } from "vue";
-import { HkButton, HkDebugFloat } from "@celestia-island/hikari";
+import { HkDebugFloat, HkIconButton, HkPillToggleGroup } from "@celestia-island/hikari";
+import { Pin, PinOff } from "@lucide/vue";
 
 import { t as i18nT } from "@/i18n";
 
@@ -91,6 +96,16 @@ const REPORT_MS = 500;
  *  (the old stats-only dim) rendered them as ghosts under the pointer. */
 export const PERF_HUD_HOVER_OPACITY = 0.4;
 
+/** Opacity of the frozen window's CONTENT (switch + stats) — the pin
+ *  keeps PIN_OPACITY: the HUD keeps measuring but stops competing
+ *  visually, and the hikari window stops taking pointers
+ *  (`interactive: false`). */
+const FROZEN_OPACITY = 0.4;
+
+/** The pin control's own constant opacity — always semi-transparent
+ *  (user direction), never a full-opacity chrome button. */
+const PIN_OPACITY = 0.6;
+
 /**
  * Fixed card width, applied to the slot root. Fixed so toggling a section
  * off can never reflow/resize the float (HkDebugFloat's `width: "auto"`
@@ -102,8 +117,9 @@ export const PERF_HUD_HOVER_OPACITY = 0.4;
  * 0.75rem mono — measured 369.5px in Consolas and 403.3px in Courier
  * New-class faces at 12px. 17rem (272px) clipped even the draws line
  * (283.7px), and the HUD's whole point is a screenshot-readable readout.
- * The GPU adapter string is unbounded and still overflows (the window
- * body scrolls); it never fit an auto width either.
+ * The GPU adapter string is unbounded: report lines WRAP
+ * (`white-space: pre-wrap` + `overflow-wrap: anywhere`) instead of
+ * clipping or scrolling — a wrapped second line beats a cut-off readout.
  */
 export const PERF_HUD_WIDTH = "26rem";
 
@@ -233,26 +249,33 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
     display: "flex",
     flexDirection: "column",
     gap: "var(--space-6)",
-    // The fixed width is authoritative: an overlong GPU adapter string
-    // scrolls inside the float body instead of widening the card.
+    // The fixed width is authoritative; overlong report lines WRAP inside
+    // it (pre-wrap) instead of widening the card or clipping.
     minWidth: 0,
   };
-  const toggleRowStyle: CSSProperties = {
+  // Row 1: the pin at the leading edge, the pill switch beside it. The
+  // pin keeps a fixed slot, so it can never overlap the switch whatever
+  // the labels measure.
+  const headStyle: CSSProperties = {
     display: "flex",
     alignItems: "center",
     gap: "var(--space-4)",
-  };
-  // flex-basis 0 + min-width 0: three EQUAL buttons whatever their labels
-  // are; the label span ellipsizes instead of widening the card.
-  const toggleButtonStyle: CSSProperties = { flex: "1 1 0", minWidth: 0 };
-  const toggleLabelStyle: CSSProperties = {
-    display: "block",
     minWidth: 0,
-    maxWidth: "100%",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-    whiteSpace: "nowrap",
   };
+  // Always semi-transparent (user direction) and never stretched into the
+  // section buttons' space.
+  const pinStyle: CSSProperties = {
+    flex: "0 0 auto",
+    opacity: String(PIN_OPACITY),
+  };
+  /** The dimmed half of the window: while frozen the switch and the stats
+   *  fade to FROZEN_OPACITY; the pin stays at PIN_OPACITY above them so it
+   *  can always be found and pressed to release the lock. */
+  const dimStyle = (frozen: boolean): CSSProperties => ({
+    minWidth: 0,
+    opacity: frozen ? FROZEN_OPACITY : 1,
+    transition: "opacity var(--duration-short) ease",
+  });
   const statsStyle: CSSProperties = {
     display: "flex",
     flexDirection: "column",
@@ -262,13 +285,18 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
     // never collapses to the button row alone.
     minHeight: STATS_MIN_HEIGHT,
   };
-  const metricStyle: CSSProperties = { whiteSpace: "pre" };
+  // Wrapping report lines: a long GPU adapter string or a wide timing
+  // line breaks onto the next line instead of clipping at the card edge.
+  const metricStyle: CSSProperties = {
+    whiteSpace: "pre-wrap",
+    overflowWrap: "anywhere",
+  };
 
   const PerfHudFloat = defineComponent({
     name: "PerfHudFloat",
     setup() {
       // Session-only open state, bound CONTROLLED: the persisted record
-      // (written by the float on close/drag-drop for the dragged
+      // (written by the float on drag-drop for the dragged
       // position) is never honored for open — a fresh mount always
       // opens, so the HUD can never return stuck-hidden (the v0.6.9
       // `wowsp.perf` lesson above).
@@ -278,6 +306,9 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
       // its overlay chips), so its persistence does not know about
       // `hidden` — this module owns that half of the record.
       const hidden = ref<PerfHudSectionKey[]>(readHiddenSections());
+      // The pin's click-through state, session-only like open: a frozen
+      // window stops taking pointers and dims; only the pin stays live.
+      const frozen = ref(false);
       const isVisible = (key: PerfHudSectionKey): boolean =>
         !hidden.value.includes(key);
       const toggleSection = (key: PerfHudSectionKey): void => {
@@ -302,8 +333,8 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
       });
 
       // HkDebugFloat still owns open/position and rewrites the record on
-      // close and drag-drop; without `sections` those writes omit our
-      // `hidden` field. Re-merge it right after such a write — these
+      // drag-drop; without `sections` those writes omit our `hidden`
+      // field. Re-merge it right after such a write — these
       // document listeners run after the float's own bubble-phase
       // handlers, and only engage for events aimed inside the window.
       const realignPersistedHidden = (event: Event): void => {
@@ -349,11 +380,17 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
             // controlled open binding above).
             offset: 48,
             hoverOpacity: PERF_HUD_HOVER_OPACITY,
-            // A bare HUD: no title bar (hover already fades the
-            // window), the body itself is the drag handle, and the
-            // close × reveals on hover. No title prop: the window keeps
-            // hikari's own localized debug label as its accessible name.
+            // A bare HUD: no title bar (hover already fades the window)
+            // and the body itself is the drag handle. No title prop: the
+            // window keeps hikari's own localized debug label as its
+            // accessible name.
             chrome: "none",
+            // The HUD owns its chrome: hikari's hover-revealed close is
+            // dropped (the pin below replaces it), and a frozen window
+            // leaves the pointer layer — only the data-hk-debug-float-
+            // pointer pin keeps receiving events, to release the lock.
+            closable: false,
+            interactive: !frozen.value,
             // Fit the seat: the slot root pins PERF_HUD_WIDTH, so the
             // window follows that fixed width instead of its content.
             width: "auto",
@@ -365,51 +402,71 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
               {
                 class: "holo-perf-hud-root",
                 "data-holo-perf-root": "",
+                "data-holo-perf-frozen": frozen.value ? "" : undefined,
                 style: cardStyle,
               },
               [
-                // Row 1 — the multi-select section switch, inside the
-                // card. HkButton is the house control; the pressed state
-                // is hikari's primary variant vs ghost (plus
-                // aria-pressed for assistive tech and diagnostics).
+                // Row 1 — the pin and the grouped section switch. The pin
+                // is the ONLY control that stays addressable while the
+                // window is frozen (the user's release affordance) and
+                // always sits at PIN_OPACITY; the switch is hikari's
+                // standard HkPillToggleGroup.
                 h(
                   "div",
                   {
-                    class: "holo-perf-hud-toggles",
+                    class: "holo-perf-hud-head",
+                    // Diagnostics hook for the row (scripts, screenshots,
+                    // tests); the pin's data-holo-perf-pin and the card's
+                    // data-holo-perf-frozen are the same kind of hook.
                     "data-holo-perf-toggles": "",
-                    role: "group",
-                    style: toggleRowStyle,
+                    style: headStyle,
                   },
-                  PERF_HUD_SECTIONS.map(({ key }) => {
-                    const on = isVisible(key);
-                    const label = i18nT(`replay.perf.${key}`);
-                    return h(
-                      HkButton,
+                  [
+                    h(
+                      HkIconButton,
                       {
-                        key,
-                        size: "sm",
-                        variant: on ? "primary" : "ghost",
-                        "aria-pressed": on,
-                        "data-holo-perf-toggle": key,
-                        "data-on": on ? "" : undefined,
-                        class: "holo-perf-hud-toggle",
-                        style: toggleButtonStyle,
-                        // Full label when a locale's string ellipsizes in
-                        // the equal-width button.
-                        title: label,
-                        onClick: () => toggleSection(key),
+                        class: "holo-perf-hud-pin",
+                        "data-holo-perf-pin": "",
+                        "data-hk-debug-float-pointer": "",
+                        size: 24,
+                        variant: "ghost",
+                        "aria-label": i18nT("replay.perf.pin"),
+                        "aria-pressed": frozen.value ? "true" : "false",
+                        title: i18nT("replay.perf.pin"),
+                        style: pinStyle,
+                        onClick: () => {
+                          frozen.value = !frozen.value;
+                        },
                       },
                       () =>
-                        h(
-                          "span",
-                          {
-                            class: "holo-perf-hud-toggle-label",
-                            style: toggleLabelStyle,
-                          },
-                          label,
+                        h(frozen.value ? PinOff : Pin, {
+                          size: 14,
+                          "aria-hidden": "true",
+                        }),
+                    ),
+                    h(
+                      "div",
+                      {
+                        class: "holo-perf-hud-toggles",
+                        style: dimStyle(frozen.value),
+                      },
+                      h(HkPillToggleGroup, {
+                        label: i18nT("replay.perf.sections"),
+                        options: PERF_HUD_SECTIONS.map(({ key }) => ({
+                          value: key,
+                          label: i18nT(`replay.perf.${key}`),
+                        })),
+                        selected: new Set(
+                          PERF_HUD_SECTIONS.filter(({ key }) =>
+                            isVisible(key),
+                          ).map(({ key }) => key),
                         ),
-                    );
-                  }),
+                        onToggle: (value: string) => {
+                          toggleSection(value as PerfHudSectionKey);
+                        },
+                      }),
+                    ),
+                  ],
                 ),
                 // The visible report lines. Stable per-section hooks for
                 // diagnostics scripts, screenshots and tests; the text
@@ -419,7 +476,7 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
                   {
                     class: "holo-perf-hud-stats",
                     "data-holo-perf-stats": "",
-                    style: statsStyle,
+                    style: { ...statsStyle, ...dimStyle(frozen.value) },
                   },
                   PERF_HUD_SECTIONS.filter(({ key }) => isVisible(key)).map(
                     ({ key }) =>
@@ -496,8 +553,9 @@ export function createPerfHud(enabled: boolean): PerfHud | null {
     const buf =
       r != null ? r.domElement.width + "x" + r.domElement.height : "?";
     const ratio = r != null ? r.getPixelRatio().toFixed(2) : "?";
-    // Space-padded numeric columns: with white-space: pre the pads keep
-    // the columns steady while digit counts change.
+    // Space-padded numeric columns: under white-space: pre-wrap the pads
+    // still keep the columns steady while digit counts change (a wrapped
+    // long GPU string is the only line that leaves the grid).
     statsText.timing.value =
       "render " +
       String(fps).padStart(3) +

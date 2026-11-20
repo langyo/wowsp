@@ -4,14 +4,17 @@
  * hooks (.holo-perf-hud + data-holo-perf per section) and the report
  * text that scripts and screenshots rely on. The presentation is
  * hikari's HkDebugFloat window (teleported to <body>) in its headerless
- * chrome: no title bar, the body drags, and the close button stays in the
- * hover-revealed overlay. The section switch is the card's first row —
- * three equal HkButtons (timing / draws / gpu), translated through the app
- * i18n, pressed state via aria-pressed + hikari's primary variant — and
- * the card keeps a fixed width whatever is toggled off. Visibility
- * persists in the float's own record (hk-debug-float:holo-perf, its
- * `hidden` field). (Activation moved to stores/perfHud — the session-only
- * toggle; the URL parameters and the stored flag are gone.)
+ * chrome: no title bar, the body drags, and NO in-window close — the HUD
+ * owns its chrome (`closable: false`). The card's first row leads with the
+ * pin: it freezes the window into a dimmed click-through state
+ * (`interactive: false`, only the pin left addressable) and releases it
+ * again. The section switch beside it is hikari's standard
+ * HkPillToggleGroup (timing / draws / gpu), translated through the app
+ * i18n, and the card keeps a fixed width whatever is toggled off — report
+ * lines WRAP instead of clipping. Visibility persists in the float's own
+ * record (hk-debug-float:holo-perf, its `hidden` field). (Activation moved
+ * to stores/perfHud — the session-only toggle; the URL parameters and the
+ * stored flag are gone.)
  */
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import * as THREE from "three";
@@ -53,14 +56,30 @@ function floatRoot(): HTMLElement {
   return document.querySelector<HTMLElement>(".hk-debug-float")!;
 }
 
-function toggleButton(key: string): HTMLButtonElement {
-  return document.querySelector<HTMLButtonElement>(
-    `[data-holo-perf-toggle='${key}']`,
-  )!;
+/** The standard pill switch's buttons, in PERF_HUD_SECTIONS order. */
+function pills(): HTMLButtonElement[] {
+  return [
+    ...document.querySelectorAll<HTMLButtonElement>(
+      ".holo-perf-hud-toggles .hk-pill-group-pill",
+    ),
+  ];
+}
+
+/** The pill for one section, located by its translated label (the pill
+ *  group does not let the host stamp per-option data hooks). */
+function pill(key: string): HTMLButtonElement {
+  const label = i18nT(`replay.perf.${key}`);
+  const found = pills().find((candidate) => candidate.textContent!.trim() === label);
+  expect(found).toBeTruthy();
+  return found!;
+}
+
+function isActive(key: string): boolean {
+  return pill(key).hasAttribute("data-active");
 }
 
 async function clickToggle(key: string): Promise<void> {
-  toggleButton(key).click();
+  pill(key).click();
   await nextTick();
 }
 
@@ -164,11 +183,14 @@ describe("createPerfHud", () => {
       (el) => (el as HTMLElement).dataset.holoPerf,
     );
     expect(keys).toEqual(["timing", "draws", "gpu"]);
-    // Each line is its own pre-formatted node — no fused 3-line blob.
+    // Each line is its own pre-formatted node — no fused 3-line blob —
+    // and it WRAPS instead of clipping: the pads keep the columns steady,
+    // while an overlong GPU adapter string breaks onto the next line.
     const timing = metric("timing")!;
     expect(timing.textContent).toContain("idle-ticks");
     expect(timing.textContent).not.toContain("draws");
-    expect(timing.style.whiteSpace).toBe("pre");
+    expect(timing.style.whiteSpace).toBe("pre-wrap");
+    expect(timing.style.overflowWrap).toBe("anywhere");
     hud.dispose();
   });
 
@@ -203,7 +225,7 @@ describe("createPerfHud", () => {
 });
 
 describe("the in-card section switch", () => {
-  it("mounts three equal toggle buttons as the card's first row", () => {
+  it("mounts the pin and the standard pill switch as the card's first row", () => {
     mountHud();
     const win = floatRoot();
     const body = win.querySelector("[data-el='body']")!;
@@ -212,34 +234,84 @@ describe("the in-card section switch", () => {
     // Row 1 of the card, inside the body — not the hover overlay chips.
     const row = root.firstElementChild as HTMLElement;
     expect(row.getAttribute("data-holo-perf-toggles")).toBe("");
-    expect(row.getAttribute("role")).toBe("group");
-    const buttons = [...row.querySelectorAll<HTMLButtonElement>("[data-holo-perf-toggle]")];
-    expect(buttons.map((btn) => btn.dataset.holoPerfToggle)).toEqual([
-      "timing",
-      "draws",
-      "gpu",
-    ]);
-    // The overlay keeps only the close affordance; the old section chips
-    // are gone (the in-card row replaced them).
+    // The pin leads (left-aligned, its own fixed slot) and carries the
+    // hikari pointer marker; the pill group follows it.
+    const pin = row.querySelector<HTMLElement>(".holo-perf-hud-pin")!;
+    expect(row.firstElementChild).toBe(pin);
+    expect(pin.getAttribute("data-hk-debug-float-pointer")).toBe("");
+    expect(pills().map((button) => button.textContent!.trim())).toEqual(
+      PERF_HUD_SECTIONS.map(({ key }) => i18nT(`replay.perf.${key}`)),
+    );
+    // The old section chips are gone AND the in-window close is gone:
+    // the HUD owns its chrome (`closable: false`).
     expect(win.querySelectorAll(".hk-debug-float-section").length).toBe(0);
-    expect(win.querySelector("[data-el='overlay'] .hk-debug-float-close")).toBeTruthy();
+    expect(win.querySelector(".hk-debug-float-close")).toBeNull();
   });
 
-  it("labels every button through the app i18n and shows the pressed state", () => {
+  it("keeps the pin always semi-transparent, outside the dimmed switch", () => {
     mountHud();
-    const buttons = [...document.querySelectorAll<HTMLButtonElement>("[data-holo-perf-toggle]")];
+    const pin = document.querySelector<HTMLButtonElement>(".holo-perf-hud-pin")!;
+    expect(pin.style.opacity).toBe("0.6");
+    const dimmed = document.querySelector<HTMLElement>(".holo-perf-hud-toggles")!;
+    expect(dimmed.style.opacity).toBe("1");
+  });
+
+  it("freezes into a dimmed click-through lock from the pin, and releases", async () => {
+    mountHud();
+    const win = floatRoot();
+    const pin = document.querySelector<HTMLButtonElement>(".holo-perf-hud-pin")!;
+    const dimmed = document.querySelector<HTMLElement>(".holo-perf-hud-toggles")!;
+    const stats = document.querySelector<HTMLElement>("[data-holo-perf-stats]")!;
+    const root = document.querySelector<HTMLElement>("[data-holo-perf-root]")!;
+    // Unlocked: the window takes pointers, the pin is unpressed.
+    expect(win.hasAttribute("data-interactive")).toBe(false);
+    expect(pin.getAttribute("aria-pressed")).toBe("false");
+    expect(dimmed.style.opacity).toBe("1");
+    pin.click();
+    await nextTick();
+    // Frozen: hikari's window leaves the pointer layer (data-interactive
+    // marks it) and everything but the pin dims.
+    expect(win.getAttribute("data-interactive")).toBe("");
+    expect(pin.getAttribute("aria-pressed")).toBe("true");
+    expect(root.hasAttribute("data-holo-perf-frozen")).toBe(true);
+    expect(dimmed.style.opacity).toBe("0.4");
+    expect(stats.style.opacity).toBe("0.4");
+    // The pin still lives inside the locked window — it is the release.
+    expect(pin.closest("[data-interactive]")).toBe(win);
+    pin.click();
+    await nextTick();
+    expect(win.hasAttribute("data-interactive")).toBe(false);
+    expect(dimmed.style.opacity).toBe("1");
+    expect(root.hasAttribute("data-holo-perf-frozen")).toBe(false);
+  });
+
+  it("never renders a close affordance (the host owns the chrome)", () => {
+    mountHud();
+    expect(document.querySelector(".hk-debug-float-close")).toBeNull();
+    // Hovering must not conjure one either: the headerless overlay is
+    // omitted when it holds neither a close nor section chips.
+    floatRoot().dispatchEvent(new PointerEvent("pointerenter"));
+    expect(document.querySelector(".hk-debug-float-close")).toBeNull();
+  });
+
+  it("labels every pill through the app i18n and shows the active state", () => {
+    mountHud();
+    const buttons = pills();
     expect(buttons.length).toBe(3);
-    for (const button of buttons) {
-      const key = button.dataset.holoPerfToggle!;
+    PERF_HUD_SECTIONS.forEach(({ key }, index) => {
       const label = i18nT(`replay.perf.${key}`);
-      // HkButton at small size, translated text in the slot.
-      expect(button.classList.contains("hk-btn-sm")).toBe(true);
-      expect(button.querySelector(".holo-perf-hud-toggle-label")!.textContent).toBe(label);
-      expect(button.getAttribute("title")).toBe(label);
-      // Every section starts visible → pressed (aria + primary variant).
+      const button = buttons[index]!;
+      expect(button.textContent!.trim()).toBe(label);
+      // Every section starts visible → the pill is active (aria + data).
       expect(button.getAttribute("aria-pressed")).toBe("true");
-      expect(button.classList.contains("hk-btn-primary")).toBe(true);
-    }
+      expect(button.hasAttribute("data-active")).toBe(true);
+      expect(isActive(key)).toBe(true);
+    });
+    // The group itself carries an accessible name from the app i18n.
+    const group = document.querySelector<HTMLElement>(
+      ".holo-perf-hud-toggles [role='group']",
+    )!;
+    expect(group.getAttribute("aria-label")).toBe(i18nT("replay.perf.sections"));
   });
 
   it("keeps a fixed card width and never collapses with every section off", async () => {
@@ -256,9 +328,9 @@ describe("the in-card section switch", () => {
     expect(document.querySelector("[data-holo-perf-toggles]")).not.toBeNull();
     expect(document.querySelector("[data-holo-perf-stats]")).not.toBeNull();
     expect(root.style.width).toBe(PERF_HUD_WIDTH);
-    for (const button of document.querySelectorAll("[data-holo-perf-toggle]")) {
+    for (const button of document.querySelectorAll(".hk-pill-group-pill")) {
       expect(button.getAttribute("aria-pressed")).toBe("false");
-      expect(button.classList.contains("hk-btn-ghost")).toBe(true);
+      expect(button.hasAttribute("data-active")).toBe(false);
     }
   });
 
@@ -267,7 +339,7 @@ describe("the in-card section switch", () => {
     await clickToggle("gpu");
     expect(metric("gpu")).toBeNull();
     expect(metric("timing")).not.toBeNull();
-    expect(toggleButton("gpu").getAttribute("aria-pressed")).toBe("false");
+    expect(isActive("gpu")).toBe(false);
     // The float's own record, its `hidden` field (open preserved by us).
     expect(persistedRecord()).toMatchObject({ open: true, hidden: ["gpu"] });
   });
@@ -282,7 +354,7 @@ describe("the in-card section switch", () => {
     expect(document.querySelector(".hk-debug-float")).not.toBeNull();
     expect(metric("gpu")).toBeNull();
     expect(metric("draws")).not.toBeNull();
-    expect(toggleButton("gpu").getAttribute("aria-pressed")).toBe("false");
+    expect(isActive("gpu")).toBe(false);
   });
 
   it("toggling back re-shows the line with its current text", async () => {
@@ -324,15 +396,15 @@ describe("the in-card section switch", () => {
     });
   });
 
-  it("keeps the hidden set when the float is closed (its close write)", async () => {
+  it("keeps the hidden set when the float rewrites its record (drag-drop)", async () => {
     mountHud();
     await clickToggle("gpu");
-    document.querySelector<HTMLElement>(".hk-debug-float .hk-debug-float-close")!.click();
-    await nextTick();
-    expect(document.querySelector(".hk-debug-float")).toBeNull();
-    const record = persistedRecord();
-    expect(record.open).toBe(false);
-    expect(record.hidden).toEqual(["gpu"]);
+    // A position write from the float carries no hidden field; our
+    // document listener re-merges it right after (same path the drag-drop
+    // write takes now that the HUD has no close of its own).
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ open: true, x: 7, y: 8 }));
+    floatRoot().dispatchEvent(new Event("pointerup", { bubbles: true }));
+    expect(persistedRecord()).toMatchObject({ x: 7, y: 8, hidden: ["gpu"] });
   });
 });
 
@@ -401,19 +473,16 @@ describe("hover yield (HkDebugFloat)", () => {
 });
 
 describe("session lifecycle (HkDebugFloat)", () => {
-  it("a closed float stays hidden for the session but a fresh mount always reopens", async () => {
-    mountHud();
-    const close = document.querySelector<HTMLElement>(
-      ".hk-debug-float .hk-debug-float-close",
-    )!;
-    close.click();
+  it("ignores a persisted close record and always reopens on mount", async () => {
+    // The HUD has no close control of its own (`closable: false`), but the
+    // float's record still carries an `open` half another writer could
+    // flip. The controlled open binding must keep a fresh mount visible
+    // regardless (the v0.6.9 wowsp.perf stuck-flag lesson).
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ open: false }));
+    const hud = mountHud();
     await nextTick();
-    expect(document.querySelector(".hk-debug-float")).toBeNull();
-    // The persisted record must never pin the HUD shut: open state is
-    // session-only (controlled open binding), so the next mount opens
-    // even though the close wrote { open: false } under the persistKey
-    // (the v0.6.9 wowsp.perf stuck-flag lesson).
-    mountHud();
     expect(document.querySelector(".hk-debug-float")).not.toBeNull();
+    hud.dispose();
+    expect(document.querySelector(".hk-debug-float")).toBeNull();
   });
 });
