@@ -1,8 +1,10 @@
 /** Pure-logic tests for the replay-playback export: layout math, the GIF
- *  delay grid, settings clamping, the settings-driven estimate inputs and
- *  the team-column layout rules (fixed name size, header/entry metrics,
- *  first-two stats). The team-column painter is driven with a recording
- *  2D context — no real canvas, no encoders. */
+ *  delay grid, settings clamping, the settings-driven estimate inputs, the
+ *  team-column layout rules (fixed name size, left-aligned identity, the
+ *  centered header labels over right-aligned value tracks, the stats
+ *  toggle's full-width fallback) and the header's corner blocks. The
+ *  painters are driven with a recording 2D context — no real canvas, no
+ *  encoders. */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -26,6 +28,13 @@ import {
   EXPORT_TEAM_SHIP_SIZE,
   EXPORT_TEAM_STAT_COLS,
   EXPORT_TEAM_STAT_TEXT_SIZE,
+  EXPORT_TEAM_STAT_TRACK_W,
+  EXPORT_TEAM_INSET_X,
+  EXPORT_TEAM_ID_CELL_W,
+  EXPORT_HEADER_CORNER_CY,
+  drawPlaybackHeader,
+  teamIdentityCell,
+  teamStatBandWidth,
   PLAYBACK_CODEC_LADDER,
   EXPORT_LOGICAL,
   EXPORT_SIDE_W,
@@ -121,17 +130,19 @@ describe("frameTimesAtSpeed", () => {
 
 describe("clampExportSettings", () => {
   it("keeps on-ladder values untouched", () => {
-    const s = clampExportSettings({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false });
-    expect(s).toEqual({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false });
+    const s = clampExportSettings({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true });
+    expect(s).toEqual({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true });
   });
 
   it("re-bases fps, speed and size when the format flips", () => {
-    const s = clampExportSettings({ format: "gif", from: 0, to: 60, fps: 60, speed: 3, size: 1080, footer: true });
+    const s = clampExportSettings({ format: "gif", from: 0, to: 60, fps: 60, speed: 3, size: 1080, footer: true, stats: false });
     // (1080 is off the GIF width ladder → falls to the ladder's smallest.)
     expect(s.format).toBe("gif");
     expect(PLAYBACK_EXPORT_FPS.gif).toContain(s.fps);
     expect(PLAYBACK_EXPORT_SIZES.gif).toContain(s.size);
     expect([1, 2, 5, 10, 20]).toContain(s.speed);
+    // The stats toggle is not a ladder value - it survives the flip.
+    expect(s.stats).toBe(false);
   });
 });
 
@@ -165,6 +176,15 @@ describe("team column budget", () => {
     expect(
       EXPORT_TEAM_INSET + EXPORT_TEAM_HEADER_H + 13 * EXPORT_TEAM_ENTRY_H,
     ).toBeGreaterThan(EXPORT_TEAM_H);
+    // Two fixed 40px stat tracks leave the identity band 88px (190 - 2x8
+    // inset - 2x40 - the 6px guard), and the identity cell + ship name fit
+    // inside that band with room for a name.
+    expect(EXPORT_TEAM_STAT_TRACK_W).toBe(40);
+    const identityBand =
+      EXPORT_SIDE_W - 2 * EXPORT_TEAM_INSET_X - 2 * EXPORT_TEAM_STAT_TRACK_W - 6;
+    expect(identityBand).toBe(88);
+    expect(EXPORT_TEAM_ID_CELL_W).toBeLessThan(identityBand);
+    expect(identityBand - EXPORT_TEAM_ID_CELL_W - 4).toBeGreaterThanOrEqual(40);
   });
 
   it("keeps the header around 22-26px and every text band inside its slot", () => {
@@ -380,8 +400,11 @@ function recordingContext() {
     fill() {},
     translate() {},
     rotate() {},
+    scale() {},
     roundRect() {},
     stroke() {},
+    strokeRect() {},
+    setLineDash() {},
     drawImage() {},
   };
   return {
@@ -454,7 +477,7 @@ describe("drawPlaybackTeamColumn", () => {
     expect(nickTexts[0].text.endsWith("\u2026")).toBe(true);
   });
 
-  it("centers the identity lines and keeps the HP bar full width", () => {
+  it("left-aligns the nick at the column inset and keeps the HP bar full width", () => {
     const { ctx, texts, rects } = recordingContext();
     drawPlaybackTeamColumn(
       ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(1)]), "ally",
@@ -463,16 +486,34 @@ describe("drawPlaybackTeamColumn", () => {
     );
     const nick = texts.find((t) => t.text === "p01");
     expect(nick).toBeDefined();
-    // 190px column: a ~18px nick sits on the column center, not left.
-    expect(nick!.x).toBeGreaterThan(EXPORT_SIDE_W / 2 - 30);
-    expect(nick!.x).toBeLessThan(EXPORT_SIDE_W / 2);
-    // Ship line: the roman tier and the ship name ride the same line.
+    // The 2026-11-21 「全体左对齐」 report: the nick starts at the LEFT
+    // inset, never on the column centre.
+    expect(nick!.x).toBe(EXPORT_TEAM_INSET_X);
+    expect(nick!.align).toBe("left");
+    // Every row's nick shares that exact left edge.
+    const ctx2 = recordingContext();
+    drawPlaybackTeamColumn(
+      ctx2.ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(1), teamRow(2), teamRow(3)]), "ally",
+      "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+    );
+    const nicks = ctx2.texts.filter((t) => /^p0\d$/.test(t.text));
+    expect(nicks.length).toBe(3);
+    for (const n of nicks) expect(n.x).toBe(EXPORT_TEAM_INSET_X);
+    // Ship line: the roman tier and the ship name ride the same line, the
+    // ship starting right after the FIXED identity cell.
     const tier = texts.find((t) => t.text === "VIII");
     const ship = texts.find((t) => t.text === "Ship1");
     expect(tier).toBeDefined();
     expect(ship).toBeDefined();
     expect(ship!.y).toBe(tier!.y);
     expect(ship!.y).toBeGreaterThan(nick!.y);
+    expect(ship!.x).toBe(EXPORT_TEAM_INSET_X + EXPORT_TEAM_ID_CELL_W + 4);
+    expect(ship!.align).toBe("left");
+    // Tier content centres inside its fixed cell: it starts after the cell
+    // edge's left inset and ends before the cell's right edge.
+    expect(tier!.x).toBeGreaterThan(EXPORT_TEAM_INSET_X);
+    expect(tier!.x).toBeLessThan(EXPORT_TEAM_INSET_X + EXPORT_TEAM_ID_CELL_W);
     // The two stats hug the RIGHT edge on the ship line, in column order
     // (the header paints the same average text earlier - take the LAST).
     const percents = texts.filter((t) => t.text === "52.3%");
@@ -480,6 +521,9 @@ describe("drawPlaybackTeamColumn", () => {
     expect(stat.align).toBe("right");
     expect(stat.y).toBe(ship!.y);
     expect(stat.x).toBeGreaterThan(EXPORT_SIDE_W - 60);
+    // ...and they end exactly on their own track's right edge (the first
+    // track ends 40px before the column's right inset).
+    expect(stat.x).toBe(EXPORT_SIDE_W - EXPORT_TEAM_INSET_X - EXPORT_TEAM_STAT_TRACK_W);
     // The HP bar spans the column's inner width at 5px tall.
     const bar = rects.find(
       (r) =>
@@ -488,7 +532,7 @@ describe("drawPlaybackTeamColumn", () => {
     expect(bar).toBeDefined();
   });
 
-  it("renders the header as labels over the team averages", () => {
+  it("centres the header labels over their tracks, averages right in them", () => {
     const { ctx, texts } = recordingContext();
     drawPlaybackTeamColumn(
       ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(0)]), "ally",
@@ -502,8 +546,141 @@ describe("drawPlaybackTeamColumn", () => {
     expect(avg).toBeDefined();
     expect(label!.y).toBeLessThan(avg!.y);
     expect(avg!.y).toBeLessThan(EXPORT_TEAM_HEADER_H);
+    // The label is CENTERED over its own 40px track (the last two tracks
+    // of the column: 190 - 8 inset - 2 x 40).
+    const statsLeft = EXPORT_SIDE_W - EXPORT_TEAM_INSET_X - 2 * EXPORT_TEAM_STAT_TRACK_W;
+    expect(label!.align).toBe("center");
+    expect(label!.x).toBe(statsLeft + EXPORT_TEAM_STAT_TRACK_W / 2);
+    // The PR label is the second track's centre.
+    const prLabel = texts.find((t) => t.text === "PR");
+    expect(prLabel).toBeDefined();
+    expect(prLabel!.x).toBe(statsLeft + 1.5 * EXPORT_TEAM_STAT_TRACK_W);
     // The averages row carries its caption (so the numbers read as team
-    // means, not one player\u2019s).
+    // means, not one player\u2019s)...
     expect(texts.some((t) => t.text === "Avg")).toBe(true);
+    // ...and the averages themselves plus the row cells stay RIGHT-aligned
+    // inside their own tracks (the first 52.3% is the average, the second
+    // the row's cell - both end on the track's right edge).
+    const values = texts.filter((t) => t.text === "52.3%");
+    expect(values.length).toBe(2);
+    for (const v of values) {
+      expect(v.align).toBe("right");
+      expect(v.x).toBe(statsLeft + EXPORT_TEAM_STAT_TRACK_W);
+    }
+  });
+
+  it("drops the whole stat band when the toggle is off (full-width identity)", () => {
+    const withStats = recordingContext();
+    drawPlaybackTeamColumn(
+      withStats.ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(1, { shipName: "LongShipNameTwelve" })]), "ally",
+      "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+      true,
+    );
+    const without = recordingContext();
+    drawPlaybackTeamColumn(
+      without.ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(1, { shipName: "LongShipNameTwelve" })]), "ally",
+      "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+      false,
+    );
+    // No stat labels, no averages caption, no values - anywhere.
+    expect(without.texts.some((t) => t.text === "52.3%")).toBe(false);
+    expect(without.texts.some((t) => t.text === "1450")).toBe(false);
+    expect(without.texts.some((t) => t.text === "PR")).toBe(false);
+    expect(without.texts.some((t) => t.text === "Avg")).toBe(false);
+    // The identity still paints: nick at the inset, ship in its cell.
+    expect(without.texts.find((t) => t.text === "p01")).toBeDefined();
+    // The identity band now owns the column: the 17-char ship name that
+    // ellipsized beside the stat tracks fits whole in the full-width band.
+    const shipOff = without.texts.find((t) => t.text.startsWith("LongShip"));
+    expect(shipOff).toBeDefined();
+    expect(shipOff!.text).toBe("LongShipNameTwelve");
+    const shipOn = withStats.texts.find((t) => t.text.startsWith("LongShip"));
+    expect(shipOn!.text.endsWith("\u2026")).toBe(true);
+    // The HP bar is unchanged (full inner width), and the vertical budget
+    // still holds with a ZERO-width stat band: 6 + 26 + 12 x 34 <= 452.
+    expect(teamStatBandWidth([])).toBe(0);
+    expect(
+      EXPORT_TEAM_INSET + EXPORT_TEAM_HEADER_H + EXPORT_TEAM_MAX_ROWS * EXPORT_TEAM_ENTRY_H,
+    ).toBeLessThanOrEqual(EXPORT_TEAM_H);
+    expect(teamEntryCapacity()).toBeGreaterThanOrEqual(EXPORT_TEAM_MAX_ROWS);
+  });
+});
+
+describe("teamIdentityCell", () => {
+  it("centres the glyph + tier group inside the fixed cell", () => {
+    const cellX = 8;
+    const cell = teamIdentityCell(cellX, EXPORT_TEAM_ID_CELL_W, 12, 4, 10, true);
+    expect(cell.contentW).toBe(12 + 4 + 10);
+    // A 26-wide content group inside the 36px cell starts 5px in...
+    expect(cell.iconX - cellX).toBeCloseTo((EXPORT_TEAM_ID_CELL_W - 26) / 2, 6);
+    // ...and the tier follows the glyph by the cell's inner gap.
+    expect(cell.tierX).toBeCloseTo(cell.iconX + 16, 6);
+    // Tier text ending flush with the content group always stays inside
+    // the cell.
+    expect(cell.tierX + 10).toBeLessThanOrEqual(cellX + EXPORT_TEAM_ID_CELL_W);
+  });
+
+  it("keeps a tier-only cell centred and never goes negative", () => {
+    const cell = teamIdentityCell(8, EXPORT_TEAM_ID_CELL_W, 12, 4, 0, false);
+    expect(cell.iconX).toBe(8 + (EXPORT_TEAM_ID_CELL_W - 0) / 2);
+    // A content group WIDER than the cell starts flush left, never left of
+    // the cell (the caller pre-fits the tier; this is the guard).
+    const wide = teamIdentityCell(8, EXPORT_TEAM_ID_CELL_W, 12, 4, 40, true);
+    expect(wide.iconX).toBe(8);
+  });
+});
+
+describe("drawPlaybackHeader corners", () => {
+  const header = (over: Partial<Parameters<typeof drawPlaybackHeader>[1]>) => ({
+    clock: "03:12",
+    scoreAlly: null,
+    scoreEnemy: null,
+    caps: [],
+    ships: [],
+    ...over,
+  });
+
+  it("paints the map/mode/start block LEFT and the duration/winner RIGHT", () => {
+    const { ctx, texts } = recordingContext();
+    const info = ["58 Ridge · Random battle", "2026-11-08 22:43"];
+    const outcome = ["Duration 20:34", "Our team won"];
+    drawPlaybackHeader(
+      ctx,
+      header({ infoLines: info, outcomeLines: outcome }),
+      darkPalette(),
+      () => null,
+    );
+    const left = texts.filter((t) => t.text === info[0] || t.text === info[1]);
+    expect(left.length).toBe(2);
+    for (const t of left) {
+      expect(t.align).toBe("left");
+      expect(t.x).toBe(10);
+    }
+    // Two stacked small lines at the corner's own baselines.
+    expect(left[0].y).toBe(EXPORT_HEADER_CORNER_CY[0]);
+    expect(left[1].y).toBe(EXPORT_HEADER_CORNER_CY[1]);
+    const right = texts.filter((t) => t.text === outcome[0] || t.text === outcome[1]);
+    expect(right.length).toBe(2);
+    for (const t of right) {
+      expect(t.align).toBe("right");
+      expect(t.x).toBe(EXPORT_TOTAL_LOGICAL - 10);
+    }
+    // The centre still carries the clock (the pill's own row).
+    expect(texts.some((t) => t.text === "03:12" && t.align === "center")).toBe(true);
+  });
+
+  it("omits a corner block gracefully when its data is missing", () => {
+    const { ctx, texts } = recordingContext();
+    drawPlaybackHeader(
+      ctx,
+      header({ infoLines: ["58 Ridge · Random battle"], outcomeLines: [] }),
+      darkPalette(),
+      () => null,
+    );
+    expect(texts.some((t) => t.text === "58 Ridge · Random battle")).toBe(true);
+    // Nothing was invented for the missing outcome block.
+    expect(texts.filter((t) => t.align === "right")).toHaveLength(0);
   });
 });
