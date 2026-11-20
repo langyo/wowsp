@@ -606,6 +606,8 @@
     "savedCopied": "Enregistré dans {path} — fichier copié dans le presse-papiers, prêt à coller",
     "teamAlly": "Alliés",
     "teamEnemy": "Ennemis",
+    "teamAvg": "Moy.",
+    "noStats": "Aucune colonne de stats",
     "damageTitle": "Dégâts infligés",
     "dmgFrags": "Fragments",
     "dmgTaken": "Subis",

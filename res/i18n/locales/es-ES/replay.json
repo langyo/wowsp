@@ -606,6 +606,8 @@
     "savedCopied": "Guardado en {path} — archivo copiado al portapapeles, listo para pegar",
     "teamAlly": "Aliados",
     "teamEnemy": "Enemigos",
+    "teamAvg": "Med.",
+    "noStats": "Sin columnas de estadísticas",
     "damageTitle": "Daño infligido",
     "dmgFrags": "Hundimientos",
     "dmgTaken": "Recibido",

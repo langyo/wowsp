@@ -190,6 +190,30 @@ const SCOPE_FULL_KEY: Record<OverlayColumnScope, string> = {
  *  (the live panel's enemy side no longer mirrors; the in-game Tab
  *  overlay's enemy chips keep their own game-true reversed layout in the
  *  overlay's renderer). */
+/** The live team-head's label for one configured column: global-scope
+ *  means get the TEAM-MEAN wording (加权胜率 / 平均 PR / 场均伤害 …), not
+ *  the per-player compact head — the head and the mean row must never
+ *  disagree about what a column is called. `weightedTeamWr` rides in as a
+ *  parameter so every surface (live panel, clip feed) passes its own
+ *  store's flag without this module reaching into the pinia store. */
+export function teamHeadLabelOf(
+  col: RosterColumnSpec,
+  weightedTeamWr: boolean,
+): string {
+  if (col.scope !== "global") return col.head;
+  if (col.metric === "winrate") {
+    return t(
+      weightedTeamWr
+        ? "replay.roster.teamWrWeighted"
+        : "replay.roster.teamWrPlain",
+    );
+  }
+  if (col.metric === "pr") return t("replay.roster.teamAvgPr");
+  if (col.metric === "battles") return t("replay.roster.battles");
+  if (col.metric === "kd") return t("replay.roster.metricKd");
+  return t("replay.postbattle.avgDamage");
+}
+
 export function rosterColumns(): RosterColumnSpec[] {
   const prOn = statsPrefsState.value.prEnabled;
   return statsPrefsState.value.overlayColumns

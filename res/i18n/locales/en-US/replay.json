@@ -606,6 +606,8 @@
     "savedCopied": "Saved to {path} — file copied to the clipboard, ready to paste",
     "teamAlly": "Allies",
     "teamEnemy": "Enemies",
+    "teamAvg": "Avg",
+    "noStats": "No stat columns",
     "damageTitle": "Damage dealt",
     "dmgFrags": "Frags",
     "dmgTaken": "Taken",
