@@ -613,7 +613,13 @@
     "damageTitle": "Dégâts infligés",
     "dmgFrags": "Fragments",
     "dmgTaken": "Subis",
-    "chatTitle": "Chat"
+    "chatTitle": "Chat",
+    "pathLabel": "Dossier d'export",
+    "pathChange": "Changer",
+    "phaseFinalize": "Finalisation de la vidéo…",
+    "phaseSave": "Enregistrement du fichier…",
+    "rangeFullDesc": "Du début à la fin · ~{time}",
+    "rangeNowDesc": "De la position actuelle à la fin · ~{time}"
   },
   "perf": {
     "timing": "Fréquence d'images",

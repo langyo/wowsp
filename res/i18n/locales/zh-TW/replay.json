@@ -613,7 +613,13 @@
     "damageTitle": "傷害輸出",
     "dmgFrags": "擊沉",
     "dmgTaken": "承傷",
-    "chatTitle": "聊天紀錄"
+    "chatTitle": "聊天紀錄",
+    "pathLabel": "匯出目錄",
+    "pathChange": "變更",
+    "phaseFinalize": "正在封裝影片…",
+    "phaseSave": "正在儲存檔案…",
+    "rangeFullDesc": "從開場到結束 · 約 {time}",
+    "rangeNowDesc": "從目前播放位置到結束 · 約 {time}"
   },
   "perf": {
     "timing": "幀率",

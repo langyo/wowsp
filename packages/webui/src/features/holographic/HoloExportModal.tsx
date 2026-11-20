@@ -1,18 +1,21 @@
 /**
  * Replay-playback export modal (the playback bar's export button): one
- * hikari surface collecting the output settings — format (video / GIF),
- * range (from now / full match), speed (battle-time compression), fps,
- * size, and the footer toggle — plus a frame/duration estimate before
- * the offline render starts. Starting the export closes the modal;
- * progress then rides the map's chip (the render owns the playhead until
- * it finishes). Takes beyond the format's frame budget are refused with
- * the warning line (raise speed or narrow the range).
+ * hikari surface collecting the output settings — the FORMAT as a button
+ * group, fps / speed / resolution on one row, the RANGE as hikari's
+ * selection-waterfall clip cards on its own row, the EXPORT FOLDER picked
+ * in-window (default: the OS Downloads folder, remembered by the shell),
+ * the frame/duration estimate, and the frame-budget guard.
  *
- * Mirrors the tactical board's ExportWizardModal grammar (HkModal +
- * HkPopupSelect + HkSwitch) so the two export surfaces read as one family.
+ * The footer watermark is NOT a setting: every clip carries it, and the
+ * band renders in the CURRENT UI language (shareFooterStrings already
+ * reads the active locale), so the toggle is gone by design.
+ *
+ * Starting the export closes the modal; progress then rides the shell's
+ * toast card (ToastCardBase) — frames first, then the encoder/muxer
+ * flush, then the file write.
  */
 import { computed, defineComponent, type PropType } from "vue";
-import { HkModal, HkPopupSelect, HkSwitch } from "@celestia-island/hikari";
+import { HkButton, HkModal, HkPopupSelect, HSelectionWaterfall } from "@celestia-island/hikari";
 import "./HoloExportModal.scss";
 
 import { t as i18nT } from "@/i18n";
@@ -26,6 +29,14 @@ import {
   type PlaybackExportSettings,
 } from "./playbackExport";
 
+/** "1:02:03" / "12:34" battle clock for the range cards. */
+function clockLabel(seconds: number): string {
+  const s = Math.max(0, Math.round(seconds));
+  const mm = Math.floor(s / 60);
+  const ss = s % 60;
+  return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
+}
+
 export default defineComponent({
   name: "HoloExportModal",
   props: {
@@ -35,7 +46,12 @@ export default defineComponent({
     settings: { type: Object as PropType<PlaybackExportSettings>, required: true },
     duration: { type: Number, required: true },
     current: { type: Number, required: true },
+    /** The export folder (shell-persisted), or null on hosts without the
+     *  native surface — the row then hides and the legacy save dialog
+     *  handles the target. */
+    exportDir: { type: String as PropType<string | null>, default: null },
     onStart: { type: Function as PropType<() => void>, required: true },
+    onPickDir: { type: Function as PropType<() => void>, default: null },
   },
   emits: {
     "update:modelValue": (_v: boolean) => true,
@@ -75,8 +91,33 @@ export default defineComponent({
       }
     };
 
+    /** Range cards for hikari's selection waterfall: the full match vs
+     *  the remaining one, each carrying its own length so the choice reads
+     *  without opening anything. */
+    const rangeItems = computed(() => {
+      const remaining = Math.max(0, props.duration - props.current);
+      return [
+        {
+          id: "start",
+          title: i18nT("replay.export.rangeFull"),
+          description: i18nT("replay.export.rangeFullDesc", {
+            time: clockLabel(props.duration),
+          }),
+        },
+        {
+          id: "now",
+          title: i18nT("replay.export.rangeNow"),
+          description: i18nT("replay.export.rangeNowDesc", {
+            time: clockLabel(remaining),
+          }),
+        },
+      ];
+    });
+
     const start = (): void => {
       if (frameCount.value < 2 || tooLong.value) return;
+      // The footer watermark is mandatory on every clip.
+      props.settings.footer = true;
       props.onStart();
       emit("update:modelValue", false);
     };
@@ -102,27 +143,29 @@ export default defineComponent({
         ]}
       >
         <div class="holo-export">
-          <div class="holo-export__grid">
-            <HkPopupSelect
-              label={i18nT("replay.export.format")}
-              modelValue={props.settings.format}
-              options={[
+          {/* Format as a button group — the two choices are peers, not a
+              menu (the 2026-11-20 layout report). */}
+          <div class="holo-export__row">
+            <span class="holo-export__label">{i18nT("replay.export.format")}</span>
+            <div class="holo-export__btn-group" role="group">
+              {([
                 { value: "video", label: i18nT("replay.export.formatVideo") },
                 { value: "gif", label: i18nT("replay.export.formatGif") },
-              ]}
-              onUpdate:modelValue={setFormat}
-            />
-            <HkPopupSelect
-              label={i18nT("replay.export.range")}
-              modelValue={props.settings.from}
-              options={[
-                { value: "now", label: i18nT("replay.export.rangeNow") },
-                { value: "start", label: i18nT("replay.export.rangeFull") },
-              ]}
-              onUpdate:modelValue={(v: string) => {
-                props.settings.from = v === "start" ? "start" : "now";
-              }}
-            />
+              ] as const).map((opt) => (
+                <HkButton
+                  key={opt.value}
+                  size="sm"
+                  variant={props.settings.format === opt.value ? "primary" : "ghost"}
+                  aria-pressed={props.settings.format === opt.value}
+                  onClick={() => setFormat(opt.value)}
+                >
+                  {opt.label}
+                </HkButton>
+              ))}
+            </div>
+          </div>
+          {/* fps · speed · resolution on ONE row. */}
+          <div class="holo-export__params">
             <HkPopupSelect
               label={i18nT("replay.export.fps")}
               modelValue={String(props.settings.fps)}
@@ -166,17 +209,29 @@ export default defineComponent({
               }}
             />
           </div>
-          <div class="holo-export__toggles">
-            <HkSwitch
-              size="sm"
-              modelValue={props.settings.footer}
-              onUpdate:modelValue={(v: boolean) => {
-                props.settings.footer = v;
-              }}
-            >
-              {i18nT("replay.export.footer")}
-            </HkSwitch>
-          </div>
+          {/* Range: hikari's selection waterfall, one row of clip cards. */}
+          <HSelectionWaterfall
+            items={rangeItems.value}
+            selectedIds={[props.settings.from]}
+            onSelect={(item) => {
+              props.settings.from = item.id === "start" ? "start" : "now";
+            }}
+          />
+          {/* Export folder: the default lives in the shell config, the
+              picker is a native folder dialog, and the choice persists. */}
+          {props.exportDir ? (
+            <div class="holo-export__row holo-export__row--path">
+              <span class="holo-export__label">{i18nT("replay.export.pathLabel")}</span>
+              <code class="holo-export__path" title={props.exportDir}>
+                {props.exportDir}
+              </code>
+              {props.onPickDir ? (
+                <HkButton size="sm" variant="secondary" onClick={() => props.onPickDir?.()}>
+                  {i18nT("replay.export.pathChange")}
+                </HkButton>
+              ) : null}
+            </div>
+          ) : null}
           <p class="holo-export__estimate">
             {i18nT("replay.export.estimate", { n: frameCount.value, s: seconds.value })}
           </p>

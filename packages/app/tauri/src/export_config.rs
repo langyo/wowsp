@@ -242,18 +242,20 @@ pub async fn export_config_get() -> CommandResult<ExportConfig> {
     .map_err(|e| anyhow!("export config read task failed: {e}"))??)
 }
 
-/// Remember a new export directory. Validated (absolute, exists or created)
-/// before it lands on disk; the modal's folder picker writes through the same
-/// core, so both routes agree on the stored spelling.
-#[tauri::command]
-pub async fn export_config_set_dir(dir: String) -> CommandResult<()> {
-    Ok(tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
-        let stored = persist_dir(&dir)?;
-        tracing::info!(dir = %stored, "export directory changed");
-        Ok(())
-    })
-    .await
-    .map_err(|e| anyhow!("export config write task failed: {e}"))??)
+/// Restore the persisted folder's WRITE GRANT at startup.
+///
+/// The export folder is either the app's conventional default (the OS
+/// Downloads folder — the same exposure class a browser grants for
+/// downloads) or a path the user picked through the native folder dialog in
+/// an earlier run. The IPC surface deliberately has NO setter (only the
+/// native picker may change the folder), so the stored value is always
+/// user-consented and re-granting it at startup cannot be turned into an
+/// IPC-triggerable arbitrary-write path: the webview chooses nothing here.
+pub(crate) fn grant_persisted_dir() -> anyhow::Result<String> {
+    let data_dir = paths::ensure_data_dir()?;
+    let dir = resolved_dir(&data_dir)?;
+    crate::commands::exports::grant_export_dir(&dir);
+    Ok(dir)
 }
 
 #[cfg(test)]

@@ -613,7 +613,13 @@
     "damageTitle": "Daño infligido",
     "dmgFrags": "Hundimientos",
     "dmgTaken": "Recibido",
-    "chatTitle": "Chat"
+    "chatTitle": "Chat",
+    "pathLabel": "Carpeta de exportación",
+    "pathChange": "Cambiar",
+    "phaseFinalize": "Finalizando el vídeo…",
+    "phaseSave": "Guardando el archivo…",
+    "rangeFullDesc": "Del inicio al final · ~{time}",
+    "rangeNowDesc": "Desde la posición actual hasta el final · ~{time}"
   },
   "perf": {
     "timing": "Fotogramas",

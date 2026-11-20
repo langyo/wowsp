@@ -613,7 +613,13 @@
     "damageTitle": "伤害输出",
     "dmgFrags": "击沉",
     "dmgTaken": "承伤",
-    "chatTitle": "聊天记录"
+    "chatTitle": "聊天记录",
+    "pathLabel": "导出目录",
+    "pathChange": "更改",
+    "phaseFinalize": "正在封装视频…",
+    "phaseSave": "正在保存文件…",
+    "rangeFullDesc": "从开场到结束 · 约 {time}",
+    "rangeNowDesc": "从当前播放位置到结束 · 约 {time}"
   },
   "perf": {
     "timing": "帧率",

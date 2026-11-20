@@ -613,7 +613,13 @@
     "damageTitle": "Нанесённый урон",
     "dmgFrags": "Фраги",
     "dmgTaken": "Получено",
-    "chatTitle": "Чат"
+    "chatTitle": "Чат",
+    "pathLabel": "Папка экспорта",
+    "pathChange": "Изменить",
+    "phaseFinalize": "Финализация видео…",
+    "phaseSave": "Сохранение файла…",
+    "rangeFullDesc": "С начала до конца · ~{time}",
+    "rangeNowDesc": "С текущей позиции до конца · ~{time}"
   },
   "perf": {
     "timing": "Частота кадров",

@@ -613,7 +613,13 @@
     "damageTitle": "ダメージ",
     "dmgFrags": "撃沈",
     "dmgTaken": "被弾",
-    "chatTitle": "チャット"
+    "chatTitle": "チャット",
+    "pathLabel": "出力先フォルダー",
+    "pathChange": "変更",
+    "phaseFinalize": "動画をファイナライズ中…",
+    "phaseSave": "ファイルを保存中…",
+    "rangeFullDesc": "開始から終了まで · 約 {time}",
+    "rangeNowDesc": "現在位置から終了まで · 約 {time}"
   },
   "perf": {
     "timing": "フレームレート",

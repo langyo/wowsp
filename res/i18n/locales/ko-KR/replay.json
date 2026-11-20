@@ -613,7 +613,13 @@
     "damageTitle": "준 피해",
     "dmgFrags": "격침",
     "dmgTaken": "받은 피해",
-    "chatTitle": "채팅 기록"
+    "chatTitle": "채팅 기록",
+    "pathLabel": "내보내기 폴더",
+    "pathChange": "변경",
+    "phaseFinalize": "동영상 마무리 중…",
+    "phaseSave": "파일 저장 중…",
+    "rangeFullDesc": "시작부터 끝까지 · 약 {time}",
+    "rangeNowDesc": "현재 위치부터 끝까지 · 약 {time}"
   },
   "perf": {
     "timing": "프레임률",

@@ -97,11 +97,11 @@ import {
   type PlaybackIconVariant,
   type PlaybackTeamRow,
 } from "./playbackExport";
-import { formatBattleClock, saveExportBlob } from "./tactical/exporters";
+import { formatBattleClock, saveExportBlob, saveExportBlobTo } from "./tactical/exporters";
 import {
   LOGO_URL,
+  darkPalette,
   loadImage,
-  readPalette,
   shareFooterStrings,
 } from "@/features/share/shotKit";
 import { branchOfReplay, type ShipDataBranch } from "@/utils/realms";
@@ -3274,10 +3274,24 @@ const RECORDED_DOLLY_MIN = -40;
     const exportProgress = ref({ done: 0, total: 0 });
     const exportCancel = { cancelled: false };
     const exportCard = ref<ToastCardBaseInstance | null>(null);
+    /** Coarse phase: frames → encoder/muxer flush → file write. The
+     *  finalize phase reports no percentage (mediabunny gives none), so
+     *  the card goes indeterminate there instead of freezing at 100%
+     *  while a long take is muxed (the 2026-11-20 report). */
+    const exportPhase = ref<"render" | "finalize" | "save">("render");
     /** The leave-fold snapshot: when the take ends, the card folds out
      *  showing the last live values instead of snapping to empty. */
-    const exportCardHeld = ref({ meta: "", progress: 0 });
-    function exportCardLive(): { meta: string; progress: number } {
+    const exportCardHeld = ref<{ meta: string; progress: number | null }>({
+      meta: "",
+      progress: 0,
+    });
+    function exportCardLive(): { meta: string; progress: number | null } {
+      if (exportPhase.value === "finalize") {
+        return { meta: i18nT("replay.export.phaseFinalize"), progress: null };
+      }
+      if (exportPhase.value === "save") {
+        return { meta: i18nT("replay.export.phaseSave"), progress: null };
+      }
       const { done, total } = exportProgress.value;
       const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
       return { meta: `${pct}% · ${done}/${total}`, progress: pct };
@@ -3305,6 +3319,31 @@ const RECORDED_DOLLY_MIN = -40;
       size: 1440,
       footer: true,
     });
+    /** The shell-persisted export folder (null on hosts without the
+     *  native surface — the row hides and the save dialog handles it). */
+    const exportDir = ref<string | null>(null);
+    async function loadExportDir(): Promise<void> {
+      try {
+        const cfg = await rpcApi.exportDirGet();
+        exportDir.value = cfg?.dir ?? null;
+      } catch {
+        exportDir.value = null;
+      }
+    }
+    async function pickExportDir(): Promise<void> {
+      try {
+        const picked = await rpcApi.exportDirPick();
+        if (picked) exportDir.value = picked;
+      } catch {
+        // Host refused (non-tauri / dialog backend) — keep the old dir.
+      }
+    }
+    watch(
+      () => exportOpen.value,
+      (open) => {
+        if (open) void loadExportDir();
+      },
+    );
     let lastProgressTick = 0;
     /** Feed the transport strip — throttled to ~10 Hz; the bar itself is
      *  continuous, the counts don't need 30 Hz Vue renders. */
@@ -3339,6 +3378,7 @@ const RECORDED_DOLLY_MIN = -40;
       const resumeAt = current.value;
       playing.value = false;
       exportProgress.value = { done: 0, total: times.length };
+      exportPhase.value = "render";
       exporting.value = true;
       exportCancel.cancelled = false;
       // Clan tags ride the lazily-armed roster-stats fetch — arm it now
@@ -3360,7 +3400,9 @@ const RECORDED_DOLLY_MIN = -40;
         // cannot strand `exporting`. The scorebar strip's HUD icons
         // preload too: the same SVG class art the DOM scorebar renders,
         // decoded once so drawImage never paints a half-decoded image.
-        const palette = readPalette(container.value);
+        // The clip always renders on the DARK ramp: the theme-following
+        // capture produced pale panels with unreadable text on light theme.
+        const palette = darkPalette();
         const footerStrings = shareFooterStrings();
         let logo: HTMLImageElement | null = null;
         if (s.footer) logo = await loadImage(LOGO_URL);
@@ -3490,11 +3532,17 @@ const RECORDED_DOLLY_MIN = -40;
               logical: EXPORT_LOGICAL,
               rotation: 0,
               shipLabels: true,
+              // The clip is a clean tactical view — no travelled-path
+              // lines (the 2026-11-20 report).
+              trails: false,
               clanOf: (name) => nameStats.value.get(name)?.clanTag ?? null,
               romanTier: tierRoman,
             });
           },
           onProgress: markExportProgress,
+          onPhase: (phase) => {
+            exportPhase.value = phase;
+          },
           cancelToken: exportCancel,
         });
         if (!result) {
@@ -3505,12 +3553,22 @@ const RECORDED_DOLLY_MIN = -40;
           const tag = (props.mapName || props.mapId || "map").replace(/[^\w-]+/g, "_");
           const clock = formatBattleClock(from).slice(2).replace(":", "");
           const name = `wowsp-replay-${tag}-${clock}.${result.ext}`;
-          const saved = await saveExportBlob(
-            result.blob,
-            name,
-            result.ext === "gif" ? "Image" : "Video",
-            result.ext,
-          );
+          // The file write is its own phase: a multi-hundred-MB clip
+          // takes a while to land, and the card must say so.
+          exportPhase.value = "save";
+          let saved = exportDir.value
+            ? await saveExportBlobTo(result.blob, exportDir.value, name)
+            : null;
+          if (!saved) {
+            // No remembered folder (or the host refused the write) — the
+            // native save dialog keeps its old fallback.
+            saved = await saveExportBlob(
+              result.blob,
+              name,
+              result.ext === "gif" ? "Image" : "Video",
+              result.ext,
+            );
+          }
           if (saved) {
             // The clip's chat hand-off: a natively saved file rides the
             // clipboard as an HDROP entry, so the next 粘贴 in QQ/微信/
@@ -4125,7 +4183,13 @@ const RECORDED_DOLLY_MIN = -40;
                   : exportCardHeld.value.progress;
                 return (
                   <div class="toast-card__track">
-                    <div class="toast-card__fill" style={{ width: `${pct}%` }} />
+                    <div
+                      class={[
+                        "toast-card__fill",
+                        pct == null ? "toast-card__fill--indeterminate" : "",
+                      ].filter(Boolean).join(" ")}
+                      style={pct == null ? undefined : { width: `${pct}%` }}
+                    />
                   </div>
                 );
               },
@@ -4137,6 +4201,8 @@ const RECORDED_DOLLY_MIN = -40;
             settings={exportSettings}
             duration={duration.value}
             current={current.value}
+            exportDir={exportDir.value}
+            onPickDir={() => { void pickExportDir(); }}
             onStart={() => { void runPlaybackExportJob(); }}
           />
           </>

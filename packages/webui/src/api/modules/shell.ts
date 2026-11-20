@@ -332,10 +332,6 @@ export const shellApi = {
    *  folder, which is then persisted — the result is always a usable absolute
    *  directory. */
   exportDirGet: () => transport.invoke<{ dir: string }>(RPC.export_config_get),
-  /** Persist a new export folder. Absolute, non-empty, and created when it
-   *  does not exist yet; rejects otherwise rather than storing a dead path. */
-  exportDirSet: (dir: string) =>
-    transport.invoke<null>(RPC.export_config_set_dir, { dir }),
   /** Native FOLDER picker for the export destination — persists the choice
    *  and authorizes writes of files directly inside it. Null = the user
    *  cancelled. Rejects on mobile (no native folder picker). */

@@ -613,7 +613,13 @@
     "damageTitle": "Damage dealt",
     "dmgFrags": "Frags",
     "dmgTaken": "Taken",
-    "chatTitle": "Chat log"
+    "chatTitle": "Chat log",
+    "pathLabel": "Export folder",
+    "pathChange": "Change",
+    "phaseFinalize": "Finalizing video…",
+    "phaseSave": "Saving file…",
+    "rangeFullDesc": "From the opening to the end · ~{time}",
+    "rangeNowDesc": "From the playhead to the end · ~{time}"
   },
   "perf": {
     "timing": "Frame rate",

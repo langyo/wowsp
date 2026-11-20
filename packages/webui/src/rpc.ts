@@ -73,7 +73,6 @@ export const RPC = {
   // per-file save dialog.
   pick_export_dir: "pick_export_dir",
   export_config_get: "export_config_get",
-  export_config_set_dir: "export_config_set_dir",
   write_export_bytes: "write_export_bytes",
   // Plan-profile archive (commands/tactics_profile.rs): the tactics page's
   // shareable 档案 — a zip of profile.toml + per-branch plan JSON.

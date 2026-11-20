@@ -107,6 +107,14 @@ export function font(size: number, weight = 400, mono = false): string {
   return `${weight} ${size}px ${mono ? MONO_STACK : FONT_STACK}`;
 }
 
+/** The forced DARK palette — the replay clip's default look. Exporting
+ *  from a light-theme app produced pale panels with unreadable text (the
+ * 影音 report), so the clip pins this ramp instead of capturing the
+ *  current theme; it is the same dark ramp share shots fall back to. */
+export function darkPalette(): ShotPalette {
+  return { ...DEFAULT_PALETTE };
+}
+
 export function readPalette(el?: HTMLElement | null): ShotPalette {
   if (!el) return DEFAULT_PALETTE;
   const style = getComputedStyle(el);

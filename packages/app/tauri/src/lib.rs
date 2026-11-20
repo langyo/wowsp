@@ -304,6 +304,17 @@ pub fn run() {
             // for a data/cache dir.
             paths::init(app.handle().clone());
 
+            // Restore the replay-export folder's write grant (see
+            // export_config::grant_persisted_dir: the folder is the app's
+            // Downloads default or a native-picker choice, never an IPC-set
+            // path — so this is consent restoration, not a new grant path).
+            match export_config::grant_persisted_dir() {
+                Ok(dir) => tracing::debug!(dir = %dir, "export folder grant restored"),
+                Err(err) => {
+                    tracing::warn!(error = %err, "export folder grant restore failed")
+                }
+            }
+
             // ── Installer-shipped resource-pack publication (desktop) ─────
             //
             // The shun-built installer delivers the model/dog-tag pack as
@@ -852,7 +863,6 @@ pub fn run() {
             // (src/export_config.rs) + the native folder picker that both
             // persists the choice and registers the directory grant.
             export_config::export_config_get,
-            export_config::export_config_set_dir,
             commands::exports::pick_export_dir,
             // Tactics plan-profile archives (commands/tactics_profile.rs):
             // the tactics page's save/share 档案 (profile.toml + plan JSONs).
