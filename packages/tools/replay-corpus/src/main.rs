@@ -47,7 +47,7 @@ fn main() {
     };
     let run: Result<replay_corpus::RunReport> = match cmd {
         Command::Scan(args) => run_scan(&args.archive, &args.out),
-        Command::Insights(args) => run_insights(&args.archive, &args.out, chrono::Utc::now()),
+        Command::Insights(args) => run_insights(&args.archive, &args.out, jiff::Timestamp::now()),
         Command::Calib(args) => run_calib(&args.archive, &args.out),
     };
     match run {

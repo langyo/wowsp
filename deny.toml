@@ -20,16 +20,11 @@ id = "RUSTSEC-2024-0436"
 reason = "paste is unmaintained but functional; it is a direct dependency of the vendored wows-toolkit sources (packages/tools/game-assets tree). The vendor tree is now WoWSP's own independent fork (2026-10 decision — no upstream sync), so swapping in the drop-in pastey fork is unblocked whenever wanted; not urgent while paste keeps compiling."
 
 
-# chrono: RUSTSEC-2026-0543 (unmaintained, INFO-level; no patched versions —
-# the advisory recommends migrating to jiff or time). chrono is a direct
-# workspace dependency (wowsp_tauri, wowsp_tauri_shared, replay-corpus,
-# replay-drain) used for RFC3339 timestamps and date parsing across the app
-# commands; a date-time library swap is a behavioral-risk refactor to
-# schedule deliberately, not an emergency. Ignore on the paste precedent
-# until that migration happens.
-[[advisories.ignore]]
-id = "RUSTSEC-2026-0543"
-reason = "chrono is unmaintained (no patched versions exist); our usage is RFC3339 formatting/parsing and UTC now() across wowsp_tauri, wowsp_tauri_shared, replay-corpus and replay-drain. Migration to jiff/time is a deliberate behavioral-risk refactor; not urgent while chrono keeps compiling and no vulnerability is involved."
+# (The RUSTSEC-2026-0543 ignore for chrono was removed: the 2026-11 jiff
+# migration left chrono with no first-party callers — it survives only as a
+# transitive dep (serde_with et al), which the `unmaintained = "workspace"`
+# scope never flags. Re-add an ignore ONLY if chrono becomes a direct
+# dependency again; cargo-deny fails on unused ignores otherwise.)
 
 
 # zstd 0.13.x: the 2026-10 advisory batch (0391 context-reuse leak, 0398

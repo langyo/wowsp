@@ -64,7 +64,7 @@ uuid.workspace = true
 # the relay digest docs' signature layer (commands/update.rs).
 sha2.workspace = true
 hex.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 zip.workspace = true
 ed25519-dalek.workspace = true
 

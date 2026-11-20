@@ -59,7 +59,12 @@ async-trait = "^0.1"
 # declared here.
 thiserror = "^2"
 # Data and serialization
-chrono = { version = "^0.4", features = ["serde", "clock"] }
+# jiff is chrono's successor (same author): RUSTSEC-2026-0543 flagged chrono
+# as unmaintained (INFO, no patched versions — the 2026-11 migration removed
+# the last first-party chrono). RFC3339-first API; a real tz database backs
+# the local-time paths (Windows + Android fold/gap handling that chrono's
+# LocalResult used to own — commands/local_battles.rs, playtime.rs).
+jiff = { version = "^0.2", features = ["tzdb-bundle-platform"] }
 serde = { version = "^1", features = ["derive"] }
 serde_json = "^1"
 toml = "^1"
@@ -176,8 +181,10 @@ winreg = "^0.56"
 # WMI queries for the feedback bundle's consented hardware report (see
 # commands/hardware_info.rs): CPU / board / BIOS / GPU+driver / disk serials /
 # NIC MACs / antivirus inventory. MIT OR Apache-2.0, crates.io-only — passes
-# cargo-deny; its `chrono` default reuses the chrono already in the tree.
-wmi = "^0.18"
+# cargo-deny. default-features = false drops wmi's `chrono` feature (the
+# only reason chrono survived in the tree after the 2026-11 jiff migration);
+# our queries never touch Variant::DateTime, so nothing else changes.
+wmi = { version = "^0.18", default-features = false }
 
 # Windows screen capture for overlay roster positioning; DXGI adapter
 # enumeration for the conditional WebView2 GPU switch (webview_args.rs).

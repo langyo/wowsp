@@ -59,7 +59,6 @@ use boa_engine::{
     JsArgs, JsObject, JsResult, JsString, JsValue, NativeFunction, Source, context::Context,
     js_string,
 };
-use chrono::{Datelike, Timelike};
 
 use crate::commands::network::build_direct_http_client;
 
@@ -280,7 +279,8 @@ fn real_my_ip() -> String {
 // ── Civil time (the PAC helpers' clock) ────────────────────────────────────
 
 /// The calendar fields the date/time helpers compare against, split out of
-/// chrono so the pure cores are table-testable without a live clock.
+/// the date-time library so the pure cores are table-testable without a
+/// live clock.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Civil {
     year: i32,
@@ -297,20 +297,37 @@ impl Civil {
     /// The wall-clock the helpers read: UTC when the script passed the
     /// "GMT" flag, LOCAL time otherwise (exactly the Navigator contract).
     fn now(gmt: bool) -> Civil {
-        let now = chrono::Local::now();
-        let naive = if gmt {
-            now.naive_utc()
+        let local = jiff::Zoned::now();
+        let (year, month, day, hour, minute, second, weekday) = if gmt {
+            let utc = local.with_time_zone(jiff::tz::TimeZone::UTC);
+            (
+                utc.year(),
+                utc.month(),
+                utc.day(),
+                utc.hour(),
+                utc.minute(),
+                utc.second(),
+                utc.weekday().to_sunday_zero_offset(),
+            )
         } else {
-            now.naive_local()
+            (
+                local.year(),
+                local.month(),
+                local.day(),
+                local.hour(),
+                local.minute(),
+                local.second(),
+                local.weekday().to_sunday_zero_offset(),
+            )
         };
         Civil {
-            year: naive.year(),
-            month: naive.month(),
-            day: naive.day(),
-            hour: naive.hour(),
-            minute: naive.minute(),
-            second: naive.second(),
-            weekday: naive.weekday().num_days_from_sunday(),
+            year: i32::from(year),
+            month: month as u32,
+            day: day as u32,
+            hour: hour as u32,
+            minute: minute as u32,
+            second: second as u32,
+            weekday: weekday as u32,
         }
     }
 }

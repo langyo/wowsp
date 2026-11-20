@@ -42,7 +42,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::UNIX_EPOCH;
 
-use chrono::{Local, NaiveDateTime, TimeZone};
 use serde::{Deserialize, Serialize};
 use wowsp_tauri_shared::{CommandResult, LocalBattle, LocalBattleLog};
 
@@ -225,16 +224,22 @@ struct Candidate {
 /// timestamp source is its LOCAL-time filename.
 fn timestamp_of(date_time: &str) -> Option<i64> {
     let (date, time) = date_time.split_once('_').unwrap_or((date_time, "000000"));
-    let naive = NaiveDateTime::parse_from_str(&format!("{date}_{time}"), "%Y%m%d_%H%M%S").ok()?;
-    match Local.from_local_datetime(&naive) {
-        chrono::LocalResult::Single(stamp) => Some(stamp.timestamp()),
-        // Ambiguous fall-back hour: either instant is within the ±1 day slack,
-        // pick the earliest for determinism.
-        chrono::LocalResult::Ambiguous(earliest, _) => Some(earliest.timestamp()),
-        // Wall time inside the DST spring-forward gap has no local instant; a
-        // UTC reading still lands within the slack instead of losing the file.
-        chrono::LocalResult::None => Some(naive.and_utc().timestamp()),
+    let naive = jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", format!("{date}_{time}")).ok()?;
+    let amb = jiff::tz::TimeZone::system().to_ambiguous_zoned(naive);
+    // The three arm shapes chrono's LocalResult match had:
+    // - a single wall-clock instant → itself;
+    // - a DST fold (the fall-back hour) → two instants, either lands inside
+    //   the ±1 day slack; take the earliest for determinism;
+    // - a DST gap (spring-forward) → no local instant exists; read the wall
+    //   clock as UTC so the file is not lost. jiff's own gap `earlier()`
+    //   would instead slide to the instant before the gap — NOT the
+    //   historical reading, so the arm decision comes off `offset()`.
+    match amb.offset() {
+        jiff::tz::AmbiguousOffset::Unambiguous { .. } => amb.unambiguous().ok(),
+        jiff::tz::AmbiguousOffset::Fold { .. } => amb.earlier().ok(),
+        jiff::tz::AmbiguousOffset::Gap { .. } => naive.to_zoned(jiff::tz::TimeZone::UTC).ok(),
     }
+    .map(|z| z.timestamp().as_second())
 }
 
 fn filename_timestamp(path: &Path) -> Option<(i64, String)> {
@@ -615,11 +620,21 @@ mod tests {
     /// A local wall-clock timestamp (the implementation reads a replay
     /// filename as LOCAL time, so the fixtures use the same clock).
     fn local_ts(year: i32, month: u32, day: u32, hour: u32, minute: u32) -> i64 {
-        Local
-            .with_ymd_and_hms(year, month, day, hour, minute, 0)
-            .single()
-            .expect("unambiguous local time")
-            .timestamp()
+        jiff::civil::date(
+            i16::try_from(year).unwrap(),
+            i8::try_from(month).unwrap(),
+            i8::try_from(day).unwrap(),
+        )
+        .at(
+            i8::try_from(hour).unwrap(),
+            i8::try_from(minute).unwrap(),
+            0,
+            0,
+        )
+        .to_zoned(jiff::tz::TimeZone::system())
+        .expect("unambiguous local time")
+        .timestamp()
+        .as_second()
     }
 
     /// A minimal wowsreplay container: magic + one descriptor block + a

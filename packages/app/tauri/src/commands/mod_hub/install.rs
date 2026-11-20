@@ -271,7 +271,7 @@ pub(crate) fn local_record(
         preset: None,
         discussion: None,
         bin_version: applied.report.bin_version.clone(),
-        installed_at: chrono::Utc::now().to_rfc3339(),
+        installed_at: crate::time_fmt::now_utc_rfc3339(),
         files: applied.written.clone(),
         restore_dir: applied
             .restore_dir

@@ -162,7 +162,7 @@ pub fn verify_and_store<R: Read>(shard: R, out: &Path) -> anyhow::Result<VerifyR
 pub fn write_contributors_envelope(
     path: &Path,
     rows: &[CreditRow],
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> anyhow::Result<u64> {
     let prev = std::fs::read_to_string(path)
         .ok()
@@ -172,7 +172,9 @@ pub fn write_contributors_envelope(
     let version = prev + 1;
     let doc = serde_json::json!({
         "version": version,
-        "generatedAt": now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        // Whole seconds with a `Z` suffix — the envelope's byte contract
+        // with the webui (previously chrono's `to_rfc3339_opts(Secs, Z)`).
+        "generatedAt": now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
         "contributors": rows,
     });
     std::fs::write(path, serde_json::to_vec_pretty(&doc)?)?;
@@ -553,7 +555,7 @@ mod tests {
             realm: "asia".into(),
             count: 3,
         }];
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         assert_eq!(write_contributors_envelope(&path, &rows, now).unwrap(), 1);
         assert_eq!(write_contributors_envelope(&path, &rows, now).unwrap(), 2);
         let doc: serde_json::Value =

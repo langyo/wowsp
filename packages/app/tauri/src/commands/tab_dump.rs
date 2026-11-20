@@ -196,7 +196,7 @@ fn first_row_bucket(anchor: &OverlayAnchor) -> i64 {
 /// `YYYYMMDD-HHMMSS` (local time) shared by the three files of one dump so a
 /// battle's artifacts sort together in the directory listing.
 fn timestamp_stem() -> String {
-    chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
+    crate::time_fmt::now_local_compact()
 }
 
 /// Encode the captured frame as PNG bytes (same encoding as the debug

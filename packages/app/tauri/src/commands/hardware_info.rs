@@ -234,7 +234,7 @@ pub fn run_elevated_child(out_path: &std::path::Path) -> i32 {
             return 1;
         },
     };
-    report.generated_at = chrono::Local::now().to_rfc3339();
+    report.generated_at = crate::time_fmt::now_local_rfc3339();
     let json = match serde_json::to_string_pretty(&report) {
         Ok(json) => json,
         Err(e) => {
@@ -335,12 +335,12 @@ pub fn collect_for_bundle(elevate: bool) -> HardwareReport {
 /// DMTF datetime → `(naive local wall clock, UTC offset minutes)`.
 /// WMI emits `YYYYMMDDHHMMSS.ffffff±UUU`; the fractional part is dropped
 /// (the seconds are already more precise than a diagnostics report needs).
-fn dmtf_parts(s: &str) -> Option<(chrono::NaiveDateTime, i32)> {
+fn dmtf_parts(s: &str) -> Option<(jiff::civil::DateTime, i32)> {
     let s = s.trim();
     if s.len() < 14 || !s.is_ascii() {
         return None;
     }
-    let naive = chrono::NaiveDateTime::parse_from_str(&s[..14], "%Y%m%d%H%M%S").ok()?;
+    let naive = jiff::civil::DateTime::strptime("%Y%m%d%H%M%S", &s[..14]).ok()?;
     let offset = s
         .get(21..25)
         .and_then(|o| o.parse::<i32>().ok())
@@ -360,7 +360,7 @@ fn dmtf_display(s: &str) -> String {
             };
             format!(
                 "{} {sign}{:02}:{:02}",
-                naive.format("%Y-%m-%d %H:%M:%S"),
+                naive.strftime("%Y-%m-%d %H:%M:%S"),
                 minutes / 60,
                 minutes % 60
             )
@@ -371,19 +371,22 @@ fn dmtf_display(s: &str) -> String {
 
 /// Uptime string from a DMTF `LastBootUpTime` (`7d 12:34:56`).
 fn uptime_since(last_boot_dmtf: &str) -> Option<String> {
-    use chrono::TimeZone;
     let (naive, offset_minutes) = dmtf_parts(last_boot_dmtf)?;
-    let boot = chrono::FixedOffset::east_opt(offset_minutes * 60)?
-        .from_local_datetime(&naive)
-        .single()?
-        .with_timezone(&chrono::Utc);
-    let elapsed = chrono::Utc::now().signed_duration_since(boot);
+    // The DMTF offset is whole minutes, so a fixed-offset zone resolves the
+    // wall clock unconditionally (chrono's `.single()?` never tripped here).
+    let tz = jiff::tz::TimeZone::fixed(jiff::tz::Offset::from_seconds(offset_minutes * 60).ok()?);
+    let boot = naive.to_zoned(tz).ok()?;
+    let elapsed_secs = boot
+        .until(&jiff::Zoned::now())
+        .ok()?
+        .total(jiff::Unit::Second)
+        .ok()? as i64;
     Some(format!(
         "{}d {:02}:{:02}:{:02}",
-        elapsed.num_days(),
-        elapsed.num_hours() % 24,
-        elapsed.num_minutes() % 60,
-        elapsed.num_seconds() % 60
+        elapsed_secs / 86_400,
+        (elapsed_secs / 3_600) % 24,
+        (elapsed_secs / 60) % 60,
+        elapsed_secs % 60
     ))
 }
 
@@ -1132,7 +1135,7 @@ mod win {
             )),
         }
         registry_fallbacks(&mut report);
-        report.generated_at = chrono::Local::now().to_rfc3339();
+        report.generated_at = crate::time_fmt::now_local_rfc3339();
         report
     }
 
@@ -1186,11 +1189,14 @@ mod win {
                 }
             }
             if let Ok(installed) = key.get_value::<u32, _>("InstallDate") {
-                if let Some(date) = chrono::DateTime::from_timestamp(i64::from(installed), 0) {
+                // The registry's InstallDate is epoch seconds; render the
+                // LOCAL calendar day (the machine's own "installed on").
+                let ts = jiff::Timestamp::new(i64::from(installed), 0);
+                if let Ok(ts) = ts {
                     os.push((
                         "installed-at".into(),
-                        date.with_timezone(&chrono::Local)
-                            .format("%Y-%m-%d")
+                        ts.to_zoned(jiff::tz::TimeZone::system())
+                            .strftime("%Y-%m-%d")
                             .to_string(),
                     ));
                 }
@@ -1969,7 +1975,15 @@ mod win {
         std::fs::create_dir_all(&dir)
             .map_err(|e| ElevateErr::Failed(format!("create {}: {e}", dir.display())))?;
         cleanup_stale(&dir);
-        let stamp = chrono::Local::now().format("%Y%m%d%H%M%S%3f");
+        // `%Y%m%d%H%M%S%3f`: local stamp with exactly three fraction digits
+        // (chrono's `%3f`; jiff's `%.3f` matches, the manual form is used so
+        // the whole stamp comes from one `Zoned` read).
+        let now = jiff::Zoned::now();
+        let stamp = format!(
+            "{}{:03}",
+            now.strftime("%Y%m%d%H%M%S"),
+            now.subsec_nanosecond().unsigned_abs() / 1_000_000
+        );
         let out_path = dir.join(format!("hw-{}-{stamp}.json", std::process::id()));
         // The parent may retry after a failed helper run.
         let _ = std::fs::remove_file(&out_path);

@@ -663,7 +663,7 @@ pub fn lite_out_path(out: &Path) -> PathBuf {
 fn build_envelope(
     battles: impl IntoIterator<Item = BattleInsight>,
     unparsed: u32,
-    now: chrono::DateTime<chrono::Utc>,
+    now: jiff::Timestamp,
 ) -> InsightsEnvelope {
     let mut maps: BTreeMap<String, BTreeMap<String, ModeAcc>> = BTreeMap::new();
     for battle in battles {
@@ -673,7 +673,9 @@ fn build_envelope(
     }
     InsightsEnvelope {
         version: 1,
-        generated_at: now.to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+        // Whole seconds with a `Z` suffix — the envelope's byte contract
+        // (previously chrono's `to_rfc3339_opts(Secs, Z)`).
+        generated_at: now.strftime("%Y-%m-%dT%H:%M:%SZ").to_string(),
         unparsed,
         maps: maps
             .into_iter()
@@ -696,11 +698,7 @@ fn build_envelope(
 /// (the decode fns are sync CPU work; archive dirs hold thousands of
 /// files) and write the aggregated `map-insights.json` envelope plus its
 /// heat-free `-lite` companion.
-pub fn run_insights(
-    archive: &Path,
-    out: &Path,
-    now: chrono::DateTime<chrono::Utc>,
-) -> anyhow::Result<RunReport> {
+pub fn run_insights(archive: &Path, out: &Path, now: jiff::Timestamp) -> anyhow::Result<RunReport> {
     let files = Arc::new(walk_raw(archive)?);
     let raw_dir = archive.join("raw");
     eprintln!(
@@ -967,7 +965,7 @@ mod tests {
                 battle("map", "pvp", drifted()),
             ],
             0,
-            chrono::Utc::now(),
+            jiff::Timestamp::now(),
         );
         let mode = &envelope.maps["map"].modes["pvp"];
         assert_eq!(mode.battle_count, 3);
@@ -998,16 +996,14 @@ mod tests {
         );
         b.spawns = vec![(10.0, 20.0), (30.0, 40.0)];
         b.tracks = vec![(10.0, 20.0), (11.0, 21.0)];
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let envelope = build_envelope([b], 2, now);
         let json = serde_json::to_value(&envelope).expect("serializes");
         assert_eq!(json["version"], serde_json::json!(1));
         assert_eq!(json["unparsed"], serde_json::json!(2));
         let generated = json["generatedAt"].as_str().expect("generatedAt string");
-        let reparsed = chrono::DateTime::parse_from_rfc3339(generated)
-            .expect("generatedAt is RFC3339")
-            .with_timezone(&chrono::Utc);
-        assert_eq!(reparsed.timestamp(), now.timestamp());
+        let reparsed: jiff::Timestamp = generated.parse().expect("generatedAt is RFC3339");
+        assert_eq!(reparsed.as_second(), now.as_second());
         let mode = &json["maps"]["20_NE_two_brothers"]["modes"]["pvp"];
         assert_eq!(mode["battleCount"], serde_json::json!(1));
         assert_eq!(mode["capsSample"], serde_json::json!(1));
@@ -1075,7 +1071,7 @@ mod tests {
         // A mode that observed nothing (no caps → no capsSample) still gets
         // its row, with an empty layout.
         let bare = battle("20_NE_two_brothers", "ranked", Vec::new());
-        let now = chrono::Utc::now();
+        let now = jiff::Timestamp::now();
         let envelope = build_envelope([with_caps, bare], 4, now);
         let full = serde_json::to_value(&envelope).expect("full serializes");
         let lite =

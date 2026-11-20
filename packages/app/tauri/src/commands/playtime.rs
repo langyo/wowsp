@@ -33,7 +33,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use chrono::{Datelike, Local, TimeZone};
 use serde::{Deserialize, Serialize};
 use wowsp_tauri_shared::{
     CommandResult, GameInstall, PlaytimeBattle, PlaytimeBattles, PlaytimeDay, PlaytimeLaunch,
@@ -366,27 +365,37 @@ pub(crate) fn flush() {
 // ── overview (the command's pure core) ─────────────────────────────────────
 
 /// Split `[start, end]` at the timezone's local midnights into
-/// (`YYYY-MM-DD`, seconds-on-that-day) segments. Generic over the timezone
+/// (`YYYY-MM-DD`, seconds-on-that-day) segments. The timezone is passed in
 /// so tests pin the geometry with a fixed offset while the runtime passes
-/// `Local` (DST-aware per timestamp).
-fn split_session_days<Tz: TimeZone>(start: i64, end: i64, tz: &Tz) -> Vec<(String, u64)> {
+/// the system zone (DST-aware per timestamp).
+fn split_session_days(start: i64, end: i64, tz: &jiff::tz::TimeZone) -> Vec<(String, u64)> {
     let mut out: Vec<(String, u64)> = Vec::new();
     if end <= start {
         return out;
     }
     let mut t = start;
     loop {
-        let Some(dt) = tz.timestamp_opt(t, 0).single() else {
+        let Ok(ts) = jiff::Timestamp::new(t, 0) else {
             break;
         };
-        let key = format!("{:04}-{:02}-{:02}", dt.year(), dt.month(), dt.day());
-        let Some(next_day) = dt.date_naive().succ_opt() else {
+        let dt = ts.to_zoned(tz.clone());
+        let key = format!(
+            "{:04}-{:02}-{:02}",
+            i32::from(dt.year()),
+            i32::from(dt.month()),
+            i32::from(dt.day())
+        );
+        let Ok(next_day) = dt.date().tomorrow() else {
             break;
         };
-        let midnight = next_day
-            .and_hms_opt(0, 0, 0)
-            .and_then(|n| tz.from_local_datetime(&n).single())
-            .map(|m| m.timestamp());
+        // chrono's `.single()`: an ambiguous (fold) or skipped (gap)
+        // midnight reads as "no resolvable midnight", which the arm below
+        // turns into "dump the remainder on this day".
+        let midnight = tz
+            .to_ambiguous_zoned(next_day.at(0, 0, 0, 0))
+            .unambiguous()
+            .ok()
+            .map(|m| m.timestamp().as_second());
         match midnight {
             // Normal midnight in the future: credit up to it and roll over.
             Some(nm) if nm > t => {
@@ -415,13 +424,13 @@ fn longest_streak(dates: &[String]) -> (u64, Option<(String, String)>) {
     let mut best: u64 = 0;
     let mut best_range: Option<(String, String)> = None;
     let mut run: u64 = 0;
-    let mut run_start: Option<chrono::NaiveDate> = None;
-    let mut prev: Option<chrono::NaiveDate> = None;
+    let mut run_start: Option<jiff::civil::Date> = None;
+    let mut prev: Option<jiff::civil::Date> = None;
     for raw in dates {
-        let Ok(day) = chrono::NaiveDate::parse_from_str(raw, "%Y-%m-%d") else {
+        let Ok(day) = jiff::civil::Date::strptime("%Y-%m-%d", raw) else {
             continue;
         };
-        let continues = prev.is_some_and(|p| p.succ_opt() == Some(day));
+        let continues = prev.is_some_and(|p| p.tomorrow().ok() == Some(day));
         run = if continues { run + 1 } else { 1 };
         if !continues {
             run_start = Some(day);
@@ -441,7 +450,7 @@ fn longest_streak(dates: &[String]) -> (u64, Option<(String, String)>) {
 }
 
 /// The command's pure core: ledger → wire DTO. `now` bounds open sessions.
-fn overview_of<Tz: TimeZone>(store: &PlaytimeStore, now: i64, tz: &Tz) -> PlaytimeOverview {
+fn overview_of(store: &PlaytimeStore, now: i64, tz: &jiff::tz::TimeZone) -> PlaytimeOverview {
     let mut days: BTreeMap<String, u64> = BTreeMap::new();
     let mut local_total: u64 = 0;
     let mut longest_session: Option<(PlaytimeSession, u64)> = None;
@@ -537,18 +546,26 @@ fn overview_of<Tz: TimeZone>(store: &PlaytimeStore, now: i64, tz: &Tz) -> Playti
 
 /// The `YYYY-MM-DD` key of a unix timestamp in `tz` ("" when the timestamp
 /// is not representable — a corrupt ledger must not panic the command).
-fn day_key_of<Tz: TimeZone>(ts: i64, tz: &Tz) -> String {
-    tz.timestamp_opt(ts, 0)
-        .single()
-        .map(|dt| format!("{:04}-{:02}-{:02}", dt.year(), dt.month(), dt.day()))
+fn day_key_of(ts: i64, tz: &jiff::tz::TimeZone) -> String {
+    jiff::Timestamp::new(ts, 0)
+        .map(|ts| ts.to_zoned(tz.clone()))
+        .map(|dt| {
+            format!(
+                "{:04}-{:02}-{:02}",
+                i32::from(dt.year()),
+                i32::from(dt.month()),
+                i32::from(dt.day())
+            )
+        })
         .unwrap_or_default()
 }
 
 /// Current ledger → wire DTO (the command body).
 fn current_overview() -> PlaytimeOverview {
     let now = now_unix();
-    with_state(|state| overview_of(&state.store, now, &Local))
-        .unwrap_or_else(|| overview_of(&PlaytimeStore::default(), now, &Local))
+    let tz = jiff::tz::TimeZone::system();
+    with_state(|state| overview_of(&state.store, now, &tz))
+        .unwrap_or_else(|| overview_of(&PlaytimeStore::default(), now, &tz))
 }
 
 /// The playtime page's full payload. Cross-platform: on mobile (no session
@@ -1032,7 +1049,6 @@ fn scan_battle_cache_in(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::FixedOffset;
     use wowsp_tauri_shared::GameInstallKind;
 
     struct StoreFixture(std::path::PathBuf);
@@ -1324,21 +1340,16 @@ mod tests {
 
     /// +08:00 — a fixed offset so the day-split geometry is pinned no
     /// matter which timezone the test machine runs in.
-    const TZ: FixedOffset = match FixedOffset::east_opt(8 * 3600) {
-        Some(tz) => tz,
-        None => unreachable!(),
-    };
+    const TZ: jiff::tz::TimeZone = jiff::tz::TimeZone::fixed(jiff::tz::Offset::constant(8));
 
     /// 2026-10-05 20:00 local (+08:00) = 12:00 UTC.
-    fn ts(y: i32, m: u32, d: u32, h: u32, min: u32) -> i64 {
-        chrono::NaiveDate::from_ymd_opt(y, m, d)
-            .unwrap()
-            .and_hms_opt(h, min, 0)
-            .unwrap()
-            .and_local_timezone(TZ)
-            .single()
+    fn ts(y: i16, m: i8, d: i8, h: i8, min: i8) -> i64 {
+        jiff::civil::date(y, m, d)
+            .at(h, min, 0, 0)
+            .to_zoned(TZ.clone())
             .unwrap()
             .timestamp()
+            .as_second()
     }
 
     #[test]

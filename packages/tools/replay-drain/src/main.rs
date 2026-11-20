@@ -222,7 +222,8 @@ async fn credits(args: CreditsArgs) -> anyhow::Result<()> {
         .json()
         .await
         .context("parsing the credits document")?;
-    let version = write_contributors_envelope(&args.out, &doc.contributors, chrono::Utc::now())?;
+    let version =
+        write_contributors_envelope(&args.out, &doc.contributors, jiff::Timestamp::now())?;
     println!(
         "wrote {} — v{}, {} contributor(s)",
         args.out.display(),

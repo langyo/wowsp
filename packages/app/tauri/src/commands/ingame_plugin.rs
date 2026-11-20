@@ -248,7 +248,7 @@ pub(crate) fn probe_managed_entry(enabled: bool) -> super::mod_hub::manifest::Ma
         source: "bundled".into(),
         preset: None,
         enabled,
-        installed_at: chrono::Utc::now().to_rfc3339(),
+        installed_at: crate::time_fmt::now_utc_rfc3339(),
     }
 }
 

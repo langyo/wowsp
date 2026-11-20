@@ -40,10 +40,14 @@ fn cached_fresh(path: &std::path::Path) -> Option<CatalogTagIndex> {
     let raw = fs::read_to_string(path).ok()?;
     let idx = parse(&raw)?;
     let fetched = fs::metadata(path).ok()?.modified().ok()?;
-    let fetched: chrono::DateTime<chrono::Utc> = fetched.into();
-    let age_h = chrono::Utc::now()
-        .signed_duration_since(fetched)
-        .num_hours();
+    let fetched = jiff::Timestamp::try_from(fetched).ok()?;
+    // fetched → now is the file's age (chrono's `now.signed_duration_since`
+    // pointed the other way — jiff's `until` is "from self to the target").
+    let age_h = fetched
+        .until(jiff::Timestamp::now())
+        .ok()?
+        .total(jiff::Unit::Hour)
+        .ok()? as i64;
     (age_h < CACHE_TTL_HOURS).then_some(idx)
 }
 

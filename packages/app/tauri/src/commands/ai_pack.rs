@@ -184,7 +184,7 @@ impl AiStamp {
 }
 
 fn now_rfc3339() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    crate::time_fmt::now_utc_rfc3339_millis()
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {

@@ -12,7 +12,7 @@ description = "Replay-share corpus CLI — index the drained archive and aggrega
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 
 # Workspace internal crates
 wowsp_replay_core.workspace = true
