@@ -79,6 +79,20 @@ pub(crate) fn resolve_entry_packages(
     }
 }
 
+/// The two independent fan-out gates an AUTOMATIC install can opt into:
+/// both answer `InstallReport.skipped` (its `skipped_kind` names which one
+/// fired) and both stay off for an explicit / active-client install, where
+/// a refusal is the user's answer.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct InstallGates {
+    /// Version gate: the pack's published game range confidently excludes
+    /// this client (see [`version_guard`]).
+    pub(crate) skip_version_incompatible: bool,
+    /// Package-capability gate: the package is well-formed but this client
+    /// does not ship the FONT assets its glue loads (see [`integrity_gate`]).
+    pub(crate) skip_package_incompatible: bool,
+}
+
 #[tauri::command]
 pub async fn mod_catalog_install(
     window: tauri::Window,
@@ -97,6 +111,16 @@ pub async fn mod_catalog_install(
     // reporting 26.10.0). The active install path leaves it None/False:
     // a mismatch warns and the human decides.
     skip_incompatible: Option<bool>,
+    // The batch caller's PACKAGE-capability gate (distinct from the version
+    // gate above): when true, an integrity-gate refusal caused ONLY by staged
+    // dangling references — the target client does not ship the assets the
+    // package's glue loads (foreign-lineage font/UI sets) — comes back as
+    // report.skipped instead of a hard error. The package itself is fine; the
+    // CLIENT cannot load it, which a fan-out target chosen by rule (the
+    // one-click update pass, the reconcile plan) reports quietly. A corrupt
+    // payload (invalid SWF) always stays an error. The explicit / active
+    // install path leaves it None/False: the refusal is the user's answer.
+    skip_package_incompatible: Option<bool>,
 ) -> CommandResult<InstallReport> {
     crate::commands::ensure_main_window_label(window.label())?;
     // Wrapped so every post-guard failure (download, unpack, ledger) lands in
@@ -109,7 +133,10 @@ pub async fn mod_catalog_install(
         game_root,
         app,
         preset,
-        skip_incompatible.unwrap_or(false),
+        InstallGates {
+            skip_version_incompatible: skip_incompatible.unwrap_or(false),
+            skip_package_incompatible: skip_package_incompatible.unwrap_or(false),
+        },
     )
     .await
     {
@@ -126,7 +153,7 @@ pub(crate) async fn mod_catalog_install_inner(
     game_root: String,
     app: AppHandle,
     preset: Option<String>,
-    skip_incompatible: bool,
+    gates: InstallGates,
 ) -> anyhow::Result<InstallReport> {
     // Every failure of this command is otherwise log-invisible (its early
     // guards return before any download or install line) — the entry line
@@ -177,7 +204,7 @@ pub(crate) async fn mod_catalog_install_inner(
     let version_warning =
         version_guard::compat_warning(&entry.game, client_game_version.as_deref());
     if let (Some(warning), Some(client)) = (&version_warning, client_game_version.as_deref()) {
-        if skip_incompatible {
+        if gates.skip_version_incompatible {
             tracing::info!(
                 id = %entry.id,
                 game = %entry.game,
@@ -192,6 +219,7 @@ pub(crate) async fn mod_catalog_install_inner(
                 conflicts: Vec::new(),
                 mirrored_bins: Vec::new(),
                 skipped: version_warning,
+                skipped_kind: Some(InstallSkipKind::Version),
                 pruned_files: 0,
             });
         }
@@ -341,6 +369,7 @@ pub(crate) async fn mod_catalog_install_inner(
     let unpack_category = entry.category.clone();
     let unpack_preset = preset.clone();
     let unpack_discussion = entry.discussion;
+    let unpack_quiet = gates.skip_package_incompatible;
     // The same-id records this install is about to rewind (the entry plus
     // its superseded variants) — captured BEFORE the rewind so the
     // dropped-component cleanup below can diff their consumed component
@@ -354,11 +383,20 @@ pub(crate) async fn mod_catalog_install_inner(
         .filter(|r| unpack_rewind_ids.contains(&r.id))
         .cloned()
         .collect();
+    // What the blocking install task produced: the applied unit (plan,
+    // conflict warnings, ledger record) or the batch capability skip. A
+    // skip carries its reason only — nothing was rewound or written.
+    enum BlockingOutcome {
+        // Boxed: the applied unit dwarfs the skip variant by an order of
+        // magnitude, and this value crosses exactly one channel per install.
+        Installed(Box<(mod_hub::PlanApply, Vec<String>, ModInstallRecord)>),
+        Incompatible(String),
+    }
     let (outcome, ledger) = tauri::async_runtime::spawn_blocking(move || {
         // The record build and the shared-component split commit ride
         // inside the blocking task with the unpack: the snapshot-layer
         // moves are fs work too.
-        let outcome = unpack_and_install(
+        let outcome = unpack_and_install_with_gate(
             &unpack_id,
             &unpack_name,
             &unpack_work,
@@ -366,8 +404,17 @@ pub(crate) async fn mod_catalog_install_inner(
             &unpack_pkgs,
             &unpack_supersedes,
             &mut ledger.installs,
+            unpack_quiet,
         )
-        .and_then(|applied| {
+        .and_then(|outcome| {
+            let applied = match outcome {
+                // Batch capability gate: nothing was mutated (the gate runs
+                // before the rewind) — hand the reason up untouched.
+                InstallOutcome::Incompatible(reason) => {
+                    return Ok(BlockingOutcome::Incompatible(reason));
+                },
+                InstallOutcome::Applied(applied) => *applied,
+            };
             // Say whose files this install clobbered (the journal already
             // snapshotted them — the visibility half of the conflict
             // policy). Computed BEFORE the split commit: the ledger still
@@ -421,7 +468,9 @@ pub(crate) async fn mod_catalog_install_inner(
                         &record.shared_roots,
                         &unpack_root,
                     )?;
-                    Ok((applied, conflicts, record))
+                    Ok(BlockingOutcome::Installed(Box::new((
+                        applied, conflicts, record,
+                    ))))
                 },
                 Err(e) => Err(e),
             }
@@ -431,7 +480,36 @@ pub(crate) async fn mod_catalog_install_inner(
     .await
     .map_err(|e| anyhow!("install task: {e}"))?;
     let (unpacked, conflicts, pack_record) = match outcome {
-        Ok(done) => done,
+        Ok(BlockingOutcome::Installed(done)) => {
+            let (applied, conflicts, record) = *done;
+            (applied, conflicts, record)
+        },
+        Ok(BlockingOutcome::Incompatible(reason)) => {
+            // The package is well-formed and the target CLIENT does not
+            // ship the font assets its glue loads: a rule skip for the
+            // batch caller, not a failure. The gate ran before the rewind,
+            // so no res_mods file, ledger record or restore snapshot
+            // moved; the webui renders its own localized note from
+            // `skippedKind` (the `skipped` sentence only reaches the log
+            // and a hub report).
+            tracing::info!(
+                id = %entry.id,
+                game_root = %game_root,
+                reason = %reason,
+                "mod_catalog_install skipped by the package-capability gate (fan-out)"
+            );
+            return Ok(InstallReport {
+                name: entry_display_name(&entry),
+                bin_version: String::new(),
+                wrote_files: 0,
+                warnings: Vec::new(),
+                conflicts: Vec::new(),
+                mirrored_bins: Vec::new(),
+                pruned_files: 0,
+                skipped: Some(reason),
+                skipped_kind: Some(InstallSkipKind::Package),
+            });
+        },
         Err(e) => {
             // The rewind already changed the ledger even though the unpack
             // failed — persist it so the on-disk ledger does not describe
@@ -857,12 +935,25 @@ pub(crate) fn entry_display_name(entry: &CatalogEntry) -> String {
 /// them all. `overlap` findings never block: an overlap with the existing
 /// mods tree is the user's decision, surfaced by the scan command
 /// elsewhere.
+///
+/// `quiet` marks a BATCH caller (an install target the user did not pick
+/// client-by-client). It can turn ONE narrow class into a rule skip: staged
+/// dangling `.ttf` references only — the whole-file `fontconfig_scaleform.xml`
+/// override shape, where a foreign-lineage client ships its own font family
+/// set instead. Every other blocking finding (invalid SWF, or a missing
+/// `.swf`/`.xml`/`.unbound` load — the original package-defect crash class)
+/// stays a hard refusal even then, so a genuinely broken package is never
+/// silently skipped. Absence of evidence never becomes an accusation: the
+/// scan already suppresses dangling findings when the client index is
+/// unavailable or the walk was truncated, so a capability skip can never fire
+/// on "no evidence".
 fn integrity_gate(
     mod_id: &str,
     display_name: &str,
     staged: &Path,
     game_root: &str,
-) -> anyhow::Result<()> {
+    quiet: bool,
+) -> anyhow::Result<Option<String>> {
     let mut bases = vec![staged.to_path_buf()];
     if let Some(existing) = crate::commands::mod_integrity::active_res_mods(game_root) {
         bases.push(existing);
@@ -912,6 +1003,9 @@ fn integrity_gate(
              advisory only, the install is not blocked by them"
         );
     }
+    let has_invalid = blocking
+        .iter()
+        .any(|p| p.kind == crate::commands::mod_integrity::KIND_INVALID_SWF);
     let clauses: Vec<String> = blocking
         .iter()
         .map(|p| {
@@ -936,9 +1030,59 @@ fn integrity_gate(
             overlaps = report.problems.len(),
             "mod-integrity scan found no staged blocking findings (advisory)"
         );
-        return Ok(());
+        return Ok(None);
     }
     let message = clauses.join("; ");
+    // Capability-skip class (batch callers only): a WELL-FORMED package whose
+    // staged glue references FONT assets that the package, the existing tree
+    // and the client's index all lack. That is the whole-file `fontconfig_*`
+    // override shape — a foreign-lineage client ships its own font family
+    // set, so the WG overrides cannot resolve there. Narrowed on purpose:
+    // a missing `.swf`/`.xml`/`.unbound` load is the original package-defect
+    // crash class (gc-20261101232118338-22840) and stays a hard refusal even
+    // on a batch target, so a broken package is never silently skipped —
+    // widen this class only with field evidence. The full clauses still go
+    // through the WARN log so the package remains reportable.
+    let dangling_assets: Vec<&str> = blocking
+        .iter()
+        .filter(|p| p.kind == crate::commands::mod_integrity::KIND_DANGLING_REF)
+        .filter_map(|p| p.asset.as_deref())
+        .collect();
+    let font_only = !dangling_assets.is_empty()
+        // Every blocking finding must be a NAMED dangling ref: an unnamed one
+        // (impossible today) must never be suspected away.
+        && dangling_assets.len() == blocking.len()
+        && dangling_assets.iter().all(|asset| asset.ends_with(".ttf"));
+    if quiet && !has_invalid && font_only {
+        const MAX_NAMED_ASSETS: usize = 4;
+        let shown = dangling_assets
+            .iter()
+            .take(MAX_NAMED_ASSETS)
+            .map(|asset| format!("`{asset}`"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let more = dangling_assets.len().saturating_sub(MAX_NAMED_ASSETS);
+        let tail = if more > 0 {
+            format!(" (and {more} more)")
+        } else {
+            String::new()
+        };
+        let reason = format!(
+            "the target client does not ship font assets this package's glue loads: {shown}{tail}"
+        );
+        // Skip-specific evidence line: the refusal wording (with its
+        // "refusing to install … report the package" tail) would read as a
+        // hard refusal in the log, but this target was NOT installed. Keep
+        // the full findings one level down for a hub report.
+        tracing::warn!(
+            id = %mod_id,
+            game_root,
+            assets = %dangling_assets.join(", "),
+            "batch capability skip: the target client does not ship font assets the package's glue loads (nothing installed; an explicit install still refuses with the full findings)"
+        );
+        tracing::debug!(id = %mod_id, game_root, "{message}");
+        return Ok(Some(reason));
+    }
     tracing::warn!(id = %mod_id, game_root, "{message}");
     bail!("{message}");
 }
@@ -988,6 +1132,18 @@ fn push_package_conflict_warnings(
     }
 }
 
+/// What the gated install pipeline did: applied the validated plan, or
+/// (a BATCH caller only) answered the capability skip — the package is
+/// well-formed, this client just does not ship the font assets its glue
+/// loads. Nothing was mutated in the latter case (the gate runs before the
+/// rewind).
+pub(crate) enum InstallOutcome {
+    /// Boxed to keep the value small (the plan payload dwarfs the skip
+    /// reason; clippy::large_enum_variant).
+    Applied(Box<mod_hub::PlanApply>),
+    Incompatible(String),
+}
+
 /// Extract every package archive (part order = index order) into `work`, then
 /// run the shared classify → install pipeline. Validate the full replacement
 /// before rewinding an existing install. Returns the applied plan — the
@@ -1000,6 +1156,10 @@ fn push_package_conflict_warnings(
 /// Aslain packages are laid out against the game root: the payload lives under
 /// `res_mods/…` (→ `bin/<ver>/res_mods/…`), and a few text mods ship a loose
 /// DLL that belongs in the game root itself.
+/// Test-only convenience wrapper (the production catalog install path uses
+/// [`unpack_and_install_with_gate`] with its batch gates); existing pipeline
+/// tests keep the hard-gate entry unchanged.
+#[cfg(test)]
 pub(crate) fn unpack_and_install(
     mod_id: &str,
     display_name: &str,
@@ -1012,6 +1172,43 @@ pub(crate) fn unpack_and_install(
     supersede_ids: &[String],
     installs: &mut Vec<ModInstallRecord>,
 ) -> anyhow::Result<mod_hub::PlanApply> {
+    // The explicit / active install path: the integrity gate keeps its hard
+    // refusal — the user asked for THIS client and must see why it cannot
+    // take the package.
+    match unpack_and_install_with_gate(
+        mod_id,
+        display_name,
+        work,
+        game_root,
+        packages,
+        supersede_ids,
+        installs,
+        false,
+    )? {
+        InstallOutcome::Applied(applied) => Ok(*applied),
+        // Unreachable by construction: quiet=false keeps the gate refusing
+        // hard, so a capability skip can only come from a quiet caller.
+        InstallOutcome::Incompatible(reason) => Err(anyhow!("{reason}")),
+    }
+}
+
+/// [`unpack_and_install`] with the batch caller's capability gate:
+/// `skip_package_incompatible` answers the font-only dangling-ref class (see
+/// [`integrity_gate`]) with [`InstallOutcome::Incompatible`] instead of the
+/// hard refusal, so the caller may report a quiet `InstallReport.skipped` for
+/// a client that does not ship the package's font assets. A corrupt payload
+/// or any non-font dangling load always refuses, regardless of this flag.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn unpack_and_install_with_gate(
+    mod_id: &str,
+    display_name: &str,
+    work: &Path,
+    game_root: &str,
+    packages: &[CatalogPackage],
+    supersede_ids: &[String],
+    installs: &mut Vec<ModInstallRecord>,
+    skip_package_incompatible: bool,
+) -> anyhow::Result<InstallOutcome> {
     let extract_root = work.join("unpacked");
     // The work dir may be REUSED (the test suite drives the same tree twice):
     // start from empty split/merged trees, or stale files read as finished
@@ -1069,7 +1266,15 @@ pub(crate) fn unpack_and_install(
     // record and its restore snapshots stay untouched (the same
     // "validate the full replacement before rewinding" contract the
     // classifier and validate_plan enforce above).
-    integrity_gate(mod_id, display_name, &extract_root, game_root)?;
+    if let Some(reason) = integrity_gate(
+        mod_id,
+        display_name,
+        &extract_root,
+        game_root,
+        skip_package_incompatible,
+    )? {
+        return Ok(InstallOutcome::Incompatible(reason));
+    }
     // Rewind only once all archives and the classified plan are usable.
     // Corrupt or unsupported replacement packages must leave the installed
     // version, its ledger record and its restore snapshots untouched.
@@ -1132,7 +1337,7 @@ pub(crate) fn unpack_and_install(
         ));
     }
 
-    Ok(applied)
+    Ok(InstallOutcome::Applied(Box::new(applied)))
 }
 
 /// Records that sit AFTER the first rewound one in ledger order - the "newer

@@ -2290,6 +2290,7 @@ fn local_record_describes_local_install() {
             conflicts: Vec::new(),
             mirrored_bins: Vec::new(),
             skipped: None,
+            skipped_kind: None,
             pruned_files: 0,
         },
         written: vec!["gui/a.png".into(), "ime_config.xml".into()],

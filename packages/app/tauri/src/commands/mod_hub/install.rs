@@ -455,6 +455,7 @@ fn install_plan_inner(
             conflicts: Vec::new(),
             mirrored_bins,
             skipped: None,
+            skipped_kind: None,
             pruned_files: pruned,
         },
         written,

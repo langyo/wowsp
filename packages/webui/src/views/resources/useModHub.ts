@@ -704,25 +704,33 @@ export function useModHub() {
       }
       try {
         if (op === "install") {
-          // Version gate: the fan-out chose this CLIENT, the user did
-          // not — a pack whose published range confidently excludes the
-          // client's game version skips (quiet note) instead of
-          // warn-and-proceed. The ACTIVE root keeps warn-and-proceed:
-          // the user pressed Install on THAT client.
-          const isActive = target.path === gameRoot.value;
+          // Fan-out gates: this CLIENT was chosen by the fan-out, the user
+          // picked only the active root. A confident VERSION-range mismatch
+          // skips quietly (the pack is built for another game version), and
+          // so does a package whose glue loads FONT assets the client does
+          // not ship (a foreign-lineage client's own font family set). The
+          // ACTIVE root keeps warn-and-proceed: the user pressed Install on
+          // THAT client.
+          const isActive = sameGamePath(target.path, gameRoot.value);
           const r = await pluginUpdates.runMod(
             entry.id,
             target.path,
             preset,
             "install",
             !isActive,
+            !isActive,
           );
           if (r.skipped) {
             toast.info(
-              t("resources.sync.skippedByVersion", {
-                mod: localized(entry).name || entry.nameEn,
-                client: label,
-              }),
+              t(
+                r.skippedKind === "package"
+                  ? "resources.sync.skippedIncompatible"
+                  : "resources.sync.skippedByVersion",
+                {
+                  mod: localized(entry).name || entry.nameEn,
+                  client: label,
+                },
+              ),
             );
             continue;
           }
@@ -1234,7 +1242,13 @@ export function useModHub() {
   /** Execute a confirmed plan: per client install-then-uninstall,
    *  sequentially (single-flight busy table), running clients skipped
    *  with a warning (Rust refuses writes into a live game tree), ONE
-   *  end-of-run summary toast, then the full refresh pass. */
+   *  end-of-run summary toast, then the full refresh pass. Every install
+   *  here targets a NON-ACTIVE client the reconcile chose (never the user),
+   *  so it takes the package-capability gate: a pack whose glue loads font
+   *  assets that client does not ship skips quietly instead of hard-failing
+   *  the plan (a foreign-lineage client would otherwise take WG-only packs
+   *  and break on its own font set). The version RANGE is not gated here —
+   *  a lagging WG client must keep receiving the active set's mods. */
   async function doSyncAll(): Promise<void> {
     const plan = syncAllAsk.value;
     syncAllAsk.value = null;
@@ -1250,7 +1264,13 @@ export function useModHub() {
     }
     const failures: string[] = [];
     let okClients = 0;
+    /** Clients with at least one failure — the honest "failed" count (a
+     *  capability-skip-only client was neither synced nor refused). */
+    let failedClients = 0;
     let attempted = 0;
+    /** Any planned install parked by the capability gate (its own note
+     *  already spoke — the summary must not contradict it). */
+    let skippedIncompatible = false;
     const skippedRunning: string[] = [];
     try {
       for (const p of plan.clients) {
@@ -1260,16 +1280,41 @@ export function useModHub() {
         }
         attempted += 1;
         let ok = true;
+        /** Whether this client actually changed on disk — a plan whose
+         *  every install the capability gate skipped did not converge. */
+        let landedSomething = false;
         for (const item of p.installs) {
           // An op busy on another surface owns the item — that op's own
           // fan-out keeps the ledger honest; skip silently.
           if (pluginUpdates.itemBusy.has(item.entry.id)) continue;
           try {
-            await pluginUpdates.runMod(
+            // Package-capability gate (the version range is NOT gated here:
+            // a lagging WG client must keep receiving the active set's
+            // mods; a lagging version only warns). Every target is a
+            // NON-active client the reconcile chose.
+            const r = await pluginUpdates.runMod(
               item.entry.id,
               p.install.path,
               item.preset ?? undefined,
+              "install",
+              undefined,
+              true,
             );
+            if (r.skipped) {
+              // Rule skip, not a failure: the plan does not converge on
+              // this client and the note says why. The target was chosen
+              // by the reconcile, so the active client's hard refusal does
+              // not apply here.
+              toast.info(
+                t("resources.sync.skippedIncompatible", {
+                  mod: localized(item.entry).name || item.entry.nameEn,
+                  client: p.label,
+                }),
+              );
+              skippedIncompatible = true;
+              continue;
+            }
+            landedSomething = true;
           } catch (e) {
             ok = false;
             failures.push(
@@ -1282,6 +1327,7 @@ export function useModHub() {
         for (const u of p.uninstalls) {
           try {
             await pluginUpdates.runModUninstall(u.id, p.install.path);
+            landedSomething = true;
           } catch (e) {
             ok = false;
             failures.push(
@@ -1289,7 +1335,8 @@ export function useModHub() {
             );
           }
         }
-        if (ok) okClients += 1;
+        if (ok && landedSomething) okClients += 1;
+        if (!ok) failedClients += 1;
       }
     } finally {
       syncAllBusy.value = false;
@@ -1297,20 +1344,30 @@ export function useModHub() {
         for (const i of p.installs) fanOutBusy.value.delete(i.entry.id);
       }
       if (attempted > 0) {
-        if (failures.length === 0) {
+        if (failures.length === 0 && okClients > 0) {
           toast.success(t("resources.sync.done", { count: okClients }));
+        } else if (failures.length === 0 && skippedIncompatible) {
+          // Nothing landed, nothing failed and a capability skip already
+          // explained itself: no summary line — a "nothing to do" claim
+          // would contradict the note that this client cannot run the pack.
+        } else if (failures.length === 0) {
+          // Nothing landed and nothing failed: every planned install was
+          // owned by a concurrent op. Never claim a sync that did not happen.
+          toast.info(t("resources.sync.nothingToDo"));
         } else if (okClients > 0) {
           toast.warning(
             t("resources.sync.partial", {
               ok: okClients,
-              count: attempted,
+              // Clients with a real outcome: a skip-only target is neither
+              // a success nor a failure (its own note already spoke).
+              count: okClients + failedClients,
               details: failureDetail(failures),
             }),
           );
         } else {
           toast.error(
             t("resources.sync.failed", {
-              count: attempted,
+              count: failedClients,
               details: failureDetail(failures),
             }),
           );

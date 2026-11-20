@@ -580,6 +580,43 @@ mention, a `<format>` template or an absolute path never accuses), and
 nothing is blocked or deleted automatically — a legitimate skin may
 replace a client asset on purpose.
 
+**Landed (batch gates: version + package capability)**: a catalog entry
+publishes the game range its payload was built against, and each client's own
+`preferences.xml` pin carries the version it runs
+(`commands/mod_catalog/version_guard.rs`). TWO independent gates ride
+`InstallReport.skipped` (`skipped_kind` names which one answered), requested
+per caller:
+
+- **Version gate** — only the mod-hub install FAN-OUT (a pack the user
+  installed for the active client, mirrored onto the others) requests it: a
+  CONFIDENT range mismatch skips that client before a byte moves. It is
+  deliberately NOT applied to the per-client update batch or the reconcile
+  plan — those update each client's OWN ledger copy, and a lagging WG client
+  (e.g. CN on 15.9 while the catalog targets 15.10) must keep updating.
+- **Package-capability gate** — the sidebar's one-click update batch and the
+  reconcile/sync-all plan request it for their NON-active targets. A
+  well-formed package whose staged glue loads FONT assets the target client
+  does not index (the whole-file `gui/fontconfig_scaleform.xml` override
+  against a foreign-lineage client that ships its own font family set)
+  answers a quiet skip and nothing is rewritten: the package is fine, the
+  client cannot load it. The class is narrowed to `.ttf` references on
+  purpose — an invalid SWF, or a missing `.swf`/`.xml`/`.unbound` load, is
+  the original package-defect crash class and stays a hard refusal on every
+  target, so a broken package is never silently skipped. The full clauses
+  still reach the WARN log (the package stays reportable), and the skip is
+  memoized for the session, scoped to the catalog pack version, so the badge
+  stops re-offering an update that can only re-skip until the pack version
+  changes or an explicit install is attempted (a client update alone does
+  not clear the memo).
+
+The ACTIVE install always keeps the hard refusal — the user chose that
+client, so the integrity gate's "refusing to install" answer is theirs to
+see. With NO active install selected there is no chosen client to
+privilege, so every batch target keeps the hard refusal too. Field history: the 2026-11-20 report (an Info Panel pack on a Lesta
+client) surfaced that refusal as a whole-batch "update failed"; the batch
+and the sync-all plan now answer their non-active targets with the
+capability skip instead.
+
 **Landed (tree version stamp + staleness signal)**: `wowsp.toml` carries a
 `[tree] game_version` stamp — the client version the tree was last written
 for — set at every catalog install from the client's own `preferences.xml`

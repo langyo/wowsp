@@ -2274,6 +2274,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: Vec::new(),
         mirrored_bins: Vec::new(),
         skipped: None,
+        skipped_kind: None,
         pruned_files: 0,
     });
     assert_exact_keys(&v, &["name", "binVersion", "wroteFiles", "warnings"]);
@@ -2292,6 +2293,10 @@ fn install_report_renames_bin_version_and_wrote_files() {
     assert!(back.conflicts.is_empty());
     assert!(back.mirrored_bins.is_empty());
     assert!(back.skipped.is_none(), "legacy reports stay unskipped");
+    assert!(
+        back.skipped_kind.is_none(),
+        "legacy reports carry no skip kind"
+    );
     // Non-empty conflicts serialize under the camelCase name.
     let v = round_trips(InstallReport {
         name: "x".into(),
@@ -2301,6 +2306,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: vec!["overwrites 2 file(s)".into()],
         mirrored_bins: Vec::new(),
         skipped: None,
+        skipped_kind: None,
         pruned_files: 0,
     });
     assert_eq!(v["conflicts"][0], "overwrites 2 file(s)");
@@ -2313,11 +2319,13 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: Vec::new(),
         mirrored_bins: vec!["13357625".into()],
         skipped: None,
+        skipped_kind: None,
         pruned_files: 0,
     });
     assert_eq!(v["mirroredBins"][0], "13357625");
-    // A version-gate skip serializes as "skipped" (the fan-out keys its
-    // quiet per-client skip on it); absent stays off the wire.
+    // A fan-out skip serializes as "skipped" plus the gate discriminant
+    // (the webui picks its sentence from skippedKind); both stay off the
+    // wire when absent.
     let v = round_trips(InstallReport {
         name: "x".into(),
         bin_version: String::new(),
@@ -2326,9 +2334,11 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: Vec::new(),
         mirrored_bins: Vec::new(),
         skipped: Some("game version mismatch".into()),
+        skipped_kind: Some(InstallSkipKind::Version),
         pruned_files: 0,
     });
     assert_eq!(v["skipped"], "game version mismatch");
+    assert_eq!(v["skippedKind"], "version");
     // Junk the copy skipped rides the report under the camelCase name.
     let v = round_trips(InstallReport {
         name: "x".into(),
@@ -2338,6 +2348,7 @@ fn install_report_renames_bin_version_and_wrote_files() {
         conflicts: Vec::new(),
         mirrored_bins: Vec::new(),
         skipped: None,
+        skipped_kind: None,
         pruned_files: 2,
     });
     assert_eq!(v["prunedFiles"], 2);
