@@ -32,10 +32,30 @@
     gap: 0.35rem;
   }
 
-  /* The range waterfall ships its own 1rem bottom margin — the modal's
-     flex gap already spaces the next row. */
-  :deep(.hk-selection-waterfall) {
-    margin-bottom: 0;
+  /* The range block: label + readout over hikari's ribbon (which ships its
+     own chrome). */
+  &__range {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+
+    :deep(.hk-range-ribbon) {
+      margin: 0;
+    }
+  }
+
+  &__range-readout {
+    margin: 0;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: rgb(var(--color-text));
+  }
+
+  /* GIF budget clamp note (the range auto-shortened to fit 1500 frames). */
+  &__clamp {
+    margin: 0;
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-muted));
   }
 
   /* fps · speed · resolution — three equal columns on ONE row. */

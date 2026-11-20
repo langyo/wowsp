@@ -5,6 +5,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  GIF_MAX_FRAMES,
+  clampRangeToBudget,
+  exportMaxSpan,
+  normalizeExportRange,
   EXPORT_HEADER_H,
   PLAYBACK_CODEC_LADDER,
   EXPORT_LOGICAL,
@@ -91,12 +95,12 @@ describe("frameTimesAtSpeed", () => {
 
 describe("clampExportSettings", () => {
   it("keeps on-ladder values untouched", () => {
-    const s = clampExportSettings({ format: "video", from: "now", fps: 60, speed: 2, size: 1080, footer: false });
-    expect(s).toEqual({ format: "video", from: "now", fps: 60, speed: 2, size: 1080, footer: false });
+    const s = clampExportSettings({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false });
+    expect(s).toEqual({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false });
   });
 
   it("re-bases fps, speed and size when the format flips", () => {
-    const s = clampExportSettings({ format: "gif", from: "start", fps: 60, speed: 3, size: 1080, footer: true });
+    const s = clampExportSettings({ format: "gif", from: 0, to: 60, fps: 60, speed: 3, size: 1080, footer: true });
     // (1080 is off the GIF width ladder → falls to the ladder's smallest.)
     expect(s.format).toBe("gif");
     expect(PLAYBACK_EXPORT_FPS.gif).toContain(s.fps);
@@ -120,5 +124,42 @@ describe("PLAYBACK_CODEC_LADDER", () => {
     }
     // Every rung lands in the MP4 container the modal advertises.
     expect(PLAYBACK_CODEC_LADDER.every((r) => r.ext === "mp4")).toBe(true);
+  });
+});
+
+describe("export range helpers", () => {
+  it("GIF takes the 1500-frame budget", () => {
+    expect(GIF_MAX_FRAMES).toBe(1500);
+  });
+
+  it("exportMaxSpan is the endpoint-inclusive budget span", () => {
+    // 1500 frames at 10 fps × 10× speed → 1499 steps of 1 battle second.
+    expect(exportMaxSpan("gif", 10, 10)).toBeCloseTo(1499, 6);
+    // Video is not auto-clamped (its budget is a refusal, not a shrink).
+    expect(exportMaxSpan("video", 30, 1)).toBeCloseTo(29999 / 30, 6);
+  });
+
+  it("clampRangeToBudget shortens GIF only", () => {
+    const span = exportMaxSpan("gif", 10, 10);
+    expect(clampRangeToBudget(0, 5000, "gif", 10, 10)).toBeCloseTo(span, 6);
+    expect(clampRangeToBudget(0, 5000, "video", 30, 5)).toBe(5000);
+    // A window inside the budget is untouched.
+    expect(clampRangeToBudget(100, 300, "gif", 10, 10)).toBe(300);
+  });
+
+  it("normalizeExportRange orders, clamps and caps the window", () => {
+    const r = normalizeExportRange(50, 10, 600, "video", 30, 1);
+    expect(r.from).toBe(10);
+    expect(r.to).toBe(50);
+    expect(normalizeExportRange(-5, 9999, 600, "video", 30, 1)).toEqual({ from: 0, to: 600 });
+    // Hairline windows keep at least one frame step.
+    const hair = normalizeExportRange(100, 100, 600, "video", 30, 1);
+    expect(hair.to - hair.from).toBeGreaterThan(0);
+    // GIF end capped by the budget — only bites once the window exceeds it
+    // (the fixture's whole battle is shorter than the 1499 s budget span).
+    const gif = normalizeExportRange(0, 600, 600, "gif", 10, 10);
+    expect(gif.to).toBe(600);
+    const long = normalizeExportRange(0, 5000, 5000, "gif", 10, 10);
+    expect(long.to).toBeCloseTo(exportMaxSpan("gif", 10, 10), 6);
   });
 });

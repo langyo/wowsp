@@ -591,8 +591,6 @@
     "formatVideo": "Видео (MP4)",
     "formatGif": "GIF-анимация",
     "range": "Диапазон",
-    "rangeNow": "От текущего момента до конца",
-    "rangeFull": "Весь бой",
     "fps": "Частота кадров",
     "speed": "Ускорение",
     "resolution": "Разрешение",
@@ -616,8 +614,9 @@
     "pathChange": "Изменить",
     "phaseFinalize": "Финализация видео…",
     "phaseSave": "Сохранение файла…",
-    "rangeFullDesc": "С начала до конца · ~{time}",
-    "rangeNowDesc": "С текущей позиции до конца · ~{time}"
+    "rangeLane": "Таймлайн боя",
+    "rangeLength": "Интервал {time}",
+    "rangeClamp": "Сокращено до {time} (лимит GIF 1500 кадров)"
   },
   "perf": {
     "timing": "Частота кадров",

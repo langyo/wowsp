@@ -591,8 +591,6 @@
     "formatVideo": "视频（MP4）",
     "formatGif": "GIF 动图",
     "range": "范围",
-    "rangeNow": "从当前时刻到结束",
-    "rangeFull": "整场",
     "fps": "帧率",
     "speed": "倍速",
     "resolution": "分辨率",
@@ -616,8 +614,9 @@
     "pathChange": "更改",
     "phaseFinalize": "正在封装视频…",
     "phaseSave": "正在保存文件…",
-    "rangeFullDesc": "从开场到结束 · 约 {time}",
-    "rangeNowDesc": "从当前播放位置到结束 · 约 {time}"
+    "rangeLane": "对局时间轴",
+    "rangeLength": "区间时长 {time}",
+    "rangeClamp": "已按 GIF 1500 帧上限截断到 {time}"
   },
   "perf": {
     "timing": "帧率",

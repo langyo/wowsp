@@ -31,4 +31,42 @@ export function planeIcon(type: string): HTMLImageElement | null {
   return img;
 }
 
+/** The game's aircraft art only ships ALLY faces — an enemy squadron drawn
+ *  with it read green on the minimap (2026-11-20 report). Team-tinted
+ *  variants: the ally face passes through untouched, the enemy face is a
+ *  cached offscreen canvas whose pixels are recolored with source-in (the
+ *  original silhouette is the mask, so the marker keeps its shape). */
+const tintCache = new Map<string, HTMLCanvasElement | null>();
+const ROLE_TINT: Record<string, string> = {
+  enemy: "rgba(226, 64, 64, 0.98)",
+};
+
+export function planeIconTinted(
+  type: string,
+  role: "ally" | "enemy" | "self" | "neutral" | undefined,
+): HTMLImageElement | HTMLCanvasElement | null {
+  const tint = role ? ROLE_TINT[role] : undefined;
+  const img = planeIcon(type);
+  if (!tint || !img) return img;
+  const key = `${type}:${role}`;
+  if (tintCache.has(key)) return tintCache.get(key) ?? img;
+  if (!img.complete || img.naturalWidth === 0) return img;
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const c2d = canvas.getContext("2d");
+  if (!c2d) {
+    tintCache.set(key, null);
+    return img;
+  }
+  c2d.drawImage(img, 0, 0);
+  c2d.globalCompositeOperation = "source-in";
+  c2d.fillStyle = tint;
+  c2d.fillRect(0, 0, w, h);
+  tintCache.set(key, canvas);
+  return canvas;
+}
+
 export default planeIcon;

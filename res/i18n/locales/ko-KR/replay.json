@@ -591,8 +591,6 @@
     "formatVideo": "동영상(MP4)",
     "formatGif": "GIF 애니메이션",
     "range": "범위",
-    "rangeNow": "현재 시점부터 끝까지",
-    "rangeFull": "경기 전체",
     "fps": "프레임 레이트",
     "speed": "배속",
     "resolution": "해상도",
@@ -616,8 +614,9 @@
     "pathChange": "변경",
     "phaseFinalize": "동영상 마무리 중…",
     "phaseSave": "파일 저장 중…",
-    "rangeFullDesc": "시작부터 끝까지 · 약 {time}",
-    "rangeNowDesc": "현재 위치부터 끝까지 · 약 {time}"
+    "rangeLane": "전투 타임라인",
+    "rangeLength": "구간 {time}",
+    "rangeClamp": "GIF 1500프레임 상한으로 {time}까지 단축됨"
   },
   "perf": {
     "timing": "프레임률",

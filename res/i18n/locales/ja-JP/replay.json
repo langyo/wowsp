@@ -591,8 +591,6 @@
     "formatVideo": "動画（MP4）",
     "formatGif": "GIF アニメ",
     "range": "範囲",
-    "rangeNow": "現在位置から終了まで",
-    "rangeFull": "試合全体",
     "fps": "フレームレート",
     "speed": "倍速",
     "resolution": "解像度",
@@ -616,8 +614,9 @@
     "pathChange": "変更",
     "phaseFinalize": "動画をファイナライズ中…",
     "phaseSave": "ファイルを保存中…",
-    "rangeFullDesc": "開始から終了まで · 約 {time}",
-    "rangeNowDesc": "現在位置から終了まで · 約 {time}"
+    "rangeLane": "戦闘タイムライン",
+    "rangeLength": "区間 {time}",
+    "rangeClamp": "GIF の 1500 フレーム上限により {time} に短縮"
   },
   "perf": {
     "timing": "フレームレート",

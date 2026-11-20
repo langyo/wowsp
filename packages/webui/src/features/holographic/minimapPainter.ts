@@ -8,8 +8,9 @@
  * persistent state lives in the context (planeSmoothState).
  */
 import { drawShipGlyph } from "./shipGlyph";
-import { planeIcon } from "./planeIcons";
+import { planeIconTinted } from "./planeIcons";
 import { planeTrailExpiry } from "./planeFormation";
+import { activeSquadronOf } from "./followTargets";
 import { sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
 import { frustumCorners } from "./sceneUtils";
@@ -492,7 +493,64 @@ function drawDecisionSuggestions(
   }
 }
 
-export function drawMinimap(ctx: MapInternals) {
+/** Squadron role from the carrier join (planeCarrierOf → trajById). */
+function planeRoleOf(ctx: MapInternals, planeId: number): TeamRole | undefined {
+  const carrierId = ctx.planeCarrierOf.get(planeId);
+  const carrier = carrierId != null ? ctx.trajById.get(carrierId) : undefined;
+  return carrier ? resolveRoleQuick(ctx, carrier) : undefined;
+}
+
+/** Draw one squadron marker: team-tinted class icon, a gold controlled-
+ *  aircraft ring when this squadron is the followed carrier's active one,
+ *  and a role-coloured dot as the pre-decode fallback. */
+function drawSquadron(
+  g: CanvasRenderingContext2D,
+  ctx: MapInternals,
+  t: number,
+  planeId: number,
+  x: number,
+  y: number,
+  size: number,
+  followedCarrierId: number | null | undefined,
+): void {
+  const role = planeRoleOf(ctx, planeId);
+  const type = ctx.planeTypesById.get(planeId * 16) ?? "attack";
+  const icon = planeIconTinted(type, role);
+  const followPlaneId =
+    followedCarrierId != null
+      ? activeSquadronOf(
+          ctx.planeTrails,
+          ctx.planeCarrierOf,
+          ctx.minimapTrailEnd,
+          followedCarrierId,
+          t,
+        )
+      : null;
+  const followed = followPlaneId != null && followPlaneId === planeId;
+  const ready = icon != null && (icon as HTMLImageElement).naturalWidth > 0;
+  if (icon && ready) {
+    g.drawImage(icon as CanvasImageSource, x - size / 2, y - size / 2, size, size);
+  } else {
+    // Pre-decode fallback: the team's own ink, never a neutral blue.
+    g.fillStyle = role === "enemy" ? "rgba(232, 92, 92, 0.95)" : "rgba(74, 222, 128, 0.95)";
+    g.beginPath();
+    g.arc(x, y, Math.max(1.4, size * 0.16), 0, Math.PI * 2);
+    g.fill();
+  }
+  if (followed) {
+    // 主控 (camera-followed) aircraft: a gold edge outside the icon.
+    g.strokeStyle = "rgba(245, 197, 66, 0.95)";
+    g.lineWidth = Math.max(1.2, size * 0.09);
+    g.beginPath();
+    g.arc(x, y, size / 2 + Math.max(1.5, size * 0.12), 0, Math.PI * 2);
+    g.stroke();
+  }
+}
+
+export function drawMinimap(
+  ctx: MapInternals,
+  opts?: { followedCarrierId?: number | null },
+) {
   const full: MapBounds | null = computeFullMapBounds(ctx);
   if (!full) return;
   // Crop to the active battle area when the match plays out in a small
@@ -733,20 +791,7 @@ export function drawMinimap(ctx: MapInternals) {
       const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
       if (s == null) continue;
       drawn.add(planeId);
-      const icon = planeIcon(ctx.planeTypesById.get(trail.id) ?? "attack");
-      if (icon && icon.complete && icon.naturalWidth > 0) {
-        const sz = 10;
-        c2d.save();
-        c2d.translate(wx(s.x), wz(-s.z));
-        // Aircraft icons stay upright on the minimap (no rotation).
-        c2d.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
-        c2d.restore();
-      } else {
-        c2d.fillStyle = "rgba(120, 210, 255, 0.95)";
-        c2d.beginPath();
-        c2d.arc(wx(s.x), wz(-s.z), 1.4, 0, Math.PI * 2);
-        c2d.fill();
-      }
+      drawSquadron(c2d, ctx, t, planeId, wx(s.x), wz(-s.z), 10, opts?.followedCarrierId ?? null);
     }
   }
 
@@ -820,6 +865,9 @@ export function drawMinimap(ctx: MapInternals) {
         view: computeViewBounds(ctx, full),
         logical: TACTICAL_SIZE,
         rotation: (ctx.mmRotationDeg.value * Math.PI) / 180,
+        // The camera-followed carrier's active squadron wears the gold
+        // controlled-aircraft edge (主控 marker).
+        followedCarrierId: opts?.followedCarrierId ?? null,
       });
     }
   }
@@ -852,6 +900,10 @@ export interface EnlargedMapPaintOptions {
    *  live canvas); the replay clip turns them off. Aircraft formation
    *  icons are NOT trails — they always draw. */
   trails?: boolean;
+  /** Carrier entity the camera is following — its ACTIVE squadron wears
+   *  the gold controlled-aircraft edge (the 主控 marker). Live canvas only;
+   *  the clip passes nothing. */
+  followedCarrierId?: number | null;
   /** Clan tag by player name (rendered as `[TAG] name`), when known. */
   clanOf?: (name: string) => string | null;
   /** Numeric tier → Roman numeral ("X"), for the ship-name line. */
@@ -1084,7 +1136,18 @@ export function paintEnlargedMap(
     for (const l of ctx.shipLabels.value) {
       if (l.kind !== "plane") byEntity.set(l.entityId, l);
     }
-    for (const m of ctx.shipMarkers) {
+    // Sunk ships keep their cards (the 2026-11-20 report) but paint
+    // FIRST and dimmer, so a live ship's card always wins an overlap.
+    const labelOrder = [...ctx.shipMarkers].sort((a, b) => {
+      const deadA =
+        (a.userData.deathTime as number | null) != null &&
+        t >= (a.userData.deathTime as number);
+      const deadB =
+        (b.userData.deathTime as number | null) != null &&
+        t >= (b.userData.deathTime as number);
+      return Number(deadB) - Number(deadA);
+    });
+    for (const m of labelOrder) {
       const firstT = m.userData.firstT as number | undefined;
       if (t < (firstT ?? Infinity)) continue;
       const label = byEntity.get(m.userData.entityId as number);
@@ -1094,6 +1157,7 @@ export function paintEnlargedMap(
         t >= (m.userData.deathTime as number);
       const lx = zwx(m.position.x);
       const ly = zwz(m.position.z) - 20;
+      g.globalAlpha = labelDead ? 0.62 : 1;
       const ink = labelDead
         ? "rgba(148, 163, 184, 0.7)"
         : label.role === "enemy"
@@ -1144,6 +1208,7 @@ export function paintEnlargedMap(
         g.fillStyle = `rgba(${barInk}, 0.95)`;
         g.fillRect(barX, barY, barW * frac, 4);
       }
+      g.globalAlpha = 1;
     }
   }
   // Smoke screens — the same filled puff band as the thumb pass, at
@@ -1197,22 +1262,13 @@ export function paintEnlargedMap(
       const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
       if (s == null) continue;
       drawn.add(planeId);
-      const icon = planeIcon(ctx.planeTypesById.get(trail.id) ?? "attack");
-      if (icon && icon.complete && icon.naturalWidth > 0) {
-        const sz = 22;
-        g.save();
-        g.translate(zwx(s.x), zwz(-s.z));
-        // Aircraft icons stay upright on the minimap (counter-rotate
-        // against the map frame when the rotate buttons are used).
-        if (rotRad !== 0) g.rotate(-rotRad);
-        g.drawImage(icon, -sz / 2, -sz / 2, sz, sz);
-        g.restore();
-      } else {
-        g.fillStyle = "rgba(120, 210, 255, 0.95)";
-        g.beginPath();
-        g.arc(zwx(s.x), zwz(-s.z), 3.5, 0, Math.PI * 2);
-        g.fill();
-      }
+      g.save();
+      g.translate(zwx(s.x), zwz(-s.z));
+      // Aircraft icons stay upright on the minimap (counter-rotate
+      // against the map frame when the rotate buttons are used).
+      if (rotRad !== 0) g.rotate(-rotRad);
+      drawSquadron(g, ctx, t, planeId, 0, 0, 22, o.followedCarrierId);
+      g.restore();
     }
   }
   // In-flight torpedoes at the enlarged scale (inside the rotated
