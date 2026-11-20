@@ -20,6 +20,7 @@ const mocks = vi.hoisted(() => ({
   layerStack: vi.fn(), layerSetOrder: vi.fn(), layerSetEnabled: vi.fn(),
   layerRender: vi.fn(), layerPaths: vi.fn(),
   catalogInstall: vi.fn(), catalogUninstall: vi.fn(),
+  parkSkip: vi.fn(),
   syncOn: true,
 }));
 vi.mock("vue-router", () => ({ useRoute: () => ({ query: {} }), useRouter: () => ({ replace: vi.fn() }) }));
@@ -64,6 +65,8 @@ vi.mock("@/stores/pluginUpdates", () => ({
       skipPackage?: boolean,
     ) => mocks.catalogInstall(id, root, preset, skip, skipPackage),
     runModUninstall: (id: string, root: string) => mocks.catalogUninstall(id, root),
+    parkIncompatibleSkip: (path: string, id: string, version?: string, reason?: string) =>
+      mocks.parkSkip(path, id, version, reason),
   }),
 }));
 /* The mod-sync preference: a plain getter box (not a vue ref) seeded per
@@ -913,6 +916,10 @@ describe("multi-client sync", () => {
     expect(mocks.info.mock.calls.map((c) => c[0])).toContain(
       "resources.sync.skippedByVersion",
     );
+    // The rule skip PARKS the pack on that client (the shared memo) so the
+    // badge stops re-offering it — the fan-out attempt cleared the row to
+    // allow this explicit attempt, so it must re-park here.
+    expect(mocks.parkSkip).toHaveBeenCalledWith("C:/RU", "mod-x", "1", "game version mismatch");
     // Only the landed clients count — the skip is not a partial failure.
     expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
     expect(mocks.warning).not.toHaveBeenCalledWith(expect.stringContaining("resources.sync.partial"));
@@ -950,6 +957,8 @@ describe("multi-client sync", () => {
     const infoKeys = mocks.info.mock.calls.map((c) => c[0]);
     expect(infoKeys).toContain("resources.sync.skippedIncompatible");
     expect(infoKeys).not.toContain("resources.sync.skippedByVersion");
+    // Parked for the badge too, not just toasted (see the version-skip test).
+    expect(mocks.parkSkip).toHaveBeenCalledWith("C:/RU", "mod-x", "1", "client lacks assets");
   });
 
   it("stays single-root while unified sync is off", async () => {

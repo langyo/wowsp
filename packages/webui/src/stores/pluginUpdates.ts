@@ -45,7 +45,7 @@ import { useConfigStore } from "@/stores/config";
 import { DOWNLOAD_CARD_GRACE_MS, useDownloadsStore } from "@/stores/downloads";
 import { useGameStatusStore } from "@/stores/gameStatus";
 import { useIngamePluginStore } from "@/stores/ingamePlugin";
-import { sameGamePath } from "@/utils/gamePath";
+import { normalizeGamePath, sameGamePath } from "@/utils/gamePath";
 import { installFolderName, installLabel } from "@/utils/installLabel";
 import { guardRefusalKey } from "@/utils/refusalKey";
 
@@ -109,6 +109,42 @@ export function failureDetail(
 /** Lifecycle op an item is mid-way through. */
 export type PluginItemOp = "install" | "update" | "uninstall";
 
+/** localStorage key of the capability-skip memo (the store's
+ *  `incompatibleSkips`). Shape: `{ [normalizedInstallPath\u0000modId]:
+ *  { version, reason } }` — the in-memory memo serialized verbatim, so a
+ *  corrupt or foreign payload degrades to an empty memo, never to a wrong
+ *  park. */
+const INCOMPATIBLE_SKIPS_KEY = "wowsp-plugin-updates-incompatible-skips";
+
+/** One memo row as persisted. */
+interface IncompatibleSkipMemo {
+  version: string;
+  reason: string;
+}
+
+/** Read the persisted memo. Any surprise (storage unavailable, corrupt
+ *  JSON, wrong row shape) degrades to an empty memo — the next rule skip
+ *  re-fills it, so nothing user-visible depends on the read succeeding. */
+function loadIncompatibleSkips(): Map<string, IncompatibleSkipMemo> {
+  const memo = new Map<string, IncompatibleSkipMemo>();
+  try {
+    const raw = localStorage.getItem(INCOMPATIBLE_SKIPS_KEY);
+    if (!raw) return memo;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return memo;
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (!value || typeof value !== "object") continue;
+      const row = value as Partial<IncompatibleSkipMemo>;
+      if (typeof row.version !== "string" || typeof row.reason !== "string") continue;
+      memo.set(key, { version: row.version, reason: row.reason });
+    }
+  } catch {
+    // storage unavailable (privacy mode) or a corrupt payload — start
+    // empty; the memo re-fills on the next skip
+  }
+  return memo;
+}
+
 export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   const toast = useToast();
   const config = useConfigStore();
@@ -116,13 +152,75 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
   /** Per-install snapshot; missing path = not assessed (quiet). */
   const perInstall = ref<Record<string, PluginUpdateInfo>>({});
 
-  /** Session memo of capability-gate skips: "this client cannot run that
-   *  pack" (the package needs font assets the client does not ship). Keyed
-   *  by install path + mod id and version-scoped, so the pending badge and
-   *  every later batch stop offering an update that can only re-skip — and a
-   *  catalog update (new pack version) re-offers it once more. An explicit
-   *  attempt through [`runMod`] retries immediately. */
-  const incompatibleSkips = ref(new Map<string, { version: string; reason: string }>());
+  /** Memo of capability-gate skips: "this client cannot run that pack"
+   *  (the package needs font assets the client does not ship). Keyed by
+   *  install path + mod id and version-scoped, so the pending badge and
+   *  every later batch stop offering an update that can only re-skip — and
+   *  a catalog update (new pack version) re-offers it once more. An
+   *  explicit attempt through [`runMod`] retries immediately. The memo is
+   *  PERSISTENT (localStorage): a session-only memo re-offered the same
+   *  hopeless update on every app start and only cleared after the user
+   *  clicked through the identical skip toast once more — the badge kept
+   *  counting an update that could never land (user report 2026-11-20).
+   *  Dead rows (the pack moved on, the record left) are pruned by every
+   *  assessment, so the persisted payload never grows stale. */
+  const incompatibleSkips = ref(loadIncompatibleSkips());
+
+  /** Write the memo through to localStorage. A failure (storage
+   *  unavailable, quota) keeps the in-memory memo — the park then lives
+   *  for this session only, exactly the pre-persistence behavior, and is
+   *  never worth an error surface. */
+  function persistIncompatibleSkips(): void {
+    try {
+      localStorage.setItem(
+        INCOMPATIBLE_SKIPS_KEY,
+        JSON.stringify(Object.fromEntries(incompatibleSkips.value)),
+      );
+    } catch {
+      // session-only memo on failure
+    }
+  }
+
+  /** Drop memo rows that no longer park anything: a row matters only while
+   *  the SAME pack version is still pending on that install — a catalog
+   *  update re-offers the pack by design, and an uninstalled record has
+   *  nothing left to hide. Runs on every assessment, so the persisted
+   *  payload never accumulates dead rows across restarts. */
+  function pruneIncompatibleSkips(next: Record<string, PluginUpdateInfo>): void {
+    const live = new Set<string>();
+    for (const [path, info] of Object.entries(next)) {
+      for (const m of info.mods) {
+        const key = incompatibleSkipKey(path, m.id);
+        const hit = incompatibleSkips.value.get(key);
+        if (hit && hit.version === (m.catalogVersion ?? "")) live.add(key);
+      }
+    }
+    if (live.size === incompatibleSkips.value.size) return;
+    for (const key of [...incompatibleSkips.value.keys()]) {
+      if (!live.has(key)) incompatibleSkips.value.delete(key);
+    }
+    persistIncompatibleSkips();
+  }
+
+  /** Park one capability-gate skip: the memo row hides the pack from the
+   *  badge and from later batches until the pack version moves (or an
+   *  explicit [`runMod`] attempt clears it). The one-click batch AND the
+   *  mod hub's fan-out install both route their rule skips through here,
+   *  so every skip path parks consistently — a fan-out attempt first
+   *  CLEARS the memo row ([`runMod`]), and without this the badge would
+   *  rise again right after the user watched it skip. */
+  function parkIncompatibleSkip(
+    path: string,
+    id: string,
+    catalogVersion: string | undefined,
+    reason: string,
+  ): void {
+    incompatibleSkips.value.set(incompatibleSkipKey(path, id), {
+      version: catalogVersion ?? "",
+      reason,
+    });
+    persistIncompatibleSkips();
+  }
 
   /** ── shared per-item busy table ────────────────────────────────────
    *  Probe (PROBE_ITEM) + catalog mod ids → the op in flight. Every
@@ -201,18 +299,25 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     });
   }
 
-  /** Memo key: install path + mod id (the store's two-level identity). */
+  /** Memo key: install path + mod id (the store's two-level identity).
+   *  The path goes through the FULL install-path normalization (not just a
+   *  lowercase) so a "/" vs "\\" spelling change between launches cannot
+   *  orphan a parked row — the memo now outlives the session, and the key
+   *  must outlive the exact spelling it was parked under. */
   function incompatibleSkipKey(path: string, id: string): string {
-    return `${path.toLowerCase()}\u0000${id}`;
+    return `${normalizeGamePath(path)}\u0000${id}`;
   }
 
   function clearIncompatibleSkip(gameRoot: string, id: string): void {
+    let removed = false;
     for (const key of [...incompatibleSkips.value.keys()]) {
       const [path, modId] = key.split("\u0000");
       if (modId === id && sameGamePath(path, gameRoot)) {
         incompatibleSkips.value.delete(key);
+        removed = true;
       }
     }
+    if (removed) persistIncompatibleSkips();
   }
 
   /** Whether this pending mod was parked by a capability skip for the SAME
@@ -367,6 +472,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         next[path] = { mods, probeOutdated };
       }),
     );
+    pruneIncompatibleSkips(next);
     perInstall.value = next;
   }
 
@@ -445,8 +551,9 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     skipIncompatible?: boolean,
     skipPackageIncompatible?: boolean,
   ): Promise<InstallReport> {
-    // An explicit attempt (the user picked this client/row) retries a pack the
-    // capability memo parked for this session.
+    // An explicit attempt (the user picked this client/row) retries a pack
+    // the capability memo parked — persistently, so the row leaves storage
+    // here, not just for this session.
     clearIncompatibleSkip(gameRoot, id);
     return withItem(id, op, () =>
       api.modCatalogInstall(
@@ -501,9 +608,9 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
    * surface are skipped (that op's own fan-out keeps the snapshot
    * honest), and so is a NON-ACTIVE client the pack needs font assets from
    * that it does not ship (the backend's package-capability gate: quiet
-   * note, never a failure, the item is parked for the session so the badge
-   * stops re-offering it — the active install keeps the hard refusal because
-   * the user chose it). Every successful item folds into the local snapshot at once
+   * note, never a failure, the item is parked persistently so the badge
+   * stops re-offering it across restarts too — the active install keeps
+   * the hard refusal because the user chose it). Every successful item folds into the local snapshot at once
    * (markItemFresh — the badge ticks down while the pass runs, clearing
    * the moment the last item lands) and still fans out a freshness sync
    * that confirms against catalog/ledger. The end-of-pass toast speaks
@@ -611,7 +718,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
             // does not ship answers report.skipped (the download/extract is
             // already done, but nothing is written — the gate runs before the
             // rewind). Rule skip, never a failure; the memo parks it so the
-            // badge stops re-offering it this session.
+            // badge stops re-offering it (persistently — across restarts).
             const report = await runMod(
               m.id,
               g.path,
@@ -621,10 +728,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
               !activeTarget(g.path),
             );
             if (report.skipped) {
-              incompatibleSkips.value.set(incompatibleSkipKey(g.path, m.id), {
-                version: m.catalogVersion ?? "",
-                reason: report.skipped,
-              });
+              parkIncompatibleSkip(g.path, m.id, m.catalogVersion, report.skipped);
               incompatibleSkipped.push({ mod: m.name, client: label });
               return false;
             }
@@ -876,6 +980,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     totalCount,
     infoFor,
     itemOp,
+    parkIncompatibleSkip,
     refresh,
     syncFreshness,
     runProbe,
