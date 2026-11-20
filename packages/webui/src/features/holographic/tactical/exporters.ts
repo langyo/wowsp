@@ -358,15 +358,19 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
   // the VP9/AV1 software encoders into their slowest paths (a 10-minute
   // match encoded for tens of minutes), but the first throughput pass
   // (0.12 bpp) starved the realtime deadline into smeared map text — the
-  // "太糊了" report. 0.2 bpp with a 6 Mbps floor keeps grid lines and
-  // ship-name pills crisp at the realtime deadline; the realtime latency
-  // mode itself stays (it is what keeps libvpx out of the slow paths),
-  // and prefer-hardware lets AVC land on the platform encoder.
+  // "太糊了" report. 0.24 bpp with an 8 Mbps floor keeps grid lines and
+  // ship-name pills crisp at the realtime deadline now that the default
+  // composition is 2K (a 30 fps take lands ~31 Mbps, a 60 fps one rides
+  // the 45 Mbps cap); the realtime latency mode itself stays (it is what
+  // keeps libvpx out of the slow paths), and prefer-hardware lets AVC
+  // land on the platform encoder. VBR is mediabunny's default rate mode —
+  // the budget spends where frames need it instead of flattening to the
+  // average, which is the "high compression" half of the ask.
   const source = new CanvasSource(canvas, {
     codec: picked.codec,
     bitrate: Math.min(
-      30_000_000,
-      Math.max(6_000_000, Math.round(width * height * opts.fps * 0.2)),
+      45_000_000,
+      Math.max(8_000_000, Math.round(width * height * opts.fps * 0.24)),
     ),
     latencyMode: "realtime",
     hardwareAcceleration: "prefer-hardware",
