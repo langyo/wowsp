@@ -52,6 +52,8 @@ import {
   type OfflineCodecChoice,
 } from "./tactical/exporters";
 import { TACTICAL_SIZE } from "./tactical/render";
+import { sampleAt } from "./trajectoryMath";
+import type { EntityTrajectory, ShotKillEvent } from "@/api";
 
 /** Logical edge of the map square — paintEnlargedMap draws in this space. */
 export const EXPORT_LOGICAL = TACTICAL_SIZE;
@@ -177,6 +179,126 @@ export function teamIdentityCell(
  *  the cells can never drift onto different columns. */
 export function visibleTeamStats<T>(columns: readonly T[]): T[] {
   return columns.slice(0, EXPORT_TEAM_STAT_COLS);
+}
+
+/* Recorder panel metrics ------------------------------------------------
+ * The left column's bottom block: the recorder's damage headline, then
+ * their FULL ribbon set and the two damage-source columns (the 2026-11-21
+ * 「勋带弄齐全 + 造成/受到伤害来源」 request). It sits under the roster band
+ * exactly like the chat log: the roster keeps EXPORT_TEAM_H, then a 10px
+ * top gap and a 6px bottom inset — 760 - 452 - 10 - 6 = 292 logical px, the
+ * budget every band below must fit.
+ *
+ * Stack, from the panel's top edge:
+ *   0   .. 118  the existing block: title badge, the 28px total, then the
+ *               frag / taken rows (each with its own badge)
+ *   128 .. 171  ribbon strip: a 10px caption + TWO 15px rows of icon+count
+ *               cells, 4 per row — 8 cells cover the app's whole
+ *               authoritative set (7 kinds, RIBBON_SOURCES)
+ *   181 .. 264  two damage-source columns: a 10px caption + 5 rows at 14px
+ *   => 264 <= 292: 28px of slack, so no band can clip the column's bottom.
+ */
+/** Top gap between the roster band and the recorder panel (the chat log's
+ *  own offset). */
+export const EXPORT_RECORDER_TOP_GAP = 10;
+/** Bottom inset the column keeps under the panel (the chat log's own). */
+export const EXPORT_RECORDER_BOTTOM_INSET = 6;
+/** The panel's height budget in logical units: 292 with the shipped
+ *  metrics. The optional argument is the column height the caller has. */
+export function recorderPanelHeight(available = EXPORT_LOGICAL): number {
+  return (
+    available -
+    EXPORT_TEAM_H -
+    EXPORT_RECORDER_TOP_GAP -
+    EXPORT_RECORDER_BOTTOM_INSET
+  );
+}
+/** Bottom edge of the existing headline block, from the panel's top (the
+ *  second row's badge bottom is 115.5; 118 keeps a hair of pad). */
+export const EXPORT_RECORDER_BLOCK_H = 118;
+/** Gap between the bands. */
+export const EXPORT_RECORDER_BAND_GAP = 10;
+/** Ribbon strip: caption band + two cell rows. */
+export const EXPORT_RECORDER_RIBBON_CAPTION_H = 13;
+export const EXPORT_RECORDER_RIBBON_ROW_H = 15;
+export const EXPORT_RECORDER_RIBBON_ROWS = 2;
+export const EXPORT_RECORDER_RIBBON_COLS = 4;
+/** Icon height (the bundled ribbon art is 40 x 15 — the wide end-screen
+ *  strip, so a cell gives the icon ~20px and the count the rest). */
+export const EXPORT_RECORDER_RIBBON_ICON_H = 7.5;
+export const EXPORT_RECORDER_RIBBON_ICON_W =
+  (EXPORT_RECORDER_RIBBON_ICON_H * 40) / 15;
+/** Count face (shrunk only when a 4-digit count needs the room). */
+export const EXPORT_RECORDER_RIBBON_COUNT_SIZE = 9;
+export const EXPORT_RECORDER_RIBBON_COUNT_MIN_SIZE = 7.5;
+/** Source columns: caption band + five 14px rows each. */
+export const EXPORT_RECORDER_SOURCE_CAPTION_H = 13;
+export const EXPORT_RECORDER_SOURCE_ROW_H = 14;
+/** Rows per column — the DISPLAY clamp (see foldRecorderSources): the
+ *  ledger keeps every counterparty; the panel lists the top five. */
+export const EXPORT_RECORDER_SOURCE_ROWS = 5;
+export const EXPORT_RECORDER_SOURCE_COLUMNS = 2;
+/** Horizontal inset of every panel line (the existing headline block's
+ *  10px) and the gap between the two source columns. */
+export const EXPORT_RECORDER_INSET_X = 10;
+export const EXPORT_RECORDER_SOURCE_GAP = 6;
+/** Text faces inside the two added bands. The values sit one step smaller
+ *  than the names: at 82px per column a 6-digit figure at 10px would leave
+ *  the roster name barely four characters. */
+export const EXPORT_RECORDER_CAPTION_SIZE = 10;
+export const EXPORT_RECORDER_SOURCE_SIZE = 10;
+export const EXPORT_RECORDER_SOURCE_VALUE_SIZE = 9;
+
+/** Height of the ribbon strip's band (caption + the cell rows). */
+export function recorderRibbonBandHeight(): number {
+  return (
+    EXPORT_RECORDER_RIBBON_CAPTION_H +
+    EXPORT_RECORDER_RIBBON_ROWS * EXPORT_RECORDER_RIBBON_ROW_H
+  );
+}
+
+/** Height of the two source columns' band (caption + the row stack). */
+export function recorderSourceBandHeight(): number {
+  return (
+    EXPORT_RECORDER_SOURCE_CAPTION_H +
+    EXPORT_RECORDER_SOURCE_ROWS * EXPORT_RECORDER_SOURCE_ROW_H
+  );
+}
+
+/** One width available to a source column: the panel's inner width minus
+ *  the inter-column gap, halved (82 with the shipped metrics). */
+export function recorderSourceColumnWidth(): number {
+  return (
+    (EXPORT_SIDE_W -
+      2 * EXPORT_RECORDER_INSET_X -
+      (EXPORT_RECORDER_SOURCE_COLUMNS - 1) * EXPORT_RECORDER_SOURCE_GAP) /
+    EXPORT_RECORDER_SOURCE_COLUMNS
+  );
+}
+
+/** The bands' top edges, from the panel's top edge, plus the stack height
+ *  they occupy — the single source both the painter and the budget test
+ *  read, so a metric change can never drift the two apart. */
+export interface RecorderPanelBands {
+  ribbonsTop: number;
+  sourcesTop: number;
+  stackH: number;
+}
+
+export function recorderPanelBands(): RecorderPanelBands {
+  const ribbonsTop = EXPORT_RECORDER_BLOCK_H + EXPORT_RECORDER_BAND_GAP;
+  const sourcesTop =
+    ribbonsTop + recorderRibbonBandHeight() + EXPORT_RECORDER_BAND_GAP;
+  return {
+    ribbonsTop,
+    sourcesTop,
+    stackH: sourcesTop + recorderSourceBandHeight(),
+  };
+}
+
+/** Does the whole stack fit the panel's budget? (The 292px assertion.) */
+export function recorderPanelFits(available = recorderPanelHeight()): boolean {
+  return recorderPanelBands().stackH <= available;
 }
 
 /** Export formats offered by the modal. */
@@ -495,10 +617,223 @@ export interface PlaybackTeamSide {
   rows: readonly PlaybackTeamRow[];
 }
 
+/** One ribbon counter the recorder earned — the settlement's 勋章 strip:
+ *  the parser's ribbon kind key (postBattle RIBBON_SOURCES → the bundled
+ *  art) plus its count. */
+export interface PlaybackRecorderRibbon {
+  key: string;
+  value: number;
+}
+
+/** One damage-source row: a counterparty's name and the cumulative damage
+ *  exchanged with the recorder. */
+export interface PlaybackDamageSource {
+  label: string;
+  amount: number;
+}
+
 export interface PlaybackRecorderStats {
   damage: number;
   frags: number;
   taken: number;
+  /** The recorder's ribbon set in the settlement's own order (the list the
+   *  post-battle report paints; time-invariant, so it is folded once). */
+  ribbons: readonly PlaybackRecorderRibbon[];
+  /** Damage the recorder DEALT, per target ship, descending — display
+   *  clamped (see foldRecorderSources); the ledger keeps every ship. */
+  dealTargets: readonly PlaybackDamageSource[];
+  /** Damage the recorder TOOK, per attacker, descending (same clamp). */
+  takeSources: readonly PlaybackDamageSource[];
+}
+
+/* Recorder damage attribution ------------------------------------------
+ * The two source columns. The authoritative streams cannot answer "who did
+ * this damage": receiveDamageStat is the recorder's OWN running total per
+ * weapon (no target), and receiveShieldDamageInfo carries a victim+attacker
+ * only for shield-absorbed damage (15.10+). The hit stream answers it the
+ * way the app's calibrated self-statistics do (liveSelfStats.ts): every
+ * victim's HP-loss timeline is PARTITIONED among the ship impacts that sat
+ * near it — each drop is credited once, split evenly across its covering
+ * impacts — so a salvo cannot multiply a drop and a focused hull's loss is
+ * shared with the crossfiring attackers instead of re-credited per shell
+ * (the old per-impact walk summed to a 2.4x median of the results screen).
+ * Fire/flooding inside a window rides the shell that landed there, an
+ * attacker id 0 (the game's withheld sentinel) is dropped rather than shown
+ * under a fake row, and the headline total keeps the server's exact figure
+ * (foldDamageStats). Ally hulls never appear under 造成伤害 (a grazed
+ * teammate is not damage dealt — the same rule the self-statistics ledger
+ * applies), while their shells still dilute the claim partitions and can
+ * appear under 受到伤害.
+ */
+/** The impact window (the same envelope as liveSelfStats.ts, whose copies
+ *  stay private — this panel keeps its own). */
+const SOURCE_IMPACT_RADIUS = 500;
+const SOURCE_HP_BEFORE_S = 0.4;
+const SOURCE_HP_AFTER_S = 0.6;
+const SOURCE_HP_DROP_MIN = 50;
+
+export type RecorderSourceKind = "dealt" | "taken";
+
+/** One attributed hit in the recorder's damage ledger. */
+export interface RecorderSourceHit {
+  time: number;
+  /** The OTHER party's vehicle entity id (the target when dealt, the
+   *  attacker when taken). */
+  counterpartyId: number;
+  amount: number;
+  kind: RecorderSourceKind;
+}
+
+export interface RecorderSourceParams {
+  shotKills: readonly ShotKillEvent[];
+  trajectories: readonly EntityTrajectory[];
+  /** The recorder's own ship vehicle entity id (joins trajectories). */
+  selfEntityId: number;
+  /** The recorder's teammates' vehicle ids: their hulls are excluded from
+   *  the DEALT ledger (their shells still dilute the partitions). */
+  allyIds?: readonly number[];
+}
+
+/** One hull's HP-loss timeline: every sample that fell by at least
+ *  SOURCE_HP_DROP_MIN since the previous one (time-ascending; heals never
+ *  produce drops). The drops' sum is the hull's real HP loss — the budget
+ *  its covering impacts share. */
+function sourceDropsOf(tr: EntityTrajectory): { time: number; delta: number }[] {
+  const hp = tr.hpSamples;
+  const out: { time: number; delta: number }[] = [];
+  if (!hp || hp.length < 2) return out;
+  for (let i = 1; i < hp.length; i++) {
+    const d = hp[i - 1].value - hp[i].value;
+    if (d >= SOURCE_HP_DROP_MIN) out.push({ time: hp[i].time, delta: d });
+  }
+  return out;
+}
+
+/** Partition `victim`'s HP drops evenly across the impacts covering each
+ *  drop (the liveSelfStats claim model), and return the recorder-owned
+ *  shares as ledger rows. A drop is covered by an impact when the drop's
+ *  sample time sits inside the impact's envelope. */
+function partitionSourceDrops(
+  victim: EntityTrajectory,
+  impacts: readonly { e: ShotKillEvent; selfOwned: boolean }[],
+  selfEntityId: number,
+  kind: RecorderSourceKind,
+  out: RecorderSourceHit[],
+): void {
+  if (impacts.length === 0) return;
+  const drops = sourceDropsOf(victim);
+  if (drops.length === 0) return;
+  const poses = impacts.map(({ e }) => sampleAt(victim, e.time));
+  const share = new Array<number>(impacts.length).fill(0);
+  let lo = 0; // impacts ascend in time alongside the drops — sliding window
+  for (const drop of drops) {
+    while (lo < impacts.length && impacts[lo].e.time + SOURCE_HP_AFTER_S < drop.time) lo++;
+    const covering: number[] = [];
+    for (let i = lo; i < impacts.length && impacts[i].e.time - SOURCE_HP_BEFORE_S < drop.time; i++) {
+      const at = poses[i];
+      if (!at) continue;
+      if (Math.hypot(at.x - impacts[i].e.x, at.z - impacts[i].e.z) > SOURCE_IMPACT_RADIUS) continue;
+      covering.push(i);
+    }
+    if (covering.length === 0) continue;
+    const per = drop.delta / covering.length;
+    for (const i of covering) share[i] += per;
+  }
+  for (let i = 0; i < impacts.length; i++) {
+    // dealt rows ride the RECORDER's own impacts; taken rows ride everyone
+    // else's (their shares were partitioned over the victim's drops).
+    const owns = kind === "dealt" ? impacts[i].selfOwned : true;
+    if (!owns || share[i] <= 0) continue;
+    out.push({
+      time: impacts[i].e.time,
+      counterpartyId:
+        kind === "dealt" ? victim.entityId : impacts[i].e.ownerId,
+      amount: share[i],
+      kind,
+    });
+  }
+}
+
+/** Build the recorder's attributed damage ledger — once per replay, like the
+ *  self-shot ledger, since the streams are immutable. Rows are time-ordered
+ *  and cumulative folding happens per playhead (foldRecorderSources). */
+export function buildRecorderSourceHits({
+  shotKills,
+  trajectories,
+  selfEntityId,
+  allyIds,
+}: RecorderSourceParams): RecorderSourceHit[] {
+  const ships = trajectories.filter((tr) => tr.kind?.entityType === 2);
+  const self = ships.find((tr) => tr.entityId === selfEntityId) ?? null;
+  if (!self) return [];
+  const allies = new Set(allyIds ?? []);
+  const shipIds = new Set(ships.map((tr) => tr.entityId));
+  // The claim candidates: any SHIP's impacts except the victim's own (a
+  // hull's shells cannot hurt it). Ship-id membership also drops the
+  // game's withheld attacker 0 — it names no hull here.
+  const shipImpacts = shotKills.filter((e) => shipIds.has(e.ownerId));
+  const out: RecorderSourceHit[] = [];
+  // dealt: the recorder's shares of every enemy hull's drops (allies are
+  // excluded as targets but their shells still claim their slices).
+  for (const victim of ships) {
+    if (victim.entityId === selfEntityId || allies.has(victim.entityId)) continue;
+    const impacts = shipImpacts
+      .filter((e) => e.ownerId !== victim.entityId)
+      .map((e) => ({ e, selfOwned: e.ownerId === selfEntityId }));
+    partitionSourceDrops(victim, impacts, selfEntityId, "dealt", out);
+  }
+  // taken: everyone else's impacts partition the recorder's own drops.
+  {
+    const impacts = shipImpacts
+      .filter((e) => e.ownerId !== selfEntityId)
+      .map((e) => ({ e, selfOwned: false }));
+    partitionSourceDrops(self, impacts, selfEntityId, "taken", out);
+  }
+  out.sort((a, b) => a.time - b.time || a.counterpartyId - b.counterpartyId);
+  return out;
+}
+
+
+/** A counterparty's display label: the roster join's name, or the raw id as
+ *  a hash-prefixed fallback when the id is not on the roster (a wave NPC, a
+ *  withheld id). */
+export function recorderSourceLabel(
+  id: number,
+  nameOf: (id: number) => string | null | undefined,
+): string {
+  const name = nameOf(id)?.trim();
+  return name ? name : "#" + String(id);
+}
+
+/** The panel's two lists: the counterparties' cumulative damage at battle
+ *  time t, descending, clamped to "cap" rows for DISPLAY. The ledger keeps
+ *  everything — a larger cap (or Infinity) returns the whole set, so the
+ *  clamp costs no data. */
+export function foldRecorderSources(
+  hits: readonly RecorderSourceHit[],
+  t: number,
+  kind: RecorderSourceKind,
+  nameOf: (id: number) => string | null | undefined,
+  cap = EXPORT_RECORDER_SOURCE_ROWS,
+): PlaybackDamageSource[] {
+  const sums = new Map<number, number>();
+  for (const hit of hits) {
+    if (hit.kind !== kind || hit.time > t) continue;
+    sums.set(hit.counterpartyId, (sums.get(hit.counterpartyId) ?? 0) + hit.amount);
+  }
+  const rows: PlaybackDamageSource[] = [];
+  for (const [id, amount] of sums) {
+    const rounded = Math.round(amount);
+    if (rounded > 0) {
+      rows.push({ label: recorderSourceLabel(id, nameOf), amount: rounded });
+    }
+  }
+  rows.sort(
+    (a, b) =>
+      b.amount - a.amount ||
+      (a.label < b.label ? -1 : a.label > b.label ? 1 : 0),
+  );
+  return rows.slice(0, Math.max(0, cap));
 }
 
 export interface PlaybackChatLine {
@@ -1195,15 +1530,19 @@ function drawStatBadge(
 
 /** The recorder's damage block (left column bottom): a title with the
  *  damage badge, the total big and bold, then the frags / taken rows —
- *  each carrying its own badge (the 2026-11-20 「徽章缺失」 report). */
-function drawRecorderPanel(
+ *  each carrying its own badge (the 2026-11-20 「徽章缺失」 report) — and,
+ *  under them, the recorder's ribbon strip + the two damage-source columns
+ *  (the 2026-11-21 「勋带弄齐全 + 来源列表」 request). */
+export function drawRecorderPanel(
   g: CanvasRenderingContext2D,
   x: number,
   y: number,
   w: number,
+  h: number,
   stats: PlaybackRecorderStats,
   palette: ShotPalette,
-  labels: { title: string; frags: string; taken: string },
+  labels: PlaybackPanelLabels,
+  ribbonIconFor: (key: string) => HTMLImageElement | null,
 ): void {
   g.textBaseline = "middle";
   g.textAlign = "left";
@@ -1211,7 +1550,7 @@ function drawRecorderPanel(
   drawStatBadge(g, x + 10, y + 7, badge, "255 180 60", "burst");
   g.font = font(12, 700);
   g.fillStyle = rgba(palette.text, 0.72);
-  g.fillText(labels.title, x + 10 + badge + 7, y + 14);
+  g.fillText(labels.damage, x + 10 + badge + 7, y + 14);
   g.font = font(28, 700, true);
   g.fillStyle = rgba(palette.text, 0.96);
   g.fillText(stats.damage.toLocaleString("en-US"), x + 10, y + 50);
@@ -1219,7 +1558,7 @@ function drawRecorderPanel(
   drawStatBadge(g, x + 10, rowY(0) - badge / 2, badge, "248 92 92", "frag");
   g.font = font(11, 400);
   g.fillStyle = rgba(palette.text, 0.62);
-  g.fillText(labels.frags, x + 10 + badge + 7, rowY(0));
+  g.fillText(labels.dmgFrags, x + 10 + badge + 7, rowY(0));
   g.font = font(11, 700, true);
   g.fillStyle = rgba(palette.text, 0.9);
   g.textAlign = "right";
@@ -1229,7 +1568,7 @@ function drawRecorderPanel(
   g.fillStyle = rgba(palette.text, 0.62);
   // Labels stay left-aligned; only the VALUE columns are right-aligned.
   g.textAlign = "left";
-  g.fillText(labels.taken, x + 10 + badge + 7, rowY(1));
+  g.fillText(labels.dmgTaken, x + 10 + badge + 7, rowY(1));
   g.font = font(11, 700, true);
   g.fillStyle = rgba(palette.text, 0.9);
   // The value column hugs the right inset (it must not start there and run
@@ -1237,6 +1576,214 @@ function drawRecorderPanel(
   g.textAlign = "right";
   g.fillText(stats.taken.toLocaleString("en-US"), x + w - 10, rowY(1));
   // Hand the alignment back to the callers (left) for the next pass.
+  g.textAlign = "left";
+  // ── The ribbon strip + the two damage-source columns ──────────────────
+  // Both bands' offsets come from recorderPanelBands(), the same helper the
+  // budget test asserts against 292px — the painter cannot drift off it.
+  const bands = recorderPanelBands();
+  const innerX = x + EXPORT_RECORDER_INSET_X;
+  const innerW = w - EXPORT_RECORDER_INSET_X * 2;
+  drawRecorderRibbons(
+    g,
+    innerX,
+    y + bands.ribbonsTop,
+    innerW,
+    stats.ribbons,
+    palette,
+    labels.ribbonsTitle,
+    ribbonIconFor,
+  );
+  // Rows the band can hold (a defensive min: the fold's display cap is what
+  // normally binds, so this only matters if the metrics ever shrink).
+  const rowsThatFit = Math.max(
+    0,
+    Math.floor(
+      (h - bands.sourcesTop - EXPORT_RECORDER_SOURCE_CAPTION_H) /
+        EXPORT_RECORDER_SOURCE_ROW_H,
+    ),
+  );
+  const rows = Math.min(EXPORT_RECORDER_SOURCE_ROWS, rowsThatFit);
+  const colW = recorderSourceColumnWidth();
+  drawRecorderSourceColumn(
+    g,
+    innerX,
+    y + bands.sourcesTop,
+    colW,
+    labels.dmgDealtSources,
+    stats.dealTargets.slice(0, rows),
+    palette,
+  );
+  drawRecorderSourceColumn(
+    g,
+    innerX + colW + EXPORT_RECORDER_SOURCE_GAP,
+    y + bands.sourcesTop,
+    colW,
+    labels.dmgTakenSources,
+    stats.takeSources.slice(0, rows),
+    palette,
+  );
+}
+
+/** The recorder's ribbon strip: a caption over TWO rows of icon+count cells
+ *  (4 per row), painted in the settlement's own order. The bundled end-screen
+ *  art identifies the kind (no per-ribbon word is needed, and the art is
+ *  language-neutral); a cell whose art was not preloaded keeps a neutral
+ *  capsule in the slot so the count still lands in place. */
+function drawRecorderRibbons(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  ribbons: readonly PlaybackRecorderRibbon[],
+  palette: ShotPalette,
+  caption: string,
+  ribbonIconFor: (key: string) => HTMLImageElement | null,
+): void {
+  g.textBaseline = "middle";
+  g.textAlign = "left";
+  g.font = font(EXPORT_RECORDER_CAPTION_SIZE, 700);
+  g.fillStyle = rgba(palette.text, 0.6);
+  g.fillText(caption, x, y + EXPORT_RECORDER_RIBBON_CAPTION_H / 2 + 1);
+  const cellW = w / EXPORT_RECORDER_RIBBON_COLS;
+  const firstCy =
+    y + EXPORT_RECORDER_RIBBON_CAPTION_H + EXPORT_RECORDER_RIBBON_ROW_H / 2;
+  const cells = EXPORT_RECORDER_RIBBON_COLS * EXPORT_RECORDER_RIBBON_ROWS;
+  if (ribbons.length === 0) {
+    // No settlement counters (a replay without BattleResults): keep the
+    // caption's dash, like the two source columns do.
+    g.font = font(EXPORT_RECORDER_SOURCE_SIZE, 400, true);
+    g.fillStyle = rgba(palette.text, 0.32);
+    g.fillText("—", x, firstCy);
+    return;
+  }
+  // The app's authoritative set is 7 kinds, so 8 cells hold it without a
+  // cut; the slice is the contract the budget test asserts against
+  // RIBBON_SOURCES.
+  ribbons.slice(0, cells).forEach((rib, i) => {
+    const cx = x + (i % EXPORT_RECORDER_RIBBON_COLS) * cellW;
+    const cy = firstCy + Math.floor(i / EXPORT_RECORDER_RIBBON_COLS) * EXPORT_RECORDER_RIBBON_ROW_H;
+    const icon = ribbonIconFor(rib.key);
+    if (icon) {
+      g.drawImage(
+        icon,
+        cx,
+        cy - EXPORT_RECORDER_RIBBON_ICON_H / 2,
+        EXPORT_RECORDER_RIBBON_ICON_W,
+        EXPORT_RECORDER_RIBBON_ICON_H,
+      );
+    } else {
+      g.fillStyle = rgba(palette.text, 0.12);
+      g.beginPath();
+      g.roundRect(
+        cx,
+        cy - EXPORT_RECORDER_RIBBON_ICON_H / 2,
+        EXPORT_RECORDER_RIBBON_ICON_W,
+        EXPORT_RECORDER_RIBBON_ICON_H,
+        2,
+      );
+      g.fill();
+    }
+    // The count rides IMMEDIATELY after its icon: a right-aligned count
+    // would sit next to the FOLLOWING cell's icon and read as that icon's
+    // number. The remaining cell width is the count's cap.
+    const countW = Math.max(6, cellW - EXPORT_RECORDER_RIBBON_ICON_W - 3);
+    const text = String(rib.value);
+    const size = fitShrinkSize(
+      (t, s) => {
+        g.font = font(s, 700, true);
+        return g.measureText(t).width;
+      },
+      text,
+      countW,
+      EXPORT_RECORDER_RIBBON_COUNT_SIZE,
+      EXPORT_RECORDER_RIBBON_COUNT_MIN_SIZE,
+    );
+    g.font = font(size, 700, true);
+    g.textAlign = "left";
+    g.fillStyle = rgba(palette.text, 0.82);
+    g.fillText(
+      ellipsize(g, text, countW),
+      cx + EXPORT_RECORDER_RIBBON_ICON_W + 3,
+      cy + 0.5,
+    );
+  });
+  g.textAlign = "left";
+}
+
+/** One damage-source column: a muted caption over up to five rows of
+ *  "name left, value right" (the user's 两列 layout) — names at 10px, the
+ *  figures one step smaller so a six-digit number does not eat the name.
+ *  The value track reserves the widest figure and names ellipsize into what
+ *  is left; an empty column keeps a dim dash so the caption never floats
+ *  alone. */
+function drawRecorderSourceColumn(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  caption: string,
+  rows: readonly PlaybackDamageSource[],
+  palette: ShotPalette,
+): void {
+  g.textBaseline = "middle";
+  g.textAlign = "left";
+  g.font = font(EXPORT_RECORDER_CAPTION_SIZE, 700);
+  g.fillStyle = rgba(palette.text, 0.6);
+  g.fillText(caption, x, y + EXPORT_RECORDER_SOURCE_CAPTION_H / 2 + 1);
+  const firstCy =
+    y + EXPORT_RECORDER_SOURCE_CAPTION_H + EXPORT_RECORDER_SOURCE_ROW_H / 2;
+  if (rows.length === 0) {
+    g.font = font(EXPORT_RECORDER_SOURCE_SIZE, 400, true);
+    g.fillStyle = rgba(palette.text, 0.32);
+    g.fillText("—", x, firstCy);
+    return;
+  }
+  // The value track never takes more than half the column (a 7+-digit
+  // figure shrinks instead of pushing every name out); the widest figure it
+  // actually paints is what the names give room to.
+  const maxValueW = w * 0.5;
+  const valueText = (r: PlaybackDamageSource): string => r.amount.toLocaleString("en-US");
+  let valueW = 0;
+  for (const r of rows) {
+    const text = valueText(r);
+    const size = fitShrinkSize(
+      (t, s) => {
+        g.font = font(s, 700, true);
+        return g.measureText(t).width;
+      },
+      text,
+      maxValueW,
+      EXPORT_RECORDER_SOURCE_VALUE_SIZE,
+      7.5,
+    );
+    g.font = font(size, 700, true);
+    valueW = Math.max(valueW, g.measureText(text).width);
+  }
+  rows.forEach((r, i) => {
+    const cy = firstCy + i * EXPORT_RECORDER_SOURCE_ROW_H;
+    const text = valueText(r);
+    g.font = font(
+      fitShrinkSize(
+        (t, s) => {
+          g.font = font(s, 700, true);
+          return g.measureText(t).width;
+        },
+        text,
+        maxValueW,
+        EXPORT_RECORDER_SOURCE_VALUE_SIZE,
+        7.5,
+      ),
+      700,
+      true,
+    );
+    g.textAlign = "right";
+    g.fillStyle = rgba(palette.text, 0.88);
+    g.fillText(text, x + w, cy);
+    g.font = font(EXPORT_RECORDER_SOURCE_SIZE, 400);
+    g.textAlign = "left";
+    g.fillStyle = rgba(palette.text, 0.66);
+    g.fillText(ellipsize(g, r.label, Math.max(8, w - valueW - 4)), x, cy);
+  });
   g.textAlign = "left";
 }
 
@@ -1308,6 +1855,10 @@ export interface PlaybackExportRequest {
    *  preloads (decodes) every class×variant once before the render loop.
    *  Return null to skip a slot. */
   shipIconFor: (shipType: string | null, variant: PlaybackIconVariant) => HTMLImageElement | null;
+  /** Ribbon-art resolver for the recorder's strip — the caller preloads the
+   *  bundled settlement icons once (bundledRibbonUrl). Null skips the art
+   *  and keeps the cell's neutral capsule. */
+  ribbonIconFor: (key: string) => HTMLImageElement | null;
   /** Paint the map square for battle time `t` in logical units onto `g`
    *  (already translated to the map's top-left corner and scaled). */
   paintMap: (t: number, g: CanvasRenderingContext2D) => void;
@@ -1344,6 +1895,11 @@ export interface PlaybackPanelLabels {
   damage: string;
   dmgFrags: string;
   dmgTaken: string;
+  /** Caption over the recorder's ribbon strip. */
+  ribbonsTitle: string;
+  /** The two damage-source column captions (dealt / taken). */
+  dmgDealtSources: string;
+  dmgTakenSources: string;
   chat: string;
 }
 
@@ -1400,11 +1956,17 @@ function composeFrame(
     req.showStats,
   );
   if (recorder) {
-    drawRecorderPanel(ctx, 0, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, recorder, req.palette, {
-      title: req.panelLabels.damage,
-      frags: req.panelLabels.dmgFrags,
-      taken: req.panelLabels.dmgTaken,
-    });
+    drawRecorderPanel(
+      ctx,
+      0,
+      colTop + EXPORT_TEAM_H + EXPORT_RECORDER_TOP_GAP,
+      EXPORT_SIDE_W,
+      recorderPanelHeight(colH),
+      recorder,
+      req.palette,
+      req.panelLabels,
+      req.ribbonIconFor,
+    );
   }
   drawColumnBase(ctx, colRight, EXPORT_SIDE_W, colTop, colH, req.palette, "left");
   drawPlaybackTeamColumn(

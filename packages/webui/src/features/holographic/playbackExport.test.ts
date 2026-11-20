@@ -50,13 +50,39 @@ import {
   teamEntryCapacity,
   visibleTeamStats,
   drawPlaybackTeamColumn,
+  EXPORT_RECORDER_BLOCK_H,
+  EXPORT_RECORDER_BAND_GAP,
+  EXPORT_RECORDER_BOTTOM_INSET,
+  EXPORT_RECORDER_INSET_X,
+  EXPORT_RECORDER_RIBBON_COLS,
+  EXPORT_RECORDER_RIBBON_ROWS,
+  EXPORT_RECORDER_SOURCE_CAPTION_H,
+  EXPORT_RECORDER_SOURCE_COLUMNS,
+  EXPORT_RECORDER_SOURCE_GAP,
+  EXPORT_RECORDER_SOURCE_ROWS,
+  EXPORT_RECORDER_SOURCE_ROW_H,
+  EXPORT_RECORDER_TOP_GAP,
+  buildRecorderSourceHits,
+  drawRecorderPanel,
+  foldRecorderSources,
+  recorderPanelBands,
+  recorderPanelFits,
+  recorderPanelHeight,
+  recorderRibbonBandHeight,
+  recorderSourceBandHeight,
+  recorderSourceColumnWidth,
+  recorderSourceLabel,
 } from "./playbackExport";
 import { FOOT_H, darkPalette } from "@/features/share/shotKit";
 import type {
   PlaybackPanelLabels,
+  PlaybackRecorderStats,
   PlaybackTeamRow,
   PlaybackTeamSide,
+  RecorderSourceHit,
 } from "./playbackExport";
+import { RIBBON_SOURCES } from "@/features/replay/postBattle";
+import type { EntityTrajectory, ShotKillEvent } from "@/api";
 import { TACTICAL_SIZE } from "./tactical/render";
 
 describe("playbackExportLayout", () => {
@@ -346,10 +372,18 @@ interface PaintedRect {
   h: number;
   fill: string;
 }
+interface PaintedImage {
+  src: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 
 function recordingContext() {
   const texts: PaintedText[] = [];
   const rects: PaintedRect[] = [];
+  const images: PaintedImage[] = [];
   const stack: Array<Record<string, unknown>> = [];
   const ctx: Record<string, unknown> = {
     font: "",
@@ -396,6 +430,9 @@ function recordingContext() {
       if (s) Object.assign(ctx, s);
     },
     beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
     arc() {},
     fill() {},
     translate() {},
@@ -405,12 +442,16 @@ function recordingContext() {
     stroke() {},
     strokeRect() {},
     setLineDash() {},
-    drawImage() {},
+    drawImage(img: unknown, x: number, y: number, w: number, h: number) {
+      const src = (img as { src?: string } | null)?.src ?? "";
+      images.push({ src, x, y, w, h });
+    },
   };
   return {
     ctx: ctx as unknown as CanvasRenderingContext2D,
     texts,
     rects,
+    images,
   };
 }
 
@@ -422,6 +463,9 @@ const LABELS: PlaybackPanelLabels = {
   damage: "Damage",
   dmgFrags: "Frags",
   dmgTaken: "Taken",
+  ribbonsTitle: "Ribbons",
+  dmgDealtSources: "Damage dealt",
+  dmgTakenSources: "Damage taken",
   chat: "Chat",
 };
 
@@ -684,3 +728,365 @@ describe("drawPlaybackHeader corners", () => {
     expect(texts.filter((t) => t.align === "right")).toHaveLength(0);
   });
 });
+
+/* ── The recorder panel: budget, attribution, painter ───────────────────
+   The 2026-11-21 「勋带弄齐全 + 造成/受到伤害来源」 request: the bottom-left
+   block keeps its damage headline and adds the settlement ribbon strip and
+   the two damage-source columns. The budget is hard (292 logical px), the
+   source lists are a per-counterparty fold over the hit stream, and both are
+   asserted against what actually gets painted. */
+
+describe("recorder panel budget", () => {
+  it("fits every band inside the column's 292px bottom half", () => {
+    // The hard budget: the column is 760 tall, the roster keeps 452, the
+    // panel adds a 10px top gap and a 6px bottom inset.
+    expect(recorderPanelHeight()).toBe(292);
+    expect(
+      EXPORT_LOGICAL - EXPORT_TEAM_H - EXPORT_RECORDER_TOP_GAP - EXPORT_RECORDER_BOTTOM_INSET,
+    ).toBe(292);
+    // The stack: headline block, ribbon band, source band, two 10px gaps.
+    const bands = recorderPanelBands();
+    expect(bands.ribbonsTop).toBe(EXPORT_RECORDER_BLOCK_H + EXPORT_RECORDER_BAND_GAP);
+    expect(recorderRibbonBandHeight()).toBe(43);
+    expect(recorderSourceBandHeight()).toBe(83);
+    expect(bands.sourcesTop).toBe(181);
+    expect(bands.stackH).toBe(264);
+    expect(recorderPanelFits()).toBe(true);
+    expect(bands.stackH).toBeLessThanOrEqual(recorderPanelHeight());
+    // No band may overlap the one above it.
+    expect(EXPORT_RECORDER_BLOCK_H).toBeLessThan(bands.ribbonsTop);
+    expect(bands.ribbonsTop + recorderRibbonBandHeight()).toBeLessThan(bands.sourcesTop);
+    expect(bands.sourcesTop + recorderSourceBandHeight()).toBe(bands.stackH);
+    // The five-row clamp is a DISPLAY choice, not a space limit: a sixth
+    // row would still fit (7 rows fit the band) - the ledger keeps every
+    // counterparty either way (see foldRecorderSources).
+    const rowFit = Math.floor(
+      (recorderPanelHeight() - bands.sourcesTop - EXPORT_RECORDER_SOURCE_CAPTION_H) /
+        EXPORT_RECORDER_SOURCE_ROW_H,
+    );
+    expect(rowFit).toBeGreaterThanOrEqual(6);
+    expect(EXPORT_RECORDER_SOURCE_ROWS).toBe(5);
+  });
+
+  it("gives each source column 82px and holds the whole ribbon set in 8 cells", () => {
+    const colW = recorderSourceColumnWidth();
+    expect(colW).toBe(82);
+    // Two columns + the one gap + both insets reconstruct the 190px column.
+    expect(
+      EXPORT_RECORDER_SOURCE_COLUMNS * colW +
+        (EXPORT_RECORDER_SOURCE_COLUMNS - 1) * EXPORT_RECORDER_SOURCE_GAP +
+        2 * EXPORT_RECORDER_INSET_X,
+    ).toBe(EXPORT_SIDE_W);
+    // Every authoritative ribbon kind the settlement parser exposes has a
+    // cell: 4 columns x 2 rows = 8 >= RIBBON_SOURCES (7) - the strip is
+    // complete, never cut.
+    expect(RIBBON_SOURCES.length).toBeLessThanOrEqual(
+      EXPORT_RECORDER_RIBBON_COLS * EXPORT_RECORDER_RIBBON_ROWS,
+    );
+  });
+});
+
+/* One ship trajectory: a single position sample (the impact spot) plus the
+   HP step stream the attribution reads. */
+function shipTraj(
+  entityId: number,
+  x: number,
+  z: number,
+  hp: Array<{ time: number; value: number }>,
+): EntityTrajectory {
+  return {
+    entityId,
+    kind: {
+      entityType: 2,
+      vehicleId: 0,
+      initialX: x,
+      initialY: 0,
+      initialZ: z,
+      creationTime: 0,
+    },
+    samples: [{ time: 0, entityId, vehicleId: 0, x, y: 0, z, yaw: 0 }],
+    hpSamples: hp,
+  };
+}
+
+/** One terminal impact (receiveShotKills) at (x, z). */
+function shotAt(time: number, ownerId: number, x = 0, z = 0): ShotKillEvent {
+  return { time, ownerId, hitType: 1, shotId: 1, x, y: 0, z };
+}
+
+describe("buildRecorderSourceHits", () => {
+  const trajectories = [
+    // The recorder (entity 1) and two targets inside the blast (2, 3), one
+    // far outside it (4) and one attacker (5) shooting the recorder.
+    shipTraj(1, 0, 0, [
+      { time: 0, value: 40000 },
+      { time: 120.2, value: 38000 },
+    ]),
+    shipTraj(2, 100, 0, [
+      { time: 0, value: 20000 },
+      { time: 100.2, value: 19500 },
+    ]),
+    shipTraj(3, -150, 50, [
+      { time: 0, value: 30000 },
+      { time: 100.3, value: 29000 },
+    ]),
+    shipTraj(4, 5000, 0, [
+      { time: 0, value: 30000 },
+      { time: 100.3, value: 1000 },
+    ]),
+    shipTraj(5, 0, 0, [{ time: 0, value: 30000 }]),
+  ];
+
+  it("credits the recorder's shells to the ships their splash damaged", () => {
+    const hits = buildRecorderSourceHits({
+      shotKills: [shotAt(100, 1)],
+      trajectories,
+      selfEntityId: 1,
+    });
+    const dealt = hits.filter((h) => h.kind === "dealt");
+    expect(dealt).toHaveLength(2);
+    expect(dealt.map((h) => h.counterpartyId).sort()).toEqual([2, 3]);
+    expect(dealt.find((h) => h.counterpartyId === 2)!.amount).toBe(500);
+    expect(dealt.find((h) => h.counterpartyId === 3)!.amount).toBe(1000);
+    // The far ship lost HP at the same moment but was nowhere near the
+    // impact - it must never be credited.
+    expect(dealt.some((h) => h.counterpartyId === 4)).toBe(false);
+  });
+
+  it("credits incoming fire to its attacker, and stays recorder-scoped", () => {
+    const hits = buildRecorderSourceHits({
+      shotKills: [
+        // Near the recorder: 40000 -> 38000 = 2000.
+        shotAt(120, 5),
+        // A duel between two other ships, far from the recorder: neither
+        // list may pick it up (the panel is the RECORDER's).
+        shotAt(130, 2, 3000, 3000),
+        // A withheld attacker id (the game's 0 sentinel) is dropped rather
+        // than shown under a fake row.
+        shotAt(121, 0),
+      ],
+      trajectories,
+      selfEntityId: 1,
+    });
+    const taken = hits.filter((h) => h.kind === "taken");
+    expect(taken).toHaveLength(1);
+    expect(taken[0].counterpartyId).toBe(5);
+    expect(taken[0].amount).toBe(2000);
+    expect(taken[0].time).toBe(120);
+    // No dealt row: the recorder fired nothing in this fixture.
+    expect(hits.filter((h) => h.kind === "dealt")).toHaveLength(0);
+  });
+
+  it("splits a drop across a salvo's shells instead of multiplying it", () => {
+    const hits = buildRecorderSourceHits({
+      shotKills: [shotAt(100, 1), shotAt(100, 1), shotAt(100, 1)],
+      trajectories,
+      selfEntityId: 1,
+    });
+    // Three covering shells split each victim's drop three ways: the total
+    // equals the real HP loss (no multiplication), no row exceeds its drop.
+    const dealt = hits.filter((h) => h.kind === "dealt");
+    expect(hits.reduce((a, h) => a + h.amount, 0)).toBeCloseTo(1500, 6);
+    for (const h of dealt) {
+      expect(h.amount).toBeLessThanOrEqual(h.counterpartyId === 3 ? 1000 : 500);
+    }
+  });
+
+  it("excludes ally hulls from dealt while their shells still dilute", () => {
+    // Entity 2 is a teammate: its hull is not a 造成伤害 row, but its
+    // presence in the splash still halves the recorder's claim on entity 3.
+    const hits = buildRecorderSourceHits({
+      shotKills: [shotAt(100, 1)],
+      trajectories,
+      selfEntityId: 1,
+      allyIds: [2],
+    });
+    const dealt = hits.filter((h) => h.kind === "dealt");
+    expect(dealt.map((h) => h.counterpartyId)).toEqual([3]);
+    expect(dealt[0].amount).toBeCloseTo(1000, 6);
+  });
+
+  it("orders the ledger by battle time", () => {
+    const hits = buildRecorderSourceHits({
+      shotKills: [shotAt(120, 5), shotAt(100, 1)],
+      trajectories,
+      selfEntityId: 1,
+    });
+    const times = hits.map((h) => h.time);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+});
+
+describe("foldRecorderSources", () => {
+  const names = new Map<number, string>([
+    [7, "Alpha"],
+    [8, "Bravo"],
+  ]);
+  const nameOf = (id: number): string | null => names.get(id) ?? null;
+  const hits: RecorderSourceHit[] = [
+    { time: 10, counterpartyId: 7, amount: 1200, kind: "dealt" },
+    { time: 20, counterpartyId: 8, amount: 4000, kind: "dealt" },
+    { time: 30, counterpartyId: 7, amount: 900, kind: "dealt" },
+    { time: 40, counterpartyId: 9, amount: 500, kind: "taken" },
+  ];
+
+  it("sums each counterparty and sorts descending", () => {
+    const rows = foldRecorderSources(hits, 25, "dealt", nameOf);
+    expect(rows).toEqual([
+      { label: "Bravo", amount: 4000 },
+      { label: "Alpha", amount: 1200 },
+    ]);
+  });
+
+  it("folds cumulatively up to the playhead and keeps kinds apart", () => {
+    const rows = foldRecorderSources(hits, 35, "dealt", nameOf);
+    expect(rows).toEqual([
+      { label: "Bravo", amount: 4000 },
+      { label: "Alpha", amount: 2100 },
+    ]);
+    const taken = foldRecorderSources(hits, 100, "taken", nameOf);
+    expect(taken).toEqual([{ label: "#9", amount: 500 }]);
+    // Nothing happened yet at t = 5.
+    expect(foldRecorderSources(hits, 5, "dealt", nameOf)).toEqual([]);
+  });
+
+  it("clamps to the top five for display without losing the rest", () => {
+    const many: RecorderSourceHit[] = Array.from({ length: 7 }, (_, i) => ({
+      time: 1,
+      counterpartyId: 100 + i,
+      amount: 100 * (i + 1),
+      kind: "dealt" as const,
+    }));
+    const shown = foldRecorderSources(many, 10, "dealt", nameOf);
+    expect(shown).toHaveLength(EXPORT_RECORDER_SOURCE_ROWS);
+    // Descending, and the five biggest survived the clamp.
+    expect(shown.map((r) => r.amount)).toEqual([700, 600, 500, 400, 300]);
+    expect(shown.map((r) => r.label)).toEqual([
+      "#106",
+      "#105",
+      "#104",
+      "#103",
+      "#102",
+    ]);
+    // The clamp is display-only: a wider cap returns every counterparty.
+    expect(foldRecorderSources(many, 10, "dealt", nameOf, Infinity)).toHaveLength(7);
+  });
+
+  it("resolves names through the roster join, unknown ids to #id", () => {
+    expect(recorderSourceLabel(7, nameOf)).toBe("Alpha");
+    expect(recorderSourceLabel(42, nameOf)).toBe("#42");
+    // A whitespace-only roster name is no name.
+    expect(recorderSourceLabel(43, () => "  ")).toBe("#43");
+  });
+});
+
+describe("drawRecorderPanel", () => {
+  const stats = (
+    over: Partial<PlaybackRecorderStats> = {},
+  ): PlaybackRecorderStats => ({
+    damage: 123456,
+    frags: 3,
+    taken: 98765,
+    ribbons: [
+      { key: "frag", value: 3 },
+      { key: "main_caliber", value: 241 },
+      { key: "torpedo", value: 12 },
+    ],
+    dealTargets: [
+      { label: "Alpha", amount: 42000 },
+      { label: "Bravo", amount: 9000 },
+    ],
+    takeSources: [{ label: "#42", amount: 7000 }],
+    ...over,
+  });
+  const fakeIcon = { src: "ribbon.webp" } as unknown as HTMLImageElement;
+
+  it("paints the headline, the ribbon strip and both source columns", () => {
+    const { ctx, texts, images } = recordingContext();
+    const h = recorderPanelHeight();
+    drawRecorderPanel(
+      ctx, 0, 0, EXPORT_SIDE_W, h, stats(), darkPalette(), LABELS,
+      () => fakeIcon,
+    );
+    // The existing headline block survives untouched.
+    expect(texts.some((t) => t.text === LABELS.damage)).toBe(true);
+    expect(texts.some((t) => t.text === "123,456")).toBe(true);
+    expect(texts.some((t) => t.text === "3")).toBe(true);
+    expect(texts.some((t) => t.text === "98,765")).toBe(true);
+    // The two added bands' captions.
+    expect(texts.some((t) => t.text === LABELS.ribbonsTitle)).toBe(true);
+    expect(texts.some((t) => t.text === LABELS.dmgDealtSources)).toBe(true);
+    expect(texts.some((t) => t.text === LABELS.dmgTakenSources)).toBe(true);
+    // Every ribbon's count paints, and one icon lands per kind.
+    expect(texts.some((t) => t.text === "241")).toBe(true);
+    expect(texts.some((t) => t.text === "12")).toBe(true);
+    expect(images).toHaveLength(3);
+    expect(images[0].src).toBe("ribbon.webp");
+    // Source rows: name at the left inset, value right-aligned on the
+    // column's right edge (two columns, 82px each).
+    const alpha = texts.find((t) => t.text === "Alpha")!;
+    const alphaValue = texts.find((t) => t.text === "42,000")!;
+    expect(alpha.align).toBe("left");
+    expect(alpha.x).toBe(EXPORT_RECORDER_INSET_X);
+    expect(alphaValue.align).toBe("right");
+    expect(alphaValue.x).toBe(EXPORT_RECORDER_INSET_X + recorderSourceColumnWidth());
+    // The right-hand column starts one gap later.
+    const taken = texts.find((t) => t.text === LABELS.dmgTakenSources)!;
+    expect(taken.x).toBe(
+      EXPORT_RECORDER_INSET_X + recorderSourceColumnWidth() + EXPORT_RECORDER_SOURCE_GAP,
+    );
+    // The unknown counterparty keeps its hash fallback.
+    expect(texts.some((t) => t.text === "#42")).toBe(true);
+    // Nothing may paint past the panel's bottom edge.
+    const lowestText = Math.max(...texts.map((t) => t.y));
+    const lowestImage = Math.max(...images.map((i) => i.y + i.h));
+    expect(Math.max(lowestText, lowestImage)).toBeLessThanOrEqual(h);
+    // The source rows sit BELOW the ribbon strip, which sits below the
+    // headline (the band order the budget guarantees).
+    const bands = recorderPanelBands();
+    expect(alpha.y).toBeGreaterThan(bands.sourcesTop);
+    expect(texts.find((t) => t.text === LABELS.ribbonsTitle)!.y).toBeGreaterThan(
+      EXPORT_RECORDER_BLOCK_H,
+    );
+  });
+
+  it("caps each source column at five rows", () => {
+    const { ctx, texts } = recordingContext();
+    const many = Array.from({ length: 7 }, (_, i) => ({
+      label: "Target" + i,
+      amount: 1000 * (i + 1),
+    }));
+    drawRecorderPanel(
+      ctx, 0, 0, EXPORT_SIDE_W, recorderPanelHeight(),
+      stats({ dealTargets: many, takeSources: many }), darkPalette(), LABELS,
+      () => fakeIcon,
+    );
+    // The 5th (index 4) paints; the 6th and 7th never do.
+    expect(texts.some((t) => t.text === "Target4")).toBe(true);
+    expect(texts.some((t) => t.text === "Target5")).toBe(false);
+    expect(texts.some((t) => t.text === "Target6")).toBe(false);
+  });
+
+  it("keeps a count and a dim dash when the art or the data is missing", () => {
+    const empty = recordingContext();
+    drawRecorderPanel(
+      empty.ctx, 0, 0, EXPORT_SIDE_W, recorderPanelHeight(),
+      stats({ ribbons: [], dealTargets: [], takeSources: [] }), darkPalette(),
+      LABELS, () => null,
+    );
+    // No ribbon cells (the strip keeps its own dash) and both empty
+    // columns keep theirs - the three bands never float caption-only.
+    expect(empty.texts.filter((t) => t.text === "\u2014")).toHaveLength(3);
+    expect(empty.images).toHaveLength(0);
+    expect(empty.texts.some((t) => t.text === LABELS.ribbonsTitle)).toBe(true);
+    // A missing icon still paints the cell's count.
+    const noArt = recordingContext();
+    drawRecorderPanel(
+      noArt.ctx, 0, 0, EXPORT_SIDE_W, recorderPanelHeight(),
+      stats(), darkPalette(), LABELS, () => null,
+    );
+    expect(noArt.images).toHaveLength(0);
+    expect(noArt.texts.some((t) => t.text === "241")).toBe(true);
+  });
+});
+

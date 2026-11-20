@@ -91,16 +91,20 @@ import { loadSquadronStates } from "./squadronStatesLoader";
 import type { SquadronStateEvents } from "@/api";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap, paintEnlargedMap } from "./minimapPainter";
+import { bundledRibbonUrl } from "./ribbonIcons";
 import HoloExportModal from "./HoloExportModal";
 import {
   EXPORT_LOGICAL,
   EXPORT_TEAM_STAT_COLS,
+  buildRecorderSourceHits,
   clampExportSettings,
+  foldRecorderSources,
   frameTimesAtSpeed,
   normalizeExportRange,
   renderPlaybackExport,
   type PlaybackExportSettings,
   type PlaybackIconVariant,
+  type PlaybackRecorderRibbon,
   type PlaybackTeamRow,
   type PlaybackTeamSide,
   type PlaybackTeamStat,
@@ -3903,6 +3907,66 @@ const RECORDED_DOLLY_MIN = -40;
           `${i18nT("replay.export.duration")} ${formatBattleClock(duration.value).slice(2)}`,
           winnerText ?? "",
         ].filter((line) => line !== "");
+        // ── Recorder panel feed (frozen once per take) ────────────────
+        // The ribbon strip is the recorder's settlement counters — the same
+        // list the post-battle report paints (parsePostBattle's RIBBON_SOURCES
+        // over CLIENT_PUBLIC_RESULTS) — and the two source columns come from
+        // the hit stream's per-counterparty damage attribution. Both are
+        // time-invariant lookups over immutable streams, resolved ONCE here;
+        // only the per-frame fold at the playhead runs inside the feed.
+        const recorderPb = pbData.value;
+        const recorderSelfRow =
+          recorderPb?.selfId != null
+            ? (recorderPb.players.find((p) => p.accountId === recorderPb.selfId) ?? null)
+            : null;
+        const recorderRibbons: PlaybackRecorderRibbon[] = (
+          recorderSelfRow?.ribbons ?? []
+        ).map((r) => ({ key: r.key, value: r.value }));
+        // Counterparty names: the arena's entity→name map first (it also
+        // names operation-wave NPCs), then the roster assignment join. An id
+        // in neither falls back to "#<id>" (recorderSourceLabel).
+        const arenaNameByEntity = new Map<number, string>();
+        for (const ap of props.arenaPlayers) {
+          if (ap.name) arenaNameByEntity.set(ap.entityId, ap.name);
+        }
+        const counterpartyName = (id: number): string | null =>
+          arenaNameByEntity.get(id) ?? ctx.rosterAssignments.get(id)?.name ?? null;
+        const recorderSelfEntityId = selfShotBook.value?.selfTraj.entityId ?? null;
+        // Teammates: their hulls never appear under 造成伤害 (their shells
+        // still dilute the claim partitions), mirroring the live ledger.
+        const recorderAllyIds = props.arenaPlayers
+          .filter(
+            (ap) =>
+              ap.entityId !== recorderSelfEntityId &&
+              ap.teamId === props.arenaPlayers.find((p) => p.entityId === recorderSelfEntityId)?.teamId,
+          )
+          .map((ap) => ap.entityId);
+        const recorderSourceHits =
+          recorderSelfEntityId != null
+            ? buildRecorderSourceHits({
+                shotKills: props.shotKills,
+                trajectories: props.trajectories,
+                selfEntityId: recorderSelfEntityId,
+                allyIds: recorderAllyIds,
+              })
+            : [];
+        // Ribbon art: the bundled settlement icons (the post-battle shot's own
+        // source), decoded once so drawImage never paints a half-decoded face.
+        const ribbonIconMap = new Map<string, HTMLImageElement>();
+        await Promise.all(
+          recorderRibbons.map(async (r) => {
+            const url = bundledRibbonUrl(r.key);
+            if (!url) return;
+            try {
+              const img = await loadImage(url);
+              if (img) ribbonIconMap.set(r.key, img);
+            } catch {
+              // A missing face keeps the cell's neutral capsule.
+            }
+          }),
+        );
+        const ribbonIconFor = (key: string): HTMLImageElement | null =>
+          ribbonIconMap.get(key) ?? null;
         const result = await renderPlaybackExport({
           format: s.format,
           fps: s.fps,
@@ -3921,6 +3985,9 @@ const RECORDED_DOLLY_MIN = -40;
             damage: i18nT("replay.export.damageTitle"),
             dmgFrags: i18nT("replay.export.dmgFrags"),
             dmgTaken: i18nT("replay.export.dmgTaken"),
+            ribbonsTitle: i18nT("replay.export.ribbonsTitle"),
+            dmgDealtSources: i18nT("replay.export.dmgDealtSources"),
+            dmgTakenSources: i18nT("replay.export.dmgTakenSources"),
             chat: i18nT("replay.export.chatTitle"),
           },
           header: (t) => {
@@ -3966,10 +4033,31 @@ const RECORDED_DOLLY_MIN = -40;
               enemies: sideOf(rows.enemies, frozenColumns.enemies),
             };
           },
-          recorder: () => {
+          recorder: (t) => {
             const st = selfStats.value;
-            return st ? { damage: st.damage, frags: st.frags, taken: st.taken } : null;
+            if (!st) return null;
+            return {
+              damage: st.damage,
+              frags: st.frags,
+              taken: st.taken,
+              ribbons: recorderRibbons,
+              // Cumulative per counterparty, descending, top 5 — the DISPLAY
+              // clamp only (the ledger keeps every ship / attacker).
+              dealTargets: foldRecorderSources(
+                recorderSourceHits,
+                t,
+                "dealt",
+                counterpartyName,
+              ),
+              takeSources: foldRecorderSources(
+                recorderSourceHits,
+                t,
+                "taken",
+                counterpartyName,
+              ),
+            };
           },
+          ribbonIconFor,
           chat: (t) =>
             props.chatMessages
               // System rows (playerId <= 0) are client-ignored noise —
