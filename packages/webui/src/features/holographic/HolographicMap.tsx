@@ -106,7 +106,6 @@ import {
 import { formatBattleClock, saveExportBlob, saveExportBlobTo } from "./tactical/exporters";
 import {
   LOGO_URL,
-  STAMP_URL,
   darkPalette,
   loadImage,
   shareFooterStrings,
@@ -215,10 +214,11 @@ import {
 } from "@/features/replay/postBattleShare";
 import {
   prAlgoForRequest,
+  statsPrefsState,
   useStatsPrefsStore,
   type OverlayColumnScope,
 } from "@/stores/statsPrefs";
-import { careerStamp, type StampKind } from "@/utils/winrate";
+import { careerStamp, stampWording, type StampKind } from "@/utils/winrate";
 import { shipTierOf } from "@/utils/shipClass";
 import { useLanguage } from "@/i18n/useLanguage";
 import { splitRosterSides } from "@/utils/rosterSides";
@@ -1382,10 +1382,6 @@ const RECORDED_DOLLY_MIN = -40;
      *  (careerStamp lives in utils/winrate; the composition half needs the
      *  per-class share verdict this batch answers.) */
     const exportCompositions = new Map<string, PlayerComposition | null>();
-  /** Seal art decoded once per session (shotKit.STAMP_URL) — shared by the
-   *  export feed and warmed on modal open so the first take never stalls
-   *  decoding mid-render. */
-  const medalImages = new Map<StampKind, HTMLImageElement>();
   let medalFeedWarm = false;
     /** Seals are a zh-only artifact on every surface (RatingStamp /
      *  StampTag gate on the UI locale) AND ride the PR + seals masters —
@@ -1407,19 +1403,14 @@ const RECORDED_DOLLY_MIN = -40;
     const humanNames = [
       ...new Set(props.vehicles.filter((v) => !AI_NAME.test(v.name)).map((v) => v.name)),
     ];
-    const [comps] = await Promise.all([
+    // The tag face is pure vector text (stampWording over sealLabels) —
+    // nothing to decode; only the composition lookup needs warming.
+    const comps =
       humanNames.length > 0 && props.realm
-        ? rpcApi
+        ? await rpcApi
             .lookupPlayersComposition(humanNames, props.realm)
             .catch(() => [] as (PlayerComposition | null)[])
-        : Promise.resolve([] as (PlayerComposition | null)[]),
-      Promise.all(
-        (Object.keys(STAMP_URL) as StampKind[]).map(async (kind) => {
-          const img = await loadImage(STAMP_URL[kind]);
-          if (img) medalImages.set(kind, img);
-        }),
-      ),
-    ]);
+        : [];
     humanNames.forEach((name, i) => exportCompositions.set(name, comps[i] ?? null));
   };
 
@@ -1502,7 +1493,7 @@ const RECORDED_DOLLY_MIN = -40;
      *  the career verdict first (the row-end stamp there), then the
      *  composition tags air-before-sub. A 蛆 / 过街老鼠 verdict suppresses
      *  the composition half, exactly like compSealKindsOf. */
-    const medalsOf = (name: string, st: RosterStat | undefined): StampKind[] => {
+    const medalsOf = (name: string, st: RosterStat | undefined): string[] => {
       if (!sealsShown.value || !st || st.loading || AI_NAME.test(name)) return [];
       // A hidden profile whose clan gate is still out holds its stamp.
       if (st.hidden && st.clanId != null && st.clanWinrate === undefined) return [];
@@ -1516,7 +1507,12 @@ const RECORDED_DOLLY_MIN = -40;
           if (comp.sub) kinds.push(comp.subVeteran ? "subVeteran" : "sub");
         }
       }
-      return kinds.filter((kind) => !statsPrefs.prefs.sealDisabled[kind]);
+      // The TAG face's wording: the shared STAMP_WORDING with the user's
+      // label edits applied (StampTag's exact recipe). A user-imported
+      // seal PICTURE deliberately never enters the clip.
+      return kinds
+        .filter((kind) => !statsPrefs.prefs.sealDisabled[kind])
+        .map((kind) => stampWording(kind, statsPrefsState.value.sealLabels));
     };
     /** One side's HEADER columns: the stats config's first two columns
      *  labelled above each metric's team mean (the live full mode's
@@ -3714,16 +3710,9 @@ const RECORDED_DOLLY_MIN = -40;
           // slot the live HUD would draw.
           shipIconMap.get(`${variant}:${shipTypeClass(shipType) || "battleship"}`) ?? null;
         // ── Team-column feed: the live roster full mode's medals ────────
-        // Seal glyphs are the same bundled cinnabar art the DOM's
-        // RatingStamp/SVG seals rasterize (shotKit.STAMP_URL); decode every
-        // kind once so drawImage never paints a half-loaded image. The
-        // composition half of the medals comes from the SAME batch command
-        // the live panel rides — one call, process-cached backend-side.
-        // The medal feed (seal art + compositions) warms when the export
-        // modal opens; this await is then a no-op re-read of warm caches.
+        // The medal feed (compositions) warms when the export modal opens;
+        // this await is then a no-op re-read of a warm cache.
         await warmExportMedalFeed();
-        const medalIconFor = (kind: StampKind): HTMLImageElement | null =>
-          medalImages.get(kind) ?? null;
         // Freeze the roster feed for the take: the players, their stats,
         // medals and the header columns cannot change inside one export,
         // so they resolve ONCE here; only the HP fraction and the dead
@@ -3805,7 +3794,6 @@ const RECORDED_DOLLY_MIN = -40;
             };
           },
           shipIconFor,
-          medalIconFor,
           // Each side carries its own header columns (the team averages
           // are per side) plus the full-mode entries; the icon strip's
           // dead-at-outer-edge sort reads wrong in a vertical HUD, so the
