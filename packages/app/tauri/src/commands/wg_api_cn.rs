@@ -1438,11 +1438,16 @@ fn clan_info_from_cn(
 }
 
 /// Parse the CN claninfo `created_at` ("2020-10-21T03:45:18.364106" — no
-/// zone designator) into epoch seconds. None when unparseable.
+/// zone designator, read as UTC, the zone-less reading chrono's naive
+/// `.and_utc()` gave) into epoch seconds. None when unparseable.
 fn parse_cn_timestamp(raw: &str) -> Option<i64> {
-    chrono::NaiveDateTime::parse_from_str(raw, "%Y-%m-%dT%H:%M:%S%.f")
-        .ok()
-        .map(|dt| dt.and_utc().timestamp())
+    let dt = jiff::civil::DateTime::strptime("%Y-%m-%dT%H:%M:%S%.f", raw).ok()?;
+    Some(
+        dt.to_zoned(jiff::tz::TimeZone::UTC)
+            .ok()?
+            .timestamp()
+            .as_second(),
+    )
 }
 
 #[cfg(test)]

@@ -163,9 +163,18 @@ pub async fn mod_catalog_refresh(
 
 /// Whether the index's fetch stamp is younger than the cache TTL.
 fn fetched_recently(fetched_at: &str) -> bool {
-    chrono::DateTime::parse_from_rfc3339(fetched_at)
-        .map(|t| Utc::now().signed_duration_since(t).num_hours() < INDEX_CACHE_TTL_HOURS)
-        .unwrap_or(false)
+    fetched_at
+        .parse::<jiff::Timestamp>()
+        .ok()
+        .and_then(|t| {
+            // t → now is the stamp's age; a negative (future-stamped,
+            // clock-skewed) index stays "recent" like chrono did.
+            t.until(jiff::Timestamp::now())
+                .ok()?
+                .total(jiff::Unit::Hour)
+                .ok()
+        })
+        .is_some_and(|hours| (hours as i64) < INDEX_CACHE_TTL_HOURS)
 }
 
 /// The cached catalog index, shared read-only with sibling modules
@@ -228,7 +237,7 @@ pub(crate) async fn fetch_index() -> anyhow::Result<(CatalogIndex, String)> {
             Ok(bytes) => match serde_json::from_slice::<serde_json::Value>(&bytes) {
                 Ok(raw) => {
                     let mut index = parse_index(&raw)?;
-                    index.fetched_at = Utc::now().to_rfc3339();
+                    index.fetched_at = crate::time_fmt::now_utc_rfc3339();
                     index.source_sha256 = expected.clone();
                     return Ok((index, expected));
                 },
@@ -523,7 +532,7 @@ pub(crate) fn parse_index(raw: &serde_json::Value) -> anyhow::Result<CatalogInde
             .content_version
             .unwrap_or_else(|| "community crawl".into()),
         game_version: source.game_version.unwrap_or_else(|| "*".into()),
-        fetched_at: Utc::now().to_rfc3339(),
+        fetched_at: crate::time_fmt::now_utc_rfc3339(),
         // Filled in by `fetch_index` once the bytes match the official
         // digest; parse-only paths (tests) carry an empty stamp.
         source_sha256: String::new(),
@@ -552,16 +561,16 @@ mod tests {
     /// built against the REAL now — the gate compares against it.
     #[test]
     fn fetched_recently_follows_the_ttl() {
-        let base = Utc::now();
+        let base = jiff::Timestamp::now();
         let stamp = |hours_before: i64| {
-            chrono::DateTime::from_timestamp(base.timestamp() - hours_before * 3600, 0)
+            jiff::Timestamp::new(base.as_second() - hours_before * 3600, 0)
                 .unwrap()
-                .to_rfc3339()
+                .to_string()
         };
         assert!(fetched_recently(&stamp(INDEX_CACHE_TTL_HOURS - 1)));
         assert!(!fetched_recently(&stamp(INDEX_CACHE_TTL_HOURS + 1)));
         assert!(
-            fetched_recently(&base.to_rfc3339()),
+            fetched_recently(&base.to_string()),
             "the fetch moment itself is inside the TTL"
         );
         assert!(!fetched_recently("not-a-stamp"), "unparseable -> stale");

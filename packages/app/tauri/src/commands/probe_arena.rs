@@ -51,7 +51,6 @@
 
 use std::path::Path;
 use std::sync::LazyLock;
-use std::time::{Duration, SystemTime};
 
 use wowsp_tauri_shared::ArenaInfo;
 
@@ -313,11 +312,13 @@ fn synthesize_arena_info(
     } else {
         None
     };
-    let date_time = chrono::DateTime::<chrono::Local>::from(
-        SystemTime::UNIX_EPOCH + Duration::from_secs(stamp_unix.max(0) as u64),
-    )
-    .format("%d.%m.%Y %H:%M:%S")
-    .to_string();
+    let date_time = jiff::Timestamp::from_second(stamp_unix.max(0))
+        .map(|ts| {
+            ts.to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%d.%m.%Y %H:%M:%S")
+                .to_string()
+        })
+        .unwrap_or_default();
     let raw = serde_json::json!({
         // The arena file's own field name for the local player — the same
         // anchor the Lesta synthesis reads off the real file.
@@ -399,6 +400,7 @@ pub(crate) fn try_claim_serve(dir: &Path, now_ms: i64) -> Option<LiveProbeBattle
 mod tests {
     use super::*;
     use crate::commands::probe_roster;
+    use std::time::{Duration, SystemTime};
 
     /// A minimal install whose `res_mods_dir` resolves: one numeric
     /// `bin/<build>` (the plain-newest fallback of `latest_bin_dir` needs

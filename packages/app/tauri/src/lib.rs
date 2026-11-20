@@ -33,6 +33,7 @@ mod resource_pack;
 mod settings_store;
 #[cfg(feature = "test-harness")]
 mod test_harness;
+mod time_fmt;
 /// WebView2 browser-argument policy: static args are gone; the conditional
 /// GPU switch rides an env var set before any webview exists (module docs).
 mod webview_args;

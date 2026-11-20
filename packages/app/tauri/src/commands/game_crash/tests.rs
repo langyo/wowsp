@@ -56,7 +56,7 @@ impl Drop for TempDir {
 fn sample_record(id: &str, root: Option<&str>) -> GameCrashRecord {
     GameCrashRecord {
         id: id.to_string(),
-        detected_at: chrono::Utc::now().to_rfc3339(),
+        detected_at: crate::time_fmt::now_utc_rfc3339(),
         pid: 4242,
         image_name: "worldofwarships64.exe".to_string(),
         game_root: root.map(str::to_string),

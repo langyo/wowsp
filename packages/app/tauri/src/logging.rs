@@ -90,7 +90,7 @@ pub fn list_log_files(dir: &Path) -> Vec<LogFile> {
 fn is_rolling_log_name(name: &str) -> bool {
     name.strip_prefix("wowsp.")
         .and_then(|rest| rest.strip_suffix(".log"))
-        .is_some_and(|date| chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d").is_ok())
+        .is_some_and(|date| jiff::civil::Date::strptime("%Y-%m-%d", date).is_ok())
 }
 
 /// Install the global panic hook: every panic is MIRRORED into the tracing

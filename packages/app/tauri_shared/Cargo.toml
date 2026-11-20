@@ -12,4 +12,3 @@ description = "Shared DTOs between the WoWSP Tauri shell and the frontend"
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-chrono.workspace = true

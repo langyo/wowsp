@@ -71,9 +71,7 @@ fn to_info(f: &LogFile) -> LogFileInfo {
             .unwrap_or_default(),
         path: f.path.to_string_lossy().into_owned(),
         size_bytes: f.size_bytes,
-        modified: f
-            .modified
-            .map(|m| chrono::DateTime::<chrono::Utc>::from(m).to_rfc3339()),
+        modified: f.modified.map(crate::time_fmt::rfc3339_utc_from),
     }
 }
 
@@ -189,7 +187,7 @@ fn export_bundle_sync(app: &tauri::AppHandle, include_hardware: bool) -> anyhow:
     use tauri_plugin_opener::OpenerExt;
 
     let dir = logging::ensure_log_dir()?;
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let stamp = crate::time_fmt::now_local_compact();
     let bundle_path = dir.join(format!("feedback-bundle-{stamp}.zip"));
 
     // Newest first. The newest file always enters the bundle — when it
@@ -306,7 +304,7 @@ fn feedback_info(
     manifest.push_str("encoding: UTF-8\n");
     manifest.push_str(&format!(
         "generated-at: {}\n",
-        chrono::Local::now().to_rfc3339()
+        crate::time_fmt::now_local_rfc3339()
     ));
     manifest.push_str(&format!("app-version: {}\n", env!("CARGO_PKG_VERSION")));
     manifest.push_str(&format!("os: {}\n", std::env::consts::OS));

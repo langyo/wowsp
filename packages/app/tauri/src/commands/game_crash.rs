@@ -301,7 +301,7 @@ fn unix_now() -> i64 {
 
 /// RFC 3339 UTC for a SystemTime, when present.
 fn rfc3339(t: Option<SystemTime>) -> Option<String> {
-    t.map(|t| chrono::DateTime::<chrono::Utc>::from(t).to_rfc3339())
+    t.map(crate::time_fmt::rfc3339_utc_from)
 }
 
 /// The file-stem of a process image name, lowercase (worldofwarships64)
@@ -609,7 +609,7 @@ fn mutate_quarantine(
             QuarantineEntry {
                 name,
                 crash_id: crash_id.map(str::to_string),
-                quarantined_at: chrono::Utc::now().to_rfc3339(),
+                quarantined_at: crate::time_fmt::now_utc_rfc3339(),
             },
         );
     } else {
@@ -1103,9 +1103,17 @@ fn build_crash_record(pid: u32, seen: &SeenProcess, evidence: &CrashEvidence) ->
         .and_then(super::mod_hub::latest_bin_version)
         .map(|(build, _)| build);
     let mods_active = root.as_deref().is_some_and(res_mods_has_entries);
+    // The ID stem is UTC with exactly three fraction digits (chrono's
+    // `%3f`) — the observed shape tests assert (`gc-20261101232118338-…`).
+    let now = jiff::Timestamp::now();
+    let id_stamp = format!(
+        "{}{:03}",
+        now.strftime("%Y%m%d%H%M%S"),
+        now.subsec_nanosecond().unsigned_abs() / 1_000_000
+    );
     GameCrashRecord {
-        id: format!("gc-{}-{pid}", chrono::Utc::now().format("%Y%m%d%H%M%S%3f")),
-        detected_at: chrono::Utc::now().to_rfc3339(),
+        id: format!("gc-{id_stamp}-{pid}"),
+        detected_at: crate::time_fmt::now_utc_rfc3339(),
         pid,
         image_name: seen.image.clone(),
         game_root: root,
@@ -1494,10 +1502,9 @@ fn local_dump_evidence(image: &str, pid: u32, window: (i64, i64)) -> Option<Cras
         summary: format!(
             "LocalDumps dump {} ({})",
             path.display(),
-            chrono::DateTime::<chrono::Utc>::from(
-                UNIX_EPOCH + Duration::from_secs(mtime.max(0) as u64)
+            crate::time_fmt::rfc3339_utc(
+                jiff::Timestamp::from_second(mtime.max(0)).unwrap_or(jiff::Timestamp::UNIX_EPOCH)
             )
-            .to_rfc3339()
         ),
     })
 }
@@ -2016,9 +2023,9 @@ fn backfill_recent(app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord
                 r.evidence_id.as_deref() == Some(candidate.evidence_id.as_str())
                     || (r.image_name == candidate.image
                         && r.detected_at
-                            .parse::<chrono::DateTime<chrono::Utc>>()
+                            .parse::<jiff::Timestamp>()
                             .ok()
-                            .map(|t| t.timestamp())
+                            .map(|t| t.as_second())
                             .is_some_and(|t| {
                                 (t - candidate.at_unix).abs() <= BACKFILL_CLUSTER_SECS
                             }))
@@ -2038,10 +2045,10 @@ fn backfill_recent(app: &tauri::AppHandle) -> anyhow::Result<Vec<GameCrashRecord
         let mods_active = root.as_deref().is_some_and(res_mods_has_entries);
         let record = GameCrashRecord {
             id: format!("gc-bf-{}", candidate.evidence_id),
-            detected_at: chrono::DateTime::<chrono::Utc>::from(
-                UNIX_EPOCH + Duration::from_secs(candidate.at_unix.max(0) as u64),
-            )
-            .to_rfc3339(),
+            detected_at: crate::time_fmt::rfc3339_utc(
+                jiff::Timestamp::from_second(candidate.at_unix.max(0))
+                    .unwrap_or(jiff::Timestamp::UNIX_EPOCH),
+            ),
             pid: 0,
             image_name: candidate.image.clone(),
             game_root: root,
@@ -2155,8 +2162,8 @@ fn parse_event_block(block: &str) -> ParsedEvent {
         .to_string();
     let time_unix = between(block, "SystemTime='", "'")
         .or_else(|| between(block, "SystemTime=\"", "\""))
-        .and_then(|v| chrono::DateTime::parse_from_rfc3339(v.trim()).ok())
-        .map(|t| t.timestamp());
+        .and_then(|v| v.trim().parse::<jiff::Timestamp>().ok())
+        .map(|t| t.as_second());
     let mut data = Vec::new();
     let mut rest = block;
     while let Some(rel) = rest.find("<Data") {
@@ -2768,9 +2775,7 @@ fn exception_finding(code: &str) -> CrashFinding {
 
 /// RFC 3339 -> unix seconds (analysis-side date math).
 fn parse_rfc3339_unix(text: &str) -> Option<i64> {
-    chrono::DateTime::parse_from_rfc3339(text)
-        .ok()
-        .map(|t| t.timestamp())
+    text.parse::<jiff::Timestamp>().ok().map(|t| t.as_second())
 }
 
 // ── dangling-reference detection (the death-window heuristics) ──────────────
@@ -3223,7 +3228,7 @@ fn analyze_sync(record: &GameCrashRecord) -> anyhow::Result<CrashAnalysis> {
         mods_inventory,
         suspects,
         current_build,
-        generated_at: chrono::Utc::now().to_rfc3339(),
+        generated_at: crate::time_fmt::now_utc_rfc3339(),
     })
 }
 
@@ -3381,7 +3386,7 @@ pub fn game_crash_ignore_suspect(window: tauri::Window, name: String) -> Command
             0,
             IgnoredSuspect {
                 name: name.to_string(),
-                ignored_at: chrono::Utc::now().to_rfc3339(),
+                ignored_at: crate::time_fmt::now_utc_rfc3339(),
             },
         );
     }
@@ -3554,7 +3559,7 @@ fn export_sync(app: &tauri::AppHandle, record_id: &str) -> anyhow::Result<String
 
     let out_dir = crate::paths::data_dir()?.join("crash-reports");
     fs::create_dir_all(&out_dir)?;
-    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+    let stamp = crate::time_fmt::now_local_compact();
     let id_part: String = record.id.chars().take(14).collect();
     let bundle_path = out_dir.join(format!("game-crash-{id_part}-{stamp}.zip"));
 
@@ -3570,7 +3575,7 @@ fn export_sync(app: &tauri::AppHandle, record_id: &str) -> anyhow::Result<String
     manifest.push_str("encoding: UTF-8\n");
     manifest.push_str(&format!(
         "generated-at: {}\n",
-        chrono::Local::now().to_rfc3339()
+        crate::time_fmt::now_local_rfc3339()
     ));
     manifest.push_str(&format!("app-version: {}\n", env!("CARGO_PKG_VERSION")));
     manifest.push_str(&format!("crash-id: {}\n", record.id));

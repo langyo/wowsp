@@ -149,7 +149,9 @@ fn now_unix() -> i64 {
 }
 
 fn rfc3339_now() -> String {
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
+    jiff::Timestamp::now()
+        .strftime("%Y-%m-%dT%H:%M:%SZ")
+        .to_string()
 }
 
 /// Read the store, healing an absent file to defaults. A damaged file
@@ -471,19 +473,23 @@ fn facts_plausible(facts: &ReplayFacts) -> bool {
 /// zone into an RFC3339 UTC stamp. Unconvertible stamps fall back to
 /// treating the stamp as UTC rather than dropping the battle time.
 fn battle_time_of(date_time: Option<&str>) -> Option<String> {
-    use chrono::TimeZone as _;
     let raw = date_time?;
-    let naive = match chrono::NaiveDateTime::parse_from_str(raw, "%Y%m%d_%H%M%S") {
+    let naive = match jiff::civil::DateTime::strptime("%Y%m%d_%H%M%S", raw) {
         Ok(dt) => dt,
-        Err(_) => chrono::NaiveDate::parse_from_str(raw, "%Y%m%d")
+        Err(_) => jiff::civil::Date::strptime("%Y%m%d", raw)
             .ok()?
-            .and_hms_opt(0, 0, 0)?,
+            .at(0, 0, 0, 0),
     };
-    let utc = match chrono::Local.from_local_datetime(&naive).single() {
-        Some(local) => local.with_timezone(&chrono::Utc),
-        None => chrono::DateTime::from_naive_utc_and_offset(naive, chrono::Utc),
+    // chrono's `.single()` treated BOTH DST folds and gaps as unresolvable
+    // and fell back to reading the stamp as UTC — mirror that exactly.
+    let amb = jiff::tz::TimeZone::system().to_ambiguous_zoned(naive);
+    // Format the zone-independent instant (NOT the local Zoned — its
+    // wall clock is +08:00 here; the literal-Z strftime must read UTC).
+    let stamp = match amb.unambiguous() {
+        Ok(zoned) => zoned.timestamp(),
+        Err(_) => naive.to_zoned(jiff::tz::TimeZone::UTC).ok()?.timestamp(),
     };
-    Some(utc.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+    Some(stamp.strftime("%Y-%m-%dT%H:%M:%SZ").to_string())
 }
 
 /// Streaming sha256 of one file.
@@ -2015,10 +2021,10 @@ mod tests {
         let got = battle_time_of(Some("20261014_090000")).unwrap();
         // Round-trip: whatever the machine's zone, converting back to the
         // local wall clock must land on the stamped time.
-        let dt = chrono::DateTime::parse_from_rfc3339(&got).unwrap();
-        let local = dt.with_timezone(&chrono::Local);
+        let dt = got.parse::<jiff::Timestamp>().unwrap();
+        let local = dt.to_zoned(jiff::tz::TimeZone::system());
         assert_eq!(
-            local.format("%Y%m%d_%H%M%S").to_string(),
+            local.strftime("%Y%m%d_%H%M%S").to_string(),
             "20261014_090000",
             "{got}"
         );
@@ -2160,10 +2166,10 @@ mod tests {
         assert_eq!(item.facts.core.tier, Some(10));
         let battle_time = item.facts.core.battle_time.clone();
         assert!(!battle_time.is_empty(), "dated filename");
-        let dt = chrono::DateTime::parse_from_rfc3339(&battle_time).unwrap();
+        let dt = battle_time.parse::<jiff::Timestamp>().unwrap();
         assert_eq!(
-            dt.with_timezone(&chrono::Local)
-                .format("%Y%m%d_%H%M%S")
+            dt.to_zoned(jiff::tz::TimeZone::system())
+                .strftime("%Y%m%d_%H%M%S")
                 .to_string(),
             "20261014_090000",
             "{battle_time}"

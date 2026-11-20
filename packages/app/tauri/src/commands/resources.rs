@@ -211,7 +211,7 @@ fn now_rfc3339() -> String {
     // Millisecond precision: consecutive installs within one second must
     // still compare distinct (the ledger's content-moved re-stamp relies
     // on it).
-    chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
+    crate::time_fmt::now_utc_rfc3339_millis()
 }
 
 /// Record one row's ledger entry from a command that owns the content

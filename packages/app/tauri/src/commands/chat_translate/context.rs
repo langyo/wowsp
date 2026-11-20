@@ -254,14 +254,17 @@ fn non_empty(value: Option<String>) -> Option<String> {
 /// local time (the webui's battle clock parses the same layout; seconds are
 /// optional for hand-edited captures).
 fn parse_started_at(raw: &str) -> Option<i64> {
-    use chrono::TimeZone;
-    let naive = chrono::NaiveDateTime::parse_from_str(raw.trim(), "%d.%m.%Y %H:%M:%S")
-        .or_else(|_| chrono::NaiveDateTime::parse_from_str(raw.trim(), "%d.%m.%Y %H:%M"))
+    let trimmed = raw.trim();
+    let naive = jiff::civil::DateTime::strptime("%d.%m.%Y %H:%M:%S", trimmed)
+        .or_else(|_| jiff::civil::DateTime::strptime("%d.%m.%Y %H:%M", trimmed))
         .ok()?;
-    chrono::Local
-        .from_local_datetime(&naive)
-        .single()
-        .map(|at| at.timestamp())
+    // chrono's `.single()`: a DST fold or gap has no unambiguous local
+    // instant → the line is dropped, exactly what `unambiguous()`'s Err is.
+    jiff::tz::TimeZone::system()
+        .to_ambiguous_zoned(naive)
+        .unambiguous()
+        .map(|at| at.timestamp().as_second())
+        .ok()
 }
 
 // ── Own-language resolution ─────────────────────────────────────────────

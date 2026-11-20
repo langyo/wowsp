@@ -309,7 +309,7 @@ pub async fn mod_hub_purge_reinstall(
             .filter(|record| record.source != "mod-hub")
             .map(|record| record.name.clone())
             .collect(),
-        started_at: chrono::Utc::now().to_rfc3339(),
+        started_at: crate::time_fmt::now_utc_rfc3339(),
     };
     if let Err(e) = purge_backups::write_marker(&backup, &marker) {
         // The rename already happened — aborting now would strand a worse
@@ -476,7 +476,7 @@ async fn adopt_and_register(
             preset: None,
             discussion: None,
             bin_version: bin_version.to_string(),
-            installed_at: chrono::Utc::now().to_rfc3339(),
+            installed_at: crate::time_fmt::now_utc_rfc3339(),
             files: unit.files,
             restore_dir: None,
             game_root: game_root.to_string(),
