@@ -11,6 +11,7 @@ import { watchStageThemeMode } from "@wowsp/holo";
 import { useCapabilitiesStore } from "@/stores/capabilities";
 import {
   shipModelStem,
+  shipNameFromOfflineDb,
   shipSilhouetteBox,
   shipSilhouetteUrl,
   shipOfflineEntry,
@@ -90,6 +91,7 @@ import { drawMinimap, paintEnlargedMap } from "./minimapPainter";
 import HoloExportModal from "./HoloExportModal";
 import {
   EXPORT_LOGICAL,
+  EXPORT_TEAM_STAT_COLS,
   clampExportSettings,
   frameTimesAtSpeed,
   normalizeExportRange,
@@ -97,10 +99,14 @@ import {
   type PlaybackExportSettings,
   type PlaybackIconVariant,
   type PlaybackTeamRow,
+  type PlaybackTeamSide,
+  type PlaybackTeamStat,
+  type PlaybackTeamStatColumn,
 } from "./playbackExport";
 import { formatBattleClock, saveExportBlob, saveExportBlobTo } from "./tactical/exporters";
 import {
   LOGO_URL,
+  STAMP_URL,
   darkPalette,
   loadImage,
   shareFooterStrings,
@@ -175,6 +181,7 @@ import type {
   WeatherTransition,
   ShellLaunchEvent,
   ShipInfo,
+  PlayerComposition,
   SquadronCreate,
   SquadronPlane,
   TorpedoLaunch,
@@ -192,7 +199,28 @@ import LoadingNote from "@/components/base/LoadingNote";
 import { AI_NAME, fetchRosterStatsByNames, type RosterStat } from "@/composables/useRosterStats";
 import { tierRoman } from "@/features/replay/shipLiveStats";
 import ToastCardBase, { type ToastCardBaseInstance } from "@/components/layout/ToastCardBase";
-import type { ResolvedStatsMode } from "@/utils/statView";
+import {
+  EMPTY_ROSTER_VIEW,
+  overlayColumnDims,
+  type ResolvedStatsMode,
+} from "@/utils/statView";
+import { scopedRosterView } from "@/utils/shipStatsScope";
+import { aggregateTeamStats } from "@/utils/teamAggregate";
+import {
+  rosterColumns,
+  rosterShotCells,
+  rosterShotDashes,
+  type RosterColumnSpec,
+  teamHeadLabelOf,
+} from "@/features/replay/postBattleShare";
+import {
+  prAlgoForRequest,
+  useStatsPrefsStore,
+  type OverlayColumnScope,
+} from "@/stores/statsPrefs";
+import { careerStamp, type StampKind } from "@/utils/winrate";
+import { shipTierOf } from "@/utils/shipClass";
+import { useLanguage } from "@/i18n/useLanguage";
 import { splitRosterSides } from "@/utils/rosterSides";
 import { isScriptedUnitName } from "@/utils/aiNames";
 import planeIcon from "./planeIcons";
@@ -1338,6 +1366,213 @@ const RECORDED_DOLLY_MIN = -40;
           if (nameStatsLoadedFor === path) nameStatsLoading.value = false;
         });
     }
+    // ── Team-column feed (the live roster's FULL mode on the clip) ─────
+    // The clip's side columns rebuild what the live battle roster shows:
+    // the same configured stats columns (statsPrefs.overlayColumns), the
+    // same per-column scope views (utils/statView + shipStatsScope), the
+    // same team aggregates (utils/teamAggregate, tier-weighted winrate
+    // included) and the same seal verdicts (careerStamp + the composition
+    // batch). Nothing here invents its own numbers or labels.
+    const statsPrefs = useStatsPrefsStore();
+    const { uiLocale, dataLanguage } = useLanguage();
+    /** Composition-seal verdicts for the clip's medals — the SAME batch
+     *  command the live roster rides (one process-lifetime backend cache,
+     *  so a clip costs no extra WG request once the panel asked). Filled
+     *  per export: a clip is a one-shot read.
+     *  (careerStamp lives in utils/winrate; the composition half needs the
+     *  per-class share verdict this batch answers.) */
+    const exportCompositions = new Map<string, PlayerComposition | null>();
+  /** Seal art decoded once per session (shotKit.STAMP_URL) — shared by the
+   *  export feed and warmed on modal open so the first take never stalls
+   *  decoding mid-render. */
+  const medalImages = new Map<StampKind, HTMLImageElement>();
+  let medalFeedWarm = false;
+    /** Seals are a zh-only artifact on every surface (RatingStamp /
+     *  StampTag gate on the UI locale) AND ride the PR + seals masters —
+     *  the clip applies the same three gates before painting a badge. */
+    const sealsShown = computed(
+      () =>
+        uiLocale.value.startsWith("zh") &&
+        statsPrefs.prefs.prEnabled &&
+        statsPrefs.prefs.sealsEnabled,
+    );
+  /** Warm the clip's medal feed (compositions + seal art) ahead of a take.
+   *  Fired when the export modal opens: in the replay view the live panel
+   *  never mounts, so the backend composition cache is otherwise cold and
+   *  the first take would sit at "render 0/N" through the lookup. Idempotent
+   *  per session; the job awaits it and gets warm caches in the common case. */
+  const warmExportMedalFeed = async (): Promise<void> => {
+    if (medalFeedWarm || !sealsShown.value) return;
+    medalFeedWarm = true;
+    const humanNames = [
+      ...new Set(props.vehicles.filter((v) => !AI_NAME.test(v.name)).map((v) => v.name)),
+    ];
+    const [comps] = await Promise.all([
+      humanNames.length > 0 && props.realm
+        ? rpcApi
+            .lookupPlayersComposition(humanNames, props.realm)
+            .catch(() => [] as (PlayerComposition | null)[])
+        : Promise.resolve([] as (PlayerComposition | null)[]),
+      Promise.all(
+        (Object.keys(STAMP_URL) as StampKind[]).map(async (kind) => {
+          const img = await loadImage(STAMP_URL[kind]);
+          if (img) medalImages.set(kind, img);
+        }),
+      ),
+    ]);
+    humanNames.forEach((name, i) => exportCompositions.set(name, comps[i] ?? null));
+  };
+
+    /** One row's display numbers for ONE configured column scope — the
+     *  live panel's own resolver (account careers for global/solo, the
+     *  aggregated per-ship view for ship/shipSolo/class). */
+    const colViewOf = (
+      scope: OverlayColumnScope,
+      st: RosterStat | null | undefined,
+      shipId: number | null,
+    ) =>
+      scopedRosterView(
+        st,
+        shipId,
+        overlayColumnDims(scope, statsPrefs.prefs.overlayBattleScope),
+        props.statsMode,
+        prAlgoForRequest() ?? "winrate",
+      );
+    /** One team's aggregate FOR ONE COLUMN SCOPE — the live panel's
+     *  teamAggFor verbatim: loading / hidden / bot rows sit out, each
+     *  survivor resolves through its column's own scope, and the winrate
+     *  mean stays tier-weighted per the stats pref. */
+    const teamAggFor = (scope: OverlayColumnScope, entries: ShipRowEntry[]) =>
+      aggregateTeamStats(
+        entries.map((entry) => {
+          const v = entry.vehicle;
+          const st = nameStats.value.get(v.name);
+          if (
+            !st ||
+            st.loading ||
+            (scope !== "global" && scope !== "solo" && st.shipsLoading) ||
+            st.hidden ||
+            AI_NAME.test(v.name)
+          ) {
+            return {
+              winrate: null,
+              pr: null,
+              battles: null,
+              damage: null,
+              kd: null,
+              tier: shipTierOf(v.shipId),
+            };
+          }
+          const view = colViewOf(scope, st, v.shipId);
+          return {
+            winrate: view.winrate,
+            pr: view.pr,
+            battles: view.battles,
+            damage: view.avgDamage,
+            kd: view.kd,
+            tier: shipTierOf(v.shipId),
+          };
+        }),
+        statsPrefs.prefs.weightedTeamWr,
+      );
+    /** The header label of one configured column — the stats config's own
+     *  compact head ("胜率" / "单排 PR" / "K/D"), so the clip never owns a
+     *  duplicated column title. The averages row below carries the team
+     *  mean under each label (see the drawer). */
+    const headerLabelOf = (col: RosterColumnSpec): string =>
+      // The live head's own wording (加权胜率 / 平均 PR …) — col.head would
+      // silently rename the column over the team mean.
+      teamHeadLabelOf(col, statsPrefs.prefs.weightedTeamWr);
+    /** The rows' first-two stats, formatted and coloured by the live
+     *  roster's own shot-cell formatter (postBattleShare.rosterShotCells)
+     *  so the clip and the DOM can never quote different numbers. */
+    const statCellsOf = (
+      st: RosterStat | null | undefined,
+      shipId: number | null,
+    ): PlaybackTeamStat[] => {
+      // Bots / stats misses keep the aligned dash cells (the live roster
+      // renders "—" there, never a blank band).
+      if (!st) return rosterShotDashes().slice(0, EXPORT_TEAM_STAT_COLS);
+      return rosterShotCells((scope) => colViewOf(scope, st, shipId)).slice(
+        0,
+        EXPORT_TEAM_STAT_COLS,
+      );
+    };
+    /** One player's seal kinds, in the live roster full mode's order:
+     *  the career verdict first (the row-end stamp there), then the
+     *  composition tags air-before-sub. A 蛆 / 过街老鼠 verdict suppresses
+     *  the composition half, exactly like compSealKindsOf. */
+    const medalsOf = (name: string, st: RosterStat | undefined): StampKind[] => {
+      if (!sealsShown.value || !st || st.loading || AI_NAME.test(name)) return [];
+      // A hidden profile whose clan gate is still out holds its stamp.
+      if (st.hidden && st.clanId != null && st.clanWinrate === undefined) return [];
+      const career = careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate);
+      const kinds: StampKind[] = [];
+      if (career) kinds.push(career);
+      if (career !== "maggot" && career !== "rat") {
+        const comp = exportCompositions.get(name);
+        if (comp) {
+          if (comp.air) kinds.push(comp.airVeteran ? "airVeteran" : "air");
+          if (comp.sub) kinds.push(comp.subVeteran ? "subVeteran" : "sub");
+        }
+      }
+      return kinds.filter((kind) => !statsPrefs.prefs.sealDisabled[kind]);
+    };
+    /** One side's HEADER columns: the stats config's first two columns
+     *  labelled above each metric's team mean (the live full mode's
+     *  two-line header, its averages formatted by the live cell
+     *  formatter so rounding/units/colours can never drift). */
+    const playbackHeaderColumns = (
+      entries: ShipRowEntry[],
+    ): PlaybackTeamStatColumn[] => {
+      const columns = rosterColumns().slice(0, EXPORT_TEAM_STAT_COLS);
+      // One aggregate per DISTINCT scope (two columns may share a scope:
+      // they then read different fields of the SAME team mean).
+      const aggViews = new Map<OverlayColumnScope, ReturnType<typeof colViewOf>>();
+      for (const col of columns) {
+        if (aggViews.has(col.scope)) continue;
+        const agg = teamAggFor(col.scope, entries);
+        aggViews.set(col.scope, {
+          winrate: agg.winrate,
+          pr: agg.avgPr,
+          battles: agg.avgBattles,
+          avgDamage: agg.avgDamage,
+          kd: agg.avgKd,
+        });
+      }
+      const headerCells = rosterShotCells(
+        (scope) => aggViews.get(scope) ?? EMPTY_ROSTER_VIEW,
+      ).slice(0, columns.length);
+      return columns.map((col, i) => ({
+        label: headerLabelOf(col),
+        text: headerCells[i]?.text ?? "\u2014",
+        color: headerCells[i]?.color,
+      }));
+    };
+    /** One entry's TIME-INVARIANT half (identity, stats, medals) - frozen
+     *  once per export; the HP fraction and the dead flag are the only
+     *  fields the render loop re-reads per frame. */
+    const playbackRowBase = (
+      r: ShipRowEntry,
+    ): Omit<PlaybackTeamRow, "hpFrac" | "dead"> => {
+      const v = r.vehicle;
+      const st = nameStats.value.get(v.name);
+      return {
+        name: v.name,
+        clan: st?.clanTag ?? null,
+        // The live roster's own identity chain (offline DB name first -
+        // the clip must read like the panel, not like the raw header).
+        shipName:
+          shipNameFromOfflineDb(v.shipId, dataLanguage.value) ??
+          v.shipName ??
+          i18nT("replay.live.unknownShip"),
+        tier: tierRoman(v.shipId != null ? shipTierOf(v.shipId) : null),
+        shipType: r.type,
+        medals: medalsOf(v.name, st),
+        stats: statCellsOf(st, v.shipId),
+      };
+    };
+
     /** Strip-icon hover tooltip: which roster player, anchored to which
      *  slot element. Stays mounted a beat after both icon and card are
      *  left so the pointer can travel between them. */
@@ -3353,6 +3588,9 @@ const RECORDED_DOLLY_MIN = -40;
       (open) => {
         if (!open) return;
         void loadExportDir();
+        // Warm the medal feed in the background so starting the take does
+        // not pay the composition lookup on a cold cache.
+        void warmExportMedalFeed().catch(() => {});
         // Seed the range window: keep a still-valid window on THIS replay,
         // else default to [playhead, end] (the old "从现在开始" reading). The
         // seeding is tracked per replay path so switching matches never
@@ -3475,6 +3713,50 @@ const RECORDED_DOLLY_MIN = -40;
           // fallback the holo registry applies, so the clip never drops a
           // slot the live HUD would draw.
           shipIconMap.get(`${variant}:${shipTypeClass(shipType) || "battleship"}`) ?? null;
+        // ── Team-column feed: the live roster full mode's medals ────────
+        // Seal glyphs are the same bundled cinnabar art the DOM's
+        // RatingStamp/SVG seals rasterize (shotKit.STAMP_URL); decode every
+        // kind once so drawImage never paints a half-loaded image. The
+        // composition half of the medals comes from the SAME batch command
+        // the live panel rides — one call, process-cached backend-side.
+        // The medal feed (seal art + compositions) warms when the export
+        // modal opens; this await is then a no-op re-read of warm caches.
+        await warmExportMedalFeed();
+        const medalIconFor = (kind: StampKind): HTMLImageElement | null =>
+          medalImages.get(kind) ?? null;
+        // Freeze the roster feed for the take: the players, their stats,
+        // medals and the header columns cannot change inside one export,
+        // so they resolve ONCE here; only the HP fraction and the dead
+        // flag (playhead-derived) are re-read per frame.
+        const frozenRows = new Map<
+          number,
+          Omit<PlaybackTeamRow, "hpFrac" | "dead">
+        >();
+        for (const r of [...shipRows.value.allies, ...shipRows.value.enemies]) {
+          frozenRows.set(r.vehicle.id, playbackRowBase(r));
+        }
+        const frozenColumns = {
+          allies: playbackHeaderColumns(shipRows.value.allies),
+          enemies: playbackHeaderColumns(shipRows.value.enemies),
+        };
+        const sideOf = (
+          entries: ShipRowEntry[],
+          columns: readonly PlaybackTeamStatColumn[],
+        ): PlaybackTeamSide => ({
+          columns,
+          // Alive first, dead last - the vertical HUD order (the icon
+          // strip's dead-at-outer-edge sort reads wrong top-down).
+          rows: [...entries]
+            .sort((a, b) => Number(a.dead) - Number(b.dead))
+            .map((r) => ({
+              ...(frozenRows.get(r.vehicle.id) ?? playbackRowBase(r)),
+              hpFrac:
+                r.hp != null && r.maxHp
+                  ? Math.max(0, Math.min(1, r.hp / r.maxHp))
+                  : null,
+              dead: r.dead,
+            })),
+        });
         const result = await renderPlaybackExport({
           format: s.format,
           fps: s.fps,
@@ -3487,6 +3769,8 @@ const RECORDED_DOLLY_MIN = -40;
           panelLabels: {
             teamAlly: i18nT("replay.export.teamAlly"),
             teamEnemy: i18nT("replay.export.teamEnemy"),
+            teamAvg: i18nT("replay.export.teamAvg"),
+            noStats: i18nT("replay.export.noStats"),
             damage: i18nT("replay.export.damageTitle"),
             dmgFrags: i18nT("replay.export.dmgFrags"),
             dmgTaken: i18nT("replay.export.dmgTaken"),
@@ -3521,23 +3805,16 @@ const RECORDED_DOLLY_MIN = -40;
             };
           },
           shipIconFor,
+          medalIconFor,
+          // Each side carries its own header columns (the team averages
+          // are per side) plus the full-mode entries; the icon strip's
+          // dead-at-outer-edge sort reads wrong in a vertical HUD, so the
+          // rows stay put (alive first, dead last — inside the builder).
           team: () => {
-            const toRow = (r: ShipRowEntry): PlaybackTeamRow => ({
-              name: r.vehicle.name,
-              clan: nameStats.value.get(r.vehicle.name)?.clanTag ?? null,
-              shipName: r.vehicle.shipName ?? "",
-              hpFrac:
-                r.hp != null && r.maxHp ? Math.max(0, Math.min(1, r.hp / r.maxHp)) : null,
-              dead: r.dead,
-            });
-            // The icon strip's sort (dead-at-outer-edge) reads wrong in a
-            // vertical HUD — rows stay put, alive first, dead last.
-            const vertical = (a: ShipRowEntry, b: ShipRowEntry) =>
-              Number(a.dead) - Number(b.dead);
             const rows = shipRows.value;
             return {
-              allies: [...rows.allies].sort(vertical).map(toRow),
-              enemies: [...rows.enemies].sort(vertical).map(toRow),
+              allies: sideOf(rows.allies, frozenColumns.allies),
+              enemies: sideOf(rows.enemies, frozenColumns.enemies),
             };
           },
           recorder: () => {

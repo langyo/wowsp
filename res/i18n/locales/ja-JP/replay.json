@@ -606,6 +606,8 @@
     "savedCopied": "{path} に保存し、ファイルをクリップボードにコピーしました。そのまま貼り付けられます",
     "teamAlly": "味方",
     "teamEnemy": "敵",
+    "teamAvg": "平均",
+    "noStats": "統計列が未設定",
     "damageTitle": "ダメージ",
     "dmgFrags": "撃沈",
     "dmgTaken": "被弾",

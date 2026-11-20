@@ -606,6 +606,8 @@
     "savedCopied": "{path}에 저장했으며 파일이 클립보드에 복사되었습니다 — 바로 붙여넣을 수 있어요",
     "teamAlly": "아군",
     "teamEnemy": "적군",
+    "teamAvg": "평균",
+    "noStats": "통계 열 없음",
     "damageTitle": "준 피해",
     "dmgFrags": "격침",
     "dmgTaken": "받은 피해",

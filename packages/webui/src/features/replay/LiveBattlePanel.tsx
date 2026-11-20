@@ -107,6 +107,7 @@ import { WaitingRadarArt } from "./liveGuideArt";
 import {
   rosterColumns,
   rosterShotCells,
+  teamHeadLabelOf,
   rosterShotDashes,
   rosterStatCols,
   useNickMasking,
@@ -1230,20 +1231,9 @@ export default defineComponent({
       if (cols.length === 0) {
         return <div class="live-battle__col-title">{title}</div>;
       }
-      const labelOf = (col: RosterColumnSpec): string => {
-        if (col.scope !== "global") return col.head;
-        if (col.metric === "winrate") {
-          return t(
-            prefs.prefs.weightedTeamWr
-              ? "replay.roster.teamWrWeighted"
-              : "replay.roster.teamWrPlain",
-          );
-        }
-        if (col.metric === "pr") return t("replay.roster.teamAvgPr");
-        if (col.metric === "battles") return t("replay.roster.battles");
-        if (col.metric === "kd") return t("replay.roster.metricKd");
-        return t("replay.postbattle.avgDamage");
-      };
+      // The shared wording (the clip feed uses the very same helper).
+      const labelOf = (col: RosterColumnSpec): string =>
+        teamHeadLabelOf(col, prefs.prefs.weightedTeamWr);
       const valueOf = (col: RosterColumnSpec): VNode => {
         const agg = teamAggFor(col.scope, entries);
         if (col.metric === "winrate") {

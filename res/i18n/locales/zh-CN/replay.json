@@ -606,6 +606,8 @@
     "savedCopied": "已保存到 {path}，文件已复制到剪贴板，可直接粘贴发送",
     "teamAlly": "我方",
     "teamEnemy": "敌方",
+    "teamAvg": "均值",
+    "noStats": "未配置统计列",
     "damageTitle": "伤害输出",
     "dmgFrags": "击沉",
     "dmgTaken": "承伤",
