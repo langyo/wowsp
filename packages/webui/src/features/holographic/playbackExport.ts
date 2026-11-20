@@ -759,6 +759,9 @@ function drawRecorderPanel(
   g.fillText(labels.taken, x + 10 + badge + 7, rowY(1));
   g.font = font(11, 700, true);
   g.fillStyle = rgba(palette.text, 0.9);
+  // The value column hugs the right inset (it must not start there and run
+  // rightward out of the panel).
+  g.textAlign = "right";
   g.fillText(stats.taken.toLocaleString("en-US"), x + w - 10, rowY(1));
   // Hand the alignment back to the callers (left) for the next pass.
   g.textAlign = "left";
