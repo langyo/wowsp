@@ -469,6 +469,11 @@
     "shellDamage": "單發傷害",
     "shellDamageHint": "該彈種每發命中的標準傷害。",
     "variantSelectorHint": "切換本分組的模組變體",
+    "variantStage": {
+      "stock": "初始",
+      "mid": "進階",
+      "top": "完全體"
+    },
     "variantOptionAria": "選擇模組變體"
   },
   "skills": {

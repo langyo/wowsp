@@ -162,16 +162,40 @@
   }
 
   /* The group's module-variant dropdown (hikari's compact HkPopupSelect):
-     pinned to the header's far edge; the "sm" trigger density carries the
-     row, only the value text shrinks to the group's own label scale. */
+     a header-edge PILL. The "sm" trigger density is slimmed further (a
+     1.6rem band, hairline padding, full-radius ends) while the value text
+     steps UP to --text-xs and semibold — the control reads smaller than
+     the stock form field but the module label stays the legible part.
+     The wrapper must shrink to its label: hikari's stock wrapper is
+     width: 100%, which as a header flex child would fill the whole row. */
   &__variant {
     margin-left: auto;
-    font-size: var(--text-2xs);
     min-width: 0;
     max-width: 9.5rem;
+    width: auto;
+    flex: 0 1 auto;
+
+    .hk-popup-select-trigger-sm {
+      min-height: 1.6rem;
+      padding: 0.1rem 0.45rem;
+      padding-inline-end: 1.3rem;
+      border-radius: var(--radius-full);
+    }
 
     .hk-popup-select-value {
-      font-size: var(--text-2xs);
+      font-size: var(--text-xs);
+      font-weight: 600;
+      line-height: 1.4;
+      /* The stock italic cushion reserves truncation room on both edges;
+         in a pill this narrow it reads as lopsided inset — the value is a
+         short CJK word plus a letter, never italic. */
+      padding-inline: 0;
+    }
+
+    .hk-popup-select-arrow {
+      width: 12px;
+      height: 12px;
+      inset-inline-end: 0.4rem;
     }
   }
 
@@ -296,6 +320,74 @@
     font-weight: 600;
     letter-spacing: 0.03em;
   }
+}
+
+/* ── Variant dropdown's popup list (the teleported panel) ──────────────────
+   Each option row carries a chain-stage tag (初始 / 进阶 / 完全体 — the
+   ships.spec.variantStage.* copy) in its description slot, so hikari's
+   two-line option anatomy (label over muted meta) is recomposed into ONE
+   line: the module label left, the stage as a small chip on the right.
+   The option list TELEPORTS to the overlay root, so these rules are
+   necessarily global classes, not .specs-group descendants. They are
+   scoped to rows that actually carry a description via
+   :has(> .hk-popup-select-item-body) — only the variant dropdown renders
+   those today, so plain label-only selects keep the stock touch geometry
+   byte-for-byte. The compact band is additionally guarded to the DESKTOP
+   popout (:not(.hk-is-sheet)): on phones the select renders as a bottom
+   sheet, and its 44px touch rows must never inherit this density.
+   Engines without :has() degrade to the stock stacked two-line rows:
+   fully readable, just not compact. */
+
+/* Compact row band for tag-carrying rows: retune the shared menu-item
+   tokens AT ROW level — the mixin declares its stock values on each row
+   (a (0,1,0) rule), and a declared property always beats an inherited
+   one, so panel-level tokens would silently lose (see hikari's
+   _menu-item.scss adoption contract). The :has() prefix lifts the
+   specificity above the stock declaration regardless of bundle order. */
+.hk-popup-select-content:not(.hk-is-sheet)
+  .hk-popup-select-item:has(> .hk-popup-select-item-body) {
+  --hk-menu-item-min-h: 1.7rem;
+  --hk-menu-item-pad-x: 0.5rem;
+  --hk-menu-item-pad-y: 0.25rem;
+  --hk-menu-item-gap: 0.5rem;
+}
+
+/* One-line recomposition: label left, stage chip right. */
+.hk-popup-select-content:not(.hk-is-sheet)
+  .hk-popup-select-item:has(> .hk-popup-select-item-body)
+  .hk-popup-select-item-body {
+  flex-direction: row;
+  align-items: center;
+}
+
+/* The stage chip itself: a quiet primary pill so the tag reads as a
+   category marker, not as secondary prose. Fixed colors (not inherited
+   row colors) so the checked row's primary face can't wash it out. */
+.hk-popup-select-content:not(.hk-is-sheet)
+  .hk-popup-select-item:has(> .hk-popup-select-item-body)
+  .hk-popup-select-item-desc {
+  flex: none;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* The shorthand resets the hikari desc's inline-end label cushion — the
+     chip pads itself symmetrically. */
+  padding: 0 0.4rem;
+  border-radius: var(--radius-full);
+  background: rgb(var(--color-primary) / 10%);
+  color: rgb(var(--color-primary));
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  line-height: 1.5;
+  opacity: 1;
+}
+
+/* The panel hugs its now-shorter rows instead of the stock 180px floor —
+   the popout opens at a header-edge pill and a wide panel would cover
+   half the spec card. */
+.hk-popup-select-content:not(.hk-is-sheet):has(.hk-popup-select-item-body) {
+  min-width: 9.5rem;
 }
 
 /* ── Alternate-firing mode switch (shell section head) ─────────────────────

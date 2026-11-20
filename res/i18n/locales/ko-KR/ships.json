@@ -469,6 +469,11 @@
     "shellDamage": "발당 피해",
     "shellDamageHint": "해당 탄종의 발당 표준 피해.",
     "variantSelectorHint": "이 섹션의 모듈 변형 전환",
+    "variantStage": {
+      "stock": "초기",
+      "mid": "중간",
+      "top": "최종"
+    },
     "variantOptionAria": "모듈 변형 선택"
   },
   "skills": {

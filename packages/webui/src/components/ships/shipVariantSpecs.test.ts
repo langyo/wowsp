@@ -17,6 +17,7 @@ import {
   selectedVariantOf,
   variantLetter,
   variantMountStats,
+  variantStageOf,
 } from "./shipVariantSpecs";
 
 /** A minimal slice with a three-hull chain and a stock→mid→top torpedo chain. */
@@ -88,6 +89,45 @@ describe("default / selected resolution", () => {
     expect(selectedVariantOf(opts.survivability, "HULL_A")?.name).toBe("HULL_A");
     expect(findVariantOf(opts.torpedoes, "TORP_MED")?.role).toBe("torpedoes");
     expect(findVariantOf(opts.torpedoes, "nope")).toBeNull();
+  });
+});
+
+describe("variantStageOf", () => {
+  const opts = buildShipVariantOptions(slice());
+
+  it("reads the chain stage from depths, not list positions", () => {
+    const hulls = opts.survivability!;
+    expect(hulls.map((o) => variantStageOf(hulls, o))).toEqual(["stock", "mid", "top"]);
+    const torps = opts.torpedoes!;
+    expect(torps.map((o) => variantStageOf(torps, o))).toEqual(["stock", "top"]);
+  });
+
+  it("classifies parallel same-depth variants alike", () => {
+    // A second stock-rooted hull joins the table after the whole chain:
+    // both roots are stock, only the depth-1/2 steps climb to top.
+    const g = slice();
+    const info = g.ShipUpgradeInfo as Record<string, Record<string, unknown>>;
+    info.HULL_B2 = { ucType: "_Hull", prev: "", components: { hull: ["B_Hull_B2"] } };
+    const hulls = buildShipVariantOptions(g).survivability!;
+    expect(hulls.map((o) => o.name)).toEqual(["HULL_A", "HULL_B2", "HULL_B", "HULL_C"]);
+    expect(hulls.map((o) => variantStageOf(hulls, o))).toEqual(["stock", "stock", "mid", "top"]);
+  });
+
+  it("keeps a cross-slot prev one level above stock (top)", () => {
+    // A hull-locked top torp bank (prev into the hull slot) replaces the
+    // mid step: it sits at depth 1 next to the stock root.
+    const g = slice();
+    const info = g.ShipUpgradeInfo as Record<string, Record<string, unknown>>;
+    delete info.TORP_MED;
+    info.TORP_TOP = { ucType: "_Torpedoes", prev: "HULL_B", components: { torpedoes: ["A3_610"] } };
+    const torps = buildShipVariantOptions(g).torpedoes!;
+    expect(torps.map((o) => o.name)).toEqual(["TORP_STOCK", "TORP_TOP"]);
+    expect(torps.map((o) => variantStageOf(torps, o))).toEqual(["stock", "top"]);
+  });
+
+  it("answers stock for single-entry chains (no dropdown renders)", () => {
+    const art = opts.artillery!;
+    expect(art.map((o) => variantStageOf(art, o))).toEqual(["stock"]);
   });
 });
 

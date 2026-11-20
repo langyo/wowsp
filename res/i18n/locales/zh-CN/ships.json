@@ -469,6 +469,11 @@
     "shellDamage": "单发伤害",
     "shellDamageHint": "该弹种每发命中的标准伤害。",
     "variantSelectorHint": "切换本分组的模块变体",
+    "variantStage": {
+      "stock": "初始",
+      "mid": "进阶",
+      "top": "完全体"
+    },
     "variantOptionAria": "选择模块变体"
   },
   "skills": {

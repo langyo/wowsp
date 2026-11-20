@@ -469,6 +469,11 @@
     "shellDamage": "Shell damage",
     "shellDamageHint": "Standard damage per hit of this shell type.",
     "variantSelectorHint": "Switch this section's module variant",
+    "variantStage": {
+      "stock": "Stock",
+      "mid": "Intermediate",
+      "top": "Final"
+    },
     "variantOptionAria": "Select module variant"
   },
   "skills": {
