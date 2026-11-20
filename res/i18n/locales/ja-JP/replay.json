@@ -613,7 +613,6 @@
     "pathLabel": "出力先フォルダー",
     "phaseFinalize": "動画をファイナライズ中…",
     "phaseSave": "ファイルを保存中…",
-    "rangeLane": "戦闘タイムライン",
     "rangeLength": "区間 {time}",
     "rangeClamp": "GIF の 1500 フレーム上限により {time} に短縮"
   },
