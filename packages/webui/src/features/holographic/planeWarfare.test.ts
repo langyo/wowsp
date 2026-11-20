@@ -59,6 +59,11 @@ import { buildPlaneFormations, buildPlaneTrails } from "./planeWarfare";
 const WARD_PARAMS_ID = 3866984144; // PJAF408, GameParams count 1
 const TOP_FIGHTER_PARAMS_ID = 4076699344; // PJAF208, GameParams count 9
 const UNKNOWN_PARAMS_ID = 1; // absent from plane_types.json
+/** The VIII Shokaku's TOP torpedo squadron (PJAB208_Shokaku_top): the
+ *  14.5.0.0 reference replay's FIRST launch (t = 30.7 s, paramsId 4076830416),
+ *  whose GameParams species is "Bomber" with torpedo ammunition. */
+const SHOKAKU_TORPEDO_PARAMS_ID = 4076830416;
+const SHOKAKU_TORPEDO_STOCK_PARAMS_ID = 4181688016; // PJAB108_Shokaku_stock
 
 const create = (
   planeId: number,
@@ -201,6 +206,51 @@ describe("buildPlaneTrails", () => {
     });
     buildPlaneTrails(ctx);
     expect(ctx.planeIndexById.get(310 * 16)).toBe("PJAF208");
+  });
+
+  it("keeps a good type when the OTHER stream's paramsId misses the table", () => {
+    // The minimap stream runs LAST, and the old code wrote its "attack"
+    // fallback unconditionally — a table miss there downgraded the family the
+    // create stream had just resolved for the very same planeId. "Last
+    // DEFINED writer wins" only holds if a miss writes nothing at all.
+    const ctx = makeCtx({
+      squadronCreates: [create(320, TOP_FIGHTER_PARAMS_ID)],
+      minimapSquadronAdds: [add(320, UNKNOWN_PARAMS_ID)],
+    });
+    buildPlaneTrails(ctx);
+    expect(ctx.planeTypesById.get(320 * 16)).toBe("fighter");
+  });
+
+  it("defaults to attack only when NO stream resolves the paramsId", () => {
+    // Pre-existing contract: consumers repeat `?? "attack"`; the map keeps a
+    // value for an unresolvable squadron instead of going sparse.
+    const ctx = makeCtx({
+      squadronCreates: [create(330, UNKNOWN_PARAMS_ID)],
+      minimapSquadronAdds: [add(330, UNKNOWN_PARAMS_ID)],
+    });
+    buildPlaneTrails(ctx);
+    expect(ctx.planeTypesById.get(330 * 16)).toBe("attack");
+    expect(ctx.planeIndexById.has(330 * 16)).toBe(false);
+  });
+
+  it("joins the Shokaku torpedo squadrons to the torpedo family", () => {
+    // The reported replay: both streams name the torpedo airframe, and the
+    // minimap icon / hover label / timeline marker must read torpedo.
+    const ctx = makeCtx({
+      squadronCreates: [
+        create(340, SHOKAKU_TORPEDO_PARAMS_ID),
+        create(341, SHOKAKU_TORPEDO_STOCK_PARAMS_ID),
+      ],
+      minimapSquadronAdds: [
+        add(340, SHOKAKU_TORPEDO_PARAMS_ID),
+        add(341, SHOKAKU_TORPEDO_STOCK_PARAMS_ID),
+      ],
+    });
+    buildPlaneTrails(ctx);
+    expect(ctx.planeTypesById.get(340 * 16)).toBe("torpedo");
+    expect(ctx.planeTypesById.get(341 * 16)).toBe("torpedo");
+    expect(ctx.planeIndexById.get(340 * 16)).toBe("PJAB208");
+    expect(ctx.planeIndexById.get(341 * 16)).toBe("PJAB108");
   });
 
   it("clears the previous replay's stale idx entries", () => {
