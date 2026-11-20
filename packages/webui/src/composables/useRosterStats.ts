@@ -125,6 +125,21 @@ function enqueueRosterBatch(
  *  clans/accountinfo sweeps stay merged for most of the roster. */
 const ROSTER_QUERY_CHUNK = 6;
 
+/** Marker the CN backend prefixes on a roster-batch rejection when the
+ *  region edge REFUSED this client (401/403) rather than merely failing —
+ *  mirrors `REFUSAL_MARKER` in commands/wg_api_cn.rs. Kept in sync by the
+ *  backend test that asserts the literal, so a rename fails loudly. */
+const REFUSAL_MARKER = "[cn-api-refused] ";
+
+/** Whether an IPC rejection carries the CN refusal marker. The rejection is
+ *  a plain string here (the batch keeps its message contract), so this is a
+ *  prefix test — a network blip or a 5xx never matches. */
+function isApiRefusal(rejection: unknown): boolean {
+  return (
+    typeof rejection === "string" && rejection.includes(REFUSAL_MARKER.trim())
+  );
+}
+
 /** Cache key embeds the request algorithm: the batch answers PR=null under
  *  "expected" (see the backend's `apply_batch_pr_algo`), so an entry cached
  *  under one algorithm must never serve a view switched to the other —
@@ -695,6 +710,10 @@ export function useRosterStats(options: UseRosterStatsOptions) {
     }
     const landed: Array<{ name: string; row: PlayerStats | null }> = [];
     const failed: string[] = [];
+    // Set when any chunk's rejection says the region API REFUSED this
+    // client (the CN 401/403 marker) — see the ladder below: a block is
+    // not healed by retrying, so the burst/re-probe schedule is skipped.
+    let refused = false;
     try {
       // Sub-batches: every realm group splits into ROSTER_QUERY_CHUNK-sized
       // pipeline messages that resolve independently — the pipeline's lanes
@@ -728,8 +747,14 @@ export function useRosterStats(options: UseRosterStatsOptions) {
                 // exist.
                 ensureShipLists();
               },
-              () => {
+              (rejection) => {
                 failed.push(...chunkNames);
+                // The CN backend tags wholesale refusals (401/403 from the
+                // region edge) with a marker. Retrying a block is what
+                // turned a two-battle scrape into a lasting ban on issue
+                // #2016, so record it and let the ladder stop below
+                // instead of scheduling the burst + 30 s re-probes.
+                if (isApiRefusal(rejection)) refused = true;
               },
             ),
           );
@@ -763,6 +788,14 @@ export function useRosterStats(options: UseRosterStatsOptions) {
           }
         }
         for (const name of failed) failedNames.add(name);
+        // A refusal (CN 401/403) is settled here: spinners go off above,
+        // the names stay in `failedNames` for the manual refresh to retry,
+        // and no automatic round fires. Issue #2016: the old ladder kept
+        // re-probing a host that had just blocked this client, which is
+        // how a two-battle scrape became a session-long ban.
+        if (refused) {
+          return;
+        }
         if (retriesLeft > 0) {
           retriesLeft -= 1;
           for (const name of failed) retryNames.add(name);

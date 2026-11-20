@@ -275,3 +275,60 @@ describe("roster-stats progress stream (CN per-slot events)", () => {
     ).toBe(true);
   });
 });
+
+describe("CN region refusal (issue #2016)", () => {
+  it("stops the retry ladder when the backend reports a refusal", async () => {
+    // The CN backend prefixes wholesale 401/403 rejections with the
+    // refusal marker. Retrying a block is what made a two-battle scrape
+    // into a lasting ban, so the composable must settle the names and
+    // schedule NOTHING further — no burst retry, no 30 s re-probe.
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.lookupPlayersStatsBatch).mockRejectedValue(
+        "[cn-api-refused] CN vortex: HTTP 403 Forbidden",
+      );
+      vi.mocked(api.lookupPlayerShipStats).mockResolvedValue([]);
+      const arena = {
+        dateTime: "2026-11-01 11:00:00",
+        vehicles: [{ id: 21, name: "refused_player" }],
+      } as unknown as ArenaInfo;
+      const { stats } = useRosterStats({ realm: () => "cn", arena: () => arena });
+
+      // Drain the scheduler (the 100 ms first kick + any queued ticks).
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(stats.get(21)?.loading).toBe(false);
+      const baseline = vi.mocked(api.lookupPlayersStatsBatch).mock.calls.length;
+      // Past the 3 s burst AND the 30 s re-probe: no further call may fire.
+      await vi.advanceTimersByTimeAsync(40_000);
+      expect(vi.mocked(api.lookupPlayersStatsBatch).mock.calls.length).toBe(baseline);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps the retry ladder for ordinary transient failures", async () => {
+    // A plain 5xx / network shape has no marker: the existing backoff
+    // behaviour must be untouched, so the burst retry DOES fire.
+    vi.useFakeTimers();
+    try {
+      vi.mocked(api.lookupPlayersStatsBatch).mockRejectedValue("CN vortex: HTTP 503");
+      vi.mocked(api.lookupPlayerShipStats).mockResolvedValue([]);
+      const arena = {
+        dateTime: "2026-11-01 12:00:00",
+        vehicles: [{ id: 22, name: "flaky_player" }],
+      } as unknown as ArenaInfo;
+      const { stats } = useRosterStats({ realm: () => "cn", arena: () => arena });
+
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(stats.get(22)?.loading).toBe(false);
+      const baseline = vi.mocked(api.lookupPlayersStatsBatch).mock.calls.length;
+      // The 3 s burst retry fires for a transient shape: the count grows.
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(vi.mocked(api.lookupPlayersStatsBatch).mock.calls.length).toBeGreaterThan(
+        baseline,
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
