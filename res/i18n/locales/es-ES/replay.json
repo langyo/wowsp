@@ -622,7 +622,9 @@
   "perf": {
     "timing": "Fotogramas",
     "draws": "Llamadas",
-    "gpu": "GPU"
+    "gpu": "GPU",
+    "sections": "Secciones",
+    "pin": "Fijar (permitir clics)"
   },
   "chatLog": "Chat de batalla",
   "chat": {
