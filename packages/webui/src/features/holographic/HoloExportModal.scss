@@ -1,7 +1,7 @@
-/* Replay-playback export modal body: the format button group, the
- * one-row fps/speed/resolution params, the range waterfall row, the export
- * folder row and the frame/duration estimate. The HkModal chrome is
- * hikari's; only the content layout lives here. */
+/* Replay-playback export modal body: the format pill group, the one-row
+ * fps/speed/resolution params, the sequence-ribbon range (hikari chrome) and
+ * the export folder path field. The HkModal chrome is hikari's; only the
+ * content layout lives here. */
 
 .holo-export {
   display: flex;
@@ -25,11 +25,6 @@
     min-width: 3.5rem;
     font-size: var(--text-xs);
     color: rgb(var(--color-muted));
-  }
-
-  &__btn-group {
-    display: inline-flex;
-    gap: 0.35rem;
   }
 
   /* The range block: label + readout over hikari's ribbon (which ships its
@@ -67,21 +62,6 @@
 
   /* The shell-persisted export folder: mono, ellipsized with the full path
    * on the title attribute, and never wider than the row. */
-  &__path {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-family: var(--font-mono);
-    font-size: var(--text-2xs);
-    color: rgb(var(--color-text));
-    background: rgb(var(--color-surface) / 60%);
-    border: 1px solid rgb(var(--color-border) / 40%);
-    border-radius: 6px;
-    padding: 0.15rem 0.45rem;
-  }
-
   &__estimate {
     margin: 0.1rem 0 0;
     text-align: center;

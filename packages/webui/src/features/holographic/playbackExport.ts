@@ -78,8 +78,8 @@ export const PLAYBACK_CODEC_LADDER: readonly OfflineCodecChoice[] = [
   { codec: "av1", ext: "mp4" },
   { codec: "avc", ext: "mp4" },
 ];
-/** The exported span, in battle seconds (the range ribbon's window). */
-
+/** The export settings; `from`/`to` are the range ribbon's window, in
+ *  battle seconds. */
 export interface PlaybackExportSettings {
   format: PlaybackExportFormat;
   /** Window start, battle seconds. */
@@ -754,6 +754,8 @@ function drawRecorderPanel(
   drawStatBadge(g, x + 10, rowY(1) - badge / 2, badge, "120 160 255", "shield");
   g.font = font(11, 400);
   g.fillStyle = rgba(palette.text, 0.62);
+  // Labels stay left-aligned; only the VALUE columns are right-aligned.
+  g.textAlign = "left";
   g.fillText(labels.taken, x + 10 + badge + 7, rowY(1));
   g.font = font(11, 700, true);
   g.fillStyle = rgba(palette.text, 0.9);

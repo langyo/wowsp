@@ -91,11 +91,15 @@ export function zoneNeedsEngagement(t: EntityTrajectory): boolean {
 }
 
 // ── Scoring rules (official: wiki.worldofwarships.com/Ship:Game_Modes) ──
-// Domination Random/Co-op: 3 areas → start 300, +3 per completed capture,
-// +3 every 5s per controlled area; 4 areas → start 200, +4, +4 every 9s.
-// Capture duration 60s (1 ship) / 40s (2+ ships); contested by both teams
-// freezes progress; being hit halves the accrued progress.
-// Eight maps override everything: start 150, kills +40, deaths -25.
+// The numbers themselves live in capSimulator.ts's scoringRules() table (the
+// single source of truth, unit-tested per mode); this file only records which
+// maps take the special column. Random/Co-op: 3 areas → start 300, +3 per
+// completed capture, +3 every 6 s per controlled area; 4 areas → start 200,
+// +4, +4 every 9 s (the 6 s interval is an exact solve of a real replay's
+// owned-cap-seconds, not the wiki's rounded 5 s). Capture 60 s with one ship /
+// 40 s with more; contested freezes; being hit halves the accrued progress.
+// Eight maps take start 150 / kills +40 / deaths −25 (and keep their normal
+// per-area capture awards and accrual).
 export const SPECIAL_CAP_MAPS = new Set([
   "13_OC_new_dawn",
   "17_NA_fault_line",

@@ -405,10 +405,10 @@ export default defineComponent({
       if (mmAccum >= MM_REDRAW_S) {
         mmAccum = 0;
         drawMinimap(ctx, {
-    // The 主控 gold edge belongs to the followed carrier's active squadron
-    // (followAircraft is the intent flag; the carrier is the selection).
-    followedCarrierId: followAircraft.value ? selectedEntityId.value ?? null : null,
-  });
+      // The 主控 gold edge belongs to the followed carrier's active
+      // squadron (followAircraft is the intent; the carrier is the selection).
+      followedCarrierId: followAircraft.value ? selectedEntityId.value ?? null : null,
+    });
         // ~5 Hz live hover refresh: while a 2D tooltip is open and the
         // replay plays, a moving torpedo / aircraft / smoke cluster keeps
         // its card numbers current under a stationary cursor.
@@ -1681,10 +1681,10 @@ const RECORDED_DOLLY_MIN = -40;
       dollySeen = false;
       updateMarkersAt(ctx, clamped);
       drawMinimap(ctx, {
-    // The 主控 gold edge belongs to the followed carrier's active squadron
-    // (followAircraft is the intent flag; the carrier is the selection).
-    followedCarrierId: followAircraft.value ? selectedEntityId.value ?? null : null,
-  });
+      // The 主控 gold edge belongs to the followed carrier's active
+      // squadron (followAircraft is the intent; the carrier is the selection).
+      followedCarrierId: followAircraft.value ? selectedEntityId.value ?? null : null,
+    });
     }
 
     /** Effective view window for the tactical layer (null before bounds). */
@@ -3320,6 +3320,9 @@ const RECORDED_DOLLY_MIN = -40;
       { flush: "sync" },
     );
     /** Survives between passes (same contract as the tactical wizard's). */
+    /** Replay path the export range was last seeded for (the modal's open
+     *  watcher re-seeds when this changes). */
+    let seedRangeForPath = "";
     const exportSettings = reactive<PlaybackExportSettings>({
       format: "video",
       // Filled in when the modal opens (playhead → end); normalized again
@@ -3342,29 +3345,26 @@ const RECORDED_DOLLY_MIN = -40;
         exportDir.value = null;
       }
     }
-    async function pickExportDir(): Promise<void> {
-      try {
-        const picked = await rpcApi.exportDirPick();
-        if (picked) exportDir.value = picked;
-      } catch {
-        // Host refused (non-tauri / dialog backend) — keep the old dir.
-      }
-    }
     watch(
       () => exportOpen.value,
       (open) => {
         if (!open) return;
         void loadExportDir();
-        // Seed the range window: keep a still-valid window, else default to
-        // [playhead, end] (the old "从现在开始" default).
+        // Seed the range window: keep a still-valid window on THIS replay,
+        // else default to [playhead, end] (the old "从现在开始" reading). The
+        // seeding is tracked per replay path so switching matches never
+        // inherits the previous span.
         const dur = duration.value;
-        if (
+        const path = props.replayPath ?? "";
+        const stale =
+          path !== seedRangeForPath ||
           !Number.isFinite(exportSettings.from) ||
           !Number.isFinite(exportSettings.to) ||
           exportSettings.to <= exportSettings.from ||
           exportSettings.to > dur ||
-          exportSettings.from < 0
-        ) {
+          exportSettings.from < 0;
+        if (stale) {
+          seedRangeForPath = path;
           exportSettings.from = Math.min(current.value, Math.max(0, dur - 1));
           exportSettings.to = dur;
         }
@@ -4251,7 +4251,6 @@ const RECORDED_DOLLY_MIN = -40;
             duration={duration.value}
             current={current.value}
             exportDir={exportDir.value}
-            onPickDir={() => { void pickExportDir(); }}
             onDirChange={(dir: string) => {
               // Typed path: display-only this session. The PICKER persists
               // (native dialog = the user's consent, see export_config.rs);

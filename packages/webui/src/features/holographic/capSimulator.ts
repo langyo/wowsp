@@ -344,6 +344,12 @@ export function scoringRules(
   // Co-op is the "pve" matchGroup WITHOUT a story operation: operations hide
   // the score digits entirely, and their pre-placed objectives are not
   // scored by the domination rules at all.
+  // NOTE: every non-operation PvE replay reads as co-op here. Asymmetric
+  // battles (asymm_*), convoy and event PvE also carry matchGroup "pve" and
+  // the replay stream this simulator sees does not identify them, so their
+  // digits follow the co-op column until a replay with a known score proves
+  // otherwise (the repo's modeColors.isCoopBattle has the richer predicate —
+  // it needs the scenario/roster, which MapProps does not carry).
   const isCoop = group === "pve" && !props.operation;
   const mode: ScoringMode = isRanked
     ? "ranked"

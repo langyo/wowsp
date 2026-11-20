@@ -63,7 +63,6 @@ export default defineComponent({
      *  surface — the row then hides and the save dialog handles the target). */
     exportDir: { type: String as PropType<string | null>, default: null },
     onStart: { type: Function as PropType<() => void>, required: true },
-    onPickDir: { type: Function as PropType<() => void>, default: null },
     onDirChange: { type: Function as PropType<(dir: string) => void>, default: null },
   },
   emits: {
@@ -236,7 +235,13 @@ export default defineComponent({
               window={ribbonWindow.value}
               minWindow={Math.max(0.01, 1 / Math.max(1, props.duration))}
               onWindowChange={(w: [number, number] | null) => {
-                if (!w) return;
+                // Reset (the chip / Esc / double-click / Home) emits null:
+                // that means the WHOLE domain, not "ignore".
+                if (!w) {
+                  props.settings.from = 0;
+                  props.settings.to = Math.max(1, props.duration);
+                  return;
+                }
                 props.settings.from = w[0];
                 props.settings.to = w[1];
               }}
@@ -256,7 +261,13 @@ export default defineComponent({
                 modelValue={props.exportDir}
                 backend="hook"
                 directory
-                pick={async () => (await rpcApi.exportDirPick()) ?? null}
+                pick={async () => {
+                  try {
+                    return (await rpcApi.exportDirPick()) ?? null;
+                  } catch {
+                    return null;
+                  }
+                }}
                 onUpdate:modelValue={(v: string) => props.onDirChange?.(v)}
               />
             </div>
