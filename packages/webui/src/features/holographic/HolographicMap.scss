@@ -108,19 +108,6 @@
     pointer-events: none;
   }
 
-  &__hint,
-  &__overlay-info,
-  &__controls {
-    position: absolute;
-    left: 12px;
-    padding: 4px 8px;
-    font-size: var(--text-sm);
-    color: rgb(var(--color-primary));
-    background: var(--holo-hud-bg);
-    border-radius: var(--radius-sm);
-    pointer-events: none;
-  }
-
   &__hint {
     bottom: 12px;
   }
@@ -209,9 +196,24 @@
   }
 
   &__controls {
+    /* IN-FLOW inside the transport column — the row must never carry its
+       own positioning. It used to be the absolute seat itself (left/bottom
+       12px), and when #2033 moved that seat onto __transport the stale
+       "absolute + left: 12px" from the old corner-chip group silently
+       survived here: the row then hung off a ZERO-height anchor's static
+       top and grew DOWN past the map's bottom edge, so overflow:hidden
+       clipped all but a ~13px sliver of the bar (2026-11-20 user report:
+       播放条错位遮住没法用). static pins that contract in CSS. */
+    position: static;
     display: flex;
     align-items: center;
     gap: 0.6rem;
+    /* Chrome the retired corner-chip group rule used to leak onto the
+       row (glass face + inherited text) — owned here now. */
+    font-size: var(--text-sm);
+    color: rgb(var(--color-primary));
+    background: var(--holo-hud-bg);
+    border-radius: var(--radius-sm);
     /* The block width's inner inset lives in one token so the phone
        regime can swap it for 8px (see the block-width contract at the
        root); the row does not depend on this value — it spans the
@@ -1910,14 +1912,16 @@
       then the AI heat strip / score panel (their own files). */
 @media (max-width: 767px) {
   /* 1 — playback row: span the pane, wrap, reorder. The fixed block
-     width (--holo-hud-block-w) is a desktop contract: here the bar's
-     width comes back from the left/right insets so the two-line form
-     keeps the phone regime's full-bleed geometry (the row spans this
-     box via width: 100% either way), and the one-line 8px padding
-     below replaces the desktop `6px var(--holo-hud-pad-x)`. */
-  .holo-map__controls {
+     width (--holo-hud-block-w) is a desktop contract: the SEAT reclaims
+     the full-bleed geometry through the left/right insets (the row
+     spans it via width: 100%), and the one-line 8px padding below
+     replaces the desktop `6px var(--holo-hud-pad-x)`. */
+  .holo-map__transport {
+    left: 12px;
     right: 12px;
     width: auto;
+  }
+  .holo-map__controls {
     flex-wrap: wrap;
     gap: 8px;
     row-gap: 6px;
