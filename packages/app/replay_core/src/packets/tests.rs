@@ -2332,13 +2332,16 @@ fn scans_state_for_zone_radius() {
 
 /// The control-point scan reads the 0-based point index off the
 /// `controlPoint` component tail (`<type> 00 <index>`) WITHOUT hard-coding
-/// the ControlPointType byte. The first two full states are pasted straight
-/// from a 15.8 58_RidgeNew domination_2point capture — the mode packs type
-/// 5 where the classic layouts pack 1, so the old type-anchored signature
-/// matched NOTHING and every 2-cap point vanished from the map (each side's
-/// pre-owned home point is the one that goes fully stream-silent). The
-/// third state swaps in the verbatim 47_Sleeping_Giant domination_4point
-/// tail (type 1, index 2) to pin the classic shape.
+/// either drifting byte: not the ControlPointType byte, and (since the
+/// 37_Ridge defect) not componentsState's exposed property index either.
+/// The first two full states are pasted straight from a 15.8 58_RidgeNew
+/// domination_2point capture — the mode packs type 5 where the classic
+/// layouts pack 1, so the old type-anchored signature matched NOTHING and
+/// every 2-cap point vanished from the map (each side's pre-owned home point
+/// is the one that goes fully stream-silent). The third state swaps in the
+/// verbatim 47_Sleeping_Giant domination_4point tail (type 1, index 2) to
+/// pin the classic shape. The 14.5.0 property-index drift has its own
+/// regression test below (`scans_state_for_control_point_on_14_5_layout`).
 #[test]
 fn scans_state_for_control_point() {
     // 58_RidgeNew eid 20040 — enemy home point, index 0 (A).
@@ -2376,21 +2379,110 @@ fn scans_state_for_control_point() {
     let strike = hex_literal("323032332e353909014544594145445941b0c78dff0a00000b0100");
     assert_eq!(scan_state_for_control_point(&strike), None);
 
-    // A buoy-constant lookalike without the `00` separator yields nothing.
+    // A buoy-constant lookalike with a NON-ZERO timer-name length yields
+    // nothing (the name byte is 0 on every real domination point). The
+    // anchor is the invariant `01 b0 c7 e5 ff…` core, so this state starts
+    // right at it (no property-index byte in front).
     let mut bogus = vec![0u8; 24];
-    bogus[..10].copy_from_slice(&[0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff]);
-    bogus[10] = 0x01; // ControlPointType slot
-    bogus[11] = 0x07; // non-zero separator byte
-    bogus[12] = 0x01;
+    bogus[..9].copy_from_slice(&[0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff]);
+    bogus[9] = 0x01; // ControlPointType slot
+    bogus[10] = 0x07; // non-zero timer-name length
+    bogus[11] = 0x01;
     assert_eq!(scan_state_for_control_point(&bogus), None);
     // An oversized index byte is rejected the same way.
-    bogus[11] = 0x00;
-    bogus[12] = 0x40;
+    bogus[10] = 0x00;
+    bogus[11] = 0x40;
     assert_eq!(scan_state_for_control_point(&bogus), None);
     // Truncated tail (no room for `<type> 00 <index>`) yields nothing.
     let mut short = bogus;
-    short.truncate(12);
+    short.truncate(11);
     assert_eq!(scan_state_for_control_point(&short), None);
+    // A lookalike ahead of the real component must not shadow it: the scan
+    // takes the first occurrence that passes BOTH structural gates.
+    let mut shadowed = vec![0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff];
+    shadowed.extend_from_slice(&[0x05, 0x07, 0x09]); // bad separator
+    shadowed.extend_from_slice(&[0x08, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff]);
+    shadowed.extend_from_slice(&[0x05, 0x00, 0x02]);
+    assert_eq!(scan_state_for_control_point(&shadowed), Some(2));
+}
+
+/// Regression for the user defect: a 14.5.0 37_Ridge (symmetric 2-cap
+/// domination) replay rendered ONLY cap A. The 14.5.0 client's
+/// InteractiveZone def carries two fewer exposed properties before
+/// `componentsState` than the 15.8 one, so the packed component starts with
+/// 0x08, not the 0x0a the former signature hard-coded — both zones came
+/// back `None`, and zone B (its pre-owned home point is never contested,
+/// so it has ZERO ownership/progress traffic) had no other qualifier left.
+/// Both states are VERBATIM from that replay's EntityCreate frames:
+/// eid 573670 = index 0/A at z=+375 owned by team 0, eid 573669 = index
+/// 1/B at z=-375 owned by team 1 (mode layout domination_2point, ring
+/// 180 m, ControlPointType 5).
+#[test]
+fn scans_state_for_control_point_on_14_5_layout() {
+    // eid 573670 — index 0 (A).
+    let state = hex_literal(
+        "650000000a000001090200030000000400003443050000000006000000000000000007\
+         2346363546303242342e34413136444541442e37383146374139322e36453534313637\
+         380801b0c7e5ffffffffff0500000100000000ff00000101000034430000803f090100",
+    );
+    assert_eq!(scan_state_for_control_point(&state), Some(0));
+
+    // eid 573669 — index 1 (B). Byte-for-byte identical except the point
+    // index and the zone's own team/ID string.
+    let state = hex_literal(
+        "650000000a000101090200030000000400003443050000000006000000000000000007\
+         2342363742424532432e34333845324231462e36374335393238322e41373146454343\
+         330801b0c7e5ffffffffff0500010100000000ff00000101000034430000803f090100",
+    );
+    assert_eq!(scan_state_for_control_point(&state), Some(1));
+}
+
+/// End-to-end through the create parser — the exact drop site of the
+/// 37_Ridge defect. Both 14.5.0 InteractiveZone creates must surface
+/// `control_point_index` + `initial_team`; B has no other qualifier in the
+/// whole replay (no capSamples), so a `None` here is precisely what
+/// removed it from the map.
+#[test]
+fn parses_14_5_zone_create_control_point_index() {
+    /// 38-byte EntityCreate header + the zone's state stream.
+    fn zone_create(entity_id: i32, z: f32, state: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&entity_id.to_le_bytes());
+        p.extend_from_slice(&14i16.to_le_bytes()); // InteractiveZone
+        p.extend_from_slice(&0i32.to_le_bytes()); // vehicle_id
+        p.extend_from_slice(&0i32.to_le_bytes()); // space_id
+        p.extend_from_slice(&100.0f32.to_le_bytes()); // x
+        p.extend_from_slice(&0.0f32.to_le_bytes()); // y
+        p.extend_from_slice(&z.to_le_bytes());
+        p.extend_from_slice(&[0u8; 12]); // direction
+        p.extend_from_slice(state);
+        p
+    }
+    let a_state = hex_literal(
+        "650000000a000001090200030000000400003443050000000006000000000000000007\
+         2346363546303242342e34413136444541442e37383146374139322e36453534313637\
+         380801b0c7e5ffffffffff0500000100000000ff00000101000034430000803f090100",
+    );
+    let b_state = hex_literal(
+        "650000000a000101090200030000000400003443050000000006000000000000000007\
+         2342363742424532432e34333845324231462e36374335393238322e41373146454343\
+         330801b0c7e5ffffffffff0500010100000000ff00000101000034430000803f090100",
+    );
+    let a = parse_entity_create(&zone_create(573670, 375.0, &a_state), 0.0, 14)
+        .expect("zone A parses")
+        .clone_into_kind();
+    assert_eq!(a.entity_type, 14);
+    assert_eq!(a.control_point_index, Some(0));
+    assert_eq!(a.initial_team, Some(0));
+    assert_eq!(a.radius, Some(180.0));
+    let b = parse_entity_create(&zone_create(573669, -375.0, &b_state), 0.0, 14)
+        .expect("zone B parses")
+        .clone_into_kind();
+    assert_eq!(b.control_point_index, Some(1));
+    assert_eq!(b.initial_team, Some(1));
+    // The two caps sit symmetrically about the map centre, one home each.
+    assert_eq!((a.initial_x, a.initial_z), (100.0, 375.0));
+    assert_eq!((b.initial_x, b.initial_z), (100.0, -375.0));
 }
 
 // ── Global weather (NestedPropertyUpdate 0x23) ─────────────────────────────

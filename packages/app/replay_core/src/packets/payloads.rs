@@ -418,8 +418,11 @@ impl ParsedCreate {
 
 /// Initial owning team of an InteractiveZone from its create state: the
 /// InteractiveZone `teamId` property (INT8) is the first property byte of
-/// the state stream — `[u32 len][0c 00]<teamId>...` — so it sits at offset
-/// 6: -1 = neutral, 0/1 = team. Zones owned from match start never emit
+/// the state stream — `[u32 len][<prop> 00]<teamId>...` — so it sits at
+/// offset 6: -1 = neutral, 0/1 = team. `teamId` is the FIRST exposed
+/// property in every pinned era, so the VALUE's position holds even though
+/// the preceding index byte drifts with the entity defs (0x0c on 15.8,
+/// 0x0a on 14.5.0). Zones owned from match start never emit
 /// capSamples/capProgress updates, so the opening colour must come from
 /// here. Verified across domination/PvE/brawl and current clients.
 fn scan_state_for_team(state: &[u8]) -> Option<i8> {
@@ -430,32 +433,55 @@ fn scan_state_for_team(state: &[u8]) -> Option<i8> {
     (t == -1 || t == 0 || t == 1).then_some(t)
 }
 
-/// Detect a real domination point in an InteractiveZone (type 14) create
-/// state. Real points carry the `componentsState` property (index 10) with a
-/// non-empty `controlPoint` component, packed as:
+/// Detect a real domination point in an InteractiveZone create state. Real
+/// points carry a non-empty `componentsState` whose single `controlPoint`
+/// component is packed as:
 ///
-///   `0a 01 b0 c7 e5 ff ff ff ff ff <type> 00 <index>`
+///   `<prop> 01 b0 c7 e5 ff ff ff ff ff <type> <name> <index>`
 ///
-/// (property 10 present, buoyVisualId constant 0xffe5c7b0, nextControlPoint
-/// -1, ControlPointType byte, empty timer name, 0-based point index).
-/// Strike/event zones keep componentsState empty (`0a 00`) and never match.
+/// (`01` = the one component, buoyVisualId constant 0xffe5c7b0,
+/// nextControlPoint -1, then the ControlPointType byte, the component's
+/// timer-name STRING — u8 length + bytes, `00` on every domination point —
+/// and the 0-based point index). Strike/event zones keep componentsState
+/// empty (`<prop> 00`) and never match; the Arms Race mode's
+/// `GAMEMODE_ARMS_RACE_TMR_*` buff timers DO carry the component, but with
+/// a 25-character timer name, so the zero-name gate rejects them (they are
+/// buff timers, not capture points — 5 such zones in the local corpus).
 ///
-/// The ControlPointType byte is mode- and version-drifting (1 = Control on
-/// domination_3/4-point layouts, 5 on the 15.8 domination_2point one) and
-/// stays OUT of the match — hard-coding it silently dropped every real
-/// point on 2-cap layouts (the create state still carries everything; only
-/// the trailing index was unreadable). The `00` separator and a small index
-/// keep accidental buoy-constant lookalikes (e.g. a GUID embedding the
-/// bytes) from producing a phantom point.
-/// Verified byte-identical across domination, PvE, brawl, and asymmetric
-/// modes on 15.8.
+/// TWO bytes drift across client versions and stay OUT of the match:
+///  - `<prop>`, componentsState's exposed property index: 0x08 on the
+///    13.x / 14.5.0 layouts (two fewer properties precede it), 0x0a on the
+///    15.8+ ones. A hard-coded prefix (the former `0a …` signature)
+///    recovered NO control point from any 14.5.0 replay, and a pre-owned
+///    home point is otherwise completely stream-silent (zero
+///    capSamples/capProgress) — so the UI's isCaptureZone fallback dropped
+///    it and a symmetric 2-cap map rendered one cap (user defect: 37_Ridge
+///    14.5.0 replay, zone A eid 573670 index 0 / zone B eid 573669
+///    index 1, both 0x08);
+///  - the ControlPointType byte: 1 = Control on domination_3/4-point
+///    layouts, 5 on the 2-point one.
+///
+/// The zero-length timer name and a small index keep accidental
+/// buoy-constant lookalikes (e.g. a GUID embedding the bytes) from
+/// producing a phantom point; the scan takes the first occurrence that
+/// passes BOTH gates (a lookalike ahead of the real component must not
+/// shadow it). Verified across the 132-replay local corpus (13.x,
+/// 14.5.0, 15.9/15.10): 368 domination zones match, nothing else does.
 pub(super) fn scan_state_for_control_point(state: &[u8]) -> Option<i32> {
-    const SIG: [u8; 10] = [0x0a, 0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff];
-    state
-        .windows(SIG.len() + 3)
-        .position(|w| w[..SIG.len()] == SIG)
-        .filter(|&i| state[i + SIG.len() + 1] == 0 && state[i + SIG.len() + 2] < 16)
-        .map(|i| state[i + SIG.len() + 2] as i32)
+    // The invariant part of the packed component: the `01` count byte plus
+    // the buoyVisualId constant. No pinned client version has moved it.
+    const SIG: [u8; 9] = [0x01, 0xb0, 0xc7, 0xe5, 0xff, 0xff, 0xff, 0xff, 0xff];
+    for (i, window) in state.windows(SIG.len() + 3).enumerate() {
+        if !window.starts_with(&SIG) {
+            continue;
+        }
+        let name_len = state[i + SIG.len() + 1];
+        let index = state[i + SIG.len() + 2];
+        if name_len == 0 && index < 16 {
+            return Some(index as i32);
+        }
+    }
+    None
 }
 
 /// Scan an EntityCreate state stream for any roster shipId (u32 LE, sliding
