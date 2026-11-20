@@ -596,13 +596,11 @@
     "fps": "帧率",
     "speed": "倍速",
     "resolution": "分辨率",
-    "footer": "底部水印页脚",
     "estimate": "预计 {n} 帧 · 约 {s} 秒",
     "tooLong": "导出过长（超过 {n} 帧），请提高倍速或缩小范围",
     "start": "开始导出",
     "cancel": "取消",
     "toggle": "导出回放视频 / GIF",
-    "runningProgress": "正在导出回放 {done}/{total}",
     "cancelRun": "取消",
     "unsupported": "当前环境不支持视频编码",
     "toastEmpty": "没有可导出的时间范围",
@@ -613,7 +611,13 @@
     "damageTitle": "伤害输出",
     "dmgFrags": "击沉",
     "dmgTaken": "承伤",
-    "chatTitle": "聊天记录"
+    "chatTitle": "聊天记录",
+    "pathLabel": "导出目录",
+    "pathChange": "更改",
+    "phaseFinalize": "正在封装视频…",
+    "phaseSave": "正在保存文件…",
+    "rangeFullDesc": "从开场到结束 · 约 {time}",
+    "rangeNowDesc": "从当前播放位置到结束 · 约 {time}"
   },
   "perf": {
     "timing": "帧率",

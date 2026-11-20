@@ -1,4 +1,5 @@
-//! Tactical-board export commands: native save dialog + raw-bytes file write.
+//! Tactical-board export commands: native save/folder dialogs + raw-bytes
+//! file write.
 //!
 //! Screenshots (PNG/WebP) and screen recordings (MP4/WebM) rendered by the
 //! webui arrive here as raw IPC bodies (see `transport.invokeRaw` on the JS
@@ -14,6 +15,13 @@
 //! arbitrary destinations (Startup-folder payloads, config clobbers). The
 //! tactics profile's dialogless re-save rides the same registry (see
 //! `tactics_profile.rs`).
+//!
+//! [`pick_export_dir`] adds the DIRECTORY flavour of the same consent: the
+//! replay-clip export modal picks one folder, which the app persists
+//! (`src/export_config.rs`) and registers as a folder grant, so every clip
+//! writes straight in with no per-file dialog. A folder grant authorizes
+//! files DIRECTLY inside it only — never a nested subfolder, never a
+//! sibling (the grant table below spells the rule out).
 
 use anyhow::anyhow;
 use std::collections::HashMap;
@@ -31,49 +39,131 @@ const EXPORT_GRANT_TTL: Duration = Duration::from_secs(6 * 3600);
 
 /// Maximum live grants. A pick happens behind a native dialog, so the table
 /// cannot grow fast — the cap only stops a hostile webview from spinning
-/// `pick_export_path` into an unbounded map (each real grant still needs a
-/// human click).
+/// `pick_export_path` / `pick_export_dir` into an unbounded map (each real
+/// grant still needs a human click). One cap covers both kinds.
 const EXPORT_GRANT_CAP: usize = 16;
 
-fn export_grants() -> &'static std::sync::Mutex<HashMap<String, Instant>> {
-    static GRANTS: OnceLock<std::sync::Mutex<HashMap<String, Instant>>> = OnceLock::new();
+/// What a registered target authorizes.
+///
+/// - `File` — exactly the path a native save dialog returned (the shared
+///   export write, the clip clipboard hand-off, the tactics profile's
+///   dialogless re-save).
+/// - `Dir` — every file DIRECTLY inside the folder a native folder dialog
+///   returned: `<dir>/name.ext` yes, `<dir>/sub/name.ext` NO, `<sibling>/…`
+///   NO. A directory grant is the export modal's standing consent — one
+///   folder pick covers every clip written into it, with no recursion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GrantKind {
+    File,
+    Dir,
+}
+
+/// One live grant: when it was last used (TTL slides on a hit) and what it
+/// authorizes.
+#[derive(Debug)]
+struct Grant {
+    at: Instant,
+    kind: GrantKind,
+}
+
+fn export_grants() -> &'static std::sync::Mutex<HashMap<String, Grant>> {
+    static GRANTS: OnceLock<std::sync::Mutex<HashMap<String, Grant>>> = OnceLock::new();
     GRANTS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
-/// Register `path` — exactly as a native dialog returned it — as a writable
-/// save target for this session.
+/// Path identity for the grant table: both separators fold to `/`, a trailing
+/// separator is dropped (except a Windows drive root), and Windows lowercases
+/// the whole key (its filesystem is case-insensitive, so `C:\A\b.png` and
+/// `c:/a/B.png` are one target). The fold matters: a folder dialog and the
+/// webui's path join can disagree on separators and spelling, and the grant
+/// must still match the file the export actually writes.
+fn grant_key(path: &str) -> String {
+    let mut key = path.trim().replace('\\', "/");
+    while key.len() > 1 && key.ends_with('/') && !key.ends_with(":/") {
+        key.pop();
+    }
+    if cfg!(windows) {
+        key = key.to_lowercase();
+    }
+    key
+}
+
+/// The parent directory of an already [`grant_key`]-normalized path, in the
+/// same key form. `None` when the path has no directory component — a bare
+/// file name can never match a stored (always absolute) grant, and a path that
+/// itself names a directory has no grantable parent.
+fn parent_dir_key(key: &str) -> Option<String> {
+    let slash = key.rfind('/')?;
+    let (dir, name) = (&key[..slash], &key[slash + 1..]);
+    if name.is_empty() {
+        return None;
+    }
+    Some(if dir.is_empty() {
+        "/".to_string()
+    } else if dir.ends_with(':') {
+        // A Windows drive root: `D:/`, exactly how the folder's own grant is
+        // keyed.
+        format!("{dir}/")
+    } else {
+        dir.to_string()
+    })
+}
+
+/// Register `path` — exactly as a native save dialog returned it — as a
+/// writable single target for this session.
 pub(crate) fn grant_export_path(path: &str) {
+    register_grant(path, GrantKind::File);
+}
+
+/// Register a native folder dialog's result: every file directly inside it
+/// becomes writable for this session (see [`GrantKind::Dir`]). Re-registering
+/// the same folder just refreshes its TTL.
+pub(crate) fn grant_export_dir(dir: &str) {
+    register_grant(dir, GrantKind::Dir);
+}
+
+fn register_grant(path: &str, kind: GrantKind) {
     let mut grants = export_grants().lock().unwrap_or_else(|p| p.into_inner());
     // Drop expired entries first, then make room for the new grant by
     // evicting the oldest survivor. The map is tiny; a linear scan is the
     // cheap and obvious move.
     let now = Instant::now();
-    grants.retain(|_, at| now.duration_since(*at) < EXPORT_GRANT_TTL);
+    grants.retain(|_, g| now.duration_since(g.at) < EXPORT_GRANT_TTL);
     while grants.len() >= EXPORT_GRANT_CAP {
         let Some(oldest) = grants
             .iter()
-            .min_by_key(|(_, at)| **at)
+            .min_by_key(|(_, g)| g.at)
             .map(|(p, _)| p.clone())
         else {
             break;
         };
         grants.remove(&oldest);
     }
-    grants.insert(path.to_string(), Instant::now());
+    grants.insert(grant_key(path), Grant { at: now, kind });
 }
 
-/// Does `path` carry a live grant? Slides the TTL forward on use, so an
-/// actively re-saved target never expires mid-session.
+/// Does `path` carry a live grant? An exact grant covers its own path; a
+/// DIRECTORY grant additionally covers files directly inside it. Slides the
+/// TTL of whichever grant matched, so an actively re-saved target (or an
+/// actively used export folder) never expires mid-session.
 pub(crate) fn export_path_granted(path: &str) -> bool {
+    let key = grant_key(path);
     let mut grants = export_grants().lock().unwrap_or_else(|p| p.into_inner());
     let now = Instant::now();
-    grants.retain(|_, at| now.duration_since(*at) < EXPORT_GRANT_TTL);
-    match grants.get_mut(path) {
-        Some(at) => {
-            *at = now;
+    grants.retain(|_, g| now.duration_since(g.at) < EXPORT_GRANT_TTL);
+    if let Some(grant) = grants.get_mut(&key) {
+        grant.at = now;
+        return true;
+    }
+    let Some(parent) = parent_dir_key(&key) else {
+        return false;
+    };
+    match grants.get_mut(&parent) {
+        Some(grant) if grant.kind == GrantKind::Dir => {
+            grant.at = now;
             true
         },
-        None => false,
+        _ => false,
     }
 }
 
@@ -120,6 +210,50 @@ pub async fn pick_export_path(
     }
 }
 
+/// Open a native FOLDER dialog for the destination the export modal writes
+/// into — the replay-clip export's one-time directory pick, which replaces a
+/// per-file save dialog for the rest of the session. Returns the picked
+/// absolute directory, or `None` when the user cancelled.
+///
+/// The pick is validated + persisted through the same store the getter
+/// uses (`src/export_config.rs` → `export-config.toml`) and registered as a
+/// DIRECTORY grant, so [`write_export_bytes`] accepts files directly inside
+/// it (see [`GrantKind::Dir`]) — and the modal reopens on that folder next
+/// launch.
+#[tauri::command]
+pub async fn pick_export_dir() -> CommandResult<Option<String>> {
+    // Mobile: no native folder picker — the phone's export flow writes into
+    // app storage / the media store instead (later mobile phase).
+    #[cfg(mobile)]
+    {
+        return Err(anyhow!(crate::mobile_unsupported::PICKER).into());
+    }
+    // rfd pumps its own message loop — run it on a blocking thread, never
+    // the async runtime workers or the app's UI thread (same rule as
+    // pick_export_path).
+    #[cfg(desktop)]
+    {
+        let picked = tokio::task::spawn_blocking(|| {
+            rfd::FileDialog::new()
+                .set_title("Select the export folder")
+                .pick_folder()
+        })
+        .await
+        .map_err(|e| anyhow!("export folder dialog task failed: {e}"))?;
+        let Some(picked) = picked else {
+            return Ok(None);
+        };
+        let dir = picked.to_string_lossy().into_owned();
+        // Validate + persist, then authorize the folder. The settings write
+        // is blocking fs work, so it stays on the pool like the dialog.
+        let dir = tokio::task::spawn_blocking(move || crate::export_config::persist_dir(&dir))
+            .await
+            .map_err(|e| anyhow!("export folder persist task failed: {e}"))??;
+        grant_export_dir(&dir);
+        Ok(Some(dir))
+    }
+}
+
 /// Hard ceiling on one export body. The rendered share shot tops out around
 /// a few MB and a battle recording in the tens — anything near this is a
 /// hostile or runaway webview, not an export.
@@ -127,10 +261,11 @@ const MAX_EXPORT_BYTES: usize = 512 * 1024 * 1024;
 
 /// Write a raw export body (PNG/WebP image bytes or MP4/WebM video bytes) to
 /// the path carried in the `x-export-path` header. The path must carry a live
-/// grant from [`pick_export_path`] — a native-dialog result — so the webview
-/// can never name a destination no dialog has ever returned (audit H-1).
-/// Async + blocking pool: a multi-MB video write must never stall the UI
-/// thread.
+/// grant — either exactly what [`pick_export_path`] returned for it, or a
+/// file directly inside a folder [`pick_export_dir`] returned (see
+/// [`GrantKind`]) — so the webview can never name a destination no dialog
+/// has ever returned (audit H-1). Async + blocking pool: a multi-MB video
+/// write must never stall the UI thread.
 #[tauri::command]
 pub async fn write_export_bytes(
     window: tauri::Window,
@@ -144,9 +279,10 @@ pub async fn write_export_bytes(
         .ok_or_else(|| anyhow!("missing x-export-path header"))?;
     let path = percent_decode(encoded)?;
     if !export_path_granted(&path) {
-        return Err(
-            anyhow!("export target was not picked in a save dialog this session: {path}").into(),
-        );
+        return Err(anyhow!(
+            "export target was not picked (or inside a picked export folder) this session: {path}"
+        )
+        .into());
     }
     let bytes = match request.body() {
         tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
@@ -237,8 +373,9 @@ pub async fn copy_file_to_clipboard(path: String) -> CommandResult<()> {
         // Same audit H-1 invariant as write_export_bytes: only paths a
         // native dialog handed out this session may move through the
         // clipboard — a compromised webview must not turn arbitrary files
-        // on disk into paste bait. The replay flow always holds the grant
-        // (the save dialog just registered it).
+        // on disk into paste bait. The replay flow always holds the grant:
+        // the save dialog registered the exact file, and a clip written into
+        // the export modal's picked folder is covered by the folder grant.
         if !export_path_granted(&path) {
             return Err(anyhow!("clipboard copy target was not granted this session").into());
         }
@@ -432,8 +569,11 @@ mod tests {
     // so parallel test threads cannot evict each other's entries.
     static GRANT_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+    /// An exact save-dialog grant authorizes its own file, never a different
+    /// one — and it is NOT a folder grant, so nothing next to (or below) it
+    /// becomes writable.
     #[test]
-    fn grant_gates_the_write_side() {
+    fn exact_file_grant_authorizes_only_its_own_file() {
         let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
         let granted = "C:/tmp/wowsp-grant-test/shot.png";
         assert!(!export_path_granted(granted), "no grant before any pick");
@@ -443,24 +583,122 @@ mod tests {
             !export_path_granted("C:/tmp/wowsp-grant-test/other.png"),
             "a similar but never-picked path stays refused"
         );
+        assert!(
+            !export_path_granted("C:/tmp/wowsp-grant-test/shot.webm"),
+            "same folder, different file: no grant"
+        );
+        assert!(
+            !export_path_granted("C:/tmp/wowsp-grant-test/shot.png/inner.png"),
+            "a file grant does not become a folder grant"
+        );
     }
 
+    /// A folder grant covers files DIRECTLY inside the picked folder and
+    /// nothing else: a nested subfolder, a sibling, a prefix-matching sibling
+    /// and the folder's own parent are all refused (no recursive grants).
+    #[test]
+    fn dir_grant_authorizes_direct_children_only() {
+        let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let dir = "D:/wowsp-grant-test/exports";
+        assert!(!export_path_granted("D:/wowsp-grant-test/exports/a.webm"));
+        grant_export_dir(dir);
+        assert!(
+            export_path_granted("D:/wowsp-grant-test/exports/a.webm"),
+            "a file directly inside the picked folder writes"
+        );
+        assert!(
+            export_path_granted("D:/wowsp-grant-test/exports/回放 b.webm"),
+            "non-ASCII names are just files inside the folder"
+        );
+        assert!(
+            !export_path_granted("D:/wowsp-grant-test/exports/sub/a.webm"),
+            "a nested subfolder is not covered"
+        );
+        assert!(
+            !export_path_granted("D:/wowsp-grant-test/other/a.webm"),
+            "a sibling folder is not covered"
+        );
+        assert!(
+            !export_path_granted("D:/wowsp-grant-test/exports2/a.webm"),
+            "a prefix-matching sibling folder is not covered"
+        );
+        assert!(
+            !export_path_granted("D:/wowsp-grant-test/a.webm"),
+            "the granted folder's parent is not covered"
+        );
+    }
+
+    /// The folder dialog and the webui's path join can disagree on separators
+    /// and a trailing slash; the grant table folds both into one identity (and
+    /// Windows, whose FS ignores case, folds case too).
+    #[test]
+    fn dir_grant_folds_separator_and_trailing_slash_spellings() {
+        let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        grant_export_dir(r"C:\wowsp-grant-test\clips\");
+        assert!(export_path_granted("C:/wowsp-grant-test/clips/shot.png"));
+        assert!(export_path_granted(r"C:\wowsp-grant-test\clips\shot.png"));
+        assert!(export_path_granted("C:/wowsp-grant-test/clips/trailing/"));
+        #[cfg(windows)]
+        assert!(
+            export_path_granted("c:/WOWSP-GRANT-TEST/Clips/Shot.PNG"),
+            "the Windows filesystem is case-insensitive; the grant follows"
+        );
+    }
+
+    /// TTL unchanged: an aged-out grant stops applying, and the read that
+    /// notices prunes the entry. Both kinds age the same way.
     #[test]
     fn expired_grants_stop_applying() {
         let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let expired_at = Instant::now() - EXPORT_GRANT_TTL - Duration::from_secs(1);
+
         let path = "C:/tmp/wowsp-grant-test/expired.png";
         grant_export_path(path);
         // Age the grant past the TTL by hand — no test waits six hours.
         export_grants().lock().unwrap().insert(
-            path.to_string(),
-            Instant::now() - EXPORT_GRANT_TTL - Duration::from_secs(1),
+            grant_key(path),
+            Grant {
+                at: expired_at,
+                kind: GrantKind::File,
+            },
         );
         assert!(!export_path_granted(path), "expired grants are refused");
+        assert!(
+            !export_grants()
+                .lock()
+                .unwrap()
+                .contains_key(&grant_key(path)),
+            "the read pruned the expired entry"
+        );
+
+        let dir = "C:/tmp/wowsp-grant-test/expired-dir";
+        let child = "C:/tmp/wowsp-grant-test/expired-dir/clip.webm";
+        grant_export_dir(dir);
+        assert!(export_path_granted(child));
+        export_grants().lock().unwrap().insert(
+            grant_key(dir),
+            Grant {
+                at: expired_at,
+                kind: GrantKind::Dir,
+            },
+        );
+        assert!(
+            !export_path_granted(child),
+            "an expired folder grant stops covering its files"
+        );
     }
 
+    /// Cap unchanged: the table keeps at most `EXPORT_GRANT_CAP` live grants
+    /// and evicts the oldest survivor. Folder grants share that one table and
+    /// therefore the one cap.
     #[test]
     fn grant_table_is_capped_and_evicts_the_oldest() {
         let _guard = GRANT_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        // Start from a known table — the grants above are process-global.
+        export_grants().lock().unwrap().clear();
+
+        let dir = "C:/tmp/wowsp-grant-test/dir-cap";
+        grant_export_dir(dir);
         let first = "C:/tmp/wowsp-grant-test/first.png";
         grant_export_path(first);
         for i in 0..EXPORT_GRANT_CAP {
@@ -468,12 +706,16 @@ mod tests {
         }
         assert!(
             !export_path_granted(first),
-            "the oldest grant left when the table hit its cap"
+            "the oldest file grant left when the table hit its cap"
         );
         assert!(export_path_granted(&format!(
             "C:/tmp/wowsp-grant-test/n{}.png",
             EXPORT_GRANT_CAP - 1
         )));
+        assert!(
+            !export_path_granted("C:/tmp/wowsp-grant-test/dir-cap/clip.webm"),
+            "the folder grant is evicted by the same cap, so its files stop"
+        );
     }
 
     /// The CF_HDROP header the shell parses: 20 bytes — the list offset

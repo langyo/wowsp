@@ -1,6 +1,7 @@
-/* Replay-playback export modal body: the settings grid, the footer toggle
- * and the frame/duration estimate. The HkModal chrome is hikari's; only
- * the content layout lives here (mirrors the tactical wizard's sheet). */
+/* Replay-playback export modal body: the format button group, the
+ * one-row fps/speed/resolution params, the range waterfall row, the export
+ * folder row and the frame/duration estimate. The HkModal chrome is
+ * hikari's; only the content layout lives here. */
 
 .holo-export {
   display: flex;
@@ -8,17 +9,57 @@
   gap: 0.7rem;
   font-size: var(--text-sm);
 
-  &__grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.6rem 1rem;
+  /* Label + control rows (format group, export folder). */
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+
+    &--path {
+      align-items: baseline;
+    }
   }
 
-  &__toggles {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.45rem;
+  &__label {
+    flex: 0 0 auto;
+    min-width: 3.5rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__btn-group {
+    display: inline-flex;
+    gap: 0.35rem;
+  }
+
+  /* The range waterfall ships its own 1rem bottom margin — the modal's
+     flex gap already spaces the next row. */
+  :deep(.hk-selection-waterfall) {
+    margin-bottom: 0;
+  }
+
+  /* fps · speed · resolution — three equal columns on ONE row. */
+  &__params {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.6rem 0.8rem;
+  }
+
+  /* The shell-persisted export folder: mono, ellipsized with the full path
+   * on the title attribute, and never wider than the row. */
+  &__path {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
+    color: rgb(var(--color-text));
+    background: rgb(var(--color-surface) / 60%);
+    border: 1px solid rgb(var(--color-border) / 40%);
+    border-radius: 6px;
+    padding: 0.15rem 0.45rem;
   }
 
   &__estimate {
@@ -28,7 +69,7 @@
     color: rgb(var(--color-muted));
   }
 
-  /* The GIF frame-budget refusal line — warning ink, same rhythm as the
+  /* The frame-budget refusal line — warning ink, same rhythm as the
    * estimate above it. */
   &__warn {
     margin: 0;
@@ -38,8 +79,8 @@
   }
 
   @media (max-width: 767px) {
-    &__grid {
-      grid-template-columns: 1fr;
+    &__params {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
     }
   }
 }

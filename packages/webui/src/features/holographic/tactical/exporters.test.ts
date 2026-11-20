@@ -1,6 +1,6 @@
 /** Offline-export frame schedule tests (pure — no DOM / WebCodecs here). */
 import { describe, expect, it } from "vitest";
-import { DEFAULT_CODEC_LADDER, frameTimes } from "./exporters";
+import { DEFAULT_CODEC_LADDER, frameTimes, joinExportPath } from "./exporters";
 
 describe("frameTimes", () => {
   it("steps at 1/fps from `from` through `to` inclusive", () => {
@@ -51,5 +51,28 @@ describe("DEFAULT_CODEC_LADDER", () => {
     for (const rung of DEFAULT_CODEC_LADDER) {
       if (rung.ext === "webm") expect(webmOk.has(rung.codec)).toBe(true);
     }
+  });
+});
+
+describe("joinExportPath", () => {
+  it("keeps the directory's own separator and collapses trailing ones", () => {
+    expect(joinExportPath("C:\\Users\\me\\Downloads", "clip.mp4")).toBe(
+      "C:\\Users\\me\\Downloads\\clip.mp4",
+    );
+    expect(joinExportPath("C:\\Users\\me\\Downloads\\", "clip.mp4")).toBe(
+      "C:\\Users\\me\\Downloads\\clip.mp4",
+    );
+    expect(joinExportPath("/home/me/Downloads", "clip.mp4")).toBe(
+      "/home/me/Downloads/clip.mp4",
+    );
+    expect(joinExportPath("/home/me/Downloads///", "clip.mp4")).toBe(
+      "/home/me/Downloads/clip.mp4",
+    );
+  });
+
+  it("refuses an empty directory", () => {
+    expect(joinExportPath("", "clip.mp4")).toBeNull();
+    expect(joinExportPath("   ", "clip.mp4")).toBeNull();
+    expect(joinExportPath("\\\\", "clip.mp4")).toBeNull();
   });
 });

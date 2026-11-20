@@ -180,9 +180,8 @@
      · 4 playback controls (+self card) · 5 kill feed · 6 pop-up menus
      · 3 zoomed minimap (deliberately BELOW the z-4 controls so the 2D view
        stays scrubable) · 10 roster overlay. */
-  /* The transport column: the playback row plus (while an export runs)
-     the progress strip, anchored as one absolute seat — the strip is a
-     sibling of the row, never an in-flow child of the canvas. */
+  /* The transport seat: the playback row lives here in flow (the seat
+     owns ALL the positioning — see #2041). */
   &__transport {
     left: 12px;
     bottom: 12px;

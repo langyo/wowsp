@@ -176,6 +176,39 @@ export async function saveExportBlob(
   return { path, native: true };
 }
 
+/** Join a directory + file name with the directory's own separator (a
+ *  Windows path keeps backslashes, a POSIX path keeps slashes); trailing
+ *  separators are collapsed. Empty dir → null (nothing to write into). */
+export function joinExportPath(dir: string, name: string): string | null {
+  const trimmed = dir.trim().replace(/[\\/]+$/, "");
+  if (!trimmed) return null;
+  // A bare drive root ("D:\\") trims to "D:" — re-arm the separator so the
+  // join stays rooted instead of producing a drive-relative "D:clip.mp4".
+  const isDriveRoot = /^[A-Za-z]:$/.test(trimmed);
+  const sep = isDriveRoot || trimmed.includes("\\") ? "\\" : "/";
+  return `${trimmed}${sep}${name}`;
+}
+
+/** Save into a user-chosen DIRECTORY (the export modal's path row) —
+ *  no native dialog. Returns null when the host rejects the write (non-
+ *  tauri host, revoked dir grant, IO error) so callers fall back to
+ *  saveExportBlob's dialog/browser path. */
+export async function saveExportBlobTo(
+  blob: Blob,
+  dir: string,
+  name: string,
+): Promise<SavedExport | null> {
+  const path = joinExportPath(dir, name);
+  if (!path) return null;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  try {
+    await api.saveExportBytes(path, bytes);
+  } catch {
+    return null;
+  }
+  return { path, native: true };
+}
+
 const RECORDER_MIMES: { mime: string; ext: "mp4" | "webm" }[] = [
   { mime: "video/mp4;codecs=avc1.640028", ext: "mp4" },
   { mime: "video/mp4;codecs=avc1.42E01E", ext: "mp4" },
@@ -245,6 +278,13 @@ export interface OfflineRenderOptions {
    *  can actually encode wins. */
   codecLadder?: readonly OfflineCodecChoice[];
   onProgress?: (done: number, total: number) => void;
+  /** Coarse PHASE signal for the progress surface: "render" while frames
+   *  are painted+encoded, "finalize" while the encoder flushes and the
+   *  muxer writes the container (mediabunny's finalize can take a long
+   *  while on a long in-memory track and reports no percentage of its
+   *  own — the UI must at least change state there instead of looking
+   *  frozen at 100%). */
+  onPhase?: (phase: "render" | "finalize") => void;
   cancelToken?: { cancelled: boolean };
 }
 
@@ -338,6 +378,7 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
     // mediabunny contract: tracks must be declared, then the output started,
     // before the first sample — `source.add` throws on a pending output.
     await output.start();
+    opts.onPhase?.("render");
     const first = times[0];
     const frameDuration = 1 / opts.fps;
     let encodedAny = false;
@@ -352,6 +393,9 @@ export async function renderVideoOffline(opts: OfflineRenderOptions): Promise<Of
       encodedAny = true;
       opts.onProgress?.(i + 1, times.length);
     }
+    // Frames are done: the encoder flush + container write is the
+    // "finalize" phase (no percentage of its own — see onPhase).
+    opts.onPhase?.("finalize");
     source.close();
     await output.finalize();
     // A cancelled render with zero encoded frames finalizes to a header-only

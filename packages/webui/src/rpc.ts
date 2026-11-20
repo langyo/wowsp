@@ -67,6 +67,12 @@ export const RPC = {
   list_game_maps: "list_game_maps",
   pick_replay_files: "pick_replay_files",
   pick_export_path: "pick_export_path",
+  // Persistent replay-clip export folder (commands/exports.rs +
+  // src/export_config.rs): the modal picks a directory once — persisted in
+  // `export-config.toml` — and every clip writes straight into it, no
+  // per-file save dialog.
+  pick_export_dir: "pick_export_dir",
+  export_config_get: "export_config_get",
   write_export_bytes: "write_export_bytes",
   // Plan-profile archive (commands/tactics_profile.rs): the tactics page's
   // shareable 档案 — a zip of profile.toml + per-branch plan JSON.

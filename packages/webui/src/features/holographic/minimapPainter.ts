@@ -848,6 +848,10 @@ export interface EnlargedMapPaintOptions {
    *  the replay clip's HUD ask (the live 3D view shows labels as DOM
    *  overlays, which have no equivalent on this canvas). */
   shipLabels?: boolean;
+  /** Draw the ships' travelled-path polylines. Defaults to true (the
+   *  live canvas); the replay clip turns them off. Aircraft formation
+   *  icons are NOT trails — they always draw. */
+  trails?: boolean;
   /** Clan tag by player name (rendered as `[TAG] name`), when known. */
   clanOf?: (name: string) => string | null;
   /** Numeric tier → Roman numeral ("X"), for the ship-name line. */
@@ -958,7 +962,7 @@ export function paintEnlargedMap(
     fillAlpha: 0.1,
     rimAlpha: 0.5,
   });
-  if (ctx.minimapShowTrails.value) {
+  if (o.trails !== false && ctx.minimapShowTrails.value) {
     for (const tr of ctx.props.trajectories) {
       if (tr.kind?.entityType !== 2 || tr.samples.length < 2) continue;
       const role = resolveRoleQuick(ctx, tr);

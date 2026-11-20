@@ -596,13 +596,11 @@
     "fps": "Fréquence d'images",
     "speed": "Vitesse",
     "resolution": "Résolution",
-    "footer": "Pied de page filigrane",
     "estimate": "≈{n} images · {s} s",
     "tooLong": "Export trop long (plus de {n} images) — augmentez la vitesse ou réduisez la plage",
     "start": "Lancer l'export",
     "cancel": "Annuler",
     "toggle": "Exporter le replay en vidéo / GIF",
-    "runningProgress": "Export du replay {done}/{total}",
     "cancelRun": "Annuler",
     "unsupported": "L'encodage vidéo n'est pas disponible ici",
     "toastEmpty": "Aucune plage à exporter",
@@ -613,7 +611,13 @@
     "damageTitle": "Dégâts infligés",
     "dmgFrags": "Fragments",
     "dmgTaken": "Subis",
-    "chatTitle": "Chat"
+    "chatTitle": "Chat",
+    "pathLabel": "Dossier d'export",
+    "pathChange": "Changer",
+    "phaseFinalize": "Finalisation de la vidéo…",
+    "phaseSave": "Enregistrement du fichier…",
+    "rangeFullDesc": "Du début à la fin · ~{time}",
+    "rangeNowDesc": "De la position actuelle à la fin · ~{time}"
   },
   "perf": {
     "timing": "Fréquence d'images",

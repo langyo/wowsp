@@ -55,10 +55,11 @@ export const EXPORT_LOGICAL = TACTICAL_SIZE;
 export const EXPORT_SIDE_W = 190;
 /** Logical width of the whole composition (map square plus both columns). */
 export const EXPORT_TOTAL_LOGICAL = EXPORT_LOGICAL + EXPORT_SIDE_W * 2;
-/** Score/caps header band height in logical units: the scorebar pill row
- *  (score · cap chips · clock · score) over the ship-icon strip row — the
- *  app's own HoloScorebar replicated on canvas. */
-export const EXPORT_HEADER_H = 96;
+/** Header band height in logical units: the scorebar pill row (score ·
+ *  cap chips · score), the battle clock UNDER the caps (the live app reads
+ *  the time from the transport bar; a clip needs it visible, and beside
+ *  the chips it crowded them), then the ship-icon strip row. */
+export const EXPORT_HEADER_H = 112;
 /** Team-list portion of a side column; the rest is damage (left) or the
  *  chat log (right). */
 export const EXPORT_TEAM_H = 452;
@@ -296,6 +297,31 @@ const HP_GOOD = "74 222 128";
 const HP_MID = "251 191 36";
 const HP_LOW = "248 92 92";
 
+/** Draw text fitted into `maxW`: the face shrinks down to `minSize`
+ *  instead of the string being ellipsized — a clipped player name reads as
+ *  a different player, so names are never truncated (2026-11-20 report). */
+function fillFit(
+  g: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxW: number,
+  size: number,
+  weight = 400,
+  mono = false,
+  minSize = 8.5,
+): void {
+  let s = size;
+  g.font = font(s, weight, mono);
+  while (s > minSize && g.measureText(text).width > maxW) {
+    s = Math.max(minSize, s - 0.5);
+    g.font = font(s, weight, mono);
+  }
+  // At the floor, ellipsize as the last resort — an overflowing name
+  // would paint over the ship-name column.
+  g.fillText(ellipsize(g, text, maxW), x, y);
+}
+
 function hpInk(frac: number): string {
   return frac > 0.55 ? HP_GOOD : frac > 0.25 ? HP_MID : HP_LOW;
 }
@@ -345,16 +371,12 @@ export function drawPlaybackHeader(
   const scoreW = (s: number): number => g.measureText(String(s)).width;
   const chips = data.caps.slice(0, 5);
   const capsW = chips.length * chipSize + Math.max(0, chips.length - 1) * chipGap;
-  // The clock measures in its own mono face (set AFTER the score widths).
-  g.font = font(20, 700, true);
-  const clockW = g.measureText(data.clock).width;
   const showScores = data.scoreAlly != null && data.scoreEnemy != null;
   const allyScoreW = showScores ? Math.max(scoreW(data.scoreAlly!), 33) + dotR * 2 + 6 : 0;
   const enemyScoreW = showScores ? Math.max(scoreW(data.scoreEnemy!), 33) + dotR * 2 + 6 : 0;
   const contentW =
     (showScores ? allyScoreW + groupGap : 0) +
     (chips.length ? capsW + groupGap : 0) +
-    clockW +
     (showScores ? groupGap + enemyScoreW : 0);
   const padX = 22;
   const pillW = contentW + padX * 2;
@@ -444,22 +466,23 @@ export function drawPlaybackHeader(
     cx += chipSize + chipGap;
   }
   if (chips.length) cx += groupGap - chipGap;
-  // Clock: the one export-only addition to the pill (the app reads the
-  // time from the transport bar; a clip has neither) — mono, bright.
-  g.font = font(20, 700, true);
-  g.fillStyle = rgba(palette.text, 0.92);
-  g.textAlign = "left";
-  g.fillText(data.clock, cx, pillCy);
-  cx += clockW;
   if (showScores) {
     cx += groupGap;
     scoreBlock(data.scoreEnemy!, ENEMY_INK, "enemy");
   }
+  // Clock UNDER the caps (the 2026-11-20 report: beside the chips it
+  // crowded the third cap). Mono, centered, export-only — the app reads
+  // the time off its transport bar.
+  const clockCy = pillY + pillH + 12;
+  g.font = font(17, 700, true);
+  g.fillStyle = rgba(palette.text, 0.92);
+  g.textAlign = "center";
+  g.fillText(data.clock, w / 2, clockCy);
   // ── Ship-icon strip row (the scorebar’s __ships) ───────────────
-  const stripTop = pillY + pillH + 8;
+  const stripTop = pillY + pillH + 24;
   g.fillStyle = rgba(palette.text, 0.12);
   g.fillRect(0, stripTop, w, 1);
-  const stripCy = (stripTop + h) / 2 + 1;
+  const stripCy = (stripTop + h) / 2;
   const iconSize = 15;
   const iconGap = 2;
   const sepGap = 8;
@@ -569,10 +592,12 @@ function drawTeamList(
     if (ry + rowH > y + EXPORT_TEAM_H) break;
     const dim = row.dead ? 0.35 : 1;
     g.textAlign = "left";
-    g.font = font(11, 700);
-    g.fillStyle = rgba(row.dead ? NEUTRAL_INK : ink, 0.9 * dim);
+    // Names read as ordinary text (white on the dark clip), NOT team
+    // colours — the HP bar and side title already carry the team; a
+    // green/red name was unreadable on the dark panel.
+    g.fillStyle = rgba(palette.text, 0.92 * dim);
     const display = row.clan ? `[${row.clan}] ${row.name}` : row.name;
-    g.fillText(ellipsize(g, display, w - 104), x + 10, ry + 8);
+    fillFit(g, display, x + 10, ry + 8, w - 96, 11, 700);
     g.font = font(10, 400);
     g.fillStyle = rgba(palette.text, 0.5 * dim);
     g.textAlign = "right";
@@ -590,8 +615,63 @@ function drawTeamList(
   }
 }
 
-/** The recorder's damage block (left column bottom): total damage big and
- *  bold, frags + damage taken muted beneath. */
+/** One stat badge: rounded tint square with a vector glyph — the live
+ *  self-stats plaque's icon row (damage burst / frags skull / shield),
+ *  drawn by hand because canvas cannot host the lucide components. */
+function drawStatBadge(
+  g: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  size: number,
+  ink: string,
+  glyph: "burst" | "frag" | "shield",
+): void {
+  g.save();
+  g.fillStyle = rgba(ink, 0.18);
+  g.beginPath();
+  g.roundRect(x, y, size, size, Math.max(3, size * 0.24));
+  g.fill();
+  g.strokeStyle = rgba(ink, 0.9);
+  g.fillStyle = rgba(ink, 0.95);
+  g.lineWidth = 1.3;
+  const cx = x + size / 2;
+  const cy = y + size / 2;
+  const r = size * 0.26;
+  if (glyph === "burst") {
+    // Four-point hit burst: two crossing blades.
+    g.beginPath();
+    g.moveTo(cx - r, cy - r);
+    g.lineTo(cx + r, cy + r);
+    g.moveTo(cx + r, cy - r);
+    g.lineTo(cx - r, cy + r);
+    g.stroke();
+  } else if (glyph === "frag") {
+    // Skull: round cranium + two eye dots.
+    g.beginPath();
+    g.arc(cx, cy - size * 0.06, size * 0.22, Math.PI * 0.9, Math.PI * 2.1);
+    g.stroke();
+    g.beginPath();
+    g.arc(cx - size * 0.08, cy + size * 0.04, size * 0.035, 0, Math.PI * 2);
+    g.arc(cx + size * 0.08, cy + size * 0.04, size * 0.035, 0, Math.PI * 2);
+    g.fill();
+  } else {
+    // Shield: pointed crest.
+    g.beginPath();
+    g.moveTo(cx, cy - r);
+    g.lineTo(cx + r * 0.85, cy - r * 0.45);
+    g.lineTo(cx + r * 0.6, cy + r * 0.6);
+    g.lineTo(cx, cy + r);
+    g.lineTo(cx - r * 0.6, cy + r * 0.6);
+    g.lineTo(cx - r * 0.85, cy - r * 0.45);
+    g.closePath();
+    g.stroke();
+  }
+  g.restore();
+}
+
+/** The recorder's damage block (left column bottom): a title with the
+ *  damage badge, the total big and bold, then the frags / taken rows —
+ *  each carrying its own badge (the 2026-11-20 「徽章缺失」 report). */
 function drawRecorderPanel(
   g: CanvasRenderingContext2D,
   x: number,
@@ -603,20 +683,35 @@ function drawRecorderPanel(
 ): void {
   g.textBaseline = "middle";
   g.textAlign = "left";
+  const badge = 15;
+  drawStatBadge(g, x + 10, y + 7, badge, "255 180 60", "burst");
   g.font = font(12, 700);
-  g.fillStyle = rgba(palette.text, 0.6);
-  g.fillText(labels.title, x + 10, y + 14);
-  g.font = font(30, 700, true);
-  g.fillStyle = rgba(palette.text, 0.95);
-  g.fillText(stats.damage.toLocaleString("en-US"), x + 10, y + 52);
+  g.fillStyle = rgba(palette.text, 0.72);
+  g.fillText(labels.title, x + 10 + badge + 7, y + 14);
+  g.font = font(28, 700, true);
+  g.fillStyle = rgba(palette.text, 0.96);
+  g.fillText(stats.damage.toLocaleString("en-US"), x + 10, y + 50);
+  const rowY = (i: number): number => y + 82 + i * 26;
+  drawStatBadge(g, x + 10, rowY(0) - badge / 2, badge, "248 92 92", "frag");
   g.font = font(11, 400);
-  g.fillStyle = rgba(palette.text, 0.6);
-  g.fillText(`${labels.frags} ${stats.frags}`, x + 10, y + 88);
-  g.fillText(`${labels.taken} ${stats.taken.toLocaleString("en-US")}`, x + 10, y + 108);
+  g.fillStyle = rgba(palette.text, 0.62);
+  g.fillText(labels.frags, x + 10 + badge + 7, rowY(0));
+  g.font = font(11, 700, true);
+  g.fillStyle = rgba(palette.text, 0.9);
+  g.fillText(String(stats.frags), x + w - 10, rowY(0));
+  drawStatBadge(g, x + 10, rowY(1) - badge / 2, badge, "120 160 255", "shield");
+  g.font = font(11, 400);
+  g.fillStyle = rgba(palette.text, 0.62);
+  g.fillText(labels.taken, x + 10 + badge + 7, rowY(1));
+  g.font = font(11, 700, true);
+  g.fillStyle = rgba(palette.text, 0.9);
+  g.textAlign = "right";
+  g.fillText(stats.taken.toLocaleString("en-US"), x + w - 10, rowY(1));
 }
 
-/** The chat log (right column bottom): the most recent lines drawn from
- *  the bottom edge upward, senders tinted by side. */
+/** The chat log (right column bottom): the most recent entries drawn from
+ *  the bottom edge upward, TWO rows each — [MM:SS] sender on the first
+ *  line, the message on the second (the 2026-11-20 layout report). */
 function drawChatPanel(
   g: CanvasRenderingContext2D,
   x: number,
@@ -632,27 +727,27 @@ function drawChatPanel(
   g.font = font(12, 700);
   g.fillStyle = rgba(palette.text, 0.6);
   g.fillText(title, x + 10, y + 14);
-  const lineH = 26;
-  const max = Math.floor((h - 40) / lineH);
+  const entryH = 34;
+  const max = Math.max(0, Math.floor((h - 44) / entryH));
   const shown = lines.slice(-max);
-  let ly = y + h - 14 - (shown.length - 1) * lineH;
+  let ly = y + h - 20 - (shown.length - 1) * entryH;
   for (const line of shown) {
     const mm = Math.floor(line.time / 60);
     const ss = Math.floor(line.time % 60);
     const stamp = `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
-    g.font = font(10, 400);
+    // Row 1: time + sender (sender tinted by side; the time muted).
+    g.font = font(10, 400, true);
     g.fillStyle = rgba(palette.text, 0.45);
     g.fillText(stamp, x + 10, ly);
     const ink = line.side === "enemy" ? ENEMY_INK : ALLY_INK;
     g.font = font(10, 700);
     g.fillStyle = rgba(ink, 0.9);
-    const sender = ellipsize(g, line.sender, 64);
-    g.fillText(sender, x + 48, ly);
-    const senderW = g.measureText(sender).width;
+    fillFit(g, line.sender, x + 46, ly, w - 56, 10, 700);
+    // Row 2: the message, full width.
     g.font = font(10, 400);
-    g.fillStyle = rgba(palette.text, 0.85);
-    g.fillText(ellipsize(g, line.text, Math.max(20, w - 58 - senderW)), x + 52 + senderW, ly);
-    ly += lineH;
+    g.fillStyle = rgba(palette.text, 0.9);
+    g.fillText(ellipsize(g, line.text, w - 20), x + 10, ly + 15);
+    ly += entryH;
   }
 }
 
@@ -687,6 +782,10 @@ export interface PlaybackExportRequest {
   /** Panel/header word bundle (caller i18n's every word). */
   panelLabels: PlaybackPanelLabels;
   onProgress?: (done: number, total: number) => void;
+  /** Coarse phase for the progress card: frames vs the encoder/muxer
+   *  flush (the latter reports no percentage — the card goes
+   *  indeterminate instead of sitting frozen at 100%). */
+  onPhase?: (phase: "render" | "finalize") => void;
   cancelToken?: { cancelled: boolean };
 }
 
@@ -814,6 +913,7 @@ export async function renderPlaybackExport(
         composeFrame(g, layout, req, t);
       },
       onProgress: req.onProgress,
+      onPhase: req.onPhase,
       cancelToken: req.cancelToken,
     });
     if (!result) return null;
@@ -849,6 +949,7 @@ export async function renderPlaybackExport(
   if (encoded === 0) {
     return { blob: new Blob([], { type: "image/gif" }), ext: "gif", cancelled: true };
   }
+  req.onPhase?.("finalize");
   gif.finish();
   // Copy into a plain ArrayBuffer-backed view — TS's BlobPart wants
   // ArrayBuffer (not ArrayBufferLike) and gifenc returns the shared

@@ -25,6 +25,9 @@
 
 mod atomic_file;
 mod commands;
+/// The replay-clip export directory (`export-config.toml`): the persistent
+/// destination folder the export modal writes into without a per-file dialog.
+mod export_config;
 mod logging;
 mod os_prefs;
 mod paths;
@@ -300,6 +303,17 @@ pub fn run() {
             // paths.rs); capture the AppHandle globally before anything asks
             // for a data/cache dir.
             paths::init(app.handle().clone());
+
+            // Restore the replay-export folder's write grant (see
+            // export_config::grant_persisted_dir: the folder is the app's
+            // Downloads default or a native-picker choice, never an IPC-set
+            // path — so this is consent restoration, not a new grant path).
+            match export_config::grant_persisted_dir() {
+                Ok(dir) => tracing::debug!(dir = %dir, "export folder grant restored"),
+                Err(err) => {
+                    tracing::warn!(error = %err, "export folder grant restore failed")
+                }
+            }
 
             // ── Installer-shipped resource-pack publication (desktop) ─────
             //
@@ -845,6 +859,11 @@ pub fn run() {
             #[cfg(desktop)]
             commands::screenshot::capture_main_window,
             commands::exports::pick_export_path,
+            // The export modal's persistent destination folder: typed config
+            // (src/export_config.rs) + the native folder picker that both
+            // persists the choice and registers the directory grant.
+            export_config::export_config_get,
+            commands::exports::pick_export_dir,
             // Tactics plan-profile archives (commands/tactics_profile.rs):
             // the tactics page's save/share 档案 (profile.toml + plan JSONs).
             commands::tactics_profile::tactics_profile_save,

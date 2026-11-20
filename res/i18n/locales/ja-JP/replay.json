@@ -596,13 +596,11 @@
     "fps": "フレームレート",
     "speed": "倍速",
     "resolution": "解像度",
-    "footer": "下部の透かしフッター",
     "estimate": "約 {n} フレーム · 約 {s} 秒",
     "tooLong": "書き出しが長すぎます（{n} フレーム超）— 倍速を上げるか範囲を狭めてください",
     "start": "書き出し開始",
     "cancel": "キャンセル",
     "toggle": "リプレイ動画 / GIF を書き出す",
-    "runningProgress": "リプレイを書き出し中 {done}/{total}",
     "cancelRun": "中止",
     "unsupported": "この環境では動画のエンコードに対応していません",
     "toastEmpty": "書き出せる時間範囲がありません",
@@ -613,7 +611,13 @@
     "damageTitle": "ダメージ",
     "dmgFrags": "撃沈",
     "dmgTaken": "被弾",
-    "chatTitle": "チャット"
+    "chatTitle": "チャット",
+    "pathLabel": "出力先フォルダー",
+    "pathChange": "変更",
+    "phaseFinalize": "動画をファイナライズ中…",
+    "phaseSave": "ファイルを保存中…",
+    "rangeFullDesc": "開始から終了まで · 約 {time}",
+    "rangeNowDesc": "現在位置から終了まで · 約 {time}"
   },
   "perf": {
     "timing": "フレームレート",

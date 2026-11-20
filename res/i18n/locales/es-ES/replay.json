@@ -596,13 +596,11 @@
     "fps": "Fotogramas por segundo",
     "speed": "Velocidad",
     "resolution": "Resolución",
-    "footer": "Pie de página con marca de agua",
     "estimate": "≈{n} fotogramas · {s} s",
     "tooLong": "Exportación demasiado larga (más de {n} fotogramas): sube la velocidad o acorta el intervalo",
     "start": "Iniciar exportación",
     "cancel": "Cancelar",
     "toggle": "Exportar repetición en vídeo / GIF",
-    "runningProgress": "Exportando repetición {done}/{total}",
     "cancelRun": "Cancelar",
     "unsupported": "La codificación de vídeo no está disponible aquí",
     "toastEmpty": "No hay un intervalo que exportar",
@@ -613,7 +611,13 @@
     "damageTitle": "Daño infligido",
     "dmgFrags": "Hundimientos",
     "dmgTaken": "Recibido",
-    "chatTitle": "Chat"
+    "chatTitle": "Chat",
+    "pathLabel": "Carpeta de exportación",
+    "pathChange": "Cambiar",
+    "phaseFinalize": "Finalizando el vídeo…",
+    "phaseSave": "Guardando el archivo…",
+    "rangeFullDesc": "Del inicio al final · ~{time}",
+    "rangeNowDesc": "Desde la posición actual hasta el final · ~{time}"
   },
   "perf": {
     "timing": "Fotogramas",
