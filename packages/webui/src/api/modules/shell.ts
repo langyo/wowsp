@@ -327,6 +327,19 @@ export const shellApi = {
       filterName,
       filterExts,
     }),
+  /** The persisted replay-clip export folder (`export-config.toml` under the
+   *  appdata root). Missing/invalid/moved folders answer the OS Downloads
+   *  folder, which is then persisted — the result is always a usable absolute
+   *  directory. */
+  exportDirGet: () => transport.invoke<{ dir: string }>(RPC.export_config_get),
+  /** Persist a new export folder. Absolute, non-empty, and created when it
+   *  does not exist yet; rejects otherwise rather than storing a dead path. */
+  exportDirSet: (dir: string) =>
+    transport.invoke<null>(RPC.export_config_set_dir, { dir }),
+  /** Native FOLDER picker for the export destination — persists the choice
+   *  and authorizes writes of files directly inside it. Null = the user
+   *  cancelled. Rejects on mobile (no native folder picker). */
+  exportDirPick: () => transport.invoke<string | null>(RPC.pick_export_dir),
   /** Write a tactics plan-profile archive (profile.toml + plan JSONs) to a
    *  user-picked path; null = cancelled. Throws outside the Tauri shell. */
   saveTacticsProfile: (

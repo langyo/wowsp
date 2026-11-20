@@ -25,6 +25,9 @@
 
 mod atomic_file;
 mod commands;
+/// The replay-clip export directory (`export-config.toml`): the persistent
+/// destination folder the export modal writes into without a per-file dialog.
+mod export_config;
 mod logging;
 mod os_prefs;
 mod paths;
@@ -845,6 +848,12 @@ pub fn run() {
             #[cfg(desktop)]
             commands::screenshot::capture_main_window,
             commands::exports::pick_export_path,
+            // The export modal's persistent destination folder: typed config
+            // (src/export_config.rs) + the native folder picker that both
+            // persists the choice and registers the directory grant.
+            export_config::export_config_get,
+            export_config::export_config_set_dir,
+            commands::exports::pick_export_dir,
             // Tactics plan-profile archives (commands/tactics_profile.rs):
             // the tactics page's save/share 档案 (profile.toml + plan JSONs).
             commands::tactics_profile::tactics_profile_save,
