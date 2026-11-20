@@ -651,6 +651,69 @@ describe("drawPlaybackTeamColumn", () => {
     ).toBeLessThanOrEqual(EXPORT_TEAM_H);
     expect(teamEntryCapacity()).toBeGreaterThanOrEqual(EXPORT_TEAM_MAX_ROWS);
   });
+
+  // ── Repair Party's grey recoverable segment (the game's three-layer
+  //    bar: green | grey | red) ─────────────────────────────────────────
+  it("paints green | grey | red with the grey eating the red width", () => {
+    const { ctx, rects } = recordingContext();
+    drawPlaybackTeamColumn(
+      ctx, 0, 0, EXPORT_SIDE_W,
+      sideOf([teamRow(1, { hpFrac: 0.5, hpRecoverableFrac: 0.25 })]), "ally",
+      "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+    );
+    const bar = rects.filter((r) => r.h === EXPORT_TEAM_HP_H);
+    // Rail + the three layers, in paint order.
+    expect(bar).toHaveLength(4);
+    const [rail, red, gray, green] = bar;
+    const barW = EXPORT_SIDE_W - EXPORT_TEAM_INSET_X * 2;
+    expect(rail.w).toBeCloseTo(barW, 6);
+    // Green keeps the current HP: 0..50% of the track.
+    expect(green.x).toBeCloseTo(rail.x, 6);
+    expect(green.w).toBeCloseTo(barW * 0.5, 6);
+    // Grey: 50%..75% — the recoverable pool, sitting BETWEEN green and red.
+    expect(gray.x).toBeCloseTo(rail.x + barW * 0.5, 6);
+    expect(gray.w).toBeCloseTo(barW * 0.25, 6);
+    // Red: 75%..100% — lost for good.
+    expect(red.x).toBeCloseTo(rail.x + barW * 0.75, 6);
+    expect(red.w).toBeCloseTo(barW * 0.25, 6);
+    // Each layer carries its own ink (the grey is the hull plaque's own
+    // repairable grey, the red the lost-for-good tint).
+    expect(gray.fill).toBe("rgba(200,208,220,0.85)");
+    expect(red.fill).toBe("rgba(248,92,92,0.45)");
+    expect(green.fill).toBe("rgba(251,191,36,0.95)");
+  });
+
+  it("keeps the two-layer bar when the hull has no Repair Party data", () => {
+    const { ctx, rects } = recordingContext();
+    drawPlaybackTeamColumn(
+      ctx, 0, 0, EXPORT_SIDE_W,
+      sideOf([teamRow(1, { hpFrac: 0.5, hpRecoverableFrac: null })]), "ally",
+      "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+    );
+    const bar = rects.filter((r) => r.h === EXPORT_TEAM_HP_H);
+    // Rail + green only: the historical bar, byte-identical to before.
+    expect(bar).toHaveLength(2);
+    expect(bar[1].w).toBeCloseTo((EXPORT_SIDE_W - EXPORT_TEAM_INSET_X * 2) * 0.5, 6);
+  });
+
+  it("clamps a pool wider than the lost HP to the lost remainder", () => {
+    const { ctx, rects } = recordingContext();
+    drawPlaybackTeamColumn(
+      ctx, 0, 0, EXPORT_SIDE_W,
+      sideOf([teamRow(1, { hpFrac: 0.6, hpRecoverableFrac: 0.9 })]), "ally",
+      "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+    );
+    const bar = rects.filter((r) => r.h === EXPORT_TEAM_HP_H);
+    const [, red, gray, green] = bar;
+    const barW = EXPORT_SIDE_W - EXPORT_TEAM_INSET_X * 2;
+    // Green never shrinks; the grey takes the remaining 40% and red is 0.
+    expect(green.w).toBeCloseTo(barW * 0.6, 6);
+    expect(gray.w).toBeCloseTo(barW * 0.4, 6);
+    expect(red.w).toBe(0);
+  });
 });
 
 describe("teamIdentityCell", () => {

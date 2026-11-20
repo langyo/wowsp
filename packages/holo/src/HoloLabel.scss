@@ -14,6 +14,10 @@
   --label-ink-tier: rgba(100, 200, 255, 0.85);
   --label-ink-hp: rgba(100, 255, 150, 0.9);
   --label-ink-hp-bar-bg: rgba(5, 8, 15, 0.55);
+  /* Three-layer HP bar: the grey Repair-Party pool and the red lost-for-good
+     remainder. Same grey the hull plaque's repairable pool uses. */
+  --label-ink-hp-recover: rgb(200 208 220 / 55%);
+  --label-ink-hp-lost: rgb(248 92 92 / 45%);
   --label-ink-hp-text: #fff;
   --label-ink-hp-text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
   --label-ink-ghost-bg: rgba(5, 8, 15, 0.55);
@@ -130,6 +134,30 @@
     transition: width 0.2s linear;
   }
 
+  /* Repair Party's grey recoverable segment (the game's repair-bar reading)
+     and the red lost-for-good segment right of it. Both are absolutely
+     positioned over the track and under the green fill (which owns the left
+     end): the grey eats the RED width, never the green's. Hosts that never
+     pass hpRecoverableFrac render neither element. */
+  &__hp-recover,
+  &__hp-lost {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    pointer-events: none;
+    transition:
+      left 0.2s linear,
+      width 0.2s linear;
+  }
+
+  &__hp-recover {
+    background: var(--label-ink-hp-recover);
+  }
+
+  &__hp-lost {
+    background: var(--label-ink-hp-lost);
+  }
+
   /* Extra thin bars under the HP bar (aircraft boost readouts): a stacked
      column so a plane can show engine boost AND the one-shot window at
      the same time, each its own color. */
@@ -221,6 +249,10 @@
   --label-ink-tier: rgb(23 100 170 / 0.95);
   --label-ink-hp: rgb(20 130 80 / 0.95);
   --label-ink-hp-bar-bg: rgb(55 65 81 / 10%);
+  /* Three-layer bar on the paper-white sea: a mid grey reads as recoverable
+     against the pale rail, the red darkens one step to stay legible. */
+  --label-ink-hp-recover: rgb(120 135 152 / 65%);
+  --label-ink-hp-lost: rgb(248 113 113 / 45%);
   --label-ink-hp-text: #374151;
   --label-ink-hp-text-shadow: 0 0 2px rgb(255 255 255 / 80%);
   --label-ink-ghost-bg: rgb(255 255 255 / 55%);

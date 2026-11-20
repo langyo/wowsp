@@ -21,6 +21,7 @@ import type {
   AchievementEvent,
   CameraSample,
   ChatEvent,
+  ConsumableUseEvent,
   DecisionDebugReport,
   DecisionSuggestionReport,
   EntityTrajectory,
@@ -122,6 +123,11 @@ export interface HoloMapDataProps {
   weatherTransitions: WeatherTransition[];
   /** Announced upcoming weather changes (the in-game warning banners). */
   weatherNotifications: WeatherNotification[];
+  /** Vehicle consumable activations (onConsumableUsed, experiment E11) —
+   *  the Repair Party (id 8) windows behind the HP bar's grey recoverable
+   *  segment (repairPool.ts). Absent on replays whose exposed method id is
+   *  not pinned: the feature stays off and every bar renders unchanged. */
+  consumableUses?: ConsumableUseEvent[];
 }
 
 /** Rectangular XZ rect in scene coordinates (z = -worldZ). */

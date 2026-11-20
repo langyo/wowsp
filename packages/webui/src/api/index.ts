@@ -191,6 +191,7 @@ export type {
   SquadronDamageEvent,
   SquadronThrottleEvent,
   SquadronConsumableEvent,
+  ConsumableUseEvent,
   PlaneDeathEvent,
   SquadronNotifyEvent,
   SquadronDeactivateEvent,

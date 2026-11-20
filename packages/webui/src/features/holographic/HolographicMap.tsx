@@ -145,6 +145,7 @@ import { applyOsdTones, createOsdContrast, OSD_REFRESH_S } from "./osdContrast";
 import { buildSelfShotLedger, querySelfShotLedger } from "./selfShotLedger";
 import { capLetter, isCaptureZone, type CapZoneState } from "./capZones";
 import type { ShipLabel } from "./shipLabel";
+import { repairRecoverableFracAt } from "./repairPool";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
@@ -170,6 +171,7 @@ import type {
   ArenaPlayer,
   CameraSample,
   ChatEvent,
+  ConsumableUseEvent,
   DamageStatSample,
   DecisionDebugReport,
   DecisionSuggestionReport,
@@ -388,6 +390,12 @@ export default defineComponent({
     /** In-battle achievement awards (avatar onAchievementEarned) — same
      *  playhead-crossing feed treatment as chat. */
     achievements: { type: Array as () => AchievementEvent[], default: () => [] },
+    /** Vehicle consumable activations (onConsumableUsed, experiment E11) —
+     *  the Repair Party (raw id 8) windows behind the floating labels' and
+     *  the exported clip's grey recoverable HP segment (repairPool.ts).
+     *  Absent on replays whose exposed method id is not pinned: the feature
+     *  stays off and the bars render exactly as before. */
+    consumableUses: { type: Array as () => ConsumableUseEvent[], default: () => [] },
     /** Global-weather timeline (BattleLogic state.weather.globalWeather) —
      *  cyclone/storm approach warnings + interpolation windows. */
     weatherTransitions: { type: Array as () => WeatherTransition[], default: () => [] },
@@ -3835,20 +3843,44 @@ const RECORDED_DOLLY_MIN = -40;
         const sideOf = (
           entries: ShipRowEntry[],
           columns: readonly PlaybackTeamStatColumn[],
+          t: number,
         ): PlaybackTeamSide => ({
           columns,
           // Alive first, dead last - the vertical HUD order (the icon
           // strip's dead-at-outer-edge sort reads wrong top-down).
           rows: [...entries]
             .sort((a, b) => Number(a.dead) - Number(b.dead))
-            .map((r) => ({
-              ...(frozenRows.get(r.vehicle.id) ?? playbackRowBase(r)),
-              hpFrac:
-                r.hp != null && r.maxHp
-                  ? Math.max(0, Math.min(1, r.hp / r.maxHp))
-                  : null,
-              dead: r.dead,
-            })),
+            .map((r) => {
+              // Repair Party's grey recoverable segment (repairPool.ts):
+              // PLAYHEAD-DERIVED like hp/dead, never part of the frozen
+              // per-take row base — the pool shrinks as the repair's heal
+              // ticks land, so it must be re-read at every frame's t.
+              // null = no repair-party activation for this hull in the
+              // replay (feature off, bar unchanged); 0 = pool exhausted.
+              const state = rosterState.value.get(r.vehicle.id);
+              const traj = state?.traj ?? null;
+              return {
+                ...(frozenRows.get(r.vehicle.id) ?? playbackRowBase(r)),
+                hpFrac:
+                  r.hp != null && r.maxHp
+                    ? Math.max(0, Math.min(1, r.hp / r.maxHp))
+                    : null,
+                // Only a hull with a decoded trajectory can carry a pool: a
+                // roster row whose stream never resolved keeps the plain bar
+                // (null), never "some other hull's" windows.
+                hpRecoverableFrac:
+                  r.dead || !traj
+                    ? null
+                    : repairRecoverableFracAt(
+                        props.consumableUses,
+                        traj.hpSamples,
+                        state?.maxHp ?? r.maxHp,
+                        t,
+                        traj.entityId,
+                      ),
+                dead: r.dead,
+              };
+            }),
         });
         // ── Header corners (the 2026-11-21 request) ─────────────────
         // LEFT: map display name · localized battle mode, then the replay's
@@ -4028,11 +4060,11 @@ const RECORDED_DOLLY_MIN = -40;
           // are per side) plus the full-mode entries; the icon strip's
           // dead-at-outer-edge sort reads wrong in a vertical HUD, so the
           // rows stay put (alive first, dead last — inside the builder).
-          team: () => {
+          team: (t) => {
             const rows = shipRows.value;
             return {
-              allies: sideOf(rows.allies, frozenColumns.allies),
-              enemies: sideOf(rows.enemies, frozenColumns.enemies),
+              allies: sideOf(rows.allies, frozenColumns.allies, t),
+              enemies: sideOf(rows.enemies, frozenColumns.enemies, t),
             };
           },
           recorder: (t) => {
@@ -4272,6 +4304,10 @@ const RECORDED_DOLLY_MIN = -40;
                         : null,
                   hp: lbl.hp,
                   maxHp: lbl.maxHp,
+                  // Repair Party's grey recoverable segment: null (feature
+                  // off / no repair data / sunk / aircraft) leaves the bar's
+                  // historical two-layer look untouched.
+                  hpRecoverableFrac: lbl.hpRecoverableFrac ?? null,
                   // Aircraft: boost readouts as thin bars under the HP bar —
                   // blue = engine boost (throttle mode 1), white = the one-shot
                   // temporary boost window (healForsage). They can be on

@@ -26,6 +26,12 @@ export interface ShipLabel {
   type: string | null;
   hp: number | null;
   maxHp: number | null;
+  /** Repair-Party recoverable pool as a fraction of maxHp (0..1), or null
+   *  when the replay streamed no repair-party activation for this hull —
+   *  the HP bar then renders its plain green/lost two-layer form and the
+   *  grey segment never appears (see repairPool.ts). 0 means "repairs exist,
+   *  pool exhausted": the bar keeps green + red only. */
+  hpRecoverableFrac?: number | null;
   /** Submarine depth in meters — a POSITIVE number = meters below the
    *  surface — refreshed per playhead tick (markerUpdate reads the same
    *  PositionSample altitude that submerges the 3D marker). null/undefined
