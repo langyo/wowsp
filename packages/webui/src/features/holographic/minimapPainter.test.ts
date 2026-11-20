@@ -26,6 +26,7 @@ import type * as THREE from "three";
 
 import { fakeAs } from "@/test-utils/fakes";
 import { drawMinimap } from "./minimapPainter";
+import type { EntityTrajectory, PositionSample, SquadronPlane } from "@/api";
 import { TEAM_COLOR } from "./teamColors";
 import { TACTICAL_SIZE } from "./tactical/render";
 import type { MapInternals } from "./mapInternals";
@@ -470,5 +471,143 @@ describe("thumbnail canvas context cache", () => {
 
     expect(freshRec.fills.length).toBeGreaterThan(0); // the LIVE canvas paints
     expect(staleRec.fills).toHaveLength(0); // the detached one is left alone
+  });
+});
+/* ── Homeward-bound (post-strike) squadrons: NO class marker ─────────────
+ * User requirement: "所有返航的飞机不应当显示标记" on the 2D side. Both the
+ * thumbnail and the enlarged overlay paint the aircraft through drawSquadron
+ * (minimapPainter's two plane passes), and the exported clip's tactical board
+ * reuses paintEnlargedMap — so one gate covers all three surfaces. These
+ * tests pin it on the two canvases: a PROVEN-returning wing (a completed
+ * attack dive followed by a sustained closing run on its carrier — see
+ * planeFormation.squadronReturningSince) draws nothing, while a strike-bound
+ * wing and an unknown one (no attitude byte) render exactly as before. */
+
+/** The plane marker's two inks (drawSquadron's pre-decode dot: enemy red,
+ *  otherwise the team's own green). With no ship markers in the context under
+ *  test these are the ONLY fills they produce, so counting them counts the
+ *  formations drawn. */
+const PLANE_INKS = ["rgba(232, 92, 92, 0.95)", "rgba(74, 222, 128, 0.95)"];
+const CARRIER = 700;
+const PLANE_ID = 41;
+const T_READ = 45;
+
+/** The carrier parks at the origin (a real CV makes ~10 m/s against the
+ *  wing's ~60, far below the closing threshold). */
+const carrierTrack = (): PositionSample[] =>
+  Array.from({ length: 121 }, (_, i) => ({
+    time: i,
+    entityId: CARRIER,
+    vehicleId: 0,
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
+  }));
+
+/** The shared sortie profile: cruise out to 1200 m (60 m/s), dive −35° for
+ *  three samples, then fly home at the same speed. planeFormation's tests
+ *  prove this leg at t = 40, so T_READ = 45 reads "returning".
+ *  `attack` false keeps the same geometry but levels the attitude
+ *  (no dive → no attack), `pitch` false strips the byte entirely (a
+ *  pre-attitude stream). */
+function wingSamples(opts: { attack: boolean; pitch: boolean; home: boolean }): SquadronPlane[] {
+  const out: SquadronPlane[] = [];
+  for (let t = 0; t <= 48; t++) {
+    const x = opts.home
+      ? t <= 20
+        ? 60 * t
+        : t < 23
+          ? 1200 + 5 * (t - 20)
+          : 1200 - 60 * (t - 23)
+      : 60 * t;
+    const sample: SquadronPlane = {
+      time: t, planeId: PLANE_ID, index: 0, x, y: 20, z: 0, yaw: 0,
+    };
+    if (opts.pitch) sample.pitch = opts.attack && t > 20 && t < 23 ? -35 : 0;
+    out.push(sample);
+  }
+  return out;
+}
+
+/** A context whose ONLY painted entity is the aircraft formation. */
+function planeCtx(samples: SquadronPlane[]): MapInternals {
+  const ctx = makeCtx([]);
+  ctx.planeTrails = [{ id: PLANE_ID * 16, samples }];
+  ctx.planeCarrierOf = new Map([[PLANE_ID, CARRIER]]);
+  ctx.trajById = new Map([
+    [CARRIER, fakeAs<EntityTrajectory>({ entityId: CARRIER, samples: carrierTrack() })],
+  ]);
+  // Plane-role resolution reads the roster joins; empty = the entity-id
+  // heuristic, which answers "enemy" (the red dot).
+  ctx.rosterAssignments = new Map();
+  ctx.shipEntityIds = [];
+  ctx.arenaIdentities = null;
+  return ctx;
+}
+
+/** Paint the steady-state frame on fresh thumbnail + enlarged canvases and
+ *  report how many formation markers landed on each. */
+function countPlaneMarkers(ctx: MapInternals): { thumb: number; enlarged: number } {
+  const thumb = new FakeCanvas(160);
+  const zoom = new FakeCanvas(720);
+  ctx.minimapCanvas.value = fakeAs<HTMLCanvasElement>(thumb);
+  ctx.zoomCanvas.value = fakeAs<HTMLCanvasElement>(zoom);
+  const trec = thumb.rec();
+  const zrec = zoom.rec();
+  const count = (rec: FakeCtx) => rec.fills.filter((f) => PLANE_INKS.includes(f.fill)).length;
+  zrec.reset();
+  trec.reset();
+  drawMinimap(ctx); // layout frame (backing store + transform land here)
+  zrec.reset();
+  trec.reset();
+  drawMinimap(ctx); // steady-state frame
+  ctx.current.value = T_READ;
+  return { thumb: count(trec), enlarged: count(zrec) };
+}
+
+describe("homeward-bound squadrons draw no 2D formation marker", () => {
+  it("suppresses the marker on BOTH canvases once the return leg is proven", () => {
+    const ctx = planeCtx(wingSamples({ attack: true, pitch: true, home: true }));
+    ctx.current.value = T_READ;
+    const drawn = countPlaneMarkers(ctx);
+    expect(drawn.thumb).toBe(0);
+    expect(drawn.enlarged).toBe(0);
+  });
+
+  it("keeps drawing a strike-bound formation (the control)", () => {
+    const ctx = planeCtx(wingSamples({ attack: false, pitch: true, home: false }));
+    ctx.current.value = T_READ;
+    const drawn = countPlaneMarkers(ctx);
+    expect(drawn.thumb).toBe(1);
+    expect(drawn.enlarged).toBe(1);
+  });
+
+  it("draws a wing that flies home without ever attacking", () => {
+    // Same return geometry, no dive on record — "unknown" stays today's
+    // rendering, never a guessed suppression.
+    const ctx = planeCtx(wingSamples({ attack: false, pitch: true, home: true }));
+    ctx.current.value = T_READ;
+    const drawn = countPlaneMarkers(ctx);
+    expect(drawn.thumb).toBe(1);
+    expect(drawn.enlarged).toBe(1);
+  });
+
+  it("draws a pre-attitude stream (no pitch byte to prove anything with)", () => {
+    const ctx = planeCtx(wingSamples({ attack: true, pitch: false, home: true }));
+    ctx.current.value = T_READ;
+    const drawn = countPlaneMarkers(ctx);
+    expect(drawn.thumb).toBe(1);
+    expect(drawn.enlarged).toBe(1);
+  });
+
+  it("hides the marker only from the proven sample on (no flicker mid-leg)", () => {
+    const ctx = planeCtx(wingSamples({ attack: true, pitch: true, home: true }));
+    // t = 30: the wing is diving/turning home but the run is not yet proven,
+    // so it still marks; t = 45: proven, so it does not.
+    ctx.current.value = 30;
+    expect(countPlaneMarkers(ctx).enlarged).toBe(1);
+    ctx.current.value = 45;
+    expect(countPlaneMarkers(ctx).enlarged).toBe(0);
   });
 });

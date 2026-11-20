@@ -10,6 +10,7 @@
 import { drawShipGlyph } from "./shipGlyph";
 import { planeIconTinted } from "./planeIcons";
 import { planeTrailExpiry } from "./planeFormation";
+import { planeReturningAt } from "./planeWarfare";
 import { activeSquadronOf } from "./followTargets";
 import { sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
@@ -794,6 +795,12 @@ export function drawMinimap(
         samples[samples.length - 1].time,
         ctx.minimapTrailEnd.get(planeId),
       )) continue;
+      // Homeward-bound (post-strike) wings carry NO class marker here — and
+      // because the enlarged overlay and the exported clip's tactical board
+      // both paint through this same painter, one gate covers all three. The
+      // test is PROVEN-returning only (planeFormation.squadronReturningSince),
+      // so an unknown wing renders exactly as before.
+      if (planeReturningAt(ctx, trail, t)) continue;
       const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
       if (s == null) continue;
       drawn.add(planeId);
@@ -1265,6 +1272,9 @@ export function paintEnlargedMap(
         samples[samples.length - 1].time,
         ctx.minimapTrailEnd.get(planeId),
       )) continue;
+      // Same suppression as the thumbnail pass above: a returning wing has no
+      // formation marker on the enlarged map (or in the exported clip board).
+      if (planeReturningAt(ctx, trail, t)) continue;
       const s = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
       if (s == null) continue;
       drawn.add(planeId);

@@ -52,7 +52,13 @@ import type {
 } from "@/api";
 import type { MapInternals } from "./mapInternals";
 import { planeTrailExpiry } from "./planeFormation";
-import { buildPlaneFormations, buildPlaneTrails } from "./planeWarfare";
+import type { EntityTrajectory, PositionSample } from "@/api";
+import {
+  buildPlaneFormations,
+  buildPlaneTrails,
+  planeCardVisibleAt,
+  planeReturningAt,
+} from "./planeWarfare";
 
 /** Real plane_types.json entries (baked GameParams): PJAF408 is the
  *  attack-group-size-1 trap (count: 1), PJAF208 a size-9 airframe. */
@@ -518,5 +524,126 @@ describe("buildPlaneFormations", () => {
     expect(vi.mocked(buildPropMarker)).toHaveBeenLastCalledWith(
       expect.objectContaining({ yawOffset: 0 }),
     );
+  });
+});
+/* ── Homeward-bound (post-strike) gating readers ─────────────────────────
+ * planeReturningAt is the one join every aircraft surface shares (2D painter,
+ * label projection, marker pass); planeCardVisibleAt is the floating card's
+ * visibility, which must drop for a wing that is flying home while the
+ * MODEL keeps rendering. */
+
+const CARRIER_ID = 700;
+const T_RETURN = 45; // the leg is proven at t = 40 (planeFormation's tests)
+
+/** A parked carrier; a real CV makes ~10 m/s against the wing's ~60. */
+const carrierTrack = (): PositionSample[] =>
+  Array.from({ length: 121 }, (_, i) => ({
+    time: i,
+    entityId: CARRIER_ID,
+    vehicleId: 0,
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
+  }));
+
+/** Out at 60 m/s, a −35° dive at t 21/22, then home. */
+function sortie(planeId: number, returning: boolean): SquadronPlane[] {
+  const samples: SquadronPlane[] = [];
+  for (let t = 0; t <= 48; t++) {
+    const x = returning ? (t <= 20 ? 60 * t : t < 23 ? 1200 : 1200 - 60 * (t - 23)) : 60 * t;
+    samples.push({
+      time: t,
+      planeId,
+      index: 0,
+      x,
+      y: 20,
+      z: 0,
+      yaw: 0,
+      pitch: returning && t > 20 && t < 23 ? -35 : 0,
+    });
+  }
+  return samples;
+}
+
+/** The ctx slices the two readers consume. */
+function planeCtx(
+  sorties: Array<[planeId: number, returning: boolean]>,
+): MapInternals {
+  const ctx = makeCtx({});
+  const obj = ctx as unknown as {
+    planeTrails: { id: number; samples: SquadronPlane[] }[];
+    planeCarrierOf: Map<number, number | null>;
+    trajById: Map<number, EntityTrajectory>;
+    planeLabelOfPlane: Map<number, number>;
+  };
+  obj.planeTrails = sorties.map(([planeId, returning]) => ({
+    id: planeId * 16,
+    samples: sortie(planeId, returning),
+  }));
+  obj.planeCarrierOf = new Map(sorties.map(([planeId]) => [planeId, CARRIER_ID]));
+  obj.trajById = new Map([
+    [CARRIER_ID, { entityId: CARRIER_ID, samples: carrierTrack() } as EntityTrajectory],
+  ]);
+  obj.planeLabelOfPlane = new Map(sorties.map(([planeId]) => [planeId, 9000 + CARRIER_ID]));
+  return ctx;
+}
+
+describe("planeReturningAt", () => {
+  it("reports a proven post-strike return leg", () => {
+    const ctx = planeCtx([[41, true]]);
+    expect(planeReturningAt(ctx, ctx.planeTrails[0], 39)).toBe(false);
+    expect(planeReturningAt(ctx, ctx.planeTrails[0], T_RETURN)).toBe(true);
+  });
+
+  it("keeps a strike-bound wing rendered", () => {
+    const ctx = planeCtx([[41, false]]);
+    expect(planeReturningAt(ctx, ctx.planeTrails[0], T_RETURN)).toBe(false);
+  });
+
+  it("reads an unresolved carrier / missing trajectory as not returning", () => {
+    // Unknown must render exactly as today — never a guessed suppression.
+    expect(planeReturningAt({}, { id: 41 * 16, samples: sortie(41, true) }, T_RETURN)).toBe(false);
+    expect(
+      planeReturningAt(
+        { planeCarrierOf: new Map([[41, null]]), trajById: new Map() },
+        { id: 41 * 16, samples: sortie(41, true) },
+        T_RETURN,
+      ),
+    ).toBe(false);
+    expect(
+      planeReturningAt(
+        { planeCarrierOf: new Map([[41, CARRIER_ID]]), trajById: new Map() },
+        { id: 41 * 16, samples: sortie(41, true) },
+        T_RETURN,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("planeCardVisibleAt", () => {
+  const LABEL_ID = 9000 + CARRIER_ID;
+
+  it("hides the floating card while every sortie of the carrier is returning", () => {
+    const ctx = planeCtx([[41, true], [42, true]]);
+    expect(planeCardVisibleAt(ctx, LABEL_ID, T_RETURN)).toBe(false);
+  });
+
+  it("keeps the card while an outbound sortie is still flying", () => {
+    const ctx = planeCtx([[41, true], [42, false]]);
+    expect(planeCardVisibleAt(ctx, LABEL_ID, T_RETURN)).toBe(true);
+  });
+
+  it("keeps the card before the return is proven, and after the wing is gone", () => {
+    const ctx = planeCtx([[41, true]]);
+    expect(planeCardVisibleAt(ctx, LABEL_ID, 30)).toBe(true); // still proving
+    // Past the shared planeTrailExpiry window the card hides for the old
+    // reason (nothing airborne) — the returning gate must not resurrect it.
+    expect(planeCardVisibleAt(ctx, LABEL_ID, 100)).toBe(false);
+  });
+
+  it("ignores another carrier's sorties", () => {
+    const ctx = planeCtx([[41, true]]);
+    expect(planeCardVisibleAt(ctx, LABEL_ID + 1, T_RETURN)).toBe(false);
   });
 });

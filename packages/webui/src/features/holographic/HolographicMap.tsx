@@ -66,7 +66,10 @@ import {
   planeCameraJumpTarget,
   type RecordedCameraMode,
 } from "./cameraModes";
-import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
+import {
+  PLANE_CARD_LABEL_ID_BASE,
+  planeReturningAt,
+} from "./planeWarfare";
 import { planeTrailExpiry } from "./planeFormation";
 import {
   chaseStrength,
@@ -2670,6 +2673,9 @@ const RECORDED_DOLLY_MIN = -40;
         )) continue;
         const pose = planeSmoothPosAt(trail.id, samples, t, ctx.planeSmoothState);
         if (!pose) continue;
+        // The painter hides proven-returning wings, so the hover pick must
+        // not hit them either (a tooltip over empty water names nothing).
+        if (planeReturningAt(ctx, trail, t)) continue;
         seenPlanes.add(planeId);
         const labelId = ctx.planeLabelOfPlane.get(planeId);
         const carrierId = labelId != null ? ctx.planeLabelCarriers.get(labelId) : undefined;

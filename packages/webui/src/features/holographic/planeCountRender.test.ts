@@ -16,7 +16,8 @@ import { describe, expect, it } from "vitest";
 import * as THREE from "three";
 import type { MapInternals } from "./mapInternals";
 import { updateMarkersAt } from "./markerUpdate";
-import type { SquadronPlane } from "@/api";
+import { PLANE_CARD_LABEL_ID_BASE } from "./planeWarfare";
+import type { EntityTrajectory, PositionSample, SquadronPlane } from "@/api";
 
 const PLANE_ID = 7;
 
@@ -205,5 +206,110 @@ describe("rendered plane count follows the live flying strength", () => {
     } as MapInternals["squadronStates"];
     updateMarkersAt(ctx, 16);
     expect(pool.filter((m) => m.visible)).toHaveLength(3);
+  });
+});
+/* ── Returning (homeward-bound) wings: MODEL stays, floating card hides ──
+ * User requirement: "3d 视角下也只是有模型没悬浮标签". markerUpdate is where
+ * both halves live — the formation placement pass (planeWedge + the pool's
+ * visible flags) and the per-carrier aircraft card's visibility — so this
+ * pins the pair end to end: the tick that hides the card must still render
+ * the wedge. */
+
+const CARRIER = 700;
+const CARD_LABEL = PLANE_CARD_LABEL_ID_BASE + CARRIER;
+const T_LATE = 45; // the return leg is proven at 40 (planeFormation's tests)
+
+/** Out at 60 m/s, a −35° attack dive at t 21/22, then home. */
+function sortie(returning: boolean): SquadronPlane[] {
+  const samples: SquadronPlane[] = [];
+  for (let t = 0; t <= 48; t++) {
+    const x = returning ? (t <= 20 ? 60 * t : t < 23 ? 1200 : 1200 - 60 * (t - 23)) : 60 * t;
+    samples.push({
+      time: t,
+      planeId: PLANE_ID,
+      index: 0,
+      x,
+      y: 100,
+      z: 0,
+      yaw: 0,
+      pitch: returning && t > 20 && t < 23 ? -35 : 0,
+    });
+  }
+  return samples;
+}
+
+/** A parked carrier track (a real CV makes ~10 m/s against the wing's ~60). */
+const carrierTrack = (): PositionSample[] =>
+  Array.from({ length: 121 }, (_, i) => ({
+    time: i,
+    entityId: CARRIER,
+    vehicleId: 0,
+    x: 0,
+    y: 0,
+    z: 0,
+    yaw: 0,
+  }));
+
+/** Give the context a wing plus the carrier card that floats over it, and
+ *  return that very card object so the assertions see what the pass wrote. */
+function withCarrierCard(
+  ctx: MapInternals,
+  returning: boolean,
+): { visible: boolean } {
+  const label = {
+    entityId: CARD_LABEL,
+    kind: "plane",
+    planeType: "attack",
+    name: "Carrier",
+    shipName: "Shokaku",
+    tier: 8,
+    visible: true,
+    dead: false,
+    belowVisible: false,
+    x: 0,
+    y: 0,
+    belowX: 0,
+    belowY: 0,
+  };
+  ctx.planeTrails = [{ id: PLANE_ID * 16, samples: sortie(returning) }];
+  ctx.planeFormations = new Map([
+    [PLANE_ID, { count: 6, groupSize: 1, groupCount: 6, meshes: [] }],
+  ]);
+  ctx.shipLabels = { value: [label] } as unknown as MapInternals["shipLabels"];
+  ctx.planeLabelCarriers = new Map([[CARD_LABEL, CARRIER]]);
+  ctx.planeLabelOfPlane = new Map([[PLANE_ID, CARD_LABEL]]);
+  ctx.planeCarrierOf = new Map([[PLANE_ID, CARRIER]]);
+  ctx.trajById = new Map([
+    [CARRIER, { entityId: CARRIER, samples: carrierTrack() } as EntityTrajectory],
+  ]);
+  return label;
+}
+
+describe("returning wings keep the model and lose the floating card", () => {
+  it("hides the card while the wedge stays rendered", () => {
+    const pool = poolOf(6);
+    const ctx = makeCtx(pool);
+    const card = withCarrierCard(ctx, true);
+    updateMarkersAt(ctx, T_LATE);
+    expect(pool.filter((m) => m.visible)).toHaveLength(6); // models stay
+    expect(ctx.planeWedge.has(PLANE_ID)).toBe(true); // wedge still placed
+    expect(card.visible).toBe(false); // card hidden
+  });
+
+  it("keeps the card for a strike-bound wing", () => {
+    const pool = poolOf(6);
+    const ctx = makeCtx(pool);
+    const card = withCarrierCard(ctx, false);
+    updateMarkersAt(ctx, T_LATE);
+    expect(pool.filter((m) => m.visible)).toHaveLength(6);
+    expect(card.visible).toBe(true);
+  });
+
+  it("keeps the card while the return leg is not yet proven", () => {
+    const pool = poolOf(6);
+    const ctx = makeCtx(pool);
+    const card = withCarrierCard(ctx, true);
+    updateMarkersAt(ctx, 30);
+    expect(card.visible).toBe(true);
   });
 });

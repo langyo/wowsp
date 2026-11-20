@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { CAP_SPRITE_PX, SMOKE_SPRITE_PX } from "./screenOverlays";
 import type { SquadronPlane } from "@/api";
 import { samplesUpTo } from "./trajectoryMath";
+import { planeReturningAt } from "./planeWarfare";
 import type { MapInternals } from "./mapInternals";
 
 /** Camera distance under which the below-hull combat status rows render —
@@ -177,6 +178,11 @@ export function updateLabelPositions(ctx: MapInternals) {
       if (bestWedgePlane >= 0 && planeId !== bestWedgePlane) continue;
       const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
       if (!trail || trail.samples.length === 0) continue;
+      // Homeward-bound (post-strike) wings keep their MODEL but lose the
+      // floating card: they are never a candidate anchor (the card then rides
+      // an outbound sortie of the same carrier, or — when every sortie of the
+      // carrier is returning — markerUpdate's visibility gate hides it).
+      if (planeReturningAt(ctx, trail, ctx.current.value)) continue;
 
       // Playhead-accurate: the carrier's aircraft label must ride the sortie
       // the map is SHOWING, not the trail's end pose — the minimap merge
@@ -301,12 +307,17 @@ export function pickLabelWedgePlane(
   labelId: number,
   camPos: { x: number; y: number; z: number },
 ): number {
+  const t = ctx.current?.value ?? 0;
   let bestDist = Infinity;
   let best = -1;
   for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
     if (labelOf !== labelId) continue;
     const w = ctx.planeWedge.get(planeId);
     if (!w) continue;
+    // The model still renders, but a homeward-bound wing must not CARRY the
+    // floating card either (see updateLabelPositions' anchor scan).
+    const trail = ctx.planeTrails?.find((tr) => tr.id === planeId * 16);
+    if (trail && planeReturningAt(ctx, trail, t)) continue;
     // Wedges are world coords, the camera is scene (z mirrored).
     const d = Math.hypot(w.x - camPos.x, w.y - camPos.y, w.z + camPos.z);
     if (d < bestDist - 1e-6 || (Math.abs(d - bestDist) <= 1e-6 && planeId < best)) {
