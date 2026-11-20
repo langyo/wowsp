@@ -25,6 +25,7 @@ import {
   HkPillToggleGroup,
   HkPopupSelect,
   HkRangeRibbon,
+  HkSwitch,
 } from "@celestia-island/hikari";
 import "./HoloExportModal.scss";
 
@@ -204,6 +205,22 @@ export default defineComponent({
                 if (PLAYBACK_EXPORT_SIZES[props.settings.format].includes(s)) {
                   props.settings.size = s;
                 }
+              }}
+            />
+          </div>
+          {/* Stats band: paint the live roster's configured stat columns
+              (labels over the team averages + the first two values per
+              row), or drop the band entirely so the identity lines use the
+              full column width. Defaults to the live surface's own
+              preference (the configured column list). */}
+          <div class="holo-export__toggle">
+            <span class="holo-export__toggle-label">
+              {i18nT("replay.export.showStats")}
+            </span>
+            <HkSwitch
+              modelValue={props.settings.stats !== false}
+              onUpdate:modelValue={(v: boolean) => {
+                props.settings.stats = v;
               }}
             />
           </div>

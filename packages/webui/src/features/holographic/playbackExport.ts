@@ -64,6 +64,12 @@ export const EXPORT_TOTAL_LOGICAL = EXPORT_LOGICAL + EXPORT_SIDE_W * 2;
  *  the time from the transport bar; a clip needs it visible, and beside
  *  the chips it crowded them), then the ship-icon strip row. */
 export const EXPORT_HEADER_H = 112;
+/** The header band's corner blocks (map · mode · start time left, duration
+ *  · winner right): two small dim lines each, clear of the centre pill. */
+export const EXPORT_HEADER_CORNER_INSET = 10;
+export const EXPORT_HEADER_CORNER_CY: readonly [number, number] = [10, 28];
+export const EXPORT_HEADER_CORNER_FONTS: readonly [number, number] = [10, 9];
+export const EXPORT_HEADER_CORNER_ALPHAS: readonly [number, number] = [0.62, 0.5];
 /** Team-list portion of a side column; the rest is damage (left) or the
  *  chat log (right). */
 export const EXPORT_TEAM_H = 452;
@@ -107,6 +113,17 @@ export const EXPORT_TEAM_STAT_LABEL_SIZE = 8.5;
 /** Wide enough for the widest formatted value ("123,456" at 10px) minus
  *  the track's 2px guard; two tracks leave the identity band ~88px. */
 export const EXPORT_TEAM_STAT_TRACK_W = 40;
+/** Gap between the line-2 identity band and the stat tracks (the stats'
+ *  left guard, so a long ship name never touches a value). */
+export const EXPORT_TEAM_STAT_GAP = 6;
+/** Line 2's FIXED identity cell: class glyph + roman tier live in this
+ *  one box and its content is centered inside it, so every row's ship
+ *  name starts on the SAME x no matter how wide the tier numeral is
+ *  (26px was the report's example; the shipped face needs 36 to hold the
+ *  12px glyph and "VIII" at 11px — the tier shrinks to fit the rest). */
+export const EXPORT_TEAM_ID_CELL_W = 36;
+/** Gap inside that cell (glyph → tier) and after it (cell → ship name). */
+export const EXPORT_TEAM_ID_GAP = 4;
 /** How many of the user's configured stats params a team column shows:
  *  the FIRST TWO, in the stats config's own order (the live full mode's
  *  order and formatters, trimmed to the clip's width budget). */
@@ -115,10 +132,44 @@ export const EXPORT_TEAM_STAT_COLS = 2;
 export const EXPORT_TEAM_INSET_X = 8;
 
 /** How many entries fit one side's roster area (12 with the shipped
- *  metrics - the layout's own capacity, not the row cap). */
+ *  metrics - the layout's own capacity, not the row cap). The stats band
+ *  is HORIZONTAL only: turning it off widens the identity band but never
+ *  changes the entry pitch, so the capacity (and therefore the 452px
+ *  budget) holds identically with the stat band at zero width. */
 export function teamEntryCapacity(available = EXPORT_TEAM_H): number {
   const forRows = available - EXPORT_TEAM_INSET - EXPORT_TEAM_HEADER_H;
   return Math.max(0, Math.floor(forRows / EXPORT_TEAM_ENTRY_H));
+}
+
+/** Width of the right-hand stat band for the columns actually painted
+ *  under EXPORT_TEAM_STAT_COLS. Zero when the stats toggle is off - the
+ *  identity band then runs to the column's right inset. */
+export function teamStatBandWidth(columns: readonly unknown[]): number {
+  return visibleTeamStats(columns).length * EXPORT_TEAM_STAT_TRACK_W;
+}
+
+/** Line 2's fixed identity cell geometry: the class glyph and the roman
+ *  tier ride ONE cell and their group is centered inside it, so the ship
+ *  name after the cell starts on the SAME x on every row. A tier that
+ *  out-measures the cell shrinks first (the caller fits it against the
+ *  cell's remaining width); a content group narrower than the cell
+ *  centers, a full one starts flush left (never a negative offset). */
+export function teamIdentityCell(
+  cellX: number,
+  cellW: number,
+  iconSize: number,
+  gap: number,
+  tierW: number,
+  hasIcon: boolean,
+): { iconX: number; tierX: number; contentW: number } {
+  const contentW =
+    (hasIcon ? iconSize : 0) + (tierW > 0 ? (hasIcon ? gap : 0) + tierW : 0);
+  const cx = cellX + Math.max(0, (cellW - contentW) / 2);
+  return {
+    iconX: cx,
+    tierX: cx + (hasIcon ? iconSize + gap : 0),
+    contentW,
+  };
 }
 
 /** The first `EXPORT_TEAM_STAT_COLS` entries of a configured column list -
@@ -158,6 +209,11 @@ export interface PlaybackExportSettings {
   size: number;
   /** Burn the WoWSP share-shot footer band. */
   footer: boolean;
+  /** Paint the live roster's configured stat columns (labels + team
+   *  averages + the first two values per row). Off = no stat band at
+   *  all: entries take the full column width and the clip never pays the
+   *  roster-stats lookup. */
+  stats: boolean;
 }
 
 /** Frame-rate ladders per format: GIF stays coarse (size explodes fast). */
@@ -371,6 +427,15 @@ export interface PlaybackHeaderData {
   caps: PlaybackCapChip[];
   /** Strip slots, allies first then enemies (the scorebar's own order). */
   ships: PlaybackShipSlot[];
+  /** Top-LEFT corner block, up to two small dim lines: map name · mode on
+   *  the first, the real-world battle start time on the second. The words
+   *  are the caller's (localized); the canvas only paints them. Empty /
+   *  omitted = nothing painted. */
+  infoLines?: readonly string[];
+  /** Top-RIGHT corner block, up to two small dim lines: the replay's
+   *  total in-game duration on the first, the winner verdict on the
+   *  second (omitted when the payload carries no verdict). */
+  outcomeLines?: readonly string[];
 }
 
 /** Ship-class HUD icon variant for a strip slot (the scorebar's direction
@@ -697,6 +762,33 @@ export function drawPlaybackHeader(
   g.fillStyle = rgba(palette.text, 0.92);
   g.textAlign = "center";
   g.fillText(data.clock, w / 2, clockCy);
+  // ── Corner blocks: the map/mode/start-time identity on the LEFT, the
+  //    total duration + winner verdict on the RIGHT. Two small dim lines
+  //    each, sized to the gap between the frame edge and the pill so they
+  //    can never run under it (the pill keeps the centre). ─────────────
+  const cornerInset = EXPORT_HEADER_CORNER_INSET;
+  const leftMax = Math.max(0, pillX - cornerInset * 2);
+  const rightMax = Math.max(0, w - (pillX + pillW) - cornerInset * 2);
+  const drawCorner = (
+    lines: readonly string[] | undefined,
+    align: "left" | "right",
+    maxW: number,
+  ): void => {
+    if (!lines || lines.length === 0 || maxW <= 4) return;
+    g.textAlign = align;
+    lines.slice(0, 2).forEach((line, i) => {
+      if (!line) return;
+      g.font = font(EXPORT_HEADER_CORNER_FONTS[i], i === 0 ? 600 : 400);
+      g.fillStyle = rgba(palette.text, EXPORT_HEADER_CORNER_ALPHAS[i]);
+      g.fillText(
+        ellipsize(g, line, maxW),
+        align === "left" ? cornerInset : w - cornerInset,
+        EXPORT_HEADER_CORNER_CY[i],
+      );
+    });
+  };
+  drawCorner(data.infoLines, "left", leftMax);
+  drawCorner(data.outcomeLines, "right", rightMax);
   // ── Ship-icon strip row (the scorebar’s __ships) ───────────────
   const stripTop = pillY + pillH + 24;
   g.fillStyle = rgba(palette.text, 0.12);
@@ -781,13 +873,20 @@ function drawColumnBase(
  *  on canvas - a two-line header (the configured column labels over the
  *  team averages) above up to 12 three-line entries:
  *
- *    [nick] [medal] [medal]        <- ONE fixed name size, centered
- *      (class glyph) VIII 雷电  52.3% 1450   <- centered identity, stats right
+ *    [nick] [medal] [medal]        <- ONE fixed name size, LEFT at the inset
+ *      (glyph) VIII | 雷电 52.3% 1450 <- fixed cell + left ship, stats right
  *    =====================================    <- slim full-width HP bar
  *
- *  The line-2 identity centers inside the band left of the stat tracks,
- *  the first two configured stats hug the column's right edge (the live
- *  head's own columns), and dead rows dim exactly as before.
+ *  Everything identity-shaped is LEFT-aligned (the 2026-11-21 report:
+ *  centered groups made the nick/ship columns read ragged): the nick
+ *  starts at the column's left inset with its seals after it, and line 2
+ *  starts with a FIXED-WIDTH cell whose class-glyph + roman-tier content
+ *  centers inside that cell, so every ship name begins on the same x.
+ *  The first two configured stat columns keep their fixed 40px tracks -
+ *  values right-aligned inside a track, header labels centered OVER the
+ *  same track (the live head's own columns). With `showStats` off the
+ *  stat band disappears entirely: no labels, no averages, no values, and
+ *  the identity band runs to the column's right inset.
  *
  *  Exported for the layout tests, which drive it with a recording 2D
  *  context (canvas-free). */
@@ -806,14 +905,20 @@ export function drawPlaybackTeamColumn(
     shipType: string | null,
     variant: PlaybackIconVariant,
   ) => HTMLImageElement | null,
+  showStats = true,
 ): void {
   g.textBaseline = "middle";
-  const columns = visibleTeamStats(side.columns);
-  const statBandW = columns.length * EXPORT_TEAM_STAT_TRACK_W;
+  const columns = showStats ? visibleTeamStats(side.columns) : [];
+  const statBandW = teamStatBandWidth(columns);
   const inset = EXPORT_TEAM_INSET_X;
   const right = x + w - inset;
+  // Left edge of the stat band; with the band off this is the column's
+  // right inset (the identity band then owns the whole width).
+  const statsLeft = right - statBandW;
+  const bandRight = statBandW > 0 ? statsLeft - EXPORT_TEAM_STAT_GAP : right;
   // Header row 1: side dot + name + alive count on the left, the column
-  // labels right-aligned over their own tracks (the live head's layout).
+  // labels CENTERED over their own tracks (the values underneath stay
+  // right-aligned inside those same tracks).
   g.fillStyle = rgba(ink, 0.95);
   g.beginPath();
   g.arc(x + 10, y + EXPORT_TEAM_HEADER_TITLE_CY, 3.6, 0, Math.PI * 2);
@@ -832,42 +937,45 @@ export function drawPlaybackTeamColumn(
     y + EXPORT_TEAM_HEADER_TITLE_CY,
   );
   g.font = font(EXPORT_TEAM_STAT_LABEL_SIZE, 400);
-  g.textAlign = "right";
+  g.textAlign = "center";
   columns.forEach((col, i) => {
-    const cx = right - (columns.length - 1 - i) * EXPORT_TEAM_STAT_TRACK_W;
     g.fillStyle = rgba(palette.text, 0.5);
     g.fillText(
       ellipsize(g, col.label, EXPORT_TEAM_STAT_TRACK_W - 2),
-      cx,
+      statsLeft + (i + 0.5) * EXPORT_TEAM_STAT_TRACK_W,
       y + EXPORT_TEAM_HEADER_TITLE_CY,
     );
   });
   // Header row 2: the team averages under their own columns - captioned
-  // so they cannot be misread as one player's numbers.
-  g.textAlign = "left";
-  g.font = font(EXPORT_TEAM_STAT_LABEL_SIZE, 400);
-  g.fillStyle = rgba(palette.text, 0.42);
-  g.fillText(
-    ellipsize(g, columns.length > 0 ? labels.teamAvg : labels.noStats, w - inset * 2),
-    x + 10,
-    y + EXPORT_TEAM_HEADER_STAT_CY,
-  );
-  g.textAlign = "right";
-  g.font = font(EXPORT_TEAM_STAT_TEXT_SIZE, 700);
-  columns.forEach((col, i) => {
-    const cx = right - (columns.length - 1 - i) * EXPORT_TEAM_STAT_TRACK_W;
-    // A dash cell keeps the live head's muted gray (a bright dash reads
-    // as a value).
-    g.fillStyle =
-      col.color ?? (col.text === "—"
-        ? rgba(palette.text, 0.45)
-        : rgba(palette.text, 0.88));
+  // so they cannot be misread as one player's numbers. The caption rides
+  // the column's left inset; every average stays right-aligned INSIDE its
+  // track exactly like the row values below (the toggle-off layout paints
+  // no label/average row at all).
+  if (showStats) {
+    g.textAlign = "left";
+    g.font = font(EXPORT_TEAM_STAT_LABEL_SIZE, 400);
+    g.fillStyle = rgba(palette.text, 0.42);
     g.fillText(
-      ellipsize(g, col.text, EXPORT_TEAM_STAT_TRACK_W - 2),
-      cx,
+      ellipsize(g, columns.length > 0 ? labels.teamAvg : labels.noStats, w - inset * 2),
+      x + inset,
       y + EXPORT_TEAM_HEADER_STAT_CY,
     );
-  });
+    g.textAlign = "right";
+    g.font = font(EXPORT_TEAM_STAT_TEXT_SIZE, 700);
+    columns.forEach((col, i) => {
+      // A dash cell keeps the live head's muted gray (a bright dash reads
+      // as a value).
+      g.fillStyle =
+        col.color ?? (col.text === "—"
+          ? rgba(palette.text, 0.45)
+          : rgba(palette.text, 0.88));
+      g.fillText(
+        ellipsize(g, col.text, EXPORT_TEAM_STAT_TRACK_W - 2),
+        statsLeft + (i + 1) * EXPORT_TEAM_STAT_TRACK_W,
+        y + EXPORT_TEAM_HEADER_STAT_CY,
+      );
+    });
+  }
   // Entries: the header band, then one fixed-pitch entry each.
   const listTop = y + EXPORT_TEAM_HEADER_H;
   const count = Math.min(
@@ -880,10 +988,12 @@ export function drawPlaybackTeamColumn(
     const dim = row.dead ? 0.35 : 1;
     const cy1 = ry + EXPORT_TEAM_NAME_CY;
     const cy2 = ry + EXPORT_TEAM_SHIP_CY;
-    // Line 1: the clan-tagged nick plus the seal TAGS (StampTag's small
-    // face redrawn: cinnabar wording in a rounded border, scaled down to
-    // the entry band), ONE centered group at the column's fixed name size
-    // (never per-name shrink).
+    // Line 1: the clan-tagged nick starts at the column's LEFT inset (the
+    // 2026-11-21 「全体左对齐」 report - the centered group read ragged),
+    // the seal TAGS (StampTag's small face redrawn: cinnabar wording in a
+    // rounded border, scaled down to the entry band) following right
+    // after it, still capped at three. ONE fixed name size (never
+    // per-name shrink).
     const medals = (row.medals ?? []).slice(0, 3);
     const tagWs = medals.map((label) => sealTagWidth(g, label) * EXPORT_TEAM_MEDAL_TAG_SCALE);
     const medalW =
@@ -902,8 +1012,7 @@ export function drawPlaybackTeamColumn(
     );
     g.font = font(nameFit.size, 700);
     const nameW = Math.min(g.measureText(nameFit.text).width, nameMaxW);
-    const groupW = nameW + medalW;
-    const gx = x + Math.max(inset, (w - groupW) / 2);
+    const gx = x + inset;
     g.textAlign = "left";
     // Names read as ordinary text (white on the dark clip), NOT team
     // colours - the HP bar and side title already carry the team.
@@ -923,20 +1032,36 @@ export function drawPlaybackTeamColumn(
       });
       g.restore();
     }
-    // Line 2: class glyph + roman tier + ship name, centered in the band
-    // left of the stat tracks; the first two stats hug the right edge.
-    const identityMaxW = Math.max(
-      44,
-      w - inset * 2 - statBandW - (statBandW > 0 ? 6 : 0),
-    );
+    // Line 2: a FIXED-WIDTH identity cell (class glyph + roman tier, the
+    // content centered INSIDE the cell) then the ship name, LEFT-aligned
+    // right after it. The cell keeps every ship name on the same x even
+    // when the tier numeral is wide; the name shrinks/ellipsizes before
+    // the stat tracks. With the stats toggle off, `bandRight` is the
+    // column's right inset, so the identity band owns the full width.
+    const cellX = x + inset;
     const iconSize = 12;
     const tier = row.tier ?? "";
-    g.font = font(EXPORT_TEAM_SHIP_SIZE, 700);
-    const tierW = tier !== "" ? g.measureText(tier).width : 0;
-    const shipMaxW = Math.max(
-      20,
-      identityMaxW - iconSize - 4 - (tierW > 0 ? tierW + 3 : 0),
-    );
+    const cellGap = EXPORT_TEAM_ID_GAP;
+    // The tier shrinks to the cell's remaining width first, so the fixed
+    // cell can always center its content (a one-char numeral keeps size).
+    const tierMaxW = Math.max(0, EXPORT_TEAM_ID_CELL_W - iconSize - cellGap);
+    const tierSize =
+      tier !== ""
+        ? fitShrinkSize(
+            (text, size) => {
+              g.font = font(size, 700);
+              return g.measureText(text).width;
+            },
+            tier,
+            tierMaxW,
+            EXPORT_TEAM_SHIP_SIZE,
+            8,
+          )
+        : EXPORT_TEAM_SHIP_SIZE;
+    g.font = font(tierSize, 700);
+    const tierW = tier !== "" ? Math.min(g.measureText(tier).width, tierMaxW) : 0;
+    const shipX = cellX + EXPORT_TEAM_ID_CELL_W + cellGap;
+    const shipMaxW = Math.max(20, bandRight - shipX);
     // Line 2 keeps the shrink-to-fit rule (fitShrinkSize + ellipsize): the
     // ONE slot allowed to shrink (a long ship
     // name ellipsizes at the floor rather than painting over the stats).
@@ -949,21 +1074,20 @@ export function drawPlaybackTeamColumn(
       shipMaxW,
       EXPORT_TEAM_SHIP_SIZE,
     );
-    g.font = font(shipSize, 400);
-    const shipW = Math.min(g.measureText(row.shipName).width, shipMaxW);
-    const idW = iconSize + 4 + (tierW > 0 ? tierW + 3 : 0) + shipW;
-    // Line 2 shares the nick line's center — the COLUMN — clamped so a
-    // long ship name stops short of the stat tracks instead of sliding
-    // into the identity band's smaller center.
-    const statsLeft = x + w - statBandW - (statBandW > 0 ? 6 : 0);
-    let ix = x + (w - idW) / 2;
-    ix = Math.max(x + inset, Math.min(ix, statsLeft - idW));
     const variant: PlaybackIconVariant = row.dead
       ? role === "enemy"
         ? "sunk-enemy"
         : "sunk"
       : role;
     const icon = shipIconFor(row.shipType ?? null, variant);
+    const cell = teamIdentityCell(
+      cellX,
+      EXPORT_TEAM_ID_CELL_W,
+      iconSize,
+      cellGap,
+      tierW,
+      icon != null,
+    );
     if (icon) {
       g.save();
       g.globalAlpha = dim;
@@ -974,32 +1098,30 @@ export function drawPlaybackTeamColumn(
       const fit = Math.min(iconSize / natW, iconSize / natH);
       const dw = natW * fit;
       const dh = natH * fit;
-      g.drawImage(icon, ix + (iconSize - dw) / 2, cy2 - dh / 2, dw, dh);
+      g.drawImage(icon, cell.iconX + (iconSize - dw) / 2, cy2 - dh / 2, dw, dh);
       g.restore();
     }
-    ix += iconSize + 4;
     if (tierW > 0) {
-      g.font = font(EXPORT_TEAM_SHIP_SIZE, 700);
+      g.font = font(tierSize, 700);
       g.fillStyle = rgba(palette.text, 0.82 * dim);
       g.textAlign = "left";
-      g.fillText(tier, ix, cy2);
-      ix += tierW + 3;
+      g.fillText(ellipsize(g, tier, tierMaxW), cell.tierX, cy2);
     }
     g.font = font(shipSize, 400);
     g.fillStyle = rgba(palette.text, 0.62 * dim);
     g.textAlign = "left";
-    g.fillText(ellipsize(g, row.shipName, shipMaxW), ix, cy2);
-    const stats = visibleTeamStats(row.stats ?? []);
+    g.fillText(ellipsize(g, row.shipName, shipMaxW), shipX, cy2);
+    const stats = showStats ? visibleTeamStats(row.stats ?? []) : [];
     g.font = font(EXPORT_TEAM_STAT_TEXT_SIZE, 700);
     g.textAlign = "right";
     stats.forEach((stat, si) => {
-      const cx = right - (stats.length - 1 - si) * EXPORT_TEAM_STAT_TRACK_W;
+      // Values stay RIGHT-aligned inside their own 40px track.
       g.save();
       g.globalAlpha = dim;
       g.fillStyle = stat.color ?? rgba(palette.text, 0.82);
       g.fillText(
         ellipsize(g, stat.text, EXPORT_TEAM_STAT_TRACK_W - 2),
-        cx,
+        statsLeft + (si + 1) * EXPORT_TEAM_STAT_TRACK_W,
         cy2,
       );
       g.restore();
@@ -1191,6 +1313,9 @@ export interface PlaybackExportRequest {
   paintMap: (t: number, g: CanvasRenderingContext2D) => void;
   /** Panel/header word bundle (caller i18n's every word). */
   panelLabels: PlaybackPanelLabels;
+  /** Paint the team columns' stat band (labels + averages + values).
+   *  False = no stat tracks anywhere in the clip. */
+  showStats: boolean;
   onProgress?: (done: number, total: number) => void;
   /** Coarse phase for the progress card: frames vs the encoder/muxer
    *  flush (the latter reports no percentage — the card goes
@@ -1272,6 +1397,7 @@ function composeFrame(
     req.palette,
     req.panelLabels,
     req.shipIconFor,
+    req.showStats,
   );
   if (recorder) {
     drawRecorderPanel(ctx, 0, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, recorder, req.palette, {
@@ -1293,6 +1419,7 @@ function composeFrame(
     req.palette,
     req.panelLabels,
     req.shipIconFor,
+    req.showStats,
   );
   drawChatPanel(ctx, colRight, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, colH - EXPORT_TEAM_H - 16, chat, req.palette, req.panelLabels.chat);
   ctx.restore();

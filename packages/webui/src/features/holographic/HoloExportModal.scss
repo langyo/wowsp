@@ -54,6 +54,21 @@
     color: rgb(var(--color-muted));
   }
 
+  /* Stats band switch: label left, hikari switch right, one calm row. */
+  &__toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem;
+    font-size: var(--text-xs);
+    color: rgb(var(--color-muted));
+  }
+
+  &__toggle-label {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+
   /* fps · speed · resolution — three equal columns on ONE row. */
   &__params {
     display: grid;

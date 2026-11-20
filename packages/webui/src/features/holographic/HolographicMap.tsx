@@ -223,6 +223,10 @@ import { shipTierOf } from "@/utils/shipClass";
 import { useLanguage } from "@/i18n/useLanguage";
 import { splitRosterSides } from "@/utils/rosterSides";
 import { isScriptedUnitName } from "@/utils/aiNames";
+import { hasSingleTeamRoster, modeKey } from "@/utils/modeColors";
+import { modeLabelOfKey } from "@/features/replay/ReplayListFilter";
+import { displayMapName } from "@/utils/mapNames";
+import { useReplayStore } from "@/stores/replay";
 import planeIcon from "./planeIcons";
 import { shipIconUrl, shipTypeClass } from "./shipIcons";
 import {
@@ -301,6 +305,26 @@ export interface HoloMapHandle {
   seek: (t: number) => void;
   /** Chase the given ship with the 3D camera (`null` = free orbit). */
   focusEntity: (entityId: number | null, options?: HoloFocusOptions) => void;
+}
+
+/** Upper bound on how long an export waits for the replay's one-shot
+ *  roster-stats batch before its first frame. The batch resolves only when
+ *  the WHOLE roster (and any per-ship lists the configured columns need)
+ *  has answered, which a cold replay view can take well past the old 5 s
+ *  poll; a provider that never answers must still not strand the take, so
+ *  the await is raced against this and the clip keeps its honest dashes. */
+const EXPORT_STATS_WAIT_MS = 20_000;
+
+/** Format the replay header's `YYYYMMDD[_HHMMSS]` date-time as the clip
+ *  header's "YYYY-MM-DD HH:MM" start stamp. Returns null when the field is
+ *  absent or unparseable (the clip then omits the line instead of printing
+ *  a raw filename fragment). Same rendering as the replay list card's
+ *  timestamp (ReplayView.formatDateTime, which is page-scoped). */
+function replayStampLabel(dt: string | null): string | null {
+  if (!dt) return null;
+  const m = dt.match(/^(\d{4})(\d{2})(\d{2})(?:_(\d{2})(\d{2})\d{2})?$/);
+  if (!m) return null;
+  return `${m[1]}-${m[2]}-${m[3]}${m[4] ? ` ${m[4]}:${m[5]}` : ""}`;
 }
 
 export default defineComponent({
@@ -1341,30 +1365,59 @@ const RECORDED_DOLLY_MIN = -40;
       }
       return m;
     }
-    /** Career stats for the strip tooltip and the Tab scoreboard's clan
-     *  tags — one WG batch per replay, armed lazily by the first strip
-     *  hover or Tab hold (nobody pays for stats they never look at). */
+    /** Career stats for the strip tooltip, the Tab scoreboard's clan tags
+     *  AND the export clip's team columns — one WG batch per replay, armed
+     *  lazily by the first strip hover / Tab hold (nobody pays for stats
+     *  they never look at) and by the export job. */
     const nameStats = ref<Map<string, RosterStat>>(new Map());
     const nameStatsLoading = ref(false);
     let nameStatsLoadedFor = "";
+    /** The in-flight one-shot fetch (and the replay it belongs to) so the
+     *  export job can AWAIT the real answer instead of racing a timer. */
+    let nameStatsInFlight: { path: string; promise: Promise<void> } | null = null;
     const markers = useMarkersStore();
     void markers.ensureLoaded();
-    function ensureRosterStats(): void {
-      if (nameStatsLoadedFor === props.replayPath) return;
+    /** Arm (and return) the replay's roster-stats batch.
+     *
+     *  The 2026-11-21 「战绩没加载出来」 report: the export job used to arm
+     *  this and poll `nameStatsLoading` for at most 5 s. A cold replay view
+     *  (the live panel never mounts, so the batch, its queue lane and any
+     *  per-ship lists are all cold) routinely needs longer than that — and
+     *  because the latch below is set BEFORE the fetch, the take froze
+     *  every row as "—" and no later attempt ever refetched. Two defects,
+     *  both fixed here: the caller can await the actual promise, and a
+     *  FAILED fetch clears the latch so the next attempt retries instead
+     *  of poisoning the replay for the rest of the session. */
+    function ensureRosterStats(): Promise<void> {
+      const path = props.replayPath;
+      if (nameStatsInFlight?.path === path) return nameStatsInFlight.promise;
+      if (nameStatsLoadedFor === path) return Promise.resolve();
       const names = [...new Set(props.vehicles.map((v) => v.name))].filter(
         (n) => !AI_NAME.test(n),
       );
-      if (names.length === 0 || !props.realm) return;
-      const path = props.replayPath;
+      if (names.length === 0 || !props.realm) return Promise.resolve();
       nameStatsLoadedFor = path;
       nameStatsLoading.value = true;
-      fetchRosterStatsByNames(names, props.realm)
+      const promise = fetchRosterStatsByNames(names, props.realm)
         .then((m) => {
           if (nameStatsLoadedFor === path) nameStats.value = m;
         })
+        .catch(() => {
+          // A transient provider/queue failure must not pin this replay to
+          // an empty map forever: drop the latch so the next arm refetches
+          // (the clip then keeps its honest dashes for this take).
+          if (nameStatsLoadedFor === path) nameStatsLoadedFor = "";
+        })
         .finally(() => {
-          if (nameStatsLoadedFor === path) nameStatsLoading.value = false;
+          // Only THIS replay's slot retires; a newer replay's fetch owns
+          // the flag by then.
+          if (nameStatsInFlight?.path === path) {
+            nameStatsInFlight = null;
+            nameStatsLoading.value = false;
+          }
         });
+      nameStatsInFlight = { path, promise };
+      return promise;
     }
     // ── Team-column feed (the live roster's FULL mode on the clip) ─────
     // The clip's side columns rebuild what the live battle roster shows:
@@ -1375,6 +1428,22 @@ const RECORDED_DOLLY_MIN = -40;
     // batch). Nothing here invents its own numbers or labels.
     const statsPrefs = useStatsPrefsStore();
     const { uiLocale, dataLanguage } = useLanguage();
+    /** The open replay's own descriptor — the clip header's corner needs
+     *  its recorded date-time (the file header's field the rail's cards
+     *  show), which HolographicMap does not receive as a prop. The parsed
+     *  `current` entry is the authoritative one for the open file; the
+     *  rail lists (scanned + externally picked) cover a header still in
+     *  flight. Absent = the corner omits its start-time line. */
+    const replayStore = useReplayStore();
+    const recordedStamp = computed<string | null>(() => {
+      const path = props.replayPath;
+      const cur = replayStore.current;
+      const entry =
+        cur && cur.path === path
+          ? cur
+          : [...replayStore.list, ...replayStore.external].find((r) => r.path === path);
+      return entry?.dateTime ?? null;
+    });
     /** Composition-seal verdicts for the clip's medals — the SAME batch
      *  command the live roster rides (one process-lifetime backend cache,
      *  so a clip costs no extra WG request once the panel asked). Filled
@@ -1550,6 +1619,7 @@ const RECORDED_DOLLY_MIN = -40;
      *  fields the render loop re-reads per frame. */
     const playbackRowBase = (
       r: ShipRowEntry,
+      statsOn = true,
     ): Omit<PlaybackTeamRow, "hpFrac" | "dead"> => {
       const v = r.vehicle;
       const st = nameStats.value.get(v.name);
@@ -1564,8 +1634,10 @@ const RECORDED_DOLLY_MIN = -40;
           i18nT("replay.live.unknownShip"),
         tier: tierRoman(v.shipId != null ? shipTierOf(v.shipId) : null),
         shipType: r.type,
-        medals: medalsOf(v.name, st),
-        stats: statCellsOf(st, v.shipId),
+        // Stats toggle off: no seal verdicts (they grade stats) and no
+        // cells — the identity band owns the row.
+        medals: statsOn ? medalsOf(v.name, st) : [],
+        stats: statsOn ? statCellsOf(st, v.shipId) : [],
       };
     };
 
@@ -3567,6 +3639,12 @@ const RECORDED_DOLLY_MIN = -40;
       speed: 5,
       size: 1440,
       footer: true,
+      // The clip's stats default follows the LIVE surface: with every stat
+      // column removed (or PR off and nothing else configured) the roster
+      // paints none, so the clip starts with the band off too. No dedicated
+      // "show stats" pref exists in statsPrefs; the column list IS the
+      // user's live preference.
+      stats: rosterColumns().length > 0,
     });
     /** The shell-persisted export folder (null on hosts without the
      *  native surface — the row hides and the save dialog handles it). */
@@ -3652,13 +3730,21 @@ const RECORDED_DOLLY_MIN = -40;
       exportPhase.value = "render";
       exporting.value = true;
       exportCancel.cancelled = false;
-      // Clan tags ride the lazily-armed roster-stats fetch — arm it now
-      // and give it a short window to land before the first frame (a
-      // fresh session has no tags yet); a slow fetch just starts the
-      // take tag-less, never blocks long.
-      ensureRosterStats();
-      for (let i = 0; i < 50 && nameStatsLoading.value; i++) {
-        await new Promise((r) => setTimeout(r, 100));
+      // The team columns (clan tags, seals, the stat cells and the header
+      // averages) ride the lazily-armed roster-stats batch. AWAIT the real
+      // promise — the old 5 s poll raced the batch and froze every row
+      // dashed on a cold replay view (the 2026-11-21 「战绩没加载出来」
+      // report); the latch made it permanent. The wait is bounded so a
+      // hung provider can never strand the take before its first frame;
+      // on timeout/rejection the clip keeps the honest dashes.
+      const statsOn = s.stats !== false;
+      if (statsOn) {
+        await Promise.race([
+          ensureRosterStats(),
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, EXPORT_STATS_WAIT_MS);
+          }),
+        ]);
       }
       // Chat senders tint by roster side — the side lookup is per replay,
       // built once here (vehicles never change mid-export).
@@ -3711,23 +3797,29 @@ const RECORDED_DOLLY_MIN = -40;
           shipIconMap.get(`${variant}:${shipTypeClass(shipType) || "battleship"}`) ?? null;
         // ── Team-column feed: the live roster full mode's medals ────────
         // The medal feed (compositions) warms when the export modal opens;
-        // this await is then a no-op re-read of a warm cache.
-        await warmExportMedalFeed();
+        // this await is then a no-op re-read of a warm cache. With the
+        // stats toggle off there are no seals to grade (every seal verdict
+        // is stats-derived), so the lookup is skipped entirely.
+        if (statsOn) await warmExportMedalFeed();
         // Freeze the roster feed for the take: the players, their stats,
         // medals and the header columns cannot change inside one export,
         // so they resolve ONCE here; only the HP fraction and the dead
-        // flag (playhead-derived) are re-read per frame.
+        // flag (playhead-derived) are re-read per frame. With the stats
+        // toggle OFF the whole column/aggregate pipeline is skipped — no
+        // rosterColumns()/aggregateTeamStats work, no stat cells.
         const frozenRows = new Map<
           number,
           Omit<PlaybackTeamRow, "hpFrac" | "dead">
         >();
         for (const r of [...shipRows.value.allies, ...shipRows.value.enemies]) {
-          frozenRows.set(r.vehicle.id, playbackRowBase(r));
+          frozenRows.set(r.vehicle.id, playbackRowBase(r, statsOn));
         }
-        const frozenColumns = {
-          allies: playbackHeaderColumns(shipRows.value.allies),
-          enemies: playbackHeaderColumns(shipRows.value.enemies),
-        };
+        const frozenColumns = statsOn
+          ? {
+              allies: playbackHeaderColumns(shipRows.value.allies),
+              enemies: playbackHeaderColumns(shipRows.value.enemies),
+            }
+          : { allies: [], enemies: [] };
         const sideOf = (
           entries: ShipRowEntry[],
           columns: readonly PlaybackTeamStatColumn[],
@@ -3746,12 +3838,72 @@ const RECORDED_DOLLY_MIN = -40;
               dead: r.dead,
             })),
         });
+        // ── Header corners (the 2026-11-21 request) ─────────────────
+        // LEFT: map display name · localized battle mode, then the replay's
+        // real-world start time. RIGHT: the replay's total in-game duration
+        // and the post-battle winner verdict. Every word is the app's own
+        // (displayMapName / modeLabelOfKey / i18n); a missing source drops
+        // its line rather than printing a guess.
+        const rosterNames = props.vehicles.map((v) => v.name);
+        const modeText = modeLabelOfKey(
+          modeKey(
+            props.matchGroup,
+            undefined,
+            undefined,
+            rosterNames.filter((n) => AI_NAME.test(n)).length,
+            rosterNames.filter((n) => isScriptedUnitName(n)).length,
+            hasSingleTeamRoster(props.vehicles),
+          ),
+        );
+        const mapText = displayMapName(props.mapName || props.mapId, dataLanguage.value);
+        const startText = replayStampLabel(recordedStamp.value);
+        // Winner: the post-battle payload's `commonList[3]` is the winning
+        // SIDE (0/1) — the exact field the local battle ledger reads
+        // (api/modules/localBattles.ts:33). parsePostBattle does not expose
+        // commonList, so read that one field off the raw document; the
+        // recorder's own side comes from their playersPublicInfo row. A
+        // draw / undecodable layout answers null and the line is omitted
+        // rather than guessed.
+        let winnerTeam: 0 | 1 | null = null;
+        try {
+          const common = (
+            JSON.parse(props.battleResults ?? "null") as {
+              commonList?: unknown[];
+            } | null
+          )?.commonList;
+          const w = Array.isArray(common) ? common[3] : null;
+          if (w === 0 || w === 1) winnerTeam = w;
+        } catch {
+          // Undecodable payload — no verdict line.
+        }
+        const pb = pbData.value;
+        const selfTeam =
+          pb?.selfId != null
+            ? (pb.players.find((p) => p.accountId === pb.selfId)?.team ?? null)
+            : null;
+        const winnerText =
+          winnerTeam != null && selfTeam != null
+            ? i18nT(
+                winnerTeam === selfTeam
+                  ? "replay.export.allyVictory"
+                  : "replay.export.enemyVictory",
+              )
+            : null;
+        const infoLines = [
+          [mapText, modeText].filter((part) => part !== "").join(" · "),
+          startText ?? "",
+        ].filter((line) => line !== "");
+        const outcomeLines = [
+          `${i18nT("replay.export.duration")} ${formatBattleClock(duration.value).slice(2)}`,
+          winnerText ?? "",
+        ].filter((line) => line !== "");
         const result = await renderPlaybackExport({
           format: s.format,
           fps: s.fps,
           times,
           targetWidth: s.size,
           footer: s.footer,
+          showStats: statsOn,
           palette,
           footerStrings,
           logo,
@@ -3791,6 +3943,9 @@ const RECORDED_DOLLY_MIN = -40;
                     ? Math.max(0, Math.min(1, sh.hp / sh.maxHp))
                     : null,
               })),
+              // Time-invariant corner blocks (built once above).
+              infoLines,
+              outcomeLines,
             };
           },
           shipIconFor,
