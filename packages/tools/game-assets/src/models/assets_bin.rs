@@ -150,7 +150,7 @@ impl<'a> PrototypeDatabase<'a> {
         let type_tag = (value & 0xFF) as usize;
         let record_index = (value >> 8) as usize;
 
-        if !type_tag.is_multiple_of(4) {
+        if type_tag % 4 != 0 {
             return Err(Report::new(AssetsBinError::ParseError(format!(
                 "r2p value 0x{value:08X}: low byte 0x{type_tag:02X} is not a multiple of 4"
             ))));

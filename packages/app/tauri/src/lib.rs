@@ -2,7 +2,7 @@
 //!
 //! The shell owns no business logic of its own — every capability the webui
 //! needs is exposed as a `#[tauri::command]` in `commands/`, and the webui
-//! reaches it through the `@wowsp/shared_ui` transport (see
+//! reaches it through its transport layer (see
 //! `packages/webui/src/transport/`). This mirrors the shittim-chest pattern:
 //! Rust holds the privileged operations (registry reads, screen capture, file
 //! polling), the webview holds presentation.

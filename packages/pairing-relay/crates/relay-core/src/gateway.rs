@@ -1088,7 +1088,7 @@ mod tests {
         }
         let row = auth.password_row(IP).unwrap().clone();
         assert_eq!(row.dead_at(), Some(T0 + PASSWORD_LOCK_MS));
-        assert_eq!(row.is_empty(), false);
+        assert!(!row.is_empty());
         assert_eq!(
             auth.sweep(T0 + PASSWORD_WINDOW_MS + 1).0,
             Vec::<String>::new(),

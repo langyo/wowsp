@@ -53,7 +53,6 @@ gltf-json = { version = "^1", optional = true, features = ["KHR_materials_varian
 gltf = { version = "^1", optional = true, features = ["KHR_materials_variants"] }
 half = { version = "^2", optional = true }
 image_dds = { workspace = true, optional = true, features = ["ddsfile", "image"] }
-image = { workspace = true, optional = true, features = ["png"] }
 unidecode = { version = "^0.3", optional = true }
 vfs = { version = "^0.13", optional = true }
 async-trait = { version = "^0.1", optional = true }
@@ -101,7 +100,6 @@ models = [
     "dep:gltf",
     "dep:half",
     "dep:image_dds",
-    "dep:image",
     "dep:unidecode",
     "dep:meshopt-rs",
     "vfs",

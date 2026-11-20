@@ -6,8 +6,6 @@
     "types": ["vite/client", "node"],
     "paths": {
       "@/*": ["./src/*"],
-      "@wowsp/shared_ui": ["./src"],
-      "@wowsp/shared_ui/*": ["./src/*"],
       "@shaders/*": ["./.generated/shaders/*"]
     }
   },

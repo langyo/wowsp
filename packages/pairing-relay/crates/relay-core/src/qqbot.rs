@@ -473,14 +473,6 @@ pub fn contact_of_binding(bindings: &Map<String, Value>, openid: &str) -> Option
 mod tests {
     use super::*;
 
-    fn seed_pair() -> (String, String) {
-        // 固定测试种子；公钥从私钥推导，模拟控制台给的一对密钥。
-        let key = SigningKey::from_bytes(&[7u8; 32]);
-        let seed = hex(&key.to_bytes());
-        let pubhex = hex(key.verifying_key().as_bytes());
-        (seed, pubhex)
-    }
-
     #[test]
     fn callback_length_gate_caps_before_buffering() {
         // 缺失 / 不可解析 → 411（chunked 不进缓冲）。

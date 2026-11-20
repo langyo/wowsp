@@ -40,7 +40,6 @@ use crate::feedback::{FEISHU, err, feishu_json, feishu_token, http_call, json_he
 /// whose headers carry an immutable guard — ANY later header mutation
 /// (in these handlers, and in the security-headers exit wrapper)
 /// throws and turns the response into a 500.
-
 /// `GET /api/erp/login` — kick off the OAuth round trip.
 pub async fn handle_login(req: Request, env: Env) -> Result<Response> {
     if req.method() != Method::Get {
@@ -88,7 +87,7 @@ pub async fn handle_callback(req: Request, env: Env) -> Result<Response> {
         .flatten()
         .unwrap_or_default();
     let expected = cookie_get(&cookie, OAUTH_STATE_COOKIE).unwrap_or_default();
-    if state.len() != 32 || !ct_eq(&state, &expected) {
+    if state.len() != 32 || !ct_eq(state, &expected) {
         return login_failed(&origin, "state");
     }
     let Some(app_secret) = env.secret("FEISHU_APP_SECRET").ok().map(|s| s.to_string()) else {
@@ -467,10 +466,10 @@ pub async fn handle_users(req: Request, env: Env) -> Result<Response> {
     // the grant guidance) from transport trouble.
     let mut url = format!(
         "{FEISHU}/contact/v3/users/find_by_department?department_id={}&page_size={}&user_id_type=open_id",
-        urlencode(&department),
+        urlencode(department),
         USERS_PAGE_SIZE,
     );
-    if let Some(t) = page_token.as_deref() {
+    if let Some(t) = page_token {
         url.push_str(&format!("&page_token={}", urlencode(t)));
     }
     let (_, page) = match feishu_json(Method::Get, &url, &token, Value::Null).await {

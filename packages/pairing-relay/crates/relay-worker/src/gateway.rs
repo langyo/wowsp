@@ -8,12 +8,12 @@
 //! - `GatewayAuth` (singleton, "auth") — ticket mint/consume plus the
 //!   per-IP password failure counters (KV is not atomic enough; the
 //!   contract §3.2 puts them in a DO). Internal routes:
-//!     GET /mint?route=<id>&kind=turnstile|password|both|none
-//!                                     → {"ticket":"<32hex>","ttl":120}
-//!     GET /consume?ticket=<32hex>&route=<id>
-//!                                     → 200 | 404 | 409 (route mismatch)
-//!     GET /gate?ip=<ip>               → {"locked":bool,"retryAfterMs":n}
-//!     GET /pwfail?ip=<ip>             → records one failure, same shape
+//!   GET /mint?route=<id>&kind=turnstile|password|both|none
+//!   → {"ticket":"<32hex>","ttl":120}
+//!   GET /consume?ticket=<32hex>&route=<id>
+//!   → 200 | 404 | 409 (route mismatch)
+//!   GET /gate?ip=<ip>               → {"locked":bool,"retryAfterMs":n}
+//!   GET /pwfail?ip=<ip>             → records one failure, same shape
 //! - `GatewayChannel` (one per route id) — host presence, subscriber
 //!   fan-out, last-battle snapshot retention + alarm, and the
 //!   fire-and-forget `battle:<route>` KV mirror. Sockets upgrade INSIDE
@@ -342,7 +342,7 @@ async fn auth_retry_after(env: &Env, path: &str, ip: &str) -> Result<Option<u64>
     Ok(v.get("retryAfterMs")
         .and_then(Value::as_u64)
         .filter(|ms| *ms > 0)
-        .map(|ms| (ms + 999) / 1000))
+        .map(|ms| ms.div_ceil(1000)))
 }
 
 // ── shared response helpers ────────────────────────────────────────────
@@ -509,7 +509,7 @@ impl GatewayAuth {
             let Some(auth) = slot.as_mut() else {
                 return not_hydrated();
             };
-            auth.mint(now, &mut rng, &route, kind)
+            auth.mint(now, &mut rng, route, kind)
         };
         let _ = self
             .state
@@ -533,12 +533,12 @@ impl GatewayAuth {
             let Some(auth) = slot.as_mut() else {
                 return not_hydrated();
             };
-            auth.consume(now, &ticket, &route)
+            auth.consume(now, ticket, route)
         };
         // The pure machine removed the row for every spent/expired/
         // mismatched outcome; mirror it (Unknown never had a row).
         if !matches!(outcome, Err(ConsumeError::Unknown)) {
-            let _ = self.state.storage().delete(&ticket_key(&ticket)).await;
+            let _ = self.state.storage().delete(&ticket_key(ticket)).await;
         }
         match outcome {
             Ok(()) => Response::ok("consumed"),
@@ -752,7 +752,7 @@ impl GatewayChannel {
         if let Some(old) = previous {
             let _ = old.close(Some(CLOSE_NORMAL), Some("replaced by a new host"));
         }
-        let _ = server.send_with_str(&hello_frame("pub"));
+        let _ = server.send_with_str(hello_frame("pub"));
         let snapshot = self.inner.borrow().chan.snapshot().cloned();
         if let Some(snap) = snapshot {
             let _ = server.send_with_str(&snap.frame);
@@ -763,7 +763,7 @@ impl GatewayChannel {
         broadcast_subs(&self.inner);
         self.spawn_host_reader(server.clone(), route.to_string());
         spawn_pinger(server);
-        Ok(Response::from_websocket(pair.client)?)
+        Response::from_websocket(pair.client)
     }
 
     /// The desktop publisher's socket: battle frames (size-capped,
@@ -884,12 +884,12 @@ impl GatewayChannel {
 
         // hello → host presence → the current battle snapshot (live from
         // storage, else best-effort the KV mirror's stale copy).
-        let _ = server.send_with_str(&hello_frame("sub"));
+        let _ = server.send_with_str(hello_frame("sub"));
         let (host_up, snapshot) = {
             let inner = self.inner.borrow();
             (inner.host.is_some(), inner.chan.snapshot().cloned())
         };
-        let _ = server.send_with_str(&host_frame(host_up));
+        let _ = server.send_with_str(host_frame(host_up));
         if let Some(snap) = snapshot {
             let _ = server.send_with_str(&snap.frame);
         } else if let Some(stale) = kv_stale_snapshot(&self.env, route).await {
@@ -899,7 +899,7 @@ impl GatewayChannel {
         spawn_pinger(server);
         // A phone just joined: tell the publisher (tray indicator).
         broadcast_subs(&self.inner);
-        Ok(Response::from_websocket(pair.client)?)
+        Response::from_websocket(pair.client)
     }
 
     /// A subscriber's socket: inbound text is tolerated (30 s keepalives
@@ -951,7 +951,7 @@ fn broadcast_subs(inner: &RefCell<ChannelInner>) {
     let Some(host) = guard.host.as_ref() else {
         return;
     };
-    let _ = host.send_with_str(&subs_frame(guard.subs.len()));
+    let _ = host.send_with_str(subs_frame(guard.subs.len()));
 }
 
 /// Server-side keepalive: one text ping every 30 s per socket (the
@@ -961,7 +961,7 @@ fn spawn_pinger(server: WebSocket) {
     wasm_bindgen_futures::spawn_local(async move {
         loop {
             Delay::from(std::time::Duration::from_millis(KEEPALIVE_INTERVAL_MS)).await;
-            if server.send_with_str(&keepalive_frame()).is_err() {
+            if server.send_with_str(keepalive_frame()).is_err() {
                 break;
             }
         }

@@ -122,7 +122,7 @@ pub fn export_glb(
     }
 
     // Pad binary data to 4-byte alignment.
-    while !bin_data.len().is_multiple_of(4) {
+    while bin_data.len() % 4 != 0 {
         bin_data.push(0);
     }
 
@@ -964,7 +964,7 @@ pub fn export_map_scene_glb(scene: &MapScene, writer: &mut impl Write) -> Result
     }
 
     // Finalize GLB.
-    while !bin_data.len().is_multiple_of(4) {
+    while bin_data.len() % 4 != 0 {
         bin_data.push(0);
     }
 
@@ -1384,7 +1384,7 @@ pub fn export_merged_models_glb(
     }
 
     // Pad binary data to 4-byte alignment.
-    while !bin_data.len().is_multiple_of(4) {
+    while bin_data.len() % 4 != 0 {
         bin_data.push(0);
     }
 
@@ -1600,7 +1600,7 @@ pub fn export_geometry_raw(geometry: &MergedGeometry, writer: &mut impl Write) -
     }
 
     // Pad binary data to 4-byte alignment.
-    while !bin_data.len().is_multiple_of(4) {
+    while bin_data.len() % 4 != 0 {
         bin_data.push(0);
     }
 
@@ -1688,6 +1688,7 @@ const ATTACH_NODE_EXCLUDE: &[&str] = &[
 /// in. The ship/map pipelines place sub-models through their own glTF node
 /// matrices instead and must pass `false`, or mount-local geometry would be
 /// transformed twice.
+#[allow(clippy::too_many_arguments)]
 fn collect_primitives(
     visual: &VisualPrototype,
     geometry: &MergedGeometry,
@@ -2716,7 +2717,7 @@ fn add_variants_extension(root: &mut json::Root, texture_set: &TextureSet) {
 }
 
 fn pad_to_4(data: &mut Vec<u8>) {
-    while !data.len().is_multiple_of(4) {
+    while data.len() % 4 != 0 {
         data.push(0);
     }
 }
@@ -3516,7 +3517,7 @@ pub fn export_ship_glb(
     }
 
     // Pad binary data to 4-byte alignment.
-    while !bin_data.len().is_multiple_of(4) {
+    while bin_data.len() % 4 != 0 {
         bin_data.push(0);
     }
 

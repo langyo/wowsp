@@ -318,7 +318,6 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(pkgDir, 'src'),
-      '@wowsp/shared_ui': resolve(pkgDir, 'src'),
       '@shaders': resolve(pkgDir, '.generated/shaders'),
     },
   },

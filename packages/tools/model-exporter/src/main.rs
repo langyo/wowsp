@@ -112,7 +112,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     };
     match run(&args) {
-        Ok(failed) if failed == 0 => ExitCode::SUCCESS,
+        Ok(0) => ExitCode::SUCCESS,
         Ok(failed) => {
             eprintln!("error: {failed} of the batch exports failed (see results)");
             ExitCode::FAILURE
@@ -157,12 +157,11 @@ fn run(args: &Args) -> Result<usize, Report> {
                     Some(h) => Some(h.clone()),
                     None => v
                         .hull_upgrades()
-                        .map(|upg| {
+                        .and_then(|upg| {
                             let mut names: Vec<&String> = upg.keys().collect();
                             names.sort();
                             names.pop().cloned()
-                        })
-                        .flatten(),
+                        }),
                 };
                 assets.load_ship_from_vehicle(v, &options_for(hull.as_deref()))?
             },
