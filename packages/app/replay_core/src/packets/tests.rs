@@ -2199,7 +2199,7 @@ fn chat_message_supports_long_escape() {
 /// achievements list of the same replay.
 #[test]
 fn decodes_achievement_event() {
-    let args = hex_literal(&"99ea0a20b0e3f2fe");
+    let args = hex_literal("99ea0a20b0e3f2fe");
     let a = decode_achievement(237.3, &args).expect("must parse");
     assert_eq!(a.player_id, 537586329);
     assert_eq!(a.achievement_id, 4277330864);
@@ -3803,8 +3803,7 @@ fn cruise_state_consistent_with_speed_on_real_replay() {
     let throttle_at = |tt: f32| -> Option<i32> {
         cruise
             .iter()
-            .filter(|s| s.controller == 0 && s.time <= tt)
-            .next_back()
+            .rfind(|s| s.controller == 0 && s.time <= tt)
             .map(|s| s.level)
     };
     let mut full_ok = 0usize;
@@ -4424,8 +4423,7 @@ fn e11_vision_events_on_real_replay() {
             starts_total += 1;
             if let Some(last) = events
                 .iter()
-                .filter(|e| a - 3.5 <= e.time && e.time <= a + 1.5)
-                .next_back()
+                .rfind(|e| a - 3.5 <= e.time && e.time <= a + 1.5)
             {
                 starts_hit += 1;
                 if !last.visible {
@@ -4589,8 +4587,7 @@ fn e11_engine_states_on_real_replay() {
         decoded
             .engine_states
             .iter()
-            .filter(|s| s.entity_id == eid && s.power.is_some() && s.time <= t)
-            .next_back()
+            .rfind(|s| s.entity_id == eid && s.power.is_some() && s.time <= t)
             .and_then(|s| s.power)
     };
     let stream_bounds = |eid: i32| -> Option<(f32, f32)> {
@@ -4646,8 +4643,7 @@ fn e11_engine_states_on_real_replay() {
         decoded
             .cruise
             .iter()
-            .filter(|c| c.controller == 0 && c.time <= t)
-            .next_back()
+            .rfind(|c| c.controller == 0 && c.time <= t)
             .map(|c| c.level)
     };
     let mut checked = 0;

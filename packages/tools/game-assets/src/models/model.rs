@@ -194,10 +194,9 @@ fn parse_model_at(blob_data: &[u8], base: usize) -> Result<ModelPrototype, Repor
         } else {
             let mut anims = Vec::with_capacity(animations_count);
             for i in 0..animations_count {
-                match parse_model_at(blob_data, abs + i * MODEL_ITEM_SIZE) {
-                    Ok(a) => anims.push(a),
-                    Err(_) => {} // skip broken animation entries
-                }
+                if let Ok(a) = parse_model_at(blob_data, abs + i * MODEL_ITEM_SIZE) {
+                    anims.push(a)
+                } // skip broken animation entries
             }
             anims
         }

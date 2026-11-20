@@ -87,10 +87,10 @@ pub fn dds_to_png_resized(dds_bytes: &[u8], max_size: Option<u32>) -> Result<Vec
                 }
                 if count > 0 {
                     let di = (dy * nw + dx) as usize * 4;
-                    dst[di] = (r / count) as u8;
-                    dst[di + 1] = (g / count) as u8;
-                    dst[di + 2] = (b / count) as u8;
-                    dst[di + 3] = (a / count) as u8;
+                    dst[di] = r.checked_div(count).unwrap_or(0) as u8;
+                    dst[di + 1] = g.checked_div(count).unwrap_or(0) as u8;
+                    dst[di + 2] = b.checked_div(count).unwrap_or(0) as u8;
+                    dst[di + 3] = a.checked_div(count).unwrap_or(0) as u8;
                 }
             }
         }
@@ -641,9 +641,9 @@ pub fn bake_tiledland_albedo(
                 }
                 if count > 0 {
                     let di = (dy * nw + dx) as usize * 4;
-                    dst[di] = (ra / count) as u8;
-                    dst[di + 1] = (ga / count) as u8;
-                    dst[di + 2] = (ba / count) as u8;
+                    dst[di] = ra.checked_div(count).unwrap_or(0) as u8;
+                    dst[di + 1] = ga.checked_div(count).unwrap_or(0) as u8;
+                    dst[di + 2] = ba.checked_div(count).unwrap_or(0) as u8;
                     dst[di + 3] = 255;
                 }
             }

@@ -426,7 +426,7 @@ mod tests {
                 name: name.into(),
                 avatar: Some("https://pic1.afdiancdn.com/a.png".into()),
             },
-            current_plan: (expire > 0).then(|| SponsorPlan { expire_time: expire }),
+            current_plan: (expire > 0).then_some(SponsorPlan { expire_time: expire }),
             first_pay_time: first,
             last_pay_time: first,
         }

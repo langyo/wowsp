@@ -2202,7 +2202,6 @@ dependencies = [
  "gltf",
  "gltf-json",
  "half",
- "image",
  "image_dds",
  "indicatif",
  "insta",

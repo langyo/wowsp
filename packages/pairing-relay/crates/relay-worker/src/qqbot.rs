@@ -143,12 +143,12 @@ async fn send_c2c(
 // ── POST /api/qqbot/callback ───────────────────────────────────────────
 
 pub async fn handle_callback(mut req: Request, env: &Env) -> Result<Response> {
-    if !notify_enabled(&env) {
+    if !notify_enabled(env) {
         // Frozen (see the module banner): 404 lets the platform retire
         // the webhook instead of retrying a half-alive endpoint.
         return Response::error("qq bot frozen", 404);
     }
-    let Some(c) = creds(&env) else {
+    let Some(c) = creds(env) else {
         return Response::error("qq bot not configured", 503);
     };
     // 公开且无鉴权，而验签发生在 body 解析之后：先过 Content-Length

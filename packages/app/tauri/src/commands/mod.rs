@@ -2,7 +2,7 @@
 //!
 //! Every command here is the wire boundary between the webui and Rust. Keep
 //! signatures thin and DTOs in `wowsp_tauri_shared` so the frontend can mirror
-//! them via `@wowsp/shared_ui`.
+//! them in its own types.
 
 /// Audit P0-5: the state-changing commands (export writes, installs,
 /// pairing server, appdata writes) are callable from the MAIN webview

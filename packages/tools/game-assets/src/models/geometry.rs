@@ -137,7 +137,7 @@ pub enum IndexData<'a> {
 /// meshopt_rs requires `size_of::<Vertex>() == stride`, but our stride is only known at
 /// runtime. We dispatch to a monomorphized call for each supported stride value.
 fn decode_vertex_buffer_dynamic(count: usize, stride: usize, encoded: &[u8]) -> Result<Vec<u8>, Report<GeometryError>> {
-    if stride == 0 || stride > 256 || !stride.is_multiple_of(4) {
+    if stride == 0 || stride > 256 || stride % 4 != 0 {
         return Err(Report::new(GeometryError::InvalidStride(stride)));
     }
 

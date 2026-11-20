@@ -3204,7 +3204,7 @@ mod tests {
         // Array caps reject instead of trimming.
         let fat = format!(
             r#"{{ "rules": [ {{ "id": "r1", "realms": [{}] }} ] }}"#,
-            vec!["\"na\""; 9].join(",")
+            ["\"na\""; 9].join(",")
         );
         assert!(
             validate_wanted_save(&fat, 0)

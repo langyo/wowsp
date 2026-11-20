@@ -496,6 +496,10 @@ pub fn urlencode(s: &str) -> String {
 mod tests {
     use super::*;
 
+    // Compile-time invariant: the overall attachment cap never undercuts
+    // a per-kind cap.
+    const _: () = assert!(ATTACHMENT_MAX >= IMAGE_MAX && ATTACHMENT_MAX >= FILE_MAX);
+
     /// The single-record envelope family, pinned (see [`record_field`]):
     /// the field read must hit `/data/record/fields/<name>`, the submit
     /// flow's record_id parse must hit the same record object, and the
@@ -838,7 +842,6 @@ mod tests {
         assert_eq!(attach_max(AttachKind::Log), FILE_MAX);
         assert_eq!(attach_max(AttachKind::Image), IMAGE_MAX);
         assert_eq!(attach_max(AttachKind::Video), VIDEO_MAX);
-        assert!(ATTACHMENT_MAX >= IMAGE_MAX && ATTACHMENT_MAX >= FILE_MAX);
     }
 
     #[test]

@@ -1255,41 +1255,43 @@ mod tests {
     /// (one LiveSelfStream per line, no embedded newlines).
     #[test]
     fn calib_line_roundtrips_a_prebuilt_stream() {
-        let mut stream = LiveSelfStream::default();
-        stream.trajectories = vec![wowsp_tauri_shared::EntityTrajectory {
-            entity_id: 7,
-            kind: Some(wowsp_tauri_shared::EntityKind {
-                entity_type: 2,
-                vehicle_id: 0,
-                initial_x: 1.0,
-                initial_y: 0.0,
-                initial_z: -2.0,
-                creation_time: -1.0,
-                ship_id: Some(101),
-                max_health: Some(27_400),
-                control_point_index: None,
-                initial_team: None,
-                radius: None,
-                team_id: None,
-            }),
-            samples: Vec::new(),
-            death_time: Some(612.5),
-            hp_samples: vec![wowsp_tauri_shared::HpSample {
-                time: 0.0,
-                value: 27_400,
+        let stream = LiveSelfStream {
+            trajectories: vec![wowsp_tauri_shared::EntityTrajectory {
+                entity_id: 7,
+                kind: Some(wowsp_tauri_shared::EntityKind {
+                    entity_type: 2,
+                    vehicle_id: 0,
+                    initial_x: 1.0,
+                    initial_y: 0.0,
+                    initial_z: -2.0,
+                    creation_time: -1.0,
+                    ship_id: Some(101),
+                    max_health: Some(27_400),
+                    control_point_index: None,
+                    initial_team: None,
+                    radius: None,
+                    team_id: None,
+                }),
+                samples: Vec::new(),
+                death_time: Some(612.5),
+                hp_samples: vec![wowsp_tauri_shared::HpSample {
+                    time: 0.0,
+                    value: 27_400,
+                }],
+                cap_samples: Vec::new(),
+                cap_progress: Vec::new(),
+                cruise_samples: Vec::new(),
             }],
-            cap_samples: Vec::new(),
-            cap_progress: Vec::new(),
-            cruise_samples: Vec::new(),
-        }];
-        stream.damage_stats = vec![wowsp_tauri_shared::DamageStatSample {
-            time: 60.0,
-            weapon: 2,
-            category: 0,
-            count: 4,
-            total: 5_678.5,
-        }];
-        stream.battle_results = Some(r#"{"accountDBID":42}"#.into());
+            damage_stats: vec![wowsp_tauri_shared::DamageStatSample {
+                time: 60.0,
+                weapon: 2,
+                category: 0,
+                count: 4,
+                total: 5_678.5,
+            }],
+            battle_results: Some(r#"{"accountDBID":42}"#.into()),
+            ..Default::default()
+        };
         let line = calib_line(&stream).expect("serializes");
         assert!(!line.contains('\n'), "one line per battle");
         let back: LiveSelfStream = serde_json::from_str(&line).expect("reparses");

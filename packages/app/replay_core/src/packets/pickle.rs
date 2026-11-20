@@ -619,8 +619,8 @@ mod tests {
     #[test]
     fn hostile_list_append_chain_is_height_capped() {
         let mut bytes = vec![0x80, 0x04];
-        bytes.extend(std::iter::repeat(0x5d).take(100_000)); // EMPTY_LIST ×n
-        bytes.extend(std::iter::repeat(0x61).take(99_999)); // APPEND ×(n-1)
+        bytes.extend(std::iter::repeat_n(0x5d, 100_000)); // EMPTY_LIST ×n
+        bytes.extend(std::iter::repeat_n(0x61, 99_999)); // APPEND ×(n-1)
         bytes.push(0x2e);
         assert_eq!(parse_pickle(&bytes), None);
     }
@@ -635,7 +635,7 @@ mod tests {
     fn hostile_tuple1_chain_is_height_capped() {
         // Scalar seed + 200 TUPLE1s: each wraps the previous, height 200.
         let mut bytes = vec![0x80, 0x04, 0x4b, 0x01];
-        bytes.extend(std::iter::repeat(0x85).take(200));
+        bytes.extend(std::iter::repeat_n(0x85, 200));
         bytes.push(0x2e);
         assert_eq!(parse_pickle(&bytes), None);
     }
@@ -646,13 +646,13 @@ mod tests {
     #[test]
     fn tuple_and_append_chains_at_the_cap_still_parse() {
         let mut bytes = vec![0x80, 0x04, 0x4b, 0x01];
-        bytes.extend(std::iter::repeat(0x85).take(128));
+        bytes.extend(std::iter::repeat_n(0x85, 128));
         bytes.push(0x2e);
         assert!(matches!(parse_pickle(&bytes), Some(PyVal::Tuple(_))));
 
         let mut bytes = vec![0x80, 0x04];
-        bytes.extend(std::iter::repeat(0x5d).take(128));
-        bytes.extend(std::iter::repeat(0x61).take(127));
+        bytes.extend(std::iter::repeat_n(0x5d, 128));
+        bytes.extend(std::iter::repeat_n(0x61, 127));
         bytes.push(0x2e);
         assert!(matches!(parse_pickle(&bytes), Some(PyVal::List(_))));
     }
@@ -664,13 +664,13 @@ mod tests {
         // 130 empty lists + 129 appends would nest 130 deep — one past
         // MAX_VALUE_DEPTH (the 128th append composes height 129).
         let mut bytes = vec![0x80, 0x04];
-        bytes.extend(std::iter::repeat(0x5d).take(130));
-        bytes.extend(std::iter::repeat(0x61).take(129));
+        bytes.extend(std::iter::repeat_n(0x5d, 130));
+        bytes.extend(std::iter::repeat_n(0x61, 129));
         bytes.push(0x2e);
         assert_eq!(parse_pickle(&bytes), None);
         // One past on the TUPLE family: 129 TUPLE1s compose height 129.
         let mut bytes = vec![0x80, 0x04, 0x4b, 0x01];
-        bytes.extend(std::iter::repeat(0x85).take(129));
+        bytes.extend(std::iter::repeat_n(0x85, 129));
         bytes.push(0x2e);
         assert_eq!(parse_pickle(&bytes), None);
     }

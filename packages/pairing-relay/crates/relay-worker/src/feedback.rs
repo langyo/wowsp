@@ -750,7 +750,7 @@ pub(crate) async fn feishu_json(
         .map_err(|_| "feishu unreachable")?;
     let status = resp.status_code();
     let v: Value = resp.json().await.unwrap_or(Value::Null);
-    if status >= 200 && status < 300 && v.get("code").and_then(Value::as_i64).unwrap_or(0) == 0 {
+    if (200..300).contains(&status) && v.get("code").and_then(Value::as_i64).unwrap_or(0) == 0 {
         Ok((status, v))
     } else {
         Err(format!(

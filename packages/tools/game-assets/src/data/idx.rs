@@ -490,7 +490,7 @@ pub fn build_file_tree(idx_files: &[IdxFile]) -> HashMap<String, VfsEntry> {
         let resource = packed_resources.get(&id).expect("failed to find packed resource");
 
         let path = if resource.parent_id == ROOT_PARENT_ID {
-            format!("/{}", &resource.filename)
+            format!("/{}", resource.filename)
         } else {
             let mut parent_path = resolve_path(resource.parent_id, packed_resources, path_cache);
             parent_path.reserve(1 + resource.filename.len());
