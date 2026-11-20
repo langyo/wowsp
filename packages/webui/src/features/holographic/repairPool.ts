@@ -24,17 +24,17 @@
  * number (the fold is cached as a per-sample PREFIX ARRAY, so a seek is a
  * binary search over an already-correct fold rather than a replay).
  *
- * COEFFICIENT SOURCE: the real per-hull number lives in GameParams
- * (`regenerationHPSpeed` × the consumable's workTime, and the hard
- * `regenCrewHpLimit` vehicle property). Neither reaches the webui replay
- * path: the baked consumable dataset
- * (`packages/webui/src/data/consumable_details.json`,
- * scripts/extract/build_consumable_details.py) carries charges/duration/cooldown
- * only, and the replay's HP samples carry no pool fields — surfacing
- * `regenCrewHpLimit` would need a new Rust stream field, which this wave
- * does not own. So the coefficient is a DOCUMENTED FLAT DEFAULT of 0.5 × max
- * HP (`REPAIR_PARTY_RECOVERABLE_FRAC`), threaded as a parameter so a future
- * per-hull source can hand in the real value with no other change.
+ * COEFFICIENT SOURCE: the hard per-hull number is the Vehicle create-state
+ * property `regenCrewHpLimit` (FLOAT32, absolute HP — the repair coefficient
+ * × maxHp), which the Rust decode now surfaces per entity on
+ * `ReplayStream.repairHpCaps` (entity id → cap; the value never changes
+ * mid-battle). Each renderer joins that map by the hull's entity id and hands
+ * the result in through [`repairCoefficientFor`], which converts
+ * `clamp(limit / maxHp, 0, 1)`. When the replay carries no cap for the hull
+ * (the map is empty on older client versions, and the reference captures'
+ * create states read `0` — "the server never replicated the cap"), the
+ * documented FLAT DEFAULT of 0.5 × max HP (`REPAIR_PARTY_RECOVERABLE_FRAC`)
+ * applies, so the grey bar behaves exactly as before on those replays.
  *
  * Both renderers consume this module: the floating label's HP bar (through
  * markerUpdate's per-tick label content) and the exported clip's team-column
@@ -47,10 +47,35 @@ import type { ConsumableUseEvent, HpSample } from "@/api";
  *  ConsumableUseEvent docs: reference capture clusters id 8 at 28 s). */
 export const REPAIR_PARTY_CONSUMABLE_ID = 8;
 
-/** Fallback recoverable pool as a fraction of max HP. Used because no
- *  per-hull GameParams coefficient reaches the webui replay path (see the
- *  module header) — 0.5 × max HP is the documented flat default. */
+/** Fallback recoverable pool as a fraction of max HP — the documented flat
+ *  default used whenever the replay does not carry a usable per-hull
+ *  `regenCrewHpLimit` cap (see the module header). */
 export const REPAIR_PARTY_RECOVERABLE_FRAC = 0.5;
+
+/** The hull's recoverable share of max HP, from the stream's per-entity
+ *  Repair-Party cap (`repairHpCaps`: entity id → `regenCrewHpLimit` in
+ *  ABSOLUTE HP) — the coefficient the grey-bar state machine takes as a
+ *  parameter.
+ *
+ *  `clamp(cap / maxHp, 0, 1)` when both are usable numbers; otherwise the
+ *  documented flat default [`REPAIR_PARTY_RECOVERABLE_FRAC`], which is also
+ *  what every replay without the property answers. Entity ids ride the wire
+ *  as STRINGS (the Rust map's serde adapter stringifies them, see
+ *  `ReplayStream.repairHpCaps`), so the join is `String(entityId)`. */
+export function repairCoefficientFor(
+  hpCaps: Record<string, number> | null | undefined,
+  entityId: number,
+  maxHp: number | null | undefined,
+): number {
+  const cap = hpCaps?.[String(entityId)];
+  if (typeof cap !== "number" || !Number.isFinite(cap) || !(cap > 0)) {
+    return REPAIR_PARTY_RECOVERABLE_FRAC;
+  }
+  if (maxHp == null || !Number.isFinite(maxHp) || !(maxHp > 0)) {
+    return REPAIR_PARTY_RECOVERABLE_FRAC;
+  }
+  return Math.max(0, Math.min(1, cap / maxHp));
+}
 
 /** One Repair Party effect window: `[start, end]`, in battle seconds. */
 export interface RepairWindow {

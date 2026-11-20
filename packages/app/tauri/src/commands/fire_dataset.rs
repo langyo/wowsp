@@ -4428,6 +4428,7 @@ mod tests {
             weather_notifications: Vec::new(),
             self_team: None,
             consumable_uses: Vec::new(),
+            repair_hp_caps: std::collections::BTreeMap::new(),
             shield_damage_events: Vec::new(),
             shield_state_events: Vec::new(),
             shield_markers: Vec::new(),

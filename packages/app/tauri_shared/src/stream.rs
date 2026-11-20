@@ -491,29 +491,38 @@ pub struct WeatherNotification {
     pub param: u32,
 }
 
-/// Serde adapter that makes [`ReplayStream::leaves`] key itself by STRING on
-/// every wire: JSON already stringifies integer map keys, and the webui's
-/// MessagePack decoder (@msgpack/msgpack v3) silently drops entries from
-/// integer-keyed msgpack maps (verified empirically: `decode(encode({42:
-/// 55.5})) === {}`), so the packed IPC wire must carry the same string keys
-/// the JSON wire always did.
-mod leaves_string_keys {
+/// Serde adapter that makes an entity-id-keyed map ([`ReplayStream::leaves`],
+/// [`ReplayStream::repair_hp_caps`]) key itself by STRING on every wire: JSON
+/// already stringifies integer map keys, and the webui's MessagePack decoder
+/// (@msgpack/msgpack v3) silently drops entries from integer-keyed msgpack maps
+/// (verified empirically: `decode(encode({42: 55.5})) === {}`), so the packed
+/// IPC wire must carry the same string keys the JSON wire always did.
+///
+/// Generic over the value type so every entity-id-keyed map rides ONE adapter
+/// (a second copy of this logic is exactly the kind of drift that would let one
+/// map work over msgpack and the other silently arrive empty).
+mod entity_id_string_keys {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::collections::BTreeMap;
 
-    pub fn serialize<S: Serializer>(map: &BTreeMap<i32, f32>, s: S) -> Result<S::Ok, S::Error> {
-        let keyed: BTreeMap<String, f32> = map.iter().map(|(k, v)| (k.to_string(), *v)).collect();
+    pub fn serialize<S: Serializer, V: Serialize>(
+        map: &BTreeMap<i32, V>,
+        s: S,
+    ) -> Result<S::Ok, S::Error> {
+        let keyed: BTreeMap<String, &V> = map.iter().map(|(k, v)| (k.to_string(), v)).collect();
         keyed.serialize(s)
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<BTreeMap<i32, f32>, D::Error> {
-        let keyed: BTreeMap<String, f32> = BTreeMap::deserialize(d)?;
+    pub fn deserialize<'de, D: Deserializer<'de>, V: Deserialize<'de>>(
+        d: D,
+    ) -> Result<BTreeMap<i32, V>, D::Error> {
+        let keyed: BTreeMap<String, V> = BTreeMap::deserialize(d)?;
         keyed
             .into_iter()
             .map(|(k, v)| {
                 k.parse::<i32>()
                     .map(|id| (id, v))
-                    .map_err(|e| serde::de::Error::custom(format!("leaves key {k}: {e}")))
+                    .map_err(|e| serde::de::Error::custom(format!("entity-id map key {k}: {e}")))
             })
             .collect()
     }
@@ -566,10 +575,10 @@ pub struct ReplayStream {
     /// Keys ride the wire AS STRINGS on every codec: serde_json already
     /// emits `{"42": 55.5}` for an integer-keyed map, and @msgpack/msgpack
     /// (the packed IPC wire) silently DROPS entries from integer-keyed
-    /// msgpack maps — see leaves_string_keys below.
+    /// msgpack maps — see entity_id_string_keys below.
     #[serde(
         default,
-        with = "leaves_string_keys",
+        with = "entity_id_string_keys",
         skip_serializing_if = "std::collections::BTreeMap::is_empty"
     )]
     pub leaves: std::collections::BTreeMap<i32, f32>,
@@ -647,6 +656,24 @@ pub struct ReplayStream {
     /// id isn't pinned.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumable_uses: Vec<ConsumableUseEvent>,
+    /// Entity id → its hull's Repair-Party recoverable cap in ABSOLUTE HP — the
+    /// Vehicle create-state property `regenCrewHpLimit` (the hard limit behind
+    /// the grey HP-bar segment: the hull's repair coefficient × maxHp; the
+    /// entity defs type the property FLOAT32). Read per vehicle out of the
+    /// SAME EntityCreate state the builds decode from; the value does not
+    /// change mid-battle, so one entry per entity is the whole timeline. Only
+    /// NONZERO caps appear: the reference captures' create states all read `0`
+    /// there, and a zero cap would mean "no recoverable damage ever", so
+    /// consumers treat an absent entry as UNKNOWN and fall back to the
+    /// documented flat coefficient (repairPool.ts). Empty on versions without a
+    /// pinned build layout. Keys ride the wire as strings — see
+    /// `entity_id_string_keys`.
+    #[serde(
+        default,
+        with = "entity_id_string_keys",
+        skip_serializing_if = "std::collections::BTreeMap::is_empty"
+    )]
+    pub repair_hp_caps: std::collections::BTreeMap<i32, f32>,
     /// Shield-damage broadcasts (Avatar `receiveShieldDamageInfo`, 15.10+).
     /// Empty on older versions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

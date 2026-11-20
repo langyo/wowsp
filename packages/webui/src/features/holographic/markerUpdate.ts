@@ -44,7 +44,7 @@ import {
   recordedCameraForward,
 } from "./recordedCamera";
 import { shipStatusAt } from "./shipStatusModel";
-import { repairRecoverableFracAt } from "./repairPool";
+import { repairCoefficientFor, repairRecoverableFracAt } from "./repairPool";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { ShipInfo, SquadronPlane, VehicleEntry, WeaponLockEvent } from "@/api";
 import type { FeedEntry } from "./HoloEventFeed";
@@ -536,6 +536,9 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // (the bar renders exactly as before); 0 = repairs exist but the pool
         // is exhausted right now (green + red only). A sunk hull has no
         // repair party left — its bar is pinned empty.
+        // The coefficient comes from the replay's per-hull Repair-Party cap
+        // (float stream `repairHpCaps`, joined by entity id) and falls back to
+        // the documented flat 0.5 when the replay carries none.
         label.hpRecoverableFrac = dead
           ? null
           : repairRecoverableFracAt(
@@ -544,6 +547,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
               label.maxHp,
               tEff,
               entityId,
+              repairCoefficientFor(ctx.props.repairHpCaps, entityId, label.maxHp),
             );
         // Submerged submarines badge their depth on the floating label
         // (positive meters below surface); surfaced ships clear it.

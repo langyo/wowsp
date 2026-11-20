@@ -18,6 +18,7 @@ import {
   REPAIR_PARTY_RECOVERABLE_FRAC,
   hasRepairPartyUse,
   hpBarSegments,
+  repairCoefficientFor,
   repairRecoverableAt,
   repairRecoverableFracAt,
   repairWindowsFor,
@@ -182,6 +183,52 @@ describe("repairRecoverableFracAt", () => {
     const events = [use(10, 7)];
     const samples = [hp(0, MAX_HP), hp(15, 8_000), hp(20, 10_000)];
     expect(repairRecoverableFracAt(events, samples, MAX_HP, 26, 7)).toBe(0);
+  });
+});
+
+describe("repairCoefficientFor", () => {
+  // Entity ids are STRINGS on the wire map (the Rust serde adapter stringifies
+  // them so the MessagePack IPC keeps the entries).
+  const caps = { "7": 12_500 };
+
+  it("converts the streamed per-hull cap to a fraction of max HP", () => {
+    expect(repairCoefficientFor(caps, 7, 25_000)).toBeCloseTo(0.5, 10);
+    expect(repairCoefficientFor({ "7": 3_000 }, 7, 10_000)).toBeCloseTo(0.3, 10);
+    // Defensive clamps: a cap at/above maxHp can never paint more than the bar.
+    expect(repairCoefficientFor(caps, 7, 12_500)).toBe(1);
+    expect(repairCoefficientFor({ "7": 20_000 }, 7, 10_000)).toBe(1);
+  });
+
+  it("falls back to the documented flat 0.5 when the cap is unknown", () => {
+    expect(repairCoefficientFor(undefined, 7, 25_000)).toBe(
+      REPAIR_PARTY_RECOVERABLE_FRAC,
+    );
+    expect(repairCoefficientFor({}, 7, 25_000)).toBe(0.5);
+    // Another hull's cap is not this hull's cap.
+    expect(repairCoefficientFor({ "9": 12_500 }, 7, 25_000)).toBe(0.5);
+    // A zero reading is the captures' "not replicated" encoding, not a cap.
+    expect(repairCoefficientFor({ "7": 0 }, 7, 25_000)).toBe(0.5);
+    expect(repairCoefficientFor({ "7": Number.NaN }, 7, 25_000)).toBe(0.5);
+    expect(repairCoefficientFor({ "7": -1 }, 7, 25_000)).toBe(0.5);
+    // Without a usable maxHp there is no ratio to form.
+    expect(repairCoefficientFor(caps, 7, null)).toBe(0.5);
+    expect(repairCoefficientFor(caps, 7, 0)).toBe(0.5);
+  });
+
+  it("feeds the state machine the real per-hull pool", () => {
+    // A 2,500 HP cap on a 10,000 HP hull is a 0.25 coefficient (not the flat
+    // 0.5): 2,000 damage taken inside the window queues 500 recoverable HP.
+    const coefficient = repairCoefficientFor({ "7": 2_500 }, 7, MAX_HP);
+    expect(coefficient).toBeCloseTo(0.25, 10);
+    const events = [use(10, 7)];
+    const samples = [hp(0, MAX_HP), hp(20, 8_000)];
+    expect(repairRecoverableAt(events, samples, MAX_HP, coefficient, 25, 7)).toBe(
+      500,
+    );
+    expect(repairRecoverableFracAt(events, samples, MAX_HP, 25, 7, coefficient)).toBeCloseTo(
+      0.05,
+      10,
+    );
   });
 });
 

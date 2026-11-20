@@ -145,7 +145,7 @@ import { applyOsdTones, createOsdContrast, OSD_REFRESH_S } from "./osdContrast";
 import { buildSelfShotLedger, querySelfShotLedger } from "./selfShotLedger";
 import { capLetter, isCaptureZone, type CapZoneState } from "./capZones";
 import type { ShipLabel } from "./shipLabel";
-import { repairRecoverableFracAt } from "./repairPool";
+import { repairCoefficientFor, repairRecoverableFracAt } from "./repairPool";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
@@ -396,6 +396,12 @@ export default defineComponent({
      *  Absent on replays whose exposed method id is not pinned: the feature
      *  stays off and the bars render exactly as before. */
     consumableUses: { type: Array as () => ConsumableUseEvent[], default: () => [] },
+    /** Entity id → the hull's Repair-Party cap in ABSOLUTE HP (the Vehicle
+     *  `regenCrewHpLimit` create-state property the Rust decode surfaces on
+     *  `ReplayStream.repairHpCaps`). Converts to the grey bar's coefficient
+     *  (cap / maxHp) in repairPool.ts; an absent entry keeps the documented
+     *  flat 0.5 fallback. */
+    repairHpCaps: { type: Object as () => Record<string, number>, default: () => ({}) },
     /** Global-weather timeline (BattleLogic state.weather.globalWeather) —
      *  cyclone/storm approach warnings + interpolation windows. */
     weatherTransitions: { type: Array as () => WeatherTransition[], default: () => [] },
@@ -3859,6 +3865,7 @@ const RECORDED_DOLLY_MIN = -40;
               // replay (feature off, bar unchanged); 0 = pool exhausted.
               const state = rosterState.value.get(r.vehicle.id);
               const traj = state?.traj ?? null;
+              const hullMaxHp = state?.maxHp ?? r.maxHp;
               return {
                 ...(frozenRows.get(r.vehicle.id) ?? playbackRowBase(r)),
                 hpFrac:
@@ -3874,9 +3881,16 @@ const RECORDED_DOLLY_MIN = -40;
                     : repairRecoverableFracAt(
                         props.consumableUses,
                         traj.hpSamples,
-                        state?.maxHp ?? r.maxHp,
+                        hullMaxHp,
                         t,
                         traj.entityId,
+                        // Real per-hull cap (repairHpCaps) when the replay
+                        // carries one, else the documented flat 0.5.
+                        repairCoefficientFor(
+                          props.repairHpCaps,
+                          traj.entityId,
+                          hullMaxHp,
+                        ),
                       ),
                 dead: r.dead,
               };

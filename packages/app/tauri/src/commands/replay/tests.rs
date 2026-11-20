@@ -2067,6 +2067,7 @@ fn ally_build_filter_drops_enemy_unknown_and_ambiguous_joins() {
         crew_params_id: 0xffe2_a6d0,
         is_in_adaptation: false,
         learned_skills: vec![vec![], vec![], vec![], vec![12, 18], vec![], vec![]],
+        regen_crew_hp_limit: Some(11_750.0),
     };
     let entry = |ship_id: i64, relation: i64| VehicleEntry {
         id: relation + 1,
@@ -2194,7 +2195,8 @@ fn replay_stream_msgpack_wire_round_trip() {
             "rotX": 0.0, "rotY": 0.0, "rotZ": 0.0, "rotW": 1.0,
             "fov": 1.2
         }],
-        "leaves": { "42": 55.5 }
+        "leaves": { "42": 55.5 },
+        "repairHpCaps": { "42": 12000.5 }
     }))
     .expect("fixture parses (field names mirror the wire)");
     let packed = rmp_serde::to_vec_named(&stream).expect("pack");
@@ -2214,6 +2216,14 @@ fn replay_stream_msgpack_wire_round_trip() {
         "u32 HP values must stay integers on the wire"
     );
     assert_eq!(round["leaves"]["42"].as_f64(), Some(55.5));
+    // Entity-id-keyed maps must keep STRING keys on the packed wire (an
+    // integer-keyed msgpack map arrives EMPTY at @msgpack/msgpack) — the same
+    // adapter carries leaves and the Repair-Party HP caps.
+    assert_eq!(
+        round["repairHpCaps"]["42"].as_f64(),
+        Some(12_000.5),
+        "repairHpCaps must ride the msgpack wire under string entity-id keys"
+    );
     // The packer's whole point: bytes, not a JSON string.
     assert!(!packed.is_empty());
 }
