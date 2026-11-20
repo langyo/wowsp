@@ -349,7 +349,9 @@
   --hk-menu-item-min-h: 1.7rem;
   --hk-menu-item-pad-x: 0.5rem;
   --hk-menu-item-pad-y: 0.25rem;
-  --hk-menu-item-gap: 0.5rem;
+  /* No --hk-menu-item-gap here: a description row's only child is the body
+     span, so the row gap would never land (the label-chip air is the
+     body's own gap, set below). */
 }
 
 /* One-line recomposition: label left, stage chip right. */
@@ -358,11 +360,16 @@
   .hk-popup-select-item-body {
   flex-direction: row;
   align-items: center;
+  /* Hikari's stock body gap is var(--space-2) (2px) — fine between stacked
+     lines, cramped between a label and its chip. */
+  gap: 0.5rem;
 }
 
 /* The stage chip itself: a quiet primary pill so the tag reads as a
    category marker, not as secondary prose. Fixed colors (not inherited
-   row colors) so the checked row's primary face can't wash it out. */
+   row colors) — and a hairline outline, because the checked row's face
+   is exactly this tint at full row scale: without its own stroke the
+   pill boundary would wash out on the selection. */
 .hk-popup-select-content:not(.hk-is-sheet)
   .hk-popup-select-item:has(> .hk-popup-select-item-body)
   .hk-popup-select-item-desc {
@@ -375,6 +382,7 @@
      chip pads itself symmetrically. */
   padding: 0 0.4rem;
   border-radius: var(--radius-full);
+  border: 1px solid rgb(var(--color-primary) / 30%);
   background: rgb(var(--color-primary) / 10%);
   color: rgb(var(--color-primary));
   font-size: var(--text-2xs);

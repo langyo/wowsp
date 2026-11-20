@@ -225,8 +225,9 @@ export type ShipVariantStage = "stock" | "mid" | "top";
  * as-delivered module), "top" sits at the deepest step of its chain (the
  * panel's default pick always does), "mid" fills the steps between. The
  * defensive floor is "stock": every list this module builds contains at
- * least one depth-0 root, and unresolved prev edges collapse to depth 0,
- * so a caller can never hand us a negative depth that means anything else.
+ * least one depth-0 root, and a cyclic prev chain keeps its UNRESOLVED
+ * (-1) depth from orderedChain — the <= 0 floor reads it as stock, so a
+ * caller can never hand us a depth that means anything else.
  * Single-entry chains answer "stock" too — they never render a dropdown
  * (the caller gates at two options), so the value is only a fallback.
  */
