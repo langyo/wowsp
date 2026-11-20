@@ -1396,7 +1396,9 @@ const RECORDED_DOLLY_MIN = -40;
     });
     const capZones = computed(() => {
       const zones = props.trajectories.filter((t) => {
-        if (t.kind?.entityType !== 14) return false;
+        // InteractiveZone is entity type 14 on modern clients but 13 before
+        // 14.5.0; isCaptureZone() still decides what is a real point.
+        if (t.kind?.entityType !== 13 && t.kind?.entityType !== 14) return false;
         if (!isCaptureZone(t)) return false;
         if (t.kind.initialX == null && t.kind.initialZ == null && t.samples.length === 0) {
           return false;
@@ -1827,7 +1829,8 @@ const RECORDED_DOLLY_MIN = -40;
           // ghost at the spawn inside the initial camera view.
           for (const s of t.samples) eat(s.x, -s.z);
           eat(t.kind.initialX, -t.kind.initialZ);
-        } else if (t.kind?.entityType === 14) {
+        } else if (t.kind?.entityType === 13 || t.kind?.entityType === 14) {
+          // 13 = InteractiveZone before 14.5.0, 14 = modern.
           eat(t.kind.initialX, -t.kind.initialZ);
         }
       }
