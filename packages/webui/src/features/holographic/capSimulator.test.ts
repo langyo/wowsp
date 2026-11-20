@@ -6,10 +6,16 @@
  *
  * Also gates updateCapsAndScore's progressive-zone rule: operation (行动)
  * points are CREATED mid-battle (EntityCreate time) and stay invisible —
- * and scoreless — until the playhead crosses their birth instant. */
+ * and scoreless — until the playhead crosses their birth instant.
+ *
+ * And the domination SCORE math: the per-mode/map parameter table, the
+ * area-accrual clock (which must charge the playhead's real elapsed time —
+ * it used to charge a full 0.5 s sim step per rendered frame, racing every
+ * score to the 1000 clamp within a minute), the contested pause, the
+ * capture bonus, the co-op / ranked / clan columns and the clamp. */
 import { describe, expect, it } from "vitest";
 
-import { sunkShipPoints, updateCapsAndScore, type SunkShipMarker } from "./capSimulator";
+import { scoringRules, sunkShipPoints, updateCapsAndScore, type SunkShipMarker } from "./capSimulator";
 import type { MapInternals } from "./mapInternals";
 import type { EntityKind, EntityTrajectory } from "@/api";
 
@@ -40,6 +46,27 @@ describe("sunkShipPoints", () => {
     expect(sunkShipPoints([mk("enemy", "AirCarrier", 100)], 200, true)).toEqual({
       ally: 40,
       enemy: -25,
+    });
+  });
+
+  it("uses the flat ranked/clan tables (+40/-60, carriers +60/-90)", () => {
+    // Ranked / Clan replace the Random per-class rows entirely.
+    expect(sunkShipPoints([mk("enemy", "Destroyer", 100)], 200, false, false, "ranked")).toEqual({
+      ally: 40,
+      enemy: -60,
+    });
+    expect(sunkShipPoints([mk("enemy", "Destroyer", 100)], 200, false, false, "clan")).toEqual({
+      ally: 40,
+      enemy: -60,
+    });
+    expect(sunkShipPoints([mk("enemy", "AirCarrier", 100)], 200, false, false, "ranked")).toEqual({
+      ally: 60,
+      enemy: -90,
+    });
+    // Co-op shares the Random per-class table (DD +30/-45).
+    expect(sunkShipPoints([mk("enemy", "Destroyer", 100)], 200, false, false, "coop")).toEqual({
+      ally: 30,
+      enemy: -45,
     });
   });
 
@@ -97,21 +124,36 @@ const zone = (kindOver: Partial<EntityKind> = {}): EntityTrajectory => ({
   },
 });
 
+/** A ship trajectory that teleports between waypoints (the >4 s gaps make
+ *  sampleAt FREEZE at the last waypoint instead of interpolating, so a ship
+ *  "arrives" and "leaves" exactly on its sample times). */
+function waypoints(steps: { time: number; x: number; z: number }[]) {
+  return steps.map((s) => ({ ...s, yaw: 0 }));
+}
+
 /** The subset of MapInternals updateCapsAndScore touches (no scene).
- *  `ships` feeds the ships-in-zone scan: each entry is a marker whose
- *  trajectory sits FAR away until `arrive`, then inside the zone (0,0). */
+ *  `ships` feeds the ships-in-zone scan: by default each entry is a marker
+ *  that sits FAR away until `arrive`, then inside the zone (0,0); pass
+ *  `samples` for a custom in/out pattern (see waypoints). */
 function fakeCtx(
   zones: EntityTrajectory[],
   opts: {
     operation?: boolean;
-    ships?: { entityId: number; role: string; arrive: number }[];
+    matchGroup?: string;
+    mapName?: string;
+    ships?: {
+      entityId: number;
+      role: string;
+      arrive?: number;
+      samples?: { time: number; x: number; z: number; yaw: number }[];
+    }[];
   } = {},
 ): MapInternals {
   const trajById = new Map();
   for (const s of opts.ships ?? []) {
     trajById.set(s.entityId, {
       entityId: s.entityId,
-      samples: [
+      samples: s.samples ?? [
         { time: 0, x: 5000, z: 5000, yaw: 0 },
         { time: s.arrive, x: 0, z: 0, yaw: 0 },
       ],
@@ -120,7 +162,11 @@ function fakeCtx(
   return {
     capZones: { value: zones },
     scoringZones: { value: zones },
-    props: { matchGroup: "pvp", mapName: "any", operation: opts.operation ?? true },
+    props: {
+      matchGroup: opts.matchGroup ?? "pvp",
+      mapName: opts.mapName ?? "any",
+      operation: opts.operation ?? true,
+    },
     shipMarkers: (opts.ships ?? []).map((s) => ({
       userData: { entityId: s.entityId, role: s.role },
     })),
@@ -240,5 +286,198 @@ describe("operation story objectives (pre-placed zones)", () => {
     updateCapsAndScore(ctx, 120);
     expect(ctx.capDisplay.value[0].live).toBe(false); // captured → gone
     expect(ctx.capSim.get(1)?.owner).toBe(1);
+  });
+});
+
+describe("scoringRules", () => {
+  const rules = (matchGroup: string, nAreas: number, mapName = "any", operation = false) =>
+    scoringRules({ matchGroup, mapName, operation }, nAreas);
+
+  it("follows the Random / Co-op start + capture + interval table", () => {
+    expect(rules("pvp", 3)).toMatchObject({
+      mode: "random", special: false, startPts: 300, capCompletePts: 3,
+      accrualEvery: 6, accrualPts: 3,
+    });
+    expect(rules("pvp", 4)).toMatchObject({
+      startPts: 200, capCompletePts: 4, accrualEvery: 9, accrualPts: 4,
+    });
+    // Co-op starts higher than Random (400 / 300, not 300 / 200).
+    expect(rules("pve", 3)).toMatchObject({
+      mode: "coop", startPts: 400, capCompletePts: 3,
+      accrualEvery: 6, accrualPts: 3,
+    });
+    expect(rules("pve", 4)).toMatchObject({
+      startPts: 300, capCompletePts: 4, accrualEvery: 9, accrualPts: 4,
+    });
+  });
+
+  it("keeps the interval table on the eight special maps (only start/kills/deaths change)", () => {
+    expect(rules("pvp", 3, "13_OC_new_dawn")).toEqual({
+      mode: "random", special: true, startPts: 150, capCompletePts: 3,
+      accrualEvery: 6, accrualPts: 3,
+    });
+    expect(rules("pvp", 4, "54_Faroe")).toMatchObject({
+      special: true, startPts: 150, capCompletePts: 4, accrualEvery: 9, accrualPts: 4,
+    });
+  });
+
+  it("uses the ranked columns (2-area +9 / 10 s, 3-area +2 / 3 s, no 4-area tier)", () => {
+    expect(rules("ranked", 2)).toMatchObject({
+      mode: "ranked", startPts: 300, capCompletePts: 9,
+      accrualEvery: 10, accrualPts: 9,
+    });
+    // 3-area ranked used to inherit the 2-area +9 capture award.
+    expect(rules("ranked", 3)).toMatchObject({
+      startPts: 300, capCompletePts: 2, accrualEvery: 3, accrualPts: 2,
+    });
+    expect(rules("ranked", 4)).toMatchObject({
+      startPts: 300, capCompletePts: 2, accrualEvery: 0, accrualPts: 0,
+    });
+  });
+
+  it("uses the clan column (+3 capture, +3 every 4 s)", () => {
+    expect(rules("clan", 3)).toMatchObject({
+      mode: "clan", startPts: 300, capCompletePts: 3,
+      accrualEvery: 4, accrualPts: 3,
+    });
+  });
+
+  it("never treats a story operation as co-op scoring", () => {
+    // pve + operation → Random numbers (the score digits are hidden anyway).
+    expect(rules("pve", 3, "any", true)).toMatchObject({
+      mode: "random", startPts: 300, capCompletePts: 3,
+    });
+  });
+});
+
+/** Drive the sim from 0 to t at a fixed cadence (seconds) — the live HUD
+ *  calls it once per rendered frame, the exporter once per exported frame. */
+function drive(ctx: MapInternals, t: number, dt: number) {
+  for (let x = dt; x < t - 1e-9; x += dt) updateCapsAndScore(ctx, x);
+  updateCapsAndScore(ctx, t);
+}
+
+/** A 3-area Random domination point pre-owned by the recorder's side from
+ *  t=0 (no ownership stream at all — the stream-silent home point). */
+const ownedZone = () => zone({});
+
+describe("area accrual accounting", () => {
+  it("charges the playhead's real elapsed time, not one 0.5 s step per call", () => {
+    // 3-area Random, one point owned from t=0: +3 every 6 s → 10 ticks in 60 s.
+    const single = fakeCtx([ownedZone()], { operation: false });
+    updateCapsAndScore(single, 60);
+    expect(single.allyScore.value).toBe(330);
+
+    // The same playhead reached at 4 Hz and at 60 Hz must agree. Before the
+    // fix every call charged a whole 0.5 s to the accrual clock, so a 60 fps
+    // playback ticked ~30x too fast and pinned the score at the 1000 clamp
+    // within a minute (the reported "enemy score jumped to 1000").
+    const at4hz = fakeCtx([ownedZone()], { operation: false });
+    drive(at4hz, 60, 0.25);
+    expect(at4hz.allyScore.value).toBe(330);
+
+    const at60hz = fakeCtx([ownedZone()], { operation: false });
+    drive(at60hz, 60, 1 / 60);
+    // Float accumulation may leave the last tick pending — never more.
+    expect(at60hz.allyScore.value).toBeGreaterThanOrEqual(327);
+    expect(at60hz.allyScore.value).toBeLessThanOrEqual(330);
+  });
+
+  it("pauses accrual while an enemy ship sits in the owned point", () => {
+    const ctx = fakeCtx([ownedZone()], {
+      operation: false,
+      ships: [{
+        entityId: 9,
+        role: "enemy",
+        samples: waypoints([
+          { time: 0, x: 61, z: 0 }, // just outside the 60-unit default radius
+          { time: 20, x: 0, z: 0 },
+          { time: 40, x: 61, z: 0 },
+        ]),
+      }],
+    });
+    drive(ctx, 60, 0.25);
+    // Only 40 of the 60 s ticked → 6 whole 6 s windows (+18), not 10.
+    expect(ctx.allyScore.value).toBe(318);
+  });
+
+  it("uses the 4-area start and the 9 s cadence", () => {
+    const zones = [0, 1, 2, 3].map((i) => ({
+      ...zone({ controlPointIndex: i }),
+      entityId: i + 1,
+    }));
+    const ctx = fakeCtx(zones, { operation: false });
+    drive(ctx, 18, 0.25);
+    // 200 start + 4 points x 2 windows x 4 pts.
+    expect(ctx.allyScore.value).toBe(232);
+    expect(ctx.enemyScore.value).toBe(200);
+  });
+
+  it("clamps both sides at the 1000-point victory threshold", () => {
+    const ctx = fakeCtx([ownedZone()], { operation: false });
+    updateCapsAndScore(ctx, 3000);
+    expect(ctx.allyScore.value).toBe(1000);
+    expect(ctx.enemyScore.value).toBe(300);
+  });
+
+  it("awards the capture bonus once per completed capture and switches the tick side", () => {
+    const ctx = fakeCtx(
+      [{
+        ...zone({ initialTeam: -1 }),
+        capSamples: [
+          { time: 30.4, value: 2 },
+          { time: 60.4, value: 1 },
+        ],
+      }],
+      { operation: false },
+    );
+    drive(ctx, 90, 0.25);
+    // Enemy: +3 at 30.4 then 5 windows over the 30 s it held. Ally: +3 at
+    // 60.4 then 4 windows over the 29.5 s it held.
+    expect(ctx.enemyScore.value).toBe(318);
+    expect(ctx.allyScore.value).toBe(315);
+  });
+
+  it("pays +3 (not the +40 kill value) for a capture on a special map, and still ticks", () => {
+    const ctx = fakeCtx(
+      [{ ...zone({ initialTeam: -1 }), capSamples: [{ time: 100.4, value: 1 }] }],
+      { operation: false, mapName: "13_OC_new_dawn" },
+    );
+    updateCapsAndScore(ctx, 120);
+    // 150 start + 3 capture + 3 windows over the 19.5 s owned (not +40).
+    expect(ctx.allyScore.value).toBe(162);
+  });
+
+  it("starts co-op (pve) at 400 for a 3-area layout", () => {
+    const ctx = fakeCtx([ownedZone()], { operation: false, matchGroup: "pve" });
+    updateCapsAndScore(ctx, 12);
+    expect(ctx.allyScore.value).toBe(406);
+  });
+
+  it("does not pay a capture bonus for the pre-placed starting owner", () => {
+    const ctx = fakeCtx(
+      [{ ...zone(), capSamples: [{ time: 0, value: 1 }] }],
+      { operation: false },
+    );
+    updateCapsAndScore(ctx, 12);
+    // 300 + 2 windows; the t=0 ownership sample is the starting state.
+    expect(ctx.allyScore.value).toBe(306);
+  });
+});
+
+describe("capture progress clock", () => {
+  it("fills at the real 1/60 per second, not per rendered frame", () => {
+    const ctx = fakeCtx([zone({ initialTeam: -1 })], {
+      operation: false,
+      ships: [{
+        entityId: 7,
+        role: "ally",
+        samples: waypoints([{ time: 0, x: 0, z: 0 }]),
+      }],
+    });
+    drive(ctx, 30, 1 / 60);
+    // 30 s of a 60 s single-ship capture = half the ring (the old per-call
+    // step filled it in ~2 s, resolving operation objectives instantly).
+    expect(ctx.capDisplay.value[0].progress).toBeCloseTo(0.5, 1);
   });
 });

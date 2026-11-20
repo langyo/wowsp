@@ -1,8 +1,8 @@
 /**
  * Shell + plane encyclopedia lookups shared between the holographic map
  * (shell-flight tinting) and the tactical timeline (action markers).
- * Data is baked from GameParams by `scripts/model_convert/extract_shells.py`
- * and `extract_planes.py`.
+ * Data is baked from GameParams by `scripts/model_convert/extract_plane_types.py`
+ * (+ the Lesta/WG table mergers `extract_lesta_planes.py` / `extract_wg_planes.py`).
  */
 import shellTypesRaw from "../../../data/shell_types.json";
 import planeTypesRaw from "../../../data/plane_types.json";
@@ -13,22 +13,53 @@ export const SHELL_TYPES = shellTypesRaw as Record<
   { name: string; ammo: string; tint: number[] | null }
 >;
 
+/** One baked `plane_types.json` row. */
+export interface PlaneTypeRow {
+  index: string;
+  name: string;
+  type: string;
+  count?: number;
+  /** GameParams ammo/role family — the fine-grained label the squadron
+   *  panel shows (torpedo / rocket / heBomber / apBomber / asw / mine /
+   *  scout / dive / ...). `type` stays the coarse icon family. */
+  role?: string;
+  /** Row belongs to the Lesta client's table merge (extract_lesta_planes.py). */
+  lesta?: boolean;
+}
+
+/** The coarse battle-HUD family for one baked row.
+ *
+ *  A torpedo squadron's GameParams species is literally "Bomber" — the
+ *  airframe entity is a bomber whose carried ammunition is a torpedo
+ *  (`bombName` → a projectile with `planeAmmoType`/`ammoType` "torpedo").
+ *  The bakers project species+ammo into the icon family and already know
+ *  that: `scripts/model_convert/extract_lesta_planes.py` `plane_type()` maps
+ *  species "Bomber" + role "torpedo" → "torpedo" (extract_wg_planes.py reuses
+ *  the same function). The LEGACY rows baked before that rule kept the
+ *  species-derived "bomber": 91 of the 152 `role: "torpedo"` rows, so those
+ *  airframes painted the AP-bomber icon (planeIcons.ts `bomber`) and the
+ *  "AP bombers" hover label (MinimapHoverTip PLANE_TYPE_KEY `bomber`) while
+ *  their ammo-derived role already said torpedo. Reported on the VIII
+ *  Shokaku, whose FIRST-launched squadrons are torpedo bombers (PJAB108 /
+ *  PJAB208: species "Bomber", ammo "torpedo"; the 14.5.0.0 reference replay
+ *  `20250708_192303_PJSA108-Shokaku_37_Ridge` opens with paramsId 4076830416
+ *  at t=30.7 s) that showed up as bombers. Re-project the family from the
+ *  ammo-derived role here so every row — legacy, freshly baked, or Lesta —
+ *  answers the same way; `index` / `name` / `count` / `role` stay verbatim. */
+function planeTypeFamily(row: PlaneTypeRow): string {
+  return row.role === "torpedo" && row.type === "bomber" ? "torpedo" : row.type;
+}
+
 /** squadron paramsId → baked GameParams plane info (index/name/type/count):
  *  `type` is the behavioural family (torpedo/dive/fighter/scout/bomber/
- *  attack) driving the in-game icon and the timeline's marker language. */
-export const PLANE_TYPES = planeTypesRaw as Record<
-  string,
-  {
-    index: string;
-    name: string;
-    type: string;
-    count?: number;
-    /** GameParams ammo/role family — the fine-grained label the squadron
-     *  panel shows (torpedo / rocket / heBomber / apBomber / asw / mine /
-     *  scout / dive / ...). `type` stays the coarse icon family. */
-    role?: string;
-  }
->;
+ *  attack) driving the in-game icon and the timeline's marker language,
+ *  normalised by planeTypeFamily above. */
+export const PLANE_TYPES: Record<string, PlaneTypeRow> = Object.fromEntries(
+  Object.entries(planeTypesRaw as Record<string, PlaneTypeRow>).map(([id, row]) => [
+    id,
+    { ...row, type: planeTypeFamily(row) },
+  ]),
+);
 
 /** The airframe's FULL squadron strength: the GameParams `count` on the
  *  plane_types row — the same number plane_specs calls `squadron`, i.e. the

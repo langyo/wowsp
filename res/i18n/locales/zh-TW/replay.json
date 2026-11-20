@@ -591,8 +591,6 @@
     "formatVideo": "影片（MP4）",
     "formatGif": "GIF 動圖",
     "range": "範圍",
-    "rangeNow": "從目前時刻到結束",
-    "rangeFull": "整場",
     "fps": "幀率",
     "speed": "倍速",
     "resolution": "解析度",
@@ -613,11 +611,11 @@
     "dmgTaken": "承傷",
     "chatTitle": "聊天紀錄",
     "pathLabel": "匯出目錄",
-    "pathChange": "變更",
     "phaseFinalize": "正在封裝影片…",
     "phaseSave": "正在儲存檔案…",
-    "rangeFullDesc": "從開場到結束 · 約 {time}",
-    "rangeNowDesc": "從目前播放位置到結束 · 約 {time}"
+    "rangeLane": "對局時間軸",
+    "rangeLength": "區間時長 {time}",
+    "rangeClamp": "已按 GIF 1500 幀上限截斷至 {time}"
   },
   "perf": {
     "timing": "幀率",

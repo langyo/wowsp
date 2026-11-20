@@ -159,16 +159,20 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
   ctx.planeIndexById.clear();
   const typesOf = (paramsId: number, planeId: number) => {
     const info = PLANE_TYPES[String(paramsId)];
-    const type = info?.type ?? "attack";
+    const type = info?.type;
     const index = info?.index;
     for (let i = 0; i < 16; i++) {
       const key = planeId * 16 + i;
       // Last DEFINED writer wins, per map: both streams carry the same
-      // paramsId per planeId in practice, but when one stream's lookup
-      // misses PLANE_TYPES the old first-writer-wins guard let it poison
-      // the slot forever — the other stream's good paramsId could never
-      // repair the type or the model idx.
-      ctx.planeTypesById.set(key, type);
+      // paramsId per planeId in practice, but a table MISS must never write
+      // a value at all — the old code wrote the "attack" fallback
+      // unconditionally, so the minimap stream (run last) could downgrade a
+      // good family the create stream had just resolved, and the create
+      // stream could not repair it afterwards. The "attack" default is only
+      // filled for a slot NO stream resolves, which is the pre-existing
+      // contract every consumer already repeats (`?? "attack"`).
+      if (type) ctx.planeTypesById.set(key, type);
+      else if (!ctx.planeTypesById.has(key)) ctx.planeTypesById.set(key, "attack");
       if (index) ctx.planeIndexById.set(key, index);
     }
   };

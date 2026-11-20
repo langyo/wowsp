@@ -78,12 +78,14 @@ export const PLAYBACK_CODEC_LADDER: readonly OfflineCodecChoice[] = [
   { codec: "av1", ext: "mp4" },
   { codec: "avc", ext: "mp4" },
 ];
-/** Range options — same semantics as the tactical wizard's. */
-export type PlaybackExportRange = "now" | "start";
-
+/** The export settings; `from`/`to` are the range ribbon's window, in
+ *  battle seconds. */
 export interface PlaybackExportSettings {
   format: PlaybackExportFormat;
-  from: PlaybackExportRange;
+  /** Window start, battle seconds. */
+  from: number;
+  /** Window end, battle seconds (clamped to an end > from at job time). */
+  to: number;
   fps: number;
   /** Battle-time compression: each frame advances speed/fps battle
    *  seconds, so a whole match fits a shareable clip. */
@@ -103,7 +105,7 @@ export const PLAYBACK_EXPORT_FPS: Record<PlaybackExportFormat, number[]> = {
  *  memory until finish(), so an unbounded take (a 1× full match) would
  *  balloon past a gigabyte. The modal refuses to start past this and
  *  says how to shrink the take. */
-export const GIF_MAX_FRAMES = 1200;
+export const GIF_MAX_FRAMES = 1500;
 /** Video frame budget: mediabunny's BufferTarget also holds the whole
  *  mux in memory, so a 1× 60 fps full match (72k frames) is not a
  *  take anyone should be able to start by accident. */
@@ -111,6 +113,31 @@ export const VIDEO_MAX_FRAMES = 30000;
 /** The budget for a format (the modal's start guard + warning line). */
 export function exportFrameBudget(format: PlaybackExportFormat): number {
   return format === "gif" ? GIF_MAX_FRAMES : VIDEO_MAX_FRAMES;
+}
+
+/** Longest battle span the format's frame budget allows, in battle seconds
+ *  (frameTimesAtSpeed is endpoint-inclusive: frames = span·fps/speed + 1). */
+export function exportMaxSpan(
+  format: PlaybackExportFormat,
+  fps: number,
+  speed: number,
+): number {
+  const step = Math.max(1e-6, speed / Math.max(1, fps));
+  return Math.max(step, (exportFrameBudget(format) - 1) * step);
+}
+
+/** Clamp a window's end so the take fits the budget. GIF auto-shrinks (the
+ *  range ribbon短ens itself, 2026-11-20 request); video keeps the explicit
+ *  refusal instead, so its end is left untouched here. */
+export function clampRangeToBudget(
+  from: number,
+  to: number,
+  format: PlaybackExportFormat,
+  fps: number,
+  speed: number,
+): number {
+  if (format !== "gif") return to;
+  return Math.min(to, from + exportMaxSpan(format, fps, speed));
 }
 /** Width ladders per format: the HUD composition needs width for its side
  *  columns, so video starts at 1080 (1440 default — the map text goes
@@ -129,7 +156,8 @@ export const PLAYBACK_EXPORT_DEFAULT_SPEED: Record<PlaybackExportFormat, number>
 };
 
 /** Clamp fps/size/speed onto the ladders (format switches in the modal
- *  must not leave an alien value behind). */
+ *  must not leave an alien value behind). The from/to window is NOT a
+ *  ladder value — the job normalizes it against the replay's duration. */
 export function clampExportSettings(s: PlaybackExportSettings): PlaybackExportSettings {
   const fps = PLAYBACK_EXPORT_FPS[s.format];
   const sizes = PLAYBACK_EXPORT_SIZES[s.format];
@@ -141,6 +169,29 @@ export function clampExportSettings(s: PlaybackExportSettings): PlaybackExportSe
       ? s.speed
       : PLAYBACK_EXPORT_DEFAULT_SPEED[s.format],
   };
+}
+
+/** Normalize a raw settings window against the replay: finite, ordered,
+ *  inside [0, duration], at least one frame long, GIF capped to its budget.
+ *  Both the modal (estimate) and the job (the actual take) run this, so
+ *  what the user reads is exactly what gets rendered. */
+export function normalizeExportRange(
+  from: number,
+  to: number,
+  duration: number,
+  format: PlaybackExportFormat,
+  fps: number,
+  speed: number,
+): { from: number; to: number } {
+  const dur = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  let a = Number.isFinite(from) ? Math.min(Math.max(0, from), dur) : 0;
+  let b = Number.isFinite(to) ? Math.min(Math.max(0, to), dur) : dur;
+  if (b < a) [a, b] = [b, a];
+  // The ribbon can hand back a hairline window (a stray click); the export
+  // always covers at least one frame step.
+  const minSpan = Math.max(1e-3, speed / Math.max(1, fps));
+  if (b - a < minSpan) b = Math.min(dur, a + minSpan);
+  return { from: a, to: clampRangeToBudget(a, b, format, fps, speed) };
 }
 
 /** Frame schedule under compression: like frameTimes, but each frame
@@ -698,15 +749,22 @@ function drawRecorderPanel(
   g.fillText(labels.frags, x + 10 + badge + 7, rowY(0));
   g.font = font(11, 700, true);
   g.fillStyle = rgba(palette.text, 0.9);
+  g.textAlign = "right";
   g.fillText(String(stats.frags), x + w - 10, rowY(0));
   drawStatBadge(g, x + 10, rowY(1) - badge / 2, badge, "120 160 255", "shield");
   g.font = font(11, 400);
   g.fillStyle = rgba(palette.text, 0.62);
+  // Labels stay left-aligned; only the VALUE columns are right-aligned.
+  g.textAlign = "left";
   g.fillText(labels.taken, x + 10 + badge + 7, rowY(1));
   g.font = font(11, 700, true);
   g.fillStyle = rgba(palette.text, 0.9);
+  // The value column hugs the right inset (it must not start there and run
+  // rightward out of the panel).
   g.textAlign = "right";
   g.fillText(stats.taken.toLocaleString("en-US"), x + w - 10, rowY(1));
+  // Hand the alignment back to the callers (left) for the next pass.
+  g.textAlign = "left";
 }
 
 /** The chat log (right column bottom): the most recent entries drawn from

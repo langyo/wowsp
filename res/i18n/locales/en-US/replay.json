@@ -591,8 +591,6 @@
     "formatVideo": "Video (MP4)",
     "formatGif": "GIF animation",
     "range": "Range",
-    "rangeNow": "From playhead to end",
-    "rangeFull": "Full match",
     "fps": "Frame rate",
     "speed": "Speed",
     "resolution": "Resolution",
@@ -613,11 +611,11 @@
     "dmgTaken": "Taken",
     "chatTitle": "Chat log",
     "pathLabel": "Export folder",
-    "pathChange": "Change",
     "phaseFinalize": "Finalizing video…",
     "phaseSave": "Saving file…",
-    "rangeFullDesc": "From the opening to the end · ~{time}",
-    "rangeNowDesc": "From the playhead to the end · ~{time}"
+    "rangeLane": "Battle timeline",
+    "rangeLength": "Span {time}",
+    "rangeClamp": "Trimmed to {time} (GIF 1500-frame cap)"
   },
   "perf": {
     "timing": "Frame rate",

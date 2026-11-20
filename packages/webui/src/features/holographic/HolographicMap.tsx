@@ -92,6 +92,7 @@ import {
   EXPORT_LOGICAL,
   clampExportSettings,
   frameTimesAtSpeed,
+  normalizeExportRange,
   renderPlaybackExport,
   type PlaybackExportSettings,
   type PlaybackIconVariant,
@@ -403,7 +404,11 @@ export default defineComponent({
       mmAccum += dt;
       if (mmAccum >= MM_REDRAW_S) {
         mmAccum = 0;
-        drawMinimap(ctx);
+        drawMinimap(ctx, {
+      // The 主控 gold edge belongs to the followed carrier's active
+      // squadron (followAircraft is the intent; the carrier is the selection).
+      followedCarrierId: followAircraft.value ? selectedEntityId.value ?? null : null,
+    });
         // ~5 Hz live hover refresh: while a 2D tooltip is open and the
         // replay plays, a moving torpedo / aircraft / smoke cluster keeps
         // its card numbers current under a stationary cursor.
@@ -1675,7 +1680,11 @@ const RECORDED_DOLLY_MIN = -40;
       // against the teleported position as if it were wheel zoom.
       dollySeen = false;
       updateMarkersAt(ctx, clamped);
-      drawMinimap(ctx);
+      drawMinimap(ctx, {
+      // The 主控 gold edge belongs to the followed carrier's active
+      // squadron (followAircraft is the intent; the carrier is the selection).
+      followedCarrierId: followAircraft.value ? selectedEntityId.value ?? null : null,
+    });
     }
 
     /** Effective view window for the tactical layer (null before bounds). */
@@ -3311,9 +3320,15 @@ const RECORDED_DOLLY_MIN = -40;
       { flush: "sync" },
     );
     /** Survives between passes (same contract as the tactical wizard's). */
+    /** Replay path the export range was last seeded for (the modal's open
+     *  watcher re-seeds when this changes). */
+    let seedRangeForPath = "";
     const exportSettings = reactive<PlaybackExportSettings>({
       format: "video",
-      from: "now",
+      // Filled in when the modal opens (playhead → end); normalized again
+      // against the replay in the job.
+      from: 0,
+      to: 0,
       fps: 30,
       speed: 5,
       size: 1440,
@@ -3330,18 +3345,29 @@ const RECORDED_DOLLY_MIN = -40;
         exportDir.value = null;
       }
     }
-    async function pickExportDir(): Promise<void> {
-      try {
-        const picked = await rpcApi.exportDirPick();
-        if (picked) exportDir.value = picked;
-      } catch {
-        // Host refused (non-tauri / dialog backend) — keep the old dir.
-      }
-    }
     watch(
       () => exportOpen.value,
       (open) => {
-        if (open) void loadExportDir();
+        if (!open) return;
+        void loadExportDir();
+        // Seed the range window: keep a still-valid window on THIS replay,
+        // else default to [playhead, end] (the old "从现在开始" reading). The
+        // seeding is tracked per replay path so switching matches never
+        // inherits the previous span.
+        const dur = duration.value;
+        const path = props.replayPath ?? "";
+        const stale =
+          path !== seedRangeForPath ||
+          !Number.isFinite(exportSettings.from) ||
+          !Number.isFinite(exportSettings.to) ||
+          exportSettings.to <= exportSettings.from ||
+          exportSettings.to > dur ||
+          exportSettings.from < 0;
+        if (stale) {
+          seedRangeForPath = path;
+          exportSettings.from = Math.min(current.value, Math.max(0, dur - 1));
+          exportSettings.to = dur;
+        }
       },
     );
     let lastProgressTick = 0;
@@ -3368,8 +3394,16 @@ const RECORDED_DOLLY_MIN = -40;
       const full = computeFullMapBounds(ctx);
       if (!full || duration.value <= 0 || exporting.value) return;
       const s = clampExportSettings(exportSettings);
-      const from = s.from === "start" ? 0 : current.value;
-      const times = frameTimesAtSpeed(from, duration.value, s.fps, s.speed);
+      const range = normalizeExportRange(
+        s.from,
+        s.to,
+        duration.value,
+        s.format,
+        s.fps,
+        s.speed,
+      );
+      const from = range.from;
+      const times = frameTimesAtSpeed(range.from, range.to, s.fps, s.speed);
       if (times.length < 2) {
         toast.info(i18nT("replay.export.toastEmpty"));
         return;
@@ -3679,7 +3713,15 @@ const RECORDED_DOLLY_MIN = -40;
             x/y churn stays out of Vue, and only the low-frequency content
             below (name/hp/tone/status) re-renders — see markerUpdate's
             label-content throttle. */}
-        <div class={["holo-map__labels", showLabels.value ? "" : "holo-map__labels--hidden"]} aria-hidden="true">
+        <div
+          class={[
+            "holo-map__labels",
+            // The enlarged 2D map IS the view: floating 3D name/status cards
+            // painted over it would read as map labels from another layer.
+            showLabels.value && !minimapZoom.value ? "" : "holo-map__labels--hidden",
+          ].filter(Boolean).join(" ")}
+          aria-hidden="true"
+        >
           {shipLabels.value.map((lbl) => {
             // Local player markers (玩家标记): nickname-first match, the
             // resolved account id sharpens it when the stats batch landed.
@@ -4209,7 +4251,13 @@ const RECORDED_DOLLY_MIN = -40;
             duration={duration.value}
             current={current.value}
             exportDir={exportDir.value}
-            onPickDir={() => { void pickExportDir(); }}
+            onDirChange={(dir: string) => {
+              // Typed path: display-only this session. The PICKER persists
+              // (native dialog = the user's consent, see export_config.rs);
+              // an arbitrarily typed folder has no write grant and the save
+              // falls back to the dialog.
+              exportDir.value = dir;
+            }}
             onStart={() => { void runPlaybackExportJob(); }}
           />
           </>

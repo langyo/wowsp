@@ -591,8 +591,6 @@
     "formatVideo": "Vidéo (MP4)",
     "formatGif": "GIF animé",
     "range": "Plage",
-    "rangeNow": "De la position actuelle à la fin",
-    "rangeFull": "Match complet",
     "fps": "Fréquence d'images",
     "speed": "Vitesse",
     "resolution": "Résolution",
@@ -613,11 +611,11 @@
     "dmgTaken": "Subis",
     "chatTitle": "Chat",
     "pathLabel": "Dossier d'export",
-    "pathChange": "Changer",
     "phaseFinalize": "Finalisation de la vidéo…",
     "phaseSave": "Enregistrement du fichier…",
-    "rangeFullDesc": "Du début à la fin · ~{time}",
-    "rangeNowDesc": "De la position actuelle à la fin · ~{time}"
+    "rangeLane": "Chronologie de la bataille",
+    "rangeLength": "Intervalle {time}",
+    "rangeClamp": "Réduit à {time} (limite GIF 1500 images)"
   },
   "perf": {
     "timing": "Fréquence d'images",

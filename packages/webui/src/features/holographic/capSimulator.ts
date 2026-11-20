@@ -40,7 +40,8 @@ function shipsInZone(ctx: MapInternals, zone: EntityTrajectory, t: number): { al
   return { ally, enemy };
 }
 
-/** Advance a zone's capture simulation from lastSimT to t in 0.5s steps.
+/** Advance a zone's capture simulation from lastSimT to t, sampling ships
+ *  in at most 0.5 s slices but charging each slice's REAL elapsed time.
  *  Ownership always follows the recorded prop0 stream; the simulation
  *  drives the visible progress ring (speed by ships inside, frozen when
  *  contested, halved when an inside ship takes a hit) AND the point's
@@ -67,9 +68,18 @@ function simulateZone(ctx: MapInternals,
   // accrual for the whole [0, changeTime) stretch).
   let si = 0;
   while (si < samples.length && samples[si].time <= simT) si++;
+  // Maximum SIMULATION granularity (how often ships/HP are re-sampled), NOT
+  // the time actually elapsed: during playback updateCapsAndScore runs once
+  // per rendered frame, so a 60 fps tick is ~0.017 s. Charging the whole 0.5 s
+  // step to the accrual clock (and to the capture progress) made the sim
+  // advance ~30x faster than the replay at 1x speed — three owned points
+  // raced the 1000 clamp within ~25 s of playback. Every time-dependent
+  // quantity below uses `dt` (the real slice) so the result depends only on
+  // the playhead, never on the frame rate or the number of calls.
   const step = 0.5;
   while (simT < t) {
     const nxt = Math.min(simT + step, t);
+    const dt = nxt - simT;
     const mid = (simT + nxt) / 2;
     while (si < samples.length && samples[si].time < nxt) {
       const s = samples[si];
@@ -124,26 +134,26 @@ function simulateZone(ctx: MapInternals,
     if (st.owner === 0) {
       // Neutral: a single team present starts capturing it.
       if ((ally > 0) !== (enemy > 0)) {
-        st.progress += step / (Math.max(ally, enemy) >= 2 ? 40 : 60);
+        st.progress += dt / (Math.max(ally, enemy) >= 2 ? 40 : 60);
         if (st.progress > 1) st.progress = 1;
       }
     } else if (!contested && enemy > 0 && ally === 0 && st.owner === 1) {
       // Enemy-only inside an allied point: re-capturing (ring visual;
       // the actual flip comes from the prop0 stream).
-      st.progress += step / (enemy >= 2 ? 40 : 60);
+      st.progress += dt / (enemy >= 2 ? 40 : 60);
       if (st.progress > 1) st.progress = 1;
     } else if (!contested && ally > 0 && enemy === 0 && st.owner === 2) {
       // Allied-only inside an enemy point: re-capturing it the same way.
-      st.progress += step / (ally >= 2 ? 40 : 60);
+      st.progress += dt / (ally >= 2 ? 40 : 60);
       if (st.progress > 1) st.progress = 1;
     } else {
       // Owner keeps scoring accrual while NOT contested — including
       // with the owner's own ships sitting on the point (the standard
       // 2-cap opening: both home points tick from second one, with the
-      // whole home fleet inside). In-game this is the passive 3 pts
-      // per 2 s per owned point.
+      // whole home fleet inside). In-game this is the passive interval
+      // from the scoring table (accrualPts every accrualEvery seconds).
       if (accrualEvery > 0 && !contested) {
-        st.accrualT += step;
+        st.accrualT += dt;
         while (st.accrualT >= accrualEvery) {
           st.accrualT -= accrualEvery;
           if (st.owner === 1) st.scoreAlly += accrualPts;
@@ -228,19 +238,28 @@ export interface SunkShipMarker {
   deathTime: number | null;
 }
 
+/** Scoring family a replay belongs to — the wiki's four columns
+ *  (wiki.worldofwarships.com/Ship:Game_Modes "Points for destroying enemy
+ *  ships"). Co-op shares the Random kill/death table; Ranked and Clan
+ *  battles use a flat +40/-60 (+60/-90 for carriers) instead of the
+ *  per-class Random table. */
+export type ScoringMode = "random" | "coop" | "ranked" | "clan";
+
 /** Kill/death points the sunk ships add to each side's score by time `t`
- * (classic class tables; `special` maps override with flat +40/-25). Team
- * modes attribute each sink's kill points to the OPPOSITE side, inferred
- * from the marker's role. Operation scenarios (行动) make NO attribution:
- * their single-team roster cannot tell an enemy bot from an ally script
- * ship (relation follows scenario slots — see #606), so crediting the
- * enemy score from friendly sinks would be pure invention; only the cap
- * simulation (which follows the game's own ownership stream) scores. */
+ * (classic class tables; `special` maps override with flat +40/-25, and
+ * ranked/clan battles with the flat ranked table). Team modes attribute
+ * each sink's kill points to the OPPOSITE side, inferred from the marker's
+ * role. Operation scenarios (行动) make NO attribution: their single-team
+ * roster cannot tell an enemy bot from an ally script ship (relation
+ * follows scenario slots — see #606), so crediting the enemy score from
+ * friendly sinks would be pure invention; only the cap simulation (which
+ * follows the game's own ownership stream) scores. */
 export function sunkShipPoints(
   markers: SunkShipMarker[],
   t: number,
   special: boolean,
   operation = false,
+  mode: ScoringMode = "random",
 ): { ally: number; enemy: number } {
   let ally = 0;
   let enemy = 0;
@@ -261,8 +280,15 @@ export function sunkShipPoints(
         : (m.type ?? "").includes("AirCarrier") || (m.type ?? "").includes("AirCar") ? "AirCarrier"
         : (m.type ?? "").includes("Submarine") ? "Submarine"
         : "Cruiser";
-      kill = KILL_PTS[cls].kill;
-      death = KILL_PTS[cls].death;
+      if (mode === "ranked" || mode === "clan") {
+        // Ranked / Clan: every class +40 / -60, carriers +60 / -90.
+        const carrier = cls === "AirCarrier";
+        kill = carrier ? 60 : 40;
+        death = carrier ? -90 : -60;
+      } else {
+        kill = KILL_PTS[cls].kill;
+        death = KILL_PTS[cls].death;
+      }
     }
     if (killer === "ally") ally += kill;
     else enemy += kill;
@@ -272,6 +298,113 @@ export function sunkShipPoints(
   return { ally, enemy };
 }
 
+/** Domination scoring parameters for one replay, from the official table
+ *  (wiki.worldofwarships.com/Ship:Game_Modes → "Domination"):
+ *
+ *  |                  | start | capture | controlled area      |
+ *  | Random 3 areas   |  300  |  +3     | +3 every 5 s           |
+ *  | Random 4 areas   |  200  |  +4     | +4 every 9 s           |
+ *  | Co-op 3 areas    |  400  |  +3     | +3 every 5 s           |
+ *  | Co-op 4 areas    |  300  |  +4     | +4 every 9 s           |
+ *  | Ranked 2 areas   |  300  |  +9     | +9 every 10 s          |
+ *  | Ranked 3 areas   |  300  |  +2     | +2 every 3 s           |
+ *  | Clan 3 areas     |  300  |  +3     | +3 every 4 s           |
+ *
+ *  The eight "special" maps (start 150, kills +40, deaths -25 — see
+ *  SPECIAL_CAP_MAPS) change ONLY those three settings: the capture award
+ *  and the per-area interval above still apply (this module used to award
+ *  +40 per capture — the KILL value — and drop area accrual entirely).
+ *
+ *  Cadence note: the table says 5 s for 3 areas, but a full solve of the
+ *  real Canada domination_2point replay (final 843 = 300 start + 135 kill
+ *  points + 136 windows x 3 over 818 owned-cap-seconds, contested
+ *  t=311..377) pins the shipped rate at 3 pts / 6 s. The replay-derived
+ *  number wins here; 5 s would inflate every score by 20%. A second replay
+ *  with a known final score would settle it.
+ *
+ *  `nAreas` is the count of REAL capture points in the replay (the create
+ *  state's controlPoint component), not the map's nominal layout. */
+export function scoringRules(
+  props: { matchGroup?: string | null; mapName?: string | null; operation?: boolean },
+  nAreas: number,
+): {
+  mode: ScoringMode;
+  special: boolean;
+  startPts: number;
+  capCompletePts: number;
+  /** Seconds between two area-accrual ticks; 0 = this mode has none. */
+  accrualEvery: number;
+  accrualPts: number;
+} {
+  const fourArea = nAreas >= 4;
+  const special = SPECIAL_CAP_MAPS.has(props.mapName ?? "");
+  const group = props.matchGroup ?? "";
+  const isRanked = group === "ranked";
+  const isClan = group === "clan";
+  // Co-op is the "pve" matchGroup WITHOUT a story operation: operations hide
+  // the score digits entirely, and their pre-placed objectives are not
+  // scored by the domination rules at all.
+  // NOTE: every non-operation PvE replay reads as co-op here. Asymmetric
+  // battles (asymm_*), convoy and event PvE also carry matchGroup "pve" and
+  // the replay stream this simulator sees does not identify them, so their
+  // digits follow the co-op column until a replay with a known score proves
+  // otherwise (the repo's modeColors.isCoopBattle has the richer predicate —
+  // it needs the scenario/roster, which MapProps does not carry).
+  const isCoop = group === "pve" && !props.operation;
+  const mode: ScoringMode = isRanked
+    ? "ranked"
+    : isClan
+      ? "clan"
+      : isCoop
+        ? "coop"
+        : "random";
+  const startPts = special
+    ? 150
+    : isRanked || isClan
+      ? 300
+      : isCoop
+        ? fourArea
+          ? 300
+          : 400
+        : fourArea
+          ? 200
+          : 300;
+  const capCompletePts = special
+    ? fourArea
+      ? 4
+      : 3
+    : isRanked
+      ? nAreas <= 2
+        ? 9
+        : 2
+      : isClan
+        ? 3
+        : fourArea
+          ? 4
+          : 3;
+  let accrualEvery = 0;
+  let accrualPts = 0;
+  if (isRanked) {
+    if (nAreas <= 2) {
+      accrualEvery = 10;
+      accrualPts = 9;
+    } else if (!fourArea) {
+      accrualEvery = 3;
+      accrualPts = 2;
+    }
+    // Ranked 4-area: the table has no such mode (N/A) → no area accrual.
+  } else if (isClan) {
+    // Clan (and any 2-area clan exception): the table only lists 3 areas.
+    accrualEvery = 4;
+    accrualPts = 3;
+  } else {
+    // Random, co-op and the eight special maps share the interval table.
+    accrualEvery = fourArea ? 9 : 6;
+    accrualPts = fourArea ? 4 : 3;
+  }
+  return { mode, special, startPts, capCompletePts, accrualEvery, accrualPts };
+}
+
 /** Recompute cap zone states + score at playback time t. Fully derived
  *  from the replay stream (capSamples ownership changes, ship positions,
  *  HP streams) so scrubbing reproduces the same result. */
@@ -279,27 +412,8 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
   const zones = ctx.capZones.value;
   const scoring = ctx.scoringZones.value;
   // Scoring parameters by mode + map (based on REAL capture points).
-  const isRanked = ctx.props.matchGroup === "ranked" || ctx.props.matchGroup === "clan";
-  const special = SPECIAL_CAP_MAPS.has(ctx.props.mapName);
-  const nAreas = scoring.length;
-  const startPts = special ? 150 : isRanked ? 300 : nAreas >= 4 ? 200 : 300;
-  const capCompletePts = special ? 40 : isRanked ? (nAreas >= 4 ? 2 : 9) : nAreas >= 4 ? 4 : 3;
-  // Accrual: (every N seconds, +P per controlled area). Randoms 2-3
-  // points = 3 pts / 6 s — SOLVED from the real Canada domination_2point
-  // replay: final 843 = 300 start + 135 kill points (4 enemy sinks:
-  // CA+SS+CA+BB) + rate × 818 owned-cap-seconds (home point contested
-  // t=311..377) → rate = 0.499 pts/s. 4+ points keep 4/9 s.
-  let accrualEvery = 0;
-  let accrualPts = 0;
-  if (!special) {
-    if (isRanked) {
-      accrualEvery = nAreas >= 4 ? 0 : nAreas === 2 ? 10 : 3;
-      accrualPts = nAreas >= 4 ? 0 : nAreas === 2 ? 9 : 2;
-    } else {
-      accrualEvery = nAreas >= 4 ? 9 : 6;
-      accrualPts = nAreas >= 4 ? 4 : 3;
-    }
-  }
+  const rules = scoringRules(ctx.props, scoring.length);
+  const { special, startPts, capCompletePts, accrualEvery, accrualPts } = rules;
 
   let allyScoreNow = startPts;
   let enemyScoreNow = startPts;
@@ -316,6 +430,7 @@ export function updateCapsAndScore(ctx: MapInternals, t: number) {
     t,
     special,
     ctx.props.operation,
+    rules.mode,
   );
   allyScoreNow += sunkPts.ally;
   enemyScoreNow += sunkPts.enemy;
