@@ -344,8 +344,11 @@ pub async fn mod_hub_purge_reinstall(
                 record.preset.clone(),
                 // A purge reinstalls what the ledger already had on this
                 // exact root — a version mismatch would have warned the
-                // same way the first time; the resume must not drop units.
-                false,
+                // same way the first time; the resume must not drop units,
+                // and neither fan-out gate may turn one into a rule skip:
+                // this restore's job is to put back exactly what the ledger
+                // recorded.
+                mod_catalog::install::InstallGates::default(),
             )
             .await
             {
@@ -562,8 +565,9 @@ pub async fn mod_hub_purge_backup_resume(
             root,
             app_handle,
             unit.preset.clone(),
-            // Same rule as the purge loop above: resume restores.
-            false,
+            // Same rule as the purge loop above: resume restores — neither
+            // fan-out gate may skip a unit.
+            mod_catalog::install::InstallGates::default(),
         )
         .await
         {

@@ -55,8 +55,14 @@ vi.mock("@/stores/pluginUpdates", () => ({
   usePluginUpdatesStore: () => ({
     itemBusy: new Map(),
     syncFreshness: vi.fn(),
-    runMod: (id: string, root: string, preset?: string, _op?: string, skip?: boolean) =>
-      mocks.catalogInstall(id, root, preset, skip),
+    runMod: (
+      id: string,
+      root: string,
+      preset?: string,
+      _op?: string,
+      skip?: boolean,
+      skipPackage?: boolean,
+    ) => mocks.catalogInstall(id, root, preset, skip, skipPackage),
     runModUninstall: (id: string, root: string) => mocks.catalogUninstall(id, root),
   }),
 }));
@@ -859,13 +865,13 @@ describe("multi-client sync", () => {
     // Active EU client first, the Lesta build (kind fallback → ru) next;
     // the CN client is skipped by rule (cn ∉ [eu, ru]).
     expect(mocks.catalogInstall).toHaveBeenCalledTimes(2);
-    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined, false);
-    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(2, "mod-x", "C:/RU", undefined, true);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined, false, false);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(2, "mod-x", "C:/RU", undefined, true, true);
     expect(mocks.info).toHaveBeenCalledWith("resources.sync.skippedByRule");
     expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
   });
 
-  it("skips version-incompatible targets quietly instead of failing them", async () => {
+  it("skips rule-incompatible fan-out targets quietly instead of failing them", async () => {
     localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
     multiInstallConfig();
     mocks.catalog.mockResolvedValue({
@@ -874,13 +880,15 @@ describe("multi-client sync", () => {
       fetchedAt: "",
     });
     // The Lesta client (kind fallback -> ru) reports a foreign version
-    // lineage: the backend's version gate answers report.skipped and the
-    // fan-out treats it as a RULE skip — quiet per-client note, no
-    // failure, no outcome. (Inline mount: the shared helper re-seeds the
-    // install mock wholesale.)
+    // lineage: the backend answers report.skipped and the fan-out treats it
+    // as a RULE skip — quiet per-client note, no failure, no outcome.
+    // (Inline mount: the shared helper re-seeds the install mock wholesale.)
     mocks.catalogInstall.mockImplementation(async (_id: string, root: string) =>
       root === "C:/RU"
-        ? { name: "Mod X", binVersion: "", wroteFiles: 0, warnings: [], skipped: "mismatch" }
+        ? {
+            name: "Mod X", binVersion: "", wroteFiles: 0, warnings: [],
+            skipped: "game version mismatch", skippedKind: "version",
+          }
         : { name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [] },
     );
     const view = await shallowMount(ResourcesView, {
@@ -896,16 +904,52 @@ describe("multi-client sync", () => {
     await flushPromises();
     // Universal entry: EU + CN land, RU skips by version — three attempts.
     expect(mocks.catalogInstall).toHaveBeenCalledTimes(3);
-    // The gate skips every FAN-OUT target; the ACTIVE root (EU) keeps
-    // warn-and-proceed.
-    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined, false);
-    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(3, "mod-x", "C:/RU", undefined, true);
+    // Both gates are requested for FAN-OUT targets; the ACTIVE root (EU)
+    // keeps warn-and-proceed with neither gate.
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(1, "mod-x", "C:/EU", undefined, false, false);
+    expect(mocks.catalogInstall).toHaveBeenNthCalledWith(3, "mod-x", "C:/RU", undefined, true, true);
+    // The report's skippedKind picks the sentence: this one is the version
+    // gate's.
     expect(mocks.info.mock.calls.map((c) => c[0])).toContain(
       "resources.sync.skippedByVersion",
     );
     // Only the landed clients count — the skip is not a partial failure.
     expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
     expect(mocks.warning).not.toHaveBeenCalledWith(expect.stringContaining("resources.sync.partial"));
+  });
+
+  it("labels a capability skip with the package sentence in the fan-out", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    multiInstallConfig();
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry("mod-x")],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    mocks.catalogInstall.mockImplementation(async (_id: string, root: string) =>
+      root === "C:/RU"
+        ? {
+            name: "Mod X", binVersion: "", wroteFiles: 0, warnings: [],
+            skipped: "client lacks assets", skippedKind: "package",
+          }
+        : { name: "Mod X", binVersion: "1", wroteFiles: 1, warnings: [] },
+    );
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+    });
+    await flushPromises();
+    await view.findAll(".mod-row")[0].trigger("click");
+    await flushPromises();
+    const installBtn = view
+      .findAllComponents({ name: "HkButton" })
+      .find((b) => "onClick" in (b.vm.$attrs as Record<string, unknown>))!;
+    (installBtn.vm.$attrs as { onClick: () => void }).onClick();
+    await flushPromises();
+    // The capability gate must not borrow the version wording: the pack's
+    // range is fine, the CLIENT does not ship the assets it loads.
+    const infoKeys = mocks.info.mock.calls.map((c) => c[0]);
+    expect(infoKeys).toContain("resources.sync.skippedIncompatible");
+    expect(infoKeys).not.toContain("resources.sync.skippedByVersion");
   });
 
   it("stays single-root while unified sync is off", async () => {
@@ -915,7 +959,7 @@ describe("multi-client sync", () => {
     await mountWithEntry();
     // Only the ACTIVE client's root is touched; the per-op toast stays.
     expect(mocks.catalogInstall).toHaveBeenCalledTimes(1);
-    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-x", "C:/EU", undefined, undefined);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-x", "C:/EU", undefined, undefined, undefined);
     expect(mocks.success).toHaveBeenCalledWith("resources.installedDone");
   });
 
@@ -991,10 +1035,58 @@ describe("multi-client sync", () => {
     // CN receives the two missing mods (mod-cn by its realm rule);
     // its extra mod leaves (removal is realm-agnostic).
     expect(mocks.catalogInstall).toHaveBeenCalledTimes(2);
-    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-a", "C:/CN", undefined, undefined);
-    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-cn", "C:/CN", undefined, undefined);
+    // Every reconcile target is a NON-active client chosen by the rule, so
+    // the installs take the package-capability gate (no version gate).
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-a", "C:/CN", undefined, undefined, true);
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-cn", "C:/CN", undefined, undefined, true);
     expect(mocks.catalogUninstall).toHaveBeenCalledWith("mod-extra", "C:/CN");
     expect(mocks.success).toHaveBeenCalledWith("resources.sync.done");
+  });
+
+  it("treats a capability-gated reconcile target as a quiet skip, not a failure", async () => {
+    localStorage.setItem("wowsp-modhub-disclaimer-acked", "1");
+    mocks.config.activeInstall = { kind: "steam", realm: "eu", path: "C:/EU" };
+    mocks.config.installs = [
+      { kind: "steam", realm: "eu", path: "C:/EU" },
+      { kind: "lesta", path: "C:/RU" },
+    ];
+    mocks.catalog.mockResolvedValue({
+      mods: [catEntry("mod-a")],
+      sourceVersion: "test",
+      fetchedAt: "",
+    });
+    // The active EU client owns mod-a; the Lesta target carries none, so the
+    // plan tries to copy it there — and the backend's capability gate skips
+    // (the client does not ship the pack's font assets).
+    mocks.records.mockResolvedValue([
+      { id: "mod-a", name: "Mod A", version: "1", source: "mod-hub", gameRoot: "C:/EU" },
+    ]);
+    mocks.catalogInstall.mockResolvedValue({
+      name: "Mod A", binVersion: "", wroteFiles: 0, warnings: [],
+      skipped: "client lacks assets", skippedKind: "package",
+    });
+    const view = await shallowMount(ResourcesView, {
+      global: { stubs: { HkScrollContainer: false, AppTag: false, HkTag: false } },
+    });
+    await flushPromises();
+    view.findComponent({ name: "HMenu" }).vm.$emit("select", "sync-all");
+    await flushPromises();
+    view
+      .findAllComponents({ name: "HkConfirmDialog" })
+      .find((d) => d.props("open") === true)!
+      .vm.$emit("confirm");
+    await flushPromises();
+
+    expect(mocks.catalogInstall).toHaveBeenCalledWith("mod-a", "C:/RU", undefined, undefined, true);
+    // Rule skip, not a client failure: a per-item note says why, and the run
+    // must never claim a sync that did not land. The note is the whole story
+    // — a "nothing to do" claim would contradict it.
+    const infoKeys = mocks.info.mock.calls.map((c) => c[0]);
+    expect(infoKeys).toContain("resources.sync.skippedIncompatible");
+    expect(infoKeys).not.toContain("resources.sync.nothingToDo");
+    expect(mocks.success).not.toHaveBeenCalledWith("resources.sync.done");
+    expect(mocks.warning).not.toHaveBeenCalled();
+    expect(mocks.error).not.toHaveBeenCalled();
   });
 
 

@@ -106,6 +106,7 @@
   "pluginUpdateBusyElsewhere": "Ces plugins sont déjà en cours de mise à jour ailleurs.",
   "pluginUpdateStaleWarning": "Le plugin du client en cours d'exécution n'est pas à jour — les statistiques affichées en maintenant Tab peuvent être inexactes.",
   "pluginUpdateSkipped": "« {names} » est en cours d'exécution — {count} mise(s) à jour ignorée(s). Fermez le jeu, puis relancez la mise à jour.",
+  "pluginUpdateSkippedIncompatible": "{count} mise(s) à jour ignorée(s) : le client {clients} ne possède pas les ressources de jeu requises par le pack.",
   "pluginUpdateBadge": "MàJ",
   "pluginUpdateMinimize": "Masquer pour l'instant",
   "pluginUpdateStep": "Mise à jour de {name} ({done}/{total})",
@@ -428,6 +429,7 @@
     "failed": "Échec de la synchronisation sur les {count} clients : {details}",
     "skippedByRule": "« {mod} » ne s'applique pas à {client} — ignoré",
     "skippedByVersion": "{mod} : {client} ignoré — la plage de versions du pack n'inclut pas ce client",
+    "skippedIncompatible": "{mod} : {client} ignoré — ce client ne possède pas les ressources de jeu requises par le pack.",
     "nothingToDo": "Les autres clients correspondent déjà à l'ensemble de mods de ce client.",
     "noCatalog": "Le catalogue en ligne n'est pas chargé — actualisez-le avant de synchroniser les clients.",
     "noLedger": "Impossible de lire le registre des installations — réessayez dans un instant."

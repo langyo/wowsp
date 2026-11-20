@@ -55,6 +55,9 @@ export interface OutdatedMod {
   name: string;
   /** Install-time scheme to carry over the reinstall. */
   preset?: string | null;
+  /** Catalog version the record is paired against — the version-scope of
+   *  the capability-skip memo (a catalog update re-offers the pack). */
+  catalogVersion?: string;
 }
 
 /** Freshness snapshot for one game install (keyed by install path). */
@@ -112,6 +115,14 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
 
   /** Per-install snapshot; missing path = not assessed (quiet). */
   const perInstall = ref<Record<string, PluginUpdateInfo>>({});
+
+  /** Session memo of capability-gate skips: "this client cannot run that
+   *  pack" (the package needs font assets the client does not ship). Keyed
+   *  by install path + mod id and version-scoped, so the pending badge and
+   *  every later batch stop offering an update that can only re-skip — and a
+   *  catalog update (new pack version) re-offers it once more. An explicit
+   *  attempt through [`runMod`] retries immediately. */
+  const incompatibleSkips = ref(new Map<string, { version: string; reason: string }>());
 
   /** ── shared per-item busy table ────────────────────────────────────
    *  Probe (PROBE_ITEM) + catalog mod ids → the op in flight. Every
@@ -190,10 +201,36 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     });
   }
 
+  /** Memo key: install path + mod id (the store's two-level identity). */
+  function incompatibleSkipKey(path: string, id: string): string {
+    return `${path.toLowerCase()}\u0000${id}`;
+  }
+
+  function clearIncompatibleSkip(gameRoot: string, id: string): void {
+    for (const key of [...incompatibleSkips.value.keys()]) {
+      const [path, modId] = key.split("\u0000");
+      if (modId === id && sameGamePath(path, gameRoot)) {
+        incompatibleSkips.value.delete(key);
+      }
+    }
+  }
+
+  /** Whether this pending mod was parked by a capability skip for the SAME
+   *  catalog version (a newer pack re-offers it). */
+  function incompatibleSkippedFor(path: string, mod: OutdatedMod): boolean {
+    const hit = incompatibleSkips.value.get(incompatibleSkipKey(path, mod.id));
+    return hit != null && hit.version === (mod.catalogVersion ?? "");
+  }
+
   function infoFor(gameRoot: string | null | undefined): PluginUpdateInfo | null {
     if (!gameRoot) return null;
     for (const [path, info] of Object.entries(perInstall.value)) {
-      if (sameGamePath(path, gameRoot)) return info;
+      if (sameGamePath(path, gameRoot)) {
+        // A parked capability skip is not an update opportunity on ANY
+        // surface (sidebar hint, settings row badge): keep the badge math
+        // consistent with pendingInstalls.
+        return { ...info, mods: info.mods.filter((m) => !incompatibleSkippedFor(path, m)) };
+      }
     }
     return null;
   }
@@ -218,8 +255,18 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       return Number.MAX_SAFE_INTEGER;
     };
     return Object.entries(perInstall.value)
-      .filter(([, info]) => info.mods.length > 0 || info.probeOutdated)
-      .map(([path, info]) => ({ path, install: metaFor(path), info }))
+      .map(([path, info]) => ({
+        path,
+        install: metaFor(path),
+        info: {
+          ...info,
+          // A parked capability skip is not an update opportunity: keeping it
+          // would leave a badge that can never clear and re-attempt the same
+          // hopeless install on every click.
+          mods: info.mods.filter((m) => !incompatibleSkippedFor(path, m)),
+        },
+      }))
+      .filter(({ info }) => info.mods.length > 0 || info.probeOutdated)
       .sort((a, b) => rankOf(a.path) - rankOf(b.path));
   });
 
@@ -308,6 +355,7 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
             id: entry.id,
             name: r.name,
             preset: r.preset ?? entry.supersedes?.[r.id] ?? null,
+            catalogVersion: entry.version,
           });
         }
         let probeOutdated = false;
@@ -395,9 +443,19 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     preset?: string | null,
     op: "install" | "update" = "install",
     skipIncompatible?: boolean,
+    skipPackageIncompatible?: boolean,
   ): Promise<InstallReport> {
+    // An explicit attempt (the user picked this client/row) retries a pack the
+    // capability memo parked for this session.
+    clearIncompatibleSkip(gameRoot, id);
     return withItem(id, op, () =>
-      api.modCatalogInstall(id, gameRoot, preset ?? undefined, skipIncompatible),
+      api.modCatalogInstall(
+        id,
+        gameRoot,
+        preset ?? undefined,
+        skipIncompatible,
+        skipPackageIncompatible,
+      ),
     );
   }
 
@@ -441,7 +499,11 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
    * attempting it would only surface a raw backend refusal — and gets a
    * dedicated warning toast instead. Items already busy on another
    * surface are skipped (that op's own fan-out keeps the snapshot
-   * honest). Every successful item folds into the local snapshot at once
+   * honest), and so is a NON-ACTIVE client the pack needs font assets from
+   * that it does not ship (the backend's package-capability gate: quiet
+   * note, never a failure, the item is parked for the session so the badge
+   * stops re-offering it — the active install keeps the hard refusal because
+   * the user chose it). Every successful item folds into the local snapshot at once
    * (markItemFresh — the badge ticks down while the pass runs, clearing
    * the moment the last item lands) and still fans out a freshness sync
    * that confirms against catalog/ledger. The end-of-pass toast speaks
@@ -470,7 +532,10 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       id: string | null;
       path: string;
       name: string;
-      run: () => Promise<unknown>;
+      /** True when the item actually LANDED; false when it was silently
+       *  skipped (a concurrent op owns it, or the batch's package-capability
+       *  gate skipped it) — a skip is neither a success nor a failure. */
+      run: () => Promise<boolean>;
     }[] = [];
     let skipped = 0;
     const skippedClients: string[] = [];
@@ -479,6 +544,26 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
     const clientLabels = new Map<string, string>();
     /** Clients (perInstall keys) with at least one failed task. */
     const failedPaths = new Set<string>();
+    /** Items a NON-ACTIVE client's package-capability gate skipped. The
+     *  batch names them together at the end: a rule skip, never a failure,
+     *  and the memo keeps them out of the badge until the pack or client
+     *  changes. */
+    const incompatibleSkipped: { mod: string; client: string }[] = [];
+    // Capability gate: only the ACTIVE install keeps the hard refusal — the
+    // user chose THAT client, so the integrity gate's "refusing to install"
+    // answer is theirs to see. Every other target was chosen by the batch,
+    // and a pack whose glue loads font assets the client does not ship (a
+    // foreign-lineage client's own font family set) is reported as a quiet
+    // rule skip there instead. The VERSION range is NOT a gate here: these
+    // are per-client own-ledger updates, and a lagging WG client (e.g. CN on
+    // 15.9 while the catalog targets 15.10) must keep updating normally.
+    // With NO active install there is no chosen client to privilege: every
+    // target keeps the hard refusal.
+    const activePath = config.activeInstall?.path ?? "";
+    const activeTarget = (path: string) => !activePath || sameGamePath(path, activePath);
+    /** Clients with at least one LANDED item — the honest "updated" set:
+     *  capability-skipped items are neither failures nor successes. */
+    const landedPaths = new Set<string>();
     for (const g of groups) {
       const label = installLabel(g.install?.kind, g.install?.realm) || installFolderName(g.path);
       if (runningPaths.some((path) => sameGamePath(g.path, path))) {
@@ -498,12 +583,13 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
             // the probe between task build and its queue turn — that op
             // updates it and fans out its own sync, so skip silently
             // instead of recording its refusal as a false failure.
-            if (probeBusy.value) return;
+            if (probeBusy.value) return false;
             const err = await runProbe(g.path, "update");
             // runProbe's own refusals are KEYS (safe mode, running client);
             // the batch failure summary must render the localized line, not
             // the raw key path. Raw backend sentences pass through unchanged.
             if (err) throw new Error(tError(err));
+            return true;
           },
         });
       }
@@ -519,8 +605,30 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
             // fans out its own sync, so skip silently instead of
             // reporting a false failure for a mod that is, in fact,
             // freshly updated.
-            if (itemBusy.value.has(m.id)) return;
-            await runMod(m.id, g.path, m.preset ?? undefined, "update");
+            if (itemBusy.value.has(m.id)) return false;
+            // Capability gate: this client was chosen by the batch, not by
+            // the user. A package whose glue loads font assets the client
+            // does not ship answers report.skipped (the download/extract is
+            // already done, but nothing is written — the gate runs before the
+            // rewind). Rule skip, never a failure; the memo parks it so the
+            // badge stops re-offering it this session.
+            const report = await runMod(
+              m.id,
+              g.path,
+              m.preset ?? undefined,
+              "update",
+              undefined,
+              !activeTarget(g.path),
+            );
+            if (report.skipped) {
+              incompatibleSkips.value.set(incompatibleSkipKey(g.path, m.id), {
+                version: m.catalogVersion ?? "",
+                reason: report.skipped,
+              });
+              incompatibleSkipped.push({ mod: m.name, client: label });
+              return false;
+            }
+            return true;
           },
         });
       }
@@ -612,11 +720,14 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
         speedBps.value = null; // never carry the previous item's rate
         publishPass();
         try {
-          await task.run();
-          // The write landed (or a concurrent op owns the item and will
-          // confirm its own outcome) — drop it from the badge now; the
-          // post-item freshness sync only confirms.
-          markItemFresh(task.path, task.id);
+          const landed = await task.run();
+          if (landed) {
+            // The write landed — drop it from the badge now; the post-item
+            // freshness sync only confirms. A skip (concurrent op or package
+            // capability) deliberately keeps the item pending.
+            landedPaths.add(task.path);
+            markItemFresh(task.path, task.id);
+          }
         } catch (e) {
           const detail = e instanceof Error ? e.message : String(e);
           // Catalog-mod items have no frontend guard pre-check, so a
@@ -650,14 +761,22 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
       // A client that contributed NO task (its every item was already
       // busy on another surface at build) stays out of the rollup — the
       // outcome is that op's story to tell, not this pass's to claim.
-      const attempted = [...clientLabels.entries()].filter(([path]) =>
-        tasks.some((task) => task.path === path),
+      const attempted = [...clientLabels.entries()].filter(
+        ([path]) =>
+          tasks.some((task) => task.path === path)
+          && (landedPaths.has(path) || failedPaths.has(path)),
       );
       const multiClients = attempted.length > 1;
       const failedClients = attempted
         .filter(([path]) => failedPaths.has(path))
         .map(([, label]) => label);
-      const okClients = attempted.length - failedClients.length;
+      // "Updated" = the client landed at least one item and nothing failed.
+      // A client every item of which the capability gate skipped was neither
+      // updated nor refused — its quiet note below is the whole story, and it
+      // stays out of BOTH rollup sides.
+      const okClients = attempted.filter(
+        ([path]) => landedPaths.has(path) && !failedPaths.has(path),
+      ).length;
       if (failures.value.length > 0) {
         // Multi-client summaries carry the concrete failed items too — the
         // client names alone left the user unable to tell WHY a plugin
@@ -674,7 +793,8 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           // below.
           showStickyError(
             t("resources.pluginUpdateAllFailedClientsDetail", {
-              count: attempted.length,
+              // Skipped clients were not refused — name only the failures.
+              count: failedClients.length,
               details: detail,
             }),
           );
@@ -706,7 +826,10 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
             toast.error(text);
           }
         }
-      } else if (tasks.length > 0 && Date.now() - startedAt < MOD_PASS_CARD_GRACE_MS) {
+      } else if (
+        landedPaths.size > 0
+        && Date.now() - startedAt < MOD_PASS_CARD_GRACE_MS
+      ) {
         // A pass that finished INSIDE the card's mount grace leaves no
         // visible trace at all (the card never mounted; success normally
         // speaks through the card's leave snapshot). The fast full-success
@@ -717,6 +840,18 @@ export const usePluginUpdatesStore = defineStore("pluginUpdates", () => {
           multiClients
             ? t("resources.pluginUpdateDoneClients", { count: okClients })
             : t("resources.pluginUpdateDone"),
+        );
+      }
+      if (incompatibleSkipped.length > 0) {
+        // A quiet RULE skip, not a failure: name how many updates stayed
+        // pending and on which clients, and why (those clients do not ship
+        // the font assets the pack loads). Aggregated because one batch can
+        // skip several items at once.
+        toast.info(
+          t("resources.pluginUpdateSkippedIncompatible", {
+            count: incompatibleSkipped.length,
+            clients: [...new Set(incompatibleSkipped.map((s) => s.client))].join(", "),
+          }),
         );
       }
       reportSkipped();

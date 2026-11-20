@@ -212,8 +212,11 @@ describe("usePluginUpdatesStore.updateAll", () => {
     await updates.updateAll();
 
     expect(mocked.probeInstall).toHaveBeenCalledWith(GAME);
-    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, "lite", undefined);
-    expect(mocked.install).toHaveBeenNthCalledWith(2, "b", GAME, undefined, undefined);
+    // GAME is the ACTIVE install: no version gate (a lagging client still
+    // updates) and no package-capability gate — a refusal is the user's
+    // answer on the client they chose.
+    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, "lite", undefined, false);
+    expect(mocked.install).toHaveBeenNthCalledWith(2, "b", GAME, undefined, undefined, false);
     expect(updates.done).toBe(3);
     expect(updates.running).toBe(false);
     // Ends with a freshness re-assessment.
@@ -566,6 +569,110 @@ describe("usePluginUpdatesStore.updateAll", () => {
     release();
     await held;
   });
+
+  it("asks for the capability gate on non-active installs only", async () => {
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: false },
+      [OTHER]: { mods: [{ id: "b", name: "mod-b", preset: null }], probeOutdated: false },
+    };
+
+    await updates.updateAll();
+
+    // No VERSION gating anywhere (per-client own-ledger updates: a lagging
+    // client must still update); only a non-active target tolerates the
+    // package-capability refusal as a rule skip. The ACTIVE install keeps
+    // the hard refusal.
+    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, undefined, undefined, false);
+    expect(mocked.install).toHaveBeenNthCalledWith(2, "b", OTHER, undefined, undefined, true);
+  });
+
+  it("treats a capability skip as a quiet rule skip and parks it", async () => {
+    // Hold the post-pass freshness re-assessment open: it would re-derive
+    // the snapshot and hide the local fold under assertion.
+    mocked.refresh.mockImplementation(() => new Promise(() => undefined) as never);
+    mocked.install.mockImplementation(async (_id: string, root: string) =>
+      root === OTHER
+        ? ({ name: "mod-b", binVersion: "", wroteFiles: 0, warnings: [], skipped: "mismatch" } as never)
+        : ({ name: "mod-a", binVersion: "1", wroteFiles: 1, warnings: [] } as never),
+    );
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [GAME]: { mods: [{ id: "a", name: "mod-a", preset: null }], probeOutdated: false },
+      [OTHER]: { mods: [{ id: "b", name: "mod-b", preset: null }], probeOutdated: false },
+    };
+
+    await updates.updateAll();
+
+    expect(updates.failures).toEqual([]);
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    // Raw keys: this suite runs before the en-US catalog is loaded.
+    expect(texts).toContain("resources.pluginUpdateSkippedIncompatible");
+    // The landed item left the badge; the skipped one is PARKED — still
+    // outdated on that client, but no longer offered by the badge/batches
+    // (the memo stops the same hopeless attempt repeating this session).
+    expect(updates.infoFor(GAME)?.mods).toEqual([]);
+    expect(updates.infoFor(OTHER)?.mods).toEqual([]);
+    expect(updates.pendingInstalls).toEqual([]);
+    expect(updates.totalCount).toBe(0);
+    // The assessed snapshot still carries the record — the memo only hides
+    // it from the update surfaces.
+    expect(updates.perInstall[OTHER]?.mods.map((m) => m.id)).toEqual(["b"]);
+  });
+
+  it("never claims success when every item was capability-gated", async () => {
+    mocked.refresh.mockImplementation(() => new Promise(() => undefined) as never);
+    mocked.install.mockResolvedValue({ skipped: "mismatch" } as never);
+    const updates = usePluginUpdatesStore();
+    // Only a NON-active client is pending: every task is a rule skip.
+    updates.perInstall = {
+      [OTHER]: { mods: [{ id: "b", name: "mod-b", preset: null }], probeOutdated: false },
+    };
+
+    await updates.updateAll();
+
+    const texts = useToast().toasts.flatMap((s) => s.messages.map((m) => m.text));
+    expect(texts).toContain("resources.pluginUpdateSkippedIncompatible");
+    expect(texts).not.toContain("resources.pluginUpdateDone");
+    expect(texts).not.toContain("resources.pluginUpdateDoneClients");
+    expect(updates.failures).toEqual([]);
+    expect(updates.done).toBe(1);
+    expect(updates.infoFor(OTHER)?.mods).toEqual([]);
+    expect(updates.totalCount).toBe(0);
+  });
+
+  it("parks a capability skip so a later batch stops re-attempting it", async () => {
+    mocked.refresh.mockImplementation(() => new Promise(() => undefined) as never);
+    mocked.install.mockResolvedValue({ skipped: "client lacks assets" } as never);
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [OTHER]: { mods: [{ id: "b", name: "mod-b", preset: null }], probeOutdated: false },
+    };
+
+    await updates.updateAll();
+    expect(mocked.install).toHaveBeenCalledTimes(1);
+    expect(updates.totalCount).toBe(0);
+
+    // The snapshot still carries the outdated record, but the memo parks it:
+    // no second download/extract/scan cycle, no badge that never clears.
+    await updates.updateAll();
+    expect(mocked.install).toHaveBeenCalledTimes(1);
+    expect(updates.failures).toEqual([]);
+  });
+
+  it("keeps the hard refusal when no install is active", async () => {
+    useConfigStore().activeInstall = null;
+    const updates = usePluginUpdatesStore();
+    updates.perInstall = {
+      [OTHER]: { mods: [{ id: "b", name: "mod-b", preset: null }], probeOutdated: false },
+    };
+
+    await updates.updateAll();
+
+    // No chosen client to privilege: the backend's integrity gate keeps its
+    // hard refusal instead of turning it into a quiet skip.
+    expect(mocked.install).toHaveBeenCalledWith("b", OTHER, undefined, undefined, false);
+  });
 });
 
 describe("usePluginUpdatesStore all-installs batch", () => {
@@ -591,7 +698,7 @@ describe("usePluginUpdatesStore all-installs batch", () => {
 
     // Active install (GAME) first: its probe, its mod, then OTHER's probe.
     expect(mocked.probeInstall).toHaveBeenNthCalledWith(1, GAME);
-    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, undefined, undefined);
+    expect(mocked.install).toHaveBeenNthCalledWith(1, "a", GAME, undefined, undefined, false);
     expect(mocked.probeInstall).toHaveBeenNthCalledWith(2, OTHER);
     expect(updates.done).toBe(3);
   });

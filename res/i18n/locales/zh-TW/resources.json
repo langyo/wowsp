@@ -106,6 +106,7 @@
   "pluginUpdateBusyElsewhere": "這些插件正在其他入口更新中。",
   "pluginUpdateStaleWarning": "正在執行的用戶端插件不是最新版本，按住 Tab 時顯示的戰績可能不準確。",
   "pluginUpdateSkipped": "「{names}」正在執行，已略過 {count} 項更新——關閉遊戲後再次一鍵更新即可。",
+  "pluginUpdateSkippedIncompatible": "{count} 項更新已略過：{clients} 用戶端缺少此外掛所需的遊戲資源。",
   "pluginUpdateBadge": "需更新",
   "pluginUpdateMinimize": "暫時收起",
   "pluginUpdateStep": "正在更新 {name}({done}/{total})",
@@ -428,6 +429,7 @@
     "failed": "{count} 個用戶端全部同步失敗：{details}",
     "skippedByRule": "「{mod}」不適用於 {client}，已略過",
     "skippedByVersion": "{mod}：已跳過 {client}——該插件支援的遊戲版本不包含此用戶端",
+    "skippedIncompatible": "{mod}：已略過 {client}——此外掛所需的遊戲資源在此用戶端中不存在。",
     "nothingToDo": "其他用戶端均已與本用戶端的模組清單一致。",
     "noCatalog": "線上目錄尚未載入——請先重新整理目錄再同步用戶端。",
     "noLedger": "安裝記錄讀取失敗——請稍後再試一次。"

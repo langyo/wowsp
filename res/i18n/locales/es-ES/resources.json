@@ -106,6 +106,7 @@
   "pluginUpdateBusyElsewhere": "Estos plugins ya se están actualizando en otra ventana.",
   "pluginUpdateStaleWarning": "El complemento del cliente en ejecución no está actualizado: las estadísticas mostradas al mantener Tab pueden ser imprecisas.",
   "pluginUpdateSkipped": "«{names}» está en ejecución: se omitieron {count} actualización(es). Cierra el juego y vuelve a ejecutar Actualizar todo.",
+  "pluginUpdateSkippedIncompatible": "Se omitieron {count} actualización(es): el cliente {clients} no tiene los recursos del juego que necesita el paquete.",
   "pluginUpdateBadge": "Actualiz.",
   "pluginUpdateMinimize": "Ocultar por ahora",
   "pluginUpdateStep": "Actualizando {name} ({done}/{total})",
@@ -428,6 +429,7 @@
     "failed": "Error de sincronización en los {count} clientes: {details}",
     "skippedByRule": "«{mod}» no se aplica a {client}; se omitió",
     "skippedByVersion": "{mod}: se omitió {client} — el rango de versiones del paquete no incluye a ese cliente",
+    "skippedIncompatible": "{mod}: se omitió {client} — este cliente no tiene los recursos del juego que necesita el paquete.",
     "nothingToDo": "Los demás clientes ya coinciden con el conjunto de mods de este cliente.",
     "noCatalog": "El catálogo en línea no está cargado; actualízalo antes de sincronizar los clientes.",
     "noLedger": "No se pudo leer el registro de instalaciones; inténtalo de nuevo en un momento."

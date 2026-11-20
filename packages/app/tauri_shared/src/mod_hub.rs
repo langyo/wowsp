@@ -205,14 +205,20 @@ pub struct InstallReport {
     pub bin_version: String,
     pub wrote_files: usize,
     pub warnings: Vec<String>,
-    /// The install was SKIPPED before any byte moved (the fan-out's
-    /// version gate: the pack's published range confidently excludes
-    /// this client's game version). Carries the same sentence the warn
-    /// path would log; the webui shows it as a quiet per-client skip,
-    /// never a failure. Absent on every landed report (wire-shape rule
-    /// as conflicts/mirroredBins).
+    /// The install was SKIPPED as a rule — a quiet per-client note, never
+    /// a failure — because one of the fan-out gates answered for it (see
+    /// [`InstallSkipKind`]). Carries the same sentence the warn path would
+    /// log; absent on every landed report (wire-shape rule as
+    /// conflicts/mirroredBins).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub skipped: Option<String>,
+    /// WHICH gate answered [`InstallReport::skipped`]: the two gates are
+    /// independent, and the UI picks its sentence from this discriminant
+    /// (the version wording lies about a client-capability skip). Absent on
+    /// landed reports and on skips from a backend that predates the field —
+    /// the webui falls back to the version wording then.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub skipped_kind: Option<InstallSkipKind>,
     /// Which other installed mods this install overwrote files of (also
     /// mirrored into `warnings`); kept separate so the UI can toast them
     /// without string-matching. Absent when empty so the wire shape of
@@ -229,6 +235,19 @@ pub struct InstallReport {
     /// Absent when zero so junk-free reports keep their older wire shape.
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     pub pruned_files: usize,
+}
+
+/// Which fan-out gate answered an [`InstallReport::skipped`] report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum InstallSkipKind {
+    /// The pack's published game range confidently excludes this client's
+    /// game version (`mod_catalog`'s version gate, the install fan-out).
+    Version,
+    /// The package is well-formed but this client does not ship the font
+    /// assets its glue loads (the batch package-capability gate: a
+    /// foreign-lineage client's own font family set).
+    Package,
 }
 
 // ── Mod Hub online catalog (mirrors scripts/mod_hub_publish.py output) ──────

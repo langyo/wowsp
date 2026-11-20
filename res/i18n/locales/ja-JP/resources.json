@@ -106,6 +106,7 @@
   "pluginUpdateBusyElsewhere": "これらのプラグインは別の画面で更新中です。",
   "pluginUpdateStaleWarning": "実行中のクライアントのプラグインが最新ではないため、Tab キーを押している間に表示される戦績が正確でない場合があります。",
   "pluginUpdateSkipped": "「{names}」が実行中のため、{count} 件の更新をスキップしました。ゲームを終了してから、もう一度一括更新してください。",
+  "pluginUpdateSkippedIncompatible": "{count} 件の更新をスキップしました — {clients} クライアントにはこのパックが必要とするゲームアセットがありません。",
   "pluginUpdateBadge": "更新あり",
   "pluginUpdateMinimize": "一時的に隠す",
   "pluginUpdateStep": "更新中 {name}({done}/{total})",
@@ -428,6 +429,7 @@
     "failed": "{count} 個のクライアントすべてで同期に失敗しました：{details}",
     "skippedByRule": "「{mod}」は {client} には適用されないためスキップしました",
     "skippedByVersion": "{mod}：{client} をスキップしました——このパックの対応バージョンに含まれません",
+    "skippedIncompatible": "{mod}: {client} をスキップしました — このパックが必要とするゲームアセットがこのクライアントにありません。",
     "nothingToDo": "他のクライアントはすべてこのクライアントの MOD 構成と一致しています。",
     "noCatalog": "オンラインカタログが未読み込みです——先にカタログを更新してから同期してください。",
     "noLedger": "インストール記録の読み取りに失敗しました——しばらくしてから再試行してください。"

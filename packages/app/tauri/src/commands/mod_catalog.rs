@@ -34,7 +34,7 @@ use wowsp_tauri_shared::download::{kind, phase};
 use wowsp_tauri_shared::{
     CatalogAuthor, CatalogEntry, CatalogEntryI18n, CatalogFilePreview, CatalogIndex,
     CatalogPackage, CatalogPreset, CommandResult, DOWNLOAD_PROGRESS_EVENT, DownloadProgress,
-    InstallReport, ModInstallRecord, PackageFilePreview,
+    InstallReport, InstallSkipKind, ModInstallRecord, PackageFilePreview,
 };
 
 use super::download_hub::{self, DownloadRequest};
@@ -184,7 +184,8 @@ pub(crate) use index::load_cached_index;
 pub(crate) use index::parse_index;
 #[cfg(test)]
 pub(crate) use install::{
-    WorkDir, package_archive, size_within_catalog, unpack_and_install, validate_path_segment,
+    InstallOutcome, WorkDir, package_archive, size_within_catalog, unpack_and_install,
+    unpack_and_install_with_gate, validate_path_segment,
 };
 pub(crate) use install::{
     entry_display_name, newer_owner_records, refresh_newer_snapshots, shared_divergence_warnings,

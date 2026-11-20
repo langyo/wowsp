@@ -3702,3 +3702,222 @@ fn install_accepts_modforge_toolchain_glue_under_staged_prefix() {
     );
     fs::remove_dir_all(&tmp).ok();
 }
+
+/// (g) Batch capability gate: a staged FONT-only dangling reference — the
+/// whole-file `fontconfig_scaleform.xml` override shape, where a
+/// foreign-lineage client ships its own font family set — answers the quiet
+/// batch skip instead of the hard refusal, and NOTHING is mutated (the gate
+/// runs before the rewind).
+#[test]
+fn capability_gate_skips_font_only_dangling_refs_on_a_batch_target() {
+    let _serial = gate_seam_guard();
+    let tmp = std::env::temp_dir().join(format!("wowsp-gate-fontskip-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let work = tmp.join("work");
+    let game = tmp.join("game");
+    fs::create_dir_all(game.join("bin/1")).unwrap();
+    let game_root = game.to_string_lossy().into_owned();
+    let packages = gate_packages(
+        &work,
+        &[(
+            "res_mods/gui/fontconfig_scaleform.xml",
+            b"<fontconfig><family><path> gui/fonts/Source_Han_Sans_CN_Bold_WH.ttf </path></family></fontconfig>".as_slice(),
+        )],
+    );
+    let mut installs = Vec::new();
+
+    gate_client_index(&[]);
+    let outcome = unpack_and_install_with_gate(
+        "font-pack",
+        "Font pack",
+        &work,
+        &game_root,
+        &packages,
+        &[],
+        &mut installs,
+        true,
+    )
+    .expect("a font-only client-capability mismatch is a skip, not an error");
+    gate_client_index_clear();
+
+    let InstallOutcome::Incompatible(reason) = outcome else {
+        panic!("expected the batch capability skip");
+    };
+    assert!(reason.contains("font"), "{reason}");
+    assert!(
+        reason.contains("source_han_sans_cn_bold_wh.ttf"),
+        "{reason}"
+    );
+    // The gate fired before the rewind: no res_mods tree, no ledger record.
+    assert!(!game.join("bin/1/res_mods").exists(), "{reason}");
+    assert!(installs.is_empty(), "{installs:?}");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+/// (g2) The quiet flag is the ONLY difference: the same font-only dangling
+/// class stays a HARD refusal on the explicit / active install path (the user
+/// chose that client and must see why the package cannot land).
+#[test]
+fn explicit_install_refuses_font_only_dangling_refs() {
+    let _serial = gate_seam_guard();
+    let tmp = std::env::temp_dir().join(format!("wowsp-gate-fonthard-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let work = tmp.join("work");
+    let game = tmp.join("game");
+    fs::create_dir_all(game.join("bin/1")).unwrap();
+    let game_root = game.to_string_lossy().into_owned();
+    let packages = gate_packages(
+        &work,
+        &[(
+            "res_mods/gui/fontconfig_scaleform.xml",
+            b"<fontconfig><family><path> gui/fonts/Source_Han_Sans_CN_Bold_WH.ttf </path></family></fontconfig>"
+                .as_slice(),
+        )],
+    );
+
+    gate_client_index(&[]);
+    let err = unpack_and_install(
+        "font-pack",
+        "Font pack",
+        &work,
+        &game_root,
+        &packages,
+        &[],
+        &mut Vec::new(),
+    )
+    .err()
+    .expect("an explicit install must show the full font-asset refusal");
+    gate_client_index_clear();
+
+    let message = err.to_string();
+    assert!(
+        message.contains("source_han_sans_cn_bold_wh.ttf"),
+        "{message}"
+    );
+    assert!(message.contains("does not index"), "{message}");
+    assert!(
+        message.contains("report the package on the mod hub"),
+        "{message}"
+    );
+    assert!(!game.join("bin/1/res_mods").exists(), "{message}");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+/// (h) The capability skip is FONT-only ON PURPOSE: a staged dangling `.swf`
+/// load is the original package-defect crash class, so even a batch caller
+/// keeps the hard refusal — a broken package is never silently skipped.
+#[test]
+fn capability_gate_keeps_non_font_refusals_hard() {
+    let _serial = gate_seam_guard();
+    let tmp = std::env::temp_dir().join(format!("wowsp-gate-swfhard-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let work = tmp.join("work");
+    let game = tmp.join("game");
+    fs::create_dir_all(game.join("bin/1")).unwrap();
+    let game_root = game.to_string_lossy().into_owned();
+    let packages = gate_packages(
+        &work,
+        &[(
+            "res_mods/gui/battle.xml",
+            b"<element url=\"battle_stats.swf\"/>".as_slice(),
+        )],
+    );
+
+    gate_client_index(&[]);
+    let err = unpack_and_install_with_gate(
+        "broken-mod",
+        "Broken mod",
+        &work,
+        &game_root,
+        &packages,
+        &[],
+        &mut Vec::new(),
+        true,
+    )
+    .err()
+    .expect("a dangling swf load stays a hard refusal even for a batch target");
+    gate_client_index_clear();
+
+    let message = err.to_string();
+    assert!(message.contains("battle_stats.swf"), "{message}");
+    assert!(
+        message.contains("report the package on the mod hub"),
+        "{message}"
+    );
+    assert!(!game.join("bin/1/res_mods").exists(), "{message}");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+/// (i) A corrupt payload is broken on EVERY client: the batch flag never
+/// turns the `.swf`-magic refusal into a skip.
+#[test]
+fn capability_gate_keeps_invalid_swf_hard() {
+    let _serial = gate_seam_guard();
+    let tmp = std::env::temp_dir().join(format!("wowsp-gate-badswf-skip-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let work = tmp.join("work");
+    let game = tmp.join("game");
+    fs::create_dir_all(game.join("bin/1")).unwrap();
+    let game_root = game.to_string_lossy().into_owned();
+    let packages = gate_packages(&work, &[("res_mods/gui/broken.swf", b"not a swf")]);
+
+    let err = unpack_and_install_with_gate(
+        "corrupt-swf",
+        "Corrupt swf",
+        &work,
+        &game_root,
+        &packages,
+        &[],
+        &mut Vec::new(),
+        true,
+    )
+    .err()
+    .expect("a corrupt .swf must stay a hard error for a batch target too");
+
+    assert!(err.to_string().contains("not a valid SWF file"), "{err}");
+    assert!(!game.join("bin/1/res_mods").exists(), "{err}");
+    fs::remove_dir_all(&tmp).ok();
+}
+
+/// (j) No evidence, no skip: without a client index the scan suppresses
+/// dangling findings entirely (absence of evidence is never an accusation),
+/// so the batch flag cannot fire and the install lands normally.
+#[test]
+fn capability_gate_needs_client_evidence_to_skip() {
+    let _serial = gate_seam_guard();
+    let tmp = std::env::temp_dir().join(format!("wowsp-gate-noindex-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&tmp);
+    let work = tmp.join("work");
+    let game = tmp.join("game");
+    fs::create_dir_all(game.join("bin/1")).unwrap();
+    let game_root = game.to_string_lossy().into_owned();
+    let _rr = mod_hub::test_restore_root_in(&tmp.join("rr"));
+    let packages = gate_packages(
+        &work,
+        &[(
+            "res_mods/gui/fontconfig_scaleform.xml",
+            b"<fontconfig><family><path> gui/fonts/Missing_WH.ttf </path></family></fontconfig>"
+                .as_slice(),
+        )],
+    );
+
+    gate_client_index_clear();
+    let outcome = unpack_and_install_with_gate(
+        "font-pack",
+        "Font pack",
+        &work,
+        &game_root,
+        &packages,
+        &[],
+        &mut Vec::new(),
+        true,
+    )
+    .expect("without client evidence the batch gate must stay silent");
+
+    assert!(matches!(outcome, InstallOutcome::Applied(_)));
+    assert!(
+        game.join("bin/1/res_mods/gui/fontconfig_scaleform.xml")
+            .is_file()
+    );
+    fs::remove_dir_all(&tmp).ok();
+}

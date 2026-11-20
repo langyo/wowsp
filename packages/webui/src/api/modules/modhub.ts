@@ -202,15 +202,24 @@ export interface InstallReport {
   conflicts?: string[];
   /** Pre-release bin versions the files were mirrored into. */
   mirroredBins?: string[];
-  /** The install was SKIPPED before any byte moved — the fan-out's
-   *  version gate (the pack's published range confidently excludes this
-   *  client's game version). A quiet per-client skip, never a failure. */
+  /** The install was SKIPPED as a rule — a quiet per-client note, never a
+   *  failure — because one of the fan-out gates answered for it (see
+   *  skippedKind). */
   skipped?: string;
+  /** WHICH gate answered `skipped`: the version gate (the pack's published
+   *  range confidently excludes this client) or the package-capability gate
+   *  (this client does not ship the font assets the package's glue loads).
+   *  Absent on landed reports and on skips from an older backend (the webui
+   *  falls back to the version wording then). */
+  skippedKind?: InstallSkipKind;
   /** Preview/screenshot junk files the install skipped instead of writing
    *  (pack screenshots, Explorer noise). Absent when zero so junk-free
    *  reports keep their older wire shape. */
   prunedFiles?: number;
 }
+
+/** The fan-out gate that answered an install skip (wire: skippedKind). */
+export type InstallSkipKind = "version" | "package";
 
 // ── Custom import (自定义导入安装) ──────────────────────────────────────────
 
@@ -930,12 +939,14 @@ export const modHubApi = {
     gameRoot: string,
     preset?: string,
     skipIncompatible?: boolean,
+    skipPackageIncompatible?: boolean,
   ) =>
     transport.invoke<InstallReport>(RPC.mod_catalog_install, {
       modId,
       gameRoot,
       preset: preset ?? null,
       skipIncompatible: skipIncompatible ?? null,
+      skipPackageIncompatible: skipPackageIncompatible ?? null,
     }),
   /** Read-only file preview: downloads the packages to a temp dir and
    *  classifies them there, never touching res_mods. */
