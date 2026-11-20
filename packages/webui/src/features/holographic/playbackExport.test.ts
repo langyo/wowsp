@@ -441,7 +441,6 @@ describe("drawPlaybackTeamColumn", () => {
       ctx, 0, 0, EXPORT_SIDE_W, sideOf(rows), "ally",
       "74 222 128", "Allies", darkPalette(), LABELS,
       () => null,
-      () => null,
     );
     // Every nickname painted at the SAME face - the fixed-size invariant.
     const nickTexts = texts.filter((t) => /^p\d\d|^AReallyLong/.test(t.text));
@@ -460,7 +459,6 @@ describe("drawPlaybackTeamColumn", () => {
     drawPlaybackTeamColumn(
       ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(1)]), "ally",
       "74 222 128", "Allies", darkPalette(), LABELS,
-      () => null,
       () => null,
     );
     const nick = texts.find((t) => t.text === "p01");
@@ -495,7 +493,6 @@ describe("drawPlaybackTeamColumn", () => {
     drawPlaybackTeamColumn(
       ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(0)]), "ally",
       "74 222 128", "Allies", darkPalette(), LABELS,
-      () => null,
       () => null,
     );
     const label = texts.find((t) => t.text === "\u80dc\u7387");

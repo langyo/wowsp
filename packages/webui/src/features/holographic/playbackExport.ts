@@ -38,7 +38,8 @@ import { GIFEncoder, quantize, applyPalette } from "gifenc";
 import {
   FOOT_H,
   drawFooterBand,
-  drawStampSeal,
+  drawSealTag,
+  sealTagWidth,
   ellipsize,
   font,
   footerMinWidth,
@@ -46,7 +47,6 @@ import {
   type ShotFooterStrings,
   type ShotPalette,
 } from "@/features/share/shotKit";
-import type { StampKind } from "@/utils/winrate";
 import {
   renderVideoOffline,
   type OfflineCodecChoice,
@@ -99,8 +99,8 @@ export const EXPORT_TEAM_HP_H = 5;
 export const EXPORT_TEAM_NAME_SIZE = 12;
 export const EXPORT_TEAM_SHIP_SIZE = 11;
 /** Medal badge edge (the live roster's cinnabar seal glyphs at row size). */
-export const EXPORT_TEAM_MEDAL_SIZE = 18;
-export const EXPORT_TEAM_MEDAL_GAP = 2;
+export const EXPORT_TEAM_MEDAL_TAG_SCALE = 0.82;
+export const EXPORT_TEAM_MEDAL_GAP = 4;
 /** Stat text/label sizes and the right-hand track pitch. */
 export const EXPORT_TEAM_STAT_TEXT_SIZE = 10;
 export const EXPORT_TEAM_STAT_LABEL_SIZE = 8.5;
@@ -411,8 +411,10 @@ export interface PlaybackTeamRow {
   shipType?: string | null;
   /** The seal/medal kinds the live roster's full mode presses beside the
    *  nickname (the career verdict first, then the composition tags). The
-   *  caller resolves them and preloads their glyphs. */
-  medals?: readonly StampKind[];
+   *  seal customizer's LABELS (stampWording over sealLabels) — the small
+   *  tag face's text. Deliberately WORDING, not pictures: a user-imported
+   *  seal image never enters the clip (the tag form is the whole point). */
+  medals?: readonly string[];
   /** The FIRST TWO configured stat columns' values, in the stats
    *  config's own order (see EXPORT_TEAM_STAT_COLS). */
   stats?: readonly PlaybackTeamStat[];
@@ -800,7 +802,6 @@ export function drawPlaybackTeamColumn(
   title: string,
   palette: ShotPalette,
   labels: PlaybackPanelLabels,
-  medalIconFor: (kind: StampKind) => HTMLImageElement | null,
   shipIconFor: (
     shipType: string | null,
     variant: PlaybackIconVariant,
@@ -879,14 +880,15 @@ export function drawPlaybackTeamColumn(
     const dim = row.dead ? 0.35 : 1;
     const cy1 = ry + EXPORT_TEAM_NAME_CY;
     const cy2 = ry + EXPORT_TEAM_SHIP_CY;
-    // Line 1: the clan-tagged nick plus the medal badges, ONE centered
-    // group at the column's fixed name size (never per-name shrink).
-    const medals = (row.medals ?? []).slice(0, 5);
+    // Line 1: the clan-tagged nick plus the seal TAGS (StampTag's small
+    // face redrawn: cinnabar wording in a rounded border, scaled down to
+    // the entry band), ONE centered group at the column's fixed name size
+    // (never per-name shrink).
+    const medals = (row.medals ?? []).slice(0, 3);
+    const tagWs = medals.map((label) => sealTagWidth(g, label) * EXPORT_TEAM_MEDAL_TAG_SCALE);
     const medalW =
-      medals.length > 0
-        ? medals.length * EXPORT_TEAM_MEDAL_SIZE +
-          (medals.length - 1) * EXPORT_TEAM_MEDAL_GAP +
-          6
+      tagWs.length > 0
+        ? tagWs.reduce((a, b) => a + b, 0) + (tagWs.length - 1) * EXPORT_TEAM_MEDAL_GAP + 6
         : 0;
     const display = row.clan ? `[${row.clan}] ${row.name}` : row.name;
     const nameMaxW = Math.max(24, w - inset * 2 - medalW);
@@ -911,17 +913,14 @@ export function drawPlaybackTeamColumn(
       g.save();
       g.globalAlpha = dim;
       let mx = gx + nameW + 6;
-      for (const kind of medals) {
-        drawStampSeal(
-          g,
-          mx + EXPORT_TEAM_MEDAL_SIZE / 2,
-          cy1,
-          EXPORT_TEAM_MEDAL_SIZE,
-          medalIconFor(kind),
-          "mini",
-        );
-        mx += EXPORT_TEAM_MEDAL_SIZE + EXPORT_TEAM_MEDAL_GAP;
-      }
+      medals.forEach((label, i) => {
+        g.save();
+        g.translate(mx + tagWs[i] / 2, cy1);
+        g.scale(EXPORT_TEAM_MEDAL_TAG_SCALE, EXPORT_TEAM_MEDAL_TAG_SCALE);
+        drawSealTag(g, 0, 0, label);
+        g.restore();
+        mx += tagWs[i] + EXPORT_TEAM_MEDAL_GAP;
+      });
       g.restore();
     }
     // Line 2: class glyph + roman tier + ship name, centered in the band
@@ -1179,9 +1178,6 @@ export interface PlaybackExportRequest {
   /** Each side's roster + its header columns (label + team average) at
    *  each frame's battle time (read AFTER the seek). */
   team: (t: number) => { allies: PlaybackTeamSide; enemies: PlaybackTeamSide };
-  /** Seal-glyph resolver for the rows' medals - the caller preloads the
-   *  live roster's seal art once. Null skips that badge. */
-  medalIconFor: (kind: StampKind) => HTMLImageElement | null;
   /** The recorder's damage/frags/taken at each battle time. */
   recorder: (t: number) => PlaybackRecorderStats | null;
   /** Chat lines up to each battle time, oldest first. */
@@ -1275,7 +1271,6 @@ function composeFrame(
     req.panelLabels.teamAlly,
     req.palette,
     req.panelLabels,
-    req.medalIconFor,
     req.shipIconFor,
   );
   if (recorder) {
@@ -1297,7 +1292,6 @@ function composeFrame(
     req.panelLabels.teamEnemy,
     req.palette,
     req.panelLabels,
-    req.medalIconFor,
     req.shipIconFor,
   );
   drawChatPanel(ctx, colRight, colTop + EXPORT_TEAM_H + 10, EXPORT_SIDE_W, colH - EXPORT_TEAM_H - 16, chat, req.palette, req.panelLabels.chat);
