@@ -469,6 +469,11 @@
     "shellDamage": "Daño por proyectil",
     "shellDamageHint": "Daño estándar por impacto de este tipo de proyectil.",
     "variantSelectorHint": "Cambiar la variante de módulo de esta sección",
+    "variantStage": {
+      "stock": "Origen",
+      "mid": "Intermedio",
+      "top": "Final"
+    },
     "variantOptionAria": "Seleccionar variante de módulo"
   },
   "skills": {

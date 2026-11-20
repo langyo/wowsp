@@ -469,6 +469,11 @@
     "shellDamage": "単発ダメージ",
     "shellDamageHint": "この弾種の1発あたりの標準ダメージ。",
     "variantSelectorHint": "このセクションのモジュールバリアントを切り替えます",
+    "variantStage": {
+      "stock": "初期",
+      "mid": "中間",
+      "top": "最終"
+    },
     "variantOptionAria": "モジュールバリアントを選択"
   },
   "skills": {

@@ -214,6 +214,33 @@ export function findVariantOf(
   return list.find((o) => o.name === name) ?? null;
 }
 
+/** Where one option sits in its stock → top chain, for the spec dropdowns'
+ *  per-row stage tag. The classifier reads DEPTHS, not list positions, so
+ *  parallel same-depth variants (two stock hulls, two top torp banks) all
+ *  classify alike instead of the flat order lying about the second one. */
+export type ShipVariantStage = "stock" | "mid" | "top";
+
+/**
+ * Chain stage of one option: "stock" roots the chain (depth 0 — the game's
+ * as-delivered module), "top" sits at the deepest step of its chain (the
+ * panel's default pick always does), "mid" fills the steps between. The
+ * defensive floor is "stock": every list this module builds contains at
+ * least one depth-0 root, and a cyclic prev chain keeps its UNRESOLVED
+ * (-1) depth from orderedChain — the <= 0 floor reads it as stock, so a
+ * caller can never hand us a depth that means anything else.
+ * Single-entry chains answer "stock" too — they never render a dropdown
+ * (the caller gates at two options), so the value is only a fallback.
+ */
+export function variantStageOf(
+  list: readonly ShipVariantOption[],
+  option: ShipVariantOption,
+): ShipVariantStage {
+  let max = 0;
+  for (const o of list) if (o.depth > max) max = o.depth;
+  if (option.depth <= 0) return "stock";
+  return option.depth >= max ? "top" : "mid";
+}
+
 /** Stats one weapon-mount block answers for its slot's spec rows. */
 export interface VariantMountStats {
   /** Σ numBarrels over the block's HP_* hardpoints (mount-level, in key

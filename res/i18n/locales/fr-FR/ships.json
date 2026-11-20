@@ -469,6 +469,11 @@
     "shellDamage": "Dégâts par obus",
     "shellDamageHint": "Dégâts standard par coup de ce type d’obus.",
     "variantSelectorHint": "Changer la variante de module de cette section",
+    "variantStage": {
+      "stock": "Origine",
+      "mid": "Intermédiaire",
+      "top": "Final"
+    },
     "variantOptionAria": "Sélectionner la variante de module"
   },
   "skills": {

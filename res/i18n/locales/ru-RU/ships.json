@@ -469,6 +469,11 @@
     "shellDamage": "Урон снаряда",
     "shellDamageHint": "Стандартный урон одного попадания этого снаряда.",
     "variantSelectorHint": "Переключить вариант модуля этого раздела",
+    "variantStage": {
+      "stock": "Исходный",
+      "mid": "Средний",
+      "top": "Финальный"
+    },
     "variantOptionAria": "Выбрать вариант модуля"
   },
   "skills": {

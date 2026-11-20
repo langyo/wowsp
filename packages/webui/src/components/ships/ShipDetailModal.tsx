@@ -28,6 +28,7 @@ import {
   buildShipVariantOptions,
   defaultVariantOf,
   selectedVariantOf,
+  variantStageOf,
   type ShipVariantOption,
   type VariantGroup,
 } from "./shipVariantSpecs";
@@ -870,7 +871,11 @@ const SpecsPanel = defineComponent({
               options={groupOptions.map((o: ShipVariantOption) => ({
                 value: o.name,
                 label: t("ships.parts.role." + o.role) + " " + o.variant,
-                description: o.name,
+                // The list row's tag: where this module sits in its stock →
+                // top chain (初始 / 进阶 / 完全体 per locale), replacing the
+                // raw GameParams entry name — players classify by stage,
+                // not by internal module keys.
+                description: t("ships.spec.variantStage." + variantStageOf(groupOptions, o)),
               }))}
             />
           ) : null;
