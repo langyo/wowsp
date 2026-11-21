@@ -491,16 +491,16 @@ pub struct WeatherNotification {
     pub param: u32,
 }
 
-/// Serde adapter that makes an entity-id-keyed map ([`ReplayStream::leaves`],
-/// [`ReplayStream::repair_hp_caps`]) key itself by STRING on every wire: JSON
-/// already stringifies integer map keys, and the webui's MessagePack decoder
+/// Serde adapter that makes an entity-id-keyed map ([`ReplayStream::leaves`])
+/// key itself by STRING on every wire: JSON already stringifies integer map
+/// keys, and the webui's MessagePack decoder
 /// (@msgpack/msgpack v3) silently drops entries from integer-keyed msgpack maps
 /// (verified empirically: `decode(encode({42: 55.5})) === {}`), so the packed
 /// IPC wire must carry the same string keys the JSON wire always did.
 ///
-/// Generic over the value type so every entity-id-keyed map rides ONE adapter
-/// (a second copy of this logic is exactly the kind of drift that would let one
-/// map work over msgpack and the other silently arrive empty).
+/// Generic over the value type so any future entity-id-keyed map rides the
+/// SAME adapter (a second copy of this logic is exactly the kind of drift that
+/// would let one map work over msgpack and the other silently arrive empty).
 mod entity_id_string_keys {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::collections::BTreeMap;
@@ -656,24 +656,6 @@ pub struct ReplayStream {
     /// id isn't pinned.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub consumable_uses: Vec<ConsumableUseEvent>,
-    /// Entity id → its hull's Repair-Party recoverable cap in ABSOLUTE HP — the
-    /// Vehicle create-state property `regenCrewHpLimit` (the hard limit behind
-    /// the grey HP-bar segment: the hull's repair coefficient × maxHp; the
-    /// entity defs type the property FLOAT32). Read per vehicle out of the
-    /// SAME EntityCreate state the builds decode from; the value does not
-    /// change mid-battle, so one entry per entity is the whole timeline. Only
-    /// NONZERO caps appear: the reference captures' create states all read `0`
-    /// there, and a zero cap would mean "no recoverable damage ever", so
-    /// consumers treat an absent entry as UNKNOWN and fall back to the
-    /// documented flat coefficient (repairPool.ts). Empty on versions without a
-    /// pinned build layout. Keys ride the wire as strings — see
-    /// `entity_id_string_keys`.
-    #[serde(
-        default,
-        with = "entity_id_string_keys",
-        skip_serializing_if = "std::collections::BTreeMap::is_empty"
-    )]
-    pub repair_hp_caps: std::collections::BTreeMap<i32, f32>,
     /// Shield-damage broadcasts (Avatar `receiveShieldDamageInfo`, 15.10+).
     /// Empty on older versions.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]

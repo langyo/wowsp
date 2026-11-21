@@ -520,10 +520,11 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         vision_events: _,
         consumable_uses,
         engine_states: _,
-        // The ally-only build list is emitted by the app's IPC exit; the
-        // grouping core keeps only the one per-vehicle number the stream
-        // carries (the Repair-Party HP cap below).
-        vehicle_builds,
+        // The ally-only build list is emitted by the app's IPC exit, which
+        // re-derives it off the descriptor roster; the grouping core has no
+        // per-vehicle build field left to fill (the grey HP bar's coefficient
+        // is a baked GameParams hull property now — repairPool.ts).
+        vehicle_builds: _,
         shield_damage_events,
         shield_state_events,
         shield_markers,
@@ -575,21 +576,6 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         }
     }
     anchor_hp_streams(&mut hp_map, &arena_players);
-    // Repair-Party recoverable caps: the create-state `regenCrewHpLimit`
-    // property (absolute HP) of every vehicle whose build decoded — BOTH
-    // teams, because the grey HP bar renders on every hull the recording
-    // client observed. Zero readings are dropped instead of carried: the
-    // reference captures' create states all carry `0` there (the server never
-    // replicates the cap for those hulls), and a zero cap would pin the grey
-    // segment to nothing — the frontend falls back to the documented flat
-    // coefficient when an entity has no entry.
-    let repair_hp_caps: BTreeMap<i32, f32> = vehicle_builds
-        .iter()
-        .filter_map(|build| match build.regen_crew_hp_limit {
-            Some(cap) if cap.is_finite() && cap > 0.0 => Some((build.entity_id, cap)),
-            _ => None,
-        })
-        .collect();
     // Infer death from the HP stream when no EntityDestroy packet exists:
     // a float HP series that ends at exactly 0 means the ship sank (the last
     // sample is the sink instant; the client stops updating HP afterwards).
@@ -708,7 +694,6 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         weather_notifications,
         self_team,
         consumable_uses,
-        repair_hp_caps,
         shield_damage_events,
         shield_state_events,
         shield_markers,
@@ -857,58 +842,6 @@ mod tests {
         let ping = &stream.consumable_uses[1];
         assert_eq!(ping.target_x, Some(123.5));
         assert_eq!(ping.target_z, Some(-67.25));
-    }
-
-    /// The Repair-Party HP caps ride the assembled stream: every decoded
-    /// vehicle build contributes the `regenCrewHpLimit` read off its own
-    /// create state (absolute HP), the entity-id map is the whole timeline
-    /// (the value never changes mid-battle), and a ZERO reading is dropped —
-    /// the reference captures' create states all carry 0 there, which is
-    /// "the server never replicated the cap", not "no recoverable damage
-    /// ever"; consumers fall back to the documented flat coefficient. A hull
-    /// whose build never decoded (older era) simply has no entry.
-    #[test]
-    fn group_by_entity_carries_repair_hp_caps() {
-        fn build(entity_id: i32, regen: Option<f32>) -> crate::VehicleBuildRaw {
-            crate::VehicleBuildRaw {
-                entity_id,
-                ship_params_id: 4_065_212_112,
-                units: vec![1],
-                modernization: Vec::new(),
-                exteriors: Vec::new(),
-                abilities: Vec::new(),
-                ensigns: Vec::new(),
-                ecoboosts: Vec::new(),
-                crew_params_id: 0xffe2_a6d0,
-                is_in_adaptation: false,
-                learned_skills: vec![vec![], vec![], vec![], vec![12], vec![], vec![]],
-                regen_crew_hp_limit: regen,
-            }
-        }
-        let mut decoded = empty_decode();
-        decoded.vehicle_builds = vec![
-            build(7, Some(11_750.0)),
-            build(9, Some(0.0)), // the wire read zero: not a usable cap
-            build(11, None),     // era without the property
-            build(13, Some(6_000.0)),
-            build(15, Some(f32::NAN)), // a garbage reading is never a cap
-        ];
-        let stream = group_by_entity(decoded);
-        assert_eq!(stream.repair_hp_caps.len(), 2);
-        assert_eq!(stream.repair_hp_caps.get(&7), Some(&11_750.0));
-        assert_eq!(stream.repair_hp_caps.get(&13), Some(&6_000.0));
-        assert!(
-            !stream.repair_hp_caps.contains_key(&9),
-            "a zero cap is an unknown cap, never a real one"
-        );
-        assert!(
-            !stream.repair_hp_caps.contains_key(&11),
-            "no decoded build means no entry"
-        );
-        assert!(
-            !stream.repair_hp_caps.contains_key(&15),
-            "a non-finite cap is dropped, never handed to the frontend"
-        );
     }
 
     /// The shared tail synthesizes the Lesta arena join (self anchored to the

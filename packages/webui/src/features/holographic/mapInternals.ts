@@ -128,11 +128,6 @@ export interface HoloMapDataProps {
    *  segment (repairPool.ts). Absent on replays whose exposed method id is
    *  not pinned: the feature stays off and every bar renders unchanged. */
   consumableUses?: ConsumableUseEvent[];
-  /** Entity id → the hull's Repair-Party cap in ABSOLUTE HP (the Vehicle
-   *  `regenCrewHpLimit` create-state property, surfaced as
-   *  `ReplayStream.repairHpCaps`). repairPool.ts converts it to the grey
-   *  bar's coefficient; a missing entry keeps the flat 0.5 fallback. */
-  repairHpCaps?: Record<string, number>;
 }
 
 /** Rectangular XZ rect in scene coordinates (z = -worldZ). */
