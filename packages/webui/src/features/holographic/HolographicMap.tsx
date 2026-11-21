@@ -116,6 +116,7 @@ import {
   frameTimesAtSpeed,
   normalizeExportRange,
   renderPlaybackExport,
+  type PlaybackExportPhase,
   type PlaybackExportSettings,
   type PlaybackIconVariant,
   type PlaybackRecorderRibbon,
@@ -342,6 +343,129 @@ export interface HoloMapHandle {
  *  poll; a provider that never answers must still not strand the take, so
  *  the await is raced against this and the clip keeps its honest dashes. */
 const EXPORT_STATS_WAIT_MS = 20_000;
+
+/** Hard cap on the export's medal-feed warm-up (the composition lookup).
+ *  The batch has no cancellation channel of its own, so a hostile/slow
+ *  provider may only ever cost this long before the feed proceeds — the
+ *  clip then paints the seals it has (or none) instead of stranding the
+ *  take on a lookup. */
+const EXPORT_FEED_WAIT_MS = 15_000;
+
+/** Bounded drain of the 3D take's ship hulls (the models phase). The scene
+ *  installs a cone first and swaps the GLB in when it lands; a clip
+ *  rendered before that bakes placeholders into every frame, so the export
+ *  waits — but never forever: a hull whose GLB is missing renders as the
+ *  scene's own stand-in, exactly as the live view does. */
+const EXPORT_MODEL_WAIT_MS = 60_000;
+/** ...and a model that stops ARRIVING ends the wait early: a failed/hung
+ *  load (no model pack installed, a dead mount) must not hold the take for
+ *  the full cap when nothing is coming. */
+const EXPORT_MODEL_STALL_MS = 8_000;
+/** How often the models phase re-reads the scene's counts. */
+const EXPORT_MODEL_POLL_MS = 150;
+
+/** The export card's phase: the renderer's own coarse phases plus the
+ *  caller's final file-write stage. `feed` and `models` run BEFORE the
+ *  encode loop and report no percentage — the card shows their label over
+ *  an indeterminate bar instead of freezing at 0% · 0/N while the feed is
+ *  assembled and the 3D hulls load. */
+export type ExportCardPhase = PlaybackExportPhase | "save";
+
+/** One reading of the 3D scene's hull state. `loaded` = markers wearing
+ *  their real GLB (or a pooled stand-in); `total` = every ship marker the
+ *  scene built; `pending` = the subset still in flight (not loaded AND not
+ *  already parked in the map's modelWaiters — a waiter can only resolve
+ *  when some OTHER hull's load finishes, so it is not work the export can
+ *  wait on). */
+export interface ShipModelProgress {
+  loaded: number;
+  total: number;
+  pending: number;
+}
+
+/** The card's live readout for one phase: the meta line and the bar fill
+ *  (null = indeterminate). Only the frame loop has a percentage; the
+ *  pre-render stages and the encoder flush / file write are label-only.
+ *  Kept module-level and pure (bar the i18n lookup) so the phase ladder
+ *  feed → models (3D hulls) → render → finalize → save is unit-tested. */
+export function exportCardReadout(
+  phase: ExportCardPhase,
+  counts: { done: number; total: number },
+  models: { loaded: number; total: number } | null = null,
+): { meta: string; progress: number | null } {
+  if (phase === "feed") {
+    return { meta: i18nT("replay.export.phaseFeed"), progress: null };
+  }
+  if (phase === "models") {
+    return {
+      meta:
+        models && models.total > 0
+          ? i18nT("replay.export.phaseModelsCount", {
+              done: models.loaded,
+              total: models.total,
+            })
+          : i18nT("replay.export.phaseModels"),
+      progress: null,
+    };
+  }
+  if (phase === "finalize") {
+    return { meta: i18nT("replay.export.phaseFinalize"), progress: null };
+  }
+  if (phase === "save") {
+    return { meta: i18nT("replay.export.phaseSave"), progress: null };
+  }
+  const { done, total } = counts;
+  const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  return { meta: `${pct}% · ${done}/${total}`, progress: pct };
+}
+
+/** Which phase follows the feed assembly. Only the 3D take needs the hull
+ *  wait (its map layer is the live scene); the 2D take's layer is the same
+ *  painter every frame, and a fully-loaded scene skips the wait too. */
+export function exportPhaseAfterFeed(
+  view: "2d" | "3d",
+  models: ShipModelProgress | null,
+): "models" | "render" {
+  if (view !== "3d" || !models) return "render";
+  // `pending` (in-flight loads), NOT `total - loaded`: a hull whose GLB is
+  // missing never resolves, and waiting on it would stall the take for the
+  // whole cap on every export.
+  return models.pending > 0 ? "models" : "render";
+}
+
+/** Await one pre-render step while honouring the export's cancel token and
+ *  a hard cap. The roster batch / composition lookup have no cancel
+ *  channel of their own, so a cancel stops WAITING on them instead of
+ *  abandoning them (the token is polled); a step that never settles costs
+ *  at most `capMs`. A rejected step resolves "done" — a failed warm-up
+ *  keeps the clip's honest dashes, exactly as before. */
+export function awaitExportStep(
+  work: Promise<unknown>,
+  token: { cancelled: boolean },
+  capMs: number,
+  pollMs = 100,
+): Promise<"done" | "cancelled" | "timeout"> {
+  return new Promise((resolve) => {
+    let settled = false;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    let cap: ReturnType<typeof setTimeout> | undefined;
+    const finish = (result: "done" | "cancelled" | "timeout"): void => {
+      if (settled) return;
+      settled = true;
+      if (poll !== undefined) clearInterval(poll);
+      if (cap !== undefined) clearTimeout(cap);
+      resolve(result);
+    };
+    poll = setInterval(() => {
+      if (token.cancelled) finish("cancelled");
+    }, pollMs);
+    cap = setTimeout(() => finish("timeout"), capMs);
+    void work.then(
+      () => finish("done"),
+      () => finish("done"),
+    );
+  });
+}
 
 /** Format the replay header's `YYYYMMDD[_HHMMSS]` date-time as the clip
  *  header's "YYYY-MM-DD HH:MM" start stamp. Returns null when the field is
@@ -3757,21 +3881,27 @@ const RECORDED_DOLLY_MIN = -40;
     // the fixed WoWSP share-shot footer the share images carry. The
     // render owns the playhead for its whole run (seek per frame, restore
     // on finish). Progress rides the shell's standard toast CARD (the
-    // ToastCardBase family the download passes use): a determinate bar,
-    // the frame counts, and the cancel pill — top-right, continuous for
-    // the whole take. While it runs the play/scrub controls are disabled,
-    // since the render owns the playhead.
+    // ToastCardBase family the download passes use): the phase label, a
+    // bar that is determinate only while frames advance, and the cancel
+    // pill — top-right, continuous for the whole take, PRE-RENDER stages
+    // included. While it runs the play/scrub controls are disabled, since
+    // the render owns the playhead.
     const toast = useToast();
     const exportOpen = ref(false);
     const exporting = ref(false);
     const exportProgress = ref({ done: 0, total: 0 });
     const exportCancel = { cancelled: false };
     const exportCard = ref<ToastCardBaseInstance | null>(null);
-    /** Coarse phase: frames → encoder/muxer flush → file write. The
-     *  finalize phase reports no percentage (mediabunny gives none), so
-     *  the card goes indeterminate there instead of freezing at 100%
-     *  while a long take is muxed (the 2026-11-20 report). */
-    const exportPhase = ref<"render" | "finalize" | "save">("render");
+    /** 3D hull-drain progress for the models phase (loaded/total scene
+     *  markers + how many loads are still in flight); null outside it. */
+    const exportModels = ref<ShipModelProgress | null>(null);
+    /** Coarse phase: feed → models (3D) → frames → encoder/muxer flush →
+     *  file write. The pre-render stages and the two post-render ones
+     *  report no percentage (mediabunny gives none; the feed has none), so
+     *  the card goes indeterminate there instead of freezing at 0% · 0/N
+     *  through the feed (the 2026-11-22 report) or at 100% while a long
+     *  take is muxed (the 2026-11-20 report). */
+    const exportPhase = ref<ExportCardPhase>("feed");
     /** The leave-fold snapshot: when the take ends, the card folds out
      *  showing the last live values instead of snapping to empty. */
     const exportCardHeld = ref<{ meta: string; progress: number | null }>({
@@ -3779,15 +3909,7 @@ const RECORDED_DOLLY_MIN = -40;
       progress: 0,
     });
     function exportCardLive(): { meta: string; progress: number | null } {
-      if (exportPhase.value === "finalize") {
-        return { meta: i18nT("replay.export.phaseFinalize"), progress: null };
-      }
-      if (exportPhase.value === "save") {
-        return { meta: i18nT("replay.export.phaseSave"), progress: null };
-      }
-      const { done, total } = exportProgress.value;
-      const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-      return { meta: `${pct}% · ${done}/${total}`, progress: pct };
+      return exportCardReadout(exportPhase.value, exportProgress.value, exportModels.value);
     }
     watch(
       () => exporting.value,
@@ -3989,6 +4111,53 @@ const RECORDED_DOLLY_MIN = -40;
       }
     }
 
+    /** Read the scene's hull state for the models phase. rebuildActors
+     *  creates one marker per vessel up-front and each flips
+     *  `modelLoaded` when its GLB (or a same-role pooled stand-in) is
+     *  installed, so loaded/total is an honest pair. Only markers still
+     *  IN FLIGHT count as pending: the ones already parked in
+     *  `modelWaiters` failed (or had no candidate URL) and can only be
+     *  rescued by another hull's load — waiting on them would stall every
+     *  take for a user with no model pack installed. */
+    function shipModelProgress(): ShipModelProgress {
+      const waiting = new Set(ctx.modelWaiters.map((w) => w.marker));
+      const markers = ctx.shipMarkers;
+      let loaded = 0;
+      let pending = 0;
+      for (const marker of markers) {
+        if (marker.userData.modelLoaded === true) loaded++;
+        else if (!waiting.has(marker)) pending++;
+      }
+      return { loaded, total: markers.length, pending };
+    }
+
+    /** Wait (bounded) for the 3D take's in-flight hulls while publishing the
+     *  live count to the card. Cancellation is honoured within one poll; the
+     *  wait also ends when nothing has ARRIVED for a while (a failed/hung
+     *  load) or at the total cap — either way the take proceeds, and a
+     *  missing hull renders as the scene's own cone/stand-in, which the live
+     *  3D view already does. */
+    async function waitForShipModels(): Promise<void> {
+      const deadline = performance.now() + EXPORT_MODEL_WAIT_MS;
+      let lastLoaded = -1;
+      let lastArrival = performance.now();
+      for (;;) {
+        const progress = shipModelProgress();
+        exportModels.value = progress;
+        if (exportCancel.cancelled || progress.pending === 0) return;
+        const now = performance.now();
+        if (progress.loaded !== lastLoaded) {
+          lastLoaded = progress.loaded;
+          lastArrival = now;
+        }
+        if (now - lastArrival >= EXPORT_MODEL_STALL_MS) return;
+        if (now >= deadline) return;
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, EXPORT_MODEL_POLL_MS);
+        });
+      }
+    }
+
     async function runPlaybackExportJob(): Promise<void> {
       const full = computeFullMapBounds(ctx);
       if (!full || duration.value <= 0 || exporting.value) return;
@@ -4030,31 +4199,37 @@ const RECORDED_DOLLY_MIN = -40;
       const resumeAt = current.value;
       playing.value = false;
       exportProgress.value = { done: 0, total: times.length };
-      exportPhase.value = "render";
+      // The feed below (roster batch, medal compositions, the ledger and the
+      // decoded art) is real work with no percentage. Say so on the card
+      // instead of leaving it at 0% · 0/N for the whole assembly — the
+      // 2026-11-22 「一直卡着不导出」 report.
+      exportPhase.value = "feed";
+      exportModels.value = null;
       exporting.value = true;
       exportCancel.cancelled = false;
-      // The team columns (clan tags, seals, the stat cells and the header
-      // averages) ride the lazily-armed roster-stats batch. AWAIT the real
-      // promise — the old 5 s poll raced the batch and froze every row
-      // dashed on a cold replay view (the 2026-11-21 「战绩没加载出来」
-      // report); the latch made it permanent. The wait is bounded so a
-      // hung provider can never strand the take before its first frame;
-      // on timeout/rejection the clip keeps the honest dashes.
-      const statsOn = s.stats !== false;
-      if (statsOn) {
-        await Promise.race([
-          ensureRosterStats(),
-          new Promise<void>((resolve) => {
-            setTimeout(resolve, EXPORT_STATS_WAIT_MS);
-          }),
-        ]);
-      }
-      // Chat senders tint by roster side — the side lookup is per replay,
-      // built once here (vehicles never change mid-export).
-      const sideOfVehicle = new Map<number, "ally" | "enemy">();
-      for (const v of rosterSides.value.allies) sideOfVehicle.set(v.id, "ally");
-      for (const v of rosterSides.value.enemies) sideOfVehicle.set(v.id, "enemy");
       try {
+        // The team columns (clan tags, seals, the stat cells and the header
+        // averages) ride the lazily-armed roster-stats batch. AWAIT the real
+        // promise — the old 5 s poll raced the batch and froze every row
+        // dashed on a cold replay view (the 2026-11-21 「战绩没加载出来」
+        // report); the latch made it permanent. The wait is bounded so a
+        // hung provider can never strand the take before its first frame;
+        // on timeout/rejection the clip keeps the honest dashes. Cancelling
+        // stops the wait immediately, not just at the next frame.
+        const statsOn = s.stats !== false;
+        if (statsOn) {
+          const settled = await awaitExportStep(
+            ensureRosterStats(),
+            exportCancel,
+            EXPORT_STATS_WAIT_MS,
+          );
+          if (settled === "cancelled") return;
+        }
+        // Chat senders tint by roster side — the side lookup is per replay,
+        // built once here (vehicles never change mid-export).
+        const sideOfVehicle = new Map<number, "ally" | "enemy">();
+        for (const v of rosterSides.value.allies) sideOfVehicle.set(v.id, "ally");
+        for (const v of rosterSides.value.enemies) sideOfVehicle.set(v.id, "enemy");
         // Theme-following palette + the footer's bundled art resolve once,
         // before the first frame — inside the try so even a surprise throw
         // cannot strand `exporting`. The scorebar strip's HUD icons
@@ -4102,8 +4277,18 @@ const RECORDED_DOLLY_MIN = -40;
         // The medal feed (compositions) warms when the export modal opens;
         // this await is then a no-op re-read of a warm cache. With the
         // stats toggle off there are no seals to grade (every seal verdict
-        // is stats-derived), so the lookup is skipped entirely.
-        if (statsOn) await warmExportMedalFeed();
+        // is stats-derived), so the lookup is skipped entirely. The warm
+        // call returns immediately when the modal's own warm-up is still in
+        // flight (it is idempotent), so the cap only ever bites a COLD
+        // lookup started here — a cancel stops waiting on it right away.
+        if (statsOn) {
+          const settled = await awaitExportStep(
+            warmExportMedalFeed(),
+            exportCancel,
+            EXPORT_FEED_WAIT_MS,
+          );
+          if (settled === "cancelled") return;
+        }
         // Freeze the roster feed for the take: the players, their stats,
         // medals and the header columns cannot change inside one export,
         // so they resolve ONCE here; only the HP fraction and the dead
@@ -4312,6 +4497,23 @@ const RECORDED_DOLLY_MIN = -40;
         );
         const ribbonIconFor = (key: string): HTMLImageElement | null =>
           ribbonIconMap.get(key) ?? null;
+        // A cancel during the feed stops here — the encode loop never starts,
+        // and the finally below still restores the playhead/card.
+        if (exportCancel.cancelled) return;
+        // 3D view only: the scene's hulls load lazily (rebuildActors installs
+        // a placeholder cone and swaps the GLB in when it lands), so a take
+        // started right after opening the map would bake cones into every
+        // frame. Drain them here — bounded, and only when any are pending;
+        // the encode loop starts either way (a hull that never resolves
+        // renders as the scene's own stand-in, like the live view).
+        const hulls = s.view === "3d" ? shipModelProgress() : null;
+        if (exportPhaseAfterFeed(s.view, hulls) === "models") {
+          exportPhase.value = "models";
+          await waitForShipModels();
+          if (exportCancel.cancelled) return;
+        }
+        // Frames start here; only this phase reports a percentage.
+        exportPhase.value = "render";
         const result = await renderPlaybackExport({
           format: s.format,
           fps: s.fps,
@@ -5092,9 +5294,12 @@ const RECORDED_DOLLY_MIN = -40;
           </div>
           </div>
           {/* Export progress: the shell's standard toast CARD (the download
-              passes' ToastCardBase family) — determinate bar, the frame
-              counts in the meta readout, and the cancel pill; teleports to
-              the top-right toast column and stays for the whole take. */}
+              passes' ToastCardBase family) — the meta readout is the phase
+              label (feed / models / finalize / save) or, once frames run,
+              the percentage + frame counts; the bar is determinate only
+              while frames advance and indeterminate through the pre-render
+              stages and the mux/write tail. The cancel pill stays up the
+              whole time; the card teleports to the top-right toast column. */}
           <ToastCardBase
             ref={exportCard}
             tone="info"
