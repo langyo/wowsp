@@ -9,9 +9,12 @@
   gap: 0.7rem;
   font-size: var(--text-sm);
 
-  /* Label + control rows (format group, export folder). */
+  /* Label + control rows (format / view groups, export folder). A narrow
+     viewport may wrap the control under its label instead of squeezing the
+     pill track. */
   &__row {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.6rem;
 

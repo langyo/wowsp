@@ -5,9 +5,13 @@
  *  toggle's full-width fallback, the 过街老鼠 row's blank stat band), the
  *  header's pill-centred corner blocks, the recorder panel's 292px band
  *  budget and its enlarged, unchromed ribbon art, and the top-anchored
- *  chat transcript. The painters are driven with a recording 2D context —
- *  no real canvas, no encoders. */
-import { describe, expect, it } from "vitest";
+ *  chat transcript, the fixed 3D export camera's bounds fit, and the
+ *  modal's 2D/3D view button group. The painters are driven with a recording
+ *  2D context — no real canvas, no encoders; the modal mounts hikari's real
+ *  pill group (its teleported chrome is queried off the body). */
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { nextTick } from "vue";
 
 import {
   GIF_MAX_FRAMES,
@@ -51,6 +55,10 @@ import {
   PLAYBACK_EXPORT_FPS,
   PLAYBACK_EXPORT_SIZES,
   clampExportSettings,
+  exportGodCamera,
+  EXPORT_GOD_FOV_DEG,
+  EXPORT_GOD_MARGIN,
+  EXPORT_GOD_TILT_DEG,
   fitShrinkSize,
   fitTeamName,
   frameTimesAtSpeed,
@@ -90,13 +98,19 @@ import {
   EXPORT_HEADER_PILL_PAD,
   EXPORT_HEADER_SCORE_DOT_R,
   EXPORT_HEADER_MAX_CHIPS,
+  composePlaybackFrame,
   foldPlaybackRecorderStats,
   playbackHeaderPillLayout,
 } from "./playbackExport";
 import { FOOT_H, darkPalette } from "@/features/share/shotKit";
+import type { ShotFooterStrings } from "@/features/share/shotKit";
 import type {
   PlaybackCapChip,
   PlaybackChatLine,
+  PlaybackExportRequest,
+  PlaybackExportSettings,
+  ExportGodCameraPose,
+  PlaybackHeaderData,
   PlaybackHeaderPillLayout,
   PlaybackPanelLabels,
   PlaybackRecorderStats,
@@ -109,6 +123,14 @@ import { RIBBON_SOURCES } from "@/features/replay/postBattle";
 import { foldDamageStats } from "@/api/modules/replay";
 import type { EntityTrajectory, ShotKillEvent } from "@/api";
 import { TACTICAL_SIZE } from "./tactical/render";
+import { initLocaleMessages, t as i18nT } from "@/i18n";
+import HoloExportModal from "./HoloExportModal";
+
+enableAutoUnmount(afterEach);
+
+beforeAll(async () => {
+  await initLocaleMessages();
+});
 
 describe("playbackExportLayout", () => {
   it("stacks header + map + footer across the side columns", () => {
@@ -181,19 +203,44 @@ describe("frameTimesAtSpeed", () => {
 
 describe("clampExportSettings", () => {
   it("keeps on-ladder values untouched", () => {
-    const s = clampExportSettings({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true });
-    expect(s).toEqual({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true });
+    const s = clampExportSettings({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true, view: "3d" });
+    expect(s).toEqual({ format: "video", from: 0, to: 60, fps: 60, speed: 2, size: 1080, footer: false, stats: true, view: "3d" });
   });
 
   it("re-bases fps, speed and size when the format flips", () => {
-    const s = clampExportSettings({ format: "gif", from: 0, to: 60, fps: 60, speed: 3, size: 1080, footer: true, stats: false });
+    const s = clampExportSettings({ format: "gif", from: 0, to: 60, fps: 60, speed: 3, size: 1080, footer: true, stats: false, view: "2d" });
     // (1080 is off the GIF width ladder → falls to the ladder's smallest.)
     expect(s.format).toBe("gif");
     expect(PLAYBACK_EXPORT_FPS.gif).toContain(s.fps);
     expect(PLAYBACK_EXPORT_SIZES.gif).toContain(s.size);
     expect([1, 2, 5, 10, 20]).toContain(s.speed);
-    // The stats toggle is not a ladder value - it survives the flip.
+    // Neither the stats toggle nor the view is a ladder value - both
+    // survive a format flip.
     expect(s.stats).toBe(false);
+    expect(s.view).toBe("2d");
+  });
+
+  it("keeps a 3D view and re-bases anything else to the 2D painting", () => {
+    const base = {
+      format: "video" as const,
+      from: 0,
+      to: 60,
+      fps: 30,
+      speed: 5,
+      size: 1920,
+      footer: true,
+      stats: true,
+    };
+    // The view rides along untouched on the normal path.
+    expect(clampExportSettings({ ...base, view: "3d" }).view).toBe("3d");
+    // A stale / hand-edited value never survives: the tactical painting is
+    // the safe layer (a blank map square would be a broken clip).
+    expect(
+      clampExportSettings({ ...base, view: "ortho" as unknown as "2d" }).view,
+    ).toBe("2d");
+    expect(
+      clampExportSettings({ ...base } as unknown as PlaybackExportSettings).view,
+    ).toBe("2d");
   });
 });
 
@@ -415,12 +462,34 @@ interface PaintedRoundRect {
   r: number;
 }
 
+/** Current 2D transform, tracked so a test can prove WHERE a painter
+ *  draws (the map layer is painted under the composer's square transform). */
+interface Matrix2D {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+  e: number;
+  f: number;
+}
+const identityMatrix = (): Matrix2D => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 });
+/** m then n (canvas semantics: the new transform is applied first). */
+const multiplyMatrix = (m: Matrix2D, n: Matrix2D): Matrix2D => ({
+  a: m.a * n.a + m.c * n.b,
+  b: m.b * n.a + m.d * n.b,
+  c: m.a * n.c + m.c * n.d,
+  d: m.b * n.c + m.d * n.d,
+  e: m.a * n.e + m.c * n.f + m.e,
+  f: m.b * n.e + m.d * n.f + m.f,
+});
+
 function recordingContext() {
   const texts: PaintedText[] = [];
   const rects: PaintedRect[] = [];
   const roundRects: PaintedRoundRect[] = [];
   const images: PaintedImage[] = [];
   const stack: Array<Record<string, unknown>> = [];
+  let matrix = identityMatrix();
   const ctx: Record<string, unknown> = {
     font: "",
     textAlign: "left",
@@ -451,6 +520,12 @@ function recordingContext() {
     fillRect(x: number, y: number, w: number, h: number) {
       rects.push({ x, y, w, h, fill: String(ctx.fillStyle) });
     },
+    getTransform() {
+      return { ...matrix };
+    },
+    setTransform(a: number, b: number, c: number, d: number, e: number, f: number) {
+      matrix = { a, b, c, d, e, f };
+    },
     save() {
       stack.push({
         font: ctx.font,
@@ -459,21 +534,32 @@ function recordingContext() {
         strokeStyle: ctx.strokeStyle,
         lineWidth: ctx.lineWidth,
         globalAlpha: ctx.globalAlpha,
+        matrix: { ...matrix },
       });
     },
     restore() {
       const s = stack.pop();
-      if (s) Object.assign(ctx, s);
+      if (s) {
+        const { matrix: saved, ...styles } = s;
+        Object.assign(ctx, styles);
+        if (saved) matrix = saved as Matrix2D;
+      }
     },
     beginPath() {},
+    rect() {},
+    clip() {},
     moveTo() {},
     lineTo() {},
     closePath() {},
     arc() {},
     fill() {},
-    translate() {},
+    translate(x: number, y: number) {
+      matrix = multiplyMatrix(matrix, { a: 1, b: 0, c: 0, d: 1, e: x, f: y });
+    },
     rotate() {},
-    scale() {},
+    scale(x: number, y: number) {
+      matrix = multiplyMatrix(matrix, { a: x, b: 0, c: 0, d: y, e: 0, f: 0 });
+    },
     roundRect(x: number, y: number, w: number, h: number, r: number) {
       roundRects.push({ x, y, w, h, r });
     },
@@ -1648,4 +1734,240 @@ describe("foldPlaybackRecorderStats", () => {
   });
 });
 
+/* ── 3D view (the fixed 上帝俯瞰 god camera) ────────────────────────────
+   The camera math is pure, so the tests RE-PROJECT the map corners the way
+   three.js does (world-up basis, camera looking down its local −Z) and
+   assert the whole map lands inside the square with the declared margin. */
 
+type Vec3 = { x: number; y: number; z: number };
+
+const sub3 = (a: Vec3, b: Vec3): Vec3 => ({ x: a.x - b.x, y: a.y - b.y, z: a.z - b.z });
+const dot3 = (a: Vec3, b: Vec3): number => a.x * b.x + a.y * b.y + a.z * b.z;
+const cross3 = (a: Vec3, b: Vec3): Vec3 => ({
+  x: a.y * b.z - a.z * b.y,
+  y: a.z * b.x - a.x * b.z,
+  z: a.x * b.y - a.y * b.x,
+});
+const norm3 = (v: Vec3): Vec3 => {
+  const len = Math.hypot(v.x, v.y, v.z) || 1;
+  return { x: v.x / len, y: v.y / len, z: v.z / len };
+};
+
+/** NDC (aspect 1) of a scene point through the pose — the three.js basis. */
+function projectNdc(
+  pose: ExportGodCameraPose,
+  p: Vec3,
+): { x: number; y: number } {
+  const zAxis = norm3(sub3(pose.position, pose.lookAt)); // camera local +Z
+  const xAxis = norm3(cross3({ x: 0, y: 1, z: 0 }, zAxis));
+  const yAxis = cross3(zAxis, xAxis);
+  const v = sub3(p, pose.position);
+  const depth = -dot3(v, zAxis); // positive in front of the camera
+  const tanHalf = Math.tan((EXPORT_GOD_FOV_DEG * Math.PI) / 360);
+  return {
+    x: dot3(v, xAxis) / depth / tanHalf,
+    y: dot3(v, yAxis) / depth / tanHalf,
+  };
+}
+
+/** The four map corners in SCENE space (z mirrored from the world). */
+function mapCorners(b: { minX: number; maxX: number; minZ: number; maxZ: number }): Vec3[] {
+  return [
+    { x: b.minX, y: 0, z: -b.maxZ },
+    { x: b.maxX, y: 0, z: -b.maxZ },
+    { x: b.minX, y: 0, z: -b.minZ },
+    { x: b.maxX, y: 0, z: -b.minZ },
+  ];
+}
+
+describe("exportGodCamera", () => {
+  const BOUNDS = { minX: -5000, maxX: 7000, minZ: -4000, maxZ: 9000 };
+  const pose = exportGodCamera(BOUNDS) as ExportGodCameraPose;
+
+  it("centres on the full map bounds in scene space", () => {
+    expect(pose.position.x).toBeCloseTo(1000, 9);
+    expect(pose.lookAt.x).toBeCloseTo(1000, 9);
+    // World centre z = (−4000 + 9000)/2 = 2500 → scene z = −2500.
+    expect(pose.lookAt.z).toBeCloseTo(-2500, 9);
+    expect(pose.lookAt.y).toBe(0);
+    expect(pose.position.y).toBeGreaterThan(0);
+  });
+
+  it("sits the fixed 18° off vertical and looks down at the map", () => {
+    const back = pose.position.z - pose.lookAt.z;
+    expect(pose.position.y).toBeGreaterThan(back);
+    expect(Math.atan2(back, pose.position.y)).toBeCloseTo(
+      (EXPORT_GOD_TILT_DEG * Math.PI) / 180,
+      9,
+    );
+    expect(pose.tilt).toBeCloseTo((EXPORT_GOD_TILT_DEG * Math.PI) / 180, 12);
+    expect(pose.distance).toBeCloseTo(Math.hypot(back, pose.position.y), 6);
+  });
+
+  it("fits the whole map into the square, and fills it (not a thumbnail)", () => {
+    const limit = 1 / EXPORT_GOD_MARGIN;
+    let widest = 0;
+    for (const corner of mapCorners(BOUNDS)) {
+      const ndc = projectNdc(pose, corner);
+      expect(Number.isFinite(ndc.x)).toBe(true);
+      expect(Number.isFinite(ndc.y)).toBe(true);
+      expect(Math.abs(ndc.x)).toBeLessThanOrEqual(limit + 1e-9);
+      expect(Math.abs(ndc.y)).toBeLessThanOrEqual(limit + 1e-9);
+      widest = Math.max(widest, Math.abs(ndc.x), Math.abs(ndc.y));
+    }
+    // The binding edge sits exactly on the margin: the pose is a FIT, not
+    // an arbitrary far-away camera.
+    expect(widest).toBeCloseTo(limit, 6);
+  });
+
+  it("is deterministic for a replay and tolerant of reversed bounds", () => {
+    expect(exportGodCamera(BOUNDS)).toEqual(exportGodCamera(BOUNDS));
+    // Reversed corners describe the same map: extents are absolute.
+    expect(
+      exportGodCamera({ minX: 7000, maxX: -5000, minZ: 9000, maxZ: -4000 }),
+    ).toEqual(exportGodCamera(BOUNDS));
+  });
+
+  it("answers null for a missing or unusable rectangle", () => {
+    expect(exportGodCamera(null)).toBeNull();
+    expect(exportGodCamera(undefined)).toBeNull();
+    expect(exportGodCamera({ minX: 0, maxX: Number.NaN, minZ: 0, maxZ: 1 })).toBeNull();
+    expect(exportGodCamera({ minX: 0, maxX: 1, minZ: 0, maxZ: Infinity })).toBeNull();
+  });
+
+  it("frames a degenerate point-map instead of collapsing the camera", () => {
+    const point = exportGodCamera({ minX: 5, maxX: 5, minZ: 5, maxZ: 5 });
+    expect(point).not.toBeNull();
+    expect(Number.isFinite(point!.position.y)).toBe(true);
+    expect(point!.position.y).toBeGreaterThan(0);
+  });
+});
+
+/* ── Frame composer: the map-square origin contract ─────────────────────
+   paintMap is handed a context already translated to the square's
+   top-left, scaled by the layout scale and clipped to the square. The 3D
+   bridge blits its WebGL canvas in exactly that space, so this test pins
+   the transform — regressing to the composition origin (blitting at the
+   frame's top-left) would crop and offset every 3D frame. */
+
+describe("composePlaybackFrame map-square contract", () => {
+  const emptyHeader: PlaybackHeaderData = {
+    clock: "00:00",
+    scoreAlly: null,
+    scoreEnemy: null,
+    caps: [],
+    ships: [],
+  };
+  const emptySide: PlaybackTeamSide = { columns: [], rows: [] };
+  const footerStrings: ShotFooterStrings = {
+    tagline: "tagline",
+    disclaimer1: "d1",
+    disclaimer2: "d2",
+    qqGroup: "qq",
+  };
+
+  it("hands paintMap the square's translated/scaled transform", () => {
+    const rec = recordingContext();
+    const layout = playbackExportLayout(1920, false);
+    let seen: Matrix2D | null = null;
+    const request: PlaybackExportRequest = {
+      format: "video",
+      fps: 30,
+      times: [0],
+      targetWidth: 1920,
+      footer: false,
+      palette: darkPalette(),
+      footerStrings,
+      logo: null,
+      header: () => emptyHeader,
+      team: () => ({ allies: emptySide, enemies: emptySide }),
+      recorder: () => null,
+      chat: () => [],
+      shipIconFor: () => null,
+      ribbonIconFor: () => null,
+      paintMap: (_t, g) => {
+        seen = g.getTransform() as Matrix2D;
+      },
+      panelLabels: LABELS,
+      showStats: false,
+    };
+    composePlaybackFrame(rec.ctx, layout, request, 0);
+    const m = seen as Matrix2D | null;
+    expect(m).not.toBeNull();
+    // Translated to the map's top-left and scaled by the layout scale.
+    expect(m!.a).toBeCloseTo(layout.scale, 9);
+    expect(m!.d).toBeCloseTo(layout.scale, 9);
+    expect(m!.b).toBe(0);
+    expect(m!.c).toBe(0);
+    expect(m!.e).toBeCloseTo(layout.mapLeft, 9);
+    expect(m!.f).toBeCloseTo(layout.mapTop, 9);
+    // Logical 0..EXPORT_LOGICAL maps EXACTLY onto the square\'s device rect —
+    // the space the 3D blit must fill.
+    expect(m!.a * EXPORT_LOGICAL + m!.e).toBeCloseTo(layout.mapLeft + layout.mapSize, 6);
+    expect(m!.d * EXPORT_LOGICAL + m!.f).toBeCloseTo(layout.mapTop + layout.mapSize, 6);
+    expect(layout.mapTop + layout.mapSize).toBeLessThanOrEqual(layout.height);
+  });
+});
+/* ── Modal wiring: the view button group ────────────────────────────────
+   The real hikari pill group is mounted (its buttons are the contract);
+   only what the modal writes into the shared settings object is asserted. */
+
+describe("HoloExportModal view toggle", () => {
+  const settings = (over: Partial<PlaybackExportSettings> = {}): PlaybackExportSettings => ({
+    format: "video",
+    view: "2d",
+    from: 0,
+    to: 60,
+    fps: 30,
+    speed: 5,
+    size: 1920,
+    footer: true,
+    stats: true,
+    ...over,
+  });
+
+  /** hikari's modal teleports to the overlay root, so query the body. */
+  const viewGroups = (): HTMLElement[] =>
+    Array.from(document.body.querySelectorAll<HTMLElement>('[role="group"]'));
+
+  it("offers 2D / 3D as a second button group and writes the pick", async () => {
+    const s = settings();
+    mount(HoloExportModal, {
+      props: {
+        modelValue: true,
+        settings: s,
+        duration: 600,
+        current: 0,
+        exportDir: null,
+        onStart: () => {},
+      },
+      attachTo: document.body,
+    });
+    await nextTick();
+    const groups = viewGroups();
+    // Format first, view second — two pill groups, in that order.
+    expect(groups).toHaveLength(2);
+    expect(groups[0].getAttribute("aria-label")).toBe(i18nT("replay.export.format"));
+    expect(groups[1].getAttribute("aria-label")).toBe(i18nT("replay.export.view"));
+
+    const pills = Array.from(groups[1].querySelectorAll<HTMLButtonElement>("button"));
+    expect(pills.map((p) => p.textContent?.trim())).toEqual([
+      i18nT("replay.export.view2d"),
+      i18nT("replay.export.view3d"),
+    ]);
+    // The default selection is the 2D tactical painting.
+    expect(pills[0].getAttribute("aria-pressed")).toBe("true");
+    expect(pills[1].getAttribute("aria-pressed")).toBe("false");
+
+    pills[1].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(s.view).toBe("3d");
+    const after3d = Array.from(viewGroups()[1].querySelectorAll<HTMLButtonElement>("button"));
+    expect(after3d[1].getAttribute("aria-pressed")).toBe("true");
+    expect(after3d[0].getAttribute("aria-pressed")).toBe("false");
+
+    after3d[0].dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    await nextTick();
+    expect(s.view).toBe("2d");
+  });
+});
