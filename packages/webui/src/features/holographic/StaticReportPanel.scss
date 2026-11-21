@@ -106,6 +106,19 @@
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+
+    /* The recorder tag is the head row's one AppTag face: it rides the same
+       unified pill voice as the provenance run (2026-11-08 sweep) so the
+       head card carries ONE label geometry — the picker trigger is not an
+       .hk-tag and stays untouched. */
+    > .hk-tag {
+      min-height: 20px;
+      font-size: var(--text-2xs);
+      line-height: 1.4;
+      font-weight: 600;
+      padding-block: 1px;
+      padding-inline: 8px;
+    }
   }
 
   /** Battle provenance (map · mode · start · replay fingerprint ·
@@ -118,6 +131,32 @@
     flex-wrap: wrap;
     font-size: 11px;
     color: var(--srp-dim);
+
+    /* One pill for the whole provenance row (2026-11-08 review: the row
+       mixed three chip families whose stock boxes disagree — the map tag
+       rode a 1.5 line height and wider padding (~20px tall) beside
+       18px HkTag/HkBadge faces, AppTag's HkTag face rendered weight 500
+       against HkBadge's 600, and the time badge was the only sans face
+       among mono telemetry). Every chip shares one box — a 20px pill at
+       --text-2xs/600 with one inline padding — so the exported long image
+       reads a single even chip run. The direct-child floor stretches the
+       short faces up to the map tag's height; the family selectors below
+       carry the typography so they win the cascade over hikari's own
+       rules regardless of sheet order. */
+    > * {
+      min-height: 20px;
+      border-radius: var(--radius-full);
+    }
+
+    > .hk-tag,
+    > .hk-badge,
+    > .map-tag {
+      font-size: var(--text-2xs);
+      line-height: 1.4;
+      font-weight: 600;
+      padding-block: 1px;
+      padding-inline: 8px;
+    }
   }
 
   &__hash {
@@ -145,11 +184,13 @@
     b {
       font-size: 19px;
       line-height: 1.1;
+      font-variant-numeric: tabular-nums;
     }
 
     &-sub {
       font-size: 11px;
       color: var(--srp-dim);
+      font-variant-numeric: tabular-nums;
     }
   }
 
@@ -195,11 +236,13 @@
     &-label {
       font-size: 11px;
       color: var(--srp-dim);
+      font-variant-numeric: tabular-nums;
     }
 
     &-note {
       margin-left: 8px;
       color: var(--srp-warn);
+      font-variant-numeric: tabular-nums;
     }
   }
 
@@ -539,7 +582,10 @@
   }
 
   &__count {
-    font-size: 11px;
+    /* One dim voice in this header row: the hint, the legend items and the
+       interactive hint all sit at 10.5px — the count was the lone 11px
+       outlier (2026-11-08 sweep). */
+    font-size: 10.5px;
     color: var(--srp-dim);
   }
 
@@ -829,6 +875,18 @@
     align-items: center;
     gap: 7px;
     margin-bottom: 6px;
+
+    /* The category tag carries the head's unified label voice (600 at
+       --text-2xs, one 20px pill with the shared inline padding) — the
+       cards and the provenance row read as one chip run in the exported
+       long image (2026-11-08 sweep). */
+    .hk-tag {
+      min-height: 20px;
+      font-size: var(--text-2xs);
+      line-height: 1.4;
+      font-weight: 600;
+      padding-inline: 8px;
+    }
   }
 
   &__moment-idx {
@@ -875,6 +933,9 @@
     flex-wrap: wrap;
     font-weight: 600;
     color: var(--srp-ink);
+    /* Every digit in the sheet renders tabular — the ruler, the y-axis
+       marks and the moment clock already do (2026-11-08 sweep). */
+    font-variant-numeric: tabular-nums;
 
     &--outcome {
       color: var(--srp-good);
@@ -885,6 +946,7 @@
     font-size: 10px;
     font-weight: 400;
     color: var(--srp-dim);
+    font-variant-numeric: tabular-nums;
   }
 
   &__range {
