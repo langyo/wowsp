@@ -1,0 +1,21 @@
+// 缓存服务器 section — the ladder's draggable user-row block and the
+// discover-now preview strip. The card surface and the official row's
+// hairline come from HkCardList; the rows INSIDE HkDraggableList are one
+// child blob, so their dividers repeat the same hairline here.
+.settings-modal__cache-servers {
+  width: 100%;
+
+  .hk-draggable-list-item + .hk-draggable-list-item {
+    border-top: 1px solid rgb(var(--color-border) / 10%);
+  }
+}
+
+// The autodiscover preview strip: the discover-now button with its result
+// line beside it (wraps under on narrow panes / phone).
+.settings-modal__cache-discover {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}

@@ -128,7 +128,13 @@ fn enforce_wss_base(ws_base: &str, raw: &str) -> Result<String> {
 /// lives under /gateway/). M-5b: https is ENFORCED — plain http is
 /// accepted only on explicit loopback hosts (any port, dev convenience).
 /// Returns Err on anything that cannot be a gateway origin.
-pub(super) fn normalize_https_root(raw: &str) -> Result<String> {
+///
+/// Also the URL policy behind the cache-mesh server roots (docs/en/
+/// designs/cache-mesh.md §6.1 — "sanitized like the mirror ladders",
+/// loopback http tolerated): the same normalize + https-enforce class,
+/// so a pasted bare host gains https:// and a LAN node stays http-only
+/// legal on loopback.
+pub(crate) fn normalize_https_root(raw: &str) -> Result<String> {
     let url = raw.trim();
     if url.is_empty() {
         return Err(anyhow!("gateway URL is empty"));

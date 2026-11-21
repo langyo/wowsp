@@ -291,7 +291,32 @@ pub(crate) async fn get_with_fallback(
 /// configured proxy, see `http_builder_for`), so the chain must not
 /// narrate a proxy→direct fallback for them — nor burn a direct-preference
 /// mark on a host whose "proxied" attempt was never a proxy path at all.
+///
+/// CACHE-MESH HOOK (docs/en/designs/cache-mesh.md §6.2): before the chain
+/// runs, allowlisted stats URLs try the user's cache servers first — one
+/// 2xx answer from the mesh returns as-if-upstream and the chain never
+/// dials. The hook lives HERE, in the single choke point every stats
+/// request already rides, so no call site changes; [`recorded_get`] keeps
+/// mesh-served rows out of the health table (a cache hit must not flatter
+/// the upstream row).
 pub(crate) async fn send_with_fallback(
+    pair: &super::network::HttpPair,
+    host: &str,
+    label: &str,
+    build: impl Fn(&reqwest::Client) -> reqwest::RequestBuilder,
+) -> anyhow::Result<reqwest::Response> {
+    if let Some(response) = super::stats_cache::send_via_cache_mesh(pair, host, label, &build).await
+    {
+        return Ok(response);
+    }
+    send_proxy_direct_chain(pair, host, label, build).await
+}
+
+/// The proxy→direct chain proper (the former body of
+/// [`send_with_fallback`], split out so the cache-server fetches
+/// themselves can ride it WITHOUT re-entering the mesh hook — a server
+/// root that happens to be a stats host must not recurse).
+pub(crate) async fn send_proxy_direct_chain(
     pair: &super::network::HttpPair,
     host: &str,
     label: &str,
@@ -356,6 +381,11 @@ pub(crate) async fn recorded_get(
     let outcome = get_with_fallback(pair, host, label, url).await;
     let elapsed_ms = started.elapsed().as_millis() as u64;
     match &outcome {
+        // Cache-mesh hit (§6.2): the upstream was never dialed — the row
+        // stays untouched so the fault chip keeps describing the real
+        // upstream path (a miss below falls through to the chain and
+        // records exactly as before).
+        Ok(resp) if is_cache_served(resp) => {},
         Ok(resp) => {
             let status = resp.status();
             if status.is_success() {
@@ -393,6 +423,9 @@ pub(crate) async fn best_effort_get(
 /// only the refusal statuses and SEND failures record a failure.
 pub(crate) fn record_transport(host: &str, result: &anyhow::Result<reqwest::Response>) {
     match result {
+        // Cache-mesh hit (§6.2): not an upstream outcome — see
+        // [`is_cache_served`] / the recorded_get carve-out.
+        Ok(resp) if is_cache_served(resp) => {},
         Ok(resp) if is_refusal(resp.status()) => {
             record_failure(host, &format!("HTTP {}", resp.status()))
         },
@@ -469,6 +502,112 @@ pub(crate) fn host_of_url(url: &str) -> &str {
         None => url,
     };
     no_scheme.split('/').next().unwrap_or("")
+}
+
+// ── cache-mesh lookup planning (docs/en/designs/cache-mesh.md §6.2) ──────
+
+/// The stats-family host set of the embedded catalogue (`kind == "stats"`
+/// rows) — the client-side mirror of the mesh's lookup allowlist (§3.2:
+/// "exactly the stats family of upstream-endpoints.json"). Parsed once.
+static STATS_HOSTS: LazyLock<std::collections::HashSet<String>> = LazyLock::new(|| {
+    host_catalogue()
+        .into_iter()
+        .filter(|entry| entry.kind == "stats")
+        .map(|entry| entry.host.to_ascii_lowercase())
+        .collect()
+});
+
+/// Whether `host` (bare host, an optional `:port` tolerated) belongs to
+/// the stats family — the cheap pre-gate the mesh hook keys on before it
+/// ever touches the config or builds a request for inspection.
+pub(crate) fn is_stats_host(host: &str) -> bool {
+    let bare = host.rsplit_once(':').map(|(h, _)| h).unwrap_or(host);
+    STATS_HOSTS.contains(&bare.to_ascii_lowercase())
+}
+
+/// Whether a full URL points into the stats family (§3.2 allowlist).
+pub(crate) fn is_stats_lookup_url(url: &str) -> bool {
+    is_stats_host(host_of_url(url))
+}
+
+/// Percent-encode `value` for a query slot (the `?url=` of
+/// `/api/lookup/fetch`, §3.1): RFC 3986 unreserved characters pass
+/// through, every other byte becomes `%XX` — a strict spelling every
+/// server-side query parser reads back identically (no form-style `+`
+/// ambiguity).
+fn percent_encode_query_value(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            },
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// The §6.2 lookup plan: whether `url` rides the cache mesh, and with
+/// which servers. `None` unless the mesh is enabled, the URL's host is
+/// in the stats family (§3.2) and at least one server is configured or
+/// autodiscovered. `Some((servers, encoded_url))` carries the ordered,
+/// deduped roots — the user's saved list first, autodiscovered community
+/// nodes after (§6.1) — and the percent-encoded upstream URL for the
+/// `?url=` slot.
+pub(crate) fn stats_cache_lookup_target(url: &str) -> Option<(Vec<String>, String)> {
+    if !is_stats_lookup_url(url) {
+        return None;
+    }
+    let config = super::network::load_config();
+    if !config.stats_cache_enabled {
+        return None;
+    }
+    let autodiscovered = if config.stats_peer_autodiscover {
+        super::stats_cache::autodiscovered_servers()
+    } else {
+        Vec::new()
+    };
+    stats_cache_lookup_target_with(url, &config, &autodiscovered)
+}
+
+/// Testable core of [`stats_cache_lookup_target`] — config and discovered
+/// list injected, no filesystem or mesh state.
+pub(crate) fn stats_cache_lookup_target_with(
+    url: &str,
+    config: &super::network::NetworkConfig,
+    autodiscovered: &[String],
+) -> Option<(Vec<String>, String)> {
+    if !config.stats_cache_enabled || !is_stats_lookup_url(url) {
+        return None;
+    }
+    let mut servers: Vec<String> =
+        Vec::with_capacity(config.stats_cache_servers.len() + autodiscovered.len());
+    for root in config
+        .stats_cache_servers
+        .iter()
+        .chain(autodiscovered.iter())
+    {
+        if !servers.iter().any(|kept| kept.eq_ignore_ascii_case(root)) {
+            servers.push(root.clone());
+        }
+    }
+    if servers.is_empty() {
+        return None;
+    }
+    Some((servers, percent_encode_query_value(url)))
+}
+
+/// Whether a response was served by the stats-cache mesh: the §3.4
+/// provenance header only a lookup node sets (the hook force-inserts it
+/// when a non-conformant node omitted it, so this check cannot miss). A
+/// mesh-served row is NOT an upstream outcome — the health table records
+/// direct-path outcomes only (§6.2: a cache hit must not flatter the
+/// upstream's row).
+pub(crate) fn is_cache_served(response: &reqwest::Response) -> bool {
+    response
+        .headers()
+        .contains_key(reqwest::header::HeaderName::from_static("x-wowsp-cache"))
 }
 
 #[cfg(test)]
@@ -621,6 +760,181 @@ mod tests {
             "127.0.0.1:8787"
         );
         assert_eq!(host_of_url("not-a-url"), "not-a-url");
+    }
+
+    /// The cache-mesh gate (§3.2/§6.2): exactly the catalogue's
+    /// kind == "stats" hosts qualify — the content family (GitHub,
+    /// mirrors, CDNs) and loopback never ride the mesh.
+    #[test]
+    fn stats_family_gate_matches_only_catalogue_stats_hosts() {
+        for host in [
+            "vortex.wowsgame.cn",
+            "api.korabli.su",
+            "clans.wowsgame.cn",
+            "api.wows-numbers.com",
+            "VORTEX.Wowsgame.CN",
+        ] {
+            assert!(is_stats_host(host), "{host} must be a stats host");
+        }
+        for host in [
+            "github.com",
+            "api.github.com",
+            "wowsp.langyo.xyz",
+            "127.0.0.1:8787",
+            "localhost",
+            "",
+        ] {
+            assert!(!is_stats_host(host), "{host} must NOT be a stats host");
+        }
+        assert!(is_stats_lookup_url(
+            "https://vortex.wowsgame.cn/api/accounts/search/x/?limit=10"
+        ));
+        assert!(!is_stats_lookup_url("https://github.com/langyo/wowsp"));
+        assert!(!is_stats_lookup_url("http://127.0.0.1:8787/api/health"));
+    }
+
+    /// §6.2 gating: a non-stats URL, a disabled mesh and an empty server
+    /// list all decline the hook (None) — the request rides the existing
+    /// chain unchanged.
+    #[test]
+    fn stats_cache_lookup_target_declines_non_stats_disabled_and_empty() {
+        let enabled = super::super::network::NetworkConfig {
+            stats_cache_servers: vec!["https://wowsp.langyo.xyz".into()],
+            ..Default::default()
+        };
+        assert!(
+            stats_cache_lookup_target_with(
+                "https://vortex.wowsgame.cn/api/accounts/1",
+                &enabled,
+                &[]
+            )
+            .is_some()
+        );
+
+        let disabled = super::super::network::NetworkConfig {
+            stats_cache_enabled: false,
+            ..enabled.clone()
+        };
+        assert!(
+            stats_cache_lookup_target_with(
+                "https://vortex.wowsgame.cn/api/accounts/1",
+                &disabled,
+                &[]
+            )
+            .is_none(),
+            "disabled mesh never hooks"
+        );
+
+        assert!(
+            stats_cache_lookup_target_with("https://github.com/langyo/wowsp", &enabled, &[])
+                .is_none(),
+            "non-stats URLs never hook"
+        );
+
+        let empty_list = super::super::network::NetworkConfig {
+            stats_cache_servers: Vec::new(),
+            ..enabled
+        };
+        assert!(
+            stats_cache_lookup_target_with(
+                "https://vortex.wowsgame.cn/api/accounts/1",
+                &empty_list,
+                &[]
+            )
+            .is_none(),
+            "no servers configured means no mesh"
+        );
+    }
+
+    /// §6.1 server ordering: the user's saved list first, autodiscovered
+    /// community nodes after, deduped (a community row echoing a
+    /// configured root adds nothing) — and the plan carries the strictly
+    /// percent-encoded upstream URL for the ?url= slot.
+    #[test]
+    fn stats_cache_lookup_target_orders_and_dedupes_servers() {
+        let config = super::super::network::NetworkConfig {
+            stats_cache_servers: vec![
+                "https://wowsp.langyo.xyz".into(),
+                "https://legion.example.org".into(),
+            ],
+            ..Default::default()
+        };
+        let autodiscovered = [
+            "https://wowsp.langyo.xyz".to_string(), // duplicate
+            "https://mesh.example.org".to_string(),
+            "https://MESH.example.org".to_string(), // case duplicate
+        ];
+        let (servers, encoded) = stats_cache_lookup_target_with(
+            "https://vortex.wowsgame.cn/api/accounts/search/x/?limit=10",
+            &config,
+            &autodiscovered,
+        )
+        .expect("the plan applies");
+        assert_eq!(
+            servers,
+            vec![
+                "https://wowsp.langyo.xyz".to_string(),
+                "https://legion.example.org".to_string(),
+                "https://mesh.example.org".to_string(),
+            ]
+        );
+        assert_eq!(
+            encoded,
+            "https%3A%2F%2Fvortex.wowsgame.cn%2Fapi%2Faccounts%2Fsearch%2Fx%2F%3Flimit%3D10"
+        );
+    }
+
+    /// A mesh-served response never touches the health table (§6.2): the
+    /// provenance header marks it, and recorded_get leaves the row at its
+    /// previous values — a cache hit must not flatter the upstream.
+    #[tokio::test]
+    async fn recorded_get_skips_cache_served_rows() {
+        let (addr, server) = mesh_stub_server(1);
+        let host = format!("mesh-served-{addr}");
+        let pair = crate::commands::network::HttpPair::from_clients(
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("healthy"),
+            reqwest::Client::builder()
+                .no_proxy()
+                .build()
+                .expect("direct"),
+            false,
+        );
+        let resp = recorded_get(&pair, &host, "probe", format!("http://{addr}/probe"))
+            .await
+            .expect("stub serves");
+        assert_eq!(resp.status(), 200);
+        assert!(is_cache_served(&resp));
+        let health = health_of(&host);
+        assert_eq!(health.consecutive_failures, 0, "nothing was recorded");
+        assert!(health.last_success_ts.is_none(), "no success recorded");
+        assert!(
+            health.last_failure_ts.is_none(),
+            "no failure recorded either"
+        );
+        assert!(health.last_elapsed_ms.is_none(), "no latency recorded");
+        server.join().expect("stub served");
+    }
+
+    /// The loopback stub of the mesh tests: answers with a 200 carrying
+    /// the §3.4 provenance header (what a conformant cache node sends).
+    fn mesh_stub_server(len: usize) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("stub bind");
+        let addr = listener.local_addr().expect("stub addr");
+        let handle = std::thread::spawn(move || {
+            for _ in 0..len {
+                let (mut stream, _) = listener.accept().expect("stub accept");
+                let mut buf = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let _ = std::io::Write::write_all(
+                    &mut stream,
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\nx-wowsp-cache: hit\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok",
+                );
+            }
+        });
+        (addr, handle)
     }
 
     /// The diagnostics snapshot lists only FRESH marks, sorted, and never

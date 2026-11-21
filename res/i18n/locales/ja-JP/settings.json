@@ -123,6 +123,7 @@
   "dpiRiskyWarning": "{scale}% に拡大すると画面からはみ出し、操作しにくくなる可能性があります。",
   "dpiRevertCountdown": "{scale}% を適用しました。{seconds} 秒後に自動的に戻ります。",
   "network": "ネットワーク",
+  "cacheServersSection": "キャッシュサーバー",
   "networkHint": "戦績照会・モデルパックのダウンロード・更新確認など、すべての外向きリクエストに使用するプロキシです。システムプロキシは OS の設定に従います。",
   "networkSystem": "システムプロキシ",
   "networkNone": "プロキシを使用しない",

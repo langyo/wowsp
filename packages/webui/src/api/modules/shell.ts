@@ -82,6 +82,15 @@ export interface NetworkConfig {
   /** User-saved ghproxy-style mirror prefixes the downloader rotates
    *  through (empty → direct GitHub + the built-ins only). */
   githubMirrors?: string[] | null;
+  /** Whether stats-family lookups ride the cache mesh first (docs/en/
+   *  designs/cache-mesh.md §6.1; a miss falls back to the direct chain). */
+  statsCacheEnabled?: boolean | null;
+  /** Ordered cache-mesh server roots — official node default; user-managed
+   *  list rendered by the 缓存服务器 settings pane. */
+  statsCacheServers?: string[] | null;
+  /** Whether community nodes from the official broadcast list ride AFTER
+   *  the user's own list (§6.1). */
+  statsPeerAutodiscover?: boolean | null;
   /** OS proxy pre-resolved by the shell (read-only, for proxy-URL consumers). */
   effectiveProxy?: string | null;
   /** Which channel the shell's proxy decision resolved to ("manual" |

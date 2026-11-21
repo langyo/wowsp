@@ -19,6 +19,7 @@ import {
   Power,
   RefreshCw,
   ScrollText,
+  Server,
   Smartphone,
   Upload,
   UserRound,
@@ -44,6 +45,7 @@ import { useSettingsNetworkState } from "@/components/settings/useSettingsNetwor
 import { useSettingsUpdatesState } from "@/components/settings/useSettingsUpdatesState";
 import { useSettingsResourcesState } from "@/components/settings/useSettingsResourcesState";
 import { useSettingsGatewayState } from "@/components/settings/useSettingsGatewayState";
+import { useSettingsCacheServersState } from "@/components/settings/useSettingsCacheServersState";
 import { useSettingsDpiState } from "@/components/settings/useSettingsDpiState";
 import { isMobileApp } from "@/utils/platform";
 
@@ -62,6 +64,7 @@ export function useSettingsBody(props: { active: boolean }) {
   const updates = useSettingsUpdatesState();
   const resources = useSettingsResourcesState();
   const gateway = useSettingsGatewayState();
+  const cacheServers = useSettingsCacheServersState();
   const dpi = useSettingsDpiState(
     () => props.active,
     () => ui.section,
@@ -74,6 +77,15 @@ export function useSettingsBody(props: { active: boolean }) {
     void overlayCfg.load();
     void gamePaths.refreshIngamePlugin();
   });
+
+  /** 缓存服务器 activation: re-sync the config FIRST (the ladder the
+   *  probe walks comes from it — probing the pre-load snapshot would test
+   *  stale rows), then probe the visible rows once. */
+  const openCacheServers = () =>
+    (async () => {
+      await cacheServers.load();
+      await cacheServers.testAll();
+    })();
 
   watch(
     () => ui.section,
@@ -90,6 +102,12 @@ export function useSettingsBody(props: { active: boolean }) {
       // The changelog feed streams from GitHub Releases on demand —
       // never at startup — so opening the section is what loads it.
       if (id === "changelog") void changelog.ensureLoaded();
+      // 缓存服务器: re-sync the saved server list + toggles from the
+      // config and probe the visible rows once (both idempotent).
+      if (id === "cacheServers") {
+        void openCacheServers();
+        return;
+      }
       if (id === "updates") {
         // Re-sync the saved mirror list and lazy-load the ladder (both
         // idempotent; the ladder falls back to its static set where the
@@ -126,10 +144,12 @@ export function useSettingsBody(props: { active: boolean }) {
         void resources.refreshDecisions();
       }
       if (open && ui.section === "changelog") void changelog.ensureLoaded();
+      if (open && ui.section === "cacheServers") void openCacheServers();
     },
   );
 
   if (ui.section === "changelog") void changelog.ensureLoaded();
+  if (ui.section === "cacheServers") void openCacheServers();
   // Same gap for the resources section's data-source rows: a landing mount
   // never triggers the watcher's loads (the pack cards mask it via their
   // boot-time store init — the rows have no such backstop).
@@ -160,6 +180,7 @@ export function useSettingsBody(props: { active: boolean }) {
     crash: Zap,
     account: UserRound,
     network: Globe,
+    cacheServers: Server,
     markers: Tag,
     pairing: Smartphone,
     updates: RefreshCw,
@@ -182,6 +203,7 @@ export function useSettingsBody(props: { active: boolean }) {
     crash: t("crash.section.title"),
     account: t("settings.account"),
     network: t("settings.network"),
+    cacheServers: t("settings.cacheServersSection"),
     markers: t("settings.markersTitle"),
     pairing: mobileApp ? t("gateway.phoneSectionTitle") : t("gateway.sectionTitle"),
     updates: t("settings.updates"),
@@ -230,6 +252,7 @@ export function useSettingsBody(props: { active: boolean }) {
     updates,
     resources,
     gateway,
+    cacheServers,
     dpi,
     railGroups,
   };

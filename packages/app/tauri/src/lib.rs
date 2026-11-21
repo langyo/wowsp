@@ -804,6 +804,12 @@ pub fn run() {
             commands::gateway::gateway_selfhost_probe,
             #[cfg(desktop)]
             commands::gateway::gateway_selfhost_step,
+            // Stats-cache mesh client (docs/en/designs/cache-mesh.md §6):
+            // the 缓存服务器 pane's per-server probe + community-node
+            // autodiscover. All targets — the phone's Rust commands run
+            // the same transport hook the desktop rides.
+            commands::stats_cache::stats_cache_probe,
+            commands::stats_cache::stats_cache_autodiscover,
             commands::wg_api::lookup_player_stats,
             commands::wg_api::lookup_players_stats_batch,
             commands::wg_api::clear_roster_stats_cache,

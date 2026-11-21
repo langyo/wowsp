@@ -167,6 +167,11 @@ export const RPC = {
   // see api/modules/shell.ts.
   github_mirror_ladder: "github_mirror_ladder",
   github_mirror_probe: "github_mirror_probe",
+  // Stats-cache mesh client (commands/stats_cache.rs, docs/en/designs/
+  // cache-mesh.md §6.3): the 缓存服务器 pane's per-server reachability
+  // probe and the community-node autodiscover — see api/modules/statsCache.ts.
+  stats_cache_probe: "stats_cache_probe",
+  stats_cache_autodiscover: "stats_cache_autodiscover",
   get_overlay_config: "get_overlay_config",
   set_overlay_config: "set_overlay_config",
   // Chat translation (commands/chat_translate/): provider config storage,

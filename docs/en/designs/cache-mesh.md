@@ -340,10 +340,14 @@ gossip jobs, no push, no want-list protocol. Those stay future work
 ### 6.1 Config (`network-config.toml`, `NetworkConfig`)
 
 ```toml
-stats_cache_enabled = true
-stats_cache_servers = ["https://wowsp.langyo.xyz"]   # ordered, user-managed
-stats_peer_autodiscover = true
+statsCacheEnabled = true
+statsCacheServers = ["https://wowsp.langyo.xyz"]     # ordered, user-managed
+statsPeerAutodiscover = true
 ```
+
+The keys follow `network-config.toml`'s canonical camelCase (the IPC
+shape doubles as the TOML key set there — one spelling everywhere); the
+Rust fields are the snake_case `stats_cache_*` trio.
 
 - Sanitized like the mirror ladders (https-only, loopback http
   tolerated, trim, dedupe, cap 8).

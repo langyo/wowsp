@@ -7,6 +7,7 @@
 //! regenerate the TS bindings (planned: ts-rs) and update the webui types.
 
 mod arena;
+mod cache;
 mod capabilities;
 mod chat_translate;
 mod contribution;
@@ -29,6 +30,7 @@ mod stream;
 mod supporters;
 
 pub use arena::*;
+pub use cache::*;
 pub use capabilities::*;
 pub use chat_translate::*;
 pub use contribution::*;
