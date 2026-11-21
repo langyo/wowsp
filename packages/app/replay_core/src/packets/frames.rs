@@ -618,7 +618,7 @@ pub(super) fn walk_frames(
                 &call.args,
                 profile.shotkill_has_ballistics,
             ));
-        } else if m.avatar_receive_damage_stat == Some(call.method_id) {
+        } else if profile.damage_stat_method == Some(call.method_id) {
             damage_stats.extend(decode_damage_stat(call.time, &call.args));
         } else if call.method_id == m.avatar_on_chat_message {
             if let Some(c) = decode_chat_message(call.time, &call.args) {

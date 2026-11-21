@@ -207,6 +207,13 @@ struct LayoutProfile {
     /// E11 experimental decoders (minimap vision, consumable uses, engine
     /// state projection) — only for versions whose ids/indices are pinned.
     e11: Option<E11MethodIds>,
+    /// The recorder's `receiveDamageStat` exposed id. The generated method
+    /// table leaves 14.5's row `None` (its defs ship the method but the id is
+    /// suppressed until wire-probed), so the exact-minor layout pin
+    /// (`layout_tables::damage_stat_for`) overrides it; the 15.8/15.10 ids
+    /// still come from `methods`. `None` = the stream stays empty and the
+    /// frontend keeps its HP-delta fallback.
+    damage_stat_method: Option<i32>,
     /// Vehicle build decode (create-state property walk → shipConfig + crew
     /// modifiers). Pinned to the 15.9.x era (see `packets::build`; the 15.10
     /// shipConfig BINARY is an open item there); other versions skip it and
@@ -579,6 +586,15 @@ fn build_layout_profile(
     // pinning a new era appends a row there, never decode-logic surgery.
     LayoutProfile {
         methods,
+        // The generated 14.5 row suppresses receiveDamageStat's id
+        // (DEF_ID_SUPPRESSED); the exact-minor wire-probed pin wins. Lesta
+        // keeps its own table (its 26.10 row carries 166).
+        damage_stat_method: if lesta {
+            methods.and_then(|m| m.avatar_receive_damage_stat)
+        } else {
+            lt::damage_stat_for(version_key)
+                .or_else(|| methods.and_then(|m| m.avatar_receive_damage_stat))
+        },
         zone_entity_type: lt::row_newest(&lt::ZONE_ENTITY_TYPE, version_key),
         ward_has_type: lt::row_newest(&lt::WARD_HAS_TYPE, version_key),
         shotkill_has_ballistics: lt::row_newest(&lt::SHOTKILL_HAS_BALLISTICS, version_key),
