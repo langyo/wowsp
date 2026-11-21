@@ -659,6 +659,9 @@
     "incomingIn": "arrive dans {s}",
     "visibility": "Visibilité"
   },
+  "ward": {
+    "arrivesIn": "arrive dans {s}"
+  },
   "ranges": {
     "title": "Indicateurs de portée",
     "hint": "Trace autour du navire enregistré les portées standard de ses armes et consommables (sans bonus d'équipement).",

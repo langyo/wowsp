@@ -8,8 +8,7 @@ import * as THREE from "three";
 import { CAP_SPRITE_PX, SMOKE_SPRITE_PX } from "./screenOverlays";
 import type { SquadronPlane } from "@/api";
 import { samplesUpTo } from "./trajectoryMath";
-import { planeReturningAt, wardCardAnchor } from "./planeWarfare";
-import { activeSquadronOf } from "./followTargets";
+import { cardWingAt, planeReturningAt, wardCardAnchor } from "./planeWarfare";
 import type { MapInternals } from "./mapInternals";
 
 /** Camera distance under which the below-hull combat status rows render —
@@ -167,9 +166,9 @@ export function updateLabelPositions(ctx: MapInternals) {
     let anchor: SquadronPlane | null = null;
     let anchorPlaneId: number | null = null;
     // The carrier's CURRENT wing speaks for the card (identification rule):
-    // the same pick the chase camera, the gold controlled-aircraft edge and
-    // the bottom-left pill already use (followTargets.activeSquadronOf — the
-    // newest launch still inside its shared lifetime window). Without it the
+    // planeWarfare.cardWingAt — the newest sensible wing, held back by its 3 s
+    // hysteresis so a short-lived re-created group cannot flash a wrong
+    // family over the card (see currentWingOfCarrier). Without it the
     // pick below ("newest sample" / nearest rendered wedge) answered with
     // whatever formation happened to sit closest to the camera: on the
     // 14.5.0.0 Shokaku "37_Ridge" capture at 03:10 that was a 4-plane WARD
@@ -352,38 +351,25 @@ export function planeRowVisible(label: {
   ) > 0;
 }
 
-/** The wing a carrier's aircraft card describes and follows: the carrier's
- *  CURRENT sortie (followTargets.activeSquadronOf — newest launch, inside the
- *  shared planeTrailExpiry window and before its minimap remove), and never a
- *  homeward-bound one. Null when the carrier has nothing up or the join is
- *  missing; the caller then falls back to the rendered-wedge / newest-sample
- *  scan. This is the SAME pick the chase camera and the 2D maps' gold
- *  controlled-aircraft edge use, so the card's type, ✈N and HP can no longer
- *  describe a different formation than the one the user is following. */
+/** The wing a carrier's aircraft card describes and follows: planeWarfare's
+ *  cardWingAt — the newest SENSIBLE wing (airborne inside the shared
+ *  planeTrailExpiry window, not homeward-bound, not a scout) that has been up
+ *  for the card's 3 s hysteresis window, else the oldest one still flying.
+ *  Null when the carrier has nothing sensible up or the join is missing; the
+ *  caller then falls back to the rendered-wedge / newest-sample scan.
+ *
+ *  The hysteresis is the fix for the flashing wrong-family card: a wing that
+ *  appears mid-air for a couple of seconds (a re-created survivor group, a
+ *  scout/ward hand-off) used to become the "newest launch" — the pick every
+ *  tick — so the card jumped onto it, showed ITS family for two seconds and
+ *  vanished with it. The pick is a pure function of (wings, t), so scrubbing
+ *  lands on the same wing as playback. */
 export function currentWingOfCarrier(
   ctx: MapInternals,
   labelId: number,
   t: number,
 ): number | null {
-  const carrierId = ctx.planeLabelCarriers?.get(labelId);
-  if (carrierId == null) return null;
-  const planeId = activeSquadronOf(
-    ctx.planeTrails ?? [],
-    ctx.planeCarrierOf ?? new Map(),
-    ctx.minimapTrailEnd ?? new Map(),
-    carrierId,
-    t,
-  );
-  if (planeId == null) return null;
-  const trail = ctx.planeTrails?.find(
-    (tr) => Math.floor(tr.id / 16) === planeId,
-  );
-  if (!trail || trail.samples.length === 0) return null;
-  // A homeward-bound wing carries no card at all (planeWarfare's gate owns
-  // that decision); leaving the pick to the scan below keeps the two rules in
-  // one place instead of hiding the card here as a second gate.
-  if (planeReturningAt(ctx, trail, t)) return null;
-  return planeId;
+  return cardWingAt(ctx, labelId, t);
 }
 
 /** Which formation's rendered wedge should carry a carrier's aircraft

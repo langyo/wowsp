@@ -349,3 +349,34 @@ describe("updateLabelPositions — fighter deployment anchor", () => {
   });
 });
 
+
+/* ── Item B: no card flash across a mid-air re-created wing ──────────────
+ * The 14.5.0.0 Shokaku capture re-adds squadrons mid-air (a survivor group
+ * with a fresh planeId living 1.9–3.4 s). The old "newest launch" pick rode
+ * that group for its whole life, so the card flashed ITS family for a couple
+ * of seconds and vanished with it — "出现一下就又消失了". The card now holds
+ * the older still-airborne wing until the newer one has flown for 3 s.
+ */
+describe("currentWingOfCarrier (no flash window across a mid-air group)", () => {
+  it("holds the older wing for the whole life of a short re-created group", () => {
+    // Wing 9 launches at 20 s, its stream stops at 22 s (expiry 27 s).
+    const ctx = carrierWings(makeCtx([]), [[7, 0, 60], [9, 20, 22]]);
+    for (let t = 20; t <= 27; t++) {
+      expect(currentWingOfCarrier(ctx, LABEL, t)).toBe(7);
+    }
+  });
+
+  it("takes the newer wing once it has been airborne for 3 s", () => {
+    const ctx = carrierWings(makeCtx([]), [[7, 0, 60], [9, 20, 60]]);
+    expect(currentWingOfCarrier(ctx, LABEL, 22)).toBe(7);
+    expect(currentWingOfCarrier(ctx, LABEL, 23)).toBe(9);
+  });
+
+  it("is scrub-stable: the same playhead answers the same wing", () => {
+    const ctx = carrierWings(makeCtx([]), [[7, 0, 60], [9, 20, 60]]);
+    const fwd = [18, 21, 22, 23, 30].map((t) => currentWingOfCarrier(ctx, LABEL, t));
+    const back = [30, 23, 22, 21, 18].map((t) => currentWingOfCarrier(ctx, LABEL, t)).reverse();
+    expect(fwd).toEqual(back);
+    expect(fwd).toEqual([7, 7, 7, 9, 9]);
+  });
+});

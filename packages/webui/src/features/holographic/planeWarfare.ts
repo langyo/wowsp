@@ -174,15 +174,17 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
     for (let i = 0; i < 16; i++) {
       const key = planeId * 16 + i;
       // Last DEFINED writer wins, per map: both streams carry the same
-      // paramsId per planeId in practice, but a table MISS must never write
-      // a value at all — the old code wrote the "attack" fallback
-      // unconditionally, so the minimap stream (run last) could downgrade a
-      // good family the create stream had just resolved, and the create
-      // stream could not repair it afterwards. The "attack" default is only
-      // filled for a slot NO stream resolves, which is the pre-existing
-      // contract every consumer already repeats (`?? "attack"`).
+      // paramsId per planeId in practice, but a table MISS writes NO value
+      // at all. Two reasons: the minimap stream (run last) could otherwise
+      // downgrade a good family the create stream had just resolved, and a
+      // manufactured default is a WRONG family — the "attack" fallback made
+      // every unresolvable airframe (a scout whose paramsId the table does
+      // not carry) paint the attack/skip-bomber icon, the reported
+      // "scout renders as a bomber" defect. A missing family stays missing:
+      // consumers repeat their own `?? "attack"` fallback for the ICON, while
+      // the card keeps the wing's last KNOWN family (markerUpdate) instead of
+      // silently claiming one.
       if (type) ctx.planeTypesById.set(key, type);
-      else if (!ctx.planeTypesById.has(key)) ctx.planeTypesById.set(key, "attack");
       if (index) ctx.planeIndexById.set(key, index);
     }
   };
@@ -198,6 +200,23 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
  *  "inexplicable floating dots" report); see markerUpdate's park pass. */
 export const PLANE_DOT_PARKED_Y = -100000;
 
+/** Airframe-index marker of a CATAPULT-launched scout / spotter: the baked
+ *  GameParams indices spell the role into the index itself — P + nation
+ *  letter + role letters, the scout role being `AS` (PJAS011_Nakajima_E8N,
+ *  PSAS022_IMAM_RO42, PBAS001_Walrus, PAAS014_Vought_OS2U, PXAS001_...).
+ *  The strike families spell `AD` / `AB` / `AF` instead (PJAD902, PJAB208,
+ *  PJAF408), so the test never swallows a strike wing.
+ *
+ *  This is the FALLBACK half of the scout rule, not a replacement: the baked
+ *  `type` column is the primary source, but a row whose family came from the
+ *  GameParams species (the legacy bakes typed torpedo airframes "bomber") or
+ *  a row the bake missed can otherwise sail past the scout exclusion and paint
+ *  the wrong card — the "疑似侦察机却显示为轰炸机" report. */
+export function isScoutAirframeIndex(index: string | null | undefined): boolean {
+  if (!index) return false;
+  return /^P[A-Z]AS\d/.test(index);
+}
+
 /** Whether a GameParams paramsId names a CATAPULT-launched scout / spotter
  *  wing (the `scout` plane family: the PJAS / P★AS single-plane squadrons). Those
  *  wings carry NO floating card of their own — the requirement is that the
@@ -206,13 +225,133 @@ export const PLANE_DOT_PARKED_Y = -100000;
  *  the historical card). */
 export function isScoutParamsId(paramsId: number | null | undefined): boolean {
   if (paramsId == null) return false;
-  return PLANE_TYPES[String(paramsId)]?.type === "scout";
+  const row = PLANE_TYPES[String(paramsId)];
+  if (!row) return false;
+  return row.type === "scout" || isScoutAirframeIndex(row.index);
 }
 
 /** Whether the wing a planeId names is a scout wing (same test, resolved
  *  through the type table the trail build already filled). */
-export function isScoutWing(ctx: MapInternals, planeId: number): boolean {
+export function isScoutWing(
+  ctx: Pick<MapInternals, "planeTypesById">,
+  planeId: number,
+): boolean {
   return ctx.planeTypesById?.get(planeId * 16) === "scout";
+}
+
+/** How long a NEWER wing must have been airborne before it may take the
+ *  aircraft card away from an older wing that is still flying (seconds).
+ *  The card's per-tick family follow rides the pick this gate returns;
+ *  without it a wing that appears mid-air for a couple of seconds (a
+ *  re-created survivor group, a scout/ward hand-off) became the "newest
+ *  launch", flashed its own family over the card and vanished again — the
+ *  "出现一下就又消失了" report. 3 s is the hysteresis the flight groups
+ *  need to be told apart from a launch: every genuine sortie in the
+ *  reference captures flies far longer than this, while the short-lived
+ *  re-created groups live 1.9–3.4 s.
+ */
+export const WING_CARD_STICKY_S = 3;
+
+/** One candidate for the aircraft card's wing. */
+export interface WingRideCandidate {
+  planeId: number;
+  /** First decoded sample — the wing's launch. */
+  born: number;
+  /** Last decoded sample. Past it the wing is inside planeTrailExpiry's GRACE
+   *  window: it may KEEP the card it already has (the historical 5 s linger),
+   *  but it must not TAKE it over — a wing whose stream has stopped is landing
+   *  or already gone, and the whole point of the gate is that such a wing's
+   *  family never flashes over the card. */
+  lastSample: number;
+}
+
+/** The wing a card should ride among `candidates` at `t` — PURE, so the
+ *  answer is a function of (candidates, t) alone and scrubbing backwards
+ *  lands on exactly the same wing as playing forwards.
+ *
+ *  The newest candidate wins ONLY once it has been airborne for `stickyS`
+ *  AND is still streaming (see WingRideCandidate.lastSample): while a newly
+ *  appeared wing is still inside either window the older still-airborne wing
+ *  keeps the card (hysteresis). When nothing qualifies — the carrier's first
+ *  sortie, or the first wing after a gap — the OLDEST live candidate answers,
+ *  so the card never waits 3 s to appear for a wing that has no competitor. */
+export function stableWingPick(
+  candidates: readonly WingRideCandidate[],
+  t: number,
+  stickyS: number = WING_CARD_STICKY_S,
+): number | null {
+  let oldest: WingRideCandidate | null = null;
+  let chosen: WingRideCandidate | null = null;
+  for (const c of candidates) {
+    if (oldest == null || c.born < oldest.born) oldest = c;
+    // A takeover needs BOTH: the wing has flown for the hysteresis window AND
+    // its stream is still live at t (see WingRideCandidate.lastSample).
+    if (t - c.born >= stickyS && t <= c.lastSample && (chosen == null || c.born > chosen.born)) {
+      chosen = c;
+    }
+  }
+  return (chosen ?? oldest)?.planeId ?? null;
+}
+
+/** Every wing of `carrierId` that may carry the floating card at `t`:
+ *  airborne inside the shared planeTrailExpiry window, NOT homeward-bound
+ *  (a returning wing keeps its model but loses the card) and NOT a scout
+ *  (a catapult spotter belongs to its hull's consumable chip). Wings
+ *  outside those rules are not "sensible picks" and never win, so a
+ *  wrong-family card can no longer appear for one tick and vanish.
+ *
+ *  Candidates come back in planeTrail order; stableWingPick is
+ *  order-independent (it compares born times), so the caller may sort or
+ *  not. */
+export function cardRideCandidates(
+  ctx: Pick<
+    MapInternals,
+    "planeTrails" | "minimapTrailEnd" | "planeCarrierOf" | "trajById" | "planeTypesById"
+  >,
+  carrierId: number,
+  t: number,
+): WingRideCandidate[] {
+  const out: WingRideCandidate[] = [];
+  for (const trail of ctx.planeTrails ?? []) {
+    // Only the formation's index-0 anchor speaks for the squadron; the
+    // wingmen trails share its lifetime (same rule as activeSquadronOf).
+    if (trail.id % 16 !== 0) continue;
+    const planeId = Math.floor(trail.id / 16);
+    if (ctx.planeCarrierOf?.get(planeId) !== carrierId) continue;
+    const samples = trail.samples;
+    if (samples.length === 0) continue;
+    const born = samples[0].time;
+    const last = samples[samples.length - 1].time;
+    const expiry = planeTrailExpiry(last, ctx.minimapTrailEnd?.get(planeId));
+    if (t < born || t > expiry) continue;
+    if (isScoutWing(ctx, planeId)) continue;
+    if (planeReturningAt(ctx, trail, t)) continue;
+    out.push({ planeId, born, lastSample: last });
+  }
+  return out;
+}
+
+/** The wing a carrier's aircraft card describes at `t` (its position anchor
+ *  AND its content: family, ✈N, HP source). Null when the carrier has
+ *  nothing sensible up. One rule for the position pass (labelOverlay) and the
+ *  content pass (markerUpdate), so the two can never describe different
+ *  sorties. */
+export function cardWingAt(
+  ctx: Pick<
+    MapInternals,
+    | "planeTrails"
+    | "minimapTrailEnd"
+    | "planeCarrierOf"
+    | "trajById"
+    | "planeTypesById"
+    | "planeLabelCarriers"
+  >,
+  labelId: number,
+  t: number,
+): number | null {
+  const carrierId = ctx.planeLabelCarriers?.get(labelId);
+  if (carrierId == null) return null;
+  return stableWingPick(cardRideCandidates(ctx, Number(carrierId), t), t);
 }
 
 /** One fighter-patrol anchor of a carrier's aircraft card (user requirement
@@ -706,7 +845,10 @@ export function resolvePlaneCarriers(
   // 需要带标签"; the parent hull's label reports the consumable instead, see
   // markerUpdate's ship-label pass). A ship whose only wings are scouts gets
   // no card at all, which is exactly the rule.
-  const carriersOfPlanes = new Map<number, { paramsId: number; time: number }>();
+  const carriersOfPlanes = new Map<
+    number,
+    { paramsId: number; time: number; role: TeamRole }
+  >();
   for (const [planeId, carrierId] of planeCarrierOf) {
     if (carrierId == null) continue;
     const first = createFirst.get(planeId)!;
@@ -720,14 +862,28 @@ export function resolvePlaneCarriers(
     // the pre-first-tick fallback.
     const prev = carriersOfPlanes.get(carrierId);
     if (!prev || first.time >= prev.time) {
-      carriersOfPlanes.set(carrierId, { paramsId: first.paramsId, time: first.time });
+      carriersOfPlanes.set(carrierId, {
+        paramsId: first.paramsId,
+        time: first.time,
+        // The card's OWNER ROLE rides the same join the plane tint does: an
+        // ENEMY carrier's card must paint the hostile look (red border ink +
+        // red-tinted HP fill), never the recorder's own white/green — the
+        // "红色飞机却绿色血条+白色边框" report. markerUpdate refreshes it per
+        // tick once the hull's role resolves.
+        role: (ctx.planeRoleById.get(planeId) ?? "enemy") as TeamRole,
+      });
     }
   }
   for (const [carrierId, info] of carriersOfPlanes) {
-    const planeType = PLANE_TYPES[String(info.paramsId)]?.type ?? "attack";
+    // A paramsId the baked table does not carry names no family: the card
+    // must NOT claim one (the old "attack" default painted the skip-bomber
+    // icon for unknown wings — "疑似侦察机却显示为轰炸机"). The first content
+    // tick fills the real family from the wing it rides, and until then the
+    // label simply has none (its icon falls back, its family line hides).
+    const planeType = PLANE_TYPES[String(info.paramsId)]?.type ?? null;
     newLabels.push({
       entityId: PLANE_CARD_LABEL_ID_BASE + Number(carrierId),
-      role: "self",
+      role: info.role,
       name: "",
       shipName: "",
       tier: null,
