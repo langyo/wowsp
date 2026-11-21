@@ -14,14 +14,24 @@
 //! protocol frames) were retired with the pairing mode on 2026-11-13;
 //! the account-routed gateway push (gateway.rs) is the live
 //! phone↔desktop channel.
+//!
+//! The cache-mesh namespaces (docs/en/designs/cache-mesh.md) follow the
+//! same one-core-many-transports split: lookup.rs (the stats-cache
+//! proxy policy: host allowlist, TTL table, canonical request line,
+//! CID, envelope) and peers.rs (the mesh registry: URL gates, announce
+//! shape, merge rule) are pure policy here; the Worker/native/Vercel
+//! transports carry the I/O. manifest.rs answers the §2 capability +
+//! node document.
 
 pub mod digests;
 pub mod erp;
 pub mod feedback;
 pub mod gateway;
 pub mod headers;
+pub mod lookup;
 pub mod manifest;
 pub mod multipart;
+pub mod peers;
 pub mod qqbot;
 pub mod replay;
 pub mod route;

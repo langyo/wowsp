@@ -87,7 +87,13 @@ not_found_handling = "single-page-application"
 # "/gateway*" — the account-routed battle-push namespace
 # (crates/relay-worker/src/gateway.rs; mobile-gateway wave). Nothing
 # static ever lives under /gateway, so no per-path negation is needed.
-run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*", "!/api/digests/data", "!/api/digests/data/*", "!/api/digests/mod-hub", "!/api/digests/mod-hub/*", "/gateway*"]
+# "/ipfs*" — the cache-mesh block store's IPFS-gateway alias
+# (docs/en/designs/cache-mesh.md §4.2; crates/relay-worker/src/
+# blocks.rs). OUTSIDE /api* on purpose (IPFS gateway path convention),
+# so it needs its own worker-first entry: without it the assets layer
+# answers every /ipfs/<cid> with the SPA shell and the worker route is
+# unreachable. Nothing static ever lives under /ipfs either.
+run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*", "!/api/digests/data", "!/api/digests/data/*", "!/api/digests/mod-hub", "!/api/digests/mod-hub/*", "/gateway*", "/ipfs*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
 # (crates/relay-worker/src/digests.rs — serves the doc-less channels'
 # gated 404; the doc-carrying channels' hits are answered statically
@@ -119,6 +125,21 @@ id = "a523e16e116b4f9fa5878c721c133028"
 # name, so nothing else changes.
 [[kv_namespaces]]
 binding = "GATEWAY_KV"
+id = "a523e16e116b4f9fa5878c721c133028"
+
+# Cache-mesh block + peer store (the /api/lookup, /api/blocks, /ipfs
+# and /api/peers namespaces — crates/relay-worker/src/{lookup,blocks,
+# peers}.rs; docs/en/designs/cache-mesh.md). A THIRD binding over the
+# SAME FEEDBACK_KV namespace (the two-bindings-one-namespace pattern
+# above): blk:<cid> block envelopes (TTL + 24 h grace), peer:<url>
+# registry rows (48 h), node:id, the lookup/announce rate counters and
+# the cached upstream peer list all share the same free quota, and the
+# hot lookup path is fronted by the edge Cache API anyway (zero KV
+# reads on a hit). Split the same way if the mesh ever needs its own
+# traffic profile:
+#   npx wrangler kv namespace create LOOKUP_KV
+[[kv_namespaces]]
+binding = "LOOKUP_KV"
 id = "a523e16e116b4f9fa5878c721c133028"
 
 # Release-digest store: RETIRED from KV on 2026-10-22 — the docs ride
@@ -276,6 +297,24 @@ DIGEST_PUBLISHED_CHANNELS = "app,data,mod-hub"
 # FEEDBACK_KV 的 sponsors:afdian 槽（内容不变不写）。
 AFDIAN_USER_ID = "174593ccd13211e8831352540025c377"
 # GATEWAY_NOTICE = ""
+# ── 缓存网格 cache-mesh（docs/en/designs/cache-mesh.md）──────────────
+# 这组变量遵循与上面 QQBOT_NOTIFY 相同的纪律：**本文件不写 = 默认开**。
+# 一个写进 [vars] 的值就是部署值——要关闭某能力时才显式添加：
+#   LOOKUP_ENABLED = "0"        — 总闸：关掉 /api/lookup、/api/blocks、
+#                                  /ipfs、/api/peers（/api/health 的
+#                                  capabilities 同步降为 false；网关推送
+#                                  不受影响）。
+#   LOOKUP_SYNC = "0"           — 关闭 §5.4 的对等节点透传导送
+#                                  （本地缓存未命中时不再询问 peers）。
+#   PEERS_ACCEPT_ANNOUNCES = "false" — 关闭本节点的 announce 受理
+#                                  （§5.2.5，注册表变只读）。
+#   SYNC_PEERS_MAX = "3"        — 透传时最多询问的 peer 数（默认 3）。
+#   LOOKUP_RATE_PER_HOUR = "240" — /api/lookup 的每 IP 小时预算（§3.5）。
+#   PEERS_UPSTREAM — 官方节点保持未设（它自己就是种子节点）；自建节点
+#                                  设为 https://wowsp.langyo.xyz 订阅广播
+#                                  名单（见 wrangler.selfhost.toml.example）。
+# 官方节点的 mesh 角色显式声明（默认 community；官方部署必须 official）。
+NODE_ROLE = "official"
 
 # 每日 19:33 UTC（北京 03:33）拉一次爱发电赞助者/订单——刷新
 # /api/sponsors 的 KV 文档（src/sponsors.rs；变更才写，免费版 KV

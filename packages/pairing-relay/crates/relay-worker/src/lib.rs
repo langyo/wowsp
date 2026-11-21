@@ -18,15 +18,24 @@
 //!     docs/en/designs/gateway-push.md): health/session answered here,
 //!     the sockets forwarded to the GatewayAuth + GatewayChannel
 //!     Durable Objects.
+//!   - the cache-mesh namespaces (docs/en/designs/cache-mesh.md):
+//!     `GET /api/health` answers the manifest with capabilities +
+//!     node (§2), `GET|POST /api/lookup/fetch` the stats cache proxy
+//!     (src/lookup.rs), `GET /api/blocks/<cid>[/raw]` and `GET
+//!     /ipfs/<cid>` the block store (src/blocks.rs), `GET /api/peers`
+//!     + `POST /api/peers/announce` the mesh registry (src/peers.rs).
 //!
 //! The PIN-pairing rooms (`/api/relay/*`, the Room + Directory Durable
 //! Objects) were retired with the pairing mode on 2026-11-13; the
 //! account-routed gateway push above is the live phone↔desktop channel.
 
+pub mod blocks;
 pub mod digests;
 pub mod erp;
 pub mod feedback;
 pub mod gateway;
+pub mod lookup;
+pub mod peers;
 pub mod qqbot;
 pub mod replay;
 pub mod replay_index;
@@ -35,7 +44,7 @@ pub mod sponsors;
 pub use gateway::{GatewayAuth, GatewayChannel};
 pub use replay_index::ReplayIndex;
 
-use relay_core::manifest::{ManifestOverrides, gateway_manifest};
+use relay_core::manifest::{CapabilitiesDoc, ManifestOverrides, NodeDoc, gateway_manifest};
 use relay_core::route::{Route, classify};
 use worker::*;
 
@@ -61,7 +70,16 @@ async fn route(req: Request, env: Env) -> Result<Response> {
     match classify(&path, &query) {
         Route::Health => {
             let notice = env.var("GATEWAY_NOTICE").ok().map(|v| v.to_string());
-            let health = gateway_manifest(&ManifestOverrides::from_raw(notice.as_deref()));
+            let overrides = ManifestOverrides {
+                notice: notice
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string),
+                capabilities: manifest_capabilities(&env),
+                node: manifest_node(&env, &req).await,
+            };
+            let health = gateway_manifest(&overrides);
             let mut resp = Response::from_json(&health)?;
             resp.headers_mut().set("cache-control", "no-store")?;
             Ok(resp)
@@ -104,6 +122,14 @@ async fn route(req: Request, env: Env) -> Result<Response> {
         Route::ReplaysAdminRename => replay::handle_admin_rename(req, env).await,
         Route::ReplaysAdminBackfill => replay::handle_admin_backfill(req, env).await,
 
+        // ── cache-mesh namespaces (docs/en/designs/cache-mesh.md) ───────
+        Route::LookupFetch { url } => lookup::handle_fetch(req, env, url).await,
+        Route::BlockGet { cid } => blocks::handle_block_get(req, env, cid).await,
+        Route::BlockRaw { cid } => blocks::handle_block_raw(req, env, cid).await,
+        Route::IpfsGateway { cid } => blocks::handle_ipfs(req, env, cid).await,
+        Route::PeersList => peers::handle_list(req, env).await,
+        Route::PeersAnnounce => peers::handle_announce(req, env).await,
+
         // ── erp console auth (see src/erp.rs) ────────────────────────────
         Route::ErpLogin => erp::handle_login(req, env).await,
         Route::ErpCallback => erp::handle_callback(req, env).await,
@@ -114,6 +140,89 @@ async fn route(req: Request, env: Env) -> Result<Response> {
 
         Route::NotFound => Response::error("not found", 404),
     }
+}
+
+// ── cache-mesh manifest inputs (§2) ─────────────────────────────────────
+
+/// The §2 capability vector of this deployment: `gateway` always on
+/// (this worker IS the push namespace), the three cache-mesh
+/// namespaces riding the single `LOOKUP_ENABLED` switch (absent =
+/// on, the digest-channel var discipline — a var named in
+/// wrangler.toml is a DEPLOYED value).
+fn manifest_capabilities(env: &Env) -> CapabilitiesDoc {
+    let mesh_on = env
+        .var("LOOKUP_ENABLED")
+        .map(|v| v.to_string() != "0")
+        .unwrap_or(true);
+    CapabilitiesDoc {
+        gateway: true,
+        lookup: mesh_on,
+        peers: mesh_on,
+        blocks: mesh_on,
+    }
+}
+
+/// The §2 node doc: stable id (KV `node:id`, minted once from
+/// workerd's CSPRNG), role (`NODE_ROLE`, "community" default — the
+/// official wrangler.toml sets "official"), sync flag (`LOOKUP_SYNC`,
+/// absent = on), peers upstream (`PEERS_UPSTREAM`, or this
+/// deployment's own root when official — informational).
+async fn manifest_node(env: &Env, req: &Request) -> NodeDoc {
+    let role = env
+        .var("NODE_ROLE")
+        .ok()
+        .map(|v| v.to_string())
+        .filter(|r| r == "official" || r == "community")
+        .unwrap_or_else(|| "community".to_string());
+    let peers_upstream = env
+        .var("PEERS_UPSTREAM")
+        .ok()
+        .map(|v| v.to_string())
+        .or_else(|| {
+            // The official node IS the seed; showing its own root is
+            // the doc's example spelling.
+            (role == "official")
+                .then(|| {
+                    req.url()
+                        .ok()
+                        .and_then(|url| url.host_str().map(|host| format!("https://{host}")))
+                })
+                .flatten()
+        });
+    NodeDoc {
+        id: node_id(env).await,
+        role,
+        sync: env
+            .var("LOOKUP_SYNC")
+            .map(|v| v.to_string() != "0")
+            .unwrap_or(true),
+        peers_upstream,
+    }
+}
+
+/// The stable node id (§2: 32 lowercase hex): KV `node:id`, minted
+/// from getrandom's workerd CSPRNG on first read and written once. A
+/// failing KV write still answers the minted id (stability is
+/// best-effort under a quota outage, never a broken health doc).
+async fn node_id(env: &Env) -> String {
+    const KEY: &str = "node:id";
+    let kv = env.kv("LOOKUP_KV").or_else(|_| env.kv("FEEDBACK_KV"));
+    if let Ok(kv) = &kv {
+        if let Ok(Some(id)) = kv.get(KEY).text().await {
+            if relay_core::manifest::NodeDoc::valid_id(&id) {
+                return id;
+            }
+        }
+    }
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).expect("workerd crypto.getRandomValues unavailable");
+    let id: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    if let Ok(kv) = &kv {
+        if let Ok(put) = kv.put(KEY, id.clone()) {
+            let _ = put.execute().await;
+        }
+    }
+    id
 }
 
 /// The one response exit: every response this worker sends to a client
