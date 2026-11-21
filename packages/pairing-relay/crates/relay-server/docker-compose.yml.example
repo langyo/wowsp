@@ -1,0 +1,34 @@
+# wowsp-server — docker compose example (see this crate's README for
+# every knob). Copy to docker-compose.yml and adjust; secrets (gateway
+# password, Turnstile secret) belong in the environment of the service,
+# never in a tracked file.
+services:
+  wowsp-server:
+    build:
+      context: ..
+      dockerfile: crates/relay-server/Dockerfile
+    # CAUTION: the default bind is 127.0.0.1:8787. To serve a LAN or the
+    # public internet you must bind the container's interface —
+    #   WOWSP_SERVER_BIND=0.0.0.0:8787
+    # — which EXPOSES the server to whatever network the container is
+    # on. Public deployments belong behind a TLS-terminating reverse
+    # proxy (Caddy/nginx) that OVERWRITES X-Real-IP / X-Forwarded-For;
+    # only then set WOWSP_SERVER_TRUST_PROXY=true — the per-IP budgets
+    # and the password lockout key on those headers, and they are
+    # client-spoofable when the server is directly exposed (the proxy
+    # headers are IGNORED unless TRUST_PROXY is on).
+    environment:
+      WOWSP_SERVER_BIND: 0.0.0.0:8787
+      # Public nodes: set PUBLIC_URL so the node lists itself and
+      # announces to the official registry (https only, §5.2/§5.3).
+      # WOWSP_SERVER_PUBLIC_URL: https://wowsp.example.org
+      # WOWSP_SERVER_GATEWAY_PASSWORD: change-me
+      # WOWSP_SERVER_TRUST_PROXY: "true"   # only behind an overwriting proxy
+    ports:
+      - "8787:8787"
+    volumes:
+      - wowsp-data:/data
+    restart: unless-stopped
+
+volumes:
+  wowsp-data:

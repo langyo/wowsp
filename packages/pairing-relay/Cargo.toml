@@ -7,7 +7,7 @@
 [workspace]
 resolver = "2"
 
-members = ["crates/relay-core", "crates/relay-worker"]
+members = ["crates/relay-core", "crates/relay-server", "crates/relay-worker"]
 
 # No default-members: `cargo check --target wasm32-unknown-unknown` and
 # `cargo test -p relay-core` are the entry points (see `just check-relay`).
