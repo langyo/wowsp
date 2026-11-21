@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { CAP_SPRITE_PX, SMOKE_SPRITE_PX } from "./screenOverlays";
 import type { SquadronPlane } from "@/api";
 import { samplesUpTo } from "./trajectoryMath";
-import { planeReturningAt } from "./planeWarfare";
+import { planeReturningAt, wardCardAnchor } from "./planeWarfare";
 import { activeSquadronOf } from "./followTargets";
 import type { MapInternals } from "./mapInternals";
 
@@ -149,14 +149,19 @@ export function updateLabelPositions(ctx: MapInternals) {
       continue;
     }
     const label = labels.find((l) => l.entityId === labelId);
-    if (!label || !label.visible) {
+    if (!label) continue;
+    // The carrier's CURRENT wing speaks for the card, and the ward anchor is
+    // resolved BEFORE the visibility gate: a deploying fighter's card has to
+    // render from the FIRST frame of its countdown (no formation is on station
+    // yet, so nothing else would make it "airborne-visible").
+    const currentWing = currentWingOfCarrier(ctx, labelId, ctx.current.value);
+    const ward = wardCardAnchor(ctx, labelId, currentWing, ctx.current.value);
+    if (!label.visible && !ward) {
       // Carrier label not currently airborne-visible: hide its slots too —
       // INCLUDING the below-aircraft chip row, otherwise the last shown
       // consumables stick to the screen after the last sortie lands.
-      if (label) {
-        applySlot(ctx.labelSlotEls.get("l" + label.entityId), false, 0, 0);
-        applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
-      }
+      applySlot(ctx.labelSlotEls.get("l" + label.entityId), false, 0, 0);
+      applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
       continue;
     }
     let anchor: SquadronPlane | null = null;
@@ -180,7 +185,45 @@ export function updateLabelPositions(ctx: MapInternals) {
     // ride draws the models ~80 units ahead of the camera, so the sample
     // parked the card at the lens (user report: no labels next to the
     // aircraft).
-    const currentWing = currentWingOfCarrier(ctx, labelId, ctx.current.value);
+    // Fighter-patrol anchor (item C): a WARD wing flies a FIXED circle, and
+    // during its deployment phase there is no formation to follow at all —
+    // the card belongs to the patrol AREA, not to the individual planes.
+    // wardCardAnchor answers null while the pick is some other sortie of the
+    // same carrier, so a torpedo/bomber strike keeps its own anchor.
+    if (ward) {
+      // Same projection as the wedge path (world x/z, z mirrored into scene
+      // space; the recorded lens rides the aircraft altitude). The deployment
+      // phase renders the same card with a countdown instead of HP/plane
+      // count — the content pass owns that part.
+      const lift = ctx.planeRecordedView ? ward.y + 15 : Math.max(60, ward.y) + 30;
+      ctx._projVec.set(ward.x, lift, -ward.z);
+      ctx._projVec.project(cam);
+      if (ctx._projVec.z >= 1 || !Number.isFinite(ctx._projVec.z)) {
+        const edge = behindCameraEdgeNdc(ctx._projVec.x, ctx._projVec.y);
+        ctx._projVec.x = edge.x;
+        ctx._projVec.y = edge.y;
+        ctx._projVec.z = 0.5;
+      }
+      label.x = (ctx._projVec.x * hw) + hw;
+      label.y = (-ctx._projVec.y * hh) + hh;
+      label.visible = true;
+      // Publish the wing the card describes (the ward's own wing on station,
+      // the deploying fighter during the countdown) so the content pass reads
+      // ✈N from the SAME formation; with no live pick the content pass falls
+      // back to the ward anchor's planeId itself.
+      if (currentWing != null) ctx.planeLabelPicks.set(labelId, currentWing);
+      else ctx.planeLabelPicks.delete(labelId);
+      applySlot(ctx.labelSlotEls.get("l" + label.entityId), true, label.x, label.y);
+      // The below-formation chip row keeps its normal gate (a deploying card
+      // has nothing to show there — the content pass clears those fields).
+      applySlot(
+        ctx.labelSlotEls.get("s" + label.entityId),
+        planeRowVisible(label) && label.visible,
+        label.x,
+        label.y + PLANE_ROW_DY,
+      );
+      continue;
+    }
     const bestWedgePlane =
       currentWing ?? pickLabelWedgePlane(ctx, labelId, cam.position);
     for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {

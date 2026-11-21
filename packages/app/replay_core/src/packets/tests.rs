@@ -4144,7 +4144,7 @@ fn decodes_consumable_used_variants() {
     let real: Vec<u8> = [0x02u8, 0x01, 0x0a, 0x00, 0x00, 0xf2, 0x42]
         .into_iter()
         .collect();
-    let e = decode_consumable_used(74.9, 963623, &real).expect("must decode");
+    let e = decode_consumable_used(74.9, 963623, &real, true).expect("must decode");
     assert_eq!(e.usage_type, 1);
     assert_eq!(e.consumable_id, 10);
     assert!((e.duration - 121.0).abs() < 1e-3);
@@ -4156,7 +4156,7 @@ fn decodes_consumable_used_variants() {
     pos.extend_from_slice(&123.5f32.to_le_bytes());
     pos.extend_from_slice(&(-67.25f32).to_le_bytes());
     pos.extend_from_slice(&30.0f32.to_le_bytes());
-    let e = decode_consumable_used(83.3, 951995, &pos).expect("must decode");
+    let e = decode_consumable_used(83.3, 951995, &pos, true).expect("must decode");
     assert_eq!(e.usage_type, 2);
     assert_eq!(e.consumable_id, 5);
     assert!((e.target_x.unwrap() - 123.5).abs() < 1e-3);
@@ -4167,7 +4167,7 @@ fn decodes_consumable_used_variants() {
     let mut ent: Vec<u8> = vec![0x0b, 0x03, 0x07, 0x01];
     ent.extend_from_slice(&963621u64.to_le_bytes());
     ent.extend_from_slice(&45.0f32.to_le_bytes());
-    let e = decode_consumable_used(90.0, 951999, &ent).expect("must decode");
+    let e = decode_consumable_used(90.0, 951999, &ent, true).expect("must decode");
     assert_eq!(e.usage_type, 3);
     assert_eq!(e.consumable_id, 7);
     assert_eq!(e.target_id, Some(963621));
@@ -4175,19 +4175,54 @@ fn decodes_consumable_used_variants() {
     // NONE variant: empty blob, duration only.
     let mut none: Vec<u8> = vec![0x00];
     none.extend_from_slice(&5.0f32.to_le_bytes());
-    let e = decode_consumable_used(101.0, 963619, &none).expect("must decode");
+    let e = decode_consumable_used(101.0, 963619, &none, true).expect("must decode");
     assert_eq!(e.usage_type, 0);
     assert_eq!(e.consumable_id, 0);
     assert!((e.duration - 5.0).abs() < 1e-4);
 
     // Desyncs: variant/length contradiction, truncation, bad duration.
-    assert!(decode_consumable_used(0.0, 1, &[0x02, 0x02, 0x09, 0, 0, 0x16, 0x44]).is_none());
-    assert!(decode_consumable_used(0.0, 1, &real[..5]).is_none());
-    assert!(decode_consumable_used(0.0, 1, &[]).is_none());
+    assert!(decode_consumable_used(0.0, 1, &[0x02, 0x02, 0x09, 0, 0, 0x16, 0x44], true).is_none());
+    assert!(decode_consumable_used(0.0, 1, &real[..5], true).is_none());
+    assert!(decode_consumable_used(0.0, 1, &[], true).is_none());
     let mut nan = real.clone();
     nan[6] = 0xff; // duration exponent all-ones -> non-finite
     nan[3] = 0x7f;
-    assert!(decode_consumable_used(0.0, 1, &nan).is_none());
+    assert!(decode_consumable_used(0.0, 1, &nan, true).is_none());
+}
+
+/// The 14.5 pre-blob shape: `u8 consumable id, f32 workTimeLeft` in exactly
+/// five bytes. Real capture bytes (t=82.4 s, the Shokaku's carrier patrol
+/// fighter: id 9, 600 s work time) and the repair-party cluster (id 8, 28 s)
+/// pin both the shape and the id byte's position.
+#[test]
+fn decodes_consumable_used_145_preblob_shape() {
+    let mut shield_use: Vec<u8> = vec![9];
+    shield_use.extend_from_slice(&600.0f32.to_le_bytes());
+    assert_eq!(shield_use.len(), 5);
+    let e = decode_consumable_used(82.4, 845628, &shield_use, false).expect("must decode");
+    assert_eq!(e.consumable_id, 9);
+    assert_eq!(e.usage_type, 0, "pre-blob shape carries no usage variant");
+    assert!((e.duration - 600.0).abs() < 1e-4);
+    assert_eq!(e.entity_id, 845628);
+    assert!(e.target_x.is_none() && e.target_z.is_none() && e.target_id.is_none());
+
+    let mut repair: Vec<u8> = vec![8];
+    repair.extend_from_slice(&28.0f32.to_le_bytes());
+    let e = decode_consumable_used(220.5, 845640, &repair, false).expect("must decode");
+    assert_eq!(e.consumable_id, 8, "repair party id");
+    assert!((e.duration - 28.0).abs() < 1e-4);
+
+    // The pre-blob gate refuses anything but the exact five bytes: a longer
+    // (15.2+) blob payload must NOT be half-read as the 14.5 shape, and a
+    // shorter block is a desync.
+    assert!(decode_consumable_used(0.0, 1, &shield_use[..4], false).is_none());
+    assert!(decode_consumable_used(0.0, 1, &[], false).is_none());
+    let mut nan: Vec<u8> = vec![9];
+    nan.extend_from_slice(&[0xff, 0xff, 0xff, 0x7f]);
+    assert!(decode_consumable_used(0.0, 1, &nan, false).is_none());
+    let mut negative: Vec<u8> = vec![9];
+    negative.extend_from_slice(&(-5.0f32).to_le_bytes());
+    assert!(decode_consumable_used(0.0, 1, &negative, false).is_none());
 }
 
 /// Hostile EntityCreate floods are capped at MAX_TRACKED_ENTITIES: the
@@ -5443,4 +5478,105 @@ fn shield_streams_on_real_replay() {
         decoded.gun_overheats.len(),
         max_by_entity.len(),
     );
+}
+/// End-to-end: the 14.5 shape of the vehicle consumable stream. Same method
+/// id pin resolves through the layout table, but the args are the pre-blob
+/// "u8 consumable id, f32 workTimeLeft" (5 bytes) — the walk must lift them
+/// with the era flag, and 15.x calls (7-byte blob form) must still decode on
+/// their own row. This is the stream the grey recoverable HP bar feeds on.
+#[test]
+fn walk_frames_decodes_145_consumable_uses() {
+    fn frame(ptype: u32, time: f32, payload: &[u8]) -> Vec<u8> {
+        let mut f = Vec::with_capacity(12 + payload.len());
+        f.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        f.extend_from_slice(&ptype.to_le_bytes());
+        f.extend_from_slice(&time.to_le_bytes());
+        f.extend_from_slice(payload);
+        f
+    }
+    fn entity_create(eid: i32, etype: i16) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&etype.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&0i32.to_le_bytes());
+        p.extend_from_slice(&[0u8; 24]);
+        p
+    }
+    fn method_call(eid: i32, mid: i32, args: &[u8]) -> Vec<u8> {
+        let mut p = Vec::new();
+        p.extend_from_slice(&eid.to_le_bytes());
+        p.extend_from_slice(&mid.to_le_bytes());
+        p.extend_from_slice(&(args.len() as u32).to_le_bytes());
+        p.extend_from_slice(args);
+        p
+    }
+    let mut repair = vec![8u8]; // repair party, 28 s work time
+    repair.extend_from_slice(&28.0f32.to_le_bytes());
+    let mut fighter = vec![9u8]; // carrier patrol fighter, 600 s
+    fighter.extend_from_slice(&600.0f32.to_le_bytes());
+    let mut stream = Vec::new();
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(845640, ENTITY_TYPE_VEHICLE),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_CREATE,
+        0.0,
+        &entity_create(845628, ENTITY_TYPE_VEHICLE),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        220.5,
+        &method_call(845640, 27, &repair),
+    ));
+    stream.extend(frame(
+        PACKET_ENTITY_METHOD,
+        82.4,
+        &method_call(845628, 27, &fighter),
+    ));
+    // The method-id table MUST resolve too: the walk bails out before the
+    // vehicle branch when no table is pinned (a pre-0.11.6 replay).
+    let methods = crate::method_tables::method_ids_for_version(Some("14,5,0,10087791"));
+    let profile = |e11: Option<E11MethodIds>| LayoutProfile {
+        methods: Some(methods),
+        e11,
+        ..profile_for(false)
+    };
+    let decoded = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile(e11_method_ids(Some((14, 5, 0)))),
+        Some((14, 5, 0)),
+    );
+    assert_eq!(decoded.consumable_uses.len(), 2);
+    let repair = &decoded.consumable_uses[0];
+    assert_eq!(repair.entity_id, 845640);
+    assert_eq!(repair.consumable_id, 8);
+    assert!((repair.duration - 28.0).abs() < 1e-4);
+    assert_eq!(repair.usage_type, 0, "the 14.5 wire has no usage variant");
+    let fighter = &decoded.consumable_uses[1];
+    assert_eq!(fighter.consumable_id, 9);
+    assert!((fighter.duration - 600.0).abs() < 1e-4);
+
+    // Without the 14.5 pin the same calls decode nothing ...
+    let off = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile(None),
+        Some((14, 5, 0)),
+    );
+    assert!(off.consumable_uses.is_empty());
+    // ... and the 15.8 pin (blob shape, other ids) must not mis-read them.
+    let on_158 = walk_frames(
+        &stream,
+        &std::collections::HashSet::new(),
+        false,
+        &profile(e11_method_ids(Some((15, 8, 0)))),
+        Some((14, 5, 0)),
+    );
+    assert!(on_158.consumable_uses.is_empty());
 }

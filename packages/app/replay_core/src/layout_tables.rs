@@ -154,13 +154,23 @@ pub(crate) const ARENA_BOT_FLOOR: Era = (0, 12, 8);
 /// against the 15.8.0 exposed tables (E10: def build 13187581,
 /// wire-validated on the reference capture). Other versions decode
 /// nothing — pinning a new era appends a row.
+///
+/// `consumable_use_params_blob` records the ARGUMENT SHAPE of Vehicle
+/// `onConsumableUsed`, which is NOT stable across the pinned eras: 15.2+
+/// carry the def's length-prefixed `CONSUMABLE_USAGE_PARAMS` blob followed by
+/// the f32 `workTimeLeft` (a usage variant 0..3 plus the raw consumable id
+/// inside the blob), while the 14.5 def predates that blob — its wire is the
+/// bare `u8 consumable id, f32 workTimeLeft` (5 bytes).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct E11Ids {
     pub avatar_update_minimap_vision_info: i32,
     pub vehicle_on_consumable_used: i32,
+    /// True when the consumable-use args carry the `CONSUMABLE_USAGE_PARAMS`
+    /// length-prefixed blob (15.2+); false for the 14.5 pre-blob shape.
+    pub consumable_use_params_blob: bool,
 }
 
-pub(crate) const E11_METHOD_IDS: [(Era, E11Ids); 2] = [
+pub(crate) const E11_METHOD_IDS: [(Era, E11Ids); 3] = [
     // 15.10.0 (build 13533378, the Bermuda Triangle event client): def-derived
     // from the authoritative entity defs (exposed_index.py). The whole exposed
     // table shifted +1 at and above id 87 with receiveShieldDamageInfo's
@@ -170,6 +180,7 @@ pub(crate) const E11_METHOD_IDS: [(Era, E11Ids); 2] = [
         E11Ids {
             avatar_update_minimap_vision_info: 156,
             vehicle_on_consumable_used: 73,
+            consumable_use_params_blob: true,
         },
     ),
     (
@@ -177,6 +188,29 @@ pub(crate) const E11_METHOD_IDS: [(Era, E11Ids); 2] = [
         E11Ids {
             avatar_update_minimap_vision_info: 155,
             vehicle_on_consumable_used: 72,
+            consumable_use_params_blob: true,
+        },
+    ),
+    // 14.5.0 (the Shokaku reference era) — WIRE-PROBED, not def-derived: the
+    // 14.5 entity defs are no longer on the install, so a temporary probe test
+    // walked EVERY EntityMethod (0x08) call of the 2025-07-08 "37_Ridge"
+    // capture and classified by argument shape:
+    //   - avatar id 141 decodes as updateMinimapVisionInfo's two MINIMAPINFO
+    //     arrays (2,278 calls / 15,563 marker events — the allied always-visible
+    //     opening set plus the hidden sentinel, exactly the stream the 15.8 pin
+    //     carries);
+    //   - vehicle id 27 carries 5-byte args whose trailing f32 clusters on the
+    //     GameParams work times of the consumables those hulls actually pressed
+    //     (28 s repair party, 5 s damage control, 71.5/100 s spotter, 600 s
+    //     carrier patrol fighter) — 135 uses across 21 vehicles.
+    // The neighbouring candidate ids are rejected by the parser's shape gate:
+    // only 27 yields a plausible count/duration distribution on this capture.
+    (
+        (14, 5, 0),
+        E11Ids {
+            avatar_update_minimap_vision_info: 141,
+            vehicle_on_consumable_used: 27,
+            consumable_use_params_blob: false,
         },
     ),
 ];
@@ -347,7 +381,7 @@ mod tests {
     }
 
     /// The E11 ids ride their exact pinned minor: 15.8.x carries the pin,
-    /// 15.9.0 and 15.7.9 do not.
+    /// 15.9.0 and 15.7.9 do not, and 14.5.x carries the wire-probed row.
     #[test]
     fn e11_ids_are_minor_exact() {
         assert_eq!(
@@ -361,6 +395,33 @@ mod tests {
         assert_eq!(e11_for(Some((15, 9, 0))), None);
         assert_eq!(e11_for(Some((15, 7, 9))), None);
         assert_eq!(e11_for(None), None);
+    }
+
+    /// The 14.5.0 row: the wire-probed ids AND the pre-blob argument shape.
+    /// This is the row that turns the grey recoverable HP bar back on for
+    /// 14.5 replays — without it the consumable stream decodes zero events
+    /// and repairPool has nothing to fail over to.
+    #[test]
+    fn e11_145_row_pins_wire_probed_ids() {
+        let row = e11_for(Some((14, 5, 0))).expect("14.5.0 E11 row pinned");
+        assert_eq!(row.vehicle_on_consumable_used, 27);
+        assert_eq!(row.avatar_update_minimap_vision_info, 141);
+        assert!(
+            !row.consumable_use_params_blob,
+            "14.5 predates the CONSUMABLE_USAGE_PARAMS blob"
+        );
+        // Same-minor patches ride the row; the neighbouring minors do not.
+        assert_eq!(
+            e11_for(Some((14, 5, 7))).map(|i| i.vehicle_on_consumable_used),
+            Some(27)
+        );
+        assert_eq!(e11_for(Some((14, 4, 9))), None);
+        assert_eq!(e11_for(Some((14, 6, 0))), None);
+        // The 15.x rows keep the blob shape.
+        assert!(
+            e11_for(Some((15, 8, 0))).is_some_and(|i| i.consumable_use_params_blob),
+            "15.8 carries the params blob"
+        );
     }
 
     /// The shield/gun-heat layout rides its exact pinned minor like the E11

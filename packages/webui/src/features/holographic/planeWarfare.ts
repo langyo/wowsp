@@ -20,6 +20,11 @@ import { inferGrouping } from "./planeFormation";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
 import type { MapInternals } from "./mapInternals";
 import type { ShipLabel } from "./shipLabel";
+import {
+  FIGHTER_PATROL_CONSUMABLE_IDS,
+  consumableWindows,
+  lastConsumableUseAt,
+} from "./consumableRoles";
 import type { MinimapSquadronAdd, SquadronPlane } from "@/api";
 
 /** First synthetic label id of the per-carrier aircraft cards (one card per
@@ -192,6 +197,169 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
  *  used to freeze at their last centroid for the whole replay (the
  *  "inexplicable floating dots" report); see markerUpdate's park pass. */
 export const PLANE_DOT_PARKED_Y = -100000;
+
+/** Whether a GameParams paramsId names a CATAPULT-launched scout / spotter
+ *  wing (the `scout` plane family: the PJAS / P★AS single-plane squadrons). Those
+ *  wings carry NO floating card of their own — the requirement is that the
+ *  parent hull's label reports the consumable instead ("侦察机消耗品放出来的
+ * 飞机都不需要带标签"). Unknown paramsIds answer false (an unknown wing keeps
+ *  the historical card). */
+export function isScoutParamsId(paramsId: number | null | undefined): boolean {
+  if (paramsId == null) return false;
+  return PLANE_TYPES[String(paramsId)]?.type === "scout";
+}
+
+/** Whether the wing a planeId names is a scout wing (same test, resolved
+ *  through the type table the trail build already filled). */
+export function isScoutWing(ctx: MapInternals, planeId: number): boolean {
+  return ctx.planeTypesById?.get(planeId * 16) === "scout";
+}
+
+/** One fighter-patrol anchor of a carrier's aircraft card (user requirement
+ *  2026-11-21: the WARD fighter has a DEPLOYMENT phase — the consumable fired,
+ *  the wing is not on station yet — so the card must show a countdown AT the
+ *  patrol area, with no HP bar; once the wing arrives it stays pinned to the
+ *  patrol circle instead of following the individual planes). */
+export interface PlaneWardAnchor {
+  /** Ward centre in WORLD coordinates (x/y/z; y is the patrol altitude). */
+  x: number;
+  y: number;
+  z: number;
+  /** Deployment start: the fighter consumable that launched this patrol, or
+   *  the ward's own add time when the replay carries no matching use. */
+  t0: number;
+  /** Arrival on station = the wing's first decoded sample (or its minimap
+   *  add). The countdown runs [t0, arriveAt). */
+  arriveAt: number;
+  /** End of the station window (ward remove, else the wing's last sample +
+   *  the shared trail grace); Infinity when neither is known. */
+  t1: number;
+  /** The wing the ward names (joins planeTrails / paramsId). */
+  planeId: number;
+  /** The wing's plane family ("fighter" for a WARD patrol). */
+  planeType: string | null;
+}
+
+/** A fighter consumable fires this long before the ward appears at most: real
+ *  deployments measured 0.7–15 s on the reference capture (the carrier
+ *  launches, the wing flies to the patrol point, the server adds the ring).
+ *  A use older than this is a previous patrol, not this ward's deployment. */
+const DEPLOY_LOOKBACK_S = 60;
+/** Grace past the wing's last decoded sample before the circle anchor ends
+ *  (same order as the shared plane-trail expiry window). */
+const WARD_WING_GRACE_S = 5;
+
+/** Resolve every carrier's fighter-patrol anchors into
+ *  `ctx.planeWardAnchors` (label id → anchors, one per ward of that carrier).
+ *  Called once per actor rebuild from resolvePlaneCarriers, after the label
+ *  ids and the type tables exist. Pure data joins over the decoded streams —
+ *  no per-frame work. */
+export function buildPlaneWardAnchors(ctx: MapInternals) {
+  ctx.planeWardAnchors.clear();
+  const wards = ctx.props.wards;
+  if (!wards || wards.length === 0) return;
+  // Per-plane spans: the ARRIVAL is the first 3D airborne sample (the minimap
+  // add fires at LAUNCH, i.e. while the wing is still flying out — that is the
+  // deployment's start side, not its end), while the minimap centre track only
+  // extends the END (a sparse 3D stream stops early on real captures).
+  const span = new Map<number, { first3d: number | null; last: number | null }>();
+  const note = (planeId: number, t: number, airborne: boolean) => {
+    const e = span.get(planeId) ?? { first3d: null, last: null };
+    if (airborne && (e.first3d == null || t < e.first3d)) e.first3d = t;
+    if (e.last == null || t > e.last) e.last = t;
+    span.set(planeId, e);
+  };
+  for (const tr of ctx.planeTrails ?? []) {
+    const planeId = Math.floor(tr.id / 16);
+    for (const s of tr.samples) note(planeId, s.time, true);
+  }
+  for (const a of ctx.props.minimapSquadronAdds ?? []) note(a.planeId, a.time, false);
+  for (const m of ctx.props.minimapSquadronMoves ?? []) note(m.planeId, m.time, false);
+  const paramsById = new Map<number, number>();
+  for (const c of ctx.props.squadronCreates ?? []) {
+    if (!paramsById.has(c.planeId)) paramsById.set(c.planeId, c.paramsId);
+  }
+  for (const a of ctx.props.minimapSquadronAdds ?? []) {
+    if (!paramsById.has(a.planeId)) paramsById.set(a.planeId, a.paramsId);
+  }
+  for (const w of wards) {
+    const labelId = PLANE_CARD_LABEL_ID_BASE + Number(w.ownerId);
+    if (!ctx.planeLabelCarriers.has(labelId)) continue;
+    // The wing's own first sample is the arrival: the ward add fires at (or
+    // a sub-second before) the ring's planes appear.
+    const s = span.get(w.squadronId) ?? null;
+    const arriveAt =
+      s?.first3d != null && s.first3d >= w.time - 2 ? s.first3d : w.time;
+    let t1: number = Number.POSITIVE_INFINITY;
+    for (const rm of ctx.props.wardRemoves ?? []) {
+      if (rm.planeId !== w.squadronId || rm.time <= w.time) continue;
+      if (rm.time < t1) t1 = rm.time;
+    }
+    if (s?.last != null) t1 = Math.min(t1, s.last + WARD_WING_GRACE_S);
+    // Deployment window: the fighter consumable that launched this patrol.
+    const windows = consumableWindows(
+      ctx.props.consumableUses,
+      Number(w.ownerId),
+      FIGHTER_PATROL_CONSUMABLE_IDS,
+    );
+    const use = lastConsumableUseAt(windows, arriveAt);
+    const t0 =
+      use != null && arriveAt - use.t0 <= DEPLOY_LOOKBACK_S ? use.t0 : w.time;
+    const paramsId = paramsById.get(w.squadronId);
+    const anchor: PlaneWardAnchor = {
+      x: w.x,
+      y: w.y,
+      z: w.z,
+      t0: Math.min(t0, arriveAt),
+      arriveAt,
+      t1: Math.max(t1, arriveAt),
+      planeId: w.squadronId,
+      planeType: paramsId != null ? (PLANE_TYPES[String(paramsId)]?.type ?? null) : null,
+    };
+    const list = ctx.planeWardAnchors.get(labelId);
+    if (list) list.push(anchor);
+    else ctx.planeWardAnchors.set(labelId, [anchor]);
+  }
+  for (const list of ctx.planeWardAnchors.values()) list.sort((a, b) => a.t0 - b.t0);
+}
+
+/** The anchor a carrier's aircraft card sits on at `t`: the newest ward whose
+ *  [t0, t1) window covers the playhead, or null (the card then follows the
+ *  current wing as before). */
+export function wardAnchorAt(
+  ctx: MapInternals,
+  labelId: number,
+  t: number,
+): PlaneWardAnchor | null {
+  const list = ctx.planeWardAnchors?.get(labelId);
+  if (!list || list.length === 0) return null;
+  let best: PlaneWardAnchor | null = null;
+  for (const a of list) {
+    if (t < a.t0) break;
+    if (t <= a.t1) best = a;
+  }
+  return best;
+}
+
+/** The ward anchor the card may USE at `t`, or null when the card must keep
+ *  following `picked` (the carrier's current wing):
+ *
+ *  - inside the DEPLOYMENT window ([t0, arriveAt)) the card always sits on
+ *    the patrol circle: the wing the carrier just launched is still flying
+ *    out, and the requirement is a countdown AT the area, with no HP bar;
+ *  - on station it sits on the circle only while `picked` IS the wing
+ *    manning that ward — a torpedo/bomber sortie keeps its own anchor. */
+export function wardCardAnchor(
+  ctx: MapInternals,
+  labelId: number,
+  picked: number | null | undefined,
+  t: number,
+): PlaneWardAnchor | null {
+  const anchor = wardAnchorAt(ctx, labelId, t);
+  if (!anchor) return null;
+  if (t < anchor.arriveAt) return anchor;
+  return picked === anchor.planeId ? anchor : null;
+}
 
 /** Points fallback cloud: one slot per unique SQUADRON, team-tinted. */
 export function buildPlaneCloud(ctx: MapInternals, scene: THREE.Scene) {
@@ -532,13 +700,28 @@ export function resolvePlaneCarriers(
     const planeIdx = PLANE_TYPES[String(createFirst.get(planeId)?.paramsId)]?.index;
     if (planeIdx) ctx.planeIndexById.set(planeId * 16, planeIdx);
   }
-  // One label per carrier that controls any aircraft.
-  const carriersOfPlanes = new Map<number, { paramsId: number }>();
+  // One label per carrier that controls any aircraft — SCOUT wings excluded:
+  // a catapult-launched spotter belongs to its hull, not to a floating
+  // aircraft card (user requirement 2026-11-21: "侦察机消耗品放出来的飞机都不
+  // 需要带标签"; the parent hull's label reports the consumable instead, see
+  // markerUpdate's ship-label pass). A ship whose only wings are scouts gets
+  // no card at all, which is exactly the rule.
+  const carriersOfPlanes = new Map<number, { paramsId: number; time: number }>();
   for (const [planeId, carrierId] of planeCarrierOf) {
     if (carrierId == null) continue;
     const first = createFirst.get(planeId)!;
-    const acc = carriersOfPlanes.get(carrierId) ?? { paramsId: first.paramsId };
-    carriersOfPlanes.set(carrierId, acc);
+    if (isScoutParamsId(first.paramsId)) continue;
+    // The card's INITIAL type comes from the carrier's NEWEST wing (the one
+    // most likely to be on screen at build time). The old accumulation kept
+    // whichever wing iterated first, so a Shokaku's card wore its first
+    // (torpedo) sortie's family for the whole match — the "fighter label
+    // renders as a torpedo plane" report. The per-frame content pass
+    // (markerUpdate) then follows the wing actually picked, so this is only
+    // the pre-first-tick fallback.
+    const prev = carriersOfPlanes.get(carrierId);
+    if (!prev || first.time >= prev.time) {
+      carriersOfPlanes.set(carrierId, { paramsId: first.paramsId, time: first.time });
+    }
   }
   for (const [carrierId, info] of carriersOfPlanes) {
     const planeType = PLANE_TYPES[String(info.paramsId)]?.type ?? "attack";
@@ -591,13 +774,18 @@ export function resolvePlaneCarriers(
       }
     }
   }
-  // Keep a per-plane → labelId map for the per-frame position update.
+  // Keep a per-plane → labelId map for the per-frame position update. Scout
+  // wings stay OUT of it: no floating card may ever anchor to a spotter.
   ctx.planeLabelOfPlane.clear();
   for (const [planeId, carrierId] of planeCarrierOf) {
-    if (carrierId != null) {
-      ctx.planeLabelOfPlane.set(planeId, PLANE_CARD_LABEL_ID_BASE + Number(carrierId));
-    }
+    if (carrierId == null) continue;
+    const first = createFirst.get(planeId);
+    if (first && isScoutParamsId(first.paramsId)) continue;
+    ctx.planeLabelOfPlane.set(planeId, PLANE_CARD_LABEL_ID_BASE + Number(carrierId));
   }
+  // Fighter-patrol anchors (deployment countdown + fixed-circle anchor): the
+  // ward circles joined to the wings and to the consumable that launched them.
+  buildPlaneWardAnchors(ctx);
 }
 
 /* ── Homeward-bound (post-strike) gating for the aircraft markers ────────

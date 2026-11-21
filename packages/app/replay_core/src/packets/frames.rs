@@ -528,7 +528,13 @@ pub(super) fn walk_frames(
                     .e11
                     .is_some_and(|e| e.vehicle_on_consumable_used == call.method_id)
             {
-                if let Some(event) = decode_consumable_used(call.time, call.entity_id, &call.args) {
+                // The argument shape is era-pinned alongside the id: 15.2+
+                // carry the CONSUMABLE_USAGE_PARAMS blob, 14.5 the bare
+                // `u8 consumable id, f32 workTimeLeft` (see layout_tables).
+                let has_blob = profile.e11.is_some_and(|e| e.consumable_use_params_blob);
+                if let Some(event) =
+                    decode_consumable_used(call.time, call.entity_id, &call.args, has_blob)
+                {
                     consumable_uses.push(event);
                 }
             }

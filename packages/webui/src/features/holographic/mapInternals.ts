@@ -64,6 +64,7 @@ import type { TacticalView } from "./tactical/render";
 import type { OsdContrast } from "./osdContrast";
 import type { MoveAdviceArrowSlot } from "./moveAdvisories";
 import type { PlaneAnimState } from "./minimapFx";
+import type { PlaneWardAnchor } from "./planeWarfare";
 
 /** The subset of HolographicMap's props the extracted map modules read.
  *  Structurally satisfied by the component's reactive props object. */
@@ -549,6 +550,12 @@ export interface MapInternals extends MapInternalsDeps {
   planeRoleById: Map<number, string>;
   /** planeId → the carrier card label id that shows it. */
   planeLabelOfPlane: Map<number, number>;
+  /** Aircraft-card label id → the fighter-patrol anchors its card may sit on
+   *  (one entry per ward of that carrier: the ward circle, the deployment
+   *  window opened by the fighter consumable, and the wing's arrival time).
+   *  See planeWarfare.buildPlaneWardAnchors — the deployment countdown and
+   *  the fixed-circle anchor of item C both read this. */
+  planeWardAnchors: Map<number, PlaneWardAnchor[]>;
   /** planeId → controlling ship's entity id (the carrier join the aircraft
    *  follow camera and the AI-report jump read; null when unresolved). */
   planeCarrierOf: Map<number, number | null>;
@@ -666,6 +673,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeLabelCarriers: new Map(),
     planeRoleById: new Map(),
     planeLabelOfPlane: new Map(),
+    planeWardAnchors: new Map(),
     planeCarrierOf: new Map(),
 
     minimapImage: null,

@@ -747,21 +747,50 @@ pub(super) fn decode_minimap_vision(
     out
 }
 
-/// Decode Vehicle `onConsumableUsed` args (experiment E11):
-/// `[u8 blob_len][CONSUMABLE_USAGE_PARAMS blob][f32 workTimeLeft]`.
+/// Decode Vehicle `onConsumableUsed` args (experiment E11).
 ///
-/// The params blob's first byte is the `ConsumableUsageType` (serialized by
-/// the game's `CommonConsumables.UsageConverter`, mirrored by upstream
-/// wows-toolkit's wows-replays decoder): 0 = none (empty blob), 1 = default `<BB>`
-/// (usage + consumable id), 2 = position `<BBff>` (+ map x/z), 3 = entity
-/// target `<BBbQ>` (+ i8 target type + u64 target id). A blob whose length
-/// contradicts its declared variant is a desync — the call is skipped rather
-/// than half-decoded.
+/// Two era-pinned shapes ride the same method:
+///
+/// - `has_blob` (15.2+): `[u8 blob_len][CONSUMABLE_USAGE_PARAMS blob][f32
+///   workTimeLeft]`. The params blob's first byte is the `ConsumableUsageType`
+///   (serialized by the game's `CommonConsumables.UsageConverter`, mirrored by
+///   upstream wows-toolkit's wows-replays decoder): 0 = none (empty blob), 1 =
+///   default `<BB>` (usage + consumable id), 2 = position `<BBff>` (+ map x/z),
+///   3 = entity target `<BBbQ>` (+ i8 target type + u64 target id). A blob
+///   whose length contradicts its declared variant is a desync — the call is
+///   skipped rather than half-decoded.
+/// - `!has_blob` (14.5): the def predates the params type, so the wire is the
+///   bare `u8 consumable id, f32 workTimeLeft` — five bytes, no usage variant
+///   (the event keeps `usage_type = 0` = the NONE variant's id-less form, and
+///   the id byte is the raw consumable id the 15.x blob would have carried).
+///   Wire-probed on the 14.5.0.0 Shokaku reference capture: every call is
+///   exactly 5 bytes and the trailing f32 clusters on the known GameParams
+///   work times (5 s damage control, 28 s repair party, 71.5/100 s spotter,
+///   600 s carrier patrol fighter).
 pub(super) fn decode_consumable_used(
     time: f32,
     entity_id: i32,
     args: &[u8],
+    has_blob: bool,
 ) -> Option<wowsp_tauri_shared::ConsumableUseEvent> {
+    if !has_blob {
+        // 14.5 shape: <BB>-less, exactly `u8 id + f32 duration`.
+        let (&consumable_id, duration_bytes) = (args.first()?, args.get(1..5)?);
+        let duration = f32::from_le_bytes(duration_bytes.try_into().ok()?);
+        if !duration.is_finite() || duration < 0.0 {
+            return None;
+        }
+        return Some(wowsp_tauri_shared::ConsumableUseEvent {
+            time,
+            entity_id,
+            usage_type: 0,
+            consumable_id,
+            duration,
+            target_x: None,
+            target_z: None,
+            target_id: None,
+        });
+    }
     let &blob_len = args.first()?;
     let blob_len = blob_len as usize;
     let blob = args.get(1..1 + blob_len)?;

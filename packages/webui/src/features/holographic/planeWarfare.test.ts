@@ -54,10 +54,16 @@ import type { MapInternals } from "./mapInternals";
 import { planeTrailExpiry } from "./planeFormation";
 import type { EntityTrajectory, PositionSample } from "@/api";
 import {
+  PLANE_CARD_LABEL_ID_BASE,
   buildPlaneFormations,
   buildPlaneTrails,
+  buildPlaneWardAnchors,
+  isScoutParamsId,
   planeCardVisibleAt,
   planeReturningAt,
+  resolvePlaneCarriers,
+  wardAnchorAt,
+  wardCardAnchor,
 } from "./planeWarfare";
 
 /** Real plane_types.json entries (baked GameParams): PJAF408 is the
@@ -167,6 +173,7 @@ const makeCtx = (props: {
     api: { value: null },
     markerEpoch: 1,
     planeTrails: [],
+    planeCloudSlots: new Map(),
     planeMeshes: new Map(),
     planeFormations: new Map(),
     planeLaunchPoses: new Map(),
@@ -647,3 +654,201 @@ describe("planeCardVisibleAt", () => {
     expect(planeCardVisibleAt(ctx, LABEL_ID + 1, T_RETURN)).toBe(false);
   });
 });
+
+/* ── Item C: the fighter-patrol deployment anchor ─────────────────────────
+ * The 14.5 reference capture's first carrier patrol: the fighter consumable
+ * fires at t = 82.4 (id 9, 600 s), the wing appears at 82.7 and the ward ring
+ * (the patrol circle) is added at 97.2 — a 14.8 s deployment during which the
+ * card must sit on the CIRCLE with a countdown, not follow the flying-out
+ * wing. After arrival it stays on the circle while that wing mans it.
+ */
+describe("buildPlaneWardAnchors / wardCardAnchor", () => {
+  const CARRIER = 845628;
+  const WING = 1203;
+  const LABEL_ID = PLANE_CARD_LABEL_ID_BASE + CARRIER;
+
+  function wardCtx(overrides: {
+    picked?: number | null;
+    wingSamples?: number[];
+    wardRemoves?: { time: number; planeId: number }[];
+  } = {}): MapInternals {
+    const ctx = makeCtx({
+      squadronCreates: [
+        { ...create(WING, WARD_PARAMS_ID), time: 82.4, x: 10, z: 0 },
+      ],
+      minimapSquadronAdds: [
+        { ...add(WING, WARD_PARAMS_ID), time: 82.4, ownerId: CARRIER },
+      ],
+    });
+    const obj = ctx as unknown as {
+      planeTrails: { id: number; samples: SquadronPlane[] }[];
+      planeLabelCarriers: Map<number, number | null>;
+      planeWardAnchors: Map<number, unknown>;
+      props: Record<string, unknown>;
+    };
+    const times = overrides.wingSamples ?? [97.9, 110, 131.9];
+    obj.planeTrails = [
+      {
+        id: WING * 16,
+        samples: times.map((t) => spAt(WING, 0, t, 165, 100, 249)),
+      },
+    ];
+    obj.planeLabelCarriers = new Map([[LABEL_ID, CARRIER]]);
+    obj.planeWardAnchors = new Map();
+    obj.props.wards = [
+      { time: 97.2, ownerId: CARRIER, squadronId: WING, teamId: 0, x: 191, y: 100, z: 218, radius: 100, wardType: 1 },
+    ];
+    obj.props.wardRemoves = overrides.wardRemoves ?? [];
+    obj.props.consumableUses = [
+      { time: 82.4, entityId: CARRIER, usageType: 0, consumableId: 9, duration: 600 },
+    ];
+    buildPlaneWardAnchors(ctx);
+    return ctx;
+  }
+
+  it("opens the deployment at the consumable and closes it at arrival", () => {
+    const ctx = wardCtx();
+    const anchor = wardAnchorAt(ctx, LABEL_ID, 90);
+    expect(anchor).not.toBeNull();
+    expect(anchor!.t0).toBeCloseTo(82.4);
+    expect(anchor!.arriveAt).toBeCloseTo(97.9);
+    expect(anchor!.planeId).toBe(WING);
+    expect(anchor!.planeType).toBe("fighter");
+    // The circle's own centre carries the label, not the wing's position.
+    expect(anchor!.x).toBe(191);
+    expect(anchor!.z).toBe(218);
+  });
+
+  it("anchors the card on the circle during deployment, whatever the pick", () => {
+    const ctx = wardCtx();
+    // No formation pick yet: the countdown card still belongs to the area.
+    expect(wardCardAnchor(ctx, LABEL_ID, null, 90)).not.toBeNull();
+    // A different sortie of the same carrier launched mid-deployment — the
+    // circle still wins while the fighters are flying out.
+    expect(wardCardAnchor(ctx, LABEL_ID, 999, 90)).not.toBeNull();
+  });
+
+  it("keeps the circle only while the ward's own wing mans it", () => {
+    const ctx = wardCtx();
+    expect(wardCardAnchor(ctx, LABEL_ID, WING, 110)).not.toBeNull();
+    // A torpedo/bomber sortie picked later keeps its own anchor.
+    expect(wardCardAnchor(ctx, LABEL_ID, 999, 110)).toBeNull();
+    // Past the wing's last sample (+grace) the anchor is gone.
+    expect(wardAnchorAt(ctx, LABEL_ID, 140)).toBeNull();
+  });
+
+  it("falls back to the ward's own add when no consumable precedes it", () => {
+    const ctx = wardCtx();
+    (ctx.props as unknown as { consumableUses: unknown[] }).consumableUses = [];
+    buildPlaneWardAnchors(ctx);
+    expect(wardAnchorAt(ctx, LABEL_ID, 97.2)!.t0).toBeCloseTo(97.2);
+  });
+
+  it("ignores a stale consumable (older than the deployment lookback)", () => {
+    const ctx = wardCtx();
+    (ctx.props as unknown as { consumableUses: unknown[] }).consumableUses = [
+      { time: 10, entityId: CARRIER, usageType: 0, consumableId: 9, duration: 600 },
+    ];
+    buildPlaneWardAnchors(ctx);
+    expect(wardAnchorAt(ctx, LABEL_ID, 97.5)!.t0).toBeCloseTo(97.2);
+  });
+
+  it("ends the anchor at the ward remove", () => {
+    const ctx = wardCtx({ wardRemoves: [{ time: 115, planeId: WING }] });
+    expect(wardAnchorAt(ctx, LABEL_ID, 114)).not.toBeNull();
+    expect(wardAnchorAt(ctx, LABEL_ID, 116)).toBeNull();
+  });
+});
+
+/* ── Item D: scout wings carry no card ────────────────────────────────────
+ * A catapult spotter belongs to its hull: no per-carrier aircraft card may be
+ * created for it, and the wing must not enter the per-plane → label map.
+ */
+describe("resolvePlaneCarriers scout exclusion", () => {
+  const SCOUT_PARAMS_ID = 4288085712; // PJAS006_Aichi_E16A1, type "scout"
+  const SHIP = 7;
+
+  function carrierCtx(paramsId: number): MapInternals {
+    const ctx = makeCtx({
+      squadronCreates: [create(500, paramsId)],
+      minimapSquadronAdds: [{ ...add(500, paramsId), ownerId: SHIP }],
+    });
+    const obj = ctx as unknown as {
+      shipMarkers: { userData: Record<string, unknown> }[];
+      trajById: Map<number, EntityTrajectory>;
+      planeLabelCarriers: Map<number, number | null>;
+      planeLabelOfPlane: Map<number, number>;
+      planeCarrierOf: Map<number, number | null>;
+      planeRoleById: Map<number, string>;
+      planeWardAnchors: Map<number, unknown>;
+      props: Record<string, unknown>;
+    };
+    obj.shipMarkers = [{ userData: { entityId: SHIP, role: "self" } }];
+    obj.trajById = new Map([
+      [
+        SHIP,
+        {
+          entityId: SHIP,
+          samples: [{ time: 0, entityId: SHIP, vehicleId: 0, x: 5, y: 0, z: 5, yaw: 0 }],
+        } as EntityTrajectory,
+      ],
+    ]);
+    obj.planeLabelCarriers = new Map();
+    obj.planeLabelOfPlane = new Map();
+    obj.planeCarrierOf = new Map();
+    obj.planeRoleById = new Map();
+    obj.planeWardAnchors = new Map();
+    obj.props.wards = [];
+    obj.props.wardRemoves = [];
+    obj.props.consumableUses = [];
+    return ctx;
+  }
+
+  it("keeps a fighter wing on the carrier card", () => {
+    const ctx = carrierCtx(WARD_PARAMS_ID);
+    resolvePlaneCarriers(ctx, [], new Map());
+    expect(ctx.planeLabelCarriers.size).toBe(1);
+    expect(ctx.planeLabelOfPlane.get(500)).toBe(PLANE_CARD_LABEL_ID_BASE + SHIP);
+  });
+
+  it("starts the card on the carrier's NEWEST wing, not its first sortie", () => {
+    // The reference Shokaku launches a torpedo wing at 30.7 s and a WARD
+    // fighter wing at 82.4 s; the old accumulation kept whichever iterated
+    // first, which is exactly the "fighter label renders as a torpedo plane"
+    // report. The card is born on the newest wing and the per-frame content
+    // pass then follows the picked wing.
+    const ctx = carrierCtx(SHOKAKU_TORPEDO_PARAMS_ID);
+    const torpedo = create(500, SHOKAKU_TORPEDO_PARAMS_ID);
+    const fighter = { ...create(501, WARD_PARAMS_ID), time: 82.4 };
+    (ctx.props as unknown as { squadronCreates: unknown[] }).squadronCreates = [
+      torpedo,
+      fighter,
+    ];
+    (ctx.props as unknown as { minimapSquadronAdds: unknown[] }).minimapSquadronAdds = [
+      { ...add(500, SHOKAKU_TORPEDO_PARAMS_ID), time: 30.7, ownerId: SHIP },
+      { ...add(501, WARD_PARAMS_ID), time: 82.4, ownerId: SHIP },
+    ];
+    // resolvePlaneCarriers PUSHES its own card objects into the label array.
+    const labels: { entityId: number; planeType?: string }[] = [];
+    resolvePlaneCarriers(ctx, labels as never, new Map());
+    expect(labels).toHaveLength(1);
+    expect(labels[0].entityId).toBe(PLANE_CARD_LABEL_ID_BASE + SHIP);
+    expect(labels[0].planeType).toBe("fighter");
+  });
+
+  it("creates NO card for a scout-only ship and keeps it out of the label map", () => {
+    const ctx = carrierCtx(SCOUT_PARAMS_ID);
+    resolvePlaneCarriers(ctx, [], new Map());
+    expect(ctx.planeLabelCarriers.size).toBe(0);
+    expect(ctx.planeLabelOfPlane.has(500)).toBe(false);
+    // The wing itself still exists for the model/role passes.
+    expect(ctx.planeCarrierOf.get(500)).toBe(SHIP);
+  });
+
+  it("recognises the scout family from the baked paramsId", () => {
+    expect(isScoutParamsId(SCOUT_PARAMS_ID)).toBe(true);
+    expect(isScoutParamsId(WARD_PARAMS_ID)).toBe(false);
+    expect(isScoutParamsId(null)).toBe(false);
+  });
+});
+

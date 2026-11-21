@@ -35,7 +35,16 @@ import {
 } from "./planeFormation";
 import { updateStormZone } from "./weatherScene";
 import { syncMoveAdvisories } from "./moveAdvisories";
-import { PLANE_DOT_PARKED_Y, planeCardVisibleAt } from "./planeWarfare";
+import {
+  PLANE_DOT_PARKED_Y,
+  planeCardVisibleAt,
+  wardCardAnchor,
+} from "./planeWarfare";
+import {
+  SCOUT_CONSUMABLE_IDS,
+  consumableWindows,
+  activeConsumableAt,
+} from "./consumableRoles";
 import type { OsdTone } from "./osdContrast";
 import { captureSecondsRemaining, formatEta } from "@wowsp/holo";
 import {
@@ -43,7 +52,7 @@ import {
   recordedCameraAt,
   recordedCameraForward,
 } from "./recordedCamera";
-import { shipStatusAt } from "./shipStatusModel";
+import { shipStatusAt, type ShipStatusSnapshot } from "./shipStatusModel";
 import {
   REPAIR_PARTY_DAMAGE_SHARE,
   repairCoefficientFor,
@@ -566,7 +575,16 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // so there is no per-frame fallback to seed here.
         // Below-hull combat status rows (actions / hits / dots) track the
         // same effective clock — a dying ship freezes at its death instant.
-        label.status = shipStatusAt(ctx.shipStatus.get(entityId), tEff);
+        // The SPOTTER consumable (a catapult-launched scout, which carries no
+        // floating card of its own) reports itself here instead: one
+        // active-consumable tile with its remaining seconds, exactly like the
+        // repair party's window (user requirement 2026-11-21).
+        label.status = withScoutConsumable(
+          shipStatusAt(ctx.shipStatus.get(entityId), tEff),
+          ctx,
+          entityId,
+          tEff,
+        );
       }
     }
   }
@@ -1224,6 +1242,32 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // answer (user report: the card said ✈2 while the rendered wedge was a
       // different sortie at launch strength).
       const picked = ctx.planeLabelPicks.get(labelId);
+      // Fighter-patrol state for this card (item C): `deploying` = the wing is
+      // still flying out to the circle. The card then shows ONLY the countdown
+      // at the patrol area — no HP bar, no plane count (there is nothing on
+      // station yet). The position half lives in labelOverlay.
+      const ward = wardCardAnchor(ctx, labelId, picked, t);
+      const deploying = ward != null && t < ward.arriveAt;
+      if (deploying) {
+        label.planeType = ward.planeType ?? label.planeType;
+        label.ghostText = i18nT("replay.weather.incomingIn", {
+          s: fmtCountdown(ward.arriveAt - t),
+        });
+        label.planeAlive = null;
+        label.hp = null;
+        label.maxHp = null;
+        label.hpRecoverableFrac = null;
+        label.dead = false;
+        if (label.planeBoost !== false) label.planeBoost = false;
+        if (label.planeSlow !== false) label.planeSlow = false;
+        if (label.planeConsumKey !== "") {
+          label.planeConsumKey = "";
+          label.planeConsumables = [];
+        }
+        label.visible = true;
+        continue;
+      }
+      label.ghostText = null;
       const squadronId = (() => {
         if (picked != null) {
           const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === picked);
@@ -1247,6 +1291,16 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         }
         return null;
       })();
+      // The card's FAMILY follows the wing it is anchored to (item B): the
+      // table is the same paramsId → family join the formation pass uses, so
+      // a WARD fighter reads 战斗机 even when the carrier's first sortie of
+      // the replay was a torpedo wing (the stale value the card is BORN with,
+      // see resolvePlaneCarriers). A wing the table does not resolve leaves
+      // the previous family in place — never the "attack" default, which is
+      // only for a slot NO stream resolved at all.
+      const wingType =
+        squadronId != null ? ctx.planeTypesById.get(squadronId * 16) : undefined;
+      if (wingType) label.planeType = wingType;
       const squadronFrac =
         squadronId == null
           ? null
@@ -1325,4 +1379,49 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
   // step or an async model install changed the scene, so make sure the
   // next uncapped tick repaints.
   ctx.api.value?.requestRender();
+}
+
+/** Countdown text for a fighter deployment ("0:15") — the same MM:SS shape
+ *  the weather badge's ETA uses, so the card reuses the one countdown chrome
+ *  the map already has instead of inventing a second one. */
+export function fmtCountdown(secs: number): string {
+  const s = Math.max(0, Math.round(secs));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Append the SPOTTER / scout consumable's active window to a hull's
+ *  below-label rows.
+ *
+ *  A catapult-launched scout carries no floating card of its own (planeWarfare
+ *  keeps scout wings out of the per-carrier card), so its activation reports
+ *  itself under the PARENT HULL exactly like a repair-party window does —
+ *  the requirement is "只需要其所属的船的标签下面显示正在使用消耗品（和大保健啥
+ *  的一个类型）". The chip is an active-consumable tile with the remaining
+ *  seconds (the row's own countdown formatting), not a new chip family: the
+ *  HUD's consumable art set has no spotter sprite, and the action row is the
+ *  one active-consumable channel the floating label renders.
+ *
+ *  Pure data-in/data-out so the rule is unit-testable. */
+export function withScoutConsumable(
+  status: ShipStatusSnapshot | null,
+  ctx: Pick<MapInternals, "props">,
+  entityId: number,
+  t: number,
+): ShipStatusSnapshot | null {
+  const win = activeConsumableAt(
+    consumableWindows(ctx.props.consumableUses, entityId, SCOUT_CONSUMABLE_IDS),
+    t,
+  );
+  if (!win) return status;
+  const remaining = Math.max(0, win.t1 - t);
+  const chip = {
+    // The consumable tile of the action row (the same one the Repair Party
+    // window paints). Its countdown is what tells the two apart.
+    key: "repair" as const,
+    phase: "active" as const,
+    frac: remaining / Math.max(0.001, win.t1 - win.t0),
+    secs: remaining,
+  };
+  if (!status) return { actions: [chip], hits: [], dots: [] };
+  return { ...status, actions: [...status.actions, chip] };
 }

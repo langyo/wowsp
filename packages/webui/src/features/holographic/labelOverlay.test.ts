@@ -5,12 +5,14 @@
  * (nearest the camera, deterministic tie-break).
  */
 import { describe, expect, it } from "vitest";
+import * as THREE from "three";
 import {
   behindCameraEdgeNdc,
   currentWingOfCarrier,
   pickLabelWedgePlane,
   planeCardAllowed,
   planeRowVisible,
+  updateLabelPositions,
 } from "./labelOverlay";
 import type { MapInternals } from "./mapInternals";
 import type { EntityTrajectory, PositionSample, SquadronPlane } from "@/api";
@@ -259,3 +261,91 @@ describe("currentWingOfCarrier (the card rides the followed wing)", () => {
     expect(currentWingOfCarrier(ctx, LABEL, 45)).toBeNull();
   });
 });
+
+/* ── Item C: the deployment countdown card sits on the patrol CIRCLE ─────
+ * Before the fighters arrive there is no formation to follow; the card must
+ * still exist, at the ward's own centre, with no HP bar (the content pass
+ * blanks hp/planeAlive and prints the countdown). */
+describe("updateLabelPositions — fighter deployment anchor", () => {
+  function harness() {
+    const cam = new THREE.PerspectiveCamera(60, 1, 1, 10000);
+    cam.position.set(0, 0, 800);
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld(true);
+    const canvas = { clientWidth: 800, clientHeight: 600 };
+    const slots = new Map<string, HTMLDivElement | null>();
+    const slot = { style: { display: "none", transform: "" } } as unknown as HTMLDivElement;
+    slots.set("l" + LABEL, slot);
+    const label = {
+      entityId: LABEL,
+      x: 0,
+      y: 0,
+      visible: false,
+      belowVisible: false,
+      belowX: 0,
+      belowY: 0,
+      kind: "plane",
+      planeType: "fighter",
+    };
+    const ctx = {
+      api: { value: { camera: cam, renderer: { domElement: canvas } } },
+      container: { value: { clientWidth: 800, clientHeight: 600 } },
+      shipLabels: { value: [label] },
+      shipMarkers: [],
+      current: { value: 90 },
+      labelSlotEls: slots,
+      _projVec: new THREE.Vector3(),
+      planeLabelOfPlane: new Map(),
+      planeLabelCarriers: new Map([[LABEL, 845628]]),
+      planeTrails: [],
+      planeWedge: new Map(),
+      planeLabelPicks: new Map<number, number>(),
+      planeRecordedView: false,
+      planeCarrierOf: new Map(),
+      minimapTrailEnd: new Map(),
+      planeWardAnchors: new Map([
+        [
+          LABEL,
+          [
+            {
+              x: 0,
+              y: 100,
+              z: 0,
+              t0: 82.4,
+              arriveAt: 97.9,
+              t1: 136.9,
+              planeId: 1203,
+              planeType: "fighter",
+            },
+          ],
+        ],
+      ]),
+      followAircraftId: null,
+    } as unknown as MapInternals;
+    return { ctx, label, slot };
+  }
+
+  it("projects the deploying card at the ward centre and shows it", () => {
+    const { ctx, label, slot } = harness();
+    updateLabelPositions(ctx);
+    expect(label.visible).toBe(true);
+    // Horizontally centred (the ward sits straight ahead of the camera) and
+    // lifted above the horizon by the patrol-altitude offset.
+    expect(label.x).toBeCloseTo(400, 0);
+    expect(label.y).toBeLessThan(300);
+    expect(Number.isFinite(label.y)).toBe(true);
+    expect(slot.style.display).toBe("block");
+    expect(slot.style.transform).toContain("translate3d");
+  });
+
+  it("falls back to the wing path once the anchor belongs to another sortie", () => {
+    const { ctx, label } = harness();
+    // On station, but the carrier's card now describes a different wing: the
+    // ward anchor must NOT hold the card hostage.
+    (ctx as unknown as { current: { value: number } }).current.value = 110;
+    ctx.planeLabelPicks.set(LABEL, 999);
+    updateLabelPositions(ctx);
+    expect(label.visible).toBe(false);
+  });
+});
+
