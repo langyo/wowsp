@@ -1,0 +1,3 @@
+# Local Vercel CLI state (vercel link / vercel build) -- per-machine, and the
+# org/project ids inside are deployment targets, not tree content.
+.vercel/

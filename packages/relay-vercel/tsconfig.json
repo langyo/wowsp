@@ -1,0 +1,16 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    // Node types cover the same Web-standard surface (fetch / Request /
+    // Response / crypto.subtle) the edge runtime provides; vitest runs in
+    // the node environment, so one set of globals serves both worlds.
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": [
+    "api/**/*.ts",
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "vitest.config.ts"
+  ]
+}
