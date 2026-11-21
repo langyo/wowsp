@@ -119,8 +119,28 @@ only ever redirect onto themselves).
 
 ### 3.3 Cache key, envelope, TTLs
 
-The cache key is the CID (§4.1) of the canonical request line
-`"<METHOD> <url>[<sha256(body)>]"`. Stored envelope (JSON):
+The cache key is the CID (§4.1) of the canonical request line. The
+pinned spelling — the brackets in the original
+`"<METHOD> <url>[<sha256(body)>]"` wording were OPTIONAL-FIELD
+notation, never literal characters; re-implementations of the bracket
+form are a compatibility bug:
+
+- a GET line is exactly `GET <url>` — two fields, one space between
+  them, nothing after the url;
+- a POST line is `POST <url> <sha256hex>` — the lowercase sha256 hex
+  of the forwarded body rides as a THIRD space-separated bare-hex
+  field (64 chars, no prefix, no brackets).
+
+The method is uppercased; the url is byte-exactly as the client
+spelled it (two spellings of one upstream URL are two cache entries).
+The spelling is pinned on both sides of the Rust/TS seam —
+`relay-core`'s unit tests and the cross-implementation fixture
+`packages/relay-vercel/test/policy.fixture.json` carry the same
+canonical-line and CID vectors (each side pins them independently:
+`relay-core` in its own test module, the TS adapter in the fixture),
+so drift from the pinned spelling fails whichever side disagrees.
+
+Stored envelope (JSON):
 
 ```json
 {
@@ -130,9 +150,19 @@ The cache key is the CID (§4.1) of the canonical request line
   "bodyB64": "…",
   "fetchedAt": 1732185600,
   "ttl": 120,
-  "upstream": "vortex.wowsgame.cn"
+  "upstream": "vortex.wowsgame.cn",
+  "line": "GET https://vortex.wowsgame.cn/api/accounts/503224851/"
 }
 ```
+
+The optional `line` member carries the canonical request line this
+block's CID addresses — the §4.2/§8 mesh-verification anchor as
+actually implemented. Nodes write it on every row they mint; a
+PEER-sourced row without it MUST be rejected fail-closed (there is
+nothing to verify the CID against), and a row carrying it is verified
+by recomputing the CID over it. Foreign/legacy rows without the
+member still parse — and re-serialize without it — so older rows stay
+byte-compatible when re-served.
 
 TTL by purpose (host + path prefix classification, pure function in
 `relay-core::lookup`, mirrored by the Vercel adapter and pinned by a
@@ -164,8 +194,10 @@ shared fixture test):
 
 ### 3.5 Abuse budget
 
-Per-IP rate limit on `/api/lookup/*`: 240 requests/hour (KV counter
-on the Worker, in-memory+SQLite natively, Upstash on Vercel). 429
+Per-IP rate limit on `/api/lookup/*`: 240 requests/hour (a
+`LookupRate` SQLite Durable Object on the Worker — NOT a KV
+counter, which would cost one PUT per request against the free KV
+write budget — in-memory+SQLite natively, Upstash on Vercel). 429
 carries `retry-after`. Operator override: `LOOKUP_RATE_PER_HOUR`.
 
 ## 4. Content-addressed blocks — `/api/blocks/*`
@@ -193,17 +225,22 @@ GET /api/blocks/<cid>/raw    → decoded body bytes with stored content-type
 GET /ipfs/<cid>              → alias of /raw (IPFS gateway path convention)
 ```
 
-A served block is verified: the store recomputes the request-line
-hash before serving a peer-sourced row, so a malicious peer cannot
-poison the mesh — wrong content simply fails the CID check and is
-dropped.
+Verification is line-based, as implemented: the CID addresses the
+canonical request line, so body authenticity rides the envelope's own
+`line` field (§3.3) — at ingress, a peer-sourced row must carry the
+exact line the requester computed, and recomputing the CID over that
+line must reproduce the CID asked for. A peer row without the field
+fails closed; wrong content fails the hash check and is dropped,
+never served — a malicious peer cannot poison the mesh.
 
 ### 4.3 Eviction
 
 Blocks expire with their TTL (+ 24 h grace for late peer hits);
-sweep on write (native: periodic task; Worker: overwrite-and-TTL;
-Vercel: Upstash TTL). No quota accounting in v1 — the rate limit is
-the abuse brake, storage is bounded by the TTL.
+expiry is lazy where it landed (native: a periodic housekeeping
+sweep; Worker: checked on read — an expired object is a miss and is
+deleted best-effort right then, refills overwrite, deliberately no
+sweep cron; Vercel: Upstash TTL). No quota accounting in v1 — the
+rate limit is the abuse brake, storage is bounded by the TTL.
 
 ## 5. Peer registry & mesh sync — `/api/peers/*`
 
@@ -255,6 +292,16 @@ POST /api/peers/announce   {"url": "https://wowsp.example.org", "contact": "opti
    registries accept announces too (operators may disable with
    `PEERS_ACCEPT_ANNOUNCES=false`).
 
+Implementation realities that are now contract: peer rows expire
+LAZILY at read time — a row lives 48 h from its `lastSeenAt`,
+expired rows simply stop appearing in reads, and the next
+announce-driven rewrite prunes them from the stored document for
+good. On the Worker the whole own registry is ONE KV document (key
+`peers:own`, the entire row vector) for quota economics — one read
+per list render, one write per accepted announce — with the upstream
+subscription cached a minute under `peers:upstream` and the list
+render itself fronted by a 60 s edge-Cache entry.
+
 ### 5.3 Private / LAN nodes
 
 An http or IP-literal URL is never published in a public list. A
@@ -274,6 +321,16 @@ When a lookup misses LOCALLY and `node.sync` is on:
    `x-wowsp-cache: peer-hit`.
 3. All misses → real upstream as usual.
 
+Two implementation realities are contract as well: a peer-served
+block's TTL is RECLASSIFIED locally — the served `ttl` is
+`min(peer claim, classify_ttl)` over the §3.3 table, so a peer's
+claim can only shrink the window, never extend it — and
+sync-candidate selection is own-table-first (own registry rows in
+list order), falling back to DETERMINISTIC-random seeding over the
+merged list — ordering keyed by sha256(url, cid, hour bucket) — when
+the own registry is empty, so a hostile upstream list cannot
+monopolize the first `SYNC_PEERS_MAX` slots.
+
 v1 sync is lazy (pull on demand) and content-verified — no background
 gossip jobs, no push, no want-list protocol. Those stay future work
 (documented here so the route names do not get re-invented).
@@ -290,6 +347,12 @@ stats_peer_autodiscover = true
 
 - Sanitized like the mirror ladders (https-only, loopback http
   tolerated, trim, dedupe, cap 8).
+- The default entry is the official node — the same
+  `BUILTIN_WORKER_ROOT_URL` constant the apps already pin
+  (`packages/app/tauri/src/commands/gateway/urls.rs`), so a fresh
+  install is cache-served without typing anything. The settings
+  surface is the **缓存服务器 / Cache servers** pane (settings id
+  `cacheServers`, the connection group; §6.3).
 - `stats_peer_autodiscover`: when on, the client periodically
   subscribes `GET {official}/api/peers`, capability-filters for
   `lookup`, probes the top entries and uses up to 3 verified
@@ -329,9 +392,24 @@ non-2xx/timeout → next server → … → existing chain
 
 | Platform | Package | Capabilities | Storage |
 | --- | --- | --- | --- |
-| Cloudflare Workers | `crates/relay-worker` (wasm) | all four | KV (edge-Cache-fronted) + DO (gateway) |
+| Cloudflare Workers | `crates/relay-worker` (wasm) | all four | KV (single-doc registry + counters caches, edge-Cache-fronted) + R2 (blocks, bucket `wowsp-lookup-blocks`) + `LookupRate` SQLite DO (rate limits) + gateway DOs |
 | VPS / LAN / Docker | `crates/relay-server` (native axum) | all four | SQLite + memory |
 | Vercel edge | `packages/relay-vercel` (TS adapter) | lookup + peers + blocks | Upstash KV REST (or per-instance memory) |
+
+Worker enable recipe — the vars/bindings the official
+`wrangler.toml` binds, and what a self-host adds to turn the mesh
+on. The mesh is ON when `LOOKUP_ENABLED` is ABSENT (`"0"` gates
+the six mesh routes to 404 and lowers `/api/health` capabilities to
+false). Bind `LOOKUP_KV` (registry documents, `node:id`, announce
+counters), `LOOKUP_R2` plus the one-time `npx wrangler r2 bucket
+create wowsp-lookup-blocks` (block envelopes), and the
+`LOOKUP_RATE` Durable Object binding with migration v6
+(`new_sqlite_classes = ["LookupRate"]` — the per-IP hourly budget).
+Optional vars: `PEERS_UPSTREAM` (subscribe the broadcast list;
+official default), `NODE_ROLE`, `PEERS_ACCEPT_ANNOUNCES`,
+`SYNC_PEERS_MAX`, `LOOKUP_RATE_PER_HOUR`. `/ipfs/*` additionally
+needs its own `run_worker_first` entry next to `/api*` — the
+IPFS-gateway path convention sits outside `/api*` on purpose.
 
 - The native server reuses `relay-core` state machines (gateway
   auth/channel, lookup policy, peers policy) with in-process

@@ -64,7 +64,7 @@
   持久化在数据目录；Worker：KV `node:id` 缓存）。不是机密；它让网格
   遥测能区分"节点重启"与"另一个节点"。
 - `node.role` —— `official` | `community`（信息性）。
-- `node.sync` —— 本节点在本地缓存未命中时是否向peer拉取块（§5.4）。
+- `node.sync` —— 本节点在本地缓存未命中时是否向 peer 拉取块（§5.4）。
 - `node.peersUpstream` —— 本节点从哪里订阅服务器列表（默认官方）；
   同样是给人看的信息。
 
@@ -106,7 +106,23 @@ api.wows-numbers.com      v3-api.wows.shinoaki.com  api.wows.yuyuko.dev
 
 ### 3.3 缓存键、信封、TTL
 
-缓存键是规范请求行 `"<METHOD> <url>[<sha256(body)>]"` 的 CID（§4.1）。
+缓存键是规范请求行的 CID（§4.1）。钉死的拼写如下——原始表述
+`"<METHOD> <url>[<sha256(body)>]"` 中的方括号是**可选字段记号**，
+绝不是字面字符；把方括号实现进去就是兼容性 bug：
+
+- GET 行就是 `GET <url>`——两个字段，中间一个空格，url 之后
+  再无内容；
+- POST 行是 `POST <url> <sha256hex>`——转发体的 sha256 小写
+  十六进制作为**第三个以空格分隔的裸十六进制字段**（64 字符，
+  无前缀、无方括号）。
+
+方法名转大写；url 逐字节保持客户端的原样拼写（同一上游 URL 的
+两种拼写就是两条缓存）。该拼写由 Rust/TS 两侧共同钉死——
+`relay-core` 的单元测试与跨实现 fixture
+`packages/relay-vercel/test/policy.fixture.json` 携带相同的规范行
+与 CID 向量（两侧各自独立钉住：`relay-core` 在自己的测试模块里，
+TS 适配器在 fixture 里），偏离钉死拼写的哪一侧就会先挂 CI。
+
 存储信封（JSON）：
 
 ```json
@@ -117,9 +133,17 @@ api.wows-numbers.com      v3-api.wows.shinoaki.com  api.wows.yuyuko.dev
   "bodyB64": "…",
   "fetchedAt": 1732185600,
   "ttl": 120,
-  "upstream": "vortex.wowsgame.cn"
+  "upstream": "vortex.wowsgame.cn",
+  "line": "GET https://vortex.wowsgame.cn/api/accounts/503224851/"
 }
 ```
+
+可选成员 `line` 携带本块 CID 所对应的规范请求行——这是
+§4.2/§8 网格校验锚点在实现中的真实形态。节点在自家铸造的每一行
+上都写入它；**缺少该成员的 peer 来源行必须失败关闭**（没有可校验
+CID 的对象），携带它的行通过在其上重算 CID 来验证。不含该成员的
+外来/旧版行仍可解析——并且再序列化时保持缺失——旧行重发时字节
+兼容。
 
 按用途区分的 TTL（主机 + 路径前缀分类，`relay-core::lookup` 中的
 纯函数，Vercel 适配器镜像，共享 fixture 测试钉死）：
@@ -150,9 +174,10 @@ api.wows-numbers.com      v3-api.wows.shinoaki.com  api.wows.yuyuko.dev
 
 ### 3.5 滥用预算
 
-`/api/lookup/*` 每 IP 限流：240 次/小时（Worker 用 KV 计数器，原生
-用内存+SQLite，Vercel 用 Upstash）。429 带 `retry-after`。运营者可
-用 `LOOKUP_RATE_PER_HOUR` 覆盖。
+`/api/lookup/*` 每 IP 限流：240 次/小时（Worker 上是
+`LookupRate` SQLite Durable Object——**不是** KV 计数器，每请求一次
+PUT 会烧穿免费 KV 写预算；原生用内存+SQLite，Vercel 用 Upstash）。
+429 带 `retry-after`。运营者可用 `LOOKUP_RATE_PER_HOUR` 覆盖。
 
 ## 4. 内容寻址块 —— `/api/blocks/*`
 
@@ -177,15 +202,19 @@ GET /api/blocks/<cid>/raw    → 解码后的体字节，带存储的 content-ty
 GET /ipfs/<cid>              → /raw 的别名（IPFS 网关路径约定）
 ```
 
-被服务的块要做校验：存储在服务来自 peer 的行之前重新计算请求行
-哈希，恶意 peer 无法污染网格——内容不符就过不了 CID 校验，直接
-丢弃。
+按实际实现，校验是**基于请求行**的：CID 寻址的是规范请求行，因此
+体的真实性由信封自己的 `line` 字段（§3.3）承载——在入口处，
+peer 来源的行必须携带请求方算出的那条请求行，且在该行上重算 CID
+必须复现所请求的 CID。缺少该字段的 peer 行失败关闭；内容不符过
+不了哈希检查，直接丢弃、永不下发——恶意 peer 无法污染网格。
 
 ### 4.3 淘汰
 
-块随 TTL 过期（+ 24 小时宽限给迟到的 peer 命中）；写入时清扫
-（原生：周期任务；Worker：覆盖即 TTL；Vercel：Upstash TTL）。v1
-不做配额记账——限流就是滥用闸门，存储量被 TTL 约束。
+块随 TTL 过期（+ 24 小时宽限给迟到的 peer 命中）；已落地的各端
+均为惰性过期（原生：周期清扫任务；Worker：读取时检查——过期对象
+即未命中，读取当时尽力删除，重填覆盖，刻意不设清扫 cron；Vercel：
+Upstash TTL）。v1 不做配额记账——限流就是滥用闸门，存储量被 TTL
+约束。
 
 ## 5. Peer 注册表与网格同步 —— `/api/peers/*`
 
@@ -235,6 +264,14 @@ POST /api/peers/announce   {"url": "https://wowsp.example.org", "contact": "可�
 5. **官方**注册表是所有人订阅的种子；社区注册表同样接受宣告
    （运营者可用 `PEERS_ACCEPT_ANNOUNCES=false` 关闭）。
 
+已成为契约的实现细节：peer 行的过期是**读取时惰性判定**——行自
+`lastSeenAt` 起存活 48 小时，过期行只是不再出现在读取结果里，
+下一次由宣告触发的重写会把它们从存储文档中彻底清掉。Worker 上
+整个自有注册表是**一份 KV 文档**（键 `peers:own`，即整个行向量），
+出于配额经济学——每次列表渲染一次读、每次接受宣告一次写——上游
+订阅在 `peers:upstream` 下缓存一分钟，列表渲染本身再前置一层
+60 秒边缘缓存。
+
 ### 5.3 私有 / 局域网节点
 
 http 或 IP 字面量 URL 永远不进公共列表。原生节点把这类行保存在
@@ -252,6 +289,13 @@ http 或 IP 字面量 URL 永远不进公共列表。原生节点把这类行保
 2. 校验 CID 与请求行，存入本地，以 `x-wowsp-cache: peer-hit` 服务。
 3. 全部未命中 → 照常打真实上游。
 
+同样已成为契约的两个实现细节：peer 交回的块其 TTL 会在本地
+**重新分类**——服务的 `ttl` 取 `min(peer 声明, classify_ttl)`
+（按 §3.3 表），peer 的声明只能缩短窗口、不能延长；同步候选的
+选择**自有表优先**（自有注册表行按列表顺序），自有注册表为空时
+退化为对合并列表的**确定性随机**排序——以 sha256(url, cid, 小时桶)
+为键——使恶意的上游列表无法垄断前 `SYNC_PEERS_MAX` 个位置。
+
 v1 的同步是惰性（按需拉取）且内容校验的——没有后台 gossip 任务、
 没有推送、没有 want-list 协议。那些留作后续工作（在此记录，避免
 路由名被重新发明）。
@@ -267,6 +311,10 @@ stats_peer_autodiscover = true
 ```
 
 - 与镜像梯子一样净化（仅 https、容忍回环 http、修剪、去重、上限 8）。
+- 默认条目即官方节点——与应用已钉住的
+  `BUILTIN_WORKER_ROOT_URL` 常量（`packages/app/tauri/src/commands/gateway/urls.rs`）
+  同源，全新安装无需输入任何内容即享受缓存服务。设置入口是
+  **缓存服务器**面板（设置 id `cacheServers`，连接分组；§6.3）。
 - `stats_peer_autodiscover`：打开时，客户端周期性订阅
   `GET {official}/api/peers`，按 `lookup` 能力过滤，探测头部条目，
   在用户自己的列表**之后**（永远不插前）使用最多 3 个已验证社区
@@ -302,9 +350,23 @@ for server in [用户列表…] ++ [自动发现…]:
 
 | 平台 | 包 | 能力 | 存储 |
 | --- | --- | --- | --- |
-| Cloudflare Workers | `crates/relay-worker`（wasm） | 全部四项 | KV（边缘缓存前置）+ DO（gateway） |
+| Cloudflare Workers | `crates/relay-worker`（wasm） | 全部四项 | KV（单文档注册表 + 计数器缓存，边缘缓存前置）+ R2（块，桶 `wowsp-lookup-blocks`）+ `LookupRate` SQLite DO（限流）+ gateway DO |
 | VPS / 局域网 / Docker | `crates/relay-server`（原生 axum） | 全部四项 | SQLite + 内存 |
 | Vercel 边缘 | `packages/relay-vercel`（TS 适配器） | lookup + peers + blocks | Upstash KV REST（或每实例内存） |
+
+Worker 启用配方——官方 `wrangler.toml` 绑定的变量/绑定，也是
+自建节点打开网格要补的东西。`LOOKUP_ENABLED` **缺省即开**
+（设 `"0"` 会把六条网格路由闸成 404，并把 `/api/health` 的
+capabilities 降为 false）。绑定 `LOOKUP_KV`（注册表文档、
+`node:id`、宣告计数器）、`LOOKUP_R2` 并一次性执行
+`npx wrangler r2 bucket create wowsp-lookup-blocks`（块信封）、
+以及 `LOOKUP_RATE` Durable Object 绑定与迁移 v6
+（`new_sqlite_classes = ["LookupRate"]`——每 IP 小时预算）。
+可选变量：`PEERS_UPSTREAM`（订阅广播名单；默认官方）、
+`NODE_ROLE`、`PEERS_ACCEPT_ANNOUNCES`、`SYNC_PEERS_MAX`、
+`LOOKUP_RATE_PER_HOUR`。`/ipfs/*` 另需在 `run_worker_first`
+里与 `/api*` 并列加自己的条目——IPFS 网关路径约定刻意放在
+`/api*` 之外。
 
 - 原生服务端复用 `relay-core` 状态机（gateway auth/channel、lookup
   策略、peers 策略），DO/KV 接缝换成进程内实现：票据在内存（120 秒
