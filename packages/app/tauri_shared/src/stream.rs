@@ -1458,14 +1458,22 @@ pub struct VisionEvent {
 /// consumable, for BOTH teams' vehicles visible to the recording client
 /// (reference capture: 104 uses across 22 of 24 vehicles).
 ///
-/// Wire (15.2+): a length-prefixed blob `CONSUMABLE_USAGE_PARAMS` followed by
-/// the f32 `workTimeLeft`. The blob's first byte selects the usage variant
-/// (`ConsumableUsageType`): 0 = none (no id), 1 = default `<BB>`, 2 = position
-/// `<BBff>`, 3 = entity target `<BBbQ>`; its second byte is the raw
-/// consumable type id (GameParams enum — reference capture used ids
-/// {0,1,3,4,6,8,9,10,65}; several durations cluster near well-known
+/// Two era-pinned wire shapes ride the same method:
+///
+/// - 15.2+: a length-prefixed blob `CONSUMABLE_USAGE_PARAMS` followed by the
+///   f32 `workTimeLeft`. The blob's first byte selects the usage variant
+///   (`ConsumableUsageType`): 0 = none (no id), 1 = default `<BB>`, 2 = position
+///   `<BBff>`, 3 = entity target `<BBbQ>`; its second byte is the raw
+///   consumable type id.
+/// - 14.5: the def predates that blob, so the args are the bare
+///   `u8 consumable id, f32 workTimeLeft` (5 bytes) and `usage_type` stays 0
+///   (see `layout_tables::E11Ids::consumable_use_params_blob`).
+///
+/// The consumable id is the raw GameParams enum (reference capture used ids
+/// {0,1,3,4,6,8,9,10,65}); several durations cluster near well-known
 /// consumables — 5 s (id 0, damage control immunity), 28 s (id 8, repair
-/// party) — but the id→name map is a GameParams concern and stays raw here).
+/// party), 600 s (id 9, the carrier's patrol fighter) — but the id→name map
+/// is a GameParams concern and stays raw here).
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConsumableUseEvent {

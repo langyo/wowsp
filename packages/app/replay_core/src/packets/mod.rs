@@ -171,6 +171,7 @@ fn e11_method_ids(version_key: Option<(u32, u32, u32)>) -> Option<E11MethodIds> 
     crate::layout_tables::e11_for(version_key).map(|ids| E11MethodIds {
         avatar_update_minimap_vision_info: ids.avatar_update_minimap_vision_info,
         vehicle_on_consumable_used: ids.vehicle_on_consumable_used,
+        consumable_use_params_blob: ids.consumable_use_params_blob,
     })
 }
 
@@ -183,6 +184,10 @@ fn e11_method_ids(version_key: Option<(u32, u32, u32)>) -> Option<E11MethodIds> 
 struct E11MethodIds {
     avatar_update_minimap_vision_info: i32,
     vehicle_on_consumable_used: i32,
+    /// The onConsumableUsed argument shape (see `layout_tables::E11Ids`):
+    /// true = length-prefixed CONSUMABLE_USAGE_PARAMS blob + f32 workTimeLeft
+    /// (15.2+), false = the 14.5 bare `u8 consumable id, f32 workTimeLeft`.
+    consumable_use_params_blob: bool,
 }
 
 /// Version-dependent decoder inputs resolved once per replay: the method-id
