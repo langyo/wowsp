@@ -3647,7 +3647,9 @@ const RECORDED_DOLLY_MIN = -40;
       to: 0,
       fps: 30,
       speed: 5,
-      size: 1440,
+      // 2K default: the map text is the whole point, and 1080's 720px map
+      // square reads soft on every report so far.
+      size: 1920,
       footer: true,
       // The clip's stats default follows the LIVE surface: with every stat
       // column removed (or PR off and nothing else configured) the roster

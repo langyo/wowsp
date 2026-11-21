@@ -576,7 +576,7 @@ describe("drawPlaybackTeamColumn", () => {
     expect(bar).toBeDefined();
   });
 
-  it("centres the header labels over their tracks, averages right in them", () => {
+  it("right-aligns the header labels with the averages beneath them", () => {
     const { ctx, texts } = recordingContext();
     drawPlaybackTeamColumn(
       ctx, 0, 0, EXPORT_SIDE_W, sideOf([teamRow(0)]), "ally",
@@ -590,15 +590,16 @@ describe("drawPlaybackTeamColumn", () => {
     expect(avg).toBeDefined();
     expect(label!.y).toBeLessThan(avg!.y);
     expect(avg!.y).toBeLessThan(EXPORT_TEAM_HEADER_H);
-    // The label is CENTERED over its own 40px track (the last two tracks
-    // of the column: 190 - 8 inset - 2 x 40).
+    // The label shares the average's right edge inside its own 40px track
+    // (the last two tracks of the column: 190 - 8 inset - 2 x 40) — a
+    // centered label sits left of the number it names.
     const statsLeft = EXPORT_SIDE_W - EXPORT_TEAM_INSET_X - 2 * EXPORT_TEAM_STAT_TRACK_W;
-    expect(label!.align).toBe("center");
-    expect(label!.x).toBe(statsLeft + EXPORT_TEAM_STAT_TRACK_W / 2);
-    // The PR label is the second track's centre.
+    expect(label!.align).toBe("right");
+    expect(label!.x).toBe(statsLeft + EXPORT_TEAM_STAT_TRACK_W);
+    // The PR label rides the second track's right edge.
     const prLabel = texts.find((t) => t.text === "PR");
     expect(prLabel).toBeDefined();
-    expect(prLabel!.x).toBe(statsLeft + 1.5 * EXPORT_TEAM_STAT_TRACK_W);
+    expect(prLabel!.x).toBe(statsLeft + 2 * EXPORT_TEAM_STAT_TRACK_W);
     // The averages row carries its caption (so the numbers read as team
     // means, not one player\u2019s)...
     expect(texts.some((t) => t.text === "Avg")).toBe(true);

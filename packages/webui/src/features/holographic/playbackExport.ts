@@ -1272,12 +1272,14 @@ export function drawPlaybackTeamColumn(
     y + EXPORT_TEAM_HEADER_TITLE_CY,
   );
   g.font = font(EXPORT_TEAM_STAT_LABEL_SIZE, 400);
-  g.textAlign = "center";
+  // Labels share the values' right edge — a centered label sits left of
+  // the number it names and reads as a different column.
+  g.textAlign = "right";
   columns.forEach((col, i) => {
     g.fillStyle = rgba(palette.text, 0.5);
     g.fillText(
       ellipsize(g, col.label, EXPORT_TEAM_STAT_TRACK_W - 2),
-      statsLeft + (i + 0.5) * EXPORT_TEAM_STAT_TRACK_W,
+      statsLeft + (i + 1) * EXPORT_TEAM_STAT_TRACK_W,
       y + EXPORT_TEAM_HEADER_TITLE_CY,
     );
   });
@@ -1374,7 +1376,9 @@ export function drawPlaybackTeamColumn(
     // the stat tracks. With the stats toggle off, `bandRight` is the
     // column's right inset, so the identity band owns the full width.
     const cellX = x + inset;
-    const iconSize = 12;
+    // 10 logical px: the live roster's BattleIcon is 14 CSS px on a ~46px
+    // row (~30% of the row); 12 read a size larger than the app's.
+    const iconSize = 10;
     const tier = row.tier ?? "";
     const cellGap = EXPORT_TEAM_ID_GAP;
     // The tier shrinks to the cell's remaining width first, so the fixed
