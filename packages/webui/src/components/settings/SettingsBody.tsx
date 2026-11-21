@@ -14,6 +14,7 @@ import CrashSection from "@/components/settings/sections/CrashSection";
 import SectionBoundary from "@/components/settings/SectionBoundary";
 import AccountSection from "@/components/settings/sections/AccountSection";
 import NetworkSection from "@/components/settings/sections/NetworkSection";
+import CacheServersSection from "@/components/settings/sections/CacheServersSection";
 import MarkersSection from "@/components/settings/sections/MarkersSection";
 import PairingSection from "@/components/settings/sections/PairingSection";
 import UpdatesSection from "@/components/settings/sections/UpdatesSection";
@@ -89,6 +90,7 @@ export default defineComponent({
           ),
           account: () => <AccountSection />,
           network: () => <NetworkSection ctx={ctx} />,
+          cacheServers: () => <CacheServersSection ctx={ctx} />,
           markers: () => <MarkersSection ctx={ctx} />,
           pairing: () => <PairingSection ctx={ctx} />,
           updates: () => <UpdatesSection ctx={ctx} />,

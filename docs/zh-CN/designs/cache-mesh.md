@@ -305,10 +305,14 @@ v1 的同步是惰性（按需拉取）且内容校验的——没有后台 goss
 ### 6.1 配置（`network-config.toml`，`NetworkConfig`）
 
 ```toml
-stats_cache_enabled = true
-stats_cache_servers = ["https://wowsp.langyo.xyz"]   # 有序，用户管理
-stats_peer_autodiscover = true
+statsCacheEnabled = true
+statsCacheServers = ["https://wowsp.langyo.xyz"]     # 有序，用户管理
+statsPeerAutodiscover = true
 ```
+
+键名沿用 `network-config.toml` 的规范 camelCase（那里 IPC 形状同时
+就是 TOML 键集——到处只有一种拼写）；Rust 字段是对应的 snake_case
+`stats_cache_*` 三元组。
 
 - 与镜像梯子一样净化（仅 https、容忍回环 http、修剪、去重、上限 8）。
 - 默认条目即官方节点——与应用已钉住的

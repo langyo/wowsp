@@ -123,6 +123,7 @@
   "dpiRiskyWarning": "À {scale} %, l'interface peut dépasser l'écran et devenir difficile à utiliser.",
   "dpiRevertCountdown": "{scale} % appliqué, retour automatique dans {seconds} s.",
   "network": "Réseau",
+  "cacheServersSection": "Serveurs de cache",
   "networkHint": "Proxy utilisé pour toutes les requêtes sortantes (consultation des stats, pack de modèles, mises à jour). Système suit les paramètres de proxy de votre OS.",
   "networkSystem": "Proxy système",
   "networkNone": "Aucun proxy",

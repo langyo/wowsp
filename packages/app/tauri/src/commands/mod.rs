@@ -237,7 +237,12 @@ pub mod screenshot;
 // playing", broadcast to every window (see commands/session.rs).
 pub mod session;
 pub mod ship_stats;
+// Stats-cache mesh client (docs/en/designs/cache-mesh.md §6): the
+// 缓存服务器 settings surface — per-server probe + community-node
+// autodiscover. Cross-platform: appdata + the proxy-aware HTTP client
+// only; the transport hook itself lives in commands/upstream_health.rs.
 pub mod stamps;
+pub mod stats_cache;
 pub mod supporters;
 // The tray panel webview window (tray.html) — desktop only, like the tray
 // itself.

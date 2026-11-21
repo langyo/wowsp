@@ -99,6 +99,35 @@ pub struct NetworkConfig {
     /// docs/en/designs/ai-models.md section 7.
     #[serde(default)]
     pub huggingface_mirrors: Vec<String>,
+    /// Whether stats-family lookups ride the cache mesh first (docs/en/
+    /// designs/cache-mesh.md §6.1). Default ON — the mesh is the same
+    /// trust level as any upstream and a miss falls through to the
+    /// existing proxy→direct chain unchanged.
+    #[serde(default = "default_stats_cache_enabled")]
+    pub stats_cache_enabled: bool,
+    /// Ordered, user-managed cache-mesh server roots (§6.1). The official
+    /// node by default; tried in order before the autodiscovered
+    /// community nodes. Sanitized like the mirror ladders (https-only,
+    /// loopback http tolerated, trim, dedupe, cap 8).
+    #[serde(default = "default_stats_cache_servers")]
+    pub stats_cache_servers: Vec<String>,
+    /// Whether community nodes from the official `/api/peers` broadcast
+    /// list are used AFTER the user's own list (§6.1). One-click off in
+    /// the 缓存服务器 settings pane.
+    #[serde(default = "default_stats_peer_autodiscover")]
+    pub stats_peer_autodiscover: bool,
+}
+
+fn default_stats_cache_enabled() -> bool {
+    true
+}
+
+fn default_stats_cache_servers() -> Vec<String> {
+    vec![wowsp_tauri_shared::OFFICIAL_CACHE_SERVER_URL.to_string()]
+}
+
+fn default_stats_peer_autodiscover() -> bool {
+    true
 }
 
 impl Default for NetworkConfig {
@@ -110,6 +139,9 @@ impl Default for NetworkConfig {
             github_mirror: None,
             github_mirrors: Vec::new(),
             huggingface_mirrors: Vec::new(),
+            stats_cache_enabled: default_stats_cache_enabled(),
+            stats_cache_servers: default_stats_cache_servers(),
+            stats_peer_autodiscover: default_stats_peer_autodiscover(),
         }
     }
 }
@@ -183,6 +215,46 @@ fn sanitize_endpoint_base(raw: &str) -> Option<String> {
         return None;
     }
     Some(trimmed.to_string())
+}
+
+/// Sanitize the cache-mesh server ladder (docs/en/designs/cache-mesh.md
+/// §6.1 — "sanitized like the mirror ladders"): the gateway URL policy
+/// (commands/gateway/urls.rs) normalizes each root — bare hosts gain
+/// `https://`, trailing slashes fold away, https is enforced with the
+/// loopback plain-http exception (a LAN node on `http://127.0.0.1:8787`
+/// stays legal) — then empties/unusable values drop and the survivors
+/// dedupe in saved order, capped at `MAX_MIRRORS_PER_PROVIDER`.
+fn sanitize_cache_servers(raw: impl IntoIterator<Item = String>) -> Vec<String> {
+    let mut servers: Vec<String> = Vec::new();
+    for entry in raw {
+        let trimmed = entry.trim();
+        // Inner whitespace can never address a host (the same gate
+        // looks_like_https_mirror holds the GitHub ladder to).
+        if trimmed.chars().any(char::is_whitespace) {
+            tracing::warn!("network config: ignoring whitespace statsCacheServers entry {entry:?}");
+            continue;
+        }
+        let root = match super::gateway::urls::normalize_https_root(trimmed) {
+            Ok(root) => root,
+            Err(e) => {
+                tracing::warn!(
+                    "network config: ignoring invalid statsCacheServers entry {entry:?} ({e})"
+                );
+                continue;
+            },
+        };
+        if servers.len() >= MAX_MIRRORS_PER_PROVIDER {
+            tracing::warn!(
+                "network config: dropping statsCacheServers entry {root:?} \
+                 (more than {MAX_MIRRORS_PER_PROVIDER} servers)"
+            );
+            continue;
+        }
+        if !servers.iter().any(|s| s.eq_ignore_ascii_case(&root)) {
+            servers.push(root);
+        }
+    }
+    servers
 }
 
 /// The fallback layer proper: resolve every invalid field onto the
@@ -259,6 +331,7 @@ pub fn sanitize(mut config: NetworkConfig) -> NetworkConfig {
         }
     }
     config.huggingface_mirrors = hf_mirrors;
+    config.stats_cache_servers = sanitize_cache_servers(config.stats_cache_servers.drain(..));
     // "manual" without a usable URL would silently mean "no proxy at all"
     // — the safest reading of a half-broken manual config is the default.
     if config.mode == ProxyMode::Manual && config.proxy.is_none() {
@@ -283,6 +356,15 @@ struct NetworkConfigTomlFile {
     github_mirrors: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     huggingface_mirrors: Vec<String>,
+    stats_cache_enabled: bool,
+    // No skip-when-empty here (unlike the mirror lists): the mesh's
+    // default ladder is NON-empty, so an emptied list must persist as
+    // an explicit empty array — omitting the key would resurrect the
+    // official default on the next load and a deliberately mesh-less
+    // config could never survive a restart.
+    #[serde(default)]
+    stats_cache_servers: Vec<String>,
+    stats_peer_autodiscover: bool,
 }
 
 /// Serialize the canonical file text (header + flat TOML keys).
@@ -293,6 +375,9 @@ fn canonical_toml(config: &NetworkConfig) -> anyhow::Result<String> {
         resource_cdn: config.resource_cdn.clone(),
         github_mirrors: config.github_mirrors.clone(),
         huggingface_mirrors: config.huggingface_mirrors.clone(),
+        stats_cache_enabled: config.stats_cache_enabled,
+        stats_cache_servers: config.stats_cache_servers.clone(),
+        stats_peer_autodiscover: config.stats_peer_autodiscover,
     };
     let body = toml::to_string(&file).map_err(|e| anyhow!("serialize network config: {e}"))?;
     Ok(format!("{FILE_HEADER}{body}"))
@@ -349,6 +434,13 @@ pub struct NetworkConfigResponse {
     pub github_mirrors: Vec<String>,
     /// The Hugging Face endpoint bases (sanitized, saved order).
     pub huggingface_mirrors: Vec<String>,
+    /// Whether stats lookups ride the cache mesh first (cache-mesh.md §6.1).
+    pub stats_cache_enabled: bool,
+    /// The cache-mesh server roots (sanitized, saved order; official
+    /// default) — the 缓存服务器 pane's list.
+    pub stats_cache_servers: Vec<String>,
+    /// Whether autodiscovered community nodes ride after the user's list.
+    pub stats_peer_autodiscover: bool,
     /// LEGACY display compat: the list head, `None` when the list is
     /// empty — older webui builds render this single field.
     pub github_mirror: Option<String>,
@@ -373,6 +465,9 @@ impl From<NetworkConfig> for NetworkConfigResponse {
             github_mirror: github_mirrors.first().cloned(),
             github_mirrors,
             huggingface_mirrors: cfg.huggingface_mirrors,
+            stats_cache_enabled: cfg.stats_cache_enabled,
+            stats_cache_servers: cfg.stats_cache_servers,
+            stats_peer_autodiscover: cfg.stats_peer_autodiscover,
             effective_proxy,
             proxy_source,
         }
@@ -1241,6 +1336,94 @@ mod tests {
                 .unwrap()
                 .contains("huggingfaceMirrors"),
             "an empty list never writes the key"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Cache-mesh server roots (cache-mesh.md §6.1): bare hosts gain
+    /// https://, trailing slashes fold away, plain http survives ONLY on
+    /// loopback (the LAN-node exception), unusable values drop, and the
+    /// ladder dedupes (case-insensitively) capped at 8 in saved order.
+    #[test]
+    fn sanitize_normalizes_stats_cache_servers() {
+        let cfg = sanitize(NetworkConfig {
+            stats_cache_servers: vec![
+                " cache.example.org/ ".into(),
+                "http://insecure.example".into(),
+                "http://127.0.0.1:8787".into(),
+                "https://cache.example.org".into(),
+                "not a url".into(),
+            ],
+            ..NetworkConfig::default()
+        });
+        assert_eq!(
+            cfg.stats_cache_servers,
+            vec!["https://cache.example.org", "http://127.0.0.1:8787"]
+        );
+        // The mesh defaults survive a sanitize that touches nothing else.
+        assert!(cfg.stats_cache_enabled);
+        assert!(cfg.stats_peer_autodiscover);
+    }
+
+    /// The stats-cache ladder caps at 8 roots (saved order, extras drop).
+    #[test]
+    fn sanitize_caps_stats_cache_servers_at_eight() {
+        let cfg = sanitize(NetworkConfig {
+            stats_cache_servers: (0..10)
+                .map(|i| format!("https://mesh-{i}.example.org"))
+                .collect(),
+            ..NetworkConfig::default()
+        });
+        assert_eq!(cfg.stats_cache_servers.len(), 8);
+        assert_eq!(cfg.stats_cache_servers[0], "https://mesh-0.example.org");
+        assert_eq!(cfg.stats_cache_servers[7], "https://mesh-7.example.org");
+    }
+
+    /// Old config files keep parsing: a TOML without the stats-cache keys
+    /// lands on the mesh defaults (enabled, official node, autodiscover
+    /// on), and the canonical round-trip preserves a customized ladder.
+    #[test]
+    fn stats_cache_fields_default_and_round_trip() {
+        let legacy = toml::from_str::<NetworkConfig>("mode = \"none\"\n").unwrap();
+        assert!(legacy.stats_cache_enabled);
+        assert_eq!(
+            legacy.stats_cache_servers,
+            vec![wowsp_tauri_shared::OFFICIAL_CACHE_SERVER_URL]
+        );
+        assert!(legacy.stats_peer_autodiscover);
+
+        let dir = temp_dir("stats-cache");
+        let cfg = NetworkConfig {
+            mode: ProxyMode::None,
+            stats_cache_enabled: false,
+            stats_cache_servers: vec![
+                "https://wowsp.langyo.xyz".into(),
+                "http://127.0.0.1:8787".into(),
+            ],
+            stats_peer_autodiscover: false,
+            ..NetworkConfig::default()
+        };
+        std::fs::write(dir.join(NETWORK_CONFIG_FILE), canonical_toml(&cfg).unwrap()).unwrap();
+        let loaded = load_config_from(&dir);
+        assert!(!loaded.stats_cache_enabled);
+        assert_eq!(loaded.stats_cache_servers, cfg.stats_cache_servers);
+        assert!(!loaded.stats_peer_autodiscover);
+
+        // An EMPTIED ladder stays empty across a save+load (the mesh-off
+        // state is durable — the official default must not resurrect).
+        let emptied = NetworkConfig {
+            stats_cache_servers: Vec::new(),
+            ..cfg
+        };
+        std::fs::write(
+            dir.join(NETWORK_CONFIG_FILE),
+            canonical_toml(&emptied).unwrap(),
+        )
+        .unwrap();
+        let reloaded = load_config_from(&dir);
+        assert!(
+            reloaded.stats_cache_servers.is_empty(),
+            "an emptied ladder must survive a reload"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

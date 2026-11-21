@@ -18,6 +18,7 @@ import { resPackApi } from "./modules/respack";
 import { modHubApi } from "./modules/modhub";
 import { pairingApi } from "./modules/pairing";
 import { gatewayApi } from "./modules/gateway";
+import { statsCacheApi } from "./modules/statsCache";
 import { contributionApi } from "./modules/contribution";
 import { decisionApi } from "./modules/decision";
 import { chatTranslateApi } from "./modules/chat";
@@ -35,6 +36,7 @@ export * from "./modules/respack";
 export * from "./modules/modhub";
 export * from "./modules/pairing";
 export * from "./modules/gateway";
+export * from "./modules/statsCache";
 export * from "./modules/contribution";
 export * from "./modules/decision";
 export * from "./modules/chat";
@@ -54,6 +56,7 @@ export const api = {
   ...modHubApi,
   ...pairingApi,
   ...gatewayApi,
+  ...statsCacheApi,
   ...contributionApi,
   ...chatTranslateApi,
   ...localBattlesApi,

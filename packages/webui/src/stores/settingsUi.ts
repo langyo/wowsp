@@ -14,6 +14,7 @@ export type SettingsSection =
   | "crash"
   | "account"
   | "network"
+  | "cacheServers"
   | "markers"
   | "pairing"
   | "updates"
@@ -47,7 +48,7 @@ export interface SettingsGroupSpec {
 export const SETTINGS_GROUPS: readonly SettingsGroupSpec[] = [
   { id: "general", sections: ["language", "appearance", "closeBehavior"] },
   { id: "game", sections: ["stats", "markers", "overlayCalibration", "chatTranslate", "gamePath", "crash"] },
-  { id: "connection", sections: ["account", "network", "pairing"] },
+  { id: "connection", sections: ["account", "network", "cacheServers", "pairing"] },
   { id: "app", sections: ["updates", "resources", "installCleanup", "changelog"] },
   { id: "about", sections: ["feedback", "about", "attributions", "sharing"] },
 ];

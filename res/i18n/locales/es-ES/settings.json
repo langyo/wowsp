@@ -123,6 +123,7 @@
   "dpiRiskyWarning": "Al {scale} % la interfaz puede no caber en la pantalla y ser difícil de usar.",
   "dpiRevertCountdown": "{scale} % aplicado; se revertirá automáticamente en {seconds} s.",
   "network": "Red",
+  "cacheServersSection": "Servidores de caché",
   "networkHint": "Proxy usado para todas las solicitudes salientes (consultas de estadísticas, paquete de modelos, actualizaciones). «Sistema» sigue la configuración de proxy de tu sistema operativo.",
   "networkSystem": "Proxy del sistema",
   "networkNone": "Sin proxy",

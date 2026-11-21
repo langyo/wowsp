@@ -31,6 +31,12 @@
  * - the selfhost probe reports a plausible partial env; each step streams
  *   a few wowsp://gateway-selfhost lines then a done result (deploy/verify
  *   carry the RFC 2606 example URL https://gateway.example.com/gateway/).
+ *
+ * Stats-cache mesh (docs/en/designs/cache-mesh.md §6.3): stats_cache_probe
+ * answers health-style canned rows (every root ok, a full capability block
+ * for the official root) and stats_cache_autodiscover reports two verified
+ * RFC 2606 example community nodes — enough to develop the 缓存服务器
+ * settings pane in browser mode.
  */
 
 
@@ -443,6 +449,32 @@ export const MOCK_COMMANDS: Record<string, MockHandler> = {
   // ── Gateway push (§9). Health/session simulate the exchange; the
   //    socket commands drive the mock state-event bus; the selfhost
   //    surface streams a short scripted pass.
+  // ── Stats-cache mesh (§6.3). Canned probe rows + a two-node
+  //    community discovery — the pane's rows and autodiscover preview are
+  //    developable in browser mode.
+  async stats_cache_probe(args) {
+    const urls = Array.isArray(args.urls) && args.urls.length > 0
+      ? (args.urls as string[])
+      : ["https://wowsp.langyo.xyz"];
+    return urls.map((url, i) => ({
+      url,
+      ok: true,
+      latencyMs: 38 + i * 11,
+      capabilities: {
+        gateway: true,
+        lookup: true,
+        peers: true,
+        blocks: i === 0,
+      },
+      error: null,
+    }));
+  },
+
+  async stats_cache_autodiscover() {
+    await delay(200);
+    return ["https://mesh-a.example.org", "https://mesh-b.example.org"];
+  },
+
   async gateway_get_config() {
     return { root: mockGatewayRoot, enabled: mockGatewayEnabled };
   },

@@ -123,6 +123,7 @@
   "dpiRiskyWarning": "Scaling to {scale}% may exceed this screen and make the interface hard to use.",
   "dpiRevertCountdown": "Applied {scale}%, reverting automatically in {seconds}s.",
   "network": "Network",
+  "cacheServersSection": "Cache servers",
   "networkHint": "Proxy used for all outbound requests (stats lookups, model pack, updates). System follows your OS proxy settings.",
   "networkSystem": "System proxy",
   "networkNone": "No proxy",

@@ -4,6 +4,7 @@ export {
   isPlaneWeapon,
   GATEWAY_OFFICIAL_ROOT,
   GATEWAY_ROUTE_RE,
+  OFFICIAL_CACHE_SERVER,
 } from "./client";
 export type {
   LearnedCapPoint,
@@ -140,6 +141,8 @@ export type {
   GatewaySelfhostStep,
   GatewaySelfhostStepResult,
   GatewaySelfhostStream,
+  CacheCapabilities,
+  StatsCacheProbeRow,
   RankedSeasonStats,
   RankedLeagueTiers,
   RankedShipSeasonStats,
