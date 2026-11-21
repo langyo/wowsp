@@ -5,14 +5,16 @@
 //! [`relay_core::lookup`]; this module owns the R2 plumbing.
 //!
 //! Storage layout: ONE R2 object per CID in the LOOKUP_R2 bucket —
-//! key = the CID, body = the envelope JSON (§4.1's documented
-//! on-disk shape: "one file per CID under blocks/, content = the
-//! envelope JSON"). R2 replaced the original KV layout for quota
-//! economics (review finding 1b): block fills are WRITE traffic, and
-//! the free KV namespace budget (1000 writes/day, shared with the
-//! feedback pipeline) cannot absorb them — R2's free tier (1M class-A
-//! ops/month) can. The edge Cache API still fronts every hot read, so
-//! serves stay off storage entirely when warm.
+//! key = the BARE CID (no `blocks/` prefix and no extension; §4.1's
+//! one-file-per-CID shape is about the NATIVE server's on-disk tree,
+//! where each CID is a file under `blocks/` whose content is the
+//! envelope JSON — the R2 bucket is dedicated, so the prefix would be
+//! redundant), body = the envelope JSON. R2 replaced the original KV
+//! layout for quota economics (review finding 1b): block fills are
+//! WRITE traffic, and the free KV namespace budget (1000 writes/day,
+//! shared with the feedback pipeline) cannot absorb them — R2's free
+//! tier (1M class-A ops/month) can. The edge Cache API still fronts
+//! every hot read, so serves stay off storage entirely when warm.
 //!
 //! TTL semantics (§4.3, lazy — deliberately NO cron): a row lives
 //! until its TTL + 24 h grace; an expired read is treated as a MISS

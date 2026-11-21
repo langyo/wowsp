@@ -107,12 +107,10 @@ pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
         return not_modified(&etag);
     }
     let mut resp = Response::from_json(&doc)?;
-    {
-        let headers = resp.headers_mut();
-        headers.set("Access-Control-Allow-Origin", "*")?;
-        headers.set("Cache-Control", "public, max-age=60")?;
-        headers.set("ETag", &etag)?;
-    }
+    let headers = resp.headers_mut();
+    headers.set("Access-Control-Allow-Origin", "*")?;
+    headers.set("Cache-Control", "public, max-age=60")?;
+    headers.set("ETag", &etag)?;
     // Best-effort edge fill (needs the cache-control above).
     let _ = cache.put(EDGE_LIST_KEY.to_string(), resp.cloned()?).await;
     Ok(resp)
@@ -149,21 +147,40 @@ pub(crate) async fn mesh_view(env: &Env) -> MeshView {
     }
 }
 
-/// The own registry document (`peers:own`, one read).
+/// The own registry document (`peers:own`, one read), lazily
+/// expired: a row lives 48 h from its `lastSeenAt` (§5.2.3 — the
+/// one-document redesign replaced the per-row KV TTL with this
+/// read-time filter, mirroring blocks.rs's lazy expiry). Expired rows
+/// simply stop appearing; the next announce-driven rewrite prunes
+/// them from the stored document for good.
 async fn own_rows(env: &Env) -> Result<Vec<PeerRow>> {
     let kv = registry_kv(env)?;
     let raw = kv.get(peers::OWN_REGISTRY_KEY).text().await.ok().flatten();
+    let now = now_secs();
     Ok(raw
         .as_deref()
         .and_then(|text| serde_json::from_str::<Vec<PeerRow>>(text).ok())
-        .unwrap_or_default())
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|row| row.last_seen_at.saturating_add(peers::PEER_TTL_SECS) > now)
+        .collect())
 }
 
 /// Upsert one row into the own registry document (§5.2.3: re-announce
 /// refreshes `lastSeenAt`; past `PEERS_MAX` the oldest-`lastSeenAt`
-/// rows are evicted). One read + one write per announce.
+/// rows are evicted; expired rows are pruned with the rewrite). One
+/// read + one write per announce.
+///
+/// Concurrency, acknowledged: KV is last-writer-wins with cross-colo
+/// staleness up to ~60 s, so two near-simultaneous announces can drop
+/// each other's row. Self-healing: a dropped peer's next announce
+/// re-inserts it (announces repeat), and the 10/h/IP budget plus the
+/// tiny registry make the window cheap to accept versus a Durable
+/// Object seam.
 async fn upsert_own_row(env: &Env, row: PeerRow) -> Result<()> {
     let kv = registry_kv(env)?;
+    // own_rows already drops expired rows, so the rewritten document
+    // prunes them (and the cap eviction below works on live rows).
     let mut rows = own_rows(env).await?;
     match rows.iter_mut().find(|existing| existing.url == row.url) {
         Some(existing) => *existing = row,
