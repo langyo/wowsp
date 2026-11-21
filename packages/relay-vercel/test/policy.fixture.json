@@ -16,7 +16,7 @@
       "method": "POST",
       "url": "https://v3-api.wows.shinoaki.com/api/ban/cn",
       "bodySha256": "aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61",
-      "expected": "POST https://v3-api.wows.shinoaki.com/api/ban/cn[aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61]"
+      "expected": "POST https://v3-api.wows.shinoaki.com/api/ban/cn aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61"
     }
   ],
   "cids": [
@@ -29,8 +29,8 @@
       "expectedCid": "b2rhYAZnzzN2T1h8tghZSTnAKjbSDRMRjvzFAgGDcWznbbJK"
     },
     {
-      "canonicalLine": "POST https://v3-api.wows.shinoaki.com/api/ban/cn[aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61]",
-      "expectedCid": "b2rhc4rh5u3Us7NtkYdqdMY6oUgtXeXQ6S43sJbijrfiaSfm"
+      "canonicalLine": "POST https://v3-api.wows.shinoaki.com/api/ban/cn aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61",
+      "expectedCid": "b2rhcgUfY9mjHEDUUePnVNS4E3aT34BdLyh3vDAfaoNtLyj2"
     }
   ],
   "ttls": [

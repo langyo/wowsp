@@ -42,9 +42,17 @@ describe("canonical request lines (fixture)", () => {
       expect(canonicalRequestLine(vector.method, vector.url, vector.bodySha256)).toBe(vector.expected);
     });
   }
-  it("null body hash appends no bracket", () => {
+  it("omits the third field when there is no body", () => {
     expect(canonicalRequestLine("GET", "https://vortex.wowsgame.cn/x", null)).toBe(
       "GET https://vortex.wowsgame.cn/x",
+    );
+  });
+  it("spells the body hash as a space-separated bare-hex third field", () => {
+    // The cross-implementation spelling pinned by the PR #2065 /
+    // relay-core cross-check: "POST <url> <64-hex>" -- the §3.3 bracket
+    // fragment was optional-field notation, never literal characters.
+    expect(canonicalRequestLine("POST", "https://v3-api.wows.shinoaki.com/api/ban/cn", "aa".repeat(32))).toBe(
+      `POST https://v3-api.wows.shinoaki.com/api/ban/cn ${"aa".repeat(32)}`,
     );
   });
 });

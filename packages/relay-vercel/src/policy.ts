@@ -90,9 +90,13 @@ export function classifyTtl(host: string, path: string): number {
 }
 
 /**
- * The canonical request line (contract §3.3):
- * `"<METHOD> <url>[<sha256(body)>]"` -- GET/HEAD-style requests carry
- * no bracket, POST carries the hex sha256 of the forwarded body.
+ * The canonical request line (contract §3.3, spelling pinned by the
+ * cross-implementation cross-check of PR #2065 / relay-core): requests
+ * WITHOUT a body are `"<METHOD> <url>"`; requests WITH a body carry
+ * the sha256 of the forwarded body as a THIRD SPACE-SEPARATED bare-hex
+ * field: `"POST <url> <64-lowercase-hex>"`. (The bracket fragment in
+ * the original §3.3 wording was optional-field notation, not literal
+ * -- the docs wave amends the contract to this space-separated form.)
  *
  * The url is the ABSOLUTE URL STRING EXACTLY AS THE CLIENT SUPPLIED it
  * in the `url=` query parameter (after one round of query decoding) --
@@ -102,7 +106,7 @@ export function classifyTtl(host: string, path: string): number {
  */
 export function canonicalRequestLine(method: string, url: string, bodySha256: string | null): string {
   const m = method.toUpperCase();
-  return bodySha256 === null ? `${m} ${url}` : `${m} ${url}[${bodySha256}]`;
+  return bodySha256 === null ? `${m} ${url}` : `${m} ${url} ${bodySha256}`;
 }
 
 /** Hex sha256 of a byte array (crypto.subtle under the hood). */

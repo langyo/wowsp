@@ -88,8 +88,13 @@ must attach Upstash KV.
 Adapter policy details worth knowing (all documented in the source):
 
 - The canonical request line uses the upstream URL string **exactly as
-  supplied** in the `url=` parameter; the fixture pins this so the Rust
-  and TS sides derive identical CIDs.
+  supplied** in the `url=` parameter. Body-carrying requests append the
+  sha256 of the forwarded body as a THIRD SPACE-SEPARATED bare-hex
+  field (`POST <url> <64-lowercase-hex>` — the spelling cross-checked
+  byte-for-byte against relay-core; the bracket fragment in the
+  original §3.3 wording was optional-field notation, not literal). The
+  fixture pins both forms so the Rust and TS sides derive identical
+  CIDs.
 - The lookup gate additionally rejects userinfo and explicit ports in
   the `url` (canonical lines are cache keys; credentials and non-default
   origins must never enter them).
