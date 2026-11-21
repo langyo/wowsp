@@ -315,9 +315,11 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
     }
     if (ghostBox) ghostBox.visible = false;
 
-    // After death the ship is gone from the water: hollow box at the
-    // LIVE position (sinking ships keep drifting in the samples) + a
-    // "sunk" label that keeps tracking the actual coordinates.
+    // After death the ship is gone from the water: hollow box at the LIVE
+    // position (sinking ships keep drifting in the samples). The floating
+    // card is dropped entirely — the 2026-11-22 ask 「沉了的船不要显示标签」
+    // covers the live 3D view AND the exported clip; only the ghost box and
+    // the grey glyph name the wreck.
     const s: ReturnType<typeof sampleAt> | null = sampleAt(traj, dead ? t : tEff);
     if (!s) {
       marker.visible = false;
@@ -340,8 +342,11 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       marker.position.set(s.x, 0, -s.z);
       marker.rotation.y = Math.PI - s.yaw;
       if (label) {
-        // Sunk ships keep the dead tag — no "gone for N s" counter.
-        label.visible = true;
+        // A SUNK hull gets NO floating card. Hiding it here (not only in the
+        // projection pass) keeps label.visible honest for every consumer, so
+        // no later pass can resurrect a stale card. The below-hull status
+        // rows go with it; the kill feed and the ghost box are unaffected.
+        label.visible = false;
         label.ghostText = null;
         label.status = null;
       }

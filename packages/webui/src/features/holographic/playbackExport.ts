@@ -1814,22 +1814,53 @@ function drawStatBadge(
   const cy = y + size / 2;
   const r = size * 0.26;
   if (glyph === "burst") {
-    // Four-point hit burst: two crossing blades.
-    g.beginPath();
-    g.moveTo(cx - r, cy - r);
-    g.lineTo(cx + r, cy + r);
-    g.moveTo(cx + r, cy - r);
-    g.lineTo(cx - r, cy + r);
-    g.stroke();
+    // Crossed SWORDS — the live self-stats plaque's 伤害输出 face
+    // (`Swords`): each blade carries a cross-guard near its hilt, so the
+    // pair reads as sword steel. The old bare ✕ (two bare diagonals) read
+    // as a placeholder glyph — the 2026-11-22 「伤害输出 ✕ 徽章」 report.
+    g.lineWidth = 1.15;
+    for (const dir of [1, -1] as const) {
+      const hx = cx - r * dir;
+      const hy = cy + r * dir;
+      const tx = cx + r * dir;
+      const ty = cy - r * dir;
+      g.beginPath();
+      g.moveTo(hx, hy);
+      g.lineTo(tx, ty);
+      g.stroke();
+      // Cross-guard, perpendicular to the blade, one fifth in from the hilt.
+      const gx = hx + (tx - hx) * 0.2;
+      const gy = hy + (ty - hy) * 0.2;
+      const dx = -(ty - hy);
+      const dy = tx - hx;
+      const len = Math.hypot(dx, dy) || 1;
+      const arm = r * 0.45;
+      g.beginPath();
+      g.moveTo(gx - (dx / len) * arm, gy - (dy / len) * arm);
+      g.lineTo(gx + (dx / len) * arm, gy + (dy / len) * arm);
+      g.stroke();
+    }
   } else if (glyph === "frag") {
-    // Skull: round cranium + two eye dots.
+    // SKULL — the live plaque's 击沉 face (`Skull`): a cranium dome over a
+    // jaw patch, with two eye sockets punched in (each its own subpath, so
+    // the fills never bridge into one blob).
     g.beginPath();
-    g.arc(cx, cy - size * 0.06, size * 0.22, Math.PI * 0.9, Math.PI * 2.1);
+    g.moveTo(cx - size * 0.2, cy + size * 0.05);
+    g.arc(cx, cy + size * 0.05, size * 0.2, Math.PI, 0);
+    g.closePath();
     g.stroke();
+    for (const side of [-1, 1] as const) {
+      g.beginPath();
+      g.arc(cx + side * size * 0.08, cy - size * 0.01, size * 0.045, 0, Math.PI * 2);
+      g.fill();
+    }
+    // Jaw: a short trapezoid under the cranium.
     g.beginPath();
-    g.arc(cx - size * 0.08, cy + size * 0.04, size * 0.035, 0, Math.PI * 2);
-    g.arc(cx + size * 0.08, cy + size * 0.04, size * 0.035, 0, Math.PI * 2);
-    g.fill();
+    g.moveTo(cx - size * 0.11, cy + size * 0.05);
+    g.lineTo(cx - size * 0.09, cy + size * 0.16);
+    g.lineTo(cx + size * 0.09, cy + size * 0.16);
+    g.lineTo(cx + size * 0.11, cy + size * 0.05);
+    g.stroke();
   } else {
     // Shield: pointed crest.
     g.beginPath();
@@ -2112,18 +2143,38 @@ function drawRecorderSourceColumn(
  */
 /** Caption band at the panel's top (the localized "聊天记录" word). */
 export const EXPORT_CHAT_TITLE_H = 20;
-/** One entry's pitch: the 12px time+sender row over the 10px message row. */
+/** The caption's own face size: the band CENTRES it, so its glyph box ends at
+ *  the band's bottom edge and the entry list can start there. */
+export const EXPORT_CHAT_TITLE_SIZE = 12;
+/** One entry's pitch: a 10px time+sender row over the 10px message row. */
 export const EXPORT_CHAT_ENTRY_H = 34;
 /** The message row's offset inside an entry (second line). */
 export const EXPORT_CHAT_ENTRY_TEXT_H = 15;
+/** Face box of the time+sender row (the first row clears the caption by half
+ *  of it). */
+export const EXPORT_CHAT_ROW_H = 10;
 /** Breathing room kept under the newest entry. */
 export const EXPORT_CHAT_BOTTOM_PAD = 8;
+/** Middle baseline of the first entry's time+sender row. The caption's glyph
+ *  box already ends at the band's bottom edge (its band-centre baseline), so
+ *  the first row must start HALF ITS OWN FACE below that edge: the pre-fix
+ *  baseline sat exactly on the edge, which put the upper half of the 10px row
+ *  inside the 12px caption — the 2026-11-22 「第一条聊天记录压住表头」 report. */
+export const EXPORT_CHAT_FIRST_ROW_DY =
+  EXPORT_CHAT_TITLE_H + EXPORT_CHAT_ROW_H / 2;
 
 /** How many entries the chat panel's height shows — the newest window the
- *  painter slices (the feed hands it every line up to the playhead). */
+ *  painter slices (the feed hands it every line up to the playhead). Derived
+ *  from the FIRST ROW's own baseline (not the band edge) plus the last
+ *  entry's message box and the bottom pad, so a painted entry can never
+ *  overhang the panel at any height. */
 export function chatEntryCapacity(h: number): number {
   const usable =
-    h - EXPORT_CHAT_TITLE_H - EXPORT_CHAT_ENTRY_TEXT_H - EXPORT_CHAT_BOTTOM_PAD;
+    h -
+    EXPORT_CHAT_FIRST_ROW_DY -
+    EXPORT_CHAT_ENTRY_TEXT_H -
+    EXPORT_CHAT_ROW_H / 2 -
+    EXPORT_CHAT_BOTTOM_PAD;
   if (usable < 0) return 0;
   return Math.floor(usable / EXPORT_CHAT_ENTRY_H) + 1;
 }
@@ -2144,16 +2195,19 @@ export function drawChatPanel(
 ): void {
   g.textBaseline = "middle";
   g.textAlign = "left";
-  g.font = font(12, 700);
+  g.font = font(EXPORT_CHAT_TITLE_SIZE, 700);
   g.fillStyle = rgba(palette.text, 0.6);
-  g.fillText(title, x + 10, y + 14);
+  // Band-centre baseline: the caption's glyph box ends at y + TITLE_H, so the
+  // first entry below can never reach back into it.
+  g.fillText(title, x + 10, y + EXPORT_CHAT_TITLE_H / 2 + 1);
   const max = chatEntryCapacity(h);
   // slice(-0) would return EVERY line (a zero-height panel must show
   // nothing), so the empty window is spelled out.
   const shown = max > 0 ? lines.slice(-max) : [];
-  // Top anchor: the first (oldest visible) entry starts at the entry
-  // area's top edge and the list flows DOWNWARD.
-  let ly = y + EXPORT_CHAT_TITLE_H;
+  // Top anchor: the first (oldest visible) entry starts just under the
+  // caption's glyph box and the list flows DOWNWARD (the first row's own
+  // half-face below the band — EXPORT_CHAT_FIRST_ROW_DY).
+  let ly = y + EXPORT_CHAT_FIRST_ROW_DY;
   for (const line of shown) {
     const mm = Math.floor(line.time / 60);
     const ss = Math.floor(line.time % 60);

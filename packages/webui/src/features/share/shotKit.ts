@@ -158,7 +158,15 @@ export function loadImage(
         }
         resolve(img);
       };
-      img.onerror = () => resolve(null);
+      img.onerror = () => {
+        // A failed decode must not poison the session: drop the cache entry
+        // so the next take/panel retries the fetch instead of reusing the
+        // null forever. A transient miss (a restarting dev server, a cold
+        // asset mount) used to cost the clip's 勋带 strip every icon for the
+        // rest of the session.
+        if (imageCache.get(key) === entry) imageCache.delete(key);
+        resolve(null);
+      };
       img.src = url;
     });
     imageCache.set(key, entry);

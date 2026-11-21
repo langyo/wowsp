@@ -7,99 +7,88 @@
  *   2. Bundled fallback art — `res/images/ribbons/*.webp` extracted from
  *      the stock game and re-encoded to WebP.
  *
- * The name parameter matches the bundled filename stem ("ribbon_crit",
- * "subribbon_burn", ...) and the res_mods equivalent ("crit.png" style names
- * vary by skin — we try a couple of common spellings).
+ * The name parameter is the LOGICAL ribbon kind (the post-battle parser's
+ * key: "frag", "main_caliber", "sub_torpedo", ...); the map below resolves it
+ * to a bundled file stem ("ribbon_frag", "subribbon_torpedo", ...) and to the
+ * res_mods equivalent ("crit.png" style names vary by skin — we try a couple
+ * of common spellings).
  */
 import { api } from "@/api";
 
-// PublicDir art served at the root path (see utils/shipImages.ts) — plain
-// URL constants instead of imports (same URLs, no module-graph nodes).
-const ribbonAcid = "/images/ribbons/ribbon_acid.webp";
-const ribbonAcousticHit = "/images/ribbons/ribbon_acoustic_hit.webp";
-const ribbonAssist = "/images/ribbons/ribbon_assist.webp";
-const ribbonBaseCapture = "/images/ribbons/ribbon_base_capture.webp";
-const ribbonBaseCaptureAssist = "/images/ribbons/ribbon_base_capture_assist.webp";
-const ribbonBaseDefense = "/images/ribbons/ribbon_base_defense.webp";
-const ribbonBomb = "/images/ribbons/ribbon_bomb.webp";
-const ribbonBuildingKill = "/images/ribbons/ribbon_building_kill.webp";
-const ribbonBurn = "/images/ribbons/ribbon_burn.webp";
-const ribbonCitadel = "/images/ribbons/ribbon_citadel.webp";
-const ribbonCrit = "/images/ribbons/ribbon_crit.webp";
-const ribbonDbomb = "/images/ribbons/ribbon_dbomb.webp";
-const ribbonDbombMine = "/images/ribbons/ribbon_dbomb_mine.webp";
-const ribbonDemining = "/images/ribbons/ribbon_demining.webp";
-const ribbonDeminingMine = "/images/ribbons/ribbon_demining_mine.webp";
-const ribbonDeminingMinefield = "/images/ribbons/ribbon_demining_minefield.webp";
-const ribbonDetected = "/images/ribbons/ribbon_detected.webp";
-const ribbonDrop = "/images/ribbons/ribbon_drop.webp";
-const ribbonFlood = "/images/ribbons/ribbon_flood.webp";
-const ribbonFrag = "/images/ribbons/ribbon_frag.webp";
-const ribbonMainCaliber = "/images/ribbons/ribbon_main_caliber.webp";
-const ribbonMine = "/images/ribbons/ribbon_mine.webp";
-const ribbonMissile = "/images/ribbons/ribbon_missile.webp";
-const ribbonPhaserLaser = "/images/ribbons/ribbon_phaser_laser.webp";
-const ribbonPlane = "/images/ribbons/ribbon_plane.webp";
-const ribbonRocket = "/images/ribbons/ribbon_rocket.webp";
-const ribbonSecondaryCaliber = "/images/ribbons/ribbon_secondary_caliber.webp";
-const ribbonShield = "/images/ribbons/ribbon_shield.webp";
-const ribbonSplane = "/images/ribbons/ribbon_splane.webp";
-const ribbonSuppressed = "/images/ribbons/ribbon_suppressed.webp";
-const ribbonTorpedo = "/images/ribbons/ribbon_torpedo.webp";
-const ribbonWave = "/images/ribbons/ribbon_wave.webp";
-const subBurn = "/images/ribbons/subribbon_burn.webp";
-const subFlood = "/images/ribbons/subribbon_flood.webp";
-const subFrag = "/images/ribbons/subribbon_frag.webp";
-const subMainCaliber = "/images/ribbons/subribbon_main_caliber.webp";
-const subTorpedo = "/images/ribbons/subribbon_torpedo.webp";
+/** The shipped ribbon art, keyed by FILE STEM. A Vite `?url` import keeps
+ *  every URL in the module graph: the file is emitted (content-hashed) into
+ *  the build and the URL is resolved against the app's base — so a ribbon
+ *  face cannot 404 because the publicDir copy is missing, stale, or the app
+ *  is served from a sub-path. That silent 404 is exactly what left the clip's
+ *  勋带 strip as bare counts; the parser's keys are pinned to these stems by
+ *  ribbonIcons.test.ts, so a rename on either side fails the suite instead of
+ *  quietly dropping the art. */
+const ART_URLS: Record<string, string> = Object.fromEntries(
+  Object.entries(
+    import.meta.glob<string>("../../res/images/ribbons/*.webp", {
+      eager: true,
+      query: "?url",
+      import: "default",
+    }),
+  ).map(([path, url]) => {
+    const file = path.slice(path.lastIndexOf("/") + 1);
+    return [file.slice(0, file.lastIndexOf(".")), url];
+  }),
+);
+
+/** One art stem -> its built URL ("" when no such file ships: bundledRibbonUrl
+ *  then answers null and the painter keeps a plain count beside the cell). */
+function art(stem: string): string {
+  return ART_URLS[stem] ?? "";
+}
 
 /** Bundled art keyed by the logical ribbon name. */
 const BUNDLED: Record<string, string> = {
-  acid: ribbonAcid,
-  acoustic_hit: ribbonAcousticHit,
-  assist: ribbonAssist,
-  base_capture: ribbonBaseCapture,
-  base_capture_assist: ribbonBaseCaptureAssist,
-  base_defense: ribbonBaseDefense,
-  bomb: ribbonBomb,
-  building_kill: ribbonBuildingKill,
-  burn: ribbonBurn,
-  citadel: ribbonCitadel,
-  crit: ribbonCrit,
-  dbomb: ribbonDbomb,
-  dbomb_mine: ribbonDbombMine,
-  demining: ribbonDemining,
-  demining_mine: ribbonDeminingMine,
-  demining_minefield: ribbonDeminingMinefield,
-  detected: ribbonDetected,
-  drop: ribbonDrop,
-  flood: ribbonFlood,
-  frag: ribbonFrag,
-  main_caliber: ribbonMainCaliber,
-  mine: ribbonMine,
-  missile: ribbonMissile,
-  phaser_laser: ribbonPhaserLaser,
-  plane: ribbonPlane,
-  rocket: ribbonRocket,
-  secondary_caliber: ribbonSecondaryCaliber,
-  shield: ribbonShield,
-  splane: ribbonSplane,
-  suppressed: ribbonSuppressed,
-  torpedo: ribbonTorpedo,
-  wave: ribbonWave,
+  acid: art("ribbon_acid"),
+  acoustic_hit: art("ribbon_acoustic_hit"),
+  assist: art("ribbon_assist"),
+  base_capture: art("ribbon_base_capture"),
+  base_capture_assist: art("ribbon_base_capture_assist"),
+  base_defense: art("ribbon_base_defense"),
+  bomb: art("ribbon_bomb"),
+  building_kill: art("ribbon_building_kill"),
+  burn: art("ribbon_burn"),
+  citadel: art("ribbon_citadel"),
+  crit: art("ribbon_crit"),
+  dbomb: art("ribbon_dbomb"),
+  dbomb_mine: art("ribbon_dbomb_mine"),
+  demining: art("ribbon_demining"),
+  demining_mine: art("ribbon_demining_mine"),
+  demining_minefield: art("ribbon_demining_minefield"),
+  detected: art("ribbon_detected"),
+  drop: art("ribbon_drop"),
+  flood: art("ribbon_flood"),
+  frag: art("ribbon_frag"),
+  main_caliber: art("ribbon_main_caliber"),
+  mine: art("ribbon_mine"),
+  missile: art("ribbon_missile"),
+  phaser_laser: art("ribbon_phaser_laser"),
+  plane: art("ribbon_plane"),
+  rocket: art("ribbon_rocket"),
+  secondary_caliber: art("ribbon_secondary_caliber"),
+  shield: art("ribbon_shield"),
+  splane: art("ribbon_splane"),
+  suppressed: art("ribbon_suppressed"),
+  torpedo: art("ribbon_torpedo"),
+  wave: art("ribbon_wave"),
   // Aggregates with no dedicated art — reuse a representative icon.
-  main_caliber_shots: ribbonMainCaliber,
-  hits: ribbonMainCaliber,
-  salvos: ribbonMainCaliber,
-  shells: ribbonMainCaliber,
-  aa_hits: ribbonPlane,
-  plane_losses: ribbonPlane,
+  main_caliber_shots: art("ribbon_main_caliber"),
+  hits: art("ribbon_main_caliber"),
+  salvos: art("ribbon_main_caliber"),
+  shells: art("ribbon_main_caliber"),
+  aa_hits: art("ribbon_plane"),
+  plane_losses: art("ribbon_plane"),
   // Sub-ribbons (penetration/ricochet detail) that we still display.
-  sub_burn: subBurn,
-  sub_flood: subFlood,
-  sub_frag: subFrag,
-  sub_main_caliber: subMainCaliber,
-  sub_torpedo: subTorpedo,
+  sub_burn: art("subribbon_burn"),
+  sub_flood: art("subribbon_flood"),
+  sub_frag: art("subribbon_frag"),
+  sub_main_caliber: art("subribbon_main_caliber"),
+  sub_torpedo: art("subribbon_torpedo"),
 };
 
 /** Logical ribbon name → res_mods candidate filenames (skins vary). */
@@ -183,10 +172,10 @@ export async function ribbonUrl(
       /* fall through to bundled */
     }
   }
-  return BUNDLED[name] ?? null;
+  return BUNDLED[name] || null;
 }
 
 /** Synchronous bundled URL (no res_mods check) — for tests/fallback UI. */
 export function bundledRibbonUrl(name: string): string | null {
-  return BUNDLED[name] ?? null;
+  return BUNDLED[name] || null;
 }

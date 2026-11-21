@@ -67,7 +67,14 @@ export function updateLabelPositions(ctx: MapInternals) {
     const dead =
       marker.userData.deathTime != null &&
       ctx.current.value >= (marker.userData.deathTime as number);
-    if (!marker.visible && !dead) {
+    // A SUNK hull shows no floating card at all (the 2026-11-22 ask
+    // 「沉了的船不要显示标签」, live view and clip alike): its marker is
+    // hidden and its label would otherwise keep tracking the wreck's live
+    // position. An ALIVE-but-unspotted hull keeps the historical behaviour
+    // (also hidden — the marker's own visibility is the gate). Only the
+    // below-hull status rows ever needed the dead case, and they are gated
+    // separately below.
+    if (dead || !marker.visible) {
       label.visible = false;
       label.belowVisible = false;
       // The slot's display is the ONLY hide mechanism now (the template no
@@ -76,9 +83,6 @@ export function updateLabelPositions(ctx: MapInternals) {
       applySlot(ctx.labelSlotEls.get("s" + label.entityId), false, 0, 0);
       continue;
     }
-    // Sunk markers are hidden, but their position keeps tracking the live
-    // sample — project it anyway so the "sunk" label follows the actual
-    // coordinates (and the camera) instead of freezing at the death spot.
     // Project the marker's world position (offset 20 units upward so the
     // label sits above the ship silhouette, not buried inside it).
     ctx._projVec.copy(marker.position);
