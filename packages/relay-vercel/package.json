@@ -1,0 +1,20 @@
+{
+  "name": "@wowsp/relay-vercel",
+  "version": "0.0.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "WoWSP cache-mesh edge adapter -- the HTTP-only subset (health/lookup/peers/blocks) of docs/en/designs/cache-mesh.md as pure TypeScript Vercel edge functions",
+  "scripts": {
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "deploy": "vercel deploy --prod"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7",
+    "vitest": "^5"
+  }
+}

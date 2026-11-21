@@ -1,0 +1,123 @@
+{
+  "canonicalLines": [
+    {
+      "method": "GET",
+      "url": "https://vortex.wowsgame.cn/api/accounts/2035526744/ships/pvp/",
+      "bodySha256": null,
+      "expected": "GET https://vortex.wowsgame.cn/api/accounts/2035526744/ships/pvp/"
+    },
+    {
+      "method": "GET",
+      "url": "https://api.worldofwarships.asia/wows/account/list/?application_id=demo&search=name",
+      "bodySha256": null,
+      "expected": "GET https://api.worldofwarships.asia/wows/account/list/?application_id=demo&search=name"
+    },
+    {
+      "method": "POST",
+      "url": "https://v3-api.wows.shinoaki.com/api/ban/cn",
+      "bodySha256": "aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61",
+      "expected": "POST https://v3-api.wows.shinoaki.com/api/ban/cn[aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61]"
+    }
+  ],
+  "cids": [
+    {
+      "canonicalLine": "GET https://vortex.wowsgame.cn/api/accounts/2035526744/ships/pvp/",
+      "expectedCid": "b2rhjgDeUKCbasB8vDD3kq7tXMw298eFvAwi8C8fvaxCi9zY"
+    },
+    {
+      "canonicalLine": "GET https://api.worldofwarships.asia/wows/account/list/?application_id=demo&search=name",
+      "expectedCid": "b2rhYAZnzzN2T1h8tghZSTnAKjbSDRMRjvzFAgGDcWznbbJK"
+    },
+    {
+      "canonicalLine": "POST https://v3-api.wows.shinoaki.com/api/ban/cn[aa032f81e6b8111cc4ade16e4ec304603f0a183efd092e1dd9617b6031945d61]",
+      "expectedCid": "b2rhc4rh5u3Us7NtkYdqdMY6oUgtXeXQ6S43sJbijrfiaSfm"
+    }
+  ],
+  "ttls": [
+    {
+      "host": "vortex.wowsgame.cn",
+      "path": "/api/accounts/2035526744/ships/pvp/",
+      "expected": 120
+    },
+    {
+      "host": "vortex.korabli.su",
+      "path": "/api/accounts/2035526744",
+      "expected": 120
+    },
+    {
+      "host": "vortex.worldofwarships.asia",
+      "path": "/api/accounts/2035526744/",
+      "expected": 120
+    },
+    {
+      "host": "vortex.worldofwarships.eu",
+      "path": "/api/accounts/2035526744/ships/ranked/",
+      "expected": 120
+    },
+    {
+      "host": "vortex.wowsgame.cn",
+      "path": "/api/accounts/search/name/?limit=10",
+      "expected": 600
+    },
+    {
+      "host": "vortex.worldofwarships.com",
+      "path": "/api/accounts/search/autocomplete/abc/",
+      "expected": 600
+    },
+    {
+      "host": "clans.wowsgame.cn",
+      "path": "/api/clanbase/1000/claninfo/",
+      "expected": 600
+    },
+    {
+      "host": "api.worldofwarships.eu",
+      "path": "/wows/account/list/",
+      "expected": 120
+    },
+    {
+      "host": "api.korabli.su",
+      "path": "/wows/account/info/",
+      "expected": 120
+    },
+    {
+      "host": "api.worldofwarships.com",
+      "path": "/wows/clans/info/",
+      "expected": 600
+    },
+    {
+      "host": "api.worldofwarships.asia",
+      "path": "/wows/seasons/",
+      "expected": 600
+    },
+    {
+      "host": "api.worldofwarships.asia",
+      "path": "/wows/encyclopedia/info/",
+      "expected": 86400
+    },
+    {
+      "host": "api.wows-numbers.com",
+      "path": "/personal/rating/expected/json/",
+      "expected": 86400
+    },
+    {
+      "host": "v3-api.wows.shinoaki.com",
+      "path": "/api/ban/cn",
+      "expected": 86400
+    },
+    {
+      "host": "api.wows.yuyuko.dev",
+      "path": "/api/v2/ban/list",
+      "expected": 86400
+    },
+    {
+      "host": "vortex.wowsgame.cn",
+      "path": "/api/accounts/2035526744/clans/",
+      "expected": 300
+    },
+    {
+      "host": "api.worldofwarships.eu",
+      "path": "/wows/ships/info/",
+      "expected": 300
+    }
+  ]
+}
