@@ -19,6 +19,7 @@
 - [Mod Hub](./designs/mod-hub.md)
 - [Gateway Push](./designs/gateway-push.md)
 - [Cache Mesh](./designs/cache-mesh.md)
+- [Cache Mesh Trust](./designs/cache-mesh-trust.md)
 - [In-Game Stats Plugin](./designs/ingame-stats-plugin.md)
 - [Threat Model](./designs/threat-model.md)
 - [AI Model Distribution](./designs/ai-models.md)
