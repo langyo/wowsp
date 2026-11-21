@@ -63,6 +63,14 @@ export function planeTrailExpiry(
  * stays today's behaviour: no pitch (pre-attitude streams), no dive, no
  * carrier join, or a leg too short to prove all read "not returning" — a
  * wrong or flickering suppression is worse than none.
+ *
+ * A torpedo wing never dives, so the attitude latch cannot answer for it —
+ * and TB wings are what a CV keeps in the air most. They are covered by the
+ * DIVE-FREE proof below: the game re-creates an attack run's survivors as a
+ * fresh squadron object in mid-air, and that object's trail is one continuous
+ * homeward leg from its first sample (see RETURN_BORN_MIN_NET_M). Both proofs
+ * feed the same answer, so every surface that hides returning wings (the two
+ * 2D painter passes, the floating card, the minimap hover) inherits it.
  */
 
 /** Pitch (degrees) at which a 3D aircraft sample reads as an attack-run dive.
@@ -85,6 +93,35 @@ export const RETURN_MIN_CLOSING_M = 120;
  *  is a latch: once established the wing stays "returning" for the rest of
  *  the sortie unless it dives again. */
 export const RETURN_CONFIRM_S = 10;
+
+/* ── The dive-free proof: a trail whose WHOLE life is one homeward leg ────
+ * The dive latch above cannot answer for torpedo bombers: TBs fly a level
+ * torpedo run, never a −25° dive, so a TB sortie's return leg is unprovable
+ * by attitude — and those are the wings the recorder's own CV puts in the
+ * air most often. The stream still records the fact, just not as a pitch
+ * byte: after an attack run the game RE-CREATES the survivors as a fresh
+ * squadron object in mid-air, 300 m–1100 m out from the carrier, and that
+ * object's trail simply flies home (measured over the 14.5.0.0 Shokaku
+ * "37_Ridge" reference capture: every mid-air create of the CV's TB/dive
+ * airframes closes on its carrier and ends on the deck at 8–40 m).
+ *
+ * So the second proof is geometric and needs no attitude at all: a trail
+ * that BEGINS already far out and never recedes — its whole recorded life is
+ * one closing approach — is a return leg by construction. A wing that flew
+ * out first never qualifies (its range grows by hundreds of metres), and a
+ * wing launched from the deck starts at ~0 m, so the outbound legs of live
+ * sorties are untouched. The thresholds are deliberately loose (a born-
+ * homeward trail closed 400–1100 m net on the capture) and the proof keeps
+ * the same CONFIRM window, so a trail that is merely crossing near its
+ * carrier cannot latch it. */
+
+/** Metres a born-homeward wing starts from its carrier — the guard that keeps
+ *  deck launches (0 m) and short hops out of the proof. */
+export const RETURN_BORN_MIN_NET_M = 300;
+
+/** Metres a born-homeward wing may ever RECEDE from its carrier: enough for
+ *  the launch climb or a wide turn, far too little for an outbound leg. */
+export const RETURN_BORN_RECEDE_SLACK_M = 150;
 
 /** The carrier timeline the closing test reads — the entity trajectory of the
  *  wing's controlling ship (planeWarfare's planeReturningAt supplies the
@@ -127,12 +164,52 @@ const returnMemo = new WeakMap<
   { track: CarrierTrackLike | null; end: number; since: number | null }
 >();
 
+/** Dive-free homeward proof (see the body comment above its constants):
+ *  earliest sample time at which a trail that STARTED far out and never
+ *  receded has closed on its carrier for the confirm window — null when the
+ *  trail launched from the deck, flew out at any point, or is too short.
+ *  Pure in the samples at or before `end`, so scrubbing answers exactly like
+ *  playback. */
+function bornHomewardSince(
+  samples: readonly { time: number; x: number; z: number }[],
+  carrierTrack: CarrierTrackLike,
+  end: number,
+): number | null {
+  if (end < 2) return null;
+  const born = samples[0].time;
+  const bornCarrier = carrierPoseAt(carrierTrack, born);
+  if (!bornCarrier) return null;
+  const d0 = Math.hypot(samples[0].x - bornCarrier.x, samples[0].z - bornCarrier.z);
+  // Deck launches start on the carrier: their trail must fly OUT before it can
+  // ever fly home, so they are never born-homeward.
+  if (d0 < RETURN_BORN_MIN_NET_M) return null;
+  let receded = 0;
+  for (let i = 1; i < end; i++) {
+    const carrier = carrierPoseAt(carrierTrack, samples[i].time);
+    if (!carrier) continue;
+    const d = Math.hypot(samples[i].x - carrier.x, samples[i].z - carrier.z);
+    const delta = d - d0;
+    if (delta > receded) receded = delta;
+    // It flew out at some point — an ordinary sortie, not a return leg.
+    if (receded > RETURN_BORN_RECEDE_SLACK_M) return null;
+    if (
+      d0 - d >= RETURN_BORN_MIN_NET_M &&
+      samples[i].time - born >= RETURN_CONFIRM_S - 1e-6
+    ) {
+      return samples[i].time;
+    }
+  }
+  return null;
+}
+
 /** Earliest sample time at or before `t` at which this wing is PROVEN
- *  homeward-bound after a completed attack run; null while it is not (still
- *  strike-bound, still on the dive, no attack recorded, or no carrier read).
- *  Pure in (samples at or before t, carrier track): any `t` can be evaluated
- *  directly — scrubbing forwards or backwards yields the same answer — and
- *  the caller reads "returning now" as a non-null result. */
+ *  homeward-bound: either the attack-dive latch above, or the dive-free
+ *  "whole trail is one closing approach" proof (`bornHomewardSince`) that
+ *  covers torpedo-bomber return legs. Null while it is not (still
+ *  strike-bound, no proof yet, or no carrier read). Pure in (samples at or
+ *  before t, carrier track): any `t` can be evaluated directly — scrubbing
+ *  forwards or backwards yields the same answer — and the caller reads
+ *  "returning now" as a non-null result. */
 export function squadronReturningSince(
   samples: readonly { time: number; x: number; z: number; pitch?: number }[],
   carrierTrack: CarrierTrackLike | null | undefined,
@@ -200,6 +277,10 @@ export function squadronReturningSince(
       }
     }
   }
+  // No attack dive on record (a torpedo run never dives, and the dive byte is
+  // absent on pre-attitude streams): fall back to the geometric proof that the
+  // trail's WHOLE life is one homeward leg.
+  if (since === null) since = bornHomewardSince(samples, carrierTrack, end);
   returnMemo.set(samples, { track: carrierTrack, end, since });
   return since;
 }

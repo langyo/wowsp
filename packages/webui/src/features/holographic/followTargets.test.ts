@@ -94,6 +94,26 @@ describe("activeSquadronOf", () => {
     expect(activeSquadronOf(trails, unresolved, noRemoves, 7, 15)).toBeNull();
   });
 
+  it("skips a LANDED newer wing and keeps the still-airborne one", () => {
+    // A CV re-launches constantly: the newest-born trail can already be over
+    // (landed / shot down / recalled, its minimap remove fired) while an older
+    // wing is still up. The gold controlled-aircraft edge and the chase camera
+    // must follow the one that is actually flying, not the last birth stamp.
+    const trails = [trail(3, [10, 100]), trail(4, [20, 40])];
+    const carrierOf = new Map<number, number | null>([
+      [3, 7],
+      [4, 7],
+    ]);
+    const removeAt = new Map([[4, 45]]);
+    // t=30: wing 4 (born 20) is the newest and still up.
+    expect(activeSquadronOf(trails, carrierOf, removeAt, 7, 30)).toBe(4);
+    // t=50: wing 4 landed at 45, wing 3 is still flying → wing 3.
+    expect(activeSquadronOf(trails, carrierOf, removeAt, 7, 50)).toBe(3);
+    // t=104: wing 3's own trail has expired too (last 100 + 5 s grace).
+    expect(activeSquadronOf(trails, carrierOf, removeAt, 7, 104)).toBe(3);
+    expect(activeSquadronOf(trails, carrierOf, removeAt, 7, 106)).toBeNull();
+  });
+
   it("picks the most recently launched overlapping squadron", () => {
     const trails = [trail(3, [10, 30]), trail(4, [20, 40]), trail(5, [5, 15])];
     const carrierOf = new Map<number, number | null>([

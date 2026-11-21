@@ -14,6 +14,8 @@ import {
   inferGrouping,
   PLANE_TRAIL_GRACE_S,
   planeTrailExpiry,
+  RETURN_BORN_MIN_NET_M,
+  RETURN_BORN_RECEDE_SLACK_M,
   RETURN_CONFIRM_S,
   RETURN_CLOSING_WINDOW_S,
   RETURN_DIVE_PITCH_DEG,
@@ -431,5 +433,83 @@ describe("squadronReturningSince (derived homeward-bound state)", () => {
     expect(RETURN_CLOSING_WINDOW_S).toBe(8);
     expect(RETURN_MIN_CLOSING_M).toBe(120);
     expect(RETURN_CONFIRM_S).toBe(10);
+  });
+});
+
+/* ── The dive-free proof: a trail whose whole life is one homeward leg ────
+ * Torpedo bombers fly a LEVEL torpedo run, so the −25° attitude latch can
+ * never answer for a TB sortie's return leg — and TB wings are exactly what
+ * the recorder's own CV keeps in the air. The stream still records the fact:
+ * after an attack the game re-creates the survivors as a FRESH squadron
+ * object in mid-air, hundreds of metres out, and that object only ever flies
+ * home (measured on the 14.5.0.0 Shokaku 37_Ridge capture: every mid-air
+ * create of the CV's TB/dive airframes closed on its carrier and ended on the
+ * deck). The fold therefore proves a wing whose trail BEGAN far out and never
+ * receded. */
+
+/** A trail that starts `fromX` metres out and moves toward (direction −1) or
+ *  away from (+1) a parked carrier at cruise speed — the returning group's
+ *  shape. Level flight: no pitch byte at all, so the attitude latch is out of
+ *  the picture. */
+function bornHomeward(fromX = 900, until = 48, direction = -1) {
+  const out: ReturnType<typeof pt>[] = [];
+  for (let t = 0; t <= until; t++) {
+    out.push(pt(t, fromX + direction * WING_SPEED * t));
+  }
+  return out;
+}
+
+describe("squadronReturningSince (dive-free: born on a homeward leg)", () => {
+  it("proves a level torpedo wing's return leg with no attitude byte", () => {
+    const track = parkedCarrier();
+    const trail = bornHomeward(900);
+    // 900 m out at t=0: the net-closing threshold lands at t=5, the confirm
+    // window at t=10 → the first provable sample is 10.
+    expect(squadronReturningSince(trail, track, 9)).toBeNull();
+    expect(squadronReturningSince(trail, track, 10)).toBe(10);
+    // Latch: the rest of the trail stays returning, and the wing ends on deck.
+    expect(squadronReturningSince(trail, track, 15)).toBe(10);
+    expect(squadronReturningSince(trail, track, 48)).toBe(10);
+  });
+
+  it("never flags a wing born on the deck (it must fly OUT before coming home)", () => {
+    const track = parkedCarrier();
+    // Launched and recovered: the classic out-and-back sortie, no dive.
+    expect(squadronReturningSince(sortie({ dive: false, home: true }), track, 45)).toBeNull();
+    expect(squadronReturningSince(sortie({ dive: false, home: false }), track, 45)).toBeNull();
+  });
+
+  it("never flags a wing that receded from its carrier at any point", () => {
+    const track = parkedCarrier();
+    // Born 900 m out, flies FURTHER out — an outbound sortie, not a return.
+    expect(squadronReturningSince(bornHomeward(900, 48, +1), track, 48)).toBeNull();
+    // Born far out but its first leg pushes out past the slack, then it turns
+    // home: the trail is not a born return leg, and with no dive there is no
+    // other proof — deliberately unknown rather than guessed.
+    const outThenHome: ReturnType<typeof pt>[] = [];
+    for (let t = 0; t <= 48; t++) {
+      outThenHome.push(
+        t <= 10 ? pt(t, 900 + WING_SPEED * t) : pt(t, 1500 - WING_SPEED * (t - 10)),
+      );
+    }
+    expect(squadronReturningSince(outThenHome, track, 48)).toBeNull();
+  });
+
+  it("needs both the net closing distance and the confirm window", () => {
+    const track = parkedCarrier();
+    // Under the floor a trail is a short hop, never a proven return.
+    expect(
+      squadronReturningSince(bornHomeward(RETURN_BORN_MIN_NET_M - 1), track, 45),
+    ).toBeNull();
+    // A leg too young to confirm stays unproven even though it closes.
+    expect(squadronReturningSince(bornHomeward(900, 8), track, 8)).toBeNull();
+  });
+
+  it("keeps the born-homeward thresholds as the contract", () => {
+    expect(RETURN_BORN_MIN_NET_M).toBe(300);
+    expect(RETURN_BORN_RECEDE_SLACK_M).toBe(150);
+    // The slack must stay far below the net closing it guards, or a slow
+    // outbound leg could hide inside it.
+    expect(RETURN_BORN_RECEDE_SLACK_M).toBeLessThan(RETURN_BORN_MIN_NET_M);
   });
 });

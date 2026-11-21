@@ -610,4 +610,79 @@ describe("homeward-bound squadrons draw no 2D formation marker", () => {
     ctx.current.value = 45;
     expect(countPlaneMarkers(ctx).enlarged).toBe(0);
   });
+
+  /* ── Dive-free return legs (torpedo wings) ─────────────────────────────
+   * A TB wing never dives, so the attitude latch cannot see it. The stream's
+   * own shape carries the proof instead: after an attack the survivors are
+   * re-created as a fresh squadron object in mid-air, far from the carrier,
+   * and that object only ever flies home. User report (37_Ridge, 03:10): a
+   * torpedo wing 400 m from its carrier, flying home, kept its marker while
+   * the followed formation was a different wing of the same CV. */
+  /** Born 900 m out at t = 30, closing on the parked carrier at 60 m/s. */
+  function bornHomewardWing(away = false): SquadronPlane[] {
+    const out: SquadronPlane[] = [];
+    for (let t = 30; t <= 48; t++) {
+      const d = 900 + (away ? 1 : -1) * 60 * (t - 30);
+      out.push({ time: t, planeId: PLANE_ID, index: 0, x: d, y: 100, z: 0, yaw: 0 });
+    }
+    return out;
+  }
+
+  it("suppresses a level (never-diving) wing whose whole trail is a homeward leg", () => {
+    const ctx = planeCtx(bornHomewardWing());
+    ctx.current.value = T_READ;
+    const drawn = countPlaneMarkers(ctx);
+    expect(drawn.thumb).toBe(0);
+    expect(drawn.enlarged).toBe(0);
+  });
+
+  it("keeps drawing a wing that flies AWAY from its carrier (the control)", () => {
+    const ctx = planeCtx(bornHomewardWing(true));
+    ctx.current.value = T_READ;
+    const drawn = countPlaneMarkers(ctx);
+    expect(drawn.thumb).toBe(1);
+    expect(drawn.enlarged).toBe(1);
+  });
+});
+
+/* ── The plane marker's ink: the recorder's own wing is GREEN ────────────
+ * The light Ridge art washed the small aircraft glyphs out (user report:
+ * "a loose cluster of faint white/dim aircraft glyphs"), so the ink rule is
+ * worth pinning: the game only ships ALLY aircraft art, the painter
+ * recolours ENEMY formations red (planeIcons.planeIconTinted), and the
+ * pre-decode fallback dot uses the team's own green for both self and ally —
+ * never a neutral/white marker. */
+describe("the recorder's own wing paints the ally ink", () => {
+  /** The plane inks this context paints on the ENLARGED canvas. */
+  function markedInks(ctx: MapInternals): string[] {
+    const thumb = new FakeCanvas(160);
+    const zoom = new FakeCanvas(720);
+    ctx.minimapCanvas.value = fakeAs<HTMLCanvasElement>(thumb);
+    ctx.zoomCanvas.value = fakeAs<HTMLCanvasElement>(zoom);
+    const zrec = zoom.rec();
+    zrec.reset();
+    drawMinimap(ctx); // layout frame
+    zrec.reset();
+    drawMinimap(ctx); // steady-state frame
+    return zrec.fills
+      .filter((fill) => PLANE_INKS.includes(fill.fill))
+      .map((fill) => fill.fill);
+  }
+
+  it("draws green for a self-roled carrier, never the enemy red", () => {
+    const ctx = planeCtx(wingSamples({ attack: false, pitch: true, home: false }));
+    // Roster relation 0 = the recorder (teamColors.roleFromRelation).
+    ctx.rosterAssignments = new Map([
+      [CARRIER, { relation: 0 }],
+    ]) as unknown as MapInternals["rosterAssignments"];
+    expect(markedInks(ctx)).toEqual(["rgba(74, 222, 128, 0.95)"]);
+  });
+
+  it("draws red for an enemy-roled carrier (the tint path stays live)", () => {
+    const ctx = planeCtx(wingSamples({ attack: false, pitch: true, home: false }));
+    ctx.rosterAssignments = new Map([
+      [CARRIER, { relation: 2 }],
+    ]) as unknown as MapInternals["rosterAssignments"];
+    expect(markedInks(ctx)).toEqual(["rgba(232, 92, 92, 0.95)"]);
+  });
 });
