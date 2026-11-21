@@ -15,16 +15,11 @@ PM := "pnpm"
 
 import? "./.just/celestia-devtools.just"
 
-# Python resolver — self-contained mirror of celestia-devtools' staged
-# python_cmd (the import? above is optional so a fresh clone parses this
-# file before `just fetch` stages .just/; when staged, the same semantics
-# apply). Repo scripting policy (AGENTS.md §6): helper scripts are Python
-# invoked through just recipes — never hardcode an interpreter path.
-python_cmd := if os_family() == "windows" {
-    if which("python") != "" { "python" } else { "python3" }
-} else {
-    if which("python3") != "" { "python3" } else { "python" }
-}
+# Python resolver: the staged celestia-devtools module defines python_cmd
+# (the managed interpreter with celestia_devtools importable). A fresh clone
+# parses without it — repo recipes use plain `python` like every other
+# script invocation, and `just fetch`-style bootstrap is not needed for
+# them; only the staged devtools recipes reference {{python_cmd}}.
 
 # ── dev ───────────────────────────────────────────────────────────────
 # Usage: just dev [target] [flags]
@@ -122,7 +117,7 @@ build target='app' *FLAGS='':
 # Python is resolved via celestia-devtools' python_cmd (see .just/ staged
 # import) per the repo's Python-scripts policy (AGENTS.md section 6).
 dump-icon-grids *ARGS='':
-    {{python_cmd}} scripts/dump_icon_grids.py {{ARGS}}
+    python scripts/dump_icon_grids.py {{ARGS}}
 
 # ── test ──────────────────────────────────────────────────────────────
 #   just test          → cargo test --workspace (default)
