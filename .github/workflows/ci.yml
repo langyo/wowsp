@@ -239,13 +239,18 @@ jobs:
 
   relay:
     name: Relay (ubuntu)
-    # The pairing gateway is a STANDALONE wasm workspace (excluded from the
-    # root workspace) — its relay-core tests and the wasm32 check are the
-    # two halves of `just check-relay`. Own target dir inside
-    # packages/pairing-relay, so no cargo cache step here (mirrors the deny
-    # job) and no target-dir lock contention with anything else. Pure
-    # cargo: the console pages live in packages/console (web job), so no
-    # frontend deps are needed here.
+    # The pairing gateway is a STANDALONE workspace (excluded from the root
+    # workspace) with two halves of `just check-relay`: the host tests
+    # (relay-core policy + relay-server's native server) and the wasm32
+    # check. The wasm32 check is SCOPED to the wasm crates
+    # (-p relay-worker): relay-server is host-only (axum/tokio are host
+    # services there and rusqlite's bundled SQLite does not build for
+    # wasm32), so an unscoped workspace check would fail on it. Own target
+    # dir inside packages/pairing-relay, so no cargo cache step here
+    # (mirrors the deny job) and no target-dir lock contention with
+    # anything else. Pure cargo: the console pages live in
+    # packages/console (web job), so no frontend deps are needed here
+    # (ubuntu runners carry the C toolchain rusqlite bundled needs).
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -258,7 +263,11 @@ jobs:
       - name: Relay core tests
         run: cargo test --manifest-path packages/pairing-relay/Cargo.toml -p relay-core
       - name: Relay worker wasm check
-        run: cargo check --manifest-path packages/pairing-relay/Cargo.toml --target wasm32-unknown-unknown
+        run: cargo check --manifest-path packages/pairing-relay/Cargo.toml --target wasm32-unknown-unknown -p relay-worker
+      - name: Relay server check
+        run: cargo check --manifest-path packages/pairing-relay/Cargo.toml -p relay-server
+      - name: Relay server tests
+        run: cargo test --manifest-path packages/pairing-relay/Cargo.toml -p relay-server
 
   versions:
     name: Verify version consistency

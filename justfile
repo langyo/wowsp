@@ -206,14 +206,28 @@ check-ingame-plugin:
 
 # ── pairing relay ─────────────────────────────────────────────────────
 # The pairing gateway (packages/pairing-relay) is a STANDALONE Rust
-# workspace compiled to wasm32 for Cloudflare Workers (excluded from the
-# root workspace — own gitignored Cargo.lock). One recipe covers both
-# halves of its verification; wasm32 check is quick and holds no shared
-# target-dir lock (the package has its own target/). Pure cargo — no
-# frontend deps needed (the console pages live in packages/console).
+# workspace excluded from the root workspace (tracked Cargo.lock), with
+# the wasm32 relay-worker for Cloudflare Workers plus the HOST-target
+# relay-server (the native wowsp-server). The wasm32 check is SCOPED to
+# the wasm crates (-p relay-worker): relay-server is host-only
+# (axum/tokio are host services; rusqlite's bundled SQLite does not
+# build for wasm32). Pure cargo — no frontend deps needed (the console
+# pages live in packages/console); mirrors the CI relay job exactly.
 check-relay:
     cd packages/pairing-relay && cargo test -p relay-core
-    cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown
+    cd packages/pairing-relay && cargo check --target wasm32-unknown-unknown -p relay-worker
+    cd packages/pairing-relay && cargo check -p relay-server
+    cd packages/pairing-relay && cargo test -p relay-server
+
+# Native wowsp-server (crates/relay-server): run against the default
+# 127.0.0.1:8787 (configuration: crates/relay-server/README.md — env
+# WOWSP_SERVER_* > wowsp-server.toml > defaults).
+run-server *ARGS='':
+    cd packages/pairing-relay && cargo run -p relay-server --release -- {{ARGS}}
+
+# Release build of the server binary only.
+build-server:
+    cd packages/pairing-relay && cargo build -p relay-server --release
 
 # Maintainer replay-share drain CLI (packages/tools/replay-drain):
 #   just drain-replays                → pull + verify + drain every staged shard

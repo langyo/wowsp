@@ -1,0 +1,88 @@
+# The NATIVE wowsp-server (host target: VPS / LAN / Docker self-hosting;
+# see docs/en/designs/cache-mesh.md and this crate's README.md). Serves the
+# full capability set — /gateway/* battle-push, /api/lookup/* stats cache,
+# /api/blocks/* + /ipfs/* content store, /api/peers/* registry — backed by
+# SQLite + in-process state instead of Workers KV/Durable Objects. Every
+# policy decision lives in relay-core (or, until the lookup/peers modules
+# land there, in this crate's clearly-marked policy seam); this crate is
+# HTTP/WS plumbing, storage and configuration only.
+#
+# HOST-ONLY crate: never compiled for wasm32 (axum/tokio are host services
+# here and rusqlite's bundled SQLite does not build for wasm). CI and the
+# justfile scope the wasm32 check to the wasm crates ("-p relay-worker")
+# and check/test this crate for the host target instead.
+[package]
+name = "relay-server"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description.workspace = true
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "wowsp-server"
+path = "src/main.rs"
+
+[dependencies]
+relay-core = { path = "../relay-core" }
+# HTTP + WS surface. axum 0.8 uses "{param}" path syntax.
+axum = { version = "^0.8", features = ["ws"] }
+tokio = { version = "^1", features = [
+    "rt-multi-thread",
+    "macros",
+    "signal",
+    "time",
+    "net",
+    "sync",
+] }
+tower-http = { version = "^0.7", features = ["cors"] }
+# Upstream fetches (lookup proxy), peer sync, Turnstile siteverify and the
+# announce liveness callback. rustls over the RING provider (aws-lc,
+# reqwest's default rustls provider, needs NASM on Windows and has no
+# benefit here) with the bundled webpki roots; gzip/brotli
+# decompression on; streaming for the pass-through path.
+reqwest = { version = "^0.13", default-features = false, features = [
+    "rustls-no-provider",
+    "webpki-roots",
+    "gzip",
+    "brotli",
+    "stream",
+    "json",
+    "query",
+] }
+# Request-body extractor type (axum 0.8 no longer re-exports Bytes in
+# axum::body's tuple-struct position it once did).
+bytes = "^1"
+# The crypto provider reqwest's rustls-no-provider slot expects the
+# process to supply (feature-unified with reqwest's own rustls dep).
+rustls = { version = "^0.23", default-features = false, features = [
+    "ring",
+    "std",
+    "tls12",
+    "logging",
+] }
+rusqlite = { version = "^0.43", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = "^1"
+anyhow = "^1"
+dashmap = "^6"
+futures-util = { version = "^0.3", default-features = false, features = [
+    "std",
+] }
+# CSPRNG for ticket minting + the node id — the host-side implementation
+# of relay-core's TicketRng seam (the worker uses the wasm_js backend).
+getrandom = "^0.4"
+
+[dev-dependencies]
+# WebSocket client for the gateway integration tests (ws:// against the
+# loopback listener — no TLS feature needed).
+tokio-tungstenite = "^0.30"
+tempfile = "^3"
+# oneshot request dispatch in the router unit tests.
+tower = { version = "^0.5", features = ["util"] }
