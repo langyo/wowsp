@@ -124,6 +124,9 @@ Every unit of work follows this pattern:
   commit message format.
 - Launch independent subtasks in parallel; wait for results before
   continuing serial ones.
+- Same-domain subagent dispatches go out serially; parallel dispatch requires
+  provably disjoint file ownership, and each brief must name its own distinct
+  worktree path.
 - Every subagent must verify its own work before returning; important work
   is cross-verified by another subagent.
 
@@ -161,6 +164,15 @@ checkout or disturbing its build state):
    `git branch -d <type>/<name>`.
 4. Never nest a second-level worktree inside a worktree; one worktree serves
    one branch.
+5. **One worktree serves one branch — never switch an existing worktree to a
+   second branch for a follow-up wave**; create a fresh worktree instead (the
+   pnpm-install cost is cheaper than stale-branch state and wrong-branch
+   confusion).
+
+The one-worktree-one-branch, serial same-domain subagent, and captured
+PR-number rules are the org-wide convention codified in the shared
+[`agent-workflow-convention.md`](https://github.com/celestia-island/celestia-devtools/blob/master/docs/agent-workflow-convention.md)
+in `celestia-devtools`; cite it rather than re-deriving them per repository.
 
 ### Verification gates
 
@@ -268,6 +280,10 @@ Before submitting, the relevant subset of `just lint` (or scoped
   nobody-requested substantial work (refactor waves, new feature ideas);
   never open PRs without completed, verified work in them. PR economy
   (§5.3) still applies.
+- **PR numbers are captured from the `gh pr create` output, never guessed**:
+  batched push → create → merge chains must merge the exact number the create
+  returned (a concurrent session can take an adjacent number — a guessed
+  merge lands on the wrong PR).
 
 ## 6. Build & Test
 
