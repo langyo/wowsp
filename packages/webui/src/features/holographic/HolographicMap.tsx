@@ -22,6 +22,16 @@ import { clearShipMarkerCache } from "./shipMarker";
 import { clearPropMarkerCache } from "./propMarker";
 import { hpAtTime, sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { shouldReserveTabKey } from "./tabKeyGate";
+import {
+  KBD_HOLD_DELAY_MS,
+  KBD_REPEAT_MS,
+  clampSeekSeconds,
+  isModalAboveSurface,
+  kbdBaseStepSeconds,
+  kbdSeekDirection,
+  kbdStepSeconds,
+  shouldHandleTransportKey,
+} from "./kbdTransport";
 import { arenaIdentities, resolveRosterAssignments } from "./rosterRoles";
 import { encyclopediaHullHealth, resolveMaxHp } from "./shipHp";
 import HoloShipTooltip from "./HoloShipTooltip";
@@ -1866,6 +1876,119 @@ const RECORDED_DOLLY_MIN = -40;
         window.removeEventListener("keyup", onKeyUp, true);
         window.removeEventListener("blur", retireRoster);
         document.removeEventListener("visibilitychange", onVisibilityChange);
+      });
+    });
+
+    // ── Keyboard transport: Space + ArrowLeft/Right ──────────────────
+    // Space toggles pause/play; the arrows seek by the current playback
+    // multiplier (a tap moves playbackSpeed battle-seconds, a hold ramps
+    // from that rate to 10x of it — see kbdTransport.ts). The listener is
+    // window-level (capture) so the map does not need to be clicked first,
+    // and it stands down exactly where the rest of the app expects: typing
+    // surfaces keep their keys, a window stacked OVER the map wins, the
+    // export take owns the playhead, and the tactical editor (whose Space is
+    // hold-to-pan) keeps its own shortcuts.
+    let transportHold: { dir: -1 | 1; timer: number } | null = null;
+    function stopTransportHold(): void {
+      if (!transportHold) return;
+      window.clearInterval(transportHold.timer);
+      transportHold = null;
+    }
+    /** A hikari window stacked ABOVE this map. Modal content teleports to
+     *  the overlay root, so "any .hk-modal-content that does not CONTAIN the
+     *  map" is an overlay over it; the phone replay-detail sheet wraps the
+     *  whole view and must not kill the shortcuts it contains. */
+    function modalAboveReplay(): boolean {
+      return isModalAboveSurface(
+        container.value,
+        document.querySelectorAll(".hk-modal-content"),
+      );
+    }
+    /** The replay surface is mounted, laid out and not the tactical editor —
+     *  the editor mounts INSIDE the enlarged 2D map and its own keyboard map
+     *  (Space = hand tool, [ ] = step) owns the keys while it is up. */
+    function replaySurfaceActive(): boolean {
+      const root = container.value;
+      return (
+        !!root &&
+        root.isConnected &&
+        root.getClientRects().length > 0 &&
+        !(tacticalOn.value && minimapZoom.value)
+      );
+    }
+    function transportKeyAllowed(e: KeyboardEvent): boolean {
+      const target = e.target as HTMLElement | null;
+      const typing =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable === true;
+      return shouldHandleTransportKey({
+        typingTarget: typing,
+        modalOpen: exportOpen.value || modalAboveReplay(),
+        exporting: exporting.value,
+        active: replaySurfaceActive(),
+      });
+    }
+    /** Seek one step of `heldMs` into the hold, through the same path the
+     *  transport slider/tactical timeline use (it pauses playback, syncs the
+     *  HUD clock and repaints both map layers). */
+    function stepTransport(dir: -1 | 1, heldMs: number): void {
+      const step = kbdStepSeconds(kbdBaseStepSeconds(playbackSpeed.value), heldMs);
+      if (step <= 0) return;
+      seekBattleTime(clampSeekSeconds(current.value + dir * step, duration.value));
+    }
+    function onTransportKey(e: KeyboardEvent): void {
+      if (e.key !== " " && e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      if (e.isComposing || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (!transportKeyAllowed(e)) return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      // A focused select owns BOTH keys: Space opens it and the arrows walk
+      // its options, so the transport must not shadow either.
+      if (tag === "SELECT") return;
+      if (e.key === " ") {
+        // Never steal Space from a focused button: native activation is the
+        // expected keyboard behavior there.
+        if (tag === "BUTTON") return;
+        e.preventDefault(); // page scroll
+        if (!e.repeat) togglePlay();
+        return;
+      }
+      const dir = kbdSeekDirection(e.key);
+      if (dir === 0) return;
+      e.preventDefault(); // horizontal page scroll
+      // The browser's own key repeat has an OS-specific first delay; the
+      // interval below is the one repeat source we control.
+      if (e.repeat) return;
+      stopTransportHold();
+      stepTransport(dir, 0);
+      const startedAt = performance.now();
+      const timer = window.setInterval(() => {
+        const heldMs = performance.now() - startedAt;
+        // A tap must stay ONE step: no repeat before the hold window opens.
+        if (heldMs < KBD_HOLD_DELAY_MS) return;
+        stepTransport(dir, heldMs);
+      }, KBD_REPEAT_MS);
+      transportHold = { dir, timer };
+    }
+    function onTransportKeyUp(e: KeyboardEvent): void {
+      if (transportHold && kbdSeekDirection(e.key) === transportHold.dir) {
+        stopTransportHold();
+      }
+    }
+    const onTransportVisibility = (): void => {
+      if (document.visibilityState === "hidden") stopTransportHold();
+    };
+    onMounted(() => {
+      window.addEventListener("keydown", onTransportKey, true);
+      window.addEventListener("keyup", onTransportKeyUp, true);
+      window.addEventListener("blur", stopTransportHold);
+      document.addEventListener("visibilitychange", onTransportVisibility);
+      onBeforeUnmount(() => {
+        window.removeEventListener("keydown", onTransportKey, true);
+        window.removeEventListener("keyup", onTransportKeyUp, true);
+        window.removeEventListener("blur", stopTransportHold);
+        document.removeEventListener("visibilitychange", onTransportVisibility);
+        stopTransportHold();
       });
     });
 
