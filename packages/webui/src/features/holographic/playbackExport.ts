@@ -2174,6 +2174,19 @@ export function drawChatPanel(
   }
 }
 
+/** Coarse phase the export progress card renders.
+ *
+ *  `feed` and `models` are the PRE-RENDER stages: the caller assembles the
+ *  clip's feed (roster batch, medal composition lookup, recorder ledger +
+ *  ribbon art, ship-icon decode) and, for the 3D view, drains the scene's
+ *  lazily loaded ship hulls BEFORE the encode loop starts. Neither has a
+ *  percentage of its own — the card shows the stage label over an
+ *  indeterminate bar instead of sitting frozen at 0% · 0/N while that work
+ *  runs (the 2026-11-22 「一直卡着不导出」 report). `render` is the frame
+ *  loop (the only phase with a percentage) and `finalize` the
+ *  encoder/muxer flush. The caller adds its own final `save` stage. */
+export type PlaybackExportPhase = "feed" | "models" | "render" | "finalize";
+
 export interface PlaybackExportRequest {
   format: PlaybackExportFormat;
   fps: number;
@@ -2218,8 +2231,10 @@ export interface PlaybackExportRequest {
   onProgress?: (done: number, total: number) => void;
   /** Coarse phase for the progress card: frames vs the encoder/muxer
    *  flush (the latter reports no percentage — the card goes
-   *  indeterminate instead of sitting frozen at 100%). */
-  onPhase?: (phase: "render" | "finalize") => void;
+   *  indeterminate instead of sitting frozen at 100%). The renderer only
+   *  ever raises `render` / `finalize`; the card's pre-render stages
+   *  (`feed` / `models`) are the caller's own. */
+  onPhase?: (phase: PlaybackExportPhase) => void;
   cancelToken?: { cancelled: boolean };
 }
 
