@@ -15,6 +15,17 @@ PM := "pnpm"
 
 import? "./.just/celestia-devtools.just"
 
+# Python resolver — self-contained mirror of celestia-devtools' staged
+# python_cmd (the import? above is optional so a fresh clone parses this
+# file before `just fetch` stages .just/; when staged, the same semantics
+# apply). Repo scripting policy (AGENTS.md §6): helper scripts are Python
+# invoked through just recipes — never hardcode an interpreter path.
+python_cmd := if os_family() == "windows" {
+    if which("python") != "" { "python" } else { "python3" }
+} else {
+    if which("python3") != "" { "python3" } else { "python" }
+}
+
 # ── dev ───────────────────────────────────────────────────────────────
 # Usage: just dev [target] [flags]
 #   just dev          → cargo tauri dev (default)
@@ -105,6 +116,13 @@ _build-unoodle:
 
 build target='app' *FLAGS='':
     @just _build-{{target}} {{FLAGS}}
+
+# Dump the HUD ship-class icons' alpha channel as ASCII grids into tmp/
+# (step 1 of the ship-glyph pipeline; step 2 is scripts/trace_icons.ts).
+# Python is resolved via celestia-devtools' python_cmd (see .just/ staged
+# import) per the repo's Python-scripts policy (AGENTS.md section 6).
+dump-icon-grids *ARGS='':
+    {{python_cmd}} scripts/dump_icon_grids.py {{ARGS}}
 
 # ── test ──────────────────────────────────────────────────────────────
 #   just test          → cargo test --workspace (default)
