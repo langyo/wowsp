@@ -288,6 +288,12 @@ Before submitting, the relevant subset of `just lint` (or scoped
   (a thin CLI over the game-assets library's ship-export API; build via
   `just build model-exporter`) — it replaced the vendored C++
   wows-model-exporter, which is gone together with its CMake/vcpkg chain.
+- **Scripting policy**: repo helper scripts are PYTHON, never
+  `.bat`/`.ps1`/`.sh` files (tool-generated vendor scaffolds such as
+  Tauri's `gen/android/gradlew.bat` are the only exception), and they are
+  triggered through justfile recipes — resolve Python with celestia-devtools'
+  `python_cmd` from the staged `.just/` import, never a hardcoded
+  interpreter path.
 - **Cross-repo dependencies**: always consume published artifacts or
   vendored checkouts — never path dependencies pointing at local directories
   outside this repo. hikari comes from the npm package

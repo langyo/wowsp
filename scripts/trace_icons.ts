@@ -1,7 +1,8 @@
 // Trace the game's 28x28 HUD ship-class icons into vector polygons for
 // the shared glyph atlas in packages/holo/src/shipGlyph.ts (SHIP_GLYPH_POLYS;
-// the app and the site both draw it). Pipeline: dump_icon_grids.ps1 exports
-// each icon_<class>.png's alpha channel to D:\icon_<class>.txt ('#' >160,
+// the app and the site both draw it). Pipeline: just dump-icon-grids
+// (scripts/dump_icon_grids.py) exports each icon_<class>.png's alpha
+// channel to <repo>/tmp/icon_<class>.txt ('#' >160,
 // '+' 60..160, '.' <60); this script extracts connected components (the
 // engraved separators are transparent, so classes split into 1-3 solid
 // bands), Moore-traces each boundary and simplifies with Douglas-Peucker.
@@ -10,6 +11,12 @@
 //   node --experimental-strip-types scripts/trace_icons.ts
 // (Node >= 23.6 runs .ts natively, no flag needed.)
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+
+// The ASCII grids this script consumes live in <repo>/tmp (written by
+// scripts/dump_icon_grids.py — see the pipeline note above).
+const GRID_DIR = fileURLToPath(new URL("../tmp", import.meta.url));
 
 type Pt = [number, number];
 
@@ -18,7 +25,7 @@ const NL = String.fromCharCode(10);
 const key = (x: number, y: number): string => `${x},${y}`;
 
 function loadGrid(cls: string): Set<string> {
-  const rows = readFileSync(`D:\\icon_${cls}.txt`, "ascii").split(NL);
+  const rows = readFileSync(join(GRID_DIR, `icon_${cls}.txt`), "ascii").split(NL);
   const solid = new Set<string>();
   rows.forEach((row, y) => {
     const bar = row.indexOf("|");
