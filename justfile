@@ -30,6 +30,12 @@ import? "./.just/celestia-devtools.just"
 #   just dev site     → site dev server (landing page)
 #   just dev test     → tauri dev with test-harness feature
 
+# The 3D replay view reads ship GLBs / map meshes from the cache root via
+# the asset protocol — an empty pack renders an empty scene with no error
+# the user can act on, so every dev start verifies the pack first.
+_check-resources:
+    @python scripts/check_resources.py
+
 _dev-tauri *FLAGS='':
     python scripts/dev.py tauri {{FLAGS}}
 
@@ -47,6 +53,7 @@ _dev-test *FLAGS='':
     cargo tauri dev --features test-harness {{FLAGS}}
 
 dev target='tauri' *FLAGS='':
+    @just _check-resources
     @just _dev-{{target}} {{FLAGS}}
 
 # ── build ─────────────────────────────────────────────────────────────
