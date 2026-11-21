@@ -173,6 +173,7 @@ export function buildPlaneTrails(ctx: MapInternals): Map<number, MinimapSquadron
     const index = info?.index;
     for (let i = 0; i < 16; i++) {
       const key = planeId * 16 + i;
+      if (info?.role) ctx.planeRoleByTrail?.set(key, info.role);
       // Last DEFINED writer wins, per map: both streams carry the same
       // paramsId per planeId in practice, but a table MISS writes NO value
       // at all. Two reasons: the minimap stream (run last) could otherwise
@@ -215,6 +216,24 @@ export const PLANE_DOT_PARKED_Y = -100000;
 export function isScoutAirframeIndex(index: string | null | undefined): boolean {
   if (!index) return false;
   return /^P[A-Z]AS\d/.test(index);
+}
+
+/** Whether the paramsId's table row is an ASW (depth-charge) wing — its
+ *  family reads "dive" but its ROLE is "asw", and a cruiser/BB's
+ *  depth-charge wing is a utility wing that never rides the aircraft card
+ *  (the same rule as the scout exclusion; the round-6 sighting report). */
+export function isAswParamsId(paramsId: number | null | undefined): boolean {
+  const row = paramsId == null ? undefined : PLANE_TYPES[String(paramsId)];
+  return row?.role === "asw";
+}
+
+/** Whether the wing a planeId names is an ASW wing (the role the trail build
+ *  recorded per trail key). */
+export function isAswWing(
+  ctx: Pick<MapInternals, "planeRoleByTrail">,
+  planeId: number,
+): boolean {
+  return ctx.planeRoleByTrail?.get(planeId * 16) === "asw";
 }
 
 /** Whether a GameParams paramsId names a CATAPULT-launched scout / spotter
@@ -306,7 +325,12 @@ export function stableWingPick(
 export function cardRideCandidates(
   ctx: Pick<
     MapInternals,
-    "planeTrails" | "minimapTrailEnd" | "planeCarrierOf" | "trajById" | "planeTypesById"
+    | "planeTrails"
+    | "minimapTrailEnd"
+    | "planeCarrierOf"
+    | "trajById"
+    | "planeTypesById"
+    | "planeRoleByTrail"
   >,
   carrierId: number,
   t: number,
@@ -325,6 +349,7 @@ export function cardRideCandidates(
     const expiry = planeTrailExpiry(last, ctx.minimapTrailEnd?.get(planeId));
     if (t < born || t > expiry) continue;
     if (isScoutWing(ctx, planeId)) continue;
+    if (isAswWing(ctx, planeId)) continue;
     if (planeReturningAt(ctx, trail, t)) continue;
     out.push({ planeId, born, lastSample: last });
   }
@@ -344,6 +369,7 @@ export function cardWingAt(
     | "planeCarrierOf"
     | "trajById"
     | "planeTypesById"
+    | "planeRoleByTrail"
     | "planeLabelCarriers"
   >,
   labelId: number,
@@ -852,7 +878,7 @@ export function resolvePlaneCarriers(
   for (const [planeId, carrierId] of planeCarrierOf) {
     if (carrierId == null) continue;
     const first = createFirst.get(planeId)!;
-    if (isScoutParamsId(first.paramsId)) continue;
+    if (isScoutParamsId(first.paramsId) || isAswParamsId(first.paramsId)) continue;
     // The card's INITIAL type comes from the carrier's NEWEST wing (the one
     // most likely to be on screen at build time). The old accumulation kept
     // whichever wing iterated first, so a Shokaku's card wore its first
@@ -936,7 +962,7 @@ export function resolvePlaneCarriers(
   for (const [planeId, carrierId] of planeCarrierOf) {
     if (carrierId == null) continue;
     const first = createFirst.get(planeId);
-    if (first && isScoutParamsId(first.paramsId)) continue;
+    if (first && (isScoutParamsId(first.paramsId) || isAswParamsId(first.paramsId))) continue;
     ctx.planeLabelOfPlane.set(planeId, PLANE_CARD_LABEL_ID_BASE + Number(carrierId));
   }
   // Fighter-patrol anchors (deployment countdown + fixed-circle anchor): the

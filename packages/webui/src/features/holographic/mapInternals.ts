@@ -542,6 +542,9 @@ export interface MapInternals extends MapInternalsDeps {
   minimapTrailEnd: Map<number, number>;
   /** planeId*16+index → aircraft type (fighter/dive/torpedo/...). */
   planeTypesById: Map<number, string>;
+  /** Per trail key: the PLANE_TYPES row's role ("asw" wings never ride the
+   *  aircraft card — the utility-wing rule). */
+  planeRoleByTrail: Map<number, string>;
   /** planeId*16+index → GameParams index (for the baked model GLB). */
   planeIndexById: Map<number, string>;
   /** Squadron label id → controlling ship's entity id. */
@@ -669,6 +672,7 @@ export function createMapInternals(deps: MapInternalsDeps): MapInternals {
     planeCloudSlots: new Map(),
     minimapTrailEnd: new Map(),
     planeTypesById: new Map(),
+  planeRoleByTrail: new Map(),
     planeIndexById: new Map(),
     planeLabelCarriers: new Map(),
     planeRoleById: new Map(),

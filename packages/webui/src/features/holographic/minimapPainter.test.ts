@@ -310,6 +310,7 @@ function makeCtx(markers: THREE.Group[]): MapInternals {
     planeSmoothState: new Map(),
     minimapTrailEnd: new Map(),
     planeTypesById: new Map(),
+  planeRoleByTrail: new Map(),
     torpedoMeshes: [],
     trajById: new Map(),
     aiAnalysisOn: ref(false),
