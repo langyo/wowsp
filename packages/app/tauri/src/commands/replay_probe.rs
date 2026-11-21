@@ -439,6 +439,7 @@ mod tests {
             weather_notifications: Vec::new(),
             ally_builds: Vec::new(),
             self_team: None,
+            consumable_uses: Vec::new(),
             shield_damage_events: Vec::new(),
             shield_state_events: Vec::new(),
             shield_markers: Vec::new(),

@@ -513,11 +513,12 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         // added to it without touching frozen files.
         smoke_screens: _,
         recorder_vehicle,
-        // E11 research surfaces (minimap vision / consumable uses / engine
-        // state) are served off `DecodedReplay` directly by their own tests
-        // until the G1 wiring lands.
+        // E11 research surfaces: `consumable_uses` is now carried on the
+        // stream below (the Repair-Party gray-bar foundation); the minimap
+        // vision / engine-state families are still served off
+        // `DecodedReplay` by their own tests until their own wiring lands.
         vision_events: _,
-        consumable_uses: _,
+        consumable_uses,
         engine_states: _,
         // Consumed by the app's ally-only IPC exit before grouping (the
         // ReplayStream shape stays build-free — several experiment modules
@@ -691,6 +692,7 @@ pub fn group_by_entity(decoded: DecodedReplay) -> wowsp_tauri_shared::ReplayStre
         weather_transitions,
         weather_notifications,
         self_team,
+        consumable_uses,
         shield_damage_events,
         shield_state_events,
         shield_markers,
@@ -796,6 +798,49 @@ mod tests {
             squadron_notifies: Vec::new(),
             squadron_deactivations: Vec::new(),
         }
+    }
+
+    /// The E11 consumable-use stream survives assembly verbatim: the decoded
+    /// vector must reach the assembled `ReplayStream` (the regression this
+    /// guards is the bare `consumable_uses: _` discard that kept it off the
+    /// stream). Covers the default variant (repair party, id 8 / ~28 s) and
+    /// the position-ping variant with its optional coordinates.
+    #[test]
+    fn group_by_entity_carries_consumable_uses() {
+        let mut decoded = empty_decode();
+        decoded.consumable_uses = vec![
+            wowsp_tauri_shared::ConsumableUseEvent {
+                time: 74.9,
+                entity_id: 963_623,
+                usage_type: 1,
+                consumable_id: 8, // repair party
+                duration: 28.0,
+                target_x: None,
+                target_z: None,
+                target_id: None,
+            },
+            wowsp_tauri_shared::ConsumableUseEvent {
+                time: 90.0,
+                entity_id: 951_995,
+                usage_type: 2,
+                consumable_id: 5,
+                duration: 30.0,
+                target_x: Some(123.5),
+                target_z: Some(-67.25),
+                target_id: None,
+            },
+        ];
+        let stream = group_by_entity(decoded);
+        assert_eq!(stream.consumable_uses.len(), 2);
+        let repair = &stream.consumable_uses[0];
+        assert_eq!(repair.entity_id, 963_623);
+        assert_eq!(repair.consumable_id, 8);
+        assert!((repair.duration - 28.0).abs() < 1e-6);
+        assert!(repair.target_x.is_none() && repair.target_z.is_none());
+        // The position-variant ping keeps both optional coordinates.
+        let ping = &stream.consumable_uses[1];
+        assert_eq!(ping.target_x, Some(123.5));
+        assert_eq!(ping.target_z, Some(-67.25));
     }
 
     /// The shared tail synthesizes the Lesta arena join (self anchored to the
