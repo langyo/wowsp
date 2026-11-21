@@ -1,7 +1,14 @@
 /**
- * The stored envelope (contract §3.3): what a block row contains and
- * how it is (de)serialized. Envelope JSON is also the /api/blocks wire
- * body (§4.2) and the on-disk file content for native deployments.
+ * The stored envelope (contract §3.3 + the relay-core PR #2067 addition):
+ * what a block row contains and how it is (de)serialized. Envelope JSON
+ * is also the /api/blocks wire body (§4.2) and the on-disk file content
+ * for native deployments.
+ *
+ * The OPTIONAL `line` field carries the canonical request line the row
+ * was fetched under (camelCase JSON key, exactly as relay-core spells
+ * it). Own writes always include it; peer-pulled rows are only trusted
+ * when it is present and hashes to the requested CID (src/lookup.ts,
+ * fail closed) -- that is the §4.2 content verification.
  */
 
 /** The §3.3 envelope. `v` is a schema version, not the release version. */
@@ -19,6 +26,12 @@ export interface Envelope {
   ttl: number;
   /** The allowlisted host the document came from (hostname only). */
   upstream: string;
+  /**
+   * Canonical request line (relay-core PR #2067): present on rows this
+   * node wrote itself, absent on foreign rows from older nodes. null
+   * means "not carried".
+   */
+  line: string | null;
 }
 
 /** Current epoch seconds (the mesh speaks seconds everywhere). */
@@ -26,7 +39,10 @@ export function epochSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
-/** Serialize with a fixed key order so CIDs/ETags hash stably. */
+/**
+ * Serialize with a fixed key order (stable CIDs/ETags). `line` is only
+ * emitted when carried, matching the optional wire field.
+ */
 export function serializeEnvelope(envelope: Envelope): string {
   return JSON.stringify({
     v: envelope.v,
@@ -36,15 +52,21 @@ export function serializeEnvelope(envelope: Envelope): string {
     fetchedAt: envelope.fetchedAt,
     ttl: envelope.ttl,
     upstream: envelope.upstream,
+    ...(envelope.line !== null ? { line: envelope.line } : {}),
   });
 }
 
 const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
 
+/** Sanity ceiling for the carried line: canonical lines are short URLs. */
+const LINE_MAX = 8192;
+
 /**
  * Parse + shape-validate a stored/received envelope. Returns `null`
  * for anything that is not a well-formed v1 envelope -- callers treat
  * that as "unknown block" (a corrupt row is dropped, never served).
+ * The body must actually DECODE: a regex-shaped but undecodable
+ * bodyB64 (e.g. "A") would otherwise 500 every later serve.
  */
 export function parseEnvelope(raw: string | null | undefined): Envelope | null {
   if (!raw) return null;
@@ -60,6 +82,11 @@ export function parseEnvelope(raw: string | null | undefined): Envelope | null {
   if (typeof e.status !== "number" || !Number.isFinite(e.status)) return null;
   if (typeof e.contentType !== "string") return null;
   if (typeof e.bodyB64 !== "string" || !BASE64_RE.test(e.bodyB64)) return null;
+  try {
+    atob(e.bodyB64);
+  } catch {
+    return null; // shape-right but undecodable -- not a storable row
+  }
   if (typeof e.fetchedAt !== "number" || !Number.isFinite(e.fetchedAt)) return null;
   if (typeof e.ttl !== "number" || !Number.isFinite(e.ttl) || e.ttl <= 0) return null;
   if (typeof e.upstream !== "string") return null;
@@ -71,6 +98,7 @@ export function parseEnvelope(raw: string | null | undefined): Envelope | null {
     fetchedAt: e.fetchedAt,
     ttl: e.ttl,
     upstream: e.upstream,
+    line: typeof e.line === "string" && e.line.length > 0 && e.line.length <= LINE_MAX ? e.line : null,
   };
 }
 

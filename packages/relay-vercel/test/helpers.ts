@@ -88,7 +88,11 @@ export function post(pathAndQuery: string, body: string | Uint8Array, headers: R
   });
 }
 
-/** Read a JSON response body. */
-export async function jsonOf(response: Response): Promise<any> {
-  return JSON.parse(await response.text());
+/**
+ * Read a JSON response body. Generic with an `unknown` default so the
+ * suites that destructure annotate the shape they assert against (and
+ * the rest pass the value straight to `expect`).
+ */
+export async function jsonOf<T = unknown>(response: Response): Promise<T> {
+  return JSON.parse(await response.text()) as T;
 }

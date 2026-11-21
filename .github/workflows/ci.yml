@@ -47,9 +47,12 @@ jobs:
       - name: Frontend typecheck
         run: pnpm -r typecheck
       - name: Frontend unit tests
-        # The ~500 vitest cases (webui). happy-dom environment, no game
-        # assets needed.
-        run: pnpm --filter @wowsp/webui test
+        # The ~500 vitest cases (webui, happy-dom; no game assets) plus
+        # the relay-vercel edge-adapter suite (node env, no DOM) -- the
+        # policy fixture parity cases ride the same step.
+        run: |
+          pnpm --filter @wowsp/webui test
+          pnpm --filter @wowsp/relay-vercel test
       - name: Bake writer unit tests
         # Locks the GLB container contract on every writer in
         # scripts/model_convert/bake_model.py (JSON chunk space-padded, BIN

@@ -6,7 +6,16 @@
 
 import { readConfig, type RuntimeConfig } from "./config";
 import { epochSeconds } from "./envelope";
-import { clientIp, errorResponse, guarded, methodNotAllowed, preflight, readJsonBody, BodyTooLargeError } from "./http";
+import {
+  clientIp,
+  errorResponse,
+  guarded,
+  methodNotAllowed,
+  preflight,
+  readCapped,
+  readJsonBody,
+  BodyTooLargeError,
+} from "./http";
 import type { Kv } from "./kv";
 import { openKv } from "./kv";
 import { rateLimit } from "./ratelimit";
@@ -20,6 +29,8 @@ const PEER_CAP = 128;
 const ANNOUNCE_RATE_PER_HOUR = 10;
 /** Liveness callback budget (§5.2.2). */
 const ANNOUNCE_CALLBACK_MS = 10_000;
+/** Liveness callback body cap: manifests are tiny; big answers are junk. */
+const HEALTH_PROBE_CAP = 64 * 1024;
 /** Announce request body cap. */
 const ANNOUNCE_BODY_CAP = 8 * 1024;
 /** The upstream list is cached this long (§5.1 "cache-control max-age=60"). */
@@ -137,7 +148,13 @@ async function upstreamRows(kv: Kv, cfg: RuntimeConfig): Promise<PeerRow[]> {
   if (parsed === null || !Array.isArray(parsed.peers)) return rows;
   for (const entry of parsed.peers) {
     const row = parseRow(JSON.stringify(entry));
-    if (row !== null) rows.push(row);
+    if (row === null) continue;
+    // Shape-gate every upstream row through the same public-URL gate
+    // announces pass (§5.2): an http://, IP-literal or junk URL from a
+    // compromised/buggy peersUpstream must be neither republished nor
+    // become a server-side fetch target (§5.3 keeps such nodes private).
+    if (!gateAnnounceUrl(row.url).ok) continue;
+    rows.push(row);
   }
   return rows;
 }
@@ -273,7 +290,12 @@ async function probePeer(url: string): Promise<PeerRow | null> {
   try {
     const response = await fetch(`${url}/api/health`, { signal: controller.signal });
     if (!response.ok) return null;
-    const answer = (await response.json()) as HealthAnswer;
+    // Capped read (not response.json()): a hostile endpoint cannot
+    // balloon memory with an endless "health" body. Real manifests are
+    // a few hundred bytes; 64 KiB is generous.
+    const probe = await readCapped(response, HEALTH_PROBE_CAP);
+    if (probe === null) return null;
+    const answer = JSON.parse(new TextDecoder().decode(probe)) as HealthAnswer;
     if (answer.capabilities === null || typeof answer.capabilities !== "object" || Array.isArray(answer.capabilities)) {
       return null;
     }

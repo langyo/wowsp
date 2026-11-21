@@ -6,11 +6,22 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { healthResponse } from "../src/health";
 import { freshEnv, get, jsonOf } from "./helpers";
 
+/** The §2 manifest shape the assertions destructure. */
+interface HealthBody {
+  ok: boolean;
+  provider: string;
+  name: string;
+  version: string;
+  notice: string | null;
+  capabilities: { gateway: boolean; lookup: boolean; peers: boolean; blocks: boolean };
+  node: { id: string; role: string; sync: boolean; peersUpstream: string | null };
+}
+
 beforeEach(() => freshEnv());
 
 describe("manifest", () => {
   it("declares the HTTP-only subset (gateway false)", async () => {
-    const body = await jsonOf(healthResponse());
+    const body = await jsonOf<HealthBody>(healthResponse());
     expect(body).toMatchObject({
       ok: true,
       provider: "wowsp-gateway",
@@ -32,7 +43,7 @@ describe("manifest", () => {
       NOTICE: "test node",
       PEERS_SYNC: "false",
     });
-    const body = await jsonOf(healthResponse());
+    const body = await jsonOf<HealthBody>(healthResponse());
     expect(body.node.id).toBe("0123456789abcdef0123456789abcdef");
     expect(body.node.role).toBe("official");
     expect(body.node.sync).toBe(false);
@@ -41,7 +52,7 @@ describe("manifest", () => {
 
   it("ignores an invalid NODE_ID (falls back to random)", async () => {
     freshEnv({ NODE_ID: "not-hex" });
-    const body = await jsonOf(healthResponse());
+    const body = await jsonOf<HealthBody>(healthResponse());
     expect(body.node.id).toMatch(/^[0-9a-f]{32}$/);
     expect(body.node.id).not.toBe("not-hex");
   });
@@ -56,6 +67,6 @@ describe("manifest", () => {
     const route = await import("../api/health");
     const response = await route.default(get("/api/health"));
     expect(response.status).toBe(200);
-    expect((await jsonOf(response)).ok).toBe(true);
+    expect((await jsonOf<HealthBody>(response)).ok).toBe(true);
   });
 });

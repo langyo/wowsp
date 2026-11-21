@@ -149,6 +149,16 @@ describe("upstream failures (§3.1)", () => {
     expect(response.status).toBe(502);
     expect(await jsonOf(response)).toEqual({ error: "upstream_failed" });
   });
+  it("answers 502 on scheme-changing redirects (https -> http same host)", async () => {
+    mockFetch((url) =>
+      url.hostname === "vortex.wowsgame.cn"
+        ? new Response(null, { status: 302, headers: { location: "http://vortex.wowsgame.cn/x" } })
+        : new Response("never", { status: 200 }),
+    );
+    const response = await handleLookup(lookupRequest(SHIPS_URL));
+    expect(response.status).toBe(502);
+    expect(await jsonOf(response)).toEqual({ error: "upstream_failed" });
+  });
   it("follows same-host redirects to the document", async () => {
     const { calls } = mockFetch((url) =>
       url.pathname.endsWith("/pvp")
@@ -212,6 +222,7 @@ describe("peer pull (§5.4)", () => {
       fetchedAt: Math.floor(Date.now() / 1000),
       ttl: 120,
       upstream: "vortex.wowsgame.cn",
+      line, // carried canonical line (relay-core PR #2067)
     };
     // Seed the own registry with one lookup-capable peer.
     const { openKv } = await import("../src/kv");
@@ -248,6 +259,123 @@ describe("peer pull (§5.4)", () => {
     expect(cached.headers.get("x-wowsp-cache")).toBe("hit");
   });
 
+  it("rejects peer rows without a carried line (fail closed, PR #2067)", async () => {
+    freshEnv({ PEERS_SYNC: "true", PEERS_UPSTREAM: "" });
+    const line = canonicalRequestLine("GET", SHIPS_URL, null);
+    const cid = await cidOfRequest(line);
+    const envelope = {
+      v: 1,
+      status: 200,
+      contentType: "application/json",
+      bodyB64: btoa(UPSTREAM_DOC),
+      fetchedAt: Math.floor(Date.now() / 1000),
+      ttl: 120,
+      upstream: "vortex.wowsgame.cn",
+    };
+    const { openKv } = await import("../src/kv");
+    await openKv(null, null).setTtl(
+      "peer:https://peer.example.org",
+      JSON.stringify({
+        v: 1,
+        url: "https://peer.example.org",
+        capabilities: { lookup: true },
+        role: "community",
+        nodeId: "0123456789abcdef0123456789abcdef",
+        addedAt: 1,
+        lastSeenAt: 2,
+        notice: null,
+        private: false,
+      }),
+      172_800,
+    );
+    const { calls } = mockFetch((url) => {
+      if (url.href === `https://peer.example.org/api/blocks/${cid}`) {
+        return new Response(JSON.stringify(envelope)); // no line field
+      }
+      return new Response(UPSTREAM_DOC, { headers: { "content-type": "application/json" } });
+    });
+    const response = await handleLookup(lookupRequest(SHIPS_URL));
+    expect(response.headers.get("x-wowsp-cache")).toBe("miss"); // fell through
+    expect(calls.map((call) => call.url)).toEqual([
+      `https://peer.example.org/api/blocks/${cid}`,
+      SHIPS_URL,
+    ]);
+  });
+
+  it("rejects peer rows whose carried line does not hash to the cid", async () => {
+    freshEnv({ PEERS_SYNC: "true", PEERS_UPSTREAM: "" });
+    const cid = await cidOfRequest(canonicalRequestLine("GET", SHIPS_URL, null));
+    // A well-formed line for a DIFFERENT request: hashes to another cid.
+    const wrongLine = canonicalRequestLine("GET", "https://vortex.wowsgame.cn/api/accounts/999/ships/pvp/", null);
+    const envelope = {
+      v: 1,
+      status: 200,
+      contentType: "application/json",
+      bodyB64: btoa(UPSTREAM_DOC),
+      fetchedAt: Math.floor(Date.now() / 1000),
+      ttl: 120,
+      upstream: "vortex.wowsgame.cn",
+      line: wrongLine,
+    };
+    const { openKv } = await import("../src/kv");
+    await openKv(null, null).setTtl(
+      "peer:https://peer.example.org",
+      JSON.stringify({
+        v: 1,
+        url: "https://peer.example.org",
+        capabilities: { lookup: true },
+        role: "community",
+        nodeId: "0123456789abcdef0123456789abcdef",
+        addedAt: 1,
+        lastSeenAt: 2,
+        notice: null,
+        private: false,
+      }),
+      172_800,
+    );
+    const { calls } = mockFetch((url) => {
+      if (url.href === `https://peer.example.org/api/blocks/${cid}`) {
+        return new Response(JSON.stringify(envelope));
+      }
+      return new Response(UPSTREAM_DOC, { headers: { "content-type": "application/json" } });
+    });
+    const response = await handleLookup(lookupRequest(SHIPS_URL));
+    expect(response.headers.get("x-wowsp-cache")).toBe("miss"); // lying row dropped
+    expect(calls).toHaveLength(2);
+  });
+
+  it("skips oversized peer block bodies (8 MiB cap)", async () => {
+    freshEnv({ PEERS_SYNC: "true", PEERS_UPSTREAM: "" });
+    const cid = await cidOfRequest(canonicalRequestLine("GET", SHIPS_URL, null));
+    const oversized = new Uint8Array(8 * 1024 * 1024 + 1);
+    const { openKv } = await import("../src/kv");
+    await openKv(null, null).setTtl(
+      "peer:https://peer.example.org",
+      JSON.stringify({
+        v: 1,
+        url: "https://peer.example.org",
+        capabilities: { lookup: true },
+        role: "community",
+        nodeId: "0123456789abcdef0123456789abcdef",
+        addedAt: 1,
+        lastSeenAt: 2,
+        notice: null,
+        private: false,
+      }),
+      172_800,
+    );
+    const { calls } = mockFetch((url) => {
+      if (url.href === `https://peer.example.org/api/blocks/${cid}`) {
+        return new Response(oversized);
+      }
+      return new Response(UPSTREAM_DOC, { headers: { "content-type": "application/json" } });
+    });
+    const response = await handleLookup(lookupRequest(SHIPS_URL));
+    expect(response.headers.get("x-wowsp-cache")).toBe("miss");
+    expect(await response.text()).toBe(UPSTREAM_DOC);
+    expect(calls).toHaveLength(2);
+  });
+
   it("skips peers that are not lookup-capable", async () => {
     freshEnv({ PEERS_SYNC: "true", PEERS_UPSTREAM: "" });
     const { openKv } = await import("../src/kv");
@@ -272,6 +400,34 @@ describe("peer pull (§5.4)", () => {
     expect(response.headers.get("x-wowsp-cache")).toBe("miss"); // fell through to upstream
     expect(calls).toHaveLength(1);
     expect(calls[0].url).toBe(SHIPS_URL);
+  });
+});
+
+describe("KV outages degrade, never 500 (finding 7)", () => {
+  it("treats a failed block read as a miss and serves without storing", async () => {
+    freshEnv({
+      PEERS_SYNC: "false",
+      PEERS_UPSTREAM: "",
+      KV_REST_URL: "https://kv.example.org",
+      KV_REST_TOKEN: "test-token-only",
+    });
+    const { calls } = mockFetch((url) => {
+      if (url.hostname === "kv.example.org") {
+        return new Response("boom", { status: 500 });
+      }
+      return new Response(UPSTREAM_DOC, { headers: { "content-type": "application/json" } });
+    });
+    const first = await handleLookup(lookupRequest(SHIPS_URL));
+    expect(first.status).toBe(200); // read failed -> miss -> upstream -> serve
+    expect(first.headers.get("x-wowsp-cache")).toBe("miss");
+    expect(await first.text()).toBe(UPSTREAM_DOC);
+    // The rate-limit counter failed open too (no 429), and the failed
+    // store means the second request refetches upstream.
+    const second = await handleLookup(lookupRequest(SHIPS_URL));
+    expect(second.status).toBe(200);
+    expect(second.headers.get("x-wowsp-cache")).toBe("miss");
+    const upstreamCalls = calls.filter((call) => call.url === SHIPS_URL);
+    expect(upstreamCalls).toHaveLength(2);
   });
 });
 

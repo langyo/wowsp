@@ -30,15 +30,27 @@ async function loadBlock(cid: string): Promise<LoadedBlock | null> {
   return { envelope, raw: raw as string };
 }
 
-/** Pull the <cid> path segment out of /api/blocks/<cid>... or /ipfs/<cid>. */
-function cidFromPath(pathname: string, ipfsAlias?: "ipfs"): string | null {
+type CidPath = { kind: "ok"; cid: string } | { kind: "missing" } | { kind: "malformed" };
+
+/**
+ * Pull the <cid> path segment out of /api/blocks/<cid>... or /ipfs/<cid>.
+ * Malformed percent-escapes make decodeURIComponent THROW -- surfaced
+ * as `malformed` so the routes answer 400 invalid_cid, not a 500.
+ */
+function cidFromPath(pathname: string, ipfsAlias?: "ipfs"): CidPath {
   const segments = pathname.split("/").filter((segment) => segment !== "");
+  const segment = ipfsAlias === "ipfs" ? segments[1] : segments[2];
   if (ipfsAlias === "ipfs") {
-    if (segments.length !== 2 || segments[0] !== "ipfs") return null;
-    return decodeURIComponent(segments[1]);
+    if (segments.length !== 2 || segments[0] !== "ipfs") return { kind: "missing" };
+  } else if (segments.length < 3 || segments[0] !== "api" || segments[1] !== "blocks") {
+    return { kind: "missing" };
   }
-  if (segments.length < 3 || segments[0] !== "api" || segments[1] !== "blocks") return null;
-  return decodeURIComponent(segments[2]);
+  if (segment === undefined) return { kind: "missing" };
+  try {
+    return { kind: "ok", cid: decodeURIComponent(segment) };
+  } catch {
+    return { kind: "malformed" };
+  }
 }
 
 /** `GET /api/blocks/<cid>` -- the envelope JSON (404 unknown, §4.2). */
@@ -46,8 +58,10 @@ export async function handleBlockEnvelope(request: Request): Promise<Response> {
   return guarded(async () => {
     if (request.method === "OPTIONS") return preflight();
     if (request.method !== "GET") return methodNotAllowed("GET, OPTIONS");
-    const cid = cidFromPath(new URL(request.url).pathname);
-    if (cid === null) return errorResponse(404, "not_found");
+    const path = cidFromPath(new URL(request.url).pathname);
+    if (path.kind === "missing") return errorResponse(404, "not_found");
+    if (path.kind === "malformed") return errorResponse(400, "invalid_cid");
+    const cid = path.cid;
     if (!CID_SPELLING_RE.test(cid)) return errorResponse(400, "invalid_cid");
     const block = await loadBlock(cid);
     if (block === null) return errorResponse(404, "not_found");
@@ -67,8 +81,10 @@ export async function handleBlockRaw(request: Request, ipfsAlias?: "ipfs"): Prom
   return guarded(async () => {
     if (request.method === "OPTIONS") return preflight();
     if (request.method !== "GET") return methodNotAllowed("GET, OPTIONS");
-    const cid = cidFromPath(new URL(request.url).pathname, ipfsAlias);
-    if (cid === null) return errorResponse(404, "not_found");
+    const path = cidFromPath(new URL(request.url).pathname, ipfsAlias);
+    if (path.kind === "missing") return errorResponse(404, "not_found");
+    if (path.kind === "malformed") return errorResponse(400, "invalid_cid");
+    const cid = path.cid;
     if (!CID_SPELLING_RE.test(cid)) return errorResponse(400, "invalid_cid");
     const block = await loadBlock(cid);
     if (block === null) return errorResponse(404, "not_found");

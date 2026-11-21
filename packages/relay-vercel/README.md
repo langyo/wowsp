@@ -99,7 +99,13 @@ Adapter policy details worth knowing (all documented in the source):
 - Non-2xx upstream statuses answer `502 upstream_failed` (§3.1: the
   client falls back to its direct chain either way).
 - Rate-limit counters fail OPEN on KV errors: budgets are abuse brakes,
-  not auth.
+  not auth. Block-store reads/writes degrade the same way (read error
+  → cache miss; write error → serve the document anyway).
+- Stored envelopes carry the optional `line` field (the canonical
+  request line, relay-core PR #2067). Own writes always include it;
+  peer-pulled rows are trusted ONLY when the field is present and
+  hashes to the requested CID — a row without it fails closed to the
+  next peer / the upstream fetch.
 
 ## Development
 
@@ -114,8 +120,10 @@ pnpm --filter @wowsp/relay-vercel typecheck   # tsc --noEmit, strict
 
 `test/policy.fixture.json` pins the allowlist-adjacent policy to data:
 canonical request lines, the CIDs they derive to, and one vector per
-`§3.3` TTL row plus the defaults. The Rust `relay-core` implementation
-(wave A) consumes the same file, so any drift between the two policy
-cores fails CI on at least one side. The CID vectors were verified
-independently at authoring time (layout `0x01 0x55 0x12 0x20` + sha256
-of the line, base58btc spelling).
+`§3.3` TTL row plus the defaults. relay-core (wave A) consumes the same
+fixture, so once it lands, drift between the two policy cores fails CI
+on whichever side disagrees; until then this file pins the TypeScript
+implementation (the envelope `line` field and the fail-closed peer-row
+verification already mirror the relay-core decision). The CID vectors
+were verified independently at authoring time (layout
+`0x01 0x55 0x12 0x20` + sha256 of the line, base58btc spelling).

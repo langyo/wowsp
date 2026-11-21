@@ -8,6 +8,20 @@ import { handleAnnounce, handlePeersList } from "../src/peers";
 import { openKv } from "../src/kv";
 import { freshEnv, get, jsonOf, mockFetch, post } from "./helpers";
 
+/** The announce answer shape (§5.2). */
+interface AnnounceBody {
+  ok: boolean;
+  listed: boolean;
+  reason?: string;
+}
+
+/** The published list shape (§5.1). */
+interface PeersBody {
+  v: number;
+  generatedAt: number;
+  peers: Array<{ url: string; role: string; notice: string | null; [key: string]: unknown }>;
+}
+
 function seedPeerRow(kv: ReturnType<typeof openKv>, url: string, extra: Record<string, unknown> = {}): Promise<void> {
   return kv.setTtl(
     `peer:${url}`,
@@ -51,14 +65,14 @@ describe("announce handshake (§5.2)", () => {
       post("/api/peers/announce", JSON.stringify({ url: "https://peer.example.org", contact: "XX legion node" })),
     );
     expect(response.status).toBe(200);
-    expect(await jsonOf(response)).toEqual({ ok: true, listed: true });
+    expect(await jsonOf<AnnounceBody>(response)).toEqual({ ok: true, listed: true });
     expect(calls).toHaveLength(1);
 
     const list = await handlePeersList(get("/api/peers"));
     expect(list.status).toBe(200);
     expect(list.headers.get("cache-control")).toBe("public, max-age=60");
     expect(list.headers.get("access-control-allow-origin")).toBe("*");
-    const body = await jsonOf(list);
+    const body = await jsonOf<PeersBody>(list);
     expect(body.v).toBe(1);
     expect(typeof body.generatedAt).toBe("number");
     expect(body.peers).toEqual([
@@ -80,7 +94,7 @@ describe("announce handshake (§5.2)", () => {
     });
     const response = await handleAnnounce(post("/api/peers/announce", JSON.stringify({ url: "https://peer.example.org" })));
     expect(response.status).toBe(200);
-    const body = await jsonOf(response);
+    const body = await jsonOf<AnnounceBody>(response);
     expect(body.ok).toBe(true);
     expect(body.listed).toBe(false);
     expect(typeof body.reason).toBe("string");
@@ -90,7 +104,7 @@ describe("announce handshake (§5.2)", () => {
     mockFetch(() => new Response("<html>hi</html>", { headers: { "content-type": "text/html" } }));
     const response = await handleAnnounce(post("/api/peers/announce", JSON.stringify({ url: "https://peer.example.org" })));
     expect(response.status).toBe(200);
-    expect((await jsonOf(response)).listed).toBe(false);
+    expect((await jsonOf<AnnounceBody>(response)).listed).toBe(false);
   });
 
   it("closes the registry with 403 when announces are off (§5.2.5)", async () => {
@@ -179,7 +193,7 @@ describe("the list (§5.1)", () => {
       }
       throw new Error("unexpected " + url.href);
     });
-    const body = await jsonOf(await handlePeersList(get("/api/peers")));
+    const body = await jsonOf<PeersBody>(await handlePeersList(get("/api/peers")));
     expect(fetched).toBe(1);
     expect(body.peers).toHaveLength(2);
     expect(body.peers[0]).toMatchObject({ url: "https://shared.example.org", role: "own-answer" }); // own wins
@@ -190,10 +204,74 @@ describe("the list (§5.1)", () => {
     expect(fetched).toBe(1);
   });
 
+  it("shape-gates upstream rows (http/IP-literal junk is dropped, finding 5)", async () => {
+    freshEnv({ PEERS_UPSTREAM: "https://official.example.org" });
+    const upstreamBody = {
+      v: 1,
+      generatedAt: 1,
+      peers: [
+        {
+          url: "http://plain-http.example.org", // not https -> never republished
+          capabilities: { lookup: true },
+          role: "community",
+          nodeId: "a",
+          addedAt: 1,
+          lastSeenAt: 1,
+          notice: null,
+        },
+        {
+          url: "https://192.0.2.10", // IP literal -> private per §5.3
+          capabilities: { lookup: true },
+          role: "community",
+          nodeId: "b",
+          addedAt: 1,
+          lastSeenAt: 1,
+          notice: null,
+        },
+        {
+          url: "not a url at all", // junk
+          capabilities: { lookup: true },
+          role: "community",
+          nodeId: "c",
+          addedAt: 1,
+          lastSeenAt: 1,
+          notice: null,
+        },
+        {
+          url: "https://legit.example.org",
+          capabilities: { lookup: true },
+          role: "community",
+          nodeId: "d",
+          addedAt: 1,
+          lastSeenAt: 1,
+          notice: null,
+        },
+      ],
+    };
+    mockFetch((url) => {
+      if (url.href === "https://official.example.org/api/peers") {
+        return new Response(JSON.stringify(upstreamBody));
+      }
+      throw new Error("unexpected " + url.href);
+    });
+    const body = await jsonOf<PeersBody>(await handlePeersList(get("/api/peers")));
+    expect(body.peers).toEqual([expect.objectContaining({ url: "https://legit.example.org" })]);
+  });
+
+  it("treats an oversized health probe as unreachable (64 KiB cap, finding 3)", async () => {
+    mockFetch(() => new Response("x".repeat(64 * 1024 + 1)));
+    const response = await handleAnnounce(
+      post("/api/peers/announce", JSON.stringify({ url: "https://peer.example.org" })),
+    );
+    expect(response.status).toBe(200);
+    const body = await jsonOf<AnnounceBody>(response);
+    expect(body.listed).toBe(false);
+  });
+
   it("excludes private rows (§5.3)", async () => {
     const kv = openKv(null, null);
     await seedPeerRow(kv, "https://lan-node.example.org", { private: true });
-    const body = await jsonOf(await handlePeersList(get("/api/peers")));
+    const body = await jsonOf<PeersBody>(await handlePeersList(get("/api/peers")));
     expect(body.peers).toHaveLength(0);
   });
 
@@ -212,7 +290,7 @@ describe("the list (§5.1)", () => {
     for (let i = 0; i < 130; i += 1) {
       await seedPeerRow(kv, `https://peer${i}.example.org`, { lastSeenAt: 1000 + i });
     }
-    const body = await jsonOf(await handlePeersList(get("/api/peers")));
+    const body = await jsonOf<PeersBody>(await handlePeersList(get("/api/peers")));
     expect(body.peers).toHaveLength(128);
     const urls = body.peers.map((peer: { url: string }) => peer.url);
     expect(urls).not.toContain("https://peer0.example.org"); // oldest evicted
@@ -226,7 +304,7 @@ describe("the list (§5.1)", () => {
     mockFetch(() => {
       throw new Error("upstream list down");
     });
-    const body = await jsonOf(await handlePeersList(get("/api/peers")));
+    const body = await jsonOf<PeersBody>(await handlePeersList(get("/api/peers")));
     expect(body.peers).toHaveLength(1);
   });
 

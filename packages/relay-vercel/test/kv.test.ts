@@ -86,6 +86,28 @@ describe("Upstash REST", () => {
     ]);
   });
 
+  it("keys() SCANs from cursor 0 across pages (do/while, finding 1)", async () => {
+    const bodies: unknown[] = [];
+    let scan = 0;
+    mockFetch(async (_url, init) => {
+      const body = JSON.parse(String(init?.body));
+      bodies.push(body);
+      // First SCAN returns a non-zero cursor + one key; the second
+      // finishes the iteration. The pre-fix code never issued ANY scan
+      // (cursor 0 !== "0" was false before the first call).
+      scan += 1;
+      return new Response(
+        JSON.stringify(scan === 1 ? { result: ["17", ["peer:a"]] } : { result: ["0", ["peer:b"]] }),
+      );
+    });
+    const kvInstance = openKv("https://kv.example.org", "test-token-only");
+    await expect(kvInstance.keys("peer:")).resolves.toEqual(["peer:a", "peer:b"]);
+    expect(bodies).toEqual([
+      ["SCAN", "0", "MATCH", "peer:*", "COUNT", "256"],
+      ["SCAN", "17", "MATCH", "peer:*", "COUNT", "256"],
+    ]);
+  });
+
   it("maps GET nulls to null and reports values verbatim", async () => {
     mockFetch(async () => new Response(JSON.stringify({ result: null })));
     const kv = openKv("https://kv.example.org", "test-token-only");

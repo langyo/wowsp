@@ -24,7 +24,7 @@ import {
   serializeEnvelope,
   type Envelope,
 } from "./envelope";
-import { clientIp, errorResponse, guarded, methodNotAllowed, preflight } from "./http";
+import { clientIp, errorResponse, guarded, methodNotAllowed, preflight, readCapped, concatBytes } from "./http";
 import type { Kv } from "./kv";
 import { openKv } from "./kv";
 import { collectPeerRows } from "./peers";
@@ -144,6 +144,11 @@ async function fetchUpstream(
         throw new UpstreamFailedError("bad redirect");
       }
       if (next.host !== originalHost) throw new UpstreamFailedError("cross-host redirect");
+      // Scheme changes are refused too: in normal operation the chain is
+      // https and an http://same-host downgrade must not be followed.
+      // (Equality, not a hard https check, because UPSTREAM_OVERRIDE
+      // air-gapped bases may deliberately be non-https from hop one.)
+      if (next.protocol !== target.protocol) throw new UpstreamFailedError("scheme-change redirect");
       if (currentMethod === "POST" && (response.status === 301 || response.status === 302 || response.status === 303)) {
         currentMethod = "GET"; // classic redirect downgrade
         currentBody = null;
@@ -163,7 +168,7 @@ async function fetchUpstream(
     let total = 0;
     for (;;) {
       const { done, value } = await reader.read();
-      if (done) return { kind: "ok", bytes: concat(chunks, total), status: response.status, contentType: responseContentType };
+      if (done) return { kind: "ok", bytes: concatBytes(chunks, total), status: response.status, contentType: responseContentType };
       chunks.push(value);
       total += value.byteLength;
       if (total > UPSTREAM_BODY_CAP) {
@@ -174,16 +179,6 @@ async function fetchUpstream(
     }
   }
   throw new UpstreamFailedError("too many redirects");
-}
-
-function concat(chunks: Uint8Array[], total: number): Uint8Array {
-  const out = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    out.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return out;
 }
 
 /** Buffered prefix + the still-live reader remainder, as one stream. */
@@ -205,16 +200,20 @@ function spliceStream(buffered: Uint8Array[], reader: ReadableStreamDefaultReade
   });
 }
 
+/** Peer block bodies are capped like upstream bodies (§3.1's 8 MiB). */
+const PEER_BLOCK_CAP = 8 * 1024 * 1024;
+
 /**
  * §5.4 pull-through sync: ask up to SYNC_PEERS_MAX lookup-capable peers
  * (own table first, then the upstream list) for the block, 3 s each,
- * and trust a row only after the CID verify + envelope shape checks.
+ * and trust a row ONLY when it carries its canonical request line and
+ * that line hashes to the CID we asked for (the relay-core PR #2067
+ * envelope `line` field; §4.2 content verification, fail closed).
  */
 async function pullFromPeers(
   kv: Kv,
   cfg: RuntimeConfig,
   cid: string,
-  canonicalLine: string,
 ): Promise<{ envelope: Envelope; raw: string } | null> {
   const rows = (await collectPeerRows(kv, cfg)).filter((row) => row.capabilities?.lookup === true);
   for (const row of rows.slice(0, cfg.syncPeersMax)) {
@@ -223,13 +222,19 @@ async function pullFromPeers(
     try {
       const response = await fetch(`${row.url}/api/blocks/${cid}`, { signal: controller.signal });
       if (!response.ok) continue;
-      const raw = await response.text();
+      const bytes = await readCapped(response, PEER_BLOCK_CAP);
+      if (bytes === null) continue; // oversized peer body -- untrusted, skip
+      const raw = new TextDecoder().decode(bytes);
       const envelope = parseEnvelope(raw);
-      // §4.2: content verification before trust -- the served row must
-      // match the CID we asked for, recomputed from OUR request line.
       if (envelope === null) continue;
       if (envelope.status < 200 || envelope.status > 299) continue; // never serve a peer's error page
-      if (!(await cidVerify(cid, canonicalLine))) continue;
+      // Fail closed: no carried line, no trust (rows from older nodes
+      // or foreign 200s are simply not usable -- fall through to the
+      // next peer / upstream).
+      if (envelope.line === null) continue;
+      // Real verification: the PEER-declared line must hash to the CID
+      // we independently asked for. A lying peer's row drops here.
+      if (!(await cidVerify(cid, envelope.line))) continue;
       return { envelope, raw };
     } catch {
       // unreachable/slow peer -> next peer (§5.4: all misses -> upstream)
@@ -273,15 +278,24 @@ export async function handleLookup(request: Request): Promise<Response> {
     const line = canonicalRequestLine(request.method, rawUrl, bodySha256);
     const cid = await cidOfRequest(line);
 
-    const stored = parseEnvelope(await kv.get(`block:${cid}`));
+    // KV read failures degrade to a miss -- the cache is an
+    // optimization, never a dependency of the route (finding 7).
+    let stored: Envelope | null = null;
+    try {
+      stored = parseEnvelope(await kv.get(`block:${cid}`));
+    } catch {
+      stored = null;
+    }
     if (stored !== null && envelopeFresh(stored)) return serveEnvelope(stored, "hit");
 
     if (cfg.peersSync) {
-      const pulled = await pullFromPeers(kv, cfg, cid, line);
+      const pulled = await pullFromPeers(kv, cfg, cid);
       if (pulled !== null) {
-        // Store what the peer served (its own fetchedAt/ttl travel with
-        // the row) and serve with peer provenance (§5.4).
-        await kv.setTtl(`block:${cid}`, pulled.raw, pulled.envelope.ttl + STORE_GRACE_SECONDS);
+        // Store what the peer served (its own fetchedAt/ttl/line travel
+        // with the row); a store failure still serves (best-effort).
+        await kv
+          .setTtl(`block:${cid}`, pulled.raw, pulled.envelope.ttl + STORE_GRACE_SECONDS)
+          .catch(() => undefined);
         return serveEnvelope(pulled.envelope, "peer-hit");
       }
     }
@@ -308,8 +322,13 @@ export async function handleLookup(request: Request): Promise<Response> {
         fetchedAt: epochSeconds(),
         ttl,
         upstream: host,
+        // Own writes always carry the line so peers can verify this row
+        // (relay-core PR #2067; see src/envelope.ts).
+        line,
       };
-      await kv.setTtl(`block:${cid}`, serializeEnvelope(envelope), ttl + STORE_GRACE_SECONDS);
+      await kv
+        .setTtl(`block:${cid}`, serializeEnvelope(envelope), ttl + STORE_GRACE_SECONDS)
+        .catch(() => undefined); // store failure still serves the document
       return serveEnvelope(envelope, "miss");
     } catch {
       // §3.1: any upstream failure (network, timeout, non-2xx,

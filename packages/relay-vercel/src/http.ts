@@ -83,3 +83,38 @@ export class BodyTooLargeError extends Error {
     super("body too large");
   }
 }
+
+/** Concatenate chunks into one array (no spread: bodies reach 8 MiB). */
+export function concatBytes(chunks: Uint8Array[], total: number): Uint8Array {
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return out;
+}
+
+/**
+ * Read a response body up to `maxBytes`; returns `null` when the body
+ * EXCEEDS the cap (the reader is cancelled). Used for peer block bodies
+ * and health probes so a hostile endpoint cannot balloon memory with an
+ * endless stream -- unlike `response.text()`, this never buffers more
+ * than the cap.
+ */
+export async function readCapped(response: Response, maxBytes: number): Promise<Uint8Array | null> {
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array(0);
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return concatBytes(chunks, total);
+    chunks.push(value);
+    total += value.byteLength;
+    if (total > maxBytes) {
+      void reader.cancel().catch(() => undefined);
+      return null;
+    }
+  }
+}

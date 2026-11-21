@@ -88,9 +88,12 @@ function upstashKv(baseUrl: string, token: string): Kv {
     async keys(prefix) {
       const found: string[] = [];
       let cursor = "0";
-      // SCAN loops are bounded (5 rounds x COUNT 256): the peer table is
-      // capped at 128 rows anyway (§5.2.3).
-      for (let round = 0; round < 5 && cursor !== "0" && found.length < 1024; round += 1) {
+      // SCAN starts AT cursor "0" (Redis semantics: zero is the initial
+      // cursor, the loop ENDS when the server returns it) -- a do/while,
+      // not a pre-condition loop. Rounds stay bounded (5 x COUNT 256):
+      // the peer table is capped at 128 rows anyway (§5.2.3).
+      let round = 0;
+      do {
         const { result, error } = await upstashFetch(baseUrl, token, [
           "SCAN",
           cursor,
@@ -103,7 +106,8 @@ function upstashKv(baseUrl: string, token: string): Kv {
         const [next, batch] = result as [string, string[]];
         cursor = next;
         found.push(...batch);
-      }
+        round += 1;
+      } while (cursor !== "0" && round < 5 && found.length < 1024);
       return found;
     },
   };
