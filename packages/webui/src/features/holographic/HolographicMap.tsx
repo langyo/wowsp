@@ -102,6 +102,12 @@ import type { SquadronStateEvents } from "@/api";
 import { clearMapModel, ensureWaterFloor, reapplyWaterTheme, tryLoadMapModel } from "./mapTerrain";
 import { drawMinimap, paintEnlargedMap } from "./minimapPainter";
 import { bundledRibbonUrl } from "./ribbonIcons";
+import {
+  EXPORT_LABEL_LAYER,
+  ShipLabelSpriteLayer,
+  exportShipCardVisible,
+  type ShipLabelSpriteInput,
+} from "./exportShipLabels";
 import HoloExportModal from "./HoloExportModal";
 import {
   EXPORT_GOD_FOV_DEG,
@@ -4157,6 +4163,56 @@ const RECORDED_DOLLY_MIN = -40;
         });
       }
     }
+    /** The ALIVE hulls to card in the 3D take at battle time `t`: the same
+     *  markers/labels the 2D label pass reads, minus every SUNK hull (the
+     *  user's rule — 「阵亡的才不显示」) and every hull not observed yet (a
+     *  card would announce an unspotted enemy). Ghost hulls (spotted once,
+     *  dark now) keep their card at the last-known spot, exactly like the 2D
+     *  pass's labels. */
+    function collectExportShipCards(t: number): ShipLabelSpriteInput[] {
+      const out: ShipLabelSpriteInput[] = [];
+      const labels = ctx.shipLabels.value;
+      for (let i = 0; i < ctx.shipMarkers.length; i++) {
+        const marker = ctx.shipMarkers[i];
+        const label = labels[i];
+        if (!marker || !label || label.kind === "plane") continue;
+        if (
+          !exportShipCardVisible({
+            t,
+            firstT: marker.userData.firstT as number | undefined,
+            deathTime: marker.userData.deathTime as number | null,
+            dead: label.dead,
+            hp: label.hp,
+          })
+        ) {
+          // SUNK (or never-spotted) hull: no card at all — the sunk case is
+          // the user's explicit rule (markerUpdate drops the DOM card too).
+          continue;
+        }
+        out.push({
+          entityId: label.entityId,
+          x: marker.position.x,
+          y: marker.position.y,
+          z: marker.position.z,
+          data: {
+            name: label.scripted ? "" : label.name,
+            clan: nameStats.value.get(label.name)?.clanTag ?? null,
+            tier: tierRoman(label.tier),
+            shipName: label.shipName,
+            role:
+              label.role === "enemy"
+                ? "enemy"
+                : label.role === "self"
+                  ? "self"
+                  : "ally",
+            hp: label.hp,
+            maxHp: label.maxHp,
+            recoverableFrac: label.hpRecoverableFrac ?? null,
+          },
+        });
+      }
+      return out;
+    }
 
     async function runPlaybackExportJob(): Promise<void> {
       const full = computeFullMapBounds(ctx);
@@ -4191,10 +4247,18 @@ const RECORDED_DOLLY_MIN = -40;
             Math.max(20000, godPose.distance * 4),
           )
         : null;
+      // The take's in-scene label cards live on their OWN layer: only the
+      // export camera ever enables it, so the live view's per-frame repaint
+      // (the export's restore path) can never show them.
+      godCamera?.layers.enable(EXPORT_LABEL_LAYER);
       // 3D-render bail-out notice (at most one per take): a missing scene or
       // a lost context switches the take to the 2D painting, never a blank
       // square — say so once instead of silently mixing modes.
       let export3dFallbackNoticed = false;
+      // In-scene ship-label sprites (3D take only): created before the encode
+      // loop and disposed in the finally below.
+      let shipLabelSprites: ShipLabelSpriteLayer | null = null;
+      let exportFrame = 0;
       const wasPlaying = playing.value;
       const resumeAt = current.value;
       playing.value = false;
@@ -4500,6 +4564,13 @@ const RECORDED_DOLLY_MIN = -40;
         // A cancel during the feed stops here — the encode loop never starts,
         // and the finally below still restores the playhead/card.
         if (exportCancel.cancelled) return;
+        // 3D take only: the in-scene label cards for every ALIVE hull (the
+        // user's rule 「阵亡的才不显示」). They read the same post-seek
+        // markers/labels the 2D pass reads, so both views agree.
+        if (s.view === "3d") {
+          shipLabelSprites = new ShipLabelSpriteLayer(api.value?.scene ?? null);
+          exportFrame = 0;
+        }
         // 3D view only: the scene's hulls load lazily (rebuildActors installs
         // a placeholder cone and swaps the GLB in when it lands), so a take
         // started right after opening the map would bake cones into every
@@ -4640,6 +4711,13 @@ const RECORDED_DOLLY_MIN = -40;
             // same post-seek state.
             seekBattleTime(t);
             if (godPose && godCamera) {
+              // In-scene label cards: one pass per frame, from the SAME
+              // post-seek data the 2D painter reads (no second clock).
+              shipLabelSprites?.update(
+                godCamera,
+                collectExportShipCards(t),
+                exportFrame++,
+              );
               if (paintExportScene3d(g, mapSizePx, godPose, godCamera)) return;
               if (!export3dFallbackNoticed) {
                 export3dFallbackNoticed = true;
@@ -4722,6 +4800,11 @@ const RECORDED_DOLLY_MIN = -40;
       } catch (e) {
         toast.error(String((e as Error)?.message ?? e));
       } finally {
+        // Take end: every card's canvas/texture/material is released before
+        // the live view is repainted (the sprites live on an export-only
+        // layer, but their resources must not outlive the take).
+        shipLabelSprites?.dispose();
+        shipLabelSprites = null;
         exporting.value = false;
         seekBattleTime(resumeAt);
         if (wasPlaying) playing.value = true;

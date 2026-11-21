@@ -46,6 +46,7 @@ import {
   EXPORT_CHAT_TITLE_H,
   EXPORT_CHAT_ENTRY_H,
   EXPORT_CHAT_ENTRY_TEXT_H,
+  EXPORT_CHAT_FIRST_ROW_DY,
   teamIdentityCell,
   teamStatBandWidth,
   PLAYBACK_CODEC_LADDER,
@@ -1401,11 +1402,14 @@ describe("drawRecorderPanel", () => {
   });
 });
 
-/* ── The chat panel: TOP-anchored transcript ──────────────────────────
-   The 2026-11-21 「聊天记录从开头渲染而不是从最下头往上渲染」 report: the
-   newest window still rides the panel, but the list now starts at the
-   entry area's top edge and flows DOWNWARD (the live chat panel's
-   reading), instead of stacking up from the panel's bottom edge. */
+/* ── The chat panel: TOP-anchored transcript, clear of the caption ────
+   The 2026-11-21 「聊天记录从开头渲染而不是从最下头往上渲染」 report anchored
+   the list to the TOP of the entry area; the 2026-11-22 report showed the
+   FIRST ENTRY OVERLAPPING the 聊天记录 caption, because its baseline sat
+   exactly on the caption band's edge — half of the 10px row reached back up
+   into the 12px caption's glyphs. Baselines alone hid that (both landed
+   inside the band), so these tests compare GLYPH BOXES: the first row's box
+   must start at or below the caption's box bottom, at every panel height. */
 describe("drawChatPanel", () => {
   const line = (i: number): PlaybackChatLine => ({
     sender: "p" + i,
@@ -1414,33 +1418,71 @@ describe("drawChatPanel", () => {
     time: i,
   });
 
-  it("anchors the first visible entry to the panel's top", () => {
+  /** Face box of a painted text: the chat painter centres every row on the
+   *  middle baseline, and CJK glyphs fill the em box, so ±half the face size
+   *  is the tight bound the reported overlap lives in. */
+  const boxOf = (t: PaintedText): { top: number; bottom: number } => {
+    const size = Number.parseFloat(/(\d+(?:\.\d+)?)px/.exec(t.font)?.[1] ?? "10");
+    return { top: t.y - size / 2, bottom: t.y + size / 2 };
+  };
+
+  it("starts the first entry below the caption's glyph box", () => {
     const { ctx, texts } = recordingContext();
     const h = recorderPanelHeight();
     drawChatPanel(
       ctx, 0, 0, EXPORT_SIDE_W, h,
       [line(0), line(1), line(2)], darkPalette(), LABELS.chat,
     );
-    // The caption still owns the panel's first 20px band...
     const caption = texts.find((t) => t.text === LABELS.chat)!;
+    // The caption owns the panel's first 20px band...
     expect(caption.y).toBeLessThan(EXPORT_CHAT_TITLE_H);
-    // ...and the OLDEST visible entry starts at the entry area's top edge
-    // (never at the bottom), the next ones flowing downward.
+    // ...and the OLDEST visible entry starts one half-face below that band
+    // (never on its edge, never at the bottom), the next ones flowing down.
     const stamps = texts.filter((t) => /^00:0\d$/.test(t.text));
     expect(stamps).toHaveLength(3);
-    expect(stamps[0].y).toBe(EXPORT_CHAT_TITLE_H);
-    expect(stamps[1].y).toBe(EXPORT_CHAT_TITLE_H + EXPORT_CHAT_ENTRY_H);
-    expect(stamps[2].y).toBe(EXPORT_CHAT_TITLE_H + 2 * EXPORT_CHAT_ENTRY_H);
-    // The caption sits ABOVE the first entry, and the list starts at the
-    // panel's top instead of resting on its bottom edge.
-    expect(caption.y).toBeLessThan(stamps[0].y);
+    expect(stamps[0].y).toBe(EXPORT_CHAT_FIRST_ROW_DY);
+    expect(stamps[1].y).toBe(EXPORT_CHAT_FIRST_ROW_DY + EXPORT_CHAT_ENTRY_H);
+    expect(stamps[2].y).toBe(EXPORT_CHAT_FIRST_ROW_DY + 2 * EXPORT_CHAT_ENTRY_H);
+    // THE regression: the two glyph boxes must not intersect. Comparing the
+    // baselines alone is what let the overlap ship.
+    expect(boxOf(caption).bottom).toBeLessThanOrEqual(boxOf(stamps[0]).top);
+    expect(boxOf(caption).bottom).toBeLessThanOrEqual(
+      boxOf(texts.find((t) => t.text === "p0")!).top,
+    );
     expect(stamps[0].y).toBeLessThan(h / 2);
     // Each entry's message rides its own second row.
     expect(texts.find((t) => t.text === "msg0")!.y).toBe(
-      EXPORT_CHAT_TITLE_H + EXPORT_CHAT_ENTRY_TEXT_H,
+      EXPORT_CHAT_FIRST_ROW_DY + EXPORT_CHAT_ENTRY_TEXT_H,
     );
     // Nothing overhangs the panel's bottom edge.
-    for (const t of texts) expect(t.y).toBeLessThanOrEqual(h);
+    for (const t of texts) expect(boxOf(t).bottom).toBeLessThanOrEqual(h + 0.01);
+  });
+
+  it("keeps the caption and every entry disjoint at any panel height", () => {
+    for (const h of [20, 40, 53, 54, 60, 90, 120, 200, 292, 400, 760]) {
+      const capacity = chatEntryCapacity(h);
+      const { ctx, texts } = recordingContext();
+      drawChatPanel(
+        ctx, 0, 0, EXPORT_SIDE_W, h,
+        // Enough lines that the newest window is always full.
+        Array.from({ length: capacity + 4 }, (_, i) => line(i)),
+        darkPalette(),
+        LABELS.chat,
+      );
+      const caption = texts.find((t) => t.text === LABELS.chat)!;
+      const cbox = boxOf(caption);
+      const senders = texts.filter((t) => /^p\d+$/.test(t.text));
+      expect(senders, `h=${h}`).toHaveLength(capacity);
+      for (const t of texts) {
+        if (t === caption) continue;
+        expect(boxOf(t).top, `h=${h} "${t.text}" touches the caption`).toBeGreaterThanOrEqual(
+          cbox.bottom - 0.01,
+        );
+        expect(boxOf(t).bottom, `h=${h} "${t.text}" overhangs the panel`).toBeLessThanOrEqual(
+          h + 0.01,
+        );
+      }
+    }
   });
 
   it("keeps the NEWEST window while still reading top-down", () => {
@@ -1457,21 +1499,23 @@ describe("drawChatPanel", () => {
     expect(senders[senders.length - 1].text).toBe("p11");
     // ...anchored at the top, with the newest entry ending nearest the
     // panel's bottom edge.
-    expect(senders[0].y).toBe(EXPORT_CHAT_TITLE_H);
+    expect(senders[0].y).toBe(EXPORT_CHAT_FIRST_ROW_DY);
     const lastMsg = texts.find((t) => t.text === "msg11")!;
     expect(lastMsg.y).toBe(
-      EXPORT_CHAT_TITLE_H +
+      EXPORT_CHAT_FIRST_ROW_DY +
         (capacity - 1) * EXPORT_CHAT_ENTRY_H +
         EXPORT_CHAT_ENTRY_TEXT_H,
     );
-    expect(lastMsg.y).toBeLessThanOrEqual(h);
+    expect(boxOf(lastMsg).bottom).toBeLessThanOrEqual(h);
     expect(lastMsg.y).toBeGreaterThan(h - EXPORT_CHAT_ENTRY_H - EXPORT_CHAT_ENTRY_TEXT_H);
   });
 
   it("paints nothing when the panel has no room for an entry", () => {
     // A zero-capacity window must not fall through to slice(-0), which
-    // would paint EVERY line.
+    // would paint EVERY line. The first row's own half-face below the
+    // caption counts: a panel exactly one caption tall shows no entry.
     expect(chatEntryCapacity(EXPORT_CHAT_TITLE_H)).toBe(0);
+    expect(chatEntryCapacity(EXPORT_CHAT_FIRST_ROW_DY)).toBe(0);
     const { ctx, texts } = recordingContext();
     drawChatPanel(
       ctx, 0, 0, EXPORT_SIDE_W, EXPORT_CHAT_TITLE_H,

@@ -380,3 +380,98 @@ describe("currentWingOfCarrier (no flash window across a mid-air group)", () => 
     expect(fwd).toEqual([7, 7, 7, 9, 9]);
   });
 });
+
+/* ── Sunk hulls get NO floating card ────────────────────────────────────
+ * The 2026-11-22 ask 「沉了的船不要显示标签 … 3d 视角其实你也还是没落实,
+ * 不论导出录像还是软件内实时查看都要如此」: the DOM label layer let a DEAD
+ * marker through its visibility gate (the card kept tracking the wreck) even
+ * though the 2D painter had already dropped its card. Sunk hulls now hide
+ * outright; an ALIVE-but-unspotted hull keeps its historical behaviour. */
+describe("updateLabelPositions — sunk hulls", () => {
+  function shipHarness(opts: {
+    deathTime: number | null;
+    markerVisible: boolean;
+    t: number;
+  }) {
+    const cam = new THREE.PerspectiveCamera(60, 1, 1, 10000);
+    cam.position.set(0, 0, 800);
+    cam.lookAt(0, 0, 0);
+    cam.updateMatrixWorld(true);
+    const canvas = { clientWidth: 800, clientHeight: 600 };
+    const slots = new Map<string, HTMLDivElement | null>();
+    const makeSlot = () =>
+      ({ style: { display: "", transform: "" } }) as unknown as HTMLDivElement;
+    const labelSlot = makeSlot();
+    const statusSlot = makeSlot();
+    slots.set("l5", labelSlot);
+    slots.set("s5", statusSlot);
+    const label = {
+      entityId: 5,
+      x: 0,
+      y: 0,
+      visible: true,
+      belowVisible: true,
+      belowX: 0,
+      belowY: 0,
+      kind: "ship",
+      status: null,
+    };
+    const marker = {
+      visible: opts.markerVisible,
+      position: new THREE.Vector3(0, 0, 0),
+      rotation: { y: 0 },
+      userData: { entityId: 5, deathTime: opts.deathTime },
+    };
+    const ctx = {
+      api: { value: { camera: cam, renderer: { domElement: canvas } } },
+      container: { value: { clientWidth: 800, clientHeight: 600 } },
+      shipLabels: { value: [label] },
+      shipMarkers: [marker],
+      current: { value: opts.t },
+      labelSlotEls: slots,
+      _projVec: new THREE.Vector3(),
+      planeLabelCarriers: new Map(),
+      planeLabelOfPlane: new Map(),
+      planeLabelPicks: new Map(),
+      planeTrails: [],
+      planeWedge: new Map(),
+      planeRecordedView: false,
+    } as unknown as MapInternals;
+    return { ctx, label, labelSlot, statusSlot };
+  }
+
+  it("drops the card once the hull is sunk", () => {
+    const { ctx, label, labelSlot, statusSlot } = shipHarness({
+      deathTime: 30,
+      markerVisible: false,
+      t: 45,
+    });
+    updateLabelPositions(ctx);
+    expect(label.visible).toBe(false);
+    expect(labelSlot.style.display).toBe("none");
+    expect(statusSlot.style.display).toBe("none");
+  });
+
+  it("keeps the card for an alive, visible hull (the control)", () => {
+    const { ctx, label, labelSlot } = shipHarness({
+      deathTime: null,
+      markerVisible: true,
+      t: 45,
+    });
+    updateLabelPositions(ctx);
+    expect(label.visible).toBe(true);
+    expect(labelSlot.style.display).toBe("block");
+    expect(labelSlot.style.transform).toContain("translate3d");
+  });
+
+  it("hides an alive-but-unspotted ghost (the historical behaviour)", () => {
+    const { ctx, label, labelSlot } = shipHarness({
+      deathTime: null,
+      markerVisible: false,
+      t: 45,
+    });
+    updateLabelPositions(ctx);
+    expect(label.visible).toBe(false);
+    expect(labelSlot.style.display).toBe("none");
+  });
+});
