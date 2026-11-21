@@ -15,6 +15,27 @@ import { activeSquadronOf } from "./followTargets";
 import { sampleAt, samplesUpTo, UNSEEN_GAP_S } from "./trajectoryMath";
 import { TEAM_COLOR, type TeamRole } from "./teamColors";
 import { frustumCorners } from "./sceneUtils";
+
+/** Ellipsize `text` with a trailing … until it fits `maxWidth` at `font` —
+ *  the label cards are fixed-width, so long names shrink instead of
+ *  stretching the card (and the HP bar inside it). */
+function ellipsizeToWidth(
+  g: CanvasRenderingContext2D,
+  text: string,
+  maxWidth: number,
+  font: string,
+): string {
+  g.font = font;
+  if (g.measureText(text).width <= maxWidth) return text;
+  let lo = 0;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (g.measureText(text.slice(0, mid) + "…").width <= maxWidth) lo = mid + 1;
+    else hi = mid;
+  }
+  return text.slice(0, Math.max(0, lo - 1)) + "…";
+}
 import {
   activeWards,
   planeSmoothPosAt,
@@ -1149,31 +1170,22 @@ export function paintEnlargedMap(
     for (const l of ctx.shipLabels.value) {
       if (l.kind !== "plane") byEntity.set(l.entityId, l);
     }
-    // Sunk ships keep their cards (the 2026-11-20 report) but paint
-    // FIRST and dimmer, so a live ship's card always wins an overlap.
-    const labelOrder = [...ctx.shipMarkers].sort((a, b) => {
-      const deadA =
-        (a.userData.deathTime as number | null) != null &&
-        t >= (a.userData.deathTime as number);
-      const deadB =
-        (b.userData.deathTime as number | null) != null &&
-        t >= (b.userData.deathTime as number);
-      return Number(deadB) - Number(deadA);
-    });
-    for (const m of labelOrder) {
+    for (const m of ctx.shipMarkers) {
       const firstT = m.userData.firstT as number | undefined;
       if (t < (firstT ?? Infinity)) continue;
       const label = byEntity.get(m.userData.entityId as number);
       if (!label) continue;
-      const labelDead =
+      // A sunk ship keeps its greyed glyph but drops its card entirely
+      // (the 2026-11-21 explicit ask — the glyph already names the wreck).
+      if (
         (m.userData.deathTime as number | null) != null &&
-        t >= (m.userData.deathTime as number);
+        t >= (m.userData.deathTime as number)
+      ) {
+        continue;
+      }
       const lx = zwx(m.position.x);
       const ly = zwz(m.position.z) - 20;
-      g.globalAlpha = labelDead ? 0.62 : 1;
-      const ink = labelDead
-        ? "rgba(148, 163, 184, 0.7)"
-        : label.role === "enemy"
+      const ink = label.role === "enemy"
           ? "rgba(255, 138, 138, 0.95)"
           : label.role === "self"
             ? "rgba(255, 255, 255, 0.95)"
@@ -1182,14 +1194,10 @@ export function paintEnlargedMap(
       const nameLine = clan ? `[${clan}] ${label.name}` : label.name;
       const tier = o.romanTier?.(label.tier) ?? "";
       const shipLine = [tier, label.shipName].filter(Boolean).join(" ");
-      // Card: a MINIMUM width so the HP bar reads as equal for everyone
-      // (血量条众生平等) — short names never shrink the bar.
-      const MIN_W = 92;
-      g.font = "700 11px ui-sans-serif, system-ui, sans-serif";
-      const w1 = g.measureText(nameLine).width;
-      g.font = "500 10px ui-sans-serif, system-ui, sans-serif";
-      const w2 = g.measureText(shipLine).width;
-      const boxW = Math.max(MIN_W, Math.ceil(Math.max(w1, w2)) + 10);
+      // Card: a FIXED width so the HP bar reads as equal for everyone
+      // (血量条众生平等) and a long nickname never stretches the bar —
+      // both lines ellipsize into the constant box instead.
+      const boxW = 92;
       const boxH = 40;
       const bx = Math.min(Math.max(2, lx - boxW / 2), zw - boxW - 2);
       const by = Math.min(Math.max(2, ly - boxH), zw - boxH - 2);
@@ -1201,12 +1209,19 @@ export function paintEnlargedMap(
       g.textBaseline = "middle";
       g.font = "700 11px ui-sans-serif, system-ui, sans-serif";
       g.fillStyle = ink;
-      g.fillText(nameLine, bx + boxW / 2, by + 9);
+      g.fillText(
+        ellipsizeToWidth(g, nameLine, boxW - 8, "700 11px ui-sans-serif, system-ui, sans-serif"),
+        bx + boxW / 2,
+        by + 9,
+      );
       g.font = "500 10px ui-sans-serif, system-ui, sans-serif";
       g.fillStyle = "rgba(226, 232, 240, 0.8)";
-      g.fillText(shipLine, bx + boxW / 2, by + 22);
-      // The HP bar: full inner width, fraction-coloured; sunk cards keep
-      // an empty track (the greyed glyph already reads as dead).
+      g.fillText(
+        ellipsizeToWidth(g, shipLine, boxW - 8, "500 10px ui-sans-serif, system-ui, sans-serif"),
+        bx + boxW / 2,
+        by + 22,
+      );
+      // The HP bar: full inner width, fraction-coloured.
       const barX = bx + 6;
       const barW = boxW - 12;
       const barY = by + boxH - 8;
@@ -1214,14 +1229,13 @@ export function paintEnlargedMap(
       g.fillRect(barX, barY, barW, 4);
       const hp = label.hp;
       const maxHp = label.maxHp;
-      if (!labelDead && hp != null && maxHp != null && maxHp > 0) {
+      if (hp != null && maxHp != null && maxHp > 0) {
         const frac = Math.min(1, Math.max(0, hp / maxHp));
         const barInk =
           frac > 0.55 ? "74, 222, 128" : frac > 0.25 ? "251, 191, 36" : "248, 92, 92";
         g.fillStyle = `rgba(${barInk}, 0.95)`;
         g.fillRect(barX, barY, barW * frac, 4);
       }
-      g.globalAlpha = 1;
     }
   }
   // Smoke screens — the same filled puff band as the thumb pass, at
