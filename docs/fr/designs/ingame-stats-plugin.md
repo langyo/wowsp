@@ -217,30 +217,11 @@ de nom de la DB de cette disposition quand un côté entier est couvert
 
 ## Architecture
 
-```
-┌─ client de jeu (bac à sable Mods API, sans réseau) ───────┐
-│ PnFMods/WoWSPProbe/Main.py                                │
-│  · interrogation du roster (1 s, confirmation stable)     │
-│    → roster_raw.json                                      │
-│  · parcours des entités → télémétrie (hp/relation/alive)  │
-│  · événements SFM → marqueurs tabMode, marqueurs          │
-│    de cycle de vie                                        │
-│  · heartbeat.json (phase port/battle, 1–2 s)              │
-└──────────────┬────────────────────────────────────────────┘
-               │ fichiers JSON plats dans le répertoire propre du mod
-┌──────────────┴────────────────────────────────────────────┐
-│ Application WoWSP (Rust, processus existants)             │
-│  · lecteur/écrivain du pont (remplace le rôle de          │
-│    compagnon de la sonde d'expérimentation ; même         │
-│    protocole request/response que le plugin de            │
-│    référence tiers a établi)                              │
-│  · moteur d'ordonnancement : ordre arène + coulage des    │
-│    morts en fin de liste                                  │
-│  · mode roster "plugin" dans overlay_config               │
-│  · contrôle de santé : analyser profile/python.log        │
-│    pour les lignes de chargement/auto-vérification        │
-│    du mod (api[load] dh=True …)                           │
-└───────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    client["client de jeu (bac à sable Mods API, sans réseau)<br/>PnFMods/WoWSPProbe/Main.py<br/>· interrogation du roster (1 s, confirmation stable) → roster_raw.json<br/>· parcours des entités → télémétrie (hp/relation/alive)<br/>· événements SFM → marqueurs tabMode, marqueurs de cycle de vie<br/>· heartbeat.json (phase port/battle, 1–2 s)"]
+    app["Application WoWSP (Rust, processus existants)<br/>· lecteur/écrivain du pont (remplace le rôle de compagnon de la sonde d'expérimentation ; même protocole request/response que le plugin de référence tiers a établi)<br/>· moteur d'ordonnancement : ordre arène + coulage des morts en fin de liste<br/>· mode roster #quot;plugin#quot; dans overlay_config<br/>· contrôle de santé : analyser profile/python.log pour les lignes de chargement/auto-vérification du mod (api[load] dh=True …)"]
+    client -->|"fichiers JSON plats dans le répertoire propre du mod"| app
 ```
 
 Fichiers du pont (protocole v1, tous dans le répertoire du mod) :

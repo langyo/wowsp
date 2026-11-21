@@ -149,24 +149,11 @@ CN 排列在整側覆蓋時以用戶端船名替換 DB 名段（兩源混排會�
 
 ## 架構
 
-```
-┌─ 遊戲用戶端（Mods API 沙盒，無網路）─────────────────────┐
-│ PnFMods/WoWSPProbe/Main.py                               │
-│  · 名單輪詢（1 s，穩定確認）→ roster_raw.json            │
-│  · 實體遍歷 → 遙測（hp/relation/alive）                  │
-│  · SFM 事件 → tabMode 標記、生命週期標記                 │
-│  · heartbeat.json（port/battle 相位，1–2 s）             │
-└──────────────┬────────────────────────────────────────────┘
-               │ mod 自身目錄下的平鋪 JSON 檔案
-┌──────────────┴────────────────────────────────────────────┐
-│ WoWSP 應用程式（Rust，沿用現有程序）                      │
-│  · 橋接讀寫器（接替實驗探針的伴生角色；即第三方參考插件   │
-│    確立的 request/response 協定）                         │
-│  · 排序引擎：載具序 + 陣亡下沉                            │
-│  · overlay_config 的 roster "plugin" 模式                 │
-│  · 健康檢查：解析 profile/python.log 中 mod 的            │
-│    載入/自檢行（api[load] dh=True …）                     │
-└───────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    client["遊戲用戶端（Mods API 沙盒，無網路）<br/>PnFMods/WoWSPProbe/Main.py<br/>· 名單輪詢（1 s，穩定確認）→ roster_raw.json<br/>· 實體遍歷 → 遙測（hp/relation/alive）<br/>· SFM 事件 → tabMode 標記、生命週期標記<br/>· heartbeat.json（port/battle 相位，1–2 s）"]
+    app["WoWSP 應用程式（Rust，沿用現有程序）<br/>· 橋接讀寫器（接替實驗探針的伴生角色；即第三方參考插件確立的 request/response 協定）<br/>· 排序引擎：載具序 + 陣亡下沉<br/>· overlay_config 的 roster #quot;plugin#quot; 模式<br/>· 健康檢查：解析 profile/python.log 中 mod 的載入/自檢行（api[load] dh=True …）"]
+    client -->|"mod 自身目錄下的平鋪 JSON 檔案"| app
 ```
 
 橋接檔案（協定 v1，全部位於 mod 目錄）：

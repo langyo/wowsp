@@ -8,8 +8,11 @@
  * upgrade 'depth' inside the slot, so a slot with parallel research options
  * stacks them as tiles in ONE column:
  *
- *   stock ─┬─ option A ── top A
- *          └─ option B ── top B
+ *   ```mermaid
+ *   graph LR
+ *       stock --> a["option A"] --> topA["top A"]
+ *       stock --> b["option B"] --> topB["top B"]
+ *   ```
  *
  * Missing/invalid depth still falls back to the sequential stock-first step
  * order (a defensive default for partial snapshots; the shipped bundle always

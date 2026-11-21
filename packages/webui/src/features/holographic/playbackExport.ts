@@ -5,20 +5,20 @@
  * exactly like the reference clip the feature asks for — into a framed
  * composition that mirrors the in-game replay HUD:
  *
- *   ┌──────────────────────────────────────────────┐
- *   │ score header: ally pts · caps · clock · enemy │
- *   ├──────────┬──────────────────────────┬────────┤
- *   │ ally     │                          │ enemy  │
- *   │ roster   │   map square (the same   │ roster │
- *   │ header + │   enlarged-map painter)  │ header +
- *   │ 3-line   │  ship labels over every  │ 3-line │
- *   │ rows     │        glyph             │ rows   │
- *   │ ──────── │                          │ ───────│
- *   │ recorder │                          │ chat   │
- *   │ damage   │                          │ log    │
- *   ├──────────┴──────────────────────────┴────────┤
- *   │ the fixed WoWSP promo footer (share shots)   │
- *   └──────────────────────────────────────────────┘
+ *   ```mermaid
+ *   graph TD
+ *       header["score header: ally pts · caps · clock · enemy"]
+ *       ally["ally roster header + 3-line rows"] --> rec["recorder damage"]
+ *       enemy["enemy roster header + 3-line rows"] --> chat["chat log"]
+ *       mid["map square (the same enlarged-map painter)<br/>ship labels over every glyph"]
+ *       footer["the fixed WoWSP promo footer (share shots)"]
+ *       header --> ally
+ *       header --> mid
+ *       header --> enemy
+ *       rec --> footer
+ *       mid --> footer
+ *       chat --> footer
+ *   ```
  *
  * One deterministic frame pipeline feeds BOTH muxers:
  *

@@ -181,25 +181,11 @@ DB 이름으로 물러나 행동은 종전과 같다). roster_raw.json은(2026-1
 
 ## 아키텍처
 
-```
-┌─ game client (Mods API sandbox, no network) ─────────────┐
-│ PnFMods/WoWSPProbe/Main.py                               │
-│  · roster poll (1 s, stable-confirm) → roster_raw.json   │
-│  · entity walk → telemetry (hp/relation/alive)           │
-│  · SFM events → tabMode marks, lifecycle marks           │
-│  · heartbeat.json (phase port/battle, 1–2 s)             │
-└──────────────┬────────────────────────────────────────────┘
-               │ flat JSON files in the mod's own directory
-┌──────────────┴────────────────────────────────────────────┐
-│ WoWSP app (Rust, existing processes)                      │
-│  · bridge reader/writer (replaces the experiment probe's │
-│    companion role; same request/response protocol the    │
-│    third-party reference plugin established)             │
-│  · ordering engine: arena order + dead-sinking           │
-│  · roster mode "plugin" in overlay_config                │
-│  · health check: parse profile/python.log for the mod's  │
-│    load/self-check lines (api[load] dh=True …)           │
-└───────────────────────────────────────────────────────────┘
+```mermaid
+graph TD
+    client["game client (Mods API sandbox, no network)<br/>PnFMods/WoWSPProbe/Main.py<br/>· roster poll (1 s, stable-confirm) → roster_raw.json<br/>· entity walk → telemetry (hp/relation/alive)<br/>· SFM events → tabMode marks, lifecycle marks<br/>· heartbeat.json (phase port/battle, 1–2 s)"]
+    app["WoWSP app (Rust, existing processes)<br/>· bridge reader/writer (replaces the experiment probe's companion role; same request/response protocol the third-party reference plugin established)<br/>· ordering engine: arena order + dead-sinking<br/>· roster mode #quot;plugin#quot; in overlay_config<br/>· health check: parse profile/python.log for the mod's load/self-check lines (api[load] dh=True …)"]
+    client -->|"flat JSON files in the mod's own directory"| app
 ```
 
 브리지 파일(프로토콜 v1, 모두 모드 디렉터리 안에 위치):
