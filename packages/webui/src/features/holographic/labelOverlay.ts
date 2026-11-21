@@ -9,6 +9,7 @@ import { CAP_SPRITE_PX, SMOKE_SPRITE_PX } from "./screenOverlays";
 import type { SquadronPlane } from "@/api";
 import { samplesUpTo } from "./trajectoryMath";
 import { planeReturningAt } from "./planeWarfare";
+import { activeSquadronOf } from "./followTargets";
 import type { MapInternals } from "./mapInternals";
 
 /** Camera distance under which the below-hull combat status rows render —
@@ -160,17 +161,28 @@ export function updateLabelPositions(ctx: MapInternals) {
     }
     let anchor: SquadronPlane | null = null;
     let anchorPlaneId: number | null = null;
-    // The label projects the RENDERED wedge centroid the marker pass
-    // publishes (planeWedge): the recorded lens ride draws the models ~80
-    // units ahead of the camera, so projecting the trail sample parked the
-    // aircraft card at the lens (off-screen) while the planes were elsewhere
-    // (user report: no labels next to the aircraft).
-    // Stable pick: a carrier can have several sorties airborne, and the
-    // "newest sample" alternates between them tick to tick, which made the
-    // card hop between two formations (the flicker the user reported).
-    // Prefer the formation the map is RENDERING nearest the camera — that is
-    // the one in view, and it is deterministic for a given frame.
-    const bestWedgePlane = pickLabelWedgePlane(ctx, labelId, cam.position);
+    // The carrier's CURRENT wing speaks for the card (identification rule):
+    // the same pick the chase camera, the gold controlled-aircraft edge and
+    // the bottom-left pill already use (followTargets.activeSquadronOf — the
+    // newest launch still inside its shared lifetime window). Without it the
+    // pick below ("newest sample" / nearest rendered wedge) answered with
+    // whatever formation happened to sit closest to the camera: on the
+    // 14.5.0.0 Shokaku "37_Ridge" capture at 03:10 that was a 4-plane WARD
+    // fighter patrol loitering over the deck, so the card read "100% · ✈4"
+    // while the followed formation was the 10-plane torpedo wing the carrier
+    // had just launched (user report: the followed-plane identification
+    // riding a stale trail).
+    // Fallback only (no resolvable current wing, or none with a trail): the
+    // formation the map is RENDERING nearest the camera — deterministic for a
+    // given frame, so a multi-sortie carrier cannot make the card hop tick to
+    // tick. The anchor below still projects that formation's RENDERED wedge
+    // centroid (planeWedge) rather than its trail sample: the recorded lens
+    // ride draws the models ~80 units ahead of the camera, so the sample
+    // parked the card at the lens (user report: no labels next to the
+    // aircraft).
+    const currentWing = currentWingOfCarrier(ctx, labelId, ctx.current.value);
+    const bestWedgePlane =
+      currentWing ?? pickLabelWedgePlane(ctx, labelId, cam.position);
     for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
       if (labelOf !== labelId) continue;
       // With a rendered wedge for this carrier, only that formation's card
@@ -297,11 +309,47 @@ export function planeRowVisible(label: {
   ) > 0;
 }
 
+/** The wing a carrier's aircraft card describes and follows: the carrier's
+ *  CURRENT sortie (followTargets.activeSquadronOf — newest launch, inside the
+ *  shared planeTrailExpiry window and before its minimap remove), and never a
+ *  homeward-bound one. Null when the carrier has nothing up or the join is
+ *  missing; the caller then falls back to the rendered-wedge / newest-sample
+ *  scan. This is the SAME pick the chase camera and the 2D maps' gold
+ *  controlled-aircraft edge use, so the card's type, ✈N and HP can no longer
+ *  describe a different formation than the one the user is following. */
+export function currentWingOfCarrier(
+  ctx: MapInternals,
+  labelId: number,
+  t: number,
+): number | null {
+  const carrierId = ctx.planeLabelCarriers?.get(labelId);
+  if (carrierId == null) return null;
+  const planeId = activeSquadronOf(
+    ctx.planeTrails ?? [],
+    ctx.planeCarrierOf ?? new Map(),
+    ctx.minimapTrailEnd ?? new Map(),
+    carrierId,
+    t,
+  );
+  if (planeId == null) return null;
+  const trail = ctx.planeTrails?.find(
+    (tr) => Math.floor(tr.id / 16) === planeId,
+  );
+  if (!trail || trail.samples.length === 0) return null;
+  // A homeward-bound wing carries no card at all (planeWarfare's gate owns
+  // that decision); leaving the pick to the scan below keeps the two rules in
+  // one place instead of hiding the card here as a second gate.
+  if (planeReturningAt(ctx, trail, t)) return null;
+  return planeId;
+}
+
 /** Which formation's rendered wedge should carry a carrier's aircraft
  *  label: the one NEAREST the camera among the formations this label owns
  *  (deterministic `planeId` tie-break so a multi-sortie carrier cannot make
  *  the card hop between anchors tick to tick). −1 = none rendered, and the
- *  caller then falls back to the newest-sample scan. */
+ *  caller then falls back to the newest-sample scan. Only the fallback: the
+ *  carrier's current wing (`currentWingOfCarrier`) wins whenever it resolves,
+ *  because "nearest the camera" is not "the wing the carrier is flying". */
 export function pickLabelWedgePlane(
   ctx: MapInternals,
   labelId: number,
