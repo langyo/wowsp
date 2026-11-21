@@ -327,6 +327,13 @@ export function recorderPanelFits(available = recorderPanelHeight()): boolean {
 /** Export formats offered by the modal. */
 export type PlaybackExportFormat = "video" | "gif";
 
+/** Export map-square views offered by the modal: the 2D tactical painting
+ *  (the clip's original map layer) or the replay's own three.js scene from
+ *  a fixed god camera. ONLY the map square swaps — the score pill, both
+ *  team columns, the recorder/chat panels, the footer band and the corner
+ *  info are byte-identical between the two modes. */
+export type PlaybackExportView = "2d" | "3d";
+
 /** The replay clip's video ladder — VP9 into MP4 first (the modern MP4
  *  combination every Chromium/ffmpeg/VLC toolchain plays: `vp09` sample
  *  entries are standard ISO BMFF), AV1 next (better compression, slower
@@ -342,6 +349,10 @@ export const PLAYBACK_CODEC_LADDER: readonly OfflineCodecChoice[] = [
  *  battle seconds. */
 export interface PlaybackExportSettings {
   format: PlaybackExportFormat;
+  /** Map-square layer: "2d" = today's tactical painting (default), "3d" =
+   *  the replay's three.js scene from the fixed god camera (see
+   *  exportGodCamera). Layout around the square is unchanged. */
+  view: PlaybackExportView;
   /** Window start, battle seconds. */
   from: number;
   /** Window end, battle seconds (clamped to an end > from at job time). */
@@ -428,6 +439,9 @@ export function clampExportSettings(s: PlaybackExportSettings): PlaybackExportSe
   const sizes = PLAYBACK_EXPORT_SIZES[s.format];
   return {
     ...s,
+    // A view outside the two known layers (stale settings, hand-edited
+    // state) falls back to the tactical painting — never a blank square.
+    view: s.view === "3d" ? "3d" : "2d",
     fps: fps.includes(s.fps) ? s.fps : fps[0],
     size: sizes.includes(s.size) ? s.size : sizes[0],
     speed: (PLAYBACK_EXPORT_SPEEDS as readonly number[]).includes(s.speed)
@@ -537,6 +551,71 @@ export function playbackExportLayout(
     mapSize: EXPORT_LOGICAL * scale,
     footerTop: height - footerHeight,
     footerHeight,
+  };
+}
+
+/* ── 3D export camera (the 上帝俯瞰 slightly-tilted god view) ────────────
+ *  The 3D export renders the replay's OWN three.js scene, framed once per
+ *  take by a FIXED camera: high above the full-map centre, tilted just off
+ *  vertical (15–25° is the user's 「上帝俯瞰稍微有点倾斜」 reading; 18° sits in
+ *  that band) and fitted so the whole map rectangle fits the square with a
+ *  small margin. No orbit, no follow, no recorded pose: the same pose
+ *  every frame, and the same pose for the same replay every time.
+ *
+ *  Input bounds are the WORLD-space rectangle computeFullMapBounds returns.
+ *  The scene mirrors z (scene z = −world z, the same convention as
+ *  sceneMapRect and every marker), so the returned pose is SCENE-space. */
+export const EXPORT_GOD_TILT_DEG = 18;
+/** Vertical field of view of the export camera — the replay view's own 50°. */
+export const EXPORT_GOD_FOV_DEG = 50;
+/** Pose margin: the map fills at most 1/1.06 of the half-frame per axis. */
+export const EXPORT_GOD_MARGIN = 1.06;
+
+/** Fixed export camera pose in scene units. */
+export interface ExportGodCameraPose {
+  position: { x: number; y: number; z: number };
+  lookAt: { x: number; y: number; z: number };
+  /** Camera-to-target distance along the tilted axis (tests/diagnostics). */
+  distance: number;
+  /** Tilt off the vertical, radians (the pose's own pitch). */
+  tilt: number;
+}
+
+/** Fit the FIXED god camera to a map rectangle (see the block comment).
+ *  Null for a missing / degenerate (non-finite) rectangle — the caller
+ *  then keeps the 2D layer rather than framing an empty square. */
+export function exportGodCamera(
+  bounds: { minX: number; maxX: number; minZ: number; maxZ: number } | null | undefined,
+): ExportGodCameraPose | null {
+  if (!bounds) return null;
+  const { minX, maxX, minZ, maxZ } = bounds;
+  if (![minX, maxX, minZ, maxZ].every((n) => Number.isFinite(n))) return null;
+  const cx = (minX + maxX) / 2;
+  // Scene z mirrors the world's, so the same centre in scene space.
+  const cz = -(minZ + maxZ) / 2;
+  const halfW = Math.max(Math.abs(maxX - minX), 2) / 2;
+  const halfD = Math.max(Math.abs(maxZ - minZ), 2) / 2;
+  const tilt = (EXPORT_GOD_TILT_DEG * Math.PI) / 180;
+  const tanHalfFov = Math.tan((EXPORT_GOD_FOV_DEG * Math.PI) / 360);
+  // Perspective fit in the square viewport (aspect 1). At tilt θ the ground
+  // plane's screen-up axis is foreshortened by cosθ; the NEAR edge (the one
+  // closest to the camera) is the binding constraint on both axes:
+  //   near depth = distance − halfD·sinθ
+  //   halfW            / (near depth · tanHalfFov) ≤ 1/margin
+  //   halfD·cosθ       / (near depth · tanHalfFov) ≤ 1/margin
+  const limit = 1 / EXPORT_GOD_MARGIN;
+  const nearDepth =
+    Math.max(halfW, halfD * Math.cos(tilt)) / (limit * tanHalfFov);
+  // The camera sits on the +z side, looking north — the replay view's own
+  // opening direction (fitCamera starts at cz + span/2 too).
+  const distance = halfD * Math.sin(tilt) + nearDepth;
+  const height = distance * Math.cos(tilt);
+  const back = distance * Math.sin(tilt);
+  return {
+    position: { x: cx, y: height, z: cz + back },
+    lookAt: { x: cx, y: 0, z: cz },
+    distance,
+    tilt,
   };
 }
 
@@ -2127,8 +2206,10 @@ export interface PlaybackExportRequest {
    *  (the cell keeps its plain count — the painter draws no plate). */
   ribbonIconFor: (key: string) => HTMLImageElement | null;
   /** Paint the map square for battle time `t` in logical units onto `g`
-   *  (already translated to the map's top-left corner and scaled). */
-  paintMap: (t: number, g: CanvasRenderingContext2D) => void;
+   *  (already translated to the map's top-left corner and scaled).
+   *  `mapSizePx` is the square's edge in DEVICE pixels — the 3D view renders
+   *  the live WebGL scene at exactly that resolution so it lands 1:1. */
+  paintMap: (t: number, g: CanvasRenderingContext2D, mapSizePx: number) => void;
   /** Panel/header word bundle (caller i18n's every word). */
   panelLabels: PlaybackPanelLabels;
   /** Paint the team columns' stat band (labels + averages + values).
@@ -2172,8 +2253,14 @@ export interface PlaybackPanelLabels {
 
 /** Compose one full frame (header + map + side panels + footer) in device
  *  px. The map paints FIRST — its seek brings every shared data structure
- *  to `t`, and the header/panels read that state right after. */
-function composeFrame(
+ *  to `t`, and the header/panels read that state right after.
+ *
+ *  The map layer is painted with `g` ALREADY translated to the square's
+ *  top-left and scaled, and clipped to the square: `paintMap` must paint in
+ *  that space (logical 0..EXPORT_LOGICAL), never under the identity
+ *  transform — the 3D bridge's WebGL blit depends on this origin contract.
+ *  Exported so the contract is unit-tested. */
+export function composePlaybackFrame(
   ctx: CanvasRenderingContext2D,
   layout: PlaybackExportLayout,
   req: PlaybackExportRequest,
@@ -2191,7 +2278,7 @@ function composeFrame(
   ctx.beginPath();
   ctx.rect(0, 0, EXPORT_LOGICAL, EXPORT_LOGICAL);
   ctx.clip();
-  req.paintMap(t, ctx);
+  req.paintMap(t, ctx, layout.mapSize);
   ctx.restore();
   // Header band (logical units, full composition width).
   ctx.save();
@@ -2305,7 +2392,7 @@ export async function renderPlaybackExport(
       codecLadder: PLAYBACK_CODEC_LADDER,
       paintAt: (t, g) => {
         // The exporter's canvas is our canvas — compose straight into it.
-        composeFrame(g, layout, req, t);
+        composePlaybackFrame(g, layout, req, t);
       },
       onProgress: req.onProgress,
       onPhase: req.onPhase,
@@ -2330,7 +2417,7 @@ export async function renderPlaybackExport(
   for (let i = 0; i < req.times.length; i++) {
     if (req.cancelToken?.cancelled === true) break;
     const t = req.times[i];
-    composeFrame(ctx, layout, req, t);
+    composePlaybackFrame(ctx, layout, req, t);
     const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const palette = quantize(data, 256, { format: "rgb565" });
     const index = applyPalette(data, palette, "rgb565");

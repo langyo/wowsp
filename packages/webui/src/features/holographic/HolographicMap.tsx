@@ -94,10 +94,13 @@ import { drawMinimap, paintEnlargedMap } from "./minimapPainter";
 import { bundledRibbonUrl } from "./ribbonIcons";
 import HoloExportModal from "./HoloExportModal";
 import {
+  EXPORT_GOD_FOV_DEG,
   EXPORT_LOGICAL,
   EXPORT_TEAM_STAT_COLS,
   buildRecorderSourceHits,
   clampExportSettings,
+  exportGodCamera,
+  type ExportGodCameraPose,
   foldPlaybackRecorderStats,
   foldRecorderSources,
   frameTimesAtSpeed,
@@ -3683,6 +3686,9 @@ const RECORDED_DOLLY_MIN = -40;
     let seedRangeForPath = "";
     const exportSettings = reactive<PlaybackExportSettings>({
       format: "video",
+      // The map layer: the tactical painting (the clip's original look) by
+      // default; the 上帝俯瞰 3D view is one pill away.
+      view: "2d",
       // Filled in when the modal opens (playhead → end); normalized again
       // against the replay in the job.
       from: 0,
@@ -3759,6 +3765,107 @@ const RECORDED_DOLLY_MIN = -40;
       exportCancel.cancelled = true;
     });
 
+    /** Render the LIVE three.js scene into the clip's map square for one
+     *  frame — the 3D export's map layer (2D keeps paintEnlargedMap).
+     *  Returns false when nothing could be rendered (no scene yet, lost
+     *  context, an over-limit square); the caller then paints the 2D map so
+     *  a clip is never a blank square.
+     *
+     *  The composer hands `g` ALREADY translated to the square's top-left
+     *  and clipped to it (playbackExport.composePlaybackFrame): every paint
+     *  below stays in that space — the identity transform would land the
+     *  frame at the composition origin.
+     *
+     *  The live renderer is resized to the square's device edge, the scene
+     *  renders ONCE through the fixed export camera, the WebGL canvas is
+     *  copied into the frame canvas, and the renderer's EXACT pixel ratio +
+     *  size are restored in a finally (cancellation and encoder failures
+     *  land there too).
+     *
+     *  The live camera OBJECT is never mutated — the export pose is a
+     *  separate PerspectiveCamera. Only the scene slot (`api.camera`, which
+     *  the HUD's screen-space sizing reads) points at it for this
+     *  synchronous block, and the finally points it back: the render loop
+     *  holds its own camera reference, so no async frame can see the swap.
+     *  Everything here must stay synchronous for that guarantee. */
+    function paintExportScene3d(
+      g: CanvasRenderingContext2D,
+      mapSizePx: number,
+      pose: ExportGodCameraPose,
+      camera: THREE.PerspectiveCamera,
+    ): boolean {
+      const size = Math.max(2, Math.round(mapSizePx));
+      g.save();
+      try {
+        const a = api.value;
+        const scene = a?.scene;
+        const renderer = a?.renderer;
+        const liveCamera = a?.camera;
+        g.fillStyle =
+          scene?.background instanceof THREE.Color
+            ? "#" + scene.background.getHexString()
+            : "#0b1220";
+        g.fillRect(0, 0, EXPORT_LOGICAL, EXPORT_LOGICAL);
+        if (!a || !scene || !renderer || !liveCamera) return false;
+        const gl = renderer.getContext();
+        if (!gl || gl.isContextLost()) return false;
+        // The default framebuffer is the limit for THIS render target (a
+        // texture-unit limit can be the wrong ceiling); accept the smaller.
+        const maxSide = Math.min(
+          renderer.capabilities.maxTextureSize,
+          Number(gl.getParameter(gl.MAX_RENDERBUFFER_SIZE)) ||
+            renderer.capabilities.maxTextureSize,
+        );
+        if (size > maxSide) return false;
+        camera.position.set(pose.position.x, pose.position.y, pose.position.z);
+        camera.lookAt(pose.lookAt.x, pose.lookAt.y, pose.lookAt.z);
+        const prevRatio = renderer.getPixelRatio();
+        const prevSize = renderer.getSize(new THREE.Vector2());
+        try {
+          renderer.setPixelRatio(1);
+          renderer.setSize(size, size, false);
+          // Screen-space HUD (cap letters, smoke timers, ring line widths)
+          // is sized from the SCENE camera and the LIVE viewport height.
+          // Install the export camera for this sync block, then scale the
+          // sprites from the live height to the square's render height so
+          // the frame does not depend on the user's window or zoom.
+          a.camera = camera;
+          updateOverlayScale(ctx);
+          const hudK = size / Math.max(1, container.value?.clientHeight || 600);
+          if (hudK !== 1) {
+            for (const sprite of ctx.capLetterSprites) sprite.scale.multiplyScalar(hudK);
+            for (const cluster of ctx.smokeClusters) {
+              cluster.timeSprite?.scale.multiplyScalar(hudK);
+            }
+          }
+          for (const mat of ctx.overlayLineMats) mat.resolution.set(size, size);
+          renderer.render(scene, camera);
+          // Same task as the render: the drawing buffer is valid until the
+          // compositor takes it, so this never copies a cleared canvas.
+          g.drawImage(renderer.domElement, 0, 0, EXPORT_LOGICAL, EXPORT_LOGICAL);
+          return true;
+        } finally {
+          a.camera = liveCamera;
+          // Restore the logical size first (cheap at ratio 1), then the
+          // pixel ratio — setPixelRatio re-applies the final live buffer, so
+          // the expensive allocation happens exactly once.
+          renderer.setSize(prevSize.x, prevSize.y, false);
+          renderer.setPixelRatio(prevRatio);
+          // Re-tune the HUD for the live camera/viewport (the export scales
+          // above must not leak into the running view).
+          updateOverlayScale(ctx);
+          // setSize clears the drawing buffer: repaint the LIVE camera at
+          // its own size immediately, or the visible map would blank until
+          // the next rAF tick (a take spans hundreds of frames). It shows
+          // this frame's seek, exactly like the 2D path.
+          if (!gl.isContextLost()) renderer.render(scene, liveCamera);
+          api.value?.requestRender();
+        }
+      } finally {
+        g.restore();
+      }
+    }
+
     async function runPlaybackExportJob(): Promise<void> {
       const full = computeFullMapBounds(ctx);
       if (!full || duration.value <= 0 || exporting.value) return;
@@ -3777,6 +3884,25 @@ const RECORDED_DOLLY_MIN = -40;
         toast.info(i18nT("replay.export.toastEmpty"));
         return;
       }
+      // 3D view: ONE fixed god-camera pose for the whole take, fitted to the
+      // full map bounds (deterministic per replay — no orbit, no follow, no
+      // recorded pose). The camera itself is a SEPARATE instance, so the
+      // user's live camera/controls are never swapped or restored.
+      const godPose = s.view === "3d" ? exportGodCamera(full) : null;
+      const godCamera = godPose
+        ? new THREE.PerspectiveCamera(
+            EXPORT_GOD_FOV_DEG,
+            1,
+            0.1,
+            // The fit distance scales with the map: keep the far plane
+            // beyond it instead of trusting a fixed 20k for unknown bounds.
+            Math.max(20000, godPose.distance * 4),
+          )
+        : null;
+      // 3D-render bail-out notice (at most one per take): a missing scene or
+      // a lost context switches the take to the 2D painting, never a blank
+      // square — say so once instead of silently mixing modes.
+      let export3dFallbackNoticed = false;
       const wasPlaying = playing.value;
       const resumeAt = current.value;
       playing.value = false;
@@ -4182,10 +4308,19 @@ const RECORDED_DOLLY_MIN = -40;
                 text: c.message,
                 time: c.time,
               })),
-          paintMap: (t, g) => {
+          paintMap: (t, g, mapSizePx) => {
             // Seek first: markers, caps, scores and the eased plane state
-            // all update synchronously for this battle time.
+            // all update synchronously for this battle time. BOTH views
+            // share this one seek — the 3D scene and the 2D painter read the
+            // same post-seek state.
             seekBattleTime(t);
+            if (godPose && godCamera) {
+              if (paintExportScene3d(g, mapSizePx, godPose, godCamera)) return;
+              if (!export3dFallbackNoticed) {
+                export3dFallbackNoticed = true;
+                toast.warning(i18nT("replay.export.view3dFallback"));
+              }
+            }
             paintEnlargedMap(g, ctx, {
               t,
               full,

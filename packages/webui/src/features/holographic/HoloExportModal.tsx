@@ -163,6 +163,23 @@ export default defineComponent({
               onToggle={(v: string) => setFormat(v)}
             />
           </div>
+          {/* View: the 2D tactical painting vs the replay's three.js scene
+              from the fixed god camera. A second standard pill group — ONLY
+              the map square swaps; every other band is identical. */}
+          <div class="holo-export__row">
+            <span class="holo-export__label">{i18nT("replay.export.view")}</span>
+            <HkPillToggleGroup
+              label={i18nT("replay.export.view")}
+              options={[
+                { value: "2d", label: i18nT("replay.export.view2d") },
+                { value: "3d", label: i18nT("replay.export.view3d") },
+              ]}
+              selected={new Set([props.settings.view === "3d" ? "3d" : "2d"])}
+              onToggle={(v: string) => {
+                props.settings.view = v === "3d" ? "3d" : "2d";
+              }}
+            />
+          </div>
           {/* fps · speed · resolution on ONE row. */}
           <div class="holo-export__params">
             <HkPopupSelect
