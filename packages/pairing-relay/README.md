@@ -58,6 +58,11 @@ target `wasm32-unknown-unknown`). Two crates:
 | `POST /gateway/session` | auth exchange (Turnstile token and/or password) → single-use `{ticket, route, ttl}`; password failures rate-limit 5/min → 5 min IP lock (429 + `retryAfter`) |
 | `WS /gateway/pub?route=&ticket=[&hostId=]` | desktop publisher for `r:<realm>:<accountId>` — one per channel, a different persistent hostId replaces the first |
 | `WS /gateway/sub?route=&ticket=` | phone subscriber — hello → host presence → current battle snapshot; live battle frames fan out verbatim (≤ 64 KiB, over → close 1009) |
+| `GET\|POST /api/lookup/fetch?url=` | cache-mesh stats proxy: allowlisted upstream fetch with server-side caching, `x-wowsp-cache: hit\|miss\|peer-hit` (see the Cache mesh section) |
+| `GET /api/blocks/<cid>[/raw]` | content-addressed cached envelope by CID (`/raw` = the decoded body bytes with the stored content-type) |
+| `GET /ipfs/<cid>` | IPFS-gateway alias of `/raw` (rides its own `/ipfs*` `run_worker_first` entry — it sits outside `/api*` on purpose) |
+| `GET /api/peers` | the broadcast server list: own registry ∪ `PEERS_UPSTREAM`'s, `max-age=60` + ETag, edge-cached |
+| `POST /api/peers/announce` | self-announce with liveness callback (`GET {url}/api/health`); rows live 48 h, registry caps at 128 |
 
 The pre-unification spellings (`/v1/*`, `/health`, bare `/control` …) are
 **retired** — as are the `/api/relay/*` pairing sockets (control / resolve /
@@ -467,6 +472,53 @@ The admin routes accept EITHER a logged-in erp session OR an
 `x-admin-key` header matching the `REPLAY_ADMIN_KEY` secret
 (`wrangler secret put REPLAY_ADMIN_KEY`; a high-entropy random value).
 While the secret is unset the routes answer to the browser flow only.
+
+## Cache mesh (`/api/lookup`, `/api/blocks`, `/ipfs`, `/api/peers`)
+
+The battle-record lookup cache and its peer mesh — the routes in the
+five mesh rows of the table above. The full contract (routes, wire
+shapes, TTL table, CID scheme, trust model) is
+[docs/en/designs/cache-mesh.md](../../docs/en/designs/cache-mesh.md);
+this section is the package-side map.
+
+- **Capabilities** — the mesh namespaces report through the same
+  `/api/health` manifest as an optional `capabilities` object
+  (`gateway` / `lookup` / `peers` / `blocks`) plus a `node`
+  block (stable id, role, sync flag, peers upstream). Absent
+  capabilities = gateway-only; clients probe before use.
+- **Storage layout** (free-tier quota economics, see the design
+  doc §7):
+  - the edge **Cache API** fronts every hot lookup
+    (`https://lookup.edge/<cid>`, the digests pattern) — warm
+    traffic burns no storage reads and no rate budget;
+  - **block envelopes** live in R2 (binding `LOOKUP_R2`, ONE
+    object per CID, bucket `wowsp-lookup-blocks`) — create it
+    ONCE before the first mesh-enabled deploy:
+    `npx wrangler r2 bucket create wowsp-lookup-blocks`;
+  - the **per-IP hourly lookup budget** lives in the `LookupRate`
+    SQLite Durable Object (binding `LOOKUP_RATE`, migration
+    **v6**, one self-deleting shard per (hour, IP)) — NOT a KV
+    counter, which would PUT once per request against the shared
+    1000-writes/day free budget;
+  - **KV** (binding `LOOKUP_KV`, a third binding over the shared
+    namespace) holds only the tiny announce-bounded state: the
+    ONE-document own peer registry (`peers:own`), the cached
+    upstream list (`peers:upstream`, 60 s), `node:id` and the
+    announce rate counters.
+- **Off-switch** — `LOOKUP_ENABLED = "0"` gates the six mesh
+  routes to 404 and lowers the health capabilities to false; ABSENT
+  means ON. The selfhost template ships it set (gateway-only by
+  default); tuning vars: `LOOKUP_SYNC`, `SYNC_PEERS_MAX`,
+  `LOOKUP_RATE_PER_HOUR`, `PEERS_UPSTREAM`, `NODE_ROLE`,
+  `PEERS_ACCEPT_ANNOUNCES`.
+- **Self-hosting** — the step-by-step operations guide (all three
+  shapes) is [docs/en/guides/self-host-gateway.md](../../docs/en/guides/self-host-gateway.md).
+  Sibling implementations: the NATIVE server
+  (`crates/relay-server`, VPS/LAN/Docker, all four capabilities,
+  SQLite — PR #2068) and the Vercel edge adapter
+  (`packages/relay-vercel`, HTTP-only subset, Upstash KV or
+  memory) share the same contract; `relay-core` and the TS adapter
+  pin the shared policy via the same fixture vectors.
 
 ## Deploy
 

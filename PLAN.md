@@ -115,6 +115,18 @@ official mini-patches (IME fix, fonts) are the foundation.
 > (updater flow) stay fully headless: explicit `--shortcut-*` answers
 > honored, `launch-after-install = "always"` puts the app back.
 
+### M11 — Cache mesh (self-hostable server, lookup cache, peer sync)
+
+Full design: `docs/en/designs/cache-mesh.md`. One contract, three
+server shapes (Cloudflare Worker, native binary, Vercel edge)
+exchanging content-verified cached stats blocks; clients gain a
+cache-server setting and a lookup transport hook.
+
+- [x] Contract + `relay-core` policy core (allowlist/TTL/CID tables, canonical request line, envelope `line` verification anchor) (#2063)
+- [x] Worker namespaces: lookup/blocks/peers handlers, R2 block store, `LookupRate` DO, edge-cached peers list, `LOOKUP_ENABLED` off-switch (#2067)
+- [x] Vercel edge adapter (HTTP-only TS subset, Upstash KV + memory fallback) (#2065)
+- [ ] native server + client pane (in review — the `relay-server` crate rides #2068, the 缓存服务器 settings pane and transport hook ride the client wave)
+
 ## Release notes history
 
 ### M4 state / known gaps
