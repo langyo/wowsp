@@ -1101,15 +1101,6 @@ export interface ReplayStream {
    *  consumes this. Absent on versions whose exposed method id isn't
    *  pinned. */
   consumableUses?: ConsumableUseEvent[];
-  /** Entity id → the hull's Repair-Party recoverable cap in ABSOLUTE HP — the
-   *  Vehicle create-state property `regenCrewHpLimit` (FLOAT32), i.e. the
-   *  repair coefficient × maxHp. Keys are STRINGS on the wire (serde
-   *  stringifies integer map keys so the MessagePack IPC keeps them); the
-   *  value does not change mid-battle. Only nonzero caps appear; an absent
-   *  entry means the replay carries no usable cap (older client versions, or
-   *  the reference captures' zero readings), and the grey-bar coefficient
-   *  falls back to the documented flat 0.5 (repairPool.ts). */
-  repairHpCaps?: Record<string, number>;
   /** Shield-damage broadcasts (avatar receiveShieldDamageInfo, 15.10+):
    *  one absorbed-hit event with the attacker join. Absent on older
    *  versions. */

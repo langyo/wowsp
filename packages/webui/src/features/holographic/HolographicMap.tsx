@@ -396,12 +396,6 @@ export default defineComponent({
      *  Absent on replays whose exposed method id is not pinned: the feature
      *  stays off and the bars render exactly as before. */
     consumableUses: { type: Array as () => ConsumableUseEvent[], default: () => [] },
-    /** Entity id → the hull's Repair-Party cap in ABSOLUTE HP (the Vehicle
-     *  `regenCrewHpLimit` create-state property the Rust decode surfaces on
-     *  `ReplayStream.repairHpCaps`). Converts to the grey bar's coefficient
-     *  (cap / maxHp) in repairPool.ts; an absent entry keeps the documented
-     *  flat 0.5 fallback. */
-    repairHpCaps: { type: Object as () => Record<string, number>, default: () => ({}) },
     /** Global-weather timeline (BattleLogic state.weather.globalWeather) —
      *  cyclone/storm approach warnings + interpolation windows. */
     weatherTransitions: { type: Array as () => WeatherTransition[], default: () => [] },
@@ -3884,13 +3878,10 @@ const RECORDED_DOLLY_MIN = -40;
                         hullMaxHp,
                         t,
                         traj.entityId,
-                        // Real per-hull cap (repairHpCaps) when the replay
-                        // carries one, else the documented flat 0.5.
-                        repairCoefficientFor(
-                          props.repairHpCaps,
-                          traj.entityId,
-                          hullMaxHp,
-                        ),
+                        // The hull's BAKED GameParams repair fraction
+                        // (repairPool.ts), keyed by the roster's shipParamsId
+                        // — else the documented flat 0.5.
+                        repairCoefficientFor(r.vehicle.shipId, hullMaxHp),
                       ),
                 dead: r.dead,
               };

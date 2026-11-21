@@ -536,9 +536,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         // (the bar renders exactly as before); 0 = repairs exist but the pool
         // is exhausted right now (green + red only). A sunk hull has no
         // repair party left — its bar is pinned empty.
-        // The coefficient comes from the replay's per-hull Repair-Party cap
-        // (float stream `repairHpCaps`, joined by entity id) and falls back to
-        // the documented flat 0.5 when the replay carries none.
+        // The coefficient is the hull's BAKED GameParams repair fraction
+        // (repairPool.ts, keyed by shipParamsId — the same shipId this label
+        // already carries for its silhouette), with the documented flat 0.5
+        // for a hull the bake does not know.
         label.hpRecoverableFrac = dead
           ? null
           : repairRecoverableFracAt(
@@ -547,7 +548,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
               label.maxHp,
               tEff,
               entityId,
-              repairCoefficientFor(ctx.props.repairHpCaps, entityId, label.maxHp),
+              repairCoefficientFor(label.shipId, label.maxHp),
             );
         // Submerged submarines badge their depth on the floating label
         // (positive meters below surface); surfaced ships clear it.

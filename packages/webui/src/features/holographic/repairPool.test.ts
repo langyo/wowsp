@@ -12,6 +12,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ConsumableUseEvent, HpSample } from "@/api";
+import repairCoefficients from "@/data/repair_coefficients.json";
 
 import {
   REPAIR_PARTY_CONSUMABLE_ID,
@@ -187,48 +188,66 @@ describe("repairRecoverableFracAt", () => {
 });
 
 describe("repairCoefficientFor", () => {
-  // Entity ids are STRINGS on the wire map (the Rust serde adapter stringifies
-  // them so the MessagePack IPC keeps the entries).
-  const caps = { "7": 12_500 };
+  // The source is the COMMITTED GameParams bake
+  // (scripts/extract_repair_coefficients.py): shipParamsId → the fraction of
+  // max HP one Repair Party charge restores.
+  const table = repairCoefficients as Record<string, number>;
+  /** Montana (shipParamsId 4277090288) — the standard premium repair charge,
+   *  regenerationHPSpeed 0.0066 × workTime 28 s = 0.1848 of max HP. */
+  const MONTANA = 4_277_090_288;
 
-  it("converts the streamed per-hull cap to a fraction of max HP", () => {
-    expect(repairCoefficientFor(caps, 7, 25_000)).toBeCloseTo(0.5, 10);
-    expect(repairCoefficientFor({ "7": 3_000 }, 7, 10_000)).toBeCloseTo(0.3, 10);
-    // Defensive clamps: a cap at/above maxHp can never paint more than the bar.
-    expect(repairCoefficientFor(caps, 7, 12_500)).toBe(1);
-    expect(repairCoefficientFor({ "7": 20_000 }, 7, 10_000)).toBe(1);
+  it("reads the hull's baked GameParams fraction", () => {
+    expect(table[String(MONTANA)]).toBeCloseTo(0.1848, 10);
+    expect(repairCoefficientFor(MONTANA, 30_000)).toBeCloseTo(0.1848, 10);
   });
 
-  it("falls back to the documented flat 0.5 when the cap is unknown", () => {
-    expect(repairCoefficientFor(undefined, 7, 25_000)).toBe(
+  it("is a hull property, not a ratio of maxHp", () => {
+    // The old stream cap was absolute HP and got divided by maxHp; the baked
+    // table already IS the fraction, so the hull answers the same either way.
+    expect(repairCoefficientFor(MONTANA, 10_000)).toBe(
+      repairCoefficientFor(MONTANA, 120_000),
+    );
+  });
+
+  it("answers every baked hull with its own row", () => {
+    const ids = Object.keys(table);
+    expect(ids.length).toBeGreaterThan(500);
+    for (const id of ids) {
+      expect(repairCoefficientFor(Number(id), MAX_HP)).toBeCloseTo(table[id], 10);
+      // JSON object keys are strings; a string shipId joins the same row.
+      expect(repairCoefficientFor(id, MAX_HP)).toBeCloseTo(table[id], 10);
+      expect(table[id]).toBeGreaterThan(0);
+      expect(table[id]).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("falls back to the documented flat 0.5 for an unknown hull", () => {
+    expect(table["1"]).toBeUndefined();
+    expect(repairCoefficientFor(1, 25_000)).toBe(
       REPAIR_PARTY_RECOVERABLE_FRAC,
     );
-    expect(repairCoefficientFor({}, 7, 25_000)).toBe(0.5);
-    // Another hull's cap is not this hull's cap.
-    expect(repairCoefficientFor({ "9": 12_500 }, 7, 25_000)).toBe(0.5);
-    // A zero reading is the captures' "not replicated" encoding, not a cap.
-    expect(repairCoefficientFor({ "7": 0 }, 7, 25_000)).toBe(0.5);
-    expect(repairCoefficientFor({ "7": Number.NaN }, 7, 25_000)).toBe(0.5);
-    expect(repairCoefficientFor({ "7": -1 }, 7, 25_000)).toBe(0.5);
-    // Without a usable maxHp there is no ratio to form.
-    expect(repairCoefficientFor(caps, 7, null)).toBe(0.5);
-    expect(repairCoefficientFor(caps, 7, 0)).toBe(0.5);
+    expect(repairCoefficientFor(null, 25_000)).toBe(0.5);
+    expect(repairCoefficientFor(undefined, 25_000)).toBe(0.5);
+    // Without a usable maxHp there is no bar to segment, even though the
+    // fraction itself no longer needs the division.
+    expect(repairCoefficientFor(MONTANA, null)).toBe(0.5);
+    expect(repairCoefficientFor(MONTANA, 0)).toBe(0.5);
+    expect(repairCoefficientFor(MONTANA, Number.NaN)).toBe(0.5);
   });
 
-  it("feeds the state machine the real per-hull pool", () => {
-    // A 2,500 HP cap on a 10,000 HP hull is a 0.25 coefficient (not the flat
-    // 0.5): 2,000 damage taken inside the window queues 500 recoverable HP.
-    const coefficient = repairCoefficientFor({ "7": 2_500 }, 7, MAX_HP);
-    expect(coefficient).toBeCloseTo(0.25, 10);
+  it("feeds the state machine the hull's real pool", () => {
+    // Montana's 0.1848 of 10,000 HP is an 1,848 HP budget and a 0.1848 share
+    // of every damage event: 2,000 damage inside the window queues 369.6 HP.
+    const coefficient = repairCoefficientFor(MONTANA, MAX_HP);
+    expect(coefficient).toBeCloseTo(0.1848, 10);
     const events = [use(10, 7)];
     const samples = [hp(0, MAX_HP), hp(20, 8_000)];
-    expect(repairRecoverableAt(events, samples, MAX_HP, coefficient, 25, 7)).toBe(
-      500,
-    );
-    expect(repairRecoverableFracAt(events, samples, MAX_HP, 25, 7, coefficient)).toBeCloseTo(
-      0.05,
-      10,
-    );
+    expect(
+      repairRecoverableAt(events, samples, MAX_HP, coefficient, 25, 7),
+    ).toBeCloseTo(369.6, 6);
+    expect(
+      repairRecoverableFracAt(events, samples, MAX_HP, 25, 7, coefficient),
+    ).toBeCloseTo(0.03696, 10);
   });
 });
 
