@@ -154,6 +154,7 @@ function makeCtx(pool: THREE.Object3D[]): MapInternals {
     planeCloudSlots: new Map(),
     minimapTrailEnd: new Map(),
     planeTypesById: new Map(),
+  planeRoleByTrail: new Map(),
     planeIndexById: new Map(),
     planeLabelCarriers: new Map(),
     planeRoleById: new Map(),

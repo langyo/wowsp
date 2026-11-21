@@ -162,13 +162,16 @@ describe("HoloLabel three-layer stack geometry (stylesheet contract)", () => {
     expect(scss).toMatch(/&__hp-text\s*\{[^}]*z-index:\s*3;/s);
   });
 
-  it("colors the queued pre-cover a LIGHT GREEN, never grey", () => {
-    // Default (dark scene) tone: a desaturated light green.
-    expect(scss).toMatch(/--label-ink-hp-recover:\s*rgb\(158 224 168 \//);
-    // Light theme: the same hue, deepened to read on the paper-white sea.
-    expect(scss).toMatch(/--label-ink-hp-recover:\s*rgb\(96 174 112 \//);
-    // No grey rail survives anywhere.
-    expect(scss).not.toMatch(/--label-ink-hp-recover:\s*rgb\(200 208 220/);
-    expect(scss).not.toMatch(/--label-ink-hp-recover:\s*rgb\(120 135 152/);
+  it("colors the queued pre-cover a distinct grey, never the lost red", () => {
+    const scss = readFileSync(
+      join(__dirname, "../../../../holo/src/HoloLabel.scss"),
+      "utf8",
+    );
+    // The queued layer is its OWN grey (distinct from the lost red and the
+    // dark track), in both themes.
+    expect(scss).toContain("rgb(148 163 184 / 62%)");
+    expect(scss).toContain("rgb(100 116 139 / 65%)");
+    expect(scss).not.toContain("158 224 168");
+    expect(scss).not.toContain("96 174 112");
   });
 });

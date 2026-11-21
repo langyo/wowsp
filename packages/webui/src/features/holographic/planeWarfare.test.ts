@@ -185,6 +185,7 @@ const makeCtx = (props: {
     planeLaunchPoses: new Map(),
     minimapTrailEnd: new Map(),
     planeTypesById: new Map(),
+  planeRoleByTrail: new Map(),
     planeIndexById: new Map(),
     planeRoleById: new Map(),
   }) as unknown as MapInternals;
@@ -1169,5 +1170,36 @@ describe("isScoutAirframeIndex / isScoutParamsId coverage", () => {
 
   it("keeps unknown paramsIds out of the scout rule (nothing to classify)", () => {
     expect(isScoutParamsId(UNKNOWN_PARAMS_ID)).toBe(false);
+  });
+});
+
+describe("cardRideCandidates ASW exclusion", () => {
+  it("never rides a depth-charge (role asw) wing", async () => {
+    // The Shokaku corpus's ASW wings: PJAD902_ASW_T8-family rows carry
+    // role "asw" with a "dive" family — they are utility wings.
+    const { cardRideCandidates } = await import("./planeWarfare");
+    const aswEntry = Object.entries(
+      planeTypesRaw as Record<string, { type: string; role?: string }>,
+    ).find(([, row]) => row.role === "asw");
+    expect(aswEntry).toBeDefined();
+    const family = (aswEntry![1] as { type: string }).type;
+    const ctx = {
+      planeTrails: [
+        {
+          id: 100 * 16,
+          samples: [
+            { time: 10, x: 0, z: 0 },
+            { time: 200, x: 500, z: 0 },
+          ],
+        },
+      ],
+      minimapTrailEnd: new Map(),
+      planeCarrierOf: new Map([[100, 7]]),
+      trajById: new Map(),
+      planeTypesById: new Map([[100 * 16, family]]),
+      planeRoleByTrail: new Map([[100 * 16, "asw"]]),
+    } as unknown as Parameters<typeof cardRideCandidates>[0];
+    const out = cardRideCandidates(ctx, 7, 150);
+    expect(out).toEqual([]);
   });
 });

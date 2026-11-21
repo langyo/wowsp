@@ -14,11 +14,11 @@
   --label-ink-tier: rgba(100, 200, 255, 0.85);
   --label-ink-hp: rgba(100, 255, 150, 0.9);
   --label-ink-hp-bar-bg: rgba(5, 8, 15, 0.55);
-  /* Three-layer HP bar: the LIGHT-GREEN queued Repair-Party pool and the red
+  /* Three-layer HP bar: the QUEUED Repair-Party pool (a grey of its own —
+     distinct from the lost-for-good red AND from the dark track) and the red
      lost-for-good remainder. The queued layer is a desaturated tint of the
-     green fill — a pre-cover of the HP that is coming back, not a dead grey
-     rail (user report: 灰血范围做得不太好). */
-  --label-ink-hp-recover: rgb(158 224 168 / 60%);
+     hull's repair coefficient — the game's repair-bar reading. */
+  --label-ink-hp-recover: rgb(148 163 184 / 62%);
   --label-ink-hp-lost: rgb(248 92 92 / 45%);
   --label-ink-hp-text: #fff;
   --label-ink-hp-text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
@@ -142,7 +142,7 @@
     transition: width 0.2s linear;
   }
 
-  /* Repair Party's queued light-green segment (the game's repair-bar reading)
+  /* Repair Party's queued grey segment (the game's repair-bar reading)
      and the red lost-for-good segment right of it. Both are absolutely
      positioned over the track and UNDER the green fill (which owns the left
      end): the queued layer eats the RED width, never the green's. Hosts that
@@ -271,7 +271,7 @@
   /* Three-layer bar on the paper-white sea: the queued pre-cover deepens to a
      mid green so it still separates from the pale rail, the red darkens one
      step to stay legible. */
-  --label-ink-hp-recover: rgb(96 174 112 / 65%);
+  --label-ink-hp-recover: rgb(100 116 139 / 65%);
   --label-ink-hp-lost: rgb(248 113 113 / 45%);
   --label-ink-hp-text: #374151;
   --label-ink-hp-text-shadow: 0 0 2px rgb(255 255 255 / 80%);

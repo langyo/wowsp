@@ -184,6 +184,7 @@ function makeCtx(): MapInternals {
     planeCloudSlots: new Map(),
     minimapTrailEnd: new Map(),
     planeTypesById: new Map(),
+  planeRoleByTrail: new Map(),
     planeIndexById: new Map(),
     planeLabelCarriers: new Map(),
     planeRoleById: new Map(),
