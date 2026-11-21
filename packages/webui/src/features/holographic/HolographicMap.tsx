@@ -1568,7 +1568,13 @@ const RECORDED_DOLLY_MIN = -40;
     const statCellsOf = (
       st: RosterStat | null | undefined,
       shipId: number | null,
+      blank: boolean,
     ): PlaybackTeamStat[] => {
+      // A 过街老鼠 verdict (a hidden career) has no values to show, and the
+      // live formatter still emits aligned "—" glyphs for it — a dash on an
+      // empty band reads as a number. Such a row's cells are BLANK (the
+      // 2026-11-21 report); the header averages keep the team's own values.
+      if (blank) return [];
       // Bots / stats misses keep the aligned dash cells (the live roster
       // renders "—" there, never a blank band).
       if (!st) return rosterShotDashes().slice(0, EXPORT_TEAM_STAT_COLS);
@@ -1577,15 +1583,29 @@ const RECORDED_DOLLY_MIN = -40;
         EXPORT_TEAM_STAT_COLS,
       );
     };
+    /** The seal gate chain shared by a row's medals and its stat band: the
+     *  zh-only seal surface over the PR + seals masters, a stat-resolved
+     *  non-bot row, and a hidden profile whose clan gate has resolved. */
+    const sealGatesOpen = (name: string, st: RosterStat | undefined): boolean => {
+      if (!sealsShown.value || !st || st.loading || AI_NAME.test(name)) return false;
+      // A hidden profile whose clan gate is still out holds its stamp.
+      if (st.hidden && st.clanId != null && st.clanWinrate === undefined) return false;
+      return true;
+    };
+    /** The career verdict a hull carries into the clip — the SAME careerStamp
+     *  the live roster rides, behind the seal gates above. Null = no verdict
+     *  (or a row the gates hold back entirely). */
+    const careerOf = (name: string, st: RosterStat | undefined): StampKind | null =>
+      !st || !sealGatesOpen(name, st)
+        ? null
+        : careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate);
     /** One player's seal kinds, in the live roster full mode's order:
      *  the career verdict first (the row-end stamp there), then the
      *  composition tags air-before-sub. A 蛆 / 过街老鼠 verdict suppresses
      *  the composition half, exactly like compSealKindsOf. */
     const medalsOf = (name: string, st: RosterStat | undefined): string[] => {
-      if (!sealsShown.value || !st || st.loading || AI_NAME.test(name)) return [];
-      // A hidden profile whose clan gate is still out holds its stamp.
-      if (st.hidden && st.clanId != null && st.clanWinrate === undefined) return [];
-      const career = careerStamp(st.pr, st.battles, st.winrate, st.hidden, st.clanWinrate);
+      if (!st || !sealGatesOpen(name, st)) return [];
+      const career = careerOf(name, st);
       const kinds: StampKind[] = [];
       if (career) kinds.push(career);
       if (career !== "maggot" && career !== "rat") {
@@ -1642,6 +1662,13 @@ const RECORDED_DOLLY_MIN = -40;
     ): Omit<PlaybackTeamRow, "hpFrac" | "dead"> => {
       const v = r.vehicle;
       const st = nameStats.value.get(v.name);
+      // The career verdict drives BOTH the seal tags and the stat band: a
+      // 过街老鼠 row's cells are blank (statCellsOf). A seal the user switched
+      // off paints no mark, so it blanks nothing.
+      const ratStamped =
+        statsOn &&
+        careerOf(v.name, st) === "rat" &&
+        !statsPrefs.prefs.sealDisabled.rat;
       return {
         name: v.name,
         clan: st?.clanTag ?? null,
@@ -1654,9 +1681,10 @@ const RECORDED_DOLLY_MIN = -40;
         tier: tierRoman(v.shipId != null ? shipTierOf(v.shipId) : null),
         shipType: r.type,
         // Stats toggle off: no seal verdicts (they grade stats) and no
-        // cells — the identity band owns the row.
+        // cells — the identity band owns the row. A rat-stamped row keeps
+        // its stamp but leaves the two stat tracks empty.
         medals: statsOn ? medalsOf(v.name, st) : [],
-        stats: statsOn ? statCellsOf(st, v.shipId) : [],
+        stats: statsOn ? statCellsOf(st, v.shipId, ratStamped) : [],
       };
     };
 
@@ -4007,7 +4035,7 @@ const RECORDED_DOLLY_MIN = -40;
               const img = await loadImage(url);
               if (img) ribbonIconMap.set(r.key, img);
             } catch {
-              // A missing face keeps the cell's neutral capsule.
+              // A missing face leaves the cell's plain count (no plate).
             }
           }),
         );

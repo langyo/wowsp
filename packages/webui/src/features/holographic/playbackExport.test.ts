@@ -2,9 +2,11 @@
  *  delay grid, settings clamping, the settings-driven estimate inputs, the
  *  team-column layout rules (fixed name size, left-aligned identity, the
  *  centered header labels over right-aligned value tracks, the stats
- *  toggle's full-width fallback) and the header's corner blocks. The
- *  painters are driven with a recording 2D context — no real canvas, no
- *  encoders. */
+ *  toggle's full-width fallback, the 过街老鼠 row's blank stat band), the
+ *  header's pill-centred corner blocks, the recorder panel's 292px band
+ *  budget and its enlarged, unchromed ribbon art, and the top-anchored
+ *  chat transcript. The painters are driven with a recording 2D context —
+ *  no real canvas, no encoders. */
 import { describe, expect, it } from "vitest";
 
 import {
@@ -32,7 +34,14 @@ import {
   EXPORT_TEAM_INSET_X,
   EXPORT_TEAM_ID_CELL_W,
   EXPORT_HEADER_CORNER_CY,
+  EXPORT_HEADER_CORNER_FONTS,
+  EXPORT_HEADER_CORNER_MID_CY,
   drawPlaybackHeader,
+  drawChatPanel,
+  chatEntryCapacity,
+  EXPORT_CHAT_TITLE_H,
+  EXPORT_CHAT_ENTRY_H,
+  EXPORT_CHAT_ENTRY_TEXT_H,
   teamIdentityCell,
   teamStatBandWidth,
   PLAYBACK_CODEC_LADDER,
@@ -56,6 +65,9 @@ import {
   EXPORT_RECORDER_INSET_X,
   EXPORT_RECORDER_RIBBON_COLS,
   EXPORT_RECORDER_RIBBON_ROWS,
+  EXPORT_RECORDER_RIBBON_ROW_H,
+  EXPORT_RECORDER_RIBBON_ICON_W,
+  EXPORT_RECORDER_RIBBON_COUNT_PAD,
   EXPORT_RECORDER_SOURCE_CAPTION_H,
   EXPORT_RECORDER_SOURCE_COLUMNS,
   EXPORT_RECORDER_SOURCE_GAP,
@@ -75,6 +87,7 @@ import {
 } from "./playbackExport";
 import { FOOT_H, darkPalette } from "@/features/share/shotKit";
 import type {
+  PlaybackChatLine,
   PlaybackPanelLabels,
   PlaybackRecorderStats,
   PlaybackTeamRow,
@@ -379,10 +392,21 @@ interface PaintedImage {
   w: number;
   h: number;
 }
+/** One rounded-rect path (a badge square, a capsule/plate or the panel's
+ *  own chrome) - recorded so a test can prove the ribbon strip draws NONE
+ *  of its own chrome around the art. */
+interface PaintedRoundRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  r: number;
+}
 
 function recordingContext() {
   const texts: PaintedText[] = [];
   const rects: PaintedRect[] = [];
+  const roundRects: PaintedRoundRect[] = [];
   const images: PaintedImage[] = [];
   const stack: Array<Record<string, unknown>> = [];
   const ctx: Record<string, unknown> = {
@@ -438,7 +462,9 @@ function recordingContext() {
     translate() {},
     rotate() {},
     scale() {},
-    roundRect() {},
+    roundRect(x: number, y: number, w: number, h: number, r: number) {
+      roundRects.push({ x, y, w, h, r });
+    },
     stroke() {},
     strokeRect() {},
     setLineDash() {},
@@ -451,6 +477,7 @@ function recordingContext() {
     ctx: ctx as unknown as CanvasRenderingContext2D,
     texts,
     rects,
+    roundRects,
     images,
   };
 }
@@ -652,6 +679,42 @@ describe("drawPlaybackTeamColumn", () => {
     expect(teamEntryCapacity()).toBeGreaterThanOrEqual(EXPORT_TEAM_MAX_ROWS);
   });
 
+  // ── The 过街老鼠 row's BLANK stat cells (the 2026-11-21 report) ────────
+  it("paints no dash glyph on a rat-stamped row's stat cells", () => {
+    // The feed blanks a rat row's cells (HolographicMap's statCellsOf): the
+    // row keeps its identity + its seal tag, but the two stat tracks are
+    // empty bands - the live formatter's "—" would read as a number.
+    const rat = teamRow(1, {
+      name: "RatRow",
+      medals: ["\u8fc7\u8857\u8001\u9f20"],
+      stats: [],
+    });
+    const { ctx, texts } = recordingContext();
+    drawPlaybackTeamColumn(
+      ctx, 0, 0, EXPORT_SIDE_W, sideOf([rat]), "ally",
+      "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+    );
+    // No value and no dash glyph anywhere on the row.
+    expect(texts.some((t) => t.text === "\u2014")).toBe(false);
+    // The identity line and the seal tag still paint.
+    expect(texts.some((t) => t.text === "RatRow")).toBe(true);
+    expect(texts.some((t) => t.text === "\u8fc7\u8857\u8001\u9f20")).toBe(true);
+    // The header averages keep their own values (only ROW cells blank).
+    expect(texts.some((t) => t.text === "52.3%")).toBe(true);
+    expect(texts.some((t) => t.text === "1450")).toBe(true);
+    // Contrast: the same row with the live formatter's dash cells would
+    // paint both glyphs - which is exactly what the feed suppresses.
+    const dashed = recordingContext();
+    drawPlaybackTeamColumn(
+      dashed.ctx, 0, 0, EXPORT_SIDE_W,
+      sideOf([teamRow(1, { stats: [{ text: "\u2014" }, { text: "\u2014" }] })]),
+      "ally", "74 222 128", "Allies", darkPalette(), LABELS,
+      () => null,
+    );
+    expect(dashed.texts.filter((t) => t.text === "\u2014")).toHaveLength(2);
+  });
+
   // ── Repair Party's grey recoverable segment (the game's three-layer
   //    bar: green | grey | red) ─────────────────────────────────────────
   it("paints green | grey | red with the grey eating the red width", () => {
@@ -766,15 +829,31 @@ describe("drawPlaybackHeader corners", () => {
       expect(t.align).toBe("left");
       expect(t.x).toBe(10);
     }
-    // Two stacked small lines at the corner's own baselines.
+    // Two lines at the corner's own baselines, CENTRED on the pill band's
+    // midline (the band spans y 6..50, so cy = 28): title above, detail
+    // below - not the old 10/28 top-hug (the 2026-11-21 report).
     expect(left[0].y).toBe(EXPORT_HEADER_CORNER_CY[0]);
     expect(left[1].y).toBe(EXPORT_HEADER_CORNER_CY[1]);
+    expect(left[0].y).toBe(EXPORT_HEADER_CORNER_MID_CY - 7);
+    expect(left[1].y).toBe(EXPORT_HEADER_CORNER_MID_CY + 9);
+    expect(left[0].y).toBeGreaterThan(6);
+    expect(left[1].y).toBeLessThan(6 + 44);
+    // The enlarged faces: a 12px/700 title over an 11px/400 detail (was
+    // 10/9 at weight 600/400) - the 「根本看不清」 half of the report.
+    expect(left[0].font.startsWith("700 12px")).toBe(true);
+    expect(left[1].font.startsWith("400 11px")).toBe(true);
+    for (const size of EXPORT_HEADER_CORNER_FONTS) expect(size).toBeGreaterThanOrEqual(11);
     const right = texts.filter((t) => t.text === outcome[0] || t.text === outcome[1]);
     expect(right.length).toBe(2);
     for (const t of right) {
       expect(t.align).toBe("right");
       expect(t.x).toBe(EXPORT_TOTAL_LOGICAL - 10);
     }
+    // Both blocks ride the same pair (the right one mirrors the left).
+    expect(right[0].font).toBe(left[0].font);
+    expect(right[1].font).toBe(left[1].font);
+    expect(right[0].y).toBe(left[0].y);
+    expect(right[1].y).toBe(left[1].y);
     // The centre still carries the clock (the pill's own row).
     expect(texts.some((t) => t.text === "03:12" && t.align === "center")).toBe(true);
   });
@@ -809,30 +888,39 @@ describe("recorder panel budget", () => {
       EXPORT_LOGICAL - EXPORT_TEAM_H - EXPORT_RECORDER_TOP_GAP - EXPORT_RECORDER_BOTTOM_INSET,
     ).toBe(292);
     // The stack: headline block, ribbon band, source band, two 10px gaps.
+    // 118 + 10 + 64 (13 caption + 3 x 17 rows) + 10 + 83 = 285 <= 292.
     const bands = recorderPanelBands();
     expect(bands.ribbonsTop).toBe(EXPORT_RECORDER_BLOCK_H + EXPORT_RECORDER_BAND_GAP);
-    expect(recorderRibbonBandHeight()).toBe(43);
+    expect(recorderRibbonBandHeight()).toBe(64);
     expect(recorderSourceBandHeight()).toBe(83);
-    expect(bands.sourcesTop).toBe(181);
-    expect(bands.stackH).toBe(264);
+    expect(bands.sourcesTop).toBe(202);
+    expect(bands.stackH).toBe(285);
     expect(recorderPanelFits()).toBe(true);
     expect(bands.stackH).toBeLessThanOrEqual(recorderPanelHeight());
+    // The whole stack stays inside the 292px budget with its 7px of slack -
+    // the enlarged ribbon strip (3 x 17px rows) is paid for out of the old
+    // 28px of slack, so the source band keeps all five rows.
+    expect(recorderPanelHeight() - bands.stackH).toBe(7);
+    expect(recorderRibbonBandHeight() + recorderSourceBandHeight()).toBe(147);
     // No band may overlap the one above it.
     expect(EXPORT_RECORDER_BLOCK_H).toBeLessThan(bands.ribbonsTop);
     expect(bands.ribbonsTop + recorderRibbonBandHeight()).toBeLessThan(bands.sourcesTop);
     expect(bands.sourcesTop + recorderSourceBandHeight()).toBe(bands.stackH);
-    // The five-row clamp is a DISPLAY choice, not a space limit: a sixth
-    // row would still fit (7 rows fit the band) - the ledger keeps every
-    // counterparty either way (see foldRecorderSources).
+    // The five-row clamp is now ALSO the space limit: with the taller
+    // ribbon strip exactly five 14px rows fit the source band (13 + 5 x 14
+    // = 83 <= 90), and a sixth would run past the panel's bottom edge.
     const rowFit = Math.floor(
       (recorderPanelHeight() - bands.sourcesTop - EXPORT_RECORDER_SOURCE_CAPTION_H) /
         EXPORT_RECORDER_SOURCE_ROW_H,
     );
-    expect(rowFit).toBeGreaterThanOrEqual(6);
-    expect(EXPORT_RECORDER_SOURCE_ROWS).toBe(5);
+    expect(rowFit).toBe(5);
+    expect(EXPORT_RECORDER_SOURCE_ROWS).toBe(rowFit);
+    expect(EXPORT_RECORDER_SOURCE_CAPTION_H + 6 * EXPORT_RECORDER_SOURCE_ROW_H).toBeGreaterThan(
+      recorderPanelHeight() - bands.sourcesTop,
+    );
   });
 
-  it("gives each source column 82px and holds the whole ribbon set in 8 cells", () => {
+  it("gives each source column 82px and holds the ribbon set in 3 x 3 cells", () => {
     const colW = recorderSourceColumnWidth();
     expect(colW).toBe(82);
     // Two columns + the one gap + both insets reconstruct the 190px column.
@@ -842,10 +930,21 @@ describe("recorder panel budget", () => {
         2 * EXPORT_RECORDER_INSET_X,
     ).toBe(EXPORT_SIDE_W);
     // Every authoritative ribbon kind the settlement parser exposes has a
-    // cell: 4 columns x 2 rows = 8 >= RIBBON_SOURCES (7) - the strip is
-    // complete, never cut.
-    expect(RIBBON_SOURCES.length).toBeLessThanOrEqual(
-      EXPORT_RECORDER_RIBBON_COLS * EXPORT_RECORDER_RIBBON_ROWS,
+    // cell: 3 columns x 3 rows = 9 >= RIBBON_SOURCES (7) - the strip is
+    // complete, never cut (the 2026-11-21 enlargement traded the 4-wide row
+    // for a bigger art plus its row).
+    const cells = EXPORT_RECORDER_RIBBON_COLS * EXPORT_RECORDER_RIBBON_ROWS;
+    expect(cells).toBe(9);
+    expect(RIBBON_SOURCES.length).toBeLessThanOrEqual(cells);
+    // The art is drawn 30px wide now (was 20), and a cell still leaves
+    // ~26px of plain count beside it.
+    expect(EXPORT_RECORDER_RIBBON_ICON_W).toBe(30);
+    const cellW =
+      (EXPORT_SIDE_W - 2 * EXPORT_RECORDER_INSET_X) / EXPORT_RECORDER_RIBBON_COLS;
+    expect(cellW - EXPORT_RECORDER_RIBBON_ICON_W).toBeGreaterThanOrEqual(20);
+    // ...and every row is taller than the art it holds.
+    expect(EXPORT_RECORDER_RIBBON_ROW_H).toBeGreaterThan(
+      (EXPORT_RECORDER_RIBBON_ICON_W * 15) / 40,
     );
   });
 });
@@ -1066,7 +1165,7 @@ describe("drawRecorderPanel", () => {
   const fakeIcon = { src: "ribbon.webp" } as unknown as HTMLImageElement;
 
   it("paints the headline, the ribbon strip and both source columns", () => {
-    const { ctx, texts, images } = recordingContext();
+    const { ctx, texts, images, roundRects } = recordingContext();
     const h = recorderPanelHeight();
     drawRecorderPanel(
       ctx, 0, 0, EXPORT_SIDE_W, h, stats(), darkPalette(), LABELS,
@@ -1086,6 +1185,22 @@ describe("drawRecorderPanel", () => {
     expect(texts.some((t) => t.text === "12")).toBe(true);
     expect(images).toHaveLength(3);
     expect(images[0].src).toBe("ribbon.webp");
+    // The bundled art is drawn at the enlarged 30px width (was 20) and its
+    // count rides a PLAIN text slot right after it — the painter wraps the
+    // cell in no capsule, no plate and no border (the 2026-11-21
+    // 「去掉自绘图标」 report).
+    const ribbonCellW =
+      (EXPORT_SIDE_W - 2 * EXPORT_RECORDER_INSET_X) / EXPORT_RECORDER_RIBBON_COLS;
+    expect(images[0].w).toBe(EXPORT_RECORDER_RIBBON_ICON_W);
+    expect(images[0].h).toBeCloseTo((EXPORT_RECORDER_RIBBON_ICON_W * 15) / 40, 6);
+    const count241 = texts.find((t) => t.text === "241")!;
+    expect(count241.x).toBeCloseTo(
+      EXPORT_RECORDER_INSET_X +
+        ribbonCellW +
+        EXPORT_RECORDER_RIBBON_ICON_W +
+        EXPORT_RECORDER_RIBBON_COUNT_PAD,
+      6,
+    );
     // Source rows: name at the left inset, value right-aligned on the
     // column's right edge (two columns, 82px each).
     const alpha = texts.find((t) => t.text === "Alpha")!;
@@ -1112,6 +1227,40 @@ describe("drawRecorderPanel", () => {
     expect(texts.find((t) => t.text === LABELS.ribbonsTitle)!.y).toBeGreaterThan(
       EXPORT_RECORDER_BLOCK_H,
     );
+    // No self-drawn chrome inside the ribbon band: every rounded rect the
+    // panel painted belongs to the badge block ABOVE the strip (the cells
+    // carry their own art and a plain count — nothing else).
+    for (const rr of roundRects) {
+      expect(rr.y).toBeLessThan(bands.ribbonsTop);
+    }
+  });
+
+  it("wraps the ribbon cells three per row and paints the art plain", () => {
+    const { ctx, images, roundRects } = recordingContext();
+    const five = ["frag", "main_caliber", "torpedo", "plane", "dbomb"].map(
+      (key, i) => ({ key, value: 11 + i }),
+    );
+    drawRecorderPanel(
+      ctx, 0, 0, EXPORT_SIDE_W, recorderPanelHeight(),
+      stats({ ribbons: five }), darkPalette(), LABELS, () => fakeIcon,
+    );
+    expect(images).toHaveLength(5);
+    const bands = recorderPanelBands();
+    const cellW =
+      (EXPORT_SIDE_W - 2 * EXPORT_RECORDER_INSET_X) / EXPORT_RECORDER_RIBBON_COLS;
+    // Cells 0..2 share a row (one cell pitch apart); cells 3 and 4 wrap
+    // onto the next 17px row.
+    expect(images[1].x - images[0].x).toBeCloseTo(cellW, 6);
+    expect(images[2].x - images[1].x).toBeCloseTo(cellW, 6);
+    expect(images[3].x).toBeCloseTo(images[0].x, 6);
+    expect(images[3].y - images[0].y).toBeGreaterThan(EXPORT_RECORDER_RIBBON_ROW_H - 1);
+    // The whole 3-row strip stays inside its own band (and the panel).
+    const lowest = Math.max(...images.map((i) => i.y + i.h));
+    expect(lowest).toBeLessThan(bands.ribbonsTop + recorderRibbonBandHeight());
+    // Nothing was drawn around the art inside the band.
+    for (const rr of roundRects) {
+      expect(rr.y).toBeLessThan(bands.ribbonsTop);
+    }
   });
 
   it("caps each source column at five rows", () => {
@@ -1151,6 +1300,87 @@ describe("drawRecorderPanel", () => {
     );
     expect(noArt.images).toHaveLength(0);
     expect(noArt.texts.some((t) => t.text === "241")).toBe(true);
+  });
+});
+
+/* ── The chat panel: TOP-anchored transcript ──────────────────────────
+   The 2026-11-21 「聊天记录从开头渲染而不是从最下头往上渲染」 report: the
+   newest window still rides the panel, but the list now starts at the
+   entry area's top edge and flows DOWNWARD (the live chat panel's
+   reading), instead of stacking up from the panel's bottom edge. */
+describe("drawChatPanel", () => {
+  const line = (i: number): PlaybackChatLine => ({
+    sender: "p" + i,
+    side: i % 2 === 0 ? "ally" : "enemy",
+    text: "msg" + i,
+    time: i,
+  });
+
+  it("anchors the first visible entry to the panel's top", () => {
+    const { ctx, texts } = recordingContext();
+    const h = recorderPanelHeight();
+    drawChatPanel(
+      ctx, 0, 0, EXPORT_SIDE_W, h,
+      [line(0), line(1), line(2)], darkPalette(), LABELS.chat,
+    );
+    // The caption still owns the panel's first 20px band...
+    const caption = texts.find((t) => t.text === LABELS.chat)!;
+    expect(caption.y).toBeLessThan(EXPORT_CHAT_TITLE_H);
+    // ...and the OLDEST visible entry starts at the entry area's top edge
+    // (never at the bottom), the next ones flowing downward.
+    const stamps = texts.filter((t) => /^00:0\d$/.test(t.text));
+    expect(stamps).toHaveLength(3);
+    expect(stamps[0].y).toBe(EXPORT_CHAT_TITLE_H);
+    expect(stamps[1].y).toBe(EXPORT_CHAT_TITLE_H + EXPORT_CHAT_ENTRY_H);
+    expect(stamps[2].y).toBe(EXPORT_CHAT_TITLE_H + 2 * EXPORT_CHAT_ENTRY_H);
+    // The caption sits ABOVE the first entry, and the list starts at the
+    // panel's top instead of resting on its bottom edge.
+    expect(caption.y).toBeLessThan(stamps[0].y);
+    expect(stamps[0].y).toBeLessThan(h / 2);
+    // Each entry's message rides its own second row.
+    expect(texts.find((t) => t.text === "msg0")!.y).toBe(
+      EXPORT_CHAT_TITLE_H + EXPORT_CHAT_ENTRY_TEXT_H,
+    );
+    // Nothing overhangs the panel's bottom edge.
+    for (const t of texts) expect(t.y).toBeLessThanOrEqual(h);
+  });
+
+  it("keeps the NEWEST window while still reading top-down", () => {
+    const { ctx, texts } = recordingContext();
+    const h = recorderPanelHeight();
+    const lines = Array.from({ length: 12 }, (_, i) => line(i));
+    drawChatPanel(ctx, 0, 0, EXPORT_SIDE_W, h, lines, darkPalette(), LABELS.chat);
+    const capacity = chatEntryCapacity(h);
+    expect(capacity).toBe(8);
+    const senders = texts.filter((t) => /^p\d+$/.test(t.text));
+    expect(senders).toHaveLength(capacity);
+    // The window is the LAST `capacity` lines (the newest)...
+    expect(senders[0].text).toBe("p" + (lines.length - capacity));
+    expect(senders[senders.length - 1].text).toBe("p11");
+    // ...anchored at the top, with the newest entry ending nearest the
+    // panel's bottom edge.
+    expect(senders[0].y).toBe(EXPORT_CHAT_TITLE_H);
+    const lastMsg = texts.find((t) => t.text === "msg11")!;
+    expect(lastMsg.y).toBe(
+      EXPORT_CHAT_TITLE_H +
+        (capacity - 1) * EXPORT_CHAT_ENTRY_H +
+        EXPORT_CHAT_ENTRY_TEXT_H,
+    );
+    expect(lastMsg.y).toBeLessThanOrEqual(h);
+    expect(lastMsg.y).toBeGreaterThan(h - EXPORT_CHAT_ENTRY_H - EXPORT_CHAT_ENTRY_TEXT_H);
+  });
+
+  it("paints nothing when the panel has no room for an entry", () => {
+    // A zero-capacity window must not fall through to slice(-0), which
+    // would paint EVERY line.
+    expect(chatEntryCapacity(EXPORT_CHAT_TITLE_H)).toBe(0);
+    const { ctx, texts } = recordingContext();
+    drawChatPanel(
+      ctx, 0, 0, EXPORT_SIDE_W, EXPORT_CHAT_TITLE_H,
+      [line(0)], darkPalette(), LABELS.chat,
+    );
+    expect(texts.some((t) => t.text === "p0")).toBe(false);
+    expect(texts.some((t) => t.text === "msg0")).toBe(false);
   });
 });
 
