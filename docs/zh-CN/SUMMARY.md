@@ -19,6 +19,7 @@
 - [Mod Hub 插件管理](./designs/mod-hub.md)
 - [网关推送](./designs/gateway-push.md)
 - [缓存网格](./designs/cache-mesh.md)
+- [缓存网格信任体系](./designs/cache-mesh-trust.md)
 - [游戏内战绩插件](./designs/ingame-stats-plugin.md)
 - [AI 模型分发](./designs/ai-models.md)
 
