@@ -73,11 +73,9 @@ new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
 #   tauri.localhost   (Windows desktop app)
 #   asset.localhost   (Android app)
 #   localhost         (wrangler dev / browser smoke tests)
-# Then uncomment the sitekey and store the secret:
+# Then store the secret:
 #   npx wrangler secret put GATEWAY_TURNSTILE_SECRET
-#
-# [vars]
-# GATEWAY_TURNSTILE_SITEKEY = "0x4AAA0000000000000000000000000000000"
+# and uncomment the sitekey line in [vars] below.
 #
 # Password gate (works with or without Turnstile; constant-time compare,
 # 5 failed attempts within a minute locks the source IP for 5 minutes):
@@ -85,27 +83,43 @@ new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
 # Absent ⇒ password off.
 #
 # Operator notice — free text riding /gateway/health:
-# GATEWAY_NOTICE = "wowsp node of <your legion>"
-#
-# ── cache-mesh (stats lookup cache, blocks, peers) — NOT part of this
-#    template, on purpose ──────────────────────────────────────────────
-# This template stays a GATEWAY-ONLY self-host: the battle-push
-# /gateway/* namespace, nothing else. The wasm binary it deploys also
-# carries the cache-mesh namespaces (docs/en/designs/cache-mesh.md) —
-# they simply stay unrouted: without a LOOKUP_KV binding and without
-# [vars] the lookup/blocks/peers handlers answer from an empty store,
-# and /api/health reports capabilities { lookup: false, peers: false,
-# blocks: false } (the code falls back to the GATEWAY_KV binding for
-# the node id, so the health document stays complete). A deployment
-# that wants ONLY push keeps this file as-is — no change needed.
-#
-# For a full cache-mesh SELF-HOST (serving the stats lookup cache to
-# the apps), the Worker is the wrong shape on purpose: use the NATIVE
-# relay-server (VPS / LAN / Docker, all four capabilities, SQLite
-# storage) or the Vercel adapter (packages/relay-vercel, HTTP-only
-# subset) — the operations guide walks both:
+#   GATEWAY_NOTICE = "wowsp node of <your legion>"
+
+[vars]
+# Cache-mesh OFF by default (review finding 4, 2026-11-21): the wasm
+# binary this template deploys carries the cache-mesh namespaces
+# (docs/en/designs/cache-mesh.md), and with no [assets] layer in front
+# they WOULD serve — an uncached, rate-limit-less allowlist proxy on
+# every request. LOOKUP_ENABLED = "0" gates the six mesh routes at
+# dispatch (404, indistinguishable from absent routes) AND lowers the
+# /api/health capabilities to { lookup, peers, blocks } = false, so a
+# gateway-only self-host is exactly that: the battle-push /gateway/*
+# namespace and nothing else. The node id persists through the
+# GATEWAY_KV binding fallback chain (LOOKUP_KV → FEEDBACK_KV →
+# GATEWAY_KV).
+LOOKUP_ENABLED = "0"
+# NODE_ROLE = "community"          # the code default when absent
+# GATEWAY_TURNSTILE_SITEKEY = "0x4AAA0000000000000000000000000000000"
+
+# ── turning the cache-mesh ON (not recommended on the Worker shape) ──
+# For a real cache-mesh self-host, the Worker is the wrong shape on
+# purpose: use the NATIVE relay-server (VPS / LAN / Docker, all four
+# capabilities, SQLite storage) or the Vercel adapter
+# (packages/relay-vercel, HTTP-only subset) — the operations guide
+# walks both:
 #   docs/en/guides/self-host-gateway.md  (+ zh-CN and other locales)
-# Should a Worker-based mesh node ever be wanted anyway, the recipe is
-# exactly the official wrangler.toml's: add a LOOKUP_KV binding (any
-# namespace), optionally PEERS_UPSTREAM = "https://wowsp.langyo.xyz"
-# to subscribe the broadcast list, and NODE_ROLE = "community".
+# Should a Worker-based mesh node be wanted anyway, flipping
+# LOOKUP_ENABLED off ("1" or removing the line) is NOT enough — the
+# mesh's storage seams must be bound first, exactly like the official
+# wrangler.toml:
+#   1. [[kv_namespaces]] LOOKUP_KV  (any namespace — the registry
+#      documents, node:id, announce counters)
+#   2. [[r2_buckets]] LOOKUP_R2 + create the bucket ONCE:
+#        npx wrangler r2 bucket create wowsp-lookup-blocks
+#   3. [[durable_objects.bindings]] LOOKUP_RATE (class LookupRate)
+#      AND its migration entry on this template's chain:
+#        [[migrations]]
+#        tag = "v2"
+#        new_sqlite_classes = ["LookupRate"]
+#   4. optionally PEERS_UPSTREAM = "https://wowsp.langyo.xyz" (subscribe
+#      the broadcast list) and NODE_ROLE = "community".

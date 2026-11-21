@@ -35,6 +35,7 @@ pub mod erp;
 pub mod feedback;
 pub mod gateway;
 pub mod lookup;
+pub mod lookup_rate;
 pub mod peers;
 pub mod qqbot;
 pub mod replay;
@@ -42,6 +43,7 @@ pub mod replay_index;
 pub mod sponsors;
 
 pub use gateway::{GatewayAuth, GatewayChannel};
+pub use lookup_rate::LookupRate;
 pub use replay_index::ReplayIndex;
 
 use relay_core::manifest::{CapabilitiesDoc, ManifestOverrides, NodeDoc, gateway_manifest};
@@ -66,8 +68,17 @@ async fn route(req: Request, env: Env) -> Result<Response> {
     let url = req.url()?;
     let path = url.path().to_string();
     let query = url.query().unwrap_or("").to_string();
+    let route = classify(&path, &query);
 
-    match classify(&path, &query) {
+    // The advertised off-switch must be REAL (review finding 3): when
+    // LOOKUP_ENABLED=0 the six cache-mesh routes answer 404 exactly
+    // like absent routes — no capability is served while the health
+    // document says it is off.
+    if mesh_disabled(&env, &route) {
+        return Response::error("not found", 404);
+    }
+
+    match route {
         Route::Health => {
             let notice = env.var("GATEWAY_NOTICE").ok().map(|v| v.to_string());
             let overrides = ManifestOverrides {
@@ -144,16 +155,37 @@ async fn route(req: Request, env: Env) -> Result<Response> {
 
 // ── cache-mesh manifest inputs (§2) ─────────────────────────────────────
 
+/// Is the cache-mesh namespace OFF (`LOOKUP_ENABLED=0`)? Absent =
+/// on (the digest-channel var discipline — a var named in
+/// wrangler.toml is a DEPLOYED value).
+fn mesh_off(env: &Env) -> bool {
+    env.var("LOOKUP_ENABLED")
+        .map(|v| v.to_string() == "0")
+        .unwrap_or(false)
+}
+
+/// Review finding 3's dispatch gate: the six cache-mesh routes when
+/// the namespace is off. Answers indistinguishable from absent routes.
+fn mesh_disabled(env: &Env, route: &Route) -> bool {
+    mesh_off(env)
+        && matches!(
+            route,
+            Route::LookupFetch { .. }
+                | Route::BlockGet { .. }
+                | Route::BlockRaw { .. }
+                | Route::IpfsGateway { .. }
+                | Route::PeersList
+                | Route::PeersAnnounce
+        )
+}
+
 /// The §2 capability vector of this deployment: `gateway` always on
 /// (this worker IS the push namespace), the three cache-mesh
-/// namespaces riding the single `LOOKUP_ENABLED` switch (absent =
-/// on, the digest-channel var discipline — a var named in
-/// wrangler.toml is a DEPLOYED value).
+/// namespaces riding the single `LOOKUP_ENABLED` switch — and the
+/// dispatch gate above refuses their routes when it is off, so the
+/// advertised flags and the served surface always agree.
 fn manifest_capabilities(env: &Env) -> CapabilitiesDoc {
-    let mesh_on = env
-        .var("LOOKUP_ENABLED")
-        .map(|v| v.to_string() != "0")
-        .unwrap_or(true);
+    let mesh_on = !mesh_off(env);
     CapabilitiesDoc {
         gateway: true,
         lookup: mesh_on,
@@ -201,15 +233,40 @@ async fn manifest_node(env: &Env, req: &Request) -> NodeDoc {
 }
 
 /// The stable node id (§2: 32 lowercase hex): KV `node:id`, minted
-/// from getrandom's workerd CSPRNG on first read and written once. A
-/// failing KV write still answers the minted id (stability is
+/// from getrandom's workerd CSPRNG on first read and written once.
+/// A failing KV write still answers the minted id (stability is
 /// best-effort under a quota outage, never a broken health doc).
+///
+/// The resolved id is edge-cached for 60 s (review finding 6): a warm
+/// /api/health pays NO storage ops, so the route cannot be drained by
+/// polling. The health document itself stays `no-store` (§2) — only
+/// this internal lookup carries the cache.
 async fn node_id(env: &Env) -> String {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct NodeIdDoc {
+        id: String,
+    }
+    const EDGE_KEY: &str = "https://health.edge/node-id";
     const KEY: &str = "node:id";
-    let kv = env.kv("LOOKUP_KV").or_else(|_| env.kv("FEEDBACK_KV"));
+    let cache = Cache::default();
+    if let Ok(Some(mut cached)) = cache.get(EDGE_KEY.to_string(), true).await {
+        if let Ok(doc) = cached.json::<NodeIdDoc>().await {
+            if relay_core::manifest::NodeDoc::valid_id(&doc.id) {
+                return doc.id;
+            }
+        }
+    }
+    // Binding chain (review finding 4): LOOKUP_KV → FEEDBACK_KV →
+    // GATEWAY_KV, so a gateway-only selfhost (which binds GATEWAY_KV
+    // alone) still persists its id instead of re-minting per call.
+    let kv = env
+        .kv("LOOKUP_KV")
+        .or_else(|_| env.kv("FEEDBACK_KV"))
+        .or_else(|_| env.kv("GATEWAY_KV"));
     if let Ok(kv) = &kv {
         if let Ok(Some(id)) = kv.get(KEY).text().await {
             if relay_core::manifest::NodeDoc::valid_id(&id) {
+                fill_node_id_cache(&cache, EDGE_KEY, &id).await;
                 return id;
             }
         }
@@ -222,7 +279,18 @@ async fn node_id(env: &Env) -> String {
             let _ = put.execute().await;
         }
     }
+    fill_node_id_cache(&cache, EDGE_KEY, &id).await;
     id
+}
+
+/// Best-effort 60 s edge entry for the resolved node id.
+async fn fill_node_id_cache(cache: &Cache, edge_key: &str, id: &str) {
+    if let Ok(mut entry) = Response::from_json(&serde_json::json!({ "id": id })) {
+        let _ = entry
+            .headers_mut()
+            .set("Cache-Control", "public, max-age=60");
+        let _ = cache.put(edge_key.to_string(), entry).await;
+    }
 }
 
 /// The one response exit: every response this worker sends to a client

@@ -127,16 +127,21 @@ id = "a523e16e116b4f9fa5878c721c133028"
 binding = "GATEWAY_KV"
 id = "a523e16e116b4f9fa5878c721c133028"
 
-# Cache-mesh block + peer store (the /api/lookup, /api/blocks, /ipfs
-# and /api/peers namespaces — crates/relay-worker/src/{lookup,blocks,
-# peers}.rs; docs/en/designs/cache-mesh.md). A THIRD binding over the
-# SAME FEEDBACK_KV namespace (the two-bindings-one-namespace pattern
-# above): blk:<cid> block envelopes (TTL + 24 h grace), peer:<url>
-# registry rows (48 h), node:id, the lookup/announce rate counters and
-# the cached upstream peer list all share the same free quota, and the
-# hot lookup path is fronted by the edge Cache API anyway (zero KV
-# reads on a hit). Split the same way if the mesh ever needs its own
-# traffic profile:
+# Cache-mesh KV (the /api/lookup, /api/blocks, /ipfs and /api/peers
+# namespaces — crates/relay-worker/src/{lookup,blocks,peers}.rs;
+# docs/en/designs/cache-mesh.md). A THIRD binding over the SAME
+# FEEDBACK_KV namespace (the two-bindings-one-namespace pattern
+# above). What lives here after the review quota fixes
+# (2026-11-21): the ONE-document own peer registry (peers:own),
+# the cached upstream peer list (peers:upstream), node:id and the
+# peer-announce rate counters — all tiny and announce-bounded. The
+# heavy paths deliberately do NOT touch KV anymore: block envelopes
+# ride R2 (LOOKUP_R2 below) and the per-IP lookup budget rides the
+# LookupRate Durable Object (LOOKUP_RATE below) — a KV counter there
+# would have PUT once per request against this namespace's shared
+# 1000-writes/day free budget (the 2026-10-22 incident shape). The hot
+# lookup path is edge-cached in front of everything anyway. Split the
+# same way if the mesh ever needs its own traffic profile:
 #   npx wrangler kv namespace create LOOKUP_KV
 [[kv_namespaces]]
 binding = "LOOKUP_KV"
@@ -160,6 +165,21 @@ id = "a523e16e116b4f9fa5878c721c133028"
 binding = "REPLAY_R2"
 bucket_name = "wowsp-replay-shards"
 
+# Cache-mesh block storage — one envelope-JSON object per CID (the
+# /api/lookup fill store + the /api/blocks and /ipfs read family; see
+# crates/relay-worker/src/blocks.rs). Blocks moved here from KV for
+# quota economics (review finding 1b, 2026-11-21): fills are WRITE
+# traffic the free KV namespace budget (1000/day) cannot absorb,
+# while R2's free tier allows 1M class-A ops/month. Expiry is LAZY
+# (TTL + 24 h grace checked on read; expired reads delete
+# best-effort; refills overwrite) — deliberately no sweep cron. The
+# maintainer must create the bucket ONCE before the first deploy that
+# binds it:
+#   npx wrangler r2 bucket create wowsp-lookup-blocks
+[[r2_buckets]]
+binding = "LOOKUP_R2"
+bucket_name = "wowsp-lookup-blocks"
+
 # SQLite-backed Durable Object classes — what the Workers FREE tier
 # provisions. (The pairing Room + Directory classes were RETIRED with
 # the PIN pairing mode on 2026-11-13: migration v5 deletes them and
@@ -177,6 +197,12 @@ bucket_name = "wowsp-replay-shards"
 #                 v4): publisher presence, subscriber fan-out (cap 32),
 #                 last-battle snapshot retention alarm, battle:<route>
 #                 KV mirror writes.
+#   LookupRate   — the cache-mesh lookup budget (v6): one SQLite shard
+#                 per (hour bucket, IP) via idFromName — the §3.5
+#                 per-IP hourly counter, GET /spend?limit=<n> → 200 |
+#                 429, self-deleting alarm sweep at hour + 2 h. NOT a
+#                 KV counter on purpose (see the LOOKUP_KV comment
+#                 above); see crates/relay-worker/src/lookup_rate.rs.
 #
 # Migrations v1/v2 declared the TypeScript era's Room + Directory classes
 # (v3 adds ReplayIndex, v4 the gateway-push pair). v5 DELETES Room +
@@ -194,6 +220,10 @@ class_name = "GatewayAuth"
 [[durable_objects.bindings]]
 name = "GATEWAY_CHANNEL"
 class_name = "GatewayChannel"
+
+[[durable_objects.bindings]]
+name = "LOOKUP_RATE"
+class_name = "LookupRate"
 
 [[migrations]]
 tag = "v1"
@@ -219,6 +249,15 @@ new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
 [[migrations]]
 tag = "v5"
 deleted_classes = ["Room", "Directory"]
+
+# v6 adds the cache-mesh lookup budget shard (see the LookupRate class
+# comment above). NOTE for self-hosts: a gateway-only selfhost that
+# later turns the mesh ON (LOOKUP_ENABLED) must add this binding AND
+# its own migration entry to its chain — see
+# wrangler.selfhost.toml.example.
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["LookupRate"]
 
 # Optional operator switch (dashboard ▶ Settings ▶ Variables, or here
 # under [vars]); not required:

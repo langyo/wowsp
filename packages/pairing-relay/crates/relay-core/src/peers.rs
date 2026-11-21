@@ -40,8 +40,14 @@ pub const ANNOUNCE_BODY_MAX: usize = 8 * 1024;
 pub const CONTACT_MAX_CHARS: usize = 120;
 /// URL length ceiling — a legal hostname boundary (§5.2.1).
 pub const URL_MAX_LEN: usize = 253;
-/// KV key prefix of one registry row (`peer:<url>`).
+/// KV key prefix of one registry row (`peer:<url>`) — the per-row
+/// layout the Worker started with; the Worker now keeps its OWN
+/// registry as ONE document ([`OWN_REGISTRY_KEY`]) for quota
+/// economics (one read, one write per announce). The prefix stays
+/// exported for KV-shaped deployments (native keeps its own store).
 pub const PEER_KEY_PREFIX: &str = "peer:";
+/// KV key of the own registry document (the whole `Vec<PeerRow>`).
+pub const OWN_REGISTRY_KEY: &str = "peers:own";
 /// KV key of the cached upstream list (§5.1's subscription, fetched
 /// at most once per minute).
 pub const UPSTREAM_CACHE_KEY: &str = "peers:upstream";
@@ -351,6 +357,31 @@ pub fn sync_candidates<'a>(peers: &'a [PeerRow], max: usize) -> Vec<&'a PeerRow>
         .collect()
 }
 
+/// §5.4, review finding 7: candidate selection for the no-own-rows
+/// case. List order lets a hostile upstream registry monopolize the
+/// first `SYNC_PEERS_MAX` slots; ordering every blocks-capable row
+/// by sha256(url + "\n" + seed) (the caller seeds with the CID +
+/// hour bucket) makes the pick deterministic for honest replays yet
+/// unpredictable to a list author. Same set as `sync_candidates`,
+/// different order.
+pub fn sync_candidates_seeded<'a>(
+    peers: &'a [PeerRow],
+    max: usize,
+    seed: &str,
+) -> Vec<&'a PeerRow> {
+    let rank = |row: &&PeerRow| -> u64 {
+        let digest = Sha256::digest(format!("{}\n{seed}", row.url).as_bytes());
+        u64::from_be_bytes(digest[..8].try_into().expect("8 bytes"))
+    };
+    let mut picked: Vec<&PeerRow> = peers
+        .iter()
+        .filter(|row| !row.private && row.capabilities.blocks)
+        .collect();
+    picked.sort_by_key(rank);
+    picked.truncate(max);
+    picked
+}
+
 /// The list route's weak ETag (§5.1: cheap revalidation): a sha256
 /// over the peers array's canonical JSON — `generatedAt` is
 /// deliberately outside the hash so a re-render of identical content
@@ -584,6 +615,57 @@ mod tests {
             picked.iter().map(|r| r.url.as_str()).collect::<Vec<_>>(),
             ["https://b.example.org", "https://c.example.org"]
         );
+    }
+
+    #[test]
+    fn seeded_sync_candidates_are_deterministic_and_set_equal() {
+        let peers: Vec<PeerRow> = ('a'..='j')
+            .map(|c| row(&format!("https://{c}.example.org"), true, false))
+            .collect();
+        let a = sync_candidates_seeded(&peers, 3, "cid123:7");
+        let b = sync_candidates_seeded(&peers, 3, "cid123:7");
+        // Deterministic: the same seed picks the same candidates in
+        // the same order (honest replays agree).
+        assert_eq!(
+            a.iter().map(|r| r.url.as_str()).collect::<Vec<_>>(),
+            b.iter().map(|r| r.url.as_str()).collect::<Vec<_>>()
+        );
+        // A different seed (next hour / other CID) picks a DIFFERENT
+        // first candidate than list order would — over ten rows the
+        // seeded pick cannot coincide with the first three by list
+        // order for every seed (pin one concrete divergence).
+        let plain = sync_candidates(&peers, 3);
+        let seeded = sync_candidates_seeded(&peers, 3, "other-cid:9");
+        assert_ne!(
+            a.iter().map(|r| r.url.as_str()).collect::<Vec<_>>(),
+            plain.iter().map(|r| r.url.as_str()).collect::<Vec<_>>(),
+            "the seeded order is not the list order for this seed"
+        );
+        assert_ne!(
+            a.iter().map(|r| r.url.clone()).collect::<Vec<_>>(),
+            seeded.iter().map(|r| r.url.clone()).collect::<Vec<_>>()
+        );
+        // Same eligible SET as the plain pick over the full range: the
+        // seeding is a permutation, not a filter.
+        let all_seeded = sync_candidates_seeded(&peers, usize::MAX, "x");
+        let all_plain = sync_candidates(&peers, usize::MAX);
+        let mut seeded_urls: Vec<&str> = all_seeded.iter().map(|r| r.url.as_str()).collect();
+        let mut plain_urls: Vec<&str> = all_plain.iter().map(|r| r.url.as_str()).collect();
+        seeded_urls.sort();
+        plain_urls.sort();
+        assert_eq!(seeded_urls, plain_urls);
+        // Filters stay applied: private and blocks-less rows never
+        // appear, whatever the seed.
+        let mixed = vec![
+            row("https://no-blocks.example.org", false, false),
+            row("http://192.0.2.9:8787", true, true),
+            row("https://good.example.org", true, false),
+        ];
+        for seed in ["a", "b", "cid:1"] {
+            let picked = sync_candidates_seeded(&mixed, 3, seed);
+            assert_eq!(picked.len(), 1);
+            assert_eq!(picked[0].url, "https://good.example.org");
+        }
     }
 
     #[test]

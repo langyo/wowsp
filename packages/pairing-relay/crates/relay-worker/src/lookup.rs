@@ -5,28 +5,35 @@
 //! [`relay_core::lookup`]; this module owns the plumbing:
 //!
 //! 1. edge Cache API (`https://lookup.edge/<cid>`, the digests.rs
-//!    pattern) — hot traffic burns NO KV reads; the rate-limit
-//!    counter is only spent after an edge miss;
-//! 2. KV `blk:<cid>` (LOOKUP_KV, over the shared namespace) — the
-//!    fresh envelope store, TTL + 24 h grace (§4.3);
+//!    pattern) — hot traffic burns NO storage reads and NO budget;
+//!    the rate counter is only spent after an edge miss;
+//! 2. the R2 block store via [`crate::blocks`] — the fresh envelope
+//!    (TTL + 24 h grace, §4.3), one object per CID;
 //! 3. peer pull-through (§5.4, `LOOKUP_SYNC` on): up to
 //!    `SYNC_PEERS_MAX` peers with the `blocks` capability answer
 //!    `GET {peer}/api/blocks/<cid>`; every peer row is CID-verified
-//!    against OUR canonical line before it is stored or served
-//!    (§4.2/§8 — a lying peer's row fails the hash check and is
-//!    dropped);
+//!    against OUR canonical line and TTL-reclassified locally before
+//!    it is stored or served (§4.2/§8 — a lying peer's row fails the
+//!    hash check and is dropped; a lying TTL is simply overwritten);
 //! 4. the real upstream (browser UA, §3.1) — non-2xx answers
 //!    `502 upstream_failed` so the client falls back to its direct
 //!    chain; bodies over the 8 MiB store cap pass through UNCACHED.
 //!
-//! Residual risk, documented: workers-rs 0.8's `fetch` carries no
-//! per-request timeout (no AbortSignal plumbing through
-//! `RequestInit`), so the §3.1 15 s upstream budget and the §5.4 3 s
-//! peer budget are enforced by workerd's own subrequest/wall-clock
-//! caps here — the native transport enforces the constants for real.
-//! Upstream bodies are read whole before the cap check (a trusted-ish
-//! allowlist host could buffer a large body into wasm memory); the
-//! cap then refuses to STORE it.
+//! Abuse budget (§3.5): the per-IP hourly counter lives in the
+//! LookupRate SQLite Durable Object (`src/lookup_rate.rs`), NOT in KV
+//! — a KV counter would PUT once per request against the namespace's
+//! 1000-writes/day free budget (the 2026-10-22 incident shape), while
+//! DO storage carries no shared quota. Sharded per (hour, IP).
+//!
+//! Residual risks, documented (workers-rs 0.8's `fetch` carries no
+//! per-request timeout — no AbortSignal plumbing through
+//! `RequestInit`): the §3.1 15 s upstream budget, the §5.4 3 s peer
+//! budget and the §5.2 callback budget are enforced by workerd's own
+//! subrequest/wall-clock caps here — the native transport enforces
+//! the relay-core constants for real. Upstream bodies are also read
+//! whole before the cap check (a trusted-ish allowlist host could
+//! buffer a large body into wasm memory); the cap then refuses to
+//! STORE it.
 
 use relay_core::lookup::{
     self, CACHE_HEADER, CACHE_HIT, CACHE_MISS, CACHE_PEER_HIT, LookupEnvelope,
@@ -36,17 +43,10 @@ use worker::*;
 
 use crate::feedback::{client_ip, err, http_call};
 
-/// The block store's KV binding (wrangler.toml).
-const KV: &str = "LOOKUP_KV";
-/// Pre-cache-mesh selfhosts have no LOOKUP_KV binding — fall back to
-/// the feedback namespace (same shared namespace on the official
-/// deployment either way).
-const KV_FALLBACK: &str = "FEEDBACK_KV";
 /// Default response content-type (§3.4).
 const DEFAULT_CONTENT_TYPE: &str = "application/json";
-/// Sanity ceiling on a peer-served TTL (our own table tops out at
-/// 86400; a lying peer claiming more is clamped, never trusted).
-const PEER_TTL_CEILING: u64 = 2 * 86_400;
+/// The LookupRate DO binding (wrangler.toml).
+const RATE_DO: &str = "LOOKUP_RATE";
 
 /// GET|POST /api/lookup/fetch?url=… — see the module doc.
 pub async fn handle_fetch(mut req: Request, env: Env, raw_url: Option<&str>) -> Result<Response> {
@@ -114,34 +114,22 @@ pub async fn handle_fetch(mut req: Request, env: Env, raw_url: Option<&str>) -> 
         .and_then(|v| v.to_string().parse::<u64>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(lookup::LOOKUP_RATE_PER_HOUR);
-    if let Ok(kv) = lookup_kv(&env) {
-        let key = lookup::lookup_rate_key(&ip, now_ms);
-        if !crate::replay::spend(&kv, &key, limit).await? {
-            let mut resp = crate::replay::err_retry(
-                429,
-                "rate_limited",
-                lookup::hour_retry_after_secs(now_ms),
-            )?;
-            resp.headers_mut().set("Access-Control-Allow-Origin", "*")?;
-            return Ok(resp);
-        }
+    if !spend_rate(&env, &ip, now_ms, limit).await {
+        let mut resp =
+            crate::replay::err_retry(429, "rate_limited", lookup::hour_retry_after_secs(now_ms))?;
+        resp.headers_mut().set("Access-Control-Allow-Origin", "*")?;
+        return Ok(resp);
     }
 
-    // ── 2. KV envelope (§3.3) ───────────────────────────────────────
-    if let Ok(kv) = lookup_kv(&env) {
-        let key = format!("{}{cid}", lookup::BLOCK_KEY_PREFIX);
-        let raw = kv.get(&key).text().await.ok().flatten();
-        if let Some(envelope) = raw
-            .as_deref()
-            .and_then(|text| serde_json::from_str::<LookupEnvelope>(text).ok())
-        {
-            if envelope.is_fresh(now_secs) {
-                let resp = serve_envelope(&envelope, CACHE_HIT, now_secs)?;
-                fill_edge_cache(&cache, &cache_key, &envelope, now_secs).await;
-                return Ok(resp);
-            }
-            // Stale (§4.3's grace window): fall through and refresh.
+    // ── 2. stored envelope (§3.3) ───────────────────────────────────
+    if let Some(envelope) = crate::blocks::load_block(&env, &cid).await {
+        if envelope.is_fresh(now_secs) {
+            let resp = serve_envelope(&envelope, CACHE_HIT, now_secs)?;
+            fill_edge_cache(&cache, &cache_key, &envelope, now_secs).await;
+            return Ok(resp);
         }
+        // Stale (§4.3's grace window): fall through and refresh — the
+        // refill overwrites the row.
     }
 
     // ── 3. peer pull-through (§5.4) ────────────────────────────────
@@ -150,11 +138,14 @@ pub async fn handle_fetch(mut req: Request, env: Env, raw_url: Option<&str>) -> 
         .map(|v| v.to_string() != "0")
         .unwrap_or(true);
     if sync_on {
-        if let Some(envelope) = pull_from_peers(&env, &cid, &line, now_secs).await {
+        // §3.3's own classification is the TTL authority — a peer's
+        // claimed TTL never survives verification unclamped.
+        let local_ttl = lookup::classify_ttl(host, url_path(&url));
+        if let Some(envelope) =
+            pull_from_peers(&env, &cid, &line, now_ms, now_secs, local_ttl).await
+        {
             let resp = serve_envelope(&envelope, CACHE_PEER_HIT, now_secs)?;
-            if let Ok(kv) = lookup_kv(&env) {
-                store_block(&kv, &cid, &envelope).await;
-            }
+            crate::blocks::store_block(&env, &cid, &envelope).await;
             fill_edge_cache(&cache, &cache_key, &envelope, now_secs).await;
             return Ok(resp);
         }
@@ -191,8 +182,8 @@ pub async fn handle_fetch(mut req: Request, env: Env, raw_url: Option<&str>) -> 
         Err(_) => return err(502, "upstream_failed"),
     };
     if bytes.len() > lookup::STORE_CAP {
-        // §3.1: over-cap bodies pass through UNCACHED (no KV row, no
-        // edge entry) — one stream, then the client's own chain.
+        // §3.1: over-cap bodies pass through UNCACHED (no store entry,
+        // no edge entry) — one stream, then the client's own chain.
         let mut resp = Response::from_bytes(bytes)?.with_status(status);
         let h = resp.headers_mut();
         h.set("Content-Type", &content_type)?;
@@ -203,12 +194,9 @@ pub async fn handle_fetch(mut req: Request, env: Env, raw_url: Option<&str>) -> 
     }
 
     // Store + serve (§3.3/§3.4).
-    let path = url_path(&url);
-    let ttl = lookup::classify_ttl(host, path);
+    let ttl = lookup::classify_ttl(host, url_path(&url));
     let envelope = LookupEnvelope::new(status, &content_type, &bytes, now_secs, ttl, host, &line);
-    if let Ok(kv) = lookup_kv(&env) {
-        store_block(&kv, &cid, &envelope).await;
-    }
+    crate::blocks::store_block(&env, &cid, &envelope).await;
     let resp = serve_envelope(&envelope, CACHE_MISS, now_secs)?;
     // The edge entry carries its own cache-control (fill_edge_cache
     // builds the stored response; a put without max-age is a no-op).
@@ -216,71 +204,67 @@ pub async fn handle_fetch(mut req: Request, env: Env, raw_url: Option<&str>) -> 
     Ok(resp)
 }
 
-/// The LOOKUP_KV binding, falling back to the feedback namespace for
-/// configs predating it (missing binding ⇒ no block store, lookup
-/// still works uncached).
-fn lookup_kv(env: &Env) -> Result<KvStore> {
-    env.kv(KV).or_else(|_| env.kv(KV_FALLBACK))
+/// Spend one (hour, IP) shard of the §3.5 budget in the LookupRate
+/// DO. FAIL-CLOSED on a DO fetch error (the KV counter's posture: a
+/// failing limiter refuses rather than flows unthrottled). A MISSING
+/// BINDING skips the limit — stated plainly, that is a deviation only
+/// a deliberate binding-less deploy reaches (the official and example
+/// configs both bind the class).
+async fn spend_rate(env: &Env, ip: &str, now_ms: i64, limit: u64) -> bool {
+    let Ok(namespace) = env.durable_object(RATE_DO) else {
+        return true;
+    };
+    let shard = now_ms.div_euclid(3_600_000);
+    let Ok(stub) = namespace
+        .id_from_name(&format!("{shard}:{ip}"))
+        .and_then(|id| id.get_stub())
+    else {
+        return false;
+    };
+    match stub
+        .fetch_with_str(&format!("https://lookup-rate/spend?limit={limit}"))
+        .await
+    {
+        Ok(resp) => resp.status_code() == 200,
+        Err(_) => false,
+    }
 }
 
 /// The path portion of an absolute URL (query excluded — the TTL table
 /// keys on path shapes only).
 fn url_path(url: &str) -> &str {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
-    let end = after_scheme
+    // Skip the authority (up to the first path/query/fragment marker —
+    // the §3.2 gate already refused userinfo authorities).
+    let authority_end = after_scheme
         .find(['/', '?', '#'])
         .unwrap_or(after_scheme.len());
-    let start = if after_scheme[..end].contains('@') {
-        // userinfo authority: host starts after the last '@'
-        after_scheme[..end]
-            .rfind('@')
-            .map(|at| at + 1)
-            .unwrap_or(end)
-    } else {
-        end.min(after_scheme.len())
-    };
-    let from = if let Some(pos) = after_scheme.get(start..).and_then(|s| s.find('/')) {
-        start + pos
-    } else {
-        after_scheme.len()
-    };
-    let path = &after_scheme[from..];
-    let cut = path
-        .find('?')
-        .or_else(|| path.find('#'))
-        .unwrap_or(path.len());
-    &path[..cut]
-}
-
-/// Write one block row (§4.3: TTL + 24 h grace; overwrite-and-TTL, no
-/// sweep). Failures are logged-and-ignored — the served response does
-/// not depend on the write.
-async fn store_block(kv: &KvStore, cid: &str, envelope: &LookupEnvelope) {
-    let key = format!("{}{cid}", lookup::BLOCK_KEY_PREFIX);
-    let Ok(json) = serde_json::to_string(envelope) else {
-        return;
-    };
-    let Ok(put) = kv.put(&key, json) else {
-        return;
-    };
-    let _ = put
-        .expiration_ttl(envelope.ttl + lookup::BLOCK_GRACE_SECS)
-        .execute()
-        .await;
+    let rest = &after_scheme[authority_end..];
+    let cut = rest.find(['?', '#']).unwrap_or(rest.len());
+    &rest[..cut]
 }
 
 /// §5.4: ask up to SYNC_PEERS_MAX blocks-capable peers for the CID.
 /// Every candidate row is verified against OUR canonical line
-/// (`cid_verify`) — the §8 anti-poisoning gate — and its TTL is
-/// clamped; a row failing any check is skipped, not an error.
+/// (`cid_verify`) and its TTL is reclassified by the LOCAL §3.3 table
+/// (review finding 5: a peer's TTL claim is never trusted) — a row
+/// failing any check is skipped, not an error.
+///
+/// Candidate selection (review finding 7): rows from the OWN registry
+/// come first (list order); when the own registry is EMPTY the
+/// candidates are picked deterministically-random from the merged
+/// list — order keyed by sha256(url, cid, hour) — so a hostile
+/// upstream list cannot monopolize the first SYNC_PEERS_MAX slots.
 async fn pull_from_peers(
     env: &Env,
     cid: &str,
     line: &str,
+    now_ms: i64,
     now_secs: u64,
+    local_ttl: u64,
 ) -> Option<LookupEnvelope> {
-    let peers = crate::peers::mesh_view(env).await;
-    if peers.is_empty() {
+    let view = crate::peers::mesh_view(env).await;
+    if view.peers.is_empty() {
         return None;
     }
     let max = env
@@ -289,7 +273,13 @@ async fn pull_from_peers(
         .and_then(|v| v.to_string().parse::<usize>().ok())
         .filter(|n| *n > 0)
         .unwrap_or(peers::SYNC_PEERS_MAX_DEFAULT);
-    for peer in peers::sync_candidates(&peers, max) {
+    let candidates = if view.own_empty {
+        let hour = now_ms.div_euclid(3_600_000);
+        peers::sync_candidates_seeded(&view.peers, max, &format!("{cid}:{hour}"))
+    } else {
+        peers::sync_candidates(&view.peers, max)
+    };
+    for peer in candidates {
         let url = format!("{}/api/blocks/{cid}", peer.url);
         let headers = Headers::new();
         let _ = headers.set("User-Agent", lookup::BROWSER_UA);
@@ -323,7 +313,9 @@ async fn pull_from_peers(
             continue;
         }
         let mut verified = envelope.clone();
-        verified.ttl = verified.ttl.min(PEER_TTL_CEILING).max(1);
+        // Local TTL authority (finding 5); the peer's own claim only
+        // ever SHRINKS the window, never extends it.
+        verified.ttl = envelope.ttl.min(local_ttl);
         // A peer's already-stale row is no better than a miss — the
         // upstream refresh follows anyway.
         if !verified.is_fresh(now_secs) {
@@ -411,13 +403,12 @@ async fn fill_edge_cache(cache: &Cache, cache_key: &str, envelope: &LookupEnvelo
     if remaining == 0 {
         return;
     }
-    let Ok(mut cached) = Response::from_bytes(body).map(|resp| {
-        resp.with_status(if (200..=299).contains(&envelope.status) {
-            envelope.status
-        } else {
-            200
-        })
-    }) else {
+    let status = if (200..=299).contains(&envelope.status) {
+        envelope.status
+    } else {
+        200
+    };
+    let Ok(mut cached) = Response::from_bytes(body).map(|resp| resp.with_status(status)) else {
         return;
     };
     let headers = cached.headers_mut();

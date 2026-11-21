@@ -1,10 +1,17 @@
 //! GET /api/peers + POST /api/peers/announce — the peer registry's
 //! I/O half (design contract: docs/en/designs/cache-mesh.md §5).
 //! Policy (URL gates, announce body shape, merge rule, budgets) lives
-//! in [`relay_core::peers`]; this module owns the KV table
-//! (`peer:<url>` rows, 48 h TTL), the upstream-list subscription
-//! (cached in `peers:upstream`, refreshed at most once a minute) and
-//! the §5.2 liveness callback.
+//! in [`relay_core::peers`]; this module owns the registry document,
+//! the upstream-list subscription and the §5.2 liveness callback.
+//!
+//! Quota economics (review findings 1c/2): the OWN registry is ONE KV
+//! document (`peers:own`, the whole `Vec<PeerRow>` — 128 rows ×
+//! ~300 B fits trivially), rewritten only on announce (already
+//! bounded 10/h/IP); the list route is fronted by a 60 s edge-Cache
+//! entry and spends the shared public-read budget (`peers` scope,
+//! the digests/sponsors pattern) only on edge misses. No KV LIST, no
+//! per-row GETs — the whole namespace costs ~2 reads per edge-miss
+//! list render and ~1 write per accepted announce.
 //!
 //! - The official node leaves `PEERS_UPSTREAM` unset: it IS the seed
 //!   everyone subscribes, so its list is its own registry only.
@@ -30,6 +37,8 @@ use crate::feedback::{client_ip, err, http_call};
 const KV: &str = "LOOKUP_KV";
 /// Pre-cache-mesh selfhosts.
 const KV_FALLBACK: &str = "FEEDBACK_KV";
+/// The edge-cache key of the list render (60 s, the route's max-age).
+const EDGE_LIST_KEY: &str = "https://peers.edge/list";
 
 /// The cached upstream subscription's wrapper shape.
 #[derive(Serialize, Deserialize)]
@@ -37,6 +46,14 @@ const KV_FALLBACK: &str = "FEEDBACK_KV";
 struct UpstreamCache {
     fetched_at: u64,
     rows: Vec<PeerRow>,
+}
+
+/// This node's merged view of the mesh, plus whether the OWN registry
+/// contributed any row (the §5.4 pull-through picks candidates
+/// deterministically-random when it did not — see lookup.rs).
+pub(crate) struct MeshView {
+    pub own_empty: bool,
+    pub peers: Vec<PeerRow>,
 }
 
 fn registry_kv(env: &Env) -> Result<KvStore> {
@@ -55,73 +72,120 @@ fn now_secs() -> u64 {
 
 /// The broadcast list: own registry rows ∪ the upstream subscription
 /// (own rows winning — `merge_peers`), ETagged for cheap
-/// revalidation, cached a minute.
+/// revalidation, edge-cached a minute, public-read-budgeted on edge
+/// misses.
 pub async fn handle_list(req: Request, env: Env) -> Result<Response> {
     match req.method() {
         Method::Options => return cors_preflight(),
         Method::Get => {},
         _ => return err(405, "method_not_allowed"),
     }
+    // Edge cache first (the digests.rs pattern): a warm edge answers
+    // with zero storage reads and zero budget spends.
+    let cache = Cache::default();
+    if let Ok(Some(cached)) = cache.get(EDGE_LIST_KEY.to_string(), true).await {
+        let etag = cached.headers().get("ETag")?.unwrap_or_default();
+        if if_none_match(&req, &etag) {
+            return not_modified(&etag);
+        }
+        return Ok(cached);
+    }
+    // Public-read budget on the miss path only (audit M-10's scope
+    // split, same as digests/sponsors).
+    if !crate::replay::spend_public_read(&env, "peers", &client_ip(&req)).await? {
+        let mut resp = crate::replay::err_retry(429, "rate_limited", 600)?;
+        resp.headers_mut().set("Access-Control-Allow-Origin", "*")?;
+        return Ok(resp);
+    }
     // §5.1's subscription: fetch the upstream list at most once per
     // minute (the cache window mirrors the route's own max-age).
     refresh_upstream(&env).await;
-    let merged = mesh_view(&env).await;
-    let doc = peers::peers_doc(merged, now_secs());
+    let view = mesh_view(&env).await;
+    let doc = peers::peers_doc(view.peers, now_secs());
     let etag = peers::peers_etag(&doc.peers);
+    if if_none_match(&req, &etag) {
+        return not_modified(&etag);
+    }
     let mut resp = Response::from_json(&doc)?;
-    let headers = resp.headers_mut();
-    headers.set("Access-Control-Allow-Origin", "*")?;
-    headers.set("Cache-Control", "public, max-age=60")?;
-    headers.set("ETag", &etag)?;
-    if req
-        .headers()
-        .get("If-None-Match")?
-        .is_some_and(|seen| seen.trim() == etag)
     {
-        let mut not_modified = Response::empty()?.with_status(304);
-        let headers = not_modified.headers_mut();
+        let headers = resp.headers_mut();
         headers.set("Access-Control-Allow-Origin", "*")?;
         headers.set("Cache-Control", "public, max-age=60")?;
         headers.set("ETag", &etag)?;
-        return Ok(not_modified);
     }
+    // Best-effort edge fill (needs the cache-control above).
+    let _ = cache.put(EDGE_LIST_KEY.to_string(), resp.cloned()?).await;
     Ok(resp)
 }
 
-/// This node's merged view of the mesh: own rows plus the CACHED
-/// upstream subscription (never triggering a fetch — the list route
-/// owns the refresh, so the lookup pull-through stays fast).
-pub(crate) async fn mesh_view(env: &Env) -> Vec<PeerRow> {
-    let own = own_rows(env).await.unwrap_or_default();
-    let upstream = cached_upstream_rows(env).await.unwrap_or_default();
-    peers::merge_peers(&own, &upstream)
+fn if_none_match(req: &Request, etag: &str) -> bool {
+    req.headers()
+        .get("If-None-Match")
+        .ok()
+        .flatten()
+        .is_some_and(|seen| seen.trim() == etag)
 }
 
-/// The registry table (`peer:` prefix; capped at PEERS_MAX rows, so
-/// one list page covers it — the cursor loop is defensive only).
+fn not_modified(etag: &str) -> Result<Response> {
+    let mut resp = Response::empty()?.with_status(304);
+    let headers = resp.headers_mut();
+    headers.set("Access-Control-Allow-Origin", "*")?;
+    headers.set("Cache-Control", "public, max-age=60")?;
+    headers.set("ETag", etag)?;
+    Ok(resp)
+}
+
+/// This node's merged view of the mesh: own registry document plus
+/// the CACHED upstream subscription (never triggering a fetch — the
+/// list route owns the refresh, so the lookup pull-through stays
+/// fast: exactly two KV reads on a cold miss).
+pub(crate) async fn mesh_view(env: &Env) -> MeshView {
+    let own = own_rows(env).await.unwrap_or_default();
+    let own_empty = own.is_empty();
+    let upstream = cached_upstream_rows(env).await.unwrap_or_default();
+    MeshView {
+        own_empty,
+        peers: peers::merge_peers(&own, &upstream),
+    }
+}
+
+/// The own registry document (`peers:own`, one read).
 async fn own_rows(env: &Env) -> Result<Vec<PeerRow>> {
     let kv = registry_kv(env)?;
-    let mut rows = Vec::new();
-    let mut cursor: Option<String> = None;
-    for _ in 0..4 {
-        let mut list = kv.list().prefix(peers::PEER_KEY_PREFIX.to_string());
-        if let Some(cursor) = cursor.take() {
-            list = list.cursor(cursor);
-        }
-        let page = list.limit(1000).execute().await?;
-        for key in page.keys.iter() {
-            if let Some(text) = kv.get(&key.name).text().await.ok().flatten() {
-                if let Ok(row) = serde_json::from_str::<PeerRow>(&text) {
-                    rows.push(row);
-                }
-            }
-        }
-        if page.list_complete {
-            break;
-        }
-        cursor = page.cursor;
+    let raw = kv.get(peers::OWN_REGISTRY_KEY).text().await.ok().flatten();
+    Ok(raw
+        .as_deref()
+        .and_then(|text| serde_json::from_str::<Vec<PeerRow>>(text).ok())
+        .unwrap_or_default())
+}
+
+/// Upsert one row into the own registry document (§5.2.3: re-announce
+/// refreshes `lastSeenAt`; past `PEERS_MAX` the oldest-`lastSeenAt`
+/// rows are evicted). One read + one write per announce.
+async fn upsert_own_row(env: &Env, row: PeerRow) -> Result<()> {
+    let kv = registry_kv(env)?;
+    let mut rows = own_rows(env).await?;
+    match rows.iter_mut().find(|existing| existing.url == row.url) {
+        Some(existing) => *existing = row,
+        None => rows.push(row),
     }
-    Ok(rows)
+    if rows.len() > peers::PEERS_MAX {
+        // §5.2.3: evict the oldest-`lastSeenAt` rows past the cap,
+        // preserving the survivors' document order.
+        let excess = rows.len() - peers::PEERS_MAX;
+        let mut order: Vec<usize> = (0..rows.len()).collect();
+        order.sort_by_key(|i| rows[*i].last_seen_at);
+        let evict: std::collections::HashSet<usize> = order.into_iter().take(excess).collect();
+        let mut index = 0;
+        rows.retain(|_| {
+            let keep = !evict.contains(&index);
+            index += 1;
+            keep
+        });
+    }
+    let json = serde_json::to_string(&rows)?;
+    let _ = kv.put(peers::OWN_REGISTRY_KEY, json)?.execute().await;
+    Ok(())
 }
 
 /// The upstream subscription rows from the `peers:upstream` cache
@@ -225,8 +289,9 @@ pub async fn handle_announce(mut req: Request, env: Env) -> Result<Response> {
     if len > peers::ANNOUNCE_BODY_MAX {
         return err(413, "payload_too_large");
     }
-    // §5.2.4 rate limit: 10 announces/hour/IP, fail-closed like every
-    // other counter (the replay `spend`).
+    // §5.2.4 rate limit: 10 announces/hour/IP in KV (announce volume
+    // is tiny by construction; a KV counter is the right shape here,
+    // fail-closed like every other counter).
     let now_ms = Date::now().as_millis() as i64;
     let ip = client_ip(&req);
     if let Ok(kv) = registry_kv(&env) {
@@ -277,17 +342,14 @@ pub async fn handle_announce(mut req: Request, env: Env) -> Result<Response> {
         return listed(false, "foreign");
     }
 
-    // Record the row (re-announce refreshes lastSeenAt, §5.2.3).
+    // Record the row (re-announce refreshes lastSeenAt, §5.2.3; the
+    // upsert owns the cap eviction inside the single document).
     let now = now_secs();
-    let kv = registry_kv(&env)?;
-    let key = peers::row_key(&public_url);
-    let existing = kv
-        .get(&key)
-        .text()
+    let existing = own_rows(&env)
         .await
-        .ok()
-        .flatten()
-        .and_then(|text| serde_json::from_str::<PeerRow>(&text).ok());
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.url == public_url);
     let row = PeerRow {
         url: public_url.clone(),
         capabilities: manifest.capabilities,
@@ -306,15 +368,7 @@ pub async fn handle_announce(mut req: Request, env: Env) -> Result<Response> {
         notice: announce.contact.clone(),
         private: false,
     };
-    enforce_registry_cap(&env, &kv, &public_url).await;
-    let Ok(json) = serde_json::to_string(&row) else {
-        return err(500, "row_serialize_failed");
-    };
-    let _ = kv
-        .put(&key, json)?
-        .expiration_ttl(peers::PEER_TTL_SECS)
-        .execute()
-        .await;
+    upsert_own_row(&env, row.clone()).await?;
     let mut resp = Response::from_json(&json!({
         "ok": true,
         "listed": true,
@@ -327,16 +381,12 @@ pub async fn handle_announce(mut req: Request, env: Env) -> Result<Response> {
 /// §5.3: a private/LAN row — stored for the local fleet, never
 /// re-broadcast, no liveness callback (the edge cannot reach the LAN).
 async fn store_private(env: &Env, url: &str, contact: Option<&str>) -> Result<Response> {
-    let kv = registry_kv(env)?;
     let now = now_secs();
-    let key = peers::row_key(url);
-    let existing = kv
-        .get(&key)
-        .text()
+    let existing = own_rows(env)
         .await
-        .ok()
-        .flatten()
-        .and_then(|text| serde_json::from_str::<PeerRow>(&text).ok());
+        .unwrap_or_default()
+        .into_iter()
+        .find(|row| row.url == url);
     let row = PeerRow {
         url: url.to_string(),
         capabilities: Default::default(),
@@ -347,33 +397,8 @@ async fn store_private(env: &Env, url: &str, contact: Option<&str>) -> Result<Re
         notice: contact.map(str::to_string),
         private: true,
     };
-    enforce_registry_cap(env, &kv, url).await;
-    let _ = kv
-        .put(&key, serde_json::to_string(&row)?)?
-        .expiration_ttl(peers::PEER_TTL_SECS)
-        .execute()
-        .await;
+    upsert_own_row(env, row).await?;
     listed(false, "private_stored")
-}
-
-/// §5.2.3: registry cap 128 — past it, the oldest-`lastSeenAt` row
-/// (never the one being written) is evicted. workerd KV lists per key,
-/// which is fine at this scale.
-async fn enforce_registry_cap(env: &Env, kv: &KvStore, incoming: &str) {
-    let Ok(rows) = own_rows(env).await else {
-        return;
-    };
-    if rows.len() < peers::PEERS_MAX {
-        return;
-    }
-    let mut candidates: Vec<&PeerRow> = rows.iter().filter(|row| row.url != incoming).collect();
-    candidates.sort_by_key(|row| row.last_seen_at);
-    let excess = rows
-        .len()
-        .saturating_sub(peers::PEERS_MAX.saturating_sub(1));
-    for row in candidates.into_iter().take(excess) {
-        let _ = kv.delete(&peers::row_key(&row.url)).await;
-    }
 }
 
 /// §5.2.2's best-effort answer: listed stays 200.
