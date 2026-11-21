@@ -87,7 +87,13 @@ not_found_handling = "single-page-application"
 # "/gateway*" — the account-routed battle-push namespace
 # (crates/relay-worker/src/gateway.rs; mobile-gateway wave). Nothing
 # static ever lives under /gateway, so no per-path negation is needed.
-run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*", "!/api/digests/data", "!/api/digests/data/*", "!/api/digests/mod-hub", "!/api/digests/mod-hub/*", "/gateway*"]
+# "/ipfs*" — the cache-mesh block store's IPFS-gateway alias
+# (docs/en/designs/cache-mesh.md §4.2; crates/relay-worker/src/
+# blocks.rs). OUTSIDE /api* on purpose (IPFS gateway path convention),
+# so it needs its own worker-first entry: without it the assets layer
+# answers every /ipfs/<cid> with the SPA shell and the worker route is
+# unreachable. Nothing static ever lives under /ipfs either.
+run_worker_first = ["/api*", "!/api/digests/app", "!/api/digests/app/*", "!/api/digests/data", "!/api/digests/data/*", "!/api/digests/mod-hub", "!/api/digests/mod-hub/*", "/gateway*", "/ipfs*"]
 # The ASSETS binding lets the worker fetch its own asset files by path
 # (crates/relay-worker/src/digests.rs — serves the doc-less channels'
 # gated 404; the doc-carrying channels' hits are answered statically
@@ -121,6 +127,26 @@ id = "a523e16e116b4f9fa5878c721c133028"
 binding = "GATEWAY_KV"
 id = "a523e16e116b4f9fa5878c721c133028"
 
+# Cache-mesh KV (the /api/lookup, /api/blocks, /ipfs and /api/peers
+# namespaces — crates/relay-worker/src/{lookup,blocks,peers}.rs;
+# docs/en/designs/cache-mesh.md). A THIRD binding over the SAME
+# FEEDBACK_KV namespace (the two-bindings-one-namespace pattern
+# above). What lives here after the review quota fixes
+# (2026-11-21): the ONE-document own peer registry (peers:own),
+# the cached upstream peer list (peers:upstream), node:id and the
+# peer-announce rate counters — all tiny and announce-bounded. The
+# heavy paths deliberately do NOT touch KV anymore: block envelopes
+# ride R2 (LOOKUP_R2 below) and the per-IP lookup budget rides the
+# LookupRate Durable Object (LOOKUP_RATE below) — a KV counter there
+# would have PUT once per request against this namespace's shared
+# 1000-writes/day free budget (the 2026-10-22 incident shape). The hot
+# lookup path is edge-cached in front of everything anyway. Split the
+# same way if the mesh ever needs its own traffic profile:
+#   npx wrangler kv namespace create LOOKUP_KV
+[[kv_namespaces]]
+binding = "LOOKUP_KV"
+id = "a523e16e116b4f9fa5878c721c133028"
+
 # Release-digest store: RETIRED from KV on 2026-10-22 — the docs ride
 # the [assets] layer now (assets/api/digests/** from the tracked
 # packages/pairing-relay/digests/ tree; see crates/relay-core/src/
@@ -139,6 +165,21 @@ id = "a523e16e116b4f9fa5878c721c133028"
 binding = "REPLAY_R2"
 bucket_name = "wowsp-replay-shards"
 
+# Cache-mesh block storage — one envelope-JSON object per CID (the
+# /api/lookup fill store + the /api/blocks and /ipfs read family; see
+# crates/relay-worker/src/blocks.rs). Blocks moved here from KV for
+# quota economics (review finding 1b, 2026-11-21): fills are WRITE
+# traffic the free KV namespace budget (1000/day) cannot absorb,
+# while R2's free tier allows 1M class-A ops/month. Expiry is LAZY
+# (TTL + 24 h grace checked on read; expired reads delete
+# best-effort; refills overwrite) — deliberately no sweep cron. The
+# maintainer must create the bucket ONCE before the first deploy that
+# binds it:
+#   npx wrangler r2 bucket create wowsp-lookup-blocks
+[[r2_buckets]]
+binding = "LOOKUP_R2"
+bucket_name = "wowsp-lookup-blocks"
+
 # SQLite-backed Durable Object classes — what the Workers FREE tier
 # provisions. (The pairing Room + Directory classes were RETIRED with
 # the PIN pairing mode on 2026-11-13: migration v5 deletes them and
@@ -156,6 +197,12 @@ bucket_name = "wowsp-replay-shards"
 #                 v4): publisher presence, subscriber fan-out (cap 32),
 #                 last-battle snapshot retention alarm, battle:<route>
 #                 KV mirror writes.
+#   LookupRate   — the cache-mesh lookup budget (v6): one SQLite shard
+#                 per (hour bucket, IP) via idFromName — the §3.5
+#                 per-IP hourly counter, GET /spend?limit=<n> → 200 |
+#                 429, self-deleting alarm sweep at hour + 2 h. NOT a
+#                 KV counter on purpose (see the LOOKUP_KV comment
+#                 above); see crates/relay-worker/src/lookup_rate.rs.
 #
 # Migrations v1/v2 declared the TypeScript era's Room + Directory classes
 # (v3 adds ReplayIndex, v4 the gateway-push pair). v5 DELETES Room +
@@ -173,6 +220,10 @@ class_name = "GatewayAuth"
 [[durable_objects.bindings]]
 name = "GATEWAY_CHANNEL"
 class_name = "GatewayChannel"
+
+[[durable_objects.bindings]]
+name = "LOOKUP_RATE"
+class_name = "LookupRate"
 
 [[migrations]]
 tag = "v1"
@@ -198,6 +249,15 @@ new_sqlite_classes = ["GatewayAuth", "GatewayChannel"]
 [[migrations]]
 tag = "v5"
 deleted_classes = ["Room", "Directory"]
+
+# v6 adds the cache-mesh lookup budget shard (see the LookupRate class
+# comment above). NOTE for self-hosts: a gateway-only selfhost that
+# later turns the mesh ON (LOOKUP_ENABLED) must add this binding AND
+# its own migration entry to its chain — see
+# wrangler.selfhost.toml.example.
+[[migrations]]
+tag = "v6"
+new_sqlite_classes = ["LookupRate"]
 
 # Optional operator switch (dashboard ▶ Settings ▶ Variables, or here
 # under [vars]); not required:
@@ -276,6 +336,24 @@ DIGEST_PUBLISHED_CHANNELS = "app,data,mod-hub"
 # FEEDBACK_KV 的 sponsors:afdian 槽（内容不变不写）。
 AFDIAN_USER_ID = "174593ccd13211e8831352540025c377"
 # GATEWAY_NOTICE = ""
+# ── 缓存网格 cache-mesh（docs/en/designs/cache-mesh.md）──────────────
+# 这组变量遵循与上面 QQBOT_NOTIFY 相同的纪律：**本文件不写 = 默认开**。
+# 一个写进 [vars] 的值就是部署值——要关闭某能力时才显式添加：
+#   LOOKUP_ENABLED = "0"        — 总闸：关掉 /api/lookup、/api/blocks、
+#                                  /ipfs、/api/peers（/api/health 的
+#                                  capabilities 同步降为 false；网关推送
+#                                  不受影响）。
+#   LOOKUP_SYNC = "0"           — 关闭 §5.4 的对等节点透传导送
+#                                  （本地缓存未命中时不再询问 peers）。
+#   PEERS_ACCEPT_ANNOUNCES = "false" — 关闭本节点的 announce 受理
+#                                  （§5.2.5，注册表变只读）。
+#   SYNC_PEERS_MAX = "3"        — 透传时最多询问的 peer 数（默认 3）。
+#   LOOKUP_RATE_PER_HOUR = "240" — /api/lookup 的每 IP 小时预算（§3.5）。
+#   PEERS_UPSTREAM — 官方节点保持未设（它自己就是种子节点）；自建节点
+#                                  设为 https://wowsp.langyo.xyz 订阅广播
+#                                  名单（见 wrangler.selfhost.toml.example）。
+# 官方节点的 mesh 角色显式声明（默认 community；官方部署必须 official）。
+NODE_ROLE = "official"
 
 # 每日 19:33 UTC（北京 03:33）拉一次爱发电赞助者/订单——刷新
 # /api/sponsors 的 KV 文档（src/sponsors.rs；变更才写，免费版 KV

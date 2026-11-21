@@ -34,6 +34,13 @@
 //!   GET  /api/replays/admin/archive?anon_id=… — one shard (erp session)
 //!   POST /api/replays/admin/drain        — mark drained + free space
 //!   GET  /api/sponsors                   — afdian sponsor list (KV cache)
+//!   GET|POST /api/lookup/fetch?url=…     — stats-cache proxy (the
+//!                                        cache-mesh lookup namespace,
+//!                                        docs/en/designs/cache-mesh.md §3)
+//!   GET  /api/blocks/<cid>[/raw]         — content-addressed blocks (§4)
+//!   GET  /ipfs/<cid>                      — IPFS-gateway alias of /raw
+//!   GET  /api/peers                       — broadcast server list (§5)
+//!   POST /api/peers/announce              — self-announce (§5.2)
 
 /// What a request path (+query) asks for. Values borrow from the input.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -142,6 +149,23 @@ pub enum Route<'a> {
     /// POST /api/replays/admin/backfill — credit manually collected
     /// replays (erp session or machine key; the handler gates).
     ReplaysAdminBackfill,
+    /// GET|POST /api/lookup/fetch?url=… — the cache-mesh stats proxy
+    /// (cache-mesh.md §3.1). `url` is the RAW query value; the handler
+    /// percent-decodes it and runs the allowlist gate.
+    LookupFetch { url: Option<&'a str> },
+    /// GET /api/blocks/<cid> — one stored envelope (§4.2). `cid` is
+    /// validated against the base58 CID charset here; existence is the
+    /// handler's KV lookup.
+    BlockGet { cid: &'a str },
+    /// GET /api/blocks/<cid>/raw — the decoded body bytes (§4.2).
+    BlockRaw { cid: &'a str },
+    /// GET /ipfs/<cid> — the IPFS-gateway alias of /raw (§4.2).
+    IpfsGateway { cid: &'a str },
+    /// GET /api/peers — the broadcast server list (§5.1).
+    PeersList,
+    /// POST /api/peers/announce — self-announce with liveness
+    /// callback (§5.2).
+    PeersAnnounce,
     /// Nothing we serve — every path outside `run_worker_first` is
     /// answered by the static-assets layer (any miss gets the SPA
     /// shell, navigation or not), so in production this only happens
@@ -176,6 +200,13 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
         "/api/feedback/update" => return Route::FeedbackUpdate,
         "/api/qqbot/callback" => return Route::QqBotCallback,
         "/api/sponsors" => return Route::Sponsors,
+        "/api/lookup/fetch" => {
+            return Route::LookupFetch {
+                url: query_get(query, "url"),
+            };
+        },
+        "/api/peers" => return Route::PeersList,
+        "/api/peers/announce" => return Route::PeersAnnounce,
         "/api/erp/login" => return Route::ErpLogin,
         "/api/erp/callback" => return Route::ErpCallback,
         "/api/erp/session" => return Route::ErpSession,
@@ -231,6 +262,32 @@ pub fn classify<'a>(path: &'a str, query: &'a str) -> Route<'a> {
             channel,
             tag: tag_in_path.filter(|t| !t.is_empty()),
         };
+    }
+    // /api/blocks/<cid> and /api/blocks/<cid>/raw — the cid segment is
+    // validated against the base58 charset HERE so a garbage path
+    // never reaches the KV store (cache-mesh.md §4.2).
+    if let Some(rest) = path.strip_prefix("/api/blocks/") {
+        let mut segs = rest.split('/');
+        let cid = segs.next().unwrap_or("");
+        let tail = segs.next();
+        if segs.next().is_some() || !crate::lookup::valid_cid(cid) {
+            return Route::NotFound;
+        }
+        return match tail {
+            None => Route::BlockGet { cid },
+            Some("raw") => Route::BlockRaw { cid },
+            Some(_) => Route::NotFound,
+        };
+    }
+    // /ipfs/<cid> — the IPFS-gateway alias (§4.2); same charset gate.
+    if let Some(cid) = path.strip_prefix("/ipfs/") {
+        if cid.contains('/') {
+            return Route::NotFound;
+        }
+        if crate::lookup::valid_cid(cid) {
+            return Route::IpfsGateway { cid };
+        }
+        return Route::NotFound;
     }
     Route::NotFound
 }
@@ -510,5 +567,88 @@ mod tests {
         assert_eq!(classify("/api/replays/admin/other", ""), Route::NotFound);
         assert_eq!(classify("/api/replays", ""), Route::NotFound);
         assert_eq!(classify("/api/replays/", ""), Route::NotFound);
+    }
+
+    #[test]
+    fn lookup_routes_classify() {
+        assert_eq!(
+            classify("/api/lookup/fetch", ""),
+            Route::LookupFetch { url: None }
+        );
+        assert_eq!(
+            classify("/api/lookup/fetch/", ""),
+            Route::LookupFetch { url: None }
+        );
+        // The raw query value rides along STILL percent-encoded — the
+        // handler decodes; this layer only routes.
+        assert_eq!(
+            classify(
+                "/api/lookup/fetch",
+                "url=https%3A%2F%2Fvortex.wowsgame.cn%2Fapi%2Faccounts%2F1%2F"
+            ),
+            Route::LookupFetch {
+                url: Some("https%3A%2F%2Fvortex.wowsgame.cn%2Fapi%2Faccounts%2F1%2F")
+            }
+        );
+        // Unknown lookup subpaths stay NotFound.
+        assert_eq!(classify("/api/lookup", ""), Route::NotFound);
+        assert_eq!(classify("/api/lookup/", ""), Route::NotFound);
+        assert_eq!(classify("/api/lookup/other", ""), Route::NotFound);
+    }
+
+    #[test]
+    fn block_and_ipfs_routes_classify() {
+        let cid = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
+        assert_eq!(
+            classify(&format!("/api/blocks/{cid}"), ""),
+            Route::BlockGet { cid }
+        );
+        // Trailing slash routes like the bare block path.
+        assert_eq!(
+            classify(&format!("/api/blocks/{cid}/"), ""),
+            Route::BlockGet { cid }
+        );
+        assert_eq!(
+            classify(&format!("/api/blocks/{cid}/raw"), ""),
+            Route::BlockRaw { cid }
+        );
+        assert_eq!(
+            classify(&format!("/ipfs/{cid}"), ""),
+            Route::IpfsGateway { cid }
+        );
+        // Charset violations (0/O/I/l, garbage) never route.
+        assert_eq!(classify("/api/blocks/0OOOllll", ""), Route::NotFound);
+        assert_eq!(classify("/api/blocks/short", ""), Route::NotFound);
+        assert_eq!(
+            classify(&format!("/api/blocks/{}", "a".repeat(81)), ""),
+            Route::NotFound
+        );
+        assert_eq!(classify("/ipfs/0OOOllll", ""), Route::NotFound);
+        // Unknown tails and the bare prefixes stay NotFound.
+        assert_eq!(
+            classify(&format!("/api/blocks/{cid}/json"), ""),
+            Route::NotFound
+        );
+        assert_eq!(
+            classify(&format!("/api/blocks/{cid}/raw/x"), ""),
+            Route::NotFound
+        );
+        assert_eq!(classify("/api/blocks", ""), Route::NotFound);
+        assert_eq!(classify("/api/blocks/", ""), Route::NotFound);
+        assert_eq!(classify("/ipfs", ""), Route::NotFound);
+        assert_eq!(classify("/ipfs/", ""), Route::NotFound);
+        assert_eq!(classify(&format!("/ipfs/{cid}/x"), ""), Route::NotFound);
+    }
+
+    #[test]
+    fn peers_routes_classify() {
+        assert_eq!(classify("/api/peers", ""), Route::PeersList);
+        assert_eq!(classify("/api/peers/", ""), Route::PeersList);
+        assert_eq!(classify("/api/peers/announce", ""), Route::PeersAnnounce);
+        assert_eq!(classify("/api/peers/announce/", ""), Route::PeersAnnounce);
+        // Unknown peers subpaths stay NotFound.
+        assert_eq!(classify("/api/peer", ""), Route::NotFound);
+        assert_eq!(classify("/api/peers/other", ""), Route::NotFound);
+        assert_eq!(classify("/api/peers/announce/x", ""), Route::NotFound);
     }
 }
