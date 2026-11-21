@@ -84,17 +84,29 @@ import {
   recorderSourceBandHeight,
   recorderSourceColumnWidth,
   recorderSourceLabel,
+  EXPORT_HEADER_CHIP_SIZE,
+  EXPORT_HEADER_CHIP_GAP,
+  EXPORT_HEADER_GROUP_GAP,
+  EXPORT_HEADER_PILL_PAD,
+  EXPORT_HEADER_SCORE_DOT_R,
+  EXPORT_HEADER_MAX_CHIPS,
+  foldPlaybackRecorderStats,
+  playbackHeaderPillLayout,
 } from "./playbackExport";
 import { FOOT_H, darkPalette } from "@/features/share/shotKit";
 import type {
+  PlaybackCapChip,
   PlaybackChatLine,
+  PlaybackHeaderPillLayout,
   PlaybackPanelLabels,
   PlaybackRecorderStats,
+  PlaybackRecorderTimeline,
   PlaybackTeamRow,
   PlaybackTeamSide,
   RecorderSourceHit,
 } from "./playbackExport";
 import { RIBBON_SOURCES } from "@/features/replay/postBattle";
+import { foldDamageStats } from "@/api/modules/replay";
 import type { EntityTrajectory, ShotKillEvent } from "@/api";
 import { TACTICAL_SIZE } from "./tactical/render";
 
@@ -1383,4 +1395,257 @@ describe("drawChatPanel", () => {
     expect(texts.some((t) => t.text === "msg0")).toBe(false);
   });
 });
+
+/* ── Header pill: the LIVE chip cluster is the pivot ───────────────────
+   The 2026-11-21 「顶部点位应该水平居中，而不是预先留着三个点位的」 report: a
+   fixed three-slot chip row between the two scores left a 2-cap or 4-cap
+   map off-centre. The layout now measures the LIVE chips and gives BOTH
+   score blocks one shared width, so the [score | chips | score] group is
+   centred AND the cluster's centre is the frame centre at every count. */
+describe("header pill centring", () => {
+  const chip = (i: number): PlaybackCapChip => ({
+    letter: String.fromCharCode(65 + i),
+    owner: "neutral",
+    progress: 0,
+    capturing: false,
+    contested: false,
+  });
+  type HeaderData = Parameters<typeof drawPlaybackHeader>[1];
+  const header = (
+    chipCount: number,
+    over: Partial<HeaderData> = {},
+  ): HeaderData => ({
+    clock: "04:33",
+    scoreAlly: 721,
+    scoreEnemy: 655,
+    caps: Array.from({ length: chipCount }, (_, i) => chip(i)),
+    ships: [],
+    ...over,
+  });
+  const mid = EXPORT_TOTAL_LOGICAL / 2;
+  const pillOf = (roundRects: PaintedRoundRect[]): PaintedRoundRect =>
+    roundRects.find((r) => r.r === 18)!;
+
+  for (const count of [2, 3, 4]) {
+    it(`centres the group and the ${count}-chip cluster on the frame`, () => {
+      const { ctx, texts, roundRects } = recordingContext();
+      const data = header(count);
+      drawPlaybackHeader(ctx, data, darkPalette(), () => null);
+      // The whole [score | chips | score] group is centred on the frame.
+      const pill = pillOf(roundRects);
+      expect(pill.x + pill.w / 2).toBeCloseTo(mid, 6);
+      // The LIVE chip count drives the layout: the cluster's centre is the
+      // frame centre (no three-slot reserve anywhere).
+      const layout: PlaybackHeaderPillLayout = playbackHeaderPillLayout(
+        ctx,
+        count,
+        data.scoreAlly,
+        data.scoreEnemy,
+      );
+      expect(layout.chipCount).toBe(count);
+      expect(layout.capsW).toBeCloseTo(
+        count * EXPORT_HEADER_CHIP_SIZE + (count - 1) * EXPORT_HEADER_CHIP_GAP,
+        6,
+      );
+      expect(layout.capsCenterX).toBeCloseTo(mid, 6);
+      // The pill's width is exactly the measured live content.
+      expect(pill.w).toBeCloseTo(
+        layout.capsW +
+          2 * EXPORT_HEADER_GROUP_GAP +
+          2 * layout.scoreBlockW +
+          2 * EXPORT_HEADER_PILL_PAD,
+        6,
+      );
+      // The painted idle chips agree (each letter at its chip's centre).
+      const letters = texts.filter(
+        (t) => t.align === "center" && /^[A-E]$/.test(t.text),
+      );
+      expect(letters).toHaveLength(count);
+      const firstLeft = letters[0].x - EXPORT_HEADER_CHIP_SIZE / 2;
+      const lastRight = letters[count - 1].x + EXPORT_HEADER_CHIP_SIZE / 2;
+      expect((firstLeft + lastRight) / 2).toBeCloseTo(mid, 6);
+      // Both score blocks share one width and mirror around the cluster:
+      // the ally block's left edge mirrors the enemy block's right edge.
+      const enemyRight = layout.enemyX + layout.scoreBlockW;
+      expect(layout.allyX + enemyRight).toBeCloseTo(2 * mid, 6);
+      // Each block leaves room for its dot plus the score digits.
+      expect(layout.scoreBlockW).toBeGreaterThan(EXPORT_HEADER_SCORE_DOT_R * 2);
+      expect(layout.allyX + layout.scoreBlockW).toBeLessThanOrEqual(layout.capsX);
+      expect(layout.enemyX).toBeGreaterThanOrEqual(layout.capsX + layout.capsW);
+      // The painted scores sit inside their blocks, one on each side.
+      const allyScore = texts.find((t) => t.text === "721")!;
+      const enemyScore = texts.find((t) => t.text === "655")!;
+      expect(allyScore.x).toBeLessThan(layout.capsX);
+      expect(enemyScore.x).toBeGreaterThan(layout.capsX + layout.capsW);
+      expect(allyScore.align).toBe("left");
+      expect(enemyScore.align).toBe("right");
+    });
+  }
+
+  it("grows the pill per live chip instead of reserving three slots", () => {
+    const { ctx } = recordingContext();
+    const two = playbackHeaderPillLayout(ctx, 2, 721, 655);
+    const three = playbackHeaderPillLayout(ctx, 3, 721, 655);
+    const four = playbackHeaderPillLayout(ctx, 4, 721, 655);
+    // One chip's pitch per extra cap — never a fixed reserve.
+    expect(three.w - two.w).toBeCloseTo(
+      EXPORT_HEADER_CHIP_SIZE + EXPORT_HEADER_CHIP_GAP,
+      6,
+    );
+    expect(four.w - three.w).toBeCloseTo(
+      EXPORT_HEADER_CHIP_SIZE + EXPORT_HEADER_CHIP_GAP,
+      6,
+    );
+    // Every count keeps the pill (and the cluster) centred.
+    for (const layout of [two, three, four]) {
+      expect(layout.x + layout.w / 2).toBeCloseTo(EXPORT_TOTAL_LOGICAL / 2, 6);
+      expect(layout.capsCenterX).toBeCloseTo(EXPORT_TOTAL_LOGICAL / 2, 6);
+    }
+  });
+
+  it("caps the display at five chips and centres what is drawn", () => {
+    const { ctx, texts, roundRects } = recordingContext();
+    drawPlaybackHeader(ctx, header(7), darkPalette(), () => null);
+    // Seven would-be chips: the game's five-point maximum is what paints.
+    expect(EXPORT_HEADER_MAX_CHIPS).toBe(5);
+    const letters = texts.filter(
+      (t) => t.align === "center" && /^[A-G]$/.test(t.text),
+    );
+    expect(letters).toHaveLength(EXPORT_HEADER_MAX_CHIPS);
+    expect(letters[EXPORT_HEADER_MAX_CHIPS - 1].text).toBe("E");
+    const pill = pillOf(roundRects);
+    expect(pill.x + pill.w / 2).toBeCloseTo(EXPORT_TOTAL_LOGICAL / 2, 6);
+  });
+
+  it("keeps operations (no score digits) centred on the live chips", () => {
+    const { ctx, texts, roundRects } = recordingContext();
+    drawPlaybackHeader(
+      ctx,
+      header(2, { scoreAlly: null, scoreEnemy: null }),
+      darkPalette(),
+      () => null,
+    );
+    const layout = playbackHeaderPillLayout(ctx, 2, null, null);
+    expect(layout.showScores).toBe(false);
+    expect(layout.scoreBlockW).toBe(0);
+    expect(layout.capsCenterX).toBeCloseTo(EXPORT_TOTAL_LOGICAL / 2, 6);
+    const pill = pillOf(roundRects);
+    expect(pill.w).toBeCloseTo(layout.capsW + 2 * EXPORT_HEADER_PILL_PAD, 6);
+    expect(pill.x + pill.w / 2).toBeCloseTo(EXPORT_TOTAL_LOGICAL / 2, 6);
+    // No score digits were invented.
+    expect(texts.some((t) => t.text === "721")).toBe(false);
+  });
+});
+
+/* ── Recorder headline: fold the TIMESTAMPED stream to the playhead ────
+   The 2026-11-21 「左下角伤害数字异常，应该没那么高」 report: the clip's
+   recorder panel showed 300,245 dealt / 23,505 taken at battle-time 04:33
+   where the tactical board's bottom strip read 21,522 / 0 — the panel was
+   reading a final/cumulative figure instead of folding the timeline to the
+   playhead. foldPlaybackRecorderStats is the export feed's ONE fold: the
+   server damage-stat updates (the strip's own source), the kills credited
+   at or before t, and the hull's HP drops at or before t. */
+describe("foldPlaybackRecorderStats", () => {
+  const timeline: PlaybackRecorderTimeline = {
+    damageStats: [
+      { time: 15, weapon: 1, category: 0, count: 1, total: 8420 },
+      { time: 90, weapon: 1, category: 0, count: 3, total: 21522 },
+      // A second weapon family folds in alongside the first.
+      { time: 200, weapon: 2, category: 0, count: 6, total: 278723 },
+      // Spotting / potential families never enter the dealt headline.
+      { time: 200, weapon: 3, category: 2, count: 0, total: 99000 },
+    ],
+    killTimes: [120, 230],
+    hpSamples: [
+      { time: 0, value: 40000 },
+      { time: 100, value: 32000 },
+      { time: 200, value: 16495 },
+      // A heal must never read as negative damage taken.
+      { time: 260, value: 19000 },
+    ],
+  };
+
+  it("folds early / mid / final playheads instead of the final totals", () => {
+    const early = foldPlaybackRecorderStats(timeline, 30);
+    const mid = foldPlaybackRecorderStats(timeline, 150);
+    const final = foldPlaybackRecorderStats(timeline, 400);
+    expect(early.damage).toBe(8420);
+    expect(mid.damage).toBe(21522);
+    // The latest update per weapon family at t=400 is the whole battle.
+    expect(final.damage).toBe(21522 + 278723);
+    // The report's own shape: the early read must be far below the final.
+    expect(early.damage).toBeLessThan(final.damage / 10);
+    // Monotone across playheads (a running fold never jumps backwards).
+    expect(early.damage).toBeLessThanOrEqual(mid.damage);
+    expect(mid.damage).toBeLessThanOrEqual(final.damage);
+    // Frags: kill instants at or before the playhead only.
+    expect(early.frags).toBe(0);
+    expect(mid.frags).toBe(1);
+    expect(final.frags).toBe(timeline.killTimes!.length);
+    // 承受伤害: the HP drops at or before the playhead only.
+    expect(early.taken).toBe(0);
+    expect(mid.taken).toBe(8000);
+    expect(final.taken).toBe(8000 + 32000 - 16495);
+    // The heal (a rising sample) contributed nothing.
+    expect(foldPlaybackRecorderStats(timeline, 999).taken).toBe(final.taken);
+  });
+
+  it("matches the strip's server-exact fold at every playhead", () => {
+    // The strip reads foldDamageStats at the live playhead; the clip must
+    // read the SAME numbers at its own playhead.
+    for (const t of [0, 15, 30, 90, 150, 200, 240, 300, 999]) {
+      expect(foldPlaybackRecorderStats(timeline, t).damage).toBe(
+        foldDamageStats(timeline.damageStats!, t).damage,
+      );
+    }
+  });
+
+  it("counts updates at exactly t and every kill instant", () => {
+    const dual: PlaybackRecorderTimeline = {
+      damageStats: [{ time: 60, weapon: 1, category: 0, count: 1, total: 500 }],
+      killTimes: [60, 60],
+    };
+    expect(foldPlaybackRecorderStats(dual, 59.9).damage).toBe(0);
+    // Inclusive bound: the update AT t is in.
+    expect(foldPlaybackRecorderStats(dual, 60).damage).toBe(500);
+    // Two frags at one instant both count.
+    expect(foldPlaybackRecorderStats(dual, 60).frags).toBe(2);
+  });
+
+  it("reads zero from an empty timeline", () => {
+    expect(foldPlaybackRecorderStats({}, 123)).toEqual({
+      damage: 0,
+      frags: 0,
+      taken: 0,
+    });
+    expect(
+      foldPlaybackRecorderStats(
+        { damageStats: null, killTimes: null, hpSamples: null },
+        1,
+      ),
+    ).toEqual({ damage: 0, frags: 0, taken: 0 });
+  });
+
+  it("folds a realistic 04:33 clip frame far below the battle total", () => {
+    // The report's own numbers: at 04:33 the strip read 21,522 / 0; the
+    // panel had printed the end-of-battle 300,245 / 23,505.
+    const battle: PlaybackRecorderTimeline = {
+      damageStats: [
+        { time: 273, weapon: 1, category: 0, count: 3, total: 21522 },
+        { time: 1100, weapon: 1, category: 0, count: 8, total: 250000 },
+        { time: 1180, weapon: 2, category: 0, count: 4, total: 50245 },
+      ],
+      hpSamples: [
+        { time: 0, value: 40000 },
+        { time: 420, value: 16495 },
+      ],
+    };
+    const at0433 = foldPlaybackRecorderStats(battle, 273);
+    expect(at0433.damage).toBe(21522);
+    expect(at0433.taken).toBe(0);
+    expect(foldPlaybackRecorderStats(battle, 1200).damage).toBe(300245);
+    expect(foldPlaybackRecorderStats(battle, 1200).taken).toBe(23505);
+  });
+});
+
 

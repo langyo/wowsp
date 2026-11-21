@@ -54,7 +54,8 @@ import {
 import { TACTICAL_SIZE } from "./tactical/render";
 import { sampleAt } from "./trajectoryMath";
 import { hpBarSegments } from "./repairPool";
-import type { EntityTrajectory, ShotKillEvent } from "@/api";
+import { foldDamageStats } from "@/api";
+import type { DamageStatSample, EntityTrajectory, ShotKillEvent } from "@/api";
 
 /** Logical edge of the map square — paintEnlargedMap draws in this space. */
 export const EXPORT_LOGICAL = TACTICAL_SIZE;
@@ -661,8 +662,13 @@ export interface PlaybackDamageSource {
 }
 
 export interface PlaybackRecorderStats {
+  /** Damage DEALT at this playhead — the server-exact fold of the
+   *  timestamped updates ≤ t (foldPlaybackRecorderStats), never a final
+   *  total. */
   damage: number;
+  /** Kills credited at or before this playhead. */
   frags: number;
+  /** Damage TAKEN at this playhead (the hull's HP drops ≤ t). */
   taken: number;
   /** The recorder's ribbon set in the settlement's own order (the list the
    *  post-battle report paints; time-invariant, so it is folded once). */
@@ -864,6 +870,69 @@ export function foldRecorderSources(
   return rows.slice(0, Math.max(0, cap));
 }
 
+/* Recorder headline timeline -------------------------------------------
+ * The panel's headline numbers are a FOLD of timestamped streams at the
+ * frame's own playhead — never a final/cumulative read. The dealt family
+ * comes from the server's damage-stat updates (cumulative running totals
+ * per weapon/category, each stamped with its battle time), the frags from
+ * the shot ledger's kill instants, and 承受伤害 from the hull's HP samples.
+ * foldPlaybackRecorderStats is the ONE fold the export feed calls, so the
+ * clip's recorder panel and the tactical board's bottom strip read the same
+ * semantics at the same battle time (only the playhead differs). */
+
+/** The recorder's timestamped fold source — frozen once per take. */
+export interface PlaybackRecorderTimeline {
+  /** Server damage-stat updates (`receiveDamageStat`): cumulative running
+   *  totals per (weapon, category), timestamped in battle seconds. Mutable
+   *  (not `readonly`) because the shared fold takes the stream's own array
+   *  without copying it per frame. */
+  damageStats?: DamageStatSample[] | null;
+  /** Kill instants credited to the recorder — one entry per frag (the shot
+   *  ledger stamps each credited kill with its impact time). */
+  killTimes?: readonly number[] | null;
+  /** The recorder hull's own HP samples (the 承受伤害 source). */
+  hpSamples?: readonly { time: number; value: number }[] | null;
+}
+
+/** The recorder panel's headline numbers at one playhead. */
+export interface PlaybackRecorderFold {
+  /** Damage DEALT — the server-exact fold of the damage-stat updates ≤ t. */
+  damage: number;
+  /** Kills credited to the recorder at or before t. */
+  frags: number;
+  /** Damage TAKEN — every HP point the recorder hull lost ≤ t. */
+  taken: number;
+}
+
+/** Fold the recorder's timestamped timeline to battle time `t`.
+ *  Pure and O(n) over the frozen timeline; early playheads therefore read
+ *  the early numbers (≪ the final totals), the exact class of bug the
+ *  「左下角伤害数字异常」 report described. */
+export function foldPlaybackRecorderStats(
+  timeline: PlaybackRecorderTimeline,
+  t: number,
+): PlaybackRecorderFold {
+  // Dealt family: the SAME server-exact fold the tactical board's bottom
+  // strip runs at the live playhead (api/modules/replay.ts foldDamageStats);
+  // only the playhead argument differs, so the two can never disagree.
+  const damage = foldDamageStats(timeline.damageStats ?? [], t).damage;
+  // Frags: kill events at or before the playhead.
+  let frags = 0;
+  for (const killAt of timeline.killTimes ?? []) {
+    if (killAt <= t) frags += 1;
+  }
+  // 承受伤害: every point of HP the recorder lost up to the playhead — the
+  // strip's own HP-sample fold (drop between consecutive samples).
+  let taken = 0;
+  const hps = timeline.hpSamples ?? [];
+  for (let i = 1; i < hps.length; i++) {
+    if (hps[i].time > t) break;
+    const drop = hps[i - 1].value - hps[i].value;
+    if (drop > 0) taken += drop;
+  }
+  return { damage, frags, taken };
+}
+
 export interface PlaybackChatLine {
   sender: string;
   side: "ally" | "enemy";
@@ -991,6 +1060,113 @@ function slotVariant(role: "ally" | "enemy", dead: boolean): PlaybackIconVariant
   return role === "enemy" ? "enemy" : "ally";
 }
 
+/* Header pill metrics ---------------------------------------------------
+ * The scorebar pill is ONE row: [ally score | cap chips | enemy score],
+ * centred on the frame as a group. Both score blocks share ONE width and
+ * one gap, so the chip cluster — the row's pivot — keeps its centre on the
+ * frame centre whatever the live cap count (2, 3, 4 …). Nothing here
+ * reserves a fixed slot row: the pill's width is the measured sum of the
+ * LIVE chips plus the two symmetric score blocks. */
+export const EXPORT_HEADER_CHIP_SIZE = 26;
+export const EXPORT_HEADER_CHIP_GAP = 6;
+/** Gap between the pill's three groups (score · chips · score). */
+export const EXPORT_HEADER_GROUP_GAP = 24;
+/** The pill's own horizontal padding. */
+export const EXPORT_HEADER_PILL_PAD = 22;
+/** Score text size and its dot radius (the scorebar's own read). */
+export const EXPORT_HEADER_SCORE_SIZE = 20;
+export const EXPORT_HEADER_SCORE_DOT_R = 4;
+/** Minimum score-block text width — the scorebar's `min-width: 3ch`. */
+export const EXPORT_HEADER_SCORE_MIN_W = 33;
+/** Display cap: five control points is the game's maximum. */
+export const EXPORT_HEADER_MAX_CHIPS = 5;
+
+/** Measured geometry of the header's pill row — the single source the
+ *  painter uses, so the layout is unit-testable without a real canvas. */
+export interface PlaybackHeaderPillLayout {
+  /** The glass pill's left edge and width (the group is frame-centred). */
+  x: number;
+  w: number;
+  /** The pill's horizontal padding. */
+  padX: number;
+  /** Both scores are present (the digits hide in operations). */
+  showScores: boolean;
+  /** The SHARED width of both score blocks (0 while the scores are hidden). */
+  scoreBlockW: number;
+  /** The measured LIVE chip count (0..EXPORT_HEADER_MAX_CHIPS). */
+  chipCount: number;
+  chipSize: number;
+  chipGap: number;
+  groupGap: number;
+  /** The live chip cluster's width and left edge. */
+  capsW: number;
+  capsX: number;
+  /** The cluster's centre — the frame centre whenever chips are present. */
+  capsCenterX: number;
+  /** The ally block's left edge, then the enemy block's. */
+  allyX: number;
+  enemyX: number;
+}
+
+/** Measure the header pill for one frame: the LIVE chip count/width is the
+ *  pivot, so a 2-cap map and a 4-cap map both keep the [score | chips |
+ *  score] group centred on the frame (the two score blocks share one width,
+ *  sitting symmetrically around the cluster). Reads only `g.font` for the
+ *  score measurement and restores it. */
+export function playbackHeaderPillLayout(
+  g: CanvasRenderingContext2D,
+  capCount: number,
+  scoreAlly: number | null,
+  scoreEnemy: number | null,
+): PlaybackHeaderPillLayout {
+  const w = EXPORT_TOTAL_LOGICAL;
+  const chipCount = Math.max(0, Math.floor(capCount));
+  const capsW = chipCount
+    ? chipCount * EXPORT_HEADER_CHIP_SIZE +
+      (chipCount - 1) * EXPORT_HEADER_CHIP_GAP
+    : 0;
+  const showScores = scoreAlly != null && scoreEnemy != null;
+  let scoreBlockW = 0;
+  if (showScores) {
+    const prevFont = g.font;
+    g.font = font(EXPORT_HEADER_SCORE_SIZE, 700);
+    const widest = Math.max(
+      g.measureText(String(scoreAlly)).width,
+      g.measureText(String(scoreEnemy)).width,
+      EXPORT_HEADER_SCORE_MIN_W,
+    );
+    g.font = prevFont;
+    scoreBlockW = widest + EXPORT_HEADER_SCORE_DOT_R * 2 + 6;
+  }
+  const mid = w / 2;
+  const capsX = mid - capsW / 2;
+  // The content span: scores flank the cluster (or, with no chips, the
+  // centre line) with ONE shared gap each; with no scores the cluster
+  // alone is the span.
+  let contentLeft = capsX;
+  let contentRight = capsX + capsW;
+  if (showScores) {
+    contentLeft = (chipCount ? capsX : mid) - EXPORT_HEADER_GROUP_GAP - scoreBlockW;
+    contentRight = (chipCount ? capsX + capsW : mid) + EXPORT_HEADER_GROUP_GAP + scoreBlockW;
+  }
+  return {
+    x: contentLeft - EXPORT_HEADER_PILL_PAD,
+    w: contentRight - contentLeft + EXPORT_HEADER_PILL_PAD * 2,
+    padX: EXPORT_HEADER_PILL_PAD,
+    showScores,
+    scoreBlockW,
+    chipCount,
+    chipSize: EXPORT_HEADER_CHIP_SIZE,
+    chipGap: EXPORT_HEADER_CHIP_GAP,
+    groupGap: EXPORT_HEADER_GROUP_GAP,
+    capsW,
+    capsX,
+    capsCenterX: capsX + capsW / 2,
+    allyX: contentLeft,
+    enemyX: contentRight - scoreBlockW,
+  };
+}
+
 /** Draw the header band in LOGICAL units across the WHOLE composition
  *  width: the app’s HoloScorebar replicated on canvas — the grey glass
  *  pill (ally score · cap chips · clock · enemy score) over the game-HUD
@@ -1012,56 +1188,60 @@ export function drawPlaybackHeader(
   const pillH = 44;
   const pillY = 6;
   const pillCy = pillY + pillH / 2;
-  // ── Pill content metrics ─────────────────────────────────────
-  const chipSize = 26;
-  const chipGap = 6;
-  const groupGap = 24;
-  const dotR = 4;
-  const scoreFont = font(20, 700);
-  g.font = scoreFont;
-  const scoreW = (s: number): number => g.measureText(String(s)).width;
-  const chips = data.caps.slice(0, 5);
-  const capsW = chips.length * chipSize + Math.max(0, chips.length - 1) * chipGap;
-  const showScores = data.scoreAlly != null && data.scoreEnemy != null;
-  const allyScoreW = showScores ? Math.max(scoreW(data.scoreAlly!), 33) + dotR * 2 + 6 : 0;
-  const enemyScoreW = showScores ? Math.max(scoreW(data.scoreEnemy!), 33) + dotR * 2 + 6 : 0;
-  const contentW =
-    (showScores ? allyScoreW + groupGap : 0) +
-    (chips.length ? capsW + groupGap : 0) +
-    (showScores ? groupGap + enemyScoreW : 0);
-  const padX = 22;
-  const pillW = contentW + padX * 2;
-  const pillX = (w - pillW) / 2;
+  // ── Pill content metrics: the LIVE chip cluster is the pivot ────────
+  // The chip count/width is measured from this frame's own caps (never a
+  // pre-reserved slot row), and both score blocks share ONE width so the
+  // pair sits symmetrically around the cluster: the cluster's centre is
+  // the frame centre for 2, 3, 4 … chips alike.
+  const chips = data.caps.slice(0, EXPORT_HEADER_MAX_CHIPS);
+  const pill = playbackHeaderPillLayout(
+    g,
+    chips.length,
+    data.scoreAlly,
+    data.scoreEnemy,
+  );
   // ── Pill chrome (the scorebar’s grey glass) ──────────────────────────
   g.beginPath();
-  g.roundRect(pillX, pillY, pillW, pillH, 18);
+  g.roundRect(pill.x, pillY, pill.w, pillH, 18);
   g.fillStyle = rgba(palette.surface, 0.6);
   g.fill();
   g.strokeStyle = rgba(palette.text, 0.22);
   g.lineWidth = 1;
   g.stroke();
-  // ── Pill content, flowing left→right (explicit mirroring: no flipped
-  //    transform, or the glyphs themselves would mirror) ───────
-  let cx = pillX + padX;
-  const scoreBlock = (score: number, ink: string, side: "ally" | "enemy"): void => {
+  // ── Pill content, placed from the measured layout (explicit mirroring:
+  //    no flipped transform, or the glyphs themselves would mirror) ─────
+  const drawScore = (
+    x: number,
+    score: number,
+    ink: string,
+    side: "ally" | "enemy",
+  ): void => {
     const right = side === "enemy";
-    const blockW = right ? enemyScoreW : allyScoreW;
+    const blockW = pill.scoreBlockW;
     g.fillStyle = rgba(ink, 0.95);
     g.beginPath();
-    const dotX = right ? cx + blockW - dotR : cx + dotR;
-    g.arc(dotX, pillCy, dotR, 0, Math.PI * 2);
+    const dotX = right
+      ? x + blockW - EXPORT_HEADER_SCORE_DOT_R
+      : x + EXPORT_HEADER_SCORE_DOT_R;
+    g.arc(dotX, pillCy, EXPORT_HEADER_SCORE_DOT_R, 0, Math.PI * 2);
     g.fill();
-    g.font = scoreFont;
+    g.font = font(EXPORT_HEADER_SCORE_SIZE, 700);
     g.fillStyle = rgba(ink, 0.98);
     g.textAlign = right ? "right" : "left";
-    const tx = right ? cx + blockW - dotR * 2 - 6 : cx + dotR * 2 + 6;
+    const tx = right
+      ? x + blockW - EXPORT_HEADER_SCORE_DOT_R * 2 - 6
+      : x + EXPORT_HEADER_SCORE_DOT_R * 2 + 6;
     g.fillText(String(score), tx, pillCy);
   };
-  if (showScores) scoreBlock(data.scoreAlly!, ALLY_INK, "ally");
-  if (showScores) cx += allyScoreW + groupGap;
+  if (pill.showScores) drawScore(pill.allyX, data.scoreAlly!, ALLY_INK, "ally");
   // Cap chips: idle = square stroke (roomier letter), capturing/
   // contested = the diamond with the capture-side progress ring — the
-  // scorebar’s CapChip geometry, path-identical.
+  // scorebar’s CapChip geometry, path-identical. The cluster starts at the
+  // measured centre slot (pill.capsX) — the frame's own chip count, never a
+  // reserved three-slot row.
+  const chipSize = pill.chipSize;
+  const chipGap = pill.chipGap;
+  let cx = pill.capsX;
   for (const cap of chips) {
     const ink = ownerInk(cap.owner);
     const ringInk = ownerInk(cap.captureSide ?? cap.owner);
@@ -1116,10 +1296,8 @@ export function drawPlaybackHeader(
     }
     cx += chipSize + chipGap;
   }
-  if (chips.length) cx += groupGap - chipGap;
-  if (showScores) {
-    cx += groupGap;
-    scoreBlock(data.scoreEnemy!, ENEMY_INK, "enemy");
+  if (pill.showScores) {
+    drawScore(pill.enemyX, data.scoreEnemy!, ENEMY_INK, "enemy");
   }
   // Clock UNDER the caps (the 2026-11-20 report: beside the chips it
   // crowded the third cap). Mono, centered, export-only — the app reads
@@ -1136,8 +1314,8 @@ export function drawPlaybackHeader(
   //    edge and the pill so they can never run under it (the pill keeps
   //    the centre). ────────────────────────────────────────────────────
   const cornerInset = EXPORT_HEADER_CORNER_INSET;
-  const leftMax = Math.max(0, pillX - cornerInset * 2);
-  const rightMax = Math.max(0, w - (pillX + pillW) - cornerInset * 2);
+  const leftMax = Math.max(0, pill.x - cornerInset * 2);
+  const rightMax = Math.max(0, w - (pill.x + pill.w) - cornerInset * 2);
   const drawCorner = (
     lines: readonly string[] | undefined,
     align: "left" | "right",
