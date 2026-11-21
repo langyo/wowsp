@@ -68,11 +68,23 @@ export const EXPORT_TOTAL_LOGICAL = EXPORT_LOGICAL + EXPORT_SIDE_W * 2;
  *  the chips it crowded them), then the ship-icon strip row. */
 export const EXPORT_HEADER_H = 112;
 /** The header band's corner blocks (map · mode · start time left, duration
- *  · winner right): two small dim lines each, clear of the centre pill. */
+ *  · winner right): two dim lines each, clear of the centre pill. The pill
+ *  band spans y 6..50, so its own centre is 28; the 2026-11-21 「字太小、位置
+ *  太高看不清」 report fixed both blocks to that midline — the title line at
+ *  cy-7 and the detail line at cy+9, symmetric about the pill, instead of
+ *  the old 10/28 top-hugging baselines. */
 export const EXPORT_HEADER_CORNER_INSET = 10;
-export const EXPORT_HEADER_CORNER_CY: readonly [number, number] = [10, 28];
-export const EXPORT_HEADER_CORNER_FONTS: readonly [number, number] = [10, 9];
-export const EXPORT_HEADER_CORNER_ALPHAS: readonly [number, number] = [0.62, 0.5];
+/** The pill band's vertical centre both corner blocks centre against. */
+export const EXPORT_HEADER_CORNER_MID_CY = 28;
+/** The two corner baselines, symmetric about the pill's midline: title
+ *  above (cy-7), detail below (cy+9). */
+export const EXPORT_HEADER_CORNER_CY: readonly [number, number] = [
+  EXPORT_HEADER_CORNER_MID_CY - 7,
+  EXPORT_HEADER_CORNER_MID_CY + 9,
+];
+/** Title line 12px, detail 11px (was 10 / 9 — the legibility report). */
+export const EXPORT_HEADER_CORNER_FONTS: readonly [number, number] = [12, 11];
+export const EXPORT_HEADER_CORNER_ALPHAS: readonly [number, number] = [0.78, 0.6];
 /** Team-list portion of a side column; the rest is damage (left) or the
  *  chat log (right). */
 export const EXPORT_TEAM_H = 452;
@@ -193,11 +205,15 @@ export function visibleTeamStats<T>(columns: readonly T[]): T[] {
  * Stack, from the panel's top edge:
  *   0   .. 118  the existing block: title badge, the 28px total, then the
  *               frag / taken rows (each with its own badge)
- *   128 .. 171  ribbon strip: a 10px caption + TWO 15px rows of icon+count
- *               cells, 4 per row — 8 cells cover the app's whole
- *               authoritative set (7 kinds, RIBBON_SOURCES)
- *   181 .. 264  two damage-source columns: a 10px caption + 5 rows at 14px
- *   => 264 <= 292: 28px of slack, so no band can clip the column's bottom.
+ *   128 .. 192  ribbon strip: a 10px caption + THREE 17px rows of icon+count
+ *               cells, 3 per row — 9 cells cover the app's whole
+ *               authoritative set (7 kinds, RIBBON_SOURCES). The 2026-11-21
+ *               「勋带放大 + 去掉自绘底板」 report: the bundled art is drawn
+ *               30px wide (was 20) and the painter draws NO capsule/plate of
+ *               its own — a 30px art + its count needs ~56px, so the cells
+ *               went 4-per-row to 3.
+ *   202 .. 285  two damage-source columns: a 10px caption + 5 rows at 14px
+ *   => 285 <= 292: 7px of slack, so no band can clip the column's bottom.
  */
 /** Top gap between the roster band and the recorder panel (the chat log's
  *  own offset). */
@@ -219,16 +235,21 @@ export function recorderPanelHeight(available = EXPORT_LOGICAL): number {
 export const EXPORT_RECORDER_BLOCK_H = 118;
 /** Gap between the bands. */
 export const EXPORT_RECORDER_BAND_GAP = 10;
-/** Ribbon strip: caption band + two cell rows. */
+/** Ribbon strip: caption band + three cell rows. */
 export const EXPORT_RECORDER_RIBBON_CAPTION_H = 13;
-export const EXPORT_RECORDER_RIBBON_ROW_H = 15;
-export const EXPORT_RECORDER_RIBBON_ROWS = 2;
-export const EXPORT_RECORDER_RIBBON_COLS = 4;
-/** Icon height (the bundled ribbon art is 40 x 15 — the wide end-screen
- *  strip, so a cell gives the icon ~20px and the count the rest). */
-export const EXPORT_RECORDER_RIBBON_ICON_H = 7.5;
-export const EXPORT_RECORDER_RIBBON_ICON_W =
-  (EXPORT_RECORDER_RIBBON_ICON_H * 40) / 15;
+export const EXPORT_RECORDER_RIBBON_ROW_H = 17;
+export const EXPORT_RECORDER_RIBBON_ROWS = 3;
+export const EXPORT_RECORDER_RIBBON_COLS = 3;
+/** Icon WIDTH (the bundled ribbon art is 40 x 15 — the wide end-screen
+ *  strip). The 2026-11-21 「勋带放大」 report took it from 20 to 30 logical
+ *  px, which is why a row holds three cells (30px art + a plain count needs
+ *  the ~56px a third of the 170px inner width gives it). */
+export const EXPORT_RECORDER_RIBBON_ICON_W = 30;
+export const EXPORT_RECORDER_RIBBON_ICON_H =
+  (EXPORT_RECORDER_RIBBON_ICON_W * 15) / 40;
+/** Gap between a cell's art and its plain count (the count's own left edge
+ *  when no art could be decoded). */
+export const EXPORT_RECORDER_RIBBON_COUNT_PAD = 3;
 /** Count face (shrunk only when a 4-digit count needs the room). */
 export const EXPORT_RECORDER_RIBBON_COUNT_SIZE = 9;
 export const EXPORT_RECORDER_RIBBON_COUNT_MIN_SIZE = 7.5;
@@ -1109,9 +1130,11 @@ export function drawPlaybackHeader(
   g.textAlign = "center";
   g.fillText(data.clock, w / 2, clockCy);
   // ── Corner blocks: the map/mode/start-time identity on the LEFT, the
-  //    total duration + winner verdict on the RIGHT. Two small dim lines
-  //    each, sized to the gap between the frame edge and the pill so they
-  //    can never run under it (the pill keeps the centre). ─────────────
+  //    total duration + winner verdict on the RIGHT. Two lines each
+  //    (12px/700 over 11px/400), centred on the pill band's midline
+  //    (EXPORT_HEADER_CORNER_CY) and clamped to the gap between the frame
+  //    edge and the pill so they can never run under it (the pill keeps
+  //    the centre). ────────────────────────────────────────────────────
   const cornerInset = EXPORT_HEADER_CORNER_INSET;
   const leftMax = Math.max(0, pillX - cornerInset * 2);
   const rightMax = Math.max(0, w - (pillX + pillW) - cornerInset * 2);
@@ -1124,7 +1147,7 @@ export function drawPlaybackHeader(
     g.textAlign = align;
     lines.slice(0, 2).forEach((line, i) => {
       if (!line) return;
-      g.font = font(EXPORT_HEADER_CORNER_FONTS[i], i === 0 ? 600 : 400);
+      g.font = font(EXPORT_HEADER_CORNER_FONTS[i], i === 0 ? 700 : 400);
       g.fillStyle = rgba(palette.text, EXPORT_HEADER_CORNER_ALPHAS[i]);
       g.fillText(
         ellipsize(g, line, maxW),
@@ -1661,11 +1684,13 @@ export function drawRecorderPanel(
   );
 }
 
-/** The recorder's ribbon strip: a caption over TWO rows of icon+count cells
- *  (4 per row), painted in the settlement's own order. The bundled end-screen
- *  art identifies the kind (no per-ribbon word is needed, and the art is
- *  language-neutral); a cell whose art was not preloaded keeps a neutral
- *  capsule in the slot so the count still lands in place. */
+/** The recorder's ribbon strip: a caption over THREE rows of icon+count
+ *  cells (3 per row), painted in the settlement's own order. The bundled
+ *  end-screen art identifies the kind (no per-ribbon word is needed, and the
+ *  art is language-neutral) and is drawn at its own 30px width with a plain
+ *  count beside it: the painter adds NO self-drawn chrome — no count capsule,
+ *  no plate, no border (the 2026-11-21 「去掉自绘图标」 report). A cell whose
+ *  art was not preloaded therefore keeps the count alone, on the panel. */
 function drawRecorderRibbons(
   g: CanvasRenderingContext2D,
   x: number,
@@ -1693,12 +1718,15 @@ function drawRecorderRibbons(
     g.fillText("—", x, firstCy);
     return;
   }
-  // The app's authoritative set is 7 kinds, so 8 cells hold it without a
-  // cut; the slice is the contract the budget test asserts against
-  // RIBBON_SOURCES.
+  // The app's authoritative set is 7 kinds, so the 3 x 3 = 9 cells hold it
+  // without a cut; the slice is the contract the budget test asserts
+  // against RIBBON_SOURCES.
   ribbons.slice(0, cells).forEach((rib, i) => {
     const cx = x + (i % EXPORT_RECORDER_RIBBON_COLS) * cellW;
     const cy = firstCy + Math.floor(i / EXPORT_RECORDER_RIBBON_COLS) * EXPORT_RECORDER_RIBBON_ROW_H;
+    // The bundled art, plain and larger: the official end-screen strip
+    // already carries its own face — the painter lays NO capsule / plate /
+    // border around it (nor around a missing one).
     const icon = ribbonIconFor(rib.key);
     if (icon) {
       g.drawImage(
@@ -1708,22 +1736,17 @@ function drawRecorderRibbons(
         EXPORT_RECORDER_RIBBON_ICON_W,
         EXPORT_RECORDER_RIBBON_ICON_H,
       );
-    } else {
-      g.fillStyle = rgba(palette.text, 0.12);
-      g.beginPath();
-      g.roundRect(
-        cx,
-        cy - EXPORT_RECORDER_RIBBON_ICON_H / 2,
-        EXPORT_RECORDER_RIBBON_ICON_W,
-        EXPORT_RECORDER_RIBBON_ICON_H,
-        2,
-      );
-      g.fill();
     }
     // The count rides IMMEDIATELY after its icon: a right-aligned count
     // would sit next to the FOLLOWING cell's icon and read as that icon's
-    // number. The remaining cell width is the count's cap.
-    const countW = Math.max(6, cellW - EXPORT_RECORDER_RIBBON_ICON_W - 3);
+    // number. The remaining cell width is the count's cap; with no art the
+    // count simply starts at the cell's own left edge.
+    const countX =
+      cx +
+      (icon
+        ? EXPORT_RECORDER_RIBBON_ICON_W + EXPORT_RECORDER_RIBBON_COUNT_PAD
+        : EXPORT_RECORDER_RIBBON_COUNT_PAD);
+    const countW = Math.max(6, cx + cellW - countX - 2);
     const text = String(rib.value);
     const size = fitShrinkSize(
       (t, s) => {
@@ -1738,11 +1761,7 @@ function drawRecorderRibbons(
     g.font = font(size, 700, true);
     g.textAlign = "left";
     g.fillStyle = rgba(palette.text, 0.82);
-    g.fillText(
-      ellipsize(g, text, countW),
-      cx + EXPORT_RECORDER_RIBBON_ICON_W + 3,
-      cy + 0.5,
-    );
+    g.fillText(ellipsize(g, text, countW), countX, cy + 0.5);
   });
   g.textAlign = "left";
 }
@@ -1824,10 +1843,39 @@ function drawRecorderSourceColumn(
   g.textAlign = "left";
 }
 
-/** The chat log (right column bottom): the most recent entries drawn from
- *  the bottom edge upward, TWO rows each — [MM:SS] sender on the first
- *  line, the message on the second (the 2026-11-20 layout report). */
-function drawChatPanel(
+/* Chat log metrics ------------------------------------------------------
+ * The right column's bottom block: a caption band, then one entry per line —
+ * [MM:SS] sender on the first row, the message on the second (the 2026-11-20
+ * layout report). The list is anchored to the TOP of the entry area (the
+ * 2026-11-21 「聊天记录从开头渲染而不是从最下头往上渲染」 report): the oldest
+ * visible entry starts right under the caption and the entries flow DOWN,
+ * so the transcript reads like the live chat panel; the newest entry ends
+ * nearest the panel's bottom edge. The window is still the NEWEST
+ * chatEntryCapacity(h) lines — only the anchor direction changed.
+ */
+/** Caption band at the panel's top (the localized "聊天记录" word). */
+export const EXPORT_CHAT_TITLE_H = 20;
+/** One entry's pitch: the 12px time+sender row over the 10px message row. */
+export const EXPORT_CHAT_ENTRY_H = 34;
+/** The message row's offset inside an entry (second line). */
+export const EXPORT_CHAT_ENTRY_TEXT_H = 15;
+/** Breathing room kept under the newest entry. */
+export const EXPORT_CHAT_BOTTOM_PAD = 8;
+
+/** How many entries the chat panel's height shows — the newest window the
+ *  painter slices (the feed hands it every line up to the playhead). */
+export function chatEntryCapacity(h: number): number {
+  const usable =
+    h - EXPORT_CHAT_TITLE_H - EXPORT_CHAT_ENTRY_TEXT_H - EXPORT_CHAT_BOTTOM_PAD;
+  if (usable < 0) return 0;
+  return Math.floor(usable / EXPORT_CHAT_ENTRY_H) + 1;
+}
+
+/** The chat log (right column bottom): the newest window of entries, drawn
+ *  from the TOP of the entry area downward, TWO rows each — [MM:SS] sender
+ *  on the first line, the message on the second (the 2026-11-20 layout
+ *  report). Exported for the layout tests' recording context. */
+export function drawChatPanel(
   g: CanvasRenderingContext2D,
   x: number,
   y: number,
@@ -1842,10 +1890,13 @@ function drawChatPanel(
   g.font = font(12, 700);
   g.fillStyle = rgba(palette.text, 0.6);
   g.fillText(title, x + 10, y + 14);
-  const entryH = 34;
-  const max = Math.max(0, Math.floor((h - 44) / entryH));
-  const shown = lines.slice(-max);
-  let ly = y + h - 20 - (shown.length - 1) * entryH;
+  const max = chatEntryCapacity(h);
+  // slice(-0) would return EVERY line (a zero-height panel must show
+  // nothing), so the empty window is spelled out.
+  const shown = max > 0 ? lines.slice(-max) : [];
+  // Top anchor: the first (oldest visible) entry starts at the entry
+  // area's top edge and the list flows DOWNWARD.
+  let ly = y + EXPORT_CHAT_TITLE_H;
   for (const line of shown) {
     const mm = Math.floor(line.time / 60);
     const ss = Math.floor(line.time % 60);
@@ -1861,8 +1912,8 @@ function drawChatPanel(
     // Row 2: the message, full width.
     g.font = font(10, 400);
     g.fillStyle = rgba(palette.text, 0.9);
-    g.fillText(ellipsize(g, line.text, w - 20), x + 10, ly + 15);
-    ly += entryH;
+    g.fillText(ellipsize(g, line.text, w - 20), x + 10, ly + EXPORT_CHAT_ENTRY_TEXT_H);
+    ly += EXPORT_CHAT_ENTRY_H;
   }
 }
 
@@ -1886,7 +1937,8 @@ export interface PlaybackExportRequest {
   team: (t: number) => { allies: PlaybackTeamSide; enemies: PlaybackTeamSide };
   /** The recorder's damage/frags/taken at each battle time. */
   recorder: (t: number) => PlaybackRecorderStats | null;
-  /** Chat lines up to each battle time, oldest first. */
+  /** Chat lines up to each battle time, oldest first (the painter keeps
+   *  the newest chatEntryCapacity(h) of them, top-anchored). */
   chat: (t: number) => PlaybackChatLine[];
   /** Ship-class HUD icon resolver for the header strip — the caller
    *  preloads (decodes) every class×variant once before the render loop.
@@ -1894,7 +1946,7 @@ export interface PlaybackExportRequest {
   shipIconFor: (shipType: string | null, variant: PlaybackIconVariant) => HTMLImageElement | null;
   /** Ribbon-art resolver for the recorder's strip — the caller preloads the
    *  bundled settlement icons once (bundledRibbonUrl). Null skips the art
-   *  and keeps the cell's neutral capsule. */
+   *  (the cell keeps its plain count — the painter draws no plate). */
   ribbonIconFor: (key: string) => HTMLImageElement | null;
   /** Paint the map square for battle time `t` in logical units onto `g`
    *  (already translated to the map's top-left corner and scaled). */
