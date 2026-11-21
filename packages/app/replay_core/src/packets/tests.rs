@@ -80,6 +80,7 @@ fn profile_for(lesta: bool) -> LayoutProfile {
         shotkill_has_ballistics: true,
         arena_state_method: None,
         e11: None,
+        damage_stat_method: None,
         builds: false,
         gun_state: None,
         state_property_index: None,
@@ -4384,6 +4385,23 @@ fn decoded_real_replay() -> Option<DecodedReplay> {
     Some(decoded)
 }
 
+/// The server-authoritative damage fold at `t`: the latest sample per
+/// (weapon, category) pair, category-0 (enemy) totals summed — the same
+/// semantics as the webui's `foldDamageStats`.
+fn fold_damage_at(samples: &[wowsp_tauri_shared::DamageStatSample], t: f32) -> f64 {
+    let mut latest = std::collections::BTreeMap::new();
+    for s in samples {
+        if s.time <= t {
+            latest.insert((s.weapon, s.category), s.total);
+        }
+    }
+    latest
+        .iter()
+        .filter(|((_, category), _)| *category == 0)
+        .map(|(_, total)| *total)
+        .sum()
+}
+
 /// E11 against the real replay (skips without `WOWSP_TEST_REPLAY`): the
 /// minimap vision stream is the explicit spot/unspot signal. Every >4 s
 /// gap in a vehicle's position stream must be bracketed by vision events,
@@ -4553,6 +4571,64 @@ fn e11_consumables_on_real_replay() {
             "implausible workTimeLeft {}",
             e.duration
         );
+    }
+}
+
+/// The 14.5 damage-stat stream (the bug this pin fixes). The generated method
+/// table leaves 14.5's `receiveDamageStat` row `None` (DEF_ID_SUPPRESSED),
+/// so without the exact-minor layout pin `damage_stats` was EMPTY and the
+/// recorder panel fell back to the HP-delta heuristic — the clip read 300,245
+/// where the post-battle modal read 108,120. With the pin the stream decodes
+/// and folds to the user's own screenshots.
+#[test]
+fn damage_stat_145_stream_on_real_replay() {
+    let Some(decoded) = decoded_real_replay() else {
+        corpus_skip("damage_stat_145_stream_on_real_replay");
+        return;
+    };
+    let version = decoded.version.as_deref().and_then(parse_version_key);
+    if version != Some((14, 5, 0)) {
+        eprintln!("skipped: corpus replay is {version:?}, not the 14.5 reference capture");
+        return;
+    }
+    assert!(
+        !decoded.damage_stats.is_empty(),
+        "the 14.5 pin must decode receiveDamageStat samples (the bug decoded 0)"
+    );
+    let final_damage = fold_damage_at(&decoded.damage_stats, f32::INFINITY);
+    // Battle time 04:33 = replay 353.1 s: this capture opens ~80 s before the
+    // battle clock starts (descriptor battle window 1200 s; the last sample
+    // lands at 1159.054 s).
+    let at_0433 = fold_damage_at(&decoded.damage_stats, 353.1);
+    eprintln!(
+        "[dmgstat] {} samples; final fold {final_damage:.3}; 04:33 fold {at_0433:.3}",
+        decoded.damage_stats.len()
+    );
+    // Post-battle modal oracle: 108,120. The stream's latest-per-pair fold is
+    // 108,119.29 — inside the ±1 rounding the report allows.
+    assert!(
+        (final_damage - 108_120.0).abs() <= 1.0,
+        "final fold {final_damage:.3} must match the post-battle modal's 108,120 (±1)"
+    );
+    // Tactical-strip oracle at 04:33: 21,522. The strip was still on the
+    // HP-delta fallback there (79 low against the server stream); the decoded
+    // stream's fold is 21,601.17 — same reading within the fallback's error.
+    assert!(
+        (at_0433 - 21_522.0).abs() <= 100.0,
+        "04:33 fold {at_0433:.3} must match the strip's 21,522 (heuristic fallback)"
+    );
+    assert!(
+        (at_0433 - 21_601.17).abs() <= 1.0,
+        "the server stream's own 04:33 fold is 21,601.17"
+    );
+    // The stream carries the full category mix, and every total is finite.
+    let categories: std::collections::BTreeSet<i64> =
+        decoded.damage_stats.iter().map(|s| s.category).collect();
+    assert!(categories.contains(&0), "no enemy-damage (category 0) rows");
+    assert!(categories.contains(&2), "no spotting (category 2) rows");
+    assert!(categories.contains(&3), "no agro (category 3) rows");
+    for s in &decoded.damage_stats {
+        assert!(s.total.is_finite() && s.count >= 0, "bad sample {s:?}");
     }
 }
 
@@ -5579,4 +5655,76 @@ fn walk_frames_decodes_145_consumable_uses() {
         Some((14, 5, 0)),
     );
     assert!(on_158.consumable_uses.is_empty());
+}
+
+/// The 14.5 damage-stat pin: the exact-minor layout row resolves avatar id
+/// 149, the receiveDamageStat BLOB decodes on it, and neither the wrong id nor
+/// the unpinned 14.6 row reads anything.
+#[test]
+fn walk_frames_decodes_145_damage_stat() {
+    // Byte-for-byte the 15.8 fixture: BLOB length prefix + pickle-proto-2 dict
+    // {(weapon 28, category 0): [count 4, total 2640.0]}. The 14.5 wire is the
+    // same shape (the probe's 59 calls all parse with this decoder).
+    let pickle: Vec<u8> = vec![
+        0x80, 0x02, 0x7d, 0x71, 0x01, 0x4b, 0x1c, 0x4b, 0x00, 0x86, 0x71, 0x02, 0x5d, 0x71, 0x03,
+        0x28, 0x4b, 0x04, 0x47, 0x40, 0xa4, 0xa0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x65, 0x73, 0x2e,
+    ];
+    let mut args = vec![pickle.len() as u8];
+    args.extend_from_slice(&pickle);
+    // The avatar method branch only runs on a type-1 entity, so create the
+    // recorder's avatar first (the real capture's entity 845627).
+    let mut create = Vec::new();
+    create.extend_from_slice(&845627i32.to_le_bytes());
+    create.extend_from_slice(&(ENTITY_TYPE_AVATAR as i16).to_le_bytes());
+    create.extend_from_slice(&0i32.to_le_bytes());
+    create.extend_from_slice(&0i32.to_le_bytes());
+    create.extend_from_slice(&[0u8; 24]);
+    let stream = |method_id: i32| {
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&845627i32.to_le_bytes());
+        payload.extend_from_slice(&method_id.to_le_bytes());
+        payload.extend_from_slice(&(args.len() as u32).to_le_bytes());
+        payload.extend_from_slice(&args);
+        let mut s = wire_frame(PACKET_ENTITY_CREATE, 0.0, &create);
+        s.extend(wire_frame(PACKET_ENTITY_METHOD, 100.75, &payload));
+        s
+    };
+    let pinned = build_layout_profile(Some((14, 5, 0)), false, Some("14,5,0,10087791"));
+    assert_eq!(pinned.damage_stat_method, Some(149));
+    let decoded = walk_frames(
+        &stream(149),
+        &std::collections::HashSet::new(),
+        false,
+        &pinned,
+        Some((14, 5, 0)),
+    );
+    assert_eq!(decoded.damage_stats.len(), 1);
+    let sample = &decoded.damage_stats[0];
+    assert_eq!(sample.weapon, 28);
+    assert_eq!(sample.category, 0);
+    assert_eq!(sample.count, 4);
+    assert!((sample.total - 2640.0).abs() < 1e-9);
+    assert!((sample.time - 100.75).abs() < 1e-6);
+
+    // Same call, wrong id: the pin must not fall through to a neighbouring id.
+    let wrong = walk_frames(
+        &stream(150),
+        &std::collections::HashSet::new(),
+        false,
+        &pinned,
+        Some((14, 5, 0)),
+    );
+    assert!(wrong.damage_stats.is_empty());
+
+    // Neighbouring minor (14.6) has no pin: the same 149 call decodes nothing.
+    let unpinned = build_layout_profile(Some((14, 6, 0)), false, Some("14,6,0,10087791"));
+    assert_eq!(unpinned.damage_stat_method, None);
+    let off = walk_frames(
+        &stream(149),
+        &std::collections::HashSet::new(),
+        false,
+        &unpinned,
+        Some((14, 6, 0)),
+    );
+    assert!(off.damage_stats.is_empty());
 }

@@ -227,6 +227,44 @@ pub(crate) fn e11_for(v: Option<Era>) -> Option<E11Ids> {
         .map(|(_, ids)| *ids)
 }
 
+/// The recorder's `receiveDamageStat` exposed method id, pinned per exact
+/// minor for versions whose GENERATED method-table row suppresses it
+/// (`DEF_ID_SUPPRESSED` in `scripts/gen_method_tables.py`: newer reference
+/// defs ship the method, but those ids are not trusted until wire-probed).
+/// The generated row keeps the id `None`; this override supplies it to the
+/// decoder. 15.8/15.10 already carry their ids in `method_tables`, so they
+/// need no row here.
+///
+/// 14.5.0 (the Shokaku reference era) — WIRE-PROBED, id 149. The 14.5 entity
+/// defs are gone from the install, so a temporary probe walked EVERY
+/// EntityMethod (0x08) call of the 2025-07-08 "37_Ridge" capture and ran the
+/// decoder's shape gate on each args blob:
+///   - only avatar id 149 parses as `receiveDamageStat`'s BLOB: a u8 length
+///     prefix + pickle-proto-2 dict `{(weapon, category): [count, total]}`;
+///   - 59 calls, all on the recorder's avatar entity 845627, 157.087..1159.054
+///     (106 samples: 55 category-0 enemy, 46 category-2 spotting, 5
+///     category-3 agro);
+///   - the category-0 fold of the latest sample per (weapon, category) is
+///     108,119.29 — the post-battle modal's 108,120 within its ±1 rounding —
+///     and 21,601.17 at replay t=353.1 (the 04:33 strip playhead; the strip's
+///     21,522 is its HP-delta fallback 79 low);
+///   - every neighbouring avatar id fails the parser's shape gate.
+///
+/// The 14.5 call's args match the 15.8 wire byte-for-byte, so no era-shape
+/// flag is needed (unlike E11's consumable blob split).
+pub(crate) const DAMAGE_STAT_METHOD_IDS: [(Era, i32); 1] = [((14, 5, 0), 149)];
+
+/// Exact-minor lookup, same rule as [`e11_for`]: the exposed indices
+/// re-shuffle every minor, so a version resolves iff a row shares its
+/// (major, minor) and the row's patch floor is <= the version's patch.
+pub(crate) fn damage_stat_for(v: Option<Era>) -> Option<i32> {
+    let (ma, mi, pa) = v?;
+    DAMAGE_STAT_METHOD_IDS
+        .iter()
+        .find(|((ra, ri, rp), _)| *ra == ma && *ri == mi && *rp <= pa)
+        .map(|(_, id)| *id)
+}
+
 /// The 15.10.0 shield + gun-heat streams (the Bermuda Triangle event era's
 /// two new mechanics), pinned as one exact-minor row like the E11 ids — the
 /// same defs re-shuffle invalidates all of them together.
@@ -422,6 +460,26 @@ mod tests {
             e11_for(Some((15, 8, 0))).is_some_and(|i| i.consumable_use_params_blob),
             "15.8 carries the params blob"
         );
+    }
+
+    /// The 14.5 damage-stat pin rides its exact minor; the 15.8/15.10 rows
+    /// keep their generated ids and must NOT be shadowed by this table.
+    #[test]
+    fn damage_stat_145_is_minor_exact() {
+        assert_eq!(damage_stat_for(Some((14, 5, 0))), Some(149));
+        assert_eq!(
+            damage_stat_for(Some((14, 5, 9))),
+            Some(149),
+            "same-minor patches ride the row"
+        );
+        assert_eq!(damage_stat_for(Some((14, 4, 9))), None);
+        assert_eq!(damage_stat_for(Some((14, 6, 0))), None);
+        assert_eq!(
+            damage_stat_for(Some((15, 8, 0))),
+            None,
+            "15.8 carries its own generated method-table id"
+        );
+        assert_eq!(damage_stat_for(None), None);
     }
 
     /// The shield/gun-heat layout rides its exact pinned minor like the E11
