@@ -98,6 +98,7 @@ import {
   EXPORT_TEAM_STAT_COLS,
   buildRecorderSourceHits,
   clampExportSettings,
+  foldPlaybackRecorderStats,
   foldRecorderSources,
   frameTimesAtSpeed,
   normalizeExportRange,
@@ -105,6 +106,7 @@ import {
   type PlaybackExportSettings,
   type PlaybackIconVariant,
   type PlaybackRecorderRibbon,
+  type PlaybackRecorderTimeline,
   type PlaybackTeamRow,
   type PlaybackTeamSide,
   type PlaybackTeamStat,
@@ -4024,6 +4026,26 @@ const RECORDED_DOLLY_MIN = -40;
                 allyIds: recorderAllyIds,
               })
             : [];
+        // The recorder panel's timestamped fold source, frozen once per take:
+        // the server damage-stat updates, the kill instants credited to the
+        // recorder (the shot ledger's per-event frag counts flattened to one
+        // entry per kill) and the hull's HP samples. recorder(t) folds THIS
+        // to each frame's playhead — never the live HUD snapshot, whose key
+        // is the mutable hudCurrent shadow clock.
+        const recorderKillTimes: number[] = [];
+        const recorderLedger = selfShotBook.value?.ledger;
+        if (recorderLedger) {
+          for (let i = 0; i < recorderLedger.times.length; i++) {
+            const gained =
+              recorderLedger.frags[i] - (i > 0 ? recorderLedger.frags[i - 1] : 0);
+            for (let k = 0; k < gained; k++) recorderKillTimes.push(recorderLedger.times[i]);
+          }
+        }
+        const recorderTimeline: PlaybackRecorderTimeline = {
+          damageStats: props.damageStats,
+          killTimes: recorderKillTimes,
+          hpSamples: selfShotBook.value?.selfTraj.hpSamples ?? null,
+        };
         // Ribbon art: the bundled settlement icons (the post-battle shot's own
         // source), decoded once so drawImage never paints a half-decoded face.
         const ribbonIconMap = new Map<string, HTMLImageElement>();
@@ -4108,12 +4130,26 @@ const RECORDED_DOLLY_MIN = -40;
             };
           },
           recorder: (t) => {
-            const st = selfStats.value;
-            if (!st) return null;
+            // Fold the TIMESTAMPED timeline to THIS frame's playhead. The
+            // headline therefore never reads a final/cumulative figure: at
+            // 04:33 it is the fold at 04:33 (the strip's own semantics), not
+            // the end-of-battle totals. The reactive selfStats snapshot is
+            // keyed on hudCurrent — the live HUD shadow clock — so it must
+            // not be the clip's source.
+            const book = selfShotBook.value;
+            if (!book && props.damageStats.length === 0) return null;
+            const folded = foldPlaybackRecorderStats(recorderTimeline, t);
+            // Dealt family: the server-exact fold when the stream carries it;
+            // otherwise the shot ledger's HP-drop estimate at the same t (the
+            // strip's own fallback).
+            const estimate = book ? querySelfShotLedger(book.ledger, t) : null;
+            const damage = props.damageStats.length
+              ? folded.damage
+              : (estimate?.damage ?? 0);
             return {
-              damage: st.damage,
-              frags: st.frags,
-              taken: st.taken,
+              damage,
+              frags: folded.frags,
+              taken: folded.taken,
               ribbons: recorderRibbons,
               // Cumulative per counterparty, descending, top 5 — the DISPLAY
               // clamp only (the ledger keeps every ship / attacker).
