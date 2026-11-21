@@ -55,16 +55,22 @@ import { planeTrailExpiry } from "./planeFormation";
 import type { EntityTrajectory, PositionSample } from "@/api";
 import {
   PLANE_CARD_LABEL_ID_BASE,
+  WING_CARD_STICKY_S,
   buildPlaneFormations,
   buildPlaneTrails,
   buildPlaneWardAnchors,
+  cardRideCandidates,
+  cardWingAt,
+  isScoutAirframeIndex,
   isScoutParamsId,
   planeCardVisibleAt,
   planeReturningAt,
   resolvePlaneCarriers,
+  stableWingPick,
   wardAnchorAt,
   wardCardAnchor,
 } from "./planeWarfare";
+import planeTypesRaw from "@/data/plane_types.json";
 
 /** Real plane_types.json entries (baked GameParams): PJAF408 is the
  *  attack-group-size-1 trap (count: 1), PJAF208 a size-9 airframe. */
@@ -234,15 +240,18 @@ describe("buildPlaneTrails", () => {
     expect(ctx.planeTypesById.get(320 * 16)).toBe("fighter");
   });
 
-  it("defaults to attack only when NO stream resolves the paramsId", () => {
-    // Pre-existing contract: consumers repeat `?? "attack"`; the map keeps a
-    // value for an unresolvable squadron instead of going sparse.
+  it("leaves the family UNSET when no stream resolves the paramsId", () => {
+    // A typeless slot is the honest answer — the old "attack" default is a
+    // WRONG family: it painted the skip-bomber icon over an unknown airframe
+    // (a scout whose paramsId the table does not carry), the reported
+    // "疑似侦察机却显示为轰炸机". Consumers keep their own `?? "attack"` icon
+    // fallback; the CARD keeps the wing's last KNOWN family instead.
     const ctx = makeCtx({
       squadronCreates: [create(330, UNKNOWN_PARAMS_ID)],
       minimapSquadronAdds: [add(330, UNKNOWN_PARAMS_ID)],
     });
     buildPlaneTrails(ctx);
-    expect(ctx.planeTypesById.get(330 * 16)).toBe("attack");
+    expect(ctx.planeTypesById.has(330 * 16)).toBe(false);
     expect(ctx.planeIndexById.has(330 * 16)).toBe(false);
   });
 
@@ -852,3 +861,313 @@ describe("resolvePlaneCarriers scout exclusion", () => {
   });
 });
 
+
+/* ── Item B: the card's wing pick is STABLE across a mid-air re-created wing
+ * The 14.5.0.0 Shokaku capture re-adds squadrons mid-air: a survivor group
+ * appears with a fresh planeId and lives 1.9–3.4 s. activeSquadronOf's
+ * "newest launch wins" handed the card to that group for its whole life — the
+ * wrong-family flash ("出现一下就又消失了"). The pick is now a pure
+ * hysteresis: the newest wing must have been airborne for
+ * WING_CARD_STICKY_S before taking the card from an older one still flying.
+ */
+describe("stableWingPick (scrub-stable hysteresis)", () => {
+  it("keeps the OLDER airborne wing while the newer one is younger than the window", () => {
+    const wings = [
+      { planeId: 7, born: 0, lastSample: 100 },
+      { planeId: 9, born: 20, lastSample: 100 }, // a mid-air re-created group
+    ];
+    // Both up at t = 21..22 — the card must still describe wing 7.
+    expect(stableWingPick(wings, 20)).toBe(7);
+    expect(stableWingPick(wings, 21)).toBe(7);
+    expect(stableWingPick(wings, 22)).toBe(7);
+    // 3 s after the newer wing appeared, it takes the card (and keeps it).
+    expect(stableWingPick(wings, 22.99)).toBe(7);
+    expect(stableWingPick(wings, 23)).toBe(9);
+    expect(stableWingPick(wings, 40)).toBe(9);
+  });
+
+  it("is a pure function of t: evaluation order never changes the answer", () => {
+    const wings = [
+      { planeId: 7, born: 0, lastSample: 100 },
+      { planeId: 9, born: 20, lastSample: 100 },
+      { planeId: 11, born: 26, lastSample: 100 },
+    ];
+    const times = [30, 0, 23, 26, 21, 29, 100];
+    const forward = times.map((t) => stableWingPick(wings, t));
+    const backward = times
+      .slice()
+      .reverse()
+      .map((t) => stableWingPick(wings.slice().reverse(), t))
+      .reverse();
+    expect(forward).toEqual(backward);
+    // Reversing the CANDIDATE order changes nothing either.
+    expect(forward).toEqual(times.map((t) => stableWingPick(wings.slice().reverse(), t)));
+    expect(forward).toEqual([11, 7, 9, 9, 7, 11, 11]);
+  });
+
+  it("answers the only live wing at once (no 3 s blank card after a gap)", () => {
+    expect(stableWingPick([{ planeId: 7, born: 50, lastSample: 90 }], 50)).toBe(7);
+    expect(stableWingPick([{ planeId: 7, born: 50, lastSample: 90 }], 51)).toBe(7);
+    expect(stableWingPick([], 50)).toBeNull();
+  });
+
+  it("never TAKES the card for a wing whose stream already stopped (grace window)", () => {
+    // Wing 9 launched at 20 and its last sample was at 22: it may linger on a
+    // card it already holds, but inside planeTrailExpiry's grace it must not
+    // steal the card from the older, still-flying wing 7.
+    const wings = [
+      { planeId: 7, born: 0, lastSample: 100 },
+      { planeId: 9, born: 20, lastSample: 22 },
+    ];
+    for (let t = 20; t <= 27; t++) expect(stableWingPick(wings, t)).toBe(7);
+  });
+
+  it("never rides a wing inside its own 3 s window when an older one is up", () => {
+    // Sweep a whole synthetic sortie set: whenever the answer is not the
+    // OLDEST live wing it must be at least WING_CARD_STICKY_S old.
+    const wings = [
+      { planeId: 1, born: 0, lastSample: 100 },
+      { planeId: 2, born: 12, lastSample: 100 },
+      { planeId: 3, born: 13, lastSample: 100 }, // two mid-air groups in a row
+      { planeId: 4, born: 30, lastSample: 100 },
+    ];
+    for (let t = 0; t <= 60; t++) {
+      const live = wings.filter((w) => w.born <= t);
+      const pick = stableWingPick(live, t)!;
+      const oldest = live.reduce((a, b) => (b.born < a.born ? b : a));
+      expect(pick).not.toBeNull();
+      if (pick !== oldest.planeId) {
+        const chosen = live.find((w) => w.planeId === pick)!;
+        expect(t - chosen.born).toBeGreaterThanOrEqual(WING_CARD_STICKY_S);
+      }
+    }
+  });
+});
+
+describe("cardWingAt / cardRideCandidates (the card's own pick)", () => {
+  const LABEL = PLANE_CARD_LABEL_ID_BASE + CARRIER_ID;
+
+  /** A ctx whose carrier owns the wings [planeId, born, lastSample]. */
+  function rideCtx(
+    wings: Array<[number, number, number]>,
+    opts: { scout?: number[] } = {},
+  ): MapInternals {
+    const ctx = makeCtx({});
+    const obj = ctx as unknown as {
+      planeTrails: { id: number; samples: SquadronPlane[] }[];
+      planeCarrierOf: Map<number, number | null>;
+      trajById: Map<number, EntityTrajectory>;
+      planeLabelCarriers: Map<number, number | null>;
+      planeTypesById: Map<number, string>;
+      minimapTrailEnd: Map<number, number>;
+    };
+    obj.planeTrails = wings.map(([planeId, born, last]) => ({
+      id: planeId * 16,
+      samples: Array.from({ length: last - born + 1 }, (_, i) =>
+        spAt(planeId, 0, born + i, 60 * i, 100, 0),
+      ),
+    }));
+    obj.planeCarrierOf = new Map(wings.map(([planeId]) => [planeId, CARRIER_ID]));
+    obj.trajById = new Map([
+      [CARRIER_ID, { entityId: CARRIER_ID, samples: carrierTrack() } as EntityTrajectory],
+    ]);
+    obj.planeLabelCarriers = new Map([[LABEL, CARRIER_ID]]);
+    obj.minimapTrailEnd = new Map();
+    obj.planeTypesById = new Map();
+    for (const planeId of opts.scout ?? []) obj.planeTypesById.set(planeId * 16, "scout");
+    return ctx;
+  }
+
+  it("holds the older wing for the whole life of a mid-air re-created group", () => {
+    // Wing 9 appears at 20 s and is gone by 23 s (a short re-created group);
+    // wing 7 has been up since 0.
+    const ctx = rideCtx([[7, 0, 60], [9, 20, 22]]);
+    // Wing 9 is a candidate for 20..27 s (its own life + the trail grace), yet
+    // it never takes the card: it is younger than the window while flying and
+    // already stopped afterwards.
+    for (let t = 20; t <= 27; t++) expect(cardWingAt(ctx, LABEL, t)).toBe(7);
+    expect(cardRideCandidates(ctx, CARRIER_ID, 24).map((c) => c.planeId)).toEqual([7, 9]);
+  });
+
+  it("switches once the newer wing has been airborne for the window", () => {
+    const ctx = rideCtx([[7, 0, 60], [9, 20, 60]]);
+    expect(cardWingAt(ctx, LABEL, 22)).toBe(7);
+    expect(cardWingAt(ctx, LABEL, 23)).toBe(9);
+  });
+
+  it("never picks a scout wing", () => {
+    const ctx = rideCtx([[7, 0, 60], [9, 20, 60]], { scout: [9] });
+    // The scout is the newer launch, but it is not a sensible pick at all.
+    expect(cardWingAt(ctx, LABEL, 40)).toBe(7);
+    const scoutOnly = rideCtx([[9, 20, 60]], { scout: [9] });
+    expect(cardWingAt(scoutOnly, LABEL, 40)).toBeNull();
+  });
+
+  it("never picks a homeward-bound wing", () => {
+    const ctx = makeCtx({});
+    const obj = ctx as unknown as {
+      planeTrails: { id: number; samples: SquadronPlane[] }[];
+      planeCarrierOf: Map<number, number | null>;
+      trajById: Map<number, EntityTrajectory>;
+      planeLabelCarriers: Map<number, number | null>;
+      planeTypesById: Map<number, string>;
+      minimapTrailEnd: Map<number, number>;
+    };
+    obj.planeTrails = [
+      { id: 7 * 16, samples: sortie(7, false) },
+      { id: 9 * 16, samples: sortie(9, true) },
+    ];
+    obj.planeCarrierOf = new Map([[7, CARRIER_ID], [9, CARRIER_ID]]);
+    obj.trajById = new Map([
+      [CARRIER_ID, { entityId: CARRIER_ID, samples: carrierTrack() } as EntityTrajectory],
+    ]);
+    obj.planeLabelCarriers = new Map([[LABEL, CARRIER_ID]]);
+    obj.minimapTrailEnd = new Map();
+    obj.planeTypesById = new Map();
+    expect(cardWingAt(ctx, LABEL, T_RETURN)).toBe(7);
+  });
+
+  it("is null for a carrier join it does not own", () => {
+    const ctx = rideCtx([[7, 0, 60]]);
+    expect(cardWingAt(ctx, LABEL + 1, 30)).toBeNull();
+  });
+});
+
+/* ── Item C: the card is themed by the WING'S OWNER ROLE ─────────────────
+ * The card used to be born with role "self" whatever the carrier was, so an
+ * ENEMY wing's card painted the recorder's own look (white border, green HP
+ * fill) — the "红色飞机却绿色血条+白色边框" report. The role now rides the
+ * same planeRoleById join the plane tint does, and markerUpdate refreshes it
+ * from the carrier label every tick.
+ */
+describe("resolvePlaneCarriers card role (enemy wings paint hostile)", () => {
+  const SHIP = 7;
+  const LABEL_ID = PLANE_CARD_LABEL_ID_BASE + SHIP;
+
+  function carrierRoleCtx(carrierRole: string | null): MapInternals {
+    const ctx = makeCtx({
+      squadronCreates: [create(500, WARD_PARAMS_ID)],
+      minimapSquadronAdds: [{ ...add(500, WARD_PARAMS_ID), ownerId: SHIP }],
+    });
+    const obj = ctx as unknown as {
+      shipMarkers: { userData: Record<string, unknown> }[];
+      trajById: Map<number, EntityTrajectory>;
+      planeLabelCarriers: Map<number, number | null>;
+      planeLabelOfPlane: Map<number, number>;
+      planeCarrierOf: Map<number, number | null>;
+      planeRoleById: Map<number, string>;
+      planeWardAnchors: Map<number, unknown>;
+      props: Record<string, unknown>;
+    };
+    obj.shipMarkers = [
+      { userData: { entityId: SHIP, ...(carrierRole ? { role: carrierRole } : {}) } },
+    ];
+    obj.trajById = new Map([
+      [
+        SHIP,
+        {
+          entityId: SHIP,
+          samples: [{ time: 0, entityId: SHIP, vehicleId: 0, x: 5, y: 0, z: 5, yaw: 0 }],
+        } as EntityTrajectory,
+      ],
+    ]);
+    obj.planeLabelCarriers = new Map();
+    obj.planeLabelOfPlane = new Map();
+    obj.planeCarrierOf = new Map();
+    obj.planeRoleById = new Map();
+    obj.planeWardAnchors = new Map();
+    obj.props.wards = [];
+    obj.props.wardRemoves = [];
+    obj.props.consumableUses = [];
+    return ctx;
+  }
+
+  function cardFor(ctx: MapInternals): {
+    entityId: number;
+    role: string;
+    planeType?: string | null;
+  } {
+    const labels: { entityId: number; role: string; planeType?: string | null }[] = [];
+    resolvePlaneCarriers(ctx, labels as never, new Map());
+    expect(labels).toHaveLength(1);
+    expect(labels[0].entityId).toBe(LABEL_ID);
+    return labels[0];
+  }
+
+  it("gives an ENEMY carrier's card the enemy role", () => {
+    expect(cardFor(carrierRoleCtx("enemy")).role).toBe("enemy");
+  });
+
+  it("keeps ally / self roles for friendly wings", () => {
+    expect(cardFor(carrierRoleCtx("self")).role).toBe("self");
+    expect(cardFor(carrierRoleCtx("ally")).role).toBe("ally");
+  });
+
+  it("defaults an unresolved hull to enemy (the air owner's hostile default)", () => {
+    expect(cardFor(carrierRoleCtx(null)).role).toBe("enemy");
+  });
+
+  it("starts the card with NO family when the paramsId misses the table", () => {
+    // A miss must not manufacture a family (the old "attack" default) — the
+    // first content tick fills it from the wing actually ridden.
+    const ctx = carrierRoleCtx("enemy");
+    (ctx.props as unknown as { squadronCreates: unknown[] }).squadronCreates = [
+      create(500, UNKNOWN_PARAMS_ID),
+    ];
+    (ctx.props as unknown as { minimapSquadronAdds: unknown[] }).minimapSquadronAdds = [
+      { ...add(500, UNKNOWN_PARAMS_ID), ownerId: SHIP },
+    ];
+    expect(cardFor(ctx).planeType).toBeNull();
+  });
+});
+
+/* ── Item D: scout AIRFRAMES the family column misses ────────────────────
+ * The scout exclusion reads the baked family first, but the AIRFRAME INDEX
+ * spells the role too (P + nation + AS). A row baked from the GameParams
+ * species — or a future bake that drops the family — would otherwise sail
+ * past the exclusion and paint a bomber card for a spotter.
+ */
+describe("isScoutAirframeIndex / isScoutParamsId coverage", () => {
+  it("recognises the AS family on the index and nothing else", () => {
+    for (const idx of [
+      "PJAS011_Nakajima_E8N_SUZUYA",
+      "PSAS022_IMAM_RO42_T8",
+      "PBAS001_Walrus",
+      "PAAS014_Vought_OS2U",
+      "PXAS001_Mitsubishi_Ki_57",
+      "PWAS001_IMAM_RO43",
+      "PVAS005_VOUGHT_OS2U",
+    ]) {
+      expect(isScoutAirframeIndex(idx)).toBe(true);
+    }
+    for (const idx of [
+      "PJAB208_Shokaku_top",
+      "PJAD902_ASW_T8",
+      "PJAF408_Lexington_stock_WARD",
+      "PAAD900_ASW",
+      "PXAB001_B5N2",
+      "PJAL710_AKAGI",
+      "",
+      null,
+      undefined,
+    ]) {
+      expect(isScoutAirframeIndex(idx as string | null | undefined)).toBe(false);
+    }
+  });
+
+  it("classifies EVERY baked AS-family airframe as a scout", () => {
+    // The bake guard: whatever the family column says, an AS-family airframe
+    // is a catapult spotter. This is the fence the reported "scout renders as
+    // a bomber" needed — it fails the day a re-bake mislabels one.
+    const rows = Object.entries(
+      planeTypesRaw as Record<string, { index: string; type: string }>,
+    ).filter(([, row]) => isScoutAirframeIndex(row.index));
+    expect(rows.length).toBeGreaterThan(90);
+    const missed = rows.filter(([paramsId]) => !isScoutParamsId(Number(paramsId)));
+    expect(missed.map(([, row]) => row.index)).toEqual([]);
+  });
+
+  it("keeps unknown paramsIds out of the scout rule (nothing to classify)", () => {
+    expect(isScoutParamsId(UNKNOWN_PARAMS_ID)).toBe(false);
+  });
+});

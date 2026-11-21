@@ -659,6 +659,9 @@
     "incomingIn": "arrives in {s}",
     "visibility": "Visibility"
   },
+  "ward": {
+    "arrivesIn": "arrives in {s}"
+  },
   "ranges": {
     "title": "Range indicators",
     "hint": "Draws the recorder ship's stock weapon and consumable ranges around her hull (no equipment bonuses).",

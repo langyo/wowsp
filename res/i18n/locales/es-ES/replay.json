@@ -659,6 +659,9 @@
     "incomingIn": "llega en {s}",
     "visibility": "Visibilidad"
   },
+  "ward": {
+    "arrivesIn": "llega en {s}"
+  },
   "ranges": {
     "title": "Indicadores de alcance",
     "hint": "Dibuja alrededor del barco grabado los alcances estándar de sus armas y consumibles (sin bonus de equipo).",

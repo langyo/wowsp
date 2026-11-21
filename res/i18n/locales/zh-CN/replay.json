@@ -659,6 +659,9 @@
     "incomingIn": "{s} 后来临",
     "visibility": "能见度"
   },
+  "ward": {
+    "arrivesIn": "{s} 后抵达"
+  },
   "ranges": {
     "title": "范围指示器",
     "hint": "围绕本舰绘制各武器与消耗品的作用范围（库存数值，不含配件加成）。",

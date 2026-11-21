@@ -37,6 +37,7 @@ import { updateStormZone } from "./weatherScene";
 import { syncMoveAdvisories } from "./moveAdvisories";
 import {
   PLANE_DOT_PARKED_Y,
+  cardWingAt,
   planeCardVisibleAt,
   wardCardAnchor,
 } from "./planeWarfare";
@@ -1224,6 +1225,13 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         label.name = carrierLabel.name;
         label.shipName = carrierLabel.shipName;
         label.tier = carrierLabel.tier;
+        // The card is themed by the WING'S OWNER, refreshed here so a role
+        // that resolves AFTER the actor build (the minimap owner / relation
+        // pass lands later) still flips the card: an enemy carrier's wing
+        // paints the hostile look (red border ink + red-tinted HP fill), the
+        // recorder's own and allied wings keep the white/green one (report:
+        // "红色飞机却绿色血条+白色边框").
+        label.role = carrierLabel.role;
         // Aircraft have no "sunk" state — planes are simply gone when
         // shot down, so the card never shows the ship's dead tag.
         label.dead = false;
@@ -1237,10 +1245,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       // squadron stream is missing (pre-E27 replay) keeps the ship values
       // as the honest fallback.
       // The CONTENT formation must be the one the viewer SEES: labelOverlay
-      // publishes its nearest-rendered-wedge pick each frame; only when that
-      // is absent (first frame / no models) does the first-airborne scan
-      // answer (user report: the card said ✈2 while the rendered wedge was a
-      // different sortie at launch strength).
+      // publishes the wing this card is anchored to each frame; only when that
+      // is absent (first frame / no models) does the same stability gate
+      // answer from the trails (user report: the card said ✈2 while the
+      // rendered wedge was a different sortie at launch strength).
       const picked = ctx.planeLabelPicks.get(labelId);
       // Fighter-patrol state for this card (item C): `deploying` = the wing is
       // still flying out to the circle. The card then shows ONLY the countdown
@@ -1250,9 +1258,7 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       const deploying = ward != null && t < ward.arriveAt;
       if (deploying) {
         label.planeType = ward.planeType ?? label.planeType;
-        label.ghostText = i18nT("replay.weather.incomingIn", {
-          s: fmtCountdown(ward.arriveAt - t),
-        });
+        label.ghostText = wardDeployCountdown(t, ward.arriveAt);
         label.planeAlive = null;
         label.hp = null;
         label.maxHp = null;
@@ -1268,36 +1274,21 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         continue;
       }
       label.ghostText = null;
-      const squadronId = (() => {
-        if (picked != null) {
-          const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === picked);
-          if (trail && trail.samples.length > 0) {
-            const expiry = planeTrailExpiry(
-              trail.samples[trail.samples.length - 1].time,
-              ctx.minimapTrailEnd.get(picked),
-            );
-            if (t >= trail.samples[0].time && t <= expiry) return picked;
-          }
-        }
-        for (const [planeId, labelOf] of ctx.planeLabelOfPlane) {
-          if (labelOf !== labelId) continue;
-          const trail = ctx.planeTrails.find((tr) => Math.floor(tr.id / 16) === planeId);
-          if (!trail || trail.samples.length === 0) continue;
-          const expiry = planeTrailExpiry(
-            trail.samples[trail.samples.length - 1].time,
-            ctx.minimapTrailEnd.get(planeId),
-          );
-          if (t >= trail.samples[0].time && t <= expiry) return planeId;
-        }
-        return null;
-      })();
-      // The card's FAMILY follows the wing it is anchored to (item B): the
-      // table is the same paramsId → family join the formation pass uses, so
-      // a WARD fighter reads 战斗机 even when the carrier's first sortie of
-      // the replay was a torpedo wing (the stale value the card is BORN with,
-      // see resolvePlaneCarriers). A wing the table does not resolve leaves
-      // the previous family in place — never the "attack" default, which is
-      // only for a slot NO stream resolved at all.
+      // The card's WING: planeWarfare.cardWingAt — the newest sensible wing
+      // held back by the 3 s hysteresis (see stableWingPick). It excludes
+      // scouts and homeward-bound wings and never rides a wing that appeared
+      // mid-air for a couple of seconds, so the family this pass writes can no
+      // longer flash over the card and vanish with the wing (the "出现一下就又
+      // 消失了" report); the position pass reads the very same answer.
+      const squadronId = cardWingAt(ctx, labelId, t);
+      // The card's FAMILY follows the wing it is anchored to: the table is the
+      // same paramsId → family join the formation pass uses, so a WARD fighter
+      // reads 战斗机 even when the carrier's first sortie of the replay was a
+      // torpedo wing (the stale value the card is BORN with, see
+      // resolvePlaneCarriers). A wing the table does not resolve leaves the
+      // previous family in place — a miss must never paint a manufactured
+      // family (the old "attack" default showed the skip-bomber icon for an
+      // unknown scout airframe).
       const wingType =
         squadronId != null ? ctx.planeTypesById.get(squadronId * 16) : undefined;
       if (wingType) label.planeType = wingType;
@@ -1387,6 +1378,16 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
 export function fmtCountdown(secs: number): string {
   const s = Math.max(0, Math.round(secs));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+/** Wording of the deploying fighter card's countdown: the time until the wing
+ *  ARRIVES on station ("{s} 后抵达" / "arrives in {s}"). It used to borrow the
+ *  weather feature's `replay.weather.incomingIn` ("… 后来临" — the storm is
+ *  COMING), which describes a weather event rather than a wing's arrival
+ *  (user report: "应该叫抵达，什么来临？"). The two keys stay separate: the
+ *  weather badge keeps its own wording. */
+export function wardDeployCountdown(t: number, arriveAt: number): string {
+  return i18nT("replay.ward.arrivesIn", { s: fmtCountdown(arriveAt - t) });
 }
 
 /** Append the SPOTTER / scout consumable's active window to a hull's

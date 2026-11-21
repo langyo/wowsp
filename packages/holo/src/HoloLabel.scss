@@ -14,9 +14,11 @@
   --label-ink-tier: rgba(100, 200, 255, 0.85);
   --label-ink-hp: rgba(100, 255, 150, 0.9);
   --label-ink-hp-bar-bg: rgba(5, 8, 15, 0.55);
-  /* Three-layer HP bar: the grey Repair-Party pool and the red lost-for-good
-     remainder. Same grey the hull plaque's repairable pool uses. */
-  --label-ink-hp-recover: rgb(200 208 220 / 55%);
+  /* Three-layer HP bar: the LIGHT-GREEN queued Repair-Party pool and the red
+     lost-for-good remainder. The queued layer is a desaturated tint of the
+     green fill — a pre-cover of the HP that is coming back, not a dead grey
+     rail (user report: 灰血范围做得不太好). */
+  --label-ink-hp-recover: rgb(158 224 168 / 60%);
   --label-ink-hp-lost: rgb(248 92 92 / 45%);
   --label-ink-hp-text: #fff;
   --label-ink-hp-text-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
@@ -127,23 +129,34 @@
     overflow: hidden;
   }
 
+  /* Solid green: current HP. It sits ABOVE the two queued layers so its
+     rounded right corner stays crisp where the queued segment tucks under it
+     (see the seam rule in HoloLabel.tsx), and it keeps the bar's full
+     rounding on the left end. */
   &__hp-fill {
+    position: relative;
+    z-index: 2;
     display: block;
     height: 100%;
     border-radius: 2px;
     transition: width 0.2s linear;
   }
 
-  /* Repair Party's grey recoverable segment (the game's repair-bar reading)
+  /* Repair Party's queued light-green segment (the game's repair-bar reading)
      and the red lost-for-good segment right of it. Both are absolutely
-     positioned over the track and under the green fill (which owns the left
-     end): the grey eats the RED width, never the green's. Hosts that never
-     pass hpRecoverableFrac render neither element. */
+     positioned over the track and UNDER the green fill (which owns the left
+     end): the queued layer eats the RED width, never the green's. Hosts that
+     never pass hpRecoverableFrac render neither element.
+     The queued layer's left edge is SQUARE and runs 2 px under the green's
+     right edge (the inline geometry carries the overlap), so the green's
+     rounded corner covers the junction — no seam gap, no notch. The red starts
+     exactly at the queued layer's right edge, also square. */
   &__hp-recover,
   &__hp-lost {
     position: absolute;
     top: 0;
     bottom: 0;
+    border-radius: 0;
     pointer-events: none;
     transition:
       left 0.2s linear,
@@ -151,10 +164,12 @@
   }
 
   &__hp-recover {
+    z-index: 1;
     background: var(--label-ink-hp-recover);
   }
 
   &__hp-lost {
+    z-index: 0;
     background: var(--label-ink-hp-lost);
   }
 
@@ -182,9 +197,13 @@
     transition: width 0.2s linear;
   }
 
-  /* HP number sits inside the bar, like the in-game team list. */
+  /* HP number sits inside the bar, like the in-game team list. It rides the
+     HIGHEST layer of the stack: the green fill is z-index 2 (it must cover the
+     queued segment's seam), so the readout needs an explicit level above it or
+     the opaque fill would paint over the numbers. */
   &__hp-text {
     position: absolute;
+    z-index: 3;
     inset: 0;
     display: flex;
     align-items: center;
@@ -249,9 +268,10 @@
   --label-ink-tier: rgb(23 100 170 / 0.95);
   --label-ink-hp: rgb(20 130 80 / 0.95);
   --label-ink-hp-bar-bg: rgb(55 65 81 / 10%);
-  /* Three-layer bar on the paper-white sea: a mid grey reads as recoverable
-     against the pale rail, the red darkens one step to stay legible. */
-  --label-ink-hp-recover: rgb(120 135 152 / 65%);
+  /* Three-layer bar on the paper-white sea: the queued pre-cover deepens to a
+     mid green so it still separates from the pale rail, the red darkens one
+     step to stay legible. */
+  --label-ink-hp-recover: rgb(96 174 112 / 65%);
   --label-ink-hp-lost: rgb(248 113 113 / 45%);
   --label-ink-hp-text: #374151;
   --label-ink-hp-text-shadow: 0 0 2px rgb(255 255 255 / 80%);
