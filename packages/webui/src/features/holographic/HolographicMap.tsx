@@ -145,7 +145,11 @@ import { applyOsdTones, createOsdContrast, OSD_REFRESH_S } from "./osdContrast";
 import { buildSelfShotLedger, querySelfShotLedger } from "./selfShotLedger";
 import { capLetter, isCaptureZone, type CapZoneState } from "./capZones";
 import type { ShipLabel } from "./shipLabel";
-import { repairCoefficientFor, repairRecoverableFracAt } from "./repairPool";
+import {
+  REPAIR_PARTY_DAMAGE_SHARE,
+  repairCoefficientFor,
+  repairRecoverableFracAt,
+} from "./repairPool";
 import HoloEventFeed, { type FeedEntry } from "./HoloEventFeed";
 import HoloCameraMenu from "./HoloCameraMenu";
 import HoloRosterOverlay from "./HoloRosterOverlay";
@@ -3878,10 +3882,13 @@ const RECORDED_DOLLY_MIN = -40;
                         hullMaxHp,
                         t,
                         traj.entityId,
-                        // The hull's BAKED GameParams repair fraction
+                        // The hull's BAKED per-charge capacity fraction
                         // (repairPool.ts), keyed by the roster's shipParamsId
                         // — else the documented flat 0.5.
                         repairCoefficientFor(r.vehicle.shipId, hullMaxHp),
+                        // The flat per-damage share (regeneratedHPPart
+                        // typical): the replay has no section attribution.
+                        REPAIR_PARTY_DAMAGE_SHARE,
                       ),
                 dead: r.dead,
               };

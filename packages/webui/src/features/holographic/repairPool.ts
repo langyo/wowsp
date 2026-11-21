@@ -6,16 +6,37 @@
  *     green  current HP   |   grey  recoverable   |   red  lost for good
  *
  * The grey layer is what an active Repair Party (GameParams consumable id 8,
- * `regenCrew`, ~28 s window) can still restore. Damage a hull takes INSIDE
- * one of its repair windows is queued into that window's pool; when the
- * consumable's heal ticks later raise the hull's HP, the pool drains first —
- * grey shrinks, green grows. Damage taken OUTSIDE every window (and any heal
- * that runs past the pool) is gone for good; heals are never "damage" and so
- * never ACCRUE a pool. Two back-to-back repairs keep two independent pools
- * (the second window cannot re-claim damage the first one already queued) and
- * the bar shows their sum, capped by the heal coefficient × max HP.
+ * `regenCrew`, ~28 s window) can still restore. The game bounds it with TWO
+ * different GameParams numbers, and this module keeps them apart:
  *
- * Recoverable(t) = min( Σ pools(t), coefficient × maxHp )
+ *   - the per-DAMAGE share the repair can claim — GameParams hit-location
+ *     `regeneratedHPPart` (~0.5 on a hull's main sections, 0.1/0.33 on the
+ *     citadel). The replay stream only carries aggregate hull HP deltas, so
+ *     the section a hit landed on is unknowable; the module takes the
+ *     documented TYPICAL as a flat `damageShare` parameter (default 0.5).
+ *   - the per-CHARGE capacity — `regenerationHPSpeed × workTime`, the
+ *     fraction of max HP ONE Repair Party charge restores. That is a HULL
+ *     property, baked per `shipParamsId` by
+ *     `scripts/extract_repair_coefficients.py` into
+ *     `data/repair_coefficients.json` (739 hulls on the 15.10 client,
+ *     0.05..0.60; 0.14 typical / 0.1848 premium) and answered by
+ *     `repairCoefficientFor`.
+ *
+ * Damage a hull takes INSIDE one of its repair windows is queued into that
+ * window's pool at `damage × damageShare`, capped at one charge's capacity
+ * (`coefficient × maxHp`); when the consumable's heal ticks later raise the
+ * hull's HP, the pool drains first — grey shrinks, green grows. Damage taken
+ * OUTSIDE every window (and any heal that runs past the pool) is gone for
+ * good; heals are never "damage" and so never ACCRUE a pool. Two back-to-back
+ * repairs keep two independent pools (the second window cannot re-claim damage
+ * the first one already queued) — each pool capped by its own charge
+ * capacity, since every window is one charge — and the bar shows their sum:
+ *
+ *     grey(t) = Σ_windows min( damage in window × damageShare,
+ *                              coefficient × maxHp )   (heals drain first)
+ *
+ * A 5,000-damage salvo on a 50,000-HP hull inside a window queues 2,500, but
+ * never more than that charge can restore.
  *
  * SCRUB STABILITY: this is a pure fold over the events and the hull's HP
  * samples at or before the playhead — no playback-history state, no
@@ -24,19 +45,18 @@
  * number (the fold is cached as a per-sample PREFIX ARRAY, so a seek is a
  * binary search over an already-correct fold rather than a replay).
  *
- * COEFFICIENT SOURCE: the hard per-hull number is a GameParams HULL property,
- * not a replay field — the hull's Repair Party ability carries
- * `regenerationHPSpeed` (the heal rate as a FRACTION OF MAX HP per second) and
- * `workTime` (how long one charge runs), so one charge restores
- * `clamp(regenerationHPSpeed × workTime, 0, 1)` of max HP. That fraction is
- * baked per `shipParamsId` by `scripts/extract_repair_coefficients.py` into
- * `data/repair_coefficients.json` (739 hulls on the 15.10 client, 0.05..0.60;
- * the derivation is documented in the generator's header). Each renderer hands
- * the hull's ship id in through `repairCoefficientFor`, which reads that
- * table. An UNKNOWN hull (never baked — a ship added after the bake) answers
- * the documented FLAT DEFAULT of 0.5 × max HP
- * (`REPAIR_PARTY_RECOVERABLE_FRAC`), so the grey bar keeps its old behaviour
- * there.
+ * WHY THE SHARE STAYS FLAT: the extraction dump DOES carry the per-section
+ * number (`A_Hull.<part>.regeneratedHPPart`, the ship's hit locations: Bow /
+ * Hull / SS / St / SG are 0.5, Cit is 0.1 or 0.33, some sections 0.6..0.75),
+ * so it is cheap to read — but it is a SECTION property, not a hull one, and
+ * the replay never attributes a hit to a section. Baking one value per hull
+ * would dress a guess up as data, so the documented typical stays a constant
+ * parameter ([`REPAIR_PARTY_DAMAGE_SHARE`]).
+ *
+ * CAPACITY FALLBACK: an UNKNOWN hull (never baked — a ship added after the
+ * bake) answers the documented FLAT DEFAULT of 0.5 × max HP
+ * (`REPAIR_PARTY_RECOVERABLE_FRAC`) as its capacity, so the grey bar keeps
+ * its old behaviour there.
  *
  * The replay stream is deliberately NOT a source: the Vehicle create-state
  * `regenCrewHpLimit` an earlier slice carried as `ReplayStream.repairHpCaps`
@@ -56,9 +76,18 @@ import repairCoefficientsRaw from "@/data/repair_coefficients.json";
  *  ConsumableUseEvent docs: reference capture clusters id 8 at 28 s). */
 export const REPAIR_PARTY_CONSUMABLE_ID = 8;
 
-/** Fallback recoverable pool as a fraction of max HP — the documented flat
- *  default every UNKNOWN hull answers (see the module header). */
+/** Fallback per-charge CAPACITY as a fraction of max HP — the documented flat
+ *  default every UNKNOWN hull answers (one Repair Party charge restores at
+ *  most this much). NOT the per-damage share: the pre-split model used this
+ *  one number for both, which is exactly the semantic bug the split fixes. */
 export const REPAIR_PARTY_RECOVERABLE_FRAC = 0.5;
+
+/** The documented TYPICAL per-damage recoverable share — GameParams
+ *  hit-location `regeneratedHPPart` (~0.5 on a hull's main sections; the
+ *  citadel is 0.1/0.33). FLAT on purpose: the replay stream has no section
+ *  attribution, so a per-section bake could not be applied honestly (see the
+ *  module header). */
+export const REPAIR_PARTY_DAMAGE_SHARE = 0.5;
 
 /** The baked per-hull coefficients (`shipParamsId` → fraction of max HP one
  *  Repair Party charge restores), generated by
@@ -66,8 +95,9 @@ export const REPAIR_PARTY_RECOVERABLE_FRAC = 0.5;
  *  (JSON object keys), so the join is `String(shipId)`. */
 const REPAIR_COEFFICIENTS = repairCoefficientsRaw as Record<string, number>;
 
-/** The hull's recoverable share of max HP — the coefficient the grey-bar
- *  state machine takes as a parameter, read off the baked GameParams table.
+/** The hull's per-CHARGE CAPACITY as a fraction of max HP — the `coefficient`
+ *  the grey-bar state machine caps each Repair Party window's pool with, read
+ *  off the baked GameParams table.
  *
  *  A hull present in the table answers its own baked fraction (clamped to
  *  0..1 so a bad bake can never paint past the bar); an UNKNOWN hull answers
@@ -162,28 +192,34 @@ interface PoolFold {
   windows: readonly RepairWindow[];
   maxHp: number;
   coefficient: number;
+  damageShare: number;
   /** `values[i]` = recoverable HP right AFTER hpSamples[i] was folded in. */
   values: Float64Array;
 }
 
 const foldMemo = new WeakMap<object, PoolFold>();
 
-/** Fold the hull's whole HP timeline once: `values[i]` is the recoverable
- *  pool after sample i. Damage (a negative HP delta) accrues
- *  `-delta × coefficient` into the NEWEST window active at that sample's
- *  time, capped by the remaining global budget (coefficient × maxHp); a heal
- *  (a positive delta) drains the pools oldest-window-first. The full prefix is
- *  cached, which is what makes any playhead (and any scrub direction) a
- *  binary search instead of a replay. */
+/** Fold the hull's whole HP timeline once: `values[i]` is the TOTAL
+ *  recoverable pool after sample i. Damage (a negative HP delta) accrues
+ *  `-delta × damageShare` into the NEWEST window active at that sample's
+ *  time, capped by THAT window's remaining charge capacity
+ *  (coefficient × maxHp — every window is one charge); a heal (a positive
+ *  delta) drains the pools oldest-window-first. The full prefix is cached,
+ *  which is what makes any playhead (and any scrub direction) a binary search
+ *  instead of a replay. */
 function foldPools(
   windows: readonly RepairWindow[],
   samples: readonly HpSample[],
   maxHp: number,
   coefficient: number,
+  damageShare: number,
 ): Float64Array {
   const values = new Float64Array(samples.length);
   const cap = coefficient * maxHp;
   if (!(cap > 0) || windows.length === 0) return values;
+  const share = Number.isFinite(damageShare)
+    ? Math.max(0, Math.min(1, damageShare))
+    : 0;
   const pools = new Float64Array(windows.length);
   let total = 0;
   let prev = samples[0].value;
@@ -202,7 +238,9 @@ function foldPools(
         }
       }
       if (active >= 0) {
-        const add = Math.min(-delta * coefficient, cap - total);
+        // The share decides how much of the hit is queued at all; the
+        // window's own charge capacity bounds its pool (not the sum's).
+        const add = Math.min(-delta * share, cap - pools[active]);
         if (add > 0) {
           pools[active] += add;
           total += add;
@@ -233,12 +271,16 @@ function foldPools(
  *  @param events  the replay's vehicle consumable activations (the stream's
  *                 optional `consumableUses`; absent = 0).
  *  @param hpSamples the hull's HP timeline (ascending `time`).
- *  @param maxHp   the hull's total HP (the pool's cap denominator).
- *  @param coefficient recoverable share of the damage taken inside a window
- *                 (default REPAIR_PARTY_RECOVERABLE_FRAC = 0.5).
+ *  @param maxHp   the hull's total HP (the capacity's denominator).
+ *  @param coefficient the hull's per-charge CAPACITY as a fraction of maxHp
+ *                 ([`repairCoefficientFor`]): one Repair Party charge
+ *                 restores at most coefficient × maxHp.
  *  @param t       battle seconds.
  *  @param entityId optional hull join — omit only when `events` already
  *                 holds this hull's events alone.
+ *  @param damageShare the share of each damage event inside a window that
+ *                 becomes recoverable (default REPAIR_PARTY_DAMAGE_SHARE =
+ *                 0.5, the documented typical regeneratedHPPart).
  */
 export function repairRecoverableAt(
   events: readonly ConsumableUseEvent[] | null | undefined,
@@ -247,6 +289,7 @@ export function repairRecoverableAt(
   coefficient: number,
   t: number,
   entityId?: number | null,
+  damageShare: number = REPAIR_PARTY_DAMAGE_SHARE,
 ): number {
   if (maxHp == null || !(maxHp > 0)) return 0;
   if (!hpSamples || hpSamples.length === 0) return 0;
@@ -267,13 +310,15 @@ export function repairRecoverableAt(
     !fold ||
     fold.windows !== windows ||
     fold.maxHp !== maxHp ||
-    fold.coefficient !== coefficient
+    fold.coefficient !== coefficient ||
+    fold.damageShare !== damageShare
   ) {
     fold = {
       windows,
       maxHp,
       coefficient,
-      values: foldPools(windows, hpSamples, maxHp, coefficient),
+      damageShare,
+      values: foldPools(windows, hpSamples, maxHp, coefficient, damageShare),
     };
     foldMemo.set(hpSamples, fold);
   }
@@ -285,7 +330,11 @@ export function repairRecoverableAt(
  *  two renderers paint in. `null` means "this hull has no Repair Party data
  *  in the replay" (the feature stays off and the bar renders exactly as
  *  before); `0` with repairs present means "pool exhausted — green + red
- *  only". */
+ *  only".
+ *
+ *  `coefficient` is the hull's per-charge CAPACITY fraction (pass
+ *  `repairCoefficientFor(shipId, maxHp)`); `damageShare` is the flat
+ *  per-damage share (default REPAIR_PARTY_DAMAGE_SHARE = 0.5). */
 export function repairRecoverableFracAt(
   events: readonly ConsumableUseEvent[] | null | undefined,
   hpSamples: readonly HpSample[] | null | undefined,
@@ -293,10 +342,19 @@ export function repairRecoverableFracAt(
   t: number,
   entityId?: number | null,
   coefficient: number = REPAIR_PARTY_RECOVERABLE_FRAC,
+  damageShare: number = REPAIR_PARTY_DAMAGE_SHARE,
 ): number | null {
   if (maxHp == null || !(maxHp > 0)) return null;
   if (!hasRepairPartyUse(events, entityId)) return null;
-  const amount = repairRecoverableAt(events, hpSamples, maxHp, coefficient, t, entityId);
+  const amount = repairRecoverableAt(
+    events,
+    hpSamples,
+    maxHp,
+    coefficient,
+    t,
+    entityId,
+    damageShare,
+  );
   return Math.max(0, Math.min(1, amount / maxHp));
 }
 
