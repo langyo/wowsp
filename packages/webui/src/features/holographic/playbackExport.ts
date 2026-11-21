@@ -53,6 +53,7 @@ import {
 } from "./tactical/exporters";
 import { TACTICAL_SIZE } from "./tactical/render";
 import { sampleAt } from "./trajectoryMath";
+import { hpBarSegments } from "./repairPool";
 import type { EntityTrajectory, ShotKillEvent } from "@/api";
 
 /** Logical edge of the map square — paintEnlargedMap draws in this space. */
@@ -607,6 +608,12 @@ export interface PlaybackTeamRow {
   stats?: readonly PlaybackTeamStat[];
   /** 0..1, or null when unknown (row dims instead of a bar). */
   hpFrac: number | null;
+  /** Repair-Party recoverable pool as a fraction of maxHp (0..1), or null
+   *  when the replay carried no repair-party activation for this hull (the
+   *  bar keeps its two-layer form). 0 = repairs exist, pool exhausted: the
+   *  bar shows green + red only. PLAYHEAD-DERIVED — the caller re-reads it
+   *  per frame (see repairPool.ts), so it can never be frozen into a take. */
+  hpRecoverableFrac?: number | null;
   dead: boolean;
 }
 
@@ -852,6 +859,10 @@ const NEUTRAL_INK = "255 255 255";
 const HP_GOOD = "74 222 128";
 const HP_MID = "251 191 36";
 const HP_LOW = "248 92 92";
+/** Repair Party's grey recoverable pool — the same grey the hull plaque's
+ *  repairable segment uses — and the red lost-for-good remainder. */
+const HP_REPAIR = "200 208 220";
+const HP_REPAIR_LOST = "248 92 92";
 
 /** Canvas-independent text measure at a given face size (canvas's own
  *  measureText, wrapped so the fit rules below stay unit-testable). */
@@ -1466,13 +1477,35 @@ export function drawPlaybackTeamColumn(
       g.restore();
     });
     // Line 3: the slim full-width HP bar (team ink; dead rows keep the
-    // empty rail, exactly as before).
+    // empty rail, exactly as before). A row carrying a Repair Party pool
+    // renders the game's three layers instead — green (current HP) | grey
+    // (recoverable) | red (lost for good), left to right — and the grey takes
+    // its width OUT OF the red remainder, never out of green.
     const barX = x + inset;
     const barW = w - inset * 2;
     g.fillStyle = rgba(palette.text, 0.14);
     g.fillRect(barX, ry + EXPORT_TEAM_HP_TOP, barW, EXPORT_TEAM_HP_H);
     if (row.hpFrac != null && !row.dead) {
       const frac = Math.min(1, Math.max(0, row.hpFrac));
+      if (row.hpRecoverableFrac != null) {
+        const seg = hpBarSegments(frac, row.hpRecoverableFrac);
+        // The lost-for-good red rail first, then the grey pool over it: the
+        // green fill below still owns the bar's left end untouched.
+        g.fillStyle = rgba(HP_REPAIR_LOST, 0.45);
+        g.fillRect(
+          barX + barW * (seg.green + seg.gray),
+          ry + EXPORT_TEAM_HP_TOP,
+          barW * seg.red,
+          EXPORT_TEAM_HP_H,
+        );
+        g.fillStyle = rgba(HP_REPAIR, 0.85);
+        g.fillRect(
+          barX + barW * seg.green,
+          ry + EXPORT_TEAM_HP_TOP,
+          barW * seg.gray,
+          EXPORT_TEAM_HP_H,
+        );
+      }
       g.fillStyle = rgba(hpInk(frac), 0.95);
       g.fillRect(barX, ry + EXPORT_TEAM_HP_TOP, barW * frac, EXPORT_TEAM_HP_H);
     }

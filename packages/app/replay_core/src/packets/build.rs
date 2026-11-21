@@ -139,7 +139,9 @@ pub(crate) fn state_property_index_for(version: Option<(u32, u32, u32)>) -> Opti
 
 /// One vehicle's decoded build — the DECODE layer keeps both teams' builds
 /// (completeness + tests); the IPC exit filters to allies.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// `PartialEq` only (no `Eq`): the Repair-Party cap is a wire FLOAT32.
+#[derive(Debug, Clone, PartialEq)]
 pub struct VehicleBuildRaw {
     pub entity_id: i32,
     pub ship_params_id: u32,
@@ -152,6 +154,18 @@ pub struct VehicleBuildRaw {
     pub crew_params_id: u32,
     pub is_in_adaptation: bool,
     pub learned_skills: Vec<Vec<u8>>,
+    /// The Vehicle `regenCrewHpLimit` property from the SAME create state —
+    /// the hard Repair-Party recoverable cap in ABSOLUTE HP (the hull's repair
+    /// coefficient × maxHp, the number the grey HP-bar segment is bounded by;
+    /// see the webui's repairPool.ts). The entity defs type it FLOAT32
+    /// (default 0.0), so it is read as `f32` — reading the raw bits as an
+    /// integer would turn a real cap into a nonsense huge number. Read by NAME
+    /// off the generated property table, so an entity-def reorder cannot
+    /// mis-read it. `None` = the pinned table has no such property for this
+    /// era (older layouts); `Some(0.0)` = the wire carried the property as
+    /// zero (both reference captures do), which consumers treat as "unknown"
+    /// and fall back to the documented flat coefficient.
+    pub regen_crew_hp_limit: Option<f32>,
 }
 
 /// A bounds-checked little-endian cursor over a byte slice; every read returns
@@ -495,6 +509,10 @@ pub(crate) fn decode_vehicle_build(
     cursor.skip(5)?;
     let mut ship_config: Option<ShipConfigRaw> = None;
     let mut crew: Option<CrewModifiersRaw> = None;
+    // The Repair-Party recoverable cap (absolute HP), read BY NAME like the two
+    // payloads — the walk below already crosses its fixed-width slot, so this
+    // costs one u32 read instead of a skip.
+    let mut regen_crew_hp_limit: Option<f32> = None;
     // The state lists every exposed property in ascending index order. Walk the
     // generated table: fixed-width values are skipped by their pinned width and
     // variable-width ones by NAME until both payloads are read — the trailing
@@ -504,6 +522,10 @@ pub(crate) fn decode_vehicle_build(
     // name guard below instead of silently reading a different property.
     let ship_config_index = usize::from(table.ship_config);
     let crew_index = usize::from(table.crew_modifiers_compact_params);
+    let regen_limit_index = table
+        .properties
+        .iter()
+        .position(|entry| entry.name == "regenCrewHpLimit");
     for (index, entry) in table.properties.iter().enumerate() {
         if usize::from(cursor.u8()?) != index {
             return None;
@@ -526,6 +548,17 @@ pub(crate) fn decode_vehicle_build(
             skip_variable_property(&mut cursor, entry.name)?;
             continue;
         }
+        if Some(index) == regen_limit_index {
+            // The generated table pins the property at 4 bytes and the entity
+            // defs type it FLOAT32 (absolute HP); a regeneration that changes
+            // the width must fail loudly here instead of mis-reading the
+            // neighbouring property.
+            if entry.fixed_width != Some(4) {
+                return None;
+            }
+            regen_crew_hp_limit = Some(f32::from_bits(cursor.u32()?));
+            continue;
+        }
         cursor.skip(usize::from(entry.fixed_width?))?;
     }
     let config = ship_config?;
@@ -542,6 +575,7 @@ pub(crate) fn decode_vehicle_build(
         crew_params_id: crew.params_id,
         is_in_adaptation: crew.is_in_adaptation,
         learned_skills: crew.learned_skills,
+        regen_crew_hp_limit,
     })
 }
 

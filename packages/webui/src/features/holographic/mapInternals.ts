@@ -21,6 +21,7 @@ import type {
   AchievementEvent,
   CameraSample,
   ChatEvent,
+  ConsumableUseEvent,
   DecisionDebugReport,
   DecisionSuggestionReport,
   EntityTrajectory,
@@ -122,6 +123,16 @@ export interface HoloMapDataProps {
   weatherTransitions: WeatherTransition[];
   /** Announced upcoming weather changes (the in-game warning banners). */
   weatherNotifications: WeatherNotification[];
+  /** Vehicle consumable activations (onConsumableUsed, experiment E11) —
+   *  the Repair Party (id 8) windows behind the HP bar's grey recoverable
+   *  segment (repairPool.ts). Absent on replays whose exposed method id is
+   *  not pinned: the feature stays off and every bar renders unchanged. */
+  consumableUses?: ConsumableUseEvent[];
+  /** Entity id → the hull's Repair-Party cap in ABSOLUTE HP (the Vehicle
+   *  `regenCrewHpLimit` create-state property, surfaced as
+   *  `ReplayStream.repairHpCaps`). repairPool.ts converts it to the grey
+   *  bar's coefficient; a missing entry keeps the flat 0.5 fallback. */
+  repairHpCaps?: Record<string, number>;
 }
 
 /** Rectangular XZ rect in scene coordinates (z = -worldZ). */

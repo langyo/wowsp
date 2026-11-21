@@ -31,6 +31,7 @@ import type {
   ArenaPlayer,
   CameraSample,
   ChatEvent,
+  ConsumableUseEvent,
   EntityTrajectory,
   ExplosionEvent,
   HpSample,
@@ -2380,6 +2381,14 @@ export default defineComponent({
     /** Global-weather timeline (cyclone) — badge + minimap darkening. */
     const weatherTransitions = ref<WeatherTransition[]>([]);
     const weatherNotifications = ref<WeatherNotification[]>([]);
+    /** Vehicle consumable activations (onConsumableUsed, E11) — the Repair
+     *  Party id-8 windows behind the HP bars' grey recoverable segment.
+     *  Empty on replays whose exposed method id is not pinned. */
+    const consumableUses = ref<ConsumableUseEvent[]>([]);
+    /** Entity id → the hull's Repair-Party cap in ABSOLUTE HP (Vehicle
+     *  `regenCrewHpLimit`) — the grey bar's coefficient source. Empty on
+     *  replays without the property, where the flat 0.5 fallback applies. */
+    const repairHpCaps = ref<Record<string, number>>({});
     /** Ally ship builds decoded off the replay's create states (self + team
      *  only — the Rust IPC exit filters enemy and mirror-ambiguous builds). */
     const allyBuilds = ref<PlayerBuild[]>([]);
@@ -2776,6 +2785,8 @@ export default defineComponent({
         arenaPlayers.value = [];
         weatherTransitions.value = [];
         weatherNotifications.value = [];
+        consumableUses.value = [];
+        repairHpCaps.value = {};
         allyBuilds.value = [];
         inferredDeaths.value = new Set();
         showChat.value = false;
@@ -2835,6 +2846,8 @@ export default defineComponent({
         arenaPlayers.value = stream.arenaPlayers ?? [];
         weatherTransitions.value = stream.weatherTransitions ?? [];
         weatherNotifications.value = stream.weatherNotifications ?? [];
+        consumableUses.value = stream.consumableUses ?? [];
+        repairHpCaps.value = stream.repairHpCaps ?? {};
         allyBuilds.value = stream.allyBuilds ?? [];
         let maxT = 0;
         for (const tr of stream.trajectories) {
@@ -3309,6 +3322,8 @@ export default defineComponent({
                             inferredDeaths={inferredDeaths.value}
                             weatherTransitions={weatherTransitions.value}
                             weatherNotifications={weatherNotifications.value}
+                            consumableUses={consumableUses.value}
+                            repairHpCaps={repairHpCaps.value}
                             vehicles={parser.current.value.vehicles}
                             operation={isOperation.value}
                             encyclopedia={encyclopedia.byId}

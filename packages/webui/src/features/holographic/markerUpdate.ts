@@ -44,6 +44,7 @@ import {
   recordedCameraForward,
 } from "./recordedCamera";
 import { shipStatusAt } from "./shipStatusModel";
+import { repairCoefficientFor, repairRecoverableFracAt } from "./repairPool";
 import type { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { ShipInfo, SquadronPlane, VehicleEntry, WeaponLockEvent } from "@/api";
 import type { FeedEntry } from "./HoloEventFeed";
@@ -529,6 +530,25 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
       if (contentDue) {
         const currentHp = hpAtTime(traj.hpSamples, tEff);
         if (currentHp != null) label.hp = currentHp;
+        // Repair Party's grey recoverable segment (repairPool.ts): how much
+        // of this hull's already-lost HP the repair pool can still restore.
+        // null = the replay streamed no repair-party activation for the hull
+        // (the bar renders exactly as before); 0 = repairs exist but the pool
+        // is exhausted right now (green + red only). A sunk hull has no
+        // repair party left — its bar is pinned empty.
+        // The coefficient comes from the replay's per-hull Repair-Party cap
+        // (float stream `repairHpCaps`, joined by entity id) and falls back to
+        // the documented flat 0.5 when the replay carries none.
+        label.hpRecoverableFrac = dead
+          ? null
+          : repairRecoverableFracAt(
+              ctx.props.consumableUses,
+              traj.hpSamples,
+              label.maxHp,
+              tEff,
+              entityId,
+              repairCoefficientFor(ctx.props.repairHpCaps, entityId, label.maxHp),
+            );
         // Submerged submarines badge their depth on the floating label
         // (positive meters below surface); surfaced ships clear it.
         label.depthMeters =
@@ -1238,6 +1258,10 @@ export function updateMarkersAt(ctx: MapInternals, t: number) {
         label.hp = null;
         label.maxHp = null;
       }
+      // Aircraft never carry a repair-party pool of their own: the card's
+      // bar stays the plain two-layer form (the carrier's grey segment
+      // belongs to the CARRIER's label).
+      label.hpRecoverableFrac = null;
       void squadronFrac;
       // The flying count has no slot in ShipStatusSnapshot (that shape is
       // the below-hull combat chip row) — it rides the label's planeCard

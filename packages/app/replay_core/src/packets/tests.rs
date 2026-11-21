@@ -4735,6 +4735,9 @@ fn decodes_ally_vehicle_build_from_the_reference_capture() {
     assert_eq!(build.learned_skills.len(), 6);
     assert_eq!(build.learned_skills[3], [12, 18, 20, 25, 34]);
     assert!(build.learned_skills[0].is_empty());
+    // The Repair-Party cap property IS walked (not skipped), and this capture
+    // carries a zero there — the "unknown cap" reading, not a real one.
+    assert_eq!(build.regen_crew_hp_limit, Some(0.0));
 }
 
 #[test]
@@ -4756,6 +4759,38 @@ fn decodes_enemy_vehicle_build_from_the_reference_capture() {
     assert_eq!(build.learned_skills.len(), 6);
     assert_eq!(build.learned_skills[2], [3, 8, 12, 17, 19, 21, 23, 25, 38]);
     assert_eq!(build.learned_skills[3], [4, 12, 17, 18, 20, 23, 24, 25]);
+    assert_eq!(build.regen_crew_hp_limit, Some(0.0));
+}
+
+/// The create-state walk READS the `regenCrewHpLimit` property instead of
+/// skipping its fixed-width slot. The reference capture carries 0 in it (the
+/// server never replicated the cap for those hulls), which would also pass a
+/// walk that read the wrong slot — so patch the four bytes at the property's
+/// pinned offset and require the decoder to surface exactly that absolute HP
+/// value, with the rest of the build unchanged (a skip or a one-byte drift
+/// fails here).
+#[test]
+fn create_state_walk_reads_the_repair_party_hp_cap() {
+    // state = payload[38..]; the walk is 5 frame bytes + 33 (index + value)
+    // slots before the property, then its own index byte:
+    // indices 0..=32 are 19×1 + 8×2 + 6×4 = 59 value bytes.
+    const REGEN_VALUE_OFFSET: usize = 38 // EntityCreate fixed header
+        + 5 // u32 declared length + u8 property count
+        + 33 // index bytes of the 33 preceding properties
+        + 59 // their fixed widths (19×1 + 8×2 + 6×4)
+        + 1; // this property's own index byte
+    // Sanity: the byte just before is this property's exposed index (33).
+    let mut payload = hex_literal(FIXTURE_ALLY_SELF_HEX);
+    assert_eq!(payload[REGEN_VALUE_OFFSET - 1], 33);
+    // The defs type the property FLOAT32 (absolute HP) — patch the float.
+    payload[REGEN_VALUE_OFFSET..REGEN_VALUE_OFFSET + 4].copy_from_slice(&11_750.0f32.to_le_bytes());
+    let build = super::build::decode_vehicle_build(677_453, &payload[38..], FIXTURE_VERSION)
+        .expect("the patched create state must still decode");
+    assert_eq!(build.regen_crew_hp_limit, Some(11_750.0));
+    // The neighbouring reads stay put: the patch touched only that u32.
+    assert_eq!(build.ship_params_id, 4_065_212_112);
+    assert_eq!(build.crew_params_id, 0xffe2_a6d0);
+    assert_eq!(build.learned_skills[3], [12, 18, 20, 25, 34]);
 }
 
 /// The 15.10 shipConfig layout against the real replay (skips without

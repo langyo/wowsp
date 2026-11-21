@@ -25,6 +25,13 @@ export interface HoloLabelData {
   planeAlive?: number | null;
   hp?: number | null;
   maxHp?: number | null;
+  /** Repair-Party recoverable pool as a fraction of maxHp (0..1), or null
+   *  when the replay carried no repair-party activation for the hull (or the
+   *  host does not compute it at all — the marketing sandbox). The HP bar then
+   *  splits into its three layers, green | grey | red: grey is the share a
+   *  repair party can still restore, red is what is lost for good. Absent /
+   *  null renders the historical two-layer bar unchanged. */
+  hpRecoverableFrac?: number | null;
   /** Submerged-submarine depth readout: POSITIVE meters below the surface.
    *  Rendered as a compact tag beside the HP chip (same ~10 Hz content
    *  throttle the host's per-tick label refresh already runs on). Null /
@@ -70,6 +77,8 @@ const TONE_INK_VARS: Record<NonNullable<HoloLabelData["tone"]>, Record<string, s
     "--label-ink-tier": "rgba(100, 200, 255, 0.85)",
     "--label-ink-hp": "rgba(100, 255, 150, 0.9)",
     "--label-ink-hp-bar-bg": "rgba(5, 8, 15, 0.55)",
+    "--label-ink-hp-recover": "rgb(200 208 220 / 55%)",
+    "--label-ink-hp-lost": "rgb(248 92 92 / 45%)",
     "--label-ink-hp-text": "#ffffff",
     "--label-ink-hp-text-shadow": "0 0 2px rgba(0, 0, 0, 0.9)",
     "--label-ink-ghost-bg": "rgba(5, 8, 15, 0.55)",
@@ -82,6 +91,8 @@ const TONE_INK_VARS: Record<NonNullable<HoloLabelData["tone"]>, Record<string, s
     "--label-ink-tier": "rgb(23 100 170 / 95%)",
     "--label-ink-hp": "rgb(20 130 80 / 95%)",
     "--label-ink-hp-bar-bg": "rgb(55 65 81 / 10%)",
+    "--label-ink-hp-recover": "rgb(100 116 139 / 60%)",
+    "--label-ink-hp-lost": "rgb(220 80 80 / 45%)",
     "--label-ink-hp-text": "#374151",
     "--label-ink-hp-text-shadow": "0 0 2px rgb(255 255 255 / 80%)",
     "--label-ink-ghost-bg": "rgb(255 255 255 / 55%)",
@@ -115,6 +126,20 @@ export default defineComponent({
         !l.dead && l.hp != null && l.maxHp != null
           ? Math.max(0, Math.min(100, (l.hp / l.maxHp) * 100))
           : 0;
+      // Three-layer bar (the game's own repair reading): green (current HP)
+      // | grey (the repair pool that can still restore lost HP) | red (lost
+      // for good). The grey takes its width OUT OF the red remainder — never
+      // out of green. Only rendered when the host supplies a pool, so a host
+      // that never sets hpRecoverableFrac (the marketing sandbox, or a replay
+      // with no repair-party stream) keeps the exact historical bar.
+      // Same clamp as the app's pure repairPool.hpBarSegments — this package
+      // cannot import from the webui.
+      const repFrac =
+        !l.dead && !l.ghostText && l.hpRecoverableFrac != null
+          ? Math.max(0, Math.min(1, l.hpRecoverableFrac))
+          : null;
+      const grayPct = repFrac == null ? 0 : Math.min(repFrac * 100, 100 - pct);
+      const lostPct = 100 - pct - grayPct;
       return (
         <div
           class={[
@@ -164,6 +189,21 @@ export default defineComponent({
             <span class="holo-label__hp">
               {l.maxHp != null ? (
                 <span class="holo-label__hp-bar">
+                  {/* Repair layers paint UNDER the green fill: red is the
+                      permanent loss (right end), grey the repair pool sitting
+                      between green and red. */}
+                  {repFrac != null ? (
+                    <span
+                      class="holo-label__hp-lost"
+                      style={{ left: `${pct + grayPct}%`, width: `${lostPct}%` }}
+                    />
+                  ) : null}
+                  {repFrac != null ? (
+                    <span
+                      class="holo-label__hp-recover"
+                      style={{ left: `${pct}%`, width: `${grayPct}%` }}
+                    />
+                  ) : null}
                   <span
                     class="holo-label__hp-fill"
                     style={{ width: `${pct}%`, background: ROLE_BAR[l.role] }}
