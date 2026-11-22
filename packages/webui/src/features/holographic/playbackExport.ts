@@ -26,7 +26,8 @@
  *           renderVideoOffline; the container pill picks the ladder (MP4 →
  *           H.264 with MP4-native VP9/AV1 fallbacks, WebM → VP9/VP8 — see
  *           playbackCodecLadder);
- *   gif   — gifenc, per-frame quantized palette, centisecond delays;
+ *   gif   — gifenc, ONE take-wide global palette (never a per-frame local
+ *           table — see the GIF palette block), centisecond delays;
  *   webp  — the canvas's own lossy WebP encoder (VP8, one frame at a time),
  *           muxed into an animated WebP by the dependency-free webpMux.ts.
  *
@@ -627,6 +628,174 @@ export function frameTimesAtSpeed(
  *  viewers, so the floor keeps slow GIFs honest). */
 export function gifDelayMs(fps: number): number {
   return Math.max(20, Math.round(100 / Math.max(1, fps)) * 10);
+}
+
+/* ── GIF palette: ONE global table for the whole take ────────────────────
+ * gifenc writes the FIRST frame's palette as the file's global colour table
+ * and, whenever a later frame is handed a palette too, writes it as a LOCAL
+ * table that overrides the global one. The export used to quantize every
+ * frame on its own — the classic per-frame palette drift: the moving ships
+ * and the drift of weather/smoke change each frame's histogram, all 256
+ * entries shift a little, and a STATIC antialiased background pixel (the
+ * sea/terrain gradient) lands on a different entry — a different RGB — on
+ * the next frame. Played back, the still background shimmers 「五颜六色」.
+ *
+ * The format's own strongest knob is that global colour table: quantize ONE
+ * 256-colour palette for the take, hand it to the encoder on the FIRST frame
+ * only, and let every later frame index that same table (applyPalette is a
+ * deterministic nearest-colour map), so a static pixel keeps ONE index — and
+ * one RGB — for the whole file. The palette samples the take rather than
+ * frame one alone: the first frame in full (it carries every HUD ink) plus
+ * strided pixels from a few frames spread across the window, so colours that
+ * only appear later (weather, smoke, late-game states) are in the table
+ * instead of banding.
+ */
+/** GIF's palette ceiling: one 256-entry colour table. */
+export const GIF_PALETTE_MAX_COLORS = 256;
+/** Upper bound on frames the take-wide palette samples; the first and last
+ *  are always included and the rest are spread evenly. */
+export const GIF_PALETTE_SAMPLE_FRAMES = 8;
+/** Pixels each later sample contributes (the quantizer is linear in the
+ *  aggregate, and a 2K take must not quantize several full frames). */
+export const GIF_PALETTE_SAMPLE_PIXELS = 1 << 15;
+
+/** Frame indices the take-wide palette samples: the first and last frame are
+ *  always in, the rest spread evenly, and the pass stays a small fraction of
+ *  the take (a short take samples proportionally fewer frames — the palette
+ *  pass re-composes each one, so it must never approach the take's own frame
+ *  count). Deterministic for a given frame count. */
+export function gifPaletteSampleIndices(frameCount: number): number[] {
+  if (!Number.isFinite(frameCount) || frameCount <= 0) return [];
+  if (frameCount === 1) return [0];
+  const count = Math.min(
+    GIF_PALETTE_SAMPLE_FRAMES,
+    Math.max(2, Math.round(frameCount / 6)),
+  );
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const idx = Math.round((i * (frameCount - 1)) / (count - 1));
+    if (out[out.length - 1] !== idx) out.push(idx);
+  }
+  return out;
+}
+
+/** Copy every stride-th RGBA pixel of the sample into out at the offset
+ *  'at'; returns the next write offset. */
+function stridePixelsInto(
+  out: Uint8ClampedArray,
+  rgba: Uint8ClampedArray,
+  stride: number,
+  at: number,
+): number {
+  const pixels = rgba.length >> 2;
+  for (let i = 0; i < pixels; i += stride) {
+    const s = i << 2;
+    out[at] = rgba[s];
+    out[at + 1] = rgba[s + 1];
+    out[at + 2] = rgba[s + 2];
+    out[at + 3] = rgba[s + 3];
+    at += 4;
+  }
+  return at;
+}
+
+/** Downsample one composed frame to at most GIF_PALETTE_SAMPLE_PIXELS
+ *  pixels for the take-palette aggregate (every stride-th pixel). The
+ *  palette pass runs this on every sample after the first AS IT READS IT,
+ *  so it never retains several full-resolution frames (a 2K frame is
+ *  ~12 MB). Returns the input unchanged when it already fits. */
+export function gifPaletteSampleFrame(
+  rgba: Uint8ClampedArray,
+): Uint8ClampedArray {
+  const pixels = rgba.length >> 2;
+  const stride = Math.max(
+    1,
+    Math.ceil(pixels / GIF_PALETTE_SAMPLE_PIXELS),
+  );
+  if (stride === 1) return rgba;
+  const out = new Uint8ClampedArray(Math.ceil(pixels / stride) * 4);
+  stridePixelsInto(out, rgba, stride, 0);
+  return out;
+}
+
+/** Quantize ONE palette for the whole take from RGBA frame samples (see the
+ *  block comment): the first sample in full, the later ones strided down to
+ *  GIF_PALETTE_SAMPLE_PIXELS each. Returns [] for no usable sample.
+ *
+ *  The quantizer (like applyPalette) reads its input as one flat Uint32Array
+ *  over buffer, so the aggregate must be its own exact-size buffer — never a
+ *  subarray view. */
+export function gifTakePalette(
+  samples: readonly Uint8ClampedArray[],
+): number[][] {
+  const usable = samples.filter((s) => s.length >= 4 && s.length % 4 === 0);
+  if (usable.length === 0) return [];
+  const extras = usable.slice(1);
+  // ceil keeps every later sample at or under the pixel budget (floor
+  // would let a sample just under twice the cap through at full size).
+  const strides = extras.map((s) =>
+    Math.max(1, Math.ceil((s.length >> 2) / GIF_PALETTE_SAMPLE_PIXELS)),
+  );
+  const extraBytes = extras.reduce(
+    (n, s, i) => n + Math.ceil((s.length >> 2) / strides[i]) * 4,
+    0,
+  );
+  const aggregate = new Uint8ClampedArray(usable[0].length + extraBytes);
+  aggregate.set(usable[0], 0);
+  let at = usable[0].length;
+  for (let i = 0; i < extras.length; i++) {
+    at = stridePixelsInto(aggregate, extras[i], strides[i], at);
+  }
+  return quantize(aggregate, GIF_PALETTE_MAX_COLORS, { format: "rgb565" });
+}
+
+/** One GIF take's incremental writer: every frame is indexed against the
+ *  SAME take-wide palette, and only the first frame carries a colour table
+ *  (the file's global one). Omitting the palette on later frames makes gifenc
+ *  write no local table, so a static pixel's index — and RGB — is stable
+ *  across frames. */
+export interface GifTakeWriter {
+  /** Index one composed RGBA frame against the take palette. */
+  writeFrame(rgba: Uint8ClampedArray): void;
+  /** Container length so far (the live size estimate's numerator). */
+  bytesLength(): number;
+  /** Emit the trailer and return the finished file. gifenc hands back a
+   *  fresh exact-size copy (bytes() is a slice of the stream), so the
+   *  caller can put it straight into a Blob. */
+  finish(): Uint8Array;
+}
+
+/** Build a writer for ONE take (see the GIF palette block comment). */
+export function createGifTakeWriter(
+  width: number,
+  height: number,
+  delay: number,
+  palette: number[][],
+): GifTakeWriter {
+  const gif = GIFEncoder();
+  let first = true;
+  return {
+    writeFrame(rgba: Uint8ClampedArray): void {
+      const index = applyPalette(rgba, palette, "rgb565");
+      // The first frame's palette becomes the global colour table; later
+      // frames pass NO palette, so they add no local table and keep
+      // indexing that one table (the whole point of the fix).
+      gif.writeFrame(
+        index,
+        width,
+        height,
+        first ? { palette, delay } : { delay },
+      );
+      first = false;
+    },
+    bytesLength(): number {
+      return gif.bytesView().length;
+    },
+    finish(): Uint8Array {
+      gif.finish();
+      return gif.bytes();
+    },
+  };
 }
 
 /** Animated-WebP frame duration in ms: the container stores plain
@@ -2628,12 +2797,48 @@ export async function renderPlaybackExport(
   canvas.height = layout.height;
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
-  // GIF: gifenc with a per-frame local palette (the map's colors drift with
-  // weather/smoke; one global palette would band late-game frames). WebP:
-  // one browser-encoded lossy frame per compose step, then a container mux.
-  const gif = isWebp ? null : GIFEncoder();
   const webpFrames: AnimatedWebpFrame[] = [];
   const delay = isWebp ? webpDelayMs(req.fps) : gifDelayMs(req.fps);
+  // GIF: ONE palette quantized for the WHOLE take and written as the file's
+  // global colour table, so later frames add no local table (see the GIF
+  // palette block above). This palette pass composes a bounded spread of the
+  // window first; the encode loop re-composes those frames, so the take's
+  // own frame pipeline is untouched (the only caller-visible side effect is
+  // the 3D label refresh cadence advancing with those extra composes —
+  // cosmetic, every encoded frame is composed from scratch). WebP: one
+  // browser-encoded lossy frame per compose step, then a container mux.
+  let gifWriter: GifTakeWriter | null = null;
+  if (!isWebp) {
+    const samples: Uint8ClampedArray[] = [];
+    for (const idx of gifPaletteSampleIndices(req.times.length)) {
+      if (req.cancelToken?.cancelled === true) break;
+      composePlaybackFrame(ctx, layout, req, req.times[idx]);
+      const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+      // Keep the first sample in full (it carries every HUD ink) and
+      // downsample the rest as they are read, so the pass never holds
+      // several full-resolution frames at once.
+      samples.push(samples.length === 0 ? data : gifPaletteSampleFrame(data));
+      // A compose is heavy; yield between samples so the progress surface
+      // keeps painting and cancel stays responsive during this pass too.
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    if (samples.length === 0) {
+      // Cancelled during the palette pass, before any frame was encoded:
+      // answer with the same empty/cancelled result as the loop below.
+      return {
+        blob: new Blob([], { type: "image/gif" }),
+        ext: "gif",
+        cancelled: true,
+      };
+    }
+    const palette = gifTakePalette(samples);
+    if (palette.length === 0) {
+      // No usable sample means no colour table: refuse the take instead of
+      // letting gifenc emit a valid-but-black GIF.
+      return null;
+    }
+    gifWriter = createGifTakeWriter(canvas.width, canvas.height, delay, palette);
+  }
   /** Bytes the finished container holds so far (the estimate's numerator). */
   let written = 0;
   let encoded = 0;
@@ -2656,12 +2861,10 @@ export async function renderPlaybackExport(
       written += data.byteLength;
     } else {
       const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const palette = quantize(data, 256, { format: "rgb565" });
-      const index = applyPalette(data, palette, "rgb565");
-      gif!.writeFrame(index, canvas.width, canvas.height, { palette, delay });
+      gifWriter!.writeFrame(data);
       // gifenc writes into a growing buffer: bytesView() is the container's
       // live length (no copy), which is the estimate's numerator.
-      written = gif!.bytesView().length;
+      written = gifWriter!.bytesLength();
     }
     encoded++;
     req.onProgress?.(i + 1, req.times.length);
@@ -2696,15 +2899,12 @@ export async function renderPlaybackExport(
       cancelled: req.cancelToken?.cancelled === true,
     };
   }
-  gif!.finish();
-  // Copy into a plain ArrayBuffer-backed view — TS's BlobPart wants
-  // ArrayBuffer (not ArrayBufferLike) and gifenc returns the shared
-  // backing view.
-  const outBytes = gif!.bytes();
-  const bytes = new Uint8Array(outBytes.length);
-  bytes.set(outBytes);
+  // gifenc's bytes() already copies the stream down to its exact length,
+  // so the finished view goes straight into the Blob; the cast only narrows
+  // TS's generic Uint8Array<ArrayBufferLike> to BlobPart.
+  const outBytes = gifWriter!.finish();
   return {
-    blob: new Blob([bytes.buffer], { type: "image/gif" }),
+    blob: new Blob([outBytes.buffer as ArrayBuffer], { type: "image/gif" }),
     ext: "gif",
     cancelled: req.cancelToken?.cancelled === true,
   };

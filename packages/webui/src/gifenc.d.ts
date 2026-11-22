@@ -3,8 +3,11 @@
  *  https://github.com/mattdesl/gifenc). */
 declare module "gifenc" {
   export interface GifFrameOptions {
-    /** Per-frame local palette (from quantize). */
-    palette: number[][];
+    /** Palette for this frame. The FIRST frame's palette becomes the
+     *  file's global colour table; on a later frame it is written as a
+     *  local colour table that overrides it. Omit it on later frames to
+     *  keep indexing the one global table (the stable-palette route). */
+    palette?: number[][];
     /** Frame delay in milliseconds (snapped to centiseconds). */
     delay: number;
     transparent?: boolean;
