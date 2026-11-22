@@ -1,8 +1,9 @@
 # Self-hosting the WoWSP server
 
 > This guide walks you through running your own WoWSP server node — the
-> full battle-push gateway, the battle-record lookup cache, or both —
-> and pointing the desktop app and your members' phones at it. The whole
+> full battle-push gateway (it relays live battle data to members'
+> phones), the battle-record lookup cache, or both — and pointing the
+> desktop app and your members' phones at it. The whole
 > server is the standard `packages/pairing-relay` code in this
 > repository. The wire contracts live in
 > [cache-mesh.md](../designs/cache-mesh.md) (lookup cache, blocks,
@@ -13,8 +14,9 @@
 
 - **Privacy**: battle pushes for your members route through your
   server, not the public node.
-- **No captcha**: private deployments may turn Turnstile off and/or
-  protect the gateway with a simple password instead.
+- **No captcha**: private deployments may turn Turnstile (Cloudflare's
+  human-verification widget) off and/or protect the gateway with a
+  simple password instead.
 - **Control**: put it on any domain you own — a legion domain is a
   natural fit, and the URL doubles as a small perk for your members.
 - **Speed**: your node caches battle-record lookups, so your members'
@@ -36,45 +38,42 @@ get.
 | `blocks` | `/api/blocks/*` + `/ipfs/*` content store | ✔ | ✔ | ✔ |
 
 - **Cloudflare Worker** — the same wasm the official node runs; the
-  desktop app's built-in wizard deploys it (gateway-only by default,
-  mesh optional). Best for zero-maintenance public nodes.
+  desktop app's wizard can deploy it in one go. Good for
+  zero-maintenance public nodes.
 - **Native server** — one self-contained binary (`relay-server`,
-  axum + SQLite) for a VPS, a LAN box or Docker; every capability,
-  no Cloudflare account needed. Best for full control and LAN fleets.
-- **Vercel edge** — the `packages/relay-vercel` TypeScript adapter,
-  an HTTP-only subset (no battle push); deployable with zero Rust
-  toolchain from the Vercel dashboard.
+  axum + SQLite) for a VPS, a LAN box or Docker; every capability, no
+  Cloudflare account needed. Good when you want full control and LAN
+  fleets.
+- **Vercel edge** — the TypeScript adapter; HTTP-only (no battle
+  push). The choice when you have no Rust toolchain.
 
 Every deployment answers `GET /api/health` with its capabilities;
 clients probe before use, so a gateway-only node never receives
 lookup traffic.
 
-## The battle-record lookup cache
+## The lookup cache and the mesh (one minute)
 
-Every stats lookup used to go desktop → WG/Lesta/vortex upstreams
-directly, and in CN the vortex transport crawls at evening peak — a
-single query can take 30 s, and the whole thing feels broken.
+The lookup cache: your node fetches stats from the upstreams — the
+WG/Lesta/vortex official stats sources — for your members and keeps
+the result; the next query for the same player hits the cache and
+comes back in ~100 ms (before nodes, every member queried the upstreams
+alone, and a single query could take 30 s at peak). The cache mesh:
+nodes share their caches with each other, so data nobody on your node
+has queried can still arrive from a peer.
 
-A node puts a server-side cache in front of those lookups. One player's
-slow 30 s fetch becomes everyone's ~100 ms cache hit — first on your
-own node, then across the mesh: nodes share cached blocks with each
-other, content-addressed and hash-verified, so a community node can
-answer data it never fetched itself.
-
-The boundary matters just as much: only public game data travels
-between nodes (the same bytes the official stats sites serve
-anonymously). Battle-push frames and feedback stay out entirely, nodes
-keep no query logs and no client identifiers, and an http or
-IP-literal node never appears in a public list — LAN fleets stay
-private by construction (cache-mesh.md §8).
+Two words used below: **announce** — listing your node in the public
+node list so others can find it; **peer** — any other node in the mesh.
+A block is one cached query result; blocks are content-addressed and
+hash-verified when shared. Only public stats data travels the mesh:
+battle-push frames and feedback never do, and nodes keep no query logs
+and no client identifiers. An http or IP-literal node never appears in
+a public list, so LAN fleets stay private by construction.
 
 ## Path 1 — Cloudflare Worker
 
 ### Prerequisites
 
-1. A Cloudflare account (the free Workers plan is enough — Durable
-   Objects on the free plan use SQLite storage, which the gateway and
-   the mesh's rate limiter use).
+1. A Cloudflare account (the free Workers plan is enough).
 2. A domain or subdomain hosted on that Cloudflare account (a Workers
    Custom Domain is bound to it automatically at deploy time).
 3. On the machine running the desktop app: Node.js (with `npx`) and a
@@ -89,8 +88,9 @@ path step by step:
 1. **Environment probe** — checks `node`, `npx`, `rustc`, the wasm32
    target and `worker-build`; anything missing is reported with install
    hints.
-2. **Wrangler login** — runs `npx wrangler login` (opens the browser;
-   the token stays in wrangler's own local state, never in WoWSP).
+2. **Wrangler login** — runs `npx wrangler login` (Cloudflare's CLI;
+   opens the browser; the token stays in wrangler's own local state,
+   never in WoWSP).
 3. **Target domain** — the subdomain the gateway will own, e.g.
    `wowsp.your-legion.example`.
 4. **KV bucket** — creates/selects the `GATEWAY_KV` namespace the
@@ -103,8 +103,8 @@ path step by step:
    (Settings ▸ 连接 ▸ 路由入口).
 
 The wizard deploys the battle-push gateway with the cache mesh off
-(`LOOKUP_ENABLED = "0"` in the template — deliberate, since an ungated
-allowlist proxy must not switch itself on as a side effect).
+(`LOOKUP_ENABLED = "0"` in the template). Turn it on with the next
+section when you want it.
 
 ### The manual way (CLI)
 
@@ -122,14 +122,16 @@ curl https://<your-domain>/gateway/health
 
 ### Turning the cache mesh on (Worker)
 
-The template ships mesh-off; a Worker-based mesh node needs the mesh's
-storage seams bound first. Add to your selfhost config:
+The template ships mesh-off. To turn it on, bind the mesh's three
+pieces of storage in your selfhost config — one KV (Cloudflare
+key-value storage), one R2 bucket (Cloudflare object storage) and one
+Durable Object (a small stateful instance):
 
-1. `[[kv_namespaces]]` binding `LOOKUP_KV` (any namespace — it holds
-   the peer-registry documents, `node:id` and the announce counters).
+1. `[[kv_namespaces]]` binding `LOOKUP_KV` (any namespace; it holds
+   the node list).
 2. `[[r2_buckets]]` binding `LOOKUP_R2`, and create the bucket once:
-   `npx wrangler r2 bucket create wowsp-lookup-blocks` (block
-   envelopes).
+   `npx wrangler r2 bucket create wowsp-lookup-blocks` (cached data
+   blocks).
 3. `[[durable_objects.bindings]]` `LOOKUP_RATE` (class `LookupRate`)
    plus its migration entry on your chain (the template's next tag):
    ```toml
@@ -139,24 +141,16 @@ storage seams bound first. Add to your selfhost config:
    ```
 4. Remove `LOOKUP_ENABLED = "0"` (absent = mesh on) and optionally set
    `PEERS_UPSTREAM = "https://wowsp.langyo.xyz"` (subscribe the
-   broadcast list) and `NODE_ROLE = "community"`.
+   public node list) and `NODE_ROLE = "community"`.
 
 Tuning knobs as vars: `LOOKUP_SYNC = "0"` (disable peer pull-through),
 `SYNC_PEERS_MAX`, `LOOKUP_RATE_PER_HOUR`,
-`PEERS_ACCEPT_ANNOUNCES = "false"` (make your registry read-only).
+`PEERS_ACCEPT_ANNOUNCES = "false"` (make your node list read-only).
 
-Why the storage is split this way (free-tier quota reality):
-
-- **Blocks live in R2** — every cache fill is a write; the free KV
-  namespace budget is 1000 writes/day shared with everything else,
-  while R2's free tier allows 1M class-A operations/month.
-- **Rate limits live in a Durable Object** — a KV counter costs one
-  PUT per request; the `LookupRate` SQLite DO (one shard per
-  (hour, IP), self-deleting) carries no such shared quota.
-- **KV writes stay bounded to announce traffic** — the whole own peer
-  registry is a single document rewritten only on accepted announces
-  (already limited to 10/hour/IP); the hot lookup path is edge-cached
-  in front of everything and burns no storage reads when warm.
+The three stores are split so the mesh stays inside the free KV budget
+(1000 writes/day): data blocks live in R2 (free tier: 1M class-A
+operations/month), rate limits in the Durable Object, and KV is written
+only when nodes announce. Details in cache-mesh.md.
 
 Of the three shapes, the Worker is the most quota-fragile. For a cache
 node you plan to keep, prefer the native server below; keep the Worker
@@ -211,8 +205,9 @@ belong in the service environment, never in a tracked file.
 The `127.0.0.1` default keeps the server invisible outside its host —
 fine for a personal cache. To serve a LAN, bind `0.0.0.0:8787` (or
 your LAN address). To serve the public internet, bind `0.0.0.0` and
-front it with a TLS-terminating reverse proxy that sets
-`X-Forwarded-For` — the per-IP budgets key on that header, and
+front it with a reverse proxy — a web server sitting in front that
+terminates TLS and forwards to the local port — which sets
+`X-Forwarded-For` for you; the per-IP budgets key on that header, and
 without it every client shares one budget. Public nodes should also
 set `WOWSP_SERVER_PUBLIC_URL` so the node lists itself.
 
@@ -227,24 +222,22 @@ Multi-stage (`rust:1-bookworm` → `gcr.io/distroless/cc`), volume
 `/data`, non-root user, port 8787. Read the compose file's
 `0.0.0.0` warning before exposing the port.
 
-### Data directory layout
+### Data directory
 
-One `wowsp-server.db` (SQLite, WAL) plus `node-id.txt` (the stable
-node id, generated once): cached envelopes keyed by CID with TTL + 24 h
-grace, the 48 h announce registry (128-row cap), battle snapshots,
-and the hourly rate windows. A housekeeping task sweeps expired rows
-every 10 minutes; SIGTERM drains in-flight requests.
+All state lives in one SQLite database (`wowsp-server.db`) plus a node
+id file (`node-id.txt`); cached entries keep their TTL plus a 24 h
+grace window. To reset a node completely, stop it and delete the data
+directory.
 
 ### Joining the mesh
 
-- **Subscribing**: the default `WOWSP_SERVER_PEERS_UPSTREAM` subscribes
-  the official broadcast list — your node serves the union of its own
-  registry and the official one, and pulls blocks from peers on a
-  local miss.
+- **Subscribing**: by default the node subscribes the official public
+  node list (`WOWSP_SERVER_PEERS_UPSTREAM`) — on a local miss it asks
+  the other nodes on that list.
 - **Announcing**: with `WOWSP_SERVER_PUBLIC_URL` set, the node lists
-  itself in its own registry and best-effort re-announces to the
-  upstream on every sweep. Without that, announce manually — rows live
-  48 h, so a twice-daily cron keeps you listed:
+  itself and re-announces on every sweep — no cron needed. Without it,
+  announce manually; listings expire after 48 h, so keep a twice-daily
+  cron:
   ```bash
   # cron: refresh the announce every 12 h
   0 */12 * * * curl -fsS -X POST https://wowsp.langyo.xyz/api/peers/announce \
@@ -272,11 +265,10 @@ looks like a new node) and optionally `PEERS_UPSTREAM`,
 `NODE_ROLE`, `NOTICE`. The full env-var table lives in
 `packages/relay-vercel/README.md`.
 
-**Memory-mode caveat**: without the Upstash env vars the adapter falls
-back to an in-memory map — every edge isolate keeps its own cache,
-counters reset on cold starts, and the peer cap cannot evict globally.
-Fine for `vercel dev` and previews; a real deployment attaches
-Upstash KV (the free tier is enough).
+**Memory mode**: without the Upstash env vars the adapter keeps
+everything in memory — counters reset on cold starts and every edge
+instance (isolate) caches on its own. Fine for previews; attach Upstash
+KV (the free tier is enough) for anything real.
 
 ## Pointing WoWSP at your node
 
@@ -294,14 +286,14 @@ Upstash KV (the free tier is enough).
 
 ### The mesh trust model (short version)
 
-Cache servers are information sources for public data, nothing more
-(cache-mesh.md §8). Blocks are content-verified — a lying peer's row
-fails the CID hash check and is dropped; public peers are https-name
-only and their announce is liveness-checked; and a hostile node can at
-worst serve stale or wrong stats, which the client's own sanity checks
-police anyway. That is the same trust level as any upstream. Ordering
-is user-managed, so your own node always wins. Battle-push frames and
-feedback never enter the mesh.
+Cache servers are just one source of public stats: every block carries
+a content hash and mismatched data is dropped; the public list takes
+https-named nodes only, with a liveness-checked announce; a hostile
+node can at worst hand out stale stats — the client's own checks
+police that.
+Ordering is user-managed, so your own node always wins. Battle-push
+frames and feedback never enter the mesh (details in cache-mesh.md
+§8).
 
 ## Operations hygiene
 
