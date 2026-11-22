@@ -90,7 +90,7 @@ timeline the holographic map scrubs.
 
 ## 서버 측
 
-WoWSP는 데스크톱 앱만이 아니다. `wowsp.langyo.xyz`(공식 노드)와 어떤 자체 호스팅 노드든 함께 모여, 하나의 정책 코어(`packages/pairing-relay/crates/relay-core`)에서 만들어진 세 가지 형태의 작은 서버 측을 이룬다:
+WoWSP는 데스크톱 앱만이 아니다. `wowsp.langyo.xyz`(공식 노드)와 어떤 자체 호스팅 노드든 함께 작은 서버 측을 이루며, 세 가지 형태는 하나의 정책 코어(`packages/pairing-relay/crates/relay-core`)를 공유한다:
 
 | 형태 | 패키지 | 기능 |
 |---|---|---|
@@ -98,12 +98,12 @@ WoWSP는 데스크톱 앱만이 아니다. `wowsp.langyo.xyz`(공식 노드)와 
 | 네이티브 바이너리(VPS / LAN / Docker) | `crates/relay-server`(axum + SQLite) | 전체 |
 | Vercel 엣지 어댑터 | `packages/relay-vercel`(TypeScript) | lookup + peers + blocks |
 
-모든 노드에는 두 개의 네임스페이스가 함께 돌아간다:
+모든 노드는 두 개의 네임스페이스를 노출한다:
 
 - **전투 푸시**(`/gateway/*`, WebSocket) — 휴대폰의 라이브 전적 채널. `designs/gateway-push.md` 참고.
 - **캐시 메시**(`/api/lookup`, `/api/blocks`, `/api/peers`) — 공개 전적 업스트림(vortex/WG/클랜, 13개 호스트 허용 목록)을 위한 캐싱 프록시에, 콘텐츠 주소 방식 블록 저장소(CIDv1, `/ipfs/<cid>` 게이트웨이 별칭 포함)와 브로드캐스트 방식 peer 레지스트리를 더한 것이라, 한 플레이어의 느린 콜드 조회가 모두의 캐시 히트가 된다. `designs/cache-mesh.md` 참고(클라이언트가 보고하는 결과에 대한 로드맵은 `designs/cache-mesh-trust.md`).
 
-클라이언트에서는 모든 전적 요청이 설정된 캐시 서버(설정 ▸ 연결 ▸ 캐시 서버 — 기본은 공식 노드 + 메시의 peer 목록에 있는 커뮤니티 노드)를 먼저 거치고, 그다음에 변함없는 프록시 → 직접 연결 체인으로 넘어간다. 자체 노드 운영도 일급 경로다: `guides/self-host-gateway.md`.
+클라이언트에서는 모든 전적 요청이 설정된 캐시 서버(설정 ▸ 연결 ▸ 캐시 서버 — 기본은 공식 노드 + 메시의 peer 목록에 있는 커뮤니티 노드)를 먼저 거치고, 그다음에 기존의 프록시 → 직접 연결 체인으로 넘어간다. 자체 노드 운영도 공식적으로 지원되는 경로로, 방법은 `guides/self-host-gateway.md`에 정리되어 있다.
 
 ## Provenance
 

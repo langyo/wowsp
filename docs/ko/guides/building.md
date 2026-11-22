@@ -56,7 +56,7 @@ just lint          # fmt-check + clippy + pnpm lint + i18n parity
 just check         # cargo check --workspace
 just test          # cargo test --workspace (or `just test e2e` for Playwright)
 just i18n-check    # validate i18n key parity (link URLs are en-US-only, shared via fallback)
-just check-relay  # 독립 실행형 pairing-relay 워크스페이스: relay-core 테스트 + wasm32 검사 + 네이티브 서버의 check/테스트
+just check-relay   # 독립 실행형 pairing-relay 워크스페이스: relay-core 테스트 + wasm32 검사 + 네이티브 서버의 check/테스트
 ```
 
 ## Building for release

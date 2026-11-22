@@ -44,7 +44,7 @@ just lint          # fmt-check + clippy + pnpm lint + i18n 一致性
 just check         # cargo check --workspace
 just test          # cargo test --workspace（或 `just test e2e` 跑 Playwright）
 just i18n-check    # 校验各语言的 i18n key 一致性（链接 URL 仅 en-US 一份，全语言共享）
-just check-relay  # 独立的 pairing-relay 工作区：relay-core 测试 + wasm32 检查 + 原生服务端的 check/test
+just check-relay   # 独立的 pairing-relay 工作区：relay-core 测试 + wasm32 检查 + 原生服务端的 check/test
 ```
 
 ## 发布构建

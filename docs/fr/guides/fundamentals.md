@@ -21,7 +21,7 @@ view.
 | Wargaming Public / Vortex API | Both (optional) | Per-player stats (winrate, clan, etc.) |
 | Nœud de la maille de cache WoWSP | Les deux (facultatif) | Les mêmes statistiques, servies depuis un cache (officiel ou auto-hébergé) |
 
-Les recherches de statistiques gravissent une échelle : d'abord les serveurs de cache configurés (paramètres ▸ connexion ▸ serveurs de cache ; le nœud officiel plus les nœuds communautaires vérifiés par la découverte automatique), puis la chaîne mandataire → direct, inchangée. Une réponse en cache porte la provenance `x-wowsp-cache: hit|miss|peer-hit` ; le registre de santé des sources n'enregistre toujours que les résultats du chemin direct, donc un succès de cache ne flatte jamais la ligne de santé d'une source.
+Les recherches de statistiques gravissent une échelle : d'abord les serveurs de cache configurés (paramètres ▸ connexion ▸ serveurs de cache ; le nœud officiel plus les nœuds communautaires vérifiés par la découverte automatique), puis l'habituelle chaîne mandataire → direct. Une réponse en cache porte la provenance `x-wowsp-cache: hit|miss|peer-hit` ; le registre de santé des sources n'enregistre toujours que les résultats du chemin direct, donc un succès de cache ne gonfle jamais la ligne de santé d'une source.
 
 ## Model conversion
 

@@ -90,7 +90,7 @@ timeline the holographic map scrubs.
 
 ## Le côté serveur
 
-WoWSP n'est pas que l'application de bureau : `wowsp.langyo.xyz` (le nœud officiel) et n'importe quel nœud auto-hébergé forment un petit côté serveur en trois formes, toutes construites sur un même cœur de politiques (`packages/pairing-relay/crates/relay-core`) :
+WoWSP n'est pas que l'application de bureau : `wowsp.langyo.xyz` (le nœud officiel) et n'importe quel nœud auto-hébergé forment ensemble un petit côté serveur dont les trois formes partagent un même cœur de politiques (`packages/pairing-relay/crates/relay-core`) :
 
 | Forme | Paquet | Capacités |
 |---|---|---|
@@ -98,12 +98,12 @@ WoWSP n'est pas que l'application de bureau : `wowsp.langyo.xyz` (le nœud offic
 | Binaire natif (VPS / LAN / Docker) | `crates/relay-server` (axum + SQLite) | toutes |
 | Adaptateur edge Vercel | `packages/relay-vercel` (TypeScript) | lookup + peers + blocks |
 
-Deux espaces de noms cohabitent sur chaque nœud :
+Chaque nœud expose deux espaces de noms :
 
 - **Push de bataille** (`/gateway/*`, WebSockets) — le canal de statistiques en direct du téléphone ; voir `designs/gateway-push.md`.
 - **La maille de cache** (`/api/lookup`, `/api/blocks`, `/api/peers`) — un mandataire de cache pour les sources publiques de statistiques (vortex/WG/clans, la liste blanche des 13 hôtes), complété d'un magasin de blocs adressés par contenu (CIDv1, avec un alias de passerelle `/ipfs/<cid>`) et d'un registre de pairs par diffusion : la lente recherche à froid d'un joueur devient un succès de cache pour tout le monde. Voir `designs/cache-mesh.md` (et `designs/cache-mesh-trust.md` pour la feuille de route des résultats rapportés par le client).
 
-Côté client, chaque requête de statistiques passe d'abord par les serveurs de cache configurés (paramètres ▸ connexion ▸ serveurs de cache — le nœud officiel par défaut, plus les nœuds communautaires issus de la liste de pairs de la maille), puis retombe sur la chaîne mandataire → direct, inchangée. Faire tourner son propre nœud est un chemin de premier ordre : `guides/self-host-gateway.md`.
+Côté client, chaque requête de statistiques passe d'abord par les serveurs de cache configurés (paramètres ▸ connexion ▸ serveurs de cache — le nœud officiel par défaut, plus les nœuds communautaires issus de la liste de pairs de la maille), puis retombe sur l'habituelle chaîne mandataire → direct. Faire tourner son propre nœud est un chemin pris en charge et documenté : `guides/self-host-gateway.md`.
 
 ## Provenance
 

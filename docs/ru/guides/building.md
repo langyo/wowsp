@@ -56,7 +56,7 @@ just lint          # fmt-check + clippy + pnpm lint + i18n parity
 just check         # cargo check --workspace
 just test          # cargo test --workspace (or `just test e2e` for Playwright)
 just i18n-check    # validate i18n key parity (link URLs are en-US-only, shared via fallback)
-just check-relay  # отдельный воркспейс pairing-relay: тесты relay-core + проверка wasm32 + check/тесты нативного сервера
+just check-relay   # отдельный воркспейс pairing-relay: тесты relay-core + проверка wasm32 + check/тесты нативного сервера
 ```
 
 ## Building for release
